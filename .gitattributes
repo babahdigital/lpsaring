@@ -1,0 +1,5 @@
+* text=auto eol=lf
+*.txt text eol=lf
+*.js text eol=lf
+*.vue text eol=lf
+# Tambahkan ekstensi file teks lainnya yang relevan
