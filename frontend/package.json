@@ -129,10 +129,5 @@
     "@tiptap/core": "^2",
     "@types/video.js": "^7",
     "postcss": "^8"
-  },
-  "resolutions": {
-    "@tiptap/core": "^2",
-    "@types/video.js": "^7",
-    "postcss": "^8"
   }
 }
