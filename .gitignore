@@ -126,3 +126,6 @@ credentials/
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+
+docker-compose.yml.bak
+*.bak
