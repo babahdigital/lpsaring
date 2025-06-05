@@ -1,0 +1,9 @@
+ignoredBuiltDependencies:
+  - '@parcel/watcher'
+  - '@scarf/scarf'
+  - esbuild
+  - vue-demi
+
+onlyBuiltDependencies:
+  - core-js
+  - unrs-resolver

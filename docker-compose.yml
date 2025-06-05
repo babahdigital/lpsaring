@@ -1,0 +1,137 @@
+# hotspot-portal/docker-compose.yml
+# VERSI: Disempurnakan dengan healthcheck dan depends_on yang lebih baik
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: hotspot_postgres_db # Nama kontainer yang lebih deskriptif
+    environment:
+      # Variabel ini akan diambil dari file .env di root project hotspot-portal
+      # atau dari environment sistem jika .env tidak ada atau variabel tidak disetel di sana.
+      # Default placeholder hanya akan digunakan jika variabel TIDAK ADA SAMA SEKALI.
+      POSTGRES_DB: ${DB_NAME:-hotspot_default_db}
+      POSTGRES_USER: ${DB_USER:-hotspot_default_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-supersecretdefaultpassword} # GANTI INI DI .env ANDA!
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - hotspot_network
+    healthcheck:
+      # Menggunakan variabel environment yang sama dengan yang didefinisikan di atas
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-hotspot_default_user} -d $${POSTGRES_DB:-hotspot_default_db} -q"] # -q untuk quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s # Beri waktu lebih untuk PostgreSQL start awal
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine # Pertimbangkan untuk menggunakan versi spesifik, misal redis:7.2-alpine
+    container_name: hotspot_redis_cache # Nama kontainer yang lebih deskriptif
+    networks:
+      - hotspot_network
+    volumes:
+      - redis_data:/data
+    # command: redis-server --save 60 1 --loglevel warning # Contoh command jika perlu
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s # Beri waktu untuk Redis start
+    restart: unless-stopped
+    # ports:
+    #   - "127.0.0.1:6379:6379" # Hanya expose ke localhost host jika perlu debug langsung
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hotspot_flask_backend # Nama kontainer yang lebih deskriptif
+    environment:
+      PYTHONUNBUFFERED: 1 # Untuk output log Python langsung
+      PYTHONPATH: /app # Pastikan PYTHONPATH disetel
+      FLASK_CONFIG: ${FLASK_CONFIG:-development} # Ambil dari env host, default ke development
+      # Variabel lain akan diambil dari backend/.env
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend:/app # Mount kode untuk hot-reload di development
+    ports:
+      - "5010:5010" # Port yang diexpose oleh Gunicorn di dalam container
+    # Perintah Gunicorn untuk development, merujuk ke 'app' instance di 'run.py'
+    # Gunicorn akan mencari variabel 'app' di modul 'run' (run.py)
+    command: gunicorn --bind 0.0.0.0:5010 "run:app" --reload --workers=1 --log-level=debug --access-logfile - --error-logfile -
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - hotspot_network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development # Pastikan target build sesuai
+    container_name: hotspot_nuxt_frontend # Nama kontainer yang lebih deskriptif
+    env_file:
+      - ./frontend/.env
+    environment:
+      # Variabel ini penting agar Nuxt di dalam Docker tahu cara menghubungi Nginx
+      # Nginx akan bertindak sebagai reverse proxy ke API backend.
+      # NUXT_PUBLIC_API_BASE_URL di frontend/.env harus disetel ke /api
+      # atau jika ingin absolut: NUXT_PUBLIC_API_BASE_URL: http://localhost/api (jika diakses dari browser host)
+      # Untuk komunikasi internal dari Nuxt SSR ke API (jika ada), mungkin perlu konfigurasi berbeda.
+      # Variabel NGINX_INTERNAL_HOST tidak standar untuk Nuxt, biasanya API URL dikonfigurasi di Nuxt.
+      # Pastikan NUXT_PUBLIC_API_BASE di frontend/.env adalah '/api'
+      HOST: '0.0.0.0' # Agar Nuxt dev server bisa diakses dari luar container (oleh Nginx)
+      PORT: 3010
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules # Jaga node_modules tetap di dalam container
+      - /app/.nuxt # Jaga cache Nuxt tetap di dalam container
+    command: pnpm run dev # Atau npm run dev
+    ports:
+      - "3010:3010" # Untuk akses langsung ke Nuxt dev server (opsional, biasanya via Nginx)
+    networks:
+      - hotspot_network
+    restart: unless-stopped
+    depends_on: # Frontend mungkin tidak perlu depends_on backend secara ketat untuk start
+      - backend # Tapi baik untuk urutan start jika ada proses build yang bergantung API
+
+  nginx:
+    image: nginx:stable-alpine
+    container_name: hotspot_nginx_proxy # Nama kontainer yang lebih deskriptif
+    ports:
+      - "80:80" # Port utama aplikasi
+      # - "443:443" # Jika Anda menambahkan konfigurasi SSL
+    volumes:
+      - ./infrastructure/nginx/conf.d/app.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./infrastructure/nginx/logs:/var/log/nginx
+      # Jika menggunakan SSL:
+      # - ./infrastructure/nginx/ssl/default.crt:/etc/nginx/ssl/default.crt:ro
+      # - ./infrastructure/nginx/ssl/default.key:/etc/nginx/ssl/default.key:ro
+      # - ./infrastructure/nginx/conf.d/ssl_params.conf:/etc/nginx/conf.d/ssl_params.conf:ro # Opsional
+    depends_on:
+      backend:
+        condition: service_started # Cukup service_started karena Nginx bisa menangani jika backend down sementara
+      frontend:
+        condition: service_started
+    # networks:
+    #  - hotspot_network
+    network_mode: "host"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  hotspot_network:
+    driver: bridge
+    name: hotspot_portal_net # Nama network yang lebih jelas

@@ -1,0 +1,23 @@
+# frontend/.dockerignore
+
+# Abaikan direktori dependensi Node.js di host
+node_modules
+
+# Abaikan output build Nuxt dan cache
+.nuxt
+.output
+dist
+
+# Abaikan file log
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Abaikan file environment lokal
+.env
+
+# Abaikan file konfigurasi IDE (opsional)
+.vscode
+.idea

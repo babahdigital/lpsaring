@@ -1,0 +1,22 @@
+# hotspot-portal/docker-compose.yml (FILE UJI COBA SEMENTARA)
+
+# Definisi anchor menggunakan x-* (dalam file yang sama)
+x-db-definition: &db-anchor-lokal
+  image: postgres:15-alpine
+  container_name: test_db_singkat
+  environment:
+    POSTGRES_DB: testdb
+    POSTGRES_USER: testuser
+    POSTGRES_PASSWORD: testpassword
+  networks:
+    - test_network_singkat # Nama network sederhana untuk tes
+
+services:
+  # Service db final, menggunakan anchor dari file ini
+  db:
+    <<: *db-anchor-lokal # Referensi anchor yang didefinisikan di atas
+
+networks:
+  test_network_singkat:
+    driver: bridge
+    name: test_jaringan_anchor_singkat # Nama network Docker
