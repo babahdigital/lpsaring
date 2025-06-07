@@ -14,8 +14,8 @@ RUN npm install -g pnpm
 FROM base AS deps
 COPY package.json pnpm-lock.yaml* ./
 # Install semua dependensi menggunakan lockfile untuk konsistensi.
-# Script diabaikan di sini karena source code belum ada.
-RUN pnpm install --frozen-lockfile --prod=false
+# --ignore-scripts ditambahkan untuk mencegah postinstall berjalan sebelum source code ada.
+RUN pnpm install --frozen-lockfile --prod=false --ignore-scripts
 
 # --- Development Stage ---
 # INI ADALAH TARGET yang dicari oleh docker-compose.yml untuk development.
@@ -48,8 +48,8 @@ RUN pnpm build
 FROM base AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
-# Salin hanya file yang dibutuhkan untuk menjalankan aplikasi produksi.
-COPY package.json ./
+# Salin file manifest DAN lockfile untuk instalasi produksi yang konsisten.
+COPY package.json pnpm-lock.yaml* ./
 # Install HANYA dependensi produksi untuk menjaga ukuran image tetap kecil.
 RUN pnpm install --prod --frozen-lockfile
 # Salin aplikasi yang sudah di-build dari 'builder' stage.
