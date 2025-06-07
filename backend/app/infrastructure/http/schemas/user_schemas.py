@@ -246,19 +246,30 @@ class UserProfileResponseSchema(BaseModel):
 
 # --- Skema Request Update Profil Pengguna (oleh diri sendiri) ---
 class UserProfileUpdateRequestSchema(BaseModel):
-    # Pengguna (USER) wajib mengisi blok dan kamar saat update profil
-    # Validasi ini diterapkan di endpoint berdasarkan peran pengguna
     full_name: Optional[str] = Field(None, min_length=2, max_length=100, description="Nama Lengkap baru pengguna (opsional jika tidak ingin diubah)")
-    blok: UserBlok = Field(..., description="Blok pengguna (wajib untuk user)") # Dibuat wajib di skema ini
-    kamar: UserKamar = Field(..., description="Nomor kamar pengguna (wajib untuk user)") # Dibuat wajib di skema ini
+    
+    # PERUBAHAN: Jadikan blok dan kamar opsional untuk menerima null
+    blok: Optional[UserBlok] = Field(None, description="Blok pengguna. Kirim null jika tidak tinggal di asrama.")
+    kamar: Optional[UserKamar] = Field(None, description="Nomor kamar pengguna. Kirim null jika tidak tinggal di asrama.")
 
     # Validasi nama jika field ada dan tidak None
     @validator('full_name', pre=True, always=True)
     def validate_update_profile_full_name(cls, v):
         if v is None:
             return None # Izinkan None jika tidak ingin mengubah nama
-        # Jika diisi, validasi seperti biasa
-        return UserBaseSchema.validate_base_full_name(cls, v)
+        if isinstance(v, str):
+            stripped_v = v.strip()
+            if not stripped_v: return None # Anggap string kosong sebagai tidak ada perubahan
+            if len(stripped_v) < 2: raise ValueError('Nama Lengkap minimal 2 karakter.')
+            return stripped_v
+        raise TypeError('Nama Lengkap harus berupa string atau None.')
+    
+    @root_validator(pre=False, skip_on_failure=True)
+    def check_blok_kamar_consistency(cls, values):
+        blok, kamar = values.get('blok'), values.get('kamar')
+        if (blok is not None and kamar is None) or (blok is None and kamar is not None):
+            raise ValueError('Blok dan Kamar harus diisi keduanya atau dikosongkan keduanya.')
+        return values
 
     # Catatan: Validasi bahwa 'blok' dan 'kamar' *harus* diisi oleh peran USER
     # sebaiknya dilakukan di logika endpoint (`user_routes.py`), karena skema ini

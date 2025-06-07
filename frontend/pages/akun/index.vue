@@ -1,14 +1,30 @@
 <script lang="ts" setup>
 import { ref, onMounted, computed, watch, defineAsyncComponent } from 'vue'
 import { useNuxtApp } from '#app'
-import type { UserMeResponseSchema, UserProfileUpdateRequestSchema, UserProfileResponseSchema, UserLoginHistoryItem, AdminProfileUpdateRequestSchema, ChangePasswordRequest } from '~/types/api'
+import type { UserMeResponseSchema, UserProfileResponseSchema } from '~/types/api'
 import { VForm } from 'vuetify/components/VForm'
 import { useDisplay } from 'vuetify'
+
+// --- Tipe Lokal untuk Request Payload ---
+// Tipe ini mungkin perlu ditambahkan di file `types/api.ts` Anda agar lebih terpusat
+interface UserProfileUpdateRequest {
+  full_name: string
+  blok: string | null
+  kamar: string | null
+}
+interface AdminProfileUpdateRequest {
+  full_name: string
+  phone_number: string
+}
+interface ChangePasswordRequest {
+  current_password: string
+  new_password: string
+}
 
 // Dynamic import untuk chart agar tidak membebani render sisi server
 const UserSpendingChart = defineAsyncComponent({
   loader: () => import('~/components/charts/UserSpendingChart.vue'),
-  ssr: false
+  ssr: false,
 })
 
 // --- Inisialisasi ---
@@ -32,16 +48,16 @@ const pageError = ref<string | null>(null)
 const userProfileForm = ref<InstanceType<typeof VForm> | null>(null)
 const userProfileLoading = ref(false)
 const userProfileAlert = ref<{ type: 'success' | 'error' | 'warning'; message: string } | null>(null)
-const editUserProfileData = ref<UserProfileUpdateRequestSchema>({ full_name: '', blok: null, kamar: null })
+const editUserProfileData = ref<UserProfileUpdateRequest>({ full_name: '', blok: null, kamar: null })
 const showBlokKamar = ref(true)
 
 // Form Profil Admin
 const adminProfileForm = ref<InstanceType<typeof VForm> | null>(null)
 const adminProfileLoading = ref(false)
 const adminProfileAlert = ref<{ type: 'success' | 'error' | 'warning'; message: string } | null>(null)
-const editAdminProfileData = ref<AdminProfileUpdateRequestSchema>({ full_name: '', phone_number: '' })
+const editAdminProfileData = ref<AdminProfileUpdateRequest>({ full_name: '', phone_number: '' })
 
-// Form Ubah Password (untuk semua peran)
+// Form Ubah Password (ADMIN/SUPER ADMIN)
 const passwordForm = ref<InstanceType<typeof VForm> | null>(null)
 const passwordLoading = ref(false)
 const passwordAlert = ref<{ type: 'success' | 'error' | 'warning'; message: string } | null>(null)
@@ -64,19 +80,28 @@ const spendingChartLoading = ref(false)
 
 // --- Logika Inti & Panggilan API ---
 
-const fetchUserProfile = async () => {
+const fetchInitialData = async () => {
   pageLoading.value = true
   pageError.value = null
   try {
+    // 1. Ambil data utama pengguna
     const data = await $api<UserMeResponseSchema>('/auth/me', { method: 'GET' })
     userProfile.value = data
-    authStore.setUser(data)
+    authStore.setUser(data) // Selalu update store dengan data terbaru
+
+    // 2. Siapkan data form berdasarkan peran
     if (data.role === 'USER') {
       editUserProfileData.value = { full_name: data.full_name || '', blok: data.blok || null, kamar: data.kamar || null }
       showBlokKamar.value = !!(data.blok && data.kamar)
-    } else {
+      // Panggil API khusus USER
+      fetchSpendingSummary()
+    } else { // Admin & Super Admin
       editAdminProfileData.value = { full_name: data.full_name || '', phone_number: data.phone_number || '' }
     }
+    
+    // 3. Panggil API yang umum untuk semua peran
+    fetchLoginHistory()
+
   } catch (error: any) {
     pageError.value = error.data?.message || error.data?.error || 'Gagal memuat data profil.'
   } finally {
@@ -91,10 +116,23 @@ const saveUserProfile = async () => {
 
   userProfileLoading.value = true
   userProfileAlert.value = null
+
+  // Pastikan blok/kamar null jika switch off
+  const payload: UserProfileUpdateRequest = {
+    ...editUserProfileData.value,
+    blok: showBlokKamar.value ? editUserProfileData.value.blok : null,
+    kamar: showBlokKamar.value ? editUserProfileData.value.kamar : null,
+  }
+
   try {
-    const response = await $api<UserProfileResponseSchema>('/users/me/profile', { method: 'PUT', body: editUserProfileData.value })
-    authStore.updateUserProfile(response)
+    const response = await $api<UserProfileResponseSchema>('/users/me/profile', { method: 'PUT', body: payload })
+    
+    // Update data di store dan state lokal
+    if (authStore.user) {
+        authStore.setUser({ ...authStore.user, ...response })
+    }
     Object.assign(userProfile.value, response)
+
     userProfileAlert.value = { type: 'success', message: 'Profil berhasil diperbarui.' }
   } catch (error: any) {
     userProfileAlert.value = { type: 'error', message: `Gagal menyimpan: ${error.data?.message || 'Kesalahan tidak diketahui'}` }
@@ -111,7 +149,7 @@ const saveAdminProfile = async () => {
   adminProfileLoading.value = true
   adminProfileAlert.value = null
   try {
-    const response = await $api<UserMeResponseSchema>('/auth/me', { method: 'PUT', body: editAdminProfileData.value })
+    const response = await $api<UserMeResponseSchema>('/admin/users/me', { method: 'PUT', body: editAdminProfileData.value })
     authStore.setUser(response)
     Object.assign(userProfile.value, response)
     adminProfileAlert.value = { type: 'success', message: 'Profil admin berhasil diperbarui.' }
@@ -171,44 +209,51 @@ const parseUserAgent = (uaString?: string | null): { device: string; os: string;
 const fetchLoginHistory = async () => {
   loginHistoryLoading.value = true
   try {
-    const response = await $api<any>('/users/me/login-history', { params: { limit: 5 }, method: 'GET' })
+    const response = await $api<{success: boolean, history: any[]}>('/users/me/login-history', { params: { limit: 5 }, method: 'GET' })
     if (response.success && response.history) {
-      loginHistory.value = response.history.map((item:any) => ({ date: formatDate(item.login_time), ...parseUserAgent(item.user_agent_string), ip_address: item.ip_address || 'N/A' }))
+      loginHistory.value = response.history.map((item:any) => ({ 
+          date: formatDate(item.login_time), 
+          ...parseUserAgent(item.user_agent_string), 
+          ip_address: item.ip_address || 'N/A' 
+      }))
     }
-  } finally { loginHistoryLoading.value = false }
+  } catch (e) {
+    //
+  } finally { 
+    loginHistoryLoading.value = false 
+  }
 }
 
 const fetchSpendingSummary = async () => {
   if (!isUser.value) return
   spendingChartLoading.value = true
   try {
-    // =================================================================
-    // PERBAIKAN: Menghapus <any> yang menyebabkan error kompilasi
-    // =================================================================
-    const response = await <span class="math-inline">api\('/users/me/weekly\-spending', \{ method\: 'GET' \}\)
-if \(response && response\.categories && response\.series\) \{
-spendingChartCategories\.value \= response\.categories
-spendingChartData\.value \= response\.series
-totalSpendingThisPeriod\.value \= formatCurrency\(response\.total\_this\_week\)
-\}
-\} finally \{ spendingChartLoading\.value \= false \}
-\}
-onMounted\(async \(\) \=\> \{
-await fetchUserProfile\(\)
-if \(userProfile\.value\.id\) \{
-fetchLoginHistory\(\)
-fetchSpendingSummary\(\)
-\}
-\}\)
-watch\(showBlokKamar, \(isAsrama\) \=\> \{
-if \(\!isAsrama\) \{
-editUserProfileData\.value\.blok \= null
-editUserProfileData\.value\.kamar \= null
-\}
-\}\)
-const requiredRule \= \(v\: any\) \=\> \!\!v \|\| 'Wajib diisi\.'
-const nameLengthRule \= \(v\: string\) \=\> \(v && v\.length \>\= 2\) \|\| 'Minimal 2 karakter\.'
-const phoneFormatRule \= \(v\: string\) \=\> /^\\\+628\[1\-9\]\[0\-9\]\{7,11\}</span>/.test(v) || 'Format harus +62xxxxxxxxxx.'
+    const response = await $api<any>('/users/me/weekly-spending', { method: 'GET' })
+    if (response && response.categories && response.series) {
+        spendingChartCategories.value = response.categories
+        spendingChartData.value = response.series
+        totalSpendingThisPeriod.value = formatCurrency(response.total_this_week)
+    }
+  } catch (e) {
+    //
+  } finally { 
+      spendingChartLoading.value = false 
+  }
+}
+
+onMounted(fetchInitialData)
+
+watch(showBlokKamar, (isAsrama) => {
+  if (!isAsrama) {
+    editUserProfileData.value.blok = null
+    editUserProfileData.value.kamar = null
+  }
+})
+
+// --- Validasi & Helper ---
+const requiredRule = (v: any) => !!v || 'Wajib diisi.'
+const nameLengthRule = (v: string) => (v && v.length >= 2) || 'Minimal 2 karakter.'
+const phoneFormatRule = (v: string) => /^\+628[1-9][0-9]{7,11}$/.test(v) || 'Format harus +62xxxxxxxxxx.'
 const passwordLengthRule = (v: string) => (v && v.length >= 6) || 'Password minimal 6 karakter.'
 const passwordMatchRule = (v: string) => v === passwordData.value.new_password || 'Password tidak sama.'
 
@@ -221,7 +266,6 @@ const formatCurrency = (amount: number) => new Intl.NumberFormat('id-ID', { styl
 
 const blokItems = ['A', 'B', 'C', 'D', 'E', 'F']
 const kamarItems = ['1', '2', '3', '4', '5', '6']
-
 </script>
 
 <template>
@@ -235,7 +279,7 @@ const kamarItems = ['1', '2', '3', '4', '5', '6']
       <VIcon icon="tabler-alert-triangle" size="64" color="error" />
       <p class="text-h6 mt-4">Gagal Memuat Data</p>
       <p class="text-body-1 mt-2">{{ pageError }}</p>
-      <VBtn color="primary" class="mt-4" @click="fetchUserProfile">Coba Lagi</VBtn>
+      <VBtn color="primary" class="mt-4" @click="fetchInitialData">Coba Lagi</VBtn>
     </div>
 
     <div v-else-if="userProfile.id">
@@ -249,34 +293,76 @@ const kamarItems = ['1', '2', '3', '4', '5', '6']
                 <VAlert v-if="userProfileAlert" :type="userProfileAlert.type" variant="tonal" density="compact" closable class="mb-4" @update:model-value="userProfileAlert = null">{{ userProfileAlert.message }}</VAlert>
                 <VForm ref="userProfileForm" @submit.prevent="saveUserProfile">
                   <VRow dense>
-                    <VCol cols="12"><AppTextField v-model="editUserProfileData.full_name" label="Nama Lengkap" :rules="[requiredRule, nameLengthRule]" :loading="userProfileLoading" density="comfortable" prepend-inner-icon="tabler-user" /></VCol>
-                    <VCol cols="12"><VSwitch v-model="showBlokKamar" label="Saya tinggal di asrama" color="primary" density="comfortable" /></VCol>
+                    <VCol cols="12">
+                      <AppTextField v-model="editUserProfileData.full_name" label="Nama Lengkap" :rules="[requiredRule, nameLengthRule]" :loading="userProfileLoading" density="comfortable" prepend-inner-icon="tabler-user" />
+                    </VCol>
+                    <VCol cols="12">
+                      <VSwitch v-model="showBlokKamar" label="Saya tinggal di asrama" color="primary" density="comfortable" />
+                    </VCol>
                     <template v-if="showBlokKamar">
-                      <VCol cols="12" sm="6"><AppSelect v-model="editUserProfileData.blok" label="Blok" :items="blokItems" :rules="showBlokKamar ? [requiredRule] : []" :loading="userProfileLoading" density="comfortable" prepend-inner-icon="tabler-building-cottage" /></VCol>
-                      <VCol cols="12" sm="6"><AppSelect v-model="editUserProfileData.kamar" label="Kamar" :items="kamarItems" :rules="showBlokKamar ? [requiredRule] : []" :loading="userProfileLoading" density="comfortable" prepend-inner-icon="tabler-door" /></VCol>
+                      <VCol cols="12" sm="6">
+                        <AppSelect v-model="editUserProfileData.blok" label="Blok" :items="blokItems" :rules="showBlokKamar ? [requiredRule] : []" :loading="userProfileLoading" density="comfortable" prepend-inner-icon="tabler-building-cottage" />
+                      </VCol>
+                      <VCol cols="12" sm="6">
+                        <AppSelect v-model="editUserProfileData.kamar" label="Kamar" :items="kamarItems" :rules="showBlokKamar ? [requiredRule] : []" :loading="userProfileLoading" density="comfortable" prepend-inner-icon="tabler-door" />
+                      </VCol>
                     </template>
                   </VRow>
-                  <VCardActions class="mt-4 pa-0"><VBtn block color="primary" type="submit" :loading="userProfileLoading" size="large">Simpan Profil</VBtn></VCardActions>
+                  <VCardActions class="mt-4 pa-0">
+                    <VBtn block color="primary" type="submit" :loading="userProfileLoading" size="large">Simpan Profil</VBtn>
+                  </VCardActions>
                 </VForm>
               </VCardText>
             </VCard>
-            <VCard><VCardTitle>Keamanan Hotspot</VCardTitle>
+            <VCard>
+              <VCardTitle>Keamanan Hotspot</VCardTitle>
               <VCardText>
                 <VAlert v-if="securityAlert" :type="securityAlert.type" variant="tonal" closable class="mb-4" @update:model-value="securityAlert = null">{{ securityAlert.message }}</VAlert>
-                <p class="mb-4 text-body-2">Lupa password hotspot? Reset untuk mendapatkan password baru via WhatsApp.</p>
+                <p class="mb-4 text-body-2">Lupa password hotspot? Reset untuk mendapatkan password baru (6 digit angka) via WhatsApp.</p>
                 <VBtn block color="warning" variant="tonal" @click="resetHotspotPassword" :loading="securityLoading" size="large">Reset Password Hotspot</VBtn>
               </VCardText>
             </VCard>
           </VCol>
           <VCol cols="12" md="5" lg="4">
-            <VCard class="mb-4"><VCardTitle>Ringkasan Pengeluaran</VCardTitle><VCardSubtitle>7 hari terakhir</VCardSubtitle>
+            <VCard class="mb-4">
+              <VCardTitle>Ringkasan Pengeluaran</VCardTitle>
+              <VCardSubtitle>7 hari terakhir</VCardSubtitle>
               <VCardText>
                 <div v-if="spendingChartLoading" class="text-center py-4"><VProgressCircular indeterminate /></div>
                 <template v-else>
-                  <div class="d-flex justify-space-between align-center mb-3"><h5 class="text-h6">Total:</h5><h5 class="text-h6 text-success">{{ totalSpendingThisPeriod }}</h5></div>
-                  <div :style="{ height: '220px' }"><UserSpendingChart :series-data="spendingChartData" :categories="spendingChartCategories" /></div>
+                  <div class="d-flex justify-space-between align-center mb-3">
+                    <h5 class="text-h6">Total:</h5>
+                    <h5 class="text-h6 text-success">{{ totalSpendingThisPeriod }}</h5>
+                  </div>
+                  <div :style="{ height: '220px' }">
+                    <UserSpendingChart :series-data="spendingChartData" :categories="spendingChartCategories" />
+                  </div>
                 </template>
               </VCardText>
+            </VCard>
+             <VCard class="mb-4">
+                <VCardTitle>Informasi & Riwayat</VCardTitle>
+                <VDivider />
+                <VList lines="two" density="comfortable">
+                    <VListItem title="Status Akun">
+                        <template #prepend><VIcon icon="tabler-id-badge-2" class="mx-3" /></template>
+                        <template #append><VChip :color="userProfile.is_active ? 'success' : 'error'" size="small" label>{{ userProfile.is_active ? 'Aktif' : 'Tidak Aktif' }}</VChip></template>
+                    </VListItem>
+                    <VListItem title="Tanggal Terdaftar">
+                        <template #prepend><VIcon icon="tabler-calendar-plus" class="mx-3" /></template>
+                        <template #append><span class="text-body-2">{{ formatDate(userProfile.created_at) }}</span></template>
+                    </VListItem>
+                </VList>
+                <VDivider/>
+                <div v-if="loginHistoryLoading" class="text-center pa-4"><VProgressCircular indeterminate size="24" /></div>
+                <VList v-else-if="loginHistory.length > 0" nav density="compact">
+                    <VListItem v-for="(item, index) in loginHistory" :key="index">
+                        <template #prepend><VIcon :icon="item.icon" size="22" class="mx-3" /></template>
+                        <VListItemTitle class="font-weight-medium">{{ item.date }}</VListItemTitle>
+                        <VListItemSubtitle class="text-caption">IP: {{ item.ip_address }} | {{ item.os }}</VListItemSubtitle>
+                    </VListItem>
+                </VList>
+                <VCardText v-else class="text-center text-caption text-disabled py-4">Belum ada riwayat akses tercatat.</VCardText>
             </VCard>
           </VCol>
         </VRow>
@@ -291,10 +377,16 @@ const kamarItems = ['1', '2', '3', '4', '5', '6']
                 <VAlert v-if="adminProfileAlert" :type="adminProfileAlert.type" variant="tonal" density="compact" closable class="mb-4" @update:model-value="adminProfileAlert = null">{{ adminProfileAlert.message }}</VAlert>
                 <VForm ref="adminProfileForm" @submit.prevent="saveAdminProfile">
                   <VRow dense>
-                    <VCol cols="12"><AppTextField v-model="editAdminProfileData.full_name" label="Nama Lengkap" :rules="[requiredRule, nameLengthRule]" :loading="adminProfileLoading" prepend-inner-icon="tabler-user" density="comfortable" /></VCol>
-                    <VCol cols="12"><AppTextField v-model="editAdminProfileData.phone_number" label="Nomor Telepon" :rules="[requiredRule, phoneFormatRule]" :loading="adminProfileLoading" prepend-inner-icon="tabler-phone" placeholder="+62..." density="comfortable" /></VCol>
+                    <VCol cols="12">
+                      <AppTextField v-model="editAdminProfileData.full_name" label="Nama Lengkap" :rules="[requiredRule, nameLengthRule]" :loading="adminProfileLoading" prepend-inner-icon="tabler-user" density="comfortable" />
+                    </VCol>
+                    <VCol cols="12">
+                      <AppTextField v-model="editAdminProfileData.phone_number" label="Nomor Telepon (Username)" :rules="[requiredRule, phoneFormatRule]" :loading="adminProfileLoading" prepend-inner-icon="tabler-phone" placeholder="+62..." density="comfortable" />
+                    </VCol>
                   </VRow>
-                  <VCardActions class="mt-4 pa-0"><VBtn block color="primary" type="submit" :loading="adminProfileLoading" size="large">Simpan Perubahan</VBtn></VCardActions>
+                  <VCardActions class="mt-4 pa-0">
+                    <VBtn block color="primary" type="submit" :loading="adminProfileLoading" size="large">Simpan Perubahan</VBtn>
+                  </VCardActions>
                 </VForm>
               </VCardText>
             </VCard>
@@ -304,32 +396,51 @@ const kamarItems = ['1', '2', '3', '4', '5', '6']
                 <VAlert v-if="passwordAlert" :type="passwordAlert.type" variant="tonal" density="compact" closable class="mb-4" @update:model-value="passwordAlert = null">{{ passwordAlert.message }}</VAlert>
                 <VForm ref="passwordForm" @submit.prevent="changePassword">
                   <VRow dense>
-                    <VCol cols="12"><AppTextField v-model="passwordData.current_password" label="Password Saat Ini" :type="isPasswordVisible ? 'text' : 'password'" :append-inner-icon="isPasswordVisible ? 'tabler-eye-off' : 'tabler-eye'" @click:append-inner="isPasswordVisible = !isPasswordVisible" :rules="[requiredRule]" density="comfortable" /></VCol>
-                    <VCol cols="12"><AppTextField v-model="passwordData.new_password" label="Password Baru" :type="isPasswordVisible ? 'text' : 'password'" :rules="[requiredRule, passwordLengthRule]" density="comfortable" /></VCol>
-                    <VCol cols="12"><AppTextField v-model="confirmPassword" label="Konfirmasi Password Baru" :type="isPasswordVisible ? 'text' : 'password'" :rules="[requiredRule, passwordMatchRule]" density="comfortable" /></VCol>
+                    <VCol cols="12">
+                      <AppTextField v-model="passwordData.current_password" label="Password Saat Ini" :type="isPasswordVisible ? 'text' : 'password'" :append-inner-icon="isPasswordVisible ? 'tabler-eye-off' : 'tabler-eye'" @click:append-inner="isPasswordVisible = !isPasswordVisible" :rules="[requiredRule]" density="comfortable" />
+                    </VCol>
+                    <VCol cols="12" sm="6">
+                      <AppTextField v-model="passwordData.new_password" label="Password Baru" :type="isPasswordVisible ? 'text' : 'password'" :rules="[requiredRule, passwordLengthRule]" density="comfortable" />
+                    </VCol>
+                    <VCol cols="12" sm="6">
+                      <AppTextField v-model="confirmPassword" label="Konfirmasi Password Baru" :type="isPasswordVisible ? 'text' : 'password'" :rules="[requiredRule, passwordMatchRule]" density="comfortable" />
+                    </VCol>
                   </VRow>
-                  <VCardActions class="mt-4 pa-0"><VBtn block color="primary" type="submit" :loading="passwordLoading" size="large">Ubah Password</VBtn></VCardActions>
+                  <VCardActions class="mt-4 pa-0">
+                    <VBtn block color="primary" type="submit" :loading="passwordLoading" size="large">Ubah Password</VBtn>
+                  </VCardActions>
                 </VForm>
               </VCardText>
             </VCard>
           </VCol>
           <VCol cols="12" md="5" lg="4">
             <VCard class="mb-4">
-              <VCardTitle>Informasi Akun</VCardTitle><VDivider />
+              <VCardTitle>Informasi Akun</VCardTitle>
+              <VDivider />
               <VList lines="two" density="comfortable">
-                <VListItem title="Status Akun"><template #prepend><VIcon icon="tabler-id-badge-2" class="mx-3" /></template><template #append><VChip :color="userProfile.is_active ? 'success' : 'error'" size="small" label>{{ userProfile.is_active ? 'Aktif' : 'Tidak Aktif' }}</VChip></template></VListItem>
-                <VListItem title="Peran Akun"><template #prepend><VIcon icon="tabler-shield-check" class="mx-3" /></template><template #append><VChip color="info" size="small" label>{{ userProfile.role }}</VChip></template></VListItem>
-                <VListItem title="Tanggal Terdaftar"><template #prepend><VIcon icon="tabler-calendar-plus" class="mx-3" /></template><template #append><span class="text-body-2">{{ formatDate(userProfile.created_at) }}</span></template></VListItem>
+                <VListItem title="Status Akun">
+                  <template #prepend><VIcon icon="tabler-id-badge-2" class="mx-3" /></template>
+                  <template #append><VChip :color="userProfile.is_active ? 'success' : 'error'" size="small" label>{{ userProfile.is_active ? 'Aktif' : 'Tidak Aktif' }}</VChip></template>
+                </VListItem>
+                <VListItem title="Peran Akun">
+                  <template #prepend><VIcon icon="tabler-shield-check" class="mx-3" /></template>
+                  <template #append><VChip color="info" size="small" label>{{ userProfile.role }}</VChip></template>
+                </VListItem>
+                <VListItem title="Tanggal Terdaftar">
+                  <template #prepend><VIcon icon="tabler-calendar-plus" class="mx-3" /></template>
+                  <template #append><span class="text-body-2">{{ formatDate(userProfile.created_at) }}</span></template>
+                </VListItem>
               </VList>
             </VCard>
             <VCard>
-              <VCardTitle>Riwayat Akses</VCardTitle><VDivider />
+              <VCardTitle>Riwayat Akses</VCardTitle>
+              <VDivider />
               <div v-if="loginHistoryLoading" class="text-center pa-4"><VProgressCircular indeterminate /></div>
               <VList v-else-if="loginHistory.length > 0" nav density="compact">
                 <VListItem v-for="(item, index) in loginHistory" :key="index">
-                    <template #prepend><VIcon :icon="item.icon" size="22" class="mx-3" /></template>
-                    <VListItemTitle class="font-weight-medium">{{ item.date }}</VListItemTitle>
-                    <VListItemSubtitle class="text-caption">IP: {{ item.ip_address }} | {{ item.os }}</VListItemSubtitle>
+                  <template #prepend><VIcon :icon="item.icon" size="22" class="mx-3" /></template>
+                  <VListItemTitle class="font-weight-medium">{{ item.date }}</VListItemTitle>
+                  <VListItemSubtitle class="text-caption">IP: {{ item.ip_address }} | {{ item.os }}</VListItemSubtitle>
                 </VListItem>
               </VList>
               <VCardText v-else class="text-center text-caption text-disabled py-4">Belum ada riwayat akses tercatat.</VCardText>
@@ -338,33 +449,15 @@ const kamarItems = ['1', '2', '3', '4', '5', '6']
         </VRow>
       </template>
 
-      <VRow v-if="!(isAdmin || isSuperAdmin)">
-        <VCol cols="12">
-            <VCard class="mt-4">
-              <VCardTitle>Informasi Akun & Riwayat</VCardTitle><VDivider />
-                <VList lines="two" density="comfortable">
-                    <VListItem title="Status Akun"><template #prepend><VIcon icon="tabler-id-badge-2" class="mx-3" /></template><template #append><VChip :color="userProfile.is_active ? 'success' : 'error'" size="small" label>{{ userProfile.is_active ? 'Aktif' : 'Tidak Aktif' }}</VChip></template></VListItem>
-                    <VListItem title="Peran Akun"><template #prepend><VIcon icon="tabler-shield-check" class="mx-3" /></template><template #append><VChip color="info" size="small" label>{{ userProfile.role }}</VChip></template></VListItem>
-                    <VListItem title="Tanggal Terdaftar"><template #prepend><VIcon icon="tabler-calendar-plus" class="mx-3" /></template><template #append><span class="text-body-2">{{ formatDate(userProfile.created_at) }}</span></template></VListItem>
-                </VList>
-                <VDivider/>
-                <div v-if="loginHistoryLoading" class="text-center pa-4"><VProgressCircular indeterminate /></div>
-                <VList v-else-if="loginHistory.length > 0" nav density="compact">
-                  <VListItem v-for="(item, index) in loginHistory" :key="index">
-                      <template #prepend><VIcon :icon="item.icon" size="22" class="mx-3" /></template>
-                      <VListItemTitle class="font-weight-medium">{{ item.date }}</VListItemTitle>
-                      <VListItemSubtitle class="text-caption">IP: {{ item.ip_address }} | {{ item.os }}</VListItemSubtitle>
-                  </VListItem>
-                </VList>
-                <VCardText v-else class="text-center text-caption text-disabled py-4">Belum ada riwayat akses tercatat.</VCardText>
-            </VCard>
-        </VCol>
-      </VRow>
     </div>
   </VContainer>
 </template>
 
 <style lang="scss" scoped>
-.v-list-item { padding-inline: 16px; }
-.v-list-item-subtitle { white-space: normal; }
+.v-list-item {
+  padding-inline: 16px;
+}
+.v-list-item-subtitle {
+  white-space: normal;
+}
 </style>

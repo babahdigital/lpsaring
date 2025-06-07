@@ -272,8 +272,6 @@ def create_access_token(data: dict) -> str:
 # === Endpoint Registrasi Pengguna ===
 @auth_bp.route('/register', methods=['POST'])
 def register_user():
-    # ... (Kode endpoint register_user tetap sama seperti sebelumnya) ...
-    # ... (Pastikan tidak ada referensi ke current_app.redis_client di sini) ...
     normalized_phone_number = "N/A"
     new_user_obj: Optional[User] = None
     data_input: Optional[UserRegisterRequestSchema] = None
@@ -716,3 +714,38 @@ def admin_login():
     except Exception as e:
         current_app.logger.error(f"Error tidak terduga saat proses login admin untuk '{username_input}': {e}", exc_info=True)
         return jsonify(AuthErrorResponseSchema(error="Terjadi kesalahan internal pada server.").model_dump()), HTTPStatus.INTERNAL_SERVER_ERROR
+
+@auth_bp.route('/me/change-password', methods=['POST'])
+@token_required
+def change_my_password(current_user_id: uuid.UUID):
+    """Mengubah password login portal untuk pengguna yang sedang login."""
+    user = db.session.get(User, current_user_id)
+    if not user:
+        return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+
+    # Hanya admin yang punya password portal
+    if not user.is_admin_role:
+        return jsonify({"message": "Fitur ini hanya untuk Admin."}), HTTPStatus.FORBIDDEN
+    
+    data = request.get_json()
+    if not data or 'current_password' not in data or 'new_password' not in data:
+        return jsonify({"message": "Password saat ini dan password baru wajib diisi."}), HTTPStatus.BAD_REQUEST
+
+    current_password = data['current_password']
+    new_password = data['new_password']
+
+    if not user.password_hash or not check_password_hash(user.password_hash, current_password):
+        return jsonify({"message": "Password saat ini salah."}), HTTPStatus.UNAUTHORIZED
+
+    if len(new_password) < 6:
+        return jsonify({"message": "Password baru minimal 6 karakter."}), HTTPStatus.BAD_REQUEST
+
+    user.password_hash = generate_password_hash(new_password)
+    try:
+        db.session.commit()
+        current_app.logger.info(f"Admin {user.id} berhasil mengubah password portalnya.")
+        return jsonify({"message": "Password berhasil diubah."}), HTTPStatus.OK
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        current_app.logger.error(f"Gagal commit perubahan password untuk admin {user.id}: {e}", exc_info=True)
+        return jsonify({"message": "Gagal menyimpan password baru ke database."}), HTTPStatus.INTERNAL_SERVER_ERROR

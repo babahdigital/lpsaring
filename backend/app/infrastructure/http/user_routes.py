@@ -479,41 +479,31 @@ def handle_my_profile(current_user_id):
             return jsonify({"success": False, "message": "Request body tidak boleh kosong."}), 400
 
         try:
-            # Gunakan skema UserProfileUpdateRequestSchema (blok & kamar wajib)
+            # Gunakan skema yang sudah diupdate
             update_data = UserProfileUpdateRequestSchema.model_validate(json_data)
             user_updated = False
 
-            # Update nama jika ada di request dan berbeda
             if update_data.full_name is not None and user.full_name != update_data.full_name:
                 user.full_name = update_data.full_name
                 user_updated = True
-                current_app.logger.debug(f"[Profile PUT] User {user_uuid} updating full_name.")
 
-            # Update blok (selalu ada di skema, cek jika berbeda)
+            # PERUBAHAN: Logika untuk update blok dan kamar (bisa di-set menjadi NULL)
             if user.blok != update_data.blok:
                 user.blok = update_data.blok
                 user_updated = True
-                current_app.logger.debug(f"[Profile PUT] User {user_uuid} updating blok to {update_data.blok.value}.")
-
-            # Update kamar (selalu ada di skema, cek jika berbeda)
+            
             if user.kamar != update_data.kamar:
-                user.kamar = update_data.kamar # update_data.kamar adalah UserKamar Enum
+                user.kamar = update_data.kamar
                 user_updated = True
-                current_app.logger.debug(f"[Profile PUT] User {user_uuid} updating kamar to {update_data.kamar.value}.")
 
             if user_updated:
-                try:
-                    db.session.commit()
-                    current_app.logger.info(f"[Profile PUT] Profil user {user_uuid} berhasil diupdate.")
-                    # Kirim respons sukses dengan data yang diupdate
-                    # Menggunakan skema respons yang sudah ada
-                    resp_data = UserProfileResponseSchema.model_validate(user)
-                    return jsonify(resp_data.model_dump(mode='json')), 200
-                except SQLAlchemyError as e_sql_commit:
-                    db.session.rollback()
-                    current_app.logger.error(f"[Profile PUT] Error database saat commit update user {user_uuid}: {e_sql_commit}", exc_info=True)
-                    abort(500, description="Gagal menyimpan perubahan profil ke database.")
+                db.session.commit()
+                current_app.logger.info(f"[Profile PUT] Profil user {user_uuid} berhasil diupdate.")
+                # PERBAIKAN: Gunakan UserMeResponseSchema untuk konsistensi respons
+                resp_data = UserMeResponseSchema.model_validate(user)
+                return jsonify(resp_data.model_dump(mode='json')), 200
             else:
+
                 current_app.logger.info(f"[Profile PUT] Tidak ada perubahan data untuk user {user_uuid}.")
                 # Tetap kembalikan data terbaru sebagai konfirmasi
                 resp_data = UserProfileResponseSchema.model_validate(user)

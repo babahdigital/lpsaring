@@ -171,9 +171,50 @@ def delete_user(current_admin: User, user_id):
     return jsonify({"message": action_message}), HTTPStatus.OK
 
 # ==============================================================================
+# Endpoint Manajemen Profil Admin Sendiri
+# ==============================================================================
+@admin_bp.route('/users/me', methods=['PUT'])
+@admin_required
+def update_own_admin_profile(current_admin: User):
+    """Memperbarui profil admin yang sedang login (nama & telepon)."""
+    data = request.get_json()
+    if not data:
+        return jsonify({"message": "Data tidak boleh kosong."}), HTTPStatus.BAD_REQUEST
+
+    # Anda bisa membuat skema Pydantic khusus untuk ini jika ingin validasi lebih ketat
+    # Untuk sementara, validasi manual:
+    full_name = data.get('full_name')
+    phone_number = data.get('phone_number')
+
+    if not full_name or len(full_name) < 2:
+        return jsonify({"errors": [{"loc": ["full_name"], "msg": "Nama lengkap wajib diisi dan minimal 2 karakter."}]}), HTTPStatus.UNPROCESSABLE_ENTITY
+
+    try:
+        normalized_phone = normalize_phone_number(phone_number) # Gunakan helper yang sudah ada
+    except (ValueError, TypeError) as e:
+        return jsonify({"errors": [{"loc": ["phone_number"], "msg": str(e)}]}), HTTPStatus.UNPROCESSABLE_ENTITY
+
+    # Cek jika nomor telepon baru sudah digunakan oleh orang lain
+    if normalized_phone != current_admin.phone_number:
+        existing_user = db.session.scalar(db.select(User).filter_by(phone_number=normalized_phone))
+        if existing_user:
+            return jsonify({"message": f"Nomor telepon {normalized_phone} sudah terdaftar untuk pengguna lain."}), HTTPStatus.CONFLICT
+    
+    current_admin.full_name = full_name
+    current_admin.phone_number = normalized_phone
+    
+    try:
+        db.session.commit()
+        # Mengembalikan data user yang lengkap menggunakan skema yang sudah ada
+        return jsonify(UserResponseSchema.from_orm(current_admin).model_dump()), HTTPStatus.OK
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Gagal memperbarui profil admin {current_admin.id}: {e}", exc_info=True)
+        return jsonify({"message": "Terjadi kesalahan internal saat menyimpan profil."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+# ==============================================================================
 # Endpoint Manajemen Profil & Paket
 # ==============================================================================
-# ... (Kode untuk /profiles dan /packages tetap sama seperti sebelumnya) ...
 @admin_bp.route('/profiles', methods=['GET'])
 @admin_required
 def get_profiles_list(current_admin: User):
