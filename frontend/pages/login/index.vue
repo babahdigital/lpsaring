@@ -392,9 +392,6 @@ function closeSnackbar() {
 
           <v-form v-if="currentView === 'login'" ref="loginFormRef" lazy-validation @submit.prevent="otpSent ? handleVerifyOtp() : handleRequestOtp()">
             <div v-if="!otpSent">
-              <p class="text-body-1 mb-2 font-weight-medium">
-                Nomor WhatsApp
-              </p>
               <AppTextField
                 ref="phoneInputRef"
                 v-model="phoneNumber"

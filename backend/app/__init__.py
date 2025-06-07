@@ -192,12 +192,13 @@ def register_blueprints(app: Flask):
 
         if app.config.get('ENABLE_ADMIN_ROUTES', False):
             try:
+                # PERUBAHAN DI SINI: Impor admin_bp
                 from .infrastructure.http.admin_routes import admin_bp
                 app.register_blueprint(admin_bp)
                 module_log.info(f"Blueprint '{admin_bp.name}' (Admin) registered at {admin_bp.url_prefix or '/'}.")
-            except ImportError:
-                module_log.warning("Admin routes enabled in config, but 'admin_routes.py' not found or failed to import.")
-
+            except ImportError as e_admin_bp:
+                module_log.error(f"Admin routes enabled, but failed to import or register 'admin_bp': {e_admin_bp}", exc_info=True)
+                
     except ImportError as e_bp_import:
         module_log.error(f"Failed to import a blueprint module: {e_bp_import}", exc_info=True)
     module_log.info("Blueprints registration process finished.")

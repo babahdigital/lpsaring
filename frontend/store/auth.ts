@@ -1,4 +1,5 @@
 // frontend/store/auth.ts
+
 import type { RegisterResponse, RegistrationPayload, User, VerifyOtpResponse } from '~/types/auth'
 import { navigateTo, useCookie, useNuxtApp } from '#app'
 import { defineStore } from 'pinia'
@@ -36,6 +37,7 @@ function extractErrorMessage(errorData: any, defaultMessage: string): string {
   else if (Array.isArray(errorData.details)) {
     detailMsg = errorData.details.map((d: any) => d.msg || JSON.stringify(d)).join(', ')
   }
+
   return detailMsg || defaultMessage
 }
 
@@ -59,6 +61,13 @@ export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = computed(() => !!tokenCookie.value && !!user.value)
   const getUser = computed(() => user.value)
   const isAdmin = computed(() => user.value?.role === 'ADMIN' || user.value?.role === 'SUPER_ADMIN')
+  
+  // ===================================================================
+  // == PENAMBAHAN GETTER BARU ==
+  // ===================================================================
+  const isSuperAdmin = computed(() => user.value?.role === 'SUPER_ADMIN')
+  // ===================================================================
+
   const isUserApprovedAndActive = computed(() =>
     !!user.value && user.value.is_active === true && user.value.approval_status === 'APPROVED',
   )
@@ -70,6 +79,7 @@ export const useAuthStore = defineStore('auth', () => {
   function clearError() {
     error.value = null
   }
+
   function clearMessage() {
     message.value = null
   }
@@ -206,6 +216,61 @@ export const useAuthStore = defineStore('auth', () => {
       loading.value = false
     }
   }
+  
+  async function adminLogin(username: string, password: string): Promise<boolean> {
+    const { $api } = useNuxtApp()
+    clearError()
+    clearMessage()
+    loading.value = true
+    try {
+      const response = await $api<VerifyOtpResponse>('/auth/admin/login', {
+        method: 'POST',
+        body: { username, password },
+      })
+      
+      if (response && response.access_token) {
+        tokenCookie.value = response.access_token
+        const userFetched = await fetchUser()
+        
+        if (userFetched && user.value && (user.value.role === 'ADMIN' || user.value.role === 'SUPER_ADMIN')) {
+          setMessage('Login admin berhasil!')
+          return true
+        }
+        else {
+          if (!error.value) {
+            setError('Gagal memverifikasi hak akses admin setelah login.')
+          }
+          if (tokenCookie.value) {
+            await logout(false)
+          }
+          return false
+        }
+      }
+      else {
+        setError('Respons server tidak valid (token tidak ditemukan).')
+        tokenCookie.value = null
+        setUser(null)
+        return false
+      }
+    }
+    catch (err: any) {
+      const statusCode = err.response?.status || err.statusCode
+      const errorData = err.data || err.response?._data
+      let baseErrMsg = 'Terjadi kesalahan saat login.'
+      if (statusCode === 401 || statusCode === 400) {
+        baseErrMsg = 'Username atau password salah.'
+      }
+      else if (statusCode === 403) {
+        baseErrMsg = 'Anda tidak memiliki hak akses untuk masuk.'
+      }
+      const errMsg = extractErrorMessage(errorData, baseErrMsg)
+      setError(errMsg)
+      return false
+    }
+    finally {
+      loading.value = false
+    }
+  }
 
   async function register(payload: RegistrationPayload): Promise<boolean> {
     const { $api } = useNuxtApp()
@@ -239,12 +304,13 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function logout(performRedirectAndSetMessage: boolean = true) {
     const { $api } = useNuxtApp()
-    const redirectPath = '/login'
+    const redirectPath = (user.value?.role === 'ADMIN' || user.value?.role === 'SUPER_ADMIN') ? '/admin' : '/login'
+    
     if (tokenCookie.value) {
       try {
         await $api('/auth/logout', { method: 'POST' })
       }
-      catch { // PERBAIKAN ESLINT: Menghilangkan parameter error jika tidak digunakan
+      catch {
         /* Abaikan error logout dari server, tetap bersihkan sisi klien */
       }
     }
@@ -294,6 +360,7 @@ export const useAuthStore = defineStore('auth', () => {
     isLoggedIn,
     getUser,
     isAdmin,
+    isSuperAdmin, // <-- Daftarkan getter baru di sini
     isUserApprovedAndActive,
     isLoading,
     isLoadingUserOp,
@@ -303,6 +370,7 @@ export const useAuthStore = defineStore('auth', () => {
     requestOtp,
     verifyOtp,
     register,
+    adminLogin,
     logout,
     initializeAuth,
     clearError,

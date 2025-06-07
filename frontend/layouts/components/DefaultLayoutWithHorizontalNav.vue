@@ -2,39 +2,26 @@
 import NavBarI18n from '@core/components/I18n.vue'
 import { HorizontalNavLayout } from '@layouts'
 import { VNodeRenderer } from '@layouts/components/VNodeRenderer'
-
 import { themeConfig } from '@themeConfig'
 
-import { computed } from 'vue' // 1. Impor computed
+// 1. Impor `computed` dari Vue
+import { computed } from 'vue'
+
+// 2. Impor fungsi navigasi dinamis yang baru
+import { getHorizontalNavItems } from '@/navigation/horizontal'
+
 // Components
 import Footer from '@/layouts/components/Footer.vue'
 import NavbarThemeSwitcher from '@/layouts/components/NavbarThemeSwitcher.vue'
 import UserProfile from '@/layouts/components/UserProfile.vue'
-import navItemsData from '@/navigation/horizontal' // 2. Impor data menu lengkap
-import { useAuthStore } from '~/store/auth' // 3. Impor auth store
 
-// 4. Dapatkan instance auth store
-const authStore = useAuthStore()
-
-// 5. Buat computed property untuk memfilter navItems
-const filteredNavItems = computed(() => {
-  // Pastikan user sudah ada dan memiliki properti is_admin
-  const isAdmin = authStore.user?.is_admin === true
-
-  // Filter navItemsData
-  return navItemsData.filter((item) => {
-    // Selalu tampilkan item yang tidak memerlukan admin
-    if (!item.requiresAdmin) {
-      return true
-    }
-    // Hanya tampilkan item admin jika pengguna adalah admin
-    return isAdmin
-  })
-})
+// 3. Buat computed property untuk mendapatkan item navigasi
+// Logika filtering sekarang terpusat di dalam `getHorizontalNavItems`
+const navItems = computed(() => getHorizontalNavItems())
 </script>
 
 <template>
-  <HorizontalNavLayout :nav-items="filteredNavItems">
+  <HorizontalNavLayout :nav-items="navItems">
     <template #navbar>
       <NuxtLink
         to="/"

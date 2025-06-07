@@ -759,6 +759,45 @@ def set_user_role(phone_number, new_role, admin_id):
             current_app.logger.error(f"Error set-role untuk {normalized_phone}: {e_db_set_role}", exc_info=True) 
         click.echo(click.style(f"ERROR: Gagal ubah role: {e_db_set_role}", fg='red'))
 
+@user_cli_bp.command('set-password', help="Mengatur atau mereset password portal untuk pengguna.")
+@click.argument('phone_number', type=str)
+@click.option('--password', '-p', prompt="Masukkan password baru", hide_input=True, confirmation_prompt=True, help="Password baru untuk pengguna. Akan di-hash sebelum disimpan.")
+def set_user_password(phone_number, password):
+    """
+    Perintah ini untuk mengatur ulang password login portal (bukan password Mikrotik).
+    """
+    if not MODELS_AVAILABLE:
+        click.echo(click.style("ERROR: Model User tidak dapat dimuat.", fg='red'))
+        return
+        
+    if not password or len(password) < 6:
+        click.echo(click.style("ERROR: Password minimal 6 karakter.", fg='red'))
+        return
+
+    try:
+        normalized_phone = normalize_phone_for_cli(phone_number)
+    except click.BadParameter as e:
+        click.echo(click.style(f"ERROR: {e.message}", fg='red'))
+        return
+
+    user_to_update = db.session.execute(db.select(User).filter_by(phone_number=normalized_phone)).scalar_one_or_none()
+    
+    if not user_to_update:
+        click.echo(click.style(f"ERROR: Pengguna dengan nomor '{normalized_phone}' tidak ditemukan.", fg='red'))
+        return
+
+    # Hash password baru
+    try:
+        new_password_hash = generate_password_hash_func(password)
+        user_to_update.password_hash = new_password_hash
+        user_to_update.updated_at = datetime.now(dt_timezone.utc)
+        
+        db.session.commit()
+        
+        click.echo(click.style(f"SUKSES: Password untuk pengguna '{user_to_update.full_name}' ({normalized_phone}) telah berhasil diatur ulang.", fg='green'))
+    except Exception as e:
+        db.session.rollback()
+        click.echo(click.style(f"ERROR: Gagal menyimpan password baru ke database: {e}", fg='red'))
 
 # --- Perintah seed-usage ---
 @user_cli_bp.command('seed-usage', help="Membuat data dummy kuota & pemakaian harian untuk user.")

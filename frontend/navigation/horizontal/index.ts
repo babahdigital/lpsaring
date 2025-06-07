@@ -1,74 +1,40 @@
 // frontend/navigation/horizontal/index.ts
 
+import { useAuthStore } from '@/store/auth'
+
+// Impor semua set menu modular, termasuk yang baru
+import userMenu from './user'
+import adminMenu from './admin'
+import superAdminMenu from './superadmin'
+import commonMenu from './common' // <-- Impor menu bersama
+
+// Definisikan interface di sini sebagai pusat
 interface HorizontalNavItem {
   title: string
-  to: { name: string } | { path: string }
+  to: { name?: string; path?: string }
   icon: { icon: string }
-  requiresAuth?: boolean
-  requiresAdmin?: boolean
 }
 
-export default [
-  // --- Menu untuk Semua Pengguna (User & Admin) ---
-  {
-    title: 'Dashboard',
-    to: { path: '/dashboard' },
-    icon: { icon: 'tabler-smart-home' },
-    requiresAuth: true,
-  },
-  {
-    title: 'Beli Paket',
-    to: { path: '/beli' },
-    icon: { icon: 'tabler-shopping-cart-plus' },
-    requiresAuth: true,
-  },
-  {
-    title: 'Riwayat Transaksi',
-    to: { path: '/riwayat' },
-    icon: { icon: 'tabler-history' },
-    requiresAuth: true,
-  },
-  {
-    title: 'Akun Saya',
-    to: { path: '/akun' },
-    icon: { icon: 'tabler-user-circle' },
-    requiresAuth: true,
-  },
+export const getHorizontalNavItems = (): HorizontalNavItem[] => {
+  const authStore = useAuthStore()
+  
+  if (!authStore.isLoggedIn) {
+    return []
+  }
 
-  // --- Menu Khusus Administrator ---
-  {
-    title: 'Manajemen Pengguna',
-    to: { path: '/admin/users' },
-    icon: { icon: 'tabler-users-group' },
-    requiresAuth: true,
-    requiresAdmin: true,
-  },
-  {
-    title: 'Manajemen Paket',
-    to: { path: '/admin/packages' },
-    icon: { icon: 'tabler-box' },
-    requiresAuth: true,
-    requiresAdmin: true,
-  },
-  {
-    title: 'Manajemen Transaksi',
-    to: { path: '/admin/transactions' },
-    icon: { icon: 'tabler-receipt-2' },
-    requiresAuth: true,
-    requiresAdmin: true,
-  },
-  {
-    title: 'Laporan',
-    to: { path: '/admin/reports' },
-    icon: { icon: 'tabler-chart-bar' },
-    requiresAuth: true,
-    requiresAdmin: true,
-  },
-  {
-    title: 'Pengaturan Sistem',
-    to: { path: '/admin/settings' },
-    icon: { icon: 'tabler-settings' },
-    requiresAuth: true,
-    requiresAdmin: true,
-  },
-] as HorizontalNavItem[]
+  let roleSpecificMenu: HorizontalNavItem[] = []
+
+  // Langkah 1: Tentukan menu spesifik berdasarkan peran
+  if (authStore.isSuperAdmin) {
+    roleSpecificMenu = [...adminMenu, ...superAdminMenu]
+  }
+  else if (authStore.isAdmin) {
+    roleSpecificMenu = adminMenu
+  }
+  else {
+    roleSpecificMenu = userMenu
+  }
+  
+  // Langkah 2: Gabungkan menu spesifik peran dengan menu bersama
+  return [...roleSpecificMenu, ...commonMenu]
+}

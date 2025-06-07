@@ -9,11 +9,18 @@ const srcDir = fileURLToPath(new URL('.', import.meta.url))
 console.log('Proxy Target:', process.env.NUXT_INTERNAL_API_BASE_URL)
 console.log('Public API URL:', process.env.NUXT_PUBLIC_API_BASE_URL)
 
+// ==============================================================================
+// PERBAIKAN: Deklarasi variabel dipindahkan ke luar objek konfigurasi
+// ==============================================================================
+const host = process.env.NUXT_HOST || 'localhost';
+const port = parseInt(process.env.NUXT_PORT || '3010', 10);
+
 export default defineNuxtConfig({
   compatibilityDate: '2025-04-23',
   ssr: true,
   devServer: {
-    port: 3010,
+    port: port,
+    host: host,
   },
 
   app: {
@@ -104,7 +111,7 @@ export default defineNuxtConfig({
   vite: {
     define: {
       'process.env': {
-        NODE_ENV: process.env.NODE_ENV || '"development"',
+        NODE_ENV: `"${process.env.NODE_ENV || 'development'}"`,
         NUXT_PUBLIC_MIDTRANS_CLIENT_KEY: `"${process.env.NUXT_PUBLIC_MIDTRANS_CLIENT_KEY || ''}"`,
         NUXT_PUBLIC_MIDTRANS_ENV: `"${process.env.NUXT_PUBLIC_MIDTRANS_ENV || 'sandbox'}"`,
       },
@@ -135,6 +142,13 @@ export default defineNuxtConfig({
         styles: { configFile: 'assets/styles/variables/_vuetify.scss' },
       }),
     ],
+    server: {
+      hmr: {
+        protocol: 'ws',
+        host: host,
+        port: port, 
+      },
+    },
   },
 
   build: {
@@ -145,7 +159,7 @@ export default defineNuxtConfig({
     '@vueuse/nuxt',
     '@nuxtjs/device',
     '@pinia/nuxt',
-    '@nuxt/devtools', // Modul penting untuk debugging proxy
+    '@nuxt/devtools',
   ],
 
   runtimeConfig: {

@@ -14,6 +14,8 @@ from functools import wraps
 import uuid
 import enum
 from typing import Optional, Dict, Any
+from werkzeug.security import check_password_hash
+from .schemas.auth_schemas import validate_phone_number
 
 # Impor get_client_ip dari utils
 from app.utils.request_utils import get_client_ip # Pastikan app/utils/request_utils.py ada dan benar
@@ -171,6 +173,26 @@ def token_required(f):
              return jsonify(AuthErrorResponseSchema(error="Internal error during token processing.").model_dump()), HTTPStatus.INTERNAL_SERVER_ERROR
 
         return f(current_user_id=user_uuid_from_token, *args, **kwargs)
+    return decorated_function
+
+def admin_required(f):
+    @wraps(f)
+    @token_required
+    def decorated_function(current_user_id, *args, **kwargs):
+        # Dapatkan objek user dari current_user_id yang diberikan oleh @token_required
+        admin_user = db.session.get(User, current_user_id)
+        
+        # Periksa apakah user ada dan memiliki peran yang sesuai
+        if not admin_user or not admin_user.is_admin_role:
+            current_app.logger.warning(
+                f"Akses DITOLAK ke rute admin. User ID: {current_user_id}, "
+                f"Role: {admin_user.role.value if admin_user and admin_user.role else 'Tidak Ditemukan'}"
+            )
+            return jsonify(AuthErrorResponseSchema(error="Akses ditolak. Memerlukan hak akses Admin.").model_dump()), HTTPStatus.FORBIDDEN
+        
+        # Jika valid, teruskan ke fungsi endpoint asli
+        # Kita bisa meneruskan objek admin_user untuk menghindari query ulang
+        return f(current_admin=admin_user, *args, **kwargs)
     return decorated_function
 
 # --- Helper Functions ---
@@ -643,3 +665,54 @@ def logout_user(current_user_id: uuid.UUID):
         current_app.logger.debug(f"Ending /logout for user {current_user_id}.")
         if hasattr(db, 'session'):
             db.session.remove()
+
+# === Endpoint /admin/login (BARU) ===
+@auth_bp.route('/admin/login', methods=['POST'])
+def admin_login():
+    """Endpoint khusus untuk login admin menggunakan username (nomor telepon) dan password."""
+    if not request.is_json:
+        return jsonify(AuthErrorResponseSchema(error="Request body harus JSON.").model_dump()), HTTPStatus.BAD_REQUEST
+
+    data = request.get_json()
+    username_input = data.get('username')
+    password = data.get('password')
+
+    if not username_input or not password:
+        return jsonify(AuthErrorResponseSchema(error="Username dan password wajib diisi.").model_dump()), HTTPStatus.BAD_REQUEST
+
+    # --- PERBAIKAN UTAMA: Normalisasi nomor telepon sebelum query ---
+    try:
+        normalized_phone = validate_phone_number(username_input)
+    except ValueError as e:
+        current_app.logger.warning(f"Login admin gagal: Format username/telepon tidak valid. Input: '{username_input}'. Error: {e}")
+        return jsonify(AuthErrorResponseSchema(error="Format nomor telepon tidak valid.").model_dump()), HTTPStatus.BAD_REQUEST
+    # ----------------------------------------------------------------
+
+    current_app.logger.info(f"Percobaan login admin oleh username: '{username_input}' (dinormalisasi menjadi: '{normalized_phone}')")
+
+    try:
+        # Gunakan nomor yang sudah dinormalisasi untuk mencari di database
+        user_to_login = db.session.execute(
+            db.select(User).filter(User.phone_number == normalized_phone)
+        ).scalar_one_or_none()
+
+        if (not user_to_login or 
+            not user_to_login.is_admin_role or 
+            not user_to_login.password_hash or 
+            not check_password_hash(user_to_login.password_hash, password)):
+            
+            current_app.logger.warning(f"Login admin gagal untuk '{normalized_phone}'. Salah satu kondisi tidak terpenuhi.")
+            return jsonify(AuthErrorResponseSchema(error="Username atau password salah.").model_dump()), HTTPStatus.UNAUTHORIZED
+
+        # Jika lolos semua verifikasi
+        user_id_str_for_jwt = str(user_to_login.id)
+        user_role_value_for_jwt = user_to_login.role.value
+        jwt_payload = {"sub": user_id_str_for_jwt, "rl": user_role_value_for_jwt}
+        access_token = create_access_token(data=jwt_payload)
+        
+        current_app.logger.info(f"Login admin BERHASIL untuk user '{normalized_phone}' (ID: {user_id_str_for_jwt}).")
+        return jsonify(VerifyOtpResponseSchema(access_token=access_token, token_type="bearer").model_dump()), HTTPStatus.OK
+
+    except Exception as e:
+        current_app.logger.error(f"Error tidak terduga saat proses login admin untuk '{username_input}': {e}", exc_info=True)
+        return jsonify(AuthErrorResponseSchema(error="Terjadi kesalahan internal pada server.").model_dump()), HTTPStatus.INTERNAL_SERVER_ERROR

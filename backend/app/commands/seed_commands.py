@@ -1,7 +1,6 @@
 # backend/app/commands/seed_commands.py
-# Saat Fresh Install
-# 1. docker-compose exec backend flask db upgrade
-# 2. docker-compose exec backend flask seed-db
+# VERSI: Disesuaikan dengan model Package terbaru (duration_days, data_quota_gb).
+
 import click
 from flask.cli import with_appcontext
 import uuid
@@ -13,52 +12,54 @@ from app.infrastructure.db.models import Package
 @click.command('seed-db')
 @with_appcontext
 def seed_db_command():
-    """Mengisi database dengan data paket awal (versi kuota)."""
+    """Mengisi database dengan data paket awal yang disesuaikan."""
     click.echo("Starting database seeding...")
 
     if db.session.query(Package).first():
         click.echo('Database already contains package data. Seeding cancelled.')
         return
 
-    click.echo("Creating sample packages...")
+    click.echo("Creating sample packages with new model structure...")
     try:
-        # Paket sekarang berbasis kuota, data_quota_mb WAJIB ADA.
         package1 = Package(
             id=uuid.uuid4(), name='Paket Kuota 1GB',
-            description='Kuota internet 1GB, Speed Up To 50Mbps.',
+            description='Kuota internet 1GB untuk 30 hari, Speed Up To 50Mbps.',
             price=Decimal('10000.00'),
-            # duration_days dihilangkan
-            speed_limit_kbps=51200, # 1Mbps
-            data_quota_mb=1024,  # WAJIB ADA - Contoh 1GB
-            mikrotik_profile_name='profile-quota-1gb', # Nama profile di Mikrotik
+            duration_days=30, # WAJIB ADA
+            data_quota_gb=Decimal('1.00'),  # WAJIB ADA - Contoh 1GB
+            speed_limit_kbps=51200,
+            mikrotik_profile_name='profile-quota-1gb',
             is_active=True
         )
         package2 = Package(
             id=uuid.uuid4(), name='Paket Kuota 5GB',
-            description='Kuota internet 5GB, Speed Up To 100Mbps.',
+            description='Kuota internet 5GB untuk 30 hari, Speed Up To 100Mbps.',
             price=Decimal('25000.00'),
+            duration_days=30, # WAJIB ADA
+            data_quota_gb=Decimal('5.00'),  # WAJIB ADA - Contoh 5GB
             speed_limit_kbps=102400,
-            data_quota_mb=5120,  # WAJIB ADA - Contoh 5GB
             mikrotik_profile_name='profile-quota-5gb',
             is_active=True
         )
         package3 = Package(
             id=uuid.uuid4(), name='Paket Kuota 10GB',
-            description='Kuota internet 10GB, kecepatan tanpa batas.',
+            description='Kuota internet 10GB untuk 30 hari, kecepatan tanpa batas.',
             price=Decimal('50000.00'),
-            speed_limit_kbps=None, # None berarti Unlimited
-            data_quota_mb=10240, # WAJIB ADA - Contoh 10GB
+            duration_days=30, # WAJIB ADA
+            data_quota_gb=Decimal('10.00'), # WAJIB ADA - Contoh 10GB
+            speed_limit_kbps=None,
             mikrotik_profile_name='profile-quota-10gb',
             is_active=True
         )
         package4 = Package(
             id=uuid.uuid4(), name='Paket Hemat 500MB (Non-Aktif)',
-            description='Paket coba kuota 500MB.',
+            description='Paket coba kuota 500MB untuk 7 hari.',
             price=Decimal('5000.00'),
-            speed_limit_kbps=1024, # 1Mbps
-            data_quota_mb=500,   # WAJIB ADA - Contoh 500MB
+            duration_days=7,   # WAJIB ADA
+            data_quota_gb=Decimal('0.50'), # WAJIB ADA - Contoh 500MB
+            speed_limit_kbps=1024,
             mikrotik_profile_name='profile-nonaktif-500mb',
-            is_active=False # Contoh paket tidak aktif
+            is_active=False
         )
 
         packages_to_add = [package1, package2, package3, package4]

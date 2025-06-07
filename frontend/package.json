@@ -26,6 +26,7 @@
     "@tiptap/pm": "^2.12.0",
     "@tiptap/starter-kit": "^2.12.0",
     "@tiptap/vue-3": "^2.12.0",
+    "@vuepic/vue-datepicker": "^11.0.2",
     "@vueuse/core": "13.3.0",
     "@vueuse/math": "13.3.0",
     "apexcharts": "4.7.0",

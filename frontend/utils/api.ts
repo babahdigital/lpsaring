@@ -1,26 +1,27 @@
-import { useCookie, useRuntimeConfig } from '#app'
 // frontend/utils/api.ts
-import { $fetch } from 'ofetch'
-import { useAuthStore } from '~/store/auth' // Impor langsung
+
+import { useCookie, useRuntimeConfig } from '#app'
+import { $fetch, type FetchOptions } from 'ofetch'
+import { useAuthStore } from '~/store/auth'
 
 export const $api = $fetch.create({
-  async onRequest({ options }) {
+  async onRequest({ options }: { options: FetchOptions }) {
     const config = useRuntimeConfig()
     options.baseURL = config.public.apiBaseUrl || '/api'
 
     const token = useCookie('auth_token').value
     const currentHeaders = new Headers(options.headers as HeadersInit | undefined)
 
-    // Set default Accept header jika belum ada
     if (!currentHeaders.has('Accept')) {
       currentHeaders.set('Accept', 'application/json')
     }
 
-    // Set default Content-Type untuk metode tertentu jika body ada dan bukan FormData
-    if (options.body
+    if (
+      options.body
       && (options.method?.toUpperCase() === 'POST'
-        || options.method?.toUpperCase() === 'PUT'
-        || options.method?.toUpperCase() === 'PATCH')) {
+      || options.method?.toUpperCase() === 'PUT'
+      || options.method?.toUpperCase() === 'PATCH')
+    ) {
       if (!currentHeaders.has('Content-Type') && !(options.body instanceof FormData)) {
         currentHeaders.set('Content-Type', 'application/json')
       }
@@ -34,13 +35,28 @@ export const $api = $fetch.create({
 
   async onResponseError({ request, response }) {
     const requestUrl = typeof request === 'string' ? request : (request as Request).url
+    
     console.error(`[API Global onResponseError] Path: ${requestUrl}, Status: ${response?.status}, Data:`, response?._data)
 
     if (import.meta.client && response?.status === 401) {
-      // Panggil useAuthStore() secara langsung.
       const authStore = useAuthStore()
-      console.warn('[API Interceptor Global] 401 Unauthorized. Logging out...')
-      await authStore.logout(true) // Gunakan logout(true) untuk penanganan terpusat
+
+      // PERBAIKAN: Daftar path yang tidak akan memicu logout otomatis saat error 401
+      const ignoredPaths = [
+        '/auth/admin/login', // Gagal login admin
+        '/auth/verify-otp',   // Gagal verifikasi OTP
+        '/auth/logout',       // Gagal saat proses logout itu sendiri
+      ]
+
+      const isIgnoredPath = ignoredPaths.some(path => requestUrl.includes(path))
+
+      if (!isIgnoredPath) {
+        console.warn(`[API Interceptor Global] 401 pada rute terproteksi (${requestUrl}). Menjalankan logout otomatis...`)
+        await authStore.logout(true)
+      }
+      else {
+        console.warn(`[API Interceptor Global] 401 pada rute otentikasi (${requestUrl}). Logout otomatis diabaikan.`)
+      }
     }
   },
 })
