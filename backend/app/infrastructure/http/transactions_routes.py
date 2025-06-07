@@ -62,7 +62,7 @@ def generate_random_password(length: int = 6) -> str:
     return password
 
 try:
-    from .auth_routes import token_required
+    from .decorators import token_required
     print("INFO (transactions_routes): Decorator @token_required berhasil diimpor dari .auth_routes.")
 except ImportError:
     import functools

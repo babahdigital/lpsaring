@@ -61,13 +61,7 @@ export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = computed(() => !!tokenCookie.value && !!user.value)
   const getUser = computed(() => user.value)
   const isAdmin = computed(() => user.value?.role === 'ADMIN' || user.value?.role === 'SUPER_ADMIN')
-  
-  // ===================================================================
-  // == PENAMBAHAN GETTER BARU ==
-  // ===================================================================
   const isSuperAdmin = computed(() => user.value?.role === 'SUPER_ADMIN')
-  // ===================================================================
-
   const isUserApprovedAndActive = computed(() =>
     !!user.value && user.value.is_active === true && user.value.approval_status === 'APPROVED',
   )
@@ -216,7 +210,7 @@ export const useAuthStore = defineStore('auth', () => {
       loading.value = false
     }
   }
-  
+
   async function adminLogin(username: string, password: string): Promise<boolean> {
     const { $api } = useNuxtApp()
     clearError()
@@ -304,25 +298,37 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function logout(performRedirectAndSetMessage: boolean = true) {
     const { $api } = useNuxtApp()
+    
+    // Tentukan path redirect di awal
     const redirectPath = (user.value?.role === 'ADMIN' || user.value?.role === 'SUPER_ADMIN') ? '/admin' : '/login'
     
-    if (tokenCookie.value) {
-      try {
-        await $api('/auth/logout', { method: 'POST' })
-      }
-      catch {
-        /* Abaikan error logout dari server, tetap bersihkan sisi klien */
-      }
-    }
+    // =================================================================
+    // PERBAIKAN KRITIS: HAPUS TOKEN & USER DARI STATE SEGERA!
+    // Ini akan mencegah panggilan API selanjutnya mengirim token yang tidak valid.
+    // =================================================================
     tokenCookie.value = null
     setUser(null)
-    isInitialized.value = false
+    isInitialized.value = false // Set ulang status inisialisasi
+
+    // Panggilan API ke server sekarang bersifat "best effort".
+    // Jika gagal pun tidak masalah, karena sisi klien sudah bersih (ter-logout).
+    try {
+      // Panggilan ini tidak akan lagi menyebabkan 401 yang memicu loop,
+      // karena token sudah null dan tidak akan dikirim oleh interceptor.
+      await $api('/auth/logout', { method: 'POST' })
+      console.log("Notifikasi logout ke server berhasil dikirim.");
+    }
+    catch (err) {
+      console.warn('Gagal mengirim notifikasi logout ke server. State di klien tetap bersih.')
+    }
+
+    // Sisa logika untuk redirect...
     if (performRedirectAndSetMessage) {
       if (!error.value) {
         setMessage('Anda telah berhasil logout.')
       }
       if (import.meta.client) {
-        await new Promise(resolve => setTimeout(resolve, error.value || message.value ? 200 : 50))
+        await new Promise(resolve => setTimeout(resolve, 50)) // Sedikit delay untuk UI update
         try {
           await navigateTo(redirectPath, { replace: true })
         }
@@ -360,7 +366,7 @@ export const useAuthStore = defineStore('auth', () => {
     isLoggedIn,
     getUser,
     isAdmin,
-    isSuperAdmin, // <-- Daftarkan getter baru di sini
+    isSuperAdmin,
     isUserApprovedAndActive,
     isLoading,
     isLoadingUserOp,

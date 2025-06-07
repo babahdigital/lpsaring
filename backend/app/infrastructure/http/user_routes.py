@@ -58,7 +58,7 @@ except ImportError as e_tx_helper:
 
 # Import decorator token_required (dengan penanganan error)
 try:
-    from .auth_routes import token_required
+    from .decorators import token_required
     print("INFO: Decorator @token_required berhasil diimpor dari .auth_routes ke user_routes.")
 except ImportError:
     try:

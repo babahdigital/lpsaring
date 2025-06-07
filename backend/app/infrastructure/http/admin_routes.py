@@ -14,7 +14,7 @@ from decimal import Decimal
 
 from app.extensions import db
 from app.infrastructure.db.models import User, UserRole, Package, PackageProfile, ApprovalStatus, Transaction, TransactionStatus
-from .auth_routes import admin_required
+from .decorators import admin_required
 from .schemas.user_schemas import UserResponseSchema, UserUpdateByAdminSchema
 from app.services.helpers import normalize_phone_number
 
