@@ -69,8 +69,8 @@ def _process_single_user(api, user, username_08, today, counters):
     # 2. Hitung pemakaian saat ini
     current_usage_bytes = 0
     try:
-        bytes_in = int(mt_user.get('bytes-in', 0) or 0
-        bytes_out = int(mt_user.get('bytes-out', 0) or 0
+        bytes_in = int(mt_user.get('bytes-in', '0') or '0') # Perbaikan di sini
+        bytes_out = int(mt_user.get('bytes-out', '0') or '0') # Perbaikan di sini
         current_usage_bytes = bytes_in + bytes_out
     except (TypeError, ValueError) as e:
         logger.error(f"Error parsing usage for {username_08}: {e}")
@@ -112,7 +112,7 @@ def _process_single_user(api, user, username_08, today, counters):
 
     # 5. Sinkronisasi limit kuota ke Mikrotik
     db_quota_bytes = int((user.total_quota_purchased_mb or 0) * 1024 * 1024)
-    mt_limit_bytes = int(mt_user.get('limit-bytes-total', 0) or 0
+    mt_limit_bytes = int(mt_user.get('limit-bytes-total', '0') or '0') # Perbaikan di sini
     
     # Periksa perbedaan yang signifikan
     if abs(db_quota_bytes - mt_limit_bytes) > LIMIT_UPDATE_THRESHOLD_BYTES:
