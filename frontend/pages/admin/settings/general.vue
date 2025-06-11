@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useAuthStore } from '@/store/auth';
 import { useSettingsStore } from '@/store/settings';
-import { useMaintenanceStore } from '~/store/maintenance'; // <-- 1. Tambahkan impor maintenance store
+import { useMaintenanceStore } from '~/store/maintenance';
 import type { SettingSchema } from '@/types/api/settings';
 import { computed, onMounted, ref } from 'vue';
 import { useCookie } from '#app';
@@ -14,7 +14,7 @@ definePageMeta({
 
 const authStore = useAuthStore();
 const settingsStore = useSettingsStore();
-const maintenanceStore = useMaintenanceStore(); // <-- 2. Buat instance maintenance store
+const maintenanceStore = useMaintenanceStore();
 const { $api } = useNuxtApp();
 const snackbar = useSnackbar();
 
@@ -50,10 +50,8 @@ onMounted(async () => {
   
   isLoading.value = true;
   try {
-    // PERBAIKAN: Panggil endpoint yang benar (tanpa /api)
     const response = await $api<SettingSchema[]>('/admin/settings');
     
-    // Isi form lokal dengan data dari API
     localSettings.value = response.reduce((acc, setting) => {
       acc[setting.setting_key] = setting.setting_value || '';
       return acc;
@@ -83,19 +81,14 @@ async function handleSaveChanges() {
       }
     });
 
-    // 1. PERBAIKI ENDPOINT: Hapus /api di depan
     await $api('/admin/settings', {
       method: 'PUT',
       body: { settings: settingsToSave }
     });
 
-    // 2. Simpan ke cookies (gunakan data asli)
     syncSettingsToCookies(localSettings.value);
-
-    // 3. Perbarui state Pinia (gunakan data asli)
     settingsStore.setSettingsFromObject(localSettings.value);
     
-    // 4. PERBARUI MAINTENANCE STORE LANGSUNG
     const active = localSettings.value.MAINTENANCE_MODE_ACTIVE === 'True';
     const message = localSettings.value.MAINTENANCE_MODE_MESSAGE || '';
     maintenanceStore.setMaintenanceStatus(active, message);
@@ -107,12 +100,31 @@ async function handleSaveChanges() {
     });
 
   } catch (e: any) {
-    console.error('Error saving settings:', e.data || e);
-    const errorDetails = e.data?.errors ? JSON.stringify(e.data.errors) : 'Terjadi kesalahan validasi.';
+    // PERBAIKAN: Menangkap dan menampilkan detail error validasi dengan lebih baik
+    console.error('Gagal menyimpan pengaturan. Detail error:', e.data || e);
+
+    let errorDetails = 'Terjadi kesalahan pada server.';
+
+    // Cek jika ada detail error dari response API
+    if (e.data && e.data.errors && Array.isArray(e.data.errors)) {
+      // Format pesan error dari array agar mudah dibaca
+      errorDetails = e.data.errors.map((err: any) => {
+        // Menangani format error yang mungkin berupa object atau string
+        if (typeof err === 'object' && err.message) {
+          return err.message; // Contoh format: { field: '...', message: 'Pesan error.' }
+        }
+        return String(err);
+      }).join(' '); // Gabungkan beberapa pesan error jika ada
+    } else if (e.data && e.data.message) {
+      // Menangani format error tunggal
+      errorDetails = e.data.message;
+    }
+
+    // Tampilkan notifikasi yang informatif kepada pengguna
     snackbar.add({
       type: 'error',
-      title: 'Gagal Menyimpan',
-      text: errorDetails
+      title: `Gagal Menyimpan (Error ${e.statusCode || '422'})`,
+      text: errorDetails,
     });
   } finally {
     isSaving.value = false;
@@ -123,96 +135,96 @@ async function handleSaveChanges() {
 <template>
   <div>
     <VCard title="Pengaturan Aplikasi">
-      <VTabs v-model="tab">
-        <VTab value="umum">Umum & Maintenance</VTab>
-        <VTab value="tampilan">Tampilan & Layout</VTab>
-        <VTab value="integrasi">Integrasi</VTab>
-      </VTabs>
+        <VTabs v-model="tab">
+          <VTab value="umum">Umum & Maintenance</VTab>
+          <VTab value="tampilan">Tampilan & Layout</VTab>
+          <VTab value="integrasi">Integrasi</VTab>
+        </VTabs>
 
-      <VCardText>
-        <VProgressLinear v-if="isLoading" indeterminate />
-        <VWindow v-else v-model="tab" class="disable-tab-transition mt-4">
-          <VWindowItem value="umum">
-            <VForm @submit.prevent="handleSaveChanges">
-                <h6 class="text-h6 mb-4">Mode Maintenance</h6>
-                <VRow>
-                  <VCol cols="12">
-                    <VSwitch v-model="maintenanceModeActive" :label="maintenanceModeActive ? 'Mode Maintenance AKTIF' : 'Mode Maintenance TIDAK AKTIF'" color="error"/>
-                    <p class="text-caption">Jika diaktifkan, seluruh aplikasi kecuali halaman admin akan menampilkan halaman maintenance.</p>
-                  </VCol>
-                  <VCol cols="12">
-                    <VTextarea v-model="localSettings.MAINTENANCE_MODE_MESSAGE" label="Pesan Maintenance" placeholder="Contoh: Aplikasi sedang dalam perbaikan..." rows="3" :disabled="!maintenanceModeActive"/>
-                  </VCol>
-                </VRow>
-                <VDivider class="my-6" />
-
-                <h6 class="text-h6 mb-4">Informasi Umum</h6>
-                <VRow>
-                  <VCol cols="12" md="6"><VTextField v-model="localSettings.APP_NAME" label="Nama Aplikasi" persistent-placeholder placeholder="Contoh: Portal Hotspot Sobigidul" /></VCol>
-                  <VCol cols="12" md="6"><VTextField v-model="localSettings.APP_BROWSER_TITLE" label="Judul di Browser" persistent-placeholder placeholder="Contoh: Hotspot Sobigidul" /></VCol>
-                </VRow>
-                <VCardActions class="mt-4 px-0">
-                  <VSpacer />
-                  <VBtn type="submit" :loading="isSaving">Simpan Perubahan</VBtn>
-                </VCardActions>
-            </VForm>
-          </VWindowItem>
-
-          <VWindowItem value="tampilan">
+        <VCardText>
+          <VProgressLinear v-if="isLoading" indeterminate />
+          <VWindow v-else v-model="tab" class="disable-tab-transition mt-4">
+            <VWindowItem value="umum">
               <VForm @submit.prevent="handleSaveChanges">
-                <VRow>
-                  <VCol cols="12" md="6">
-                    <p class="text-subtitle-1 mb-2">Tema</p>
-                    <VRadioGroup v-model="localSettings.THEME" inline><VRadio label="Light" value="light" /><VRadio label="Dark" value="dark" /><VRadio label="Sistem" value="system" /></VRadioGroup>
-                  </VCol>
-                  <VCol cols="12" md="6">
-                    <p class="text-subtitle-1 mb-2">Skin</p>
-                    <VRadioGroup v-model="localSettings.SKIN" inline><VRadio label="Default" value="default" /><VRadio label="Bordered" value="bordered" /></VRadioGroup>
-                  </VCol>
-                  <VCol cols="12" md="6">
-                    <p class="text-subtitle-1 mb-2">Tata Letak (Layout)</p>
-                    <VRadioGroup v-model="localSettings.LAYOUT" inline><VRadio label="Vertical" value="vertical" /><VRadio label="Horizontal" value="horizontal" /></VRadioGroup>
-                  </VCol>
-                  <VCol cols="12" md="6">
-                    <p class="text-subtitle-1 mb-2">Lebar Konten</p>
-                    <VRadioGroup v-model="localSettings.CONTENT_WIDTH" inline><VRadio label="Compact (Boxed)" value="boxed" /><VRadio label="Wide (Full-width)" value="fluid" /></VRadioGroup>
-                  </VCol>
-                </VRow>
-                  <VCardActions class="mt-4 px-0">
-                  <VSpacer />
-                  <VBtn type="submit" :loading="isSaving">Simpan Perubahan</VBtn>
-                </VCardActions>
-              </VForm>
-          </VWindowItem>
-
-          <VWindowItem value="integrasi">
-              <VForm @submit.prevent="handleSaveChanges">
-                <h6 class="text-h6 mb-4">WhatsApp (Fonnte)</h6>
-                <VRow>
-                  <VCol cols="12"><VSwitch v-model="whatsappEnabled" :label="whatsappEnabled ? 'Notifikasi WhatsApp Aktif' : 'Notifikasi WhatsApp Tidak Aktif'"/></VCol>
-                  <VCol cols="12"><VTextField v-model="localSettings.WHATSAPP_API_KEY" label="API Key WhatsApp (Fonnte)" type="password" persistent-placeholder placeholder="Masukkan API Key Fonnte Anda" :disabled="!whatsappEnabled"/></VCol>
-                </VRow>
-                <VDivider class="my-6" />
-                <h6 class="text-h6 mb-4">Midtrans</h6>
-                <VRow>
-                  <VCol cols="12" md="6"><VTextField v-model="localSettings.MIDTRANS_SERVER_KEY" label="Server Key Midtrans" type="password" persistent-placeholder placeholder="Masukkan Server Key Midtrans"/></VCol>
-                  <VCol cols="12" md="6"><VTextField v-model="localSettings.MIDTRANS_CLIENT_KEY" label="Client Key Midtrans" type="password" persistent-placeholder placeholder="Masukkan Client Key Midtrans"/></VCol>
-                </VRow>
-                <VDivider class="my-6" />
-                <h6 class="text-h6 mb-4">MikroTik</h6>
+                  <h6 class="text-h6 mb-4">Mode Maintenance</h6>
                   <VRow>
-                    <VCol cols="12" md="4"><VTextField v-model="localSettings.MIKROTIK_HOST" label="Host MikroTik" persistent-placeholder placeholder="Alamat IP atau domain router"/></VCol>
-                    <VCol cols="12" md="4"><VTextField v-model="localSettings.MIKROTIK_USER" label="User MikroTik" persistent-placeholder placeholder="Username API MikroTik"/></VCol>
-                    <VCol cols="12" md="4"><VTextField v-model="localSettings.MIKROTIK_PASSWORD" label="Password MikroTik" type="password" persistent-placeholder placeholder="Password API MikroTik"/></VCol>
+                    <VCol cols="12">
+                      <VSwitch v-model="maintenanceModeActive" :label="maintenanceModeActive ? 'Mode Maintenance AKTIF' : 'Mode Maintenance TIDAK AKTIF'" color="error"/>
+                      <p class="text-caption">Jika diaktifkan, seluruh aplikasi kecuali halaman admin akan menampilkan halaman maintenance.</p>
+                    </VCol>
+                    <VCol cols="12">
+                      <VTextarea v-model="localSettings.MAINTENANCE_MODE_MESSAGE" label="Pesan Maintenance" placeholder="Contoh: Aplikasi sedang dalam perbaikan..." rows="3" :disabled="!maintenanceModeActive"/>
+                    </VCol>
+                  </VRow>
+                  <VDivider class="my-6" />
+
+                  <h6 class="text-h6 mb-4">Informasi Umum</h6>
+                  <VRow>
+                    <VCol cols="12" md="6"><VTextField v-model="localSettings.APP_NAME" label="Nama Aplikasi" persistent-placeholder placeholder="Contoh: Portal Hotspot Sobigidul" /></VCol>
+                    <VCol cols="12" md="6"><VTextField v-model="localSettings.APP_BROWSER_TITLE" label="Judul di Browser" persistent-placeholder placeholder="Contoh: Hotspot Sobigidul" /></VCol>
                   </VRow>
                   <VCardActions class="mt-4 px-0">
-                  <VSpacer />
-                  <VBtn type="submit" :loading="isSaving">Simpan Perubahan</VBtn>
-                </VCardActions>
+                    <VSpacer />
+                    <VBtn type="submit" :loading="isSaving">Simpan Perubahan</VBtn>
+                  </VCardActions>
               </VForm>
-          </VWindowItem>
-        </VWindow>
-      </VCardText>
+            </VWindowItem>
+
+            <VWindowItem value="tampilan">
+                <VForm @submit.prevent="handleSaveChanges">
+                  <VRow>
+                    <VCol cols="12" md="6">
+                      <p class="text-subtitle-1 mb-2">Tema</p>
+                      <VRadioGroup v-model="localSettings.THEME" inline><VRadio label="Light" value="light" /><VRadio label="Dark" value="dark" /><VRadio label="Sistem" value="system" /></VRadioGroup>
+                    </VCol>
+                    <VCol cols="12" md="6">
+                      <p class="text-subtitle-1 mb-2">Skin</p>
+                      <VRadioGroup v-model="localSettings.SKIN" inline><VRadio label="Default" value="default" /><VRadio label="Bordered" value="bordered" /></VRadioGroup>
+                    </VCol>
+                    <VCol cols="12" md="6">
+                      <p class="text-subtitle-1 mb-2">Tata Letak (Layout)</p>
+                      <VRadioGroup v-model="localSettings.LAYOUT" inline><VRadio label="Vertical" value="vertical" /><VRadio label="Horizontal" value="horizontal" /></VRadioGroup>
+                    </VCol>
+                    <VCol cols="12" md="6">
+                      <p class="text-subtitle-1 mb-2">Lebar Konten</p>
+                      <VRadioGroup v-model="localSettings.CONTENT_WIDTH" inline><VRadio label="Compact (Boxed)" value="boxed" /><VRadio label="Wide (Full-width)" value="fluid" /></VRadioGroup>
+                    </VCol>
+                  </VRow>
+                    <VCardActions class="mt-4 px-0">
+                    <VSpacer />
+                    <VBtn type="submit" :loading="isSaving">Simpan Perubahan</VBtn>
+                  </VCardActions>
+                </VForm>
+            </VWindowItem>
+
+            <VWindowItem value="integrasi">
+                <VForm @submit.prevent="handleSaveChanges">
+                  <h6 class="text-h6 mb-4">WhatsApp (Fonnte)</h6>
+                  <VRow>
+                    <VCol cols="12"><VSwitch v-model="whatsappEnabled" :label="whatsappEnabled ? 'Notifikasi WhatsApp Aktif' : 'Notifikasi WhatsApp Tidak Aktif'"/></VCol>
+                    <VCol cols="12"><VTextField v-model="localSettings.WHATSAPP_API_KEY" label="API Key WhatsApp (Fonnte)" type="password" persistent-placeholder placeholder="Masukkan API Key Fonnte Anda" :disabled="!whatsappEnabled"/></VCol>
+                  </VRow>
+                  <VDivider class="my-6" />
+                  <h6 class="text-h6 mb-4">Midtrans</h6>
+                  <VRow>
+                    <VCol cols="12" md="6"><VTextField v-model="localSettings.MIDTRANS_SERVER_KEY" label="Server Key Midtrans" type="password" persistent-placeholder placeholder="Masukkan Server Key Midtrans"/></VCol>
+                    <VCol cols="12" md="6"><VTextField v-model="localSettings.MIDTRANS_CLIENT_KEY" label="Client Key Midtrans" type="password" persistent-placeholder placeholder="Masukkan Client Key Midtrans"/></VCol>
+                  </VRow>
+                  <VDivider class="my-6" />
+                  <h6 class="text-h6 mb-4">MikroTik</h6>
+                    <VRow>
+                      <VCol cols="12" md="4"><VTextField v-model="localSettings.MIKROTIK_HOST" label="Host MikroTik" persistent-placeholder placeholder="Alamat IP atau domain router"/></VCol>
+                      <VCol cols="12" md="4"><VTextField v-model="localSettings.MIKROTIK_USER" label="User MikroTik" persistent-placeholder placeholder="Username API MikroTik"/></VCol>
+                      <VCol cols="12" md="4"><VTextField v-model="localSettings.MIKROTIK_PASSWORD" label="Password MikroTik" type="password" persistent-placeholder placeholder="Password API MikroTik"/></VCol>
+                    </VRow>
+                    <VCardActions class="mt-4 px-0">
+                    <VSpacer />
+                    <VBtn type="submit" :loading="isSaving">Simpan Perubahan</VBtn>
+                  </VCardActions>
+                </VForm>
+            </VWindowItem>
+          </VWindow>
+        </VCardText>
     </VCard>
   </div>
 </template>
