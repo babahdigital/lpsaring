@@ -120,9 +120,9 @@ def _create_admin_user_logic(data: UserCreateByAdminSchema, creator: User):
         kamar=data.kamar,
         approval_status=ApprovalStatus.APPROVED,
         is_unlimited_user=False,
-        total_quota_purchased_mb=0, # Inisialisasi kuota
-        total_quota_used_mb=0,      # Inisialisasi penggunaan kuota
-        quota_expiry_date=None      # Inisialisasi tanggal kadaluarsa kuota
+        total_quota_purchased_mb=0,
+        total_quota_used_mb=0,
+        quota_expiry_date=None
     )
     db.session.add(new_user)
     db.session.commit()
@@ -142,12 +142,12 @@ def _create_regular_user_logic(data: UserCreateByAdminSchema, creator: User):
         kamar=data.kamar,
         approval_status=ApprovalStatus.PENDING_APPROVAL,
         is_unlimited_user=False,
-        total_quota_purchased_mb=0, # Inisialisasi kuota
-        total_quota_used_mb=0,      # Inisialisasi penggunaan kuota
-        quota_expiry_date=None      # Inisialisasi tanggal kadaluarsa kuota
+        total_quota_purchased_mb=0,
+        total_quota_used_mb=0,
+        quota_expiry_date=None
     )
     db.session.add(new_user)
-    db.session.flush() # Flush untuk mendapatkan ID user jika diperlukan sebelum commit
+    db.session.flush()
     current_app.logger.info(f"User {new_user.full_name} created with PENDING_APPROVAL.")
     db.session.commit()
     db.session.refresh(new_user)
@@ -165,7 +165,6 @@ def create_user_by_admin(current_admin: User):
     except ValidationError as e:
         return jsonify({"errors": e.errors()}), HTTPStatus.UNPROCESSABLE_ENTITY
     
-    # Cek duplikasi nomor telepon
     if db.session.scalar(select(User).filter_by(phone_number=normalize_to_e164(validated_data.phone_number))):
         return jsonify({"message": f"Phone number {validated_data.phone_number} is already registered."}), HTTPStatus.CONFLICT
     
@@ -180,7 +179,6 @@ def create_user_by_admin(current_admin: User):
         db.session.refresh(new_user)
         response_data = UserResponseSchema.from_orm(new_user).model_dump()
         if new_user.role == UserRole.USER:
-            # Sembunyikan mikrotik_password untuk user reguler saat pembuatan
             response_data['mikrotik_password'] = None 
         return jsonify(response_data), HTTPStatus.CREATED
     except IntegrityError as e:
@@ -429,12 +427,10 @@ def approve_user(current_admin: User, user_id):
         current_app.logger.info(f"User {user.full_name} has no bonus quota, quota_expiry_date set to None.")
 
     # Persiapan parameter untuk Mikrotik
-    mikrotik_limit_bytes_total = int(user.total_quota_purchased_mb * 1024 * 1024) # Konversi MB ke bytes
-    # Pastikan nilai tidak negatif
+    mikrotik_limit_bytes_total = int(user.total_quota_purchased_mb * 1024 * 1024)
     if mikrotik_limit_bytes_total < 0:
         mikrotik_limit_bytes_total = 0
         current_app.logger.warning(f"Negative quota value for user {user.id} ({user.full_name}), reset to 0 for Mikrotik.")
-
 
     mikrotik_session_timeout_seconds = 0
     if user.quota_expiry_date:
@@ -547,7 +543,7 @@ def delete_user(current_admin: User, user_id):
     if user.id == current_admin.id:
         return jsonify({"message": "You cannot delete your own account."}), HTTPStatus.FORBIDDEN
     if user.is_admin_role and not current_admin.is_super_admin_role:
-        return jsonify({"message": "Access denied: You do not have permission to delete an admin."}), HTTPStatus.FORBIDDEN
+        return jsonify({"message": "Access denied: You do not have permission to delete an an_admin."}), HTTPStatus.FORBIDDEN
     if user.role == UserRole.SUPER_ADMIN and current_admin.role == UserRole.ADMIN:
         return jsonify({"message": "Access denied: Admin cannot delete Super Admin."}), HTTPStatus.FORBIDDEN
     if user.approval_status == ApprovalStatus.PENDING_APPROVAL:
@@ -655,7 +651,7 @@ def admin_reset_hotspot_password(current_admin: User, user_id):
                         mikrotik_username = format_to_local_phone(user_to_reset.phone_number)
                         
                         limit_bytes_total = int(user_to_reset.total_quota_purchased_mb or 0) * 1024 * 1024
-                        if limit_bytes_total < 0: # Pastikan juga di sini tidak negatif
+                        if limit_bytes_total < 0:
                             limit_bytes_total = 0
                             current_app.logger.warning(f"Negative quota value for user {user_to_reset.id} (reset password), reset to 0 for Mikrotik.")
                         
