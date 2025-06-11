@@ -2,6 +2,7 @@
 import { useSettingsStore } from '~/store/settings'
 import { useMaintenanceStore } from '~/store/maintenance'
 import type { SettingSchema } from '@/types/api/settings'
+import { useRuntimeConfig } from '#app'
 
 export default defineNuxtPlugin(async (nuxtApp) => {
   const settingsStore = useSettingsStore()
@@ -15,10 +16,17 @@ export default defineNuxtPlugin(async (nuxtApp) => {
 
   // Kode ini akan berjalan di server, atau di klien jika ini adalah navigasi sisi klien pertama kali.
   try {
-    // PERBAIKAN: Panggil endpoint TANPA '/api'.
-    // Base URL dari `nuxt.config.ts` sudah menangani awalan `/api` di klien
-    // dan URL lengkap di server.
-    const publicSettings = await $fetch<SettingSchema[]>('settings/public');
+    // PERBAIKAN: Secara eksplisit tentukan baseURL untuk panggilan di sisi server.
+    const runtimeConfig = useRuntimeConfig()
+    const fetchOptions: any = {}
+
+    // Saat di server, kita HARUS menyediakan baseURL lengkap dari runtimeConfig.
+    if (import.meta.server) {
+      fetchOptions.baseURL = runtimeConfig.internalApiBaseUrl
+    }
+    // Saat di klien, proxy akan menangani path relatif, jadi tidak perlu baseURL.
+
+    const publicSettings = await $fetch<SettingSchema[]>('settings/public', fetchOptions);
     
     // Setelah data didapat, isi state di Pinia store.
     if (publicSettings) {
