@@ -8,7 +8,7 @@ import { hexToRgb } from '@core/utils/colorConverter'
 import { useSettingsStore } from '~/store/settings'
 
 // Inisialisasi store-store yang diperlukan
-const { global } = useTheme()
+const { global } = useTheme() // Menggunakan 'global' dari useTheme
 const configStore = useConfigStore()
 const settingsStore = useSettingsStore()
 
@@ -16,15 +16,17 @@ const settingsStore = useSettingsStore()
 initCore()
 
 // PENYEMPURNAAN: Sinkronisasi Otomatis Tema dari Database
-// watchEffect akan berjalan setiap kali nilai di dalam settingsStore berubah.
-// Ini memastikan bahwa tema yang disimpan di database akan langsung diterapkan.
 watchEffect(() => {
-  // Hanya jalankan jika pengaturan sudah dimuat dari database
   if (settingsStore.isLoaded) {
+    // 1. Terapkan pengaturan ke configStore (untuk skin, layout, dll.)
     configStore.theme = settingsStore.theme
     configStore.skin = settingsStore.skin
     configStore.appContentLayoutNav = settingsStore.layout
     configStore.appContentWidth = settingsStore.contentWidth
+
+    // 2. PERBAIKAN UTAMA: Perintahkan Vuetify untuk mengubah tema global.
+    // Ini adalah langkah kunci yang akan mengubah warna aplikasi (terang/gelap).
+    global.name.value = configStore.theme
   }
 })
 
@@ -36,7 +38,7 @@ useHead({
     const browserTitle = settingsStore.browserTitle || 'Hotspot APP';
 
     if (titleChunk && titleChunk !== browserTitle) {
-      return `${titleChunk} By ${appName}`;
+      return `${titleChunk} - ${appName}`;
     }
     
     return browserTitle;
