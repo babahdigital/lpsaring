@@ -4,7 +4,7 @@ import { useSettingsStore } from '~/store/settings'
 import { useMaintenanceStore } from '~/store/maintenance'
 import type { SettingSchema } from '@/types/api/settings'
 
-// PERBAIKAN: Definisikan tipe untuk payload yang akan kita teruskan dari server ke client
+// Definisikan tipe untuk payload yang akan kita teruskan dari server ke client
 interface PiniaInitialState {
   settings: ReturnType<typeof useSettingsStore>['$state'];
   maintenance: ReturnType<typeof useMaintenanceStore>['$state'];
@@ -27,7 +27,9 @@ export default defineNuxtPlugin(async () => {
   // Bagian ini hanya berjalan di server untuk fetch data awal
   if (process.server) {
     try {
-      const publicSettings = await nuxtApp.$api<SettingSchema[]>('/api/settings/public')
+      // PERBAIKAN: Hapus duplikasi '/api' dari path.
+      // Plugin $api kemungkinan sudah memiliki base URL '/api'.
+      const publicSettings = await nuxtApp.$api<SettingSchema[]>('/settings/public')
       settingsStore.setSettings(publicSettings || [])
     } catch (error) {
       console.error('Kritis: Gagal memuat pengaturan awal dari server.', error)
@@ -41,13 +43,13 @@ export default defineNuxtPlugin(async () => {
         settings: settingsStore.$state,
         maintenance: maintenanceStore.$state,
     };
-    // PERBAIKAN: Memberi tahu TypeScript tentang struktur payload
+    // Memberi tahu TypeScript tentang struktur payload
     nuxtApp.payload.provide = nuxtApp.payload.provide || {};
     (nuxtApp.payload.provide as Record<string, any>)['pinia-initial-state'] = state;
   }
   // Di client, ambil state dari payload untuk menghindari fetch ulang
   else if (nuxtApp.payload?.provide && (nuxtApp.payload.provide as Record<string, any>)['pinia-initial-state']) {
-      // PERBAIKAN: Memberi tahu TypeScript tentang struktur payload saat membacanya
+      // Memberi tahu TypeScript tentang struktur payload saat membacanya
       const initialState = (nuxtApp.payload.provide as Record<string, any>)['pinia-initial-state'] as PiniaInitialState;
 
       if (initialState.settings) {
