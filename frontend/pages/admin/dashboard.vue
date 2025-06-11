@@ -268,7 +268,7 @@
 <script setup lang="ts">
 import { useApiFetch } from '~/composables/useApiFetch';
 import { VDataTable } from 'vuetify/labs/VDataTable';
-import { VueApexCharts } from 'vue-apexcharts';
+import { VueApexCharts } from 'apexcharts';
 import { computed } from 'vue';
 
 definePageMeta({
