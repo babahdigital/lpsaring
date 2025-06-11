@@ -3,7 +3,7 @@
 # Menambahkan force_update_profile, logging yang lebih baik, dan penanganan parameter opsional.
 # PERBAIKAN FINAL: Menambahkan pengecekan '.id' untuk mencegah KeyError.
 # PERBAIKAN V3: Logika yang lebih tangguh untuk menangani user yang ada tanpa '.id'
-# PERBAIKAN V5 (Fokus Approve): Memisahkan operasi ADD dan SET untuk mengatasi error 'unknown parameter'.
+# PERBAIKAN V6: Menambahkan fungsi get_hotspot_user_details untuk sinkronisasi komprehensif.
 
 import os
 import time
@@ -286,6 +286,42 @@ def update_mikrotik_user_password(
     except Exception as e:
         msg = f"Error tidak terduga saat update password Mikrotik user {username_mikrotik_fmt}: {e}"
         logger.error(msg, exc_info=True); return False, str(e)
+
+# --- FUNGSI HELPER BARU DITAMBAHKAN ---
+def get_hotspot_user_details(
+    api_connection: Any,
+    username: str
+) -> Tuple[bool, Optional[Dict[str, Any]], str]:
+    """
+    Mengambil detail lengkap seorang user hotspot dari Mikrotik.
+    Mengembalikan data user jika ditemukan.
+    """
+    username_mikrotik_fmt = username
+    if not username_mikrotik_fmt:
+        return False, None, f"Username '{username}' tidak valid."
+
+    try:
+        user_resource = api_connection.get_resource('/ip/hotspot/user')
+        user_list: list[dict[str, Any]] = user_resource.get(name=username_mikrotik_fmt)
+        
+        if user_list:
+            # User ditemukan, kembalikan data lengkapnya
+            user_data = user_list[0]
+            logger.debug(f"Detail data ditemukan untuk '{username_mikrotik_fmt}': {user_data}")
+            return True, user_data, "Sukses"
+        else:
+            # User tidak ditemukan, ini bukan error API, tapi info status
+            logger.warning(f"User '{username_mikrotik_fmt}' tidak ditemukan saat get_hotspot_user_details.")
+            return True, None, f"User '{username_mikrotik_fmt}' tidak ditemukan."
+            
+    except routeros_api.exceptions.RouterOsApiError as e:
+        msg = f"Error API Mikrotik saat get_hotspot_user_details untuk user {username_mikrotik_fmt}: {getattr(e, 'original_message', str(e))}"
+        logger.error(msg, exc_info=False)
+        return False, None, msg
+    except Exception as e:
+        msg = f"Error tidak terduga saat get_hotspot_user_details untuk Mikrotik user {username_mikrotik_fmt}: {e}"
+        logger.error(msg, exc_info=True)
+        return False, None, str(e)
 
 
 def get_hotspot_user_usage(
