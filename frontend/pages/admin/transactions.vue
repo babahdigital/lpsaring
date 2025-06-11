@@ -511,13 +511,14 @@ const clearEndDate = () => { endDate.value = null; };
 const openUserFilterDialog = async () => {
   isUserFilterDialogOpen.value = true;
   tempSelectedUser.value = selectedUser.value;
-  // Perbaikan: Hapus baris di bawah ini agar userList selalu di-fetch ulang
-  // if (userList.value.length > 0) return; 
+  if (userList.value.length > 0) return;
   try {
-    const responseData = await $api<UserSelectItem[]>('/admin/users?all=true');
-    userList.value = Array.isArray(responseData) ? responseData : [];
+    // PERBAIKAN: Mengambil data dari properti 'items' di dalam respons
+    const responseData = await $api<{ items: UserSelectItem[] }>('/admin/users?all=true');
+    userList.value = responseData && Array.isArray(responseData.items) ? responseData.items : [];
   } catch (e: any) {
     showSnackbar(e.data?.message || 'Gagal memuat daftar pengguna.', 'error');
+    userList.value = []; // Pastikan list kosong jika terjadi error
   }
 };
 
