@@ -153,7 +153,6 @@ def register_blueprints(app: Flask):
         app.register_blueprint(public_bp)
         module_log.info(f"Blueprint '{public_bp.name}' (Public) registered.")
 
-        # --- PERUBAHAN: Mendaftarkan blueprint-blueprint baru yang sudah dipecah ---
         # Daftarkan blueprint-blueprint baru dari direktori /user
         from .infrastructure.http.user.profile_routes import profile_bp
         app.register_blueprint(profile_bp)
@@ -172,9 +171,8 @@ def register_blueprints(app: Flask):
         from .infrastructure.http.public_promo_routes import public_promo_bp
         app.register_blueprint(public_promo_bp)
         module_log.info(f"Blueprint '{public_promo_bp.name}' (Public Promo) registered.")
-        # --- AKHIR PERUBAHAN ---
 
-        # Pendaftaran blueprint admin tetap sama
+        # Pendaftaran blueprint admin
         if app.config.get('ENABLE_ADMIN_ROUTES', False):
             try:
                 from .infrastructure.http.admin.user_management_routes import user_management_bp
@@ -241,7 +239,8 @@ def create_app(config_name: str = None) -> Flask:
         is_maintenance = settings_service.get_setting('MAINTENANCE_MODE_ACTIVE', 'False') == 'True'
         if not is_maintenance: return
         
-        allowed_paths = ['/api/admin', '/api/auth', '/api/settings/public', '/admin']
+        # PENAMBAHAN: Izinkan akses ke API publik
+        allowed_paths = ['/api/admin', '/api/auth', '/api/settings/public', '/api/public', '/admin']
         if any(request.path.startswith(p) for p in allowed_paths): return
         
         auth_header = request.headers.get('Authorization')
