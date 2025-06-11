@@ -245,11 +245,7 @@ watch(endDateModel, (newDate) => {
     editedItem.value.end_date = newDate ? newDate.toISOString() : undefined
 })
 
-definePageMeta({
-  title: 'Manajemen Event & Promo',
-  layout: 'default',
-  middleware: ['auth'],
-})
+useHead({ title: 'Event & Promo' })
 </script>
 
 <template>
