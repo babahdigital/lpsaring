@@ -181,24 +181,31 @@
         <VCard>
           <VCardTitle>Paket Terlaris (Bulan Ini)</VCardTitle>
           <VCardText>
-            <VueApexCharts
-              v-if="!pending && pieChartSeries.length > 0"
-              type="pie"
-              height="350"
-              :options="pieChartOptions"
-              :series="pieChartSeries"
-            />
+            <ClientOnly>
+              <VueApexCharts
+                v-if="!pending && pieChartSeries.length > 0"
+                type="pie"
+                height="350"
+                :options="pieChartOptions"
+                :series="pieChartSeries"
+              />
+              <template #fallback>
+                <div class="text-center pa-5">
+                  Memuat komponen grafik...
+                </div>
+              </template>
+            </ClientOnly>
             <div
-              v-else-if="pending"
-              class="text-center"
-            >
-              Memuat data grafik...
-            </div>
-            <div
-              v-else
+              v-if="!pending && pieChartSeries.length === 0"
               class="text-center"
             >
               Belum ada data penjualan paket bulan ini.
+            </div>
+            <div
+              v-if="pending"
+              class="text-center"
+            >
+              Memuat data grafik...
             </div>
           </VCardText>
         </VCard>
@@ -211,40 +218,47 @@
       >
         <VCard>
           <VCardTitle>Aktivitas Transaksi Terakhir</VCardTitle>
-          <VDataTable
-            :headers="transactionHeaders"
-            :items="stats?.transaksiTerakhir ?? []"
-            :loading="pending"
-            :items-per-page="5"
-            density="compact"
-            class="text-no-wrap"
-          >
-            <template #item.amount="{ item }">
-              {{ formatCurrency(item.raw.amount) }}
-            </template>
-            <template #item.user.full_name="{ item }">
-              <div class="d-flex align-center">
-                <VAvatar
-                  size="32"
-                  :color="item.raw.user ? 'primary' : 'grey'"
-                  class="me-3"
-                  variant="tonal"
+          <ClientOnly>
+            <VDataTable
+              :headers="transactionHeaders"
+              :items="stats?.transaksiTerakhir ?? []"
+              :loading="pending"
+              :items-per-page="5"
+              density="compact"
+              class="text-no-wrap"
+            >
+              <template #item.amount="{ item }">
+                {{ formatCurrency(item.raw.amount) }}
+              </template>
+              <template #item.user.full_name="{ item }">
+                <div class="d-flex align-center">
+                  <VAvatar
+                    size="32"
+                    :color="item.raw.user ? 'primary' : 'grey'"
+                    class="me-3"
+                    variant="tonal"
+                  >
+                    <VIcon :icon="item.raw.user ? 'mdi-account-outline' : 'mdi-account-off-outline'" />
+                  </VAvatar>
+                  <span>{{ item.raw.user?.full_name ?? 'Pengguna Dihapus' }}</span>
+                </div>
+              </template>
+              <template #item.package.name="{ item }">
+                <VChip
+                  color="success"
+                  size="small"
+                  label
                 >
-                  <VIcon :icon="item.raw.user ? 'mdi-account-outline' : 'mdi-account-off-outline'" />
-                </VAvatar>
-                <span>{{ item.raw.user?.full_name ?? 'Pengguna Dihapus' }}</span>
+                  {{ item.raw.package.name }}
+                </VChip>
+              </template>
+            </VDataTable>
+            <template #fallback>
+              <div class="text-center pa-5">
+                Memuat komponen tabel...
               </div>
             </template>
-            <template #item.package.name="{ item }">
-              <VChip
-                color="success"
-                size="small"
-                label
-              >
-                {{ item.raw.package.name }}
-              </VChip>
-            </template>
-          </VDataTable>
+          </ClientOnly>
         </VCard>
       </VCol>
     </VRow>
