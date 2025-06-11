@@ -1,5 +1,5 @@
 #
-deploy-to-dockerhub.yml
+.github/*
 # Nuxt dev/build outputs
 .output
 .data
