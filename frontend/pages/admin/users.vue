@@ -4,10 +4,13 @@ import type { VDataTableServer } from 'vuetify/labs/VDataTable'
 import { useDisplay } from 'vuetify'
 import { useAuthStore } from '@/store/auth'
 import type { VForm } from 'vuetify/components'
+import { differenceInDays, format, isPast, isValid } from 'date-fns'
 
 import AppTextField from '@core/components/app-form-elements/AppTextField.vue'
 import AppSelect from '@core/components/app-form-elements/AppSelect.vue'
 
+// --- INTERFACE DIPERBARUI ---
+// Menambahkan properti terkait kuota untuk mencerminkan data dari backend
 interface User {
   id: string
   full_name: string
@@ -19,6 +22,37 @@ interface User {
   blok: string | null
   kamar: string | null
   approved_at: string | null
+  // Properti baru ditambahkan
+  total_quota_purchased_mb: number
+  total_quota_used_mb: number
+  quota_expiry_date: string | null
+  is_unlimited_user: boolean
+}
+
+// Interface untuk menyimpan detail promo yang diambil dari API
+interface PromoDetails {
+  id: string
+  name: string
+  description: string
+  bonus_value_mb: number
+  bonus_duration_days: number
+  start_date: string
+  end_date: string | null
+}
+
+// Interface untuk menyimpan hasil kalkulasi detail kuota
+interface QuotaInfo {
+  totalQuotaMB: number
+  usedQuotaMB: number
+  remainingQuotaMB: number
+  percentageUsed: number
+  isUnlimited: boolean
+  promoName: string | null
+  activationDate: string | null
+  expiryDate: string | null
+  remainingDays: number | null
+  status: 'ACTIVE' | 'EXPIRED' | 'NOT_SET' | 'UNLIMITED'
+  statusColor: string
 }
 
 type Options = InstanceType<typeof VDataTableServer>['options']
@@ -40,7 +74,6 @@ const options = ref<Options>({
 })
 
 const snackbar = reactive({ show: false, text: '', color: 'info', timeout: 4000 })
-// Menambahkan 'customConfirm' ke objek dialog untuk dialog konfirmasi kustom
 const dialog = reactive({ view: false, edit: false, delete: false, approve: false, reject: false, customConfirm: false })
 const formRef = ref<InstanceType<typeof VForm> | null>(null)
 
@@ -56,23 +89,110 @@ const defaultUser = {
 
 const editedUser = ref<Partial<User>>({ ...defaultUser })
 const isMounted = ref(false)
-const isUserDataInputActive = ref(false) // Untuk VSwitch Blok & Kamar di Admin
+const isUserDataInputActive = ref(false)
 
-// Opsi Blok dan Kamar yang akan dimuat dari backend
-const availableBloks = ref<string[]>([]);
-const availableKamars = ref<string[]>([]);
+const availableBloks = ref<string[]>([])
+const availableKamars = ref<string[]>([])
+const activeBonusPromo = ref<PromoDetails | null>(null) // State untuk menyimpan info promo aktif
 
-// Variabel untuk dialog konfirmasi kustom
-const confirmMessage = ref('');
-const confirmActionCallback = ref<(() => Promise<void>) | null>(null);
+const confirmMessage = ref('')
+const confirmActionCallback = ref<(() => Promise<void>) | null>(null)
 
-onMounted(() => {
+onMounted(async () => {
   isMounted.value = true
-  fetchUsers()
-  fetchAlamatOptions() // Memuat opsi blok/kamar saat komponen di-mount
+  await Promise.all([
+    fetchUsers(),
+    fetchAlamatOptions(),
+    fetchActiveBonusPromo(), // Memuat info promo saat komponen dimuat
+  ])
 })
 
 const formTitle = computed(() => (editedUser.value.id ? 'Edit Pengguna' : 'Tambah Pengguna'))
+
+// --- FUNGSI BARU UNTUK MENGAMBIL PROMO AKTIF ---
+async function fetchActiveBonusPromo() {
+  try {
+    const response = await $api<PromoDetails>('/public/promos/active', { method: 'GET' })
+    if (response && response.id) {
+      activeBonusPromo.value = response
+    }
+  }
+  catch (error) {
+    console.error("Tidak ada promo bonus registrasi aktif atau gagal memuat:", error)
+    activeBonusPromo.value = null
+  }
+}
+
+// --- COMPUTED PROPERTY BARU UNTUK MENGOLAH DETAIL KUOTA ---
+const quotaDetails = computed((): QuotaInfo | null => {
+  if (!selectedUser.value || selectedUser.value.role !== 'USER')
+    return null
+
+  const user = selectedUser.value
+  const totalMB = user.total_quota_purchased_mb || 0
+  const usedMB = user.total_quota_used_mb || 0
+  const remainingMB = Math.max(0, totalMB - usedMB)
+  const percentage = totalMB > 0 ? Math.min(100, (usedMB / totalMB) * 100) : 0
+
+  let status: QuotaInfo['status'] = 'NOT_SET'
+  let statusColor = 'grey'
+  let remainingDays: number | null = null
+
+  if (user.is_unlimited_user) {
+    status = 'UNLIMITED'
+    statusColor = 'primary'
+  }
+  else if (user.quota_expiry_date) {
+    const expiry = new Date(user.quota_expiry_date)
+    if (isValid(expiry)) {
+      if (isPast(expiry)) {
+        status = 'EXPIRED'
+        statusColor = 'error'
+        remainingDays = 0
+      }
+      else {
+        status = 'ACTIVE'
+        statusColor = 'success'
+        remainingDays = differenceInDays(expiry, new Date())
+      }
+    }
+  }
+
+  let promoName: string | null = null
+  if (activeBonusPromo.value && user.approved_at) {
+    const approvalDate = new Date(user.approved_at)
+    const promoStartDate = new Date(activeBonusPromo.value.start_date)
+    const promoEndDate = activeBonusPromo.value.end_date ? new Date(activeBonusPromo.value.end_date) : null
+
+    // Cek apakah user disetujui dalam periode promo
+    if (approvalDate >= promoStartDate && (!promoEndDate || approvalDate <= promoEndDate)) {
+      // Cek apakah bonus kuota yang diterima user sesuai dengan bonus promo
+      if (user.total_quota_purchased_mb === activeBonusPromo.value.bonus_value_mb) {
+        promoName = activeBonusPromo.value.name
+      }
+    }
+  }
+
+  // Jika tidak ada promo terdeteksi tapi ada kuota, anggap paket reguler
+  if (!promoName && totalMB > 0) {
+    promoName = "Paket Reguler"
+  }
+
+
+  return {
+    totalQuotaMB: totalMB,
+    usedQuotaMB: usedMB,
+    remainingQuotaMB: remainingMB,
+    percentageUsed: percentage,
+    isUnlimited: user.is_unlimited_user,
+    promoName: promoName,
+    activationDate: user.approved_at ? format(new Date(user.approved_at), 'dd MMMM yyyy') : null,
+    expiryDate: user.quota_expiry_date ? format(new Date(user.quota_expiry_date), 'dd MMMM yyyy') : null,
+    remainingDays: remainingDays,
+    status: status,
+    statusColor: statusColor,
+  }
+})
 
 const availableRoles = computed(() => {
   if (authStore.isSuperAdmin) {
@@ -84,14 +204,12 @@ const availableRoles = computed(() => {
   return [{ title: 'User Biasa', value: 'USER' }]
 })
 
-// Watcher untuk editedUser.role agar mengaktifkan switch alamat jika role adalah ADMIN
 watch(() => editedUser.value.role, (newRole) => {
-  if (newRole === 'ADMIN') {
-    isUserDataInputActive.value = true;
-  } else {
-    isUserDataInputActive.value = false;
-  }
-});
+  if (newRole === 'ADMIN')
+    isUserDataInputActive.value = true
+  else
+    isUserDataInputActive.value = false
+})
 
 const headers = computed(() => {
   const base = [
@@ -102,14 +220,15 @@ const headers = computed(() => {
     { title: 'TGL DAFTAR', key: 'created_at', sortable: true },
     { title: 'AKSI', key: 'actions', sortable: false, align: 'center', width: '150px' },
   ]
-  if (smAndDown.value) {
+  if (smAndDown.value)
     return base.filter(h => ['full_name', 'approval_status', 'actions'].includes(h.key))
-  }
+
   return base
 })
 
 async function fetchUsers() {
-  if (!isMounted.value) return
+  if (!isMounted.value)
+    return
   loading.value = true
   try {
     const params = new URLSearchParams()
@@ -122,7 +241,8 @@ async function fetchUsers() {
     if (search.value)
       params.append('search', search.value)
 
-    const response = await $api<{ items: User[]; totalItems: number }>(`/admin/users?${params.toString()}`)
+    // Memastikan `items` sesuai dengan interface User yang telah diperbarui
+    const response = await $api<{ items: User[], totalItems: number }>(`/admin/users?${params.toString()}`)
     users.value = response.items
     totalUsers.value = response.totalItems
   }
@@ -134,19 +254,20 @@ async function fetchUsers() {
   }
 }
 
-// Fungsi untuk memuat opsi blok dan kamar dari backend
 async function fetchAlamatOptions() {
   try {
-    const response = await $api<any>('/admin/form-options/alamat', { method: 'GET' });
+    const response = await $api<any>('/admin/form-options/alamat', { method: 'GET' })
     if (response.success) {
-      availableBloks.value = response.bloks || [];
-      availableKamars.value = response.kamars || [];
-    } else {
-      showSnackbar(response.message || 'Gagal memuat opsi alamat.', 'error');
+      availableBloks.value = response.bloks || []
+      availableKamars.value = response.kamars || []
     }
-  } catch (error: any) {
-    console.error("Gagal mengambil opsi alamat:", error);
-    showSnackbar('Gagal memuat opsi alamat. Terjadi kesalahan jaringan.', 'error');
+    else {
+      showSnackbar(response.message || 'Gagal memuat opsi alamat.', 'error')
+    }
+  }
+  catch (error: any) {
+    console.error("Gagal mengambil opsi alamat:", error)
+    showSnackbar('Gagal memuat opsi alamat. Terjadi kesalahan jaringan.', 'error')
   }
 }
 
@@ -177,34 +298,25 @@ const roleMap = {
   SUPER_ADMIN: { text: 'Super Admin', color: 'purple', variant: 'tonal' },
 }
 
-// Fungsi ini menormalisasi nomor telepon ke format +62.
-// Dipanggil saat input kehilangan fokus (blur) dan sebelum data disimpan.
 function normalizePhoneNumber() {
   if (editedUser.value.phone_number) {
-    // Menghapus semua karakter yang bukan digit, kecuali '+' di awal
-    let phone = editedUser.value.phone_number.trim();
-    phone = phone.replace(/\s+/g, '').replace(/[^0-9+]/g, '');
-
-    if (phone.startsWith('08')) {
-      // Mengubah format '08...' menjadi '+628...'
-      editedUser.value.phone_number = `+628${phone.substring(2)}`;
-    } else if (phone.startsWith('62')) {
-      // Memastikan format '62...' memiliki '+' di depan
-      editedUser.value.phone_number = `+${phone}`;
-    } else if (phone.startsWith('8')) {
-      // Mengubah format '8...' (tanpa 0) menjadi '+628...'
-      editedUser.value.phone_number = `+62${phone}`;
-    }
+    let phone = editedUser.value.phone_number.trim()
+    phone = phone.replace(/\s+/g, '').replace(/[^0-9+]/g, '')
+    if (phone.startsWith('08'))
+      editedUser.value.phone_number = `+628${phone.substring(2)}`
+    else if (phone.startsWith('62'))
+      editedUser.value.phone_number = `+${phone}`
+    else if (phone.startsWith('8'))
+      editedUser.value.phone_number = `+62${phone}`
   }
 }
 
 const requiredRule = (value: any) => !!value || 'Field ini wajib diisi.'
 
-// Fungsi untuk membuka dialog konfirmasi kustom
 function openCustomConfirmDialog(message: string, callback: () => Promise<void>) {
-  confirmMessage.value = message;
-  confirmActionCallback.value = callback;
-  dialog.customConfirm = true;
+  confirmMessage.value = message
+  confirmActionCallback.value = callback
+  dialog.customConfirm = true
 }
 
 function closeDialog() {
@@ -213,111 +325,100 @@ function closeDialog() {
   dialog.delete = false
   dialog.approve = false
   dialog.reject = false
-  dialog.customConfirm = false // Menutup dialog konfirmasi kustom
+  dialog.customConfirm = false
   nextTick(() => {
     selectedUser.value = null
     editedUser.value = { ...defaultUser }
     isUserDataInputActive.value = false
     formRef.value?.resetValidation()
-    confirmMessage.value = ''; // Mengatur ulang pesan konfirmasi
-    confirmActionCallback.value = null; // Mengatur ulang callback konfirmasi
+    confirmMessage.value = ''
+    confirmActionCallback.value = null
   })
 }
 
 function openDialog(type: 'view' | 'approve' | 'delete' | 'edit' | 'reject', user?: User) {
   if (type === 'edit') {
-    if (!user) { // Untuk TAMBAH PENGGUNA BARU
-      editedUser.value = { ...defaultUser };
-      isUserDataInputActive.value = false;
-      if (editedUser.value.role === 'ADMIN') {
-        isUserDataInputActive.value = true;
-      }
-      dialog.edit = true;
-      return;
+    if (!user) {
+      editedUser.value = { ...defaultUser }
+      isUserDataInputActive.value = false
+      if (editedUser.value.role === 'ADMIN')
+        isUserDataInputActive.value = true
+
+      dialog.edit = true
+      return
     }
+    selectedUser.value = { ...user }
+    const userToEdit = JSON.parse(JSON.stringify(user))
+    if (userToEdit.kamar)
+      userToEdit.kamar = formatKamarDisplay(userToEdit.kamar)
 
-    // Untuk EDIT PENGGUNA YANG SUDAH ADA
-    selectedUser.value = { ...user };
-    const userToEdit = JSON.parse(JSON.stringify(user));
+    if (userToEdit.phone_number)
+      userToEdit.phone_number = formatPhoneNumberDisplay(userToEdit.phone_number)
 
-    // Memastikan kamar diformat menjadi hanya angka saat dialog dibuka
-    if (userToEdit.kamar) {
-      userToEdit.kamar = formatKamarDisplay(userToEdit.kamar);
-    }
+    editedUser.value = userToEdit
+    if (editedUser.value.role === 'ADMIN')
+      isUserDataInputActive.value = true
+    else
+      isUserDataInputActive.value = false
 
-    // Mengubah nomor telepon ke format '08...' untuk ditampilkan di form.
-    // Fungsi normalizePhoneNumber akan mengubahnya kembali ke format '+62' saat disimpan.
-    if (userToEdit.phone_number) {
-      userToEdit.phone_number = formatPhoneNumberDisplay(userToEdit.phone_number);
-    }
-
-    editedUser.value = userToEdit;
-
-    // Inisialisasi isUserDataInputActive berdasarkan data yang ada
-    if (editedUser.value.role === 'ADMIN') {
-      isUserDataInputActive.value = true;
-    } else {
-      isUserDataInputActive.value = false;
-    }
-    dialog.edit = true;
-  } else { // Untuk dialog lain (view, approve, delete, reject)
+    dialog.edit = true
+  }
+  else {
     if (user) {
-      selectedUser.value = { ...user };
-      dialog[type] = true;
-    } else {
-      showSnackbar('Pengguna tidak ditemukan untuk aksi ini.', 'error');
+      selectedUser.value = { ...user }
+      dialog[type] = true
+    }
+    else {
+      showSnackbar('Pengguna tidak ditemukan untuk aksi ini.', 'error')
     }
   }
 }
 
 async function handleAction(type: 'approve' | 'delete' | 'update' | 'create' | 'reject') {
   if (type === 'create' || type === 'update') {
-    // Normalisasi nomor telepon sebelum validasi dan pengiriman.
-    normalizePhoneNumber();
-    await nextTick(); // Menunggu DOM update jika diperlukan
-
+    normalizePhoneNumber()
+    await nextTick()
     const { valid } = await formRef.value!.validate()
-    if (!valid) return
+    if (!valid)
+      return
   }
-
   let endpoint = '',
     method: 'PATCH' | 'DELETE' | 'PUT' | 'POST' = 'POST',
     successMessage = '',
     body: object | undefined
-
   const getPayload = () => {
     const payload: Partial<User> = { ...editedUser.value }
-
-    // Handle blok dan kamar berdasarkan peran dan status switch
     if (payload.role === 'USER') {
-      // Untuk USER, blok dan kamar selalu wajib.
-    } else if (payload.role === 'ADMIN') {
-      if (!isUserDataInputActive.value) { // Jika switch dimatikan, kirim blok dan kamar sebagai null
+      // Logic for USER role
+    }
+    else if (payload.role === 'ADMIN') {
+      if (!isUserDataInputActive.value) {
         payload.blok = null
         payload.kamar = null
       }
     }
     return payload
   }
-
   try {
-    loading.value = true;
-
+    loading.value = true
     switch (type) {
       case 'approve':
-        if (!selectedUser.value) return
+        if (!selectedUser.value)
+          return
         endpoint = `/admin/users/${selectedUser.value.id}/approve`
         method = 'PATCH'
         successMessage = 'Pengguna berhasil disetujui.'
         break
       case 'reject':
-        if (!selectedUser.value) return
+        if (!selectedUser.value)
+          return
         endpoint = `/admin/users/${selectedUser.value.id}/reject`
         method = 'POST'
         successMessage = 'Pendaftaran pengguna ditolak dan data telah dihapus.'
         break
       case 'delete':
-        if (!selectedUser.value) return
+        if (!selectedUser.value)
+          return
         endpoint = `/admin/users/${selectedUser.value.id}`
         method = 'DELETE'
         successMessage = 'Pengguna berhasil dihapus.'
@@ -335,109 +436,113 @@ async function handleAction(type: 'approve' | 'delete' | 'update' | 'create' | '
         body = getPayload()
         break
     }
-
     await $api(endpoint, { method, body })
     showSnackbar(successMessage, 'success')
     fetchUsers()
   }
   catch (error: any) {
-    console.error('API Error:', error);
+    console.error('API Error:', error)
     const errorMsg = error.response?._data?.message || error.data?.message || error.message || 'Terjadi kesalahan tidak dikenal'
     showSnackbar(`Error: ${errorMsg}`, 'error')
   }
   finally {
-    loading.value = false;
+    loading.value = false
     closeDialog()
   }
 }
 
-// Fungsi untuk Reset Password Hotspot (untuk user biasa, di dialog view)
 const resetHotspotPasswordForUser = async () => {
   if (!selectedUser.value || selectedUser.value.role !== 'USER') {
-    showSnackbar('Hanya pengguna biasa yang dapat mereset password hotspot.', 'warning');
-    return;
+    showSnackbar('Hanya pengguna biasa yang dapat mereset password hotspot.', 'warning')
+    return
   }
-
-  // Menggunakan dialog konfirmasi kustom
   openCustomConfirmDialog(
     `Anda yakin ingin mereset password hotspot untuk ${selectedUser.value.full_name}? Password baru akan dikirim via WhatsApp.`,
     async () => {
       try {
-        loading.value = true;
-        const response = await $api<{ success: boolean; message: string; }>('/admin/users/' + selectedUser.value.id + '/reset-hotspot-password', {
+        loading.value = true
+        const response = await $api<{ success: boolean, message: string }>('/admin/users/' + selectedUser.value!.id + '/reset-hotspot-password', {
           method: 'POST',
-        });
-
+        })
         if (response.success) {
-          showSnackbar(response.message, 'success');
-          fetchUsers();
-        } else {
-          showSnackbar(response.message, 'error');
+          showSnackbar(response.message, 'success')
+          fetchUsers()
         }
-      } catch (error: any) {
-        const errorMsg = error.response?._data?.message || error.data?.message || error.message || 'Gagal mereset password hotspot.'
-        showSnackbar(`Error: ${errorMsg}`, 'error');
-      } finally {
-        loading.value = false;
-        closeDialog();
+        else {
+          showSnackbar(response.message, 'error')
+        }
       }
-    }
-  );
-};
+      catch (error: any) {
+        const errorMsg = error.response?._data?.message || error.data?.message || error.message || 'Gagal mereset password hotspot.'
+        showSnackbar(`Error: ${errorMsg}`, 'error')
+      }
+      finally {
+        loading.value = false
+        closeDialog()
+      }
+    },
+  )
+}
 
-// Fungsi untuk Generate Password Admin (untuk admin yang sedang diedit)
 const generateAdminPasswordForAdmin = async () => {
   if (!selectedUser.value || selectedUser.value.role !== 'ADMIN') {
-    showSnackbar('Hanya admin yang dapat meng-generate password portal.', 'warning');
-    return;
+    showSnackbar('Hanya admin yang dapat meng-generate password portal.', 'warning')
+    return
   }
-
-  // Menggunakan dialog konfirmasi kustom
   openCustomConfirmDialog(
     `Anda yakin ingin meng-generate ulang password portal untuk ${selectedUser.value.full_name}? Password baru akan dikirim via WhatsApp.`,
     async () => {
       try {
-        loading.value = true;
-        const response = await $api<{ message: string }>('/admin/users/' + selectedUser.value.id + '/generate-admin-password', {
+        loading.value = true
+        const response = await $api<{ message: string }>('/admin/users/' + selectedUser.value!.id + '/generate-admin-password', {
           method: 'POST',
-        });
-
-        showSnackbar(response.message, 'success');
-        fetchUsers();
-      } catch (error: any) {
-        const errorMsg = error.response?._data?.message || error.data?.message || error.message || 'Gagal meng-generate password admin.'
-        showSnackbar(`Error: ${errorMsg}`, 'error');
-      } finally {
-        loading.value = false;
-        closeDialog();
+        })
+        showSnackbar(response.message, 'success')
+        fetchUsers()
       }
-    }
-  );
-};
+      catch (error: any) {
+        const errorMsg = error.response?._data?.message || error.data?.message || error.message || 'Gagal meng-generate password admin.'
+        showSnackbar(`Error: ${errorMsg}`, 'error')
+      }
+      finally {
+        loading.value = false
+        closeDialog()
+      }
+    },
+  )
+}
 
-// Fungsi untuk memformat tanggal dan waktu sederhana
 const formatSimpleDateTime = (dateString: string | null) => {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return 'Tanggal tidak valid';
-    return date.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-};
+  if (!dateString)
+    return 'N/A'
+  const date = new Date(dateString)
+  if (isNaN(date.getTime()))
+    return 'Tanggal tidak valid'
+  return date.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
 
-// Fungsi untuk memformat nilai 'kamar' agar hanya menampilkan angka
 const formatKamarDisplay = (kamarValue: string | null) => {
-  if (!kamarValue) return '';
-  // Menghilangkan 'Kamar_' dari string jika ada
-  return kamarValue.replace('Kamar_', '');
-};
+  if (!kamarValue)
+    return ''
+  return kamarValue.replace('Kamar_', '')
+}
 
-// Fungsi untuk memformat nomor telepon untuk tampilan (mengubah +62 menjadi 0)
 const formatPhoneNumberDisplay = (phoneNumber: string | null) => {
-  if (!phoneNumber) return 'N/A';
-  if (phoneNumber.startsWith('+62')) {
-    return '0' + phoneNumber.substring(3);
-  }
-  return phoneNumber;
-};
+  if (!phoneNumber)
+    return 'N/A'
+  if (phoneNumber.startsWith('+62'))
+    return '0' + phoneNumber.substring(3)
+
+  return phoneNumber
+}
+
+// Fungsi untuk memformat ukuran data dari MB ke format yang lebih mudah dibaca (MB/GB)
+const formatDataSize = (sizeInMB: number) => {
+  if (sizeInMB < 1024)
+    return `${sizeInMB.toFixed(2)} MB`
+  else
+    return `${(sizeInMB / 1024).toFixed(2)} GB`
+}
 
 useHead({ title: 'Manajemen Pengguna' })
 </script>
@@ -447,13 +552,20 @@ useHead({ title: 'Manajemen Pengguna' })
     <VCard class="mb-6">
       <VCardText class="d-flex align-center flex-wrap gap-4">
         <div class="d-flex align-center gap-2">
-          <VIcon icon="tabler-users-group" color="primary" size="28" />
+          <VIcon
+            icon="tabler-users-group"
+            color="primary"
+            size="28"
+          />
           <h5 class="text-h5">
             Manajemen Pengguna
           </h5>
         </div>
         <VSpacer />
-        <div class="d-flex align-center gap-4" :style="{ width: smAndDown ? '100%' : 'auto' }">
+        <div
+          class="d-flex align-center gap-4"
+          :style="{ width: smAndDown ? '100%' : 'auto' }"
+        >
           <div :style="{ width: smAndDown ? 'calc(100% - 110px)' : '300px' }">
             <AppTextField
               v-model="search"
@@ -464,7 +576,10 @@ useHead({ title: 'Manajemen Pengguna' })
               class="search-field"
             />
           </div>
-          <VBtn prepend-icon="tabler-plus" @click="openDialog('edit')">
+          <VBtn
+            prepend-icon="tabler-plus"
+            @click="openDialog('edit')"
+          >
             Tambah
           </VBtn>
         </div>
@@ -534,43 +649,90 @@ useHead({ title: 'Manajemen Pengguna' })
         
         <template #item.actions="{ item }">
           <div class="d-flex gap-1 justify-center action-buttons">
-            <VBtn icon variant="text" color="secondary" size="small" @click="openDialog('view', item)" class="action-btn">
-                <VIcon icon="tabler-eye" />
-                <VTooltip activator="parent">Lihat Detail</VTooltip>
+            <VBtn
+              icon
+              variant="text"
+              color="secondary"
+              size="small"
+              @click="openDialog('view', item)"
+              class="action-btn"
+            >
+              <VIcon icon="tabler-eye" />
+              <VTooltip activator="parent">
+                Lihat Detail
+              </VTooltip>
             </VBtn>
 
             <template v-if="item.approval_status === 'PENDING_APPROVAL'">
-              <VBtn icon variant="text" color="success" size="small" @click="openDialog('approve', item)" class="action-btn">
+              <VBtn
+                icon
+                variant="text"
+                color="success"
+                size="small"
+                @click="openDialog('approve', item)"
+                class="action-btn"
+              >
                 <VIcon icon="tabler-check" />
-                <VTooltip activator="parent">Setujui</VTooltip>
+                <VTooltip activator="parent">
+                  Setujui
+                </VTooltip>
               </VBtn>
-              <VBtn icon variant="text" color="error" size="small" @click="openDialog('reject', item)" class="action-btn">
+              <VBtn
+                icon
+                variant="text"
+                color="error"
+                size="small"
+                @click="openDialog('reject', item)"
+                class="action-btn"
+              >
                 <VIcon icon="tabler-trash-x-filled" />
-                <VTooltip activator="parent">Tolak & Hapus</VTooltip>
+                <VTooltip activator="parent">
+                  Tolak & Hapus
+                </VTooltip>
               </VBtn>
             </template>
 
-            <VBtn 
+            <VBtn
               v-if="item.id !== authStore.user?.id && (authStore.isSuperAdmin || (authStore.isAdmin && item.role === 'USER'))"
-              icon variant="text" color="primary" size="small" @click="openDialog('edit', item)" class="action-btn"
+              icon
+              variant="text"
+              color="primary"
+              size="small"
+              @click="openDialog('edit', item)"
+              class="action-btn"
             >
               <VIcon icon="tabler-pencil" />
-              <VTooltip activator="parent">Edit</VTooltip>
+              <VTooltip activator="parent">
+                Edit
+              </VTooltip>
             </VBtn>
             
-            <VBtn 
-              v-if="item.id !== authStore.user?.id && item.approval_status !== 'PENDING_APPROVAL' && (authStore.isSuperAdmin || (authStore.isAdmin && item.role === 'USER'))" 
-              icon variant="text" color="error" size="small" @click="openDialog('delete', item)" class="action-btn"
+            <VBtn
+              v-if="item.id !== authStore.user?.id && item.approval_status !== 'PENDING_APPROVAL' && (authStore.isSuperAdmin || (authStore.isAdmin && item.role === 'USER'))"
+              icon
+              variant="text"
+              color="error"
+              size="small"
+              @click="openDialog('delete', item)"
+              class="action-btn"
             >
               <VIcon icon="tabler-trash" />
-              <VTooltip activator="parent">Hapus</VTooltip>
+              <VTooltip activator="parent">
+                Hapus
+              </VTooltip>
             </VBtn>
           </div>
         </template>
         
         <template #loading>
-          <tr v-for="i in options.itemsPerPage" :key="i">
-            <td v-for="j in headers.length" :key="j">
+          <tr
+            v-for="i in options.itemsPerPage"
+            :key="i"
+          >
+            <td
+              v-for="j in headers.length"
+              :key="j"
+            >
               <VSkeletonLoader type="text" />
             </td>
           </tr>
@@ -578,7 +740,11 @@ useHead({ title: 'Manajemen Pengguna' })
         
         <template #no-data>
           <div class="py-8 text-center">
-            <VIcon icon="tabler-database-off" size="48" class="mb-2" />
+            <VIcon
+              icon="tabler-database-off"
+              size="48"
+              class="mb-2"
+            />
             <p>Tidak ada data pengguna</p>
           </div>
         </template>
@@ -586,26 +752,49 @@ useHead({ title: 'Manajemen Pengguna' })
     </VCard>
 
     <div v-else>
-      <VCard v-if="loading" class="mb-4">
+      <VCard
+        v-if="loading"
+        class="mb-4"
+      >
         <VCardText>
           <VSkeletonLoader type="card" />
         </VCardText>
       </VCard>
 
       <template v-else>
-        <div v-if="users.length === 0" class="text-center py-8">
-          <VIcon icon="tabler-database-off" size="48" class="mb-2" />
+        <div
+          v-if="users.length === 0"
+          class="text-center py-8"
+        >
+          <VIcon
+            icon="tabler-database-off"
+            size="48"
+            class="mb-2"
+          />
           <p>Tidak ada data pengguna</p>
         </div>
 
-        <VCard v-for="user in users" :key="user.id" class="mb-4 user-card">
+        <VCard
+          v-for="user in users"
+          :key="user.id"
+          class="mb-4 user-card"
+        >
           <VCardText>
             <div class="d-flex justify-space-between align-center mb-2">
               <div>
-                <div class="font-weight-bold user-name">{{ user.full_name }}</div>
-                <div class="text-caption text-medium-emphasis">{{ formatPhoneNumberDisplay(user.phone_number) }}</div>
+                <div class="font-weight-bold user-name">
+                  {{ user.full_name }}
+                </div>
+                <div class="text-caption text-medium-emphasis">
+                  {{ formatPhoneNumberDisplay(user.phone_number) }}
+                </div>
               </div>
-              <VChip :color="statusMap[user.approval_status]?.color" :variant="statusMap[user.approval_status]?.variant" size="small" class="status-chip">
+              <VChip
+                :color="statusMap[user.approval_status]?.color"
+                :variant="statusMap[user.approval_status]?.variant"
+                size="small"
+                class="status-chip"
+              >
                 {{ statusMap[user.approval_status]?.text }}
               </VChip>
             </div>
@@ -613,141 +802,348 @@ useHead({ title: 'Manajemen Pengguna' })
             <VDivider class="my-3" />
             
             <div class="d-flex justify-end gap-2 action-buttons">
-                <VBtn icon variant="text" color="secondary" size="small" @click="openDialog('view', user)" class="action-btn">
-                    <VIcon icon="tabler-eye" />
-                    <VTooltip activator="parent">Lihat Detail</VTooltip>
-                </VBtn>
+              <VBtn
+                icon
+                variant="text"
+                color="secondary"
+                size="small"
+                @click="openDialog('view', user)"
+                class="action-btn"
+              >
+                <VIcon icon="tabler-eye" />
+                <VTooltip activator="parent">
+                  Lihat Detail
+                </VTooltip>
+              </VBtn>
 
               <template v-if="user.approval_status === 'PENDING_APPROVAL'">
-                <VBtn icon variant="text" color="success" size="small" @click="openDialog('approve', user)" class="action-btn">
+                <VBtn
+                  icon
+                  variant="text"
+                  color="success"
+                  size="small"
+                  @click="openDialog('approve', user)"
+                  class="action-btn"
+                >
                   <VIcon icon="tabler-check" />
-                  <VTooltip activator="parent">Setujui</VTooltip>
+                  <VTooltip activator="parent">
+                    Setujui
+                  </VTooltip>
                 </VBtn>
-                <VBtn icon variant="text" color="error" size="small" @click="openDialog('reject', user)" class="action-btn">
+                <VBtn
+                  icon
+                  variant="text"
+                  color="error"
+                  size="small"
+                  @click="openDialog('reject', user)"
+                  class="action-btn"
+                >
                   <VIcon icon="tabler-trash-x-filled" />
-                  <VTooltip activator="parent">Tolak & Hapus</VTooltip>
+                  <VTooltip activator="parent">
+                    Tolak & Hapus
+                  </VTooltip>
                 </VBtn>
               </template>
               
-              <VBtn 
+              <VBtn
                 v-if="user.id !== authStore.user?.id && (authStore.isSuperAdmin || (authStore.isAdmin && user.role === 'USER'))"
-                icon variant="text" color="primary" size="small" @click="openDialog('edit', user)" class="action-btn"
+                icon
+                variant="text"
+                color="primary"
+                size="small"
+                @click="openDialog('edit', user)"
+                class="action-btn"
               >
                 <VIcon icon="tabler-pencil" />
-                <VTooltip activator="parent">Edit</VTooltip>
+                <VTooltip activator="parent">
+                  Edit
+                </VTooltip>
               </VBtn>
               
-              <VBtn 
-                v-if="user.id !== authStore.user?.id && user.approval_status !== 'PENDING_APPROVAL' && (authStore.isSuperAdmin || (authStore.isAdmin && user.role === 'USER'))" 
-                icon variant="text" color="error" size="small" @click="openDialog('delete', user)" class="action-btn"
+              <VBtn
+                v-if="user.id !== authStore.user?.id && user.approval_status !== 'PENDING_APPROVAL' && (authStore.isSuperAdmin || (authStore.isAdmin && user.role === 'USER'))"
+                icon
+                variant="text"
+                color="error"
+                size="small"
+                @click="openDialog('delete', user)"
+                class="action-btn"
               >
                 <VIcon icon="tabler-trash" />
-                <VTooltip activator="parent">Hapus</VTooltip>
+                <VTooltip activator="parent">
+                  Hapus
+                </VTooltip>
               </VBtn>
             </div>
           </VCardText>
         </VCard>
       </template>
       
-      <div class="d-flex justify-center mt-4" v-if="!loading && users.length > 0">
-        <VPagination v-model="options.page" :length="Math.ceil(totalUsers / options.itemsPerPage)" :total-visible="smAndDown ? 5 : 7" density="comfortable" />
+      <div
+        class="d-flex justify-center mt-4"
+        v-if="!loading && users.length > 0"
+      >
+        <VPagination
+          v-model="options.page"
+          :length="Math.ceil(totalUsers / options.itemsPerPage)"
+          :total-visible="smAndDown ? 5 : 7"
+          density="comfortable"
+        />
       </div>
     </div>
     
-    <VDialog v-model="dialog.view" max-width="600" scrollable>
-        <VCard v-if="selectedUser">
-            <DialogCloseBtn @click="closeDialog" />
-            <VCardTitle class="text-h6 d-flex align-center pa-4 bg-primary text-white">
-                <VIcon start icon="tabler-user-circle" />
-                Detail Pengguna
-            </VCardTitle>
-            <VDivider />
-            <VCardText class="pt-4">
-                <VList lines="two" density="compact">
-                    <VListItem>
-                        <template #prepend><VIcon icon="tabler-user" /></template>
-                        <VListItemTitle class="font-weight-semibold">{{ selectedUser.full_name }}</VListItemTitle>
-                    </VListItem>
-                    <VListItem>
-                        <template #prepend><VIcon icon="tabler-phone" /></template>
-                        <VListItemTitle>{{ formatPhoneNumberDisplay(selectedUser.phone_number) }}</VListItemTitle>
-                    </VListItem>
-                    <VListItem>
-                        <template #prepend><VIcon icon="tabler-shield-check" /></template>
-                        <VListItemTitle>
-                            <!-- PERBAIKAN: Menghapus properti 'label' -->
-                            <VChip :color="roleMap[selectedUser.role]?.color" size="small">{{ roleMap[selectedUser.role]?.text }}</VChip>
-                        </VListItemTitle>
-                    </VListItem>
-                    <VListItem>
-                        <template #prepend><VIcon icon="tabler-checkup-list" /></template>
-                        <VListItemTitle>
-                            <VChip :color="statusMap[selectedUser.approval_status]?.color" size="small" label>{{ statusMap[selectedUser.approval_status]?.text }}</VChip>
-                        </VListItemTitle>
-                    </VListItem>
-                    <VListItem>
-                        <template #prepend><VIcon :color="selectedUser.is_active ? 'success' : 'error'" :icon="selectedUser.is_active ? 'tabler-plug-connected' : 'tabler-plug-connected-x'" /></template>
-                        <VListItemTitle>{{ selectedUser.is_active ? 'Aktif' : 'Tidak Aktif' }}</VListItemTitle>
-                    </VListItem>
-
-                    <VDivider class="my-2" v-if="selectedUser.blok && selectedUser.kamar"/>
-
-                    <VListItem v-if="selectedUser.blok && selectedUser.kamar">
-                        <template #prepend><VIcon icon="tabler-building-community" /></template>
-                        <VListItemTitle>Blok {{ selectedUser.blok }}, Kamar {{ formatKamarDisplay(selectedUser.kamar) }}</VListItemTitle>
-                    </VListItem>
-
-                    <VDivider class="my-2"/>
-
-                    <VListItem>
-                        <template #prepend><VIcon icon="tabler-calendar-plus" /></template>
-                        <VListItemSubtitle>Tanggal Pendaftaran</VListItemSubtitle>
-                        <VListItemTitle>{{ formatSimpleDateTime(selectedUser.created_at) }}</VListItemTitle>
-                    </VListItem>
-                    <VListItem v-if="selectedUser.approval_status === 'APPROVED'">
-                        <template #prepend><VIcon icon="tabler-calendar-check" /></template>
-                        <VListItemSubtitle>Tanggal Disetujui</VListItemSubtitle>
-                        <VListItemTitle>{{ formatSimpleDateTime(selectedUser.approved_at) }}</VListItemTitle>
-                    </VListItem>
-                </VList>
-            </VCardText>
-            <VCardActions class="pa-4 d-flex flex-wrap justify-space-between align-center">
-                <VBtn
-                    v-if="selectedUser.role === 'USER' && selectedUser.is_active"
-                    color="warning"
-                    prepend-icon="tabler-key"
-                    @click="resetHotspotPasswordForUser"
-                    :loading="loading"
-                    :disabled="loading"
-                    class="my-1"
+    <!-- --- DIALOG VIEW DIPERBARUI SECARA SIGNIFIKAN --- -->
+    <VDialog
+      v-model="dialog.view"
+      max-width="600"
+      scrollable
+    >
+      <VCard v-if="selectedUser">
+        <DialogCloseBtn @click="closeDialog" />
+        <VCardTitle class="text-h6 d-flex align-center pa-4 bg-primary text-white">
+          <VIcon
+            start
+            icon="tabler-user-circle"
+          />
+          Detail Pengguna
+        </VCardTitle>
+        <VDivider />
+        <VCardText class="pt-4">
+          <!-- INFORMASI DASAR PENGGUNA -->
+          <div class="text-overline mb-2">
+            Informasi Dasar
+          </div>
+          <VList
+            lines="two"
+            density="compact"
+          >
+            <VListItem>
+              <template #prepend>
+                <VIcon icon="tabler-user" />
+              </template>
+              <VListItemTitle class="font-weight-semibold">
+                {{ selectedUser.full_name }}
+              </VListItemTitle>
+            </VListItem>
+            <VListItem>
+              <template #prepend>
+                <VIcon icon="tabler-phone" />
+              </template>
+              <VListItemTitle>{{ formatPhoneNumberDisplay(selectedUser.phone_number) }}</VListItemTitle>
+            </VListItem>
+            <VListItem>
+              <template #prepend>
+                <VIcon icon="tabler-shield-check" />
+              </template>
+              <VListItemTitle>
+                <VChip
+                  :color="roleMap[selectedUser.role]?.color"
+                  size="small"
                 >
-                    Reset Hotspot Password
-                </VBtn>
-                
-                <VBtn
-                    v-if="selectedUser.role === 'ADMIN'"
-                    color="info"
-                    prepend-icon="tabler-refresh"
-                    @click="generateAdminPasswordForAdmin"
-                    :loading="loading"
-                    :disabled="loading"
-                    class="my-1"
+                  {{ roleMap[selectedUser.role]?.text }}
+                </VChip>
+              </VListItemTitle>
+            </VListItem>
+            <VListItem>
+              <template #prepend>
+                <VIcon icon="tabler-checkup-list" />
+              </template>
+              <VListItemTitle>
+                <VChip
+                  :color="statusMap[selectedUser.approval_status]?.color"
+                  size="small"
+                  label
                 >
-                    Reset Password Admin
-                </VBtn>
-                
-                <VSpacer/>
-                <VBtn variant="tonal" color="secondary" @click="closeDialog" class="my-1">Tutup</VBtn>
-            </VCardActions>
-        </VCard>
+                  {{ statusMap[selectedUser.approval_status]?.text }}
+                </VChip>
+              </VListItemTitle>
+            </VListItem>
+            <VListItem>
+              <template #prepend>
+                <VIcon
+                  :color="selectedUser.is_active ? 'success' : 'error'"
+                  :icon="selectedUser.is_active ? 'tabler-plug-connected' : 'tabler-plug-connected-x'"
+                />
+              </template>
+              <VListItemTitle>{{ selectedUser.is_active ? 'Aktif' : 'Tidak Aktif' }}</VListItemTitle>
+            </VListItem>
+            <VListItem v-if="selectedUser.blok && selectedUser.kamar">
+              <template #prepend>
+                <VIcon icon="tabler-building-community" />
+              </template>
+              <VListItemTitle>Blok {{ selectedUser.blok }}, Kamar {{ formatKamarDisplay(selectedUser.kamar) }}</VListItemTitle>
+            </VListItem>
+          </VList>
+
+          <!-- BAGIAN BARU: INFORMASI KUOTA (HANYA UNTUK USER BIASA) -->
+          <template v-if="selectedUser.role === 'USER' && quotaDetails">
+            <VDivider class="my-4" />
+            <div class="text-overline mb-2">
+              Informasi Kuota
+            </div>
+            
+            <div v-if="quotaDetails.isUnlimited">
+              <VAlert
+                variant="tonal"
+                color="primary"
+                icon="tabler-infinity"
+                density="compact"
+              >
+                Pengguna ini memiliki akses tak terbatas (unlimited).
+              </VAlert>
+            </div>
+
+            <div v-else-if="quotaDetails.totalQuotaMB > 0">
+              <VProgressLinear
+                v-model="quotaDetails.percentageUsed"
+                :color="quotaDetails.statusColor"
+                height="20"
+                rounded
+                class="mb-2"
+              >
+                <template #default="{ value }">
+                  <strong class="text-white">{{ Math.ceil(value) }}% Terpakai</strong>
+                </template>
+              </VProgressLinear>
+              <div class="d-flex justify-space-between text-caption mb-3">
+                <span>{{ formatDataSize(quotaDetails.usedQuotaMB) }} dari {{ formatDataSize(quotaDetails.totalQuotaMB) }}</span>
+                <span class="font-weight-bold">Sisa: {{ formatDataSize(quotaDetails.remainingQuotaMB) }}</span>
+              </div>
+
+              <VList
+                lines="one"
+                density="compact"
+              >
+                <VListItem
+                  v-if="quotaDetails.promoName"
+                  prepend-icon="tabler-ticket"
+                >
+                  <VListItemTitle>Paket Promo</VListItemTitle>
+                  <VListItemSubtitle>{{ quotaDetails.promoName }}</VListItemSubtitle>
+                </VListItem>
+                <VListItem
+                  v-if="quotaDetails.activationDate"
+                  prepend-icon="tabler-calendar-play"
+                >
+                  <VListItemTitle>Tanggal Aktif</VListItemTitle>
+                  <VListItemSubtitle>{{ quotaDetails.activationDate }}</VListItemSubtitle>
+                </VListItem>
+                <VListItem
+                  v-if="quotaDetails.expiryDate"
+                  prepend-icon="tabler-calendar-due"
+                >
+                  <VListItemTitle>Masa Berlaku Hingga</VListItemTitle>
+                  <VListItemSubtitle>{{ quotaDetails.expiryDate }}</VListItemSubtitle>
+                </VListItem>
+                <VListItem
+                  v-if="quotaDetails.remainingDays !== null"
+                  :prepend-icon="quotaDetails.status === 'EXPIRED' ? 'tabler-calendar-x' : 'tabler-hourglass-high'"
+                >
+                  <VListItemTitle>Sisa Masa Aktif</VListItemTitle>
+                  <VListItemSubtitle>
+                    <VChip
+                      :color="quotaDetails.statusColor"
+                      size="x-small"
+                      label
+                      class="px-2"
+                    >
+                      {{ quotaDetails.status === 'EXPIRED' ? 'Telah Berakhir' : `${quotaDetails.remainingDays} hari lagi` }}
+                    </VChip>
+                  </VListItemSubtitle>
+                </VListItem>
+              </VList>
+            </div>
+            <div v-else>
+               <VAlert
+                variant="tonal"
+                color="warning"
+                icon="tabler-alert-circle"
+                density="compact"
+              >
+                Pengguna belum memiliki paket kuota aktif.
+              </VAlert>
+            </div>
+          </template>
+          
+          <VDivider class="my-4" />
+
+          <!-- INFORMASI LOG -->
+          <div class="text-overline mb-2">
+            Informasi Pendaftaran
+          </div>
+          <VList
+            lines="two"
+            density="compact"
+          >
+            <VListItem>
+              <template #prepend>
+                <VIcon icon="tabler-calendar-plus" />
+              </template>
+              <VListItemSubtitle>Tanggal Pendaftaran</VListItemSubtitle>
+              <VListItemTitle>{{ formatSimpleDateTime(selectedUser.created_at) }}</VListItemTitle>
+            </VListItem>
+            <VListItem v-if="selectedUser.approval_status === 'APPROVED'">
+              <template #prepend>
+                <VIcon icon="tabler-calendar-check" />
+              </template>
+              <VListItemSubtitle>Tanggal Disetujui</VListItemSubtitle>
+              <VListItemTitle>{{ formatSimpleDateTime(selectedUser.approved_at) }}</VListItemTitle>
+            </VListItem>
+          </VList>
+        </VCardText>
+        <VCardActions class="pa-4 d-flex flex-wrap justify-space-between align-center">
+          <VBtn
+            v-if="selectedUser.role === 'USER' && selectedUser.is_active"
+            color="warning"
+            prepend-icon="tabler-key"
+            @click="resetHotspotPasswordForUser"
+            :loading="loading"
+            :disabled="loading"
+            class="my-1"
+          >
+            Reset Hotspot Password
+          </VBtn>
+          
+          <VBtn
+            v-if="selectedUser.role === 'ADMIN'"
+            color="info"
+            prepend-icon="tabler-refresh"
+            @click="generateAdminPasswordForAdmin"
+            :loading="loading"
+            :disabled="loading"
+            class="my-1"
+          >
+            Reset Password Admin
+          </VBtn>
+          
+          <VSpacer />
+          <VBtn
+            variant="tonal"
+            color="secondary"
+            @click="closeDialog"
+            class="my-1"
+          >
+            Tutup
+          </VBtn>
+        </VCardActions>
+      </VCard>
     </VDialog>
 
-    <VDialog v-model="dialog.approve" max-width="400" persistent>
+    <!-- Dialog Approve -->
+    <VDialog
+      v-model="dialog.approve"
+      max-width="400"
+      persistent
+    >
       <VCard>
         <VCardTitle class="d-flex align-center">
           <span class="headline">Konfirmasi Persetujuan</span>
           <VSpacer />
-          <VBtn icon="tabler-x" variant="text" @click="closeDialog" />
+          <VBtn
+            icon="tabler-x"
+            variant="text"
+            @click="closeDialog"
+          />
         </VCardTitle>
         <VDivider />
         <VCardText class="pt-4">
@@ -755,83 +1151,170 @@ useHead({ title: 'Manajemen Pengguna' })
         </VCardText>
         <VCardActions>
           <VSpacer />
-          <VBtn variant="tonal" color="secondary" @click="closeDialog">Batal</VBtn>
-          <VBtn color="success" @click="handleAction('approve')">Setujui</VBtn>
+          <VBtn
+            variant="tonal"
+            color="secondary"
+            @click="closeDialog"
+          >
+            Batal
+          </VBtn>
+          <VBtn
+            color="success"
+            @click="handleAction('approve')"
+          >
+            Setujui
+          </VBtn>
         </VCardActions>
       </VCard>
     </VDialog>
 
-    <VDialog v-model="dialog.reject" max-width="450" persistent>
+    <!-- Dialog Reject -->
+    <VDialog
+      v-model="dialog.reject"
+      max-width="450"
+      persistent
+    >
       <VCard>
         <VCardTitle class="d-flex align-center">
           <span class="headline">Konfirmasi Penolakan</span>
           <VSpacer />
-          <VBtn icon="tabler-x" variant="text" @click="closeDialog" />
+          <VBtn
+            icon="tabler-x"
+            variant="text"
+            @click="closeDialog"
+          />
         </VCardTitle>
         <VDivider />
         <VCardText class="pt-4">
           <p>Anda yakin ingin menolak pendaftaran <strong>{{ selectedUser?.full_name }}</strong>?</p>
-          <p class="text-caption text-medium-emphasis mt-2">Data pendaftaran akan dihapus secara permanen.</p>
+          <p class="text-caption text-medium-emphasis mt-2">
+            Data pendaftaran akan dihapus secara permanen.
+          </p>
         </VCardText>
         <VCardActions>
           <VSpacer />
-          <VBtn variant="tonal" color="secondary" @click="closeDialog">Batal</VBtn>
-          <VBtn color="error" @click="handleAction('reject')">Ya, Tolak & Hapus</VBtn>
+          <VBtn
+            variant="tonal"
+            color="secondary"
+            @click="closeDialog"
+          >
+            Batal
+          </VBtn>
+          <VBtn
+            color="error"
+            @click="handleAction('reject')"
+          >
+            Ya, Tolak & Hapus
+          </VBtn>
         </VCardActions>
       </VCard>
     </VDialog>
 
-    <VDialog v-model="dialog.delete" max-width="450" persistent>
+    <!-- Dialog Delete -->
+    <VDialog
+      v-model="dialog.delete"
+      max-width="450"
+      persistent
+    >
       <VCard>
         <VCardTitle class="d-flex align-center">
           <span class="headline">Konfirmasi Penghapusan</span>
           <VSpacer />
-          <VBtn icon="tabler-x" variant="text" @click="closeDialog" />
+          <VBtn
+            icon="tabler-x"
+            variant="text"
+            @click="closeDialog"
+          />
         </VCardTitle>
         <VDivider />
         <VCardText class="pt-4">
           <p>Anda yakin ingin menghapus pengguna <strong>{{ selectedUser?.full_name }}</strong>?</p>
-          <p class="text-caption text-medium-emphasis mt-2">Data yang dihapus tidak dapat dikembalikan.</p>
+          <p class="text-caption text-medium-emphasis mt-2">
+            Data yang dihapus tidak dapat dikembalikan.
+          </p>
         </VCardText>
         <VCardActions>
           <VSpacer />
-          <VBtn variant="tonal" color="secondary" @click="closeDialog">Batal</VBtn>
-          <VBtn color="error" @click="handleAction('delete')">Hapus</VBtn>
+          <VBtn
+            variant="tonal"
+            color="secondary"
+            @click="closeDialog"
+          >
+            Batal
+          </VBtn>
+          <VBtn
+            color="error"
+            @click="handleAction('delete')"
+          >
+            Hapus
+          </VBtn>
         </VCardActions>
       </VCard>
     </VDialog>
 
-    <VDialog v-model="dialog.edit" max-width="600" persistent>
+    <!-- Dialog Edit/Create -->
+    <VDialog
+      v-model="dialog.edit"
+      max-width="600"
+      persistent
+    >
       <VCard>
-        <VForm ref="formRef" @submit.prevent="handleAction(editedUser.id ? 'update' : 'create')">
+        <VForm
+          ref="formRef"
+          @submit.prevent="handleAction(editedUser.id ? 'update' : 'create')"
+        >
           <VCardTitle class="d-flex align-center">
             <span class="headline">{{ formTitle }}</span>
             <VSpacer />
-            <VBtn icon="tabler-x" variant="text" @click="closeDialog" />
+            <VBtn
+              icon="tabler-x"
+              variant="text"
+              @click="closeDialog"
+            />
           </VCardTitle>
           <VDivider />
-          <VCardText v-if="editedUser" class="pt-4">
+          <VCardText
+            v-if="editedUser"
+            class="pt-4"
+          >
             <VRow>
               <VCol cols="12">
-                <AppTextField v-model="editedUser.full_name" label="Nama Lengkap" density="compact" :rules="[requiredRule]" />
+                <AppTextField
+                  v-model="editedUser.full_name"
+                  label="Nama Lengkap"
+                  density="compact"
+                  :rules="[requiredRule]"
+                />
               </VCol>
               <VCol cols="12">
-                <!-- Menggunakan v-model untuk binding dua arah yang reaktif. -->
-                <AppTextField 
+                <AppTextField
                   v-model="editedUser.phone_number"
-                  label="Nomor Telepon" 
+                  label="Nomor Telepon"
                   placeholder="Contoh: 081234567890"
-                  density="compact" 
-                  @blur="normalizePhoneNumber" 
-                  :rules="[requiredRule]" 
+                  density="compact"
+                  @blur="normalizePhoneNumber"
+                  :rules="[requiredRule]"
                 />
               </VCol>
 
               <template v-if="editedUser.role === 'USER'">
-                <VCol cols="12" sm="6">
-                  <AppSelect v-model="editedUser.blok" :items="availableBloks" label="Blok" clearable density="compact" :rules="[requiredRule]" />
+                <VCol
+                  cols="12"
+                  sm="6"
+                >
+                  <AppSelect
+                    v-model="editedUser.blok"
+                    :items="availableBloks"
+                    label="Blok"
+                    clearable
+                    density="compact"
+                    :rules="[requiredRule]"
+                  />
                 </VCol>
-                <VCol cols="12" sm="6">
+                <VCol
+                  cols="12"
+                  sm="6"
+                >
                   <AppSelect
                     v-model="editedUser.kamar"
                     :items="availableKamars"
@@ -844,15 +1327,35 @@ useHead({ title: 'Manajemen Pengguna' })
                 </VCol>
               </template>
 
-              <VCol v-if="editedUser.role === 'ADMIN'" cols="12">
-                <VSwitch v-model="isUserDataInputActive" label="Lengkapi Data Alamat (Blok & Kamar)" density="compact" />
+              <VCol
+                v-if="editedUser.role === 'ADMIN'"
+                cols="12"
+              >
+                <VSwitch
+                  v-model="isUserDataInputActive"
+                  label="Lengkapi Data Alamat (Blok & Kamar)"
+                  density="compact"
+                />
               </VCol>
 
               <template v-if="editedUser.role === 'ADMIN' && isUserDataInputActive">
-                <VCol cols="12" sm="6">
-                  <AppSelect v-model="editedUser.blok" :items="availableBloks" label="Blok" clearable density="compact" :rules="[requiredRule]" />
+                <VCol
+                  cols="12"
+                  sm="6"
+                >
+                  <AppSelect
+                    v-model="editedUser.blok"
+                    :items="availableBloks"
+                    label="Blok"
+                    clearable
+                    density="compact"
+                    :rules="[requiredRule]"
+                  />
                 </VCol>
-                <VCol cols="12" sm="6">
+                <VCol
+                  cols="12"
+                  sm="6"
+                >
                   <AppSelect
                     v-model="editedUser.kamar"
                     :items="availableKamars"
@@ -865,7 +1368,11 @@ useHead({ title: 'Manajemen Pengguna' })
                 </VCol>
               </template>
 
-              <VCol v-if="authStore.isSuperAdmin" cols="12" sm="6">
+              <VCol
+                v-if="authStore.isSuperAdmin"
+                cols="12"
+                sm="6"
+              >
                 <AppSelect
                   v-model="editedUser.role"
                   :items="availableRoles"
@@ -878,30 +1385,58 @@ useHead({ title: 'Manajemen Pengguna' })
                 />
               </VCol>
 
-              <VCol v-if="editedUser.id" cols="12" sm="6" class="d-flex align-end pt-sm-5 mt-2">
-                <VSwitch v-model="editedUser.is_active" label="Akun Aktif" density="compact" />
+              <VCol
+                v-if="editedUser.id"
+                cols="12"
+                sm="6"
+                class="d-flex align-end pt-sm-5 mt-2"
+              >
+                <VSwitch
+                  v-model="editedUser.is_active"
+                  label="Akun Aktif"
+                  density="compact"
+                />
               </VCol>
             </VRow>
           </VCardText>
           <VDivider />
           <VCardActions class="px-5 pb-4 mt-2">
             <VSpacer />
-            <VBtn variant="tonal" color="secondary" @click="closeDialog">Batal</VBtn>
+            <VBtn
+              variant="tonal"
+              color="secondary"
+              @click="closeDialog"
+            >
+              Batal
+            </VBtn>
             <div class="d-flex flex-column flex-sm-row ga-2">
-                <VBtn type="submit" color="primary">Simpan</VBtn>
-                </div>
+              <VBtn
+                type="submit"
+                color="primary"
+              >
+                Simpan
+              </VBtn>
+            </div>
           </VCardActions>
         </VForm>
       </VCard>
     </VDialog>
 
     <!-- Dialog Konfirmasi Kustom -->
-    <VDialog v-model="dialog.customConfirm" max-width="450" persistent>
+    <VDialog
+      v-model="dialog.customConfirm"
+      max-width="450"
+      persistent
+    >
       <VCard>
         <VCardTitle class="d-flex align-center">
           <span class="headline">Konfirmasi Aksi</span>
           <VSpacer />
-          <VBtn icon="tabler-x" variant="text" @click="closeDialog" />
+          <VBtn
+            icon="tabler-x"
+            variant="text"
+            @click="closeDialog"
+          />
         </VCardTitle>
         <VDivider />
         <VCardText class="pt-4">
@@ -909,9 +1444,15 @@ useHead({ title: 'Manajemen Pengguna' })
         </VCardText>
         <VCardActions>
           <VSpacer />
-          <VBtn variant="tonal" color="secondary" @click="closeDialog">Batal</VBtn>
-          <VBtn 
-            color="primary" 
+          <VBtn
+            variant="tonal"
+            color="secondary"
+            @click="closeDialog"
+          >
+            Batal
+          </VBtn>
+          <VBtn
+            color="primary"
             @click="() => { 
               if (confirmActionCallback) { 
                 confirmActionCallback(); 
@@ -973,12 +1514,6 @@ useHead({ title: 'Manajemen Pengguna' })
   line-height: 1.4;
 }
 
-.detail-item {
-  flex: 1;
-  min-width: 120px;
-  margin-bottom: 8px;
-}
-
 /* Aksi tombol */
 .action-buttons {
   flex-wrap: nowrap;
@@ -998,16 +1533,6 @@ useHead({ title: 'Manajemen Pengguna' })
 /* Search field */
 .search-field {
   border-radius: 6px;
-}
-
-/* Loading state */
-.v-skeleton-loader {
-  border-radius: 8px;
-}
-
-/* Pagination */
-.v-pagination {
-  margin-top: 20px;
 }
 
 /* No data styling */
