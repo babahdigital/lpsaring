@@ -437,18 +437,14 @@ def approve_user(current_admin: User, user_id):
     if mikrotik_limit_bytes_total < 0:
         mikrotik_limit_bytes_total = 0
 
+    # PERBAIKAN: Hitung waktu timeout dengan benar
     mikrotik_session_timeout_seconds = 0
     if user.quota_expiry_date:
         time_remaining = user.quota_expiry_date - datetime.now(dt_timezone.utc)
-        mikrotik_session_timeout_seconds = max(0, int(time_remaining.total_seconds()))
-
-    current_app.logger.info(
-        f"Preparing to sync with Mikrotik for user '{mikrotik_username}' (ID: {user.id}). "
-        f"Payload: "
-        f"limit_bytes_total={mikrotik_limit_bytes_total}, "
-        f"session_timeout_seconds={mikrotik_session_timeout_seconds}"
-    )
-
+        if time_remaining.total_seconds() > 0:
+            mikrotik_session_timeout_seconds = int(time_remaining.total_seconds())
+    
+    # PERBAIKAN: Gunakan fungsi yang sudah diperbaiki
     mikrotik_success, mikrotik_message = _handle_mikrotik_operation(
         activate_or_update_hotspot_user,
         user_mikrotik_username=mikrotik_username,
@@ -456,7 +452,8 @@ def approve_user(current_admin: User, user_id):
         hotspot_password=new_mikrotik_password,
         comment=f"Approved by {current_admin.full_name} | Bonus: {bonus_given_mb}MB",
         limit_bytes_total=mikrotik_limit_bytes_total,
-        session_timeout_seconds=mikrotik_session_timeout_seconds
+        session_timeout_seconds=mikrotik_session_timeout_seconds,
+        force_update_profile=True
     )
     if not mikrotik_success:
         current_app.logger.error(f"Failed to activate user {user.full_name} in Mikrotik: {mikrotik_message}")
