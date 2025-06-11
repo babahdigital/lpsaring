@@ -1,0 +1,199 @@
+# Versi file format Docker Compose untuk lingkungan produksi.
+version: '3.8'
+
+# Menetapkan nama proyek secara eksplisit.
+name: hotspot-portal-production
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: hotspot_postgres_db_prod
+    environment:
+      # Variabel ini harus disetel sebagai environment variable di server produksi,
+      # BUKAN dari file .env yang di-commit.
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      # Memastikan data database tetap persistent di volume yang terpisah.
+      - postgres_data_prod:/var/lib/postgresql/data
+    networks:
+      - hotspot_network_prod
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB} -q"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    # Tambahkan konfigurasi resource limit untuk produksi
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '0.5'
+    #       memory: 1024M
+    #     reservations:
+    #       cpus: '0.25'
+    #       memory: 512M
+
+  redis:
+    image: redis:7-alpine
+    container_name: hotspot_redis_cache_prod
+    volumes:
+      # Memastikan data cache Redis tetap persistent (jika diperlukan)
+      - redis_data_prod:/data
+    networks:
+      - hotspot_network_prod
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '0.25'
+    #       memory: 256M
+    #     reservations:
+    #       cpus: '0.1'
+    #       memory: 128M
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      # Tidak perlu target spesifik, karena Dockerfile backend sudah mengoptimalkan untuk runtime
+    container_name: hotspot_flask_backend_prod
+    environment:
+      # Variabel ini harus disetel sebagai environment variable di server produksi,
+      # BUKAN dari file .env yang di-commit.
+      FLASK_ENV: production
+      FLASK_DEBUG: "False"
+      LOG_LEVEL: INFO
+      SECRET_KEY: ${FLASK_SECRET_KEY} # Ganti dengan kunci kuat dari env produksi
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_HOST: redis_prod # Nama service Redis di compose untuk produksi
+      REDIS_PORT: ${REDIS_PORT}
+      REDIS_DB: ${REDIS_DB}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY} # Ganti dengan kunci kuat dari env produksi
+      JWT_ACCESS_TOKEN_EXPIRES_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRES_MINUTES}
+      OTP_EXPIRE_SECONDS: ${OTP_EXPIRE_SECONDS}
+      MIDTRANS_SERVER_KEY: ${MIDTRANS_SERVER_KEY}
+      MIDTRANS_CLIENT_KEY: ${MIDTRANS_CLIENT_KEY}
+      MIDTRANS_IS_PRODUCTION: ${MIDTRANS_IS_PRODUCTION}
+      WHATSAPP_API_URL: ${WHATSAPP_API_URL}
+      WHATSAPP_API_KEY: ${WHATSAPP_API_KEY}
+      ENABLE_WHATSAPP_NOTIFICATIONS: ${ENABLE_WHATSAPP_NOTIFICATIONS}
+      MIKROTIK_HOST: ${MIKROTIK_HOST}
+      MIKROTIK_USERNAME: ${MIKROTIK_USERNAME}
+      MIKROTIK_PASSWORD: ${MIKROTIK_PASSWORD}
+      MIKROTIK_PORT: ${MIKROTIK_PORT}
+      MIKROTIK_DEFAULT_PROFILE: ${MIKROTIK_DEFAULT_PROFILE}
+      MIKROTIK_USE_SSL: ${MIKROTIK_USE_SSL}
+      MIKROTIK_SEND_LIMIT_BYTES_TOTAL: ${MIKROTIK_SEND_LIMIT_BYTES_TOTAL}
+      MIKROTIK_SEND_SESSION_TIMEOUT: ${MIKROTIK_SEND_SESSION_TIMEOUT}
+      FRONTEND_URL: ${FRONTEND_URL}
+      API_RATE_LIMIT: ${API_RATE_LIMIT}
+      ENABLE_ADMIN_ROUTES: ${ENABLE_ADMIN_ROUTES}
+      APP_LINK_USER: ${APP_LINK_USER}
+      APP_LINK_ADMIN: ${APP_LINK_ADMIN}
+      APP_LINK_MIKROTIK: ${APP_LINK_MIKROTIK}
+    # Tidak ada volume mount untuk kode sumber di produksi.
+    # Kode sudah dibundel ke dalam image Docker.
+    ports:
+      # Port ini mungkin tidak perlu diekspos langsung ke host
+      # jika Nginx bertindak sebagai reverse proxy di server yang sama.
+      # Expose hanya untuk debugging atau jika backend di server berbeda.
+      - "5010:5010"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - hotspot_network_prod
+    restart: unless-stopped
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '1.0'
+    #       memory: 2048M
+    #     reservations:
+    #       cpus: '0.5'
+    #       memory: 1024M
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: runtime # Targetkan stage runtime untuk image produksi
+    container_name: hotspot_nuxt_frontend_prod
+    environment:
+      # Variabel ini harus disetel sebagai environment variable di server produksi.
+      NODE_ENV: production
+      NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE} # URL API backend untuk frontend
+      # Jika ada variabel lingkungan lain yang perlu disetel untuk Nuxt di produksi, tambahkan di sini.
+    # Tidak ada volume mount untuk kode sumber di produksi.
+    # Kode sudah dibundel ke dalam image Docker.
+    ports:
+      # Port ini mungkin tidak perlu diekspos langsung ke host
+      # jika Nginx bertindak sebagai reverse proxy di server yang sama.
+      # Expose hanya untuk debugging atau jika frontend di server berbeda.
+      - "3010:3010"
+    networks:
+      - hotspot_network_prod
+    restart: unless-stopped
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '0.75'
+    #       memory: 1536M
+    #     reservations:
+    #       cpus: '0.3'
+    #       memory: 768M
+
+  nginx:
+    image: nginx:stable-alpine
+    container_name: hotspot_nginx_proxy_prod
+    ports:
+      - "80:80"
+      - "443:443" # Aktifkan port 443 untuk HTTPS di produksi
+    volumes:
+      - ./infrastructure/nginx/conf.d/app.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./infrastructure/nginx/logs:/var/log/nginx
+      # Uncomment baris di bawah ini jika Anda menggunakan SSL/TLS di produksi.
+      # Pastikan file sertifikat dan kunci ada di jalur yang benar di server.
+      # - ./infrastructure/nginx/ssl/default.crt:/etc/nginx/ssl/default.crt:ro
+      # - ./infrastructure/nginx/ssl/default.key:/etc/nginx/ssl/default.key:ro
+    depends_on:
+      backend:
+        condition: service_started
+      frontend:
+        condition: service_started
+    networks:
+      - hotspot_network_prod
+    restart: unless-stopped
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '0.2'
+    #       memory: 128M
+    #     reservations:
+    #       cpus: '0.1'
+    #       memory: 64M
+
+volumes:
+  # Volume untuk data persistent database
+  postgres_data_prod:
+    driver: local
+  # Volume untuk data persistent Redis (jika Redis Anda perlu persistensi data)
+  redis_data_prod:
+    driver: local
+
+networks:
+  hotspot_network_prod:
+    driver: bridge
+    name: hotspot_portal_net # Nama network khusus untuk produksi
