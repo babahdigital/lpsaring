@@ -24,13 +24,11 @@ export default [
         to: { path: '/admin/transactions' },
         icon: { icon: 'tabler-receipt-2' },
       },
-      // --- PENAMBAHAN MENU BARU ---
-      {
-        title: 'Event & Promo',
-        to: { path: '/admin/promos' },
-        icon: { icon: 'tabler-discount-2' }, // Menggunakan ikon yang konsisten
-      },
-      // --- AKHIR PENAMBAHAN ---
     ],
+  },
+  {
+    title: 'Event & Promo',
+    to: { path: '/admin/promos' },
+    icon: { icon: 'tabler-discount-2' },
   },
 ]
