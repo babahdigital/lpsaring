@@ -56,7 +56,48 @@ class NotificationType(enum.Enum):
     ROLE_UPGRADE_TO_ADMIN = "ROLE_UPGRADE_TO_ADMIN"
     ROLE_DOWNGRADE_TO_USER = "ROLE_DOWNGRADE_TO_USER"
 
+# --- ENUM BARU UNTUK PROMO ---
+class PromoEventType(enum.Enum):
+    """
+    Jenis-jenis event promo.
+    - BONUS_REGISTRATION: Bonus otomatis saat registrasi (tidak perlu kode).
+    - GENERAL_ANNOUNCEMENT: Pengumuman umum tanpa bonus, hanya informasi.
+    """
+    BONUS_REGISTRATION = "BONUS_REGISTRATION"
+    GENERAL_ANNOUNCEMENT = "GENERAL_ANNOUNCEMENT"
+
+class PromoEventStatus(enum.Enum):
+    """Status dari sebuah event promo."""
+    DRAFT = "DRAFT"       # Disimpan tapi belum aktif
+    ACTIVE = "ACTIVE"     # Sedang berjalan dan terlihat oleh pengguna
+    SCHEDULED = "SCHEDULED" # Dijadwalkan untuk aktif di masa depan
+    EXPIRED = "EXPIRED"   # Sudah lewat masa berlakunya
+    ARCHIVED = "ARCHIVED" # Disimpan sebagai arsip
+
 # --- Definisi Model ---
+
+# --- MODEL BARU UNTUK PROMO EVENT ---
+class PromoEvent(db.Model):
+    __tablename__ = 'promo_events'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    event_type: Mapped[PromoEventType] = mapped_column(SQLAlchemyEnum(PromoEventType, name="promo_event_type_enum", native_enum=False), nullable=False, default=PromoEventType.GENERAL_ANNOUNCEMENT)
+    status: Mapped[PromoEventStatus] = mapped_column(SQLAlchemyEnum(PromoEventStatus, name="promo_event_status_enum", native_enum=False), nullable=False, default=PromoEventStatus.DRAFT, index=True)
+    start_date: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    end_date: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Kolom untuk menyimpan nilai bonus jika ada (misal: kuota dalam MB)
+    bonus_value_mb: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, comment="Nilai bonus dalam MB untuk event tipe BONUS_REGISTRATION")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=True)
+
+    created_by: Mapped["User"] = relationship("User", back_populates="created_promo_events")
+
+    def __repr__(self):
+        return f'<PromoEvent name={self.name} status={self.status.name}>'
+
+
 class PackageProfile(db.Model):
     __tablename__ = 'package_profiles'
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -91,16 +132,10 @@ class User(db.Model):
     phone_number: Mapped[str] = mapped_column(String(25), nullable=False)
     password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     full_name: Mapped[str] = mapped_column(String(100), nullable=False)
-
-    # Kolom alamat utama
     blok: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     kamar: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-
-    # --- PENAMBAHAN KOLOM BARU UNTUK MEMORI ALAMAT ---
     previous_blok: Mapped[Optional[str]] = mapped_column(String(10), nullable=True, comment="Menyimpan data blok terakhir sebelum diupgrade ke admin")
     previous_kamar: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, comment="Menyimpan data kamar terakhir sebelum diupgrade ke admin")
-    # --- AKHIR PENAMBAHAN ---
-
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=expression.false())
     role: Mapped[UserRole] = mapped_column(SQLAlchemyEnum(UserRole, name="user_role_enum", native_enum=False, create_type=False), nullable=False, default=UserRole.USER)
     approval_status: Mapped[ApprovalStatus] = mapped_column(SQLAlchemyEnum(ApprovalStatus, name="approval_status_enum", native_enum=False, create_type=False), nullable=False, default=ApprovalStatus.PENDING_APPROVAL)
@@ -124,6 +159,10 @@ class User(db.Model):
     daily_usage_logs: Mapped[List["DailyUsageLog"]] = relationship("DailyUsageLog", back_populates="user", lazy="dynamic", cascade="all, delete-orphan")
     notification_subscriptions: Mapped[List["NotificationRecipient"]] = relationship("NotificationRecipient", back_populates="admin", cascade="all, delete-orphan")
     login_histories: Mapped[List["UserLoginHistory"]] = relationship("UserLoginHistory", back_populates="user", lazy="dynamic", cascade="all, delete-orphan")
+    
+    # Relasi baru dari User ke PromoEvent
+    created_promo_events: Mapped[List["PromoEvent"]] = relationship("PromoEvent", back_populates="created_by", foreign_keys=[PromoEvent.created_by_id])
+
 
     def __repr__(self):
         return f'<User id={self.id} phone={self.phone_number}>'
