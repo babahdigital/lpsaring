@@ -1,7 +1,8 @@
 # backend/app/commands/sync_usage_command.py
-# Versi 3.0: Sinkronisasi komprehensif (Usage, Limit, Profile)
-# - PULL: Mengambil data pemakaian dari MikroTik ke DB.
+# Versi 3.1: Final - Sinkronisasi komprehensif DITAMBAH logging pemakaian harian.
+# - PULL: Mengambil data pemakaian (usage) dari MikroTik ke DB.
 # - PUSH: Mendorong/memaksa sinkronisasi limit kuota dan status profil dari DB ke MikroTik.
+# - LOG: Mencatat penambahan pemakaian harian ke tabel DailyUsageLog.
 
 import click
 from flask import current_app
@@ -14,7 +15,7 @@ from app.extensions import db
 from app.infrastructure.db.models import User, DailyUsageLog, UserRole
 from app.infrastructure.gateways.mikrotik_client import (
     get_mikrotik_connection,
-    get_hotspot_user_details, # Diperbarui untuk mengambil semua detail
+    get_hotspot_user_details,
     set_hotspot_user_limit,
     set_hotspot_user_profile,
     format_to_local_phone
@@ -28,10 +29,8 @@ USAGE_UPDATE_THRESHOLD_MB = 0.1
 @with_appcontext
 def sync_usage_command():
     """
-    Menyinkronkan status pengguna antara database dan MikroTik secara komprehensif.
-    1. Menarik data pemakaian (usage) dari MikroTik ke database.
-    2. Mendorong batas kuota (limit) dari database ke MikroTik jika ada perbedaan.
-    3. Mendorong status profil (misal: default/expired) dari database ke MikroTik jika ada perbedaan.
+    Menyinkronkan status pengguna antara database dan MikroTik secara komprehensif,
+    termasuk mencatat pemakaian harian.
     """
     current_app.logger.info("Memulai sinkronisasi status pengguna dengan MikroTik...")
 
@@ -61,8 +60,7 @@ def sync_usage_command():
     current_app.logger.info(f"Ditemukan {len(users_to_sync)} pengguna aktif untuk disinkronkan.")
 
     # Inisialisasi counter
-    processed_count, failed_count, db_updates, limit_updates, profile_updates = 0, 0, 0, 0, 0
-    users_to_commit, logs_to_commit = [], []
+    processed_count, failed_count, db_updates, limit_updates, profile_updates, log_created, log_updated = 0, 0, 0, 0, 0, 0, 0
     today = date.today()
 
     with get_mikrotik_connection() as api:
@@ -93,14 +91,31 @@ def sync_usage_command():
                     failed_count += 1
                     continue
 
-                # 2. Sinkronisasi PENGGUNAAN (PULL dari MikroTik ke DB)
+                # 2. Sinkronisasi PENGGUNAAN (PULL dari MikroTik ke DB) dan LOGGING HARIAN
                 current_usage_bytes = int(mt_user.get('bytes-in', 0) or 0) + int(mt_user.get('bytes-out', 0) or 0)
                 current_usage_mb = round(current_usage_bytes / (1024 * 1024), 2)
                 old_usage_mb_in_db = user.total_quota_used_mb or 0.0
+                
+                # Hitung delta pemakaian sejak sinkronisasi terakhir
+                delta_usage_mb = max(0, current_usage_mb - old_usage_mb_in_db)
+
+                if delta_usage_mb > 0:
+                    try:
+                        log_stmt = select(DailyUsageLog).where(DailyUsageLog.user_id == user.id, DailyUsageLog.log_date == today)
+                        daily_log = db.session.scalars(log_stmt).first()
+
+                        if daily_log:
+                            daily_log.usage_mb = (daily_log.usage_mb or 0) + delta_usage_mb
+                            log_updated += 1
+                        else:
+                            new_log = DailyUsageLog(user_id=user.id, log_date=today, usage_mb=delta_usage_mb)
+                            db.session.add(new_log)
+                            log_created += 1
+                    except Exception as log_err:
+                        current_app.logger.error(f"Error saat logging pemakaian harian untuk user {user.id}: {log_err}", exc_info=True)
 
                 if abs(old_usage_mb_in_db - current_usage_mb) > USAGE_UPDATE_THRESHOLD_MB:
                     user.total_quota_used_mb = current_usage_mb
-                    if user not in users_to_commit: users_to_commit.append(user)
                     db_updates += 1
                     current_app.logger.info(f"Usage Sync for '{username_08}': DB updated from {old_usage_mb_in_db:.2f}MB to {current_usage_mb:.2f}MB.")
 
@@ -135,18 +150,19 @@ def sync_usage_command():
                 current_app.logger.error(f"Error tidak terduga saat memproses user '{username_08}' (DB ID: {user.id}): {e}", exc_info=True)
                 failed_count += 1
     
-    # Commit perubahan ke DB
-    if users_to_commit:
-        current_app.logger.info(f"Menyimpan {len(users_to_commit)} pembaruan usage ke database...")
+    # Commit semua perubahan ke DB sekaligus di akhir
+    if db.session.dirty or db.session.new:
+        current_app.logger.info(f"Menyimpan {len(db.session.dirty) + len(db.session.new)} pembaruan ke database...")
         try:
             db.session.commit()
-            current_app.logger.info("Pembaruan usage berhasil disimpan.")
+            current_app.logger.info("Semua pembaruan berhasil disimpan.")
         except SQLAlchemyError as e:
             db.session.rollback()
-            current_app.logger.error(f"Error DB saat menyimpan pembaruan usage: {e}", exc_info=True)
+            current_app.logger.error(f"Error DB saat menyimpan pembaruan: {e}", exc_info=True)
 
     current_app.logger.info(
         f"Sinkronisasi Selesai. "
         f"Total Diproses: {processed_count}, Gagal/Dilewati: {failed_count}, "
-        f"Update Usage DB: {db_updates}, Update Limit MT: {limit_updates}, Update Profil MT: {profile_updates}"
+        f"Update Usage DB: {db_updates}, Update Limit MT: {limit_updates}, Update Profil MT: {profile_updates}, "
+        f"Log Harian Dibuat: {log_created}, Log Harian Diperbarui: {log_updated}"
     )
