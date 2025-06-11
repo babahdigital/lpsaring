@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { useAuthStore } from '@/store/auth';
 import { useSettingsStore } from '@/store/settings';
-import { useMaintenanceStore } from '~/store/maintenance' // Tambahkan impor maintenance store
 import type { SettingSchema } from '@/types/api/settings';
 import { computed, onMounted, ref } from 'vue';
 import { useCookie } from '#app';
 // Impor semua enum yang Anda gunakan di template atau script
-import { Theme, Skins, Layout, ContentWidth } from '@/types/enums';
+import { Theme, Skins, Layout, ContentWidth } from '@/types/enums'; 
 
 definePageMeta({
   requiredRole: ['SUPER_ADMIN'],
@@ -14,7 +13,6 @@ definePageMeta({
 
 const authStore = useAuthStore();
 const settingsStore = useSettingsStore();
-const maintenanceStore = useMaintenanceStore(); // Inisialisasi maintenance store
 const { $api } = useNuxtApp();
 const snackbar = useSnackbar();
 
@@ -23,7 +21,7 @@ const isLoading = ref(true);
 const isSaving = ref(false);
 
 // Objek lokal untuk menampung data form
-const localSettings = ref<Record<string, string>>({});
+const localSettings = ref<Record<string, string>>({}); // Ubah `any` menjadi `string` untuk nilai
 
 // Computed properties untuk VSwitch
 const maintenanceModeActive = computed({
@@ -47,14 +45,14 @@ function syncSettingsToCookies(savedSettings: Record<string, string>) {
 
 onMounted(async () => {
   if (!authStore.isSuperAdmin) return navigateTo('/admin/dashboard', { replace: true });
-
+  
   isLoading.value = true;
   try {
     const response = await $api<SettingSchema[]>('/api/admin/settings');
     // Isi form lokal dengan data dari API
     localSettings.value = response.reduce((acc, setting) => {
         // Pastikan nilai default jika setting_value null
-        acc[setting.setting_key] = setting.setting_value || '';
+        acc[setting.setting_key] = setting.setting_value || ''; 
         return acc;
     }, {} as Record<string, string>);
 
@@ -64,7 +62,7 @@ onMounted(async () => {
     settingsStore.setSettingsFromObject(localSettings.value);
 
   } catch (e) {
-    console.error('Error fetching settings:', e);
+    console.error('Error fetching settings:', e); // Log error untuk debugging
     snackbar.add({ type: 'error', title: 'Gagal Memuat', text: 'Tidak dapat mengambil data pengaturan.' });
   } finally {
     isLoading.value = false;
@@ -78,6 +76,7 @@ async function handleSaveChanges() {
     const settingsToSave: Record<string, string> = { ...localSettings.value };
 
     // Hapus kunci yang memiliki nilai kosong dari objek yang akan dikirim
+    // Anda bisa sesuaikan jika ada field yang memang boleh kosong
     Object.keys(settingsToSave).forEach(key => {
       if (settingsToSave[key] === null || settingsToSave[key] === '') {
         // Pengecualian: Biarkan pesan maintenance kosong jika maintenance tidak aktif
@@ -89,10 +88,9 @@ async function handleSaveChanges() {
     });
 
     // 1. Simpan ke database dengan data yang sudah bersih
-    // PERBAIKAN ENDPOINT: Hapus /api di depan
-    await $api('/admin/settings', {
+    await $api('/api/admin/settings', {
       method: 'PUT',
-      body: { settings: settingsToSave }
+      body: { settings: settingsToSave } // Kirim data yang sudah difilter
     });
 
     // 2. Simpan ke cookies (gunakan data asli, bukan yang difilter)
@@ -101,18 +99,13 @@ async function handleSaveChanges() {
     // 3. Perbarui state Pinia (gunakan data asli)
     settingsStore.setSettingsFromObject(localSettings.value);
 
-    // 4. PERBARUI MAINTENANCE STORE LANGSUNG
-    const active = localSettings.value.MAINTENANCE_MODE_ACTIVE === 'True';
-    const message = localSettings.value.MAINTENANCE_MODE_MESSAGE || '';
-    maintenanceStore.setMaintenanceStatus(active, message);
-
     snackbar.add({
       type: 'success',
       title: 'Berhasil',
       text: 'Pengaturan berhasil diperbarui.'
     });
 
-  } catch (e: any) {
+  } catch (e: any) { // Tangkap error dengan lebih detail
     console.error('Error saving settings:', e.data || e);
     const errorDetails = e.data?.errors ? JSON.stringify(e.data.errors) : 'Terjadi kesalahan validasi.';
     snackbar.add({
@@ -187,7 +180,7 @@ async function handleSaveChanges() {
                    <VCardActions class="mt-4 px-0">
                     <VSpacer />
                     <VBtn type="submit" :loading="isSaving">Simpan Perubahan</VBtn>
-                   </VCardActions>
+                  </VCardActions>
                 </VForm>
             </VWindowItem>
 
@@ -214,7 +207,7 @@ async function handleSaveChanges() {
                    <VCardActions class="mt-4 px-0">
                     <VSpacer />
                     <VBtn type="submit" :loading="isSaving">Simpan Perubahan</VBtn>
-                   </VCardActions>
+                  </VCardActions>
                 </VForm>
             </VWindowItem>
           </VWindow>
@@ -222,7 +215,3 @@ async function handleSaveChanges() {
     </VCard>
   </div>
 </template>
-
-<style lang="scss">
-@use "@core/scss/template/pages/page-misc.scss";
-</style>

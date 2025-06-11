@@ -50,5 +50,5 @@ definePageMeta({
 </template>
 
 <style lang="scss" scoped>
-@use "@core/scss/template/placeholders/misc.scss";
+@use "@core/scss/template/pages/misc.scss";
 </style>
