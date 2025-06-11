@@ -58,7 +58,11 @@ async function saveSettings() {
       .filter(r => r.is_subscribed)
       .map(r => r.id)
 
-    const payload = { subscribed_admin_ids }
+    // PERBAIKAN PENTING: Tambahkan notification_type ke payload
+    const payload = {
+      notification_type: 'NEW_USER_REGISTRATION', // Sesuaikan dengan tipe notifikasi yang Anda atur di backend
+      subscribed_admin_ids,
+    }
 
     await $api('/admin/notification-recipients', {
       method: 'POST',
