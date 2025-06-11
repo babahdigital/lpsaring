@@ -19,8 +19,6 @@ export const useSettingsStore = defineStore('settings', () => {
   const skin = ref<Skins>(Skins.Bordered);
   const layout = ref<AppContentLayoutNav>(AppContentLayoutNav.Horizontal);
   const contentWidth = ref<ContentWidth>(ContentWidth.Boxed);
-
-  // PERBAIKAN: Definisikan isLoaded sebagai ref
   const isLoaded = ref(false);
 
   const maintenanceStore = useMaintenanceStore();
@@ -39,9 +37,9 @@ export const useSettingsStore = defineStore('settings', () => {
     layout.value = (settings.LAYOUT as AppContentLayoutNav) || AppContentLayoutNav.Horizontal;
     contentWidth.value = (settings.CONTENT_WIDTH as ContentWidth) || ContentWidth.Boxed;
 
-    // Perbarui maintenanceStore dari data settings
+    // PERBAIKAN: Panggil maintenance store langsung untuk sinkronisasi
     const active = settings.MAINTENANCE_MODE_ACTIVE === 'True';
-    const message = settings.MAINTENANCE_MODE_MESSAGE || 'Aplikasi sedang dalam perbaikan. Silakan coba lagi nanti.';
+    const message = settings.MAINTENANCE_MODE_MESSAGE || '';
     maintenanceStore.setMaintenanceStatus(active, message);
   }
 
@@ -53,7 +51,7 @@ export const useSettingsStore = defineStore('settings', () => {
       acc[setting.setting_key] = setting.setting_value;
       return acc;
     }, {} as Record<string, string | null>);
-
+    
     _updateAllStates(settingsMap);
     isLoaded.value = true; // Tandai bahwa data telah dimuat
   }
@@ -73,7 +71,7 @@ export const useSettingsStore = defineStore('settings', () => {
     skin,
     layout,
     contentWidth,
-    isLoaded, // <-- Pastikan isLoaded di-return agar bisa diakses dari luar
+    isLoaded,
     setSettings,
     setSettingsFromObject,
   };

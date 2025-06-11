@@ -4,46 +4,46 @@ import { useAuthStore } from '~/store/auth'
 
 /**
  * Middleware untuk menangani Maintenance Mode.
- * Middleware ini sekarang sangat cepat dan sinkron karena hanya membaca
- * state dari Pinia store yang sudah diisi oleh plugin `00.load-initial-state.ts`.
+ * Middleware ini membaca state dari Pinia store yang sudah diisi oleh plugin.
  */
 export default defineNuxtRouteMiddleware((to) => {
   const maintenanceStore = useMaintenanceStore()
   const authStore = useAuthStore()
 
-  const isMaintenanceActive = maintenanceStore.isActive
-  const isMaintenancePage = to.path === '/maintenance'
-  const isAdminPath = to.path.startsWith('/admin')
-
-  // Rute yang selalu bisa diakses meskipun maintenance aktif
-  // PERBAIKAN: Tambahkan path login ke allowed paths
+  const isMaintenanceActive = maintenanceStore.isActive;
+  const isMaintenancePage = to.path === '/maintenance';
+  const isAdminPath = to.path.startsWith('/admin');
+  
+  // PERBAIKAN: Tambahkan path login dan admin ke path yang diizinkan
+  // Ini penting agar admin bisa mengakses halaman login saat maintenance aktif.
   const allowedPathsDuringMaintenance = [
     '/maintenance',
     '/login',
-  ]
+    '/admin' // Mengizinkan akses ke root halaman admin (biasanya halaman login admin)
+  ];
 
   // Jika mode maintenance aktif
   if (isMaintenanceActive) {
-    // Izinkan admin yang sudah login untuk mengakses area admin
+    // Izinkan admin yang sudah login untuk mengakses area admin manapun
     if (isAdminPath && authStore.isLoggedIn && authStore.isAdmin) {
       return
     }
 
-    // Jika tujuan adalah salah satu halaman yang diizinkan, biarkan
+    // Izinkan akses ke halaman yang secara eksplisit diizinkan (maintenance, login, admin)
     if (allowedPathsDuringMaintenance.includes(to.path)) {
       return
     }
 
     // Untuk semua kasus lain, redirect ke halaman maintenance
     if (!isMaintenancePage) {
-        return navigateTo('/maintenance', { replace: true })
+        return navigateTo('/maintenance', { replace: true });
     }
-  }
+  } 
   // Jika mode maintenance TIDAK aktif
   else {
     // Jika pengguna mencoba mengakses halaman maintenance, redirect ke halaman utama
     if (isMaintenancePage) {
-      return navigateTo('/', { replace: true })
+      return navigateTo('/', { replace: true });
     }
   }
 })

@@ -26,16 +26,18 @@ export default defineNuxtPlugin(async () => {
   // Bagian ini hanya berjalan di server untuk fetch data awal
   if (process.server) {
     try {
-      // PERBAIKAN: Hapus duplikasi '/api' dari path.
-      // Plugin $api kemungkinan sudah memiliki base URL '/api'.
+      // PERBAIKAN: Panggil endpoint yang benar sesuai dengan backend
       const publicSettings = await nuxtApp.$api<SettingSchema[]>('/settings/public')
+      
+      // Mengisi settings store utama
       settingsStore.setSettings(publicSettings || [])
-
-      // PERBAIKAN: Update maintenance store langsung
+      
+      // PERBAIKAN: Update maintenance store secara langsung setelah fetch
+      // Ini memastikan maintenance store memiliki data terbaru saat inisialisasi.
       const maintenanceActive = publicSettings.find(s => s.setting_key === 'MAINTENANCE_MODE_ACTIVE')?.setting_value === 'True';
       const maintenanceMessage = publicSettings.find(s => s.setting_key === 'MAINTENANCE_MODE_MESSAGE')?.setting_value || '';
       maintenanceStore.setMaintenanceStatus(maintenanceActive, maintenanceMessage);
-
+      
     } catch (error) {
       console.error('Kritis: Gagal memuat pengaturan awal dari server.', error)
       settingsStore.setSettings([])
@@ -48,13 +50,11 @@ export default defineNuxtPlugin(async () => {
         settings: settingsStore.$state,
         maintenance: maintenanceStore.$state,
     };
-    // Memberi tahu TypeScript tentang struktur payload
     nuxtApp.payload.provide = nuxtApp.payload.provide || {};
     (nuxtApp.payload.provide as Record<string, any>)['pinia-initial-state'] = state;
   }
   // Di client, ambil state dari payload untuk menghindari fetch ulang
   else if (nuxtApp.payload?.provide && (nuxtApp.payload.provide as Record<string, any>)['pinia-initial-state']) {
-      // Memberi tahu TypeScript tentang struktur payload saat membacanya
       const initialState = (nuxtApp.payload.provide as Record<string, any>)['pinia-initial-state'] as PiniaInitialState;
 
       if (initialState.settings) {

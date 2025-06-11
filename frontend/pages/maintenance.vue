@@ -3,15 +3,17 @@ import { useGenerateImageVariant } from '@core/composable/useGenerateImageVarian
 import miscMaskDark from '@images/pages/misc-mask-dark.png'
 import miscMaskLight from '@images/pages/misc-mask-light.png'
 import miscUnderMaintenance from '@images/pages/misc-under-maintenance.png'
-import { useMaintenanceStore } from '@/store/maintenance' // <-- Impor kembali
+import { useMaintenanceStore } from '@/store/maintenance'
 
 const authThemeMask = useGenerateImageVariant(miscMaskLight, miscMaskDark)
 const maintenanceStore = useMaintenanceStore()
+
+// Pesan diambil secara dinamis dari store
 const message = computed(() => maintenanceStore.message || "Aplikasi sedang dalam perbaikan. Kami akan segera kembali.")
 
 definePageMeta({
   layout: 'blank',
-  public: true,
+  public: true, // Halaman ini bersifat publik
 })
 </script>
 
