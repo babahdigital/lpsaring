@@ -72,31 +72,46 @@ onMounted(async () => {
 async function handleSaveChanges() {
   isSaving.value = true;
   try {
-    // 1. Simpan ke database
-    await $api('/api/admin/settings', { 
-      method: 'PUT', 
-      body: { settings: localSettings.value } 
+    // Salin semua pengaturan lokal ke objek baru
+    const settingsToSave: Record<string, string> = { ...localSettings.value };
+
+    // Hapus kunci yang memiliki nilai kosong dari objek yang akan dikirim
+    // Anda bisa sesuaikan jika ada field yang memang boleh kosong
+    Object.keys(settingsToSave).forEach(key => {
+      if (settingsToSave[key] === null || settingsToSave[key] === '') {
+        // Pengecualian: Biarkan pesan maintenance kosong jika maintenance tidak aktif
+        if (key === 'MAINTENANCE_MODE_MESSAGE' && settingsToSave['MAINTENANCE_MODE_ACTIVE'] === 'False') {
+            return;
+        }
+        delete settingsToSave[key];
+      }
     });
-    
-    // 2. Simpan ke cookies
+
+    // 1. Simpan ke database dengan data yang sudah bersih
+    await $api('/api/admin/settings', {
+      method: 'PUT',
+      body: { settings: settingsToSave } // Kirim data yang sudah difilter
+    });
+
+    // 2. Simpan ke cookies (gunakan data asli, bukan yang difilter)
     syncSettingsToCookies(localSettings.value);
 
-    // 3. Perbarui tema tanpa reload (gunakan settingsStore yang sudah ada)
-    // const settingsStore = useSettingsStore(); // Baris ini tidak perlu karena sudah dideklarasikan di atas
+    // 3. Perbarui state Pinia (gunakan data asli)
     settingsStore.setSettingsFromObject(localSettings.value);
-    
-    snackbar.add({ 
-      type: 'success', 
-      title: 'Berhasil', 
-      text: 'Pengaturan berhasil diperbarui.' 
+
+    snackbar.add({
+      type: 'success',
+      title: 'Berhasil',
+      text: 'Pengaturan berhasil diperbarui.'
     });
 
-  } catch (e) {
-    console.error('Error saving settings:', e); // Log error untuk debugging
-    snackbar.add({ 
-      type: 'error', 
-      title: 'Gagal Menyimpan', 
-      text: 'Terjadi kesalahan.' 
+  } catch (e: any) { // Tangkap error dengan lebih detail
+    console.error('Error saving settings:', e.data || e);
+    const errorDetails = e.data?.errors ? JSON.stringify(e.data.errors) : 'Terjadi kesalahan validasi.';
+    snackbar.add({
+      type: 'error',
+      title: 'Gagal Menyimpan',
+      text: errorDetails
     });
   } finally {
     isSaving.value = false;
