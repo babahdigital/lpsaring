@@ -27,7 +27,7 @@ from .schemas.auth_schemas import (
 from .schemas.user_schemas import UserMeResponseSchema, UserProfileUpdateRequestSchema
 from app.extensions import db
 from app.infrastructure.db.models import (
-    User, UserRole, ApprovalStatus, UserLoginHistory, UserBlok, UserKamar,
+    User, UserRole, ApprovalStatus, UserBlok, UserKamar,
     NotificationRecipient, NotificationType, Package
 )
 from app.infrastructure.gateways.whatsapp_client import send_otp_whatsapp
@@ -135,8 +135,8 @@ def register_user():
         new_user_obj = User(
             phone_number=normalized_phone_number, 
             full_name=data_input.full_name, 
-            blok=data_input.blok.value if data_input.blok else None,
-            kamar=data_input.kamar.value if data_input.kamar else None,
+            blok=data_input.blok, # Perbaikan: Langsung gunakan nilai string
+            kamar=data_input.kamar, # Perbaikan: Langsung gunakan nilai string
             role=UserRole.USER, 
             approval_status=ApprovalStatus.PENDING_APPROVAL, 
             is_active=False,
@@ -269,8 +269,8 @@ def update_user_profile(current_user_id: uuid.UUID):
         user.full_name = update_data.full_name
         
         if user.role == UserRole.USER:
-            user.blok = update_data.blok.value if update_data.blok else None
-            user.kamar = update_data.kamar.value if update_data.kamar else None
+            user.blok = update_data.blok # Perbaikan: Langsung gunakan nilai string
+            user.kamar = update_data.kamar # Perbaikan: Langsung gunakan nilai string
         else:
             user.blok = None
             user.kamar = None
