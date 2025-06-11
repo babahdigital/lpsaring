@@ -176,6 +176,7 @@ async function handleAction(type: 'create' | 'update' | 'delete') {
     dialog.delete = false
   }
 }
+useHead({ title: 'Manajemen Paket Mikrotik' })
 </script>
 
 <template>

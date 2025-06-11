@@ -157,4 +157,6 @@ const formatCurrency = (value: number | null | undefined): string => {
     maximumFractionDigits: 0,
   }).format(value);
 };
+
+useHead({ title: 'Dashboard Admin' })
 </script>

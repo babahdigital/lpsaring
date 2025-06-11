@@ -47,6 +47,7 @@ const handleLogin = async () => {
     loading.value = false
   }
 }
+useHead({ title: 'Login Admin' })
 </script>
 
 <template>

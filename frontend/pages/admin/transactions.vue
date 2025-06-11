@@ -563,6 +563,8 @@ const exportReport = async (format: 'pdf' | 'csv') => {
     exportLoading.value = false;
   }
 };
+
+useHead({ title: 'Laporan Penjualan' })
 </script>
 
 <style scoped>
