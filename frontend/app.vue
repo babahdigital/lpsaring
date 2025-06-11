@@ -5,13 +5,13 @@ import initCore from '@core/initCore'
 import { initConfigStore, useConfigStore } from '@core/stores/config'
 import { hexToRgb } from '@core/utils/colorConverter'
 import { useSettingsStore } from '~/store/settings'
-import { useMaintenanceStore } from '~/store/maintenance' // <-- Tambahkan impor maintenance store
+import { useMaintenanceStore } from '~/store/maintenance'
 import { useHead, useNuxtApp } from '#app'
 
 const { global } = useTheme()
 const configStore = useConfigStore()
 const settingsStore = useSettingsStore()
-const maintenanceStore = useMaintenanceStore() // <-- Tambahkan ini
+const maintenanceStore = useMaintenanceStore()
 const nuxtApp = useNuxtApp()
 
 onMounted(() => {
@@ -29,7 +29,7 @@ onMounted(() => {
 initCore()
 
 useHead({
-  title: computed(() => settingsStore.browserTitle || 'Hotspot App'),
+  title: computed(() => settingsStore.browserTitle || 'Hotspot APP'),
   titleTemplate: (titleChunk) => {
     return titleChunk 
       ? `${titleChunk} Oleh ${settingsStore.appName || 'SOBIDIGUL'}` 
