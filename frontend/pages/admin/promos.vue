@@ -41,7 +41,8 @@ const isDeleteDialogVisible = ref(false)
 const editedItem = ref<Partial<PromoEvent>>({})
 const editedIndex = ref(-1)
 
-// --- State untuk Date Picker baru ---
+// --- State untuk Form & Date Picker ---
+const form = ref<any>(null) // Ref untuk VForm
 const isStartDateMenuOpen = ref(false)
 const isEndDateMenuOpen = ref(false)
 const startDateModel = ref<Date | null>(null)
@@ -104,6 +105,9 @@ const typeOptions = [
   { title: 'Bonus Registrasi', value: 'BONUS_REGISTRATION' },
 ]
 
+// === Aturan Validasi ===
+const requiredRule = [(v: string) => !!v || 'Field ini wajib diisi']
+
 // === Computed Properties ===
 const formTitle = computed(() => (editedIndex.value === -1 ? 'Tambah Event Baru' : 'Edit Event'))
 
@@ -111,14 +115,12 @@ const formTitle = computed(() => (editedIndex.value === -1 ? 'Tambah Event Baru'
 const formatDateForTable = (dateString?: string) => {
   if (!dateString)
     return 'N/A'
-  // Format untuk tabel tetap bisa menampilkan waktu
   return new Date(dateString).toLocaleString('id-ID', {
     dateStyle: 'medium',
     timeStyle: 'short',
   })
 }
 
-// Fungsi format tanggal untuk field date picker, sesuai referensi
 const formatDateForField = (date: Date | null) => {
   if (!date)
     return ''
@@ -145,12 +147,10 @@ const statusColor = (status: PromoEvent['status']) => {
 function openNew() {
   editedIndex.value = -1
   const now = new Date()
-  
-  // Mengatur model untuk date picker
+
   startDateModel.value = now
   endDateModel.value = null
 
-  // Menyiapkan data untuk dikirim ke API
   editedItem.value = {
     name: '',
     description: '',
@@ -167,10 +167,9 @@ function openEdit(item: PromoEvent) {
   editedIndex.value = promoList.value.indexOf(item)
   editedItem.value = { ...item }
 
-  // Mengatur model untuk date picker dari data string yang ada
   startDateModel.value = item.start_date ? new Date(item.start_date) : null
   endDateModel.value = item.end_date ? new Date(item.end_date) : null
-  
+
   isEditorDialogVisible.value = true
 }
 
@@ -193,6 +192,13 @@ function closeDeleteDialog() {
 }
 
 async function saveEvent() {
+  // Jalankan validasi form
+  const { valid } = await form.value.validate()
+  if (!valid) {
+    snackbar.add({ type: 'warning', text: 'Mohon isi semua field yang wajib diisi.' })
+    return // Hentikan fungsi jika form tidak valid
+  }
+
   try {
     if (editedIndex.value > -1) {
       await $api(`/admin/promos/${editedItem.value.id}`, {
@@ -212,7 +218,9 @@ async function saveEvent() {
     await refreshPromos()
   }
   catch (e: any) {
-    snackbar.add({ type: 'error', text: e.message || 'Gagal menyimpan data.' })
+    const errorData = e.data?.errors?.[0]
+    const errorMessage = errorData ? `${errorData.loc.join('.')} - ${errorData.msg}` : (e.message || 'Gagal menyimpan data.')
+    snackbar.add({ type: 'error', text: errorMessage })
   }
 }
 
@@ -234,8 +242,7 @@ async function deleteItemConfirm() {
 watch(startDateModel, (newDate) => {
   if (editedItem.value)
     editedItem.value.start_date = newDate ? newDate.toISOString() : undefined
-  
-  // Jika tanggal mulai diubah dan lebih baru dari tanggal selesai, reset tanggal selesai
+
   if (newDate && endDateModel.value && newDate > endDateModel.value)
     endDateModel.value = null
 })
@@ -317,126 +324,133 @@ useHead({ title: 'Event & Promo' })
   <!-- Dialog untuk Create/Edit Event -->
   <VDialog v-model="isEditorDialogVisible" max-width="600px" persistent>
     <VCard>
-      <VCardTitle>
-        <span class="headline">{{ formTitle }}</span>
-      </VCardTitle>
-      <VCardText>
-        <VContainer>
-          <VRow>
-            <VCol cols="12">
-              <VTextField
-                v-model="editedItem.name"
-                label="Nama Event"
-                prepend-inner-icon="tabler-heading"
-              />
-            </VCol>
-            <VCol cols="12">
-              <VTextarea
-                v-model="editedItem.description"
-                label="Deskripsi"
-                rows="3"
-                prepend-inner-icon="tabler-message-2"
-              />
-            </VCol>
-            <VCol cols="12" md="6">
-              <VSelect
-                v-model="editedItem.status"
-                :items="statusOptions"
-                label="Status Event"
-                prepend-inner-icon="tabler-traffic-lights"
-              />
-            </VCol>
-            <VCol cols="12" md="6">
-              <VSelect
-                v-model="editedItem.event_type"
-                :items="typeOptions"
-                label="Tipe Event"
-                prepend-inner-icon="tabler-category"
-              />
-            </VCol>
+      <VForm ref="form" @submit.prevent="saveEvent">
+        <VCardTitle>
+          <span class="headline">{{ formTitle }}</span>
+        </VCardTitle>
+        <VCardText>
+          <VContainer>
+            <VRow>
+              <VCol cols="12">
+                <VTextField
+                  v-model="editedItem.name"
+                  label="Nama Event"
+                  prepend-inner-icon="tabler-heading"
+                  :rules="requiredRule"
+                  persistent-placeholder
+                />
+              </VCol>
+              <VCol cols="12">
+                <VTextarea
+                  v-model="editedItem.description"
+                  label="Deskripsi"
+                  rows="3"
+                  prepend-inner-icon="tabler-message-2"
+                  :rules="requiredRule"
+                  persistent-placeholder
+                />
+              </VCol>
+              <VCol cols="12" md="6">
+                <VSelect
+                  v-model="editedItem.status"
+                  :items="statusOptions"
+                  label="Status Event"
+                  prepend-inner-icon="tabler-traffic-lights"
+                  :rules="requiredRule"
+                />
+              </VCol>
+              <VCol cols="12" md="6">
+                <VSelect
+                  v-model="editedItem.event_type"
+                  :items="typeOptions"
+                  label="Tipe Event"
+                  prepend-inner-icon="tabler-category"
+                  :rules="requiredRule"
+                />
+              </VCol>
 
-            <!-- Implementasi Date Picker Baru untuk Tanggal Mulai -->
-            <VCol cols="12" md="6">
-              <VTextField
-                id="start-date-activator"
-                :model-value="formatDateForField(startDateModel)"
-                label="Tanggal Mulai"
-                placeholder="Pilih tanggal"
-                prepend-inner-icon="tabler-calendar-event"
-                readonly
-              />
-              <VMenu
-                v-model="isStartDateMenuOpen"
-                activator="#start-date-activator"
-                :close-on-content-click="false"
-                location="bottom start"
-                offset="10"
-              >
-                <client-only>
-                  <VDatePicker
-                    v-model="startDateModel"
-                    @update:model-value="isStartDateMenuOpen = false"
-                    no-title
-                    color="primary"
-                    show-adjacent-months
-                  />
-                </client-only>
-              </VMenu>
-            </VCol>
+              <VCol cols="12" md="6">
+                <VTextField
+                  id="start-date-activator"
+                  :model-value="formatDateForField(startDateModel)"
+                  label="Tanggal Mulai"
+                  placeholder="Pilih tanggal"
+                  prepend-inner-icon="tabler-calendar-event"
+                  readonly
+                  :rules="requiredRule"
+                />
+                <VMenu
+                  v-model="isStartDateMenuOpen"
+                  activator="#start-date-activator"
+                  :close-on-content-click="false"
+                  location="bottom start"
+                  offset="10"
+                >
+                  <client-only>
+                    <VDatePicker
+                      v-model="startDateModel"
+                      @update:model-value="isStartDateMenuOpen = false"
+                      no-title
+                      color="primary"
+                      show-adjacent-months
+                    />
+                  </client-only>
+                </VMenu>
+              </VCol>
 
-            <!-- Implementasi Date Picker Baru untuk Tanggal Selesai -->
-            <VCol cols="12" md="6">
-              <VTextField
-                id="end-date-activator"
-                :model-value="formatDateForField(endDateModel)"
-                label="Tanggal Selesai (Opsional)"
-                placeholder="Pilih tanggal"
-                prepend-inner-icon="tabler-calendar-off"
-                readonly
-                clearable
-                :disabled="!startDateModel"
-                @click:clear="endDateModel = null"
-              />
-              <VMenu
-                v-model="isEndDateMenuOpen"
-                activator="#end-date-activator"
-                :close-on-content-click="false"
-                location="bottom start"
-                offset="10"
-              >
-                <client-only>
-                  <VDatePicker
-                    v-model="endDateModel"
-                    @update:model-value="isEndDateMenuOpen = false"
-                    no-title
-                    color="primary"
-                    :min="startDateModel"
-                    show-adjacent-months
-                  />
-                </client-only>
-              </VMenu>
-            </VCol>
+              <VCol cols="12" md="6">
+                <VTextField
+                  id="end-date-activator"
+                  :model-value="formatDateForField(endDateModel)"
+                  label="Tanggal Selesai (Opsional)"
+                  placeholder="Pilih tanggal"
+                  prepend-inner-icon="tabler-calendar-off"
+                  readonly
+                  clearable
+                  :disabled="!startDateModel"
+                  @click:clear="endDateModel = null"
+                />
+                <VMenu
+                  v-model="isEndDateMenuOpen"
+                  activator="#end-date-activator"
+                  :close-on-content-click="false"
+                  location="bottom start"
+                  offset="10"
+                >
+                  <client-only>
+                    <VDatePicker
+                      v-model="endDateModel"
+                      @update:model-value="isEndDateMenuOpen = false"
+                      no-title
+                      color="primary"
+                      :min="startDateModel"
+                      show-adjacent-months
+                    />
+                  </client-only>
+                </VMenu>
+              </VCol>
 
-            <VCol v-if="editedItem.event_type === 'BONUS_REGISTRATION'" cols="12">
-              <VTextField
-                v-model.number="editedItem.bonus_value_mb"
-                label="Bonus Kuota (MB)"
-                type="number"
-                prepend-inner-icon="tabler-database"
-              />
-            </VCol>
-          </VRow>
-        </VContainer>
-      </VCardText>
-      <VCardActions>
-        <VSpacer />
-        <VBtn color="secondary" @click="closeEditorDialog">
-          Batal
-        </VBtn>
-        <VBtn color="primary" @click="saveEvent">
-          Simpan
-        </VBtn>
-      </VCardActions>
+              <VCol v-if="editedItem.event_type === 'BONUS_REGISTRATION'" cols="12">
+                <VTextField
+                  v-model.number="editedItem.bonus_value_mb"
+                  label="Bonus Kuota (MB)"
+                  type="number"
+                  prepend-inner-icon="tabler-database"
+                />
+              </VCol>
+            </VRow>
+          </VContainer>
+        </VCardText>
+        <VCardActions>
+          <VSpacer />
+          <VBtn color="secondary" @click="closeEditorDialog">
+            Batal
+          </VBtn>
+          <VBtn color="primary" type="submit">
+            Simpan
+          </VBtn>
+        </VCardActions>
+      </VForm>
     </VCard>
   </VDialog>
 
