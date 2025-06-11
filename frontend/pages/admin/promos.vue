@@ -89,7 +89,7 @@ const headers = [
   { title: 'Tipe', key: 'event_type', align: 'center' },
   { title: 'Tanggal Mulai', key: 'start_date' },
   { title: 'Tanggal Selesai', key: 'end_date' },
-  { title: 'Actions', key: 'actions', sortable: false, align: 'center' },
+  { title: 'Aksi', key: 'actions', sortable: false, align: 'center', width: '150px' },
 ]
 
 // === Konfigurasi untuk VSelect ===
@@ -310,9 +310,19 @@ useHead({ title: 'Event & Promo' })
 
             <!-- Slot untuk actions -->
             <template #item.actions="{ item }">
-              <div class="d-flex gap-1">
-                <VBtn icon="tabler-edit" variant="text" size="small" @click="openEdit(item)" />
-                <VBtn icon="tabler-trash" variant="text" size="small" @click="openDelete(item)" />
+              <div class="d-flex gap-1 justify-center">
+                <VBtn icon variant="text" color="primary" size="small" @click="openEdit(item)">
+                  <VIcon icon="tabler-pencil" />
+                  <VTooltip activator="parent">
+                    Edit Event
+                  </VTooltip>
+                </VBtn>
+                <VBtn icon variant="text" color="error" size="small" @click="openDelete(item)">
+                  <VIcon icon="tabler-trash" />
+                  <VTooltip activator="parent">
+                    Hapus Event
+                  </VTooltip>
+                </VBtn>
               </div>
             </template>
           </VDataTableServer>
