@@ -41,11 +41,11 @@ export const $api = $fetch.create({
     if (import.meta.client && response?.status === 401) {
       const authStore = useAuthStore()
 
-      // PERBAIKAN: Daftar path yang tidak akan memicu logout otomatis saat error 401
+      // Tambahkan endpoint logout ke daftar ignore
       const ignoredPaths = [
-        '/auth/admin/login', // Gagal login admin
-        '/auth/verify-otp',   // Gagal verifikasi OTP
-        '/auth/logout',       // Gagal saat proses logout itu sendiri
+        '/auth/admin/login',
+        '/auth/verify-otp',
+        '/auth/logout', // Tambahkan ini
       ]
 
       const isIgnoredPath = ignoredPaths.some(path => requestUrl.includes(path))

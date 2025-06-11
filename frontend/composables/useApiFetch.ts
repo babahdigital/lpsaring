@@ -4,12 +4,13 @@ import type {
   UseFetchOptions,
 } from '#app'
 import type { KeysOf, PickFrom } from '#app/composables/asyncData'
-import type { FetchError as OFetchError } from 'ofetch'
+import type { FetchError as OFetchError, FetchResponse } from 'ofetch'
 import type { Ref } from 'vue'
 
-import { useCookie, useFetch, useRuntimeConfig } from '#app'
+import { useCookie, useFetch, useRuntimeConfig, useRoute, navigateTo } from '#app'
 import { defu } from 'defu'
 import { useAuthStore } from '~/store/auth'
+import { useMaintenanceStore } from '@/store/maintenance'
 
 type FetchRequestInput = string | Request | Ref<string | Request> | (() => string | Request)
 
@@ -25,14 +26,14 @@ export function useApiFetch<
   const config = useRuntimeConfig()
   const authToken = useCookie<string | null>('auth_token')
   const authStore = useAuthStore()
+  const route = useRoute()
 
-  // PERUBAHAN KUNCI: Logika baseURL yang berbeda untuk server dan client
   const calculatedBaseURL = import.meta.server
-    ? config.internalApiBaseUrl // Gunakan URL backend langsung saat SSR (mis. http://backend:5010/api)
-    : config.public.apiBaseUrl // Gunakan path relatif untuk client (mis. /api, akan di-proxy oleh Nitro)
+    ? config.internalApiBaseUrl
+    : config.public.apiBaseUrl
 
   const defaultOptions: UseFetchOptions<ResT, DataT, PickKeys, ErrorT> = {
-    baseURL: calculatedBaseURL, // Menggunakan baseURL yang sudah dihitung
+    baseURL: calculatedBaseURL,
     headers: {
       Accept: 'application/json',
     } as HeadersInit,
@@ -45,19 +46,23 @@ export function useApiFetch<
       }
     },
 
-    async onResponse({ response }) {
-      if (response.status === 401) {
-        if (import.meta.client) {
-          await authStore.logout(true)
+    onResponseError({ request, response, error }) {
+      if (response?.status === 503) {
+        const maintenanceStore = useMaintenanceStore()
+        const message = response?._data?.message || 'Aplikasi sedang dalam perbaikan.'
+        
+        // --- PERBAIKAN: Gunakan nama fungsi yang benar ---
+        maintenanceStore.setMaintenanceStatus(true, message)
+        
+        if (route.path !== '/maintenance') {
+          navigateTo('/maintenance')
         }
+        return
       }
-    },
 
-    async onResponseError({ response }) {
-      if (response?.status === 401) {
-        if (import.meta.client) {
-          await authStore.logout(true)
-        }
+      if (response?.status === 401 && import.meta.client) {
+        console.warn(`[useApiFetch Interceptor] 401 Unauthorized terdeteksi pada ${request}.`)
+        authStore.logout(true)
       }
     },
   }

@@ -22,7 +22,6 @@ export enum UserBlok {
 }
 
 export enum UserKamar {
-  // Menggunakan nama member yang valid di TypeScript
   Kamar_1 = "1",
   Kamar_2 = "2",
   Kamar_3 = "3",
@@ -40,4 +39,53 @@ export enum TransactionStatus {
   UNKNOWN = "UNKNOWN",
 }
 
-// Tambahkan Enum lain yang Anda butuhkan dan ada di models.py
+// ------ ENUM Yang Dimigrasi dari @core/enums dan @layouts/enums ------
+export enum Skins {
+  Default = 'default',
+  Bordered = 'bordered',
+}
+
+export enum Theme {
+  Light = 'light',
+  Dark = 'dark',
+  System = 'system',
+}
+
+export enum Layout {
+  Vertical = 'vertical',
+  Horizontal = 'horizontal',
+  Collapsed = 'collapsed',
+}
+
+export enum Direction {
+  Ltr = 'ltr',
+  Rtl = 'rtl',
+}
+
+export enum ContentWidth {
+  Fluid = 'fluid',
+  Boxed = 'boxed',
+}
+
+export enum NavbarType {
+  Sticky = 'sticky',
+  Static = 'static',
+  Hidden = 'hidden',
+}
+
+export enum FooterType {
+  Sticky = 'sticky',
+  Static = 'static',
+  Hidden = 'hidden',
+}
+
+export enum AppContentLayoutNav { // Ini yang menyebabkan error Anda
+  Vertical = 'vertical',
+  Horizontal = 'horizontal',
+}
+
+export enum HorizontalNavType {
+  Sticky = 'sticky',
+  Static = 'static',
+  Hidden = 'hidden',
+}

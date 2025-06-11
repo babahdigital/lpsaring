@@ -1,32 +1,114 @@
 # backend/app/infrastructure/gateways/mikrotik_client.py
-# Versi Update: Perbaikan verifikasi pada delete_hotspot_user.
+# VERSI FINAL: Memperbaiki masalah inisialisasi RouterOsApiPool,
+# Menambahkan force_update_profile, logging yang lebih baik, dan penanganan parameter opsional.
+# PERBAIKAN FINAL: Menambahkan pengecekan '.id' untuk mencegah KeyError.
+# PERBAIKAN V3: Logika yang lebih tangguh untuk menangani user yang ada tanpa '.id'
 
-import routeros_api
-from flask import current_app
-from routeros_api.exceptions import RouterOsApiConnectionError, RouterOsApiCommunicationError, RouterOsApiError
-from typing import Optional, Any, Tuple, Dict
-import uuid
+import os
+import time
 import re
-import time # Import time untuk jeda kecil (opsional)
+from contextlib import contextmanager
+from typing import Optional, Tuple, List, Dict, Any
+from flask import current_app # Import current_app di sini
+import logging
 
-# Import model User dan instance db
-from app.extensions import db
+# Coba import routeros_api, jika gagal, berikan placeholder
 try:
-    from app.infrastructure.db.models import User
+    import routeros_api
+    ROUTEROS_API_AVAILABLE = True
 except ImportError:
-    logger = current_app.logger if current_app else print
-    logger.critical("Gagal mengimpor model User di mikrotik_client.py. Periksa path.")
-    class User: # type: ignore
-        id: uuid.UUID
-        phone_number: str
-        full_name: str | None
-        total_quota_purchased_mb: int | None
-        total_quota_used_mb: float | None
+    ROUTEROS_API_AVAILABLE = False
+    print("WARNING: routeros_api is not installed. Mikrotik functions will be dummy.")
+
+# Global logger yang bisa diakses di mana saja
+# Ini untuk memastikan logger terkonfigurasi, terutama di luar app context
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    # Konfigurasi handler default jika belum ada (misal saat running via CLI tanpa Flask app context penuh)
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO) # Default level
+
+# Konfigurasi Mikrotik dari environment variables
+MIKROTIK_HOST = os.environ.get('MIKROTIK_HOST')
+MIKROTIK_USERNAME = os.environ.get('MIKROTIK_USERNAME')
+MIKROTIK_PASSWORD = os.environ.get('MIKROTIK_PASSWORD')
+MIKROTIK_PORT = int(os.environ.get('MIKROTIK_PORT', 8728))
+MIKROTIK_USE_SSL = os.environ.get('MIKROTIK_USE_SSL', 'False').lower() == 'true'
+MIKROTIK_SSL_VERIFY = os.environ.get('MIKROTIK_SSL_VERIFY', 'False').lower() == 'true'
+MIKROTIK_PLAIN_TEXT_LOGIN = os.environ.get('MIKROTIK_PLAIN_TEXT_LOGIN', 'True').lower() == 'true'
+
+# PERBAIKAN: Gunakan RouterOsApiPool secara eksplisit di sini
+_connection_pool: Optional[routeros_api.RouterOsApiPool] = None # Ganti Any dengan tipe yang lebih spesifik
+
+def init_mikrotik_pool() -> bool:
+    """Menginisialisasi pool koneksi MikroTik. Dipanggil sekali."""
+    global _connection_pool
+    
+    if _connection_pool is not None:
+        logger.debug("Pool koneksi MikroTik sudah diinisialisasi.")
+        return True
+
+    if not (MIKROTIK_HOST and MIKROTIK_USERNAME and MIKROTIK_PASSWORD):
+        logger.error("Konfigurasi MikroTik (MIKROTIK_HOST, MIKROTIK_USERNAME, MIKROTIK_PASSWORD) tidak lengkap.")
+        _connection_pool = None
+        return False
+    
+    if not ROUTEROS_API_AVAILABLE:
+        logger.error("routeros_api library not installed. Cannot initialize Mikrotik connection pool.")
+        _connection_pool = None
+        return False
+
+    try:
+        # Inisialisasi pool koneksi
+        _connection_pool = routeros_api.RouterOsApiPool(
+            MIKROTIK_HOST,
+            username=MIKROTIK_USERNAME,
+            password=MIKROTIK_PASSWORD,
+            port=MIKROTIK_PORT,
+            use_ssl=MIKROTIK_USE_SSL,
+            ssl_verify=MIKROTIK_SSL_VERIFY,
+            plaintext_login=MIKROTIK_PLAIN_TEXT_LOGIN
+        )
+        logger.info(f"Pool koneksi MikroTik berhasil diinisialisasi untuk {MIKROTIK_HOST}:{MIKROTIK_PORT}.")
+        return True
+    except Exception as e:
+        logger.error(f"Gagal menginisialisasi pool koneksi MikroTik: {e}", exc_info=True)
+        _connection_pool = None
+        return False
+
+@contextmanager
+def get_mikrotik_connection() -> Optional[Any]: # Gunakan Any untuk type hint api_instance
+    """Menyediakan koneksi API MikroTik dari pool menggunakan context manager."""
+    api_instance: Optional[Any] = None 
+    try:
+        # Pastikan pool sudah diinisialisasi. Jika belum, coba inisialisasi.
+        if _connection_pool is None:
+            if not init_mikrotik_pool():
+                logger.error("Pool koneksi MikroTik tidak tersedia atau gagal diinisialisasi. Tidak bisa mendapatkan koneksi API.")
+                yield None
+                return
+
+        api_instance = _connection_pool.get_api()
+        logger.debug(f"[MikroTik Client] Koneksi API MikroTik berhasil didapatkan dari pool: {MIKROTIK_HOST}")
+        yield api_instance
+    except (routeros_api.exceptions.RouterOsApiError, routeros_api.exceptions.RouterOsApiConnectionError, routeros_api.exceptions.RouterOsApiCommunicationError) as e:
+        logger.error(f"RouterOS API Error saat mendapatkan koneksi dari pool: {e}", exc_info=True)
+        yield None
+    except Exception as e:
+        logger.error(f"Error tidak terduga saat mendapatkan koneksi MikroTik dari pool: {e}", exc_info=True)
+        yield None
+    finally:
+        # Koneksi akan otomatis dikembalikan ke pool saat keluar dari context manager
+        # karena perilaku RouterOsApiPool default.
+        if api_instance and _connection_pool:
+            logger.debug("Koneksi MikroTik API sedang dikembalikan ke pool.")
+
 
 # --- Fungsi Helper Format Nomor Telepon ---
 def format_to_local_phone(phone_number: Optional[str]) -> Optional[str]:
-    """Mengubah format +62... atau 62... menjadi 08... Mengembalikan None jika input None."""
-    logger = current_app.logger if current_app else print
     if not phone_number: return None
     try:
         cleaned_number = re.sub(r'[\s\-()+]', '', str(phone_number)).lstrip('+')
@@ -42,150 +124,136 @@ def format_to_local_phone(phone_number: Optional[str]) -> Optional[str]:
         logger.error(f"Error dalam format_to_local_phone untuk '{phone_number}': {e}", exc_info=True)
         return None
 
-# --- Fungsi Koneksi ---
-def get_mikrotik_connection() -> Optional[routeros_api.RouterOsApiPool]:
-    """Membuat dan mengembalikan objek pool koneksi API ke MikroTik."""
-    logger = current_app.logger if current_app else print
-    host: Optional[str] = current_app.config.get('MIKROTIK_HOST')
-    port: int = current_app.config.get('MIKROTIK_PORT', 8728)
-    user_cfg: Optional[str] = current_app.config.get('MIKROTIK_USER')
-    password_cfg: Optional[str] = current_app.config.get('MIKROTIK_PASSWORD')
-    use_ssl: bool = current_app.config.get('MIKROTIK_USE_SSL', False)
-    ssl_verify_cfg = current_app.config.get('MIKROTIK_SSL_VERIFY', False)
-
-    if not all([host, user_cfg, password_cfg]):
-        logger.error("Konfigurasi MikroTik (MIKROTIK_HOST, MIKROTIK_USER, MIKROTIK_PASSWORD) tidak lengkap.")
-        return None
-
-    should_use_plaintext_login: bool = not use_ssl
-
-    logger.debug(f"[MikroTik Client] Mencoba koneksi dengan: Host={host}, Port={port}, User={user_cfg}, SSL={use_ssl}, SSLVerify={ssl_verify_cfg}, PlaintextLogin={should_use_plaintext_login}")
-
-    try:
-        connection_pool = routeros_api.RouterOsApiPool(
-            host, username=user_cfg, password=password_cfg, port=port,
-            use_ssl=use_ssl,
-            ssl_verify=ssl_verify_cfg,
-            ssl_verify_hostname=ssl_verify_cfg,
-            plaintext_login=should_use_plaintext_login
-        )
-        return connection_pool
-    except Exception as e: # Tangkap exception lebih umum di sini
-        logger.error(f"Error saat membuat pool koneksi MikroTik: {e}", exc_info=True)
-        return None
-
 # --- Fungsi Aksi Hotspot ---
 
 def activate_or_update_hotspot_user(
-    connection_pool: Optional[routeros_api.RouterOsApiPool],
-    user_db_id: str,
+    api_connection: Any, # Gunakan Any untuk type hint api_connection
+    user_mikrotik_username: str, # Username Mikrotik yang sudah diformat
     mikrotik_profile_name: str,
     hotspot_password: str,
-    comment: str = ""
+    comment: str = "",
+    limit_bytes_total: Optional[int] = None,
+    session_timeout_seconds: Optional[int] = None,
+    force_update_profile: bool = False
 ) -> Tuple[bool, str]:
     """
-    Mengaktifkan/mengupdate user hotspot di MikroTik berdasarkan data dari DB.
+    Mengaktifkan atau memperbarui pengguna hotspot di MikroTik.
+    Menerima limit_bytes_total (bytes) dan session_timeout_seconds (detik) untuk kontrol per user.
+    Parameter ini hanya akan dikirim jika diaktifkan melalui konfigurasi Flask DAN nilainya > 0.
     """
-    logger = current_app.logger if current_app else print
-    if User is None: return False, "Model User tidak termuat."
-    if not connection_pool:
-        msg = "Tidak dapat mengaktifkan/update user hotspot: Pool koneksi MikroTik tidak valid."
-        logger.error(msg); return False, msg
-
-    api: Optional[routeros_api.RouterOsApi] = None
-    username_mikrotik_formatted: Optional[str] = None
-    user_uuid: Optional[uuid.UUID] = None
-
+    user_data = {}
     try:
-        try: user_uuid = uuid.UUID(user_db_id)
-        except ValueError:
-            msg = f"Format user_db_id tidak valid: '{user_db_id}'. Harus berupa UUID."
-            logger.error(msg); return False, msg
+        user_hotspot_resource = api_connection.get_resource('/ip/hotspot/user')
+        logger.debug(f"Mencari user '{user_mikrotik_username}' di MikroTik...")
+        existing_users_list: list[dict[str, Any]] = user_hotspot_resource.get(name=user_mikrotik_username)
+        
+        final_comment = comment
 
-        user_in_db = db.session.get(User, user_uuid)
-        if not user_in_db:
-            msg = f"User dengan ID DB {user_db_id} tidak ditemukan."
-            logger.error(msg); return False, msg
+        user_data = {
+            'name': user_mikrotik_username,
+            'password': hotspot_password,
+            'profile': mikrotik_profile_name,
+            'server': 'all', # Asumsi target server hotspot
+            'comment': final_comment,
+        }
 
-        username_mikrotik_formatted = format_to_local_phone(user_in_db.phone_number)
-        if not username_mikrotik_formatted:
-             msg = f"Format nomor telepon tidak valid untuk User ID DB {user_db_id} (PhoneNumber DB: {user_in_db.phone_number})."
-             logger.error(msg); return False, msg
+        # --- Penanganan Opsional parameter limit-bytes-total dan session-timeout ---
+        send_limit_bytes_total_cfg = False
+        send_session_timeout_cfg = False
+        if current_app: 
+            send_limit_bytes_total_cfg = current_app.config.get('MIKROTIK_SEND_LIMIT_BYTES_TOTAL', False)
+            send_session_timeout_cfg = current_app.config.get('MIKROTIK_SEND_SESSION_TIMEOUT', False)
+        else:
+            logger.warning("current_app tidak tersedia. MIKROTIK_SEND_LIMIT_BYTES_TOTAL dan MIKROTIK_SEND_SESSION_TIMEOUT akan menggunakan nilai default False.")
 
-        if not hotspot_password:
-             msg = f"Password hotspot wajib diisi untuk user '{username_mikrotik_formatted}'."
-             logger.error(msg); return False, msg
+        if send_limit_bytes_total_cfg and limit_bytes_total is not None and limit_bytes_total > 0:
+            user_data['limit-bytes-total'] = str(limit_bytes_total)
+            logger.debug(f"Adding 'limit-bytes-total': {limit_bytes_total} to Mikrotik payload.")
+        
+        if send_session_timeout_cfg and session_timeout_seconds is not None and session_timeout_seconds > 0:
+            user_data['session-timeout'] = str(session_timeout_seconds)
+            logger.debug(f"Adding 'session-timeout': {session_timeout_seconds} to Mikrotik payload.")
+        # --- Akhir Penanganan Opsional ---
 
-        purchased_mb = getattr(user_in_db, 'total_quota_purchased_mb', 0) or 0
-        used_mb = getattr(user_in_db, 'total_quota_used_mb', 0.0) or 0.0
-        remaining_mb = max(0.0, purchased_mb - used_mb)
-        limit_bytes_total_val = int(remaining_mb * 1024 * 1024)
-        logger.debug(f"Kuota user '{username_mikrotik_formatted}': Beli={purchased_mb}MB, Pakai={used_mb}MB, Sisa={remaining_mb}MB, LimitBytesTotal={limit_bytes_total_val}")
-
-        server_target = "all"
-        api = connection_pool.get_api()
-        user_hotspot_resource = api.get_resource('/ip/hotspot/user')
-        logger.debug(f"Mencari user '{username_mikrotik_formatted}' di MikroTik...")
-        existing_users_list: list[dict[str, Any]] = user_hotspot_resource.get(name=username_mikrotik_formatted)
-        final_comment = comment or f"DB_ID:{user_db_id};Name:{getattr(user_in_db, 'full_name', 'N/A')};"
-
+        # --- PERBAIKAN V3: Logika UPDATE vs ADD yang lebih kuat ---
         if existing_users_list:
-            mikrotik_internal_id = existing_users_list[0]['id']
-            logger.info(f"User '{username_mikrotik_formatted}' ditemukan (ID: {mikrotik_internal_id}). Memperbarui...")
-            update_payload = { 'id': mikrotik_internal_id, 'password': hotspot_password, 'profile': mikrotik_profile_name, 'server': server_target, 'limit-bytes-total': str(limit_bytes_total_val), 'comment': final_comment, }
-            user_hotspot_resource.set(**update_payload)
-            msg = f"User MikroTik '{username_mikrotik_formatted}' berhasil diperbarui. Profil: {mikrotik_profile_name}, Limit: {limit_bytes_total_val} bytes."
+            # Pengguna ditemukan dalam bentuk apa pun, jadi kita harus UPDATE.
+            user_entry = existing_users_list[0]
+            
+            # Cari identifier, bisa '.id' atau 'id'. Kunci '.id' lebih diutamakan.
+            mikrotik_internal_id = user_entry.get('.id') or user_entry.get('id')
+            
+            if not mikrotik_internal_id:
+                # Kasus aneh: pengguna ada tapi tidak punya ID. Ini tidak seharusnya terjadi.
+                # Gagal dengan aman daripada mencoba 'add' yang pasti gagal.
+                error_msg = f"User '{user_mikrotik_username}' ditemukan tetapi tidak memiliki ID yang valid. Tidak dapat melanjutkan. Data: {user_entry}"
+                logger.error(error_msg)
+                return False, "User ditemukan di MikroTik tetapi data ID-nya tidak valid."
+
+            logger.info(f"User '{user_mikrotik_username}' ditemukan (ID: {mikrotik_internal_id}). Memperbarui...")
+            
+            # Gunakan ID yang ditemukan untuk operasi 'set' (update).
+            # Library routeros_api menggunakan kunci '.id' untuk menargetkan record.
+            user_data['.id'] = mikrotik_internal_id
+            
+            # Pastikan profile diupdate jika force_update_profile True atau jika profile berubah
+            if force_update_profile or user_entry.get('profile') != mikrotik_profile_name:
+                user_data['profile'] = mikrotik_profile_name
+                logger.info(f"Mengupdate profil untuk {user_mikrotik_username} ke {mikrotik_profile_name}.")
+
+            user_hotspot_resource.set(**user_data)
+
+            msg = f"User MikroTik '{user_mikrotik_username}' berhasil diperbarui. Profil: {mikrotik_profile_name}."
+            if send_limit_bytes_total_cfg and limit_bytes_total is not None and limit_bytes_total > 0: msg += f" LimitBytesTotal: {limit_bytes_total}."
+            if send_session_timeout_cfg and session_timeout_seconds is not None and session_timeout_seconds > 0: msg += f" SessionTimeout: {session_timeout_seconds}."
             logger.info(msg)
             return True, msg
         else:
-            logger.info(f"User '{username_mikrotik_formatted}' tidak ditemukan. Membuat baru...")
-            add_payload = { 'name': username_mikrotik_formatted, 'password': hotspot_password, 'profile': mikrotik_profile_name, 'server': server_target, 'limit-bytes-total': str(limit_bytes_total_val), 'comment': final_comment }
-            user_hotspot_resource.add(**add_payload)
-            msg = f"User MikroTik baru '{username_mikrotik_formatted}' berhasil dibuat. Profil: {mikrotik_profile_name}, Limit: {limit_bytes_total_val} bytes."
+            # Pengguna benar-benar tidak ditemukan, jadi kita harus ADD.
+            logger.info(f"User '{user_mikrotik_username}' tidak ditemukan. Membuat baru...")
+            user_hotspot_resource.add(**user_data)
+            
+            msg = f"User MikroTik baru '{user_mikrotik_username}' berhasil dibuat. Profil: {mikrotik_profile_name}."
+            if send_limit_bytes_total_cfg and limit_bytes_total is not None and limit_bytes_total > 0: msg += f" LimitBytesTotal: {limit_bytes_total}."
+            if send_session_timeout_cfg and session_timeout_seconds is not None and session_timeout_seconds > 0: msg += f" SessionTimeout: {session_timeout_seconds}."
             logger.info(msg)
             return True, msg
 
-    except RouterOsApiError as e:
-        ctx = f"untuk user '{username_mikrotik_formatted or user_db_id}'"
-        msg = f"Gagal aksi MikroTik {ctx}. Error API: {e}. Detail: {getattr(e, 'original_message', '')}"
+    except routeros_api.exceptions.RouterOsApiError as e:
+        ctx = f"untuk user '{user_mikrotik_username}'"
+        msg = f"Gagal aksi MikroTik {ctx}. Error API: {e}. Detail: {getattr(e, 'original_message', '')}. Payload yang dicoba: {user_data}"
         logger.error(msg, exc_info=False)
         return False, f"Error API MikroTik: {getattr(e, 'original_message', str(e))}"
     except Exception as e:
-        ctx = f"untuk user '{username_mikrotik_formatted or user_db_id}'"
+        ctx = f"untuk user '{user_mikrotik_username}'"
         msg = f"Error tidak terduga selama aksi MikroTik {ctx}: {e}"
         logger.error(msg, exc_info=True)
         return False, f"Error internal server saat operasi MikroTik: {e}"
-    finally:
-        if api and connection_pool:
-            try: connection_pool.disconnect(); logger.debug("Mikrotik API connection returned (activate/update).")
-            except Exception as e_disc: logger.error(f"Error disconnect (activate/update): {e_disc}", exc_info=True)
+
 
 # --- Fungsi Update Password User Hotspot ---
 def update_mikrotik_user_password(
-    connection_pool: Optional[routeros_api.RouterOsApiPool],
-    username_db: str,
+    api_connection: Any, # Gunakan Any
+    username_mikrotik_fmt: str,
     new_password: str
 ) -> Tuple[bool, str]:
-    """Memperbarui password user hotspot yang sudah ada di MikroTik."""
-    logger = current_app.logger if current_app else print
-    if not connection_pool: msg = "..."; logger.error(msg); return False, msg
-    if not username_db: msg = "..."; logger.error(msg); return False, msg
-    if not new_password: msg = "..."; logger.error(msg); return False, msg
-
-    api: Optional[routeros_api.RouterOsApi] = None
-    username_mikrotik_fmt: Optional[str] = format_to_local_phone(username_db)
-
-    if not username_mikrotik_fmt: msg = "..."; logger.error(msg); return False, msg
+    if not username_mikrotik_fmt: msg = "Username Mikrotik tidak boleh kosong."; logger.error(msg); return False, msg
+    if not new_password: msg = "Password baru tidak boleh kosong."; logger.error(msg); return False, msg
 
     try:
-        api = connection_pool.get_api()
-        user_resource = api.get_resource('/ip/hotspot/user')
+        user_resource = api_connection.get_resource('/ip/hotspot/user')
         logger.debug(f"Mencari user '{username_mikrotik_fmt}' untuk update password...")
         existing_user_list: list[dict[str, Any]] = user_resource.get(name=username_mikrotik_fmt)
 
         if existing_user_list:
-            user_mikrotik_id = existing_user_list[0]['id']
+            # PERBAIKAN: Gunakan logika yang sama seperti di atas untuk mendapatkan ID
+            user_entry = existing_user_list[0]
+            user_mikrotik_id = user_entry.get('.id') or user_entry.get('id')
+            if not user_mikrotik_id:
+                return False, f"User '{username_mikrotik_fmt}' ditemukan tetapi tidak memiliki ID yang valid."
+                
             logger.info(f"User '{username_mikrotik_fmt}' ditemukan (ID: {user_mikrotik_id}). Memperbarui password...")
+            # Gunakan ID yang ditemukan untuk operasi 'set'
             user_resource.set(id=user_mikrotik_id, password=new_password)
             msg = f"Password MikroTik '{username_mikrotik_fmt}' berhasil diperbarui."
             logger.info(msg); return True, msg
@@ -193,130 +261,208 @@ def update_mikrotik_user_password(
             msg = f"User '{username_mikrotik_fmt}' tidak ditemukan. Password tidak diperbarui."
             logger.warning(msg); return False, msg
 
-    except RouterOsApiError as e: msg = f"..."; logger.error(msg, exc_info=False); return False, f"..."
-    except Exception as e: msg = f"..."; logger.error(msg, exc_info=True); return False, f"..."
-    finally:
-        if api and connection_pool:
-            try: connection_pool.disconnect(); logger.debug("Mikrotik API connection returned (update_password).")
-            except Exception as e_disc: logger.error(f"Error disconnect (update_password): {e_disc}", exc_info=True)
+    except routeros_api.exceptions.RouterOsApiError as e:
+        msg = f"Error API Mikrotik saat update password user {username_mikrotik_fmt}: {getattr(e, 'original_message', str(e))}"
+        logger.error(msg, exc_info=False); return False, msg
+    except Exception as e:
+        msg = f"Error tidak terduga saat update password Mikrotik user {username_mikrotik_fmt}: {e}"
+        logger.error(msg, exc_info=True); return False, str(e)
+
 
 # --- Fungsi Helper Lainnya ---
 
 def get_hotspot_user_usage(
-    connection_pool: Optional[routeros_api.RouterOsApiPool],
+    api_connection: Any, # Gunakan Any
     username: str
 ) -> Tuple[bool, Optional[Dict[str, int]], str]:
     """Mengambil data penggunaan (bytes-in, bytes-out) user dari Mikrotik."""
-    logger = current_app.logger if current_app else print
-    if not connection_pool: return False, None, "Pool koneksi tidak valid."
-    api: Optional[routeros_api.RouterOsApi] = None
     username_mikrotik_fmt = username
     if not username_mikrotik_fmt: return False, None, f"Username '{username}' tidak valid."
 
     try:
-        api = connection_pool.get_api()
-        user_resource = api.get_resource('/ip/hotspot/user')
+        user_resource = api_connection.get_resource('/ip/hotspot/user')
         user_list: list[dict[str, Any]] = user_resource.get(name=username_mikrotik_fmt)
         if user_list:
             data = user_list[0]; bytes_in = int(data.get('bytes-in', 0) or 0); bytes_out = int(data.get('bytes-out', 0) or 0)
             logger.debug(f"Usage data found for '{username_mikrotik_fmt}': In={bytes_in}, Out={bytes_out}")
             return True, {'bytes_in': bytes_in, 'bytes_out': bytes_out}, "Sukses"
         else: logger.warning(f"User '{username_mikrotik_fmt}' tidak ditemukan saat get_usage."); return True, None, f"User '{username_mikrotik_fmt}' tidak ditemukan."
-    except RouterOsApiError as e: msg = f"..."; logger.error(msg, exc_info=False); return False, None, msg
-    except Exception as e: msg = f"..."; logger.error(msg, exc_info=True); return False, None, str(e)
-    finally:
-        if api and connection_pool:
-            try: connection_pool.disconnect(); logger.debug("Mikrotik API connection returned (get_usage).")
-            except Exception as e_disc: logger.error(f"Error disconnect (get_usage): {e_disc}", exc_info=True)
+    except routeros_api.exceptions.RouterOsApiError as e:
+        msg = f"Error API Mikrotik saat get_usage user {username_mikrotik_fmt}: {getattr(e, 'original_message', str(e))}"
+        logger.error(msg, exc_info=False); return False, msg
+    except Exception as e:
+        msg = f"Error tidak terduga saat get_usage Mikrotik user {username_mikrotik_fmt}: {e}"
+        logger.error(msg, exc_info=True); return False, str(e)
 
 
 def set_hotspot_user_limit(
-    connection_pool: Optional[routeros_api.RouterOsApiPool],
+    api_connection: Any, # Gunakan Any
     username: str,
     limit_bytes_total: int
 ) -> Tuple[bool, str]:
     """Menetapkan limit-bytes-total untuk user hotspot Mikrotik."""
-    logger = current_app.logger if current_app else print
-    if not connection_pool: return False, "Pool koneksi tidak valid."
-    api: Optional[routeros_api.RouterOsApi] = None
     username_mikrotik_fmt = username
     if not username_mikrotik_fmt: return False, f"Username '{username}' tidak valid."
     try:
-        api = connection_pool.get_api()
-        user_resource = api.get_resource('/ip/hotspot/user')
+        user_resource = api_connection.get_resource('/ip/hotspot/user')
         user_list: list[dict[str, Any]] = user_resource.get(name=username_mikrotik_fmt)
         if user_list:
-            user_id = user_list[0]['id']; user_resource.set(id=user_id, **{'limit-bytes-total': str(limit_bytes_total)})
+            # PERBAIKAN: Gunakan logika yang sama untuk mendapatkan ID
+            user_entry = user_list[0]
+            user_id = user_entry.get('.id') or user_entry.get('id')
+            if not user_id:
+                return False, f"User '{username_mikrotik_fmt}' ditemukan tetapi tidak memiliki ID yang valid."
+            
+            user_resource.set(id=user_id, **{'limit-bytes-total': str(limit_bytes_total)})
             logger.info(f"Limit bytes '{username_mikrotik_fmt}' diatur ke {limit_bytes_total}."); return True, "Sukses"
         else: logger.warning(f"User '{username_mikrotik_fmt}' tidak ditemukan saat set_limit."); return False, f"User '{username_mikrotik_fmt}' tidak ditemukan."
-    except RouterOsApiError as e: msg = f"..."; logger.error(msg, exc_info=False); return False, msg
-    except Exception as e: msg = f"..."; logger.error(msg, exc_info=True); return False, str(e)
-    finally:
-        if api and connection_pool:
-            try: connection_pool.disconnect(); logger.debug("Mikrotik API connection returned (set_limit).")
-            except Exception as e_disc: logger.error(f"Error disconnect (set_limit): {e_disc}", exc_info=True)
+    except routeros_api.exceptions.RouterOsApiError as e:
+        msg = f"Error API Mikrotik saat set_limit user {username_mikrotik_fmt}: {getattr(e, 'original_message', str(e))}"
+        logger.error(msg, exc_info=False); return False, msg
+    except Exception as e:
+        msg = f"Error tidak terduga saat set_limit Mikrotik user {username_mikrotik_fmt}: {e}"
+        logger.error(msg, exc_info=True); return False, str(e)
+
+
+# --- FUNGSI BARU: set_hotspot_user_profile ---
+def set_hotspot_user_profile(
+    api_connection: Any, # Gunakan Any
+    username_or_id: str,
+    new_profile_name: str
+) -> Tuple[bool, str]:
+    if not username_or_id: return False, "Username atau ID Mikrotik tidak boleh kosong."
+    if not new_profile_name: return False, "Nama profil baru tidak boleh kosong."
+
+    try:
+        user_resource = api_connection.get_resource('/ip/hotspot/user')
+        
+        users = user_resource.get(name=username_or_id)
+        
+        if not users:
+            try:
+                users = user_resource.get(id=username_or_id)
+            except Exception:
+                pass
+
+        if not users:
+            msg = f"User hotspot '{username_or_id}' tidak ditemukan di Mikrotik."
+            logger.warning(msg); return False, msg
+
+        # PERBAIKAN: Gunakan logika yang sama untuk mendapatkan ID
+        user_entry = users[0]
+        user_mikrotik_id = user_entry.get('.id') or user_entry.get('id')
+        if not user_mikrotik_id:
+            return False, f"User '{username_or_id}' ditemukan tetapi tidak memiliki ID yang valid."
+
+        current_profile = user_entry.get('profile')
+
+        if current_profile == new_profile_name:
+            msg = f"User '{username_or_id}' sudah berada di profil '{new_profile_name}'. Tidak perlu update."
+            logger.info(msg); return True, msg
+        
+        logger.info(f"Mengubah profil user '{username_or_id}' dari '{current_profile or 'N/A'}' ke '{new_profile_name}'...")
+        user_resource.set(id=user_mikrotik_id, profile=new_profile_name)
+        
+        msg = f"Profil user '{username_or_id}' berhasil diubah ke '{new_profile_name}'."
+        logger.info(msg); return True, msg
+
+    except routeros_api.exceptions.RouterOsApiError as e:
+        msg = f"Error API Mikrotik saat mengubah profil user {username_or_id}: {getattr(e, 'original_message', str(e))}"
+        logger.error(msg, exc_info=False); return False, msg
+    except Exception as e:
+        msg = f"Error tidak terduga saat mengubah profil Mikrotik user {username_or_id}: {e}"
+        logger.error(msg, exc_info=True); return False, str(e)
+
+def add_mikrotik_hotspot_user_profile(
+    api_connection: Any,
+    profile_name: str,
+    rate_limit: Optional[str] = None,
+    shared_users: Optional[int] = None,
+    comment: Optional[str] = None
+) -> Tuple[bool, str]:
+    """
+    Menambahkan profil hotspot baru di Mikrotik.
+    """
+    if not api_connection:
+        return False, "API connection is not established."
+    if not ROUTEROS_API_AVAILABLE:
+        return False, "routeros_api library not installed."
+    
+    attrs = {}
+    try:
+        profiles = api_connection.get_resource('/ip/hotspot/user/profile')
+
+        # Cek apakah profil sudah ada
+        existing_profile = profiles.get(name=profile_name)
+        if existing_profile:
+            return False, f"Profile '{profile_name}' already exists in Mikrotik."
+
+        attrs = {
+            'name': profile_name,
+        }
+        if rate_limit:
+            attrs['rate-limit'] = rate_limit
+        if shared_users is not None and shared_users > 0:
+            attrs['shared-users'] = str(shared_users) # shared-users expect string in API
+        if comment:
+            attrs['comment'] = comment
+
+        profiles.add(**attrs)
+        logger.info(f"Hotspot user profile '{profile_name}' added to Mikrotik.")
+        return True, f"Profile '{profile_name}' added successfully."
+
+    except routeros_api.exceptions.RouterOsApiError as e:
+        error_message = f"Mikrotik API error adding profile '{profile_name}'. Payload: {attrs}. Error: {e.original_message or e}"
+        logger.error(error_message, exc_info=True)
+        return False, error_message
+    except Exception as e:
+        error_message = f"Unexpected error adding Mikrotik profile '{profile_name}': {e}"
+        logger.error(error_message, exc_info=True)
+        return False, error_message
 
 # --- FUNGSI DELETE DENGAN VERIFIKASI ---
 def delete_hotspot_user(
-    connection_pool: Optional[routeros_api.RouterOsApiPool],
-    username: str # Username hotspot (format 08...)
+    api_connection: Any, # Gunakan Any
+    username: str
 ) -> Tuple[bool, str]:
-    """Menghapus user hotspot dari Mikrotik dan memverifikasi penghapusan."""
-    logger = current_app.logger if current_app else print
-    if not connection_pool: return False, "Pool koneksi tidak valid."
-    api: Optional[routeros_api.RouterOsApi] = None
-    # Username sudah diformat oleh pemanggil (user_commands.py)
     username_mikrotik_fmt = username
     if not username_mikrotik_fmt: return False, f"Username '{username}' tidak valid."
 
     try:
-        api = connection_pool.get_api()
-        user_resource = api.get_resource('/ip/hotspot/user')
+        user_resource = api_connection.get_resource('/ip/hotspot/user')
         logger.debug(f"Mencari user '{username_mikrotik_fmt}' untuk dihapus...")
         user_list: list[dict[str, Any]] = user_resource.get(name=username_mikrotik_fmt)
 
         if user_list:
-            user_id = user_list[0]['id']
+            # PERBAIKAN: Gunakan logika yang sama untuk mendapatkan ID
+            user_entry = user_list[0]
+            user_id = user_entry.get('.id') or user_entry.get('id')
+            if not user_id:
+                return False, f"Gagal menghapus. User '{username_mikrotik_fmt}' ditemukan tetapi tidak memiliki ID yang valid."
+
             logger.info(f"User '{username_mikrotik_fmt}' ditemukan (ID: {user_id}). Mencoba menghapus...")
             try:
-                 # Kirim perintah remove
                  user_resource.remove(id=user_id)
                  logger.info(f"Perintah remove untuk user '{username_mikrotik_fmt}' (ID: {user_id}) telah dikirim.")
-
-                 # --- VERIFIKASI PENGHAPUSAN ---
-                 # Beri jeda sedikit (misal 0.5 detik) agar Mikrotik sempat memproses
-                 time.sleep(0.5)
+                 time.sleep(0.5) # Beri waktu Mikrotik untuk memproses
                  logger.debug(f"Memverifikasi penghapusan user '{username_mikrotik_fmt}'...")
                  verify_list: list[dict[str, Any]] = user_resource.get(name=username_mikrotik_fmt)
                  if not verify_list:
-                     # Jika daftar kosong, berarti berhasil dihapus
                      logger.info(f"Verifikasi SUKSES: User '{username_mikrotik_fmt}' tidak lagi ditemukan di Mikrotik.")
                      return True, "Sukses dihapus dari Mikrotik."
                  else:
-                     # Jika masih ada, berarti gagal dihapus
                      logger.error(f"Verifikasi GAGAL: User '{username_mikrotik_fmt}' masih ditemukan di Mikrotik setelah perintah remove.")
                      return False, f"Gagal menghapus user '{username_mikrotik_fmt}' dari Mikrotik (masih terdeteksi)."
-            except RouterOsApiError as e_remove:
-                 # Tangkap error spesifik saat remove
+            except routeros_api.exceptions.RouterOsApiError as e_remove:
                  msg = f"Error API Mikrotik saat remove user {username_mikrotik_fmt}: {getattr(e_remove, 'original_message', str(e_remove))}"
                  logger.error(msg, exc_info=False)
                  return False, msg
         else:
-            # User memang tidak ada dari awal
             logger.info(f"User hotspot '{username_mikrotik_fmt}' tidak ditemukan di Mikrotik (dianggap sudah terhapus).")
             return True, f"User '{username_mikrotik_fmt}' tidak ditemukan."
-    except RouterOsApiError as e:
+    except routeros_api.exceptions.RouterOsApiError as e:
         msg = f"Error API Mikrotik saat proses delete user {username_mikrotik_fmt}: {getattr(e, 'original_message', str(e))}"
-        logger.error(msg, exc_info=False)
-        return False, msg
+        logger.error(msg, exc_info=False); return False, msg
     except Exception as e:
         msg = f"Error tidak terduga saat delete user Mikrotik {username_mikrotik_fmt}: {e}"
-        logger.error(msg, exc_info=True)
-        return False, str(e)
-    finally:
-        if api and connection_pool:
-            try:
-                connection_pool.disconnect()
-                logger.debug("Mikrotik API connection returned to pool (delete_user).")
-            except Exception as e_disc:
-                 logger.error(f"Error during Mikrotik pool disconnect (delete_user): {e_disc}", exc_info=True)
+        logger.error(msg, exc_info=True); return False, str(e)

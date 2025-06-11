@@ -56,7 +56,6 @@ def get_env_list(var_name, default="[]"):
     warnings.warn(f"PERINGATAN: Tidak dapat mem-parse {var_name} ('{val_str}') sebagai list. Menggunakan default: {default}")
     return [] if default == "[]" else default
 
-
 class Config:
     """Konfigurasi dasar aplikasi Flask."""
 
@@ -126,7 +125,6 @@ class Config:
     _redis_password_ratelimit = os.environ.get('REDIS_PASSWORD_RATELIMIT', REDIS_PASSWORD_OTP)
     REDIS_PASSWORD_RATELIMIT = _redis_password_ratelimit if _redis_password_ratelimit and _redis_password_ratelimit.lower() != 'null' else None
     _redis_auth_ratelimit = f":{REDIS_PASSWORD_RATELIMIT}@" if REDIS_PASSWORD_RATELIMIT else ""
-    # PERUBAHAN KUNCI DI SINI: Menggunakan RATELIMIT_STORAGE_URI
     RATELIMIT_STORAGE_URI = os.environ.get('RATELIMIT_STORAGE_URI', f"redis://{_redis_auth_ratelimit}{REDIS_HOST_RATELIMIT}:{REDIS_PORT_RATELIMIT}/{REDIS_DB_RATELIMIT}")
     
     REDIS_CONNECT_TIMEOUT = get_env_int('REDIS_CONNECT_TIMEOUT', 5)
@@ -136,7 +134,7 @@ class Config:
     RATELIMIT_DEFAULT = os.environ.get('API_RATE_LIMIT', '200 per day;50 per hour;10 per minute')
     RATELIMIT_STRATEGY = os.environ.get('RATELIMIT_STRATEGY', 'fixed-window')
     PING_RATE_LIMIT = os.environ.get('PING_RATE_LIMIT', '10 per minute')
-    RATELIMIT_ENABLED = get_env_bool('RATELIMIT_ENABLED', 'True') # Tambahkan ini untuk kontrol eksplisit
+    RATELIMIT_ENABLED = get_env_bool('RATELIMIT_ENABLED', 'True')
 
     # --- Konfigurasi Midtrans ---
     MIDTRANS_SERVER_KEY = os.environ.get('MIDTRANS_SERVER_KEY')
@@ -150,11 +148,14 @@ class Config:
 
     # --- Konfigurasi MikroTik API ---
     MIKROTIK_HOST = os.environ.get('MIKROTIK_HOST')
-    MIKROTIK_USER = os.environ.get('MIKROTIK_USER')
+    MIKROTIK_USERNAME = os.environ.get('MIKROTIK_USERNAME') # <-- PERBAIKAN DI SINI
     MIKROTIK_PASSWORD = os.environ.get('MIKROTIK_PASSWORD')
     MIKROTIK_PORT = get_env_int('MIKROTIK_PORT', 8728)
     MIKROTIK_USE_SSL = get_env_bool('MIKROTIK_USE_SSL', 'False')
     MIKROTIK_DEFAULT_PROFILE = os.environ.get('MIKROTIK_DEFAULT_PROFILE', 'default')
+    MIKROTIK_SEND_LIMIT_BYTES_TOTAL = get_env_bool('MIKROTIK_SEND_LIMIT_BYTES_TOTAL', 'False')
+    MIKROTIK_SEND_SESSION_TIMEOUT = get_env_bool('MIKROTIK_SEND_SESSION_TIMEOUT', 'False')
+    # --- Akhir Konfigurasi MikroTik API ---
 
     # --- Konfigurasi Logging ---
     LOG_TO_FILE = get_env_bool('LOG_TO_FILE', 'False')
@@ -163,7 +164,7 @@ class Config:
     LOG_FILENAME = os.environ.get('LOG_FILENAME', 'hotspot_portal.log')
     LOG_MAX_BYTES = get_env_int('LOG_MAX_BYTES', 10*1024*1024)
     LOG_BACKUP_COUNT = get_env_int('LOG_BACKUP_COUNT', 5)
-    LOG_FILE_LEVEL = os.environ.get('LOG_FILE_LEVEL', 'INFO').upper() # Tambahkan ini
+    LOG_FILE_LEVEL = os.environ.get('LOG_FILE_LEVEL', 'INFO').upper()
 
     # --- Konfigurasi ProxyFix ---
     PROXYFIX_X_FOR = get_env_int('PROXYFIX_X_FOR', 1)
@@ -180,6 +181,10 @@ class Config:
     JINJA_DATETIME_FORMAT = os.environ.get('JINJA_DATETIME_FORMAT', '%d/%m/%y %H:%M')
     JINJA_DATETIME_SHORT_FORMAT = os.environ.get('JINJA_DATETIME_SHORT_FORMAT', '%b %d, %Y')
     ENABLE_ADMIN_ROUTES = get_env_bool('ENABLE_ADMIN_ROUTES', 'False')
+    APP_LINK_USER = os.environ.get('APP_LINK_USER', 'http://localhost:3010')
+    APP_LINK_ADMIN = os.environ.get('APP_LINK_ADMIN', 'http://localhost:3010/admin')
+    APP_LINK_MIKROTIK = os.environ.get('APP_LINK_MIKROTIK', 'http://172.16.0.1/login')
+    APP_LINK_ADMIN_CHANGE_PASSWORD = os.environ.get('APP_LINK_ADMIN_CHANGE_PASSWORD', f"{APP_LINK_ADMIN}/account-settings")
 
     @classmethod
     def validate_production_config(cls):
@@ -194,7 +199,7 @@ class Config:
                  warnings.warn("PERINGATAN PRODUKSI: Kunci Midtrans (SERVER/CLIENT) tidak disetel. Fitur pembayaran tidak akan berfungsi.")
             if cls.ENABLE_WHATSAPP_NOTIFICATIONS and (not cls.WHATSAPP_API_URL or not cls.WHATSAPP_API_KEY):
                  warnings.warn("PERINGATAN PRODUKSI: Notifikasi WhatsApp diaktifkan tetapi URL/Kunci API WhatsApp tidak disetel.")
-            if not cls.MIKROTIK_HOST or not cls.MIKROTIK_USER or not cls.MIKROTIK_PASSWORD:
+            if not cls.MIKROTIK_HOST or not cls.MIKROTIK_USERNAME or not cls.MIKROTIK_PASSWORD: # PERBAIKAN DI SINI
                  warnings.warn("PERINGATAN PRODUKSI: Konfigurasi MikroTik tidak lengkap. Fitur hotspot mungkin tidak berfungsi.")
             if not cls.RATELIMIT_STORAGE_URI or 'memory://' in cls.RATELIMIT_STORAGE_URI:
                  warnings.warn("PERINGATAN PRODUKSI: RATELIMIT_STORAGE_URI tidak disetel ke backend Redis yang valid. Rate limiting tidak akan persisten.")
@@ -204,9 +209,9 @@ class DevelopmentConfig(Config):
     FLASK_ENV = 'development'
     SQLALCHEMY_ECHO = get_env_bool('SQLALCHEMY_ECHO', 'True')
     LOG_LEVEL = os.environ.get('LOG_LEVEL', 'DEBUG').upper()
-    RATELIMIT_DEFAULT = os.environ.get('API_RATE_LIMIT', '500 per minute') # Lebih longgar untuk dev
+    RATELIMIT_DEFAULT = os.environ.get('API_RATE_LIMIT', '500 per minute')
     ENABLE_WHATSAPP_NOTIFICATIONS = get_env_bool('ENABLE_WHATSAPP_NOTIFICATIONS', 'False')
-    RATELIMIT_ENABLED = get_env_bool('RATELIMIT_ENABLED', 'False') # Seringkali nonaktif di dev
+    RATELIMIT_ENABLED = get_env_bool('RATELIMIT_ENABLED', 'False')
 
 
 class ProductionConfig(Config):
@@ -216,7 +221,7 @@ class ProductionConfig(Config):
     LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO').upper()
     MIDTRANS_IS_PRODUCTION = get_env_bool('MIDTRANS_IS_PRODUCTION', 'True')
     ENABLE_WHATSAPP_NOTIFICATIONS = get_env_bool('ENABLE_WHATSAPP_NOTIFICATIONS', 'True')
-    RATELIMIT_ENABLED = get_env_bool('RATELIMIT_ENABLED', 'True') # Harus aktif di produksi
+    RATELIMIT_ENABLED = get_env_bool('RATELIMIT_ENABLED', 'True')
 
     def __init__(self):
         super().validate_production_config()
@@ -234,7 +239,7 @@ class TestingConfig(Config):
     MIDTRANS_SERVER_KEY = 'test-midtrans-server-key'
     MIDTRANS_CLIENT_KEY = 'test-midtrans-client-key'
     MIDTRANS_IS_PRODUCTION = False
-    RATELIMIT_ENABLED = False # Nonaktifkan rate limiting saat testing
+    RATELIMIT_ENABLED = False
     LOG_LEVEL = 'DEBUG'
     LOG_TO_FILE = False
 
@@ -246,7 +251,5 @@ config_options = {
     'default': DevelopmentConfig
 }
 
-# Panggil validasi untuk instance default Config jika FLASK_ENV adalah production
-# dan tidak ada kelas spesifik yang dipilih melalui FLASK_CONFIG
 if Config.FLASK_ENV == 'production' and os.environ.get('FLASK_CONFIG') is None:
     Config.validate_production_config()

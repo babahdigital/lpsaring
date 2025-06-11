@@ -1,91 +1,65 @@
 # backend/app/infrastructure/http/schemas/auth_schemas.py
-# Versi: Penyesuaian 'kamar' menjadi wajib untuk registrasi pengguna biasa.
+# VERSI FINAL: Membersihkan duplikasi dan memastikan penggunaan Pydantic yang konsisten.
 
-from pydantic import BaseModel, Field, validator
-import re
-import uuid
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Dict, Any
-import enum
+import uuid
 
-try:
-    from app.infrastructure.db.models import UserBlok, UserKamar
-except ImportError:
-    print("WARNING: Gagal mengimpor UserBlok atau UserKamar dari models.py di auth_schemas.py. Menggunakan placeholder.")
-    class UserBlok(str, enum.Enum):
-        A="A"; B="B"; C="C"; D="D"; E="E"; F="F"
-    class UserKamar(str, enum.Enum):
-        Kamar_1 = "1"; Kamar_2 = "2"; Kamar_3 = "3"; Kamar_4 = "4"; Kamar_5 = "5"; Kamar_6 = "6"
+# Impor fungsi normalisasi dari helper terpusat
+from app.utils.formatters import normalize_to_e164 # <--- PASTIKAN INI ADALAH normalize_to_e164
 
-def validate_phone_number(phone: str) -> str:
-    if not phone: raise ValueError("Nomor telepon tidak boleh kosong.")
-    cleaned_phone = re.sub(r"[^\d+]", "", phone).strip()
-    
-    if cleaned_phone.startswith('08'):
-        formatted_phone = '+62' + cleaned_phone[1:]
-    elif cleaned_phone.startswith('628'):
-        formatted_phone = '+' + cleaned_phone if not cleaned_phone.startswith('+') else cleaned_phone
-    elif cleaned_phone.startswith('+628'):
-        formatted_phone = cleaned_phone
-    elif cleaned_phone.startswith('8') and len(cleaned_phone) >= 8:
-        formatted_phone = '+62' + cleaned_phone
-    else:
-        raise ValueError("Format nomor telepon tidak valid (awalan 08..., 628..., atau +628...).")
-    
-    if not (11 <= len(formatted_phone) <= 15):
-        raise ValueError(f"Panjang nomor telepon tidak valid setelah normalisasi ({len(formatted_phone)} digit). Seharusnya antara 11-15 digit termasuk +62.")
-    return formatted_phone
-
-class UserRegisterRequestSchema(BaseModel):
-    phone_number: str = Field(..., description="Nomor telepon pengguna (format 08... atau +628...)")
-    full_name: str = Field(..., min_length=2, max_length=100, description="Nama Lengkap Pengguna")
-    blok: UserBlok = Field(..., description="Blok tempat tinggal pengguna (wajib)") # Tetap wajib
-    kamar: UserKamar = Field(..., description="Nomor kamar pengguna (wajib)") # PERUBAHAN: Menjadi wajib
-
-    _validate_phone_number = validator('phone_number', pre=True, allow_reuse=True)(validate_phone_number)
-
-class UserRegisterResponseSchema(BaseModel):
-    message: str = Field(..., example="Registrasi berhasil. Akun Anda sedang menunggu persetujuan Admin.")
-    user_id: Optional[uuid.UUID] = None
-    phone_number: Optional[str] = None
+# Validator yang sekarang memanggil helper
+def validate_phone_number(v: str) -> str:
+    """Fungsi validator yang dipanggil oleh Pydantic."""
+    if not v:
+        raise ValueError("Nomor telepon tidak boleh kosong.")
+    try:
+        # PANGGIL FUNGSI DENGAN NAMA YANG BENAR: normalize_to_e164
+        return normalize_to_e164(v) # <--- PERBAIKAN UTAMA DI SINI
+    except ValueError as e:
+        # Teruskan pesan error dari normalizer
+        raise ValueError(str(e))
 
 class RequestOtpRequestSchema(BaseModel):
-    phone_number: str = Field(..., description="Nomor telepon (format 08... atau +628...)")
-    _validate_phone_number = validator('phone_number', pre=True, allow_reuse=True)(validate_phone_number)
+    """Skema untuk permintaan OTP."""
+    phone_number: str
+    _normalize_phone = field_validator('phone_number', mode='before')(validate_phone_number)
 
 class VerifyOtpRequestSchema(BaseModel):
-    phone_number: str = Field(..., description="Nomor telepon (format +628...)")
-    otp: str = Field(..., min_length=6, max_length=6, description="Kode OTP 6 digit")
+    """Skema untuk verifikasi OTP."""
+    phone_number: str
+    otp: str = Field(..., min_length=6, max_length=6)
+    _normalize_phone = field_validator('phone_number', mode='before')(validate_phone_number)
 
-    @validator('phone_number', pre=True, always=True)
-    def check_and_format_phone_verify(cls, v):
-        try:
-            formatted = validate_phone_number(v)
-            return formatted
-        except ValueError as e:
-            raise ValueError(str(e)) from e
-
-    @validator('otp')
-    def check_otp_format(cls, v):
-        if not v.isdigit() or len(v) != 6:
-             raise ValueError("Kode OTP harus berupa 6 digit angka.")
-        return v
+class UserRegisterRequestSchema(BaseModel):
+    """Skema untuk registrasi pengguna baru."""
+    phone_number: str
+    full_name: str = Field(..., min_length=2)
+    blok: str 
+    kamar: str 
+    _normalize_phone = field_validator('phone_number', mode='before')(validate_phone_number)
 
 class RequestOtpResponseSchema(BaseModel):
-    message: str = "OTP telah dikirim ke nomor telepon Anda."
+    """Skema respons setelah OTP berhasil dikirim."""
+    message: str = "Kode OTP telah dikirim ke nomor WhatsApp Anda."
 
 class VerifyOtpResponseSchema(BaseModel):
-    access_token: str = Field(..., description="Token JWT untuk akses")
+    """Skema respons setelah login berhasil."""
+    access_token: str
     token_type: str = "bearer"
 
 class AuthErrorResponseSchema(BaseModel):
-    error: str = Field(..., description="Deskripsi error")
-    details: Optional[List[Dict[str, Any]]] = None
+    """Skema standar untuk respons error."""
+    error: str
+    details: Optional[List[Dict[str, Any]] | str] = None
 
-class UserResponseSchemaPlaceholder(BaseModel):
-    id: uuid.UUID
+class UserRegisterResponseSchema(BaseModel):
+    """Skema respons setelah registrasi berhasil."""
+    message: str
+    user_id: uuid.UUID
     phone_number: str
-    full_name: Optional[str] = None
-    is_active: bool
-    class Config:
-        from_attributes = True
-        use_enum_values = True
+
+class ChangePasswordRequestSchema(BaseModel):
+    """Skema untuk permintaan perubahan password."""
+    current_password: str = Field(..., min_length=6)
+    new_password: str = Field(..., min_length=6)

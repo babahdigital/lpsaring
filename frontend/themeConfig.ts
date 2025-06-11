@@ -1,5 +1,5 @@
 import { defineThemeConfig } from '@core'
-import { Skins } from '@core/enums'
+import { Skins } from '@/types/enums'
 // ❗ Logo SVG must be imported with ?raw suffix
 import logo from '@images/logo.svg?raw'
 
@@ -9,7 +9,7 @@ import {
   FooterType,
   HorizontalNavType, // Pastikan enum ini diimpor/didefinisikan
   NavbarType,
-} from '@layouts/enums'
+} from  '@/types/enums'
 
 import { breakpointsVuetifyV3 } from '@vueuse/core'
 import { h } from 'vue'

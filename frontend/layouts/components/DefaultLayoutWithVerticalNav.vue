@@ -1,15 +1,23 @@
 <script lang="ts" setup>
-import NavBarI18n from '@core/components/I18n.vue'
-// @layouts plugin
 import { VerticalNavLayout } from '@layouts'
-
 import { themeConfig } from '@themeConfig'
+import { computed } from 'vue'
+
 // Components
 import Footer from '@/layouts/components/Footer.vue'
-import NavbarThemeSwitcher from '@/layouts/components/NavbarThemeSwitcher.vue'
 import UserProfile from '@/layouts/components/UserProfile.vue'
+import HeaderWeeklyRevenue from '@/components/admin/HeaderWeeklyRevenue.vue'
 
-import navItems from '@/navigation/vertical'
+// PENYEMPURNAAN: Mengimpor fungsi dinamis dari sistem navigasi terpusat kita
+import { getHorizontalNavItems } from '@/navigation/horizontal'
+import { useAuthStore } from '~/store/auth'
+
+const authStore = useAuthStore()
+const isAdmin = computed(() => authStore.isAdmin || authStore.isSuperAdmin)
+
+// PENYEMPURNAAN: navItems sekarang menjadi computed property yang memanggil fungsi terpusat
+const navItems = computed(() => getHorizontalNavItems())
+
 </script>
 
 <template>
@@ -28,14 +36,14 @@ import navItems from '@/navigation/vertical'
           />
         </IconBtn>
 
-        <NavbarThemeSwitcher />
-
         <VSpacer />
 
-        <NavBarI18n
-          v-if="themeConfig.app.i18n.enable && themeConfig.app.i18n.langConfig?.length"
-          :languages="themeConfig.app.i18n.langConfig"
+        <!-- Info Pendapatan Mingguan -->
+        <HeaderWeeklyRevenue
+          v-if="isAdmin"
+          class="me-4"
         />
+
         <UserProfile />
       </div>
     </template>
@@ -47,8 +55,5 @@ import navItems from '@/navigation/vertical'
     <template #footer>
       <Footer />
     </template>
-
-    <!-- 👉 Customizer -->
-    <!-- <TheCustomizer /> -->
   </VerticalNavLayout>
 </template>

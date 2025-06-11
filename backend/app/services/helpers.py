@@ -3,6 +3,12 @@
 
 import re
 
+# PENTING: Fungsi normalize_phone_number di sini mungkin duplikat
+# dengan app.utils.formatters.normalize_to_e164.
+# Disarankan untuk secara bertahap memigrasikan semua penggunaan
+# ke app.utils.formatters.normalize_to_e164
+# dan menghapus fungsi ini di masa mendatang untuk konsistensi.
+
 def normalize_phone_number(phone_number: str) -> str:
     """
     Membersihkan dan menormalkan nomor telepon ke format internasional (misal: 628xxxxxxxx).

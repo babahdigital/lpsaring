@@ -322,8 +322,9 @@
 <script setup lang="ts">
 import { ref, computed, watch, reactive } from 'vue';
 import type { VDataTableServer } from 'vuetify/components';
+import { useAuthStore } from '@/store/auth';
 
-// --- Tipe Data (Tetap sama) ---
+// --- Tipe Data ---
 interface Transaction {
   id: string;
   order_id: string;
@@ -340,8 +341,8 @@ interface UserSelectItem {
 }
 
 // --- State Management ---
-// Menggunakan useNuxtApp() untuk mendapatkan $api dari plugin Anda
 const { $api } = useNuxtApp();
+const authStore = useAuthStore(); // Siap digunakan jika perlu
 
 const options = ref<InstanceType<typeof VDataTableServer>['$props']['options']>({
   page: 1,
@@ -364,56 +365,46 @@ const userList = ref<UserSelectItem[]>([]);
 const userSearch = ref('');
 
 const snackbar = ref({
-  visible: false, 
-  text: '', 
+  visible: false,
+  text: '',
   color: 'success',
   icon: 'tabler-check'
 });
 
-
-// --- Refactoring Utama: Menggunakan useAsyncData untuk Data Reaktif ---
-// Membuat parameter query reaktif. Setiap kali nilainya berubah, data akan diambil ulang.
+// --- Data Fetching Reaktif dengan useAsyncData ---
 const queryParams = computed(() => ({
   page: options.value.page,
   itemsPerPage: options.value.itemsPerPage,
   sortBy: options.value.sortBy[0]?.key ?? 'created_at',
   sortOrder: options.value.sortBy[0]?.order ?? 'desc',
-  search: search.value,
+  search: search.value, // Ini akan dikirim ke backend untuk pencarian global
   user_id: selectedUser.value?.id,
   start_date: startDate.value ? startDate.value.toISOString().split('T')[0] : undefined,
   end_date: endDate.value ? endDate.value.toISOString().split('T')[0] : undefined,
 }));
 
-// Menggunakan useAsyncData untuk mengambil data transaksi.
-// 'pending' akan menjadi state loading kita.
-// 'refresh' adalah fungsi untuk memuat ulang data secara manual.
 const { data: transactionData, pending: loading, error, refresh } = useAsyncData(
   'fetch-transactions',
   () => $api<{ items: Transaction[], totalItems: number }>('/admin/transactions', {
     params: queryParams.value,
   }),
   {
-    // Opsi watch akan secara otomatis memanggil ulang API ketika queryParams berubah.
     watch: [queryParams],
   }
 );
 
-// Membuat computed properties untuk mengakses data dengan aman (menghindari error jika data null)
 const transactions = computed(() => transactionData.value?.items || []);
 const totalTransactions = computed(() => transactionData.value?.totalItems || 0);
 
-// Menampilkan error jika fetch gagal
 watch(error, (newError) => {
   if (newError) {
     showSnackbar(newError.data?.message || 'Gagal memuat data transaksi', 'error');
   }
 });
 
-
-// --- Konfigurasi & Format (Tidak ada perubahan signifikan) ---
+// --- Konfigurasi & Format ---
 const headers = [
   { title: 'NAMA PENGGUNA', key: 'user.full_name', sortable: false, width: '200px' },
-  { title: 'TELEPON', key: 'user.phone_number', sortable: false, width: '150px' },
   { title: 'ID INVOICE', key: 'order_id', sortable: true, width: '200px' },
   { title: 'PAKET', key: 'package_name', sortable: false, width: '180px' },
   { title: 'JUMLAH', key: 'amount', sortable: true, align: 'end', width: '160px' },
@@ -433,19 +424,8 @@ const formatStatus = (status: string) => {
 };
 
 const formatCurrency = (value: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(value);
-
-const formatDateTime = (dateString: string) => {
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) return 'Tanggal tidak valid';
-  return date.toLocaleDateString('id-ID', { 
-    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' 
-  });
-};
-
-const formatDate = (date: Date | null) => {
-  if (!date) return '';
-  return new Date(date).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
-};
+const formatDateTime = (dateString: string) => new Date(dateString).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const formatDate = (date: Date | null) => date ? new Date(date).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : '';
 
 const hasActiveFilters = computed(() => !!selectedUser.value || !!startDate.value || !!endDate.value);
 const formattedDateRangeForChip = computed(() => {
@@ -455,81 +435,90 @@ const formattedDateRangeForChip = computed(() => {
     return `${start} - ${end}`;
 });
 
+// PENYEMPURNAAN PENCARIAN DIALOG: Helper JS untuk variasi nomor telepon
+const getPhoneNumberVariationsJS = (query: string): string[] => {
+    const cleaned = query.replace(/\D/g, '');
+    if (!cleaned) return [];
+    const variations = new Set<string>();
+    
+    // 08... -> +628...
+    if (cleaned.startsWith('08')) {
+        variations.add('+62' + cleaned.substring(1));
+    }
+    // 628... -> +628...
+    if (cleaned.startsWith('628')) {
+        variations.add('+' + cleaned);
+    }
+    // +628...
+    if (cleaned.startsWith('628')) {
+        variations.add('+62' + cleaned.substring(2));
+    }
+    variations.add(cleaned); // Tambahkan versi angka saja
+    return Array.from(variations);
+};
 
-// --- Logika & Fungsi (Disederhanakan) ---
+// PENYEMPURNAAN PENCARIAN DIALOG: Logika filter yang lebih cerdas
+const filteredUserList = computed(() => {
+  if (!userSearch.value) return userList.value;
+  const queryLower = userSearch.value.toLowerCase();
+  
+  const phoneVariations = getPhoneNumberVariationsJS(userSearch.value);
+
+  return userList.value.filter(user => {
+    // Selalu cek nama
+    if (user.full_name.toLowerCase().includes(queryLower)) {
+        return true;
+    }
+    // Jika ada variasi telepon, cek semua variasi
+    if (phoneVariations.length > 0) {
+        // Cek apakah nomor telepon di user list mengandung salah satu variasi
+        return phoneVariations.some(variation => user.phone_number.includes(variation));
+    }
+    // Fallback jika bukan format telepon yang dikenali
+    return user.phone_number.includes(queryLower);
+  });
+});
+
+
+// --- Logika & Fungsi ---
 const showSnackbar = (text: string, type: 'success' | 'error' | 'warning' = 'success') => {
-  const config = {
-    success: { color: 'success', icon: 'tabler-check' },
-    error: { color: 'error', icon: 'tabler-alert-circle' },
-    warning: { color: 'warning', icon: 'tabler-alert-triangle' }
-  }[type];
+  const config = { success: { color: 'success', icon: 'tabler-check' }, error: { color: 'error', icon: 'tabler-alert-circle' }, warning: { color: 'warning', icon: 'tabler-alert-triangle' } }[type];
   snackbar.value = { text, color: config.color, icon: config.icon, visible: true };
 };
 
-const applyFilter = () => {
-  // Cukup panggil refresh dari useAsyncData jika diperlukan pembaruan manual.
-  // Namun, watch pada queryParams sudah menangani sebagian besar kasus.
-  // Fungsi ini tetap berguna untuk tombol "Terapkan"
-  refresh();
-};
-
+const applyFilter = () => refresh();
 const clearAllFilters = () => {
   search.value = '';
   startDate.value = null;
   endDate.value = null;
   selectedUser.value = null;
   tempSelectedUser.value = null;
-  // Perubahan state akan otomatis memicu watch di useAsyncData
 };
-
 const clearUserFilter = () => {
   selectedUser.value = null;
   tempSelectedUser.value = null;
 };
-
 const clearDateFilter = () => {
   startDate.value = null;
   endDate.value = null;
 };
-
 const clearStartDate = () => {
   startDate.value = null;
-  if(endDate.value) {
-      endDate.value = null;
-  }
-}
-
-const clearEndDate = () => {
-    endDate.value = null;
-}
+  endDate.value = null;
+};
+const clearEndDate = () => { endDate.value = null; };
 
 const openUserFilterDialog = async () => {
   isUserFilterDialogOpen.value = true;
   tempSelectedUser.value = selectedUser.value;
   if (userList.value.length > 0) return;
-
   try {
-    // Menggunakan $api untuk aksi sisi klien
     const responseData = await $api<UserSelectItem[]>('/admin/users?all=true');
-    if (Array.isArray(responseData)) {
-      userList.value = responseData;
-    } else {
-      userList.value = [];
-      showSnackbar('Data pengguna diterima dengan format yang salah.', 'error');
-    }
-  } catch (error: any) {
-    showSnackbar(error.data?.message || 'Gagal memuat daftar pengguna.', 'error');
+    userList.value = Array.isArray(responseData) ? responseData : [];
+  } catch (e: any) {
+    showSnackbar(e.data?.message || 'Gagal memuat daftar pengguna.', 'error');
   }
 };
-
-const filteredUserList = computed(() => {
-  if (!userSearch.value) return userList.value;
-  const query = userSearch.value.toLowerCase();
-  return userList.value.filter(user => 
-    user.full_name.toLowerCase().includes(query) ||
-    user.phone_number.includes(query)
-  );
-});
 
 const getUserInitials = (name: string) => name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
 const selectUser = (user: UserSelectItem) => { tempSelectedUser.value = user; };
@@ -545,21 +534,14 @@ const exportReport = async (format: 'pdf' | 'csv') => {
     showSnackbar('Pilih tanggal mulai terlebih dahulu', 'warning');
     return;
   }
-
   exportLoading.value = true;
   try {
     const start = startDate.value.toISOString().split('T')[0];
     const end = (endDate.value || startDate.value).toISOString().split('T')[0];
     const params = new URLSearchParams({ format, start_date: start, end_date: end });
     if (selectedUser.value) params.append('user_id', selectedUser.value.id);
-
-    // Menggunakan $api untuk aksi sisi klien
-    const data = await $api(`/admin/transactions/export?${params.toString()}`, {
-      responseType: 'blob' 
-    });
-
+    const data = await $api(`/admin/transactions/export?${params.toString()}`, { responseType: 'blob' });
     if (!data) throw new Error('Tidak ada data laporan yang diterima');
-    
     const url = window.URL.createObjectURL(data);
     const link = document.createElement('a');
     link.href = url;
@@ -568,7 +550,6 @@ const exportReport = async (format: 'pdf' | 'csv') => {
     link.click();
     link.remove();
     window.URL.revokeObjectURL(url);
-    
     showSnackbar('Laporan berhasil diunduh', 'success');
   } catch (err: any) {
     showSnackbar(`Gagal mengunduh laporan: ${err.data?.message || err.message}`, 'error');
@@ -652,7 +633,73 @@ const exportReport = async (format: 'pdf' | 'csv') => {
 .search-field {
   width: 100%;
 }
-.v-date-picker-month__day,.v-date-picker-month__weekday {
-  margin-left: 25px;
+
+/* Perbaikan utama untuk alignment kalender */
+:deep(.v-date-picker-month) {
+  padding: 0 !important;
+  width: 100% !important;
+}
+
+:deep(.v-date-picker-month__weeks) {
+  display: grid !important;
+  grid-template-columns: repeat(7, 1fr) !important;
+  justify-items: center !important;
+  width: 100% !important;
+  column-gap: 0 !important;
+}
+
+:deep(.v-date-picker-month__weekday) {
+  padding: 0 !important;
+  margin: 0 !important;
+  width: 100% !important;
+  text-align: center !important;
+  font-size: 0.875rem !important;
+  height: 40px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+:deep(.v-date-picker-month__days) {
+  display: grid !important;
+  grid-template-columns: repeat(7, 1fr) !important;
+  justify-items: center !important;
+  width: 100% !important;
+  column-gap: 0 !important;
+}
+
+:deep(.v-date-picker-month__day) {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  height: 40px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+:deep(.v-date-picker-month__day-btn) {
+  width: 36px !important;
+  height: 36px !important;
+  margin: 0 !important;
+}
+
+:deep(.v-date-picker-month__day--adjacent) {
+  opacity: 0.5 !important;
+}
+
+/* Perbaikan tambahan untuk layout responsif */
+.v-menu :deep(.v-overlay__content) {
+  width: 320px !important;
+  min-width: 320px !important;
+  max-width: 320px !important;
+}
+
+:deep(.v-date-picker-controls) {
+  padding: 4px 8px !important;
+}
+
+:deep(.v-date-picker-header) {
+  padding: 10px 20px !important;
 }
 </style>

@@ -1,14 +1,21 @@
 // frontend/navigation/horizontal/superadmin.ts
 
 export default [
+  // PENYEMPURNAAN: Membuat grup menu "Pengaturan" untuk Super Admin
   {
-    title: 'Laporan',
-    to: { path: '/admin/reports' },
-    icon: { icon: 'tabler-chart-bar' },
-  },
-  {
-    title: 'Pengaturan Sistem',
-    to: { path: '/admin/settings' },
-    icon: { icon: 'tabler-settings' },
+    title: 'Pengaturan',
+    icon: { icon: 'tabler-settings' }, // Ikon untuk grup
+    children: [
+        {
+            title: 'Notifikasi',
+            to: { path: '/admin/settings/notifications' },
+            icon: { icon: 'tabler-bell-ringing' },
+        },
+        {
+            title: 'Aplikasi',
+            to: { path: '/admin/settings/general' },
+            icon: { icon: 'tabler-tool' },
+        },
+    ]
   },
 ]

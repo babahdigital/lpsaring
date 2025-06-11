@@ -1,23 +1,19 @@
 <script lang="ts" setup>
-import NavBarI18n from '@core/components/I18n.vue'
 import { HorizontalNavLayout } from '@layouts'
 import { VNodeRenderer } from '@layouts/components/VNodeRenderer'
 import { themeConfig } from '@themeConfig'
-
-// 1. Impor `computed` dari Vue
 import { computed } from 'vue'
-
-// 2. Impor fungsi navigasi dinamis yang baru
 import { getHorizontalNavItems } from '@/navigation/horizontal'
 
-// Components
 import Footer from '@/layouts/components/Footer.vue'
-import NavbarThemeSwitcher from '@/layouts/components/NavbarThemeSwitcher.vue'
 import UserProfile from '@/layouts/components/UserProfile.vue'
+import HeaderWeeklyRevenue from '@/components/admin/HeaderWeeklyRevenue.vue'
+import { useAuthStore } from '~/store/auth'
 
-// 3. Buat computed property untuk mendapatkan item navigasi
-// Logika filtering sekarang terpusat di dalam `getHorizontalNavItems`
+const authStore = useAuthStore()
+
 const navItems = computed(() => getHorizontalNavItems())
+const isAdmin = computed(() => authStore.isAdmin || authStore.isSuperAdmin)
 </script>
 
 <template>
@@ -28,19 +24,18 @@ const navItems = computed(() => getHorizontalNavItems())
         class="app-logo d-flex align-center gap-x-3"
       >
         <VNodeRenderer :nodes="themeConfig.app.logo" />
-
         <h1 class="app-title font-weight-bold leading-normal text-xl text-capitalize">
           {{ themeConfig.app.title }}
         </h1>
       </NuxtLink>
+
       <VSpacer />
 
-      <NavBarI18n
-        v-if="themeConfig.app.i18n.enable && themeConfig.app.i18n.langConfig?.length"
-        :languages="themeConfig.app.i18n.langConfig"
+      <HeaderWeeklyRevenue
+        v-if="isAdmin"
+        class="me-4"
       />
 
-      <NavbarThemeSwitcher class="me-2" />
       <UserProfile />
     </template>
 

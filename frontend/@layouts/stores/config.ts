@@ -1,6 +1,6 @@
 import type { Ref } from 'vue'
 import { useCookie } from '#app'
-import { AppContentLayoutNav, NavbarType } from '@layouts/enums'
+import { AppContentLayoutNav, NavbarType } from  '@/types/enums'
 import { injectionKeyIsVerticalNavHovered } from '@layouts/symbols'
 import { _setDirAttr } from '@layouts/utils'
 import { layoutConfig } from '@themeConfig'

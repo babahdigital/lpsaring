@@ -58,13 +58,18 @@ services:
       - "5010:5010"
     # Menggunakan YAML block scalar (|) untuk command yang panjang agar lebih mudah dibaca.
     # Command ini spesifik untuk development dengan --reload.
-    command: >
-      sh -c "gunicorn --bind 0.0.0.0:5010 'run:app'
-             --reload
-             --workers=1
-             --log-level=debug
-             --access-logfile -
-             --error-logfile -"
+    command: 
+      - "gunicorn"
+      - "--bind"
+      - "0.0.0.0:5010"
+      - "run:app"
+      - "--reload"
+      - "--workers=1"
+      - "--log-level=debug"
+      - "--access-logfile"
+      - "-"
+      - "--error-logfile"
+      - "-"
     depends_on:
       db:
         condition: service_healthy

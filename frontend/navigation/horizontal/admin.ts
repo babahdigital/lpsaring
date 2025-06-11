@@ -6,19 +6,26 @@ export default [
     to: { path: '/admin/dashboard' },
     icon: { icon: 'tabler-layout-dashboard' },
   },
+  // PENYEMPURNAAN: Membuat grup menu "Manajemen"
   {
-    title: 'Manajemen Pengguna',
-    to: { path: '/admin/users' },
-    icon: { icon: 'tabler-users-group' },
-  },
-  {
-    title: 'Manajemen Paket',
-    to: { path: '/admin/packages' },
-    icon: { icon: 'tabler-box' },
-  },
-  {
-    title: 'Manajemen Transaksi',
-    to: { path: '/admin/transactions' },
-    icon: { icon: 'tabler-receipt-2' },
+    title: 'Manajemen',
+    icon: { icon: 'tabler-adjustments-horizontal' }, // Ikon untuk grup
+    children: [
+      {
+        title: 'Pengguna',
+        to: { path: '/admin/users' },
+        icon: { icon: 'tabler-users-group' },
+      },
+      {
+        title: 'Paket',
+        to: { path: '/admin/packages' },
+        icon: { icon: 'tabler-box' },
+      },
+      {
+        title: 'Transaksi',
+        to: { path: '/admin/transactions' },
+        icon: { icon: 'tabler-receipt-2' },
+      },
+    ],
   },
 ]

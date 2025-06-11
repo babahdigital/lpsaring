@@ -1,7 +1,7 @@
 import type { NavGroup, NavLink, NavLinkProps } from '@layouts/types'
 import type { Router } from 'vue-router'
 import { layoutConfig } from '@layouts/config'
-import { AppContentLayoutNav } from '@layouts/enums'
+import { AppContentLayoutNav } from  '@/types/enums'
 import { useLayoutConfigStore } from '@layouts/stores/config'
 
 export const openGroups = ref<string[]>([])

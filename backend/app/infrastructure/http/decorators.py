@@ -1,5 +1,5 @@
 # backend/app/infrastructure/http/decorators.py
-# File baru untuk menampung semua decorator otentikasi.
+# VERSI DIPERBARUI: Penambahan decorator @super_admin_required
 
 from functools import wraps
 from flask import request, jsonify, current_app
@@ -67,4 +67,23 @@ def admin_required(f):
             return jsonify(AuthErrorResponseSchema(error="Akses ditolak. Memerlukan hak akses Admin.").model_dump()), HTTPStatus.FORBIDDEN
         
         return f(current_admin=admin_user, *args, **kwargs)
+    return decorated_function
+
+# --- PENAMBAHAN BARU ---
+def super_admin_required(f):
+    @wraps(f)
+    @token_required
+    def decorated_function(current_user_id, *args, **kwargs):
+        super_admin_user = db.session.get(User, current_user_id)
+        
+        # Periksa apakah pengguna adalah SUPER_ADMIN
+        if not super_admin_user or not super_admin_user.is_super_admin_role:
+            current_app.logger.warning(
+                f"Akses DITOLAK ke rute Super Admin. User ID: {current_user_id}, "
+                f"Role: {super_admin_user.role.value if super_admin_user and super_admin_user.role else 'Tidak Ditemukan'}"
+            )
+            # Pesan error sesuai dengan rencana pengembangan
+            return jsonify(AuthErrorResponseSchema(error="Akses ditolak. Memerlukan hak akses Super Admin.").model_dump()), HTTPStatus.FORBIDDEN
+        
+        return f(current_admin=super_admin_user, *args, **kwargs)
     return decorated_function

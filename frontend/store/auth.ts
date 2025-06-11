@@ -55,11 +55,16 @@ export const useAuthStore = defineStore('auth', () => {
   const loadingUser = ref(false)
   const error = ref<string | null>(null)
   const message = ref<string | null>(null)
-  const isInitialized = ref(false)
+  
+  // PERUBAHAN NAMA: 'isInitialized' menjadi 'initialAuthCheckDone' agar lebih deskriptif
+  const initialAuthCheckDone = ref(false)
 
   const token = computed(() => tokenCookie.value)
   const isLoggedIn = computed(() => !!tokenCookie.value && !!user.value)
-  const getUser = computed(() => user.value)
+  
+  // PENAMBAHAN: 'currentUser' sebagai alias untuk 'user' agar lebih intuitif di komponen
+  const currentUser = computed(() => user.value)
+
   const isAdmin = computed(() => user.value?.role === 'ADMIN' || user.value?.role === 'SUPER_ADMIN')
   const isSuperAdmin = computed(() => user.value?.role === 'SUPER_ADMIN')
   const isUserApprovedAndActive = computed(() =>
@@ -298,37 +303,34 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function logout(performRedirectAndSetMessage: boolean = true) {
     const { $api } = useNuxtApp()
-    
-    // Tentukan path redirect di awal
     const redirectPath = (user.value?.role === 'ADMIN' || user.value?.role === 'SUPER_ADMIN') ? '/admin' : '/login'
     
-    // =================================================================
-    // PERBAIKAN KRITIS: HAPUS TOKEN & USER DARI STATE SEGERA!
-    // Ini akan mencegah panggilan API selanjutnya mengirim token yang tidak valid.
-    // =================================================================
+    // Bersihkan state terlebih dahulu
     tokenCookie.value = null
     setUser(null)
-    isInitialized.value = false // Set ulang status inisialisasi
+    initialAuthCheckDone.value = false
 
-    // Panggilan API ke server sekarang bersifat "best effort".
-    // Jika gagal pun tidak masalah, karena sisi klien sudah bersih (ter-logout).
     try {
-      // Panggilan ini tidak akan lagi menyebabkan 401 yang memicu loop,
-      // karena token sudah null dan tidak akan dikirim oleh interceptor.
-      await $api('/auth/logout', { method: 'POST' })
-      console.log("Notifikasi logout ke server berhasil dikirim.");
+      // Hanya kirim request jika token sebelumnya ada
+      if (tokenCookie.value) {
+        await $api('/auth/logout', { method: 'POST' })
+        console.log("Notifikasi logout ke server berhasil dikirim.")
+      }
     }
-    catch (err) {
-      console.warn('Gagal mengirim notifikasi logout ke server. State di klien tetap bersih.')
+    catch (err: any) {
+      // Abaikan error 401 karena token sudah tidak valid
+      const status = err.response?.status || err.statusCode
+      if (status !== 401) {
+        console.warn('Gagal mengirim notifikasi logout:', err.message)
+      }
     }
 
-    // Sisa logika untuk redirect...
     if (performRedirectAndSetMessage) {
       if (!error.value) {
         setMessage('Anda telah berhasil logout.')
       }
       if (import.meta.client) {
-        await new Promise(resolve => setTimeout(resolve, 50)) // Sedikit delay untuk UI update
+        await new Promise(resolve => setTimeout(resolve, 50))
         try {
           await navigateTo(redirectPath, { replace: true })
         }
@@ -340,31 +342,25 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function initializeAuth() {
-    if (isInitialized.value && ((tokenCookie.value && user.value) || !tokenCookie.value)) {
-      return
-    }
-    if (loadingUser.value) {
-      return
-    }
+    if (initialAuthCheckDone.value) return
+    
     loadingUser.value = true
-    if (tokenCookie.value) {
-      if (!user.value) {
+    try {
+      if (tokenCookie.value) {
         await fetchUser()
       }
+    } finally {
+      initialAuthCheckDone.value = true
+      loadingUser.value = false
     }
-    else {
-      setUser(null)
-    }
-    isInitialized.value = true
-    loadingUser.value = false
   }
 
   return {
     user,
     token,
-    isInitialized,
+    initialAuthCheckDone, // Menggunakan nama yang sudah diperbaiki
     isLoggedIn,
-    getUser,
+    currentUser, // Mengekspos currentUser
     isAdmin,
     isSuperAdmin,
     isUserApprovedAndActive,
@@ -383,5 +379,6 @@ export const useAuthStore = defineStore('auth', () => {
     clearMessage,
     setError,
     setMessage,
+    setUser,
   }
 })

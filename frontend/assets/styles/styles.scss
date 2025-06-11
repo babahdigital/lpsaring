@@ -1,1 +1,12 @@
 // Write your overrides
+.layout-navbar {
+    block-size: 75px !important;
+}
+
+.layout-horizontal-nav {
+    padding-block: 0.7rem !important;
+}
+
+.layout-footer .footer-content-container {
+    block-size: 70px !important;
+}

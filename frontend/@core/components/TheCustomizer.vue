@@ -1,5 +1,5 @@
 <script setup lang="tsx">
-import { Direction, Layout, Skins, Theme } from '@core/enums'
+import { Direction, Layout, Skins, Theme } from  '@/types/enums'
 import { useConfigStore } from '@core/stores/config'
 import borderSkin from '@images/customizer-icons/border-light.svg'
 import collapsed from '@images/customizer-icons/collapsed-light.svg'
@@ -10,7 +10,7 @@ import ltrSvg from '@images/customizer-icons/ltr-light.svg'
 import rtlSvg from '@images/customizer-icons/rtl-light.svg'
 import wideSvg from '@images/customizer-icons/wide-light.svg'
 
-import { AppContentLayoutNav, ContentWidth } from '@layouts/enums'
+import { AppContentLayoutNav, ContentWidth } from  '@/types/enums'
 import { cookieRef, namespaceConfig } from '@layouts/stores/config'
 import { themeConfig } from '@themeConfig'
 import { useStorage } from '@vueuse/core'
