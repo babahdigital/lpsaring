@@ -211,6 +211,7 @@ function openDialog(type: 'view' | 'approve' | 'delete' | 'edit' | 'reject', use
   if (type === 'edit') {
     if (!user) { // Untuk ADD NEW USER (type 'edit' tanpa user)
       editedUser.value = { ...defaultUser };
+      editedUser.value.phone_number_display = ''; // Untuk user baru, kosongkan display
       isUserDataInputActive.value = false; // Default: switch off for new user
       // Saat menambahkan user baru, jika default role adalah ADMIN, aktifkan switch alamat.
       if (editedUser.value.role === 'ADMIN') {
@@ -626,7 +627,7 @@ useHead({ title: 'Manajemen Pengguna' })
         </VCard>
       </template>
       
-      <div class="d-flex justify-center mt-4">
+      <div class="d-flex justify-center mt-4" v-if="!loading && users.length > 0">
         <VPagination v-model="options.page" :length="Math.ceil(totalUsers / options.itemsPerPage)" :total-visible="smAndDown ? 5 : 7" density="comfortable" />
       </div>
     </div>
