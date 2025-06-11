@@ -12,6 +12,7 @@ interface PromoEvent {
   start_date: string
   end_date?: string
   bonus_value_mb?: number
+  bonus_duration_days?: number // <-- KOLOM BARU DITAMBAHKAN
   created_by?: {
     id: string
     full_name: string
@@ -107,6 +108,8 @@ const typeOptions = [
 
 // === Aturan Validasi ===
 const requiredRule = [(v: string) => !!v || 'Field ini wajib diisi']
+const numberRule = [(v: number) => v > 0 || 'Nilai harus lebih dari 0']
+
 
 // === Computed Properties ===
 const formTitle = computed(() => (editedIndex.value === -1 ? 'Tambah Event Baru' : 'Edit Event'))
@@ -159,13 +162,18 @@ function openNew() {
     start_date: now.toISOString(),
     end_date: undefined,
     bonus_value_mb: 0,
+    bonus_duration_days: 30, // <-- Inisialisasi default 30 hari
   }
   isEditorDialogVisible.value = true
 }
 
 function openEdit(item: PromoEvent) {
   editedIndex.value = promoList.value.indexOf(item)
-  editedItem.value = { ...item }
+  editedItem.value = { 
+    ...item,
+    // Pastikan ada nilai default jika data lama tidak punya durasi
+    bonus_duration_days: item.bonus_duration_days || 30 
+  }
 
   startDateModel.value = item.start_date ? new Date(item.start_date) : null
   endDateModel.value = item.end_date ? new Date(item.end_date) : null
@@ -440,14 +448,27 @@ useHead({ title: 'Event & Promo' })
                 </VMenu>
               </VCol>
 
-              <VCol v-if="editedItem.event_type === 'BONUS_REGISTRATION'" cols="12">
-                <VTextField
-                  v-model.number="editedItem.bonus_value_mb"
-                  label="Bonus Kuota (MB)"
-                  type="number"
-                  prepend-inner-icon="tabler-database"
-                />
-              </VCol>
+              <!-- === BLOK KONDISIONAL UNTUK BONUS === -->
+              <template v-if="editedItem.event_type === 'BONUS_REGISTRATION'">
+                <VCol cols="12" md="6">
+                  <VTextField
+                    v-model.number="editedItem.bonus_value_mb"
+                    label="Bonus Kuota (MB)"
+                    type="number"
+                    prepend-inner-icon="tabler-database"
+                    :rules="[...requiredRule, ...numberRule]"
+                  />
+                </VCol>
+                <VCol cols="12" md="6">
+                   <VTextField
+                    v-model.number="editedItem.bonus_duration_days"
+                    label="Durasi Bonus (Hari)"
+                    type="number"
+                    prepend-inner-icon="tabler-clock"
+                    :rules="[...requiredRule, ...numberRule]"
+                  />
+                </VCol>
+              </template>
             </VRow>
           </VContainer>
         </VCardText>
