@@ -1,5 +1,5 @@
 # backend/app/__init__.py
-# VERSI FINAL: Mendaftarkan blueprint-blueprint baru yang sudah dipecah.
+# VERSI FINAL: Mendaftarkan blueprint-blueprint baru, termasuk untuk Promo.
 
 import os
 import sys
@@ -154,8 +154,6 @@ def register_blueprints(app: Flask):
         module_log.info(f"Blueprint '{public_bp.name}' (Public) registered.")
 
         # --- PERUBAHAN: Mendaftarkan blueprint-blueprint baru yang sudah dipecah ---
-        # Hapus pendaftaran `users_bp` yang lama
-        
         # Daftarkan blueprint-blueprint baru dari direktori /user
         from .infrastructure.http.user.profile_routes import profile_bp
         app.register_blueprint(profile_bp)
@@ -169,6 +167,11 @@ def register_blueprints(app: Flask):
         from .infrastructure.http.public_user_routes import public_user_bp
         app.register_blueprint(public_user_bp)
         module_log.info(f"Blueprint '{public_user_bp.name}' (Public User) registered.")
+
+        # Daftarkan blueprint publik untuk promo
+        from .infrastructure.http.public_promo_routes import public_promo_bp
+        app.register_blueprint(public_promo_bp)
+        module_log.info(f"Blueprint '{public_promo_bp.name}' (Public Promo) registered.")
         # --- AKHIR PERUBAHAN ---
 
         # Pendaftaran blueprint admin tetap sama
@@ -180,6 +183,10 @@ def register_blueprints(app: Flask):
                 app.register_blueprint(package_management_bp, url_prefix='/api/admin')
                 from .infrastructure.http.admin.settings_routes import settings_management_bp
                 app.register_blueprint(settings_management_bp, url_prefix='/api/admin')
+                # Daftarkan blueprint admin untuk promo
+                from .infrastructure.http.admin.promo_management_routes import promo_management_bp
+                app.register_blueprint(promo_management_bp, url_prefix='/api/admin')
+                # Blueprint admin yang lama
                 from .infrastructure.http.admin_routes import admin_bp
                 app.register_blueprint(admin_bp)
                 module_log.info("All admin blueprints registered.")
