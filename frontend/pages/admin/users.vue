@@ -702,7 +702,7 @@ useHead({ title: 'Manajemen Pengguna' })
                     :disabled="loading"
                     class="my-1"
                 >
-                    Generate & Kirim Password Admin
+                    Reset Password Admin
                 </VBtn>
                 
                 <VSpacer/>
