@@ -1,4 +1,3 @@
-// frontend/middleware/00.maintenance.global.ts
 import { defineNuxtRouteMiddleware, navigateTo } from '#app'
 import { useMaintenanceStore } from '~/store/maintenance'
 import { useAuthStore } from '~/store/auth'
@@ -15,9 +14,13 @@ export default defineNuxtRouteMiddleware((to) => {
   const isMaintenanceActive = maintenanceStore.isActive
   const isMaintenancePage = to.path === '/maintenance'
   const isAdminPath = to.path.startsWith('/admin')
-  
+
   // Rute yang selalu bisa diakses meskipun maintenance aktif
-  const allowedPathsDuringMaintenance = ['/maintenance']
+  // PERBAIKAN: Tambahkan path login ke allowed paths
+  const allowedPathsDuringMaintenance = [
+    '/maintenance',
+    '/login',
+  ]
 
   // Jika mode maintenance aktif
   if (isMaintenanceActive) {

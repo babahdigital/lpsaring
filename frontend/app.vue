@@ -5,45 +5,72 @@ import initCore from '@core/initCore'
 import { initConfigStore, useConfigStore } from '@core/stores/config'
 import { hexToRgb } from '@core/utils/colorConverter'
 import { useSettingsStore } from '~/store/settings'
-// --- PERBAIKAN: Pastikan 'useDevice' TIDAK diimpor dari '#app' ---
-import { useHead } from '#app'
+import { useMaintenanceStore } from '~/store/maintenance' // <-- Tambahkan impor maintenance store
+import { useHead, useNuxtApp } from '#app'
 
 const { global } = useTheme()
 const configStore = useConfigStore()
 const settingsStore = useSettingsStore()
+const maintenanceStore = useMaintenanceStore() // <-- Tambahkan ini
+const nuxtApp = useNuxtApp()
 
 onMounted(() => {
   initConfigStore()
+  
+  // PERBAIKAN: Pindahkan logika mobile ke sini untuk menghindari error SSR
+  if (process.client) {
+    const { isMobile } = useDevice()
+    if (isMobile) {
+      configStore.appContentLayoutNav = 'vertical'
+    }
+  }
 })
 
 initCore()
 
 useHead({
-  title: computed(() => settingsStore.browserTitle),
+  title: computed(() => settingsStore.browserTitle || 'Portal Hotspot'),
   titleTemplate: (titleChunk) => {
-    return titleChunk ? `${titleChunk} - ${settingsStore.appName}` : settingsStore.appName;
+    return titleChunk 
+      ? `${titleChunk} - ${settingsStore.appName || 'Portal Hotspot'}` 
+      : (settingsStore.appName || 'Portal Hotspot');
   }
 })
 
-// Panggilan ini akan bekerja karena auto-import Nuxt. TIDAK PERLU IMPORT MANUAL.
-const { isMobile } = useDevice()
-if (isMobile) {
-  configStore.appContentLayoutNav = 'vertical'
-}
+// PERBAIKAN: Tambahkan pengecekan maintenance mode
+watchEffect(() => {
+  if (maintenanceStore.isActive) {
+    // Redirect ke halaman maintenance jika tidak di halaman admin
+    const currentPath = nuxtApp.$router.currentRoute.value.path
+    const isAdminPath = currentPath.startsWith('/admin')
+    
+    if (!isAdminPath && currentPath !== '/maintenance') {
+      nuxtApp.$router.replace('/maintenance')
+    }
+  }
+})
 </script>
 
 <template>
   <VLocaleProvider :rtl="configStore.isAppRTL">
     <VApp :style="`--v-global-theme-primary: ${hexToRgb(global.current.value.colors.primary)}`">
-      <NuxtLayout>
-        <NuxtPage />
-      </NuxtLayout>
+      <!-- PERBAIKAN: Sembunyikan konten jika maintenance aktif dan bukan admin -->
+      <template v-if="!maintenanceStore.isActive || $route.path.startsWith('/admin')">
+        <NuxtLayout>
+          <NuxtPage />
+        </NuxtLayout>
 
-      <ClientOnly>
-        <ScrollToTop />
-        <template #placeholder />
-      </ClientOnly>
-      <AppSnackbar />
+        <ClientOnly>
+          <ScrollToTop />
+          <template #placeholder />
+        </ClientOnly>
+        <AppSnackbar />
+      </template>
+      
+      <!-- Tampilkan halaman maintenance jika mode aktif -->
+      <template v-else>
+        <NuxtPage page-key="maintenance" :page-path="'/maintenance'" />
+      </template>
     </VApp>
   </VLocaleProvider>
 </template>

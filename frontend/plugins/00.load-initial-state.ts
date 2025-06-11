@@ -1,4 +1,3 @@
-// frontend/plugins/00.load-initial-state.ts
 import { defineNuxtPlugin, useNuxtApp } from '#app'
 import { useSettingsStore } from '~/store/settings'
 import { useMaintenanceStore } from '~/store/maintenance'
@@ -31,6 +30,12 @@ export default defineNuxtPlugin(async () => {
       // Plugin $api kemungkinan sudah memiliki base URL '/api'.
       const publicSettings = await nuxtApp.$api<SettingSchema[]>('/settings/public')
       settingsStore.setSettings(publicSettings || [])
+
+      // PERBAIKAN: Update maintenance store langsung
+      const maintenanceActive = publicSettings.find(s => s.setting_key === 'MAINTENANCE_MODE_ACTIVE')?.setting_value === 'True';
+      const maintenanceMessage = publicSettings.find(s => s.setting_key === 'MAINTENANCE_MODE_MESSAGE')?.setting_value || '';
+      maintenanceStore.setMaintenanceStatus(maintenanceActive, maintenanceMessage);
+
     } catch (error) {
       console.error('Kritis: Gagal memuat pengaturan awal dari server.', error)
       settingsStore.setSettings([])

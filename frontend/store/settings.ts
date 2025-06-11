@@ -1,6 +1,5 @@
-// frontend/store/settings.ts
 import { defineStore } from 'pinia';
-import { ref } from 'vue'; // Pastikan 'ref' diimpor
+import { ref } from 'vue';
 import type { SettingSchema } from '@/types/api/settings';
 import { useMaintenanceStore } from './maintenance';
 
@@ -20,8 +19,8 @@ export const useSettingsStore = defineStore('settings', () => {
   const skin = ref<Skins>(Skins.Bordered);
   const layout = ref<AppContentLayoutNav>(AppContentLayoutNav.Horizontal);
   const contentWidth = ref<ContentWidth>(ContentWidth.Boxed);
-  
-  // --- PERBAIKAN: Definisikan isLoaded sebagai ref ---
+
+  // PERBAIKAN: Definisikan isLoaded sebagai ref
   const isLoaded = ref(false);
 
   const maintenanceStore = useMaintenanceStore();
@@ -54,7 +53,7 @@ export const useSettingsStore = defineStore('settings', () => {
       acc[setting.setting_key] = setting.setting_value;
       return acc;
     }, {} as Record<string, string | null>);
-    
+
     _updateAllStates(settingsMap);
     isLoaded.value = true; // Tandai bahwa data telah dimuat
   }
@@ -63,7 +62,7 @@ export const useSettingsStore = defineStore('settings', () => {
    * Fungsi untuk update dari object (Record<string, string>)
    */
   function setSettingsFromObject(settings: Record<string, string>) {
-     _updateAllStates(settings);
+      _updateAllStates(settings);
   }
 
   // --- RETURN ---
