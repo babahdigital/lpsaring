@@ -1,14 +1,14 @@
 # backend/app/infrastructure/http/admin_routes.py
-# VERSI FINAL: Disesuaikan kembali dengan Model A (Paket Fleksibel).
-# Menghapus CRUD profil dan menyesuaikan skema & endpoint.
-# PERBAIKAN: Penanganan Enum UserBlok dan UserKamar di API agar konsisten dengan string.
+# PERUBAHAN: Endpoint dashboard/stats ditulis ulang sepenuhnya untuk menyediakan
+# data yang komprehensif untuk dasbor admin yang baru.
+# UPDATE: Logika terkait voucher telah dihapus sesuai permintaan.
 
 from flask import Blueprint, jsonify, request, current_app
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, desc
 from sqlalchemy.orm import selectinload
 from datetime import datetime, timezone as dt_timezone, timedelta
 from http import HTTPStatus
-from pydantic import BaseModel, Field, ValidationError # PERBAIKAN: Tambahkan import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from typing import Optional, List
 from decimal import Decimal
 import uuid
@@ -17,70 +17,99 @@ import uuid
 from app.extensions import db
 from app.infrastructure.db.models import (
     User, UserRole, Package, ApprovalStatus, Transaction,
-    TransactionStatus, NotificationRecipient, NotificationType, ApplicationSetting
+    TransactionStatus, NotificationRecipient, NotificationType
 )
+# Impor voucher dihapus karena tidak digunakan
+    
 from .decorators import admin_required, super_admin_required
-
-# Mengambil skema yang tersisa jika masih ada
-# dari .schemas.user_schemas import UserResponseSchema, UserUpdateByAdminSchema, UserCreateByAdminSchema
 from app.utils.formatters import get_phone_number_variations
 from app.services.notification_service import get_notification_message
-
-# Import settings_service for ConfigKeys
 from app.services import settings_service
 
 # Define admin_bp for remaining routes
 admin_bp = Blueprint('admin_api', __name__, url_prefix='/api/admin')
 
-# --- Helper dan Konstanta yang mungkin masih digunakan di rute yang tersisa ---
-class ConfigKeys:
-    MIKROTIK_DEFAULT_PROFILE = 'MIKROTIK_DEFAULT_PROFILE'
-    MIKROTIK_EXPIRED_PROFILE = 'MIKROTIK_EXPIRED_PROFILE'
-    ENABLE_WHATSAPP_NOTIFICATIONS = 'ENABLE_WHATSAPP_NOTIFICATIONS'
-
-# Removed: _generate_password, _send_whatsapp_notification, _handle_mikrotik_operation
-# as they are primarily used by user management routes.
-# If _send_whatsapp_notification or _handle_mikrotik_operation are needed
-# by these remaining routes, they should be re-imported or defined here.
-
-
-# --- Endpoints yang tersisa (dashboard stats, notif recipients, transactions) ---
-
+# --- PERUBAHAN UTAMA PADA ENDPOINT STATS DASHBOARD ---
 @admin_bp.route('/dashboard/stats', methods=['GET'])
 @admin_required
 def get_dashboard_stats(current_admin: User):
-    """Provides key statistics for the admin dashboard, including weekly revenue."""
+    """
+    Provides comprehensive statistics for the new admin dashboard.
+    This endpoint gathers data on revenue, user metrics, sales, and recent activities.
+    """
     try:
-        total_users_query = select(func.count(User.id)).where(User.role == UserRole.USER)
-        total_users = db.session.scalar(total_users_query) or 0
+        now_utc = datetime.now(dt_timezone.utc)
+        start_of_today_utc = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_of_month_utc = now_utc.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        seven_days_from_now = now_utc + timedelta(days=7)
 
-        pending_approvals_query = select(func.count(User.id)).where(User.approval_status == ApprovalStatus.PENDING_APPROVAL)
-        pending_approvals = db.session.scalar(pending_approvals_query) or 0
-
-        active_packages_query = select(func.count(Package.id)).where(Package.is_active == True)
-        active_packages = db.session.scalar(active_packages_query) or 0
-
-        today = datetime.now(dt_timezone.utc).date()
-        start_of_month = today.replace(day=1)
-        monthly_revenue_query = select(func.sum(Transaction.amount)).where(
+        # 1. Pendapatan Hari Ini
+        revenue_today_q = select(func.sum(Transaction.amount)).where(
             Transaction.status == TransactionStatus.SUCCESS,
-            Transaction.created_at >= start_of_month
+            Transaction.created_at >= start_of_today_utc
         )
-        monthly_revenue = db.session.scalar(monthly_revenue_query) or Decimal('0.00')
+        pendapatan_hari_ini = db.session.scalar(revenue_today_q) or Decimal('0.00')
 
-        start_of_week = today - timedelta(days=today.weekday())
-        weekly_revenue_query = select(func.sum(Transaction.amount)).where(
+        # 2. Pendaftar Baru (Menunggu Persetujuan)
+        pendaftar_baru_q = select(func.count(User.id)).where(User.approval_status == ApprovalStatus.PENDING_APPROVAL)
+        pendaftar_baru = db.session.scalar(pendaftar_baru_q) or 0
+
+        # 3. Total Pengguna Aktif (yang sudah disetujui)
+        pengguna_aktif_q = select(func.count(User.id)).where(User.approval_status == ApprovalStatus.APPROVED)
+        pengguna_aktif = db.session.scalar(pengguna_aktif_q) or 0
+
+        # 4. Pengguna Akan Kadaluwarsa (dalam 7 hari)
+        akan_kadaluwarsa_q = select(func.count(User.id)).where(
+            User.quota_expiry_date != None,
+            User.quota_expiry_date >= now_utc,
+            User.quota_expiry_date < seven_days_from_now
+        )
+        akan_kadaluwarsa = db.session.scalar(akan_kadaluwarsa_q) or 0
+
+        # 5. Total Kuota Terjual Bulan Ini (dalam MB)
+        kuota_terjual_gb_q = select(func.sum(Package.data_quota_gb)).select_from(Transaction).join(Package).where(
             Transaction.status == TransactionStatus.SUCCESS,
-            Transaction.created_at >= start_of_week
+            Transaction.created_at >= start_of_month_utc,
+            Package.data_quota_gb > 0 # Hanya hitung paket berkuota
         )
-        weekly_revenue = db.session.scalar(weekly_revenue_query) or Decimal('0.00')
+        kuota_terjual_gb = db.session.scalar(kuota_terjual_gb_q) or Decimal('0.0')
+        kuota_terjual_mb = float(kuota_terjual_gb) * 1024
 
+        # 6. Transaksi Terakhir (5 terbaru)
+        transaksi_terakhir_q = select(Transaction).options(
+            selectinload(Transaction.user.load_only(User.full_name)),
+            selectinload(Transaction.package.load_only(Package.name))
+        ).where(Transaction.status == TransactionStatus.SUCCESS).order_by(desc(Transaction.created_at)).limit(5)
+        
+        latest_transactions = db.session.scalars(transaksi_terakhir_q).all()
+        transaksi_terakhir_data = [{
+            "id": str(tx.id),
+            "amount": float(tx.amount),
+            "package": {"name": tx.package.name if tx.package else "N/A"},
+            "user": {"full_name": tx.user.full_name if tx.user else "Pengguna Dihapus"}
+        } for tx in latest_transactions]
+
+        # 7. Paket Terlaris Bulan Ini
+        paket_terlaris_q = select(
+            Package.name,
+            func.count(Transaction.id).label('sales_count')
+        ).select_from(Transaction).join(Package).where(
+            Transaction.status == TransactionStatus.SUCCESS,
+            Transaction.created_at >= start_of_month_utc
+        ).group_by(Package.name).order_by(desc('sales_count')).limit(5)
+        
+        top_packages = db.session.execute(paket_terlaris_q).all()
+        paket_terlaris_data = [{"name": name, "count": count} for name, count in top_packages]
+
+        # Gabungkan semua statistik menjadi satu respons
         stats = {
-            "totalUsers": total_users,
-            "pendingApprovals": pending_approvals,
-            "activePackages": active_packages,
-            "monthlyRevenue": float(monthly_revenue),
-            "weeklyRevenue": float(weekly_revenue)
+            "pendapatanHariIni": float(pendapatan_hari_ini),
+            "pendaftarBaru": pendaftar_baru,
+            "penggunaAktif": pengguna_aktif,
+            "akanKadaluwarsa": akan_kadaluwarsa,
+            "kuotaTerjualMb": kuota_terjual_mb,
+            "transaksiTerakhir": transaksi_terakhir_data,
+            "paketTerlaris": paket_terlaris_data
         }
         
         return jsonify(stats), HTTPStatus.OK
@@ -95,7 +124,6 @@ class NotificationRecipientStatusSchema(BaseModel):
     full_name: str
     phone_number: str
     is_subscribed: bool
-    # model_config = ConfigDict(from_attributes=True) # Uncomment if used for ORM conversion
 
 class NotificationRecipientUpdateSchema(BaseModel):
     notification_type: NotificationType
@@ -103,7 +131,6 @@ class NotificationRecipientUpdateSchema(BaseModel):
 
 class NotificationUpdateResponseSchema(BaseModel):
     total_recipients: int
-
 
 @admin_bp.route('/notification-recipients', methods=['GET'])
 @super_admin_required
@@ -145,7 +172,6 @@ def update_notification_recipients(current_admin: User):
         response = NotificationUpdateResponseSchema(total_recipients=len(new_recipients))
         return jsonify(response.model_dump()), HTTPStatus.OK
     except ValidationError as e:
-        # Tambahkan logging di sini untuk melihat detail error Pydantic
         current_app.logger.error(f"Pydantic validation error in update_notification_recipients: {e.errors()}", exc_info=True)
         return jsonify({"errors": e.errors()}), HTTPStatus.UNPROCESSABLE_ENTITY
     except Exception as e:
@@ -173,10 +199,7 @@ def get_transactions_list(current_admin: User):
         )
         
         if search_query:
-            # Join with User only if search_query is present and needs to search on User fields
-            # This avoids unnecessary joins for purely transaction-related searches
             query = query.outerjoin(User, Transaction.user_id == User.id)
-
 
         if user_id_filter:
             try:
@@ -196,22 +219,19 @@ def get_transactions_list(current_admin: User):
             search_term = f"%{search_query}%"
             search_conditions = [
                 Transaction.midtrans_order_id.ilike(search_term),
-                # Pastikan User.full_name hanya diakses jika join sudah dilakukan
                 User.full_name.ilike(search_term) if Transaction.user_id is not None else False
             ]
             
             phone_variations = get_phone_number_variations(search_query)
             if phone_variations:
                 for variation in phone_variations:
-                    # Pastikan User.phone_number hanya diakses jika join sudah dilakukan
                     if Transaction.user_id is not None:
                         search_conditions.append(User.phone_number.ilike(f"%{variation}%"))
             else:
-                # Pastikan User.phone_number hanya diakses jika join sudah dilakukan
                 if Transaction.user_id is not None:
                     search_conditions.append(User.phone_number.ilike(search_term))
             
-            query = query.where(or_(*search_conditions))
+            query = query.where(or_(*[c for c in search_conditions if c is not False]))
 
         sortable_columns = {
             'created_at': Transaction.created_at,
@@ -268,28 +288,3 @@ def export_transactions(current_admin: User):
             "format": export_format
         }
     }), HTTPStatus.NOT_IMPLEMENTED
-
-# --- Rute CRUD yang dihapus dari Model B: PROFILES ---
-# @admin_bp.route('/profiles', methods=['GET'])
-# @admin_required
-# def get_profiles_list(current_admin: User):
-#     """(Dihapus di Model A) Retrieve a list of package profiles, optionally paginated and searchable."""
-#     return jsonify({"message": "Endpoint ini tidak tersedia di Model A."}), HTTPStatus.NOT_IMPLEMENTED
-
-# @admin_bp.route('/profiles', methods=['POST'])
-# @super_admin_required
-# def create_profile(current_admin: User):
-#     """(Dihapus di Model A) Create a new package profile."""
-#     return jsonify({"message": "Endpoint ini tidak tersedia di Model A."}), HTTPStatus.NOT_IMPLEMENTED
-
-# @admin_bp.route('/profiles/<uuid:profile_id>', methods=['PUT'])
-# @super_admin_required
-# def update_profile(current_admin: User, profile_id):
-#     """(Dihapus di Model A) Update an existing package profile."""
-#     return jsonify({"message": "Endpoint ini tidak tersedia di Model A."}), HTTPStatus.NOT_IMPLEMENTED
-
-# @admin_bp.route('/profiles/<uuid:profile_id>', methods=['DELETE'])
-# @super_admin_required
-# def delete_profile(current_admin: User, profile_id):
-#     """(Dihapus di Model A) Delete a package profile, preventing deletion if still used by packages."""
-#     return jsonify({"message": "Endpoint ini tidak tersedia di Model A."}), HTTPStatus.NOT_IMPLEMENTED
