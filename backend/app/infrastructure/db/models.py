@@ -86,8 +86,9 @@ class PromoEvent(db.Model):
     status: Mapped[PromoEventStatus] = mapped_column(SQLAlchemyEnum(PromoEventStatus, name="promo_event_status_enum", native_enum=False), nullable=False, default=PromoEventStatus.DRAFT, index=True)
     start_date: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     end_date: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    # Kolom untuk menyimpan nilai bonus jika ada (misal: kuota dalam MB)
     bonus_value_mb: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, comment="Nilai bonus dalam MB untuk event tipe BONUS_REGISTRATION")
+    # --- KOLOM BARU DITAMBAHKAN ---
+    bonus_duration_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="Durasi masa aktif bonus dalam hari")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey('users.id'), nullable=True)
