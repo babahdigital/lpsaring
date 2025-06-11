@@ -7,7 +7,7 @@ import {
   AppContentLayoutNav,
   ContentWidth,
   FooterType,
-  HorizontalNavType, // Pastikan enum ini diimpor/didefinisikan
+  HorizontalNavType,
   NavbarType,
 } from  '@/types/enums'
 
@@ -30,7 +30,10 @@ export const { themeConfig, layoutConfig } = defineThemeConfig({
         { label: 'English', i18nLang: 'en', isRTL: false },
       ],
     },
-    theme: 'dark',
+    // PERBAIKAN: Kembalikan properti 'theme' dengan nilai default 'system'.
+    // Ini diperlukan untuk memenuhi kontrak tipe TypeScript.
+    // Nilai ini akan segera ditimpa oleh pengaturan dari database di app.vue.
+    theme: 'system',
     skin: Skins.Bordered,
     iconRenderer: VIcon,
     isRTL: false,
