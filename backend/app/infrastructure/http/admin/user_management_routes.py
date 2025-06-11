@@ -353,7 +353,7 @@ def update_user_by_admin(current_admin: User, user_id):
                     mikrotik_profile_name=current_app.config.get(ConfigKeys.MIKROTIK_DEFAULT_PROFILE, 'default'),
                     hotspot_password=new_hotspot_password,
                     comment=f"Downgraded to USER by {current_admin.full_name}",
-                    limit_bytes_total=int(user_to_update.total_quota_purchased_mb * 1024 * 1024),
+                    limit_bytes_total=int((user_to_update.total_quota_purchased_mb or 0) * 1024 * 1024),
                     session_timeout_seconds=int((user_to_update.quota_expiry_date - datetime.now(dt_timezone.utc)).total_seconds()) if user_to_update.quota_expiry_date and user_to_update.quota_expiry_date > datetime.now(dt_timezone.utc) else 0
                 )
 
@@ -384,12 +384,13 @@ def update_user_by_admin(current_admin: User, user_id):
         current_app.logger.error(f"Failed to update user {user_id}: {e}", exc_info=True)
         return jsonify({"message": "An internal error occurred."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
+# --- PERBAIKAN PADA FUNGSI APPROVE_USER ---
 @user_management_bp.route('/users/<uuid:user_id>/approve', methods=['PATCH'])
 @admin_required
 def approve_user(current_admin: User, user_id):
     """
-    Menyetujui pengguna baru dan memberikan bonus registrasi jika ada promo aktif,
-    serta melakukan sinkronisasi ke Mikrotik.
+    Menyetujui pengguna baru, memberikan bonus registrasi jika ada promo aktif,
+    dan melakukan sinkronisasi ke Mikrotik secara robust.
     """
     user = db.session.get(User, user_id)
     if not user:
@@ -398,75 +399,96 @@ def approve_user(current_admin: User, user_id):
         return jsonify({"message": "This user is not in pending approval status."}), HTTPStatus.CONFLICT
     if user.role == UserRole.USER and (not user.blok or not user.kamar):
         return jsonify({"message": "User with USER role must have Blok and Kamar defined before approval."}), HTTPStatus.BAD_REQUEST
-    
+
     mikrotik_username = format_to_local_phone(user.phone_number)
+    if not mikrotik_username:
+        # Ini adalah kasus edge, tetapi penting untuk ditangani
+        current_app.logger.error(f"Cannot approve user ID {user.id} because phone number '{user.phone_number}' cannot be formatted.")
+        return jsonify({"message": "Cannot process approval. Invalid phone number format."}), HTTPStatus.BAD_REQUEST
+        
     new_mikrotik_password = _generate_password(length=6, numeric_only=True)
 
-    # --- LOGIKA PEMBERIAN BONUS REGISTRASI ---
+    # --- LOGIKA PEMBERIAN BONUS REGISTRASI YANG LEBIH ROBUST ---
     bonus_given_mb = 0
-    bonus_duration_days = 30
+    # Durasi default jika ada bonus, bisa juga diambil dari promo jika ada fieldnya
+    bonus_duration_days = 30 
     
     active_bonus_promo = _get_active_bonus_registration_promo()
-    if active_bonus_promo and active_bonus_promo.bonus_value_mb is not None and active_bonus_promo.bonus_value_mb > 0:
+    if active_bonus_promo and active_bonus_promo.bonus_value_mb and active_bonus_promo.bonus_value_mb > 0:
         bonus_given_mb = active_bonus_promo.bonus_value_mb
         current_app.logger.info(f"Applying bonus {bonus_given_mb}MB from promo '{active_bonus_promo.name}' to user {user.full_name}.")
     else:
-        current_app.logger.info(f"No active 'BONUS_REGISTRATION' promo found or bonus_value_mb is not set/zero. User {user.full_name} will not receive bonus quota.")
+        current_app.logger.info(f"No active 'BONUS_REGISTRATION' promo found. User {user.full_name} will not receive a bonus quota.")
 
-    user.total_quota_purchased_mb = bonus_given_mb 
-
-    if user.total_quota_purchased_mb > 0:
-        if user.quota_expiry_date and user.quota_expiry_date > datetime.now(dt_timezone.utc):
-            user.quota_expiry_date += timedelta(days=bonus_duration_days)
-            current_app.logger.info(f"Extending existing quota expiry date for {user.full_name} by {bonus_duration_days} days to {user.quota_expiry_date}.")
-        else:
-            user.quota_expiry_date = datetime.now(dt_timezone.utc) + timedelta(days=bonus_duration_days)
-            current_app.logger.info(f"Setting new quota expiry date for {user.full_name} to {user.quota_expiry_date} ({bonus_duration_days} days).")
+    # Tetapkan kuota dan tanggal kadaluarsa di DB
+    user.total_quota_purchased_mb = bonus_given_mb
+    if bonus_given_mb > 0:
+        # Jika ada bonus, tetapkan tanggal kadaluarsa.
+        # Logika ini bisa disesuaikan, misalnya memperpanjang jika sudah ada.
+        user.quota_expiry_date = datetime.now(dt_timezone.utc) + timedelta(days=bonus_duration_days)
+        current_app.logger.info(f"Setting new quota expiry date for {user.full_name} to {user.quota_expiry_date}.")
     else:
+        # Jika tidak ada bonus, pastikan tanggal kadaluarsa adalah None.
         user.quota_expiry_date = None
-        current_app.logger.info(f"User {user.full_name} has no bonus quota, quota_expiry_date set to None.")
+        current_app.logger.info(f"User {user.full_name} has no bonus quota, quota_expiry_date is set to None.")
 
-    # Persiapan parameter untuk Mikrotik
-    mikrotik_limit_bytes_total = int(user.total_quota_purchased_mb * 1024 * 1024)
+    # --- PERSIAPAN PARAMETER UNTUK MIKROTIK (LOGIKA INTI) ---
+    # Pastikan nilai kuota adalah integer dan tidak negatif.
+    mikrotik_limit_bytes_total = int(user.total_quota_purchased_mb or 0) * 1024 * 1024
     if mikrotik_limit_bytes_total < 0:
         mikrotik_limit_bytes_total = 0
-        current_app.logger.warning(f"Negative quota value for user {user.id} ({user.full_name}), reset to 0 for Mikrotik.")
 
+    # Pastikan nilai timeout adalah integer dan tidak negatif.
     mikrotik_session_timeout_seconds = 0
     if user.quota_expiry_date:
-        time_remaining_seconds = (user.quota_expiry_date - datetime.now(dt_timezone.utc)).total_seconds()
-        mikrotik_session_timeout_seconds = max(0, int(time_remaining_seconds))
+        time_remaining = user.quota_expiry_date - datetime.now(dt_timezone.utc)
+        mikrotik_session_timeout_seconds = max(0, int(time_remaining.total_seconds()))
 
     # --- LOG PENTING: Untuk memastikan nilai yang dikirim ke Mikrotik ---
     current_app.logger.info(
-        f"Sending to Mikrotik - User: {mikrotik_username}, "
-        f"Limit Bytes: {mikrotik_limit_bytes_total}, "
-        f"Timeout: {mikrotik_session_timeout_seconds}"
+        f"Preparing to sync with Mikrotik for user '{mikrotik_username}' (ID: {user.id}). "
+        f"Payload: "
+        f"limit_bytes_total={mikrotik_limit_bytes_total}, "
+        f"session_timeout_seconds={mikrotik_session_timeout_seconds}"
     )
     # --- AKHIR LOG PENTING ---
 
     mikrotik_success, mikrotik_message = _handle_mikrotik_operation(
         activate_or_update_hotspot_user,
         user_mikrotik_username=mikrotik_username,
-        mikrotik_profile_name=current_app.config.get(ConfigKeys.MIKROTIK_DEFAULT_PROFILE, 'default'),
+        mikrotik_profile_name=settings_service.get_setting(ConfigKeys.MIKROTIK_DEFAULT_PROFILE, 'default'),
         hotspot_password=new_mikrotik_password,
-        comment=f"Approved by {current_admin.full_name} (Bonus: {bonus_given_mb}MB)",
+        comment=f"Approved by {current_admin.full_name} | Bonus: {bonus_given_mb}MB",
         limit_bytes_total=mikrotik_limit_bytes_total,
         session_timeout_seconds=mikrotik_session_timeout_seconds
     )
     if not mikrotik_success:
+        # Log error jika gagal, tapi proses tetap lanjut untuk update DB
         current_app.logger.error(f"Failed to activate user {user.full_name} in Mikrotik: {mikrotik_message}")
+        # Jangan return di sini, agar status user di DB tetap terupdate.
         
+    # Update status user di database, APAPUN hasil dari Mikrotik
     user.approval_status = ApprovalStatus.APPROVED
     user.is_active = True
     user.approved_at = datetime.now(dt_timezone.utc)
+    user.approved_by_id = current_admin.id
     user.mikrotik_password = new_mikrotik_password
     user.is_unlimited_user = False
     user.total_quota_used_mb = 0
 
-    db.session.commit()
-    db.session.refresh(user)
-    
+    try:
+        db.session.commit()
+        db.session.refresh(user)
+    except Exception as e_db:
+        db.session.rollback()
+        current_app.logger.error(f"CRITICAL: Failed to commit user approval to DB for user {user_id} after Mikrotik operation. Error: {e_db}", exc_info=True)
+        # Jika gagal simpan ke DB, ini adalah error serius
+        return jsonify({
+            "message": "User approval failed due to a database error. Please check logs.",
+            "mikrotik_status": f"Operation attempted with message: {mikrotik_message}"
+        }), HTTPStatus.INTERNAL_SERVER_ERROR
+
+    # Kirim notifikasi setelah semua proses berhasil
     context = {
         "full_name": user.full_name,
         "username": mikrotik_username,
@@ -479,9 +501,10 @@ def approve_user(current_admin: User, user_id):
     return jsonify({
         "message": "User approved successfully.",
         "user": UserResponseSchema.from_orm(user).model_dump(),
-        "mikrotik_status": "OK" if mikrotik_success else f"Mikrotik Warning: {mikrotik_message}",
+        "mikrotik_status": "OK" if mikrotik_success else f"Warning: {mikrotik_message}",
         "notification_sent": notification_sent
     }), HTTPStatus.OK
+
 
 @user_management_bp.route('/users/<uuid:user_id>/reject', methods=['POST'])
 @admin_required
@@ -501,7 +524,7 @@ def reject_user(current_admin: User, user_id):
             current_app.logger.info(f"Admin '{current_admin.full_name}' attempting to move user '{mikrotik_username_target}' to expired profile (rejection).")
             with get_mikrotik_connection() as api_conn:
                 if api_conn:
-                    expired_profile_name = current_app.config.get(ConfigKeys.MIKROTIK_EXPIRED_PROFILE, 'expired')
+                    expired_profile_name = settings_service.get_setting(ConfigKeys.MIKROTIK_EXPIRED_PROFILE, 'expired')
                     success_profile, msg_profile = set_hotspot_user_profile(api_conn, mikrotik_username_target, expired_profile_name)
                     mikrotik_status_action = f"Mikrotik: {'Success' if success_profile else 'Failed'} moving to '{expired_profile_name}' profile ({msg_profile})."
                 else:
@@ -647,13 +670,11 @@ def admin_reset_hotspot_password(current_admin: User, user_id):
             try:
                 with get_mikrotik_connection() as api_conn:
                     if api_conn:
-                        mikrotik_profile_name = current_app.config.get(ConfigKeys.MIKROTIK_DEFAULT_PROFILE, 'default')
+                        mikrotik_profile_name = settings_service.get_setting(ConfigKeys.MIKROTIK_DEFAULT_PROFILE, 'default')
                         mikrotik_username = format_to_local_phone(user_to_reset.phone_number)
                         
                         limit_bytes_total = int(user_to_reset.total_quota_purchased_mb or 0) * 1024 * 1024
-                        if limit_bytes_total < 0:
-                            limit_bytes_total = 0
-                            current_app.logger.warning(f"Negative quota value for user {user_to_reset.id} (reset password), reset to 0 for Mikrotik.")
+                        if limit_bytes_total < 0: limit_bytes_total = 0
                         
                         session_timeout_seconds = 0
                         if user_to_reset.quota_expiry_date:
