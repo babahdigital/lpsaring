@@ -1,7 +1,11 @@
 <template>
   <div>
     <VRow>
-      <VCol cols="12" md="4" sm="6">
+      <VCol
+        cols="12"
+        md="4"
+        sm="6"
+      >
         <VCard>
           <VCardText class="d-flex justify-space-between">
             <div>
@@ -11,7 +15,7 @@
                   {{ formatCurrency(stats?.pendapatanHariIni) }}
                 </h6>
               </div>
-              <span class="text-sm">Ringkasan hari ini</span>
+              <span class="text-sm">Total transaksi sukses hari ini</span>
             </div>
             <VAvatar
               rounded
@@ -24,91 +28,53 @@
         </VCard>
       </VCol>
 
-      <VCol cols="12" md="4" sm="6">
-         <VCard>
-          <VCardText class="d-flex justify-space-between">
-            <div>
-              <span>Pendapatan Minggu Ini</span>
-              <div class="d-flex align-center gap-2 my-1">
-                <h6 class="text-h6">
-                  {{ formatCurrency(stats?.pendapatanMingguIni) }}
-                </h6>
-              </div>
-              <span class="text-sm">Total minggu ini</span>
-            </div>
-            <VAvatar
-              rounded
-              variant="tonal"
-              color="primary"
-            >
-              <VIcon icon="mdi-cash-multiple" />
-            </VAvatar>
-          </VCardText>
-        </VCard>
-      </VCol>
-      
-      <VCol cols="12" md="4" sm="6">
-         <VCard>
-          <VCardText class="d-flex justify-space-between">
-            <div>
-              <span>Pendapatan Bulan Ini</span>
-              <div class="d-flex align-center gap-2 my-1">
-                <h6 class="text-h6">
-                  {{ formatCurrency(stats?.pendapatanBulanIni) }}
-                </h6>
-              </div>
-              <span class="text-sm">Total bulan ini</span>
-            </div>
-            <VAvatar
-              rounded
-              variant="tonal"
-              color="info"
-            >
-              <VIcon icon="mdi-poll" />
-            </VAvatar>
-          </VCardText>
-        </VCard>
-      </VCol>
-
-      <VCol cols="12" md="4" sm="6">
+      <VCol
+        cols="12"
+        md="4"
+        sm="6"
+      >
         <VCard>
           <VCardText class="d-flex justify-space-between">
             <div>
-              <span>Pendaftar Baru</span>
+              <span>Menunggu Persetujuan</span>
               <div class="d-flex align-center gap-2 my-1">
                 <h6 class="text-h6">
-                  {{ stats?.pendaftarBaru }}
+                  {{ stats?.pendaftarBaru ?? 0 }} Pengguna
                 </h6>
               </div>
-              <span class="text-sm">Menunggu persetujuan</span>
+              <span class="text-sm text-warning">Perlu tindakan Anda</span>
             </div>
             <VAvatar
               rounded
               variant="tonal"
               color="warning"
             >
-              <VIcon icon="mdi-account-plus-outline" />
+              <VIcon icon="mdi-account-clock-outline" />
             </VAvatar>
           </VCardText>
         </VCard>
       </VCol>
 
-      <VCol cols="12" md="4" sm="6">
+      <VCol
+        cols="12"
+        md="4"
+        sm="6"
+      >
         <VCard>
           <VCardText class="d-flex justify-space-between">
             <div>
               <span>Pengguna Aktif</span>
               <div class="d-flex align-center gap-2 my-1">
                 <h6 class="text-h6">
-                  {{ stats?.penggunaAktif }}
+                  {{ stats?.penggunaAktif ?? 0 }} Pengguna
                 </h6>
               </div>
-              <span class="text-sm">Total pengguna disetujui</span>
+              <span class="text-sm">Total pengguna terdaftar & disetujui</span>
             </div>
             <VAvatar
               rounded
               variant="tonal"
-              color="secondary"
+              color="primary"
             >
               <VIcon icon="mdi-account-group-outline" />
             </VAvatar>
@@ -116,36 +82,230 @@
         </VCard>
       </VCol>
 
-    </VRow>
-    
-    <VRow class="mt-4">
-      <VCol>
+      <VCol
+        cols="12"
+        md="4"
+        sm="6"
+      >
         <VCard>
-          <VCardTitle>Grafik Pendapatan (Segera Hadir)</VCardTitle>
-          <VCardText>
-            Area ini akan menampilkan grafik tren pendapatan.
+          <VCardText class="d-flex justify-space-between">
+            <div>
+              <span>Akan Kadaluwarsa</span>
+              <div class="d-flex align-center gap-2 my-1">
+                <h6 class="text-h6">
+                  {{ stats?.akanKadaluwarsa ?? 0 }} Pengguna
+                </h6>
+              </div>
+              <span class="text-sm">Masa aktif akan habis dalam 7 hari</span>
+            </div>
+            <VAvatar
+              rounded
+              variant="tonal"
+              color="secondary"
+            >
+              <VIcon icon="mdi-account-reactivate-outline" />
+            </VAvatar>
+          </VCardText>
+        </VCard>
+      </VCol>
+
+      <VCol
+        cols="12"
+        md="4"
+        sm="6"
+      >
+        <VCard>
+          <VCardText class="d-flex justify-space-between">
+            <div>
+              <span>Kuota Terjual (Bulan Ini)</span>
+              <div class="d-flex align-center gap-2 my-1">
+                <h6 class="text-h6">
+                  {{ stats?.kuotaTerjualMb ? (stats.kuotaTerjualMb / 1024).toFixed(2) : '0.00' }} GB
+                </h6>
+              </div>
+              <span class="text-sm">Total kuota dari paket terjual</span>
+            </div>
+            <VAvatar
+              rounded
+              variant="tonal"
+              color="info"
+            >
+              <VIcon icon="mdi-signal-cellular-3" />
+            </VVAvatar>
+          </VCardText>
+        </VCard>
+      </VCol>
+
+      <VCol
+        cols="12"
+        md="4"
+        sm="6"
+      >
+        <VCard>
+          <VCardText class="d-flex justify-space-between">
+            <div>
+              <span>Voucher Terklaim</span>
+              <div class="d-flex align-center gap-2 my-1">
+                <h6 class="text-h6">
+                  {{ stats?.voucherTerklaimHariIni ?? 0 }} Voucher
+                </h6>
+              </div>
+              <span class="text-sm">Total klaim voucher hari ini</span>
+            </div>
+            <VAvatar
+              rounded
+              variant="tonal"
+              color="error"
+            >
+              <VIcon icon="mdi-ticket-percent-outline" />
+            </VAvatar>
           </VCardText>
         </VCard>
       </VCol>
     </VRow>
     
+    <VRow class="mt-4">
+      <VCol
+        cols="12"
+        md="5"
+      >
+        <VCard>
+          <VCardTitle>Paket Terlaris (Bulan Ini)</VCardTitle>
+          <VCardText>
+            <VueApexCharts
+              v-if="!pending && pieChartSeries.length > 0"
+              type="pie"
+              height="350"
+              :options="pieChartOptions"
+              :series="pieChartSeries"
+            />
+            <div v-else-if="pending" class="text-center">
+              Memuat data grafik...
+            </div>
+            <div v-else class="text-center">
+              Belum ada data penjualan paket bulan ini.
+            </div>
+          </VCardText>
+        </VCard>
+      </VCol>
+
+      <VCol
+        cols="12"
+        md="7"
+      >
+        <VCard>
+          <VCardTitle>Aktivitas Transaksi Terakhir</VCardTitle>
+          <VDataTable
+            :headers="transactionHeaders"
+            :items="stats?.transaksiTerakhir ?? []"
+            :loading="pending"
+            :items-per-page="5"
+            density="compact"
+            class="text-no-wrap"
+          >
+            <template #item.amount="{ item }">
+              {{ formatCurrency(item.raw.amount) }}
+            </template>
+            <template #item.user.full_name="{ item }">
+              <div class="d-flex align-center">
+                <VAvatar
+                  size="32"
+                  :color="item.raw.user ? 'primary' : 'grey'"
+                  class="me-3"
+                  variant="tonal"
+                >
+                  <VIcon :icon="item.raw.user ? 'mdi-account-outline' : 'mdi-account-off-outline'" />
+                </VAvatar>
+                <span>{{ item.raw.user?.full_name ?? 'Pengguna Dihapus' }}</span>
+              </div>
+            </template>
+            <template #item.package.name="{ item }">
+              <VChip
+                color="success"
+                size="small"
+                label
+              >
+                {{ item.raw.package.name }}
+              </VChip>
+            </template>
+          </VDataTable>
+        </VCard>
+      </VCol>
+    </VRow>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useApiFetch } from '~/composables/useApiFetch';
+import { VDataTable } from 'vuetify/labs/VDataTable';
+import VueApexCharts from 'vue-apexcharts';
 
 definePageMeta({
   requiredRole: ['ADMIN', 'SUPER_ADMIN'],
-})
-
-// Fetch data statistik dari backend
-const { data: stats, pending, error } = useApiFetch('/admin/dashboard/stats', {
-  lazy: true, // Load data di background
-  server: false, // Ambil data di sisi klien saja untuk dashboard
 });
 
-// Fungsi helper untuk format mata uang
+// --- Definisi Tipe untuk Data Dashboard ---
+interface TransaksiTerakhir {
+  id: string;
+  amount: number;
+  package: { name: string };
+  user: { full_name: string } | null;
+}
+
+interface PaketTerlaris {
+  name: string;
+  count: number;
+}
+
+interface DashboardStats {
+  pendapatanHariIni: number;
+  pendaftarBaru: number;
+  penggunaAktif: number;
+  akanKadaluwarsa: number;
+  kuotaTerjualMb: number;
+  voucherTerklaimHariIni: number;
+  transaksiTerakhir: TransaksiTerakhir[];
+  paketTerlaris: PaketTerlaris[];
+}
+
+// --- Fetch Data Statistik Utama ---
+const { data: stats, pending, error } = useApiFetch<DashboardStats>('/admin/dashboard/stats', {
+  lazy: true,
+  server: false, 
+});
+
+// --- Konfigurasi Tabel Transaksi ---
+const transactionHeaders = [
+  { title: 'PENGGUNA', key: 'user.full_name', sortable: false },
+  { title: 'PAKET', key: 'package.name', sortable: false },
+  { title: 'JUMLAH', key: 'amount', align: 'end', sortable: false },
+];
+
+// --- Konfigurasi Grafik Pie ---
+const pieChartOptions = computed(() => ({
+  chart: {
+    type: 'pie',
+  },
+  labels: stats.value?.paketTerlaris.map(p => p.name) ?? [],
+  legend: {
+    position: 'bottom',
+  },
+  responsive: [{
+    breakpoint: 480,
+    options: {
+      chart: {
+        width: 200,
+      },
+      legend: {
+        position: 'bottom',
+      },
+    },
+  }],
+}));
+
+const pieChartSeries = computed(() => stats.value?.paketTerlaris.map(p => p.count) ?? []);
+
+// --- Fungsi Helper ---
 const formatCurrency = (value: number | null | undefined): string => {
   if (value === null || value === undefined) {
     return 'Rp 0';
@@ -158,5 +318,5 @@ const formatCurrency = (value: number | null | undefined): string => {
   }).format(value);
 };
 
-useHead({ title: 'Dashboard Admin' })
+useHead({ title: 'Dashboard Admin' });
 </script>
