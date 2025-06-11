@@ -6,46 +6,31 @@ import type { SettingSchema } from '@/types/api/settings'
 export default defineNuxtPlugin(async (nuxtApp) => {
   const settingsStore = useSettingsStore()
   const maintenanceStore = useMaintenanceStore()
-  
-  // Jika data sudah dimuat, hentikan eksekusi.
-  if (settingsStore.isLoaded) {
+
+  // PERBAIKAN UTAMA:
+  // Di sisi klien, jika state 'isLoaded' sudah true (karena ditransfer dari server),
+  // hentikan eksekusi untuk menghindari pengambilan data ganda dan reset state.
+  if (import.meta.client && settingsStore.isLoaded) {
     return
   }
 
-  // Gunakan import.meta.server untuk kode sisi server.
-  if (import.meta.server) {
-    try {
-      // 1. Ambil runtimeConfig yang sudah Anda definisikan di nuxt.config.ts
-      const runtimeConfig = useRuntimeConfig()
-      
-      // 2. PERBAIKAN: Gunakan variabel yang benar dari runtimeConfig.
-      // Variabel ini berisi 'http://backend:5010/api' dari .env Anda.
-      const baseURL = runtimeConfig.internalApiBaseUrl;
-      
-      // 3. PERBAIKAN: Panggil endpoint relatif terhadap baseURL.
-      // Karena baseURL sudah mengandung '/api', kita hanya perlu menambahkan 'settings/public'.
-      // Hasil akhirnya akan menjadi http://backend:5010/api/settings/public
-      const publicSettings = await $fetch<SettingSchema[]>('settings/public', { baseURL });
-      
-      // Setelah data didapat, isi state di Pinia store.
-      settingsStore.setSettings(publicSettings || [])
-      
-      // Isi state maintenance store dari data yang sama.
-      const maintenanceActive = publicSettings.find(s => s.setting_key === 'MAINTENANCE_MODE_ACTIVE')?.setting_value === 'True';
-      const maintenanceMessage = publicSettings.find(s => s.setting_key === 'MAINTENANCE_MODE_MESSAGE')?.setting_value || '';
-      maintenanceStore.setMaintenanceStatus(maintenanceActive, maintenanceMessage);
-      
-    } catch (error) {
-      // Log error dengan lebih detail untuk debugging.
-      console.error('KRITIS: Gagal memuat pengaturan awal dari server.', { 
-        message: (error as Error).message,
-        cause: (error as any).cause,
-      })
-      // Tetap set state kosong agar aplikasi tidak crash.
-      settingsStore.setSettings([])
+  // Kode ini akan berjalan di server, atau di klien jika ini adalah navigasi sisi klien pertama kali.
+  try {
+    // Gunakan $fetch universal yang tersedia di Nuxt 3. Ia akan otomatis menggunakan
+    // internal URL di server dan public URL di klien.
+    const publicSettings = await $fetch<SettingSchema[]>('/api/settings/public');
+    
+    // Setelah data didapat, isi state di Pinia store.
+    if (publicSettings) {
+        settingsStore.setSettings(publicSettings);
+    } else {
+        settingsStore.setSettings([]); // Pastikan tetap array kosong jika data null
     }
+    
+  } catch (error) {
+    console.error('KRITIS: Gagal memuat pengaturan awal dari server.', error);
+    // Tetap set state kosong agar aplikasi tidak crash dan maintenance tidak aktif secara salah.
+    settingsStore.setSettings([])
+    maintenanceStore.setMaintenanceStatus(false, '');
   }
-  
-  // Tandai bahwa data sudah selesai dimuat.
-  settingsStore.isLoaded = true
 })
