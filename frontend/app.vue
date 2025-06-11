@@ -29,7 +29,7 @@ useHead({
     // Jika ada judul halaman spesifik (titleChunk tidak kosong dan berbeda dari judul default),
     // maka format menjadi "Judul Halaman - Nama Aplikasi".
     if (titleChunk && titleChunk !== browserTitle) {
-      return `${titleChunk} Oleh ${appName}`;
+      return `${titleChunk} By ${appName}`;
     }
     
     // Jika tidak ada judul halaman spesifik, cukup kembalikan judul browser default.
