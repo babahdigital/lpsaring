@@ -15,6 +15,7 @@ definePageMeta({
   layout: 'blank',
   public: true,
 })
+useHead({ title: 'Sedang Dalam Perbaikan' })
 </script>
 
 <template>
