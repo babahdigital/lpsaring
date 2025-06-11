@@ -8,10 +8,10 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 from datetime import datetime, timezone as dt_timezone, timedelta
 from http import HTTPStatus
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError # PERBAIKAN: Tambahkan import ValidationError
 from typing import Optional, List
 from decimal import Decimal
-import uuid # PERBAIKAN: Tambahkan impor uuid
+import uuid
 
 # Impor-impor esensial
 from app.extensions import db
@@ -145,7 +145,7 @@ def update_notification_recipients(current_admin: User):
         db.session.commit()
         response = NotificationUpdateResponseSchema(total_recipients=len(new_recipients))
         return jsonify(response.model_dump()), HTTPStatus.OK
-    except ValidationError as e:
+    except ValidationError as e: # Baris ini adalah penyebab NameError
         return jsonify({"errors": e.errors()}), HTTPStatus.UNPROCESSABLE_ENTITY
     except Exception as e:
         db.session.rollback()
