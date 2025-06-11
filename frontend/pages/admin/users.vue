@@ -40,7 +40,8 @@ const options = ref<Options>({
 })
 
 const snackbar = reactive({ show: false, text: '', color: 'info', timeout: 4000 })
-const dialog = reactive({ view: false, edit: false, delete: false, approve: false, reject: false })
+// Menambahkan 'customConfirm' ke objek dialog untuk dialog konfirmasi kustom
+const dialog = reactive({ view: false, edit: false, delete: false, approve: false, reject: false, customConfirm: false })
 const formRef = ref<InstanceType<typeof VForm> | null>(null)
 
 const selectedUser = ref<User | null>(null)
@@ -60,6 +61,10 @@ const isUserDataInputActive = ref(false) // Untuk VSwitch Blok & Kamar di Admin
 // Opsi Blok dan Kamar yang akan dimuat dari backend
 const availableBloks = ref<string[]>([]);
 const availableKamars = ref<string[]>([]);
+
+// Variabel untuk dialog konfirmasi kustom
+const confirmMessage = ref('');
+const confirmActionCallback = ref<(() => Promise<void>) | null>(null);
 
 onMounted(() => {
   isMounted.value = true
@@ -172,7 +177,7 @@ const roleMap = {
   SUPER_ADMIN: { text: 'Super Admin', color: 'purple', variant: 'tonal' },
 }
 
-// **PERBAIKAN**: Fungsi ini menormalisasi nomor telepon ke format +62.
+// Fungsi ini menormalisasi nomor telepon ke format +62.
 // Dipanggil saat input kehilangan fokus (blur) dan sebelum data disimpan.
 function normalizePhoneNumber() {
   if (editedUser.value.phone_number) {
@@ -195,17 +200,27 @@ function normalizePhoneNumber() {
 
 const requiredRule = (value: any) => !!value || 'Field ini wajib diisi.'
 
+// Fungsi untuk membuka dialog konfirmasi kustom
+function openCustomConfirmDialog(message: string, callback: () => Promise<void>) {
+  confirmMessage.value = message;
+  confirmActionCallback.value = callback;
+  dialog.customConfirm = true;
+}
+
 function closeDialog() {
   dialog.view = false
   dialog.edit = false
   dialog.delete = false
   dialog.approve = false
   dialog.reject = false
+  dialog.customConfirm = false // Menutup dialog konfirmasi kustom
   nextTick(() => {
     selectedUser.value = null
     editedUser.value = { ...defaultUser }
     isUserDataInputActive.value = false
     formRef.value?.resetValidation()
+    confirmMessage.value = ''; // Mengatur ulang pesan konfirmasi
+    confirmActionCallback.value = null; // Mengatur ulang callback konfirmasi
   })
 }
 
@@ -230,7 +245,7 @@ function openDialog(type: 'view' | 'approve' | 'delete' | 'edit' | 'reject', use
       userToEdit.kamar = formatKamarDisplay(userToEdit.kamar);
     }
 
-    // **PERBAIKAN**: Mengubah nomor telepon ke format '08...' untuk ditampilkan di form.
+    // Mengubah nomor telepon ke format '08...' untuk ditampilkan di form.
     // Fungsi normalizePhoneNumber akan mengubahnya kembali ke format '+62' saat disimpan.
     if (userToEdit.phone_number) {
       userToEdit.phone_number = formatPhoneNumberDisplay(userToEdit.phone_number);
@@ -257,7 +272,7 @@ function openDialog(type: 'view' | 'approve' | 'delete' | 'edit' | 'reject', use
 
 async function handleAction(type: 'approve' | 'delete' | 'update' | 'create' | 'reject') {
   if (type === 'create' || type === 'update') {
-    // **PERBAIKAN**: Normalisasi nomor telepon sebelum validasi dan pengiriman.
+    // Normalisasi nomor telepon sebelum validasi dan pengiriman.
     normalizePhoneNumber();
     await nextTick(); // Menunggu DOM update jika diperlukan
 
@@ -343,27 +358,31 @@ const resetHotspotPasswordForUser = async () => {
     return;
   }
 
-  if (confirm(`Anda yakin ingin mereset password hotspot untuk ${selectedUser.value.full_name}? Password baru akan dikirim via WhatsApp.`)) {
-    try {
-      loading.value = true;
-      const response = await $api<{ success: boolean; message: string; }>('/admin/users/' + selectedUser.value.id + '/reset-hotspot-password', {
-        method: 'POST',
-      });
+  // Menggunakan dialog konfirmasi kustom
+  openCustomConfirmDialog(
+    `Anda yakin ingin mereset password hotspot untuk ${selectedUser.value.full_name}? Password baru akan dikirim via WhatsApp.`,
+    async () => {
+      try {
+        loading.value = true;
+        const response = await $api<{ success: boolean; message: string; }>('/admin/users/' + selectedUser.value.id + '/reset-hotspot-password', {
+          method: 'POST',
+        });
 
-      if (response.success) {
-        showSnackbar(response.message, 'success');
-        fetchUsers();
-      } else {
-        showSnackbar(response.message, 'error');
+        if (response.success) {
+          showSnackbar(response.message, 'success');
+          fetchUsers();
+        } else {
+          showSnackbar(response.message, 'error');
+        }
+      } catch (error: any) {
+        const errorMsg = error.response?._data?.message || error.data?.message || error.message || 'Gagal mereset password hotspot.'
+        showSnackbar(`Error: ${errorMsg}`, 'error');
+      } finally {
+        loading.value = false;
+        closeDialog();
       }
-    } catch (error: any) {
-      const errorMsg = error.response?._data?.message || error.data?.message || error.message || 'Gagal mereset password hotspot.'
-      showSnackbar(`Error: ${errorMsg}`, 'error');
-    } finally {
-      loading.value = false;
-      closeDialog();
     }
-  }
+  );
 };
 
 // Fungsi untuk Generate Password Admin (untuk admin yang sedang diedit)
@@ -373,23 +392,27 @@ const generateAdminPasswordForAdmin = async () => {
     return;
   }
 
-  if (confirm(`Anda yakin ingin meng-generate ulang password portal untuk ${selectedUser.value.full_name}? Password baru akan dikirim via WhatsApp.`)) {
-    try {
-      loading.value = true;
-      const response = await $api<{ message: string }>('/admin/users/' + selectedUser.value.id + '/generate-admin-password', {
-        method: 'POST',
-      });
+  // Menggunakan dialog konfirmasi kustom
+  openCustomConfirmDialog(
+    `Anda yakin ingin meng-generate ulang password portal untuk ${selectedUser.value.full_name}? Password baru akan dikirim via WhatsApp.`,
+    async () => {
+      try {
+        loading.value = true;
+        const response = await $api<{ message: string }>('/admin/users/' + selectedUser.value.id + '/generate-admin-password', {
+          method: 'POST',
+        });
 
-      showSnackbar(response.message, 'success');
-      fetchUsers();
-    } catch (error: any) {
-      const errorMsg = error.response?._data?.message || error.data?.message || error.message || 'Gagal meng-generate password admin.'
-      showSnackbar(`Error: ${errorMsg}`, 'error');
-    } finally {
-      loading.value = false;
-      closeDialog();
+        showSnackbar(response.message, 'success');
+        fetchUsers();
+      } catch (error: any) {
+        const errorMsg = error.response?._data?.message || error.data?.message || error.message || 'Gagal meng-generate password admin.'
+        showSnackbar(`Error: ${errorMsg}`, 'error');
+      } finally {
+        loading.value = false;
+        closeDialog();
+      }
     }
-  }
+  );
 };
 
 // Fungsi untuk memformat tanggal dan waktu sederhana
@@ -652,7 +675,8 @@ useHead({ title: 'Manajemen Pengguna' })
                     <VListItem>
                         <template #prepend><VIcon icon="tabler-shield-check" /></template>
                         <VListItemTitle>
-                                <VChip :color="roleMap[selectedUser.role]?.color" size="small" label>{{ roleMap[selectedUser.role]?.text }}</Chip>
+                            <!-- PERBAIKAN: Menghapus properti 'label' -->
+                            <VChip :color="roleMap[selectedUser.role]?.color" size="small">{{ roleMap[selectedUser.role]?.text }}</VChip>
                         </VListItemTitle>
                     </VListItem>
                     <VListItem>
@@ -792,7 +816,7 @@ useHead({ title: 'Manajemen Pengguna' })
                 <AppTextField v-model="editedUser.full_name" label="Nama Lengkap" density="compact" :rules="[requiredRule]" />
               </VCol>
               <VCol cols="12">
-                <!-- **PERBAIKAN**: Menggunakan v-model untuk binding dua arah yang reaktif. -->
+                <!-- Menggunakan v-model untuk binding dua arah yang reaktif. -->
                 <AppTextField 
                   v-model="editedUser.phone_number"
                   label="Nomor Telepon" 
@@ -868,6 +892,36 @@ useHead({ title: 'Manajemen Pengguna' })
                 </div>
           </VCardActions>
         </VForm>
+      </VCard>
+    </VDialog>
+
+    <!-- Dialog Konfirmasi Kustom -->
+    <VDialog v-model="dialog.customConfirm" max-width="450" persistent>
+      <VCard>
+        <VCardTitle class="d-flex align-center">
+          <span class="headline">Konfirmasi Aksi</span>
+          <VSpacer />
+          <VBtn icon="tabler-x" variant="text" @click="closeDialog" />
+        </VCardTitle>
+        <VDivider />
+        <VCardText class="pt-4">
+          <p>{{ confirmMessage }}</p>
+        </VCardText>
+        <VCardActions>
+          <VSpacer />
+          <VBtn variant="tonal" color="secondary" @click="closeDialog">Batal</VBtn>
+          <VBtn 
+            color="primary" 
+            @click="() => { 
+              if (confirmActionCallback) { 
+                confirmActionCallback(); 
+              } 
+              closeDialog(); 
+            }"
+          >
+            Ya
+          </VBtn>
+        </VCardActions>
       </VCard>
     </VDialog>
 
