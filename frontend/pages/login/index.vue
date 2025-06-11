@@ -347,6 +347,7 @@ watch([() => authStore.getError, () => authStore.getMessage], ([newError, newMes
 function closeSnackbar() {
   snackbarVisible.value = false
 }
+useHead({ title: 'Login Dan Registrasi' })
 </script>
 
 <template>

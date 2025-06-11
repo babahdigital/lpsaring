@@ -191,6 +191,7 @@ async function refreshAllDataLogic() {
 }
 
 const refreshAllData = useDebounceFn(refreshAllDataLogic, 500, { maxWait: 2000 })
+useHead({ title: 'Dashboard User' })
 </script>
 
 <template>

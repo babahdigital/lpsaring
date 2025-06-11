@@ -327,6 +327,7 @@ const isQrUrl = computed(() => qrValue.value.startsWith('http') || qrValue.value
 const qrSize = ref(220)
 
 definePageMeta({ layout: 'blank' })
+useHead({ title: 'Detail Transaksi' })
 </script>
 
 <template>

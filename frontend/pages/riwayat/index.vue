@@ -261,6 +261,7 @@ async function downloadInvoice(midtransOrderId: string) {
 onMounted(() => {
   // Pemanggilan data awal sudah ditangani oleh `watch` pada `useApiFetch`
 })
+useHead({ title: 'Riwayat Transaksi' })
 </script>
 
 <template>

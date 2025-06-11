@@ -335,6 +335,7 @@ onMounted(async () => {
 })
 
 definePageMeta({ layout: 'blank' })
+useHead({ title: 'Beli Paket Mikrotik' })
 </script>
 
 <template>
