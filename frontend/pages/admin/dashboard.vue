@@ -1,6 +1,8 @@
 <template>
   <div>
+    <!-- Baris 1: Statistik KPI Utama -->
     <VRow>
+      <!-- Pendapatan Hari Ini -->
       <VCol
         cols="12"
         md="4"
@@ -28,6 +30,7 @@
         </VCard>
       </VCol>
 
+      <!-- Pendaftar Menunggu Persetujuan (Actionable) -->
       <VCol
         cols="12"
         md="4"
@@ -55,6 +58,7 @@
         </VCard>
       </VCol>
 
+      <!-- Total Pengguna Aktif -->
       <VCol
         cols="12"
         md="4"
@@ -82,6 +86,7 @@
         </VCard>
       </VCol>
 
+      <!-- Pengguna Akan Kadaluwarsa (Proaktif) -->
       <VCol
         cols="12"
         md="4"
@@ -109,6 +114,7 @@
         </VCard>
       </VCol>
 
+      <!-- Kuota Terjual Bulan Ini -->
       <VCol
         cols="12"
         md="4"
@@ -131,12 +137,13 @@
               color="info"
             >
               <VIcon icon="mdi-signal-cellular-3" />
-            </VVAvatar>
+            </VAvatar>
           </VCardText>
         </VCard>
       </VCol>
 
-      <VCol
+       <!-- Pendapatan Bulan Ini -->
+       <VCol
         cols="12"
         md="4"
         sm="6"
@@ -144,27 +151,29 @@
         <VCard>
           <VCardText class="d-flex justify-space-between">
             <div>
-              <span>Voucher Terklaim</span>
+              <span>Pendapatan Bulan Ini</span>
               <div class="d-flex align-center gap-2 my-1">
                 <h6 class="text-h6">
-                  {{ stats?.voucherTerklaimHariIni ?? 0 }} Voucher
+                  {{ formatCurrency(stats?.pendapatanBulanIni) }}
                 </h6>
               </div>
-              <span class="text-sm">Total klaim voucher hari ini</span>
+              <span class="text-sm">Total transaksi sukses bulan ini</span>
             </div>
             <VAvatar
               rounded
               variant="tonal"
-              color="error"
+              color="success"
             >
-              <VIcon icon="mdi-ticket-percent-outline" />
+              <VIcon icon="mdi-poll" />
             </VAvatar>
           </VCardText>
         </VCard>
       </VCol>
     </VRow>
     
+    <!-- Baris 2: Grafik & Tabel -->
     <VRow class="mt-4">
+      <!-- Grafik Paket Terlaris -->
       <VCol
         cols="12"
         md="5"
@@ -179,16 +188,23 @@
               :options="pieChartOptions"
               :series="pieChartSeries"
             />
-            <div v-else-if="pending" class="text-center">
+            <div
+              v-else-if="pending"
+              class="text-center"
+            >
               Memuat data grafik...
             </div>
-            <div v-else class="text-center">
+            <div
+              v-else
+              class="text-center"
+            >
               Belum ada data penjualan paket bulan ini.
             </div>
           </VCardText>
         </VCard>
       </VCol>
 
+      <!-- Tabel Transaksi Terakhir -->
       <VCol
         cols="12"
         md="7"
@@ -239,6 +255,7 @@
 import { useApiFetch } from '~/composables/useApiFetch';
 import { VDataTable } from 'vuetify/labs/VDataTable';
 import VueApexCharts from 'vue-apexcharts';
+import { computed } from 'vue';
 
 definePageMeta({
   requiredRole: ['ADMIN', 'SUPER_ADMIN'],
@@ -259,11 +276,11 @@ interface PaketTerlaris {
 
 interface DashboardStats {
   pendapatanHariIni: number;
+  pendapatanBulanIni: number;
   pendaftarBaru: number;
   penggunaAktif: number;
   akanKadaluwarsa: number;
   kuotaTerjualMb: number;
-  voucherTerklaimHariIni: number;
   transaksiTerakhir: TransaksiTerakhir[];
   paketTerlaris: PaketTerlaris[];
 }
