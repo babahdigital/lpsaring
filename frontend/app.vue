@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useTheme } from 'vuetify'
-import { watchEffect } from 'vue'
+import { watchEffect, computed } from 'vue'
 import ScrollToTop from '@core/components/ScrollToTop.vue'
 import initCore from '@core/initCore'
 import { useConfigStore } from '@core/stores/config'
@@ -15,7 +15,17 @@ const settingsStore = useSettingsStore()
 // Panggil initCore untuk inisialisasi dasar
 initCore()
 
-// PENYEMPURNAAN: Sinkronisasi Otomatis Tema dari Database
+// PERBAIKAN: Buat computed property yang aman untuk style VApp.
+// Ini mencegah error "Cannot read properties of undefined (reading 'colors')" saat SSR
+// dengan hanya menghitung style jika properti yang diperlukan sudah ada.
+const vAppStyle = computed(() => {
+  if (global.current.value?.colors?.primary) {
+    return { '--v-global-theme-primary': hexToRgb(global.current.value.colors.primary) }
+  }
+  return {}
+})
+
+// Sinkronisasi Otomatis Tema dari Database
 watchEffect(() => {
   if (settingsStore.isLoaded) {
     // 1. Terapkan pengaturan ke configStore (untuk skin, layout, dll.)
@@ -24,8 +34,7 @@ watchEffect(() => {
     configStore.appContentLayoutNav = settingsStore.layout
     configStore.appContentWidth = settingsStore.contentWidth
 
-    // 2. PERBAIKAN UTAMA: Perintahkan Vuetify untuk mengubah tema global.
-    // Ini adalah langkah kunci yang akan mengubah warna aplikasi (terang/gelap).
+    // 2. Perintahkan Vuetify untuk mengubah tema global.
     global.name.value = configStore.theme
   }
 })
@@ -48,7 +57,7 @@ useHead({
 
 <template>
   <VLocaleProvider :rtl="configStore.isAppRTL">
-    <VApp :style="`--v-global-theme-primary: ${hexToRgb(global.current.value.colors.primary)}`">
+    <VApp :style="vAppStyle">
       <NuxtLayout>
         <NuxtPage />
       </NuxtLayout>
