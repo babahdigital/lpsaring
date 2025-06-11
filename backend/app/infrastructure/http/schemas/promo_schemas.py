@@ -1,4 +1,6 @@
 # backend/app/infrastructure/http/schemas/promo_schemas.py
+# VERSI FINAL: Mengintegrasikan bonus_duration_days ke semua skema yang relevan.
+
 import uuid
 import datetime
 from typing import Optional
@@ -15,9 +17,12 @@ class PromoEventBaseSchema(BaseModel):
     start_date: datetime.datetime = Field(..., description="Tanggal dan waktu promo dimulai.")
     end_date: Optional[datetime.datetime] = Field(None, description="Tanggal dan waktu promo berakhir (opsional).")
     bonus_value_mb: Optional[int] = Field(None, ge=0, description="Nilai bonus kuota dalam MB (jika ada).")
+    # --- FIELD BARU UNTUK DURASI DITAMBAHKAN DI SINI ---
+    bonus_duration_days: Optional[int] = Field(None, ge=1, description="Durasi masa aktif bonus dalam hari (jika ada).")
 
     class Config:
         use_enum_values = True # Mengirim nilai enum sebagai string untuk response JSON
+        from_attributes = True # Membaca data langsung dari objek model SQLAlchemy
 
 # Skema yang digunakan saat membuat event baru
 class PromoEventCreateSchema(PromoEventBaseSchema):
@@ -33,6 +38,8 @@ class PromoEventUpdateSchema(BaseModel):
     start_date: Optional[datetime.datetime] = None
     end_date: Optional[datetime.datetime] = None
     bonus_value_mb: Optional[int] = Field(None, ge=0)
+    # --- FIELD BARU DITAMBAHKAN UNTUK UPDATE ---
+    bonus_duration_days: Optional[int] = Field(None, ge=1)
 
 
 # Skema untuk response data user (hanya informasi yang relevan)
@@ -44,6 +51,7 @@ class UserInfoSchema(BaseModel):
         from_attributes = True
 
 # Skema untuk response data event, termasuk info admin yang membuat
+# Ini akan otomatis mewarisi `bonus_duration_days` dari `PromoEventBaseSchema`
 class PromoEventResponseSchema(PromoEventBaseSchema):
     id: uuid.UUID
     created_at: datetime.datetime

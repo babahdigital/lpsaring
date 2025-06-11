@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from app.extensions import db
 from app.infrastructure.db.models import PromoEvent, User, PromoEventStatus
 from app.infrastructure.http.decorators import admin_required, super_admin_required
+# Pastikan path import ini benar
 from ..schemas.promo_schemas import (
     PromoEventCreateSchema, PromoEventUpdateSchema, PromoEventResponseSchema
 )
@@ -26,6 +27,7 @@ def create_promo_event(current_admin: User):
     try:
         data = PromoEventCreateSchema.model_validate(json_data)
         
+        # --- PERBAIKAN: Menambahkan bonus_duration_days saat membuat event ---
         new_event = PromoEvent(
             name=data.name,
             description=data.description,
@@ -34,6 +36,7 @@ def create_promo_event(current_admin: User):
             start_date=data.start_date,
             end_date=data.end_date,
             bonus_value_mb=data.bonus_value_mb,
+            bonus_duration_days=data.bonus_duration_days, # <-- Tambahkan ini
             created_by_id=current_admin.id
         )
         
@@ -123,6 +126,7 @@ def update_promo_event(current_admin: User, promo_id: uuid.UUID):
     try:
         update_data = PromoEventUpdateSchema.model_validate(json_data)
         
+        # Loop ini akan secara otomatis menangani field baru 'bonus_duration_days'
         for key, value in update_data.model_dump(exclude_unset=True).items():
             setattr(event, key, value)
             
