@@ -1,4 +1,6 @@
 {
+  "notification_type": "NEW_USER_REGISTRATION",
+  "subscribed_admin_ids": ["uuid-admin-1", "uuid-admin-2"],  
   "user_self_register_pending": "Terima kasih, {full_name}.\nPendaftaran Anda telah kami terima dan sedang menunggu persetujuan dari Admin.\nAnda akan menerima notifikasi lebih lanjut setelah akun Anda disetujui.",
   "user_registration_pending": "Yth. {full_name},\n\nAkun Anda telah berhasil dibuat oleh Admin dan saat ini sedang menunggu persetujuan akhir.\n\nAnda akan menerima notifikasi lebih lanjut setelah akun Anda diaktifkan sepenuhnya oleh Admin.\n\nTerima kasih.",
   "new_user_registration_to_admin": "🔔 *Pendaftaran Pengguna Baru*\n\nNama: *{full_name}*\nTelepon: `{phone_number}`\nAlamat: Blok {blok} Kamar {kamar}\n\nSegera proses pendaftaran ini di Panel Admin:\n{link_admin_app}",
