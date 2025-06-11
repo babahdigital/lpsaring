@@ -79,6 +79,16 @@ const availableRoles = computed(() => {
   return [{ title: 'User Biasa', value: 'USER' }]
 })
 
+// Watcher untuk editedUser.role agar mengaktifkan switch alamat jika role adalah ADMIN
+watch(() => editedUser.value.role, (newRole) => {
+  if (newRole === 'ADMIN') {
+    isUserDataInputActive.value = true;
+  } else {
+    isUserDataInputActive.value = false;
+  }
+});
+
+
 const headers = computed(() => {
   const base = [
     { title: 'PENGGUNA', key: 'full_name', sortable: true },
@@ -163,14 +173,21 @@ const roleMap = {
   SUPER_ADMIN: { text: 'Super Admin', color: 'purple', variant: 'tonal' },
 }
 
+// Perbaikan: Pastikan normalisasi nomor telepon selalu ke format +62 saat blur
 function normalizePhoneNumberOnBlur() {
   if (editedUser.value.phone_number) {
-    const phone = editedUser.value.phone_number
-    let cleaned = phone.replace(/\D/g, '')
-    if (cleaned.startsWith('08'))
-      cleaned = `62${cleaned.substring(1)}`
-    if (cleaned.startsWith('62'))
-      editedUser.value.phone_number = `+${cleaned}`
+    let cleaned = editedUser.value.phone_number.replace(/\D/g, ''); // Hapus semua non-digit
+    if (cleaned.startsWith('08')) {
+      editedUser.value.phone_number = `+62${cleaned.substring(1)}`;
+    } else if (cleaned.startsWith('62')) {
+      editedUser.value.phone_number = `+${cleaned}`;
+    } else if (cleaned.startsWith('+62')) {
+      // Sudah dalam format yang benar, tidak perlu diubah
+    } else {
+      // Jika format tidak dikenali, biarkan seperti adanya atau berikan pesan kesalahan
+      // Untuk tujuan ini, kita biarkan saja, validasi Pydantic di backend akan menangani.
+      // current_app.logger.warning("Nomor telepon tidak dalam format Indonesia yang diharapkan.");
+    }
   }
 }
 
@@ -195,6 +212,10 @@ function openDialog(type: 'view' | 'approve' | 'delete' | 'edit' | 'reject', use
     if (!user) { // Untuk ADD NEW USER (type 'edit' tanpa user)
       editedUser.value = { ...defaultUser };
       isUserDataInputActive.value = false; // Default: switch off for new user
+      // Saat menambahkan user baru, jika default role adalah ADMIN, aktifkan switch alamat.
+      if (editedUser.value.role === 'ADMIN') {
+        isUserDataInputActive.value = true;
+      }
       dialog.edit = true;
       return;
     }
@@ -211,8 +232,9 @@ function openDialog(type: 'view' | 'approve' | 'delete' | 'edit' | 'reject', use
     editedUser.value = userToEdit;
     
     // Inisialisasi isUserDataInputActive berdasarkan data yang ada HANYA untuk role ADMIN
+    // Jika user yang diedit adalah ADMIN, set isUserDataInputActive default aktif
     if (editedUser.value.role === 'ADMIN') {
-        isUserDataInputActive.value = !!(editedUser.value.blok || editedUser.value.kamar);
+        isUserDataInputActive.value = true; // Selalu aktifkan untuk admin yang sudah ada
     } else {
         // Untuk USER, isUserDataInputActive selalu false karena blok/kamar selalu terlihat
         isUserDataInputActive.value = false;
@@ -339,15 +361,15 @@ const resetHotspotPasswordForUser = async () => {
 
 // Fungsi untuk Generate Password Admin (untuk admin yang sedang diedit)
 const generateAdminPasswordForAdmin = async () => {
-  if (!editedUser.value || editedUser.value.role !== 'ADMIN') {
+  if (!selectedUser.value || selectedUser.value.role !== 'ADMIN') { // Perbaikan: Gunakan selectedUser untuk tombol di dialog view
     showSnackbar('Hanya admin yang dapat meng-generate password portal.', 'warning');
     return;
   }
   
-  if (confirm(`Anda yakin ingin meng-generate ulang password portal untuk ${editedUser.value.full_name}? Password baru akan dikirim via WhatsApp.`)) {
+  if (confirm(`Anda yakin ingin meng-generate ulang password portal untuk ${selectedUser.value.full_name}? Password baru akan dikirim via WhatsApp.`)) {
     try {
       loading.value = true;
-      const response = await $api<{ message: string }>('/admin/users/' + editedUser.value.id + '/generate-admin-password', {
+      const response = await $api<{ message: string }>('/admin/users/' + selectedUser.value.id + '/generate-admin-password', { // Perbaikan: Gunakan selectedUser.id
         method: 'POST',
       });
 
@@ -468,7 +490,7 @@ useHead({ title: 'Manajemen Pengguna' })
               <VIcon
                 v-bind="props"
                 :color="item.is_active ? 'success' : 'error'"
-                :icon="item.is_active ? 'tabler-circle-check-filled' : 'tabler-circle-x-filled'"
+                :icon="item.is_active ? 'tabler-plug-connected' : 'tabler-plug-connected-x'"
                 size="22"
                 style="left: 8px;"
               />
@@ -499,16 +521,16 @@ useHead({ title: 'Manajemen Pengguna' })
             </template>
 
             <VBtn 
-              v-if="authStore.isSuperAdmin || (authStore.isAdmin && item.role === 'USER')"
+              v-if="item.id !== authStore.user?.id && (authStore.isSuperAdmin || (authStore.isAdmin && item.role === 'USER'))"
               icon variant="text" color="primary" size="small" @click="openDialog('edit', item)" class="action-btn"
             >
               <VIcon icon="tabler-pencil" />
               <VTooltip activator="parent">Edit</VTooltip>
             </VBtn>
+            
             <VBtn 
-              v-if="item.approval_status !== 'PENDING_APPROVAL' && (authStore.isSuperAdmin || (authStore.isAdmin && item.role === 'USER'))" 
-              icon variant="text" color="error" size="small" @click="openDialog('delete', item)" class
-="action-btn"
+              v-if="item.id !== authStore.user?.id && item.approval_status !== 'PENDING_APPROVAL' && (authStore.isSuperAdmin || (authStore.isAdmin && item.role === 'USER'))" 
+              icon variant="text" color="error" size="small" @click="openDialog('delete', item)" class="action-btn"
             >
               <VIcon icon="tabler-trash" />
               <VTooltip activator="parent">Hapus</VTooltip>
@@ -576,15 +598,17 @@ useHead({ title: 'Manajemen Pengguna' })
                   <VTooltip activator="parent">Tolak & Hapus</VTooltip>
                 </VBtn>
               </template>
+              
               <VBtn 
-                v-if="authStore.isSuperAdmin || (authStore.isAdmin && user.role === 'USER')"
+                v-if="user.id !== authStore.user?.id && (authStore.isSuperAdmin || (authStore.isAdmin && user.role === 'USER'))"
                 icon variant="text" color="primary" size="small" @click="openDialog('edit', user)" class="action-btn"
               >
                 <VIcon icon="tabler-pencil" />
                 <VTooltip activator="parent">Edit</VTooltip>
               </VBtn>
+              
               <VBtn 
-                v-if="user.approval_status !== 'PENDING_APPROVAL' && (authStore.isSuperAdmin || (authStore.isAdmin && user.role === 'USER'))" 
+                v-if="user.id !== authStore.user?.id && user.approval_status !== 'PENDING_APPROVAL' && (authStore.isSuperAdmin || (authStore.isAdmin && user.role === 'USER'))" 
                 icon variant="text" color="error" size="small" @click="openDialog('delete', user)" class="action-btn"
               >
                 <VIcon icon="tabler-trash" />
@@ -656,7 +680,7 @@ useHead({ title: 'Manajemen Pengguna' })
                     </VListItem>
                 </VList>
             </VCardText>
-            <VCardActions class="pa-4 d-flex justify-space-between align-center">
+            <VCardActions class="pa-4 d-flex flex-wrap justify-space-between align-center">
                 <VBtn
                     v-if="selectedUser.role === 'USER' && selectedUser.is_active"
                     color="warning"
@@ -664,11 +688,25 @@ useHead({ title: 'Manajemen Pengguna' })
                     @click="resetHotspotPasswordForUser"
                     :loading="loading"
                     :disabled="loading"
+                    class="my-1"
                 >
                     Reset Hotspot Password
                 </VBtn>
+                
+                <VBtn
+                    v-if="selectedUser.role === 'ADMIN'"
+                    color="info"
+                    prepend-icon="tabler-refresh"
+                    @click="generateAdminPasswordForAdmin"
+                    :loading="loading"
+                    :disabled="loading"
+                    class="my-1"
+                >
+                    Generate & Kirim Password Admin
+                </VBtn>
+                
                 <VSpacer/>
-                <VBtn variant="tonal" color="secondary" @click="closeDialog">Tutup</VBtn>
+                <VBtn variant="tonal" color="secondary" @click="closeDialog" class="my-1">Tutup</VBtn>
             </VCardActions>
         </VCard>
     </VDialog>
@@ -747,7 +785,6 @@ useHead({ title: 'Manajemen Pengguna' })
                 <AppTextField v-model="editedUser.full_name" label="Nama Lengkap" density="compact" :rules="[v => !!v || 'Nama wajib diisi']" />
               </VCol>
               <VCol cols="12">
-                <!-- Gunakan editedUser.phone_number langsung untuk input, karena format +62 dibutuhkan untuk backend -->
                 <AppTextField v-model="editedUser.phone_number" label="Nomor Telepon" density="compact" @blur="normalizePhoneNumberOnBlur" :rules="[v => !!v || 'Nomor telepon wajib diisi']" />
               </VCol>
 
@@ -813,17 +850,7 @@ useHead({ title: 'Manajemen Pengguna' })
             <VBtn variant="tonal" color="secondary" @click="closeDialog">Batal</VBtn>
             <div class="d-flex flex-column flex-sm-row ga-2">
                 <VBtn type="submit" color="primary">Simpan</VBtn>
-                <VBtn
-                    v-if="editedUser.id && editedUser.role === 'ADMIN'"
-                    color="info"
-                    prepend-icon="tabler-refresh"
-                    @click="generateAdminPasswordForAdmin"
-                    :loading="loading"
-                    :disabled="loading"
-                >
-                    Generate & Kirim Password Admin
-                </VBtn>
-            </div>
+                </div>
           </VCardActions>
         </VForm>
       </VCard>
