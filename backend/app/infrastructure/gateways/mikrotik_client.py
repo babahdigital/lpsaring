@@ -80,10 +80,11 @@ def init_mikrotik_pool() -> bool:
         return False
 
 @contextmanager
-def get_mikrotik_connection() -> Optional[Any]:
+def get_mikrotik_connection() -> Optional[Any]: # Gunakan Any untuk type hint api_instance
     """Menyediakan koneksi API MikroTik dari pool menggunakan context manager."""
     api_instance: Optional[Any] = None 
     try:
+        # Pastikan pool sudah diinisialisasi. Jika belum, coba inisialisasi.
         if _connection_pool is None:
             if not init_mikrotik_pool():
                 logger.error("Pool koneksi MikroTik tidak tersedia atau gagal diinisialisasi. Tidak bisa mendapatkan koneksi API.")
@@ -100,6 +101,8 @@ def get_mikrotik_connection() -> Optional[Any]:
         logger.error(f"Error tidak terduga saat mendapatkan koneksi MikroTik dari pool: {e}", exc_info=True)
         yield None
     finally:
+        # Koneksi akan otomatis dikembalikan ke pool saat keluar dari context manager
+        # karena perilaku RouterOsApiPool default.
         if api_instance and _connection_pool:
             logger.debug("Koneksi MikroTik API sedang dikembalikan ke pool.")
 
@@ -127,13 +130,13 @@ def format_to_local_phone(phone_number: Optional[str]) -> Optional[str]:
 # --- Fungsi Aksi Hotspot ---
 
 def activate_or_update_hotspot_user(
-    api_connection: Any,
-    user_mikrotik_username: str,
+    api_connection: Any, # Gunakan Any untuk type hint api_connection
+    user_mikrotik_username: str, # Username Mikrotik yang sudah diformat
     mikrotik_profile_name: str,
     hotspot_password: str,
     comment: str = "",
-    limit_bytes_total: Optional[int] = None,
-    session_timeout_seconds: Optional[int] = None,
+    limit_bytes_total: Optional[int] = None, # Kuota dalam bytes
+    session_timeout_seconds: Optional[int] = None, # Durasi sesi dalam detik
     force_update_profile: bool = False
 ) -> Tuple[bool, str]:
     """
@@ -153,30 +156,36 @@ def activate_or_update_hotspot_user(
             'name': user_mikrotik_username,
             'password': hotspot_password,
             'profile': mikrotik_profile_name,
-            'server': 'all',
+            'server': 'all', # Asumsi target server hotspot. Sesuaikan jika Anda punya server hotspot spesifik.
             'comment': final_comment,
         }
 
         # --- Penanganan Opsional parameter limit-bytes-total dan session-timeout ---
-        try:
+        # Membaca konfigurasi dari current_app (yang diatur di config.py)
+        send_limit_bytes_total_cfg = False
+        send_session_timeout_cfg = False
+        if current_app: 
             send_limit_bytes_total_cfg = current_app.config.get('MIKROTIK_SEND_LIMIT_BYTES_TOTAL', False)
             send_session_timeout_cfg = current_app.config.get('MIKROTIK_SEND_SESSION_TIMEOUT', False)
-        except RuntimeError:  # Handle jika di luar app context (misal: saat unit testing tanpa app context)
-            send_limit_bytes_total_cfg = False
-            send_session_timeout_cfg = False
-            logger.warning("Outside app context, using default config for Mikrotik params. This might be due to unit testing.")
+        else:
+            logger.warning("current_app tidak tersedia. MIKROTIK_SEND_LIMIT_BYTES_TOTAL dan MIKROTIK_SEND_SESSION_TIMEOUT akan menggunakan nilai default False.")
 
         if send_limit_bytes_total_cfg and limit_bytes_total is not None and limit_bytes_total > 0:
             user_data['limit-bytes-total'] = str(limit_bytes_total)
             logger.debug(f"Adding 'limit-bytes-total': {limit_bytes_total} to Mikrotik payload for {user_mikrotik_username}.")
         
         if send_session_timeout_cfg and session_timeout_seconds is not None and session_timeout_seconds > 0:
+            # Format session-timeout sebagai durasi Mikrotik (HH:MM:SS) atau hanya detik
+            # Mikrotik API biasanya menerima string durasi (misal: "1d", "01:00:00") atau jumlah detik.
+            # Mengirimkan detik adalah cara paling aman.
             user_data['session-timeout'] = str(session_timeout_seconds)
             logger.debug(f"Adding 'session-timeout': {session_timeout_seconds} to Mikrotik payload for {user_mikrotik_username}.")
         # --- Akhir Penanganan Opsional ---
 
         if existing_users_list:
+            # Pengguna ditemukan, jadi kita harus UPDATE.
             user_entry = existing_users_list[0]
+            
             mikrotik_internal_id = user_entry.get('.id') or user_entry.get('id')
             
             if not mikrotik_internal_id:
@@ -188,6 +197,7 @@ def activate_or_update_hotspot_user(
             
             user_data['.id'] = mikrotik_internal_id
             
+            # Pastikan profile diupdate jika force_update_profile True atau jika profile berubah
             if force_update_profile or user_entry.get('profile') != mikrotik_profile_name:
                 user_data['profile'] = mikrotik_profile_name
                 logger.info(f"Mengupdate profil untuk {user_mikrotik_username} ke {mikrotik_profile_name}.")
@@ -200,6 +210,7 @@ def activate_or_update_hotspot_user(
             logger.info(msg)
             return True, msg
         else:
+            # Pengguna tidak ditemukan, jadi kita harus ADD.
             logger.info(f"User '{user_mikrotik_username}' tidak ditemukan. Membuat baru...")
             user_hotspot_resource.add(**user_data)
             
@@ -223,7 +234,7 @@ def activate_or_update_hotspot_user(
 
 # --- Fungsi Update Password User Hotspot ---
 def update_mikrotik_user_password(
-    api_connection: Any,
+    api_connection: Any, # Gunakan Any
     username_mikrotik_fmt: str,
     new_password: str
 ) -> Tuple[bool, str]:
@@ -261,7 +272,7 @@ def update_mikrotik_user_password(
 # --- Fungsi Helper Lainnya ---
 
 def get_hotspot_user_usage(
-    api_connection: Any,
+    api_connection: Any, # Gunakan Any
     username: str
 ) -> Tuple[bool, Optional[Dict[str, int]], str]:
     """Mengambil data penggunaan (bytes-in, bytes-out) user dari Mikrotik."""
@@ -285,7 +296,7 @@ def get_hotspot_user_usage(
 
 
 def set_hotspot_user_limit(
-    api_connection: Any,
+    api_connection: Any, # Gunakan Any
     username: str,
     limit_bytes_total: int
 ) -> Tuple[bool, str]:
@@ -313,7 +324,7 @@ def set_hotspot_user_limit(
 
 
 def set_hotspot_user_profile(
-    api_connection: Any,
+    api_connection: Any, # Gunakan Any
     username_or_id: str,
     new_profile_name: str
 ) -> Tuple[bool, str]:
@@ -324,12 +335,15 @@ def set_hotspot_user_profile(
     try:
         user_resource = api_connection.get_resource('/ip/hotspot/user')
         
+        # Coba cari berdasarkan nama
         users = user_resource.get(name=username_or_id)
         
         if not users:
+            # Jika tidak ditemukan berdasarkan nama, coba cari berdasarkan ID (jika formatnya UUID/ID Mikrotik)
             try:
                 users = user_resource.get(id=username_or_id)
             except Exception:
+                # Abaikan exception jika username_or_id bukan format ID yang valid
                 pass
 
         if not users:
@@ -379,6 +393,7 @@ def add_mikrotik_hotspot_user_profile(
     try:
         profiles = api_connection.get_resource('/ip/hotspot/user/profile')
 
+        # Cek apakah profil sudah ada
         existing_profile = profiles.get(name=profile_name)
         if existing_profile:
             return False, f"Profile '{profile_name}' already exists in Mikrotik."
@@ -389,7 +404,7 @@ def add_mikrotik_hotspot_user_profile(
         if rate_limit:
             attrs['rate-limit'] = rate_limit
         if shared_users is not None and shared_users > 0:
-            attrs['shared-users'] = str(shared_users)
+            attrs['shared-users'] = str(shared_users) # shared-users expect string in API
         if comment:
             attrs['comment'] = comment
 
@@ -408,7 +423,7 @@ def add_mikrotik_hotspot_user_profile(
 
 # --- FUNGSI DELETE DENGAN VERIFIKASI ---
 def delete_hotspot_user(
-    api_connection: Any,
+    api_connection: Any, # Gunakan Any
     username: str
 ) -> Tuple[bool, str]:
     """Menghapus user hotspot dari Mikrotik dan melakukan verifikasi penghapusan."""
@@ -430,7 +445,7 @@ def delete_hotspot_user(
             try:
                  user_resource.remove(id=user_id)
                  logger.info(f"Perintah remove untuk user '{username_mikrotik_fmt}' (ID: {user_id}) telah dikirim.")
-                 time.sleep(0.5)
+                 time.sleep(0.5) # Beri waktu Mikrotik untuk memproses
                  logger.debug(f"Memverifikasi penghapusan user '{username_mikrotik_fmt}'...")
                  verify_list: list[dict[str, Any]] = user_resource.get(name=username_mikrotik_fmt)
                  if not verify_list:
