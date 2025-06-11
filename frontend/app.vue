@@ -15,9 +15,7 @@ const settingsStore = useSettingsStore()
 // Panggil initCore untuk inisialisasi dasar
 initCore()
 
-// PERBAIKAN: Buat computed property yang aman untuk style VApp.
-// Ini mencegah error "Cannot read properties of undefined (reading 'colors')" saat SSR
-// dengan hanya menghitung style jika properti yang diperlukan sudah ada.
+// Buat computed property yang aman untuk style VApp.
 const vAppStyle = computed(() => {
   if (global.current.value?.colors?.primary) {
     return { '--v-global-theme-primary': hexToRgb(global.current.value.colors.primary) }
@@ -34,8 +32,11 @@ watchEffect(() => {
     configStore.appContentLayoutNav = settingsStore.layout
     configStore.appContentWidth = settingsStore.contentWidth
 
-    // 2. Perintahkan Vuetify untuk mengubah tema global.
-    global.name.value = configStore.theme
+    // 2. PERBAIKAN: Hanya perintahkan Vuetify untuk mengubah tema di sisi klien.
+    // Ini mencegah error SSR saat server mencoba mengubah tema sebelum siap.
+    if (import.meta.client) {
+      global.name.value = configStore.theme
+    }
   }
 })
 
