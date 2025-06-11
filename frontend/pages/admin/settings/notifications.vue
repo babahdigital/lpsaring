@@ -94,6 +94,7 @@ onMounted(() => {
     fetchRecipients()
   }
 })
+useHead({ title: 'Notifikasi WhatsApp' })
 </script>
 
 <template>

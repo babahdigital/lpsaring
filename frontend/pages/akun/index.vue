@@ -273,7 +273,7 @@ const formatDate = (dateString?: string | Date | null) => {
 const displayBlok = computed(() => `Blok ${userProfile.value.blok || 'N/A'}`)
 const displayKamar = computed(() => `Kamar ${userProfile.value.kamar || 'N/A'}`)
 const formatCurrency = (amount: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount)
-useHead({ title: 'Edit Profile' })
+useHead({ title: 'Setting Profile' })
 </script>
 
 <template>

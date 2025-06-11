@@ -126,6 +126,7 @@ async function handleSaveChanges() {
     isSaving.value = false;
   }
 }
+useHead({ title: 'Setting Aplikasi' })
 </script>
 
 <template>
