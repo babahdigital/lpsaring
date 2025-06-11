@@ -27,7 +27,7 @@ from .schemas.auth_schemas import (
 from .schemas.user_schemas import UserMeResponseSchema, UserProfileUpdateRequestSchema
 from app.extensions import db
 from app.infrastructure.db.models import (
-    User, UserRole, ApprovalStatus, UserBlok, UserKamar,
+    User, UserRole, ApprovalStatus, UserBlok, UserKamar, UserLoginHistory, # PENAMBAHAN: UserLoginHistory diimpor di sini
     NotificationRecipient, NotificationType, Package
 )
 from app.infrastructure.gateways.whatsapp_client import send_otp_whatsapp
@@ -35,7 +35,7 @@ from app.infrastructure.gateways.mikrotik_client import format_to_local_phone
 from user_agents import parse as parse_user_agent
 from app.services.notification_service import get_notification_message
 from app.utils.formatters import format_datetime_to_wita
-from app.services import settings_service # PENAMBAHAN: Impor settings_service
+from app.services import settings_service
 
 try:
     from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
@@ -135,8 +135,8 @@ def register_user():
         new_user_obj = User(
             phone_number=normalized_phone_number, 
             full_name=data_input.full_name, 
-            blok=data_input.blok, # Perbaikan: Langsung gunakan nilai string
-            kamar=data_input.kamar, # Perbaikan: Langsung gunakan nilai string
+            blok=data_input.blok,
+            kamar=data_input.kamar,
             role=UserRole.USER, 
             approval_status=ApprovalStatus.PENDING_APPROVAL, 
             is_active=False,
@@ -269,8 +269,8 @@ def update_user_profile(current_user_id: uuid.UUID):
         user.full_name = update_data.full_name
         
         if user.role == UserRole.USER:
-            user.blok = update_data.blok # Perbaikan: Langsung gunakan nilai string
-            user.kamar = update_data.kamar # Perbaikan: Langsung gunakan nilai string
+            user.blok = update_data.blok
+            user.kamar = update_data.kamar
         else:
             user.blok = None
             user.kamar = None
@@ -394,13 +394,9 @@ def admin_login():
         current_app.logger.error(f"Failed to record login history for admin {user_to_login.id}: {e_log}", exc_info=True)
  
     try:
-        # --- PENYEMPURNAAN LOGIKA NOTIFIKASI ---
-        # 1. Cek saklar utama
         is_wa_enabled = settings_service.get_setting('ENABLE_WHATSAPP_NOTIFICATIONS', 'False') == 'True'
-        # 2. Cek saklar spesifik untuk login
         is_login_notif_enabled = settings_service.get_setting('ENABLE_WHATSAPP_LOGIN_NOTIFICATION', 'False') == 'True'
 
-        # 3. Notifikasi dikirim HANYA JIKA keduanya 'True'
         if WHATSAPP_AVAILABLE and is_wa_enabled and is_login_notif_enabled:
             login_time_wita = format_datetime_to_wita(datetime.now(dt_timezone.utc))
             
@@ -408,7 +404,6 @@ def admin_login():
             template_key = "super_admin_login_notification" if user_to_login.role == UserRole.SUPER_ADMIN else "admin_login_notification"
             message_body = get_notification_message(template_key, context)
             send_whatsapp_message(user_to_login.phone_number, message_body)
-        # --- AKHIR PENYEMPURNAAN ---
     except Exception as e_notif:
         current_app.logger.error(f"Failed to send login notification for admin {user_to_login.id}: {e_notif}", exc_info=True)
     
