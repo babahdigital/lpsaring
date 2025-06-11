@@ -7,7 +7,6 @@ export default defineNuxtPlugin(async (nuxtApp) => {
   const settingsStore = useSettingsStore()
   const maintenanceStore = useMaintenanceStore()
 
-  // PERBAIKAN UTAMA:
   // Di sisi klien, jika state 'isLoaded' sudah true (karena ditransfer dari server),
   // hentikan eksekusi untuk menghindari pengambilan data ganda dan reset state.
   if (import.meta.client && settingsStore.isLoaded) {
@@ -16,9 +15,10 @@ export default defineNuxtPlugin(async (nuxtApp) => {
 
   // Kode ini akan berjalan di server, atau di klien jika ini adalah navigasi sisi klien pertama kali.
   try {
-    // Gunakan $fetch universal yang tersedia di Nuxt 3. Ia akan otomatis menggunakan
-    // internal URL di server dan public URL di klien.
-    const publicSettings = await $fetch<SettingSchema[]>('/api/settings/public');
+    // PERBAIKAN: Panggil endpoint TANPA '/api'.
+    // Base URL dari `nuxt.config.ts` sudah menangani awalan `/api` di klien
+    // dan URL lengkap di server.
+    const publicSettings = await $fetch<SettingSchema[]>('settings/public');
     
     // Setelah data didapat, isi state di Pinia store.
     if (publicSettings) {
