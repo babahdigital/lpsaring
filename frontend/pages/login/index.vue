@@ -1,14 +1,17 @@
-// frontend/pages/login/index.vue
-// Halaman Login Dan Registrasi
 <script setup lang="ts">
 import type { ComponentPublicInstance } from 'vue'
 import type { VForm } from 'vuetify/components'
 import type { VOtpInput } from 'vuetify/labs/VOtpInput'
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { VThemeProvider } from 'vuetify/components/VThemeProvider'
 import { useAuthStore } from '~/store/auth'
+
+// --- PENAMBAHAN BARU ---
+// Impor komponen PromoAnnouncement
+const PromoAnnouncement = defineAsyncComponent(() => import('~/components/promo/PromoAnnouncement.vue'))
+// --- AKHIR PENAMBAHAN ---
 
 definePageMeta({
   layout: 'blank',
@@ -353,56 +356,198 @@ useHead({ title: 'Login Dan Registrasi' })
 <template>
   <VThemeProvider theme="dark">
     <v-responsive class="fill-height d-flex align-center justify-center pa-0 bg-background">
-      <v-card
-        class="pa-md-8 pa-sm-6 pa-4 mx-auto"
-        :rounded="mobile ? 'md' : 'lg'"
-        elevation="12"
-        width="100%"
-        max-width="480px"
-        :loading="isSubmitting"
-        style="overflow: visible;"
-        variant="outlined"
-      >
-        <v-progress-linear v-if="isSubmitting" indeterminate color="primary" absolute top />
+      <!-- --- PENAMBAHAN BARU --- -->
+      <!-- Menempatkan promo di dalam container utama agar responsif -->
+      <div class="d-flex flex-column" style="width: 100%; max-width: 480px;">
+        <!-- Menampilkan komponen promo di sini -->
+        <PromoAnnouncement />
 
-        <ClientOnly>
-          <template v-if="initialLoading">
-            <div>
-              <v-skeleton-loader type="heading" class="mb-2" />
-              <v-skeleton-loader type="text" class="mb-8" />
-              <v-skeleton-loader type="text" class="skeleton-as-textfield mb-4" />
-              <v-skeleton-loader type="button" />
+        <v-card
+          class="pa-md-8 pa-sm-6 pa-4 mx-auto"
+          :rounded="mobile ? 'md' : 'lg'"
+          elevation="12"
+          width="100%"
+          :loading="isSubmitting"
+          style="overflow: visible;"
+          variant="outlined"
+        >
+          <v-progress-linear v-if="isSubmitting" indeterminate color="primary" absolute top />
+
+          <ClientOnly>
+            <template v-if="initialLoading">
+              <div>
+                <v-skeleton-loader type="heading" class="mb-2" />
+                <v-skeleton-loader type="text" class="mb-8" />
+                <v-skeleton-loader type="text" class="skeleton-as-textfield mb-4" />
+                <v-skeleton-loader type="button" />
+              </div>
+            </template>
+            <template #fallback>
+              <div style="min-height: 380px; display: flex; align-items: center; justify-content: center;">
+                <v-progress-circular indeterminate color="primary" size="40" />
+              </div>
+            </template>
+          </ClientOnly>
+
+          <template v-if="!initialLoading">
+            <div class="text-center mb-8">
+              <h1 :class="mobile ? 'text-h5' : 'text-h4'" class="font-weight-bold text-primary">
+                {{ cardTitle }}
+              </h1>
+              <p class="text-medium-emphasis">
+                {{ cardSubtitle }}
+              </p>
             </div>
-          </template>
-          <template #fallback>
-            <div style="min-height: 380px; display: flex; align-items: center; justify-content: center;">
-              <v-progress-circular indeterminate color="primary" size="40" />
-            </div>
-          </template>
-        </ClientOnly>
 
-        <template v-if="!initialLoading">
-          <div class="text-center mb-8">
-            <h1 :class="mobile ? 'text-h5' : 'text-h4'" class="font-weight-bold text-primary">
-              {{ cardTitle }}
-            </h1>
-            <p class="text-medium-emphasis">
-              {{ cardSubtitle }}
-            </p>
-          </div>
+            <v-form v-if="currentView === 'login'" ref="loginFormRef" lazy-validation @submit.prevent="otpSent ? handleVerifyOtp() : handleRequestOtp()">
+              <div v-if="!otpSent">
+                <AppTextField
+                  ref="phoneInputRef"
+                  v-model="phoneNumber"
+                  label="Nomor WhatsApp"
+                  placeholder="Contoh: 081234567890"
+                  prepend-inner-icon="mdi-whatsapp"
+                  variant="outlined"
+                  density="comfortable"
+                  color="primary"
+                  :rules="phoneRules"
+                  :disabled="isSubmitting"
+                  autocomplete="tel"
+                  class="mb-4"
+                  required
+                />
+                <v-btn
+                  type="submit"
+                  color="primary"
+                  block
+                  :size="mobile ? 'default' : 'large'"
+                  class="mb-2"
+                  :loading="isSubmitting"
+                  :disabled="!isLoginFormPhoneValid || isSubmitting"
+                >
+                  Kirim Kode OTP
+                </v-btn>
+              </div>
+              <div v-else>
+                <p class="text-body-1 mb-2 font-weight-medium">
+                  Verifikasi OTP
+                </p>
+                <p class="text-body-2 mb-4">
+                  Kode OTP telah dikirim ke nomor WhatsApp
+                  <strong class="text-primary">{{ formattedPhoneNumberDisplay }}</strong>.
+                  Masukkan 6 digit kode.
+                </p>
+                <v-otp-input
+                  ref="otpInputRef"
+                  v-model="otpCode"
+                  :length="6"
+                  variant="underlined"
+                  placeholder="-"
+                  label="Masukkan Kode OTP"
+                  :loading="isSubmitting"
+                  :disabled="isSubmitting"
+                  class="mb-4"
+                  autocomplete="one-time-code"
+                  required
+                  :rules="otpRules"
+                  @finish="handleVerifyOtp"
+                />
+                <v-btn
+                  type="submit"
+                  color="primary"
+                  block
+                  :size="mobile ? 'default' : 'large'"
+                  class="mb-2"
+                  :loading="isSubmitting"
+                  :disabled="!isLoginFormOtpValid || isSubmitting || otpCode.length !== 6"
+                >
+                  Verifikasi & Masuk
+                </v-btn>
+                <v-btn
+                  variant="text"
+                  block
+                  size="small"
+                  :disabled="isSubmitting"
+                  class="text-caption text-medium-emphasis"
+                  prepend-icon="mdi-arrow-left"
+                  @click="resetLoginView"
+                >
+                  Ganti Nomor Telepon
+                </v-btn>
+              </div>
+              <div class="text-center mt-6">
+                <span class="text-body-2 text-medium-emphasis">Belum punya akun?</span>
+                <v-btn
+                  variant="text"
+                  color="primary"
+                  size="small"
+                  class="ms-1 text-body-2"
+                  :disabled="isSubmitting"
+                  @click="showRegistrationForm"
+                >
+                  Registrasi di sini
+                </v-btn>
+              </div>
+            </v-form>
 
-          <v-form v-if="currentView === 'login'" ref="loginFormRef" lazy-validation @submit.prevent="otpSent ? handleVerifyOtp() : handleRequestOtp()">
-            <div v-if="!otpSent">
+            <v-form v-else-if="currentView === 'register'" ref="registrationFormRef" lazy-validation @submit.prevent="handleRegister">
               <AppTextField
-                ref="phoneInputRef"
-                v-model="phoneNumber"
-                label="Nomor WhatsApp"
+                ref="regNameInputRef"
+                v-model="regName"
+                label="Nama Lengkap"
+                placeholder="Masukkan nama lengkap Anda"
+                prepend-inner-icon="mdi-account-outline"
+                variant="outlined"
+                density="comfortable"
+                color="primary"
+                :rules="regNameRules"
+                :disabled="isSubmitting"
+                class="mb-4"
+                required
+              />
+              <AppSelect
+                v-model="regBlock"
+                :items="blockOptions"
+                item-title="title"
+                item-value="value"
+                label="Blok Tempat Tinggal"
+                placeholder="Pilih blok tempat tinggal Anda"
+                prepend-inner-icon="mdi-map-marker-outline"
+                variant="outlined"
+                density="comfortable"
+                color="primary"
+                :rules="regBlockRules"
+                :disabled="isSubmitting"
+                class="mb-4"
+                required
+                clearable
+              />
+              <AppSelect
+                v-model="regKamar"
+                :items="kamarOptions"
+                item-title="title"
+                item-value="value"
+                label="Nomor Kamar"
+                placeholder="Pilih nomor kamar Anda"
+                prepend-inner-icon="mdi-door-closed"
+                variant="outlined"
+                density="comfortable"
+                color="primary"
+                :rules="regKamarRules"
+                :disabled="isSubmitting"
+                class="mb-4"
+                required
+                clearable
+              />
+              <AppTextField
+                v-model="regPhoneNumber"
+                label="Nomor WhatsApp Aktif"
                 placeholder="Contoh: 081234567890"
                 prepend-inner-icon="mdi-whatsapp"
                 variant="outlined"
                 density="comfortable"
                 color="primary"
-                :rules="phoneRules"
+                :rules="regPhoneRules"
                 :disabled="isSubmitting"
                 autocomplete="tel"
                 class="mb-4"
@@ -415,181 +560,45 @@ useHead({ title: 'Login Dan Registrasi' })
                 :size="mobile ? 'default' : 'large'"
                 class="mb-2"
                 :loading="isSubmitting"
-                :disabled="!isLoginFormPhoneValid || isSubmitting"
+                :disabled="!isRegistrationFormValid || isSubmitting"
               >
-                Kirim Kode OTP
+                Daftar Akun
               </v-btn>
-            </div>
-            <div v-else>
-              <p class="text-body-1 mb-2 font-weight-medium">
-                Verifikasi OTP
-              </p>
-              <p class="text-body-2 mb-4">
-                Kode OTP telah dikirim ke nomor WhatsApp
-                <strong class="text-primary">{{ formattedPhoneNumberDisplay }}</strong>.
-                Masukkan 6 digit kode.
-              </p>
-              <v-otp-input
-                ref="otpInputRef"
-                v-model="otpCode"
-                :length="6"
-                variant="underlined"
-                placeholder="-"
-                label="Masukkan Kode OTP"
-                :loading="isSubmitting"
-                :disabled="isSubmitting"
-                class="mb-4"
-                autocomplete="one-time-code"
-                required
-                :rules="otpRules"
-                @finish="handleVerifyOtp"
-              />
-              <v-btn
-                type="submit"
-                color="primary"
-                block
-                :size="mobile ? 'default' : 'large'"
-                class="mb-2"
-                :loading="isSubmitting"
-                :disabled="!isLoginFormOtpValid || isSubmitting || otpCode.length !== 6"
-              >
-                Verifikasi & Masuk
-              </v-btn>
-              <v-btn
-                variant="text"
-                block
-                size="small"
-                :disabled="isSubmitting"
-                class="text-caption text-medium-emphasis"
-                prepend-icon="mdi-arrow-left"
-                @click="resetLoginView"
-              >
-                Ganti Nomor Telepon
-              </v-btn>
-            </div>
-            <div class="text-center mt-6">
-              <span class="text-body-2 text-medium-emphasis">Belum punya akun?</span>
-              <v-btn
-                variant="text"
-                color="primary"
-                size="small"
-                class="ms-1 text-body-2"
-                :disabled="isSubmitting"
-                @click="showRegistrationForm"
-              >
-                Registrasi di sini
-              </v-btn>
-            </div>
-          </v-form>
+              <div class="text-center mt-6">
+                <span class="text-body-2 text-medium-emphasis">Sudah punya akun?</span>
+                <v-btn
+                  variant="text"
+                  color="primary"
+                  size="small"
+                  class="ms-1 text-body-2"
+                  :disabled="isSubmitting"
+                  @click="showLoginForm"
+                >
+                  Masuk di sini
+                </v-btn>
+              </div>
+            </v-form>
 
-          <v-form v-else-if="currentView === 'register'" ref="registrationFormRef" lazy-validation @submit.prevent="handleRegister">
-            <AppTextField
-              ref="regNameInputRef"
-              v-model="regName"
-              label="Nama Lengkap"
-              placeholder="Masukkan nama lengkap Anda"
-              prepend-inner-icon="mdi-account-outline"
-              variant="outlined"
-              density="comfortable"
-              color="primary"
-              :rules="regNameRules"
-              :disabled="isSubmitting"
-              class="mb-4"
-              required
-            />
-            <AppSelect
-              v-model="regBlock"
-              :items="blockOptions"
-              item-title="title"
-              item-value="value"
-              label="Blok Tempat Tinggal"
-              placeholder="Pilih blok tempat tinggal Anda"
-              prepend-inner-icon="mdi-map-marker-outline"
-              variant="outlined"
-              density="comfortable"
-              color="primary"
-              :rules="regBlockRules"
-              :disabled="isSubmitting"
-              class="mb-4"
-              required
-              clearable
-            />
-            <AppSelect
-              v-model="regKamar"
-              :items="kamarOptions"
-              item-title="title"
-              item-value="value"
-              label="Nomor Kamar"
-              placeholder="Pilih nomor kamar Anda"
-              prepend-inner-icon="mdi-door-closed"
-              variant="outlined"
-              density="comfortable"
-              color="primary"
-              :rules="regKamarRules"
-              :disabled="isSubmitting"
-              class="mb-4"
-              required
-              clearable
-            />
-            <AppTextField
-              v-model="regPhoneNumber"
-              label="Nomor WhatsApp Aktif"
-              placeholder="Contoh: 081234567890"
-              prepend-inner-icon="mdi-whatsapp"
-              variant="outlined"
-              density="comfortable"
-              color="primary"
-              :rules="regPhoneRules"
-              :disabled="isSubmitting"
-              autocomplete="tel"
-              class="mb-4"
-              required
-            />
-            <v-btn
-              type="submit"
-              color="primary"
-              block
-              :size="mobile ? 'default' : 'large'"
-              class="mb-2"
-              :loading="isSubmitting"
-              :disabled="!isRegistrationFormValid || isSubmitting"
-            >
-              Daftar Akun
-            </v-btn>
-            <div class="text-center mt-6">
-              <span class="text-body-2 text-medium-emphasis">Sudah punya akun?</span>
-              <v-btn
-                variant="text"
-                color="primary"
-                size="small"
-                class="ms-1 text-body-2"
-                :disabled="isSubmitting"
-                @click="showLoginForm"
-              >
-                Masuk di sini
+            <div v-else-if="currentView === 'registerSuccess'" class="text-center">
+              <v-icon :size="mobile ? 56 : 64" color="success" class="d-block mx-auto mb-4">
+                mdi-check-decagram-outline
+              </v-icon>
+              <h2 class="text-h5 font-weight-medium mb-2">
+                Registrasi Diproses
+              </h2>
+              <p class="text-body-1 text-medium-emphasis mb-4">
+                {{ authStore.getMessage || 'Permintaan registrasi Anda telah berhasil dikirim.' }}
+              </p>
+              <p class="text-body-2 text-medium-emphasis mb-6">
+                Akun Anda sedang menunggu persetujuan Admin. Anda akan menerima notifikasi melalui WhatsApp jika akun Anda telah disetujui dan diaktifkan.
+              </p>
+              <v-btn color="primary" variant="tonal" block :size="mobile ? 'default' : 'large'" @click="showLoginForm">
+                Kembali ke Halaman Login
               </v-btn>
             </div>
-          </v-form>
-
-          <div v-else-if="currentView === 'registerSuccess'" class="text-center">
-            <v-icon :size="mobile ? 56 : 64" color="success" class="d-block mx-auto mb-4">
-              mdi-check-decagram-outline
-            </v-icon>
-            <h2 class="text-h5 font-weight-medium mb-2">
-              Registrasi Diproses
-            </h2>
-            <p class="text-body-1 text-medium-emphasis mb-4">
-              {{ authStore.getMessage || 'Permintaan registrasi Anda telah berhasil dikirim.' }}
-            </p>
-            <p class="text-body-2 text-medium-emphasis mb-6">
-              Akun Anda sedang menunggu persetujuan Admin. Anda akan menerima notifikasi melalui WhatsApp jika akun Anda telah disetujui dan diaktifkan.
-            </p>
-            <v-btn color="primary" variant="tonal" block :size="mobile ? 'default' : 'large'" @click="showLoginForm">
-              Kembali ke Halaman Login
-            </v-btn>
-          </div>
-        </template>
-      </v-card>
+          </template>
+        </v-card>
+      </div>
 
       <div class="text-center text-caption mt-8 page-footer">
         &copy; {{ new Date().getFullYear() }} Babah Digital. Semua Hak Cipta Dilindungi.

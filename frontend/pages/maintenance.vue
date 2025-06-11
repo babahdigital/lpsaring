@@ -5,6 +5,12 @@ import miscMaskLight from '@images/pages/misc-mask-light.png'
 import miscUnderMaintenance from '@images/pages/misc-under-maintenance.png'
 import { useMaintenanceStore } from '@/store/maintenance'
 
+// --- PENAMBAHAN BARU ---
+// Impor komponen PromoAnnouncement secara dinamis
+import { defineAsyncComponent } from 'vue'
+const PromoAnnouncement = defineAsyncComponent(() => import('~/components/promo/PromoAnnouncement.vue'))
+// --- AKHIR PENAMBAHAN ---
+
 const authThemeMask = useGenerateImageVariant(miscMaskLight, miscMaskDark)
 const maintenanceStore = useMaintenanceStore()
 
@@ -19,7 +25,6 @@ useHead({ title: 'Maintenance On' })
 </script>
 
 <template>
-  <!-- PERBAIKAN: Membungkus seluruh konten dengan <NuxtLayout> -->
   <NuxtLayout>
     <div class="misc-wrapper">
       <div class="text-center mb-15">
@@ -29,6 +34,13 @@ useHead({ title: 'Maintenance On' })
         <p class="text-body-1 mb-6">
           {{ message }}
         </p>
+
+        <!-- --- PENAMBAHAN BARU --- -->
+        <!-- Menampilkan promo di sini jika ada -->
+        <div class="mx-auto" style="max-width: 600px;">
+          <PromoAnnouncement />
+        </div>
+        <!-- --- AKHIR PENAMBAHAN --- -->
 
         <VBtn to="/">
           Kembali ke Halaman Utama

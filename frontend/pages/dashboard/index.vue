@@ -5,14 +5,14 @@ import { useDebounceFn } from '@vueuse/core'
 import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from 'vue'
 import { useAuthStore } from '~/store/auth'
 
-// Definisi komponen chart secara asynchronous
+// Impor komponen PromoAnnouncement dan Chart secara asynchronous
+const PromoAnnouncement = defineAsyncComponent(() => import('~/components/promo/PromoAnnouncement.vue'))
 const WeeklyUsageChart = defineAsyncComponent(() => import('~/components/charts/WeeklyUsageChart.vue'))
 const MonthlyUsageChart = defineAsyncComponent(() => import('~/components/charts/MonthlyUsageChart.vue'))
 
 const authToken = useCookie<string | null>('auth_token')
 const authStore = useAuthStore()
-const isAdmin = computed(() => authStore.isAdmin)
-const pageTitle = computed(() => isAdmin.value ? 'Dashboard Admin' : 'Dashboard Pengguna')
+const pageTitle = 'Dashboard Pengguna'
 
 function getApiUrl(endpoint: string): string {
   const clientBaseUrl = '/api'
@@ -26,21 +26,21 @@ const commonFetchOptions = computed(() => ({
 }))
 
 // Fetch data kuota
-const quotaApiUrl = computed(() => isAdmin.value || !authToken.value ? null : getApiUrl('/users/me/quota'))
+const quotaApiUrl = computed(() => !authToken.value ? null : getApiUrl('/users/me/quota'))
 const { data: quotaData, pending: quotaPending, error: quotaError, refresh: refreshQuotaRaw } = useFetch<UserQuotaResponse>(
   quotaApiUrl,
   { ...commonFetchOptions.value, key: 'userQuotaData', default: () => ({ success: false, total_quota_purchased_mb: 0, total_quota_used_mb: 0, remaining_mb: 0, hotspot_username: '...', last_sync_time: null }), immediate: false, watch: false },
 )
 
 // Fetch data penggunaan mingguan
-const weeklyUsageApiUrl = computed(() => isAdmin.value || !authToken.value ? null : getApiUrl('/users/me/weekly-usage'))
+const weeklyUsageApiUrl = computed(() => !authToken.value ? null : getApiUrl('/users/me/weekly-usage'))
 const { data: weeklyUsageData, pending: weeklyUsagePending, error: weeklyUsageError, refresh: refreshWeeklyUsageRaw } = useFetch<WeeklyUsageResponse>(
   weeklyUsageApiUrl,
   { ...commonFetchOptions.value, key: 'weeklyUsageData', default: () => ({ success: false, weekly_data: [] }), immediate: false, watch: false },
 )
 
 // Fetch data penggunaan bulanan
-const monthlyUsageApiUrl = computed(() => isAdmin.value || !authToken.value ? null : getApiUrl('/users/me/monthly-usage'))
+const monthlyUsageApiUrl = computed(() => !authToken.value ? null : getApiUrl('/users/me/monthly-usage'))
 const { data: monthlyUsageData, pending: monthlyChartPending, error: monthlyChartError, refresh: refreshMonthlyUsageRaw } = useFetch<MonthlyUsageResponse>(
   monthlyUsageApiUrl,
   { ...commonFetchOptions.value, key: 'monthlyUsageData', default: () => ({ success: false, monthly_data: [] }), immediate: false, watch: false },
@@ -51,20 +51,14 @@ const minSkeletonTimePassed = ref(false)
 const dashboardRenderKey = ref(0)
 
 const isFetching = computed(() => {
-  if (isAdmin.value)
-    return false
   return quotaPending.value || weeklyUsagePending.value || monthlyChartPending.value
 })
 
 const shouldShowSkeleton = computed(() => {
-  if (isAdmin.value)
-    return false
   return fetchesInitiated.value && (isFetching.value || !minSkeletonTimePassed.value)
 })
 
 const hasError = computed(() => {
-  if (isAdmin.value)
-    return false
   return !!quotaError.value || !!weeklyUsageError.value || !!monthlyChartError.value
 })
 
@@ -76,7 +70,7 @@ function createRefresher(rawRefresher: RefresherFunction | globalThis.Ref<unknow
   return async () => {
     if (typeof rawRefresher !== 'function')
       return
-    if (!authToken.value && !isAdmin.value)
+    if (!authToken.value)
       return
     showErrorAlert.value = true
     return rawRefresher()
@@ -110,11 +104,6 @@ async function performFetches() {
 }
 
 async function initialFetch() {
-  if (isAdmin.value) {
-    fetchesInitiated.value = true
-    minSkeletonTimePassed.value = true
-    return
-  }
   if (authToken.value) {
     preFetchActions()
     await performFetches()
@@ -183,7 +172,7 @@ function formatUsername(username: string | null | undefined): string {
 }
 
 async function refreshAllDataLogic() {
-  if (isAdmin.value || !authToken.value)
+  if (!authToken.value)
     return
 
   preFetchActions()
@@ -204,7 +193,10 @@ useHead({ title: 'Dashboard User' })
       </VCol>
     </VRow>
 
-    <div v-if="!isAdmin">
+    <div>
+      <!-- Menampilkan komponen promo di sini -->
+      <PromoAnnouncement />
+
       <ClientOnly>
         <div v-if="shouldShowSkeleton">
           <VRow class="match-height">
@@ -356,12 +348,6 @@ useHead({ title: 'Dashboard User' })
           </div>
         </template>
       </ClientOnly>
-    </div>
-
-    <div v-else>
-      <VAlert type="info" variant="tonal" prominent border="start" color="info" class="vuexy-alert">
-        Selamat datang, Admin! Konten dashboard admin akan ditampilkan di sini.
-      </VAlert>
     </div>
   </VContainer>
 </template>
