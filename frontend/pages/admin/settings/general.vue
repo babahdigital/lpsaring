@@ -30,10 +30,24 @@ const maintenanceModeActive = computed({
   get: () => localSettings.value.MAINTENANCE_MODE_ACTIVE === 'True',
   set: (val: boolean) => { localSettings.value.MAINTENANCE_MODE_ACTIVE = val ? 'True' : 'False'; }
 });
+
 const whatsappEnabled = computed({
   get: () => localSettings.value.ENABLE_WHATSAPP_NOTIFICATIONS === 'True',
-  set: (val: boolean) => { localSettings.value.ENABLE_WHATSAPP_NOTIFICATIONS = val ? 'True' : 'False'; }
+  set: (val: boolean) => { 
+    localSettings.value.ENABLE_WHATSAPP_NOTIFICATIONS = val ? 'True' : 'False';
+    // Jika notifikasi WA utama dimatikan, matikan juga notifikasi login
+    if (!val) {
+      localSettings.value.ENABLE_WHATSAPP_LOGIN_NOTIFICATION = 'False';
+    }
+  }
 });
+
+// PENAMBAHAN: Computed property untuk saklar notifikasi login
+const whatsappLoginNotificationEnabled = computed({
+  get: () => localSettings.value.ENABLE_WHATSAPP_LOGIN_NOTIFICATION === 'True',
+  set: (val: boolean) => { localSettings.value.ENABLE_WHATSAPP_LOGIN_NOTIFICATION = val ? 'True' : 'False'; }
+});
+
 
 /**
  * Fungsi untuk menyimpan pengaturan ke cookies browser.
@@ -50,13 +64,22 @@ onMounted(async () => {
   
   isLoading.value = true;
   try {
-    // PERBAIKAN: Endpoint disesuaikan menjadi /api/admin/settings
     const response = await $api<SettingSchema[]>('/api/admin/settings');
     
-    localSettings.value = response.reduce((acc, setting) => {
+    // Inisialisasi semua kemungkinan nilai agar tidak 'undefined'
+    const initialSettings: Record<string, string> = {
+        MAINTENANCE_MODE_ACTIVE: 'False',
+        ENABLE_WHATSAPP_NOTIFICATIONS: 'False',
+        ENABLE_WHATSAPP_LOGIN_NOTIFICATION: 'False', // PENAMBAHAN: Inisialisasi nilai default
+        // Tambahkan kunci lain jika perlu
+    };
+
+    const fetchedSettings = response.reduce((acc, setting) => {
       acc[setting.setting_key] = setting.setting_value || '';
       return acc;
     }, {} as Record<string, string>);
+
+    localSettings.value = { ...initialSettings, ...fetchedSettings };
 
     settingsStore.setSettingsFromObject(localSettings.value);
 
@@ -81,8 +104,7 @@ async function handleSaveChanges() {
         delete settingsToSave[key];
       }
     });
-
-    // PERBAIKAN UTAMA: Endpoint diubah menjadi /api/admin/settings agar sesuai dengan registrasi blueprint di __init__.py
+    
     await $api('/api/admin/settings', {
       method: 'PUT',
       body: { settings: settingsToSave }
@@ -198,8 +220,25 @@ useHead({ title: 'Setting Aplikasi' })
                 <VForm @submit.prevent="handleSaveChanges">
                   <h6 class="text-h6 mb-4">WhatsApp (Fonnte)</h6>
                   <VRow>
-                    <VCol cols="12"><VSwitch v-model="whatsappEnabled" :label="whatsappEnabled ? 'Notifikasi WhatsApp Aktif' : 'Notifikasi WhatsApp Tidak Aktif'"/></VCol>
-                    <VCol cols="12"><VTextField v-model="localSettings.WHATSAPP_API_KEY" label="API Key WhatsApp (Fonnte)" type="password" persistent-placeholder placeholder="Masukkan API Key Fonnte Anda" :disabled="!whatsappEnabled"/></VCol>
+                    <VCol cols="12">
+                        <VSwitch v-model="whatsappEnabled" :label="whatsappEnabled ? 'Notifikasi WhatsApp Aktif' : 'Notifikasi WhatsApp Tidak Aktif'"/>
+                        <p class="text-caption">Saklar utama untuk mengaktifkan semua fitur notifikasi WhatsApp.</p>
+                    </VCol>
+
+                    <!-- PENAMBAHAN: Saklar spesifik untuk notifikasi login -->
+                    <VCol cols="12" class="pl-8">
+                        <VSwitch 
+                            v-model="whatsappLoginNotificationEnabled" 
+                            :label="whatsappLoginNotificationEnabled ? 'Notifikasi Login Admin Aktif' : 'Notifikasi Login Admin Tidak Aktif'"
+                            :disabled="!whatsappEnabled"
+                        />
+                        <p class="text-caption">Kirim notifikasi ke admin/super admin setiap kali ada yang login ke panel admin. Hanya bisa diaktifkan jika saklar utama di atas hidup.</p>
+                    </VCol>
+                    
+                    <VCol cols="12">
+                        <VTextField v-model="localSettings.WHATSAPP_API_KEY" label="API Key WhatsApp (Fonnte)" type="password" persistent-placeholder placeholder="Masukkan API Key Fonnte Anda" :disabled="!whatsappEnabled"/>
+                    </VCol>
+
                   </VRow>
                   <VDivider class="my-6" />
                   <h6 class="text-h6 mb-4">Midtrans</h6>
