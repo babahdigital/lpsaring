@@ -23,13 +23,13 @@ useHead({
   // Template ini akan memformat judul akhir.
   titleTemplate: (titleChunk) => {
     // Ambil nama aplikasi dan judul browser dari store, berikan fallback jika kosong.
-    const appName = settingsStore.appName || 'Hotspot App';
-    const browserTitle = settingsStore.browserTitle || 'Portal Hotspot';
+    const appName = settingsStore.appName || 'Sobigidul';
+    const browserTitle = settingsStore.browserTitle || 'Hotspot App';
 
     // Jika ada judul halaman spesifik (titleChunk tidak kosong dan berbeda dari judul default),
     // maka format menjadi "Judul Halaman - Nama Aplikasi".
     if (titleChunk && titleChunk !== browserTitle) {
-      return `${titleChunk} - ${appName}`;
+      return `${titleChunk} Oleh ${appName}`;
     }
     
     // Jika tidak ada judul halaman spesifik, cukup kembalikan judul browser default.
