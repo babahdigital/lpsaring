@@ -3,7 +3,7 @@
 # Menambahkan force_update_profile, logging yang lebih baik, dan penanganan parameter opsional.
 # PERBAIKAN FINAL: Menambahkan pengecekan '.id' untuk mencegah KeyError.
 # PERBAIKAN V3: Logika yang lebih tangguh untuk menangani user yang ada tanpa '.id'
-# PERBAIKAN V4 (Fokus Approve): Memastikan nilai 0 untuk limit/timeout tetap dikirim ke Mikrotik.
+# PERBAIKAN V5 (Fokus Approve): Memisahkan operasi ADD dan SET untuk mengatasi error 'unknown parameter'.
 
 import os
 import time
@@ -134,6 +134,7 @@ def activate_or_update_hotspot_user(
     """
     Mengaktifkan atau memperbarui pengguna hotspot di MikroTik.
     Memastikan nilai limit 0 tetap dikirim ke Mikrotik.
+    PERBAIKAN: Memisahkan operasi ADD dan SET untuk mengatasi error 'unknown parameter'.
     """
     try:
         user_hotspot_resource = api_connection.get_resource('/ip/hotspot/user')
@@ -146,25 +147,6 @@ def activate_or_update_hotspot_user(
             send_session_timeout_cfg = current_app.config.get('MIKROTIK_SEND_SESSION_TIMEOUT', False)
         except RuntimeError:
             logger.warning("Di luar app context, tidak bisa akses config. Menggunakan default False untuk pengiriman limit.")
-
-        # Persiapan data untuk Mikrotik API
-        base_user_data = {
-            'name': user_mikrotik_username,
-            'password': hotspot_password,
-            'profile': mikrotik_profile_name,
-            'server': 'all',
-            'comment': comment,
-        }
-        
-        # --- PERBAIKAN UTAMA: Gunakan '>= 0' untuk mengirim nilai 0 ---
-        # Ini memastikan bahwa jika kuota adalah 0, perintah untuk mengaturnya menjadi 0 tetap dikirim.
-        if send_limit_bytes_total_cfg and limit_bytes_total is not None and limit_bytes_total >= 0:
-            base_user_data['limit-bytes-total'] = str(limit_bytes_total)
-            logger.debug(f"Menambahkan 'limit-bytes-total': {limit_bytes_total} ke payload Mikrotik untuk {user_mikrotik_username}.")
-        
-        if send_session_timeout_cfg and session_timeout_seconds is not None and session_timeout_seconds >= 0:
-            base_user_data['session-timeout'] = str(session_timeout_seconds)
-            logger.debug(f"Menambahkan 'session-timeout': {session_timeout_seconds} ke payload Mikrotik untuk {user_mikrotik_username}.")
 
         # Cek apakah pengguna sudah ada
         existing_users_list: list[dict[str, Any]] = user_hotspot_resource.get(name=user_mikrotik_username)
@@ -181,12 +163,24 @@ def activate_or_update_hotspot_user(
 
             logger.info(f"User '{user_mikrotik_username}' ditemukan (ID: {mikrotik_internal_id}). Memperbarui...")
             
-            # Gabungkan data dasar dengan ID untuk operasi SET
-            user_data_to_set = {**base_user_data, '.id': mikrotik_internal_id}
+            # Siapkan data lengkap untuk operasi SET
+            user_data_to_set = {
+                '.id': mikrotik_internal_id,
+                'password': hotspot_password,
+                'comment': comment,
+            }
             
             if force_update_profile or user_entry.get('profile') != mikrotik_profile_name:
                 user_data_to_set['profile'] = mikrotik_profile_name
                 logger.info(f"Memperbarui profil untuk {user_mikrotik_username} ke {mikrotik_profile_name}.")
+            else:
+                user_data_to_set['profile'] = mikrotik_profile_name
+
+            if send_limit_bytes_total_cfg and limit_bytes_total is not None and limit_bytes_total >= 0:
+                user_data_to_set['limit-bytes-total'] = str(limit_bytes_total)
+            
+            if send_session_timeout_cfg and session_timeout_seconds is not None and session_timeout_seconds >= 0:
+                user_data_to_set['session-timeout'] = str(session_timeout_seconds)
 
             user_hotspot_resource.set(**user_data_to_set)
 
@@ -194,14 +188,57 @@ def activate_or_update_hotspot_user(
             logger.info(msg)
             return True, msg
         else:
-            # Pengguna tidak ditemukan, lakukan CREATE (ADD)
-            logger.info(f"User '{user_mikrotik_username}' tidak ditemukan. Mencoba membuat baru...")
-
-            user_hotspot_resource.add(**base_user_data)
+            # --- BLOK PERBAIKAN: MEMISAHKAN ADD DAN SET ---
+            # Pengguna tidak ditemukan, lakukan CREATE (ADD) dengan parameter minimal, lalu UPDATE (SET)
+            logger.info(f"User '{user_mikrotik_username}' tidak ditemukan. Mencoba membuat dengan proses 2-langkah (ADD -> SET)...")
             
-            msg = f"User MikroTik baru '{user_mikrotik_username}' berhasil dibuat."
-            logger.info(msg)
-            return True, msg
+            # Langkah 1: ADD dengan parameter esensial
+            minimal_add_data = {
+                'name': user_mikrotik_username,
+                'password': hotspot_password,
+                'profile': mikrotik_profile_name,
+                'server': 'all',
+                'comment': comment,
+            }
+            user_hotspot_resource.add(**minimal_add_data)
+            logger.info(f"User '{user_mikrotik_username}' berhasil di-ADD (langkah 1/2).")
+
+            time.sleep(0.5) # Beri jeda singkat agar Mikrotik memproses
+
+            # Langkah 2: Dapatkan ID user yang baru dibuat, lalu SET parameter tambahan
+            newly_created_user_list = user_hotspot_resource.get(name=user_mikrotik_username)
+            if not newly_created_user_list:
+                msg = f"Gagal mengambil user '{user_mikrotik_username}' setelah dibuat. Parameter tambahan tidak bisa di-SET."
+                logger.error(msg)
+                return False, msg # Ini adalah kegagalan parsial, user dibuat tapi tanpa limit
+            
+            user_entry = newly_created_user_list[0]
+            mikrotik_internal_id = user_entry.get('.id') or user_entry.get('id')
+            if not mikrotik_internal_id:
+                msg = f"User '{user_mikrotik_username}' dibuat tapi tidak memiliki ID. Parameter tambahan tidak bisa di-SET."
+                logger.error(msg)
+                return False, msg # Kegagalan parsial
+            
+            # Siapkan data HANYA untuk parameter tambahan
+            data_to_set = { '.id': mikrotik_internal_id }
+            should_set = False
+            
+            if send_limit_bytes_total_cfg and limit_bytes_total is not None and limit_bytes_total >= 0:
+                data_to_set['limit-bytes-total'] = str(limit_bytes_total)
+                should_set = True
+            
+            if send_session_timeout_cfg and session_timeout_seconds is not None and session_timeout_seconds >= 0:
+                data_to_set['session-timeout'] = str(session_timeout_seconds)
+                should_set = True
+            
+            if should_set:
+                logger.info(f"Mencoba SET parameter tambahan untuk user '{user_mikrotik_username}' (ID: {mikrotik_internal_id}) (langkah 2/2)...")
+                user_hotspot_resource.set(**data_to_set)
+                logger.info(f"SET parameter tambahan untuk '{user_mikrotik_username}' berhasil.")
+            else:
+                logger.info(f"Tidak ada parameter tambahan yang perlu di-SET untuk '{user_mikrotik_username}'.")
+            
+            return True, f"User MikroTik baru '{user_mikrotik_username}' berhasil dibuat dan dikonfigurasi."
 
     except routeros_api.exceptions.RouterOsApiError as e:
         ctx = f"untuk user '{user_mikrotik_username}'"
