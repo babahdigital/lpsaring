@@ -6,35 +6,44 @@ import { useAuthStore } from '~/store/auth'
 /**
  * Middleware untuk otentikasi dan otorisasi.
  * Berjalan setelah middleware maintenance.
- * Logika ini telah disederhanakan untuk kejelasan dan efisiensi.
  */
-export default defineNuxtRouteMiddleware((to: RouteLocationNormalized) => {
+export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => {
   const authStore = useAuthStore()
+
+  // Penting: Tunggu hingga pengecekan otentikasi awal selesai.
+  // Ini mencegah race condition di mana middleware berjalan sebelum user/token dimuat.
+  if (!authStore.initialAuthCheckDone) {
+    await authStore.initializeAuth();
+  }
 
   const isLoggedIn = authStore.isLoggedIn
   const isAdmin = authStore.isAdmin
 
-  // Halaman yang dapat diakses oleh semua orang (pengguna belum login)
-  // Rute root '/' TIDAK termasuk di sini, karena harusnya me-redirect.
+  // Halaman yang dapat diakses oleh pengguna yang belum login (guest).
+  // Rute root '/' tidak termasuk di sini karena akan di-redirect.
   const GUEST_ROUTES = ['/login', '/register', '/admin']
 
-  // Jika halaman tujuan adalah halaman maintenance, lewati middleware ini.
+  // Jika tujuan rute adalah halaman maintenance, lewati middleware ini.
+  // Logika untuk maintenance sudah ditangani sepenuhnya oleh maintenance.global.ts
   if (to.path === '/maintenance') {
     return
   }
-  
+
   // --- Logika untuk Pengguna yang Belum Login ---
   if (!isLoggedIn) {
     // Jika tujuan rute BUKAN halaman untuk tamu, redirect ke halaman login yang sesuai.
     if (!GUEST_ROUTES.includes(to.path)) {
-      // Jika mencoba akses path admin, arahkan ke login admin.
-      if (to.path.startsWith('/admin')) {
+      // Jika mencoba akses path admin yang dilindungi (bukan /admin itu sendiri),
+      // arahkan ke login admin.
+      if (to.path.startsWith('/admin/')) {
         return navigateTo('/admin', { replace: true });
       }
-      // Jika tidak, arahkan ke login pengguna biasa.
-      return navigateTo('/login', { replace: true });
+      // Jika mencoba akses path user yang dilindungi, arahkan ke login user.
+      if (!to.path.startsWith('/admin')) {
+          return navigateTo('/login', { replace: true });
+      }
     }
-  } 
+  }
   // --- Logika untuk Pengguna yang Sudah Login ---
   else {
     const userDashboard = '/dashboard'
