@@ -148,11 +148,12 @@ class Config:
 
     # --- Konfigurasi MikroTik API ---
     MIKROTIK_HOST = os.environ.get('MIKROTIK_HOST')
-    MIKROTIK_USERNAME = os.environ.get('MIKROTIK_USERNAME') # <-- PERBAIKAN DI SINI
+    MIKROTIK_USERNAME = os.environ.get('MIKROTIK_USERNAME')
     MIKROTIK_PASSWORD = os.environ.get('MIKROTIK_PASSWORD')
     MIKROTIK_PORT = get_env_int('MIKROTIK_PORT', 8728)
     MIKROTIK_USE_SSL = get_env_bool('MIKROTIK_USE_SSL', 'False')
     MIKROTIK_DEFAULT_PROFILE = os.environ.get('MIKROTIK_DEFAULT_PROFILE', 'default')
+    MIKROTIK_EXPIRED_PROFILE = os.environ.get('MIKROTIK_EXPIRED_PROFILE', 'expired') # Menambahkan Mikrotik Expired Profile
     MIKROTIK_SEND_LIMIT_BYTES_TOTAL = get_env_bool('MIKROTIK_SEND_LIMIT_BYTES_TOTAL', 'False')
     MIKROTIK_SEND_SESSION_TIMEOUT = get_env_bool('MIKROTIK_SEND_SESSION_TIMEOUT', 'False')
     # --- Akhir Konfigurasi MikroTik API ---
@@ -186,6 +187,7 @@ class Config:
     APP_LINK_MIKROTIK = os.environ.get('APP_LINK_MIKROTIK', 'http://172.16.0.1/login')
     APP_LINK_ADMIN_CHANGE_PASSWORD = os.environ.get('APP_LINK_ADMIN_CHANGE_PASSWORD', f"{APP_LINK_ADMIN}/account-settings")
 
+
     @classmethod
     def validate_production_config(cls):
         if cls.FLASK_ENV == 'production':
@@ -199,7 +201,7 @@ class Config:
                  warnings.warn("PERINGATAN PRODUKSI: Kunci Midtrans (SERVER/CLIENT) tidak disetel. Fitur pembayaran tidak akan berfungsi.")
             if cls.ENABLE_WHATSAPP_NOTIFICATIONS and (not cls.WHATSAPP_API_URL or not cls.WHATSAPP_API_KEY):
                  warnings.warn("PERINGATAN PRODUKSI: Notifikasi WhatsApp diaktifkan tetapi URL/Kunci API WhatsApp tidak disetel.")
-            if not cls.MIKROTIK_HOST or not cls.MIKROTIK_USERNAME or not cls.MIKROTIK_PASSWORD: # PERBAIKAN DI SINI
+            if not cls.MIKROTIK_HOST or not cls.MIKROTIK_USERNAME or not cls.MIKROTIK_PASSWORD:
                  warnings.warn("PERINGATAN PRODUKSI: Konfigurasi MikroTik tidak lengkap. Fitur hotspot mungkin tidak berfungsi.")
             if not cls.RATELIMIT_STORAGE_URI or 'memory://' in cls.RATELIMIT_STORAGE_URI:
                  warnings.warn("PERINGATAN PRODUKSI: RATELIMIT_STORAGE_URI tidak disetel ke backend Redis yang valid. Rate limiting tidak akan persisten.")
@@ -212,6 +214,10 @@ class DevelopmentConfig(Config):
     RATELIMIT_DEFAULT = os.environ.get('API_RATE_LIMIT', '500 per minute')
     ENABLE_WHATSAPP_NOTIFICATIONS = get_env_bool('ENABLE_WHATSAPP_NOTIFICATIONS', 'False')
     RATELIMIT_ENABLED = get_env_bool('RATELIMIT_ENABLED', 'False')
+    
+    # Konfigurasi MikroTik untuk development, sesuai .env yang Anda berikan
+    MIKROTIK_SEND_LIMIT_BYTES_TOTAL = get_env_bool('MIKROTIK_SEND_LIMIT_BYTES_TOTAL', 'False')
+    MIKROTIK_SEND_SESSION_TIMEOUT = get_env_bool('MIKROTIK_SEND_SESSION_TIMEOUT', 'False')
 
 
 class ProductionConfig(Config):
@@ -222,6 +228,10 @@ class ProductionConfig(Config):
     MIDTRANS_IS_PRODUCTION = get_env_bool('MIDTRANS_IS_PRODUCTION', 'True')
     ENABLE_WHATSAPP_NOTIFICATIONS = get_env_bool('ENABLE_WHATSAPP_NOTIFICATIONS', 'True')
     RATELIMIT_ENABLED = get_env_bool('RATELIMIT_ENABLED', 'True')
+    
+    # Mengatur ini ke True secara eksplisit di ProductionConfig untuk memastikan fitur kuota bekerja
+    MIKROTIK_SEND_LIMIT_BYTES_TOTAL = get_env_bool('MIKROTIK_SEND_LIMIT_BYTES_TOTAL', 'True')
+    MIKROTIK_SEND_SESSION_TIMEOUT = get_env_bool('MIKROTIK_SEND_SESSION_TIMEOUT', 'True')
 
     def __init__(self):
         super().validate_production_config()
