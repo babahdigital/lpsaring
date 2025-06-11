@@ -69,7 +69,7 @@ useHead({
     const browserTitle = settingsStore.browserTitle || 'Hotspot APP';
 
     if (titleChunk && titleChunk !== browserTitle) {
-      return `${titleChunk} - ${appName}`;
+      return `${titleChunk} By ${appName}`;
     }
     
     return browserTitle;
