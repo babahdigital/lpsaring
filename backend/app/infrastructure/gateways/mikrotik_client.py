@@ -1,5 +1,5 @@
 # backend/app/infrastructure/gateways/mikrotik_client.py
-# VERSI FINAL 2.1: Beralih ke koneksi langsung dan memaksa proplist untuk keandalan maksimal.
+# VERSI FINAL 2.2: Beralih ke koneksi langsung dan membiarkan penutupan koneksi otomatis.
 
 import os
 import time
@@ -11,7 +11,6 @@ import logging
 
 try:
     import routeros_api
-    # Import connect langsung
     from routeros_api.api import connect as routeros_connect
     ROUTEROS_API_AVAILABLE = True
 except ImportError:
@@ -37,8 +36,8 @@ MIKROTIK_PLAIN_TEXT_LOGIN = os.environ.get('MIKROTIK_PLAIN_TEXT_LOGIN', 'True').
 @contextmanager
 def get_mikrotik_connection() -> Optional[Any]:
     """
-    Membuat koneksi baru ke MikroTik untuk setiap operasi dan memastikannya tertutup.
-    Ini menggantikan model connection pool untuk meningkatkan keandalan.
+    Membuat koneksi baru ke MikroTik untuk setiap operasi dan membiarkan
+    Python menangani penutupannya secara otomatis.
     """
     if not ROUTEROS_API_AVAILABLE:
         logger.error("routeros_api library not installed.")
@@ -52,7 +51,6 @@ def get_mikrotik_connection() -> Optional[Any]:
         
     connection = None
     try:
-        # --- PERBAIKAN: Menggunakan connect() langsung, bukan pool ---
         connection = routeros_connect(
             host=MIKROTIK_HOST,
             username=MIKROTIK_USERNAME,
@@ -68,11 +66,8 @@ def get_mikrotik_connection() -> Optional[Any]:
         logger.error(f"Gagal membuat koneksi ke MikroTik: {e}", exc_info=True)
         yield None
     finally:
-        # --- PERBAIKAN: Metode close() pada koneksi ---
-        if connection:
-            logger.debug("Menutup koneksi MikroTik...")
-            connection.close()
-            logger.debug("Koneksi MikroTik berhasil ditutup.")
+        # --- PERBAIKAN: Tidak melakukan apa-apa. Biarkan koneksi ditutup otomatis. ---
+        logger.debug("Selesai menggunakan koneksi MikroTik.")
 
 
 def format_to_local_phone(phone_number: Optional[str]) -> Optional[str]:
@@ -88,21 +83,19 @@ def format_to_local_phone(phone_number: Optional[str]) -> Optional[str]:
 
 def _get_user_by_name(user_resource: Any, username: str) -> Optional[Dict[str, Any]]:
     """Helper untuk mengambil data user dengan proplist untuk memastikan ID terambil."""
-    # --- PERBAIKAN: Menggunakan .proplist untuk memaksa API mengembalikan ID ---
     users = user_resource.get(**{'name': username, '.proplist': '.id'})
     if users:
         return users[0]
     return None
 
 def _execute_set_command(api_resource, user_id, parameter, value, parameter_name_log):
-    """Fungsi helper untuk menjalankan satu perintah SET dan menangani error."""
     try:
         api_resource.set(**{'.id': user_id, parameter: str(value)})
         logger.info(f"SET SUKSES untuk user ID {user_id}: {parameter_name_log} diatur ke {value}.")
         return True
     except routeros_api.exceptions.RouterOsApiError as e:
         if 'unknown parameter' in str(e.original_message):
-            logger.warning(f"SET PERINGATAN untuk user ID {user_id}: Parameter '{parameter_name_log}' tidak didukung oleh RouterOS versi ini. Melewati.")
+            logger.warning(f"SET PERINGATAN untuk user ID {user_id}: Parameter '{parameter_name_log}' tidak didukung. Melewati.")
             return True 
         else:
             logger.error(f"SET GAGAL untuk user ID {user_id} saat mengatur {parameter_name_log}: {getattr(e, 'original_message', e)}", exc_info=False)
@@ -190,7 +183,6 @@ def get_hotspot_user_details(
     if not username: return False, None, "Username tidak valid."
     try:
         user_resource = api_connection.get_resource('/ip/hotspot/user')
-        # Memaksa properti yang dibutuhkan agar selalu ada
         props_to_get = ".id,name,profile,comment,limit-bytes-total,session-timeout,bytes-in,bytes-out"
         user_list = user_resource.get(**{'name': username, '.proplist': props_to_get})
         if user_list:
@@ -218,10 +210,11 @@ def set_hotspot_user_limit(
         logger.error(f"Gagal set limit untuk {username}: {e}", exc_info=True)
         return False, str(e)
         
-# --- Fungsi lain yang tidak berubah ---
-def update_mikrotik_user_password(api_connection: Any,username_mikrotik_fmt: str,new_password: str) -> Tuple[bool, str]:
-    return set_hotspot_user_profile(api_connection, username_mikrotik_fmt, new_password)
-def set_hotspot_user_profile(api_connection: Any,username_or_id: str,new_profile_name: str) -> Tuple[bool, str]:
+def set_hotspot_user_profile(
+    api_connection: Any,
+    username_or_id: str,
+    new_profile_name: str
+) -> Tuple[bool, str]:
     if not username_or_id: return False, "Username/ID tidak valid."
     if not new_profile_name: return False, "Nama profil tidak valid."
     try:
@@ -235,7 +228,11 @@ def set_hotspot_user_profile(api_connection: Any,username_or_id: str,new_profile
     except Exception as e:
         logger.error(f"Gagal set profil untuk {username_or_id}: {e}", exc_info=True)
         return False, str(e)
-def get_hotspot_user_usage(api_connection: Any,username: str) -> Tuple[bool, Optional[Dict[str, int]], str]:
+
+def get_hotspot_user_usage(
+    api_connection: Any,
+    username: str
+) -> Tuple[bool, Optional[Dict[str, int]], str]:
     success, details, msg = get_hotspot_user_details(api_connection, username)
     if not success: return False, None, msg
     if details:
@@ -243,7 +240,14 @@ def get_hotspot_user_usage(api_connection: Any,username: str) -> Tuple[bool, Opt
         bytes_out = int(details.get('bytes-out', 0) or 0)
         return True, {'bytes_in': bytes_in, 'bytes_out': bytes_out}, "Sukses"
     return True, None, "User tidak ditemukan."
-def add_mikrotik_hotspot_user_profile(api_connection: Any,profile_name: str,rate_limit: Optional[str] = None,shared_users: Optional[int] = None,comment: Optional[str] = None) -> Tuple[bool, str]:
+
+def add_mikrotik_hotspot_user_profile(
+    api_connection: Any,
+    profile_name: str,
+    rate_limit: Optional[str] = None,
+    shared_users: Optional[int] = None,
+    comment: Optional[str] = None
+) -> Tuple[bool, str]:
     if not profile_name: return False, "Nama profil tidak valid."
     try:
         profiles = api_connection.get_resource('/ip/hotspot/user/profile')
