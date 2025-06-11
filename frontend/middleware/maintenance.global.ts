@@ -6,14 +6,12 @@ import { useAuthStore } from '~/store/auth'
 /**
  * Middleware untuk menangani Maintenance Mode.
  * Logika ini diprioritaskan untuk mengontrol akses selama maintenance.
- * Dieksekusi sebelum auth.global.ts.
  */
 export default defineNuxtRouteMiddleware(async (to) => {
   const maintenanceStore = useMaintenanceStore()
   const authStore = useAuthStore()
 
   // Pastikan status auth dan settings sudah dicek/dimuat sebelum middleware berjalan.
-  // Ini penting untuk mendapatkan status maintenance dan role pengguna yang akurat.
   if (!authStore.initialAuthCheckDone) {
     await authStore.initializeAuth();
   }
@@ -29,13 +27,12 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (isMaintenanceActive) {
     // KASUS 1: Pengguna adalah ADMIN atau SUPER_ADMIN yang sudah login.
     if (isUserLoggedInAdmin) {
-      // Izinkan akses ke semua halaman di dalam '/admin'.
-      if (isAdminPath) {
+      // PERBAIKAN: Izinkan akses ke semua halaman di dalam '/admin' DAN ke halaman '/akun'.
+      if (isAdminPath || to.path === '/akun') {
         return; // Lanjutkan navigasi
       }
-      // Jika admin mencoba akses halaman non-admin (cth: '/login', '/'),
-      // redirect ke dashboard admin. Ini mencegah admin mengakses halaman user
-      // yang mungkin rusak atau tidak berfungsi selama maintenance.
+      // Jika admin mencoba akses halaman non-admin lainnya,
+      // redirect ke dashboard admin mereka.
       else {
         return navigateTo('/admin/dashboard', { replace: true });
       }
@@ -44,7 +41,6 @@ export default defineNuxtRouteMiddleware(async (to) => {
     // KASUS 2: Pengguna BUKAN admin yang login (guest, user biasa, atau admin belum login).
     else {
       // Izinkan akses ke halaman login admin (/admin) dan halaman maintenance itu sendiri.
-      // Ini penting agar admin bisa login saat maintenance aktif.
       if (isAdminPath || isMaintenancePage) {
         return; // Lanjutkan navigasi ke /admin (login) atau /maintenance
       }
