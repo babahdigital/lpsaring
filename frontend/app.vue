@@ -33,7 +33,7 @@ useHead({
   titleTemplate: (titleChunk) => {
     return titleChunk 
       ? `${titleChunk} Oleh ${settingsStore.appName || 'SOBIDIGUL'}` 
-      : (settingsStore.appName || 'Portal Hotspot');
+      : (settingsStore.appName || 'Hotspot APP');
   }
 })
 
