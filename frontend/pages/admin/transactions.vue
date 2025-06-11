@@ -511,7 +511,8 @@ const clearEndDate = () => { endDate.value = null; };
 const openUserFilterDialog = async () => {
   isUserFilterDialogOpen.value = true;
   tempSelectedUser.value = selectedUser.value;
-  if (userList.value.length > 0) return;
+  // Perbaikan: Hapus baris di bawah ini agar userList selalu di-fetch ulang
+  // if (userList.value.length > 0) return; 
   try {
     const responseData = await $api<UserSelectItem[]>('/admin/users?all=true');
     userList.value = Array.isArray(responseData) ? responseData : [];
