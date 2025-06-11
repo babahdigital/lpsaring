@@ -17,7 +17,7 @@ from werkzeug.security import generate_password_hash
 from app.extensions import db
 from app.infrastructure.db.models import (
     User, UserRole, ApprovalStatus, UserBlok, UserKamar,
-    PromoEvent, PromoEventType, PromoEventStatus # Menambahkan import untuk PromoEvent
+    PromoEvent, PromoEventType, PromoEventStatus
 )
 from app.infrastructure.http.decorators import admin_required, super_admin_required
 from app.infrastructure.http.schemas.user_schemas import (
@@ -44,7 +44,6 @@ class ConfigKeys:
     MIKROTIK_DEFAULT_PROFILE = 'MIKROTIK_DEFAULT_PROFILE'
     MIKROTIK_EXPIRED_PROFILE = 'MIKROTIK_EXPIRED_PROFILE'
     ENABLE_WHATSAPP_NOTIFICATIONS = 'ENABLE_WHATSAPP_NOTIFICATIONS'
-    # Tambahkan kunci konfigurasi untuk mengontrol pengiriman limit Mikrotik
     MIKROTIK_SEND_LIMIT_BYTES_TOTAL = 'MIKROTIK_SEND_LIMIT_BYTES_TOTAL'
     MIKROTIK_SEND_SESSION_TIMEOUT = 'MIKROTIK_SEND_SESSION_TIMEOUT'
 
@@ -59,7 +58,6 @@ def _send_whatsapp_notification(user_phone: str, template_key: str, context: dic
         current_app.logger.warning("WhatsApp client is not available. Skipping notification.")
         return False
     try:
-        # Menggunakan settings_service untuk memeriksa apakah notifikasi WA diaktifkan
         if settings_service.get_setting(ConfigKeys.ENABLE_WHATSAPP_NOTIFICATIONS, 'False') == 'True':
             message_body = get_notification_message(template_key, context)
             if message_body:
@@ -233,13 +231,12 @@ def get_users_list(current_admin: User):
             User.device_brand,
             User.device_model,
             User.raw_user_agent,
-            User.last_login_at # Menambahkan kolom last_login_at
+            User.last_login_at
         ]
 
         base_query = db.select(*user_cols_to_select).select_from(User)
 
         if not is_super_admin:
-            # Admin biasa hanya melihat user dengan role USER
             base_query = base_query.where(User.role == UserRole.USER)
 
         search_query = request.args.get('search', '').strip()
@@ -262,7 +259,7 @@ def get_users_list(current_admin: User):
             column_to_sort = getattr(User, sort_by)
             base_query = base_query.order_by(column_to_sort.desc() if sort_order.lower() == 'desc' else column_to_sort.asc())
         else:
-            base_query = base_query.order_by(User.created_at.desc()) # Default sort
+            base_query = base_query.order_by(User.created_at.desc())
 
         total_items_query = select(func.count(User.id))
         if not is_super_admin:
@@ -295,7 +292,6 @@ def update_user_by_admin(current_admin: User, user_id):
     if not user_to_update:
         return jsonify({"message": "User not found."}), HTTPStatus.NOT_FOUND
 
-    # Admin biasa tidak bisa mengedit admin lain
     if not current_admin.is_super_admin_role and user_to_update.is_admin_role:
         return jsonify({"message": "You do not have permission to edit ADMIN roles."}), HTTPStatus.FORBIDDEN
     
@@ -307,9 +303,8 @@ def update_user_by_admin(current_admin: User, user_id):
 
     update_fields = validated_data.model_dump(exclude_unset=True)
     old_role = user_to_update.role
-    new_role_val = validated_data.role # Ini akan menjadi objek Enum UserRole
+    new_role_val = validated_data.role
 
-    # Logika perubahan peran
     if new_role_val and old_role != new_role_val:
         current_app.logger.info(f"Admin {current_admin.full_name} is changing role for user {user_to_update.full_name} from {old_role.value} to {new_role_val.value}")
         
@@ -317,32 +312,27 @@ def update_user_by_admin(current_admin: User, user_id):
             if not current_admin.is_super_admin_role:
                  return jsonify({"message": "Only Super Admins can upgrade users to Admin."}), HTTPStatus.FORBIDDEN
 
-            # Simpan blok/kamar sebelumnya
             user_to_update.previous_blok = user_to_update.blok
             user_to_update.previous_kamar = user_to_update.kamar
             user_to_update.role = UserRole.ADMIN
-            user_to_update.blok = None # Admin tidak punya blok/kamar
+            user_to_update.blok = None
             user_to_update.kamar = None
             
-            # Buat password portal baru untuk admin
             password_portal = _generate_password(length=6, numeric_only=True)
             user_to_update.password_hash = generate_password_hash(password_portal)
             
             context = {"full_name": user_to_update.full_name, "password": password_portal}
             _send_whatsapp_notification(user_to_update.phone_number, "user_upgrade_to_admin_with_password", context)
             
-            # Hapus user dari Mikrotik hotspot jika ada
             mikrotik_username = format_to_local_phone(user_to_update.phone_number)
             if mikrotik_username:
                 _handle_mikrotik_operation(delete_hotspot_user, username=mikrotik_username)
-            user_to_update.mikrotik_password = None # Hapus password Mikrotik
+            user_to_update.mikrotik_password = None
 
         elif old_role == UserRole.ADMIN and new_role_val == UserRole.USER:
-            # Perubahan peran dari ADMIN ke USER
             user_to_update.role = UserRole.USER
-            user_to_update.password_hash = None # User reguler tidak punya password portal
+            user_to_update.password_hash = None
 
-            # Kembalikan blok/kamar jika ada, atau minta input jika diperlukan
             if user_to_update.previous_blok and user_to_update.previous_kamar:
                 user_to_update.blok = user_to_update.previous_blok
                 user_to_update.kamar = user_to_update.previous_kamar
@@ -351,25 +341,21 @@ def update_user_by_admin(current_admin: User, user_id):
             elif not validated_data.blok or not validated_data.kamar:
                  return jsonify({"message": "Blok and Kamar are required when downgrading an admin to USER role if previous address is not available."}), HTTPStatus.BAD_REQUEST
             else:
-                # Jika tidak ada previous_blok/kamar, gunakan yang dari payload update
                 user_to_update.blok = validated_data.blok.value if validated_data.blok else None
                 user_to_update.kamar = validated_data.kamar.value if validated_data.kamar else None
 
-            # Buat password hotspot baru untuk user reguler
             new_hotspot_password = _generate_password(length=6, numeric_only=True)
             user_to_update.mikrotik_password = new_hotspot_password
             
-            # Sinkronkan ke Mikrotik
             mikrotik_username = format_to_local_phone(user_to_update.phone_number)
             if mikrotik_username:
-                # Saat downgrade, set profile default dan password baru
                 _handle_mikrotik_operation(
                     activate_or_update_hotspot_user,
                     user_mikrotik_username=mikrotik_username,
                     mikrotik_profile_name=current_app.config.get(ConfigKeys.MIKROTIK_DEFAULT_PROFILE, 'default'),
                     hotspot_password=new_hotspot_password,
                     comment=f"Downgraded to USER by {current_admin.full_name}",
-                    limit_bytes_total=int(user_to_update.total_quota_purchased_mb * 1024 * 1024), # Sertakan kuota yang ada
+                    limit_bytes_total=int(user_to_update.total_quota_purchased_mb * 1024 * 1024),
                     session_timeout_seconds=int((user_to_update.quota_expiry_date - datetime.now(dt_timezone.utc)).total_seconds()) if user_to_update.quota_expiry_date and user_to_update.quota_expiry_date > datetime.now(dt_timezone.utc) else 0
                 )
 
@@ -382,13 +368,10 @@ def update_user_by_admin(current_admin: User, user_id):
         else:
             return jsonify({"message": f"Role change from {old_role.value} to {new_role_val.value} is not supported."}), HTTPStatus.BAD_REQUEST
 
-    # Hapus 'role' dari update_fields karena sudah ditangani secara terpisah
-    update_fields.pop('role', None) 
+    update_fields.pop('role', None)
 
-    # Terapkan perubahan lain dari payload
     for key, value in update_fields.items():
         if hasattr(user_to_update, key):
-            # Handle nilai enum yang datang dari Pydantic (sudah dalam bentuk Enum)
             if isinstance(value, enum.Enum):
                 setattr(user_to_update, key, value.value)
             else:
@@ -422,23 +405,19 @@ def approve_user(current_admin: User, user_id):
     new_mikrotik_password = _generate_password(length=6, numeric_only=True)
 
     # --- LOGIKA PEMBERIAN BONUS REGISTRASI ---
-    bonus_given_mb = 0 # Inisialisasi bonus
-    bonus_duration_days = 30 # Durasi default untuk bonus, bisa diambil dari promo event jika ada fieldnya
+    bonus_given_mb = 0
+    bonus_duration_days = 30
     
-    active_bonus_promo = _get_active_bonus_registration_promo() # Mencari promo bonus registrasi aktif
+    active_bonus_promo = _get_active_bonus_registration_promo()
     if active_bonus_promo and active_bonus_promo.bonus_value_mb is not None and active_bonus_promo.bonus_value_mb > 0:
         bonus_given_mb = active_bonus_promo.bonus_value_mb
         current_app.logger.info(f"Applying bonus {bonus_given_mb}MB from promo '{active_bonus_promo.name}' to user {user.full_name}.")
     else:
         current_app.logger.info(f"No active 'BONUS_REGISTRATION' promo found or bonus_value_mb is not set/zero. User {user.full_name} will not receive bonus quota.")
 
-    # Set total kuota pengguna dengan bonus (ini adalah kuota awal yang didapat)
     user.total_quota_purchased_mb = bonus_given_mb 
 
-    # Set tanggal kadaluarsa kuota berdasarkan bonus
     if user.total_quota_purchased_mb > 0:
-        # Jika user sudah punya kuota yang berlaku, tambahkan durasi.
-        # Jika belum ada atau sudah kadaluarsa, mulai dari sekarang.
         if user.quota_expiry_date and user.quota_expiry_date > datetime.now(dt_timezone.utc):
             user.quota_expiry_date += timedelta(days=bonus_duration_days)
             current_app.logger.info(f"Extending existing quota expiry date for {user.full_name} by {bonus_duration_days} days to {user.quota_expiry_date}.")
@@ -446,31 +425,38 @@ def approve_user(current_admin: User, user_id):
             user.quota_expiry_date = datetime.now(dt_timezone.utc) + timedelta(days=bonus_duration_days)
             current_app.logger.info(f"Setting new quota expiry date for {user.full_name} to {user.quota_expiry_date} ({bonus_duration_days} days).")
     else:
-        user.quota_expiry_date = None # Tidak ada kuota, tidak ada tanggal kadaluarsa
+        user.quota_expiry_date = None
         current_app.logger.info(f"User {user.full_name} has no bonus quota, quota_expiry_date set to None.")
 
     # Persiapan parameter untuk Mikrotik
     mikrotik_limit_bytes_total = int(user.total_quota_purchased_mb * 1024 * 1024) # Konversi MB ke bytes
-    mikrotik_session_timeout_seconds = 0 # Default tanpa timeout sesi jika hanya berdasarkan expiry date
+    # Pastikan nilai tidak negatif
+    if mikrotik_limit_bytes_total < 0:
+        mikrotik_limit_bytes_total = 0
+        current_app.logger.warning(f"Negative quota value for user {user.id} ({user.full_name}), reset to 0 for Mikrotik.")
 
-    # Hitung session_timeout_seconds berdasarkan quota_expiry_date
+
+    mikrotik_session_timeout_seconds = 0
     if user.quota_expiry_date:
         time_remaining_seconds = (user.quota_expiry_date - datetime.now(dt_timezone.utc)).total_seconds()
-        # Pastikan tidak negatif dan diatur minimal 1 detik jika ada sisa waktu
         mikrotik_session_timeout_seconds = max(0, int(time_remaining_seconds))
-        current_app.logger.debug(f"Calculated Mikrotik session-timeout for {user.full_name}: {mikrotik_session_timeout_seconds} seconds.")
 
-    # Panggil Mikrotik API untuk mengaktifkan/memperbarui pengguna
-    # Parameter MIKROTIK_SEND_LIMIT_BYTES_TOTAL dan MIKROTIK_SEND_SESSION_TIMEOUT
-    # akan dibaca dari app.config di dalam activate_or_update_hotspot_user.
+    # --- LOG PENTING: Untuk memastikan nilai yang dikirim ke Mikrotik ---
+    current_app.logger.info(
+        f"Sending to Mikrotik - User: {mikrotik_username}, "
+        f"Limit Bytes: {mikrotik_limit_bytes_total}, "
+        f"Timeout: {mikrotik_session_timeout_seconds}"
+    )
+    # --- AKHIR LOG PENTING ---
+
     mikrotik_success, mikrotik_message = _handle_mikrotik_operation(
         activate_or_update_hotspot_user,
         user_mikrotik_username=mikrotik_username,
         mikrotik_profile_name=current_app.config.get(ConfigKeys.MIKROTIK_DEFAULT_PROFILE, 'default'),
         hotspot_password=new_mikrotik_password,
-        comment=f"Approved by {current_admin.full_name} (Bonus: {bonus_given_mb}MB)", # Tambahkan info bonus di comment
-        limit_bytes_total=mikrotik_limit_bytes_total, # Kirim total kuota dalam bytes
-        session_timeout_seconds=mikrotik_session_timeout_seconds # Kirim session timeout
+        comment=f"Approved by {current_admin.full_name} (Bonus: {bonus_given_mb}MB)",
+        limit_bytes_total=mikrotik_limit_bytes_total,
+        session_timeout_seconds=mikrotik_session_timeout_seconds
     )
     if not mikrotik_success:
         current_app.logger.error(f"Failed to activate user {user.full_name} in Mikrotik: {mikrotik_message}")
@@ -480,7 +466,7 @@ def approve_user(current_admin: User, user_id):
     user.approved_at = datetime.now(dt_timezone.utc)
     user.mikrotik_password = new_mikrotik_password
     user.is_unlimited_user = False
-    user.total_quota_used_mb = 0 # Reset penggunaan kuota
+    user.total_quota_used_mb = 0
 
     db.session.commit()
     db.session.refresh(user)
@@ -489,7 +475,7 @@ def approve_user(current_admin: User, user_id):
         "full_name": user.full_name,
         "username": mikrotik_username,
         "password": new_mikrotik_password,
-        "bonus_mb": bonus_given_mb, # Tambahkan bonus_mb ke konteks notifikasi
+        "bonus_mb": bonus_given_mb,
         "quota_expiry_date": user.quota_expiry_date.strftime('%d %B %Y %H:%M') if user.quota_expiry_date else 'Tidak Ada'
     }
     notification_sent = _send_whatsapp_notification(user.phone_number, "user_approve_success", context)
@@ -602,13 +588,12 @@ def update_own_admin_profile(current_admin: User):
         validated_data = UserProfileUpdateRequestSchema.model_validate(data)
         update_dict = validated_data.model_dump(exclude_unset=True)
         
-        # Perbarui hanya field yang diizinkan dan ada dalam payload
         if 'full_name' in update_dict:
             current_admin.full_name = update_dict['full_name']
         if 'blok' in update_dict and validated_data.blok is not None:
-            current_admin.blok = validated_data.blok # Sudah dalam bentuk Enum value dari pydantic
+            current_admin.blok = validated_data.blok
         if 'kamar' in update_dict and validated_data.kamar is not None:
-            current_admin.kamar = validated_data.kamar # Sudah dalam bentuk Enum value dari pydantic
+            current_admin.kamar = validated_data.kamar
         
         db.session.commit()
         db.session.refresh(current_admin)
@@ -669,23 +654,30 @@ def admin_reset_hotspot_password(current_admin: User, user_id):
                         mikrotik_profile_name = current_app.config.get(ConfigKeys.MIKROTIK_DEFAULT_PROFILE, 'default')
                         mikrotik_username = format_to_local_phone(user_to_reset.phone_number)
                         
-                        # Hitung limit_bytes_total dari total_quota_purchased_mb
                         limit_bytes_total = int(user_to_reset.total_quota_purchased_mb or 0) * 1024 * 1024
+                        if limit_bytes_total < 0: # Pastikan juga di sini tidak negatif
+                            limit_bytes_total = 0
+                            current_app.logger.warning(f"Negative quota value for user {user_to_reset.id} (reset password), reset to 0 for Mikrotik.")
                         
-                        # Hitung session_timeout_seconds dari quota_expiry_date
                         session_timeout_seconds = 0
                         if user_to_reset.quota_expiry_date:
                             time_remaining = (user_to_reset.quota_expiry_date - datetime.now(dt_timezone.utc)).total_seconds()
-                            session_timeout_seconds = max(0, int(time_remaining)) # Pastikan tidak negatif
+                            session_timeout_seconds = max(0, int(time_remaining))
                         
+                        current_app.logger.info(
+                            f"Sending to Mikrotik (Reset Password) - User: {mikrotik_username}, "
+                            f"Limit Bytes: {limit_bytes_total}, "
+                            f"Timeout: {session_timeout_seconds}"
+                        )
+
                         activate_success, msg = activate_or_update_hotspot_user(
                             api_connection=api_conn, 
                             user_mikrotik_username=mikrotik_username,
                             mikrotik_profile_name=mikrotik_profile_name, 
                             hotspot_password=new_mikrotik_password,
                             comment=f"Password reset by Admin {current_admin.full_name}",
-                            limit_bytes_total=limit_bytes_total, # Kirim kuota yang ada
-                            session_timeout_seconds=session_timeout_seconds # Kirim sisa waktu
+                            limit_bytes_total=limit_bytes_total,
+                            session_timeout_seconds=session_timeout_seconds
                         )
                         mikrotik_success = activate_success
                         mikrotik_message = msg
@@ -705,7 +697,7 @@ def admin_reset_hotspot_password(current_admin: User, user_id):
             "full_name": user_to_reset.full_name,
             "username": format_to_local_phone(user_to_reset.phone_number),
             "password": new_mikrotik_password,
-            "bonus_mb": user_to_reset.total_quota_purchased_mb, # Tambahkan info kuota saat reset password
+            "bonus_mb": user_to_reset.total_quota_purchased_mb,
             "quota_expiry_date": user_to_reset.quota_expiry_date.strftime('%d %B %Y %H:%M') if user_to_reset.quota_expiry_date else 'Tidak Ada'
         }
         notification_sent = _send_whatsapp_notification(user_to_reset.phone_number, "user_hotspot_password_reset_by_admin", context)
@@ -735,7 +727,6 @@ def get_alamat_form_options(current_admin: User):
     """Mengambil opsi untuk dropdown 'blok' dan 'kamar'."""
     try:
         blok_options = [e.value for e in UserBlok]
-        # Mengirim nomor kamar sebagai angka saja
         kamar_options = [e.value.replace('Kamar_', '') for e in UserKamar]
         return jsonify({"success": True, "bloks": blok_options, "kamars": kamar_options}), HTTPStatus.OK
     except Exception as e:
