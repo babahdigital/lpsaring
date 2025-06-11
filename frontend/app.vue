@@ -29,10 +29,10 @@ onMounted(() => {
 initCore()
 
 useHead({
-  title: computed(() => settingsStore.browserTitle || 'Portal Hotspot'),
+  title: computed(() => settingsStore.browserTitle || 'Hotspot App'),
   titleTemplate: (titleChunk) => {
     return titleChunk 
-      ? `${titleChunk} - ${settingsStore.appName || 'Portal Hotspot'}` 
+      ? `${titleChunk} Oleh ${settingsStore.appName || 'SOBIDIGUL'}` 
       : (settingsStore.appName || 'Portal Hotspot');
   }
 })
