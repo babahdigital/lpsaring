@@ -1,58 +1,46 @@
 // frontend/middleware/00.maintenance.global.ts
-import type { RouteLocationNormalized } from 'vue-router'
 import { defineNuxtRouteMiddleware, navigateTo } from '#app'
 import { useMaintenanceStore } from '~/store/maintenance'
 import { useAuthStore } from '~/store/auth'
-import { useSettingsStore } from '~/store/settings'
-import type { SettingSchema } from '@/types/api/settings'
 
-export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => {
-  const maintenanceStore = useMaintenanceStore();
-  const authStore = useAuthStore();
-  const settingsStore = useSettingsStore();
-  const nuxtApp = useNuxtApp();
+/**
+ * Middleware untuk menangani Maintenance Mode.
+ * Middleware ini sekarang sangat cepat dan sinkron karena hanya membaca
+ * state dari Pinia store yang sudah diisi oleh plugin `00.load-initial-state.ts`.
+ */
+export default defineNuxtRouteMiddleware((to) => {
+  const maintenanceStore = useMaintenanceStore()
+  const authStore = useAuthStore()
 
-  // --- PENTING: Pastikan settings sudah dimuat sebelum mengecek maintenance ---
-  // Jika appName dari settingsStore belum ada (indikasi store belum terisi dari API),
-  // maka coba muat pengaturan lagi. Ini berlaku untuk SSR dan Client-side load.
-  // Pastikan ini tidak menyebabkan loop jika API selalu gagal.
-  if (!settingsStore.appName) { // Cek apakah settingsStore sudah terisi data awal
-    try {
-      const publicSettings = await nuxtApp.$api<SettingSchema[]>('/api/settings/public'); // SettingSchema digunakan di sini
-      if (publicSettings) {
-        settingsStore.setSettings(publicSettings); // Ini akan mengisi settingsStore DAN maintenanceStore
-      }
-    } catch (e) {
-      console.error('Gagal memuat pengaturan di middleware maintenance:', e);
-      // Jika fetching gagal, set default agar maintenance tidak aktif
-      settingsStore.setSettings([]); // Pastikan maintenanceStore.isActive menjadi false
-    }
-  }
-
-  const isMaintenanceActive = maintenanceStore.isActive;
-  const isAdminPath = to.path.startsWith('/admin');
-  const isMaintenancePage = to.path === '/maintenance';
+  const isMaintenanceActive = maintenanceStore.isActive
+  const isMaintenancePage = to.path === '/maintenance'
+  const isAdminPath = to.path.startsWith('/admin')
+  
+  // Rute yang selalu bisa diakses meskipun maintenance aktif
+  const allowedPathsDuringMaintenance = ['/maintenance']
 
   // Jika mode maintenance aktif
   if (isMaintenanceActive) {
-    // Izinkan admin mengakses area admin
-    if (isAdminPath && authStore.isAdmin) {
-      return;
+    // Izinkan admin yang sudah login untuk mengakses area admin
+    if (isAdminPath && authStore.isLoggedIn && authStore.isAdmin) {
+      return
     }
 
-    // Selalu izinkan akses ke halaman maintenance itu sendiri
-    if (isMaintenancePage) {
-      return;
+    // Jika tujuan adalah salah satu halaman yang diizinkan, biarkan
+    if (allowedPathsDuringMaintenance.includes(to.path)) {
+      return
     }
 
-    // Redirect semua non-admin atau non-admin-path ke halaman maintenance
-    return navigateTo('/maintenance', { replace: true });
+    // Untuk semua kasus lain, redirect ke halaman maintenance
+    if (!isMaintenancePage) {
+        return navigateTo('/maintenance', { replace: true })
+    }
   }
   // Jika mode maintenance TIDAK aktif
   else {
-    // Jika sedang di halaman maintenance dan mode sudah tidak aktif, redirect ke home/dashboard
+    // Jika pengguna mencoba mengakses halaman maintenance, redirect ke halaman utama
     if (isMaintenancePage) {
-      return navigateTo('/', { replace: true });
+      return navigateTo('/', { replace: true })
     }
   }
-});
+})

@@ -1,7 +1,8 @@
 // frontend/store/settings.ts
 import { defineStore } from 'pinia';
+import { ref } from 'vue'; // Pastikan 'ref' diimpor
 import type { SettingSchema } from '@/types/api/settings';
-import { useMaintenanceStore } from './maintenance'; // Impor store maintenance
+import { useMaintenanceStore } from './maintenance';
 
 // Impor semua enum dari lokasi sentral `frontend/types/enums.ts`
 import {
@@ -12,46 +13,26 @@ import {
 } from '@/types/enums';
 
 export const useSettingsStore = defineStore('settings', () => {
+  // --- STATE ---
   const appName = ref('Portal Hotspot');
   const browserTitle = ref('Portal Hotspot');
   const theme = ref<Theme>(Theme.System);
   const skin = ref<Skins>(Skins.Bordered);
   const layout = ref<AppContentLayoutNav>(AppContentLayoutNav.Horizontal);
   const contentWidth = ref<ContentWidth>(ContentWidth.Boxed);
+  
+  // --- PERBAIKAN: Definisikan isLoaded sebagai ref ---
+  const isLoaded = ref(false);
 
-  const maintenanceStore = useMaintenanceStore(); // Akses store maintenance
+  const maintenanceStore = useMaintenanceStore();
 
-  /**
-   * Action untuk mengisi seluruh state pada store dari data API (array SettingSchema)
-   * Juga akan memperbarui maintenanceStore
-   */
-  function setSettings(settings: SettingSchema[]) {
-    const settingsMap = settings.reduce((acc, setting) => {
-      if (setting.setting_value) {
-        acc[setting.setting_key] = setting.setting_value;
-      }
-      return acc;
-    }, {} as Record<string, string>);
-
-    appName.value = settingsMap.APP_NAME || 'Portal Hotspot';
-    browserTitle.value = settingsMap.APP_BROWSER_TITLE || 'Portal Hotspot';
-    theme.value = (settingsMap.THEME as Theme) || Theme.System;
-    skin.value = (settingsMap.SKIN as Skins) || Skins.Bordered;
-    layout.value = (settingsMap.LAYOUT as AppContentLayoutNav) || AppContentLayoutNav.Horizontal;
-    contentWidth.value = (settingsMap.CONTENT_WIDTH as ContentWidth) || ContentWidth.Boxed;
-
-    // --- PENTING: Perbarui maintenanceStore dari data settings ---
-    const active = settingsMap.MAINTENANCE_MODE_ACTIVE === 'True';
-    const message = settingsMap.MAINTENANCE_MODE_MESSAGE || 'Aplikasi sedang dalam perbaikan. Silakan coba lagi nanti.';
-    maintenanceStore.setMaintenanceStatus(active, message);
-    // -------------------------------------------------------------
-  }
+  // --- ACTIONS ---
 
   /**
-   * Fungsi untuk update dari object (Record<string, string>)
-   * Juga akan memperbarui maintenanceStore
+   * Fungsi internal untuk memetakan data dan memperbarui state.
+   * Digunakan untuk menghindari duplikasi kode.
    */
-  function setSettingsFromObject(settings: Record<string, string>) {
+  function _updateAllStates(settings: Record<string, string | null | undefined>) {
     appName.value = settings.APP_NAME || 'Portal Hotspot';
     browserTitle.value = settings.APP_BROWSER_TITLE || 'Portal Hotspot';
     theme.value = (settings.THEME as Theme) || Theme.System;
@@ -59,13 +40,33 @@ export const useSettingsStore = defineStore('settings', () => {
     layout.value = (settings.LAYOUT as AppContentLayoutNav) || AppContentLayoutNav.Horizontal;
     contentWidth.value = (settings.CONTENT_WIDTH as ContentWidth) || ContentWidth.Boxed;
 
-    // --- PENTING: Perbarui maintenanceStore dari data settings ---
+    // Perbarui maintenanceStore dari data settings
     const active = settings.MAINTENANCE_MODE_ACTIVE === 'True';
     const message = settings.MAINTENANCE_MODE_MESSAGE || 'Aplikasi sedang dalam perbaikan. Silakan coba lagi nanti.';
     maintenanceStore.setMaintenanceStatus(active, message);
-    // -------------------------------------------------------------
   }
 
+  /**
+   * Action untuk mengisi seluruh state pada store dari data API (array SettingSchema)
+   */
+  function setSettings(settings: SettingSchema[]) {
+    const settingsMap = settings.reduce((acc, setting) => {
+      acc[setting.setting_key] = setting.setting_value;
+      return acc;
+    }, {} as Record<string, string | null>);
+    
+    _updateAllStates(settingsMap);
+    isLoaded.value = true; // Tandai bahwa data telah dimuat
+  }
+
+  /**
+   * Fungsi untuk update dari object (Record<string, string>)
+   */
+  function setSettingsFromObject(settings: Record<string, string>) {
+     _updateAllStates(settings);
+  }
+
+  // --- RETURN ---
   return {
     appName,
     browserTitle,
@@ -73,6 +74,7 @@ export const useSettingsStore = defineStore('settings', () => {
     skin,
     layout,
     contentWidth,
+    isLoaded, // <-- Pastikan isLoaded di-return agar bisa diakses dari luar
     setSettings,
     setSettingsFromObject,
   };
