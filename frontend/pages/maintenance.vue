@@ -13,7 +13,7 @@ const message = computed(() => maintenanceStore.message || "Aplikasi sedang dala
 
 definePageMeta({
   layout: 'blank',
-  public: true, // Halaman ini bersifat publik
+  public: true,
 })
 </script>
 
