@@ -1,3 +1,4 @@
+// frontend/plugins/00.load-initial-state.ts
 import { useSettingsStore } from '~/store/settings'
 import { useMaintenanceStore } from '~/store/maintenance'
 import type { SettingSchema } from '@/types/api/settings'
@@ -11,16 +12,20 @@ export default defineNuxtPlugin(async (nuxtApp) => {
     return
   }
 
-  // PERBAIKAN: Gunakan import.meta.server sebagai pengganti process.server
-  // Ini adalah sintaks modern yang direkomendasikan di Nuxt 3.
+  // Gunakan import.meta.server untuk kode sisi server.
   if (import.meta.server) {
     try {
-      // Panggil API untuk mendapatkan pengaturan publik.
-      const publicSettings = await $fetch<SettingSchema[]>('/api/settings/public', {
-        baseURL: nuxtApp.ssrContext?.event.node.req.headers.host 
-          ? `http://${nuxtApp.ssrContext.event.node.req.headers.host}`
-          : 'http://localhost:3010', // Fallback untuk development
-      });
+      // 1. Ambil runtimeConfig yang sudah Anda definisikan di nuxt.config.ts
+      const runtimeConfig = useRuntimeConfig()
+      
+      // 2. PERBAIKAN: Gunakan variabel yang benar dari runtimeConfig.
+      // Variabel ini berisi 'http://backend:5010/api' dari .env Anda.
+      const baseURL = runtimeConfig.internalApiBaseUrl;
+      
+      // 3. PERBAIKAN: Panggil endpoint relatif terhadap baseURL.
+      // Karena baseURL sudah mengandung '/api', kita hanya perlu menambahkan 'settings/public'.
+      // Hasil akhirnya akan menjadi http://backend:5010/api/settings/public
+      const publicSettings = await $fetch<SettingSchema[]>('settings/public', { baseURL });
       
       // Setelah data didapat, isi state di Pinia store.
       settingsStore.setSettings(publicSettings || [])
@@ -31,7 +36,11 @@ export default defineNuxtPlugin(async (nuxtApp) => {
       maintenanceStore.setMaintenanceStatus(maintenanceActive, maintenanceMessage);
       
     } catch (error) {
-      console.error('KRITIS: Gagal memuat pengaturan awal dari server.', error)
+      // Log error dengan lebih detail untuk debugging.
+      console.error('KRITIS: Gagal memuat pengaturan awal dari server.', { 
+        message: (error as Error).message,
+        cause: (error as any).cause,
+      })
       // Tetap set state kosong agar aplikasi tidak crash.
       settingsStore.setSettings([])
     }
