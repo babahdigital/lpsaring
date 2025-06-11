@@ -41,12 +41,6 @@ def sync_usage_command():
     """
     current_app.logger.info("Starting user quota usage synchronization and daily logging...")
 
-    # Dapatkan koneksi pool MikroTik
-    mikrotik_conn_pool = get_mikrotik_connection()
-    if not mikrotik_conn_pool:
-        current_app.logger.error("Synchronization aborted: Failed to get MikroTik connection pool.")
-        return
-
     # Ambil semua user yang relevan dari DB
     try:
         stmt = select(User).filter(
@@ -77,14 +71,26 @@ def sync_usage_command():
     users_to_commit = []
     logs_to_commit = [] # List untuk menyimpan log yang akan di-commit
 
-    # Dapatkan koneksi API dari pool dan tes koneksi
-    api = None
+    # PERBAIKAN: Gunakan context manager untuk koneksi MikroTik
+    mikrotik_api_connection = None
     try:
-        api = mikrotik_conn_pool.get_api()
-        identity = api.get_resource('/system/identity').get()
-        current_app.logger.info(f"Successfully connected to MikroTik '{identity[0].get('name', 'N/A')}' for sync job.")
+        # Masuk ke context manager untuk mendapatkan objek API yang sebenarnya
+        # get_mikrotik_connection() mengembalikan context manager,
+        # dan 'as api' akan menetapkan objek API yang dikembalikan ke 'api'
+        with get_mikrotik_connection() as api:
+            if not api:
+                current_app.logger.error("Synchronization aborted: Failed to get MikroTik API connection from pool.")
+                return
+            mikrotik_api_connection = api # Simpan referensi ke koneksi API yang aktif
+            identity = mikrotik_api_connection.get_resource('/system/identity').get()
+            current_app.logger.info(f"Successfully connected to MikroTik '{identity[0].get('name', 'N/A')}' for sync job.")
     except Exception as conn_err:
         current_app.logger.error(f"Synchronization aborted: Failed to get/verify API connection from pool: {conn_err}", exc_info=True)
+        return
+
+    # Pastikan koneksi API berhasil didapatkan sebelum melanjutkan
+    if mikrotik_api_connection is None:
+        current_app.logger.error("Synchronization aborted: MikroTik API connection not established.")
         return
 
     # Dapatkan tanggal hari ini sekali saja
@@ -102,7 +108,8 @@ def sync_usage_command():
 
         try:
             # 1. Ambil data usage dari MikroTik menggunakan username 08...
-            success, usage_data, error_msg = get_hotspot_user_usage(mikrotik_conn_pool, username_08)
+            # PERBAIKAN: Gunakan mikrotik_api_connection yang sudah didapatkan dari 'with' statement
+            success, usage_data, error_msg = get_hotspot_user_usage(mikrotik_api_connection, username_08)
 
             if not success:
                 current_app.logger.warning(f"Failed to get usage for user '{username_08}': {error_msg}")
@@ -176,8 +183,8 @@ def sync_usage_command():
                 remaining_mb = max(0, purchased_mb - current_usage_mb)
                 limit_bytes_total = int(remaining_mb * 1024 * 1024)
 
-                # Gunakan username 08... untuk set limit
-                limit_success, limit_msg = set_hotspot_user_limit(mikrotik_conn_pool, username_08, limit_bytes_total)
+                # PERBAIKAN: Gunakan mikrotik_api_connection
+                limit_success, limit_msg = set_hotspot_user_limit(mikrotik_api_connection, username_08, limit_bytes_total)
                 if limit_success:
                     limit_update_count += 1
                 else:
