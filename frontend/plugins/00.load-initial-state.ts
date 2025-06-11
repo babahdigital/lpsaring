@@ -8,37 +8,29 @@ export default defineNuxtPlugin(async (nuxtApp) => {
   const settingsStore = useSettingsStore()
   const maintenanceStore = useMaintenanceStore()
 
-  // Di sisi klien, jika state 'isLoaded' sudah true (karena ditransfer dari server),
-  // hentikan eksekusi untuk menghindari pengambilan data ganda dan reset state.
-  if (import.meta.client && settingsStore.isLoaded) {
-    return
-  }
-
-  // Kode ini akan berjalan di server, atau di klien jika ini adalah navigasi sisi klien pertama kali.
-  try {
-    // PERBAIKAN: Secara eksplisit tentukan baseURL untuk panggilan di sisi server.
-    const runtimeConfig = useRuntimeConfig()
-    const fetchOptions: any = {}
-
-    // Saat di server, kita HARUS menyediakan baseURL lengkap dari runtimeConfig.
-    if (import.meta.server) {
-      fetchOptions.baseURL = runtimeConfig.internalApiBaseUrl
+  // PERBAIKAN UTAMA: Paksa plugin ini untuk hanya berjalan di sisi server.
+  // Nuxt akan secara otomatis menangani transfer state (hidrasi) ke klien.
+  // Ini adalah cara paling andal untuk menghindari race condition di klien.
+  if (import.meta.server) {
+    try {
+      const runtimeConfig = useRuntimeConfig()
+      
+      // Ambil data pengaturan publik HANYA di server menggunakan URL internal lengkap.
+      const publicSettings = await $fetch<SettingSchema[]>('settings/public', {
+        baseURL: runtimeConfig.internalApiBaseUrl
+      });
+      
+      if (publicSettings) {
+          settingsStore.setSettings(publicSettings);
+      } else {
+          settingsStore.setSettings([]);
+      }
+      
+    } catch (error) {
+      console.error('KRITIS: Gagal memuat pengaturan awal dari server.', error);
+      // Set state default jika gagal agar aplikasi tidak crash.
+      settingsStore.setSettings([])
+      maintenanceStore.setMaintenanceStatus(false, '');
     }
-    // Saat di klien, proxy akan menangani path relatif, jadi tidak perlu baseURL.
-
-    const publicSettings = await $fetch<SettingSchema[]>('settings/public', fetchOptions);
-    
-    // Setelah data didapat, isi state di Pinia store.
-    if (publicSettings) {
-        settingsStore.setSettings(publicSettings);
-    } else {
-        settingsStore.setSettings([]); // Pastikan tetap array kosong jika data null
-    }
-    
-  } catch (error) {
-    console.error('KRITIS: Gagal memuat pengaturan awal dari server.', error);
-    // Tetap set state kosong agar aplikasi tidak crash dan maintenance tidak aktif secara salah.
-    settingsStore.setSettings([])
-    maintenanceStore.setMaintenanceStatus(false, '');
   }
 })

@@ -14,42 +14,39 @@ const settingsStore = useSettingsStore()
 // Panggil initCore untuk inisialisasi dasar
 initCore()
 
-// Gunakan useHead untuk mengatur judul halaman secara dinamis
-// Data akan reaktif dan otomatis update saat nilai di settingsStore berubah
+// PERBAIKAN: Sederhanakan `useHead` untuk menghilangkan fallback yang berkonflik.
+// Sekarang ia hanya bergantung pada data dari settingsStore.
+// Jika data di store kosong, Nuxt akan otomatis menggunakan nilai default dari `nuxt.config.ts`.
 useHead({
-  title: computed(() => settingsStore.browserTitle || 'Portal Hotspot'),
+  // Judul utama situs, diambil dari pengaturan.
+  // Jika halaman tertentu mengatur judulnya sendiri, ini akan ditimpa oleh titleTemplate.
+  title: computed(() => settingsStore.browserTitle),
+
+  // Template untuk judul halaman.
   titleTemplate: (titleChunk) => {
-    // Format judul: "Judul Halaman - Nama Aplikasi"
-    // atau hanya "Nama Aplikasi" jika tidak ada judul spesifik
-    return titleChunk && titleChunk !== settingsStore.browserTitle
-      ? `${titleChunk} - ${settingsStore.appName || 'Hotspot APP'}`
-      : settingsStore.browserTitle || 'Portal Hotspot';
+    // Hanya gunakan template "Judul Halaman - Nama Aplikasi" jika nama aplikasi dari pengaturan ADA.
+    if (settingsStore.appName && titleChunk) {
+      return `${titleChunk} - ${settingsStore.appName}`;
+    }
+    
+    // Jika tidak, kembalikan hanya judul halaman atau biarkan Nuxt yang menangani.
+    return titleChunk || '';
   }
 })
 </script>
 
 <template>
   <VLocaleProvider :rtl="configStore.isAppRTL">
-    <!-- 
-      Style ini diperlukan oleh Vuetify untuk tema dinamis, jangan dihapus.
-    -->
     <VApp :style="`--v-global-theme-primary: ${hexToRgb(global.current.value.colors.primary)}`">
-      <!-- 
-        NuxtLayout dan NuxtPage akan menangani rendering halaman utama
-        dan halaman maintenance secara otomatis berdasarkan rute.
-        Tidak perlu logika v-if/v-else di sini.
-      -->
       <NuxtLayout>
         <NuxtPage />
       </NuxtLayout>
 
-      <!-- Komponen tambahan yang hanya berjalan di client -->
       <ClientOnly>
         <ScrollToTop />
         <template #placeholder />
       </ClientOnly>
       
-      <!-- Komponen untuk menampilkan notifikasi snackbar global -->
       <AppSnackbar />
     </VApp>
   </VLocaleProvider>
