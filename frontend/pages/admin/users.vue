@@ -229,6 +229,13 @@ function openDialog(type: 'view' | 'approve' | 'delete' | 'edit' | 'reject', use
       userToEdit.kamar = formatKamarDisplay(userToEdit.kamar);
     }
     
+    // Memastikan nomor telepon diformat menjadi '0' saat dialog dibuka untuk input form
+    if (userToEdit.phone_number) {
+      userToEdit.phone_number_display = formatPhoneNumberDisplay(userToEdit.phone_number);
+    } else {
+      userToEdit.phone_number_display = ''; // Atur ke string kosong jika tidak ada nomor telepon
+    }
+
     editedUser.value = userToEdit;
     
     // Inisialisasi isUserDataInputActive berdasarkan data yang ada HANYA untuk role ADMIN
@@ -702,7 +709,7 @@ useHead({ title: 'Manajemen Pengguna' })
                     :disabled="loading"
                     class="my-1"
                 >
-                    Reset Password Admin
+                    Generate & Kirim Password Admin
                 </VBtn>
                 
                 <VSpacer/>
@@ -785,7 +792,15 @@ useHead({ title: 'Manajemen Pengguna' })
                 <AppTextField v-model="editedUser.full_name" label="Nama Lengkap" density="compact" :rules="[v => !!v || 'Nama wajib diisi']" />
               </VCol>
               <VCol cols="12">
-                <AppTextField v-model="editedUser.phone_number" label="Nomor Telepon" density="compact" @blur="normalizePhoneNumberOnBlur" :rules="[v => !!v || 'Nomor telepon wajib diisi']" />
+                <!-- Menggunakan value untuk tampilan awal, v-model untuk binding input -->
+                <AppTextField 
+                  :value="editedUser.phone_number_display"
+                  @input="editedUser.phone_number = $event.target.value"
+                  label="Nomor Telepon" 
+                  density="compact" 
+                  @blur="normalizePhoneNumberOnBlur" 
+                  :rules="[v => !!v || 'Nomor telepon wajib diisi']" 
+                />
               </VCol>
 
               <template v-if="editedUser.role === 'USER'">
