@@ -29,6 +29,6 @@ export default [
   {
     title: 'Event & Promo',
     to: { path: '/admin/promos' },
-    icon: { icon: 'tabler-discount-2' },
+    icon: { icon: 'tabler-discount' },
   },
 ]
