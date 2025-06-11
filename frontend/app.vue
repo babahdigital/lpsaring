@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useTheme } from 'vuetify'
+import { watchEffect } from 'vue'
 import ScrollToTop from '@core/components/ScrollToTop.vue'
 import initCore from '@core/initCore'
 import { useConfigStore } from '@core/stores/config'
@@ -14,26 +15,30 @@ const settingsStore = useSettingsStore()
 // Panggil initCore untuk inisialisasi dasar
 initCore()
 
-// PERBAIKAN: Logika `useHead` disempurnakan untuk menangani semua kasus judul.
+// PENYEMPURNAAN: Sinkronisasi Otomatis Tema dari Database
+// watchEffect akan berjalan setiap kali nilai di dalam settingsStore berubah.
+// Ini memastikan bahwa tema yang disimpan di database akan langsung diterapkan.
+watchEffect(() => {
+  // Hanya jalankan jika pengaturan sudah dimuat dari database
+  if (settingsStore.isLoaded) {
+    configStore.theme = settingsStore.theme
+    configStore.skin = settingsStore.skin
+    configStore.appContentLayoutNav = settingsStore.layout
+    configStore.appContentWidth = settingsStore.contentWidth
+  }
+})
+
+// Logika `useHead` yang sudah benar untuk menangani judul
 useHead({
-  // Menetapkan judul default untuk seluruh aplikasi.
-  // Ini akan menjadi nilai `titleChunk` pada halaman yang tidak memiliki `useHead` sendiri.
   title: computed(() => settingsStore.browserTitle),
-
-  // Template ini akan memformat judul akhir.
   titleTemplate: (titleChunk) => {
-    // Ambil nama aplikasi dan judul browser dari store, berikan fallback jika kosong.
     const appName = settingsStore.appName || 'Sobigidul';
-    const browserTitle = settingsStore.browserTitle || 'Hotspot App';
+    const browserTitle = settingsStore.browserTitle || 'Hotspot APP';
 
-    // Jika ada judul halaman spesifik (titleChunk tidak kosong dan berbeda dari judul default),
-    // maka format menjadi "Judul Halaman - Nama Aplikasi".
     if (titleChunk && titleChunk !== browserTitle) {
       return `${titleChunk} By ${appName}`;
     }
     
-    // Jika tidak ada judul halaman spesifik, cukup kembalikan judul browser default.
-    // Ini akan menjadi judul untuk halaman utama dan halaman lain tanpa `useHead`.
     return browserTitle;
   }
 })
