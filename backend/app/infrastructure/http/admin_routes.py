@@ -126,7 +126,6 @@ def get_notification_recipients(current_admin: User):
 @admin_bp.route('/notification-recipients', methods=['POST'])
 @super_admin_required
 def update_notification_recipients(current_admin: User):
-    """Update notification recipients for a specific notification type."""
     json_data = request.get_json()
     if not json_data:
         return jsonify({"message": "Request body cannot be empty."}), HTTPStatus.BAD_REQUEST
@@ -145,14 +144,15 @@ def update_notification_recipients(current_admin: User):
         db.session.commit()
         response = NotificationUpdateResponseSchema(total_recipients=len(new_recipients))
         return jsonify(response.model_dump()), HTTPStatus.OK
-    except ValidationError as e: # Baris ini adalah penyebab NameError
+    except ValidationError as e:
+        # Tambahkan logging di sini untuk melihat detail error Pydantic
+        current_app.logger.error(f"Pydantic validation error in update_notification_recipients: {e.errors()}", exc_info=True)
         return jsonify({"errors": e.errors()}), HTTPStatus.UNPROCESSABLE_ENTITY
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Failed to update notification recipients: {e}", exc_info=True)
         return jsonify({"message": "An internal error occurred while saving data."}), HTTPStatus.INTERNAL_SERVER_ERROR
-
-
+        
 @admin_bp.route('/transactions', methods=['GET'])
 @admin_required
 def get_transactions_list(current_admin: User):
