@@ -50,7 +50,8 @@ onMounted(async () => {
   
   isLoading.value = true;
   try {
-    const response = await $api<SettingSchema[]>('/admin/settings');
+    // PERBAIKAN: Endpoint disesuaikan menjadi /api/admin/settings
+    const response = await $api<SettingSchema[]>('/api/admin/settings');
     
     localSettings.value = response.reduce((acc, setting) => {
       acc[setting.setting_key] = setting.setting_value || '';
@@ -81,7 +82,8 @@ async function handleSaveChanges() {
       }
     });
 
-    await $api('/admin/settings', {
+    // PERBAIKAN UTAMA: Endpoint diubah menjadi /api/admin/settings agar sesuai dengan registrasi blueprint di __init__.py
+    await $api('/api/admin/settings', {
       method: 'PUT',
       body: { settings: settingsToSave }
     });
@@ -100,27 +102,21 @@ async function handleSaveChanges() {
     });
 
   } catch (e: any) {
-    // PERBAIKAN: Menangkap dan menampilkan detail error validasi dengan lebih baik
     console.error('Gagal menyimpan pengaturan. Detail error:', e.data || e);
 
     let errorDetails = 'Terjadi kesalahan pada server.';
 
-    // Cek jika ada detail error dari response API
     if (e.data && e.data.errors && Array.isArray(e.data.errors)) {
-      // Format pesan error dari array agar mudah dibaca
       errorDetails = e.data.errors.map((err: any) => {
-        // Menangani format error yang mungkin berupa object atau string
         if (typeof err === 'object' && err.message) {
-          return err.message; // Contoh format: { field: '...', message: 'Pesan error.' }
+          return err.message;
         }
         return String(err);
-      }).join(' '); // Gabungkan beberapa pesan error jika ada
+      }).join(' ');
     } else if (e.data && e.data.message) {
-      // Menangani format error tunggal
       errorDetails = e.data.message;
     }
 
-    // Tampilkan notifikasi yang informatif kepada pengguna
     snackbar.add({
       type: 'error',
       title: `Gagal Menyimpan (Error ${e.statusCode || '422'})`,
