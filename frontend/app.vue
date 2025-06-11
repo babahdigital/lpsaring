@@ -23,18 +23,18 @@ const vAppStyle = computed(() => {
   return {}
 })
 
-// Sinkronisasi Otomatis Tema dari Database
+// PERBAIKAN UTAMA: Bungkus seluruh logika sinkronisasi agar hanya berjalan di sisi klien.
+// Ini mencegah error SSR dan memastikan state diterapkan dengan benar setelah hidrasi.
 watchEffect(() => {
-  if (settingsStore.isLoaded) {
-    // 1. Terapkan pengaturan ke configStore (untuk skin, layout, dll.)
-    configStore.theme = settingsStore.theme
-    configStore.skin = settingsStore.skin
-    configStore.appContentLayoutNav = settingsStore.layout
-    configStore.appContentWidth = settingsStore.contentWidth
+  if (import.meta.client) {
+    if (settingsStore.isLoaded) {
+      // 1. Terapkan pengaturan ke configStore (untuk skin, layout, dll.)
+      configStore.theme = settingsStore.theme
+      configStore.skin = settingsStore.skin
+      configStore.appContentLayoutNav = settingsStore.layout
+      configStore.appContentWidth = settingsStore.contentWidth
 
-    // 2. PERBAIKAN: Hanya perintahkan Vuetify untuk mengubah tema di sisi klien.
-    // Ini mencegah error SSR saat server mencoba mengubah tema sebelum siap.
-    if (import.meta.client) {
+      // 2. Perintahkan Vuetify untuk mengubah tema global.
       global.name.value = configStore.theme
     }
   }
