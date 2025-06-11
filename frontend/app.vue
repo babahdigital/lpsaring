@@ -14,23 +14,27 @@ const settingsStore = useSettingsStore()
 // Panggil initCore untuk inisialisasi dasar
 initCore()
 
-// PERBAIKAN: Sederhanakan `useHead` untuk menghilangkan fallback yang berkonflik.
-// Sekarang ia hanya bergantung pada data dari settingsStore.
-// Jika data di store kosong, Nuxt akan otomatis menggunakan nilai default dari `nuxt.config.ts`.
+// PERBAIKAN: Logika `useHead` disempurnakan untuk menangani semua kasus judul.
 useHead({
-  // Judul utama situs, diambil dari pengaturan.
-  // Jika halaman tertentu mengatur judulnya sendiri, ini akan ditimpa oleh titleTemplate.
+  // Menetapkan judul default untuk seluruh aplikasi.
+  // Ini akan menjadi nilai `titleChunk` pada halaman yang tidak memiliki `useHead` sendiri.
   title: computed(() => settingsStore.browserTitle),
 
-  // Template untuk judul halaman.
+  // Template ini akan memformat judul akhir.
   titleTemplate: (titleChunk) => {
-    // Hanya gunakan template "Judul Halaman - Nama Aplikasi" jika nama aplikasi dari pengaturan ADA.
-    if (settingsStore.appName && titleChunk) {
-      return `${titleChunk} - ${settingsStore.appName}`;
+    // Ambil nama aplikasi dan judul browser dari store, berikan fallback jika kosong.
+    const appName = settingsStore.appName || 'Hotspot App';
+    const browserTitle = settingsStore.browserTitle || 'Portal Hotspot';
+
+    // Jika ada judul halaman spesifik (titleChunk tidak kosong dan berbeda dari judul default),
+    // maka format menjadi "Judul Halaman - Nama Aplikasi".
+    if (titleChunk && titleChunk !== browserTitle) {
+      return `${titleChunk} - ${appName}`;
     }
     
-    // Jika tidak, kembalikan hanya judul halaman atau biarkan Nuxt yang menangani.
-    return titleChunk || '';
+    // Jika tidak ada judul halaman spesifik, cukup kembalikan judul browser default.
+    // Ini akan menjadi judul untuk halaman utama dan halaman lain tanpa `useHead`.
+    return browserTitle;
   }
 })
 </script>
