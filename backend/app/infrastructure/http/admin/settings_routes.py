@@ -64,8 +64,9 @@ def update_application_settings(current_admin: User):
             is_active_str = settings_dict.get('MAINTENANCE_MODE_ACTIVE', 'False')
             if is_active_str not in ['True', 'False']:
                 errors.append({"field": "MAINTENANCE_MODE_ACTIVE", "message": "Nilai harus 'True' atau 'False'"})
-            elif is_active_str == 'True' and not settings_dict.get('MAINTENANCE_MODE_MESSAGE'):
-                errors.append({"field": "MAINTENANCE_MODE_MESSAGE", "message": "Pesan maintenance wajib diisi jika mode diaktifkan"})
+            # PERBAIKAN: Validasi pesan maintenance dihapus agar boleh kosong.
+            # Logika sebelumnya: elif is_active_str == 'True' and not settings_dict.get('MAINTENANCE_MODE_MESSAGE'):
+            # Sekarang tidak ada validasi untuk pesan, sehingga pesan boleh kosong.
 
         if 'ENABLE_WHATSAPP_NOTIFICATIONS' in settings_dict:
             is_enabled_str = settings_dict.get('ENABLE_WHATSAPP_NOTIFICATIONS', 'False')
@@ -77,8 +78,7 @@ def update_application_settings(current_admin: User):
         if errors:
             return jsonify({"errors": errors}), HTTPStatus.UNPROCESSABLE_ENTITY
             
-        # 3. PERBAIKAN FINAL: Hapus transformasi data yang salah.
-        # Langsung panggil service dengan data dictionary yang sudah valid.
+        # 3. Langsung panggil service dengan data dictionary yang sudah valid.
         settings_service.update_settings(settings_dict)
         
         # 4. Commit transaksi setelah service selesai bekerja.
