@@ -285,7 +285,7 @@
                     </VAvatar>
                   </template>
                   <VListItemTitle class="font-weight-medium">{{ user.full_name }}</VListItemTitle>
-                  <VListItemSubtitle class="text-medium-emphasis">{{ user.phone_number }}</VListItemSubtitle>
+                  <VListItemSubtitle class="text-medium-emphasis">{{ formatPhoneNumberForDisplay(user.phone_number) }}</VListItemSubtitle>
                 </VListItem>
               </template>
               <VListItem v-else class="text-center py-8 no-users">
@@ -320,7 +320,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, reactive } from 'vue';
+import { ref, computed, watch } from 'vue';
 import type { VDataTableServer } from 'vuetify/components';
 import { useAuthStore } from '@/store/auth';
 
@@ -338,11 +338,12 @@ interface UserSelectItem {
   id: string;
   full_name: string;
   phone_number: string;
+  role: 'USER' | 'ADMIN' | 'SUPER_ADMIN'; // Menambahkan 'role'
 }
 
 // --- State Management ---
 const { $api } = useNuxtApp();
-const authStore = useAuthStore(); // Siap digunakan jika perlu
+const authStore = useAuthStore();
 
 const options = ref<InstanceType<typeof VDataTableServer>['$props']['options']>({
   page: 1,
@@ -377,7 +378,7 @@ const queryParams = computed(() => ({
   itemsPerPage: options.value.itemsPerPage,
   sortBy: options.value.sortBy[0]?.key ?? 'created_at',
   sortOrder: options.value.sortBy[0]?.order ?? 'desc',
-  search: search.value, // Ini akan dikirim ke backend untuk pencarian global
+  search: search.value, 
   user_id: selectedUser.value?.id,
   start_date: startDate.value ? startDate.value.toISOString().split('T')[0] : undefined,
   end_date: endDate.value ? endDate.value.toISOString().split('T')[0] : undefined,
@@ -423,6 +424,15 @@ const formatStatus = (status: string) => {
   return statusMap[status] || status;
 };
 
+// Fungsi baru untuk format nomor telepon
+const formatPhoneNumberForDisplay = (phoneNumber: string | null) => {
+  if (!phoneNumber) return '';
+  if (phoneNumber.startsWith('+62')) {
+    return '0' + phoneNumber.substring(3);
+  }
+  return phoneNumber;
+};
+
 const formatCurrency = (value: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(value);
 const formatDateTime = (dateString: string) => new Date(dateString).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 const formatDate = (date: Date | null) => date ? new Date(date).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : '';
@@ -435,29 +445,23 @@ const formattedDateRangeForChip = computed(() => {
     return `${start} - ${end}`;
 });
 
-// PENYEMPURNAAN PENCARIAN DIALOG: Helper JS untuk variasi nomor telepon
 const getPhoneNumberVariationsJS = (query: string): string[] => {
     const cleaned = query.replace(/\D/g, '');
     if (!cleaned) return [];
     const variations = new Set<string>();
-    
-    // 08... -> +628...
     if (cleaned.startsWith('08')) {
         variations.add('+62' + cleaned.substring(1));
     }
-    // 628... -> +628...
     if (cleaned.startsWith('628')) {
         variations.add('+' + cleaned);
     }
-    // +628...
     if (cleaned.startsWith('628')) {
         variations.add('+62' + cleaned.substring(2));
     }
-    variations.add(cleaned); // Tambahkan versi angka saja
+    variations.add(cleaned);
     return Array.from(variations);
 };
 
-// PENYEMPURNAAN PENCARIAN DIALOG: Logika filter yang lebih cerdas
 const filteredUserList = computed(() => {
   if (!userSearch.value) return userList.value;
   const queryLower = userSearch.value.toLowerCase();
@@ -465,16 +469,12 @@ const filteredUserList = computed(() => {
   const phoneVariations = getPhoneNumberVariationsJS(userSearch.value);
 
   return userList.value.filter(user => {
-    // Selalu cek nama
     if (user.full_name.toLowerCase().includes(queryLower)) {
         return true;
     }
-    // Jika ada variasi telepon, cek semua variasi
     if (phoneVariations.length > 0) {
-        // Cek apakah nomor telepon di user list mengandung salah satu variasi
         return phoneVariations.some(variation => user.phone_number.includes(variation));
     }
-    // Fallback jika bukan format telepon yang dikenali
     return user.phone_number.includes(queryLower);
   });
 });
@@ -513,12 +513,16 @@ const openUserFilterDialog = async () => {
   tempSelectedUser.value = selectedUser.value;
   if (userList.value.length > 0) return;
   try {
-    // PERBAIKAN: Mengambil data dari properti 'items' di dalam respons
     const responseData = await $api<{ items: UserSelectItem[] }>('/admin/users?all=true');
-    userList.value = responseData && Array.isArray(responseData.items) ? responseData.items : [];
+    if (responseData && Array.isArray(responseData.items)) {
+      // Filter hanya untuk peran 'USER'
+      userList.value = responseData.items.filter(user => user.role === 'USER');
+    } else {
+      userList.value = [];
+    }
   } catch (e: any) {
     showSnackbar(e.data?.message || 'Gagal memuat daftar pengguna.', 'error');
-    userList.value = []; // Pastikan list kosong jika terjadi error
+    userList.value = [];
   }
 };
 
