@@ -1,69 +1,36 @@
-import { defineNuxtPlugin, useNuxtApp } from '#app'
 import { useSettingsStore } from '~/store/settings'
 import { useMaintenanceStore } from '~/store/maintenance'
 import type { SettingSchema } from '@/types/api/settings'
 
-// Definisikan tipe untuk payload yang akan kita teruskan dari server ke client
-interface PiniaInitialState {
-  settings: ReturnType<typeof useSettingsStore>['$state'];
-  maintenance: ReturnType<typeof useMaintenanceStore>['$state'];
-}
-
-/**
- * Plugin ini berjalan sebelum aplikasi diinisialisasi untuk memuat pengaturan penting
- * dari backend dan menyimpannya di Pinia store.
- */
-export default defineNuxtPlugin(async () => {
-  const nuxtApp = useNuxtApp()
+export default defineNuxtPlugin(async (nuxtApp) => {
   const settingsStore = useSettingsStore()
-  const maintenanceStore = useMaintenanceStore()
-
-  // Hanya jalankan fetch jika state belum terisi.
+  
+  // Jika data sudah dimuat (misalnya, saat navigasi sisi klien), hentikan eksekusi.
   if (settingsStore.isLoaded) {
     return
   }
 
-  // Bagian ini hanya berjalan di server untuk fetch data awal
+  // Bagian ini hanya berjalan satu kali di sisi server saat aplikasi pertama kali dimuat.
   if (process.server) {
     try {
-      // PERBAIKAN: Panggil endpoint yang benar sesuai dengan backend
-      const publicSettings = await nuxtApp.$api<SettingSchema[]>('/settings/public')
+      // Panggil API untuk mendapatkan pengaturan publik.
+      // $fetch langsung digunakan di sini karena ini adalah metode universal Nuxt.
+      const publicSettings = await $fetch<SettingSchema[]>('/api/settings/public', {
+        baseURL: nuxtApp.ssrContext?.event.node.req.headers.host 
+          ? `http://${nuxtApp.ssrContext.event.node.req.headers.host}`
+          : 'http://localhost:8000', // Fallback untuk development
+      });
       
-      // Mengisi settings store utama
+      // Setelah data didapat, isi state di Pinia store.
       settingsStore.setSettings(publicSettings || [])
       
-      // PERBAIKAN: Update maintenance store secara langsung setelah fetch
-      // Ini memastikan maintenance store memiliki data terbaru saat inisialisasi.
-      const maintenanceActive = publicSettings.find(s => s.setting_key === 'MAINTENANCE_MODE_ACTIVE')?.setting_value === 'True';
-      const maintenanceMessage = publicSettings.find(s => s.setting_key === 'MAINTENANCE_MODE_MESSAGE')?.setting_value || '';
-      maintenanceStore.setMaintenanceStatus(maintenanceActive, maintenanceMessage);
-      
     } catch (error) {
-      console.error('Kritis: Gagal memuat pengaturan awal dari server.', error)
+      console.error('KRITIS: Gagal memuat pengaturan awal dari server.', error)
+      // Tetap set state kosong agar aplikasi tidak crash.
       settingsStore.setSettings([])
     }
   }
-
-  // Di server, kirim state ke client melalui payload
-  if (process.server) {
-    const state: PiniaInitialState = {
-        settings: settingsStore.$state,
-        maintenance: maintenanceStore.$state,
-    };
-    nuxtApp.payload.provide = nuxtApp.payload.provide || {};
-    (nuxtApp.payload.provide as Record<string, any>)['pinia-initial-state'] = state;
-  }
-  // Di client, ambil state dari payload untuk menghindari fetch ulang
-  else if (nuxtApp.payload?.provide && (nuxtApp.payload.provide as Record<string, any>)['pinia-initial-state']) {
-      const initialState = (nuxtApp.payload.provide as Record<string, any>)['pinia-initial-state'] as PiniaInitialState;
-
-      if (initialState.settings) {
-          settingsStore.$patch(initialState.settings);
-      }
-      if (initialState.maintenance) {
-          maintenanceStore.$patch(initialState.maintenance);
-      }
-      // Pastikan flag isLoaded juga di-set di client setelah patching
-      settingsStore.isLoaded = true;
-  }
+  
+  // Tandai bahwa data sudah selesai dimuat.
+  settingsStore.isLoaded = true
 })

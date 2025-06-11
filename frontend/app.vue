@@ -2,75 +2,55 @@
 import { useTheme } from 'vuetify'
 import ScrollToTop from '@core/components/ScrollToTop.vue'
 import initCore from '@core/initCore'
-import { initConfigStore, useConfigStore } from '@core/stores/config'
+import { useConfigStore } from '@core/stores/config'
 import { hexToRgb } from '@core/utils/colorConverter'
 import { useSettingsStore } from '~/store/settings'
-import { useMaintenanceStore } from '~/store/maintenance'
-import { useHead, useNuxtApp } from '#app'
 
+// Inisialisasi store-store yang diperlukan
 const { global } = useTheme()
 const configStore = useConfigStore()
 const settingsStore = useSettingsStore()
-const maintenanceStore = useMaintenanceStore()
-const nuxtApp = useNuxtApp()
 
-onMounted(() => {
-  initConfigStore()
-  
-  // PERBAIKAN: Pindahkan logika mobile ke sini untuk menghindari error SSR
-  if (process.client) {
-    const { isMobile } = useDevice()
-    if (isMobile) {
-      configStore.appContentLayoutNav = 'vertical'
-    }
-  }
-})
-
+// Panggil initCore untuk inisialisasi dasar
 initCore()
 
+// Gunakan useHead untuk mengatur judul halaman secara dinamis
+// Data akan reaktif dan otomatis update saat nilai di settingsStore berubah
 useHead({
-  title: computed(() => settingsStore.browserTitle || 'Hotspot APP'),
+  title: computed(() => settingsStore.browserTitle || 'Portal Hotspot'),
   titleTemplate: (titleChunk) => {
-    return titleChunk 
-      ? `${titleChunk} Oleh ${settingsStore.appName || 'SOBIDIGUL'}` 
-      : (settingsStore.appName || 'Hotspot APP');
-  }
-})
-
-// PERBAIKAN: Tambahkan pengecekan maintenance mode
-watchEffect(() => {
-  if (maintenanceStore.isActive) {
-    // Redirect ke halaman maintenance jika tidak di halaman admin
-    const currentPath = nuxtApp.$router.currentRoute.value.path
-    const isAdminPath = currentPath.startsWith('/admin')
-    
-    if (!isAdminPath && currentPath !== '/maintenance') {
-      nuxtApp.$router.replace('/maintenance')
-    }
+    // Format judul: "Judul Halaman - Nama Aplikasi"
+    // atau hanya "Nama Aplikasi" jika tidak ada judul spesifik
+    return titleChunk && titleChunk !== settingsStore.browserTitle
+      ? `${titleChunk} - ${settingsStore.appName || 'Hotspot APP'}`
+      : settingsStore.browserTitle || 'Portal Hotspot';
   }
 })
 </script>
 
 <template>
   <VLocaleProvider :rtl="configStore.isAppRTL">
+    <!-- 
+      Style ini diperlukan oleh Vuetify untuk tema dinamis, jangan dihapus.
+    -->
     <VApp :style="`--v-global-theme-primary: ${hexToRgb(global.current.value.colors.primary)}`">
-      <!-- PERBAIKAN: Sembunyikan konten jika maintenance aktif dan bukan admin -->
-      <template v-if="!maintenanceStore.isActive || $route.path.startsWith('/admin')">
-        <NuxtLayout>
-          <NuxtPage />
-        </NuxtLayout>
+      <!-- 
+        NuxtLayout dan NuxtPage akan menangani rendering halaman utama
+        dan halaman maintenance secara otomatis berdasarkan rute.
+        Tidak perlu logika v-if/v-else di sini.
+      -->
+      <NuxtLayout>
+        <NuxtPage />
+      </NuxtLayout>
 
-        <ClientOnly>
-          <ScrollToTop />
-          <template #placeholder />
-        </ClientOnly>
-        <AppSnackbar />
-      </template>
+      <!-- Komponen tambahan yang hanya berjalan di client -->
+      <ClientOnly>
+        <ScrollToTop />
+        <template #placeholder />
+      </ClientOnly>
       
-      <!-- Tampilkan halaman maintenance jika mode aktif -->
-      <template v-else>
-        <NuxtPage page-key="maintenance" :page-path="'/maintenance'" />
-      </template>
+      <!-- Komponen untuk menampilkan notifikasi snackbar global -->
+      <AppSnackbar />
     </VApp>
   </VLocaleProvider>
 </template>
