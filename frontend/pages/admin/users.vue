@@ -88,7 +88,6 @@ watch(() => editedUser.value.role, (newRole) => {
   }
 });
 
-
 const headers = computed(() => {
   const base = [
     { title: 'PENGGUNA', key: 'full_name', sortable: true },
@@ -173,20 +172,23 @@ const roleMap = {
   SUPER_ADMIN: { text: 'Super Admin', color: 'purple', variant: 'tonal' },
 }
 
-// Perbaikan: Pastikan normalisasi nomor telepon selalu ke format +62 saat blur
-function normalizePhoneNumberOnBlur() {
+// **PERBAIKAN**: Fungsi ini menormalisasi nomor telepon ke format +62.
+// Dipanggil saat input kehilangan fokus (blur) dan sebelum data disimpan.
+function normalizePhoneNumber() {
   if (editedUser.value.phone_number) {
-    let cleaned = editedUser.value.phone_number.replace(/\D/g, ''); // Hapus semua non-digit
-    if (cleaned.startsWith('08')) {
-      editedUser.value.phone_number = `+62${cleaned.substring(1)}`;
-    } else if (cleaned.startsWith('62')) {
-      editedUser.value.phone_number = `+${cleaned}`;
-    } else if (cleaned.startsWith('+62')) {
-      // Sudah dalam format yang benar, tidak perlu diubah
-    } else {
-      // Jika format tidak dikenali, biarkan seperti adanya atau berikan pesan kesalahan
-      // Untuk tujuan ini, kita biarkan saja, validasi Pydantic di backend akan menangani.
-      // current_app.logger.warning("Nomor telepon tidak dalam format Indonesia yang diharapkan.");
+    // Menghapus semua karakter yang bukan digit, kecuali '+' di awal
+    let phone = editedUser.value.phone_number.trim();
+    phone = phone.replace(/\s+/g, '').replace(/[^0-9+]/g, '');
+
+    if (phone.startsWith('08')) {
+      // Mengubah format '08...' menjadi '+628...'
+      editedUser.value.phone_number = `+628${phone.substring(2)}`;
+    } else if (phone.startsWith('62')) {
+      // Memastikan format '62...' memiliki '+' di depan
+      editedUser.value.phone_number = `+${phone}`;
+    } else if (phone.startsWith('8')) {
+      // Mengubah format '8...' (tanpa 0) menjadi '+628...'
+      editedUser.value.phone_number = `+62${phone}`;
     }
   }
 }
@@ -209,11 +211,9 @@ function closeDialog() {
 
 function openDialog(type: 'view' | 'approve' | 'delete' | 'edit' | 'reject', user?: User) {
   if (type === 'edit') {
-    if (!user) { // Untuk ADD NEW USER (type 'edit' tanpa user)
+    if (!user) { // Untuk TAMBAH PENGGUNA BARU
       editedUser.value = { ...defaultUser };
-      editedUser.value.phone_number_display = ''; // Untuk user baru, kosongkan display
-      isUserDataInputActive.value = false; // Default: switch off for new user
-      // Saat menambahkan user baru, jika default role adalah ADMIN, aktifkan switch alamat.
+      isUserDataInputActive.value = false;
       if (editedUser.value.role === 'ADMIN') {
         isUserDataInputActive.value = true;
       }
@@ -221,34 +221,31 @@ function openDialog(type: 'view' | 'approve' | 'delete' | 'edit' | 'reject', use
       return;
     }
 
-    // Untuk EDIT EXISTING USER
+    // Untuk EDIT PENGGUNA YANG SUDAH ADA
     selectedUser.value = { ...user };
     const userToEdit = JSON.parse(JSON.stringify(user));
-    
+
     // Memastikan kamar diformat menjadi hanya angka saat dialog dibuka
     if (userToEdit.kamar) {
       userToEdit.kamar = formatKamarDisplay(userToEdit.kamar);
     }
-    
-    // Memastikan nomor telepon diformat menjadi '0' saat dialog dibuka untuk input form
+
+    // **PERBAIKAN**: Mengubah nomor telepon ke format '08...' untuk ditampilkan di form.
+    // Fungsi normalizePhoneNumber akan mengubahnya kembali ke format '+62' saat disimpan.
     if (userToEdit.phone_number) {
-      userToEdit.phone_number_display = formatPhoneNumberDisplay(userToEdit.phone_number);
-    } else {
-      userToEdit.phone_number_display = ''; // Atur ke string kosong jika tidak ada nomor telepon
+      userToEdit.phone_number = formatPhoneNumberDisplay(userToEdit.phone_number);
     }
 
     editedUser.value = userToEdit;
-    
-    // Inisialisasi isUserDataInputActive berdasarkan data yang ada HANYA untuk role ADMIN
-    // Jika user yang diedit adalah ADMIN, set isUserDataInputActive default aktif
+
+    // Inisialisasi isUserDataInputActive berdasarkan data yang ada
     if (editedUser.value.role === 'ADMIN') {
-        isUserDataInputActive.value = true; // Selalu aktifkan untuk admin yang sudah ada
+      isUserDataInputActive.value = true;
     } else {
-        // Untuk USER, isUserDataInputActive selalu false karena blok/kamar selalu terlihat
-        isUserDataInputActive.value = false;
+      isUserDataInputActive.value = false;
     }
     dialog.edit = true;
-  } else { // For other dialogs (view, approve, delete, reject)
+  } else { // Untuk dialog lain (view, approve, delete, reject)
     if (user) {
       selectedUser.value = { ...user };
       dialog[type] = true;
@@ -260,25 +257,27 @@ function openDialog(type: 'view' | 'approve' | 'delete' | 'edit' | 'reject', use
 
 async function handleAction(type: 'approve' | 'delete' | 'update' | 'create' | 'reject') {
   if (type === 'create' || type === 'update') {
+    // **PERBAIKAN**: Normalisasi nomor telepon sebelum validasi dan pengiriman.
+    normalizePhoneNumber();
+    await nextTick(); // Menunggu DOM update jika diperlukan
+
     const { valid } = await formRef.value!.validate()
     if (!valid) return
   }
 
   let endpoint = '',
-      method: 'PATCH' | 'DELETE' | 'PUT' | 'POST' = 'POST',
-      successMessage = '',
-      body: object | undefined
+    method: 'PATCH' | 'DELETE' | 'PUT' | 'POST' = 'POST',
+    successMessage = '',
+    body: object | undefined
 
   const getPayload = () => {
     const payload: Partial<User> = { ...editedUser.value }
-    
-    // Handle blok and kamar based on role and switch status
+
+    // Handle blok dan kamar berdasarkan peran dan status switch
     if (payload.role === 'USER') {
-      // Untuk USER, blok dan kamar selalu wajib. Validasi di template sudah menangani ini.
-    } else if (payload.role === 'ADMIN') { // Jika role Admin
-      if (isUserDataInputActive.value) { // Jika switch diaktifkan, kirim nilai dari form
-        // Validasi wajib sudah di template jika switch aktif
-      } else { // Jika switch dimatikan, kirim blok dan kamar sebagai null
+      // Untuk USER, blok dan kamar selalu wajib.
+    } else if (payload.role === 'ADMIN') {
+      if (!isUserDataInputActive.value) { // Jika switch dimatikan, kirim blok dan kamar sebagai null
         payload.blok = null
         payload.kamar = null
       }
@@ -343,7 +342,7 @@ const resetHotspotPasswordForUser = async () => {
     showSnackbar('Hanya pengguna biasa yang dapat mereset password hotspot.', 'warning');
     return;
   }
-  
+
   if (confirm(`Anda yakin ingin mereset password hotspot untuk ${selectedUser.value.full_name}? Password baru akan dikirim via WhatsApp.`)) {
     try {
       loading.value = true;
@@ -369,15 +368,15 @@ const resetHotspotPasswordForUser = async () => {
 
 // Fungsi untuk Generate Password Admin (untuk admin yang sedang diedit)
 const generateAdminPasswordForAdmin = async () => {
-  if (!selectedUser.value || selectedUser.value.role !== 'ADMIN') { // Perbaikan: Gunakan selectedUser untuk tombol di dialog view
+  if (!selectedUser.value || selectedUser.value.role !== 'ADMIN') {
     showSnackbar('Hanya admin yang dapat meng-generate password portal.', 'warning');
     return;
   }
-  
+
   if (confirm(`Anda yakin ingin meng-generate ulang password portal untuk ${selectedUser.value.full_name}? Password baru akan dikirim via WhatsApp.`)) {
     try {
       loading.value = true;
-      const response = await $api<{ message: string }>('/admin/users/' + selectedUser.value.id + '/generate-admin-password', { // Perbaikan: Gunakan selectedUser.id
+      const response = await $api<{ message: string }>('/admin/users/' + selectedUser.value.id + '/generate-admin-password', {
         method: 'POST',
       });
 
@@ -653,7 +652,7 @@ useHead({ title: 'Manajemen Pengguna' })
                     <VListItem>
                         <template #prepend><VIcon icon="tabler-shield-check" /></template>
                         <VListItemTitle>
-                               <VChip :color="roleMap[selectedUser.role]?.color" size="small" label>{{ roleMap[selectedUser.role]?.text }}</VChip>
+                                <VChip :color="roleMap[selectedUser.role]?.color" size="small" label>{{ roleMap[selectedUser.role]?.text }}</Chip>
                         </VListItemTitle>
                     </VListItem>
                     <VListItem>
@@ -790,17 +789,17 @@ useHead({ title: 'Manajemen Pengguna' })
           <VCardText v-if="editedUser" class="pt-4">
             <VRow>
               <VCol cols="12">
-                <AppTextField v-model="editedUser.full_name" label="Nama Lengkap" density="compact" :rules="[v => !!v || 'Nama wajib diisi']" />
+                <AppTextField v-model="editedUser.full_name" label="Nama Lengkap" density="compact" :rules="[requiredRule]" />
               </VCol>
               <VCol cols="12">
-                <!-- Menggunakan value untuk tampilan awal, v-model untuk binding input -->
+                <!-- **PERBAIKAN**: Menggunakan v-model untuk binding dua arah yang reaktif. -->
                 <AppTextField 
-                  :value="editedUser.phone_number_display"
-                  @input="editedUser.phone_number = $event.target.value"
+                  v-model="editedUser.phone_number"
                   label="Nomor Telepon" 
+                  placeholder="Contoh: 081234567890"
                   density="compact" 
-                  @blur="normalizePhoneNumberOnBlur" 
-                  :rules="[v => !!v || 'Nomor telepon wajib diisi']" 
+                  @blur="normalizePhoneNumber" 
+                  :rules="[requiredRule]" 
                 />
               </VCol>
 
@@ -850,7 +849,7 @@ useHead({ title: 'Manajemen Pengguna' })
                   item-value="value"
                   label="Peran"
                   density="compact"
-                  :rules="[v => !!v || 'Peran wajib dipilih']"
+                  :rules="[requiredRule]"
                   :disabled="editedUser.id === authStore.user?.id"
                 />
               </VCol>
