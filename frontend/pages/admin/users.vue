@@ -892,7 +892,7 @@ useHead({ title: 'Manajemen Pengguna' })
       </div>
     </div>
     
-    <!-- --- DIALOG VIEW DIPERBARUI SECARA SIGNIFIKAN --- -->
+    <!-- --- DIALOG VIEW DIPERBARUI --- -->
     <VDialog
       v-model="dialog.view"
       max-width="600"
@@ -975,7 +975,7 @@ useHead({ title: 'Manajemen Pengguna' })
             </VListItem>
           </VList>
 
-          <!-- BAGIAN BARU: INFORMASI KUOTA (HANYA UNTUK USER BIASA) -->
+          <!-- BAGIAN INFORMASI KUOTA YANG DISIMPLIFY -->
           <template v-if="selectedUser.role === 'USER' && quotaDetails">
             <VDivider class="my-4" />
             <div class="text-overline mb-2">
@@ -994,31 +994,32 @@ useHead({ title: 'Manajemen Pengguna' })
             </div>
 
             <div v-else-if="quotaDetails.totalQuotaMB > 0">
-              <VProgressLinear
-                v-model="quotaDetails.percentageUsed"
-                :color="quotaDetails.statusColor"
-                height="20"
-                rounded
-                class="mb-2"
-              >
-                <template #default="{ value }">
-                  <strong class="text-white">{{ Math.ceil(value) }}% Terpakai</strong>
-                </template>
-              </VProgressLinear>
-              <div class="d-flex justify-space-between text-caption mb-3">
-                <span>{{ formatDataSize(quotaDetails.usedQuotaMB) }} dari {{ formatDataSize(quotaDetails.totalQuotaMB) }}</span>
-                <span class="font-weight-bold">Sisa: {{ formatDataSize(quotaDetails.remainingQuotaMB) }}</span>
-              </div>
-
               <VList
                 lines="one"
                 density="compact"
               >
+                <VListItem prepend-icon="tabler-database">
+                  <VListItemTitle>Total Kuota</VListItemTitle>
+                  <VListItemSubtitle>{{ formatDataSize(quotaDetails.totalQuotaMB) }}</VListItemSubtitle>
+                </VListItem>
+                <VListItem prepend-icon="tabler-database-import">
+                  <VListItemTitle>Kuota Terpakai</VListItemTitle>
+                  <VListItemSubtitle>{{ formatDataSize(quotaDetails.usedQuotaMB) }}</VListItemSubtitle>
+                </VListItem>
+                <VListItem prepend-icon="tabler-database-export">
+                  <VListItemTitle>Sisa Kuota</VListItemTitle>
+                  <VListItemSubtitle class="font-weight-bold">
+                    {{ formatDataSize(quotaDetails.remainingQuotaMB) }}
+                  </VListItemSubtitle>
+                </VListItem>
+
+                <VDivider class="my-1" />
+
                 <VListItem
                   v-if="quotaDetails.promoName"
                   prepend-icon="tabler-ticket"
                 >
-                  <VListItemTitle>Paket Promo</VListItemTitle>
+                  <VListItemTitle>Paket/Promo</VListItemTitle>
                   <VListItemSubtitle>{{ quotaDetails.promoName }}</VListItemSubtitle>
                 </VListItem>
                 <VListItem
@@ -1054,7 +1055,7 @@ useHead({ title: 'Manajemen Pengguna' })
               </VList>
             </div>
             <div v-else>
-               <VAlert
+              <VAlert
                 variant="tonal"
                 color="warning"
                 icon="tabler-alert-circle"
