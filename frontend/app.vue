@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { useTheme } from 'vuetify'
-import { watchEffect, computed } from 'vue'
+import { watchEffect, computed, onUnmounted } from 'vue'
 import ScrollToTop from '@core/components/ScrollToTop.vue'
 import initCore from '@core/initCore'
 import { useConfigStore } from '@core/stores/config'
 import { hexToRgb } from '@core/utils/colorConverter'
 import { useSettingsStore } from '~/store/settings'
+import { Theme } from '@/types/enums';
 
 // Inisialisasi store-store yang diperlukan
-const { global } = useTheme() // Menggunakan 'global' dari useTheme
+const { global } = useTheme()
 const configStore = useConfigStore()
 const settingsStore = useSettingsStore()
 
@@ -23,22 +24,42 @@ const vAppStyle = computed(() => {
   return {}
 })
 
-// PERBAIKAN UTAMA: Bungkus seluruh logika sinkronisasi agar hanya berjalan di sisi klien.
-// Ini mencegah error SSR dan memastikan state diterapkan dengan benar setelah hidrasi.
+// Logika sinkronisasi yang disempurnakan berdasarkan analisis Anda
 watchEffect(() => {
-  if (import.meta.client) {
-    if (settingsStore.isLoaded) {
-      // 1. Terapkan pengaturan ke configStore (untuk skin, layout, dll.)
-      configStore.theme = settingsStore.theme
-      configStore.skin = settingsStore.skin
-      configStore.appContentLayoutNav = settingsStore.layout
-      configStore.appContentWidth = settingsStore.contentWidth
+  if (import.meta.client && settingsStore.isLoaded) {
+    // 1. Terapkan skin, layout, dll.
+    configStore.skin = settingsStore.skin
+    configStore.appContentLayoutNav = settingsStore.layout
+    configStore.appContentWidth = settingsStore.contentWidth
 
-      // 2. Perintahkan Vuetify untuk mengubah tema global.
-      global.name.value = configStore.theme
-    }
+    // 2. Gunakan `effectiveTheme` dari store untuk menerapkan tema yang benar.
+    const themeToApply = settingsStore.effectiveTheme
+    configStore.theme = themeToApply
+    global.name.value = themeToApply
   }
 })
+
+// PENYEMPURNAAN: Tambahkan listener untuk perubahan tema sistem (OS)
+// Ini membuat tema 'system' benar-benar reaktif.
+if (import.meta.client) {
+  const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+
+  const handleSystemThemeChange = (e: MediaQueryListEvent) => {
+    if (settingsStore.theme === Theme.System) {
+      const newTheme = e.matches ? Theme.Dark : Theme.Light
+      configStore.theme = newTheme
+      global.name.value = newTheme
+    }
+  }
+
+  darkModeMediaQuery.addEventListener('change', handleSystemThemeChange)
+
+  // Pastikan untuk membersihkan listener saat komponen tidak lagi digunakan
+  onUnmounted(() => {
+    darkModeMediaQuery.removeEventListener('change', handleSystemThemeChange)
+  })
+}
+
 
 // Logika `useHead` yang sudah benar untuk menangani judul
 useHead({

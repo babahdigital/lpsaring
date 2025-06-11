@@ -1,6 +1,5 @@
-// frontend/store/settings.ts
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import type { SettingSchema } from '@/types/api/settings';
 import { useMaintenanceStore } from './maintenance';
 
@@ -14,8 +13,6 @@ import {
 
 export const useSettingsStore = defineStore('settings', () => {
   // --- STATE ---
-  // PERBAIKAN: Ubah nilai default menjadi string kosong atau null
-  // untuk mencegah flash of incorrect content saat hidrasi.
   const appName = ref('');
   const browserTitle = ref('');
   const theme = ref<Theme>(Theme.System);
@@ -26,13 +23,22 @@ export const useSettingsStore = defineStore('settings', () => {
 
   const maintenanceStore = useMaintenanceStore();
 
+  // PENYEMPURNAAN: Computed property untuk mendapatkan tema yang efektif (valid untuk Vuetify)
+  // Sesuai dengan analisis Anda untuk menangani tema 'system'.
+  const effectiveTheme = computed(() => {
+    if (theme.value === Theme.System) {
+      // Cek preferensi sistem hanya di sisi klien untuk menghindari error SSR.
+      if (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        return Theme.Dark;
+      }
+      return Theme.Light;
+    }
+    return theme.value;
+  });
+
   // --- ACTIONS ---
 
-  /**
-   * Fungsi internal untuk memetakan data dan memperbarui state.
-   */
   function _updateAllStates(settings: Record<string, string | null | undefined>) {
-    // Gunakan fallback ke string kosong jika nilai tidak ada
     appName.value = settings.APP_NAME || '';
     browserTitle.value = settings.APP_BROWSER_TITLE || '';
     theme.value = (settings.THEME as Theme) || Theme.System;
@@ -45,9 +51,6 @@ export const useSettingsStore = defineStore('settings', () => {
     maintenanceStore.setMaintenanceStatus(active, message);
   }
 
-  /**
-   * Action untuk mengisi seluruh state pada store dari data API (array SettingSchema)
-   */
   function setSettings(settings: SettingSchema[]) {
     const settingsMap = settings.reduce((acc, setting) => {
       acc[setting.setting_key] = setting.setting_value;
@@ -58,9 +61,6 @@ export const useSettingsStore = defineStore('settings', () => {
     isLoaded.value = true;
   }
 
-  /**
-   * Fungsi untuk update dari object (Record<string, string>)
-   */
   function setSettingsFromObject(settings: Record<string, string>) {
       _updateAllStates(settings);
   }
@@ -74,6 +74,7 @@ export const useSettingsStore = defineStore('settings', () => {
     layout,
     contentWidth,
     isLoaded,
+    effectiveTheme,
     setSettings,
     setSettingsFromObject,
   };
