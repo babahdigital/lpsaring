@@ -267,7 +267,8 @@
 
 <script setup lang="ts">
 import { useApiFetch } from '~/composables/useApiFetch';
-import { VDataTable } from 'vuetify/labs/VDataTable';
+// --- PERBAIKAN: Hapus impor eksplisit VDataTable untuk mengandalkan auto-import Vuetify ---
+// import { VDataTable } from 'vuetify/labs/VDataTable'; 
 import { computed, defineAsyncComponent, h } from 'vue';
 
 // --- PERBAIKAN: Menggunakan defineAsyncComponent dengan nama paket yang benar ('vue3-apexcharts') ---

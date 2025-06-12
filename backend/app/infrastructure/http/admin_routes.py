@@ -1,7 +1,6 @@
 # backend/app/infrastructure/http/admin_routes.py
-# PERUBAHAN: Endpoint dashboard/stats ditulis ulang sepenuhnya untuk menyediakan
-# data yang komprehensif untuk dasbor admin yang baru.
-# UPDATE: Logika terkait voucher telah dihapus sesuai permintaan.
+# PERUBAHAN: Memperbaiki sintaks query SQLAlchemy pada get_dashboard_stats
+# untuk mengatasi AttributeError: load_only.
 
 from flask import Blueprint, jsonify, request, current_app
 from sqlalchemy import func, or_, select, desc
@@ -19,7 +18,6 @@ from app.infrastructure.db.models import (
     User, UserRole, Package, ApprovalStatus, Transaction,
     TransactionStatus, NotificationRecipient, NotificationType
 )
-# Impor voucher dihapus karena tidak digunakan
     
 from .decorators import admin_required, super_admin_required
 from app.utils.formatters import get_phone_number_variations
@@ -29,7 +27,7 @@ from app.services import settings_service
 # Define admin_bp for remaining routes
 admin_bp = Blueprint('admin_api', __name__, url_prefix='/api/admin')
 
-# --- PERUBAHAN UTAMA PADA ENDPOINT STATS DASHBOARD ---
+# --- PERBAIKAN UTAMA PADA ENDPOINT STATS DASHBOARD ---
 @admin_bp.route('/dashboard/stats', methods=['GET'])
 @admin_required
 def get_dashboard_stats(current_admin: User):
@@ -49,6 +47,13 @@ def get_dashboard_stats(current_admin: User):
             Transaction.created_at >= start_of_today_utc
         )
         pendapatan_hari_ini = db.session.scalar(revenue_today_q) or Decimal('0.00')
+
+        # Tambahan: Pendapatan Bulan Ini
+        revenue_month_q = select(func.sum(Transaction.amount)).where(
+            Transaction.status == TransactionStatus.SUCCESS,
+            Transaction.created_at >= start_of_month_utc
+        )
+        pendapatan_bulan_ini = db.session.scalar(revenue_month_q) or Decimal('0.00')
 
         # 2. Pendaftar Baru (Menunggu Persetujuan)
         pendaftar_baru_q = select(func.count(User.id)).where(User.approval_status == ApprovalStatus.PENDING_APPROVAL)
@@ -77,8 +82,9 @@ def get_dashboard_stats(current_admin: User):
 
         # 6. Transaksi Terakhir (5 terbaru)
         transaksi_terakhir_q = select(Transaction).options(
-            selectinload(Transaction.user.load_only(User.full_name)),
-            selectinload(Transaction.package.load_only(Package.name))
+            # --- PERBAIKAN SINTAKS SQLAlchemy ---
+            selectinload(Transaction.user).load_only(User.full_name),
+            selectinload(Transaction.package).load_only(Package.name)
         ).where(Transaction.status == TransactionStatus.SUCCESS).order_by(desc(Transaction.created_at)).limit(5)
         
         latest_transactions = db.session.scalars(transaksi_terakhir_q).all()
@@ -104,6 +110,7 @@ def get_dashboard_stats(current_admin: User):
         # Gabungkan semua statistik menjadi satu respons
         stats = {
             "pendapatanHariIni": float(pendapatan_hari_ini),
+            "pendapatanBulanIni": float(pendapatan_bulan_ini),
             "pendaftarBaru": pendaftar_baru,
             "penggunaAktif": pengguna_aktif,
             "akanKadaluwarsa": akan_kadaluwarsa,
