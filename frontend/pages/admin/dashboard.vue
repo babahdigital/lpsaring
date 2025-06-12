@@ -189,24 +189,24 @@
                 :options="pieChartOptions"
                 :series="pieChartSeries"
               />
+              <div
+                v-else-if="!pending && pieChartSeries.length === 0"
+                class="text-center py-10"
+              >
+                Belum ada data penjualan paket bulan ini.
+              </div>
+              <div
+                v-else
+                class="text-center py-10"
+              >
+                Memuat data grafik...
+              </div>
               <template #fallback>
                 <div class="text-center pa-5">
                   Memuat komponen grafik...
                 </div>
               </template>
             </ClientOnly>
-            <div
-              v-if="!pending && pieChartSeries.length === 0"
-              class="text-center"
-            >
-              Belum ada data penjualan paket bulan ini.
-            </div>
-            <div
-              v-if="pending"
-              class="text-center"
-            >
-              Memuat data grafik...
-            </div>
           </VCardText>
         </VCard>
       </VCol>
@@ -268,8 +268,16 @@
 <script setup lang="ts">
 import { useApiFetch } from '~/composables/useApiFetch';
 import { VDataTable } from 'vuetify/labs/VDataTable';
-import { VueApexCharts } from 'vue3-apexcharts';
-import { computed } from 'vue';
+import { computed, defineAsyncComponent, h } from 'vue';
+
+// --- PERBAIKAN: Menggunakan defineAsyncComponent dengan nama paket yang benar ('vue3-apexcharts') ---
+const VueApexCharts = defineAsyncComponent(() =>
+  import('vue3-apexcharts').then(mod => mod.default).catch((err) => {
+    console.error(`Gagal memuat VueApexCharts`, err);
+    // Fallback jika komponen gagal dimuat
+    return { render: () => h('div', { class: 'text-caption text-error text-center pa-4' }, 'Komponen Chart Gagal Dimuat.') };
+  }),
+);
 
 definePageMeta({
   requiredRole: ['ADMIN', 'SUPER_ADMIN'],
