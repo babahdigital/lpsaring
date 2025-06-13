@@ -16,10 +16,10 @@ interface Package {
   description: string | null;
   price: number;
   is_active: boolean;
-  profile_id: string; // Tetap ada di data, tapi tidak di form
+  profile_id: string;
   data_quota_gb: number;
   duration_days: number;
-  profile: Profile; // Digunakan untuk menampilkan nama profil
+  profile: Profile;
 }
 // --- AKHIR STRUKTUR DATA ---
 
