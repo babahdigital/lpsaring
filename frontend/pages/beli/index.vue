@@ -279,7 +279,7 @@ useHead({ title: 'Beli Paket Hotspot' })
                   :disabled="!pkg.is_active || !!isInitiatingPayment"
                   @click="handlePackageSelection(pkg)"
                 >
-                  <v-card-item class="text-center">
+                  <v-card-item class="text-left">
                     <v-card-title class="text-h6 text-wrap font-weight-bold mb-2">{{ pkg.name }}</v-card-title>
                     <v-card-subtitle class="text-h5 font-weight-bold text-primary">
                       {{ formatCurrency(pkg.price) }}
