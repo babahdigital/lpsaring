@@ -181,13 +181,23 @@ def register_blueprints(app: Flask):
                 app.register_blueprint(package_management_bp, url_prefix='/api/admin')
                 from .infrastructure.http.admin.settings_routes import settings_management_bp
                 app.register_blueprint(settings_management_bp, url_prefix='/api/admin')
-                # Daftarkan blueprint admin untuk promo
+                
+                # --- PERBAIKAN & TAMBAHAN BARU DIMULAI DI SINI ---
+                # 1. Daftarkan blueprint untuk manajemen PROFIL yang baru kita buat
+                from .infrastructure.http.admin.profile_management_routes import profile_management_bp
+                app.register_blueprint(profile_management_bp, url_prefix='/api/admin')
+                
+                # 2. Daftarkan blueprint untuk manajemen PROMO yang sudah ada
                 from .infrastructure.http.admin.promo_management_routes import promo_management_bp
                 app.register_blueprint(promo_management_bp, url_prefix='/api/admin')
-                # Blueprint admin yang lama
+                
+                # 3. Blueprint admin yang lama (sudah ada sebelumnya)
                 from .infrastructure.http.admin_routes import admin_bp
                 app.register_blueprint(admin_bp)
+                
                 module_log.info("All admin blueprints registered.")
+                # --- AKHIR DARI PERBAIKAN & TAMBAHAN ---
+                
             except ImportError as e_admin_bp:
                 module_log.error(f"Admin routes enabled, but failed to import or register an admin blueprint: {e_admin_bp}", exc_info=True)
                 
