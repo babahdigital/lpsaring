@@ -226,7 +226,81 @@ useHead({ title: 'Manajemen Paket Mikrotik' })
       
       <!-- Tampilan mobile tidak berubah signifikan -->
       <div v-else class="pa-3">
-        <!-- ... (Kode untuk tampilan mobile tetap sama) ... -->
+        <div v-if="loading">
+          <div v-for="i in 3" :key="i" class="mb-4">
+            <VSkeletonLoader type="list-item-avatar-three-line" />
+          </div>
+        </div>
+        
+        <div v-else-if="packages.length === 0" class="text-center py-8 text-medium-emphasis">
+          <VIcon icon="tabler-package-off" size="48" class="mb-2" />
+          <p class="text-body-1">
+            Tidak Ada Paket
+          </p>
+          <span class="text-caption">Silakan tambah paket baru.</span>
+        </div>
+        
+        <div v-else>
+          <VCard
+            v-for="pkg in packages"
+            :key="pkg.id"
+            class="mb-4"
+          >
+            <VCardText>
+              <div class="d-flex justify-space-between align-start">
+                <div>
+                  <div class="text-subtitle-1 font-weight-bold">
+                    {{ pkg.name }}
+                  </div>
+                  <div class="text-body-2 text-medium-emphasis mb-2">
+                    {{ pkg.description || 'Tidak ada deskripsi' }}
+                  </div>
+                  
+                  <div class="d-flex align-center gap-2 mt-2">
+                    <VChip
+                      :color="pkg.is_active ? 'success' : 'error'"
+                      size="small"
+                      label
+                    >
+                      {{ pkg.is_active ? 'Aktif' : 'Nonaktif' }}
+                    </VChip>
+                    <div class="text-primary text-subtitle-1 font-weight-bold">
+                      Rp {{ formatNumber(pkg.price) }}
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="d-flex">
+                  <VBtn icon="tabler-pencil" variant="text" size="small" color="primary" @click="openDialog('edit', pkg)" />
+                  <VBtn icon="tabler-trash" variant="text" size="small" color="error" @click="openDialog('delete', pkg)" />
+                </div>
+              </div>
+              
+              <VDivider class="my-3" />
+
+              <div class="d-flex align-center justify-space-between text-caption text-medium-emphasis">
+                <span>Profil Teknis: <strong>{{ pkg.profile?.profile_name || 'N/A' }}</strong></span>
+                <div class="d-flex align-center gap-1">
+                  <VChip v-if="pkg.data_quota_gb === 0" color="success" variant="tonal" size="x-small" label>
+                    Unlimited
+                  </VChip>
+                  <span v-else>{{ pkg.data_quota_gb }} GB</span>
+                  <span>/</span>
+                  <span>{{ pkg.duration_days }} Hari</span>
+                </div>
+              </div>
+            </VCardText>
+          </VCard>
+        </div>
+        
+        <VPagination
+          v-if="!loading && totalPackages > options.itemsPerPage"
+          v-model="options.page"
+          :length="Math.ceil(totalPackages / options.itemsPerPage)"
+          :total-visible="smAndDown ? 5 : 7"
+          density="comfortable"
+          class="mt-2"
+        />
       </div>
     </VCard>
 
