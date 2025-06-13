@@ -193,8 +193,19 @@ function closeContactDialog() {
 }
 
 onMounted(async () => {
-  if (!authStore.isInitialized) await authStore.initializeAuth()
-  // ... (Logika onMounted lainnya tetap sama)
+  if (authStore && !authStore.isInitialized) {
+    await authStore.initializeAuth()
+  }
+  const query = route.query
+  if (query.action === 'cancelled' && query.order_id) {
+    showSnackbar(`Pembayaran Order ID ${query.order_id} dibatalkan.`, 'info')
+    router.replace({ query: {} })
+  }
+  else if (query.action === 'error' && query.order_id) {
+    const errorMsg = query.msg ? decodeURIComponent(query.msg as string) : 'Terjadi kesalahan pembayaran'
+    showSnackbar(`Pembayaran Order ID ${query.order_id} gagal: ${errorMsg}`, 'error', 8000)
+    router.replace({ query: {} })
+  }
 })
 
 definePageMeta({ layout: 'blank' })
