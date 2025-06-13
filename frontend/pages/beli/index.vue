@@ -286,7 +286,7 @@ useHead({ title: 'Beli Paket Hotspot' })
                     </v-card-subtitle>
                   </v-card-item>
 
-                  <v-card-text class="flex-grow-1 py-2">
+                  <v-card-text class="flex-grow-1 py-2 text-left">
                     <v-list lines="one" density="compact" bg-color="transparent" class="py-0">
                       <v-list-item>
                         <template #prepend><v-icon size="small" class="mr-2">mdi-database-outline</v-icon></template>
