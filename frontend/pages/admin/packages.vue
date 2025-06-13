@@ -292,7 +292,23 @@ useHead({ title: 'Manajemen Paket Mikrotik' })
     
     <!-- Dialog Hapus tidak berubah -->
     <VDialog v-model="dialog.delete" max-width="450px" persistent>
-      <!-- ... (Kode dialog hapus tetap sama) ... -->
+      <VCard>
+        <VCardTitle class="pa-4 text-h6">
+          Konfirmasi Hapus
+        </VCardTitle>
+        <VCardText class="pt-2 pa-4">
+          Yakin ingin menghapus paket <strong>{{ selectedPackage?.name }}</strong>?
+        </VCardText>
+        <VCardActions class="pa-4">
+          <VSpacer />
+          <VBtn variant="tonal" color="secondary" @click="dialog.delete = false">
+            Batal
+          </VBtn>
+          <VBtn color="error" @click="handleAction('delete')">
+            Hapus
+          </VBtn>
+        </VCardActions>
+      </VCard>
     </VDialog>
 
     <VSnackbar v-model="snackbar.show" :color="snackbar.color" location="top center" :timeout="3000">
