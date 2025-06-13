@@ -10,6 +10,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { useApiFetch } from '~/composables/useApiFetch'
 import { useAuthStore } from '~/store/auth'
 
+// --- STRUKTUR DATA TAMBAHAN UNTUK MENANGANI RESPON API ---
+// Tambahkan interface ini untuk mencocokkan struktur objek yang dikembalikan oleh API
+interface PackagesApiResponse {
+  items: Package[];
+}
+// --- AKHIR STRUKTUR DATA ---
+
 const authStore = useAuthStore()
 const router = useRouter()
 const route = useRoute()
@@ -17,16 +24,20 @@ const { $api } = useNuxtApp()
 
 const { isLoggedIn, user, isLoadingUser, authError } = storeToRefs(authStore)
 
-// Mengambil data paket dari API publik, langsung mengharapkan array Package[]
+// --- PERBAIKAN PADA FUNGSI FETCH ---
+// Mengambil data paket dari API publik, dengan mengharapkan objek yang berisi array `items`
 const { data: packageApiResponse, pending: isLoadingPackages, error: fetchPackagesError, refresh: refreshPackages }
-  = useApiFetch<Package[]>('/packages', {
+  = useApiFetch<PackagesApiResponse>('/packages', { // DIUBAH: Mengharapkan PackagesApiResponse
     key: 'publicPackages',
     lazy: true,
     server: true,
-    default: () => [] as Package[],
+    // DIUBAH: Nilai default disesuaikan dengan struktur objek
+    default: () => ({ items: [] as Package[] }),
   })
 
-const packages = computed(() => packageApiResponse.value || [])
+// DIUBAH: Computed property sekarang mengekstrak array 'items' dari respons API
+const packages = computed(() => packageApiResponse.value?.items || [])
+// --- AKHIR PERBAIKAN ---
 
 // State untuk dialog, formulir, pembayaran, dan notifikasi
 const showContactDialog = ref(false)
