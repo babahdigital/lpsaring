@@ -433,6 +433,6 @@ useHead({ title: 'Beli Paket Hotspot' })
   box-shadow: 0 6px 14px rgba(var(--v-theme-primary), 0.1);
 }
 .v-list-item {
-  padding-inline: 4px !important;
+  padding-inline: 0px !important;
 }
 </style>
