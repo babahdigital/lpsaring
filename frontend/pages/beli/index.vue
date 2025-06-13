@@ -10,12 +10,14 @@ import { useRoute, useRouter } from 'vue-router'
 import { useApiFetch } from '~/composables/useApiFetch'
 import { useAuthStore } from '~/store/auth'
 
-// --- STRUKTUR DATA TAMBAHAN UNTUK MENANGANI RESPON API ---
-// Tambahkan interface ini untuk mencocokkan struktur objek yang dikembalikan oleh API
+// --- STRUKTUR DATA DISESUAIKAN DENGAN RESPON API BACKEND ---
+// Interface ini diubah untuk mencocokkan struktur JSON dari backend (`"data": [...]`)
 interface PackagesApiResponse {
-  items: Package[];
+  data: Package[];
+  success: boolean;
+  message: string;
 }
-// --- AKHIR STRUKTUR DATA ---
+// --- AKHIR PENYESUAIAN STRUKTUR DATA ---
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -25,18 +27,18 @@ const { $api } = useNuxtApp()
 const { isLoggedIn, user, isLoadingUser, authError } = storeToRefs(authStore)
 
 // --- PERBAIKAN PADA FUNGSI FETCH ---
-// Mengambil data paket dari API publik, dengan mengharapkan objek yang berisi array `items`
+// Mengambil data paket dari API publik, dengan mengharapkan objek yang berisi `data`
 const { data: packageApiResponse, pending: isLoadingPackages, error: fetchPackagesError, refresh: refreshPackages }
   = useApiFetch<PackagesApiResponse>('/packages', { // DIUBAH: Mengharapkan PackagesApiResponse
     key: 'publicPackages',
     lazy: true,
     server: true,
-    // DIUBAH: Nilai default disesuaikan dengan struktur objek
-    default: () => ({ items: [] as Package[] }),
+    // DIUBAH: Nilai default disesuaikan dengan struktur objek backend
+    default: () => ({ data: [] as Package[], success: false, message: '' }),
   })
 
-// DIUBAH: Computed property sekarang mengekstrak array 'items' dari respons API
-const packages = computed(() => packageApiResponse.value?.items || [])
+// DIUBAH: Computed property sekarang mengekstrak array dari `packageApiResponse.value.data`
+const packages = computed(() => packageApiResponse.value?.data || [])
 // --- AKHIR PERBAIKAN ---
 
 // State untuk dialog, formulir, pembayaran, dan notifikasi
@@ -224,9 +226,10 @@ useHead({ title: 'Beli Paket Hotspot' })
 </script>
 
 <template>
-  <v-container fluid class="pa-0 ma-0 bg-grey-lighten-5">
+  <!-- DIUBAH: Container utama ditambahkan class untuk centering -->
+  <v-container fluid class="pa-0 ma-0 bg-grey-lighten-5 full-height-container">
     <v-col cols="12" style="max-width: 1300px;" class="mx-auto">
-      <!-- PERBAIKAN LAYOUT: Header dan konten dipisahkan untuk kontrol jarak yang lebih baik -->
+      
       <v-container fluid class="py-8 px-lg-12 px-md-6 px-sm-4">
         <h1 class="text-h4 text-sm-h3 font-weight-bold mb-2 text-center text-grey-darken-3">
           DAFTAR PAKET HOTSPOT
@@ -249,7 +252,6 @@ useHead({ title: 'Beli Paket Hotspot' })
         </div>
       </v-container>
 
-      <!-- PERBAIKAN LAYOUT: Konten paket sekarang berada di dalam v-row utama -->
       <v-row class="ma-0" align="start" justify="center">
         <v-col cols="12">
           <!-- Skeleton loader saat memuat paket -->
@@ -286,14 +288,12 @@ useHead({ title: 'Beli Paket Hotspot' })
 
                   <v-card-text class="flex-grow-1 py-2">
                     <v-list lines="one" density="compact" bg-color="transparent" class="py-0">
-                      <!-- PERBAIKAN: Menggunakan pkg.data_quota_gb -->
                       <v-list-item>
                         <template #prepend><v-icon size="small" class="mr-2">mdi-database-outline</v-icon></template>
                         <v-list-item-title class="text-body-2">
                           Kuota: <span class="font-weight-medium">{{ formatQuota(pkg.data_quota_gb) }}</span>
                         </v-list-item-title>
                       </v-list-item>
-                      <!-- PERBAIKAN: Menampilkan Kecepatan Unlimited -->
                       <v-list-item>
                         <template #prepend><v-icon size="small" class="mr-2">mdi-speedometer</v-icon></template>
                         <v-list-item-title class="text-body-2">
@@ -418,6 +418,16 @@ useHead({ title: 'Beli Paket Hotspot' })
 </template>
 
 <style scoped>
+/* DIUBAH: Penambahan style untuk centering halaman penuh */
+.full-height-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  text-align: center;
+}
+
 .v-card:hover:not([disabled]) {
   border-color: rgba(var(--v-theme-primary), 0.6);
   box-shadow: 0 6px 14px rgba(var(--v-theme-primary), 0.1);
