@@ -337,7 +337,7 @@ useHead({ title: 'Manajemen Paket Mikrotik' })
                 :items="profiles"
                 item-title="profile_name"
                 item-value="id"
-                label="Profil Teknis (di Mikrotik)"
+                label="Profile Mikrotik"
                 placeholder="Pilih profil Mikrotik..."
                 :loading="loadingProfiles"
                 :error="profileError"
