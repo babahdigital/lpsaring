@@ -29,7 +29,8 @@ class PackageSchema(BaseModel):
     description: Optional[str] = None
     price: int = Field(..., ge=0)
     is_active: bool = True
-    profile_id: uuid.UUID
+    # --- PERUBAHAN 1: Jadikan profile_id opsional ---
+    profile_id: Optional[uuid.UUID] = None
     data_quota_gb: Decimal = Field(..., ge=0, decimal_places=2)
     duration_days: int = Field(..., gt=0)
     profile: Optional[ProfileSimpleSchema] = None
@@ -57,9 +58,26 @@ def get_packages_list(current_admin: User):
 @package_management_bp.route('/packages', methods=['POST'])
 @admin_required
 def create_package(current_admin: User):
-    """Membuat paket jualan baru."""
+    """Membuat paket jualan baru, secara otomatis menetapkan profil 'default'."""
     try:
         package_data = PackageSchema.model_validate(request.get_json())
+
+        # --- PERUBAHAN 2: Logika penetapan profil default ---
+        # Jika frontend tidak mengirim profile_id (karena dropdown sudah dihapus),
+        # cari dan tetapkan profil 'default' secara otomatis.
+        if not package_data.profile_id:
+            default_profile = db.session.scalar(
+                db.select(PackageProfile).filter_by(profile_name='default')
+            )
+            if not default_profile:
+                # Ini adalah error server jika profil 'default' tidak ada di DB
+                current_app.logger.critical("Profil 'default' tidak ditemukan di database saat membuat paket!")
+                return jsonify({"message": "Konfigurasi profil sistem error."}), HTTPStatus.INTERNAL_SERVER_ERROR
+            
+            # Tetapkan ID dari profil default
+            package_data.profile_id = default_profile.id
+        # --- AKHIR PERUBAHAN ---
+
         new_package = Package(**package_data.model_dump(exclude={'id', 'profile'}))
         db.session.add(new_package)
         db.session.commit()
@@ -83,8 +101,14 @@ def update_package(current_admin: User, package_id):
     if not pkg: return jsonify({"message": "Paket tidak ditemukan."}), HTTPStatus.NOT_FOUND
     try:
         package_data = PackageSchema.model_validate(request.get_json())
-        for key, value in package_data.model_dump(exclude={'id', 'profile'}).items():
-            setattr(pkg, key, value)
+        # Jangan izinkan profile_id diubah menjadi null saat update
+        update_dict = package_data.model_dump(exclude_unset=True)
+        if 'profile_id' in update_dict and update_dict['profile_id'] is None:
+            del update_dict['profile_id']
+
+        for key, value in update_dict.items():
+            if key not in ['id', 'profile']: # Hindari mengubah ID atau relasi secara langsung
+                setattr(pkg, key, value)
         db.session.commit()
         updated_package = db.session.get(Package, pkg.id)
         return jsonify(PackageSchema.from_orm(updated_package).model_dump()), HTTPStatus.OK
@@ -117,7 +141,6 @@ def get_profiles_for_dropdown(current_admin: User):
     Profil sistem seperti 'default' dan 'expired' akan disembunyikan.
     """
     try:
-        # --- PERUBAHAN DI SINI ---
         # Buat daftar profil yang tidak ingin ditampilkan di form
         system_profiles_to_hide = ['default', 'expired']
         
@@ -127,7 +150,6 @@ def get_profiles_for_dropdown(current_admin: User):
         ).order_by(PackageProfile.profile_name)
         
         profiles = db.session.scalars(query).all()
-        # --- AKHIR PERUBAHAN ---
         
         return jsonify([ProfileSimpleSchema.from_orm(p).model_dump() for p in profiles]), HTTPStatus.OK
     except Exception as e:
