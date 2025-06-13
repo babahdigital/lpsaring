@@ -1,4 +1,4 @@
-# migrations/versions/xxxx_seed_default_mikrotik_profile_data.py
+# migrations/versions/120625_seed_default_mikrotik_profile_data.py
 """Seed default Mikrotik profile data
 
 Revision ID: <your_revision_id>
