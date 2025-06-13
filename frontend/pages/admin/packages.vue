@@ -341,7 +341,6 @@ useHead({ title: 'Manajemen Paket Mikrotik' })
                 placeholder="Pilih profil Mikrotik..."
                 :loading="loadingProfiles"
                 :error="profileError"
-                hint="Profil yang dibuat oleh Super Admin."
                 persistent-hint
               >
               </VSelect>
