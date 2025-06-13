@@ -68,19 +68,7 @@ useHead({ title: 'Login Admin' })
         max-width="460"
         :class="$vuetify.display.smAndUp ? 'pa-6' : 'pa-0'"
       >
-        <VCardItem class="justify-center">
-          <VCardTitle>
-            <NuxtLink to="/">
-              <div class="app-logo">
-                <VNodeRenderer :nodes="themeConfig.app.logo" />
-                <h1 class="app-logo-title">
-                  {{ themeConfig.app.title }}
-                </h1>
-              </div>
-            </NuxtLink>
-          </VCardTitle>
-        </VCardItem>
-
+      
         <VCardText>
           <h4 class="text-h4 mb-1">
             Admin Portal 👋🏻
