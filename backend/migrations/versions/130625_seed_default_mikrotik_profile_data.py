@@ -1,9 +1,9 @@
 # migrations/versions/120625_seed_default_mikrotik_profile_data.py
 """Seed default Mikrotik profile data
 
-Revision ID: <your_revision_id>
-Revises: <previous_revision_id>
-Create Date: <your_create_date>
+Revision ID: 130625
+Revises:
+Create Date: 2025-06-13 10:01:00.676418
 
 """
 from alembic import op
