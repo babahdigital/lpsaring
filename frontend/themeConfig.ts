@@ -33,7 +33,7 @@ export const { themeConfig, layoutConfig } = defineThemeConfig({
     // PERBAIKAN: Kembalikan properti 'theme' dengan nilai default 'system'.
     // Ini diperlukan untuk memenuhi kontrak tipe TypeScript.
     // Nilai ini akan segera ditimpa oleh pengaturan dari database di app.vue.
-    theme: 'system',
+    theme: 'dark',
     skin: Skins.Bordered,
     iconRenderer: VIcon,
     isRTL: false,
