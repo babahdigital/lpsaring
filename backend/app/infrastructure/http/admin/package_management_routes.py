@@ -12,7 +12,7 @@ from decimal import Decimal
 
 # Impor-impor esensial
 from app.extensions import db
-from app.infrastructure.db.models import Package, PackageProfile, Transaction, User # PERBAIKAN: Tambahkan User
+from app.infrastructure.db.models import Package, PackageProfile, Transaction, User
 from app.infrastructure.http.decorators import admin_required
 
 package_management_bp = Blueprint('package_management_api', __name__)
@@ -63,7 +63,6 @@ def create_package(current_admin: User):
         new_package = Package(**package_data.model_dump(exclude={'id', 'profile'}))
         db.session.add(new_package)
         db.session.commit()
-        # Re-fetch untuk menyertakan relasi 'profile' dalam respons
         created_package = db.session.get(Package, new_package.id)
         return jsonify(PackageSchema.from_orm(created_package).model_dump()), HTTPStatus.CREATED
     except IntegrityError:
@@ -101,22 +100,36 @@ def update_package(current_admin: User, package_id):
 @package_management_bp.route('/packages/<uuid:package_id>', methods=['DELETE'])
 @admin_required
 def delete_package(current_admin: User, package_id):
-    """Delete a package, preventing deletion if it has associated transactions."""
+    """Menghapus sebuah paket, mencegah penghapusan jika ada riwayat transaksi."""
     pkg = db.session.get(Package, package_id)
-    if not pkg: return jsonify({"message": "Package not found."}), HTTPStatus.NOT_FOUND
+    if not pkg: return jsonify({"message": "Paket tidak ditemukan."}), HTTPStatus.NOT_FOUND
     if db.session.query(Transaction.id).filter_by(package_id=pkg.id).first():
-        return jsonify({"message": "Package cannot be deleted as it has transaction history."}), HTTPStatus.CONFLICT
+        return jsonify({"message": "Paket tidak dapat dihapus karena memiliki riwayat transaksi."}), HTTPStatus.CONFLICT
     db.session.delete(pkg)
     db.session.commit()
-    return jsonify({"message": "Package deleted successfully."}), HTTPStatus.OK
+    return jsonify({"message": "Paket berhasil dihapus."}), HTTPStatus.OK
 
 @package_management_bp.route('/form-options/profiles', methods=['GET'])
 @admin_required
 def get_profiles_for_dropdown(current_admin: User):
-    """Hanya mengambil daftar profil teknis untuk dropdown di form paket."""
+    """
+    Hanya mengambil daftar profil teknis yang BISA DIPILIH untuk paket.
+    Profil sistem seperti 'default' dan 'expired' akan disembunyikan.
+    """
     try:
-        profiles = db.session.scalars(db.select(PackageProfile).order_by(PackageProfile.profile_name)).all()
+        # --- PERUBAHAN DI SINI ---
+        # Buat daftar profil yang tidak ingin ditampilkan di form
+        system_profiles_to_hide = ['default', 'expired']
+        
+        # Ambil semua profil dari DB, kecuali yang ada di daftar 'hide'
+        query = db.select(PackageProfile).where(
+            PackageProfile.profile_name.notin_(system_profiles_to_hide)
+        ).order_by(PackageProfile.profile_name)
+        
+        profiles = db.session.scalars(query).all()
+        # --- AKHIR PERUBAHAN ---
+        
         return jsonify([ProfileSimpleSchema.from_orm(p).model_dump() for p in profiles]), HTTPStatus.OK
     except Exception as e:
         current_app.logger.error(f"Error retrieving profiles for dropdown: {e}", exc_info=True)
-        return jsonify({"message": "Failed to retrieve profiles list."}), HTTPStatus.INTERNAL_SERVER_ERROR
+        return jsonify({"message": "Gagal mengambil daftar profil."}), HTTPStatus.INTERNAL_SERVER_ERROR
