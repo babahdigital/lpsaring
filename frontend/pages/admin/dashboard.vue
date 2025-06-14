@@ -560,7 +560,7 @@ const kuotaChartOptions = computed(() => {
   const currentTheme = vuetifyTheme.current.value.colors
   const variableTheme = vuetifyTheme.current.value.variables
   const labelColor = `rgba(${hexToRgb(currentTheme['on-surface'])},${variableTheme['disabled-opacity']})`
-  const-labelSuccessColor = `rgba(${hexToRgb(currentTheme.success)},0.2)`
+  const labelSuccessColor = `rgba(${hexToRgb(currentTheme.success)},0.2)`
 
   return {
     chart: { type: 'bar', height: 162, parentHeightOffset: 0, toolbar: { show: false } },
