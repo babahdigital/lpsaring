@@ -25,7 +25,7 @@ from app.services.notification_service import get_notification_message
 from app.services import settings_service
 
 # Define admin_bp for remaining routes
-admin_bp = Blueprint('admin_api', __name__, url_prefix='/api/admin')
+admin_bp = Blueprint('admin_api', __name__)
 
 # --- PERBAIKAN UTAMA PADA ENDPOINT STATS DASHBOARD ---
 @admin_bp.route('/dashboard/stats', methods=['GET'])

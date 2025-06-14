@@ -8,39 +8,38 @@ import QrcodeVue from 'qrcode.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-// --- Interface Data yang Diperbaiki ---
+// --- Interface Data Disesuaikan dengan Backend (snake_case) ---
 interface PackageDetails {
   id: string,
   name: string,
   description?: string | null,
   price?: number | null,
-  // PERBAIKAN: Disesuaikan dengan struktur data backend dan halaman beli.vue
   data_quota_gb?: number | null
 }
 interface UserDetails {
   id: string,
   phone_number: string,
-  name?: string | null
+  full_name?: string | null,
+  quota_expiry_date?: string | null // DIUBAH: Ditambahkan untuk menampilkan tanggal di pesan sukses
 }
 type TransactionStatus = 'SUCCESS' | 'PENDING' | 'FAILED' | 'EXPIRED' | 'CANCELLED' | 'ERROR' | 'UNKNOWN'
+
 interface TransactionDetails {
-  orderId: string
-  transactionId?: string
-  status: TransactionStatus
-  amount?: number | null
-  paymentMethod?: string | null
-  transactionTime?: string | null
-  paymentTime?: string | null
-  expiryTime?: string | null
-  midtransTransactionId?: string | null
-  package?: PackageDetails | null
+  id: string,
+  midtrans_order_id: string,
+  midtrans_transaction_id?: string | null,
+  status: TransactionStatus,
+  amount?: number | null,
+  payment_method?: string | null,
+  payment_time?: string | null,
+  expiry_time?: string | null,
+  va_number?: string | null,
+  payment_code?: string | null,
+  biller_code?: string | null,
+  qr_code_url?: string | null,
+  hotspot_password?: string | null,
+  package?: PackageDetails | null,
   user?: UserDetails | null
-  vaNumber?: string | null
-  paymentCode?: string | null
-  billerCode?: string | null
-  qrCodeUrl?: string | null
-  hotspotUsername?: string | null
-  hotspotPassword?: string | null
 }
 // --- Akhir Interface Data ---
 
@@ -61,7 +60,7 @@ async function fetchTransactionDetails(orderId: string) {
   fetchError.value = null
   try {
     const response = await $api<TransactionDetails>(`/transactions/by-order-id/${orderId}`)
-    if (!response || typeof response !== 'object' || !response.orderId || !response.status) {
+    if (!response || typeof response !== 'object' || !response.midtrans_order_id || !response.status) {
       throw new Error('Respons API tidak valid atau tidak lengkap.')
     }
     transactionDetails.value = response
@@ -110,10 +109,10 @@ const finalStatus = computed((): TransactionStatus => {
 })
 
 const userPhoneNumberRaw = computed(() => transactionDetails.value?.user?.phone_number || null)
-const userName = computed(() => transactionDetails.value?.user?.name || 'Pengguna')
+const userName = computed(() => transactionDetails.value?.user?.full_name || 'Pengguna')
 const packageName = computed(() => transactionDetails.value?.package?.name || 'Paket Tidak Diketahui')
-const paymentMethod = computed(() => transactionDetails.value?.paymentMethod || null)
-const displayHotspotUsername = computed(() => transactionDetails.value?.hotspotUsername || formatToLocalPhone(userPhoneNumberRaw.value) || '-')
+const paymentMethod = computed(() => transactionDetails.value?.payment_method || null)
+const displayHotspotUsername = computed(() => formatToLocalPhone(userPhoneNumberRaw.value) || '-')
 
 function formatToLocalPhone(phoneNumber?: string | null): string {
   if (!phoneNumber) return '-'
@@ -184,15 +183,22 @@ const detailMessage = computed((): string => {
 
   switch (finalStatus.value) {
     case 'SUCCESS':
-      return `Aktivasi ${safePackageName} untuk ${safeUsername} (${userName.value}) berhasil. Kredensial login akan atau sudah dikirim via WhatsApp ke ${safePhoneNumber}.`
+      // DIUBAH: Logika pesan dibedakan untuk paket kuota dan unlimited
+      if (transactionDetails.value?.package?.data_quota_gb === 0) {
+        return `Langganan paket ${safePackageName} Anda telah berhasil diaktifkan. Anda kini dapat menggunakan internet tanpa batas kuota hingga ${formatDate(transactionDetails.value?.user?.quota_expiry_date)}. Kredensial login akan atau sudah dikirim via WhatsApp ke ${safePhoneNumber}.`
+      }
+      else {
+        const quotaDisplay = transactionDetails.value?.package?.data_quota_gb
+        return `Pembelian paket ${safePackageName} (${quotaDisplay} GB) untuk ${safeUsername} (${userName.value}) berhasil. Kredensial login akan atau sudah dikirim via WhatsApp ke ${safePhoneNumber}.`
+      }
     case 'PENDING':
-      return `Selesaikan pembayaran sebelum ${formatDate(transactionDetails.value?.expiryTime)} menggunakan instruksi di bawah.`
+      return `Selesaikan pembayaran sebelum ${formatDate(transactionDetails.value?.expiry_time)} menggunakan instruksi di bawah.`
     case 'FAILED':
-      return `Pembayaran untuk transaksi ${transactionDetails.value?.orderId || ''} gagal. Silakan coba pesan ulang.`
+      return `Pembayaran untuk transaksi ${transactionDetails.value?.midtrans_order_id || ''} gagal. Silakan coba pesan ulang.`
     case 'EXPIRED':
-      return `Batas waktu pembayaran untuk transaksi ${transactionDetails.value?.orderId || ''} telah terlewati. Silakan pesan ulang.`
+      return `Batas waktu pembayaran untuk transaksi ${transactionDetails.value?.midtrans_order_id || ''} telah terlewati. Silakan pesan ulang.`
     case 'CANCELLED':
-      return `Transaksi ${transactionDetails.value?.orderId || ''} telah dibatalkan.`
+      return `Transaksi ${transactionDetails.value?.midtrans_order_id || ''} telah dibatalkan.`
     case 'ERROR':
       return `Terjadi kesalahan pada proses pembayaran. Jika Anda merasa ini adalah kesalahan sistem, silakan hubungi admin.`
     default:
@@ -235,14 +241,14 @@ const goToDashboard = () => router.push({ path: '/dashboard' })
 const showSpecificPendingInstructions = computed(() => {
   if (finalStatus.value !== 'PENDING' || !transactionDetails.value) return false
   const td = transactionDetails.value
-  const pm = td.paymentMethod?.toLowerCase()
-  const hasVa = !!td.vaNumber && (pm?.includes('_va') || pm === 'bank_transfer')
-  const hasEchannel = !!td.paymentCode && !!td.billerCode && pm === 'echannel'
-  const hasQr = !!td.qrCodeUrl && (pm === 'qris' || pm === 'gopay' || pm === 'shopeepay')
+  const pm = td.payment_method?.toLowerCase()
+  const hasVa = !!td.va_number && (pm?.includes('_va') || pm === 'bank_transfer')
+  const hasEchannel = !!td.payment_code && !!td.biller_code && pm === 'echannel'
+  const hasQr = !!td.qr_code_url && (pm === 'qris' || pm === 'gopay' || pm === 'shopeepay')
   return hasVa || hasEchannel || hasQr
 })
 
-const qrValue = computed(() => transactionDetails.value?.qrCodeUrl ?? '')
+const qrValue = computed(() => transactionDetails.value?.qr_code_url ?? '')
 const showQrCode = computed(() => {
   if (finalStatus.value !== 'PENDING' || !qrValue.value) return false
   const pm = paymentMethod.value?.toLowerCase()
@@ -293,12 +299,12 @@ useHead({ title: 'Detail Transaksi' })
             <v-list-item class="px-sm-5 px-3">
               <template #prepend><v-icon size="20" class="mr-4 text-disabled">mdi-pound</v-icon></template>
               <v-list-item-title class="text-caption text-medium-emphasis">Order ID</v-list-item-title>
-              <template #append><span class="text-body-2 font-weight-medium font-mono">{{ transactionDetails.orderId }}</span></template>
+              <template #append><span class="text-body-2 font-weight-medium font-mono">{{ transactionDetails.midtrans_order_id }}</span></template>
             </v-list-item>
-            <v-list-item v-if="transactionDetails.midtransTransactionId" class="px-sm-5 px-3">
+            <v-list-item v-if="transactionDetails.midtrans_transaction_id" class="px-sm-5 px-3">
               <template #prepend><v-icon size="20" class="mr-4 text-disabled">mdi-barcode-scan</v-icon></template>
               <v-list-item-title class="text-caption text-medium-emphasis">ID Pembayaran</v-list-item-title>
-              <template #append><span class="text-body-2 font-mono">{{ transactionDetails.midtransTransactionId }}</span></template>
+              <template #append><span class="text-body-2 font-mono">{{ transactionDetails.midtrans_transaction_id }}</span></template>
             </v-list-item>
             <v-list-item class="px-sm-5 px-3">
               <template #prepend><v-icon size="20" class="mr-4 text-disabled">mdi-package-variant-closed</v-icon></template>
@@ -316,16 +322,16 @@ useHead({ title: 'Detail Transaksi' })
             <v-divider class="mb-5" />
             <p class="text-h6 font-weight-medium mb-4 text-center">Instruksi Pembayaran</p>
             <div v-if="showSpecificPendingInstructions">
-              <div v-if="transactionDetails.vaNumber" class="mb-5">
+              <div v-if="transactionDetails.va_number" class="mb-5">
                 <p class="text-subtitle-1 font-weight-medium mb-2">{{ getBankNameFromVA(paymentMethod) }} Virtual Account</p>
                 <v-text-field
-                  :model-value="transactionDetails.vaNumber" label="Nomor Virtual Account" readonly variant="outlined"
+                  :model-value="transactionDetails.va_number" label="Nomor Virtual Account" readonly variant="outlined"
                   density="comfortable" hide-details class="font-weight-bold text-h6"
                 >
                   <template #append-inner>
                     <v-tooltip location="top" :text="copySuccess === 'Nomor VA' ? 'Tersalin!' : 'Salin Nomor VA'">
                       <template #activator="{ props: tooltipProps }">
-                        <v-btn v-bind="tooltipProps" :icon="copySuccess === 'Nomor VA' ? 'mdi-check-all' : 'mdi-content-copy'" variant="text" @click="copyToClipboard(transactionDetails?.vaNumber, 'Nomor VA')" />
+                        <v-btn v-bind="tooltipProps" :icon="copySuccess === 'Nomor VA' ? 'mdi-check-all' : 'mdi-content-copy'" variant="text" @click="copyToClipboard(transactionDetails?.va_number, 'Nomor VA')" />
                       </template>
                     </v-tooltip>
                   </template>
@@ -352,7 +358,7 @@ useHead({ title: 'Detail Transaksi' })
             <v-btn v-if="finalStatus === 'SUCCESS'" color="primary" variant="flat" rounded="lg" @click="goToDashboard">
               <v-icon start>mdi-view-dashboard</v-icon> Ke Dashboard
             </v-btn>
-            <v-btn v-if="finalStatus === 'PENDING'" color="grey-darken-1" variant="text" rounded="lg" :loading="isLoading" @click="fetchTransactionDetails(transactionDetails.orderId)">
+            <v-btn v-if="finalStatus === 'PENDING'" color="grey-darken-1" variant="text" rounded="lg" :loading="isLoading" @click="fetchTransactionDetails(transactionDetails.midtrans_order_id)">
               <v-icon start>mdi-refresh</v-icon> Cek Ulang Status
             </v-btn>
           </v-card-actions>

@@ -7,7 +7,9 @@ import { useAuthStore } from '~/store/auth'
 
 // Impor komponen PromoAnnouncement dan Chart secara asynchronous
 const PromoAnnouncement = defineAsyncComponent(() => import('~/components/promo/PromoAnnouncement.vue'))
+// Ganti import WeeklyUsageChart biasa dengan dua opsi
 const WeeklyUsageChart = defineAsyncComponent(() => import('~/components/charts/WeeklyUsageChart.vue'))
+const WeeklyUsageChartUnlimited = defineAsyncComponent(() => import('~/components/charts/WeeklyUsageChartUnlimited.vue'))
 const MonthlyUsageChart = defineAsyncComponent(() => import('~/components/charts/MonthlyUsageChart.vue'))
 
 const authToken = useCookie<string | null>('auth_token')
@@ -29,7 +31,7 @@ const commonFetchOptions = computed(() => ({
 const quotaApiUrl = computed(() => !authToken.value ? null : getApiUrl('/users/me/quota'))
 const { data: quotaData, pending: quotaPending, error: quotaError, refresh: refreshQuotaRaw } = useFetch<UserQuotaResponse>(
   quotaApiUrl,
-  { ...commonFetchOptions.value, key: 'userQuotaData', default: () => ({ success: false, total_quota_purchased_mb: 0, total_quota_used_mb: 0, remaining_mb: 0, hotspot_username: '...', last_sync_time: null }), immediate: false, watch: false },
+  { ...commonFetchOptions.value, key: 'userQuotaData', default: () => ({ success: false, total_quota_purchased_mb: 0, total_quota_used_mb: 0, remaining_mb: 0, hotspot_username: '...', last_sync_time: null, is_unlimited_user: false }), immediate: false, watch: false }, // Tambahkan is_unlimited_user di default
 )
 
 // Fetch data penggunaan mingguan
@@ -131,7 +133,7 @@ watch(authToken, (newToken, oldToken) => {
     initialFetch()
   }
   else if (!newToken && oldToken) {
-    quotaData.value = { success: false, total_quota_purchased_mb: 0, total_quota_used_mb: 0, remaining_mb: 0, hotspot_username: '...', last_sync_time: null }
+    quotaData.value = { success: false, total_quota_purchased_mb: 0, total_quota_used_mb: 0, remaining_mb: 0, hotspot_username: '...', last_sync_time: null, is_unlimited_user: false } // Update default is_unlimited_user
     weeklyUsageData.value = { success: false, weekly_data: [] }
     monthlyUsageData.value = { success: false, monthly_data: [] }
     fetchesInitiated.value = false
@@ -209,7 +211,8 @@ useHead({ title: 'Dashboard User' })
                   <VSkeletonLoader type="card-avatar, subtitle, text" class="vuexy-skeleton-card" />
                 </VCol>
               </VRow>
-              <VSkeletonLoader type="image" height="370px" class="vuexy-skeleton-card" />
+              <!-- Sesuaikan tinggi skeleton loader untuk chart -->
+              <VSkeletonLoader type="image" height="300px" class="vuexy-skeleton-card" />
             </VCol>
             <VCol cols="12" md="6" class="d-flex flex-column chart-column ga-4">
               <VSkeletonLoader type="image" height="460px" class="vuexy-skeleton-card" />
@@ -315,15 +318,29 @@ useHead({ title: 'Dashboard User' })
                   </VCol>
                 </VRow>
 
-                <WeeklyUsageChart
-                  :quota-data="quotaData"
-                  :weekly-usage-data="weeklyUsageData"
-                  :parent-loading="isFetching"
-                  :parent-error="quotaError || weeklyUsageError"
-                  :dashboard-render-key="dashboardRenderKey"
-                  class="dashboard-chart-card"
-                  @refresh="refreshAllData"
-                />
+                <!-- Kondisional rendering untuk WeeklyUsageChart -->
+                <template v-if="quotaData?.is_unlimited_user">
+                  <WeeklyUsageChartUnlimited
+                    :weekly-usage-data="weeklyUsageData"
+                    :parent-loading="isFetching"
+                    :parent-error="weeklyUsageError"
+                    :dashboard-render-key="dashboardRenderKey"
+                    class="dashboard-chart-card"
+                    @refresh="refreshAllData"
+                  />
+                </template>
+                <template v-else>
+                  <WeeklyUsageChart
+                    :quota-data="quotaData"
+                    :weekly-usage-data="weeklyUsageData"
+                    :parent-loading="isFetching"
+                    :parent-error="quotaError || weeklyUsageError"
+                    :dashboard-render-key="dashboardRenderKey"
+                    class="dashboard-chart-card"
+                    @refresh="refreshAllData"
+                  />
+                </template>
+
               </VCol>
 
               <VCol cols="12" md="6" class="d-flex flex-column chart-column ga-4">

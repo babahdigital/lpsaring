@@ -175,28 +175,31 @@ def register_blueprints(app: Flask):
         # Pendaftaran blueprint admin
         if app.config.get('ENABLE_ADMIN_ROUTES', False):
             try:
+                # Definisikan prefix admin di satu tempat untuk konsistensi
+                ADMIN_API_PREFIX = '/api/admin'
+                module_log.info("Registering ALL admin blueprints under prefix: %s", ADMIN_API_PREFIX)
+
                 from .infrastructure.http.admin.user_management_routes import user_management_bp
-                app.register_blueprint(user_management_bp, url_prefix='/api/admin')
+                app.register_blueprint(user_management_bp, url_prefix=ADMIN_API_PREFIX)
+                
                 from .infrastructure.http.admin.package_management_routes import package_management_bp
-                app.register_blueprint(package_management_bp, url_prefix='/api/admin')
+                app.register_blueprint(package_management_bp, url_prefix=ADMIN_API_PREFIX)
+                
                 from .infrastructure.http.admin.settings_routes import settings_management_bp
-                app.register_blueprint(settings_management_bp, url_prefix='/api/admin')
+                app.register_blueprint(settings_management_bp, url_prefix=ADMIN_API_PREFIX)
                 
-                # --- PERBAIKAN & TAMBAHAN BARU DIMULAI DI SINI ---
-                # 1. Daftarkan blueprint untuk manajemen PROFIL yang baru kita buat
                 from .infrastructure.http.admin.profile_management_routes import profile_management_bp
-                app.register_blueprint(profile_management_bp, url_prefix='/api/admin')
+                app.register_blueprint(profile_management_bp, url_prefix=ADMIN_API_PREFIX)
                 
-                # 2. Daftarkan blueprint untuk manajemen PROMO yang sudah ada
                 from .infrastructure.http.admin.promo_management_routes import promo_management_bp
-                app.register_blueprint(promo_management_bp, url_prefix='/api/admin')
+                app.register_blueprint(promo_management_bp, url_prefix=ADMIN_API_PREFIX)
                 
-                # 3. Blueprint admin yang lama (sudah ada sebelumnya)
+                # --- PERUBAHAN DI SINI ---
+                # Daftarkan admin_bp DENGAN prefix yang sama, karena prefix di filenya sudah dihapus.
                 from .infrastructure.http.admin_routes import admin_bp
-                app.register_blueprint(admin_bp)
+                app.register_blueprint(admin_bp, url_prefix=ADMIN_API_PREFIX)
                 
-                module_log.info("All admin blueprints registered.")
-                # --- AKHIR DARI PERBAIKAN & TAMBAHAN ---
+                module_log.info("All admin blueprints registered successfully.")
                 
             except ImportError as e_admin_bp:
                 module_log.error(f"Admin routes enabled, but failed to import or register an admin blueprint: {e_admin_bp}", exc_info=True)

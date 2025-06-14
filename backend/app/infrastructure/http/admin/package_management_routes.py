@@ -1,5 +1,5 @@
 # backend/app/infrastructure/http/admin/package_management_routes.py
-# Blueprint untuk rute-rute admin terkait manajemen paket.
+# VERSI FINAL: Menggabungkan struktur URL yang benar dengan logika bisnis yang disempurnakan.
 
 from flask import Blueprint, jsonify, request, current_app
 from sqlalchemy.exc import IntegrityError
@@ -8,16 +8,16 @@ from http import HTTPStatus
 from pydantic import BaseModel, Field, ValidationError, ConfigDict
 from typing import Optional, List
 import uuid
-from decimal import Decimal
 
 # Impor-impor esensial
 from app.extensions import db
 from app.infrastructure.db.models import Package, PackageProfile, Transaction, User
 from app.infrastructure.http.decorators import admin_required
 
+# --- PERBAIKAN 1: Definisi Blueprint tanpa url_prefix (mengambil dari file lama Anda yang bekerja)
 package_management_bp = Blueprint('package_management_api', __name__)
 
-# --- Skema Pydantic untuk Paket ---
+# --- Skema Pydantic untuk Paket (tetap sama) ---
 class ProfileSimpleSchema(BaseModel):
     id: uuid.UUID
     profile_name: str
@@ -30,7 +30,6 @@ class PackageSchema(BaseModel):
     price: int = Field(..., ge=0)
     is_active: bool = True
     profile_id: Optional[uuid.UUID] = None
-    # --- PERBAIKAN: Ubah Decimal menjadi float untuk serialisasi JSON ---
     data_quota_gb: float = Field(..., ge=0)
     duration_days: int = Field(..., gt=0)
     profile: Optional[ProfileSimpleSchema] = None
@@ -58,23 +57,27 @@ def get_packages_list(current_admin: User):
 @package_management_bp.route('/packages', methods=['POST'])
 @admin_required
 def create_package(current_admin: User):
-    """Membuat paket jualan baru, secara otomatis menetapkan profil 'default'."""
+    """Membuat paket jualan baru, secara OTOMATIS dan TEGAS menetapkan profil 'default'."""
     try:
         package_data = PackageSchema.model_validate(request.get_json())
 
-        if not package_data.profile_id:
-            default_profile = db.session.scalar(
-                db.select(PackageProfile).filter_by(profile_name='default')
-            )
-            if not default_profile:
-                current_app.logger.critical("Profil 'default' tidak ditemukan di database saat membuat paket!")
-                return jsonify({"message": "Konfigurasi profil sistem error."}), HTTPStatus.INTERNAL_SERVER_ERROR
-            
-            package_data.profile_id = default_profile.id
+        # --- PERBAIKAN 2: Mengambil logika yang lebih baik ---
+        # Logika pemilihan profil sekarang sepenuhnya di backend, tidak lagi dipilih manual.
+        default_profile = db.session.scalar(
+            db.select(PackageProfile).filter_by(profile_name='default')
+        )
+        if not default_profile:
+            current_app.logger.critical("Profil 'default' tidak ditemukan di database saat membuat paket!")
+            return jsonify({"message": "Konfigurasi profil sistem error. Pastikan profil 'default' ada."}), HTTPStatus.INTERNAL_SERVER_ERROR
+        
+        # Secara tegas mengatur profile_id ke profil default, mengabaikan input dari frontend.
+        package_data.profile_id = default_profile.id
 
         new_package = Package(**package_data.model_dump(exclude={'id', 'profile'}))
         db.session.add(new_package)
         db.session.commit()
+        
+        # Ambil ulang dari DB untuk memastikan data relasi (profil) ter-load
         created_package = db.session.get(Package, new_package.id)
         return jsonify(PackageSchema.from_orm(created_package).model_dump()), HTTPStatus.CREATED
     except IntegrityError:
@@ -95,13 +98,13 @@ def update_package(current_admin: User, package_id):
     if not pkg: return jsonify({"message": "Paket tidak ditemukan."}), HTTPStatus.NOT_FOUND
     try:
         package_data = PackageSchema.model_validate(request.get_json())
-        update_dict = package_data.model_dump(exclude_unset=True)
-        if 'profile_id' in update_dict and update_dict['profile_id'] is None:
-            del update_dict['profile_id']
+        
+        # --- PERBAIKAN 3: Mencegah perubahan profile_id saat update ---
+        update_dict = package_data.model_dump(exclude_unset=True, exclude={'id', 'profile', 'profile_id'})
 
         for key, value in update_dict.items():
-            if key not in ['id', 'profile']:
-                setattr(pkg, key, value)
+            setattr(pkg, key, value)
+            
         db.session.commit()
         updated_package = db.session.get(Package, pkg.id)
         return jsonify(PackageSchema.from_orm(updated_package).model_dump()), HTTPStatus.OK
@@ -120,29 +123,13 @@ def delete_package(current_admin: User, package_id):
     """Menghapus sebuah paket, mencegah penghapusan jika ada riwayat transaksi."""
     pkg = db.session.get(Package, package_id)
     if not pkg: return jsonify({"message": "Paket tidak ditemukan."}), HTTPStatus.NOT_FOUND
+    
+    # Logika ini sudah benar, mencegah penghapusan jika terikat transaksi
     if db.session.query(Transaction.id).filter_by(package_id=pkg.id).first():
         return jsonify({"message": "Paket tidak dapat dihapus karena memiliki riwayat transaksi."}), HTTPStatus.CONFLICT
+        
     db.session.delete(pkg)
     db.session.commit()
     return jsonify({"message": "Paket berhasil dihapus."}), HTTPStatus.OK
 
-@package_management_bp.route('/form-options/profiles', methods=['GET'])
-@admin_required
-def get_profiles_for_dropdown(current_admin: User):
-    """
-    Hanya mengambil daftar profil teknis yang BISA DIPILIH untuk paket.
-    Profil sistem seperti 'default' dan 'expired' akan disembunyikan.
-    """
-    try:
-        system_profiles_to_hide = ['default', 'expired']
-        
-        query = db.select(PackageProfile).where(
-            PackageProfile.profile_name.notin_(system_profiles_to_hide)
-        ).order_by(PackageProfile.profile_name)
-        
-        profiles = db.session.scalars(query).all()
-        
-        return jsonify([ProfileSimpleSchema.from_orm(p).model_dump() for p in profiles]), HTTPStatus.OK
-    except Exception as e:
-        current_app.logger.error(f"Error retrieving profiles for dropdown: {e}", exc_info=True)
-        return jsonify({"message": "Gagal mengambil daftar profil."}), HTTPStatus.INTERNAL_SERVER_ERROR
+# Endpoint `/form-options/profiles` tidak ada di sini, yang mana sudah benar.

@@ -157,6 +157,18 @@ const quotaDetails = computed((): QuotaInfo | null => {
       }
     }
   }
+  
+  // Set sisa hari untuk user unlimited juga
+  if (user.is_unlimited_user && user.quota_expiry_date) {
+      const expiry = new Date(user.quota_expiry_date);
+      if (isValid(expiry) && !isPast(expiry)) {
+          remainingDays = differenceInDays(expiry, new Date());
+      } else if (isPast(expiry)) {
+          remainingDays = 0;
+          status = 'EXPIRED'
+          statusColor = 'error'
+      }
+  }
 
   let promoName: string | null = null
   if (activeBonusPromo.value && user.approved_at) {
@@ -478,7 +490,7 @@ const resetHotspotPasswordForUser = async () => {
       }
       finally {
         loading.value = false
-        closeDialog()
+        // Dialog ditutup oleh fungsi confirm
       }
     },
   )
@@ -506,7 +518,7 @@ const generateAdminPasswordForAdmin = async () => {
       }
       finally {
         loading.value = false
-        closeDialog()
+        // Dialog ditutup oleh fungsi confirm
       }
     },
   )
@@ -524,7 +536,11 @@ const formatSimpleDateTime = (dateString: string | null) => {
 const formatKamarDisplay = (kamarValue: string | null) => {
   if (!kamarValue)
     return ''
-  return kamarValue.replace('Kamar_', '')
+  // Mengembalikan nilai asli jika itu adalah item dari `availableKamars`
+  if (availableKamars.value.includes(kamarValue)) {
+      return kamarValue.replace('Kamar_', '');
+  }
+  return kamarValue;
 }
 
 const formatPhoneNumberDisplay = (phoneNumber: string | null) => {
@@ -892,7 +908,7 @@ useHead({ title: 'Manajemen Pengguna' })
       </div>
     </div>
     
-    <!-- --- DIALOG VIEW DIPERBARUI --- -->
+    <!-- --- DIALOG VIEW YANG TELAH DISEMPURNAKAN --- -->
     <VDialog
       v-model="dialog.view"
       max-width="600"
@@ -975,24 +991,57 @@ useHead({ title: 'Manajemen Pengguna' })
             </VListItem>
           </VList>
 
-          <!-- BAGIAN INFORMASI KUOTA YANG DISIMPLIFY -->
+          <!-- BAGIAN INFORMASI KUOTA DIPERBARUI -->
           <template v-if="selectedUser.role === 'USER' && quotaDetails">
             <VDivider class="my-4" />
             <div class="text-overline mb-2">
               Informasi Kuota
             </div>
             
+            <!-- Tampilan jika pengguna unlimited -->
             <div v-if="quotaDetails.isUnlimited">
               <VAlert
                 variant="tonal"
-                color="primary"
+                color="success"
                 icon="tabler-infinity"
-                density="compact"
+                class="mb-4"
               >
-                Pengguna ini memiliki akses tak terbatas (unlimited).
+                <h6 class="text-h6">
+                  Langganan Unlimited Aktif
+                </h6>
+                <div>Nikmati koneksi internet tanpa batas kuota.</div>
               </VAlert>
+              <VList
+                  lines="one"
+                  density="compact"
+              >
+                <VListItem
+                  v-if="quotaDetails.expiryDate"
+                  prepend-icon="tabler-calendar-due"
+                >
+                  <VListItemTitle>Masa Berlaku Hingga</VListItemTitle>
+                  <VListItemSubtitle>{{ quotaDetails.expiryDate }}</VListItemSubtitle>
+                </VListItem>
+                <VListItem
+                  v-if="quotaDetails.remainingDays !== null"
+                  :prepend-icon="quotaDetails.status === 'EXPIRED' ? 'tabler-calendar-x' : 'tabler-hourglass-high'"
+                >
+                  <VListItemTitle>Sisa Masa Aktif</VListItemTitle>
+                  <VListItemSubtitle>
+                    <VChip
+                      :color="quotaDetails.statusColor"
+                      size="x-small"
+                      label
+                      class="px-2"
+                    >
+                      {{ quotaDetails.status === 'EXPIRED' ? 'Telah Berakhir' : `${quotaDetails.remainingDays} hari lagi` }}
+                    </VChip>
+                  </VListItemSubtitle>
+                </VListItem>
+              </VList>
             </div>
 
+            <!-- Tampilan jika pengguna punya kuota (tapi tidak unlimited) -->
             <div v-else-if="quotaDetails.totalQuotaMB > 0">
               <VList
                 lines="one"
@@ -1054,6 +1103,8 @@ useHead({ title: 'Manajemen Pengguna' })
                 </VListItem>
               </VList>
             </div>
+            
+            <!-- Tampilan jika pengguna belum punya paket sama sekali -->
             <div v-else>
               <VAlert
                 variant="tonal"
@@ -1323,7 +1374,8 @@ useHead({ title: 'Manajemen Pengguna' })
                     clearable
                     density="compact"
                     :rules="[requiredRule]"
-                    item-title="formatKamarDisplay"
+                    :item-title="item => formatKamarDisplay(item)"
+                    :item-value="item => item"
                   />
                 </VCol>
               </template>
@@ -1364,7 +1416,8 @@ useHead({ title: 'Manajemen Pengguna' })
                     clearable
                     density="compact"
                     :rules="[requiredRule]"
-                    item-title="formatKamarDisplay"
+                    :item-title="item => formatKamarDisplay(item)"
+                    :item-value="item => item"
                   />
                 </VCol>
               </template>
@@ -1458,7 +1511,7 @@ useHead({ title: 'Manajemen Pengguna' })
               if (confirmActionCallback) { 
                 confirmActionCallback(); 
               } 
-              closeDialog(); 
+              // Menutup dialog di-handle di dalam callback atau di finally block
             }"
           >
             Ya

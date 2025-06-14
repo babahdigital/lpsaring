@@ -1,5 +1,6 @@
 # backend/app/infrastructure/gateways/mikrotik_client.py
-# VERSI FINAL: Perbaikan menyeluruh untuk masalah penghapusan dan kuota
+# VERSI FINAL: Perbaikan menyeluruh, termasuk proses penghapusan user yang lebih robust.
+
 import os
 import time
 import re
@@ -8,6 +9,7 @@ from contextlib import contextmanager
 from typing import Optional, Tuple, List, Dict, Any
 from flask import current_app
 import routeros_api
+import routeros_api.exceptions
 
 logger = logging.getLogger(__name__)
 if not logger.handlers:
@@ -98,7 +100,6 @@ def format_to_local_phone(phone_number: Optional[str]) -> Optional[str]:
         logger.error(f"Format error: {e}", exc_info=True)
         return None
 
-# --- FUNGSI UTAMA DENGAN PERBAIKAN ---
 def activate_or_update_hotspot_user(
     api_connection: Any,
     user_mikrotik_username: str,
@@ -111,11 +112,9 @@ def activate_or_update_hotspot_user(
     max_retries: int = 3
 ) -> Tuple[bool, str]:
     """
-    Mengaktifkan/memperbarui user hotspot dengan pendekatan dua langkah:
-    1. Buat user dengan parameter dasar
-    2. Tambahkan parameter tambahan setelah jeda
+    Mengaktifkan/memperbarui user hotspot dengan penanganan error yang lebih robust
+    untuk parameter opsional dan tipe data error.
     """
-    # Ambil konfigurasi pengiriman limit
     try:
         send_limit_cfg = current_app.config.get('MIKROTIK_SEND_LIMIT_BYTES_TOTAL', False)
         send_timeout_cfg = current_app.config.get('MIKROTIK_SEND_SESSION_TIMEOUT', False)
@@ -125,37 +124,28 @@ def activate_or_update_hotspot_user(
     
     user_resource = api_connection.get_resource('/ip/hotspot/user')
     
-    # Coba hingga max_retries
     for attempt in range(1, max_retries + 1):
         try:
-            # Cek apakah user sudah ada
             users = user_resource.get(name=user_mikrotik_username)
+            user_id = None
+
             if users:
                 user_entry = users[0]
                 user_id = user_entry.get('.id') or user_entry.get('id')
                 if not user_id:
-                    return False, f"User ditemukan tapi tidak punya ID: {user_mikrotik_username}"
+                    return False, f"User {user_mikrotik_username} ditemukan tapi tidak punya ID."
 
-                # Update user yang sudah ada
-                update_data = {'.id': user_id}
-                update_data['password'] = hotspot_password
-                update_data['comment'] = comment
-                
+                update_data = {
+                    '.id': user_id,
+                    'password': hotspot_password,
+                    'comment': comment
+                }
                 if force_update_profile or user_entry.get('profile') != mikrotik_profile_name:
                     update_data['profile'] = mikrotik_profile_name
                 
-                # Tambahkan parameter opsional jika diaktifkan
-                if send_limit_cfg and limit_bytes_total is not None and limit_bytes_total >= 0:
-                    update_data['limit-bytes-total'] = str(limit_bytes_total)
-                
-                if send_timeout_cfg and session_timeout_seconds is not None and session_timeout_seconds >= 0:
-                    update_data['session-timeout'] = str(session_timeout_seconds)
-                
                 user_resource.set(**update_data)
-                return True, f"User {user_mikrotik_username} berhasil diperbarui"
-            
+                logger.info(f"User {user_mikrotik_username} berhasil diperbarui.")
             else:
-                # Langkah 1: Buat user dengan parameter dasar
                 add_data = {
                     'name': user_mikrotik_username,
                     'password': hotspot_password,
@@ -164,84 +154,100 @@ def activate_or_update_hotspot_user(
                     'comment': comment
                 }
                 user_resource.add(**add_data)
-                logger.info(f"User {user_mikrotik_username} berhasil dibuat (langkah 1/2)")
-                
-                # Beri jeda untuk memastikan user terdaftar
-                time.sleep(1.0)
-                
-                # Langkah 2: Dapatkan user dan update parameter tambahan
+                logger.info(f"User {user_mikrotik_username} berhasil dibuat. Melanjutkan ke update parameter opsional.")
+                time.sleep(0.5)
                 new_users = user_resource.get(name=user_mikrotik_username)
                 if not new_users:
                     logger.warning(f"User {user_mikrotik_username} tidak ditemukan setelah dibuat, percobaan {attempt}/{max_retries}")
                     time.sleep(0.5 * attempt)
                     continue
-                    
-                new_user = new_users[0]
-                user_id = new_user.get('.id') or new_user.get('id')
-                if not user_id:
-                    return False, f"User dibuat tapi tidak punya ID: {user_mikrotik_username}"
-                
-                # Siapkan data tambahan
-                update_data = {'.id': user_id}
-                updated = False
-                
-                # Tambahkan limit bytes jika diaktifkan
-                if send_limit_cfg and limit_bytes_total is not None and limit_bytes_total >= 0:
-                    try:
-                        user_resource.set(**{'.id': user_id, 'limit-bytes-total': str(limit_bytes_total)})
-                        logger.info(f"Set limit-bytes-total: {limit_bytes_total} untuk {user_mikrotik_username}")
-                        updated = True
-                    except routeros_api.exceptions.RouterOsApiError as e:
-                        if 'no such argument' in str(e).lower():
-                            logger.warning("Parameter 'limit-bytes-total' tidak didukung, melewati")
-                        else:
-                            raise
-                
-                # Tambahkan session timeout jika diaktifkan
-                if send_timeout_cfg and session_timeout_seconds is not None and session_timeout_seconds >= 0:
-                    try:
-                        user_resource.set(**{'.id': user_id, 'session-timeout': str(session_timeout_seconds)})
-                        logger.info(f"Set session-timeout: {session_timeout_seconds} untuk {user_mikrotik_username}")
-                        updated = True
-                    except routeros_api.exceptions.RouterOsApiError as e:
-                        if 'no such argument' in str(e).lower():
-                            logger.warning("Parameter 'session-timeout' tidak didukung, melewati")
-                        else:
-                            raise
-                
-                return True, f"User {user_mikrotik_username} berhasil dibuat" + (" dan diupdate" if updated else "")
-                
-        except routeros_api.exceptions.RouterOsApiError as e:
-            error_msg = getattr(e, 'original_message', str(e))
+                user_id = (new_users[0].get('.id') or new_users[0].get('id'))
+
+            if not user_id:
+                return False, f"Gagal mendapatkan ID untuk user {user_mikrotik_username} setelah dibuat/ditemukan."
             
-            # Tangani error spesifik
-            if 'already exists' in error_msg:
-                logger.info(f"User {user_mikrotik_username} sudah ada, mencoba update")
+            if send_limit_cfg and limit_bytes_total is not None and limit_bytes_total >= 0:
+                try:
+                    user_resource.set(**{'.id': user_id, 'limit-bytes-total': str(limit_bytes_total)})
+                    logger.info(f"Set limit-bytes-total: {limit_bytes_total} untuk {user_mikrotik_username} berhasil.")
+                except routeros_api.exceptions.RouterOsApiError as e_limit:
+                    error_str = str(e_limit).lower()
+                    if 'no such item' in error_str or 'unknown parameter' in error_str or 'no such argument' in error_str:
+                        logger.warning(f"Parameter 'limit-bytes-total' tidak didukung di RouterOS ini, melewati. Pesan: {e_limit}")
+                    else:
+                        raise e_limit
+
+            if send_timeout_cfg and session_timeout_seconds is not None and session_timeout_seconds > 0:
+                try:
+                    user_resource.set(**{'.id': user_id, 'session-timeout': str(session_timeout_seconds)})
+                    logger.info(f"Set session-timeout: {session_timeout_seconds} untuk {user_mikrotik_username} berhasil.")
+                except routeros_api.exceptions.RouterOsApiError as e_timeout:
+                    error_str = str(e_timeout).lower()
+                    if 'no such item' in error_str or 'unknown parameter' in error_str or 'no such argument' in error_str:
+                        logger.warning(f"Parameter 'session-timeout' tidak didukung di RouterOS ini, melewati. Pesan: {e_timeout}")
+                    else:
+                        raise e_timeout
+            
+            return True, f"User {user_mikrotik_username} berhasil diproses."
+
+        except routeros_api.exceptions.RouterOsApiError as e:
+            raw_message = getattr(e, 'original_message', str(e))
+            error_msg_str = ""
+            if isinstance(raw_message, bytes):
+                try:
+                    error_msg_str = raw_message.decode('utf-8', errors='ignore')
+                except:
+                    error_msg_str = str(raw_message)
+            elif isinstance(raw_message, tuple) and len(raw_message) > 1 and isinstance(raw_message[1], bytes):
+                 error_msg_str = raw_message[1].decode('utf-8', errors='ignore')
+            else:
+                error_msg_str = str(raw_message)
+
+            if 'already exists' in error_msg_str:
+                logger.info(f"User {user_mikrotik_username} sudah ada, mencoba lagi untuk update.")
+                time.sleep(0.5 * attempt)
                 continue
-                
-            logger.error(f"API Error (attempt {attempt}/{max_retries}): {error_msg}")
+            
+            logger.error(f"API Error (attempt {attempt}/{max_retries}) untuk {user_mikrotik_username}: {error_msg_str}")
             time.sleep(0.5 * attempt)
             
         except Exception as e:
-            logger.error(f"Unexpected error (attempt {attempt}/{max_retries}): {str(e)}", exc_info=True)
+            logger.error(f"Unexpected error (attempt {attempt}/{max_retries}) pada user {user_mikrotik_username}: {str(e)}", exc_info=True)
             time.sleep(1 * attempt)
     
     return False, f"Gagal memproses user {user_mikrotik_username} setelah {max_retries} percobaan"
 
+# --- FUNGSI DELETE DENGAN PENYEMPURNAAN ---
 def delete_hotspot_user(
     api_connection: Any,
     username: str,
     max_retries: int = 3
 ) -> Tuple[bool, str]:
-    """Menghapus user hotspot dengan verifikasi dan retry"""
+    """
+    Menghapus user hotspot dengan robust:
+    1. Hapus sesi aktif terlebih dahulu.
+    2. Hapus data user.
+    """
     if not username:
         return False, "Username tidak valid"
     
+    # --- PENAMBAHAN LOGIKA: HAPUS SESI AKTIF TERLEBIH DAHULU ---
+    try:
+        active_resource = api_connection.get_resource('/ip/hotspot/active')
+        active_sessions = active_resource.get(user=username)
+        if active_sessions:
+            active_id = active_sessions[0].get('.id') or active_sessions[0].get('id')
+            if active_id:
+                logger.info(f"Menemukan sesi aktif untuk {username} (ID: {active_id}). Menghapus sesi...")
+                active_resource.remove(id=active_id)
+                logger.info(f"Sesi aktif untuk {username} berhasil dihapus.")
+    except Exception as e:
+        logger.warning(f"Tidak dapat menghapus sesi aktif untuk {username} (mungkin tidak ada): {str(e)}")
+    # --- AKHIR PENAMBAHAN LOGIKA ---
+
     user_resource = api_connection.get_resource('/ip/hotspot/user')
-    
     for attempt in range(1, max_retries + 1):
         try:
-            # Cari user
             users = user_resource.get(name=username)
             if not users:
                 return True, f"User {username} tidak ditemukan (dianggap sudah terhapus)"
@@ -249,37 +255,35 @@ def delete_hotspot_user(
             user_entry = users[0]
             user_id = user_entry.get('.id') or user_entry.get('id')
             if not user_id:
-                return False, f"User ditemukan tapi tidak punya ID: {username}"
+                return False, f"User {username} ditemukan tapi tidak punya ID"
             
-            # Hapus user
+            logger.info(f"Menghapus data user {username} (ID: {user_id})...")
             user_resource.remove(id=user_id)
-            logger.info(f"Perintah hapus dikirim untuk {username} (ID: {user_id})")
             
-            # Verifikasi penghapusan
             time.sleep(0.5)
             verify_users = user_resource.get(name=username)
             if not verify_users:
-                return True, f"User {username} berhasil dihapus"
+                return True, f"User {username} berhasil dihapus sepenuhnya"
             
             logger.warning(f"Verifikasi gagal, user {username} masih ada (attempt {attempt}/{max_retries})")
             time.sleep(1 * attempt)
             
         except routeros_api.exceptions.RouterOsApiError as e:
-            error_msg = getattr(e, 'original_message', str(e))
+            raw_message = getattr(e, 'original_message', str(e))
+            error_msg_str = str(raw_message.decode('utf-8', errors='ignore') if isinstance(raw_message, bytes) else raw_message)
             
-            if 'no such item' in error_msg.lower():
-                return True, f"User {username} tidak ditemukan (dianggap terhapus)"
+            if 'no such item' in error_msg_str.lower():
+                return True, f"User {username} tidak ditemukan saat mencoba menghapus (dianggap terhapus)"
                 
-            logger.error(f"API Error (attempt {attempt}/{max_retries}): {error_msg}")
+            logger.error(f"API Error saat hapus user (attempt {attempt}/{max_retries}): {error_msg_str}")
             time.sleep(0.5 * attempt)
             
         except Exception as e:
-            logger.error(f"Unexpected error (attempt {attempt}/{max_retries}): {str(e)}", exc_info=True)
+            logger.error(f"Unexpected error saat hapus user (attempt {attempt}/{max_retries}): {str(e)}", exc_info=True)
             time.sleep(1 * attempt)
     
     return False, f"Gagal menghapus user {username} setelah {max_retries} percobaan"
 
-# --- FUNGSI PENDUKUNG LAINNYA ---
 def get_hotspot_user_details(
     api_connection: Any,
     username: str
@@ -309,7 +313,7 @@ def set_hotspot_user_limit(
             if not users:
                 return False, f"User {username} tidak ditemukan"
             
-            user_id = users[0].get('.id')
+            user_id = users[0].get('.id') or users[0].get('id')
             if not user_id:
                 return False, f"User {username} tidak punya ID valid"
             
@@ -329,11 +333,8 @@ def set_hotspot_user_profile(
     """Mengubah profil user hotspot"""
     try:
         user_resource = api_connection.get_resource('/ip/hotspot/user')
-        
-        # Cari berdasarkan username
         users = user_resource.get(name=username_or_id)
         if not users:
-            # Coba berdasarkan ID
             try:
                 users = user_resource.get(id=username_or_id)
             except:
@@ -342,7 +343,7 @@ def set_hotspot_user_profile(
         if not users:
             return False, f"User {username_or_id} tidak ditemukan"
         
-        user_id = users[0].get('.id')
+        user_id = users[0].get('.id') or users[0].get('id')
         if not user_id:
             return False, f"User {username_or_id} tidak punya ID valid"
         

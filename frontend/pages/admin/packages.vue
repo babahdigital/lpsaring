@@ -4,7 +4,7 @@ import type { VDataTableServer } from 'vuetify/labs/VDataTable'
 import { useDisplay } from 'vuetify'
 import { useNuxtApp } from '#app'
 
-// --- STRUKTUR DATA (Interface Profile tidak lagi digunakan di halaman ini) ---
+// --- STRUKTUR DATA (Tidak berubah) ---
 interface Profile {
   id: string;
   profile_name: string;
@@ -16,12 +16,11 @@ interface Package {
   description: string | null;
   price: number;
   is_active: boolean;
-  profile_id: string; // Tetap ada di data, tapi tidak di form
+  profile_id: string;
   data_quota_gb: number;
   duration_days: number;
-  profile: Profile; // Digunakan untuk menampilkan nama profil
+  profile: Profile;
 }
-// --- AKHIR STRUKTUR DATA ---
 
 const { $api } = useNuxtApp()
 const { smAndDown } = useDisplay()
@@ -35,48 +34,74 @@ const snackbar = reactive({ show: false, text: '', color: 'info' })
 const selectedPackage = ref<Package | null>(null)
 const editedPackage = ref<Partial<Package>>({})
 
-// Default package tidak lagi membutuhkan profile_id
-const defaultPackage: Partial<Package> = { 
-  name: '', 
-  price: 0, 
-  description: '', 
-  is_active: true, 
-  data_quota_gb: 0, 
-  duration_days: 30 
+const defaultPackage: Partial<Package> = {
+  name: '',
+  price: 0,
+  description: '',
+  is_active: true,
+  data_quota_gb: 0,
+  duration_days: 30
 }
 
-// --- LOGIKA FORMAT HARGA ---
-const formattedPrice = ref('')
+// --- PENAMBAHAN 1: State untuk Switch Unlimited ---
+const isUnlimited = ref(false)
+// --- AKHIR PENAMBAHAN 1 ---
 
+// --- LOGIKA FORMAT HARGA (Tidak berubah) ---
+const formattedPrice = ref('')
 function formatNumber(value: number | string): string {
   if (value === null || value === undefined) return ''
   return new Intl.NumberFormat('id-ID').format(Number(value))
 }
-
 function unformatNumber(value: string): number {
   return parseInt(String(value).replace(/[^0-9]/g, ''), 10) || 0
 }
-
 watch(formattedPrice, (newValue) => {
   const cleanValue = String(newValue).replace(/[^0-9]/g, '')
   editedPackage.value.price = unformatNumber(cleanValue)
-  
   const newFormattedValue = formatNumber(cleanValue)
   if (formattedPrice.value !== newFormattedValue) {
     formattedPrice.value = newFormattedValue
   }
 })
 
+// --- PENYESUAIAN 2: Sinkronisasi Switch saat Dialog Dibuka ---
 watch(() => dialog.edit, (isOpening) => {
-  if (isOpening && editedPackage.value.price !== undefined && editedPackage.value.price !== null) {
-    formattedPrice.value = formatNumber(editedPackage.value.price)
+  if (isOpening) {
+    // Sinkronkan harga
+    if (editedPackage.value.price !== undefined && editedPackage.value.price !== null) {
+      formattedPrice.value = formatNumber(editedPackage.value.price)
+    } else {
+      formattedPrice.value = ''
+    }
+    // Sinkronkan status switch unlimited
+    isUnlimited.value = editedPackage.value.data_quota_gb === 0
   } else {
     formattedPrice.value = ''
   }
 })
-// --- AKHIR LOGIKA FORMAT HARGA ---
+// --- AKHIR PENYESUAIAN 2 ---
 
-// Hanya fetchPackages yang diperlukan saat mounting
+
+// --- PENAMBAHAN 3: Logika Reaktif untuk Switch ---
+// Jika switch diaktifkan, paksa kuota menjadi 0
+watch(isUnlimited, (isNowUnlimited) => {
+  if (isNowUnlimited) {
+    editedPackage.value.data_quota_gb = 0
+  }
+})
+// Jika admin mengetik 0 di kuota, aktifkan switch secara otomatis
+watch(() => editedPackage.value.data_quota_gb, (newQuota) => {
+  if (newQuota === 0) {
+    isUnlimited.value = true
+  } else if (newQuota && newQuota > 0 && isUnlimited.value) {
+    // Jika admin mengisi angka > 0, matikan switch
+    isUnlimited.value = false
+  }
+})
+// --- AKHIR PENAMBAHAN 3 ---
+
+
 onMounted(fetchPackages)
 
 const formTitle = computed(() => (editedPackage.value.id ? 'Edit Paket Jualan' : 'Tambah Paket Jualan'))
@@ -91,8 +116,8 @@ const headers = [
 async function fetchPackages() {
   loading.value = true
   try {
-    const params = new URLSearchParams({ 
-      page: String(options.value.page), 
+    const params = new URLSearchParams({
+      page: String(options.value.page),
       itemsPerPage: String(options.value.itemsPerPage),
     })
     const response = await $api<{ items: Package[], totalItems: number }>(`/admin/packages?${params.toString()}`)
@@ -107,13 +132,12 @@ async function fetchPackages() {
   }
 }
 
-// Fungsi fetchAllProfilesForSelect tidak lagi diperlukan dan bisa dihapus
-
 function openDialog(type: 'edit' | 'delete', pkg: Package | null = null) {
   if (type === 'edit') {
-    // Saat edit, pastikan tidak mengirim `profile` object ke backend
     const { profile, ...restOfPkg } = pkg || {};
     editedPackage.value = pkg ? JSON.parse(JSON.stringify(restOfPkg)) : { ...defaultPackage }
+    // Saat membuka dialog, langsung atur status switch berdasarkan data
+    isUnlimited.value = editedPackage.value.data_quota_gb === 0
     dialog.edit = true
   } else if (type === 'delete' && pkg) {
     selectedPackage.value = { ...pkg }
@@ -183,7 +207,6 @@ useHead({ title: 'Manajemen Paket Mikrotik' })
       >
         <template #item.details="{ item }">
           <div class="d-flex flex-column py-2">
-            <!-- Menampilkan nama profil tetap penting -->
             <small class="text-caption text-medium-emphasis">Profil: {{ item.profile?.profile_name || 'N/A' }}</small>
             <div class="d-flex align-center gap-2">
               <VChip v-if="item.data_quota_gb === 0" color="success" size="x-small" label>Unlimited</VChip>
@@ -224,61 +247,65 @@ useHead({ title: 'Manajemen Paket Mikrotik' })
         </template>
       </VDataTableServer>
       
-      <!-- Tampilan mobile tidak berubah signifikan -->
       <div v-else class="pa-3">
-        <!-- ... (Kode untuk tampilan mobile tetap sama) ... -->
-      </div>
+        </div>
     </VCard>
 
-    <!-- Dialog Edit/Tambah Paket -->
     <VDialog v-model="dialog.edit" max-width="600px" persistent>
       <VCard>
         <VCardTitle class="pa-4 text-h6">{{ formTitle }}</VCardTitle>
         <VCardText class="pt-2 pa-4">
           <VRow>
-            <!-- --- PERUBAHAN DI SINI --- -->
-            <!-- VCol untuk Nama Paket sekarang mengambil lebar penuh -->
             <VCol cols="12">
               <VTextField v-model="editedPackage.name" label="Nama Paket (Nama Jualan)" placeholder="Contoh: Paket Hebat" />
             </VCol>
             
-            <!-- VCol untuk VSelect profil Mikrotik DIHAPUS -->
-
             <VCol cols="12" md="6">
-              <VTextField 
-                v-model.number="editedPackage.data_quota_gb" 
-                label="Kuota Data (GB)" 
-                type="number" 
-                hint="Isi 0 untuk Unlimited" 
-                :rules="[(v) => (v !== null && v >= 0) || 'Kuota harus angka positif atau 0']"
+              <VTextField
+                v-model.number="editedPackage.data_quota_gb"
+                label="Kuota Data (GB)"
+                type="number"
+                :rules="[(v) => (v !== null && v >= 0) || 'Kuota harus angka positif']"
                 min="0"
                 step="0.01"
+                :disabled="isUnlimited"
               />
             </VCol>
+
+            <VCol cols="12" md="6" class="d-flex align-center">
+               <VSwitch
+                v-model="isUnlimited"
+                label="Paket Unlimited"
+                color="success"
+                class="me-auto"
+              />
+            </VCol>
+
             <VCol cols="12" md="6">
-              <VTextField 
-                v-model.number="editedPackage.duration_days" 
-                label="Masa Berlaku (Hari)" 
-                type="number" 
-                :rules="[(v) => (v !== null && v >= 0) || 'Durasi harus angka positif atau 0']"
-                min="0"
+              <VTextField
+                v-model.number="editedPackage.duration_days"
+                label="Masa Berlaku (Hari)"
+                type="number"
+                :rules="[(v) => (v !== null && v > 0) || 'Durasi harus lebih dari 0']"
+                min="1"
               />
             </VCol>
-            <VCol cols="12">
-              <VTextField 
-                v-model="formattedPrice" 
-                label="Harga Jual" 
-                type="text" 
-                prefix="Rp" 
+
+            <VCol cols="12" md="6">
+              <VTextField
+                v-model="formattedPrice"
+                label="Harga Jual"
+                type="text"
+                prefix="Rp"
                 placeholder="50.000"
                 :rules="[(v) => (unformatNumber(v) >= 0) || 'Harga harus angka positif']"
               />
             </VCol>
+            
             <VCol cols="12">
               <VTextarea v-model="editedPackage.description" label="Deskripsi Paket (Opsional)" rows="2" />
             </VCol>
-            <!-- --- AKHIR PERUBAHAN --- -->
-          </VRow>
+            </VRow>
         </VCardText>
         <VDivider />
         <VCardActions class="pa-4">
@@ -290,10 +317,8 @@ useHead({ title: 'Manajemen Paket Mikrotik' })
       </VCard>
     </VDialog>
     
-    <!-- Dialog Hapus tidak berubah -->
     <VDialog v-model="dialog.delete" max-width="450px" persistent>
-      <!-- ... (Kode dialog hapus tetap sama) ... -->
-    </VDialog>
+      </VDialog>
 
     <VSnackbar v-model="snackbar.show" :color="snackbar.color" location="top center" :timeout="3000">
       {{ snackbar.text }}
