@@ -281,7 +281,7 @@
           <VCardItem>
             <VCardTitle>Paket Terlaris</VCardTitle>
             <VCardSubtitle>Berdasarkan jumlah penjualan bulan ini</VCardSubtitle>
-          </VCardItem style="padding: 27px 0;">
+          </VCardItem style="padding-bottom: 30px; padding-top: 25px;">
           <VCardText>
             <ClientOnly>
               <VueApexCharts
