@@ -8,7 +8,9 @@ const dashboardStore = useDashboardStore()
 
 const currentUser = computed(() => authStore.currentUser)
 const isLoggedIn = computed(() => authStore.isLoggedIn)
-const isAdmin = computed(() => authStore.isAdmin || authStore.isSuperAdmin)
+const isAdmin = computed(() => authStore.isAdmin)
+// Menambahkan computed property spesifik untuk Super Admin
+const isSuperAdmin = computed(() => authStore.isSuperAdmin) 
 const pendingUserCount = computed(() => dashboardStore.stats?.pendingApprovals ?? 0)
 
 onMounted(() => {
@@ -105,7 +107,11 @@ const isLoadingAuth = computed(() => !authStore.initialAuthCheckDone && !authSto
                   color="success"
                   bordered
                 >
-                  <VAvatar color="primary" variant="tonal" size="40">
+                  <VAvatar
+                    color="primary"
+                    variant="tonal"
+                    size="40"
+                  >
                     <span class="text-h6 font-weight-medium">{{ userInitials }}</span>
                   </VAvatar>
                 </VBadge>
@@ -117,27 +123,63 @@ const isLoadingAuth = computed(() => !authStore.initialAuthCheckDone && !authSto
             <VListItemSubtitle>{{ userRole }}</VListItemSubtitle>
           </VListItem>
           <VDivider class="my-2" />
-          <VListItem link to="/akun" density="compact">
+          <VListItem
+            link
+            to="/akun"
+            density="compact"
+          >
             <template #prepend>
-              <VIcon class="me-2" icon="tabler-user" size="22" />
+              <VIcon
+                class="me-2"
+                icon="tabler-user"
+                size="22"
+              />
             </template>
             <VListItemTitle>Profil Saya</VListItemTitle>
           </VListItem>
-          <VListItem v-if="isAdmin && pendingUserCount > 0" link to="/admin/users" density="compact">
+          <VListItem
+            v-if="isAdmin && pendingUserCount > 0"
+            link
+            to="/admin/users"
+            density="compact"
+          >
             <template #prepend>
-              <VIcon class="me-2" icon="tabler-user-exclamation" size="22" color="warning" />
+              <VIcon
+                class="me-2"
+                icon="tabler-user-exclamation"
+                size="22"
+                color="warning"
+              />
             </template>
-            <VListItemTitle class="text-warning">Persetujuan Pengguna</VListItemTitle>
-             <template #append>
-              <VBadge color="error" :content="pendingUserCount" inline />
+            <VListItemTitle class="text-warning">
+              Persetujuan Pengguna
+            </VListItemTitle>
+            <template #append>
+              <VBadge
+                color="error"
+                :content="pendingUserCount"
+                inline
+              />
             </template>
           </VListItem>
-          <VListItem link disabled density="compact">
+          
+          <!-- Pengaturan: Hanya muncul jika isSuperAdmin bernilai true -->
+          <VListItem
+            v-if="isSuperAdmin"
+            link
+            to="/admin/settings/general"
+            density="compact"
+          >
             <template #prepend>
-              <VIcon class="me-2" icon="tabler-settings" size="22" />
+              <VIcon
+                class="me-2"
+                icon="tabler-settings"
+                size="22"
+              />
             </template>
             <VListItemTitle>Pengaturan</VListItemTitle>
           </VListItem>
+
           <VDivider class="my-2" />
           <div class="px-2 py-1">
             <VBtn
@@ -147,7 +189,10 @@ const isLoadingAuth = computed(() => !authStore.initialAuthCheckDone && !authSto
               @click="handleLogout"
             >
               <template #prepend>
-                <VIcon icon="tabler-logout" size="20" />
+                <VIcon
+                  icon="tabler-logout"
+                  size="20"
+                />
               </template>
               Logout
             </VBtn>
@@ -156,10 +201,21 @@ const isLoadingAuth = computed(() => !authStore.initialAuthCheckDone && !authSto
       </VMenu>
     </VAvatar>
   </VBadge>
-  <VAvatar v-else-if="isLoadingAuth" color="grey-lighten-1" variant="tonal">
-    <VProgressCircular indeterminate size="24" />
+  <VAvatar
+    v-else-if="isLoadingAuth"
+    color="grey-lighten-1"
+    variant="tonal"
+  >
+    <VProgressCircular
+      indeterminate
+      size="24"
+    />
   </VAvatar>
-  <VBtn v-else-if="!isLoggedIn && authStore.initialAuthCheckDone" to="/login" color="primary">
+  <VBtn
+    v-else-if="!isLoggedIn && authStore.initialAuthCheckDone"
+    to="/login"
+    color="primary"
+  >
     Login
   </VBtn>
 </template>
