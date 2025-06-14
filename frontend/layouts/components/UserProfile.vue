@@ -88,9 +88,20 @@ const isLoadingAuth = computed(() => !authStore.initialAuthCheckDone && !authSto
 <template>
   <div class="d-flex align-center gap-2">
     <!-- Badge pendapatan hari ini untuk admin -->
-    <div v-if="isAdmin" class="revenue-badge">
-      <VChip variant="tonal" color="success" size="small">
-        <VIcon icon="tabler-currency-rupiah" size="18" class="me-1" />
+    <div
+      v-if="isAdmin && isLoggedIn"
+      class="revenue-badge"
+    >
+      <VChip
+        variant="tonal"
+        color="success"
+        size="small"
+      >
+        <VIcon
+          icon="tabler-currency-rupiah"
+          size="18"
+          class="me-1"
+        />
         {{ formattedTodayRevenue }}
       </VChip>
     </div>
@@ -144,10 +155,13 @@ const isLoadingAuth = computed(() => !authStore.initialAuthCheckDone && !authSto
               <VListItemSubtitle>{{ userRole }}</VListItemSubtitle>
             </VListItem>
             
-            <!-- Tambahkan pendapatan hari ini di menu dropdown -->
+            <!-- Tambahkan pendapatan hari ini di menu dropdown (hanya admin) -->
             <template v-if="isAdmin">
               <VDivider class="my-2" />
-              <VListItem density="compact" class="px-0">
+              <VListItem
+                density="compact"
+                class="px-0"
+              >
                 <VListItemTitle class="d-flex justify-space-between align-center">
                   <span>Pendapatan Hari Ini:</span>
                   <span class="font-weight-medium">{{ formattedTodayRevenue }}</span>
@@ -234,25 +248,26 @@ const isLoadingAuth = computed(() => !authStore.initialAuthCheckDone && !authSto
         </VMenu>
       </VAvatar>
     </VBadge>
+
+    <VAvatar
+      v-else-if="isLoadingAuth"
+      color="grey-lighten-1"
+      variant="tonal"
+    >
+      <VProgressCircular
+        indeterminate
+        size="24"
+      />
+    </VAvatar>
+
+    <VBtn
+      v-else-if="!isLoggedIn && authStore.initialAuthCheckDone"
+      to="/login"
+      color="primary"
+    >
+      Login
+    </VBtn>
   </div>
-  
-  <VAvatar
-    v-else-if="isLoadingAuth"
-    color="grey-lighten-1"
-    variant="tonal"
-  >
-    <VProgressCircular
-      indeterminate
-      size="24"
-    />
-  </VAvatar>
-  <VBtn
-    v-else-if="!isLoggedIn && authStore.initialAuthCheckDone"
-    to="/login"
-    color="primary"
-  >
-    Login
-  </VBtn>
 </template>
 
 <style scoped>
