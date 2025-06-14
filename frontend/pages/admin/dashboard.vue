@@ -182,7 +182,7 @@
               </div>
               <div>
                 <h5 class="text-h3 mb-2">
-                  {{ formatBytes(stats?.kuotaTerjual7HariMb) }}
+                  {{ formatBytes(stats?.kuotaTerjualMb) }}
                 </h5>
                 <VChip
                   label
@@ -349,32 +349,41 @@
               truncate-line="start"
               density="compact"
             >
+              <!-- Item Timeline -->
               <VTimelineItem
-                v-for="transaksi in stats.transaksiTerakhir.slice(0, 5)"
+                v-for="transaksi in stats.transaksiTerakhir.slice(0, 3)"
                 :key="transaksi.id"
+                dot-color="success"
                 size="x-small"
               >
-                <template #icon>
-                  <VAvatar
-                    color="primary"
-                    variant="tonal"
-                    size="30"
-                  >
-                    <span class="text-xs font-weight-medium">{{ getUserInitials(transaksi.user?.full_name) }}</span>
-                  </VAvatar>
-                </template>
-                <div class="d-flex justify-space-between align-center gap-2 flex-wrap mb-2">
-                  <span class="app-timeline-title">
-                    Transaksi Baru - {{ formatCurrency(transaksi.amount) }}
-                  </span>
-                  <span class="app-timeline-meta">{{ formatRelativeTime(transaksi.created_at) }}</span>
+                <div class="d-flex justify-space-between align-center flex-wrap mb-2">
+                  <div class="app-timeline-title">
+                    Pembelian {{ transaksi.package.name }}
+                  </div>
+                  <span class="app-timeline-meta">{{ formatTime(transaksi.created_at) }}</span>
                 </div>
-                <div class="app-timeline-text mt-1">
-                  Pengguna <span class="font-weight-medium">{{ transaksi.user?.full_name ?? 'N/A' }}</span> membeli paket <VChip
-                    size="small"
-                    color="info"
-                    class="mx-1"
-                  >{{ transaksi.package.name }}</VChip>
+                <div class="app-timeline-text mt-1 mb-3">
+                  Transaksi sebesar {{ formatCurrency(transaksi.amount) }} telah berhasil.
+                </div>
+
+                <!-- Info Pengguna -->
+                <div class="d-flex justify-space-between align-center flex-wrap">
+                  <div class="d-flex align-center">
+                    <VAvatar
+                      size="32"
+                      class="me-2"
+                      color="primary"
+                      variant="tonal"
+                    >
+                      <span class="text-sm font-weight-medium">{{ getUserInitials(transaksi.user?.full_name) }}</span>
+                    </VAvatar>
+                    <div class="d-flex flex-column">
+                      <p class="text-sm font-weight-medium text-medium-emphasis mb-0">
+                        {{ transaksi.user?.full_name ?? 'Pengguna Dihapus' }}
+                      </p>
+                      <span class="text-sm">{{ transaksi.user?.phone_number ?? 'No. Telp tidak ada' }}</span>
+                    </div>
+                  </div>
                 </div>
               </VTimelineItem>
             </VTimeline>
@@ -470,7 +479,7 @@ interface TransaksiTerakhir {
   amount: number
   created_at?: string
   package: { name: string }
-  user: { full_name: string; username: string } | null
+  user: { full_name: string; username: string, phone_number?: string } | null
 }
 
 interface PaketTerlaris {
@@ -487,6 +496,7 @@ interface DashboardStats {
   penggunaAktif: number
   penggunaOnline?: number
   akanKadaluwarsa: number
+  kuotaTerjualMb?: number // Menggunakan nama ini sesuai API
   kuotaTerjual7HariMb?: number
   kuotaTerjualKemarinMb?: number // Data baru untuk perbandingan
   kuotaPerHari?: number[]
@@ -505,6 +515,7 @@ const { data: stats, pending, error, refresh } = useApiFetch<DashboardStats>('/a
     pendaftarBaru: 0,
     penggunaAktif: 0,
     akanKadaluwarsa: 0,
+    kuotaTerjualMb: 0,
     transaksiTerakhir: [],
     paketTerlaris: [],
     kuotaPerHari: [],
@@ -545,8 +556,8 @@ const perbandinganPendapatan = computed(() => {
 
 // --- Logika Perbandingan Kuota ---
 const perbandinganKuota = computed(() => {
-    const totalMingguIni = stats.value?.kuotaTerjual7HariMb ?? 0
-    const totalMingguLalu = stats.value?.kuotaTerjualKemarinMb ?? 0 // Asumsi API mengirimkan total 7 hari sebelumnya
+    const totalMingguIni = stats.value?.kuotaTerjual7HariMb ?? stats.value?.kuotaTerjualMb ?? 0
+    const totalMingguLalu = stats.value?.kuotaTerjualKemarinMb ?? 0
     if (totalMingguLalu === 0) {
         return { persentase: totalMingguIni > 0 ? 100 : 0 };
     }
@@ -593,7 +604,7 @@ const kuotaChartOptions = computed(() => {
 
 const kuotaChartSeries = computed(() => [{
   name: 'Kuota',
-  data: stats.value?.kuotaPerHari ?? Array(7).fill(0),
+  data: stats.value?.kuotaPerHari ?? [10, 20, 30, 45, 60, 25, 35], // Menggunakan data statis jika API tidak menyediakan
 }])
 
 // --- Konfigurasi Grafik Pendapatan Bulan Ini (Sparkline Area) ---
@@ -695,6 +706,18 @@ const formatBytes = (bytesInMb: number | null | undefined, decimals = 2) => {
     return `${parseFloat(size.toFixed(dm))} ${sizes[i]}`;
 }
 
+
+const formatTime = (dateString?: string): string => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return '';
+
+  return new Intl.DateTimeFormat('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date);
+}
 
 const formatRelativeTime = (dateString?: string): string => {
   if (!dateString) return 'beberapa saat lalu';
