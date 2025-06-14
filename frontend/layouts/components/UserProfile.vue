@@ -98,7 +98,7 @@ const isLoadingAuth = computed(() => !authStore.initialAuthCheckDone && !authSto
         size="small"
       >
         <VIcon
-          icon="tabler-currency-rupiah"
+          icon="tabler-currency"
           size="18"
           class="me-1"
         />
