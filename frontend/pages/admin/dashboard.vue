@@ -95,7 +95,7 @@
                   <span>Transaksi</span>
                 </div>
                 <h5 class="text-h5">
-                  {{ stats?.transaksiHariIni ?? 0 }}
+                  {{ stats?.transaksiHariIni ?? stats?.transaksiTerakhir.length ?? 0 }}
                 </h5>
                 <div class="text-body-2 text-disabled">
                   Sukses
@@ -177,7 +177,7 @@
                   Kuota Terjual
                 </h5>
                 <div class="text-body-1">
-                  Laporan 7 Hari Terakhir
+                  Laporan Mingguan
                 </div>
               </div>
               <div>
@@ -263,10 +263,11 @@
         cols="12"
         md="5"
       >
-        <VCard
-          title="Paket Terlaris"
-          subtitle="Berdasarkan jumlah penjualan bulan ini"
-        >
+        <VCard>
+          <VCardItem>
+            <VCardTitle>Paket Terlaris</VCardTitle>
+            <VCardSubtitle>Berdasarkan jumlah penjualan bulan ini</VCardSubtitle>
+          </VCardItem>
           <VCardText>
             <ClientOnly>
               <VueApexCharts
@@ -351,9 +352,17 @@
               <VTimelineItem
                 v-for="transaksi in stats.transaksiTerakhir.slice(0, 5)"
                 :key="transaksi.id"
-                dot-color="primary"
                 size="x-small"
               >
+                <template #icon>
+                  <VAvatar
+                    color="primary"
+                    variant="tonal"
+                    size="30"
+                  >
+                    <span class="text-xs font-weight-medium">{{ getUserInitials(transaksi.user?.full_name) }}</span>
+                  </VAvatar>
+                </template>
                 <div class="d-flex justify-space-between align-center gap-2 flex-wrap mb-2">
                   <span class="app-timeline-title">
                     Transaksi Baru - {{ formatCurrency(transaksi.amount) }}
@@ -442,6 +451,7 @@
 import { useTheme } from 'vuetify'
 import { useApiFetch } from '~/composables/useApiFetch'
 import { computed, defineAsyncComponent, h, ref, watch } from 'vue'
+import { hexToRgb } from '@layouts/utils' // Import helper
 
 const VueApexCharts = defineAsyncComponent(() =>
   import('vue3-apexcharts').then(mod => mod.default).catch((err) => {
@@ -458,7 +468,7 @@ definePageMeta({
 interface TransaksiTerakhir {
   id: string
   amount: number
-  created_at?: string // Menjadi opsional untuk mencegah error
+  created_at?: string
   package: { name: string }
   user: { full_name: string; username: string } | null
 }
@@ -471,15 +481,16 @@ interface PaketTerlaris {
 interface DashboardStats {
   pendapatanHariIni: number
   pendapatanBulanIni: number
-  pendapatanKemarin?: number // Opsional
-  transaksiHariIni?: number // Opsional
+  pendapatanKemarin?: number
+  transaksiHariIni?: number
   pendaftarBaru: number
   penggunaAktif: number
-  penggunaOnline?: number // Opsional
+  penggunaOnline?: number
   akanKadaluwarsa: number
-  kuotaTerjual7HariMb?: number // Opsional
-  kuotaPerHari?: number[] // Opsional
-  pendapatanPerHari?: number[] // Opsional
+  kuotaTerjual7HariMb?: number
+  kuotaTerjualKemarinMb?: number // Data baru untuk perbandingan
+  kuotaPerHari?: number[]
+  pendapatanPerHari?: number[]
   transaksiTerakhir: TransaksiTerakhir[]
   paketTerlaris: PaketTerlaris[]
 }
@@ -488,6 +499,16 @@ interface DashboardStats {
 const { data: stats, pending, error, refresh } = useApiFetch<DashboardStats>('/admin/dashboard/stats', {
   lazy: true,
   server: false,
+  default: () => ({ // Menyediakan nilai default untuk mencegah error saat render awal
+    pendapatanHariIni: 0,
+    pendapatanBulanIni: 0,
+    pendaftarBaru: 0,
+    penggunaAktif: 0,
+    akanKadaluwarsa: 0,
+    transaksiTerakhir: [],
+    paketTerlaris: [],
+    kuotaPerHari: [],
+  }),
 })
 
 const vuetifyTheme = useTheme()
@@ -507,7 +528,6 @@ watch(stats, (newStats) => {
     statistics.value[1].value = newStats.akanKadaluwarsa ?? 0
     statistics.value[2].value = newStats.penggunaAktif ?? 0
     statistics.value[3].value = newStats.penggunaOnline ?? 0
-    // Note: 'change' masih 0 karena data pembanding belum ada dari API
   }
 })
 
@@ -525,47 +545,52 @@ const perbandinganPendapatan = computed(() => {
 
 // --- Logika Perbandingan Kuota ---
 const perbandinganKuota = computed(() => {
-    const kuotaHariIni = stats.value?.kuotaPerHari?.slice(-1)[0] ?? 0;
-    const kuotaKemarin = stats.value?.kuotaPerHari?.slice(-2)[0] ?? 0;
-    if (kuotaKemarin === 0) {
-        return { persentase: kuotaHariIni > 0 ? 100 : 0 };
+    const totalMingguIni = stats.value?.kuotaTerjual7HariMb ?? 0
+    const totalMingguLalu = stats.value?.kuotaTerjualKemarinMb ?? 0 // Asumsi API mengirimkan total 7 hari sebelumnya
+    if (totalMingguLalu === 0) {
+        return { persentase: totalMingguIni > 0 ? 100 : 0 };
     }
-    const selisih = kuotaHariIni - kuotaKemarin;
-    const persentase = (selisih / kuotaKemarin) * 100;
-    return { persentase: isFinite(persentase) ? persentase : 0 };
+    const selisih = totalMingguIni - totalMingguLalu
+    const persentase = (selisih / totalMingguLalu) * 100
+    return { persentase: isFinite(persentase) ? persentase : 0 }
 });
 
 // --- Konfigurasi Grafik Kuota (Bar Chart) ---
-const kuotaChartOptions = computed(() => ({
-  chart: {
-    type: 'bar',
-    toolbar: { show: false },
-    // Sparkline dihapus agar bar chart dapat dirender
-  },
-  grid: { show: false, padding: { top: 0, bottom: 0, left: -5, right: 0 } },
-  colors: [vuetifyTheme.current.value.colors.success],
-  plotOptions: { bar: { borderRadius: 4, columnWidth: '60%', distributed: true } },
-  legend: { show: false },
-  dataLabels: { enabled: false },
-  stroke: { width: 0 },
-  xaxis: {
-    labels: { show: false },
-    axisBorder: { show: false },
-    axisTicks: { show: false },
-  },
-  yaxis: { labels: { show: false } },
-  tooltip: {
-    enabled: true,
-    theme: 'dark',
-    x: { show: false },
-    y: {
-        formatter: (val: number) => `${formatBytes(val)}`,
-        title: {
-            formatter: () => 'Kuota Terjual'
-        }
-    }
-  },
-}))
+const kuotaChartOptions = computed(() => {
+  const currentTheme = vuetifyTheme.current.value.colors
+  const variableTheme = vuetifyTheme.current.value.variables
+  const labelColor = `rgba(${hexToRgb(currentTheme['on-surface'])},${variableTheme['disabled-opacity']})`
+  const-labelSuccessColor = `rgba(${hexToRgb(currentTheme.success)},0.2)`
+
+  return {
+    chart: { type: 'bar', height: 162, parentHeightOffset: 0, toolbar: { show: false } },
+    plotOptions: {
+      bar: { barHeight: '80%', columnWidth: '30%', startingShape: 'rounded', endingShape: 'rounded', borderRadius: 6, distributed: true },
+    },
+    tooltip: { enabled: false },
+    grid: { show: false, padding: { top: -20, bottom: -12, left: -10, right: 0 } },
+    colors: [
+      labelSuccessColor,
+      labelSuccessColor,
+      labelSuccessColor,
+      labelSuccessColor,
+      currentTheme.success,
+      labelSuccessColor,
+      labelSuccessColor,
+    ],
+    dataLabels: { enabled: false },
+    legend: { show: false },
+    xaxis: {
+      categories: ['S', 'S', 'R', 'K', 'J', 'S', 'M'],
+      axisBorder: { show: false },
+      axisTicks: { show: false },
+      labels: { style: { colors: labelColor, fontSize: '13px', fontFamily: 'Public sans' } },
+    },
+    yaxis: { labels: { show: false } },
+    states: { hover: { filter: { type: 'none' } } },
+  }
+})
+
 const kuotaChartSeries = computed(() => [{
   name: 'Kuota',
   data: stats.value?.kuotaPerHari ?? Array(7).fill(0),
@@ -593,38 +618,59 @@ const pendapatanBulanIniChartSeries = computed(() => [{
 }])
 
 // --- Konfigurasi Grafik Paket Terlaris (Donut Chart) ---
-const paketTerlarisChartOptions = computed(() => ({
-  chart: { type: 'donut' },
-  labels: stats.value?.paketTerlaris.map(p => p.name) ?? [],
-  colors: [
-    vuetifyTheme.current.value.colors.primary,
-    vuetifyTheme.current.value.colors.success,
-    vuetifyTheme.current.value.colors.info,
-    vuetifyTheme.current.value.colors.warning,
-    vuetifyTheme.current.value.colors.secondary,
-  ],
-  dataLabels: { enabled: true, formatter: (val: number, opts: any) => `${opts.w.config.series[opts.seriesIndex]}x` },
-  legend: {
-    position: 'bottom',
-    markers: { offsetX: -3 },
-    itemMargin: { horizontal: 10 },
-    // PERBAIKAN: Mengatur warna teks legenda secara dinamis
-    labels: { colors: vuetifyTheme.current.value.colors.onSurface },
-  },
-  plotOptions: {
-    pie: {
-      donut: {
-        labels: {
-          show: true,
-          name: { show: false },
-          value: { show: true, fontSize: '1.5rem', fontWeight: '600', color: vuetifyTheme.current.value.colors.onBackground, formatter: (val: string) => `${val}x` },
-          total: { show: true, label: 'Total Terjual', fontSize: '0.9rem', color: vuetifyTheme.current.value.colors.onSurface, formatter: (w: any) => w.globals.seriesTotals.reduce((a: number, b: number) => a + b, 0) + 'x' },
+const paketTerlarisChartOptions = computed(() => {
+    const currentTheme = vuetifyTheme.current.value
+    return {
+        chart: { type: 'donut' },
+        labels: stats.value?.paketTerlaris.map(p => p.name) ?? [],
+        colors: [
+            currentTheme.colors.primary,
+            currentTheme.colors.success,
+            currentTheme.colors.info,
+            currentTheme.colors.warning,
+            currentTheme.colors.secondary,
+        ],
+        stroke: { width: 5, colors: [currentTheme.colors.surface] },
+        dataLabels: { enabled: false },
+        legend: {
+            position: 'bottom',
+            markers: { offsetX: -3 },
+            itemMargin: { horizontal: 10 },
+            labels: { colors: currentTheme.colors.onSurface, useSeriesColors: false },
         },
-      },
-    },
-  },
-  responsive: [{ breakpoint: 480, options: { chart: { width: 300 }, legend: { position: 'bottom' } } }],
-}))
+        plotOptions: {
+            pie: {
+                donut: {
+                    size: '75%',
+                    labels: {
+                        show: true,
+                        value: {
+                            fontSize: '1.625rem',
+                            fontFamily: 'Public Sans',
+                            color: currentTheme.colors.onBackground,
+                            fontWeight: 600,
+                            offsetY: -15,
+                            formatter: (val: string) => `${val}x`,
+                        },
+                        name: {
+                            fontSize: '0.9rem',
+                            fontFamily: 'Public Sans',
+                            color: currentTheme.colors.onSurface,
+                            offsetY: 20,
+                        },
+                        total: {
+                            show: true,
+                            showAlways: true,
+                            label: 'Total',
+                            color: currentTheme.colors.onSurface,
+                            formatter: (w: any) => w.globals.seriesTotals.reduce((a: number, b: number) => a + b, 0) + 'x',
+                        },
+                    },
+                },
+            },
+        },
+    }
+})
 const paketTerlarisChartSeries = computed(() => stats.value?.paketTerlaris.map(p => p.count) ?? [])
 
 // --- Fungsi Helper ---
@@ -633,28 +679,27 @@ const formatCurrency = (value: number | null | undefined): string => {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value)
 }
 
-const formatBytes = (bytes: number | null | undefined, decimals = 2) => {
-    if (bytes === null || bytes === undefined || bytes === 0) return '0 MB';
+const formatBytes = (bytesInMb: number | null | undefined, decimals = 2) => {
+    if (bytesInMb === null || bytesInMb === undefined || bytesInMb === 0) return '0 MB';
     const k = 1024;
     const dm = decimals < 0 ? 0 : decimals;
     const sizes = ['MB', 'GB', 'TB'];
     
-    // Karena input sudah dalam MB, kita mulai dari indeks 0 (MB)
     let i = 0;
-    let sizeInBytes = bytes;
-    while(sizeInBytes >= k && i < sizes.length -1) {
-        sizeInBytes /= k;
+    let size = bytesInMb;
+    while(size >= k && i < sizes.length -1) {
+        size /= k;
         i++;
     }
 
-    return `${parseFloat(sizeInBytes.toFixed(dm))} ${sizes[i]}`;
+    return `${parseFloat(size.toFixed(dm))} ${sizes[i]}`;
 }
 
 
 const formatRelativeTime = (dateString?: string): string => {
-  if (!dateString) return 'beberapa saat lalu'; // Fallback jika tanggal tidak ada
+  if (!dateString) return 'beberapa saat lalu';
   const date = new Date(dateString)
-  if (isNaN(date.getTime())) return 'waktu tidak valid'; // Fallback jika tanggal tidak valid
+  if (isNaN(date.getTime())) return ''; // Jangan tampilkan apa-apa jika tanggal tidak valid
   
   const now = new Date()
   const seconds = Math.round((now.getTime() - date.getTime()) / 1000)
@@ -666,6 +711,15 @@ const formatRelativeTime = (dateString?: string): string => {
   if (hours < 24) return `${hours} jam lalu`
   return `${days} hari lalu`
 }
+
+const getUserInitials = (name?: string) => {
+  if (!name || name.trim() === '') return 'N/A'
+  const words = name.split(' ').filter(Boolean)
+  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase()
+  if (words.length === 1 && words[0].length > 1) return (words[0][0] + words[0][1]).toUpperCase()
+  return name.substring(0, 1).toUpperCase()
+}
+
 
 useHead({ title: 'Dashboard Admin' })
 </script>
