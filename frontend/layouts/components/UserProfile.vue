@@ -9,6 +9,7 @@ const dashboardStore = useDashboardStore()
 const currentUser = computed(() => authStore.currentUser)
 const isLoggedIn = computed(() => authStore.isLoggedIn)
 const isAdmin = computed(() => authStore.isAdmin || authStore.isSuperAdmin)
+const isSuperAdmin = computed(() => authStore.isSuperAdmin)
 const pendingUserCount = computed(() => dashboardStore.stats?.pendingApprovals ?? 0)
 
 onMounted(() => {
@@ -31,7 +32,7 @@ function handleLogout() {
 
 const displayName = computed(() => {
   if (!currentUser.value) return 'Pengguna'
-  if (currentUser.value.full_name && currentUser.value.full_name.trim() !== '') return currentUser.value.full_name
+  if (currentUser.value.full_name?.trim()) return currentUser.value.full_name
   if (currentUser.value.phone_number) return currentUser.value.phone_number
   return 'Pengguna Terdaftar'
 })
@@ -41,8 +42,8 @@ const userInitials = computed(() => {
   if (!name || name === 'Pengguna') return 'U'
   const words = name.split(' ').filter(Boolean)
   if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase()
-  if (words.length === 1 && words[0].length > 1) return (words[0][0] + words[0][1]).toUpperCase()
-  return name.substring(0, 1).toUpperCase()
+  if (words.length === 1 && words[0].length > 1) return words[0].slice(0, 2).toUpperCase()
+  return name[0].toUpperCase()
 })
 
 const userRole = computed(() => {
@@ -117,27 +118,44 @@ const isLoadingAuth = computed(() => !authStore.initialAuthCheckDone && !authSto
             <VListItemSubtitle>{{ userRole }}</VListItemSubtitle>
           </VListItem>
           <VDivider class="my-2" />
+          
+          <!-- Profil Saya (untuk semua user) -->
           <VListItem link to="/akun" density="compact">
             <template #prepend>
               <VIcon class="me-2" icon="tabler-user" size="22" />
             </template>
             <VListItemTitle>Profil Saya</VListItemTitle>
           </VListItem>
-          <VListItem v-if="isAdmin && pendingUserCount > 0" link to="/admin/users" density="compact">
-            <template #prepend>
-              <VIcon class="me-2" icon="tabler-user-exclamation" size="22" color="warning" />
-            </template>
-            <VListItemTitle class="text-warning">Persetujuan Pengguna</VListItemTitle>
-             <template #append>
-              <VBadge color="error" :content="pendingUserCount" inline />
-            </template>
-          </VListItem>
-          <VListItem link disabled density="compact">
+          
+          <!-- Pengaturan (hanya untuk Admin/Super Admin) -->
+          <VListItem 
+            v-if="isAdmin" 
+            link 
+            :to="isSuperAdmin ? '/admin/settings/general' : '/admin/settings'" 
+            density="compact"
+          >
             <template #prepend>
               <VIcon class="me-2" icon="tabler-settings" size="22" />
             </template>
             <VListItemTitle>Pengaturan</VListItemTitle>
           </VListItem>
+          
+          <!-- Persetujuan Pengguna (hanya untuk Admin dengan pending) -->
+          <VListItem 
+            v-if="isAdmin && pendingUserCount > 0" 
+            link 
+            to="/admin/users" 
+            density="compact"
+          >
+            <template #prepend>
+              <VIcon class="me-2" icon="tabler-user-exclamation" size="22" color="warning" />
+            </template>
+            <VListItemTitle class="text-warning">Persetujuan Pengguna</VListItemTitle>
+            <template #append>
+              <VBadge color="error" :content="pendingUserCount" inline />
+            </template>
+          </VListItem>
+          
           <VDivider class="my-2" />
           <div class="px-2 py-1">
             <VBtn
@@ -156,9 +174,11 @@ const isLoadingAuth = computed(() => !authStore.initialAuthCheckDone && !authSto
       </VMenu>
     </VAvatar>
   </VBadge>
+  
   <VAvatar v-else-if="isLoadingAuth" color="grey-lighten-1" variant="tonal">
     <VProgressCircular indeterminate size="24" />
   </VAvatar>
+  
   <VBtn v-else-if="!isLoggedIn && authStore.initialAuthCheckDone" to="/login" color="primary">
     Login
   </VBtn>
