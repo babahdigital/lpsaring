@@ -9,7 +9,7 @@ const dashboardStore = useDashboardStore()
 const currentUser = computed(() => authStore.currentUser)
 const isLoggedIn = computed(() => authStore.isLoggedIn)
 const isAdmin = computed(() => authStore.isAdmin)
-// Menambahkan computed property spesifik untuk Super Admin
+// Computed property spesifik untuk Super Admin
 const isSuperAdmin = computed(() => authStore.isSuperAdmin) 
 const pendingUserCount = computed(() => dashboardStore.stats?.pendingApprovals ?? 0)
 
