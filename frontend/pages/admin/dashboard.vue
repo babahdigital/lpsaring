@@ -99,7 +99,7 @@
                       icon="tabler-calendar-check"
                     />
                   </VAvatar>
-                  <span>Minggu Ini</span>
+                  <span>Hari Ini</span>
                 </div>
                 <h5 class="text-h5">
                   {{ formatCurrency(stats?.pendapatanMingguIni) }}
@@ -136,7 +136,7 @@
                 class="text-end"
               >
                 <div class="d-flex align-center justify-end mb-3">
-                  <span class="me-2">Lalu</span>
+                  <span class="me-2">Kemaren</span>
                   <VAvatar
                     color="secondary"
                     variant="tonal"
