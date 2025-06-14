@@ -64,7 +64,7 @@
           <VCardText>
             <div class="d-flex align-center justify-space-between">
               <div class="text-body-1">
-                Pendapatan
+                Pendapatan Mingguan
               </div>
               <div
                 class="font-weight-medium"
