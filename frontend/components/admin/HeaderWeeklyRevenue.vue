@@ -51,7 +51,7 @@ onMounted(() => {
           v-bind="props"
           color="primary"
           variant="elevated"
-          prepend-icon="tabler-currency-rupiah"
+          prepend-icon="tabler-cash"
           :disabled="dashboardStore.isLoading"
         >
           <template v-if="dashboardStore.isLoading">
