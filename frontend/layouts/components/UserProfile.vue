@@ -13,10 +13,10 @@ const isSuperAdmin = computed(() => authStore.isSuperAdmin)
 const pendingUserCount = computed(() => dashboardStore.stats?.pendingApprovals ?? 0)
 const todayRevenue = computed(() => dashboardStore.stats?.pendapatanHariIni ?? 0)
 
-// Format pendapatan hari ini untuk ditampilkan
+// Format pendapatan hari ini untuk ditampilkan di tooltip
 const formattedTodayRevenue = computed(() => {
   if (todayRevenue.value === 0) return 'Rp 0'
-  
+
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
     currency: 'IDR',
@@ -86,28 +86,146 @@ const isLoadingAuth = computed(() => !authStore.initialAuthCheckDone && !authSto
 </script>
 
 <template>
-  <div class="d-flex align-center gap-2">
-    <!-- Badge pendapatan hari ini untuk admin -->
-    <div
+  <div class="d-flex align-center">
+    <VTooltip
       v-if="isAdmin && isLoggedIn"
-      class="revenue-badge"
+      location="bottom"
     >
-      <VChip
-        variant="tonal"
-        color="success"
-        size="small"
-      >
+      <template #activator="{ props }">
+        <div v-bind="props">
+          <VBadge
+            v-if="isLoggedIn && currentUser"
+            v-bind="headerBadgeProps"
+            location="top end"
+            offset-x="-1"
+            offset-y="-1"
+            bordered
+          >
+            <VAvatar
+              class="cursor-pointer"
+              color="primary"
+              variant="tonal"
+            >
+              <span class="font-weight-medium">{{ userInitials }}</span>
+              <VMenu
+                activator="parent"
+                width="260"
+                location="bottom end"
+                offset="14px"
+                close-on-content-click
+              >
+                <VList>
+                  <VListItem class="pb-2">
+                    <template #prepend>
+                      <VAvatar
+                        color="primary"
+                        variant="tonal"
+                        size="40"
+                      >
+                        <span class="text-h6 font-weight-medium">{{ userInitials }}</span>
+                      </VAvatar>
+                    </template>
+                    <VListItemTitle class="font-weight-semibold">
+                      {{ displayName }}
+                    </VListItemTitle>
+                    <VListItemSubtitle>{{ userRole }}</VListItemSubtitle>
+                  </VListItem>
+
+                  <VDivider />
+
+                  <VListItem
+                    link
+                    to="/profile"
+                    density="compact"
+                  >
+                    <template #prepend>
+                      <VIcon
+                        class="me-2"
+                        icon="tabler-user"
+                        size="22"
+                      />
+                    </template>
+                    <VListItemTitle>Profil Saya</VListItemTitle>
+                  </VListItem>
+
+                  <VListItem
+                    v-if="isAdmin && pendingUserCount > 0"
+                    link
+                    to="/admin/users"
+                    density="compact"
+                  >
+                    <template #prepend>
+                      <VIcon
+                        class="me-2"
+                        icon="tabler-user-exclamation"
+                        size="22"
+                        color="warning"
+                      />
+                    </template>
+                    <VListItemTitle class="text-warning">
+                      Persetujuan Pengguna
+                    </VListItemTitle>
+                    <template #append>
+                      <VBadge
+                        color="error"
+                        :content="pendingUserCount"
+                        inline
+                      />
+                    </template>
+                  </VListItem>
+
+                  <VListItem
+                    v-if="isSuperAdmin"
+                    link
+                    to="/admin/settings/general"
+                    density="compact"
+                  >
+                    <template #prepend>
+                      <VIcon
+                        class="me-2"
+                        icon="tabler-settings"
+                        size="22"
+                      />
+                    </template>
+                    <VListItemTitle>Pengaturan</VListItemTitle>
+                  </VListItem>
+
+                  <VDivider class="my-2" />
+                  
+                  <div class="px-2 py-1">
+                    <VBtn
+                      block
+                      color="error"
+                      variant="tonal"
+                      @click="handleLogout"
+                    >
+                      <template #prepend>
+                        <VIcon
+                          icon="tabler-logout"
+                          size="20"
+                        />
+                      </template>
+                      Logout
+                    </VBtn>
+                  </div>
+                </VList>
+              </VMenu>
+            </VAvatar>
+          </VBadge>
+        </div>
+      </template>
+      <div class="d-flex align-center">
         <VIcon
           icon="tabler-currency-rupiah"
           size="18"
           class="me-1"
         />
-        {{ formattedTodayRevenue }}
-      </VChip>
-    </div>
-
+        <span>{{ formattedTodayRevenue }}</span>
+      </div>
+    </VTooltip>
+    
     <VBadge
-      v-if="isLoggedIn && currentUser"
+      v-else-if="isLoggedIn && currentUser"
       v-bind="headerBadgeProps"
       location="top end"
       offset-x="-1"
@@ -128,51 +246,27 @@ const isLoadingAuth = computed(() => !authStore.initialAuthCheckDone && !authSto
           close-on-content-click
         >
           <VList>
-            <VListItem>
+            <VListItem class="pb-2">
               <template #prepend>
-                <VListItemAction start>
-                  <VBadge
-                    dot
-                    location="bottom right"
-                    offset-x="3"
-                    offset-y="3"
-                    color="success"
-                    bordered
-                  >
-                    <VAvatar
-                      color="primary"
-                      variant="tonal"
-                      size="40"
-                    >
-                      <span class="text-h6 font-weight-medium">{{ userInitials }}</span>
-                    </VAvatar>
-                  </VBadge>
-                </VListItemAction>
+                <VAvatar
+                  color="primary"
+                  variant="tonal"
+                  size="40"
+                >
+                  <span class="text-h6 font-weight-medium">{{ userInitials }}</span>
+                </VAvatar>
               </template>
               <VListItemTitle class="font-weight-semibold">
                 {{ displayName }}
               </VListItemTitle>
               <VListItemSubtitle>{{ userRole }}</VListItemSubtitle>
             </VListItem>
-            
-            <!-- Tambahkan pendapatan hari ini di menu dropdown (hanya admin) -->
-            <template v-if="isAdmin">
-              <VDivider class="my-2" />
-              <VListItem
-                density="compact"
-                class="px-0"
-              >
-                <VListItemTitle class="d-flex justify-space-between align-center">
-                  <span>Pendapatan Hari Ini:</span>
-                  <span class="font-weight-medium">{{ formattedTodayRevenue }}</span>
-                </VListItemTitle>
-              </VListItem>
-            </template>
-            
-            <VDivider class="my-2" />
+
+            <VDivider />
+
             <VListItem
               link
-              to="/akun"
+              to="/profile"
               density="compact"
             >
               <template #prepend>
@@ -184,33 +278,7 @@ const isLoadingAuth = computed(() => !authStore.initialAuthCheckDone && !authSto
               </template>
               <VListItemTitle>Profil Saya</VListItemTitle>
             </VListItem>
-            <VListItem
-              v-if="isAdmin && pendingUserCount > 0"
-              link
-              to="/admin/users"
-              density="compact"
-            >
-              <template #prepend>
-                <VIcon
-                  class="me-2"
-                  icon="tabler-user-exclamation"
-                  size="22"
-                  color="warning"
-                />
-              </template>
-              <VListItemTitle class="text-warning">
-                Persetujuan Pengguna
-              </VListItemTitle>
-              <template #append>
-                <VBadge
-                  color="error"
-                  :content="pendingUserCount"
-                  inline
-                />
-              </template>
-            </VListItem>
-            
-            <!-- Pengaturan: Hanya muncul jika isSuperAdmin bernilai true -->
+
             <VListItem
               v-if="isSuperAdmin"
               link
@@ -228,6 +296,7 @@ const isLoadingAuth = computed(() => !authStore.initialAuthCheckDone && !authSto
             </VListItem>
 
             <VDivider class="my-2" />
+            
             <div class="px-2 py-1">
               <VBtn
                 block
@@ -269,10 +338,3 @@ const isLoadingAuth = computed(() => !authStore.initialAuthCheckDone && !authSto
     </VBtn>
   </div>
 </template>
-
-<style scoped>
-.revenue-badge {
-  margin-right: 8px;
-  font-weight: 500;
-}
-</style>
