@@ -413,14 +413,14 @@
             <VCardSubtitle>Gunakan ini untuk memeriksa data mentah yang diterima dari server.</VCardSubtitle>
           </VCardItem>
           <VCardText>
-            <VAlert
+            <v-alert
               v-if="error"
               type="error"
               variant="tonal"
               class="mb-3"
             >
               Gagal memuat data statistik: {{ error.message }}
-            </VVAlert>
+            </v-alert>
             <pre
               v-if="!pending"
               style="white-space: pre-wrap; word-wrap: break-word; background-color: #282c34; color: #abb2bf; padding: 1rem; border-radius: 8px;"
@@ -447,7 +447,7 @@
 <script setup lang="ts">
 import { useTheme } from 'vuetify'
 import { useApiFetch } from '~/composables/useApiFetch'
-import { VDataTable } from 'vuetify/labs/VDataTable' // Diperlukan untuk Vuetify 3
+import { VDataTable } from 'vuetify/components/VDataTable' // PERBAIKAN: Mengubah jalur impor
 import { computed, defineAsyncComponent, h } from 'vue'
 
 const VueApexCharts = defineAsyncComponent(() =>
