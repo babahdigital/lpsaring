@@ -9,12 +9,13 @@ const authStore = useAuthStore()
 const isAdmin = computed(() => authStore.isAdmin)
 const isLoggedIn = computed(() => authStore.isLoggedIn)
 
-// Mengambil nilai pendapatan mingguan dengan aman menggunakan optional chaining
-const weeklyRevenue = computed(() => dashboardStore.stats?.weeklyRevenue)
+// Mengambil nilai pendapatan hari ini
+const todayRevenue = computed(() => dashboardStore.stats?.pendapatanHariIni ?? 0)
 
-// Helper untuk format mata uang yang sudah diperkuat untuk menangani nilai non-numerik
-const formatCurrency = (value: number | undefined | null) => {
-  if (typeof value !== 'number') {
+// Helper untuk format mata uang yang sudah diperkuat
+const formatCurrency = (value: number) => {
+  // Pastikan value adalah number dan valid
+  if (typeof value !== 'number' || isNaN(value)) {
     return 'Rp 0'
   }
   
@@ -26,9 +27,9 @@ const formatCurrency = (value: number | undefined | null) => {
   }).format(value)
 }
 
-// Computed property untuk menampilkan pendapatan mingguan yang sudah diformat
-const weeklyRevenueDisplay = computed(() => {
-  return formatCurrency(weeklyRevenue.value)
+// Computed property untuk menampilkan pendapatan yang sudah diformat
+const todayRevenueDisplay = computed(() => {
+  return formatCurrency(todayRevenue.value)
 })
 
 // Secara otomatis mengambil data saat komponen dimuat, jika pengguna adalah admin
@@ -42,7 +43,7 @@ onMounted(() => {
 <template>
   <div>
     <VTooltip
-      text="Pendapatan Minggu Ini"
+      text="Pendapatan Hari Ini"
       location="bottom"
     >
       <template #activator="{ props }">
@@ -51,16 +52,29 @@ onMounted(() => {
           color="primary"
           variant="elevated"
           prepend-icon="tabler-currency-rupiah"
+          :disabled="dashboardStore.isLoading"
         >
-          <VProgressCircular
-            v-if="dashboardStore.isLoading"
-            indeterminate
-            size="20"
-            class="me-2"
-          />
-          <strong v-else>{{ weeklyRevenueDisplay }}</strong>
+          <template v-if="dashboardStore.isLoading">
+            <VProgressCircular
+              indeterminate
+              size="16"
+              width="2"
+              class="me-2"
+            />
+            <span>Memuat...</span>
+          </template>
+          <template v-else>
+            <strong>{{ todayRevenueDisplay }}</strong>
+          </template>
         </VChip>
       </template>
     </VTooltip>
   </div>
 </template>
+
+<style scoped>
+/* Style untuk membuat loading indicator lebih rapi */
+.v-progress-circular {
+  margin-right: 8px;
+}
+</style>
