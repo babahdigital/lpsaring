@@ -281,8 +281,8 @@
           <VCardItem>
             <VCardTitle>Paket Terlaris</VCardTitle>
             <VCardSubtitle>Berdasarkan jumlah penjualan bulan ini</VCardSubtitle>
-          </VCardItem style="padding-bottom: 30px; padding-top: 25px;">
-          <VCardText>
+          </VCardItem>
+          <VCardText style="padding-bottom: 30px; padding-top: 25px;">
             <ClientOnly>
               <VueApexCharts
                 v-if="!pending && paketTerlarisChartSeries.length > 0 && paketTerlarisChartSeries.some(s => s > 0)"
