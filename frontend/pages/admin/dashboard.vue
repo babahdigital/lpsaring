@@ -98,10 +98,10 @@
                   <span>Sekarang</span>
                 </div>
                 <h5 class="text-h5">
-                  {{ stats?.transaksiHariIni ?? stats?.transaksiTerakhir.length ?? 0 }}
+                  Rp. {{ stats?.transaksiHariIni ?? stats?.transaksiTerakhir.length ?? 0 }}
                 </h5>
                 <div class="text-body-2 text-disabled">
-                  Sukses
+                  Pendapatan
                 </div>
               </VCol>
 
