@@ -42,7 +42,8 @@
                 {{ (data.change > 0) ? '+' : '' }}{{ data.change.toFixed(1) }}%
               </h6>
               <div class="text-disabled">
-                dari kemarin
+                <!-- Teks perbandingan diubah secara dinamis -->
+                {{ data.title === 'Penggunaan Kuota' ? 'dari minggu lalu' : 'dari kemarin' }}
               </div>
             </div>
           </VCardText>
@@ -50,12 +51,12 @@
       </VCol>
     </VRow>
 
-    <!-- Baris Tengah: Grafik Pendapatan & Kuota (Telah Diperbaiki Sesuai Permintaan) -->
+    <!-- Baris Tengah: Grafik Pendapatan & Kuota -->
     <VRow
       class="mb-4"
       match-height
     >
-      <!-- Kartu Pendapatan Mingguan (Logika & Tampilan Diperbarui) -->
+      <!-- Kartu Pendapatan Mingguan -->
       <VCol
         cols="12"
         md="4"
@@ -170,22 +171,22 @@
         </VCard>
       </VCol>
 
-      <!-- Kartu Kuota Terjual (Style Chart Diperbarui) -->
+      <!-- Kartu Kuota Terjual (Layout & Chart Diperbarui) -->
       <VCol
         cols="12"
         md="4"
       >
         <VCard class="h-100">
-          <VCardItem class="pb-sm-0">
+          <VCardItem class="pb-sm-8">
             <VCardTitle>Kuota Terjual</VCardTitle>
             <VCardSubtitle>Laporan Mingguan</VCardSubtitle>
           </VCardItem>
-          <VCardText>
+          <VCardText class="pt-sm-4">
              <VRow>
                <VCol
                  cols="12"
                  sm="5"
-                 class="d-flex flex-column align-self-center"
+                 class="d-flex flex-column align-self-end"
                >
                  <div class="d-flex align-center gap-2 mb-3 flex-wrap">
                    <h4 class="text-h2">
@@ -199,14 +200,12 @@
                      {{ perbandinganKuota.persentase >= 0 ? '+' : '' }}{{ perbandinganKuota.persentase.toFixed(1) }}%
                    </VChip>
                  </div>
-                 <span class="text-sm text-medium-emphasis">
-                   Perbandingan dengan minggu lalu
-                 </span>
                </VCol>
 
                <VCol
                  cols="12"
                  sm="7"
+                 class="mt-auto"
                >
                  <ClientOnly>
                    <VueApexCharts
@@ -330,7 +329,7 @@
         </VCard>
       </VCol>
 
-      <!-- Kartu Aktivitas Transaksi Terakhir -->
+      <!-- Kartu Aktivitas Transaksi Terakhir (Dibatasi 3) -->
       <VCol
         cols="12"
         md="7"
@@ -365,7 +364,7 @@
               density="compact"
             >
               <VTimelineItem
-                v-for="transaksi in stats.transaksiTerakhir.slice(0, 4)"
+                v-for="transaksi in stats.transaksiTerakhir.slice(0, 3)"
                 :key="transaksi.id"
                 dot-color="success"
                 size="x-small"
@@ -429,7 +428,7 @@
       </VCol>
     </VRow>
     
-    <!-- Kartu Debugging API (Ditambahkan Kembali) -->
+    <!-- Kartu Debugging API -->
     <VRow class="mt-4">
       <VCol cols="12">
         <VCard>
@@ -521,7 +520,6 @@ interface PaketTerlaris {
   count: number
 }
 
-// PERHATIAN: Interface diperbarui. Pastikan backend menyediakan data ini.
 interface DashboardStats {
   pendapatanHariIni: number
   pendapatanBulanIni: number
@@ -538,8 +536,6 @@ interface DashboardStats {
   pendapatanPerHari?: number[]
   transaksiTerakhir: TransaksiTerakhir[]
   paketTerlaris: PaketTerlaris[]
-
-  // --- DATA BARU UNTUK KARTU PENDAPATAN MINGGUAN ---
   pendapatanMingguIni?: number
   pendapatanMingguLalu?: number
   transaksiMingguIni?: number
@@ -582,12 +578,12 @@ const { data: stats, pending, error, refresh } = useApiFetch<DashboardStats>(API
 
 const vuetifyTheme = useTheme()
 
-// --- Data untuk Kartu Statistik Atas ---
+// --- Data untuk Kartu Statistik Atas (Diperbarui) ---
 const statistics = ref([
   { icon: 'tabler-user-search', color: 'warning', title: 'Menunggu Persetujuan', value: 0, change: 0, isHover: false },
   { icon: 'tabler-calendar-exclamation', color: 'secondary', title: 'Akan Kadaluwarsa', value: 0, change: 0, isHover: false },
   { icon: 'tabler-users-group', color: 'primary', title: 'Pengguna Aktif', value: 0, change: 0, isHover: false },
-  { icon: 'tabler-wifi', color: 'success', title: 'Pengguna Online', value: 0, change: 0, isHover: false },
+  { icon: 'tabler-chart-bar', color: 'success', title: 'Penggunaan Kuota', value: 0, change: 0, isHover: false },
 ])
 
 watch(stats, (newStats) => {
@@ -595,6 +591,7 @@ watch(stats, (newStats) => {
     statistics.value[0].value = newStats.pendaftarBaru ?? 0
     statistics.value[1].value = newStats.akanKadaluwarsa ?? 0
     statistics.value[2].value = newStats.penggunaAktif ?? 0
+    // Asumsi data untuk 'Penggunaan Kuota' berasal dari 'penggunaOnline' untuk saat ini
     statistics.value[3].value = newStats.penggunaOnline ?? 0
   }
 })
@@ -622,6 +619,7 @@ const perbandinganKuota = computed(() => {
 const kuotaChartOptions = computed(() => {
   const currentTheme = vuetifyTheme.current.value.colors
   const variableTheme = vuetifyTheme.current.value.variables
+  const labelColor = `rgba(${hexToRgb(currentTheme['on-surface'])},${variableTheme['disabled-opacity']})`
 
   return {
     chart: { type: 'bar', parentHeightOffset: 0, toolbar: { show: false } },
@@ -644,10 +642,21 @@ const kuotaChartOptions = computed(() => {
       categories: ['S', 'S', 'R', 'K', 'J', 'S', 'M'],
       axisBorder: { show: false },
       axisTicks: { show: false },
-      labels: { style: { colors: `rgba(${hexToRgb(currentTheme['on-surface'])},${variableTheme['disabled-opacity']})`, fontSize: '13px', fontFamily: 'Public Sans' } },
+      labels: { style: { colors: labelColor, fontSize: '13px', fontFamily: 'Public Sans' } },
     },
     yaxis: { labels: { show: false } },
-    tooltip: { enabled: false },
+    // Tooltip diaktifkan dan dikonfigurasi
+    tooltip: {
+      enabled: true,
+      theme: 'dark',
+      transition: 'scale-transition',
+      y: {
+        formatter: (val: number) => `${formatBytes(val)}`,
+        title: {
+            formatter: (seriesName: string, opts: any) => `Hari: ${opts.w.globals.labels[opts.dataPointIndex]}`,
+        },
+      },
+    },
   }
 })
 
@@ -682,7 +691,7 @@ const paketTerlarisChartOptions = computed(() => {
         colors: [
             currentTheme.colors.primary, currentTheme.colors.success, currentTheme.colors.info, currentTheme.colors.warning, currentTheme.colors.secondary,
         ],
-        stroke: { width: 2, colors: [currentTheme.colors.surface] }, // Mengurangi celah
+        stroke: { width: 0, colors: [currentTheme.colors.surface] }, // Celah dihilangkan
         dataLabels: { 
           enabled: true,
           formatter: (val: number, opts: any) => `${opts.w.globals.series[opts.seriesIndex]}x`,
@@ -704,13 +713,13 @@ const paketTerlarisChartOptions = computed(() => {
         plotOptions: {
             pie: {
                 donut: {
-                    size: '65%', // Membuat donut lebih tebal
+                    size: '70%', // Membuat donut lebih tebal
                     labels: {
                         show: true,
                         value: { 
                           fontSize: '1.625rem', 
                           fontFamily: 'Public Sans', 
-                          color: currentTheme.colors.onBackground, 
+                          color: currentTheme.colors.onSurface, // Warna teks diubah agar theme-aware
                           fontWeight: 600, 
                           offsetY: -15, 
                           formatter: (val: string) => `${val}x` 
@@ -725,12 +734,19 @@ const paketTerlarisChartOptions = computed(() => {
                           show: true, 
                           showAlways: true, 
                           label: 'Total', 
-                          color: currentTheme.colors.onSurface, 
+                          color: currentTheme.colors.onSurface,
                           formatter: (w: any) => w.globals.seriesTotals.reduce((a: number, b: number) => a + b, 0) + 'x' 
                         },
                     },
                 },
             },
+        },
+        tooltip: {
+          enabled: true,
+          theme: 'dark',
+          y: {
+            formatter: (val: number) => `${val} penjualan`,
+          },
         },
     }
 })
@@ -743,7 +759,7 @@ const formatCurrency = (value: number | null | undefined): string => {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value)
 }
 
-const formatBytes = (bytesInMb: number | null | undefined, decimals = 2) => {
+const formatBytes = (bytesInMb: number | null | undefined, decimals = 1) => {
     if (bytesInMb === null || bytesInMb === undefined || bytesInMb === 0) return '0 MB';
     const k = 1024;
     const dm = decimals < 0 ? 0 : decimals;
@@ -761,10 +777,8 @@ const formatRelativeTime = (dateString?: string): string => {
   if (!dateString) return 'Baru saja';
   const date = new Date(dateString);
   if (isNaN(date.getTime())) return '';
-
   const now = new Date();
   const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-
   let interval = seconds / 31536000;
   if (interval > 1) return `${Math.floor(interval)} tahun lalu`;
   interval = seconds / 2592000;
