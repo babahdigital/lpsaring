@@ -154,27 +154,6 @@ const isLoadingAuth = computed(() => !authStore.initialAuthCheckDone && !authSto
               </VListItemTitle>
               <VListItemSubtitle>{{ userRole }}</VListItemSubtitle>
             </VListItem>
-            
-            <!-- Tambahkan pendapatan hari ini di menu dropdown (hanya admin) -->
-            <template v-if="isAdmin">
-              <VDivider class="my-2" />
-              <VListItem
-                density="compact"
-                class="px-0"
-              >
-                <VListItemTitle class="d-flex justify-space-between align-center">
-                  <span>Pendapatan Hari Ini:</span>
-                  <span class="font-weight-medium">{{ formattedTodayRevenue }}</span>
-                </VListItemTitle>
-              </VListItem>
-            </template>
-            
-            <VDivider class="my-2" />
-            <VListItem
-              link
-              to="/akun"
-              density="compact"
-            >
               <template #prepend>
                 <VIcon
                   class="me-2"
