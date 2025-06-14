@@ -64,7 +64,7 @@
           <VCardText>
             <div class="d-flex align-center justify-space-between">
               <div class="text-body-1">
-                Pendapatan Hari Ini
+                Pendapatan
               </div>
               <div
                 class="font-weight-medium"
@@ -95,7 +95,7 @@
                       icon="tabler-shopping-cart"
                     />
                   </VAvatar>
-                  <span>Transaksi</span>
+                  <span>Sekarang</span>
                 </div>
                 <h5 class="text-h5">
                   {{ stats?.transaksiHariIni ?? stats?.transaksiTerakhir.length ?? 0 }}
