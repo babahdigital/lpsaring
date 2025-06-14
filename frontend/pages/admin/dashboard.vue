@@ -1,6 +1,6 @@
 <template>
   <div>
-    <!-- Baris Atas: Statistik Model Logistik -->
+    <!-- Baris Atas: Statistik Utama -->
     <VRow class="mb-4">
       <VCol
         v-for="(data, index) in statistics"
@@ -55,17 +55,15 @@
       class="mb-4"
       match-height
     >
-      <!-- Kartu Pendapatan Hari Ini (Sales Overview Style) -->
+      <!-- Kartu Pendapatan Hari Ini (Telah Diperbaiki) -->
       <VCol
         cols="12"
         md="4"
       >
         <VCard class="h-100">
-          <VCardText>
-            <div class="d-flex align-center justify-space-between">
-              <div class="text-body-1">
-                Pendapatan Mingguan
-              </div>
+          <VCardItem>
+            <VCardTitle>Pendapatan</VCardTitle>
+            <template #append>
               <div
                 class="font-weight-medium"
                 :class="perbandinganPendapatan.persentase >= 0 ? 'text-success' : 'text-error'"
@@ -73,10 +71,15 @@
                 <span v-if="stats?.pendapatanKemarin === 0 && stats?.pendapatanHariIni > 0">BARU</span>
                 <span v-else>{{ perbandinganPendapatan.persentase >= 0 ? '+' : '' }}{{ perbandinganPendapatan.persentase.toFixed(1) }}%</span>
               </div>
-            </div>
+            </template>
+          </VCardItem>
+          <VCardText>
             <h4 class="text-h4 my-2">
               {{ formatCurrency(stats?.pendapatanHariIni) }}
             </h4>
+            <div class="text-body-2 text-disabled">
+              Pendapatan hari ini
+            </div>
           </VCardText>
 
           <VCardText>
@@ -92,16 +95,16 @@
                   >
                     <VIcon
                       size="18"
-                      icon="tabler-shopping-cart"
+                      icon="tabler-wallet"
                     />
                   </VAvatar>
-                  <span>Sekarang</span>
+                  <span>Hari Ini</span>
                 </div>
                 <h5 class="text-h5">
-                  Rp. {{ stats?.transaksiHariIni ?? stats?.transaksiTerakhir.length ?? 0 }}
+                  {{ formatCurrency(stats?.pendapatanHariIni) }}
                 </h5>
                 <div class="text-body-2 text-disabled">
-                  Pendapatan
+                  {{ stats?.transaksiTerakhir?.length ?? 0 }} Transaksi
                 </div>
               </VCol>
 
@@ -167,25 +170,17 @@
         </VCard>
       </VCol>
 
-      <!-- Kartu Kuota Terjual (7 Hari) -->
+      <!-- Kartu Kuota Terjual (Telah Diperbaiki) -->
       <VCol
         cols="12"
         md="4"
       >
         <VCard class="h-100">
-          <VCardText class="d-flex justify-space-between">
-            <div class="d-flex flex-column">
-              <div class="mb-auto">
-                <h5 class="text-h5 text-no-wrap mb-2">
+          <VCardText>
+            <div class="d-flex justify-space-between align-start">
+              <div class="d-flex flex-column">
+                <h5 class="text-h5 text-no-wrap mb-1">
                   Kuota Terjual
-                </h5>
-                <div class="text-body-1">
-                  Laporan Mingguan
-                </div>
-              </div>
-              <div>
-                <h5 class="text-h3 mb-2">
-                  {{ formatBytes(stats?.kuotaTerjualMb) }}
                 </h5>
                 <VChip
                   label
@@ -195,18 +190,28 @@
                   {{ perbandinganKuota.persentase >= 0 ? '+' : '' }}{{ perbandinganKuota.persentase.toFixed(1) }}%
                 </VChip>
               </div>
+              <h4 class="text-h4">
+                {{ formatBytes(stats?.kuotaTerjualMb) }}
+              </h4>
+            </div>
+          </VCardText>
+
+          <!-- Zona Merah & Kuning Sesuai Permintaan -->
+          <VCardText class="d-flex flex-column justify-end">
+            <div class="text-end text-error font-weight-medium mb-2">
+              Laporan Mingguan
             </div>
             <div style="min-width: 120px;">
               <ClientOnly>
                 <VueApexCharts
                   :options="kuotaChartOptions"
                   :series="kuotaChartSeries"
-                  :height="162"
+                  :height="120"
                 />
                 <template #fallback>
                   <div
                     class="d-flex align-center justify-center"
-                    style="height: 162px;"
+                    style="height: 120px;"
                   >
                     <VProgressCircular
                       indeterminate
@@ -318,7 +323,7 @@
         </VCard>
       </VCol>
 
-      <!-- Kartu Aktivitas Transaksi Terakhir -->
+      <!-- Kartu Aktivitas Transaksi Terakhir (Telah Diperbaiki) -->
       <VCol
         cols="12"
         md="7"
@@ -352,9 +357,9 @@
               truncate-line="start"
               density="compact"
             >
-              <!-- Item Timeline -->
+              <!-- Item Timeline (Sesuai Contoh) -->
               <VTimelineItem
-                v-for="transaksi in stats.transaksiTerakhir.slice(0, 3)"
+                v-for="transaksi in stats.transaksiTerakhir.slice(0, 4)"
                 :key="transaksi.id"
                 dot-color="success"
                 size="x-small"
@@ -363,7 +368,7 @@
                   <div class="app-timeline-title">
                     Pembelian {{ transaksi.package.name }}
                   </div>
-                  <span class="app-timeline-meta">{{ formatTime(transaksi.created_at) }}</span>
+                  <span class="app-timeline-meta">{{ formatRelativeTime(transaksi.created_at) }}</span>
                 </div>
                 <div class="app-timeline-text mt-1 mb-3">
                   Transaksi sebesar {{ formatCurrency(transaksi.amount) }} telah berhasil.
@@ -371,7 +376,7 @@
 
                 <!-- Info Pengguna -->
                 <div class="d-flex justify-space-between align-center flex-wrap">
-                  <div class="d-flex align-center">
+                  <div class="d-flex align-center mt-2">
                     <VAvatar
                       size="32"
                       class="me-2"
@@ -482,6 +487,13 @@ import { useApiFetch } from '~/composables/useApiFetch'
 import { computed, defineAsyncComponent, h, ref, watch } from 'vue'
 import { hexToRgb } from '@layouts/utils'
 
+/**
+ * API UTAMA YANG DIGUNAKAN
+ * Endpoint ini harus mengembalikan data sesuai dengan interface DashboardStats.
+ * Pastikan endpoint ini ada dan aktif di backend.
+ */
+const API_ENDPOINT = '/admin/dashboard/stats'
+
 const VueApexCharts = defineAsyncComponent(() =>
   import('vue3-apexcharts').then(mod => mod.default).catch((err) => {
     console.error(`Gagal memuat VueApexCharts`, err)
@@ -493,13 +505,18 @@ definePageMeta({
   requiredRole: ['ADMIN', 'SUPER_ADMIN'],
 })
 
-// --- Tipe Data ---
+// --- Tipe Data (Interface) ---
+// PERHATIAN: Pastikan backend mengirimkan `created_at` dan `phone_number` dalam objek transaksi
 interface TransaksiTerakhir {
   id: string
   amount: number
-  created_at?: string
+  created_at: string // WAJIB ADA: Timestamp dalam format ISO (contoh: "2024-06-14T15:30:00.000Z")
   package: { name: string }
-  user: { full_name: string; username: string, phone_number?: string } | null
+  user: {
+    full_name: string
+    username?: string
+    phone_number?: string // WAJIB ADA: Nomor telepon pengguna
+  } | null
 }
 
 interface PaketTerlaris {
@@ -507,6 +524,7 @@ interface PaketTerlaris {
   count: number
 }
 
+// Interface utama untuk data dari API
 interface DashboardStats {
   pendapatanHariIni: number
   pendapatanBulanIni: number
@@ -517,8 +535,8 @@ interface DashboardStats {
   penggunaOnline?: number
   akanKadaluwarsa: number
   kuotaTerjualMb?: number
-  kuotaTerjual7HariMb?: number
-  kuotaTerjualKemarinMb?: number
+  kuotaTerjual7HariMb?: number // Data untuk perbandingan
+  kuotaTerjualKemarinMb?: number // Data minggu lalu
   kuotaPerHari?: number[]
   pendapatanPerHari?: number[]
   transaksiTerakhir: TransaksiTerakhir[]
@@ -533,19 +551,22 @@ const snackbar = ref({
   icon: 'tabler-check',
 })
 
-const { data: stats, pending, error, refresh } = useApiFetch<DashboardStats>('/admin/dashboard/stats', {
+const { data: stats, pending, error, refresh } = useApiFetch<DashboardStats>(API_ENDPOINT, {
   lazy: true,
   server: false,
   default: () => ({
     pendapatanHariIni: 0,
     pendapatanBulanIni: 0,
+    pendapatanKemarin: 0,
     pendaftarBaru: 0,
     penggunaAktif: 0,
+    penggunaOnline: 0,
     akanKadaluwarsa: 0,
     kuotaTerjualMb: 0,
     transaksiTerakhir: [],
     paketTerlaris: [],
-    kuotaPerHari: [],
+    kuotaPerHari: Array(7).fill(0),
+    pendapatanPerHari: Array(30).fill(0),
   }),
 })
 
@@ -595,13 +616,13 @@ const kuotaChartOptions = computed(() => {
   const labelSuccessColor = `rgba(${hexToRgb(currentTheme.success)},0.2)`
 
   return {
-    chart: { type: 'bar', height: 162, parentHeightOffset: 0, toolbar: { show: false } },
+    chart: { type: 'bar', parentHeightOffset: 0, toolbar: { show: false } },
     plotOptions: {
-      bar: { barHeight: '80%', columnWidth: '30%', startingShape: 'rounded', endingShape: 'rounded', borderRadius: 6, distributed: true },
+      bar: { barHeight: '80%', columnWidth: '60%', startingShape: 'rounded', endingShape: 'rounded', borderRadius: 4, distributed: true },
     },
     grid: { show: false, padding: { top: -20, bottom: -12, left: -10, right: 0 } },
     colors: [
-      labelSuccessColor, labelSuccessColor, labelSuccessColor, labelSuccessColor, currentTheme.success, labelSuccessColor, labelSuccessColor,
+      labelSuccessColor, labelSuccessColor, labelSuccessColor, labelSuccessColor, labelSuccessColor, labelSuccessColor, currentTheme.success,
     ],
     dataLabels: { enabled: false },
     legend: { show: false },
@@ -613,7 +634,7 @@ const kuotaChartOptions = computed(() => {
     },
     yaxis: { labels: { show: false } },
     states: { hover: { filter: { type: 'none' } } },
-    tooltip: { // Tooltip diaktifkan di sini
+    tooltip: {
       enabled: true,
       theme: 'dark',
       x: { show: false },
@@ -628,7 +649,7 @@ const kuotaChartOptions = computed(() => {
 
 const kuotaChartSeries = computed(() => [{
   name: 'Kuota',
-  data: stats.value?.kuotaPerHari ?? [1024, 2048, 1536, 3072, 4096, 2560, 1024], // Menggunakan data dummy jika API belum siap
+  data: stats.value?.kuotaPerHari?.slice(-7) ?? [1024, 2048, 1536, 3072, 4096, 2560, 1024],
 }])
 
 const pendapatanBulanIniChartOptions = computed(() => ({
@@ -642,9 +663,10 @@ const pendapatanBulanIniChartOptions = computed(() => ({
   xaxis: { show: false, lines: { show: false }, labels: { show: false }, axisBorder: { show: false } },
   yaxis: { show: false },
 }))
+
 const pendapatanBulanIniChartSeries = computed(() => [{
   name: 'Pendapatan',
-  data: stats.value?.pendapatanPerHari ?? Array(30).fill(0).map((_, i) => Math.random() * 100000 * (i/10)), // Data dummy jika API belum siap
+  data: stats.value?.pendapatanPerHari ?? Array(30).fill(0).map((_, i) => Math.random() * 100000 * (i/10)),
 }])
 
 const paketTerlarisChartOptions = computed(() => {
@@ -678,6 +700,7 @@ const paketTerlarisChartOptions = computed(() => {
         },
     }
 })
+
 const paketTerlarisChartSeries = computed(() => stats.value?.paketTerlaris.map(p => p.count) ?? [])
 
 // --- Fungsi Helper ---
@@ -700,16 +723,37 @@ const formatBytes = (bytesInMb: number | null | undefined, decimals = 2) => {
     return `${parseFloat(size.toFixed(dm))} ${sizes[i]}`;
 }
 
-const formatTime = (dateString?: string): string => {
-  if (!dateString) return '';
+const formatRelativeTime = (dateString?: string): string => {
+  if (!dateString) return 'Baru saja';
   const date = new Date(dateString);
   if (isNaN(date.getTime())) return '';
-  return new Intl.DateTimeFormat('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false }).format(date);
+
+  const now = new Date();
+  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  let interval = seconds / 31536000;
+  if (interval > 1) return `${Math.floor(interval)} tahun lalu`;
+  interval = seconds / 2592000;
+  if (interval > 1) return `${Math.floor(interval)} bulan lalu`;
+  interval = seconds / 86400;
+  if (interval > 1) return `${Math.floor(interval)} hari lalu`;
+  interval = seconds / 3600;
+  if (interval > 1) return `${Math.floor(interval)} jam lalu`;
+  interval = seconds / 60;
+  if (interval > 1) return `${Math.floor(interval)} menit lalu`;
+  return 'Baru saja';
 }
 
 const formatPhoneNumberForDisplay = (phoneNumber?: string | null) => {
   if (!phoneNumber) return 'No. Telp tidak ada';
-  if (phoneNumber.startsWith('+62')) return '0' + phoneNumber.substring(3);
+  // Format nomor untuk tampilan, contoh: 0812-xxxx-1234
+  if (phoneNumber.startsWith('+62')) {
+    const localNumber = '0' + phoneNumber.substring(3);
+    if (localNumber.length > 8) {
+        return `${localNumber.substring(0, 4)}-xxxx-${localNumber.substring(localNumber.length - 4)}`;
+    }
+    return localNumber;
+  }
   return phoneNumber;
 };
 
