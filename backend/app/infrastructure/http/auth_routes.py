@@ -33,10 +33,9 @@ from app.services.notification_service import get_notification_message
 from app.services import settings_service
 from app.utils.formatters import format_datetime_to_wita, format_to_local_phone
 
-# --- [PERBAIKAN KUNCI] ---
-# 1. Impor helper password dari lokasi yang benar
-from app.services.user_management.helpers import _generate_password
+from app.services.user_management.helpers import _generate_password, _handle_mikrotik_operation
 from app.services.user_management.user_profile import _get_active_registration_bonus
+from app.infrastructure.gateways.mikrotik_client import activate_or_update_hotspot_user
 
 try:
     from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
@@ -46,20 +45,6 @@ except ImportError:
     def send_whatsapp_message(to: str, body: str) -> bool:
         current_app.logger.warning("WhatsApp client not available. Dummy send_whatsapp_message called.")
         return False
-
-try:
-    from app.infrastructure.gateways.mikrotik_client import (
-        get_mikrotik_connection,
-        activate_or_update_hotspot_user,
-        delete_hotspot_user
-    )
-    MIKROTIK_CLIENT_AVAILABLE = True
-except ImportError:
-    MIKROTIK_CLIENT_AVAILABLE = False
-    def get_mikrotik_connection(): return None
-    def activate_or_update_hotspot_user(api_connection, user_mikrotik_username: str, mikrotik_profile_name: str, hotspot_password: str, comment:str="", limit_bytes_total: Optional[int] = None, session_timeout_seconds: Optional[int] = None, force_update_profile: bool = False): return False, "Mikrotik client not available"
-    def delete_hotspot_user(api_connection, username: str): return False, "Mikrotik client not available"
-
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
@@ -146,7 +131,6 @@ def register_user():
             new_user_obj.blok = data_input.blok
             new_user_obj.kamar = data_input.kamar
 
-        # --- [PERBAIKAN] Logika pemberian bonus registrasi otomatis saat user mendaftar mandiri ---
         active_bonus = _get_active_registration_bonus()
         if active_bonus and active_bonus.bonus_value_mb and active_bonus.bonus_duration_days:
             current_app.logger.info(f"Menerapkan bonus registrasi '{active_bonus.name}' untuk pendaftar baru {new_user_obj.full_name}")
@@ -155,7 +139,6 @@ def register_user():
         else:
             new_user_obj.total_quota_purchased_mb = 0
             new_user_obj.quota_expiry_date = None
-        # --- Akhir Perbaikan ---
 
         db.session.add(new_user_obj)
         db.session.commit()
@@ -298,34 +281,31 @@ def reset_hotspot_password(current_user_id: uuid.UUID):
     if not current_user.is_active or current_user.approval_status != ApprovalStatus.APPROVED: return jsonify({"message": "Your account is not active or approved. Cannot reset password."}), HTTPStatus.FORBIDDEN
 
     try:
-        # --- [PERBAIKAN KUNCI] ---
-        # 2. Menggunakan helper yang konsisten untuk membuat password.
         new_mikrotik_password = _generate_password(length=6, numeric_only=True)
+        mikrotik_username = format_to_local_phone(current_user.phone_number)
+        
+        # [PERBAIKAN] Menggunakan helper terpusat untuk konsistensi
+        mikrotik_success, mikrotik_message = _handle_mikrotik_operation(
+            activate_or_update_hotspot_user,
+            user_mikrotik_username=mikrotik_username,
+            hotspot_password=new_mikrotik_password,
+            mikrotik_profile_name=current_user.mikrotik_profile_name,
+            server=current_user.mikrotik_server_name,
+            comment=f"Password reset by user via Portal"
+        )
 
-        if MIKROTIK_CLIENT_AVAILABLE:
-            with get_mikrotik_connection() as mikrotik_conn:
-                if mikrotik_conn:
-                    profile_key = 'MIKROTIK_KOMANDAN_PROFILE' if current_user.role == UserRole.KOMANDAN else 'MIKROTIK_USER_PROFILE'
-                    fallback_profile = 'komandan' if current_user.role == UserRole.KOMANDAN else 'user'
-                    mikrotik_profile_name = settings_service.get_setting(profile_key, fallback_profile)
-                    
-                    activate_or_update_hotspot_user(
-                        api_connection=mikrotik_conn,
-                        user_mikrotik_username=format_to_local_phone(current_user.phone_number),
-                        mikrotik_profile_name=mikrotik_profile_name,
-                        hotspot_password=new_mikrotik_password,
-                        comment=f"Password reset by user via Portal",
-                        server=current_user.mikrotik_server_name
-                    )
+        if not mikrotik_success:
+            return jsonify({"success": False, "message": f"Gagal mereset password di Mikrotik. Error: {mikrotik_message}"}), HTTPStatus.INTERNAL_SERVER_ERROR
+
         current_user.mikrotik_password = new_mikrotik_password
         db.session.commit()
 
         if WHATSAPP_AVAILABLE and settings_service.get_setting('ENABLE_WHATSAPP_NOTIFICATIONS', 'False') == 'True':
-            context = {"full_name": current_user.full_name, "username": format_to_local_phone(current_user.phone_number), "password": new_mikrotik_password}
+            context = {"full_name": current_user.full_name, "username": mikrotik_username, "password": new_mikrotik_password}
             message_body = get_notification_message("user_hotspot_password_reset_by_user", context)
             send_whatsapp_message(current_user.phone_number, message_body)
             
-        return jsonify({"success": True, "message": "New hotspot password successfully generated and sent via WhatsApp!"}), HTTPStatus.OK
+        return jsonify({"success": True, "message": "Password hotspot baru berhasil dibuat dan dikirim via WhatsApp."}), HTTPStatus.OK
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Internal error while resetting hotspot password for user {current_user.id}: {e}", exc_info=True)
