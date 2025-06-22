@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="pragma" content="no-cache">
+    <meta http-equiv="expires" content="-1">
+    <title>Hotspot Login</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@mdi/font@5.x/css/materialdesignicons.min.css" rel="stylesheet">
+    
+    <link href="https://cdn.jsdelivr.net/npm/vuetify@3.6.10/dist/vuetify.min.css" rel="stylesheet">
+    
+    <style>
+        /* Mencegah 'flash of unstyled content' */
+        [v-cloak] { display: none; }
+        html, body {
+            overflow-y: auto !important;
+            font-family: 'Poppins', sans-serif;
+        }
+        .v-card-title {
+            font-weight: 700 !important;
+        }
+    </style>
+</head>
+<body>
+
+    $(if chap-id)
+    <form name="sendin" action="$(link-login-only)" method="post" style="display:none">
+        <input type="hidden" name="username" />
+        <input type="hidden" name="password" />
+        <input type="hidden" name="dst" value="$(link-orig)" />
+        <input type="hidden" name="popup" value="true" />
+    </form>
+    $(endif)
+
+    <div id="app" v-cloak>
+        <v-app>
+            <v-main>
+                <v-container class="fill-height" fluid>
+                    <v-row align="center" justify="center">
+                        <v-col cols="12" sm="8" md="6" lg="4">
+                            
+                            <v-card class="elevation-12" theme="dark">
+                                <v-toolbar color="primary" dark flat>
+                                    <v-toolbar-title class="text-center font-weight-bold">
+                                        PORTAL HOTSPOT
+                                    </v-toolbar-title>
+                                </v-toolbar>
+
+                                <v-card-text>
+                                    <form name="login" action="$(link-login-only)" method="post" @submit.prevent="doLogin">
+                                        
+                                        $(if error)
+                                        <v-alert
+                                            type="error"
+                                            variant="tonal"
+                                            border="start"
+                                            density="compact"
+                                            class="mb-5"
+                                        >
+                                            $(error)
+                                        </v-alert>
+                                        $(endif)
+
+                                        $(if error == "")
+                                        <p class="text-grey-lighten-1 text-center mb-5">
+                                            Silakan login untuk melanjutkan
+                                            $(if trial == 'yes')
+                                            <br>
+                                            <a :href="'$(link-login-only)?dst=$(link-orig-esc)&username=T-$(mac-esc)'" class="text-primary">
+                                                Coba gratis tersedia, klik di sini.
+                                            </a>
+                                            $(endif)
+                                        </p>
+                                        $(endif)
+
+                                        <v-text-field
+                                            v-model="username"
+                                            label="Username"
+                                            name="username"
+                                            prepend-inner-icon="mdi-account"
+                                            variant="outlined"
+                                            required
+                                        ></v-text-field>
+
+                                        <v-text-field
+                                            v-model="password"
+                                            label="Password"
+                                            name="password"
+                                            prepend-inner-icon="mdi-lock"
+                                            :append-inner-icon="showPass ? 'mdi-eye' : 'mdi-eye-off'"
+                                            @click:append-inner="showPass = !showPass"
+                                            :type="showPass ? 'text' : 'password'"
+                                            variant="outlined"
+                                            required
+                                        ></v-text-field>
+                                        
+                                        <v-btn type="submit" color="primary" block large class="mt-4">
+                                            Login
+                                        </v-btn>
+                                    </form>
+                                </v-card-text>
+
+                                <v-divider class="my-3"></v-divider>
+                                <v-card-actions class="justify-center">
+                                     <v-btn 
+                                        href="/register" 
+                                        variant="text"
+                                        >
+                                        Belum punya akun? Beli Paket / Daftar
+                                    </v-btn>
+                                </v-card-actions>
+                            </v-card>
+                        
+                        </v-col>
+                    </v-row>
+                </v-container>
+            </v-main>
+        </v-app>
+    </div>
+
+    <script src="/md5.js"></script>
+    <script>
+        function doLogin() {
+            var form = document.login;
+            // Jika menggunakan CHAP, enkripsi passwordnya
+            $(if chap-id)
+            {
+                var sendinForm = document.sendin;
+                sendinForm.username.value = form.username.value;
+                sendinForm.password.value = hexMD5('$(chap-id)' + form.password.value + '$(chap-challenge)');
+                sendinForm.submit();
+            }
+            $(endif)
+            // Jika tidak menggunakan CHAP, kirim form seperti biasa
+            $(if chap-id == "")
+            {
+                form.submit();
+            }
+            $(endif)
+            return false;
+        }
+    </script>
+    
+    <script src="https://unpkg.com/vue@3"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vuetify@3.6.10/dist/vuetify.min.js"></script>
+
+    <script>
+        const { createApp, ref } = Vue
+        const { createVuetify } = Vuetify
+
+        const vuetify = createVuetify({
+            theme: {
+                defaultTheme: 'dark', // Mengatur tema gelap sebagai default
+                themes: {
+                    dark: {
+                        colors: {
+                            primary: '#673ab7', // Warna ungu yang menarik
+                            surface: '#1E1E1E',
+                        }
+                    }
+                }
+            }
+        })
+
+        createApp({
+            setup() {
+                const showPass = ref(false);
+                const username = ref('$(username)'); // Mengambil nilai username dari Mikrotik
+                const password = ref('');
+                
+                // Fungsi doLogin global sudah tersedia dari script di atas
+                // Jadi kita tidak perlu mendefinisikannya lagi di sini.
+
+                return {
+                    showPass,
+                    username,
+                    password,
+                    doLogin // Membuatnya tersedia di template jika diperlukan (meskipun sudah di @submit.prevent)
+                }
+            }
+        }).use(vuetify).mount('#app')
+    </script>
+
+</body>
+</html>

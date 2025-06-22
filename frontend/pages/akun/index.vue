@@ -1,0 +1,377 @@
+<script lang="ts" setup>
+import { ref, onMounted, computed, defineAsyncComponent, watch } from 'vue'
+import { useNuxtApp } from '#app'
+import { useAuthStore } from '~/store/auth'
+import type { User, ChangePasswordRequest } from '~/types/auth'
+import type { VForm } from 'vuetify/components'
+import { useDisplay } from 'vuetify'
+import { normalize_to_e164 } from '~/utils/formatters'
+
+// --- [PERBAIKAN] Komponen sekarang dipanggil LoginHistoryCard (nama file tetap) ---
+const LoginHistoryCard = defineAsyncComponent({
+  loader: () => import('~/components/akun/LoginHistoryCard.vue'),
+  ssr: false,
+})
+const UserSpendingChart = defineAsyncComponent({
+  loader: () => import('~/components/charts/UserSpendingChart.vue'),
+  ssr: false,
+})
+
+// --- Inisialisasi & State Management ---
+const { $api } = useNuxtApp()
+const authStore = useAuthStore()
+const display = useDisplay()
+const profileLoading = ref(true)
+const profileError = ref<string | null>(null)
+const securityLoading = ref(false)
+const securityAlert = ref<{ type: 'success' | 'error'; message: string } | null>(null)
+const profileForm = ref<InstanceType<typeof VForm> | null>(null)
+const profileAlert = ref<{ type: 'success' | 'error'; message: string } | null>(null)
+const editData = ref({ full_name: '', phone_number: '' })
+const totalSpendingThisPeriod = ref<string>("Rp 0")
+const spendingChartData = ref([{ data: [] as number[] }])
+const spendingChartCategories = ref<string[]>([])
+const spendingChartLoading = ref(false)
+const spendingAlert = ref<{ type: 'success' | 'error'; message: string } | null>(null)
+const isPasswordDialogVisible = ref(false)
+const passwordFormRef = ref<InstanceType<typeof VForm> | null>(null)
+const passwordLoading = ref(false)
+const passwordAlert = ref<{ type: 'success' | 'error'; message: string } | null>(null)
+const passwordData = ref<ChangePasswordRequest>({ current_password: '', new_password: '' })
+const confirmPassword = ref('')
+const isPasswordVisible = ref(false)
+
+// --- Computed Properties ---
+const currentUser = computed(() => authStore.currentUser)
+const isUser = computed(() => currentUser.value?.role === 'USER')
+const isKomandan = computed(() => currentUser.value?.role === 'KOMANDAN')
+const isAdminOrSuperAdmin = computed(() => ['ADMIN', 'SUPER_ADMIN'].includes(currentUser.value?.role ?? ''))
+
+const displayRole = computed(() => {
+    if (!currentUser.value) return '';
+    const roles = {
+        USER: 'Pengguna',
+        KOMANDAN: 'Komandan',
+        ADMIN: 'Admin',
+        SUPER_ADMIN: 'Support'
+    }
+    return roles[currentUser.value.role] || currentUser.value.role;
+});
+
+// --- Fungsi-Fungsi (Tidak ada perubahan logika, hanya format) ---
+const formatPhoneNumberForDisplay = (phone?: string | null): string => {
+  if (!phone) return '';
+  return phone.startsWith('+62') ? `0${phone.substring(3)}` : phone;
+}
+const populateEditForm = () => {
+  if (currentUser.value) {
+    editData.value.full_name = currentUser.value.full_name || '';
+    editData.value.phone_number = formatPhoneNumberForDisplay(currentUser.value.phone_number);
+  }
+}
+const loadInitialData = async () => {
+  profileLoading.value = true
+  profileError.value = null
+  try {
+    if (!authStore.currentUser) {
+      const success = await authStore.fetchUser()
+      if (!success) throw new Error(authStore.error || 'Gagal memuat data pengguna.')
+    }
+    populateEditForm()
+    if (isUser.value) fetchSpendingSummary()
+  } catch (error: any) {
+    profileError.value = error.message
+  } finally {
+    profileLoading.value = false
+  }
+}
+const saveProfile = async () => {
+  if (!profileForm.value) return
+  const { valid } = await profileForm.value.validate()
+  if (!valid) return
+
+  securityLoading.value = true
+  profileAlert.value = null
+  
+  const isPrivilegedUser = isAdminOrSuperAdmin.value || isKomandan.value;
+  const endpoint = isPrivilegedUser ? `/admin/users/me` : `/auth/me/profile`;
+  
+  const payload: Partial<User> = { full_name: editData.value.full_name };
+
+  if (isPrivilegedUser) {
+    try {
+      payload.phone_number = normalize_to_e164(editData.value.phone_number);
+    } catch (e: any) {
+      profileAlert.value = { type: 'error', message: e.message || 'Format nomor telepon tidak valid.' };
+      securityLoading.value = false;
+      return;
+    }
+  }
+
+  try {
+    const response = await $api<User>(endpoint, { method: 'PUT', body: payload })
+    authStore.setUser(response)
+    populateEditForm()
+    profileAlert.value = { type: 'success', message: 'Profil berhasil diperbarui!' }
+  } catch (error: any) {
+    profileAlert.value = { type: 'error', message: `Gagal menyimpan profil: ${error.data?.message || 'Terjadi kesalahan'}` }
+  } finally {
+    securityLoading.value = false
+  }
+}
+const resetHotspotPassword = async () => {
+  securityLoading.value = true
+  securityAlert.value = null
+  if (!currentUser.value) {
+    securityAlert.value = { type: 'error', message: 'Data pengguna tidak ditemukan.' };
+    securityLoading.value = false;
+    return;
+  }
+  const isPrivilegedUser = isAdminOrSuperAdmin.value || isKomandan.value;
+  let endpoint = isPrivilegedUser
+    ? `/admin/users/${currentUser.value.id}/reset-hotspot-password`
+    : '/users/me/reset-hotspot-password';
+
+  try {
+    const response = await $api<{ message: string }>(endpoint, { method: 'POST' })
+    securityAlert.value = { type: 'success', message: response.message || 'Password hotspot berhasil direset.' }
+  } catch (error: any) {
+    securityAlert.value = { type: 'error', message: `Gagal mereset password: ${error.data?.message || 'Kesalahan tidak diketahui'}` }
+  } finally {
+    securityLoading.value = false
+  }
+}
+const fetchSpendingSummary = async () => {
+  spendingChartLoading.value = true
+  spendingAlert.value = null
+  try {
+    const response = await $api<{ categories: string[]; series: any[]; total_this_week: number }>('/users/me/weekly-spending')
+    spendingChartCategories.value = response.categories
+    spendingChartData.value = response.series
+    totalSpendingThisPeriod.value = formatCurrency(response.total_this_week)
+  } catch (error: any) {
+    spendingChartCategories.value = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab']
+    spendingChartData.value = [{ data: [0, 0, 0, 0, 0, 0, 0] }]
+    totalSpendingThisPeriod.value = formatCurrency(0)
+    spendingAlert.value = { type: 'error', message: `Gagal memuat pengeluaran: ${error.data?.message}` }
+  } finally {
+    spendingChartLoading.value = false
+  }
+}
+const changePassword = async () => {
+  if (!passwordFormRef.value) return;
+  const { valid } = await passwordFormRef.value.validate();
+  if (!valid) return;
+  passwordLoading.value = true
+  passwordAlert.value = null
+  try {
+    const response = await $api<{ message: string }>('/auth/me/change-password', { method: 'POST', body: passwordData.value })
+    passwordAlert.value = { type: 'success', message: response.message || 'Password berhasil diubah!' }
+    setTimeout(() => {
+      isPasswordDialogVisible.value = false
+      passwordFormRef.value?.reset()
+      passwordData.value = { current_password: '', new_password: '' }
+      confirmPassword.value = ''
+    }, 1500)
+  } catch (error: any) {
+    passwordAlert.value = { type: 'error', message: error.data?.message || 'Gagal mengubah password.' }
+  } finally {
+    passwordLoading.value = false
+  }
+}
+onMounted(loadInitialData)
+watch(() => authStore.currentUser, (newUser) => { if(newUser) populateEditForm() }, { deep: true })
+
+const requiredRule = (v: any) => !!v || 'Wajib diisi.'
+const nameLengthRule = (v: string) => (v && v.length >= 2) || 'Nama minimal 2 karakter.'
+const phoneRule = (v: string) => /^(?:\+62|0)8[1-9][0-9]{7,12}$/.test(v) || 'Format nomor telepon tidak valid.'
+const passwordLengthRule = (v: string) => (v && v.length >= 6) || 'Password minimal 6 karakter.'
+const passwordMatchRule = (v: string) => v === passwordData.value.new_password || 'Password tidak cocok.'
+const formatDate = (dateString?: string | Date | null) => {
+  if (!dateString) return 'N/A'
+  return new Date(dateString).toLocaleString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })
+}
+const formatCurrency = (amount: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount)
+useHead({ title: 'Pengaturan Akun' })
+</script>
+
+<template>
+  <VContainer fluid>
+    <div v-if="profileLoading" class="py-10">
+      <VProgressLinear indeterminate color="primary" rounded height="6" />
+      <div class="text-center mt-4 text-disabled">Memuat data akun...</div>
+    </div>
+    
+    <div v-else-if="profileError" class="text-center py-16">
+      <VIcon icon="tabler-alert-triangle" size="64" color="error" />
+      <p class="text-h6 mt-4">Gagal Memuat Data</p>
+      <p class="text-body-1 mt-2">{{ profileError }}</p>
+      <VBtn color="primary" class="mt-4" @click="loadInitialData" prepend-icon="tabler-reload">Coba Lagi</VBtn>
+    </div>
+
+    <VRow v-else-if="currentUser" class="ga-0">
+      <VCol cols="12" lg="8">
+        <VRow class="ga-0">
+          <VCol cols="12">
+            <VCard>
+              <VCardItem>
+                <VCardTitle class="text-h5">Profil Akun</VCardTitle>
+                <VCardSubtitle>Kelola informasi profil Anda di sini.</VCardSubtitle>
+              </VCardItem>
+              <VCardText>
+                <VAlert v-if="profileAlert" :type="profileAlert.type" variant="tonal" density="compact" closable class="mb-4" @update:model-value="profileAlert = null">
+                  {{ profileAlert.message }}
+                </VAlert>
+                <VForm ref="profileForm" @submit.prevent="saveProfile">
+                  <VRow>
+                    <VCol cols="12" md="6">
+                      <AppTextField v-model="editData.full_name" label="Nama Lengkap" prepend-inner-icon="tabler-user" :rules="[requiredRule, nameLengthRule]" />
+                    </VCol>
+                    <VCol cols="12" md="6">
+                      <AppTextField v-model="editData.phone_number" label="Nomor Telepon (Username)" prepend-inner-icon="tabler-phone" :rules="[requiredRule, phoneRule]" :disabled="!isAdminOrSuperAdmin && !isKomandan" :readonly="!isAdminOrSuperAdmin && !isKomandan" />
+                    </VCol>
+                    <VCol v-if="isUser" cols="12" md="6">
+                      <AppTextField :model-value="currentUser.blok || 'N/A'" label="Blok" readonly disabled prepend-inner-icon="tabler-building" />
+                    </VCol>
+                    <VCol v-if="isUser" cols="12" md="6">
+                      <AppTextField :model-value="currentUser.kamar || 'N/A'" label="Kamar" readonly disabled prepend-inner-icon="tabler-door" />
+                    </VCol>
+                  </VRow>
+                   <VBtn class="mt-4" color="primary" type="submit" :loading="securityLoading" prepend-icon="tabler-device-floppy">Simpan Perubahan</VBtn>
+                </VForm>
+              </VCardText>
+            </VCard>
+          </VCol>
+
+          <VCol cols="12">
+            <VCard>
+              <VCardItem>
+                <VCardTitle class="text-h5">Keamanan</VCardTitle>
+                <VCardSubtitle>Kelola kredensial dan akses keamanan akun Anda.</VCardSubtitle>
+              </VCardItem>
+              <VCardText>
+                <VAlert v-if="securityAlert" :type="securityAlert.type" variant="tonal" density="compact" closable class="mb-4" @update:model-value="securityAlert = null">
+                  {{ securityAlert.message }}
+                </VAlert>
+                <div class="d-flex flex-wrap ga-4">
+                  <VBtn v-if="isAdminOrSuperAdmin" color="secondary" variant="tonal" @click="isPasswordDialogVisible = true" prepend-icon="tabler-key">Ubah Password Portal</VBtn>
+                  <VBtn color="warning" variant="tonal" @click="resetHotspotPassword" :loading="securityLoading" prepend-icon="tabler-wifi">Reset Password Hotspot</VBtn>
+                </div>
+              </VCardText>
+            </VCard>
+          </VCol>
+
+          <VCol v-if="isUser" cols="12">
+            <VCard>
+               <VCardItem>
+                <VCardTitle class="text-h5">Ringkasan Pengeluaran</VCardTitle>
+                <VCardSubtitle>Grafik pengeluaran Anda dalam seminggu terakhir.</VCardSubtitle>
+                <template #append>
+                  <div class="text-right">
+                    <div class="text-h5 font-weight-bold text-success">{{ totalSpendingThisPeriod }}</div>
+                    <div class="text-caption">Minggu Ini</div>
+                  </div>
+                </template>
+              </VCardItem>
+              <VCardText>
+                 <div v-if="spendingChartLoading" class="text-center py-4"><VProgressCircular indeterminate /></div>
+                 <VAlert v-if="spendingAlert" :type="spendingAlert.type" variant="tonal" density="compact" closable class="mb-4" @update:model-value="spendingAlert = null">
+                    {{ spendingAlert.message }}
+                  </VAlert>
+                 <div :style="{ height: display.smAndDown ? '200px' : '250px' }">
+                    <UserSpendingChart v-if="spendingChartData[0]?.data.length > 0" :series-data="spendingChartData" :categories="spendingChartCategories" />
+                  </div>
+              </VCardText>
+            </VCard>
+          </VCol>
+        </VRow>
+      </VCol>
+      
+      <VCol cols="12" lg="4">
+        <VRow class="ga-0">
+          <VCol cols="12">
+            <VCard>
+              <VCardText>
+                <div class="d-flex align-center mb-4">
+                    <VAvatar color="primary" rounded size="50" class="me-4">
+                        <VIcon size="30" icon="tabler-user-circle" />
+                    </VAvatar>
+                    <div>
+                        <h5 class="text-h5 font-weight-bold">{{ currentUser.full_name }}</h5>
+                        <div class="text-caption">{{ currentUser.phone_number }}</div>
+                    </div>
+                </div>
+                <VDivider />
+                <VList lines="two" density="compact" class="mt-2">
+                  <VListItem>
+                    <template #prepend><VIcon icon="tabler-shield-check" class="me-3" color="info" /></template>
+                    <VListItemTitle>Peran</VListItemTitle>
+                    <template #append><VChip size="small" label color="info">{{ displayRole }}</VChip></template>
+                  </VListItem>
+                  <VListItem>
+                    <template #prepend><VIcon icon="tabler-id-badge-2" class="me-3" :color="currentUser.is_active ? 'success' : 'warning'" /></template>
+                    <VListItemTitle>Status</VListItemTitle>
+                    <template #append>
+                      <VChip :color="currentUser.is_active ? 'success' : 'warning'" size="small" label>
+                        {{ currentUser.is_active ? 'Aktif' : 'Tidak Aktif' }}
+                      </VChip>
+                    </template>
+                  </VListItem>
+                  <VListItem>
+                    <template #prepend><VIcon icon="tabler-calendar-plus" class="me-3" color="secondary"/></template>
+                    <VListItemTitle>Terdaftar</VListItemTitle>
+                    <template #append><span class="text-body-2">{{ formatDate(currentUser.created_at) }}</span></template>
+                  </VListItem>
+                </VList>
+              </VCardText>
+            </VCard>
+          </VCol>
+          
+          <VCol cols="12">
+            <VCard>
+              <VCardItem>
+                <VCardTitle class="text-h5">Riwayat Akses</VCardTitle>
+                <VCardSubtitle>Aktivitas login terakhir pada akun Anda.</VCardSubtitle>
+              </VCardItem>
+              <LoginHistoryCard />
+            </VCard>
+          </VCol>
+        </VRow>
+      </VCol>
+    </VRow>
+
+    <VDialog v-model="isPasswordDialogVisible" max-width="500px" persistent>
+      <VCard>
+        <VCardTitle class="d-flex align-center">
+          Ubah Password Portal
+          <VSpacer />
+          <VBtn icon="tabler-x" variant="text" @click="isPasswordDialogVisible = false" />
+        </VCardTitle>
+        <VDivider />
+        <VCardText class="pt-4">
+          <VAlert v-if="passwordAlert" :type="passwordAlert.type" variant="tonal" density="compact" closable class="mb-4" @update:model-value="passwordAlert = null">
+            {{ passwordAlert.message }}
+          </VAlert>
+          <VForm ref="passwordFormRef" @submit.prevent="changePassword">
+            <VRow>
+              <VCol cols="12">
+                <AppTextField v-model="passwordData.current_password" label="Password Saat Ini" :type="isPasswordVisible ? 'text' : 'password'" :append-inner-icon="isPasswordVisible ? 'tabler-eye-off' : 'tabler-eye'" @click:append-inner="isPasswordVisible = !isPasswordVisible" :rules="[requiredRule]" density="compact" autocomplete="current-password" />
+              </VCol>
+              <VCol cols="12">
+                <AppTextField v-model="passwordData.new_password" label="Password Baru" :type="isPasswordVisible ? 'text' : 'password'" :rules="[requiredRule, passwordLengthRule]" density="compact" autocomplete="new-password" />
+              </VCol>
+              <VCol cols="12">
+                <AppTextField v-model="confirmPassword" label="Konfirmasi Password Baru" :type="isPasswordVisible ? 'text' : 'password'" :rules="[requiredRule, passwordMatchRule]" density="compact" autocomplete="new-password"/>
+              </VCol>
+            </VRow>
+          </VForm>
+        </VCardText>
+        <VCardActions>
+          <VSpacer />
+          <VBtn color="secondary" variant="text" @click="isPasswordDialogVisible = false" :disabled="passwordLoading">Batal</VBtn>
+          <VBtn color="primary" variant="elevated" @click="changePassword" :loading="passwordLoading">Simpan Password</VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+  </VContainer>
+</template>

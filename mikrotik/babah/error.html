@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="pragma" content="no-cache">
+    <meta http-equiv="expires" content="-1">
+    <title>Hotspot Error</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@mdi/font@5.x/css/materialdesignicons.min.css" rel="stylesheet">
+    
+    <link href="https://cdn.jsdelivr.net/npm/vuetify@3.6.10/dist/vuetify.min.css" rel="stylesheet">
+    
+    <style>
+        [v-cloak] { display: none; }
+        html, body {
+            overflow-y: auto !important;
+            font-family: 'Poppins', sans-serif;
+        }
+    </style>
+</head>
+<body v-cloak>
+
+    <div id="app">
+        <v-app>
+            <v-main>
+                <v-container class="fill-height" fluid>
+                    <v-row align="center" justify="center">
+                        <v-col cols="12" sm="8" md="6" lg="4">
+                            
+                            <v-card class="elevation-12" theme="dark">
+                                <v-toolbar color="error" dark flat>
+                                    <v-toolbar-title class="text-center font-weight-bold">
+                                        TERJADI KESALAHAN
+                                    </v-toolbar-title>
+                                </v-toolbar>
+
+                                <v-card-text class="text-center pa-6">
+                                    <v-icon color="error" size="64" class="mb-4">mdi-alert-circle-outline</v-icon>
+                                    
+                                    <v-alert
+                                        type="error"
+                                        variant="tonal"
+                                        border="start"
+                                        density="compact"
+                                        class="mb-6 text-left"
+                                    >
+                                        $(error)
+                                    </v-alert>
+
+                                    <p class="text-medium-emphasis mb-6">
+                                        Silakan periksa kembali informasi Anda atau hubungi administrator jika masalah berlanjut.
+                                    </p>
+
+                                    <v-btn href="$(link-login)" color="primary" block large>
+                                        Kembali ke Halaman Login
+                                    </v-btn>
+                                </v-card-text>
+                            </v-card>
+                        
+                        </v-col>
+                    </v-row>
+                </v-container>
+            </v-main>
+        </v-app>
+    </div>
+    
+    <script src="https://unpkg.com/vue@3"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vuetify@3.6.10/dist/vuetify.min.js"></script>
+
+    <script>
+        const { createApp } = Vue
+        const { createVuetify } = Vuetify
+
+        const vuetify = createVuetify({
+            theme: {
+                defaultTheme: 'dark',
+                 themes: {
+                    dark: {
+                        colors: {
+                            primary: '#673ab7',
+                            error: '#d32f2f',
+                        }
+                    }
+                }
+            }
+        })
+
+        createApp({}).use(vuetify).mount('#app')
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,149 @@
+# Menetapkan nama proyek secara eksplisit.
+# Ini akan menjadi prefix untuk semua kontainer, volume, dan network yang dibuat (cth: hotspot-portal-db-1).
+# Lebih dapat diprediksi daripada menggunakan nama direktori.
+name: hotspot-portal
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: hotspot_postgres_db
+    environment:
+      # Variabel ini diambil dari file .env di root project.
+      POSTGRES_DB: ${DB_NAME:-hotspot_default_db}
+      POSTGRES_USER: ${DB_USER:-hotspot_default_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-supersecretdefaultpassword}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - hotspot_network
+    healthcheck:
+      # Test sudah benar, menggunakan CMD-SHELL untuk substitusi variabel env.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-hotspot_default_user} -d $${POSTGRES_DB:-hotspot_default_db} -q"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: hotspot_redis_cache
+    volumes:
+      - redis_data:/data
+    networks:
+      - hotspot_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hotspot_flask_backend
+    env_file:
+      - ./backend/.env
+    # Me-mount kode sumber untuk hot-reload selama development.
+    # Untuk produksi, baris ini harus dihapus.
+    volumes:
+      - ./backend:/app
+      # TAMBAHKAN VOLUME UNTUK FONT CACHE
+      - font_cache:/app/.cache
+    ports:
+      - "5010:5010"
+    # Menggunakan YAML block scalar (|) untuk command yang panjang agar lebih mudah dibaca.
+    # Command ini spesifik untuk development dengan --reload.
+    command:
+      - "gunicorn"
+      - "--bind"
+      - "0.0.0.0:5010"
+      - "run:app"
+      - "--reload"
+      - "--workers=1"
+      - "--log-level=debug"
+      - "--access-logfile"
+      - "-"
+      - "--error-logfile"
+      - "-"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - hotspot_network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      # Menargetkan stage 'development' dari Dockerfile frontend.
+      target: development
+    container_name: hotspot_nuxt_frontend
+    env_file:
+      - ./frontend/.env
+    environment:
+      # Memastikan Nuxt dev server dapat diakses dari luar container oleh Nginx.
+      HOST: '0.0.0.0'
+      PORT: 3010
+    # Me-mount kode sumber, tetapi menjaga node_modules dan .nuxt dari container.
+    # Ini adalah pola yang benar untuk development frontend.
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.nuxt
+    ports:
+      # Port ini diekspos terutama untuk debugging langsung ke Nuxt.
+      # Akses utama pengguna akan melalui Nginx di port 80.
+      - "3010:3010"
+    command: pnpm run dev
+    # depends_on untuk backend bisa diaktifkan jika diperlukan,
+    # namun seringkali frontend modern dapat menangani jika API belum siap,
+    # sehingga tidak memblokir proses startup.
+    # depends_on:
+    #   - backend
+    networks:
+      - hotspot_network
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:stable-alpine
+    container_name: hotspot_nginx_proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/nginx/conf.d/app.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./infrastructure/nginx/logs:/var/log/nginx
+      # Uncomment baris di bawah ini jika Anda menggunakan SSL.
+      # - ./infrastructure/nginx/ssl/default.crt:/etc/nginx/ssl/default.crt:ro
+      # - ./infrastructure/nginx/ssl/default.key:/etc/nginx/ssl/default.key:ro
+    depends_on:
+      # Nginx hanya perlu menunggu layanan backend dan frontend 'dimulai',
+      # tidak harus 'sehat'. Nginx cukup pintar untuk menangani jika upstream belum siap.
+      backend:
+        condition: service_started
+      frontend:
+        condition: service_started
+    networks:
+      - hotspot_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  # TAMBAHKAN VOLUME KHUSUS FONT CACHE
+  font_cache:
+    driver: local
+
+networks:
+  hotspot_network:
+    driver: bridge
+    name: hotspot_portal_net

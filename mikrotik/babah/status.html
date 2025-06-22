@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    $(if refresh-timeout)
+    <meta http-equiv="refresh" content="$(refresh-timeout-secs)">
+    $(endif)
+    <meta http-equiv="pragma" content="no-cache">
+    <meta http-equiv="expires" content="-1">
+    <title>Hotspot Status</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@mdi/font@5.x/css/materialdesignicons.min.css" rel="stylesheet">
+    
+    <link href="https://cdn.jsdelivr.net/npm/vuetify@3.6.10/dist/vuetify.min.css" rel="stylesheet">
+    
+    <style>
+        [v-cloak] { display: none; }
+        html, body {
+            overflow-y: auto !important;
+            font-family: 'Poppins', sans-serif;
+            background-color: #121212; /* Fallback background color */
+        }
+    </style>
+</head>
+<body v-cloak>
+
+    <div id="app">
+        <v-app>
+            <v-main>
+                <v-card theme="dark" flat>
+                    <v-card-title class="d-flex align-center pt-4">
+                        <v-icon color="success" start>mdi-wifi-check</v-icon>
+                        Status Koneksi
+                    </v-card-title>
+                    <v-card-subtitle>
+                        $(if login-by == 'trial')
+                            Selamat datang, pengguna trial!
+                        $(elif login-by != 'mac')
+                            Selamat datang, $(username)!
+                        $(endif)
+                    </v-card-subtitle>
+
+                    <v-card-text>
+                        <v-list lines="one" density="compact" bg-color="transparent">
+                            <v-list-item prepend-icon="mdi-ip-network-outline">
+                                <v-list-item-title>$(ip)</v-list-item-title>
+                                <v-list-item-subtitle>Alamat IP</v-list-item-subtitle>
+                            </v-list-item>
+                            
+                            <v-list-item prepend-icon="mdi-swap-vertical-bold">
+                                <v-list-item-title>$(bytes-in-nice) / $(bytes-out-nice)</v-list-item-title>
+                                <v-list-item-subtitle>Data Upload / Download</v-list-item-subtitle>
+                            </v-list-item>
+
+                            $(if session-time-left)
+                            <v-list-item prepend-icon="mdi-clock-time-eight-outline">
+                                <v-list-item-title>$(uptime)</v-list-item-title>
+                                <v-list-item-subtitle>Durasi Terhubung</v-list-item-subtitle>
+                            </v-list-item>
+                            <v-list-item prepend-icon="mdi-timer-sand">
+                                <v-list-item-title>$(session-time-left)</v-list-item-title>
+                                <v-list-item-subtitle>Sisa Waktu</v-list-item-subtitle>
+                            </v-list-item>
+                            $(else)
+                            <v-list-item prepend-icon="mdi-clock-time-eight-outline">
+                                <v-list-item-title>$(uptime)</v-list-item-title>
+                                <v-list-item-subtitle>Durasi Terhubung</v-list-item-subtitle>
+                            </v-list-item>
+                            $(endif)
+
+                            $(if refresh-timeout)
+                            <v-list-item prepend-icon="mdi-refresh">
+                                <v-list-item-title>$(refresh-timeout)</v-list-item-title>
+                                <v-list-item-subtitle>Refresh Status</v-list-item-subtitle>
+                            </v-list-item>
+                            $(endif)
+                        </v-list>
+                    </v-card-text>
+
+                    <v-card-actions>
+                        <form action="$(link-logout)" name="logout" @submit.prevent="openLogout" style="width: 100%;">
+                            <v-btn type="submit" color="error" block variant="flat">
+                                Logout
+                            </v-btn>
+                        </form>
+                    </v-card-actions>
+                </v-card>
+            </v-main>
+        </v-app>
+    </div>
+
+    <script>
+        // Fungsi asli dari Mikrotik untuk handle popup logout
+        function openLogout() {
+            if (window.name != 'hotspot_status') return true;
+            open('$(link-logout)', 'hotspot_logout', 'toolbar=0,location=0,directories=0,status=0,menubars=0,resizable=1,width=350,height=350');
+            window.close();
+            return false;
+        }
+    </script>
+    
+    <script src="https://unpkg.com/vue@3"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vuetify@3.6.10/dist/vuetify.min.js"></script>
+    <script>
+        const { createApp } = Vue
+        const { createVuetify } = Vuetify
+
+        const vuetify = createVuetify({
+             theme: { defaultTheme: 'dark' }
+        })
+
+        createApp({
+            setup() {
+                // Membuat fungsi openLogout tersedia untuk template
+                return { openLogout };
+            }
+        }).use(vuetify).mount('#app')
+    </script>
+</body>
+</html>

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="id" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="pragma" content="no-cache">
+    <meta http-equiv="expires" content="-1">
+    <title>Hotspot Logout</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@mdi/font@5.x/css/materialdesignicons.min.css" rel="stylesheet">
+    
+    <link href="https://cdn.jsdelivr.net/npm/vuetify@3.6.10/dist/vuetify.min.css" rel="stylesheet">
+    
+    <style>
+        [v-cloak] { display: none; }
+        html, body {
+            overflow-y: auto !important;
+            font-family: 'Poppins', sans-serif;
+            background-color: #121212; /* Fallback background color */
+        }
+    </style>
+</head>
+<body v-cloak>
+
+    <div id="app">
+        <v-app>
+            <v-main>
+                <v-card theme="dark" flat class="text-center">
+                    <v-card-text class="pa-5">
+                        <v-icon color="primary" size="64" class="mb-4">mdi-logout-variant</v-icon>
+                        <h1 class="text-h5 font-weight-bold mb-2">Anda Telah Logout</h1>
+                        <p class="text-medium-emphasis mb-6">Berikut adalah ringkasan sesi Anda.</p>
+
+                        <v-list lines="one" density="compact" bg-color="transparent" class="text-left">
+                            <v-list-item prepend-icon="mdi-account-circle-outline">
+                                <v-list-item-title>$(username)</v-list-item-title>
+                                <v-list-item-subtitle>Username</v-list-item-subtitle>
+                            </v-list-item>
+                            
+                             <v-list-item prepend-icon="mdi-ip-network-outline">
+                                <v-list-item-title>$(ip)</v-list-item-title>
+                                <v-list-item-subtitle>Alamat IP</v-list-item-subtitle>
+                            </v-list-item>
+
+                            <v-list-item prepend-icon="mdi-barcode-scan">
+                                <v-list-item-title>$(mac)</v-list-item-title>
+                                <v-list-item-subtitle>Alamat MAC</v-list-item-subtitle>
+                            </v-list-item>
+                            
+                            <v-list-item prepend-icon="mdi-clock-time-eight-outline">
+                                <v-list-item-title>$(uptime)</v-list-item-title>
+                                <v-list-item-subtitle>Total Durasi Sesi</v-list-item-subtitle>
+                            </v-list-item>
+
+                            <v-list-item prepend-icon="mdi-swap-vertical-bold">
+                                <v-list-item-title>$(bytes-in-nice) / $(bytes-out-nice)</v-list-item-title>
+                                <v-list-item-subtitle>Total Data Upload / Download</v-list-item-subtitle>
+                            </v-list-item>
+                        </v-list>
+                    </v-card-text>
+
+                    <v-card-actions class="pa-4">
+                        <form action="$(link-login)" name="login" @submit.prevent="openLogin" style="width: 100%;">
+                            <v-btn type="submit" color="primary" block variant="flat">
+                                Login Kembali
+                            </v-btn>
+                        </form>
+                    </v-card-actions>
+                </v-card>
+            </v-main>
+        </v-app>
+    </div>
+
+    <script>
+        // Fungsi asli dari Mikrotik untuk membuka halaman login
+        function openLogin() {
+            if (window.name != 'hotspot_logout') return true;
+            open('$(link-login)', '_blank', '');
+            window.close();
+            return false;
+        }
+    </script>
+    
+    <script src="https://unpkg.com/vue@3"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vuetify@3.6.10/dist/vuetify.min.js"></script>
+    <script>
+        const { createApp } = Vue
+        const { createVuetify } = Vuetify
+
+        const vuetify = createVuetify({
+             theme: { defaultTheme: 'dark' }
+        })
+
+        createApp({
+             setup() {
+                // Membuat fungsi openLogin tersedia untuk template
+                return { openLogin };
+            }
+        }).use(vuetify).mount('#app')
+    </script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+// frontend/@layouts/styles/_default-layout.scss
+@use "@layouts/styles/rtl";
+@use "@layouts/styles/placeholders";
+@use "@layouts/styles/mixins";
+@use "@configured-variables" as variables;
+
+html,
+body {
+  min-block-size: 100%;
+}
+
+.layout-page-content {
+  // Pindahkan deklarasi CSS di atas nested rule
+  flex-grow: 1;
+  padding-block: 1.5rem; // TODO: Use grid gutter variable here
+  
+  @include mixins.boxed-content(true); // Nested rule
+}
+
+.layout-footer {
+  .footer-content-container {
+    block-size: variables.$layout-vertical-nav-footer-height;
+  }
+
+  .layout-footer-sticky & {
+    position: sticky;
+    inset-block-end: 0;
+    will-change: transform;
+  }
+
+  .layout-footer-hidden & {
+    display: none;
+  }
+}
