@@ -87,7 +87,8 @@ const queryParams = computed(() => {
   params.append('page', currentPage.value.toString())
   params.append('per_page', itemsPerPage.value.toString())
 
-  if (sortBy.value.length > 0 && sortBy.value[0].key && sortBy.value[0].order) {
+  // PERBAIKAN: Pengecekan eksplisit untuk properti dari 'any'
+  if (sortBy.value.length > 0 && typeof sortBy.value[0].key === 'string' && typeof sortBy.value[0].order === 'string') {
     params.append('sort_by', sortBy.value[0].key)
     params.append('sort_order', sortBy.value[0].order)
   }
@@ -118,16 +119,19 @@ const { data: apiResponse, pending: loading, error: fetchError, refresh: _loadIt
 )
 
 watch(apiResponse, (newData) => {
-  if (newData?.success && Array.isArray(newData.transactions)) {
+  // PERBAIKAN: Pengecekan boolean eksplisit
+  if (newData?.success === true && Array.isArray(newData.transactions)) {
     transactions.value = newData.transactions
 
-    if (newData.pagination) {
+    // PERBAIKAN: Pengecekan null eksplisit
+    if (newData.pagination != null) {
       totalItems.value = newData.pagination.total_items
       currentPage.value = newData.pagination.page
       itemsPerPage.value = newData.pagination.per_page
     }
   }
-  else if (newData && !newData.success) {
+  // PERBAIKAN: Pengecekan null dan boolean eksplisit
+  else if (newData != null && newData.success === false) {
     transactions.value = []
     totalItems.value = 0
   }
@@ -145,7 +149,8 @@ function handleOptionsUpdate({ page, itemsPerPage: limit, sortBy: newSortBy }: {
 
 // --- Helper Functions ---
 function formatDateTime(dateTimeString: string | null | undefined): string {
-  if (!dateTimeString)
+  // PERBAIKAN: Pengecekan null eksplisit
+  if (dateTimeString == null)
     return '-'
 
   try {
@@ -207,13 +212,15 @@ function getStatusText(status: string | undefined | null): string {
     case 'EXPIRED': return 'Kedaluwarsa'
     case 'CANCELLED': return 'Dibatalkan'
     case 'FAILED': return 'Gagal'
-    default: return status || 'Tidak Diketahui'
+    // PERBAIKAN: Mengganti || dengan ??
+    default: return status ?? 'Tidak Diketahui'
   }
 }
 
 function isDownloadable(status: string | undefined | null): boolean {
   const upperStatus = status?.toUpperCase()
-  return ['SUCCESS', 'SETTLEMENT', 'PAID'].includes(upperStatus || '')
+  // PERBAIKAN: Mengganti || dengan ??
+  return ['SUCCESS', 'SETTLEMENT', 'PAID'].includes(upperStatus ?? '')
 }
 
 async function downloadInvoice(midtransOrderId: string) {
@@ -230,7 +237,8 @@ async function downloadInvoice(midtransOrderId: string) {
       responseType: 'blob',
     })
 
-    if (!blob || blob.size === 0) {
+    // PERBAIKAN: Pengecekan null eksplisit
+    if (blob == null || blob.size === 0) {
       throw new Error('Gagal menerima data file dari server (blob kosong).')
     }
 
@@ -248,7 +256,8 @@ async function downloadInvoice(midtransOrderId: string) {
     snackbar.show = true
   }
   catch (err: any) {
-    const message = err.data?.message || err.message || 'Gagal mengunduh invoice.'
+    // PERBAIKAN: Mengganti || dengan ?? untuk nilai fallback
+    const message = err.data?.message ?? err.message ?? 'Gagal mengunduh invoice.'
     snackbar.text = message
     snackbar.color = 'error'
     snackbar.show = true
