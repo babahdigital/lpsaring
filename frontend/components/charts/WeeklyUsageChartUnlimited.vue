@@ -236,8 +236,8 @@ async function attemptSetReady() {
   await vueNextTick()
   const containerEl = unref(chartContainerActualRef)
 
-  if (!containerEl || !containerEl.isConnected || containerEl.offsetWidth === 0 || containerEl.offsetHeight === 0) {
-    const reason = !containerEl ? 'tidak ditemukan' : (!containerEl.isConnected ? 'tidak terhubung' : 'dimensi nol')
+  if (containerEl === null || !containerEl.isConnected || containerEl.offsetWidth === 0 || containerEl.offsetHeight === 0) {
+    const reason = containerEl === null ? 'tidak ditemukan' : (!containerEl.isConnected ? 'tidak terhubung' : 'dimensi nol')
     if (attemptSetReadyRetries < MAX_ATTEMPT_RETRIES) {
       attemptSetReadyRetries++
       setTimeout(attemptSetReady, RETRY_DELAY_MS)
@@ -331,7 +331,7 @@ async function retryChartInit() {
   await vueNextTick()
   updateChartData()
 
-  if (!props.parentLoading && !props.parentError) { // Hanya memeriksa parentError, tidak quotaData
+  if (!props.parentLoading && props.parentError === null) { // Hanya memeriksa parentError, tidak quotaData
     attemptSetReady()
   }
 }
@@ -395,7 +395,7 @@ function updateChartData() {
   chartNoDataTextFromLogic.value = currentNoDataText
   quotaWeeklyBarSeries.value = [{ name: 'Penggunaan Harian', data: newSeriesDataValues }]
 
-  if (!newParentLoading && !newParentError && !isChartReadyToRender.value && !chartContainerFailedOverall.value) { // Hapus cek !newQuotaData
+  if (!newParentLoading && newParentError === null && !isChartReadyToRender.value && !chartContainerFailedOverall.value) { // Hapus cek !newQuotaData
     vueNextTick().then(attemptSetReady)
   }
 
@@ -425,7 +425,7 @@ watch(() => props.weeklyUsageData, () => {
 
 watch(() => props.parentLoading, (newVal, oldVal) => {
   updateChartData()
-  if (!newVal && oldVal && !props.parentError && !isChartReadyToRender.value && !chartContainerFailedOverall.value) { // Hapus cek props.quotaData
+  if (!newVal && oldVal && props.parentError === null && !isChartReadyToRender.value && !chartContainerFailedOverall.value) { // Hapus cek props.quotaData
     vueNextTick().then(attemptSetReady)
   }
 }, { flush: 'post' })
@@ -512,7 +512,7 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
             <p v-else-if="props.parentError?.message != null" class="text-caption mt-1">
               Detail: {{ props.parentError.message }}
             </p>
-            <div v-if="devErrorMessage != null && devErrorMessage !== (props.parentError?.message || props.parentError.toString())" class="dev-error-overlay-message mt-2">
+            <div v-if="devErrorMessage != null && devErrorMessage !== (Boolean(props.parentError.message) ? props.parentError.message : props.parentError.toString())" class="dev-error-overlay-message mt-2">
               <strong>Pesan Error Tambahan (Dev):</strong><br>{{ devErrorMessage }}
             </div>
           </VAlert>
@@ -550,7 +550,7 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
             <p class="text-body-2">
               Terjadi masalah saat menyiapkan area untuk menampilkan chart mingguan.
             </p>
-            <div v-if="devErrorMessage != null" class="dev-error-overlay-message mt-2">
+            <div v-if="typeof devErrorMessage === 'string'" class="dev-error-overlay-message mt-2">
               <strong>Pesan Error (Dev):</strong><br>{{ devErrorMessage }}
             </div>
           </VAlert>
@@ -579,15 +579,15 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
                     <div class="chart-inner-wrapper">
                       <ClientOnly>
                         <VueApexCharts
-                          v-if="isChartReadyToRender && VueApexCharts != null && weeklyDataProcessed && !props.parentLoading"
+                          v-if="isChartReadyToRender && weeklyDataProcessed && !props.parentLoading"
                           ref="weeklyChartRef"
                           :key="`${weeklyChartKey}-${vuetifyTheme.current.value.dark}-dinamis-mobile-unlimited`" type="bar" :height="chartHeight"
                           :options="quotaWeeklyBarOptions" :series="quotaWeeklyBarSeries"
                           class="w-100"
                         />
                         <div v-else-if="!props.parentLoading" class="chart-fallback-container text-center pa-2 d-flex flex-column justify-center align-items-center" :style="{ height: '100%', width: '100%', minHeight: chartHeightInPx }">
-                          <VProgressCircular v-if="isLoadingInternalProcessing" indeterminate size="28" color="primary" class="mb-2" />
-                          <VIcon v-else-if="!isLoadingInternalProcessing && (props.weeklyUsageData == null || !props.weeklyUsageData.success || (props.weeklyUsageData.weekly_data != null && props.weeklyUsageData.weekly_data.every(d => d === 0)))" size="32" :color="infoDisplayColor" class="mb-1">
+                          <VProgressCircular v-if="isLoadingInternalProcessing === true" indeterminate size="28" color="primary" class="mb-2" />
+                          <VIcon v-else-if="isLoadingInternalProcessing !== true && (props.weeklyUsageData == null || props.weeklyUsageData.success !== true || (props.weeklyUsageData.weekly_data != null && props.weeklyUsageData.weekly_data.every(d => d === 0)))" size="32" :color="infoDisplayColor" class="mb-1">
                             tabler-chart-infographic
                           </VIcon>
                           <p class="text-caption text-medium-emphasis">
@@ -613,15 +613,15 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
                     <div class="chart-inner-wrapper">
                       <ClientOnly>
                         <VueApexCharts
-                          v-if="isChartReadyToRender && VueApexCharts != null && weeklyDataProcessed && !props.parentLoading"
+                          v-if="isChartReadyToRender && weeklyDataProcessed && !props.parentLoading"
                           ref="weeklyChartRef"
                           :key="`${weeklyChartKey}-${vuetifyTheme.current.value.dark}-dinamis-desktop-unlimited`" type="bar" :height="chartHeight"
                           :options="quotaWeeklyBarOptions" :series="quotaWeeklyBarSeries"
                           class="w-100"
                         />
                         <div v-else-if="!props.parentLoading" class="chart-fallback-container text-center pa-2 d-flex flex-column justify-center align-items-center" :style="{ height: '100%', width: '100%', minHeight: chartHeightInPx }">
-                          <VProgressCircular v-if="isLoadingInternalProcessing" indeterminate size="28" color="primary" class="mb-2" />
-                          <VIcon v-else-if="!isLoadingInternalProcessing && (props.weeklyUsageData == null || !props.weeklyUsageData.success || (props.weeklyUsageData.weekly_data != null && props.weeklyUsageData.weekly_data.every(d => d === 0)))" size="32" :color="infoDisplayColor" class="mb-1">
+                          <VProgressCircular v-if="isLoadingInternalProcessing === true" indeterminate size="28" color="primary" class="mb-2" />
+                          <VIcon v-else-if="isLoadingInternalProcessing !== true && (props.weeklyUsageData == null || props.weeklyUsageData.success !== true || (props.weeklyUsageData.weekly_data != null && props.weeklyUsageData.weekly_data.every(d => d === 0)))" size="32" :color="infoDisplayColor" class="mb-1">
                             tabler-chart-infographic
                           </VIcon>
                           <p class="text-caption text-medium-emphasis">
@@ -654,7 +654,7 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
                   </div>
                   <div class="summary-item-content d-flex flex-column align-center">
                     <h6 class="font-weight-medium summary-value">
-                      {{ weeklyUsageData?.weekly_data != null && weeklyUsageData.weekly_data.length > 0 ? formatQuota(weeklyUsageData.weekly_data[weeklyUsageData.weekly_data.length - 1]) : 'N/A' }}
+                      {{ (weeklyUsageData?.weekly_data ?? []).length > 0 ? formatQuota(weeklyUsageData.weekly_data[weeklyUsageData.weekly_data.length - 1]) : 'N/A' }}
                     </h6>
                   </div>
                 </VCol>
