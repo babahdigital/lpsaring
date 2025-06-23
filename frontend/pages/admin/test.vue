@@ -4,7 +4,7 @@ import { useSnackbar } from '@/composables/useSnackbar'
 // Ambil fungsi 'add' dari composable snackbar kita
 const { add: addSnackbar } = useSnackbar()
 
-const triggerSuccess = () => {
+function triggerSuccess() {
   addSnackbar({
     type: 'success',
     title: 'Berhasil',
@@ -12,7 +12,7 @@ const triggerSuccess = () => {
   })
 }
 
-const triggerError = () => {
+function triggerError() {
   addSnackbar({
     type: 'error',
     title: 'Error Terjadi',
@@ -20,7 +20,7 @@ const triggerError = () => {
   })
 }
 
-const triggerWarning = () => {
+function triggerWarning() {
   addSnackbar({
     type: 'warning',
     title: 'Peringatan',
@@ -28,7 +28,7 @@ const triggerWarning = () => {
   })
 }
 
-const triggerInfo = () => {
+function triggerInfo() {
   addSnackbar({
     type: 'info',
     title: 'Informasi',

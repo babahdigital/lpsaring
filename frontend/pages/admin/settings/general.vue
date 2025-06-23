@@ -97,7 +97,8 @@ async function handleSaveChanges() {
     const settingsToSave: Record<string, string> = { ...localSettings.value }
 
     Object.keys(settingsToSave).forEach((key) => {
-      if (settingsToSave[key] === null || settingsToSave[key] === '') {
+      // Perbaikan: Hapus pengecekan `null` yang tidak perlu karena nilai sudah dijamin string.
+      if (settingsToSave[key] === '') {
         if (key === 'MAINTENANCE_MODE_MESSAGE' && settingsToSave.MAINTENANCE_MODE_ACTIVE === 'False') {
           return
         }
@@ -124,25 +125,26 @@ async function handleSaveChanges() {
     })
   }
   catch (e: any) {
-    console.error('Gagal menyimpan pengaturan. Detail error:', e.data || e)
+    console.error('Gagal menyimpan pengaturan. Detail error:', e.data ?? e)
 
     let errorDetails = 'Terjadi kesalahan pada server.'
 
-    if (e.data && e.data.errors && Array.isArray(e.data.errors)) {
+    // Perbaikan: Pengecekan error dibuat lebih eksplisit untuk memenuhi aturan `strict-boolean-expressions`.
+    if (e.data && typeof e.data === 'object' && e.data !== null && Array.isArray(e.data.errors)) {
       errorDetails = e.data.errors.map((err: any) => {
-        if (typeof err === 'object' && err.message) {
-          return err.message
+        if (typeof err === 'object' && err !== null && 'message' in err) {
+          return String(err.message)
         }
         return String(err)
       }).join(' ')
     }
-    else if (e.data && e.data.message) {
+    else if (e.data && typeof e.data === 'object' && e.data !== null && typeof e.data.message === 'string') {
       errorDetails = e.data.message
     }
 
     snackbar.add({
       type: 'error',
-      title: `Gagal Menyimpan (Error ${e.statusCode || '422'})`,
+      title: `Gagal Menyimpan (Error ${e.statusCode ?? '422'})`,
       text: errorDetails,
     })
   }
