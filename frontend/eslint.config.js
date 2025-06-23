@@ -6,19 +6,27 @@ import globalsPkg from 'globals'
 const { browser, node } = globalsPkg
 
 export default antfu(
+  // Objek Konfigurasi Utama
   {
     vue: true,
     typescript: true,
-    plugins: {
-      '@typescript-eslint': tsPlugin,
-      'n': nPlugin,
-    },
+    ignores: [
+      '**/migrations/**',
+      'public/build/**',
+      '.nuxt',
+      'dist',
+      'node_modules',
+    ],
     languageOptions: {
       globals: {
         ...browser,
         ...node,
         process: true,
       },
+    },
+    plugins: {
+      '@typescript-eslint': tsPlugin,
+      'n': nPlugin,
     },
     rules: {
       'vue/v-slot-style': [
@@ -29,65 +37,58 @@ export default antfu(
           named: 'shorthand',
         },
       ],
-      // Aturan 'vue/valid-v-slot' telah dihapus dari sini untuk menghindari konflik
       'n/prefer-global/process': 'off',
       '@typescript-eslint/no-redeclare': 'error',
       'ts/no-redeclare': 'off',
       'no-console': ['warn', { allow: ['info', 'log', 'warn', 'error'] }],
     },
-    overrides: [
-      // Aturan khusus untuk file TypeScript/Vue
-      {
-        files: ['**/*.{ts,tsx,vue}'],
-        rules: {
-          'vue/valid-v-slot': ['error', {
-            allowModifiers: true,
-          }],
-          'ts/strict-boolean-expressions': [
-            'error',
-            {
-              allowString: true,
-              allowNumber: true,
-              allowNullableObject: true,
-            },
-          ],
-          'unused-imports/no-unused-vars': [
-            'error',
-            {
-              vars: 'all',
-              varsIgnorePattern: '^_',
-              args: 'after-used',
-              argsIgnorePattern: '^_',
-              ignoreRestSiblings: true,
-              destructuredArrayIgnorePattern: '^_',
-            },
-          ],
-          'no-console': ['warn', { allow: ['info', 'log', 'warn', 'error'] }],
+  },
+
+  // Objek Konfigurasi Terpisah untuk Override File Vue/TypeScript
+  {
+    files: ['**/*.{ts,tsx,vue}'],
+    rules: {
+      'vue/valid-v-slot': ['error', {
+        allowModifiers: true,
+      }],
+      'ts/strict-boolean-expressions': [
+        'error',
+        {
+          allowString: true,
+          allowNumber: true,
+          allowNullableObject: true,
         },
-      },
-      // Aturan khusus untuk file konfigurasi
-      {
-        files: ['*.config.*'],
-        rules: {
-          'ts/no-var-requires': 'off',
-          'no-console': 'off',
+      ],
+      'unused-imports/no-unused-vars': [
+        'error',
+        {
+          vars: 'all',
+          varsIgnorePattern: '^_',
+          args: 'after-used',
+          argsIgnorePattern: '^_',
+          ignoreRestSiblings: true,
+          destructuredArrayIgnorePattern: '^_',
         },
-      },
-      // Nonaktifkan aturan TypeScript untuk file JSON
-      {
-        files: ['**/*.json'],
-        rules: {
-          'ts/*': 'off',
-          '@typescript-eslint/*': 'off',
-        },
-      },
-    ],
-    ignores: [
-      '**/migrations/**',
-      'public/build/**',
-      '.nuxt',
-      'dist',
-      'node_modules',
-    ],
+      ],
+      'no-console': ['warn', { allow: ['info', 'log', 'warn', 'error'] }],
+    },
+  },
+
+  // Objek Konfigurasi Terpisah untuk Override File Konfigurasi
+  {
+    files: ['*.config.*'],
+    rules: {
+      'ts/no-var-requires': 'off',
+      'no-console': 'off',
+    },
+  },
+
+  // Objek Konfigurasi Terpisah untuk Override File JSON
+  {
+    files: ['**/*.json'],
+    rules: {
+      'ts/*': 'off',
+      '@typescript-eslint/*': 'off',
+    },
   },
 )
