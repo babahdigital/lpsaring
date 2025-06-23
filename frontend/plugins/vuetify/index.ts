@@ -7,14 +7,14 @@ import { VBtn } from 'vuetify/components/VBtn'
 import { mdi, aliases as mdiAliases } from 'vuetify/iconsets/mdi'
 import { cookieRef } from '@/@layouts/stores/config'
 import pluginDefaults from './defaults'
+// --- Impor adapter Iconify yang baru dibuat ---
+import IconifyVuetifyAdapter from './iconify-adapter'
 import { icons as iconAliases } from './icons'
 import { themes } from './theme'
 import '@core/scss/template/libs/vuetify/index.scss'
 import 'vuetify/styles'
-import '@mdi/font/css/materialdesignicons.css'
 
-// --- Impor adapter Iconify yang baru dibuat ---
-import IconifyVuetifyAdapter from './iconify-adapter'
+import '@mdi/font/css/materialdesignicons.css'
 
 function resolveInitialVuetifyTheme(userPreference: string | undefined | null): 'light' | 'dark' {
   const validThemes = Object.keys(themes)

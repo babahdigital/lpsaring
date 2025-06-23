@@ -1,7 +1,7 @@
+import type { IconProps, IconSet } from 'vuetify'
+import { Icon as IconifyIcon } from '@iconify/vue'
 // frontend/plugins/vuetify/iconify-adapter.ts
 import { h } from 'vue'
-import { Icon as IconifyIcon } from '@iconify/vue'
-import type { IconSet, IconProps } from 'vuetify'
 
 const IconifyVuetifyAdapter: IconSet = {
   component: (props: IconProps) => {

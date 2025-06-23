@@ -24,11 +24,11 @@ const { messages, remove } = useSnackbar()
           <VBtn
             variant="text"
             size="small"
-            @click="remove(message.id)"
-            :icon="false" <!-- Perubahan disini -->
+            :icon="false"
           >
+            >
             <!-- Gunakan span dengan kelas langsung -->
-            <span class="tabler-x custom-icon"></span>
+            <span class="tabler-x custom-icon" />
           </VBtn>
         </template>
       </VAlert>
