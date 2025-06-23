@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import type { VDataTableServer } from 'vuetify/labs/VDataTable'
-import { onMounted, reactive, ref, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import ProcessRequestDialog from '@/components/request/ProcessRequestDialog.vue'
 import { useSnackbar } from '@/composables/useSnackbar' // Menggunakan composable useSnackbar
@@ -60,11 +60,11 @@ async function fetchRequests() {
   }
   catch (error: any) {
     // Perbaikan: Penanganan error dengan pengecekan tipe eksplisit
-    let errorMessage = 'Server error';
+    let errorMessage = 'Server error'
     if (error && typeof error === 'object' && error !== null && 'data' in error) {
-      const errorData = error.data as Record<string, unknown>; // Casting to a more specific type
+      const errorData = error.data as Record<string, unknown> // Casting to a more specific type
       if (errorData && typeof errorData === 'object' && errorData !== null && 'message' in errorData && typeof errorData.message === 'string') {
-        errorMessage = errorData.message;
+        errorMessage = errorData.message
       }
     }
     showSnackbar({
