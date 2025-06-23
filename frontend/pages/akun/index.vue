@@ -64,7 +64,7 @@ const displayRole = computed(() => {
 const formatCurrency = (amount: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount)
 
 function formatPhoneNumberForDisplay(phone?: string | null): string {
-  if (!phone)
+  if (phone === null || phone === undefined || phone === '') // Perbaikan: Handle null, undefined, dan string kosong secara eksplisit
     return ''
   return phone.startsWith('+62') ? `0${phone.substring(3)}` : phone
 }
@@ -79,7 +79,7 @@ async function loadInitialData() {
   profileLoading.value = true
   profileError.value = null
   try {
-    if (!authStore.currentUser) {
+    if (authStore.currentUser === null || authStore.currentUser === undefined) { // Perbaikan: Perbandingan eksplisit
       const success = await authStore.fetchUser()
       if (!success)
         // DIPERBAIKI: Menggunakan ?? untuk fallback yang aman
@@ -97,7 +97,7 @@ async function loadInitialData() {
   }
 }
 async function saveProfile() {
-  if (!profileForm.value)
+  if (profileForm.value === null) // Perbaikan: Perbandingan eksplisit
     return
   const { valid } = await profileForm.value.validate()
   if (!valid)
@@ -140,7 +140,7 @@ async function saveProfile() {
 async function resetHotspotPassword() {
   securityLoading.value = true
   securityAlert.value = null
-  if (!currentUser.value) {
+  if (currentUser.value === null || currentUser.value === undefined) { // Perbaikan: Perbandingan eksplisit
     securityAlert.value = { type: 'error', message: 'Data pengguna tidak ditemukan.' }
     securityLoading.value = false
     return
@@ -186,7 +186,7 @@ async function fetchSpendingSummary() {
   }
 }
 async function changePassword() {
-  if (!passwordFormRef.value)
+  if (passwordFormRef.value === null) // Perbaikan: Perbandingan eksplisit
     return
   const { valid } = await passwordFormRef.value.validate()
   if (!valid)
@@ -220,13 +220,13 @@ watch(() => authStore.currentUser, (newUser) => {
 }, { deep: true })
 
 // DIPERBAIKI: Aturan validasi menggunakan perbandingan eksplisit
-const requiredRule = (v: any) => (v != null && v !== '') || 'Wajib diisi.'
-const nameLengthRule = (v: string) => (v != null && v.length >= 2) || 'Nama minimal 2 karakter.'
+const requiredRule = (v: any) => (v !== null && v !== undefined && v !== '') || 'Wajib diisi.' // Perbaikan: Perbandingan eksplisit dengan null, undefined, dan string kosong
+const nameLengthRule = (v: string) => (v !== null && v !== undefined && v.length >= 2) || 'Nama minimal 2 karakter.' // Perbaikan: Perbandingan eksplisit
 const phoneRule = (v: string) => /^(?:\+62|0)8[1-9]\d{7,12}$/.test(v) || 'Format nomor telepon tidak valid.'
-const passwordLengthRule = (v: string) => (v != null && v.length >= 6) || 'Password minimal 6 karakter.'
+const passwordLengthRule = (v: string) => (v !== null && v !== undefined && v.length >= 6) || 'Password minimal 6 karakter.' // Perbaikan: Perbandingan eksplisit
 const passwordMatchRule = (v: string) => v === passwordData.value.new_password || 'Password tidak cocok.'
 function formatDate(dateString?: string | Date | null) {
-  if (!dateString)
+  if (dateString === null || dateString === undefined || dateString === '') // Perbaikan: Handle null, undefined, dan string kosong secara eksplisit
     return 'N/A'
   return new Date(dateString).toLocaleString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })
 }
@@ -256,8 +256,7 @@ useHead({ title: 'Pengaturan Akun' })
       </VBtn>
     </div>
 
-    <VRow v-else-if="currentUser" class="ga-0">
-      <VCol cols="12" lg="8">
+    <VRow v-else-if="currentUser !== null" class="ga-0"> <VCol cols="12" lg="8">
         <VRow class="ga-0">
           <VCol cols="12">
             <VCard>
