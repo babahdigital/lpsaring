@@ -378,7 +378,6 @@ useHead({ title: 'Pengaturan Akun' })
                       <VChip :color="currentUser.is_active ? 'success' : 'warning'" size="small" label>
                         {{ currentUser.is_active ? 'Aktif' : 'Tidak Aktif' }}
                       </VChip>
-                      </vchip>
                     </template>
                   </VListItem>
                   <VListItem>
