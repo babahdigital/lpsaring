@@ -445,7 +445,6 @@ useHead({ title: 'Pengaturan Akun' })
             Simpan Password
           </VBtn>
         </VCardActions>
-        </vcardtitle>
       </VCard>
     </VDialog>
   </VContainer>
