@@ -2,6 +2,7 @@
 import type { VDataTableServer } from 'vuetify/labs/VDataTable'
 import { computed, ref } from 'vue'
 import { useDisplay } from 'vuetify'
+import { useSnackbar } from '@/composables/useSnackbar' // Pastikan ini diimpor jika useSnackbar digunakan
 
 // Menggunakan hook useDisplay untuk deteksi mobile
 const { mobile } = useDisplay()
@@ -23,7 +24,7 @@ interface PromoEvent {
 type DatatableOptions = VDataTableServer['$props']['options']
 
 const { $api } = useNuxtApp()
-const snackbar = useSnackbar()
+const snackbar = useSnackbar() // Menggunakan composable useSnackbar
 
 // State untuk tabel dan dialog
 const promoList = ref<PromoEvent[]>([])
@@ -43,7 +44,7 @@ const editedItem = ref<Partial<PromoEvent>>({})
 const editedIndex = ref(-1)
 
 // State untuk form dan date picker
-const form = ref<any>(null)
+const form = ref<any>(null) // VForm ref needs to be 'any' to access its methods like .validate()
 const isStartDateMenuOpen = ref(false)
 const isEndDateMenuOpen = ref(false)
 
@@ -64,10 +65,11 @@ const { refresh: refreshPromos } = useAsyncData(
       promoList.value = response.items
       totalPromos.value = response.totalItems
     }
-    catch (e: any) {
+    catch (e: any) { // e: any karena error dari api bisa bermacam-macam
       snackbar.add({
         type: 'error',
         // Perbaikan: Menggunakan operator `??` (nullish coalescing) untuk pengecekan eksplisit.
+        title: 'Gagal Memuat Data', // Tambahkan title sesuai struktur snackbar Anda
         text: e.message ?? 'Gagal mengambil data event.',
       })
     }
@@ -147,13 +149,14 @@ const typeOptions = [
 ]
 
 // Aturan validasi
-const requiredRule = [(v: any) => !!v || 'Field ini wajib diisi']
+// Perbaikan: Gunakan tipe 'unknown' pada parameter 'v' dan lakukan pengecekan eksplisit.
+const requiredRule = [(v: unknown) => (v !== null && v !== undefined && v !== '') || 'Field ini wajib diisi']
 // Perbaikan: Pengecekan eksplisit untuk nilai number.
 const numberRule = [(v: number) => (v != null && v > 0) || 'Nilai harus lebih dari 0']
 
 // Fungsi Helper
 function formatDate(date: Date | null | undefined) {
-  if (!date)
+  if (date === null || date === undefined) // Pengecekan eksplisit untuk null atau undefined
     return ''
   return new Date(date).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
 }
@@ -173,6 +176,7 @@ function statusProps(status: PromoEvent['status']) {
     DRAFT: { color: 'default', icon: 'tabler-edit-circle' },
   }
   // Perbaikan: Pengecekan eksplisit keberadaan `key` di dalam `object`.
+  // Gunakan 'status in map' yang sudah benar, hanya memastikan 'map.DRAFT' sebagai fallback yang aman
   return status in map ? map[status] : map.DRAFT
 }
 
@@ -226,19 +230,19 @@ async function saveEvent() {
   if (form.value == null)
     return
   const { valid } = await form.value.validate()
-  // Perbaikan: Pengecekan eksplisit `valid !== true` karena `valid` bisa jadi bukan boolean.
+  // Perbaikan: Pengecekan eksplisit `valid !== true` karena `valid` bisa jadi bukan boolean atau undefined.
   if (valid !== true) {
-    snackbar.add({ type: 'warning', text: 'Mohon periksa kembali form, ada data yang belum valid.' })
+    snackbar.add({ type: 'warning', title: 'Validasi Gagal', text: 'Mohon periksa kembali form, ada data yang belum valid.' }) // Tambahkan title
     return
   }
   try {
     if (editedIndex.value > -1) {
       await $api(`/admin/promos/${editedItem.value.id}`, { method: 'PUT', body: editedItem.value })
-      snackbar.add({ type: 'success', text: 'Event berhasil diperbarui.' })
+      snackbar.add({ type: 'success', title: 'Berhasil', text: 'Event berhasil diperbarui.' }) // Tambahkan title
     }
     else {
       await $api('/admin/promos', { method: 'POST', body: editedItem.value })
-      snackbar.add({ type: 'success', text: 'Event berhasil ditambahkan.' })
+      snackbar.add({ type: 'success', title: 'Berhasil', text: 'Event berhasil ditambahkan.' }) // Tambahkan title
     }
     closeEditorDialog()
     await refreshPromos()
@@ -246,20 +250,20 @@ async function saveEvent() {
   catch (e: any) {
     // Perbaikan: Menggunakan operator `??` (nullish coalescing) untuk chain property access yang aman.
     const errorMessage = e.data?.message ?? e.data?.errors?.[0]?.msg ?? 'Gagal menyimpan data.'
-    snackbar.add({ type: 'error', text: errorMessage })
+    snackbar.add({ type: 'error', title: 'Gagal Menyimpan', text: errorMessage }) // Tambahkan title
   }
 }
 
 async function deleteItemConfirm() {
   try {
     await $api(`/admin/promos/${editedItem.value.id}`, { method: 'DELETE' })
-    snackbar.add({ type: 'success', text: 'Event berhasil dihapus.' })
+    snackbar.add({ type: 'success', title: 'Berhasil', text: 'Event berhasil dihapus.' }) // Tambahkan title
     closeDeleteDialog()
     await refreshPromos()
   }
   catch (e: any) {
     // Perbaikan: Menggunakan `??` untuk penanganan `e.message` yang bertipe `any`.
-    snackbar.add({ type: 'error', text: e.message ?? 'Gagal menghapus event.' })
+    snackbar.add({ type: 'error', title: 'Gagal Menghapus', text: e.message ?? 'Gagal menghapus event.' }) // Tambahkan title
   }
 }
 
