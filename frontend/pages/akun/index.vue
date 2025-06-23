@@ -64,7 +64,7 @@ const displayRole = computed(() => {
 const formatCurrency = (amount: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount)
 
 function formatPhoneNumberForDisplay(phone?: string | null): string {
-  if (phone === null || phone === undefined || phone === '') // Perbaikan: Handle null, undefined, dan string kosong secara eksplisit
+  if (phone === null || phone === undefined || phone === '')
     return ''
   return phone.startsWith('+62') ? `0${phone.substring(3)}` : phone
 }
@@ -79,7 +79,7 @@ async function loadInitialData() {
   profileLoading.value = true
   profileError.value = null
   try {
-    if (authStore.currentUser === null || authStore.currentUser === undefined) { // Perbaikan: Perbandingan eksplisit
+    if (authStore.currentUser === null) {
       const success = await authStore.fetchUser()
       if (!success)
         // DIPERBAIKI: Menggunakan ?? untuk fallback yang aman
@@ -97,7 +97,7 @@ async function loadInitialData() {
   }
 }
 async function saveProfile() {
-  if (profileForm.value === null) // Perbaikan: Perbandingan eksplisit
+  if (profileForm.value === null)
     return
   const { valid } = await profileForm.value.validate()
   if (!valid)
@@ -130,7 +130,8 @@ async function saveProfile() {
   }
   catch (error: any) {
     // DIPERBAIKI: Pemeriksaan tipe eksplisit untuk pesan error
-    const errorMessage = (typeof error.data?.message === 'string' && error.data.message) ? error.data.message : 'Terjadi kesalahan'
+    // Baris 119: Perbaikan eksplisit untuk `error.data?.message`
+    const errorMessage = (error.data && typeof error.data.message === 'string') ? error.data.message : 'Terjadi kesalahan'
     profileAlert.value = { type: 'error', message: `Gagal menyimpan profil: ${errorMessage}` }
   }
   finally {
@@ -140,7 +141,7 @@ async function saveProfile() {
 async function resetHotspotPassword() {
   securityLoading.value = true
   securityAlert.value = null
-  if (currentUser.value === null || currentUser.value === undefined) { // Perbaikan: Perbandingan eksplisit
+  if (currentUser.value === null) {
     securityAlert.value = { type: 'error', message: 'Data pengguna tidak ditemukan.' }
     securityLoading.value = false
     return
@@ -157,7 +158,8 @@ async function resetHotspotPassword() {
   }
   catch (error: any) {
     // DIPERBAIKI: Pemeriksaan tipe eksplisit untuk pesan error
-    const errorMessage = (typeof error.data?.message === 'string' && error.data.message) ? error.data.message : 'Kesalahan tidak diketahui'
+    // Baris 133: Perbaikan eksplisit untuk `error.data?.message`
+    const errorMessage = (error.data && typeof error.data.message === 'string') ? error.data.message : 'Kesalahan tidak diketahui'
     securityAlert.value = { type: 'error', message: `Gagal mereset password: ${errorMessage}` }
   }
   finally {
@@ -178,7 +180,8 @@ async function fetchSpendingSummary() {
     spendingChartData.value = [{ data: [0, 0, 0, 0, 0, 0, 0] }]
     totalSpendingThisPeriod.value = formatCurrency(0)
     // DIPERBAIKI: Pemeriksaan tipe eksplisit untuk pesan error
-    const errorMessage = typeof error.data?.message === 'string' ? error.data.message : 'Kesalahan tidak diketahui'
+    // Baris 160: Perbaikan eksplisit untuk `error.data?.message`
+    const errorMessage = (error.data && typeof error.data.message === 'string') ? error.data.message : 'Kesalahan tidak diketahui'
     spendingAlert.value = { type: 'error', message: `Gagal memuat pengeluaran: ${errorMessage}` }
   }
   finally {
@@ -186,7 +189,7 @@ async function fetchSpendingSummary() {
   }
 }
 async function changePassword() {
-  if (passwordFormRef.value === null) // Perbaikan: Perbandingan eksplisit
+  if (passwordFormRef.value === null)
     return
   const { valid } = await passwordFormRef.value.validate()
   if (!valid)
@@ -206,7 +209,8 @@ async function changePassword() {
   }
   catch (error: any) {
     // DIPERBAIKI: Pemeriksaan tipe eksplisit untuk pesan error
-    const errorMessage = (typeof error.data?.message === 'string' && error.data.message) ? error.data.message : 'Gagal mengubah password.'
+    // Baris 209: Perbaikan eksplisit untuk `error.data?.message`
+    const errorMessage = (error.data && typeof error.data.message === 'string') ? error.data.message : 'Gagal mengubah password.'
     passwordAlert.value = { type: 'error', message: errorMessage }
   }
   finally {
@@ -220,13 +224,13 @@ watch(() => authStore.currentUser, (newUser) => {
 }, { deep: true })
 
 // DIPERBAIKI: Aturan validasi menggunakan perbandingan eksplisit
-const requiredRule = (v: any) => (v !== null && v !== undefined && v !== '') || 'Wajib diisi.' // Perbaikan: Perbandingan eksplisit dengan null, undefined, dan string kosong
-const nameLengthRule = (v: string) => (v !== null && v !== undefined && v.length >= 2) || 'Nama minimal 2 karakter.' // Perbaikan: Perbandingan eksplisit
+const requiredRule = (v: any) => (v !== null && v !== undefined && v !== '') || 'Wajib diisi.'
+const nameLengthRule = (v: string) => (v !== null && v !== undefined && v.length >= 2) || 'Nama minimal 2 karakter.'
 const phoneRule = (v: string) => /^(?:\+62|0)8[1-9]\d{7,12}$/.test(v) || 'Format nomor telepon tidak valid.'
-const passwordLengthRule = (v: string) => (v !== null && v !== undefined && v.length >= 6) || 'Password minimal 6 karakter.' // Perbaikan: Perbandingan eksplisit
+const passwordLengthRule = (v: string) => (v !== null && v !== undefined && v.length >= 6) || 'Password minimal 6 karakter.'
 const passwordMatchRule = (v: string) => v === passwordData.value.new_password || 'Password tidak cocok.'
 function formatDate(dateString?: string | Date | null) {
-  if (dateString === null || dateString === undefined || dateString === '') // Perbaikan: Handle null, undefined, dan string kosong secara eksplisit
+  if (dateString === null || dateString === undefined || dateString === '')
     return 'N/A'
   return new Date(dateString).toLocaleString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })
 }
