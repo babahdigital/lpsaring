@@ -62,7 +62,8 @@ const defaultPackage: Partial<Package> = {
 // --- FUNGSI & LOGIKA ---
 onMounted(fetchPackages)
 
-const formTitle = computed(() => (editedPackage.value.id ? 'Edit Paket Jualan' : 'Tambah Paket Jualan'))
+// Perbaikan: Pengecekan `id` yang mungkin `undefined` dibuat eksplisit.
+const formTitle = computed(() => (editedPackage.value.id != null ? 'Edit Paket Jualan' : 'Tambah Paket Jualan'))
 
 const headers = [
   { title: 'NAMA PAKET', key: 'name', sortable: false },
@@ -84,7 +85,8 @@ async function fetchPackages() {
     totalPackages.value = response.totalItems || 0
   }
   catch (e: any) {
-    snackbar.add({ type: 'error', title: 'Gagal Memuat', text: e.data?.message || 'Tidak dapat memuat daftar paket.' })
+    // Perbaikan: Menggunakan operator `??` (nullish coalescing) untuk `any`.
+    snackbar.add({ type: 'error', title: 'Gagal Memuat', text: e.data?.message ?? 'Tidak dapat memuat daftar paket.' })
   }
   finally {
     loading.value = false
@@ -143,7 +145,8 @@ async function handleAction(type: 'create' | 'update' | 'delete') {
         lastFailedAction.value = apiCall
       }
       else {
-        snackbar.add({ type: 'error', title: 'Gagal', text: error.data?.message || 'Terjadi kesalahan tidak terduga.' })
+        // Perbaikan: Menggunakan operator `??` untuk `any`.
+        snackbar.add({ type: 'error', title: 'Gagal', text: error.data?.message ?? 'Terjadi kesalahan tidak terduga.' })
       }
     }
   }
@@ -151,7 +154,8 @@ async function handleAction(type: 'create' | 'update' | 'delete') {
 }
 
 function onProfilesCreated() {
-  if (lastFailedAction.value) {
+  // Perbaikan: Pengecekan eksplisit terhadap `null`.
+  if (lastFailedAction.value !== null) {
     snackbar.add({ type: 'info', title: 'Mencoba Lagi', text: 'Konfigurasi selesai, mencoba menyimpan paket kembali...' })
     lastFailedAction.value()
     lastFailedAction.value = null
@@ -161,9 +165,13 @@ function onProfilesCreated() {
 function formatNumber(value: number | string): string {
   return new Intl.NumberFormat('id-ID').format(Number(value) || 0)
 }
+
 function unformatNumber(value: string): number {
-  return Number.parseInt(String(value).replace(/\D/g, ''), 10) || 0
+  // Perbaikan: Pengecekan eksplisit untuk `NaN` setelah parsing.
+  const parsed = Number.parseInt(String(value).replace(/\D/g, ''), 10)
+  return isNaN(parsed) ? 0 : parsed
 }
+
 watch(formattedPrice, (newValue) => {
   const cleanValue = String(newValue).replace(/\D/g, '')
   editedPackage.value.price = unformatNumber(cleanValue)
@@ -186,7 +194,8 @@ watch(() => editedPackage.value.data_quota_gb, (newQuota) => {
   if (newQuota === 0) {
     isUnlimited.value = true
   }
-  else if (newQuota && newQuota > 0 && isUnlimited.value) {
+  // Perbaikan: Pengecekan `null` secara eksplisit pada `newQuota`.
+  else if (newQuota != null && newQuota > 0 && isUnlimited.value) {
     isUnlimited.value = false
   }
 })
@@ -235,7 +244,7 @@ useHead({ title: 'Manajemen Paket Jualan' })
       >
         <template #item.details="{ item }">
           <div class="d-flex flex-column py-2">
-            <small class="text-caption text-medium-emphasis">Profil: {{ item.profile?.profile_name || 'N/A' }}</small>
+            <small class="text-caption text-medium-emphasis">Profil: {{ item.profile?.profile_name ?? 'N/A' }}</small>
             <div class="d-flex align-center gap-2">
               <VChip
                 v-if="item.data_quota_gb === 0"
