@@ -160,8 +160,9 @@ function organizeIconsList(icons: string[]): Record<string, string[]> {
       return
 
     const prefix = item.prefix
-    if (!sorted[prefix])
+    if (!Object.hasOwn(sorted, prefix))
       sorted[prefix] = []
+
     const prefixList = sorted[prefix]
     const name = item.name
 
