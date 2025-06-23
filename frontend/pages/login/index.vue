@@ -7,7 +7,7 @@ import authV1TopShape from '@images/svg/auth-v1-top-shape.svg?raw'
 import { VNodeRenderer } from '@layouts/components/VNodeRenderer'
 import { themeConfig } from '@themeConfig'
 
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, h, nextTick, ref, watch } from 'vue'
 import { useSnackbar } from '~/composables/useSnackbar'
 import { useAuthStore } from '~/store/auth'
 import { normalize_to_e164 } from '~/utils/formatters'
@@ -65,10 +65,6 @@ const phoneRules = [
       return 'Nomor telepon harus antara 10 hingga 12 digit.'
     return true
   },
-]
-const otpRules = [
-  (v: string) => !!v || 'Kode OTP wajib diisi.',
-  (v: string) => (v && v.length === 6) || 'Kode OTP harus 6 digit.',
 ]
 const requiredRule = (v: any) => !!v || 'Wajib diisi.'
 
@@ -203,7 +199,6 @@ watch(() => authStore.message, (newMessage) => {
 watch(regRole, () => {
   // Saat role diganti, reset status validasi pada form registrasi
   // untuk membersihkan error dari field yang mungkin disembunyikan (Blok/Kamar).
-  // INI ADALAH KUNCI PERBAIKANNYA.
   if (registerFormRef.value)
     registerFormRef.value.resetValidation()
 })
