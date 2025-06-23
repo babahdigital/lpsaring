@@ -70,19 +70,7 @@ onMounted(async () => {
       MAINTENANCE_MODE_ACTIVE: 'False',
       ENABLE_WHATSAPP_NOTIFICATIONS: 'False',
       ENABLE_WHATSAPP_LOGIN_NOTIFICATION: 'False', // PENAMBAHAN: Inisialisasi nilai default
-      APP_NAME: '', // Inisialisasi default
-      APP_BROWSER_TITLE: '', // Inisialisasi default
-      THEME: 'system', // Inisialisasi default
-      SKIN: 'bordered', // Inisialisasi default
-      LAYOUT: 'horizontal', // Inisialisasi default
-      CONTENT_WIDTH: 'boxed', // Inisialisasi default
-      WHATSAPP_API_KEY: '', // Inisialisasi default
-      MIDTRANS_SERVER_KEY: '', // Inisialisasi default
-      MIDTRANS_CLIENT_KEY: '', // Inisialisasi default
-      MIKROTIK_HOST: '', // Inisialisasi default
-      MIKROTIK_USER: '', // Inisialisasi default
-      MIKROTIK_PASSWORD: '', // Inisialisasi default
-      MAINTENANCE_MODE_MESSAGE: '', // Inisialisasi default
+      // Tambahkan kunci lain jika perlu
     }
 
     const fetchedSettings = response.reduce((acc, setting) => {
@@ -109,14 +97,10 @@ async function handleSaveChanges() {
     const settingsToSave: Record<string, string> = { ...localSettings.value }
 
     Object.keys(settingsToSave).forEach((key) => {
-      // Perbaiki pengecekan null/empty string untuk semua key
       if (settingsToSave[key] === null || settingsToSave[key] === '') {
-        // Khusus untuk MAINTENANCE_MODE_MESSAGE, hanya hapus jika maintenance mode tidak aktif
-        if (key === 'MAINTENANCE_MODE_MESSAGE' && settingsToSave.MAINTENANCE_MODE_ACTIVE !== 'True') {
-          // Biarkan kosong jika mode maintenance tidak aktif dan pesan tidak diisi
+        if (key === 'MAINTENANCE_MODE_MESSAGE' && settingsToSave.MAINTENANCE_MODE_ACTIVE === 'False') {
           return
         }
-        // Hapus key jika nilainya null atau string kosong, kecuali yang ditangani khusus di atas
         delete settingsToSave[key]
       }
     })
