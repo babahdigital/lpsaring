@@ -4,8 +4,8 @@
     <VIcon icon="tabler:circle-check" size="x-large" />
     <p>Icon "tabler:circle-check" should be above.</p>
 
-    <VIcon icon="complete" size="x-large" />
-    <p>Icon "complete" (tabler:circle-check alias) should be above.</p>
+    <VIcon icon="success" size="x-large" />
+    <p>Icon "success" (tabler:circle-check alias) should be above.</p>
 
     <VIcon icon="mdi-circle-check" size="x-large" />
     <p>Icon "mdi-circle-check" should be above.</p>
