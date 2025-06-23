@@ -25,14 +25,14 @@ const currentTab = ref<'login' | 'register'>('login')
 const viewState = ref<'form' | 'success'>('form')
 
 // --- State untuk Form Login ---
-const loginFormRef = ref<InstanceType<typeof VForm> | null>(null)
+const loginFormRef = ref<VForm | null>(null)
 const otpSent = ref(false)
 const phoneNumber = ref('')
 const otpCode = ref('')
-const otpInputRef = ref<InstanceType<typeof VOtpInput> | null>(null)
+const otpInputRef = ref<VOtpInput | null>(null)
 
 // --- State untuk Form Register ---
-const registerFormRef = ref<InstanceType<typeof VForm> | null>(null)
+const registerFormRef = ref<VForm | null>(null)
 const regName = ref('')
 const regPhoneNumber = ref('')
 const regRole = ref<'USER' | 'KOMANDAN'>('USER')
@@ -69,9 +69,9 @@ const phoneRules = [
 const requiredRule = (v: any) => !!v || 'Wajib diisi.'
 
 // --- Fungsi Helper ---
-async function tryFocus(refInstance: any) {
+async function tryFocus(refInstance: { focus?: () => void } | null) {
   await nextTick()
-  if (refInstance != null)
+  if (refInstance !== null)
     refInstance.focus?.()
 }
 
@@ -101,7 +101,7 @@ async function handleVerifyOtp() {
 
   try {
     const numberToVerify = normalize_to_e164(phoneNumber.value)
-    const loginSuccess = await authStore.verifyOtp(numberToVerify, otpCode.value)
+    const loginSuccess: boolean = await authStore.verifyOtp(numberToVerify, otpCode.value)
     if (loginSuccess !== true) {
       otpCode.value = ''
       tryFocus(otpInputRef.value)
@@ -143,7 +143,7 @@ async function handleRegister() {
     register_as_komandan: regRole.value === 'KOMANDAN',
   }
 
-  const registerSuccess = await authStore.register(registrationPayload)
+  const registerSuccess: boolean = await authStore.register(registrationPayload)
   if (registerSuccess === true)
     viewState.value = 'success'
 }
