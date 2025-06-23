@@ -79,9 +79,11 @@ useHead({
   ],
 })
 
-// Kondisi untuk menampilkan komponen promo, tidak ada perubahan
 const shouldShowPromoFetcher = computed(() => {
-  return !route.path.startsWith('/admin')
+  return !(
+    route.path.startsWith('/admin') || 
+    route.path.startsWith('/maintenance')
+  )
 })
 </script>
 
