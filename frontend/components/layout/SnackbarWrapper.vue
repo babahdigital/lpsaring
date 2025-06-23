@@ -2,6 +2,14 @@
 import { useSnackbar } from '@/composables/useSnackbar'
 
 const { messages, remove } = useSnackbar()
+
+// Peta untuk menentukan ikon secara eksplisit berdasarkan tipe pesan
+const iconMap = {
+  success: 'tabler:circle-check',
+  error: 'tabler:alert-circle',
+  info: 'tabler:info-circle',
+  warning: 'tabler:alert-triangle',
+}
 </script>
 
 <template>
@@ -15,6 +23,7 @@ const { messages, remove } = useSnackbar()
         :key="message.id"
         :type="message.type"
         :title="message.title"
+        :icon="iconMap[message.type]"  
         variant="elevated"
         closable
         class="mb-4"
@@ -34,7 +43,7 @@ const { messages, remove } = useSnackbar()
             @click="remove(message.id)"
           />
         </template>
-        </VAlert>
+      </VAlert>
     </VScaleTransition>
   </div>
 </template>
@@ -49,9 +58,4 @@ const { messages, remove } = useSnackbar()
   flex-direction: column;
   align-items: flex-end;
 }
-
-/*
-  Style .custom-icon tidak lagi diperlukan karena kita
-  menggunakan komponen VIcon/VBtn secara langsung.
-*/
 </style>

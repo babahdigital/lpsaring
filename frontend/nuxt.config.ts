@@ -140,7 +140,7 @@ export default defineNuxtConfig({
   },
 
   build: {
-    transpile: ['vuetify'],
+    transpile: ['vuetify', '@iconify/vue'],
   },
 
   modules: [
