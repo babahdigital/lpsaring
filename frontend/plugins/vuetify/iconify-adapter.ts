@@ -1,20 +1,43 @@
 // frontend/plugins/vuetify/iconify-adapter.ts
-import { h } from 'vue'
-import { Icon as IconifyIcon } from '@iconify/vue'
-import type { IconSet, IconProps } from 'vuetify'
+// --- KODE BARU DAN FINAL ---
 
-const IconifyVuetifyAdapter: IconSet = {
+import { defineAsyncComponent, h } from 'vue'
+import type { IconProps, IconSet } from 'vuetify'
+
+/**
+ * Adapter kustom untuk Vuetify yang terintegrasi dengan `unplugin-icons`.
+ * Adapter ini secara dinamis mengimpor komponen ikon dari modul virtual `~icons/...`
+ * yang dibuat oleh `unplugin-icons` saat proses build.
+ * Ini memastikan bahwa hanya ikon yang digunakan yang masuk ke dalam bundle,
+ * dan semuanya bekerja secara offline tanpa panggilan API eksternal.
+ */
+const UnpluginIconsVuetifyAdapter: IconSet = {
   component: (props: IconProps) => {
-    const iconName = (props.icon !== null && props.icon !== undefined)
-      ? String(props.icon)
-      : ''
+    const icon = props.icon as string
 
-    // PENTING: Pastikan Anda mengembalikan h(IconifyIcon, { icon: iconName })
-    // dan BUKAN hanya string SVG mentah jika props.icon adalah string SVG.
-    // Dalam kasus 'tabler:check', props.icon seharusnya adalah string "tabler:check",
-    // dan IconifyIcon akan menanganinya.
-    return h(IconifyIcon, { icon: iconName })
+    if (!icon)
+      return h('span') // Render elemen kosong jika tidak ada ikon
+
+    // Mem-format nama ikon dari 'collection:name' menjadi '~icons/collection/name'
+    // Contoh: 'tabler:circle-check' -> '~icons/tabler/circle-check'
+    const [collection, name] = icon.split(':')
+    if (!collection || !name) {
+      // Jika format tidak sesuai, render elemen kosong untuk mencegah error
+      console.warn(`[Icon Adapter] Format nama ikon tidak valid: "${icon}". Diharapkan format "koleksi:nama".`)
+      return h('span')
+    }
+
+    // Menggunakan defineAsyncComponent dari Vue untuk memuat ikon secara dinamis.
+    // Komentar /* @vite-ignore */ sangat penting untuk mencegah Vite
+    // mencoba menyelesaikan impor ini saat build.
+    const component = defineAsyncComponent(() =>
+      import(/* @vite-ignore */ `~icons/${collection}/${name}`),
+    )
+
+    // Merender komponen ikon yang telah dimuat, sambil meneruskan semua properti lain
+    // seperti 'class', 'style', 'size', dan lainnya ke komponen ikon.
+    return h(component, props)
   },
 }
 
-export default IconifyVuetifyAdapter
+export default UnpluginIconsVuetifyAdapter
