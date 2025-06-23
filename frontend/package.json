@@ -107,6 +107,7 @@
     "eslint-plugin-sonarjs": "3.0.2",
     "eslint-plugin-unicorn": "59.0.1",
     "eslint-plugin-vue": "10.2.0",
+    "fiber": "1.0.4",
     "globals": "^16.2.0",
     "jsonc-eslint-parser": "^2.4.0",
     "postcss-html": "1.8.0",
