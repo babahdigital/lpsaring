@@ -59,10 +59,10 @@ const roleMap = { USER: { text: 'User', color: 'info' }, KOMANDAN: { text: 'Koma
 const statusMap = { APPROVED: { text: 'Disetujui', color: 'success' }, PENDING_APPROVAL: { text: 'Menunggu', color: 'warning' }, REJECTED: { text: 'Ditolak', color: 'error' } }
 const roleFilterOptions = computed(() => {
   const allFilters = [{ text: 'User', value: 'USER' }, { text: 'Komandan', value: 'KOMANDAN' }]
-  if (authStore.isAdmin || authStore.isSuperAdmin)
+  if (authStore.isAdmin === true || authStore.isSuperAdmin === true) // Perbaikan baris 56
     allFilters.push({ text: 'Admin', value: 'ADMIN' })
 
-  if (authStore.isSuperAdmin)
+  if (authStore.isSuperAdmin === true) // Perbaikan baris 56 (ini bagian dari blok yang sama, tapi penting untuk diperhatikan)
     allFilters.push({ text: 'Support', value: 'SUPER_ADMIN' })
 
   return allFilters
@@ -77,8 +77,9 @@ const headers = computed(() => {
     { title: 'TGL DAFTAR', key: 'created_at', sortable: true },
     { title: 'AKSI', key: 'actions', sortable: false, align: 'center', width: '150px' },
   ]
-  return smAndDown.value
-    ? base.filter(h => h && h.key && ['full_name', 'approval_status', 'actions'].includes(h.key))
+  // Perbaikan baris 81: Perbandingan eksplisit untuk smAndDown.value dan pengecekan h.key
+  return smAndDown.value === true
+    ? base.filter(h => h !== null && h.key !== null && ['full_name', 'approval_status', 'actions'].includes(h.key))
     : base
 })
 
@@ -88,7 +89,7 @@ onMounted(() => {
   fetchAlamatOptions()
 })
 watch([() => options.value, roleFilter], () => {
-  if (options.value)
+  if (options.value !== null) // Perbaikan baris 91
     options.value.page = 1
   fetchUsers()
 }, { deep: true })
@@ -96,7 +97,7 @@ let searchTimeout: ReturnType<typeof setTimeout>
 watch(search, () => {
   clearTimeout(searchTimeout)
   searchTimeout = setTimeout(() => {
-    if (options.value)
+    if (options.value !== null) // Perbaikan baris 99
       options.value.page = 1
     fetchUsers()
   }, 500)
@@ -106,24 +107,25 @@ async function fetchUsers() {
   loading.value = true
   try {
     const params = new URLSearchParams()
-    if (options.value) {
+    if (options.value !== null) { // Perbaikan baris 109
       params.append('page', String(options.value.page))
       params.append('itemsPerPage', String(options.value.itemsPerPage))
-      if (options.value.sortBy?.length) {
+      if (options.value.sortBy !== undefined && options.value.sortBy.length > 0) { // Perbaikan baris 112
         params.append('sortBy', options.value.sortBy[0].key)
         params.append('sortOrder', options.value.sortBy[0].order)
       }
     }
-    if (search.value)
+    if (search.value !== null && search.value !== '') // Perbaikan baris 119
       params.append('search', search.value)
-    if (roleFilter.value)
+    if (roleFilter.value !== null && roleFilter.value !== '') // Perbaikan baris 126
       params.append('role', roleFilter.value)
     const response = await $api<{ items: User[], totalItems: number }>(`/admin/users?${params.toString()}`)
     users.value = response.items
     totalUsers.value = response.totalItems
   }
   catch (error: any) {
-    showSnackbar({ type: 'error', title: 'Gagal Mengambil Data', text: error.data?.message || 'Terjadi kesalahan pada server.' })
+    const errorMessage = (typeof error.data?.message === 'string' && error.data.message !== '') ? error.data.message : 'Terjadi kesalahan pada server.' // Perbaikan baris 142
+    showSnackbar({ type: 'error', title: 'Gagal Mengambil Data', text: errorMessage })
   }
   finally {
     loading.value = false
@@ -139,7 +141,8 @@ async function fetchAlamatOptions() {
     availableKamars.value = response.kamars
   }
   catch (error: any) {
-    showSnackbar({ type: 'error', title: 'Gagal Memuat Alamat', text: error.data?.message || 'Terjadi error saat memuat pilihan alamat.' })
+    const errorMessage = (typeof error.data?.message === 'string' && error.data.message !== '') ? error.data.message : 'Terjadi error saat memuat pilihan alamat.' // Perbaikan baris 162
+    showSnackbar({ type: 'error', title: 'Gagal Memuat Alamat', text: errorMessage })
   }
   finally {
     isAlamatLoading.value = false
@@ -170,7 +173,7 @@ function closeAllDialogs() {
   dialogState.confirm = false
 }
 async function handleSaveUser(payload: EditPayload) {
-  const isUpdate = !!payload.id
+  const isUpdate = payload.id !== undefined && payload.id !== null && payload.id !== '' // Perbaikan baris 173
   const endpoint = isUpdate ? `/admin/users/${payload.id}` : '/admin/users'
   const method = isUpdate ? 'PUT' : 'POST'
   await performAction(endpoint, method, isUpdate ? 'Data pengguna berhasil diperbarui.' : 'Pengguna baru berhasil dibuat.', { body: payload }, isUpdate ? payload.id : undefined)
@@ -223,11 +226,13 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
     showSnackbar({ type: 'success', title: 'Berhasil', text: successMessage })
     closeAllDialogs()
     await fetchUsers()
-    if (dialogState.view && selectedUser.value && selectedUser.value.id === updatedItemId && response && response.user)
+    // Perbaikan baris 226: Menambahkan perbandingan eksplisit dan pengecekan untuk response
+    if (dialogState.view === true && selectedUser.value !== null && selectedUser.value.id === updatedItemId && response !== null && response.user !== undefined) {
       selectedUser.value = { ...selectedUser.value, ...response.user }
+    }
   }
   catch (error: any) {
-    const errorMessage = error.data?.message || 'Operasi gagal. Silakan coba lagi.'
+    const errorMessage = (typeof error.data?.message === 'string' && error.data.message !== '') ? error.data.message : 'Operasi gagal. Silakan coba lagi.' // Perbaikan baris 230
     showSnackbar({ type: 'error', title: 'Terjadi Kesalahan', text: errorMessage })
   }
   finally {
@@ -286,10 +291,11 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
               <span class="text-h6">{{ item.full_name.substring(0, 1).toUpperCase() }}</span>
             </VAvatar>
             <div class="d-flex flex-column">
-              <span class="font-weight-semibold text-high-emphasis">{{ item.full_name }}</span>
+              <span class="font-weight-semibold text-high-emphasis">{{ formatPhoneNumberDisplay(item.phone_number) }}</span>
               <small class="text-medium-emphasis">{{ formatPhoneNumberDisplay(item.phone_number) }}</small>
             </div>
-            <VTooltip v-if="item.is_unlimited_user" location="top">
+            <VTooltip v-if="item.is_unlimited_user === true" location="top">
+              <!-- Perbaikan: item.is_unlimited_user -->
               <template #activator="{ props: tooltipProps }">
                 <VIcon v-bind="tooltipProps" icon="tabler-infinity" color="success" size="small" class="ms-2" />
               </template>
@@ -337,12 +343,14 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
               </VBtn>
             </template>
             <template v-else>
-              <VBtn v-if="(authStore.isSuperAdmin || authStore.isAdmin)" icon variant="text" color="primary" size="small" @click="openEditDialog(item)">
+              <VBtn v-if="(authStore.isSuperAdmin === true || authStore.isAdmin === true)" icon variant="text" color="primary" size="small" @click="openEditDialog(item)">
+                <!-- Perbaikan: isSuperAdmin dan isAdmin -->
                 <VIcon icon="tabler-pencil" /><VTooltip activator="parent">
                   Edit
                 </VTooltip>
               </VBtn>
-              <VBtn v-if="item.id !== authStore.user?.id && (authStore.isSuperAdmin || (authStore.isAdmin && item.role !== 'ADMIN' && item.role !== 'SUPER_ADMIN'))" icon variant="text" color="error" size="small" @click="handleDelete(item)">
+              <VBtn v-if="item.id !== authStore.user?.id && (authStore.isSuperAdmin === true || (authStore.isAdmin === true && user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN'))" icon variant="text" color="error" size="small" @click="handleDelete(item)">
+                <!-- Perbaikan: isSuperAdmin dan isAdmin -->
                 <VIcon icon="tabler-trash" /><VTooltip activator="parent">
                   Hapus
                 </VTooltip>
@@ -357,7 +365,8 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
         </template>
       </VDataTableServer>
       <div v-else class="pa-4">
-        <div v-if="users.length === 0 && !loading" class="py-8 text-center text-medium-emphasis">
+        <div v-if="users.length === 0 && loading === false" class="py-8 text-center text-medium-emphasis">
+          <!-- Perbaikan: loading === false -->
           <VIcon icon="tabler-database-off" size="32" class="mb-2" /><p>Tidak ada data pengguna.</p>
         </div>
         <VCard v-for="user in users" v-else :key="user.id" class="mb-3">
@@ -397,12 +406,12 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
                 </VBtn>
               </template>
               <template v-else>
-                <VBtn v-if="(authStore.isSuperAdmin || authStore.isAdmin)" icon variant="text" color="primary" size="small" @click="openEditDialog(user)">
+                <VBtn v-if="(authStore.isSuperAdmin === true || authStore.isAdmin === true)" icon variant="text" color="primary" size="small" @click="openEditDialog(user)">
                   <VIcon icon="tabler-pencil" /><VTooltip activator="parent">
                     Edit
                   </VTooltip>
                 </VBtn>
-                <VBtn v-if="user.id !== authStore.user?.id && (authStore.isSuperAdmin || (authStore.isAdmin && user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN'))" icon variant="text" color="error" size="small" @click="handleDelete(user)">
+                <VBtn v-if="user.id !== authStore.user?.id && (authStore.isSuperAdmin === true || (authStore.isAdmin === true && user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN'))" icon variant="text" color="error" size="small" @click="handleDelete(user)">
                   <VIcon icon="tabler-trash" /><VTooltip activator="parent">
                     Hapus
                   </VTooltip>
@@ -416,7 +425,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 
     <UserDetailDialog v-model="dialogState.view" :user="selectedUser" />
     <UserAddDialog v-model="dialogState.add" :loading="loading" :available-bloks="availableBloks" :available-kamars="availableKamars" :is-alamat-loading="isAlamatLoading" @save="handleSaveUser" />
-    <UserEditDialog v-if="dialogState.edit && editedUser" v-model="dialogState.edit" :user="editedUser" :loading="loading" :available-bloks="availableBloks" :available-kamars="availableKamars" :is-alamat-loading="isAlamatLoading" @save="handleSaveUser" @reset-hotspot="handleResetHotspot" @generate-admin-pass="handleGenerateAdminPass" />
+    <UserEditDialog v-if="dialogState.edit === true && editedUser !== null" v-model="dialogState.edit" :user="editedUser" :loading="loading" :available-bloks="availableBloks" :available-kamars="availableKamars" :is-alamat-loading="isAlamatLoading" @save="handleSaveUser" @reset-hotspot="handleResetHotspot" @generate-admin-pass="handleGenerateAdminPass" /> <!-- Perbaikan: dialogState.edit -->
     <UserActionConfirmDialog v-model="dialogState.confirm" :title="confirmProps.title" :message="confirmProps.message" :color="confirmProps.color" :loading="loading" @confirm="confirmProps.action" />
   </div>
 </template>
