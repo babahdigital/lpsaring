@@ -7,6 +7,7 @@ import { id as dateLocaleId } from 'date-fns/locale'
 import QrcodeVue from 'qrcode.vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useDisplay } from 'vuetify'
 
 // --- Interface Data Disesuaikan dengan Backend (snake_case) ---
 interface PackageDetails {
@@ -46,6 +47,7 @@ interface TransactionDetails {
 const route = useRoute()
 const router = useRouter()
 const { $api, $snackbar } = useNuxtApp()
+const { smAndDown } = useDisplay() // Untuk responsivitas UI
 
 const transactionDetails = ref<TransactionDetails | null>(null)
 const isLoading = ref(true)
@@ -157,7 +159,7 @@ const alertType = computed((): 'success' | 'warning' | 'error' | 'info' => {
 
 const alertTitle = computed((): string => {
   switch (finalStatus.value) {
-    case 'SUCCESS': return 'Pembayaran Berhasil!'
+    case 'SUCCESS': return 'Pembayaran Berhasil'
     case 'PENDING': return 'Menunggu Pembayaran'
     case 'FAILED': return 'Pembayaran Gagal'
     case 'EXPIRED': return 'Waktu Pembayaran Habis'
@@ -169,7 +171,7 @@ const alertTitle = computed((): string => {
 
 const alertIcon = computed((): string => {
   switch (finalStatus.value) {
-    case 'SUCCESS': return 'mdi-check-circle-outline'
+    case 'SUCCESS': return 'mdi-check-decagram-outline'
     case 'PENDING': return 'mdi-clock-fast'
     case 'FAILED': return 'mdi-close-circle-outline'
     case 'EXPIRED': return 'mdi-timer-sand-complete'
@@ -197,29 +199,29 @@ const detailMessage = computed((): string => {
         return `Pembelian paket ${safePackageName} (${quotaDisplay} GB) untuk ${safeUsername} (${userName.value}) berhasil. Kredensial login akan atau sudah dikirim via WhatsApp ke ${safePhoneNumber}.`
       }
     case 'PENDING':
-      return `Selesaikan pembayaran sebelum ${formatDate(transactionDetails.value?.expiry_time)} menggunakan instruksi di bawah.`
+      return `Mohon selesaikan pembayaran sebelum ${formatDate(transactionDetails.value?.expiry_time)} menggunakan instruksi di bawah ini.`
     case 'FAILED':
-      return `Pembayaran untuk transaksi ${transactionDetails.value?.midtrans_order_id || ''} gagal. Silakan coba pesan ulang.`
+      return `Pembayaran untuk transaksi ${transactionDetails.value?.midtrans_order_id || ''} telah gagal. Silakan coba untuk memesan ulang.`
     case 'EXPIRED':
-      return `Batas waktu pembayaran untuk transaksi ${transactionDetails.value?.midtrans_order_id || ''} telah terlewati. Silakan pesan ulang.`
+      return `Batas waktu pembayaran untuk transaksi ${transactionDetails.value?.midtrans_order_id || ''} telah terlewati. Silakan coba untuk memesan ulang.`
     case 'CANCELLED':
       return `Transaksi ${transactionDetails.value?.midtrans_order_id || ''} telah dibatalkan.`
     case 'ERROR':
-      return `Terjadi kesalahan pada proses pembayaran. Jika Anda merasa ini adalah kesalahan sistem, silakan hubungi admin.`
+      return 'Terjadi kesalahan pada proses pembayaran. Jika Anda merasa ini adalah kesalahan sistem, silakan hubungi administrator.'
     default:
-      return 'Status transaksi ini belum dapat dipastikan. Sistem sedang melakukan pengecekan.'
+      return 'Status transaksi ini belum dapat dipastikan. Sistem kami sedang melakukan pengecekan lebih lanjut.'
   }
 })
 
 async function copyToClipboard(textToCopy: string | undefined | null, type: string) {
   if (!textToCopy || !navigator.clipboard) {
-    $snackbar.add({ type: 'error', text: 'Gagal menyalin: Fitur tidak didukung.' })
+    $snackbar.add({ type: 'error', text: 'Gagal menyalin: Fitur tidak didukung oleh browser Anda.' })
     return
   }
   try {
     await navigator.clipboard.writeText(textToCopy)
     copySuccess.value = type
-    $snackbar.add({ type: 'success', text: `${type} berhasil disalin!` })
+    $snackbar.add({ type: 'success', text: `${type} berhasil disalin ke clipboard!` })
     setTimeout(() => {
       copySuccess.value = null
     }, 2500)
@@ -270,165 +272,192 @@ const showQrCode = computed(() => {
   const pm = paymentMethod.value?.toLowerCase()
   return pm === 'qris' || pm === 'gopay' || pm === 'shopeepay'
 })
-const qrSize = ref(220)
+const qrSize = computed(() => smAndDown.value ? 200 : 250) // Ukuran QR code responsif
 
 definePageMeta({ layout: 'blank' })
-useHead({ title: 'Detail Transaksi' })
+useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
 </script>
 
 <template>
-  <v-container fluid class="fill-height bg-grey-lighten-5 pa-0 ma-0">
-    <v-row justify="center" align="center" class="fill-height py-8 px-sm-4 px-2">
-      <v-col cols="12" sm="10" md="8" lg="6" xl="5" class="pa-md-4 mx-auto">
+  <v-container fluid class="fill-height bg-surface pa-0 ma-0">
+    <v-row justify="center" align="center" class="fill-height py-md-8 py-4 px-4">
+      <v-col cols="12" sm="11" md="9" lg="7" xl="5" class="mx-auto">
         <div v-if="isLoading" class="text-center pa-10">
-          <v-progress-circular indeterminate color="primary" size="60" width="5" />
-          <p class="text-h6 mt-6 text-medium-emphasis font-weight-regular">
-            Memuat Status Transaksi...
+          <v-progress-circular indeterminate color="primary" size="64" width="6" />
+          <p class="text-h6 mt-8 text-medium-emphasis font-weight-regular">
+            Memeriksa Status Transaksi Anda...
           </p>
         </div>
 
-        <v-alert
-          v-else-if="fetchError"
-          type="error" variant="tonal" prominent border="start"
-          class="mx-auto rounded-lg elevation-2 pa-5 text-center"
-          max-width="600" icon="mdi-alert-octagon-outline"
-        >
-          <v-alert-title class="text-h6 font-weight-bold mb-2">
-            Terjadi Kesalahan
-          </v-alert-title>
-          <p class="text-body-1">
-            {{ fetchError }}
-          </p>
-          <div class="mt-6">
-            <v-btn color="primary" variant="flat" @click="goToSelectPackage">
+        <v-card v-else-if="fetchError" variant="tonal" color="error" class="mx-auto rounded-xl pa-2">
+          <v-card-text class="text-center">
+            <v-icon size="56" class="mb-4" color="error">
+              mdi-alert-octagon-outline
+            </v-icon>
+            <h2 class="text-h5 font-weight-bold mb-3">
+              Gagal Memuat Transaksi
+            </h2>
+            <p class="text-body-1 mb-6 text-medium-emphasis">
+              {{ fetchError }}
+            </p>
+            <v-btn color="primary" variant="flat" size="large" @click="goToSelectPackage">
               <v-icon start>
-                mdi-arrow-left
-              </v-icon>Kembali Pilih Paket
+                mdi-arrow-left-circle-outline
+              </v-icon>Kembali ke Pilihan Paket
             </v-btn>
-          </div>
-        </v-alert>
+          </v-card-text>
+        </v-card>
 
-        <v-card v-else-if="transactionDetails" elevation="3" rounded="xl" class="mx-auto overflow-hidden">
-          <v-sheet :color="alertType" class="pa-5 text-center text-white">
-            <v-icon :icon="alertIcon" size="48" class="mb-3" />
-            <div class="text-h5 font-weight-bold mb-1">
+        <v-card v-else-if="transactionDetails" variant="flat" border class="mx-auto rounded-xl overflow-hidden">
+          <v-sheet :color="`${alertType}-darken-1`" class="pa-6 text-center text-white">
+            <v-icon :icon="alertIcon" size="56" class="mb-4" />
+            <h1 class="text-h4 font-weight-bold mb-2">
               {{ alertTitle }}
-            </div>
-            <p class="text-body-2 mx-auto" style="max-width: 90%; line-height: 1.6; opacity: 0.9;">
+            </h1>
+            <p class="text-body-1 mx-auto" style="max-width: 90%; line-height: 1.7; opacity: 0.9;">
               {{ detailMessage }}
             </p>
           </v-sheet>
 
-          <v-list lines="one" density="comfortable" class="py-3 px-1">
-            <v-list-item class="px-sm-5 px-3">
-              <template #prepend>
-                <v-icon size="20" class="mr-4 text-disabled">
-                  mdi-pound
-                </v-icon>
-              </template>
-              <v-list-item-title class="text-caption text-medium-emphasis">
-                Order ID
-              </v-list-item-title>
-              <template #append>
-                <span class="text-body-2 font-weight-medium font-mono">{{ transactionDetails.midtrans_order_id }}</span>
-              </template>
-            </v-list-item>
-            <v-list-item v-if="transactionDetails.midtrans_transaction_id" class="px-sm-5 px-3">
-              <template #prepend>
-                <v-icon size="20" class="mr-4 text-disabled">
-                  mdi-barcode-scan
-                </v-icon>
-              </template>
-              <v-list-item-title class="text-caption text-medium-emphasis">
-                ID Pembayaran
-              </v-list-item-title>
-              <template #append>
-                <span class="text-body-2 font-mono">{{ transactionDetails.midtrans_transaction_id }}</span>
-              </template>
-            </v-list-item>
-            <v-list-item class="px-sm-5 px-3">
-              <template #prepend>
-                <v-icon size="20" class="mr-4 text-disabled">
-                  mdi-package-variant-closed
-                </v-icon>
-              </template>
-              <v-list-item-title class="text-caption text-medium-emphasis">
-                Paket
-              </v-list-item-title>
-              <template #append>
-                <span class="text-body-2 font-weight-medium">{{ packageName }}</span>
-              </template>
-            </v-list-item>
-            <v-list-item class="px-sm-5 px-3">
-              <template #prepend>
-                <v-icon size="20" class="mr-4 text-disabled">
-                  mdi-cash
-                </v-icon>
-              </template>
-              <v-list-item-title class="text-caption text-medium-emphasis">
-                Total Tagihan
-              </v-list-item-title>
-              <template #append>
-                <span class="text-body-2 font-weight-bold">{{ formatCurrency(transactionDetails.amount) }}</span>
-              </template>
-            </v-list-item>
-          </v-list>
+          <v-card-text class="pa-0">
+            <v-list lines="two" density="comfortable" class="py-2 bg-transparent">
+              <v-list-item class="px-sm-6 px-4">
+                <template #prepend>
+                  <v-icon class="mr-5 text-medium-emphasis">
+                    mdi-pound
+                  </v-icon>
+                </template>
+                <v-list-item-title class="font-weight-bold">
+                  {{ transactionDetails.midtrans_order_id }}
+                </v-list-item-title>
+                <v-list-item-subtitle class="text-medium-emphasis">
+                  Order ID
+                </v-list-item-subtitle>
+              </v-list-item>
 
-          <div v-if="finalStatus === 'PENDING'" class="px-5 pb-5 pt-3">
-            <v-divider class="mb-5" />
-            <p class="text-h6 font-weight-medium mb-4 text-center">
+              <v-divider v-if="transactionDetails.midtrans_transaction_id" class="mx-6 my-1" />
+
+              <v-list-item v-if="transactionDetails.midtrans_transaction_id" class="px-sm-6 px-4">
+                <template #prepend>
+                  <v-icon class="mr-5 text-medium-emphasis">
+                    mdi-barcode-scan
+                  </v-icon>
+                </template>
+                <v-list-item-title class="font-weight-bold font-mono">
+                  {{ transactionDetails.midtrans_transaction_id }}
+                </v-list-item-title>
+                <v-list-item-subtitle class="text-medium-emphasis">
+                  ID Pembayaran
+                </v-list-item-subtitle>
+              </v-list-item>
+
+              <v-divider class="mx-6 my-1" />
+
+              <v-list-item class="px-sm-6 px-4">
+                <template #prepend>
+                  <v-icon class="mr-5 text-medium-emphasis">
+                    mdi-package-variant-closed
+                  </v-icon>
+                </template>
+                <v-list-item-title class="font-weight-bold">
+                  {{ packageName }}
+                </v-list-item-title>
+                <v-list-item-subtitle class="text-medium-emphasis">
+                  Paket yang Dibeli
+                </v-list-item-subtitle>
+              </v-list-item>
+
+              <v-divider class="mx-6 my-1" />
+
+              <v-list-item class="px-sm-6 px-4">
+                <template #prepend>
+                  <v-icon class="mr-5 text-medium-emphasis">
+                    mdi-wallet-outline
+                  </v-icon>
+                </template>
+                <v-list-item-title class="text-h6 font-weight-bold text-success">
+                  {{ formatCurrency(transactionDetails.amount) }}
+                </v-list-item-title>
+                <v-list-item-subtitle class="text-medium-emphasis">
+                  Total Tagihan
+                </v-list-item-subtitle>
+              </v-list-item>
+            </v-list>
+          </v-card-text>
+
+          <div v-if="finalStatus === 'PENDING' && showSpecificPendingInstructions" class="px-sm-6 px-4 pb-6 pt-3">
+            <v-divider class="mb-6" />
+            <h3 class="text-h6 font-weight-bold mb-5 text-center text-high-emphasis">
               Instruksi Pembayaran
-            </p>
-            <div v-if="showSpecificPendingInstructions">
-              <div v-if="transactionDetails.va_number" class="mb-5">
-                <p class="text-subtitle-1 font-weight-medium mb-2">
-                  {{ getBankNameFromVA(paymentMethod) }} Virtual Account
-                </p>
-                <v-text-field
-                  :model-value="transactionDetails.va_number" label="Nomor Virtual Account" readonly variant="outlined"
-                  density="comfortable" hide-details class="font-weight-bold text-h6"
-                >
-                  <template #append-inner>
-                    <v-tooltip location="top" :text="copySuccess === 'Nomor VA' ? 'Tersalin!' : 'Salin Nomor VA'">
-                      <template #activator="{ props: tooltipProps }">
-                        <v-btn v-bind="tooltipProps" :icon="copySuccess === 'Nomor VA' ? 'mdi-check-all' : 'mdi-content-copy'" variant="text" @click="copyToClipboard(transactionDetails?.va_number, 'Nomor VA')" />
-                      </template>
-                    </v-tooltip>
+            </h3>
+
+            <div v-if="transactionDetails.va_number" class="mb-4">
+              <p class="text-body-1 font-weight-medium mb-2 text-medium-emphasis">
+                {{ getBankNameFromVA(paymentMethod) }} Virtual Account
+              </p>
+              <v-text-field
+                :model-value="transactionDetails.va_number" label="Nomor Virtual Account" readonly variant="outlined"
+                density="comfortable" hide-details class="font-weight-bold text-h6"
+              >
+                <template #append-inner>
+                  <v-tooltip location="top" :text="copySuccess === 'Nomor VA' ? 'Berhasil Disalin!' : 'Salin Nomor VA'">
+                    <template #activator="{ props: tooltipProps }">
+                      <v-btn v-bind="tooltipProps" :color="copySuccess === 'Nomor VA' ? 'success' : ''" :icon="copySuccess === 'Nomor VA' ? 'mdi-check-all' : 'mdi-content-copy'" variant="text" @click="copyToClipboard(transactionDetails?.va_number, 'Nomor VA')" />
+                    </template>
+                  </v-tooltip>
+                </template>
+              </v-text-field>
+            </div>
+
+            <div v-else-if="showQrCode" class="mb-4 text-center">
+              <p class="text-body-1 font-weight-medium mb-3 text-medium-emphasis">
+                Scan QR Code Menggunakan Aplikasi Pembayaran Anda
+              </p>
+              <v-sheet border rounded="lg" class="d-inline-block pa-3 mx-auto bg-white">
+                <ClientOnly>
+                  <QrcodeVue :value="qrValue" :size="qrSize" level="H" render-as="svg" />
+                  <template #fallback>
+                    <v-skeleton-loader type="image" :width="qrSize" :height="qrSize" />
                   </template>
-                </v-text-field>
-              </div>
-              <div v-else-if="showQrCode" class="mb-5 text-center">
-                <p class="text-subtitle-1 font-weight-medium mb-3">
-                  Scan QR Code
-                </p>
-                <v-sheet border rounded class="d-inline-block pa-3 mx-auto bg-white">
-                  <ClientOnly>
-                    <QrcodeVue :value="qrValue" :size="qrSize" level="H" render-as="svg" />
-                  </ClientOnly>
-                </v-sheet>
-              </div>
+                </ClientOnly>
+              </v-sheet>
             </div>
           </div>
 
-          <v-card-actions class="justify-center pa-4 bg-grey-lighten-5 border-t">
-            <v-btn
-              v-if="['FAILED', 'EXPIRED', 'CANCELLED', 'ERROR', 'UNKNOWN'].includes(finalStatus)"
-              color="primary" variant="flat" rounded="lg" @click="goToSelectPackage"
-            >
-              <v-icon start>
-                mdi-cart-plus
-              </v-icon> Pesan Paket Lain
-            </v-btn>
-            <v-btn v-if="finalStatus === 'SUCCESS'" color="primary" variant="flat" rounded="lg" @click="goToDashboard">
-              <v-icon start>
-                mdi-view-dashboard
-              </v-icon> Ke Dashboard
-            </v-btn>
-            <v-btn v-if="finalStatus === 'PENDING'" color="grey-darken-1" variant="text" rounded="lg" :loading="isLoading" @click="fetchTransactionDetails(transactionDetails.midtrans_order_id)">
-              <v-icon start>
-                mdi-refresh
-              </v-icon> Cek Ulang Status
-            </v-btn>
+          <v-divider />
+          <v-card-actions class="pa-4 bg-surface-variant">
+            <v-row>
+              <v-col
+                v-if="['FAILED', 'EXPIRED', 'CANCELLED', 'ERROR', 'UNKNOWN'].includes(finalStatus)"
+                cols="12"
+              >
+                <v-btn
+                  color="primary" block variant="flat" size="large" rounded="lg"
+                  @click="goToSelectPackage"
+                >
+                  <v-icon start>
+                    mdi-cart-plus
+                  </v-icon> Pesan Paket Baru
+                </v-btn>
+              </v-col>
+              <v-col v-if="finalStatus === 'SUCCESS'" cols="12">
+                <v-btn color="primary" block variant="flat" size="large" rounded="lg" @click="goToDashboard">
+                  <v-icon start>
+                    mdi-view-dashboard-outline
+                  </v-icon> Buka Dashboard
+                </v-btn>
+              </v-col>
+              <v-col v-if="finalStatus === 'PENDING'" cols="12">
+                <v-btn
+                  block variant="text" size="large" rounded="lg" :loading="isLoading"
+                  @click="fetchTransactionDetails(transactionDetails.midtrans_order_id)"
+                >
+                  <v-icon start>
+                    mdi-refresh
+                  </v-icon> Cek Ulang Status Pembayaran
+                </v-btn>
+              </v-col>
+            </v-row>
           </v-card-actions>
         </v-card>
       </v-col>
@@ -438,4 +467,7 @@ useHead({ title: 'Detail Transaksi' })
 
 <style scoped>
 .font-mono { font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace; }
+.v-text-field .v-field--variant-outlined .v-field__input {
+  font-size: 1.25rem !important;
+}
 </style>
