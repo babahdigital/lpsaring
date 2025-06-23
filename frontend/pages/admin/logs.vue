@@ -73,19 +73,19 @@ const { data: fetchedData, pending: loading, error, refresh } = useAsyncData(
   { watch: [queryParams] },
 )
 
-const logList = computed(() => fetchedData.value?.items || [])
-const totalLogs = computed(() => fetchedData.value?.totalItems || 0)
+const logList = computed(() => fetchedData.value?.items ?? [])
+const totalLogs = computed(() => fetchedData.value?.totalItems ?? 0)
 
 watch(error, (newError) => {
   if (newError)
-    showSnackbar({ type: 'error', title: 'Gagal Memuat Log', text: newError.data?.message || 'Terjadi kesalahan server.' })
+    showSnackbar({ type: 'error', title: 'Gagal Memuat Log', text: newError.data?.message ?? 'Terjadi kesalahan server.' })
 })
 
 // --- Helper, Kamus, dan Fungsi Format ---
-const hasActiveFilters = computed(() => !!adminFilter.value || !!targetUserFilter.value || !!startDate.value)
-const formatPhoneNumber = (phone?: string) => phone ? phone.replace('+62', '0') : ''
+const hasActiveFilters = computed(() => adminFilter.value !== null || targetUserFilter.value !== null || startDate.value !== null)
+const formatPhoneNumber = (phone?: string) => phone != null ? phone.replace('+62', '0') : ''
 const formatDateTime = (date: string) => new Date(date).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
-const formatDate = (date: Date | null) => date ? new Date(date).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : ''
+const formatDate = (date: Date | null) => date !== null ? new Date(date).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : ''
 
 const actionDisplayMap = computed(() => ({
   CREATE_USER: { color: 'success', icon: 'tabler-user-plus' },
@@ -107,7 +107,7 @@ const actionDisplayMap = computed(() => ({
   PROCESS_QUOTA_REQUEST_PARTIALLY_APPROVED: { color: 'info', icon: 'tabler-check' },
   DEFAULT: { color: 'secondary', icon: 'tabler-question-mark' },
 }))
-const getActionChip = (action: string) => actionDisplayMap.value[action as keyof typeof actionDisplayMap.value] || actionDisplayMap.value.DEFAULT
+const getActionChip = (action: string) => actionDisplayMap.value[action as keyof typeof actionDisplayMap.value] ?? actionDisplayMap.value.DEFAULT
 
 const keyDictionary: Record<string, string> = {
   is_unlimited_user: 'Status Unlimited',
@@ -136,12 +136,12 @@ function formatValue(key: string, value: any): string {
     return `${value} hari`
 
   if (typeof value === 'object' && value !== null) {
-    if (value.gb && value.days)
+    if (value.gb != null && value.days != null)
       return `${value.gb} GB & ${value.days} hari`
     return JSON.stringify(value)
   }
   if (typeof value === 'string' && value.includes('MB')) {
-    const mbValue = Number.parseFloat(value.match(/(\d+)\s*MB/)?.[1] || '0')
+    const mbValue = Number.parseFloat(value.match(/(\d+)\s*MB/)?.[1] ?? '0')
     if (mbValue > 0) {
       const gbValue = (mbValue / 1024).toFixed(2)
       return value.replace(/(\d+)\s*MB/, `${gbValue} GB`)
@@ -151,32 +151,35 @@ function formatValue(key: string, value: any): string {
 }
 
 function formatLogDetails(log: AdminActionLog): string {
-  if (!log.details)
+  if (log.details == null)
     return '-'
   try {
     const details = JSON.parse(log.details)
     const parts: string[] = []
     switch (log.action_type) {
       case 'CREATE_USER': return `Membuat pengguna baru dengan peran '${details.role}'.`
-      case 'DEACTIVATE_USER': return `Alasan: ${details.reason || 'Tidak ada'}.`
+      case 'DEACTIVATE_USER': return `Alasan: ${details.reason ?? 'Tidak ada'}.`
       case 'INJECT_QUOTA': {
-        const addedMb = details.added_mb ? `${(details.added_mb / 1024).toFixed(2)} GB` : ''
-        const addedDays = details.added_days ? `${details.added_days} hari` : ''
-        if (addedMb && addedDays)
-          return `Menambah ${addedMb} & ${addedDays}.`
-        return `Menambah ${addedMb || addedDays}.`
+        const addedParts: string[] = []
+        if (details.added_mb != null && Number(details.added_mb) > 0)
+          addedParts.push(`${(Number(details.added_mb) / 1024).toFixed(2)} GB`)
+
+        if (details.added_days != null && Number(details.added_days) > 0)
+          addedParts.push(`${details.added_days} hari`)
+
+        return `Menambah ${addedParts.join(' & ')}.`
       }
       case 'SET_UNLIMITED_STATUS':
       case 'REVOKE_UNLIMITED_STATUS':
         return `Status diubah menjadi '${formatValue('status', details.status)}', profil Mikrotik diatur ke '${details.profile}'.`
       case 'UPDATE_USER_PROFILE':
         for (const key in details)
-          parts.push(`Mengubah ${keyDictionary[key] || key} menjadi '${formatValue(key, details[key])}'.`)
+          parts.push(`Mengubah ${keyDictionary[key] ?? key} menjadi '${formatValue(key, details[key])}'.`)
 
         return parts.join(' ')
       default:
         return Object.entries(details)
-          .map(([key, value]) => `${keyDictionary[key] || key}: ${formatValue(key, value)}`)
+          .map(([key, value]) => `${keyDictionary[key] ?? key}: ${formatValue(key, value)}`)
           .join('; ')
     }
   }
@@ -218,7 +221,7 @@ async function exportLogs(format: 'csv' | 'txt') {
     showSnackbar({ type: 'success', title: 'Berhasil', text: 'Laporan log berhasil diunduh.' })
   }
   catch (err: any) {
-    showSnackbar({ type: 'error', title: 'Gagal', text: err.data?.message || 'Gagal mengunduh laporan.' })
+    showSnackbar({ type: 'error', title: 'Gagal', text: err.data?.message ?? 'Gagal mengunduh laporan.' })
   }
   finally {
     exportLoading.value = false
@@ -234,7 +237,7 @@ function openClearLogDialog() {
       refresh()
     }
     catch (err: any) {
-      showSnackbar({ type: 'error', title: 'Gagal', text: err.data?.message || 'Gagal menghapus log.' })
+      showSnackbar({ type: 'error', title: 'Gagal', text: err.data?.message ?? 'Gagal menghapus log.' })
     }
   }
   confirmDialog.visible = true
@@ -353,7 +356,7 @@ useHead({ title: 'Log Aktivitas Admin' })
             </VTooltip>
           </template>
           <template #item.admin="{ item }">
-            <div v-if="item.admin" class="d-flex flex-column">
+            <div v-if="item.admin !== null" class="d-flex flex-column">
               <span class="font-weight-medium">{{ item.admin.full_name }}</span><small class="text-disabled">{{ formatPhoneNumber(item.admin.phone_number) }}</small>
             </div><span v-else class="text-disabled">Sistem</span>
           </template>
@@ -368,7 +371,7 @@ useHead({ title: 'Log Aktivitas Admin' })
             </p>
           </template>
           <template #item.target_user="{ item }">
-            <div v-if="item.target_user" class="d-flex flex-column">
+            <div v-if="item.target_user !== null" class="d-flex flex-column">
               <span class="font-weight-medium">{{ item.target_user.full_name }}</span><small class="text-disabled">{{ formatPhoneNumber(item.target_user.phone_number) }}</small>
             </div><span v-else class="text-disabled">N/A</span>
           </template>
@@ -417,7 +420,7 @@ useHead({ title: 'Log Aktivitas Admin' })
               <div class="mb-2">
                 <strong>Admin:</strong> {{ log.admin.full_name }}
               </div>
-              <div v-if="log.target_user" class="mb-2">
+              <div v-if="log.target_user !== null" class="mb-2">
                 <strong>Target:</strong> {{ log.target_user.full_name }}
               </div>
               <div><strong>Detail:</strong> {{ formatLogDetails(log) }}</div>
