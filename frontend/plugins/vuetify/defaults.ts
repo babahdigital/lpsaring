@@ -29,24 +29,24 @@ export default {
   VDataTable: {
     VPagination: {
       showFirstLastPage: true,
-      firstIcon: 'tabler-chevrons-left',
-      lastIcon: 'tabler-chevrons-right',
+      firstIcon: 'tabler:chevrons-left', // DIUBAH
+      lastIcon: 'tabler:chevrons-right', // DIUBAH
     },
   },
   VDataTableServer: {
     VPagination: {
       showFirstLastPage: true,
-      firstIcon: 'tabler-chevrons-left',
-      lastIcon: 'tabler-chevrons-right',
+      firstIcon: 'tabler:chevrons-left', // DIUBAH
+      lastIcon: 'tabler:chevrons-right', // DIUBAH
     },
   },
   VExpansionPanel: {
-    expandIcon: 'tabler-chevron-right',
-    collapseIcon: 'tabler-chevron-right',
+    expandIcon: 'tabler:chevron-right', // DIUBAH
+    collapseIcon: 'tabler:chevron-right', // DIUBAH
   },
   VExpansionPanelTitle: {
-    expandIcon: 'tabler-chevron-right',
-    collapseIcon: 'tabler-chevron-right',
+    expandIcon: 'tabler:chevron-right', // DIUBAH
+    collapseIcon: 'tabler:chevron-right', // DIUBAH
   },
   VList: {
     color: 'primary',
