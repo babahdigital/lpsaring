@@ -134,7 +134,7 @@ const quotaWeeklyBarOptions = computed<ApexOptions>(() => {
   const axisLabelColorRgbVal = onSurfaceColorRgb.value ?? (vuetifyTheme.current.value.dark ? '255, 255, 255' : '0, 0, 0')
   const axisLabelColor = `rgba(${axisLabelColorRgbVal}, ${disabledOpacity.value})`
 
-  const noDataDisplayColor = chartContainerFailedOverall.value || props.parentError
+  const noDataDisplayColor = chartContainerFailedOverall.value || props.parentError != null
     ? errorDisplayColor.value
     : (props.parentLoading ? primaryColor.value : `rgba(${axisLabelColorRgbVal}, ${disabledOpacity.value})`)
 
@@ -329,7 +329,7 @@ async function retryChartInit() {
   await vueNextTick()
   updateChartData()
 
-  if (!props.parentLoading && props.quotaData && !props.parentError) {
+  if (!props.parentLoading && props.quotaData != null && !props.parentError) {
     attemptSetReady()
   }
 }
@@ -363,13 +363,13 @@ function updateChartData() {
   if (chartContainerFailedOverall.value) {
     currentNoDataText = 'Area chart tidak dapat disiapkan.'
   }
-  else if (newParentError) {
+  else if (newParentError != null) {
     currentNoDataText = 'Gagal memuat data tren mingguan.'
-    if (!devErrorMessage.value && newParentError) {
+    if (devErrorMessage.value == null && newParentError != null) {
       devErrorMessage.value = typeof newParentError === 'string' ? newParentError : (newParentError.message || 'Error tidak diketahui dari parent.')
     }
   }
-  else if (!newQuotaData) {
+  else if (newQuotaData == null) {
     currentNoDataText = 'Menunggu data kuota pengguna...'
     weeklyDataProcessed.value = false
   }
@@ -396,7 +396,7 @@ function updateChartData() {
   chartNoDataTextFromLogic.value = currentNoDataText
   quotaWeeklyBarSeries.value = [{ name: 'Penggunaan Harian', data: newSeriesDataValues }]
 
-  if (!newParentLoading && newQuotaData && !newParentError && !isChartReadyToRender.value && !chartContainerFailedOverall.value) {
+  if (!newParentLoading && newQuotaData != null && !newParentError && !isChartReadyToRender.value && !chartContainerFailedOverall.value) {
     vueNextTick().then(attemptSetReady)
   }
 
@@ -425,13 +425,13 @@ watch(() => props.quotaData, () => {
 
 watch(() => props.parentLoading, (newVal, oldVal) => {
   updateChartData()
-  if (!newVal && oldVal && props.quotaData && !props.parentError && !isChartReadyToRender.value && !chartContainerFailedOverall.value) {
+  if (!newVal && oldVal && props.quotaData != null && !props.parentError && !isChartReadyToRender.value && !chartContainerFailedOverall.value) {
     vueNextTick().then(attemptSetReady)
   }
 }, { flush: 'post' })
 
 watch(() => props.parentError, (newErr) => {
-  if (newErr && !props.parentLoading) {
+  if (newErr != null && !props.parentLoading) {
     devErrorMessage.value = typeof newErr === 'string' ? newErr : (newErr.message || 'Error tidak diketahui dari parent.')
   }
   if (!props.parentLoading)
@@ -479,7 +479,7 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
 
 <template>
   <div class="chart-error-boundary">
-    <template v-if="!props.parentLoading && props.parentError && !chartContainerFailedOverall">
+    <template v-if="!props.parentLoading && props.parentError != null && !chartContainerFailedOverall">
       <VCard style="height: 100%;" class="vuexy-card d-flex flex-column" :class="{ 'vuexy-card-shadow': vuetifyTheme.current.value.dark }">
         <VCardItem class="vuexy-card-header pb-1 pt-4">
           <VCardTitle class="vuexy-card-title">
@@ -509,10 +509,10 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
             <p v-if="typeof props.parentError === 'string'" class="text-caption mt-1">
               Detail: {{ props.parentError }}
             </p>
-            <p v-else-if="props.parentError?.message" class="text-caption mt-1">
+            <p v-else-if="props.parentError?.message != null" class="text-caption mt-1">
               Detail: {{ props.parentError.message }}
             </p>
-            <div v-if="devErrorMessage && devErrorMessage !== (props.parentError?.message || props.parentError.toString())" class="dev-error-overlay-message mt-2">
+            <div v-if="devErrorMessage != null && devErrorMessage !== (props.parentError?.message || props.parentError.toString())" class="dev-error-overlay-message mt-2">
               <strong>Pesan Error Tambahan (Dev):</strong><br>{{ devErrorMessage }}
             </div>
           </VAlert>
@@ -523,7 +523,7 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
       </VCard>
     </template>
 
-    <template v-else-if="!props.parentLoading && !props.quotaData && !props.parentError && !chartContainerFailedOverall">
+    <template v-else-if="!props.parentLoading && props.quotaData == null && !props.parentError && !chartContainerFailedOverall">
       <VCard style="height: 100%;" class="vuexy-card d-flex flex-column" :class="{ 'vuexy-card-shadow': vuetifyTheme.current.value.dark }">
         <VCardItem class="vuexy-card-header pb-1 pt-4">
           <VCardTitle class="vuexy-card-title">
@@ -584,7 +584,7 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
             <p class="text-body-2">
               Terjadi masalah saat menyiapkan area untuk menampilkan chart mingguan.
             </p>
-            <div v-if="devErrorMessage" class="dev-error-overlay-message mt-2">
+            <div v-if="devErrorMessage != null" class="dev-error-overlay-message mt-2">
               <strong>Pesan Error (Dev):</strong><br>{{ devErrorMessage }}
             </div>
           </VAlert>
@@ -612,21 +612,21 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
                   <div class="pt-1 pb-2 px-1">
                     <div class="d-flex align-baseline justify-center">
                       <h3 class="text-h3 font-weight-semibold mr-2">
-                        {{ props.quotaData ? formatQuota(props.quotaData.remaining_mb) : 'N/A' }}
+                        {{ props.quotaData != null ? formatQuota(props.quotaData.remaining_mb) : 'N/A' }}
                       </h3>
                       <VChip
-                        v-if="props.quotaData && props.quotaData.total_quota_purchased_mb > 0"
+                        v-if="props.quotaData != null && props.quotaData.total_quota_purchased_mb > 0"
                         :color="getUsageChipColor(props.quotaData.total_quota_used_mb, props.quotaData.total_quota_purchased_mb)"
                         size="x-small" class="terpakai-chip" label
                       >
                         {{ calculatePercentage(props.quotaData.total_quota_used_mb, props.quotaData.total_quota_purchased_mb) }}%
                       </VChip>
-                      <VChip v-else-if="!props.quotaData" size="x-small" label>
+                      <VChip v-else-if="props.quotaData == null" size="x-small" label>
                         Info N/A
                       </VChip>
                     </div>
                     <p class="text-caption mt-1 text-center">
-                      {{ props.quotaData ? 'Sisa kuota Anda saat ini.' : 'Informasi kuota tidak tersedia.' }}
+                      {{ props.quotaData != null ? 'Sisa kuota Anda saat ini.' : 'Informasi kuota tidak tersedia.' }}
                     </p>
                   </div>
                 </VCol>
@@ -635,7 +635,7 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
                     <div class="chart-inner-wrapper">
                       <ClientOnly>
                         <VueApexCharts
-                          v-if="isChartReadyToRender && VueApexCharts && weeklyDataProcessed && !props.parentLoading"
+                          v-if="isChartReadyToRender && VueApexCharts != null && weeklyDataProcessed && !props.parentLoading"
                           ref="weeklyChartRef"
                           :key="`${weeklyChartKey}-${vuetifyTheme.current.value.dark}-dinamis-mobile`" type="bar" :height="chartHeight"
                           :options="quotaWeeklyBarOptions" :series="quotaWeeklyBarSeries"
@@ -643,11 +643,11 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
                         />
                         <div v-else-if="!props.parentLoading" class="chart-fallback-container text-center pa-2 d-flex flex-column justify-center align-items-center" :style="{ height: '100%', width: '100%', minHeight: chartHeightInPx }">
                           <VProgressCircular v-if="isLoadingInternalProcessing" indeterminate size="28" color="primary" class="mb-2" />
-                          <VIcon v-else-if="!isLoadingInternalProcessing && (!props.weeklyUsageData || !props.weeklyUsageData.success || (props.weeklyUsageData.weekly_data && props.weeklyUsageData.weekly_data.every(d => d === 0)))" size="32" :color="infoDisplayColor" class="mb-1">
+                          <VIcon v-else-if="!isLoadingInternalProcessing && (props.weeklyUsageData == null || !props.weeklyUsageData.success || (props.weeklyUsageData.weekly_data != null && props.weeklyUsageData.weekly_data.every(d => d === 0)))" size="32" :color="infoDisplayColor" class="mb-1">
                             tabler-chart-infographic
                           </VIcon>
                           <p class="text-caption text-medium-emphasis">
-                            {{ chartNoDataTextFromLogic || 'Menyiapkan tampilan chart...' }}
+                            {{ chartNoDataTextFromLogic !== '' ? chartNoDataTextFromLogic : 'Menyiapkan tampilan chart...' }}
                           </p>
                         </div>
                         <template #fallback>
@@ -669,7 +669,7 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
                     <div class="chart-inner-wrapper">
                       <ClientOnly>
                         <VueApexCharts
-                          v-if="isChartReadyToRender && VueApexCharts && weeklyDataProcessed && !props.parentLoading"
+                          v-if="isChartReadyToRender && VueApexCharts != null && weeklyDataProcessed && !props.parentLoading"
                           ref="weeklyChartRef"
                           :key="`${weeklyChartKey}-${vuetifyTheme.current.value.dark}-dinamis-tablet`" type="bar" :height="chartHeight"
                           :options="quotaWeeklyBarOptions" :series="quotaWeeklyBarSeries"
@@ -677,11 +677,11 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
                         />
                         <div v-else-if="!props.parentLoading" class="chart-fallback-container text-center pa-2 d-flex flex-column justify-center align-items-center" :style="{ height: '100%', width: '100%', minHeight: chartHeightInPx }">
                           <VProgressCircular v-if="isLoadingInternalProcessing" indeterminate size="28" color="primary" class="mb-2" />
-                          <VIcon v-else-if="!isLoadingInternalProcessing && (!props.weeklyUsageData || !props.weeklyUsageData.success || (props.weeklyUsageData.weekly_data && props.weeklyUsageData.weekly_data.every(d => d === 0)))" size="32" :color="infoDisplayColor" class="mb-1">
+                          <VIcon v-else-if="!isLoadingInternalProcessing && (props.weeklyUsageData == null || !props.weeklyUsageData.success || (props.weeklyUsageData.weekly_data != null && props.weeklyUsageData.weekly_data.every(d => d === 0)))" size="32" :color="infoDisplayColor" class="mb-1">
                             tabler-chart-infographic
                           </VIcon>
                           <p class="text-caption text-medium-emphasis">
-                            {{ chartNoDataTextFromLogic || 'Menyiapkan tampilan chart...' }}
+                            {{ chartNoDataTextFromLogic !== '' ? chartNoDataTextFromLogic : 'Menyiapkan tampilan chart...' }}
                           </p>
                         </div>
                         <template #fallback>
@@ -700,21 +700,21 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
                   <div class="pt-1 pb-2 px-1">
                     <div class="d-flex align-baseline justify-center">
                       <h3 class="text-h3 font-weight-semibold mr-2">
-                        {{ props.quotaData ? formatQuota(props.quotaData.remaining_mb) : 'N/A' }}
+                        {{ props.quotaData != null ? formatQuota(props.quotaData.remaining_mb) : 'N/A' }}
                       </h3>
                       <VChip
-                        v-if="props.quotaData && props.quotaData.total_quota_purchased_mb > 0"
+                        v-if="props.quotaData != null && props.quotaData.total_quota_purchased_mb > 0"
                         :color="getUsageChipColor(props.quotaData.total_quota_used_mb, props.quotaData.total_quota_purchased_mb)"
                         size="x-small" class="terpakai-chip" label
                       >
                         {{ calculatePercentage(props.quotaData.total_quota_used_mb, props.quotaData.total_quota_purchased_mb) }}%
                       </VChip>
-                      <VChip v-else-if="!props.quotaData" size="x-small" label>
+                      <VChip v-else-if="props.quotaData == null" size="x-small" label>
                         Info N/A
                       </VChip>
                     </div>
                     <p class="text-caption mt-1 text-center">
-                      {{ props.quotaData ? 'Sisa kuota Anda saat ini.' : 'Informasi kuota tidak tersedia.' }}
+                      {{ props.quotaData != null ? 'Sisa kuota Anda saat ini.' : 'Informasi kuota tidak tersedia.' }}
                     </p>
                   </div>
                 </VCol>
@@ -724,21 +724,21 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
                   <div class="pt-1 pb-2 px-1">
                     <div class="d-flex align-baseline">
                       <h3 class="text-h3 font-weight-semibold mr-2">
-                        {{ props.quotaData ? formatQuota(props.quotaData.remaining_mb) : 'N/A' }}
+                        {{ props.quotaData != null ? formatQuota(props.quotaData.remaining_mb) : 'N/A' }}
                       </h3>
                       <VChip
-                        v-if="props.quotaData && props.quotaData.total_quota_purchased_mb > 0"
+                        v-if="props.quotaData != null && props.quotaData.total_quota_purchased_mb > 0"
                         :color="getUsageChipColor(props.quotaData.total_quota_used_mb, props.quotaData.total_quota_purchased_mb)"
                         size="x-small" class="terpakai-chip" label
                       >
                         {{ calculatePercentage(props.quotaData.total_quota_used_mb, props.quotaData.total_quota_purchased_mb) }}%
                       </VChip>
-                      <VChip v-else-if="!props.quotaData" size="x-small" label>
+                      <VChip v-else-if="props.quotaData == null" size="x-small" label>
                         Info N/A
                       </VChip>
                     </div>
                     <p class="text-caption mt-1">
-                      {{ props.quotaData ? 'Sisa kuota Anda saat ini.' : 'Informasi kuota tidak tersedia.' }}
+                      {{ props.quotaData != null ? 'Sisa kuota Anda saat ini.' : 'Informasi kuota tidak tersedia.' }}
                     </p>
                   </div>
                 </VCol>
@@ -747,7 +747,7 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
                     <div class="chart-inner-wrapper">
                       <ClientOnly>
                         <VueApexCharts
-                          v-if="isChartReadyToRender && VueApexCharts && weeklyDataProcessed && !props.parentLoading"
+                          v-if="isChartReadyToRender && VueApexCharts != null && weeklyDataProcessed && !props.parentLoading"
                           ref="weeklyChartRef"
                           :key="`${weeklyChartKey}-${vuetifyTheme.current.value.dark}-dinamis-desktop`" type="bar" :height="chartHeight"
                           :options="quotaWeeklyBarOptions" :series="quotaWeeklyBarSeries"
@@ -755,11 +755,11 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
                         />
                         <div v-else-if="!props.parentLoading" class="chart-fallback-container text-center pa-2 d-flex flex-column justify-center align-items-center" :style="{ height: '100%', width: '100%', minHeight: chartHeightInPx }">
                           <VProgressCircular v-if="isLoadingInternalProcessing" indeterminate size="28" color="primary" class="mb-2" />
-                          <VIcon v-else-if="!isLoadingInternalProcessing && (!props.weeklyUsageData || !props.weeklyUsageData.success || (props.weeklyUsageData.weekly_data && props.weeklyUsageData.weekly_data.every(d => d === 0)))" size="32" :color="infoDisplayColor" class="mb-1">
+                          <VIcon v-else-if="!isLoadingInternalProcessing && (props.weeklyUsageData == null || !props.weeklyUsageData.success || (props.weeklyUsageData.weekly_data != null && props.weeklyUsageData.weekly_data.every(d => d === 0)))" size="32" :color="infoDisplayColor" class="mb-1">
                             tabler-chart-infographic
                           </VIcon>
                           <p class="text-caption text-medium-emphasis">
-                            {{ chartNoDataTextFromLogic || 'Menyiapkan tampilan chart...' }}
+                            {{ chartNoDataTextFromLogic !== '' ? chartNoDataTextFromLogic : 'Menyiapkan tampilan chart...' }}
                           </p>
                         </div>
                         <template #fallback>
@@ -788,9 +788,9 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
                   </div>
                   <div class="summary-item-content">
                     <h6 class="font-weight-medium summary-value">
-                      {{ props.quotaData ? formatQuota(props.quotaData.total_quota_purchased_mb) : 'N/A' }}
+                      {{ props.quotaData != null ? formatQuota(props.quotaData.total_quota_purchased_mb) : 'N/A' }}
                     </h6>
-                    <VProgressLinear v-if="props.quotaData" :model-value="calculatePercentage(props.quotaData.remaining_mb, props.quotaData.total_quota_purchased_mb)" color="primary" height="8" rounded class="mt-1 progress-bar-custom">
+                    <VProgressLinear v-if="props.quotaData != null" :model-value="calculatePercentage(props.quotaData.remaining_mb, props.quotaData.total_quota_purchased_mb)" color="primary" height="8" rounded class="mt-1 progress-bar-custom">
                       <VTooltip activator="parent" location="top" content-class="custom-tooltip vuexy-tooltip" transition="scale-transition">
                         Sisa: {{ formatQuota(props.quotaData.remaining_mb) }} dari {{ formatQuota(props.quotaData.total_quota_purchased_mb) }}
                       </VTooltip>
@@ -800,16 +800,16 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
                 </VCol>
                 <VCol cols="12" sm="6" class="pa-2 weekly-summary-col" :style="{ left: mobile ? '0px' : '3px', position: 'relative' }">
                   <div class="d-flex align-center mb-1">
-                    <VAvatar :color="props.quotaData ? getUsageChipColor(props.quotaData.total_quota_used_mb, props.quotaData.total_quota_purchased_mb) : 'grey'" variant="tonal" rounded size="28" class="me-2">
+                    <VAvatar :color="props.quotaData != null ? getUsageChipColor(props.quotaData.total_quota_used_mb, props.quotaData.total_quota_purchased_mb) : 'grey'" variant="tonal" rounded size="28" class="me-2">
                       <VIcon icon="tabler-arrow-bar-to-down" size="18" />
                     </VAvatar>
                     <span class="text-caption">Pemakaian Total</span>
                   </div>
                   <div class="summary-item-content">
                     <h6 class="font-weight-medium summary-value">
-                      {{ props.quotaData ? formatQuota(props.quotaData.total_quota_used_mb) : 'N/A' }}
+                      {{ props.quotaData != null ? formatQuota(props.quotaData.total_quota_used_mb) : 'N/A' }}
                     </h6>
-                    <VProgressLinear v-if="props.quotaData" :model-value="calculatePercentage(props.quotaData.total_quota_used_mb, props.quotaData.total_quota_purchased_mb)" :color="getUsageChipColor(props.quotaData.total_quota_used_mb, props.quotaData.total_quota_purchased_mb)" height="8" rounded class="mt-1 progress-bar-custom">
+                    <VProgressLinear v-if="props.quotaData != null" :model-value="calculatePercentage(props.quotaData.total_quota_used_mb, props.quotaData.total_quota_purchased_mb)" :color="getUsageChipColor(props.quotaData.total_quota_used_mb, props.quotaData.total_quota_purchased_mb)" height="8" rounded class="mt-1 progress-bar-custom">
                       <VTooltip activator="parent" location="top" content-class="custom-tooltip vuexy-tooltip" transition="scale-transition">
                         Terpakai: {{ formatQuota(props.quotaData.total_quota_used_mb) }} dari {{ formatQuota(props.quotaData.total_quota_purchased_mb) }}
                       </VTooltip>
