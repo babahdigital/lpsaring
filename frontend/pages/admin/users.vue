@@ -54,12 +54,12 @@ const availableKamars = ref<string[]>([])
 const isAlamatLoading = ref(false)
 
 // Perbaikan baris 67 (sesuai deskripsi error baris 56): Handle null/undefined secara eksplisit
-const formatPhoneNumberDisplay = (phone: string | null): string | null => {
+function formatPhoneNumberDisplay(phone: string | null): string | null {
   if (phone === null || phone === undefined || phone === '') {
-    return null; // Mengembalikan null atau string kosong sesuai kebutuhan jika phone null/undefined/kosong
+    return null // Mengembalikan null atau string kosong sesuai kebutuhan jika phone null/undefined/kosong
   }
-  return phone.startsWith('+62') ? `0${phone.substring(3)}` : phone;
-};
+  return phone.startsWith('+62') ? `0${phone.substring(3)}` : phone
+}
 const formatCreatedAt = (date: string) => new Date(date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
 const roleMap = { USER: { text: 'User', color: 'info' }, KOMANDAN: { text: 'Komandan', color: 'success' }, ADMIN: { text: 'Admin', color: 'primary' }, SUPER_ADMIN: { text: 'Support', color: 'secondary' } }
 const statusMap = { APPROVED: { text: 'Disetujui', color: 'success' }, PENDING_APPROVAL: { text: 'Menunggu', color: 'warning' }, REJECTED: { text: 'Ditolak', color: 'error' } }
@@ -180,7 +180,7 @@ function closeAllDialogs() {
   dialogState.confirm = false
 }
 async function handleSaveUser(payload: EditPayload) {
-  const isUpdate = payload.id !== undefined && payload.id !== null && payload.id !== ''; // Perbaikan baris 173
+  const isUpdate = payload.id !== undefined && payload.id !== null && payload.id !== '' // Perbaikan baris 173
   const endpoint = isUpdate ? `/admin/users/${payload.id}` : '/admin/users'
   const method = isUpdate ? 'PUT' : 'POST'
   await performAction(endpoint, method, isUpdate ? 'Data pengguna berhasil diperbarui.' : 'Pengguna baru berhasil dibuat.', { body: payload }, isUpdate ? payload.id : undefined)
@@ -235,11 +235,11 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
     await fetchUsers()
     // Perbaikan baris 226: Menambahkan perbandingan eksplisit dan pengecekan untuk response
     if (dialogState.view === true && selectedUser.value !== null && selectedUser.value.id === updatedItemId && response !== null && response.user !== undefined) {
-        selectedUser.value = { ...selectedUser.value, ...response.user };
+      selectedUser.value = { ...selectedUser.value, ...response.user }
     }
   }
   catch (error: any) {
-    const errorMessage = (typeof error.data?.message === 'string' && error.data.message !== '') ? error.data.message : 'Operasi gagal. Silakan coba lagi.'; // Perbaikan baris 230
+    const errorMessage = (typeof error.data?.message === 'string' && error.data.message !== '') ? error.data.message : 'Operasi gagal. Silakan coba lagi.' // Perbaikan baris 230
     showSnackbar({ type: 'error', title: 'Terjadi Kesalahan', text: errorMessage })
   }
   finally {
