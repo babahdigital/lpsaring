@@ -25,14 +25,14 @@ const currentTab = ref<'login' | 'register'>('login')
 const viewState = ref<'form' | 'success'>('form')
 
 // --- State untuk Form Login ---
-const loginFormRef = ref<VForm | null>(null)
+const loginFormRef = ref<InstanceType<typeof VForm> | null>(null)
 const otpSent = ref(false)
 const phoneNumber = ref('')
 const otpCode = ref('')
-const otpInputRef = ref<VOtpInput | null>(null)
+const otpInputRef = ref<InstanceType<typeof VOtpInput> | null>(null)
 
 // --- State untuk Form Register ---
-const registerFormRef = ref<VForm | null>(null)
+const registerFormRef = ref<InstanceType<typeof VForm> | null>(null)
 const regName = ref('')
 const regPhoneNumber = ref('')
 const regRole = ref<'USER' | 'KOMANDAN'>('USER')
@@ -66,12 +66,12 @@ const phoneRules = [
     return true
   },
 ]
-const requiredRule = (v: any) => !!v || 'Wajib diisi.'
+const requiredRule = (v: any) => (v !== null && v !== undefined && v !== '') || 'Wajib diisi.'
 
 // --- Fungsi Helper ---
-async function tryFocus(refInstance: { focus?: () => void } | null) {
+async function tryFocus(refInstance: any) {
   await nextTick()
-  if (refInstance !== null)
+  if (refInstance != null)
     refInstance.focus?.()
 }
 
@@ -90,7 +90,7 @@ async function handleRequestOtp() {
     }
   }
   catch (error: any) {
-    authStore.setError(error.message || 'Format nomor telepon tidak valid.')
+    authStore.setError(error.message ? error.message : 'Format nomor telepon tidak valid.')
   }
 }
 
@@ -101,14 +101,14 @@ async function handleVerifyOtp() {
 
   try {
     const numberToVerify = normalize_to_e164(phoneNumber.value)
-    const loginSuccess: boolean = await authStore.verifyOtp(numberToVerify, otpCode.value)
+    const loginSuccess = await authStore.verifyOtp(numberToVerify, otpCode.value)
     if (loginSuccess !== true) {
       otpCode.value = ''
       tryFocus(otpInputRef.value)
     }
   }
   catch (error: any) {
-    authStore.setError(error.message || 'Terjadi masalah dengan nomor telepon.')
+    authStore.setError(error.message ? error.message : 'Terjadi masalah dengan nomor telepon.')
     resetLoginView()
   }
 }
@@ -131,7 +131,7 @@ async function handleRegister() {
     numberToSend = normalize_to_e164(regPhoneNumber.value)
   }
   catch (error: any) {
-    authStore.setError(error.message || 'Format nomor WhatsApp tidak valid.')
+    authStore.setError(error.message ? error.message : 'Format nomor WhatsApp tidak valid.')
     return
   }
 
@@ -143,7 +143,7 @@ async function handleRegister() {
     register_as_komandan: regRole.value === 'KOMANDAN',
   }
 
-  const registerSuccess: boolean = await authStore.register(registrationPayload)
+  const registerSuccess = await authStore.register(registrationPayload)
   if (registerSuccess === true)
     viewState.value = 'success'
 }
