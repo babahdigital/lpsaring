@@ -46,7 +46,7 @@ const getThemeColors = computed(() => {
       isDark,
     }
   }
-  catch (e) {
+  catch {
     return {
       primaryColor,
       labelPrimaryColor: `rgba(115, 103, 240, 0.2)`,
@@ -191,7 +191,6 @@ const chartOptions = computed(() => {
       :height="chartOptions.chart?.height || 180"
     />
 
-    <!-- Placeholder untuk loading/empty state -->
     <div
       v-else
       class="empty-chart d-flex align-center justify-center text-center pa-4"
