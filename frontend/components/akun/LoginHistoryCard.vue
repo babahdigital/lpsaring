@@ -28,26 +28,52 @@ const loginHistoryAlert = ref<{ type: 'success' | 'error' | 'info', message: str
 function parseUserAgent(uaString?: string | null): { device: string, os: string, icon: string } {
   if (!uaString)
     return { device: 'Tidak diketahui', os: 'Tidak diketahui', icon: 'tabler-device-desktop-question' }
+
   let device = 'Desktop'
   let os = 'OS Tidak diketahui'
   let icon = 'tabler-device-desktop'
-  if (/android/i.test(uaString)) { os = 'Android'; device = 'Mobile'; icon = 'tabler-device-mobile' }
-  else if (/iphone|ipad|ipod/i.test(uaString)) { os = 'iOS'; device = 'Mobile'; icon = 'tabler-device-mobile' }
-  else if (/windows nt/i.test(uaString)) { os = 'Windows'; icon = 'tabler-brand-windows' }
-  else if (/macintosh|mac os x/i.test(uaString)) { os = 'macOS'; icon = 'tabler-brand-apple' }
-  else if (/linux/i.test(uaString)) { os = 'Linux'; icon = 'tabler-brand-linux' }
+
+  if (/android/i.test(uaString)) {
+    os = 'Android'
+    device = 'Mobile'
+    icon = 'tabler-device-mobile'
+  }
+  else if (/iphone|ipad|ipod/i.test(uaString)) {
+    os = 'iOS'
+    device = 'Mobile'
+    icon = 'tabler-device-mobile'
+  }
+  else if (/windows nt/i.test(uaString)) {
+    os = 'Windows'
+    icon = 'tabler-brand-windows'
+  }
+  else if (/macintosh|mac os x/i.test(uaString)) {
+    os = 'macOS'
+    icon = 'tabler-brand-apple'
+  }
+  else if (/linux/i.test(uaString)) {
+    os = 'Linux'
+    icon = 'tabler-brand-linux'
+  }
+
   return { device, os, icon }
 }
 
 function formatDate(dateString?: string | Date | null) {
   if (!dateString)
     return 'N/A'
+
   const isMobile = display.smAndDown.value
   const options: Intl.DateTimeFormatOptions = isMobile
     ? { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }
     : { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }
-  try { return new Date(dateString).toLocaleString('id-ID', options) }
-  catch (e) { return String(dateString) }
+
+  try {
+    return new Date(dateString).toLocaleString('id-ID', options)
+  }
+  catch {
+    return String(dateString)
+  }
 }
 
 async function fetchLoginHistory() {

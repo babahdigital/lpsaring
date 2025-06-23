@@ -14,7 +14,6 @@ const props = defineProps<{
   loading: boolean
   isAlamatLoading: boolean
 }>()
-// PERBAIKAN: Mengubah nama event ke camelCase
 const emit = defineEmits(['update:modelValue', 'save', 'resetHotspot', 'generateAdminPass'])
 const { $api } = useNuxtApp()
 const tab = ref('info')
@@ -91,7 +90,6 @@ const isTargetAdminOrSuper = computed(() => formData.role === 'ADMIN' || formDat
 
 const superAdminProfileOptions = ['admin', 'user', 'expired', 'komandan', 'support', 'unlimited', 'inactive']
 const superAdminServerOptions = ['srv-admin', 'srv-komandan', 'srv-support', 'srv-user']
-// PERBAIKAN: Menghapus const 'adminAccessTypeOptions' yang tidak digunakan
 const roleOptions = computed(() => {
   const roles: Array<User['role']> = ['USER', 'KOMANDAN', 'ADMIN', 'SUPER_ADMIN']
   return roles.map(role => ({ title: role.replace('_', ' '), value: role }))
@@ -119,9 +117,11 @@ watch(() => props.user, (newUser) => {
 
 watch(() => props.modelValue, (isOpen) => {
   if (isOpen) {
-    // PERBAIKAN: Memisahkan pernyataan ke baris baru
     liveData.value = null
-    nextTick(() => { formRef.value?.resetValidation() })
+    // PERBAIKAN: Memindahkan isi arrow function ke baris baru
+    nextTick(() => {
+      formRef.value?.resetValidation()
+    })
   }
 })
 
@@ -199,8 +199,6 @@ watch(adminAccessType, (newType) => {
   }
 })
 
-// PERBAIKAN: Menghapus computed property 'canEditRole' dan 'showAlamatSection' yang tidak digunakan
-
 async function checkAndApplyMikrotikStatus() {
   if (!props.user)
     return
@@ -259,8 +257,6 @@ async function onSave() {
 function onClose() {
   emit('update:modelValue', false)
 }
-
-// PERBAIKAN: Menghapus fungsi 'requiredRule' yang tidak digunakan
 </script>
 
 <template>
