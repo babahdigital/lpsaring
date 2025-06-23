@@ -93,7 +93,7 @@ async function handleRequestOtp() {
     let errorMessage = 'Format nomor telepon tidak valid.'
     if (error instanceof Error && error.message)
       errorMessage = error.message
-    
+
     authStore.setError(errorMessage)
   }
 }
@@ -142,9 +142,9 @@ async function handleRegister() {
     let errorMessage = 'Format nomor WhatsApp tidak valid.'
     if (error instanceof Error && error.message)
       errorMessage = error.message
-    
+
     authStore.setError(errorMessage)
-    
+
     return
   }
 

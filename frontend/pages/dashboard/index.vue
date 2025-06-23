@@ -22,7 +22,8 @@ const showPromoWarning = ref(false) // Default false, akan diatur oleh watcher
 const promoWarningMessage = computed(() => {
   if (promoStore.activePromo) {
     if (promoStore.activePromo.event_type === 'BONUS_REGISTRATION') {
-      const gbValue = promoStore.activePromo.bonus_value_mb ? (promoStore.activePromo.bonus_value_mb / 1024) : 0
+      const bonusMb = promoStore.activePromo.bonus_value_mb
+      const gbValue = (bonusMb !== null && bonusMb > 0) ? (bonusMb / 1024) : 0
       const displayGb = gbValue % 1 === 0 ? gbValue : gbValue.toFixed(2)
       return `Ada promo bonus registrasi aktif! Dapatkan ${displayGb} GB kuota gratis.`
     }
@@ -56,21 +57,21 @@ const commonFetchOptions = computed(() => ({
 }))
 
 // Fetch data kuota
-const quotaApiUrl = computed(() => !authToken.value ? null : getApiUrl('/users/me/quota'))
+const quotaApiUrl = computed(() => authToken.value === null ? null : getApiUrl('/users/me/quota'))
 const { data: quotaData, pending: quotaPending, error: quotaError, refresh: refreshQuotaRaw } = useFetch<UserQuotaResponse>(
   quotaApiUrl,
   { ...commonFetchOptions.value, key: 'userQuotaData', default: () => ({ success: false, total_quota_purchased_mb: 0, total_quota_used_mb: 0, remaining_mb: 0, hotspot_username: '...', last_sync_time: null, is_unlimited_user: false }), immediate: false, watch: false },
 )
 
 // Fetch data penggunaan mingguan
-const weeklyUsageApiUrl = computed(() => !authToken.value ? null : getApiUrl('/users/me/weekly-usage'))
+const weeklyUsageApiUrl = computed(() => authToken.value === null ? null : getApiUrl('/users/me/weekly-usage'))
 const { data: weeklyUsageData, pending: weeklyUsagePending, error: weeklyUsageError, refresh: refreshWeeklyUsageRaw } = useFetch<WeeklyUsageResponse>(
   weeklyUsageApiUrl,
   { ...commonFetchOptions.value, key: 'weeklyUsageData', default: () => ({ success: false, weekly_data: [] }), immediate: false, watch: false },
 )
 
 // Fetch data penggunaan bulanan
-const monthlyUsageApiUrl = computed(() => !authToken.value ? null : getApiUrl('/users/me/monthly-usage'))
+const monthlyUsageApiUrl = computed(() => authToken.value === null ? null : getApiUrl('/users/me/monthly-usage'))
 const { data: monthlyUsageData, pending: monthlyChartPending, error: monthlyChartError, refresh: refreshMonthlyUsageRaw } = useFetch<MonthlyUsageResponse>(
   monthlyUsageApiUrl,
   { ...commonFetchOptions.value, key: 'monthlyUsageData', default: () => ({ success: false, monthly_data: [] }), immediate: false, watch: false },
@@ -100,7 +101,7 @@ function createRefresher(rawRefresher: RefresherFunction | globalThis.Ref<unknow
   return async () => {
     if (typeof rawRefresher !== 'function')
       return
-    if (!authToken.value)
+    if (authToken.value === null)
       return
     showErrorAlert.value = true
     return rawRefresher()
@@ -134,7 +135,7 @@ async function performFetches() {
 }
 
 async function initialFetch() {
-  if (authToken.value) {
+  if (authToken.value !== null) {
     preFetchActions()
     await performFetches()
   }
@@ -157,10 +158,10 @@ watch(isFetching, (newValue, oldValue) => {
 })
 
 watch(authToken, (newToken, oldToken) => {
-  if (newToken && newToken !== oldToken) {
+  if (newToken !== null && newToken !== oldToken) {
     initialFetch()
   }
-  else if (!newToken && oldToken) {
+  else if (newToken === null && oldToken !== null) {
     quotaData.value = { success: false, total_quota_purchased_mb: 0, total_quota_used_mb: 0, remaining_mb: 0, hotspot_username: '...', last_sync_time: null, is_unlimited_user: false }
     weeklyUsageData.value = { success: false, weekly_data: [] }
     monthlyUsageData.value = { success: false, monthly_data: [] }
@@ -171,7 +172,7 @@ watch(authToken, (newToken, oldToken) => {
 })
 
 function formatDateTime(dateTimeString: string | null | undefined): string {
-  if (!dateTimeString)
+  if (dateTimeString == null)
     return 'N/A'
   try {
     const date = new Date(dateTimeString)
@@ -196,13 +197,13 @@ function formatDateTime(dateTimeString: string | null | undefined): string {
 }
 
 function formatUsername(username: string | null | undefined): string {
-  if (!username)
+  if (username == null)
     return 'Tidak Tersedia'
   return username.startsWith('+62') ? `0${username.substring(3)}` : username
 }
 
 async function refreshAllDataLogic() {
-  if (!authToken.value)
+  if (authToken.value === null)
     return
 
   preFetchActions()
@@ -282,7 +283,7 @@ useHead({ title: 'Dashboard User' })
                   Detail Error Kuota:
                 </p>
                 <p class="text-caption">
-                  {{ quotaError.message || 'Tidak ada pesan error spesifik.' }}
+                  {{ (quotaError.message && quotaError.message.length > 0) ? quotaError.message : 'Tidak ada pesan error spesifik.' }}
                 </p>
                 <pre v-if="quotaError.data?.message" class="error-server-message">{{ quotaError.data.message }}</pre>
               </div>
@@ -291,7 +292,7 @@ useHead({ title: 'Dashboard User' })
                   Detail Error Mingguan:
                 </p>
                 <p class="text-caption">
-                  {{ weeklyUsageError.message || 'Tidak ada pesan error spesifik.' }}
+                  {{ (weeklyUsageError.message && weeklyUsageError.message.length > 0) ? weeklyUsageError.message : 'Tidak ada pesan error spesifik.' }}
                 </p>
                 <pre v-if="weeklyUsageError.data?.message" class="error-server-message">{{ weeklyUsageError.data.message }}</pre>
               </div>
@@ -300,7 +301,7 @@ useHead({ title: 'Dashboard User' })
                   Detail Error Bulanan:
                 </p>
                 <p class="text-caption">
-                  {{ monthlyChartError.message || 'Tidak ada pesan error spesifik.' }}
+                  {{ (monthlyChartError.message && monthlyChartError.message.length > 0) ? monthlyChartError.message : 'Tidak ada pesan error spesifik.' }}
                 </p>
                 <pre v-if="monthlyChartError.data?.message" class="error-server-message">{{ monthlyChartError.data.message }}</pre>
               </div>
@@ -345,8 +346,8 @@ useHead({ title: 'Dashboard User' })
                       <VCardText class="d-flex align-center py-3 px-4">
                         <VIcon icon="tabler-clock-check" size="20" class="me-3" />
                         <span class="text-body-2 flex-grow-1">Terakhir</span>
-                        <span class="text-body-2 font-weight-medium text-medium-emphasis text-truncate" :title="quotaData?.last_sync_time ? formatDateTime(quotaData.last_sync_time) : 'N/A'">
-                          {{ quotaData?.last_sync_time ? formatDateTime(quotaData.last_sync_time) : 'N/A' }}
+                        <span class="text-body-2 font-weight-medium text-medium-emphasis text-truncate" :title="quotaData?.last_sync_time != null ? formatDateTime(quotaData.last_sync_time) : 'N/A'">
+                          {{ quotaData?.last_sync_time != null ? formatDateTime(quotaData.last_sync_time) : 'N/A' }}
                         </span>
                       </VCardText>
                     </VCard>
