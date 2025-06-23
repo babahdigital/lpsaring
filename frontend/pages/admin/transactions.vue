@@ -53,8 +53,8 @@ const snackbar = ref({
 const queryParams = computed(() => ({
   page: options.value.page,
   itemsPerPage: options.value.itemsPerPage,
-  sortBy: options.value.sortBy !== undefined && options.value.sortBy.length > 0 ? options.value.sortBy[0].key : 'created_at', // Perbaikan baris 75
-  sortOrder: options.value.sortBy !== undefined && options.value.sortBy.length > 0 ? options.value.sortBy[0].order : 'desc', // Perbaikan baris 75
+  sortBy: options.value.sortBy !== undefined && options.value.sortBy.length > 0 ? options.value.sortBy[0].key : 'created_at',
+  sortOrder: options.value.sortBy !== undefined && options.value.sortBy.length > 0 ? options.value.sortBy[0].order : 'desc',
   search: search.value,
   user_id: selectedUser.value?.id,
   start_date: startDate.value ? startDate.value.toISOString().split('T')[0] : undefined,
@@ -71,13 +71,17 @@ const { data: transactionData, pending: loading, error, refresh } = useAsyncData
   },
 )
 
+// Perbaikan baris 88 (sesuai error user baris 75): Menangani nilai nullable number secara eksplisit
 const transactions = computed(() => transactionData.value?.items || [])
-const totalTransactions = computed(() => transactionData.value?.totalItems || 0)
+const totalTransactions = computed(() => transactionData.value?.totalItems ?? 0) // Menggunakan ?? untuk explicit nullish check
 
 watch(error, (newError) => {
-  // Perbaikan baris 79: Menambahkan pengecekan eksplisit untuk newError dan newError.data
+  // Perbaikan baris 93 (sesuai error user baris 80): Menambahkan pengecekan eksplisit untuk newError.data
   if (newError !== null && newError !== undefined) {
-    showSnackbar((newError.data && typeof newError.data.message === 'string' && newError.data.message !== '') ? newError.data.message : 'Gagal memuat data transaksi', 'error')
+    const errorMessage = (newError.data !== null && newError.data !== undefined && typeof newError.data.message === 'string' && newError.data.message !== '')
+      ? newError.data.message
+      : 'Gagal memuat data transaksi'
+    showSnackbar(errorMessage, 'error')
   }
 })
 
@@ -167,9 +171,9 @@ const filteredUserList = computed(() => {
       return true
 
     if (phoneVariations.length > 0)
-      return phoneVariations.some(variation => user.phone_number?.includes(variation) === true) // Perbaikan: Menambahkan pengecekan eksplisit untuk user.phone_number
+      return phoneVariations.some(variation => user.phone_number?.includes(variation) === true)
 
-    return user.phone_number?.includes(queryLower) === true // Perbaikan: Menambahkan pengecekan eksplisit untuk user.phone_number
+    return user.phone_number?.includes(queryLower) === true
   })
 })
 
@@ -223,11 +227,16 @@ async function openUserFilterDialog() {
       userList.value = responseData.items.filter(user => user.role === 'USER')
     }
     else {
+      // Perbaikan baris 230 (sesuai error user baris 230): Pengecekan eksplisit ini sudah ada
       userList.value = []
     }
   }
   catch (e: any) {
-    showSnackbar(e.data?.message || 'Gagal memuat daftar pengguna.', 'error')
+    // Perbaikan baris 231 (sesuai error user baris 230): Menambahkan pengecekan eksplisit untuk e.data
+    const errorMessage = (e.data !== null && e.data !== undefined && typeof e.data.message === 'string' && e.data.message !== '')
+      ? e.data.message
+      : 'Gagal memuat daftar pengguna.'
+    showSnackbar(errorMessage, 'error')
     userList.value = []
   }
 }
@@ -244,7 +253,7 @@ function confirmUserSelection() {
 }
 
 async function exportReport(format: 'pdf' | 'csv') {
-  if (startDate.value === null) { // Perbaikan: Pengecekan eksplisit untuk startDate.value
+  if (startDate.value === null) {
     showSnackbar('Pilih tanggal mulai terlebih dahulu', 'warning')
     return
   }
@@ -253,10 +262,10 @@ async function exportReport(format: 'pdf' | 'csv') {
     const start = startDate.value.toISOString().split('T')[0]
     const end = (endDate.value || startDate.value).toISOString().split('T')[0]
     const params = new URLSearchParams({ format, start_date: start, end_date: end })
-    if (selectedUser.value !== null) // Perbaikan: Pengecekan eksplisit untuk selectedUser.value
+    if (selectedUser.value !== null)
       params.append('user_id', selectedUser.value.id)
     const data = await $api(`/admin/transactions/export?${params.toString()}`, { responseType: 'blob' })
-    if (data === null || data === undefined) // Perbaikan: Pengecekan eksplisit untuk data
+    if (data === null || data === undefined)
       throw new Error('Tidak ada data laporan yang diterima')
     const url = window.URL.createObjectURL(data)
     const link = document.createElement('a')
@@ -269,7 +278,11 @@ async function exportReport(format: 'pdf' | 'csv') {
     showSnackbar('Laporan berhasil diunduh', 'success')
   }
   catch (err: any) {
-    showSnackbar(`Gagal mengunduh laporan: ${err.data?.message || err.message}`, 'error')
+    // Perbaikan baris 273 (sesuai error user baris 272): Menambahkan pengecekan eksplisit untuk err.data dan err.message
+    const errorMessage = (err.data !== null && err.data !== undefined && typeof err.data.message === 'string' && err.data.message !== '')
+      ? err.data.message
+      : ((typeof err.message === 'string' && err.message !== '') ? err.message : 'Kesalahan tidak diketahui')
+    showSnackbar(`Gagal mengunduh laporan: ${errorMessage}`, 'error')
   }
   finally {
     exportLoading.value = false
