@@ -28,7 +28,7 @@ const { isLoggedIn, user, isLoadingUser } = storeToRefs(authStore)
 // --- PERBAIKAN PADA FUNGSI FETCH ---
 // Mengambil data paket dari API publik, dengan mengharapkan objek yang berisi `data`
 const { data: packageApiResponse, pending: isLoadingPackages, error: fetchPackagesError, refresh: refreshPackages }
-  = useApiFetch<PackagesApiResponse>('/packages', { // DIUBAH: Mengharapkan PackagesApiResponse
+  = useApiFetch<PackagesApiResponse>('/packages', {
     key: 'publicPackages',
     lazy: true,
     server: true,
@@ -36,8 +36,8 @@ const { data: packageApiResponse, pending: isLoadingPackages, error: fetchPackag
     default: () => ({ data: [] as Package[], success: false, message: '' }),
   })
 
-// DIUBAH: Computed property sekarang mengekstrak array dari `packageApiResponse.value.data`
-const packages = computed(() => packageApiResponse.value?.data || [])
+// DIPERBAIKI (Baris 40): Menggunakan ternary dengan pemeriksaan null eksplisit
+const packages = computed(() => (packageApiResponse.value?.data != null ? packageApiResponse.value.data : []))
 // --- AKHIR PERBAIKAN ---
 
 // State untuk dialog, formulir, pembayaran, dan notifikasi
@@ -57,7 +57,6 @@ const snackbarText = ref('')
 const snackbarColor = ref<'error' | 'success' | 'info' | 'warning'>('info')
 const snackbarTimeout = ref(5000)
 
-// DIPERBAIKI: Menambahkan pemeriksaan null eksplisit sebelum isRef untuk mengatasi aturan linter yang ketat
 if (fetchPackagesError != null && isRef(fetchPackagesError)) {
   watch(fetchPackagesError, (newError) => {
     if (newError != null && newError.statusCode !== 401 && newError.statusCode !== 403) {
@@ -166,7 +165,8 @@ function handlePackageSelection(pkg: Package) {
     }
     showSnackbar(warningMsg, 'warning', 7000)
   }
-  else if (user.value?.id) {
+  // DIPERBAIKI (Baris 169): Menggunakan pemeriksaan null eksplisit untuk ID pengguna
+  else if (user.value?.id != null) {
     initiatePayment(pkg.id)
   }
 }
@@ -197,7 +197,6 @@ async function handleContactSubmit() {
   }
   catch (err: any) {
     let errorMessage = 'Terjadi kesalahan.'
-    // DIPERBAIKI: Pemeriksaan error yang lebih robust dan eksplisit
     if (err != null && typeof err.data === 'object' && err.data != null) {
       const message = err.data.message
       if (typeof message === 'string' && message.length > 0) {
@@ -235,7 +234,6 @@ async function initiatePayment(packageId: string) {
   }
   catch (err: any) {
     let errorMessage = 'Gagal memulai pembayaran.'
-    // DIPERBAIKI: Pemeriksaan error yang lebih robust dan eksplisit
     if (err != null && typeof err.data === 'object' && err.data != null) {
       const message = err.data.message
       if (typeof message === 'string' && message.length > 0) {
