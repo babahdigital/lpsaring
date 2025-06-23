@@ -82,7 +82,8 @@ const target = join(__dirname, 'icons.css')
         }
       }
 
-      if (typeof item !== 'string' && item.icons?.length) {
+      // PERBAIKAN: Mengubah kondisi agar TypeScript dapat melakukan type-narrowing dengan benar.
+      if (typeof item !== 'string' && item.icons && item.icons.length > 0) {
         const filteredContent = getIcons(content, item.icons)
         if (filteredContent)
           allIcons.push(filteredContent)
@@ -153,7 +154,7 @@ function organizeIconsList(icons: string[]): Record<string, string[]> {
 
   icons.forEach((icon) => {
     const item = stringToIcon(icon)
-    if (!item)
+    if (item === null)
       return
 
     const prefix = item.prefix
