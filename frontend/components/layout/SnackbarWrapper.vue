@@ -26,7 +26,6 @@ const { messages, remove } = useSnackbar()
             size="small"
             :icon="false"
           >
-            >
             <!-- Gunakan span dengan kelas langsung -->
             <span class="tabler-x custom-icon" />
           </VBtn>
