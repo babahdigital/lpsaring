@@ -3,6 +3,7 @@ import type { VDataTableServer } from 'vuetify/labs/VDataTable'
 import { onMounted, reactive, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import ProcessRequestDialog from '@/components/request/ProcessRequestDialog.vue'
+import { useSnackbar } from '@/composables/useSnackbar' // Menggunakan composable useSnackbar
 
 // --- Tipe Data (tidak berubah) ---
 interface Requester { id: string, full_name: string, phone_number: string }
@@ -30,9 +31,10 @@ const loading = ref(true)
 const totalRequests = ref(0)
 const options = ref<Options>({ page: 1, itemsPerPage: 10, sortBy: [{ key: 'created_at', order: 'desc' }], groupBy: [], search: undefined })
 const statusFilter = ref<'PENDING' | 'APPROVED' | 'REJECTED' | 'PARTIALLY_APPROVED' | null>('PENDING')
-const snackbar = reactive({ show: false, text: '', color: 'info' })
+// const snackbar = reactive({ show: false, text: '', color: 'info' }) // Dihapus, diganti dengan useSnackbar composable
 const dialog = ref(false)
 const selectedRequest = ref<QuotaRequest | null>(null)
+const { add: showSnackbar } = useSnackbar() // Menggunakan add dari useSnackbar composable
 
 // --- Watchers & Lifecycle ---
 watch([options, statusFilter], () => {
@@ -57,7 +59,19 @@ async function fetchRequests() {
     totalRequests.value = response.totalItems
   }
   catch (error: any) {
-    showSnackbar(`Gagal mengambil data: ${error.data?.message || 'Server error'}`, 'error')
+    // Perbaikan: Penanganan error dengan pengecekan tipe eksplisit
+    let errorMessage = 'Server error';
+    if (error && typeof error === 'object' && error !== null && 'data' in error) {
+      const errorData = error.data as Record<string, unknown>; // Casting to a more specific type
+      if (errorData && typeof errorData === 'object' && errorData !== null && 'message' in errorData && typeof errorData.message === 'string') {
+        errorMessage = errorData.message;
+      }
+    }
+    showSnackbar({
+      type: 'error',
+      title: 'Gagal Mengambil Data',
+      text: `Gagal mengambil data: ${errorMessage}`,
+    })
   }
   finally {
     loading.value = false
@@ -73,16 +87,21 @@ function handleDialogClose(processed = false) {
   dialog.value = false
   selectedRequest.value = null
   if (processed) {
-    showSnackbar('Permintaan berhasil diproses.', 'success')
+    showSnackbar({
+      type: 'success',
+      title: 'Berhasil',
+      text: 'Permintaan berhasil diproses.',
+    })
     fetchRequests()
   }
 }
 
-function showSnackbar(text: string, color = 'info') {
-  snackbar.text = text
-  snackbar.color = color
-  snackbar.show = true
-}
+// showSnackbar ini dihapus karena sudah ada dari composable useSnackbar
+// function showSnackbar(text: string, color = 'info') {
+//   snackbar.text = text
+//   snackbar.color = color
+//   snackbar.show = true
+// }
 
 // --- [PENYEMPURNAAN] Tampilan & Formatting ---
 const headers = [
@@ -135,13 +154,13 @@ function formatRequestDetails(details: Record<string, any> | null, type: 'reques
   return 'Akses Penuh'
 }
 
-function formatSimpleDateTime(dateString: string | null) {
-  if (!dateString)
+function formatSimpleDateTime(dateString: string | null | undefined) { // Perbaikan: Tambahkan undefined
+  if (dateString === null || dateString === undefined || dateString.trim() === '') // Perbaikan: Pengecekan eksplisit
     return 'N/A'
   return new Date(dateString).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
-function formatPhoneNumber(phone: string | null): string {
-  if (!phone)
+function formatPhoneNumber(phone: string | null | undefined): string { // Perbaikan: Tambahkan undefined
+  if (phone === null || phone === undefined || phone.trim() === '') // Perbaikan: Pengecekan eksplisit
     return ''
   return phone.startsWith('+62') ? `0${phone.substring(3)}` : phone
 }
@@ -171,7 +190,7 @@ function formatPhoneNumber(phone: string | null): string {
         <template #item.requester.full_name="{ item }">
           <div class="d-flex align-center py-2">
             <VAvatar color="secondary" size="38" variant="tonal" class="me-3">
-              <span class="text-h6">{{ item.requester.full_name.charAt(0).toUpperCase() }}</span>
+              <span class="font-weight-semibold text-h6">{{ item.requester.full_name.charAt(0).toUpperCase() }}</span>
             </VAvatar>
             <div class="d-flex flex-column">
               <span class="font-weight-semibold text-high-emphasis">{{ item.requester.full_name }}</span>
@@ -242,8 +261,9 @@ function formatPhoneNumber(phone: string | null): string {
     </VCard>
 
     <ProcessRequestDialog v-if="selectedRequest" :is-dialog-visible="dialog" :request-data="selectedRequest" @update:is-dialog-visible="handleDialogClose" @processed="handleDialogClose(true)" />
-    <VSnackbar v-model="snackbar.show" :color="snackbar.color" :timeout="4000" location="top end">
+    <!-- Menghapus VSnackbar lokal karena sudah menggunakan composable useSnackbar -->
+    <!-- <VSnackbar v-model="snackbar.show" :color="snackbar.color" :timeout="4000" location="top end">
       {{ snackbar.text }}
-    </VSnackbar>
+    </VSnackbar> -->
   </div>
 </template>
