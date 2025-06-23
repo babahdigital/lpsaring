@@ -1,15 +1,21 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import CircleCheck from '~icons/tabler/circle-check' // <-- Impor virtual module
+import CircleCheck from '~icons/tabler/circle-check' // <-- Biarkan ini
 
 onMounted(() => {
-  console.log('Iconify Virtual Module Test:', CircleCheck)
+  console.log('Iconify Virtual Module Test:', CircleCheck) // <-- Biarkan ini
 })
 </script>
 
 <template>
   <div>
-    <h3>Test Icons</h3>
+    <h3>Tes Render Langsung</h3>
+    <p>Ikon di bawah ini dirender langsung (seharusnya muncul):</p>
+    <CircleCheck style="font-size: 48px; color: limegreen;" />
+    <hr style="margin: 2rem 0;">
+
+
+    <h3>Test Icons Asli (via VIcon)</h3>
     <VIcon icon="tabler:circle-check" size="x-large" />
     <p>Icon "tabler:circle-check" should be above.</p>
 
