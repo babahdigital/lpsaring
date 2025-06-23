@@ -133,7 +133,7 @@ function formatDate(isoString?: string | null): string {
       throw new Error('Invalid date')
     return format(parsedDate, 'iiii, dd MMMM yyyy, HH:mm \'WITA\'', { locale: dateLocaleId })
   }
-  catch (e) {
+  catch (_e) {
     return 'Tanggal Invalid'
   }
 }
@@ -223,7 +223,7 @@ async function copyToClipboard(textToCopy: string | undefined | null, type: stri
     $snackbar.add({ type: 'success', text: `${type} berhasil disalin!` })
     setTimeout(() => { copySuccess.value = null }, 2500)
   }
-  catch (err) {
+  catch (_err) {
     $snackbar.add({ type: 'error', text: `Gagal menyalin ${type}.` })
   }
 }
@@ -243,8 +243,12 @@ function getBankNameFromVA(paymentMethodValue?: string | null): string {
   return paymentMethodValue.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
 }
 
-const goToSelectPackage = () => router.push({ path: '/beli' })
-const goToDashboard = () => router.push({ path: '/dashboard' })
+function goToSelectPackage() {
+  router.push({ path: '/beli' })
+}
+function goToDashboard() {
+  router.push({ path: '/dashboard' })
+}
 
 const showSpecificPendingInstructions = computed(() => {
   if (finalStatus.value !== 'PENDING' || !transactionDetails.value)
