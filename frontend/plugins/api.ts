@@ -31,7 +31,8 @@ export default defineNuxtPlugin((nuxtApp) => {
       const store = getAuthStore()
       const token = store.token
 
-      if (token) {
+      // PERBAIKAN: Pengecekan null/undefined yang eksplisit
+      if (token != null) {
         // PERBAIKAN: Gunakan objek 'Headers' untuk memanipulasi header secara aman.
         // Ini mengatasi error tipe dan memastikan kompatibilitas.
         const headers = new Headers(options.headers)
@@ -47,8 +48,8 @@ export default defineNuxtPlugin((nuxtApp) => {
       if (response.status === 401) {
         const store = getAuthStore()
 
-        // Cek apakah masih ada token di state untuk mencegah loop logout.
-        if (store.token) {
+        // PERBAIKAN: Pengecekan null/undefined yang eksplisit untuk mencegah loop logout.
+        if (store.token != null) {
           const side = import.meta.server ? 'SERVER' : 'CLIENT'
           console.warn(`[API Plugin:${side}] Menerima 401. Melakukan logout...`)
 
