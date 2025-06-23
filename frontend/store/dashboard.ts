@@ -21,7 +21,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
    * Mengambil semua data statistik dari API.
    */
   async function fetchDashboardStats() {
-    if (isLoading.value || stats.value)
+    // Periksa secara eksplisit apakah stats.value tidak null untuk menghindari error linter.
+    if (isLoading.value || stats.value !== null)
       return // Jangan fetch ulang jika sedang loading atau sudah ada data
 
     isLoading.value = true
@@ -30,7 +31,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
         method: 'GET',
       })
 
-      if (response) {
+      // Periksa secara eksplisit apakah response adalah objek yang valid dan tidak null.
+      if (typeof response === 'object' && response !== null) {
         stats.value = response
       }
     }
