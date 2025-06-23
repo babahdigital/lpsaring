@@ -7,13 +7,14 @@ import { VBtn } from 'vuetify/components/VBtn'
 import { mdi, aliases as mdiAliases } from 'vuetify/iconsets/mdi'
 import { cookieRef } from '@/@layouts/stores/config'
 import pluginDefaults from './defaults'
-// --- Impor adapter Iconify yang baru dibuat ---
-import IconifyVuetifyAdapter from './iconify-adapter'
+// --- Impor adapter CSS yang baru dibuat ---
+import CssIconAdapter from './css-icon-adapter'
 import { icons as iconAliases } from './icons'
 import { themes } from './theme'
 import '@core/scss/template/libs/vuetify/index.scss'
 import 'vuetify/styles'
 
+// MDI font tetap diimpor untuk ikon yang secara spesifik menggunakan `mdi:`
 import '@mdi/font/css/materialdesignicons.css'
 
 function resolveInitialVuetifyTheme(userPreference: string | undefined | null): 'light' | 'dark' {
@@ -34,15 +35,15 @@ export default defineNuxtPlugin((nuxtApp) => {
   const initialDefaultTheme = resolveInitialVuetifyTheme(userPreferredTheme)
 
   const iconsConfig: IconOptions = {
-    defaultSet: 'tabler', // Tetap 'tabler' atau 'mdi' sesuai preferensi Anda
+    defaultSet: 'tabler', // Set default adalah 'tabler'
     aliases: {
       ...mdiAliases,
       ...iconAliases,
     },
     sets: {
       mdi,
-      // --- Gunakan adapter yang sudah dibuat ---
-      tabler: IconifyVuetifyAdapter, // Gunakan objek adapter langsung
+      // --- Gunakan adapter CSS untuk set 'tabler' ---
+      tabler: CssIconAdapter,
     },
   }
 
@@ -61,5 +62,6 @@ export default defineNuxtPlugin((nuxtApp) => {
 
   nuxtApp.vueApp.use(vuetify)
 
+  // Mengembalikan provide kosong karena kita tidak menambahkan helper ke nuxtApp
   return {}
 })
