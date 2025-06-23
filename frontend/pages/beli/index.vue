@@ -60,7 +60,11 @@ const snackbarTimeout = ref(5000)
 if (isRef(fetchPackagesError)) {
   watch(fetchPackagesError, (newError) => {
     if (newError != null && newError.statusCode !== 401 && newError.statusCode !== 403) {
-      const errorMessage = newError.data?.message || 'Gagal memuat daftar paket.'
+      // DIPERBAIKI: Pemeriksaan eksplisit untuk pesan error dari server
+      const messageFromServer = (newError as any)?.data?.message
+      const errorMessage = (typeof messageFromServer === 'string' && messageFromServer)
+        ? messageFromServer
+        : 'Gagal memuat daftar paket.'
       showSnackbar(`Gagal memuat daftar paket: ${errorMessage}`, 'error')
     }
   })
@@ -80,7 +84,8 @@ const nameRules = [
 ]
 const phoneRules = [
   (v: string) => (v != null && v.trim() !== '') || 'Nomor WhatsApp wajib diisi.',
-  (v: string) => /^\+628[1-9]\d{8,12}$/.test(normalizePhoneNumber(v)) || 'Format: +628xx... (11-15 digit).',
+  // DIPERBAIKI: Menggunakan perbandingan boolean eksplisit untuk memenuhi aturan linter
+  (v: string) => /^\+628[1-9]\d{8,12}$/.test(normalizePhoneNumber(v)) === true || 'Format: +628xx... (11-15 digit).',
 ]
 
 // --- FUNGSI FORMATTING YANG DISEMPURNAKAN ---
@@ -168,7 +173,8 @@ function handlePackageSelection(pkg: Package) {
 }
 
 async function handleContactSubmit() {
-  if (!contactFormRef.value)
+  // DIPERBAIKI: Menggunakan perbandingan eksplisit dengan null
+  if (contactFormRef.value == null)
     return
   const { valid } = await contactFormRef.value.validate()
   if (valid !== true)
@@ -193,7 +199,8 @@ async function handleContactSubmit() {
   }
   catch (err: any) {
     let errorMessage = 'Terjadi kesalahan.'
-    if (err && err.data && typeof err.data.message === 'string' && err.data.message.length > 0)
+    // DIPERBAIKI: Menggunakan perbandingan eksplisit `!= null` untuk nilai bertipe `any`
+    if (err != null && err.data != null && typeof err.data.message === 'string' && err.data.message.length > 0)
       errorMessage = err.data.message
 
     contactSubmitError.value = errorMessage
@@ -227,7 +234,8 @@ async function initiatePayment(packageId: string) {
   }
   catch (err: any) {
     let errorMessage = 'Gagal memulai pembayaran.'
-    if (err && err.data && typeof err.data.message === 'string' && err.data.message.length > 0)
+    // DIPERBAIKI: Menggunakan perbandingan eksplisit `!= null` untuk nilai bertipe `any`
+    if (err != null && err.data != null && typeof err.data.message === 'string' && err.data.message.length > 0)
       errorMessage = err.data.message
 
     showSnackbar(errorMessage, 'error')
@@ -241,7 +249,8 @@ function closeContactDialog() {
 }
 
 onMounted(async () => {
-  if (authStore && authStore.isInitialized !== true) {
+  // DIPERBAIKI: Menghapus pemeriksaan `authStore` yang selalu `true`
+  if (authStore.isInitialized !== true) {
     await authStore.initializeAuth()
   }
   const query = route.query
