@@ -70,11 +70,25 @@ onMounted(async () => {
       MAINTENANCE_MODE_ACTIVE: 'False',
       ENABLE_WHATSAPP_NOTIFICATIONS: 'False',
       ENABLE_WHATSAPP_LOGIN_NOTIFICATION: 'False', // PENAMBAHAN: Inisialisasi nilai default
+      APP_NAME: '',
+      APP_BROWSER_TITLE: '',
+      THEME: 'system',
+      SKIN: 'bordered',
+      LAYOUT: 'horizontal',
+      CONTENT_WIDTH: 'boxed',
+      WHATSAPP_API_KEY: '',
+      MIDTRANS_SERVER_KEY: '',
+      MIDTRANS_CLIENT_KEY: '',
+      MIKROTIK_HOST: '',
+      MIKROTIK_USER: '',
+      MIKROTIK_PASSWORD: '',
+      MAINTENANCE_MODE_MESSAGE: '',
       // Tambahkan kunci lain jika perlu
     }
 
     const fetchedSettings = response.reduce((acc, setting) => {
-      acc[setting.setting_key] = setting.setting_value || ''
+      // Perbaikan: Memastikan nilai selalu string secara eksplisit
+      acc[setting.setting_key] = setting.setting_value != null ? setting.setting_value : ''
       return acc
     }, {} as Record<string, string>)
 
@@ -98,9 +112,10 @@ async function handleSaveChanges() {
 
     Object.keys(settingsToSave).forEach((key) => {
       // Perbaikan: Hapus pengecekan `null` yang tidak perlu karena nilai sudah dijamin string.
+      // Saring nilai yang kosong, kecuali 'MAINTENANCE_MODE_MESSAGE' jika mode maintenance tidak aktif
       if (settingsToSave[key] === '') {
         if (key === 'MAINTENANCE_MODE_MESSAGE' && settingsToSave.MAINTENANCE_MODE_ACTIVE === 'False') {
-          return
+          return // Jangan hapus jika mode maintenance tidak aktif
         }
         delete settingsToSave[key]
       }
@@ -130,7 +145,7 @@ async function handleSaveChanges() {
     let errorDetails = 'Terjadi kesalahan pada server.'
 
     // Perbaikan: Pengecekan error dibuat lebih eksplisit untuk memenuhi aturan `strict-boolean-expressions`.
-    if (e.data && typeof e.data === 'object' && e.data !== null && Array.isArray(e.data.errors)) {
+    if (e.data && typeof e.data === 'object' && e.data !== null && 'errors' in e.data && Array.isArray(e.data.errors)) {
       errorDetails = e.data.errors.map((err: any) => {
         if (typeof err === 'object' && err !== null && 'message' in err) {
           return String(err.message)
@@ -138,7 +153,7 @@ async function handleSaveChanges() {
         return String(err)
       }).join(' ')
     }
-    else if (e.data && typeof e.data === 'object' && e.data !== null && typeof e.data.message === 'string') {
+    else if (e.data && typeof e.data === 'object' && e.data !== null && 'message' in e.data && typeof e.data.message === 'string') {
       errorDetails = e.data.message
     }
 
