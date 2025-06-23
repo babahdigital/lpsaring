@@ -313,7 +313,6 @@ useHead({ title: 'Pengaturan Akun' })
                   <VBtn color="warning" variant="tonal" :loading="securityLoading" prepend-icon="tabler-wifi" @click="resetHotspotPassword">
                     Reset Password Hotspot
                   </VBtn>
-                  </vbtn>
                 </div>
               </VCardText>
             </VCard>
