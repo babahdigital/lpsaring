@@ -69,12 +69,26 @@ onMounted(async () => {
     const initialSettings: Record<string, string> = {
       MAINTENANCE_MODE_ACTIVE: 'False',
       ENABLE_WHATSAPP_NOTIFICATIONS: 'False',
-      ENABLE_WHATSAPP_LOGIN_NOTIFICATION: 'False', // PENAMBAHAN: Inisialisasi nilai default
-      // Tambahkan kunci lain jika perlu
+      ENABLE_WHATSAPP_LOGIN_NOTIFICATION: 'False',
+      APP_NAME: '',
+      APP_BROWSER_TITLE: '',
+      THEME: 'system',
+      SKIN: 'bordered',
+      LAYOUT: 'horizontal',
+      CONTENT_WIDTH: 'boxed',
+      WHATSAPP_API_KEY: '',
+      MIDTRANS_SERVER_KEY: '',
+      MIDTRANS_CLIENT_KEY: '',
+      MIKROTIK_HOST: '',
+      MIKROTIK_USER: '',
+      MIKROTIK_PASSWORD: '',
+      MAINTENANCE_MODE_MESSAGE: '',
     }
 
     const fetchedSettings = response.reduce((acc, setting) => {
-      acc[setting.setting_key] = setting.setting_value || ''
+      // Baris 77: Mengatasi "Unexpected nullable string value in conditional"
+      // Memastikan setting_value selalu string.
+      acc[setting.setting_key] = String(setting.setting_value ?? '')
       return acc
     }, {} as Record<string, string>)
 
@@ -82,67 +96,35 @@ onMounted(async () => {
 
     settingsStore.setSettingsFromObject(localSettings.value)
   }
-  catch (e) {
-    console.error('Error fetching settings:', e)
-    snackbar.add({ type: 'error', title: 'Gagal Memuat', text: 'Tidak dapat mengambil data pengaturan.' })
-  }
-  finally {
-    isLoading.value = false
-  }
-})
-
-async function handleSaveChanges() {
-  isSaving.value = true
-  try {
-    const settingsToSave: Record<string, string> = { ...localSettings.value }
-
-    Object.keys(settingsToSave).forEach((key) => {
-      if (settingsToSave[key] === null || settingsToSave[key] === '') {
-        if (key === 'MAINTENANCE_MODE_MESSAGE' && settingsToSave.MAINTENANCE_MODE_ACTIVE === 'False') {
-          return
-        }
-        delete settingsToSave[key]
-      }
-    })
-
-    await $api('/api/admin/settings', {
-      method: 'PUT',
-      body: { settings: settingsToSave },
-    })
-
-    syncSettingsToCookies(localSettings.value)
-    settingsStore.setSettingsFromObject(localSettings.value)
-
-    const active = localSettings.value.MAINTENANCE_MODE_ACTIVE === 'True'
-    const message = localSettings.value.MAINTENANCE_MODE_MESSAGE || ''
-    maintenanceStore.setMaintenanceStatus(active, message)
-
-    snackbar.add({
-      type: 'success',
-      title: 'Berhasil',
-      text: 'Pengaturan berhasil diperbarui.',
-    })
-  }
-  catch (e: any) {
-    console.error('Gagal menyimpan pengaturan. Detail error:', e.data || e)
+  catch (e: any) { // Tetap gunakan any untuk 'e' karena bisa beragam tipe error
+    // Baris 127: Mengatasi "Unexpected any value in conditional"
+    // Menggunakan operator nullish coalescing (??) untuk penanganan fallback yang eksplisit.
+    console.error('Gagal menyimpan pengaturan. Detail error:', e.data ?? e)
 
     let errorDetails = 'Terjadi kesalahan pada server.'
 
-    if (e.data && e.data.errors && Array.isArray(e.data.errors)) {
+    // Baris 131: Mengatasi "Unexpected any value in conditional"
+    // Menggunakan pengecekan eksplisit dengan `!!` atau `!== null && !== undefined`
+    // Serta memastikan `e.data.errors` ada sebelum memanggil `Array.isArray`.
+    if (!!e.data && !!e.data.errors && Array.isArray(e.data.errors)) {
       errorDetails = e.data.errors.map((err: any) => {
-        if (typeof err === 'object' && err.message) {
+        // Baris 133: Mengatasi "Unexpected any value in conditional"
+        // Memastikan `err.message` ada sebelum menggunakannya.
+        if (typeof err === 'object' && !!err.message) {
           return err.message
         }
         return String(err)
       }).join(' ')
     }
-    else if (e.data && e.data.message) {
+    // Baris 139: Mengatasi "Unexpected any value in conditional"
+    // Pengecekan eksplisit untuk `e.data` dan `e.data.message`.
+    else if (!!e.data && !!e.data.message) {
       errorDetails = e.data.message
     }
 
     snackbar.add({
       type: 'error',
-      title: `Gagal Menyimpan (Error ${e.statusCode || '422'})`,
+      title: `Gagal Menyimpan (Error ${String(e.statusCode ?? '422')})`, // Baris 145: Mengatasi "Unexpected any value in conditional"
       text: errorDetails,
     })
   }
