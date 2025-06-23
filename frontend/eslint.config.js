@@ -47,6 +47,7 @@ export default antfu(
   // Objek Konfigurasi Terpisah untuk Override File Vue/TypeScript
   {
     files: ['**/*.{ts,tsx,vue}'],
+    // PENAMBAHAN BAGIAN INI UNTUK TYPE-AWARE LINTING
     languageOptions: {
       parserOptions: {
         project: './.nuxt/tsconfig.json',
@@ -57,12 +58,14 @@ export default antfu(
       'vue/valid-v-slot': ['error', {
         allowModifiers: true,
       }],
-
-      // ===== UBAH BARIS DI BAWAH INI =====
-      // 'ts/strict-boolean-expressions' dinonaktifkan untuk sementara
-      'ts/strict-boolean-expressions': 'off',
-      // ===================================
-
+      'ts/strict-boolean-expressions': [
+        'error',
+        {
+          allowString: true,
+          allowNumber: true,
+          allowNullableObject: true,
+        },
+      ],
       'unused-imports/no-unused-vars': [
         'error',
         {
