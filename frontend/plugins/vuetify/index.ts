@@ -34,7 +34,7 @@ export default defineNuxtPlugin((nuxtApp) => {
   const initialDefaultTheme = resolveInitialVuetifyTheme(userPreferredTheme)
 
   const iconsConfig: IconOptions = {
-    defaultSet: 'mdi', // Tetap 'tabler' atau 'mdi' sesuai preferensi Anda
+    defaultSet: 'tabler', // Tetap 'tabler' atau 'mdi' sesuai preferensi Anda
     aliases: {
       ...mdiAliases,
       ...iconAliases,

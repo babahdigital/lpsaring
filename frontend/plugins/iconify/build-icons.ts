@@ -57,7 +57,9 @@ const target = join(__dirname, 'icons.css')
   const allIcons: IconifyJSON[] = []
 
   if (sources.icons) {
-    const sourcesJSON = sources.json ? sources.json : (sources.json = [])
+    if (!sources.json)
+      sources.json = []
+    const sourcesJSON = sources.json
     const organizedList = organizeIconsList(sources.icons)
 
     for (const prefix in organizedList) {
@@ -82,7 +84,8 @@ const target = join(__dirname, 'icons.css')
         }
       }
 
-      if (typeof item !== 'string' && item.icons?.length) {
+      // PERBAIKAN: Mengubah kondisi agar TypeScript dapat melakukan type-narrowing dengan benar.
+      if (typeof item !== 'string' && item.icons && item.icons.length > 0) {
         const filteredContent = getIcons(content, item.icons)
         if (filteredContent)
           allIcons.push(filteredContent)
@@ -153,11 +156,14 @@ function organizeIconsList(icons: string[]): Record<string, string[]> {
 
   icons.forEach((icon) => {
     const item = stringToIcon(icon)
-    if (!item)
+    if (item === null)
       return
 
     const prefix = item.prefix
-    const prefixList = sorted[prefix] ? sorted[prefix] : (sorted[prefix] = [])
+    if (!Object.hasOwn(sorted, prefix))
+      sorted[prefix] = []
+
+    const prefixList = sorted[prefix]
     const name = item.name
 
     if (!prefixList.includes(name))
