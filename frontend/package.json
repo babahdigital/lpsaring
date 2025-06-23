@@ -8,7 +8,7 @@
     "build": "node --max-old-space-size=4096 node_modules/nuxt/bin/nuxt.mjs build",
     "lint": "eslint . --fix",
     "build:icons": "tsx plugins/iconify/build-icons.ts",
-    "postinstall": "nuxt prepare && pnpm run build:icons ",
+    "postinstall": "nuxt prepare && npm run build:icons ",
     "generate": "nuxt generate"
   },
   "dependencies": {
@@ -140,7 +140,6 @@
     "@tiptap/core": "^2",
     "@types/video.js": "^7",
     "fetch-blob": "^4.0.0",
-    "formdata-polyfill": "^5.0.0",
-    "node-domexception": "npm:web-domexception@^2.0.0"
+    "formdata-polyfill": "^5.0.0"
   }
 }
