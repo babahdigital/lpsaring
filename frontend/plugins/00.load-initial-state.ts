@@ -20,10 +20,13 @@ export default defineNuxtPlugin(async (_nuxtApp) => {
         baseURL: runtimeConfig.internalApiBaseUrl,
       })
 
-      if (publicSettings) {
+      // Periksa secara eksplisit apakah data yang diterima adalah array yang valid dan memiliki isi.
+      // Ini memperbaiki error `ts/strict-boolean-expressions` dan membuat logika lebih aman.
+      if (Array.isArray(publicSettings) && publicSettings.length > 0) {
         settingsStore.setSettings(publicSettings)
       }
       else {
+        // Jika data tidak ada, kosong, atau bukan array, set state dengan array kosong.
         settingsStore.setSettings([])
       }
     }
