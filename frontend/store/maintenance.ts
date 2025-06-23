@@ -7,7 +7,7 @@ export const useMaintenanceStore = defineStore('maintenance', () => {
 
   function setMaintenanceStatus(active: boolean, customMessage?: string) {
     isActive.value = active
-    
+
     // Periksa secara eksplisit apakah customMessage adalah string yang valid dan tidak kosong.
     // Ini untuk memenuhi aturan linter `strict-boolean-expressions`.
     if (typeof customMessage === 'string' && customMessage.length > 0) {
