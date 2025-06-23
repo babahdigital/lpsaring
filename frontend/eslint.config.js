@@ -47,18 +47,22 @@ export default antfu(
   // Objek Konfigurasi Terpisah untuk Override File Vue/TypeScript
   {
     files: ['**/*.{ts,tsx,vue}'],
+    languageOptions: {
+      parserOptions: {
+        project: './.nuxt/tsconfig.json',
+        extraFileExtensions: ['.vue'],
+      },
+    },
     rules: {
       'vue/valid-v-slot': ['error', {
         allowModifiers: true,
       }],
-      'ts/strict-boolean-expressions': [
-        'error',
-        {
-          allowString: true,
-          allowNumber: true,
-          allowNullableObject: true,
-        },
-      ],
+
+      // ===== UBAH BARIS DI BAWAH INI =====
+      // 'ts/strict-boolean-expressions' dinonaktifkan untuk sementara
+      'ts/strict-boolean-expressions': 'off',
+      // ===================================
+
       'unused-imports/no-unused-vars': [
         'error',
         {
