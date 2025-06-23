@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import type { VDataTableServer } from 'vuetify/labs/VDataTable'
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import ProcessRequestDialog from '@/components/request/ProcessRequestDialog.vue'
 
@@ -35,26 +35,54 @@ const dialog = ref(false)
 const selectedRequest = ref<QuotaRequest | null>(null)
 
 // --- Watchers & Lifecycle ---
-watch([options, statusFilter], () => fetchRequests(), { deep: true })
+watch([options, statusFilter], () => {
+  fetchRequests()
+}, { deep: true })
 onMounted(fetchRequests)
 
-// --- Logika Inti (tidak berubah) ---
+// --- Logika Inti ---
 async function fetchRequests() {
   loading.value = true
   try {
     const params = new URLSearchParams({ page: String(options.value.page), itemsPerPage: String(options.value.itemsPerPage) })
-    options.value.sortBy.forEach((sortItem) => { params.append('sortBy', sortItem.key); params.append('sortOrder', sortItem.order) })
-    if (statusFilter.value) { params.append('status', statusFilter.value) }
+    options.value.sortBy.forEach((sortItem) => {
+      params.append('sortBy', sortItem.key)
+      params.append('sortOrder', sortItem.order)
+    })
+    if (statusFilter.value) {
+      params.append('status', statusFilter.value)
+    }
     const response = await $api<{ items: QuotaRequest[], totalItems: number }>(`/admin/quota-requests?${params.toString()}`)
     requests.value = response.items
     totalRequests.value = response.totalItems
   }
-  catch (error: any) { showSnackbar(`Gagal mengambil data: ${error.data?.message || 'Server error'}`, 'error') }
-  finally { loading.value = false }
+  catch (error: any) {
+    showSnackbar(`Gagal mengambil data: ${error.data?.message || 'Server error'}`, 'error')
+  }
+  finally {
+    loading.value = false
+  }
 }
-function openProcessDialog(item: QuotaRequest) { selectedRequest.value = item; dialog.value = true }
-function handleDialogClose(processed = false) { dialog.value = false; selectedRequest.value = null; if (processed) { showSnackbar('Permintaan berhasil diproses.', 'success'); fetchRequests() } }
-function showSnackbar(text: string, color = 'info') { snackbar.text = text; snackbar.color = color; snackbar.show = true }
+
+function openProcessDialog(item: QuotaRequest) {
+  selectedRequest.value = item
+  dialog.value = true
+}
+
+function handleDialogClose(processed = false) {
+  dialog.value = false
+  selectedRequest.value = null
+  if (processed) {
+    showSnackbar('Permintaan berhasil diproses.', 'success')
+    fetchRequests()
+  }
+}
+
+function showSnackbar(text: string, color = 'info') {
+  snackbar.text = text
+  snackbar.color = color
+  snackbar.show = true
+}
 
 // --- [PENYEMPURNAAN] Tampilan & Formatting ---
 const headers = [
@@ -101,9 +129,9 @@ function formatRequestDetails(details: Record<string, any> | null, type: 'reques
     return 'Akses Penuh'
   const mb = type === 'requested' ? details.requested_mb : details.granted_mb
   const days = type === 'requested' ? details.requested_duration_days : details.granted_duration_days
-  if (typeof mb === 'number' && typeof days === 'number') {
+  if (typeof mb === 'number' && typeof days === 'number')
     return `${formatQuotaToGB(mb)} / ${days} hari`
-  }
+
   return 'Akses Penuh'
 }
 
