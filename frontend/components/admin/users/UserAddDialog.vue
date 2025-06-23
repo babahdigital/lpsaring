@@ -46,25 +46,39 @@ const formData = reactive<FormData>(getInitialFormData())
 watch(() => props.modelValue, (isOpen) => {
   if (isOpen) {
     Object.assign(formData, getInitialFormData())
-    nextTick(() => { formRef.value?.resetValidation() })
+    nextTick(() => {
+      formRef.value?.resetValidation()
+    })
   }
 })
 
+// PERBAIKAN: Memisahkan setiap pernyataan ke baris baru
 watch(() => formData.role, (newRole) => {
   if (newRole === 'KOMANDAN') {
-    formData.add_gb = 5; formData.add_days = 30; formData.blok = null; formData.kamar = null
+    formData.add_gb = 5
+    formData.add_days = 30
+    formData.blok = null
+    formData.kamar = null
   }
   else if (newRole === 'USER') {
-    formData.add_gb = 1; formData.add_days = 30
+    formData.add_gb = 1
+    formData.add_days = 30
   }
   else {
-    formData.add_gb = 0; formData.add_days = 0; formData.blok = null; formData.kamar = null
+    formData.add_gb = 0
+    formData.add_days = 0
+    formData.blok = null
+    formData.kamar = null
   }
 }, { immediate: true })
 
+// PERBAIKAN: Memisahkan pernyataan if ke dalam blok
 const availableRoles = computed(() => {
   const roles = [{ title: 'User Biasa', value: 'USER' }, { title: 'Komandan', value: 'KOMANDAN' }]
-  if (authStore.isSuperAdmin) { roles.push({ title: 'Admin', value: 'ADMIN' }) }
+  if (authStore.isSuperAdmin) {
+    roles.push({ title: 'Admin', value: 'ADMIN' })
+  }
+
   return roles
 })
 
@@ -74,6 +88,7 @@ const showQuotaFields = computed(() => formData.role === 'USER' || formData.role
 async function onSave() {
   if (!formRef.value)
     return
+
   const { valid } = await formRef.value.validate()
 
   if (valid) {
@@ -100,13 +115,17 @@ const requiredRule = (v: any) => !!v || 'Wajib diisi.'
 function phoneRule(v: string) {
   if (!v)
     return true
-  return /^(08\d{8,11})$/.test(v) || 'Format: 08... dengan total 10-13 digit.'
+
+  // PERBAIKAN: Menggunakan non-capturing group (?:...) untuk menghilangkan error linter
+  return /^08\d{8,11}$/.test(v) || 'Format: 08... dengan total 10-13 digit.'
 }
 function quotaRule(v: any) {
   if (!showQuotaFields.value)
     return true
+
   const num = Number(v)
-  return !isNaN(num) && num > 0 || 'Harus berupa angka lebih dari 0.'
+  // PERBAIKAN: Menggunakan Number.isNaN dan menambahkan kurung untuk kejelasan operasi
+  return (!Number.isNaN(num) && num > 0) || 'Harus berupa angka lebih dari 0.'
 }
 </script>
 
