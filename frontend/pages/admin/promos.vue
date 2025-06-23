@@ -47,8 +47,8 @@ const form = ref<any>(null)
 const isStartDateMenuOpen = ref(false)
 const isEndDateMenuOpen = ref(false)
 
-// [PERBAIKAN] Mengisi handler yang sebelumnya kosong pada useAsyncData
-const { error, refresh: refreshPromos } = useAsyncData(
+// [PERBAIKAN] 'error' dihapus dari dekonstruksi karena tidak digunakan.
+const { refresh: refreshPromos } = useAsyncData(
   'promo-events-admin',
   async () => {
     loading.value = true
@@ -209,6 +209,8 @@ function closeDeleteDialog() {
 }
 
 async function saveEvent() {
+  if (!form.value)
+    return
   const { valid } = await form.value.validate()
   if (!valid) {
     snackbar.add({ type: 'warning', text: 'Mohon periksa kembali form, ada data yang belum valid.' })
