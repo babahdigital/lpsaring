@@ -71,9 +71,9 @@ async function fetchRecipients() {
     // Perbaikan baris 71: Menambahkan pengecekan eksplisit untuk e.data.message dan e.message
     const errorMessage = (e.data?.message !== null && typeof e.data?.message === 'string' && e.data.message !== '')
       ? e.data.message
-      : ((typeof e.message === 'string' && e.message !== '') ? e.message : 'Terjadi kesalahan tidak diketahui.');
-    error.value = `Gagal memuat data: ${errorMessage}`;
-    showSnackbar(error.value, 'error');
+      : ((typeof e.message === 'string' && e.message !== '') ? e.message : 'Terjadi kesalahan tidak diketahui.')
+    error.value = `Gagal memuat data: ${errorMessage}`
+    showSnackbar(error.value, 'error')
   }
   finally {
     loading.value = false
@@ -107,8 +107,8 @@ async function saveSettings() {
     // Perbaikan baris 104: Menambahkan pengecekan eksplisit untuk e.data.message dan e.message
     const errorMessage = (e.data?.message !== null && typeof e.data?.message === 'string' && e.data.message !== '')
       ? e.data.message
-      : ((typeof e.message === 'string' && e.message !== '') ? e.message : 'Gagal menyimpan pengaturan.');
-    showSnackbar(errorMessage, 'error');
+      : ((typeof e.message === 'string' && e.message !== '') ? e.message : 'Gagal menyimpan pengaturan.')
+    showSnackbar(errorMessage, 'error')
   }
   finally {
     saveLoading.value = false
