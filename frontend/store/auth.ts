@@ -4,7 +4,8 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
 function extractErrorMessage(errorData: any, defaultMessage: string): string {
-  if (!errorData)
+  // PERBAIKAN: Pengecekan null/undefined yang eksplisit
+  if (errorData == null)
     return defaultMessage
   if (typeof errorData === 'string')
     return errorData
@@ -19,11 +20,13 @@ function extractErrorMessage(errorData: any, defaultMessage: string): string {
   }
   else if (Array.isArray(errorData.detail) && errorData.detail.length > 0) {
     if (typeof errorData.detail[0] === 'object' && errorData.detail[0] !== null)
-      detailMsg = errorData.detail.map((e: any) => `${e.loc?.join('.') || 'field'} - ${e.msg}`).join('; ')
+      // PERBAIKAN: Mengganti || dengan ??
+      detailMsg = errorData.detail.map((e: any) => `${e.loc?.join('.') ?? 'field'} - ${e.msg}`).join('; ')
     else
       detailMsg = errorData.detail.join('; ')
   }
-  return detailMsg || defaultMessage
+  // PERBAIKAN: Mengganti || dengan ??
+  return detailMsg ?? defaultMessage
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -31,7 +34,6 @@ export const useAuthStore = defineStore('auth', () => {
     maxAge: 60 * 60 * 24 * 7, // 7 hari
     sameSite: 'lax',
     path: '/',
-    // secure: process.env.NODE_ENV === 'production',
     secure: false, // Untuk debug saja jika tanpa HTTPS
   })
 
@@ -43,13 +45,14 @@ export const useAuthStore = defineStore('auth', () => {
   const initialAuthCheckDone = ref(false)
 
   const token = computed(() => tokenCookie.value)
-  const isLoggedIn = computed(() => !!token.value && !!user.value)
+  // PERBAIKAN: Pengecekan eksplisit untuk isLoggedIn
+  const isLoggedIn = computed(() => token.value != null && user.value != null)
   const currentUser = computed(() => user.value)
   const isAdmin = computed(() => user.value?.role === 'ADMIN' || user.value?.role === 'SUPER_ADMIN')
   const isSuperAdmin = computed(() => user.value?.role === 'SUPER_ADMIN')
   const isKomandan = computed(() => user.value?.role === 'KOMANDAN')
   const isUserApprovedAndActive = computed(() =>
-    !!user.value && user.value.is_active === true && user.value.approval_status === 'APPROVED',
+    user.value != null && user.value.is_active === true && user.value.approval_status === 'APPROVED',
   )
 
   function clearError() {
@@ -74,7 +77,8 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function fetchUser(): Promise<boolean> {
     const { $api } = useNuxtApp()
-    if (!token.value) {
+    // PERBAIKAN: Pengecekan eksplisit
+    if (token.value == null) {
       setUser(null)
       return false
     }
@@ -83,7 +87,8 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const fetchedUser = await $api<User>('/auth/me', { method: 'GET' })
 
-      if (fetchedUser && fetchedUser.id) {
+      // PERBAIKAN: Pengecekan eksplisit
+      if (fetchedUser != null && fetchedUser.id != null) {
         setUser(fetchedUser)
         clearError()
         return true
@@ -99,7 +104,6 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  // --- [PENAMBAHAN FUNGSI YANG HILANG] ---
   async function requestOtp(phoneNumber: string): Promise<boolean> {
     const { $api } = useNuxtApp()
     loading.value = true
@@ -114,7 +118,8 @@ export const useAuthStore = defineStore('auth', () => {
       return true
     }
     catch (err: any) {
-      const statusCode = err.response?.status || err.statusCode
+      // PERBAIKAN: Mengganti || dengan ??
+      const statusCode = err.response?.status ?? err.statusCode
       let baseErrMsg = 'Terjadi kesalahan saat meminta OTP.'
       if (statusCode === 404)
         baseErrMsg = 'Nomor telepon tidak terdaftar.'
@@ -138,10 +143,12 @@ export const useAuthStore = defineStore('auth', () => {
         method: 'POST',
         body: { username, password },
       })
-      if (response && response.access_token) {
+      // PERBAIKAN: Pengecekan eksplisit
+      if (response != null && response.access_token != null) {
         tokenCookie.value = response.access_token
         const userFetched = await fetchUser()
-        if (userFetched && isAdmin.value) {
+        // PERBAIKAN: Pengecekan boolean eksplisit
+        if (userFetched === true && isAdmin.value === true) {
           setMessage('Login berhasil!')
           return true
         }
@@ -167,12 +174,14 @@ export const useAuthStore = defineStore('auth', () => {
     clearMessage()
     try {
       const response = await $api<RegisterResponse>('/auth/register', { method: 'POST', body: payload })
-      const successMsg = response.message || 'Registrasi berhasil! Akun Anda menunggu persetujuan Admin.'
+      // PERBAIKAN: Mengganti || dengan ??
+      const successMsg = response.message ?? 'Registrasi berhasil! Akun Anda menunggu persetujuan Admin.'
       setMessage(successMsg)
       return true
     }
     catch (err: any) {
-      const statusCode = err.response?.status || err.statusCode
+      // PERBAIKAN: Mengganti || dengan ??
+      const statusCode = err.response?.status ?? err.statusCode
       let baseErrMsg = 'Terjadi kesalahan saat proses registrasi.'
       if (statusCode === 409)
         baseErrMsg = 'Nomor telepon atau email ini sudah terdaftar.'
@@ -197,10 +206,12 @@ export const useAuthStore = defineStore('auth', () => {
         method: 'POST',
         body: { phone_number: phoneNumber, otp: otpCode },
       })
-      if (response && response.access_token) {
+      // PERBAIKAN: Pengecekan eksplisit
+      if (response != null && response.access_token != null) {
         tokenCookie.value = response.access_token
         const userFetched = await fetchUser()
-        if (userFetched && user.value) {
+        // PERBAIKAN: Pengecekan boolean dan null eksplisit
+        if (userFetched === true && user.value != null) {
           setMessage('Login berhasil!')
           if (import.meta.client)
             await navigateTo('/dashboard', { replace: true })
@@ -218,7 +229,8 @@ export const useAuthStore = defineStore('auth', () => {
       }
     }
     catch (err: any) {
-      const statusCode = err.response?.status || err.statusCode
+      // PERBAIKAN: Mengganti || dengan ??
+      const statusCode = err.response?.status ?? err.statusCode
       let baseErrMsg = 'Terjadi kesalahan saat verifikasi OTP.'
       if (statusCode === 401 || statusCode === 400)
         baseErrMsg = 'Kode OTP tidak valid atau telah kedaluwarsa.'
@@ -235,7 +247,8 @@ export const useAuthStore = defineStore('auth', () => {
     const { $api } = useNuxtApp()
     const isAdminRoute = import.meta.client ? useRoute().path.startsWith('/admin') : false
 
-    if (token.value)
+    // PERBAIKAN: Pengecekan eksplisit
+    if (token.value != null)
       $api('/auth/logout', { method: 'POST' }).catch(() => {})
 
     tokenCookie.value = null
@@ -249,10 +262,11 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function initializeAuth() {
-    if (initialAuthCheckDone.value)
+    if (initialAuthCheckDone.value === true)
       return
 
-    if (token.value)
+    // PERBAIKAN: Pengecekan eksplisit
+    if (token.value != null)
       await fetchUser()
 
     initialAuthCheckDone.value = true
