@@ -10,7 +10,7 @@
     <VIcon icon="mdi-circle-check" size="x-large" />
     <p>Icon "mdi-circle-check" should be above.</p>
 
-    <span class="tabler-circle-check custom-icon" style="font-size: 48px;"></span>
+    <span class="tabler-circle-check custom-icon" style="font-size: 48px;" />
     <p>Icon "tabler-circle-check" via span should be above.</p>
   </div>
 </template>

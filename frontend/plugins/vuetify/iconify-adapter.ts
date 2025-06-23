@@ -1,9 +1,9 @@
 // frontend/plugins/vuetify/iconify-adapter.ts
 // --- KODE FINAL YANG BENAR DAN STANDAR ---
 
-import { h } from 'vue'
+import type { IconProps, IconSet } from 'vuetify'
 import { Icon as IconifyIcon } from '@iconify/vue'
-import type { IconSet, IconProps } from 'vuetify'
+import { h } from 'vue'
 
 /**
  * Adapter ini menggunakan komponen 'Icon' dari @iconify/vue.

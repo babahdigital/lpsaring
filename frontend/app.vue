@@ -3,11 +3,11 @@ import ScrollToTop from '@core/components/ScrollToTop.vue'
 import initCore from '@core/initCore'
 import { useConfigStore } from '@core/stores/config'
 import { hexToRgb } from '@core/utils/colorConverter'
-import { computed, onUnmounted, watchEffect } from 'vue'
+// DIUBAH: Tambahkan ref dan onMounted dari vue
+import { computed, onMounted, onUnmounted, ref, watchEffect } from 'vue'
 import { useRoute } from 'vue-router'
 import { useTheme } from 'vuetify'
 import { Theme } from '@/types/enums'
-// [PENYEMPURNAAN] Impor SnackbarWrapper sesuai dengan nama file yang ada
 import SnackbarWrapper from '~/components/layout/SnackbarWrapper.vue'
 import PromoFetcher from '~/components/promo/PromoFetcher.vue'
 
@@ -20,7 +20,15 @@ const settingsStore = useSettingsStore()
 const authStore = useAuthStore()
 const route = useRoute()
 
+// BARU: State untuk melacak apakah aplikasi sudah mounted di client
+const isMounted = ref(false)
+
 initCore()
+
+// BARU: Setelah komponen terpasang di client, ubah state menjadi true
+onMounted(() => {
+  isMounted.value = true
+})
 
 // Style untuk tema utama, tidak ada perubahan
 const vAppStyle = computed(() => {
@@ -59,7 +67,7 @@ if (import.meta.client) {
   })
 }
 
-// [PENYEMPURNAAN] SEO diperkaya dengan meta description
+// SEO, tidak ada perubahan
 useHead({
   title: computed(() => settingsStore.browserTitle),
   titleTemplate: (titleChunk) => {
@@ -111,13 +119,13 @@ const shouldShowPromoFetcher = computed(() => {
           <NuxtPage />
         </NuxtLayout>
 
-        <ClientOnly>
-          <ScrollToTop />
-
-          <SnackbarWrapper />
-
-          <PromoFetcher v-if="shouldShowPromoFetcher" />
-        </ClientOnly>
+        <div v-if="isMounted">
+          <ClientOnly>
+            <ScrollToTop />
+            <SnackbarWrapper />
+            <PromoFetcher v-if="shouldShowPromoFetcher" />
+          </ClientOnly>
+        </div>
       </template>
     </VApp>
   </VLocaleProvider>
