@@ -136,7 +136,7 @@ const quotaWeeklyBarOptions = computed<ApexOptions>(() => {
   const axisLabelColorRgbVal = onSurfaceColorRgb.value ?? (vuetifyTheme.current.value.dark ? '255, 255, 255' : '0, 0, 0')
   const axisLabelColor = `rgba(${axisLabelColorRgbVal}, ${disabledOpacity.value})`
 
-  const noDataDisplayColor = chartContainerFailedOverall.value || props.parentError
+  const noDataDisplayColor = chartContainerFailedOverall.value || props.parentError != null
     ? errorDisplayColor.value
     : (props.parentLoading ? primaryColor.value : `rgba(${axisLabelColorRgbVal}, ${disabledOpacity.value})`)
 
@@ -365,9 +365,9 @@ function updateChartData() {
   if (chartContainerFailedOverall.value) {
     currentNoDataText = 'Area chart tidak dapat disiapkan.'
   }
-  else if (newParentError) {
+  else if (newParentError != null) {
     currentNoDataText = 'Gagal memuat data tren mingguan.'
-    if (!devErrorMessage.value && newParentError) {
+    if (devErrorMessage.value == null && newParentError != null) {
       devErrorMessage.value = typeof newParentError === 'string' ? newParentError : (newParentError.message || 'Error tidak diketahui dari parent.')
     }
   }
@@ -431,7 +431,7 @@ watch(() => props.parentLoading, (newVal, oldVal) => {
 }, { flush: 'post' })
 
 watch(() => props.parentError, (newErr) => {
-  if (newErr && !props.parentLoading) {
+  if (newErr != null && !props.parentLoading) {
     devErrorMessage.value = typeof newErr === 'string' ? newErr : (newErr.message || 'Error tidak diketahui dari parent.')
   }
   if (!props.parentLoading)
@@ -479,7 +479,7 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
 
 <template>
   <div class="chart-error-boundary">
-    <template v-if="!props.parentLoading && props.parentError && !chartContainerFailedOverall">
+    <template v-if="!props.parentLoading && props.parentError != null && !chartContainerFailedOverall">
       <VCard style="height: 100%;" class="vuexy-card d-flex flex-column" :class="{ 'vuexy-card-shadow': vuetifyTheme.current.value.dark }">
         <VCardItem class="vuexy-card-header pb-1 pt-4">
           <VCardTitle class="vuexy-card-title">
@@ -509,10 +509,10 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
             <p v-if="typeof props.parentError === 'string'" class="text-caption mt-1">
               Detail: {{ props.parentError }}
             </p>
-            <p v-else-if="props.parentError?.message" class="text-caption mt-1">
+            <p v-else-if="props.parentError?.message != null" class="text-caption mt-1">
               Detail: {{ props.parentError.message }}
             </p>
-            <div v-if="devErrorMessage && devErrorMessage !== (props.parentError?.message || props.parentError.toString())" class="dev-error-overlay-message mt-2">
+            <div v-if="devErrorMessage != null && devErrorMessage !== (props.parentError?.message || props.parentError.toString())" class="dev-error-overlay-message mt-2">
               <strong>Pesan Error Tambahan (Dev):</strong><br>{{ devErrorMessage }}
             </div>
           </VAlert>
@@ -522,9 +522,6 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
         </VCardText>
       </VCard>
     </template>
-
-    <!-- Hapus template v-else-if="!props.parentLoading && !props.quotaData && !props.parentError && !chartContainerFailedOverall" -->
-    <!-- Karena untuk unlimited, tidak ada konsep "data kuota tidak ditemukan" -->
 
     <template v-else-if="!props.parentLoading && chartContainerFailedOverall">
       <VCard style="height: 100%;" class="vuexy-card d-flex flex-column" :class="{ 'vuexy-card-shadow': vuetifyTheme.current.value.dark }">
@@ -553,7 +550,7 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
             <p class="text-body-2">
               Terjadi masalah saat menyiapkan area untuk menampilkan chart mingguan.
             </p>
-            <div v-if="devErrorMessage" class="dev-error-overlay-message mt-2">
+            <div v-if="devErrorMessage != null" class="dev-error-overlay-message mt-2">
               <strong>Pesan Error (Dev):</strong><br>{{ devErrorMessage }}
             </div>
           </VAlert>
@@ -582,7 +579,7 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
                     <div class="chart-inner-wrapper">
                       <ClientOnly>
                         <VueApexCharts
-                          v-if="isChartReadyToRender && VueApexCharts && weeklyDataProcessed && !props.parentLoading"
+                          v-if="isChartReadyToRender && VueApexCharts != null && weeklyDataProcessed && !props.parentLoading"
                           ref="weeklyChartRef"
                           :key="`${weeklyChartKey}-${vuetifyTheme.current.value.dark}-dinamis-mobile-unlimited`" type="bar" :height="chartHeight"
                           :options="quotaWeeklyBarOptions" :series="quotaWeeklyBarSeries"
@@ -590,11 +587,11 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
                         />
                         <div v-else-if="!props.parentLoading" class="chart-fallback-container text-center pa-2 d-flex flex-column justify-center align-items-center" :style="{ height: '100%', width: '100%', minHeight: chartHeightInPx }">
                           <VProgressCircular v-if="isLoadingInternalProcessing" indeterminate size="28" color="primary" class="mb-2" />
-                          <VIcon v-else-if="!isLoadingInternalProcessing && (!props.weeklyUsageData || !props.weeklyUsageData.success || (props.weeklyUsageData.weekly_data && props.weeklyUsageData.weekly_data.every(d => d === 0)))" size="32" :color="infoDisplayColor" class="mb-1">
+                          <VIcon v-else-if="!isLoadingInternalProcessing && (props.weeklyUsageData == null || !props.weeklyUsageData.success || (props.weeklyUsageData.weekly_data != null && props.weeklyUsageData.weekly_data.every(d => d === 0)))" size="32" :color="infoDisplayColor" class="mb-1">
                             tabler-chart-infographic
                           </VIcon>
                           <p class="text-caption text-medium-emphasis">
-                            {{ chartNoDataTextFromLogic || 'Menyiapkan tampilan chart...' }}
+                            {{ chartNoDataTextFromLogic !== '' ? chartNoDataTextFromLogic : 'Menyiapkan tampilan chart...' }}
                           </p>
                         </div>
                         <template #fallback>
@@ -616,7 +613,7 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
                     <div class="chart-inner-wrapper">
                       <ClientOnly>
                         <VueApexCharts
-                          v-if="isChartReadyToRender && VueApexCharts && weeklyDataProcessed && !props.parentLoading"
+                          v-if="isChartReadyToRender && VueApexCharts != null && weeklyDataProcessed && !props.parentLoading"
                           ref="weeklyChartRef"
                           :key="`${weeklyChartKey}-${vuetifyTheme.current.value.dark}-dinamis-desktop-unlimited`" type="bar" :height="chartHeight"
                           :options="quotaWeeklyBarOptions" :series="quotaWeeklyBarSeries"
@@ -624,11 +621,11 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
                         />
                         <div v-else-if="!props.parentLoading" class="chart-fallback-container text-center pa-2 d-flex flex-column justify-center align-items-center" :style="{ height: '100%', width: '100%', minHeight: chartHeightInPx }">
                           <VProgressCircular v-if="isLoadingInternalProcessing" indeterminate size="28" color="primary" class="mb-2" />
-                          <VIcon v-else-if="!isLoadingInternalProcessing && (!props.weeklyUsageData || !props.weeklyUsageData.success || (props.weeklyUsageData.weekly_data && props.weeklyUsageData.weekly_data.every(d => d === 0)))" size="32" :color="infoDisplayColor" class="mb-1">
+                          <VIcon v-else-if="!isLoadingInternalProcessing && (props.weeklyUsageData == null || !props.weeklyUsageData.success || (props.weeklyUsageData.weekly_data != null && props.weeklyUsageData.weekly_data.every(d => d === 0)))" size="32" :color="infoDisplayColor" class="mb-1">
                             tabler-chart-infographic
                           </VIcon>
                           <p class="text-caption text-medium-emphasis">
-                            {{ chartNoDataTextFromLogic || 'Menyiapkan tampilan chart...' }}
+                            {{ chartNoDataTextFromLogic !== '' ? chartNoDataTextFromLogic : 'Menyiapkan tampilan chart...' }}
                           </p>
                         </div>
                         <template #fallback>
@@ -648,23 +645,17 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
 
             <VCardText class="border rounded pa-sm-3 pa-2 mt-auto mb-0 mx-0 weekly-summary-box vuexy-inner-card">
               <VRow class="ma-0 justify-center">
-                <!-- Tambahkan justify-center untuk tampilan yang lebih baik -->
-                <!-- Hanya menampilkan "Total Pemakaian Hari Ini" -->
                 <VCol cols="12" sm="6" class="pa-2 text-center">
-                  <!-- Hapus weekly-summary-col dan tambahkan text-center -->
                   <div class="d-flex align-center justify-center mb-1">
-                    <!-- Tambahkan justify-center -->
                     <VAvatar color="primary" variant="tonal" rounded size="28" class="me-2">
-                      <VIcon icon="tabler-calendar-today" size="18" /> <!-- Ubah ikon untuk merefleksikan "Hari Ini" -->
+                      <VIcon icon="tabler-calendar-today" size="18" />
                     </VAvatar>
                     <span class="text-caption">Total Pemakaian Hari Ini</span>
                   </div>
                   <div class="summary-item-content d-flex flex-column align-center">
-                    <!-- Tambahkan d-flex flex-column align-center -->
                     <h6 class="font-weight-medium summary-value">
-                      {{ weeklyUsageData?.weekly_data && weeklyUsageData.weekly_data.length > 0 ? formatQuota(weeklyUsageData.weekly_data[weeklyUsageData.weekly_data.length - 1]) : 'N/A' }}
+                      {{ weeklyUsageData?.weekly_data != null && weeklyUsageData.weekly_data.length > 0 ? formatQuota(weeklyUsageData.weekly_data[weeklyUsageData.weekly_data.length - 1]) : 'N/A' }}
                     </h6>
-                    <!-- Hapus ProgressLinear karena tidak relevan untuk penggunaan unlimited harian -->
                   </div>
                 </VCol>
               </VRow>
