@@ -6,7 +6,10 @@ const { messages, remove } = useSnackbar()
 
 <template>
   <div class="snackbar-wrapper">
-    <VScaleTransition group tag="div">
+    <VScaleTransition
+      group
+      tag="div"
+    >
       <VAlert
         v-for="message in messages"
         :key="message.id"
@@ -19,17 +22,17 @@ const { messages, remove } = useSnackbar()
         elevation="6"
         border="start"
       >
-        <p class="text-body-2 mb-0" v-html="message.text" />
+        <p
+          class="text-body-2 mb-0"
+          v-html="message.text"
+        />
         <template #close>
           <VBtn
+            icon="tabler-x"
             variant="text"
             size="small"
             @click="remove(message.id)"
-            :icon="false"
-          >
-            <!-- Gunakan span dengan kelas langsung -->
-            <span class="tabler-x custom-icon"></span>
-          </VBtn>
+          />
         </template>
       </VAlert>
     </VScaleTransition>
@@ -45,14 +48,5 @@ const { messages, remove } = useSnackbar()
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-}
-
-/* Tambahkan style untuk ikon custom */
-.custom-icon {
-  display: inline-block;
-  width: 1.25rem;
-  height: 1.25rem;
-  color: inherit;
-  font-size: 1.25rem;
 }
 </style>
