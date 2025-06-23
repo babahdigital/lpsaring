@@ -131,7 +131,7 @@ onMounted(async () => {
   finally {
     isSaving.value = false
   }
-}
+};
 </script>
 
 <template>
