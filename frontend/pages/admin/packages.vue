@@ -105,12 +105,27 @@ function openDialog(type: 'edit' | 'delete', pkg: Package | null = null) {
 }
 
 async function handleAction(type: 'create' | 'update' | 'delete') {
-  let endpoint = '/admin/packages'; let method: 'POST' | 'PUT' | 'DELETE' = 'POST'; let successMessage = ''; let body: object | undefined
+  let endpoint = '/admin/packages'
+  let method: 'POST' | 'PUT' | 'DELETE' = 'POST'
+  let successMessage = ''
+  let body: object | undefined
 
   switch (type) {
-    case 'create': successMessage = 'Paket baru berhasil dibuat.'; body = editedPackage.value; break
-    case 'update': endpoint = `/admin/packages/${editedPackage.value.id}`; method = 'PUT'; successMessage = 'Paket berhasil diperbarui.'; body = editedPackage.value; break
-    case 'delete': endpoint = `/admin/packages/${selectedPackage.value!.id}`; method = 'DELETE'; successMessage = 'Paket berhasil dihapus.'; break
+    case 'create':
+      successMessage = 'Paket baru berhasil dibuat.'
+      body = editedPackage.value
+      break
+    case 'update':
+      endpoint = `/admin/packages/${editedPackage.value.id}`
+      method = 'PUT'
+      successMessage = 'Paket berhasil diperbarui.'
+      body = editedPackage.value
+      break
+    case 'delete':
+      endpoint = `/admin/packages/${selectedPackage.value!.id}`
+      method = 'DELETE'
+      successMessage = 'Paket berhasil dihapus.'
+      break
   }
 
   const apiCall = async () => {
@@ -143,13 +158,18 @@ function onProfilesCreated() {
   }
 }
 
-function formatNumber(value: number | string): string { return new Intl.NumberFormat('id-ID').format(Number(value) || 0) }
-function unformatNumber(value: string): number { return Number.parseInt(String(value).replace(/\D/g, ''), 10) || 0 }
+function formatNumber(value: number | string): string {
+  return new Intl.NumberFormat('id-ID').format(Number(value) || 0)
+}
+function unformatNumber(value: string): number {
+  return Number.parseInt(String(value).replace(/\D/g, ''), 10) || 0
+}
 watch(formattedPrice, (newValue) => {
   const cleanValue = String(newValue).replace(/\D/g, '')
   editedPackage.value.price = unformatNumber(cleanValue)
   const newFormattedValue = formatNumber(cleanValue)
-  if (formattedPrice.value !== newFormattedValue) { formattedPrice.value = newFormattedValue }
+  if (formattedPrice.value !== newFormattedValue)
+    formattedPrice.value = newFormattedValue
 })
 watch(() => dialog.edit, (isOpening) => {
   if (isOpening) {
@@ -158,14 +178,17 @@ watch(() => dialog.edit, (isOpening) => {
   }
 })
 watch(isUnlimited, (isNowUnlimited) => {
-  if (isNowUnlimited)
+  if (isNowUnlimited) {
     editedPackage.value.data_quota_gb = 0
+  }
 })
 watch(() => editedPackage.value.data_quota_gb, (newQuota) => {
-  if (newQuota === 0)
+  if (newQuota === 0) {
     isUnlimited.value = true
-  else if (newQuota && newQuota > 0 && isUnlimited.value)
+  }
+  else if (newQuota && newQuota > 0 && isUnlimited.value) {
     isUnlimited.value = false
+  }
 })
 
 useHead({ title: 'Manajemen Paket Jualan' })
