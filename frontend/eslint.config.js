@@ -43,6 +43,9 @@ export default antfu(
       {
         files: ['**/*.{ts,tsx,vue}'],
         rules: {
+          'vue/valid-v-slot': ['error', {
+            allowModifiers: true,
+          }],
           'ts/strict-boolean-expressions': [
             'error',
             {
