@@ -24,13 +24,9 @@ export const usePackageStore = defineStore('packages', () => {
     return packages.value.filter(pkg => pkg.is_active).length
   })
 
-  // Gunakan nama yang konsisten untuk state dan getter
-  // const isLoadingPackages = computed(() => isLoading.value);
-  // const getFetchError = computed(() => error.value);
-
   async function fetchPackages(forceRefresh: boolean = false) {
-    if (!forceRefresh && packages.value.length > 0 && !error.value) {
-      // isLoading.value = false; // Tidak perlu jika sudah false
+    // PERBAIKAN: Mengganti !error.value dengan pengecekan null yang eksplisit.
+    if (!forceRefresh && packages.value.length > 0 && error.value == null) {
       return
     }
 
@@ -49,24 +45,29 @@ export const usePackageStore = defineStore('packages', () => {
         packages.value = response.data
       }
       else {
-        throw new Error(response?.message || 'Struktur respons API paket tidak valid.')
+        // PERBAIKAN: Mengganti || dengan ?? untuk nilai default.
+        throw new Error(response?.message ?? 'Struktur respons API paket tidak valid.')
       }
     }
     catch (err: any) {
-      const errorData = err.data || {}
-      const status = err.statusCode || err.response?.status || 500
+      // PERBAIKAN: Mengganti || dengan ?? untuk nilai default.
+      const errorData = err.data ?? {}
+      // PERBAIKAN: Mengganti || dengan ?? untuk nilai fallback.
+      const status = err.statusCode ?? err.response?.status ?? 500
 
       let message = 'Terjadi kesalahan saat memuat paket.'
       if (status === 404) {
         message = 'Endpoint API paket tidak ditemukan.'
       }
       else if (status === 401) {
-        message = 'Autentikasi diperlukan untuk paket.' // Interceptor $api akan menangani logout
+        message = 'Autentikasi diperlukan untuk paket.'
       }
-      else if (errorData.message) {
+      // PERBAIKAN: Menambah pengecekan tipe data string yang eksplisit.
+      else if (typeof errorData.message === 'string' && errorData.message) {
         message = errorData.message
       }
-      else if (err.message) {
+      // PERBAIKAN: Menambah pengecekan tipe data string yang eksplisit.
+      else if (typeof err.message === 'string' && err.message) {
         message = err.message
       }
       error.value = `${message} [Status: ${status}]`
