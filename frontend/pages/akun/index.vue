@@ -59,7 +59,9 @@ const displayRole = computed(() => {
   return roles[currentUser.value.role] || currentUser.value.role
 })
 
-// --- Fungsi-Fungsi (Tidak ada perubahan logika, hanya format) ---
+// --- Fungsi-Fungsi ---
+const formatCurrency = (amount: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount)
+
 function formatPhoneNumberForDisplay(phone?: string | null): string {
   if (!phone)
     return ''
@@ -214,7 +216,7 @@ function formatDate(dateString?: string | Date | null) {
     return 'N/A'
   return new Date(dateString).toLocaleString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })
 }
-const formatCurrency = (amount: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount)
+
 useHead({ title: 'Pengaturan Akun' })
 </script>
 
@@ -375,7 +377,8 @@ useHead({ title: 'Pengaturan Akun' })
                     <template #append>
                       <VChip :color="currentUser.is_active ? 'success' : 'warning'" size="small" label>
                         {{ currentUser.is_active ? 'Aktif' : 'Tidak Aktif' }}
-                      </VChip>
+                        </V-Chip>
+                      </vchip>
                     </template>
                   </VListItem>
                   <VListItem>
@@ -413,35 +416,36 @@ useHead({ title: 'Pengaturan Akun' })
           Ubah Password Portal
           <VSpacer />
           <VBtn icon="tabler-x" variant="text" @click="isPasswordDialogVisible = false" />
-        </VCardTitle>
-        <VDivider />
-        <VCardText class="pt-4">
-          <VAlert v-if="passwordAlert" :type="passwordAlert.type" variant="tonal" density="compact" closable class="mb-4" @update:model-value="passwordAlert = null">
-            {{ passwordAlert.message }}
-          </VAlert>
-          <VForm ref="passwordFormRef" @submit.prevent="changePassword">
-            <VRow>
-              <VCol cols="12">
-                <AppTextField v-model="passwordData.current_password" label="Password Saat Ini" :type="isPasswordVisible ? 'text' : 'password'" :append-inner-icon="isPasswordVisible ? 'tabler-eye-off' : 'tabler-eye'" :rules="[requiredRule]" density="compact" autocomplete="current-password" @click:append-inner="isPasswordVisible = !isPasswordVisible" />
-              </VCol>
-              <VCol cols="12">
-                <AppTextField v-model="passwordData.new_password" label="Password Baru" :type="isPasswordVisible ? 'text' : 'password'" :rules="[requiredRule, passwordLengthRule]" density="compact" autocomplete="new-password" />
-              </VCol>
-              <VCol cols="12">
-                <AppTextField v-model="confirmPassword" label="Konfirmasi Password Baru" :type="isPasswordVisible ? 'text' : 'password'" :rules="[requiredRule, passwordMatchRule]" density="compact" autocomplete="new-password" />
-              </VCol>
-            </VRow>
-          </VForm>
-        </VCardText>
-        <VCardActions>
-          <VSpacer />
-          <VBtn color="secondary" variant="text" :disabled="passwordLoading" @click="isPasswordDialogVisible = false">
-            Batal
-          </VBtn>
-          <VBtn color="primary" variant="elevated" :loading="passwordLoading" @click="changePassword">
-            Simpan Password
-          </VBtn>
-        </VCardActions>
+          </V-CardTitle>
+          <VDivider />
+          <VCardText class="pt-4">
+            <VAlert v-if="passwordAlert" :type="passwordAlert.type" variant="tonal" density="compact" closable class="mb-4" @update:model-value="passwordAlert = null">
+              {{ passwordAlert.message }}
+            </VAlert>
+            <VForm ref="passwordFormRef" @submit.prevent="changePassword">
+              <VRow>
+                <VCol cols="12">
+                  <AppTextField v-model="passwordData.current_password" label="Password Saat Ini" :type="isPasswordVisible ? 'text' : 'password'" :append-inner-icon="isPasswordVisible ? 'tabler-eye-off' : 'tabler-eye'" :rules="[requiredRule]" density="compact" autocomplete="current-password" @click:append-inner="isPasswordVisible = !isPasswordVisible" />
+                </VCol>
+                <VCol cols="12">
+                  <AppTextField v-model="passwordData.new_password" label="Password Baru" :type="isPasswordVisible ? 'text' : 'password'" :rules="[requiredRule, passwordLengthRule]" density="compact" autocomplete="new-password" />
+                </VCol>
+                <VCol cols="12">
+                  <AppTextField v-model="confirmPassword" label="Konfirmasi Password Baru" :type="isPasswordVisible ? 'text' : 'password'" :rules="[requiredRule, passwordMatchRule]" density="compact" autocomplete="new-password" />
+                </VCol>
+              </VRow>
+            </VForm>
+          </VCardText>
+          <VCardActions>
+            <VSpacer />
+            <VBtn color="secondary" variant="text" :disabled="passwordLoading" @click="isPasswordDialogVisible = false">
+              Batal
+            </VBtn>
+            <VBtn color="primary" variant="elevated" :loading="passwordLoading" @click="changePassword">
+              Simpan Password
+            </VBtn>
+          </VCardActions>
+        </vcardtitle>
       </VCard>
     </VDialog>
   </VContainer>
