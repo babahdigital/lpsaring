@@ -11,8 +11,8 @@ const srcDir = fileURLToPath(new URL('.', import.meta.url))
 console.log('Proxy Target:', process.env.NUXT_INTERNAL_API_BASE_URL)
 console.log('Public API URL:', process.env.NUXT_PUBLIC_API_BASE_URL)
 
-const host = process.env.NUXT_HOST || 'localhost'
-const port = Number.parseInt(process.env.NUXT_PORT || '3010', 10)
+const host = process.env.NUXT_HOST ?? 'localhost'
+const port = Number.parseInt(process.env.NUXT_PORT ?? '3010', 10)
 
 export default defineNuxtConfig({
   compatibilityDate: '2025-04-23',
@@ -47,7 +47,7 @@ export default defineNuxtConfig({
       link: [{
         rel: 'icon',
         type: 'image/x-icon',
-        href: `${process.env.NUXT_APP_BASE_URL || ''}/favicon.ico`,
+        href: `${process.env.NUXT_APP_BASE_URL ?? ''}/favicon.ico`,
       }],
     },
   },
@@ -110,9 +110,9 @@ export default defineNuxtConfig({
   vite: {
     define: {
       'process.env': {
-        NODE_ENV: `"${process.env.NODE_ENV || 'development'}"`,
-        NUXT_PUBLIC_MIDTRANS_CLIENT_KEY: `"${process.env.NUXT_PUBLIC_MIDTRANS_CLIENT_KEY || ''}"`,
-        NUXT_PUBLIC_MIDTRANS_ENV: `"${process.env.NUXT_PUBLIC_MIDTRANS_ENV || 'sandbox'}"`,
+        NODE_ENV: `"${process.env.NODE_ENV ?? 'development'}"`,
+        NUXT_PUBLIC_MIDTRANS_CLIENT_KEY: `"${process.env.NUXT_PUBLIC_MIDTRANS_CLIENT_KEY ?? ''}"`,
+        NUXT_PUBLIC_MIDTRANS_ENV: `"${process.env.NUXT_PUBLIC_MIDTRANS_ENV ?? 'sandbox'}"`,
       },
     },
     // resolve.alias tidak lagi diperlukan karena sudah diatur di root
@@ -151,18 +151,18 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     public: {
-      apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || '/api',
-      midtransClientKey: process.env.NUXT_PUBLIC_MIDTRANS_CLIENT_KEY || '',
-      midtransEnv: process.env.NUXT_PUBLIC_MIDTRANS_ENV || 'sandbox',
-      mapboxAccessToken: process.env.MAPBOX_ACCESS_TOKEN || '',
+      apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL ?? '/api',
+      midtransClientKey: process.env.NUXT_PUBLIC_MIDTRANS_CLIENT_KEY ?? '',
+      midtransEnv: process.env.NUXT_PUBLIC_MIDTRANS_ENV ?? 'sandbox',
+      mapboxAccessToken: process.env.MAPBOX_ACCESS_TOKEN ?? '',
     },
-    internalApiBaseUrl: process.env.NUXT_INTERNAL_API_BASE_URL || 'http://backend:5010/api',
+    internalApiBaseUrl: process.env.NUXT_INTERNAL_API_BASE_URL ?? 'http://backend:5010/api',
   },
 
   nitro: {
     devProxy: {
       '/api': {
-        target: process.env.NUXT_INTERNAL_API_BASE_URL || 'http://backend:5010/api',
+        target: process.env.NUXT_INTERNAL_API_BASE_URL ?? 'http://backend:5010/api',
         changeOrigin: true,
         headers: {
           Connection: 'keep-alive',
