@@ -86,7 +86,7 @@ async function loadInitialData() {
         throw new Error(authStore.error ?? 'Gagal memuat data pengguna.')
     }
     populateEditForm()
-    if (isUser.value)
+    if (isUser.value === true) // Perbaikan: Perbandingan eksplisit
       fetchSpendingSummary()
   }
   catch (error: any) {
@@ -100,7 +100,7 @@ async function saveProfile() {
   if (profileForm.value === null) // Perbaikan: Perbandingan eksplisit
     return
   const { valid } = await profileForm.value.validate()
-  if (!valid)
+  if (valid === false) // Perbaikan: Perbandingan eksplisit
     return
 
   securityLoading.value = true
@@ -189,7 +189,7 @@ async function changePassword() {
   if (passwordFormRef.value === null) // Perbaikan: Perbandingan eksplisit
     return
   const { valid } = await passwordFormRef.value.validate()
-  if (!valid)
+  if (valid === false) // Perbaikan: Perbandingan eksplisit
     return
   passwordLoading.value = true
   passwordAlert.value = null
