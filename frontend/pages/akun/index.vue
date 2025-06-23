@@ -335,7 +335,6 @@ useHead({ title: 'Pengaturan Akun' })
                     </div>
                   </div>
                 </template>
-                </vcardtitle>
               </VCardItem>
               <VCardText>
                 <div v-if="spendingChartLoading" class="text-center py-4">
