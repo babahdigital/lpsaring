@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import type { VDataTableServer } from 'vuetify/labs/VDataTable'
-import { onMounted, reactive, ref, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import ProcessRequestDialog from '@/components/request/ProcessRequestDialog.vue'
 import { useSnackbar } from '@/composables/useSnackbar' // Menggunakan composable useSnackbar
@@ -59,19 +59,19 @@ async function fetchRequests() {
     totalRequests.value = response.totalItems
   }
   catch (error: unknown) { // Mengubah 'any' menjadi 'unknown' untuk pengecekan tipe yang lebih ketat
-    let errorMessage = 'Server error';
+    let errorMessage = 'Server error'
 
     // Perbaikan: Penanganan error dengan pengecekan tipe eksplisit untuk 'data'
     if (typeof error === 'object' && error !== null && 'data' in error) {
-      const apiErrorData = (error as { data: unknown }).data; // Mengakses 'data' sebagai unknown
+      const apiErrorData = (error as { data: unknown }).data // Mengakses 'data' sebagai unknown
 
       // Perbaikan: Pengecekan eksplisit untuk 'apiErrorData'
       if (typeof apiErrorData === 'object' && apiErrorData !== null) {
-        const parsedErrorData = apiErrorData as Record<string, unknown>; // Casting ke Record untuk akses properti
+        const parsedErrorData = apiErrorData as Record<string, unknown> // Casting ke Record untuk akses properti
 
         // Pengecekan untuk 'message'
         if ('message' in parsedErrorData && typeof parsedErrorData.message === 'string') {
-          errorMessage = parsedErrorData.message;
+          errorMessage = parsedErrorData.message
         }
         // Pengecekan untuk 'errors' (jika ada struktur error array)
         else if ('errors' in parsedErrorData && Array.isArray(parsedErrorData.errors)) {
@@ -80,7 +80,7 @@ async function fetchRequests() {
               return String(err.message)
             }
             return String(err)
-          }).join(' ');
+          }).join(' ')
         }
       }
     }

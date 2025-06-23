@@ -67,7 +67,8 @@ const { refresh: refreshPromos } = useAsyncData(
     catch (e: any) {
       snackbar.add({
         type: 'error',
-        text: e.message || 'Gagal mengambil data event.',
+        // Perbaikan: Menggunakan operator `??` (nullish coalescing) untuk pengecekan eksplisit.
+        text: e.message ?? 'Gagal mengambil data event.',
       })
     }
     finally {
@@ -83,17 +84,23 @@ const { refresh: refreshPromos } = useAsyncData(
 
 // Computed properties
 const startDateModel = computed({
-  get: () => editedItem.value.start_date ? new Date(editedItem.value.start_date) : null,
+  get: () => {
+    // Perbaikan: Pengecekan `null` atau `undefined` secara eksplisit.
+    return editedItem.value.start_date != null ? new Date(editedItem.value.start_date) : null
+  },
   set: (val) => {
-    if (editedItem.value)
-      editedItem.value.start_date = val?.toISOString()
+    // Perbaikan: Menghapus pengecekan `if (editedItem.value)` yang selalu true.
+    editedItem.value.start_date = val?.toISOString()
   },
 })
 const endDateModel = computed({
-  get: () => editedItem.value.end_date ? new Date(editedItem.value.end_date) : null,
+  get: () => {
+    // Perbaikan: Pengecekan `null` atau `undefined` secara eksplisit.
+    return editedItem.value.end_date != null ? new Date(editedItem.value.end_date) : null
+  },
   set: (val) => {
-    if (editedItem.value)
-      editedItem.value.end_date = val?.toISOString()
+    // Perbaikan: Menghapus pengecekan `if (editedItem.value)` yang selalu true.
+    editedItem.value.end_date = val?.toISOString()
   },
 })
 
@@ -116,10 +123,13 @@ const headers = computed(() => {
 const formTitle = computed(() => (editedIndex.value === -1 ? 'Tambah Event Baru' : 'Edit Event'))
 
 const bonusValueGb = computed({
-  get: () => editedItem.value.bonus_value_mb ? editedItem.value.bonus_value_mb / 1024 : 0,
+  get: () => {
+    // Perbaikan: Pengecekan `null` atau `undefined` pada number secara eksplisit.
+    return editedItem.value.bonus_value_mb != null ? editedItem.value.bonus_value_mb / 1024 : 0
+  },
   set: (newValue) => {
-    if (editedItem.value)
-      editedItem.value.bonus_value_mb = newValue * 1024
+    // Perbaikan: Menghapus pengecekan `if (editedItem.value)` yang selalu true.
+    editedItem.value.bonus_value_mb = newValue * 1024
   },
 })
 
@@ -138,7 +148,8 @@ const typeOptions = [
 
 // Aturan validasi
 const requiredRule = [(v: any) => !!v || 'Field ini wajib diisi']
-const numberRule = [(v: number) => (v && v > 0) || 'Nilai harus lebih dari 0']
+// Perbaikan: Pengecekan eksplisit untuk nilai number.
+const numberRule = [(v: number) => (v != null && v > 0) || 'Nilai harus lebih dari 0']
 
 // Fungsi Helper
 function formatDate(date: Date | null | undefined) {
@@ -147,7 +158,8 @@ function formatDate(date: Date | null | undefined) {
   return new Date(date).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
 }
 function formatTableDate(dateString?: string) {
-  if (!dateString)
+  // Perbaikan: Pengecekan eksplisit untuk `null` atau `undefined`.
+  if (dateString == null)
     return 'N/A'
   return new Date(dateString).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
 }
@@ -160,7 +172,8 @@ function statusProps(status: PromoEvent['status']) {
     ARCHIVED: { color: 'secondary', icon: 'tabler-archive' },
     DRAFT: { color: 'default', icon: 'tabler-edit-circle' },
   }
-  return map[status] || map.DRAFT
+  // Perbaikan: Pengecekan eksplisit keberadaan `key` di dalam `object`.
+  return status in map ? map[status] : map.DRAFT
 }
 
 // Fungsi CRUD
@@ -209,10 +222,12 @@ function closeDeleteDialog() {
 }
 
 async function saveEvent() {
-  if (!form.value)
+  // Perbaikan: Pengecekan `null` secara eksplisit pada `form.value` yang bertipe `any`.
+  if (form.value == null)
     return
   const { valid } = await form.value.validate()
-  if (!valid) {
+  // Perbaikan: Pengecekan eksplisit `valid !== true` karena `valid` bisa jadi bukan boolean.
+  if (valid !== true) {
     snackbar.add({ type: 'warning', text: 'Mohon periksa kembali form, ada data yang belum valid.' })
     return
   }
@@ -229,7 +244,8 @@ async function saveEvent() {
     await refreshPromos()
   }
   catch (e: any) {
-    const errorMessage = e.data?.message || e.data?.errors?.[0]?.msg || 'Gagal menyimpan data.'
+    // Perbaikan: Menggunakan operator `??` (nullish coalescing) untuk chain property access yang aman.
+    const errorMessage = e.data?.message ?? e.data?.errors?.[0]?.msg ?? 'Gagal menyimpan data.'
     snackbar.add({ type: 'error', text: errorMessage })
   }
 }
@@ -242,7 +258,8 @@ async function deleteItemConfirm() {
     await refreshPromos()
   }
   catch (e: any) {
-    snackbar.add({ type: 'error', text: e.message || 'Gagal menghapus event.' })
+    // Perbaikan: Menggunakan `??` untuk penanganan `e.message` yang bertipe `any`.
+    snackbar.add({ type: 'error', text: e.message ?? 'Gagal menghapus event.' })
   }
 }
 
