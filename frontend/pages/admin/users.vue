@@ -53,16 +53,22 @@ const availableBloks = ref<string[]>([])
 const availableKamars = ref<string[]>([])
 const isAlamatLoading = ref(false)
 
-const formatPhoneNumberDisplay = (phone: string | null) => (phone?.startsWith('+62') ? `0${phone.substring(3)}` : phone)
+// Perbaikan baris 67 (sesuai deskripsi error baris 56): Handle null/undefined secara eksplisit
+const formatPhoneNumberDisplay = (phone: string | null): string | null => {
+  if (phone === null || phone === undefined || phone === '') {
+    return null; // Mengembalikan null atau string kosong sesuai kebutuhan jika phone null/undefined/kosong
+  }
+  return phone.startsWith('+62') ? `0${phone.substring(3)}` : phone;
+};
 const formatCreatedAt = (date: string) => new Date(date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
 const roleMap = { USER: { text: 'User', color: 'info' }, KOMANDAN: { text: 'Komandan', color: 'success' }, ADMIN: { text: 'Admin', color: 'primary' }, SUPER_ADMIN: { text: 'Support', color: 'secondary' } }
 const statusMap = { APPROVED: { text: 'Disetujui', color: 'success' }, PENDING_APPROVAL: { text: 'Menunggu', color: 'warning' }, REJECTED: { text: 'Ditolak', color: 'error' } }
 const roleFilterOptions = computed(() => {
   const allFilters = [{ text: 'User', value: 'USER' }, { text: 'Komandan', value: 'KOMANDAN' }]
-  if (authStore.isAdmin === true || authStore.isSuperAdmin === true) // Perbaikan baris 56
+  if (authStore.isAdmin === true || authStore.isSuperAdmin === true)
     allFilters.push({ text: 'Admin', value: 'ADMIN' })
 
-  if (authStore.isSuperAdmin === true) // Perbaikan baris 56 (ini bagian dari blok yang sama, tapi penting untuk diperhatikan)
+  if (authStore.isSuperAdmin === true)
     allFilters.push({ text: 'Support', value: 'SUPER_ADMIN' })
 
   return allFilters
@@ -78,8 +84,9 @@ const headers = computed(() => {
     { title: 'AKSI', key: 'actions', sortable: false, align: 'center', width: '150px' },
   ]
   // Perbaikan baris 81: Perbandingan eksplisit untuk smAndDown.value dan pengecekan h.key
+  // Menghapus h !== null karena h selalu objek dan truthy.
   return smAndDown.value === true
-    ? base.filter(h => h !== null && h.key !== null && ['full_name', 'approval_status', 'actions'].includes(h.key))
+    ? base.filter(h => h.key !== null && h.key !== undefined && ['full_name', 'approval_status', 'actions'].includes(String(h.key)))
     : base
 })
 
@@ -89,7 +96,7 @@ onMounted(() => {
   fetchAlamatOptions()
 })
 watch([() => options.value, roleFilter], () => {
-  if (options.value !== null) // Perbaikan baris 91
+  if (options.value !== null && options.value !== undefined) // Perbaikan baris 91
     options.value.page = 1
   fetchUsers()
 }, { deep: true })
@@ -97,7 +104,7 @@ let searchTimeout: ReturnType<typeof setTimeout>
 watch(search, () => {
   clearTimeout(searchTimeout)
   searchTimeout = setTimeout(() => {
-    if (options.value !== null) // Perbaikan baris 99
+    if (options.value !== null && options.value !== undefined) // Perbaikan baris 99
       options.value.page = 1
     fetchUsers()
   }, 500)
@@ -107,10 +114,10 @@ async function fetchUsers() {
   loading.value = true
   try {
     const params = new URLSearchParams()
-    if (options.value !== null) { // Perbaikan baris 109
+    if (options.value !== null && options.value !== undefined) { // Perbaikan baris 109
       params.append('page', String(options.value.page))
       params.append('itemsPerPage', String(options.value.itemsPerPage))
-      if (options.value.sortBy !== undefined && options.value.sortBy.length > 0) { // Perbaikan baris 112
+      if (Array.isArray(options.value.sortBy) && options.value.sortBy.length > 0) { // Perbaikan baris 112
         params.append('sortBy', options.value.sortBy[0].key)
         params.append('sortOrder', options.value.sortBy[0].order)
       }
@@ -162,7 +169,7 @@ function openViewDialog(user: User) {
 function openConfirmDialog(props: { title: string, message: string, color?: string, action: () => Promise<void> }) {
   confirmProps.title = props.title
   confirmProps.message = props.message
-  confirmProps.color = props.color || 'primary'
+  confirmProps.color = props.color ?? 'primary' // Perbaikan baris 165: Menggunakan nullish coalescing operator
   confirmProps.action = props.action
   dialogState.confirm = true
 }
@@ -173,7 +180,7 @@ function closeAllDialogs() {
   dialogState.confirm = false
 }
 async function handleSaveUser(payload: EditPayload) {
-  const isUpdate = payload.id !== undefined && payload.id !== null && payload.id !== '' // Perbaikan baris 173
+  const isUpdate = payload.id !== undefined && payload.id !== null && payload.id !== ''; // Perbaikan baris 173
   const endpoint = isUpdate ? `/admin/users/${payload.id}` : '/admin/users'
   const method = isUpdate ? 'PUT' : 'POST'
   await performAction(endpoint, method, isUpdate ? 'Data pengguna berhasil diperbarui.' : 'Pengguna baru berhasil dibuat.', { body: payload }, isUpdate ? payload.id : undefined)
@@ -228,11 +235,11 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
     await fetchUsers()
     // Perbaikan baris 226: Menambahkan perbandingan eksplisit dan pengecekan untuk response
     if (dialogState.view === true && selectedUser.value !== null && selectedUser.value.id === updatedItemId && response !== null && response.user !== undefined) {
-      selectedUser.value = { ...selectedUser.value, ...response.user }
+        selectedUser.value = { ...selectedUser.value, ...response.user };
     }
   }
   catch (error: any) {
-    const errorMessage = (typeof error.data?.message === 'string' && error.data.message !== '') ? error.data.message : 'Operasi gagal. Silakan coba lagi.' // Perbaikan baris 230
+    const errorMessage = (typeof error.data?.message === 'string' && error.data.message !== '') ? error.data.message : 'Operasi gagal. Silakan coba lagi.'; // Perbaikan baris 230
     showSnackbar({ type: 'error', title: 'Terjadi Kesalahan', text: errorMessage })
   }
   finally {
@@ -295,7 +302,6 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
               <small class="text-medium-emphasis">{{ formatPhoneNumberDisplay(item.phone_number) }}</small>
             </div>
             <VTooltip v-if="item.is_unlimited_user === true" location="top">
-              <!-- Perbaikan: item.is_unlimited_user -->
               <template #activator="{ props: tooltipProps }">
                 <VIcon v-bind="tooltipProps" icon="tabler-infinity" color="success" size="small" class="ms-2" />
               </template>
@@ -344,13 +350,11 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
             </template>
             <template v-else>
               <VBtn v-if="(authStore.isSuperAdmin === true || authStore.isAdmin === true)" icon variant="text" color="primary" size="small" @click="openEditDialog(item)">
-                <!-- Perbaikan: isSuperAdmin dan isAdmin -->
                 <VIcon icon="tabler-pencil" /><VTooltip activator="parent">
                   Edit
                 </VTooltip>
               </VBtn>
               <VBtn v-if="item.id !== authStore.user?.id && (authStore.isSuperAdmin === true || (authStore.isAdmin === true && user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN'))" icon variant="text" color="error" size="small" @click="handleDelete(item)">
-                <!-- Perbaikan: isSuperAdmin dan isAdmin -->
                 <VIcon icon="tabler-trash" /><VTooltip activator="parent">
                   Hapus
                 </VTooltip>
@@ -366,7 +370,6 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
       </VDataTableServer>
       <div v-else class="pa-4">
         <div v-if="users.length === 0 && loading === false" class="py-8 text-center text-medium-emphasis">
-          <!-- Perbaikan: loading === false -->
           <VIcon icon="tabler-database-off" size="32" class="mb-2" /><p>Tidak ada data pengguna.</p>
         </div>
         <VCard v-for="user in users" v-else :key="user.id" class="mb-3">
@@ -377,7 +380,8 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
                   <span class="text-sm font-weight-medium">{{ user.full_name.substring(0, 2).toUpperCase() }}</span>
                 </VAvatar>
                 <div class="d-flex flex-column">
-                  <span class="font-weight-medium text-high-emphasis">{{ user.full_name }}</span><small class="text-medium-emphasis">{{ formatPhoneNumberDisplay(user.phone_number) }}</small>
+                  <span class="font-weight-medium text-high-emphasis">{{ formatPhoneNumberDisplay(user.phone_number) }}</span>
+                  <small class="text-medium-emphasis">{{ formatPhoneNumberDisplay(user.phone_number) }}</small>
                 </div>
               </div>
               <VChip :color="statusMap[user.approval_status]?.color" size="small" label>
@@ -425,7 +429,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 
     <UserDetailDialog v-model="dialogState.view" :user="selectedUser" />
     <UserAddDialog v-model="dialogState.add" :loading="loading" :available-bloks="availableBloks" :available-kamars="availableKamars" :is-alamat-loading="isAlamatLoading" @save="handleSaveUser" />
-    <UserEditDialog v-if="dialogState.edit === true && editedUser !== null" v-model="dialogState.edit" :user="editedUser" :loading="loading" :available-bloks="availableBloks" :available-kamars="availableKamars" :is-alamat-loading="isAlamatLoading" @save="handleSaveUser" @reset-hotspot="handleResetHotspot" @generate-admin-pass="handleGenerateAdminPass" /> <!-- Perbaikan: dialogState.edit -->
+    <UserEditDialog v-if="dialogState.edit === true && editedUser !== null" v-model="dialogState.edit" :user="editedUser" :loading="loading" :available-bloks="availableBloks" :available-kamars="availableKamars" :is-alamat-loading="isAlamatLoading" @save="handleSaveUser" @reset-hotspot="handleResetHotspot" @generate-admin-pass="handleGenerateAdminPass" />
     <UserActionConfirmDialog v-model="dialogState.confirm" :title="confirmProps.title" :message="confirmProps.message" :color="confirmProps.color" :loading="loading" @confirm="confirmProps.action" />
   </div>
 </template>
