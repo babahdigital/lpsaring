@@ -57,10 +57,10 @@ const snackbarText = ref('')
 const snackbarColor = ref<'error' | 'success' | 'info' | 'warning'>('info')
 const snackbarTimeout = ref(5000)
 
-if (isRef(fetchPackagesError)) {
+// DIPERBAIKI: Menambahkan pemeriksaan null eksplisit sebelum isRef untuk mengatasi aturan linter yang ketat
+if (fetchPackagesError != null && isRef(fetchPackagesError)) {
   watch(fetchPackagesError, (newError) => {
     if (newError != null && newError.statusCode !== 401 && newError.statusCode !== 403) {
-      // DIPERBAIKI: Pemeriksaan eksplisit untuk pesan error dari server
       const messageFromServer = (newError as any)?.data?.message
       const errorMessage = (typeof messageFromServer === 'string' && messageFromServer)
         ? messageFromServer
@@ -84,7 +84,6 @@ const nameRules = [
 ]
 const phoneRules = [
   (v: string) => (v != null && v.trim() !== '') || 'Nomor WhatsApp wajib diisi.',
-  // DIPERBAIKI: Menggunakan perbandingan boolean eksplisit untuk memenuhi aturan linter
   (v: string) => /^\+628[1-9]\d{8,12}$/.test(normalizePhoneNumber(v)) === true || 'Format: +628xx... (11-15 digit).',
 ]
 
@@ -173,7 +172,6 @@ function handlePackageSelection(pkg: Package) {
 }
 
 async function handleContactSubmit() {
-  // DIPERBAIKI: Menggunakan perbandingan eksplisit dengan null
   if (contactFormRef.value == null)
     return
   const { valid } = await contactFormRef.value.validate()
@@ -199,10 +197,13 @@ async function handleContactSubmit() {
   }
   catch (err: any) {
     let errorMessage = 'Terjadi kesalahan.'
-    // DIPERBAIKI: Menggunakan perbandingan eksplisit `!= null` untuk nilai bertipe `any`
-    if (err != null && err.data != null && typeof err.data.message === 'string' && err.data.message.length > 0)
-      errorMessage = err.data.message
-
+    // DIPERBAIKI: Pemeriksaan error yang lebih robust dan eksplisit
+    if (err != null && typeof err.data === 'object' && err.data != null) {
+      const message = err.data.message
+      if (typeof message === 'string' && message.length > 0) {
+        errorMessage = message
+      }
+    }
     contactSubmitError.value = errorMessage
   }
   finally {
@@ -234,10 +235,13 @@ async function initiatePayment(packageId: string) {
   }
   catch (err: any) {
     let errorMessage = 'Gagal memulai pembayaran.'
-    // DIPERBAIKI: Menggunakan perbandingan eksplisit `!= null` untuk nilai bertipe `any`
-    if (err != null && err.data != null && typeof err.data.message === 'string' && err.data.message.length > 0)
-      errorMessage = err.data.message
-
+    // DIPERBAIKI: Pemeriksaan error yang lebih robust dan eksplisit
+    if (err != null && typeof err.data === 'object' && err.data != null) {
+      const message = err.data.message
+      if (typeof message === 'string' && message.length > 0) {
+        errorMessage = message
+      }
+    }
     showSnackbar(errorMessage, 'error')
     isInitiatingPayment.value = null
   }
@@ -249,7 +253,6 @@ function closeContactDialog() {
 }
 
 onMounted(async () => {
-  // DIPERBAIKI: Menghapus pemeriksaan `authStore` yang selalu `true`
   if (authStore.isInitialized !== true) {
     await authStore.initializeAuth()
   }
