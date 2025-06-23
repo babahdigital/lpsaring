@@ -3,7 +3,8 @@ import { useSnackbar } from '@/composables/useSnackbar'
 
 const { messages, remove } = useSnackbar()
 
-// Peta untuk menentukan ikon secara eksplisit berdasarkan tipe pesan
+// Peta untuk menentukan ikon secara eksplisit berdasarkan tipe pesan.
+// Tidak ada perubahan di sini, ini sudah benar.
 const iconMap = {
   success: 'tabler:circle-check',
   error: 'tabler:alert-circle',
@@ -23,26 +24,31 @@ const iconMap = {
         :key="message.id"
         :type="message.type"
         :title="message.title"
-        :icon="iconMap[message.type]"  
         variant="elevated"
-        closable
         class="mb-4"
         max-width="400px"
         elevation="6"
         border="start"
       >
+        <template #prepend>
+          <VIcon
+            :icon="iconMap[message.type]"
+            class="ms-1"
+          />
+        </template>
+
+        <template #append>
+          <VBtn
+            density="compact"
+            icon="tabler:x"
+            variant="text"
+            @click="remove(message.id)"
+          />
+        </template>
         <p
           class="text-body-2 mb-0"
           v-html="message.text"
         />
-        <template #close>
-          <VBtn
-            variant="text"
-            size="small"
-            icon="tabler:x"
-            @click="remove(message.id)"
-          />
-        </template>
       </VAlert>
     </VScaleTransition>
   </div>

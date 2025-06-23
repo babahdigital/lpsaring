@@ -3,7 +3,6 @@
 import { fileURLToPath, URL } from 'node:url'
 import vuetify from 'vite-plugin-vuetify'
 import svgLoader from 'vite-svg-loader'
-import Icons from 'unplugin-icons/vite'
 
 // Helper untuk path
 const srcDir = fileURLToPath(new URL('.', import.meta.url))
