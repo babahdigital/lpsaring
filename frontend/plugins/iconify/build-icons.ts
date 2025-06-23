@@ -30,6 +30,7 @@ const sources: BundleScriptConfig = {
         'close-circle',
         'language-javascript',
         'language-typescript',
+        'circle-check',
       ],
     },
     {
