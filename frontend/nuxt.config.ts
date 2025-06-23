@@ -125,7 +125,7 @@ export default defineNuxtConfig({
       entries: ['./**/*.vue'],
     },
     plugins: [
-      //svgLoader(),
+      svgLoader(),
       vuetify({
         styles: { configFile: 'assets/styles/variables/_vuetify.scss' },
       }),
