@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { VDataTableServer } from 'vuetify/components'
 import { computed, ref, watch } from 'vue'
-import { useAuthStore } from '@/store/auth'
 
 // --- Tipe Data ---
 interface Transaction {
@@ -22,7 +21,6 @@ interface UserSelectItem {
 
 // --- State Management ---
 const { $api } = useNuxtApp()
-const authStore = useAuthStore()
 
 const options = ref<InstanceType<typeof VDataTableServer>['$props']['options']>({
   page: 1,
@@ -77,9 +75,8 @@ const transactions = computed(() => transactionData.value?.items || [])
 const totalTransactions = computed(() => transactionData.value?.totalItems || 0)
 
 watch(error, (newError) => {
-  if (newError) {
+  if (newError)
     showSnackbar(newError.data?.message || 'Gagal memuat data transaksi', 'error')
-  }
 })
 
 // --- Konfigurasi & Format ---
@@ -117,9 +114,9 @@ function formatStatus(status: string) {
 function formatPhoneNumberForDisplay(phoneNumber: string | null) {
   if (!phoneNumber)
     return ''
-  if (phoneNumber.startsWith('+62')) {
+  if (phoneNumber.startsWith('+62'))
     return `0${phoneNumber.substring(3)}`
-  }
+
   return phoneNumber
 }
 
@@ -141,15 +138,15 @@ function getPhoneNumberVariationsJS(query: string): string[] {
   if (!cleaned)
     return []
   const variations = new Set<string>()
-  if (cleaned.startsWith('08')) {
+  if (cleaned.startsWith('08'))
     variations.add(`+62${cleaned.substring(1)}`)
-  }
-  if (cleaned.startsWith('628')) {
+
+  if (cleaned.startsWith('628'))
     variations.add(`+${cleaned}`)
-  }
-  if (cleaned.startsWith('628')) {
+
+  if (cleaned.startsWith('628'))
     variations.add(`+62${cleaned.substring(2)}`)
-  }
+
   variations.add(cleaned)
   return Array.from(variations)
 }
@@ -162,12 +159,12 @@ const filteredUserList = computed(() => {
   const phoneVariations = getPhoneNumberVariationsJS(userSearch.value)
 
   return userList.value.filter((user) => {
-    if (user.full_name.toLowerCase().includes(queryLower)) {
+    if (user.full_name.toLowerCase().includes(queryLower))
       return true
-    }
-    if (phoneVariations.length > 0) {
+
+    if (phoneVariations.length > 0)
       return phoneVariations.some(variation => user.phone_number.includes(variation))
-    }
+
     return user.phone_number.includes(queryLower)
   })
 })
@@ -198,7 +195,9 @@ function clearStartDate() {
   startDate.value = null
   endDate.value = null
 }
-function clearEndDate() { endDate.value = null }
+function clearEndDate() {
+  endDate.value = null
+}
 
 async function openUserFilterDialog() {
   isUserFilterDialogOpen.value = true
@@ -222,7 +221,9 @@ async function openUserFilterDialog() {
 }
 
 const getUserInitials = (name: string) => name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
-function selectUser(user: UserSelectItem) { tempSelectedUser.value = user }
+function selectUser(user: UserSelectItem) {
+  tempSelectedUser.value = user
+}
 
 function confirmUserSelection() {
   selectedUser.value = tempSelectedUser.value

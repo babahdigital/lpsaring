@@ -180,7 +180,7 @@ function formatLogDetails(log: AdminActionLog): string {
           .join('; ')
     }
   }
-  catch (_e) {
+  catch {
     return log.details
   }
 }
