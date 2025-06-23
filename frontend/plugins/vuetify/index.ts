@@ -1,25 +1,32 @@
-// frontend/plugins/vuetify/index.ts
+import type { NuxtApp } from '#app'
 
-import type { IconOptions } from 'vuetify'
-import { themeConfig } from '@themeConfig'
-import { createVuetify } from 'vuetify'
+// --- Import Konfigurasi Vuetify & Komponen ---
+// Import 'IconOptions' untuk memberikan tipe eksplisit pada konfigurasi ikon
+import { createVuetify, type IconOptions } from 'vuetify'
 import { VBtn } from 'vuetify/components/VBtn'
-import { mdi, aliases as mdiAliases } from 'vuetify/iconsets/mdi'
+
+// --- Import untuk Ikon MDI ---
+import { aliases as mdiAliases, mdi } from 'vuetify/iconsets/mdi'
+
+// --- Import Konfigurasi Aplikasi & Tema ---
 import { cookieRef } from '@/@layouts/stores/config'
+import { themeConfig } from '@themeConfig'
+
+// --- Import Konfigurasi Lokal ---
 import pluginDefaults from './defaults'
-// --- Impor adapter Iconify yang baru dibuat ---
-import IconifyVuetifyAdapter from './iconify-adapter'
 import { icons as iconAliases } from './icons'
 import { themes } from './theme'
+
+// --- Import Styles ---
 import '@core/scss/template/libs/vuetify/index.scss'
 import 'vuetify/styles'
+import '@mdi/font/css/materialdesignicons.css' // Pastikan @mdi/font terinstal
 
-import '@mdi/font/css/materialdesignicons.css'
-
+// --- Fungsi Helper Tema (Tidak diubah) ---
 function resolveInitialVuetifyTheme(userPreference: string | undefined | null): 'light' | 'dark' {
   const validThemes = Object.keys(themes)
   const defaultThemeFromConfig = themeConfig.app.theme
-  if (userPreference != null && validThemes.includes(userPreference)) {
+  if (userPreference && validThemes.includes(userPreference)) {
     return userPreference as 'light' | 'dark'
   }
   if (validThemes.includes(defaultThemeFromConfig)) {
@@ -29,37 +36,41 @@ function resolveInitialVuetifyTheme(userPreference: string | undefined | null): 
   return 'light'
 }
 
-export default defineNuxtPlugin((nuxtApp) => {
+// --- Plugin Nuxt ---
+export default defineNuxtPlugin((nuxtApp: NuxtApp) => {
   const userPreferredTheme = cookieRef<string>('theme', themeConfig.app.theme).value
   const initialDefaultTheme = resolveInitialVuetifyTheme(userPreferredTheme)
 
+  // Definisikan konfigurasi ikon dengan tipe 'IconOptions' yang eksplisit.
+  // Pendekatan ini lebih aman daripada 'as any' dan membantu TypeScript memvalidasi struktur.
   const iconsConfig: IconOptions = {
-    defaultSet: 'tabler', // Tetap 'tabler' atau 'mdi' sesuai preferensi Anda
+    defaultSet: 'mdi',
     aliases: {
       ...mdiAliases,
-      ...iconAliases,
+      ...iconAliases, // Gabungkan alias MDI bawaan dengan alias kustom Anda
     },
     sets: {
       mdi,
-      // --- Gunakan adapter yang sudah dibuat ---
-      tabler: IconifyVuetifyAdapter, // Gunakan objek adapter langsung
     },
   }
 
   const vuetify = createVuetify({
     ssr: true,
     defaults: pluginDefaults,
+
+    // Gunakan konfigurasi ikon yang sudah didefinisikan dengan tipe yang benar
     icons: iconsConfig,
+
     theme: {
       defaultTheme: initialDefaultTheme,
       themes,
     },
+
+    // Alias untuk komponen Vuetify, bukan untuk ikon
     aliases: {
       IconBtn: VBtn,
     },
   })
 
   nuxtApp.vueApp.use(vuetify)
-
-  return {}
 })
