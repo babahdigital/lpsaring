@@ -14,7 +14,8 @@ import '@mdi/font/css/materialdesignicons.css'
 function resolveInitialVuetifyTheme(userPreference: string | undefined | null): 'light' | 'dark' {
   const validThemes = Object.keys(themes)
   const defaultThemeFromConfig = themeConfig.app.theme
-  if (userPreference && validThemes.includes(userPreference)) {
+  // PERBAIKAN: Mengganti pengecekan implisit dengan pengecekan null/undefined yang eksplisit.
+  if (userPreference != null && validThemes.includes(userPreference)) {
     return userPreference as 'light' | 'dark'
   }
   if (validThemes.includes(defaultThemeFromConfig)) {
