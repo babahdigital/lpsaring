@@ -57,7 +57,9 @@ const target = join(__dirname, 'icons.css')
   const allIcons: IconifyJSON[] = []
 
   if (sources.icons) {
-    const sourcesJSON = sources.json ? sources.json : (sources.json = [])
+    if (!sources.json)
+      sources.json = []
+    const sourcesJSON = sources.json
     const organizedList = organizeIconsList(sources.icons)
 
     for (const prefix in organizedList) {
@@ -158,7 +160,9 @@ function organizeIconsList(icons: string[]): Record<string, string[]> {
       return
 
     const prefix = item.prefix
-    const prefixList = sorted[prefix] ? sorted[prefix] : (sorted[prefix] = [])
+    if (!sorted[prefix])
+      sorted[prefix] = []
+    const prefixList = sorted[prefix]
     const name = item.name
 
     if (!prefixList.includes(name))
