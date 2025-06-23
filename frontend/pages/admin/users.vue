@@ -53,15 +53,18 @@ const availableBloks = ref<string[]>([])
 const availableKamars = ref<string[]>([])
 const isAlamatLoading = ref(false)
 
-const shouldShowSkeleton = computed(() => loading.value && users.value.length === 0)
 const formatPhoneNumberDisplay = (phone: string | null) => (phone?.startsWith('+62') ? `0${phone.substring(3)}` : phone)
 const formatCreatedAt = (date: string) => new Date(date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
 const roleMap = { USER: { text: 'User', color: 'info' }, KOMANDAN: { text: 'Komandan', color: 'success' }, ADMIN: { text: 'Admin', color: 'primary' }, SUPER_ADMIN: { text: 'Support', color: 'secondary' } }
 const statusMap = { APPROVED: { text: 'Disetujui', color: 'success' }, PENDING_APPROVAL: { text: 'Menunggu', color: 'warning' }, REJECTED: { text: 'Ditolak', color: 'error' } }
 const roleFilterOptions = computed(() => {
   const allFilters = [{ text: 'User', value: 'USER' }, { text: 'Komandan', value: 'KOMANDAN' }]
-  if (authStore.isAdmin || authStore.isSuperAdmin) { allFilters.push({ text: 'Admin', value: 'ADMIN' }) }
-  if (authStore.isSuperAdmin) { allFilters.push({ text: 'Support', value: 'SUPER_ADMIN' }) }
+  if (authStore.isAdmin || authStore.isSuperAdmin)
+    allFilters.push({ text: 'Admin', value: 'ADMIN' })
+
+  if (authStore.isSuperAdmin)
+    allFilters.push({ text: 'Support', value: 'SUPER_ADMIN' })
+
   return allFilters
 })
 
@@ -80,16 +83,22 @@ const headers = computed(() => {
 })
 
 useHead({ title: 'Manajemen Pengguna' })
-onMounted(() => { fetchUsers(); fetchAlamatOptions() })
+onMounted(() => {
+  fetchUsers()
+  fetchAlamatOptions()
+})
 watch([() => options.value, roleFilter], () => {
   if (options.value)
-    options.value.page = 1; fetchUsers()
+    options.value.page = 1
+  fetchUsers()
 }, { deep: true })
 let searchTimeout: ReturnType<typeof setTimeout>
 watch(search, () => {
-  clearTimeout(searchTimeout); searchTimeout = setTimeout(() => {
+  clearTimeout(searchTimeout)
+  searchTimeout = setTimeout(() => {
     if (options.value)
-      options.value.page = 1; fetchUsers()
+      options.value.page = 1
+    fetchUsers()
   }, 500)
 })
 
@@ -113,8 +122,12 @@ async function fetchUsers() {
     users.value = response.items
     totalUsers.value = response.totalItems
   }
-  catch (error: any) { showSnackbar({ type: 'error', title: 'Gagal Mengambil Data', text: error.data?.message || 'Terjadi kesalahan pada server.' }) }
-  finally { loading.value = false }
+  catch (error: any) {
+    showSnackbar({ type: 'error', title: 'Gagal Mengambil Data', text: error.data?.message || 'Terjadi kesalahan pada server.' })
+  }
+  finally {
+    loading.value = false
+  }
 }
 async function fetchAlamatOptions() {
   if (availableBloks.value.length > 0)
@@ -125,16 +138,37 @@ async function fetchAlamatOptions() {
     availableBloks.value = response.bloks
     availableKamars.value = response.kamars
   }
-  catch (error: any) { showSnackbar({ type: 'error', title: 'Gagal Memuat Alamat', text: 'Terjadi error saat memuat pilihan alamat.' }) }
-  finally { isAlamatLoading.value = false }
+  catch (error: any) {
+    showSnackbar({ type: 'error', title: 'Gagal Memuat Alamat', text: error.data?.message || 'Terjadi error saat memuat pilihan alamat.' })
+  }
+  finally {
+    isAlamatLoading.value = false
+  }
 }
-function openAddUserDialog() { dialogState.add = true }
-function openEditDialog(user: User) { editedUser.value = { ...user }; dialogState.edit = true }
-function openViewDialog(user: User) { selectedUser.value = user; dialogState.view = true }
+function openAddUserDialog() {
+  dialogState.add = true
+}
+function openEditDialog(user: User) {
+  editedUser.value = { ...user }
+  dialogState.edit = true
+}
+function openViewDialog(user: User) {
+  selectedUser.value = user
+  dialogState.view = true
+}
 function openConfirmDialog(props: { title: string, message: string, color?: string, action: () => Promise<void> }) {
-  confirmProps.title = props.title; confirmProps.message = props.message; confirmProps.color = props.color || 'primary'; confirmProps.action = props.action; dialogState.confirm = true
+  confirmProps.title = props.title
+  confirmProps.message = props.message
+  confirmProps.color = props.color || 'primary'
+  confirmProps.action = props.action
+  dialogState.confirm = true
 }
-function closeAllDialogs() { dialogState.view = false; dialogState.add = false; dialogState.edit = false; dialogState.confirm = false }
+function closeAllDialogs() {
+  dialogState.view = false
+  dialogState.add = false
+  dialogState.edit = false
+  dialogState.confirm = false
+}
 async function handleSaveUser(payload: EditPayload) {
   const isUpdate = !!payload.id
   const endpoint = isUpdate ? `/admin/users/${payload.id}` : '/admin/users'
@@ -142,20 +176,45 @@ async function handleSaveUser(payload: EditPayload) {
   await performAction(endpoint, method, isUpdate ? 'Data pengguna berhasil diperbarui.' : 'Pengguna baru berhasil dibuat.', { body: payload }, isUpdate ? payload.id : undefined)
 }
 function handleApprove(user: User) {
-  openConfirmDialog({ title: 'Konfirmasi Persetujuan', message: `Anda yakin ingin menyetujui pengguna <strong>${user.full_name}</strong>? Akun akan diaktifkan dan notifikasi akan dikirim.`, color: 'success', action: async () => await performAction(`/admin/users/${user.id}/approve`, 'PATCH', 'Pengguna berhasil disetujui.') })
+  openConfirmDialog({
+    title: 'Konfirmasi Persetujuan',
+    message: `Anda yakin ingin menyetujui pengguna <strong>${user.full_name}</strong>? Akun akan diaktifkan dan notifikasi akan dikirim.`,
+    color: 'success',
+    action: async () => await performAction(`/admin/users/${user.id}/approve`, 'PATCH', 'Pengguna berhasil disetujui.'),
+  })
 }
 // [PERBAIKAN] Fungsi handleReject ditambahkan
 function handleReject(user: User) {
-  openConfirmDialog({ title: 'Konfirmasi Penolakan', message: `Anda yakin ingin menolak & menghapus pendaftaran <strong>${user.full_name}</strong>? Notifikasi penolakan akan dikirim. Aksi ini tidak dapat dibatalkan.`, color: 'error', action: async () => await performAction(`/admin/users/${user.id}/reject`, 'POST', 'Pendaftaran pengguna ditolak dan data telah dihapus.') })
+  openConfirmDialog({
+    title: 'Konfirmasi Penolakan',
+    message: `Anda yakin ingin menolak & menghapus pendaftaran <strong>${user.full_name}</strong>? Notifikasi penolakan akan dikirim. Aksi ini tidak dapat dibatalkan.`,
+    color: 'error',
+    action: async () => await performAction(`/admin/users/${user.id}/reject`, 'POST', 'Pendaftaran pengguna ditolak dan data telah dihapus.'),
+  })
 }
 function handleDelete(user: User) {
-  openConfirmDialog({ title: 'Konfirmasi Penghapusan', message: `Anda yakin ingin menghapus atau menonaktifkan pengguna <strong>${user.full_name}</strong>?`, color: 'error', action: async () => await performAction(`/admin/users/${user.id}`, 'DELETE', 'Aksi terhadap pengguna berhasil dilakukan.') })
+  openConfirmDialog({
+    title: 'Konfirmasi Penghapusan',
+    message: `Anda yakin ingin menghapus atau menonaktifkan pengguna <strong>${user.full_name}</strong>?`,
+    color: 'error',
+    action: async () => await performAction(`/admin/users/${user.id}`, 'DELETE', 'Aksi terhadap pengguna berhasil dilakukan.'),
+  })
 }
 function handleResetHotspot(userId: string) {
-  openConfirmDialog({ title: 'Reset Password Hotspot', message: 'Password hotspot baru akan dibuat dan dikirim ke pengguna via WhatsApp. Lanjutkan?', color: 'warning', action: async () => await performAction(`/admin/users/${userId}/reset-hotspot-password`, 'POST', 'Password hotspot berhasil direset.') })
+  openConfirmDialog({
+    title: 'Reset Password Hotspot',
+    message: 'Password hotspot baru akan dibuat dan dikirim ke pengguna via WhatsApp. Lanjutkan?',
+    color: 'warning',
+    action: async () => await performAction(`/admin/users/${userId}/reset-hotspot-password`, 'POST', 'Password hotspot berhasil direset.'),
+  })
 }
 function handleGenerateAdminPass(userId: string) {
-  openConfirmDialog({ title: 'Reset Password Portal', message: 'Password portal baru akan dibuat dan dikirim ke admin via WhatsApp. Lanjutkan?', color: 'info', action: async () => await performAction(`/admin/users/${userId}/generate-admin-password`, 'POST', 'Password portal berhasil direset.') })
+  openConfirmDialog({
+    title: 'Reset Password Portal',
+    message: 'Password portal baru akan dibuat dan dikirim ke admin via WhatsApp. Lanjutkan?',
+    color: 'info',
+    action: async () => await performAction(`/admin/users/${userId}/generate-admin-password`, 'POST', 'Password portal berhasil direset.'),
+  })
 }
 async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELETE' | 'PUT', successMessage: string, options: { body?: object } = {}, updatedItemId?: string) {
   loading.value = true
@@ -164,9 +223,8 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
     showSnackbar({ type: 'success', title: 'Berhasil', text: successMessage })
     closeAllDialogs()
     await fetchUsers()
-    if (dialogState.view && selectedUser.value && selectedUser.value.id === updatedItemId && response && response.user) {
+    if (dialogState.view && selectedUser.value && selectedUser.value.id === updatedItemId && response && response.user)
       selectedUser.value = { ...selectedUser.value, ...response.user }
-    }
   }
   catch (error: any) {
     const errorMessage = error.data?.message || 'Operasi gagal. Silakan coba lagi.'
