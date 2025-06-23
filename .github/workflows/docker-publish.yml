@@ -41,7 +41,7 @@ jobs:
           context: ./backend  # Lokasi Dockerfile untuk backend
           platforms: linux/amd64,linux/arm64 # Target arsitektur
           push: true # Mendorong image ke registry setelah build
-          tags: babahdigital/sobigidul_backend:latest # Tag untuk image
+          tags: babahdigital/hotspot_backend:latest # Tag untuk image
 
   # Job kedua untuk membangun image frontend
   build-frontend:
@@ -76,4 +76,4 @@ jobs:
           context: ./frontend # Lokasi Dockerfile untuk frontend
           platforms: linux/amd64,linux/arm64 # Target arsitektur
           push: true # Mendorong image ke registry setelah build
-          tags: babahdigital/sobigidul_frontend:latest # Tag untuk image
+          tags: babahdigital/hotspot_frontend:latest # Tag untuk image
