@@ -22,6 +22,7 @@ export default antfu(
     },
     rules: {
       // --- TAMBAHKAN ATURAN BARU DI SINI ---
+      'vue/valid-v-slot': 'off',
       'vue/v-slot-style': [
         'error',
         {
