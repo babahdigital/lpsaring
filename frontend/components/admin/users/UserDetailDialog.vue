@@ -54,7 +54,8 @@ function formatPhoneNumberDisplay(phoneNumber: string | null) {
 }
 
 function formatDataSize(sizeInMB: number) {
-  if (isNaN(sizeInMB))
+  // PERBAIKAN: Menggunakan Number.isNaN
+  if (Number.isNaN(sizeInMB))
     return '0 MB'
   const options = { minimumFractionDigits: 2, maximumFractionDigits: 2 }
   if (sizeInMB < 1)
@@ -77,10 +78,15 @@ const quotaDetails = computed((): QuotaInfo | null => {
   const usedMB = user.total_quota_used_mb || 0
   const remainingMB = Math.max(0, totalMB - usedMB)
   const percentage = totalMB > 0 ? Math.min(100, (usedMB / totalMB) * 100) : 0
-  let status: QuotaInfo['status'] = 'NOT_SET'; let statusColor = 'grey'; let remainingDays: number | null = null
+  // PERBAIKAN: Memisahkan setiap deklarasi ke baris baru
+  let status: QuotaInfo['status'] = 'NOT_SET'
+  let statusColor = 'grey'
+  let remainingDays: number | null = null
 
   if (user.is_unlimited_user) {
-    status = 'UNLIMITED'; statusColor = 'success'
+    // PERBAIKAN: Memisahkan setiap pernyataan ke baris baru
+    status = 'UNLIMITED'
+    statusColor = 'success'
     if (user.quota_expiry_date) {
       const expiry = new Date(user.quota_expiry_date)
       if (isValid(expiry))
@@ -90,8 +96,17 @@ const quotaDetails = computed((): QuotaInfo | null => {
   else if (user.quota_expiry_date) {
     const expiry = new Date(user.quota_expiry_date)
     if (isValid(expiry)) {
-      if (isPast(expiry)) { status = 'EXPIRED'; statusColor = 'error'; remainingDays = 0 }
-      else { status = 'ACTIVE'; statusColor = 'success'; remainingDays = differenceInDays(expiry, new Date()) + 1 }
+      // PERBAIKAN: Memisahkan isi blok if/else ke beberapa baris
+      if (isPast(expiry)) {
+        status = 'EXPIRED'
+        statusColor = 'error'
+        remainingDays = 0
+      }
+      else {
+        status = 'ACTIVE'
+        statusColor = 'success'
+        remainingDays = differenceInDays(expiry, new Date()) + 1
+      }
     }
   }
 

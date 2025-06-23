@@ -14,7 +14,8 @@ const props = defineProps<{
   loading: boolean
   isAlamatLoading: boolean
 }>()
-const emit = defineEmits(['update:modelValue', 'save', 'reset-hotspot', 'generate-admin-pass'])
+// PERBAIKAN: Mengubah nama event ke camelCase
+const emit = defineEmits(['update:modelValue', 'save', 'resetHotspot', 'generateAdminPass'])
 const { $api } = useNuxtApp()
 const tab = ref('info')
 const { add: showSnackbar } = useSnackbar()
@@ -90,7 +91,7 @@ const isTargetAdminOrSuper = computed(() => formData.role === 'ADMIN' || formDat
 
 const superAdminProfileOptions = ['admin', 'user', 'expired', 'komandan', 'support', 'unlimited', 'inactive']
 const superAdminServerOptions = ['srv-admin', 'srv-komandan', 'srv-support', 'srv-user']
-const adminAccessTypeOptions = [{ title: 'Akses Admin', value: 'admin' }, { title: 'Akses Komandan', value: 'komandan' }]
+// PERBAIKAN: Menghapus const 'adminAccessTypeOptions' yang tidak digunakan
 const roleOptions = computed(() => {
   const roles: Array<User['role']> = ['USER', 'KOMANDAN', 'ADMIN', 'SUPER_ADMIN']
   return roles.map(role => ({ title: role.replace('_', ' '), value: role }))
@@ -118,6 +119,7 @@ watch(() => props.user, (newUser) => {
 
 watch(() => props.modelValue, (isOpen) => {
   if (isOpen) {
+    // PERBAIKAN: Memisahkan pernyataan ke baris baru
     liveData.value = null
     nextTick(() => { formRef.value?.resetValidation() })
   }
@@ -197,9 +199,7 @@ watch(adminAccessType, (newType) => {
   }
 })
 
-const isSelfEdit = computed(() => props.user?.id === authStore.user?.id)
-const canEditRole = computed(() => !isSelfEdit.value && authStore.isSuperAdmin)
-const showAlamatSection = computed(() => formData.role === 'USER')
+// PERBAIKAN: Menghapus computed property 'canEditRole' dan 'showAlamatSection' yang tidak digunakan
 
 async function checkAndApplyMikrotikStatus() {
   if (!props.user)
@@ -260,7 +260,7 @@ function onClose() {
   emit('update:modelValue', false)
 }
 
-const requiredRule = (v: any) => !!v || 'Wajib diisi.'
+// PERBAIKAN: Menghapus fungsi 'requiredRule' yang tidak digunakan
 </script>
 
 <template>
@@ -407,7 +407,7 @@ const requiredRule = (v: any) => !!v || 'Wajib diisi.'
 
         <VCardActions class="pa-4 d-flex">
           <div v-if="props.user">
-            <VBtn v-if="!isTargetAdminOrSuper && formData.is_active" color="warning" variant="text" prepend-icon="tabler-key" @click="$emit('reset-hotspot', props.user.id)">
+            <VBtn v-if="!isTargetAdminOrSuper && formData.is_active" color="warning" variant="text" prepend-icon="tabler-key" @click="$emit('resetHotspot', props.user.id)">
               Reset Pass Mikrotik
             </VBtn>
             <VMenu v-else-if="formData.is_active" location="top">
@@ -417,8 +417,8 @@ const requiredRule = (v: any) => !!v || 'Wajib diisi.'
                 </VBtn>
               </template>
               <VList>
-                <VListItem title="Password Mikrotik" prepend-icon="tabler-wifi" @click="$emit('reset-hotspot', props.user.id)" />
-                <VListItem title="Password Portal" prepend-icon="tabler-shield-lock" @click="$emit('generate-admin-pass', props.user.id)" />
+                <VListItem title="Password Mikrotik" prepend-icon="tabler-wifi" @click="$emit('resetHotspot', props.user.id)" />
+                <VListItem title="Password Portal" prepend-icon="tabler-shield-lock" @click="$emit('generateAdminPass', props.user.id)" />
               </VList>
             </VMenu>
           </div>
