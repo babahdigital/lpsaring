@@ -21,6 +21,17 @@ export default antfu(
       },
     },
     rules: {
+      // --- TAMBAHKAN ATURAN BARU DI SINI ---
+      'vue/v-slot-style': [
+        'error',
+        {
+          atComponent: 'shorthand',
+          default: 'shorthand',
+          named: 'shorthand',
+        },
+      ],
+      // --- AKHIR ATURAN BARU ---
+
       'n/prefer-global/process': 'off',
       '@typescript-eslint/no-redeclare': 'error',
       'ts/no-redeclare': 'off',
