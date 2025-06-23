@@ -144,17 +144,23 @@ async function handleSaveChanges() {
 
     let errorDetails = 'Terjadi kesalahan pada server.'
 
-    // Perbaikan: Pengecekan error dibuat lebih eksplisit untuk memenuhi aturan `strict-boolean-expressions`.
-    if (e.data && typeof e.data === 'object' && e.data !== null && 'errors' in e.data && Array.isArray(e.data.errors)) {
-      errorDetails = e.data.errors.map((err: any) => {
-        if (typeof err === 'object' && err !== null && 'message' in err) {
-          return String(err.message)
-        }
-        return String(err)
-      }).join(' ')
-    }
-    else if (e.data && typeof e.data === 'object' && e.data !== null && 'message' in e.data && typeof e.data.message === 'string') {
-      errorDetails = e.data.message
+    // Perbaikan: Lakukan pengecekan `e.data` sebagai objek terlebih dahulu
+    // kemudian akses propertinya dengan casting ke Record<string, unknown>
+    if (typeof e.data === 'object' && e.data !== null) {
+      const dataAsObject = e.data as Record<string, unknown>
+
+      // Perbaikan: Pengecekan error dibuat lebih eksplisit untuk memenuhi aturan `strict-boolean-expressions`.
+      if ('errors' in dataAsObject && Array.isArray(dataAsObject.errors)) {
+        errorDetails = (dataAsObject.errors as any[]).map((err: any) => {
+          if (typeof err === 'object' && err !== null && 'message' in err) {
+            return String(err.message)
+          }
+          return String(err)
+        }).join(' ')
+      }
+      else if ('message' in dataAsObject && typeof dataAsObject.message === 'string') {
+        errorDetails = dataAsObject.message as string
+      }
     }
 
     snackbar.add({
