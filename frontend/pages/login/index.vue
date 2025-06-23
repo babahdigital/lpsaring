@@ -90,7 +90,11 @@ async function handleRequestOtp() {
     }
   }
   catch (error: any) {
-    authStore.setError(error.message ? error.message : 'Format nomor telepon tidak valid.')
+    let errorMessage = 'Format nomor telepon tidak valid.'
+    if (error instanceof Error && error.message)
+      errorMessage = error.message
+    
+    authStore.setError(errorMessage)
   }
 }
 
@@ -108,7 +112,11 @@ async function handleVerifyOtp() {
     }
   }
   catch (error: any) {
-    authStore.setError(error.message ? error.message : 'Terjadi masalah dengan nomor telepon.')
+    let errorMessage = 'Terjadi masalah dengan nomor telepon.'
+    if (error instanceof Error && error.message)
+      errorMessage = error.message
+
+    authStore.setError(errorMessage)
     resetLoginView()
   }
 }
@@ -131,7 +139,12 @@ async function handleRegister() {
     numberToSend = normalize_to_e164(regPhoneNumber.value)
   }
   catch (error: any) {
-    authStore.setError(error.message ? error.message : 'Format nomor WhatsApp tidak valid.')
+    let errorMessage = 'Format nomor WhatsApp tidak valid.'
+    if (error instanceof Error && error.message)
+      errorMessage = error.message
+    
+    authStore.setError(errorMessage)
+    
     return
   }
 
