@@ -156,109 +156,105 @@ useHead({ title: 'Setting Aplikasi' })
 <template>
   <div>
     <VCard>
-      <VCardItem>
+      <VCardItem class="pb-4">
         <VCardTitle>Pengaturan Aplikasi</VCardTitle>
         <VCardSubtitle>Kelola pengaturan umum, tampilan, dan integrasi aplikasi Anda.</VCardSubtitle>
       </VCardItem>
 
-      <VTabs v-model="tab" class="v-tabs-pill">
+      <VTabs v-model="tab" class="px-4">
         <VTab value="umum">
-          <VIcon start icon="ri-settings-3-line" />
+          <VIcon start icon="mdi-cog-outline" />
           Umum & Maintenance
         </VTab>
         <VTab value="tampilan">
-          <VIcon start icon="ri-layout-line" />
+          <VIcon start icon="mdi-view-dashboard-outline" />
           Tampilan & Layout
         </VTab>
         <VTab value="integrasi">
-          <VIcon start icon="ri-link-m" />
+          <VIcon start icon="mdi-link-variant" />
           Integrasi
         </VTab>
       </VTabs>
+      <VDivider />
 
       <VCardText>
         <VProgressLinear v-if="isLoading" indeterminate class="mb-4" />
-        <VWindow v-else v-model="tab" class="disable-tab-transition">
+        <VWindow v-else v-model="tab" class="disable-tab-transition" :style="{ 'min-height': '400px' }">
           <VWindowItem value="umum">
             <VForm @submit.prevent="handleSaveChanges">
-              <VList class="card-list" :lines="false">
-                <VListItem>
-                  <VListItemTitle class="font-weight-bold">
-                    Mode Maintenance
-                  </VListItemTitle>
+              <div class="d-flex flex-column gap-y-4">
+                <VListSubheader>Mode Maintenance</VListSubheader>
+                <VListItem lines="three">
+                  <VRow no-gutters align="center">
+                    <VCol cols="12" md="4">
+                      <VListItemTitle class="mb-1">
+                        Status Mode Maintenance
+                      </VListItemTitle>
+                      <VListItemSubtitle>
+                        Aktifkan untuk menampilkan halaman maintenance di seluruh aplikasi, kecuali halaman admin.
+                      </VListItemSubtitle>
+                    </VCol>
+                    <VCol cols="12" md="8" class="d-flex justify-start justify-md-end">
+                      <VSwitch v-model="maintenanceModeActive" :label="maintenanceModeActive ? 'AKTIF' : 'TIDAK AKTIF'" color="error" inset />
+                    </VCol>
+                  </VRow>
                 </VListItem>
 
-                <VDivider class="my-4" />
-
-                <VRow class="pa-4">
-                  <VCol cols="12" md="5">
-                    <h6 class="text-h6">
-                      Status Mode Maintenance
-                    </h6>
-                    <p class="text-body-2 text-grey">
-                      Aktifkan untuk menampilkan halaman maintenance di seluruh aplikasi, kecuali halaman admin.
-                    </p>
-                  </VCol>
-                  <VCol cols="12" md="7">
-                    <VSwitch v-model="maintenanceModeActive" :label="maintenanceModeActive ? 'Mode Maintenance AKTIF' : 'Mode Maintenance TIDAK AKTIF'" color="error" inset />
-                  </VCol>
-                </VRow>
-
-                <VRow class="pa-4">
-                  <VCol cols="12" md="5">
-                    <h6 class="text-h6">
-                      Pesan Maintenance
-                    </h6>
-                    <p class="text-body-2 text-grey">
-                      Teks yang akan ditampilkan di halaman maintenance.
-                    </p>
-                  </VCol>
-                  <VCol cols="12" md="7">
-                    <VTextarea v-model="localSettings.MAINTENANCE_MODE_MESSAGE" label="Pesan Maintenance" placeholder="Contoh: Aplikasi sedang dalam perbaikan..." rows="3" :disabled="!maintenanceModeActive" variant="outlined" density="compact" />
-                  </VCol>
-                </VRow>
-
-                <VDivider class="my-4" />
-
-                <VListItem>
-                  <VListItemTitle class="font-weight-bold">
-                    Informasi Umum
-                  </VListItemTitle>
+                <VListItem lines="three">
+                  <VRow no-gutters align="center">
+                    <VCol cols="12" md="4">
+                      <VListItemTitle class="mb-1">
+                        Pesan Maintenance
+                      </VListItemTitle>
+                      <VListItemSubtitle>
+                        Teks yang akan ditampilkan di halaman maintenance.
+                      </VListItemSubtitle>
+                    </VCol>
+                    <VCol cols="12" md="8">
+                      <VTextarea v-model="localSettings.MAINTENANCE_MODE_MESSAGE" label="Pesan Maintenance" placeholder="Contoh: Aplikasi sedang dalam perbaikan..." rows="3" :disabled="!maintenanceModeActive" variant="outlined" density="compact" />
+                    </VCol>
+                  </VRow>
                 </VListItem>
 
-                <VDivider class="my-4" />
+                <VDivider class="my-2" />
+                <VListSubheader>Informasi Umum</VListSubheader>
 
-                <VRow class="pa-4">
-                  <VCol cols="12" md="5">
-                    <h6 class="text-h6">
-                      Nama Aplikasi
-                    </h6>
-                    <p class="text-body-2 text-grey">
-                      Nama utama aplikasi yang akan ditampilkan di berbagai tempat.
-                    </p>
-                  </VCol>
-                  <VCol cols="12" md="7">
-                    <VTextField v-model="localSettings.APP_NAME" label="Nama Aplikasi" persistent-placeholder placeholder="Contoh: Portal Hotspot Sobigidul" variant="outlined" density="compact" />
-                  </VCol>
-                </VRow>
+                <VListItem>
+                  <VRow no-gutters align="center">
+                    <VCol cols="12" md="4">
+                      <VListItemTitle class="mb-1">
+                        Nama Aplikasi
+                      </VListItemTitle>
+                      <VListItemSubtitle>
+                        Nama utama aplikasi yang akan ditampilkan.
+                      </VListItemSubtitle>
+                    </VCol>
+                    <VCol cols="12" md="8">
+                      <VTextField v-model="localSettings.APP_NAME" label="Nama Aplikasi" persistent-placeholder placeholder="Contoh: Portal Hotspot Sobigidul" variant="outlined" density="compact" />
+                    </VCol>
+                  </VRow>
+                </VListItem>
 
-                <VRow class="pa-4">
-                  <VCol cols="12" md="5">
-                    <h6 class="text-h6">
-                      Judul di Browser
-                    </h6>
-                    <p class="text-body-2 text-grey">
-                      Teks yang muncul di tab browser.
-                    </p>
-                  </VCol>
-                  <VCol cols="12" md="7">
-                    <VTextField v-model="localSettings.APP_BROWSER_TITLE" label="Judul di Browser" persistent-placeholder placeholder="Contoh: Hotspot Sobigidul" variant="outlined" density="compact" />
-                  </VCol>
-                </VRow>
-              </VList>
+                <VListItem>
+                  <VRow no-gutters align="center">
+                    <VCol cols="12" md="4">
+                      <VListItemTitle class="mb-1">
+                        Judul di Browser
+                      </VListItemTitle>
+                      <VListItemSubtitle>
+                        Teks yang muncul di tab browser.
+                      </VListItemSubtitle>
+                    </VCol>
+                    <VCol cols="12" md="8">
+                      <VTextField v-model="localSettings.APP_BROWSER_TITLE" label="Judul di Browser" persistent-placeholder placeholder="Contoh: Hotspot Sobigidul" variant="outlined" density="compact" />
+                    </VCol>
+                  </VRow>
+                </VListItem>
+              </div>
 
-              <VCardActions class="mt-4 pa-4 d-flex justify-end">
-                <VBtn type="submit" :loading="isSaving" prepend-icon="ri-save-line">
+              <VCardActions class="mt-6 px-0">
+                <VSpacer />
+                <VBtn type="submit" :loading="isSaving" prepend-icon="mdi-content-save-outline">
                   Simpan Perubahan
                 </VBtn>
               </VCardActions>
@@ -267,58 +263,67 @@ useHead({ title: 'Setting Aplikasi' })
 
           <VWindowItem value="tampilan">
             <VForm @submit.prevent="handleSaveChanges">
-              <VRow>
-                <VCol cols="12" md="6">
-                  <VCard variant="tonal">
-                    <VCardText>
-                      <h6 class="text-h6 mb-3">
-                        Tema
-                      </h6>
+              <div class="d-flex flex-column gap-y-4">
+                <VListItem>
+                  <VRow no-gutters align="center">
+                    <VCol cols="12" md="4">
+                      <VListItemTitle>Tema</VListItemTitle>
+                    </VCol>
+                    <VCol cols="12" md="8">
                       <VRadioGroup v-model="localSettings.THEME" inline>
-                        <VRadio label="Light" value="light" /><VRadio label="Dark" value="dark" /><VRadio label="Sistem" value="system" />
+                        <VRadio label="Light" value="light" />
+                        <VRadio label="Dark" value="dark" />
+                        <VRadio label="Sistem" value="system" />
                       </VRadioGroup>
-                    </VCardText>
-                  </VCard>
-                </VCol>
-                <VCol cols="12" md="6">
-                  <VCard variant="tonal">
-                    <VCardText>
-                      <h6 class="text-h6 mb-3">
-                        Skin
-                      </h6>
+                    </VCol>
+                  </VRow>
+                </VListItem>
+
+                <VListItem>
+                  <VRow no-gutters align="center">
+                    <VCol cols="12" md="4">
+                      <VListItemTitle>Skin</VListItemTitle>
+                    </VCol>
+                    <VCol cols="12" md="8">
                       <VRadioGroup v-model="localSettings.SKIN" inline>
-                        <VRadio label="Default" value="default" /><VRadio label="Bordered" value="bordered" />
+                        <VRadio label="Default" value="default" />
+                        <VRadio label="Bordered" value="bordered" />
                       </VRadioGroup>
-                    </VCardText>
-                  </VCard>
-                </VCol>
-                <VCol cols="12" md="6">
-                  <VCard variant="tonal">
-                    <VCardText>
-                      <h6 class="text-h6 mb-3">
-                        Tata Letak (Layout)
-                      </h6>
+                    </VCol>
+                  </VRow>
+                </VListItem>
+
+                <VListItem>
+                  <VRow no-gutters align="center">
+                    <VCol cols="12" md="4">
+                      <VListItemTitle>Tata Letak (Layout)</VListItemTitle>
+                    </VCol>
+                    <VCol cols="12" md="8">
                       <VRadioGroup v-model="localSettings.LAYOUT" inline>
-                        <VRadio label="Vertical" value="vertical" /><VRadio label="Horizontal" value="horizontal" />
+                        <VRadio label="Vertical" value="vertical" />
+                        <VRadio label="Horizontal" value="horizontal" />
                       </VRadioGroup>
-                    </VCardText>
-                  </VCard>
-                </VCol>
-                <VCol cols="12" md="6">
-                  <VCard variant="tonal">
-                    <VCardText>
-                      <h6 class="text-h6 mb-3">
-                        Lebar Konten
-                      </h6>
+                    </VCol>
+                  </VRow>
+                </VListItem>
+
+                <VListItem>
+                  <VRow no-gutters align="center">
+                    <VCol cols="12" md="4">
+                      <VListItemTitle>Lebar Konten</VListItemTitle>
+                    </VCol>
+                    <VCol cols="12" md="8">
                       <VRadioGroup v-model="localSettings.CONTENT_WIDTH" inline>
-                        <VRadio label="Compact" value="boxed" /><VRadio label="Wide" value="fluid" />
+                        <VRadio label="Compact" value="boxed" />
+                        <VRadio label="Wide" value="fluid" />
                       </VRadioGroup>
-                    </VCardText>
-                  </VCard>
-                </VCol>
-              </VRow>
-              <VCardActions class="mt-4 pa-4 d-flex justify-end">
-                <VBtn type="submit" :loading="isSaving" prepend-icon="ri-save-line">
+                    </VCol>
+                  </VRow>
+                </VListItem>
+              </div>
+              <VCardActions class="mt-6 px-0">
+                <VSpacer />
+                <VBtn type="submit" :loading="isSaving" prepend-icon="mdi-content-save-outline">
                   Simpan Perubahan
                 </VBtn>
               </VCardActions>
@@ -327,101 +332,108 @@ useHead({ title: 'Setting Aplikasi' })
 
           <VWindowItem value="integrasi">
             <VForm @submit.prevent="handleSaveChanges">
-              <VList class="card-list" :lines="false">
-                <VListItem>
-                  <VListItemTitle class="font-weight-bold">
-                    WhatsApp (Fonnte)
-                  </VListItemTitle>
+              <div class="d-flex flex-column gap-y-4">
+                <VListSubheader>WhatsApp (Fonnte)</VListSubheader>
+
+                <VListItem lines="three">
+                  <VRow no-gutters align="center">
+                    <VCol cols="12" md="4">
+                      <VListItemTitle class="mb-1">
+                        Notifikasi WhatsApp
+                      </VListItemTitle>
+                      <VListItemSubtitle>
+                        Saklar utama untuk semua fitur notifikasi via WhatsApp.
+                      </VListItemSubtitle>
+                    </VCol>
+                    <VCol cols="12" md="8" class="d-flex justify-start justify-md-end">
+                      <VSwitch v-model="whatsappEnabled" :label="whatsappEnabled ? 'Aktif' : 'Tidak Aktif'" inset />
+                    </VCol>
+                  </VRow>
                 </VListItem>
 
-                <VDivider class="my-4" />
-
-                <VRow class="pa-4">
-                  <VCol cols="12" md="5">
-                    <h6 class="text-h6">
-                      Notifikasi WhatsApp
-                    </h6>
-                    <p class="text-body-2 text-grey">
-                      Saklar utama untuk semua fitur notifikasi via WhatsApp.
-                    </p>
-                  </VCol>
-                  <VCol cols="12" md="7">
-                    <VSwitch v-model="whatsappEnabled" :label="whatsappEnabled ? 'Notifikasi WhatsApp Aktif' : 'Notifikasi WhatsApp Tidak Aktif'" inset />
-                  </VCol>
-                </VRow>
-
-                <VRow class="pa-4">
-                  <VCol cols="12" md="5">
-                    <h6 class="text-h6">
-                      Notifikasi Login Admin
-                    </h6>
-                    <p class="text-body-2 text-grey">
-                      Kirim notifikasi saat admin atau super admin login.
-                    </p>
-                  </VCol>
-                  <VCol cols="12" md="7">
-                    <VSwitch v-model="whatsappLoginNotificationEnabled" :label="whatsappLoginNotificationEnabled ? 'Notifikasi Login Aktif' : 'Notifikasi Login Tidak Aktif'" :disabled="!whatsappEnabled" inset />
-                  </VCol>
-                </VRow>
-
-                <VRow class="pa-4">
-                  <VCol cols="12" md="5">
-                    <h6 class="text-h6">
-                      API Key Fonnte
-                    </h6>
-                    <p class="text-body-2 text-grey">
-                      Kunci API dari layanan Fonnte untuk mengirim pesan.
-                    </p>
-                  </VCol>
-                  <VCol cols="12" md="7">
-                    <VTextField v-model="localSettings.WHATSAPP_API_KEY" label="API Key WhatsApp (Fonnte)" type="password" persistent-placeholder="Masukkan API Key Fonnte Anda" :disabled="!whatsappEnabled" variant="outlined" density="compact" />
-                  </VCol>
-                </VRow>
-
-                <VDivider class="my-4" />
-
-                <VListItem>
-                  <VListItemTitle class="font-weight-bold">
-                    Midtrans
-                  </VListItemTitle>
+                <VListItem lines="three">
+                  <VRow no-gutters align="center">
+                    <VCol cols="12" md="4">
+                      <VListItemTitle class="mb-1">
+                        Notifikasi Login Admin
+                      </VListItemTitle>
+                      <VListItemSubtitle>
+                        Kirim notifikasi saat admin atau super admin login.
+                      </VListItemSubtitle>
+                    </VCol>
+                    <VCol cols="12" md="8" class="d-flex justify-start justify-md-end">
+                      <VSwitch v-model="whatsappLoginNotificationEnabled" :label="whatsappLoginNotificationEnabled ? 'Aktif' : 'Tidak Aktif'" :disabled="!whatsappEnabled" inset />
+                    </VCol>
+                  </VRow>
                 </VListItem>
 
-                <VDivider class="my-4" />
-
-                <VRow class="pa-4">
-                  <VCol cols="12" md="6">
-                    <VTextField v-model="localSettings.MIDTRANS_SERVER_KEY" label="Server Key Midtrans" type="password" persistent-placeholder="Masukkan Server Key Midtrans" variant="outlined" density="compact" />
-                  </VCol>
-                  <VCol cols="12" md="6">
-                    <VTextField v-model="localSettings.MIDTRANS_CLIENT_KEY" label="Client Key Midtrans" type="password" persistent-placeholder="Masukkan Client Key Midtrans" variant="outlined" density="compact" />
-                  </VCol>
-                </VRow>
-
-                <VDivider class="my-4" />
-
                 <VListItem>
-                  <VListItemTitle class="font-weight-bold">
-                    MikroTik
-                  </VListItemTitle>
+                  <VRow no-gutters align="center">
+                    <VCol cols="12" md="4">
+                      <VListItemTitle class="mb-1">
+                        API Key Fonnte
+                      </VListItemTitle>
+                      <VListItemSubtitle>Kunci API dari Fonnte.</VListItemSubtitle>
+                    </VCol>
+                    <VCol cols="12" md="8">
+                      <VTextField v-model="localSettings.WHATSAPP_API_KEY" label="API Key WhatsApp (Fonnte)" type="password" persistent-placeholder="Masukkan API Key Fonnte Anda" :disabled="!whatsappEnabled" variant="outlined" density="compact" />
+                    </VCol>
+                  </VRow>
                 </VListItem>
 
-                <VDivider class="my-4" />
+                <VDivider class="my-2" />
+                <VListSubheader>Midtrans</VListSubheader>
 
-                <VRow class="pa-4">
-                  <VCol cols="12" md="4">
-                    <VTextField v-model="localSettings.MIKROTIK_HOST" label="Host MikroTik" persistent-placeholder="Alamat IP atau domain router" variant="outlined" density="compact" />
-                  </VCol>
-                  <VCol cols="12" md="4">
-                    <VTextField v-model="localSettings.MIKROTIK_USER" label="User MikroTik" persistent-placeholder="Username API MikroTik" variant="outlined" density="compact" />
-                  </VCol>
-                  <VCol cols="12" md="4">
-                    <VTextField v-model="localSettings.MIKROTIK_PASSWORD" label="Password MikroTik" type="password" persistent-placeholder="Password API MikroTik" variant="outlined" density="compact" />
-                  </VCol>
-                </VRow>
-              </VList>
+                <VListItem>
+                  <VRow no-gutters align="center">
+                    <VCol cols="12" md="4">
+                      <VListItemTitle class="mb-1">
+                        Kunci Midtrans
+                      </VListItemTitle>
+                      <VListItemSubtitle>Kunci Server & Client untuk integrasi pembayaran.</VListItemSubtitle>
+                    </VCol>
+                    <VCol cols="12" md="8">
+                      <VRow>
+                        <VCol cols="12" sm="6">
+                          <VTextField v-model="localSettings.MIDTRANS_SERVER_KEY" label="Server Key Midtrans" type="password" persistent-placeholder="Masukkan Server Key" variant="outlined" density="compact" />
+                        </VCol>
+                        <VCol cols="12" sm="6">
+                          <VTextField v-model="localSettings.MIDTRANS_CLIENT_KEY" label="Client Key Midtrans" type="password" persistent-placeholder="Masukkan Client Key" variant="outlined" density="compact" />
+                        </VCol>
+                      </VRow>
+                    </VCol>
+                  </VRow>
+                </VListItem>
 
-              <VCardActions class="mt-4 pa-4 d-flex justify-end">
-                <VBtn type="submit" :loading="isSaving" prepend-icon="ri-save-line">
+                <VDivider class="my-2" />
+                <VListSubheader>MikroTik</VListSubheader>
+                <VListItem>
+                  <VRow no-gutters align="center">
+                    <VCol cols="12" md="4">
+                      <VListItemTitle class="mb-1">
+                        Kredensial MikroTik
+                      </VListItemTitle>
+                      <VListItemSubtitle>Detail koneksi API untuk router MikroTik Anda.</VListItemSubtitle>
+                    </VCol>
+                    <VCol cols="12" md="8">
+                      <VRow>
+                        <VCol cols="12" sm="4">
+                          <VTextField v-model="localSettings.MIKROTIK_HOST" label="Host MikroTik" persistent-placeholder="Alamat IP/domain" variant="outlined" density="compact" />
+                        </VCol>
+                        <VCol cols="12" sm="4">
+                          <VTextField v-model="localSettings.MIKROTIK_USER" label="User MikroTik" persistent-placeholder="Username API" variant="outlined" density="compact" />
+                        </VCol>
+                        <VCol cols="12" sm="4">
+                          <VTextField v-model="localSettings.MIKROTIK_PASSWORD" label="Password MikroTik" type="password" persistent-placeholder="Password API" variant="outlined" density="compact" />
+                        </VCol>
+                      </VRow>
+                    </VCol>
+                  </VRow>
+                </VListItem>
+              </div>
+              <VCardActions class="mt-6 px-0">
+                <VSpacer />
+                <VBtn type="submit" :loading="isSaving" prepend-icon="mdi-content-save-outline">
                   Simpan Perubahan
                 </VBtn>
               </VCardActions>
@@ -434,10 +446,7 @@ useHead({ title: 'Setting Aplikasi' })
 </template>
 
 <style scoped>
-.card-list .v-list-item {
-  padding: 0;
-}
-.v-tabs-pill {
-  border-block-end: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+.gap-y-4 {
+  gap: 1rem 0;
 }
 </style>

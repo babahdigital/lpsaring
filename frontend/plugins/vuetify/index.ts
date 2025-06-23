@@ -24,7 +24,7 @@ function resolveInitialVuetifyTheme(userPreference: string | undefined | null): 
   return 'light'
 }
 
-// Solusi utama: 
+// Solusi utama:
 // 1. Hapus impor tipe NuxtApp yang menyebabkan circular dependency
 // 2. Gunakan inferensi tipe dari defineNuxtPlugin
 export default defineNuxtPlugin((nuxtApp) => {
@@ -56,7 +56,7 @@ export default defineNuxtPlugin((nuxtApp) => {
   })
 
   nuxtApp.vueApp.use(vuetify)
-  
+
   // Return kosong untuk menghindari implicit any
   return {}
 })

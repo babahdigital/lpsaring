@@ -81,8 +81,8 @@ useHead({
 
 const shouldShowPromoFetcher = computed(() => {
   return !(
-    route.path.startsWith('/admin') || 
-    route.path.startsWith('/maintenance')
+    route.path.startsWith('/admin')
+    || route.path.startsWith('/maintenance')
   )
 })
 </script>
