@@ -26,7 +26,7 @@ const chartComponentName = 'MonthlyChartRefinedOptimized'
 
 // Helper untuk konversi hex ke rgb (digunakan oleh contoh Vuexy)
 function hexToRgb(hex: string): string | null {
-  if (!hex || typeof hex !== 'string')
+  if (typeof hex !== 'string' || hex.length === 0)
     return null
   const sanitizedHex = hex.startsWith('#') ? hex.slice(1) : hex
   if (!/^(?:[a-f\d]{3}){1,2}$/i.test(sanitizedHex))
@@ -36,7 +36,7 @@ function hexToRgb(hex: string): string | null {
     fullHex = sanitizedHex.split('').map(char => char + char).join('')
   }
   const result = /^([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(fullHex)
-  return result
+  return result !== null
     ? `${Number.parseInt(result[1], 16)}, ${Number.parseInt(result[2], 16)}, ${Number.parseInt(result[3], 16)}`
     : null
 }
@@ -48,27 +48,27 @@ const { mobile } = useDisplay() // Integrasi useDisplay untuk responsif dinamis
 const currentThemeColors = computed(() => vuetifyTheme.current.value.colors)
 const currentThemeVariables = computed(() => vuetifyTheme.current.value.variables)
 
-const chartPrimaryColor = computed(() => currentThemeColors.value.primary || '#A672FF')
+const chartPrimaryColor = computed(() => currentThemeColors.value.primary ?? '#A672FF')
 const legendColor = computed(() => {
-  const onBackgroundRgb = hexToRgb(currentThemeColors.value['on-background'] || (vuetifyTheme.current.value.dark ? '#FFFFFF' : '#000000'))
-  const opacity = currentThemeVariables.value['high-emphasis-opacity'] || 0.87
-  return onBackgroundRgb ? `rgba(${onBackgroundRgb},${opacity})` : (vuetifyTheme.current.value.dark ? 'rgba(255,255,255,0.87)' : 'rgba(0,0,0,0.87)')
+  const onBackgroundRgb = hexToRgb(currentThemeColors.value['on-background'] ?? (vuetifyTheme.current.value.dark ? '#FFFFFF' : '#000000'))
+  const opacity = currentThemeVariables.value['high-emphasis-opacity'] ?? 0.87
+  return onBackgroundRgb !== null ? `rgba(${onBackgroundRgb},${opacity})` : (vuetifyTheme.current.value.dark ? 'rgba(255,255,255,0.87)' : 'rgba(0,0,0,0.87)')
 })
 const themeBorderColor = computed(() => {
   const borderColorVar = currentThemeVariables.value['border-color']
-  const borderOpacity = currentThemeVariables.value['border-opacity'] || 0.12
-  if (borderColorVar && typeof borderColorVar === 'string') {
+  const borderOpacity = currentThemeVariables.value['border-opacity'] ?? 0.12
+  if (borderColorVar != null && typeof borderColorVar === 'string' && borderColorVar.length > 0) {
     const rgb = hexToRgb(borderColorVar)
-    if (rgb)
+    if (rgb !== null)
       return `rgba(${rgb},${borderOpacity})`
   }
-  const onSurfaceRgbVal = hexToRgb(currentThemeColors.value['on-surface'] || (vuetifyTheme.current.value.dark ? '#FFFFFF' : '#000000'))
-  return onSurfaceRgbVal ? `rgba(${onSurfaceRgbVal},${borderOpacity})` : 'rgba(0,0,0,0.12)'
+  const onSurfaceRgbVal = hexToRgb(currentThemeColors.value['on-surface'] ?? (vuetifyTheme.current.value.dark ? '#FFFFFF' : '#000000'))
+  return onSurfaceRgbVal !== null ? `rgba(${onSurfaceRgbVal},${borderOpacity})` : 'rgba(0,0,0,0.12)'
 })
 const themeLabelColor = computed(() => {
-  const onSurfaceRgbVal = hexToRgb(currentThemeColors.value['on-surface'] || (vuetifyTheme.current.value.dark ? '#FFFFFF' : '#000000'))
-  const opacity = currentThemeVariables.value['disabled-opacity'] || 0.38
-  return onSurfaceRgbVal ? `rgba(${onSurfaceRgbVal},${opacity})` : (vuetifyTheme.current.value.dark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.38)')
+  const onSurfaceRgbVal = hexToRgb(currentThemeColors.value['on-surface'] ?? (vuetifyTheme.current.value.dark ? '#FFFFFF' : '#000000'))
+  const opacity = currentThemeVariables.value['disabled-opacity'] ?? 0.38
+  return onSurfaceRgbVal !== null ? `rgba(${onSurfaceRgbVal},${opacity})` : (vuetifyTheme.current.value.dark ? 'rgba(255,255,255,0.38)' : 'rgba(0,0,0,0.38)')
 })
 const errorDisplayColor = computed(() => currentThemeColors.value.error ?? '#FF5252')
 
@@ -105,7 +105,7 @@ function getRefactoredMonthlyOptions(
 ): ApexOptions {
   const responsiveOptions: ApexOptions['responsive'] = []
 
-  if (!mobile.value) { // Desktop/Tablet
+  if (mobile.value === false) { // Desktop/Tablet
     responsiveOptions.push(
       { breakpoint: 1441, options: { plotOptions: { bar: { columnWidth: '41%' } } } },
       { breakpoint: 960, options: { plotOptions: { bar: { columnWidth: '45%' } } } },
@@ -156,7 +156,7 @@ function getRefactoredMonthlyOptions(
       enabled: true,
       formatter: (val: number, { seriesIndex, w }) => {
         const seriesInfo = w.globals.initialSeries[seriesIndex]
-        const useGb = seriesInfo?.meta?.useGbScale || false
+        const useGb = seriesInfo?.meta?.useGbScale ?? false
         return formatQuotaForDisplay(val, useGb, true) // true untuk forDataLabel
       },
       offsetY: -20,
@@ -184,7 +184,7 @@ function getRefactoredMonthlyOptions(
       axisBorder: { show: true, color: _themeBorderColor },
       axisTicks: { show: false },
       labels: {
-        formatter: (value: string) => value ? value.substring(0, 3) : '', // Format label X-axis (misal: Jan, Feb)
+        formatter: (value: string) => (value ? value.substring(0, 3) : ''), // Format label X-axis (misal: Jan, Feb)
         style: { colors: _themeLabelColor, fontSize: '13px', fontFamily: 'Public Sans, sans-serif' },
       },
     },
@@ -195,7 +195,7 @@ function getRefactoredMonthlyOptions(
         offsetX: -15,
         formatter: (val: number, opts?: any) => {
           // Mengambil useGbScale dari metadata series jika tersedia
-          const useGb = opts?.w?.globals?.series?.[0]?.meta?.useGbScale || false
+          const useGb = Boolean(opts?.w?.globals?.series?.[0]?.meta?.useGbScale)
           return formatQuotaForDisplay(val, useGb)
         },
         style: { fontSize: '13px', colors: _themeLabelColor, fontFamily: 'Public Sans, sans-serif' },
@@ -234,11 +234,11 @@ const chartNoDataTextFromLogic = ref('Belum ada riwayat penggunaan.')
 const devErrorMessage = ref<string | null>(null)
 
 const showLoadingOverlay = computed(() => {
-  return props.parentLoading || (!isChartReadyToRender.value && !chartContainerFailedOverall.value && !props.parentError && !dataProcessed.value)
+  return props.parentLoading || (!isChartReadyToRender.value && !chartContainerFailedOverall.value && props.parentError == null && !dataProcessed.value)
 })
 
 const totalMonthlyUsageFormatted = computed(() => {
-  if (props.monthlyData?.success && Array.isArray(props.monthlyData.monthly_data) && hasValidProcessedData.value) {
+  if (props.monthlyData?.success === true && Array.isArray(props.monthlyData.monthly_data) && hasValidProcessedData.value) {
     const totalMb = props.monthlyData.monthly_data.reduce((sum, item) => sum + (item.usage_mb ?? 0), 0)
     // Menggunakan useGigaByteScale dari data yang sudah diproses untuk konsistensi
     const { useGigaByteScale } = processMonthlyDataForChart(props.monthlyData.monthly_data) // Re-proses untuk mendapatkan skala yang konsisten
@@ -266,7 +266,7 @@ function processMonthlyDataForChart(data: MonthlyUsageData[] | undefined | null)
   result.originalMonthYear = originalMonthlyData.map(d => d.month_year)
 
   const processedCategories = originalMonthlyData.map((d) => {
-    if (d.month_year && typeof d.month_year === 'string' && d.month_year.includes('-')) {
+    if (d.month_year != null && typeof d.month_year === 'string' && d.month_year.includes('-')) {
       const parts = d.month_year.split('-')
       if (parts.length === 2) {
         const yearNum = Number.parseInt(parts[0])
@@ -288,7 +288,7 @@ function processMonthlyDataForChart(data: MonthlyUsageData[] | undefined | null)
   const finalApiSeriesDataMb = validDataPoints.map(point => point.value)
 
   result.isValid = finalApiSeriesDataMb.length > 0 && result.categories.length > 0 && finalApiSeriesDataMb.length === result.categories.length
-  result.allZero = !result.isValid || finalApiSeriesDataMb.every(item => item === 0)
+  result.allZero = result.isValid === false || finalApiSeriesDataMb.every(item => item === 0)
 
   if (result.isValid) {
     const maxUsageMb = Math.max(...finalApiSeriesDataMb, 0)
@@ -384,14 +384,15 @@ function handleChartError(err: Error, contextMessage: string = 'Chart error') {
 
 async function attemptSetReady() {
   devErrorMessage.value = null // Reset pesan error dev setiap percobaan
-  if (chartContainerFailedOverall.value && !props.parentLoading) {
+  if (chartContainerFailedOverall.value === true && props.parentLoading === false) {
     return // Jika sudah gagal secara keseluruhan dan tidak loading, jangan coba lagi
   }
 
   await vueNextTick()
-  const containerElement = chartContainerRef.value?.$el || (chartContainerRef.value instanceof Element ? chartContainerRef.value : null)
+  const rawContainer = chartContainerRef.value
+  const containerElement = (rawContainer?.$el ?? rawContainer) as Element | null
 
-  if (!containerElement) {
+  if (containerElement === null) {
     handleChartError(new Error('Referensi kontainer chart (VCardText) tidak tersedia.'), 'Inisiasi ResizeObserver')
     return
   }
@@ -400,11 +401,11 @@ async function attemptSetReady() {
     return
   }
 
-  if (observer.value) {
+  if (observer.value !== null) {
     observer.value.disconnect()
     observer.value = null
   }
-  if (fallbackTimeoutId) {
+  if (fallbackTimeoutId !== null) {
     clearTimeout(fallbackTimeoutId)
     fallbackTimeoutId = null
   }
@@ -415,7 +416,7 @@ async function attemptSetReady() {
       for (const entry of entries) {
         const { width, height } = entry.contentRect
         if (width > 50 && height > 50) { // Pastikan kontainer memiliki dimensi yang cukup
-          if (!isChartReadyToRender.value) {
+          if (isChartReadyToRender.value === false) {
             isChartReadyToRender.value = true
             chartContainerFailedOverall.value = false // Reset status gagal jika berhasil
             monthlyChartKey.value++ // Trigger re-render chart jika perlu
@@ -423,7 +424,7 @@ async function attemptSetReady() {
           observer.value?.unobserve(entry.target) // Hentikan observasi setelah berhasil
           observer.value?.disconnect()
           observer.value = null
-          if (fallbackTimeoutId) {
+          if (fallbackTimeoutId !== null) {
             clearTimeout(fallbackTimeoutId)
             fallbackTimeoutId = null
           }
@@ -435,11 +436,11 @@ async function attemptSetReady() {
 
     // Fallback jika ResizeObserver tidak trigger dalam waktu tertentu
     fallbackTimeoutId = setTimeout(() => {
-      if (!isChartReadyToRender.value) {
+      if (isChartReadyToRender.value === false) {
         handleChartError(new Error('Timeout ResizeObserver (3s) menunggu kontainer chart siap.'), 'Fallback Timeout ResizeObserver')
-        if (observer.value && containerElement instanceof Element)
+        if (observer.value !== null && containerElement instanceof Element)
           observer.value.unobserve(containerElement)
-        if (observer.value) {
+        if (observer.value !== null) {
           observer.value.disconnect()
           observer.value = null
         }
@@ -462,9 +463,9 @@ function retryChartInit() {
 }
 
 onBeforeUnmount(() => {
-  if (fallbackTimeoutId)
+  if (fallbackTimeoutId !== null)
     clearTimeout(fallbackTimeoutId)
-  if (observer.value) {
+  if (observer.value !== null) {
     observer.value.disconnect()
     observer.value = null
   }
@@ -528,15 +529,15 @@ watch(
       hasValidProcessedData.value = false
       processedDataResult = processMonthlyDataForChart(null)
     }
-    else if (newParentError) {
+    else if (newParentError != null) {
       currentNoDataText = 'Gagal memuat data riwayat bulanan.'
       hasValidProcessedData.value = false
       processedDataResult = processMonthlyDataForChart(null)
     }
-    else if (newData?.success && Array.isArray(newData.monthly_data)) {
+    else if (newData?.success === true && Array.isArray(newData.monthly_data)) {
       processedDataResult = processMonthlyDataForChart(newData.monthly_data)
       hasValidProcessedData.value = processedDataResult.isValid && !processedDataResult.allZero
-      if (!processedDataResult.isValid)
+      if (processedDataResult.isValid === false)
         currentNoDataText = 'Format data tidak sesuai atau data tidak valid.'
       else if (processedDataResult.allZero)
         currentNoDataText = 'Belum ada riwayat penggunaan bulan ini.'
@@ -551,11 +552,11 @@ watch(
     chartNoDataTextFromLogic.value = currentNoDataText
 
     monthlyUsageChartSeries.value = [{
-      name: processedDataResult?.yAxisTitle || 'Penggunaan Bulanan', // Nama series dari hasil proses
-      data: processedDataResult?.seriesData || [],
+      name: processedDataResult?.yAxisTitle ?? 'Penggunaan Bulanan', // Nama series dari hasil proses
+      data: processedDataResult?.seriesData ?? [],
       meta: {
-        useGbScale: processedDataResult?.useGigaByteScale || false,
-        originalMonthYears: processedDataResult?.originalMonthYear || [],
+        useGbScale: processedDataResult?.useGigaByteScale ?? false,
+        originalMonthYears: processedDataResult?.originalMonthYear ?? [],
       },
     }]
 
@@ -565,17 +566,17 @@ watch(
       colors: [_chartPrimaryColor], // Pastikan warna utama diterapkan
       xaxis: {
         ...baseOpts.xaxis,
-        categories: processedDataResult?.categories || [],
+        categories: processedDataResult?.categories ?? [],
         labels: { ...baseOpts.xaxis?.labels, style: { ...baseOpts.xaxis?.labels?.style, colors: _themeLabelColor } },
       },
       yaxis: {
         ...baseOpts.yaxis,
-        max: processedDataResult?.displayMax || 10,
+        max: processedDataResult?.displayMax ?? 10,
         title: { text: undefined }, // Eksplisit hilangkan judul Y-axis
         labels: {
           ...baseOpts.yaxis?.labels,
           style: { ...baseOpts.yaxis?.labels?.style, colors: _themeLabelColor },
-          formatter: (value: number) => formatQuotaForDisplay(value, processedDataResult?.useGigaByteScale || false),
+          formatter: (value: number) => formatQuotaForDisplay(value, processedDataResult?.useGigaByteScale ?? false),
         },
         axisBorder: { ...baseOpts.yaxis?.axisBorder, color: _themeBorderColor },
         axisTicks: { ...baseOpts.yaxis?.axisTicks, color: _themeBorderColor },
@@ -585,10 +586,10 @@ watch(
         ...baseOpts.tooltip,
         theme: isDark ? 'dark' : 'light',
         custom({ series, seriesIndex, dataPointIndex, w }) {
-          const originalMY = w.globals.initialSeries[seriesIndex]?.meta?.originalMonthYears?.[dataPointIndex] || ''
-          let displayCategory = w.globals.labels[dataPointIndex] || originalMY // Fallback ke label jika originalMY kosong
+          const originalMY = w.globals.initialSeries[seriesIndex]?.meta?.originalMonthYears?.[dataPointIndex] ?? ''
+          let displayCategory = w.globals.labels[dataPointIndex] ?? originalMY // Fallback ke label jika originalMY kosong
 
-          if (originalMY && originalMY.includes('-')) {
+          if (originalMY.length > 0 && originalMY.includes('-')) {
             const parts = originalMY.split('-')
             if (parts.length === 2) {
               const yearNum = Number.parseInt(parts[0])
@@ -603,7 +604,7 @@ watch(
           }
 
           const value = series[seriesIndex][dataPointIndex]
-          const useGb = w.globals.initialSeries[seriesIndex]?.meta?.useGbScale || false
+          const useGb = w.globals.initialSeries[seriesIndex]?.meta?.useGbScale ?? false
           const formattedValue = formatQuotaForDisplay(value, useGb) // Tidak forDataLabel
 
           return `<div class="apexcharts-tooltip-custom vuexy-tooltip custom-tooltip">
@@ -614,7 +615,7 @@ watch(
       dataLabels: {
         ...baseOpts.dataLabels,
         formatter: (val: number, opts) => {
-          const useGb = opts.w.config.series[opts.seriesIndex]?.meta?.useGbScale || false
+          const useGb = opts.w.config.series[opts.seriesIndex]?.meta?.useGbScale ?? false
           return formatQuotaForDisplay(val, useGb, true) // true untuk forDataLabel
         },
         style: { ...baseOpts.dataLabels?.style, colors: [_legendColor] },
@@ -622,16 +623,16 @@ watch(
       noData: {
         ...baseOpts.noData,
         text: currentNoDataText, // Teks noData dari logika
-        style: { ...baseOpts.noData?.style, color: containerFailed || newParentError ? errorDisplayColor.value : _themeLabelColor },
+        style: { ...baseOpts.noData?.style, color: containerFailed || newParentError != null ? errorDisplayColor.value : _themeLabelColor },
       },
     }
 
     // Update chart hanya jika siap, tidak loading, dan tidak gagal
-    if (chartRef.value && chartReady && !newParentLoading && !containerFailed) {
+    if (chartRef.value != null && chartReady && !newParentLoading && !containerFailed) {
       vueNextTick(() => { // Pastikan DOM sudah siap untuk update
-        if (chartRef.value?.updateOptions)
+        if (typeof chartRef.value?.updateOptions === 'function')
           chartRef.value.updateOptions(monthlyUsageChartOptions.value, false, true, true)
-        if (chartRef.value?.updateSeries) // Update series juga jika datanya berubah
+        if (typeof chartRef.value?.updateSeries === 'function') // Update series juga jika datanya berubah
           chartRef.value.updateSeries(monthlyUsageChartSeries.value, true) // true untuk animasi
       })
     }
@@ -649,12 +650,12 @@ watch(
             <VIcon icon="tabler-chart-bar" class="me-2" />Penggunaan Kuota Bulanan
           </VCardTitle>
           <div
-            v-if="!parentLoading && !parentError && hasValidProcessedData"
+            v-if="!parentLoading && parentError == null && hasValidProcessedData"
             class="text-h5 font-weight-semibold"
           >
             {{ totalMonthlyUsageFormatted }}
           </div>
-          <div v-else-if="!parentLoading && !parentError && !hasValidProcessedData && dataProcessed" class="text-body-2 text-medium-emphasis">
+          <div v-else-if="!parentLoading && parentError == null && !hasValidProcessedData && dataProcessed" class="text-body-2 text-medium-emphasis">
             {{ chartNoDataTextFromLogic || 'Belum ada riwayat penggunaan.' }}
           </div>
           <div v-else class="text-body-2" style="min-height: 28px;">
@@ -672,7 +673,7 @@ watch(
 
           <ClientOnly class="flex-grow-1">
             <VueApexCharts
-              v-if="VueApexCharts && isChartReadyToRender && !chartContainerFailedOverall && !showLoadingOverlay && hasValidProcessedData"
+              v-if="isChartReadyToRender && !chartContainerFailedOverall && !showLoadingOverlay && hasValidProcessedData"
               ref="chartRef"
               :key="monthlyChartKey"
               :options="monthlyUsageChartOptions"
@@ -682,19 +683,19 @@ watch(
               class="mt-2"
             />
             <div v-else-if="!showLoadingOverlay" class="chart-fallback-container" :style="{ height: '310px' }">
-              <template v-if="isChartReadyToRender && !parentLoading && (parentError || !hasValidProcessedData)">
+              <template v-if="isChartReadyToRender && !parentLoading && (parentError != null || !hasValidProcessedData)">
                 <VIcon
                   size="40"
-                  :color="parentError ? errorDisplayColor : 'grey-lighten-1'"
+                  :color="parentError != null ? errorDisplayColor : 'grey-lighten-1'"
                   class="mb-2"
                 >
-                  {{ parentError ? 'tabler-alert-triangle' : 'tabler-chart-bar-off' }}
+                  {{ parentError != null ? 'tabler-alert-triangle' : 'tabler-chart-bar-off' }}
                 </VIcon>
-                <p :class="parentError ? 'text-error' : 'text-medium-emphasis'" class="text-caption">
-                  {{ chartNoDataTextFromLogic || (parentError ? 'Gagal memuat data chart.' : 'Tidak ada data untuk ditampilkan.') }}
+                <p :class="parentError != null ? 'text-error' : 'text-medium-emphasis'" class="text-caption">
+                  {{ chartNoDataTextFromLogic || (parentError != null ? 'Gagal memuat data chart.' : 'Tidak ada data untuk ditampilkan.') }}
                 </p>
               </template>
-              <template v-else-if="!isChartReadyToRender && !parentLoading && !parentError">
+              <template v-else-if="!isChartReadyToRender && !parentLoading && parentError == null">
                 <VIcon size="40" color="grey-lighten-1" class="mb-2">
                   tabler-loader-2
                 </VIcon>
@@ -745,7 +746,7 @@ watch(
         <VBtn variant="tonal" :color="errorDisplayColor" class="mt-1" size="small" @click="retryChartInit">
           <VIcon start icon="tabler-refresh" /> Coba Lagi Inisiasi
         </VBtn>
-        <div v-if="devErrorMessage" class="dev-error-overlay-message mt-3">
+        <div v-if="devErrorMessage != null" class="dev-error-overlay-message mt-3">
           <strong>Pesan Error (Mode Pengembangan):</strong><br>{{ devErrorMessage }}
         </div>
       </div>
