@@ -68,9 +68,12 @@ async function fetchRecipients() {
     recipients.value = data
   }
   catch (e: any) {
-    const errorMessage = e.data?.message || e.message || 'Terjadi kesalahan tidak diketahui.'
-    error.value = `Gagal memuat data: ${errorMessage}`
-    showSnackbar(error.value, 'error')
+    // Perbaikan baris 71: Menambahkan pengecekan eksplisit untuk e.data.message dan e.message
+    const errorMessage = (e.data?.message !== null && typeof e.data?.message === 'string' && e.data.message !== '')
+      ? e.data.message
+      : ((typeof e.message === 'string' && e.message !== '') ? e.message : 'Terjadi kesalahan tidak diketahui.');
+    error.value = `Gagal memuat data: ${errorMessage}`;
+    showSnackbar(error.value, 'error');
   }
   finally {
     loading.value = false
@@ -101,8 +104,11 @@ async function saveSettings() {
     showSnackbar('Pengaturan notifikasi berhasil disimpan.', 'success')
   }
   catch (e: any) {
-    const errorMessage = e.data?.message || e.message || 'Gagal menyimpan pengaturan.'
-    showSnackbar(errorMessage, 'error')
+    // Perbaikan baris 104: Menambahkan pengecekan eksplisit untuk e.data.message dan e.message
+    const errorMessage = (e.data?.message !== null && typeof e.data?.message === 'string' && e.data.message !== '')
+      ? e.data.message
+      : ((typeof e.message === 'string' && e.message !== '') ? e.message : 'Gagal menyimpan pengaturan.');
+    showSnackbar(errorMessage, 'error');
   }
   finally {
     saveLoading.value = false
@@ -120,7 +126,7 @@ function showSnackbar(text: string, color: string = 'info') {
 
 // --- Lifecycle & Watchers ---
 onMounted(() => {
-  if (authStore.isSuperAdmin) {
+  if (authStore.isSuperAdmin === true) { // Perbaikan: Menambahkan perbandingan eksplisit
     fetchRecipients()
   }
 })
@@ -133,7 +139,7 @@ watch(selectedNotificationType, () => {
 
 <template>
   <div>
-    <template v-if="authStore.isSuperAdmin">
+    <template v-if="authStore.isSuperAdmin === true">
       <VCard class="mb-6">
         <VCardItem>
           <VCardTitle>Pilih Jenis Notifikasi</VCardTitle>
@@ -172,7 +178,7 @@ watch(selectedNotificationType, () => {
 
         <VDivider />
 
-        <div v-if="loading">
+        <div v-if="loading === true">
           <VSkeletonLoader
             v-for="i in 4"
             :key="i"
@@ -181,7 +187,7 @@ watch(selectedNotificationType, () => {
           />
         </div>
 
-        <div v-else-if="error" class="text-center pa-8">
+        <div v-else-if="error !== null" class="text-center pa-8">
           <VIcon icon="tabler-alert-triangle" size="48" color="error" class="mb-2" />
           <p class="mb-4">
             {{ error }}
@@ -215,7 +221,7 @@ watch(selectedNotificationType, () => {
               <VDivider v-if="index < recipients.length - 1" />
             </template>
           </VList>
-          <p v-if="!recipients.length" class="text-center text-medium-emphasis py-6">
+          <p v-if="recipients.length === 0" class="text-center text-medium-emphasis py-6">
             Tidak ada admin yang dapat dikonfigurasi.
           </p>
         </VCardText>
@@ -229,7 +235,7 @@ watch(selectedNotificationType, () => {
             variant="elevated"
             prepend-icon="tabler-device-floppy"
             :loading="saveLoading"
-            :disabled="loading || !!error"
+            :disabled="loading === true || error !== null"
             @click="saveSettings"
           >
             Simpan Perubahan
