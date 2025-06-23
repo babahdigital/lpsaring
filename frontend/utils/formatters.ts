@@ -10,12 +10,14 @@
  * @throws {Error} Jika format nomor telepon tidak valid.
  */
 export function normalize_to_e164(phoneNumber: string | null | undefined): string {
-  if (!phoneNumber || typeof phoneNumber !== 'string') {
+  // PERBAIKAN: Mengganti !phoneNumber dengan pengecekan null/undefined yang eksplisit
+  if (phoneNumber == null || typeof phoneNumber !== 'string') {
     throw new Error('Nomor telepon tidak boleh kosong.')
   }
 
   const cleaned = phoneNumber.replace(/[\s\-()+]/g, '').trim()
-  if (!cleaned) {
+  // PERBAIKAN: Mengganti !cleaned dengan pengecekan string kosong yang eksplisit
+  if (cleaned === '') {
     throw new Error('Nomor telepon tidak boleh kosong.')
   }
 

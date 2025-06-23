@@ -37,25 +37,22 @@ export const useSettingsStore = defineStore('settings', () => {
   // --- ACTIONS ---
 
   function _updateAllStates(settings: Record<string, string | null | undefined>) {
-    appName.value = settings.APP_NAME || 'Portal Hotspot'
-    browserTitle.value = settings.APP_BROWSER_TITLE || 'Portal Hotspot'
-    theme.value = (settings.THEME as Theme) || Theme.System
-    skin.value = (settings.SKIN as Skins) || Skins.Bordered
-    layout.value = (settings.LAYOUT as AppContentLayoutNav) || AppContentLayoutNav.Horizontal
-    contentWidth.value = (settings.CONTENT_WIDTH as ContentWidth) || ContentWidth.Boxed
+    // --- PERBAIKAN DI SINI: Mengganti || dengan ?? ---
+    appName.value = settings.APP_NAME ?? 'Portal Hotspot'
+    browserTitle.value = settings.APP_BROWSER_TITLE ?? 'Portal Hotspot'
+    theme.value = (settings.THEME ?? Theme.System) as Theme
+    skin.value = (settings.SKIN ?? Skins.Bordered) as Skins
+    layout.value = (settings.LAYOUT ?? AppContentLayoutNav.Horizontal) as AppContentLayoutNav
+    contentWidth.value = (settings.CONTENT_WIDTH ?? ContentWidth.Boxed) as ContentWidth
 
     const active = settings.MAINTENANCE_MODE_ACTIVE === 'True'
-    const message = settings.MAINTENANCE_MODE_MESSAGE || 'Aplikasi sedang dalam perbaikan.'
+    const message = settings.MAINTENANCE_MODE_MESSAGE ?? 'Aplikasi sedang dalam perbaikan.'
     maintenanceStore.setMaintenanceStatus(active, message)
   }
 
   function setSettings(settings: SettingSchema[]) {
-    // --- PERBAIKAN DI SINI ---
-    // Tambahkan pengecekan untuk memastikan 'settings' adalah sebuah array.
-    // Ini membuat fungsi lebih aman dan mencegah error '.reduce is not a function'.
     if (!Array.isArray(settings)) {
       console.error('setSettings expect an array, but received:', settings)
-      // Atur state default jika data tidak valid untuk mencegah crash.
       _updateAllStates({})
       isLoaded.value = true
       return
