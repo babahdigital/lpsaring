@@ -23,7 +23,7 @@ const router = useRouter()
 const route = useRoute()
 const { $api } = useNuxtApp()
 
-const { isLoggedIn, user, isLoadingUser, authError } = storeToRefs(authStore)
+const { isLoggedIn, user, isLoadingUser } = storeToRefs(authStore)
 
 // --- PERBAIKAN PADA FUNGSI FETCH ---
 // Mengambil data paket dari API publik, dengan mengharapkan objek yang berisi `data`
@@ -129,9 +129,15 @@ function retryFetch() {
   refreshPackages()
 }
 
-function goToLogin() { router.push({ path: '/login', query: { redirect: '/beli' } }) }
-function goToRegister() { router.push({ path: '/register', query: { redirect: '/beli' } }) }
-function goToDashboard() { router.push('/dashboard') }
+function goToLogin() {
+  router.push({ path: '/login', query: { redirect: '/beli' } })
+}
+function goToRegister() {
+  router.push({ path: '/register', query: { redirect: '/beli' } })
+}
+function goToDashboard() {
+  router.push('/dashboard')
+}
 
 // Logika penanganan event (tidak ada perubahan)
 function handlePackageSelection(pkg: Package) {
@@ -246,7 +252,6 @@ useHead({ title: 'Beli Paket Hotspot' })
 </script>
 
 <template>
-  <!-- DIUBAH: Container utama ditambahkan class untuk centering -->
   <v-container fluid class="pa-0 ma-0 bg-grey-lighten-5 full-height-container">
     <v-col cols="12" style="max-width: 1300px;" class="mx-auto">
       <v-container fluid class="py-8 px-lg-12 px-md-6 px-sm-4">
@@ -254,7 +259,6 @@ useHead({ title: 'Beli Paket Hotspot' })
           DAFTAR PAKET HOTSPOT
         </h1>
         <div class="text-center mb-6" style="min-height: 40px;">
-          <!-- Bagian greeting pengguna dan tombol login/dashboard -->
           <v-btn v-if="!isLoggedIn && !isLoadingUser" variant="text" color="primary" @click="goToLogin">
             <v-icon start>
               mdi-login-variant
@@ -277,13 +281,11 @@ useHead({ title: 'Beli Paket Hotspot' })
 
       <v-row class="ma-0" align="start" justify="center">
         <v-col cols="12">
-          <!-- Skeleton loader saat memuat paket -->
           <v-row v-if="isLoadingPackages" justify="center" dense class="px-lg-10 px-md-4 px-sm-2">
             <v-col v-for="n in 4" :key="`skel-pkg-${n}`" cols="12" sm="6" md="4" lg="3">
               <v-skeleton-loader type="image, article, actions" height="320" />
             </v-col>
           </v-row>
-          <!-- Tampilan error jika gagal memuat paket -->
           <v-row v-else-if="fetchPackagesError" justify="center" class="px-lg-10 px-md-4 px-sm-2">
             <v-col cols="12" md="8" lg="6">
               <v-alert type="error" title="Gagal Memuat Paket" variant="tonal" prominent>
@@ -296,7 +298,6 @@ useHead({ title: 'Beli Paket Hotspot' })
               </v-alert>
             </v-col>
           </v-row>
-          <!-- Tampilan daftar paket atau pesan jika tidak ada paket -->
           <div v-else class="px-lg-10 px-md-4 px-sm-2">
             <v-row v-if="packages.length > 0" dense justify="center">
               <v-col v-for="pkg in packages" :key="pkg.id" cols="12" sm="6" md="4" lg="3" class="pa-2 d-flex">
@@ -380,7 +381,6 @@ useHead({ title: 'Beli Paket Hotspot' })
         </v-col>
       </v-row>
 
-      <!-- Dialog kontak (KODE LENGKAP) -->
       <v-dialog v-model="showContactDialog" persistent max-width="500px" scrim="grey-darken-3" eager>
         <v-card :loading="isCheckingUser" rounded="lg" :disabled="isCheckingUser">
           <v-card-title class="d-flex align-center py-3 px-4 bg-grey-lighten-4 border-b">
@@ -450,7 +450,6 @@ useHead({ title: 'Beli Paket Hotspot' })
         </v-card>
       </v-dialog>
 
-      <!-- Snackbar (tidak ada perubahan) -->
       <v-snackbar
         v-model="snackbarVisible"
         :color="snackbarColor"
