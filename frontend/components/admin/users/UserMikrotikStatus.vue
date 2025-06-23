@@ -1,7 +1,7 @@
 // frontend/components/admin/users/UserMikrotikStatus.vue
 <script lang="ts" setup>
-import { ref } from 'vue'
 import { useNuxtApp } from '#app'
+import { ref } from 'vue'
 
 const props = defineProps<{
   userId: string
@@ -31,7 +31,7 @@ async function checkStatus() {
 }
 
 // Helper untuk format data
-const formatBytes = (bytes: number | string, decimals = 2) => {
+function formatBytes(bytes: number | string, decimals = 2) {
   if (typeof bytes === 'string')
     bytes = Number.parseInt(bytes, 10)
   if (bytes === 0 || !bytes)

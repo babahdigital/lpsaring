@@ -1,3 +1,34 @@
+<script setup lang="ts">
+import { storeToRefs } from 'pinia'
+import { ref, watch } from 'vue'
+import { useDisplay } from 'vuetify'
+import { usePromoStore } from '~/store/promo'
+
+const { mobile: isMobile } = useDisplay()
+const promoStore = usePromoStore()
+const { isPromoDialogVisible, activePromo } = storeToRefs(promoStore)
+const dialogVisible = ref(false)
+
+watch(isPromoDialogVisible, (newValue) => {
+  if (newValue && activePromo.value?.event_type === 'GENERAL_ANNOUNCEMENT') {
+    dialogVisible.value = true
+  }
+  else {
+    dialogVisible.value = false
+  }
+})
+
+function closeDialog() {
+  promoStore.hidePromoDialog()
+}
+
+function onDialogClose() {
+  if (activePromo.value?.event_type === 'GENERAL_ANNOUNCEMENT') {
+    promoStore.resetPromo()
+  }
+}
+</script>
+
 <template>
   <VDialog
     v-model="dialogVisible"
@@ -5,7 +36,7 @@
     transition="dialog-bottom-transition"
     @after-leave="onDialogClose"
   >
-    <VCard class="promo-dialog-card" v-if="activePromo">
+    <VCard v-if="activePromo" class="promo-dialog-card">
       <VCardTitle class="promo-header pa-0">
         <VIcon icon="tabler-broadcast" class="promo-icon" />
       </VCardTitle>
@@ -18,7 +49,7 @@
           {{ activePromo.name }}
         </p>
 
-        <VDivider class="my-6"/>
+        <VDivider class="my-6" />
 
         <div class="description-content">
           <p class="text-body-1" style="white-space: pre-wrap;">
@@ -41,36 +72,6 @@
     </VCard>
   </VDialog>
 </template>
-
-<script setup lang="ts">
-import { ref, watch } from 'vue';
-import { usePromoStore } from '~/store/promo';
-import { useDisplay } from 'vuetify';
-import { storeToRefs } from 'pinia';
-
-const { mobile: isMobile } = useDisplay();
-const promoStore = usePromoStore();
-const { isPromoDialogVisible, activePromo } = storeToRefs(promoStore);
-const dialogVisible = ref(false);
-
-watch(isPromoDialogVisible, (newValue) => {
-  if (newValue && activePromo.value?.event_type === 'GENERAL_ANNOUNCEMENT') {
-    dialogVisible.value = true;
-  } else {
-    dialogVisible.value = false;
-  }
-});
-
-function closeDialog() {
-  promoStore.hidePromoDialog();
-}
-
-function onDialogClose() {
-    if(activePromo.value?.event_type === 'GENERAL_ANNOUNCEMENT'){
-        promoStore.resetPromo();
-    }
-}
-</script>
 
 <style scoped>
 .promo-dialog-card {

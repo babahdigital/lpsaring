@@ -3,11 +3,11 @@ import { HorizontalNavLayout } from '@layouts'
 import { VNodeRenderer } from '@layouts/components/VNodeRenderer'
 import { themeConfig } from '@themeConfig'
 import { computed } from 'vue'
-import { getHorizontalNavItems } from '@/navigation/horizontal'
+import HeaderWeeklyRevenue from '@/components/admin/HeaderWeeklyRevenue.vue'
 
 import Footer from '@/layouts/components/Footer.vue'
 import UserProfile from '@/layouts/components/UserProfile.vue'
-import HeaderWeeklyRevenue from '@/components/admin/HeaderWeeklyRevenue.vue'
+import { getHorizontalNavItems } from '@/navigation/horizontal'
 import { useAuthStore } from '~/store/auth'
 
 const authStore = useAuthStore()

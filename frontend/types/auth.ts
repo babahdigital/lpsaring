@@ -7,7 +7,7 @@ export interface User {
   // [PERBAIKAN] Menambahkan peran KOMANDAN
   role: 'USER' | 'KOMANDAN' | 'ADMIN' | 'SUPER_ADMIN'
   approval_status: 'PENDING' | 'APPROVED' | 'REJECTED'
-  
+
   // [TAMBAHAN] Menambahkan properti lain dari backend untuk kelengkapan
   blok?: string | null
   kamar?: string | null

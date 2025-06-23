@@ -1,8 +1,8 @@
 <script lang="ts" setup>
-import { ref, reactive, watch } from 'vue'
 import { useNuxtApp } from '#app'
-import { useSnackbar } from '@/composables/useSnackbar'
+import { reactive, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
+import { useSnackbar } from '@/composables/useSnackbar'
 
 interface Profile {
   id: string
@@ -26,7 +26,8 @@ const defaultProfile: Partial<Profile> = { profile_name: '', description: '' }
 
 // Fetch data ketika dialog dibuka
 watch(() => props.modelValue, (isShown) => {
-  if (isShown) fetchProfiles()
+  if (isShown)
+    fetchProfiles()
 })
 
 const headers = [
@@ -40,9 +41,11 @@ async function fetchProfiles() {
   try {
     const response = await $api<Profile[]>('/admin/profiles')
     profiles.value = response
-  } catch (error: any) {
+  }
+  catch (error: any) {
     snackbar.add({ type: 'error', title: 'Gagal Memuat', text: error.data?.message || 'Tidak dapat mengambil data profil.' })
-  } finally {
+  }
+  finally {
     loading.value = false
   }
 }
@@ -51,7 +54,8 @@ function openDialog(type: 'edit' | 'delete', profile: Profile | null = null) {
   if (type === 'edit') {
     editedProfile.value = profile ? { ...profile } : { ...defaultProfile }
     dialogs.edit = true
-  } else if (type === 'delete' && profile) {
+  }
+  else if (type === 'delete' && profile) {
     editedProfile.value = { ...profile }
     dialogs.delete = true
   }
@@ -61,14 +65,15 @@ async function saveProfile() {
   const isUpdate = !!editedProfile.value.id
   const endpoint = isUpdate ? `/admin/profiles/${editedProfile.value.id}` : '/admin/profiles'
   const method = isUpdate ? 'PUT' : 'POST'
-  
+
   try {
     await $api(endpoint, { method, body: editedProfile.value })
     snackbar.add({ type: 'success', title: 'Berhasil', text: `Profil berhasil ${isUpdate ? 'diperbarui' : 'disimpan'}.` })
     dialogs.edit = false
     await fetchProfiles()
     emit('profiles-updated') // Beri sinyal ke induk untuk refresh
-  } catch (error: any) {
+  }
+  catch (error: any) {
     snackbar.add({ type: 'error', title: 'Gagal', text: error.data?.message || 'Terjadi kesalahan.' })
   }
 }
@@ -80,7 +85,8 @@ async function deleteProfileConfirm() {
     dialogs.delete = false
     await fetchProfiles()
     emit('profiles-updated') // Beri sinyal ke induk untuk refresh
-  } catch (error: any) {
+  }
+  catch (error: any) {
     snackbar.add({ type: 'error', title: 'Gagal Menghapus', text: error.data?.message || 'Terjadi kesalahan.' })
   }
 }

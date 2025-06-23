@@ -4,7 +4,8 @@ module.exports = {
     es2021: true,
   },
   extends: [
-    '@antfu/eslint-config-vue',
+    // '@antfu/eslint-config-vue',
+    '@antfu',
     'plugin:vue/vue3-recommended',
     'plugin:import/recommended',
     'plugin:import/typescript',
@@ -13,7 +14,7 @@ module.exports = {
     'plugin:@typescript-eslint/recommended',
     'plugin:case-police/recommended',
     'plugin:regexp/recommended',
-
+    'eslint:recommended',
     // 'plugin:unicorn/recommended',
   ],
   parser: 'vue-eslint-parser',

@@ -1,35 +1,45 @@
 <script lang="ts" setup>
-import { ref, watch, computed, reactive, nextTick } from 'vue'
-import { useAuthStore } from '@/store/auth'
 import type { VForm } from 'vuetify/components'
-import AppTextField from '@core/components/app-form-elements/AppTextField.vue'
 import AppSelect from '@core/components/app-form-elements/AppSelect.vue'
+import AppTextField from '@core/components/app-form-elements/AppTextField.vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { useAuthStore } from '@/store/auth'
 // [PERBAIKAN] Impor ini sekarang akan berhasil karena kita sudah membuat filenya.
-import { normalize_to_e164 } from '~/utils/formatters' 
+import { normalize_to_e164 } from '~/utils/formatters'
 
 interface FormData {
-  full_name: string;
-  phone_number: string; // Menyimpan format 08xx selama di form
-  role: 'USER' | 'KOMANDAN' | 'ADMIN' | 'SUPER_ADMIN';
-  blok: string | null;
-  kamar: string | null;
-  add_gb: number;
-  add_days: number;
+  full_name: string
+  phone_number: string // Menyimpan format 08xx selama di form
+  role: 'USER' | 'KOMANDAN' | 'ADMIN' | 'SUPER_ADMIN'
+  blok: string | null
+  kamar: string | null
+  add_gb: number
+  add_days: number
 }
 
 const props = defineProps<{
-  modelValue: boolean; loading: boolean; availableBloks: string[];
-  availableKamars: string[]; isAlamatLoading: boolean;
+  modelValue: boolean
+  loading: boolean
+  availableBloks: string[]
+  availableKamars: string[]
+  isAlamatLoading: boolean
 }>()
 
 const emit = defineEmits(['update:modelValue', 'save'])
 const authStore = useAuthStore()
 const formRef = ref<InstanceType<typeof VForm> | null>(null)
 
-const getInitialFormData = (): FormData => ({
-  full_name: '', phone_number: '', role: 'USER',
-  blok: null, kamar: null, add_gb: 1, add_days: 30,
-})
+function getInitialFormData(): FormData {
+  return {
+    full_name: '',
+    phone_number: '',
+    role: 'USER',
+    blok: null,
+    kamar: null,
+    add_gb: 1,
+    add_days: 30,
+  }
+}
 
 const formData = reactive<FormData>(getInitialFormData())
 
@@ -42,38 +52,42 @@ watch(() => props.modelValue, (isOpen) => {
 
 watch(() => formData.role, (newRole) => {
   if (newRole === 'KOMANDAN') {
-    formData.add_gb = 5; formData.add_days = 30; formData.blok = null; formData.kamar = null;
-  } else if (newRole === 'USER') {
-    formData.add_gb = 1; formData.add_days = 30;
-  } else {
-    formData.add_gb = 0; formData.add_days = 0; formData.blok = null; formData.kamar = null;
+    formData.add_gb = 5; formData.add_days = 30; formData.blok = null; formData.kamar = null
+  }
+  else if (newRole === 'USER') {
+    formData.add_gb = 1; formData.add_days = 30
+  }
+  else {
+    formData.add_gb = 0; formData.add_days = 0; formData.blok = null; formData.kamar = null
   }
 }, { immediate: true })
 
 const availableRoles = computed(() => {
-  const roles = [{ title: 'User Biasa', value: 'USER' }, { title: 'Komandan', value: 'KOMANDAN' }];
-  if (authStore.isSuperAdmin) { roles.push({ title: 'Admin', value: 'ADMIN' }); }
-  return roles;
+  const roles = [{ title: 'User Biasa', value: 'USER' }, { title: 'Komandan', value: 'KOMANDAN' }]
+  if (authStore.isSuperAdmin) { roles.push({ title: 'Admin', value: 'ADMIN' }) }
+  return roles
 })
 
 const showAlamatSection = computed(() => formData.role === 'USER')
 const showQuotaFields = computed(() => formData.role === 'USER' || formData.role === 'KOMANDAN')
 
-const onSave = async () => {
-  if (!formRef.value) return
+async function onSave() {
+  if (!formRef.value)
+    return
   const { valid } = await formRef.value.validate()
 
   if (valid) {
-    const payload = { ...formData };
-    
+    const payload = { ...formData }
+
     try {
       // [PERBAIKAN] Menggunakan fungsi formatter untuk memastikan konsistensi dengan backend
       payload.phone_number = normalize_to_e164(payload.phone_number)
-      emit('save', payload);
-    } catch (e: any) {
+      emit('save', payload)
+    }
+    catch (e: any) {
       // Menampilkan error jika format nomor telepon tidak valid
       // Anda bisa menggunakan snackbar atau alert di sini
-      console.error("Format nomor telepon tidak valid:", e.message)
+      console.error('Format nomor telepon tidak valid:', e.message)
       // Contoh: authStore.setError(e.message)
     }
   }
@@ -83,14 +97,16 @@ const onClose = () => emit('update:modelValue', false)
 
 // Aturan validasi
 const requiredRule = (v: any) => !!v || 'Wajib diisi.'
-const phoneRule = (v: string) => {
-  if (!v) return true;
-  return /^(08[0-9]{8,11})$/.test(v) || 'Format: 08... dengan total 10-13 digit.';
+function phoneRule(v: string) {
+  if (!v)
+    return true
+  return /^(08\d{8,11})$/.test(v) || 'Format: 08... dengan total 10-13 digit.'
 }
-const quotaRule = (v: any) => {
-  if (!showQuotaFields.value) return true;
-  const num = Number(v);
-  return !isNaN(num) && num > 0 || 'Harus berupa angka lebih dari 0.';
+function quotaRule(v: any) {
+  if (!showQuotaFields.value)
+    return true
+  const num = Number(v)
+  return !isNaN(num) && num > 0 || 'Harus berupa angka lebih dari 0.'
 }
 </script>
 
@@ -158,7 +174,7 @@ const quotaRule = (v: any) => {
                 prepend-inner-icon="tabler-shield-check"
               />
             </VCol>
-            
+
             <template v-if="showAlamatSection">
               <VCol
                 cols="12"

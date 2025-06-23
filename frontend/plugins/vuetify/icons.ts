@@ -58,14 +58,7 @@ const aliases: Partial<IconAliases> = {
   // Anda bisa menambahkan alias kustom lain di sini jika diperlukan
 }
 
-// Ekspor objek konfigurasi ikon untuk Vuetify
-// Kita hanya menyediakan 'aliases'. Vuetify akan menggunakan set ikon default
-// yang terintegrasi dengannya (biasanya Material Design Icons via @mdi/font atau
-// via Iconify jika dikonfigurasi) ATAU mengandalkan komponen <Icon> eksternal
-// untuk merender ikon berdasarkan nama alias ini.
-export const icons = {
-  aliases,
-  // Tidak perlu mendefinisikan 'defaultSet' atau 'sets' jika
-  // Anda secara konsisten menggunakan komponen <Icon icon="prefix:nama-ikon" />
-  // di template Anda untuk ikon-ikon spesifik.
-}
+// --- PERBAIKAN DI SINI ---
+// Ekspor objek 'aliases' secara langsung.
+// Bukan `export const icons = { aliases }`
+export const icons = aliases

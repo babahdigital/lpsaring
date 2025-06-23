@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import type { VForm } from 'vuetify/components'
 import type { VOtpInput } from 'vuetify/labs/VOtpInput'
-import { computed, nextTick, ref, watch } from 'vue'
-
-import { useAuthStore } from '~/store/auth'
-import { normalize_to_e164 } from '~/utils/formatters'
-import { useSnackbar } from '~/composables/useSnackbar'
-
 import authV1BottomShape from '@images/svg/auth-v1-bottom-shape.svg?raw'
+
 import authV1TopShape from '@images/svg/auth-v1-top-shape.svg?raw'
 import { VNodeRenderer } from '@layouts/components/VNodeRenderer'
 import { themeConfig } from '@themeConfig'
+
+import { computed, nextTick, ref, watch } from 'vue'
+import { useSnackbar } from '~/composables/useSnackbar'
+import { useAuthStore } from '~/store/auth'
+import { normalize_to_e164 } from '~/utils/formatters'
 
 definePageMeta({
   layout: 'blank',

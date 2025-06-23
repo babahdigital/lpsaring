@@ -1,6 +1,5 @@
 import type { Ref } from 'vue'
 import { useCookie } from '#app'
-import { AppContentLayoutNav, NavbarType } from  '@/types/enums'
 import { injectionKeyIsVerticalNavHovered } from '@layouts/symbols'
 import { _setDirAttr } from '@layouts/utils'
 import { layoutConfig } from '@themeConfig'
@@ -8,6 +7,7 @@ import { useMediaQuery, useWindowScroll } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { computed, inject, ref, watch, watchEffect } from 'vue'
 import { useRoute } from 'vue-router'
+import { AppContentLayoutNav, NavbarType } from '@/types/enums'
 
 export const namespaceConfig = (str: string) => `${layoutConfig.app.title}-${str}`
 

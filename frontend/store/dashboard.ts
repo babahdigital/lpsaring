@@ -1,6 +1,6 @@
+import { useNuxtApp } from '#app'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { useNuxtApp } from '#app'
 
 // Definisikan tipe untuk respons API statistik
 interface DashboardStats {
@@ -21,7 +21,8 @@ export const useDashboardStore = defineStore('dashboard', () => {
    * Mengambil semua data statistik dari API.
    */
   async function fetchDashboardStats() {
-    if (isLoading.value || stats.value) return // Jangan fetch ulang jika sedang loading atau sudah ada data
+    if (isLoading.value || stats.value)
+      return // Jangan fetch ulang jika sedang loading atau sudah ada data
 
     isLoading.value = true
     try {

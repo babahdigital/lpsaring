@@ -1,28 +1,28 @@
 <script lang="ts" setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue'
 import type { VDataTableServer } from 'vuetify/labs/VDataTable'
-import { useDisplay } from 'vuetify'
 import { useNuxtApp } from '#app'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useDisplay } from 'vuetify'
+import ProfileManagementDialog from '@/components/packages/ProfileManagementDialog.vue' // <--- IMPORT DIALOG BARU
+import ProfileSetupDialog from '@/components/packages/ProfileSetupDialog.vue'
 import { useSnackbar } from '@/composables/useSnackbar'
 import { useAuthStore } from '@/store/auth' // <--- IMPORT AUTH STORE
-import ProfileSetupDialog from '@/components/packages/ProfileSetupDialog.vue'
-import ProfileManagementDialog from '@/components/packages/ProfileManagementDialog.vue' // <--- IMPORT DIALOG BARU
 
 // --- TIPE DATA ---
 interface Profile {
-  id: string;
-  profile_name: string;
+  id: string
+  profile_name: string
 }
 interface Package {
-  id: string;
-  name: string;
-  description: string | null;
-  price: number;
-  is_active: boolean;
-  profile_id: string;
-  data_quota_gb: number;
-  duration_days: number;
-  profile: Profile;
+  id: string
+  name: string
+  description: string | null
+  price: number
+  is_active: boolean
+  profile_id: string
+  data_quota_gb: number
+  duration_days: number
+  profile: Profile
 }
 
 // --- INISIALISASI & STATE ---
@@ -82,9 +82,11 @@ async function fetchPackages() {
     const response = await $api<{ items: Package[], totalItems: number }>(`/admin/packages?${params.toString()}`)
     packages.value = response.items
     totalPackages.value = response.totalItems || 0
-  } catch (e: any) {
+  }
+  catch (e: any) {
     snackbar.add({ type: 'error', title: 'Gagal Memuat', text: e.data?.message || 'Tidak dapat memuat daftar paket.' })
-  } finally {
+  }
+  finally {
     loading.value = false
   }
 }
@@ -95,21 +97,22 @@ function openDialog(type: 'edit' | 'delete', pkg: Package | null = null) {
     editedPackage.value = pkg ? JSON.parse(JSON.stringify(restOfPkg)) : { ...defaultPackage }
     isUnlimited.value = editedPackage.value.data_quota_gb === 0
     dialog.edit = true
-  } else if (type === 'delete' && pkg) {
+  }
+  else if (type === 'delete' && pkg) {
     selectedPackage.value = { ...pkg }
     dialog.delete = true
   }
 }
 
 async function handleAction(type: 'create' | 'update' | 'delete') {
-  let endpoint = '/admin/packages', method: 'POST' | 'PUT' | 'DELETE' = 'POST', successMessage = '', body: object | undefined
+  let endpoint = '/admin/packages'; let method: 'POST' | 'PUT' | 'DELETE' = 'POST'; let successMessage = ''; let body: object | undefined
 
   switch (type) {
     case 'create': successMessage = 'Paket baru berhasil dibuat.'; body = editedPackage.value; break
     case 'update': endpoint = `/admin/packages/${editedPackage.value.id}`; method = 'PUT'; successMessage = 'Paket berhasil diperbarui.'; body = editedPackage.value; break
     case 'delete': endpoint = `/admin/packages/${selectedPackage.value!.id}`; method = 'DELETE'; successMessage = 'Paket berhasil dihapus.'; break
   }
-  
+
   const apiCall = async () => {
     try {
       await $api(endpoint, { method, body })
@@ -117,12 +120,14 @@ async function handleAction(type: 'create' | 'update' | 'delete') {
       await fetchPackages()
       dialog.edit = false
       dialog.delete = false
-    } catch (error: any) {
+    }
+    catch (error: any) {
       if (error.statusCode === 409 && error.data?.message.includes('Profil')) {
         profileErrorMessage.value = error.data.message
         showProfileSetupDialog.value = true
         lastFailedAction.value = apiCall
-      } else {
+      }
+      else {
         snackbar.add({ type: 'error', title: 'Gagal', text: error.data?.message || 'Terjadi kesalahan tidak terduga.' })
       }
     }
@@ -139,23 +144,28 @@ function onProfilesCreated() {
 }
 
 function formatNumber(value: number | string): string { return new Intl.NumberFormat('id-ID').format(Number(value) || 0) }
-function unformatNumber(value: string): number { return parseInt(String(value).replace(/[^0-9]/g, ''), 10) || 0 }
+function unformatNumber(value: string): number { return Number.parseInt(String(value).replace(/\D/g, ''), 10) || 0 }
 watch(formattedPrice, (newValue) => {
-  const cleanValue = String(newValue).replace(/[^0-9]/g, '');
-  editedPackage.value.price = unformatNumber(cleanValue);
-  const newFormattedValue = formatNumber(cleanValue);
-  if (formattedPrice.value !== newFormattedValue) { formattedPrice.value = newFormattedValue; }
-});
+  const cleanValue = String(newValue).replace(/\D/g, '')
+  editedPackage.value.price = unformatNumber(cleanValue)
+  const newFormattedValue = formatNumber(cleanValue)
+  if (formattedPrice.value !== newFormattedValue) { formattedPrice.value = newFormattedValue }
+})
 watch(() => dialog.edit, (isOpening) => {
   if (isOpening) {
     formattedPrice.value = formatNumber(editedPackage.value.price || 0)
     isUnlimited.value = editedPackage.value.data_quota_gb === 0
   }
 })
-watch(isUnlimited, (isNowUnlimited) => { if (isNowUnlimited) editedPackage.value.data_quota_gb = 0 })
+watch(isUnlimited, (isNowUnlimited) => {
+  if (isNowUnlimited)
+    editedPackage.value.data_quota_gb = 0
+})
 watch(() => editedPackage.value.data_quota_gb, (newQuota) => {
-  if (newQuota === 0) isUnlimited.value = true
-  else if (newQuota && newQuota > 0 && isUnlimited.value) isUnlimited.value = false
+  if (newQuota === 0)
+    isUnlimited.value = true
+  else if (newQuota && newQuota > 0 && isUnlimited.value)
+    isUnlimited.value = false
 })
 
 useHead({ title: 'Manajemen Paket Jualan' })
@@ -189,7 +199,7 @@ useHead({ title: 'Manajemen Paket Jualan' })
           </VBtn>
         </div>
       </VCardText>
-      
+
       <VDataTableServer
         v-if="!smAndDown"
         v-model:options="options"
@@ -273,7 +283,7 @@ useHead({ title: 'Manajemen Paket Jualan' })
           </tr>
         </template>
       </VDataTableServer>
-      
+
       <div
         v-else
         class="pa-4"
@@ -386,13 +396,12 @@ useHead({ title: 'Manajemen Paket Jualan' })
         </VCardActions>
       </VCard>
     </VDialog>
-    
+
     <VDialog
       v-model="dialog.delete"
       max-width="450px"
       persistent
-    >
-      </VDialog>
+    />
 
     <ProfileSetupDialog
       v-model="showProfileSetupDialog"

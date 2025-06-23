@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useTheme, useDisplay } from 'vuetify'
 import { hexToRgb } from '@layouts/utils'
+import { computed } from 'vue'
 import VueApexCharts from 'vue3-apexcharts'
+import { useDisplay, useTheme } from 'vuetify'
 
 const props = defineProps({
   seriesData: {
-    type: Array as () => Array<{ name?: string; data: Array<number> }>,
+    type: Array as () => Array<{ name?: string, data: Array<number> }>,
     default: () => [{ data: [] }],
   },
   categories: {
@@ -20,7 +20,7 @@ const props = defineProps({
   height: {
     type: Number,
     default: 180,
-  }
+  },
 })
 
 const vuetifyTheme = useTheme()
@@ -43,44 +43,47 @@ const getThemeColors = computed(() => {
       primaryColor,
       labelPrimaryColor: `rgba(${hexToRgb(primaryColor)},0.2)`,
       labelColor: `rgba(${hexToRgb(surfaceColor)},${disabledOpacity})`,
-      isDark
+      isDark,
     }
-  } catch (e) {
+  }
+  catch (e) {
     return {
       primaryColor,
       labelPrimaryColor: `rgba(115, 103, 240, 0.2)`,
       labelColor: `rgba(74, 74, 74, ${disabledOpacity})`,
-      isDark
+      isDark,
     }
   }
 })
 
 const chartOptions = computed(() => {
   const { labelPrimaryColor, labelColor, primaryColor, isDark } = getThemeColors.value
-  
+
   // Menentukan tinggi berdasarkan breakpoint
-  const dynamicHeight = display.smAndDown.value 
-    ? Math.min(props.height, 150) 
+  const dynamicHeight = display.smAndDown.value
+    ? Math.min(props.height, 150)
     : props.height
 
   // Menentukan ukuran font label berdasarkan breakpoint
-  const labelFontSize = display.xs.value 
-    ? '9px' 
-    : display.sm.value 
-      ? '10px' 
+  const labelFontSize = display.xs.value
+    ? '9px'
+    : display.sm.value
+      ? '10px'
       : '12px'
 
   // Menentukan lebar kolom berdasarkan breakpoint
-  const columnWidth = display.xs.value 
-    ? '55%' 
-    : display.sm.value 
-      ? '45%' 
+  const columnWidth = display.xs.value
+    ? '55%'
+    : display.sm.value
+      ? '45%'
       : '35%'
 
   // Fungsi untuk menyederhanakan angka (9K, 100K, dll)
   const simplifyNumber = (val: number) => {
-    if (val >= 1000000) return `${Math.round(val / 1000000)}JT`
-    if (val >= 1000) return `${Math.round(val / 1000)}K`
+    if (val >= 1000000)
+      return `${Math.round(val / 1000000)}JT`
+    if (val >= 1000)
+      return `${Math.round(val / 1000)}K`
     return val.toString()
   }
 
@@ -90,7 +93,7 @@ const chartOptions = computed(() => {
       type: 'bar',
       parentHeightOffset: 0,
       toolbar: { show: false },
-      animations: { enabled: display.smAndUp.value }
+      animations: { enabled: display.smAndUp.value },
     },
     plotOptions: {
       bar: {
@@ -111,8 +114,8 @@ const chartOptions = computed(() => {
         return `<div class="simple-tooltip">${day}: ${simplifyNumber(value)}</div>`
       },
       style: {
-        fontSize: display.xs.value ? '11px' : '12px'
-      }
+        fontSize: display.xs.value ? '11px' : '12px',
+      },
     },
     grid: {
       show: false,
@@ -157,24 +160,24 @@ const chartOptions = computed(() => {
       {
         breakpoint: 600,
         options: {
-          plotOptions: { 
-            bar: { 
+          plotOptions: {
+            bar: {
               columnWidth: '50%',
-              borderRadius: 4
-            } 
+              borderRadius: 4,
+            },
           },
           chart: {
-            height: Math.min(props.height, 160)
+            height: Math.min(props.height, 160),
           },
           grid: {
             padding: {
               top: -5,
               bottom: -2,
-            }
-          }
-        }
-      }
-    ]
+            },
+          },
+        },
+      },
+    ],
   }
 })
 </script>
@@ -187,16 +190,18 @@ const chartOptions = computed(() => {
       :series="chartSeries"
       :height="chartOptions.chart?.height || 180"
     />
-    
+
     <!-- Placeholder untuk loading/empty state -->
-    <div 
-      v-else 
+    <div
+      v-else
       class="empty-chart d-flex align-center justify-center text-center pa-4"
       :style="{ height: `${chartOptions.chart?.height || 180}px` }"
     >
       <div>
         <VIcon icon="tabler-chart-bar" size="32" class="mb-2" />
-        <p class="text-caption mb-0">Menyiapkan data pengeluaran...</p>
+        <p class="text-caption mb-0">
+          Menyiapkan data pengeluaran...
+        </p>
       </div>
     </div>
   </div>
@@ -207,25 +212,25 @@ const chartOptions = computed(() => {
   position: relative;
   width: 100%;
   overflow: hidden;
-  
+
   :deep(.apexcharts-tooltip) {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     border-radius: 8px;
     padding: 8px 12px;
     font-weight: 600;
-    
+
     &.dark {
       background: #2c2c2c;
       color: #fff;
       border: 1px solid #444;
     }
-    
+
     .simple-tooltip {
       font-size: 13px;
       font-family: 'Public sans', sans-serif;
     }
   }
-  
+
   .empty-chart {
     background-color: rgba(var(--v-theme-surface), 0.6);
     border-radius: 12px;
@@ -239,7 +244,7 @@ const chartOptions = computed(() => {
     margin-left: -4px;
     margin-right: -4px;
     width: calc(100% + 8px);
-    
+
     :deep(.apexcharts-xaxis-label) {
       transform: none;
       white-space: nowrap;

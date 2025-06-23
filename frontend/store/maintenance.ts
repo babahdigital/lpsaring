@@ -15,6 +15,6 @@ export const useMaintenanceStore = defineStore('maintenance', () => {
   return {
     isActive,
     message,
-    setMaintenanceStatus
+    setMaintenanceStatus,
   }
 })

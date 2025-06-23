@@ -2,21 +2,21 @@
 
 import { useAuthStore } from '@/store/auth'
 
+import adminMenu from './admin'
+import commonMenu from './common'
+import komandanMenu from './komandan'
+import superAdminMenu from './superadmin'
 // Impor semua set menu modular
 import userMenu from './user'
-import komandanMenu from './komandan'
-import adminMenu from './admin'
-import superAdminMenu from './superadmin'
-import commonMenu from './common'
 
 interface HorizontalNavItem {
   title: string
   icon: { icon: string }
-  to?: { name?: string; path?: string }
+  to?: { name?: string, path?: string }
   children?: HorizontalNavItem[]
 }
 
-export const getHorizontalNavItems = (): HorizontalNavItem[] => {
+export function getHorizontalNavItems(): HorizontalNavItem[] {
   const authStore = useAuthStore()
 
   if (!authStore.isLoggedIn)

@@ -2,7 +2,7 @@
 
 import { useAuthStore } from '~/store/auth'
 
-export default defineNuxtPlugin(async (nuxtApp) => {
+export default defineNuxtPlugin(async (_nuxtApp) => {
   const authStore = useAuthStore()
 
   // Plugin ini berjalan sekali di sisi server dan sekali di sisi client saat awal muat.
@@ -11,7 +11,8 @@ export default defineNuxtPlugin(async (nuxtApp) => {
   // akan dipulihkan di server SEBELUM halaman di-render, sehingga mencegah hydration mismatch.
   if (process.server) {
     await authStore.initializeAuth()
-  } else {
+  }
+  else {
     // Di sisi client, kita juga panggil untuk memastikan inisialisasi jika
     // karena suatu hal tidak berjalan di server.
     authStore.initializeAuth()

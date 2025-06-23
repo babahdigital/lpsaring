@@ -1,8 +1,8 @@
 <script lang="ts" setup>
-import { ref, reactive, onMounted, watch } from 'vue'
-import { useNuxtApp, useHead } from '#app'
-import { useAuthStore } from '@/store/auth'
 import type { NotificationType } from '@/types/api' // Asumsi Anda punya file tipe
+import { useHead, useNuxtApp } from '#app'
+import { onMounted, reactive, ref, watch } from 'vue'
+import { useAuthStore } from '@/store/auth'
 
 // --- Tipe Data ---
 interface AdminRecipient {

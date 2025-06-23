@@ -1,9 +1,9 @@
 <script lang="ts" setup>
-import { ref, reactive, computed, watch } from 'vue'
 import type { VDataTableServer } from 'vuetify/labs/VDataTable'
+import { computed, reactive, ref, watch } from 'vue'
 
 const props = defineProps({ modelValue: { type: Boolean, required: true } })
-const emit = defineEmits(['update:modelValue', 'profiles-updated'])
+const emit = defineEmits(['update:modelValue', 'profilesUpdated'])
 
 interface Profile {
   id: string
@@ -28,9 +28,12 @@ const isUnlimitedSwitch = ref(false)
 
 const isDialogVisible = computed({
   get: () => props.modelValue,
-  set: (value) => emit('update:modelValue', value),
+  set: value => emit('update:modelValue', value),
 })
-watch(isDialogVisible, (newValue) => { if (newValue) fetchProfiles() })
+watch(isDialogVisible, (newValue) => {
+  if (newValue)
+    fetchProfiles()
+})
 
 const formTitle = computed(() => (editedProfile.value.id ? 'Edit Profil' : 'Tambah Profil Baru'))
 const headers = [
@@ -46,8 +49,11 @@ async function fetchProfiles() {
     const params = new URLSearchParams({ page: String(options.value.page), itemsPerPage: String(options.value.itemsPerPage) })
     const response = await $api<{ items: Profile[], totalItems: number }>(`/admin/profiles?${params.toString()}`)
     profiles.value = response.items
-    totalProfiles.value = response.totalItems || 0;
-  } finally { loading.value = false }
+    totalProfiles.value = response.totalItems || 0
+  }
+  finally {
+    loading.value = false
+  }
 }
 
 function openSubDialog(type: 'edit' | 'delete', profile: Profile | null = null) {
@@ -55,34 +61,57 @@ function openSubDialog(type: 'edit' | 'delete', profile: Profile | null = null) 
     editedProfile.value = profile ? { ...profile } : { ...defaultProfile }
     isUnlimitedSwitch.value = editedProfile.value.data_quota_gb === 0
     dialog.edit = true
-  } else if (type === 'delete' && profile) {
+  }
+  else if (type === 'delete' && profile) {
     selectedProfile.value = { ...profile }
     dialog.delete = true
   }
 }
 
 async function handleAction(type: 'create' | 'update' | 'delete') {
-  let endpoint = '/admin/profiles', method: 'POST' | 'PUT' | 'DELETE' = 'POST', successMessage = '', body: object | undefined
+  let endpoint = '/admin/profiles'
+  let method: 'POST' | 'PUT' | 'DELETE' = 'POST'
+  let successMessage = ''
+  let body: object | undefined
 
   if (type === 'create' || type === 'update') {
-    if (isUnlimitedSwitch.value) {
+    if (isUnlimitedSwitch.value)
       editedProfile.value.data_quota_gb = 0
-    }
+
     body = editedProfile.value
   }
 
   switch (type) {
-    case 'create': successMessage = 'Profil baru berhasil dibuat.'; break;
-    case 'update': endpoint = `/admin/profiles/${editedProfile.value.id}`; method = 'PUT'; successMessage = 'Profil berhasil diperbarui.'; break;
-    case 'delete': endpoint = `/admin/profiles/${selectedProfile.value!.id}`; method = 'DELETE'; successMessage = 'Profil berhasil dihapus.'; break;
+    case 'create':
+      successMessage = 'Profil baru berhasil dibuat.'
+      break
+    case 'update':
+      endpoint = `/admin/profiles/${editedProfile.value.id}`
+      method = 'PUT'
+      successMessage = 'Profil berhasil diperbarui.'
+      break
+    case 'delete':
+      endpoint = `/admin/profiles/${selectedProfile.value!.id}`
+      method = 'DELETE'
+      successMessage = 'Profil berhasil dihapus.'
+      break
   }
   try {
-    await $api(endpoint, { method, body }); snackbar.text = successMessage; snackbar.color = 'success'; snackbar.show = true
-    await fetchProfiles(); emit('profiles-updated')
-  } catch (error: any) {
-    snackbar.text = `Error: ${error.data?.message || 'Terjadi kesalahan'}`; snackbar.color = 'error'; snackbar.show = true
-  } finally {
-    dialog.edit = false; dialog.delete = false
+    await $api(endpoint, { method, body })
+    snackbar.text = successMessage
+    snackbar.color = 'success'
+    snackbar.show = true
+    await fetchProfiles()
+    emit('profilesUpdated')
+  }
+  catch (error: any) {
+    snackbar.text = `Error: ${error.data?.message || 'Terjadi kesalahan'}`
+    snackbar.color = 'error'
+    snackbar.show = true
+  }
+  finally {
+    dialog.edit = false
+    dialog.delete = false
   }
 }
 </script>
@@ -104,17 +133,21 @@ async function handleAction(type: 'create' | 'update' | 'delete') {
         >
           <VIcon color="white" icon="tabler-x" />
         </VBtn>
-        <VToolbarTitle class="text-subtitle-1 font-weight-bold">Kelola Profil Paket</VToolbarTitle>
+        <VToolbarTitle class="text-subtitle-1 font-weight-bold">
+          Kelola Profil Paket
+        </VToolbarTitle>
         <VSpacer />
         <VToolbarItems>
           <VBtn
             variant="text"
             size="small"
             @click="isDialogVisible = false"
-          >Tutup</VBtn>
+          >
+            Tutup
+          </VBtn>
         </VToolbarItems>
       </VToolbar>
-      
+
       <VCardText class="flex-grow-1 pa-4" style="overflow-y: auto;">
         <VCard class="h-100">
           <VCardText class="d-flex justify-end pa-2">
@@ -122,11 +155,13 @@ async function handleAction(type: 'create' | 'update' | 'delete') {
               prepend-icon="tabler-plus"
               size="small"
               @click="openSubDialog('edit')"
-            >Tambah Profil</VBtn>
+            >
+              Tambah Profil
+            </VBtn>
           </VCardText>
           <VDivider />
-          
-            <VDataTableServer
+
+          <VDataTableServer
             v-model:options="options"
             :headers="headers"
             :items="profiles"
@@ -135,35 +170,42 @@ async function handleAction(type: 'create' | 'update' | 'delete') {
             density="comfortable"
             class="elevation-0"
             @update:options="fetchProfiles"
-            >
-            <template #item.duration_days="{ item }">
+          >
+             <template v-slot:item.duration_days="{ item }">
               {{ item.duration_days }} Hari
             </template>
-            <template #item.data_quota_gb="{ item }">
+
+            <template v-slot:item.data_quota_gb="{ item }">
               <VChip
                 v-if="item.data_quota_gb === 0"
                 color="success"
                 size="small"
-              >Unlimited</VChip>
+              >
+                Unlimited
+              </VChip>
               <span v-else>{{ item.data_quota_gb }} GB</span>
             </template>
-            <template #item.actions="{ item }">
+
+            <template v-slot:item.actions="{ item }">
               <div class="d-flex gap-1">
                 <VBtn
                   icon
                   variant="text"
                   size="small"
                   @click="openSubDialog('edit', item)"
-                ><VIcon icon="tabler-pencil" size="18" /></VBtn>
+                >
+                  <VIcon icon="tabler-pencil" size="18" />
+                </VBtn>
                 <VBtn
                   icon
                   variant="text"
                   size="small"
                   @click="openSubDialog('delete', item)"
-                ><VIcon icon="tabler-trash" size="18" /></VBtn>
+                >
+                  <VIcon icon="tabler-trash" size="18" />
+                </VBtn>
               </div>
             </template>
-            
             <template #loading>
               <tr v-for="index in options.itemsPerPage" :key="index">
                 <td v-for="col in headers" :key="col.key">
@@ -173,14 +215,14 @@ async function handleAction(type: 'create' | 'update' | 'delete') {
             </template>
           </VDataTableServer>
 
-            <VPagination
+          <VPagination
             v-if="totalProfiles > 0 && totalProfiles > options.itemsPerPage"
             v-model="options.page"
             :length="Math.ceil(totalProfiles / options.itemsPerPage)"
             :total-visible="5"
             density="comfortable"
             class="mt-4"
-            />
+          />
         </VCard>
       </VCardText>
     </VCard>
@@ -191,7 +233,9 @@ async function handleAction(type: 'create' | 'update' | 'delete') {
       persistent
     >
       <VCard>
-        <VCardTitle class="pa-4 text-h6">{{ formTitle }}</VCardTitle>
+        <VCardTitle class="pa-4 text-h6">
+          {{ formTitle }}
+        </VCardTitle>
         <VCardText class="pt-2 pa-4">
           <VRow>
             <VCol cols="12">
@@ -265,25 +309,31 @@ async function handleAction(type: 'create' | 'update' | 'delete') {
       persistent
     >
       <VCard>
-        <VCardTitle class="pa-4 text-h6">Konfirmasi Hapus</VCardTitle>
+        <VCardTitle class="pa-4 text-h6">
+          Konfirmasi Hapus
+        </VCardTitle>
         <VCardText class="pt-2 pa-4">
           <p>Yakin ingin menghapus profil <strong>{{ selectedProfile?.profile_name }}</strong>?</p>
         </VCardText>
         <VCardActions class="pa-4">
           <VSpacer />
-          <VBtn 
+          <VBtn
             variant="tonal"
             color="secondary"
             @click="dialog.delete = false"
-          >Batal</VBtn>
+          >
+            Batal
+          </VBtn>
           <VBtn
             color="error"
             @click="handleAction('delete')"
-          >Hapus</VBtn>
+          >
+            Hapus
+          </VBtn>
         </VCardActions>
       </VCard>
     </VDialog>
-    
+
     <VSnackbar
       v-model="snackbar.show"
       :color="snackbar.color"

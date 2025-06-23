@@ -1,12 +1,11 @@
 <script lang="ts" setup>
 import { VerticalNavLayout } from '@layouts'
-import { themeConfig } from '@themeConfig'
 import { computed } from 'vue'
 
+import HeaderWeeklyRevenue from '@/components/admin/HeaderWeeklyRevenue.vue'
 // Components
 import Footer from '@/layouts/components/Footer.vue'
 import UserProfile from '@/layouts/components/UserProfile.vue'
-import HeaderWeeklyRevenue from '@/components/admin/HeaderWeeklyRevenue.vue'
 
 // PENYEMPURNAAN: Mengimpor fungsi dinamis dari sistem navigasi terpusat kita
 import { getHorizontalNavItems } from '@/navigation/horizontal'
@@ -17,7 +16,6 @@ const isAdmin = computed(() => authStore.isAdmin || authStore.isSuperAdmin)
 
 // PENYEMPURNAAN: navItems sekarang menjadi computed property yang memanggil fungsi terpusat
 const navItems = computed(() => getHorizontalNavItems())
-
 </script>
 
 <template>

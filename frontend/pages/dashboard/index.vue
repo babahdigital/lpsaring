@@ -4,7 +4,7 @@ import { useCookie, useFetch } from '#app'
 import { useDebounceFn } from '@vueuse/core'
 import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from 'vue'
 import { useAuthStore } from '~/store/auth'
-import { usePromoStore } from '~/store/promo'; // Import promo store
+import { usePromoStore } from '~/store/promo' // Import promo store
 
 // Impor komponen PromoAnnouncement DIHAPUS, diganti dengan sistem global di app.vue
 // const PromoAnnouncement = defineAsyncComponent(() => import('~/components/promo/PromoAnnouncement.vue'))
@@ -15,33 +15,35 @@ const MonthlyUsageChart = defineAsyncComponent(() => import('~/components/charts
 
 const authToken = useCookie<string | null>('auth_token')
 const authStore = useAuthStore()
-const promoStore = usePromoStore(); // Inisialisasi promo store
+const promoStore = usePromoStore() // Inisialisasi promo store
 const pageTitle = 'Dashboard Pengguna'
 
 // --- TAMBAHAN BARU ---
 // State untuk menampilkan notifikasi promo di dashboard
-const showPromoWarning = ref(false); // Default false, akan diatur oleh watcher
+const showPromoWarning = ref(false) // Default false, akan diatur oleh watcher
 const promoWarningMessage = computed(() => {
   if (promoStore.activePromo) {
     if (promoStore.activePromo.event_type === 'BONUS_REGISTRATION') {
-      const gbValue = promoStore.activePromo.bonus_value_mb ? (promoStore.activePromo.bonus_value_mb / 1024) : 0;
-      const displayGb = gbValue % 1 === 0 ? gbValue : gbValue.toFixed(2);
-      return `Ada promo bonus registrasi aktif! Dapatkan ${displayGb} GB kuota gratis.`;
-    } else if (promoStore.activePromo.event_type === 'GENERAL_ANNOUNCEMENT') {
-      return `Ada pengumuman baru: "${promoStore.activePromo.name}". Cek segera!`;
+      const gbValue = promoStore.activePromo.bonus_value_mb ? (promoStore.activePromo.bonus_value_mb / 1024) : 0
+      const displayGb = gbValue % 1 === 0 ? gbValue : gbValue.toFixed(2)
+      return `Ada promo bonus registrasi aktif! Dapatkan ${displayGb} GB kuota gratis.`
+    }
+    else if (promoStore.activePromo.event_type === 'GENERAL_ANNOUNCEMENT') {
+      return `Ada pengumuman baru: "${promoStore.activePromo.name}". Cek segera!`
     }
   }
-  return '';
-});
+  return ''
+})
 
 // Watcher untuk mendeteksi promo aktif dari store dan menampilkan peringatan
 watch(() => promoStore.activePromo, (newPromo) => {
   if (newPromo && !promoStore.isPromoDialogVisible) { // Tampilkan warning hanya jika dialog global tidak terlihat
-    showPromoWarning.value = true;
-  } else {
-    showPromoWarning.value = false;
+    showPromoWarning.value = true
   }
-}, { immediate: true }); // Jalankan segera saat komponen dimuat
+  else {
+    showPromoWarning.value = false
+  }
+}, { immediate: true }) // Jalankan segera saat komponen dimuat
 // --- AKHIR TAMBAHAN BARU ---
 
 function getApiUrl(endpoint: string): string {
@@ -375,7 +377,6 @@ useHead({ title: 'Dashboard User' })
                     @refresh="refreshAllData"
                   />
                 </template>
-
               </VCol>
 
               <VCol cols="12" md="6" class="d-flex flex-column chart-column ga-4">

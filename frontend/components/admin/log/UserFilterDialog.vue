@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { ref, computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 // --- Tipe Data & Props ---
 interface UserSelectItem {
@@ -27,7 +27,7 @@ const tempSelectedUser = ref<UserSelectItem | null>(null)
 
 const dialogVisible = computed({
   get: () => props.modelValue,
-  set: (value) => emit('update:modelValue', value),
+  set: value => emit('update:modelValue', value),
 })
 
 const dialogTitle = computed(() => {
@@ -36,15 +36,18 @@ const dialogTitle = computed(() => {
 
 // --- Logika Fetch & Filter ---
 async function fetchUsers() {
-  if (allUsers.value.length > 0) return
-  
+  if (allUsers.value.length > 0)
+    return
+
   loading.value = true
   try {
     const responseData = await $api<{ items: UserSelectItem[] }>('/admin/users?all=true')
     allUsers.value = responseData.items || []
-  } catch (e) {
+  }
+  catch (e) {
     console.error('Gagal memuat daftar pengguna:', e)
-  } finally {
+  }
+  finally {
     loading.value = false
   }
 }
@@ -58,33 +61,34 @@ const userList = computed(() => {
 })
 
 const filteredUserList = computed(() => {
-  if (!userSearch.value) return userList.value // Gunakan userList yang sudah difilter
+  if (!userSearch.value)
+    return userList.value // Gunakan userList yang sudah difilter
   const queryLower = userSearch.value.toLowerCase()
-  
-  return userList.value.filter(user => 
-    user.full_name.toLowerCase().includes(queryLower) ||
-    user.phone_number.includes(queryLower)
+
+  return userList.value.filter(user =>
+    user.full_name.toLowerCase().includes(queryLower)
+    || user.phone_number.includes(queryLower),
   )
 })
 
 // ... sisa dari script setup tidak berubah ...
-const selectUser = (user: UserSelectItem) => {
+function selectUser(user: UserSelectItem) {
   tempSelectedUser.value = user
 }
 
-const confirmSelection = () => {
+function confirmSelection() {
   if (tempSelectedUser.value) {
     emit('select', tempSelectedUser.value)
     closeDialog()
   }
 }
 
-const closeDialog = () => {
+function closeDialog() {
   dialogVisible.value = false
 }
 
 const getUserInitials = (name: string) => name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
-const formatPhoneNumberForDisplay = (phone: string) => phone.startsWith('+62') ? '0' + phone.substring(3) : phone
+const formatPhoneNumberForDisplay = (phone: string) => phone.startsWith('+62') ? `0${phone.substring(3)}` : phone
 
 watch(dialogVisible, (isOpening) => {
   if (isOpening) {
@@ -104,7 +108,7 @@ watch(dialogVisible, (isOpening) => {
       <VCardTitle class="pa-4 bg-primary d-flex align-center">
         <VIcon
           start
-          :icon="mode === 'admin' ? 'tabler-user-shield' : 'tabler-user-search'" 
+          :icon="mode === 'admin' ? 'tabler-user-shield' : 'tabler-user-search'"
         />
         <span class="text-white font-weight-medium">{{ dialogTitle }}</span>
         <VSpacer />
@@ -133,7 +137,7 @@ watch(dialogVisible, (isOpening) => {
           clearable
           class="mb-4"
         />
-        
+
         <VSheet
           class="user-list-container"
           border
@@ -206,8 +210,8 @@ watch(dialogVisible, (isOpening) => {
         <VSpacer />
         <VBtn
           color="primary"
-          @click="confirmSelection"
           :disabled="!tempSelectedUser"
+          @click="confirmSelection"
         >
           Pilih Pengguna
         </VBtn>

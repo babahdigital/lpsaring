@@ -4,10 +4,14 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
 function extractErrorMessage(errorData: any, defaultMessage: string): string {
-  if (!errorData) return defaultMessage
-  if (typeof errorData === 'string') return errorData
-  if (typeof errorData.error === 'string') return errorData.error
-  if (typeof errorData.message === 'string') return errorData.message
+  if (!errorData)
+    return defaultMessage
+  if (typeof errorData === 'string')
+    return errorData
+  if (typeof errorData.error === 'string')
+    return errorData.error
+  if (typeof errorData.message === 'string')
+    return errorData.message
 
   let detailMsg: string | null = null
   if (typeof errorData.detail === 'string') {
@@ -48,9 +52,15 @@ export const useAuthStore = defineStore('auth', () => {
     !!user.value && user.value.is_active === true && user.value.approval_status === 'APPROVED',
   )
 
-  function clearError() { error.value = null }
-  function clearMessage() { message.value = null }
-  function setUser(userData: User | null) { user.value = userData }
+  function clearError() {
+    error.value = null
+  }
+  function clearMessage() {
+    message.value = null
+  }
+  function setUser(userData: User | null) {
+    user.value = userData
+  }
   function setError(errorMessage: string) {
     error.value = errorMessage
     message.value = null
@@ -207,8 +217,7 @@ export const useAuthStore = defineStore('auth', () => {
         throw new Error('Respons server tidak valid.')
       }
     }
-    catch (err: any)
-    {
+    catch (err: any) {
       const statusCode = err.response?.status || err.statusCode
       let baseErrMsg = 'Terjadi kesalahan saat verifikasi OTP.'
       if (statusCode === 401 || statusCode === 400)

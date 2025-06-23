@@ -46,7 +46,7 @@ export default defineNuxtPlugin(() => {
     // PENYEMPURNAAN: Gunakan console.info untuk log sukses, karena ini adalah informasi, bukan peringatan.
     console.info('[Midtrans Plugin] Skrip Midtrans Snap.js berhasil dimuat.')
   }
-  
+
   script.onerror = (error) => {
     // Gunakan console.error untuk log kegagalan.
     console.error('[Midtrans Plugin] Gagal memuat skrip Midtrans Snap.js:', error)

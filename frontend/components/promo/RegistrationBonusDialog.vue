@@ -1,3 +1,42 @@
+<script setup lang="ts">
+import { storeToRefs } from 'pinia'
+import { computed, ref, watch } from 'vue'
+import { useDisplay } from 'vuetify'
+import { usePromoStore } from '~/store/promo'
+
+const { mobile: isMobile } = useDisplay()
+const promoStore = usePromoStore()
+const { isPromoDialogVisible, activePromo } = storeToRefs(promoStore)
+
+const dialogVisible = ref(false)
+
+const bonusGbDisplay = computed(() => {
+  if (!activePromo.value?.bonus_value_mb)
+    return '0'
+  const gbValue = activePromo.value.bonus_value_mb / 1024
+  return Number.isInteger(gbValue) ? gbValue.toString() : gbValue.toFixed(1)
+})
+
+watch(isPromoDialogVisible, (newValue) => {
+  if (newValue && activePromo.value?.event_type === 'BONUS_REGISTRATION') {
+    dialogVisible.value = true
+  }
+  else {
+    dialogVisible.value = false
+  }
+})
+
+function closeDialog() {
+  promoStore.hidePromoDialog()
+}
+
+function onDialogClose() {
+  if (activePromo.value?.event_type === 'BONUS_REGISTRATION') {
+    promoStore.resetPromo()
+  }
+}
+</script>
+
 <template>
   <VDialog
     v-model="dialogVisible"
@@ -5,7 +44,7 @@
     transition="dialog-bottom-transition"
     @after-leave="onDialogClose"
   >
-    <VCard class="promo-dialog-card" v-if="activePromo">
+    <VCard v-if="activePromo" class="promo-dialog-card">
       <VCardTitle class="promo-header pa-0">
         <VIcon icon="tabler-gift" class="promo-icon" />
       </VCardTitle>
@@ -17,17 +56,17 @@
         <p class="text-h6 font-weight-regular text-medium-emphasis mb-6">
           {{ activePromo.name }}
         </p>
-        
+
         <p class="text-body-1 mb-4">
           Selamat datang! Sebagai pengguna baru, Anda berhak mendapatkan:
         </p>
-        
+
         <div class="bonus-display-container">
           <div class="bonus-value">
             <span class="bonus-number">{{ bonusGbDisplay }}</span>
             <span class="bonus-unit">GB</span>
           </div>
-          <VDivider vertical class="mx-4"/>
+          <VDivider vertical class="mx-4" />
           <div class="bonus-value">
             <span class="bonus-number">{{ activePromo.bonus_duration_days }}</span>
             <span class="bonus-unit">Hari</span>
@@ -53,43 +92,6 @@
     </VCard>
   </VDialog>
 </template>
-
-<script setup lang="ts">
-import { ref, watch, computed } from 'vue';
-import { usePromoStore } from '~/store/promo';
-import { useDisplay } from 'vuetify';
-import { storeToRefs } from 'pinia';
-
-const { mobile: isMobile } = useDisplay();
-const promoStore = usePromoStore();
-const { isPromoDialogVisible, activePromo } = storeToRefs(promoStore);
-
-const dialogVisible = ref(false);
-
-const bonusGbDisplay = computed(() => {
-  if (!activePromo.value?.bonus_value_mb) return '0';
-  const gbValue = activePromo.value.bonus_value_mb / 1024;
-  return Number.isInteger(gbValue) ? gbValue.toString() : gbValue.toFixed(1);
-});
-
-watch(isPromoDialogVisible, (newValue) => {
-  if (newValue && activePromo.value?.event_type === 'BONUS_REGISTRATION') {
-    dialogVisible.value = true;
-  } else {
-    dialogVisible.value = false;
-  }
-});
-
-function closeDialog() {
-  promoStore.hidePromoDialog();
-}
-
-function onDialogClose() {
-    if(activePromo.value?.event_type === 'BONUS_REGISTRATION'){
-        promoStore.resetPromo();
-    }
-}
-</script>
 
 <style scoped>
 .promo-dialog-card {

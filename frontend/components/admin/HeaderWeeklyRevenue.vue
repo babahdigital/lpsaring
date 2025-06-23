@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
-import { useDashboardStore } from '~/store/dashboard'
 import { useAuthStore } from '~/store/auth'
+import { useDashboardStore } from '~/store/dashboard'
 
 const dashboardStore = useDashboardStore()
 const authStore = useAuthStore()
@@ -13,12 +13,13 @@ const isLoggedIn = computed(() => authStore.isLoggedIn)
 const todayRevenue = computed(() => dashboardStore.stats?.pendapatanHariIni ?? 0)
 
 // Helper untuk format mata uang yang sudah diperkuat
-const formatCurrency = (value: number) => {
+function formatCurrency(value: number) {
   // Pastikan value adalah number dan valid
-  if (typeof value !== 'number' || isNaN(value)) {
+  // PERBAIKAN: Mengganti isNaN() dengan Number.isNaN()
+  if (typeof value !== 'number' || Number.isNaN(value)) {
     return 'Rp 0'
   }
-  
+
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
     currency: 'IDR',

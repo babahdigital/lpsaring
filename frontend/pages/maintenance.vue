@@ -9,7 +9,7 @@ const authThemeMask = useGenerateImageVariant(miscMaskLight, miscMaskDark)
 const maintenanceStore = useMaintenanceStore()
 
 // Pesan diambil secara dinamis dari store
-const message = computed(() => maintenanceStore.message || "Aplikasi sedang dalam perbaikan. Kami akan segera kembali.")
+const message = computed(() => maintenanceStore.message || 'Aplikasi sedang dalam perbaikan. Kami akan segera kembali.')
 
 definePageMeta({
   layout: 'blank',

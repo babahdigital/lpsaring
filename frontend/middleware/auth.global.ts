@@ -13,7 +13,7 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
   // Penting: Tunggu hingga pengecekan otentikasi awal selesai.
   // Ini mencegah race condition di mana middleware berjalan sebelum user/token dimuat.
   if (!authStore.initialAuthCheckDone) {
-    await authStore.initializeAuth();
+    await authStore.initializeAuth()
   }
 
   const isLoggedIn = authStore.isLoggedIn
@@ -36,11 +36,11 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
       // Jika mencoba akses path admin yang dilindungi (bukan /admin itu sendiri),
       // arahkan ke login admin.
       if (to.path.startsWith('/admin/')) {
-        return navigateTo('/admin', { replace: true });
+        return navigateTo('/admin', { replace: true })
       }
       // Jika mencoba akses path user yang dilindungi, arahkan ke login user.
       if (!to.path.startsWith('/admin')) {
-          return navigateTo('/login', { replace: true });
+        return navigateTo('/login', { replace: true })
       }
     }
   }
@@ -53,11 +53,11 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
     if (!isAdmin && to.path.startsWith('/admin')) {
       return navigateTo(userDashboard, { replace: true })
     }
-    
+
     // Aturan 2: Pengguna yang sudah login (admin/biasa) tidak boleh kembali ke halaman tamu atau root.
     // Arahkan mereka ke dashboard masing-masing.
     if (GUEST_ROUTES.includes(to.path) || to.path === '/') {
-      return navigateTo(isAdmin ? adminDashboard : userDashboard, { replace: true });
+      return navigateTo(isAdmin ? adminDashboard : userDashboard, { replace: true })
     }
   }
 })

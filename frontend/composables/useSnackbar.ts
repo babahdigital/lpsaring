@@ -1,6 +1,6 @@
 // frontend/composables/useSnackbar.ts
 
-import { ref, readonly } from 'vue'
+import { readonly, ref } from 'vue'
 
 // Definisikan struktur dari sebuah pesan snackbar
 interface SnackbarMessage {
@@ -14,7 +14,7 @@ interface SnackbarMessage {
 // State reaktif untuk menyimpan semua pesan snackbar yang aktif
 const messages = ref<SnackbarMessage[]>([])
 
-export const useSnackbar = () => {
+export function useSnackbar() {
   /**
    * Menambahkan pesan baru ke dalam antrian snackbar.
    * @param message - Objek pesan yang berisi tipe, judul, dan teks.

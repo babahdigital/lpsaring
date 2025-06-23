@@ -1,10 +1,10 @@
-import type { UseFetchOptions, AsyncData } from '#app'
-import { useFetch } from '#app'
+import type { AsyncData, UseFetchOptions } from '#app'
 import type { KeysOf, PickFrom } from '#app/composables/asyncData'
 import type { FetchError as OFetchError } from 'ofetch'
+import { useFetch } from '#app'
 
 /**
- * Composable wrapper di sekitar useFetch yang secara otomatis menggunakan 
+ * Composable wrapper di sekitar useFetch yang secara otomatis menggunakan
  * instance $api yang sudah dikonfigurasi dari plugin kita.
  * Ini memastikan semua panggilan API yang dibuat dengan useApiFetch akan
  * secara otomatis memiliki token otentikasi dan penanganan error terpusat.

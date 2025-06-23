@@ -1,6 +1,6 @@
 <script lang="ts" setup>
-import { ref, watch, onMounted } from 'vue'
 import type { VDataTableServer } from 'vuetify/labs/VDataTable'
+import { onMounted, ref, watch } from 'vue'
 import RequestFormDialog from '@/components/komandan/RequestFormDialog.vue'
 
 // --- [PENYEMPURNAAN] Interface data yang lebih rapi ---
@@ -53,13 +53,13 @@ async function fetchRequests() {
       itemsPerPage: String(options.value.itemsPerPage),
     })
 
-    options.value.sortBy.forEach(sortItem => {
+    options.value.sortBy.forEach((sortItem) => {
       params.append('sortBy', sortItem.key)
       params.append('sortOrder', sortItem.order)
     })
 
     const response = await $api<{ items: RequestHistoryItem[], totalItems: number }>(`/komandan/requests/history?${params.toString()}`)
-    
+
     requests.value = response.items
     totalRequests.value = response.totalItems
   }
@@ -94,17 +94,24 @@ const requestTypeMap = {
 
 // [PERBAIKAN] Fungsi untuk format MB ke GB
 function formatQuotaToGB(mb: number | null | undefined): string {
-  if (typeof mb !== 'number') return 'N/A'
-  if (mb === 0) return '0 GB'
+  if (typeof mb !== 'number')
+    return 'N/A'
+  if (mb === 0)
+    return '0 GB'
   const gb = mb / 1024
   // Menghilangkan .00 jika tidak ada desimal
   return `${gb.toFixed(2).replace(/\.00$/, '')} GB`
 }
 
 function formatDateTime(dateString: string | null) {
-  if (!dateString) return '-'
+  if (!dateString)
+    return '-'
   return new Date(dateString).toLocaleString('id-ID', {
-    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   })
 }
 
@@ -122,10 +129,12 @@ function showSnackbar(text: string, color = 'info') {
         <template #prepend>
           <VIcon icon="tabler-history" color="primary" size="32" class="me-2" />
         </template>
-        <VCardTitle class="text-h4">Riwayat Permintaan</VCardTitle>
+        <VCardTitle class="text-h4">
+          Riwayat Permintaan
+        </VCardTitle>
         <VCardSubtitle>Lacak status semua permintaan yang telah Anda ajukan.</VCardSubtitle>
         <template #append>
-          <VBtn @click="isRequestFormVisible = true" prepend-icon="tabler-plus">
+          <VBtn prepend-icon="tabler-plus" @click="isRequestFormVisible = true">
             Buat Permintaan Baru
           </VBtn>
         </template>
@@ -145,10 +154,10 @@ function showSnackbar(text: string, color = 'info') {
         <template #item.created_at="{ item }">
           <span class="text-high-emphasis">{{ formatDateTime(item.created_at) }}</span>
         </template>
-        
+
         <template #item.request_type="{ item }">
           <VChip :color="requestTypeMap[item.request_type]?.color" size="small" label>
-            <VIcon start :icon="requestTypeMap[item.request_type]?.icon" size="16"/>
+            <VIcon start :icon="requestTypeMap[item.request_type]?.icon" size="16" />
             {{ requestTypeMap[item.request_type]?.text }}
           </VChip>
         </template>
@@ -156,13 +165,17 @@ function showSnackbar(text: string, color = 'info') {
         <template #item.details="{ item }">
           <div v-if="item.request_type === 'QUOTA'">
             <div class="d-flex align-center">
-              <VChip color="secondary" size="x-small" label class="me-2">Diminta</VChip>
+              <VChip color="secondary" size="x-small" label class="me-2">
+                Diminta
+              </VChip>
               <span class="font-weight-medium">
                 {{ formatQuotaToGB(item.requested_mb) }} / {{ item.requested_duration_days }} hari
               </span>
             </div>
             <div v-if="item.status === 'PARTIALLY_APPROVED' && item.granted_details" class="d-flex align-center mt-1">
-              <VChip color="info" size="x-small" label class="me-2">Diberikan</VChip>
+              <VChip color="info" size="x-small" label class="me-2">
+                Diberikan
+              </VChip>
               <span class="text-info">
                 {{ formatQuotaToGB(item.granted_details.granted_mb) }} / {{ item.granted_details.granted_duration_days }} hari
               </span>
@@ -173,7 +186,7 @@ function showSnackbar(text: string, color = 'info') {
 
         <template #item.status="{ item }">
           <VChip :color="statusMap[item.status]?.color" size="small" label>
-            <VIcon start :icon="statusMap[item.status]?.icon" size="16"/>
+            <VIcon start :icon="statusMap[item.status]?.icon" size="16" />
             {{ statusMap[item.status]?.text }}
           </VChip>
         </template>
@@ -192,10 +205,12 @@ function showSnackbar(text: string, color = 'info') {
         <template #no-data>
           <div class="text-center py-8">
             <VIcon icon="tabler-file-off" size="48" class="mb-2 text-disabled" />
-            <p class="text-disabled">Anda belum pernah membuat permintaan.</p>
+            <p class="text-disabled">
+              Anda belum pernah membuat permintaan.
+            </p>
           </div>
         </template>
-        
+
         <template #loading>
           <VSkeletonLoader type="table-row@5" />
         </template>
@@ -206,7 +221,7 @@ function showSnackbar(text: string, color = 'info') {
       v-model="isRequestFormVisible"
       @submitted="fetchRequests"
     />
-    
+
     <VSnackbar
       v-model="snackbar.show"
       :color="snackbar.color"

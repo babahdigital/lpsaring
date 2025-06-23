@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch, onMounted } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useAuthStore } from '~/store/auth'
 import { useDashboardStore } from '~/store/dashboard'
 
@@ -21,7 +21,8 @@ onMounted(() => {
 watch(isAdmin, (newIsAdmin) => {
   if (newIsAdmin && isLoggedIn.value) {
     dashboardStore.fetchDashboardStats()
-  } else {
+  }
+  else {
     dashboardStore.resetState()
   }
 })
@@ -31,25 +32,34 @@ function handleLogout() {
 }
 
 const displayName = computed(() => {
-  if (!currentUser.value) return 'Pengguna'
-  if (currentUser.value.full_name?.trim()) return currentUser.value.full_name
-  if (currentUser.value.phone_number) return currentUser.value.phone_number
+  if (!currentUser.value)
+    return 'Pengguna'
+  if (currentUser.value.full_name?.trim())
+    return currentUser.value.full_name
+  if (currentUser.value.phone_number)
+    return currentUser.value.phone_number
   return 'Pengguna Terdaftar'
 })
 
 const userInitials = computed(() => {
   const name = displayName.value
-  if (!name || name === 'Pengguna') return 'U'
+  if (!name || name === 'Pengguna')
+    return 'U'
   const words = name.split(' ').filter(Boolean)
-  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase()
-  if (words.length === 1 && words[0].length > 1) return words[0].slice(0, 2).toUpperCase()
+  if (words.length >= 2)
+    return (words[0][0] + words[1][0]).toUpperCase()
+  if (words.length === 1 && words[0].length > 1)
+    return words[0].slice(0, 2).toUpperCase()
   return name[0].toUpperCase()
 })
 
 const userRole = computed(() => {
-  if (!currentUser.value) return 'Guest'
-  if (currentUser.value.role === 'SUPER_ADMIN') return 'Super Admin'
-  if (currentUser.value.role === 'ADMIN') return 'Admin'
+  if (!currentUser.value)
+    return 'Guest'
+  if (currentUser.value.role === 'SUPER_ADMIN')
+    return 'Super Admin'
+  if (currentUser.value.role === 'ADMIN')
+    return 'Admin'
   return 'User'
 })
 
@@ -60,7 +70,8 @@ const headerBadgeProps = computed(() => {
       content: pendingUserCount.value,
       dot: false,
     }
-  } else {
+  }
+  else {
     return {
       color: 'success',
       content: undefined,
@@ -118,7 +129,7 @@ const isLoadingAuth = computed(() => !authStore.initialAuthCheckDone && !authSto
             <VListItemSubtitle>{{ userRole }}</VListItemSubtitle>
           </VListItem>
           <VDivider class="my-2" />
-          
+
           <!-- Profil Saya (untuk semua user) -->
           <VListItem link to="/akun" density="compact">
             <template #prepend>
@@ -126,12 +137,12 @@ const isLoadingAuth = computed(() => !authStore.initialAuthCheckDone && !authSto
             </template>
             <VListItemTitle>Profil Saya</VListItemTitle>
           </VListItem>
-          
+
           <!-- Pengaturan (hanya untuk Admin/Super Admin) -->
-          <VListItem 
-            v-if="isAdmin" 
-            link 
-            :to="isSuperAdmin ? '/admin/settings/general' : '/admin/settings'" 
+          <VListItem
+            v-if="isAdmin"
+            link
+            :to="isSuperAdmin ? '/admin/settings/general' : '/admin/settings'"
             density="compact"
           >
             <template #prepend>
@@ -139,23 +150,25 @@ const isLoadingAuth = computed(() => !authStore.initialAuthCheckDone && !authSto
             </template>
             <VListItemTitle>Pengaturan</VListItemTitle>
           </VListItem>
-          
+
           <!-- Persetujuan Pengguna (hanya untuk Admin dengan pending) -->
-          <VListItem 
-            v-if="isAdmin && pendingUserCount > 0" 
-            link 
-            to="/admin/users" 
+          <VListItem
+            v-if="isAdmin && pendingUserCount > 0"
+            link
+            to="/admin/users"
             density="compact"
           >
             <template #prepend>
               <VIcon class="me-2" icon="tabler-user-exclamation" size="22" color="warning" />
             </template>
-            <VListItemTitle class="text-warning">Persetujuan Pengguna</VListItemTitle>
+            <VListItemTitle class="text-warning">
+              Persetujuan Pengguna
+            </VListItemTitle>
             <template #append>
               <VBadge color="error" :content="pendingUserCount" inline />
             </template>
           </VListItem>
-          
+
           <VDivider class="my-2" />
           <div class="px-2 py-1">
             <VBtn
@@ -174,11 +187,11 @@ const isLoadingAuth = computed(() => !authStore.initialAuthCheckDone && !authSto
       </VMenu>
     </VAvatar>
   </VBadge>
-  
+
   <VAvatar v-else-if="isLoadingAuth" color="grey-lighten-1" variant="tonal">
     <VProgressCircular indeterminate size="24" />
   </VAvatar>
-  
+
   <VBtn v-else-if="!isLoggedIn && authStore.initialAuthCheckDone" to="/login" color="primary">
     Login
   </VBtn>

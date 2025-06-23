@@ -1,25 +1,27 @@
 import type { NuxtApp } from '#app'
-// --- Import Konfigurasi Aplikasi & Tema ---
+
+import type { IconOptions } from 'vuetify'
 import { themeConfig } from '@themeConfig'
-// frontend/plugins/vuetify/index.ts (Workaround TS2322 dengan 'as any')
+// --- Import Konfigurasi Vuetify & Komponen ---
+// Import 'IconOptions' untuk memberikan tipe eksplisit pada konfigurasi ikon
 import { createVuetify } from 'vuetify'
-// TIDAK PERLU import IconAliases lagi
 
 import { VBtn } from 'vuetify/components/VBtn'
-// --- PENTING: Import untuk Ikon MDI ---
+
+// --- Import untuk Ikon MDI ---
 import { mdi, aliases as mdiAliases } from 'vuetify/iconsets/mdi'
+// --- Import Konfigurasi Aplikasi & Tema ---
 import { cookieRef } from '@/@layouts/stores/config'
 
-// --- Import Konfigurasi Vuetify ---
+// --- Import Konfigurasi Lokal ---
 import pluginDefaults from './defaults'
 import { icons as iconAliases } from './icons'
-
 import { themes } from './theme'
-import '@mdi/font/css/materialdesignicons.css' // Pastikan @mdi/font terinstal!
 
 // --- Import Styles ---
 import '@core/scss/template/libs/vuetify/index.scss'
 import 'vuetify/styles'
+import '@mdi/font/css/materialdesignicons.css' // Pastikan @mdi/font terinstal
 
 // --- Fungsi Helper Tema (Tidak diubah) ---
 function resolveInitialVuetifyTheme(userPreference: string | undefined | null): 'light' | 'dark' {
@@ -40,34 +42,33 @@ export default defineNuxtPlugin((nuxtApp: NuxtApp) => {
   const userPreferredTheme = cookieRef<string>('theme', themeConfig.app.theme).value
   const initialDefaultTheme = resolveInitialVuetifyTheme(userPreferredTheme)
 
-  // --- Gabungkan Alias Ikon Terlebih Dahulu ---
-  const combinedAliases = {
-    ...mdiAliases,
-    ...iconAliases,
-  } as any // <-- Gunakan 'as any' untuk bypass cek tipe TS yang bermasalah
-  // --- Akhir Penggabungan Alias ---
+  // Definisikan konfigurasi ikon dengan tipe 'IconOptions' yang eksplisit.
+  // Pendekatan ini lebih aman daripada 'as any' dan membantu TypeScript memvalidasi struktur.
+  const iconsConfig: IconOptions = {
+    defaultSet: 'mdi',
+    aliases: {
+      ...mdiAliases,
+      ...iconAliases, // Gabungkan alias MDI bawaan dengan alias kustom Anda
+    },
+    sets: {
+      mdi,
+    },
+  }
 
   const vuetify = createVuetify({
     ssr: true,
     defaults: pluginDefaults,
 
-    // --- Gunakan Alias yang Sudah Digabung ---
-    icons: {
-      defaultSet: 'mdi',
-      // Karena combinedAliases sudah 'any', TS tidak akan complain di sini
-      aliases: combinedAliases,
-      sets: {
-        mdi,
-      },
-    },
-    // --- Akhir Konfigurasi Ikon ---
+    // Gunakan konfigurasi ikon yang sudah didefinisikan dengan tipe yang benar
+    icons: iconsConfig,
 
     theme: {
       defaultTheme: initialDefaultTheme,
       themes,
     },
 
-    aliases: { // Alias komponen kustom Anda
+    // Alias untuk komponen Vuetify, bukan untuk ikon
+    aliases: {
       IconBtn: VBtn,
     },
   })

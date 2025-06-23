@@ -1,18 +1,18 @@
 <script setup lang="ts">
-import { useTheme } from 'vuetify'
-import { watchEffect, computed, onUnmounted } from 'vue'
 import ScrollToTop from '@core/components/ScrollToTop.vue'
 import initCore from '@core/initCore'
 import { useConfigStore } from '@core/stores/config'
 import { hexToRgb } from '@core/utils/colorConverter'
-import { useSettingsStore } from '~/store/settings'
-import { useAuthStore } from '~/store/auth'
-import { Theme } from '@/types/enums'
+import { computed, onUnmounted, watchEffect } from 'vue'
 import { useRoute } from 'vue-router'
-
+import { useTheme } from 'vuetify'
+import { Theme } from '@/types/enums'
 // [PENYEMPURNAAN] Impor SnackbarWrapper sesuai dengan nama file yang ada
 import SnackbarWrapper from '~/components/layout/SnackbarWrapper.vue'
 import PromoFetcher from '~/components/promo/PromoFetcher.vue'
+
+import { useAuthStore } from '~/store/auth'
+import { useSettingsStore } from '~/store/settings'
 
 const { global } = useTheme()
 const configStore = useConfigStore()
@@ -26,7 +26,7 @@ initCore()
 const vAppStyle = computed(() => {
   if (global.current.value?.colors?.primary)
     return { '--v-global-theme-primary': hexToRgb(global.current.value.colors.primary) }
-  
+
   return {}
 })
 
@@ -62,13 +62,13 @@ if (import.meta.client) {
 // [PENYEMPURNAAN] SEO diperkaya dengan meta description
 useHead({
   title: computed(() => settingsStore.browserTitle),
-  titleTemplate: titleChunk => {
+  titleTemplate: (titleChunk) => {
     const appName = settingsStore.appName || 'Sobigidul'
     const browserTitle = settingsStore.browserTitle || 'Hotspot APP'
 
     if (titleChunk && titleChunk !== browserTitle)
       return `${titleChunk} By ${appName}`
-    
+
     return browserTitle
   },
   meta: [

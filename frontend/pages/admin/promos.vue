@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { VDataTableServer } from 'vuetify/labs/VDataTable'
-import { ref, watch, computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useDisplay } from 'vuetify'
 
 // Menggunakan hook useDisplay untuk deteksi mobile
@@ -53,7 +53,7 @@ const { error, refresh: refreshPromos } = useAsyncData(
   async () => {
     loading.value = true
     try {
-      const response = await $api<{ items: PromoEvent[]; totalItems: number }>('/admin/promos', {
+      const response = await $api<{ items: PromoEvent[], totalItems: number }>('/admin/promos', {
         params: {
           page: options.value.page,
           itemsPerPage: options.value.itemsPerPage,
@@ -81,19 +81,20 @@ const { error, refresh: refreshPromos } = useAsyncData(
   },
 )
 
-
 // Computed properties
 const startDateModel = computed({
   get: () => editedItem.value.start_date ? new Date(editedItem.value.start_date) : null,
   set: (val) => {
-    if (editedItem.value) editedItem.value.start_date = val?.toISOString()
-  }
+    if (editedItem.value)
+      editedItem.value.start_date = val?.toISOString()
+  },
 })
 const endDateModel = computed({
   get: () => editedItem.value.end_date ? new Date(editedItem.value.end_date) : null,
   set: (val) => {
-    if (editedItem.value) editedItem.value.end_date = val?.toISOString()
-  }
+    if (editedItem.value)
+      editedItem.value.end_date = val?.toISOString()
+  },
 })
 
 const headers = computed(() => {
@@ -117,8 +118,9 @@ const formTitle = computed(() => (editedIndex.value === -1 ? 'Tambah Event Baru'
 const bonusValueGb = computed({
   get: () => editedItem.value.bonus_value_mb ? editedItem.value.bonus_value_mb / 1024 : 0,
   set: (newValue) => {
-    if (editedItem.value) editedItem.value.bonus_value_mb = newValue * 1024;
-  }
+    if (editedItem.value)
+      editedItem.value.bonus_value_mb = newValue * 1024
+  },
 })
 
 // Opsi untuk VSelect
@@ -139,17 +141,19 @@ const requiredRule = [(v: any) => !!v || 'Field ini wajib diisi']
 const numberRule = [(v: number) => (v && v > 0) || 'Nilai harus lebih dari 0']
 
 // Fungsi Helper
-const formatDate = (date: Date | null | undefined) => {
-  if (!date) return ''
+function formatDate(date: Date | null | undefined) {
+  if (!date)
+    return ''
   return new Date(date).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
 }
-const formatTableDate = (dateString?: string) => {
-  if (!dateString) return 'N/A'
+function formatTableDate(dateString?: string) {
+  if (!dateString)
+    return 'N/A'
   return new Date(dateString).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-const statusProps = (status: PromoEvent['status']) => {
-  const map: Record<PromoEvent['status'], { color: string; icon: string }> = {
+function statusProps(status: PromoEvent['status']) {
+  const map: Record<PromoEvent['status'], { color: string, icon: string }> = {
     ACTIVE: { color: 'success', icon: 'tabler-circle-check' },
     SCHEDULED: { color: 'info', icon: 'tabler-alarm' },
     EXPIRED: { color: 'warning', icon: 'tabler-clock-off' },
@@ -246,44 +250,46 @@ useHead({ title: 'Manajemen Event & Promo' })
 <template>
   <VCard>
     <VCardTitle class="d-flex align-center pa-4">
-      <h2 class="text-h5">Manajemen Event & Promo</h2>
+      <h2 class="text-h5">
+        Manajemen Event & Promo
+      </h2>
       <VSpacer />
-      <VBtn color="primary" @click="openNew" prepend-icon="tabler-plus">
+      <VBtn color="primary" prepend-icon="tabler-plus" @click="openNew">
         Tambah Event
       </VBtn>
     </VCardTitle>
 
     <VDataTableServer
-        v-model:items-per-page="options.itemsPerPage"
-        v-model:page="options.page"
-        v-model:sort-by="options.sortBy"
-        :headers="headers"
-        :items="promoList"
-        :items-length="totalPromos"
-        :loading="loading"
-        @update:options="options = $event"
-        class="text-no-wrap"
-        :item-value="item => item.id"
-      >
+      v-model:items-per-page="options.itemsPerPage"
+      v-model:page="options.page"
+      v-model:sort-by="options.sortBy"
+      :headers="headers"
+      :items="promoList"
+      :items-length="totalPromos"
+      :loading="loading"
+      class="text-no-wrap"
+      :item-value="item => item.id"
+      @update:options="options = $event"
+    >
       <template #item.name="{ item }">
         <div class="d-flex flex-column py-2">
           <span class="font-weight-medium text-wrap">{{ item.name }}</span>
           <small class="text-disabled text-wrap" style="max-width: 300px;">{{ item.description }}</small>
           <div v-if="mobile" class="mt-2 d-flex flex-column gap-1">
-             <VChip :color="statusProps(item.status).color" size="x-small" label>
-                {{ item.status }}
-             </VChip>
-             <VChip size="x-small" label>
-                {{ item.event_type === 'BONUS_REGISTRATION' ? 'Bonus' : 'Pengumuman' }}
-             </VChip>
+            <VChip :color="statusProps(item.status).color" size="x-small" label>
+              {{ item.status }}
+            </VChip>
+            <VChip size="x-small" label>
+              {{ item.event_type === 'BONUS_REGISTRATION' ? 'Bonus' : 'Pengumuman' }}
+            </VChip>
           </div>
         </div>
       </template>
 
       <template #item.event_type="{ item }">
-         <VChip size="small" :color="item.event_type === 'BONUS_REGISTRATION' ? 'secondary' : 'primary'" variant="tonal">
-            {{ item.event_type === 'BONUS_REGISTRATION' ? 'Bonus' : 'Pengumuman' }}
-         </VChip>
+        <VChip size="small" :color="item.event_type === 'BONUS_REGISTRATION' ? 'secondary' : 'primary'" variant="tonal">
+          {{ item.event_type === 'BONUS_REGISTRATION' ? 'Bonus' : 'Pengumuman' }}
+        </VChip>
       </template>
 
       <template #item.status="{ item }">
@@ -294,9 +300,9 @@ useHead({ title: 'Manajemen Event & Promo' })
 
       <template #item.start_date="{ item }">
         <div class="d-flex flex-column py-2">
-            <span>{{ formatTableDate(item.start_date) }}</span>
-            <small v-if="item.end_date" class="text-disabled">s/d {{ formatTableDate(item.end_date) }}</small>
-            <small v-else class="text-disabled">Tanpa batas akhir</small>
+          <span>{{ formatTableDate(item.start_date) }}</span>
+          <small v-if="item.end_date" class="text-disabled">s/d {{ formatTableDate(item.end_date) }}</small>
+          <small v-else class="text-disabled">Tanpa batas akhir</small>
         </div>
       </template>
 
@@ -315,7 +321,7 @@ useHead({ title: 'Manajemen Event & Promo' })
         <VCardTitle class="pa-4">
           <span class="text-h5">{{ formTitle }}</span>
         </VCardTitle>
-        <VDivider/>
+        <VDivider />
 
         <VCardText style="max-height: 70vh;">
           <VContainer>
@@ -323,7 +329,7 @@ useHead({ title: 'Manajemen Event & Promo' })
               <VCol cols="12">
                 <VTextField v-model="editedItem.name" label="Nama Event" :rules="requiredRule" />
               </VCol>
-               <VCol cols="12">
+              <VCol cols="12">
                 <VTextarea
                   v-model="editedItem.description"
                   label="Deskripsi Singkat"
@@ -365,7 +371,7 @@ useHead({ title: 'Manajemen Event & Promo' })
                       variant="outlined"
                     />
                   </template>
-                  <VDatePicker v-model="startDateModel" @update:model-value="isStartDateMenuOpen = false" color="primary" />
+                  <VDatePicker v-model="startDateModel" color="primary" @update:model-value="isStartDateMenuOpen = false" />
                 </VMenu>
               </VCol>
 
@@ -377,19 +383,19 @@ useHead({ title: 'Manajemen Event & Promo' })
                       label="Tanggal Selesai (Opsional)"
                       readonly
                       clearable
-                      @click:clear="endDateModel = null"
                       v-bind="props"
                       :disabled="!startDateModel"
                       prepend-inner-icon="tabler-calendar-off"
                       density="comfortable"
                       variant="outlined"
+                      @click:clear="endDateModel = null"
                     />
                   </template>
-                  <VDatePicker v-model="endDateModel" @update:model-value="isEndDateMenuOpen = false" color="primary" :min="startDateModel?.toISOString()" />
+                  <VDatePicker v-model="endDateModel" color="primary" :min="startDateModel?.toISOString()" @update:model-value="isEndDateMenuOpen = false" />
                 </VMenu>
               </VCol>
-              
-              <VCol cols="12" v-if="editedItem.event_type === 'BONUS_REGISTRATION'">
+
+              <VCol v-if="editedItem.event_type === 'BONUS_REGISTRATION'" cols="12">
                 <VAlert
                   icon="tabler-gift"
                   color="secondary"
@@ -399,52 +405,61 @@ useHead({ title: 'Manajemen Event & Promo' })
                   Isi detail bonus yang akan diterima pengguna baru.
                 </VAlert>
                 <VRow>
-                    <VCol cols="12" sm="6">
-                        <VTextField
-                            v-model.number="bonusValueGb"
-                            label="Bonus Kuota (GB)"
-                            type="number"
-                            :rules="numberRule"
-                            min="0"
-                            step="0.5"
-                        />
-                    </VCol>
-                     <VCol cols="12" sm="6">
-                        <VTextField
-                            v-model.number="editedItem.bonus_duration_days"
-                            label="Durasi Bonus (Hari)"
-                            type="number"
-                            :rules="numberRule"
-                            min="1"
-                        />
-                    </VCol>
+                  <VCol cols="12" sm="6">
+                    <VTextField
+                      v-model.number="bonusValueGb"
+                      label="Bonus Kuota (GB)"
+                      type="number"
+                      :rules="numberRule"
+                      min="0"
+                      step="0.5"
+                    />
+                  </VCol>
+                  <VCol cols="12" sm="6">
+                    <VTextField
+                      v-model.number="editedItem.bonus_duration_days"
+                      label="Durasi Bonus (Hari)"
+                      type="number"
+                      :rules="numberRule"
+                      min="1"
+                    />
+                  </VCol>
                 </VRow>
               </VCol>
-
             </VRow>
           </VContainer>
         </VCardText>
-        <VDivider/>
-        
+        <VDivider />
+
         <VCardActions class="pa-4">
           <VSpacer />
-          <VBtn color="secondary" variant="text" @click="closeEditorDialog">Batal</VBtn>
-          <VBtn color="primary" variant="flat" type="submit">Simpan</VBtn>
+          <VBtn color="secondary" variant="text" @click="closeEditorDialog">
+            Batal
+          </VBtn>
+          <VBtn color="primary" variant="flat" type="submit">
+            Simpan
+          </VBtn>
         </VCardActions>
       </VForm>
     </VCard>
   </VDialog>
-  
+
   <VDialog v-model="isDeleteDialogVisible" max-width="500px" persistent>
     <VCard>
-      <VCardTitle class="text-h5"> Konfirmasi Hapus </VCardTitle>
+      <VCardTitle class="text-h5">
+        Konfirmasi Hapus
+      </VCardTitle>
       <VCardText>
         Apakah Anda yakin ingin menghapus event <strong>"{{ editedItem.name }}"</strong>? Aksi ini tidak dapat dibatalkan.
       </VCardText>
       <VCardActions>
         <VSpacer />
-        <VBtn color="secondary" variant="text" @click="closeDeleteDialog"> Batal </VBtn>
-        <VBtn color="error" variant="flat" @click="deleteItemConfirm"> Ya, Hapus </VBtn>
+        <VBtn color="secondary" variant="text" @click="closeDeleteDialog">
+          Batal
+        </VBtn>
+        <VBtn color="error" variant="flat" @click="deleteItemConfirm">
+          Ya, Hapus
+        </VBtn>
       </VCardActions>
     </VCard>
   </VDialog>

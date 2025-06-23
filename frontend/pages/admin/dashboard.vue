@@ -1,3 +1,355 @@
+<script setup lang="ts">
+import { hexToRgb } from '@layouts/utils'
+import { computed, defineAsyncComponent, h, ref, watch } from 'vue'
+import { useTheme } from 'vuetify'
+import { useApiFetch } from '~/composables/useApiFetch'
+
+const API_ENDPOINT = '/admin/dashboard/stats'
+
+const VueApexCharts = defineAsyncComponent(() =>
+  import('vue3-apexcharts').then(mod => mod.default).catch((err) => {
+    console.error(`Gagal memuat VueApexCharts`, err)
+    return { render: () => h('div', { class: 'text-caption text-error text-center pa-4' }, 'Komponen Chart Gagal Dimuat.') }
+  }),
+)
+
+definePageMeta({
+  requiredRole: ['ADMIN', 'SUPER_ADMIN'],
+})
+
+// --- Tipe Data (Interface) ---
+interface TransaksiTerakhir {
+  id: string
+  amount: number
+  created_at: string
+  package: { name: string }
+  user: {
+    full_name: string
+    username?: string
+    phone_number?: string
+  } | null
+}
+
+interface PaketTerlaris {
+  name: string
+  count: number
+}
+
+interface DashboardStats {
+  pendapatanHariIni: number
+  pendapatanBulanIni: number
+  pendaftarBaru: number
+  penggunaAktif: number
+  akanKadaluwarsa: number
+  permintaanTertunda: number // <-- DITAMBAHKAN
+  pendapatanKemarin?: number
+  transaksiHariIni?: number
+  penggunaOnline?: number
+  kuotaTerjualMb?: number
+  kuotaTerjual7HariMb?: number
+  kuotaTerjualKemarinMb?: number
+  kuotaPerHari?: number[]
+  pendapatanPerHari?: number[]
+  transaksiTerakhir: TransaksiTerakhir[]
+  paketTerlaris: PaketTerlaris[]
+  pendapatanMingguIni?: number
+  pendapatanMingguLalu?: number
+  transaksiMingguIni?: number
+  transaksiMingguLalu?: number
+}
+
+// --- State & Fetching ---
+const snackbar = ref({
+  visible: false,
+  text: '',
+  color: 'success',
+  icon: 'tabler-check',
+})
+
+const { data: stats, pending, error, refresh } = useApiFetch<DashboardStats>(API_ENDPOINT, {
+  lazy: true,
+  server: false,
+  default: () => ({
+    pendapatanHariIni: 0,
+    pendapatanBulanIni: 0,
+    pendaftarBaru: 0,
+    penggunaAktif: 0,
+    akanKadaluwarsa: 0,
+    permintaanTertunda: 0, // <-- DITAMBAHKAN
+    pendapatanKemarin: 0,
+    transaksiHariIni: 0,
+    penggunaOnline: 0,
+    kuotaTerjualMb: 0,
+    kuotaTerjual7HariMb: 0,
+    kuotaTerjualKemarinMb: 0,
+    transaksiTerakhir: [],
+    paketTerlaris: [],
+    kuotaPerHari: Array.from({ length: 7 }).fill(0),
+    pendapatanPerHari: Array.from({ length: 30 }).fill(0),
+    pendapatanMingguIni: 0,
+    pendapatanMingguLalu: 0,
+    transaksiMingguIni: 0,
+    transaksiMingguLalu: 0,
+  }),
+})
+
+const vuetifyTheme = useTheme()
+
+// --- Data untuk Kartu Statistik Atas (Diperbarui) ---
+const statistics = ref([
+  { icon: 'tabler-mail-fast', color: 'info', title: 'Permintaan Tertunda', value: 0, change: 0, isHover: false, to: '/admin/requests' },
+  { icon: 'tabler-user-search', color: 'warning', title: 'Menunggu Persetujuan', value: 0, change: 0, isHover: false, to: '/admin/users' },
+  { icon: 'tabler-calendar-exclamation', color: 'secondary', title: 'Akan Kadaluwarsa', value: 0, change: 0, isHover: false },
+  { icon: 'tabler-users-group', color: 'primary', title: 'Pengguna Aktif', value: 0, change: 0, isHover: false },
+])
+
+watch(stats, (newStats) => {
+  if (newStats) {
+    statistics.value[0].value = newStats.permintaanTertunda ?? 0
+    statistics.value[1].value = newStats.pendaftarBaru ?? 0
+    statistics.value[2].value = newStats.akanKadaluwarsa ?? 0
+    statistics.value[3].value = newStats.penggunaAktif ?? 0
+  }
+})
+
+// --- Logika Perbandingan ---
+const perbandinganPendapatanMingguan = computed(() => {
+  const mingguIni = stats.value?.pendapatanMingguIni ?? 0
+  const mingguLalu = stats.value?.pendapatanMingguLalu ?? 0
+  if (mingguLalu === 0)
+    return { persentase: mingguIni > 0 ? 100 : 0 }
+  const selisih = mingguIni - mingguLalu
+  const persentase = (selisih / mingguLalu) * 100
+  return { persentase: isFinite(persentase) ? persentase : 0 }
+})
+
+const perbandinganKuota = computed(() => {
+  const totalMingguIni = stats.value?.kuotaTerjual7HariMb ?? stats.value?.kuotaTerjualMb ?? 0
+  const totalMingguLalu = stats.value?.kuotaTerjualKemarinMb ?? 0
+  if (totalMingguLalu === 0)
+    return { persentase: totalMingguIni > 0 ? 100 : 0 }
+  const selisih = totalMingguIni - totalMingguLalu
+  const persentase = (selisih / totalMingguLalu) * 100
+  return { persentase: isFinite(persentase) ? persentase : 0 }
+})
+
+// --- Konfigurasi Grafik ---
+const kuotaChartOptions = computed(() => {
+  const currentTheme = vuetifyTheme.current.value.colors
+  const variableTheme = vuetifyTheme.current.value.variables
+  const labelColor = `rgba(${hexToRgb(currentTheme['on-surface'])},${variableTheme['disabled-opacity']})`
+
+  return {
+    chart: { type: 'bar', parentHeightOffset: 0, toolbar: { show: false } },
+    plotOptions: {
+      bar: { barHeight: '60%', columnWidth: '38%', startingShape: 'rounded', endingShape: 'rounded', borderRadius: 4, distributed: true },
+    },
+    grid: { show: false, padding: { top: -30, bottom: 0, left: -10, right: -10 } },
+    colors: [
+      `rgba(${hexToRgb(currentTheme.primary)},${variableTheme['dragged-opacity']})`,
+      `rgba(${hexToRgb(currentTheme.primary)},${variableTheme['dragged-opacity']})`,
+      `rgba(${hexToRgb(currentTheme.primary)},${variableTheme['dragged-opacity']})`,
+      `rgba(${hexToRgb(currentTheme.primary)},${variableTheme['dragged-opacity']})`,
+      `rgba(${hexToRgb(currentTheme.primary)},${variableTheme['dragged-opacity']})`,
+      `rgba(${hexToRgb(currentTheme.primary)}, 1)`,
+      `rgba(${hexToRgb(currentTheme.primary)},${variableTheme['dragged-opacity']})`,
+    ],
+    dataLabels: { enabled: false },
+    legend: { show: false },
+    xaxis: {
+      categories: ['S', 'S', 'R', 'K', 'J', 'S', 'M'],
+      axisBorder: { show: false },
+      axisTicks: { show: false },
+      labels: { style: { colors: labelColor, fontSize: '13px', fontFamily: 'Public Sans' } },
+    },
+    yaxis: { labels: { show: false } },
+    tooltip: {
+      enabled: true,
+      theme: 'dark',
+      y: {
+        formatter: (val: number) => `${formatBytes(val)}`,
+      },
+    },
+  }
+})
+
+const kuotaChartSeries = computed(() => [{
+  name: 'Kuota',
+  data: stats.value?.kuotaPerHari?.slice(-7) ?? [40, 65, 50, 45, 90, 55, 70],
+}])
+
+const pendapatanBulanIniChartOptions = computed(() => ({
+  chart: { type: 'area', toolbar: { show: false }, sparkline: { enabled: true } },
+  markers: { colors: 'transparent', strokeColors: 'transparent' },
+  grid: { show: false },
+  colors: [vuetifyTheme.current.value.colors.primary],
+  fill: { type: 'gradient', gradient: { shadeIntensity: 0.8, opacityFrom: 0.6, opacityTo: 0.1 } },
+  dataLabels: { enabled: false },
+  stroke: { width: 2, curve: 'smooth' },
+  xaxis: { show: false, lines: { show: false }, labels: { show: false }, axisBorder: { show: false } },
+  yaxis: { show: false },
+}))
+
+const pendapatanBulanIniChartSeries = computed(() => [{
+  name: 'Pendapatan',
+  data: stats.value?.pendapatanPerHari ?? Array.from({ length: 30 }).fill(0).map((_, i) => Math.random() * 100000 * (i / 10)),
+}])
+
+const paketTerlarisChartOptions = computed(() => {
+  const currentTheme = vuetifyTheme.current.value
+  return {
+    chart: { type: 'donut' },
+    labels: stats.value?.paketTerlaris.map(p => p.name) ?? [],
+    colors: [
+      currentTheme.colors.primary,
+      currentTheme.colors.success,
+      currentTheme.colors.info,
+      currentTheme.colors.warning,
+      currentTheme.colors.secondary,
+    ],
+    stroke: { width: 0, colors: [currentTheme.colors.surface] },
+    dataLabels: {
+      enabled: true,
+      formatter: (val: number, opts: any) => `${opts.w.globals.series[opts.seriesIndex]}x`,
+      style: {
+        fontSize: '12px',
+        colors: [currentTheme.colors.surface],
+        fontWeight: 'bold',
+      },
+      dropShadow: {
+        enabled: false,
+      },
+    },
+    legend: {
+      position: 'bottom',
+      markers: { offsetX: -3 },
+      itemMargin: { horizontal: 10 },
+      labels: { colors: currentTheme.colors.onSurface, useSeriesColors: false },
+    },
+    plotOptions: {
+      pie: {
+        donut: {
+          size: '70%',
+          labels: {
+            show: true,
+            value: {
+              fontSize: '1.625rem',
+              fontFamily: 'Public Sans',
+              color: currentTheme.colors.onSurface,
+              fontWeight: 600,
+              offsetY: -15,
+              formatter: (val: string) => `${val}x`,
+            },
+            name: {
+              fontSize: '0.9rem',
+              fontFamily: 'Public Sans',
+              color: currentTheme.colors.onSurface,
+              offsetY: 20,
+            },
+            total: {
+              show: true,
+              showAlways: true,
+              label: 'Total',
+              color: currentTheme.colors.onSurface,
+              formatter: (w: any) => `${w.globals.seriesTotals.reduce((a: number, b: number) => a + b, 0)}x`,
+            },
+          },
+        },
+      },
+    },
+    tooltip: {
+      enabled: true,
+      theme: 'dark',
+      y: {
+        formatter: (val: number) => `${val} penjualan`,
+      },
+    },
+  }
+})
+
+const paketTerlarisChartSeries = computed(() => stats.value?.paketTerlaris.map(p => p.count) ?? [])
+
+// --- Fungsi Helper ---
+function handleCardClick(path?: string) {
+  if (path) {
+    navigateTo(path)
+  }
+}
+
+function formatCurrency(value: number | null | undefined): string {
+  if (value === null || value === undefined)
+    return 'Rp 0'
+  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value)
+}
+
+function formatBytes(bytesInMb: number | null | undefined, decimals = 1) {
+  if (bytesInMb === null || bytesInMb === undefined || bytesInMb === 0)
+    return '0 MB'
+  const k = 1024
+  const dm = decimals < 0 ? 0 : decimals
+  const sizes = ['MB', 'GB', 'TB']
+  let i = 0
+  let size = bytesInMb
+  while (size >= k && i < sizes.length - 1) {
+    size /= k
+    i++
+  }
+  return `${Number.parseFloat(size.toFixed(dm))} ${sizes[i]}`
+}
+
+function formatRelativeTime(dateString?: string): string {
+  if (!dateString)
+    return 'Baru saja'
+  const date = new Date(dateString)
+  if (isNaN(date.getTime()))
+    return ''
+  const now = new Date()
+  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+  let interval = seconds / 31536000
+  if (interval > 1)
+    return `${Math.floor(interval)} tahun lalu`
+  interval = seconds / 2592000
+  if (interval > 1)
+    return `${Math.floor(interval)} bulan lalu`
+  interval = seconds / 86400
+  if (interval > 1)
+    return `${Math.floor(interval)} hari lalu`
+  interval = seconds / 3600
+  if (interval > 1)
+    return `${Math.floor(interval)} jam lalu`
+  interval = seconds / 60
+  if (interval > 1)
+    return `${Math.floor(interval)} menit lalu`
+  return 'Baru saja'
+}
+
+function formatPhoneNumberForDisplay(phoneNumber?: string | null) {
+  if (!phoneNumber)
+    return 'No. Telp tidak ada'
+  if (phoneNumber.startsWith('+62')) {
+    const localNumber = `0${phoneNumber.substring(3)}`
+    if (localNumber.length > 8) {
+      return `${localNumber.substring(0, 4)}-xxxx-${localNumber.substring(localNumber.length - 4)}`
+    }
+    return localNumber
+  }
+  return phoneNumber
+}
+
+function getUserInitials(name?: string) {
+  if (!name || name.trim() === '')
+    return 'N/A'
+  const words = name.split(' ').filter(Boolean)
+  if (words.length >= 2)
+    return (words[0][0] + words[1][0]).toUpperCase()
+  if (words.length === 1 && words[0].length > 1)
+    return (words[0][0] + words[0][1]).toUpperCase()
+  return name.substring(0, 1).toUpperCase()
+}
+
+useHead({ title: 'Dashboard Admin' })
+</script>
+
 <template>
   <div>
     <!-- Baris Atas: Statistik Utama -->
@@ -231,7 +583,7 @@
           </VCardText>
         </VCard>
       </VCol>
-      
+
       <!-- Kartu Pendapatan Bulan Ini -->
       <VCol
         cols="12"
@@ -428,7 +780,7 @@
         </VCard>
       </VCol>
     </VRow>
-    
+
     <!-- Kartu Debugging API -->
     <VRow class="mt-4">
       <VCol cols="12">
@@ -483,339 +835,6 @@
     </VSnackbar>
   </div>
 </template>
-
-<script setup lang="ts">
-import { useTheme } from 'vuetify'
-import { useApiFetch } from '~/composables/useApiFetch'
-import { computed, defineAsyncComponent, h, ref, watch } from 'vue'
-import { hexToRgb } from '@layouts/utils'
-
-const API_ENDPOINT = '/admin/dashboard/stats'
-
-const VueApexCharts = defineAsyncComponent(() =>
-  import('vue3-apexcharts').then(mod => mod.default).catch((err) => {
-    console.error(`Gagal memuat VueApexCharts`, err)
-    return { render: () => h('div', { class: 'text-caption text-error text-center pa-4' }, 'Komponen Chart Gagal Dimuat.') }
-  }),
-)
-
-definePageMeta({
-  requiredRole: ['ADMIN', 'SUPER_ADMIN'],
-})
-
-// --- Tipe Data (Interface) ---
-interface TransaksiTerakhir {
-  id: string
-  amount: number
-  created_at: string
-  package: { name: string }
-  user: {
-    full_name: string
-    username?: string
-    phone_number?: string
-  } | null
-}
-
-interface PaketTerlaris {
-  name: string
-  count: number
-}
-
-interface DashboardStats {
-  pendapatanHariIni: number
-  pendapatanBulanIni: number
-  pendaftarBaru: number
-  penggunaAktif: number
-  akanKadaluwarsa: number
-  permintaanTertunda: number // <-- DITAMBAHKAN
-  pendapatanKemarin?: number
-  transaksiHariIni?: number
-  penggunaOnline?: number
-  kuotaTerjualMb?: number
-  kuotaTerjual7HariMb?: number
-  kuotaTerjualKemarinMb?: number
-  kuotaPerHari?: number[]
-  pendapatanPerHari?: number[]
-  transaksiTerakhir: TransaksiTerakhir[]
-  paketTerlaris: PaketTerlaris[]
-  pendapatanMingguIni?: number
-  pendapatanMingguLalu?: number
-  transaksiMingguIni?: number
-  transaksiMingguLalu?: number
-}
-
-// --- State & Fetching ---
-const snackbar = ref({
-  visible: false,
-  text: '',
-  color: 'success',
-  icon: 'tabler-check',
-})
-
-const { data: stats, pending, error, refresh } = useApiFetch<DashboardStats>(API_ENDPOINT, {
-  lazy: true,
-  server: false,
-  default: () => ({
-    pendapatanHariIni: 0,
-    pendapatanBulanIni: 0,
-    pendaftarBaru: 0,
-    penggunaAktif: 0,
-    akanKadaluwarsa: 0,
-    permintaanTertunda: 0, // <-- DITAMBAHKAN
-    pendapatanKemarin: 0,
-    transaksiHariIni: 0,
-    penggunaOnline: 0,
-    kuotaTerjualMb: 0,
-    kuotaTerjual7HariMb: 0,
-    kuotaTerjualKemarinMb: 0,
-    transaksiTerakhir: [],
-    paketTerlaris: [],
-    kuotaPerHari: Array(7).fill(0),
-    pendapatanPerHari: Array(30).fill(0),
-    pendapatanMingguIni: 0,
-    pendapatanMingguLalu: 0,
-    transaksiMingguIni: 0,
-    transaksiMingguLalu: 0,
-  }),
-})
-
-const vuetifyTheme = useTheme()
-
-// --- Data untuk Kartu Statistik Atas (Diperbarui) ---
-const statistics = ref([
-  { icon: 'tabler-mail-fast', color: 'info', title: 'Permintaan Tertunda', value: 0, change: 0, isHover: false, to: '/admin/requests' },
-  { icon: 'tabler-user-search', color: 'warning', title: 'Menunggu Persetujuan', value: 0, change: 0, isHover: false, to: '/admin/users' },
-  { icon: 'tabler-calendar-exclamation', color: 'secondary', title: 'Akan Kadaluwarsa', value: 0, change: 0, isHover: false },
-  { icon: 'tabler-users-group', color: 'primary', title: 'Pengguna Aktif', value: 0, change: 0, isHover: false },
-])
-
-watch(stats, (newStats) => {
-  if (newStats) {
-    statistics.value[0].value = newStats.permintaanTertunda ?? 0
-    statistics.value[1].value = newStats.pendaftarBaru ?? 0
-    statistics.value[2].value = newStats.akanKadaluwarsa ?? 0
-    statistics.value[3].value = newStats.penggunaAktif ?? 0
-  }
-})
-
-// --- Logika Perbandingan ---
-const perbandinganPendapatanMingguan = computed(() => {
-  const mingguIni = stats.value?.pendapatanMingguIni ?? 0
-  const mingguLalu = stats.value?.pendapatanMingguLalu ?? 0
-  if (mingguLalu === 0) return { persentase: mingguIni > 0 ? 100 : 0 }
-  const selisih = mingguIni - mingguLalu
-  const persentase = (selisih / mingguLalu) * 100
-  return { persentase: isFinite(persentase) ? persentase : 0 }
-})
-
-const perbandinganKuota = computed(() => {
-    const totalMingguIni = stats.value?.kuotaTerjual7HariMb ?? stats.value?.kuotaTerjualMb ?? 0
-    const totalMingguLalu = stats.value?.kuotaTerjualKemarinMb ?? 0
-    if (totalMingguLalu === 0) return { persentase: totalMingguIni > 0 ? 100 : 0 }
-    const selisih = totalMingguIni - totalMingguLalu
-    const persentase = (selisih / totalMingguLalu) * 100
-    return { persentase: isFinite(persentase) ? persentase : 0 }
-});
-
-// --- Konfigurasi Grafik ---
-const kuotaChartOptions = computed(() => {
-  const currentTheme = vuetifyTheme.current.value.colors
-  const variableTheme = vuetifyTheme.current.value.variables
-  const labelColor = `rgba(${hexToRgb(currentTheme['on-surface'])},${variableTheme['disabled-opacity']})`
-
-  return {
-    chart: { type: 'bar', parentHeightOffset: 0, toolbar: { show: false } },
-    plotOptions: {
-      bar: { barHeight: '60%', columnWidth: '38%', startingShape: 'rounded', endingShape: 'rounded', borderRadius: 4, distributed: true },
-    },
-    grid: { show: false, padding: { top: -30, bottom: 0, left: -10, right: -10 } },
-    colors: [
-      `rgba(${hexToRgb(currentTheme.primary)},${variableTheme['dragged-opacity']})`,
-      `rgba(${hexToRgb(currentTheme.primary)},${variableTheme['dragged-opacity']})`,
-      `rgba(${hexToRgb(currentTheme.primary)},${variableTheme['dragged-opacity']})`,
-      `rgba(${hexToRgb(currentTheme.primary)},${variableTheme['dragged-opacity']})`,
-      `rgba(${hexToRgb(currentTheme.primary)},${variableTheme['dragged-opacity']})`,
-      `rgba(${hexToRgb(currentTheme.primary)}, 1)`,
-      `rgba(${hexToRgb(currentTheme.primary)},${variableTheme['dragged-opacity']})`,
-    ],
-    dataLabels: { enabled: false },
-    legend: { show: false },
-    xaxis: {
-      categories: ['S', 'S', 'R', 'K', 'J', 'S', 'M'],
-      axisBorder: { show: false },
-      axisTicks: { show: false },
-      labels: { style: { colors: labelColor, fontSize: '13px', fontFamily: 'Public Sans' } },
-    },
-    yaxis: { labels: { show: false } },
-    tooltip: {
-      enabled: true,
-      theme: 'dark',
-      y: {
-        formatter: (val: number) => `${formatBytes(val)}`,
-      },
-    },
-  }
-})
-
-const kuotaChartSeries = computed(() => [{
-  name: 'Kuota',
-  data: stats.value?.kuotaPerHari?.slice(-7) ?? [40, 65, 50, 45, 90, 55, 70],
-}])
-
-const pendapatanBulanIniChartOptions = computed(() => ({
-  chart: { type: 'area', toolbar: { show: false }, sparkline: { enabled: true } },
-  markers: { colors: 'transparent', strokeColors: 'transparent' },
-  grid: { show: false },
-  colors: [vuetifyTheme.current.value.colors.primary],
-  fill: { type: 'gradient', gradient: { shadeIntensity: 0.8, opacityFrom: 0.6, opacityTo: 0.1 } },
-  dataLabels: { enabled: false },
-  stroke: { width: 2, curve: 'smooth' },
-  xaxis: { show: false, lines: { show: false }, labels: { show: false }, axisBorder: { show: false } },
-  yaxis: { show: false },
-}))
-
-const pendapatanBulanIniChartSeries = computed(() => [{
-  name: 'Pendapatan',
-  data: stats.value?.pendapatanPerHari ?? Array(30).fill(0).map((_, i) => Math.random() * 100000 * (i/10)),
-}])
-
-const paketTerlarisChartOptions = computed(() => {
-    const currentTheme = vuetifyTheme.current.value
-    return {
-        chart: { type: 'donut' },
-        labels: stats.value?.paketTerlaris.map(p => p.name) ?? [],
-        colors: [
-            currentTheme.colors.primary, currentTheme.colors.success, currentTheme.colors.info, currentTheme.colors.warning, currentTheme.colors.secondary,
-        ],
-        stroke: { width: 0, colors: [currentTheme.colors.surface] },
-        dataLabels: { 
-          enabled: true,
-          formatter: (val: number, opts: any) => `${opts.w.globals.series[opts.seriesIndex]}x`,
-          style: {
-            fontSize: '12px',
-            colors: [currentTheme.colors.surface],
-            fontWeight: 'bold',
-          },
-          dropShadow: {
-            enabled: false,
-          }
-        },
-        legend: {
-            position: 'bottom',
-            markers: { offsetX: -3 },
-            itemMargin: { horizontal: 10 },
-            labels: { colors: currentTheme.colors.onSurface, useSeriesColors: false },
-        },
-        plotOptions: {
-            pie: {
-                donut: {
-                    size: '70%',
-                    labels: {
-                        show: true,
-                        value: { 
-                          fontSize: '1.625rem', 
-                          fontFamily: 'Public Sans', 
-                          color: currentTheme.colors.onSurface,
-                          fontWeight: 600, 
-                          offsetY: -15, 
-                          formatter: (val: string) => `${val}x` 
-                        },
-                        name: { 
-                          fontSize: '0.9rem', 
-                          fontFamily: 'Public Sans', 
-                          color: currentTheme.colors.onSurface, 
-                          offsetY: 20 
-                        },
-                        total: { 
-                          show: true, 
-                          showAlways: true, 
-                          label: 'Total', 
-                          color: currentTheme.colors.onSurface,
-                          formatter: (w: any) => w.globals.seriesTotals.reduce((a: number, b: number) => a + b, 0) + 'x' 
-                        },
-                    },
-                },
-            },
-        },
-        tooltip: {
-          enabled: true,
-          theme: 'dark',
-          y: {
-            formatter: (val: number) => `${val} penjualan`,
-          },
-        },
-    }
-})
-
-const paketTerlarisChartSeries = computed(() => stats.value?.paketTerlaris.map(p => p.count) ?? [])
-
-// --- Fungsi Helper ---
-function handleCardClick(path?: string) {
-  if (path) {
-    navigateTo(path)
-  }
-}
-
-const formatCurrency = (value: number | null | undefined): string => {
-  if (value === null || value === undefined) return 'Rp 0'
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value)
-}
-
-const formatBytes = (bytesInMb: number | null | undefined, decimals = 1) => {
-    if (bytesInMb === null || bytesInMb === undefined || bytesInMb === 0) return '0 MB';
-    const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['MB', 'GB', 'TB'];
-    let i = 0;
-    let size = bytesInMb;
-    while(size >= k && i < sizes.length -1) {
-        size /= k;
-        i++;
-    }
-    return `${parseFloat(size.toFixed(dm))} ${sizes[i]}`;
-}
-
-const formatRelativeTime = (dateString?: string): string => {
-  if (!dateString) return 'Baru saja';
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) return '';
-  const now = new Date();
-  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-  let interval = seconds / 31536000;
-  if (interval > 1) return `${Math.floor(interval)} tahun lalu`;
-  interval = seconds / 2592000;
-  if (interval > 1) return `${Math.floor(interval)} bulan lalu`;
-  interval = seconds / 86400;
-  if (interval > 1) return `${Math.floor(interval)} hari lalu`;
-  interval = seconds / 3600;
-  if (interval > 1) return `${Math.floor(interval)} jam lalu`;
-  interval = seconds / 60;
-  if (interval > 1) return `${Math.floor(interval)} menit lalu`;
-  return 'Baru saja';
-}
-
-const formatPhoneNumberForDisplay = (phoneNumber?: string | null) => {
-  if (!phoneNumber) return 'No. Telp tidak ada';
-  if (phoneNumber.startsWith('+62')) {
-    const localNumber = '0' + phoneNumber.substring(3);
-    if (localNumber.length > 8) {
-        return `${localNumber.substring(0, 4)}-xxxx-${localNumber.substring(localNumber.length - 4)}`;
-    }
-    return localNumber;
-  }
-  return phoneNumber;
-};
-
-const getUserInitials = (name?: string) => {
-  if (!name || name.trim() === '') return 'N/A'
-  const words = name.split(' ').filter(Boolean)
-  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase()
-  if (words.length === 1 && words[0].length > 1) return (words[0][0] + words[0][1]).toUpperCase()
-  return name.substring(0, 1).toUpperCase()
-}
-
-useHead({ title: 'Dashboard Admin' })
-</script>
 
 <style lang="scss">
 @use "@core/scss/template/libs/apex-chart.scss";

@@ -1,6 +1,6 @@
 <script lang="ts" setup>
-import { ref, watch } from 'vue'
 import type { VForm } from 'vuetify/components'
+import { ref, watch } from 'vue'
 import { useSnackbar } from '@/composables/useSnackbar'
 
 // --- Props & Emits ---
@@ -58,7 +58,8 @@ watch(() => props.modelValue, (isVisible) => {
 async function handleSubmit() {
   errorMessage.value = null
   const { valid } = await formRef.value!.validate()
-  if (!valid) return
+  if (!valid)
+    return
 
   loading.value = true
   try {

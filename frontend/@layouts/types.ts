@@ -1,8 +1,8 @@
 // frontend/@layouts/types.ts
 import type { OffsetOptions } from '@floating-ui/dom'
-import type { AppContentLayoutNav, ContentWidth, FooterType, HorizontalNavType, NavbarType } from  '@/types/enums'
 import type { Component, VNode } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
+import type { AppContentLayoutNav, ContentWidth, FooterType, HorizontalNavType, NavbarType } from '@/types/enums'
 
 export interface LayoutConfig {
   app: {
@@ -59,20 +59,20 @@ export interface NavSectionTitle extends Partial<AclProperties> {
 
 // 👉 Vertical nav link
 declare type ATagTargetAttrValues = '_blank' | '_self' | '_parent' | '_top' | 'framename'
-declare type ATagRelAttrValues =
-  | 'alternate'
-  | 'author'
-  | 'bookmark'
-  | 'external'
-  | 'help'
-  | 'license'
-  | 'next'
-  | 'nofollow'
-  | 'noopener'
-  | 'noreferrer'
-  | 'prev'
-  | 'search'
-  | 'tag'
+declare type ATagRelAttrValues
+  = | 'alternate'
+    | 'author'
+    | 'bookmark'
+    | 'external'
+    | 'help'
+    | 'license'
+    | 'next'
+    | 'nofollow'
+    | 'noopener'
+    | 'noreferrer'
+    | 'prev'
+    | 'search'
+    | 'tag'
 
 export interface NavLinkProps {
   to?: RouteLocationRaw | string | null

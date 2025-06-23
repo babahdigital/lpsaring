@@ -647,16 +647,20 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
             </VRow>
 
             <VCardText class="border rounded pa-sm-3 pa-2 mt-auto mb-0 mx-0 weekly-summary-box vuexy-inner-card">
-              <VRow class="ma-0 justify-center"> <!-- Tambahkan justify-center untuk tampilan yang lebih baik -->
+              <VRow class="ma-0 justify-center">
+                <!-- Tambahkan justify-center untuk tampilan yang lebih baik -->
                 <!-- Hanya menampilkan "Total Pemakaian Hari Ini" -->
-                <VCol cols="12" sm="6" class="pa-2 text-center"> <!-- Hapus weekly-summary-col dan tambahkan text-center -->
-                  <div class="d-flex align-center justify-center mb-1"> <!-- Tambahkan justify-center -->
+                <VCol cols="12" sm="6" class="pa-2 text-center">
+                  <!-- Hapus weekly-summary-col dan tambahkan text-center -->
+                  <div class="d-flex align-center justify-center mb-1">
+                    <!-- Tambahkan justify-center -->
                     <VAvatar color="primary" variant="tonal" rounded size="28" class="me-2">
                       <VIcon icon="tabler-calendar-today" size="18" /> <!-- Ubah ikon untuk merefleksikan "Hari Ini" -->
                     </VAvatar>
                     <span class="text-caption">Total Pemakaian Hari Ini</span>
                   </div>
-                  <div class="summary-item-content d-flex flex-column align-center"> <!-- Tambahkan d-flex flex-column align-center -->
+                  <div class="summary-item-content d-flex flex-column align-center">
+                    <!-- Tambahkan d-flex flex-column align-center -->
                     <h6 class="font-weight-medium summary-value">
                       {{ weeklyUsageData?.weekly_data && weeklyUsageData.weekly_data.length > 0 ? formatQuota(weeklyUsageData.weekly_data[weeklyUsageData.weekly_data.length - 1]) : 'N/A' }}
                     </h6>

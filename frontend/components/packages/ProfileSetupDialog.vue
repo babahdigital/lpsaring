@@ -1,6 +1,6 @@
 <script lang="ts" setup>
-import { ref } from 'vue'
 import { useNuxtApp } from '#app'
+import { ref } from 'vue'
 import { useSnackbar } from '@/composables/useSnackbar'
 
 // Menerima properti dari komponen induk
@@ -26,15 +26,15 @@ const loading = ref(false)
  */
 async function setupMissingProfiles() {
   loading.value = true
-  
+
   // Ini adalah profil wajib yang harus ada di sistem
   const requiredProfiles = ['user', 'unlimited']
-  
+
   try {
     // 1. Ambil semua profil yang sudah ada dari server
     const existingProfiles: { profile_name: string }[] = await $api('/admin/profiles')
     const existingProfileNames = new Set(existingProfiles.map(p => p.profile_name))
-    
+
     // 2. Tentukan profil mana yang belum ada
     const profilesToCreate = requiredProfiles.filter(pName => !existingProfileNames.has(pName))
 
@@ -56,18 +56,19 @@ async function setupMissingProfiles() {
         },
       })
     }
-    
+
     snackbar.add({ type: 'success', title: 'Konfigurasi Selesai', text: `Profil sistem (${profilesToCreate.join(', ')}) berhasil dibuat.` })
     emit('profiles-created') // Kirim sinyal sukses ke induk
     closeDialog()
-
-  } catch (error: any) {
+  }
+  catch (error: any) {
     snackbar.add({
       type: 'error',
       title: 'Gagal Membuat Profil',
       text: error.data?.message || 'Terjadi kesalahan saat menghubungi server.',
     })
-  } finally {
+  }
+  finally {
     loading.value = false
   }
 }

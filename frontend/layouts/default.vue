@@ -1,9 +1,9 @@
 <script lang="ts" setup>
 import { useSkins } from '@core/composable/useSkins'
 import { useConfigStore } from '@core/stores/config'
-import { AppContentLayoutNav } from  '@/types/enums'
 import { switchToVerticalNavOnLtOverlayNavBreakpoint } from '@layouts/utils'
 import { defineAsyncComponent } from 'vue'
+import { AppContentLayoutNav } from '@/types/enums'
 
 const DefaultLayoutWithHorizontalNav = defineAsyncComponent(() => import('./components/DefaultLayoutWithHorizontalNav.vue'))
 const DefaultLayoutWithVerticalNav = defineAsyncComponent(() => import('./components/DefaultLayoutWithVerticalNav.vue'))
@@ -24,8 +24,7 @@ injectSkinClasses()
   >
     <slot />
   </Component>
-
-  </template>
+</template>
 
 <style lang="scss">
 // As we are using `layouts` plugin we need its styles to be imported

@@ -1,37 +1,5 @@
 {
   // Mewarisi konfigurasi dasar dan definisi tipe dari Nuxt
   // https://nuxt.com/docs/guide/concepts/typescript
-  "extends": "./.nuxt/tsconfig.json",
-
-  "compilerOptions": {
-    // Paths ini ditambahkan untuk membantu VS Code/Volar jika ia tidak
-    // sepenuhnya mengambil semua path dari file yang di-extend.
-    // Path di sini relatif terhadap direktori file tsconfig.json ini (yaitu, frontend/)
-    "paths": {
-      // Path yang berhasil memperbaiki error '#app' di VS Code Anda
-      // Ini mengasumsikan node_modules berada langsung di dalam direktori 'frontend/'
-      // atau dapat diakses melalui ./node_modules dari direktori 'frontend/'
-      "#app": ["./node_modules/nuxt/dist/app"],
-      "#app/*": ["./node_modules/nuxt/dist/app/*"],
-      "#imports": ["./.nuxt/imports.d.ts"],
-
-      // Tambahkan kembali alias standar Nuxt agar VS Code mengenali '~/...' dan '@/...'
-      // Ini akan menunjuk ke direktori 'frontend/' itu sendiri (tempat tsconfig.json ini berada).
-      "~/*": ["./*"],
-      "@/*": ["./*"],
-
-      // Anda juga bisa menambahkan alias lain yang sering digunakan di sini jika VS Code masih error,
-      // meskipun idealnya sudah tercakup oleh extends dan konfigurasi di nuxt.config.ts.
-      // Contoh (sesuaikan jika benar-benar diperlukan untuk VS Code):
-      "@core": ["./@core"],
-      "@core/*": ["./@core/*"],
-      "@layouts": ["./@layouts"],
-      "@layouts/*": ["./@layouts/*"],
-      "@images/*": ["./assets/images/*"],
-      "@styles/*": ["./assets/styles/*"],
-      "@validators": ["./@core/utils/validators"],
-      "@themeConfig": ["./themeConfig.ts"]
-    },
-    "strict": true
-  }
+  "extends": "./.nuxt/tsconfig.json"
 }

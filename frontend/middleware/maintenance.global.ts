@@ -1,7 +1,7 @@
 // frontend/middleware/maintenance.global.ts
 import { defineNuxtRouteMiddleware, navigateTo } from '#app'
-import { useMaintenanceStore } from '~/store/maintenance'
 import { useAuthStore } from '~/store/auth'
+import { useMaintenanceStore } from '~/store/maintenance'
 
 /**
  * Middleware untuk menangani Maintenance Mode.
@@ -13,13 +13,13 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
   // Pastikan status auth dan settings sudah dicek/dimuat sebelum middleware berjalan.
   if (!authStore.initialAuthCheckDone) {
-    await authStore.initializeAuth();
+    await authStore.initializeAuth()
   }
 
-  const isMaintenanceActive = maintenanceStore.isActive;
-  const isMaintenancePage = to.path === '/maintenance';
-  const isAdminPath = to.path.startsWith('/admin');
-  const isUserLoggedInAdmin = authStore.isLoggedIn && authStore.isAdmin;
+  const isMaintenanceActive = maintenanceStore.isActive
+  const isMaintenancePage = to.path === '/maintenance'
+  const isAdminPath = to.path.startsWith('/admin')
+  const isUserLoggedInAdmin = authStore.isLoggedIn && authStore.isAdmin
 
   // --- LOGIKA UTAMA ---
 
@@ -29,12 +29,12 @@ export default defineNuxtRouteMiddleware(async (to) => {
     if (isUserLoggedInAdmin) {
       // PERBAIKAN: Izinkan akses ke semua halaman di dalam '/admin' DAN ke halaman '/akun'.
       if (isAdminPath || to.path === '/akun') {
-        return; // Lanjutkan navigasi
+        // Lanjutkan navigasi
       }
       // Jika admin mencoba akses halaman non-admin lainnya,
       // redirect ke dashboard admin mereka.
       else {
-        return navigateTo('/admin/dashboard', { replace: true });
+        return navigateTo('/admin/dashboard', { replace: true })
       }
     }
 
@@ -42,12 +42,12 @@ export default defineNuxtRouteMiddleware(async (to) => {
     else {
       // Izinkan akses ke halaman login admin (/admin) dan halaman maintenance itu sendiri.
       if (isAdminPath || isMaintenancePage) {
-        return; // Lanjutkan navigasi ke /admin (login) atau /maintenance
+        return // Lanjutkan navigasi ke /admin (login) atau /maintenance
       }
-      
+
       // Untuk SEMUA PATH LAIN (termasuk /login, /, /dashboard, dll),
       // paksa redirect ke halaman maintenance.
-      return navigateTo('/maintenance', { replace: true });
+      return navigateTo('/maintenance', { replace: true })
     }
   }
   // Jika Mode Maintenance TIDAK AKTIF
@@ -55,7 +55,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
     // Jika maintenance TIDAK aktif, dan pengguna mencoba akses /maintenance,
     // redirect mereka ke halaman utama.
     if (isMaintenancePage) {
-      return navigateTo('/', { replace: true });
+      return navigateTo('/', { replace: true })
     }
   }
 })

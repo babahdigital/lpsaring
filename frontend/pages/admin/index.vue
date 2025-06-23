@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { useAuthStore } from '~/store/auth'
-import { h } from 'vue'
 import authV1BottomShape from '@images/svg/auth-v1-bottom-shape.svg?raw'
 import authV1TopShape from '@images/svg/auth-v1-top-shape.svg?raw'
 import { VNodeRenderer } from '@layouts/components/VNodeRenderer'
-import { themeConfig } from '@themeConfig'
+import { h } from 'vue'
+import { useAuthStore } from '~/store/auth'
 
 definePageMeta({
   layout: 'blank',
@@ -27,7 +26,7 @@ const isPasswordVisible = ref(false)
 const loading = ref(false)
 const error = ref<string | null>(null)
 
-const handleLogin = async () => {
+async function handleLogin() {
   loading.value = true
   error.value = null
   try {
@@ -68,7 +67,6 @@ useHead({ title: 'Login Admin' })
         max-width="460"
         :class="$vuetify.display.smAndUp ? 'pa-6' : 'pa-0'"
       >
-      
         <VCardText>
           <h4 class="text-h4 mb-1">
             Admin Portal 👋🏻
@@ -132,7 +130,7 @@ useHead({ title: 'Login Admin' })
               </VRow>
             </VForm>
           </ClientOnly>
-          </VCardText>
+        </VCardText>
       </VCard>
     </div>
   </div>

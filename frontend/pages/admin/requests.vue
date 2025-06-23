@@ -1,17 +1,23 @@
 <script lang="ts" setup>
-import { ref, watch, onMounted } from 'vue'
 import type { VDataTableServer } from 'vuetify/labs/VDataTable'
+import { onMounted, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import ProcessRequestDialog from '@/components/request/ProcessRequestDialog.vue'
 
 // --- Tipe Data (tidak berubah) ---
-interface Requester { id: string; full_name: string; phone_number: string }
+interface Requester { id: string, full_name: string, phone_number: string }
 interface ProcessedBy { full_name: string }
 interface QuotaRequest {
-  id: string; requester: Requester; status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'PARTIALLY_APPROVED'
-  request_type: 'QUOTA' | 'UNLIMITED'; request_details: Record<string, any> | null
-  granted_details: Record<string, any> | null; rejection_reason: string | null
-  created_at: string; processed_at: string | null; processed_by: ProcessedBy | null
+  id: string
+  requester: Requester
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'PARTIALLY_APPROVED'
+  request_type: 'QUOTA' | 'UNLIMITED'
+  request_details: Record<string, any> | null
+  granted_details: Record<string, any> | null
+  rejection_reason: string | null
+  created_at: string
+  processed_at: string | null
+  processed_by: ProcessedBy | null
 }
 type Options = InstanceType<typeof VDataTableServer>['options']
 
@@ -37,12 +43,14 @@ async function fetchRequests() {
   loading.value = true
   try {
     const params = new URLSearchParams({ page: String(options.value.page), itemsPerPage: String(options.value.itemsPerPage) })
-    options.value.sortBy.forEach(sortItem => { params.append('sortBy', sortItem.key); params.append('sortOrder', sortItem.order) })
+    options.value.sortBy.forEach((sortItem) => { params.append('sortBy', sortItem.key); params.append('sortOrder', sortItem.order) })
     if (statusFilter.value) { params.append('status', statusFilter.value) }
     const response = await $api<{ items: QuotaRequest[], totalItems: number }>(`/admin/quota-requests?${params.toString()}`)
     requests.value = response.items
     totalRequests.value = response.totalItems
-  } catch (error: any) { showSnackbar(`Gagal mengambil data: ${error.data?.message || 'Server error'}`, 'error') } finally { loading.value = false }
+  }
+  catch (error: any) { showSnackbar(`Gagal mengambil data: ${error.data?.message || 'Server error'}`, 'error') }
+  finally { loading.value = false }
 }
 function openProcessDialog(item: QuotaRequest) { selectedRequest.value = item; dialog.value = true }
 function handleDialogClose(processed = false) { dialog.value = false; selectedRequest.value = null; if (processed) { showSnackbar('Permintaan berhasil diproses.', 'success'); fetchRequests() } }
@@ -71,21 +79,26 @@ const requestTypeMap = {
 }
 
 const filterItems = [
-  { title: 'Semua Status', value: null }, { title: 'Menunggu', value: 'PENDING' },
-  { title: 'Disetujui', value: 'APPROVED' }, { title: 'Ditolak', value: 'REJECTED' },
+  { title: 'Semua Status', value: null },
+  { title: 'Menunggu', value: 'PENDING' },
+  { title: 'Disetujui', value: 'APPROVED' },
+  { title: 'Ditolak', value: 'REJECTED' },
   { title: 'Disetujui Sebagian', value: 'PARTIALLY_APPROVED' },
 ]
 
 // [PERBAIKAN 1] Fungsi baru untuk format MB ke GB
 function formatQuotaToGB(mb: number | null | undefined): string {
-  if (typeof mb !== 'number') return 'N/A'
-  if (mb === 0) return '0 GB'
+  if (typeof mb !== 'number')
+    return 'N/A'
+  if (mb === 0)
+    return '0 GB'
   const gb = mb / 1024
   return `${gb.toFixed(2).replace(/\.00$/, '')} GB`
 }
 
 function formatRequestDetails(details: Record<string, any> | null, type: 'requested' | 'granted'): string {
-  if (!details || typeof details !== 'object') return 'Akses Penuh'
+  if (!details || typeof details !== 'object')
+    return 'Akses Penuh'
   const mb = type === 'requested' ? details.requested_mb : details.granted_mb
   const days = type === 'requested' ? details.requested_duration_days : details.granted_duration_days
   if (typeof mb === 'number' && typeof days === 'number') {
@@ -95,12 +108,14 @@ function formatRequestDetails(details: Record<string, any> | null, type: 'reques
 }
 
 function formatSimpleDateTime(dateString: string | null) {
-  if (!dateString) return 'N/A'
+  if (!dateString)
+    return 'N/A'
   return new Date(dateString).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 function formatPhoneNumber(phone: string | null): string {
-  if (!phone) return ''
-  return phone.startsWith('+62') ? '0' + phone.substring(3) : phone
+  if (!phone)
+    return ''
+  return phone.startsWith('+62') ? `0${phone.substring(3)}` : phone
 }
 </script>
 
@@ -111,7 +126,9 @@ function formatPhoneNumber(phone: string | null): string {
         <template #prepend>
           <VIcon icon="tabler-mail-fast" color="primary" size="32" class="me-2" />
         </template>
-        <VCardTitle class="text-h4">Manajemen Permintaan</VCardTitle>
+        <VCardTitle class="text-h4">
+          Manajemen Permintaan
+        </VCardTitle>
         <VCardSubtitle>Proses permintaan kuota dan akses dari para Komandan.</VCardSubtitle>
         <template #append>
           <div :style="{ width: smAndDown ? '100%' : '250px' }">
@@ -134,10 +151,10 @@ function formatPhoneNumber(phone: string | null): string {
             </div>
           </div>
         </template>
-        
+
         <template #item.request_type="{ item }">
           <VChip :color="requestTypeMap[item.request_type]?.color" size="small" label>
-            <VIcon start :icon="requestTypeMap[item.request_type]?.icon" size="16"/>
+            <VIcon start :icon="requestTypeMap[item.request_type]?.icon" size="16" />
             {{ requestTypeMap[item.request_type]?.text }}
           </VChip>
         </template>
@@ -146,7 +163,7 @@ function formatPhoneNumber(phone: string | null): string {
           <div v-if="item.request_type === 'QUOTA'" class="d-flex flex-column text-no-wrap">
             <span>{{ formatRequestDetails(item.request_details, 'requested') }}</span>
             <small v-if="item.status === 'PARTIALLY_APPROVED' && item.granted_details" class="text-info mt-1">
-              <VIcon icon="tabler-arrow-down-right" size="12"/>
+              <VIcon icon="tabler-arrow-down-right" size="12" />
               Diberikan: {{ formatRequestDetails(item.granted_details, 'granted') }}
             </small>
           </div>
@@ -154,29 +171,51 @@ function formatPhoneNumber(phone: string | null): string {
         </template>
 
         <template #item.status="{ item }">
-          <VChip :color="statusMap[item.status]?.color" size="small" label>{{ statusMap[item.status]?.text }}</VChip>
+          <VChip :color="statusMap[item.status]?.color" size="small" label>
+            {{ statusMap[item.status]?.text }}
+          </VChip>
         </template>
-        <template #item.created_at="{ item }"><span>{{ formatSimpleDateTime(item.created_at) }}</span></template>
+        <template #item.created_at="{ item }">
+          <span>{{ formatSimpleDateTime(item.created_at) }}</span>
+        </template>
         <template #item.actions="{ item }">
-          <VBtn v-if="item.status === 'PENDING'" color="primary" variant="tonal" size="small" @click="openProcessDialog(item)">Proses</VBtn>
+          <VBtn v-if="item.status === 'PENDING'" color="primary" variant="tonal" size="small" @click="openProcessDialog(item)">
+            Proses
+          </VBtn>
           <VTooltip v-else location="top" max-width="250px">
-            <template #activator="{ props }"><VIcon v-bind="props" :color="statusMap[item.status]?.color" :icon="statusMap[item.status]?.icon" /></template>
+            <template #activator="{ props }">
+              <VIcon v-bind="props" :color="statusMap[item.status]?.color" :icon="statusMap[item.status]?.icon" />
+            </template>
             <div class="pa-1">
-              <p class="mb-1"><strong>Diproses oleh:</strong> {{ item.processed_by?.full_name || 'N/A' }}</p>
-              <p class="mb-0"><strong>Tanggal:</strong> {{ formatSimpleDateTime(item.processed_at) }}</p>
+              <p class="mb-1">
+                <strong>Diproses oleh:</strong> {{ item.processed_by?.full_name || 'N/A' }}
+              </p>
+              <p class="mb-0">
+                <strong>Tanggal:</strong> {{ formatSimpleDateTime(item.processed_at) }}
+              </p>
               <div v-if="(item.status === 'REJECTED' || item.status === 'PARTIALLY_APPROVED') && item.rejection_reason">
-                <VDivider class="my-2"/>
-                <p class="mb-0"><strong>Alasan:</strong> {{ item.rejection_reason }}</p>
+                <VDivider class="my-2" />
+                <p class="mb-0">
+                  <strong>Alasan:</strong> {{ item.rejection_reason }}
+                </p>
               </div>
             </div>
           </VTooltip>
         </template>
-        <template #no-data><div class="text-center py-8"><VIcon icon="tabler-mail-off" size="48" class="mb-2" /><p>Tidak ada data permintaan yang cocok.</p></div></template>
-        <template #loading><VSkeletonLoader type="table-row@10" /></template>
+        <template #no-data>
+          <div class="text-center py-8">
+            <VIcon icon="tabler-mail-off" size="48" class="mb-2" /><p>Tidak ada data permintaan yang cocok.</p>
+          </div>
+        </template>
+        <template #loading>
+          <VSkeletonLoader type="table-row@10" />
+        </template>
       </VDataTableServer>
     </VCard>
 
     <ProcessRequestDialog v-if="selectedRequest" :is-dialog-visible="dialog" :request-data="selectedRequest" @update:is-dialog-visible="handleDialogClose" @processed="handleDialogClose(true)" />
-    <VSnackbar v-model="snackbar.show" :color="snackbar.color" :timeout="4000" location="top end">{{ snackbar.text }}</VSnackbar>
+    <VSnackbar v-model="snackbar.show" :color="snackbar.color" :timeout="4000" location="top end">
+      {{ snackbar.text }}
+    </VSnackbar>
   </div>
 </template>

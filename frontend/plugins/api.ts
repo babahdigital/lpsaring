@@ -1,6 +1,6 @@
+import type { Pinia } from 'pinia'
 import { ofetch } from 'ofetch'
 import { useAuthStore } from '~/store/auth'
-import type { Pinia } from 'pinia'
 
 /**
  * Plugin universal untuk membuat instance $fetch yang sudah dikonfigurasi.
@@ -46,14 +46,14 @@ export default defineNuxtPlugin((nuxtApp) => {
       // Lakukan logout secara otomatis.
       if (response.status === 401) {
         const store = getAuthStore()
-        
+
         // Cek apakah masih ada token di state untuk mencegah loop logout.
         if (store.token) {
-            const side = import.meta.server ? 'SERVER' : 'CLIENT'
-            console.warn(`[API Plugin:${side}] Menerima 401. Melakukan logout...`)
-            
-            // Panggil logout dari store. Redirect hanya akan terjadi di sisi klien.
-            await store.logout(import.meta.client)
+          const side = import.meta.server ? 'SERVER' : 'CLIENT'
+          console.warn(`[API Plugin:${side}] Menerima 401. Melakukan logout...`)
+
+          // Panggil logout dari store. Redirect hanya akan terjadi di sisi klien.
+          await store.logout(import.meta.client)
         }
       }
     },
