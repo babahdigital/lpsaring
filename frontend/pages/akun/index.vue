@@ -56,7 +56,8 @@ const displayRole = computed(() => {
     ADMIN: 'Admin',
     SUPER_ADMIN: 'Support',
   }
-  return roles[currentUser.value.role] || currentUser.value.role
+  // DIPERBAIKI: Menggunakan ?? untuk fallback yang aman
+  return roles[currentUser.value.role] ?? currentUser.value.role
 })
 
 // --- Fungsi-Fungsi ---
@@ -69,7 +70,8 @@ function formatPhoneNumberForDisplay(phone?: string | null): string {
 }
 function populateEditForm() {
   if (currentUser.value) {
-    editData.value.full_name = currentUser.value.full_name || ''
+    // DIPERBAIKI: Menggunakan ?? untuk fallback yang aman
+    editData.value.full_name = currentUser.value.full_name ?? ''
     editData.value.phone_number = formatPhoneNumberForDisplay(currentUser.value.phone_number)
   }
 }
@@ -80,7 +82,8 @@ async function loadInitialData() {
     if (!authStore.currentUser) {
       const success = await authStore.fetchUser()
       if (!success)
-        throw new Error(authStore.error || 'Gagal memuat data pengguna.')
+        // DIPERBAIKI: Menggunakan ?? untuk fallback yang aman
+        throw new Error(authStore.error ?? 'Gagal memuat data pengguna.')
     }
     populateEditForm()
     if (isUser.value)
@@ -126,7 +129,9 @@ async function saveProfile() {
     profileAlert.value = { type: 'success', message: 'Profil berhasil diperbarui!' }
   }
   catch (error: any) {
-    profileAlert.value = { type: 'error', message: `Gagal menyimpan profil: ${error.data?.message || 'Terjadi kesalahan'}` }
+    // DIPERBAIKI: Pemeriksaan tipe eksplisit untuk pesan error
+    const errorMessage = (typeof error.data?.message === 'string' && error.data.message) ? error.data.message : 'Terjadi kesalahan'
+    profileAlert.value = { type: 'error', message: `Gagal menyimpan profil: ${errorMessage}` }
   }
   finally {
     securityLoading.value = false
@@ -147,10 +152,13 @@ async function resetHotspotPassword() {
 
   try {
     const response = await $api<{ message: string }>(endpoint, { method: 'POST' })
-    securityAlert.value = { type: 'success', message: response.message || 'Password hotspot berhasil direset.' }
+    // DIPERBAIKI: Menggunakan ?? untuk fallback yang aman
+    securityAlert.value = { type: 'success', message: response.message ?? 'Password hotspot berhasil direset.' }
   }
   catch (error: any) {
-    securityAlert.value = { type: 'error', message: `Gagal mereset password: ${error.data?.message || 'Kesalahan tidak diketahui'}` }
+    // DIPERBAIKI: Pemeriksaan tipe eksplisit untuk pesan error
+    const errorMessage = (typeof error.data?.message === 'string' && error.data.message) ? error.data.message : 'Kesalahan tidak diketahui'
+    securityAlert.value = { type: 'error', message: `Gagal mereset password: ${errorMessage}` }
   }
   finally {
     securityLoading.value = false
@@ -169,7 +177,9 @@ async function fetchSpendingSummary() {
     spendingChartCategories.value = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab']
     spendingChartData.value = [{ data: [0, 0, 0, 0, 0, 0, 0] }]
     totalSpendingThisPeriod.value = formatCurrency(0)
-    spendingAlert.value = { type: 'error', message: `Gagal memuat pengeluaran: ${error.data?.message}` }
+    // DIPERBAIKI: Pemeriksaan tipe eksplisit untuk pesan error
+    const errorMessage = typeof error.data?.message === 'string' ? error.data.message : 'Kesalahan tidak diketahui'
+    spendingAlert.value = { type: 'error', message: `Gagal memuat pengeluaran: ${errorMessage}` }
   }
   finally {
     spendingChartLoading.value = false
@@ -185,7 +195,8 @@ async function changePassword() {
   passwordAlert.value = null
   try {
     const response = await $api<{ message: string }>('/auth/me/change-password', { method: 'POST', body: passwordData.value })
-    passwordAlert.value = { type: 'success', message: response.message || 'Password berhasil diubah!' }
+    // DIPERBAIKI: Menggunakan ?? untuk fallback yang aman
+    passwordAlert.value = { type: 'success', message: response.message ?? 'Password berhasil diubah!' }
     setTimeout(() => {
       isPasswordDialogVisible.value = false
       passwordFormRef.value?.reset()
@@ -194,7 +205,9 @@ async function changePassword() {
     }, 1500)
   }
   catch (error: any) {
-    passwordAlert.value = { type: 'error', message: error.data?.message || 'Gagal mengubah password.' }
+    // DIPERBAIKI: Pemeriksaan tipe eksplisit untuk pesan error
+    const errorMessage = (typeof error.data?.message === 'string' && error.data.message) ? error.data.message : 'Gagal mengubah password.'
+    passwordAlert.value = { type: 'error', message: errorMessage }
   }
   finally {
     passwordLoading.value = false
@@ -206,10 +219,11 @@ watch(() => authStore.currentUser, (newUser) => {
     populateEditForm()
 }, { deep: true })
 
-const requiredRule = (v: any) => !!v || 'Wajib diisi.'
-const nameLengthRule = (v: string) => (v && v.length >= 2) || 'Nama minimal 2 karakter.'
+// DIPERBAIKI: Aturan validasi menggunakan perbandingan eksplisit
+const requiredRule = (v: any) => (v != null && v !== '') || 'Wajib diisi.'
+const nameLengthRule = (v: string) => (v != null && v.length >= 2) || 'Nama minimal 2 karakter.'
 const phoneRule = (v: string) => /^(?:\+62|0)8[1-9]\d{7,12}$/.test(v) || 'Format nomor telepon tidak valid.'
-const passwordLengthRule = (v: string) => (v && v.length >= 6) || 'Password minimal 6 karakter.'
+const passwordLengthRule = (v: string) => (v != null && v.length >= 6) || 'Password minimal 6 karakter.'
 const passwordMatchRule = (v: string) => v === passwordData.value.new_password || 'Password tidak cocok.'
 function formatDate(dateString?: string | Date | null) {
   if (!dateString)
@@ -299,6 +313,7 @@ useHead({ title: 'Pengaturan Akun' })
                   <VBtn color="warning" variant="tonal" :loading="securityLoading" prepend-icon="tabler-wifi" @click="resetHotspotPassword">
                     Reset Password Hotspot
                   </VBtn>
+                  </vbtn>
                 </div>
               </VCardText>
             </VCard>
@@ -321,6 +336,7 @@ useHead({ title: 'Pengaturan Akun' })
                     </div>
                   </div>
                 </template>
+                </vcardtitle>
               </VCardItem>
               <VCardText>
                 <div v-if="spendingChartLoading" class="text-center py-4">
@@ -378,6 +394,7 @@ useHead({ title: 'Pengaturan Akun' })
                       <VChip :color="currentUser.is_active ? 'success' : 'warning'" size="small" label>
                         {{ currentUser.is_active ? 'Aktif' : 'Tidak Aktif' }}
                       </VChip>
+                      </vchip>
                     </template>
                   </VListItem>
                   <VListItem>
@@ -444,6 +461,7 @@ useHead({ title: 'Pengaturan Akun' })
             Simpan Password
           </VBtn>
         </VCardActions>
+        </vcardtitle>
       </VCard>
     </VDialog>
   </VContainer>
