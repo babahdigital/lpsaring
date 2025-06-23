@@ -256,7 +256,8 @@ useHead({ title: 'Pengaturan Akun' })
       </VBtn>
     </div>
 
-    <VRow v-else-if="currentUser !== null" class="ga-0"> <VCol cols="12" lg="8">
+    <VRow v-else-if="currentUser !== null" class="ga-0">
+      <VCol cols="12" lg="8">
         <VRow class="ga-0">
           <VCol cols="12">
             <VCard>
