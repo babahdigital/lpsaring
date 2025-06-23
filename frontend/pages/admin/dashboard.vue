@@ -120,7 +120,7 @@ const perbandinganPendapatanMingguan = computed(() => {
     return { persentase: mingguIni > 0 ? 100 : 0 }
   const selisih = mingguIni - mingguLalu
   const persentase = (selisih / mingguLalu) * 100
-  return { persentase: isFinite(persentase) ? persentase : 0 }
+  return { persentase: Number.isFinite(persentase) ? persentase : 0 }
 })
 
 const perbandinganKuota = computed(() => {
@@ -130,7 +130,7 @@ const perbandinganKuota = computed(() => {
     return { persentase: totalMingguIni > 0 ? 100 : 0 }
   const selisih = totalMingguIni - totalMingguLalu
   const persentase = (selisih / totalMingguLalu) * 100
-  return { persentase: isFinite(persentase) ? persentase : 0 }
+  return { persentase: Number.isFinite(persentase) ? persentase : 0 }
 })
 
 // --- Konfigurasi Grafik ---
@@ -301,7 +301,7 @@ function formatRelativeTime(dateString?: string): string {
   if (!dateString)
     return 'Baru saja'
   const date = new Date(dateString)
-  if (isNaN(date.getTime()))
+  if (Number.isNaN(date.getTime()))
     return ''
   const now = new Date()
   const seconds = Math.floor((now.getTime() - date.getTime()) / 1000)
@@ -352,7 +352,6 @@ useHead({ title: 'Dashboard Admin' })
 
 <template>
   <div>
-    <!-- Baris Atas: Statistik Utama -->
     <VRow class="mb-4">
       <VCol
         v-for="(data, index) in statistics"
@@ -395,7 +394,6 @@ useHead({ title: 'Dashboard Admin' })
                 {{ (data.change > 0) ? '+' : '' }}{{ data.change.toFixed(1) }}%
               </h6>
               <div class="text-disabled">
-                <!-- Teks perbandingan diubah secara dinamis -->
                 {{ data.title === 'Penggunaan Kuota' ? 'dari minggu lalu' : 'dari kemarin' }}
               </div>
             </div>
@@ -404,12 +402,10 @@ useHead({ title: 'Dashboard Admin' })
       </VCol>
     </VRow>
 
-    <!-- Baris Tengah: Grafik Pendapatan & Kuota -->
     <VRow
       class="mb-4"
       match-height
     >
-      <!-- Kartu Pendapatan Mingguan -->
       <VCol
         cols="12"
         md="4"
@@ -524,7 +520,6 @@ useHead({ title: 'Dashboard Admin' })
         </VCard>
       </VCol>
 
-      <!-- Kartu Kuota Terjual (Layout & Chart Diperbarui) -->
       <VCol
         cols="12"
         md="4"
@@ -584,7 +579,6 @@ useHead({ title: 'Dashboard Admin' })
         </VCard>
       </VCol>
 
-      <!-- Kartu Pendapatan Bulan Ini -->
       <VCol
         cols="12"
         md="4"
@@ -623,9 +617,7 @@ useHead({ title: 'Dashboard Admin' })
       </VCol>
     </VRow>
 
-    <!-- Baris Bawah: Paket & Aktivitas -->
     <VRow>
-      <!-- Kartu Paket Terlaris (Chart Diperbarui) -->
       <VCol
         cols="12"
         md="5"
@@ -682,7 +674,6 @@ useHead({ title: 'Dashboard Admin' })
         </VCard>
       </VCol>
 
-      <!-- Kartu Aktivitas Transaksi Terakhir (Dibatasi 3) -->
       <VCol
         cols="12"
         md="7"
@@ -781,7 +772,6 @@ useHead({ title: 'Dashboard Admin' })
       </VCol>
     </VRow>
 
-    <!-- Kartu Debugging API -->
     <VRow class="mt-4">
       <VCol cols="12">
         <VCard>
