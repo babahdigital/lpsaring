@@ -113,10 +113,12 @@ async function saveProfile() {
 
   if (isPrivilegedUser) {
     try {
+      // Perbaikan: Menggunakan perbandingan eksplisit untuk `e.message`
       payload.phone_number = normalize_to_e164(editData.value.phone_number)
     }
     catch (e: any) {
-      profileAlert.value = { type: 'error', message: e.message || 'Format nomor telepon tidak valid.' }
+      // Baris 119: Memperbaiki penggunaan nilai 'any' dalam kondisi
+      profileAlert.value = { type: 'error', message: (typeof e.message === 'string' && e.message !== '') ? e.message : 'Format nomor telepon tidak valid.' }
       securityLoading.value = false
       return
     }
@@ -129,8 +131,8 @@ async function saveProfile() {
     profileAlert.value = { type: 'success', message: 'Profil berhasil diperbarui!' }
   }
   catch (error: any) {
-    // DIPERBAIKI: Pemeriksaan tipe eksplisit untuk pesan error
-    const errorMessage = (typeof error.data?.message === 'string' && error.data.message) ? error.data.message : 'Terjadi kesalahan'
+    // Baris 133: Memperbaiki penggunaan nilai 'any' dalam kondisi
+    const errorMessage = (typeof error.data?.message === 'string' && error.data.message !== '') ? error.data.message : 'Terjadi kesalahan'
     profileAlert.value = { type: 'error', message: `Gagal menyimpan profil: ${errorMessage}` }
   }
   finally {
@@ -156,8 +158,8 @@ async function resetHotspotPassword() {
     securityAlert.value = { type: 'success', message: response.message ?? 'Password hotspot berhasil direset.' }
   }
   catch (error: any) {
-    // DIPERBAIKI: Pemeriksaan tipe eksplisit untuk pesan error
-    const errorMessage = (typeof error.data?.message === 'string' && error.data.message) ? error.data.message : 'Kesalahan tidak diketahui'
+    // Baris 160: Memperbaiki penggunaan nilai 'any' dalam kondisi
+    const errorMessage = (typeof error.data?.message === 'string' && error.data.message !== '') ? error.data.message : 'Kesalahan tidak diketahui'
     securityAlert.value = { type: 'error', message: `Gagal mereset password: ${errorMessage}` }
   }
   finally {
@@ -205,8 +207,8 @@ async function changePassword() {
     }, 1500)
   }
   catch (error: any) {
-    // DIPERBAIKI: Pemeriksaan tipe eksplisit untuk pesan error
-    const errorMessage = (typeof error.data?.message === 'string' && error.data.message) ? error.data.message : 'Gagal mengubah password.'
+    // Baris 209: Memperbaiki penggunaan nilai 'any' dalam kondisi
+    const errorMessage = (typeof error.data?.message === 'string' && error.data.message !== '') ? error.data.message : 'Gagal mengubah password.'
     passwordAlert.value = { type: 'error', message: errorMessage }
   }
   finally {
