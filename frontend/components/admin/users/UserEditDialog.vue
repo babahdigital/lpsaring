@@ -81,7 +81,7 @@ const canAdminInject = computed(() => {
 })
 
 const isSaveDisabled = computed(() => {
-  if (!isRestrictedAdmin.value)
+  if (isRestrictedAdmin.value !== true)
     return false
   return formData.role === 'ADMIN' || formData.role === 'SUPER_ADMIN'
 })
@@ -99,7 +99,7 @@ watch(() => props.user, (newUser) => {
   if (newUser) {
     const isEditingAdminOrSuper = newUser.role === 'ADMIN' || newUser.role === 'SUPER_ADMIN'
     Object.assign(formData, getInitialFormData(), newUser, {
-      kamar: newUser.kamar ? newUser.kamar.replace('Kamar_', '') : null,
+      kamar: newUser.kamar != null ? newUser.kamar.replace('Kamar_', '') : null,
       add_gb: 0,
       add_days: 0,
       is_unlimited_user: isEditingAdminOrSuper || newUser.is_unlimited_user,
@@ -128,13 +128,13 @@ watch(() => props.modelValue, (isOpen) => {
 function setDefaultMikrotikConfig(role: User['role'] | undefined) {
   switch (role) {
     case 'USER':
-      if (!formData.is_unlimited_user) {
+      if (formData.is_unlimited_user !== true) {
         formData.mikrotik_profile_name = 'user'
       }
       formData.mikrotik_server_name = 'srv-user'
       break
     case 'KOMANDAN':
-      if (!formData.is_unlimited_user) {
+      if (formData.is_unlimited_user !== true) {
         formData.mikrotik_profile_name = 'komandan'
       }
       formData.mikrotik_server_name = 'srv-komandan'
@@ -177,7 +177,7 @@ watch(() => formData.is_active, (isActive, wasActive) => {
     formData.mikrotik_profile_name = 'inactive'
   }
   else {
-    if (formData.is_unlimited_user) {
+    if (formData.is_unlimited_user === true) {
       formData.mikrotik_profile_name = 'unlimited'
     }
     else {
@@ -206,13 +206,13 @@ async function checkAndApplyMikrotikStatus() {
   liveData.value = null
   try {
     const response = await $api<{ exists_on_mikrotik: boolean, details: any, message?: string }>(`/admin/users/${props.user.id}/mikrotik-status`)
-    if (response.exists_on_mikrotik && response.details) {
+    if (response.exists_on_mikrotik === true && response.details != null) {
       formData.mikrotik_server_name = response.details.server
       formData.mikrotik_profile_name = response.details.profile
       const usage_bytes = Number.parseInt(response.details['bytes-in'] || '0') + Number.parseInt(response.details['bytes-out'] || '0')
       liveData.value = {
         isAvailable: true,
-        db_sisa_kuota_mb: (props.user.total_quota_purchased_mb || 0) - (props.user.total_quota_used_mb || 0),
+        db_sisa_kuota_mb: (props.user.total_quota_purchased_mb ?? 0) - (props.user.total_quota_used_mb ?? 0),
         db_expiry_date: props.user.quota_expiry_date,
         mt_usage_mb: usage_bytes / (1024 * 1024),
         mt_profile: response.details.profile,
@@ -238,7 +238,7 @@ async function onSave() {
   if (valid) {
     const payload = { ...formData }
 
-    if (payload.is_unlimited_user && payload.mikrotik_profile_name !== 'unlimited') {
+    if (payload.is_unlimited_user === true && payload.mikrotik_profile_name !== 'unlimited') {
       if (!authStore.isSuperAdmin) {
         payload.mikrotik_profile_name = 'unlimited'
       }
@@ -308,20 +308,20 @@ function onClose() {
                   <VSwitch v-model="formData.is_active" label="Akun Aktif" color="success" inset hint="Menonaktifkan akan memutus akses pengguna." persistent-hint />
                 </VCol>
 
-                <VCol v-if="canAdminInject && formData.is_active" cols="12">
-                  <VSwitch v-if="!isTargetAdminOrSuper" v-model="formData.is_unlimited_user" label="Akses Internet Unlimited" color="primary" inset />
+                <VCol v-if="canAdminInject && formData.is_active === true" cols="12">
+                  <VSwitch v-if="isTargetAdminOrSuper !== true" v-model="formData.is_unlimited_user" label="Akses Internet Unlimited" color="primary" inset />
                   <VAlert v-else type="info" variant="tonal" density="compact" icon="tabler-shield-check">
                     Peran <strong>{{ formData.role }}</strong> secara otomatis mendapatkan akses <strong>Unlimited</strong>.
                   </VAlert>
                 </VCol>
 
-                <VCol v-if="!formData.is_active" cols="12">
+                <VCol v-if="formData.is_active !== true" cols="12">
                   <VAlert type="warning" variant="tonal" density="compact" icon="tabler-plug-connected-x">
                     Opsi kuota dan akses tidak tersedia karena akun ini sedang <strong>NONAKTIF</strong>.
                   </VAlert>
                 </VCol>
 
-                <template v-if="canAdminInject && formData.is_active">
+                <template v-if="canAdminInject && formData.is_active === true">
                   <VCol cols="12">
                     <VDivider class="my-2" />
                   </VCol>
@@ -361,18 +361,18 @@ function onClose() {
                           <div class="text-caption text-disabled">
                             Masa Aktif (DB)
                           </div><div class="font-weight-medium">
-                            {{ liveData.db_expiry_date ? new Date(liveData.db_expiry_date).toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' }) : 'Tidak ada' }}
+                            {{ liveData.db_expiry_date != null ? new Date(liveData.db_expiry_date).toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' }) : 'Tidak ada' }}
                           </div>
                         </VCol>
                       </VRow>
                     </VSheet>
                   </VCol>
 
-                  <VCol v-if="!formData.is_unlimited_user" cols="12" md="6">
+                  <VCol v-if="formData.is_unlimited_user !== true" cols="12" md="6">
                     <AppTextField v-model.number="formData.add_gb" label="Tambah Kuota (GB)" type="number" prepend-inner-icon="tabler-database-plus" />
                   </VCol>
 
-                  <VCol v-if="!isTargetAdminOrSuper" cols="12" md="6">
+                  <VCol v-if="isTargetAdminOrSuper !== true" cols="12" md="6">
                     <AppTextField v-model.number="formData.add_days" label="Tambah Masa Aktif (Hari)" type="number" prepend-inner-icon="tabler-calendar-plus" />
                   </VCol>
 
@@ -403,10 +403,10 @@ function onClose() {
 
         <VCardActions class="pa-4 d-flex">
           <div v-if="props.user">
-            <VBtn v-if="!isTargetAdminOrSuper && formData.is_active" color="warning" variant="text" prepend-icon="tabler-key" @click="$emit('resetHotspot', props.user.id)">
+            <VBtn v-if="isTargetAdminOrSuper !== true && formData.is_active === true" color="warning" variant="text" prepend-icon="tabler-key" @click="$emit('resetHotspot', props.user.id)">
               Reset Pass Mikrotik
             </VBtn>
-            <VMenu v-else-if="formData.is_active" location="top">
+            <VMenu v-else-if="formData.is_active === true" location="top">
               <template #activator="{ props: menuProps }">
                 <VBtn color="warning" variant="text" prepend-icon="tabler-key" v-bind="menuProps">
                   Reset Password
