@@ -129,11 +129,6 @@ export default defineNuxtConfig({
       vuetify({
         styles: { configFile: 'assets/styles/variables/_vuetify.scss' },
       }),
-      // <--- TAMBAHKAN INI: 2. Daftarkan plugin Icons di dalam array plugins Vite
-      Icons({
-        autoInstall: true,
-        compiler: 'vue3',
-      }),
     ],
     server: {
       hmr: {
