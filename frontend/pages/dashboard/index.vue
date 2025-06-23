@@ -3,7 +3,6 @@ import type { MonthlyUsageResponse, UserQuotaResponse, WeeklyUsageResponse } fro
 import { useCookie, useFetch } from '#app'
 import { useDebounceFn } from '@vueuse/core'
 import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from 'vue'
-import { useAuthStore } from '~/store/auth'
 import { usePromoStore } from '~/store/promo' // Import promo store
 
 // Impor komponen PromoAnnouncement DIHAPUS, diganti dengan sistem global di app.vue
@@ -14,7 +13,6 @@ const WeeklyUsageChartUnlimited = defineAsyncComponent(() => import('~/component
 const MonthlyUsageChart = defineAsyncComponent(() => import('~/components/charts/MonthlyUsageChart.vue'))
 
 const authToken = useCookie<string | null>('auth_token')
-const authStore = useAuthStore()
 const promoStore = usePromoStore() // Inisialisasi promo store
 const pageTitle = 'Dashboard Pengguna'
 
@@ -226,7 +224,6 @@ useHead({ title: 'Dashboard User' })
     </VRow>
 
     <div>
-      <!-- Menampilkan notifikasi promo/peringatan di dashboard -->
       <VAlert
         v-if="showPromoWarning"
         type="warning"
