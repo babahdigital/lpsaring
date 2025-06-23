@@ -166,7 +166,7 @@ function closeDialog() {
 
 // --- Aturan Validasi ---
 const reasonRule = (v: any) => (v && v.trim().length >= 5) || 'Alasan wajib diisi (minimal 5 karakter).'
-const numberRule = (v: any) => (v === null || String(v).trim() === '') || (!isNaN(Number(v)) && isFinite(Number(v)) && Number(v) >= 0) || 'Harus berupa angka positif atau 0.'
+const numberRule = (v: any) => (v === null || String(v).trim() === '') || (!Number.isNaN(Number(v)) && Number.isFinite(Number(v)) && Number(v) >= 0) || 'Harus berupa angka positif atau 0.'
 const integerRule = (v: any) => (v === null || String(v).trim() === '') || /^\d+$/.test(String(v)) || 'Harus berupa bilangan bulat.'
 const requiredIntegerRule = (v: any) => (v && /^\d+$/.test(String(v)) && Number.parseInt(v, 10) > 0) || 'Wajib diisi dengan angka bulat positif.'
 
