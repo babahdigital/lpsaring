@@ -20,7 +20,7 @@ interface UserDetails {
   id: string
   phone_number: string
   full_name?: string | null
-  quota_expiry_date?: string | null // DIUBAH: Ditambahkan untuk menampilkan tanggal di pesan sukses
+  quota_expiry_date?: string | null
 }
 type TransactionStatus = 'SUCCESS' | 'PENDING' | 'FAILED' | 'EXPIRED' | 'CANCELLED' | 'ERROR' | 'UNKNOWN'
 
@@ -133,7 +133,7 @@ function formatDate(isoString?: string | null): string {
       throw new Error('Invalid date')
     return format(parsedDate, 'iiii, dd MMMM yyyy, HH:mm \'WITA\'', { locale: dateLocaleId })
   }
-  catch (_e) {
+  catch {
     return 'Tanggal Invalid'
   }
 }
@@ -189,7 +189,6 @@ const detailMessage = computed((): string => {
 
   switch (finalStatus.value) {
     case 'SUCCESS':
-      // DIUBAH: Logika pesan dibedakan untuk paket kuota dan unlimited
       if (transactionDetails.value?.package?.data_quota_gb === 0) {
         return `Langganan paket ${safePackageName} Anda telah berhasil diaktifkan. Anda kini dapat menggunakan internet tanpa batas kuota hingga ${formatDate(transactionDetails.value?.user?.quota_expiry_date)}. Kredensial login akan atau sudah dikirim via WhatsApp ke ${safePhoneNumber}.`
       }
@@ -223,7 +222,7 @@ async function copyToClipboard(textToCopy: string | undefined | null, type: stri
     $snackbar.add({ type: 'success', text: `${type} berhasil disalin!` })
     setTimeout(() => { copySuccess.value = null }, 2500)
   }
-  catch (_err) {
+  catch {
     $snackbar.add({ type: 'error', text: `Gagal menyalin ${type}.` })
   }
 }
@@ -246,6 +245,7 @@ function getBankNameFromVA(paymentMethodValue?: string | null): string {
 function goToSelectPackage() {
   router.push({ path: '/beli' })
 }
+
 function goToDashboard() {
   router.push({ path: '/dashboard' })
 }
