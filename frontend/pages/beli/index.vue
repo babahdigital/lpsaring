@@ -59,7 +59,7 @@ const snackbarTimeout = ref(5000)
 
 if (isRef(fetchPackagesError)) {
   watch(fetchPackagesError, (newError) => {
-    if (newError && newError.statusCode !== 401 && newError.statusCode !== 403) {
+    if (newError != null && newError.statusCode !== 401 && newError.statusCode !== 403) {
       const errorMessage = newError.data?.message || 'Gagal memuat daftar paket.'
       showSnackbar(`Gagal memuat daftar paket: ${errorMessage}`, 'error')
     }
@@ -75,11 +75,11 @@ function showSnackbar(text: string, color: 'error' | 'success' | 'info' | 'warni
 }
 
 const nameRules = [
-  (v: string) => !!v || 'Nama Lengkap wajib diisi.',
-  (v: string) => (v && v.trim().length >= 2) || 'Nama minimal 2 karakter.',
+  (v: string) => (v != null && v.trim() !== '') || 'Nama Lengkap wajib diisi.',
+  (v: string) => (v != null && v.trim().length >= 2) || 'Nama minimal 2 karakter.',
 ]
 const phoneRules = [
-  (v: string) => !!v || 'Nomor WhatsApp wajib diisi.',
+  (v: string) => (v != null && v.trim() !== '') || 'Nomor WhatsApp wajib diisi.',
   (v: string) => /^\+628[1-9]\d{8,12}$/.test(normalizePhoneNumber(v)) || 'Format: +628xx... (11-15 digit).',
 ]
 
@@ -99,7 +99,7 @@ function formatCurrency(value: number | undefined): string {
 }
 
 function normalizePhoneNumber(phone: string | null | undefined): string {
-  if (!phone)
+  if (phone == null || phone === '')
     return ''
   let cleaned = phone.replace(/[\s\-()+]/g, '')
   if (cleaned.startsWith('08'))
@@ -114,7 +114,8 @@ function normalizePhoneNumber(phone: string | null | undefined): string {
 
 const userGreeting = computed(() => {
   if (isLoggedIn.value && user.value) {
-    const nameToDisplay = user.value.full_name || user.value.phone_number
+    const name = user.value.full_name
+    const nameToDisplay = (name != null && name.trim() !== '') ? name : user.value.phone_number
     return `Halo, ${nameToDisplay.split(' ')[0]}!`
   }
   return null
@@ -141,7 +142,7 @@ function goToDashboard() {
 
 // Logika penanganan event (tidak ada perubahan)
 function handlePackageSelection(pkg: Package) {
-  if (!pkg?.id || !pkg.is_active || !!isInitiatingPayment.value)
+  if (pkg?.id == null || pkg.is_active !== true || isInitiatingPayment.value != null)
     return
   selectedPackageId.value = pkg.id
   if (!isLoggedIn.value) {
@@ -170,7 +171,7 @@ async function handleContactSubmit() {
   if (!contactFormRef.value)
     return
   const { valid } = await contactFormRef.value.validate()
-  if (!valid)
+  if (valid !== true)
     return
   isCheckingUser.value = true
   contactSubmitError.value = null
@@ -181,7 +182,7 @@ async function handleContactSubmit() {
       body: { phone_number: phoneToSubmit, full_name: fullNameInput.value.trim() },
     })
     showContactDialog.value = false
-    if (response.user_exists) {
+    if (response.user_exists === true) {
       showSnackbar('Nomor Anda sudah terdaftar. Silakan login.', 'info')
       goToLogin()
     }
@@ -191,7 +192,11 @@ async function handleContactSubmit() {
     }
   }
   catch (err: any) {
-    contactSubmitError.value = err.data?.message || 'Terjadi kesalahan.'
+    let errorMessage = 'Terjadi kesalahan.'
+    if (err && err.data && typeof err.data.message === 'string' && err.data.message.length > 0)
+      errorMessage = err.data.message
+
+    contactSubmitError.value = errorMessage
   }
   finally {
     isCheckingUser.value = false
@@ -205,13 +210,13 @@ async function initiatePayment(packageId: string) {
       method: 'POST',
       body: { package_id: packageId },
     })
-    if (responseData?.snap_token && window.snap) {
+    if ((responseData?.snap_token != null && responseData.snap_token !== '') && window.snap != null) {
       window.snap.pay(responseData.snap_token, {
         onSuccess: result => router.push(`/payment/finish?status=success&order_id=${result.order_id}`),
         onPending: result => router.push(`/payment/finish?status=pending&order_id=${result.order_id}`),
         onError: result => router.push(`/payment/finish?status=error&order_id=${result.order_id}`),
         onClose: () => {
-          if (!router.currentRoute.value.path.startsWith('/payment/finish')) {
+          if (router.currentRoute.value.path.startsWith('/payment/finish') !== true) {
             showSnackbar('Anda menutup jendela pembayaran.', 'info')
           }
           isInitiatingPayment.value = null
@@ -221,27 +226,31 @@ async function initiatePayment(packageId: string) {
     else { throw new Error('Gagal mendapatkan token pembayaran.') }
   }
   catch (err: any) {
-    showSnackbar(err.data?.message || 'Gagal memulai pembayaran.', 'error')
+    let errorMessage = 'Gagal memulai pembayaran.'
+    if (err && err.data && typeof err.data.message === 'string' && err.data.message.length > 0)
+      errorMessage = err.data.message
+
+    showSnackbar(errorMessage, 'error')
     isInitiatingPayment.value = null
   }
 }
 
 function closeContactDialog() {
-  if (!isCheckingUser.value)
+  if (isCheckingUser.value !== true)
     showContactDialog.value = false
 }
 
 onMounted(async () => {
-  if (authStore && !authStore.isInitialized) {
+  if (authStore && authStore.isInitialized !== true) {
     await authStore.initializeAuth()
   }
   const query = route.query
-  if (query.action === 'cancelled' && query.order_id) {
+  if (query.action === 'cancelled' && (query.order_id != null && query.order_id !== '')) {
     showSnackbar(`Pembayaran Order ID ${query.order_id} dibatalkan.`, 'info')
     router.replace({ query: {} })
   }
-  else if (query.action === 'error' && query.order_id) {
-    const errorMsg = query.msg ? decodeURIComponent(query.msg as string) : 'Terjadi kesalahan pembayaran'
+  else if (query.action === 'error' && (query.order_id != null && query.order_id !== '')) {
+    const errorMsg = (query.msg != null && query.msg !== '') ? decodeURIComponent(query.msg as string) : 'Terjadi kesalahan pembayaran'
     showSnackbar(`Pembayaran Order ID ${query.order_id} gagal: ${errorMsg}`, 'error', 8000)
     router.replace({ query: {} })
   }
@@ -259,16 +268,16 @@ useHead({ title: 'Beli Paket Hotspot' })
           DAFTAR PAKET HOTSPOT
         </h1>
         <div class="text-center mb-6" style="min-height: 40px;">
-          <v-btn v-if="!isLoggedIn && !isLoadingUser" variant="text" color="primary" @click="goToLogin">
+          <v-btn v-if="!isLoggedIn.value && !isLoadingUser.value" variant="text" color="primary" @click="goToLogin">
             <v-icon start>
               mdi-login-variant
             </v-icon> Sudah Punya Akun? Login
           </v-btn>
-          <div v-else-if="isLoadingUser" class="d-flex justify-center align-center text-medium-emphasis">
+          <div v-else-if="isLoadingUser.value" class="d-flex justify-center align-center text-medium-emphasis">
             <v-progress-circular indeterminate size="20" width="2" color="primary" class="mr-2" />
             <span>Memuat data pengguna...</span>
           </div>
-          <div v-else-if="userGreeting" class="d-flex justify-center align-center text-body-1 text-medium-emphasis flex-wrap">
+          <div v-else-if="userGreeting != null" class="d-flex justify-center align-center text-body-1 text-medium-emphasis flex-wrap">
             <span class="mr-3">{{ userGreeting }}</span>
             <v-btn v-if="isUserApprovedAndActive" variant="outlined" color="primary" size="small" @click="goToDashboard">
               <v-icon start>
@@ -286,7 +295,7 @@ useHead({ title: 'Beli Paket Hotspot' })
               <v-skeleton-loader type="image, article, actions" height="320" />
             </v-col>
           </v-row>
-          <v-row v-else-if="fetchPackagesError" justify="center" class="px-lg-10 px-md-4 px-sm-2">
+          <v-row v-else-if="fetchPackagesError != null" justify="center" class="px-lg-10 px-md-4 px-sm-2">
             <v-col cols="12" md="8" lg="6">
               <v-alert type="error" title="Gagal Memuat Paket" variant="tonal" prominent>
                 <p class="mb-4">
@@ -304,7 +313,7 @@ useHead({ title: 'Beli Paket Hotspot' })
                 <v-card
                   class="d-flex flex-column flex-grow-1"
                   variant="outlined" hover rounded="lg"
-                  :disabled="!pkg.is_active || !!isInitiatingPayment"
+                  :disabled="pkg.is_active !== true || isInitiatingPayment != null"
                   @click="handlePackageSelection(pkg)"
                 >
                   <v-card-item class="text-left">
@@ -349,7 +358,7 @@ useHead({ title: 'Beli Paket Hotspot' })
                         </v-list-item-title>
                       </v-list-item>
                     </v-list>
-                    <p v-if="pkg.description" class="text-caption text-medium-emphasis mt-3 px-1">
+                    <p v-if="pkg.description != null && pkg.description !== ''" class="text-caption text-medium-emphasis mt-3 px-1">
                       {{ pkg.description }}
                     </p>
                   </v-card-text>
@@ -357,17 +366,17 @@ useHead({ title: 'Beli Paket Hotspot' })
                   <v-card-actions class="pa-4 mt-auto">
                     <v-btn
                       block color="primary" variant="flat" size="large"
-                      :disabled="!pkg.is_active || !!isInitiatingPayment"
+                      :disabled="pkg.is_active !== true || isInitiatingPayment != null"
                       :loading="isInitiatingPayment === pkg.id"
                       @click.stop="handlePackageSelection(pkg)"
                     >
-                      {{ pkg.is_active ? 'Beli Sekarang' : 'Tidak Tersedia' }}
+                      {{ pkg.is_active === true ? 'Beli Sekarang' : 'Tidak Tersedia' }}
                     </v-btn>
                   </v-card-actions>
                 </v-card>
               </v-col>
             </v-row>
-            <v-row v-else-if="!isLoadingPackages" justify="center">
+            <v-row v-else-if="isLoadingPackages === false" justify="center">
               <v-col cols="12" class="text-center py-16 text-medium-emphasis">
                 <v-icon size="x-large" class="mb-5">
                   mdi-package-variant-closed-remove
@@ -389,7 +398,7 @@ useHead({ title: 'Beli Paket Hotspot' })
             </v-icon>
             <span class="text-h6 font-weight-medium">Periksa Nomor Telepon</span>
             <v-spacer />
-            <v-btn icon flat size="small" :disabled="isCheckingUser" variant="text" @click="closeContactDialog">
+            <v-btn icon flat size="small" :disabled="isCheckingUser === true" variant="text" @click="closeContactDialog">
               <v-icon>mdi-close</v-icon>
             </v-btn>
           </v-card-title>
@@ -398,7 +407,7 @@ useHead({ title: 'Beli Paket Hotspot' })
           </p>
           <v-form ref="contactFormRef" v-model="isContactFormValid" @submit.prevent="handleContactSubmit">
             <v-card-text class="pt-4 px-4">
-              <v-alert v-if="contactSubmitError" density="compact" type="error" variant="tonal" class="mb-4 text-caption" border="start" closable @click:close="contactSubmitError = null">
+              <v-alert v-if="contactSubmitError != null" density="compact" type="error" variant="tonal" class="mb-4 text-caption" border="start" closable @click:close="contactSubmitError = null">
                 {{ contactSubmitError }}
               </v-alert>
               <v-text-field
@@ -436,10 +445,10 @@ useHead({ title: 'Beli Paket Hotspot' })
             <v-divider />
             <v-card-actions class="px-4 py-3 bg-grey-lighten-5">
               <v-spacer />
-              <v-btn color="grey-darken-1" variant="text" :disabled="isCheckingUser" @click="closeContactDialog">
+              <v-btn color="grey-darken-1" variant="text" :disabled="isCheckingUser === true" @click="closeContactDialog">
                 Batal
               </v-btn>
-              <v-btn color="primary" variant="flat" type="submit" :loading="isCheckingUser" :disabled="isCheckingUser || !isContactFormValid">
+              <v-btn color="primary" variant="flat" type="submit" :loading="isCheckingUser" :disabled="isCheckingUser === true || isContactFormValid !== true">
                 <v-icon start>
                   mdi-account-search-outline
                 </v-icon>
