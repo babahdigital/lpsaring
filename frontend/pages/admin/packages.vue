@@ -138,15 +138,31 @@ async function handleAction(type: 'create' | 'update' | 'delete') {
       dialog.edit = false
       dialog.delete = false
     }
-    catch (error: any) {
-      if (error.statusCode === 409 && error.data?.message.includes('Profil')) {
-        profileErrorMessage.value = error.data.message
-        showProfileSetupDialog.value = true
-        lastFailedAction.value = apiCall
+    catch (error: unknown) { // Mengubah 'any' menjadi 'unknown'
+      let errorMessage = 'Terjadi kesalahan tidak terduga.';
+      let statusCode = 500;
+
+      if (typeof error === 'object' && error !== null && 'statusCode' in error) {
+        statusCode = (error as { statusCode: number }).statusCode;
       }
-      else {
-        // Perbaikan: Menggunakan operator `??` untuk `any`.
-        snackbar.add({ type: 'error', title: 'Gagal', text: error.data?.message ?? 'Terjadi kesalahan tidak terduga.' })
+
+      if (typeof error === 'object' && error !== null && 'data' in error) {
+        const errorData = (error as { data: unknown }).data;
+        if (typeof errorData === 'object' && errorData !== null && 'message' in errorData && typeof errorData.message === 'string') {
+          errorMessage = errorData.message;
+        } else if (typeof errorData === 'object' && errorData !== null && 'errors' in errorData && Array.isArray(errorData.errors)) {
+          // Asumsi error.data.errors adalah array objek dengan properti 'msg'
+          errorMessage = errorData.errors.map((err: any) => err.msg || String(err)).join(', ');
+        }
+      }
+
+      // Perbaikan: Pengecekan `error.statusCode` yang lebih eksplisit
+      if (statusCode === 409 && errorMessage.includes('Profil')) { // Menggunakan errorMessage yang sudah di-parse
+        profileErrorMessage.value = errorMessage;
+        showProfileSetupDialog.value = true;
+        lastFailedAction.value = apiCall;
+      } else {
+        snackbar.add({ type: 'error', title: 'Gagal', text: errorMessage });
       }
     }
   }
@@ -162,14 +178,21 @@ function onProfilesCreated() {
   }
 }
 
-function formatNumber(value: number | string): string {
-  return new Intl.NumberFormat('id-ID').format(Number(value) || 0)
+function formatNumber(value: number | string | null | undefined): string { // Perbaikan: Tambahkan null | undefined
+  // Perbaikan: Tangani nullish atau NaN secara eksplisit di awal
+  const numValue = Number(value);
+  if (Number.isNaN(numValue)) { // Perbaikan: Gunakan Number.isNaN
+    return '0';
+  }
+  return new Intl.NumberFormat('id-ID').format(numValue);
 }
 
-function unformatNumber(value: string): number {
-  // Perbaikan: Pengecekan eksplisit untuk `NaN` setelah parsing.
+function unformatNumber(value: string | null | undefined): number { // Perbaikan: Tambahkan null | undefined
+  if (value === null || value === undefined) {
+    return 0;
+  }
   const parsed = Number.parseInt(String(value).replace(/\D/g, ''), 10)
-  return isNaN(parsed) ? 0 : parsed
+  return Number.isNaN(parsed) ? 0 : parsed // Perbaikan: Gunakan Number.isNaN
 }
 
 watch(formattedPrice, (newValue) => {
@@ -181,7 +204,8 @@ watch(formattedPrice, (newValue) => {
 })
 watch(() => dialog.edit, (isOpening) => {
   if (isOpening) {
-    formattedPrice.value = formatNumber(editedPackage.value.price || 0)
+    // Perbaikan: Tangani editedPackage.value.price yang mungkin null atau undefined
+    formattedPrice.value = formatNumber(editedPackage.value.price ?? 0)
     isUnlimited.value = editedPackage.value.data_quota_gb === 0
   }
 })
