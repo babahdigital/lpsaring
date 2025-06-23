@@ -220,7 +220,9 @@ async function copyToClipboard(textToCopy: string | undefined | null, type: stri
     await navigator.clipboard.writeText(textToCopy)
     copySuccess.value = type
     $snackbar.add({ type: 'success', text: `${type} berhasil disalin!` })
-    setTimeout(() => { copySuccess.value = null }, 2500)
+    setTimeout(() => {
+      copySuccess.value = null
+    }, 2500)
   }
   catch {
     $snackbar.add({ type: 'error', text: `Gagal menyalin ${type}.` })
