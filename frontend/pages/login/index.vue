@@ -71,7 +71,7 @@ const requiredRule = (v: any) => !!v || 'Wajib diisi.'
 // --- Fungsi Helper ---
 async function tryFocus(refInstance: any) {
   await nextTick()
-  if (refInstance)
+  if (refInstance != null)
     refInstance.focus?.()
 }
 
@@ -84,7 +84,7 @@ async function handleRequestOtp() {
   try {
     const numberToSend = normalize_to_e164(phoneNumber.value)
     const success = await authStore.requestOtp(numberToSend)
-    if (success) {
+    if (success === true) {
       otpSent.value = true
       tryFocus(otpInputRef.value)
     }
@@ -102,7 +102,7 @@ async function handleVerifyOtp() {
   try {
     const numberToVerify = normalize_to_e164(phoneNumber.value)
     const loginSuccess = await authStore.verifyOtp(numberToVerify, otpCode.value)
-    if (!loginSuccess) {
+    if (loginSuccess !== true) {
       otpCode.value = ''
       tryFocus(otpInputRef.value)
     }
@@ -114,7 +114,7 @@ async function handleVerifyOtp() {
 }
 
 async function handleRegister() {
-  if (!registerFormRef.value)
+  if (registerFormRef.value === null)
     return
   const { valid } = await registerFormRef.value.validate()
   if (!valid) {
@@ -144,7 +144,7 @@ async function handleRegister() {
   }
 
   const registerSuccess = await authStore.register(registrationPayload)
-  if (registerSuccess)
+  if (registerSuccess === true)
     viewState.value = 'success'
 }
 
@@ -155,7 +155,7 @@ function resetLoginView() {
   otpCode.value = ''
   authStore.clearError()
   authStore.clearMessage()
-  if (loginFormRef.value)
+  if (loginFormRef.value !== null)
     loginFormRef.value.resetValidation()
 }
 
@@ -169,13 +169,13 @@ function backToForms() {
   regRole.value = 'USER'
   regBlock.value = null
   regKamar.value = null
-  if (registerFormRef.value)
+  if (registerFormRef.value !== null)
     registerFormRef.value.reset()
 }
 
 // --- Watchers untuk menampilkan Notifikasi dan Perbaikan Bug ---
 watch(() => authStore.error, (newError) => {
-  if (newError) {
+  if (typeof newError === 'string' && newError.length > 0) {
     addSnackbar({
       title: 'Terjadi Kesalahan',
       text: newError,
@@ -186,7 +186,7 @@ watch(() => authStore.error, (newError) => {
 })
 
 watch(() => authStore.message, (newMessage) => {
-  if (newMessage) {
+  if (typeof newMessage === 'string' && newMessage.length > 0) {
     addSnackbar({
       title: 'Informasi',
       text: newMessage,
@@ -199,7 +199,7 @@ watch(() => authStore.message, (newMessage) => {
 watch(regRole, () => {
   // Saat role diganti, reset status validasi pada form registrasi
   // untuk membersihkan error dari field yang mungkin disembunyikan (Blok/Kamar).
-  if (registerFormRef.value)
+  if (registerFormRef.value !== null)
     registerFormRef.value.resetValidation()
 })
 </script>
