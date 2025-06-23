@@ -53,8 +53,9 @@ const transactionDetails = ref<TransactionDetails | null>(null)
 const isLoading = ref(true)
 const fetchError = ref<string | null>(null)
 const copySuccess = ref<string | null>(null)
+// PERBAIKAN: Pengecekan tipe string yang eksplisit
 const errorMessageFromQuery = ref<string | null>(
-  route.query.msg ? decodeURIComponent(route.query.msg as string) : null,
+  typeof route.query.msg === 'string' ? decodeURIComponent(route.query.msg) : null,
 )
 
 async function fetchTransactionDetails(orderId: string) {
@@ -62,7 +63,8 @@ async function fetchTransactionDetails(orderId: string) {
   fetchError.value = null
   try {
     const response = await $api<TransactionDetails>(`/transactions/by-order-id/${orderId}`)
-    if (!response || typeof response !== 'object' || !response.midtrans_order_id || !response.status) {
+    // PERBAIKAN: Pengecekan null, object, dan properti yang eksplisit
+    if (response == null || typeof response !== 'object' || response.midtrans_order_id == null || response.status == null) {
       throw new Error('Respons API tidak valid atau tidak lengkap.')
     }
     transactionDetails.value = response
@@ -87,10 +89,12 @@ onMounted(() => {
   const orderIdFromQuery = route.query.order_id as string | undefined
   const statusFromQuery = route.query.status as TransactionStatus | undefined
 
-  if (orderIdFromQuery && orderIdFromQuery.trim() !== '') {
+  // PERBAIKAN: Pengecekan tipe string yang eksplisit
+  if (typeof orderIdFromQuery === 'string' && orderIdFromQuery.trim() !== '') {
     fetchTransactionDetails(orderIdFromQuery.trim())
   }
-  else if (statusFromQuery === 'error' && errorMessageFromQuery.value) {
+  // PERBAIKAN: Pengecekan null yang eksplisit
+  else if (statusFromQuery === 'error' && errorMessageFromQuery.value != null) {
     fetchError.value = `Pembayaran Gagal: ${errorMessageFromQuery.value}`
     isLoading.value = false
   }
@@ -102,23 +106,28 @@ onMounted(() => {
 
 const finalStatus = computed((): TransactionStatus => {
   const statusFromQuery = route.query.status as TransactionStatus | undefined
-  if (transactionDetails.value?.status && transactionDetails.value.status !== 'UNKNOWN') {
+  // PERBAIKAN: Pengecekan null yang eksplisit
+  if (transactionDetails.value?.status != null && transactionDetails.value.status !== 'UNKNOWN') {
     return transactionDetails.value.status
   }
-  if (statusFromQuery && ['SUCCESS', 'PENDING', 'FAILED', 'EXPIRED', 'CANCELLED', 'ERROR'].includes(statusFromQuery)) {
+  // PERBAIKAN: Pengecekan null yang eksplisit
+  if (statusFromQuery != null && ['SUCCESS', 'PENDING', 'FAILED', 'EXPIRED', 'CANCELLED', 'ERROR'].includes(statusFromQuery)) {
     return statusFromQuery
   }
-  return transactionDetails.value?.status || 'UNKNOWN'
+  // PERBAIKAN: Mengganti || dengan ??
+  return transactionDetails.value?.status ?? 'UNKNOWN'
 })
 
-const userPhoneNumberRaw = computed(() => transactionDetails.value?.user?.phone_number || null)
-const userName = computed(() => transactionDetails.value?.user?.full_name || 'Pengguna')
-const packageName = computed(() => transactionDetails.value?.package?.name || 'Paket Tidak Diketahui')
-const paymentMethod = computed(() => transactionDetails.value?.payment_method || null)
-const displayHotspotUsername = computed(() => formatToLocalPhone(userPhoneNumberRaw.value) || '-')
+// PERBAIKAN: Mengganti || dengan ??
+const userPhoneNumberRaw = computed(() => transactionDetails.value?.user?.phone_number ?? null)
+const userName = computed(() => transactionDetails.value?.user?.full_name ?? 'Pengguna')
+const packageName = computed(() => transactionDetails.value?.package?.name ?? 'Paket Tidak Diketahui')
+const paymentMethod = computed(() => transactionDetails.value?.payment_method ?? null)
+const displayHotspotUsername = computed(() => formatToLocalPhone(userPhoneNumberRaw.value) ?? '-')
 
 function formatToLocalPhone(phoneNumber?: string | null): string {
-  if (!phoneNumber)
+  // PERBAIKAN: Pengecekan null yang eksplisit
+  if (phoneNumber == null)
     return '-'
   const cleaned = phoneNumber.replace(/\D/g, '')
   if (cleaned.startsWith('62'))
@@ -127,11 +136,12 @@ function formatToLocalPhone(phoneNumber?: string | null): string {
 }
 
 function formatDate(isoString?: string | null): string {
-  if (!isoString)
+  // PERBAIKAN: Pengecekan null yang eksplisit
+  if (isoString == null)
     return '-'
   try {
     const parsedDate = parseISO(isoString)
-    if (!isValidDate(parsedDate))
+    if (isValidDate(parsedDate) === false)
       throw new Error('Invalid date')
     return format(parsedDate, 'iiii, dd MMMM yyyy, HH:mm \'WITA\'', { locale: dateLocaleId })
   }
@@ -141,7 +151,7 @@ function formatDate(isoString?: string | null): string {
 }
 
 function formatCurrency(value?: number | null): string {
-  if (value === null || value === undefined)
+  if (value == null)
     return 'Rp -'
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value)
 }
@@ -182,12 +192,14 @@ const alertIcon = computed((): string => {
 })
 
 const detailMessage = computed((): string => {
-  if (finalStatus.value === 'ERROR' && errorMessageFromQuery.value && !transactionDetails.value) {
+  // PERBAIKAN: Pengecekan null yang eksplisit
+  if (finalStatus.value === 'ERROR' && errorMessageFromQuery.value != null && transactionDetails.value == null) {
     return errorMessageFromQuery.value
   }
-  const safePackageName = packageName.value || 'paket yang dipilih'
-  const safeUsername = displayHotspotUsername.value || 'akun Anda'
-  const safePhoneNumber = formatToLocalPhone(userPhoneNumberRaw.value) || 'nomor Anda'
+  // PERBAIKAN: Mengganti || dengan ??
+  const safePackageName = packageName.value ?? 'paket yang dipilih'
+  const safeUsername = displayHotspotUsername.value ?? 'akun Anda'
+  const safePhoneNumber = formatToLocalPhone(userPhoneNumberRaw.value) ?? 'nomor Anda'
 
   switch (finalStatus.value) {
     case 'SUCCESS':
@@ -201,11 +213,14 @@ const detailMessage = computed((): string => {
     case 'PENDING':
       return `Mohon selesaikan pembayaran sebelum ${formatDate(transactionDetails.value?.expiry_time)} menggunakan instruksi di bawah ini.`
     case 'FAILED':
-      return `Pembayaran untuk transaksi ${transactionDetails.value?.midtrans_order_id || ''} telah gagal. Silakan coba untuk memesan ulang.`
+      // PERBAIKAN: Mengganti || dengan ??
+      return `Pembayaran untuk transaksi ${transactionDetails.value?.midtrans_order_id ?? ''} telah gagal. Silakan coba untuk memesan ulang.`
     case 'EXPIRED':
-      return `Batas waktu pembayaran untuk transaksi ${transactionDetails.value?.midtrans_order_id || ''} telah terlewati. Silakan coba untuk memesan ulang.`
+      // PERBAIKAN: Mengganti || dengan ??
+      return `Batas waktu pembayaran untuk transaksi ${transactionDetails.value?.midtrans_order_id ?? ''} telah terlewati. Silakan coba untuk memesan ulang.`
     case 'CANCELLED':
-      return `Transaksi ${transactionDetails.value?.midtrans_order_id || ''} telah dibatalkan.`
+      // PERBAIKAN: Mengganti || dengan ??
+      return `Transaksi ${transactionDetails.value?.midtrans_order_id ?? ''} telah dibatalkan.`
     case 'ERROR':
       return 'Terjadi kesalahan pada proses pembayaran. Jika Anda merasa ini adalah kesalahan sistem, silakan hubungi administrator.'
     default:
@@ -214,7 +229,8 @@ const detailMessage = computed((): string => {
 })
 
 async function copyToClipboard(textToCopy: string | undefined | null, type: string) {
-  if (!textToCopy || !navigator.clipboard) {
+  // PERBAIKAN: Pengecekan null yang eksplisit
+  if (textToCopy == null || navigator.clipboard == null) {
     $snackbar.add({ type: 'error', text: 'Gagal menyalin: Fitur tidak didukung oleh browser Anda.' })
     return
   }
@@ -232,7 +248,8 @@ async function copyToClipboard(textToCopy: string | undefined | null, type: stri
 }
 
 function getBankNameFromVA(paymentMethodValue?: string | null): string {
-  if (!paymentMethodValue)
+  // PERBAIKAN: Pengecekan null yang eksplisit
+  if (paymentMethodValue == null)
     return 'Bank'
   const lowerPm = paymentMethodValue.toLowerCase()
   if (lowerPm === 'echannel')
@@ -241,7 +258,8 @@ function getBankNameFromVA(paymentMethodValue?: string | null): string {
   if (parts.length > 1 && parts[1] === 'va') {
     const bankCode = parts[0]
     const bankMap: { [key: string]: string } = { bca: 'BCA', bni: 'BNI', bri: 'BRI', cimb: 'CIMB Niaga', permata: 'Bank Permata', mandiri: 'Mandiri', bsi: 'BSI' }
-    return bankMap[bankCode] || bankCode.toUpperCase()
+    // PERBAIKAN: Mengganti || dengan ??
+    return bankMap[bankCode] ?? bankCode.toUpperCase()
   }
   return paymentMethodValue.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
 }
@@ -255,19 +273,22 @@ function goToDashboard() {
 }
 
 const showSpecificPendingInstructions = computed(() => {
-  if (finalStatus.value !== 'PENDING' || !transactionDetails.value)
+  // PERBAIKAN: Pengecekan null yang eksplisit
+  if (finalStatus.value !== 'PENDING' || transactionDetails.value == null)
     return false
   const td = transactionDetails.value
   const pm = td.payment_method?.toLowerCase()
-  const hasVa = !!td.va_number && (pm?.includes('_va') || pm === 'bank_transfer')
-  const hasEchannel = !!td.payment_code && !!td.biller_code && pm === 'echannel'
-  const hasQr = !!td.qr_code_url && (pm === 'qris' || pm === 'gopay' || pm === 'shopeepay')
+  // PERBAIKAN: Pengecekan boolean dari null/undefined yang eksplisit
+  const hasVa = td.va_number != null && (pm?.includes('_va') === true || pm === 'bank_transfer')
+  const hasEchannel = td.payment_code != null && td.biller_code != null && pm === 'echannel'
+  const hasQr = td.qr_code_url != null && (pm === 'qris' || pm === 'gopay' || pm === 'shopeepay')
   return hasVa || hasEchannel || hasQr
 })
 
 const qrValue = computed(() => transactionDetails.value?.qr_code_url ?? '')
 const showQrCode = computed(() => {
-  if (finalStatus.value !== 'PENDING' || !qrValue.value)
+  // PERBAIKAN: Pengecekan string kosong yang eksplisit
+  if (finalStatus.value !== 'PENDING' || qrValue.value === '')
     return false
   const pm = paymentMethod.value?.toLowerCase()
   return pm === 'qris' || pm === 'gopay' || pm === 'shopeepay'
