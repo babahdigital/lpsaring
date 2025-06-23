@@ -77,14 +77,12 @@ const logList = computed(() => fetchedData.value?.items || [])
 const totalLogs = computed(() => fetchedData.value?.totalItems || 0)
 
 watch(error, (newError) => {
-  if (newError) {
+  if (newError)
     showSnackbar({ type: 'error', title: 'Gagal Memuat Log', text: newError.data?.message || 'Terjadi kesalahan server.' })
-  }
 })
 
 // --- Helper, Kamus, dan Fungsi Format ---
 const hasActiveFilters = computed(() => !!adminFilter.value || !!targetUserFilter.value || !!startDate.value)
-const shouldShowSkeleton = computed(() => loading.value && logList.value.length === 0)
 const formatPhoneNumber = (phone?: string) => phone ? phone.replace('+62', '0') : ''
 const formatDateTime = (date: string) => new Date(date).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 const formatDate = (date: Date | null) => date ? new Date(date).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : ''
@@ -128,15 +126,15 @@ const keyDictionary: Record<string, string> = {
 }
 
 function formatValue(key: string, value: any): string {
-  if (typeof value === 'boolean') {
+  if (typeof value === 'boolean')
     return value ? 'Aktif' : 'Nonaktif'
-  }
-  if (key === 'added_mb' && typeof value === 'number') {
+
+  if (key === 'added_mb' && typeof value === 'number')
     return `${(value / 1024).toFixed(2)} GB`
-  }
-  if (key === 'added_days' && typeof value === 'number') {
+
+  if (key === 'added_days' && typeof value === 'number')
     return `${value} hari`
-  }
+
   if (typeof value === 'object' && value !== null) {
     if (value.gb && value.days)
       return `${value.gb} GB & ${value.days} hari`
@@ -161,19 +159,20 @@ function formatLogDetails(log: AdminActionLog): string {
     switch (log.action_type) {
       case 'CREATE_USER': return `Membuat pengguna baru dengan peran '${details.role}'.`
       case 'DEACTIVATE_USER': return `Alasan: ${details.reason || 'Tidak ada'}.`
-      case 'INJECT_QUOTA':
+      case 'INJECT_QUOTA': {
         const addedMb = details.added_mb ? `${(details.added_mb / 1024).toFixed(2)} GB` : ''
         const addedDays = details.added_days ? `${details.added_days} hari` : ''
         if (addedMb && addedDays)
           return `Menambah ${addedMb} & ${addedDays}.`
         return `Menambah ${addedMb || addedDays}.`
+      }
       case 'SET_UNLIMITED_STATUS':
       case 'REVOKE_UNLIMITED_STATUS':
         return `Status diubah menjadi '${formatValue('status', details.status)}', profil Mikrotik diatur ke '${details.profile}'.`
       case 'UPDATE_USER_PROFILE':
-        for (const key in details) {
+        for (const key in details)
           parts.push(`Mengubah ${keyDictionary[key] || key} menjadi '${formatValue(key, details[key])}'.`)
-        }
+
         return parts.join(' ')
       default:
         return Object.entries(details)
@@ -181,7 +180,9 @@ function formatLogDetails(log: AdminActionLog): string {
           .join('; ')
     }
   }
-  catch (e) { return log.details }
+  catch (_e) {
+    return log.details
+  }
 }
 
 // --- Fungsi Aksi ---
