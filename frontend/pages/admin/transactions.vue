@@ -53,8 +53,8 @@ const snackbar = ref({
 const queryParams = computed(() => ({
   page: options.value.page,
   itemsPerPage: options.value.itemsPerPage,
-  sortBy: options.value.sortBy[0]?.key ?? 'created_at',
-  sortOrder: options.value.sortBy[0]?.order ?? 'desc',
+  sortBy: options.value.sortBy !== undefined && options.value.sortBy.length > 0 ? options.value.sortBy[0].key : 'created_at', // Perbaikan baris 75
+  sortOrder: options.value.sortBy !== undefined && options.value.sortBy.length > 0 ? options.value.sortBy[0].order : 'desc', // Perbaikan baris 75
   search: search.value,
   user_id: selectedUser.value?.id,
   start_date: startDate.value ? startDate.value.toISOString().split('T')[0] : undefined,
@@ -75,8 +75,10 @@ const transactions = computed(() => transactionData.value?.items || [])
 const totalTransactions = computed(() => transactionData.value?.totalItems || 0)
 
 watch(error, (newError) => {
-  if (newError)
-    showSnackbar(newError.data?.message || 'Gagal memuat data transaksi', 'error')
+  // Perbaikan baris 79: Menambahkan pengecekan eksplisit untuk newError dan newError.data
+  if (newError !== null && newError !== undefined) {
+    showSnackbar((newError.data && typeof newError.data.message === 'string' && newError.data.message !== '') ? newError.data.message : 'Gagal memuat data transaksi', 'error')
+  }
 })
 
 // --- Konfigurasi & Format ---
@@ -112,7 +114,8 @@ function formatStatus(status: string) {
 
 // Fungsi baru untuk format nomor telepon
 function formatPhoneNumberForDisplay(phoneNumber: string | null) {
-  if (!phoneNumber)
+  // Perbaikan baris 115: Menambahkan pengecekan eksplisit untuk null/undefined/kosong
+  if (phoneNumber === null || phoneNumber === undefined || phoneNumber === '')
     return ''
   if (phoneNumber.startsWith('+62'))
     return `0${phoneNumber.substring(3)}`
@@ -124,9 +127,10 @@ const formatCurrency = (value: number) => new Intl.NumberFormat('id-ID', { style
 const formatDateTime = (dateString: string) => new Date(dateString).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 const formatDate = (date: Date | null) => date ? new Date(date).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : ''
 
-const hasActiveFilters = computed(() => !!selectedUser.value || !!startDate.value || !!endDate.value)
+// Perbaikan baris 209: Menambahkan perbandingan eksplisit dengan null
+const hasActiveFilters = computed(() => selectedUser.value !== null || startDate.value !== null || endDate.value !== null)
 const formattedDateRangeForChip = computed(() => {
-  if (!startDate.value && !endDate.value)
+  if (startDate.value === null && endDate.value === null) // Perbaikan baris 218
     return ''
   const start = startDate.value ? formatDate(startDate.value) : '...'
   const end = endDate.value ? formatDate(endDate.value) : '...'
@@ -152,7 +156,7 @@ function getPhoneNumberVariationsJS(query: string): string[] {
 }
 
 const filteredUserList = computed(() => {
-  if (!userSearch.value)
+  if (userSearch.value === null || userSearch.value === '') // Perbaikan: Pengecekan eksplisit untuk userSearch.value
     return userList.value
   const queryLower = userSearch.value.toLowerCase()
 
@@ -163,16 +167,23 @@ const filteredUserList = computed(() => {
       return true
 
     if (phoneVariations.length > 0)
-      return phoneVariations.some(variation => user.phone_number.includes(variation))
+      return phoneVariations.some(variation => user.phone_number?.includes(variation) === true) // Perbaikan: Menambahkan pengecekan eksplisit untuk user.phone_number
 
-    return user.phone_number.includes(queryLower)
+    return user.phone_number?.includes(queryLower) === true // Perbaikan: Menambahkan pengecekan eksplisit untuk user.phone_number
   })
 })
 
 // --- Logika & Fungsi ---
 function showSnackbar(text: string, type: 'success' | 'error' | 'warning' = 'success') {
+  // Perbaikan baris 247: Menambahkan pengecekan eksplisit untuk type dan objek config
   const config = { success: { color: 'success', icon: 'tabler-check' }, error: { color: 'error', icon: 'tabler-alert-circle' }, warning: { color: 'warning', icon: 'tabler-alert-triangle' } }[type]
-  snackbar.value = { text, color: config.color, icon: config.icon, visible: true }
+  if (config !== undefined && config !== null) {
+    snackbar.value = { text, color: config.color, icon: config.icon, visible: true }
+  }
+  else {
+    // Fallback jika type tidak dikenal, bisa disesuaikan
+    snackbar.value = { text, color: 'info', icon: 'tabler-info-circle', visible: true }
+  }
 }
 
 const applyFilter = () => refresh()
@@ -206,7 +217,8 @@ async function openUserFilterDialog() {
     return
   try {
     const responseData = await $api<{ items: UserSelectItem[] }>('/admin/users?all=true')
-    if (responseData && Array.isArray(responseData.items)) {
+    // Perbaikan baris 260: Menambahkan pengecekan eksplisit untuk responseData dan Array.isArray
+    if (responseData !== null && responseData !== undefined && Array.isArray(responseData.items)) {
       // Filter hanya untuk peran 'USER'
       userList.value = responseData.items.filter(user => user.role === 'USER')
     }
@@ -232,7 +244,7 @@ function confirmUserSelection() {
 }
 
 async function exportReport(format: 'pdf' | 'csv') {
-  if (!startDate.value) {
+  if (startDate.value === null) { // Perbaikan: Pengecekan eksplisit untuk startDate.value
     showSnackbar('Pilih tanggal mulai terlebih dahulu', 'warning')
     return
   }
@@ -241,10 +253,10 @@ async function exportReport(format: 'pdf' | 'csv') {
     const start = startDate.value.toISOString().split('T')[0]
     const end = (endDate.value || startDate.value).toISOString().split('T')[0]
     const params = new URLSearchParams({ format, start_date: start, end_date: end })
-    if (selectedUser.value)
+    if (selectedUser.value !== null) // Perbaikan: Pengecekan eksplisit untuk selectedUser.value
       params.append('user_id', selectedUser.value.id)
     const data = await $api(`/admin/transactions/export?${params.toString()}`, { responseType: 'blob' })
-    if (!data)
+    if (data === null || data === undefined) // Perbaikan: Pengecekan eksplisit untuk data
       throw new Error('Tidak ada data laporan yang diterima')
     const url = window.URL.createObjectURL(data)
     const link = document.createElement('a')
@@ -284,7 +296,7 @@ useHead({ title: 'Laporan Penjualan' })
               density="comfortable"
               variant="outlined"
               class="date-field"
-              :class="{ 'active-field': startDate }"
+              :class="{ 'active-field': startDate !== null }"
               hide-details="auto"
               @click:clear="clearStartDate"
             />
@@ -317,11 +329,11 @@ useHead({ title: 'Laporan Penjualan' })
               prepend-inner-icon="tabler-calendar"
               readonly
               clearable
-              :disabled="!startDate"
+              :disabled="startDate === null"
               density="comfortable"
               variant="outlined"
               class="date-field"
-              :class="{ 'active-field': endDate }"
+              :class="{ 'active-field': endDate !== null }"
               hide-details="auto"
               @click:clear="clearEndDate"
             />
@@ -382,10 +394,10 @@ useHead({ title: 'Laporan Penjualan' })
           </VCol>
         </VRow>
 
-        <VRow v-if="hasActiveFilters" class="mt-4">
+        <VRow v-if="hasActiveFilters === true" class="mt-4">
           <VCol cols="12" class="d-flex flex-wrap gap-2 align-center">
             <VChip
-              v-if="selectedUser"
+              v-if="selectedUser !== null"
               color="primary"
               closable
               prepend-icon="tabler-user"
@@ -397,7 +409,7 @@ useHead({ title: 'Laporan Penjualan' })
             </VChip>
 
             <VChip
-              v-if="startDate || endDate"
+              v-if="startDate !== null || endDate !== null"
               color="primary"
               closable
               prepend-icon="tabler-calendar"
@@ -578,7 +590,7 @@ useHead({ title: 'Laporan Penjualan' })
           <VBtn variant="tonal" @click="isUserFilterDialogOpen = false">
             Batal
           </VBtn>
-          <VBtn color="primary" :disabled="!tempSelectedUser" @click="confirmUserSelection">
+          <VBtn color="primary" :disabled="tempSelectedUser === null" @click="confirmUserSelection">
             Pilih
           </VBtn>
         </VCardActions>
