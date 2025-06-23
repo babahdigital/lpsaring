@@ -31,7 +31,7 @@ export default antfu(
       ],
       // Pertahankan aturan valid-v-slot
       'vue/valid-v-slot': 'error',
-      
+
       // --- AKHIR ATURAN BARU ---
       'n/prefer-global/process': 'off',
       '@typescript-eslint/no-redeclare': 'error',
