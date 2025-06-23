@@ -64,7 +64,8 @@ async function fetchRequests() {
     totalRequests.value = response.totalItems
   }
   catch (error: any) {
-    showSnackbar(`Gagal mengambil data: ${error.data?.message || 'Server error'}`, 'error')
+    // PERBAIKAN: Mengganti || dengan ?? untuk nilai fallback yang eksplisit.
+    showSnackbar(`Gagal mengambil data: ${error.data?.message ?? 'Server error'}`, 'error')
   }
   finally {
     loading.value = false
@@ -104,7 +105,8 @@ function formatQuotaToGB(mb: number | null | undefined): string {
 }
 
 function formatDateTime(dateString: string | null) {
-  if (!dateString)
+  // PERBAIKAN: Mengganti !dateString dengan pengecekan null dan string kosong yang eksplisit.
+  if (dateString == null || dateString === '')
     return '-'
   return new Date(dateString).toLocaleString('id-ID', {
     day: '2-digit',
@@ -120,6 +122,7 @@ function showSnackbar(text: string, color = 'info') {
   snackbar.color = color
   snackbar.show = true
 }
+useHead({ title: 'Request Quota' })
 </script>
 
 <template>
