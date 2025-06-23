@@ -171,11 +171,11 @@ async function handleAction(type: 'create' | 'update' | 'delete') {
             class="elevation-0"
             @update:options="fetchProfiles"
           >
-             <template v-slot:item.duration_days="{ item }">
+            <template #item.duration_days="{ item }">
               {{ item.duration_days }} Hari
             </template>
 
-            <template v-slot:item.data_quota_gb="{ item }">
+            <template #item.data_quota_gb="{ item }">
               <VChip
                 v-if="item.data_quota_gb === 0"
                 color="success"
@@ -186,7 +186,7 @@ async function handleAction(type: 'create' | 'update' | 'delete') {
               <span v-else>{{ item.data_quota_gb }} GB</span>
             </template>
 
-            <template v-slot:item.actions="{ item }">
+            <template #item.actions="{ item }">
               <div class="d-flex gap-1">
                 <VBtn
                   icon
