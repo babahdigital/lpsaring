@@ -11,7 +11,7 @@ interface Profile {
 }
 
 const props = defineProps<{ modelValue: boolean }>()
-const emit = defineEmits(['update:modelValue', 'profiles-updated'])
+const emit = defineEmits(['update:modelValue', 'profilesUpdated'])
 
 const { $api } = useNuxtApp()
 const snackbar = useSnackbar()
@@ -71,7 +71,7 @@ async function saveProfile() {
     snackbar.add({ type: 'success', title: 'Berhasil', text: `Profil berhasil ${isUpdate ? 'diperbarui' : 'disimpan'}.` })
     dialogs.edit = false
     await fetchProfiles()
-    emit('profiles-updated') // Beri sinyal ke induk untuk refresh
+    emit('profilesUpdated') // Beri sinyal ke induk untuk refresh
   }
   catch (error: any) {
     snackbar.add({ type: 'error', title: 'Gagal', text: error.data?.message || 'Terjadi kesalahan.' })
@@ -84,7 +84,7 @@ async function deleteProfileConfirm() {
     snackbar.add({ type: 'success', title: 'Dihapus', text: 'Profil berhasil dihapus.' })
     dialogs.delete = false
     await fetchProfiles()
-    emit('profiles-updated') // Beri sinyal ke induk untuk refresh
+    emit('profilesUpdated') // Beri sinyal ke induk untuk refresh
   }
   catch (error: any) {
     snackbar.add({ type: 'error', title: 'Gagal Menghapus', text: error.data?.message || 'Terjadi kesalahan.' })
@@ -140,7 +140,7 @@ function closeMainDialog() {
           density="compact"
           class="border rounded"
         >
-          <template #item.actions="{ item }">
+          <template #[`item.actions`]="{ item }">
             <div class="d-flex gap-1 justify-end">
               <VBtn
                 icon
