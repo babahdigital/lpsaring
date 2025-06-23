@@ -1,3 +1,5 @@
+// frontend/plugins/vuetify/index.ts
+
 import type { IconOptions } from 'vuetify'
 import { themeConfig } from '@themeConfig'
 import { createVuetify } from 'vuetify'
@@ -11,10 +13,12 @@ import '@core/scss/template/libs/vuetify/index.scss'
 import 'vuetify/styles'
 import '@mdi/font/css/materialdesignicons.css'
 
+// --- Impor adapter Iconify yang baru dibuat ---
+import IconifyVuetifyAdapter from './iconify-adapter'
+
 function resolveInitialVuetifyTheme(userPreference: string | undefined | null): 'light' | 'dark' {
   const validThemes = Object.keys(themes)
   const defaultThemeFromConfig = themeConfig.app.theme
-  // PERBAIKAN: Mengganti pengecekan implisit dengan pengecekan null/undefined yang eksplisit.
   if (userPreference != null && validThemes.includes(userPreference)) {
     return userPreference as 'light' | 'dark'
   }
@@ -25,21 +29,20 @@ function resolveInitialVuetifyTheme(userPreference: string | undefined | null): 
   return 'light'
 }
 
-// Solusi utama:
-// 1. Hapus impor tipe NuxtApp yang menyebabkan circular dependency
-// 2. Gunakan inferensi tipe dari defineNuxtPlugin
 export default defineNuxtPlugin((nuxtApp) => {
   const userPreferredTheme = cookieRef<string>('theme', themeConfig.app.theme).value
   const initialDefaultTheme = resolveInitialVuetifyTheme(userPreferredTheme)
 
   const iconsConfig: IconOptions = {
-    defaultSet: 'mdi',
+    defaultSet: 'tabler', // Tetap 'tabler' atau 'mdi' sesuai preferensi Anda
     aliases: {
       ...mdiAliases,
       ...iconAliases,
     },
     sets: {
       mdi,
+      // --- Gunakan adapter yang sudah dibuat ---
+      tabler: IconifyVuetifyAdapter, // Gunakan objek adapter langsung
     },
   }
 
@@ -58,6 +61,5 @@ export default defineNuxtPlugin((nuxtApp) => {
 
   nuxtApp.vueApp.use(vuetify)
 
-  // Return kosong untuk menghindari implicit any
   return {}
 })
