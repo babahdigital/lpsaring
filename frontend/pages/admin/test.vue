@@ -1,11 +1,16 @@
-<script setup lang="ts">
-// Script bisa kosong atau berisi logika minimal jika diperlukan
-// Misalnya, definePageMeta untuk middleware spesifik halaman jika tidak global
-// definePageMeta({
-//   middleware: ['auth'] // Jika middleware tidak global
-// });
-</script>
-
 <template>
-  <div />
+  <div>
+    <h3>Test Icons</h3>
+    <VIcon icon="tabler:check" size="x-large" />
+    <p>Icon "tabler:check" should be above.</p>
+
+    <VIcon icon="complete" size="x-large" />
+    <p>Icon "complete" (tabler:check alias) should be above.</p>
+
+    <VIcon icon="mdi-check" size="x-large" />
+    <p>Icon "mdi-check" should be above.</p>
+
+    <span class="tabler-check custom-icon" style="font-size: 48px;"></span>
+    <p>Icon "tabler-check" via span should be above.</p>
+  </div>
 </template>
