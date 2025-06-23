@@ -21,8 +21,6 @@ export default antfu(
       },
     },
     rules: {
-      // --- TAMBAHKAN ATURAN BARU DI SINI ---
-      'vue/valid-v-slot': 'off',
       'vue/v-slot-style': [
         'error',
         {
@@ -31,8 +29,10 @@ export default antfu(
           named: 'shorthand',
         },
       ],
+      // Pertahankan aturan valid-v-slot
+      'vue/valid-v-slot': 'error',
+      
       // --- AKHIR ATURAN BARU ---
-
       'n/prefer-global/process': 'off',
       '@typescript-eslint/no-redeclare': 'error',
       'ts/no-redeclare': 'off',
