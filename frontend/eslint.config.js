@@ -29,10 +29,7 @@ export default antfu(
           named: 'shorthand',
         },
       ],
-      // Pertahankan aturan valid-v-slot
-      'vue/valid-v-slot': 'error',
-
-      // --- AKHIR ATURAN BARU ---
+      // Aturan 'vue/valid-v-slot' telah dihapus dari sini untuk menghindari konflik
       'n/prefer-global/process': 'off',
       '@typescript-eslint/no-redeclare': 'error',
       'ts/no-redeclare': 'off',
