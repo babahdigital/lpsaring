@@ -1,20 +1,18 @@
-import type { IconProps, IconSet } from 'vuetify'
-import { Icon as IconifyIcon } from '@iconify/vue'
 // frontend/plugins/vuetify/iconify-adapter.ts
 import { h } from 'vue'
+import { Icon as IconifyIcon } from '@iconify/vue'
+import type { IconSet, IconProps } from 'vuetify'
 
 const IconifyVuetifyAdapter: IconSet = {
   component: (props: IconProps) => {
-    // PERBAIKAN: Periksa secara eksplisit apakah props.icon tidak null dan tidak undefined.
     const iconName = (props.icon !== null && props.icon !== undefined)
-      ? String(props.icon) // Pastikan dikonversi ke string jika valid
-      : '' // Default ke string kosong jika null atau undefined
+      ? String(props.icon)
+      : ''
 
-    // Penting: IconifyIcon juga bisa menerima objek IconifyIcon (untuk data JSON ikon langsung),
-    // namun dalam konteks Vuetify dengan alias, biasanya yang datang adalah string.
-    // Jika ada kemungkinan props.icon adalah objek IconifyIcon yang sudah diproses,
-    // maka perlu penanganan lebih lanjut, tetapi untuk alias 'tabler:x', itu akan menjadi string.
-
+    // PENTING: Pastikan Anda mengembalikan h(IconifyIcon, { icon: iconName })
+    // dan BUKAN hanya string SVG mentah jika props.icon adalah string SVG.
+    // Dalam kasus 'tabler:check', props.icon seharusnya adalah string "tabler:check",
+    // dan IconifyIcon akan menanganinya.
     return h(IconifyIcon, { icon: iconName })
   },
 }
