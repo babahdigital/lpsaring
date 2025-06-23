@@ -12,7 +12,7 @@ const props = defineProps<{
 // Mendefinisikan event yang akan dikirim kembali ke induk
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
-  (e: 'profiles-created'): void // Sinyal bahwa profil berhasil dibuat
+  (e: 'profilesCreated'): void // Sinyal bahwa profil berhasil dibuat
 }>()
 
 // State internal komponen
@@ -41,7 +41,7 @@ async function setupMissingProfiles() {
     // Jika semua sudah ada, beri info dan tutup
     if (profilesToCreate.length === 0) {
       snackbar.add({ type: 'info', title: 'Sudah Lengkap', text: 'Semua profil sistem yang dibutuhkan sudah ada.' })
-      emit('profiles-created') // Kirim sinyal sukses agar induk bisa mencoba lagi
+      emit('profilesCreated') // Kirim sinyal sukses agar induk bisa mencoba lagi
       closeDialog()
       return
     }
@@ -58,7 +58,7 @@ async function setupMissingProfiles() {
     }
 
     snackbar.add({ type: 'success', title: 'Konfigurasi Selesai', text: `Profil sistem (${profilesToCreate.join(', ')}) berhasil dibuat.` })
-    emit('profiles-created') // Kirim sinyal sukses ke induk
+    emit('profilesCreated') // Kirim sinyal sukses ke induk
     closeDialog()
   }
   catch (error: any) {
