@@ -65,3 +65,68 @@ def check_or_register_phone():
         if db.session.is_active: db.session.rollback()
         current_app.logger.error(f"[Check Phone] Error tidak terduga untuk nomor {phone_number}: {e}", exc_info=True)
         return jsonify({"success": False, "message": "Kesalahan internal server (check-or-register)."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+@public_user_bp.route('/validate-whatsapp', methods=['POST'])
+def validate_whatsapp_number():
+    """
+    Endpoint untuk memvalidasi apakah sebuah nomor telepon terdaftar di WhatsApp melalui Fonnte.
+    """
+    current_app.logger.info("POST /api/users/validate-whatsapp endpoint requested.")
+    
+    # 1. Validasi Input menggunakan Pydantic
+    try:
+        json_data = request.get_json()
+        if not json_data:
+            return jsonify({"isValid": False, "message": "Request body harus JSON."}), HTTPStatus.BAD_REQUEST
+        
+        # Menggunakan skema baru yang kita buat
+        req_data = WhatsappValidationRequest.model_validate(json_data)
+        phone_number_e164 = req_data.phone_number # sudah dalam format E.164
+    except ValidationError as e:
+        # Ambil pesan error pertama untuk ditampilkan ke pengguna
+        error_detail = e.errors()[0]
+        error_message = error_detail.get('msg', 'Input tidak valid.')
+        return jsonify({"isValid": False, "message": error_message}), HTTPStatus.UNPROCESSABLE_ENTITY
+    except Exception as e:
+        current_app.logger.error(f"[Validate WA] Error parsing request: {e}", exc_info=True)
+        return jsonify({"isValid": False, "message": "Format request tidak valid."}), HTTPStatus.BAD_REQUEST
+        
+    # 2. Panggil API Fonnte
+    fonnte_token = current_app.config.get('FONNTE_TOKEN')
+    if not fonnte_token:
+        current_app.logger.error("[Validate WA] FONNTE_TOKEN tidak diatur di konfigurasi server.")
+        return jsonify({"isValid": False, "message": "Layanan validasi tidak terkonfigurasi."}), HTTPStatus.INTERNAL_SERVER_ERROR
+    
+    # Fonnte memerlukan nomor tanpa + di awal
+    target_number = phone_number_e164.lstrip('+')
+
+    try:
+        response = requests.post(
+            'https://api.fonnte.com/validate',
+            headers={'Authorization': fonnte_token},
+            data={'target': target_number}
+        )
+        response.raise_for_status()  # Cek jika ada error HTTP (4xx atau 5xx)
+        
+        fonnte_data = response.json()
+        
+        # 3. Proses Respons dari Fonnte
+        if fonnte_data.get('status') is True:
+            registered_numbers = fonnte_data.get('registered', [])
+            if target_number in registered_numbers:
+                current_app.logger.info(f"[Validate WA] Nomor {target_number} terdaftar di WhatsApp.")
+                return jsonify({"isValid": True}), HTTPStatus.OK
+            else:
+                current_app.logger.warning(f"[Validate WA] Nomor {target_number} tidak terdaftar di WhatsApp.")
+                return jsonify({"isValid": False, "message": "Nomor tidak terdaftar di WhatsApp."}), HTTPStatus.OK
+        else:
+            reason = fonnte_data.get('reason', 'alasan tidak diketahui')
+            current_app.logger.error(f"[Validate WA] Fonnte API error: {reason}")
+            return jsonify({"isValid": False, "message": f"Validasi gagal: {reason}"}), HTTPStatus.BAD_REQUEST
+
+    except requests.exceptions.RequestException as e:
+        current_app.logger.error(f"[Validate WA] Gagal menghubungi Fonnte API: {e}", exc_info=True)
+        return jsonify({"isValid": False, "message": "Tidak dapat menghubungi layanan validasi."}), HTTPStatus.SERVICE_UNAVAILABLE
+    except Exception as e:
+        current_app.logger.error(f"[Validate WA] Terjadi error tidak terduga: {e}", exc_info=True)
+        return jsonify({"isValid": False, "message": "Terjadi kesalahan internal saat validasi."}), HTTPStatus.INTERNAL_SERVER_ERROR
