@@ -57,22 +57,22 @@ const kamarOptions = Array.from({ length: 6 }, (_, i) => ({ title: `Kamar ${i + 
 // --- Aturan Validasi ---
 const phoneFormatRules = [
   (v: string) => {
-    if (!v) 
-      return 'Nomor telepon wajib diisi.';
-    
+    if (!v)
+      return 'Nomor telepon wajib diisi.'
+
     // ATURAN BARU YANG KETAT:
     // 1. Harus diawali '08'
     // 2. Diikuti oleh 8-10 digit angka (total 10-12 digit)
     // 3. Tidak boleh ada karakter selain angka.
-    const phoneRegex = /^08[1-9]\d{7,9}$/;
+    const phoneRegex = /^08[1-9]\d{7,9}$/
 
     if (!phoneRegex.test(v)) {
-      return 'Format nomor salah. Contoh: 08123456789 (10-12 digit).';
+      return 'Format nomor salah. Contoh: 08123456789 (10-12 digit).'
     }
 
-    return true;
+    return true
   },
-];
+]
 const requiredRule = (v: any) => (v !== null && v !== undefined && v !== '') || 'Wajib diisi.'
 
 // --- Aturan Validasi Asinkron untuk Nomor WhatsApp ---
@@ -88,26 +88,30 @@ function whatsappValidationRule(v: string) {
 
     validationTimeout = setTimeout(async () => {
       try {
-        // [PERBAIKAN] Mengarahkan panggilan ke endpoint Python yang baru
         const response = await $fetch('/api/users/validate-whatsapp', {
           method: 'POST',
-          body: { phone_number: v }, // Pastikan key sesuai
+          body: { phone_number: v },
         })
 
-        // Tambahkan pengecekan response lebih detail
         if (response.isValid === true) {
           resolve(true)
-        } else {
+        }
+        else {
           let errorMsg = 'Nomor WhatsApp tidak valid'
-          
+
           if (response.message.includes('terdaftar')) {
             errorMsg = 'Nomor sudah terdaftar di sistem'
-          } else if (response.message.includes('aktif')) {
+          }
+          else if (response.message.includes('aktif')) {
             errorMsg = 'Nomor tidak aktif di WhatsApp'
           }
-          
+
           resolve(errorMsg)
         }
+      }
+      catch (error: any) { // PERBAIKAN: Tambahkan blok catch
+        resolve(error.data?.message || 'Gagal memvalidasi nomor. Coba lagi.')
+      }
     }, 500)
   })
 }
