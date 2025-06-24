@@ -84,6 +84,11 @@ services:
   celery_worker:
     image: babahdigital/sobigidul_backend:latest
     container_name: hotspot_prod_celery_worker
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "10"
     env_file:
       - .env.prod
     environment:
