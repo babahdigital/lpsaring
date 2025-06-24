@@ -150,6 +150,7 @@ export default defineNuxtConfig({
   ],
 
   runtimeConfig: {
+    fonnteToken: '',
     public: {
       apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL ?? '/api',
       midtransClientKey: process.env.NUXT_PUBLIC_MIDTRANS_CLIENT_KEY ?? '',

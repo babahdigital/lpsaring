@@ -2,11 +2,9 @@
 import type { VForm } from 'vuetify/components'
 import type { VOtpInput } from 'vuetify/labs/VOtpInput'
 import authV1BottomShape from '@images/svg/auth-v1-bottom-shape.svg?raw'
-
 import authV1TopShape from '@images/svg/auth-v1-top-shape.svg?raw'
 import { VNodeRenderer } from '@layouts/components/VNodeRenderer'
 import { themeConfig } from '@themeConfig'
-
 import { computed, h, nextTick, ref, watch } from 'vue'
 import { useSnackbar } from '~/composables/useSnackbar'
 import { useAuthStore } from '~/store/auth'
@@ -55,7 +53,7 @@ const blockOptions = Array.from({ length: 6 }, (_, i) => ({ title: `Blok ${Strin
 const kamarOptions = Array.from({ length: 6 }, (_, i) => ({ title: `Kamar ${i + 1}`, value: (i + 1).toString() }))
 
 // --- Aturan Validasi ---
-const phoneRules = [
+const phoneFormatRules = [
   (v: string) => !!v || 'Nomor telepon wajib diisi.',
   (v: string) => {
     const cleaned = v.replace(/[\s-]/g, '')
@@ -67,6 +65,42 @@ const phoneRules = [
   },
 ]
 const requiredRule = (v: any) => (v !== null && v !== undefined && v !== '') || 'Wajib diisi.'
+
+// --- [BARU] Aturan Validasi Asinkron untuk Nomor WhatsApp ---
+let validationTimeout: NodeJS.Timeout | null = null
+const whatsappValidationRule = (v: string) => {
+  // Hanya jalankan validasi jika format dasar sudah benar untuk efisiensi
+  const isFormatBasicallyCorrect = phoneFormatRules.every(rule => rule(v) === true)
+  if (!isFormatBasicallyCorrect)
+    return true // Biarkan aturan lain yang menangani error format
+
+  return new Promise<boolean | string>((resolve) => {
+    if (validationTimeout)
+      clearTimeout(validationTimeout)
+
+    // Debounce: Tunggu 500ms setelah user berhenti mengetik sebelum memanggil API
+    validationTimeout = setTimeout(async () => {
+      try {
+        const response = await $fetch('/api/validate-whatsapp', {
+          method: 'POST',
+          body: { phoneNumber: v },
+        })
+
+        if (response.isValid) {
+          resolve(true)
+        }
+        else {
+          // Menggunakan pesan dari server atau pesan default
+          resolve(response.message || 'Nomor WhatsApp tidak terdaftar/valid.')
+        }
+      }
+      catch (error: any) {
+        // Menangani jika API backend kita sendiri error
+        resolve(error.data?.message || 'Gagal memvalidasi nomor. Coba lagi.')
+      }
+    }, 500)
+  })
+}
 
 // --- Fungsi Helper ---
 async function tryFocus(refInstance: any) {
@@ -128,7 +162,7 @@ async function handleRegister() {
   if (!valid) {
     addSnackbar({
       title: 'Validasi Gagal',
-      text: 'Silakan periksa kembali semua data yang wajib diisi.',
+      text: 'Silakan periksa kembali semua data yang wajib diisi, termasuk memastikan nomor WhatsApp valid.',
       type: 'warning',
     })
     return
@@ -210,8 +244,6 @@ watch(() => authStore.message, (newMessage) => {
 })
 
 watch(regRole, () => {
-  // Saat role diganti, reset status validasi pada form registrasi
-  // untuk membersihkan error dari field yang mungkin disembunyikan (Blok/Kamar).
   if (registerFormRef.value !== null)
     registerFormRef.value.resetValidation()
 })
