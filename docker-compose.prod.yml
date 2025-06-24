@@ -48,6 +48,11 @@ services:
   backend:
     image: babahdigital/sobigidul_backend:latest
     container_name: hotspot_prod_flask_backend
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"   # ganti sesuai kapasitas SD-card
+        max-file: "10"    # menyimpan 10 file rotasi → ±200 MB total
     env_file:
       - .env.prod
     environment:
