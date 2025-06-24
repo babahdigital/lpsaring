@@ -56,16 +56,23 @@ const kamarOptions = Array.from({ length: 6 }, (_, i) => ({ title: `Kamar ${i + 
 
 // --- Aturan Validasi ---
 const phoneFormatRules = [
-  (v: string) => !!v || 'Nomor telepon wajib diisi.',
   (v: string) => {
-    const cleaned = v.replace(/[\s-]/g, '')
-    if (!/^08[1-9]/.test(cleaned))
-      return 'Nomor harus diawali dengan 08...'
-    if (cleaned.length < 10 || cleaned.length > 12)
-      return 'Nomor telepon harus antara 10 hingga 12 digit.'
-    return true
+    if (!v) 
+      return 'Nomor telepon wajib diisi.';
+    
+    // ATURAN BARU YANG KETAT:
+    // 1. Harus diawali '08'
+    // 2. Diikuti oleh 8-10 digit angka (total 10-12 digit)
+    // 3. Tidak boleh ada karakter selain angka.
+    const phoneRegex = /^08[1-9]\d{7,9}$/;
+
+    if (!phoneRegex.test(v)) {
+      return 'Format nomor salah. Contoh: 08123456789 (10-12 digit).';
+    }
+
+    return true;
   },
-]
+];
 const requiredRule = (v: any) => (v !== null && v !== undefined && v !== '') || 'Wajib diisi.'
 
 // --- Aturan Validasi Asinkron untuk Nomor WhatsApp ---
