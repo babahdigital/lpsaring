@@ -1,9 +1,9 @@
 # backend/app/infrastructure/http/transactions_routes.py
-# VERSI PERBAIKAN FINAL: Mengatasi NameError dan Mengintegrasikan Notifikasi PDF
+# VERSI PERBAIKAN FINAL: Mengatasi ValidationError untuk tipe UUID dan nama field.
 
 import hashlib
 import os
-import uuid
+import uuid  # <-- PERBAIKAN: Impor modul uuid
 from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
 from http import HTTPStatus
@@ -13,8 +13,7 @@ import midtransclient
 from flask import (
     Blueprint, abort, current_app, jsonify, make_response, render_template, request
 )
-# Impor yang sudah diperbaiki
-from pydantic import BaseModel, ValidationError, Field # <-- Pastikan Field diimpor
+from pydantic import BaseModel, Field, ValidationError # <-- PERBAIKAN: Impor Field
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import selectinload
 
@@ -47,7 +46,7 @@ transactions_bp = Blueprint(
     ),
 )
 
-# --- FUNGSI HELPER ---
+# --- FUNGSI HELPER (Tidak ada perubahan) ---
 def get_midtrans_core_api_client():
     is_production = current_app.config.get("MIDTRANS_IS_PRODUCTION", False)
     server_key = current_app.config.get("MIDTRANS_SERVER_KEY")
@@ -98,7 +97,7 @@ def extract_qr_code_url(response_data: Dict[str, Any]):
                 return qr_url
     return response_data.get("qr_code_url")
 
-# --- JINJA FILTERS ---
+# --- JINJA FILTERS (Tidak ada perubahan) ---
 def format_datetime_short(value: datetime) -> str:
     if not isinstance(value, datetime): return ""
     try:
@@ -132,16 +131,16 @@ def _format_status_filter(value): return format_status(value)
 class _InitiateTransactionRequestSchema(BaseModel):
     package_id: uuid.UUID
 
-# --- PERBAIKAN SKEMA DI SINI ---
+# --- PERBAIKAN FINAL PADA SKEMA DI SINI ---
 class _InitiateTransactionResponseSchema(BaseModel):
-    snap_token: Optional[str] = None
-    transaction_id: str = Field(..., alias='id')
+    snap_token: Optional[str] = Field(None, alias='snap_token')
+    transaction_id: uuid.UUID = Field(..., alias='id')
     order_id: str = Field(..., alias='midtrans_order_id')
     redirect_url: Optional[str] = Field(None, alias='snap_redirect_url')
     
     class Config:
         from_attributes = True
-# ---------------------------------
+# -------------------------------------------
 
 # --- ENDPOINTS ---
 @transactions_bp.route("/initiate", methods=["POST"])
@@ -356,7 +355,7 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
 @token_required
 def get_transaction_invoice(current_user_id: uuid.UUID, midtrans_order_id: str):
     # Logika endpoint ini tidak berubah, tetap berfungsi seperti sebelumnya untuk download manual.
-    if not WEASYPRINT_AVAILABLE or not HTML_MODULE:
+    if not WEASYPRINT_AVAILABLE:
         abort(HTTPStatus.NOT_IMPLEMENTED, "Komponen PDF server tidak tersedia.")
     session = db.session
     try:
@@ -382,7 +381,7 @@ def get_transaction_invoice(current_user_id: uuid.UUID, midtrans_order_id: str):
             'invoice_date_local': datetime.now(app_tz),
         }
         html_string = render_template('invoice_template.html', **context)
-        pdf_bytes = HTML_MODULE(string=html_string, base_url=request.url_root).write_pdf()
+        pdf_bytes = HTML(string=html_string, base_url=request.url_root).write_pdf()
         if not pdf_bytes:
             abort(HTTPStatus.INTERNAL_SERVER_ERROR, "Gagal menghasilkan file PDF.")
         response = make_response(pdf_bytes)
