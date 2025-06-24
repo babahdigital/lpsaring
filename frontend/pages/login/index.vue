@@ -336,8 +336,7 @@ watch(regRole, () => {
                       label="Nomor WhatsApp"
                       placeholder="Contoh: 081234567890"
                       prepend-inner-icon="tabler-device-mobile"
-                      :rules="phoneRules"
-                      :disabled="isSubmitting"
+                      :rules="phoneFormatRules" :disabled="isSubmitting"
                     />
                     <VBtn
                       class="mt-4"
