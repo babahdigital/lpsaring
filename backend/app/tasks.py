@@ -1,6 +1,7 @@
 # backend/app/tasks.py
 import logging
-# from app.extensions import celery_app # Tidak perlu import celery_app lagi di sini
+import os # <-- Baris ini memastikan modul 'os' tersedia
+
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_with_pdf
 # Import create_app dari app/__init__.py
 from app import create_app
@@ -26,7 +27,8 @@ def send_whatsapp_invoice_task(self, recipient_number: str, caption: str, pdf_ur
     # Penting: Buat instance aplikasi Flask di dalam konteks task
     # Ini memastikan current_app tersedia untuk semua fungsi yang dipanggil dalam task
     # yang membutuhkan konteks aplikasi (misalnya, mengakses app.config)
-    app = create_app(config_name=os.environ.get('FLASK_CONFIG', 'default')) # Gunakan nama konfigurasi yang sesuai
+    # os.environ.get sekarang akan berfungsi karena 'os' telah diimpor.
+    app = create_app(config_name=os.environ.get('FLASK_CONFIG', 'default')) 
     
     with app.app_context():
         logger.info(f"Celery Task: Memulai pengiriman WhatsApp dengan PDF ke {recipient_number} untuk URL: {pdf_url}")
