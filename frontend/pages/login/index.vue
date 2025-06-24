@@ -13,7 +13,7 @@ import { useAuthStore } from '~/store/auth'
 import { normalize_to_e164 } from '~/utils/formatters'
 
 definePageMeta({
-  layout: 'blank',
+  layout: 'blank',
 })
 
 const authStore = useAuthStore()
@@ -43,11 +43,11 @@ const regKamar = ref<string | null>(null)
 const isSubmitting = computed(() => authStore.loading)
 const showAddressFields = computed(() => regRole.value === 'USER')
 const formattedPhoneNumberDisplay = computed(() => {
-  let num = phoneNumber.value.replace(/[\s-]/g, '')
-  if (num.startsWith('08'))
-    num = `+62 ${num.substring(1)}`
+  let num = phoneNumber.value.replace(/[\s-]/g, '')
+  if (num.startsWith('08'))
+    num = `+62 ${num.substring(1)}`
 
-  return num || phoneNumber.value
+  return num || phoneNumber.value
 })
 
 // --- Opsi untuk Select Input ---
@@ -56,229 +56,230 @@ const kamarOptions = Array.from({ length: 6 }, (_, i) => ({ title: `Kamar ${i + 
 
 // --- Aturan Validasi ---
 const phoneFormatRules = [
-  (v: string) => {
-    if (!v)
-      return 'Nomor telepon wajib diisi.'
+  (v: string) => {
+    if (!v)
+      return 'Nomor telepon wajib diisi.'
 
-    // ATURAN BARU YANG KETAT:
-    // 1. Harus diawali '08'
-    // 2. Diikuti oleh 8-10 digit angka (total 10-12 digit)
-    // 3. Tidak boleh ada karakter selain angka.
-    const phoneRegex = /^08[1-9]\d{7,9}$/
+    // ATURAN BARU YANG KETAT:
+    // 1. Harus diawali '08'
+    // 2. Diikuti oleh 8-10 digit angka (total 10-12 digit)
+    // 3. Tidak boleh ada karakter selain angka.
+    const phoneRegex = /^08[1-9]\d{7,9}$/
 
-    if (!phoneRegex.test(v)) {
-      return 'Format nomor salah. Contoh: 08123456789 (10-12 digit).'
-    }
+    if (!phoneRegex.test(v)) {
+      return 'Format nomor salah. Contoh: 08123456789 (10-12 digit).'
+    }
 
-    return true
-  },
+    return true
+  },
 ]
 const requiredRule = (v: any) => (v !== null && v !== undefined && v !== '') || 'Wajib diisi.'
 
 // --- Aturan Validasi Asinkron untuk Nomor WhatsApp ---
 let validationTimeout: NodeJS.Timeout | null = null
 function whatsappValidationRule(v: string) {
-  const isFormatBasicallyCorrect = phoneFormatRules.every(rule => rule(v) === true)
-  if (isFormatBasicallyCorrect !== true)
-    return true
+  const isFormatBasicallyCorrect = phoneFormatRules.every(rule => rule(v) === true)
+  if (isFormatBasicallyCorrect !== true)
+    return true
 
-return new Promise<boolean | string>((resolve) => {
-  if (validationTimeout !== null)
-    clearTimeout(validationTimeout)
+  return new Promise<boolean | string>((resolve) => {
+    if (validationTimeout !== null)
+      clearTimeout(validationTimeout)
 
-  validationTimeout = setTimeout(async () => {
-    try {
-      const response = await $fetch('/api/users/validate-whatsapp', {
-        method: 'POST',
-        body: { phone_number: v },
-        timeout: 3000 // 3 detik timeout
-      })
+    validationTimeout = setTimeout(async () => {
+      try {
+        const response = await $fetch('/api/users/validate-whatsapp', {
+          method: 'POST',
+          body: { phone_number: v },
+          timeout: 3000 // 3 detik timeout
+        })
 
-      if (response.isValid === true) {
-        resolve(true)
-      } else {
-        let errorMsg = 'Nomor WhatsApp tidak valid'
-        
-        // Berikan pesan lebih spesifik
-        if (response.message.includes('terdaftar')) {
-          errorMsg = 'Nomor sudah terdaftar di sistem'
-        } else if (response.message.includes('aktif')) {
-          errorMsg = 'Nomor tidak aktif di WhatsApp'
-        } else if (response.message.includes('timeout')) {
-          errorMsg = 'Validasi timeout, coba lagi'
-        }
-        
-        resolve(errorMsg)
-      }
-    } catch (error: any) {
-      let errorMsg = 'Gagal memvalidasi nomor'
-      
-      // Handle timeout khusus
-      if (error.name === 'FetchError' && error.message.includes('timed out')) {
-        errorMsg = 'Timeout: Layanan validasi tidak merespon'
-      }
-      
-      resolve(errorMsg)
-    }
-  }, 500)
-})
+        if (response.isValid === true) {
+          resolve(true)
+        } else {
+          let errorMsg = 'Nomor WhatsApp tidak valid'
+
+          // Berikan pesan lebih spesifik
+          if (response.message.includes('terdaftar')) {
+            errorMsg = 'Nomor sudah terdaftar di sistem'
+          } else if (response.message.includes('aktif')) {
+            errorMsg = 'Nomor tidak aktif di WhatsApp'
+          } else if (response.message.includes('timeout')) {
+            errorMsg = 'Validasi timeout, coba lagi'
+          }
+
+          resolve(errorMsg)
+        }
+      } catch (error: any) {
+        let errorMsg = 'Gagal memvalidasi nomor'
+
+        // Handle timeout khusus
+        if (error.name === 'FetchError' && error.message.includes('timed out')) {
+          errorMsg = 'Timeout: Layanan validasi tidak merespon'
+        }
+
+        resolve(errorMsg)
+      }
+    }, 500)
+  })
+} // <-- Kurung kurawal penutup ini yang hilang
 
 // --- Fungsi Helper ---
 async function tryFocus(refInstance: { focus?: () => void } | null) {
-  await nextTick()
-  if (refInstance !== null)
-    refInstance.focus?.()
+  await nextTick()
+  if (refInstance !== null)
+    refInstance.focus?.()
 }
 
 // --- Handler Aksi Form ---
 async function handleRequestOtp() {
-  if (loginFormRef.value === null)
-    return
+  if (loginFormRef.value === null)
+    return
 
-  const { valid } = await loginFormRef.value.validate()
-  if (valid !== true)
-    return
+  const { valid } = await loginFormRef.value.validate()
+  if (valid !== true)
+    return
 
-  try {
-    const numberToSend = normalize_to_e164(phoneNumber.value)
-    const success = await authStore.requestOtp(numberToSend)
-    if (success === true) {
-      otpSent.value = true
-      tryFocus(otpInputRef.value)
-    }
-  }
-  catch (error: any) {
-    let errorMessage = 'Format nomor telepon tidak valid.'
-    // [PERBAIKAN] Pengecekan bertingkat untuk memuaskan linter.
-    if (error instanceof Error) {
-      if (error.message !== '')
-        errorMessage = error.message
-    }
-    authStore.setError(errorMessage)
-  }
+  try {
+    const numberToSend = normalize_to_e164(phoneNumber.value)
+    const success = await authStore.requestOtp(numberToSend)
+    if (success === true) {
+      otpSent.value = true
+      tryFocus(otpInputRef.value)
+    }
+  }
+  catch (error: any) {
+    let errorMessage = 'Format nomor telepon tidak valid.'
+    // [PERBAIKAN] Pengecekan bertingkat untuk memuaskan linter.
+    if (error instanceof Error) {
+      if (error.message !== '')
+        errorMessage = error.message
+    }
+    authStore.setError(errorMessage)
+  }
 }
 
 async function handleVerifyOtp() {
-  if (loginFormRef.value === null)
-    return
+  if (loginFormRef.value === null)
+    return
 
-  const { valid } = await loginFormRef.value.validate()
-  if (valid !== true)
-    return
+  const { valid } = await loginFormRef.value.validate()
+  if (valid !== true)
+    return
 
-  try {
-    const numberToVerify = normalize_to_e164(phoneNumber.value)
-    const loginSuccess = await authStore.verifyOtp(numberToVerify, otpCode.value)
-    if (loginSuccess !== true) {
-      otpCode.value = ''
-      tryFocus(otpInputRef.value)
-    }
-  }
-  catch (error: any) {
-    let errorMessage = 'Terjadi masalah dengan nomor telepon.'
-    // [PERBAIKAN] Pengecekan bertingkat untuk memuaskan linter.
-    if (error instanceof Error) {
-      if (error.message !== '')
-        errorMessage = error.message
-    }
-    authStore.setError(errorMessage)
-    resetLoginView()
-  }
+  try {
+    const numberToVerify = normalize_to_e164(phoneNumber.value)
+    const loginSuccess = await authStore.verifyOtp(numberToVerify, otpCode.value)
+    if (loginSuccess !== true) {
+      otpCode.value = ''
+      tryFocus(otpInputRef.value)
+    }
+  }
+  catch (error: any) {
+    let errorMessage = 'Terjadi masalah dengan nomor telepon.'
+    // [PERBAIKAN] Pengecekan bertingkat untuk memuaskan linter.
+    if (error instanceof Error) {
+      if (error.message !== '')
+        errorMessage = error.message
+    }
+    authStore.setError(errorMessage)
+    resetLoginView()
+  }
 }
 
 async function handleRegister() {
-  if (registerFormRef.value === null)
-    return
-  const { valid } = await registerFormRef.value.validate()
-  if (valid !== true) {
-    addSnackbar({
-      title: 'Validasi Gagal',
-      text: 'Silakan periksa kembali semua data yang wajib diisi, termasuk memastikan nomor WhatsApp valid.',
-      type: 'warning',
-    })
-    return
-  }
+  if (registerFormRef.value === null)
+    return
+  const { valid } = await registerFormRef.value.validate()
+  if (valid !== true) {
+    addSnackbar({
+      title: 'Validasi Gagal',
+      text: 'Silakan periksa kembali semua data yang wajib diisi, termasuk memastikan nomor WhatsApp valid.',
+      type: 'warning',
+    })
+    return
+  }
 
-  let numberToSend: string
-  try {
-    numberToSend = normalize_to_e164(regPhoneNumber.value)
-  }
-  catch (error: any) {
-    let errorMessage = 'Format nomor WhatsApp tidak valid.'
-    // [PERBAIKAN] Pengecekan bertingkat untuk memuaskan linter.
-    if (error instanceof Error) {
-      if (error.message !== '')
-        errorMessage = error.message
-    }
-    authStore.setError(errorMessage)
+  let numberToSend: string
+  try {
+    numberToSend = normalize_to_e164(regPhoneNumber.value)
+  }
+  catch (error: any) {
+    let errorMessage = 'Format nomor WhatsApp tidak valid.'
+    // [PERBAIKAN] Pengecekan bertingkat untuk memuaskan linter.
+    if (error instanceof Error) {
+      if (error.message !== '')
+        errorMessage = error.message
+    }
+    authStore.setError(errorMessage)
 
-    return
-  }
+    return
+  }
 
-  const registrationPayload = {
-    full_name: regName.value,
-    phone_number: numberToSend,
-    blok: showAddressFields.value ? regBlock.value : null,
-    kamar: showAddressFields.value ? regKamar.value : null,
-    register_as_komandan: regRole.value === 'KOMANDAN',
-  }
+  const registrationPayload = {
+    full_name: regName.value,
+    phone_number: numberToSend,
+    blok: showAddressFields.value ? regBlock.value : null,
+    kamar: showAddressFields.value ? regKamar.value : null,
+    register_as_komandan: regRole.value === 'KOMANDAN',
+  }
 
-  const registerSuccess = await authStore.register(registrationPayload)
-  if (registerSuccess === true)
-    viewState.value = 'success'
+  const registerSuccess = await authStore.register(registrationPayload)
+  if (registerSuccess === true)
+    viewState.value = 'success'
 }
 
 // --- Fungsi Reset View ---
 function resetLoginView() {
-  otpSent.value = false
-  phoneNumber.value = ''
-  otpCode.value = ''
-  authStore.clearError()
-  authStore.clearMessage()
-  if (loginFormRef.value !== null)
-    loginFormRef.value.resetValidation()
+  otpSent.value = false
+  phoneNumber.value = ''
+  otpCode.value = ''
+  authStore.clearError()
+  authStore.clearMessage()
+  if (loginFormRef.value !== null)
+    loginFormRef.value.resetValidation()
 }
 
 function backToForms() {
-  viewState.value = 'form'
-  currentTab.value = 'login'
-  resetLoginView()
+  viewState.value = 'form'
+  currentTab.value = 'login'
+  resetLoginView()
 
-  regName.value = ''
-  regPhoneNumber.value = ''
-  regRole.value = 'USER'
-  regBlock.value = null
-  regKamar.value = null
-  if (registerFormRef.value !== null)
-    registerFormRef.value.reset()
+  regName.value = ''
+  regPhoneNumber.value = ''
+  regRole.value = 'USER'
+  regBlock.value = null
+  regKamar.value = null
+  if (registerFormRef.value !== null)
+    registerFormRef.value.reset()
 }
 
 // --- Watchers untuk menampilkan Notifikasi dan Perbaikan Bug ---
 watch(() => authStore.error, (newError) => {
-  if (typeof newError === 'string' && newError.length > 0) {
-    addSnackbar({
-      title: 'Terjadi Kesalahan',
-      text: newError,
-      type: 'error',
-    })
-    authStore.clearError()
-  }
+  if (typeof newError === 'string' && newError.length > 0) {
+    addSnackbar({
+      title: 'Terjadi Kesalahan',
+      text: newError,
+      type: 'error',
+    })
+    authStore.clearError()
+  }
 })
 
 watch(() => authStore.message, (newMessage) => {
-  if (typeof newMessage === 'string' && newMessage.length > 0) {
-    addSnackbar({
-      title: 'Informasi',
-      text: newMessage,
-      type: 'success',
-    })
-    authStore.clearMessage()
-  }
+  if (typeof newMessage === 'string' && newMessage.length > 0) {
+    addSnackbar({
+      title: 'Informasi',
+      text: newMessage,
+      type: 'success',
+    })
+    authStore.clearMessage()
+  }
 })
 
 watch(regRole, () => {
-  if (registerFormRef.value !== null)
-    registerFormRef.value.resetValidation()
+  if (registerFormRef.value !== null)
+    registerFormRef.value.resetValidation()
 })
 </script>
 
