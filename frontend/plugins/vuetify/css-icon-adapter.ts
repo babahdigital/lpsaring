@@ -6,32 +6,40 @@ import { h } from 'vue'
  * Adapter ini mengintegrasikan sistem ikon berbasis CSS (dihasilkan oleh build-icons.ts) dengan Vuetify.
  * Ia akan mengubah nama ikon seperti 'tabler:chevron-down' menjadi elemen <i> dengan
  * kelas CSS yang sesuai, yaitu 'icon--tabler--chevron-down'.
+ *
+ * Versi ini lebih tangguh untuk menangani format ikon yang salah.
  */
 const CssIconAdapter: IconSet = {
-  // --- PERBAIKAN DI SINI ---
-  // Kita perbarui tipe props untuk menyertakan 'class' yang merupakan fallthrough attribute.
   component: (props: IconProps & { class?: string }) => {
-    // Memisahkan nama ikon dari prefix-nya. Contoh: 'tabler:chevron-down'
     const iconName = (props.icon as string) || ''
-    const [prefix, name] = iconName.split(':')
 
-    if (!prefix || !name) {
-      // Menangani kasus jika format ikon salah
-      console.warn(`Invalid icon name format: ${iconName}. Expected format: 'prefix:name'.`)
-      return h('i') // Mengembalikan elemen kosong
+    // Pengecekan 1: Menangani ikon MDI yang salah format (menggunakan 'mdi-' bukan 'mdi:')
+    // Ikon ini seharusnya di-routing ke 'mdi' set, bukan ke sini (adapter 'tabler').
+    if (iconName.startsWith('mdi-')) {
+      console.warn(`[Ikon Vuetify] Format ikon MDI salah: "${iconName}". Seharusnya menggunakan format "mdi:nama-ikon" (dengan titik dua) agar dapat di-render dengan benar oleh set 'mdi'. Ikon ini akan dilewati oleh adapter 'tabler'.`)
+      // Kembalikan elemen kosong agar tidak error, tapi teruskan props seperti class
+      return h('i', { ...props })
     }
 
-    // Menghasilkan elemen `<i>` dengan kelas yang akan dicocokkan oleh icons.css
-    // Contoh: <i class="icon--tabler--chevron-down"></i>
+    // Pengecekan 2: Menangani format standar 'prefix:nama'
+    if (iconName.includes(':')) {
+      const [prefix, name] = iconName.split(':', 2)
+      const iconClass = `icon--${prefix}--${name}`
+      return h('i', { ...props, class: [iconClass, props.class] })
+    }
+
+    // Pengecekan 3: Menangani format yang berpotensi salah seperti 'tabler-nama'
+    if (iconName.includes('-')) {
+        console.warn(`[Ikon Vuetify] Format ikon berpotensi salah: "${iconName}". Adapter mengharapkan format "prefix:nama". Mohon periksa kembali kode Anda.`)
+    }
+
+    // Penanganan Fallback: Asumsikan ikon tanpa prefix adalah bagian dari 'tabler' set
+    // Ini akan menangani kasus seperti 'chevron-down'
+    const prefix = 'tabler'
+    const name = iconName
     const iconClass = `icon--${prefix}--${name}`
 
-    // Menggunakan h() dari Vue untuk membuat elemen secara programmatic
-    // Vue akan secara otomatis menggabungkan `props.class` dari parent
-    // dengan `iconClass` yang kita definisikan di sini.
-    return h('i', {
-      ...props,
-      class: [iconClass, props.class], // Sekarang props.class dikenali oleh TypeScript
-    })
+    return h('i', { ...props, class: [iconClass, props.class] })
   },
 }
 
