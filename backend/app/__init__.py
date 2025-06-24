@@ -15,7 +15,8 @@ from jose import jwt, JWTError, ExpiredSignatureError
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from config import config_options, Config
-from .extensions import db, migrate, cors, limiter
+# Import celery_app dan make_celery_app dari extensions
+from .extensions import db, migrate, cors, limiter, celery_app, make_celery_app
 from .infrastructure.db.models import UserRole
 from .infrastructure.http.json_provider import CustomJSONProvider
 from .services import settings_service
@@ -101,7 +102,6 @@ def register_extensions(app: Flask):
         module_log.info("Rate limiter diinisialisasi.")
     
     if not app.testing:
-        # DIKEMBALIKAN: Konfigurasi Redis yang lebih aman dengan parameter terpisah
         try:
             app.redis_client_otp = redis.Redis(
                 host=app.config['REDIS_HOST_OTP'],
@@ -119,6 +119,14 @@ def register_extensions(app: Flask):
     else:
         app.redis_client_otp = None
         
+    # --- INTEGRASI CELERY APP ---
+    # Panggil make_celery_app dengan instance aplikasi Flask.
+    # Ini akan menginisialisasi Celery dengan konfigurasi Flask Anda
+    # dan mengaitkan task dengan app context Flask.
+    make_celery_app(app) 
+    module_log.info("Celery diinisialisasi dan dikaitkan dengan aplikasi Flask.")
+    # --- AKHIR INTEGRASI CELERY APP ---
+
     module_log.info("Pendaftaran ekstensi selesai.")
 
 def register_blueprints(app: Flask):
@@ -238,7 +246,7 @@ def create_app(config_name: str = None) -> Flask:
 
     # --- Inisialisasi Komponen Aplikasi ---
     setup_logging(app)
-    register_extensions(app)
+    register_extensions(app) # Ini akan menginisialisasi semua ekstensi, termasuk Celery
     register_models(app)
     register_blueprints(app)
     register_test_routes(app) # Memanggil kembali fungsi pendaftaran rute tes
