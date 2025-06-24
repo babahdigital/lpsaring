@@ -19,32 +19,38 @@ def format_datetime_to_wita(dt_utc: Optional[datetime]) -> str:
 def normalize_to_e164(phone_number: str) -> str:
     """
     Menormalisasi berbagai format nomor telepon Indonesia ke format E.164 (+62).
-    Aturan validasi: Nomor lokal (08xx) harus 10-12 digit.
+    Menerima format: 08xxx, +628xxx, 628xxx, 8xxx
+    Aturan validasi: 
+    - Panjang total 10-12 digit untuk format lokal (08xx)
+    - Digit setelah +62 harus 8-10 digit
     """
     if not phone_number or not isinstance(phone_number, str):
         raise ValueError("Nomor telepon tidak boleh kosong.")
-    cleaned = re.sub(r'[\s\-()+]', '', phone_number).strip()
+    
+    # Bersihkan semua karakter non-digit
+    cleaned = re.sub(r'[^\d]', '', phone_number)
     if not cleaned:
         raise ValueError("Nomor telepon tidak boleh kosong.")
     
-    e164_number = ""
-    if cleaned.startswith('08'):
+    # Terima berbagai format awal
+    if cleaned.startswith('0'):
+        # Format 08xxx -> +628xxx
         e164_number = '+62' + cleaned[1:]
-    elif cleaned.startswith('628'):
+    elif cleaned.startswith('62'):
+        # Format 628xxx -> +628xxx
         e164_number = '+' + cleaned
-    elif cleaned.startswith('+628'):
-        e164_number = cleaned
-    elif cleaned.startswith('8') and len(cleaned) >= 9: # Minimal 8 diikuti 9 digit
+    elif cleaned.startswith('8'):
+        # Format 8xxx -> +628xxx
         e164_number = '+62' + cleaned
     else:
         raise ValueError(f"Format awalan nomor telepon '{phone_number}' tidak valid. Gunakan awalan 08, 628, atau +628.")
 
-    # Aturan baru: panjang total nomor lokal 10-12 digit, berarti E.164 adalah 12-14 digit.
+    # Validasi panjang: 12-14 digit untuk format E.164
     if not (12 <= len(e164_number) <= 14):
         raise ValueError(f"Panjang nomor telepon tidak valid. Harus antara 10-12 digit untuk format lokal (misal: 08xx).")
     
-    # Regex baru: setelah +628, harus ada 8-10 digit lagi.
-    # [1-9] (1 digit) + [0-9]{7,9} (7-9 digit) = total 8-10 digit.
+    # Validasi pola: setelah +628, harus ada 8-10 digit angka
+    # [1-9] (digit pertama harus 1-9) + [0-9]{7,9} (7-9 digit berikutnya)
     if not re.match(r'^\+628[1-9][0-9]{7,9}$', e164_number):
         raise ValueError(f"Nomor telepon '{phone_number}' memiliki format yang tidak valid.")
         
@@ -52,63 +58,43 @@ def normalize_to_e164(phone_number: str) -> str:
 
 def format_to_local_phone(phone_number: Optional[str]) -> Optional[str]:
     """Mengubah format E.164 (+62) atau format lain menjadi format lokal (08)."""
-    if not phone_number: return None
+    if not phone_number: 
+        return None
+        
     try:
-        cleaned = re.sub(r'[^\d+]', '', str(phone_number)).strip()
-        if cleaned.startswith('+628'): return '0' + cleaned[3:]
-        if cleaned.startswith('628'): return '0' + cleaned[2:]
-        if cleaned.startswith('08'): return cleaned
-        if cleaned.startswith('8'): return '0' + cleaned
-        return re.sub(r'\D', '', cleaned)
+        # Bersihkan nomor dan pertahankan hanya digit
+        cleaned = re.sub(r'[^\d]', '', str(phone_number))
+        
+        # Konversi berbagai format ke 08xxx
+        if cleaned.startswith('62'):
+            return '0' + cleaned[2:]
+        elif cleaned.startswith('8'):
+            return '0' + cleaned
+        elif cleaned.startswith('0'):
+            return cleaned
+        else:
+            # Untuk nomor asing, kembalikan tanpa modifikasi
+            return cleaned
     except Exception:
         return None
 
 def get_phone_number_variations(query: str) -> List[str]:
     """Menghasilkan variasi format nomor telepon untuk pencarian di database."""
-    if not query or not query.isdigit(): return [query] # Kembalikan query jika bukan digit (untuk pencarian nama)
+    if not query or not query.isdigit(): 
+        return [query] # Kembalikan query jika bukan digit (untuk pencarian nama)
+    
     variations = {query}
     try:
         normalized_query = normalize_to_e164(query)
-        local_part = normalized_query[3:]
-        variations.add(normalized_query)
-        variations.add('628' + local_part)
-        variations.add('08' + local_part)
+        local_part = normalized_query[3:]  # Hilangkan '+62'
+        
+        # Tambahkan variasi format
+        variations.add(normalized_query)      # +628xxx
+        variations.add('62' + local_part)     # 628xxx
+        variations.add('0' + local_part)      # 08xxx
+        variations.add(local_part)            # 8xxx
     except ValueError:
-        pass # Abaikan jika query tidak bisa dinormalisasi, tetap gunakan query asli
+        # Jika normalisasi gagal, tetap gunakan query asli
+        pass
+        
     return list(variations)
-
-def normalize_to_e164(phoneNumber: str | None) -> str:
-    """
-    [SEMPURNA] Menormalisasi nomor telepon Indonesia ke format E.164 (+62).
-    SEKARANG DENGAN ATURAN VALIDASI KETAT:
-    1. Input WAJIB diawali dengan '0'.
-    2. Panjang input (setelah dibersihkan) WAJIB antara 10-12 digit.
-    3. Format lain (+62, 62, 8xx) akan ditolak.
-    """
-    if phoneNumber is None or not isinstance(phoneNumber, str):
-        raise ValueError('Nomor telepon tidak boleh kosong.')
-
-    # Menghapus spasi, strip, dan kurung, tapi membiarkan + untuk pengecekan awal
-    cleaned = phoneNumber.strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
-
-    if not cleaned:
-        raise ValueError('Nomor telepon tidak boleh kosong.')
-
-    # ATURAN 1: Input WAJIB diawali dengan '0'
-    if not cleaned.startswith('0'):
-        raise ValueError('Format tidak valid. Nomor telepon harus diawali dengan angka 0.')
-
-    # ATURAN 2: Panjang input WAJIB 10-12 digit
-    if not (10 <= len(cleaned) <= 12):
-        raise ValueError('Panjang nomor telepon harus antara 10 hingga 12 digit.')
-    
-    # ATURAN 3: Format Regex untuk memastikan format 08[1-9]...
-    # Ini mencegah nomor seperti 0000000000 atau 08A...
-    if not cleaned.isdigit() or not cleaned.startswith('08') or not cleaned[2].isdigit() or int(cleaned[2]) == 0:
-        raise ValueError('Format nomor telepon tidak valid.')
-
-    # Jika semua aturan di atas lolos, baru kita normalisasi ke E.164
-    # Karena sudah pasti diawali '0', logikanya menjadi sangat sederhana.
-    e164_number = f"+62{cleaned[1:]}"
-    
-    return e164_number
