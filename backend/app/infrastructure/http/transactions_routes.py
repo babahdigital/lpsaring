@@ -14,7 +14,7 @@ from flask import (
     Blueprint, abort, current_app, jsonify, make_response, render_template, request
 )
 # Impor yang sudah diperbaiki
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, Field # <-- Pastikan Field diimpor
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import selectinload
 
@@ -132,12 +132,16 @@ def _format_status_filter(value): return format_status(value)
 class _InitiateTransactionRequestSchema(BaseModel):
     package_id: uuid.UUID
 
+# --- PERBAIKAN SKEMA DI SINI ---
 class _InitiateTransactionResponseSchema(BaseModel):
     snap_token: Optional[str] = None
-    transaction_id: str
-    order_id: str
-    redirect_url: Optional[str] = None
-    class Config: from_attributes = True
+    transaction_id: str = Field(..., alias='id')
+    order_id: str = Field(..., alias='midtrans_order_id')
+    redirect_url: Optional[str] = Field(None, alias='snap_redirect_url')
+    
+    class Config:
+        from_attributes = True
+# ---------------------------------
 
 # --- ENDPOINTS ---
 @transactions_bp.route("/initiate", methods=["POST"])
@@ -189,7 +193,7 @@ def initiate_transaction(current_user_id: uuid.UUID):
 
         # Gunakan model_validate untuk membuat skema respons dari objek ORM
         response_data = _InitiateTransactionResponseSchema.model_validate(new_transaction, from_attributes=True)
-        return jsonify(response_data.model_dump(exclude_none=True)), HTTPStatus.OK
+        return jsonify(response_data.model_dump(by_alias=False, exclude_none=True)), HTTPStatus.OK
 
     except Exception as e:
         db.session.rollback()
