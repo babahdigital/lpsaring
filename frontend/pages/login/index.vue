@@ -68,7 +68,7 @@ const requiredRule = (v: any) => (v !== null && v !== undefined && v !== '') || 
 
 // --- [BARU] Aturan Validasi Asinkron untuk Nomor WhatsApp ---
 let validationTimeout: NodeJS.Timeout | null = null
-const whatsappValidationRule = (v: string) => {
+function whatsappValidationRule(v: string) {
   // Hanya jalankan validasi jika format dasar sudah benar untuk efisiensi
   const isFormatBasicallyCorrect = phoneFormatRules.every(rule => rule(v) === true)
   if (!isFormatBasicallyCorrect)
