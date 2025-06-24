@@ -477,14 +477,13 @@ def get_transaction_invoice(current_user_id: uuid.UUID, midtrans_order_id: str):
 @transactions_bp.route("/invoice/temp/<string:token>", methods=["GET"])
 def get_temp_transaction_invoice(token: str):
     """
-    Menyajikan file PDF invoice menggunakan token akses sementara.
-    Endpoint ini tidak memerlukan autentikasi @token_required karena token itu sendiri
-    adalah bentuk otorisasi yang aman dan berumur pendek.
+    Endpoint BARU. Menyajikan file PDF invoice menggunakan token akses sementara.
+    Tidak memerlukan @token_required karena token itu sendiri adalah otorisasi.
     """
-    if not WEASYPRINT_AVAILABLE or not HTML_MODULE:
+    if not WEASYPRINT_AVAILABLE or not HTML:
         abort(HTTPStatus.NOT_IMPLEMENTED, "Komponen PDF server tidak tersedia.")
 
-    # Verifikasi token. Max age bisa disesuaikan, misal 1 jam (3600 detik)
+    # Verifikasi token dari notification_service, berlaku 1 jam
     transaction_id = verify_temp_invoice_token(token, max_age_seconds=3600)
     if not transaction_id:
         abort(HTTPStatus.FORBIDDEN, description="Akses tidak valid atau link telah kedaluwarsa.")
@@ -497,13 +496,10 @@ def get_temp_transaction_invoice(token: str):
         ).filter(Transaction.id == uuid.UUID(transaction_id)).first()
 
         if not transaction or transaction.status != TransactionStatus.SUCCESS:
-            abort(HTTPStatus.NOT_FOUND, description="Invoice tidak ditemukan atau transaksi belum berhasil.")
+            abort(HTTPStatus.NOT_FOUND, "Invoice tidak ditemukan atau transaksi belum berhasil.")
 
-        # Logika pembuatan PDF sama persis dengan endpoint get_transaction_invoice
         app_tz = dt_timezone(timedelta(hours=int(current_app.config.get("APP_TIMEZONE_OFFSET", 8))))
-        user_kamar_display = transaction.user.kamar
-        if user_kamar_display and user_kamar_display.startswith("Kamar_"):
-             user_kamar_display = user_kamar_display.replace("Kamar_", "")
+        user_kamar_display = transaction.user.kamar.replace("Kamar_", "") if transaction.user.kamar else ""
         context = {
             'transaction': transaction, 'user': transaction.user, 'package': transaction.package,
             'user_kamar_value': user_kamar_display,
@@ -514,22 +510,17 @@ def get_temp_transaction_invoice(token: str):
             'invoice_date_local': datetime.now(app_tz),
         }
         html_string = render_template('invoice_template.html', **context)
-        pdf_bytes = HTML_MODULE(string=html_string, base_url=request.url_root).write_pdf()
-
-        if not pdf_bytes:
-            abort(HTTPStatus.INTERNAL_SERVER_ERROR, "Gagal menghasilkan file PDF.")
+        pdf_bytes = HTML(string=html_string, base_url=request.url_root).write_pdf()
             
         response = make_response(pdf_bytes)
         response.headers['Content-Type'] = 'application/pdf'
-        # Gunakan 'inline' agar bisa langsung ditampilkan jika dibuka di browser
         response.headers['Content-Disposition'] = f'inline; filename="invoice-{transaction.midtrans_order_id}.pdf"'
         
-        current_app.logger.info(f"Invoice sementara untuk order {transaction.midtrans_order_id} berhasil diakses.")
         return response
 
     except Exception as e:
         if session.is_active: session.rollback()
-        current_app.logger.error(f"Error saat membuat invoice sementara PDF untuk token: {e}", exc_info=True)
-        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description=f"Kesalahan tak terduga saat membuat invoice: {e}")
+        current_app.logger.error(f"Error saat membuat invoice sementara PDF: {e}", exc_info=True)
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Kesalahan tak terduga saat membuat invoice.")
     finally:
         if session: session.remove()
