@@ -120,7 +120,14 @@ def create_user_by_admin(admin_actor: User, data: Dict[str, Any]) -> Tuple[bool,
             context = { "password": portal_password, "link_admin_app": settings_service.get_setting("LINK_ADMIN_APP", "http://localhost/admin") }
             _send_whatsapp_notification(phone_number, "admin_creation_success", context)
         else:
-            context = {"full_name": new_user.full_name, "username": format_to_local_phone(new_user.phone_number), "password": new_user.mikrotik_password}
+            # === [PERBAIKAN DI SINI] ===
+            # Mengubah kunci 'username' -> 'hotspot_username' dan 'password' -> 'hotspot_password'
+            # agar sesuai dengan template notifikasi.
+            context = {
+                "full_name": new_user.full_name, 
+                "hotspot_username": format_to_local_phone(new_user.phone_number), 
+                "hotspot_password": new_user.mikrotik_password
+            }
             _send_whatsapp_notification(phone_number, "user_approve_with_password", context)
 
         return True, "Pengguna baru berhasil dibuat dan disetujui.", new_user
@@ -155,7 +162,12 @@ def reset_user_hotspot_password(user_to_reset: User, admin_actor: User) -> Tuple
 
     user_to_reset.mikrotik_password = new_mikrotik_password
     _log_admin_action(admin_actor, user_to_reset, AdminActionType.RESET_HOTSPOT_PASSWORD, {"synced": True})
-    context = {"full_name": user_to_reset.full_name, "username": mikrotik_username, "password": new_mikrotik_password}
+    # [PERBAIKAN KONSISTENSI] Menyamakan kunci placeholder di sini juga
+    context = {
+        "full_name": user_to_reset.full_name, 
+        "hotspot_username": mikrotik_username, 
+        "hotspot_password": new_mikrotik_password
+    }
     _send_whatsapp_notification(user_to_reset.phone_number, "user_hotspot_password_reset_by_admin", context)
     return True, "Password hotspot berhasil direset dan notifikasi telah dikirim."
 
