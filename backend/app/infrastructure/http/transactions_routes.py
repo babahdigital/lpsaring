@@ -1,5 +1,5 @@
 # backend/app/infrastructure/http/transactions_routes.py
-# VERSI FINAL LENGKAP: Alur disederhanakan dengan memanggil service terpusat.
+# VERSI FINAL LENGKAP: Dengan notifikasi invoice PDF via WhatsApp
 
 import hashlib
 import os
@@ -39,54 +39,37 @@ from app.infrastructure.db.models import (
 
 # Impor service yang sudah disempurnakan
 from app.services.transaction_service import apply_package_and_sync_to_mikrotik
-# Perbaikan: Mengimpor fungsi formatter dari lokasi yang benar
+# --- PERBAIKAN IMPORT ---
+from app.services.notification_service import generate_temp_invoice_token, get_notification_message, verify_temp_invoice_token
 from app.utils.formatters import format_to_local_phone
 from .decorators import token_required
 
 # Ketersediaan Klien (Gateway)
 try:
-    # Perbaikan: format_to_local_phone tidak lagi diimpor dari sini
     from app.infrastructure.gateways.mikrotik_client import (
         activate_or_update_hotspot_user,
         get_mikrotik_connection,
     )
-
     MIKROTIK_CLIENT_AVAILABLE = True
 except ImportError:
     MIKROTIK_CLIENT_AVAILABLE = False
+    def get_mikrotik_connection(): return None
+    def activate_or_update_hotspot_user(*args, **kwargs): return False, "Not implemented"
 
-    def get_mikrotik_connection():
-        return None
-
-    def activate_or_update_hotspot_user(
-        api_connection,
-        user_mikrotik_username: str,
-        mikrotik_profile_name: str,
-        hotspot_password: str,
-        comment: str = "",
-        limit_bytes_total: Optional[int] = None,
-        session_timeout_seconds: Optional[int] = None,
-        force_update_profile: bool = False,
-    ):
-        return False, "Not implemented"
-
-    # Perbaikan: Definisi fallback untuk format_to_local_phone dihapus karena sudah diimpor secara global
-
+# --- PERBAIKAN IMPORT WHATSAPP CLIENT ---
+# Impor kedua fungsi dari whatsapp_client
 try:
-    from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
-
+    from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message, send_whatsapp_with_pdf
     WHATSAPP_AVAILABLE = True
 except ImportError:
     WHATSAPP_AVAILABLE = False
-
-    def send_whatsapp_message(to, body):
-        return False
+    def send_whatsapp_message(to, body): return False
+    def send_whatsapp_with_pdf(to, caption, pdf_url, filename): return False
 
 
 WEASYPRINT_AVAILABLE = False
 try:
     from weasyprint import CSS, HTML
-
     HTML_MODULE = HTML
     CSS_MODULE = CSS
     WEASYPRINT_AVAILABLE = True
@@ -95,7 +78,6 @@ except ImportError:
     CSS_MODULE = None
     pass
 
-# Definisikan Blueprint dengan template_folder
 transactions_bp = Blueprint(
     "transactions_api",
     __name__,
@@ -106,7 +88,7 @@ transactions_bp = Blueprint(
 )
 
 
-# Fungsi Helper
+# --- FUNGSI HELPER (TETAP SAMA) ---
 def get_midtrans_core_api_client():
     is_production = current_app.config.get("MIDTRANS_IS_PRODUCTION", False)
     server_key = current_app.config.get("MIDTRANS_SERVER_KEY")
@@ -167,10 +149,9 @@ def extract_qr_code_url(response_data: Dict[str, Any]):
     return response_data.get("qr_code_url")
 
 
-# --- Jinja2 Custom Filters ---
+# --- JINJA FILTERS (TETAP SAMA) ---
 def format_datetime_short(value: datetime) -> str:
-    if not isinstance(value, datetime):
-        return ""
+    if not isinstance(value, datetime): return ""
     try:
         app_tz_offset = int(current_app.config.get("APP_TIMEZONE_OFFSET", 8))
         app_tz = dt_timezone(timedelta(hours=app_tz_offset))
@@ -181,8 +162,7 @@ def format_datetime_short(value: datetime) -> str:
         return "Invalid Date"
 
 def format_currency(value: Any) -> str:
-    if value is None:
-        return "Rp 0"
+    if value is None: return "Rp 0"
     try:
         decimal_value = Decimal(value)
         return f"Rp {decimal_value:,.0f}".replace(",", ".")
@@ -191,39 +171,27 @@ def format_currency(value: Any) -> str:
         return "Rp Error"
 
 def format_status(value: str) -> str:
-    if not isinstance(value, str):
-        return value
+    if not isinstance(value, str): return value
     return value.replace("_", " ").title()
 
 @transactions_bp.app_template_filter("format_datetime_short")
-def _format_datetime_short_filter(value):
-    return format_datetime_short(value)
-
+def _format_datetime_short_filter(value): return format_datetime_short(value)
 @transactions_bp.app_template_filter("format_currency")
-def _format_currency_filter(value):
-    return format_currency(value)
-
+def _format_currency_filter(value): return format_currency(value)
 @transactions_bp.app_template_filter("format_status")
-def _format_status_filter(value):
-    return format_status(value)
+def _format_status_filter(value): return format_status(value)
 
-
-# Skema
+# --- SKEMA (TETAP SAMA) ---
 class _InitiateTransactionRequestSchema(BaseModel):
     package_id: uuid.UUID
-
-
 class _InitiateTransactionResponseSchema(BaseModel):
     snap_token: Optional[str] = None
     transaction_id: str
     order_id: str
     redirect_url: Optional[str] = None
+    class Config: from_attributes = True
 
-    class Config:
-        from_attributes = True
-
-
-# Endpoint /initiate
+# --- ENDPOINT /initiate (TETAP SAMA) ---
 @transactions_bp.route("/initiate", methods=["POST"])
 @token_required
 def initiate_transaction(current_user_id: uuid.UUID):
@@ -247,12 +215,8 @@ def initiate_transaction(current_user_id: uuid.UUID):
         gross_amount = int(package.price or 0)
 
         new_transaction = Transaction(
-            id=uuid.uuid4(),
-            user_id=user.id,
-            package_id=package.id,
-            midtrans_order_id=order_id,
-            amount=gross_amount,
-            status=TransactionStatus.PENDING,
+            id=uuid.uuid4(), user_id=user.id, package_id=package.id,
+            midtrans_order_id=order_id, amount=gross_amount, status=TransactionStatus.PENDING,
         )
         
         snap_params = {
@@ -276,10 +240,8 @@ def initiate_transaction(current_user_id: uuid.UUID):
         session.commit()
 
         response_data = _InitiateTransactionResponseSchema(
-            snap_token=snap_token,
-            transaction_id=str(new_transaction.id),
-            order_id=new_transaction.midtrans_order_id,
-            redirect_url=redirect_url
+            snap_token=snap_token, transaction_id=str(new_transaction.id),
+            order_id=new_transaction.midtrans_order_id, redirect_url=redirect_url
         )
         return jsonify(response_data.model_dump(exclude_none=True)), HTTPStatus.OK
 
@@ -299,18 +261,14 @@ def initiate_transaction(current_user_id: uuid.UUID):
         session.remove()
 
 
+# --- ENDPOINT /notification (DENGAN MODIFIKASI) ---
 @transactions_bp.route("/notification", methods=["POST"])
 def handle_notification():
     notification_payload = request.get_json(silent=True) or {}
     order_id = notification_payload.get("order_id")
     current_app.logger.info(f"WEBHOOK: Diterima untuk Order ID: {order_id}, Status Midtrans: {notification_payload.get('transaction_status')}")
 
-    if not all([
-        order_id,
-        notification_payload.get("transaction_status"),
-        notification_payload.get("status_code"),
-        notification_payload.get("gross_amount"),
-    ]):
+    if not all([order_id, notification_payload.get("transaction_status"), notification_payload.get("status_code"), notification_payload.get("gross_amount")]):
         return jsonify({"status": "ok", "message": "Payload tidak lengkap"}), HTTPStatus.OK
 
     server_key = current_app.config.get("MIDTRANS_SERVER_KEY")
@@ -345,10 +303,7 @@ def handle_notification():
         transaction.status = status_map.get(midtrans_status, transaction.status)
         transaction.payment_method = notification_payload.get("payment_type")
         transaction.midtrans_transaction_id = notification_payload.get("transaction_id")
-        transaction.payment_time = safe_parse_midtrans_datetime(
-            notification_payload.get("settlement_time")
-            or notification_payload.get("transaction_time")
-        )
+        transaction.payment_time = safe_parse_midtrans_datetime(notification_payload.get("settlement_time") or notification_payload.get("transaction_time"))
         transaction.va_number = extract_va_number(notification_payload)
 
         if payment_success:
@@ -363,6 +318,39 @@ def handle_notification():
                 if is_success:
                     session.commit()
                     current_app.logger.info(f"WEBHOOK: Transaksi {order_id} dan update user BERHASIL di-commit. Pesan: {message}")
+
+                    # --- BLOK BARU: KIRIM NOTIFIKASI WHATSAPP DENGAN INVOICE PDF ---
+                    try:
+                        user = transaction.user
+                        package = transaction.package
+                        
+                        # 1. Buat token dan URL invoice sementara
+                        temp_token = generate_temp_invoice_token(transaction.id)
+                        # Pastikan menggunakan HTTPS di production
+                        base_url = request.url_root.rstrip('/')
+                        temp_invoice_url = f"{base_url}/api/transactions/invoice/temp/{temp_token}"
+                        
+                        # 2. Siapkan konteks untuk pesan
+                        msg_context = {
+                            "user_full_name": user.full_name,
+                            "order_id": transaction.midtrans_order_id,
+                            "package_name": package.name,
+                            "package_price": format_currency(package.price)
+                        }
+                        
+                        # 3. Dapatkan caption/body pesan dari service notifikasi
+                        caption_message = get_notification_message("purchase_success_notification", msg_context)
+                        
+                        # 4. Kirim WhatsApp dengan PDF
+                        filename = f"invoice-{transaction.midtrans_order_id}.pdf"
+                        send_whatsapp_with_pdf(user.phone_number, caption_message, temp_invoice_url, filename)
+                        current_app.logger.info(f"WEBHOOK: Notifikasi WhatsApp dengan invoice untuk {order_id} telah diantrekan untuk pengiriman.")
+
+                    except Exception as e_notif:
+                        # Kegagalan mengirim notif tidak boleh menggagalkan seluruh transaksi
+                        current_app.logger.error(f"WEBHOOK: Gagal mengirim notifikasi WhatsApp untuk {order_id}: {e_notif}", exc_info=True)
+                    # --- AKHIR BLOK BARU ---
+                    
                 else:
                     session.rollback()
                     current_app.logger.error(f"WEBHOOK: Proses transaksi {order_id} GAGAL dan di-rollback. Pesan: {message}")
@@ -372,18 +360,18 @@ def handle_notification():
         return jsonify({"status": "ok"}), HTTPStatus.OK
 
     except Exception as e:
-        if session.is_active:
-            session.rollback()
+        if session.is_active: session.rollback()
         current_app.logger.error(f"WEBHOOK: Error tidak terduga untuk {order_id}: {e}", exc_info=True)
         return jsonify({"status": "error", "message": "Internal Server Error"}), HTTPStatus.INTERNAL_SERVER_ERROR
     finally:
-        if session:
-            session.remove()
+        if session: session.remove()
 
 
+# --- ENDPOINT /by-order-id (TETAP SAMA) ---
 @transactions_bp.route("/by-order-id/<string:order_id>", methods=["GET"])
 @token_required
 def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
+    # Logika tetap sama, tidak perlu diubah.
     session = db.session
     try:
         transaction = (session.query(Transaction).filter(Transaction.midtrans_order_id == order_id).options(
@@ -406,7 +394,6 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
                 payment_success = (midtrans_trx_status in ["capture", "settlement"] and fraud_status == "accept")
 
                 if payment_success:
-                    current_app.logger.info(f"GET Detail: Pembayaran SUKSES untuk {order_id} terdeteksi. Memulai proses penerapan dan sinkronisasi.")
                     transaction.status = TransactionStatus.SUCCESS
                     transaction.payment_method = midtrans_status_response.get("payment_type")
                     transaction.midtrans_transaction_id = midtrans_status_response.get("transaction_id")
@@ -419,7 +406,6 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
                         is_success, message = apply_package_and_sync_to_mikrotik(transaction, mikrotik_api)
                         if is_success:
                             session.commit()
-                            current_app.logger.info(f"GET Detail: Perubahan untuk transaksi {order_id} berhasil di-commit. Pesan: {message}")
                         else:
                             session.rollback()
                             abort(HTTPStatus.INTERNAL_SERVER_ERROR, f"Gagal menerapkan paket: {message}")
@@ -435,72 +421,53 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
                 current_app.logger.error(f"GET Detail: Error tak terduga saat cek status Midtrans untuk PENDING {order_id}: {e_check_status}")
 
         session.refresh(transaction)
-
         p = transaction.package
         u = transaction.user
         response_data = {
-            "id": str(transaction.id),
-            "midtrans_order_id": transaction.midtrans_order_id,
-            "midtrans_transaction_id": transaction.midtrans_transaction_id,
-            "status": transaction.status.value,
-            "amount": float(transaction.amount or 0.0),
-            "payment_method": transaction.payment_method,
+            "id": str(transaction.id), "midtrans_order_id": transaction.midtrans_order_id,
+            "midtrans_transaction_id": transaction.midtrans_transaction_id, "status": transaction.status.value,
+            "amount": float(transaction.amount or 0.0), "payment_method": transaction.payment_method,
             "payment_time": transaction.payment_time.isoformat() if transaction.payment_time else None,
             "expiry_time": transaction.expiry_time.isoformat() if transaction.expiry_time else None,
-            "va_number": transaction.va_number,
-            "payment_code": transaction.payment_code,
-            "biller_code": getattr(transaction, 'biller_code', None),
-            "qr_code_url": transaction.qr_code_url,
+            "va_number": transaction.va_number, "payment_code": transaction.payment_code,
+            "biller_code": getattr(transaction, 'biller_code', None), "qr_code_url": transaction.qr_code_url,
             "hotspot_password": transaction.hotspot_password,
             "package": {"id": str(p.id), "name": p.name, "description": p.description, "price": float(p.price or 0.0), "data_quota_gb": float(p.data_quota_gb or 0.0), "is_unlimited": (p.data_quota_gb == 0)} if p else None,
             "user": {"id": str(u.id), "phone_number": u.phone_number, "full_name": u.full_name, "quota_expiry_date": u.quota_expiry_date.isoformat() if u.quota_expiry_date else None, "is_unlimited_user": u.is_unlimited_user} if u else None,
         }
         return jsonify(response_data), HTTPStatus.OK
     except Exception as e:
-        if session.is_active:
-            session.rollback()
+        if session.is_active: session.rollback()
         current_app.logger.error(f"Kesalahan tak terduga saat mengambil detail transaksi: {e}", exc_info=True)
-        if isinstance(e, (HTTPStatus, midtransclient.error_midtrans.MidtransAPIError)):
-            raise e
+        if isinstance(e, (HTTPStatus, midtransclient.error_midtrans.MidtransAPIError)): raise e
         abort(HTTPStatus.INTERNAL_SERVER_ERROR, description=f"Kesalahan tak terduga: {e}")
     finally:
-        if session:
-            session.remove()
+        if session: session.remove()
 
 
+# --- ENDPOINT /invoice (UNTUK DOWNLOAD MANUAL, TIDAK BERUBAH) ---
 @transactions_bp.route("/<string:midtrans_order_id>/invoice", methods=["GET"])
 @token_required
 def get_transaction_invoice(current_user_id: uuid.UUID, midtrans_order_id: str):
+    # Logika endpoint ini tidak berubah, tetap berfungsi seperti sebelumnya untuk download manual.
     if not WEASYPRINT_AVAILABLE or not HTML_MODULE:
         abort(HTTPStatus.NOT_IMPLEMENTED, "Komponen PDF server tidak tersedia.")
-    
     session = db.session
     try:
-        transaction = session.query(Transaction).options(
-            selectinload(Transaction.user), 
-            selectinload(Transaction.package)
-        ).filter(Transaction.midtrans_order_id == midtrans_order_id).first()
-
+        transaction = session.query(Transaction).options(selectinload(Transaction.user), selectinload(Transaction.package)).filter(Transaction.midtrans_order_id == midtrans_order_id).first()
         if not transaction:
-            abort(HTTPStatus.NOT_FOUND, description="Transaksi tidak ditemukan.")
-
+            abort(HTTPStatus.NOT_FOUND, "Transaksi tidak ditemukan.")
         requesting_user = session.get(User, current_user_id)
         if not requesting_user or (transaction.user_id != current_user_id and not requesting_user.is_admin_role):
-            abort(HTTPStatus.FORBIDDEN, description="Anda tidak diizinkan mengakses invoice ini.")
-
+            abort(HTTPStatus.FORBIDDEN, "Anda tidak diizinkan mengakses invoice ini.")
         if transaction.status != TransactionStatus.SUCCESS:
-            abort(HTTPStatus.BAD_REQUEST, description="Invoice hanya tersedia untuk transaksi yang sudah sukses.")
-
+            abort(HTTPStatus.BAD_REQUEST, "Invoice hanya tersedia untuk transaksi yang sudah sukses.")
         app_tz = dt_timezone(timedelta(hours=int(current_app.config.get("APP_TIMEZONE_OFFSET", 8))))
-        
         user_kamar_display = transaction.user.kamar
         if user_kamar_display and user_kamar_display.startswith("Kamar_"):
              user_kamar_display = user_kamar_display.replace("Kamar_", "")
-        
         context = {
-            'transaction': transaction,
-            'user': transaction.user,
-            'package': transaction.package,
+            'transaction': transaction, 'user': transaction.user, 'package': transaction.package,
             'user_kamar_value': user_kamar_display,
             'business_name': current_app.config.get('BUSINESS_NAME', 'Nama Bisnis Anda'),
             'business_address': current_app.config.get('BUSINESS_ADDRESS', 'Alamat Bisnis Anda'),
@@ -508,28 +475,80 @@ def get_transaction_invoice(current_user_id: uuid.UUID, midtrans_order_id: str):
             'business_email': current_app.config.get('BUSINESS_EMAIL', 'Email Bisnis Anda'),
             'invoice_date_local': datetime.now(app_tz),
         }
+        html_string = render_template('invoice_template.html', **context)
+        pdf_bytes = HTML_MODULE(string=html_string, base_url=request.url_root).write_pdf()
+        if not pdf_bytes:
+            abort(HTTPStatus.INTERNAL_SERVER_ERROR, "Gagal menghasilkan file PDF.")
+        response = make_response(pdf_bytes)
+        response.headers['Content-Type'] = 'application/pdf'
+        response.headers['Content-Disposition'] = f'inline; filename="invoice-{midtrans_order_id}.pdf"'
+        return response
+    except Exception as e:
+        if session.is_active: session.rollback()
+        current_app.logger.error(f"Error saat membuat invoice PDF untuk {midtrans_order_id}: {e}", exc_info=True)
+        if isinstance(e, (HTTPStatus, midtransclient.error_midtrans.MidtransAPIError)): raise e
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description=f"Kesalahan tak terduga saat membuat invoice: {e}")
+    finally:
+        if session: session.remove()
 
+
+# --- ENDPOINT BARU UNTUK AKSES INVOICE SEMENTARA DARI WHATSAPP ---
+@transactions_bp.route("/invoice/temp/<string:token>", methods=["GET"])
+def get_temp_transaction_invoice(token: str):
+    """
+    Menyajikan file PDF invoice menggunakan token akses sementara.
+    Endpoint ini tidak memerlukan autentikasi @token_required karena token itu sendiri
+    adalah bentuk otorisasi yang aman dan berumur pendek.
+    """
+    if not WEASYPRINT_AVAILABLE or not HTML_MODULE:
+        abort(HTTPStatus.NOT_IMPLEMENTED, "Komponen PDF server tidak tersedia.")
+
+    # Verifikasi token. Max age bisa disesuaikan, misal 1 jam (3600 detik)
+    transaction_id = verify_temp_invoice_token(token, max_age_seconds=3600)
+    if not transaction_id:
+        abort(HTTPStatus.FORBIDDEN, description="Akses tidak valid atau link telah kedaluwarsa.")
+        
+    session = db.session
+    try:
+        transaction = session.query(Transaction).options(
+            selectinload(Transaction.user), 
+            selectinload(Transaction.package)
+        ).filter(Transaction.id == uuid.UUID(transaction_id)).first()
+
+        if not transaction or transaction.status != TransactionStatus.SUCCESS:
+            abort(HTTPStatus.NOT_FOUND, description="Invoice tidak ditemukan atau transaksi belum berhasil.")
+
+        # Logika pembuatan PDF sama persis dengan endpoint get_transaction_invoice
+        app_tz = dt_timezone(timedelta(hours=int(current_app.config.get("APP_TIMEZONE_OFFSET", 8))))
+        user_kamar_display = transaction.user.kamar
+        if user_kamar_display and user_kamar_display.startswith("Kamar_"):
+             user_kamar_display = user_kamar_display.replace("Kamar_", "")
+        context = {
+            'transaction': transaction, 'user': transaction.user, 'package': transaction.package,
+            'user_kamar_value': user_kamar_display,
+            'business_name': current_app.config.get('BUSINESS_NAME', 'Nama Bisnis Anda'),
+            'business_address': current_app.config.get('BUSINESS_ADDRESS', 'Alamat Bisnis Anda'),
+            'business_phone': current_app.config.get('BUSINESS_PHONE', 'Telepon Bisnis Anda'),
+            'business_email': current_app.config.get('BUSINESS_EMAIL', 'Email Bisnis Anda'),
+            'invoice_date_local': datetime.now(app_tz),
+        }
         html_string = render_template('invoice_template.html', **context)
         pdf_bytes = HTML_MODULE(string=html_string, base_url=request.url_root).write_pdf()
 
         if not pdf_bytes:
-            current_app.logger.error(f"Pembuatan PDF gagal untuk invoice {midtrans_order_id}, hasilnya kosong.")
             abort(HTTPStatus.INTERNAL_SERVER_ERROR, "Gagal menghasilkan file PDF.")
             
         response = make_response(pdf_bytes)
         response.headers['Content-Type'] = 'application/pdf'
-        response.headers['Content-Disposition'] = f'inline; filename="invoice-{midtrans_order_id}.pdf"'
+        # Gunakan 'inline' agar bisa langsung ditampilkan jika dibuka di browser
+        response.headers['Content-Disposition'] = f'inline; filename="invoice-{transaction.midtrans_order_id}.pdf"'
         
-        current_app.logger.info(f"Invoice PDF untuk order {midtrans_order_id} berhasil dibuat.")
+        current_app.logger.info(f"Invoice sementara untuk order {transaction.midtrans_order_id} berhasil diakses.")
         return response
 
     except Exception as e:
-        if session.is_active:
-            session.rollback()
-        current_app.logger.error(f"Error saat membuat invoice PDF untuk {midtrans_order_id}: {e}", exc_info=True)
-        if isinstance(e, (HTTPStatus, midtransclient.error_midtrans.MidtransAPIError)):
-            raise e
+        if session.is_active: session.rollback()
+        current_app.logger.error(f"Error saat membuat invoice sementara PDF untuk token: {e}", exc_info=True)
         abort(HTTPStatus.INTERNAL_SERVER_ERROR, description=f"Kesalahan tak terduga saat membuat invoice: {e}")
     finally:
-        if session:
-            session.remove()
+        if session: session.remove()
