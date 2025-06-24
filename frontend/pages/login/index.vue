@@ -2,9 +2,11 @@
 import type { VForm } from 'vuetify/components'
 import type { VOtpInput } from 'vuetify/labs/VOtpInput'
 import authV1BottomShape from '@images/svg/auth-v1-bottom-shape.svg?raw'
+
 import authV1TopShape from '@images/svg/auth-v1-top-shape.svg?raw'
 import { VNodeRenderer } from '@layouts/components/VNodeRenderer'
 import { themeConfig } from '@themeConfig'
+
 import { computed, h, nextTick, ref, watch } from 'vue'
 import { useSnackbar } from '~/composables/useSnackbar'
 import { useAuthStore } from '~/store/auth'
@@ -66,19 +68,17 @@ const phoneFormatRules = [
 ]
 const requiredRule = (v: any) => (v !== null && v !== undefined && v !== '') || 'Wajib diisi.'
 
-// --- [BARU] Aturan Validasi Asinkron untuk Nomor WhatsApp ---
+// --- Aturan Validasi Asinkron untuk Nomor WhatsApp ---
 let validationTimeout: NodeJS.Timeout | null = null
-function whatsappValidationRule(v: string) {
-  // Hanya jalankan validasi jika format dasar sudah benar untuk efisiensi
+const whatsappValidationRule = (v: string) => {
   const isFormatBasicallyCorrect = phoneFormatRules.every(rule => rule(v) === true)
   if (!isFormatBasicallyCorrect)
-    return true // Biarkan aturan lain yang menangani error format
+    return true
 
   return new Promise<boolean | string>((resolve) => {
-    if (validationTimeout)
+    if (validationTimeout !== null)
       clearTimeout(validationTimeout)
 
-    // Debounce: Tunggu 500ms setelah user berhenti mengetik sebelum memanggil API
     validationTimeout = setTimeout(async () => {
       try {
         const response = await $fetch('/api/validate-whatsapp', {
@@ -86,16 +86,14 @@ function whatsappValidationRule(v: string) {
           body: { phoneNumber: v },
         })
 
-        if (response.isValid) {
+        if (response.isValid === true) {
           resolve(true)
         }
         else {
-          // Menggunakan pesan dari server atau pesan default
           resolve(response.message || 'Nomor WhatsApp tidak terdaftar/valid.')
         }
       }
       catch (error: any) {
-        // Menangani jika API backend kita sendiri error
         resolve(error.data?.message || 'Gagal memvalidasi nomor. Coba lagi.')
       }
     }, 500)
@@ -103,16 +101,20 @@ function whatsappValidationRule(v: string) {
 }
 
 // --- Fungsi Helper ---
-async function tryFocus(refInstance: any) {
+// [PERBAIKAN] Memberikan tipe yang lebih spesifik dari 'any' dan menggunakan pengecekan 'null' yang ketat.
+async function tryFocus(refInstance: { focus?: () => void } | null) {
   await nextTick()
-  if (refInstance != null)
+  if (refInstance !== null)
     refInstance.focus?.()
 }
 
 // --- Handler Aksi Form ---
 async function handleRequestOtp() {
-  const { valid } = await loginFormRef.value!.validate()
-  if (!valid)
+  if (loginFormRef.value === null)
+    return
+
+  const { valid } = await loginFormRef.value.validate()
+  if (valid !== true)
     return
 
   try {
@@ -125,7 +127,8 @@ async function handleRequestOtp() {
   }
   catch (error: any) {
     let errorMessage = 'Format nomor telepon tidak valid.'
-    if (error instanceof Error && error.message)
+    // [PERBAIKAN] Pengecekan eksplisit 'error.message' tidak kosong.
+    if (error instanceof Error && error.message !== '')
       errorMessage = error.message
 
     authStore.setError(errorMessage)
@@ -133,8 +136,11 @@ async function handleRequestOtp() {
 }
 
 async function handleVerifyOtp() {
-  const { valid } = await loginFormRef.value!.validate()
-  if (!valid)
+  if (loginFormRef.value === null)
+    return
+
+  const { valid } = await loginFormRef.value.validate()
+  if (valid !== true)
     return
 
   try {
@@ -147,7 +153,8 @@ async function handleVerifyOtp() {
   }
   catch (error: any) {
     let errorMessage = 'Terjadi masalah dengan nomor telepon.'
-    if (error instanceof Error && error.message)
+    // [PERBAIKAN] Pengecekan eksplisit 'error.message' tidak kosong.
+    if (error instanceof Error && error.message !== '')
       errorMessage = error.message
 
     authStore.setError(errorMessage)
@@ -159,7 +166,7 @@ async function handleRegister() {
   if (registerFormRef.value === null)
     return
   const { valid } = await registerFormRef.value.validate()
-  if (!valid) {
+  if (valid !== true) {
     addSnackbar({
       title: 'Validasi Gagal',
       text: 'Silakan periksa kembali semua data yang wajib diisi, termasuk memastikan nomor WhatsApp valid.',
@@ -174,7 +181,7 @@ async function handleRegister() {
   }
   catch (error: any) {
     let errorMessage = 'Format nomor WhatsApp tidak valid.'
-    if (error instanceof Error && error.message)
+    if (error instanceof Error && error.message !== '')
       errorMessage = error.message
 
     authStore.setError(errorMessage)

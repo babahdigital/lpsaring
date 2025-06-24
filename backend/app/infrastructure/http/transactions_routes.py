@@ -1,9 +1,9 @@
 # backend/app/infrastructure/http/transactions_routes.py
-# VERSI PERBAIKAN FINAL: Mengatasi ValidationError untuk tipe UUID dan nama field.
+# VERSI PERBAIKAN FINAL: Menggunakan base URL publik dari konfigurasi.
 
 import hashlib
 import os
-import uuid  # <-- PERBAIKAN: Impor modul uuid
+import uuid
 from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
 from http import HTTPStatus
@@ -13,7 +13,7 @@ import midtransclient
 from flask import (
     Blueprint, abort, current_app, jsonify, make_response, render_template, request
 )
-from pydantic import BaseModel, Field, ValidationError # <-- PERBAIKAN: Impor Field
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import selectinload
 
@@ -168,11 +168,16 @@ def initiate_transaction(current_user_id: uuid.UUID):
             midtrans_order_id=order_id, amount=gross_amount, status=TransactionStatus.PENDING,
         )
         
+        # PERBAIKAN: Gunakan base URL publik jika tersedia, jika tidak fallback ke frontend URL
+        # Ini untuk callback finish yang dilihat oleh browser pengguna.
+        base_callback_url = current_app.config.get('APP_PUBLIC_BASE_URL') or current_app.config.get('FRONTEND_URL', 'http://localhost:3000')
+        finish_url = f"{base_callback_url.rstrip('/')}/payment/finish?order_id={order_id}&status=pending"
+        
         snap_params = {
             "transaction_details": {"order_id": order_id, "gross_amount": gross_amount},
             "item_details": [{"id": str(package.id), "price": gross_amount, "quantity": 1, "name": package.name[:100]}],
             "customer_details": {"first_name": user.full_name or "Pengguna", "phone": format_to_local_phone(user.phone_number)},
-            "callbacks": {"finish": f"{current_app.config.get('FRONTEND_URL', 'http://localhost:3000').rstrip('/')}/payment/finish?order_id={order_id}&status=pending"}
+            "callbacks": {"finish": finish_url }
         }
 
         snap = get_midtrans_snap_client()
@@ -246,22 +251,29 @@ def handle_notification():
                         user = transaction.user
                         package = transaction.package
                         temp_token = generate_temp_invoice_token(str(transaction.id))
-                        base_url = request.url_root.rstrip('/')
-                        temp_invoice_url = f"{base_url}/api/transactions/invoice/temp/{temp_token}"
+
+                        # --- PERBAIKAN UTAMA DI SINI ---
+                        # Gunakan base URL publik yang telah dikonfigurasi, bukan dari request.
+                        base_url = current_app.config.get('APP_PUBLIC_BASE_URL')
+                        if not base_url:
+                            current_app.logger.error("APP_PUBLIC_BASE_URL tidak diatur! Tidak dapat membuat URL invoice untuk WhatsApp.")
+                            raise ValueError("Konfigurasi alamat publik aplikasi tidak ditemukan.")
                         
-                        # --- PERBAIKAN DI SINI ---
-                        # Key diubah dari "user_full_name" menjadi "full_name" agar cocok dengan template
+                        temp_invoice_url = f"{base_url.rstrip('/')}/api/transactions/invoice/temp/{temp_token}"
+                        # --- AKHIR PERBAIKAN UTAMA ---
+
                         msg_context = {
                             "full_name": user.full_name,
                             "order_id": transaction.midtrans_order_id,
                             "package_name": package.name,
                             "package_price": format_currency(package.price)
                         }
-                        # --- AKHIR PERBAIKAN ---
-
                         caption_message = get_notification_message("purchase_success_with_invoice", msg_context)
                         filename = f"invoice-{transaction.midtrans_order_id}.pdf"
+                        
+                        current_app.logger.info(f"Mencoba mengirim WA dengan PDF dari URL: {temp_invoice_url}")
                         send_whatsapp_with_pdf(user.phone_number, caption_message, temp_invoice_url, filename)
+
                     except Exception as e_notif:
                         current_app.logger.error(f"WEBHOOK: Gagal kirim notif WhatsApp {order_id}: {e_notif}", exc_info=True)
                 else:
@@ -366,6 +378,7 @@ def get_transaction_invoice(current_user_id: uuid.UUID, midtrans_order_id: str):
             abort(HTTPStatus.FORBIDDEN, "Anda tidak diizinkan mengakses invoice ini.")
         if transaction.status != TransactionStatus.SUCCESS:
             abort(HTTPStatus.BAD_REQUEST, "Invoice hanya tersedia untuk transaksi yang sudah sukses.")
+        
         app_tz = dt_timezone(timedelta(hours=int(current_app.config.get("APP_TIMEZONE_OFFSET", 8))))
         user_kamar_display = transaction.user.kamar
         if user_kamar_display and user_kamar_display.startswith("Kamar_"):
@@ -379,8 +392,12 @@ def get_transaction_invoice(current_user_id: uuid.UUID, midtrans_order_id: str):
             'business_email': current_app.config.get('BUSINESS_EMAIL', 'Email Bisnis Anda'),
             'invoice_date_local': datetime.now(app_tz),
         }
+        
+        # PERBAIKAN: Gunakan base URL publik untuk merender PDF agar path aset (jika ada) benar
+        public_base_url = current_app.config.get('APP_PUBLIC_BASE_URL', request.url_root)
         html_string = render_template('invoice_template.html', **context)
-        pdf_bytes = HTML(string=html_string, base_url=request.url_root).write_pdf()
+        pdf_bytes = HTML(string=html_string, base_url=public_base_url).write_pdf()
+
         if not pdf_bytes:
             abort(HTTPStatus.INTERNAL_SERVER_ERROR, "Gagal menghasilkan file PDF.")
         response = make_response(pdf_bytes)
@@ -425,8 +442,11 @@ def get_temp_transaction_invoice(token: str):
             'business_email': current_app.config.get('BUSINESS_EMAIL', 'Email Bisnis Anda'),
             'invoice_date_local': datetime.now(app_tz),
         }
+
+        # PERBAIKAN: Gunakan base URL publik untuk merender PDF agar path aset (jika ada) benar
+        public_base_url = current_app.config.get('APP_PUBLIC_BASE_URL', request.url_root)
         html_string = render_template('invoice_template.html', **context)
-        pdf_bytes = HTML(string=html_string, base_url=request.url_root).write_pdf()
+        pdf_bytes = HTML(string=html_string, base_url=public_base_url).write_pdf()
             
         response = make_response(pdf_bytes)
         response.headers['Content-Type'] = 'application/pdf'
