@@ -17,7 +17,7 @@ const aliases: Partial<IconAliases> = {
   prev: 'tabler:chevron-left',
   next: 'tabler:chevron-right',
   edit: 'tabler:pencil',
-  delete: 'tabler:trash', // Lebih umum pakai 'trash' daripada 'circle-x-filled' untuk delete
+  delete: 'tabler:trash',
   clear: 'tabler:circle-x',
   calendar: 'tabler:calendar',
   menu: 'tabler:menu-2',
@@ -29,36 +29,32 @@ const aliases: Partial<IconAliases> = {
   info: 'tabler:info-circle',
   warning: 'tabler:alert-triangle',
   error: 'tabler:alert-circle',
-  loading: 'tabler:refresh', // Atau 'tabler:loader-2' (animasi)
+  loading: 'tabler:refresh',
 
   // Input & Seleksi
-  checkboxOn: 'tabler:checkbox', // Menggunakan ikon checkbox standar tabler
+  checkboxOn: 'tabler:checkbox',
   checkboxOff: 'tabler:square',
   checkboxIndeterminate: 'tabler:square-minus',
-  radioOn: 'tabler:radio', // Menggunakan ikon radio standar tabler
+  // --- PERBAIKAN DI SINI ---
+  radioOn: 'tabler:circle-dot',
   radioOff: 'tabler:circle',
   ratingEmpty: 'tabler:star',
   ratingFull: 'tabler:star-filled',
   ratingHalf: 'tabler:star-half-filled',
 
   // Tabel & Urutan
-  sort: 'tabler:arrow-up', // Ikon default saat bisa di-sort
+  sort: 'tabler:arrow-up',
   sortAsc: 'tabler:arrow-up',
   sortDesc: 'tabler:arrow-down',
-  unfold: 'tabler:arrows-sort', // Lebih cocok untuk 'show/hide details' di tabel
-  delimiter: 'tabler:circle', // Untuk VStepper, VBreadcrumbs
+  unfold: 'tabler:arrows-sort',
+  delimiter: 'tabler:circle',
 
-  // Lain-lain (jika diperlukan oleh komponen spesifik atau custom)
+  // Lain-lain
   first: 'tabler:player-skip-back',
   last: 'tabler:player-skip-forward',
   file: 'tabler:paperclip',
   plus: 'tabler:plus',
   minus: 'tabler:minus',
-
-  // Anda bisa menambahkan alias kustom lain di sini jika diperlukan
 }
 
-// --- PERBAIKAN DI SINI ---
-// Ekspor objek 'aliases' secara langsung.
-// Bukan `export const icons = { aliases }`
 export const icons = aliases
