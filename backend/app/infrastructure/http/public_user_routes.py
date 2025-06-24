@@ -77,6 +77,15 @@ def validate_whatsapp_number():
     
     try:
         json_data = request.get_json()
+        # Tambahkan log untuk debugging
+        current_app.logger.debug(f"Payload received: {json_data}")
+        
+        # PERBAIKAN: Gunakan key yang sesuai dengan frontend
+        if 'phoneNumber' in json_data:
+            json_data['phone_number'] = json_data['phoneNumber']
+        
+        req_data = WhatsappValidationRequest.model_validate(json_data)
+        
         if not json_data:
             return jsonify({"isValid": False, "message": "Request body harus JSON."}), HTTPStatus.BAD_REQUEST
         
