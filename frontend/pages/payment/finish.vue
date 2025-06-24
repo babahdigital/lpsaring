@@ -47,13 +47,12 @@ interface TransactionDetails {
 const route = useRoute()
 const router = useRouter()
 const { $api, $snackbar } = useNuxtApp()
-const { smAndDown } = useDisplay() // Untuk responsivitas UI
+const { smAndDown } = useDisplay()
 
 const transactionDetails = ref<TransactionDetails | null>(null)
 const isLoading = ref(true)
 const fetchError = ref<string | null>(null)
 const copySuccess = ref<string | null>(null)
-// PERBAIKAN: Pengecekan tipe string yang eksplisit
 const errorMessageFromQuery = ref<string | null>(
   typeof route.query.msg === 'string' ? decodeURIComponent(route.query.msg) : null,
 )
@@ -63,7 +62,6 @@ async function fetchTransactionDetails(orderId: string) {
   fetchError.value = null
   try {
     const response = await $api<TransactionDetails>(`/transactions/by-order-id/${orderId}`)
-    // PERBAIKAN: Pengecekan null, object, dan properti yang eksplisit
     if (response == null || typeof response !== 'object' || response.midtrans_order_id == null || response.status == null) {
       throw new Error('Respons API tidak valid atau tidak lengkap.')
     }
@@ -89,11 +87,9 @@ onMounted(() => {
   const orderIdFromQuery = route.query.order_id as string | undefined
   const statusFromQuery = route.query.status as TransactionStatus | undefined
 
-  // PERBAIKAN: Pengecekan tipe string yang eksplisit
   if (typeof orderIdFromQuery === 'string' && orderIdFromQuery.trim() !== '') {
     fetchTransactionDetails(orderIdFromQuery.trim())
   }
-  // PERBAIKAN: Pengecekan null yang eksplisit
   else if (statusFromQuery === 'error' && errorMessageFromQuery.value != null) {
     fetchError.value = `Pembayaran Gagal: ${errorMessageFromQuery.value}`
     isLoading.value = false
@@ -106,19 +102,15 @@ onMounted(() => {
 
 const finalStatus = computed((): TransactionStatus => {
   const statusFromQuery = route.query.status as TransactionStatus | undefined
-  // PERBAIKAN: Pengecekan null yang eksplisit
   if (transactionDetails.value?.status != null && transactionDetails.value.status !== 'UNKNOWN') {
     return transactionDetails.value.status
   }
-  // PERBAIKAN: Pengecekan null yang eksplisit
   if (statusFromQuery != null && ['SUCCESS', 'PENDING', 'FAILED', 'EXPIRED', 'CANCELLED', 'ERROR'].includes(statusFromQuery)) {
     return statusFromQuery
   }
-  // PERBAIKAN: Mengganti || dengan ??
   return transactionDetails.value?.status ?? 'UNKNOWN'
 })
 
-// PERBAIKAN: Mengganti || dengan ??
 const userPhoneNumberRaw = computed(() => transactionDetails.value?.user?.phone_number ?? null)
 const userName = computed(() => transactionDetails.value?.user?.full_name ?? 'Pengguna')
 const packageName = computed(() => transactionDetails.value?.package?.name ?? 'Paket Tidak Diketahui')
@@ -126,7 +118,6 @@ const paymentMethod = computed(() => transactionDetails.value?.payment_method ??
 const displayHotspotUsername = computed(() => formatToLocalPhone(userPhoneNumberRaw.value) ?? '-')
 
 function formatToLocalPhone(phoneNumber?: string | null): string {
-  // PERBAIKAN: Pengecekan null yang eksplisit
   if (phoneNumber == null)
     return '-'
   const cleaned = phoneNumber.replace(/\D/g, '')
@@ -136,7 +127,6 @@ function formatToLocalPhone(phoneNumber?: string | null): string {
 }
 
 function formatDate(isoString?: string | null): string {
-  // PERBAIKAN: Pengecekan null yang eksplisit
   if (isoString == null)
     return '-'
   try {
@@ -179,25 +169,23 @@ const alertTitle = computed((): string => {
   }
 })
 
-// --- IKON DIPERBAIKI ---
 const alertIcon = computed((): string => {
   switch (finalStatus.value) {
     case 'SUCCESS': return 'tabler:rosette-discount-check-filled'
     case 'PENDING': return 'tabler:clock-hour-3-filled'
     case 'FAILED': return 'tabler:circle-x-filled'
-    case 'EXPIRED': return 'tabler:time-duration-0'
+    case 'EXPIRED': return 'tabler:time-duration-off'
     case 'CANCELLED': return 'tabler:ban'
-    case 'ERROR': return 'tabler:face-id-error'
+    case 'ERROR': return 'tabler:alert-triangle-filled'
     default: return 'tabler:help-circle-filled'
   }
 })
 
 const detailMessage = computed((): string => {
-  // PERBAIKAN: Pengecekan null yang eksplisit
   if (finalStatus.value === 'ERROR' && errorMessageFromQuery.value != null && transactionDetails.value == null) {
     return errorMessageFromQuery.value
   }
-  // PERBAIKAN: Mengganti || dengan ??
+
   const safePackageName = packageName.value ?? 'paket yang dipilih'
   const safeUsername = displayHotspotUsername.value ?? 'akun Anda'
   const safePhoneNumber = formatToLocalPhone(userPhoneNumberRaw.value) ?? 'nomor Anda'
@@ -214,13 +202,10 @@ const detailMessage = computed((): string => {
     case 'PENDING':
       return `Mohon selesaikan pembayaran sebelum ${formatDate(transactionDetails.value?.expiry_time)} menggunakan instruksi di bawah ini.`
     case 'FAILED':
-      // PERBAIKAN: Mengganti || dengan ??
       return `Pembayaran untuk transaksi ${transactionDetails.value?.midtrans_order_id ?? ''} telah gagal. Silakan coba untuk memesan ulang.`
     case 'EXPIRED':
-      // PERBAIKAN: Mengganti || dengan ??
       return `Batas waktu pembayaran untuk transaksi ${transactionDetails.value?.midtrans_order_id ?? ''} telah terlewati. Silakan coba untuk memesan ulang.`
     case 'CANCELLED':
-      // PERBAIKAN: Mengganti || dengan ??
       return `Transaksi ${transactionDetails.value?.midtrans_order_id ?? ''} telah dibatalkan.`
     case 'ERROR':
       return 'Terjadi kesalahan pada proses pembayaran. Jika Anda merasa ini adalah kesalahan sistem, silakan hubungi administrator.'
@@ -230,7 +215,6 @@ const detailMessage = computed((): string => {
 })
 
 async function copyToClipboard(textToCopy: string | undefined | null, type: string) {
-  // PERBAIKAN: Pengecekan null yang eksplisit
   if (textToCopy == null || navigator.clipboard == null) {
     $snackbar.add({ type: 'error', text: 'Gagal menyalin: Fitur tidak didukung oleh browser Anda.' })
     return
@@ -249,7 +233,6 @@ async function copyToClipboard(textToCopy: string | undefined | null, type: stri
 }
 
 function getBankNameFromVA(paymentMethodValue?: string | null): string {
-  // PERBAIKAN: Pengecekan null yang eksplisit
   if (paymentMethodValue == null)
     return 'Bank'
   const lowerPm = paymentMethodValue.toLowerCase()
@@ -259,7 +242,6 @@ function getBankNameFromVA(paymentMethodValue?: string | null): string {
   if (parts.length > 1 && parts[1] === 'va') {
     const bankCode = parts[0]
     const bankMap: { [key: string]: string } = { bca: 'BCA', bni: 'BNI', bri: 'BRI', cimb: 'CIMB Niaga', permata: 'Bank Permata', mandiri: 'Mandiri', bsi: 'BSI' }
-    // PERBAIKAN: Mengganti || dengan ??
     return bankMap[bankCode] ?? bankCode.toUpperCase()
   }
   return paymentMethodValue.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
@@ -274,12 +256,10 @@ function goToDashboard() {
 }
 
 const showSpecificPendingInstructions = computed(() => {
-  // PERBAIKAN: Pengecekan null yang eksplisit
   if (finalStatus.value !== 'PENDING' || transactionDetails.value == null)
     return false
   const td = transactionDetails.value
   const pm = td.payment_method?.toLowerCase()
-  // PERBAIKAN: Pengecekan boolean dari null/undefined yang eksplisit
   const hasVa = td.va_number != null && (pm?.includes('_va') === true || pm === 'bank_transfer')
   const hasEchannel = td.payment_code != null && td.biller_code != null && pm === 'echannel'
   const hasQr = td.qr_code_url != null && (pm === 'qris' || pm === 'gopay' || pm === 'shopeepay')
@@ -288,13 +268,12 @@ const showSpecificPendingInstructions = computed(() => {
 
 const qrValue = computed(() => transactionDetails.value?.qr_code_url ?? '')
 const showQrCode = computed(() => {
-  // PERBAIKAN: Pengecekan string kosong yang eksplisit
   if (finalStatus.value !== 'PENDING' || qrValue.value === '')
     return false
   const pm = paymentMethod.value?.toLowerCase()
   return pm === 'qris' || pm === 'gopay' || pm === 'shopeepay'
 })
-const qrSize = computed(() => smAndDown.value ? 200 : 250) // Ukuran QR code responsif
+const qrSize = computed(() => smAndDown.value ? 200 : 250)
 
 definePageMeta({ layout: 'blank' })
 useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
@@ -312,7 +291,7 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
         </div>
 
         <v-card v-else-if="fetchError" variant="tonal" color="error" class="mx-auto rounded-xl pa-2">
-          <v-card-text class="text-center">
+          <v-card-text class="text-center pa-6">
             <v-icon size="56" class="mb-4" color="error" icon="tabler:alert-octagon" />
             <h2 class="text-h5 font-weight-bold mb-3">
               Gagal Memuat Transaksi
@@ -327,15 +306,23 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
         </v-card>
 
         <v-card v-else-if="transactionDetails" variant="flat" border class="mx-auto rounded-xl overflow-hidden">
-          <v-sheet :color="`${alertType}-darken-1`" class="pa-6 text-center text-white">
-            <v-icon :icon="alertIcon" size="56" class="mb-4" />
-            <h1 class="text-h4 font-weight-bold mb-2">
-              {{ alertTitle }}
-            </h1>
-            <p class="text-body-1 mx-auto" style="max-width: 90%; line-height: 1.7; opacity: 0.9;">
+          <v-alert
+            :color="alertType"
+            variant="tonal"
+            :icon="alertIcon"
+            prominent
+            class="pa-6 rounded-0"
+            border="none"
+          >
+            <template #title>
+              <h1 class="text-h5 font-weight-bold mb-2 text-high-emphasis">
+                {{ alertTitle }}
+              </h1>
+            </template>
+            <p class="text-body-1" style="line-height: 1.7;">
               {{ detailMessage }}
             </p>
-          </v-sheet>
+          </v-alert>
 
           <v-card-text class="pa-0">
             <v-list lines="two" density="comfortable" class="py-2 bg-transparent">
@@ -406,13 +393,24 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
                 {{ getBankNameFromVA(paymentMethod) }} Virtual Account
               </p>
               <v-text-field
-                :model-value="transactionDetails.va_number" label="Nomor Virtual Account" readonly variant="outlined"
-                density="comfortable" hide-details class="font-weight-bold text-h6"
+                :model-value="transactionDetails.va_number"
+                label="Nomor Virtual Account"
+                readonly
+                variant="outlined"
+                density="comfortable"
+                hide-details
+                class="font-weight-bold text-h6"
               >
                 <template #append-inner>
                   <v-tooltip location="top" :text="copySuccess === 'Nomor VA' ? 'Berhasil Disalin!' : 'Salin Nomor VA'">
                     <template #activator="{ props: tooltipProps }">
-                      <v-btn v-bind="tooltipProps" :color="copySuccess === 'Nomor VA' ? 'success' : ''" :icon="copySuccess === 'Nomor VA' ? 'tabler:checks' : 'tabler:copy'" variant="text" @click="copyToClipboard(transactionDetails?.va_number, 'Nomor VA')" />
+                      <v-btn
+                        v-bind="tooltipProps"
+                        :color="copySuccess === 'Nomor VA' ? 'success' : ''"
+                        :icon="copySuccess === 'Nomor VA' ? 'tabler:checks' : 'tabler:copy'"
+                        variant="text"
+                        @click="copyToClipboard(transactionDetails?.va_number, 'Nomor VA')"
+                      />
                     </template>
                   </v-tooltip>
                 </template>
@@ -442,7 +440,11 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
                 cols="12"
               >
                 <v-btn
-                  color="primary" block variant="flat" size="large" rounded="lg"
+                  color="primary"
+                  block
+                  variant="flat"
+                  size="large"
+                  rounded="lg"
                   @click="goToSelectPackage"
                 >
                   <v-icon start icon="tabler:shopping-cart-plus" /> Pesan Paket Baru
@@ -455,7 +457,11 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
               </v-col>
               <v-col v-if="finalStatus === 'PENDING'" cols="12">
                 <v-btn
-                  block variant="text" size="large" rounded="lg" :loading="isLoading"
+                  block
+                  variant="text"
+                  size="large"
+                  rounded="lg"
+                  :loading="isLoading"
                   @click="fetchTransactionDetails(transactionDetails.midtrans_order_id)"
                 >
                   <v-icon start icon="tabler:refresh" /> Cek Ulang Status Pembayaran
