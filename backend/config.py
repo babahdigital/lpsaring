@@ -154,7 +154,7 @@ class Config:
     MIKROTIK_USE_SSL = get_env_bool('MIKROTIK_USE_SSL', 'False')
     MIKROTIK_DEFAULT_PROFILE = os.environ.get('MIKROTIK_DEFAULT_PROFILE', 'default')
     MIKROTIK_EXPIRED_PROFILE = os.environ.get('MIKROTIK_EXPIRED_PROFILE', 'expired')
-    MIKROTIK_KOMANDAN_PROFILE = os.environ.get('MIKROTIK_KOMANDAN_PROFILE', 'komandan') # <-- DITAMBAHKAN
+    MIKROTIK_KOMANDAN_PROFILE = os.environ.get('MIKROTIK_KOMANDAN_PROFILE', 'komandan')
     MIKROTIK_SEND_LIMIT_BYTES_TOTAL = get_env_bool('MIKROTIK_SEND_LIMIT_BYTES_TOTAL', 'False')
     MIKROTIK_SEND_SESSION_TIMEOUT = get_env_bool('MIKROTIK_SEND_SESSION_TIMEOUT', 'False')
     # --- Akhir Konfigurasi MikroTik API ---
@@ -177,6 +177,9 @@ class Config:
 
     # --- Konfigurasi Lainnya ---
     FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3010')
+    # --- PENAMBAHAN VARIABEL BARU ---
+    APP_PUBLIC_BASE_URL = os.environ.get('APP_PUBLIC_BASE_URL')
+    # -------------------------------
     CORS_ADDITIONAL_ORIGINS = get_env_list('CORS_ADDITIONAL_ORIGINS', "[]")
     APP_LOCALE = os.environ.get('APP_LOCALE', 'id_ID.UTF-8')
     CURRENCY_SYMBOL = os.environ.get('CURRENCY_SYMBOL', 'Rp ')
@@ -198,6 +201,12 @@ class Config:
                 raise ValueError("ERROR: JWT_SECRET_KEY harus disetel dengan nilai yang kuat di environment production!")
             if not cls.SQLALCHEMY_DATABASE_URI:
                  raise ValueError("ERROR: DATABASE_URL harus disetel di environment production!")
+            
+            # --- PENAMBAHAN VALIDASI UNTUK URL PUBLIK ---
+            if not cls.APP_PUBLIC_BASE_URL:
+                 raise ValueError("ERROR: APP_PUBLIC_BASE_URL harus disetel di environment production! Ini dibutuhkan untuk callback dan URL eksternal.")
+            # ---------------------------------------------
+
             if not cls.MIDTRANS_SERVER_KEY or not cls.MIDTRANS_CLIENT_KEY:
                  warnings.warn("PERINGATAN PRODUKSI: Kunci Midtrans (SERVER/CLIENT) tidak disetel. Fitur pembayaran tidak akan berfungsi.")
             if cls.ENABLE_WHATSAPP_NOTIFICATIONS and (not cls.WHATSAPP_API_URL or not cls.WHATSAPP_API_KEY):
@@ -213,7 +222,7 @@ class DevelopmentConfig(Config):
     SQLALCHEMY_ECHO = get_env_bool('SQLALCHEMY_ECHO', 'True')
     LOG_LEVEL = os.environ.get('LOG_LEVEL', 'DEBUG').upper()
     RATELIMIT_DEFAULT = os.environ.get('API_RATE_LIMIT', '500 per minute')
-    ENABLE_WHATSAPP_NOTIFICATIONS = get_env_bool('ENABLE_WHATSAPP_NOTIFICATIONS', 'False')
+    ENABLE_WHATSAPP_NOTIFICATIONS = get_env_bool('ENABLE_WHATSAPP_NOTIFICATIONS', 'True')
     RATELIMIT_ENABLED = get_env_bool('RATELIMIT_ENABLED', 'False')
     
     MIKROTIK_SEND_LIMIT_BYTES_TOTAL = get_env_bool('MIKROTIK_SEND_LIMIT_BYTES_TOTAL', 'False')
@@ -251,6 +260,7 @@ class TestingConfig(Config):
     RATELIMIT_ENABLED = False
     LOG_LEVEL = 'DEBUG'
     LOG_TO_FILE = False
+    APP_PUBLIC_BASE_URL = 'http://testserver' # Tambahkan untuk testing
 
 
 config_options = {
