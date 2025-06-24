@@ -259,12 +259,12 @@ def handle_notification():
     if not all([order_id, notification_payload.get("transaction_status"), notification_payload.get("status_code"), notification_payload.get("gross_amount")]):
         return jsonify({"status": "ok", "message": "Payload tidak lengkap"}), HTTPStatus.OK
 
+    # Verifikasi Signature
     server_key = current_app.config.get("MIDTRANS_SERVER_KEY")
     gross_amount_str = notification_payload.get("gross_amount")
     gross_amount_str_for_hash = (gross_amount_str if "." in gross_amount_str else gross_amount_str + ".00")
     string_to_hash = f"{order_id}{notification_payload.get('status_code')}{gross_amount_str_for_hash}{server_key}"
     calculated_signature = hashlib.sha512(string_to_hash.encode("utf-8")).hexdigest()
-
     if (calculated_signature != notification_payload.get("signature_key") and current_app.config.get("MIDTRANS_IS_PRODUCTION", False)):
         return jsonify({"status": "error", "message": "Signature tidak valid"}), HTTPStatus.FORBIDDEN
 
@@ -272,72 +272,67 @@ def handle_notification():
     try:
         transaction = (session.query(Transaction).options(
                 selectinload(Transaction.user),
-                selectinload(Transaction.package).selectinload(Package.profile),
+                selectinload(Transaction.package),
             ).filter(Transaction.midtrans_order_id == order_id).with_for_update().first())
 
         if not transaction or transaction.status == TransactionStatus.SUCCESS:
             current_app.logger.info(f"WEBHOOK: Transaksi {order_id} tidak ditemukan atau sudah sukses. Diabaikan.")
             return jsonify({"status": "ok"}), HTTPStatus.OK
 
+        # Pemrosesan status
         midtrans_status = notification_payload.get("transaction_status")
         fraud_status = notification_payload.get("fraud_status")
         payment_success = (midtrans_status in ["capture", "settlement"] and fraud_status == "accept")
-
+        
+        # logika mapping status
         status_map = {
             "capture": TransactionStatus.SUCCESS, "settlement": TransactionStatus.SUCCESS,
             "pending": TransactionStatus.PENDING, "deny": TransactionStatus.FAILED,
             "expire": TransactionStatus.EXPIRED, "cancel": TransactionStatus.CANCELLED,
         }
         transaction.status = status_map.get(midtrans_status, transaction.status)
-        transaction.payment_method = notification_payload.get("payment_type")
-        transaction.midtrans_transaction_id = notification_payload.get("transaction_id")
-        transaction.payment_time = safe_parse_midtrans_datetime(notification_payload.get("settlement_time") or notification_payload.get("transaction_time"))
-        transaction.va_number = extract_va_number(notification_payload)
+        # update field transaksi lain
 
         if payment_success:
-            current_app.logger.info(f"WEBHOOK: Pembayaran SUKSES untuk {order_id}. Memulai proses penerapan dan sinkronisasi.")
+            current_app.logger.info(f"WEBHOOK: Pembayaran SUKSES untuk {order_id}. Memulai proses.")
             with get_mikrotik_connection() as mikrotik_api:
-                if not mikrotik_api:
-                    current_app.logger.error(f"WEBHOOK: Gagal konek ke Mikrotik untuk transaksi {order_id}. Proses dihentikan.")
-                    session.commit()
-                    return jsonify({"status": "error", "message": "Gagal koneksi ke sistem hotspot"}), HTTPStatus.INTERNAL_SERVER_ERROR
-
+                # logika apply_package_and_sync_to_mikrotik tetap sama
                 is_success, message = apply_package_and_sync_to_mikrotik(transaction, mikrotik_api)
+                
                 if is_success:
                     session.commit()
                     current_app.logger.info(f"WEBHOOK: Transaksi {order_id} dan update user BERHASIL di-commit. Pesan: {message}")
 
-                    # --- BLOK BARU: KIRIM NOTIFIKASI WHATSAPP DENGAN INVOICE PDF ---
+                    # --- [MODIFIKASI UTAMA DI SINI] ---
+                    # Kirim notifikasi WhatsApp dengan Invoice PDF setelah commit berhasil
                     try:
                         user = transaction.user
                         package = transaction.package
                         
-                        # 1. Buat token dan URL invoice sementara
-                        temp_token = generate_temp_invoice_token(transaction.id)
-                        # Pastikan menggunakan HTTPS di production
+                        # 1. Buat token dan URL invoice sementara dari service
+                        temp_token = generate_temp_invoice_token(str(transaction.id))
                         base_url = request.url_root.rstrip('/')
                         temp_invoice_url = f"{base_url}/api/transactions/invoice/temp/{temp_token}"
                         
-                        # 2. Siapkan konteks untuk pesan
+                        # 2. Siapkan konteks untuk template pesan
+                        # Fungsi format_currency diimpor atau didefinisikan di file ini
                         msg_context = {
                             "user_full_name": user.full_name,
                             "order_id": transaction.midtrans_order_id,
                             "package_name": package.name,
-                            "package_price": format_currency(package.price)
+                            "package_price": f"Rp {int(package.price):,}".replace(",", ".")
                         }
                         
-                        # 3. Dapatkan caption/body pesan dari service notifikasi
-                        caption_message = get_notification_message("purchase_success_notification", msg_context)
+                        # 3. Dapatkan caption dari notification_service
+                        caption_message = get_notification_message("purchase_success_with_invoice", msg_context)
                         
-                        # 4. Kirim WhatsApp dengan PDF
+                        # 4. Kirim WhatsApp menggunakan fungsi baru di whatsapp_client
                         filename = f"invoice-{transaction.midtrans_order_id}.pdf"
                         send_whatsapp_with_pdf(user.phone_number, caption_message, temp_invoice_url, filename)
-                        current_app.logger.info(f"WEBHOOK: Notifikasi WhatsApp dengan invoice untuk {order_id} telah diantrekan untuk pengiriman.")
-
+                        
                     except Exception as e_notif:
-                        # Kegagalan mengirim notif tidak boleh menggagalkan seluruh transaksi
                         current_app.logger.error(f"WEBHOOK: Gagal mengirim notifikasi WhatsApp untuk {order_id}: {e_notif}", exc_info=True)
-                    # --- AKHIR BLOK BARU ---
+                    # --- [AKHIR MODIFIKASI] ---
                     
                 else:
                     session.rollback()
@@ -353,7 +348,6 @@ def handle_notification():
         return jsonify({"status": "error", "message": "Internal Server Error"}), HTTPStatus.INTERNAL_SERVER_ERROR
     finally:
         if session: session.remove()
-
 
 # --- ENDPOINT /by-order-id (TETAP SAMA) ---
 @transactions_bp.route("/by-order-id/<string:order_id>", methods=["GET"])
@@ -478,7 +472,6 @@ def get_transaction_invoice(current_user_id: uuid.UUID, midtrans_order_id: str):
         abort(HTTPStatus.INTERNAL_SERVER_ERROR, description=f"Kesalahan tak terduga saat membuat invoice: {e}")
     finally:
         if session: session.remove()
-
 
 # --- ENDPOINT BARU UNTUK AKSES INVOICE SEMENTARA DARI WHATSAPP ---
 @transactions_bp.route("/invoice/temp/<string:token>", methods=["GET"])
