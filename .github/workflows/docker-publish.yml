@@ -1,66 +1,49 @@
-# Nama workflow yang akan muncul di tab Actions di GitHub
+# ===============================================
+#  Build & Push Multi-arch Docker Images
+# ===============================================
+
 name: Build and Push Multi-arch Docker Images
 
-# Pemicu workflow: dijalankan setiap kali ada push ke branch 'main'
 on:
   push:
-    branches: [ "main" ]
-  # Memungkinkan Anda menjalankan workflow ini secara manual dari tab Actions
+    branches: ["main"]
   workflow_dispatch:
 
+env:
+  DOCKER_BUILDKIT: 1            # pastikan BuildKit aktif
+
 jobs:
-  # Job pertama untuk membangun image backend
-  build-backend:
-    name: Build and Push Backend Image
-    # Menjalankan job di virtual machine Ubuntu terbaru dari GitHub
+  build-and-push:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write           # diperlukan untuk push image
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Tambah entri di sini jika ada service lain
+          - service: backend
+            context: ./backend
+            image: babahdigital/hotspot_backend
+          - service: frontend
+            context: ./frontend
+            image: babahdigital/hotspot_frontend
+
     steps:
-      # 1. Checkout kode dari repositori Anda
+      # 1. Ambil kode
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Setup QEMU untuk emulasi arsitektur (diperlukan untuk build multi-arch)
+      # 2. QEMU (emulasi arsitektur non-host)
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
-      # 3. Setup Docker Buildx, ini adalah builder yang bisa membuat image multi-arch
+      # 3. Buildx builder
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      # 4. Login ke Docker Hub menggunakan kredensial yang disimpan di GitHub Secrets
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      # 5. Build dan push image backend ke Docker Hub
-      - name: Build and push backend
-        uses: docker/build-push-action@v5
-        with:
-          context: ./backend  # Lokasi Dockerfile untuk backend
-          platforms: linux/amd64,linux/arm64 # Target arsitektur
-          push: true # Mendorong image ke registry setelah build
-          tags: babahdigital/hotspot_backend:latest # Tag untuk image
-
-  # Job kedua untuk membangun image frontend
-  build-frontend:
-    name: Build and Push Frontend Image
-    # Menjalankan job di virtual machine Ubuntu terbaru dari GitHub
-    runs-on: ubuntu-latest
-    # Job ini berjalan secara paralel dengan job backend
-    steps:
-      # 1. Checkout kode dari repositori Anda
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      # 2. Setup QEMU
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      # 3. Setup Docker Buildx
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+          install: true
 
       # 4. Login ke Docker Hub
       - name: Login to Docker Hub
@@ -69,11 +52,24 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # 5. Build dan push image frontend ke Docker Hub
-      - name: Build and push frontend
+      # 5. Otomatis buat daftar tag (latest + sha)
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ matrix.image }}
+          tags: |
+            type=raw,value=latest
+            type=sha
+
+      # 6. Build & Push
+      - name: Build and push ${{ matrix.service }} image
         uses: docker/build-push-action@v5
         with:
-          context: ./frontend # Lokasi Dockerfile untuk frontend
-          platforms: linux/amd64,linux/arm64 # Target arsitektur
-          push: true # Mendorong image ke registry setelah build
-          tags: babahdigital/hotspot_frontend:latest # Tag untuk image
+          context: ${{ matrix.context }}
+          platforms: linux/amd64,linux/arm64          # tambah linux/arm/v7 jika perlu
+          push: true
+          provenance: false                           # skip SBOM untuk image ringan
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
