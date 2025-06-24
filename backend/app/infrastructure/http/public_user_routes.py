@@ -12,7 +12,7 @@ from app.infrastructure.db.models import User
 
 # --- PERBAIKAN IMPORT PATH ---
 # Impor skema dari direktori yang sama (http), lalu ke subdirektori schemas
-from .schemas.user_schemas import PhoneCheckRequest, PhoneCheckResponse
+from .schemas.user_schemas import PhoneCheckRequest, PhoneCheckResponse, WhatsappValidationRequest
 # -----------------------------
 
 # --- DEFINISI BLUEPRINT ---
