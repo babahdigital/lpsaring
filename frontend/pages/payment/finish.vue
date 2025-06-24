@@ -187,8 +187,8 @@ const alertIcon = computed((): string => {
     case 'FAILED': return 'tabler:circle-x-filled'
     case 'EXPIRED': return 'tabler:time-duration-0'
     case 'CANCELLED': return 'tabler:ban'
-    case 'ERROR': return 'tabler:alert-circle'
-    default: return 'tabler:help-circle'
+    case 'ERROR': return 'tabler:face-id-error'
+    default: return 'tabler:help-circle-filled'
   }
 })
 
