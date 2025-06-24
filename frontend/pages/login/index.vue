@@ -70,7 +70,7 @@ const requiredRule = (v: any) => (v !== null && v !== undefined && v !== '') || 
 
 // --- Aturan Validasi Asinkron untuk Nomor WhatsApp ---
 let validationTimeout: NodeJS.Timeout | null = null
-function whatsappValidationRule(v: string) {
+const whatsappValidationRule = (v: string) => {
   const isFormatBasicallyCorrect = phoneFormatRules.every(rule => rule(v) === true)
   if (isFormatBasicallyCorrect !== true)
     return true
@@ -81,7 +81,8 @@ function whatsappValidationRule(v: string) {
 
     validationTimeout = setTimeout(async () => {
       try {
-        const response = await $fetch('/api/validate-whatsapp', {
+        // [PERBAIKAN] Mengarahkan panggilan ke endpoint Python yang baru
+        const response = await $fetch('/api/users/validate-whatsapp', {
           method: 'POST',
           body: { phoneNumber: v },
         })
@@ -90,11 +91,13 @@ function whatsappValidationRule(v: string) {
           resolve(true)
         }
         else {
-          resolve(response.message ?? 'Nomor WhatsApp tidak terdaftar/valid.')
+          // Gunakan pesan error dari backend jika ada, jika tidak, gunakan pesan default
+          resolve(response.message || 'Nomor WhatsApp tidak terdaftar atau tidak valid.')
         }
       }
       catch (error: any) {
-        resolve(error.data?.message ?? 'Gagal memvalidasi nomor. Coba lagi.')
+        // Tangani jika endpoint backend kita sendiri mengembalikan error (misal: 400, 500)
+        resolve(error.data?.message || 'Gagal memvalidasi nomor. Coba lagi.')
       }
     }, 500)
   })
