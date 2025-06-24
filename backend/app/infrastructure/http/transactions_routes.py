@@ -260,7 +260,10 @@ def handle_notification():
                             current_app.logger.error("APP_PUBLIC_BASE_URL tidak diatur! Tidak dapat membuat URL invoice untuk WhatsApp.")
                             raise ValueError("Konfigurasi alamat publik aplikasi tidak ditemukan.")
                         
-                        temp_invoice_url = f"{base_url.rstrip('/')}/api/transactions/invoice/temp/{temp_token}"
+                        # --- PERUBAHAN KRUSIAL DI SINI: Tambahkan .pdf ke URL ---
+                        # Ini akan membuat URL yang berakhir dengan .pdf, membantu Fonnte mengidentifikasi formatnya.
+                        temp_invoice_url = f"{base_url.rstrip('/')}/api/transactions/invoice/temp/{temp_token}.pdf"
+                        # --- AKHIR PERUBAHAN ---
 
                         msg_context = {
                             "full_name": user.full_name,
@@ -273,9 +276,8 @@ def handle_notification():
                         
                         current_app.logger.info(f"Mencoba mengirim WA dengan PDF dari URL: {temp_invoice_url}")
                         
-                        # --- Ganti panggilan sinkron ini dengan panggilan Celery task ---
                         send_whatsapp_invoice_task.delay(
-                            str(user.phone_number), # Pastikan ini string
+                            str(user.phone_number), 
                             caption_message, 
                             temp_invoice_url, 
                             filename
@@ -423,6 +425,8 @@ def get_transaction_invoice(current_user_id: uuid.UUID, midtrans_order_id: str):
         if session: session.remove()
 
 @transactions_bp.route("/invoice/temp/<string:token>", methods=["GET"])
+# Tambahkan route baru untuk URL yang diakhiri dengan .pdf
+@transactions_bp.route("/invoice/temp/<string:token>.pdf", methods=["GET"])
 def get_temp_transaction_invoice(token: str):
     if not WEASYPRINT_AVAILABLE or not HTML:
         abort(HTTPStatus.NOT_IMPLEMENTED, "Komponen PDF server tidak tersedia.")
