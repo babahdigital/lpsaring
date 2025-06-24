@@ -1,5 +1,5 @@
 # backend/app/infrastructure/gateways/mikrotik_client.py
-# VERSI FINAL: Dibuat lebih tangguh untuk menangani error "user already exists".
+# VERSI PERBAIKAN: Mengatasi AttributeError dengan menangani AsynchronousResponse
 
 import os
 import time
@@ -122,9 +122,10 @@ def activate_or_update_hotspot_user(
                 new_user_info = user_resource.add(**add_data)
                 
                 # --- [PERBAIKAN] ---
-                # Langsung akses objek hasil (bukan memanggilnya sebagai fungsi).
-                # Objek 'new_user_info' adalah dictionary-like yang berisi data user baru.
-                user_id = new_user_info.get('.id') or new_user_info.get('id')
+                # Objek 'new_user_info' adalah 'AsynchronousResponse'. Kita harus memanggilnya
+                # seperti fungsi untuk mendapatkan hasil (dictionary) yang sebenarnya.
+                new_user_result = new_user_info()
+                user_id = new_user_result.get('.id') or new_user_result.get('id')
                 # --------------------
 
                 if not user_id:
@@ -157,6 +158,7 @@ def activate_or_update_hotspot_user(
             
     return False, f"Gagal memproses user {user_mikrotik_username} setelah {max_retries} percobaan."
 
+# Sisa fungsi (delete_hotspot_user, set_hotspot_user_profile, dll) tidak perlu diubah.
 def delete_hotspot_user(api_connection: Any, username: str, max_retries: int = 3) -> Tuple[bool, str]:
     """Menghapus user dari /ip/hotspot/active dan /ip/hotspot/user dengan logika ID yang fleksibel."""
     if not username: 
