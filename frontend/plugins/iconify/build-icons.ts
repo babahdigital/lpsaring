@@ -141,7 +141,7 @@ const target = join(__dirname, 'icons.css')
       iconSet,
       Object.keys(iconSet.icons),
       {
-        iconSelector: '.{prefix}-{name}',
+        iconSelector: '.icon--{prefix}--{name}',
         mode: 'mask',
       },
     ))
