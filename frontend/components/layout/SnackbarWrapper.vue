@@ -1,3 +1,5 @@
+// frontend/components/SnackbarWrapper.vue
+
 <script lang="ts" setup>
 import { useSnackbar } from '@/composables/useSnackbar'
 
@@ -31,7 +33,6 @@ const iconMap = {
         <template #prepend>
           <VIcon
             :icon="iconMap[message.type]"
-            class="ms-1"
             color="white"
             size="24"
           />
