@@ -2,7 +2,7 @@
 
 // Fungsi untuk mengubah format nomor dari 08... ke 628...
 function normalizeTo62(phone: string): string {
-  const cleaned = phone.replace(/[\s-]/g, '')
+  let cleaned = phone.replace(/[\s-]/g, '')
   if (cleaned.startsWith('08'))
     return `62${cleaned.substring(1)}`
 
@@ -16,8 +16,7 @@ export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig(event)
   const fonnteToken = config.fonnteToken
 
-  // [PERBAIKAN] Pengecekan eksplisit untuk string kosong atau null/undefined.
-  if (!fonnteToken || fonnteToken.length === 0) {
+  if (fonnteToken === null || fonnteToken === undefined || fonnteToken.length === 0) {
     throw createError({
       statusCode: 500,
       statusMessage: 'Konfigurasi server tidak lengkap: Token Fonnte tidak ditemukan.',
@@ -27,8 +26,8 @@ export default defineEventHandler(async (event) => {
   const body = await readBody(event)
   const phoneNumber = body.phoneNumber as string
 
-  // [PERBAIKAN] Pengecekan eksplisit untuk string kosong atau null/undefined.
-  if (!phoneNumber || phoneNumber.length === 0) {
+  // [PERBAIKAN] Pengecekan yang lebih eksplisit untuk null, undefined, dan string kosong.
+  if (phoneNumber === null || phoneNumber === undefined || phoneNumber.length === 0) {
     throw createError({
       statusCode: 400,
       statusMessage: 'Nomor telepon wajib diisi.',
@@ -62,7 +61,6 @@ export default defineEventHandler(async (event) => {
       }
     }
     else {
-      // [PERBAIKAN] Menggunakan operator '??' untuk menangani nilai null/undefined.
       return {
         isValid: false,
         message: `Validasi gagal: ${fonnteResponse.reason ?? 'kesalahan tidak diketahui'}.`,
@@ -72,9 +70,7 @@ export default defineEventHandler(async (event) => {
   catch (error: any) {
     // Menangani error dari $fetch atau API Fonnte
     throw createError({
-      // [PERBAIKAN] Menggunakan operator '??' untuk menangani nilai null/undefined.
       statusCode: error.statusCode ?? 500,
-      // [PERBAIKAN] Menggunakan operator '??' untuk menangani nilai null/undefined.
       statusMessage: `Gagal menghubungi layanan validasi. ${error.statusMessage ?? ''}`,
     })
   }

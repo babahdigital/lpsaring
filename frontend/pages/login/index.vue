@@ -70,9 +70,9 @@ const requiredRule = (v: any) => (v !== null && v !== undefined && v !== '') || 
 
 // --- Aturan Validasi Asinkron untuk Nomor WhatsApp ---
 let validationTimeout: NodeJS.Timeout | null = null
-function whatsappValidationRule(v: string) {
+const whatsappValidationRule = (v: string) => {
   const isFormatBasicallyCorrect = phoneFormatRules.every(rule => rule(v) === true)
-  if (!isFormatBasicallyCorrect)
+  if (isFormatBasicallyCorrect !== true)
     return true
 
   return new Promise<boolean | string>((resolve) => {
@@ -90,18 +90,17 @@ function whatsappValidationRule(v: string) {
           resolve(true)
         }
         else {
-          resolve(response.message || 'Nomor WhatsApp tidak terdaftar/valid.')
+          resolve(response.message ?? 'Nomor WhatsApp tidak terdaftar/valid.')
         }
       }
       catch (error: any) {
-        resolve(error.data?.message || 'Gagal memvalidasi nomor. Coba lagi.')
+        resolve(error.data?.message ?? 'Gagal memvalidasi nomor. Coba lagi.')
       }
     }, 500)
   })
 }
 
 // --- Fungsi Helper ---
-// [PERBAIKAN] Memberikan tipe yang lebih spesifik dari 'any' dan menggunakan pengecekan 'null' yang ketat.
 async function tryFocus(refInstance: { focus?: () => void } | null) {
   await nextTick()
   if (refInstance !== null)
@@ -127,10 +126,11 @@ async function handleRequestOtp() {
   }
   catch (error: any) {
     let errorMessage = 'Format nomor telepon tidak valid.'
-    // [PERBAIKAN] Pengecekan eksplisit 'error.message' tidak kosong.
-    if (error instanceof Error && error.message !== '')
-      errorMessage = error.message
-
+    // [PERBAIKAN] Pengecekan bertingkat untuk memuaskan linter.
+    if (error instanceof Error) {
+      if (error.message !== '')
+        errorMessage = error.message
+    }
     authStore.setError(errorMessage)
   }
 }
@@ -153,10 +153,11 @@ async function handleVerifyOtp() {
   }
   catch (error: any) {
     let errorMessage = 'Terjadi masalah dengan nomor telepon.'
-    // [PERBAIKAN] Pengecekan eksplisit 'error.message' tidak kosong.
-    if (error instanceof Error && error.message !== '')
-      errorMessage = error.message
-
+    // [PERBAIKAN] Pengecekan bertingkat untuk memuaskan linter.
+    if (error instanceof Error) {
+      if (error.message !== '')
+        errorMessage = error.message
+    }
     authStore.setError(errorMessage)
     resetLoginView()
   }
@@ -181,9 +182,11 @@ async function handleRegister() {
   }
   catch (error: any) {
     let errorMessage = 'Format nomor WhatsApp tidak valid.'
-    if (error instanceof Error && error.message !== '')
-      errorMessage = error.message
-
+    // [PERBAIKAN] Pengecekan bertingkat untuk memuaskan linter.
+    if (error instanceof Error) {
+      if (error.message !== '')
+        errorMessage = error.message
+    }
     authStore.setError(errorMessage)
 
     return
