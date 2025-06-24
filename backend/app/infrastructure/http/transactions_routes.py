@@ -131,7 +131,6 @@ def _format_status_filter(value): return format_status(value)
 class _InitiateTransactionRequestSchema(BaseModel):
     package_id: uuid.UUID
 
-# --- PERBAIKAN FINAL PADA SKEMA DI SINI ---
 class _InitiateTransactionResponseSchema(BaseModel):
     snap_token: Optional[str] = Field(None, alias='snap_token')
     transaction_id: uuid.UUID = Field(..., alias='id')
@@ -140,7 +139,6 @@ class _InitiateTransactionResponseSchema(BaseModel):
     
     class Config:
         from_attributes = True
-# -------------------------------------------
 
 # --- ENDPOINTS ---
 @transactions_bp.route("/initiate", methods=["POST"])
@@ -190,7 +188,6 @@ def initiate_transaction(current_user_id: uuid.UUID):
         session.add(new_transaction)
         session.commit()
 
-        # Gunakan model_validate untuk membuat skema respons dari objek ORM
         response_data = _InitiateTransactionResponseSchema.model_validate(new_transaction, from_attributes=True)
         return jsonify(response_data.model_dump(by_alias=False, exclude_none=True)), HTTPStatus.OK
 
@@ -251,10 +248,17 @@ def handle_notification():
                         temp_token = generate_temp_invoice_token(str(transaction.id))
                         base_url = request.url_root.rstrip('/')
                         temp_invoice_url = f"{base_url}/api/transactions/invoice/temp/{temp_token}"
+                        
+                        # --- PERBAIKAN DI SINI ---
+                        # Key diubah dari "user_full_name" menjadi "full_name" agar cocok dengan template
                         msg_context = {
-                            "user_full_name": user.full_name, "order_id": transaction.midtrans_order_id,
-                            "package_name": package.name, "package_price": format_currency(package.price)
+                            "full_name": user.full_name,
+                            "order_id": transaction.midtrans_order_id,
+                            "package_name": package.name,
+                            "package_price": format_currency(package.price)
                         }
+                        # --- AKHIR PERBAIKAN ---
+
                         caption_message = get_notification_message("purchase_success_with_invoice", msg_context)
                         filename = f"invoice-{transaction.midtrans_order_id}.pdf"
                         send_whatsapp_with_pdf(user.phone_number, caption_message, temp_invoice_url, filename)
@@ -272,11 +276,9 @@ def handle_notification():
     finally:
         db.session.remove()
 
-# --- ENDPOINT /by-order-id (TETAP SAMA) ---
 @transactions_bp.route("/by-order-id/<string:order_id>", methods=["GET"])
 @token_required
 def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
-    # Logika tetap sama, tidak perlu diubah.
     session = db.session
     try:
         transaction = (session.query(Transaction).filter(Transaction.midtrans_order_id == order_id).options(
@@ -349,12 +351,9 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
     finally:
         if session: session.remove()
 
-
-# --- ENDPOINT /invoice (UNTUK DOWNLOAD MANUAL, TIDAK BERUBAH) ---
 @transactions_bp.route("/<string:midtrans_order_id>/invoice", methods=["GET"])
 @token_required
 def get_transaction_invoice(current_user_id: uuid.UUID, midtrans_order_id: str):
-    # Logika endpoint ini tidak berubah, tetap berfungsi seperti sebelumnya untuk download manual.
     if not WEASYPRINT_AVAILABLE:
         abort(HTTPStatus.NOT_IMPLEMENTED, "Komponen PDF server tidak tersedia.")
     session = db.session
@@ -396,7 +395,6 @@ def get_transaction_invoice(current_user_id: uuid.UUID, midtrans_order_id: str):
     finally:
         if session: session.remove()
 
-# --- ENDPOINT BARU UNTUK AKSES INVOICE SEMENTARA DARI WHATSAPP ---
 @transactions_bp.route("/invoice/temp/<string:token>", methods=["GET"])
 def get_temp_transaction_invoice(token: str):
     if not WEASYPRINT_AVAILABLE or not HTML:
