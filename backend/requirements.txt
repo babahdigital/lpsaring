@@ -38,3 +38,4 @@ Jinja2
 user-agents
 Werkzeug>=2.0.0
 pytz
+itsdangerous
