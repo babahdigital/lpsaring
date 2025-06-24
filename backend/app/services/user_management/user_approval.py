@@ -1,118 +1,130 @@
 # backend/app/services/user_management/user_approval.py
-from typing import Tuple
-from datetime import datetime, timezone as dt_timezone, timedelta
+# VERSI FINAL: Dengan pemanggilan notifikasi yang sudah diperbaiki dan lengkap.
+
+from flask import current_app
+from sqlalchemy.exc import SQLAlchemyError
+from datetime import datetime, timezone as dt_timezone
 
 from app.extensions import db
-from app.infrastructure.db.models import User, UserRole, ApprovalStatus, AdminActionType
+from app.infrastructure.db.models import User, ApprovalStatus, AdminActionType
+from app.services.notification_service import get_notification_message
+from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
+from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection, activate_or_update_hotspot_user
 from app.utils.formatters import format_to_local_phone
-from app.services import settings_service
-from .helpers import (
-    _log_admin_action, _generate_password, _send_whatsapp_notification,
-    _handle_mikrotik_operation, _get_active_bonus_registration_promo
-)
-from app.infrastructure.gateways.mikrotik_client import activate_or_update_hotspot_user, set_hotspot_user_profile
+from .common import log_admin_action, generate_and_hash_password, get_default_mikrotik_profile, get_default_mikrotik_server
 
-def approve_user_account(user_to_approve: User, admin_actor: User) -> Tuple[bool, str]:
+def approve_user_account(user: User, admin: User) -> tuple[bool, str]:
     """
-    Logika inti untuk menyetujui pengguna baru.
-    [PERBAIKAN] Bonus promo registrasi HANYA berlaku untuk peran USER.
+    Menyetujui akun pengguna, mengaktifkannya, membuat/memperbarui user di Mikrotik,
+    dan mengirim notifikasi dengan detail login.
     """
-    if user_to_approve.approval_status != ApprovalStatus.PENDING_APPROVAL:
-        return False, "Pengguna ini tidak dalam status menunggu persetujuan."
-    
-    if user_to_approve.role == UserRole.USER and (not user_to_approve.blok or not user_to_approve.kamar):
-        return False, "Pengguna USER harus memiliki Blok dan Kamar."
+    if user.approval_status == ApprovalStatus.APPROVED:
+        return False, "Pengguna sudah dalam status disetujui."
 
-    mikrotik_username = format_to_local_phone(user_to_approve.phone_number)
-    if not mikrotik_username:
-        return False, "Format nomor telepon tidak valid."
+    original_status = user.approval_status
+    user.approval_status = ApprovalStatus.APPROVED
+    user.is_active = True
+    user.approved_at = datetime.now(dt_timezone.utc)
+    user.approved_by_id = admin.id
 
-    new_mikrotik_password = _generate_password()
-    initial_quota_mb = 0
-    initial_duration_days = 30
-    mikrotik_profile = ''
-    mikrotik_server = user_to_approve.mikrotik_server_name
-    log_details = {}
-    
-    # --- [PERBAIKAN] Logika kuota dipisahkan kembali berdasarkan peran ---
-    if user_to_approve.role == UserRole.KOMANDAN:
-        # KOMANDAN tidak mendapat bonus promo. Langsung gunakan setting default (0).
-        initial_quota_mb = settings_service.get_setting_as_int('KOMANDAN_INITIAL_QUOTA_MB', 0)
-        initial_duration_days = settings_service.get_setting_as_int('KOMANDAN_INITIAL_DURATION_DAYS', 30)
-        
-        mikrotik_profile = settings_service.get_setting('MIKROTIK_KOMANDAN_PROFILE', 'komandan')
-        if not mikrotik_server: mikrotik_server = 'srv-komandan'
-        log_details = {"role_approved": "KOMANDAN", "initial_quota_mb": initial_quota_mb, "initial_days": initial_duration_days}
-    
-    else: # Untuk USER
-        # USER berhak mendapatkan promo registrasi.
-        active_bonus_promo = _get_active_bonus_registration_promo()
-        if active_bonus_promo and active_bonus_promo.bonus_value_mb and active_bonus_promo.bonus_value_mb > 0:
-            # Jika ada promo, gunakan nilai dari promo
-            initial_quota_mb = active_bonus_promo.bonus_value_mb
-            if active_bonus_promo.bonus_duration_days is not None and active_bonus_promo.bonus_duration_days > 0:
-                initial_duration_days = active_bonus_promo.bonus_duration_days
-        else:
-            # Jika tidak ada promo, kuota awal User adalah 0.
-            initial_quota_mb = settings_service.get_setting_as_int('USER_INITIAL_QUOTA_MB', 0)
-        
-        mikrotik_profile = settings_service.get_setting('MIKROTIK_USER_PROFILE', 'user')
-        if not mikrotik_server: mikrotik_server = 'srv-user'
-        log_details = {"role_approved": "USER", "bonus_mb": initial_quota_mb, "bonus_days": initial_duration_days}
+    # Hasilkan password hotspot jika belum ada
+    if not user.mikrotik_password:
+        user.mikrotik_password = generate_and_hash_password(is_for_admin=False)
 
-    # Menerapkan kuota dan masa aktif ke database
-    user_to_approve.total_quota_purchased_mb = initial_quota_mb
-    user_to_approve.quota_expiry_date = datetime.now(dt_timezone.utc) + timedelta(days=initial_duration_days) if initial_quota_mb > 0 else None
-    user_to_approve.mikrotik_profile_name = mikrotik_profile
-    
-    # Jika kuota 0, set limit_bytes ke 1. Jika ada, hitung normal.
-    mikrotik_limit_bytes_total = int(initial_quota_mb) * 1024 * 1024 if initial_quota_mb > 0 else 1
+    hotspot_username = format_to_local_phone(user.phone_number)
+    if not hotspot_username:
+        return False, "Format nomor telepon pengguna tidak valid untuk Mikrotik."
 
-    mikrotik_success, mikrotik_message = _handle_mikrotik_operation(
-        activate_or_update_hotspot_user,
-        user_mikrotik_username=mikrotik_username, 
-        mikrotik_profile_name=mikrotik_profile,
-        hotspot_password=new_mikrotik_password, 
-        comment=f"Approved by {admin_actor.full_name}",
-        limit_bytes_total=mikrotik_limit_bytes_total,
-        server=mikrotik_server
+    # Sinkronisasi ke Mikrotik
+    try:
+        with get_mikrotik_connection() as mikrotik_api:
+            if not mikrotik_api:
+                return False, "Gagal terhubung ke sistem hotspot. Persetujuan dibatalkan."
+
+            mikrotik_profile = user.mikrotik_profile_name or get_default_mikrotik_profile()
+            mikrotik_server = user.mikrotik_server_name or get_default_mikrotik_server()
+
+            success_mt, msg_mt = activate_or_update_hotspot_user(
+                api_connection=mikrotik_api,
+                user_mikrotik_username=hotspot_username,
+                mikrotik_profile_name=mikrotik_profile,
+                hotspot_password=user.mikrotik_password,
+                comment=f"Approved by {admin.full_name}",
+                server=mikrotik_server
+            )
+            if success_mt:
+                user.mikrotik_user_exists = True
+            else:
+                # Jika gagal di Mikrotik, batalkan seluruh proses persetujuan
+                return False, f"Gagal sinkronisasi ke Mikrotik: {msg_mt}"
+    except Exception as e:
+        return False, f"Terjadi kesalahan saat koneksi ke Mikrotik: {str(e)}"
+
+    # Pencatatan log aksi admin
+    log_admin_action(
+        admin_id=admin.id,
+        target_user_id=user.id,
+        action_type=AdminActionType.APPROVE_USER,
+        details={"from_status": original_status.value, "to_status": "APPROVED"}
     )
-
-    if not mikrotik_success:
-        return False, f"Gagal aktivasi di Mikrotik: {mikrotik_message}"
-
-    user_to_approve.approval_status = ApprovalStatus.APPROVED
-    user_to_approve.is_active = True
-    user_to_approve.approved_at = datetime.now(dt_timezone.utc)
-    user_to_approve.approved_by_id = admin_actor.id
-    user_to_approve.mikrotik_password = new_mikrotik_password
-    user_to_approve.mikrotik_user_exists = True
-    user_to_approve.is_unlimited_user = False
-    user_to_approve.total_quota_used_mb = 0
     
-    _log_admin_action(admin_actor, user_to_approve, AdminActionType.APPROVE_USER, log_details)
-    
-    context = {
-        "full_name": user_to_approve.full_name, 
-        "username": mikrotik_username, 
-        "password": new_mikrotik_password,
-        "bonus_gb": round(initial_quota_mb / 1024, 2) if initial_quota_mb > 0 else 0,
-        "quota_expiry_date": user_to_approve.quota_expiry_date.strftime('%d %B %Y %H:%M') if user_to_approve.quota_expiry_date else 'Tidak Ada'
-    }
-    _send_whatsapp_notification(user_to_approve.phone_number, "user_approve_success", context)
-    
-    return True, f"Pengguna {user_to_approve.full_name} berhasil disetujui."
+    db.session.add(user)
+
+    # --- [PERBAIKAN UTAMA DI SINI] ---
+    # Mengirim notifikasi dengan template dan konteks yang benar
+    try:
+        # 1. Gunakan kunci template yang sudah distandardisasi
+        template_key = 'user_approve_success'
+
+        # 2. Siapkan dictionary 'context' dengan SEMUA placeholder yang dibutuhkan oleh template
+        context_data = {
+            'full_name': user.full_name,
+            'hotspot_username': format_to_local_phone(user.phone_number),
+            'hotspot_password': user.mikrotik_password  # Pastikan ini password plain text
+        }
+        
+        # 3. Panggil service notifikasi dengan context yang lengkap
+        message_body = get_notification_message(template_key, context_data)
+        
+        # 4. Kirim pesan WhatsApp
+        send_whatsapp_message(user.phone_number, message_body)
+
+    except Exception as e:
+        current_app.logger.error(f"Gagal mengirim notifikasi persetujuan untuk user {user.id}: {e}", exc_info=True)
+        # Jangan gagalkan seluruh proses jika hanya notifikasi yang gagal, cukup catat log
+        pass
+    # --- [AKHIR PERBAIKAN] ---
+
+    return True, "Pengguna berhasil disetujui, diaktifkan, dan disinkronkan ke Mikrotik."
 
 
-def reject_user_account(user_to_reject: User, admin_actor: User) -> Tuple[bool, str]:
-    """Menolak pendaftaran, lalu menghapus data dari DB dan mengirim notifikasi."""
-    if user_to_reject.approval_status != ApprovalStatus.PENDING_APPROVAL:
-        return False, "Pengguna ini tidak dalam status menunggu persetujuan."
+def reject_user_account(user: User, admin: User) -> tuple[bool, str]:
+    """
+    Menolak akun pengguna dan mengirim notifikasi penolakan.
+    """
+    if user.approval_status == ApprovalStatus.REJECTED:
+        return False, "Pengguna sudah dalam status ditolak."
 
-    user_name_log, user_phone_log = user_to_reject.full_name, user_to_reject.phone_number
+    original_status = user.approval_status
+    user.approval_status = ApprovalStatus.REJECTED
+    user.is_active = False
+    user.rejected_at = datetime.now(dt_timezone.utc)
+    user.rejected_by_id = admin.id
     
-    _send_whatsapp_notification(user_phone_log, "user_reject_notification", {"full_name": user_name_log})
-    _log_admin_action(admin_actor, user_to_reject, AdminActionType.REJECT_USER, {"reason": "Admin rejection"})
-    db.session.delete(user_to_reject)
+    log_admin_action(
+        admin_id=admin.id,
+        target_user_id=user.id,
+        action_type=AdminActionType.REJECT_USER,
+        details={"from_status": original_status.value, "to_status": "REJECTED"}
+    )
     
-    return True, f"Pendaftaran pengguna {user_name_log} ditolak dan data telah dihapus."
+    db.session.add(user)
+
+    try:
+        message_body = get_notification_message('user_reject_notification', {"full_name": user.full_name})
+        send_whatsapp_message(user.phone_number, message_body)
+    except Exception as e:
+        current_app.logger.error(f"Gagal mengirim notifikasi penolakan untuk user {user.id}: {e}", exc_info=True)
+        pass
+
+    return True, "Pengguna berhasil ditolak."
