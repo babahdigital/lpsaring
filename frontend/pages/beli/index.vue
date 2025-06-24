@@ -4,7 +4,7 @@ import type { VForm, VTextField } from 'vuetify/components'
 import type { PackagePublic as Package } from '~/types/package'
 import { useNuxtApp } from '#app'
 import { storeToRefs } from 'pinia'
-import { computed, isRef, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useApiFetch } from '~/composables/useApiFetch'
 import { useAuthStore } from '~/store/auth'
@@ -26,17 +26,16 @@ const { $api } = useNuxtApp()
 const { isLoggedIn, user, isLoadingUser } = storeToRefs(authStore)
 
 // --- PERBAIKAN PADA FUNGSI FETCH ---
-// Mengambil data paket dari API publik, dengan mengharapkan objek yang berisi `data`
-const { data: packageApiResponse, pending: isLoadingPackages, error: fetchPackagesError, refresh: refreshPackages }
+// DIPERBAIKI: Memberikan nilai default `ref(null)` untuk `fetchPackagesError`
+// untuk memastikan variabel ini selalu terdefinisi sebagai ref, bahkan jika `useApiFetch` tidak mengembalikan properti `error`.
+const { data: packageApiResponse, pending: isLoadingPackages, error: fetchPackagesError = ref(null), refresh: refreshPackages }
   = useApiFetch<PackagesApiResponse>('/packages', {
     key: 'publicPackages',
     lazy: true,
     server: true,
-    // DIUBAH: Nilai default disesuaikan dengan struktur objek backend
     default: () => ({ data: [] as Package[], success: false, message: '' }),
   })
 
-// DIPERBAIKI (Baris 40): Menggunakan ternary dengan pemeriksaan null eksplisit
 const packages = computed(() => (packageApiResponse.value?.data != null ? packageApiResponse.value.data : []))
 // --- AKHIR PERBAIKAN ---
 
@@ -57,17 +56,17 @@ const snackbarText = ref('')
 const snackbarColor = ref<'error' | 'success' | 'info' | 'warning'>('info')
 const snackbarTimeout = ref(5000)
 
-if (fetchPackagesError != null && isRef(fetchPackagesError)) {
-  watch(fetchPackagesError, (newError) => {
-    if (newError != null && newError.statusCode !== 401 && newError.statusCode !== 403) {
-      const messageFromServer = (newError as any)?.data?.message
-      const errorMessage = (typeof messageFromServer === 'string' && messageFromServer)
-        ? messageFromServer
-        : 'Gagal memuat daftar paket.'
-      showSnackbar(`Gagal memuat daftar paket: ${errorMessage}`, 'error')
-    }
-  })
-}
+// DIPERBAIKI: Menyederhanakan `watch` untuk penanganan galat yang lebih bersih dan standar.
+watch(fetchPackagesError, (newError) => {
+  // Memeriksa jika `newError` (nilai dari ref `fetchPackagesError`) ada (tidak null)
+  if (newError && newError.statusCode !== 401 && newError.statusCode !== 403) {
+    const messageFromServer = (newError as any)?.data?.message
+    const errorMessage = (typeof messageFromServer === 'string' && messageFromServer)
+      ? messageFromServer
+      : 'Gagal memuat daftar paket.'
+    showSnackbar(`Gagal memuat daftar paket: ${errorMessage}`, 'error')
+  }
+})
 
 // Fungsi utilitas dan aturan validasi (tidak ada perubahan)
 function showSnackbar(text: string, color: 'error' | 'success' | 'info' | 'warning' = 'info', timeout = 5000) {
@@ -165,7 +164,6 @@ function handlePackageSelection(pkg: Package) {
     }
     showSnackbar(warningMsg, 'warning', 7000)
   }
-  // DIPERBAIKI (Baris 169): Menggunakan pemeriksaan null eksplisit untuk ID pengguna
   else if (user.value?.id != null) {
     initiatePayment(pkg.id)
   }
@@ -278,21 +276,17 @@ useHead({ title: 'Beli Paket Hotspot' })
           DAFTAR PAKET HOTSPOT
         </h1>
         <div class="text-center mb-6" style="min-height: 40px;">
-          <v-btn v-if="!isLoggedIn.value && !isLoadingUser.value" variant="text" color="primary" @click="goToLogin">
-            <v-icon start>
-              mdi-login-variant
-            </v-icon> Sudah Punya Akun? Login
+          <v-btn v-if="!isLoggedIn && !isLoadingUser" variant="text" color="primary" @click="goToLogin">
+            <v-icon start icon="tabler:login" /> Sudah Punya Akun? Login
           </v-btn>
-          <div v-else-if="isLoadingUser.value" class="d-flex justify-center align-center text-medium-emphasis">
+          <div v-else-if="isLoadingUser" class="d-flex justify-center align-center text-medium-emphasis">
             <v-progress-circular indeterminate size="20" width="2" color="primary" class="mr-2" />
             <span>Memuat data pengguna...</span>
           </div>
           <div v-else-if="userGreeting != null" class="d-flex justify-center align-center text-body-1 text-medium-emphasis flex-wrap">
             <span class="mr-3">{{ userGreeting }}</span>
             <v-btn v-if="isUserApprovedAndActive" variant="outlined" color="primary" size="small" @click="goToDashboard">
-              <v-icon start>
-                mdi-view-dashboard-outline
-              </v-icon> Ke Panel
+              <v-icon start icon="tabler:layout-dashboard" /> Ke Panel
             </v-btn>
           </div>
         </div>
@@ -305,7 +299,7 @@ useHead({ title: 'Beli Paket Hotspot' })
               <v-skeleton-loader type="image, article, actions" height="320" />
             </v-col>
           </v-row>
-          <v-row v-else-if="fetchPackagesError != null" justify="center" class="px-lg-10 px-md-4 px-sm-2">
+          <v-row v-else-if="fetchPackagesError" justify="center" class="px-lg-10 px-md-4 px-sm-2">
             <v-col cols="12" md="8" lg="6">
               <v-alert type="error" title="Gagal Memuat Paket" variant="tonal" prominent>
                 <p class="mb-4">
@@ -339,9 +333,7 @@ useHead({ title: 'Beli Paket Hotspot' })
                     <v-list lines="one" density="compact" bg-color="transparent" class="py-0">
                       <v-list-item>
                         <template #prepend>
-                          <v-icon size="small" class="mr-2">
-                            mdi-database-outline
-                          </v-icon>
+                          <v-icon icon="tabler:database" size="small" class="mr-2" />
                         </template>
                         <v-list-item-title class="text-body-2">
                           Kuota: <span class="font-weight-medium">{{ formatQuota(pkg.data_quota_gb) }}</span>
@@ -349,9 +341,7 @@ useHead({ title: 'Beli Paket Hotspot' })
                       </v-list-item>
                       <v-list-item>
                         <template #prepend>
-                          <v-icon size="small" class="mr-2">
-                            mdi-speedometer
-                          </v-icon>
+                          <v-icon icon="tabler:gauge" size="small" class="mr-2" />
                         </template>
                         <v-list-item-title class="text-body-2">
                           Kecepatan: <span class="font-weight-medium">Unlimited</span>
@@ -359,9 +349,7 @@ useHead({ title: 'Beli Paket Hotspot' })
                       </v-list-item>
                       <v-list-item>
                         <template #prepend>
-                          <v-icon size="small" class="mr-2">
-                            mdi-calendar-clock-outline
-                          </v-icon>
+                          <v-icon icon="tabler:calendar-time" size="small" class="mr-2" />
                         </template>
                         <v-list-item-title class="text-body-2">
                           Aktif: <span class="font-weight-medium">{{ pkg.duration_days }} Hari</span>
@@ -386,11 +374,9 @@ useHead({ title: 'Beli Paket Hotspot' })
                 </v-card>
               </v-col>
             </v-row>
-            <v-row v-else-if="isLoadingPackages === false" justify="center">
+            <v-row v-else-if="!isLoadingPackages" justify="center">
               <v-col cols="12" class="text-center py-16 text-medium-emphasis">
-                <v-icon size="x-large" class="mb-5">
-                  mdi-package-variant-closed-remove
-                </v-icon>
+                <v-icon icon="tabler:package-off" size="x-large" class="mb-5" />
                 <p class="text-h6">
                   Belum ada paket yang tersedia.
                 </p>
@@ -403,14 +389,10 @@ useHead({ title: 'Beli Paket Hotspot' })
       <v-dialog v-model="showContactDialog" persistent max-width="500px" scrim="grey-darken-3" eager>
         <v-card :loading="isCheckingUser" rounded="lg" :disabled="isCheckingUser">
           <v-card-title class="d-flex align-center py-3 px-4 bg-grey-lighten-4 border-b">
-            <v-icon color="primary" start>
-              mdi-account-question-outline
-            </v-icon>
+            <v-icon icon="tabler:user-question" color="primary" start />
             <span class="text-h6 font-weight-medium">Periksa Nomor Telepon</span>
             <v-spacer />
-            <v-btn icon flat size="small" :disabled="isCheckingUser === true" variant="text" @click="closeContactDialog">
-              <v-icon>mdi-close</v-icon>
-            </v-btn>
+            <v-btn icon="tabler:x" flat size="small" :disabled="isCheckingUser === true" variant="text" @click="closeContactDialog" />
           </v-card-title>
           <p class="text-caption px-4 pt-4 text-medium-emphasis">
             Masukkan nama dan nomor WhatsApp Anda untuk memeriksa apakah sudah terdaftar.
@@ -430,7 +412,7 @@ useHead({ title: 'Beli Paket Hotspot' })
                 class="mb-4"
                 :disabled="isCheckingUser"
                 hide-details="auto"
-                prepend-inner-icon="mdi-account"
+                prepend-inner-icon="tabler:user"
                 :rules="nameRules"
                 clearable
                 autofocus
@@ -446,7 +428,7 @@ useHead({ title: 'Beli Paket Hotspot' })
                 class="mb-1"
                 :disabled="isCheckingUser"
                 hide-details="auto"
-                prepend-inner-icon="mdi-whatsapp"
+                prepend-inner-icon="tabler:brand-whatsapp"
                 :rules="phoneRules"
                 clearable
                 density="default"
@@ -459,9 +441,7 @@ useHead({ title: 'Beli Paket Hotspot' })
                 Batal
               </v-btn>
               <v-btn color="primary" variant="flat" type="submit" :loading="isCheckingUser" :disabled="isCheckingUser === true || isContactFormValid !== true">
-                <v-icon start>
-                  mdi-account-search-outline
-                </v-icon>
+                <v-icon icon="tabler:user-search" start />
                 Periksa Nomor
               </v-btn>
             </v-card-actions>
@@ -479,7 +459,7 @@ useHead({ title: 'Beli Paket Hotspot' })
       >
         {{ snackbarText }}
         <template #actions>
-          <v-btn icon="mdi-close" variant="text" @click="snackbarVisible = false" />
+          <v-btn icon="tabler:x" variant="text" @click="snackbarVisible = false" />
         </template>
       </v-snackbar>
     </v-col>

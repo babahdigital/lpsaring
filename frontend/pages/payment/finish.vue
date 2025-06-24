@@ -179,15 +179,16 @@ const alertTitle = computed((): string => {
   }
 })
 
+// --- IKON DIPERBAIKI ---
 const alertIcon = computed((): string => {
   switch (finalStatus.value) {
-    case 'SUCCESS': return 'mdi-check-decagram-outline'
-    case 'PENDING': return 'mdi-clock-fast'
-    case 'FAILED': return 'mdi-close-circle-outline'
-    case 'EXPIRED': return 'mdi-timer-sand-complete'
-    case 'CANCELLED': return 'mdi-cancel'
-    case 'ERROR': return 'mdi-alert-circle-outline'
-    default: return 'mdi-help-circle-outline'
+    case 'SUCCESS': return 'tabler:discount-check'
+    case 'PENDING': return 'tabler:clock-hour-3'
+    case 'FAILED': return 'tabler:circle-x'
+    case 'EXPIRED': return 'tabler:hourglass-high'
+    case 'CANCELLED': return 'tabler:ban'
+    case 'ERROR': return 'tabler:alert-circle'
+    default: return 'tabler:help-circle'
   }
 })
 
@@ -312,9 +313,7 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
 
         <v-card v-else-if="fetchError" variant="tonal" color="error" class="mx-auto rounded-xl pa-2">
           <v-card-text class="text-center">
-            <v-icon size="56" class="mb-4" color="error">
-              mdi-alert-octagon-outline
-            </v-icon>
+            <v-icon size="56" class="mb-4" color="error" icon="tabler:alert-octagon" />
             <h2 class="text-h5 font-weight-bold mb-3">
               Gagal Memuat Transaksi
             </h2>
@@ -322,9 +321,7 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
               {{ fetchError }}
             </p>
             <v-btn color="primary" variant="flat" size="large" @click="goToSelectPackage">
-              <v-icon start>
-                mdi-arrow-left-circle-outline
-              </v-icon>Kembali ke Pilihan Paket
+              <v-icon start icon="tabler:arrow-left-circle" />Kembali ke Pilihan Paket
             </v-btn>
           </v-card-text>
         </v-card>
@@ -344,9 +341,7 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
             <v-list lines="two" density="comfortable" class="py-2 bg-transparent">
               <v-list-item class="px-sm-6 px-4">
                 <template #prepend>
-                  <v-icon class="mr-5 text-medium-emphasis">
-                    mdi-pound
-                  </v-icon>
+                  <v-icon class="mr-5 text-medium-emphasis" icon="tabler:hash" />
                 </template>
                 <v-list-item-title class="font-weight-bold">
                   {{ transactionDetails.midtrans_order_id }}
@@ -360,9 +355,7 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
 
               <v-list-item v-if="transactionDetails.midtrans_transaction_id" class="px-sm-6 px-4">
                 <template #prepend>
-                  <v-icon class="mr-5 text-medium-emphasis">
-                    mdi-barcode-scan
-                  </v-icon>
+                  <v-icon class="mr-5 text-medium-emphasis" icon="tabler:scan" />
                 </template>
                 <v-list-item-title class="font-weight-bold font-mono">
                   {{ transactionDetails.midtrans_transaction_id }}
@@ -376,9 +369,7 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
 
               <v-list-item class="px-sm-6 px-4">
                 <template #prepend>
-                  <v-icon class="mr-5 text-medium-emphasis">
-                    mdi-package-variant-closed
-                  </v-icon>
+                  <v-icon class="mr-5 text-medium-emphasis" icon="tabler:package" />
                 </template>
                 <v-list-item-title class="font-weight-bold">
                   {{ packageName }}
@@ -392,9 +383,7 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
 
               <v-list-item class="px-sm-6 px-4">
                 <template #prepend>
-                  <v-icon class="mr-5 text-medium-emphasis">
-                    mdi-wallet-outline
-                  </v-icon>
+                  <v-icon class="mr-5 text-medium-emphasis" icon="tabler:wallet" />
                 </template>
                 <v-list-item-title class="text-h6 font-weight-bold text-success">
                   {{ formatCurrency(transactionDetails.amount) }}
@@ -423,7 +412,7 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
                 <template #append-inner>
                   <v-tooltip location="top" :text="copySuccess === 'Nomor VA' ? 'Berhasil Disalin!' : 'Salin Nomor VA'">
                     <template #activator="{ props: tooltipProps }">
-                      <v-btn v-bind="tooltipProps" :color="copySuccess === 'Nomor VA' ? 'success' : ''" :icon="copySuccess === 'Nomor VA' ? 'mdi-check-all' : 'mdi-content-copy'" variant="text" @click="copyToClipboard(transactionDetails?.va_number, 'Nomor VA')" />
+                      <v-btn v-bind="tooltipProps" :color="copySuccess === 'Nomor VA' ? 'success' : ''" :icon="copySuccess === 'Nomor VA' ? 'tabler:checks' : 'tabler:copy'" variant="text" @click="copyToClipboard(transactionDetails?.va_number, 'Nomor VA')" />
                     </template>
                   </v-tooltip>
                 </template>
@@ -456,16 +445,12 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
                   color="primary" block variant="flat" size="large" rounded="lg"
                   @click="goToSelectPackage"
                 >
-                  <v-icon start>
-                    mdi-cart-plus
-                  </v-icon> Pesan Paket Baru
+                  <v-icon start icon="tabler:shopping-cart-plus" /> Pesan Paket Baru
                 </v-btn>
               </v-col>
               <v-col v-if="finalStatus === 'SUCCESS'" cols="12">
                 <v-btn color="primary" block variant="flat" size="large" rounded="lg" @click="goToDashboard">
-                  <v-icon start>
-                    mdi-view-dashboard-outline
-                  </v-icon> Buka Dashboard
+                  <v-icon start icon="tabler:layout-dashboard" /> Buka Dashboard
                 </v-btn>
               </v-col>
               <v-col v-if="finalStatus === 'PENDING'" cols="12">
@@ -473,9 +458,7 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
                   block variant="text" size="large" rounded="lg" :loading="isLoading"
                   @click="fetchTransactionDetails(transactionDetails.midtrans_order_id)"
                 >
-                  <v-icon start>
-                    mdi-refresh
-                  </v-icon> Cek Ulang Status Pembayaran
+                  <v-icon start icon="tabler:refresh" /> Cek Ulang Status Pembayaran
                 </v-btn>
               </v-col>
             </v-row>
