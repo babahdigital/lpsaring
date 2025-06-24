@@ -23,10 +23,9 @@ def validate_indonesian_phone_number(v: Any) -> str:
         raise TypeError(f"Input nomor telepon harus berupa string, bukan {type(v)}")
     
     try:
-        # Panggil fungsi normalisasi terpusat
+        # Terima berbagai format (08, +628, 628)
         return normalize_to_e164(v)
     except ValueError as e:
-        # Teruskan pesan error dari normalizer untuk konsistensi pesan error
         raise ValueError(str(e))
 
 class UserBaseSchema(BaseModel):
