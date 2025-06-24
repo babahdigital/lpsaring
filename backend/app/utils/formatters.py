@@ -76,3 +76,39 @@ def get_phone_number_variations(query: str) -> List[str]:
     except ValueError:
         pass # Abaikan jika query tidak bisa dinormalisasi, tetap gunakan query asli
     return list(variations)
+
+def normalize_to_e164(phoneNumber: str | None) -> str:
+    """
+    [SEMPURNA] Menormalisasi nomor telepon Indonesia ke format E.164 (+62).
+    SEKARANG DENGAN ATURAN VALIDASI KETAT:
+    1. Input WAJIB diawali dengan '0'.
+    2. Panjang input (setelah dibersihkan) WAJIB antara 10-12 digit.
+    3. Format lain (+62, 62, 8xx) akan ditolak.
+    """
+    if phoneNumber is None or not isinstance(phoneNumber, str):
+        raise ValueError('Nomor telepon tidak boleh kosong.')
+
+    # Menghapus spasi, strip, dan kurung, tapi membiarkan + untuk pengecekan awal
+    cleaned = phoneNumber.strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
+
+    if not cleaned:
+        raise ValueError('Nomor telepon tidak boleh kosong.')
+
+    # ATURAN 1: Input WAJIB diawali dengan '0'
+    if not cleaned.startswith('0'):
+        raise ValueError('Format tidak valid. Nomor telepon harus diawali dengan angka 0.')
+
+    # ATURAN 2: Panjang input WAJIB 10-12 digit
+    if not (10 <= len(cleaned) <= 12):
+        raise ValueError('Panjang nomor telepon harus antara 10 hingga 12 digit.')
+    
+    # ATURAN 3: Format Regex untuk memastikan format 08[1-9]...
+    # Ini mencegah nomor seperti 0000000000 atau 08A...
+    if not cleaned.isdigit() or not cleaned.startswith('08') or not cleaned[2].isdigit() or int(cleaned[2]) == 0:
+        raise ValueError('Format nomor telepon tidak valid.')
+
+    # Jika semua aturan di atas lolos, baru kita normalisasi ke E.164
+    # Karena sudah pasti diawali '0', logikanya menjadi sangat sederhana.
+    e164_number = f"+62{cleaned[1:]}"
+    
+    return e164_number
