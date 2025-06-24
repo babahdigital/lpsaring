@@ -59,7 +59,6 @@ export default defineNuxtConfig({
   css: [
     '@core/scss/template/index.scss',
     '@/assets/styles/styles.scss',
-    '@/plugins/iconify/icons.css',
   ],
 
   components: {
