@@ -10,14 +10,14 @@ on:
   workflow_dispatch:
 
 env:
-  DOCKER_BUILDKIT: 1            # pastikan BuildKit aktif
+  DOCKER_BUILDKIT: 1
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write           # diperlukan untuk push image
+      packages: write
     strategy:
       fail-fast: false
       matrix:
