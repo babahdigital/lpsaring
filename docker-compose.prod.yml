@@ -81,6 +81,8 @@ services:
     container_name: hotspot_prod_celery_worker
     env_file:
       - .env.prod
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     command: >
       celery -A app.extensions.celery_app worker
       --loglevel=info
