@@ -82,39 +82,46 @@ function whatsappValidationRule(v: string) {
   if (isFormatBasicallyCorrect !== true)
     return true
 
-  return new Promise<boolean | string>((resolve) => {
-    if (validationTimeout !== null)
-      clearTimeout(validationTimeout)
+return new Promise<boolean | string>((resolve) => {
+  if (validationTimeout !== null)
+    clearTimeout(validationTimeout)
 
-    validationTimeout = setTimeout(async () => {
-      try {
-        const response = await $fetch('/api/users/validate-whatsapp', {
-          method: 'POST',
-          body: { phone_number: v },
-        })
+  validationTimeout = setTimeout(async () => {
+    try {
+      const response = await $fetch('/api/users/validate-whatsapp', {
+        method: 'POST',
+        body: { phone_number: v },
+        timeout: 3000 // 3 detik timeout
+      })
 
-        if (response.isValid === true) {
-          resolve(true)
+      if (response.isValid === true) {
+        resolve(true)
+      } else {
+        let errorMsg = 'Nomor WhatsApp tidak valid'
+        
+        // Berikan pesan lebih spesifik
+        if (response.message.includes('terdaftar')) {
+          errorMsg = 'Nomor sudah terdaftar di sistem'
+        } else if (response.message.includes('aktif')) {
+          errorMsg = 'Nomor tidak aktif di WhatsApp'
+        } else if (response.message.includes('timeout')) {
+          errorMsg = 'Validasi timeout, coba lagi'
         }
-        else {
-          let errorMsg = 'Nomor WhatsApp tidak valid'
-
-          if (response.message.includes('terdaftar')) {
-            errorMsg = 'Nomor sudah terdaftar di sistem'
-          }
-          else if (response.message.includes('aktif')) {
-            errorMsg = 'Nomor tidak aktif di WhatsApp'
-          }
-
-          resolve(errorMsg)
-        }
+        
+        resolve(errorMsg)
       }
-      catch (error: any) { // PERBAIKAN: Tambahkan blok catch
-        resolve(error.data?.message || 'Gagal memvalidasi nomor. Coba lagi.')
+    } catch (error: any) {
+      let errorMsg = 'Gagal memvalidasi nomor'
+      
+      // Handle timeout khusus
+      if (error.name === 'FetchError' && error.message.includes('timed out')) {
+        errorMsg = 'Timeout: Layanan validasi tidak merespon'
       }
-    }, 500)
-  })
-}
+      
+      resolve(errorMsg)
+    }
+  }, 500)
+})
 
 // --- Fungsi Helper ---
 async function tryFocus(refInstance: { focus?: () => void } | null) {
