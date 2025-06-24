@@ -2,7 +2,7 @@
 
 // Fungsi untuk mengubah format nomor dari 08... ke 628...
 function normalizeTo62(phone: string): string {
-  let cleaned = phone.replace(/[\s-]/g, '')
+  const cleaned = phone.replace(/[\s-]/g, '')
   if (cleaned.startsWith('08'))
     return `62${cleaned.substring(1)}`
 
