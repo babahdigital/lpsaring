@@ -16,11 +16,8 @@ const CssIconAdapter: IconSet = {
     let iconClass = ''
 
     // Pengecekan 1: Menangani ikon MDI yang mungkin salah masuk ke adapter ini.
-    // Ikon ini seharusnya di-routing ke 'mdi' set.
     if (iconName.startsWith('mdi-')) {
-      console.warn(`[Ikon Vuetify] Format ikon MDI salah: "${iconName}". Seharusnya menggunakan format "mdi:nama-ikon" (dengan titik dua) agar dapat di-render dengan benar oleh set 'mdi'. Ikon ini akan dilewati oleh adapter 'tabler'.`)
-      
-      // Kembalikan elemen kosong agar tidak error, tapi teruskan props seperti class.
+      console.warn(`[Ikon Vuetify] Format ikon MDI salah: "${iconName}". Seharusnya menggunakan format "mdi:nama-ikon".`)
       return h('i', { ...props })
     }
 
@@ -29,13 +26,17 @@ const CssIconAdapter: IconSet = {
       const [prefix, name] = iconName.split(':', 2)
       iconClass = `icon--${prefix}--${name}`
     }
-    // Pengecekan 3: Menangani format umum 'prefix-nama' (contoh: 'tabler-eye') dan memperbaikinya.
+    // Pengecekan 3: Menangani format umum 'prefix-nama' (contoh: 'tabler-mail-fast') dan memperbaikinya.
     else if (iconName.startsWith('tabler-')) {
-      const [prefix, name] = iconName.split('-', 2)
+      // --- PERBAIKAN LOGIKA ADA DI SINI ---
+      // Menggunakan indexOf dan substring untuk memisahkan nama ikon dengan benar,
+      // bahkan jika nama ikon mengandung tanda hubung.
+      const firstHyphenIndex = iconName.indexOf('-')
+      const prefix = iconName.substring(0, firstHyphenIndex) // Hasil: 'tabler'
+      const name = iconName.substring(firstHyphenIndex + 1)   // Hasil: 'mail-fast'
       iconClass = `icon--${prefix}--${name}`
     }
-    // Pengecekan 4 (Fallback): Menangani format tanpa prefix (contoh: 'chevron-down')
-    // dan mengasumsikannya sebagai bagian dari set 'tabler'.
+    // Pengecekan 4 (Fallback): Menangani format tanpa prefix (contoh: 'chevron-down').
     else {
       iconClass = `icon--tabler--${iconName}`
     }
