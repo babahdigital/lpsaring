@@ -446,10 +446,11 @@ watch(regRole, () => {
                     label="Nomor WhatsApp Aktif"
                     placeholder="Contoh: 081234567890"
                     prepend-inner-icon="tabler-brand-whatsapp"
-                    :rules="phoneRules"
+                    :rules="[...phoneFormatRules, whatsappValidationRule]"
                     :disabled="isSubmitting"
                     class="mb-4"
                     maxlength="12"
+                    validate-on="input"
                   />
                   <VBtn
                     block
