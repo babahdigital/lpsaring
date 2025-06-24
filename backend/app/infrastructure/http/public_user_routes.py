@@ -79,11 +79,9 @@ def validate_whatsapp_number():
         if not json_data:
             return jsonify({"isValid": False, "message": "Request body harus JSON."}), HTTPStatus.BAD_REQUEST
         
-        # Menggunakan skema baru yang kita buat
         req_data = WhatsappValidationRequest.model_validate(json_data)
-        phone_number_e164 = req_data.phone_number # sudah dalam format E.164
+        phone_number_e164 = req_data.phone_number 
     except ValidationError as e:
-        # Ambil pesan error pertama untuk ditampilkan ke pengguna
         error_detail = e.errors()[0]
         error_message = error_detail.get('msg', 'Input tidak valid.')
         return jsonify({"isValid": False, "message": error_message}), HTTPStatus.UNPROCESSABLE_ENTITY
@@ -91,10 +89,14 @@ def validate_whatsapp_number():
         current_app.logger.error(f"[Validate WA] Error parsing request: {e}", exc_info=True)
         return jsonify({"isValid": False, "message": "Format request tidak valid."}), HTTPStatus.BAD_REQUEST
         
-    # 2. Panggil API Fonnte
-    fonnte_token = current_app.config.get('FONNTE_TOKEN')
+    # 2. Panggil API Fonnte menggunakan konfigurasi yang sudah ada
+    # --- [PERBAIKAN KUNCI DI SINI] ---
+    # Mengambil token dari 'WHATSAPP_API_KEY' sesuai dengan config.py dan .env Anda.
+    fonnte_token = current_app.config.get('WHATSAPP_API_KEY')
+    # ------------------------------------
+
     if not fonnte_token:
-        current_app.logger.error("[Validate WA] FONNTE_TOKEN tidak diatur di konfigurasi server.")
+        current_app.logger.error("[Validate WA] WHATSAPP_API_KEY tidak diatur di konfigurasi server.")
         return jsonify({"isValid": False, "message": "Layanan validasi tidak terkonfigurasi."}), HTTPStatus.INTERNAL_SERVER_ERROR
     
     # Fonnte memerlukan nomor tanpa + di awal
@@ -106,7 +108,7 @@ def validate_whatsapp_number():
             headers={'Authorization': fonnte_token},
             data={'target': target_number}
         )
-        response.raise_for_status()  # Cek jika ada error HTTP (4xx atau 5xx)
+        response.raise_for_status()
         
         fonnte_data = response.json()
         
