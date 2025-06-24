@@ -182,7 +182,7 @@ const alertTitle = computed((): string => {
 // --- IKON DIPERBAIKI ---
 const alertIcon = computed((): string => {
   switch (finalStatus.value) {
-    case 'SUCCESS': return 'tabler:discount-check'
+    case 'SUCCESS': return 'tabler:rosette-discount-check-filled'
     case 'PENDING': return 'tabler:clock-hour-3'
     case 'FAILED': return 'tabler:circle-x'
     case 'EXPIRED': return 'tabler:hourglass-high'
