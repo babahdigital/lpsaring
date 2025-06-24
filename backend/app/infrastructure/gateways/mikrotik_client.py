@@ -1,5 +1,5 @@
 # backend/app/infrastructure/gateways/mikrotik_client.py
-# VERSI FINAL: Logika penanganan respons dari .add() dibuat lebih tangguh.
+# VERSI FINAL: Fungsi delete_hotspot_user dibuat lebih tangguh.
 
 import os
 import time
@@ -92,9 +92,8 @@ def activate_or_update_hotspot_user(
             user_entry = users[0] if users else None
 
             if user_entry:
-                user_id = user_entry.get('.id') or user_entry.get('id')
+                user_id = user_entry.get('.id')
                 if not user_id:
-                    logger.error(f"User {user_mikrotik_username} ditemukan tapi tidak punya ID. Data: {user_entry}")
                     return False, f"Gagal update, user {user_mikrotik_username} tidak memiliki ID."
 
                 update_data = {'.id': user_id, 'password': hotspot_password, 'comment': comment}
@@ -113,22 +112,15 @@ def activate_or_update_hotspot_user(
                 return True, f"User {user_mikrotik_username} berhasil diperbarui."
             else:
                 add_data = {
-                    'name': user_mikrotik_username, 
-                    'password': hotspot_password, 
-                    'profile': profile_result, 
-                    'server': server or 'all', 
-                    'comment': comment
+                    'name': user_mikrotik_username, 'password': hotspot_password, 'profile': profile_result, 
+                    'server': server or 'all', 'comment': comment
                 }
                 new_user_info = user_resource.add(**add_data)
                 
-                # --- [PERBAIKAN FINAL] ---
-                # Logika baru yang lebih aman untuk menangani berbagai kemungkinan respons
                 user_id = None
                 if isinstance(new_user_info, list) and new_user_info:
-                    # Jika hasilnya list, ambil elemen pertama (yang seharusnya dict)
                     user_id = new_user_info[0].get('.id')
                 elif isinstance(new_user_info, dict):
-                    # Jika hasilnya sudah dict
                     user_id = new_user_info.get('.id')
                 
                 if not user_id:
@@ -148,13 +140,12 @@ def activate_or_update_hotspot_user(
             error_msg_str = str(raw_message.decode('utf-8', errors='ignore') if isinstance(raw_message, bytes) else raw_message)
             
             if "already have user with this name" in error_msg_str:
-                logger.warning(f"Terjadi konflik (user sudah ada) saat mencoba membuat {user_mikrotik_username}. Mencoba lagi (Percobaan {attempt})...")
+                logger.warning(f"Konflik (user sudah ada) saat membuat {user_mikrotik_username}. Percobaan {attempt}...")
                 time.sleep(0.5 * attempt)
                 continue
             else:
                 logger.error(f"Error RouterOS API pada percobaan {attempt}: {error_msg_str}")
                 time.sleep(0.5 * attempt)
-        
         except Exception as e:
             logger.error(f"Error tak terduga pada percobaan {attempt}: {e}", exc_info=True)
             time.sleep(1 * attempt)
@@ -162,40 +153,58 @@ def activate_or_update_hotspot_user(
     return False, f"Gagal memproses user {user_mikrotik_username} setelah {max_retries} percobaan."
 
 def delete_hotspot_user(api_connection: Any, username: str, max_retries: int = 3) -> Tuple[bool, str]:
+    """
+    [PERBAIKAN] Menghapus user dari /ip/hotspot/active dan /ip/hotspot/user dengan cara yang lebih aman.
+    """
     if not username: 
         return False, "Username tidak valid"
     
     logger.info(f"[MIKROTIK DELETE] Memulai proses hapus untuk user: {username}")
     
+    # Langkah 1: Hapus sesi aktif dengan aman
     try:
         active_resource = api_connection.get_resource('/ip/hotspot/active')
         active_sessions = active_resource.get(user=username)
         if active_sessions:
-            session_id = active_sessions[0].get('.id')
+            session_id = active_sessions[0].get('.id') # Gunakan .get() yang aman
             if session_id:
+                logger.info(f"[MIKROTIK DELETE] Sesi aktif ditemukan (ID: {session_id}). Menghapus...")
                 active_resource.remove(id=session_id)
                 logger.info(f"[MIKROTIK DELETE] Sesi aktif untuk {username} berhasil dihapus.")
     except Exception as e:
-        logger.warning(f"[MIKROTIK DELETE] Gagal menghapus sesi aktif untuk {username}: {e}", exc_info=True)
+        logger.warning(f"[MIKROTIK DELETE] Gagal menghapus sesi aktif untuk {username} (mungkin sudah tidak ada): {e}")
 
+    # Langkah 2: Hapus user dari /ip/hotspot/user dengan aman
     user_resource = api_connection.get_resource('/ip/hotspot/user')
     for attempt in range(max_retries):
         try:
             users = user_resource.get(name=username)
             if not users:
+                logger.info(f"[MIKROTIK DELETE] User {username} tidak ditemukan (dianggap terhapus).")
                 return True, f"User {username} tidak ditemukan (dianggap terhapus)."
             
-            user_id = users[0].get('.id')
+            user_id = users[0].get('.id') # Gunakan .get() yang aman
             if not user_id:
+                logger.error(f"[MIKROTIK DELETE] Entri user {username} ditemukan tanpa ID. Data: {users[0]}")
                 return False, f"Gagal menghapus {username}: entri user ditemukan di Mikrotik tanpa ID."
             
+            logger.info(f"[MIKROTIK DELETE] User {username} ditemukan (ID: {user_id}). Menghapus (percobaan {attempt + 1})...")
             user_resource.remove(id=user_id)
-            return True, f"User {username} berhasil dihapus."
+            
+            time.sleep(0.3)
+            if not user_resource.get(name=username):
+                logger.info(f"[MIKROTIK DELETE] Verifikasi berhasil. User {username} telah dihapus.")
+                return True, f"User {username} berhasil dihapus."
+            else:
+                 logger.warning(f"[MIKROTIK DELETE] Verifikasi gagal, user {username} masih ada. Mencoba lagi...")
+
         except Exception as e:
             logger.error(f"[MIKROTIK DELETE] Error pada percobaan hapus user {username}: {e}", exc_info=True)
             time.sleep(0.5 * (attempt + 1))
 
+    logger.error(f"[MIKROTIK DELETE] Gagal total menghapus user {username} setelah {max_retries} percobaan.")
     return False, f"Gagal menghapus user {username} dari Mikrotik setelah beberapa percobaan."
+
 
 def set_hotspot_user_profile(api_connection: Any, username_or_id: str, new_profile_name: str) -> Tuple[bool, str]:
     is_valid, profile_name = _is_profile_valid(api_connection, new_profile_name)
@@ -206,7 +215,8 @@ def set_hotspot_user_profile(api_connection: Any, username_or_id: str, new_profi
         if not users: return False, f"User {username_or_id} tidak ditemukan."
         
         user_id = users[0].get('.id')
-        if not user_id: return False, f"Gagal mengubah profil, user {username_or_id} tidak memiliki ID."
+        if not user_id:
+            return False, f"Gagal mengubah profil, user {username_or_id} tidak memiliki ID."
 
         user_resource.set(id=user_id, profile=profile_name)
         return True, f"Profil berhasil diubah ke {profile_name}."
