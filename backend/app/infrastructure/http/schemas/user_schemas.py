@@ -194,6 +194,16 @@ class PhoneCheckResponse(BaseModel):
     user_id: Optional[uuid.UUID] = None
     message: Optional[str] = None
 
+class WhatsappValidationRequest(BaseModel):
+    """Skema untuk memvalidasi permintaan pengecekan nomor WhatsApp."""
+    phone_number: str
+
+    @field_validator('phone_number', mode='before')
+    @classmethod
+    def validate_phone(cls, v: Any) -> str:
+        # Menggunakan kembali validator yang sudah ada untuk konsistensi
+        return validate_indonesian_phone_number(v)
+
 class UserQuotaResponse(BaseModel):
     total_quota_purchased_mb: int
     total_quota_used_mb: int
