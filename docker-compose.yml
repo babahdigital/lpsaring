@@ -56,15 +56,22 @@ services:
     ports:
       - "5010:5010"
     # Menggunakan YAML block scalar (|) untuk command yang panjang agar lebih mudah dibaca.
-    # Command ini spesifik untuk development dengan --reload.
+    # Mengoptimalkan Gunicorn:
+    # - Tingkatkan workers untuk konkurensi (aturan umum: 2 * CPU_CORES + 1). Misal CPU 2 core = 5 worker.
+    # - Tambahkan timeout lebih tinggi untuk menoleransi panggilan API eksternal yang lambat.
+    # - Hapus --reload jika ini untuk PRODUKSI (gunakan ini di dev)
     command:
       - "gunicorn"
       - "--bind"
       - "0.0.0.0:5010"
       - "run:app"
+      # Hapus --reload ini jika ini untuk produksi!
+      # Untuk development:
       - "--reload"
-      - "--workers=1"
-      - "--log-level=debug"
+      # Untuk produksi, ganti 1 dengan angka yang lebih tinggi (misal 5)
+      - "--workers=4" # Sesuaikan jumlah worker sesuai CPU Anda (misal 2 * jumlah_core_CPU + 1)
+      - "--timeout=60" # Meningkatkan timeout worker Gunicorn menjadi 60 detik
+      - "--log-level=info" # Bisa diubah ke debug jika diperlukan
       - "--access-logfile"
       - "-"
       - "--error-logfile"
@@ -77,6 +84,27 @@ services:
     networks:
       - hotspot_network
     restart: unless-stopped
+
+  # --- LAYANAN CELERY WORKER BARU ---
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hotspot_celery_worker
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend:/app
+    command: celery -A app.extensions.celery_app worker --loglevel=info
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - hotspot_network
+    restart: unless-stopped
+  # --- AKHIR LAYANAN CELERY WORKER ---
 
   frontend:
     build:
