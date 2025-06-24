@@ -54,7 +54,7 @@ const iconMap = {
         </template>
 
         <p
-          class="text-body-2 mb-0"
+          class="text-body-2 mb-0 text-white"
           v-html="message.text"
         />
       </VAlert>

@@ -33,7 +33,7 @@ const CssIconAdapter: IconSet = {
       // bahkan jika nama ikon mengandung tanda hubung.
       const firstHyphenIndex = iconName.indexOf('-')
       const prefix = iconName.substring(0, firstHyphenIndex) // Hasil: 'tabler'
-      const name = iconName.substring(firstHyphenIndex + 1)   // Hasil: 'mail-fast'
+      const name = iconName.substring(firstHyphenIndex + 1) // Hasil: 'mail-fast'
       iconClass = `icon--${prefix}--${name}`
     }
     // Pengecekan 4 (Fallback): Menangani format tanpa prefix (contoh: 'chevron-down').
