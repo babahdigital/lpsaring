@@ -185,7 +185,7 @@ const alertIcon = computed((): string => {
     case 'SUCCESS': return 'tabler:rosette-discount-check-filled'
     case 'PENDING': return 'tabler:clock-hour-3-filled'
     case 'FAILED': return 'tabler:circle-x-filled'
-    case 'EXPIRED': return 'tabler:hourglass-high'
+    case 'EXPIRED': return 'tabler:time-duration-0'
     case 'CANCELLED': return 'tabler:ban'
     case 'ERROR': return 'tabler:alert-circle'
     default: return 'tabler:help-circle'
