@@ -183,8 +183,8 @@ const alertTitle = computed((): string => {
 const alertIcon = computed((): string => {
   switch (finalStatus.value) {
     case 'SUCCESS': return 'tabler:rosette-discount-check-filled'
-    case 'PENDING': return 'tabler:clock-hour-3'
-    case 'FAILED': return 'tabler:circle-x'
+    case 'PENDING': return 'tabler:clock-hour-3-filled'
+    case 'FAILED': return 'tabler:circle-x-filled'
     case 'EXPIRED': return 'tabler:hourglass-high'
     case 'CANCELLED': return 'tabler:ban'
     case 'ERROR': return 'tabler:alert-circle'
