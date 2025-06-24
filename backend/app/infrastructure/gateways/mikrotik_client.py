@@ -121,11 +121,11 @@ def activate_or_update_hotspot_user(
                 }
                 new_user_info = user_resource.add(**add_data)
                 
-                # --- [PERBAIKAN KUNCI] ---
-                # Panggil objek AsynchronousResponse untuk mendapatkan hasilnya
-                user_data = new_user_info() 
-                user_id = user_data.get('.id') or user_data.get('id')
-                # -------------------------
+                # --- [PERBAIKAN] ---
+                # Langsung akses objek hasil (bukan memanggilnya sebagai fungsi).
+                # Objek 'new_user_info' adalah dictionary-like yang berisi data user baru.
+                user_id = new_user_info.get('.id') or new_user_info.get('id')
+                # --------------------
 
                 if not user_id:
                     logger.error(f"Mikrotik 'add' tidak mengembalikan ID untuk user {user_mikrotik_username}.")
