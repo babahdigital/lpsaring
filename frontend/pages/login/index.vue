@@ -91,7 +91,7 @@ function whatsappValidationRule(v: string) {
         // [PERBAIKAN] Mengarahkan panggilan ke endpoint Python yang baru
         const response = await $fetch('/api/users/validate-whatsapp', {
           method: 'POST',
-          body: { phoneNumber: v },
+          body: { phone_number: v }, // Pastikan key sesuai
         })
 
         if (response.isValid === true) {
