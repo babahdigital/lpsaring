@@ -1,5 +1,5 @@
 # backend/app/services/user_management/helpers.py
-# VERSI PERBAIKAN: Menyederhanakan _handle_mikrotik_operation dan memastikan konsistensi.
+# File ini HARUS ADA dan berisi kode di bawah ini.
 
 import json
 import secrets
@@ -29,11 +29,9 @@ def _send_whatsapp_notification(user_phone: str, template_key: str, context: dic
 
 def _log_admin_action(admin: User, target_user: User, action_type: AdminActionType, details: dict):
     """Mencatat aksi admin ke log, tidak mencatat jika pelakunya adalah Superadmin."""
-    # Super Admin tidak dicatat aksinya untuk mengurangi noise di log
     if admin.is_super_admin_role:
         return
     try:
-        # Menggunakan default=str untuk menangani objek yang tidak serializable seperti datetime
         log_entry = AdminActionLog(
             admin_id=admin.id, 
             target_user_id=target_user.id, 
@@ -50,31 +48,17 @@ def _generate_password(length=6, numeric_only=True) -> str:
     return "".join(secrets.choice(characters) for _ in range(length))
 
 def _handle_mikrotik_operation(operation_func: Callable, **kwargs: Any) -> Tuple[bool, Any]:
-    """
-    [PERBAIKAN] Menangani operasi Mikrotik dengan cara yang lebih sederhana dan aman.
-    Fungsi ini sekarang secara eksplisit menangani pemetaan argumen yang berbeda.
-    """
+    """Menangani operasi Mikrotik dengan koneksi pool dan logging."""
     try:
         with get_mikrotik_connection() as api_conn:
             if not api_conn:
                 return False, "Gagal mendapatkan koneksi ke Mikrotik."
             
-            # --- BLOK PERBAIKAN DIMULAI ---
-            # Daripada menggunakan 'inspect', kita lakukan pemetaan argumen secara eksplisit.
-            # Ini lebih aman, lebih mudah dibaca, dan lebih mudah dirawat.
-            
-            # 1. Atasi perbedaan nama parameter 'session_timeout' vs 'session_timeout_seconds'
             if 'session_timeout' in kwargs and 'session_timeout_seconds' not in kwargs:
-                # Ganti nama kunci 'session_timeout' menjadi 'session_timeout_seconds'
                 kwargs['session_timeout_seconds'] = kwargs.pop('session_timeout')
 
-            # 2. Panggil fungsi operasi dengan argumen yang sudah diproses
-            # **kwargs akan meneruskan semua argumen lain yang cocok secara otomatis.
             return operation_func(api_connection=api_conn, **kwargs)
-            # --- BLOK PERBAIKAN SELESAI ---
-
     except Exception as e:
-        # Memberikan pesan error yang lebih informatif ke log
         current_app.logger.error(f"Operasi Mikrotik '{operation_func.__name__}' gagal: {e}", exc_info=True)
         return False, f"Error Mikrotik: {str(e)}"
 
