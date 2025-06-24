@@ -1,4 +1,5 @@
 {
+  "auth_send_otp": "Kode OTP Anda: *{otp_code}*. Jangan berikan kode ini kepada siapapun. Kode berlaku selama {otp_expiry_minutes} menit.",
   "admin_creation_success": "Selamat! Akun Admin Anda telah berhasil dibuat.\n\nSilakan login ke Panel Admin menggunakan:\nNomor Telepon: {phone_number}\nPassword: *{password}*\n\nLogin di sini:\n{link_admin_app}\n\nDemi keamanan, harap segera ganti password Anda setelah login pertama kali.",
   "admin_login_notification": "ℹ️ *Aktivitas Login Terdeteksi*\n\nAkun Admin Anda ({phone_number}) baru saja login pada *{login_time}*.\n\nJika ini bukan Anda, segera amankan akun Anda di:\n{link_admin_app}",
   "admin_password_generated": "Informasi Akun Admin:\n\nPassword portal baru Anda telah dibuatkan secara otomatis. Password baru Anda adalah: *{password}*\n\nSegera login dan ganti password Anda untuk keamanan di: {link_admin_app_change_password}",
