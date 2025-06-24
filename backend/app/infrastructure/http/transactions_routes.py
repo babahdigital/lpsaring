@@ -3,44 +3,32 @@
 
 import hashlib
 import os
-import secrets
-import string
 import uuid
-from datetime import datetime, timedelta
-from datetime import timezone as dt_timezone
+from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
 from http import HTTPStatus
 from typing import Any, Dict, Optional
 
 import midtransclient
 from flask import (
-    Blueprint,
-    abort,
-    current_app,
-    jsonify,
-    make_response,
-    render_template,
-    request,
+    Blueprint, abort, current_app, jsonify, make_response, render_template, request
 )
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import selectinload
 
 from app.extensions import db
 from app.infrastructure.db.models import (
-    ApprovalStatus,
-    Package,
-    PackageProfile,
-    Transaction,
-    TransactionStatus,
-    User,
-    UserRole,
+    ApprovalStatus, Package, Transaction, TransactionStatus, User
 )
-
-# Impor service yang sudah disempurnakan
 from app.services.transaction_service import apply_package_and_sync_to_mikrotik
-# --- PERBAIKAN IMPORT ---
-from app.services.notification_service import generate_temp_invoice_token, get_notification_message, verify_temp_invoice_token
+# --- Impor yang Disesuaikan ---
+from app.services.notification_service import (
+    generate_temp_invoice_token, get_notification_message, verify_temp_invoice_token
+)
+from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection
+from app.infrastructure.gateways.whatsapp_client import send_whatsapp_with_pdf # Impor fungsi baru
+# -----------------------------
 from app.utils.formatters import format_to_local_phone
 from .decorators import token_required
 
