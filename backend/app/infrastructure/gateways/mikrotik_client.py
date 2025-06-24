@@ -1,5 +1,5 @@
 # backend/app/infrastructure/gateways/mikrotik_client.py
-# VERSI PERBAIKAN: Mengatasi AttributeError dengan menangani AsynchronousResponse
+# VERSI FINAL: Logika penanganan respons dari .add() dibuat lebih tangguh.
 
 import os
 import time
@@ -121,15 +121,18 @@ def activate_or_update_hotspot_user(
                 }
                 new_user_info = user_resource.add(**add_data)
                 
-                # --- [PERBAIKAN] ---
-                # Objek 'new_user_info' adalah 'AsynchronousResponse'. Kita harus memanggilnya
-                # seperti fungsi untuk mendapatkan hasil (dictionary) yang sebenarnya.
-                new_user_result = new_user_info()
-                user_id = new_user_result.get('.id') or new_user_result.get('id')
-                # --------------------
-
+                # --- [PERBAIKAN FINAL] ---
+                # Logika baru yang lebih aman untuk menangani berbagai kemungkinan respons
+                user_id = None
+                if isinstance(new_user_info, list) and new_user_info:
+                    # Jika hasilnya list, ambil elemen pertama (yang seharusnya dict)
+                    user_id = new_user_info[0].get('.id')
+                elif isinstance(new_user_info, dict):
+                    # Jika hasilnya sudah dict
+                    user_id = new_user_info.get('.id')
+                
                 if not user_id:
-                    logger.error(f"Mikrotik 'add' tidak mengembalikan ID untuk user {user_mikrotik_username}.")
+                    logger.error(f"Mikrotik 'add' tidak mengembalikan ID untuk user {user_mikrotik_username}. Respons: {new_user_info}")
                     time.sleep(0.5)
                     continue
 
@@ -158,65 +161,41 @@ def activate_or_update_hotspot_user(
             
     return False, f"Gagal memproses user {user_mikrotik_username} setelah {max_retries} percobaan."
 
-# Sisa fungsi (delete_hotspot_user, set_hotspot_user_profile, dll) tidak perlu diubah.
 def delete_hotspot_user(api_connection: Any, username: str, max_retries: int = 3) -> Tuple[bool, str]:
-    """Menghapus user dari /ip/hotspot/active dan /ip/hotspot/user dengan logika ID yang fleksibel."""
     if not username: 
         return False, "Username tidak valid"
     
     logger.info(f"[MIKROTIK DELETE] Memulai proses hapus untuk user: {username}")
     
-    # Langkah 1: Hapus sesi aktif
     try:
         active_resource = api_connection.get_resource('/ip/hotspot/active')
         active_sessions = active_resource.get(user=username)
         if active_sessions:
-            session_entry = active_sessions[0]
-            session_id = session_entry.get('.id') or session_entry.get('id')
+            session_id = active_sessions[0].get('.id')
             if session_id:
-                logger.info(f"[MIKROTIK DELETE] Sesi aktif ditemukan untuk {username} (ID: {session_id}). Mencoba menghapus...")
                 active_resource.remove(id=session_id)
                 logger.info(f"[MIKROTIK DELETE] Sesi aktif untuk {username} berhasil dihapus.")
-            else:
-                logger.warning(f"[MIKROTIK DELETE] Sesi aktif untuk {username} ditemukan tetapi tidak memiliki ID. Data: {session_entry}")
-        else:
-            logger.info(f"[MIKROTIK DELETE] Tidak ada sesi aktif untuk {username}.")
     except Exception as e:
-        logger.warning(f"[MIKROTIK DELETE] Gagal menghapus sesi aktif untuk {username} (mungkin sudah tidak ada): {e}", exc_info=True)
+        logger.warning(f"[MIKROTIK DELETE] Gagal menghapus sesi aktif untuk {username}: {e}", exc_info=True)
 
-    # Langkah 2: Hapus user dari /ip/hotspot/user
     user_resource = api_connection.get_resource('/ip/hotspot/user')
     for attempt in range(max_retries):
         try:
             users = user_resource.get(name=username)
             if not users:
-                logger.info(f"[MIKROTIK DELETE] User {username} tidak ditemukan di /ip/hotspot/user (dianggap sudah terhapus). Operasi berhasil.")
                 return True, f"User {username} tidak ditemukan (dianggap terhapus)."
             
-            user_entry = users[0]
-            user_id = user_entry.get('.id') or user_entry.get('id')
-
+            user_id = users[0].get('.id')
             if not user_id:
-                logger.error(f"[MIKROTIK DELETE] Ditemukan entri user untuk {username} tetapi tidak ada ID ('.id' atau 'id'). Data: {user_entry}. Proses hapus dibatalkan.")
                 return False, f"Gagal menghapus {username}: entri user ditemukan di Mikrotik tanpa ID."
             
-            logger.info(f"[MIKROTIK DELETE] User {username} ditemukan (ID: {user_id}). Mencoba menghapus (percobaan {attempt + 1})...")
             user_resource.remove(id=user_id)
-            
-            time.sleep(0.3)
-            if not user_resource.get(name=username):
-                logger.info(f"[MIKROTIK DELETE] Verifikasi berhasil. User {username} telah dihapus sepenuhnya.")
-                return True, f"User {username} berhasil dihapus."
-            else:
-                 logger.warning(f"[MIKROTIK DELETE] Verifikasi gagal, user {username} masih ada setelah dihapus. Mencoba lagi...")
-
+            return True, f"User {username} berhasil dihapus."
         except Exception as e:
             logger.error(f"[MIKROTIK DELETE] Error pada percobaan hapus user {username}: {e}", exc_info=True)
             time.sleep(0.5 * (attempt + 1))
 
-    logger.error(f"[MIKROTIK DELETE] Gagal total menghapus user {username} setelah {max_retries} percobaan.")
     return False, f"Gagal menghapus user {username} dari Mikrotik setelah beberapa percobaan."
-
 
 def set_hotspot_user_profile(api_connection: Any, username_or_id: str, new_profile_name: str) -> Tuple[bool, str]:
     is_valid, profile_name = _is_profile_valid(api_connection, new_profile_name)
@@ -226,13 +205,9 @@ def set_hotspot_user_profile(api_connection: Any, username_or_id: str, new_profi
         users = user_resource.get(name=username_or_id) or user_resource.get(id=username_or_id)
         if not users: return False, f"User {username_or_id} tidak ditemukan."
         
-        user_entry = users[0]
-        user_id = user_entry.get('.id') or user_entry.get('id')
-        if not user_id:
-            return False, f"Gagal mengubah profil, user {username_or_id} tidak memiliki ID."
+        user_id = users[0].get('.id')
+        if not user_id: return False, f"Gagal mengubah profil, user {username_or_id} tidak memiliki ID."
 
-        if user_entry.get('profile') == profile_name: return True, "User sudah di profil yang benar."
-        
         user_resource.set(id=user_id, profile=profile_name)
         return True, f"Profil berhasil diubah ke {profile_name}."
     except Exception as e: return False, str(e)
