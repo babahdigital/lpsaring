@@ -94,18 +94,20 @@ function whatsappValidationRule(v: string) {
           body: { phone_number: v }, // Pastikan key sesuai
         })
 
+        // Tambahkan pengecekan response lebih detail
         if (response.isValid === true) {
           resolve(true)
+        } else {
+          let errorMsg = 'Nomor WhatsApp tidak valid'
+          
+          if (response.message.includes('terdaftar')) {
+            errorMsg = 'Nomor sudah terdaftar di sistem'
+          } else if (response.message.includes('aktif')) {
+            errorMsg = 'Nomor tidak aktif di WhatsApp'
+          }
+          
+          resolve(errorMsg)
         }
-        else {
-          // Gunakan pesan error dari backend jika ada, jika tidak, gunakan pesan default
-          resolve(response.message || 'Nomor WhatsApp tidak terdaftar atau tidak valid.')
-        }
-      }
-      catch (error: any) {
-        // Tangani jika endpoint backend kita sendiri mengembalikan error (misal: 400, 500)
-        resolve(error.data?.message || 'Gagal memvalidasi nomor. Coba lagi.')
-      }
     }, 500)
   })
 }
