@@ -1,5 +1,5 @@
 # backend/app/infrastructure/http/transactions_routes.py
-# VERSI PERBAIKAN FINAL: Menggunakan base URL publik dari konfigurasi.
+# VERSI PERBAIKAN FINAL: Menggunakan base URL publik dari konfigurasi dan Celery.
 
 import hashlib
 import os
@@ -26,9 +26,12 @@ from app.services.notification_service import (
     generate_temp_invoice_token, get_notification_message, verify_temp_invoice_token
 )
 from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection
-from app.infrastructure.gateways.whatsapp_client import send_whatsapp_with_pdf
+# from app.infrastructure.gateways.whatsapp_client import send_whatsapp_with_pdf # Tidak lagi dipanggil langsung
 from app.utils.formatters import format_to_local_phone
 from .decorators import token_required
+
+# Import Celery task
+from app.tasks import send_whatsapp_invoice_task # Import task Celery Anda
 
 try:
     from weasyprint import HTML
@@ -59,7 +62,7 @@ def get_midtrans_snap_client():
     server_key = current_app.config.get("MIDTRANS_SERVER_KEY")
     client_key = current_app.config.get("MIDTRANS_CLIENT_KEY")
     if not server_key or not client_key:
-        raise ValueError("MIDTRANS_SERVER_KEY or MIDTRANS_CLIENT_KEY configuration is missing.")
+        raise ValueError("MIDTRANS_SERVER_KEY atau MIDTRANS_CLIENT_KEY configuration is missing.")
     return midtransclient.Snap(is_production=is_production, server_key=server_key, client_key=client_key)
 
 def safe_parse_midtrans_datetime(dt_string: Optional[str]):
@@ -245,22 +248,19 @@ def handle_notification():
             with get_mikrotik_connection() as mikrotik_api:
                 is_success, message = apply_package_and_sync_to_mikrotik(transaction, mikrotik_api)
                 if is_success:
-                    session.commit()
+                    session.commit() # Commit transaksi DULU
                     current_app.logger.info(f"WEBHOOK: Transaksi {order_id} BERHASIL di-commit. Pesan: {message}")
                     try:
                         user = transaction.user
                         package = transaction.package
                         temp_token = generate_temp_invoice_token(str(transaction.id))
 
-                        # --- PERBAIKAN UTAMA DI SINI ---
-                        # Gunakan base URL publik yang telah dikonfigurasi, bukan dari request.
                         base_url = current_app.config.get('APP_PUBLIC_BASE_URL')
                         if not base_url:
                             current_app.logger.error("APP_PUBLIC_BASE_URL tidak diatur! Tidak dapat membuat URL invoice untuk WhatsApp.")
                             raise ValueError("Konfigurasi alamat publik aplikasi tidak ditemukan.")
                         
                         temp_invoice_url = f"{base_url.rstrip('/')}/api/transactions/invoice/temp/{temp_token}"
-                        # --- AKHIR PERBAIKAN UTAMA ---
 
                         msg_context = {
                             "full_name": user.full_name,
@@ -272,14 +272,25 @@ def handle_notification():
                         filename = f"invoice-{transaction.midtrans_order_id}.pdf"
                         
                         current_app.logger.info(f"Mencoba mengirim WA dengan PDF dari URL: {temp_invoice_url}")
-                        send_whatsapp_with_pdf(user.phone_number, caption_message, temp_invoice_url, filename)
+                        
+                        # --- Ganti panggilan sinkron ini dengan panggilan Celery task ---
+                        send_whatsapp_invoice_task.delay(
+                            str(user.phone_number), # Pastikan ini string
+                            caption_message, 
+                            temp_invoice_url, 
+                            filename
+                        )
+                        current_app.logger.info(f"Task pengiriman WhatsApp invoice untuk {order_id} dikirim ke Celery.")
 
                     except Exception as e_notif:
                         current_app.logger.error(f"WEBHOOK: Gagal kirim notif WhatsApp {order_id}: {e_notif}", exc_info=True)
                 else:
-                    session.rollback()
+                    session.rollback() # Rollback jika Mikrotik gagal
+                    current_app.logger.error(f"WEBHOOK: Gagal apply paket ke Mikrotik untuk {order_id}. Rollback transaksi.")
         else:
-            session.commit()
+            session.commit() # Commit status transaksi yang berubah (pending, deny, expire, cancel)
+            current_app.logger.info(f"WEBHOOK: Status transaksi {order_id} diupdate ke {transaction.status.value}.")
+        
         return jsonify({"status": "ok"}), HTTPStatus.OK
     except Exception as e:
         db.session.rollback()
@@ -393,7 +404,6 @@ def get_transaction_invoice(current_user_id: uuid.UUID, midtrans_order_id: str):
             'invoice_date_local': datetime.now(app_tz),
         }
         
-        # PERBAIKAN: Gunakan base URL publik untuk merender PDF agar path aset (jika ada) benar
         public_base_url = current_app.config.get('APP_PUBLIC_BASE_URL', request.url_root)
         html_string = render_template('invoice_template.html', **context)
         pdf_bytes = HTML(string=html_string, base_url=public_base_url).write_pdf()
