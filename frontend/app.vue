@@ -1,7 +1,5 @@
-// app.vue
-
 <script setup lang="ts">
-// Impor dari template @core dan komponen aplikasi
+// Import components and utilities
 import ScrollToTop from '@core/components/ScrollToTop.vue'
 import initCore from '@core/initCore'
 import { useConfigStore } from '@core/stores/config'
@@ -16,8 +14,15 @@ import DeviceAuthPopup from '~/components/layout/DeviceAuthPopup.vue'
 // Impor komponen dan store lokal
 import SnackbarWrapper from '~/components/layout/SnackbarWrapper.vue'
 import PromoFetcher from '~/components/promo/PromoFetcher.vue'
+import { useDeviceNotification } from '~/composables/useDeviceNotification'
 import { useAuthStore } from '~/store/auth'
 import { useSettingsStore } from '~/store/settings'
+
+const { global } = useTheme()
+const route = useRoute()
+const configStore = useConfigStore()
+const settingsStore = useSettingsStore()
+const authStore = useAuthStore()
 
 const { global } = useTheme()
 const route = useRoute()
@@ -36,6 +41,10 @@ onMounted(async () => {
   if (!authStore.isAuthCheckDone) {
     await authStore.initializeAuth()
   }
+
+  // Initialize device notification watcher
+  const { startDeviceNotificationWatcher } = useDeviceNotification()
+  startDeviceNotificationWatcher()
 })
 
 // Force show loader for at least 2 seconds for testing

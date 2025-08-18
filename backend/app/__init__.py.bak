@@ -1,56 +1,3 @@
-# Ensure environment variables are loaded first thing
-import os
-from pathlib import Path
-import logging
-
-# Setup basic logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("env_loader")
-
-def load_env_override():
-    """Manually load .env.override file at app initialization"""
-    # Check multiple possible locations for the override file
-    paths_to_check = [
-        Path('.env.override'),  # In current directory 
-        Path('../.env.override'),  # One level up (from app directory)
-        Path('/app/.env.override'),  # Absolute path in Docker container
-    ]
-    
-    for override_path in paths_to_check:
-        if override_path.exists():
-            print(f"Found .env.override at {override_path.absolute()}")
-            try:
-                with open(override_path) as f:
-                    content = f.read()
-                    print(f"Contents of .env.override:\n{content}")
-                    
-                    # Process each line
-                    for line in content.splitlines():
-                        line = line.strip()
-                        if not line or line.startswith('#'):
-                            continue
-                            
-                        if '=' in line:
-                            key, value = line.split('=', 1)
-                            key = key.strip()
-                            value = value.strip().strip('"\'')
-                            if key:
-                                # Show what's being set
-                                print(f"Setting environment variable: {key}={value}")
-                                os.environ[key] = value
-                                
-                print("Successfully loaded environment overrides")
-                return True
-            except Exception as e:
-                print(f"Error loading .env.override: {e}")
-                continue
-    
-    print("Warning: .env.override not found in any expected location")
-    return False
-
-# Load environment variables at the earliest possible moment
-load_env_override()
-
 # backend/app/__init__.py
 # VERSI FINAL: Menambahkan bypass untuk request OPTIONS di hook maintenance.
 # pyright: reportAttributeAccessIssue=false
@@ -76,10 +23,6 @@ from .services import settings_service
 from .infrastructure.http.json_provider import CustomJSONProvider
 from .infrastructure.db.models import User, UserRole
 from .infrastructure.gateways.mikrotik_pool import init_mikrotik_pool
-
-# Monitor environment variables
-import app.env_monitor  # noqa
-
 
 module_log = logging.getLogger(__name__)
 

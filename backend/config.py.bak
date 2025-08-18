@@ -6,33 +6,6 @@ import warnings
 from datetime import timedelta
 from celery.schedules import crontab
 
-# Function to load environment variables from .env.override
-def load_env_override():
-    """Manually load .env.override file to ensure it takes precedence"""
-    import os
-    from pathlib import Path
-    
-    override_path = Path('.env.override')
-    if override_path.exists():
-        print(f"Loading environment overrides from .env.override")
-        with open(override_path) as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith('#'):
-                    continue
-                    
-                if '=' in line:
-                    key, value = line.split('=', 1)
-                    key = key.strip()
-                    value = value.strip().strip('"\'')
-                    if key:  # Skip empty keys
-                        os.environ[key] = value
-                        print(f"  Set {key}={value}")
-
-# Load .env.override at import time
-load_env_override()
-
-
 # --- Helper untuk Membaca Environment Variable ---
 def get_env_bool(var_name, default='False'):
     return os.environ.get(var_name, default).lower() in ('true', '1', 't', 'yes')

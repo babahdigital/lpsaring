@@ -50,17 +50,7 @@ def _ws_handler(ws):
 
     try:
         logger.info(f"[WEBSOCKET] New connection from ip={client_ip} mac={client_mac}")
-        # Send more helpful welcome message with debugging info
-        ws.send(json.dumps({
-            "type": "welcome",
-            "message": "Connected to real-time updates",
-            "debug": {
-                "client_ip": client_ip,
-                "client_mac": client_mac,
-                "server_time": time.time(),
-                "connection_id": f"{id(ws)}"
-            }
-        }))
+        ws.send(json.dumps({"type": "welcome", "message": "Connected to real-time updates"}))
 
         while True:
             message = ws.receive()
@@ -99,16 +89,8 @@ def _ws_handler(ws):
                 pass
 
     except Exception as e:  # noqa: BLE001
-        error_msg = str(e)
-        if 'WebSocket' not in error_msg and 'Connection closed' not in error_msg:
-            # Only log unusual errors, not normal disconnects
-            logger.warning(f"[WEBSOCKET] Error in connection: {error_msg}")
-        elif 'code=1005' in error_msg:
-            # This is a normal closure, just debug log it
-            logger.debug(f"[WEBSOCKET] Normal client disconnect: {error_msg}")
-        else:
-            # Other WebSocket errors
-            logger.debug(f"[WEBSOCKET] Connection closed: {error_msg}")
+        if 'WebSocket' not in str(e):
+            logger.warning(f"[WEBSOCKET] Connection error: {e}")
     finally:
         with ws_clients_lock:
             if client_ip and client_ip in ws_clients:

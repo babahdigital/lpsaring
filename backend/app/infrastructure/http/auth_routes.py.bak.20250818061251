@@ -483,7 +483,7 @@ def sync_device():
         if not current_user:
             # Jika membutuhkan persetujuan eksplisit, JANGAN lakukan bypass/lease otomatis
             try:
-                if False:  # HOTFIX: Bypass device authorization check
+                if current_app.config.get('REQUIRE_EXPLICIT_DEVICE_AUTH', True):
                     AuthSessionService.update_session(
                         client_ip=client_ip,
                         client_mac=client_mac,
@@ -529,7 +529,7 @@ def sync_device():
                     AuthSessionService.reset_failure_counter(client_ip, "sync_device")
 
                     # Jika explicit authorization diaktifkan, JANGAN melakukan bypass/lease otomatis pada legacy flow
-                    if True:  # HOTFIX: Always allow auto-bypass
+                    if not current_app.config.get('REQUIRE_EXPLICIT_DEVICE_AUTH', True):
                         # Best-effort: upsert bypass & static DHCP lease even without JWT
                         try:
                             list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST')
@@ -657,7 +657,7 @@ def sync_device():
 
                 # Jika membutuhkan persetujuan eksplisit dan MAC tidak dipercaya, hentikan di sini
                 try:
-                    require_explicit = False  # HOTFIX: Bypass device authorization requirement
+                    require_explicit = current_app.config.get('REQUIRE_EXPLICIT_DEVICE_AUTH', True)
                 except Exception:
                     require_explicit = True
                 is_trusted_device = bool(client_mac) and bool(getattr(current_user, 'trusted_mac_address', None)) \

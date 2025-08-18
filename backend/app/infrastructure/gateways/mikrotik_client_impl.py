@@ -449,8 +449,12 @@ def create_static_lease(ip: str, mac: str, comment: str) -> Tuple[bool, str]:
                 # Ignore mapping failures
                 pass
 
-        # Fallback ke konfigurasi default jika tersedia
-        if not server_name:
+        # Fallback ke konfigurasi default jika tersedia (kecuali testing mode, di mana kita tidak set server sama sekali)
+        try:
+            testing_mode = bool(current_app.config.get('SYNC_TEST_MODE_ENABLED', False))
+        except Exception:
+            testing_mode = False
+        if not server_name and not testing_mode:
             try:
                 server_name = current_app.config.get('MIKROTIK_DEFAULT_DHCP_SERVER') or None
             except Exception:
@@ -495,7 +499,8 @@ def create_static_lease(ip: str, mac: str, comment: str) -> Tuple[bool, str]:
                     set_fields['address'] = ip
                 if comment and current_comment != comment:
                     set_fields['comment'] = comment
-                if server_name:
+                # Hanya set server jika tidak dalam testing mode
+                if server_name and not testing_mode:
                     set_fields['server'] = server_name
                 if set_fields:
                     # Jangan pernah set server=all; hapus field bila demikian
@@ -510,13 +515,14 @@ def create_static_lease(ip: str, mac: str, comment: str) -> Tuple[bool, str]:
         # Bila tidak ada lease sama sekali untuk MAC ini, buat baru sebagai static
         if not by_mac:
             add_fields: Dict[str, Any] = {"address": ip, "mac-address": mac, "comment": comment}
-            if server_name and str(server_name).lower() != 'all':
+            # Jangan set server saat testing mode; biarkan RouterOS memilih berdasarkan network
+            if server_name and str(server_name).lower() != 'all' and not testing_mode:
                 add_fields['server'] = server_name
             try:
                 leases_res.add(**add_fields)
             except Exception as add_e:
                 # Jika gagal tanpa server, coba lagi dengan default server jika ada
-                if not server_name:
+                if not server_name and not testing_mode:
                     try:
                         default_srv = current_app.config.get('MIKROTIK_DEFAULT_DHCP_SERVER')
                     except Exception:
