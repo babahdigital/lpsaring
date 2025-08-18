@@ -1131,85 +1131,74 @@ def verify_otp():
             # Dapatkan nama server DHCP dari environment, fallback ke None jika tidak ada
             dhcp_server_name = current_app.config.get("MIKROTIK_DHCP_SERVER_NAME")
             
-            # HANDLE DEVICE jika ada client info
-            device = None
+            # ✅ SEMPURNAKAN: Hanya periksa apakah perangkat sudah diotorisasi, JANGAN buat perangkat baru
+            device_authorized = False
+            device_id = None
+            
             if client_mac:
+                # Periksa apakah perangkat ini sudah pernah disetujui sebelumnya
                 device = db.session.execute(
-                    select(UserDevice).filter_by(mac_address=client_mac)
+                    select(UserDevice).filter_by(mac_address=client_mac, status='APPROVED')
                 ).scalar_one_or_none()
-
-                if not device:
-                    # Perangkat baru terdeteksi saat login
-                    logger.info(f"[VERIFY-OTP] New device MAC {client_mac} for user {user.id}")
-                    device = UserDevice(
-                        user_id=user.id,
-                        mac_address=client_mac,
-                        ip_address=client_ip,
-                        device_name=f"Device-{client_mac[-4:]}",
-                        user_agent=request.user_agent.string,
-                        status='PENDING'  # Status default adalah PENDING
-                    )
-                    db.session.add(device)
-                    db.session.flush()  # Flush untuk mendapatkan ID perangkat
-
-                    if current_app.config.get("REQUIRE_EXPLICIT_DEVICE_AUTH"):
-                        # ✅ SEMPURNAKAN: Buat token JWT terlebih dahulu
-                        token = create_access_token(identity=str(user.id))
-                        refresh_token = create_refresh_token(identity=str(user.id))
-                        
-                        # Reset failure counters
-                        if client_ip:
-                            AuthSessionService.reset_failure_counter(client_ip, "verify_otp")
-                            AuthSessionService.reset_failure_counter(client_ip, "sync_device")
-                        
-                        db.session.commit()
-                        
-                        # Kirim status otorisasi diperlukan BESERTA token valid
-                        response_data = {
-                            "status": "DEVICE_AUTHORIZATION_REQUIRED",
-                            "message": "Perangkat baru terdeteksi. Otorisasi diperlukan untuk login.",
-                            "token": token,  # ✅ SEMPURNAKAN: Selalu sertakan token!
-                            "user": {"id": str(user.id), "full_name": user.full_name, "role": user.role.value},
-                            "data": {"device_info": {"mac": client_mac, "ip": client_ip, "id": str(device.id), "user_agent": device.user_agent}}
-                        }
-                        resp = jsonify(response_data)
-                        set_refresh_cookies(resp, refresh_token)
-                        return resp
-                    else:
-                        # Jika otorisasi tidak diperlukan, setujui secara otomatis
-                        device.status = 'APPROVED'
-                        logger.info(f"[VERIFY-OTP] Auto-registered device: {device.id}")
-                else:
-                    # Update existing device
-                    device.user_id = user.id
-                    if device.status != 'APPROVED':
-                        if current_app.config.get("REQUIRE_EXPLICIT_DEVICE_AUTH"):
-                            # ✅ SEMPURNAKAN: Buat token JWT terlebih dahulu untuk perangkat yang ada
-                            token = create_access_token(identity=str(user.id))
-                            refresh_token = create_refresh_token(identity=str(user.id))
-                            
-                            # Reset failure counters
-                            if client_ip:
-                                AuthSessionService.reset_failure_counter(client_ip, "verify_otp")
-                                AuthSessionService.reset_failure_counter(client_ip, "sync_device")
-                                
-                            db.session.commit()
-                            
-                            # Kirim status otorisasi diperlukan BESERTA token valid
-                            response_data = {
-                                "status": "DEVICE_AUTHORIZATION_REQUIRED",
-                                "message": "Perangkat ini memerlukan otorisasi untuk login.",
-                                "token": token,  # ✅ SEMPURNAKAN: Selalu sertakan token!
-                                "user": {"id": str(user.id), "full_name": user.full_name, "role": user.role.value},
-                                "data": {"device_info": {"mac": client_mac, "ip": client_ip, "id": str(device.id)}}
-                            }
-                            resp = jsonify(response_data)
-                            set_refresh_cookies(resp, refresh_token)
-                            return resp
-                        else:
-                            device.status = 'APPROVED'
+                
+                if device:
+                    device_authorized = True
+                    device_id = str(device.id)
+                    logger.info(f"[VERIFY-OTP] Device {client_mac} already authorized for user {user.id}")
+                    
+                    # Update informasi perangkat jika perlu
+                    device.last_seen_at = db.func.now()
+                    device.user_agent = request.user_agent.string
+                    device.ip_address = client_ip
                     db.session.commit()
-                    logger.info(f"[VERIFY-OTP] Updated existing device: {device.id}")
+            
+            # Generate token untuk semua kasus (disetujui atau tidak)
+            token = create_access_token(identity=str(user.id))
+            refresh_token = create_refresh_token(identity=str(user.id))
+            
+            # Reset failure counters
+            if client_ip:
+                AuthSessionService.reset_failure_counter(client_ip, "verify_otp")
+                AuthSessionService.reset_failure_counter(client_ip, "sync_device")
+            
+            # Jika perangkat belum terotorisasi dan fitur otorisasi eksplisit aktif
+            if not device_authorized and current_app.config.get("REQUIRE_EXPLICIT_DEVICE_AUTH"):
+                # Kirim status bahwa otorisasi diperlukan, BESERTA token yang valid
+                response_data = {
+                    "status": "DEVICE_AUTHORIZATION_REQUIRED",
+                    "message": "Perangkat baru terdeteksi. Otorisasi diperlukan.",
+                    "token": token,  # ✅ PENTING: Tetap sertakan token
+                    "user": {"id": str(user.id), "full_name": user.full_name, "role": user.role.value},
+                    "data": {
+                        "device_info": {
+                            "mac": client_mac, 
+                            "ip": client_ip,
+                            "user_agent": request.user_agent.string
+                        }
+                    }
+                }
+                
+                db.session.commit()
+                resp = jsonify(response_data)
+                set_refresh_cookies(resp, refresh_token)
+                
+                # Log untuk audit dan monitoring
+                logger.info(f"[VERIFY-OTP] Device authorization required for MAC={client_mac}, user={user.id}")
+                
+                # Update session dengan status otorisasi
+                if client_ip and client_mac:
+                    AuthSessionService.update_session(
+                        client_ip=client_ip, 
+                        client_mac=client_mac,
+                        updates={
+                            "user_id": str(user.id),
+                            "auth_status": "needs_device_authorization",
+                            "token_issued": True
+                        },
+                        activity="otp_verified_pending_device_auth"
+                    )
+                
+                return resp, 200
 
             # Update user last login info
             if client_ip:
@@ -1228,17 +1217,18 @@ def verify_otp():
                 AuthSessionService.reset_failure_counter(client_ip, "verify_otp")
                 AuthSessionService.reset_failure_counter(client_ip, "sync_device")
 
-                # Update session
+                # Update session dengan status yang benar (device sudah terotorisasi)
                 AuthSessionService.update_session(
                     client_ip=client_ip,
                     client_mac=client_mac,
                     updates={
                         "user_id": str(user.id),
-                        "device_id": str(device.id) if device else None,
+                        "device_id": device_id,  # Bisa null jika perangkat belum diotorisasi sebelumnya
                         "auth_status": "verified",
-                        "token_issued": True
+                        "token_issued": True,
+                        "authorized": device_authorized  # ✅ Tambahkan flag ini untuk menunjukkan status otorisasi
                     },
-                    activity=f"otp_verification_success:auto_registered_device_{device.id if device else 'none'}"
+                    activity=f"otp_verification_success:device_{'authorized' if device_authorized else 'pending_authorization'}"
                 )
 
             # Upsert bypass address-list segera setelah login sukses (best-effort)
@@ -1623,10 +1613,11 @@ def logout_user():
         }), 500
 
 @auth_bp.route('/authorize-device', methods=['POST'])
-@jwt_required()  # Add JWT authentication check to ensure current_user is available
+@jwt_required()
 def authorize_device():
     """
-    [Arsitektur 2.0] Otorisasi perangkat dengan DHCP Lease dan Address List
+    [Arsitektur 2.0] Endpoint untuk mengotorisasi perangkat baru secara eksplisit.
+    Dipanggil saat user menekan tombol "Otorisasi Perangkat Ini" di frontend.
     """
     try:
         from flask_jwt_extended import get_current_user
@@ -1635,6 +1626,7 @@ def authorize_device():
             find_and_remove_static_lease_by_mac,
             create_static_lease,
             find_and_update_address_list_entry,
+            add_ip_to_address_list,
             purge_user_from_hotspot
         )
         from sqlalchemy import select as _select
@@ -1646,21 +1638,28 @@ def authorize_device():
         
         data = request.get_json() or {}
         
-        # Client detection
-        detection_result = ClientDetectionService.get_client_info(
-            frontend_ip=data.get('ip'),
-            frontend_mac=data.get('mac'),
-            force_refresh=False,
-            use_cache=True
-        )
+        # Client detection - Use data from frontend if available, otherwise detect
+        client_ip = data.get('client_ip') or data.get('ip')
+        client_mac = data.get('client_mac') or data.get('mac')
+        device_id = data.get('device_id') # Untuk referensi silang jika ada
         
-        client_ip = detection_result.get('detected_ip')
-        client_mac = detection_result.get('detected_mac')
+        # Jika data tidak lengkap, gunakan deteksi
+        if not client_ip or not client_mac:
+            detection_result = ClientDetectionService.get_client_info(
+                frontend_ip=client_ip,
+                frontend_mac=client_mac,
+                force_refresh=True,  # Force refresh untuk mendapatkan data terkini
+                use_cache=False      # Jangan gunakan cache untuk keakuratan
+            )
+            
+            client_ip = detection_result.get('detected_ip') or client_ip
+            client_mac = detection_result.get('detected_mac') or client_mac
         
         if not client_ip or not client_mac:
+            logger.error("[AUTHORIZE-DEVICE] Tidak dapat mendeteksi IP atau MAC untuk otorisasi")
             return jsonify({
                 "status": "ERROR",
-                "message": "IP/MAC tidak lengkap",
+                "message": "IP/MAC tidak dapat dideteksi untuk otorisasi perangkat",
                 "action": "retry_detection"
             }), 400
 
@@ -1671,7 +1670,7 @@ def authorize_device():
         try:
             current_user = get_current_user()
         except Exception:
-            # Testing fallback: allow header X-Test-User-ID for unit tests
+            # Testing fallback untuk unit test
             if current_app.config.get('TESTING'):
                 test_user_id = request.headers.get('X-Test-User-ID')
                 if test_user_id:
@@ -1698,16 +1697,16 @@ def authorize_device():
             }), 401
 
         try:
-            # Rate limit sederhana per nomor (1 setiap 60s)
+            # Rate limit sederhana per nomor (1 setiap 30s) - lebih pendek dari sebelumnya
             if redis_client and current_user:
                 rl_key = f"authz_rl:{current_user.id}"
                 if redis_client.get(rl_key):
                     return jsonify({
                         "status": "RATE_LIMITED",
                         "message": "Terlalu sering melakukan otorisasi. Coba lagi sebentar lagi.",
-                        "retry_after": 60
+                        "retry_after": 30
                     }), 429
-                redis_client.setex(rl_key, 60, "1")
+                redis_client.setex(rl_key, 30, "1")
 
             # Idempotency: jika request_id dikirim dan sudah sukses, return cepat
             request_id = (data.get('request_id') or '').strip()
@@ -1730,47 +1729,85 @@ def authorize_device():
                     "action": "update_profile"
                 }), 400
                 
-            list_name = current_app.config['MIKROTIK_BYPASS_ADDRESS_LIST']
+            # ✅ SEMPURNAKAN: Cari atau buat entri perangkat untuk user ini
+            device = db.session.execute(
+                select(UserDevice).filter_by(mac_address=client_mac)
+            ).scalar_one_or_none()
             
-            # Simpan info lama untuk debugging
+            if not device:
+                # Perangkat benar-benar baru, buat sekarang dengan status APPROVED langsung
+                device = UserDevice(
+                    user_id=current_user.id,
+                    mac_address=client_mac.upper(),
+                    ip_address=client_ip,
+                    user_agent=request.user_agent.string,
+                    device_name=f"Device-{client_mac[-4:]}",
+                    status='APPROVED'  # ✅ Langsung set APPROVED
+                )
+                db.session.add(device)
+                logger.info(f"[AUTHORIZE-DEVICE] Perangkat baru {client_mac} dibuat dan disetujui untuk user {current_user.id}")
+            else:
+                # Perangkat sudah ada, update statusnya menjadi APPROVED dan pastikan terhubung ke user yang benar
+                device.status = 'APPROVED'
+                device.user_id = current_user.id
+                device.ip_address = client_ip
+                device.last_seen_at = db.func.now()
+                logger.info(f"[AUTHORIZE-DEVICE] Perangkat {client_mac} diperbarui statusnya menjadi APPROVED untuk user {current_user.id}")
+            
+            list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST')
+            if not list_name:
+                logger.warning("[AUTHORIZE-DEVICE] MIKROTIK_BYPASS_ADDRESS_LIST tidak dikonfigurasi")
+                return jsonify({
+                    "status": "CONFIG_ERROR",
+                    "message": "Konfigurasi MikroTik tidak lengkap. Hubungi administrator."
+                }), 500
+            
+            # Simpan info lama untuk debugging jika diperlukan
             old_mac = current_user.trusted_mac_address or current_user.last_login_mac
             old_ip = current_user.last_login_ip
             
-            # 1. Hapus lease lama (jika ada)
-            if old_mac:
+            # 1. Hapus lease lama (jika ada dan berbeda dengan yang baru)
+            if old_mac and old_mac != client_mac:
                 lease_remove_ok, lease_remove_msg = find_and_remove_static_lease_by_mac(old_mac)
                 logger.info(f"[AUTHORIZE-DEVICE] Remove old lease for {old_mac}: {lease_remove_msg}")
             
             # 2. Buat lease statis baru
             lease_ok, lease_msg = create_static_lease(client_ip, client_mac, comment)
             if not lease_ok:
-                logger.error(f"[AUTHORIZE-DEVICE] Failed to create lease: {lease_msg}")
-                return jsonify({
-                    "status": "ERROR", 
-                    "message": f"Gagal membuat lease: {lease_msg}",
-                    "action": "retry_authorization"
-                }), 500
+                logger.warning(f"[AUTHORIZE-DEVICE] Warning: Gagal membuat lease: {lease_msg}")
+                # Teruskan meskipun ada warning ini
             
-            # 3 & 4. Update address list (remove old + add new)
+            # 3 & 4. Update address list (remove old + add new) dengan fallback ke add jika update gagal
             address_list_ok, address_list_msg = find_and_update_address_list_entry(list_name, client_ip, comment)
+            
+            # ✅ PERBAIKAN: Jika update gagal, coba langsung add entry baru ke address list
             if not address_list_ok:
-                logger.error(f"[AUTHORIZE-DEVICE] Failed to update address list: {address_list_msg}")
-            else:
-                # Audit trail
-                if AddressListAudit:
-                    try:
-                        audit = AddressListAudit(
-                            user_id=str(current_user.id),
-                            phone_comment=comment,
-                            old_ip=old_ip,
-                            new_ip=client_ip,
-                            old_mac=old_mac,
-                            new_mac=client_mac.upper(),
-                            action_source='authorize-device'
-                        )
-                        db.session.add(audit)
-                    except Exception as _e:  # pragma: no cover
-                        logger.warning(f"[AUTHORIZE-DEVICE] Audit insert gagal: {_e}")
+                logger.warning(f"[AUTHORIZE-DEVICE] Update address list gagal: {address_list_msg}, mencoba add baru")
+                # Coba langsung menambahkan ke address list
+                add_ok, add_msg = add_ip_to_address_list(list_name, client_ip, comment)
+                
+                if add_ok:
+                    logger.info(f"[AUTHORIZE-DEVICE] Berhasil menambahkan IP ke address list dengan fallback: {add_msg}")
+                    address_list_ok = True  # Set ke sukses jika add berhasil
+                else:
+                    logger.error(f"[AUTHORIZE-DEVICE] Gagal menambahkan IP ke address list: {add_msg}")
+            
+            # Audit trail untuk address list
+            if AddressListAudit:
+                try:
+                    audit = AddressListAudit(
+                        user_id=str(current_user.id),
+                        phone_comment=comment,
+                        old_ip=old_ip,
+                        new_ip=client_ip,
+                        old_mac=old_mac,
+                        new_mac=client_mac.upper(),
+                        action_source='authorize-device',
+                        success=address_list_ok
+                    )
+                    db.session.add(audit)
+                except Exception as _e:  # pragma: no cover
+                    logger.warning(f"[AUTHORIZE-DEVICE] Audit insert gagal: {_e}")
             
             # 5. Update database
             current_user.trusted_mac_address = client_mac.upper()
@@ -2203,3 +2240,45 @@ def admin_login():
             error_code=ApiErrorCode.SERVER_ERROR,
             status_code=500
         )
+
+
+@auth_bp.route('/reject-device', methods=['POST'])
+@jwt_required()
+def reject_device():
+    """
+    Endpoint baru untuk menangani penolakan otorisasi perangkat.
+    Dipanggil saat user memilih "Tolak & Logout" di frontend.
+    """
+    try:
+        current_user = get_current_user()
+        logger.warning(f"[REJECT-DEVICE] User {current_user.id} menolak otorisasi perangkat baru. Memaksa logout.")
+        
+        # Data untuk logging dan analisis
+        client_ip = get_client_ip()
+        client_mac = get_client_mac()
+        
+        if client_ip and client_mac:
+            logger.info(f"[REJECT-DEVICE] Perangkat yang ditolak: IP={client_ip}, MAC={client_mac}")
+            
+            # Opsional: tandai di AuthSession bahwa perangkat ini ditolak
+            AuthSessionService.update_session(
+                client_ip=client_ip,
+                client_mac=client_mac,
+                updates={"device_rejected": True, "rejected_at": db.func.now()},
+                activity="device_auth_rejected"
+            )
+        
+        # Di sini bisa ditambahkan logika untuk menandai perangkat sebagai ditolak
+        # atau tambahkan ke blacklist sementara jika diperlukan
+        
+        return jsonify({
+            "status": "SUCCESS", 
+            "message": "Perangkat ditolak. Sesi login akan diakhiri."
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"[REJECT-DEVICE] Error: {e}", exc_info=True)
+        return jsonify({
+            "status": "ERROR",
+            "message": f"Gagal memproses penolakan: {str(e)}"
+        }), 500

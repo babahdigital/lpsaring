@@ -851,6 +851,53 @@ export const useAuthStore = defineStore('auth', () => {
     state.value.message = null
   }
 
+  /**
+   * Fungsi untuk menolak otorisasi perangkat saat ini dan logout.
+   * Dipanggil ketika pengguna memilih "Tolak & Logout" di popup otorisasi perangkat.
+   */
+  async function rejectDeviceAuthorization(): Promise<boolean> {
+    console.log('[AUTH-STORE] 🚫 Pengguna menolak otorisasi perangkat. Memulai logout paksa...')
+
+    if (state.value.loading) return false
+    state.value.loading = true
+    state.value.error = null
+
+    try {
+      // Gunakan data perangkat yang sama dengan yang digunakan untuk authorize
+      const ip = state.value.pendingDeviceInfo?.ip || state.value.clientIp
+      const mac = state.value.pendingDeviceInfo?.mac || state.value.clientMac
+      const deviceId = state.value.pendingDeviceInfo?.id
+
+      // Informasikan backend tentang penolakan dengan data perangkat
+      await $api('/auth/reject-device', {
+        method: 'POST',
+        body: {
+          client_ip: ip,
+          client_mac: mac,
+          device_id: deviceId,
+          reason: 'user_rejected'
+        }
+      })
+
+      console.log('[AUTH-STORE] ✅ Berhasil menolak perangkat, melanjutkan ke logout...')
+      return true
+    } catch (e) {
+      console.error('[AUTH-STORE] Gagal memberitahu backend tentang penolakan:', e)
+      state.value.error = handleApiError(e, 'Gagal menolak perangkat.')
+      return false
+    } finally {
+      state.value.loading = false
+
+      // Reset state otorisasi
+      state.value.isNewDeviceDetected = false
+      state.value.deviceAuthRequired = false
+      state.value.pendingDeviceInfo = null
+
+      // Logout dari semua perangkat
+      await logout(true)
+    }
+  }
+
   function setDeviceAuthRequired(required: boolean, deviceInfo: any = null) {
     console.log(`[AUTH-STORE] Device authorization requirement set to ${required}`)
     state.value.deviceAuthRequired = required
@@ -897,6 +944,7 @@ export const useAuthStore = defineStore('auth', () => {
     fetchUser,
     syncDevice,
     resetAuthorizationFlow,
+    rejectDeviceAuthorization,
     setDeviceAuthRequired,
 
     // ✅ TAMBAHAN: Fungsi helper untuk membantu penanganan token dan error

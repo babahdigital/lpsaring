@@ -53,10 +53,14 @@ export function useDeviceNotification() {
   // Watcher untuk mendeteksi perubahan status perangkat.
   const startDeviceNotificationWatcher = () => {
     if (import.meta.client) {
-      let hasShownNotification = false
+      // ✅ DINONAKTIFKAN: Watcher untuk automatic popup dinonaktifkan untuk mencegah
+      // multiple notification dan race condition dengan API.
+      // Notifikasi sekarang hanya akan ditampilkan melalui API secara eksplisit.
+      console.log('[DEVICE-NOTIFICATION] ℹ️ Watcher notifikasi otomatis dinonaktifkan untuk mencegah race condition.')
 
-      // ✅ PERBAIKAN: Ganti watcher untuk menggunakan deviceAuthRequired bukan isNewDeviceDetected
-      // Ini memastikan notifikasi hanya muncul ketika syncDevice eksplisit mengizinkannya
+      /* KODE DINONAKTIFKAN:
+      let hasShownNotification = false
+      
       watch(
         () => authStore.isDeviceAuthRequired,
         (isRequired) => {
@@ -73,6 +77,7 @@ export function useDeviceNotification() {
         },
         { immediate: true },
       )
+      */
     }
   }
 

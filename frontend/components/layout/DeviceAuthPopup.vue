@@ -91,6 +91,36 @@ function handleDismiss() {
   hideDeviceNotificationPopup()
   authStore.resetAuthorizationFlow()
 }
+
+// ✅ BARU: Fungsi untuk menolak perangkat dan logout
+async function handleRejectDevice() {
+  if (isLoading.value)
+    return
+  isLoading.value = true
+  
+  try {
+    addSnackbar({
+      type: 'info',
+      title: 'Menolak Perangkat',
+      text: 'Memproses penolakan perangkat dan logout...',
+    })
+    
+    await authStore.rejectDeviceAuthorization()
+    
+    // Notification tidak perlu, karena akan redirect ke halaman login
+  }
+  catch (err) {
+    console.error('[DEVICE-AUTH-POPUP] Error saat menolak perangkat:', err)
+    addSnackbar({
+      type: 'error',
+      title: 'Error',
+      text: 'Gagal menolak perangkat. Silakan coba lagi.',
+    })
+  }
+  finally {
+    isLoading.value = false
+  }
+}
 </script>
 
 <template>
@@ -114,7 +144,7 @@ function handleDismiss() {
         </p>
       </VCardText>
 
-      <VCardActions class="d-flex flex-column flex-sm-row gap-3 justify-center">
+      <VCardActions class="d-flex flex-column gap-3 justify-center">
         <VBtn
           color="warning"
           variant="flat"
@@ -136,6 +166,18 @@ function handleDismiss() {
           @click="handleDismiss"
         >
           Nanti Saja
+        </VBtn>
+        <VBtn
+          color="error"
+          variant="outlined"
+          block
+          size="large"
+          :loading="isLoading"
+          :disabled="isLoading"
+          @click="handleRejectDevice"
+        >
+          <VIcon start icon="tabler-logout" />
+          Tolak & Logout
         </VBtn>
       </VCardActions>
     </VCard>
