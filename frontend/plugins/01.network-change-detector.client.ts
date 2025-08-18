@@ -96,6 +96,20 @@ export default defineNuxtPlugin((nuxtApp) => {
     // Initialize inside the hook when Vue components are ready
     clientDetectionAPI = useClientDetection()
     console.log('🔍 Client detection initialized in network change plugin')
+
+    // OPTIMASI: Gunakan triggerDetection() saat startup, bukan forceDetection()
+    // Ini akan menggunakan cache jika tersedia dan valid, membuat pemuatan awal lebih cepat
+    // Hanya lakukan triggerDetection jika kita tidak berada di halaman login (yang sudah melakukan forceDetection)
+    if (!window.location.pathname.includes('login') && !window.location.pathname.includes('captive')) {
+      setTimeout(() => {
+        if (clientDetectionAPI) {
+          console.log('🔍 [OPTIMIZE] Triggering standard detection during initialization (non-forced)')
+          clientDetectionAPI.triggerDetection()
+        }
+      }, 1000) // Slight delay to ensure other components are initialized
+    } else {
+      console.log('🔍 [OPTIMIZE] Skipping initialization detection on login/captive page (will be handled by page)')
+    }
   })
 
   // IP address change detection for logged-in users
@@ -113,6 +127,17 @@ export default defineNuxtPlugin((nuxtApp) => {
           // Skip if client detection API isn't initialized yet
           if (!clientDetectionAPI) {
             console.log('🔍 Client detection API not initialized yet, skipping IP check')
+            return
+          }
+
+          // OPTIMASI: Jangan picu deteksi baru jika user baru saja login
+          // dan kita sudah memiliki IP yang valid dari proses login
+          const lastLoginTime = Number(sessionStorage.getItem('last_login_timestamp') || '0')
+          const now = Date.now()
+          const loginRecent = (now - lastLoginTime) < 60000 // 1 minute
+
+          if (loginRecent && authStore.clientIp) {
+            console.log('🛡️ [OPTIMIZE] Login baru terdeteksi, melewati deteksi IP otomatis')
             return
           }
 

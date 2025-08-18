@@ -145,19 +145,44 @@ def register_extensions(app: Flask):
       from app.utils.cache_manager import cache_manager
       import time
       
-      # Retry logic untuk startup race condition
+      # --- OPTIMASI STARTUP CACHE CLEAR (VERSI FINAL) ---
       max_retries = 3
+      retry_delays = [2, 5, 10] # Jeda dalam detik untuk setiap percobaan
+      
+      module_log.info("🧹 STARTUP: Preparing to clear IP/MAC cache...")
       for attempt in range(max_retries):
         try:
-          cache_manager.clear_ip_mac_cache()
-          module_log.info('✅ STARTUP: IP/MAC cache cleared successfully')
-          break
+          # Perbaikan Kritis: Bungkus dalam app.app_context()
+          with app.app_context():
+            # Ping Redis terlebih dahulu untuk memastikan koneksi tersedia
+            redis_client = getattr(current_app, 'redis_client_otp', None)
+            if redis_client:
+              try:
+                redis_client.ping()
+                module_log.debug('✅ Redis connection verified before cache clear')
+              except Exception as ping_e:
+                module_log.warning(f'⚠️ Redis ping failed, may not be ready: {ping_e}')
+            
+            # Attempt to clear cache
+            cache_manager.clear_ip_mac_cache()
+          
+          module_log.info('✅ STARTUP: IP/MAC cache cleared successfully.')
+          break # Jika berhasil, keluar dari loop
         except Exception as retry_e:
+          # Log error yang lebih detail
+          error_msg = str(retry_e).strip().split('\n')[0] # Ambil baris pertama dari error
+          delay = retry_delays[attempt]
+          module_log.warning(
+              f"🔄 STARTUP: Cache clear attempt {attempt + 1}/{max_retries} failed, retrying in {delay}s: {error_msg}"
+          )
           if attempt < max_retries - 1:
-            module_log.debug(f'🔄 STARTUP: Cache clear attempt {attempt + 1} failed, retrying in 2s: {retry_e}')
-            time.sleep(2)
+              time.sleep(delay)
           else:
-            raise retry_e
+              final_error_msg = str(retry_e).strip().split('\n')[0]
+              module_log.error(
+                  f"⚠️ STARTUP: All cache clear attempts failed. Continuing without initial clear: {final_error_msg}"
+              )
+            # No need to raise, just continue with app startup
     except Exception as e:
       module_log.warning(f'⚠️ STARTUP: Failed to clear IP/MAC cache after retries: {e}')
 

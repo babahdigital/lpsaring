@@ -65,6 +65,12 @@ export function useClientDetectionSingleton() {
     const hasValidData = globalDetectionState.value?.summary?.detected_ip || globalDetectionState.value?.summary?.detected_mac
     const hasMac = globalDetectionState.value?.summary?.detected_mac
 
+    // OPTIMASI: Jika ada proses deteksi yang sedang berjalan, gunakan itu saja
+    if (globalDetectionPromise && !forceRefresh) {
+      console.log('🔄 [OPTIMIZE] Proses deteksi sudah berjalan, melewati permintaan baru')
+      return false
+    }
+
     // === THROTTLING LOGIC ===
     // Reset counter if it's been more than a minute since we last reset it
     if (now - globalRequestCountTimestamp.value > 60000) {
@@ -80,10 +86,13 @@ export function useClientDetectionSingleton() {
       return false
     }
 
-    // Skip if we have valid data and it's recent (within 30 seconds)
-    // Always allow refresh for MAC detection if we don't have a MAC yet
-    if (hasValidData && timeSinceLastDetection < 30000 && (hasMac || !forceRefresh)) {
-      console.log('🔄 Using cached detection data from singleton')
+    // OPTIMASI: Gunakan strategi cache yang lebih agresif jika MAC sudah terdeteksi
+    // MAC sangat jarang berubah, jadi kita bisa menyimpan cache lebih lama
+    const cacheTime = hasMac ? 300000 : 30000  // 5 menit jika MAC sudah ada, 30 detik jika belum
+
+    // Skip jika data valid dan masih baru (dalam waktu cache)
+    if (hasValidData && timeSinceLastDetection < cacheTime && (hasMac || !forceRefresh)) {
+      console.log(`🔄 [OPTIMIZE] Menggunakan data cache dari singleton (${Math.floor(timeSinceLastDetection / 1000)}s old, MAC: ${hasMac ? '✓' : '✗'})`)
       return false
     }
 

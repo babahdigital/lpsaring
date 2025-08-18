@@ -430,9 +430,31 @@ export function useClientDetection() {
   // Only add the onMounted hook if we're in a component context
   if (getCurrentInstance()) {
     onMounted(async () => {
-      // Saat komponen dimuat, panggil detectClientInfo.
-      // Fungsi ini sudah memiliki semua mekanisme pelindung (singleton, cooldown)
-      // untuk mencegah panggilan yang tidak perlu.
+      // OPTIMASI: Implementasi lebih cerdas untuk deteksi otomatis pada komponen mount
+
+      // Jika ada deteksi yang sedang berjalan atau MAC sudah terdeteksi, lewati
+      if (singleton.getGlobalDetectionPromise() ||
+        globalState.clientInfo.value.isDetected ||
+        (detectionResult.value?.summary?.detected_mac)) {
+        console.log('🛡️ [onMounted] Melewati deteksi otomatis karena sudah berjalan atau sudah terdeteksi.')
+        return
+      }
+
+      // Jika halaman adalah login atau captive, lewati karena mereka akan melakukan forceDetection sendiri
+      if (typeof window !== 'undefined' &&
+        (window.location.pathname.includes('login') || window.location.pathname.includes('captive'))) {
+        console.log('🛡️ [onMounted] Melewati deteksi otomatis pada halaman login/captive yang akan melakukan deteksi sendiri.')
+        return
+      }
+
+      // Jika pengguna baru login (dalam 60 detik terakhir), asumsikan datanya fresh
+      const lastLoginTime = Number(sessionStorage.getItem('last_login_timestamp') || '0')
+      const now = Date.now()
+      if (now - lastLoginTime < 60000 && authStore.clientIp) {
+        console.log('🛡️ [onMounted] Melewati deteksi otomatis karena pengguna baru saja login.')
+        return
+      }
+
       console.log('🔍 Komponen ter-mount, memeriksa kebutuhan deteksi...')
       await detectClientInfo()
     })
