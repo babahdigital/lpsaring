@@ -1,4 +1,6 @@
 // middleware/captive-portal.ts
+import { useAuthStore } from '~/store/auth'
+
 export default defineNuxtRouteMiddleware(async (to) => {
   // Middleware ini hanya relevan untuk halaman /captive dan turunannya
   if (!to.path.startsWith('/captive')) {
@@ -27,7 +29,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
   // Jika parameter ada, tandai sebagai sesi captive
   sessionStorage.setItem('captive_portal_session', 'true')
   localStorage.setItem('captive_portal_mode', 'true')
-    ; (window as any).__IS_CAPTIVE_BROWSER__ = true
+  ; (window as any).__IS_CAPTIVE_BROWSER__ = true
 
   // Persist IP/MAC dari parameter agar tersedia sedini mungkin untuk plugin/API
   try {
@@ -39,16 +41,15 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
     if (ip) {
       localStorage.setItem('captive_ip', ip)
-        ; (window as any).__CLIENT_IP__ = ip
+      ; (window as any).__CLIENT_IP__ = ip
     }
     if (mac) {
       localStorage.setItem('captive_mac', mac)
-        ; (window as any).__CLIENT_MAC__ = mac
+      ; (window as any).__CLIENT_MAC__ = mac
     }
 
     // Update auth store segera agar header X-Frontend-Detected-* terkirim pada request awal
     try {
-      const { useAuthStore } = require('~/store/auth')
       const store = useAuthStore()
       store.setClientInfo(ip, mac)
     }
@@ -62,13 +63,13 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
   // Jika sudah login (token aktif), lewati halaman login captive dan langsung sinkronisasi/otorisasi
   try {
-    const { useAuthStore } = require('~/store/auth')
     const store = useAuthStore()
     // Jika belum login di konteks captive, coba pulihkan dengan refresh cookie (jika ada)
     if (store && !store.isLoggedIn && typeof (store as any).refreshAccessToken === 'function') {
       try {
         await (store as any).refreshAccessToken()
-      } catch { /* ignore */ }
+      }
+      catch { /* ignore */ }
     }
 
     if (store?.isLoggedIn || (store as any)?.token) {
@@ -81,7 +82,8 @@ export default defineNuxtRouteMiddleware(async (to) => {
         if ($api && (ip || mac)) {
           await $api('/auth/clear-cache', { method: 'POST', body: { ip, mac, force_refresh: true } })
         }
-      } catch { /* ignore */ }
+      }
+      catch { /* ignore */ }
 
       if ($api) {
         try {
@@ -94,10 +96,11 @@ export default defineNuxtRouteMiddleware(async (to) => {
           if (res?.status === 'DEVICE_UNREGISTERED') {
             if (to.path !== '/captive/otorisasi-perangkat')
               return navigateTo('/captive/otorisasi-perangkat', { replace: true })
-            return
           }
-        } catch { /* fallback to /captive */ }
+        }
+        catch { /* fallback to /captive */ }
       }
     }
-  } catch { /* noop */ }
+  }
+  catch { /* noop */ }
 })

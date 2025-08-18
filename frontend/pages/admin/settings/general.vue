@@ -68,7 +68,8 @@ onMounted(async () => {
         const maxIndex = Math.max(...numericKeys.map(k => Number(k)))
         const tmp: any[] = []
         for (let i = 0; i <= maxIndex; i++) {
-          if (raw[i]) tmp.push(raw[i])
+          if (raw[i])
+            tmp.push(raw[i])
         }
         arr = tmp as SettingSchema[]
         console.info('[SETTINGS] Reconstructed array from numeric-key object. Length=', arr.length)
@@ -144,8 +145,10 @@ async function handleSaveChanges() {
       else if (raw && typeof raw === 'object') {
         // fallback format key: messages
         Object.entries(raw).forEach(([k, v]: any) => {
-          if (Array.isArray(v)) mapped[k] = v.join(', ')
-          else if (typeof v === 'string') mapped[k] = v
+          if (Array.isArray(v))
+            mapped[k] = v.join(', ')
+          else if (typeof v === 'string')
+            mapped[k] = v
         })
       }
       fieldErrors.value = mapped
@@ -319,11 +322,11 @@ useHead({ title: 'Setting Aplikasi' })
                         label="Nama Aplikasi"
                         placeholder="Contoh: Portal Hotspot Sobigidul"
                         variant="outlined"
-                             density="compact"
-                             :error="!!fieldErrors.APP_NAME"
-                             :error-messages="fieldErrors.APP_NAME ? [fieldErrors.APP_NAME] : []"
-                             name="APP_NAME"
-                             :data-setting-key="'APP_NAME'"
+                        density="compact"
+                        :error="!!fieldErrors.APP_NAME"
+                        :error-messages="fieldErrors.APP_NAME ? [fieldErrors.APP_NAME] : []"
+                        name="APP_NAME"
+                        data-setting-key="APP_NAME"
                       />
                     </VCol>
                   </VRow>
@@ -354,11 +357,11 @@ useHead({ title: 'Setting Aplikasi' })
                         label="Judul di Browser"
                         placeholder="Contoh: Hotspot Sobigidul"
                         variant="outlined"
-                             density="compact"
-                             :error="!!fieldErrors.APP_BROWSER_TITLE"
-                             :error-messages="fieldErrors.APP_BROWSER_TITLE ? [fieldErrors.APP_BROWSER_TITLE] : []"
-                             name="APP_BROWSER_TITLE"
-                             :data-setting-key="'APP_BROWSER_TITLE'"
+                        density="compact"
+                        :error="!!fieldErrors.APP_BROWSER_TITLE"
+                        :error-messages="fieldErrors.APP_BROWSER_TITLE ? [fieldErrors.APP_BROWSER_TITLE] : []"
+                        name="APP_BROWSER_TITLE"
+                        data-setting-key="APP_BROWSER_TITLE"
                       />
                     </VCol>
                   </VRow>
@@ -383,7 +386,7 @@ useHead({ title: 'Setting Aplikasi' })
                     <div style="max-width:240px">
                       <strong>{{ Object.keys(fieldErrors).length }} error:</strong>
                       <ul class="error-list">
-                        <li v-for="(msg,key) in fieldErrors" :key="key">{{ key }}: {{ msg }}</li>
+                        <li v-for="(msg, key) in fieldErrors" :key="key">{{ key }}: {{ msg }}</li>
                       </ul>
                     </div>
                   </VTooltip>
@@ -408,15 +411,15 @@ useHead({ title: 'Setting Aplikasi' })
                     </VCol>
                     <VCol
                       cols="12"
-                             name="MAINTENANCE_MODE_MESSAGE"
-                             :data-setting-key="'MAINTENANCE_MODE_MESSAGE'"
+                      name="MAINTENANCE_MODE_MESSAGE"
+                      data-setting-key="MAINTENANCE_MODE_MESSAGE"
                       md="8"
                     >
                       <VRadioGroup
                         v-model="localSettings.THEME"
                         inline
-                             :error="!!fieldErrors.MAINTENANCE_MODE_MESSAGE"
-                             :error-messages="fieldErrors.MAINTENANCE_MODE_MESSAGE ? [fieldErrors.MAINTENANCE_MODE_MESSAGE] : []"
+                        :error="!!fieldErrors.MAINTENANCE_MODE_MESSAGE"
+                        :error-messages="fieldErrors.MAINTENANCE_MODE_MESSAGE ? [fieldErrors.MAINTENANCE_MODE_MESSAGE] : []"
                       >
                         <VRadio
                           label="Light"
@@ -650,10 +653,10 @@ useHead({ title: 'Setting Aplikasi' })
                         :disabled="!whatsappEnabled"
                         variant="outlined"
                         density="compact"
-                            name="WHATSAPP_API_KEY"
-                            :data-setting-key="'WHATSAPP_API_KEY'"
-                            :error="!!fieldErrors.WHATSAPP_API_KEY"
-                            :error-messages="fieldErr('WHATSAPP_API_KEY')"
+                        name="WHATSAPP_API_KEY"
+                        data-setting-key="WHATSAPP_API_KEY"
+                        :error="!!fieldErrors.WHATSAPP_API_KEY"
+                        :error-messages="fieldErr('WHATSAPP_API_KEY')"
                       />
                     </VCol>
                   </VRow>
@@ -691,7 +694,7 @@ useHead({ title: 'Setting Aplikasi' })
                             variant="outlined"
                             density="compact"
                             name="MIDTRANS_SERVER_KEY"
-                            :data-setting-key="'MIDTRANS_SERVER_KEY'"
+                            data-setting-key="MIDTRANS_SERVER_KEY"
                             :error="!!fieldErrors.MIDTRANS_SERVER_KEY"
                             :error-messages="fieldErr('MIDTRANS_SERVER_KEY')"
                           />
@@ -708,7 +711,7 @@ useHead({ title: 'Setting Aplikasi' })
                             variant="outlined"
                             density="compact"
                             name="MIDTRANS_CLIENT_KEY"
-                            :data-setting-key="'MIDTRANS_CLIENT_KEY'"
+                            data-setting-key="MIDTRANS_CLIENT_KEY"
                             :error="!!fieldErrors.MIDTRANS_CLIENT_KEY"
                             :error-messages="fieldErr('MIDTRANS_CLIENT_KEY')"
                           />
@@ -749,7 +752,7 @@ useHead({ title: 'Setting Aplikasi' })
                             variant="outlined"
                             density="compact"
                             name="MIKROTIK_HOST"
-                            :data-setting-key="'MIKROTIK_HOST'"
+                            data-setting-key="MIKROTIK_HOST"
                             :error="!!fieldErrors.MIKROTIK_HOST"
                             :error-messages="fieldErr('MIKROTIK_HOST')"
                           />
@@ -765,7 +768,7 @@ useHead({ title: 'Setting Aplikasi' })
                             variant="outlined"
                             density="compact"
                             name="MIKROTIK_USER"
-                            :data-setting-key="'MIKROTIK_USER'"
+                            data-setting-key="MIKROTIK_USER"
                             :error="!!fieldErrors.MIKROTIK_USER"
                             :error-messages="fieldErr('MIKROTIK_USER')"
                           />
@@ -782,7 +785,7 @@ useHead({ title: 'Setting Aplikasi' })
                             variant="outlined"
                             density="compact"
                             name="MIKROTIK_PASSWORD"
-                            :data-setting-key="'MIKROTIK_PASSWORD'"
+                            data-setting-key="MIKROTIK_PASSWORD"
                             :error="!!fieldErrors.MIKROTIK_PASSWORD"
                             :error-messages="fieldErr('MIKROTIK_PASSWORD')"
                           />

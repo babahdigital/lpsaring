@@ -34,20 +34,20 @@ def get_client_ip() -> Optional[str]:
         request.headers.get('X-Client-IP-From-Args')
     )
     proxy_best: Optional[str] = None
-    if proxy_client_ip and proxy_client_ip != '127.0.0.1' and is_valid_client_ip(proxy_client_ip, proxy_ips, allow_localhost):
+    if proxy_client_ip and (proxy_client_ip != '127.0.0.1' or allow_localhost) and is_valid_client_ip(proxy_client_ip, proxy_ips, allow_localhost):
         proxy_best = proxy_client_ip
     if not proxy_best:
         xff = request.headers.get('X-Forwarded-For', '')
         if xff:
             for candidate in [p.strip() for p in xff.split(',') if p.strip()]:
-                if candidate == '127.0.0.1':
+                if candidate == '127.0.0.1' and not allow_localhost:
                     continue
                 if is_valid_client_ip(candidate, proxy_ips, allow_localhost):
                     proxy_best = candidate
                     break
     if not proxy_best:
         xri = request.headers.get('X-Real-IP')
-        if xri and xri != '127.0.0.1' and is_valid_client_ip(xri, proxy_ips, allow_localhost):
+        if xri and (xri != '127.0.0.1' or allow_localhost) and is_valid_client_ip(xri, proxy_ips, allow_localhost):
             proxy_best = xri
 
     # PRIORITAS 1: Headers dari deteksi Frontend - gunakan kecuali bertentangan dengan proxy
@@ -124,11 +124,28 @@ def get_client_ip() -> Optional[str]:
         return remote_ip
 
     # TIDAK ADA FALLBACK BERBAHAYA!
-    global _last_no_ip_log_time
-    now = time.time()
-    if now - _last_no_ip_log_time > 30:  # throttle warning setiap 30s
-        current_app.logger.warning(f"[CLIENT-IP] ❌ Failed to detect valid client IP")
-        _last_no_ip_log_time = now
+    # Jangan bisingkan log untuk endpoint tertentu (debug/admin) atau bila diizinkan localhost dev
+    suppress_paths = set([
+        '/api/debug/ip-source',
+        '/api/auth/me',
+        '/api/metrics',
+        '/api/metrics/brief',
+    ])
+    path = getattr(request, 'path', '') or ''
+    if path not in suppress_paths:
+        global _last_no_ip_log_time
+        now = time.time()
+        if now - _last_no_ip_log_time > 30:  # throttle warning setiap 30s
+            # Sertakan ringkas header untuk diagnosa (tanpa bising)
+            hdrs = {
+                'xff': request.headers.get('X-Forwarded-For'),
+                'xri': request.headers.get('X-Real-IP'),
+                'xfinal': request.headers.get('X-Final-Client-IP'),
+                'xclient': request.headers.get('X-Client-IP'),
+                'xfe_ip': request.headers.get('X-Frontend-Detected-IP'),
+            }
+            current_app.logger.warning(f"[CLIENT-IP] ❌ Failed to detect valid client IP | hdrs={hdrs}")
+            _last_no_ip_log_time = now
     return None
 
 # (globals moved to top to avoid duplicate declarations)

@@ -238,6 +238,8 @@ class Config:
     # MikroTik connection & lookup tuning
     MIKROTIK_CONNECT_TIMEOUT_SECONDS = get_env_int('MIKROTIK_CONNECT_TIMEOUT_SECONDS', 3)
     MIKROTIK_READ_TIMEOUT_SECONDS = get_env_int('MIKROTIK_READ_TIMEOUT_SECONDS', 5)
+    # Default DHCP server name (optional). If set, static leases will use this when server cannot be inferred.
+    MIKROTIK_DEFAULT_DHCP_SERVER = os.environ.get('MIKROTIK_DEFAULT_DHCP_SERVER')
     MIKROTIK_LOOKUP_PARALLEL = get_env_bool('MIKROTIK_LOOKUP_PARALLEL', 'False')  # enable future parallel host/dhcp/arp
     MIKROTIK_FORCE_REFRESH_CLEAR_GRACE = get_env_bool('MIKROTIK_FORCE_REFRESH_CLEAR_GRACE', 'True')
     # Batas maksimum entry in-memory grace cache (agar hemat memory saat banyak client)

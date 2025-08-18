@@ -21,7 +21,8 @@ export default defineNuxtPlugin(() => {
         console.log(`🌐 [NETWORK-CHANGE] Network changed: ${previousConnection} → ${currentConnection}`)
 
         // Network changed - notify other parts of app immediately
-        try { window.dispatchEvent(new CustomEvent('app:network-changed')) } catch { }
+        try { window.dispatchEvent(new CustomEvent('app:network-changed')) }
+        catch { }
 
         // Then clear backend cache via API (best-effort)
         const { $api } = useNuxtApp()
@@ -110,28 +111,28 @@ export default defineNuxtPlugin(() => {
     const originalIsPageRefresh = (window as any).__isPageRefresh
 
       ; (window as any).__isPageRefresh = () => {
-        // Check original function first
-        if (originalIsPageRefresh && originalIsPageRefresh()) {
-          return true
-        }
-
-        // Network change indicators
-        return sessionStorage.getItem('network_changed') === 'true'
-          || sessionStorage.getItem('network_came_online') === 'true'
+      // Check original function first
+      if (originalIsPageRefresh && originalIsPageRefresh()) {
+        return true
       }
+
+      // Network change indicators
+      return sessionStorage.getItem('network_changed') === 'true'
+        || sessionStorage.getItem('network_came_online') === 'true'
+    }
 
     const originalClearFlag = (window as any).__clearRefreshFlag
 
       ; (window as any).__clearRefreshFlag = () => {
-        // Call original function
-        if (originalClearFlag) {
-          originalClearFlag()
-        }
-
-        // Clear network change flags
-        sessionStorage.removeItem('network_changed')
-        sessionStorage.removeItem('network_came_online')
-        sessionStorage.removeItem('network_went_offline')
+      // Call original function
+      if (originalClearFlag) {
+        originalClearFlag()
       }
+
+      // Clear network change flags
+      sessionStorage.removeItem('network_changed')
+      sessionStorage.removeItem('network_came_online')
+      sessionStorage.removeItem('network_went_offline')
+    }
   }
 })

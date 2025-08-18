@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+
 import { useApiMetricsStore } from '~/store/apiMetrics'
 import { useAuthStore } from '~/store/auth'
 
@@ -13,7 +14,8 @@ const retriesText = computed(() => `Retry: ${apiMetrics.state.totalRetries}`)
 const lastRefreshText = computed(() => {
   const t = (auth as any).state?.lastRefreshAt as number | null
   const ok = (auth as any).state?.lastRefreshOk as boolean | null
-  if (!t) return 'Refresh: —'
+  if (!t)
+    return 'Refresh: —'
   const diff = Date.now() - t
   const secs = Math.round(diff / 1000)
   return `Refresh: ${ok ? 'OK' : 'Gagal'} ${secs}s lalu`
@@ -38,13 +40,13 @@ const tipRefresh = 'Status pembaruan access token terakhir. "—" berarti belum 
       </span>
     </div>
     <div class="right" role="status">
-  <VTooltip location="top"><template #activator="{ props }"><span v-bind="props">{{ circuitText }}</span></template>{{ tipCircuit }}</VTooltip>
+      <VTooltip location="top"><template #activator="{ props }"><span v-bind="props">{{ circuitText }}</span></template>{{ tipCircuit }}</VTooltip>
       <span>•</span>
-  <VTooltip location="top"><template #activator="{ props }"><span v-bind="props">{{ failureRateText }}</span></template>{{ tipFailure }}</VTooltip>
+      <VTooltip location="top"><template #activator="{ props }"><span v-bind="props">{{ failureRateText }}</span></template>{{ tipFailure }}</VTooltip>
       <span>•</span>
-  <VTooltip location="top"><template #activator="{ props }"><span v-bind="props">{{ retriesText }}</span></template>{{ tipRetry }}</VTooltip>
+      <VTooltip location="top"><template #activator="{ props }"><span v-bind="props">{{ retriesText }}</span></template>{{ tipRetry }}</VTooltip>
       <span>•</span>
-  <VTooltip location="top"><template #activator="{ props }"><span v-bind="props">{{ lastRefreshText }}</span></template>{{ tipRefresh }}</VTooltip>
+      <VTooltip location="top"><template #activator="{ props }"><span v-bind="props">{{ lastRefreshText }}</span></template>{{ tipRefresh }}</VTooltip>
     </div>
   </div>
 </template>

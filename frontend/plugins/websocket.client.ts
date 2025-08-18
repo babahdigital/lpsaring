@@ -133,7 +133,7 @@ export default defineNuxtPlugin((nuxtApp) => {
       const host = window.location.host
       const path = wsCandidatePaths[pathIndex] || wsCandidatePaths[0] || '/api/ws/client-updates'
       const currentIp = authStore.clientIp || (typeof window !== 'undefined' ? localStorage.getItem('captive_ip') : '') || ''
-      const qp = currentIp ? ((path && path.indexOf('?') >= 0) ? `&ip=${encodeURIComponent(currentIp)}` : `?ip=${encodeURIComponent(currentIp)}`) : ''
+      const qp = currentIp ? ((path && path.includes('?')) ? `&ip=${encodeURIComponent(currentIp)}` : `?ip=${encodeURIComponent(currentIp)}`) : ''
       const wsUrl = `${protocol}//${host}${path}${qp}`
       console.debug('[WS] Attempt connect', { wsUrl, attempt: reconnectAttempts, pathIndex })
 
@@ -152,13 +152,15 @@ export default defineNuxtPlugin((nuxtApp) => {
         connectInProgress = false
 
         // Start a lightweight client → server heartbeat to keep intermediaries happy
-        if (heartbeatTimer) window.clearInterval(heartbeatTimer)
+        if (heartbeatTimer)
+          window.clearInterval(heartbeatTimer)
         heartbeatTimer = window.setInterval(() => {
           try {
             if (socket && socket.readyState === WebSocket.OPEN) {
               socket.send(JSON.stringify({ type: 'ping', t: Date.now() }))
             }
-          } catch { }
+          }
+          catch { }
         }, 25000)
 
         // Send authentication if available
@@ -237,7 +239,7 @@ export default defineNuxtPlugin((nuxtApp) => {
         // Abandon large close codes for auth / 403 style (1008 policy, 400x custom) after a few tries
         if ([1008].includes(event.code) || reconnectAttempts > 25) {
           degraded = true
-            ; (window as any).__WS_DEGRADED = true
+          ; (window as any).__WS_DEGRADED = true
           console.warn('🛑 [WEBSOCKET] Degraded mode: stop reconnect attempts.')
           // Start SSE fallback if not already
           if (!sseActive)
@@ -331,12 +333,14 @@ export default defineNuxtPlugin((nuxtApp) => {
 
   // If client IP changes while socket is open, re-register mapping on the server
   watch(() => authStore.clientIp, (newIp: string | null | undefined, oldIp: string | null | undefined) => {
-    if (!newIp || newIp === oldIp) return
+    if (!newIp || newIp === oldIp)
+      return
     if (socket && socket.readyState === WebSocket.OPEN) {
       try {
         socket.send(JSON.stringify({ type: 'register', ip: newIp, mac: globalState.clientInfo.value.mac }))
         console.debug('[WS] Re-registered with new IP', { newIp, oldIp })
-      } catch { }
+      }
+      catch { }
     }
   })
 

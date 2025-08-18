@@ -38,7 +38,7 @@ console.log('DefaultLayoutWithHorizontalNav - navItems:', {
 <template>
   <HorizontalNavLayout :nav-items="typedNavItems">
     <template #navbar>
-  <NuxtLink
+      <NuxtLink
         to="/"
         class="app-logo d-flex align-center gap-x-3"
       >
@@ -49,7 +49,7 @@ console.log('DefaultLayoutWithHorizontalNav - navItems:', {
         </h1>
       </NuxtLink>
       <VSpacer />
-  <!-- Theme switcher dihapus untuk menyederhanakan UI -->
+      <!-- Theme switcher dihapus untuk menyederhanakan UI -->
       <NavBarI18n
         v-if="themeConfig.app.i18n.enable && themeConfig.app.i18n.langConfig?.length"
         :languages="themeConfig.app.i18n.langConfig"

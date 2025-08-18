@@ -388,6 +388,67 @@ def create_static_lease(ip: str, mac: str, comment: str) -> Tuple[bool, str]:
             # Silent fallback
             server_name = server_name or None
 
+        # Jika belum ada server_name, coba petakan IP ke network DHCP untuk mendapatkan server
+        if not server_name and ip:
+            try:
+                # Ambil daftar network dan server DHCP
+                dhcp_net_res = api.get_resource("/ip/dhcp-server/network")
+                dhcp_srv_res = api.get_resource("/ip/dhcp-server")
+                networks = dhcp_net_res.get()
+                servers = dhcp_srv_res.get()
+
+                # Build mapping network -> server via subnet match (best-effort)
+                def ip_to_int(addr: str) -> int:
+                    parts = [int(p) for p in addr.split('.')]
+                    return (parts[0] << 24) + (parts[1] << 16) + (parts[2] << 8) + parts[3]
+
+                def cidr_to_netmask(prefix: int) -> int:
+                    return (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF
+
+                target = ip_to_int(ip)
+                best_prefix = -1
+                chosen_network = None
+                for net in networks:
+                    addr = net.get('address')  # e.g., '192.168.88.0/24'
+                    if not addr or '/' not in addr:
+                        continue
+                    net_ip, pref = addr.split('/')
+                    try:
+                        pref_i = int(pref)
+                        n_int = ip_to_int(net_ip)
+                        mask = cidr_to_netmask(pref_i)
+                        if (target & mask) == (n_int & mask):
+                            if pref_i > best_prefix:
+                                best_prefix = pref_i
+                                chosen_network = addr
+                    except Exception:
+                        continue
+
+                # If we have a chosen network, try to guess server by pool; else leave None
+                if chosen_network:
+                    pool_name = None
+                    try:
+                        for net in networks:
+                            if net.get('address') == chosen_network:
+                                pool_name = net.get('address-pool')
+                                break
+                    except Exception:
+                        pool_name = None
+                    if pool_name:
+                        for srv in servers:
+                            if srv.get('address-pool') == pool_name:
+                                candidate = srv.get('name') or srv.get('id')
+                                if candidate and str(candidate).lower() != 'all':
+                                    server_name = candidate
+                                    break
+                    if not server_name and len(servers) == 1:
+                        candidate = servers[0].get('name') or servers[0].get('id')
+                        if candidate and str(candidate).lower() != 'all':
+                            server_name = candidate
+            except Exception:
+                # Ignore mapping failures
+                pass
+
         # Fallback ke konfigurasi default jika tersedia
         if not server_name:
             try:
@@ -437,6 +498,9 @@ def create_static_lease(ip: str, mac: str, comment: str) -> Tuple[bool, str]:
                 if server_name:
                     set_fields['server'] = server_name
                 if set_fields:
+                    # Jangan pernah set server=all; hapus field bila demikian
+                    if set_fields.get('server', '').lower() == 'all':
+                        set_fields.pop('server', None)
                     leases_res.set(id=l_id, **set_fields)
                     messages.append(f"updated:{l_id}:{set_fields}")
                     updated = True
@@ -446,7 +510,7 @@ def create_static_lease(ip: str, mac: str, comment: str) -> Tuple[bool, str]:
         # Bila tidak ada lease sama sekali untuk MAC ini, buat baru sebagai static
         if not by_mac:
             add_fields: Dict[str, Any] = {"address": ip, "mac-address": mac, "comment": comment}
-            if server_name:
+            if server_name and str(server_name).lower() != 'all':
                 add_fields['server'] = server_name
             try:
                 leases_res.add(**add_fields)
@@ -457,7 +521,7 @@ def create_static_lease(ip: str, mac: str, comment: str) -> Tuple[bool, str]:
                         default_srv = current_app.config.get('MIKROTIK_DEFAULT_DHCP_SERVER')
                     except Exception:
                         default_srv = None
-                    if default_srv:
+                    if default_srv and str(default_srv).lower() != 'all':
                         add_fields['server'] = default_srv
                         leases_res.add(**add_fields)
                 else:

@@ -276,7 +276,8 @@ export const useAuthStore = defineStore('auth', () => {
   // Refresh access token using HttpOnly refresh cookie
   let _isRefreshing = false
   async function refreshAccessToken(): Promise<boolean> {
-    if (_isRefreshing) return false
+    if (_isRefreshing)
+      return false
     _isRefreshing = true
     try {
       const baseURL: string = (config.public.apiBaseUrl || '').replace(/\/$/, '')
@@ -287,9 +288,11 @@ export const useAuthStore = defineStore('auth', () => {
         headers: { 'Content-Type': 'application/json', 'x-skip-refresh': '1' },
       })
       const data = await resp.json().catch(() => ({} as any))
-      if (!resp.ok) return false
+      if (!resp.ok)
+        return false
       const newToken: string | undefined = (data && (data.access_token || data.token)) as any
-      if (!newToken) return false
+      if (!newToken)
+        return false
       token.value = newToken
       state.value.lastRefreshAt = Date.now()
       state.value.lastRefreshOk = true
@@ -542,8 +545,10 @@ export const useAuthStore = defineStore('auth', () => {
       try {
         const ip = (response as any)?.ip || (response as any)?.data?.ip || null
         const mac = (response as any)?.mac || (response as any)?.data?.mac || null
-        if (ip || mac) setClientInfo(ip, mac)
-      } catch { /* noop */ }
+        if (ip || mac)
+          setClientInfo(ip, mac)
+      }
+      catch { /* noop */ }
 
       finishAuthCheck()
       return true
@@ -633,7 +638,7 @@ export const useAuthStore = defineStore('auth', () => {
     const now = Date.now()
     // Dynamic throttle: converge faster on dashboard when MAC unknown; ensure min 5s
     const macKnown = !!state.value.clientMac
-    const throttleMs = macKnown ? 20000 : 7000
+    const throttleMs = macKnown ? 10000 : 5000
     if (lastSyncTime && (now - parseInt(lastSyncTime)) < throttleMs) {
       console.log(`[AUTH-STORE] Sync di-throttle di frontend, tunggu ${Math.round(throttleMs / 1000)} detik`)
       return { status: 'THROTTLED', message: 'Menunggu throttle selesai' }

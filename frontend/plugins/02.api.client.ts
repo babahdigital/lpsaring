@@ -7,8 +7,8 @@ import { useApiMetricsStore } from '~/store/apiMetrics'
 // Menggunakan native fetch; tidak perlu import ofetch
 import { useAuthStore } from '~/store/auth'
 import { ApiErrorCode, isApiErrorResponse } from '~/types/api'
+import { getClientMAC, getClientRealIP } from '~/utils/client-info'
 import { isProxyIP } from '~/utils/network-config'
-import { getClientRealIP, getClientMAC } from '~/utils/client-info'
 
 export default defineNuxtPlugin(() => {
   const config = useRuntimeConfig()
@@ -165,9 +165,11 @@ export default defineNuxtPlugin(() => {
             if (typeof window !== 'undefined' && serverIp !== currentStored) {
               localStorage.setItem('captive_ip', serverIp)
             }
-            try { (authStore as any)?.setClientInfo?.(serverIp, null) } catch { /* noop */ }
+            try { (authStore as any)?.setClientInfo?.(serverIp, null) }
+            catch { /* noop */ }
           }
-        } catch { /* ignore */ }
+        }
+        catch { /* ignore */ }
 
         // Refresh stored client IP/MAC from server detection endpoints to prevent staleness
         try {
@@ -176,14 +178,18 @@ export default defineNuxtPlugin(() => {
             const detectedIp: string | undefined = (data && (data.ip || data?.summary?.detected_ip))
             const detectedMac: string | undefined = (data && (data.mac || data?.summary?.detected_mac))
             if (detectedIp && !isProxyIP(detectedIp)) {
-              if (typeof window !== 'undefined') localStorage.setItem('captive_ip', detectedIp)
-              try { (authStore as any)?.setClientInfo?.(detectedIp, detectedMac || null) } catch { /* noop */ }
+              if (typeof window !== 'undefined')
+                localStorage.setItem('captive_ip', detectedIp)
+              try { (authStore as any)?.setClientInfo?.(detectedIp, detectedMac || null) }
+              catch { /* noop */ }
             }
             else if (detectedMac) {
-              try { (authStore as any)?.setClientInfo?.(authStore.clientIp || null, detectedMac) } catch { /* noop */ }
+              try { (authStore as any)?.setClientInfo?.(authStore.clientIp || null, detectedMac) }
+              catch { /* noop */ }
             }
           }
-        } catch { /* ignore */ }
+        }
+        catch { /* ignore */ }
 
         // Tambahkan properti success default jika backend tidak mengirim (hanya untuk objek biasa, bukan array)
         if (data && !Array.isArray(data) && typeof data === 'object' && typeof (data as any).success === 'undefined') {

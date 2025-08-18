@@ -13,7 +13,7 @@ useHead({ title: 'Login Portal' })
 const authStore = useAuthStore()
 const { add: addSnackbar } = useSnackbar()
 const { forceDetection } = useClientDetection()
-const { $api } = useNuxtApp()
+// const { $api } = useNuxtApp()
 
 const step = ref<'phone' | 'otp'>('phone')
 const phone = ref('')
@@ -81,7 +81,8 @@ async function handleVerifyOtp() {
       const res: any = await authStore.syncDevice()
       if (res?.status === 'DEVICE_UNREGISTERED' || authStore.isNewDeviceDetected) {
         await navigateTo('/captive/otorisasi-perangkat', { replace: true })
-      } else {
+      }
+      else {
         await navigateTo('/captive/terhubung', { replace: true })
       }
     }

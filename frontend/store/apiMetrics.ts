@@ -29,9 +29,12 @@ interface ApiMetricsState {
 export const useApiMetricsStore = defineStore('apiMetrics', () => {
   // Load persisted state if any
   const persisted = (typeof window !== 'undefined') ? localStorage.getItem('api_metrics_state_v1') : null
-  const initial: ApiMetricsState = persisted ? (() => {
-    try { return JSON.parse(persisted) as ApiMetricsState } catch { return null as any }
-  })() : null as any
+  const initial: ApiMetricsState = persisted
+    ? (() => {
+      try { return JSON.parse(persisted) as ApiMetricsState }
+      catch { return null as any }
+    })()
+    : null as any
 
   const state = ref<ApiMetricsState>(initial || {
     totalRequests: 0,
@@ -45,7 +48,8 @@ export const useApiMetricsStore = defineStore('apiMetrics', () => {
   // Persist on change (throttled via microtask; good enough for SPA)
   if (typeof window !== 'undefined') {
     watch(state, (val) => {
-      try { localStorage.setItem('api_metrics_state_v1', JSON.stringify(val)) } catch { }
+      try { localStorage.setItem('api_metrics_state_v1', JSON.stringify(val)) }
+      catch { }
     }, { deep: true })
   }
 

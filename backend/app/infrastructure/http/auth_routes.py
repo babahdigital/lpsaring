@@ -447,6 +447,11 @@ def sync_device():
         if _trusted_ip and requested_ip and _trusted_ip != requested_ip:
             logger.info(f"[SYNC-DEVICE] Overriding frontend IP {requested_ip} with trusted {_trusted_ip}")
             effective_ip = _trusted_ip
+        # Tag the source for observability
+        try:
+            request.environ['CLIENT_IP_SOURCE'] = request.environ.get('CLIENT_IP_SOURCE', 'unknown') + '|sync-device'
+        except Exception:
+            pass
         detection_result = ClientDetectionService.get_client_info(
             frontend_ip=effective_ip or requested_ip,
             frontend_mac=requested_mac,

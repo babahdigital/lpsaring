@@ -5,8 +5,8 @@ import type { ComputedRef } from 'vue'
 import NavBarI18n from '@core/components/I18n.vue'
 // @layouts plugin
 import { VerticalNavLayout } from '@layouts'
-import { themeConfig } from '@themeConfig'
 import { VNodeRenderer } from '@layouts/components/VNodeRenderer'
+import { themeConfig } from '@themeConfig'
 
 // Components
 import Footer from '@/layouts/components/Footer.vue'
