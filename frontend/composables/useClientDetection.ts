@@ -1,4 +1,4 @@
-import { computed, onMounted, ref } from 'vue'
+import { computed, getCurrentInstance, onMounted, ref } from 'vue'
 
 import { useAuthStore } from '~/store/auth'
 import { extractClientParams } from '~/utils/url-params'
@@ -427,13 +427,16 @@ export function useClientDetection() {
   }
 
   // --- Lifecycle Hook ---
-  onMounted(async () => {
-    // Saat komponen dimuat, panggil detectClientInfo.
-    // Fungsi ini sudah memiliki semua mekanisme pelindung (singleton, cooldown)
-    // untuk mencegah panggilan yang tidak perlu.
-    console.log('🔍 Komponen ter-mount, memeriksa kebutuhan deteksi...')
-    await detectClientInfo()
-  })
+  // Only add the onMounted hook if we're in a component context
+  if (getCurrentInstance()) {
+    onMounted(async () => {
+      // Saat komponen dimuat, panggil detectClientInfo.
+      // Fungsi ini sudah memiliki semua mekanisme pelindung (singleton, cooldown)
+      // untuk mencegah panggilan yang tidak perlu.
+      console.log('🔍 Komponen ter-mount, memeriksa kebutuhan deteksi...')
+      await detectClientInfo()
+    })
+  }
 
   // --- Return Public API ---
   return {

@@ -88,9 +88,15 @@ export default defineNuxtPlugin((nuxtApp) => {
     }
   }
 
-  // Initialize the detection composable ONCE at the plugin level
-  // This ensures lifecycle hooks are properly registered in the Vue context
-  const { detectionResult, triggerDetection } = useClientDetection()
+  // Store detection functions/state at module scope but initialize later
+  let clientDetectionAPI: ReturnType<typeof useClientDetection> | null = null
+
+  // Initialize client detection properly when the app is ready
+  nuxtApp.hooks.hook('app:created', () => {
+    // Initialize inside the hook when Vue components are ready
+    clientDetectionAPI = useClientDetection()
+    console.log('🔍 Client detection initialized in network change plugin')
+  })
 
   // IP address change detection for logged-in users
   const startProactiveIpCheck = () => {
@@ -104,10 +110,16 @@ export default defineNuxtPlugin((nuxtApp) => {
       // Only run if the user is logged in and not on login/captive pages
       if (authStore.isLoggedIn && !window.location.pathname.includes('login') && !window.location.pathname.includes('captive')) {
         try {
-          // Silently trigger a new detection - using the instance created outside the interval
-          await triggerDetection()
+          // Skip if client detection API isn't initialized yet
+          if (!clientDetectionAPI) {
+            console.log('🔍 Client detection API not initialized yet, skipping IP check')
+            return
+          }
 
-          const currentDetectedIp = detectionResult.value?.summary?.detected_ip
+          // Silently trigger a new detection using the API
+          await clientDetectionAPI.triggerDetection()
+
+          const currentDetectedIp = clientDetectionAPI.detectionResult.value?.summary?.detected_ip
           const storedIp = authStore.clientIp
 
           // If IP is detected and different from stored
