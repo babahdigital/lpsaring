@@ -47,6 +47,25 @@ def init_app_components(app: Flask) -> None:
         logger.error(f"Failed to initialize ARP warming: {str(e)}")
         import traceback
         logger.debug(f"ARP warming initialization error details: {traceback.format_exc()}")
+        
+    # Register MikroTik connection cleanup with Flask teardown
+    try:
+        logger.info("Registering MikroTik connection cleanup handlers")
+        
+        @app.teardown_appcontext
+        def cleanup_mikrotik_app_context(exception=None):
+            """Clean up MikroTik connections in app context"""
+            # This is just a placeholder for context cleanup if needed
+            # Main cleanup is handled by atexit handler in mikrotik_client_impl.py
+            mikrotik_pool = getattr(current_app, "mikrotik_api_pool", None)
+            if mikrotik_pool:
+                logger.debug("[MT-CLEANUP] App context teardown, noted MikroTik connection")
+            
+        logger.info("MikroTik connection cleanup handlers registered")
+    except Exception as e:
+        logger.error(f"Failed to register MikroTik cleanup handlers: {str(e)}")
+        import traceback
+        logger.debug(f"MikroTik cleanup registration error details: {traceback.format_exc()}")
     
     # Clear cache if configured
     if app.config.get('CACHE_CLEAR_ON_START', True):

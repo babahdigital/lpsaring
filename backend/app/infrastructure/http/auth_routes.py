@@ -770,7 +770,7 @@ def sync_device():
 
                 # Jika membutuhkan persetujuan eksplisit dan MAC tidak dipercaya, hentikan di sini
                 try:
-                    require_explicit = False  # HOTFIX: Bypass device authorization requirement
+                    require_explicit = current_app.config.get('REQUIRE_EXPLICIT_DEVICE_AUTH', True)
                 except Exception:
                     require_explicit = True
                 is_trusted_device = bool(client_mac) and bool(getattr(current_user, 'trusted_mac_address', None)) \

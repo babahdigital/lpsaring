@@ -41,6 +41,22 @@ else:
 # Impor factory create_app SETELAH .env dimuat
 from app import create_app
 
+# Register SIGTERM handler for graceful shutdown with Docker
+import signal
+import sys
+import logging
+
+logger = logging.getLogger(__name__)
+
+def sigterm_handler(signum, frame):
+    """Handle SIGTERM signal for graceful shutdown"""
+    logger.info("SIGTERM received! Initiating graceful shutdown...")
+    # This triggers proper cleanup via atexit handlers
+    sys.exit(0)
+
+# Register signal handler
+signal.signal(signal.SIGTERM, sigterm_handler)
+
 # Buat instance aplikasi Flask menggunakan factory.
 # Gunicorn akan mencari variabel bernama 'app' di file ini.
 app = create_app(os.getenv('FLASK_CONFIG') or 'default')

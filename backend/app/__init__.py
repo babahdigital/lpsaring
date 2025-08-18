@@ -518,6 +518,31 @@ def create_app(config_name: str | None = None) -> Flask:
 
   register_test_routes(app)
   register_commands(app)
+  
+  # Register shutdown handler to ensure resources are properly cleaned up
+  try:
+    import atexit
+    
+    @atexit.register
+    def cleanup_app_resources():
+      module_log.info("Application shutdown detected, cleaning up resources...")
+      
+      # Clean up MikroTik resources (will be handled by the atexit handler in mikrotik_client_impl.py)
+      try:
+        # Try to clean up the Flask app's MikroTik pool if it exists
+        mikrotik_pool = getattr(app, "mikrotik_api_pool", None)
+        if mikrotik_pool and hasattr(mikrotik_pool, "close") and callable(mikrotik_pool.close):
+          module_log.info("Closing app's MikroTik connection pool...")
+          mikrotik_pool.close()
+          module_log.info("App's MikroTik connection pool closed")
+      except Exception as e:
+        module_log.error(f"Error cleaning up app's MikroTik resources: {e}")
+      
+      module_log.info("Application resources cleanup completed")
+      
+    module_log.info("Resource cleanup handlers registered")
+  except Exception as e:
+    module_log.warning(f"Failed to register resource cleanup handlers: {e}")
 
   module_log.info('Flask application initialized successfully.')
   return app

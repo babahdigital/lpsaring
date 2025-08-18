@@ -88,6 +88,10 @@ export default defineNuxtPlugin((nuxtApp) => {
     }
   }
 
+  // Initialize the detection composable ONCE at the plugin level
+  // This ensures lifecycle hooks are properly registered in the Vue context
+  const { detectionResult, triggerDetection } = useClientDetection()
+
   // IP address change detection for logged-in users
   const startProactiveIpCheck = () => {
     if (ipCheckIntervalId) {
@@ -100,9 +104,7 @@ export default defineNuxtPlugin((nuxtApp) => {
       // Only run if the user is logged in and not on login/captive pages
       if (authStore.isLoggedIn && !window.location.pathname.includes('login') && !window.location.pathname.includes('captive')) {
         try {
-          const { detectionResult, triggerDetection } = useClientDetection()
-
-          // Silently trigger a new detection
+          // Silently trigger a new detection - using the instance created outside the interval
           await triggerDetection()
 
           const currentDetectedIp = detectionResult.value?.summary?.detected_ip

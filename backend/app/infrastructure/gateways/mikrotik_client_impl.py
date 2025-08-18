@@ -16,7 +16,7 @@ from app.infrastructure.gateways import mikrotik_client
 Jika menambah fungsi baru ekspor tambahkan di __all__ di bawah.
 """
 from __future__ import annotations
-import logging, time, threading, socket, collections
+import logging, time, threading, socket, collections, atexit
 from typing import Optional, Any, Tuple, List, Dict, Callable
 from functools import lru_cache
 
@@ -45,6 +45,57 @@ _MAX_ERROR_COUNT = 5
 _CONNECTION_COOLDOWN = 60  # detik (base). Akan dieksponensialkan berdasarkan jumlah error.
 _last_backoff_until = 0.0
 _log_suppression_state = {'errors': 0, 'first_ts': 0.0}
+
+
+def _safe_cleanup_pool(pool, pool_name=None):
+    """
+    Safely clean up a RouterOS API pool with proper error handling.
+    
+    Args:
+        pool: The pool to clean up
+        pool_name: Optional name for logging purposes
+    """
+    if not pool:
+        return
+        
+    try:
+        # RouterOsApiPool may not have close method, use best effort
+        cleanup_method = getattr(pool, 'close', None)
+        if callable(cleanup_method):
+            cleanup_method()
+            if pool_name:
+                logger.debug(f"[MT-CLEANUP] Closed connection pool: {pool_name}")
+    except Exception as e:
+        if pool_name:
+            logger.warning(f"[MT-CLEANUP] Error closing connection pool {pool_name}: {e}")
+        pass
+
+
+def _cleanup_all_connection_pools():
+    """
+    Clean up all connection pools at application shutdown.
+    """
+    global _global_connection_pool, _connection_pools
+    
+    try:
+        logger.info("[MT-CLEANUP] Cleaning up MikroTik connection pools")
+        
+        # Clean up global pool
+        if _global_connection_pool:
+            _safe_cleanup_pool(_global_connection_pool, "global")
+            _global_connection_pool = None
+            
+        # Clean up multi-pool list
+        for i, pool in enumerate(_connection_pools):
+            _safe_cleanup_pool(pool, f"pool-{i}")
+        
+        _connection_pools = []
+        logger.info("[MT-CLEANUP] All MikroTik connection pools cleaned up")
+    except Exception as e:
+        logger.error(f"[MT-CLEANUP] Error during connection pool cleanup: {e}")
+        
+# Register cleanup handler to be called when the application exits
+atexit.register(_cleanup_all_connection_pools)
 
 
 def _get_connection_config() -> Dict[str, Any]:
@@ -108,14 +159,7 @@ def _create_connection_pool():
             api = pool.get_api()
         except Exception as e:
             # Cleanup resources if api acquisition fails
-            if pool:
-                try:
-                    # RouterOsApiPool may not have close method, use best effort
-                    cleanup_method = getattr(pool, 'close', None)
-                    if callable(cleanup_method):
-                        cleanup_method()
-                except Exception:
-                    pass
+            _safe_cleanup_pool(pool, f"failed-api-acquisition-{cfg.get('host', 'unknown')}")
             raise e
             
         if api:
@@ -148,14 +192,7 @@ def _create_connection_pool():
             return pool
     except Exception as e:
         # Clean up resources
-        if pool:
-            try:
-                # RouterOsApiPool may not have close method, use best effort
-                cleanup_method = getattr(pool, 'close', None)
-                if callable(cleanup_method):
-                    cleanup_method()
-            except Exception:
-                pass
+        _safe_cleanup_pool(pool, f"connection-error-{cfg.get('host', 'unknown')}")
                 
         _connection_error_count += 1
         backoff_factor = min(_connection_error_count, 6)
