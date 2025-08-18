@@ -24,12 +24,6 @@ const configStore = useConfigStore()
 const settingsStore = useSettingsStore()
 const authStore = useAuthStore()
 
-const { global } = useTheme()
-const route = useRoute()
-const configStore = useConfigStore()
-const settingsStore = useSettingsStore()
-const authStore = useAuthStore()
-
 // State lokal untuk mengontrol visibilitas loader secara andal.
 const showLoader = ref(true)
 

@@ -1,6 +1,20 @@
 import { computed, ref } from 'vue'
 
-import type { DetectionResult } from './useClientDetection'
+// Define interfaces here instead of importing from useClientDetection to avoid circular dependency
+interface DetectionSummary {
+  detected_ip: string | null
+  detected_mac: string | null
+  ip_detected: boolean
+  mac_detected: boolean
+  access_mode?: string
+  user_guidance?: string | null
+}
+
+interface DetectionResult {
+  status: string
+  summary: DetectionSummary
+  details?: Record<string, any>
+}
 
 // ✅ GLOBAL SINGLETON STATE - Shared across all components
 const globalDetectionState = ref<DetectionResult | null>(null)

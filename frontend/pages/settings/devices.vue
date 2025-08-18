@@ -1,29 +1,26 @@
 <!-- pages/settings/devices.vue -->
-<script>
-import { mapGetters } from 'vuex'
-
+<script setup>
+import { computed } from 'vue'
 import UserDeviceManager from '~/components/settings/UserDeviceManager.vue'
+import { useAuthStore } from '~/store/auth'
 
+const authStore = useAuthStore()
+const isAuthenticated = computed(() => authStore.isAuthenticated)
+const user = computed(() => authStore.user)
+
+// For page metadata
+useHead({
+  title: 'Pengaturan Perangkat',
+})
+
+// Layout is automatically detected from the middleware directory structure
+// middleware is handled by the auth middleware defined in the middleware folder
+</script>
+
+<script>
 export default {
   name: 'DevicesSettingsPage',
-
-  components: {
-    UserDeviceManager,
-  },
-
   layout: 'dashboard',
-
-  middleware: ['auth'],
-
-  computed: {
-    ...mapGetters('auth', ['isAuthenticated', 'user']),
-  },
-
-  head() {
-    return {
-      title: 'Pengaturan Perangkat',
-    }
-  },
 }
 </script>
 
