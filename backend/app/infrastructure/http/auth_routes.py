@@ -1153,13 +1153,27 @@ def verify_otp():
                     db.session.flush()  # Flush untuk mendapatkan ID perangkat
 
                     if current_app.config.get("REQUIRE_EXPLICIT_DEVICE_AUTH"):
+                        # ✅ SEMPURNAKAN: Buat token JWT terlebih dahulu
+                        token = create_access_token(identity=str(user.id))
+                        refresh_token = create_refresh_token(identity=str(user.id))
+                        
+                        # Reset failure counters
+                        if client_ip:
+                            AuthSessionService.reset_failure_counter(client_ip, "verify_otp")
+                            AuthSessionService.reset_failure_counter(client_ip, "sync_device")
+                        
                         db.session.commit()
-                        # Jangan login, tapi kirim sinyal bahwa otorisasi diperlukan
-                        return jsonify({
+                        
+                        # Kirim status otorisasi diperlukan BESERTA token valid
+                        response_data = {
                             "status": "DEVICE_AUTHORIZATION_REQUIRED",
                             "message": "Perangkat baru terdeteksi. Otorisasi diperlukan untuk login.",
-                            "data": {"device_info": {"mac": client_mac, "ip": client_ip, "user_agent": device.user_agent}}
-                        })
+                            "token": token,  # ✅ SEMPURNAKAN: Selalu sertakan token!
+                            "data": {"device_info": {"mac": client_mac, "ip": client_ip, "id": str(device.id), "user_agent": device.user_agent}}
+                        }
+                        resp = jsonify(response_data)
+                        set_refresh_cookies(resp, refresh_token)
+                        return resp
                     else:
                         # Jika otorisasi tidak diperlukan, setujui secara otomatis
                         device.status = 'APPROVED'
@@ -1169,12 +1183,27 @@ def verify_otp():
                     device.user_id = user.id
                     if device.status != 'APPROVED':
                         if current_app.config.get("REQUIRE_EXPLICIT_DEVICE_AUTH"):
+                            # ✅ SEMPURNAKAN: Buat token JWT terlebih dahulu untuk perangkat yang ada
+                            token = create_access_token(identity=str(user.id))
+                            refresh_token = create_refresh_token(identity=str(user.id))
+                            
+                            # Reset failure counters
+                            if client_ip:
+                                AuthSessionService.reset_failure_counter(client_ip, "verify_otp")
+                                AuthSessionService.reset_failure_counter(client_ip, "sync_device")
+                                
                             db.session.commit()
-                            return jsonify({
+                            
+                            # Kirim status otorisasi diperlukan BESERTA token valid
+                            response_data = {
                                 "status": "DEVICE_AUTHORIZATION_REQUIRED",
                                 "message": "Perangkat ini memerlukan otorisasi untuk login.",
+                                "token": token,  # ✅ SEMPURNAKAN: Selalu sertakan token!
                                 "data": {"device_info": {"mac": client_mac, "ip": client_ip, "id": str(device.id)}}
-                            })
+                            }
+                            resp = jsonify(response_data)
+                            set_refresh_cookies(resp, refresh_token)
+                            return resp
                         else:
                             device.status = 'APPROVED'
                     db.session.commit()

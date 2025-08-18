@@ -533,15 +533,14 @@ export const useAuthStore = defineStore('auth', () => {
       }
       const response = await $api<AuthResponse>('/auth/verify-otp', { method: 'POST', body: flexible })
 
-      // Extract token and user with helper functions
-      const tokenValue = extractTokenFromResponse(response)
-      const userData = extractUserFromResponse(response)
-
-      // ✅ SEMPURNAKAN: Verifikasi dan proses hasil segera
+      // ✅ SEMPURNAKAN: Log respons OTP untuk debugging
       console.log('[AUTH-STORE] OTP verification response:', response)
 
-      // Set token if available
+      // Extract token and user with helper functions
+      const tokenValue = extractTokenFromResponse(response)
+      const userData = extractUserFromResponse(response)      // ✅ SEMPURNAKAN: Periksa token terlebih dahulu - ini adalah prioritas utama
       if (tokenValue) {
+        console.log('[AUTH-STORE] ✅ Token JWT ditemukan dalam respons')
         token.value = tokenValue
         // Store token in localStorage as backup (digunakan untuk pemulihan)
         if (import.meta.client) {
@@ -558,42 +557,59 @@ export const useAuthStore = defineStore('auth', () => {
       // Set user data if available
       if (userData) {
         setUser(userData)
+        console.log('[AUTH-STORE] ✅ Data pengguna diterima dan disimpan')
       }
 
       // Persist client IP/MAC from backend (helps captive flow follow-ups)
       try {
         const ip = (response as any)?.ip || (response as any)?.data?.ip || null
         const mac = (response as any)?.mac || (response as any)?.data?.mac || null
-        if (ip || mac)
+        if (ip || mac) {
           setClientInfo(ip, mac)
+          console.log('[AUTH-STORE] ✅ Info klien disimpan:', { ip, mac })
+        }
       }
       catch { /* noop */ }
 
       finishAuthCheck()
 
-      // ✅ SEMPURNAKAN: Jalankan syncDevice setelah login berhasil tanpa menunggu hasilnya
-      // Ini menghindari masalah rate limiting yang menghalangi navigasi
-      console.log('[AUTH-STORE] ✅ Login berhasil, menjalankan syncDevice di background')
-
-      // Hapus data throttling untuk memastikan sinkronisasi berikutnya berjalan mulus
+      // ✅ SEMPURNAKAN: Hapus data throttling untuk memastikan sinkronisasi berikutnya berjalan mulus
       if (import.meta.client) {
         try {
           localStorage.removeItem('last_device_sync')
         } catch (e) { /* noop */ }
       }
 
-      // Jalankan di background agar tidak memblokir navigasi setelah login
-      setTimeout(() => {
-        syncDevice({ allowAuthorizationFlow: true, force: true })
-          .then(result => {
-            console.log('[AUTH-STORE] Hasil background syncDevice:', result)
-          })
-          .catch(error => {
-            console.error('[AUTH-STORE] Error saat background syncDevice:', error)
-            // Kegagalan syncDevice tidak menghambat alur login
-          })
-      }, 1000)
+      // ✅ SEMPURNAKAN: Cek status respons untuk menentukan tindakan berikutnya
+      if ((response as any)?.status === 'DEVICE_AUTHORIZATION_REQUIRED') {
+        console.log('[AUTH-STORE] 🔒 Otorisasi perangkat diperlukan')
 
+        // Atur state untuk menunjukkan bahwa otorisasi perangkat diperlukan
+        state.value.isNewDeviceDetected = true
+        state.value.deviceAuthRequired = true
+
+        // Simpan informasi perangkat yang perlu diotorisasi
+        const deviceInfo = (response as any)?.data?.device_info || {
+          ip: state.value.clientIp,
+          mac: state.value.clientMac,
+          id: null
+        }
+        state.value.pendingDeviceInfo = deviceInfo
+
+        // ✅ SEMPURNAKAN: Pastikan token sudah disimpan meskipun otorisasi perangkat diperlukan
+        // Ini mencegah 401 Unauthorized saat memanggil API authorize-device nanti
+        if (tokenValue) {
+          console.log('[AUTH-STORE] ✅ Token tetap disimpan meskipun otorisasi perangkat diperlukan')
+          // Token sudah tersimpan di token.value, jadi kita tidak perlu set lagi
+        } else {
+          console.warn('[AUTH-STORE] ⚠️ Tidak ada token saat otorisasi perangkat diperlukan!')
+        }
+
+        console.log('[AUTH-STORE] ✅ State otorisasi perangkat telah diatur', deviceInfo)
+      }
+
+      // ✅ SEMPURNAKAN: Selalu kembalikan true karena OTP valid dan token diterima
+      // (ini adalah pemisahan antara verifikasi OTP dan otorisasi perangkat)
       return true
     }
     catch (err: any) {
@@ -630,25 +646,43 @@ export const useAuthStore = defineStore('auth', () => {
       const { forceDetection } = useClientDetection()
       const clientInfo = await forceDetection()
 
-      const ip = clientInfo?.summary?.detected_ip
-      const mac = clientInfo?.summary?.detected_mac
+      // ✅ SEMPURNAKAN: Gunakan informasi perangkat yang tersimpan jika ada
+      let deviceId = state.value.pendingDeviceInfo?.id
+      let ip = state.value.pendingDeviceInfo?.ip || clientInfo?.summary?.detected_ip
+      let mac = state.value.pendingDeviceInfo?.mac || clientInfo?.summary?.detected_mac
 
       if (!ip || !mac) {
         throw new Error('Tidak dapat mendeteksi informasi IP atau MAC perangkat. Pastikan Anda terhubung ke jaringan yang benar.')
       }
 
-      console.log(`[AUTH-STORE] Mengirim data otorisasi: IP=${ip}, MAC=${mac}`)
+      console.log(`[AUTH-STORE] Mengirim data otorisasi: IP=${ip}, MAC=${mac}, Device ID=${deviceId || 'unknown'}`)
 
+      // ✅ SEMPURNAKAN: Verifikasi token tersedia sebelum mengirim permintaan
+      if (!token.value) {
+        console.warn('[AUTH-STORE] ⚠️ Mencoba mengotorisasi perangkat tanpa token JWT')
+      }
+
+      // ✅ SEMPURNAKAN: Kirim ID perangkat jika tersedia untuk otorisasi yang lebih tepat
       await $api('/auth/authorize-device', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: { client_ip: ip, client_mac: mac },
+        body: {
+          client_ip: ip,
+          client_mac: mac,
+          device_id: deviceId || undefined
+        },
       })
 
+      // ✅ SEMPURNAKAN: Reset state otorisasi perangkat
       state.value.isNewDeviceDetected = false
+      state.value.deviceAuthRequired = false
+      state.value.pendingDeviceInfo = null
+
+      // Refresh data pengguna untuk mendapatkan informasi terbaru
       await fetchUser()
+
       state.value.message = 'Perangkat berhasil diotorisasi dan akses bypass telah diberikan.'
       console.log('[AUTH-STORE] ✅ Otorisasi perangkat berhasil.')
       return true // <-- Memberi tahu pemanggil bahwa proses berhasil

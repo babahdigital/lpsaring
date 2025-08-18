@@ -76,54 +76,23 @@ async function handleVerifyOtp() {
       // Clear any throttling data after successful login
       localStorage.removeItem('last_device_sync')
 
-      // ✅ SEMPURNAKAN: Perbaikan alur untuk menghindari masalah rate limiting
-      // Periksa terlebih dahulu apakah perangkat memerlukan otorisasi
-      // berdasarkan state authStore, tanpa perlu memanggil syncDevice lagi
-      console.log('[CAPTIVE] Login berhasil, memeriksa status perangkat...')
+      // ✅ SEMPURNAKAN: Alur yang disempurnakan - respons OTP sudah berisi semua informasi
+      // yang diperlukan untuk menentukan langkah selanjutnya
+      console.log('[CAPTIVE] Login berhasil ✅')
       
-      // Gunakan state yang ada untuk menentukan langkah selanjutnya
-      if (authStore.isNewDeviceDetected || authStore.isDeviceAuthRequired) {
-        console.log('[CAPTIVE] Perangkat terdeteksi memerlukan otorisasi (dari state), mengarahkan...')
+      // Periksa state dari authStore yang sudah diperbarui oleh verifyOtp
+      if (authStore.isDeviceAuthRequired) {
+        console.log('[CAPTIVE] 🔒 Perangkat memerlukan otorisasi, mengarahkan ke halaman otorisasi')
         await navigateTo('/captive/otorisasi-perangkat', { replace: true })
+      } else {
+        console.log('[CAPTIVE] ✅ Login sukses, perangkat tidak memerlukan otorisasi')
+        await navigateTo('/captive/terhubung', { replace: true })
       }
-      else {
-        // Jika tidak ada tanda otorisasi diperlukan, coba syncDevice dengan waktu tunggu
-        try {
-          console.log('[CAPTIVE] Menjalankan syncDevice dengan waktu tunggu 2 detik...')
-          
-          // Navigasi terlebih dahulu ke halaman terhubung
-          console.log('[CAPTIVE] Mengarahkan ke halaman terhubung')
-          await navigateTo('/captive/terhubung', { replace: true })
-          
-          // Kemudian jalankan syncDevice di background setelah navigasi selesai
-          // dengan parameter force=true untuk melewati throttling
-          setTimeout(async () => {
-            try {
-              const syncResult = await authStore.syncDevice({ 
-                allowAuthorizationFlow: true,
-                force: true  // ✅ SEMPURNAKAN: Force sync untuk melewati throttling setelah login
-              })
-              console.log('[CAPTIVE] Background sync result:', syncResult)
-              
-              // Jika setelah sinkronisasi ternyata perangkat perlu otorisasi,
-              // redirect dari halaman terhubung ke halaman otorisasi
-              if (syncResult?.status === 'DEVICE_AUTHORIZATION_REQUIRED' && 
-                  (authStore.isNewDeviceDetected || authStore.isDeviceAuthRequired)) {
-                console.log('[CAPTIVE] Perangkat memerlukan otorisasi setelah sinkronisasi, redirect...')
-                navigateTo('/captive/otorisasi-perangkat', { replace: true })
-              }
-            } catch (e) {
-              console.error('[CAPTIVE] Background sync error:', e)
-              // Kesalahan syncDevice tidak menghentikan alur login
-            }
-          }, 2000)
-        } 
-        catch (e) {
-          console.error('[CAPTIVE] Error saat navigasi:', e)
-          // Jika terjadi kesalahan, arahkan ke halaman terhubung sebagai fallback
-          await navigateTo('/captive/terhubung', { replace: true })
-        }
-      }
+      
+      // Tidak perlu memanggil syncDevice lagi karena:
+      // 1. Respons dari verifyOtp sudah berisi informasi perangkat
+      // 2. authStore.verifyOtp sudah mengatur state yang diperlukan
+      // 3. Token JWT sudah disimpan di authStore
     }
     else {
       addSnackbar({ type: 'error', title: 'Verifikasi Gagal', text: authStore.error || 'Kode OTP tidak valid.' })
