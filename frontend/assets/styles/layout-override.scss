@@ -1,0 +1,109 @@
+// Layout Override - Comprehensive Layout Implementation
+// Support untuk semua mode: boxed, fluid/wide, static, default, bordered
+
+// Reset ke implementasi layout standar dengan width constraint yang tepat
+:root {
+  --layout-boxed-content-width: 1440px !important; // Standard boxed width
+  --layout-fluid-content-padding: 1.5rem !important; // Padding untuk fluid mode
+}
+
+// ================================
+// BOXED LAYOUT IMPLEMENTATION
+// ================================
+.layout-content-width-boxed,
+.content-width-boxed {
+  
+  // Page content dengan boxed constraint
+  .layout-page-content {
+    max-inline-size: var(--layout-boxed-content-width) !important;
+    margin-inline: auto !important;
+    padding-inline: var(--layout-fluid-content-padding) !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  
+  // Dashboard container mengikuti boxed constraint
+  .vuexy-dashboard-container {
+    max-width: none !important; // Let parent handle this
+    margin: 0 auto !important;
+    width: 100% !important;
+  }
+}
+
+// ================================
+// FLUID/WIDE LAYOUT IMPLEMENTATION  
+// ================================
+.layout-content-width-fluid,
+.content-width-fluid {
+  
+  // Page content full width dengan padding konsisten
+  .layout-page-content {
+    max-inline-size: none !important;
+    margin-inline: 0 !important;
+    padding-inline: var(--layout-fluid-content-padding) !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  
+  // Dashboard container full width
+  .vuexy-dashboard-container {
+    max-width: none !important;
+    margin: 0 !important;
+    width: 100% !important;
+    padding-inline: 0 !important; // Let page content handle padding
+  }
+}
+
+// ================================
+// NAVBAR & NAVIGATION ALWAYS FULL WIDTH
+// ================================
+.layout-navbar,
+.navbar,
+[class*="navbar"],
+.v-app-bar,
+.layout-horizontal-nav {
+  max-width: none !important;
+  width: 100% !important;
+}
+
+// ================================
+// RESPONSIVE BEHAVIOR
+// ================================
+@media (max-width: 1440px) {
+  :root {
+    --layout-fluid-content-padding: 1.5rem !important;
+  }
+  
+  .layout-content-width-boxed .layout-page-content,
+  .content-width-boxed .layout-page-content,
+  .layout-content-width-fluid .layout-page-content,
+  .content-width-fluid .layout-page-content {
+    padding-inline: var(--layout-fluid-content-padding) !important;
+  }
+}
+
+@media (max-width: 768px) {
+  :root {
+    --layout-fluid-content-padding: 1rem !important;
+  }
+  
+  .layout-content-width-boxed .layout-page-content,
+  .content-width-boxed .layout-page-content,
+  .layout-content-width-fluid .layout-page-content,
+  .content-width-fluid .layout-page-content {
+    padding-inline: var(--layout-fluid-content-padding) !important;
+  }
+}
+
+@media (max-width: 480px) {
+  :root {
+    --layout-fluid-content-padding: 0.75rem !important;
+  }
+  
+  .layout-content-width-boxed .layout-page-content,
+  .content-width-boxed .layout-page-content,
+  .layout-content-width-fluid .layout-page-content,
+  .content-width-fluid .layout-page-content {
+    padding-inline: var(--layout-fluid-content-padding) !important;
+  }
+}

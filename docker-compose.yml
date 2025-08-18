@@ -1,0 +1,320 @@
+# Menetapkan nama proyek secara eksplisit untuk development.
+name: hotspot-portal-dev
+
+services:
+  # 1. Layanan Database (PostgreSQL) - Optimized untuk Raspberry Pi 4
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: hotspot_db
+      POSTGRES_USER: hotspot_user
+      POSTGRES_PASSWORD: alhabsyi
+      # Optimasi PostgreSQL untuk Raspberry Pi 4 (4GB RAM)
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      # Custom postgres config untuk Raspberry Pi
+      - ./infrastructure/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    command: >
+      postgres
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c work_mem=4MB
+      -c max_connections=100
+    networks:
+      - hotspot_dev_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB} -q"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    # Resource limits untuk Raspberry Pi 4
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # 2. Layanan Cache & Message Broker (Redis) - Optimized untuk Raspberry Pi 4
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - hotspot_dev_network
+    command: >
+      redis-server
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1 300 10 60 10000
+      --tcp-keepalive 300
+      --timeout 0
+      --tcp-backlog 511
+      --databases 16
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    # Resource limits untuk Raspberry Pi 4
+    deploy:
+      resources:
+        limits:
+          memory: 150M
+        reservations:
+          memory: 100M
+
+  # 3. Layanan Inisialisasi Database (Hanya berjalan sekali)
+  backend-init:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
+    environment:
+      - DB_HOST=db
+      - DB_USER=hotspot_user
+      - DB_PASSWORD=alhabsyi
+      - DB_NAME=hotspot_db
+      - FLASK_ENV=development
+      - FLASK_DEBUG=0  # Disable debug untuk init
+    user: root
+    volumes:
+      - ./backend:/app
+    command: sh -c "echo 'Starting DB initialization...' && timeout 900 sh /app/scripts/init_db.sh || (echo 'DB init timeout or failed' && exit 1)"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - hotspot_dev_network
+    restart: 'no'
+    # Resource limits yang lebih besar untuk migrasi database
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    # Healthcheck untuk memantau progress
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/init_complete"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
+  # 4. Layanan Backend Aplikasi (Flask) - Optimized untuk Raspberry Pi 4
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
+    environment:
+      # Optimasi untuk Raspberry Pi 4
+      - FLASK_ENV=development
+      - PYTHONUNBUFFERED=1
+      - CACHE_CLEAR_ON_START=true
+    volumes:
+      - ./backend:/app
+      - font_cache:/app/.cache
+      - ./backend/logs:/app/logs
+    ports:
+      - "5010:5010"
+    # Optimasi Gunicorn untuk Raspberry Pi 4 (4 cores ARM)
+    # Use list form to avoid shell/backslash issues; gevent worker for WebSocket
+    command: [
+      "gunicorn",
+      "--bind","0.0.0.0:5010",
+      "run:app",
+      "--worker-class","gevent",
+      "--workers","1",
+      "--timeout","120",
+      "--log-level","info",
+      "--reload",
+      "--max-requests","1000",
+      "--max-requests-jitter","50"
+    ]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend-init:
+        condition: service_completed_successfully
+    networks:
+      - hotspot_dev_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5010/api/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+    # Resource limits untuk Raspberry Pi 4
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  # 5. Layanan Pekerja Latar Belakang (Celery Worker) - Optimized untuk Raspberry Pi 4
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./backend:/app
+      - font_cache:/app/.cache
+      - ./backend/logs:/app/logs
+    # Optimasi Celery untuk Raspberry Pi 4 (concurrency 2 untuk 4 cores)
+    command: celery -A app.extensions:celery_app worker -l info --concurrency=2 --prefetch-multiplier=1 --max-tasks-per-child=1000
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    networks:
+      - hotspot_dev_network
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.extensions.celery_app inspect ping -d celery@$${HOSTNAME}"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    # Resource limits untuk Raspberry Pi 4
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # 6. Layanan Penjadwal Tugas (Celery Beat) - Optimized untuk Raspberry Pi 4
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./backend:/app
+      - celery_beat_schedule:/tmp/celery
+    command: celery -A app.extensions:celery_app beat -l info --schedule=/tmp/celery/celerybeat-schedule --pidfile=/tmp/celery/celerybeat.pid
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    networks:
+      - hotspot_dev_network
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'celery -A app.extensions:celery_app beat' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    # Resource limits untuk Raspberry Pi 4
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+  
+  # 7. Layanan Frontend (Nuxt.js) - Optimized untuk Raspberry Pi 4
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: hotspot-portal-dev-frontend
+    working_dir: /app
+    env_file:
+      - ./frontend/.env
+    environment:
+      - NODE_ENV=development
+      - NUXT_HOST=0.0.0.0
+      - NUXT_PORT=3000
+      - NUXT_DEV_HTTPS=false
+      - NUXT_HMR_PROTOCOL=wss
+      - NUXT_HMR_HOST=dev.sobigidul.com
+      - NUXT_HMR_PORT=443
+      # Optimasi Node.js untuk Raspberry Pi 4
+      - NODE_OPTIONS=--max-old-space-size=1024
+      - UV_THREADPOOL_SIZE=4
+    ports:
+      - "3000:3000"     # Map host port 3000 to container port 3000
+      - "24678:24678"   # Vite HMR WebSocket
+    volumes:
+      - ./frontend:/app:cached 
+      - frontend_node_modules:/app/node_modules
+      - frontend_nuxt_cache:/app/.nuxt
+      - frontend_output:/app/.output
+    # Optimasi startup untuk Raspberry Pi 4
+    command: >
+      sh -c "
+      echo '🚀 Starting frontend with cache clearing...' &&
+      rm -rf .nuxt/.cache &&
+      rm -rf node_modules/.cache &&
+      /app/scripts/dev-entrypoint.sh &&
+      npm run dev
+      "
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - hotspot_dev_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s  # Increased untuk Raspberry Pi 4
+    restart: unless-stopped
+    # Resource limits untuk Raspberry Pi 4
+    deploy:
+      resources:
+        limits:
+          memory: 1.5G
+        reservations:
+          memory: 1G
+    
+volumes:
+  postgres_dev_data:
+  redis_dev_data:
+  font_cache:
+  celery_beat_schedule:
+  frontend_node_modules:
+  frontend_nuxt_cache:
+  frontend_output:
+
+networks:
+  hotspot_dev_network:
+    name: hotspot_portal_dev_net

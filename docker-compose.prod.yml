@@ -1,0 +1,150 @@
+# ===================================================================
+#  Docker-Compose – Lingkungan Produksi (Lengkap & Disempurnakan)
+#  File: docker-compose.prod.yml
+# ===================================================================
+version: '3.8'
+
+# Menetapkan nama proyek untuk produksi, memisahkan dari development.
+name: hotspot-portal-prod
+
+services:
+  # 1. Layanan Database (PostgreSQL)
+  db:
+    image: postgres:15-alpine
+    container_name: hotspot_prod_postgres_db
+    env_file:
+      - ./.env.prod
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    networks:
+      - hotspot_prod_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB} -q"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: always
+
+  # 2. Layanan Cache & Message Broker (Redis)
+  redis:
+    image: redis:7-alpine
+    container_name: hotspot_prod_redis_cache
+    volumes:
+      - redis_prod_data:/data
+    networks:
+      - hotspot_prod_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: always
+
+  # 3. Layanan Backend Aplikasi (Flask + Gunicorn)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hotspot_prod_flask_backend
+    env_file:
+      - ./.env.prod
+    volumes:
+      - font_cache:/app/.cache # Cache font untuk pembuatan PDF
+      - ./backend/logs:/app/logs # Mount direktori log untuk persistensi
+    command: >
+      gunicorn --bind 0.0.0.0:5010 run:app --workers=${GUNICORN_WORKERS:-3} --timeout=120 --log-level=info
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks:
+      - hotspot_prod_network
+    restart: always
+
+  # 4. Layanan Pekerja Latar Belakang (Celery Worker)
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hotspot_prod_celery_worker
+    env_file:
+      - ./.env.prod
+    volumes:
+      - font_cache:/app/.cache
+      - ./backend/logs:/app/logs
+    # [PERBAIKAN UTAMA] Mengarahkan Celery ke lokasi yang benar: app.extensions:celery_app
+    command: celery -A app.extensions:celery_app worker -l info --concurrency=${CELERY_WORKERS:-2}
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks:
+      - hotspot_prod_network
+    restart: always
+
+  # 5. Layanan Penjadwal Tugas (Celery Beat)
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hotspot_prod_celery_beat
+    env_file:
+      - ./.env.prod
+    volumes:
+      - celery_beat_schedule:/tmp/celery # Menyimpan file schedule agar tidak hilang saat restart
+      - ./backend/logs:/app/logs
+    # [PERBAIKAN UTAMA] Mengarahkan Celery ke lokasi yang benar: app.extensions:celery_app
+    command: celery -A app.extensions:celery_app beat -l info --schedule=/tmp/celery/celerybeat-schedule
+    depends_on:
+      redis: { condition: service_healthy }
+    networks:
+      - hotspot_prod_network
+    restart: always
+
+  # 6. Layanan Frontend (Nuxt.js) [DIKEMBALIKAN]
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: production # Memastikan build stage produksi yang digunakan
+    container_name: hotspot_prod_nuxt_frontend
+    env_file:
+      - ./frontend/.env.prod # Menggunakan .env.prod khusus frontend
+    environment:
+      PORT: ${NUXT_PORT:-3010}
+      HOST: '0.0.0.0'
+    networks:
+      - hotspot_prod_network
+    restart: always
+
+  # 7. Layanan Reverse Proxy (Nginx) [DIKEMBALIKAN]
+  nginx:
+    image: nginx:stable-alpine
+    container_name: hotspot_prod_nginx_proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/nginx/conf.d/app.prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./infrastructure/nginx/logs:/var/log/nginx
+      # - ./infrastructure/nginx/ssl:/etc/nginx/ssl:ro # Aktifkan jika sudah memiliki sertifikat SSL
+    depends_on:
+      backend:
+        condition: service_started
+      frontend:
+        condition: service_started
+    networks:
+      - hotspot_prod_network
+    restart: always
+
+# Definisi Volume untuk persistensi data produksi
+volumes:
+  postgres_prod_data:
+  redis_prod_data:
+  font_cache:
+  celery_beat_schedule:
+
+# Definisi Jaringan kustom untuk produksi
+networks:
+  hotspot_prod_network:
+    name: hotspot_portal_prod_net

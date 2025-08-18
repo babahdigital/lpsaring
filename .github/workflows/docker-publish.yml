@@ -1,0 +1,132 @@
+# ===============================================================
+#  GitHub Actions: Build & Push multi-arch ➜ Deploy ke Pi
+#  File: .github/workflows/deploy.yml
+#  VERSI AMAN: Perintah 'docker volume prune' telah dihapus.
+# ===============================================================
+
+name: Build and Deploy Hotspot Portal
+
+on:
+  # Memicu workflow setiap kali ada push ke branch 'main'
+  push:
+    branches: ["main"]
+  # Memungkinkan workflow dijalankan secara manual dari tab Actions
+  workflow_dispatch:
+
+env:
+  # Mengaktifkan BuildKit untuk proses build Docker yang lebih efisien
+  DOCKER_BUILDKIT: "1"
+
+# ---------------------------------------------------------------
+#  JOB 1 ▸ Build & push manifest multi-arch (amd64 + arm64)
+# ---------------------------------------------------------------
+jobs:
+  build-and-push:
+    name: Build & Push Docker Images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Definisi service yang akan di-build sebagai Docker image
+        include:
+          - service: backend
+            context: ./backend
+            # [PENTING] Ganti nama image sesuai dengan Docker Hub Anda
+            image: babahdigital/hotspot_backend
+          - service: frontend
+            context: ./frontend
+            image: babahdigital/hotspot_frontend
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          install: true
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Docker Image Metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ matrix.image }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+
+      - name: Build and push ${{ matrix.service }}
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.context }}
+          # Build untuk arsitektur amd64 (PC/server) dan arm64 (Raspberry Pi 4/5)
+          platforms: linux/amd64,linux/arm64
+          push: true
+          # Menonaktifkan provenance untuk kompatibilitas lebih luas
+          provenance: false
+          tags: ${{ steps.meta.outputs.tags }}
+          # Menggunakan cache dari GitHub Actions untuk mempercepat build
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+# ---------------------------------------------------------------
+#  JOB 2 ▸ Deploy ke Raspberry Pi (self-hosted runner)
+# ---------------------------------------------------------------
+  deploy:
+    name: Deploy to Raspberry Pi
+    # Job ini hanya akan berjalan setelah 'build-and-push' berhasil
+    needs: build-and-push
+    # Menargetkan runner spesifik yang sudah Anda siapkan di Raspberry Pi
+    runs-on: [self-hosted, arm64, raspberrypi]
+
+    steps:
+      - name: Login to Docker Hub (on Pi)
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Stop current stack
+        working-directory: /home/abdullah/sobigidul
+        run: |
+          echo "Stopping existing services..."
+          docker compose -f docker-compose.prod.yml down --remove-orphans || true
+
+      - name: Prune unused images & networks
+        working-directory: /home/abdullah/sobigidul
+        run: |
+          echo "Cleaning up old Docker resources..."
+          # [PERBAIKAN] Hanya menghapus image dan network yang tidak terpakai.
+          # Perintah 'docker volume prune' sengaja DIHAPUS untuk melindungi data database.
+          docker image prune -f
+          docker network prune -f || true
+
+      - name: Pull new images
+        working-directory: /home/abdullah/sobigidul
+        run: |
+          echo "Pulling latest images from Docker Hub..."
+          docker compose -f docker-compose.prod.yml pull
+
+      - name: Start updated stack
+        working-directory: /home/abdullah/sobigidul
+        run: |
+          echo "Starting the updated application stack..."
+          # Jalankan migrasi database sebelum aplikasi utama dimulai
+          echo "Running database migrations..."
+          docker compose -f docker-compose.prod.yml run --rm backend flask db upgrade
+          
+          echo "Bringing up the services..."
+          docker compose -f docker-compose.prod.yml up -d --remove-orphans

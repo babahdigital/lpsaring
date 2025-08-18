@@ -1,0 +1,43 @@
+{
+	"name": "Hotspot Portal Dev Environment - Frontend",
+	"dockerComposeFile": [
+		"../docker-compose.yml"
+	],
+	"service": "frontend",
+	"workspaceFolder": "/app",
+
+	// Use false to let docker-compose command run the dev server
+	"overrideCommand": false,
+
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"vue.volar",
+				"dbaeumer.vscode-eslint",
+				"esbenp.prettier-vscode",
+				"stylelint.vscode-stylelint",
+				"bradlc.vscode-tailwindcss",
+				"ms-vscode.vscode-typescript-next"
+			],
+			"settings": {
+				"typescript.preferences.includePackageJsonAutoImports": "on"
+			}
+		}
+	},
+
+	// Install dependencies if node_modules doesn't exist
+	"postCreateCommand": "if [ ! -d 'node_modules' ]; then npm install; fi",
+
+	// Forward ports for development
+	"forwardPorts": [3000, 24678],
+	"portsAttributes": {
+		"3000": {
+			"label": "Nuxt Dev Server",
+			"onAutoForward": "notify"
+		},
+		"24678": {
+			"label": "HMR WebSocket",
+			"onAutoForward": "silent"
+		}
+	}
+}

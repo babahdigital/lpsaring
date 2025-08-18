@@ -1,0 +1,28 @@
+/* Regular */
+@font-face {
+  font-family: 'Public Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/PublicSans-Regular.ttf') format('truetype');
+}
+
+/* Italic */
+@font-face {
+  font-family: 'Public Sans';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/PublicSans-Italic.ttf') format('truetype');
+}
+
+/* Bold */
+@font-face {
+  font-family: 'Public Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/PublicSans-Bold.ttf') format('truetype');
+}
+
+/* Sesuaikan nama file dan path di atas dengan nama file font yang Anda salin */

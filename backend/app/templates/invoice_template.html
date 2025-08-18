@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice {{ transaction.midtrans_order_id }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        /* Reset dasar & box-sizing */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Roboto', Arial, sans-serif;
+            font-size: 13px; /* Ukuran font dasar */
+            line-height: 1.5;
+            color: #202124; /* Warna teks utama Google */
+            background-color: #ffffff;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .invoice-container {
+            max-width: 850px; /* Lebar kontainer */
+            margin: 30px auto; /* Margin untuk centering */
+            padding: 40px 50px; /* Padding dalam kontainer */
+            background-color: #ffffff;
+            border: 1px solid #e0e0e0; /* Border tipis opsional */
+        }
+
+        /* --- Header --- */
+        .header {
+            margin-bottom: 40px;
+            padding-bottom: 15px;
+            height: 40px; /* Berikan tinggi tetap untuk konsistensi jika logo tidak ada */
+        }
+
+        .header .brand-logo img {
+            display: block;
+            max-height: 40px; /* Sesuaikan tinggi logo */
+            max-width: 150px; /* Sesuaikan lebar logo */
+        }
+        /* Opsi jika tidak pakai gambar logo */
+        .header .brand-logo .business-name-text {
+            font-size: 18px;
+            font-weight: 500;
+            color: #444;
+        }
+
+        /* --- Judul Invoice --- */
+        .invoice-title {
+            margin-bottom: 30px;
+        }
+        .invoice-title h1 {
+            font-size: 32px; /* Ukuran judul "Invoice" */
+            font-weight: 400; /* Font weight normal */
+            color: #202124;
+            margin: 0 0 2px 0;
+            line-height: 1.1;
+        }
+        .invoice-title p {
+            font-size: 13px;
+            color: #5f6368;
+            margin: 0;
+        }
+
+        /* --- Info Pelanggan --- */
+        .bill-to {
+            margin-bottom: 40px;
+        }
+        .bill-to h2 {
+            font-size: 11px; /* Font kecil untuk label "BILL TO" */
+            font-weight: 700; /* Tebal */
+            color: #5f6368;
+            margin: 0 0 8px 0;
+            text-transform: uppercase; /* Huruf besar */
+            letter-spacing: 0.5px;
+        }
+        .bill-to p {
+            margin: 1px 0; /* Spasi antar baris info pelanggan */
+            font-size: 13px;
+            line-height: 1.4;
+            color: #3c4043; /* Warna sedikit lebih gelap dari abu-abu */
+        }
+
+        /* --- Ringkasan Detail (Total dihapus) --- */
+        .invoice-summary {
+            /* display: flex; Tidak perlu flex lagi */
+            margin-bottom: 40px;
+            padding: 20px 0; /* Padding atas & bawah */
+            border-top: 1px solid #dadce0; /* Garis abu-abu Google */
+            border-bottom: 1px solid #dadce0; /* Garis abu-abu Google */
+            /* gap: 40px; Dihapus */
+        }
+        .invoice-summary .details-column {
+            width: 100%; /* Kolom detail mengambil lebar penuh */
+            font-size: 13px;
+            max-width: 50%; /* Batasi lebar kolom detail agar tidak terlalu panjang */
+        }
+        /* Kolom totals-column dihapus dari HTML */
+
+        /* Kolom Detail (Kiri) dengan titik-titik */
+        .invoice-summary .details-column dl {
+            margin: 0;
+            position: relative; /* Diperlukan untuk pseudo-element */
+        }
+        .invoice-summary .details-column .detail-item {
+            display: flex; /* Label dan nilai sejajar */
+            justify-content: space-between; /* Label kiri, nilai kanan */
+            margin-bottom: 8px; /* Jarak antar item detail */
+            line-height: 1.4;
+            overflow: hidden; /* Agar titik-titik tidak keluar */
+            position: relative; /* Agar dt/dd bisa di atas titik */
+        }
+        .invoice-summary .details-column dt { /* Label (kiri) */
+            color: #5f6368;
+            padding-right: 5px;
+            white-space: nowrap; /* Jangan pindah baris */
+            background-color: #fff; /* Tutupi titik-titik di belakang teks */
+            position: relative;
+            z-index: 1; /* Di atas titik-titik */
+        }
+        .invoice-summary .details-column dd { /* Nilai (kanan) */
+            font-weight: 500; /* Nilai sedikit tebal */
+            color: #3c4043;
+            text-align: right;
+            white-space: nowrap; /* Jangan pindah baris */
+            background-color: #fff; /* Tutupi titik-titik di belakang teks */
+            padding-left: 5px;
+            position: relative;
+            z-index: 1; /* Di atas titik-titik */
+        }
+        /* Titik-titik menggunakan pseudo-element */
+        .invoice-summary .details-column .detail-item::before {
+            content: '................................................................................................................................................................';
+            position: absolute;
+            left: 0;
+            bottom: 4px; /* Posisi vertikal titik-titik */
+            width: 100%;
+            overflow: hidden;
+            white-space: nowrap;
+            color: #cccccc; /* Warna titik-titik */
+            font-weight: normal;
+            letter-spacing: 1.5px; /* Jarak antar titik */
+            z-index: 0; /* Di belakang dt/dd */
+        }
+
+        /* --- Tabel Item --- */
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 40px;
+            font-size: 13px;
+        }
+        .items-table th, .items-table td {
+            padding: 10px 5px; /* Padding sel tabel item */
+            text-align: left;
+            border-bottom: 1px solid #dadce0; /* Garis bawah antar baris */
+        }
+        .items-table th { /* Header tabel item */
+            color: #5f6368;
+            font-weight: 700;
+            text-transform: none; /* Tidak uppercase */
+            font-size: 12px;
+            border-bottom-width: 1px; /* Garis bawah header */
+            background-color: #f8f9fa; /* Latar header sedikit abu */
+        }
+        .items-table td.amount, .items-table th.amount { /* Kolom Jumlah */
+            text-align: right;
+            width: 120px; /* Lebar kolom jumlah */
+        }
+        .items-table tr:last-child td { /* Baris terakhir tanpa garis bawah */
+            border-bottom: none;
+        }
+        .items-table td.description { /* Kolom Deskripsi */
+            color: #3c4043;
+        }
+
+        /* --- Footer --- */
+        .footer {
+            text-align: left; /* Teks footer rata kiri */
+            margin-top: 50px;
+            padding-top: 20px;
+            font-size: 11px; /* Font kecil footer */
+            color: #5f6368;
+            border-top: 1px solid #dadce0; /* Garis atas footer */
+            line-height: 1.4;
+        }
+        .footer p {
+            margin: 3px 0; /* Jarak antar paragraf footer */
+        }
+        .footer a {
+            color: #1a73e8; /* Warna link biru Google */
+            text-decoration: none;
+        }
+        .footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Utility untuk status - HANYA DEFINISI WARNA */
+        .status { font-weight: 500; }
+        .status-paid { color: #1e8e3e; } /* Hijau Google */
+        .status-pending { color: #f29900; } /* Kuning/Orange Google */
+        .status-failed { color: #d93025; } /* Merah Google */
+        .status-expired { color: #5f6368; } /* Abu-abu */
+
+    </style>
+</head>
+<body>
+    <div class="invoice-container">
+        <div class="header">
+            <div class="brand-logo">
+                <h3>S O B I G I D U L</h3>
+                <small>Fast Internet, Freedom Online</small>
+            </div>
+        </div>
+
+        <div class="invoice-title">
+            <h1>Invoice</h1>
+            <p>Nomor Invoice: {{ transaction.midtrans_order_id }}</p>
+        </div>
+
+        <div class="bill-to">
+            <h2>BILL TO</h2>
+            <p>{{ user.full_name or 'Pelanggan Yth' }}</p>
+            {# ---- PENAMBAHAN BARIS UNTUK BLOK DAN KAMAR ---- #}
+            {% if user_blok_value and user_blok_value != '-' %}
+            <p>Blok: {{ user_blok_value }}</p>
+            {% endif %}
+            {% if user_kamar_value and user_kamar_value != '-' %}
+            <p>Kamar: {{ user_kamar_value }}</p>
+            {% endif %}
+            {# ---- AKHIR PENAMBAHAN ---- #}
+            <p>{{ user.phone_number }}</p>
+            {% if user.email %}
+            <p>{{ user.email }}</p>
+            {% endif %}
+        </div>
+
+        <div class="invoice-summary">
+            <div class="details-column">
+                <dl>
+                    <div class="detail-item"><dt>Invoice number</dt><dd>{{ transaction.midtrans_order_id }}</dd></div>
+                    <div class="detail-item"><dt>Invoice date</dt><dd>{{ transaction.created_at | format_datetime_short }}</dd></div>
+                    {% if transaction.payment_settlement_time %}
+                    <div class="detail-item"><dt>Payment date</dt><dd>{{ transaction.payment_settlement_time | format_datetime_short }}</dd></div>
+                    {% endif %}
+                    {% if transaction.payment_method %}
+                    <div class="detail-item"><dt>Payment method</dt><dd>{{ transaction.payment_method | title }}</dd></div>
+                    {% endif %}
+
+                    {% set status_lower = (transaction.status.value if transaction.status else '') | lower %}
+                    {% if 'paid' in status_lower or 'settlement' in status_lower or 'success' in status_lower %}
+                        {% set status_class = 'status-paid' %}
+                    {% elif 'pending' in status_lower %}
+                        {% set status_class = 'status-pending' %}
+                    {% elif 'fail' in status_lower or 'cancel' in status_lower %}
+                        {% set status_class = 'status-failed' %}
+                    {% elif 'expire' in status_lower %}
+                        {% set status_class = 'status-expired' %}
+                    {% else %}
+                        {% set status_class = '' %} {# Default jika status tidak dikenali #}
+                    {% endif %}
+                    <div class="detail-item"><dt>Status</dt><dd><span class="status {{ status_class }}">{{ transaction.status.value | format_status }}</span></dd></div>
+                </dl>
+            </div>
+            </div>
+
+        <table class="items-table">
+            <thead>
+                <tr>
+                    <th class="description">Deskripsi</th>
+                    <th class="amount">Jumlah</th> </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="description">Pembelian {{ package.name or 'Paket Layanan' }}</td>
+                    <td class="amount">{{ transaction.amount | format_currency }}</td> </tr>
+                </tbody>
+        </table>
+
+        <div class="footer">
+            <p>Invoice ini dibuat secara elektronik dan sah tanpa tanda tangan.</p>
+            <p>Terima kasih atas pembayaran Anda.</p>
+            <p>&copy; {{ now().strftime('%Y') if now else '' }} Sobigidul</p> 
+        </div>
+    </div>
+</body>
+</html>

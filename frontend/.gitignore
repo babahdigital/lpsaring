@@ -1,0 +1,55 @@
+# Nuxt dev/build outputs
+.output
+.data
+.nuxt
+.nitro
+.cache
+dist
+
+# Node dependencies
+node_modules
+
+# Logs
+logs
+*.log
+
+# Misc
+.DS_Store
+.fleet
+.idea
+
+#-----------------------------------------------
+# ENVIRONMENT FILES
+#-----------------------------------------------
+# Local env files - consolidated env patterns
+.env
+.env.*
+!.env.example
+
+#-----------------------------------------------
+# EDITOR & IDE
+#-----------------------------------------------
+# VS Code - selective inclusions
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/*.code-snippets
+!.vscode/tours
+
+# Other IDEs and editors
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.yarn
+
+#-----------------------------------------------
+# PROJECT SPECIFIC
+#-----------------------------------------------
+# Iconify generated files
+plugins/iconify/icons.css
+
+# Testing and mocking
+public/mockServiceWorker.js

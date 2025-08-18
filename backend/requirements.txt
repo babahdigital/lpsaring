@@ -1,0 +1,59 @@
+# backend/requirements.txt
+# Core Flask & Web
+Flask>=2.3,<3.0 # Framework web utama
+python-dotenv>=1.0.0 # Untuk memuat variabel dari file .env
+Flask-Cors>=4.0.0 # Mengizinkan request dari frontend (domain berbeda)
+Gunicorn>=21.0.0 # WSGI Server untuk produksi (lebih baik dari server bawaan Flask)
+flask-sock>=0.6.0 # WebSocket support for Flask
+simple-websocket>=0.10.0 # WebSocket implementation
+schedule>=1.2.0 # Scheduling for background tasks
+
+# API Documentation
+flask-swagger-ui>=4.11.1
+apispec>=6.3.0
+apispec-webframeworks>=0.5.2
+
+# Database & ORM
+SQLAlchemy>=2.0,<2.1 # Object-Relational Mapper untuk interaksi database
+psycopg2-binary>=2.9.0 # Driver agar Python bisa 'bicara' dengan PostgreSQL
+Flask-SQLAlchemy>=3.0.0 # Flask integrasi dengan SQLAlchemy
+Flask-Migrate>=4.0.0 # Alat bantu untuk migrasi skema database (menggunakan Alembic)
+Alembic>=1.10.0 # Library inti untuk migrasi database
+
+# Validasi & Serialisasi Data
+pydantic[email]>=2.0.0 # Untuk validasi data request/response API dengan mudah
+marshmallow>=3.19.0 # Untuk serialisasi/deserialisasi data dan dokumentasi API
+Flask-Marshmallow>=1.0.0
+
+# Task Queue (untuk tugas background seperti kirim WA)
+celery>=5.3.0 # Framework task queue
+redis>=5.0.0 # Diperlukan sebagai broker & backend hasil untuk Celery
+# flower>=2.0.0 # Opsional: Antarmuka web untuk monitoring Celery
+
+# Keamanan
+python-jose[cryptography]>=3.3.0
+cryptography>=41.0.0 # Untuk enkripsi data jika diperlukan nanti
+Flask-Limiter>=3.0.0 # Untuk membatasi jumlah request API (rate limiting)
+
+# API Client & Lain-lain
+requests>=2.31.0 # Library standar untuk membuat HTTP request (misal ke API WhatsApp)
+midtransclient>=1.4.2 # Library resmi Midtrans untuk Python
+routeros-api==0.21.0
+
+# Tambahkan library lain sesuai kebutuhan di masa depan
+weasyprint>=60.0
+Jinja2>=3.1.0
+user-agents>=2.2.0
+Werkzeug>=2.0.0
+pytz>=2023.0
+itsdangerous>=2.1.0
+python-dateutil>=2.8.0
+
+# Testing
+pytest>=8.0
+pytest-flask>=1.3.0
+factory-boy>=3.3.0
+
+# Authentication
+Flask-JWT-Extended>=4.5.0
+gevent>=24.2.1  # For Gunicorn WebSocket (flask-sock) support in dev

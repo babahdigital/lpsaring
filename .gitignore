@@ -1,0 +1,145 @@
+#-----------------------------------------------
+# FRONTEND IGNORES
+#-----------------------------------------------
+# Node dependencies
+node_modules/
+frontend/node_modules/
+.pnpm-store/
+
+# Nuxt.js build output
+.nuxt/
+frontend/.nuxt/
+.output/
+frontend/.output/
+dist/
+
+# Frontend caches and logs
+frontend/.npm/
+.npm/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# VS Code remote development
+frontend/.vscode-server/
+
+#-----------------------------------------------
+# WINDOWS RESERVED FILENAMES / MISC
+#-----------------------------------------------
+# Prevent accidental reserved file additions on Windows
+NUL
+frontend/.bash_history
+
+#-----------------------------------------------
+# BACKEND IGNORES
+#-----------------------------------------------
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python environments
+.env
+.env.prod
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Python packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Python testing and coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Python documentation
+docs/_build/
+
+# Python analysis tools
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+
+#-----------------------------------------------
+# DATABASE
+#-----------------------------------------------
+db.sqlite3
+db.sqlite3-journal
+
+#-----------------------------------------------
+# DEVELOPMENT TOOLS
+#-----------------------------------------------
+# IDE / Editor specific
+.idea/
+.vscode/
+*.swp
+*~
+.spyderproject
+.spyproject
+.ropeproject
+
+# Docker
+docker-compose.override.yml
+docker-compose.yml.bak
+*.bak.env.prod
+
+#-----------------------------------------------
+# SECURITY & SENSITIVE DATA
+#-----------------------------------------------
+# Secrets files - IMPORTANT!
+*.env
+secrets/
+credentials/
+*.pem
+*.key
+token.txt
+backend/instance/
+backend/logs/
+
+#-----------------------------------------------
+# OS SPECIFIC FILES
+#-----------------------------------------------
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+docs/
+
+docker-compose.yml.bak
+*.bak.env.prod
+
+# VS Code remote development
+frontend/.vscode-server/

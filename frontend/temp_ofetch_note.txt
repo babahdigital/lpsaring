@@ -1,0 +1,1 @@
+ofetch package typical exports: default export 'ofetch' or named '$fetch'. Our runtime says no default export; likely using ESM build that exports $fetch.

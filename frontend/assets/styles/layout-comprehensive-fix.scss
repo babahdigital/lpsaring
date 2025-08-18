@@ -1,0 +1,324 @@
+// ================================
+// LAYOUT SYSTEM COMPREHENSIVE FIX
+// ================================
+// Perbaikan komprehensif untuk semua varian layout: wide, boxed, static, default, bordered
+
+// Variabel untuk konsistensi
+:root {
+  --layout-padding: 1.5rem;
+  --layout-boxed-max-width: 1440px;
+  --navbar-height: 64px;
+}
+
+// ================================
+// BASE LAYOUT CORRECTIONS
+// ================================
+
+// Pastikan semua layout wrapper menggunakan horizontal nav
+.layout-wrapper.layout-nav-type-horizontal {
+  
+  // Base navbar styling
+  .layout-navbar {
+    width: 100% !important;
+    background: rgb(var(--v-theme-surface));
+    min-height: var(--navbar-height) !important;
+    display: flex !important;
+    align-items: center !important;
+  }
+  
+  // Base navbar content styling
+  .layout-navbar .navbar-content-container {
+    width: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    min-height: var(--navbar-height) !important;
+    padding-inline: var(--layout-padding) !important;
+  }
+  
+  // Base horizontal nav styling  
+  .layout-horizontal-nav .horizontal-nav-content-container {
+    width: 100% !important;
+    padding-inline: var(--layout-padding) !important;
+  }
+}
+
+// ================================
+// BOXED LAYOUT (content-width-boxed)
+// ================================
+.layout-content-width-boxed,
+.content-width-boxed {
+  
+  // Navbar container untuk boxed
+  .layout-navbar .navbar-content-container {
+    max-width: var(--layout-boxed-max-width) !important;
+    margin: 0 auto !important;
+  }
+  
+  // Horizontal nav container untuk boxed
+  .layout-horizontal-nav .horizontal-nav-content-container {
+    max-width: var(--layout-boxed-max-width) !important;
+    margin: 0 auto !important;
+  }
+  
+  // Page content untuk boxed
+  .layout-page-content {
+    max-width: var(--layout-boxed-max-width) !important;
+    margin: 0 auto !important;
+    padding-inline: var(--layout-padding) !important;
+  }
+}
+
+// ================================
+// FLUID/WIDE LAYOUT (content-width-fluid)
+// ================================
+.layout-content-width-fluid,
+.content-width-fluid {
+  
+  // Navbar untuk fluid - full width
+  .layout-navbar .navbar-content-container {
+    max-width: none !important;
+    width: 100% !important;
+  }
+  
+  // Horizontal nav untuk fluid - full width
+  .layout-horizontal-nav .horizontal-nav-content-container {
+    max-width: none !important;
+    width: 100% !important;
+  }
+  
+  // Page content untuk fluid - full width dengan padding minimal
+  .layout-page-content {
+    max-width: none !important;
+    width: 100% !important;
+    padding-inline: var(--layout-padding) !important;
+  }
+}
+
+// ================================
+// NAVBAR COMPONENTS POSITIONING
+// ================================
+
+// Logo positioning - left side
+.layout-navbar .navbar-content-container .app-logo {
+  flex-shrink: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  height: 100% !important;
+  z-index: 10 !important;
+}
+
+// Spacer - grows to fill space
+.layout-navbar .navbar-content-container .v-spacer {
+  flex-grow: 1 !important;
+}
+
+// Right side elements - user profile, i18n, etc
+.layout-navbar .navbar-content-container .v-spacer ~ * {
+  flex-shrink: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  height: 100% !important;
+  margin-left: 0.75rem !important;
+}
+
+// User profile specific styling
+.layout-navbar .navbar-content-container .user-profile {
+  z-index: 10 !important;
+}
+
+// I18n component specific styling  
+.layout-navbar .navbar-content-container [class*="i18n"] {
+  z-index: 10 !important;
+}
+
+// ================================
+// NAVBAR TYPE VARIATIONS
+// ================================
+
+// Sticky navbar - FIXED: Use actual HTML class names
+.layout-navbar-sticky {
+  .layout-navbar {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 1000 !important;
+    background: rgb(var(--v-theme-surface)) !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+    border-bottom: 2px solid #4CAF50 !important; // DEBUG: Green border for sticky
+  }
+}
+
+// Static navbar - FIXED: Use actual HTML class names
+.layout-navbar-static {
+  .layout-navbar {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 1000 !important;
+    background: rgb(var(--v-theme-surface)) !important;
+    border-bottom: 2px solid #2196F3 !important; // DEBUG: Blue border for static
+  }
+}
+
+// Hidden navbar - FIXED: Use actual HTML class names
+.layout-navbar-hidden {
+  .layout-navbar {
+    display: none !important;
+  }
+}
+
+// ================================
+// HORIZONTAL NAV TYPE VARIATIONS  
+// ================================
+
+// Sticky horizontal nav - FIXED: Use actual HTML class names
+.horizontal-nav-sticky {
+  .layout-horizontal-nav {
+    position: sticky !important;
+    top: var(--navbar-height) !important;
+    z-index: 999 !important;
+    background: rgb(var(--v-theme-surface)) !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+  }
+}
+
+// Static horizontal nav - FIXED: Use actual HTML class names
+.horizontal-nav-static {
+  .layout-horizontal-nav {
+    position: sticky !important;
+    top: var(--navbar-height) !important;
+    z-index: 999 !important;
+    background: rgb(var(--v-theme-surface)) !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+  }
+}
+
+// Hidden horizontal nav - FIXED: Use actual HTML class names
+.horizontal-nav-hidden {
+  .layout-horizontal-nav {
+    display: none !important;
+  }
+}
+
+// ================================
+// SKIN VARIATIONS
+// ================================
+
+// Default skin
+.skin--default {
+  .layout-navbar {
+    border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12) !important;
+  }
+}
+
+// Bordered skin
+.skin--bordered {
+  .layout-navbar {
+    border: 1px solid rgba(var(--v-theme-on-surface), 0.12) !important;
+    border-bottom: 2px solid rgba(var(--v-theme-primary), 0.2) !important;
+  }
+  
+  .layout-horizontal-nav {
+    border: 1px solid rgba(var(--v-theme-on-surface), 0.12) !important;
+    border-top: none !important;
+  }
+}
+
+// ================================
+// RESPONSIVE DESIGN
+// ================================
+
+@media (max-width: 1440px) {
+  .layout-content-width-boxed {
+    .layout-navbar .navbar-content-container,
+    .layout-horizontal-nav .horizontal-nav-content-container,
+    .layout-page-content {
+      padding-inline: var(--layout-padding) !important;
+    }
+  }
+}
+
+@media (max-width: 960px) {
+  :root {
+    --layout-padding: 1rem;
+  }
+  
+  // Reduce logo size on smaller screens
+  .layout-navbar .app-logo .app-title {
+    font-size: 1.1rem !important;
+  }
+}
+
+@media (max-width: 600px) {
+  :root {
+    --layout-padding: 0.75rem;
+  }
+  
+  // Stack elements on very small screens if needed
+  .layout-navbar .navbar-content-container {
+    flex-wrap: nowrap !important;
+  }
+}
+
+// ================================
+// ADDITIONAL FIXES & OVERRIDES
+// ================================
+
+// STATIC LAYOUT SPECIFIC FIXES - Menu mengikuti saat scroll
+.layout-nav-type-horizontal.layout-navbar-static {
+  .layout-navbar {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 1000 !important;
+    background: rgb(var(--v-theme-surface)) !important;
+  }
+  
+  .layout-horizontal-nav {
+    position: sticky !important;
+    top: var(--navbar-height) !important;
+    z-index: 999 !important;
+    background: rgb(var(--v-theme-surface)) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+    border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12) !important;
+  }
+}
+
+// Pastikan static layout dengan navbar static juga bekerja
+.layout-wrapper.layout-nav-type-horizontal.layout-navbar-static {
+  .layout-navbar {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 1000 !important;
+    background: rgb(var(--v-theme-surface)) !important;
+  }
+  
+  .layout-horizontal-nav {
+    position: sticky !important;
+    top: var(--navbar-height) !important;
+    z-index: 999 !important;
+    background: rgb(var(--v-theme-surface)) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+  }
+}
+
+// Ensure perfect alignment between navbar and horizontal nav
+.layout-wrapper.layout-nav-type-horizontal {
+  .layout-navbar .navbar-content-container,
+  .layout-horizontal-nav .horizontal-nav-content-container {
+    box-sizing: border-box !important;
+    position: relative !important;
+  }
+}
+
+// Logo text alignment
+.app-logo .app-title {
+  line-height: 1.2 !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
+}
+
+// Ensure vertical centering for all navbar items
+.layout-navbar .navbar-content-container > * {
+  display: flex !important;
+  align-items: center !important;
+  height: 100% !important;
+}
