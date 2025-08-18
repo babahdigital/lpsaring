@@ -638,9 +638,11 @@ export const useAuthStore = defineStore('auth', () => {
       // ✅ SEMPURNAKAN: Verifikasi token tersedia sebelum mengirim permintaan
       if (!token.value) {
         console.warn('[AUTH-STORE] ⚠️ Mencoba mengotorisasi perangkat tanpa token JWT')
+        throw new Error('Token tidak tersedia untuk otorisasi perangkat')
       }
 
-      await $api('/auth/authorize-device', {
+      // Kirim permintaan ke API
+      const response = await $api('/auth/authorize-device', {
         method: 'POST',
         body: {
           client_ip: ip,
@@ -649,13 +651,16 @@ export const useAuthStore = defineStore('auth', () => {
         },
       })
 
+      console.log('[AUTH-STORE] Respons otorisasi perangkat:', response)
+
       // Reset state setelah berhasil
-      state.value.isNewDeviceDetected = false
       state.value.deviceAuthRequired = false
+      state.value.isNewDeviceDetected = false
       state.value.pendingDeviceInfo = null
 
-      await fetchUser() // Refresh data user
+      // Refresh data pengguna dan simpan pesan sukses
       state.value.message = 'Perangkat berhasil diotorisasi.'
+      await fetchUser() // Segarkan data user untuk mendapatkan info terbaru
       console.log('[AUTH-STORE] ✅ Otorisasi perangkat berhasil.')
       return true
     }
@@ -675,6 +680,13 @@ export const useAuthStore = defineStore('auth', () => {
     // ✅ SEMPURNAKAN: Tambahkan parameter untuk mengontrol kapan popup otorisasi boleh ditampilkan
     // dan parameter force untuk melewati throttling jika diperlukan
     const { allowAuthorizationFlow = false, force = false } = options;
+
+    // ✅ PERBAIKAN KRITIS: Cek jika popup sudah aktif untuk mencegah loop
+    // Jangan melakukan sync jika menunggu otorisasi perangkat
+    if (state.value.deviceAuthRequired) {
+      console.log('[AUTH-STORE] 🛑 Sync device dibatalkan karena otorisasi perangkat sedang menunggu interaksi pengguna')
+      return { status: 'PENDING_AUTHORIZATION', message: 'Menunggu otorisasi perangkat' }
+    }
 
     // Fungsi ini dipanggil secara periodik oleh middleware untuk sinkronisasi senyap
     // dan juga secara eksplisit setelah login berhasil

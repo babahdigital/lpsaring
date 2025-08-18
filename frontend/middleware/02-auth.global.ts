@@ -128,7 +128,7 @@ export default defineNuxtRouteMiddleware((to) => {
   }
   // --- ATURAN 2: UNTUK TAMU (BELUM LOGIN) ---
   else {
-    const publicRoutes = ['/login', '/register', '/admin/login', '/captive']
+    const publicRoutes = ['/login', '/register', '/admin/login', '/captive', '/', '/maintenance', '/error', '/access-denied']
     const isGoingToPublicPage = publicRoutes.some(path => to.path.startsWith(path))
 
     // Jika tamu terdeteksi di captive browser dan belum di halaman captive,
@@ -141,8 +141,17 @@ export default defineNuxtRouteMiddleware((to) => {
 
     // Jika tamu mencoba mengakses halaman yang tidak publik, arahkan ke login.
     if (!isGoingToPublicPage) {
+      // Determine the appropriate login page based on the path
       const destination = to.path.startsWith('/admin') ? '/admin/login' : '/login'
-      return navigateTo(destination, { replace: true })
+
+      // Add the redirect query parameter for post-login redirection
+      const query = to.fullPath !== '/' ? { redirect: to.fullPath } : undefined
+
+      return navigateTo({
+        path: destination,
+        query,
+        replace: true
+      })
     }
   }
 })

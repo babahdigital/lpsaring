@@ -1,84 +1,48 @@
 // composables/useDeviceNotification.ts
 
-import { ref, watch } from 'vue'
-
-import { useSnackbar } from '~/composables/useSnackbar'
-import { useAuthStore } from '~/store/auth'
-
-// [PERBAIKAN] State reaktif untuk visibilitas popup, diekspor agar bisa diakses global.
-const isPopupVisible = ref(false)
+import { ref } from 'vue'
 
 /**
- * Composable untuk menangani notifikasi otorisasi perangkat.
- * Menampilkan snackbar dan mengontrol popup modal.
+ * DIOPTIMALKAN: File ini sekarang hanya berisi fungsi-fungsi minimal untuk
+ * mempertahankan kompatibilitas dengan kode yang menggunakannya.
+ * Logika notifikasi otomatis dihapus untuk mencegah notifikasi ganda dan race condition.
+ * DeviceAuthPopup.vue sekarang sepenuhnya dikendalikan oleh state dari auth store.
  */
-export function useDeviceNotification() {
-  const authStore = useAuthStore()
-  const { add: addSnackbar } = useSnackbar()
 
-  // Fungsi untuk menampilkan popup
-  const showDeviceNotificationPopup = () => {
-    // Hanya tampilkan jika belum terlihat untuk menghindari duplikasi
-    if (!isPopupVisible.value) {
-      isPopupVisible.value = true
+// State reaktif untuk visibilitas popup, tetap diekspor untuk mempertahankan kompatibilitas
+const isPopupVisible = ref(false)
+
+export function useDeviceNotification() {
+  console.log('[DEVICE-NOTIFICATION] ℹ️ Menggunakan versi yang dioptimalkan, tanpa notifikasi otomatis')
+
+  /**
+   * Fungsi kosong untuk kompatibilitas
+   */
+  const startDeviceNotificationWatcher = () => {
+    if (import.meta.client) {
+      console.log('[DEVICE-NOTIFICATION] ℹ️ Watcher notifikasi otomatis dinonaktifkan untuk mencegah race condition')
     }
   }
 
-  // Fungsi untuk menyembunyikan popup
+  /**
+   * Tetap menyediakan fungsi untuk menampilkan popup secara manual jika diperlukan
+   */
+  const showDeviceNotificationPopup = () => {
+    isPopupVisible.value = true
+  }
+
+  /**
+   * Tetap menyediakan fungsi untuk menyembunyikan popup
+   */
   const hideDeviceNotificationPopup = () => {
     isPopupVisible.value = false
   }
 
-  // Fungsi utama yang dipanggil untuk memulai proses notifikasi.
+  /**
+   * Fungsi kosong untuk kompatibilitas
+   */
   const showDeviceNotification = () => {
-    try {
-      // 1. Tampilkan snackbar yang tidak persisten sebagai pemberitahuan awal.
-      addSnackbar({
-        type: 'warning',
-        title: 'Perangkat Belum Terdaftar',
-        text: 'Aksi diperlukan untuk mendaftarkan perangkat ini.',
-        timeout: 8000, // Tampilkan selama 8 detik
-      })
-
-      // 2. Tampilkan popup modal setelah jeda singkat untuk tindakan lebih lanjut.
-      setTimeout(() => {
-        showDeviceNotificationPopup()
-      }, 1500)
-    }
-    catch (error) {
-      console.error('[DEVICE-NOTIFICATION] ❌ Gagal menampilkan notifikasi:', error)
-    }
-  }
-
-  // Watcher untuk mendeteksi perubahan status perangkat.
-  const startDeviceNotificationWatcher = () => {
-    if (import.meta.client) {
-      // ✅ DINONAKTIFKAN: Watcher untuk automatic popup dinonaktifkan untuk mencegah
-      // multiple notification dan race condition dengan API.
-      // Notifikasi sekarang hanya akan ditampilkan melalui API secara eksplisit.
-      console.log('[DEVICE-NOTIFICATION] ℹ️ Watcher notifikasi otomatis dinonaktifkan untuk mencegah race condition.')
-
-      /* KODE DINONAKTIFKAN:
-      let hasShownNotification = false
-      
-      watch(
-        () => authStore.isDeviceAuthRequired,
-        (isRequired) => {
-          if (isRequired && !hasShownNotification && !isPopupVisible.value) {
-            console.log('[DEVICE-NOTIFICATION] 🚨 Perangkat memerlukan otorisasi, menampilkan notifikasi.')
-            showDeviceNotification()
-            hasShownNotification = true
-          }
-          else if (!isRequired) {
-            // Reset flag jika perangkat sudah terdaftar, agar bisa muncul lagi di masa depan.
-            hasShownNotification = false
-            hideDeviceNotificationPopup()
-          }
-        },
-        { immediate: true },
-      )
-      */
-    }
+    console.log('[DEVICE-NOTIFICATION] ⚠️ Notifikasi dinonaktifkan - gunakan authStore.deviceAuthRequired untuk mengontrol popup')
   }
 
   return {

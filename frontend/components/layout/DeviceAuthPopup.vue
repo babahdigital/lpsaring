@@ -13,13 +13,19 @@ const { add: addSnackbar } = useSnackbar()
 const router = useRouter()
 const isLoading = ref(false)
 
+// Computed para device info with fallback
+const deviceInfo = computed(() => authStore.pendingDeviceInfo || {})
+
+// Dialog visibility based directly on auth store state
+const isVisible = computed(() => authStore.deviceAuthRequired)
+
 async function handleRegister() {
   if (isLoading.value)
     return
   isLoading.value = true
 
   try {
-    // ✅ SEMPURNAKAN: Periksa ketersediaan token terlebih dahulu
+    // ✅ OPTIMASI: Periksa ketersediaan token terlebih dahulu
     if (!authStore.hasValidToken()) {
       console.warn('[DEVICE-AUTH-POPUP] Mencoba otorisasi tanpa token valid')
       addSnackbar({
@@ -31,11 +37,14 @@ async function handleRegister() {
       return
     }
 
+    console.log('[DEVICE-AUTH-POPUP] Memulai proses otorisasi perangkat')
     // Proses otorisasi perangkat
     const success = await authStore.authorizeDevice()
-    hideDeviceNotificationPopup()
+    // Sembunyikan popup notifikasi yang mungkin muncul dari sistem sebelumnya
+    hideDeviceNotificationPopup() 
 
     if (success) {
+      console.log('[DEVICE-AUTH-POPUP] Otorisasi berhasil, menampilkan notifikasi')
       addSnackbar({
         type: 'success',
         title: 'Otorisasi Berhasil',
@@ -92,7 +101,7 @@ function handleDismiss() {
   authStore.resetAuthorizationFlow()
 }
 
-// ✅ BARU: Fungsi untuk menolak perangkat dan logout
+// ✅ SEMPURNAKAN: Fungsi untuk menolak perangkat dan logout
 async function handleRejectDevice() {
   if (isLoading.value)
     return
@@ -105,9 +114,13 @@ async function handleRejectDevice() {
       text: 'Memproses penolakan perangkat dan logout...',
     })
     
+    // Tambahkan log untuk debugging
+    console.log('[DEVICE-AUTH-POPUP] Menolak perangkat dan memulai logout...')
+    
     await authStore.rejectDeviceAuthorization()
     
-    // Notification tidak perlu, karena akan redirect ke halaman login
+    // Notifikasi tidak perlu, karena akan redirect ke halaman login oleh auth store
+    console.log('[DEVICE-AUTH-POPUP] Penolakan perangkat berhasil diproses')
   }
   catch (err) {
     console.error('[DEVICE-AUTH-POPUP] Error saat menolak perangkat:', err)
@@ -124,38 +137,79 @@ async function handleRejectDevice() {
 </script>
 
 <template>
+  <!-- ✅ SEMPURNAKAN: Binding dialog ke state deviceAuthRequired dari auth store -->
   <VDialog
-    :model-value="isPopupVisible"
+    :model-value="authStore.deviceAuthRequired || isPopupVisible"
     persistent
-    max-width="450px"
+    max-width="500px"
     transition="dialog-bottom-transition"
   >
     <VCard class="text-center pa-4 pa-sm-6">
-      <VCardText>
-        <VAvatar color="warning" variant="tonal" size="60" class="mb-4">
-          <VIcon size="36" icon="tabler-device-mobile-question" />
+      <VCardTitle class="d-flex justify-center mb-2">
+        <VAvatar color="warning" variant="tonal" size="48" class="me-3">
+          <VIcon size="28" icon="tabler-device-mobile-question" />
         </VAvatar>
+        <span class="text-h5 font-weight-bold d-flex align-center">Otorisasi Perangkat</span>
+      </VCardTitle>
 
-        <h4 class="text-h5 font-weight-bold mb-2">
-          Perangkat Belum Terdaftar
-        </h4>
-        <p class="text-body-1 text-medium-emphasis">
-          Perangkat yang Anda gunakan belum terdaftar. Untuk keamanan dan fungsionalitas penuh, silakan daftarkan perangkat ini.
+      <VCardText>
+        <p class="text-body-1 text-medium-emphasis mb-4">
+          Untuk keamanan akun Anda, kami perlu memverifikasi perangkat baru ini. Silakan otorisasi perangkat untuk melanjutkan menggunakan layanan kami.
         </p>
+        
+        <!-- Info perangkat -->
+        <VList density="compact" class="bg-grey-lighten-4 rounded-lg mb-3">
+          <VListItem>
+            <template #prepend>
+              <VIcon icon="tabler-device-laptop" />
+            </template>
+            <VListItemTitle>Informasi Perangkat</VListItemTitle>
+          </VListItem>
+          
+          <VListItem>
+            <template #prepend>
+              <VIcon icon="tabler-network" color="info" size="small" />
+            </template>
+            <VListItemTitle class="text-body-2">
+              IP: {{ deviceInfo.ip || 'Tidak terdeteksi' }}
+            </VListItemTitle>
+          </VListItem>
+          
+          <VListItem>
+            <template #prepend>
+              <VIcon icon="tabler-device-desktop-analytics" color="info" size="small" />
+            </template>
+            <VListItemTitle class="text-body-2">
+              MAC: {{ deviceInfo.mac || 'Tidak terdeteksi' }}
+            </VListItemTitle>
+          </VListItem>
+        </VList>
+        
+        <VAlert
+          type="warning"
+          variant="tonal"
+          border="start"
+          density="compact"
+          class="text-body-2 mb-2"
+        >
+          <p class="mb-0">
+            Jika ini bukan Anda yang login, pilih <strong>Tolak & Logout</strong> untuk keamanan akun Anda.
+          </p>
+        </VAlert>
       </VCardText>
 
       <VCardActions class="d-flex flex-column gap-3 justify-center">
         <VBtn
-          color="warning"
-          variant="flat"
+          color="success"
+          variant="elevated"
           block
           size="large"
           :loading="isLoading"
           :disabled="isLoading"
           @click="handleRegister"
         >
-          <VIcon start icon="tabler-device-mobile-plus" />
-          Daftarkan Sekarang
+          <VIcon start icon="tabler-device-mobile-check" />
+          Otorisasi Perangkat Ini
         </VBtn>
         <VBtn
           color="secondary"
