@@ -173,10 +173,13 @@ export default defineNuxtPlugin((nuxtApp) => {
 
         // Send client info to register for updates
         if (globalState.clientInfo.value.ip) {
+          console.log(`[WS] Registering client with IP: ${globalState.clientInfo.value.ip} and MAC: ${globalState.clientInfo.value.mac || 'N/A'}`)
           socket?.send(JSON.stringify({
-            type: 'register',
-            ip: globalState.clientInfo.value.ip,
-            mac: globalState.clientInfo.value.mac,
+            type: 'register_client',
+            payload: {
+              ip: globalState.clientInfo.value.ip,
+              mac: globalState.clientInfo.value.mac,
+            },
           }))
         }
       }
@@ -239,7 +242,7 @@ export default defineNuxtPlugin((nuxtApp) => {
         // Abandon large close codes for auth / 403 style (1008 policy, 400x custom) after a few tries
         if ([1008].includes(event.code) || reconnectAttempts > 25) {
           degraded = true
-          ; (window as any).__WS_DEGRADED = true
+            ; (window as any).__WS_DEGRADED = true
           console.warn('🛑 [WEBSOCKET] Degraded mode: stop reconnect attempts.')
           // Start SSE fallback if not already
           if (!sseActive)

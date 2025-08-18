@@ -62,9 +62,17 @@ export interface UserInfoResponse extends BaseApiResponse {
  * Device sync response
  */
 export interface DeviceSyncResponse extends BaseApiResponse {
-  status: 'DEVICE_VALID' | 'DEVICE_UNREGISTERED' | 'DEVICE_NOT_FOUND' | 'THROTTLED' | 'RATE_LIMITED' | 'ERROR'
+  status: 'DEVICE_VALID' | 'DEVICE_UNREGISTERED' | 'DEVICE_NOT_FOUND' | 'DEVICE_AUTHORIZATION_REQUIRED' | 'THROTTLED' | 'RATE_LIMITED' | 'ERROR'
   retry_after?: number
   message?: string
   error?: any
   ip?: string
+  mac?: string
+  data?: {
+    device_info?: {
+      ip: string
+      mac: string
+      user_id?: string
+    }
+  }
 }

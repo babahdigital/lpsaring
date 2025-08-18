@@ -29,6 +29,8 @@ interface AuthState {
   user: User | null
   isAuthCheckDone: boolean
   isNewDeviceDetected: boolean
+  deviceAuthRequired: boolean
+  pendingDeviceInfo: any | null
   clientIp: string | null
   clientMac: string | null
   loading: boolean
@@ -46,6 +48,8 @@ export const useAuthStore = defineStore('auth', () => {
     user: null,
     isAuthCheckDone: false,
     isNewDeviceDetected: false,
+    deviceAuthRequired: false,
+    pendingDeviceInfo: null,
     clientIp: null,
     clientMac: null,
     loading: false,
@@ -98,6 +102,8 @@ export const useAuthStore = defineStore('auth', () => {
   const isBlocked = computed(() => user.value?.is_blocked ?? false)
   const isQuotaFinished = computed(() => user.value?.is_quota_finished ?? false)
   const isNewDeviceDetected = computed(() => state.value.isNewDeviceDetected)
+  const isDeviceAuthRequired = computed(() => state.value.deviceAuthRequired)
+  const pendingDeviceInfo = computed(() => state.value.pendingDeviceInfo)
   const currentUser = computed(() => state.value.user)
   const clientIp = computed(() => state.value.clientIp)
   const clientMac = computed(() => state.value.clientMac)
@@ -694,7 +700,21 @@ export const useAuthStore = defineStore('auth', () => {
         }
       }
 
-      if (response?.status === 'DEVICE_UNREGISTERED') {
+      if (response?.status === 'DEVICE_AUTHORIZATION_REQUIRED') {
+        console.log('[AUTH-STORE] 🔒 Perangkat baru terdeteksi, memerlukan otorisasi.')
+        state.value.isNewDeviceDetected = true
+        state.value.deviceAuthRequired = true
+        state.value.pendingDeviceInfo = response.data?.device_info || {
+          ip: state.value.clientIp,
+          mac: state.value.clientMac
+        }
+        return {
+          status: 'DEVICE_AUTHORIZATION_REQUIRED',
+          message: response.message || 'Perangkat memerlukan otorisasi',
+          deviceInfo: response.data?.device_info
+        }
+      }
+      else if (response?.status === 'DEVICE_UNREGISTERED') {
         console.log('[AUTH-STORE] 🚨 Perangkat tidak terdaftar, memicu alur otorisasi.')
         state.value.isNewDeviceDetected = true
         // jangan set message agar tidak mengganggu UI, biarkan popup yang menangani
@@ -702,6 +722,8 @@ export const useAuthStore = defineStore('auth', () => {
       else if (response?.status === 'DEVICE_VALID') {
         console.log('[AUTH-STORE] ✅ Perangkat valid dan sinkron.')
         state.value.isNewDeviceDetected = false
+        state.value.deviceAuthRequired = false
+        state.value.pendingDeviceInfo = null
       }
       else if (response?.status === 'DEVICE_NOT_FOUND') {
         console.log('[AUTH-STORE] ⚠️ Perangkat tidak ditemukan di jaringan.')
@@ -745,8 +767,20 @@ export const useAuthStore = defineStore('auth', () => {
     // tapi state di backend tetap menganggap perangkat ini baru.
     console.log('[AUTH-STORE] Alur otorisasi di-reset oleh pengguna.')
     state.value.isNewDeviceDetected = false
+    state.value.deviceAuthRequired = false
+    state.value.pendingDeviceInfo = null
     state.value.error = null
     state.value.message = null
+  }
+
+  function setDeviceAuthRequired(required: boolean, deviceInfo: any = null) {
+    console.log(`[AUTH-STORE] Device authorization requirement set to ${required}`)
+    state.value.deviceAuthRequired = required
+    if (deviceInfo) {
+      state.value.pendingDeviceInfo = deviceInfo
+    } else if (!required) {
+      state.value.pendingDeviceInfo = null
+    }
   }
 
   return {
@@ -759,6 +793,8 @@ export const useAuthStore = defineStore('auth', () => {
     isBlocked,
     isQuotaFinished,
     isNewDeviceDetected,
+    isDeviceAuthRequired,
+    pendingDeviceInfo,
     currentUser,
     clientIp,
     clientMac,
@@ -783,5 +819,6 @@ export const useAuthStore = defineStore('auth', () => {
     fetchUser,
     syncDevice,
     resetAuthorizationFlow,
+    setDeviceAuthRequired,
   }
 })

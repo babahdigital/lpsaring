@@ -3,6 +3,64 @@
 from flask import current_app
 from datetime import datetime, timezone as dt_tz
 from app.infrastructure.db.models import User, UserRole
+from ipaddress import ip_address, ip_network
+from typing import Optional
+
+def find_dhcp_server_for_ip(mikrotik_client, ip_str: str) -> Optional[str]:
+    """
+    Menemukan nama DHCP server yang melayani IP tertentu.
+    """
+    if not ip_str:
+        return None
+
+    try:
+        target_ip = ip_address(ip_str)
+        
+        # 1. Dapatkan semua network DHCP
+        networks = mikrotik_client.get_resource('/ip/dhcp-server/network').get()
+        
+        # 2. Cari network yang cocok
+        matching_network = None
+        for net in networks:
+            address_net = net.get('address')
+            if not address_net:
+                continue
+            
+            try:
+                if target_ip in ip_network(address_net, strict=False):
+                    matching_network = net
+                    break
+            except ValueError:
+                continue
+
+        if not matching_network:
+            current_app.logger.warning(f"[DHCP-HELPER] No DHCP network found for IP: {ip_str}")
+            return None
+
+        # 3. Dapatkan semua server DHCP
+        servers = mikrotik_client.get_resource('/ip/dhcp-server').get()
+        
+        # 4. Cocokkan interface dari network dengan server
+        network_interface = matching_network.get('interface')
+        if not network_interface:
+             # Fallback untuk beberapa versi RouterOS dimana network tidak punya interface
+            network_interface = matching_network.get('gateway')
+            if not network_interface:
+                 current_app.logger.warning(f"[DHCP-HELPER] Matching network for {ip_str} has no interface or gateway.")
+                 return None
+
+        for server in servers:
+            if server.get('interface') == network_interface:
+                server_name = server.get('name')
+                current_app.logger.info(f"[DHCP-HELPER] Found DHCP server '{server_name}' for IP {ip_str} on interface '{network_interface}'")
+                return server_name
+
+        current_app.logger.warning(f"[DHCP-HELPER] No DHCP server found on interface '{network_interface}' for IP: {ip_str}")
+        return None
+
+    except Exception as e:
+        current_app.logger.error(f"[DHCP-HELPER] Error finding DHCP server for {ip_str}: {e}", exc_info=True)
+        return None
 
 def get_server_for_user(user: User) -> str:
     """

@@ -34,6 +34,7 @@ from app.infrastructure.gateways.mikrotik_client import (
     purge_user_from_hotspot,
     purge_user_from_hotspot_by_comment
 )
+from app.utils.mikrotik_helpers import find_dhcp_server_for_ip
 from app.infrastructure.db.models import User, UserDevice, UserRole, ApprovalStatus, UserBlok, UserKamar
 from app.extensions import db, limiter
 from app.infrastructure.gateways.whatsapp_client import send_otp_whatsapp
@@ -775,7 +776,14 @@ def sync_device():
                     require_explicit = True
                 is_trusted_device = bool(client_mac) and bool(getattr(current_user, 'trusted_mac_address', None)) \
                     and str(current_user.trusted_mac_address).upper() == str(client_mac).upper()
+                
+                # --- PERBAIKAN MODAL POPUP ---
+                # Jika ini adalah perangkat baru dan otorisasi eksplisit diperlukan
                 if require_explicit and not is_trusted_device:
+                    current_app.logger.warning(
+                        f"[SYNC-DEVICE] New device detected for user {current_user.id} "
+                        f"({client_ip}/{client_mac}). Authorization required."
+                    )
                     AuthSessionService.update_session(
                         client_ip=client_ip,
                         client_mac=client_mac,
@@ -787,13 +795,18 @@ def sync_device():
                         activity=f"device_requires_authorization:user_{current_user.id}"
                     )
                     return jsonify({
-                        "status": "DEVICE_UNREGISTERED",
+                        "status": "DEVICE_AUTHORIZATION_REQUIRED",
+                        "message": "Perangkat baru terdeteksi. Silakan otorisasi perangkat ini untuk melanjutkan.",
+                        "data": {
+                            "device_info": {
+                                "ip": client_ip,
+                                "mac": client_mac,
+                                "user_id": str(current_user.id)
+                            }
+                        },
                         "registered": False,
                         "requires_explicit_authorization": True,
-                        "message": "Perangkat baru terdeteksi, memerlukan otorisasi pengguna",
-                        "ip": client_ip,
-                        "mac": client_mac,
-                        "action": "redirect_to_authorize"
+                        "action": "authorize_device"
                     }), 200
 
                 # Update/ensure address list entry for current IP
@@ -856,10 +869,38 @@ def sync_device():
                             _ok_rm_lease, _msg_rm_lease = find_and_remove_static_lease_by_mac(client_mac)
                         except Exception:
                             _ok_rm_lease, _msg_rm_lease = False, ''
-                        ok_lease, msg_lease = create_static_lease(client_ip, client_mac, comment)
+                        
+                        # --- PERBAIKAN DHCP SERVER ---
+                        # Get MikroTik client
+                        from app.infrastructure.gateways.mikrotik_client_impl import _get_api_from_pool
+                        mikrotik_client = _get_api_from_pool()
+                        
+                        # Tentukan nama server DHCP yang benar
+                        dhcp_server_name = find_dhcp_server_for_ip(mikrotik_client, client_ip)
+                        
+                        # Create lease with the server parameter if available
+                        lease_params = {
+                            "address": client_ip,
+                            "mac-address": client_mac,
+                            "comment": comment,
+                        }
+                        
+                        if dhcp_server_name:
+                            lease_params["server"] = dhcp_server_name
+                            logger.info(f"[SYNC-DEVICE] Using DHCP server '{dhcp_server_name}' for IP {client_ip}")
+                        else:
+                            logger.warning(
+                                f"[SYNC-DEVICE] Could not determine specific DHCP server for IP {client_ip}. "
+                                "Lease will be created on 'all' servers."
+                            )
+                            
+                        # Create the lease with the determined server
+                        from app.infrastructure.gateways.mikrotik_client import ensure_dhcp_lease
+                        ok_lease, msg_lease = ensure_dhcp_lease(lease_params)
+                        
                         lease_updated = ok_lease
                         if ok_lease:
-                            logger.info(f"[SYNC-DEVICE] DHCP static lease ensured for {client_ip}/{client_mac}: {msg_lease}")
+                            logger.info(f"[SYNC-DEVICE] DHCP static lease ensured for {client_ip}/{client_mac} on server '{dhcp_server_name or 'all'}'")
                         else:
                             logger.warning(f"[SYNC-DEVICE] DHCP lease not ensured for {client_ip}/{client_mac}: {msg_lease}")
                     except Exception as le:
