@@ -482,7 +482,13 @@ def create_static_lease(ip: str, mac: str, comment: str) -> Tuple[bool, str]:
         # Only use explicit server name if specifically configured
         if not testing_mode:
             try:
-                server_name = current_app.config.get('MIKROTIK_DEFAULT_DHCP_SERVER')
+                # First try to use the new config option MIKROTIK_DHCP_SERVER_NAME
+                server_name = current_app.config.get('MIKROTIK_DHCP_SERVER_NAME')
+                
+                # Fallback to old config option if new one is not set
+                if server_name is None:
+                    server_name = current_app.config.get('MIKROTIK_DEFAULT_DHCP_SERVER')
+                
                 # If the config explicitly sets "all" as the server name, clear it
                 # RouterOS 7 will automatically choose the appropriate server
                 if server_name and server_name.lower() == 'all':

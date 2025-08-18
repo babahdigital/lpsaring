@@ -34,7 +34,7 @@ from app.infrastructure.gateways.mikrotik_client import (
     purge_user_from_hotspot,
     purge_user_from_hotspot_by_comment
 )
-from app.utils.mikrotik_helpers import find_dhcp_server_for_ip
+# Removed unused import: from app.utils.mikrotik_helpers import find_dhcp_server_for_ip
 from app.infrastructure.db.models import User, UserDevice, UserRole, ApprovalStatus, UserBlok, UserKamar
 from app.extensions import db, limiter
 from app.infrastructure.gateways.whatsapp_client import send_otp_whatsapp
@@ -626,8 +626,23 @@ def sync_device():
                     # Reset failure counter on success
                     AuthSessionService.reset_failure_counter(client_ip, "sync_device")
 
-                    # Jika explicit authorization diaktifkan, JANGAN melakukan bypass/lease otomatis pada legacy flow
-                    if True:  # HOTFIX: Always allow auto-bypass
+                    # Check if device needs explicit authorization
+                    if device.status != 'APPROVED' and current_app.config.get("REQUIRE_EXPLICIT_DEVICE_AUTH"):
+                        AuthSessionService.update_session(
+                            client_ip=client_ip,
+                            client_mac=client_mac,
+                            updates={"sync_status": "requires_authorization", "registered": False},
+                            activity="device_sync_requires_explicit_auth"
+                        )
+                        return jsonify({
+                            "status": "DEVICE_AUTHORIZATION_REQUIRED",
+                            "registered": False,
+                            "requires_explicit_authorization": True,
+                            "message": "Perangkat memerlukan otorisasi eksplisit",
+                            "data": {"device_info": {"mac": client_mac, "ip": client_ip, "id": str(device.id)}}
+                        }), 200
+                    
+                    # If device is approved or explicit authorization is not required
                         # Best-effort: upsert bypass & static DHCP lease even without JWT
                         try:
                             list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST')
@@ -689,10 +704,11 @@ def sync_device():
                                     except Exception:
                                         _ok_rm = False
                                     
-                                    # Create new lease with current IP/MAC
+                                    # Create new lease with current IP/MAC using the configured DHCP server name
                                     ok_lease, msg_lease = create_static_lease(client_ip, client_mac, comment)
                                     if ok_lease:
-                                        logger.info(f"[SYNC-DEVICE] (legacy) DHCP lease ensured for {client_ip}/{client_mac}")
+                                        dhcp_server = current_app.config.get("MIKROTIK_DHCP_SERVER_NAME") or "default"
+                                        logger.info(f"[SYNC-DEVICE] (legacy) DHCP lease ensured for {client_ip}/{client_mac} on server {dhcp_server}")
                                     else:
                                         logger.warning(f"[SYNC-DEVICE] (legacy) DHCP lease not ensured: {msg_lease}")
                                 except Exception as _e_le:
@@ -769,17 +785,33 @@ def sync_device():
                         "action": "update_profile"
                     }), 400
 
-                # Jika membutuhkan persetujuan eksplisit dan MAC tidak dipercaya, hentikan di sini
+                # Check if device requires explicit authorization
                 try:
                     require_explicit = current_app.config.get('REQUIRE_EXPLICIT_DEVICE_AUTH', True)
                 except Exception:
                     require_explicit = True
-                is_trusted_device = bool(client_mac) and bool(getattr(current_user, 'trusted_mac_address', None)) \
-                    and str(current_user.trusted_mac_address).upper() == str(client_mac).upper()
+                
+                # Find device by MAC address
+                device = None
+                if client_mac:
+                    device = db.session.execute(
+                        select(UserDevice).filter_by(mac_address=client_mac)
+                    ).scalar_one_or_none()
+                
+                # If device exists, check its status
+                device_authorized = False
+                if device:
+                    # Update the device with current user_id
+                    if device.user_id != current_user.id:
+                        device.user_id = current_user.id
+                        db.session.commit()
+                    
+                    # Check if device is already approved
+                    device_authorized = (device.status == 'APPROVED')
                 
                 # --- PERBAIKAN MODAL POPUP ---
-                # Jika ini adalah perangkat baru dan otorisasi eksplisit diperlukan
-                if require_explicit and not is_trusted_device:
+                # If device authorization is required and device is not approved
+                if require_explicit and ((device and not device_authorized) or not device):
                     current_app.logger.warning(
                         f"[SYNC-DEVICE] New device detected for user {current_user.id} "
                         f"({client_ip}/{client_mac}). Authorization required."
@@ -801,7 +833,8 @@ def sync_device():
                             "device_info": {
                                 "ip": client_ip,
                                 "mac": client_mac,
-                                "user_id": str(current_user.id)
+                                "user_id": str(current_user.id),
+                                "id": str(device.id) if device else None
                             }
                         },
                         "registered": False,
@@ -870,13 +903,9 @@ def sync_device():
                         except Exception:
                             _ok_rm_lease, _msg_rm_lease = False, ''
                         
-                        # --- PERBAIKAN DHCP SERVER ---
-                        # Get MikroTik client
-                        from app.infrastructure.gateways.mikrotik_client_impl import _get_api_from_pool
-                        mikrotik_client = _get_api_from_pool()
-                        
-                        # Tentukan nama server DHCP yang benar
-                        dhcp_server_name = find_dhcp_server_for_ip(mikrotik_client, client_ip)
+                                # --- PERBAIKAN DHCP SERVER ---
+                        # Get configured DHCP server name from environment
+                        dhcp_server_name = current_app.config.get("MIKROTIK_DHCP_SERVER_NAME")
                         
                         # Create lease with the server parameter if available
                         lease_params = {
@@ -885,18 +914,16 @@ def sync_device():
                             "comment": comment,
                         }
                         
-                        if dhcp_server_name:
+                        if dhcp_server_name and dhcp_server_name.lower() != 'all':
                             lease_params["server"] = dhcp_server_name
-                            logger.info(f"[SYNC-DEVICE] Using DHCP server '{dhcp_server_name}' for IP {client_ip}")
+                            logger.info(f"[SYNC-DEVICE] Using configured DHCP server '{dhcp_server_name}' for IP {client_ip}")
                         else:
-                            logger.warning(
-                                f"[SYNC-DEVICE] Could not determine specific DHCP server for IP {client_ip}. "
-                                "Lease will be created on 'all' servers."
+                            logger.info(
+                                f"[SYNC-DEVICE] No specific DHCP server configured, RouterOS will automatically select the appropriate server"
                             )
                             
-                        # Create the lease with the determined server
-                        from app.infrastructure.gateways.mikrotik_client import ensure_dhcp_lease
-                        ok_lease, msg_lease = ensure_dhcp_lease(lease_params)
+                        # Create the static lease
+                        ok_lease, msg_lease = create_static_lease(client_ip, client_mac, comment)
                         
                         lease_updated = ok_lease
                         if ok_lease:
@@ -1100,7 +1127,10 @@ def verify_otp():
                     "message": "User tidak ditemukan"
                 }), 404
 
-            # AUTO-REGISTER DEVICE jika ada client info
+            # Dapatkan nama server DHCP dari environment, fallback ke None jika tidak ada
+            dhcp_server_name = current_app.config.get("MIKROTIK_DHCP_SERVER_NAME")
+            
+            # HANDLE DEVICE jika ada client info
             device = None
             if client_mac:
                 device = db.session.execute(
@@ -1108,17 +1138,44 @@ def verify_otp():
                 ).scalar_one_or_none()
 
                 if not device:
-                    # Auto-register device - menggunakan keyword arguments
-                    device = UserDevice()
-                    device.user_id = user.id
-                    device.mac_address = client_mac
-                    device.device_name = f"Device-{client_mac[-4:]}"
+                    # Perangkat baru terdeteksi saat login
+                    logger.info(f"[VERIFY-OTP] New device MAC {client_mac} for user {user.id}")
+                    device = UserDevice(
+                        user_id=user.id,
+                        mac_address=client_mac,
+                        ip_address=client_ip,
+                        device_name=f"Device-{client_mac[-4:]}",
+                        user_agent=request.user_agent.string,
+                        status='PENDING'  # Status default adalah PENDING
+                    )
                     db.session.add(device)
-                    db.session.commit()
-                    logger.info(f"[VERIFY-OTP] Auto-registered device: {device.id}")
+                    db.session.flush()  # Flush untuk mendapatkan ID perangkat
+
+                    if current_app.config.get("REQUIRE_EXPLICIT_DEVICE_AUTH"):
+                        db.session.commit()
+                        # Jangan login, tapi kirim sinyal bahwa otorisasi diperlukan
+                        return jsonify({
+                            "status": "DEVICE_AUTHORIZATION_REQUIRED",
+                            "message": "Perangkat baru terdeteksi. Otorisasi diperlukan untuk login.",
+                            "data": {"device_info": {"mac": client_mac, "ip": client_ip, "user_agent": device.user_agent}}
+                        })
+                    else:
+                        # Jika otorisasi tidak diperlukan, setujui secara otomatis
+                        device.status = 'APPROVED'
+                        logger.info(f"[VERIFY-OTP] Auto-registered device: {device.id}")
                 else:
                     # Update existing device
                     device.user_id = user.id
+                    if device.status != 'APPROVED':
+                        if current_app.config.get("REQUIRE_EXPLICIT_DEVICE_AUTH"):
+                            db.session.commit()
+                            return jsonify({
+                                "status": "DEVICE_AUTHORIZATION_REQUIRED",
+                                "message": "Perangkat ini memerlukan otorisasi untuk login.",
+                                "data": {"device_info": {"mac": client_mac, "ip": client_ip, "id": str(device.id)}}
+                            })
+                        else:
+                            device.status = 'APPROVED'
                     db.session.commit()
                     logger.info(f"[VERIFY-OTP] Updated existing device: {device.id}")
 

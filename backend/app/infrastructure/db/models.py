@@ -54,6 +54,9 @@ class RequestType(enum.Enum):
 class RequestStatus(enum.Enum):
     PENDING = "PENDING"; APPROVED = "APPROVED"; REJECTED = "REJECTED"; PARTIALLY_APPROVED = "PARTIALLY_APPROVED"
 
+class DeviceStatus(enum.Enum):
+    PENDING = "PENDING"; APPROVED = "APPROVED"; REJECTED = "REJECTED"
+
 class AdminActionType(enum.Enum):
     CREATE_USER = "CREATE_USER"; APPROVE_USER = "APPROVE_USER"; REJECT_USER = "REJECT_USER"; CHANGE_USER_ROLE = "CHANGE_USER_ROLE"; UPGRADE_TO_ADMIN = "UPGRADE_TO_ADMIN"; DOWNGRADE_TO_USER = "DOWNGRADE_TO_USER"; DOWNGRADE_FROM_ADMIN = "DOWNGRADE_FROM_ADMIN"; INJECT_QUOTA = "INJECT_QUOTA"; SET_UNLIMITED_STATUS = "SET_UNLIMITED_STATUS"; REVOKE_UNLIMITED_STATUS = "REVOKE_UNLIMITED_STATUS"; ACTIVATE_USER = "ACTIVATE_USER"; DEACTIVATE_USER = "DEACTIVATE_USER"; RESET_HOTSPOT_PASSWORD = "RESET_HOTSPOT_PASSWORD"; GENERATE_ADMIN_PASSWORD = "GENERATE_ADMIN_PASSWORD"; MANUAL_USER_DELETE = "MANUAL_USER_DELETE"; UPDATE_USER_PROFILE = "UPDATE_USER_PROFILE"; PROCESS_QUOTA_REQUEST_APPROVE = "PROCESS_QUOTA_REQUEST_APPROVE"; PROCESS_QUOTA_REQUEST_REJECT = "PROCESS_QUOTA_REQUEST_REJECT"; PROCESS_QUOTA_REQUEST_PARTIALLY_APPROVED = "PROCESS_QUOTA_REQUEST_PARTIALLY_APPROVED"
 
@@ -199,6 +202,8 @@ class UserDevice(db.Model):
     ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True, comment="Alamat IP terakhir yang terasosiasi dengan perangkat (opsional)")
     mac_address: Mapped[str] = mapped_column(String(17), nullable=False)
     device_name: Mapped[str] = mapped_column(String(100), nullable=False, default="Perangkat Terdaftar")
+    status: Mapped[DeviceStatus] = mapped_column(SQLAlchemyEnum(DeviceStatus, name="device_status_enum", native_enum=False), nullable=False, default=DeviceStatus.PENDING, index=True)
+    user_agent: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="User Agent yang digunakan saat perangkat didaftarkan")
     last_seen_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     
