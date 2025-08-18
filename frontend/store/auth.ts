@@ -533,16 +533,15 @@ export const useAuthStore = defineStore('auth', () => {
       }
       const response = await $api<AuthResponse>('/auth/verify-otp', { method: 'POST', body: flexible })
 
-      // ✅ SEMPURNAKAN: Log respons OTP untuk debugging
       console.log('[AUTH-STORE] OTP verification response:', response)
 
-      // Extract token and user with helper functions
+      // ✅ PERBAIKAN LOGIKA UTAMA: Handle token first
       const tokenValue = extractTokenFromResponse(response)
-      const userData = extractUserFromResponse(response)      // ✅ SEMPURNAKAN: Periksa token terlebih dahulu - ini adalah prioritas utama
       if (tokenValue) {
-        console.log('[AUTH-STORE] ✅ Token JWT ditemukan dalam respons')
+        console.log('[AUTH-STORE] ✅ Token diterima, memproses login...')
         token.value = tokenValue
-        // Store token in localStorage as backup (digunakan untuk pemulihan)
+
+        // Store token in localStorage as backup
         if (import.meta.client) {
           try {
             localStorage.setItem('app_token_backup', tokenValue)
@@ -550,14 +549,20 @@ export const useAuthStore = defineStore('auth', () => {
             console.warn('[AUTH-STORE] Gagal menyimpan token di localStorage:', e)
           }
         }
-      } else {
-        console.warn('[AUTH-STORE] ⚠️ Verifikasi OTP berhasil tetapi tidak ada token!')
-      }
 
-      // Set user data if available
-      if (userData) {
-        setUser(userData)
-        console.log('[AUTH-STORE] ✅ Data pengguna diterima dan disimpan')
+        // Set user data if available
+        const userData = extractUserFromResponse(response)
+        if (userData) {
+          setUser(userData)
+          console.log('[AUTH-STORE] ✅ Data pengguna diterima dan disimpan')
+        }
+
+        // Redirect SEGERA. Alur otorisasi akan terjadi di halaman dashboard.
+        await navigateTo('/dashboard', { replace: true })
+      } else {
+        // Ini seharusnya tidak terjadi lagi setelah perbaikan backend
+        console.error('[AUTH-STORE] ❌ Verifikasi OTP berhasil tetapi tidak ada token diterima!')
+        throw new Error('Verifikasi OTP berhasil tetapi tidak ada token diterima.')
       }
 
       // Persist client IP/MAC from backend (helps captive flow follow-ups)
@@ -580,37 +585,15 @@ export const useAuthStore = defineStore('auth', () => {
         } catch (e) { /* noop */ }
       }
 
-      // ✅ SEMPURNAKAN: Cek status respons untuk menentukan tindakan berikutnya
+      // Sekarang, tangani status setelah login dan redirect diproses
       if ((response as any)?.status === 'DEVICE_AUTHORIZATION_REQUIRED') {
-        console.log('[AUTH-STORE] 🔒 Otorisasi perangkat diperlukan')
-
-        // Atur state untuk menunjukkan bahwa otorisasi perangkat diperlukan
+        console.log('[AUTH-STORE] 🔒 Otorisasi perangkat diperlukan, state diatur.')
         state.value.isNewDeviceDetected = true
         state.value.deviceAuthRequired = true
-
-        // Simpan informasi perangkat yang perlu diotorisasi
-        const deviceInfo = (response as any)?.data?.device_info || {
-          ip: state.value.clientIp,
-          mac: state.value.clientMac,
-          id: null
-        }
-        state.value.pendingDeviceInfo = deviceInfo
-
-        // ✅ SEMPURNAKAN: Pastikan token sudah disimpan meskipun otorisasi perangkat diperlukan
-        // Ini mencegah 401 Unauthorized saat memanggil API authorize-device nanti
-        if (tokenValue) {
-          console.log('[AUTH-STORE] ✅ Token tetap disimpan meskipun otorisasi perangkat diperlukan')
-          // Token sudah tersimpan di token.value, jadi kita tidak perlu set lagi
-        } else {
-          console.warn('[AUTH-STORE] ⚠️ Tidak ada token saat otorisasi perangkat diperlukan!')
-        }
-
-        console.log('[AUTH-STORE] ✅ State otorisasi perangkat telah diatur', deviceInfo)
+        state.value.pendingDeviceInfo = (response as any)?.data?.device_info || {}
       }
 
-      // ✅ SEMPURNAKAN: Selalu kembalikan true karena OTP valid dan token diterima
-      // (ini adalah pemisahan antara verifikasi OTP dan otorisasi perangkat)
-      return true
+      return true // Verifikasi OTP berhasil
     }
     catch (err: any) {
       state.value.error = handleApiError(err, 'Verifikasi OTP gagal.')
@@ -634,58 +617,47 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function authorizeDevice(): Promise<boolean> {
-    // [PERBAIKAN] Cek state loading untuk mencegah klik ganda
-    if (state.value.loading)
-      return false
+    if (state.value.loading) return false
 
     state.value.loading = true
     state.value.error = null
     try {
       console.log('[AUTH-STORE] 🔄 Memulai otorisasi perangkat...')
 
-      const { forceDetection } = useClientDetection()
-      const clientInfo = await forceDetection()
-
-      // ✅ SEMPURNAKAN: Gunakan informasi perangkat yang tersimpan jika ada
-      let deviceId = state.value.pendingDeviceInfo?.id
-      let ip = state.value.pendingDeviceInfo?.ip || clientInfo?.summary?.detected_ip
-      let mac = state.value.pendingDeviceInfo?.mac || clientInfo?.summary?.detected_mac
+      // ✅ OPTIMASI: Tidak perlu forceDetection. Gunakan data yang sudah ada.
+      const ip = state.value.pendingDeviceInfo?.ip || state.value.clientIp
+      const mac = state.value.pendingDeviceInfo?.mac || state.value.clientMac
+      const deviceId = state.value.pendingDeviceInfo?.id
 
       if (!ip || !mac) {
-        throw new Error('Tidak dapat mendeteksi informasi IP atau MAC perangkat. Pastikan Anda terhubung ke jaringan yang benar.')
+        throw new Error('Informasi perangkat tidak lengkap untuk otorisasi.')
       }
 
-      console.log(`[AUTH-STORE] Mengirim data otorisasi: IP=${ip}, MAC=${mac}, Device ID=${deviceId || 'unknown'}`)
+      console.log(`[AUTH-STORE] Mengirim data otorisasi: IP=${ip}, MAC=${mac}, Device ID=${deviceId}`)
 
       // ✅ SEMPURNAKAN: Verifikasi token tersedia sebelum mengirim permintaan
       if (!token.value) {
         console.warn('[AUTH-STORE] ⚠️ Mencoba mengotorisasi perangkat tanpa token JWT')
       }
 
-      // ✅ SEMPURNAKAN: Kirim ID perangkat jika tersedia untuk otorisasi yang lebih tepat
       await $api('/auth/authorize-device', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: {
           client_ip: ip,
           client_mac: mac,
-          device_id: deviceId || undefined
+          device_id: deviceId
         },
       })
 
-      // ✅ SEMPURNAKAN: Reset state otorisasi perangkat
+      // Reset state setelah berhasil
       state.value.isNewDeviceDetected = false
       state.value.deviceAuthRequired = false
       state.value.pendingDeviceInfo = null
 
-      // Refresh data pengguna untuk mendapatkan informasi terbaru
-      await fetchUser()
-
-      state.value.message = 'Perangkat berhasil diotorisasi dan akses bypass telah diberikan.'
+      await fetchUser() // Refresh data user
+      state.value.message = 'Perangkat berhasil diotorisasi.'
       console.log('[AUTH-STORE] ✅ Otorisasi perangkat berhasil.')
-      return true // <-- Memberi tahu pemanggil bahwa proses berhasil
+      return true
     }
     catch (err: any) {
       console.error('[AUTH-STORE] ❌ Otorisasi perangkat gagal:', err)
@@ -926,5 +898,15 @@ export const useAuthStore = defineStore('auth', () => {
     syncDevice,
     resetAuthorizationFlow,
     setDeviceAuthRequired,
+
+    // ✅ TAMBAHAN: Fungsi helper untuk membantu penanganan token dan error
+    hasValidToken: () => !!token.value,
+    handleTokenError: (error: any) => {
+      console.error('[AUTH-STORE] Token error detected:', error)
+      if (error.status === 401 || error.status === 403) {
+        console.log('[AUTH-STORE] 401/403 detected, logging out...')
+        logout(true) // Force logout and redirect on unauthorized errors
+      }
+    }
   }
 })

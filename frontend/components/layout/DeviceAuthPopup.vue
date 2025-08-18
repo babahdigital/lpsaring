@@ -19,9 +19,20 @@ async function handleRegister() {
   isLoading.value = true
 
   try {
-    // [PERBAIKAN] Langsung panggil action otorisasi dari store
-    const success = await authStore.authorizeDevice()
+    // ✅ SEMPURNAKAN: Periksa ketersediaan token terlebih dahulu
+    if (!authStore.hasValidToken()) {
+      console.warn('[DEVICE-AUTH-POPUP] Mencoba otorisasi tanpa token valid')
+      addSnackbar({
+        type: 'error',
+        title: 'Sesi Login Bermasalah',
+        text: 'Silakan login ulang untuk melanjutkan otorisasi perangkat.',
+      })
+      await router.push('/login')
+      return
+    }
 
+    // Proses otorisasi perangkat
+    const success = await authStore.authorizeDevice()
     hideDeviceNotificationPopup()
 
     if (success) {
@@ -34,21 +45,42 @@ async function handleRegister() {
       await router.push('/akun/perangkat')
     }
     else {
-      // Pesan error sudah di-set oleh authStore, tampilkan di snackbar
-      addSnackbar({
-        type: 'error',
-        title: 'Otorisasi Gagal',
-        text: authStore.error || 'Terjadi kesalahan yang tidak diketahui.',
-      })
+      // Handle specific error types
+      if (authStore.error?.includes('401') || authStore.error?.includes('Unauthorized')) {
+        addSnackbar({
+          type: 'error',
+          title: 'Sesi Berakhir',
+          text: 'Sesi login Anda telah berakhir. Silakan login ulang.',
+        })
+        await router.push('/login')
+      } else {
+        addSnackbar({
+          type: 'error',
+          title: 'Otorisasi Gagal',
+          text: authStore.error || 'Terjadi kesalahan yang tidak diketahui.',
+        })
+      }
     }
   }
-  catch (_e) {
-    // Menangani error tak terduga
-    addSnackbar({
-      type: 'error',
-      title: 'Error Kritis',
-      text: 'Gagal memproses permintaan otorisasi.',
-    })
+  catch (err) {
+    console.error('[DEVICE-AUTH-POPUP] Error saat otorisasi perangkat:', err)
+    
+    // Check for 401/403 errors to handle session issues
+    if (err?.status === 401 || err?.status === 403 || 
+        String(err).includes('401') || String(err).includes('Unauthorized')) {
+      addSnackbar({
+        type: 'error',
+        title: 'Sesi Berakhir',
+        text: 'Sesi login Anda telah berakhir. Silakan login ulang.',
+      })
+      await router.push('/login')
+    } else {
+      addSnackbar({
+        type: 'error',
+        title: 'Error Otorisasi',
+        text: 'Gagal memproses permintaan otorisasi. Silakan coba lagi.',
+      })
+    }
   }
   finally {
     isLoading.value = false

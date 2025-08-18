@@ -1169,6 +1169,7 @@ def verify_otp():
                             "status": "DEVICE_AUTHORIZATION_REQUIRED",
                             "message": "Perangkat baru terdeteksi. Otorisasi diperlukan untuk login.",
                             "token": token,  # ✅ SEMPURNAKAN: Selalu sertakan token!
+                            "user": {"id": str(user.id), "full_name": user.full_name, "role": user.role.value},
                             "data": {"device_info": {"mac": client_mac, "ip": client_ip, "id": str(device.id), "user_agent": device.user_agent}}
                         }
                         resp = jsonify(response_data)
@@ -1199,6 +1200,7 @@ def verify_otp():
                                 "status": "DEVICE_AUTHORIZATION_REQUIRED",
                                 "message": "Perangkat ini memerlukan otorisasi untuk login.",
                                 "token": token,  # ✅ SEMPURNAKAN: Selalu sertakan token!
+                                "user": {"id": str(user.id), "full_name": user.full_name, "role": user.role.value},
                                 "data": {"device_info": {"mac": client_mac, "ip": client_ip, "id": str(device.id)}}
                             }
                             resp = jsonify(response_data)
