@@ -1,12 +1,17 @@
 // plugins/01.network-change-detector.client.ts
 // Plugin untuk mendeteksi perubahan jaringan di mobile dan trigger cache clear
+// Enhanced version that also detects IP changes and forces synchronization
 
-export default defineNuxtPlugin(() => {
+import { useAuthStore } from '~/store/auth'
+import { useClientDetection } from '~/composables/useClientDetection'
+
+export default defineNuxtPlugin((nuxtApp) => {
   if (import.meta.server)
     return
 
   // Network change detection
   let previousConnection = ''
+  let ipCheckIntervalId: NodeJS.Timeout | null = null
 
   const checkNetworkChange = () => {
     // Check connection type if available (mobile browsers)
@@ -83,8 +88,75 @@ export default defineNuxtPlugin(() => {
     }
   }
 
+  // IP address change detection for logged-in users
+  const startProactiveIpCheck = () => {
+    if (ipCheckIntervalId) {
+      clearInterval(ipCheckIntervalId)
+    }
+
+    ipCheckIntervalId = setInterval(async () => {
+      const authStore = useAuthStore()
+
+      // Only run if the user is logged in and not on login/captive pages
+      if (authStore.isLoggedIn && !window.location.pathname.includes('login') && !window.location.pathname.includes('captive')) {
+        try {
+          const { detectionResult, triggerDetection } = useClientDetection()
+
+          // Silently trigger a new detection
+          await triggerDetection()
+
+          const currentDetectedIp = detectionResult.value?.summary?.detected_ip
+          const storedIp = authStore.clientIp
+
+          // If IP is detected and different from stored
+          if (currentDetectedIp && storedIp && currentDetectedIp !== storedIp) {
+            console.warn(`🌐 [IP-CHANGE] IP mismatch detected. Stored: ${storedIp}, Detected: ${currentDetectedIp}. Forcing sync.`)
+
+            // Clear old state to force aggressive resync
+            // Use internal state mutation to update read-only properties
+            localStorage.removeItem('auth_client_ip')
+            localStorage.removeItem('auth_client_mac')
+
+            // Force refresh detection via localStorage clear
+            localStorage.removeItem('client_detection_cache')
+
+            // Call sync-device. If sync-device returns that the device is not registered
+            // (because MAC is also new), authStore will automatically redirect to the authorization page.
+            await authStore.syncDevice()
+
+            // After sync, dispatch custom event to notify app of IP change
+            window.dispatchEvent(new CustomEvent('app:ip-changed', {
+              detail: { oldIp: storedIp, newIp: currentDetectedIp }
+            }))
+          }
+        } catch (error) {
+          console.error('[IP-CHANGE] Error during IP check:', error)
+        }
+      }
+    }, 15000) // Check every 15 seconds
+  }
+
+  // Stop IP checking interval
+  const stopProactiveIpCheck = () => {
+    if (ipCheckIntervalId) {
+      clearInterval(ipCheckIntervalId)
+      ipCheckIntervalId = null
+    }
+  }
+
   // Initial network check
   checkNetworkChange()
+
+  // Start IP checking when plugin loads
+  startProactiveIpCheck()
+
+  // Setup cleanup when app unmounts - use app:created as hook
+  nuxtApp.hook('app:created', () => {
+    // When app is created, set up the cleanup for when window unloads
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', stopProactiveIpCheck)
+    }
+  })
 
   // Monitor network changes
   if ('connection' in navigator) {
@@ -98,6 +170,9 @@ export default defineNuxtPlugin(() => {
   window.addEventListener('online', () => {
     console.log('🌐 [NETWORK-CHANGE] Device came online')
     sessionStorage.setItem('network_came_online', 'true')
+
+    // When device comes back online, immediately check for IP changes
+    startProactiveIpCheck()
     checkNetworkChange()
   })
 
@@ -111,28 +186,28 @@ export default defineNuxtPlugin(() => {
     const originalIsPageRefresh = (window as any).__isPageRefresh
 
       ; (window as any).__isPageRefresh = () => {
-      // Check original function first
-      if (originalIsPageRefresh && originalIsPageRefresh()) {
-        return true
-      }
+        // Check original function first
+        if (originalIsPageRefresh && originalIsPageRefresh()) {
+          return true
+        }
 
-      // Network change indicators
-      return sessionStorage.getItem('network_changed') === 'true'
-        || sessionStorage.getItem('network_came_online') === 'true'
-    }
+        // Network change indicators
+        return sessionStorage.getItem('network_changed') === 'true'
+          || sessionStorage.getItem('network_came_online') === 'true'
+      }
 
     const originalClearFlag = (window as any).__clearRefreshFlag
 
       ; (window as any).__clearRefreshFlag = () => {
-      // Call original function
-      if (originalClearFlag) {
-        originalClearFlag()
-      }
+        // Call original function
+        if (originalClearFlag) {
+          originalClearFlag()
+        }
 
-      // Clear network change flags
-      sessionStorage.removeItem('network_changed')
-      sessionStorage.removeItem('network_came_online')
-      sessionStorage.removeItem('network_went_offline')
-    }
+        // Clear network change flags
+        sessionStorage.removeItem('network_changed')
+        sessionStorage.removeItem('network_came_online')
+        sessionStorage.removeItem('network_went_offline')
+      }
   }
 })

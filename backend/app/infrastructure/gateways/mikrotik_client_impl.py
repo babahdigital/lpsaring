@@ -432,98 +432,28 @@ def create_static_lease(ip: str, mac: str, comment: str) -> Tuple[bool, str]:
         # Ambil semua lease untuk MAC ini
         by_mac = leases_res.get(**{"mac-address": mac})
 
-        # Tentukan DHCP server yang tepat (hindari memaksa 'all')
+        # RouterOS 7 Enhancement: No longer need to explicitly set the server in most cases
+        # Simply let RouterOS choose the appropriate server based on the network
         server_name: Optional[str] = None
-        try:
-            # Prefer server dari lease yang sudah ada untuk MAC ini
-            for lease in by_mac:
-                srv = lease.get('server')
-                if srv and str(srv).lower() != 'all':
-                    server_name = srv
-                    break
-            # Jika belum diketahui, coba dari lease berdasarkan IP
-            if not server_name and ip:
-                by_ip = leases_res.get(address=ip)
-                for lease in by_ip:
-                    srv = lease.get('server')
-                    if srv and str(srv).lower() != 'all':
-                        server_name = srv
-                        break
-        except Exception:
-            # Silent fallback
-            server_name = server_name or None
-
-        # Jika belum ada server_name, coba petakan IP ke network DHCP untuk mendapatkan server
-        if not server_name and ip:
-            try:
-                # Ambil daftar network dan server DHCP
-                dhcp_net_res = api.get_resource("/ip/dhcp-server/network")
-                dhcp_srv_res = api.get_resource("/ip/dhcp-server")
-                networks = dhcp_net_res.get()
-                servers = dhcp_srv_res.get()
-
-                # Build mapping network -> server via subnet match (best-effort)
-                def ip_to_int(addr: str) -> int:
-                    parts = [int(p) for p in addr.split('.')]
-                    return (parts[0] << 24) + (parts[1] << 16) + (parts[2] << 8) + parts[3]
-
-                def cidr_to_netmask(prefix: int) -> int:
-                    return (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF
-
-                target = ip_to_int(ip)
-                best_prefix = -1
-                chosen_network = None
-                for net in networks:
-                    addr = net.get('address')  # e.g., '192.168.88.0/24'
-                    if not addr or '/' not in addr:
-                        continue
-                    net_ip, pref = addr.split('/')
-                    try:
-                        pref_i = int(pref)
-                        n_int = ip_to_int(net_ip)
-                        mask = cidr_to_netmask(pref_i)
-                        if (target & mask) == (n_int & mask):
-                            if pref_i > best_prefix:
-                                best_prefix = pref_i
-                                chosen_network = addr
-                    except Exception:
-                        continue
-
-                # If we have a chosen network, try to guess server by pool; else leave None
-                if chosen_network:
-                    pool_name = None
-                    try:
-                        for net in networks:
-                            if net.get('address') == chosen_network:
-                                pool_name = net.get('address-pool')
-                                break
-                    except Exception:
-                        pool_name = None
-                    if pool_name:
-                        for srv in servers:
-                            if srv.get('address-pool') == pool_name:
-                                candidate = srv.get('name') or srv.get('id')
-                                if candidate and str(candidate).lower() != 'all':
-                                    server_name = candidate
-                                    break
-                    if not server_name and len(servers) == 1:
-                        candidate = servers[0].get('name') or servers[0].get('id')
-                        if candidate and str(candidate).lower() != 'all':
-                            server_name = candidate
-            except Exception:
-                # Ignore mapping failures
-                pass
-
-        # Fallback ke konfigurasi default jika tersedia (kecuali testing mode, di mana kita tidak set server sama sekali)
+        
+        # Check if we're in test mode
         try:
             testing_mode = bool(current_app.config.get('SYNC_TEST_MODE_ENABLED', False))
         except Exception:
             testing_mode = False
-        if not server_name and not testing_mode:
+            
+        # Only use explicit server name if specifically configured
+        if not testing_mode:
             try:
-                server_name = current_app.config.get('MIKROTIK_DEFAULT_DHCP_SERVER') or None
+                server_name = current_app.config.get('MIKROTIK_DEFAULT_DHCP_SERVER')
+                # If the config explicitly sets "all" as the server name, clear it
+                # RouterOS 7 will automatically choose the appropriate server
+                if server_name and server_name.lower() == 'all':
+                    server_name = None
             except Exception:
                 server_name = None
+                
+        # For testing mode, we don't set server at all - RouterOS will handle it
 
         updated = False
         messages: list[str] = []
@@ -564,13 +494,11 @@ def create_static_lease(ip: str, mac: str, comment: str) -> Tuple[bool, str]:
                     set_fields['address'] = ip
                 if comment and current_comment != comment:
                     set_fields['comment'] = comment
-                # Hanya set server jika tidak dalam testing mode
-                if server_name and not testing_mode:
+                # Only set server if there's a specific one configured and not in testing mode
+                # In RouterOS 7, it's better to let the system choose the server automatically
+                if server_name and not testing_mode and server_name.lower() != 'all':
                     set_fields['server'] = server_name
                 if set_fields:
-                    # Jangan pernah set server=all; hapus field bila demikian
-                    if set_fields.get('server', '').lower() == 'all':
-                        set_fields.pop('server', None)
                     leases_res.set(id=l_id, **set_fields)
                     messages.append(f"updated:{l_id}:{set_fields}")
                     updated = True
@@ -580,23 +508,16 @@ def create_static_lease(ip: str, mac: str, comment: str) -> Tuple[bool, str]:
         # Bila tidak ada lease sama sekali untuk MAC ini, buat baru sebagai static
         if not by_mac:
             add_fields: Dict[str, Any] = {"address": ip, "mac-address": mac, "comment": comment}
-            # Jangan set server saat testing mode; biarkan RouterOS memilih berdasarkan network
-            if server_name and str(server_name).lower() != 'all' and not testing_mode:
+            # In RouterOS 7, only set server if explicitly needed, otherwise let RouterOS handle it
+            if server_name and not testing_mode and server_name.lower() != 'all':
                 add_fields['server'] = server_name
             try:
+                # Simply add the lease - RouterOS 7 will assign to the appropriate server
                 leases_res.add(**add_fields)
             except Exception as add_e:
-                # Jika gagal tanpa server, coba lagi dengan default server jika ada
-                if not server_name and not testing_mode:
-                    try:
-                        default_srv = current_app.config.get('MIKROTIK_DEFAULT_DHCP_SERVER')
-                    except Exception:
-                        default_srv = None
-                    if default_srv and str(default_srv).lower() != 'all':
-                        add_fields['server'] = default_srv
-                        leases_res.add(**add_fields)
-                else:
-                    raise add_e
+                # Log the error and re-raise
+                logger.error(f"[LEASE] Failed to create static lease for IP={ip} MAC={mac}: {add_e}")
+                raise add_e
             messages.append("created:new-static")
             updated = True
 

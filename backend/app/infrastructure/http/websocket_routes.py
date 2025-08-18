@@ -85,8 +85,13 @@ def _ws_handler(ws):
                         
                         # Check for IP change after authentication
                         try:
-                            from flask_jwt_extended import get_current_user
-                            current_user = get_current_user()
+                            # Load user directly from database instead of using get_current_user()
+                            from app.infrastructure.db.models import User
+                            from app.extensions import db
+                            
+                            # Get user directly from database using the ID from the decoded token
+                            current_user = db.session.get(User, user_id) if user_id else None
+                            
                             if current_user and hasattr(current_user, 'last_login_ip'):
                                 previous_ip = current_user.last_login_ip
                                 if previous_ip and previous_ip != client_ip:
