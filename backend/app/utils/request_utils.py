@@ -8,10 +8,12 @@ import urllib.parse
 import time
 from app.infrastructure.gateways import mikrotik_client
 
-# ✅ Global variables untuk reduce logging
+# ✅ Global variables untuk reduce logging (single source of truth)
 _localhost_logged = False
 _accepted_ips = set()
 _proxy_reject_logs = set()
+_last_mac_log = {}  # Cache untuk MAC log
+_backend_mac_attempt: dict = {}  # throttle lookup per IP
 
 def get_client_ip() -> Optional[str]:
     """
@@ -22,17 +24,7 @@ def get_client_ip() -> Optional[str]:
     proxy_ips = current_app.config.get('NETWORK_PROXY_IPS', [])
     allow_localhost = current_app.config.get('NETWORK_ALLOW_LOCALHOST', False)
 
-    # PRIORITAS 1: Parameter URL (dari MikroTik) - Paling akurat untuk captive portal
-    url_ip = request.args.get('client_ip') or request.args.get('ip')
-    if url_ip and is_valid_client_ip(url_ip, proxy_ips, allow_localhost):
-        if url_ip not in _accepted_ips:  # ✅ Only log once per IP
-            current_app.logger.info(f"[CLIENT-IP] ✅ From URL params: {url_ip}")
-        # Tag source for downstream logs
-        try: request.environ['CLIENT_IP_SOURCE'] = 'url_params:client_ip'
-        except Exception: pass
-        return url_ip
-    
-    # Kumpulkan kandidat dari proxy lebih awal untuk perbandingan
+    # Kumpulkan kandidat dari proxy lebih awal untuk perbandingan/mismatch safety
     # Pastikan variabel xff/xri terinisialisasi agar tidak UnboundLocalError
     xff = ''
     xri = None
@@ -58,7 +50,7 @@ def get_client_ip() -> Optional[str]:
         if xri and xri != '127.0.0.1' and is_valid_client_ip(xri, proxy_ips, allow_localhost):
             proxy_best = xri
 
-    # PRIORITAS 2: Headers dari deteksi Frontend - gunakan kecuali bertentangan dengan proxy
+    # PRIORITAS 1: Headers dari deteksi Frontend - gunakan kecuali bertentangan dengan proxy
     frontend_ip = request.headers.get('X-Frontend-Detected-IP')
     if frontend_ip and is_valid_client_ip(frontend_ip, proxy_ips, allow_localhost):
         method = request.headers.get('X-Frontend-Detection-Method', 'unknown')
@@ -66,15 +58,28 @@ def get_client_ip() -> Optional[str]:
             # Lebih aman: percayai proxy ketika terjadi mismatch
             if proxy_best not in _accepted_ips:
                 current_app.logger.info(f"[CLIENT-IP] ✅ From proxy (overrode frontend:{method}={frontend_ip}): {proxy_best}")
+                _accepted_ips.add(proxy_best)
             try: request.environ['CLIENT_IP_SOURCE'] = 'proxy_overrode_frontend'
             except Exception: pass
             return proxy_best
         # Tidak ada proxy kandidat atau sama dengan frontend → gunakan frontend
         if frontend_ip not in _accepted_ips:
             current_app.logger.info(f"[CLIENT-IP] ✅ From frontend ({method}): {frontend_ip}")
+            _accepted_ips.add(frontend_ip)
         try: request.environ['CLIENT_IP_SOURCE'] = f'frontend:{method}'
         except Exception: pass
         return frontend_ip
+
+    # PRIORITAS 2: Parameter URL (dari MikroTik) - Paling akurat untuk captive portal
+    url_ip = request.args.get('client_ip') or request.args.get('ip')
+    if url_ip and is_valid_client_ip(url_ip, proxy_ips, allow_localhost):
+        if url_ip not in _accepted_ips:  # ✅ Only log once per IP
+            current_app.logger.info(f"[CLIENT-IP] ✅ From URL params: {url_ip}")
+            _accepted_ips.add(url_ip)
+        # Tag source for downstream logs
+        try: request.environ['CLIENT_IP_SOURCE'] = 'url_params:client_ip'
+        except Exception: pass
+        return url_ip
 
     # PRIORITAS 3: JSON body (untuk endpoint seperti sync-device)
     try:
@@ -84,6 +89,7 @@ def get_client_ip() -> Optional[str]:
             if body_ip and is_valid_client_ip(body_ip, proxy_ips, allow_localhost):
                 if body_ip not in _accepted_ips:
                     current_app.logger.info(f"[CLIENT-IP] ✅ From JSON body: {body_ip}")
+                    _accepted_ips.add(body_ip)
                 try: request.environ['CLIENT_IP_SOURCE'] = 'json_body:ip'
                 except Exception: pass
                 return body_ip
@@ -94,6 +100,7 @@ def get_client_ip() -> Optional[str]:
     if proxy_best:
         if proxy_best not in _accepted_ips:
             current_app.logger.info(f"[CLIENT-IP] ✅ From proxy headers: {proxy_best}")
+            _accepted_ips.add(proxy_best)
         try: request.environ['CLIENT_IP_SOURCE'] = 'proxy_headers'
         except Exception: pass
         return proxy_best
@@ -111,6 +118,7 @@ def get_client_ip() -> Optional[str]:
     if remote_ip and not any(remote_ip.startswith(pfx) for pfx in block_prefixes) and is_valid_client_ip(remote_ip, proxy_ips, allow_localhost):
         if remote_ip not in _accepted_ips:
             current_app.logger.info(f"[CLIENT-IP] ✅ From remote_addr: {remote_ip}")
+            _accepted_ips.add(remote_ip)
         try: request.environ['CLIENT_IP_SOURCE'] = 'remote_addr_fallback'
         except Exception: pass
         return remote_ip
@@ -123,11 +131,7 @@ def get_client_ip() -> Optional[str]:
         _last_no_ip_log_time = now
     return None
 
-# Global variables untuk mengurangi log berulang
-_localhost_logged = False
-_accepted_ips = set()
-_last_mac_log = {}  # Cache untuk MAC log
-_backend_mac_attempt: dict = {}  # throttle lookup per IP
+# (globals moved to top to avoid duplicate declarations)
 
 def get_client_mac() -> Optional[str]:
     """

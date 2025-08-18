@@ -8,6 +8,7 @@ import { useApiMetricsStore } from '~/store/apiMetrics'
 import { useAuthStore } from '~/store/auth'
 import { ApiErrorCode, isApiErrorResponse } from '~/types/api'
 import { isProxyIP } from '~/utils/network-config'
+import { getClientRealIP, getClientMAC } from '~/utils/client-info'
 
 export default defineNuxtPlugin(() => {
   const config = useRuntimeConfig()
@@ -253,62 +254,4 @@ export default defineNuxtPlugin(() => {
   return { provide: { api } }
 })
 
-// Helper function untuk detect real client IP
-function getClientRealIP(): string | null {
-  // Enhanced IP detection with captive portal support
-
-  // PRIORITY 1: Check URL parameters for captive portal
-  const urlParams = new URLSearchParams(window.location.search)
-  const captiveIP = urlParams.get('client_ip') || urlParams.get('ip') || urlParams.get('client-ip') || urlParams.get('orig-ip')
-
-  if (captiveIP) {
-    console.log('🎯 [API] Captive portal IP detected from URL:', captiveIP)
-    // Store for persistence across navigations
-    localStorage.setItem('captive_ip', captiveIP)
-    return captiveIP
-  }
-
-  // PRIORITY 2: Check localStorage for previously stored captive IP
-  const storedCaptiveIP = localStorage.getItem('captive_ip')
-  if (storedCaptiveIP) {
-    console.log('🎯 [API] Using stored captive IP:', storedCaptiveIP)
-    return storedCaptiveIP
-  }
-
-  // PRIORITY 3: Check if running in captive portal environment
-  const isCaptiveBrowser = (window as any).__IS_CAPTIVE_BROWSER__ || false
-  if (isCaptiveBrowser) {
-    // Fallback: check if IP is available in window object (set by captive portal)
-    const captiveIP = (window as any).__CLIENT_IP__
-    if (captiveIP) {
-      console.log('🎯 [API] Captive browser IP from window:', captiveIP)
-      return captiveIP
-    }
-  }
-
-  return null
-}
-
-// Helper function to get client MAC address
-function getClientMAC(): string | null {
-  // Check URL parameters for captive portal MAC
-  const urlParams = new URLSearchParams(window.location.search)
-  const captiveMAC = urlParams.get('client_mac') || urlParams.get('mac') || urlParams.get('client-mac')
-
-  if (captiveMAC) {
-    console.log('🎯 [API] Captive portal MAC detected from URL:', captiveMAC)
-    // Store for persistence across navigations
-    localStorage.setItem('captive_mac', captiveMAC)
-      ; (window as any).__CLIENT_MAC__ = captiveMAC
-    return captiveMAC
-  }
-
-  // Check localStorage for previously stored captive MAC
-  const storedCaptiveMAC = localStorage.getItem('captive_mac')
-  if (storedCaptiveMAC) {
-    console.log('🎯 [API] Using stored captive MAC:', storedCaptiveMAC)
-    return storedCaptiveMAC
-  }
-
-  return null
-}
+// Helpers moved to ~/utils/client-info to avoid duplication

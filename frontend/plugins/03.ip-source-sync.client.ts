@@ -4,6 +4,7 @@
 import { defineNuxtPlugin } from '#app'
 import { useAuthStore } from '~/store/auth'
 import { isProxyIP } from '~/utils/network-config'
+import { getBestClientInfo } from '~/utils/client-info'
 
 export default defineNuxtPlugin((nuxtApp) => {
     if (typeof window === 'undefined') return
@@ -21,20 +22,6 @@ export default defineNuxtPlugin((nuxtApp) => {
         return intervalMs
     }
 
-    function getClientRealIP(): string | null {
-        const params = new URLSearchParams(window.location.search)
-        const p = params.get('client_ip') || params.get('ip') || params.get('client-ip') || params.get('orig-ip')
-        if (p) { try { localStorage.setItem('captive_ip', p) } catch { /* noop */ } return p }
-        return localStorage.getItem('captive_ip')
-    }
-
-    function getClientMAC(): string | null {
-        const params = new URLSearchParams(window.location.search)
-        const m = params.get('client_mac') || params.get('mac') || params.get('client-mac')
-        if (m) { try { localStorage.setItem('captive_mac', m) } catch { /* noop */ }; (window as any).__CLIENT_MAC__ = m; return m }
-        return localStorage.getItem('captive_mac')
-    }
-
     async function checkIpOnce(reason: string) {
         try {
             const now = Date.now()
@@ -50,12 +37,11 @@ export default defineNuxtPlugin((nuxtApp) => {
             // Inject minimal detection headers so backend has an early candidate even jika proxy header belum ada
             const headers = new Headers()
             headers.set('X-Frontend-Request', '1')
-            const feIp = auth.clientIp || getClientRealIP()
+            const { clientIp: feIp, clientMac: feMac } = getBestClientInfo()
             if (feIp && !isProxyIP(feIp)) {
                 headers.set('X-Frontend-Detected-IP', feIp)
-                headers.set('X-Frontend-Detection-Method', auth.clientIp ? 'auth-store' : 'composite')
+                headers.set('X-Frontend-Detection-Method', auth.clientIp ? 'auth-store' : 'local-storage')
             }
-            const feMac = getClientMAC() || auth.clientMac
             if (feMac) headers.set('X-Frontend-Detected-MAC', feMac)
 
             const resp = await fetch('/api/debug/ip-source?_cb=' + now, { cache: 'no-store', headers })
