@@ -137,8 +137,10 @@ onMounted(() => {
     startDeviceNotificationWatcher()
 
     // 2. Lakukan pengecekan sinkronisasi perangkat saat dashboard pertama kali dimuat.
-    // Fungsi ini akan mengubah state 'isNewDeviceDetected' jika perlu.
-    authStore.syncDevice()
+    // ✅ SEMPURNAKAN: Gunakan mode 'force' di dashboard untuk memastikan sinkronisasi
+    // dilakukan bahkan jika ada throttling, karena ini adalah tempat yang tepat 
+    // untuk menampilkan popup otorisasi perangkat jika diperlukan
+    authStore.syncDevice({ allowAuthorizationFlow: true, force: true })
   }
 })
 

@@ -48,7 +48,11 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
     if (shouldSync) {
       // Jika belum, baru jalankan sinkronisasi untuk memeriksa status terkini.
-      const syncResult = await authStore.syncDevice()
+      // ✅ PERBAIKAN: Tambahkan parameter allowAuthorizationFlow: false untuk mencegah
+      // popup otorisasi perangkat muncul sebelum login
+      const syncResult = await authStore.syncDevice({ allowAuthorizationFlow: false })
+
+      console.log('[USER-STATUS] Sinkronisasi dengan allowAuthorizationFlow=false, status:', syncResult?.status)
 
       // Handle throttling responses
       if (syncResult?.status === 'THROTTLED' || syncResult?.status === 'RATE_LIMITED') {

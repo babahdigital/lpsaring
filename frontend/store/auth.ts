@@ -537,9 +537,22 @@ export const useAuthStore = defineStore('auth', () => {
       const tokenValue = extractTokenFromResponse(response)
       const userData = extractUserFromResponse(response)
 
+      // ✅ SEMPURNAKAN: Verifikasi dan proses hasil segera
+      console.log('[AUTH-STORE] OTP verification response:', response)
+
       // Set token if available
       if (tokenValue) {
         token.value = tokenValue
+        // Store token in localStorage as backup (digunakan untuk pemulihan)
+        if (import.meta.client) {
+          try {
+            localStorage.setItem('app_token_backup', tokenValue)
+          } catch (e) {
+            console.warn('[AUTH-STORE] Gagal menyimpan token di localStorage:', e)
+          }
+        }
+      } else {
+        console.warn('[AUTH-STORE] ⚠️ Verifikasi OTP berhasil tetapi tidak ada token!')
       }
 
       // Set user data if available
@@ -557,6 +570,30 @@ export const useAuthStore = defineStore('auth', () => {
       catch { /* noop */ }
 
       finishAuthCheck()
+
+      // ✅ SEMPURNAKAN: Jalankan syncDevice setelah login berhasil tanpa menunggu hasilnya
+      // Ini menghindari masalah rate limiting yang menghalangi navigasi
+      console.log('[AUTH-STORE] ✅ Login berhasil, menjalankan syncDevice di background')
+
+      // Hapus data throttling untuk memastikan sinkronisasi berikutnya berjalan mulus
+      if (import.meta.client) {
+        try {
+          localStorage.removeItem('last_device_sync')
+        } catch (e) { /* noop */ }
+      }
+
+      // Jalankan di background agar tidak memblokir navigasi setelah login
+      setTimeout(() => {
+        syncDevice({ allowAuthorizationFlow: true, force: true })
+          .then(result => {
+            console.log('[AUTH-STORE] Hasil background syncDevice:', result)
+          })
+          .catch(error => {
+            console.error('[AUTH-STORE] Error saat background syncDevice:', error)
+            // Kegagalan syncDevice tidak menghambat alur login
+          })
+      }, 1000)
+
       return true
     }
     catch (err: any) {
@@ -628,30 +665,45 @@ export const useAuthStore = defineStore('auth', () => {
 
   // Dedicated lock for sync to avoid coupling with global loading
   let _syncInFlight = false
-  async function syncDevice() {
-    // Fungsi ini dipanggil secara periodik oleh middleware untuk sinkronisasi senyap
-    // Jika perangkat tidak dikenal, ia akan mengubah state isNewDeviceDetected menjadi true
-    // yang kemudian akan memicu popup.
+  async function syncDevice(options: { allowAuthorizationFlow?: boolean, force?: boolean } = {}) {
+    // ✅ SEMPURNAKAN: Tambahkan parameter untuk mengontrol kapan popup otorisasi boleh ditampilkan
+    // dan parameter force untuk melewati throttling jika diperlukan
+    const { allowAuthorizationFlow = false, force = false } = options;
 
-    // Prevent rapid successive calls
+    // Fungsi ini dipanggil secara periodik oleh middleware untuk sinkronisasi senyap
+    // dan juga secara eksplisit setelah login berhasil
+
+    // Prevent rapid successive calls dengan lock yang terdedikasi
     if (_syncInFlight) {
       console.log('[AUTH-STORE] Sync sudah dalam progress (dedicated lock), skip...')
       return { status: 'IN_PROGRESS' }
     }
 
-    // Check for throttling in localStorage
-    const lastSyncTime = localStorage.getItem('last_device_sync')
-    const now = Date.now()
-    // Dynamic throttle: converge faster on dashboard when MAC unknown; ensure min 5s
-    const macKnown = !!state.value.clientMac
-    const throttleMs = macKnown ? 10000 : 5000
-    if (lastSyncTime && (now - parseInt(lastSyncTime)) < throttleMs) {
-      console.log(`[AUTH-STORE] Sync di-throttle di frontend, tunggu ${Math.round(throttleMs / 1000)} detik`)
-      return { status: 'THROTTLED', message: 'Menunggu throttle selesai' }
+    // ✅ SEMPURNAKAN: Periksa throttling kecuali jika force=true
+    if (!force) {
+      // Check for throttling in localStorage
+      const lastSyncTime = localStorage.getItem('last_device_sync')
+      const now = Date.now()
+
+      // ✅ SEMPURNAKAN: Kurangi throttle untuk menangani lebih baik setelah login
+      // Dynamic throttle: buat lebih responsif (3s) untuk login sukses, dan lebih lama (8s) untuk polling
+      const macKnown = !!state.value.clientMac
+      const throttleMs = macKnown ? 8000 : 3000
+
+      if (lastSyncTime && (now - parseInt(lastSyncTime)) < throttleMs) {
+        console.log(`[AUTH-STORE] Sync di-throttle di frontend, tunggu ${Math.round(throttleMs / 1000)} detik`)
+        return { status: 'THROTTLED', message: 'Menunggu throttle selesai' }
+      }
+    } else {
+      console.log('[AUTH-STORE] 🚩 Force sync diaktifkan, melewati throttling')
     }
 
     // Store sync time immediately to prevent multiple rapid calls
-    localStorage.setItem('last_device_sync', now.toString())
+    if (import.meta.client) {
+      try {
+        localStorage.setItem('last_device_sync', Date.now().toString())
+      } catch (e) { /* noop */ }
+    }
 
     console.log('[AUTH-STORE] 🔄 Memulai sinkronisasi perangkat di latar belakang...')
 
@@ -670,6 +722,8 @@ export const useAuthStore = defineStore('auth', () => {
         // Get current IP and MAC address if available
         const currentIp = state.value.clientIp || null
         const currentMac = state.value.clientMac || null
+        // Check MAC for retry attempts
+        const isMacKnown = !!currentMac
 
         console.log('[AUTH-STORE] Sending sync request with IP:', currentIp, 'MAC:', currentMac)
 
@@ -683,7 +737,7 @@ export const useAuthStore = defineStore('auth', () => {
             mac: currentMac,
           },
           // Force revalidation when MAC not yet known so server can override stale IP
-          retryAttempts: macKnown ? undefined : 1,
+          retryAttempts: isMacKnown ? undefined : 1,
           onResponseError: ({ response }: { response: any }) => {
             console.warn('[AUTH-STORE] Sync device API error:', response.status)
             // Don't throw here - we'll handle it in the outer catch block
@@ -702,12 +756,20 @@ export const useAuthStore = defineStore('auth', () => {
 
       if (response?.status === 'DEVICE_AUTHORIZATION_REQUIRED') {
         console.log('[AUTH-STORE] 🔒 Perangkat baru terdeteksi, memerlukan otorisasi.')
-        state.value.isNewDeviceDetected = true
-        state.value.deviceAuthRequired = true
-        state.value.pendingDeviceInfo = response.data?.device_info || {
-          ip: state.value.clientIp,
-          mac: state.value.clientMac
+
+        // ✅ PERBAIKAN: Hanya proses alur otorisasi jika diizinkan oleh pemanggil
+        if (allowAuthorizationFlow) {
+          console.log('[AUTH-STORE] ✅ Menampilkan popup otorisasi karena allowAuthorizationFlow=true')
+          state.value.isNewDeviceDetected = true
+          state.value.deviceAuthRequired = true
+          state.value.pendingDeviceInfo = response.data?.device_info || {
+            ip: state.value.clientIp,
+            mac: state.value.clientMac
+          }
+        } else {
+          console.log('[AUTH-STORE] ⚠️ Otorisasi perangkat diperlukan, tapi ditunda hingga setelah login (allowAuthorizationFlow=false)')
         }
+
         return {
           status: 'DEVICE_AUTHORIZATION_REQUIRED',
           message: response.message || 'Perangkat memerlukan otorisasi',
@@ -733,7 +795,12 @@ export const useAuthStore = defineStore('auth', () => {
       else if (response?.status === 'THROTTLED' || response?.status === 'RATE_LIMITED') {
         console.log('[AUTH-STORE] 🔄 Sync di-throttle oleh server')
         const retryAfter = response?.retry_after || 30
-        localStorage.setItem('last_device_sync', (now + (retryAfter * 1000)).toString())
+        const currentTime = Date.now()
+        if (import.meta.client) {
+          try {
+            localStorage.setItem('last_device_sync', (currentTime + (retryAfter * 1000)).toString())
+          } catch (e) { /* noop */ }
+        }
         return response
       }
 
@@ -745,7 +812,12 @@ export const useAuthStore = defineStore('auth', () => {
       // If rate limited, respect the retry-after
       if (err.status === 429 || err.statusCode === 429) {
         const retryAfter = err.data?.retry_after || 30
-        localStorage.setItem('last_device_sync', (now + (retryAfter * 1000)).toString())
+        const currentTime = Date.now()
+        if (import.meta.client) {
+          try {
+            localStorage.setItem('last_device_sync', (currentTime + (retryAfter * 1000)).toString())
+          } catch (e) { /* noop */ }
+        }
         return { status: 'RATE_LIMITED', retry_after: retryAfter }
       }
 

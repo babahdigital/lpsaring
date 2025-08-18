@@ -79,8 +79,10 @@ class ClientDetectionService:
                 else:
                     logger.info(f"[CLIENT-DETECT] Mengabaikan header MAC placeholder {decoded}")
         
-        # 3. Cache key untuk konsistensi
-        cache_key = f"client_info:{client_ip}:{client_mac}:{int(current_time/10)}"
+        # 3. Cache key untuk konsistensi 
+        # ✅ OPTIMASI: Gunakan periode cache yang lebih lama (30 detik, bukan 10 detik)
+        # untuk mengurangi operasi cache yang berlebihan
+        cache_key = f"client_info:{client_ip}:{client_mac}:{int(current_time/30)}"
         
         # 4. Check cache jika enabled dan tidak force refresh
         cached_data = None
@@ -132,15 +134,17 @@ class ClientDetectionService:
 
             while retry_count <= max_retries:
                 try:
-                    if force_refresh or (retry_count > 0 and retry_count <= max_retries):
+                    # ✅ OPTIMASI: Hanya invalidate cache jika diminta secara eksplisit (force_refresh)
+                    # dan hanya pada percobaan pertama, bukan pada setiap retry
+                    if force_refresh and retry_count == 0:
                         invalidate_ip_cache(client_ip)
                         logger.info(
-                            f"[CLIENT-DETECT] 🧹 MikroTik MAC cache invalidated untuk IP {client_ip} (retry={retry_count})"
+                            f"[CLIENT-DETECT] 🧹 MikroTik MAC cache invalidated untuk IP {client_ip} (explicit refresh)"
                         )
-
+                    
                     if retry_count > 0:
                         logger.info(
-                            f"[CLIENT-DETECT] Percobaan ke-{retry_count+1} untuk IP {client_ip}..."
+                            f"[CLIENT-DETECT] Percobaan ke-{retry_count+1} untuk IP {client_ip} (menggunakan cache yang ada)..."
                         )
                         # Exponential backoff with increased initial wait time
                         backoff_time = 0.5 * (2 ** (retry_count - 1))  # 0.5s, 1s, 2s
@@ -160,7 +164,9 @@ class ClientDetectionService:
                         logger.info(
                             f"[CLIENT-DETECT] ✅ MAC ditemukan pada percobaan {retry_count+1}: {client_mac}"
                         )
-                        ttl_override = 120 if is_browser else None
+                        # ✅ OPTIMASI: Tingkatkan TTL cache positif untuk browser dari 120 detik menjadi 300 detik
+                        # untuk mempercepat operasi berikutnya dan meningkatkan responsivitas
+                        ttl_override = 300 if is_browser else None
                         cache_mac_by_ip(
                             client_ip, True, client_mac, search_msg, ttl=ttl_override
                         )
@@ -169,9 +175,11 @@ class ClientDetectionService:
                         logger.warning(
                             f"[CLIENT-DETECT] ❌ MAC tidak ditemukan untuk IP {client_ip} setelah {max_retries+1} percobaan ({search_msg})"
                         )
+                        # ✅ OPTIMASI: Tingkatkan TTL cache negatif dari 15 detik menjadi 60 detik
+                        # untuk mengurangi tekanan pada API MikroTik dan mempercepat respons
                         cache_mac_by_ip(
-                            client_ip, False, None, search_msg, ttl=15
-                        )  # negative cache
+                            client_ip, False, None, search_msg, ttl=60
+                        )  # negative cache dengan TTL yang lebih lama
                         break
                     else:
                         logger.info(
@@ -218,8 +226,9 @@ class ClientDetectionService:
             redis_client = ClientDetectionService._get_redis_client()
             if redis_client:
                 try:
-                    # Set different TTL based on detection success
-                    ttl = 30 if client_mac else 5  # 30s with MAC, 5s without
+                    # ✅ OPTIMASI: Tingkatkan TTL Redis untuk mengurangi beban Redis dan API
+                    # TTL lebih lama untuk hasil sukses (3 menit), dan lebih lama untuk hasil gagal (30 detik)
+                    ttl = 180 if client_mac else 30  # 180s (3 menit) dengan MAC, 30s tanpa MAC
                     redis_client.setex(cache_key, ttl, json.dumps(result))
                     logger.debug(f"[CLIENT-DETECT] Cached for {ttl}s: {client_ip} → {client_mac or 'Unknown MAC'}")
                 except Exception as e:

@@ -206,6 +206,7 @@ def register_user():
         return jsonify(AuthErrorResponseSchema(error="Terjadi kesalahan tak terduga.").model_dump()), HTTPStatus.INTERNAL_SERVER_ERROR
 
 @auth_bp.route('/detect-client-info', methods=['GET'])
+@limiter.limit("30 per minute;100 per hour")
 def detect_client_info():
     """
     ENHANCED V3: Deteksi informasi client (IP, MAC) menggunakan Client Detection Service
@@ -1591,6 +1592,7 @@ def logout_user():
         }), 500
 
 @auth_bp.route('/authorize-device', methods=['POST'])
+@jwt_required()  # Add JWT authentication check to ensure current_user is available
 def authorize_device():
     """
     [Arsitektur 2.0] Otorisasi perangkat dengan DHCP Lease dan Address List

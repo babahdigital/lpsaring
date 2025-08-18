@@ -76,14 +76,53 @@ async function handleVerifyOtp() {
       // Clear any throttling data after successful login
       localStorage.removeItem('last_device_sync')
 
-      // Setelah login, arahkan ke halaman otorisasi bila perlu atau terhubung.
-      // Biarkan middleware/user-status atau halaman tujuan men-trigger sync seperlunya.
-      const res: any = await authStore.syncDevice()
-      if (res?.status === 'DEVICE_UNREGISTERED' || authStore.isNewDeviceDetected) {
+      // ✅ SEMPURNAKAN: Perbaikan alur untuk menghindari masalah rate limiting
+      // Periksa terlebih dahulu apakah perangkat memerlukan otorisasi
+      // berdasarkan state authStore, tanpa perlu memanggil syncDevice lagi
+      console.log('[CAPTIVE] Login berhasil, memeriksa status perangkat...')
+      
+      // Gunakan state yang ada untuk menentukan langkah selanjutnya
+      if (authStore.isNewDeviceDetected || authStore.isDeviceAuthRequired) {
+        console.log('[CAPTIVE] Perangkat terdeteksi memerlukan otorisasi (dari state), mengarahkan...')
         await navigateTo('/captive/otorisasi-perangkat', { replace: true })
       }
       else {
-        await navigateTo('/captive/terhubung', { replace: true })
+        // Jika tidak ada tanda otorisasi diperlukan, coba syncDevice dengan waktu tunggu
+        try {
+          console.log('[CAPTIVE] Menjalankan syncDevice dengan waktu tunggu 2 detik...')
+          
+          // Navigasi terlebih dahulu ke halaman terhubung
+          console.log('[CAPTIVE] Mengarahkan ke halaman terhubung')
+          await navigateTo('/captive/terhubung', { replace: true })
+          
+          // Kemudian jalankan syncDevice di background setelah navigasi selesai
+          // dengan parameter force=true untuk melewati throttling
+          setTimeout(async () => {
+            try {
+              const syncResult = await authStore.syncDevice({ 
+                allowAuthorizationFlow: true,
+                force: true  // ✅ SEMPURNAKAN: Force sync untuk melewati throttling setelah login
+              })
+              console.log('[CAPTIVE] Background sync result:', syncResult)
+              
+              // Jika setelah sinkronisasi ternyata perangkat perlu otorisasi,
+              // redirect dari halaman terhubung ke halaman otorisasi
+              if (syncResult?.status === 'DEVICE_AUTHORIZATION_REQUIRED' && 
+                  (authStore.isNewDeviceDetected || authStore.isDeviceAuthRequired)) {
+                console.log('[CAPTIVE] Perangkat memerlukan otorisasi setelah sinkronisasi, redirect...')
+                navigateTo('/captive/otorisasi-perangkat', { replace: true })
+              }
+            } catch (e) {
+              console.error('[CAPTIVE] Background sync error:', e)
+              // Kesalahan syncDevice tidak menghentikan alur login
+            }
+          }, 2000)
+        } 
+        catch (e) {
+          console.error('[CAPTIVE] Error saat navigasi:', e)
+          // Jika terjadi kesalahan, arahkan ke halaman terhubung sebagai fallback
+          await navigateTo('/captive/terhubung', { replace: true })
+        }
       }
     }
     else {

@@ -55,15 +55,17 @@ export function useDeviceNotification() {
     if (import.meta.client) {
       let hasShownNotification = false
 
+      // ✅ PERBAIKAN: Ganti watcher untuk menggunakan deviceAuthRequired bukan isNewDeviceDetected
+      // Ini memastikan notifikasi hanya muncul ketika syncDevice eksplisit mengizinkannya
       watch(
-        () => authStore.isNewDeviceDetected,
-        (isDetected) => {
-          if (isDetected && !hasShownNotification && !isPopupVisible.value) {
-            console.log('[DEVICE-NOTIFICATION] 🚨 Perangkat baru terdeteksi, menampilkan notifikasi.')
+        () => authStore.isDeviceAuthRequired,
+        (isRequired) => {
+          if (isRequired && !hasShownNotification && !isPopupVisible.value) {
+            console.log('[DEVICE-NOTIFICATION] 🚨 Perangkat memerlukan otorisasi, menampilkan notifikasi.')
             showDeviceNotification()
             hasShownNotification = true
           }
-          else if (!isDetected) {
+          else if (!isRequired) {
             // Reset flag jika perangkat sudah terdaftar, agar bisa muncul lagi di masa depan.
             hasShownNotification = false
             hideDeviceNotificationPopup()
