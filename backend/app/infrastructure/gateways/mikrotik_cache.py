@@ -222,15 +222,32 @@ class MikroTikCache:
             return
             
         try:
+            # Direct key invalidation
             keys_to_delete = [
                 self._get_cache_key("mbi", ip_address),
                 self._get_cache_key("hdi", ip_address),
+                self._get_cache_key("host_details_ip", ip_address),
             ]
             
-            for key in keys_to_delete:
-                redis_client.delete(key)
+            # Also check for new format client_info cache pattern
+            pattern_keys = redis_client.keys(f"client_info:{ip_address}:*")
+            if pattern_keys:
+                keys_to_delete.extend(pattern_keys)
+                
+            # Delete all keys
+            if keys_to_delete:
+                redis_client.delete(*keys_to_delete)
             
-            logger.debug(f"MikroTik cache INVALIDATED: All entries for IP {ip_address}")
+            # Also try to purge any ARP cache entries (used by warming system)
+            try:
+                arp_keys = redis_client.keys(f"arp:*:{ip_address}")
+                if arp_keys:
+                    redis_client.delete(*arp_keys)
+                    logger.debug(f"MikroTik cache INVALIDATED: {len(arp_keys)} ARP entries for IP {ip_address}")
+            except Exception as e_arp:
+                logger.debug(f"ARP cache invalidation error (non-critical): {e_arp}")
+            
+            logger.info(f"MikroTik cache INVALIDATED: All entries for IP {ip_address}")
             
         except Exception as e:
             logger.warning(f"MikroTik cache invalidate error: {e}")

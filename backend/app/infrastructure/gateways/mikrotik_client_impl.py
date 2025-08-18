@@ -639,28 +639,64 @@ def purge_user_from_hotspot(username: str) -> Tuple[bool, str]:
         if api is None:
             return False, "API tidak tersedia."
         messages: List[str] = []
+        
+        # Track IP and MAC info for cache invalidation
+        ip_to_invalidate = None
+        mac_to_invalidate = None
+        
         # active
         active = api.get_resource("/ip/hotspot/active").get(user=username)
         if active and (sid := _get_item_id(active[0])):
+            # Track IP and MAC before removing
+            if active and len(active) > 0:
+                ip_to_invalidate = active[0].get("address")
+                mac_to_invalidate = active[0].get("mac-address")
             api.get_resource("/ip/hotspot/active").remove(id=sid)
             messages.append("Active session removed")
+            
         # binding -> host -> user cleanup
         if bindings := api.get_resource("/ip/hotspot/ip-binding").get(comment=username):
             b = bindings[0]
             mac = b.get("mac-address")
+            ip = b.get("address")
+            if ip and not ip_to_invalidate:
+                ip_to_invalidate = ip
+            if mac and not mac_to_invalidate:
+                mac_to_invalidate = mac
+                
             b_id = _get_item_id(b)
             if mac:
                 hosts = api.get_resource("/ip/hotspot/host").get(**{"mac-address": mac})
                 if hosts and (hid := _get_item_id(hosts[0])):
+                    # Get IP from host if we didn't get it from binding
+                    if not ip_to_invalidate and hosts and len(hosts) > 0:
+                        ip_to_invalidate = hosts[0].get("address")
                     api.get_resource("/ip/hotspot/host").remove(id=hid)
                     messages.append("Host removed")
             if b_id:
                 api.get_resource("/ip/hotspot/ip-binding").remove(id=b_id)
                 messages.append("Binding removed")
+                
         if users := api.get_resource("/ip/hotspot/user").get(name=username):
             if uid := _get_item_id(users[0]):
                 api.get_resource("/ip/hotspot/user").remove(id=uid)
                 messages.append("User removed")
+                
+        # Invalidate caches for this user's IP and MAC if found
+        try:
+            if ip_to_invalidate or mac_to_invalidate:
+                from app.infrastructure.gateways.mikrotik_cache import invalidate_ip_cache
+                from app.services.client_detection_service import ClientDetectionService
+                
+                if ip_to_invalidate:
+                    # Invalidate MikroTik cache
+                    invalidate_ip_cache(ip_to_invalidate)
+                    # Invalidate detection service cache
+                    ClientDetectionService.clear_cache(ip_to_invalidate, mac_to_invalidate)
+                    messages.append(f"Caches cleared for IP {ip_to_invalidate}")
+        except Exception as ce:
+            logger.warning(f"Cache invalidation during purge failed: {ce}")
+            
         if not messages:
             return True, f"Tidak ada jejak untuk {username}"
         return True, "; ".join(messages)

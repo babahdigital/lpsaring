@@ -270,6 +270,15 @@ class ClientDetectionService:
                 if keys:
                     redis_client.delete(*keys)
                     logger.info(f"[CLIENT-DETECT] Cleared {len(keys)} cache entries for IP: {client_ip}, MAC: {client_mac}")
+                
+                # Also invalidate mikrotik cache if we have an IP
+                if client_ip:
+                    from app.infrastructure.gateways.mikrotik_cache import invalidate_ip_cache
+                    try:
+                        invalidate_ip_cache(client_ip)
+                        logger.info(f"[CLIENT-DETECT] Invalidated MikroTik MAC cache for IP: {client_ip}")
+                    except Exception as e2:
+                        logger.warning(f"[CLIENT-DETECT] Failed to invalidate MikroTik cache: {e2}")
             else:
                 # Clear all detection cache
                 keys = redis_client.keys("client_info:*")
@@ -278,3 +287,58 @@ class ClientDetectionService:
                     logger.info(f"[CLIENT-DETECT] Cleared {len(keys)} cache entries")
         except Exception as e:
             logger.error(f"[CLIENT-DETECT] Error clearing cache: {e}")
+            
+    @staticmethod
+    def force_refresh_detection(client_ip: Optional[str] = None, client_mac: Optional[str] = None, is_browser: bool = False) -> Dict[str, Any]:
+        """Force refresh detection for a client with thorough cache clearing first
+        
+        This is a special method to use when IP or MAC might have changed.
+        It does a complete cache invalidation before attempting detection.
+        """
+        # 1. Clear all related caches first
+        ClientDetectionService.clear_cache(client_ip, client_mac)
+        
+        # 2. Do a completely fresh detection with no cache usage
+        logger.info(f"[CLIENT-DETECT] 🔄 Forcing completely fresh detection for IP={client_ip}, MAC={client_mac}")
+        
+        try:
+            # Import warming function for direct use
+            from app.utils.ip_mac_warming import warm_ip
+            
+            # Try warming the IP first if we have it
+            if client_ip:
+                try:
+                    warm_success, warm_mac = warm_ip(client_ip, aggressive=True)
+                    if warm_success and warm_mac:
+                        logger.info(f"[CLIENT-DETECT] ✅ ARP warming successful for {client_ip} → {warm_mac}")
+                        # If we found MAC through warming, update the passed MAC
+                        if not client_mac:
+                            client_mac = warm_mac
+                except Exception as e:
+                    logger.warning(f"[CLIENT-DETECT] ARP warming error in force refresh: {e}")
+                    
+            # 3. Do the fresh detection with absolutely no caching
+            result = ClientDetectionService.get_client_info(
+                frontend_ip=client_ip,
+                frontend_mac=client_mac,
+                force_refresh=True,
+                use_cache=False,
+                is_browser=is_browser
+            )
+            
+            logger.info(f"[CLIENT-DETECT] Force refresh result: IP={result.get('detected_ip')}, MAC={result.get('detected_mac')}")
+            return result
+        except Exception as e:
+            logger.error(f"[CLIENT-DETECT] Force refresh detection error: {e}")
+            # Return a minimal result with the error
+            return {
+                "status": "ERROR",
+                "timestamp": time.time(),
+                "detected_ip": client_ip,
+                "detected_mac": client_mac,
+                "ip_detected": bool(client_ip),
+                "mac_detected": bool(client_mac),
+                "error": str(e),
+                "cached": False,
+                "force_refresh": True
+            }

@@ -452,12 +452,79 @@ def sync_device():
             request.environ['CLIENT_IP_SOURCE'] = request.environ.get('CLIENT_IP_SOURCE', 'unknown') + '|sync-device'
         except Exception:
             pass
-        detection_result = ClientDetectionService.get_client_info(
-            frontend_ip=effective_ip or requested_ip,
-            frontend_mac=requested_mac,
-            force_refresh=bool(requested_ip or requested_mac),
-            use_cache=False if (requested_ip or requested_mac) else True
-        )
+        # Detect if IP or MAC might have changed
+        is_ip_mac_change = False
+        has_previous_ip = False
+        
+        # Check if we have a current user that might have an IP/MAC mismatch
+        current_user = None
+        try:
+            current_user = get_current_user()
+            if current_user:
+                prev_ip = getattr(current_user, 'last_login_ip', None)
+                has_previous_ip = bool(prev_ip)
+                # If the current IP doesn't match the last known one, we might have an IP change
+                if prev_ip and effective_ip and prev_ip != effective_ip:
+                    logger.warning(f"[SYNC-DEVICE] ⚠️ Detected possible IP change from {prev_ip} to {effective_ip}")
+                    is_ip_mac_change = True
+        except Exception:
+            pass
+            
+        # Look for a device matching the MAC address to detect MAC changes
+        if not is_ip_mac_change and requested_mac:
+            try:
+                device = db.session.execute(
+                    select(UserDevice).filter_by(mac_address=requested_mac)
+                ).scalar_one_or_none()
+                
+                if device and device.user:
+                    last_ip = getattr(device.user, 'last_login_ip', None)
+                    if last_ip and effective_ip and last_ip != effective_ip:
+                        logger.warning(f"[SYNC-DEVICE] ⚠️ Device {requested_mac} previously used with IP {last_ip}, now using {effective_ip}")
+                        is_ip_mac_change = True
+            except Exception as e:
+                logger.warning(f"[SYNC-DEVICE] Failed to check for MAC change: {e}")
+        
+        try:
+            # For IP/MAC changes or no previous context, do a more thorough detection
+            if is_ip_mac_change or not has_previous_ip:
+                logger.info(f"[SYNC-DEVICE] Using thorough detection for possible IP/MAC change (is_ip_mac_change={is_ip_mac_change})")
+                # Use the special force_refresh_detection method that does thorough cache clearing first
+                detection_result = ClientDetectionService.force_refresh_detection(
+                    client_ip=effective_ip or requested_ip,
+                    client_mac=requested_mac,
+                    is_browser=not is_captive_browser_request()
+                )
+            else:
+                # Normal path - First attempt with forced refresh for accurate detection
+                detection_result = ClientDetectionService.get_client_info(
+                    frontend_ip=effective_ip or requested_ip,
+                    frontend_mac=requested_mac,
+                    force_refresh=True,  # Always force refresh for best accuracy during sync
+                    use_cache=False  # Don't use cache for sync to ensure we get latest state
+                )
+        except Exception as e:
+            logger.warning(f"[SYNC-DEVICE] Error during forced refresh detection: {e}")
+            # Fallback to cached detection if forced refresh fails
+            try:
+                # Clear caches first if this might be an IP/MAC change
+                if is_ip_mac_change:
+                    ClientDetectionService.clear_cache(effective_ip or requested_ip, requested_mac)
+                    
+                detection_result = ClientDetectionService.get_client_info(
+                    frontend_ip=effective_ip or requested_ip,
+                    frontend_mac=requested_mac,
+                    force_refresh=True,  # Still try to force refresh even in fallback
+                    use_cache=False  # Don't use cache in fallback to avoid stale data
+                )
+            except Exception as e2:
+                logger.error(f"[SYNC-DEVICE] Both detection attempts failed: {e2}")
+                detection_result = {
+                    'detected_ip': effective_ip or requested_ip,
+                    'detected_mac': requested_mac,
+                    'status': 'ERROR',
+                    'is_captive': False
+                }
 
         # Use provided values first, then fallback to detected values
         client_ip = (effective_ip or requested_ip) or detection_result.get('detected_ip')
@@ -525,6 +592,36 @@ def sync_device():
                 
                 # 3. Status dan response
                 if device and user:
+                    # Check if IP might have changed
+                    is_ip_changed = False
+                    try:
+                        prev_ip = getattr(user, 'last_login_ip', None)
+                        if prev_ip and client_ip and prev_ip != client_ip:
+                            logger.warning(f"[SYNC-DEVICE] (legacy) ⚠️ IP changed from {prev_ip} to {client_ip}")
+                            is_ip_changed = True
+                            # Force a fresh detection when IP changes to ensure we have accurate MAC
+                            if is_ip_changed:
+                                try:
+                                    logger.info(f"[SYNC-DEVICE] (legacy) Re-detecting with force refresh due to IP change")
+                                    # Clear all caches first to ensure fresh detection
+                                    ClientDetectionService.clear_cache(client_ip, client_mac)
+                                    # Do a completely fresh detection
+                                    fresh_result = ClientDetectionService.force_refresh_detection(
+                                        client_ip=client_ip,
+                                        client_mac=client_mac,
+                                        is_browser=not is_captive_browser_request()
+                                    )
+                                    # Update our client_mac if it was successfully detected
+                                    if fresh_result.get('mac_detected'):
+                                        detected_mac = fresh_result.get('detected_mac')
+                                        if detected_mac and detected_mac != client_mac:
+                                            logger.info(f"[SYNC-DEVICE] (legacy) ⚠️ MAC changed from {client_mac} to {detected_mac}")
+                                            client_mac = detected_mac
+                                except Exception as e_fresh:
+                                    logger.error(f"[SYNC-DEVICE] (legacy) Fresh detection failed after IP change: {e_fresh}")
+                    except Exception as e_check:
+                        logger.warning(f"[SYNC-DEVICE] (legacy) IP change check failed: {e_check}")
+                    
                     # Reset failure counter on success
                     AuthSessionService.reset_failure_counter(client_ip, "sync_device")
 
@@ -537,6 +634,17 @@ def sync_device():
                             comment = _fmt_local(user.phone_number) if user and getattr(user, 'phone_number', None) else None
                             if list_name and comment and client_ip:
                                 try:
+                                    # If IP changed, ensure we remove the old one first
+                                    if is_ip_changed and prev_ip:
+                                        try:
+                                            from app.infrastructure.gateways.mikrotik_client import remove_ip_from_address_list
+                                            ok_rm, msg_rm = remove_ip_from_address_list(list_name, prev_ip)
+                                            if ok_rm:
+                                                logger.info(f"[SYNC-DEVICE] (legacy) Removed old bypass {prev_ip} after IP change")
+                                        except Exception as e_rm:
+                                            logger.warning(f"[SYNC-DEVICE] (legacy) Failed to remove old bypass: {e_rm}")
+                                            
+                                    # Now update or add the new entry
                                     ok_upd, msg_upd = find_and_update_address_list_entry(list_name, client_ip, comment)
                                     if not ok_upd:
                                         from app.infrastructure.gateways.mikrotik_client import add_ip_to_address_list
@@ -572,10 +680,15 @@ def sync_device():
                             # Ensure DHCP static lease
                             if client_ip and client_mac and comment:
                                 try:
+                                    # Always remove existing leases for this MAC first
                                     try:
                                         _ok_rm, _ = find_and_remove_static_lease_by_mac(client_mac)
+                                        if _ok_rm:
+                                            logger.info(f"[SYNC-DEVICE] (legacy) Removed existing lease for MAC {client_mac}")
                                     except Exception:
                                         _ok_rm = False
+                                    
+                                    # Create new lease with current IP/MAC
                                     ok_lease, msg_lease = create_static_lease(client_ip, client_mac, comment)
                                     if ok_lease:
                                         logger.info(f"[SYNC-DEVICE] (legacy) DHCP lease ensured for {client_ip}/{client_mac}")
