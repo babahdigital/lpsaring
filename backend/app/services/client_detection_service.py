@@ -105,7 +105,8 @@ class ClientDetectionService:
             logger.info(
                 f"[CLIENT-DETECT] Mencari MAC untuk IP '{client_ip}' (is_browser={is_browser}, force_refresh={force_refresh})..."
             )
-            max_retries = 3 if is_browser else 1
+            # Increase max retries for more resilience 
+            max_retries = 4 if is_browser else 2
             retry_count = 0
 
             # Coba ambil dari cache MikroTik dulu (bukan ephemeral detection cache)
@@ -141,7 +142,9 @@ class ClientDetectionService:
                         logger.info(
                             f"[CLIENT-DETECT] Percobaan ke-{retry_count+1} untuk IP {client_ip}..."
                         )
-                        time.sleep(0.5)
+                        # Exponential backoff with increased initial wait time
+                        backoff_time = 0.5 * (2 ** (retry_count - 1))  # 0.5s, 1s, 2s
+                        time.sleep(backoff_time)
 
                     success, found_mac, search_msg = find_mac_by_ip_comprehensive(
                         client_ip, force_refresh=force_refresh

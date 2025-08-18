@@ -78,13 +78,21 @@ def _create_connection_pool():
 
     RouterOsApiPool tidak expose timeout secara langsung; kita set default socket timeout
     sementara proses koneksi berlangsung. Timeout ini akan mempengaruhi koneksi bawah (TCP).
+    
+    Versi dengan perbaikan:
+    1. Koneksi socket dibersihkan jika error
+    2. Eksponensial backoff yang lebih agresif
+    3. Timeout yang lebih tepat untuk kondisi jaringan
     """
     global _global_connection_pool, _last_connection_time, _connection_error_count, _last_backoff_until
     import routeros_api  # type: ignore
     cfg = _get_connection_config()
-    connect_timeout = _safe_cfg('MIKROTIK_CONNECT_TIMEOUT_SECONDS', 3)
-    read_timeout = _safe_cfg('MIKROTIK_READ_TIMEOUT_SECONDS', 5)
+    connect_timeout = _safe_cfg('MIKROTIK_CONNECT_TIMEOUT_SECONDS', 8)  # Increased from 5s to 8s
+    read_timeout = _safe_cfg('MIKROTIK_READ_TIMEOUT_SECONDS', 12)  # Increased from 8s to 12s
     prev_default = socket.getdefaulttimeout()
+    pool = None
+    api = None
+    
     try:
         socket.setdefaulttimeout(connect_timeout)
         pool = routeros_api.RouterOsApiPool(
@@ -95,11 +103,21 @@ def _create_connection_pool():
             use_ssl=cfg["use_ssl"],
             plaintext_login=cfg["plaintext_login"],
         )
-        api = None
+        
         try:
             api = pool.get_api()
         except Exception as e:
+            # Cleanup resources if api acquisition fails
+            if pool:
+                try:
+                    # RouterOsApiPool may not have close method, use best effort
+                    cleanup_method = getattr(pool, 'close', None)
+                    if callable(cleanup_method):
+                        cleanup_method()
+                except Exception:
+                    pass
             raise e
+            
         if api:
             # Set read timeout via underlying socket jika memungkinkan
             try:
@@ -108,14 +126,37 @@ def _create_connection_pool():
                 sock = getattr(transport, 'socket', None)
                 if sock and hasattr(sock, 'settimeout'):
                     sock.settimeout(read_timeout)
+                    
+                    # Set TCP keepalive to detect dead connections
+                    if hasattr(sock, 'setsockopt') and hasattr(socket, 'SOL_SOCKET') and hasattr(socket, 'SO_KEEPALIVE'):
+                        try:
+                            sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                            # Set more aggressive TCP keepalive on platforms that support it
+                            if hasattr(socket, 'TCP_KEEPIDLE') and hasattr(socket, 'TCP_KEEPINTVL') and hasattr(socket, 'TCP_KEEPCNT'):
+                                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 60)  # Start sending after 60s idle
+                                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 10)  # Send every 10s
+                                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 6)    # Drop after 6 failures
+                        except Exception:
+                            pass
             except Exception:  # pragma: no cover
                 pass
+                
             _last_connection_time = time.time()
             _connection_error_count = 0
             _last_backoff_until = 0.0
             logger.info(f"[MT-CONNECT] ✅ Pool ke {cfg['host']}:{cfg['port']} siap (timeout c={connect_timeout}s r={read_timeout}s)")
             return pool
     except Exception as e:
+        # Clean up resources
+        if pool:
+            try:
+                # RouterOsApiPool may not have close method, use best effort
+                cleanup_method = getattr(pool, 'close', None)
+                if callable(cleanup_method):
+                    cleanup_method()
+            except Exception:
+                pass
+                
         _connection_error_count += 1
         backoff_factor = min(_connection_error_count, 6)
         dynamic_cooldown = _CONNECTION_COOLDOWN * (2 ** (backoff_factor - 1)) if _connection_error_count >= _MAX_ERROR_COUNT else _CONNECTION_COOLDOWN
@@ -128,16 +169,40 @@ def _create_connection_pool():
 
 def _get_api_from_pool(pool_name=None) -> Optional[RouterOsApi]:  # noqa: D401
     global _global_connection_pool, _last_connection_time, _connection_error_count, _last_backoff_until, _pool_index
+    
+    # Track API request for metrics
+    _record_metric('mikrotik_api_requests')
+    
     # Coba ambil dari context Flask
     try:
+        # Use setattr/getattr for Flask instance to avoid type checking issues
+        # Flask doesn't have mikrotik_api_pool in its type definition
         pool = getattr(current_app, "mikrotik_api_pool", None)
         if pool:
-            try:
-                return pool.get_api()
-            except Exception as e:
-                logger.warning(f"[MT-CONNECT] Pool app error: {e}")
+            for attempt in range(1, 3):  # Try up to 2 times
+                try:
+                    api = pool.get_api()
+                    _record_metric('mikrotik_api_success')
+                    return api
+                except Exception as e:
+                    if attempt == 1:  # Only log on first attempt
+                        logger.warning(f"[MT-CONNECT] Pool app error: {e}")
+                    
+                    # On first failure, recreate the pool
+                    if attempt == 1:
+                        try:
+                            # Try to recreate the application's pool
+                            new_pool = _create_connection_pool()
+                            setattr(current_app, "mikrotik_api_pool", new_pool)
+                            if getattr(current_app, "mikrotik_api_pool", None) is None:
+                                break  # Stop if we can't recreate the pool
+                        except Exception:
+                            # If recreation fails, give up
+                            break
     except Exception:
         pass
+    
+    _record_metric('mikrotik_api_fallback')
 
     # Cooldown jika terlalu banyak error
     # Exponential backoff window
@@ -808,7 +873,7 @@ def _safe_cfg(key: str, default: Any) -> Any:
         return default
 
 
-def find_mac_by_ip_comprehensive(ip_address: str, force_refresh: bool = False) -> Tuple[bool, Optional[str], str]:
+def find_mac_by_ip_comprehensive(ip_address: str, force_refresh: bool = False, retry_count: int = 0) -> Tuple[bool, Optional[str], str]:
     """Cari MAC untuk IP dengan rantai minimal dan cache bijak.
 
     Urutan:
@@ -822,6 +887,14 @@ def find_mac_by_ip_comprehensive(ip_address: str, force_refresh: bool = False) -
 
     Grace positive cache: jika pernah dapat MAC valid, kita simpan di memori untuk X detik
     (MAC_POSITIVE_GRACE_SECONDS) agar refresh page tidak bikin flicker / None sementara.
+    
+    Args:
+        ip_address: IP yang akan dicari MAC-nya
+        force_refresh: Jika True, paksa pencarian baru (lewati cache)
+        retry_count: Jumlah percobaan ulang yang sudah dilakukan (internal)
+    
+    Returns:
+        Tuple (success, mac_address, source)
     """
     if not ip_address:
         return False, None, "IP Address tidak boleh kosong."
@@ -829,6 +902,9 @@ def find_mac_by_ip_comprehensive(ip_address: str, force_refresh: bool = False) -
     now = time.time()
     grace_seconds = _safe_cfg('MAC_POSITIVE_GRACE_SECONDS', 90)
 
+    # Maximum retry attempts (increased from 2 to 3)
+    max_retries = _safe_cfg('MIKROTIK_MAX_RETRIES', 3)
+    
     # 1. In-memory grace cache (skip jika force_refresh namun tetap fallback jika gagal)
     with _last_positive_mac_lock:
         grace_entry = _last_positive_mac.get(ip_address)
@@ -855,10 +931,21 @@ def find_mac_by_ip_comprehensive(ip_address: str, force_refresh: bool = False) -
     lookup_start = now
     _record_metric('mac_lookup_total')
     try:
+        # Add retry with exponential backoff
         api = _get_api_from_pool()
         if api is None:
+            # If we have grace entry, use it immediately as temporary fallback
             if grace_entry and (now - grace_entry[1] <= grace_seconds):
                 return True, grace_entry[0], 'Grace Cache (offline)'
+                
+            # If we still have retry attempts, try again with backoff
+            if retry_count < max_retries:
+                # Exponential backoff: 100ms, 200ms, 400ms, etc.
+                backoff_ms = 100 * (2 ** retry_count)
+                logger.info(f"[MAC-LOOKUP] Retrying {ip_address} lookup after {backoff_ms}ms (attempt {retry_count+1}/{max_retries})")
+                time.sleep(backoff_ms / 1000.0)  # Convert to seconds
+                return find_mac_by_ip_comprehensive(ip_address, force_refresh, retry_count + 1)
+                
             return False, None, 'Tidak dapat terhubung ke MikroTik'
 
         def cache_and_return(mac: str, source: str, ttl: int) -> Tuple[bool, str, str]:
@@ -949,7 +1036,7 @@ def find_mac_by_ip_comprehensive(ip_address: str, force_refresh: bool = False) -
             from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
             with ThreadPoolExecutor(max_workers=3) as executor:
                 futs = [executor.submit(fn) for fn in (host_lookup, dhcp_lookup, arp_lookup)]
-                done, pending = wait(futs, timeout=float(_safe_cfg('MIKROTIK_READ_TIMEOUT_SECONDS', 5)), return_when=FIRST_COMPLETED)
+                done, pending = wait(futs, timeout=float(_safe_cfg('MIKROTIK_READ_TIMEOUT_SECONDS', 12)), return_when=FIRST_COMPLETED)
                 for d in done:
                     mac = d.result()
                     if mac:
@@ -993,9 +1080,24 @@ def find_mac_by_ip_comprehensive(ip_address: str, force_refresh: bool = False) -
         return True, None, f'Not found ({elapsed_ms}ms)'
     except Exception as e:  # pragma: no cover
         _record_metric('mac_lookup_fail')
+        
+        # Try to retry the lookup with exponential backoff if we haven't exceeded max retries
+        if retry_count < max_retries:
+            # Increased backoff: 400ms, 800ms, 1600ms, etc. (doubled from previous values)
+            backoff_ms = 400 * (2 ** retry_count)
+            logger.warning(f"[MAC-LOOKUP] Error on attempt {retry_count+1}/{max_retries} for {ip_address}: {str(e)}, retrying in {backoff_ms}ms")
+            time.sleep(backoff_ms / 1000.0)
+            return find_mac_by_ip_comprehensive(ip_address, force_refresh, retry_count + 1)
+            
+        # Last resort: use grace cache if available
         if grace_entry and (now - grace_entry[1] <= grace_seconds):
-            return True, grace_entry[0], 'Grace Cache (error)'
-        return False, None, f'Error: {e}'
+            logger.info(f"[MAC-LOOKUP] Using grace cache for {ip_address} after error: {str(e)}")
+            return True, grace_entry[0], 'Grace Cache (error recovery)'
+            
+        # Log detailed error information
+        logger.error(f"[MAC-LOOKUP] Failed to find MAC for {ip_address} after {max_retries+1} attempts: {str(e)}")
+        # All attempts failed
+        return False, None, f"Error after {max_retries+1} attempts: {str(e)}"
 
 # ---------------------------------------------------------------------------
 # Public Exports

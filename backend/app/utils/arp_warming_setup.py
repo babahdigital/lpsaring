@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def setup_arp_warming(app):
     """
-    Setup ARP warming with better error handling and immediate teardown registration
+    Setup ARP warming with better error handling and long-running thread support
     """
     logger.info("[ARP-WARMING] Setting up ARP warming")
     
@@ -20,20 +20,22 @@ def setup_arp_warming(app):
         return False
     
     try:
-        # Register teardown handler immediately - this is critical
-        # This will ensure teardown is registered before any requests happen
+        # Import necessary functions
+        import atexit
         from app.utils.ip_mac_warming import stop_warming_thread
         
+        # This teardown handler no longer stops the warming thread after each request
         @app.teardown_appcontext
         def shutdown_warming_on_teardown(exception=None):
             logger.debug("[ARP-WARMING] Teardown handler called")
-            try:
-                stop_warming_thread()
-                logger.info("[ARP-WARMING] Stopped warming thread in teardown handler")
-            except Exception as e:
-                logger.warning(f"[ARP-WARMING] Error in teardown: {str(e)}")
+            # We don't stop the warming thread here anymore
+            # Just log that teardown was called to keep track
+            pass
         
-        logger.info("[ARP-WARMING] Teardown handler registered successfully")
+        # Register the stop_warming_thread function to be called when the application exits
+        atexit.register(stop_warming_thread)
+        
+        logger.info("[ARP-WARMING] Teardown handler modified: thread will remain running between requests")
         
         # Start a background thread that will run once app context is established
         def delayed_start():
