@@ -14,7 +14,8 @@
     "lint:check": "eslint . --ext .js,.ts,.vue",
     "type-check": "vue-tsc --noEmit",
     "postinstall": "nuxt prepare",
-    "generate": "nuxt generate"
+    "generate": "nuxt generate",
+    "generate-api-types": "openapi-typescript ../backend/.output/swagger.json --output types/generated/api.ts"
   },
   "dependencies": {
     "@casl/ability": "6.7.1",

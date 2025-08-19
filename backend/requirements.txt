@@ -48,6 +48,7 @@ Werkzeug>=2.0.0
 pytz>=2023.0
 itsdangerous>=2.1.0
 python-dateutil>=2.8.0
+pyyaml>=6.0   # Untuk parsing YAML di docstrings untuk OpenAPI/Swagger
 
 # Testing
 pytest>=8.0

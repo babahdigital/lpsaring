@@ -131,6 +131,7 @@ export function useClientDetection() {
     }
 
     const cacheBust = `_t=${Date.now()}`
+    // Gunakan endpoint dari constants untuk konsistensi
     const endpoint = `/auth/detect-client-info?${cacheBust}`
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {

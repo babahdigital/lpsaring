@@ -57,4 +57,28 @@ export default [
     action: 'read',
     subject: 'Logs',
   },
+  {
+    title: 'API Documentation',
+    icon: { icon: 'tabler-api' },
+    action: 'read',
+    subject: 'Development',
+    children: [
+      {
+        title: 'Swagger UI',
+        href: '/api/swagger',
+        icon: { icon: 'tabler-file-description' },
+        target: '_blank',
+        action: 'read',
+        subject: 'Development',
+      },
+      {
+        title: 'OpenAPI JSON',
+        href: '/api/docs/swagger.json',
+        icon: { icon: 'tabler-json' },
+        target: '_blank',
+        action: 'read',
+        subject: 'Development',
+      },
+    ],
+  },
 ]

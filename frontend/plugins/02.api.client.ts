@@ -174,6 +174,7 @@ export default defineNuxtPlugin(() => {
         // Refresh stored client IP/MAC from server detection endpoints to prevent staleness
         try {
           const ep = (url && typeof url === 'string') ? (url.split('?')[0] || '') : ''
+          // Cek endpoint deteksi IP/MAC client
           if (ep.endsWith('/auth/detect-client-info')) {
             const detectedIp: string | undefined = (data && (data.ip || data?.summary?.detected_ip))
             const detectedMac: string | undefined = (data && (data.mac || data?.summary?.detected_mac))

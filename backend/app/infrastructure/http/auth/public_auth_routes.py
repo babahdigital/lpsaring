@@ -24,7 +24,53 @@ public_auth_bp = Blueprint('public_auth', __name__, url_prefix='/auth')
 
 @public_auth_bp.route('/register', methods=['POST'])
 def register_user():
-    """Endpoint untuk registrasi user baru."""
+    """
+    Endpoint untuk registrasi user baru.
+    ---
+    tags:
+      - Otentikasi
+    summary: Mendaftarkan pengguna baru ke sistem
+    description: Menerima data pendaftaran dan membuat akun pengguna baru dengan status menunggu persetujuan admin.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: UserRegisterRequestSchema
+    responses:
+      200:
+        description: Pendaftaran berhasil diterima dan sedang menunggu persetujuan
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+                  example: "Pendaftaran berhasil diterima! Kami akan memproses permintaan Anda."
+                phone_number:
+                  type: string
+                  example: "+6281234567890"
+      400:
+        description: Format permintaan tidak valid
+        content:
+          application/json:
+            schema: AuthErrorResponseSchema
+      409:
+        description: Nomor telepon sudah terdaftar
+        content:
+          application/json:
+            schema: AuthErrorResponseSchema
+      422:
+        description: Validasi data gagal
+        content:
+          application/json:
+            schema: AuthErrorResponseSchema
+      500:
+        description: Kesalahan server
+        content:
+          application/json:
+            schema: AuthErrorResponseSchema
+    """
     if not request.is_json:
         return jsonify(AuthErrorResponseSchema(error="Request body must be JSON.").model_dump()), HTTPStatus.BAD_REQUEST
     try:
@@ -93,7 +139,103 @@ def register_user():
 @public_auth_bp.route('/request-otp', methods=['POST'])
 @limiter.limit("3 per minute; 10 per hour")
 def request_otp():
-    """Meminta kode OTP untuk login."""
+    """
+    Meminta kode OTP untuk login.
+    ---
+    tags:
+      - Otentikasi
+    summary: Meminta kode OTP untuk proses login
+    description: >
+      Mengirim kode OTP ke nomor WhatsApp pengguna untuk verifikasi.
+      Permintaan dibatasi hingga 3 per menit dan 10 per jam per IP.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - phone_number
+            properties:
+              phone_number:
+                type: string
+                description: Nomor telepon pengguna
+                example: "+6281234567890"
+    responses:
+      200:
+        description: OTP berhasil dikirim
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [SUCCESS]
+                message:
+                  type: string
+                  example: "Kode OTP telah dikirim via WhatsApp"
+      400:
+        description: Data tidak lengkap
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [ERROR]
+                message:
+                  type: string
+      403:
+        description: Akun belum disetujui
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [ERROR]
+                message:
+                  type: string
+      404:
+        description: Pengguna tidak ditemukan
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [ERROR]
+                message:
+                  type: string
+      429:
+        description: Rate limit tercapai
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [ERROR]
+                message:
+                  type: string
+      500:
+        description: Kesalahan server
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [ERROR]
+                message:
+                  type: string
+    """
     data = request.get_json() or {}
     phone_number = data.get('phone_number')
     if not phone_number:
@@ -124,7 +266,98 @@ def request_otp():
 @public_auth_bp.route('/verify-otp', methods=['POST'])
 @limiter.limit("5 per minute; 30 per hour")
 def verify_otp():
-    """Verifikasi OTP dan daftarkan perangkat secara otomatis jika diperlukan."""
+    """
+    Verifikasi OTP dan daftarkan perangkat secara otomatis jika diperlukan.
+    ---
+    tags:
+      - Otentikasi
+    summary: Memverifikasi kode OTP dan melakukan login
+    description: >
+      Memvalidasi kode OTP yang dikirimkan pengguna dan membuat session login jika valid.
+      Perangkat akan didaftarkan secara otomatis ke sistem jika diperlukan.
+      Permintaan dibatasi hingga 5 per menit dan 30 per jam per IP.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: VerifyOtpRequestSchema
+    responses:
+      200:
+        description: Verifikasi berhasil dan login sukses
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [SUCCESS]
+                message:
+                  type: string
+                token:
+                  type: string
+                  description: JWT access token
+                user:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      format: uuid
+                    full_name:
+                      type: string
+                    phone_number:
+                      type: string
+                    role:
+                      type: string
+      400:
+        description: Data tidak lengkap atau tidak valid
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [ERROR]
+                message:
+                  type: string
+      401:
+        description: OTP tidak valid atau kadaluarsa
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [ERROR]
+                message:
+                  type: string
+      429:
+        description: Rate limit tercapai
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [ERROR]
+                message:
+                  type: string
+      500:
+        description: Kesalahan server
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [ERROR]
+                message:
+                  type: string
+    """
     from app.infrastructure.db.models import UserDevice
     from app.infrastructure.gateways.mikrotik_client import find_and_update_address_list_entry, add_ip_to_address_list, create_static_lease
     from app.utils.formatters import format_to_local_phone
