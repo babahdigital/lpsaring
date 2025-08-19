@@ -42,7 +42,13 @@ function isCaptiveBrowser(): boolean {
 
 export default defineNuxtRouteMiddleware((to) => {
   const authStore = useAuthStore()
-  let { isLoggedIn, isAdmin } = authStore
+  let { isLoggedIn, isAdmin, isDeviceAuthRequired } = authStore
+
+  // OPTIMASI: Jangan lakukan redirect jika sedang dalam proses otorisasi perangkat
+  if (isDeviceAuthRequired && isLoggedIn) {
+    console.log('[AUTH-MIDDLEWARE] Mendeteksi otorisasi perangkat aktif, skip redirect')
+    return // Biarkan render normal tanpa redirect
+  }
 
   // Also check localStorage for admin flag as backup
   if (!isAdmin && typeof window !== 'undefined') {

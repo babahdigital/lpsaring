@@ -6,7 +6,13 @@ def register_blueprints(app: Flask):
     """Fungsi Koordinator: Mengimpor dan mendaftarkan semua blueprint dari aplikasi."""
 
     # === Impor Semua Blueprint dari file-filenya ===
-    from .auth_routes import auth_bp
+    # Auth blueprints dengan struktur baru
+    from .auth.public_auth_routes import public_auth_bp
+    from .auth.session_routes import session_bp
+    from .auth.device_routes import device_bp
+    from .auth.utility_routes import utility_bp
+    
+    # Catatan: auth_bp telah dihapus dan fungsionalitasnya dipindahkan ke auth/*_routes.py
     from .packages_routes import packages_bp
     from .transactions_routes import transactions_bp
     from .public_routes import public_bp
@@ -41,8 +47,13 @@ def register_blueprints(app: Flask):
 
     # === Daftarkan Semua Blueprint dengan Prefix yang Benar ===
     
-    # Prefix untuk API publik, user, dan umum
-    app.register_blueprint(auth_bp, url_prefix='/api/auth')
+    # Prefix untuk Auth API dengan struktur baru
+    app.register_blueprint(public_auth_bp, url_prefix='/api')
+    app.register_blueprint(session_bp, url_prefix='/api')
+    app.register_blueprint(device_bp, url_prefix='/api')
+    app.register_blueprint(utility_bp, url_prefix='/api')
+    
+    # Legacy auth blueprint telah dihapus karena fungsionalitasnya dipindahkan ke auth/*_routes.py
     app.register_blueprint(packages_bp, url_prefix='/api/packages')
     app.register_blueprint(transactions_bp, url_prefix='/api/transactions')
     

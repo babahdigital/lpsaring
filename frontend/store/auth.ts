@@ -541,7 +541,10 @@ export const useAuthStore = defineStore('auth', () => {
 
       console.log('[AUTH-STORE] OTP verification response:', response)
 
-      // ✅ PERBAIKAN LOGIKA UTAMA: Handle token first
+      // Cek apakah ini respons otorisasi perangkat
+      const isAuthorizationRequired = (response as any)?.status === 'DEVICE_AUTHORIZATION_REQUIRED';
+
+      // Handle token first
       const tokenValue = extractTokenFromResponse(response)
       if (tokenValue) {
         console.log('[AUTH-STORE] ✅ Token diterima, memproses login...')
@@ -563,41 +566,47 @@ export const useAuthStore = defineStore('auth', () => {
           console.log('[AUTH-STORE] ✅ Data pengguna diterima dan disimpan')
         }
 
-        // Redirect SEGERA. Alur otorisasi akan terjadi di halaman dashboard.
-        await navigateTo('/dashboard', { replace: true })
+        // Persist client IP/MAC from backend (helps captive flow follow-ups)
+        try {
+          const ip = (response as any)?.ip || (response as any)?.data?.ip || null
+          const mac = (response as any)?.mac || (response as any)?.data?.mac || null
+          if (ip || mac) {
+            setClientInfo(ip, mac)
+            console.log('[AUTH-STORE] ✅ Info klien disimpan:', { ip, mac })
+          }
+        }
+        catch { /* noop */ }
+
+        // PERBAIKAN UTAMA: Hanya redirect jika tidak memerlukan otorisasi perangkat
+        if (!isAuthorizationRequired) {
+          console.log('[AUTH-STORE] Perangkat sudah terotorisasi, melanjutkan ke dashboard...');
+          await navigateTo('/dashboard', { replace: true });
+        } else {
+          console.log('[AUTH-STORE] 🔒 Otorisasi perangkat diperlukan, redirect ditunda.');
+          // Jangan redirect dulu, biarkan alur otorisasi dijalankan
+        }
       } else {
         // Ini seharusnya tidak terjadi lagi setelah perbaikan backend
         console.error('[AUTH-STORE] ❌ Verifikasi OTP berhasil tetapi tidak ada token diterima!')
         throw new Error('Verifikasi OTP berhasil tetapi tidak ada token diterima.')
       }
 
-      // Persist client IP/MAC from backend (helps captive flow follow-ups)
-      try {
-        const ip = (response as any)?.ip || (response as any)?.data?.ip || null
-        const mac = (response as any)?.mac || (response as any)?.data?.mac || null
-        if (ip || mac) {
-          setClientInfo(ip, mac)
-          console.log('[AUTH-STORE] ✅ Info klien disimpan:', { ip, mac })
-        }
-      }
-      catch { /* noop */ }
-
       finishAuthCheck()
 
-      // ✅ SEMPURNAKAN: Hapus data throttling untuk memastikan sinkronisasi berikutnya berjalan mulus
+      // Hapus data throttling untuk memastikan sinkronisasi berikutnya berjalan mulus
       if (import.meta.client) {
         try {
           localStorage.removeItem('last_device_sync')
         } catch (e) { /* noop */ }
       }
 
-      // Sekarang, tangani status setelah login dan redirect diproses
-      if ((response as any)?.status === 'DEVICE_AUTHORIZATION_REQUIRED') {
-        console.log('[AUTH-STORE] 🔒 Otorisasi perangkat diperlukan, MENGUNCI state')
-        state.value.isNewDeviceDetected = true
-        state.value.deviceAuthRequired = true
-        state.value.pendingDeviceInfo = (response as any)?.data?.device_info || {}
-        state.value.isAuthorizing = true // ✅ PERBAIKAN: Aktifkan kunci untuk mencegah deteksi berulang
+      // Set state otorisasi perangkat jika diperlukan
+      if (isAuthorizationRequired) {
+        console.log('[AUTH-STORE] 🔒 Mengatur state untuk menampilkan popup otorisasi.');
+        state.value.isNewDeviceDetected = true;
+        state.value.deviceAuthRequired = true;
+        state.value.pendingDeviceInfo = (response as any)?.data?.device_info || {};
+        state.value.isAuthorizing = true; // Aktifkan kunci untuk mencegah deteksi berulang
       }
 
       return true // Verifikasi OTP berhasil
@@ -685,15 +694,21 @@ export const useAuthStore = defineStore('auth', () => {
   // Dedicated lock for sync to avoid coupling with global loading
   let _syncInFlight = false
   async function syncDevice(options: { allowAuthorizationFlow?: boolean, force?: boolean } = {}) {
-    // ✅ SEMPURNAKAN: Tambahkan parameter untuk mengontrol kapan popup otorisasi boleh ditampilkan
+    // Parameter untuk mengontrol kapan popup otorisasi boleh ditampilkan
     // dan parameter force untuk melewati throttling jika diperlukan
     const { allowAuthorizationFlow = false, force = false } = options;
 
-    // ✅ PERBAIKAN KRITIS: Cek jika popup sudah aktif atau isAuthorizing sudah diaktifkan
+    // PERBAIKAN KRITIS: Cek apakah popup sudah aktif atau isAuthorizing sudah diaktifkan
     // Jangan melakukan sync jika menunggu otorisasi perangkat
     if (state.value.deviceAuthRequired || state.value.isAuthorizing) {
       console.log('[AUTH-STORE] 🛑 Sync device dibatalkan karena otorisasi perangkat sedang berlangsung')
       return { status: 'PENDING_AUTHORIZATION', message: 'Menunggu otorisasi perangkat' }
+    }
+
+    // OPTIMASI: Periksa token tersedia sebelum mencoba sinkronisasi
+    if (!token.value) {
+      console.log('[AUTH-STORE] 🛑 Sync device dibatalkan karena tidak ada token')
+      return { status: 'NO_TOKEN', message: 'Token tidak tersedia' }
     }
 
     // Fungsi ini dipanggil secara periodik oleh middleware untuk sinkronisasi senyap
@@ -783,7 +798,7 @@ export const useAuthStore = defineStore('auth', () => {
       if (response?.status === 'DEVICE_AUTHORIZATION_REQUIRED') {
         console.log('[AUTH-STORE] 🔒 Perangkat baru terdeteksi, memerlukan otorisasi.')
 
-        // ✅ PERBAIKAN: Hanya proses alur otorisasi jika diizinkan oleh pemanggil
+        // Hanya proses alur otorisasi jika diizinkan oleh pemanggil
         if (allowAuthorizationFlow) {
           console.log('[AUTH-STORE] ✅ Menampilkan popup otorisasi karena allowAuthorizationFlow=true')
           state.value.isNewDeviceDetected = true
@@ -792,6 +807,8 @@ export const useAuthStore = defineStore('auth', () => {
             ip: state.value.clientIp,
             mac: state.value.clientMac
           }
+          // PERBAIKAN: Set isAuthorizing untuk mencegah infinite loop
+          state.value.isAuthorizing = true
         } else {
           console.log('[AUTH-STORE] ⚠️ Otorisasi perangkat diperlukan, tapi ditunda hingga setelah login (allowAuthorizationFlow=false)')
         }

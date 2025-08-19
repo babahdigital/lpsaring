@@ -252,7 +252,8 @@ const shouldShowPromoFetcher = computed(
 
         <ScrollToTop />
         <SnackbarWrapper />
-        <DeviceAuthPopup />
+        <!-- PERBAIKAN: Tampilkan DeviceAuthPopup hanya ketika user terautentikasi -->
+        <DeviceAuthPopup v-if="authStore.isLoggedIn" />
         <PromoFetcher v-if="shouldShowPromoFetcher && !showLoader" />
         <NetworkStatusIndicator />
       </ErrorBoundary>

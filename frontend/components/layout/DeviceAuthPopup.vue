@@ -1,7 +1,7 @@
 // components/layout/DeviceAuthPopup.vue
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 
 import { useDeviceNotification } from '~/composables/useDeviceNotification'
 import { useSnackbar } from '~/composables/useSnackbar'
@@ -18,6 +18,14 @@ const deviceInfo = computed(() => authStore.pendingDeviceInfo || {})
 
 // Dialog visibility based directly on auth store state
 const isVisible = computed(() => authStore.deviceAuthRequired)
+
+// SEMPURNAKAN: Tambahkan watcher untuk debugging visibilitas popup
+watch(isVisible, (value) => {
+  console.log('[DEVICE-AUTH-POPUP] Visibility changed:', value)
+  if (value) {
+    console.log('[DEVICE-AUTH-POPUP] Pending device info:', authStore.pendingDeviceInfo)
+  }
+})
 
 async function handleRegister() {
   if (isLoading.value)
@@ -137,12 +145,13 @@ async function handleRejectDevice() {
 </script>
 
 <template>
-  <!-- ✅ SEMPURNAKAN: Binding dialog ke state deviceAuthRequired dari auth store -->
+  <!-- SEMPURNAKAN: Binding dialog ke state deviceAuthRequired dari auth store dengan tambahan watch untuk debugging -->
   <VDialog
     :model-value="authStore.deviceAuthRequired || isPopupVisible"
     persistent
     max-width="500px"
     transition="dialog-bottom-transition"
+    @update:model-value="val => val === false && handleDismiss()"
   >
     <VCard class="text-center pa-4 pa-sm-6">
       <VCardTitle class="d-flex justify-center mb-2">

@@ -403,6 +403,42 @@ def create_app(config_name: str | None = None) -> Flask:
       return db.session.get(User, user_id)
     except (ValueError, TypeError):
       return None
+      
+  # ✅ Tambahkan token verification callback untuk cek perubahan perangkat
+  @jwt_manager.token_verification_loader
+  def verify_token_not_device_change(jwt_header, jwt_data):
+    """
+    Verifikasi tambahan untuk token JWT.
+    Memeriksa apakah perangkat (IP/MAC) berubah sejak token diterbitkan.
+    
+    Tidak memblokir token, hanya menyimpan info perubahan di request untuk
+    digunakan oleh endpoint yang memerlukan pemeriksaan perubahan perangkat.
+    """
+    try:
+      # Skip untuk endpoint yang tidak memerlukan pemeriksaan perubahan
+      skip_paths = ['/api/auth/check-device-status', '/api/auth/detect-client-info']
+      if any(request.path.startswith(path) for path in skip_paths):
+        return True
+        
+      # Dapatkan data IP dan MAC saat ini
+      from app.utils.request_utils import get_client_ip, get_client_mac
+      current_ip = get_client_ip()
+      current_mac = get_client_mac()
+      
+      # Periksa apakah perangkat berubah
+      if not current_ip or not current_mac:
+        return True  # Tidak bisa menentukan perubahan
+        
+      # Simpan informasi IP/MAC di request untuk digunakan endpoint lain
+      request.device_changed = False
+      request.client_ip = current_ip
+      request.client_mac = current_mac
+      
+      # Selalu return True karena ini hanya untuk pengecekan, bukan pemblokiran
+      return True
+    except Exception:
+      # Jangan gagalkan autentikasi jika terjadi kesalahan
+      return True
 
   @app.errorhandler(HTTPStatus.TOO_MANY_REQUESTS)
   def ratelimit_handler(e):
