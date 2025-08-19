@@ -190,6 +190,14 @@ export function useClientDetection() {
   }
 
   const clearAllCache = async () => {
+    // ✅ PERBAIKAN: Periksa status otorisasi terlebih dahulu
+    const authStore = useAuthStore()
+
+    if (authStore.isAuthorizing) {
+      console.warn('🛡️ [CLIENT-DETECT] Cache clear dibatalkan karena proses otorisasi perangkat sedang berlangsung')
+      return
+    }
+
     console.log('🧹 Clearing all IP/MAC cache...')
 
     // Get current detected information
@@ -335,6 +343,15 @@ export function useClientDetection() {
   }
 
   const detectClientInfo = async (forceRefresh: boolean = false): Promise<DetectionResult | null> => {
+    // ✅ PERBAIKAN UTAMA: Periksa status otorisasi terlebih dahulu
+    const authStore = useAuthStore()
+
+    // Jangan lakukan deteksi jika sedang dalam proses otorisasi perangkat
+    if (authStore.isAuthorizing) {
+      console.warn('🛡️ [CLIENT-DETECT] Deteksi dihentikan karena proses otorisasi perangkat sedang berlangsung')
+      return null
+    }
+
     // Cek apakah MAC telah terdeteksi dari hasil sebelumnya
     const macAlreadyDetected = !!singleton.detectionResult.value?.summary?.detected_mac
       || !!detectionResult.value?.summary?.detected_mac
@@ -422,6 +439,14 @@ export function useClientDetection() {
   }
 
   const forceDetection = async (): Promise<DetectionResult | null> => {
+    // ✅ PERBAIKAN: Periksa status otorisasi terlebih dahulu
+    const authStore = useAuthStore()
+
+    if (authStore.isAuthorizing) {
+      console.warn('🛡️ [CLIENT-DETECT] Force deteksi dihentikan karena proses otorisasi perangkat sedang berlangsung')
+      return null
+    }
+
     console.log('🚀 Memaksa deteksi baru: membersihkan cache dan mendeteksi ulang...')
     return await detectClientInfo(true)
   }

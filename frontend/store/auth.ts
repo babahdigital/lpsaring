@@ -38,6 +38,7 @@ interface AuthState {
   message: string | null
   lastRefreshAt: number | null
   lastRefreshOk: boolean | null
+  isAuthorizing: boolean // ✅ PERBAIKAN: State "kunci" untuk mencegah looping
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -55,6 +56,7 @@ export const useAuthStore = defineStore('auth', () => {
     loading: false,
     error: null,
     message: null,
+    isAuthorizing: false, // ✅ PERBAIKAN: State "kunci" untuk mencegah looping
     // Diagnostics
     lastRefreshAt: null as unknown as number | null,
     lastRefreshOk: null as unknown as boolean | null,
@@ -275,6 +277,10 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = null
     setUser(null) // Gunakan setUser untuk reset state terkait
     state.value.isAuthCheckDone = false
+    state.value.isAuthorizing = false // ✅ PERBAIKAN: Pastikan kunci direset saat logout
+    state.value.deviceAuthRequired = false // Reset juga status popup otorisasi
+    state.value.isNewDeviceDetected = false
+    state.value.pendingDeviceInfo = null
     clearClientInfo()
     if (redirect) { await navigateTo(target, { replace: true }) }
   }
@@ -587,10 +593,11 @@ export const useAuthStore = defineStore('auth', () => {
 
       // Sekarang, tangani status setelah login dan redirect diproses
       if ((response as any)?.status === 'DEVICE_AUTHORIZATION_REQUIRED') {
-        console.log('[AUTH-STORE] 🔒 Otorisasi perangkat diperlukan, state diatur.')
+        console.log('[AUTH-STORE] 🔒 Otorisasi perangkat diperlukan, MENGUNCI state')
         state.value.isNewDeviceDetected = true
         state.value.deviceAuthRequired = true
         state.value.pendingDeviceInfo = (response as any)?.data?.device_info || {}
+        state.value.isAuthorizing = true // ✅ PERBAIKAN: Aktifkan kunci untuk mencegah deteksi berulang
       }
 
       return true // Verifikasi OTP berhasil
@@ -670,6 +677,7 @@ export const useAuthStore = defineStore('auth', () => {
       return false // <-- Memberi tahu pemanggil bahwa proses gagal
     }
     finally {
+      state.value.isAuthorizing = false // ✅ PERBAIKAN: Lepas kunci setelah proses selesai
       state.value.loading = false
     }
   }
@@ -681,10 +689,10 @@ export const useAuthStore = defineStore('auth', () => {
     // dan parameter force untuk melewati throttling jika diperlukan
     const { allowAuthorizationFlow = false, force = false } = options;
 
-    // ✅ PERBAIKAN KRITIS: Cek jika popup sudah aktif untuk mencegah loop
+    // ✅ PERBAIKAN KRITIS: Cek jika popup sudah aktif atau isAuthorizing sudah diaktifkan
     // Jangan melakukan sync jika menunggu otorisasi perangkat
-    if (state.value.deviceAuthRequired) {
-      console.log('[AUTH-STORE] 🛑 Sync device dibatalkan karena otorisasi perangkat sedang menunggu interaksi pengguna')
+    if (state.value.deviceAuthRequired || state.value.isAuthorizing) {
+      console.log('[AUTH-STORE] 🛑 Sync device dibatalkan karena otorisasi perangkat sedang berlangsung')
       return { status: 'PENDING_AUTHORIZATION', message: 'Menunggu otorisasi perangkat' }
     }
 
@@ -904,6 +912,7 @@ export const useAuthStore = defineStore('auth', () => {
       state.value.isNewDeviceDetected = false
       state.value.deviceAuthRequired = false
       state.value.pendingDeviceInfo = null
+      state.value.isAuthorizing = false // ✅ PERBAIKAN: Lepas kunci
 
       // Logout dari semua perangkat
       await logout(true)
@@ -958,6 +967,9 @@ export const useAuthStore = defineStore('auth', () => {
     resetAuthorizationFlow,
     rejectDeviceAuthorization,
     setDeviceAuthRequired,
+
+    // ✅ TAMBAHAN: Expose state property isAuthorizing
+    isAuthorizing: computed(() => state.value.isAuthorizing),
 
     // ✅ TAMBAHAN: Fungsi helper untuk membantu penanganan token dan error
     hasValidToken: () => !!token.value,
