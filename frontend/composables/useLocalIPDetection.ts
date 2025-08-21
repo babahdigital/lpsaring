@@ -175,7 +175,7 @@ export function useLocalIPDetection() {
   const detectViaBackend = async (): Promise<LocalIPResult> => {
     try {
       const { $api } = useNuxtApp()
-      // Konsisten menggunakan endpoint dari constants api-endpoints.ts
+      // Call the backend API for client detection
       const data = await $api('/auth/detect-client-info', {
         headers: {
           'X-Frontend-Request': '1',

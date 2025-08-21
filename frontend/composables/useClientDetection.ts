@@ -131,7 +131,7 @@ export function useClientDetection() {
     }
 
     const cacheBust = `_t=${Date.now()}`
-    // Gunakan endpoint dari constants untuk konsistensi
+    // Use consistent endpoint path with no duplicate /api prefix
     const endpoint = `/auth/detect-client-info?${cacheBust}`
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -209,6 +209,7 @@ export function useClientDetection() {
     try {
       // Clear backend cache via API with detected IP information
       const { $api } = useNuxtApp()
+      // Call the backend API to clear cache
       const result = await $api('/auth/clear-cache', {
         method: 'POST',
         body: {

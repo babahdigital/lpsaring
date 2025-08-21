@@ -32,7 +32,7 @@ export default defineNuxtPlugin((nuxtApp) => {
         // Then clear backend cache via API (best-effort)
         const { $api } = useNuxtApp()
         try {
-          $api('/auth/clear-cache', {
+          $api('/api/auth/clear-cache', {
             method: 'POST',
             body: {},
           }).then(() => {

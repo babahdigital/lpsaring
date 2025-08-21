@@ -22,22 +22,22 @@
  * - Pengecekan perangkat klien
  */
 export const SENSITIVE_ENDPOINTS = [
-  '/auth/detect-client-info', // Endpoint utama untuk deteksi IP/MAC
-  '/auth/me',                 // Informasi user saat ini
-  '/auth/sync-device',        // Sinkronisasi perangkat
-  '/auth/authorize-device',   // Otorisasi perangkat
-  '/auth/reject-device',      // Penolakan otorisasi perangkat
-  '/auth/invalidate-device',  // Pencabutan akses perangkat
-  '/auth/check-device-status',// Pengecekan status perangkat
-  '/auth/check-token-device', // Pengecekan token dan perangkat
-  '/auth/clear-cache',        // Pembersihan cache
-  '/auth/session-stats',      // Statistik sesi
+  '/api/auth/detect-client-info', // Endpoint utama untuk deteksi IP/MAC
+  '/api/auth/me',                 // Informasi user saat ini
+  '/api/auth/sync-device',        // Sinkronisasi perangkat
+  '/api/auth/authorize-device',   // Otorisasi perangkat
+  '/api/auth/reject-device',      // Penolakan otorisasi perangkat
+  '/api/auth/invalidate-device',  // Pencabutan akses perangkat
+  '/api/auth/check-device-status',// Pengecekan status perangkat
+  '/api/auth/check-token-device', // Pengecekan token dan perangkat
+  '/api/auth/clear-cache',        // Pembersihan cache
+  '/api/auth/session-stats',      // Statistik sesi
 ]
 // Regex patterns untuk endpoint sensitif (fallback jika tidak match exact)
 export const SENSITIVE_ENDPOINT_PATTERNS: RegExp[] = [
-  /\/auth\/.*device/i,
-  /\/auth\/.*detect/i,
-  /\/auth\/.*session/i,
+  /\/api\/auth\/.*device/i,
+  /\/api\/auth\/.*detect/i,
+  /\/api\/auth\/.*session/i,
 ]
 
 /**
@@ -48,13 +48,13 @@ export const SENSITIVE_ENDPOINT_PATTERNS: RegExp[] = [
  * - Penanganan logout
  */
 export const AUTH_ENDPOINTS = [
-  '/auth/admin/login',
-  '/auth/logout',
-  '/auth/refresh',          // Endpoint untuk refresh token
-  '/auth/register',
-  '/auth/request-otp',
-  '/auth/verify-otp',
-  '/auth/verify-role',
+  '/api/auth/admin/login',
+  '/api/auth/logout',
+  '/api/auth/refresh',          // Endpoint untuk refresh token
+  '/api/auth/register',
+  '/api/auth/request-otp',
+  '/api/auth/verify-otp',
+  '/api/auth/verify-role',
 ]
 
 /**
@@ -63,10 +63,10 @@ export const AUTH_ENDPOINTS = [
  * meski terjadi error pada endpoint lain
  */
 export const CIRCUIT_BREAKER_EXCLUDED = [
-  '/auth/admin/login',      // Login admin harus selalu tersedia
-  '/auth/refresh',          // Refresh token harus selalu tersedia
-  '/auth/verify-role',      // Verifikasi role harus selalu tersedia
-  '/auth/detect-client-info', // Deteksi klien harus selalu bisa diakses
+  '/api/auth/admin/login',      // Login admin harus selalu tersedia
+  '/api/auth/refresh',          // Refresh token harus selalu tersedia
+  '/api/auth/verify-role',      // Verifikasi role harus selalu tersedia
+  '/api/auth/detect-client-info', // Deteksi klien harus selalu bisa diakses
 ]
 
 /**

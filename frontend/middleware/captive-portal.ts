@@ -29,7 +29,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
   // Jika parameter ada, tandai sebagai sesi captive
   sessionStorage.setItem('captive_portal_session', 'true')
   localStorage.setItem('captive_portal_mode', 'true')
-  ; (window as any).__IS_CAPTIVE_BROWSER__ = true
+    ; (window as any).__IS_CAPTIVE_BROWSER__ = true
 
   // Persist IP/MAC dari parameter agar tersedia sedini mungkin untuk plugin/API
   try {
@@ -41,11 +41,11 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
     if (ip) {
       localStorage.setItem('captive_ip', ip)
-      ; (window as any).__CLIENT_IP__ = ip
+        ; (window as any).__CLIENT_IP__ = ip
     }
     if (mac) {
       localStorage.setItem('captive_mac', mac)
-      ; (window as any).__CLIENT_MAC__ = mac
+        ; (window as any).__CLIENT_MAC__ = mac
     }
 
     // Update auth store segera agar header X-Frontend-Detected-* terkirim pada request awal
@@ -80,7 +80,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
       const mac = localStorage.getItem('captive_mac')
       try {
         if ($api && (ip || mac)) {
-          await $api('/auth/clear-cache', { method: 'POST', body: { ip, mac, force_refresh: true } })
+          await $api('/api/auth/clear-cache', { method: 'POST', body: { ip, mac, force_refresh: true } })
         }
       }
       catch { /* ignore */ }

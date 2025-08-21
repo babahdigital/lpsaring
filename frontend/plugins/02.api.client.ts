@@ -14,6 +14,17 @@ export default defineNuxtPlugin(() => {
   const config = useRuntimeConfig()
   const baseURL: string = (config.public.apiBaseUrl || '').replace(/\/$/, '')
 
+  // Helper function to normalize API paths to prevent duplicate /api prefixes
+  const normalizeApiPath = (url: string): string => {
+    if (url.startsWith('http')) return url // Don't modify absolute URLs
+
+    // Remove any leading /api from the url if baseURL already includes /api
+    if (baseURL.endsWith('/api') && url.startsWith('/api/')) {
+      return url.substring(4) // Remove the /api prefix
+    }
+    return url
+  }
+
   const showToast = (type: 'success' | 'error' | 'info', message: string) => {
     try {
       console.log(`[Toast ${type}]`, message)
@@ -92,11 +103,14 @@ export default defineNuxtPlugin(() => {
       headers.set('X-Request-Time', new Date().toISOString())
     }
 
+    // Normalize URL to prevent duplicate /api prefixes
+    const normalizedUrl = normalizeApiPath(url)
+
     // Build full URL
-    let fullUrl = url.startsWith('http') ? url : `${baseURL}${url.startsWith('/') ? '' : '/'}${url}`
+    let fullUrl = normalizedUrl.startsWith('http') ? normalizedUrl : `${baseURL}${normalizedUrl.startsWith('/') ? '' : '/'}${normalizedUrl}`
     // Append cache-busting query for sensitive endpoints (helps defeat stubborn browser caches)
     // Treat OTP and sync endpoints as sensitive to avoid caches
-    const otpSensitive = ['/auth/request-otp', '/auth/verify-otp', '/auth/sync-device', '/auth/clear-cache'].some((e: string) => url.startsWith(e))
+    const otpSensitive = ['/api/auth/request-otp', '/api/auth/verify-otp', '/api/auth/sync-device', '/api/auth/clear-cache'].some((e: string) => url.startsWith(e))
     const isSensitiveEp = otpSensitive || SENSITIVE_ENDPOINTS.some((e: string) => url.includes(e)) || SENSITIVE_ENDPOINT_PATTERNS.some((rx: RegExp) => rx.test(url))
     if (isSensitiveEp) {
       const bustParam = `_cb=${Date.now()}`
@@ -175,7 +189,7 @@ export default defineNuxtPlugin(() => {
         try {
           const ep = (url && typeof url === 'string') ? (url.split('?')[0] || '') : ''
           // Cek endpoint deteksi IP/MAC client
-          if (ep.endsWith('/auth/detect-client-info')) {
+          if (ep.includes('/auth/detect-client-info')) {
             const detectedIp: string | undefined = (data && (data.ip || data?.summary?.detected_ip))
             const detectedMac: string | undefined = (data && (data.mac || data?.summary?.detected_mac))
             if (detectedIp && !isProxyIP(detectedIp)) {
