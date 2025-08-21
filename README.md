@@ -2,6 +2,16 @@
 
 A comprehensive WiFi hotspot management system with user authentication, access control, and monitoring features.
 
+## Documentation
+
+Detailed documentation can be found in the [docs](./docs) directory. The key documentation files are:
+
+- [Main Documentation](./docs/README.md) - Starting point and overview of all documentation
+- [API Documentation](./docs/API_DOCUMENTATION.md) - Comprehensive API endpoint documentation
+- [Device Authorization](./docs/DEVICE_AUTHORIZATION.md) - Details about the device authorization system
+- [Technical Improvements](./docs/TECHNICAL_IMPROVEMENTS.md) - Performance optimizations and technical enhancements
+- [Troubleshooting](./docs/TROUBLESHOOTING.md) - Common issues and their solutions
+
 ## Recent Improvements
 
 ### MAC Address Detection Enhancement (2023-09-29)
@@ -13,8 +23,6 @@ Fixed MAC address detection for regular browsers accessing the portal directly i
 - Added retry logic for more reliable detection
 - Optimized caching strategies for both frontend and backend
 - Added TCP Connection and DNS Static table lookups
-
-See [MAC-DETECTION-BROWSER-FIX.md](docs/MAC-DETECTION-BROWSER-FIX.md) for detailed documentation.
 
 ## Deployment Notes (2025-08)
 

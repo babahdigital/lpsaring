@@ -2,6 +2,19 @@
 // Digunakan oleh plugin API untuk header khusus, cache busting, dsb.
 
 /**
+ * CATATAN PENTING TENTANG ENDPOINT API:
+ * 
+ * 1. Semua endpoint yang didefinisikan di sini harus memiliki implementasi yang sesuai di backend
+ * 2. Setelah menambahkan/mengubah endpoint, jalankan script validasi:
+ *    `bash ./scripts/validate-endpoints-final.sh`
+ * 3. Update dokumentasi API dengan:
+ *    `bash ./scripts/generate-api-docs.sh`
+ * 4. Selalu gunakan nama yang sama dengan yang didefinisikan di route Flask backend
+ * 
+ * Lihat docs/API_ENDPOINT_TOOLS_GUIDE.md untuk informasi lengkap.
+ */
+
+/**
  * Endpoint yang membutuhkan penanganan khusus, seperti:
  * - Cache busting
  * - Penanganan kesalahan khusus
@@ -37,7 +50,7 @@ export const SENSITIVE_ENDPOINT_PATTERNS: RegExp[] = [
 export const AUTH_ENDPOINTS = [
   '/auth/admin/login',
   '/auth/logout',
-  '/auth/refresh-token',
+  '/auth/refresh',          // Endpoint untuk refresh token
   '/auth/register',
   '/auth/request-otp',
   '/auth/verify-otp',
@@ -51,7 +64,7 @@ export const AUTH_ENDPOINTS = [
  */
 export const CIRCUIT_BREAKER_EXCLUDED = [
   '/auth/admin/login',      // Login admin harus selalu tersedia
-  '/auth/refresh-token',    // Refresh token harus selalu tersedia
+  '/auth/refresh',          // Refresh token harus selalu tersedia
   '/auth/verify-role',      // Verifikasi role harus selalu tersedia
   '/auth/detect-client-info', // Deteksi klien harus selalu bisa diakses
 ]
