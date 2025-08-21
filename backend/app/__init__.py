@@ -356,6 +356,24 @@ def register_test_routes(app: Flask):
         last_seen = ls
     return {'user_id': user_id, 'devices': devices, 'last_seen_at': last_seen}
 
+  # Dev-only: list registered routes to verify blueprint registration
+  try:
+    if app.config.get('ENV', '').lower() != 'production':
+      @app.get('/api/_routes')
+      @limiter.exempt
+      def list_routes():
+        routes = []
+        for rule in app.url_map.iter_rules():
+          safe_methods = [m for m in (rule.methods or []) if m not in ('HEAD', 'OPTIONS')]
+          routes.append({
+            'rule': str(rule),
+            'methods': sorted(safe_methods),
+            'endpoint': rule.endpoint,
+          })
+        return jsonify({'routes': routes}), 200
+  except Exception:
+    pass
+
 def register_commands(app: Flask):
   from .commands.user_cli import user_cli_bp
   from .commands.sync_usage_command import sync_usage_command

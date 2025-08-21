@@ -39,6 +39,9 @@ export const API_ENDPOINTS = {
   DEVICE_SYNC: '/auth/sync-device',
 
   // Utilities
+  // Prefer this for cache clear + detection refresh
+  FORCE_DEVICE_SYNC: '/auth/force-device-sync',
+  // Legacy/compat endpoint; keep for older deployments
   CLEAR_CACHE: '/auth/clear-cache',
   SESSION_STATS: '/auth/session-stats',
 }
@@ -59,6 +62,7 @@ export const SENSITIVE_ENDPOINTS = [
   API_ENDPOINTS.DEVICE_INVALIDATE, // Pencabutan akses perangkat
   API_ENDPOINTS.DEVICE_CHECK_STATUS, // Pengecekan status perangkat
   API_ENDPOINTS.DEVICE_CHECK_TOKEN, // Pengecekan token dan perangkat
+  API_ENDPOINTS.FORCE_DEVICE_SYNC, // Sinkronisasi paksa (membersihkan cache + deteksi ulang)
   API_ENDPOINTS.CLEAR_CACHE,     // Pembersihan cache
   API_ENDPOINTS.SESSION_STATS,   // Statistik sesi
 ]
@@ -98,7 +102,13 @@ export const CIRCUIT_BREAKER_EXCLUDED = [
   API_ENDPOINTS.DEVICE_DETECT,  // Deteksi klien harus selalu bisa diakses
   API_ENDPOINTS.DEVICE_AUTHORIZE, // Device authorization endpoint harus selalu bisa diakses
   API_ENDPOINTS.DEVICE_SYNC,    // Device synchronization endpoint harus selalu bisa diakses
+  API_ENDPOINTS.FORCE_DEVICE_SYNC, // Force sync harus selalu bisa diakses
   API_ENDPOINTS.CLEAR_CACHE,    // Cache clearing endpoint harus selalu bisa diakses
+  '/auth/detect-client-info',   // Endpoint langsung (explicit path)
+  '/auth/authorize-device',     // Endpoint langsung (explicit path)
+  '/auth/force-device-sync',    // Endpoint langsung (explicit path)
+  '/auth/clear-cache',          // Endpoint langsung (explicit path)
+  // Removed legacy placeholder '/auth/device/authorize' (no backend route)
 ]
 
 /**

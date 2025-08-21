@@ -48,10 +48,12 @@ def register_blueprints(app: Flask):
     # === Daftarkan Semua Blueprint dengan Prefix yang Benar ===
     
     # Prefix untuk Auth API dengan struktur baru
-    app.register_blueprint(public_auth_bp, url_prefix='/api')
-    app.register_blueprint(session_bp, url_prefix='/api')
-    app.register_blueprint(device_bp, url_prefix='/api')
-    app.register_blueprint(utility_bp, url_prefix='/api')
+    # Penting: Parameter url_prefix pada register_blueprint MENGGANTIKAN url_prefix milik blueprint,
+    # bukan menggabungkannya. Jadi untuk menghasilkan path final '/api/auth/...', gunakan '/api/auth'.
+    app.register_blueprint(public_auth_bp, url_prefix='/api/auth')
+    app.register_blueprint(session_bp, url_prefix='/api/auth')
+    app.register_blueprint(device_bp, url_prefix='/api/auth')
+    app.register_blueprint(utility_bp, url_prefix='/api/auth')
     
     # Legacy auth blueprint telah dihapus karena fungsionalitasnya dipindahkan ke auth/*_routes.py
     app.register_blueprint(packages_bp, url_prefix='/api/packages')

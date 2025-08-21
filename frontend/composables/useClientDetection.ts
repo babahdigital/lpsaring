@@ -168,15 +168,17 @@ export function useClientDetection() {
     // Define endpoints to try in order (fallback mechanism)
     const endpoints = [
       {
-        url: `${API_ENDPOINTS.DEVICE_DETECT}?${cacheBust}`,
+        url: `/auth/detect-client-info?${cacheBust}`,
         method: 'GET',
         body: null
       },
       {
-        url: API_ENDPOINTS.DEVICE_AUTHORIZE,
+        url: '/auth/authorize-device',
         method: 'POST',
         body: {
           detection_only: true,
+          ip: headers['X-Frontend-Detected-IP'] || null,
+          client_ip: headers['X-Frontend-Detected-IP'] || null,
           force_refresh: !!headers['force-refresh']
         }
       }
@@ -314,23 +316,43 @@ export function useClientDetection() {
     try {
       // Clear backend cache via API with detected IP information
       const { $api } = useNuxtApp()
-      // Call the backend API to clear cache using endpoint constant
-      const result = await $api(API_ENDPOINTS.CLEAR_CACHE, {
-        method: 'POST',
-        body: {
-          ip: currentIP,
-          force_refresh: true,
-        },
-      })
-      console.log('✅ Backend cache cleared', result)
 
-      // Check if backend detected MAC address
-      if (result.fresh_detection?.detected_mac) {
-        console.log(`✅ Backend found MAC: ${result.fresh_detection.detected_mac} via ${result.fresh_detection.lookup_method}`)
+      // Primary: use force-device-sync (preferred and documented)
+      try {
+        const forceResult = await $api('/auth/force-device-sync', {
+          method: 'POST',
+          body: {
+            ip: currentIP,
+            force_refresh: true,
+          },
+          retry: true,
+          retryAttempts: 2,
+        })
+        console.log('✅ Backend force-device-sync executed', forceResult)
+      }
+      catch (e1) {
+        // Fallback for legacy deployments that still expose /auth/clear-cache
+        console.warn('⚠️ force-device-sync unavailable, trying legacy clear-cache...', e1)
+        try {
+          const legacyResult = await $api('/auth/clear-cache', {
+            method: 'POST',
+            body: {
+              ip: currentIP,
+              force_refresh: true,
+            },
+            retry: true,
+            retryAttempts: 2,
+          })
+          console.log('✅ Legacy backend clear-cache executed', legacyResult)
+        }
+        catch (e2) {
+          console.warn('⚠️ Failed to clear backend cache with both endpoints:', e2)
+        }
       }
     }
     catch (error) {
-      console.warn('⚠️ Failed to clear backend cache:', error)
+      console.warn('⚠️ Unexpected error during backend cache clear:', error)
+      // Continue with frontend cache clearing despite backend error
     }
 
     // Clear frontend cache

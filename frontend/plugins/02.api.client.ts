@@ -18,10 +18,20 @@ export default defineNuxtPlugin(() => {
   const normalizeApiPath = (url: string): string => {
     if (url.startsWith('http')) return url // Don't modify absolute URLs
 
-    // Remove any leading /api from the url if baseURL already includes /api
+    // Handle our API structure correctly
+    // 1. Remove duplicate /api prefixes
     if (baseURL.endsWith('/api') && url.startsWith('/api/')) {
       return url.substring(4) // Remove the /api prefix
     }
+    // 2. Fix common path issues with auth endpoints
+    if (url.includes('/api/api/auth/')) {
+      return url.replace('/api/api/auth/', '/api/auth/')
+    }
+    if (url.startsWith('/api/auth/device/') && !url.includes('/api/auth/device')) {
+      // This URL is already correct (endpoint with correct prefix)
+      return url
+    }
+
     return url
   }
 
@@ -114,6 +124,7 @@ export default defineNuxtPlugin(() => {
       API_ENDPOINTS.REQUEST_OTP,
       API_ENDPOINTS.VERIFY_OTP,
       API_ENDPOINTS.DEVICE_SYNC,
+      API_ENDPOINTS.FORCE_DEVICE_SYNC,
       API_ENDPOINTS.CLEAR_CACHE
     ].some((e: string) => normalizedUrl.includes(e))
     const isSensitiveEp = otpSensitive || SENSITIVE_ENDPOINTS.some((e: string) => normalizedUrl.includes(e)) || SENSITIVE_ENDPOINT_PATTERNS.some((rx: RegExp) => rx.test(url))
