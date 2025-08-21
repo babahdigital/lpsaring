@@ -1,6 +1,8 @@
 // composables/useLocalIPDetection.ts
 import { computed, readonly, ref } from 'vue'
 
+import { API_ENDPOINTS } from '~/constants/api-endpoints'
+
 // Types
 export interface LocalIPResult {
   ip: string | null
@@ -175,8 +177,8 @@ export function useLocalIPDetection() {
   const detectViaBackend = async (): Promise<LocalIPResult> => {
     try {
       const { $api } = useNuxtApp()
-      // Call the backend API for client detection
-      const data = await $api('/auth/detect-client-info', {
+      // Call the backend API for client detection using the constant
+      const data = await $api(API_ENDPOINTS.DEVICE_DETECT, {
         headers: {
           'X-Frontend-Request': '1',
         },

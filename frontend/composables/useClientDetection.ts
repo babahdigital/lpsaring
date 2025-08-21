@@ -1,5 +1,7 @@
 import { computed, getCurrentInstance, onMounted, ref } from 'vue'
 
+import { API_ENDPOINTS } from '~/constants/api-endpoints'
+import { useApiMetricsStore } from '~/store/apiMetrics'
 import { useAuthStore } from '~/store/auth'
 import { extractClientParams } from '~/utils/url-params'
 
@@ -36,6 +38,7 @@ interface DetectionResponse {
     found_mac: string | null
     message: string
   } | null
+  circuit_breaker_active?: boolean
 }
 
 interface DetectionResult {
@@ -99,8 +102,12 @@ export function useClientDetection() {
   // --- Core Detection Logic ---
 
   const callBackendWithRetry = async (headers: Record<string, string>, maxRetries: number = 2): Promise<DetectionResponse> => {
-    // Jika forced refresh, skip cache
-    if (!headers['force-refresh']) {
+    // Check if circuit breaker is already open to determine whether to use cached data
+    const apiMetricsStore = useApiMetricsStore();
+    const isCircuitOpen = apiMetricsStore.isCircuitOpen;
+
+    // Try to use cache first, especially if circuit breaker is open
+    if (!headers['force-refresh'] || isCircuitOpen) {
       // Client-side cache untuk mengurangi request berulang
       const cacheKey = `client_detection_${JSON.stringify(headers)}`
       const cachedData = localStorage.getItem(cacheKey)
@@ -109,85 +116,183 @@ export function useClientDetection() {
         try {
           const parsed = JSON.parse(cachedData)
           const now = Date.now()
-          // Gunakan cache hanya jika masih fresh DAN MAC sudah terdeteksi
-          // PERBAIKAN: Jangan gunakan cache jika MAC belum terdeteksi!
-          if (now - parsed.timestamp < CLIENT_SIDE_CACHE_TTL
-            && parsed.data?.summary?.mac_detected) {
-            console.log('🚀 [CLIENT-CACHE] Using cached detection result with MAC')
-            return parsed.data
+
+          // Jika circuit breaker terbuka, gunakan cache bahkan jika MAC tidak terdeteksi
+          if (isCircuitOpen && now - parsed.timestamp < CLIENT_SIDE_CACHE_TTL * 2) {
+            console.log('🛡️ [CIRCUIT-OPEN] Using cached detection result due to open circuit');
+            return parsed.data;
+          }
+
+          // Dalam kondisi normal, hanya gunakan cache jika masih fresh DAN MAC sudah terdeteksi
+          if (now - parsed.timestamp < CLIENT_SIDE_CACHE_TTL && parsed.data?.summary?.mac_detected) {
+            console.log('🚀 [CLIENT-CACHE] Using cached detection result with MAC');
+            return parsed.data;
           }
           else if (now - parsed.timestamp < CLIENT_SIDE_CACHE_TTL) {
-            console.log('⚠️ [CLIENT-CACHE] Cached result exists but MAC not detected, skipping cache')
+            console.log('⚠️ [CLIENT-CACHE] Cached result exists but MAC not detected, skipping cache');
           }
         }
         catch (e) {
           // Invalid cache, continue to API call
-          console.warn('⚠️ [CLIENT-CACHE] Invalid cache:', e)
+          console.warn('⚠️ [CLIENT-CACHE] Invalid cache:', e);
         }
       }
     }
     else {
-      console.log('🚀 [CLIENT-CACHE] Forced refresh, skipping cache')
+      console.log('🚀 [CLIENT-CACHE] Forced refresh, skipping cache');
     }
 
-    const cacheBust = `_t=${Date.now()}`
-    // Use consistent endpoint path with no duplicate /api prefix
-    const endpoint = `/auth/detect-client-info?${cacheBust}`
+    // Early return with mock data if circuit breaker is open and no cache available
+    if (isCircuitOpen) {
+      console.log('🛑 [CIRCUIT-OPEN] Circuit breaker is open and no cache available, returning fallback data');
 
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        console.log(`🌐 [CLIENT-DETECT] API call attempt ${attempt + 1}/${maxRetries + 1} with headers:`, headers)
-        const result = await $api<DetectionResponse>(endpoint, { headers })
+      // Create a fallback response that indicates the circuit breaker is open
+      const fallbackResponse: DetectionResponse = {
+        status: 'LIMITED',
+        summary: {
+          detected_ip: headers['X-Frontend-Detected-IP'] || null,
+          detected_mac: headers['X-Frontend-Detected-MAC'] || null,
+          ip_detected: !!headers['X-Frontend-Detected-IP'],
+          mac_detected: !!headers['X-Frontend-Detected-MAC'],
+          access_mode: 'web',
+          user_guidance: 'Deteksi terbatas karena server sibuk. Silakan coba lagi nanti.'
+        },
+        circuit_breaker_active: true
+      };
 
-        // PERBAIKAN: Jika MAC tidak terdeteksi, dan ini bukan attempt terakhir, coba lagi dengan delay
-        // Ini memungkinkan backend untuk memperbarui ARP table dengan ping
-        if (!result.summary?.mac_detected && attempt < maxRetries) {
-          const delay = 1000 // 1 detik delay untuk retry
-          console.log(`⚠️ [CLIENT-DETECT] MAC tidak terdeteksi pada attempt ${attempt + 1}, retry dalam ${delay}ms...`)
-          await new Promise(resolve => setTimeout(resolve, delay))
+      return fallbackResponse;
+    }
 
-          // Pastikan refresh pada attempt berikutnya
-          headers['force-refresh'] = 'true'
-          continue
+    const cacheBust = `_t=${Date.now()}`;
+
+    // Define endpoints to try in order (fallback mechanism)
+    const endpoints = [
+      {
+        url: `${API_ENDPOINTS.DEVICE_DETECT}?${cacheBust}`,
+        method: 'GET',
+        body: null
+      },
+      {
+        url: API_ENDPOINTS.DEVICE_AUTHORIZE,
+        method: 'POST',
+        body: {
+          detection_only: true,
+          force_refresh: !!headers['force-refresh']
         }
-
-        // Cache hasil hanya jika berhasil dan MAC terdeteksi
-        if (result.summary?.mac_detected || attempt >= maxRetries) {
-          try {
-            const cacheKey = `client_detection_${JSON.stringify(headers)}`
-            localStorage.setItem(cacheKey, JSON.stringify({
-              data: result,
-              timestamp: Date.now(),
-            }))
-            console.log(`💾 [CLIENT-CACHE] Saved detection result to cache (MAC detected: ${!!result.summary?.mac_detected})`)
-          }
-          catch (e) {
-            // localStorage full, ignore
-            console.warn('⚠️ [CLIENT-CACHE] Failed to save to cache:', e)
-          }
-        }
-
-        return result
       }
-      catch (error: any) {
-        if (error?.response?.status === 429 && attempt < maxRetries) {
-          const delay = Math.min(1000 * 2 ** attempt, 5000)
-          console.warn(`⏱️ Rate limited (429), mencoba lagi dalam ${delay}ms...`)
-          await new Promise(resolve => setTimeout(resolve, delay))
-          continue
-        }
+    ];
 
-        if (attempt < maxRetries) {
-          const delay = Math.min(1000 * 2 ** attempt, 3000)
-          console.warn(`⚠️ API error, mencoba lagi dalam ${delay}ms...`, error)
-          await new Promise(resolve => setTimeout(resolve, delay))
-          continue
-        }
+    let lastError = null;
 
-        throw error
+    // Try each endpoint in sequence until one works
+    for (const endpoint of endpoints) {
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          console.log(`🌐 [CLIENT-DETECT] API call attempt ${attempt + 1}/${maxRetries + 1} to ${endpoint.url} with method ${endpoint.method}`, headers);
+
+          const options: any = {
+            headers,
+            // Set retry=false to avoid extra API client retries and rely on our own retry logic
+            retry: false
+          };
+
+          if (endpoint.method !== 'GET') {
+            options.method = endpoint.method;
+            if (endpoint.body) {
+              options.body = endpoint.body;
+            }
+          }
+
+          const result = await $api<DetectionResponse>(endpoint.url, options);
+
+          // PERBAIKAN: Jika MAC tidak terdeteksi, dan ini bukan attempt terakhir, coba lagi dengan delay
+          // Ini memungkinkan backend untuk memperbarui ARP table dengan ping
+          if (!result.summary?.mac_detected && attempt < maxRetries) {
+            const delay = 1000; // 1 detik delay untuk retry
+            console.log(`⚠️ [CLIENT-DETECT] MAC tidak terdeteksi pada attempt ${attempt + 1}, retry dalam ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+
+            // Pastikan refresh pada attempt berikutnya
+            headers['force-refresh'] = 'true';
+            if (endpoint.body) {
+              endpoint.body.force_refresh = true;
+            }
+            continue;
+          }
+
+          // Cache hasil hanya jika berhasil dan MAC terdeteksi
+          if (result.summary?.mac_detected || attempt >= maxRetries) {
+            try {
+              const cacheKey = `client_detection_${JSON.stringify(headers)}`;
+              localStorage.setItem(cacheKey, JSON.stringify({
+                data: result,
+                timestamp: Date.now(),
+              }));
+              console.log(`💾 [CLIENT-CACHE] Saved detection result to cache (MAC detected: ${!!result.summary?.mac_detected})`);
+            }
+            catch (e) {
+              // localStorage full, ignore
+              console.warn('⚠️ [CLIENT-CACHE] Failed to save to cache:', e);
+            }
+          }
+
+          return result;
+        }
+        catch (error: any) {
+          lastError = error;
+
+          // Check for circuit breaker error and use the first endpoint detection data if available
+          if (error?.message?.includes('CIRCUIT_OPEN')) {
+            console.log('🛑 [CIRCUIT-OPEN] Circuit breaker triggered during detection');
+
+            // Return a fallback response with the IP from headers
+            return {
+              status: 'LIMITED',
+              summary: {
+                detected_ip: headers['X-Frontend-Detected-IP'] || null,
+                detected_mac: headers['X-Frontend-Detected-MAC'] || null,
+                ip_detected: !!headers['X-Frontend-Detected-IP'],
+                mac_detected: !!headers['X-Frontend-Detected-MAC'],
+                access_mode: 'web',
+                user_guidance: 'Deteksi terbatas karena server sibuk. Silakan coba lagi nanti.'
+              },
+              circuit_breaker_active: true
+            };
+          }
+
+          // If we get a 404, break out of the retry loop for this endpoint and try the next one
+          if (error?.status === 404 || error?.response?.status === 404) {
+            console.warn(`⚠️ Endpoint ${endpoint.url} not found (404), will try next endpoint...`);
+            break;
+          }
+
+          if (error?.response?.status === 429 && attempt < maxRetries) {
+            const delay = Math.min(1000 * 2 ** attempt, 5000);
+            console.warn(`⏱️ Rate limited (429), mencoba lagi dalam ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+
+          if (attempt < maxRetries) {
+            const delay = Math.min(1000 * 2 ** attempt, 3000);
+            console.warn(`⚠️ API error, mencoba lagi dalam ${delay}ms...`, error);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+
+          // If this is the last endpoint and last attempt, throw the error
+          if (endpoint === endpoints[endpoints.length - 1]) {
+            throw error;
+          }
+        }
       }
     }
-    throw new Error('Semua percobaan ulang gagal')
+
+    // If we get here, all endpoints failed
+    if (lastError) {
+      throw lastError;
+    }
+    throw new Error('Semua percobaan ulang dan endpoint gagal');
   }
 
   const clearAllCache = async () => {
@@ -209,8 +314,8 @@ export function useClientDetection() {
     try {
       // Clear backend cache via API with detected IP information
       const { $api } = useNuxtApp()
-      // Call the backend API to clear cache
-      const result = await $api('/auth/clear-cache', {
+      // Call the backend API to clear cache using endpoint constant
+      const result = await $api(API_ENDPOINTS.CLEAR_CACHE, {
         method: 'POST',
         body: {
           ip: currentIP,
@@ -309,7 +414,8 @@ export function useClientDetection() {
 
       authStore.setClientInfo(ipToSend, macToSend)
 
-      const data = await callBackendWithRetry(headers)
+      // The new callBackendWithRetry will try multiple endpoints with fallbacks
+      const data = await callBackendWithRetry(headers);
 
       const result: DetectionResult = {
         summary: {
@@ -330,8 +436,9 @@ export function useClientDetection() {
 
       return result
     }
-    catch (err) {
+    catch (err: any) {
       console.error('❌ Deteksi klien gagal:', err)
+
       const errorMessage = err instanceof Error ? err.message : 'Deteksi gagal'
       singleton.setGlobalError(errorMessage)
       error.value = errorMessage

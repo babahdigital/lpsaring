@@ -2,7 +2,7 @@
 
 import type { ApiResponse } from '~/types/api'
 
-import { CIRCUIT_BREAKER_EXCLUDED, DEFAULT_RETRY_ATTEMPTS, RETRY_BASE_DELAY_MS, SENSITIVE_ENDPOINT_PATTERNS, SENSITIVE_ENDPOINTS, TRANSIENT_ERROR_CODES } from '~/constants/api-endpoints'
+import { API_ENDPOINTS, CIRCUIT_BREAKER_EXCLUDED, DEFAULT_RETRY_ATTEMPTS, RETRY_BASE_DELAY_MS, SENSITIVE_ENDPOINT_PATTERNS, SENSITIVE_ENDPOINTS, TRANSIENT_ERROR_CODES } from '~/constants/api-endpoints'
 import { useApiMetricsStore } from '~/store/apiMetrics'
 // Menggunakan native fetch; tidak perlu import ofetch
 import { useAuthStore } from '~/store/auth'
@@ -110,8 +110,13 @@ export default defineNuxtPlugin(() => {
     let fullUrl = normalizedUrl.startsWith('http') ? normalizedUrl : `${baseURL}${normalizedUrl.startsWith('/') ? '' : '/'}${normalizedUrl}`
     // Append cache-busting query for sensitive endpoints (helps defeat stubborn browser caches)
     // Treat OTP and sync endpoints as sensitive to avoid caches
-    const otpSensitive = ['/api/auth/request-otp', '/api/auth/verify-otp', '/api/auth/sync-device', '/api/auth/clear-cache'].some((e: string) => url.startsWith(e))
-    const isSensitiveEp = otpSensitive || SENSITIVE_ENDPOINTS.some((e: string) => url.includes(e)) || SENSITIVE_ENDPOINT_PATTERNS.some((rx: RegExp) => rx.test(url))
+    const otpSensitive = [
+      API_ENDPOINTS.REQUEST_OTP,
+      API_ENDPOINTS.VERIFY_OTP,
+      API_ENDPOINTS.DEVICE_SYNC,
+      API_ENDPOINTS.CLEAR_CACHE
+    ].some((e: string) => normalizedUrl.includes(e))
+    const isSensitiveEp = otpSensitive || SENSITIVE_ENDPOINTS.some((e: string) => normalizedUrl.includes(e)) || SENSITIVE_ENDPOINT_PATTERNS.some((rx: RegExp) => rx.test(url))
     if (isSensitiveEp) {
       const bustParam = `_cb=${Date.now()}`
       fullUrl += (fullUrl.includes('?') ? '&' : '?') + bustParam
@@ -119,16 +124,27 @@ export default defineNuxtPlugin(() => {
     const epKey: string = (url.split('?')[0]) || 'unknown'
 
     // Circuit breaker pre-check (skip excluded endpoints)
-    if (!CIRCUIT_BREAKER_EXCLUDED.some((p: string) => epKey.startsWith(p))) {
+    const isExcludedFromCircuitBreaker = CIRCUIT_BREAKER_EXCLUDED.some((p: string) =>
+      epKey.includes(p) || normalizedUrl.includes(p)
+    );
+
+    if (!isExcludedFromCircuitBreaker) {
       if (metrics.isCircuitOpen) {
         if (metrics.state.circuit.openedAt && (Date.now() - metrics.state.circuit.openedAt) > OPEN_TIME_MS) {
-          metrics.closeCircuit()
+          console.log('[CIRCUIT-BREAKER] Auto-closing circuit breaker after timeout');
+          metrics.closeCircuit();
         }
         else {
-          throw new Error('CIRCUIT_OPEN: API temporarily disabled due to repeated failures')
+          throw new Error('CIRCUIT_OPEN: API temporarily disabled due to repeated failures');
         }
       }
+    } else {
+      // Log that we're bypassing circuit breaker for this endpoint
+      if (metrics.isCircuitOpen) {
+        console.log(`[CIRCUIT-BREAKER] Bypassing open circuit for excluded endpoint: ${normalizedUrl}`);
+      }
     }
+
     metrics.recordRequest(epKey)
 
     const maxRetries = opts.retry === false ? 0 : (typeof opts.retryAttempts === 'number' ? opts.retryAttempts : DEFAULT_RETRY_ATTEMPTS)
@@ -189,7 +205,9 @@ export default defineNuxtPlugin(() => {
         try {
           const ep = (url && typeof url === 'string') ? (url.split('?')[0] || '') : ''
           // Cek endpoint deteksi IP/MAC client
-          if (ep.includes('/auth/detect-client-info')) {
+          if (ep.includes(API_ENDPOINTS.DEVICE_DETECT) ||
+            ep.includes(API_ENDPOINTS.DEVICE_AUTHORIZE) ||
+            ep.includes(API_ENDPOINTS.DEVICE_SYNC)) {
             const detectedIp: string | undefined = (data && (data.ip || data?.summary?.detected_ip))
             const detectedMac: string | undefined = (data && (data.mac || data?.summary?.detected_mac))
             if (detectedIp && !isProxyIP(detectedIp)) {

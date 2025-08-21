@@ -15,6 +15,35 @@
  */
 
 /**
+ * Endpoint API yang tersedia untuk digunakan
+ * Memastikan konsistensi endpoint di seluruh frontend
+ */
+export const API_ENDPOINTS = {
+  // Auth endpoints
+  LOGIN: '/auth/admin/login',
+  LOGOUT: '/auth/logout',
+  REFRESH_TOKEN: '/auth/refresh',
+  REGISTER: '/auth/register',
+  REQUEST_OTP: '/auth/request-otp',
+  VERIFY_OTP: '/auth/verify-otp',
+  VERIFY_ROLE: '/auth/verify-role',
+  ME: '/auth/me',
+
+  // Device related endpoints
+  DEVICE_DETECT: '/auth/detect-client-info',
+  DEVICE_AUTHORIZE: '/auth/authorize-device',
+  DEVICE_REJECT: '/auth/reject-device',
+  DEVICE_INVALIDATE: '/auth/invalidate-device',
+  DEVICE_CHECK_STATUS: '/auth/check-device-status',
+  DEVICE_CHECK_TOKEN: '/auth/check-token-device',
+  DEVICE_SYNC: '/auth/sync-device',
+
+  // Utilities
+  CLEAR_CACHE: '/auth/clear-cache',
+  SESSION_STATS: '/auth/session-stats',
+}
+
+/**
  * Endpoint yang membutuhkan penanganan khusus, seperti:
  * - Cache busting
  * - Penanganan kesalahan khusus
@@ -22,16 +51,16 @@
  * - Pengecekan perangkat klien
  */
 export const SENSITIVE_ENDPOINTS = [
-  '/api/auth/detect-client-info', // Endpoint utama untuk deteksi IP/MAC
-  '/api/auth/me',                 // Informasi user saat ini
-  '/api/auth/sync-device',        // Sinkronisasi perangkat
-  '/api/auth/authorize-device',   // Otorisasi perangkat
-  '/api/auth/reject-device',      // Penolakan otorisasi perangkat
-  '/api/auth/invalidate-device',  // Pencabutan akses perangkat
-  '/api/auth/check-device-status',// Pengecekan status perangkat
-  '/api/auth/check-token-device', // Pengecekan token dan perangkat
-  '/api/auth/clear-cache',        // Pembersihan cache
-  '/api/auth/session-stats',      // Statistik sesi
+  API_ENDPOINTS.DEVICE_DETECT,   // Endpoint utama untuk deteksi IP/MAC
+  API_ENDPOINTS.ME,              // Informasi user saat ini
+  API_ENDPOINTS.DEVICE_SYNC,     // Sinkronisasi perangkat
+  API_ENDPOINTS.DEVICE_AUTHORIZE, // Otorisasi perangkat
+  API_ENDPOINTS.DEVICE_REJECT,   // Penolakan otorisasi perangkat
+  API_ENDPOINTS.DEVICE_INVALIDATE, // Pencabutan akses perangkat
+  API_ENDPOINTS.DEVICE_CHECK_STATUS, // Pengecekan status perangkat
+  API_ENDPOINTS.DEVICE_CHECK_TOKEN, // Pengecekan token dan perangkat
+  API_ENDPOINTS.CLEAR_CACHE,     // Pembersihan cache
+  API_ENDPOINTS.SESSION_STATS,   // Statistik sesi
 ]
 // Regex patterns untuk endpoint sensitif (fallback jika tidak match exact)
 export const SENSITIVE_ENDPOINT_PATTERNS: RegExp[] = [
@@ -63,10 +92,13 @@ export const AUTH_ENDPOINTS = [
  * meski terjadi error pada endpoint lain
  */
 export const CIRCUIT_BREAKER_EXCLUDED = [
-  '/api/auth/admin/login',      // Login admin harus selalu tersedia
-  '/api/auth/refresh',          // Refresh token harus selalu tersedia
-  '/api/auth/verify-role',      // Verifikasi role harus selalu tersedia
-  '/api/auth/detect-client-info', // Deteksi klien harus selalu bisa diakses
+  API_ENDPOINTS.LOGIN,          // Login admin harus selalu tersedia
+  API_ENDPOINTS.REFRESH_TOKEN,  // Refresh token harus selalu tersedia
+  API_ENDPOINTS.VERIFY_ROLE,    // Verifikasi role harus selalu tersedia
+  API_ENDPOINTS.DEVICE_DETECT,  // Deteksi klien harus selalu bisa diakses
+  API_ENDPOINTS.DEVICE_AUTHORIZE, // Device authorization endpoint harus selalu bisa diakses
+  API_ENDPOINTS.DEVICE_SYNC,    // Device synchronization endpoint harus selalu bisa diakses
+  API_ENDPOINTS.CLEAR_CACHE,    // Cache clearing endpoint harus selalu bisa diakses
 ]
 
 /**
