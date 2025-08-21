@@ -228,13 +228,21 @@ async function handleVerifyOtp() {
       return
     }
 
+    // Pastikan state auth terbarui
     await authStore.initializeAuth(true)
 
+    // Jika perangkat butuh otorisasi, arahkan ke halaman otorisasi
+    if (authStore.isDeviceAuthRequired) {
+      await navigateTo('/akun/otorisasi-perangkat', { replace: true })
+      return
+    }
+
+    // Jika admin, ke dashboard admin
     if (authStore.isAdmin) {
-      navigateTo('/admin/dashboard', { replace: true })
+      await navigateTo('/admin/dashboard', { replace: true })
     }
     else {
-      navigateTo('/dashboard', { replace: true })
+      await navigateTo('/dashboard', { replace: true })
     }
 
     addSnackbar({

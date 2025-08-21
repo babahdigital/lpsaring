@@ -104,6 +104,48 @@ class ClientDetectionService:
         mikrotik_result = {"success": False, "found_mac": None, "message": "Tidak mencari MAC"}
 
         if client_ip:
+            # Dev/test fast-path: skip MikroTik lookup completely for localhost when enabled
+            try:
+                cfg = current_app.config
+                if cfg.get('SKIP_MAC_LOOKUP_FOR_LOCALHOST', True):
+                    if client_ip in {"127.0.0.1", "::1"}:
+                        logger.info(
+                            f"[CLIENT-DETECT] ⏭️ Skip MAC lookup for localhost IP {client_ip} (dev fast-path enabled)"
+                        )
+                        access_mode = "captive" if is_captive_browser_request() else "web"
+                        result = {
+                            "status": "SUCCESS",
+                            "timestamp": current_time,
+                            "detected_ip": client_ip,
+                            "detected_mac": client_mac,
+                            "ip_detected": bool(client_ip),
+                            "mac_detected": bool(client_mac),
+                            "access_mode": access_mode,
+                            "mikrotik_lookup": {
+                                "success": False,
+                                "found_mac": None,
+                                "message": "Skipped for localhost"
+                            },
+                            "cached": False,
+                            "force_refresh": force_refresh,
+                            "user_guidance": ClientDetectionService._get_user_guidance(client_ip, client_mac)
+                        }
+                        # Cache briefly to suppress repeated calls in dev
+                        if use_cache:
+                            redis_client = ClientDetectionService._get_redis_client()
+                            if redis_client:
+                                try:
+                                    redis_client.setex(
+                                        f"client_info:{client_ip}:{client_mac}:{int(current_time/30)}",
+                                        30,
+                                        json.dumps(result)
+                                    )
+                                except Exception:
+                                    pass
+                        return result
+            except Exception:
+                # If any issue occurs, fall back to normal flow
+                pass
             logger.info(
                 f"[CLIENT-DETECT] Mencari MAC untuk IP '{client_ip}' (is_browser={is_browser}, force_refresh={force_refresh})..."
             )

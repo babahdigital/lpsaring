@@ -577,13 +577,12 @@ export const useAuthStore = defineStore('auth', () => {
         }
         catch { /* noop */ }
 
-        // PERBAIKAN UTAMA: Hanya redirect jika tidak memerlukan otorisasi perangkat
+        // PERBAIKAN UTAMA: Jangan redirect dari store.
+        // Biarkan halaman pemanggil yang menentukan tujuan (dashboard atau halaman otorisasi)
         if (!isAuthorizationRequired) {
-          console.log('[AUTH-STORE] Perangkat sudah terotorisasi, melanjutkan ke dashboard...');
-          await navigateTo('/dashboard', { replace: true });
+          console.log('[AUTH-STORE] Perangkat sudah terotorisasi, serahkan redirect ke caller (halaman).')
         } else {
-          console.log('[AUTH-STORE] 🔒 Otorisasi perangkat diperlukan, redirect ditunda.');
-          // Jangan redirect dulu, biarkan alur otorisasi dijalankan
+          console.log('[AUTH-STORE] 🔒 Otorisasi perangkat diperlukan, redirect ditangani oleh halaman.')
         }
       } else {
         // Ini seharusnya tidak terjadi lagi setelah perbaikan backend

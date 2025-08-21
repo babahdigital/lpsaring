@@ -1,31 +1,32 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useNetworkStatus } from '~/composables/useNetworkStatus'
 
-import { useApiMetricsStore } from '~/store/apiMetrics'
-import { useAuthStore } from '~/store/auth'
+const net = useNetworkStatus()
 
-const apiMetrics = useApiMetricsStore()
-const auth = useAuthStore()
-
-// Ringkas: circuit, failure rate, retries, status refresh terakhir
-const circuitText = computed(() => apiMetrics.isCircuitOpen ? 'Circuit: Terbuka' : 'Circuit: Normal')
-const failureRateText = computed(() => `Gagal: ${(apiMetrics.failureRate * 100).toFixed(0)}%`)
-const retriesText = computed(() => `Retry: ${apiMetrics.state.totalRetries}`)
-const lastRefreshText = computed(() => {
-  const t = (auth as any).state?.lastRefreshAt as number | null
-  const ok = (auth as any).state?.lastRefreshOk as boolean | null
-  if (!t)
-    return 'Refresh: —'
-  const diff = Date.now() - t
-  const secs = Math.round(diff / 1000)
-  return `Refresh: ${ok ? 'OK' : 'Gagal'} ${secs}s lalu`
+const netLabel = computed(() => {
+  if (!net.isOnline.value) return 'Offline'
+  const type = net.effectiveType.value?.toUpperCase?.() || 'UNKNOWN'
+  return type
 })
 
-// Tooltips ringkas
-const tipCircuit = 'Status circuit breaker API. Terbuka = sementara menahan request non‑kritis karena banyak kegagalan.'
-const tipFailure = 'Persentase kegagalan request dibanding total pada sesi ini.'
-const tipRetry = 'Jumlah retry otomatis akibat error sementara (mis. jaringan/5xx).'
-const tipRefresh = 'Status pembaruan access token terakhir. "—" berarti belum pernah dilakukan refresh.'
+const mbpsText = computed(() => {
+  const dl = Number(net.downlink.value || 0)
+  return dl > 0 ? `${dl.toFixed(1)}Mbps` : '—'
+})
+
+const rttText = computed(() => {
+  const r = Number(net.rtt.value || 0)
+  return r > 0 ? `${r}ms RTT` : '—'
+})
+
+const colorClass = computed(() => {
+  if (!net.isOnline.value) return 'bad'
+  const r = Number(net.rtt.value || 0)
+  if (r > 1000) return 'bad'
+  if (r > 300) return 'warn'
+  return 'good'
+})
 </script>
 
 <template>
@@ -40,13 +41,11 @@ const tipRefresh = 'Status pembaruan access token terakhir. "—" berarti belum 
       </span>
     </div>
     <div class="right" role="status">
-      <VTooltip location="top"><template #activator="{ props }"><span v-bind="props">{{ circuitText }}</span></template>{{ tipCircuit }}</VTooltip>
+      <span class="badge" :class="colorClass">{{ netLabel }}</span>
       <span>•</span>
-      <VTooltip location="top"><template #activator="{ props }"><span v-bind="props">{{ failureRateText }}</span></template>{{ tipFailure }}</VTooltip>
+      <span class="metric">{{ mbpsText }}</span>
       <span>•</span>
-      <VTooltip location="top"><template #activator="{ props }"><span v-bind="props">{{ retriesText }}</span></template>{{ tipRetry }}</VTooltip>
-      <span>•</span>
-      <VTooltip location="top"><template #activator="{ props }"><span v-bind="props">{{ lastRefreshText }}</span></template>{{ tipRefresh }}</VTooltip>
+      <span class="metric">{{ rttText }}</span>
     </div>
   </div>
 </template>
@@ -55,5 +54,10 @@ const tipRefresh = 'Status pembaruan access token terakhir. "—" berarti belum 
 .footer-compact{display:flex;align-items:center;justify-content:space-between;width:100%;padding:.35rem .75rem;font-size:12px}
 .left{font-weight:600;opacity:.85}
 .right{display:flex;gap:.5rem;flex-wrap:wrap;opacity:.9}
+.badge{padding:.1rem .4rem;border-radius:.5rem;font-weight:600}
+.badge.good{background:rgba(76,175,80,.15);color:#2e7d32}
+.badge.warn{background:rgba(255,152,0,.15);color:#ef6c00}
+.badge.bad{background:rgba(244,67,54,.15);color:#c62828}
+.metric{opacity:.95}
 @media (max-width:640px){.footer-compact{flex-direction:column;align-items:flex-start;gap:.25rem}}
 </style>

@@ -22,7 +22,7 @@ export default defineNuxtPlugin({
     // 2. (Removed) Global fetch override – caused every 429 log to reference this plugin.
     //    We rely on per-request logic (useMetrics composable) for adaptive backoff.
 
-    // 3. Lightweight performance observer (only warn on very slow resources)
+    // 3. Lightweight performance observer (only warn on very slow resources; no UI popups)
     try {
       const perfObserver = new PerformanceObserver((list) => {
         for (const entry of list.getEntries()) {
@@ -30,6 +30,7 @@ export default defineNuxtPlugin({
             console.log(`📊 Navigasi lambat: ${Math.round(entry.duration)}ms`)
           if (entry.entryType === 'resource') {
             if (entry.duration > 5000) {
+              // Console-only warning; UI notification removed to avoid user distraction
               console.warn(`🐢 Resource lambat: ${entry.name} (${Math.round(entry.duration)}ms)`)
             }
           }

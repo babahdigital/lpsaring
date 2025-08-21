@@ -266,189 +266,121 @@ def request_otp():
 @public_auth_bp.route('/verify-otp', methods=['POST'])
 @limiter.limit("5 per minute; 30 per hour")
 def verify_otp():
-    """
-    Verifikasi OTP dan daftarkan perangkat secara otomatis jika diperlukan.
-    ---
-    tags:
-      - Otentikasi
-    summary: Memverifikasi kode OTP dan melakukan login
-    description: >
-      Memvalidasi kode OTP yang dikirimkan pengguna dan membuat session login jika valid.
-      Perangkat akan didaftarkan secara otomatis ke sistem jika diperlukan.
-      Permintaan dibatasi hingga 5 per menit dan 30 per jam per IP.
-    requestBody:
-      required: true
-      content:
-        application/json:
-          schema: VerifyOtpRequestSchema
-    responses:
-      200:
-        description: Verifikasi berhasil dan login sukses
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                status:
-                  type: string
-                  enum: [SUCCESS]
-                message:
-                  type: string
-                token:
-                  type: string
-                  description: JWT access token
-                user:
-                  type: object
-                  properties:
-                    id:
-                      type: string
-                      format: uuid
-                    full_name:
-                      type: string
-                    phone_number:
-                      type: string
-                    role:
-                      type: string
-      400:
-        description: Data tidak lengkap atau tidak valid
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                status:
-                  type: string
-                  enum: [ERROR]
-                message:
-                  type: string
-      401:
-        description: OTP tidak valid atau kadaluarsa
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                status:
-                  type: string
-                  enum: [ERROR]
-                message:
-                  type: string
-      429:
-        description: Rate limit tercapai
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                status:
-                  type: string
-                  enum: [ERROR]
-                message:
-                  type: string
-      500:
-        description: Kesalahan server
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                status:
-                  type: string
-                  enum: [ERROR]
-                message:
-                  type: string
-    """
-    from app.infrastructure.db.models import UserDevice
-    from app.infrastructure.gateways.mikrotik_client import find_and_update_address_list_entry, add_ip_to_address_list, create_static_lease
-    from app.utils.formatters import format_to_local_phone
-    
-    data = request.get_json() or {}
-    phone = data.get('phone') or data.get('phone_number')
-    otp_code = str(data.get('otp') or data.get('code'))
-    
-    detection_result = ClientDetectionService.get_client_info(
-        frontend_ip=(data.get('ip') or data.get('client_ip')),
-        frontend_mac=(data.get('mac') or data.get('client_mac'))
-    )
-    client_ip = detection_result.get('detected_ip')
-    client_mac = detection_result.get('detected_mac')
+  """Verifikasi OTP dan login pengguna."""
+  from app.infrastructure.db.models import UserDevice
+  from app.infrastructure.gateways.mikrotik_client import (
+    find_and_update_address_list_entry,
+    add_ip_to_address_list,
+    create_static_lease,
+  )
+  from app.utils.formatters import format_to_local_phone
 
-    if not phone or not otp_code:
-        return jsonify({"status": "ERROR", "message": "Phone dan OTP wajib diisi"}), 400
+  data = request.get_json() or {}
+  phone = data.get('phone') or data.get('phone_number')
+  otp_raw = data.get('otp') or data.get('code')
+  otp_code = str(otp_raw) if otp_raw is not None else None
 
-    redis_client = getattr(current_app, 'redis_client_otp', None)
-    if not redis_client:
-        return jsonify({"status": "ERROR", "message": "Service tidak tersedia"}), 500
+  detection_result = ClientDetectionService.get_client_info(
+    frontend_ip=(data.get('ip') or data.get('client_ip')),
+    frontend_mac=(data.get('mac') or data.get('client_mac')),
+  )
+  client_ip = detection_result.get('detected_ip')
+  client_mac = detection_result.get('detected_mac')
 
-    otp_key = f"otp:{phone}"
-    stored_otp = redis_client.get(otp_key)
-    if not stored_otp or str(stored_otp, 'utf-8') != otp_code:
-        if client_ip:
-            AuthSessionService.track_consecutive_failures(client_ip, "verify_otp", "invalid_otp")
-        return jsonify({"status": "ERROR", "message": "OTP tidak valid atau sudah expired"}), 400
+  if not phone or not otp_code:
+    return jsonify({"status": "ERROR", "message": "Phone dan OTP wajib diisi"}), 400
 
-    redis_client.delete(otp_key)
-    user = db.session.execute(select(User).filter_by(phone_number=phone)).scalar_one_or_none()
-    if not user:
-        return jsonify({"status": "ERROR", "message": "User tidak ditemukan"}), 404
+  redis_client = getattr(current_app, 'redis_client_otp', None)
+  if not redis_client:
+    return jsonify({"status": "ERROR", "message": "Service tidak tersedia"}), 500
 
-    device_authorized = False
-    device_id = None
-    if client_mac:
-        device = db.session.execute(select(UserDevice).filter_by(mac_address=client_mac)).scalar_one_or_none()
-    if device and device.status == 'APPROVED':
-        if device:
-            device_authorized = True
-            device_id = str(device.id)
-            device.last_seen_at = db.func.now()
-            device.ip_address = client_ip
-            db.session.commit()
-
-    token = create_access_token(identity=str(user.id))
-    refresh_token = create_refresh_token(identity=str(user.id))
-
-    if client_ip:
-        AuthSessionService.reset_failure_counter(client_ip, "verify_otp")
-        AuthSessionService.reset_failure_counter(client_ip, "sync_device")
-
-    if not device_authorized and current_app.config.get("REQUIRE_EXPLICIT_DEVICE_AUTH", False):
-        response_data = {
-            "status": "DEVICE_AUTHORIZATION_REQUIRED",
-            "message": "Perangkat baru terdeteksi. Otorisasi diperlukan.",
-            "token": token,
-            "user": {"id": str(user.id), "full_name": user.full_name, "role": user.role.value},
-            "data": {"device_info": {"mac": client_mac, "ip": client_ip, "user_agent": request.user_agent.string}}
-        }
-        resp = jsonify(response_data)
-        set_refresh_cookies(resp, refresh_token)
-        return resp, 200
-    
-    # Lanjutkan jika perangkat sudah diotorisasi
-    user.last_login_ip = client_ip
-    user.last_login_mac = client_mac
-    user.last_login_at = db.func.now()
-    db.session.commit()
-
-    # Best-effort update ke MikroTik
+  otp_key = f"otp:{phone}"
+  stored_otp = redis_client.get(otp_key)
+  # Robustly handle bytes or str
+  if isinstance(stored_otp, bytes):
     try:
-        if client_ip:
-            list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST', '')
-            comment = format_to_local_phone(user.phone_number) or ''
-            if list_name and comment:
-                ok, _ = find_and_update_address_list_entry(list_name, client_ip, comment)
-                if not ok:
-                    add_ip_to_address_list(list_name, client_ip, comment)
-                if client_mac:
-                    create_static_lease(client_ip, client_mac, comment)
-    except Exception as e:
-        logger.warning(f"[VERIFY-OTP] MikroTik update failed: {e}")
-        
+      decoded_otp = stored_otp.decode('utf-8')
+    except Exception:
+      decoded_otp = None
+  else:
+    decoded_otp = stored_otp if stored_otp is None else str(stored_otp)
+
+  if not decoded_otp or decoded_otp != otp_code:
+    if client_ip:
+      AuthSessionService.track_consecutive_failures(client_ip, "verify_otp", "invalid_otp")
+    return jsonify({"status": "ERROR", "message": "OTP tidak valid atau sudah expired"}), 400
+
+  # OTP valid – consume it
+  try:
+    redis_client.delete(otp_key)
+  except Exception:
+    pass
+
+  user = db.session.execute(select(User).filter_by(phone_number=phone)).scalar_one_or_none()
+  if not user:
+    return jsonify({"status": "ERROR", "message": "User tidak ditemukan"}), 404
+
+  device_authorized = False
+  device = None
+  if client_mac:
+    device = db.session.execute(select(UserDevice).filter_by(mac_address=client_mac)).scalar_one_or_none()
+    if device and getattr(device, 'status', None) == 'APPROVED':
+      device_authorized = True
+      device.last_seen_at = db.func.now()
+      device.ip_address = client_ip
+      db.session.commit()
+
+  token = create_access_token(identity=str(user.id))
+  refresh_token = create_refresh_token(identity=str(user.id))
+
+  if client_ip:
+    AuthSessionService.reset_failure_counter(client_ip, "verify_otp")
+    AuthSessionService.reset_failure_counter(client_ip, "sync_device")
+
+  if not device_authorized and current_app.config.get('REQUIRE_EXPLICIT_DEVICE_AUTH', False):
     response_data = {
-        "status": "SUCCESS", "message": "OTP verified successfully", "token": token,
-        "user_id": str(user.id), "user_name": user.full_name, "phone": user.phone_number,
-        "action": "proceed_to_dashboard", "ip": client_ip, "mac": client_mac,
-        "user": {"id": str(user.id), "full_name": user.full_name, "role": user.role.value}
+      "status": "DEVICE_AUTHORIZATION_REQUIRED",
+      "message": "Perangkat baru terdeteksi. Otorisasi diperlukan.",
+      "token": token,
+      "user": {"id": str(user.id), "full_name": user.full_name, "role": user.role.value},
+      "data": {"device_info": {"mac": client_mac, "ip": client_ip, "user_agent": request.user_agent.string}},
     }
     resp = jsonify(response_data)
     set_refresh_cookies(resp, refresh_token)
     return resp, 200
+
+  # Lanjutkan jika perangkat sudah diotorisasi
+  user.last_login_ip = client_ip
+  user.last_login_mac = client_mac
+  user.last_login_at = db.func.now()
+  db.session.commit()
+
+  # Best-effort update ke MikroTik
+  try:
+    if client_ip:
+      list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST', '')
+      comment = format_to_local_phone(user.phone_number) or ''
+      if list_name and comment:
+        ok, _ = find_and_update_address_list_entry(list_name, client_ip, comment)
+        if not ok:
+          add_ip_to_address_list(list_name, client_ip, comment)
+        if client_mac:
+          create_static_lease(client_ip, client_mac, comment)
+  except Exception as e:
+    logger.warning(f"[VERIFY-OTP] MikroTik update failed: {e}")
+
+  response_data = {
+    "status": "SUCCESS",
+    "message": "OTP verified successfully",
+    "token": token,
+    "user_id": str(user.id),
+    "user_name": user.full_name,
+    "phone": user.phone_number,
+    "action": "proceed_to_dashboard",
+    "ip": client_ip,
+    "mac": client_mac,
+    "user": {"id": str(user.id), "full_name": user.full_name, "role": user.role.value},
+  }
+  resp = jsonify(response_data)
+  set_refresh_cookies(resp, refresh_token)
+  return resp, 200

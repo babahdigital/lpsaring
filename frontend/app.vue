@@ -255,7 +255,6 @@ const shouldShowPromoFetcher = computed(
         <!-- PERBAIKAN: Tampilkan DeviceAuthPopup hanya ketika user terautentikasi -->
         <DeviceAuthPopup v-if="authStore.isLoggedIn" />
         <PromoFetcher v-if="shouldShowPromoFetcher && !showLoader" />
-        <NetworkStatusIndicator />
       </ErrorBoundary>
     </VApp>
   </VLocaleProvider>

@@ -302,6 +302,10 @@ class Config:
     MIKROTIK_ASYNC_MODE = get_env_bool('MIKROTIK_ASYNC_MODE', 'False')
     # Suppress noisy API docs skip-route logs (aktifkan dengan TRUE untuk menyembunyikan log skip)
     SUPPRESS_API_DOCS_SKIP_LOG = get_env_bool('SUPPRESS_API_DOCS_SKIP_LOG', 'True')
+
+    # Fast-path optimization: skip MAC lookup entirely for localhost in dev/test
+    # This prevents long waits when client_ip is 127.0.0.1/::1 during local development
+    SKIP_MAC_LOOKUP_FOR_LOCALHOST = get_env_bool('SKIP_MAC_LOOKUP_FOR_LOCALHOST', 'True')
     
     @staticmethod
     def init_app(app):

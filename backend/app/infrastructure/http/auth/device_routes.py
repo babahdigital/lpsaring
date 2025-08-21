@@ -76,6 +76,18 @@ def detect_client_info():
     client_ip = get_client_ip()
     rate_limit_key = f"ratelimit:detect:{client_ip}"
     redis_client = getattr(current_app, 'redis_client_otp', None)
+    # Fast-path: if localhost and configured to skip lookup, return minimal payload quickly
+    try:
+        if client_ip in {"127.0.0.1", "::1"} and current_app.config.get('SKIP_MAC_LOOKUP_FOR_LOCALHOST', True):
+            payload = ClientDetectionService.get_client_info(
+                frontend_ip=client_ip,
+                force_refresh=False,
+                use_cache=True,
+                is_browser=is_browser
+            )
+            return jsonify(payload), 200
+    except Exception:
+        pass
     
     if redis_client:
         request_count = redis_client.incr(rate_limit_key)
