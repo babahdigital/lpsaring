@@ -165,22 +165,13 @@ export function useClientDetection() {
 
     const cacheBust = `_t=${Date.now()}`;
 
-    // Define endpoints to try in order (fallback mechanism)
+    // Define endpoint(s) to try in order
+    // Routine detection should not call authorize-device as a fallback to avoid rate limits.
     const endpoints = [
       {
         url: `/auth/detect-client-info?${cacheBust}`,
         method: 'GET',
         body: null
-      },
-      {
-        url: '/auth/authorize-device',
-        method: 'POST',
-        body: {
-          detection_only: true,
-          ip: headers['X-Frontend-Detected-IP'] || null,
-          client_ip: headers['X-Frontend-Detected-IP'] || null,
-          force_refresh: !!headers['force-refresh']
-        }
       }
     ];
 
@@ -216,8 +207,8 @@ export function useClientDetection() {
 
             // Pastikan refresh pada attempt berikutnya
             headers['force-refresh'] = 'true';
-            if (endpoint.body) {
-              endpoint.body.force_refresh = true;
+            if (endpoint.body && typeof endpoint.body === 'object') {
+              (endpoint.body as any).force_refresh = true;
             }
             continue;
           }

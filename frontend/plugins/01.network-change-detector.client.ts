@@ -124,27 +124,24 @@ export default defineNuxtPlugin((nuxtApp) => {
       // Only run if the user is logged in and not on login/captive pages
       if (authStore.isLoggedIn && !window.location.pathname.includes('login') && !window.location.pathname.includes('captive')) {
         try {
-          // Skip if client detection API isn't initialized yet
-          if (!clientDetectionAPI) {
-            console.log('🔍 Client detection API not initialized yet, skipping IP check')
-            return
+          // Use lightweight debug IP source endpoint to avoid hitting rate-limited detection
+          const { $api } = useNuxtApp()
+          let currentDetectedIp: string | null | undefined = undefined
+          try {
+            const dbg = await $api<{ ip?: string }>(
+              '/api/debug/ip-source',
+              { method: 'GET', retry: false }
+            )
+            currentDetectedIp = dbg?.ip
+          }
+          catch (e) {
+            // Fallback: if debug endpoint unavailable, try minimal detection but only if API is ready
+            if (clientDetectionAPI) {
+              await clientDetectionAPI.triggerDetection()
+              currentDetectedIp = clientDetectionAPI.detectionResult.value?.summary?.detected_ip
+            }
           }
 
-          // OPTIMASI: Jangan picu deteksi baru jika user baru saja login
-          // dan kita sudah memiliki IP yang valid dari proses login
-          const lastLoginTime = Number(sessionStorage.getItem('last_login_timestamp') || '0')
-          const now = Date.now()
-          const loginRecent = (now - lastLoginTime) < 60000 // 1 minute
-
-          if (loginRecent && authStore.clientIp) {
-            console.log('🛡️ [OPTIMIZE] Login baru terdeteksi, melewati deteksi IP otomatis')
-            return
-          }
-
-          // Silently trigger a new detection using the API
-          await clientDetectionAPI.triggerDetection()
-
-          const currentDetectedIp = clientDetectionAPI.detectionResult.value?.summary?.detected_ip
           const storedIp = authStore.clientIp
 
           // If IP is detected and different from stored
@@ -159,6 +156,11 @@ export default defineNuxtPlugin((nuxtApp) => {
             // Force refresh detection via localStorage clear
             localStorage.removeItem('client_detection_cache')
 
+            // Ensure detection API is available
+            if (!clientDetectionAPI) {
+              clientDetectionAPI = useClientDetection()
+            }
+
             // Call sync-device. If sync-device returns that the device is not registered
             // (because MAC is also new), authStore will automatically redirect to the authorization page.
             await authStore.syncDevice()
@@ -172,7 +174,7 @@ export default defineNuxtPlugin((nuxtApp) => {
           console.error('[IP-CHANGE] Error during IP check:', error)
         }
       }
-    }, 15000) // Check every 15 seconds
+    }, 45000) // Check every 45 seconds to reduce backend pressure
   }
 
   // Stop IP checking interval

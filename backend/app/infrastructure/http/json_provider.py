@@ -6,7 +6,13 @@ import json
 from enum import Enum
 from uuid import UUID
 from datetime import datetime, date
+from decimal import Decimal
 from flask.json.provider import JSONProvider
+try:
+    # Optional import; present in SQLAlchemy
+    from sqlalchemy.engine.row import Row  # type: ignore
+except Exception:  # pragma: no cover
+    Row = tuple  # Fallback type to avoid NameError if SQLAlchemy internals change
 
 class CustomJSONProvider(JSONProvider):
     """
@@ -39,6 +45,25 @@ class CustomJSONEncoder(json.JSONEncoder):
         if isinstance(obj, UUID):
             # Kembalikan sebagai string
             return str(obj)
+
+        # Perbaikan: serialisasi Decimal (umum dari DB numeric/decimal)
+        if isinstance(obj, Decimal):
+            # Gunakan float untuk interoperabilitas API; gunakan str(obj) bila perlu presisi penuh
+            return float(obj)
+
+        # Bantuan: serialisasi SQLAlchemy Row ke dict
+        try:
+            if Row is not None and isinstance(obj, Row):  # type: ignore
+                return dict(getattr(obj, '_mapping', {}) or {})
+        except Exception:
+            pass
+
+        # Objek dengan to_dict kustom
+        try:
+            if hasattr(obj, 'to_dict') and callable(getattr(obj, 'to_dict')):
+                return obj.to_dict()  # type: ignore
+        except Exception:
+            pass
             
         # Untuk tipe data lain, biarkan default handler yang bekerja
         return super().default(obj)

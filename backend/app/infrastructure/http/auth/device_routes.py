@@ -50,8 +50,24 @@ logger = logging.getLogger(__name__)
 
 device_bp = Blueprint('device', __name__, url_prefix='/auth')
 
+# Custom key function to rate-limit by authenticated user when available, else by client IP
+def _limit_key_func():
+    try:
+        user = get_current_user()
+        if user and getattr(user, 'id', None):
+            return f"user:{user.id}"
+    except Exception:
+        pass
+    # Fallback to remote address via request utils for better proxy handling
+    try:
+        from app.utils.request_utils import get_client_ip
+        ip = get_client_ip()
+        return f"ip:{ip}"
+    except Exception:
+        return request.remote_addr or 'anon'
+
 @device_bp.route('/detect-client-info', methods=['GET'])
-@limiter.limit("30 per minute;100 per hour")
+@limiter.limit("60 per minute;300 per hour", key_func=_limit_key_func)
 def detect_client_info():
     """Mendeteksi IP dan MAC address klien."""
     force_refresh = request.headers.get('force-refresh', '').lower() == 'true'
@@ -77,6 +93,7 @@ def detect_client_info():
 
 @device_bp.route('/sync-device', methods=['POST'])
 @jwt_required()  # ✅ Endpoint ini mewajibkan login terlebih dahulu
+@limiter.limit("30 per minute;200 per hour", key_func=_limit_key_func)
 def sync_device():
     """
     Sinkronisasi perangkat dengan server.
@@ -271,6 +288,7 @@ def sync_device():
 
 @device_bp.route('/authorize-device', methods=['POST'])
 @jwt_required()
+@limiter.limit("20 per minute;100 per hour", key_func=_limit_key_func)
 def authorize_device():
     """Otorisasi perangkat baru secara eksplisit."""
     current_user = get_current_user()
@@ -464,7 +482,7 @@ def reject_device():
 
 @device_bp.route('/check-token-device', methods=['GET', 'POST'])
 @jwt_required(optional=True)
-@limiter.limit("30 per minute;100 per hour")
+@limiter.limit("60 per minute;300 per hour", key_func=_limit_key_func)
 def check_token_device():
     """
     Memeriksa status token dan perangkat saat ini.
@@ -541,7 +559,7 @@ def check_token_device():
 
 
 @device_bp.route('/check-device-status', methods=['GET', 'POST'])
-@limiter.limit("30 per minute;100 per hour")
+@limiter.limit("60 per minute;300 per hour", key_func=_limit_key_func)
 def check_device_status():
     """
     Memeriksa status otorisasi perangkat saat ini.

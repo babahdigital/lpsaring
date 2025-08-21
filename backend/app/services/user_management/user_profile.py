@@ -93,7 +93,8 @@ def create_user_by_admin(admin_actor: User, data: Dict[str, Any]) -> Tuple[bool,
 
         if is_inactive:
             # If user is inactive, set to inactive profile regardless of role
-            new_user.mikrotik_profile_name = 'inactive'
+            inactive_profile = settings_service.get_setting('MIKROTIK_PROFILE_INACTIVE', current_app.config.get('MIKROTIK_PROFILE_INACTIVE', 'inactive'))
+            new_user.mikrotik_profile_name = inactive_profile
             new_user.is_unlimited_user = False
             initial_duration_days = int(settings_service.get_setting('USER_INITIAL_DURATION_DAYS', '30') or '30')
             new_user.quota_expiry_date = datetime.now(dt_timezone.utc) + timedelta(days=initial_duration_days)
@@ -123,7 +124,8 @@ def create_user_by_admin(admin_actor: User, data: Dict[str, Any]) -> Tuple[bool,
             new_user.quota_expiry_date = datetime.now(dt_timezone.utc) + timedelta(days=initial_duration_days)
 
         elif new_role == UserRole.USER:
-            new_user.mikrotik_profile_name = 'profile-aktif'  # Updated to use profile-aktif
+            active_profile = settings_service.get_setting('MIKROTIK_PROFILE_AKTIF', current_app.config.get('MIKROTIK_PROFILE_AKTIF', 'profile-aktif'))
+            new_user.mikrotik_profile_name = active_profile  # default active profile per config
             new_user.is_unlimited_user = False
             
             active_bonus = _get_active_registration_bonus()
@@ -144,7 +146,13 @@ def create_user_by_admin(admin_actor: User, data: Dict[str, Any]) -> Tuple[bool,
         
         db.session.flush() 
         
-        sync_success, sync_message = _sync_user_to_mikrotik(new_user, f"Created by {admin_actor.full_name}")
+        # Always create/update MikroTik user entry.
+        # If inactive, user will be created with profile 'inactive' and minimal quota (1 byte) and short timeout.
+        comment = (
+            f"Created INACTIVE by {admin_actor.full_name}" if not new_user.is_active
+            else f"Created by {admin_actor.full_name}"
+        )
+        sync_success, sync_message = _sync_user_to_mikrotik(new_user, comment)
         if not sync_success:
             return False, f"Gagal sinkronisasi ke Mikrotik: {sync_message}", None
 
@@ -390,6 +398,16 @@ def _sync_user_to_mikrotik(user: User, comment: str) -> Tuple[bool, str]:
     if user.quota_expiry_date and user.quota_expiry_date > now:
         timeout_seconds = max(1, int((user.quota_expiry_date - now).total_seconds()))
     else:
+        timeout_seconds = 1
+        if not user.is_unlimited_user:
+            limit_bytes = 1
+
+    # If user is inactive or using inactive profile, enforce minimal quota/timeout regardless
+    try:
+        inactive_profile = settings_service.get_setting('MIKROTIK_PROFILE_INACTIVE', current_app.config.get('MIKROTIK_PROFILE_INACTIVE', 'inactive'))
+    except Exception:
+        inactive_profile = 'inactive'
+    if (not getattr(user, 'is_active', True)) or (user.mikrotik_profile_name == inactive_profile):
         timeout_seconds = 1
         if not user.is_unlimited_user:
             limit_bytes = 1

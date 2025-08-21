@@ -219,6 +219,14 @@ def _get_api_from_pool(pool_name=None) -> Optional[RouterOsApi]:  # noqa: D401
             for attempt in range(1, 3):  # Try up to 2 times
                 try:
                     api = pool.get_api()
+                    # Validate API health to avoid stale sockets (Bad file descriptor)
+                    try:
+                        res = api.get_resource('/system/identity')
+                        _ = res.get()
+                    except Exception as he:
+                        if attempt == 1:
+                            logger.warning(f"[MT-HEALTH] Unhealthy API detected on app pool (attempt {attempt}): {he}")
+                        raise
                     _record_metric('mikrotik_api_success')
                     return api
                 except Exception as e:
@@ -256,6 +264,12 @@ def _get_api_from_pool(pool_name=None) -> Optional[RouterOsApi]:  # noqa: D401
             pool = _create_connection_pool()
             if pool:
                 api = pool.get_api()
+                # Health check
+                try:
+                    res = api.get_resource('/system/identity')
+                    _ = res.get()
+                except Exception:
+                    api = None
         except Exception:
             return None
         if api:
@@ -268,12 +282,23 @@ def _get_api_from_pool(pool_name=None) -> Optional[RouterOsApi]:  # noqa: D401
                 _global_connection_pool = _create_connection_pool()
             if _global_connection_pool:
                 try:
-                    return _global_connection_pool.get_api()
+                    api = _global_connection_pool.get_api()
+                    # Health check
+                    try:
+                        res = api.get_resource('/system/identity'); _ = res.get()
+                    except Exception:
+                        raise
+                    return api
                 except Exception:
                     _global_connection_pool = _create_connection_pool()
                     if _global_connection_pool:
                         try:
-                            return _global_connection_pool.get_api()
+                            api = _global_connection_pool.get_api()
+                            try:
+                                res = api.get_resource('/system/identity'); _ = res.get()
+                            except Exception:
+                                return None
+                            return api
                         except Exception:
                             return None
         else:
@@ -291,14 +316,24 @@ def _get_api_from_pool(pool_name=None) -> Optional[RouterOsApi]:  # noqa: D401
             _pool_index = (_pool_index + 1) % len(_connection_pools)
             pool = _connection_pools[_pool_index]
             try:
-                return pool.get_api()
+                api = pool.get_api()
+                try:
+                    res = api.get_resource('/system/identity'); _ = res.get()
+                except Exception:
+                    raise
+                return api
             except Exception:
                 # Attempt recreate single pool slot
                 newp = _create_connection_pool()
                 if newp:
                     _connection_pools[_pool_index] = newp
                     try:
-                        return newp.get_api()
+                        api = newp.get_api()
+                        try:
+                            res = api.get_resource('/system/identity'); _ = res.get()
+                        except Exception:
+                            return None
+                        return api
                     except Exception:
                         return None
                 return None
