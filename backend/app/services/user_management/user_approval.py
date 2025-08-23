@@ -34,12 +34,8 @@ def approve_user_account(user_to_approve: User, admin_actor: User) -> Tuple[bool
     initial_duration_days = 30
     log_details = {}
     
-    # --- [PERBAIKAN UTAMA] Logika penentuan server dan profil diganti total dengan helper ---
-    # Ini akan secara otomatis membaca mode testing dari .env
+    # --- [PERBAIKAN UTAMA] Gunakan helper untuk menentukan server (profil dihitung setelah status diupdate) ---
     mikrotik_server = get_server_for_user(user_to_approve)
-    mikrotik_profile = get_profile_for_user(user_to_approve)
-    
-    current_app.logger.info(f"[APPROVE USER] Determined server: {mikrotik_server}, profile: {mikrotik_profile}")
     
     # Logika penentuan kuota dan durasi tetap sama, namun bisa disesuaikan untuk testing
     is_test_mode = current_app.config.get('SYNC_TEST_MODE_ENABLED', False)
@@ -68,35 +64,46 @@ def approve_user_account(user_to_approve: User, admin_actor: User) -> Tuple[bool
             initial_quota_mb = settings_service.get_setting_as_int('USER_INITIAL_QUOTA_MB', 0)
         log_details = {"role_approved": "USER", "bonus_mb": initial_quota_mb, "bonus_days": initial_duration_days}
 
-    # Simpan nama server dan profil yang benar ke database
+    # Tulis status awal ke user, tergantung ada bonus/kuota awal atau tidak
+    user_gets_initial_quota = initial_quota_mb > 0
+    user_to_approve.is_active = user_gets_initial_quota
     user_to_approve.total_quota_purchased_mb = initial_quota_mb
-    user_to_approve.quota_expiry_date = datetime.now(dt_timezone.utc) + timedelta(days=initial_duration_days) if initial_quota_mb > 0 else None
-    user_to_approve.mikrotik_profile_name = mikrotik_profile
+    user_to_approve.total_quota_used_mb = 0
+    user_to_approve.quota_expiry_date = (
+        datetime.now(dt_timezone.utc) + timedelta(days=initial_duration_days)
+        if user_gets_initial_quota else None
+    )
+    user_to_approve.is_unlimited_user = False
     user_to_approve.mikrotik_server_name = mikrotik_server
-    
-    mikrotik_limit_bytes_total = int(initial_quota_mb) * 1024 * 1024 if initial_quota_mb > 0 else 1
 
-    # Panggil Mikrotik dengan server dan profil yang sudah ditentukan oleh helper
+    # Hitung profil SETELAH field kunci di atas diupdate, agar helper membaca status terkini
+    mikrotik_profile = get_profile_for_user(user_to_approve)
+    user_to_approve.mikrotik_profile_name = mikrotik_profile
+
+    current_app.logger.info(
+        f"[APPROVE USER] User active: {user_to_approve.is_active}, Determined server: {mikrotik_server}, profile: {mikrotik_profile}"
+    )
+
+    mikrotik_limit_bytes_total = int(initial_quota_mb) * 1024 * 1024 if user_gets_initial_quota else 1
+
+    # Panggil Mikrotik dengan server dan profil yang sudah ditentukan helper
     mikrotik_success, mikrotik_message = activate_or_update_hotspot_user(
-        user_mikrotik_username=mikrotik_username, 
+        user_mikrotik_username=mikrotik_username,
         mikrotik_profile_name=mikrotik_profile,
-        hotspot_password=new_mikrotik_password, 
+        hotspot_password=new_mikrotik_password,
         comment=f"Approved by {admin_actor.full_name}",
         limit_bytes_total=mikrotik_limit_bytes_total,
-        server=mikrotik_server
+        server=mikrotik_server,
     )
 
     if not mikrotik_success:
         return False, f"Gagal aktivasi di Mikrotik: {mikrotik_message}"
 
     user_to_approve.approval_status = ApprovalStatus.APPROVED
-    user_to_approve.is_active = True
     user_to_approve.approved_at = datetime.now(dt_timezone.utc)
     user_to_approve.approved_by_id = admin_actor.id
     user_to_approve.mikrotik_password = new_mikrotik_password
     user_to_approve.mikrotik_user_exists = True
-    user_to_approve.is_unlimited_user = False
-    user_to_approve.total_quota_used_mb = 0
     
     _log_admin_action(admin_actor, user_to_approve, AdminActionType.APPROVE_USER, log_details)
     
@@ -104,9 +111,17 @@ def approve_user_account(user_to_approve: User, admin_actor: User) -> Tuple[bool
         'full_name': user_to_approve.full_name,
         'link_user_app': settings_service.get_setting("APP_LINK_USER", current_app.config.get('APP_LINK_USER'))
     }
-    _send_whatsapp_notification(user_to_approve.phone_number, "user_approve_success", context)
-    
-    return True, f"Pengguna {user_to_approve.full_name} berhasil disetujui."
+    # Kirim notifikasi sesuai status kuota awal
+    if user_gets_initial_quota:
+        _send_whatsapp_notification(user_to_approve.phone_number, "user_approve_success", context)
+        admin_msg = f"Pengguna {user_to_approve.full_name} berhasil disetujui dan diaktifkan."
+    else:
+        _send_whatsapp_notification(user_to_approve.phone_number, "user_inactive_approved", context)
+        admin_msg = (
+            f"Pengguna {user_to_approve.full_name} berhasil disetujui (status tidak aktif, perlu beli kuota)."
+        )
+
+    return True, admin_msg
 
 
 def reject_user_account(user_to_reject: User, admin_actor: User) -> Tuple[bool, str]:

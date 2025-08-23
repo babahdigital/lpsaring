@@ -145,14 +145,23 @@ def determine_target_profile(user: User) -> str:
     is_expired = user.quota_expiry_date and user.quota_expiry_date < now_utc
     if is_expired:
         return current_app.config['MIKROTIK_PROFILE_HABIS']
+    
+    # PERBAIKAN: Jika user tidak unlimited dan belum pernah membeli kuota (atau 0), anggap kuota habis
+    # Ini menutup celah ketika user aktif namun total_quota_purchased_mb == 0
+    try:
+        total_purchased = float(user.total_quota_purchased_mb or 0)
+    except Exception:
+        total_purchased = 0.0
+    if total_purchased <= 0:
+        return current_app.config['MIKROTIK_PROFILE_HABIS']
 
     # Logika baru yang lebih presisi untuk FUP dan Kuota Habis.
     # Hanya berlaku untuk user non-unlimited yang pernah beli kuota.
-    if user.total_quota_purchased_mb > 0:
+    if total_purchased > 0:
         
         # Hitung sisa kuota dalam MB untuk presisi
         # Menggunakan float untuk menangani nilai desimal dari penggunaan.
-        purchased_mb = float(user.total_quota_purchased_mb)
+        purchased_mb = float(total_purchased)
         used_mb = float(user.total_quota_used_mb or 0.0)
         remaining_mb = purchased_mb - used_mb
 
