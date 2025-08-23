@@ -1374,3 +1374,93 @@ def format_to_local_phone(phone: str) -> Optional[str]:
     p = _PHONE_LOCAL_RE.sub('0', p)
     # Basic validation
     return p if p.startswith('08') else None
+
+
+# ---------------------------------------------------------------------------
+# Client traces purge (Host, DHCP lease, ARP, optional binding)
+# ---------------------------------------------------------------------------
+from typing import Dict as _DictT, Tuple as _TupleT
+
+def purge_client_traces(ip_address: str, mac_address: Optional[str] = None, include_binding: bool = False) -> _DictT[str, _TupleT[bool, str]]:
+    """
+    Bersihkan jejak klien di MikroTik:
+      - Hotspot Host untuk address
+      - DHCP lease (by mac-address jika ada, else by address)
+      - ARP entry (hapus hanya yang dynamic)
+      - (opsional) IP Binding by mac-address
+
+    Returns: dict tag -> (ok, message)
+    """
+    results: _DictT[str, _TupleT[bool, str]] = {}
+    try:
+        api = _get_api_from_pool()
+        if api is None:
+            return {"error": (False, "API tidak tersedia.")}
+
+        # 1) Hotspot host
+        try:
+            host_res = api.get_resource('/ip/hotspot/host')
+            hosts = host_res.get(address=ip_address)
+            removed = 0
+            for h in hosts:
+                hid = h.get('id') or h.get('.id')
+                if hid:
+                    host_res.remove(id=hid)
+                    removed += 1
+            results['hotspot_host'] = (True, f"Removed {removed}" if removed else 'Tidak ada')
+        except Exception as e:
+            results['hotspot_host'] = (False, str(e))
+
+        # 2) DHCP lease
+        try:
+            lease_res = api.get_resource('/ip/dhcp-server/lease')
+            leases = []
+            if mac_address:
+                leases = lease_res.get(**{"mac-address": mac_address})
+            if not leases:
+                leases = lease_res.get(address=ip_address)
+            removed = 0
+            for l in leases:
+                lid = l.get('id') or l.get('.id')
+                if lid:
+                    lease_res.remove(id=lid)
+                    removed += 1
+            results['dhcp_lease'] = (True, f"Removed {removed}" if removed else 'Tidak ada')
+        except Exception as e:
+            results['dhcp_lease'] = (False, str(e))
+
+        # 3) ARP entry (dynamic only)
+        try:
+            arp_res = api.get_resource('/ip/arp')
+            arps = arp_res.get(address=ip_address)
+            removed = 0
+            for a in arps:
+                dynamic = str(a.get('dynamic', '')).lower() in ('true', 'yes', '1')
+                aid = a.get('id') or a.get('.id')
+                if aid and dynamic:
+                    arp_res.remove(id=aid)
+                    removed += 1
+            results['arp'] = (True, f"Removed {removed} dynamic" if removed else 'Tidak ada')
+        except Exception as e:
+            results['arp'] = (False, str(e))
+
+        # 4) Optional: ip-binding by mac
+        if include_binding and mac_address:
+            try:
+                bind_res = api.get_resource('/ip/hotspot/ip-binding')
+                binds = bind_res.get(**{"mac-address": mac_address})
+                removed = 0
+                for b in binds:
+                    bid = b.get('id') or b.get('.id')
+                    if bid:
+                        bind_res.remove(id=bid)
+                        removed += 1
+                results['ip_binding'] = (True, f"Removed {removed}" if removed else 'Tidak ada')
+            except Exception as e:
+                results['ip_binding'] = (False, str(e))
+        elif include_binding:
+            results['ip_binding'] = (True, 'Dilewati (MAC kosong)')
+
+        return results
+    except Exception as e:
+        return {"error": (False, str(e))}

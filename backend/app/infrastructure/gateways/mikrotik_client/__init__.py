@@ -188,3 +188,9 @@ def set_hotspot_user_profile(username: str, new_profile_name: str):
         return _lazy_impl().set_hotspot_user_profile(username, new_profile_name)  # type: ignore
     except Exception as e:
         return False, f"lazy-wrapper error: {e}"
+
+def purge_client_traces(ip_address: str, mac_address: Optional[str] = None, include_binding: bool = False):
+    try:
+        return _lazy_impl().purge_client_traces(ip_address, mac_address, include_binding)  # type: ignore
+    except Exception as e:
+        return {"error": (False, f"lazy-wrapper error: {e}")}

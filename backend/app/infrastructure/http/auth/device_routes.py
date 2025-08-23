@@ -323,6 +323,17 @@ def authorize_device():
     except Exception as e:
         logger.error(f"[AUTHORIZE-DEVICE] MikroTik update failed: {e}")
 
+    # Jika user tidak aktif, pastikan IP langsung dipindahkan ke inactive_client
+    try:
+        from app.infrastructure.gateways.mikrotik_client import move_user_to_inactive_list
+        # Refresh minimal status dari DB
+        db.session.refresh(current_user)
+        if not current_user.is_active:
+            logger.info(f"[AUTHORIZE-DEVICE] User non-aktif, memindahkan {client_ip} ke inactive_client")
+            move_user_to_inactive_list(client_ip, comment)
+    except Exception as e:
+        logger.warning(f"[AUTHORIZE-DEVICE] Gagal memindahkan IP ke inactive_client: {e}")
+
     return jsonify({
         "status": "SUCCESS", 
         "message": "Perangkat berhasil diotorisasi",
