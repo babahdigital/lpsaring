@@ -794,26 +794,28 @@ export const useAuthStore = defineStore('auth', () => {
         }
       }
 
-      if (response?.status === 'DEVICE_AUTHORIZATION_REQUIRED') {
-        console.log('[AUTH-STORE] 🔒 Perangkat baru terdeteksi, memerlukan otorisasi.')
+      // Konsolidasikan status yang membutuhkan otorisasi eksplisit
+      if (response?.status === 'DEVICE_AUTHORIZATION_REQUIRED' || response?.status === 'DEVICE_CHANGED') {
+        console.log(`[AUTH-STORE] 🔒 Perangkat memerlukan otorisasi (Status: ${response?.status}).`)
 
-        // Hanya proses alur otorisasi jika diizinkan oleh pemanggil
+        // Jalankan alur otorisasi hanya jika diizinkan secara eksplisit
         if (allowAuthorizationFlow) {
-          console.log('[AUTH-STORE] ✅ Menampilkan popup otorisasi karena allowAuthorizationFlow=true')
+          console.log('[AUTH-STORE] ✅ Menjalankan alur otorisasi karena allowAuthorizationFlow=true')
           state.value.isNewDeviceDetected = true
           state.value.deviceAuthRequired = true
           state.value.pendingDeviceInfo = response.data?.device_info || {
             ip: state.value.clientIp,
             mac: state.value.clientMac
           }
-          // PERBAIKAN: Set isAuthorizing untuk mencegah infinite loop
           state.value.isAuthorizing = true
         } else {
-          console.log('[AUTH-STORE] ⚠️ Otorisasi perangkat diperlukan, tapi ditunda hingga setelah login (allowAuthorizationFlow=false)')
+          // Tandai terdeteksi agar middleware dapat mengarahkan ke halaman otorisasi dengan aman
+          state.value.isNewDeviceDetected = true
+          console.log('[AUTH-STORE] ⚠️ Otorisasi ditunda (allowAuthorizationFlow=false). isNewDeviceDetected=true, tanpa memicu popup.')
         }
 
         return {
-          status: 'DEVICE_AUTHORIZATION_REQUIRED',
+          status: response.status,
           message: response.message || 'Perangkat memerlukan otorisasi',
           deviceInfo: response.data?.device_info
         }
@@ -828,6 +830,7 @@ export const useAuthStore = defineStore('auth', () => {
         state.value.isNewDeviceDetected = false
         state.value.deviceAuthRequired = false
         state.value.pendingDeviceInfo = null
+        state.value.isAuthorizing = false
       }
       else if (response?.status === 'DEVICE_NOT_FOUND') {
         console.log('[AUTH-STORE] ⚠️ Perangkat tidak ditemukan di jaringan.')

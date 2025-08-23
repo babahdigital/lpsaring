@@ -131,7 +131,8 @@ def sync_device():
     client_mac = detection_result.get('detected_mac')
 
     if not client_ip or not client_mac:
-        return jsonify({"status": "ERROR", "message": "IP/MAC tidak terdeteksi"}), 400
+        # Kembalikan status non-error agar frontend dapat melakukan retry tanpa memicu error handling
+        return jsonify({"status": "DEVICE_NOT_FOUND", "message": "IP/MAC tidak terdeteksi"}), 200
         
     # ✅ Periksa apakah IP atau MAC berubah dibandingkan dengan data terakhir user
     ip_changed = False
@@ -248,9 +249,10 @@ def sync_device():
     list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST', '')
     comment = format_to_local_phone(current_user.phone_number) or ''
 
-    # Perbarui informasi perangkat jika IP berubah
-    if ip_changed and device:
-        # Perbarui IP perangkat yang terkait dengan user ini
+    # Perbarui informasi perangkat jika IP berubah (bandingkan terhadap IP pada device, bukan hanya last_login_ip)
+    ip_changed_device = False
+    if device and device.ip_address != client_ip:
+        ip_changed_device = True
         device.ip_address = client_ip
         device.last_seen_at = db.func.now()
         db.session.commit()
@@ -274,7 +276,7 @@ def sync_device():
                 "sync_status": "success", 
                 "registered": True, 
                 "device_known": True,
-                "ip_updated": ip_changed,
+                "ip_updated": ip_changed_device,
                 "mac_validated": True
             },
             activity="device_sync_success"
@@ -286,7 +288,7 @@ def sync_device():
             "status": "DEVICE_VALID", 
             "message": "Perangkat berhasil tersinkronisasi",
             "registered": True,
-            "ip_updated": ip_changed
+            "ip_updated": ip_changed_device
         }), 200
     except Exception as e:
         # Tangani kesalahan saat sinkronisasi

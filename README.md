@@ -7,6 +7,7 @@ A comprehensive WiFi hotspot management system with user authentication, access 
 Detailed documentation can be found in the [docs](./docs) directory. The key documentation files are:
 
 - [Main Documentation](./docs/README.md) - Starting point and overview of all documentation
+- [End-to-End Stabilization (Aug 2025)](./docs/END_TO_END_STABILIZATION_AUG_2025.md) - Comprehensive summary of fixes and improvements
 - [API Documentation](./docs/API_DOCUMENTATION.md) - Comprehensive API endpoint documentation
 - [Device Authorization](./docs/DEVICE_AUTHORIZATION.md) - Details about the device authorization system
 - [Technical Improvements](./docs/TECHNICAL_IMPROVEMENTS.md) - Performance optimizations and technical enhancements
