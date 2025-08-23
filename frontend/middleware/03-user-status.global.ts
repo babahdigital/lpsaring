@@ -14,7 +14,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
     return
 
   const authStore = useAuthStore()
-  const { isLoggedIn, isAdmin, isBlocked, isQuotaFinished } = authStore
+  const { isLoggedIn, isAdmin, isBlocked, isQuotaFinished, isInactive } = authStore
 
   if (!isLoggedIn || isAdmin)
     return
@@ -33,6 +33,16 @@ export default defineNuxtRouteMiddleware(async (to) => {
     const allowedRoutes = ['/akun/habis', '/beli', '/payment', '/logout', '/captive/habis', '/captive/beli']
     if (!allowedRoutes.some(path => to.path.startsWith(path))) {
       const target = isCaptiveBrowser() ? '/captive/habis' : '/beli'
+      return navigateTo(target, { replace: true })
+    }
+    return
+  }
+
+  // Pengguna non-aktif: arahkan ke halaman info/inactive atau izinkan akses ke pembelian
+  if (isInactive) {
+    const allowedRoutes = ['/akun/inactive', '/beli', '/payment', '/logout']
+    if (!allowedRoutes.some(path => to.path.startsWith(path))) {
+      const target = '/akun/inactive'
       return navigateTo(target, { replace: true })
     }
     return

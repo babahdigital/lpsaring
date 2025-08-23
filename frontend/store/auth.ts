@@ -103,6 +103,8 @@ export const useAuthStore = defineStore('auth', () => {
   const isAdmin = computed(() => user.value?.role === 'ADMIN' || user.value?.role === 'SUPER_ADMIN')
   const isBlocked = computed(() => user.value?.is_blocked ?? false)
   const isQuotaFinished = computed(() => user.value?.is_quota_finished ?? false)
+  // New: consider user inactive when backend marks is_active as false
+  const isInactive = computed(() => user.value?.is_active === false)
   const isNewDeviceDetected = computed(() => state.value.isNewDeviceDetected)
   const isDeviceAuthRequired = computed(() => state.value.deviceAuthRequired)
   const pendingDeviceInfo = computed(() => state.value.pendingDeviceInfo)
@@ -957,6 +959,7 @@ export const useAuthStore = defineStore('auth', () => {
     isSuperAdmin,
     isBlocked,
     isQuotaFinished,
+    isInactive,
     isNewDeviceDetected,
     isDeviceAuthRequired,
     pendingDeviceInfo,

@@ -222,8 +222,8 @@ function handleReject(user: User) {
 
 function handleToggleStatus(user: User) {
   const isCurrentlyActive = user.is_active
-  const actionText = isCurrentlyActive ? 'menonaktifkan (memblokir)' : 'mengaktifkan kembali'
-  const title = isCurrentlyActive ? 'Konfirmasi Blokir Pengguna' : 'Konfirmasi Aktivasi Pengguna'
+  const actionText = isCurrentlyActive ? 'menonaktifkan' : 'mengaktifkan kembali'
+  const title = isCurrentlyActive ? 'Konfirmasi Nonaktifkan Pengguna' : 'Konfirmasi Aktivasi Pengguna'
   const color = isCurrentlyActive ? 'warning' : 'success'
 
   openConfirmDialog({
@@ -239,7 +239,7 @@ function handleToggleStatus(user: User) {
       await performAction(
         `/admin/users/${user.id}`,
         'PUT',
-        'Status pengguna berhasil diperbarui.', // Pesan default jika backend tidak mengirim pesan.
+  'Status pengguna berhasil diperbarui.', // Pesan default jika backend tidak mengirim pesan.
         { body: payload },
         user.id,
       )
@@ -373,9 +373,9 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
           </VChip>
         </template>
         <template #item.is_active="{ item }">
-          <VChip :color="item.is_active ? 'success' : 'error'" size="small" label>
-            <VIcon start :icon="item.is_active ? 'tabler-plug-connected' : 'tabler-plug-connected-x'" />
-            {{ item.is_active ? 'Aktif' : 'Diblokir' }}
+          <VChip :color="item.is_blocked ? 'error' : (item.is_active ? 'success' : 'warning')" size="small" label>
+            <VIcon start :icon="item.is_blocked ? 'tabler-ban' : (item.is_active ? 'tabler-plug-connected' : 'tabler-plug-connected-x')" />
+            {{ item.is_blocked ? 'Diblokir' : (item.is_active ? 'Aktif' : 'Nonaktif') }}
           </VChip>
         </template>
         <template #item.role="{ item }">
@@ -416,9 +416,9 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
                 </VTooltip>
               </VBtn>
               <VBtn v-if="item.id !== authStore.user?.id && (authStore.isSuperAdmin || (authStore.isAdmin && item.role !== 'ADMIN' && item.role !== 'SUPER_ADMIN'))" icon variant="text" :color="item.is_active ? 'warning' : 'success'" size="small" @click="handleToggleStatus(item)">
-                <VIcon :icon="item.is_active ? 'tabler-ban' : 'tabler-circle-check'" />
+                <VIcon :icon="item.is_active ? 'tabler-user-off' : 'tabler-user-check'" />
                 <VTooltip activator="parent">
-                  {{ item.is_active ? 'Blokir (Nonaktifkan) Akun' : 'Aktifkan Kembali Akun' }}
+                  {{ item.is_active ? 'Nonaktifkan Akun' : 'Aktifkan Kembali Akun' }}
                 </VTooltip>
               </VBtn>
               <VBtn v-if="item.id !== authStore.user?.id && (authStore.isSuperAdmin || (authStore.isAdmin && item.role !== 'ADMIN' && item.role !== 'SUPER_ADMIN'))" icon variant="text" color="error" size="small" @click="handleDelete(item)">
@@ -455,9 +455,9 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
                   <small class="text-medium-emphasis">{{ formatPhoneNumberDisplay(user.phone_number) }}</small>
                 </div>
               </div>
-              <VChip :color="user.is_active ? 'success' : 'error'" size="small" label>
-                <VIcon start :icon="user.is_active ? 'tabler-plug-connected' : 'tabler-plug-connected-x'" />
-                {{ user.is_active ? 'Aktif' : 'Diblokir' }}
+              <VChip :color="user.is_blocked ? 'error' : (user.is_active ? 'success' : 'warning')" size="small" label>
+                <VIcon start :icon="user.is_blocked ? 'tabler-ban' : (user.is_active ? 'tabler-plug-connected' : 'tabler-plug-connected-x')" />
+                {{ user.is_blocked ? 'Diblokir' : (user.is_active ? 'Aktif' : 'Nonaktif') }}
               </VChip>
             </div>
           </VCardText>
@@ -480,7 +480,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
                   <VIcon icon="tabler-pencil" />
                 </VBtn>
                 <VBtn v-if="user.id !== authStore.user?.id && (authStore.isSuperAdmin || (authStore.isAdmin && user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN'))" icon variant="text" :color="user.is_active ? 'warning' : 'success'" size="small" @click="handleToggleStatus(user)">
-                  <VIcon :icon="user.is_active ? 'tabler-ban' : 'tabler-circle-check'" />
+                  <VIcon :icon="user.is_active ? 'tabler-user-off' : 'tabler-user-check'" />
                 </VBtn>
                 <VBtn v-if="user.id !== authStore.user?.id && (authStore.isSuperAdmin || (authStore.isAdmin && user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN'))" icon variant="text" color="error" size="small" @click="handleDelete(user)">
                   <VIcon icon="tabler-trash" />

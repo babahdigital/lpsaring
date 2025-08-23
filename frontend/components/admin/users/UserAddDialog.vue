@@ -130,23 +130,6 @@ async function onSave() {
       // [PERBAIKAN] Menggunakan fungsi formatter untuk memastikan konsistensi dengan backend
       payload.phone_number = normalize_to_e164(payload.phone_number)
 
-      // Set profile based on activation status and role - matching backend values
-      if (!payload.is_active) {
-        payload.profile = 'inactive'
-      }
-      else if (payload.role === 'USER') {
-        payload.profile = 'profile-aktif'
-      }
-      else if (payload.role === 'KOMANDAN') {
-        payload.profile = 'komandan'
-      }
-      else if (payload.role === 'ADMIN') {
-        payload.profile = 'unlimited'
-      }
-      else if (payload.role === 'SUPER_ADMIN') {
-        payload.profile = 'support'
-      }
-
       emit('save', payload)
     }
     catch (e: any) {
@@ -183,6 +166,7 @@ function quotaRule(v: any) {
   <VDialog
     :model-value="props.modelValue"
     max-width="700px"
+    :fullscreen="$vuetify.display.smAndDown"
     persistent
     scrollable
     @update:model-value="onClose"
@@ -207,10 +191,7 @@ function quotaRule(v: any) {
           />
         </VCardTitle>
         <VDivider />
-        <VCardText
-          class="pa-5"
-          style="max-height: 70vh;"
-        >
+  <VCardText class="pa-5" style="max-height: 70vh;">
           <VRow>
             <VCol cols="12">
               <AppTextField
@@ -244,14 +225,12 @@ function quotaRule(v: any) {
               />
             </VCol>
 
-            <VCol
-              cols="12"
-            >
+      <VCol cols="12">
               <VDivider class="mb-3" />
               <VSwitch
                 v-model="formData.is_active"
                 color="success"
-                label="User Aktif"
+        label="Akun Aktif"
                 :hint="profileText"
                 persistent-hint
                 prepend-icon="tabler-toggle-right"
@@ -298,10 +277,7 @@ function quotaRule(v: any) {
             </VCol>
 
             <template v-if="showQuotaFields">
-              <VCol
-                cols="12"
-                md="6"
-              >
+              <VCol cols="12" md="6">
                 <AppTextField
                   v-model.number="formData.add_gb"
                   label="Kuota Awal (GB)"
@@ -312,10 +288,7 @@ function quotaRule(v: any) {
                   prepend-inner-icon="tabler-database-plus"
                 />
               </VCol>
-              <VCol
-                cols="12"
-                md="6"
-              >
+              <VCol cols="12" md="6">
                 <AppTextField
                   v-model.number="formData.add_days"
                   label="Masa Aktif Awal (Hari)"
