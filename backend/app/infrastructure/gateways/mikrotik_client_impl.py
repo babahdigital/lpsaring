@@ -727,6 +727,20 @@ def get_host_details_by_mac(mac_address: str) -> Tuple[bool, Optional[Dict[str, 
         return False, None, str(e)
 
 
+def get_host_details_by_username(username: str) -> Tuple[bool, Optional[Dict[str, Any]], str]:
+    """Ambil detail host berdasarkan nama user hotspot (username)."""
+    if not username:
+        return False, None, "Username tidak boleh kosong."
+    try:
+        api = _get_api_from_pool()
+        if api is None:
+            return False, None, "API tidak tersedia."
+        hosts = api.get_resource("/ip/hotspot/host").get(user=username)
+        return True, hosts[0] if hosts else None, "Sukses"
+    except Exception as e:
+        return False, None, str(e)
+
+
 def get_mac_from_dhcp_lease(ip_address: str) -> Tuple[bool, Optional[str], str]:
     if not ip_address:
         return False, None, "IP Address tidak boleh kosong."

@@ -74,6 +74,12 @@ def get_host_details_by_mac(mac_address: str) -> Tuple[bool, Optional[Dict[str, 
     except Exception as e:
         return False, None, f"lazy-wrapper error: {e}"
 
+def get_host_details_by_username(username: str) -> Tuple[bool, Optional[Dict[str, Any]], str]:
+    try:
+        return _lazy_impl().get_host_details_by_username(username)  # type: ignore
+    except Exception as e:
+        return False, None, f"lazy-wrapper error: {e}"
+
 def add_ip_to_address_list(list_name: str, address: str, comment: str = "") -> Tuple[bool, str]:
     try:
         return _lazy_impl().add_ip_to_address_list(list_name, address, comment)  # type: ignore

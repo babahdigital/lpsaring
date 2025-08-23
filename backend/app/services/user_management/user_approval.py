@@ -14,7 +14,12 @@ from .helpers import (
     _log_admin_action, _generate_password, _send_whatsapp_notification,
     _get_active_bonus_registration_promo
 )
-from app.infrastructure.gateways.mikrotik_client import activate_or_update_hotspot_user, move_user_to_inactive_list
+from app.infrastructure.gateways.mikrotik_client import (
+    activate_or_update_hotspot_user,
+    move_user_to_inactive_list,
+    get_host_details_by_username,
+    get_host_details_by_mac,
+)
 # [PERBAIKAN] Pastikan kedua helper di-import dengan benar
 from app.utils.mikrotik_helpers import get_server_for_user, get_profile_for_user
 
@@ -105,15 +110,31 @@ def approve_user_account(user_to_approve: User, admin_actor: User) -> Tuple[bool
     user_to_approve.mikrotik_password = new_mikrotik_password
     user_to_approve.mikrotik_user_exists = True
 
-    # Jika user disetujui tetapi tidak aktif (tanpa kuota awal), pindahkan IP terakhir ke inactive_client list
+    # Jika user disetujui tetapi tidak aktif (tanpa kuota awal), pastikan IP masuk ke inactive_client list
     if not user_gets_initial_quota:
         try:
-            last_ip = user_to_approve.last_login_ip
-            username_comment = mikrotik_username  # biasanya nomor hp lokal, cukup informatif sebagai komentar
-            if last_ip:
-                move_user_to_inactive_list(last_ip, username_comment)
+            target_ip = user_to_approve.last_login_ip
+            username_comment = mikrotik_username
+
+            # Fallback 1: cari host by username di MikroTik
+            if not target_ip:
+                ok, host, _ = get_host_details_by_username(mikrotik_username)
+                if ok and host and host.get('address'):
+                    target_ip = host.get('address')
+
+            # Fallback 2: jika ada MAC terakhir, coba host by MAC
+            last_mac = getattr(user_to_approve, 'last_login_mac', None)
+            if not target_ip and isinstance(last_mac, str) and last_mac:
+                ok, host, _ = get_host_details_by_mac(last_mac)
+                if ok and host and host.get('address'):
+                    target_ip = host.get('address')
+
+            if target_ip:
+                move_user_to_inactive_list(target_ip, username_comment)
             else:
-                current_app.logger.warning(f"[APPROVE USER] Tidak ada last_login_ip untuk user {mikrotik_username}; lewati penambahan ke inactive list")
+                current_app.logger.warning(
+                    f"[APPROVE USER] Tidak ditemukan IP untuk user {mikrotik_username} (belum pernah login/host tidak ada); lewati inactive list untuk sekarang"
+                )
         except Exception as e:
             current_app.logger.warning(f"[APPROVE USER] Gagal memindahkan user ke inactive list: {e}")
     
