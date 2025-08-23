@@ -79,6 +79,8 @@ const regPhoneNumber = ref('')
 const regRole = ref<'USER' | 'KOMANDAN'>('USER')
 const regBlock = ref<string | null>(null)
 const regKamar = ref<string | null>(null)
+// UX: indikator validasi nomor WhatsApp saat memanggil /users/validate-whatsapp
+const isValidatingPhone = ref(false)
 
 const isSubmitting = computed(() => authStore.loading)
 const showAddressFields = computed(() => regRole.value === 'USER')
@@ -154,9 +156,13 @@ function registerPhoneValidationRule(v: string) {
 
     validationTimeout = setTimeout(async () => {
       try {
+  isValidatingPhone.value = true
         const response = await $api('/users/validate-whatsapp', {
           method: 'POST',
           body: { phone_number: normalize_to_e164(v) },
+          // Jangan retry untuk validasi nomor agar tidak menambah beban saat layanan lambat
+          retry: false,
+          retryAttempts: 0,
         })
 
         if (response.isValid) {
@@ -170,6 +176,9 @@ function registerPhoneValidationRule(v: string) {
       catch (error: any) {
         const errorMsg = error.data?.message || 'Gagal memvalidasi nomor.'
         resolve(errorMsg)
+      }
+      finally {
+        isValidatingPhone.value = false
       }
     }, 800)
   })

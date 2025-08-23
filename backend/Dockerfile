@@ -82,4 +82,4 @@ EXPOSE 5010
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD curl -f http://127.0.0.1:5010/healthz || exit 1
  
-CMD ["gunicorn", "--bind", "0.0.0.0:5010", "--workers=2", "--log-level=info", "run:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5010", "--workers=2", "--timeout", "120", "--log-level=info", "run:app"]

@@ -99,6 +99,6 @@ EXPOSE 5010
 
 # Perintah default untuk menjalankan aplikasi
 # Di produksi, gunakan Gunicorn atau ASGI server lainnya.
-CMD ["gunicorn", "--bind", "0.0.0.0:5010", "--workers=4", "--log-level=info", "run:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5010", "--workers=4", "--timeout", "120", "--log-level=info", "run:app"]
 # Hapus atau komentari baris di bawah ini untuk produksi karena ini adalah server pengembangan:
 # CMD ["flask", "run", "--host=0.0.0.0", "--port=5010"]
