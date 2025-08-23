@@ -377,12 +377,14 @@ def register_test_routes(app: Flask):
 def register_commands(app: Flask):
   from .commands.user_cli import user_cli_bp
   from .commands.sync_usage_command import sync_usage_command
-  from .commands.simulation_commands import simulate_sync_device_command, simulate_low_quota_command, simulate_authorize_device_command
+  from .commands.simulation_commands import simulate_sync_device_command, simulate_low_quota_command, simulate_authorize_device_command, simulate_cli
   app.cli.add_command(user_cli_bp)
   app.cli.add_command(sync_usage_command)
   app.cli.add_command(simulate_sync_device_command)
   app.cli.add_command(simulate_authorize_device_command)
   app.cli.add_command(simulate_low_quota_command)
+  # Grup baru: simulate
+  app.cli.add_command(simulate_cli)
 
 def create_app(config_name: str | None = None) -> Flask:
   config_name = config_name or os.getenv('FLASK_CONFIG', 'default')

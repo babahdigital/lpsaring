@@ -50,6 +50,12 @@ def disable_ip_binding_by_comment(comment: str) -> Tuple[bool, str]:
     except Exception as e:
         return False, f"lazy-wrapper error: {e}"
 
+def delete_ip_binding_by_comment(comment: str) -> Tuple[bool, str]:
+    try:
+        return _lazy_impl().delete_ip_binding_by_comment(comment)  # type: ignore
+    except Exception as e:
+        return False, f"lazy-wrapper error: {e}"
+
 def create_or_update_ip_binding(mac_address: str, ip_address: str, comment: str, **kwargs) -> Tuple[bool, str]:
     try:
         return _lazy_impl().create_or_update_ip_binding(mac_address, ip_address, comment, **kwargs)  # type: ignore

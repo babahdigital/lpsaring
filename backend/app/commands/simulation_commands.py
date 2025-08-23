@@ -14,12 +14,264 @@ from app.utils.formatters import normalize_to_e164, format_datetime_to_wita, for
 from app.infrastructure.gateways.mikrotik_client import (
     get_ip_binding_details,
     get_host_details_by_mac,
+    get_host_details_by_username,
     create_or_update_ip_binding,
-    sync_address_list_for_user
+    sync_address_list_for_user,
+    activate_or_update_hotspot_user,
+    ensure_ip_binding_status_matches_profile,
+    move_user_to_inactive_list,
+    purge_user_from_hotspot,
+    get_mikrotik_connection,
+    delete_hotspot_user,
 )
+import app.infrastructure.gateways.mikrotik_client as mk_client
 from app.utils.mikrotik_helpers import determine_target_profile, get_server_for_user
 
 logger = logging.getLogger(__name__)
+
+# ==============================================================================
+# GRUP PERINTAH: simulate
+# ==============================================================================
+
+@click.group('simulate')
+def simulate_cli():
+    """
+    Kumpulan perintah simulasi untuk status pengguna, kuota, dan operasi MikroTik.
+    """
+    pass
+
+# ------------------------------------------------------------------------------
+# simulate user-status
+# ------------------------------------------------------------------------------
+@simulate_cli.command('user-status')
+@click.option('--phone', required=True, help='Nomor telepon pengguna (format 08xx atau +62xx).')
+@click.option('--status', type=click.Choice(['active','inactive','fup','habis','blocked','expired','unlimited'], case_sensitive=False), required=True, help='Status target untuk disimulasikan.')
+@click.option('--push/--no-push', default=True, show_default=True, help='Sinkronkan perubahan ke MikroTik.')
+@with_appcontext
+def simulate_user_status_command(phone: str, status: str, push: bool):
+    """Ubah status pengguna di DB dan (opsional) sinkronkan ke MikroTik."""
+    click.echo(f"===== Simulasi Status Pengguna untuk: {phone} -> {status} =====")
+    try:
+        normalized_phone = normalize_to_e164(phone)
+    except ValueError as e:
+        click.secho(f"Error: {e}", fg='red')
+        return
+
+    user = db.session.scalar(select(User).filter_by(phone_number=normalized_phone))
+    if not user:
+        click.secho(f"Pengguna dengan nomor {normalized_phone} tidak ditemukan.", fg='red')
+        return
+
+    # Simpan status awal untuk log
+    before = {
+        'is_active': user.is_active,
+        'is_blocked': user.is_blocked,
+        'is_unlimited_user': user.is_unlimited_user,
+        'purchased': float(user.total_quota_purchased_mb or 0),
+        'used': float(user.total_quota_used_mb or 0),
+        'expiry': user.quota_expiry_date,
+    }
+
+    # Mutasi sesuai status yang diminta
+    status_l = status.lower()
+    now_utc = dt_module.datetime.now(dt_timezone.utc)
+    if status_l == 'active':
+        user.is_active = True
+        user.is_blocked = False
+        user.is_unlimited_user = False
+        # Jangan ubah kuota/expiry jika tidak perlu
+    elif status_l == 'inactive':
+        user.is_active = False
+        user.is_blocked = False
+        user.is_unlimited_user = False
+    elif status_l == 'blocked':
+        user.is_blocked = True
+    elif status_l == 'expired':
+        user.is_active = True
+        user.is_blocked = False
+        user.is_unlimited_user = False
+        user.quota_expiry_date = now_utc - dt_module.timedelta(days=1)
+    elif status_l == 'unlimited':
+        user.is_active = True
+        user.is_blocked = False
+        user.is_unlimited_user = True
+    elif status_l in ('fup', 'habis'):
+        user.is_active = True
+        user.is_blocked = False
+        user.is_unlimited_user = False
+        # Pastikan punya kuota purchased agar logika status bekerja
+        purchased = float(user.total_quota_purchased_mb or 0)
+        if purchased <= 0:
+            purchased = 10240.0  # 10 GB default
+            user.total_quota_purchased_mb = int(purchased)
+        if status_l == 'habis':
+            user.total_quota_used_mb = purchased  # habis tepat
+        else:  # fup
+            # set ke 90% agar melewati threshold FUP
+            user.total_quota_used_mb = purchased * 0.9
+
+    db.session.commit()
+
+    click.echo("--- Ringkasan Perubahan ---")
+    click.echo(f"Sebelum: {before}")
+    click.echo(f"Sesudah: is_active={user.is_active}, is_blocked={user.is_blocked}, unlimited={user.is_unlimited_user}, purchased={user.total_quota_purchased_mb or 0}, used={user.total_quota_used_mb or 0}, expiry={user.quota_expiry_date}")
+
+    if not push:
+        click.secho("Lewati sinkronisasi MikroTik (--no-push)", fg='yellow')
+        return
+
+    # Sinkronisasi ke MikroTik
+    try:
+        mikrotik_username = format_to_local_phone(user.phone_number)
+        target_profile = determine_target_profile(user)
+        server = get_server_for_user(user)
+
+        # Update hotspot user profile
+        ok, msg = activate_or_update_hotspot_user(
+            mikrotik_username, target_profile, hotspot_password=None, server=server, comment=mikrotik_username
+        )
+        click.echo(f"[hotspot-user] {msg}")
+
+        # Ensure binding disabled sesuai profil (blokir -> disabled)
+        ok2, msg2 = ensure_ip_binding_status_matches_profile(mikrotik_username, target_profile)
+        click.echo(f"[ip-binding] {msg2}")
+
+        # Address list sync (jika IP diketahui)
+        target_ip = user.last_login_ip
+        if not target_ip:
+            # fallback host by username
+            found, host, _ = get_host_details_by_username(mikrotik_username)
+            if found and host:
+                target_ip = host.get('address')
+
+        if target_ip:
+            # Sinkronisasi list menurut profil
+            sync_address_list_for_user(
+                username=mikrotik_username,
+                new_ip_address=target_ip,
+                target_profile_name=target_profile,
+                old_ip_address=None
+            )
+            # Jika status inactive, pindahkan eksplisit ke inactive list
+            if status_l == 'inactive':
+                move_user_to_inactive_list(target_ip, mikrotik_username)
+
+        click.secho("Sinkronisasi MikroTik selesai.", fg='green')
+    except Exception as e:
+        logger.error(f"[simulate user-status] Sync MikroTik gagal: {e}", exc_info=True)
+        click.secho(f"Gagal sinkron ke MikroTik: {e}", fg='red')
+
+# ------------------------------------------------------------------------------
+# simulate user-quota
+# ------------------------------------------------------------------------------
+@simulate_cli.command('user-quota')
+@click.option('--phone', required=True, help='Nomor telepon pengguna (format 08xx atau +62xx).')
+@click.option('--purchase-mb', type=int, help='Set total kuota dibeli (MB).')
+@click.option('--used-mb', type=float, help='Set total kuota terpakai (MB).')
+@click.option('--expire-now', is_flag=True, help='Set masa berlaku menjadi kadaluarsa sekarang.')
+@click.option('--unlimited/--no-unlimited', default=None, help='Set sebagai pengguna unlimited atau bukan.')
+@click.option('--push/--no-push', default=True, show_default=True, help='Sinkronkan perubahan ke MikroTik.')
+@with_appcontext
+def simulate_user_quota_command(phone: str, purchase_mb: int | None, used_mb: float | None, expire_now: bool, unlimited: bool | None, push: bool):
+    """Manipulasi kuota dan masa berlaku pengguna, lalu (opsional) sinkronkan ke MikroTik."""
+    click.echo(f"===== Simulasi Kuota untuk: {phone} =====")
+    try:
+        normalized_phone = normalize_to_e164(phone)
+    except ValueError as e:
+        click.secho(f"Error: {e}", fg='red')
+        return
+
+    user = db.session.scalar(select(User).filter_by(phone_number=normalized_phone))
+    if not user:
+        click.secho(f"Pengguna dengan nomor {normalized_phone} tidak ditemukan.", fg='red')
+        return
+
+    if purchase_mb is not None:
+        user.total_quota_purchased_mb = int(max(0, purchase_mb))
+    if used_mb is not None:
+        user.total_quota_used_mb = float(max(0.0, used_mb))
+    if expire_now:
+        user.quota_expiry_date = dt_module.datetime.now(dt_timezone.utc) - dt_module.timedelta(seconds=1)
+    if unlimited is not None:
+        user.is_unlimited_user = bool(unlimited)
+        # Unlimited implies active
+        if unlimited:
+            user.is_active = True
+
+    db.session.commit()
+
+    if not push:
+        click.secho("Lewati sinkronisasi MikroTik (--no-push)", fg='yellow')
+        return
+
+    try:
+        mikrotik_username = format_to_local_phone(user.phone_number)
+        target_profile = determine_target_profile(user)
+        server = get_server_for_user(user)
+
+        ok, msg = activate_or_update_hotspot_user(
+            mikrotik_username, target_profile, hotspot_password=None, server=server, comment=mikrotik_username
+        )
+        click.echo(f"[hotspot-user] {msg}")
+        ensure_ip_binding_status_matches_profile(mikrotik_username, target_profile)
+
+        target_ip = user.last_login_ip
+        if not target_ip:
+            found, host, _ = get_host_details_by_username(mikrotik_username)
+            if found and host:
+                target_ip = host.get('address')
+        if target_ip:
+            sync_address_list_for_user(
+                username=mikrotik_username,
+                new_ip_address=target_ip,
+                target_profile_name=target_profile,
+                old_ip_address=None
+            )
+        click.secho("Sinkronisasi MikroTik selesai.", fg='green')
+    except Exception as e:
+        logger.error(f"[simulate user-quota] Sync MikroTik gagal: {e}", exc_info=True)
+        click.secho(f"Gagal sinkron ke MikroTik: {e}", fg='red')
+
+# ------------------------------------------------------------------------------
+# simulate remove-user-mikrotik (aman: hanya sesi/host, opsional hapus user/binding)
+# ------------------------------------------------------------------------------
+@simulate_cli.command('remove-user-mikrotik')
+@click.option('--phone', required=True, help='Nomor telepon pengguna (format 08xx atau +62xx).')
+@click.option('--delete-user', is_flag=True, help='Ikut hapus user hotspot dan IP binding (hati-hati).')
+@with_appcontext
+def simulate_remove_user_mikrotik_command(phone: str, delete_user: bool):
+    """Hapus sesi/host aktif user dari MikroTik. Opsional: hapus user & ip-binding."""
+    try:
+        normalized_phone = normalize_to_e164(phone)
+    except ValueError as e:
+        click.secho(f"Error: {e}", fg='red')
+        return
+
+    user = db.session.scalar(select(User).filter_by(phone_number=normalized_phone))
+    if not user:
+        click.secho(f"Pengguna dengan nomor {normalized_phone} tidak ditemukan.", fg='red')
+        return
+
+    mikrotik_username = format_to_local_phone(user.phone_number)
+    click.echo(f"Purging active sessions/hosts for '{mikrotik_username}'...")
+    ok, msg = purge_user_from_hotspot(mikrotik_username)
+    click.echo(f"[purge] {msg}")
+
+    if delete_user:
+        click.echo("Menghapus hotspot user dan IP binding...")
+        try:
+            with get_mikrotik_connection() as api:
+                ok_u, msg_u = delete_hotspot_user(api, mikrotik_username)
+                click.echo(f"[delete-user] {msg_u}")
+            # Hapus IP binding by comment jika tersedia; fallback: disable saja
+            if hasattr(mk_client, 'delete_ip_binding_by_comment'):
+                ok_b, msg_b = mk_client.delete_ip_binding_by_comment(mikrotik_username)  # type: ignore[attr-defined]
+            else:
+                ok_b, msg_b = mk_client.disable_ip_binding_by_comment(mikrotik_username)  # type: ignore[assignment]
+            click.echo(f"[delete-binding] {msg_b}")
+        except Exception as e:
+            click.secho(f"Gagal hapus user/binding: {e}", fg='red')
+
 
 # ==============================================================================
 # [PERINTAH BARU] SIMULASI OTORISASI PERANGKAT BARU
