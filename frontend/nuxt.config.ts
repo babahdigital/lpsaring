@@ -361,6 +361,9 @@ export default defineNuxtConfig({
     internalApiBaseUrl: process.env.NUXT_INTERNAL_API_BASE_URL,
     public: {
       apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL ?? '/api',
+      // Feature flag to control IP source polling plugin that can cause 502s under load
+      // Default: enabled in development, disabled in production unless explicitly overridden
+      enableIpSourcePolling: process.env.NUXT_PUBLIC_ENABLE_IP_SOURCE_POLLING ?? (process.env.NODE_ENV === 'development' ? 'true' : 'false'),
       midtransClientKey: process.env.NUXT_PUBLIC_MIDTRANS_CLIENT_KEY ?? '',
       midtransEnv: process.env.NUXT_PUBLIC_MIDTRANS_ENV ?? 'sandbox',
       mapboxAccessToken: process.env.MAPBOX_ACCESS_TOKEN ?? '',

@@ -58,7 +58,6 @@ def _limit_key_func():
             return f"user:{user.id}"
     except Exception:
         pass
-    # Fallback to remote address via request utils for better proxy handling
     try:
         from app.utils.request_utils import get_client_ip
         ip = get_client_ip()
@@ -115,8 +114,8 @@ def sync_device():
     Jika terdeteksi perubahan IP atau MAC saat token masih valid:
     1. Periksa apakah perangkat baru sudah diotorisasi
     2. Jika belum, minta otorisasi ulang atau logout
-    3. Jika sudah diotorisasi, perbarui data perangkat
     """
+
     # Dapatkan user yang terautentikasi
     current_user = get_current_user()
     if not current_user:
@@ -125,7 +124,7 @@ def sync_device():
     data = request.get_json(silent=True) or {}
     detection_result = ClientDetectionService.get_client_info(
         frontend_ip=(data.get('ip') or data.get('client_ip')),
-        frontend_mac=(data.get('mac') or data.get('client_mac'))
+        frontend_mac=(data.get('mac') or data.get('client_mac')),
     )
     client_ip = detection_result.get('detected_ip')
     client_mac = detection_result.get('detected_mac')
@@ -133,171 +132,109 @@ def sync_device():
     if not client_ip or not client_mac:
         # Kembalikan status non-error agar frontend dapat melakukan retry tanpa memicu error handling
         return jsonify({"status": "DEVICE_NOT_FOUND", "message": "IP/MAC tidak terdeteksi"}), 200
-        
-    # ✅ Periksa apakah IP atau MAC berubah dibandingkan dengan data terakhir user
-    ip_changed = False
-    mac_changed = False
-    
-    # Dapatkan perangkat yang terakhir digunakan user
-    previously_approved_device = None
-    
-    if current_user.last_login_ip and current_user.last_login_ip != client_ip:
-        ip_changed = True
-        logger.info(f"[IP-CHANGED] User {current_user.id} IP changed from {current_user.last_login_ip} to {client_ip}")
-        
-        # Cari perangkat yang sebelumnya disetujui untuk user ini
-        previously_approved_devices = db.session.execute(
-            select(UserDevice)
-            .filter_by(user_id=current_user.id)
-            .filter_by(status='APPROVED')
-        ).scalars().all()
-        
-        for device in previously_approved_devices:
-            if device.mac_address != client_mac:
-                mac_changed = True
-                previously_approved_device = device
-                logger.info(f"[MAC-CHANGED] User {current_user.id} MAC changed from {device.mac_address} to {client_mac}")
-                break
-    
-    # ✅ Jika terdeteksi perubahan IP/MAC, tangani sesuai kebijakan
-    if ip_changed or mac_changed:
-        # Periksa apakah perangkat baru sudah diotorisasi sebelumnya
-        new_device = db.session.execute(select(UserDevice).filter_by(mac_address=client_mac)).scalar_one_or_none()
-        
-        if not new_device or (hasattr(new_device, 'status') and new_device.status != 'APPROVED'):
-            # Perangkat baru belum diotorisasi
-            from app.infrastructure.db.models import DeviceStatus
-            
-            # Catat aktivitas perubahan perangkat
-            activity = "ip_changed" if ip_changed else "mac_changed"
-            if ip_changed and mac_changed:
-                activity = "ip_and_mac_changed"
-                
-            # Hapus IP lama dari bypass list jika MAC berubah (pengguna menggunakan perangkat berbeda)
-            if mac_changed and previously_approved_device:
-                try:
-                    list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST', '')
-                    if list_name:
-                        # Hapus perangkat lama dari daftar bypass
-                        from app.infrastructure.gateways.mikrotik_client import remove_ip_from_address_list
-                        if previously_approved_device.ip_address:
-                            remove_ip_from_address_list(list_name, previously_approved_device.ip_address)
-                            logger.info(f"Removed previous device IP {previously_approved_device.ip_address} from bypass list")
-                except Exception as e:
-                    logger.error(f"Error removing previous IP from bypass list: {e}")
-            
-            # Update session dengan informasi perubahan perangkat
+
+    # LOGIKA DISERDERHANAKAN & LEBIH KUAT
+    from app.infrastructure.db.models import DeviceStatus
+
+    # 1) Perangkat APPROVED untuk user saat ini dengan MAC ini => VALID
+    approved_device = db.session.execute(
+        select(UserDevice).filter_by(user_id=current_user.id, mac_address=client_mac, status='APPROVED')
+    ).scalar_one_or_none()
+
+    if approved_device:
+        ip_updated = False
+        if approved_device.ip_address != client_ip:
+            approved_device.ip_address = client_ip
+            approved_device.last_seen_at = db.func.now()
+            ip_updated = True
+            db.session.commit()
+            logger.info(f"Updated device IP for user {current_user.id} to {client_ip}")
+
+        try:
+            list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST', '')
+            comment = format_to_local_phone(current_user.phone_number) or ''
+            if list_name and comment:
+                find_and_update_address_list_entry(list_name, client_ip, comment)
+                create_static_lease(client_ip, client_mac, comment)
+
+            current_user.last_login_ip = client_ip
+            db.session.commit()
+
             AuthSessionService.update_session(
                 client_ip=client_ip,
                 client_mac=client_mac,
                 updates={
-                    "sync_status": "requires_authorization", 
-                    "registered": False,
-                    "device_changed": True,
-                    "ip_changed": ip_changed,
-                    "mac_changed": mac_changed,
-                    "previous_ip": current_user.last_login_ip or "",
-                    "previous_mac": previously_approved_device.mac_address if previously_approved_device else ""
+                    "sync_status": "success",
+                    "registered": True,
+                    "ip_updated": ip_updated,
+                    "device_known": True,
+                    "mac_validated": True,
                 },
-                activity=f"device_sync_{activity}"
+                activity="device_sync_success_existing_device",
             )
-            
-            # Kembalikan status yang sesuai untuk memaksa otorisasi ulang
+
             return jsonify({
-                "status": "DEVICE_CHANGED",
-                "registered": False,
-                "requires_explicit_authorization": True,
-                "ip_changed": ip_changed,
-                "mac_changed": mac_changed,
-                "message": "Perubahan perangkat terdeteksi. Perangkat baru memerlukan otorisasi.",
-                "data": {
-                    "device_info": {
-                        "mac": client_mac, 
-                        "ip": client_ip, 
-                        "id": str(new_device.id) if new_device else None
-                    }
-                }
+                "status": "DEVICE_VALID",
+                "message": "Perangkat berhasil tersinkronisasi",
+                "registered": True,
+                "ip_updated": ip_updated,
             }), 200
-    
-    # Cek apakah perangkat memerlukan otorisasi
-    # ✅ Selalu periksa, bukan hanya jika REQUIRE_EXPLICIT_DEVICE_AUTH diaktifkan
-    device = db.session.execute(select(UserDevice).filter_by(mac_address=client_mac)).scalar_one_or_none()
-    
-    # Jika device tidak ada atau statusnya bukan APPROVED
-    if not device or (hasattr(device, 'status') and device.status != 'APPROVED'):
-        from app.infrastructure.db.models import DeviceStatus
-        
-        # Catat status sesi
+        except Exception as e:
+            logger.error(f"Error saat sinkronisasi perangkat yang sudah ada: {str(e)}")
+            return jsonify({"status": "ERROR", "message": "Terjadi kesalahan saat sinkronisasi perangkat"}), 500
+
+    # 2) Jika user punya perangkat APPROVED lain tapi MAC saat ini berbeda => DEVICE_CHANGED
+    any_other_approved = db.session.execute(
+        select(UserDevice).filter_by(user_id=current_user.id, status='APPROVED').limit(1)
+    ).scalar_one_or_none()
+
+    # Pastikan ada (atau buat) entri pending untuk MAC saat ini
+    existing_for_user = db.session.execute(
+        select(UserDevice).filter_by(user_id=current_user.id, mac_address=client_mac)
+    ).scalar_one_or_none()
+    if not existing_for_user:
+        pending = UserDevice()
+        pending.user_id = current_user.id
+        pending.mac_address = client_mac.upper()
+        pending.ip_address = client_ip
+        pending.status = DeviceStatus.PENDING
+        pending.device_name = detection_result.get('user_agent', 'Perangkat Tidak Dikenal')
+        db.session.add(pending)
+        db.session.commit()
+        device_id = str(pending.id)
+    else:
+        device_id = str(existing_for_user.id)
+
+    if any_other_approved:
         AuthSessionService.update_session(
             client_ip=client_ip,
             client_mac=client_mac,
-            updates={"sync_status": "requires_authorization", "registered": False},
-            activity="device_sync_requires_explicit_auth"
+            updates={"sync_status": "requires_authorization", "registered": False, "device_changed": True},
+            activity="device_sync_device_changed",
         )
-        
-        # ✅ Kembalikan status yang sesuai untuk memaksa otorisasi atau logout
         return jsonify({
-            "status": "DEVICE_AUTHORIZATION_REQUIRED",
+            "status": "DEVICE_CHANGED",
+            "message": "Perubahan perangkat terdeteksi. Otorisasi ulang diperlukan.",
             "registered": False,
             "requires_explicit_authorization": True,
-            "message": "Perangkat memerlukan otorisasi eksplisit",
-            "data": {"device_info": {"mac": client_mac, "ip": client_ip, "id": str(device.id) if device else None}}
+            "data": {"device_info": {"mac": client_mac, "ip": client_ip, "id": device_id}},
         }), 200
 
-    # ✅ Jika sampai di sini, artinya perangkat sudah diotorisasi dan login berhasil
-    # Lakukan sinkronisasi penuh dengan MikroTik
-    list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST', '')
-    comment = format_to_local_phone(current_user.phone_number) or ''
+    # 3) Tidak ada perangkat APPROVED untuk user ini => perlu otorisasi eksplisit
+    AuthSessionService.update_session(
+        client_ip=client_ip,
+        client_mac=client_mac,
+        updates={"sync_status": "requires_authorization", "registered": False},
+        activity="device_sync_requires_explicit_auth",
+    )
 
-    # Perbarui informasi perangkat jika IP berubah (bandingkan terhadap IP pada device, bukan hanya last_login_ip)
-    ip_changed_device = False
-    if device and device.ip_address != client_ip:
-        ip_changed_device = True
-        device.ip_address = client_ip
-        device.last_seen_at = db.func.now()
-        db.session.commit()
-        logger.info(f"Updated device {device.id} with new IP {client_ip}")
-        
-    try:
-        # Update address list dan DHCP lease di MikroTik
-        if list_name and comment:
-            find_and_update_address_list_entry(list_name, client_ip, comment)
-            create_static_lease(client_ip, client_mac, comment)
-        
-        # Catat IP terakhir user
-        current_user.last_login_ip = client_ip
-        db.session.commit()
-        
-        # Catat aktivitas sinkronisasi berhasil
-        AuthSessionService.update_session(
-            client_ip=client_ip,
-            client_mac=client_mac,
-            updates={
-                "sync_status": "success", 
-                "registered": True, 
-                "device_known": True,
-                "ip_updated": ip_changed_device,
-                "mac_validated": True
-            },
-            activity="device_sync_success"
-        )
-        
-        logger.info(f"Device sync successful for user {current_user.id}, MAC: {client_mac}, IP: {client_ip}")
-        
-        return jsonify({
-            "status": "DEVICE_VALID", 
-            "message": "Perangkat berhasil tersinkronisasi",
-            "registered": True,
-            "ip_updated": ip_changed_device
-        }), 200
-    except Exception as e:
-        # Tangani kesalahan saat sinkronisasi
-        logger.error(f"Error sinkronisasi perangkat: {str(e)}")
-        return jsonify({
-            "status": "ERROR",
-            "message": "Terjadi kesalahan saat sinkronisasi perangkat",
-            "registered": False
-        }), 500
+    return jsonify({
+        "status": "DEVICE_AUTHORIZATION_REQUIRED",
+        "registered": False,
+        "requires_explicit_authorization": True,
+        "message": "Perangkat memerlukan otorisasi eksplisit",
+        "data": {"device_info": {"mac": client_mac, "ip": client_ip, "id": device_id}},
+    }), 200
 
 
 @device_bp.route('/authorize-device', methods=['POST'])

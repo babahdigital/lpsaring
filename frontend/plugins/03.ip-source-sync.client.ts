@@ -11,19 +11,36 @@ export default defineNuxtPlugin((nuxtApp) => {
   if (typeof window === 'undefined')
     return
 
+  const cfg = useRuntimeConfig()
+  const enabled = cfg.public?.enableIpSourcePolling === 'true'
+  if (!enabled) {
+    // Disabled by config (e.g., production). Do a single best-effort sync on first page finish then stop.
+    nuxtApp.hook('page:finish', async () => {
+      try {
+        const auth = useAuthStore()
+        // Trigger one background sync only, without forcing auth flow
+        await auth.syncDevice({ allowAuthorizationFlow: false, force: true })
+      } catch { /* noop */ }
+    })
+    return
+  }
+
   const auth = useAuthStore()
 
   let lastIp: string | null = null
   let lastCheckTs = 0
-  let intervalMs = 15000 // start moderately fast
+  let intervalMs = 30000 // start slower to avoid pressure
   let rateLimitedUntil: number | null = null
+  let errorBackoffUntil: number | null = null
 
   function scheduleNextTick(adjust?: 'faster' | 'slower' | 'default') {
     if (adjust === 'faster')
-      intervalMs = Math.max(5000, Math.floor(intervalMs * 0.75))
+      intervalMs = Math.max(10000, Math.floor(intervalMs * 0.8))
     else if (adjust === 'slower')
-      intervalMs = Math.min(60000, Math.floor(intervalMs * 1.5))
-    return intervalMs
+      intervalMs = Math.min(120000, Math.floor(intervalMs * 1.4))
+    // add small jitter to avoid thundering herd
+    const jitter = Math.floor(Math.random() * 1500)
+    return intervalMs + jitter
   }
 
   async function checkIpOnce(reason: string) {
@@ -34,8 +51,8 @@ export default defineNuxtPlugin((nuxtApp) => {
         return
       lastCheckTs = now
 
-      // Respect backoff if previously rate limited
-      if (rateLimitedUntil && now < rateLimitedUntil) {
+      // Respect backoff if previously rate limited or error backoff
+      if ((rateLimitedUntil && now < rateLimitedUntil) || (errorBackoffUntil && now < errorBackoffUntil)) {
         return
       }
 
@@ -53,14 +70,20 @@ export default defineNuxtPlugin((nuxtApp) => {
       const resp = await fetch(`/api/debug/ip-source?_cb=${now}`, { cache: 'no-store', headers })
       if (resp.status === 429) {
         // Exponential backoff up to 60s
-        intervalMs = Math.min(Math.floor(intervalMs * 2), 60000)
-        rateLimitedUntil = Date.now() + Math.max(intervalMs, 5000)
+        intervalMs = Math.min(Math.floor(intervalMs * 2), 120000)
+        rateLimitedUntil = Date.now() + Math.max(intervalMs, 10000)
         // schedule slower next
         scheduleNextTick('slower')
         return
       }
-      if (!resp.ok)
+      if (!resp.ok) {
+        // Slow down aggressively on gateway errors to reduce pressure
+        if (resp.status >= 500) {
+          intervalMs = Math.min(Math.floor(intervalMs * 2), 120000)
+          errorBackoffUntil = Date.now() + Math.max(intervalMs, 15000)
+        }
         return
+      }
       const data = await resp.json().catch(() => ({}))
       const serverIp: string | null = (data && typeof data.ip === 'string') ? data.ip : null
       if (!serverIp)
@@ -80,7 +103,7 @@ export default defineNuxtPlugin((nuxtApp) => {
         // Trigger a background sync to update bypass/lease with new IP
         try { await auth.syncDevice() }
         catch { /* ignore */ }
-        // After IP change, keep faster cadence briefly
+        // After IP change, keep slightly faster cadence briefly
         scheduleNextTick('faster')
         rateLimitedUntil = null
       }
