@@ -128,6 +128,8 @@ def sync_device():
     )
     client_ip = detection_result.get('detected_ip')
     client_mac = detection_result.get('detected_mac')
+    if client_mac:
+        client_mac = client_mac.upper()
 
     if not client_ip or not client_mac:
         # Kembalikan status non-error agar frontend dapat melakukan retry tanpa memicu error handling
@@ -138,7 +140,7 @@ def sync_device():
 
     # 1) Perangkat APPROVED untuk user saat ini dengan MAC ini => VALID
     approved_device = db.session.execute(
-        select(UserDevice).filter_by(user_id=current_user.id, mac_address=client_mac, status='APPROVED')
+        select(UserDevice).filter_by(user_id=current_user.id, mac_address=client_mac, status=DeviceStatus.APPROVED)
     ).scalar_one_or_none()
 
     if approved_device:
@@ -185,7 +187,7 @@ def sync_device():
 
     # 2) Jika user punya perangkat APPROVED lain tapi MAC saat ini berbeda => DEVICE_CHANGED
     any_other_approved = db.session.execute(
-        select(UserDevice).filter_by(user_id=current_user.id, status='APPROVED').limit(1)
+        select(UserDevice).filter_by(user_id=current_user.id, status=DeviceStatus.APPROVED).limit(1)
     ).scalar_one_or_none()
 
     # Pastikan ada (atau buat) entri pending untuk MAC saat ini
