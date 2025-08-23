@@ -1286,6 +1286,23 @@ def remove_ip_from_address_list(list_name: str, address: str) -> Tuple[bool, str
         return False, str(e)
 
 
+def remove_ip_from_all_address_lists(address: str) -> Tuple[bool, str]:
+    """Hapus semua entri address-list untuk IP tertentu (lintas list)."""
+    try:
+        api = _get_api_from_pool()
+        if api is None:
+            return False, 'API tidak tersedia.'
+        res = api.get_resource('/ip/firewall/address-list')
+        entries = res.get(address=address)
+        removed = 0
+        for entry in entries:
+            if eid := _get_item_id(entry):
+                res.remove(id=eid)
+                removed += 1
+        return True, f'Removed {removed}' if removed else 'Tidak ada'
+    except Exception as e:
+        return False, str(e)
+
 def move_user_to_inactive_list(user_ip: str, comment: str) -> Tuple[bool, str]:
     """
     Memindahkan IP pengguna dari daftar bypass ke daftar inactive.
