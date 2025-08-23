@@ -1,221 +1,236 @@
-// pages/akun/otorisasi-perangkat.vue atau pages/otorisasi-perangkat.vue
-
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
-
-import { useClientDetection } from '~/composables/useClientDetection'
+import { computed, onMounted, ref } from 'vue'
+import { navigateTo, useNuxtApp } from '#app'
 import { useAuthStore } from '~/store/auth'
+import { useSnackbar } from '~/composables/useSnackbar'
+import type { DeviceInfo } from '~/types/auth'
 
-// Meta
+// Meta dan Layout
 definePageMeta({
+  title: 'Otorisasi Perangkat Baru',
+  layout: 'blank', // Menggunakan layout 'blank' lebih cocok untuk halaman fokus seperti ini
+  // Gunakan middleware bernama 'device-auth' untuk memastikan akses yang benar
+  middleware: ['device-auth'],
+})
+
+useHead({
   title: 'Otorisasi Perangkat',
-  requiresAuth: true,
-  layout: 'default',
 })
 
 // Composables
 const authStore = useAuthStore()
-const { detectionResult, triggerDetection } = useClientDetection() // [PERBAIKAN] Menggunakan triggerDetection dan detectionResult
+const { add: addSnackbar } = useSnackbar()
+const { $api } = useNuxtApp()
 const router = useRouter()
 
-// State
-// [PERBAIKAN] Menggunakan computed property dari composable untuk data yang lebih konsisten
-const detectedInfo = computed(() => {
-  const summary = detectionResult.value?.summary
-  if (!summary)
-    return { ip: null, mac: null, accessMode: null }
+// State Lokal
+const isLoading = ref(true)
+const deviceInfo = ref<DeviceInfo | null>(null)
 
+// Computed property untuk menampilkan informasi perangkat
+const displayedInfo = computed(() => {
+  const info = deviceInfo.value || authStore.pendingDeviceInfo
   return {
-    ip: summary.detected_ip,
-    mac: summary.detected_mac,
-    accessMode: summary.access_mode,
+    ip: info?.ip || 'Tidak terdeteksi',
+    mac: info?.mac || 'Tidak terdeteksi',
+    userAgent: info?.user_agent || 'Tidak tersedia',
   }
 })
 
-// Methods
-async function handleAuthorizeDevice() {
+// Fungsi untuk mengambil informasi perangkat jika belum ada
+async function fetchPendingDevice() {
+  isLoading.value = true
   try {
-    const success = await authStore.authorizeDevice()
-    if (success) {
-      // Redirect to device management page after successful authorization
-      await router.push('/akun/perangkat')
+    // Jika state sudah ada, gunakan itu
+    if (authStore.pendingDeviceInfo) {
+      deviceInfo.value = authStore.pendingDeviceInfo
+      return
+    }
+
+    // Jika tidak ada, coba ambil dari backend
+    const response = await $api<{ status: string, data: { device_info: DeviceInfo } }>('/auth/pending-device')
+    if (response.status === 'SUCCESS' && response.data?.device_info) {
+      deviceInfo.value = response.data.device_info
+      // Simpan juga ke store untuk konsistensi
+      authStore.setDeviceAuthRequired(true, response.data.device_info)
+    }
+    else {
+      addSnackbar({
+        title: 'Info',
+        text: 'Tidak ada perangkat yang menunggu otorisasi. Mengarahkan Anda kembali...',
+        type: 'info',
+      })
+      await navigateTo('/dashboard', { replace: true })
     }
   }
   catch (error) {
-    console.error('[DEVICE-AUTH] Authorization failed:', error)
-  }
-}
-
-async function handleLogout() {
-  try {
+    console.error('Gagal mengambil info perangkat:', error)
+    addSnackbar({
+      title: 'Error',
+      text: 'Gagal memuat informasi perangkat. Silakan coba login kembali.',
+      type: 'error',
+    })
     await authStore.logout()
-    await router.push('/login')
   }
-  catch (error) {
-    console.error('[DEVICE-AUTH] Logout failed:', error)
+  finally {
+    isLoading.value = false
   }
 }
 
-// Lifecycle
-onMounted(async () => {
-  console.log('[DEVICE-AUTH-PAGE] Mounted, ensuring client info is detected...')
+// Handler untuk tombol otorisasi
+async function handleAuthorizeDevice() {
+  const success = await authStore.authorizeDevice()
+  if (success) {
+    addSnackbar({
+      title: 'Berhasil',
+      text: 'Perangkat Anda telah berhasil diotorisasi.',
+      type: 'success',
+    })
+    await navigateTo('/dashboard', { replace: true })
+  }
+}
 
-  try {
-    // [PERBAIKAN] Memanggil triggerDetection jika data belum ada, untuk memastikan data selalu termuat.
-    if (!detectedInfo.value.ip && !detectedInfo.value.mac) {
-      await triggerDetection()
-    }
-    console.log('[DEVICE-AUTH-PAGE] Client detection completed:', detectedInfo.value)
-  }
-  catch (error) {
-    console.error('[DEVICE-AUTH-PAGE] Client detection failed:', error)
-    // Anda bisa menambahkan snackbar error di sini jika diperlukan
-  }
+// Handler untuk tombol tolak
+async function handleRejectDevice() {
+  // `rejectDeviceAuthorization` akan menangani proses logout secara otomatis
+  await authStore.rejectDeviceAuthorization()
+}
+
+// Lifecycle Hook
+onMounted(() => {
+  fetchPendingDevice()
 })
 </script>
 
 <template>
-  <div class="d-flex flex-column">
-    <VCard class="mb-6">
-      <VCardTitle class="pb-4">
-        <VIcon icon="tabler-device-mobile" class="me-2" />
-        Otorisasi Perangkat Baru
-      </VCardTitle>
-      <VCardText>
+  <div class="d-flex align-center justify-center pa-4 h-100">
+    <VCard
+      class="auth-card pa-4 pt-7"
+      max-width="600"
+    >
+      <VCardItem class="justify-center">
+        <VCardTitle class="font-weight-bold text-h5">
+          <VIcon
+            icon="tabler-device-mobile-question"
+            class="me-2"
+          />
+          Otorisasi Perangkat Baru
+        </VCardTitle>
+      </VCardItem>
+
+      <VCardText class="pt-2">
+        <p class="mb-6 text-center">
+          Kami mendeteksi Anda masuk dari perangkat atau browser yang belum pernah terdaftar. Untuk keamanan akun, silakan konfirmasi tindakan ini.
+        </p>
+
         <VAlert
+          v-if="!isLoading"
           color="warning"
           variant="tonal"
-          icon="tabler-alert-triangle"
-          class="mb-4"
+          class="mb-6"
         >
-          <VAlertTitle>Perangkat Baru Terdeteksi</VAlertTitle>
-          <div class="mt-2">
-            Kami mendeteksi bahwa Anda menggunakan perangkat yang belum terdaftar.
-            Untuk keamanan akun Anda, silakan otorisasi perangkat ini terlebih dahulu.
-          </div>
+          <VAlertTitle class="mb-2">
+            Detail Perangkat Terdeteksi
+          </VAlertTitle>
+          <VList
+            density="compact"
+            class="bg-transparent"
+          >
+            <VListItem>
+              <template #prepend>
+                <VIcon
+                  icon="tabler-network"
+                  size="20"
+                  class="me-2"
+                />
+              </template>
+              <VListItemTitle class="text-caption">
+                <strong>Alamat IP:</strong> {{ displayedInfo.ip }}
+              </VListItemTitle>
+            </VListItem>
+            <VListItem>
+              <template #prepend>
+                <VIcon
+                  icon="tabler-fingerprint"
+                  size="20"
+                  class="me-2"
+                />
+              </template>
+              <VListItemTitle class="text-caption">
+                <strong>Alamat MAC:</strong> {{ displayedInfo.mac }}
+              </VListItemTitle>
+            </VListItem>
+            <VListItem>
+              <template #prepend>
+                <VIcon
+                  icon="tabler-browser"
+                  size="20"
+                  class="me-2"
+                />
+              </template>
+              <VListItemTitle class="text-caption">
+                <strong>Browser:</strong> {{ displayedInfo.userAgent }}
+              </VListItemTitle>
+            </VListItem>
+          </VList>
         </VAlert>
 
-        <div v-if="detectedInfo.ip || detectedInfo.mac" class="mb-4">
-          <h6 class="text-h6 mb-3">Informasi Perangkat:</h6>
-          <VChip
-            v-if="detectedInfo.ip"
+        <div
+          v-if="isLoading"
+          class="text-center"
+        >
+          <VProgressCircular
+            indeterminate
             color="primary"
-            variant="tonal"
-            class="me-2 mb-2"
-          >
-            <VIcon icon="tabler-world" start />
-            IP: {{ detectedInfo.ip }}
-          </VChip>
-          <VChip
-            v-if="detectedInfo.mac"
-            color="success"
-            variant="tonal"
-            class="me-2 mb-2"
-          >
-            <VIcon icon="tabler-device-mobile" start />
-            MAC: {{ detectedInfo.mac }}
-          </VChip>
+            class="mb-4"
+          />
+          <p>Memuat informasi perangkat...</p>
         </div>
+
         <div v-else>
-          <VSkeletonLoader type="text@2" />
+          <p class="mb-4 text-body-2">
+            Apakah Anda mengenali perangkat ini dan ingin menambahkannya ke akun Anda?
+          </p>
+
+          <VBtn
+            block
+            color="success"
+            size="large"
+            class="mb-3"
+            :loading="authStore.loading"
+            @click="handleAuthorizeDevice"
+          >
+            <VIcon
+              icon="tabler-circle-check"
+              class="me-2"
+            />
+            Ya, Ini Perangkat Saya
+          </VBtn>
+
+          <VBtn
+            block
+            color="error"
+            variant="outlined"
+            size="large"
+            :loading="authStore.loading"
+            @click="handleRejectDevice"
+          >
+            <VIcon
+              icon="tabler-logout"
+              class="me-2"
+            />
+            Bukan, Tolak & Logout
+          </VBtn>
         </div>
       </VCardText>
     </VCard>
-
-    <VCard>
-      <VCardTitle>Pilihan Otorisasi</VCardTitle>
-      <VCardText>
-        <VRow>
-          <VCol cols="12" md="6">
-            <VCard
-              variant="outlined"
-              class="h-100"
-              :class="{ 'border-primary': !authStore.loading }"
-            >
-              <VCardTitle class="text-success">
-                <VIcon icon="tabler-check-circle" class="me-2" />
-                Daftarkan Perangkat Ini
-              </VCardTitle>
-              <VCardText>
-                Jika ini adalah perangkat Anda yang sah, klik tombol di bawah untuk mendaftarkannya.
-                Setelah didaftarkan, Anda dapat menggunakan perangkat ini untuk mengakses akun.
-              </VCardText>
-              <VCardActions>
-                <VBtn
-                  color="success"
-                  variant="flat"
-                  :loading="authStore.loading"
-                  :disabled="authStore.loading"
-                  @click="handleAuthorizeDevice"
-                >
-                  <VIcon icon="tabler-plus" start />
-                  Daftarkan Perangkat
-                </VBtn>
-              </VCardActions>
-            </VCard>
-          </VCol>
-
-          <VCol cols="12" md="6">
-            <VCard
-              variant="outlined"
-              class="h-100"
-              :class="{ 'border-error': !authStore.loading }"
-            >
-              <VCardTitle class="text-error">
-                <VIcon icon="tabler-logout" class="me-2" />
-                Logout dari Akun
-              </VCardTitle>
-              <VCardText>
-                Jika ini bukan perangkat Anda atau Anda tidak ingin mendaftarkannya,
-                logout dari akun untuk keamanan.
-              </VCardText>
-              <VCardActions>
-                <VBtn
-                  color="error"
-                  variant="outlined"
-                  :disabled="authStore.loading"
-                  @click="handleLogout"
-                >
-                  <VIcon icon="tabler-logout" start />
-                  Logout Sekarang
-                </VBtn>
-              </VCardActions>
-            </VCard>
-          </VCol>
-        </VRow>
-      </VCardText>
-    </VCard>
-
-    <VAlert
-      v-if="authStore.message"
-      color="success"
-      variant="tonal"
-      class="mt-4"
-      closable
-      @click:close="authStore.clearMessage()"
-    >
-      {{ authStore.message }}
-    </VAlert>
-
-    <VAlert
-      v-if="authStore.error"
-      color="error"
-      variant="tonal"
-      class="mt-4"
-      closable
-      @click:close="authStore.clearError()"
-    >
-      {{ authStore.error }}
-    </VAlert>
   </div>
 </template>
 
-<style scoped>
-.border-primary {
-  border-color: rgb(var(--v-theme-primary)) !important;
-}
-
-.border-error {
-  border-color: rgb(var(--v-theme-error)) !important;
+<style lang="scss">
+.auth-card {
+  .v-card-item {
+    padding-bottom: 0;
+  }
 }
 </style>

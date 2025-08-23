@@ -73,15 +73,21 @@ export default defineNuxtRouteMiddleware(async (to) => {
     }
   }
 
-  // 3. PEMBERSIHAN FINAL UNTUK PENGGUNA NORMAL
-  // Hanya alihkan dari halaman status versi non-captive ke dashboard.
-  // Jangan ganggu halaman captive agar UX portal berjalan benar.
-  const nonCaptiveStatusPages = [
-    '/akun/blokir',
-    '/akun/habis',
-    '/akun/otorisasi-perangkat',
-  ]
-  if (nonCaptiveStatusPages.some(path => to.path.startsWith(path))) {
-    return navigateTo('/dashboard', { replace: true })
+  // 3. PEMBERSIHAN FINAL UNTUK PENGGUNA NORMAL (tanpa menyebabkan loop)
+  // Jangan pernah memaksa redirect dari halaman otorisasi perangkat saat otorisasi masih diperlukan.
+  if (to.path.startsWith('/akun/otorisasi-perangkat')) {
+    if (!authStore.isDeviceAuthRequired && !authStore.isNewDeviceDetected) {
+      // Otorisasi sudah selesai, barulah kembalikan ke dashboard
+      return navigateTo('/dashboard', { replace: true })
+    }
+    return // tetap di halaman otorisasi
+  }
+
+  // Untuk halaman status lain (blokir/habis), arahkan ke tujuan yang sesuai bila perlu.
+  if (to.path.startsWith('/akun/blokir')) {
+    if (!isBlocked) return navigateTo('/dashboard', { replace: true })
+  }
+  if (to.path.startsWith('/akun/habis')) {
+    if (!isQuotaFinished) return navigateTo('/dashboard', { replace: true })
   }
 })

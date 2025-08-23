@@ -37,19 +37,22 @@ const isDetectionComplete = ref(false)
 onMounted(async () => {
   if (import.meta.client) {
     try {
-      const result = await forceDetection()
-
-      if (result?.summary) {
-        isDetectionComplete.value = true
-
-        if (result.summary.user_guidance && !result.summary.mac_detected) {
-          addSnackbar({
-            title: 'Info Deteksi',
-            text: result.summary.user_guidance,
-            color: 'info',
-            timeout: 5000,
-          })
+      // Jalankan deteksi hanya jika MAC belum diketahui untuk menghindari duplikasi
+      if (!authStore.clientMac) {
+        const result = await forceDetection()
+        if (result?.summary) {
+          isDetectionComplete.value = true
+          if (result.summary.user_guidance && !result.summary.mac_detected) {
+            addSnackbar({
+              title: 'Info Deteksi',
+              text: result.summary.user_guidance,
+              color: 'info',
+              timeout: 5000,
+            })
+          }
         }
+      } else {
+        isDetectionComplete.value = true
       }
     }
     catch (_error) {
@@ -68,6 +71,8 @@ const otpSent = ref(false)
 const phoneNumber = ref('')
 const otpCode = ref('')
 const otpInputRef = ref<InstanceType<typeof VOtpInput> | null>(null)
+// Guard lokal untuk mencegah submit ganda (event finish + submit form)
+const isVerifyingOtp = ref(false)
 const registerFormRef = ref<InstanceType<typeof VForm> | null>(null)
 const regName = ref('')
 const regPhoneNumber = ref('')
@@ -208,8 +213,9 @@ async function handleRequestOtp() {
 }
 
 async function handleVerifyOtp() {
-  if (otpCode.value.length !== 6 || isSubmitting.value)
+  if (otpCode.value.length !== 6 || isSubmitting.value || isVerifyingOtp.value)
     return
+  isVerifyingOtp.value = true
 
   try {
     const numberToVerify = normalize_to_e164(phoneNumber.value)
@@ -260,6 +266,9 @@ async function handleVerifyOtp() {
     })
     otpCode.value = ''
     await tryFocus(otpInputRef.value)
+  }
+  finally {
+    isVerifyingOtp.value = false
   }
 }
 
