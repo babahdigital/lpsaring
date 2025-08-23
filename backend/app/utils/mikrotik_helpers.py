@@ -115,15 +115,8 @@ def get_server_for_user(user: User) -> str:
 def determine_target_profile(user: User) -> str:
     """
     Satu-satunya fungsi yang menentukan profil user di MikroTik berdasarkan semua kondisi.
-    Fungsi ini sekarang HANYA berisi logika produksi dengan presisi yang ditingkatkan.
+    Logika ini berlaku konsisten untuk mode produksi maupun testing.
     """
-    # Check if test mode is enabled - use standard profile for test mode
-    is_test_mode = current_app.config.get('SYNC_TEST_MODE_ENABLED', False)
-    if is_test_mode:
-        current_app.logger.info(f"[TEST MODE] Determine profile for {getattr(user, 'full_name', None)}")
-        # Gunakan profil standard untuk test mode
-        return current_app.config['MIKROTIK_PROFILE_AKTIF']
-    
     now_utc = datetime.now(dt_tz.utc)
     
     # --- [PERBAIKAN LOGIKA PRIORITAS DI SINI] ---
