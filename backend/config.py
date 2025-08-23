@@ -230,6 +230,8 @@ class Config:
     MIKROTIK_HABIS_ADDRESS_LIST = os.environ.get('MIKROTIK_HABIS_ADDRESS_LIST', 'klient_habis')
     MIKROTIK_BLOKIR_ADDRESS_LIST = os.environ.get('MIKROTIK_BLOKIR_ADDRESS_LIST', 'klient_blokir')
     MIKROTIK_BYPASS_ADDRESS_LIST = os.environ.get('MIKROTIK_BYPASS_ADDRESS_LIST', 'bypass_client')
+    # Address list untuk pengguna tidak aktif (tanpa paket/masa aktif habis)
+    MIKROTIK_INACTIVE_ADDRESS_LIST = os.environ.get('MIKROTIK_INACTIVE_ADDRESS_LIST', 'inactive_client')
     MIKROTIK_DHCP_SERVER_NAME = os.environ.get('MIKROTIK_DHCP_SERVER_NAME', None)
     ENABLE_IP_BINDING_LEGACY = get_env_bool('ENABLE_IP_BINDING_LEGACY', 'False')
     REQUIRE_EXPLICIT_DEVICE_AUTH = get_env_bool('REQUIRE_EXPLICIT_DEVICE_AUTH', 'True')

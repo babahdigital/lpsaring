@@ -86,6 +86,12 @@ def remove_ip_from_address_list(list_name: str, address: str) -> Tuple[bool, str
     except Exception as e:
         return False, f"lazy-wrapper error: {e}"
 
+def move_user_to_inactive_list(user_ip: str, comment: str) -> Tuple[bool, str]:
+    try:
+        return _lazy_impl().move_user_to_inactive_list(user_ip, comment)  # type: ignore
+    except Exception as e:
+        return False, f"lazy-wrapper error: {e}"
+
 def find_and_update_address_list_entry(list_name: str, address: str,
                                        new_comment: Optional[str] = None) -> Tuple[bool, str]:
     try:

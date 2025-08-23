@@ -633,71 +633,64 @@ def create_static_lease(ip: str, mac: str, comment: str) -> Tuple[bool, str]:
 
 
 def purge_user_from_hotspot(username: str) -> Tuple[bool, str]:
+    """
+    Hapus hanya sesi aktif Hotspot untuk username yang diberikan.
+    Jangan menghapus profil user (/ip/hotspot/user) maupun ip-binding.
+    """
     try:
         api = _get_api_from_pool()
         if api is None:
             return False, "API tidak tersedia."
         messages: List[str] = []
-        
+
         # Track IP and MAC info for cache invalidation
         ip_to_invalidate = None
         mac_to_invalidate = None
-        
-        # active
+
+        # 1) Remove active hotspot sessions only
         active = api.get_resource("/ip/hotspot/active").get(user=username)
-        if active and (sid := _get_item_id(active[0])):
-            # Track IP and MAC before removing
-            if active and len(active) > 0:
-                ip_to_invalidate = active[0].get("address")
-                mac_to_invalidate = active[0].get("mac-address")
-            api.get_resource("/ip/hotspot/active").remove(id=sid)
-            messages.append("Active session removed")
-            
-        # binding -> host -> user cleanup
-        if bindings := api.get_resource("/ip/hotspot/ip-binding").get(comment=username):
-            b = bindings[0]
-            mac = b.get("mac-address")
-            ip = b.get("address")
-            if ip and not ip_to_invalidate:
-                ip_to_invalidate = ip
-            if mac and not mac_to_invalidate:
-                mac_to_invalidate = mac
-                
-            b_id = _get_item_id(b)
-            if mac:
-                hosts = api.get_resource("/ip/hotspot/host").get(**{"mac-address": mac})
-                if hosts and (hid := _get_item_id(hosts[0])):
-                    # Get IP from host if we didn't get it from binding
-                    if not ip_to_invalidate and hosts and len(hosts) > 0:
-                        ip_to_invalidate = hosts[0].get("address")
-                    api.get_resource("/ip/hotspot/host").remove(id=hid)
-                    messages.append("Host removed")
-            if b_id:
-                api.get_resource("/ip/hotspot/ip-binding").remove(id=b_id)
-                messages.append("Binding removed")
-                
-        if users := api.get_resource("/ip/hotspot/user").get(name=username):
-            if uid := _get_item_id(users[0]):
-                api.get_resource("/ip/hotspot/user").remove(id=uid)
-                messages.append("User removed")
-                
+        if active:
+            for sess in active:
+                if ip_to_invalidate is None:
+                    ip_to_invalidate = sess.get("address")
+                if mac_to_invalidate is None:
+                    mac_to_invalidate = sess.get("mac-address")
+                if sid := _get_item_id(sess):
+                    api.get_resource("/ip/hotspot/active").remove(id=sid)
+                    messages.append("Active session removed")
+
+        # 2) Optionally cleanup host entries tied to MAC (do not remove ip-binding)
+        try:
+            # Try to fetch host by last known MAC from active sessions
+            mac_lookup = mac_to_invalidate
+            if mac_lookup:
+                hosts = api.get_resource("/ip/hotspot/host").get(**{"mac-address": mac_lookup})
+                for host in hosts or []:
+                    if not ip_to_invalidate:
+                        ip_to_invalidate = host.get("address")
+                    if hid := _get_item_id(host):
+                        api.get_resource("/ip/hotspot/host").remove(id=hid)
+                        messages.append("Host removed")
+        except Exception:
+            pass
+
+        # 3) Do NOT delete hotspot user profile or ip-binding entries here.
+
         # Invalidate caches for this user's IP and MAC if found
         try:
             if ip_to_invalidate or mac_to_invalidate:
                 from app.infrastructure.gateways.mikrotik_cache import invalidate_ip_cache
                 from app.services.client_detection_service import ClientDetectionService
-                
+
                 if ip_to_invalidate:
-                    # Invalidate MikroTik cache
                     invalidate_ip_cache(ip_to_invalidate)
-                    # Invalidate detection service cache
                     ClientDetectionService.clear_cache(ip_to_invalidate, mac_to_invalidate)
                     messages.append(f"Caches cleared for IP {ip_to_invalidate}")
         except Exception as ce:
             logger.warning(f"Cache invalidation during purge failed: {ce}")
-            
+
         if not messages:
-            return True, f"Tidak ada jejak untuk {username}"
+            return True, f"Tidak ada sesi aktif untuk {username}"
         return True, "; ".join(messages)
     except Exception as e:
         return False, str(e)
@@ -1278,6 +1271,36 @@ def remove_ip_from_address_list(list_name: str, address: str) -> Tuple[bool, str
     except Exception as e:
         return False, str(e)
 
+
+def move_user_to_inactive_list(user_ip: str, comment: str) -> Tuple[bool, str]:
+    """
+    Memindahkan IP pengguna dari daftar bypass ke daftar inactive.
+    - Hapus IP dari address list bypass (jika ada)
+    - Tambahkan IP ke address list inactive dengan komentar (biasanya username/nomor hp)
+    """
+    try:
+        if not user_ip:
+            return False, "IP kosong"
+        inactive_list = current_app.config.get('MIKROTIK_INACTIVE_ADDRESS_LIST', 'inactive_client')
+        bypass_list = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST', 'bypass_client')
+
+        # Hapus dari bypass terlebih dahulu (best-effort)
+        try:
+            remove_ip_from_address_list(bypass_list, user_ip)
+        except Exception:
+            pass
+
+        # Tambahkan ke inactive
+        ok, msg = add_ip_to_address_list(inactive_list, user_ip, comment or '')
+
+        # Invalidate cache untuk IP tersebut agar deteksi ulang berjalan benar
+        try:
+            invalidate_ip_cache(user_ip)
+        except Exception:
+            pass
+        return ok, msg
+    except Exception as e:
+        return False, str(e)
 
 # ---------------------------------------------------------------------------
 # Legacy helpers referenced by CLI commands
