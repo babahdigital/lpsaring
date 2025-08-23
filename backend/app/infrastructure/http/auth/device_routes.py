@@ -145,6 +145,7 @@ def sync_device():
 
     if approved_device:
         ip_updated = False
+        old_ip = approved_device.ip_address if approved_device.ip_address and approved_device.ip_address != client_ip else None
         if approved_device.ip_address != client_ip:
             approved_device.ip_address = client_ip
             approved_device.last_seen_at = db.func.now()
@@ -155,6 +156,17 @@ def sync_device():
         try:
             list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST', '')
             comment = format_to_local_phone(current_user.phone_number) or ''
+            # Cleanup old entries when IP changes
+            try:
+                find_and_remove_static_lease_by_mac(client_mac)
+            except Exception as _:
+                pass
+            if list_name and old_ip:
+                try:
+                    remove_ip_from_address_list(list_name, old_ip)
+                except Exception as _:
+                    pass
+
             if list_name and comment:
                 find_and_update_address_list_entry(list_name, client_ip, comment)
                 create_static_lease(client_ip, client_mac, comment)
@@ -299,6 +311,11 @@ def authorize_device():
     
     # Update di MikroTik
     try:
+        # Remove any existing static lease for this MAC to avoid duplicates
+        try:
+            find_and_remove_static_lease_by_mac(client_mac)
+        except Exception as _:
+            pass
         if list_name and comment:
             find_and_update_address_list_entry(list_name, client_ip, comment)
             create_static_lease(client_ip, client_mac, comment)
