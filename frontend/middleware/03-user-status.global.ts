@@ -19,6 +19,17 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (!isLoggedIn || isAdmin)
     return
 
+  // 0. OTORISASI PERANGKAT SEBAGAI PRASYARAT
+  // Jika otorisasi perangkat sedang atau masih diperlukan, prioritaskan halaman otorisasi
+  const targetAuthPage = isCaptiveBrowser() ? '/captive/otorisasi-perangkat' : '/akun/otorisasi-perangkat'
+  if (authStore.isDeviceAuthRequired || authStore.isNewDeviceDetected) {
+    const allowedDuringAuth = [targetAuthPage, '/logout']
+    if (!allowedDuringAuth.some(path => to.path.startsWith(path))) {
+      return navigateTo(targetAuthPage, { replace: true })
+    }
+    return // Jangan proses status lain sampai otorisasi selesai
+  }
+
   // 1. TANGANI STATUS KRITIS TERLEBIH DAHULU
   if (isBlocked) {
     const allowedRoutes = ['/akun/blokir', '/logout', '/captive/blokir']
@@ -72,16 +83,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
     }
   }
 
-  // Setelah state mungkin diperbarui oleh syncDevice, cek sekali lagi.
-  if (authStore.isNewDeviceDetected) {
-    const targetAuthPage = isCaptiveBrowser() ? '/captive/otorisasi-perangkat' : '/akun/otorisasi-perangkat'
-    const allowedDuringAuth = [targetAuthPage, '/logout']
-
-    if (!allowedDuringAuth.some(path => to.path.startsWith(path))) {
-      console.log(`[USER-STATUS] Perangkat baru terdeteksi. Memaksa redirect ke ${targetAuthPage}`)
-      return navigateTo(targetAuthPage, { replace: true })
-    }
-  }
+  // Setelah state mungkin diperbarui oleh syncDevice, pengecekan redirect otorisasi tidak diperlukan di sini
 
   // 3. PEMBERSIHAN FINAL UNTUK PENGGUNA NORMAL (tanpa menyebabkan loop)
   // Jangan pernah memaksa redirect dari halaman otorisasi perangkat saat otorisasi masih diperlukan.

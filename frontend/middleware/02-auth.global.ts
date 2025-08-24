@@ -44,10 +44,14 @@ export default defineNuxtRouteMiddleware((to) => {
   const authStore = useAuthStore()
   let { isLoggedIn, isAdmin, isDeviceAuthRequired } = authStore
 
-  // OPTIMASI: Jangan lakukan redirect jika sedang dalam proses otorisasi perangkat
-  if (isDeviceAuthRequired && isLoggedIn) {
-    console.log('[AUTH-MIDDLEWARE] Mendeteksi otorisasi perangkat aktif, skip redirect')
-    return // Biarkan render normal tanpa redirect
+  // OTORISASI PERANGKAT: Paksa redirect ke halaman otorisasi saat diperlukan
+  if (isLoggedIn && isDeviceAuthRequired) {
+    const targetAuthPage = isCaptiveBrowser() ? '/captive/otorisasi-perangkat' : '/akun/otorisasi-perangkat'
+    if (!to.path.startsWith(targetAuthPage)) {
+      console.log('[AUTH-MIDDLEWARE] Otorisasi perangkat diperlukan, redirect ke halaman otorisasi')
+      return navigateTo(targetAuthPage, { replace: true })
+    }
+    return // Tetap di halaman otorisasi
   }
 
   // Also check localStorage for admin flag as backup
