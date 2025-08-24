@@ -64,11 +64,13 @@ def authorize_device():
         # Update bypass address list and DHCP lease
         from app.infrastructure.gateways import mikrotik_client
         
-        list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST', 'bypass')
+        list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST')
         comment = f"{current_user.phone_number.lstrip('+')}"
         
         # Update address list entry
-        bypass_ok, bypass_msg = mikrotik_client.find_and_update_address_list_entry(list_name, client_ip, comment)
+        bypass_ok = dhcp_ok = False
+        if list_name:
+            bypass_ok, bypass_msg = mikrotik_client.find_and_update_address_list_entry(list_name, client_ip, comment)
         
         # Create static DHCP lease
         dhcp_ok, dhcp_msg = mikrotik_client.create_static_lease(client_ip, client_mac, comment)
@@ -165,8 +167,9 @@ def remove_device(device_id):
             from app.infrastructure.gateways import mikrotik_client
             
             if device.ip_address:  # Use the correct column name
-                list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST', 'bypass')
-                mikrotik_client.remove_ip_from_address_list(list_name, device.ip_address)
+                list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST')
+                if list_name:
+                    mikrotik_client.remove_ip_from_address_list(list_name, device.ip_address)
             
             if device.mac_address:
                 mikrotik_client.find_and_remove_static_lease_by_mac(device.mac_address)

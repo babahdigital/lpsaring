@@ -154,7 +154,7 @@ def sync_device():
             logger.info(f"Updated device IP for user {current_user.id} to {client_ip}")
 
         try:
-            list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST', '')
+            list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST')
             comment = format_to_local_phone(current_user.phone_number) or ''
             # Cleanup old entries when IP changes
             try:
@@ -323,7 +323,7 @@ def authorize_device():
     
     db.session.commit()
 
-    list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST', '')
+    list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST')
     comment = format_to_local_phone(current_user.phone_number) or ''
     
     # Update di MikroTik
@@ -405,7 +405,7 @@ def invalidate_device():
         
     try:
         # Hapus dari bypass address list
-        list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST', '')
+        list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST')
         if list_name and device.ip_address:
             remove_ip_from_address_list(list_name, device.ip_address)
             

@@ -188,7 +188,7 @@ def delete_my_device(device_id):
 
     # Lakukan pembersihan jejak di MikroTik (best-effort)
     try:
-        list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST', '')
+        list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST')
         ip_addr = getattr(device_to_delete, 'ip_address', None)
         mac_addr = device_to_delete.mac_address
 

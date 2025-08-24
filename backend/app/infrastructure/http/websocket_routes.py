@@ -200,7 +200,7 @@ def _ws_handler(ws):
                                     
                                     # Get bypass list name
                                     from flask import current_app
-                                    list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST', '')
+                                    list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST')
                                     
                                     # Format phone number for comment
                                     from app.utils.formatters import format_to_local_phone

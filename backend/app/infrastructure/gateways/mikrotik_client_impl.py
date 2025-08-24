@@ -1312,8 +1312,10 @@ def move_user_to_inactive_list(user_ip: str, comment: str) -> Tuple[bool, str]:
     try:
         if not user_ip:
             return False, "IP kosong"
-        inactive_list = current_app.config.get('MIKROTIK_INACTIVE_ADDRESS_LIST', 'inactive_client')
-        bypass_list = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST', 'bypass_client')
+        inactive_list = current_app.config.get('MIKROTIK_INACTIVE_ADDRESS_LIST')
+        bypass_list = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST')
+        if not inactive_list or not bypass_list:
+            return False, "Konfigurasi address-list tidak lengkap"
 
         # Hapus dari bypass terlebih dahulu (best-effort)
         try:

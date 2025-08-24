@@ -358,9 +358,9 @@ def verify_otp():
   # Best-effort update ke MikroTik
   try:
     if client_ip:
-      list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST', '')
+      list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST')
       comment = format_to_local_phone(user.phone_number) or ''
-      if list_name and comment:
+      if list_name and comment and client_ip:
         ok, _ = find_and_update_address_list_entry(list_name, client_ip, comment)
         if not ok:
           add_ip_to_address_list(list_name, client_ip, comment)
