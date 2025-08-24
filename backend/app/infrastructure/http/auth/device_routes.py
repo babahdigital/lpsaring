@@ -274,6 +274,18 @@ def authorize_device():
     if not client_ip or not client_mac:
         return jsonify({"status": "ERROR", "message": "IP/MAC tidak terdeteksi"}), 400
 
+    # Penegakan batas perangkat per user (hanya berlaku untuk perangkat baru)
+    try:
+        from app.infrastructure.db.models import DeviceStatus
+        from sqlalchemy import func
+        max_devices = int(current_app.config.get('MAX_DEVICES_PER_USER', 3))
+        approved_count = db.session.execute(
+            select(func.count()).select_from(UserDevice).filter_by(user_id=current_user.id, status=DeviceStatus.APPROVED)
+        ).scalar_one()
+    except Exception:
+        max_devices = 3
+        approved_count = 0
+
     # Coba temukan perangkat berdasarkan ID jika diberikan
     device = None
     if device_id:
@@ -287,13 +299,18 @@ def authorize_device():
     if not device:
         device = db.session.execute(select(UserDevice).filter_by(mac_address=client_mac)).scalar_one_or_none()
     
-    # Jika masih tidak ditemukan, buat baru
+    # Jika masih tidak ditemukan, ini perangkat baru: cek limit terlebih dahulu
     if not device:
+        if approved_count >= max_devices:
+            logger.warning(f"[AUTHORIZE-DEVICE] User {current_user.id} reached device limit ({approved_count}/{max_devices}) for MAC {client_mac}")
+            return jsonify({
+                "status": "DEVICE_LIMIT_REACHED",
+                "message": f"Batas maksimal {max_devices} perangkat terotorisasi telah tercapai. Hapus perangkat lama terlebih dahulu.",
+            }), 403
         device = UserDevice()
         device.user = current_user
         device.mac_address = client_mac.upper() 
         device.ip_address = client_ip
-        from app.infrastructure.db.models import DeviceStatus
         device.status = DeviceStatus.APPROVED
         device.last_seen_at = db.func.now()
         db.session.add(device)

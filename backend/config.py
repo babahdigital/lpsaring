@@ -273,6 +273,8 @@ class Config:
     MIKROTIK_DEFAULT_DHCP_SERVER = os.environ.get('MIKROTIK_DEFAULT_DHCP_SERVER')
     # Enforce explicit device authorization (no auto-bypass/lease in legacy/no-JWT mode)
     REQUIRE_EXPLICIT_DEVICE_AUTH = get_env_bool('REQUIRE_EXPLICIT_DEVICE_AUTH', 'True')
+    # Maximum authorized devices per user
+    MAX_DEVICES_PER_USER = get_env_int('MAX_DEVICES_PER_USER', 3)
     MIKROTIK_LOOKUP_PARALLEL = get_env_bool('MIKROTIK_LOOKUP_PARALLEL', 'False')  # enable future parallel host/dhcp/arp
     MIKROTIK_FORCE_REFRESH_CLEAR_GRACE = get_env_bool('MIKROTIK_FORCE_REFRESH_CLEAR_GRACE', 'True')
     # Batas maksimum entry in-memory grace cache (agar hemat memory saat banyak client)

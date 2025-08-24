@@ -15,6 +15,7 @@ from app.infrastructure.gateways.mikrotik_client import (
     delete_ip_binding_by_comment,
     get_mikrotik_connection,
     delete_hotspot_user,
+    purge_client_traces,
 )
 
 def process_user_removal(user_to_remove: User, admin_actor: User) -> Tuple[bool, str]:
@@ -67,6 +68,22 @@ def process_user_removal(user_to_remove: User, admin_actor: User) -> Tuple[bool,
                 mt_ops.append(("del-binding", ok_bind, msg_bind))
             except Exception as e:
                 mt_ops.append(("del-binding", False, f"Exception: {e}"))
+
+            # 4) Bersihkan DHCP lease & ARP entries menggunakan helper terpadu
+            try:
+                mac_address = None
+                try:
+                    # Coba cari MAC dari host detail agar pembersihan lebih tepat
+                    ok_host, host, _ = get_host_details_by_username(mikrotik_username)
+                    if ok_host and host:
+                        mac_address = (host.get('mac-address') or host.get('mac') or '').upper() or None
+                except Exception:
+                    mac_address = None
+                result = purge_client_traces(ip_address=(target_ip or ''), mac_address=mac_address, include_binding=False)
+                # result adalah dict berisi status sub-operasi; log ringkasannya
+                mt_ops.append(("purge-traces", True, f"client_traces={result}"))
+            except Exception as e:
+                mt_ops.append(("purge-traces", False, f"Exception: {e}"))
 
         # Log ringkasan operasi MikroTik
         for tag, ok, msg in mt_ops:

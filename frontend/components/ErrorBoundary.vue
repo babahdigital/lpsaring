@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useAuthStore } from '~/store/auth'
 
 interface Props {
   error?: Error | null
@@ -50,6 +51,25 @@ async function handleRetry() {
 
 function toggleDetails() {
   showDetails.value = !showDetails.value
+}
+
+// Aksi reset & logout untuk pemulihan sesi total
+const resetAndLogout = async () => {
+  try {
+    const store = useAuthStore()
+    if (store && typeof (store as any).logout === 'function') {
+      await (store as any).logout()
+    } else {
+      localStorage.clear()
+      sessionStorage.clear()
+    }
+  } catch (e) {
+    // fallback cleanup
+    try { localStorage.clear() } catch {}
+    try { sessionStorage.clear() } catch {}
+  } finally {
+    window.location.href = '/login'
+  }
 }
 
 // ---- Penanganan Error Global ----
@@ -135,13 +155,14 @@ onUnmounted(() => {
           <p>{{ errorMessage }}</p>
 
           <div class="error-actions">
-            <button class="action-btn primary" :disabled="isRetrying" @click="handleRetry">
+              <button class="action-btn primary" :disabled="isRetrying" @click="handleRetry">
               <span v-if="!isRetrying">Coba Lagi</span>
               <span v-else class="loading-state">
                 <span class="spinner" />
                 Memuat Ulang...
               </span>
             </button>
+              <button class="action-btn secondary" @click="resetAndLogout">Logout & Reset Sesi</button>
           </div>
 
           <div class="details-section">
