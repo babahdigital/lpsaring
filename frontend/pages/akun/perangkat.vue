@@ -1,16 +1,15 @@
-// pages/akun/perangkat.vue (Versi Sederhana)
-
 <script setup lang="ts">
 import { useNuxtApp } from '#app'
-import { onMounted, reactive, ref } from 'vue'
-
+import { onMounted, reactive, ref, computed } from 'vue'
 import { useSnackbar } from '~/composables/useSnackbar'
 
 interface UserDevice {
   id: string
   mac_address: string
+  ip_address?: string | null
   device_name: string
-  last_seen_at: string
+  last_seen_at: string | null
+  status?: string | null
 }
 
 const { $api } = useNuxtApp()
@@ -19,28 +18,25 @@ useHead({ title: 'Manajemen Perangkat' })
 
 const devices = ref<UserDevice[]>([])
 const loading = ref(true)
-const dialogs = reactive({
-  delete: false,
-  edit: false,
-})
+const actionLoading = ref(false)
+const dialogs = reactive({ delete: false, edit: false })
 const selectedDevice = ref<UserDevice | null>(null)
 const newDeviceName = ref('')
-const actionLoading = ref(false)
 
-const headers = [
-  { title: 'Nama Perangkat', key: 'device_name', sortable: false },
-  { title: 'Alamat MAC', key: 'mac_address', sortable: false },
-  { title: 'Terakhir Terlihat', key: 'last_seen_at', sortable: false },
-  { title: 'Aksi', key: 'actions', sortable: false, align: 'end' as const },
-] as const
+const maxDevices = ref<number>(3)
+const isLimitReached = computed(() => devices.value.length >= maxDevices.value)
 
 async function fetchDevices() {
   loading.value = true
   try {
     devices.value = await $api<UserDevice[]>('/users/me/devices')
+    // Optional: also fetch MAX_DEVICES_PER_USER if exposed via /api/public
+    // const settings = await $api<Record<string, string>>('/public')
+    // maxDevices.value = Number(settings.MAX_DEVICES_PER_USER ?? 3)
   }
-  catch (_err: any) {
-    addSnackbar({ title: 'Error', text: 'Gagal memuat daftar perangkat.', type: 'error' })
+  catch (err: any) {
+    const msg = err?.data?.message || err?.message || 'Gagal memuat daftar perangkat.'
+    addSnackbar({ title: 'Error', text: msg, type: 'error' })
   }
   finally {
     loading.value = false
@@ -59,21 +55,17 @@ function openDeleteDialog(device: UserDevice) {
 }
 
 async function handleUpdateDeviceName() {
-  if (!selectedDevice.value || !newDeviceName.value)
-    return
+  if (!selectedDevice.value || !newDeviceName.value) return
   actionLoading.value = true
   try {
-    await $api(`/users/me/devices/${selectedDevice.value.id}`, {
-      method: 'PUT',
-      body: { device_name: newDeviceName.value },
-    })
+    await $api(`/users/me/devices/${selectedDevice.value.id}`, { method: 'PUT', body: { device_name: newDeviceName.value } })
     addSnackbar({ title: 'Berhasil', text: 'Nama perangkat berhasil diperbarui.', type: 'success' })
     dialogs.edit = false
     await fetchDevices()
   }
   catch (err: any) {
-    const errorMessage = err.data?.error || 'Gagal memperbarui nama perangkat.'
-    addSnackbar({ title: 'Error', text: errorMessage, type: 'error' })
+    const msg = err?.data?.message || err?.message || 'Gagal memperbarui nama perangkat.'
+    addSnackbar({ title: 'Error', text: msg, type: 'error' })
   }
   finally {
     actionLoading.value = false
@@ -81,37 +73,26 @@ async function handleUpdateDeviceName() {
 }
 
 async function handleDeleteDevice() {
-  if (!selectedDevice.value)
-    return
+  if (!selectedDevice.value) return
   actionLoading.value = true
   try {
-    await $api(`/users/me/devices/${selectedDevice.value.id}`, {
-      method: 'DELETE',
-    })
+    await $api(`/users/me/devices/${selectedDevice.value.id}`, { method: 'DELETE' })
     addSnackbar({ title: 'Berhasil', text: 'Perangkat berhasil dihapus.', type: 'success' })
     dialogs.delete = false
     await fetchDevices()
   }
   catch (err: any) {
-    const errorMessage = err.data?.error || 'Gagal menghapus perangkat.'
-    addSnackbar({ title: 'Error', text: errorMessage, type: 'error' })
+    const msg = err?.data?.message || err?.message || 'Gagal menghapus perangkat.'
+    addSnackbar({ title: 'Error', text: msg, type: 'error' })
   }
   finally {
     actionLoading.value = false
   }
 }
 
-function formatDateTime(dateString: string) {
-  if (!dateString)
-    return 'N/A'
-  return new Date(dateString).toLocaleString('id-ID', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZoneName: 'short',
-  })
+function formatDateTime(dateString?: string | null) {
+  if (!dateString) return 'N/A'
+  return new Date(dateString).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 onMounted(fetchDevices)
@@ -145,11 +126,16 @@ onMounted(fetchDevices)
         </VAlert>
 
         <VDataTable
-          :headers="headers"
+          :headers="[
+            { title: 'Perangkat', key: 'device_name' },
+            { title: 'MAC', key: 'mac_address' },
+            { title: 'IP', key: 'ip_address' },
+            { title: 'Terakhir Aktif', key: 'last_seen_at' },
+            { title: 'Aksi', key: 'actions', align: 'end' },
+          ]"
           :items="devices"
           :loading="loading"
           :items-per-page="-1"
-          item-value="id"
           class="text-no-wrap"
         >
           <template #item.device_name="{ item }">

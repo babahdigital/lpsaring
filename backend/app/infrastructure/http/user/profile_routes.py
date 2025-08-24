@@ -16,6 +16,10 @@ from app.services.notification_service import get_notification_message
 
 from app.services.transaction_service import generate_random_password
 from app.infrastructure.gateways.mikrotik_client import activate_or_update_hotspot_user
+from app.infrastructure.gateways.mikrotik_client import (
+    purge_client_traces,
+    remove_ip_from_address_list,
+)
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
 from app.utils.formatters import format_to_local_phone
 from app.utils.mikrotik_helpers import determine_target_profile
@@ -156,8 +160,10 @@ def get_my_devices():
             {
                 "id": str(device.id),
                 "mac_address": device.mac_address,
+                "ip_address": getattr(device, 'ip_address', None),
                 "device_name": device.device_name,
-                "last_seen_at": device.last_seen_at.isoformat() if device.last_seen_at else None
+                "last_seen_at": device.last_seen_at.isoformat() if device.last_seen_at else None,
+                "status": str(getattr(device, 'status').value) if getattr(device, 'status', None) else None,
             }
             for device in current_user.devices
         ]
@@ -180,9 +186,31 @@ def delete_my_device(device_id):
     if device_to_delete.user_id != current_user.id:
         return jsonify({"message": "Akses ditolak. Anda hanya dapat menghapus perangkat sendiri."}), HTTPStatus.FORBIDDEN
 
+    # Lakukan pembersihan jejak di MikroTik (best-effort)
+    try:
+        list_name = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST', '')
+        ip_addr = getattr(device_to_delete, 'ip_address', None)
+        mac_addr = device_to_delete.mac_address
+
+        if list_name and ip_addr:
+            try:
+                remove_ip_from_address_list(list_name, ip_addr)
+            except Exception as e:
+                current_app.logger.warning(f"Gagal menghapus IP {ip_addr} dari address-list {list_name}: {e}")
+
+        # Purge host, DHCP lease, dan ARP (dynamic) untuk IP/MAC tersebut
+        try:
+            purge_result = purge_client_traces(ip_addr or '', mac_addr or None, include_binding=False)
+            current_app.logger.info(f"Purge client traces result for device {device_id}: {purge_result}")
+        except Exception as e:
+            current_app.logger.warning(f"Gagal purge client traces untuk perangkat {device_id}: {e}")
+    except Exception as e:
+        current_app.logger.warning(f"Kesalahan saat pembersihan MikroTik untuk perangkat {device_id}: {e}")
+
+    # Hapus dari database setelah upaya pembersihan
     db.session.delete(device_to_delete)
     db.session.commit()
-    
+
     current_app.logger.info(f"User {current_user.id} berhasil menghapus perangkat {device_id} (MAC: {device_to_delete.mac_address}).")
     return '', HTTPStatus.NO_CONTENT
 
