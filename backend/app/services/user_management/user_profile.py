@@ -319,26 +319,37 @@ def _handle_user_activation(user: User, should_be_active: bool, admin: User) -> 
         current_app.logger.info(f"Activating user {user.full_name}. Unblocking and triggering sync.")
         success, msg = _sync_user_to_mikrotik(user, f"Re-activated by {admin.full_name}")
         
-        # Update IP binding to enabled for reactivated user
-        if user.last_login_ip and user.last_login_mac:
-            from app.infrastructure.gateways.mikrotik_client import create_or_update_ip_binding
+        # Sync address list for activated user
+        if user.last_login_ip:
+            from app.infrastructure.gateways.mikrotik_client import sync_address_list_for_user, create_or_update_ip_binding
             mikrotik_username = format_to_local_phone(user.phone_number)
             
             try:
-                # Determine binding type based on user status
-                binding_type = 'bypassed'  # Default for active users
-                comment = f"Admin reactivate: {mikrotik_username}"
+                # Sync to address list (this ensures IP is in the correct list based on profile)
+                if mikrotik_username:  # Ensure we have a valid username
+                    sync_address_list_for_user(
+                        username=mikrotik_username,
+                        new_ip_address=user.last_login_ip,
+                        target_profile_name=user.mikrotik_profile_name or 'user',
+                        old_ip_address=None
+                    )
+                current_app.logger.info(f"[ADMIN-REACTIVATE] Address list updated for {mikrotik_username} (IP: {user.last_login_ip})")
                 
-                create_or_update_ip_binding(
-                    mac_address=user.last_login_mac,
-                    ip_address=user.last_login_ip,
-                    comment=comment,
-                    server=user.mikrotik_server_name,
-                    type=binding_type
-                )
-                current_app.logger.info(f"[ADMIN-REACTIVATE] IP binding enabled for {mikrotik_username} (IP: {user.last_login_ip}, MAC: {user.last_login_mac})")
+                # If we have MAC, also update IP binding
+                if user.last_login_mac:
+                    binding_type = 'bypassed'  # Default for active users
+                    comment = f"Admin reactivate: {mikrotik_username}"
+                    
+                    create_or_update_ip_binding(
+                        mac_address=user.last_login_mac,
+                        ip_address=user.last_login_ip,
+                        comment=comment,
+                        server=user.mikrotik_server_name,
+                        type=binding_type
+                    )
+                    current_app.logger.info(f"[ADMIN-REACTIVATE] IP binding enabled for {mikrotik_username} (IP: {user.last_login_ip}, MAC: {user.last_login_mac})")
             except Exception as e:
-                current_app.logger.warning(f"Failed to update IP binding for reactivated user {mikrotik_username}: {e}")
+                current_app.logger.warning(f"Failed to update address list/binding for reactivated user {mikrotik_username}: {e}")
         
         if success:
             _log_admin_action(admin, user, AdminActionType.ACTIVATE_USER, {})
@@ -353,26 +364,38 @@ def _handle_user_activation(user: User, should_be_active: bool, admin: User) -> 
         user.is_blocked = True
         current_app.logger.info(f"Deactivating user {user.full_name}. Setting is_active=False and is_blocked=True.")
         
-        # Disable IP binding for blocked user to force re-login
-        if user.last_login_ip and user.last_login_mac:
-            from app.infrastructure.gateways.mikrotik_client import create_or_update_ip_binding
+        # Update address list and binding for blocked user
+        if user.last_login_ip:
+            from app.infrastructure.gateways.mikrotik_client import sync_address_list_for_user, create_or_update_ip_binding
             mikrotik_username = format_to_local_phone(user.phone_number)
             
             try:
-                # For blocked users, create disabled binding to force re-login
-                binding_type = 'blocked'
-                comment = f"Admin block: {mikrotik_username}"
+                # Sync to inactive address list
+                inactive_profile = 'inactive'
+                if mikrotik_username:  # Ensure we have a valid username
+                    sync_address_list_for_user(
+                        username=mikrotik_username,
+                        new_ip_address=user.last_login_ip,
+                        target_profile_name=inactive_profile,
+                        old_ip_address=None
+                    )
+                current_app.logger.info(f"[ADMIN-BLOCK] Address list updated for {mikrotik_username} (IP: {user.last_login_ip})")
                 
-                create_or_update_ip_binding(
-                    mac_address=user.last_login_mac,
-                    ip_address=user.last_login_ip,
-                    comment=comment,
-                    server=user.mikrotik_server_name,
-                    type=binding_type
-                )
-                current_app.logger.info(f"[ADMIN-BLOCK] IP binding disabled for {mikrotik_username} (IP: {user.last_login_ip}, MAC: {user.last_login_mac})")
+                # If we have MAC, also update IP binding to blocked
+                if user.last_login_mac:
+                    binding_type = 'blocked'
+                    comment = f"Admin block: {mikrotik_username}"
+                    
+                    create_or_update_ip_binding(
+                        mac_address=user.last_login_mac,
+                        ip_address=user.last_login_ip,
+                        comment=comment,
+                        server=user.mikrotik_server_name,
+                        type=binding_type
+                    )
+                    current_app.logger.info(f"[ADMIN-BLOCK] IP binding disabled for {mikrotik_username} (IP: {user.last_login_ip}, MAC: {user.last_login_mac})")
             except Exception as e:
-                current_app.logger.warning(f"Failed to disable IP binding for blocked user {mikrotik_username}: {e}")
+                current_app.logger.warning(f"Failed to update address list/binding for blocked user {mikrotik_username}: {e}")
         
         try:
             context = {

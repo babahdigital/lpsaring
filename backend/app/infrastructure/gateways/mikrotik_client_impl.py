@@ -1169,7 +1169,7 @@ __all__ = [
     'delete_ip_binding_by_comment', 'remove_active_hotspot_user_by_ip', '_get_api_from_pool',
     'set_hotspot_user_profile', 'ensure_ip_binding_status_matches_profile',
     'activate_or_update_hotspot_user', 'add_ip_to_address_list', 'remove_ip_from_address_list',
-    'get_mikrotik_connection', 'delete_hotspot_user', 'format_to_local_phone'
+    'get_mikrotik_connection', 'delete_hotspot_user', 'format_to_local_phone', 'sync_address_list_for_user'
 ]
 
 # ---------------------------------------------------------------------------
@@ -1382,6 +1382,71 @@ def format_to_local_phone(phone: str) -> Optional[str]:
 # Client traces purge (Host, DHCP lease, ARP, optional binding)
 # ---------------------------------------------------------------------------
 from typing import Dict as _DictT, Tuple as _TupleT
+
+def sync_address_list_for_user(username: str, new_ip_address: str, target_profile_name: str, 
+                          old_ip_address: Optional[str] = None) -> Tuple[bool, str]:
+    """
+    Sinkronisasi address list berdasarkan status user dan profil MikroTik.
+    
+    Aturan:
+    1. Jika profil aktif ('aktif', 'user', 'bypass'), tambahkan IP ke BYPASS_LIST
+    2. Jika profil blokir/inactive, hapus IP dari BYPASS_LIST, tambahkan ke INACTIVE_LIST
+    3. Jika ada old_ip_address, hapus dari semua address list
+    
+    Args:
+        username: Username MikroTik (nomor telepon)
+        new_ip_address: IP baru yang akan disinkronisasi
+        target_profile_name: Nama profil MikroTik target
+        old_ip_address: IP lama yang akan dibersihkan (opsional)
+        
+    Returns:
+        (success, message)
+    """
+    from flask import current_app
+    logger = logging.getLogger('mikrotik.sync_address_list')
+    
+    if not username or not new_ip_address:
+        return False, "Username dan IP wajib diisi"
+        
+    try:
+        bypass_list = current_app.config.get('MIKROTIK_BYPASS_ADDRESS_LIST', 'klient_aktif')
+        inactive_list = current_app.config.get('MIKROTIK_INACTIVE_ADDRESS_LIST', 'klient_nonaktif')
+        
+        # Profil yang dianggap aktif (perlu masuk bypass list)
+        active_profiles = current_app.config.get('MIKROTIK_ACTIVE_PROFILES', 
+                                              ['aktif', 'user', 'bypass', 'klient_aktif'])
+                                              
+        # 1. Bersihkan IP lama jika ada
+        if old_ip_address and old_ip_address != new_ip_address:
+            logger.info(f"Removing old IP {old_ip_address} from all address lists for {username}")
+            remove_ip_from_all_address_lists(old_ip_address)
+        
+        # 2. Kelola address list berdasarkan profil
+        is_active_profile = target_profile_name in active_profiles
+        
+        if is_active_profile:
+            # User aktif: tambahkan ke bypass list
+            logger.info(f"Adding {new_ip_address} to bypass list '{bypass_list}' for {username}")
+            ok, msg = add_ip_to_address_list(bypass_list, new_ip_address, username)
+            if not ok:
+                logger.warning(f"Failed to add {new_ip_address} to bypass list: {msg}")
+                
+            # Pastikan tidak ada di inactive list
+            remove_ip_from_address_list(inactive_list, new_ip_address)
+        else:
+            # User non-aktif: hapus dari bypass, tambahkan ke inactive
+            logger.info(f"Removing {new_ip_address} from bypass list '{bypass_list}' for {username}")
+            remove_ip_from_address_list(bypass_list, new_ip_address)
+            
+            logger.info(f"Adding {new_ip_address} to inactive list '{inactive_list}' for {username}")
+            ok, msg = add_ip_to_address_list(inactive_list, new_ip_address, username)
+            if not ok:
+                logger.warning(f"Failed to add {new_ip_address} to inactive list: {msg}")
+        
+        return True, f"Address list synchronized for {username}"
+    except Exception as e:
+        logger.error(f"Address list sync error for {username}: {e}", exc_info=True)
+        return False, f"Error: {str(e)}"
 
 def purge_client_traces(ip_address: str, mac_address: Optional[str] = None, include_binding: bool = False) -> _DictT[str, _TupleT[bool, str]]:
     """

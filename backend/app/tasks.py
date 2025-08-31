@@ -341,35 +341,43 @@ def sync_bypass_address_list(self):
     [Arsitektur 2.0] Pengganti dari sync_device_ip_bindings.
     """
     from flask import current_app
-    from app.infrastructure.gateways.mikrotik_client import find_and_update_address_list_entry
+    from app.infrastructure.gateways.mikrotik_client import sync_address_list_for_user
     from app.utils.formatters import format_to_local_phone
     import logging
     
     task_logger = logging.getLogger('tasks.sync_bypass_address_list')
     task_logger.info("Memulai sinkronisasi bypass address list (batched)...")
     
-    list_name = current_app.config['MIKROTIK_BYPASS_ADDRESS_LIST']
     success_count = error_count = 0
     
     try:
-        # Ambil semua user aktif dengan IP login terakhir
+        # Ambil semua user dengan IP login terakhir
         users = db.session.execute(
-            select(User).where(
-                User.is_active == True,
-                User.last_login_ip.isnot(None)
-            )
+            select(User).where(User.last_login_ip.isnot(None))
         ).scalars().all()
         
         for user in users:
             try:
+                # Hanya proses jika user punya nomor dan IP
                 if user.phone_number and user.last_login_ip:
-                    comment = format_to_local_phone(user.phone_number)
-                    if comment:  # Pastikan nomor telepon valid
-                        success, msg = mikrotik_client.find_and_update_address_list_entry(
-                            list_name=list_name,
-                            comment=comment,
-                            new_ip=user.last_login_ip
-                        )
+                    mikrotik_username = format_to_local_phone(user.phone_number)
+                    if not mikrotik_username:
+                        continue
+                        
+                    # Tentukan profil berdasarkan status user
+                    # Jika user tidak aktif atau diblokir, gunakan profil inactive
+                    target_profile = user.mikrotik_profile_name or 'user'
+                    if not user.is_active or user.is_blocked:
+                        target_profile = current_app.config.get('MIKROTIK_PROFILE_INACTIVE', 'inactive')
+                    
+                    # Sync address list sesuai status
+                    success, msg = sync_address_list_for_user(
+                        username=mikrotik_username,
+                        new_ip_address=user.last_login_ip,
+                        target_profile_name=target_profile,
+                        old_ip_address=None
+                    )
+                    
                     if success:
                         success_count += 1
                     else:
