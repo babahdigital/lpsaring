@@ -1,6 +1,8 @@
 // middleware/03-user-status.global.ts
 
 import { useAuthStore } from '~/store/auth'
+import { API_ENDPOINTS } from '~/constants/api-endpoints'
+import { useClientDetection } from '~/composables/useClientDetection'
 
 const isCaptiveBrowser = () => import.meta.client && (window as any).__IS_CAPTIVE_BROWSER__
 
@@ -79,6 +81,30 @@ export default defineNuxtRouteMiddleware(async (to) => {
       if (syncResult?.status === 'THROTTLED' || syncResult?.status === 'RATE_LIMITED') {
         console.log('[USER-STATUS] Sync sedang di-throttle, menunggu...')
         return // Don't redirect, just wait
+      }
+
+      // Tambah validasi perangkat pasca-sync: pastikan MAC saat ini memang terotorisasi
+      try {
+        const { detectClientInfo } = useClientDetection()
+        const det = await detectClientInfo()
+        const currentMac = det?.summary?.detected_mac || null
+        if (currentMac) {
+          const { $api } = useNuxtApp()
+          const res = await $api(API_ENDPOINTS.DEVICE_VALIDATE, {
+            method: 'POST',
+            body: { mac_address: currentMac },
+            retry: false,
+          }) as any
+          if (res && res.is_valid === false) {
+            console.warn('[USER-STATUS] Perangkat belum terotorisasi, mengarahkan ke halaman otorisasi')
+            authStore.setDeviceAuthRequired(true)
+            const targetAuthPage = isCaptiveBrowser() ? '/captive/otorisasi-perangkat' : '/akun/otorisasi-perangkat'
+            return navigateTo(targetAuthPage, { replace: true })
+          }
+        }
+      }
+      catch (e) {
+        console.warn('[USER-STATUS] Validasi perangkat gagal, lanjutkan tanpa redirect:', e)
       }
     }
   }

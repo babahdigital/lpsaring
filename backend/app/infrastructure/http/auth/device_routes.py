@@ -478,6 +478,55 @@ def reject_device():
     return jsonify({"status": "SUCCESS", "message": "Penolakan perangkat tercatat."}), 200
 
 
+@device_bp.route('/validate-device', methods=['POST'])
+@jwt_required()
+@limiter.limit("60 per minute;300 per hour", key_func=_limit_key_func)
+def validate_current_device():
+    """
+    Validasi apakah perangkat (berdasarkan MAC) yang digunakan saat ini
+    sudah terotorisasi (APPROVED) untuk pengguna yang sedang login.
+    Body JSON opsional: {"mac_address": "AA:BB:CC:DD:EE:FF"}
+    Jika tidak disediakan, sistem akan mencoba mendeteksi dari request.
+    """
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({"is_valid": False, "message": "User tidak ditemukan"}), 401
+
+    data = request.get_json(silent=True) or {}
+    mac_from_body = (data.get('mac_address') or data.get('mac') or '').strip().upper() or None
+
+    # Gunakan deteksi jika MAC tidak diberikan
+    client_mac = mac_from_body
+    if not client_mac:
+        detection = ClientDetectionService.get_client_info(
+            frontend_ip=(data.get('ip') or data.get('client_ip')),
+            frontend_mac=(data.get('mac') or data.get('client_mac')),
+        )
+        client_mac = (detection.get('detected_mac') or '').strip().upper() or None
+
+    if not client_mac:
+        return jsonify({"is_valid": False, "message": "MAC tidak terdeteksi"}), 200
+
+    # Cek di database
+    try:
+        from app.infrastructure.db.models import UserDevice, DeviceStatus
+        approved = db.session.execute(
+            select(UserDevice.id).filter_by(user_id=current_user.id, mac_address=client_mac, status=DeviceStatus.APPROVED)
+        ).scalar_one_or_none()
+        if approved:
+            return jsonify({"is_valid": True, "message": "Perangkat sudah terotorisasi."}), 200
+        # Jika tidak approved, tetapi ada device entry lain milik user
+        any_entry = db.session.execute(
+            select(UserDevice.id).filter_by(user_id=current_user.id, mac_address=client_mac)
+        ).scalar_one_or_none()
+        if any_entry:
+            return jsonify({"is_valid": False, "message": "Perangkat ditemukan namun belum disetujui."}), 200
+        return jsonify({"is_valid": False, "message": "Perangkat ini belum terdaftar untuk akun Anda."}), 200
+    except Exception as e:
+        logger.error(f"[VALIDATE-DEVICE] Error: {e}")
+        return jsonify({"is_valid": False, "message": "Gagal memvalidasi perangkat"}), 500
+
+
 @device_bp.route('/check-token-device', methods=['GET', 'POST'])
 @jwt_required(optional=True)
 @limiter.limit("60 per minute;300 per hour", key_func=_limit_key_func)

@@ -37,6 +37,7 @@ export const API_ENDPOINTS = {
   DEVICE_CHECK_STATUS: '/auth/check-device-status',
   DEVICE_CHECK_TOKEN: '/auth/check-token-device',
   DEVICE_SYNC: '/auth/sync-device',
+  DEVICE_VALIDATE: '/auth/validate-device',
 
   // Utilities
   // Prefer this for cache clear + detection refresh
@@ -60,6 +61,7 @@ export const SENSITIVE_ENDPOINTS = [
   API_ENDPOINTS.DEVICE_AUTHORIZE, // Otorisasi perangkat
   API_ENDPOINTS.DEVICE_REJECT,   // Penolakan otorisasi perangkat
   API_ENDPOINTS.DEVICE_INVALIDATE, // Pencabutan akses perangkat
+  API_ENDPOINTS.DEVICE_VALIDATE,   // Validasi perangkat oleh MAC untuk user saat ini
   API_ENDPOINTS.DEVICE_CHECK_STATUS, // Pengecekan status perangkat
   API_ENDPOINTS.DEVICE_CHECK_TOKEN, // Pengecekan token dan perangkat
   API_ENDPOINTS.FORCE_DEVICE_SYNC, // Sinkronisasi paksa (membersihkan cache + deteksi ulang)
