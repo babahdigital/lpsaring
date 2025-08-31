@@ -220,11 +220,11 @@ function handleReject(user: User) {
   })
 }
 
-function handleToggleStatus(user: User) {
-  const isCurrentlyActive = user.is_active
-  const actionText = isCurrentlyActive ? 'menonaktifkan' : 'mengaktifkan kembali'
-  const title = isCurrentlyActive ? 'Konfirmasi Nonaktifkan Pengguna' : 'Konfirmasi Aktivasi Pengguna'
-  const color = isCurrentlyActive ? 'warning' : 'success'
+function handleToggleBlock(user: User) {
+  const isCurrentlyBlocked = user.is_blocked
+  const actionText = isCurrentlyBlocked ? 'membuka blokir' : 'memblokir'
+  const title = isCurrentlyBlocked ? 'Buka Blokir Pengguna' : 'Konfirmasi Blokir Pengguna'
+  const color = isCurrentlyBlocked ? 'success' : 'error'
 
   openConfirmDialog({
     title,
@@ -233,13 +233,12 @@ function handleToggleStatus(user: User) {
     action: async () => {
       const payload: EditPayload = {
         id: user.id,
-        toggle_status: true,
-        is_active: !isCurrentlyActive,
+        is_blocked: !isCurrentlyBlocked,
       }
       await performAction(
         `/admin/users/${user.id}`,
         'PUT',
-  'Status pengguna berhasil diperbarui.', // Pesan default jika backend tidak mengirim pesan.
+        'Status blokir pengguna berhasil diperbarui.',
         { body: payload },
         user.id,
       )
@@ -415,10 +414,10 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
                   Edit Data & Kuota
                 </VTooltip>
               </VBtn>
-              <VBtn v-if="item.id !== authStore.user?.id && (authStore.isSuperAdmin || (authStore.isAdmin && item.role !== 'ADMIN' && item.role !== 'SUPER_ADMIN'))" icon variant="text" :color="item.is_active ? 'warning' : 'success'" size="small" @click="handleToggleStatus(item)">
-                <VIcon :icon="item.is_active ? 'tabler-user-off' : 'tabler-user-check'" />
+              <VBtn v-if="item.id !== authStore.user?.id && (authStore.isSuperAdmin || (authStore.isAdmin && item.role !== 'ADMIN' && item.role !== 'SUPER_ADMIN'))" icon variant="text" :color="item.is_blocked ? 'success' : 'error'" size="small" @click="handleToggleBlock(item)">
+                <VIcon :icon="item.is_blocked ? 'tabler-user-check' : 'tabler-user-off'" />
                 <VTooltip activator="parent">
-                  {{ item.is_active ? 'Nonaktifkan Akun' : 'Aktifkan Kembali Akun' }}
+                  {{ item.is_blocked ? 'Buka Blokir' : 'Blokir Akun' }}
                 </VTooltip>
               </VBtn>
               <VBtn v-if="item.id !== authStore.user?.id && (authStore.isSuperAdmin || (authStore.isAdmin && item.role !== 'ADMIN' && item.role !== 'SUPER_ADMIN'))" icon variant="text" color="error" size="small" @click="handleDelete(item)">
@@ -479,8 +478,8 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
                 <VBtn v-if="authStore.isSuperAdmin || authStore.isAdmin" icon variant="text" color="primary" size="small" @click="openEditDialog(user)">
                   <VIcon icon="tabler-pencil" />
                 </VBtn>
-                <VBtn v-if="user.id !== authStore.user?.id && (authStore.isSuperAdmin || (authStore.isAdmin && user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN'))" icon variant="text" :color="user.is_active ? 'warning' : 'success'" size="small" @click="handleToggleStatus(user)">
-                  <VIcon :icon="user.is_active ? 'tabler-user-off' : 'tabler-user-check'" />
+                <VBtn v-if="user.id !== authStore.user?.id && (authStore.isSuperAdmin || (authStore.isAdmin && user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN'))" icon variant="text" :color="user.is_blocked ? 'success' : 'error'" size="small" @click="handleToggleBlock(user)">
+                  <VIcon :icon="user.is_blocked ? 'tabler-user-check' : 'tabler-user-off'" />
                 </VBtn>
                 <VBtn v-if="user.id !== authStore.user?.id && (authStore.isSuperAdmin || (authStore.isAdmin && user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN'))" icon variant="text" color="error" size="small" @click="handleDelete(user)">
                   <VIcon icon="tabler-trash" />

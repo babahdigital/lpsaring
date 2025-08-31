@@ -28,6 +28,7 @@ interface User {
   phone_number: string
   role: 'USER' | 'KOMANDAN' | 'ADMIN' | 'SUPER_ADMIN'
   is_active: boolean
+  is_blocked: boolean
   blok: string | null
   kamar: string | null
   is_unlimited_user: boolean
@@ -55,6 +56,7 @@ function getInitialFormData(): Partial<User & { add_gb: number, add_days: number
     phone_number: '',
     role: 'USER',
     is_active: true,
+    is_blocked: false,
     blok: null,
     kamar: null,
     is_unlimited_user: false,
@@ -91,7 +93,7 @@ const isSaveDisabled = computed(() => {
 
 const isTargetAdminOrSuper = computed(() => formData.role === 'ADMIN' || formData.role === 'SUPER_ADMIN')
 
-const superAdminProfileOptions = ['admin', 'user', 'expired', 'komandan', 'support', 'unlimited', 'inactive']
+const superAdminProfileOptions = ['admin', 'user', 'expired', 'komandan', 'support', 'unlimited', 'inactive', 'profile-blokir']
 const superAdminServerOptions = ['srv-admin', 'srv-komandan', 'srv-support', 'srv-user']
 const roleOptions = computed(() => {
   const roles: Array<User['role']> = ['USER', 'KOMANDAN', 'ADMIN', 'SUPER_ADMIN']
@@ -183,7 +185,7 @@ watch(() => formData.is_unlimited_user, (isUnlimited, wasUnlimited) => {
 })
 
 watch(() => formData.is_active, (isActive, wasActive) => {
-  if (isActive === wasActive)
+  if (isActive === wasActive || formData.is_blocked)
     return
 
   // Get runtime config for profile names
@@ -200,6 +202,31 @@ watch(() => formData.is_active, (isActive, wasActive) => {
     }
     else {
       setDefaultMikrotikConfig(formData.role)
+    }
+  }
+})
+
+// Watch untuk is_blocked: ubah profil ke profil blokir jika diblokir,
+// atau kembalikan ke status sebelumnya jika buka blokir
+watch(() => formData.is_blocked, (isBlocked) => {
+  const runtimeConfig = useRuntimeConfig()
+  const profileBlokir = runtimeConfig.public.profileBlokirName || 'profile-blokir'
+  const profileInactive = runtimeConfig.public.profileInactiveName || 'inactive'
+
+  if (isBlocked) {
+    formData.mikrotik_profile_name = profileBlokir
+  }
+  else {
+    // Kembali ke status sebelumnya (aktif/tidak aktif)
+    if (formData.is_active) {
+      if (formData.is_unlimited_user) {
+        const profileUnlimited = runtimeConfig.public.profileUnlimitedName || 'profile-unlimited'
+        formData.mikrotik_profile_name = profileUnlimited
+      } else {
+        setDefaultMikrotikConfig(formData.role)
+      }
+    } else {
+      formData.mikrotik_profile_name = profileInactive
     }
   }
 })
@@ -322,24 +349,42 @@ function onClose() {
 
             <VWindowItem value="akses">
               <VRow>
-                <VCol cols="12">
-                  <VSwitch v-model="formData.is_active" label="Akun Aktif" color="success" inset hint="Menonaktifkan akan memutus akses pengguna." persistent-hint />
+                <VCol cols="12" md="6">
+                  <VSwitch 
+                    v-model="formData.is_active" 
+                    label="Akun Aktif" 
+                    color="success" 
+                    inset 
+                    hint="Menonaktifkan akan memutus akses pengguna." 
+                    persistent-hint
+                    :disabled="formData.is_blocked"
+                  />
+                </VCol>
+                <VCol cols="12" md="6">
+                  <VSwitch 
+                    v-model="formData.is_blocked" 
+                    label="Blokir Pengguna" 
+                    color="error" 
+                    inset 
+                    hint="Memblokir akan menolak semua akses." 
+                    persistent-hint
+                  />
                 </VCol>
 
-                <VCol v-if="canAdminInject && formData.is_active === true" cols="12">
+                <VCol v-if="canAdminInject && formData.is_active === true && !formData.is_blocked" cols="12">
                   <VSwitch v-if="isTargetAdminOrSuper !== true" v-model="formData.is_unlimited_user" label="Akses Internet Unlimited" color="primary" inset />
                   <VAlert v-else type="info" variant="tonal" density="compact" icon="tabler-shield-check">
                     Peran <strong>{{ formData.role }}</strong> secara otomatis mendapatkan akses <strong>Unlimited</strong>.
                   </VAlert>
                 </VCol>
 
-                <VCol v-if="formData.is_active !== true" cols="12">
-                  <VAlert type="warning" variant="tonal" density="compact" icon="tabler-plug-connected-x">
-                    Opsi kuota dan akses tidak tersedia karena akun ini sedang <strong>NONAKTIF</strong>.
+                <VCol v-if="formData.is_active !== true || formData.is_blocked" cols="12">
+                  <VAlert type="warning" variant="tonal" density="compact" :icon="formData.is_blocked ? 'tabler-ban' : 'tabler-plug-connected-x'">
+                    Opsi kuota dan akses tidak tersedia karena akun ini sedang <strong>{{ formData.is_blocked ? 'DIBLOKIR' : 'NONAKTIF' }}</strong>.
                   </VAlert>
                 </VCol>
 
-                <template v-if="canAdminInject && formData.is_active === true">
+                <template v-if="canAdminInject && formData.is_active === true && !formData.is_blocked">
                   <VCol cols="12">
                     <VDivider class="my-2" />
                   </VCol>
