@@ -29,6 +29,7 @@ concurrency:
 # ---------------------------------------------------------------
 jobs:
   build-and-push:
+    if: ${{ (secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '') || (secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != '') }}
     runs-on: ubuntu-latest
     permissions: {contents: read, packages: write}
 
@@ -57,8 +58,8 @@ jobs:
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USERNAME || secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN || secrets.DOCKER_PASSWORD }}
 
       - name: Docker metadata
         id: meta
@@ -88,7 +89,7 @@ jobs:
   deploy:
     name: Deploy to Raspberry Pi
     needs: build-and-push
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy == true }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy == true && ((secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '') || (secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != '')) }}
     runs-on: [self-hosted, arm64, raspberrypi]      # label runner di Pi
 
     steps:
@@ -98,8 +99,8 @@ jobs:
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USERNAME || secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN || secrets.DOCKER_PASSWORD }}
 
       - name: Stop current stack
         run: |
