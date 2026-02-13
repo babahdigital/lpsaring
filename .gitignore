@@ -137,6 +137,9 @@ backend/backups/
 
 # Secrets files - IMPORTANT!
 *.env
+backend/.env.local
+backend/.env.public
+dev/
 secrets/
 credentials/
 *.pem
