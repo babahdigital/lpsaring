@@ -29,7 +29,6 @@ concurrency:
 # ---------------------------------------------------------------
 jobs:
   build-and-push:
-    if: ${{ (secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '') || (secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != '') }}
     runs-on: ubuntu-latest
     permissions: {contents: read, packages: write}
 
@@ -89,7 +88,7 @@ jobs:
   deploy:
     name: Deploy to Raspberry Pi
     needs: build-and-push
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy == true && ((secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '') || (secrets.DOCKER_USERNAME != '' && secrets.DOCKER_PASSWORD != '')) }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy == true }}
     runs-on: [self-hosted, arm64, raspberrypi]      # label runner di Pi
 
     steps:
