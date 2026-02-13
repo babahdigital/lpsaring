@@ -45,12 +45,12 @@ const userInitials = computed(() => {
   const name = displayName.value
   if (!name || name === 'Pengguna')
     return 'U'
-  const words = name.split(' ').filter(Boolean)
-  if (words.length >= 2)
-    return (words[0][0] + words[1][0]).toUpperCase()
-  if (words.length === 1 && words[0].length > 1)
-    return words[0].slice(0, 2).toUpperCase()
-  return name[0].toUpperCase()
+  const compact = name.replace(/\s+/g, '')
+  if (compact.length >= 2)
+    return compact.slice(0, 2).toUpperCase()
+  if (compact.length === 1)
+    return compact[0].toUpperCase()
+  return 'U'
 })
 
 const userRole = computed(() => {

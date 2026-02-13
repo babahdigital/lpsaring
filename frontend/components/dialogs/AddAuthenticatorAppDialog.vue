@@ -31,7 +31,7 @@ function resetAuthCode() {
   <VDialog
     :width="$vuetify.display.smAndDown ? 'auto' : 900"
     :model-value="props.isDialogVisible"
-    @update:model-value="(val) => $emit('update:isDialogVisible', val)"
+    @update:model-value="(val: boolean) => $emit('update:isDialogVisible', val)"
   >
     <!-- Dialog close btn -->
     <DialogCloseBtn @click="$emit('update:isDialogVisible', false)" />

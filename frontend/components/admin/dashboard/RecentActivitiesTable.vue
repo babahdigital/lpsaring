@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useCookie, useRuntimeConfig } from '#app'
+import { useRuntimeConfig } from '#app'
 import { computed, defineAsyncComponent, ref } from 'vue'
 import { useAuthStore } from '~/store/auth'
 
@@ -26,9 +26,8 @@ const _pageTitle = computed(() => '')
 
 // --- State & Config ---
 const _config = useRuntimeConfig()
-const _authToken = useCookie<string | null>('auth_token')
 const authStore = useAuthStore()
-const isAdmin = computed(() => authStore.user?.is_admin === true)
+const isAdmin = computed(() => authStore.isAdmin)
 
 // --- Fetch Data (Placeholder - tidak digunakan) ---
 const _quotaData = ref(null)

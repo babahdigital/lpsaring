@@ -1,60 +1,92 @@
-// frontend/plugins/vuetify/icons.ts
-import type { IconAliases } from 'vuetify'
+import checkboxChecked from '@images/svg/checkbox-checked.svg'
+import checkboxIndeterminate from '@images/svg/checkbox-indeterminate.svg'
+import checkboxUnchecked from '@images/svg/checkbox-unchecked.svg'
+import radioChecked from '@images/svg/radio-checked.svg'
+import radioUnchecked from '@images/svg/radio-unchecked.svg'
 
-/**
- * Definisikan alias ikon untuk komponen internal Vuetify.
- * Komponen seperti VAlert, VDataTable, VRating, VCheckbox, dll., menggunakan alias ini.
- * Kita gunakan nama ikon dari set 'tabler' dengan prefix 'tabler:'
- * agar kompatibel dengan Iconify yang kemungkinan digunakan oleh nuxt-icon atau <Icon>.
- */
-const aliases: Partial<IconAliases> = {
-  // Navigasi & Kontrol Dasar
-  collapse: 'tabler:chevron-up',
-  expand: 'tabler:chevron-down',
-  complete: 'tabler:check',
-  cancel: 'tabler:x',
-  close: 'tabler:x',
-  prev: 'tabler:chevron-left',
-  next: 'tabler:chevron-right',
-  edit: 'tabler:pencil',
-  delete: 'tabler:trash',
-  clear: 'tabler:circle-x',
-  calendar: 'tabler:calendar',
-  menu: 'tabler:menu-2',
-  dropdown: 'tabler:chevron-down',
-  subgroup: 'tabler:caret-down',
-
-  // Status & Feedback
-  success: 'tabler:circle-check',
-  info: 'tabler:info-circle',
-  warning: 'tabler:alert-triangle',
-  error: 'tabler:alert-circle',
-  loading: 'tabler:refresh',
-
-  // Input & Seleksi
-  checkboxOn: 'tabler:checkbox',
-  checkboxOff: 'tabler:square',
-  checkboxIndeterminate: 'tabler:square-minus',
-  // --- PERBAIKAN DI SINI ---
-  radioOn: 'tabler:circle-dot',
-  radioOff: 'tabler:circle',
-  ratingEmpty: 'tabler:star',
-  ratingFull: 'tabler:star-filled',
-  ratingHalf: 'tabler:star-half-filled',
-
-  // Tabel & Urutan
-  sort: 'tabler:arrow-up',
-  sortAsc: 'tabler:arrow-up',
-  sortDesc: 'tabler:arrow-down',
-  unfold: 'tabler:arrows-sort',
-  delimiter: 'tabler:circle',
-
-  // Lain-lain
-  first: 'tabler:player-skip-back',
-  last: 'tabler:player-skip-forward',
-  file: 'tabler:paperclip',
-  plus: 'tabler:plus',
-  minus: 'tabler:minus',
+const customIcons: Record<string, unknown> = {
+  'mdi-checkbox-blank-outline': checkboxUnchecked,
+  'mdi-checkbox-marked': checkboxChecked,
+  'mdi-minus-box': checkboxIndeterminate,
+  'mdi-radiobox-marked': radioChecked,
+  'mdi-radiobox-blank': radioUnchecked,
 }
 
-export const icons = aliases
+const aliases = {
+  calendar: 'tabler-calendar',
+  collapse: 'tabler-chevron-up',
+  complete: 'tabler-check',
+  cancel: 'tabler-x',
+  close: 'tabler-x',
+  delete: 'tabler-circle-x-filled',
+  clear: 'tabler-circle-x',
+  success: 'tabler-circle-check',
+  info: 'tabler-info-circle',
+  warning: 'tabler-alert-triangle',
+  error: 'tabler-alert-circle',
+  prev: 'tabler-chevron-left',
+  ratingEmpty: 'tabler-star',
+  ratingFull: 'tabler-star-filled',
+  ratingHalf: 'tabler-star-half-filled',
+  next: 'tabler-chevron-right',
+  delimiter: 'tabler-circle',
+  sort: 'tabler-arrow-up',
+  expand: 'tabler-chevron-down',
+  menu: 'tabler-menu-2',
+  subgroup: 'tabler-caret-down',
+  dropdown: 'tabler-chevron-down',
+  edit: 'tabler-pencil',
+  loading: 'tabler-refresh',
+  first: 'tabler-player-skip-back',
+  last: 'tabler-player-skip-forward',
+  unfold: 'tabler-arrows-move-vertical',
+  file: 'tabler-paperclip',
+  plus: 'tabler-plus',
+  minus: 'tabler-minus',
+  sortAsc: 'tabler-arrow-up',
+  sortDesc: 'tabler-arrow-down',
+  play: 'tabler-player-play',
+  pause: 'tabler-player-pause',
+  fullscreen: 'tabler-maximize',
+  fullscreenExit: 'tabler-minimize',
+  volumeHigh: 'tabler-volume',
+  volumeMedium: 'tabler-volume-2',
+  volumeLow: 'tabler-volume-2',
+  volumeOff: 'tabler-volume-off',
+  tableGroupExpand: 'tabler-chevron-right',
+  tableGroupCollapse: 'tabler-chevron-down',
+}
+
+export const iconify = {
+  component: (props: any) => {
+    // Load custom SVG directly instead of going through icon component
+    if (typeof props.icon === 'string') {
+      const iconComponent = customIcons[props.icon]
+
+      if (iconComponent)
+        return h(iconComponent)
+    }
+
+    return h(
+      props.tag,
+      {
+        ...props,
+
+        // As we are using class based icons
+        class: [props.icon],
+
+        // Remove used props from DOM rendering
+        tag: undefined,
+        icon: undefined,
+      },
+    )
+  },
+}
+
+export const icons = {
+  defaultSet: 'iconify',
+  aliases,
+  sets: {
+    iconify,
+  },
+}

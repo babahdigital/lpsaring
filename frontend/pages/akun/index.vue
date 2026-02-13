@@ -2,7 +2,7 @@
 import type { VForm } from 'vuetify/components'
 import type { ChangePasswordRequest, User } from '~/types/auth'
 import { useNuxtApp } from '#app'
-import { computed, defineAsyncComponent, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useAuthStore } from '~/store/auth'
 import { normalize_to_e164 } from '~/utils/formatters'
@@ -10,21 +10,25 @@ import { normalize_to_e164 } from '~/utils/formatters'
 // --- [PERBAIKAN] Komponen sekarang dipanggil LoginHistoryCard (nama file tetap) ---
 const LoginHistoryCard = defineAsyncComponent({
   loader: () => import('~/components/akun/LoginHistoryCard.vue'),
-  ssr: false,
 })
 const UserSpendingChart = defineAsyncComponent({
   loader: () => import('~/components/charts/UserSpendingChart.vue'),
-  ssr: false,
+})
+const DeviceManagerCard = defineAsyncComponent({
+  loader: () => import('~/components/akun/DeviceManagerCard.vue'),
 })
 
 // --- Inisialisasi & State Management ---
 const { $api } = useNuxtApp()
 const authStore = useAuthStore()
 const display = useDisplay()
+const isHydrated = ref(false)
+const isMobile = computed(() => (isHydrated.value ? display.smAndDown.value : false))
+const deferredWidgetsReady = ref(false)
+let deferredTimer: ReturnType<typeof setTimeout> | null = null
 const profileLoading = ref(true)
 const profileError = ref<string | null>(null)
 const securityLoading = ref(false)
-const securityAlert = ref<{ type: 'success' | 'error', message: string } | null>(null)
 const profileForm = ref<InstanceType<typeof VForm> | null>(null)
 const profileAlert = ref<{ type: 'success' | 'error', message: string } | null>(null)
 const editData = ref({ full_name: '', phone_number: '' })
@@ -42,10 +46,12 @@ const confirmPassword = ref('')
 const isPasswordVisible = ref(false)
 
 // --- Computed Properties ---
-const currentUser = computed(() => authStore.currentUser)
+type UserWithMeta = User & { created_at?: string }
+const currentUser = computed<UserWithMeta | null>(() => authStore.currentUser as UserWithMeta | null)
 const isUser = computed(() => currentUser.value?.role === 'USER')
 const isKomandan = computed(() => currentUser.value?.role === 'KOMANDAN')
 const isAdminOrSuperAdmin = computed(() => ['ADMIN', 'SUPER_ADMIN'].includes(currentUser.value?.role ?? ''))
+const showDeviceManager = computed(() => isUser.value || isKomandan.value)
 
 const displayRole = computed(() => {
   if (!currentUser.value)
@@ -80,7 +86,7 @@ async function loadInitialData() {
   profileError.value = null
   try {
     if (authStore.currentUser === null || authStore.currentUser === undefined) { // Perbaikan: Perbandingan eksplisit
-      const success = await authStore.fetchUser()
+      const success = await authStore.fetchUser('login')
       if (!success)
         // DIPERBAIKI: Menggunakan ?? untuk fallback yang aman
         throw new Error(authStore.error ?? 'Gagal memuat data pengguna.')
@@ -126,7 +132,7 @@ async function saveProfile() {
 
   try {
     const response = await $api<User>(endpoint, { method: 'PUT', body: payload })
-    authStore.setUser(response)
+    authStore.$patch({ user: response })
     populateEditForm()
     profileAlert.value = { type: 'success', message: 'Profil berhasil diperbarui!' }
   }
@@ -134,33 +140,6 @@ async function saveProfile() {
     // Baris 133: Memperbaiki penggunaan nilai 'any' dalam kondisi
     const errorMessage = (typeof error.data?.message === 'string' && error.data.message !== '') ? error.data.message : 'Terjadi kesalahan'
     profileAlert.value = { type: 'error', message: `Gagal menyimpan profil: ${errorMessage}` }
-  }
-  finally {
-    securityLoading.value = false
-  }
-}
-async function resetHotspotPassword() {
-  securityLoading.value = true
-  securityAlert.value = null
-  if (currentUser.value === null || currentUser.value === undefined) { // Perbaikan: Perbandingan eksplisit
-    securityAlert.value = { type: 'error', message: 'Data pengguna tidak ditemukan.' }
-    securityLoading.value = false
-    return
-  }
-  const isPrivilegedUser = isAdminOrSuperAdmin.value || isKomandan.value
-  const endpoint = isPrivilegedUser
-    ? `/admin/users/${currentUser.value.id}/reset-hotspot-password`
-    : '/users/me/reset-hotspot-password'
-
-  try {
-    const response = await $api<{ message: string }>(endpoint, { method: 'POST' })
-    // DIPERBAIKI: Menggunakan ?? untuk fallback yang aman
-    securityAlert.value = { type: 'success', message: response.message ?? 'Password hotspot berhasil direset.' }
-  }
-  catch (error: any) {
-    // Baris 160: Memperbaiki penggunaan nilai 'any' dalam kondisi
-    const errorMessage = (typeof error.data?.message === 'string' && error.data.message !== '') ? error.data.message : 'Kesalahan tidak diketahui'
-    securityAlert.value = { type: 'error', message: `Gagal mereset password: ${errorMessage}` }
   }
   finally {
     securityLoading.value = false
@@ -215,7 +194,19 @@ async function changePassword() {
     passwordLoading.value = false
   }
 }
-onMounted(loadInitialData)
+onMounted(() => {
+  isHydrated.value = true
+  loadInitialData()
+  deferredTimer = setTimeout(() => {
+    deferredWidgetsReady.value = true
+  }, isMobile.value ? 1200 : 500)
+})
+
+onUnmounted(() => {
+  if (deferredTimer != null)
+    clearTimeout(deferredTimer)
+  deferredTimer = null
+})
 watch(() => authStore.currentUser, (newUser) => {
   if (newUser)
     populateEditForm()
@@ -281,10 +272,13 @@ useHead({ title: 'Pengaturan Akun' })
                     <VCol cols="12" md="6">
                       <AppTextField v-model="editData.phone_number" label="Nomor Telepon (Username)" prepend-inner-icon="tabler-phone" :rules="[requiredRule, phoneRule]" :disabled="!isAdminOrSuperAdmin && !isKomandan" :readonly="!isAdminOrSuperAdmin && !isKomandan" />
                     </VCol>
-                    <VCol v-if="isUser" cols="12" md="6">
+                    <VCol v-if="isUser && currentUser.is_tamping" cols="12" md="6">
+                      <AppTextField :model-value="currentUser.tamping_type || 'N/A'" label="Tamping" readonly disabled prepend-inner-icon="tabler-building-bank" />
+                    </VCol>
+                    <VCol v-if="isUser && !currentUser.is_tamping" cols="12" md="6">
                       <AppTextField :model-value="currentUser.blok || 'N/A'" label="Blok" readonly disabled prepend-inner-icon="tabler-building" />
                     </VCol>
-                    <VCol v-if="isUser" cols="12" md="6">
+                    <VCol v-if="isUser && !currentUser.is_tamping" cols="12" md="6">
                       <AppTextField :model-value="currentUser.kamar || 'N/A'" label="Kamar" readonly disabled prepend-inner-icon="tabler-door" />
                     </VCol>
                   </VRow>
@@ -296,7 +290,7 @@ useHead({ title: 'Pengaturan Akun' })
             </VCard>
           </VCol>
 
-          <VCol cols="12">
+          <VCol v-if="isAdminOrSuperAdmin" cols="12">
             <VCard>
               <VCardItem>
                 <VCardTitle class="text-h5">
@@ -305,30 +299,33 @@ useHead({ title: 'Pengaturan Akun' })
                 <VCardSubtitle>Kelola kredensial dan akses keamanan akun Anda.</VCardSubtitle>
               </VCardItem>
               <VCardText>
-                <VAlert v-if="securityAlert" :type="securityAlert.type" variant="tonal" density="compact" closable class="mb-4" @update:model-value="securityAlert = null">
-                  {{ securityAlert.message }}
-                </VAlert>
                 <div class="d-flex flex-wrap ga-4">
-                  <VBtn v-if="isAdminOrSuperAdmin" color="secondary" variant="tonal" prepend-icon="tabler-key" @click="isPasswordDialogVisible = true">
+                  <VBtn color="secondary" variant="tonal" prepend-icon="tabler-key" @click="isPasswordDialogVisible = true">
                     Ubah Password Portal
-                  </VBtn>
-                  <VBtn color="warning" variant="tonal" :loading="securityLoading" prepend-icon="tabler-wifi" @click="resetHotspotPassword">
-                    Reset Password Hotspot
                   </VBtn>
                 </div>
               </VCardText>
             </VCard>
           </VCol>
 
+          <VCol v-if="showDeviceManager" cols="12">
+            <DeviceManagerCard />
+          </VCol>
+
           <VCol v-if="isUser" cols="12">
             <VCard>
-              <VCardItem>
-                <VCardTitle class="text-h5">
-                  Ringkasan Pengeluaran
-                </VCardTitle>
-                <VCardSubtitle>Grafik pengeluaran Anda dalam seminggu terakhir.</VCardSubtitle>
-                <template #append>
-                  <div class="text-right">
+              <VCardText class="pb-2">
+                <div class="ringkasan-header">
+                  <div class="ringkasan-title-wrap">
+                    <h3 class="text-h5 mb-1">
+                      Ringkasan Pengeluaran
+                    </h3>
+                    <p class="text-body-2 text-medium-emphasis mb-0">
+                      Grafik pengeluaran Anda dalam seminggu terakhir.
+                    </p>
+                  </div>
+
+                  <div class="ringkasan-summary text-right">
                     <div class="text-h5 font-weight-bold text-success">
                       {{ totalSpendingThisPeriod }}
                     </div>
@@ -336,8 +333,8 @@ useHead({ title: 'Pengaturan Akun' })
                       Minggu Ini
                     </div>
                   </div>
-                </template>
-              </VCardItem>
+                </div>
+              </VCardText>
               <VCardText>
                 <div v-if="spendingChartLoading" class="text-center py-4">
                   <VProgressCircular indeterminate />
@@ -345,8 +342,17 @@ useHead({ title: 'Pengaturan Akun' })
                 <VAlert v-if="spendingAlert" :type="spendingAlert.type" variant="tonal" density="compact" closable class="mb-4" @update:model-value="spendingAlert = null">
                   {{ spendingAlert.message }}
                 </VAlert>
-                <div :style="{ height: display.smAndDown ? '200px' : '250px' }">
-                  <UserSpendingChart v-if="spendingChartData[0]?.data.length > 0" :series-data="spendingChartData" :categories="spendingChartCategories" />
+                <div :style="{ height: isMobile ? '200px' : '250px' }">
+                  <ClientOnly>
+                    <UserSpendingChart
+                      v-if="deferredWidgetsReady && spendingChartData[0]?.data.length > 0"
+                      :series-data="spendingChartData"
+                      :categories="spendingChartCategories"
+                    />
+                  </ClientOnly>
+                  <div v-if="!deferredWidgetsReady" class="d-flex align-center justify-center fill-height">
+                    <VProgressCircular indeterminate size="28" />
+                  </div>
                 </div>
               </VCardText>
             </VCard>
@@ -418,14 +424,19 @@ useHead({ title: 'Pengaturan Akun' })
                 </VCardTitle>
                 <VCardSubtitle>Aktivitas login terakhir pada akun Anda.</VCardSubtitle>
               </VCardItem>
-              <LoginHistoryCard />
+              <ClientOnly>
+                <LoginHistoryCard v-if="deferredWidgetsReady" />
+              </ClientOnly>
+              <div v-if="!deferredWidgetsReady" class="text-center py-4">
+                <VProgressCircular indeterminate size="28" />
+              </div>
             </VCard>
           </VCol>
         </VRow>
       </VCol>
     </VRow>
 
-    <VDialog v-model="isPasswordDialogVisible" max-width="500px" persistent>
+    <VDialog v-if="isHydrated" v-model="isPasswordDialogVisible" max-width="500px" persistent>
       <VCard>
         <VCardTitle class="d-flex align-center">
           Ubah Password Portal
@@ -464,3 +475,32 @@ useHead({ title: 'Pengaturan Akun' })
     </VDialog>
   </VContainer>
 </template>
+
+<style scoped>
+.ringkasan-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.ringkasan-title-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.ringkasan-summary {
+  flex-shrink: 0;
+}
+
+@media (max-width: 599.98px) {
+  .ringkasan-header {
+    flex-direction: column;
+  }
+
+  .ringkasan-summary {
+    width: 100%;
+    text-align: left !important;
+  }
+}
+</style>

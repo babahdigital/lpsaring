@@ -1,0 +1,6 @@
+ingress:
+  - hostname: lpsaring.babahdigital.net
+    service: http://nginx:80
+  - service: http_status:404
+
+protocol: http2

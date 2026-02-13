@@ -1,8 +1,8 @@
 import type { NavGroup, NavLink, NavLinkProps } from '@layouts/types'
 import type { Router } from 'vue-router'
 import { layoutConfig } from '@layouts/config'
+import { AppContentLayoutNav } from '@layouts/enums'
 import { useLayoutConfigStore } from '@layouts/stores/config'
-import { AppContentLayoutNav } from '@/types/enums'
 
 export const openGroups = ref<string[]>([])
 
@@ -139,24 +139,8 @@ export function switchToVerticalNavOnLtOverlayNavBreakpoint() {
       If it's `mdAndDown` => We will use vertical nav no matter what previous nav type was
       Or if it's `lgAndUp` we need to switch back to `lgAndUp` nav type. For this we will tracker property `lgAndUpNav`
     */
-  const shouldChangeContentLayoutNav = refAutoReset(true, 500)
-
-  shouldChangeContentLayoutNav.value = false
-
   watch(() => configStore.isLessThanOverlayNavBreakpoint, (val) => {
-    if (!val) {
-      configStore.appContentLayoutNav = lgAndUpNav.value
-    }
-    else {
-      if (!shouldChangeContentLayoutNav.value) {
-        setTimeout(() => {
-          configStore.appContentLayoutNav = AppContentLayoutNav.Vertical
-        }, 500)
-      }
-      else {
-        configStore.appContentLayoutNav = AppContentLayoutNav.Vertical
-      }
-    }
+    configStore.appContentLayoutNav = val ? AppContentLayoutNav.Vertical : lgAndUpNav.value
   }, { immediate: true })
 }
 

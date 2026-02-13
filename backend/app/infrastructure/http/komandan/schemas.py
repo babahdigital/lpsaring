@@ -3,7 +3,6 @@
 # sejalan dengan arsitektur aplikasi secara keseluruhan.
 
 from pydantic import BaseModel, Field, model_validator
-from typing import Optional
 import uuid
 
 # Impor tipe enum dari model database

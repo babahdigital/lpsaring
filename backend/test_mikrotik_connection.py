@@ -16,7 +16,7 @@ load_dotenv(dotenv_path=env_path)
 
 # Baca Konfigurasi Mikrotik dari .env
 MIKROTIK_HOST = os.environ.get('MIKROTIK_HOST')
-MIKROTIK_USERNAME = os.environ.get('MIKROTIK_USERNAME')
+MIKROTIK_USERNAME = os.environ.get('MIKROTIK_USERNAME') or os.environ.get('MIKROTIK_USER')
 MIKROTIK_PASSWORD = os.environ.get('MIKROTIK_PASSWORD')
 MIKROTIK_PORT = int(os.environ.get('MIKROTIK_PORT', 8728))
 

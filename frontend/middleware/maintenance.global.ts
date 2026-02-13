@@ -1,4 +1,5 @@
 // frontend/middleware/maintenance.global.ts
+import type { RouteLocationNormalized } from 'vue-router'
 import { defineNuxtRouteMiddleware, navigateTo } from '#app'
 import { useAuthStore } from '~/store/auth'
 import { useMaintenanceStore } from '~/store/maintenance'
@@ -7,7 +8,7 @@ import { useMaintenanceStore } from '~/store/maintenance'
  * Middleware untuk menangani Maintenance Mode.
  * Logika ini diprioritaskan untuk mengontrol akses selama maintenance.
  */
-export default defineNuxtRouteMiddleware(async (to) => {
+export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => {
   const maintenanceStore = useMaintenanceStore()
   const authStore = useAuthStore()
 

@@ -1,8 +1,6 @@
-// frontend/@layouts/types.ts
 import type { OffsetOptions } from '@floating-ui/dom'
-import type { Component, VNode } from 'vue'
+import type { AppContentLayoutNav, ContentWidth, FooterType, HorizontalNavType, NavbarType } from '@layouts/enums'
 import type { RouteLocationRaw } from 'vue-router'
-import type { AppContentLayoutNav, ContentWidth, FooterType, HorizontalNavType, NavbarType } from '@/types/enums'
 
 export interface LayoutConfig {
   app: {
@@ -11,7 +9,8 @@ export interface LayoutConfig {
     contentWidth: typeof ContentWidth[keyof typeof ContentWidth]
     contentLayoutNav: typeof AppContentLayoutNav[keyof typeof AppContentLayoutNav]
     overlayNavFromBreakpoint: number
-    isRTL?: boolean // PROPERI BARU DITAMBAHKAN
+
+    // isRTL: boolean
     i18n: {
       enable: boolean
     }
@@ -20,17 +19,13 @@ export interface LayoutConfig {
   navbar: {
     type: typeof NavbarType[keyof typeof NavbarType]
     navbarBlur: boolean
-    isContentWidthWide?: boolean // PROPERI BARU DITAMBAHKAN
-    stickOnScroll?: number // PROPERI BARU DITAMBAHKAN
   }
   footer: {
     type: typeof FooterType[keyof typeof FooterType]
-    isContentWidthWide?: boolean // PROPERI BARU DITAMBAHKAN
   }
   verticalNav: {
     isVerticalNavCollapsed: boolean
     defaultNavItemIconProps: unknown
-    isMini?: boolean // PROPERI BARU DITAMBAHKAN
   }
   horizontalNav: {
     type: typeof HorizontalNavType[keyof typeof HorizontalNavType]

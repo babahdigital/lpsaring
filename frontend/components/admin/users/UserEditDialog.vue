@@ -13,6 +13,25 @@ const props = defineProps<{
   availableKamars: string[]
   loading: boolean
   isAlamatLoading: boolean
+  mikrotikOptions: {
+    serverOptions: string[]
+    profileOptions: string[]
+    defaults: {
+      server_user: string
+      server_komandan: string
+      server_admin: string
+      server_support: string
+      profile_user: string
+      profile_komandan: string
+      profile_default: string
+      profile_active: string
+      profile_fup: string
+      profile_habis: string
+      profile_unlimited: string
+      profile_expired: string
+      profile_inactive: string
+    }
+  }
 }>()
 const emit = defineEmits(['update:modelValue', 'save', 'resetHotspot', 'generateAdminPass'])
 const { $api } = useNuxtApp()
@@ -27,12 +46,16 @@ interface User {
   is_active: boolean
   blok: string | null
   kamar: string | null
+  is_tamping: boolean
+  tamping_type: string | null
   is_unlimited_user: boolean
   mikrotik_server_name: string | null
   mikrotik_profile_name: string | null
   total_quota_purchased_mb: number
   total_quota_used_mb: number
   quota_expiry_date: string | null
+  is_blocked?: boolean
+  blocked_reason?: string | null
 }
 
 interface LiveData {
@@ -54,7 +77,11 @@ function getInitialFormData(): Partial<User & { add_gb: number, add_days: number
     is_active: true,
     blok: null,
     kamar: null,
+    is_tamping: false,
+    tamping_type: null,
     is_unlimited_user: false,
+    is_blocked: false,
+    blocked_reason: null,
     mikrotik_server_name: null,
     mikrotik_profile_name: null,
     total_quota_purchased_mb: 0,
@@ -66,7 +93,6 @@ function getInitialFormData(): Partial<User & { add_gb: number, add_days: number
 }
 
 const formData = reactive(getInitialFormData())
-const adminAccessType = ref<'admin' | 'komandan' | null>(null)
 const isCheckingMikrotik = ref(false)
 const liveData = ref<LiveData | null>(null)
 
@@ -75,7 +101,7 @@ const isRestrictedAdmin = computed(() => authStore.isAdmin && !authStore.isSuper
 const canAdminInject = computed(() => {
   if (authStore.isSuperAdmin)
     return true
-  if (isRestrictedAdmin.value && formData.role === 'KOMANDAN')
+  if (isRestrictedAdmin.value && (formData.role === 'USER' || formData.role === 'KOMANDAN'))
     return true
   return false
 })
@@ -87,9 +113,43 @@ const isSaveDisabled = computed(() => {
 })
 
 const isTargetAdminOrSuper = computed(() => formData.role === 'ADMIN' || formData.role === 'SUPER_ADMIN')
+const isBlocked = computed(() => formData.is_blocked === true)
 
-const superAdminProfileOptions = ['admin', 'user', 'expired', 'komandan', 'support', 'unlimited', 'inactive']
-const superAdminServerOptions = ['srv-admin', 'srv-komandan', 'srv-support', 'srv-user']
+const tampingOptions = [
+  'Tamping luar',
+  'Tamping AO',
+  'Tamping Pembinaan',
+  'Tamping kunjungan',
+  'Tamping kamtib',
+  'Tamping klinik',
+  'Tamping dapur',
+  'Tamping mesjid',
+  'Tamping p2u',
+  'Tamping BLK',
+  'Tamping kebersihan',
+  'Tamping Humas',
+  'Tamping kebun',
+].map(item => ({ title: item, value: item }))
+
+const fallbackMikrotikDefaults = {
+  server_user: 'srv-user',
+  server_komandan: 'srv-komandan',
+  server_admin: 'srv-admin',
+  server_support: 'srv-support',
+  profile_user: 'user',
+  profile_komandan: 'komandan',
+  profile_default: 'default',
+  profile_active: 'default',
+  profile_fup: 'fup',
+  profile_habis: 'habis',
+  profile_unlimited: 'unlimited',
+  profile_expired: 'expired',
+  profile_inactive: 'inactive',
+}
+const mikrotikDefaults = computed(() => ({
+  ...fallbackMikrotikDefaults,
+  ...(props.mikrotikOptions?.defaults ?? {}),
+}))
 const roleOptions = computed(() => {
   const roles: Array<User['role']> = ['USER', 'KOMANDAN', 'ADMIN', 'SUPER_ADMIN']
   return roles.map(role => ({ title: role.replace('_', ' '), value: role }))
@@ -104,14 +164,6 @@ watch(() => props.user, (newUser) => {
       add_days: 0,
       is_unlimited_user: isEditingAdminOrSuper || newUser.is_unlimited_user,
     })
-
-    if (authStore.isAdmin && !authStore.isSuperAdmin) {
-      if (formData.mikrotik_server_name === 'srv-admin')
-        adminAccessType.value = 'admin'
-      else if (formData.mikrotik_server_name === 'srv-komandan')
-        adminAccessType.value = 'komandan'
-      else adminAccessType.value = null
-    }
   }
 }, { immediate: true })
 
@@ -126,23 +178,19 @@ watch(() => props.modelValue, (isOpen) => {
 })
 
 function setDefaultMikrotikConfig(role: User['role'] | undefined) {
+  const defaults = mikrotikDefaults.value
   switch (role) {
     case 'USER':
-      if (formData.is_unlimited_user !== true) {
-        formData.mikrotik_profile_name = 'user'
-      }
-      formData.mikrotik_server_name = 'srv-user'
-      break
     case 'KOMANDAN':
       if (formData.is_unlimited_user !== true) {
-        formData.mikrotik_profile_name = 'komandan'
+        formData.mikrotik_profile_name = defaults.profile_active || defaults.profile_user
       }
-      formData.mikrotik_server_name = 'srv-komandan'
+      formData.mikrotik_server_name = defaults.server_user
       break
     case 'ADMIN':
     case 'SUPER_ADMIN':
-      formData.mikrotik_profile_name = 'komandan'
-      formData.mikrotik_server_name = 'srv-admin'
+      formData.mikrotik_profile_name = defaults.profile_unlimited
+      formData.mikrotik_server_name = defaults.server_user
       break
   }
 }
@@ -152,8 +200,20 @@ watch(() => formData.role, (newRole) => {
     formData.is_unlimited_user = true
     formData.blok = null
     formData.kamar = null
+    formData.is_tamping = false
+    formData.tamping_type = null
   }
   setDefaultMikrotikConfig(newRole)
+})
+
+watch(() => formData.is_tamping, (isTamping) => {
+  if (isTamping) {
+    formData.blok = null
+    formData.kamar = null
+  }
+  else {
+    formData.tamping_type = null
+  }
 })
 
 watch(() => formData.is_unlimited_user, (isUnlimited, wasUnlimited) => {
@@ -161,7 +221,7 @@ watch(() => formData.is_unlimited_user, (isUnlimited, wasUnlimited) => {
     return
 
   if (isUnlimited) {
-    formData.mikrotik_profile_name = 'unlimited'
+    formData.mikrotik_profile_name = mikrotikDefaults.value.profile_unlimited
     formData.add_gb = 0
   }
   else {
@@ -174,27 +234,14 @@ watch(() => formData.is_active, (isActive, wasActive) => {
     return
 
   if (!isActive) {
-    formData.mikrotik_profile_name = 'inactive'
+    formData.mikrotik_profile_name = mikrotikDefaults.value.profile_inactive
   }
   else {
     if (formData.is_unlimited_user === true) {
-      formData.mikrotik_profile_name = 'unlimited'
+      formData.mikrotik_profile_name = mikrotikDefaults.value.profile_unlimited
     }
     else {
       setDefaultMikrotikConfig(formData.role)
-    }
-  }
-})
-
-watch(adminAccessType, (newType) => {
-  if (authStore.isAdmin && !authStore.isSuperAdmin) {
-    if (newType === 'admin') {
-      formData.mikrotik_profile_name = 'komandan'
-      formData.mikrotik_server_name = 'srv-admin'
-    }
-    else if (newType === 'komandan') {
-      formData.mikrotik_profile_name = 'komandan'
-      formData.mikrotik_server_name = 'srv-komandan'
     }
   }
 })
@@ -205,7 +252,13 @@ async function checkAndApplyMikrotikStatus() {
   isCheckingMikrotik.value = true
   liveData.value = null
   try {
-    const response = await $api<{ exists_on_mikrotik: boolean, details: any, message?: string }>(`/admin/users/${props.user.id}/mikrotik-status`)
+    const response = await $api<{ exists_on_mikrotik: boolean, details: any, message?: string, live_available?: boolean }>(`/admin/users/${props.user.id}/mikrotik-status`)
+
+    if (response.live_available === false) {
+      showSnackbar({ type: 'info', title: 'Mode Lokal', text: response.message || 'Live check MikroTik tidak tersedia. Menampilkan data dari database.' })
+      return
+    }
+
     if (response.exists_on_mikrotik === true && response.details != null) {
       formData.mikrotik_server_name = response.details.server
       formData.mikrotik_profile_name = response.details.profile
@@ -238,11 +291,14 @@ async function onSave() {
   if (valid) {
     const payload = { ...formData }
 
-    if (payload.is_unlimited_user === true && payload.mikrotik_profile_name !== 'unlimited') {
-      if (!authStore.isSuperAdmin) {
-        payload.mikrotik_profile_name = 'unlimited'
-      }
+    if (payload.is_unlimited_user === true) {
+      payload.mikrotik_profile_name = mikrotikDefaults.value.profile_unlimited
     }
+
+    if (payload.is_unlimited_user !== true)
+      payload.mikrotik_profile_name = mikrotikDefaults.value.profile_active || mikrotikDefaults.value.profile_user
+
+    payload.mikrotik_server_name = mikrotikDefaults.value.server_user
 
     if (payload.role === 'ADMIN' || payload.role === 'SUPER_ADMIN') {
       payload.is_unlimited_user = true
@@ -293,10 +349,16 @@ function onClose() {
                 <VCol cols="12" md="6">
                   <AppSelect v-model="formData.role" :items="roleOptions" label="Peran" :disabled="!authStore.isSuperAdmin" prepend-inner-icon="tabler-shield-check" />
                 </VCol>
-                <VCol v-if="formData.role === 'USER'" cols="12" md="6">
+                <VCol v-if="formData.role === 'USER'" cols="12">
+                  <VSwitch v-model="formData.is_tamping" label="Tamping" color="primary" inset :disabled="isRestrictedAdmin" />
+                </VCol>
+                <VCol v-if="formData.role === 'USER' && formData.is_tamping" cols="12" md="6">
+                  <AppSelect v-model="formData.tamping_type" :items="tampingOptions" label="Jenis Tamping" :disabled="isRestrictedAdmin" prepend-inner-icon="tabler-building-bank" />
+                </VCol>
+                <VCol v-if="formData.role === 'USER' && !formData.is_tamping" cols="12" md="6">
                   <AppSelect v-model="formData.blok" :items="props.availableBloks" :loading="props.isAlamatLoading" label="Blok" :disabled="isRestrictedAdmin" prepend-inner-icon="tabler-building" />
                 </VCol>
-                <VCol v-if="formData.role === 'USER'" cols="12" md="6">
+                <VCol v-if="formData.role === 'USER' && !formData.is_tamping" cols="12" md="6">
                   <AppSelect v-model="formData.kamar" :items="props.availableKamars" :loading="props.isAlamatLoading" label="Kamar" :disabled="isRestrictedAdmin" prepend-inner-icon="tabler-door" />
                 </VCol>
               </VRow>
@@ -306,6 +368,14 @@ function onClose() {
               <VRow>
                 <VCol cols="12">
                   <VSwitch v-model="formData.is_active" label="Akun Aktif" color="success" inset hint="Menonaktifkan akan memutus akses pengguna." persistent-hint />
+                </VCol>
+
+                <VCol cols="12">
+                  <VSwitch v-model="formData.is_blocked" label="Blokir Akun" color="error" inset hint="Blokir berbeda dengan nonaktif. Akun tetap tercatat, tetapi akses ditolak." persistent-hint />
+                </VCol>
+
+                <VCol v-if="isBlocked" cols="12">
+                  <AppTextField v-model="formData.blocked_reason" label="Alasan Blokir" placeholder="Contoh: Pelanggaran aturan penggunaan" prepend-inner-icon="tabler-alert-triangle" />
                 </VCol>
 
                 <VCol v-if="canAdminInject && formData.is_active === true" cols="12">
@@ -321,6 +391,12 @@ function onClose() {
                   </VAlert>
                 </VCol>
 
+                <VCol v-if="isBlocked" cols="12">
+                  <VAlert type="error" variant="tonal" density="compact" icon="tabler-ban">
+                    Akun ini sedang <strong>DIBLOKIR</strong>. Akses login akan ditolak sampai dibuka kembali.
+                  </VAlert>
+                </VCol>
+
                 <template v-if="canAdminInject && formData.is_active === true">
                   <VCol cols="12">
                     <VDivider class="my-2" />
@@ -331,7 +407,7 @@ function onClose() {
                       Inject Kuota & Masa Aktif
                     </div>
                     <VBtn
-                      v-if="authStore.isSuperAdmin"
+                      v-if="canAdminInject"
                       size="small" variant="tonal" color="info"
                       :loading="isCheckingMikrotik" prepend-icon="tabler-refresh-dot"
                       @click="checkAndApplyMikrotikStatus"
@@ -372,27 +448,12 @@ function onClose() {
                     <AppTextField v-model.number="formData.add_gb" label="Tambah Kuota (GB)" type="number" prepend-inner-icon="tabler-database-plus" />
                   </VCol>
 
-                  <VCol v-if="isTargetAdminOrSuper !== true" cols="12" md="6">
+                  <VCol cols="12" md="6">
                     <AppTextField v-model.number="formData.add_days" label="Tambah Masa Aktif (Hari)" type="number" prepend-inner-icon="tabler-calendar-plus" />
                   </VCol>
 
                   <VCol cols="12">
                     <VDivider class="my-2" />
-                  </VCol>
-
-                  <VCol v-if="authStore.isSuperAdmin" cols="12">
-                    <div class="text-overline mb-3">
-                      Pengaturan Mikrotik
-                    </div>
-
-                    <VRow>
-                      <VCol cols="12" md="6">
-                        <AppSelect v-model="formData.mikrotik_server_name" :items="superAdminServerOptions" label="Server Mikrotik" clearable prepend-inner-icon="tabler-server" />
-                      </VCol>
-                      <VCol cols="12" md="6">
-                        <AppSelect v-model="formData.mikrotik_profile_name" :items="superAdminProfileOptions" label="Profil Mikrotik" clearable prepend-inner-icon="tabler-network" />
-                      </VCol>
-                    </VRow>
                   </VCol>
                 </template>
               </VRow>

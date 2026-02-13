@@ -2,6 +2,9 @@
 
 This template should help get you started developing with Vue 3 in Vite.
 
+Lampiran wajib:
+- [.github/copilot-instructions.md](../.github/copilot-instructions.md)
+
 ## Recommended IDE Setup
 
 [VS Code](https://code.visualstudio.com/) + [Volar](https://marketplace.visualstudio.com/items?itemName=johnsoncodehk.volar) (and disable Vetur).
@@ -18,18 +21,20 @@ See [Vite Configuration Reference](https://vitejs.dev/config/).
 
 ## Project Setup
 
+Pastikan `pnpm` terpasang di host (mis. `corepack enable` atau `npm i -g pnpm`) agar VS Code tidak error TypeScript/Vue.
+
 ```sh
-npm install
+pnpm install
 ```
 
 ### Compile and Hot-Reload for Development
 
 ```sh
-npm run dev
+pnpm run dev
 ```
 
 ### Type-Check, Compile and Minify for Production
 
 ```sh
-npm run build
+pnpm run build
 ```

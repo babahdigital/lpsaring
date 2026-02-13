@@ -71,11 +71,14 @@ docs/_build/
 .env
 .env.prod
 .venv
+.venv*/
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+.direnv/
+.python-version
 
 # Spyder project settings
 .spyderproject
@@ -98,8 +101,19 @@ dmypy.json
 # Node.js
 node_modules/
 .nuxt/
+.nitro/
+.output/
+.pnpm-store/
+.vite/
+.eslintcache
 dist/ # Nuxt build output
 coverage/ # Test coverage
+logs/
+tmp/
+temp/
+*.tmp
+*.dump
+*.bak
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -108,6 +122,11 @@ pnpm-debug.log*
 
 # Docker
 docker-compose.override.yml
+
+# Celery beat schedule
+backend/celerybeat-schedule
+backend/celerybeat-schedule.*
+backend/backups/
 
 # IDE / Editor specific
 .idea/
@@ -128,5 +147,16 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 
+# Local databases
+*.sqlite
+*.sqlite3
+*.db
+
 docker-compose.yml.bak
 *.bak.env.prod
+.ruff_cache/
+copilot-instructions.md
+docs/
+*.md
+*.local
+*.public

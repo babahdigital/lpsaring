@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import type { VIcon } from 'vuetify/components'
-import { useNuxtApp } from '#app'
+import { useNuxtApp, useRuntimeConfig } from '#app'
 import { ClientOnly } from '#components'
 import { format, isValid as isValidDate, parseISO } from 'date-fns'
 import { id as dateLocaleId } from 'date-fns/locale'
@@ -8,6 +7,7 @@ import QrcodeVue from 'qrcode.vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
+import { useSnackbar } from '~/composables/useSnackbar'
 
 // --- Interface Data Disesuaikan dengan Backend (snake_case) ---
 interface PackageDetails {
@@ -46,16 +46,26 @@ interface TransactionDetails {
 
 const route = useRoute()
 const router = useRouter()
-const { $api, $snackbar } = useNuxtApp()
+const { $api } = useNuxtApp()
+const runtimeConfig = useRuntimeConfig()
+const { add: addSnackbar } = useSnackbar()
 const { smAndDown } = useDisplay()
+const isHydrated = ref(false)
+const isMobile = computed(() => (isHydrated.value ? smAndDown.value : false))
 
 const transactionDetails = ref<TransactionDetails | null>(null)
 const isLoading = ref(true)
 const fetchError = ref<string | null>(null)
 const copySuccess = ref<string | null>(null)
+const isDownloadingInvoice = ref(false)
 const errorMessageFromQuery = ref<string | null>(
   typeof route.query.msg === 'string' ? decodeURIComponent(route.query.msg) : null,
 )
+const orderId = computed(() => {
+  if (transactionDetails.value?.midtrans_order_id)
+    return transactionDetails.value.midtrans_order_id
+  return typeof route.query.order_id === 'string' ? route.query.order_id : null
+})
 
 async function fetchTransactionDetails(orderId: string) {
   isLoading.value = true
@@ -84,13 +94,14 @@ async function fetchTransactionDetails(orderId: string) {
 }
 
 onMounted(() => {
+  isHydrated.value = true
   const orderIdFromQuery = route.query.order_id as string | undefined
-  const statusFromQuery = route.query.status as TransactionStatus | undefined
+  const statusFromQuery = typeof route.query.status === 'string' ? route.query.status.toUpperCase() : undefined
 
   if (typeof orderIdFromQuery === 'string' && orderIdFromQuery.trim() !== '') {
     fetchTransactionDetails(orderIdFromQuery.trim())
   }
-  else if (statusFromQuery === 'error' && errorMessageFromQuery.value != null) {
+  else if (statusFromQuery === 'ERROR' && errorMessageFromQuery.value != null) {
     fetchError.value = `Pembayaran Gagal: ${errorMessageFromQuery.value}`
     isLoading.value = false
   }
@@ -101,7 +112,7 @@ onMounted(() => {
 })
 
 const finalStatus = computed((): TransactionStatus => {
-  const statusFromQuery = route.query.status as TransactionStatus | undefined
+  const statusFromQuery = typeof route.query.status === 'string' ? route.query.status.toUpperCase() as TransactionStatus : undefined
   if (transactionDetails.value?.status != null && transactionDetails.value.status !== 'UNKNOWN') {
     return transactionDetails.value.status
   }
@@ -110,6 +121,21 @@ const finalStatus = computed((): TransactionStatus => {
   }
   return transactionDetails.value?.status ?? 'UNKNOWN'
 })
+
+const invoicePath = computed(() => {
+  if (!orderId.value)
+    return ''
+  return `/transactions/${orderId.value}/invoice`
+})
+
+const invoiceDownloadUrl = computed(() => {
+  if (invoicePath.value === '')
+    return ''
+  const base = (runtimeConfig.public.apiBaseUrl ?? '/api').replace(/\/$/, '')
+  return `${base}${invoicePath.value}`
+})
+
+const canDownloadInvoice = computed(() => finalStatus.value === 'SUCCESS' && invoicePath.value !== '')
 
 const userPhoneNumberRaw = computed(() => transactionDetails.value?.user?.phone_number ?? null)
 const userName = computed(() => transactionDetails.value?.user?.full_name ?? 'Pengguna')
@@ -171,13 +197,13 @@ const alertTitle = computed((): string => {
 
 const alertIcon = computed((): string => {
   switch (finalStatus.value) {
-    case 'SUCCESS': return 'tabler:rosette-discount-check-filled'
-    case 'PENDING': return 'tabler:clock-hour-3-filled'
-    case 'FAILED': return 'tabler:circle-x-filled'
-    case 'EXPIRED': return 'tabler:time-duration-off'
-    case 'CANCELLED': return 'tabler:ban'
-    case 'ERROR': return 'tabler:alert-triangle-filled'
-    default: return 'tabler:help-circle-filled'
+    case 'SUCCESS': return 'tabler-check'
+    case 'PENDING': return 'tabler-clock'
+    case 'FAILED': return 'tabler-x'
+    case 'EXPIRED': return 'tabler-clock-off'
+    case 'CANCELLED': return 'tabler-ban'
+    case 'ERROR': return 'tabler-alert-triangle'
+    default: return 'tabler-help-circle'
   }
 })
 
@@ -216,19 +242,19 @@ const detailMessage = computed((): string => {
 
 async function copyToClipboard(textToCopy: string | undefined | null, type: string) {
   if (textToCopy == null || navigator.clipboard == null) {
-    $snackbar.add({ type: 'error', text: 'Gagal menyalin: Fitur tidak didukung oleh browser Anda.' })
+    addSnackbar({ type: 'error', title: 'Gagal Menyalin', text: 'Gagal menyalin: Fitur tidak didukung oleh browser Anda.' })
     return
   }
   try {
     await navigator.clipboard.writeText(textToCopy)
     copySuccess.value = type
-    $snackbar.add({ type: 'success', text: `${type} berhasil disalin ke clipboard!` })
+    addSnackbar({ type: 'success', title: 'Berhasil', text: `${type} berhasil disalin ke clipboard!` })
     setTimeout(() => {
       copySuccess.value = null
     }, 2500)
   }
   catch {
-    $snackbar.add({ type: 'error', text: `Gagal menyalin ${type}.` })
+    addSnackbar({ type: 'error', title: 'Gagal Menyalin', text: `Gagal menyalin ${type}.` })
   }
 }
 
@@ -249,6 +275,42 @@ function getBankNameFromVA(paymentMethodValue?: string | null): string {
 
 function goToSelectPackage() {
   router.push({ path: '/beli' })
+}
+
+async function refreshStatus() {
+  if (orderId.value)
+    await fetchTransactionDetails(orderId.value)
+}
+
+async function downloadInvoice() {
+  if (invoicePath.value === '' || isDownloadingInvoice.value)
+    return
+  isDownloadingInvoice.value = true
+  try {
+    const blob = await $api<Blob>(invoicePath.value, {
+      method: 'GET',
+      responseType: 'blob',
+    })
+    if (blob == null || blob.size === 0)
+      throw new Error('Gagal menerima data file dari server (blob kosong).')
+
+    const objectUrl = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = `invoice-${orderId.value ?? 'transaksi'}.pdf`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(objectUrl)
+    addSnackbar({ type: 'success', title: 'Berhasil', text: 'Invoice berhasil diunduh.' })
+  }
+  catch (err: any) {
+    const message = err?.data?.message ?? err?.message ?? 'Gagal mengunduh invoice.'
+    addSnackbar({ type: 'error', title: 'Gagal', text: message })
+  }
+  finally {
+    isDownloadingInvoice.value = false
+  }
 }
 
 function goToDashboard() {
@@ -273,7 +335,7 @@ const showQrCode = computed(() => {
   const pm = paymentMethod.value?.toLowerCase()
   return pm === 'qris' || pm === 'gopay' || pm === 'shopeepay'
 })
-const qrSize = computed(() => smAndDown.value ? 200 : 250)
+const qrSize = computed(() => (isMobile.value ? 200 : 250))
 
 definePageMeta({ layout: 'blank' })
 useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
@@ -281,7 +343,7 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
 
 <template>
   <v-container fluid class="fill-height bg-surface pa-0 ma-0">
-    <v-row justify="center" align="center" class="fill-height py-md-8 py-4 px-4">
+    <v-row justify="center" align="center" class="fill-height py-md-10 py-6 px-4">
       <v-col cols="12" sm="11" md="9" lg="7" xl="5" class="mx-auto">
         <div v-if="isLoading" class="text-center pa-10">
           <v-progress-circular indeterminate color="primary" size="64" width="6" />
@@ -292,7 +354,7 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
 
         <v-card v-else-if="fetchError" variant="tonal" color="error" class="mx-auto rounded-xl pa-2">
           <v-card-text class="text-center pa-6">
-            <v-icon size="56" class="mb-4" color="error" icon="tabler:alert-octagon" />
+            <v-icon size="56" class="mb-4" color="error" icon="tabler-alert-octagon" />
             <h2 class="text-h5 font-weight-bold mb-3">
               Gagal Memuat Transaksi
             </h2>
@@ -300,7 +362,7 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
               {{ fetchError }}
             </p>
             <v-btn color="primary" variant="flat" size="large" @click="goToSelectPackage">
-              <v-icon start icon="tabler:arrow-left-circle" />Kembali ke Pilihan Paket
+              <v-icon start icon="tabler-arrow-left" />Kembali ke Pilihan Paket
             </v-btn>
           </v-card-text>
         </v-card>
@@ -310,9 +372,7 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
             :color="alertType"
             variant="tonal"
             :icon="alertIcon"
-            prominent
             class="pa-6 rounded-0"
-            border="none"
           >
             <template #title>
               <h1 class="text-h5 font-weight-bold mb-2 text-high-emphasis">
@@ -322,13 +382,19 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
             <p class="text-body-1" style="line-height: 1.7;">
               {{ detailMessage }}
             </p>
+            <p
+              v-if="finalStatus === 'SUCCESS'"
+              class="text-body-2 text-medium-emphasis mt-3"
+            >
+              Silakan sambungkan ulang WiFi jika belum aktif.
+            </p>
           </v-alert>
 
           <v-card-text class="pa-0">
             <v-list lines="two" density="comfortable" class="py-2 bg-transparent">
               <v-list-item class="px-sm-6 px-4">
                 <template #prepend>
-                  <v-icon class="mr-5 text-medium-emphasis" icon="tabler:hash" />
+                  <v-icon class="mr-5 text-medium-emphasis" icon="tabler-hash" />
                 </template>
                 <v-list-item-title class="font-weight-bold">
                   {{ transactionDetails.midtrans_order_id }}
@@ -342,7 +408,7 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
 
               <v-list-item v-if="transactionDetails.midtrans_transaction_id" class="px-sm-6 px-4">
                 <template #prepend>
-                  <v-icon class="mr-5 text-medium-emphasis" icon="tabler:scan" />
+                  <v-icon class="mr-5 text-medium-emphasis" icon="tabler-scan" />
                 </template>
                 <v-list-item-title class="font-weight-bold font-mono">
                   {{ transactionDetails.midtrans_transaction_id }}
@@ -356,7 +422,7 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
 
               <v-list-item class="px-sm-6 px-4">
                 <template #prepend>
-                  <v-icon class="mr-5 text-medium-emphasis" icon="tabler:package" />
+                  <v-icon class="mr-5 text-medium-emphasis" icon="tabler-package" />
                 </template>
                 <v-list-item-title class="font-weight-bold">
                   {{ packageName }}
@@ -370,7 +436,7 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
 
               <v-list-item class="px-sm-6 px-4">
                 <template #prepend>
-                  <v-icon class="mr-5 text-medium-emphasis" icon="tabler:wallet" />
+                  <v-icon class="mr-5 text-medium-emphasis" icon="tabler-wallet" />
                 </template>
                 <v-list-item-title class="text-h6 font-weight-bold text-success">
                   {{ formatCurrency(transactionDetails.amount) }}
@@ -380,6 +446,39 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
                 </v-list-item-subtitle>
               </v-list-item>
             </v-list>
+
+            <div class="px-sm-6 px-4 pb-4">
+              <v-btn
+                v-if="finalStatus === 'PENDING'"
+                color="primary"
+                variant="tonal"
+                prepend-icon="tabler-refresh"
+                @click="refreshStatus"
+              >
+                Cek Status Pembayaran
+              </v-btn>
+              <v-btn
+                v-if="canDownloadInvoice"
+                class="ms-sm-3 mt-3 mt-sm-0"
+                color="success"
+                variant="flat"
+                :loading="isDownloadingInvoice"
+                :disabled="isDownloadingInvoice"
+                prepend-icon="tabler-file-download"
+                @click="downloadInvoice"
+              >
+                Unduh Invoice (PDF)
+              </v-btn>
+              <v-alert
+                v-if="canDownloadInvoice"
+                type="info"
+                variant="tonal"
+                density="compact"
+                class="mt-4"
+              >
+                Invoice PDF juga dikirim otomatis melalui WhatsApp setelah pembayaran berhasil.
+              </v-alert>
+            </div>
           </v-card-text>
 
           <div v-if="finalStatus === 'PENDING' && showSpecificPendingInstructions" class="px-sm-6 px-4 pb-6 pt-3">
@@ -407,7 +506,7 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
                       <v-btn
                         v-bind="tooltipProps"
                         :color="copySuccess === 'Nomor VA' ? 'success' : ''"
-                        :icon="copySuccess === 'Nomor VA' ? 'tabler:checks' : 'tabler:copy'"
+                        :icon="copySuccess === 'Nomor VA' ? 'tabler-checks' : 'tabler-copy'"
                         variant="text"
                         @click="copyToClipboard(transactionDetails?.va_number, 'Nomor VA')"
                       />
@@ -433,7 +532,7 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
           </div>
 
           <v-divider />
-          <v-card-actions class="pa-4 bg-surface-variant">
+          <v-card-actions class="pa-4">
             <v-row>
               <v-col
                 v-if="['FAILED', 'EXPIRED', 'CANCELLED', 'ERROR', 'UNKNOWN'].includes(finalStatus)"
@@ -447,24 +546,25 @@ useHead({ title: computed(() => `Status: ${alertTitle.value}`) })
                   rounded="lg"
                   @click="goToSelectPackage"
                 >
-                  <v-icon start icon="tabler:shopping-cart-plus" /> Pesan Paket Baru
+                  <v-icon start icon="tabler-shopping-cart-plus" /> Pesan Paket Baru
                 </v-btn>
               </v-col>
               <v-col v-if="finalStatus === 'SUCCESS'" cols="12">
                 <v-btn color="primary" block variant="flat" size="large" rounded="lg" @click="goToDashboard">
-                  <v-icon start icon="tabler:layout-dashboard" /> Buka Dashboard
+                  <v-icon start icon="tabler-layout-dashboard" /> Buka Dashboard
                 </v-btn>
               </v-col>
               <v-col v-if="finalStatus === 'PENDING'" cols="12">
                 <v-btn
                   block
-                  variant="text"
+                  variant="tonal"
+                  color="primary"
                   size="large"
                   rounded="lg"
                   :loading="isLoading"
                   @click="fetchTransactionDetails(transactionDetails.midtrans_order_id)"
                 >
-                  <v-icon start icon="tabler:refresh" /> Cek Ulang Status Pembayaran
+                  <v-icon start icon="tabler-refresh" /> Cek Ulang Status Pembayaran
                 </v-btn>
               </v-col>
             </v-row>

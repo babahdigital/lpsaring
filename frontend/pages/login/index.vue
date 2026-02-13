@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import type { VForm } from 'vuetify/components'
-import type { VOtpInput } from 'vuetify/labs/VOtpInput'
 import authV1BottomShape from '@images/svg/auth-v1-bottom-shape.svg?raw'
 
 import authV1TopShape from '@images/svg/auth-v1-top-shape.svg?raw'
 import { VNodeRenderer } from '@layouts/components/VNodeRenderer'
 import { themeConfig } from '@themeConfig'
 
-import { computed, h, nextTick, ref, watch } from 'vue'
+import { computed, h, nextTick, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { useDisplay } from 'vuetify'
 import { useSnackbar } from '~/composables/useSnackbar'
 import { useAuthStore } from '~/store/auth'
 import { normalize_to_e164 } from '~/utils/formatters'
@@ -18,30 +19,50 @@ definePageMeta({
 
 const authStore = useAuthStore()
 const { add: addSnackbar } = useSnackbar()
-useHead({ title: 'Portal Hotspot' })
+const display = useDisplay()
+const route = useRoute()
+const isHydrated = ref(false)
+const isWidePadding = computed(() => (isHydrated.value ? display.smAndUp.value : false))
 
 // --- State untuk UI dan Tab ---
 const currentTab = ref<'login' | 'register'>('login')
 const viewState = ref<'form' | 'success'>('form')
+useHead({ title: 'Portal Hotspot' })
+onMounted(() => {
+  isHydrated.value = true
+  const tab = typeof route.query.tab === 'string' ? route.query.tab : ''
+  if (tab === 'register')
+    currentTab.value = 'register'
+
+  authStore.initializeAuth().then(async () => {
+    if (authStore.isLoggedIn && import.meta.client) {
+      const target = authStore.isAdmin ? '/admin/dashboard' : '/dashboard'
+      await navigateTo(target, { replace: true })
+    }
+  })
+})
 
 // --- State untuk Form Login ---
 const loginFormRef = ref<InstanceType<typeof VForm> | null>(null)
 const otpSent = ref(false)
 const phoneNumber = ref('')
 const otpCode = ref('')
-const otpInputRef = ref<InstanceType<typeof VOtpInput> | null>(null)
+const otpInputRef = ref<any>(null)
 
 // --- State untuk Form Register ---
 const registerFormRef = ref<InstanceType<typeof VForm> | null>(null)
 const regName = ref('')
 const regPhoneNumber = ref('')
-const regRole = ref<'USER' | 'KOMANDAN'>('USER')
+const regRole = ref<'USER' | 'TAMPING' | 'KOMANDAN'>('USER')
 const regBlock = ref<string | null>(null)
 const regKamar = ref<string | null>(null)
+const regIsTamping = ref(false)
+const regTampingType = ref<string | null>(null)
 
 // --- Computed Properties ---
 const isSubmitting = computed(() => authStore.loading)
 const showAddressFields = computed(() => regRole.value === 'USER')
+const showTampingFields = computed(() => regRole.value === 'TAMPING')
 const formattedPhoneNumberDisplay = computed(() => {
   let num = phoneNumber.value.replace(/[\s-]/g, '')
   if (num.startsWith('08'))
@@ -50,30 +71,87 @@ const formattedPhoneNumberDisplay = computed(() => {
   return num || phoneNumber.value
 })
 
+function getQueryValue(key: string): string {
+  const value = route.query[key]
+  if (Array.isArray(value))
+    return value[0] ?? ''
+  return typeof value === 'string' ? value : ''
+}
+
+function getQueryValueFromKeys(keys: string[]): string {
+  for (const key of keys) {
+    const value = getQueryValue(key)
+    if (value)
+      return value
+  }
+  return ''
+}
+
 // --- Opsi untuk Select Input ---
 const blockOptions = Array.from({ length: 6 }, (_, i) => ({ title: `Blok ${String.fromCharCode(65 + i)}`, value: String.fromCharCode(65 + i) }))
 const kamarOptions = Array.from({ length: 6 }, (_, i) => ({ title: `Kamar ${i + 1}`, value: (i + 1).toString() }))
+const tampingOptions = [
+  'Tamping luar',
+  'Tamping AO',
+  'Tamping Pembinaan',
+  'Tamping kunjungan',
+  'Tamping kamtib',
+  'Tamping klinik',
+  'Tamping dapur',
+  'Tamping mesjid',
+  'Tamping p2u',
+  'Tamping BLK',
+  'Tamping kebersihan',
+  'Tamping Humas',
+  'Tamping kebun',
+].map(item => ({ title: item, value: item }))
 
 // --- Aturan Validasi ---
 const phoneFormatRules = [
   (v: string) => {
     if (!v)
       return 'Nomor telepon wajib diisi.'
-
-    // ATURAN BARU YANG KETAT:
-    // 1. Harus diawali '08'
-    // 2. Diikuti oleh 8-10 digit angka (total 10-12 digit)
-    // 3. Tidak boleh ada karakter selain angka.
-    const phoneRegex = /^08[1-9]\d{7,9}$/
-
-    if (!phoneRegex.test(v)) {
-      return 'Format nomor salah. Contoh: 08123456789 (10-12 digit).'
+    try {
+      normalize_to_e164(v)
+      return true
     }
-
-    return true
+    catch (error: any) {
+      return error instanceof Error && error.message !== ''
+        ? error.message
+        : 'Format nomor salah. Gunakan awalan 08, 628, atau +628.'
+    }
   },
 ]
 const requiredRule = (v: any) => (v !== null && v !== undefined && v !== '') || 'Wajib diisi.'
+const tampingRequiredRule = (v: any) => (v !== null && v !== undefined && v !== '') || 'Jenis tamping wajib dipilih.'
+
+watch(regRole, (newRole) => {
+  if (newRole === 'TAMPING') {
+    regIsTamping.value = true
+    regBlock.value = null
+    regKamar.value = null
+  }
+  else if (newRole === 'USER') {
+    regIsTamping.value = false
+    regTampingType.value = null
+  }
+  else if (newRole === 'KOMANDAN') {
+    regIsTamping.value = false
+    regBlock.value = null
+    regKamar.value = null
+    regTampingType.value = null
+  }
+})
+
+watch(regIsTamping, (isTamping) => {
+  if (isTamping) {
+    regBlock.value = null
+    regKamar.value = null
+  }
+  else {
+    regTampingType.value = null
+  }
+})
 
 // --- Aturan Validasi Asinkron untuk Nomor WhatsApp ---
 let validationTimeout: NodeJS.Timeout | null = null
@@ -88,7 +166,7 @@ function whatsappValidationRule(v: string) {
 
     validationTimeout = setTimeout(async () => {
       try {
-        const response = await $fetch('/api/users/validate-whatsapp', {
+        const response = await $fetch<{ isValid: boolean, message?: string }>('/api/users/validate-whatsapp', {
           method: 'POST',
           body: { phone_number: v },
           timeout: 3000, // 3 detik timeout
@@ -101,13 +179,13 @@ function whatsappValidationRule(v: string) {
           let errorMsg = 'Nomor WhatsApp tidak valid'
 
           // Berikan pesan lebih spesifik
-          if (response.message.includes('terdaftar')) {
+          if (response.message?.includes('terdaftar')) {
             errorMsg = 'Nomor sudah terdaftar di sistem'
           }
-          else if (response.message.includes('aktif')) {
+          else if (response.message?.includes('aktif')) {
             errorMsg = 'Nomor tidak aktif di WhatsApp'
           }
-          else if (response.message.includes('timeout')) {
+          else if (response.message?.includes('timeout')) {
             errorMsg = 'Validasi timeout, coba lagi'
           }
 
@@ -173,10 +251,38 @@ async function handleVerifyOtp() {
 
   try {
     const numberToVerify = normalize_to_e164(phoneNumber.value)
-    const loginSuccess = await authStore.verifyOtp(numberToVerify, otpCode.value)
-    if (loginSuccess !== true) {
+    const loginResponse = await authStore.verifyOtp(numberToVerify, otpCode.value)
+    if (loginResponse == null) {
+      const statusRedirectPath = authStore.getStatusRedirectPath('login')
+      if (statusRedirectPath && import.meta.client) {
+        await navigateTo(statusRedirectPath, { replace: true })
+        return
+      }
+      const errorStatus = authStore.getAccessStatusFromError(authStore.error)
+      if (errorStatus !== null) {
+        const redirectPath = authStore.getRedirectPathForStatus(errorStatus, 'login')
+        if (redirectPath && import.meta.client) {
+          await navigateTo(redirectPath, { replace: true })
+          return
+        }
+      }
       otpCode.value = ''
       tryFocus(otpInputRef.value)
+      return
+    }
+
+    const status = authStore.getAccessStatusFromUser(authStore.currentUser)
+    const redirectPath = authStore.getRedirectPathForStatus(status, 'login')
+    if (redirectPath && import.meta.client) {
+      await navigateTo(redirectPath, { replace: true })
+      return
+    }
+    if (import.meta.client) {
+      const sessionUrl = loginResponse.session_url
+      if (sessionUrl)
+        window.location.assign(sessionUrl)
+      else
+        await navigateTo('/dashboard', { replace: true })
     }
   }
   catch (error: any) {
@@ -225,6 +331,8 @@ async function handleRegister() {
     phone_number: numberToSend,
     blok: showAddressFields.value ? regBlock.value : null,
     kamar: showAddressFields.value ? regKamar.value : null,
+    is_tamping: regRole.value === 'TAMPING',
+    tamping_type: showTampingFields.value ? regTampingType.value : null,
     register_as_komandan: regRole.value === 'KOMANDAN',
   }
 
@@ -254,6 +362,8 @@ function backToForms() {
   regRole.value = 'USER'
   regBlock.value = null
   regKamar.value = null
+  regIsTamping.value = false
+  regTampingType.value = null
   if (registerFormRef.value !== null)
     registerFormRef.value.reset()
 }
@@ -303,7 +413,7 @@ watch(regRole, () => {
       <VCard
         class="auth-card"
         max-width="460"
-        :class="$vuetify.display.smAndUp ? 'pa-6' : 'pa-0'"
+        :class="isWidePadding ? 'pa-6' : 'pa-4'"
       >
         <VCardItem class="justify-center">
           <VCardTitle>
@@ -319,27 +429,34 @@ watch(regRole, () => {
         </VCardItem>
 
         <VCardText v-if="viewState === 'form'">
-          <VTabs
-            v-model="currentTab"
-            grow
-            stacked
-            class="mb-4"
-          >
-            <VTab value="login">
-              <VIcon
-                icon="tabler-login"
-                class="mb-2"
-              />
-              <span>Masuk</span>
-            </VTab>
-            <VTab value="register">
-              <VIcon
-                icon="tabler-user-plus"
-                class="mb-2"
-              />
-              <span>Daftar</span>
-            </VTab>
-          </VTabs>
+          <ClientOnly>
+            <VTabs
+              v-model="currentTab"
+              grow
+              stacked
+              class="mb-4"
+            >
+              <VTab value="login">
+                <VIcon
+                  icon="tabler-login"
+                  class="mb-2"
+                />
+                <span>Masuk</span>
+              </VTab>
+              <VTab value="register">
+                <VIcon
+                  icon="tabler-user-plus"
+                  class="mb-2"
+                />
+                <span>Daftar</span>
+              </VTab>
+            </VTabs>
+            <template #fallback>
+              <div class="mb-4">
+                <VSkeletonLoader type="text@2" />
+              </div>
+            </template>
+          </ClientOnly>
         </VCardText>
 
         <VCardText>
@@ -352,7 +469,7 @@ watch(regRole, () => {
                 <h4 class="text-h4 mb-1">
                   Selamat Datang! 👋🏻
                 </h4>
-                <p class="mb-6">
+                <p class="mb-6 text-medium-emphasis">
                   Silakan masuk dengan nomor WhatsApp Anda.
                 </p>
                 <VForm
@@ -414,13 +531,21 @@ watch(regRole, () => {
                     </VBtn>
                   </div>
                 </VForm>
+                <VAlert
+                  type="info"
+                  variant="tonal"
+                  density="compact"
+                  class="mt-4"
+                >
+                  Jika OTP gagal berulang, cek sinyal jaringan dan pastikan nomor WhatsApp benar.
+                </VAlert>
               </VWindowItem>
 
               <VWindowItem value="register">
                 <h4 class="text-h4 mb-1">
                   Ayo, Daftar Akun. 🚀
                 </h4>
-                <p class="mb-6">
+                <p class="mb-6 text-medium-emphasis">
                   Lengkapi data untuk membuat akun baru.
                 </p>
                 <VForm
@@ -440,6 +565,10 @@ watch(regRole, () => {
                       value="USER"
                     />
                     <VRadio
+                      label="Tamping"
+                      value="TAMPING"
+                    />
+                    <VRadio
                       label="Komandan"
                       value="KOMANDAN"
                     />
@@ -454,6 +583,19 @@ watch(regRole, () => {
                     :disabled="isSubmitting"
                     class="mb-4"
                   />
+
+                  <div v-show="showTampingFields">
+                    <AppSelect
+                      v-model="regTampingType"
+                      :items="tampingOptions"
+                      label="Jenis Tamping"
+                      placeholder="Pilih Jenis Tamping"
+                      prepend-inner-icon="tabler-building-bank"
+                      :rules="showTampingFields ? [tampingRequiredRule] : []"
+                      :disabled="isSubmitting"
+                      class="mb-4"
+                    />
+                  </div>
 
                   <div v-show="showAddressFields">
                     <AppSelect
@@ -514,7 +656,7 @@ watch(regRole, () => {
             <h4 class="text-h4 mb-2">
               Registrasi Diproses
             </h4>
-            <p class="mb-6">
+            <p class="mb-6 text-medium-emphasis">
               Terima kasih! Akun Anda sedang menunggu persetujuan Admin. Notifikasi akan dikirim melalui WhatsApp jika akun Anda telah aktif.
             </p>
             <VBtn

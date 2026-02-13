@@ -96,6 +96,8 @@ class AdminActionType(enum.Enum):
     GENERATE_ADMIN_PASSWORD = "GENERATE_ADMIN_PASSWORD"
     MANUAL_USER_DELETE = "MANUAL_USER_DELETE"
     UPDATE_USER_PROFILE = "UPDATE_USER_PROFILE"
+    BLOCK_USER = "BLOCK_USER"
+    UNBLOCK_USER = "UNBLOCK_USER"
 
     # --- [PENAMBAHAN DI SINI] ---
     # Menambahkan tipe aksi spesifik untuk pemrosesan permintaan kuota.
@@ -112,8 +114,19 @@ class PromoEvent(db.Model):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
     description: Mapped[Optional[str]] = mapped_column(Text)
-    event_type: Mapped[PromoEventType] = mapped_column(SQLAlchemyEnum(PromoEventType, name="promo_event_type_enum", native_enum=False), nullable=False, default=PromoEventType.GENERAL_ANNOUNCEMENT)
-    status: Mapped[PromoEventStatus] = mapped_column(SQLAlchemyEnum(PromoEventStatus, name="promo_event_status_enum", native_enum=False), nullable=False, default=PromoEventStatus.DRAFT, index=True)
+    event_type: Mapped[PromoEventType] = mapped_column(
+        SQLAlchemyEnum(PromoEventType, name="promo_event_type_enum", native_enum=False),
+        nullable=False,
+        default=PromoEventType.GENERAL_ANNOUNCEMENT,
+        server_default=PromoEventType.GENERAL_ANNOUNCEMENT.value,
+    )
+    status: Mapped[PromoEventStatus] = mapped_column(
+        SQLAlchemyEnum(PromoEventStatus, name="promo_event_status_enum", native_enum=False),
+        nullable=False,
+        default=PromoEventStatus.DRAFT,
+        server_default=PromoEventStatus.DRAFT.value,
+        index=True,
+    )
     start_date: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     end_date: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     bonus_value_mb: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, comment="Nilai bonus dalam MB untuk event tipe BONUS_REGISTRATION")
@@ -138,9 +151,9 @@ class Package(db.Model):
     name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True, index=True)
     price: Mapped[int] = mapped_column(BigInteger, nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    data_quota_gb: Mapped[float] = mapped_column(Numeric(8, 2), nullable=False, default=0, comment="Kuota dalam GB. 0 berarti unlimited.")
-    duration_days: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=expression.true())
+    data_quota_gb: Mapped[float] = mapped_column(Numeric(8, 2), nullable=False, default=0, server_default='0', comment="Kuota dalam GB. 0 berarti unlimited.")
+    duration_days: Mapped[int] = mapped_column(Integer, nullable=False, default=30, server_default='30')
     profile_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('package_profiles.id', ondelete='RESTRICT'), nullable=False)
     profile: Mapped["PackageProfile"] = relationship("PackageProfile", back_populates="packages", lazy="joined")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -156,11 +169,28 @@ class User(db.Model):
     full_name: Mapped[str] = mapped_column(String(100), nullable=False)
     blok: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     kamar: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    is_tamping: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=expression.false(), comment="Penanda pengguna tamping (True) atau non-tamping (False).")
+    tamping_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, comment="Jenis tamping jika pengguna tamping.")
     previous_blok: Mapped[Optional[str]] = mapped_column(String(10), nullable=True, comment="Menyimpan data blok terakhir sebelum diupgrade ke admin")
     previous_kamar: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, comment="Menyimpan data kamar terakhir sebelum diupgrade ke admin")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=expression.false())
-    role: Mapped[UserRole] = mapped_column(SQLAlchemyEnum(UserRole, name="user_role_enum", native_enum=False), nullable=False, default=UserRole.USER)
-    approval_status: Mapped[ApprovalStatus] = mapped_column(SQLAlchemyEnum(ApprovalStatus, name="approval_status_enum", native_enum=False), nullable=False, default=ApprovalStatus.PENDING_APPROVAL)
+    role: Mapped[UserRole] = mapped_column(
+        SQLAlchemyEnum(UserRole, name="user_role_enum", native_enum=False),
+        nullable=False,
+        default=UserRole.USER,
+        server_default=UserRole.USER.value,
+    )
+    approval_status: Mapped[ApprovalStatus] = mapped_column(
+        SQLAlchemyEnum(ApprovalStatus, name="approval_status_enum", native_enum=False),
+        nullable=False,
+        default=ApprovalStatus.PENDING_APPROVAL,
+        server_default=ApprovalStatus.PENDING_APPROVAL.value,
+    )
+
+    is_blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=expression.false())
+    blocked_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    blocked_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    blocked_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey('users.id', name='fk_users_blocked_by_id_users'), nullable=True)
     
     # PENAMBAHAN FIELD BARU
     mikrotik_user_exists: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=expression.false(), comment="Flag untuk menandakan user sudah ada di Mikrotik.")
@@ -184,6 +214,8 @@ class User(db.Model):
     last_login_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     last_low_quota_notif_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True, comment="Waktu terakhir notifikasi kuota rendah dikirim")
     last_expiry_notif_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True, comment="Waktu terakhir notifikasi akan kedaluwarsa dikirim")
+    last_quota_notification_level: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="Level persen terakhir notifikasi kuota (mis. 20/10/5)")
+    last_expiry_notification_level: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="Level hari terakhir notifikasi masa aktif (mis. 7/3/1)")
 
     transactions: Mapped[List["Transaction"]] = relationship("Transaction", back_populates="user", lazy="select", cascade="all, delete-orphan")
     daily_usage_logs: Mapped[List["DailyUsageLog"]] = relationship("DailyUsageLog", back_populates="user", lazy="dynamic", cascade="all, delete-orphan")
@@ -193,6 +225,7 @@ class User(db.Model):
     quota_requests: Mapped[List["QuotaRequest"]] = relationship("QuotaRequest", back_populates="requester", foreign_keys='QuotaRequest.requester_id', cascade="all, delete-orphan")
     created_action_logs: Mapped[List["AdminActionLog"]] = relationship("AdminActionLog", back_populates="admin", foreign_keys='AdminActionLog.admin_id')
     received_action_logs: Mapped[List["AdminActionLog"]] = relationship("AdminActionLog", back_populates="target_user", foreign_keys='AdminActionLog.target_user_id')
+    devices: Mapped[List["UserDevice"]] = relationship("UserDevice", back_populates="user", cascade="all, delete-orphan", lazy="select")
 
     @property
     def is_admin_role(self) -> bool:
@@ -203,6 +236,31 @@ class User(db.Model):
     @property
     def is_approved(self) -> bool:
         return self.approval_status == ApprovalStatus.APPROVED
+
+class UserDevice(db.Model):
+    __tablename__ = 'user_devices'
+    __table_args__ = (
+        UniqueConstraint('user_id', 'mac_address', name='uq_user_devices_user_mac'),
+        Index('ix_user_devices_user_id', 'user_id'),
+        Index('ix_user_devices_mac_address', 'mac_address'),
+        {'extend_existing': True}
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    mac_address: Mapped[str] = mapped_column(String(32), nullable=False)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
+    last_bytes_total: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    last_bytes_updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    user_agent: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    label: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    is_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=expression.true())
+    first_seen_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    last_seen_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    authorized_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    deauthorized_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped["User"] = relationship("User", back_populates="devices")
 
 class NotificationRecipient(db.Model):
     __tablename__ = 'notification_recipients'
@@ -224,7 +282,12 @@ class Transaction(db.Model):
     snap_token: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     snap_redirect_url: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    status: Mapped[TransactionStatus] = mapped_column(SQLAlchemyEnum(TransactionStatus, name="transaction_status_enum", native_enum=False), nullable=False, default=TransactionStatus.PENDING)
+    status: Mapped[TransactionStatus] = mapped_column(
+        SQLAlchemyEnum(TransactionStatus, name="transaction_status_enum", native_enum=False),
+        nullable=False,
+        default=TransactionStatus.PENDING,
+        server_default=TransactionStatus.PENDING.value,
+    )
     payment_method: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     payment_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     expiry_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -283,7 +346,13 @@ class QuotaRequest(db.Model):
     __tablename__ = 'quota_requests'
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     requester_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
-    status: Mapped[RequestStatus] = mapped_column(SQLAlchemyEnum(RequestStatus, name="request_status_enum", native_enum=False), nullable=False, default=RequestStatus.PENDING, index=True)
+    status: Mapped[RequestStatus] = mapped_column(
+        SQLAlchemyEnum(RequestStatus, name="request_status_enum", native_enum=False),
+        nullable=False,
+        default=RequestStatus.PENDING,
+        server_default=RequestStatus.PENDING.value,
+        index=True,
+    )
     request_type: Mapped[RequestType] = mapped_column(SQLAlchemyEnum(RequestType, name="request_type_enum", native_enum=False), nullable=False)
     request_details: Mapped[Optional[str]] = mapped_column(Text, comment="Detail request dlm JSON, misal: {'mb_to_add': 10240, 'days_to_add': 30}")
 

@@ -1,12 +1,12 @@
 # backend/app/services/user_management/user_quota.py
 
 from typing import Tuple
-from datetime import datetime, timezone as dt_timezone, timedelta
+from datetime import timedelta
 from flask import current_app
 
 from app.extensions import db
 from app.infrastructure.db.models import User, UserRole, AdminActionType
-from app.utils.formatters import format_to_local_phone
+from app.utils.formatters import format_to_local_phone, get_app_local_datetime
 from app.services import settings_service
 
 # [PERBAIKAN] Impor fungsi `_generate_password` yang hilang dari helper.
@@ -21,15 +21,15 @@ def inject_user_quota(user: User, admin_actor: User, mb_to_add: int, days_to_add
     """
     # Langkah 1: Validasi Hak Akses
     if not admin_actor.is_super_admin_role:
-        if user.role != UserRole.KOMANDAN:
-            return False, "Admin hanya dapat melakukan injeksi untuk pengguna dengan peran Komandan."
+        if user.role in [UserRole.ADMIN, UserRole.SUPER_ADMIN]:
+            return False, "Admin tidak dapat melakukan injeksi untuk akun Admin atau Super Admin."
             
     if mb_to_add < 0 or days_to_add < 0:
         return False, "Jumlah MB atau Hari tidak boleh negatif."
     if mb_to_add == 0 and days_to_add == 0:
         return False, "Tidak ada yang ditambahkan."
 
-    now = datetime.now(dt_timezone.utc)
+    now = get_app_local_datetime()
     
     # Langkah 2: Logika untuk Pengguna UNLIMITED
     if user.is_unlimited_user:
@@ -40,9 +40,10 @@ def inject_user_quota(user: User, admin_actor: User, mb_to_add: int, days_to_add
 
         current_expiry = user.quota_expiry_date
         user.quota_expiry_date = (current_expiry if current_expiry and current_expiry > now else now) + timedelta(days=days_to_add)
+        normalized_expiry = user.quota_expiry_date or now
         
         # Untuk unlimited, kita hanya perlu update session timeout di Mikrotik (jika ada)
-        timeout_seconds = int((user.quota_expiry_date - now).total_seconds()) if user.quota_expiry_date else 0
+        timeout_seconds = int((normalized_expiry - now).total_seconds())
         limit_bytes_total = 0 # Unlimited tidak punya batasan kuota
         comment = f"Extend unlimited {days_to_add}d by {admin_actor.full_name}"
         action_details = {"added_days_for_unlimited": days_to_add}
@@ -54,9 +55,10 @@ def inject_user_quota(user: User, admin_actor: User, mb_to_add: int, days_to_add
         if days_to_add > 0:
             user.quota_expiry_date = (current_expiry if current_expiry and current_expiry > now else now) + timedelta(days=days_to_add)
 
-        remaining_quota_mb = user.total_quota_purchased_mb - (user.total_quota_used_mb or 0)
-        limit_bytes_total = int(remaining_quota_mb * 1024 * 1024)
-        timeout_seconds = int((user.quota_expiry_date - now).total_seconds()) if user.quota_expiry_date else 0
+        purchased_mb = user.total_quota_purchased_mb or 0
+        limit_bytes_total = int(purchased_mb * 1024 * 1024)
+        normalized_expiry = user.quota_expiry_date or now
+        timeout_seconds = int((normalized_expiry - now).total_seconds())
         comment = f"Inject {mb_to_add}MB/{days_to_add}d by {admin_actor.full_name}"
         action_details = {"added_mb": mb_to_add, "added_days": days_to_add}
 
@@ -94,7 +96,7 @@ def set_user_unlimited(user: User, admin_actor: User, make_unlimited: bool) -> T
     Versi yang disederhanakan dan lebih aman untuk mengatur status unlimited.
     """
     if user.is_unlimited_user == make_unlimited: 
-        return True, f"Pengguna sudah dalam status yang diminta."
+        return True, "Pengguna sudah dalam status yang diminta."
 
     # Panggilan `_generate_password` di sini yang sebelumnya menyebabkan error.
     if not user.mikrotik_password: 
@@ -110,7 +112,11 @@ def set_user_unlimited(user: User, admin_actor: User, make_unlimited: bool) -> T
         status_text = "dijadikan"
     else: # Revoke unlimited
         action_type = AdminActionType.REVOKE_UNLIMITED_STATUS
-        user.mikrotik_profile_name = 'komandan' if user.role == UserRole.KOMANDAN else 'user'
+        user.mikrotik_profile_name = (
+            settings_service.get_setting('MIKROTIK_ACTIVE_PROFILE', None)
+            or settings_service.get_setting('MIKROTIK_USER_PROFILE', 'user')
+            or settings_service.get_setting('MIKROTIK_DEFAULT_PROFILE', 'default')
+        )
         limit_bytes_total = 1 
         session_timeout_seconds = 0
         status_text = "dikembalikan dari"

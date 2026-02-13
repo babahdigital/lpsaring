@@ -2,99 +2,155 @@
 
 import click
 from flask import current_app
-from flask.cli import AppGroup, with_appcontext
+from flask.cli import with_appcontext
 from app.extensions import db
-import re
+from app.services import settings_service
+from app.utils.formatters import (
+    normalize_to_e164,
+    normalize_to_local,
+    format_to_local_phone,
+    get_phone_number_variations,
+    format_app_date,
+    format_app_datetime,
+)
 import uuid
 import enum
 import random
 import string
 from datetime import datetime, timezone as dt_timezone, date, timedelta
-from typing import Optional, Any, Dict, List
+from typing import Optional, Any, Dict, TYPE_CHECKING, cast
+import os
 
 # --- Impor Model & Helper ---
-MODELS_AVAILABLE = False
-try:
+if TYPE_CHECKING:
     from app.infrastructure.db.models import User, UserRole, ApprovalStatus, UserBlok, UserKamar, DailyUsageLog, PackageProfile
     MODELS_AVAILABLE = True
-except ImportError:
-    # Fallback definitions if models cannot be imported (e.g., during testing or setup issues)
-    print("CRITICAL ERROR: Could not import User/DailyUsageLog/PackageProfile models in user_commands.py. CLI functions may be limited.")
-    class UserRole(str, enum.Enum): USER = "USER"; ADMIN = "ADMIN"; SUPER_ADMIN = "SUPER_ADMIN" # type: ignore
-    class ApprovalStatus(str, enum.Enum): PENDING_APPROVAL = "PENDING_APPROVAL"; APPROVED = "APPROVED"; REJECTED = "REJECTED" # type: ignore
-    class UserBlok(str, enum.Enum): A="A"; B="B"; C="C"; D="D"; E="E"; F="F"; # type: ignore
-    class UserKamar(str, enum.Enum): # type: ignore
-        Kamar_1="Kamar_1"; Kamar_2="Kamar_2"; Kamar_3="Kamar_3"; Kamar_4="Kamar_4"; Kamar_5="Kamar_5"; Kamar_6="Kamar_6" # type: ignore
-    class User(object): # type: ignore
-        id: uuid.UUID
-        phone_number: str
-        full_name: str
-        role: Any
-        approval_status: Any
-        is_active: bool
-        mikrotik_password: Optional[str]
-        total_quota_purchased_mb: int
-        total_quota_used_mb: float
-        quota_expiry_date: Optional[datetime]
-        is_unlimited_user: bool
-        blok: Optional[str]
-        kamar: Optional[str]
-        device_brand: Optional[str]
-        device_model: Optional[str]
-        created_at: datetime
-        updated_at: datetime
-        password_hash: Optional[str]
-        approved_at: Optional[datetime]
-        approved_by_id: Optional[uuid.UUID]
-        rejected_at: Optional[datetime]
-        rejected_by_id: Optional[uuid.UUID]
-        @property
-        def is_admin_role(self):
-            if isinstance(self.role, enum.Enum):
-                return self.role in [UserRole.ADMIN, UserRole.SUPER_ADMIN]
-            return self.role in ["ADMIN", "SUPER_ADMIN"]
+else:
+    MODELS_AVAILABLE = False
+    try:
+        from app.infrastructure.db.models import User, UserRole, ApprovalStatus, UserBlok, UserKamar, DailyUsageLog, PackageProfile
+        MODELS_AVAILABLE = True
+    except ImportError:
+        # Fallback definitions if models cannot be imported (e.g., during testing or setup issues)
+        print("CRITICAL ERROR: Could not import User/DailyUsageLog/PackageProfile models in user_commands.py. CLI functions may be limited.")
+        class UserRole(str, enum.Enum):
+            USER = "USER"
+            ADMIN = "ADMIN"
+            SUPER_ADMIN = "SUPER_ADMIN"
 
-    class DailyUsageLog(object): # type: ignore
-        user_id: uuid.UUID
-        log_date: datetime.date
-        usage_mb: float
-    class PackageProfile(object): # type: ignore
-        id: uuid.UUID
-        profile_name: str
+        class ApprovalStatus(str, enum.Enum):
+            PENDING_APPROVAL = "PENDING_APPROVAL"
+            APPROVED = "APPROVED"
+            REJECTED = "REJECTED"
+
+        class UserBlok(str, enum.Enum):
+            A = "A"
+            B = "B"
+            C = "C"
+            D = "D"
+            E = "E"
+            F = "F"
+
+        class UserKamar(str, enum.Enum):
+            Kamar_1 = "Kamar_1"
+            Kamar_2 = "Kamar_2"
+            Kamar_3 = "Kamar_3"
+            Kamar_4 = "Kamar_4"
+            Kamar_5 = "Kamar_5"
+            Kamar_6 = "Kamar_6"
+
+        class User(object):
+            def __init__(self, **_kwargs: Any) -> None:
+                pass
+
+            @property
+            def is_admin_role(self) -> bool:
+                return False
+
+        class DailyUsageLog(object):
+            pass
+
+        class PackageProfile(object):
+            pass
 
 
 try:
     from werkzeug.security import generate_password_hash
     generate_password_hash_func = generate_password_hash
 except ImportError:
-    def dummy_hash(password: str) -> str: return f"hashed_{password}" # type: ignore
+    def dummy_hash(password: str) -> str:  # type: ignore
+        return f"hashed_{password}"
+
     generate_password_hash_func = dummy_hash
 
 WHATSAPP_AVAILABLE = False
-try:
+if TYPE_CHECKING:
     from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
-    WHATSAPP_AVAILABLE = True
-except ImportError:
-    def send_whatsapp_message(to: str, body: str) -> bool: return False # type: ignore
+else:
+    try:
+        from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
+        WHATSAPP_AVAILABLE = True
+    except ImportError:
+        def send_whatsapp_message(*_args: Any, **_kwargs: Any) -> bool:  # type: ignore
+            return False
 
 MIKROTIK_CLIENT_AVAILABLE = False
-try:
+if TYPE_CHECKING:
     from app.infrastructure.gateways.mikrotik_client import (
         get_mikrotik_connection,
         activate_or_update_hotspot_user,
-        format_to_local_phone,
         delete_hotspot_user,
         set_hotspot_user_profile,
-        add_mikrotik_hotspot_user_profile
     )
-    MIKROTIK_CLIENT_AVAILABLE = True
-except ImportError:
-    def get_mikrotik_connection(): return None # type: ignore
-    def activate_or_update_hotspot_user(api_connection: Any, user_mikrotik_username: str, mikrotik_profile_name: str, hotspot_password: str, comment:str="", limit_bytes_total: Optional[int] = None, session_timeout_seconds: Optional[int] = None, force_update_profile: bool = False): return False, "Mikrotik client not available/not implemented." # type: ignore
-    def format_to_local_phone(phone: str | None) -> str | None: return phone if not (phone and phone.startswith('+62')) else '0' + phone[3:] # type: ignore
-    def delete_hotspot_user(api_connection: Any, username: str): return False, "Mikrotik client not available/not implemented." # type: ignore
-    def set_hotspot_user_profile(api_connection: Any, username_or_id: str, new_profile_name: str): return False, "Mikrotik client not available/not implemented." # type: ignore
-    def add_mikrotik_hotspot_user_profile(api_connection: Any, profile_name: str, rate_limit: Optional[str] = None, shared_users: Optional[int] = None, comment: Optional[str] = None): return False, "Mikrotik client not available/not implemented." # type: ignore
+else:
+    try:
+        from app.infrastructure.gateways.mikrotik_client import (
+            get_mikrotik_connection,
+            activate_or_update_hotspot_user,
+            delete_hotspot_user,
+            set_hotspot_user_profile,
+        )
+        MIKROTIK_CLIENT_AVAILABLE = True
+    except ImportError:
+        def get_mikrotik_connection(*_args: Any, **_kwargs: Any) -> Any:  # type: ignore
+            return None
+
+        def activate_or_update_hotspot_user(*_args: Any, **_kwargs: Any) -> tuple[bool, str]:  # type: ignore
+            return False, "Mikrotik client not available/not implemented."
+
+        def delete_hotspot_user(*_args: Any, **_kwargs: Any) -> tuple[bool, str]:  # type: ignore
+            return False, "Mikrotik client not available/not implemented."
+
+        def set_hotspot_user_profile(*_args: Any, **_kwargs: Any) -> tuple[bool, str]:  # type: ignore
+            return False, "Mikrotik client not available/not implemented."
+
+def add_mikrotik_hotspot_user_profile(
+    api_connection: Any,
+    profile_name: str,
+    rate_limit: Optional[str] = None,
+    shared_users: Optional[int] = None,
+    comment: Optional[str] = None,
+) -> tuple[bool, str]:
+    """Membuat profil hotspot baru di Mikrotik (fallback lokal jika belum tersedia di gateway)."""
+    if not api_connection:
+        return False, "Koneksi Mikrotik tidak tersedia."
+    if not profile_name:
+        return False, "Nama profil tidak boleh kosong."
+
+    try:
+        profile_resource = api_connection.get_resource('/ip/hotspot/user/profile')
+        payload: Dict[str, Any] = {'name': profile_name}
+        if rate_limit:
+            payload['rate-limit'] = rate_limit
+        if shared_users is not None:
+            payload['shared-users'] = str(shared_users)
+        if comment:
+            payload['comment'] = comment
+
+        profile_resource.add(**payload)
+        return True, f"Profil '{profile_name}' berhasil ditambahkan."
+    except Exception as e:
+        return False, f"Gagal menambah profil Mikrotik: {e}"
 
 
 NOTIFICATION_SERVICE_AVAILABLE = False
@@ -108,9 +164,6 @@ except ImportError:
         else:
             print(f"WARNING: Notification service not available (no app context). Template: {template_key}")
         return f"Warning: Notification template '{template_key}' not found or service unavailable."
-
-from app.services import settings_service
-from app.utils.formatters import normalize_to_e164, format_to_local_phone, get_phone_number_variations
 
 # --- Role choice mapping for create-admin ---
 if MODELS_AVAILABLE:
@@ -132,7 +185,7 @@ def user_cli_bp():
 def normalize_phone_for_cli(phone_number_input: str) -> str:
     """Normalizes phone number input from CLI using common utility."""
     try:
-        return normalize_to_e164(phone_number_input)
+        return normalize_to_local(phone_number_input)
     except ValueError as e:
         raise click.BadParameter(str(e))
     except TypeError as e:
@@ -179,10 +232,12 @@ def generate_random_password(length=6, type='numeric'):
 @with_appcontext
 def create_admin(phone, name, role, blok, kamar, mikrotik_password, portal_password):
     if not MODELS_AVAILABLE or not hasattr(db, 'session') or not User or not ApprovalStatus or not UserRole:
-        click.echo(click.style("ERROR: Model User, ApprovalStatus, UserRole atau database session tidak dapat dimuat. Perintah create-admin tidak bisa dijalankan.", fg='red')); return
+        click.echo(click.style("ERROR: Model User, ApprovalStatus, UserRole atau database session tidak dapat dimuat. Perintah create-admin tidak bisa dijalankan.", fg='red'))
+        return
     
     if not generate_password_hash_func:
-        click.echo(click.style("ERROR: Fungsi hashing password tidak tersedia. Perintah create-admin tidak bisa dijalankan.", fg='red')); return
+        click.echo(click.style("ERROR: Fungsi hashing password tidak tersedia. Perintah create-admin tidak bisa dijalankan.", fg='red'))
+        return
 
     try:
         normalized_phone = normalize_phone_for_cli(phone)
@@ -201,21 +256,25 @@ def create_admin(phone, name, role, blok, kamar, mikrotik_password, portal_passw
         
         if role_enum == UserRole.USER:
             if not blok_clean:
-                click.echo(click.style("ERROR: Blok wajib diisi untuk peran USER.", fg='red')); return
+                click.echo(click.style("ERROR: Blok wajib diisi untuk peran USER.", fg='red'))
+                return
             if not kamar_clean:
-                click.echo(click.style("ERROR: Kamar wajib diisi untuk peran USER.", fg='red')); return
+                click.echo(click.style("ERROR: Kamar wajib diisi untuk peran USER.", fg='red'))
+                return
             
             if MODELS_AVAILABLE and UserBlok and blok_clean in [b.value for b in UserBlok]:
                 blok_val_for_db = blok_clean
             else:
-                click.echo(click.style(f"ERROR: Nilai Blok '{blok}' tidak valid untuk peran USER. Pilihan: {[b.value for b in UserBlok]}", fg='red')); return
+                click.echo(click.style(f"ERROR: Nilai Blok '{blok}' tidak valid untuk peran USER. Pilihan: {[b.value for b in UserBlok]}", fg='red'))
+                return
 
             if kamar_clean.isdigit() and 1 <= int(kamar_clean) <= 6:
                 kamar_val_for_db = f"Kamar_{kamar_clean}"
             elif MODELS_AVAILABLE and UserKamar and kamar_clean in [k.value for k in UserKamar]:
                 kamar_val_for_db = kamar_clean
             else:
-                click.echo(click.style(f"ERROR: Nilai Kamar '{kamar}' tidak valid untuk peran USER. Pilihan: {[k.value for k in UserKamar]} atau angka 1-6.", fg='red')); return
+                click.echo(click.style(f"ERROR: Nilai Kamar '{kamar}' tidak valid untuk peran USER. Pilihan: {[k.value for k in UserKamar]} atau angka 1-6.", fg='red'))
+                return
         else: # Role ADMIN atau SUPER_ADMIN
             if blok_clean and MODELS_AVAILABLE and UserBlok and blok_clean in [b.value for b in UserBlok]:
                 blok_val_for_db = blok_clean
@@ -233,14 +292,18 @@ def create_admin(phone, name, role, blok, kamar, mikrotik_password, portal_passw
                     kamar_val_for_db = None
 
     except (ValueError, TypeError) as e:
-        click.echo(click.style(f"ERROR: Input tidak valid - {str(e)}", fg='red')); return
+        click.echo(click.style(f"ERROR: Input tidak valid - {str(e)}", fg='red'))
+        return
     except Exception as e:
         current_app.logger.error(f"Terjadi kesalahan tidak terduga saat parsing input: {e}", exc_info=True)
-        click.echo(click.style(f"ERROR: Terjadi kesalahan tidak terduga saat parsing input: {str(e)}", fg='red')); return
+        click.echo(click.style(f"ERROR: Terjadi kesalahan tidak terduga saat parsing input: {str(e)}", fg='red'))
+        return
 
 
-    if db.session.execute(db.select(User).filter_by(phone_number=normalized_phone)).scalar_one_or_none():
-        click.echo(click.style(f"ERROR: Nomor telepon '{normalized_phone}' sudah terdaftar.", fg='red')); return
+    phone_variations = get_phone_number_variations(normalized_phone)
+    if db.session.execute(db.select(User).filter(User.phone_number.in_(phone_variations))).scalar_one_or_none():
+        click.echo(click.style(f"ERROR: Nomor telepon '{normalized_phone}' sudah terdaftar.", fg='red'))
+        return
 
     hashed_portal_password = None
     password_portal_plain_text = None
@@ -252,11 +315,12 @@ def create_admin(phone, name, role, blok, kamar, mikrotik_password, portal_passw
     elif role_enum == UserRole.ADMIN:
         password_portal_plain_text = generate_random_password(length=6, type='numeric')
         hashed_portal_password = generate_password_hash_func(password_portal_plain_text)
-        click.echo(click.style(f"INFO: Password portal otomatis digenerate (6 digit angka) untuk peran ADMIN.", fg='blue'))
+        click.echo(click.style("INFO: Password portal otomatis digenerate (6 digit angka) untuk peran ADMIN.", fg='blue'))
     elif role_enum == UserRole.SUPER_ADMIN:
         if portal_password:
             if len(portal_password) < 6:
-                click.echo(click.style("ERROR: Password portal minimal 6 karakter.", fg='red')); return
+                click.echo(click.style("ERROR: Password portal minimal 6 karakter.", fg='red'))
+                return
             password_portal_plain_text = portal_password
             hashed_portal_password = generate_password_hash_func(password_portal_plain_text)
             click.echo(click.style("INFO: Password portal manual digunakan untuk peran SUPER_ADMIN.", fg='blue'))
@@ -265,7 +329,8 @@ def create_admin(phone, name, role, blok, kamar, mikrotik_password, portal_passw
             hashed_portal_password = generate_password_hash_func(password_portal_plain_text)
             click.echo(click.style("INFO: Password portal otomatis digenerate (6 digit angka) untuk peran SUPER_ADMIN.", fg='blue'))
     else:
-        click.echo(click.style("ERROR: Role tidak valid. Password tidak diproses.", fg='red')); return
+        click.echo(click.style("ERROR: Role tidak valid. Password tidak diproses.", fg='red'))
+        return
 
 
     final_mikrotik_password_for_db = None
@@ -274,7 +339,7 @@ def create_admin(phone, name, role, blok, kamar, mikrotik_password, portal_passw
     elif mikrotik_password:
         click.echo(click.style("WARNING: Password Mikrotik diabaikan untuk peran Admin/Super Admin.", fg='yellow'))
     
-    new_user = User(
+    new_user = cast(Any, User)(
         phone_number=normalized_phone,
         full_name=name,
         blok=blok_val_for_db,
@@ -334,7 +399,8 @@ def create_admin(phone, name, role, blok, kamar, mikrotik_password, portal_passw
     try:
         db.session.commit()
         db.session.refresh(new_user)
-        click.echo(click.style(f"SUKSES: Pengguna {role_enum.value} '{new_user.full_name}' (ID: {new_user.id}) berhasil dibuat.", fg='green'))
+        role_label = getattr(role_enum, "value", str(role_enum))
+        click.echo(click.style(f"SUKSES: Pengguna {role_label} '{new_user.full_name}' (ID: {new_user.id}) berhasil dibuat.", fg='green'))
         
         from app.services import settings_service 
         if WHATSAPP_AVAILABLE and NOTIFICATION_SERVICE_AVAILABLE and settings_service.get_setting('ENABLE_WHATSAPP_NOTIFICATIONS', 'False') == 'True':
@@ -345,8 +411,8 @@ def create_admin(phone, name, role, blok, kamar, mikrotik_password, portal_passw
             elif new_user.role == UserRole.USER:
                 context = {
                     "full_name": new_user.full_name,
-                    "username": format_to_local_phone(new_user.phone_number),
-                    "password": new_user.mikrotik_password
+                    "hotspot_username": format_to_local_phone(new_user.phone_number),
+                    "hotspot_password": new_user.mikrotik_password
                 }
                 message_body = get_notification_message("user_created_by_admin_with_password", context)
                 
@@ -380,9 +446,11 @@ def create_admin(phone, name, role, blok, kamar, mikrotik_password, portal_passw
 @with_appcontext
 def create_superadmin(phone, name, blok, kamar):
     if not MODELS_AVAILABLE or not hasattr(db, 'session') or not User or not ApprovalStatus or not UserRole:
-        click.echo(click.style("ERROR: Model User, ApprovalStatus, UserRole atau database session tidak dapat dimuat. Perintah create-superadmin tidak bisa dijalankan.", fg='red')); return
+        click.echo(click.style("ERROR: Model User, ApprovalStatus, UserRole atau database session tidak dapat dimuat. Perintah create-superadmin tidak bisa dijalankan.", fg='red'))
+        return
     if not generate_password_hash_func:
-        click.echo(click.style("ERROR: Fungsi hashing password tidak tersedia. Perintah create-superadmin tidak bisa dijalankan.", fg='red')); return
+        click.echo(click.style("ERROR: Fungsi hashing password tidak tersedia. Perintah create-superadmin tidak bisa dijalankan.", fg='red'))
+        return
 
     try:
         normalized_phone = normalize_phone_for_cli(phone)
@@ -400,18 +468,21 @@ def create_superadmin(phone, name, blok, kamar):
 
 
     except click.BadParameter as e:
-        click.echo(click.style(f"ERROR: {str(e.message)}", fg='red')); return
+        click.echo(click.style(f"ERROR: {str(e.message)}", fg='red'))
+        return
     except Exception as e:
         current_app.logger.error(f"Terjadi kesalahan tidak terduga saat parsing input: {e}", exc_info=True)
-        click.echo(click.style(f"ERROR: Terjadi kesalahan tidak terduga saat parsing input: {str(e)}", fg='red')); return
+        click.echo(click.style(f"ERROR: Terjadi kesalahan tidak terduga saat parsing input: {str(e)}", fg='red'))
+        return
 
     if db.session.execute(db.select(User).filter_by(phone_number=normalized_phone)).scalar_one_or_none():
-        click.echo(click.style(f"ERROR: Nomor telepon '{normalized_phone}' sudah terdaftar.", fg='red')); return
+        click.echo(click.style(f"ERROR: Nomor telepon '{normalized_phone}' sudah terdaftar.", fg='red'))
+        return
 
     password_portal_plain_text = generate_random_password(length=6, type='numeric')
     hashed_portal_password = generate_password_hash_func(password_portal_plain_text)
     
-    new_user = User(
+    new_user = cast(Any, User)(
         phone_number=normalized_phone,
         full_name=name,
         blok=blok_val_for_db,
@@ -469,9 +540,11 @@ def create_superadmin(phone, name, blok, kamar):
 @with_appcontext
 def update_user(phone_number, nama, blok, kamar, aktif, admin_id, is_unlimited, expiry_date):
     if not MODELS_AVAILABLE or not hasattr(db, 'session') or not User or not UserBlok or not UserKamar or not UserRole:
-        click.echo(click.style("ERROR: Model User, UserBlok, UserKamar, UserRole atau database session tidak dapat dimuat.", fg='red')); return
+        click.echo(click.style("ERROR: Model User, UserBlok, UserKamar, UserRole atau database session tidak dapat dimuat.", fg='red'))
+        return
 
-    admin_performing_update = None; admin_id_for_log_upd = "Tidak Diketahui"
+    admin_performing_update = None
+    admin_id_for_log_upd = "Tidak Diketahui"
     if admin_id:
         try:
             admin_uuid_upd = uuid.UUID(admin_id)
@@ -491,12 +564,17 @@ def update_user(phone_number, nama, blok, kamar, aktif, admin_id, is_unlimited, 
     try:
         normalized_phone = normalize_phone_for_cli(phone_number)
     except click.BadParameter as e:
-        click.echo(click.style(f"ERROR: {str(e.message)}", fg='red')); return
+        click.echo(click.style(f"ERROR: {str(e.message)}", fg='red'))
+        return
 
-    user_to_update = db.session.execute(db.select(User).filter_by(phone_number=normalized_phone)).scalar_one_or_none()
+    phone_variations = get_phone_number_variations(normalized_phone)
+    user_to_update = db.session.execute(
+        db.select(User).filter(User.phone_number.in_(phone_variations))
+    ).scalar_one_or_none()
 
     if not user_to_update:
-        click.echo(click.style(f"ERROR: Pengguna '{normalized_phone}' tidak ditemukan.", fg='red')); return
+        click.echo(click.style(f"ERROR: Pengguna '{normalized_phone}' tidak ditemukan.", fg='red'))
+        return
 
     updated_fields = []
     user_updated = False
@@ -513,7 +591,8 @@ def update_user(phone_number, nama, blok, kamar, aktif, admin_id, is_unlimited, 
     if blok is not None:
         if blok.lower() == "kosong":
             if user_to_update.role == UserRole.USER:
-                click.echo(click.style("ERROR: Blok tidak bisa dikosongkan untuk peran USER (wajib diisi).", fg='red')); return
+                click.echo(click.style("ERROR: Blok tidak bisa dikosongkan untuk peran USER (wajib diisi).", fg='red'))
+                return
             if user_to_update.blok is not None:
                 user_to_update.blok = None
                 updated_fields.append("Blok dikosongkan")
@@ -530,13 +609,15 @@ def update_user(phone_number, nama, blok, kamar, aktif, admin_id, is_unlimited, 
                 else:
                     click.echo(click.style(f"INFO: Blok pengguna sudah '{blok_val_for_db}'.", fg='blue'))
             else:
-                click.echo(click.style(f"ERROR: Nilai blok '{blok}' tidak valid. Pilihan: {[b.value for b in UserBlok]}", fg='red')); return
+                click.echo(click.style(f"ERROR: Nilai blok '{blok}' tidak valid. Pilihan: {[b.value for b in UserBlok]}", fg='red'))
+                return
 
     # Handle kamar update
     if kamar is not None:
         if kamar.lower() == "kosong":
             if user_to_update.role == UserRole.USER:
-                click.echo(click.style("ERROR: Kamar tidak bisa dikosongkan untuk peran USER (wajib diisi).", fg='red')); return
+                click.echo(click.style("ERROR: Kamar tidak bisa dikosongkan untuk peran USER (wajib diisi).", fg='red'))
+                return
             if user_to_update.kamar is not None:
                 user_to_update.kamar = None
                 updated_fields.append("Kamar dikosongkan")
@@ -549,7 +630,8 @@ def update_user(phone_number, nama, blok, kamar, aktif, admin_id, is_unlimited, 
             elif MODELS_AVAILABLE and UserKamar and kamar in [k.value for k in UserKamar]:
                 kamar_val_for_db = kamar
             else:
-                click.echo(click.style(f"ERROR: Nilai kamar '{kamar}' tidak valid. Pilihan: {[k.value for k in UserKamar]} atau angka 1-6.", fg='red')); return
+                click.echo(click.style(f"ERROR: Nilai kamar '{kamar}' tidak valid. Pilihan: {[k.value for k in UserKamar]} atau angka 1-6.", fg='red'))
+                return
 
             if user_to_update.kamar != kamar_val_for_db:
                 user_to_update.kamar = kamar_val_for_db
@@ -592,7 +674,8 @@ def update_user(phone_number, nama, blok, kamar, aktif, admin_id, is_unlimited, 
                 else:
                     click.echo(click.style(f"INFO: Tanggal kadaluarsa kuota pengguna sudah '{expiry_date}'.", fg='blue'))
             except ValueError:
-                click.echo(click.style(f"ERROR: Format tanggal kadaluarsa '{expiry_date}' tidak valid. Gunakan YYYY-MM-DD.", fg='red')); return
+                click.echo(click.style(f"ERROR: Format tanggal kadaluarsa '{expiry_date}' tidak valid. Gunakan YYYY-MM-DD.", fg='red'))
+                return
 
 
     if not user_updated:
@@ -622,15 +705,22 @@ def update_user(phone_number, nama, blok, kamar, aktif, admin_id, is_unlimited, 
 @with_appcontext
 def list_users(status, role, active, limit, search):
     if not MODELS_AVAILABLE or not hasattr(db, 'session') or not User or not ApprovalStatus or not UserRole:
-        click.echo(click.style("ERROR: Model User, ApprovalStatus, UserRole atau database session tidak dapat dimuat.", fg='red')); return
+        click.echo(click.style("ERROR: Model User, ApprovalStatus, UserRole atau database session tidak dapat dimuat.", fg='red'))
+        return
 
     query = db.select(User)
     if status:
-        try: query = query.filter(User.approval_status == ApprovalStatus(status.upper()))
-        except ValueError: click.echo(click.style(f"ERROR: Status '{status}' tidak valid.", fg='red')); return
+        try:
+            query = query.filter(User.approval_status == ApprovalStatus(status.upper()))
+        except ValueError:
+            click.echo(click.style(f"ERROR: Status '{status}' tidak valid.", fg='red'))
+            return
     if role:
-        try: query = query.filter(User.role == UserRole(role.upper()))
-        except ValueError: click.echo(click.style(f"ERROR: Role '{role}' tidak valid.", fg='red')); return
+        try:
+            query = query.filter(User.role == UserRole(role.upper()))
+        except ValueError:
+            click.echo(click.style(f"ERROR: Role '{role}' tidak valid.", fg='red'))
+            return
     if active is not None:
         query = query.filter(User.is_active == active)
     if search:
@@ -659,7 +749,8 @@ def list_users(status, role, active, limit, search):
     users_to_list = db.session.execute(query.order_by(User.created_at.desc()).limit(limit)).scalars().all()
 
     if not users_to_list:
-        click.echo("Tidak ada pengguna ditemukan."); return
+        click.echo("Tidak ada pengguna ditemukan.")
+        return
 
     click.echo(click.style("Daftar Pengguna:", fg='cyan', bold=True))
     header = "{:<37} {:<15} {:<20} {:<7} {:<7} {:<18} {:<13} {:<7} {:<15} {:<15} {:<10} {:<18}".format(
@@ -677,7 +768,7 @@ def list_users(status, role, active, limit, search):
             kamar_display = kamar_display[6:]
         
         is_unlimited_display = "Ya" if user_obj.is_unlimited_user else "Tidak"
-        expiry_date_display = user_obj.quota_expiry_date.strftime('%Y-%m-%d') if user_obj.quota_expiry_date else "N/A"
+        expiry_date_display = format_app_date(user_obj.quota_expiry_date) if user_obj.quota_expiry_date else "N/A"
 
         user_line = "{:<37} {:<15} {:<20} {:<7} {:<7} {:<18} {:<13} {:<7} {:<15} {:<15} {:<10} {:<18}".format(
             str(user_obj.id),
@@ -734,17 +825,20 @@ def approve_user(phone_number, admin_id, force_sync):
     try:
         normalized_phone = normalize_phone_for_cli(phone_number)
     except click.BadParameter as e:
-        click.echo(click.style(f"ERROR: {str(e.message)}", fg='red')); return
+        click.echo(click.style(f"ERROR: {str(e.message)}", fg='red'))
+        return
 
     user_to_process = db.session.execute(db.select(User).filter_by(phone_number=normalized_phone)).scalar_one_or_none()
 
     if not user_to_process:
-        click.echo(click.style(f"ERROR: Pengguna '{normalized_phone}' tidak ditemukan.", fg='red')); return
+        click.echo(click.style(f"ERROR: Pengguna '{normalized_phone}' tidak ditemukan.", fg='red'))
+        return
 
     is_initial_approval = (user_to_process.approval_status == ApprovalStatus.PENDING_APPROVAL)
 
     if not is_initial_approval and user_to_process.approval_status == ApprovalStatus.REJECTED:
-        click.echo(click.style(f"ERROR: Pengguna '{user_to_process.full_name}' berstatus REJECTED.", fg='red')); return
+        click.echo(click.style(f"ERROR: Pengguna '{user_to_process.full_name}' berstatus REJECTED.", fg='red'))
+        return
 
     if not is_initial_approval and user_to_process.approval_status == ApprovalStatus.APPROVED and not force_sync:
         click.echo(click.style(f"INFO: Pengguna '{user_to_process.full_name}' sudah {user_to_process.approval_status.value}.", fg='yellow'))
@@ -780,18 +874,25 @@ def approve_user(phone_number, admin_id, force_sync):
     try:
         if is_initial_approval:
             if user_to_process.role == UserRole.USER:
-                if not user_to_process.blok:
-                    current_app.logger.error(f"Pengguna '{user_to_process.full_name}' (role USER) tidak memiliki data Blok. Penyetujuan dibatalkan.")
-                    click.echo(click.style(f"  [DB] ERROR: Pengguna '{user_to_process.full_name}' (role USER) tidak memiliki data Blok. Penyetujuan dibatalkan.", fg='red'))
-                    return
-                if not user_to_process.kamar:
-                    current_app.logger.error(f"Pengguna '{user_to_process.full_name}' (role USER) tidak memiliki data Kamar. Penyetujuan dibatalkan.")
-                    click.echo(click.style(f"  [DB] ERROR: Pengguna '{user_to_process.full_name}' (role USER) tidak memiliki data Kamar. Penyetujuan dibatalkan.", fg='red'))
-                    return
+                if user_to_process.is_tamping:
+                    if not user_to_process.tamping_type:
+                        current_app.logger.error(f"Pengguna '{user_to_process.full_name}' (role USER tamping) tidak memiliki jenis tamping. Penyetujuan dibatalkan.")
+                        click.echo(click.style(f"  [DB] ERROR: Pengguna '{user_to_process.full_name}' (role USER tamping) tidak memiliki jenis tamping. Penyetujuan dibatalkan.", fg='red'))
+                        return
+                else:
+                    if not user_to_process.blok:
+                        current_app.logger.error(f"Pengguna '{user_to_process.full_name}' (role USER) tidak memiliki data Blok. Penyetujuan dibatalkan.")
+                        click.echo(click.style(f"  [DB] ERROR: Pengguna '{user_to_process.full_name}' (role USER) tidak memiliki data Blok. Penyetujuan dibatalkan.", fg='red'))
+                        return
+                    if not user_to_process.kamar:
+                        current_app.logger.error(f"Pengguna '{user_to_process.full_name}' (role USER) tidak memiliki data Kamar. Penyetujuan dibatalkan.")
+                        click.echo(click.style(f"  [DB] ERROR: Pengguna '{user_to_process.full_name}' (role USER) tidak memiliki data Kamar. Penyetujuan dibatalkan.", fg='red'))
+                        return
             user_to_process.approval_status = ApprovalStatus.APPROVED
             user_to_process.is_active = True
             user_to_process.approved_at = datetime.now(dt_timezone.utc)
-            if admin_performing_action: user_to_process.approved_by_id = admin_performing_action.id
+            if admin_performing_action:
+                user_to_process.approved_by_id = admin_performing_action.id
             user_to_process.rejected_at = None
             user_to_process.rejected_by_id = None
             user_to_process.total_quota_purchased_mb = 0
@@ -822,7 +923,7 @@ def approve_user(phone_number, admin_id, force_sync):
 
         if not mikrotik_username_mt:
             current_app.logger.warning(f"Tidak dapat konversi nomor ke username Mikrotik. Update Mikrotik dilewati untuk {user_to_process.id}.")
-            click.echo(click.style(f"  [Mikrotik] WARNING: Tidak dapat konversi nomor ke username Mikrotik. Update Mikrotik dilewati.", fg='yellow'))
+            click.echo(click.style("  [Mikrotik] WARNING: Tidak dapat konversi nomor ke username Mikrotik. Update Mikrotik dilewati.", fg='yellow'))
             mikrotik_message_detail = "Format username Mikrotik tidak valid."
         else:
             try:
@@ -887,8 +988,8 @@ def approve_user(phone_number, admin_id, force_sync):
             
             context = {
                 "full_name": user_to_process.full_name,
-                "username": username_display_for_wa,
-                "password": password_untuk_mikrotik
+                "hotspot_username": username_display_for_wa,
+                "hotspot_password": password_untuk_mikrotik
             }
             
             message_body_wa = ""
@@ -943,14 +1044,16 @@ def approve_user(phone_number, admin_id, force_sync):
 @with_appcontext
 def reject_user(phone_number, admin_id, reason, force):
     if not MODELS_AVAILABLE or not hasattr(db, 'session') or not User or not ApprovalStatus:
-        click.echo(click.style("ERROR: Model User/ApprovalStatus atau database session tidak dapat dimuat.", fg='red')); return
+        click.echo(click.style("ERROR: Model User/ApprovalStatus atau database session tidak dapat dimuat.", fg='red'))
+        return
     if not MIKROTIK_CLIENT_AVAILABLE or not NOTIFICATION_SERVICE_AVAILABLE:
         current_app.logger.error("Klien Mikrotik atau Notification Service tidak termuat. Perintah tidak bisa dijalankan.")
         click.echo(click.style("ERROR: Klien Mikrotik atau Notification Service tidak termuat. Perintah tidak bisa dijalankan.", fg='red'))
         return
 
 
-    admin_performing_rejection = None; admin_id_for_log = "Tidak Diketahui"
+    admin_performing_rejection = None
+    admin_id_for_log = "Tidak Diketahui"
     if admin_id:
         try:
             admin_uuid = uuid.UUID(admin_id)
@@ -968,24 +1071,32 @@ def reject_user(phone_number, admin_id, reason, force):
             current_app.logger.warning(f"Tidak dapat verifikasi role admin untuk admin_id '{admin_id}': {e}", exc_info=True)
             click.echo(click.style(f"WARNING: Tidak dapat verifikasi role admin untuk admin_id '{admin_id}'.", fg='yellow'))
 
-    try: normalized_phone = normalize_phone_for_cli(phone_number)
-    except click.BadParameter as e: click.echo(click.style(f"ERROR: {str(e.message)}", fg='red')); return
+    try:
+        normalized_phone = normalize_phone_for_cli(phone_number)
+    except click.BadParameter as e:
+        click.echo(click.style(f"ERROR: {str(e.message)}", fg='red'))
+        return
 
     user_to_reject = db.session.execute(db.select(User).filter_by(phone_number=normalized_phone)).scalar_one_or_none()
 
-    if not user_to_reject: click.echo(click.style(f"ERROR: Pengguna '{normalized_phone}' tidak ditemukan.", fg='red')); return
+    if not user_to_reject:
+        click.echo(click.style(f"ERROR: Pengguna '{normalized_phone}' tidak ditemukan.", fg='red'))
+        return
 
     if user_to_reject.approval_status != ApprovalStatus.PENDING_APPROVAL:
         current_status_val = user_to_reject.approval_status.value if isinstance(user_to_reject.approval_status, enum.Enum) else str(user_to_reject.approval_status)
         click.echo(click.style(f"INFO: Pengguna '{user_to_reject.full_name}' tidak PENDING (Status: {current_status_val}).", fg='yellow'))
-        click.echo(click.style("Gunakan 'delete' untuk status lain.", fg='yellow')); return
+        click.echo(click.style("Gunakan 'delete' untuk status lain.", fg='yellow'))
+        return
 
     if not force:
-        click.echo(click.style(f"\nDETAIL PENGGUNA AKAN DITOLAK & DIHAPUS:", fg='yellow', bold=True))
+        click.echo(click.style("\nDETAIL PENGGUNA AKAN DITOLAK & DIHAPUS:", fg='yellow', bold=True))
         click.echo(f"  Nama: {user_to_reject.full_name}, Telp: {user_to_reject.phone_number}, Status: {user_to_reject.approval_status.value}")
         click.confirm(click.style("\nAnda YAKIN MENOLAK dan MENGHAPUS PERMANEN pendaftaran ini?", fg='red', bold=True), abort=True)
 
-    user_full_name_for_log = user_to_reject.full_name; user_id_for_log = str(user_to_reject.id); user_phone_for_notif = user_to_reject.phone_number
+    user_full_name_for_log = user_to_reject.full_name
+    user_id_for_log = str(user_to_reject.id)
+    user_phone_for_notif = user_to_reject.phone_number
 
     mikrotik_status_action = "Tidak dicoba."
     mikrotik_username_target = format_to_local_phone(user_phone_for_notif)
@@ -1046,7 +1157,6 @@ def reject_user(phone_number, admin_id, reason, force):
     try:
         db.session.delete(user_to_reject)
         db.session.commit()
-        admin_log_info = f" oleh Admin ID '{admin_id_for_log}'" if admin_performing_rejection else " System"
         current_app.logger.info(f"User REJECTED and DELETED: ID={user_id_for_log}, Phone={user_phone_for_notif}, Name='{user_full_name_for_log}'. Mikrotik: attempted={mikrotik_status_action}. Admin ID: {admin_id_for_log if admin_performing_rejection else 'System'}.")
         click.echo(click.style(f"\nSUKSES: Pengguna '{user_full_name_for_log}' ({user_phone_for_notif}) DITOLAK & DIHAPUS dari database.", fg='green', bold=True))
         if not notification_sent_reject and WHATSAPP_AVAILABLE and user_phone_for_notif:
@@ -1066,14 +1176,16 @@ def reject_user(phone_number, admin_id, reason, force):
 @with_appcontext
 def delete_user(phone_number, admin_id, force):
     if not MODELS_AVAILABLE or not hasattr(db, 'session') or not User:
-        click.echo(click.style("ERROR: Model User atau database session tidak dapat dimuat.", fg='red')); return
+        click.echo(click.style("ERROR: Model User atau database session tidak dapat dimuat.", fg='red'))
+        return
     if not MIKROTIK_CLIENT_AVAILABLE:
         current_app.logger.warning("Klien Mikrotik tidak termuat. Operasi penghapusan Mikrotik akan dilewati.")
         click.echo(click.style("ERROR: Klien Mikrotik tidak termuat. Perintah tidak bisa dijalankan.", fg='red'))
         click.echo(click.style("INFO: Operasi penghapusan Mikrotik akan dilewati.", fg='yellow'))
 
 
-    admin_performing_deletion = None; admin_id_for_log_del = "Tidak Diketahui"
+    admin_performing_deletion = None
+    admin_id_for_log_del = "Tidak Diketahui"
     if admin_id:
         try:
             admin_uuid_del = uuid.UUID(admin_id)
@@ -1092,14 +1204,19 @@ def delete_user(phone_number, admin_id, force):
             click.echo(click.style(f"WARNING: Tidak dapat verifikasi role admin untuk admin_id '{admin_id}'.", fg='yellow'))
 
 
-    try: normalized_phone = normalize_phone_for_cli(phone_number)
-    except click.BadParameter as e: click.echo(click.style(f"ERROR: {str(e.message)}", fg='red')); return
+    try:
+        normalized_phone = normalize_phone_for_cli(phone_number)
+    except click.BadParameter as e:
+        click.echo(click.style(f"ERROR: {str(e.message)}", fg='red'))
+        return
 
     user_to_delete = db.session.execute(db.select(User).filter_by(phone_number=normalized_phone)).scalar_one_or_none()
-    if not user_to_delete: click.echo(click.style(f"ERROR: Pengguna '{normalized_phone}' tidak ditemukan.", fg='red')); return
+    if not user_to_delete:
+        click.echo(click.style(f"ERROR: Pengguna '{normalized_phone}' tidak ditemukan.", fg='red'))
+        return
 
     if not force:
-        click.echo(click.style(f"\nDETAIL PENGGUNA AKAN DIHAPUS PERMANEN:", fg='red', bold=True))
+        click.echo(click.style("\nDETAIL PENGGUNA AKAN DIHAPUS PERMANEN:", fg='red', bold=True))
         click.echo(f"  ID: {user_to_delete.id}, Nama: {user_to_delete.full_name}, Telp: {user_to_delete.phone_number}")
         click.echo(f"  Role: {user_to_delete.role.value}, Status: {user_to_delete.approval_status.value}, Aktif: {'Ya' if user_to_delete.is_active else 'Tidak'}")
         click.echo(click.style("\nPERINGATAN PENTING:", fg='yellow', bold=True))
@@ -1107,15 +1224,19 @@ def delete_user(phone_number, admin_id, force):
         click.echo(click.style("  - MENCOBA menghapus dari MIKROTIK (jika akun Mikrotik ada).", fg='yellow'))
         click.confirm(click.style("\nAnda YAKIN MENGHAPUS PERMANEN pengguna ini dari DB dan Mikrotik?", fg='red', underline=True, bold=True), abort=True)
 
-    user_id_log = str(user_to_delete.id); user_phone_log = user_to_delete.phone_number; user_name_log = user_to_delete.full_name
+    user_id_log = str(user_to_delete.id)
+    user_phone_log = user_to_delete.phone_number
+    user_name_log = user_to_delete.full_name
     mikrotik_username_to_delete = format_to_local_phone(user_phone_log)
 
-    mikrotik_deletion_attempted = False; mikrotik_deletion_successful = False; mikrotik_deletion_message = "Klien Mikrotik tidak tersedia/username tidak valid."
+    mikrotik_deletion_attempted = False
+    mikrotik_deletion_successful = False
+    mikrotik_deletion_message = "Klien Mikrotik tidak tersedia/username tidak valid."
     if MIKROTIK_CLIENT_AVAILABLE and mikrotik_username_to_delete:
         if user_to_delete.mikrotik_password:
             current_app.logger.info(f"Mencoba hapus '{mikrotik_username_to_delete}' dari Mikrotik...")
             click.echo(click.style(f"\n  [Mikrotik] INFO: Mencoba hapus '{mikrotik_username_to_delete}' dari Mikrotik...", fg='cyan'))
-            mikrotik_deletion_attempted = True; mikrotik_conn_pool_del = None
+            mikrotik_deletion_attempted = True
             try:
                 with get_mikrotik_connection() as mikrotik_api_conn:
                     if mikrotik_api_conn:
@@ -1149,7 +1270,6 @@ def delete_user(phone_number, admin_id, force):
         db.session.delete(user_to_delete)
         db.session.commit()
         db_deletion_successful = True
-        admin_log_info = f" oleh Admin ID '{admin_id_for_log_del}'" if admin_performing_deletion else " System/CLI"
         current_app.logger.info(f"User DELETED from DB: ID={user_id_log}, Phone={user_phone_log}, Name='{user_name_log}'. Mikrotik: attempted={mikrotik_deletion_attempted}, success={mikrotik_deletion_successful} ('{mikrotik_deletion_message}'). Admin ID: {admin_id_for_log_del if admin_performing_deletion else 'System/CLI'}.")
         click.echo(click.style(f"\nSUKSES: Pengguna '{user_name_log}' ({user_phone_log}) DIHAPUS dari database.", fg='green', bold=True))
     except Exception as e_db_delete_cli:
@@ -1158,14 +1278,18 @@ def delete_user(phone_number, admin_id, force):
         click.echo(click.style(f"\nERROR DB: Gagal menghapus pengguna: {str(e_db_delete_cli)}", fg='red'))
 
     click.echo(click.style("\nRingkasan Proses Penghapusan:", bold=True))
-    if db_deletion_successful: click.echo(click.style("  - Database: BERHASIL dihapus.", fg='green'))
-    else: click.echo(click.style("  - Database: GAGAL dihapus.", fg='red'))
+    if db_deletion_successful:
+        click.echo(click.style("  - Database: BERHASIL dihapus.", fg='green'))
+    else:
+        click.echo(click.style("  - Database: GAGAL dihapus.", fg='red'))
     if mikrotik_deletion_attempted:
-        if mikrotik_deletion_successful: click.echo(click.style("  - Mikrotik: BERHASIL dihapus/tidak ditemukan.", fg='green'))
+        if mikrotik_deletion_successful:
+            click.echo(click.style("  - Mikrotik: BERHASIL dihapus/tidak ditemukan.", fg='green'))
         else:
             click.echo(click.style(f"  - Mikrotik: GAGAL/TIDAK DIKONFIRMASI. Pesan: {mikrotik_deletion_message}", fg='yellow'))
             click.echo(click.style("    -> PERIKSA MIKROTIK MANUAL.", fg='yellow', bold=True))
-    else: click.echo(click.style(f"  - Mikrotik: TIDAK DICOBA. Alasan: {mikrotik_deletion_message}", fg='blue'))
+    else:
+        click.echo(click.style(f"  - Mikrotik: TIDAK DICOBA. Alasan: {mikrotik_deletion_message}", fg='blue'))
 
 
 # --- Perintah set-role ---
@@ -1176,9 +1300,11 @@ def delete_user(phone_number, admin_id, force):
 @with_appcontext
 def set_user_role(phone_number, new_role, admin_id):
     if not MODELS_AVAILABLE or not hasattr(db, 'session') or not User or not UserRole:
-        click.echo(click.style("ERROR: Model User/UserRole atau database session tidak dapat dimuat.", fg='red')); return
+        click.echo(click.style("ERROR: Model User/UserRole atau database session tidak dapat dimuat.", fg='red'))
+        return
 
-    admin_performing_set_role = None; admin_id_for_log_sr = "Tidak Diketahui"
+    admin_performing_set_role = None
+    admin_id_for_log_sr = "Tidak Diketahui"
     if admin_id:
         try:
             admin_uuid_sr = uuid.UUID(admin_id)
@@ -1199,17 +1325,24 @@ def set_user_role(phone_number, new_role, admin_id):
     try:
         normalized_phone = normalize_phone_for_cli(phone_number)
         role_enum_to_set = UserRole(new_role.upper())
-    except click.BadParameter as e: click.echo(click.style(f"ERROR: {str(e.message)}", fg='red')); return
-    except ValueError: click.echo(click.style(f"ERROR: Role '{new_role}' tidak valid.", fg='red')); return
+    except click.BadParameter as e:
+        click.echo(click.style(f"ERROR: {str(e.message)}", fg='red'))
+        return
+    except ValueError:
+        click.echo(click.style(f"ERROR: Role '{new_role}' tidak valid.", fg='red'))
+        return
 
     user_to_update_role = db.session.execute(db.select(User).filter_by(phone_number=normalized_phone)).scalar_one_or_none()
-    if not user_to_update_role: click.echo(click.style(f"ERROR: Pengguna '{normalized_phone}' tidak ditemukan.", fg='red')); return
+    if not user_to_update_role:
+        click.echo(click.style(f"ERROR: Pengguna '{normalized_phone}' tidak ditemukan.", fg='red'))
+        return
 
     old_role_val = user_to_update_role.role.value if isinstance(user_to_update_role.role, enum.Enum) else str(user_to_update_role.role)
     new_role_val = role_enum_to_set.value
 
     if user_to_update_role.role == role_enum_to_set:
-        click.echo(click.style(f"INFO: Pengguna '{user_to_update_role.full_name}' sudah role '{old_role_val}'.", fg='yellow')); return
+        click.echo(click.style(f"INFO: Pengguna '{user_to_update_role.full_name}' sudah role '{old_role_val}'.", fg='yellow'))
+        return
 
     if old_role_val != UserRole.USER.value and new_role_val == UserRole.USER.value:
         click.echo(click.style(f"INFO: Downgrade dari {old_role_val} ke {new_role_val}. Memerlukan data Blok & Kamar.", fg='blue'))
@@ -1240,7 +1373,6 @@ def set_user_role(phone_number, new_role, admin_id):
         db.session.commit()
         db.session.refresh(user_to_update_role)
         
-        admin_log_info = f" oleh Admin ID '{admin_id_for_log_sr}'" if admin_performing_set_role else " (System/CLI)"
         current_app.logger.info(f"User role updated: ID={user_to_update_role.id}, Phone={normalized_phone}, Name='{user_to_update_role.full_name}'. Old: {old_role_val}, New: {new_role_val}. Admin ID: {admin_id_for_log_sr if admin_performing_set_role else 'System/CLI'}.")
         click.echo(click.style(f"SUKSES: Role '{user_to_update_role.full_name}' ({normalized_phone}) diubah dari {old_role_val} ke {new_role_val}.", fg='green'))
 
@@ -1352,7 +1484,10 @@ def set_user_password(phone_number, password):
         click.echo(click.style(f"ERROR: {str(e.message)}", fg='red'))
         return
 
-    user_to_update = db.session.execute(db.select(User).filter_by(phone_number=normalized_phone)).scalar_one_or_none()
+    phone_variations = get_phone_number_variations(normalized_phone)
+    user_to_update = db.session.execute(
+        db.select(User).filter(User.phone_number.in_(phone_variations))
+    ).scalar_one_or_none()
     
     if not user_to_update:
         click.echo(click.style(f"ERROR: Pengguna dengan nomor '{normalized_phone}' tidak ditemukan.", fg='red'))
@@ -1371,6 +1506,142 @@ def set_user_password(phone_number, password):
         current_app.logger.error(f"Error setting password for {normalized_phone}: {str(e)}", exc_info=True)
         click.echo(click.style(f"ERROR: Gagal menyimpan password baru ke database: {str(e)}", fg='red'))
 
+
+@user_cli_bp.command('notify-access-status', help="Kirim notifikasi status akses via WhatsApp (testing).")
+@click.argument('phone_number', type=str)
+@click.option('--status', 'status_key', required=True,
+              type=click.Choice(['blocked', 'inactive', 'expired', 'fup', 'habis', 'invalid'], case_sensitive=False),
+              help="Status yang akan dikirimkan.")
+@click.option('--reason', default=None, help="Alasan status (opsional).")
+@click.option('--remaining-mb', type=float, default=None, help="Sisa kuota MB (opsional, untuk status fup).")
+@click.option('--remaining-percent', type=float, default=None, help="Sisa kuota persen (opsional, untuk status fup).")
+@click.option('--expiry-date', default=None, help="Tanggal kedaluwarsa (opsional, untuk status expired).")
+@with_appcontext
+def notify_access_status(phone_number, status_key, reason, remaining_mb, remaining_percent, expiry_date):
+    if not MODELS_AVAILABLE or not hasattr(db, 'session') or not User:
+        click.echo(click.style("ERROR: Model User atau database session tidak dapat dimuat.", fg='red'))
+        return
+    if not WHATSAPP_AVAILABLE:
+        click.echo(click.style("ERROR: Klien WhatsApp tidak tersedia.", fg='red'))
+        return
+    if settings_service.get_setting('ENABLE_WHATSAPP_NOTIFICATIONS', 'False') != 'True':
+        click.echo(click.style("ERROR: Notifikasi WhatsApp sedang dinonaktifkan.", fg='red'))
+        return
+
+    try:
+        normalized_phone = normalize_phone_for_cli(phone_number)
+    except click.BadParameter as e:
+        click.echo(click.style(f"ERROR: {str(e.message)}", fg='red'))
+        return
+
+    phone_variations = get_phone_number_variations(normalized_phone)
+    user = db.session.execute(
+        db.select(User).filter(User.phone_number.in_(phone_variations))
+    ).scalar_one_or_none()
+
+    full_name = user.full_name if user else normalized_phone
+    total_mb = float(user.total_quota_purchased_mb or 0.0) if user else 0.0
+    used_mb = float(user.total_quota_used_mb or 0.0) if user else 0.0
+    computed_remaining_mb = max(0.0, total_mb - used_mb)
+    computed_remaining_percent = round((computed_remaining_mb / total_mb) * 100, 2) if total_mb > 0 else 0.0
+
+    if remaining_mb is None:
+        remaining_mb = computed_remaining_mb
+    if remaining_percent is None:
+        remaining_percent = computed_remaining_percent
+    if expiry_date is None and user and user.quota_expiry_date:
+        expiry_date = format_app_datetime(user.quota_expiry_date)
+
+    template_map = {
+        'blocked': 'user_access_blocked',
+        'inactive': 'user_access_inactive',
+        'expired': 'user_access_expired',
+        'fup': 'user_access_fup',
+        'habis': 'user_access_habis',
+        'invalid': 'user_access_invalid',
+    }
+
+    template_key = template_map.get(status_key.lower())
+    if not template_key:
+        click.echo(click.style("ERROR: Status tidak valid.", fg='red'))
+        return
+
+    context = {
+        'full_name': full_name,
+        'reason': reason or "Tidak disebutkan",
+        'remaining_mb': remaining_mb,
+        'remaining_percent': remaining_percent,
+        'expiry_date': expiry_date or "-",
+    }
+
+    message_body = get_notification_message(template_key, context)
+    ok = send_whatsapp_message(normalized_phone, message_body)
+    if ok:
+        click.echo(click.style(f"SUKSES: Notifikasi '{status_key}' dikirim ke {normalized_phone}.", fg='green'))
+    else:
+        click.echo(click.style(f"ERROR: Gagal mengirim notifikasi '{status_key}' ke {normalized_phone}.", fg='red'))
+
+@user_cli_bp.command('init-superadmin', help="Hapus user existing dan buat ulang Super Admin dari env/arg.")
+@click.option('--phone', required=False, help="Nomor telepon Super Admin (default: SUPERADMIN_PHONE env).")
+@click.option('--name', required=False, help="Nama Super Admin (default: SUPERADMIN_NAME env).")
+@click.option('--password', required=False, help="Password Super Admin (default: SUPERADMIN_PASSWORD env).")
+@with_appcontext
+def init_superadmin(phone, name, password):
+    if not MODELS_AVAILABLE or not hasattr(db, 'session') or not User or not UserRole or not ApprovalStatus:
+        click.echo(click.style("ERROR: Model User atau database session tidak dapat dimuat.", fg='red'))
+        return
+    if not generate_password_hash_func:
+        click.echo(click.style("ERROR: Fungsi hashing password tidak tersedia.", fg='red'))
+        return
+
+    phone = phone or os.getenv('SUPERADMIN_PHONE')
+    name = name or os.getenv('SUPERADMIN_NAME', 'Super Admin')
+    password = password or os.getenv('SUPERADMIN_PASSWORD')
+
+    if not phone or not password:
+        click.echo(click.style("ERROR: phone/password wajib. Isi argumen atau env SUPERADMIN_PHONE & SUPERADMIN_PASSWORD.", fg='red'))
+        return
+    if len(password) < 6:
+        click.echo(click.style("ERROR: Password minimal 6 karakter.", fg='red'))
+        return
+
+    try:
+        normalized_phone = normalize_phone_for_cli(phone)
+    except click.BadParameter as e:
+        click.echo(click.style(f"ERROR: {str(e.message)}", fg='red'))
+        return
+
+    phone_variations = get_phone_number_variations(normalized_phone)
+
+    try:
+        existing_users = db.session.execute(
+            db.select(User).filter(User.phone_number.in_(phone_variations))
+        ).scalars().all()
+        for user in existing_users:
+            db.session.delete(user)
+        db.session.flush()
+
+        new_user = cast(Any, User)(
+            phone_number=normalized_phone,
+            full_name=name,
+            password_hash=generate_password_hash_func(password),
+            role=UserRole.SUPER_ADMIN,
+            approval_status=ApprovalStatus.APPROVED,
+            is_active=True,
+            approved_at=datetime.now(dt_timezone.utc),
+            total_quota_purchased_mb=0,
+            total_quota_used_mb=0,
+            quota_expiry_date=None,
+            is_unlimited_user=False,
+        )
+        db.session.add(new_user)
+        db.session.commit()
+        click.echo(click.style(f"SUKSES: Super Admin '{name}' dibuat ulang dengan nomor {normalized_phone}.", fg='green'))
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"ERROR: Gagal init superadmin: {str(e)}", exc_info=True)
+        click.echo(click.style(f"ERROR: Gagal init superadmin: {str(e)}", fg='red'))
+
 # --- Perintah seed-usage ---
 @user_cli_bp.command('seed-usage', help="Membuat data dummy kuota & pemakaian harian untuk user.")
 @click.argument('phone_number', type=str)
@@ -1380,18 +1651,23 @@ def set_user_password(phone_number, password):
 @with_appcontext
 def seed_user_usage(phone_number, quota_purchased, days, admin_id):
     if not MODELS_AVAILABLE or not hasattr(db, 'session') or not User or not DailyUsageLog:
-        click.echo(click.style("ERROR: Model User/DailyUsageLog atau database session tidak dapat dimuat.", fg='red')); return
+        click.echo(click.style("ERROR: Model User/DailyUsageLog atau database session tidak dapat dimuat.", fg='red'))
+        return
     try:
         db.session.execute(db.select(DailyUsageLog)).first()
     except Exception:
-        click.echo(click.style("ERROR: Model DailyUsageLog tidak terdefinisi dengan benar atau tidak dapat diakses.", fg='red')); return
+        click.echo(click.style("ERROR: Model DailyUsageLog tidak terdefinisi dengan benar atau tidak dapat diakses.", fg='red'))
+        return
 
     if quota_purchased <= 0:
-        click.echo(click.style("ERROR: --quota-purchased harus lebih besar dari 0.", fg='red')); return
+        click.echo(click.style("ERROR: --quota-purchased harus lebih besar dari 0.", fg='red'))
+        return
     if days <= 0:
-        click.echo(click.style("ERROR: --days harus lebih besar dari 0.", fg='red')); return
+        click.echo(click.style("ERROR: --days harus lebih besar dari 0.", fg='red'))
+        return
 
-    admin_performing_seed = None; admin_id_for_log_seed = "Tidak Diketahui"
+    admin_performing_seed = None
+    admin_id_for_log_seed = "Tidak Diketahui"
     if admin_id:
         try:
             admin_uuid_seed = uuid.UUID(admin_id)
@@ -1411,12 +1687,14 @@ def seed_user_usage(phone_number, quota_purchased, days, admin_id):
     try:
         normalized_phone = normalize_phone_for_cli(phone_number)
     except click.BadParameter as e:
-        click.echo(click.style(f"ERROR: {str(e.message)}", fg='red')); return
+        click.echo(click.style(f"ERROR: {str(e.message)}", fg='red'))
+        return
 
     user_to_seed = db.session.execute(db.select(User).filter_by(phone_number=normalized_phone)).scalar_one_or_none()
 
     if not user_to_seed:
-        click.echo(click.style(f"ERROR: Pengguna '{normalized_phone}' tidak ditemukan.", fg='red')); return
+        click.echo(click.style(f"ERROR: Pengguna '{normalized_phone}' tidak ditemukan.", fg='red'))
+        return
 
     click.echo(click.style(f"Memulai pembuatan data dummy untuk '{user_to_seed.full_name}' ({normalized_phone})...", fg='cyan'))
     click.echo(f"  Kuota Dibeli: {quota_purchased} MB")
@@ -1428,13 +1706,14 @@ def seed_user_usage(phone_number, quota_purchased, days, admin_id):
     total_generated_usage_mb = 0.0
 
     try:
-        num_deleted = db.session.execute(
+        delete_result = db.session.execute(
             db.delete(DailyUsageLog).where(
                 DailyUsageLog.user_id == user_to_seed.id,
                 DailyUsageLog.log_date >= start_date,
                 DailyUsageLog.log_date <= today
             )
-        ).rowcount
+        )
+        num_deleted = getattr(delete_result, "rowcount", 0) or 0
         if num_deleted > 0:
              current_app.logger.info(f"Menghapus {num_deleted} log pemakaian lama dalam rentang tanggal.")
              click.echo(click.style(f"  INFO: Menghapus {num_deleted} log pemakaian lama dalam rentang tanggal.", fg='blue'))
@@ -1456,7 +1735,11 @@ def seed_user_usage(phone_number, quota_purchased, days, admin_id):
             daily_usage = max(0.0, min(daily_usage, remaining_quota))
 
         daily_usage = round(daily_usage, 2)
-        log_entry = DailyUsageLog(user_id=user_to_seed.id, log_date=log_date, usage_mb=daily_usage)
+        log_entry = cast(Any, DailyUsageLog)(
+            user_id=user_to_seed.id,
+            log_date=log_date,
+            usage_mb=daily_usage,
+        )
         new_logs.append(log_entry)
         total_generated_usage_mb += daily_usage
         click.echo(f"    -> {log_date}: {daily_usage:.2f} MB")
@@ -1494,13 +1777,16 @@ def seed_user_usage(phone_number, quota_purchased, days, admin_id):
 @with_appcontext
 def add_mikrotik_profile(name, rate_limit, shared_users, description):
     if not MODELS_AVAILABLE or not hasattr(db, 'session') or not PackageProfile:
-        click.echo(click.style("ERROR: Model PackageProfile atau database session tidak dapat dimuat.", fg='red')); return
+        click.echo(click.style("ERROR: Model PackageProfile atau database session tidak dapat dimuat.", fg='red'))
+        return
     if not MIKROTIK_CLIENT_AVAILABLE:
         current_app.logger.error("Klien Mikrotik tidak tersedia. Tidak bisa menambahkan profil di Mikrotik.")
-        click.echo(click.style("ERROR: Klien Mikrotik tidak tersedia. Tidak bisa menambahkan profil di Mikrotik.", fg='red')); return
+        click.echo(click.style("ERROR: Klien Mikrotik tidak tersedia. Tidak bisa menambahkan profil di Mikrotik.", fg='red'))
+        return
 
     if db.session.execute(db.select(PackageProfile).filter_by(profile_name=name)).scalar_one_or_none():
-        click.echo(click.style(f"ERROR: Profil Mikrotik dengan nama '{name}' sudah ada di database aplikasi.", fg='red')); return
+        click.echo(click.style(f"ERROR: Profil Mikrotik dengan nama '{name}' sudah ada di database aplikasi.", fg='red'))
+        return
 
     mikrotik_profile_added_mt = False
     mikrotik_message_mt = "Tidak mencoba karena klien Mikrotik tidak tersedia."
@@ -1537,7 +1823,7 @@ def add_mikrotik_profile(name, rate_limit, shared_users, description):
         click.echo(f"  Detail Mikrotik: {mikrotik_message_mt}")
         return
 
-    new_profile = PackageProfile(
+    new_profile = cast(Any, PackageProfile)(
         profile_name=name,
         description=description
     )

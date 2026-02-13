@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="pragma" content="no-cache">
+    <meta http-equiv="expires" content="-1">
+    <title>Logout - Sobigidul</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+        :root { --dark-bg: #1e1e2f; --card-bg: #27293d; --text-color: #d0d2d6; --text-muted: #676a79; --primary-color: #a78bfa; --primary-color-dark: #8b5cf6; --success-color: #4caf50;}
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Roboto', sans-serif; background-color: var(--dark-bg); color: var(--text-color); display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+        .container { width: 100%; max-width: 450px; text-align: center; }
+        .card { background-color: var(--card-bg); border-radius: 12px; padding: 2.5rem; border: 1px solid rgba(255, 255, 255, 0.05); }
+        .icon { color: var(--success-color); width: 64px; height: 64px; margin-bottom: 1.5rem; }
+        h1 { font-size: 1.5rem; font-weight: 500; margin-bottom: 1rem; }
+        p { color: var(--text-muted); margin-bottom: 1.5rem; }
+        .status-table { width: 100%; text-align: left; border-collapse: collapse; margin-bottom: 1.5rem; }
+        .status-table td { padding: 10px 5px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); font-size: 0.9rem; }
+        .status-table tr:last-child td { border-bottom: none; }
+        .status-table td:first-child { color: var(--text-muted); width: 40%; }
+        .status-table td:last-child { font-weight: 500; }
+        .btn { display: inline-block; width: 100%; padding: 12px; border-radius: 8px; border: none; cursor: pointer; font-weight: 500; font-size: 1rem; text-decoration: none; transition: all 0.3s; margin-top: 0.5rem; text-align: center; }
+        .btn-primary { background: linear-gradient(90deg, var(--primary-color), var(--primary-color-dark)); color: #ffffff; }
+    </style>
+    <script>
+        function openLogin() {
+            if (window.name != 'hotspot_logout') return true;
+            open('$(link-login)', '_blank', '');
+            window.close();
+            return false;
+        }
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <svg class="icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"></path></svg>
+            <h1>Anda Telah Logout</h1>
+            <p>Ringkasan sesi terakhir Anda:</p>
+            <table class="status-table">
+                <tr><td>Pengguna</td><td>$(username)</td></tr>
+                <tr><td>Alamat IP</td><td>$(ip)</td></tr>
+                <tr><td>Durasi Sesi</td><td>$(uptime)</td></tr>
+                <tr><td>Bytes Terpakai</td><td>$(bytes-in-nice) / $(bytes-out-nice)</td></tr>
+            </table>
+            <form action="$(link-login)" name="login" onsubmit="return openLogin()">
+                <button type="submit" class="btn btn-primary">Masuk Kembali</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

@@ -6,10 +6,10 @@ import { useSnackbar } from '@/composables/useSnackbar'
 const { messages, remove } = useSnackbar()
 
 const iconMap = {
-  success: 'tabler:circle-check',
-  error: 'tabler:alert-circle',
-  info: 'tabler:info-circle',
-  warning: 'tabler:alert-triangle',
+  success: 'tabler-circle-check',
+  error: 'tabler-alert-circle',
+  info: 'tabler-info-circle',
+  warning: 'tabler-alert-triangle',
 }
 </script>
 
@@ -24,16 +24,17 @@ const iconMap = {
         :key="message.id"
         :type="message.type"
         :title="message.title"
-        variant="elevated"
-        class="mb-4"
-        max-width="400px"
-        elevation="6"
+        variant="tonal"
+        class="mb-3"
+        max-width="420px"
+        elevation="2"
         border="start"
+        density="comfortable"
       >
         <template #prepend>
           <VIcon
             :icon="iconMap[message.type]"
-            color="white"
+            :color="message.type"
             size="24"
           />
         </template>
@@ -46,15 +47,15 @@ const iconMap = {
             @click="remove(message.id)"
           >
             <VIcon
-              icon="tabler:x"
-              color="white"
-              size="22"
+              icon="tabler-x"
+              :color="message.type"
+              size="20"
             />
           </VBtn>
         </template>
 
         <p
-          class="text-body-2 mb-0 text-white"
+          class="text-body-2 mb-0"
           v-html="message.text"
         />
       </VAlert>
@@ -65,11 +66,20 @@ const iconMap = {
 <style scoped>
 .snackbar-wrapper {
   position: fixed;
-  bottom: 24px;
+  top: 24px;
   right: 24px;
   z-index: 9999;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
+}
+
+@media (max-width: 600px) {
+  .snackbar-wrapper {
+    top: 12px;
+    right: 12px;
+    left: 12px;
+    align-items: stretch;
+  }
 }
 </style>

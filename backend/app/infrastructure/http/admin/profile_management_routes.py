@@ -5,7 +5,7 @@ from flask import Blueprint, jsonify, request, current_app
 from sqlalchemy.exc import IntegrityError
 from http import HTTPStatus
 from pydantic import BaseModel, Field, ValidationError, ConfigDict
-from typing import Optional, List
+from typing import Optional
 import uuid
 
 # Impor-impor esensial

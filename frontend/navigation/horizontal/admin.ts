@@ -41,4 +41,14 @@ export default [
     to: { path: '/admin/logs' },
     icon: { icon: 'tabler-history' },
   },
+  {
+    title: 'WhatsApp',
+    to: { path: '/admin/whatsapp' },
+    icon: { icon: 'tabler-brand-whatsapp' },
+  },
+  {
+    title: 'Backup & Restore',
+    to: { path: '/admin/backup' },
+    icon: { icon: 'tabler-database-export' },
+  },
 ]

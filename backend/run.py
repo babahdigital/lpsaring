@@ -1,7 +1,5 @@
 # backend/run.py
-import os
 from app import create_app # Import factory function create_app dari package app (app/__init__.py)
-from app.commands.seed_commands import seed_db_command # <-- TAMBAHKAN IMPORT INI
 
 # Ambil konfigurasi dari environment variable (opsional, bisa juga di handle dalam create_app)
 # config_name = os.getenv('FLASK_CONFIG', 'development') # Contoh jika menggunakan config class

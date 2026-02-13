@@ -1,20 +1,71 @@
 # backend/app/utils/formatters.py
 # Kumpulan fungsi helper untuk pemformatan data.
 
+import os
 import re
 from typing import Optional, List
 from datetime import datetime, timezone as dt_timezone
-from zoneinfo import ZoneInfo
+from decimal import Decimal, ROUND_HALF_UP
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+def format_app_date(dt_utc: Optional[datetime] = None) -> str:
+    """Format tanggal sesuai zona waktu aplikasi (dd-mm-yyyy)."""
+    local_dt = get_app_local_datetime(dt_utc)
+    return local_dt.strftime('%d-%m-%Y')
+
+
+def format_app_time(dt_utc: Optional[datetime] = None) -> str:
+    """Format waktu sesuai zona waktu aplikasi (HH:MM:SS)."""
+    local_dt = get_app_local_datetime(dt_utc)
+    return local_dt.strftime('%H:%M:%S')
+
+
+def format_app_datetime(dt_utc: Optional[datetime] = None, include_tz: bool = False) -> str:
+    """Format tanggal dan waktu sesuai zona waktu aplikasi (dd-mm-yyyy HH:MM:SS)."""
+    local_dt = get_app_local_datetime(dt_utc)
+    date_str = local_dt.strftime('%d-%m-%Y')
+    time_str = local_dt.strftime('%H:%M:%S')
+    if include_tz:
+        tz_name = local_dt.tzname() or ""
+        return f"{date_str} {time_str} {tz_name}".strip()
+    return f"{date_str} {time_str}".strip()
+
 
 def format_datetime_to_wita(dt_utc: Optional[datetime]) -> str:
-    """Mengonversi objek datetime UTC menjadi string dengan zona waktu WITA (UTC+8)."""
+    """Mengonversi datetime UTC menjadi string WITA dengan format dd-mm-yyyy."""
     if not isinstance(dt_utc, datetime):
         return ""
     if dt_utc.tzinfo is None:
         dt_utc = dt_utc.replace(tzinfo=dt_timezone.utc)
     wita_tz = ZoneInfo("Asia/Makassar")
     dt_wita = dt_utc.astimezone(wita_tz)
-    return dt_wita.strftime('%d %b %Y, %H:%M:%S %Z')
+    return format_app_datetime(dt_wita, include_tz=True)
+
+def get_app_timezone_name() -> str:
+    return os.environ.get('APP_TIMEZONE', 'Asia/Makassar')
+
+def get_app_local_datetime(dt_utc: Optional[datetime] = None) -> datetime:
+    if dt_utc is None:
+        dt_utc = datetime.now(dt_timezone.utc)
+    if dt_utc.tzinfo is None:
+        dt_utc = dt_utc.replace(tzinfo=dt_timezone.utc)
+    tz_name = get_app_timezone_name()
+    try:
+        tz = ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        tz = dt_timezone.utc
+    return dt_utc.astimezone(tz)
+
+def get_app_date_time_strings(dt_utc: Optional[datetime] = None) -> tuple[str, str]:
+    local_dt = get_app_local_datetime(dt_utc)
+    return format_app_date(local_dt), format_app_time(local_dt)
+
+
+def round_mb(value: float, precision: str = "0.01") -> float:
+    try:
+        return float(Decimal(str(value)).quantize(Decimal(precision), rounding=ROUND_HALF_UP))
+    except Exception:
+        return float(value)
 
 def normalize_to_e164(phone_number: str) -> str:
     """
@@ -47,7 +98,7 @@ def normalize_to_e164(phone_number: str) -> str:
 
     # Validasi panjang: 12-14 digit untuk format E.164
     if not (12 <= len(e164_number) <= 14):
-        raise ValueError(f"Panjang nomor telepon tidak valid. Harus antara 10-12 digit untuk format lokal (misal: 08xx).")
+        raise ValueError("Panjang nomor telepon tidak valid. Harus antara 10-12 digit untuk format lokal (misal: 08xx).")
     
     # Validasi pola: setelah +628, harus ada 8-10 digit angka
     # [1-9] (digit pertama harus 1-9) + [0-9]{7,9} (7-9 digit berikutnya)
@@ -55,6 +106,14 @@ def normalize_to_e164(phone_number: str) -> str:
         raise ValueError(f"Nomor telepon '{phone_number}' memiliki format yang tidak valid.")
         
     return e164_number
+
+def normalize_to_local(phone_number: str) -> str:
+    """
+    Menormalisasi berbagai format nomor telepon Indonesia ke format lokal (08xxx).
+    Menggunakan validasi dari normalize_to_e164 agar format selalu konsisten.
+    """
+    e164_number = normalize_to_e164(phone_number)
+    return '0' + e164_number[3:]
 
 def format_to_local_phone(phone_number: Optional[str]) -> Optional[str]:
     """Mengubah format E.164 (+62) atau format lain menjadi format lokal (08)."""

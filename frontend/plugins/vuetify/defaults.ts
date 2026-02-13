@@ -1,4 +1,3 @@
-// frontend/plugins/vuetify/defaults.ts
 export default {
   IconBtn: {
     icon: true,
@@ -29,24 +28,24 @@ export default {
   VDataTable: {
     VPagination: {
       showFirstLastPage: true,
-      firstIcon: 'tabler:chevrons-left', // DIUBAH
-      lastIcon: 'tabler:chevrons-right', // DIUBAH
+      firstIcon: 'tabler-chevrons-left',
+      lastIcon: 'tabler-chevrons-right',
     },
   },
   VDataTableServer: {
     VPagination: {
       showFirstLastPage: true,
-      firstIcon: 'tabler:chevrons-left', // DIUBAH
-      lastIcon: 'tabler:chevrons-right', // DIUBAH
+      firstIcon: 'tabler-chevrons-left',
+      lastIcon: 'tabler-chevrons-right',
     },
   },
   VExpansionPanel: {
-    expandIcon: 'tabler:chevron-right', // DIUBAH
-    collapseIcon: 'tabler:chevron-right', // DIUBAH
+    expandIcon: 'tabler-chevron-right',
+    collapseIcon: 'tabler-chevron-right',
   },
   VExpansionPanelTitle: {
-    expandIcon: 'tabler:chevron-right', // DIUBAH
-    collapseIcon: 'tabler:chevron-right', // DIUBAH
+    expandIcon: 'tabler-chevron-right',
+    collapseIcon: 'tabler-chevron-right',
   },
   VList: {
     color: 'primary',
@@ -188,5 +187,10 @@ export default {
   },
   VNavigationDrawer: {
     touchless: true,
+  },
+  VVideo: {
+    VSlider: {
+      thumbLabel: false,
+    },
   },
 }

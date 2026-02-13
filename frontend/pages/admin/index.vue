@@ -2,7 +2,8 @@
 import authV1BottomShape from '@images/svg/auth-v1-bottom-shape.svg?raw'
 import authV1TopShape from '@images/svg/auth-v1-top-shape.svg?raw'
 import { VNodeRenderer } from '@layouts/components/VNodeRenderer'
-import { h } from 'vue'
+import { computed, h, onMounted, ref } from 'vue'
+import { useDisplay } from 'vuetify'
 import { useAuthStore } from '~/store/auth'
 
 definePageMeta({
@@ -16,6 +17,9 @@ definePageMeta({
 // --- State Management dan Logika Login (Sama seperti sebelumnya) ---
 const authStore = useAuthStore()
 const router = useRouter()
+const display = useDisplay()
+const isHydrated = ref(false)
+const isWidePadding = computed(() => (isHydrated.value ? display.smAndUp.value : false))
 
 const form = ref({
   username: '',
@@ -30,16 +34,22 @@ async function handleLogin() {
   loading.value = true
   error.value = null
   try {
-    const loginSuccess = await authStore.adminLogin(form.value.username, form.value.password)
+    const username = form.value.username.trim()
+    const password = form.value.password.trim()
+    if (!username || !password) {
+      error.value = 'Username dan password wajib diisi.'
+      return
+    }
+    const loginSuccess = await authStore.adminLogin(username, password)
     if (loginSuccess) {
       await router.push('/admin/dashboard')
     }
     else {
-      error.value = authStore.getError || 'Login gagal, periksa kembali username dan password Anda.'
+      error.value = authStore.error || 'Login gagal, periksa kembali username dan password Anda.'
     }
   }
   catch (err: any) {
-    error.value = authStore.getError || 'Terjadi kesalahan yang tidak terduga.'
+    error.value = authStore.error || 'Terjadi kesalahan yang tidak terduga.'
     console.error('Admin login exception:', err)
   }
   finally {
@@ -47,6 +57,9 @@ async function handleLogin() {
   }
 }
 useHead({ title: 'Login Admin' })
+onMounted(() => {
+  isHydrated.value = true
+})
 </script>
 
 <template>
@@ -65,7 +78,7 @@ useHead({ title: 'Login Admin' })
       <VCard
         class="auth-card"
         max-width="460"
-        :class="$vuetify.display.smAndUp ? 'pa-6' : 'pa-0'"
+        :class="isWidePadding ? 'pa-6' : 'pa-0'"
       >
         <VCardText>
           <h4 class="text-h4 mb-1">
@@ -85,7 +98,8 @@ useHead({ title: 'Login Admin' })
                     v-model="form.username"
                     autofocus
                     label="Telpon"
-                    type="text"
+                    type="tel"
+                    inputmode="numeric"
                     placeholder="0811xxxx"
                     autocomplete="username"
                     :disabled="loading"

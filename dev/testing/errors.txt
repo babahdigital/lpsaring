@@ -1,0 +1,104 @@
+# File ini berisi pesan kesalahan yang ditampilkan kepada pengguna, ketika login
+# http/https digunakan.
+# Pesan-pesan ini dapat diubah untuk membuat antarmuka pengguna lebih ramah, termasuk
+# terjemahan ke berbagai bahasa.
+#
+# Berbagai variabel juga dapat digunakan di sini. Yang paling sering digunakan adalah:
+#	$(error-orig)	- pesan kesalahan asli dari hotspot
+#	$(ip)		- alamat ip dari klien
+#	$(username)	- nama pengguna klien yang mencoba untuk login
+
+# internal-error
+# Seharusnya tidak pernah terjadi. Jika terjadi, halaman kesalahan akan ditampilkan
+# menampilkan pesan kesalahan ini (error-orig akan menjelaskan apa yang telah terjadi)
+
+internal-error = terjadi kesalahan internal ($(error-orig))
+
+# config-error
+# Seharusnya tidak pernah terjadi jika hotspot dikonfigurasi dengan benar.
+
+config-error = kesalahan konfigurasi ($(error-orig))
+
+# not-logged-in
+# Akan terjadi, jika halaman status atau logout diminta oleh pengguna,
+# yang sebenarnya belum login
+
+not-logged-in = Anda belum login (IP $(ip))
+
+# ippool-empty
+# Alamat IP untuk pengguna akan ditetapkan dari kumpulan ip, tetapi tidak ada lagi
+# alamat yang tersedia di kumpulan itu
+
+ippool-empty = tidak dapat memberikan alamat IP - alokasi IP sudah penuh
+
+# shutting-down
+# Ketika proses shutdown dijalankan, klien baru tidak akan diterima
+
+shutting-down = layanan hotspot sedang dimatikan
+
+# user-session-limit
+# Jika profil pengguna memiliki batas jumlah pengguna bersama (shared-users), maka kesalahan ini akan ditampilkan
+# setelah mencapai batas tersebut
+
+user-session-limit = jumlah sesi untuk pengguna $(username) sudah mencapai batas maksimal
+
+# license-session-limit
+# Tergantung pada lisensi, jumlah klien hotspot aktif dibatasi
+# hingga jumlah tertentu. Jika batas ini tercapai, kesalahan berikut akan ditampilkan.
+
+license-session-limit = batas sesi lisensi tercapai ($(error-orig))
+
+# wrong-mac-username
+# Jika nama pengguna terlihat seperti alamat MAC (12:34:56:78:9a:bc), tetapi bukan
+# alamat MAC dari klien ini, login akan ditolak
+
+wrong-mac-username = nama pengguna tidak valid ($(username)): alamat MAC ini bukan milik Anda
+
+# chap-missing
+# Jika metode login http-chap digunakan, tetapi program hotspot tidak menerima
+# kembali kata sandi terenkripsi, pesan kesalahan ini ditampilkan.
+# Kemungkinan penyebab kegagalan:
+#	- JavaScript tidak diaktifkan di browser web;
+#	- Halaman login.html tidak valid;
+#	- Nilai challenge telah kedaluwarsa di server (lebih dari 1 jam tidak aktif);
+#	- Metode login http-chap baru saja dihapus;
+# Jika JavaScript diaktifkan dan halaman login.html valid,
+# maka mencoba login kembali biasanya akan memperbaiki masalah ini.
+
+chap-missing = browser tidak mengirimkan respons (coba lagi, aktifkan JavaScript)
+
+# invalid-username
+# Kasus paling umum dari nama pengguna atau kata sandi yang tidak valid. Jika server RADIUS
+# telah mengirim string kesalahan dengan pesan Access-Reject, maka itu akan
+# menimpa pengaturan ini.
+
+invalid-username = nama pengguna atau kata sandi salah
+
+# invalid-mac
+# Pengguna lokal (di server hotspot) dapat terikat pada alamat MAC tertentu. Jika login
+# dari MAC yang berbeda dicoba, pesan kesalahan ini akan ditampilkan.
+
+invalid-mac = pengguna $(username) tidak diizinkan login dari alamat MAC ini
+
+# uptime-limit, traffic-limit
+# Untuk pengguna hotspot lokal jika batas telah tercapai
+
+uptime-limit = Kuota waktu untuk pengguna $(username) telah habis
+traffic-limit = Kuota data untuk pengguna $(username) telah habis
+
+# radius-timeout
+# Pengguna diautentikasi oleh server RADIUS, tetapi tidak ada respons yang diterima darinya,
+# kesalahan berikut akan ditampilkan.
+
+radius-timeout = server RADIUS tidak merespons
+
+# auth-in-progress
+# Otorisasi sedang berlangsung. Klien sudah mengeluarkan permintaan otorisasi
+# yang belum selesai.
+
+auth-in-progress = proses otorisasi sedang berjalan, silakan coba beberapa saat lagi
+
+# radius-reply
+# Server Radius mengembalikan beberapa pesan kesalahan khusus
+
+radius-reply = $(error-orig)

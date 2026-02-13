@@ -2,13 +2,14 @@
 import click
 from flask.cli import with_appcontext
 from sqlalchemy import select
-from datetime import datetime, date
+from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import logging
 
 from app.extensions import db
 from app.infrastructure.db.models import User, UserRole
-from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection, set_hotspot_user_profile, format_to_local_phone
+from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection, set_hotspot_user_profile
+from app.utils.formatters import format_to_local_phone
 from app.services import settings_service
 
 logger = logging.getLogger(__name__)
@@ -65,7 +66,7 @@ def monthly_reset_command():
         return
 
     # Ambil semua pengguna USER yang aktif
-    users_to_reset = db.session.scalars(select(User).where(User.role == UserRole.USER, User.is_active == True)).all()
+    users_to_reset = db.session.scalars(select(User).where(User.role == UserRole.USER, User.is_active)).all()
 
     if not users_to_reset:
         logger.info("Tidak ada pengguna aktif untuk di-reset.")

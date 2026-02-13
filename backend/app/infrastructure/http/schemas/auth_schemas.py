@@ -4,7 +4,23 @@ from typing import Optional, List, Dict, Any
 import uuid
 
 # Impor fungsi normalisasi dari helper terpusat
-from app.utils.formatters import normalize_to_e164
+from app.utils.formatters import normalize_to_local
+
+TAMPING_TYPES = [
+    "Tamping luar",
+    "Tamping AO",
+    "Tamping Pembinaan",
+    "Tamping kunjungan",
+    "Tamping kamtib",
+    "Tamping klinik",
+    "Tamping dapur",
+    "Tamping mesjid",
+    "Tamping p2u",
+    "Tamping BLK",
+    "Tamping kebersihan",
+    "Tamping Humas",
+    "Tamping kebun",
+]
 
 # Validator yang sekarang memanggil helper
 def validate_phone_number(v: str) -> str:
@@ -12,8 +28,8 @@ def validate_phone_number(v: str) -> str:
     if not v:
         raise ValueError("Nomor telepon tidak boleh kosong.")
     try:
-        # PANGGIL FUNGSI DENGAN NAMA YANG BENAR: normalize_to_e164
-        return normalize_to_e164(v)
+        # Normalisasi ke format lokal 08xxx
+        return normalize_to_local(v)
     except ValueError as e:
         # Teruskan pesan error dari normalizer
         raise ValueError(str(e))
@@ -27,6 +43,9 @@ class VerifyOtpRequestSchema(BaseModel):
     """Skema untuk verifikasi OTP."""
     phone_number: str
     otp: str = Field(..., min_length=6, max_length=6)
+    client_ip: Optional[str] = None
+    client_mac: Optional[str] = None
+    hotspot_login_context: Optional[bool] = None
     _normalize_phone = field_validator('phone_number', mode='before')(validate_phone_number)
 
 class UserRegisterRequestSchema(BaseModel):
@@ -35,6 +54,8 @@ class UserRegisterRequestSchema(BaseModel):
     full_name: str = Field(..., min_length=2)
     blok: Optional[str] = None  # Dijadikan opsional
     kamar: Optional[str] = None # Dijadikan opsional
+    is_tamping: bool = Field(False, description="True jika pengguna tamping")
+    tamping_type: Optional[str] = Field(None, description="Jenis tamping jika is_tamping True")
     register_as_komandan: bool = Field(False, description="Tandai True untuk mendaftar sebagai Komandan")
     
     _normalize_phone = field_validator('phone_number', mode='before')(validate_phone_number)
@@ -45,8 +66,17 @@ class UserRegisterRequestSchema(BaseModel):
         Validator untuk memastikan 'blok' dan 'kamar' wajib diisi
         HANYA jika pengguna mendaftar sebagai USER biasa.
         """
-        if not self.register_as_komandan and (not self.blok or not self.kamar):
-            raise ValueError("Blok dan Kamar wajib diisi untuk pendaftaran pengguna biasa.")
+        if not self.register_as_komandan:
+            if self.is_tamping:
+                if not self.tamping_type:
+                    raise ValueError("Jenis tamping wajib dipilih untuk pengguna tamping.")
+                if self.tamping_type not in TAMPING_TYPES:
+                    raise ValueError("Jenis tamping tidak valid.")
+                if self.blok or self.kamar:
+                    raise ValueError("Blok dan Kamar tidak boleh diisi untuk pengguna tamping.")
+            else:
+                if not self.blok or not self.kamar:
+                    raise ValueError("Blok dan Kamar wajib diisi untuk pendaftaran pengguna biasa.")
         return self
 
 class RequestOtpResponseSchema(BaseModel):
@@ -57,11 +87,27 @@ class VerifyOtpResponseSchema(BaseModel):
     """Skema respons setelah login berhasil."""
     access_token: str
     token_type: str = "bearer"
+    hotspot_username: Optional[str] = None
+    hotspot_password: Optional[str] = None
+    session_token: Optional[str] = None
+    session_url: Optional[str] = None
+    hotspot_login_required: Optional[bool] = None
+
+class SessionTokenRequestSchema(BaseModel):
+    """Skema untuk pertukaran one-time session token."""
+    token: str = Field(..., min_length=16)
 
 class AuthErrorResponseSchema(BaseModel):
     """Skema standar untuk respons error."""
     error: str
     details: Optional[List[Dict[str, Any]] | str] = None
+    status: Optional[str] = None
+    status_token: Optional[str] = None
+
+class StatusTokenVerifyRequestSchema(BaseModel):
+    """Skema untuk memverifikasi token halaman status."""
+    status: str
+    token: str
 
 class UserRegisterResponseSchema(BaseModel):
     """Skema respons setelah registrasi berhasil."""

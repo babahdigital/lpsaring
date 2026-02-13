@@ -1,13 +1,11 @@
 # backend/app/infrastructure/http/user/profile_routes.py
 # Berisi endpoint yang berhubungan dengan manajemen profil dan keamanan pengguna.
 
-import uuid
 from flask import Blueprint, request, jsonify, abort, current_app
 from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from http import HTTPStatus
-from typing import Optional
-from datetime import datetime, timezone as dt_timezone
 
 from app.extensions import db
 from app.services import settings_service
@@ -21,9 +19,11 @@ from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
 from app.utils.formatters import format_to_local_phone
 # -----------------------------
 
-from app.infrastructure.db.models import User, UserRole, ApprovalStatus, UserLoginHistory
+from app.infrastructure.db.models import User, UserRole, ApprovalStatus, UserLoginHistory, UserDevice
 from ..schemas.user_schemas import UserProfileResponseSchema, UserProfileUpdateRequestSchema
 from ..decorators import token_required
+from app.services.device_management_service import apply_device_binding_for_login, revoke_device
+from app.utils.request_utils import get_client_ip
 
 
 profile_bp = Blueprint('user_profile_api', __name__, url_prefix='/api/users')
@@ -37,6 +37,8 @@ def handle_my_profile(current_user_id):
 
     if not user.is_active or user.approval_status != ApprovalStatus.APPROVED:
         abort(HTTPStatus.FORBIDDEN, description="Akun Anda belum aktif atau belum disetujui.")
+    if getattr(user, 'is_blocked', False):
+        abort(HTTPStatus.FORBIDDEN, description="Akun Anda diblokir oleh Admin.")
 
     if request.method == 'GET':
         profile_data = UserProfileResponseSchema.model_validate(user)
@@ -56,10 +58,21 @@ def handle_my_profile(current_user_id):
 
             if update_data.full_name is not None and user.full_name != update_data.full_name:
                 user.full_name, user_updated = update_data.full_name, True
-            if hasattr(update_data, 'blok') and user.blok != (update_data.blok.value if update_data.blok else None):
-                user.blok, user_updated = (update_data.blok.value if update_data.blok else None), True
-            if hasattr(update_data, 'kamar') and user.kamar != (update_data.kamar.value if update_data.kamar else None):
-                user.kamar, user_updated = (update_data.kamar.value if update_data.kamar else None), True
+            if update_data.is_tamping is not None and user.is_tamping != update_data.is_tamping:
+                user.is_tamping, user_updated = update_data.is_tamping, True
+
+            if user.is_tamping:
+                if update_data.tamping_type is not None and user.tamping_type != update_data.tamping_type:
+                    user.tamping_type, user_updated = update_data.tamping_type, True
+                if user.blok is not None:
+                    user.blok, user_updated = None, True
+                if user.kamar is not None:
+                    user.kamar, user_updated = None, True
+            else:
+                if update_data.blok is not None and user.blok != update_data.blok:
+                    user.blok, user_updated = update_data.blok, True
+                if update_data.kamar is not None and user.kamar != update_data.kamar:
+                    user.kamar, user_updated = update_data.kamar, True
 
             if user_updated:
                 db.session.commit()
@@ -77,7 +90,8 @@ def handle_my_profile(current_user_id):
 @token_required
 def reset_my_hotspot_password(current_user_id):
     user = db.session.get(User, current_user_id)
-    if not user: abort(HTTPStatus.NOT_FOUND, "Pengguna tidak ditemukan.")
+    if not user:
+        abort(HTTPStatus.NOT_FOUND, "Pengguna tidak ditemukan.")
     if not user.is_active or user.approval_status != ApprovalStatus.APPROVED:
         abort(HTTPStatus.FORBIDDEN, "Akun Anda belum aktif atau disetujui.")
     
@@ -92,13 +106,14 @@ def reset_my_hotspot_password(current_user_id):
     new_password = generate_random_password(length=6)
     
     with get_mikrotik_connection() as api_conn:
-        if not api_conn: abort(HTTPStatus.INTERNAL_SERVER_ERROR, "Gagal koneksi ke sistem hotspot.")
+        if not api_conn:
+            abort(HTTPStatus.INTERNAL_SERVER_ERROR, "Gagal koneksi ke sistem hotspot.")
         
         mikrotik_profile_name = ""
         if hasattr(user, 'current_package_profile_name') and user.current_package_profile_name:
-             mikrotik_profile_name = user.current_package_profile_name
-        else: # Fallback jika profil saat ini tidak tersimpan di user
-             mikrotik_profile_name = settings_service.get_setting('MIKROTIK_DEFAULT_PROFILE', 'default')
+            mikrotik_profile_name = user.current_package_profile_name
+        else:  # Fallback jika profil saat ini tidak tersimpan di user
+            mikrotik_profile_name = settings_service.get_setting('MIKROTIK_DEFAULT_PROFILE', 'default')
 
         success, msg = activate_or_update_hotspot_user(
             api_connection=api_conn, user_mikrotik_username=mikrotik_username,
@@ -144,3 +159,101 @@ def get_my_login_history(current_user_id):
     except Exception as e:
         current_app.logger.error(f"Error di get_my_login_history: {e}", exc_info=True)
         return jsonify({"message": f"Gagal mengambil riwayat: {e}"}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+@profile_bp.route('/me/devices', methods=['GET'])
+@token_required
+def get_my_devices(current_user_id):
+    user = db.session.get(User, current_user_id)
+    if not user:
+        abort(HTTPStatus.NOT_FOUND, description="Pengguna tidak ditemukan.")
+    if not user.is_active or user.approval_status != ApprovalStatus.APPROVED:
+        abort(HTTPStatus.FORBIDDEN, description="Akun Anda belum aktif atau belum disetujui.")
+    if getattr(user, 'is_blocked', False):
+        abort(HTTPStatus.FORBIDDEN, description="Akun Anda diblokir oleh Admin.")
+
+    devices = db.session.scalars(
+        select(UserDevice).where(UserDevice.user_id == user.id).order_by(UserDevice.last_seen_at.desc())
+    ).all()
+
+    response = [
+        {
+            "id": str(d.id),
+            "mac_address": d.mac_address,
+            "ip_address": d.ip_address,
+            "label": d.label,
+            "is_authorized": d.is_authorized,
+            "first_seen_at": d.first_seen_at.isoformat() if d.first_seen_at else None,
+            "last_seen_at": d.last_seen_at.isoformat() if d.last_seen_at else None,
+            "authorized_at": d.authorized_at.isoformat() if d.authorized_at else None,
+            "deauthorized_at": d.deauthorized_at.isoformat() if d.deauthorized_at else None,
+        }
+        for d in devices
+    ]
+    return jsonify({"devices": response}), HTTPStatus.OK
+
+
+@profile_bp.route('/me/devices/bind-current', methods=['POST'])
+@token_required
+def bind_current_device(current_user_id):
+    user = db.session.get(User, current_user_id)
+    if not user:
+        abort(HTTPStatus.NOT_FOUND, description="Pengguna tidak ditemukan.")
+    if not user.is_active or user.approval_status != ApprovalStatus.APPROVED:
+        abort(HTTPStatus.FORBIDDEN, description="Akun Anda belum aktif atau belum disetujui.")
+    if getattr(user, 'is_blocked', False):
+        abort(HTTPStatus.FORBIDDEN, description="Akun Anda diblokir oleh Admin.")
+
+    client_ip = get_client_ip()
+    user_agent = request.headers.get('User-Agent')
+    ok, msg, _resolved_ip = apply_device_binding_for_login(user, client_ip, user_agent)
+    if not ok:
+        return jsonify({"message": msg}), HTTPStatus.FORBIDDEN
+
+    db.session.commit()
+    return jsonify({"message": "Perangkat berhasil diikat."}), HTTPStatus.OK
+
+
+@profile_bp.route('/me/devices/<uuid:device_id>', methods=['DELETE'])
+@token_required
+def delete_my_device(current_user_id, device_id):
+    user = db.session.get(User, current_user_id)
+    if not user:
+        abort(HTTPStatus.NOT_FOUND, description="Pengguna tidak ditemukan.")
+    if not user.is_active or user.approval_status != ApprovalStatus.APPROVED:
+        abort(HTTPStatus.FORBIDDEN, description="Akun Anda belum aktif atau belum disetujui.")
+
+    device = db.session.scalar(select(UserDevice).where(UserDevice.id == device_id, UserDevice.user_id == user.id))
+    if not device:
+        abort(HTTPStatus.NOT_FOUND, description="Perangkat tidak ditemukan.")
+
+    revoke_device(user, device)
+    db.session.delete(device)
+    db.session.commit()
+    return jsonify({"message": "Perangkat berhasil dihapus."}), HTTPStatus.OK
+
+
+@profile_bp.route('/me/devices/<uuid:device_id>/label', methods=['PUT'])
+@token_required
+def update_my_device_label(current_user_id, device_id):
+    user = db.session.get(User, current_user_id)
+    if not user:
+        abort(HTTPStatus.NOT_FOUND, description="Pengguna tidak ditemukan.")
+    if not user.is_active or user.approval_status != ApprovalStatus.APPROVED:
+        abort(HTTPStatus.FORBIDDEN, description="Akun Anda belum aktif atau belum disetujui.")
+
+    payload = request.get_json(silent=True) or {}
+    label = payload.get('label')
+    if label is not None:
+        if not isinstance(label, str):
+            abort(HTTPStatus.BAD_REQUEST, description="Label perangkat tidak valid.")
+        label = label.strip()
+        if len(label) > 100:
+            abort(HTTPStatus.BAD_REQUEST, description="Label perangkat terlalu panjang.")
+
+    device = db.session.scalar(select(UserDevice).where(UserDevice.id == device_id, UserDevice.user_id == user.id))
+    if not device:
+        abort(HTTPStatus.NOT_FOUND, description="Perangkat tidak ditemukan.")
+
+    device.label = label or None
+    db.session.commit()
+    return jsonify({"message": "Label perangkat berhasil diperbarui."}), HTTPStatus.OK

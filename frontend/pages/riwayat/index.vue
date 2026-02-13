@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { useNuxtApp } from '#app'
+import type { AsyncData } from '#app'
+import { useNuxtApp, useRuntimeConfig } from '#app'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useApiFetch } from '~/composables/useApiFetch'
@@ -42,7 +43,10 @@ interface ApiResponse {
 
 // --- State & Config ---
 const { $api } = useNuxtApp()
+const runtimeConfig = useRuntimeConfig()
 const { mobile } = useDisplay()
+const isHydrated = ref(false)
+const isMobile = computed(() => (isHydrated.value ? mobile.value : false))
 
 const transactions = ref<Transaction[]>([])
 const currentPage = ref(1)
@@ -71,7 +75,7 @@ const headers = computed(() => {
   ]
 
   // Sembunyikan kolom tertentu di mobile
-  if (mobile.value) {
+  if (isMobile.value) {
     return baseHeaders.filter(header =>
       header.key !== 'midtrans_order_id'
       && header.key !== 'package_name',
@@ -96,29 +100,18 @@ const queryParams = computed(() => {
   return params
 })
 
-const { data: apiResponse, pending: loading, error: fetchError, refresh: _loadItems } = useApiFetch<ApiResponse>(
-  () => `/users/me/transactions?${queryParams.value.toString()}`,
-  {
-    method: 'GET',
-    watch: [queryParams],
-    default: () => ({
-      success: false,
-      transactions: [],
-      pagination: {
-        page: 1,
-        per_page: itemsPerPage.value,
-        total_pages: 0,
-        total_items: 0,
-        has_prev: false,
-        has_next: false,
-        prev_num: null,
-        next_num: null,
-      },
-    }),
-  },
-)
+const apiUrl = computed(() => `/users/me/transactions?${queryParams.value.toString()}`)
 
-watch(apiResponse, (newData) => {
+const apiRequest = useApiFetch(apiUrl, {
+  method: 'GET',
+  watch: [queryParams],
+}) as AsyncData<ApiResponse, any>
+
+const { data: apiResponse, pending: loading, error: fetchError, refresh: _loadItems } = apiRequest
+
+const normalizedResponse = computed<ApiResponse | null>(() => apiResponse.value as ApiResponse | null)
+
+watch(normalizedResponse, (newData) => {
   // PERBAIKAN: Pengecekan boolean eksplisit
   if (newData?.success === true && Array.isArray(newData.transactions)) {
     transactions.value = newData.transactions
@@ -229,10 +222,21 @@ async function downloadInvoice(midtransOrderId: string) {
   snackbar.color = 'info'
   snackbar.show = true
 
-  const invoiceUrl = `/transactions/${midtransOrderId}/invoice`
+  const invoicePath = `/transactions/${midtransOrderId}/invoice`
+  const invoiceDownloadUrl = `${(runtimeConfig.public.apiBaseUrl ?? '/api').replace(/\/$/, '')}${invoicePath}`
 
   try {
-    const blob = await $api<Blob>(invoiceUrl, {
+    if (import.meta.client) {
+      const newWindow = window.open(invoiceDownloadUrl, '_blank')
+      if (newWindow) {
+        snackbar.text = `Invoice ${midtransOrderId} sedang dibuka di tab baru.`
+        snackbar.color = 'success'
+        snackbar.show = true
+        return
+      }
+    }
+
+    const blob = await $api<Blob>(invoicePath, {
       method: 'GET',
       responseType: 'blob',
     })
@@ -268,6 +272,7 @@ async function downloadInvoice(midtransOrderId: string) {
 }
 
 onMounted(() => {
+  isHydrated.value = true
   // Pemanggilan data awal sudah ditangani oleh `watch` pada `useApiFetch`
 })
 useHead({ title: 'Riwayat Transaksi' })
@@ -303,7 +308,7 @@ useHead({ title: 'Riwayat Transaksi' })
 
             <ClientOnly>
               <!-- Tampilan Mobile (Card) -->
-              <div v-if="mobile" class="d-flex flex-column gap-3">
+              <div v-if="isMobile" class="d-flex flex-column gap-3">
                 <VCard
                   v-for="item in transactions"
                   :key="item.id"

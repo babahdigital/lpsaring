@@ -14,7 +14,6 @@ from flask import (
     Blueprint, abort, current_app, jsonify, make_response, render_template, request
 )
 from pydantic import BaseModel, Field, ValidationError
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import selectinload
 
 from app.extensions import db
@@ -25,10 +24,13 @@ from app.services.transaction_service import apply_package_and_sync_to_mikrotik
 from app.services.notification_service import (
     generate_temp_invoice_token, get_notification_message, verify_temp_invoice_token
 )
+from app.services import settings_service
 from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection
 # from app.infrastructure.gateways.whatsapp_client import send_whatsapp_with_pdf # Tidak lagi dipanggil langsung
 from app.utils.formatters import format_to_local_phone
 from .decorators import token_required
+from app.utils.circuit_breaker import record_failure, record_success, should_allow_call
+from app.utils.metrics_utils import increment_metric
 
 # Import Celery task
 from app.tasks import send_whatsapp_invoice_task # Import task Celery Anda
@@ -36,7 +38,7 @@ from app.tasks import send_whatsapp_invoice_task # Import task Celery Anda
 try:
     from weasyprint import HTML
     WEASYPRINT_AVAILABLE = True
-except ImportError:
+except Exception:
     HTML = None
     WEASYPRINT_AVAILABLE = False
 
@@ -55,7 +57,13 @@ def get_midtrans_core_api_client():
     server_key = current_app.config.get("MIDTRANS_SERVER_KEY")
     if not server_key:
         raise ValueError("MIDTRANS_SERVER_KEY configuration is missing.")
-    return midtransclient.CoreApi(is_production=is_production, server_key=server_key)
+    client = midtransclient.CoreApi(is_production=is_production, server_key=server_key)
+    timeout_seconds = int(current_app.config.get("MIDTRANS_HTTP_TIMEOUT_SECONDS", 15))
+    if hasattr(client, "timeout"):
+        client.timeout = timeout_seconds
+    if hasattr(client, "http_client") and hasattr(client.http_client, "timeout"):
+        client.http_client.timeout = timeout_seconds
+    return client
 
 def get_midtrans_snap_client():
     is_production = current_app.config.get("MIDTRANS_IS_PRODUCTION", False)
@@ -63,10 +71,17 @@ def get_midtrans_snap_client():
     client_key = current_app.config.get("MIDTRANS_CLIENT_KEY")
     if not server_key or not client_key:
         raise ValueError("MIDTRANS_SERVER_KEY atau MIDTRANS_CLIENT_KEY configuration is missing.")
-    return midtransclient.Snap(is_production=is_production, server_key=server_key, client_key=client_key)
+    client = midtransclient.Snap(is_production=is_production, server_key=server_key, client_key=client_key)
+    timeout_seconds = int(current_app.config.get("MIDTRANS_HTTP_TIMEOUT_SECONDS", 15))
+    if hasattr(client, "timeout"):
+        client.timeout = timeout_seconds
+    if hasattr(client, "http_client") and hasattr(client.http_client, "timeout"):
+        client.http_client.timeout = timeout_seconds
+    return client
 
 def safe_parse_midtrans_datetime(dt_string: Optional[str]):
-    if not dt_string: return None
+    if not dt_string:
+        return None
     try:
         naive_dt = datetime.strptime(dt_string, "%Y-%m-%d %H:%M:%S")
         offset_hours = int(current_app.config.get("MIDTRANS_DATETIME_INPUT_OFFSET_HOURS", 7))
@@ -100,35 +115,72 @@ def extract_qr_code_url(response_data: Dict[str, Any]):
                 return qr_url
     return response_data.get("qr_code_url")
 
+
+def _build_webhook_idempotency_key(payload: Dict[str, Any]) -> Optional[str]:
+    order_id = payload.get("order_id")
+    status_code = payload.get("status_code")
+    transaction_status = payload.get("transaction_status")
+    transaction_id = payload.get("transaction_id")
+    if not order_id or not status_code or not transaction_status:
+        return None
+    token = transaction_id or "no_trx_id"
+    return f"midtrans:webhook:{order_id}:{transaction_status}:{status_code}:{token}"
+
+
+def _is_duplicate_webhook(payload: Dict[str, Any]) -> bool:
+    redis_client = getattr(current_app, "redis_client_otp", None)
+    if redis_client is None:
+        return False
+    key = _build_webhook_idempotency_key(payload)
+    if not key:
+        return False
+    try:
+        ttl_seconds = int(current_app.config.get("MIDTRANS_WEBHOOK_IDEMPOTENCY_TTL_SECONDS", 86400))
+    except Exception:
+        ttl_seconds = 86400
+    try:
+        inserted = redis_client.set(key, "1", ex=ttl_seconds, nx=True)
+        return inserted is None
+    except Exception:
+        return False
+
 # --- JINJA FILTERS (Tidak ada perubahan) ---
 def format_datetime_short(value: datetime) -> str:
-    if not isinstance(value, datetime): return ""
+    if not isinstance(value, datetime):
+        return ""
     try:
         app_tz_offset = int(current_app.config.get("APP_TIMEZONE_OFFSET", 8))
         app_tz = dt_timezone(timedelta(hours=app_tz_offset))
         local_dt = value.astimezone(app_tz)
         return local_dt.strftime("%d %b %Y, %H:%M WITA")
-    except Exception: return "Invalid Date"
+    except Exception:
+        return "Invalid Date"
 
 def format_currency(value: Any) -> str:
-    if value is None: return "Rp 0"
+    if value is None:
+        return "Rp 0"
     try:
         decimal_value = Decimal(value)
         return f"Rp {decimal_value:,.0f}".replace(",", ".")
-    except Exception: return "Rp Error"
+    except Exception:
+        return "Rp Error"
 
 def format_status(value: str) -> str:
-    if not isinstance(value, str): return value
+    if not isinstance(value, str):
+        return value
     return value.replace("_", " ").title()
 
 @transactions_bp.app_template_filter("format_datetime_short")
-def _format_datetime_short_filter(value): return format_datetime_short(value)
+def _format_datetime_short_filter(value):
+    return format_datetime_short(value)
 
 @transactions_bp.app_template_filter("format_currency")
-def _format_currency_filter(value): return format_currency(value)
+def _format_currency_filter(value):
+    return format_currency(value)
 
 @transactions_bp.app_template_filter("format_status")
-def _format_status_filter(value): return format_status(value)
+def _format_status_filter(value):
+    return format_status(value)
 
 # --- Skema Pydantic ---
 class _InitiateTransactionRequestSchema(BaseModel):
@@ -173,7 +225,14 @@ def initiate_transaction(current_user_id: uuid.UUID):
         
         # PERBAIKAN: Gunakan base URL publik jika tersedia, jika tidak fallback ke frontend URL
         # Ini untuk callback finish yang dilihat oleh browser pengguna.
-        base_callback_url = current_app.config.get('APP_PUBLIC_BASE_URL') or current_app.config.get('FRONTEND_URL', 'http://localhost:3000')
+        base_callback_url = (
+            current_app.config.get('APP_PUBLIC_BASE_URL')
+            or current_app.config.get('FRONTEND_URL')
+            or current_app.config.get('APP_LINK_USER')
+        )
+        if not base_callback_url:
+            current_app.logger.error("APP_PUBLIC_BASE_URL/FRONTEND_URL/APP_LINK_USER belum dikonfigurasi.")
+            abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="APP_PUBLIC_BASE_URL belum dikonfigurasi.")
         finish_url = f"{base_callback_url.rstrip('/')}/payment/finish?order_id={order_id}&status=pending"
         
         snap_params = {
@@ -183,8 +242,12 @@ def initiate_transaction(current_user_id: uuid.UUID):
             "callbacks": {"finish": finish_url }
         }
 
+        if not should_allow_call("midtrans"):
+            abort(HTTPStatus.SERVICE_UNAVAILABLE, description="Midtrans sementara tidak tersedia.")
+
         snap = get_midtrans_snap_client()
         snap_response = snap.create_transaction(snap_params)
+        record_success("midtrans")
         
         snap_token = snap_response.get("token")
         redirect_url = snap_response.get("redirect_url")
@@ -200,6 +263,7 @@ def initiate_transaction(current_user_id: uuid.UUID):
         return jsonify(response_data.model_dump(by_alias=False, exclude_none=True)), HTTPStatus.OK
 
     except Exception as e:
+        record_failure("midtrans")
         db.session.rollback()
         current_app.logger.error(f"Error di initiate_transaction: {e}", exc_info=True)
         abort(HTTPStatus.INTERNAL_SERVER_ERROR, description=str(e))
@@ -223,6 +287,10 @@ def handle_notification():
     if (calculated_signature != notification_payload.get("signature_key") and current_app.config.get("MIDTRANS_IS_PRODUCTION", False)):
         return jsonify({"status": "error", "message": "Signature tidak valid"}), HTTPStatus.FORBIDDEN
 
+    if _is_duplicate_webhook(notification_payload):
+        increment_metric("payment.webhook.duplicate")
+        return jsonify({"status": "ok", "message": "Duplicate notification"}), HTTPStatus.OK
+
     session = db.session
     try:
         transaction = session.query(Transaction).options(
@@ -242,7 +310,13 @@ def handle_notification():
             "pending": TransactionStatus.PENDING, "deny": TransactionStatus.FAILED,
             "expire": TransactionStatus.EXPIRED, "cancel": TransactionStatus.CANCELLED,
         }
-        transaction.status = status_map.get(midtrans_status, transaction.status)
+        new_status = status_map.get(midtrans_status, transaction.status)
+        if transaction.status == new_status and transaction.midtrans_transaction_id:
+            return jsonify({"status": "ok"}), HTTPStatus.OK
+
+        transaction.status = new_status
+        if notification_payload.get("transaction_id"):
+            transaction.midtrans_transaction_id = notification_payload.get("transaction_id")
 
         if payment_success:
             with get_mikrotik_connection() as mikrotik_api:
@@ -250,14 +324,20 @@ def handle_notification():
                 if is_success:
                     session.commit() # Commit transaksi DULU
                     current_app.logger.info(f"WEBHOOK: Transaksi {order_id} BERHASIL di-commit. Pesan: {message}")
+                    increment_metric("payment.success")
                     try:
                         user = transaction.user
                         package = transaction.package
                         temp_token = generate_temp_invoice_token(str(transaction.id))
 
-                        base_url = current_app.config.get('APP_PUBLIC_BASE_URL')
+                        base_url = (
+                            settings_service.get_setting('APP_PUBLIC_BASE_URL')
+                            or settings_service.get_setting('FRONTEND_URL')
+                            or settings_service.get_setting('APP_LINK_USER')
+                            or request.url_root
+                        )
                         if not base_url:
-                            current_app.logger.error("APP_PUBLIC_BASE_URL tidak diatur! Tidak dapat membuat URL invoice untuk WhatsApp.")
+                            current_app.logger.error("APP_PUBLIC_BASE_URL tidak diatur dan request.url_root kosong. Tidak dapat membuat URL invoice untuk WhatsApp.")
                             raise ValueError("Konfigurasi alamat publik aplikasi tidak ditemukan.")
                         
                         # --- PERUBAHAN KRUSIAL DI SINI: Tambahkan .pdf ke URL ---
@@ -276,11 +356,13 @@ def handle_notification():
                         
                         current_app.logger.info(f"Mencoba mengirim WA dengan PDF dari URL: {temp_invoice_url}")
                         
+                        request_id = request.environ.get('FLASK_REQUEST_ID', '')
                         send_whatsapp_invoice_task.delay(
-                            str(user.phone_number), 
-                            caption_message, 
-                            temp_invoice_url, 
-                            filename
+                            str(user.phone_number),
+                            caption_message,
+                            temp_invoice_url,
+                            filename,
+                            request_id,
                         )
                         current_app.logger.info(f"Task pengiriman WhatsApp invoice untuk {order_id} dikirim ke Celery.")
 
@@ -289,9 +371,12 @@ def handle_notification():
                 else:
                     session.rollback() # Rollback jika Mikrotik gagal
                     current_app.logger.error(f"WEBHOOK: Gagal apply paket ke Mikrotik untuk {order_id}. Rollback transaksi.")
+                    increment_metric("payment.failed")
         else:
             session.commit() # Commit status transaksi yang berubah (pending, deny, expire, cancel)
             current_app.logger.info(f"WEBHOOK: Status transaksi {order_id} diupdate ke {transaction.status.value}.")
+            if transaction.status in [TransactionStatus.FAILED, TransactionStatus.CANCELLED, TransactionStatus.EXPIRED]:
+                increment_metric("payment.failed")
         
         return jsonify({"status": "ok"}), HTTPStatus.OK
     except Exception as e:
@@ -319,8 +404,12 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
 
         if transaction.status == TransactionStatus.PENDING:
             try:
+                if not should_allow_call("midtrans"):
+                    abort(HTTPStatus.SERVICE_UNAVAILABLE, "Midtrans sementara tidak tersedia.")
+
                 core_api = get_midtrans_core_api_client()
                 midtrans_status_response = core_api.transactions.status(order_id)
+                record_success("midtrans")
                 midtrans_trx_status = midtrans_status_response.get("transaction_status")
                 fraud_status = midtrans_status_response.get("fraud_status")
                 payment_success = (midtrans_trx_status in ["capture", "settlement"] and fraud_status == "accept")
@@ -348,8 +437,10 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
                             transaction.status = new_status
                             session.commit()
             except midtransclient.error_midtrans.MidtransAPIError as midtrans_err:
+                record_failure("midtrans")
                 current_app.logger.warning(f"GET Detail: Gagal cek status Midtrans untuk PENDING {order_id}: {midtrans_err.message}")
             except Exception as e_check_status:
+                record_failure("midtrans")
                 current_app.logger.error(f"GET Detail: Error tak terduga saat cek status Midtrans untuk PENDING {order_id}: {e_check_status}")
 
         session.refresh(transaction)
@@ -369,12 +460,15 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
         }
         return jsonify(response_data), HTTPStatus.OK
     except Exception as e:
-        if session.is_active: session.rollback()
+        if session.is_active:
+            session.rollback()
         current_app.logger.error(f"Kesalahan tak terduga saat mengambil detail transaksi: {e}", exc_info=True)
-        if isinstance(e, (HTTPStatus, midtransclient.error_midtrans.MidtransAPIError)): raise e
+        if isinstance(e, (HTTPStatus, midtransclient.error_midtrans.MidtransAPIError)):
+            raise e
         abort(HTTPStatus.INTERNAL_SERVER_ERROR, description=f"Kesalahan tak terduga: {e}")
     finally:
-        if session: session.remove()
+        if session:
+            session.remove()
 
 @transactions_bp.route("/<string:midtrans_order_id>/invoice", methods=["GET"])
 @token_required
@@ -417,12 +511,15 @@ def get_transaction_invoice(current_user_id: uuid.UUID, midtrans_order_id: str):
         response.headers['Content-Disposition'] = f'inline; filename="invoice-{midtrans_order_id}.pdf"'
         return response
     except Exception as e:
-        if session.is_active: session.rollback()
+        if session.is_active:
+            session.rollback()
         current_app.logger.error(f"Error saat membuat invoice PDF untuk {midtrans_order_id}: {e}", exc_info=True)
-        if isinstance(e, (HTTPStatus, midtransclient.error_midtrans.MidtransAPIError)): raise e
+        if isinstance(e, (HTTPStatus, midtransclient.error_midtrans.MidtransAPIError)):
+            raise e
         abort(HTTPStatus.INTERNAL_SERVER_ERROR, description=f"Kesalahan tak terduga saat membuat invoice: {e}")
     finally:
-        if session: session.remove()
+        if session:
+            session.remove()
 
 @transactions_bp.route("/invoice/temp/<string:token>", methods=["GET"])
 # Tambahkan route baru untuk URL yang diakhiri dengan .pdf

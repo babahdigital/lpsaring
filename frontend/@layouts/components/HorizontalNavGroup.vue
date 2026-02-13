@@ -34,11 +34,15 @@ const isGroupActive = ref(false)
 
   updates isActive & isOpen based on active state of group.
 */
-watch(() => route.path, () => {
-  const isActive = isNavGroupActive(props.item.children, router)
+watch(
+  () => route.path,
+  () => {
+    const isActive = isNavGroupActive(props.item.children, router)
 
-  isGroupActive.value = isActive
-}, { immediate: true })
+    isGroupActive.value = isActive
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -48,19 +52,25 @@ watch(() => route.path, () => {
     class="nav-group"
     tag="li"
     content-container-tag="ul"
-    :class="[{
-      'active': isGroupActive,
-      'children-at-end': childrenAtEnd,
-      'sub-item': isSubItem,
-      'disabled': item.disable,
-    }]"
+    :class="[
+      {
+        'active': isGroupActive,
+        'children-at-end': childrenAtEnd,
+        'sub-item': isSubItem,
+        'disabled': item.disable,
+      },
+    ]"
     :popper-inline-end="childrenAtEnd"
   >
     <div class="nav-group-label">
       <Component
         :is="layoutConfig.app.iconRenderer || 'div'"
         class="nav-item-icon"
-        v-bind="item.icon || layoutConfig.verticalNav.defaultNavItemIconProps"
+        v-bind="
+          item.icon && typeof item.icon === 'object' && item.icon !== null
+            ? item.icon
+            : layoutConfig.verticalNav.defaultNavItemIconProps || {}
+        "
       />
       <Component
         :is="layoutConfig.app.i18n.enable ? 'i18n-t' : 'span'"

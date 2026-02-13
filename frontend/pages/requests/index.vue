@@ -21,6 +21,7 @@ interface RequestHistoryItem {
 }
 
 type Options = InstanceType<typeof VDataTableServer>['options']
+type SortItem = NonNullable<Options['sortBy']>[number]
 
 // --- Inisialisasi & State ---
 useHead({ title: 'Riwayat Permintaan Saya' })
@@ -53,10 +54,14 @@ async function fetchRequests() {
       itemsPerPage: String(options.value.itemsPerPage),
     })
 
-    options.value.sortBy.forEach((sortItem) => {
-      params.append('sortBy', sortItem.key)
-      params.append('sortOrder', sortItem.order)
-    })
+    if (Array.isArray(options.value.sortBy)) {
+      options.value.sortBy.forEach((sortItem: SortItem) => {
+        if (sortItem?.key) {
+          params.append('sortBy', sortItem.key)
+          params.append('sortOrder', sortItem.order ?? 'asc')
+        }
+      })
+    }
 
     const response = await $api<{ items: RequestHistoryItem[], totalItems: number }>(`/komandan/requests/history?${params.toString()}`)
 
@@ -81,17 +86,22 @@ const headers = [
   { title: 'AKSI ADMIN', key: 'processed_at', sortable: true },
 ]
 
-const statusMap = {
+const statusMap: Record<RequestHistoryItem['status'], { text: string, color: string, icon: string }> = {
   PENDING: { text: 'Menunggu', color: 'warning', icon: 'tabler-hourglass' },
   APPROVED: { text: 'Disetujui', color: 'success', icon: 'tabler-check' },
   REJECTED: { text: 'Ditolak', color: 'error', icon: 'tabler-x' },
   PARTIALLY_APPROVED: { text: 'Disetujui Sebagian', color: 'info', icon: 'tabler-discount' },
 }
 
-const requestTypeMap = {
+const requestTypeMap: Record<RequestHistoryItem['request_type'], { text: string, color: string, icon: string }> = {
   QUOTA: { text: 'Kuota', color: 'primary', icon: 'tabler-database' },
   UNLIMITED: { text: 'Unlimited', color: 'success', icon: 'tabler-infinity' },
 }
+
+const requestTypeMapAny: Record<string, { text: string, color: string, icon: string }> = requestTypeMap
+const statusMapAny: Record<string, { text: string, color: string, icon: string }> = statusMap
+const getRequestTypeMetaByKey = (key: unknown) => requestTypeMapAny[String(key)]
+const getStatusMetaByKey = (key: unknown) => statusMapAny[String(key)]
 
 // [PERBAIKAN] Fungsi untuk format MB ke GB
 function formatQuotaToGB(mb: number | null | undefined): string {
@@ -159,9 +169,9 @@ useHead({ title: 'Request Quota' })
         </template>
 
         <template #item.request_type="{ item }">
-          <VChip :color="requestTypeMap[item.request_type]?.color" size="small" label>
-            <VIcon start :icon="requestTypeMap[item.request_type]?.icon" size="16" />
-            {{ requestTypeMap[item.request_type]?.text }}
+          <VChip :color="getRequestTypeMetaByKey(item.request_type)?.color" size="small" label>
+            <VIcon start :icon="getRequestTypeMetaByKey(item.request_type)?.icon" size="16" />
+            {{ getRequestTypeMetaByKey(item.request_type)?.text }}
           </VChip>
         </template>
 
@@ -188,9 +198,9 @@ useHead({ title: 'Request Quota' })
         </template>
 
         <template #item.status="{ item }">
-          <VChip :color="statusMap[item.status]?.color" size="small" label>
-            <VIcon start :icon="statusMap[item.status]?.icon" size="16" />
-            {{ statusMap[item.status]?.text }}
+          <VChip :color="getStatusMetaByKey(item.status)?.color" size="small" label>
+            <VIcon start :icon="getStatusMetaByKey(item.status)?.icon" size="16" />
+            {{ getStatusMetaByKey(item.status)?.text }}
           </VChip>
         </template>
 

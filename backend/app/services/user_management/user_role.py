@@ -5,7 +5,6 @@ from werkzeug.security import generate_password_hash
 from datetime import datetime, timezone as dt_timezone, timedelta
 from flask import current_app
 
-from app.extensions import db
 from app.infrastructure.db.models import User, UserRole, AdminActionType
 from app.utils.formatters import format_to_local_phone
 from app.services import settings_service
@@ -14,6 +13,25 @@ from .helpers import (
     _handle_mikrotik_operation
 )
 from app.infrastructure.gateways.mikrotik_client import activate_or_update_hotspot_user
+
+
+def _resolve_default_server() -> str:
+    return (
+        settings_service.get_setting('MIKROTIK_DEFAULT_SERVER', None)
+        or settings_service.get_setting('MIKROTIK_DEFAULT_SERVER_USER', 'srv-user')
+    )
+
+
+def _resolve_active_profile() -> str:
+    return (
+        settings_service.get_setting('MIKROTIK_ACTIVE_PROFILE', None)
+        or settings_service.get_setting('MIKROTIK_USER_PROFILE', 'user')
+        or settings_service.get_setting('MIKROTIK_DEFAULT_PROFILE', 'default')
+    )
+
+
+def _resolve_unlimited_profile() -> str:
+    return settings_service.get_setting('MIKROTIK_UNLIMITED_PROFILE', 'unlimited')
 
 def change_user_role(user: User, new_role: UserRole, admin: User, blok: Optional[str] = None, kamar: Optional[str] = None) -> Tuple[bool, str]:
     """Mengubah peran pengguna dengan validasi hak akses dan sinkronisasi Mikrotik yang lebih baik."""
@@ -32,6 +50,9 @@ def change_user_role(user: User, new_role: UserRole, admin: User, blok: Optional
 
     action_type = None
     mikrotik_username = format_to_local_phone(user.phone_number)
+    default_server = _resolve_default_server()
+    active_profile = _resolve_active_profile()
+    unlimited_profile = _resolve_unlimited_profile()
     
     original_role_profile = user.mikrotik_profile_name
     original_role_server = user.mikrotik_server_name
@@ -46,8 +67,8 @@ def change_user_role(user: User, new_role: UserRole, admin: User, blok: Optional
         user.role = new_role
         user.is_unlimited_user = True
         user.quota_expiry_date = None
-        user.mikrotik_server_name = 'srv-admin'
-        user.mikrotik_profile_name = settings_service.get_setting('MIKROTIK_KOMANDAN_PROFILE', 'komandan')
+        user.mikrotik_server_name = default_server
+        user.mikrotik_profile_name = unlimited_profile
         
         new_portal_password = _generate_password()
         user.password_hash = generate_password_hash(new_portal_password)
@@ -68,12 +89,8 @@ def change_user_role(user: User, new_role: UserRole, admin: User, blok: Optional
         if new_role == UserRole.USER and (not user.blok or not user.kamar):
              return False, "Blok dan Kamar wajib diisi saat downgrade ke peran USER."
 
-        if new_role == UserRole.KOMANDAN:
-            user.mikrotik_server_name = 'srv-komandan'
-            user.mikrotik_profile_name = settings_service.get_setting('MIKROTIK_KOMANDAN_PROFILE', 'komandan')
-        else: # USER
-            user.mikrotik_server_name = 'srv-user'
-            user.mikrotik_profile_name = settings_service.get_setting('MIKROTIK_USER_PROFILE', 'user')
+        user.mikrotik_server_name = default_server
+        user.mikrotik_profile_name = active_profile
         
         try:
             initial_quota_mb_str = settings_service.get_setting('USER_INITIAL_QUOTA_MB', '1024')
@@ -94,8 +111,8 @@ def change_user_role(user: User, new_role: UserRole, admin: User, blok: Optional
             if user.blok or user.kamar:
                 user.previous_blok, user.previous_kamar = user.blok, user.kamar
                 user.blok, user.kamar = None, None
-            user.mikrotik_server_name = 'srv-komandan'
-            user.mikrotik_profile_name = settings_service.get_setting('MIKROTIK_KOMANDAN_PROFILE', 'komandan')
+            user.mikrotik_server_name = default_server
+            user.mikrotik_profile_name = active_profile
 
             try:
                 initial_quota_mb_str = settings_service.get_setting('KOMANDAN_INITIAL_QUOTA_MB', '5120')
@@ -123,8 +140,8 @@ def change_user_role(user: User, new_role: UserRole, admin: User, blok: Optional
             if not blok or not kamar:
                 return False, "Blok dan Kamar wajib diisi saat mengubah peran menjadi USER."
             user.blok, user.kamar = blok, kamar
-            user.mikrotik_server_name = 'srv-user'
-            user.mikrotik_profile_name = settings_service.get_setting('MIKROTIK_USER_PROFILE', 'user')
+            user.mikrotik_server_name = default_server
+            user.mikrotik_profile_name = active_profile
             _send_whatsapp_notification(user.phone_number, "user_downgrade_from_komandan", {"full_name": user.full_name})
     else:
         return False, f"Perubahan peran dari {old_role.value} ke {new_role.value} tidak didukung."
@@ -135,7 +152,8 @@ def change_user_role(user: User, new_role: UserRole, admin: User, blok: Optional
         if not user.is_unlimited_user and user.total_quota_purchased_mb is not None:
             remaining_mb = (user.total_quota_purchased_mb or 0) - (user.total_quota_used_mb or 0)
             limit_bytes = max(0, int(remaining_mb * 1024 * 1024))
-            if limit_bytes <= 0: limit_bytes = 1
+            if limit_bytes <= 0:
+                limit_bytes = 1
 
         timeout_seconds = 0
         if user.quota_expiry_date and user.quota_expiry_date > datetime.now(dt_timezone.utc):

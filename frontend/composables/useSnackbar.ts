@@ -31,7 +31,10 @@ export function useSnackbar() {
    */
   function add(message: Omit<SnackbarMessage, 'id'>) {
     const id = Date.now() + Math.random()
-    const timeout = message.timeout === 0 ? 0 : message.timeout || 5000 // default 5 detik, 0 berarti tidak hilang otomatis
+    const timeoutValue = message.timeout
+    const timeout = timeoutValue === 0
+      ? 0
+      : (typeof timeoutValue === 'number' && Number.isFinite(timeoutValue) ? timeoutValue : 5000) // default 5 detik, 0 berarti tidak hilang otomatis
 
     messages.value.push({ id, ...message })
 

@@ -1,6 +1,6 @@
 # backend/app/services/settings_service.py
 import os
-from typing import Optional, Dict, Set
+from typing import Optional, Dict, Set, Any, cast
 from flask import current_app
 from cryptography.fernet import Fernet, InvalidToken
 import hashlib
@@ -13,6 +13,7 @@ ENCRYPTED_KEYS: Set[str] = {
     'WHATSAPP_API_KEY', 'MIDTRANS_SERVER_KEY',
     'MIDTRANS_CLIENT_KEY', 'MIKROTIK_PASSWORD'
 }
+VALID_IP_BINDING_TYPES: Set[str] = {'bypassed', 'regular', 'blocked'}
 _fernet_instance = None
 
 def _get_fernet() -> Fernet:
@@ -34,14 +35,17 @@ def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
         setting = db.session.get(ApplicationSetting, key)
         if setting:
             if setting.is_encrypted:
-                if not setting.setting_value: return None
+                if not setting.setting_value:
+                    return os.getenv(key, default)
                 try:
                     fernet = _get_fernet()
                     return fernet.decrypt(setting.setting_value.encode('utf-8')).decode('utf-8')
                 except InvalidToken:
                     current_app.logger.error(f"Gagal mendekripsi pengaturan '{key}'. Token tidak valid.")
-                    return None
+                    return os.getenv(key, default)
             else:
+                if setting.setting_value in (None, ''):
+                    return os.getenv(key, default)
                 return setting.setting_value
         else:
             return os.getenv(key, default)
@@ -58,13 +62,27 @@ def get_setting_as_int(key: str, default: int) -> int:
     except (ValueError, TypeError):
         return default
 
+
+def get_ip_binding_type_setting(key: str, default: str) -> str:
+    value_raw = get_setting(key, default)
+    value = str(value_raw or default).strip().lower()
+    if value in VALID_IP_BINDING_TYPES:
+        return value
+    current_app.logger.warning(
+        "Nilai %s tidak valid: '%s'. Gunakan default '%s'.",
+        key,
+        value_raw,
+        default,
+    )
+    return default
+
 def update_settings(settings_data: Dict[str, str]) -> None:
     """Mempersiapkan pembaruan pengaturan di dalam sesi TANPA commit."""
     fernet = _get_fernet()
     for key, value in settings_data.items():
         setting = db.session.get(ApplicationSetting, key)
         if not setting:
-            setting = ApplicationSetting(setting_key=key)
+            setting = cast(Any, ApplicationSetting)(setting_key=key)
             db.session.add(setting)
         if key in ENCRYPTED_KEYS:
             setting.is_encrypted = True
@@ -72,3 +90,10 @@ def update_settings(settings_data: Dict[str, str]) -> None:
         else:
             setting.is_encrypted = False
             setting.setting_value = value
+
+    try:
+        redis_client = getattr(current_app, 'redis_client_otp', None)
+        if redis_client is not None:
+            redis_client.delete('cache:public_settings')
+    except Exception:
+        pass

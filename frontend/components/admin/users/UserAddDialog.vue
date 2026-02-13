@@ -13,6 +13,8 @@ interface FormData {
   role: 'USER' | 'KOMANDAN' | 'ADMIN' | 'SUPER_ADMIN'
   blok: string | null
   kamar: string | null
+  is_tamping: boolean
+  tamping_type: string | null
   add_gb: number
   add_days: number
 }
@@ -36,6 +38,8 @@ function getInitialFormData(): FormData {
     role: 'USER',
     blok: null,
     kamar: null,
+    is_tamping: false,
+    tamping_type: null,
     add_gb: 1,
     add_days: 30,
   }
@@ -59,6 +63,8 @@ watch(() => formData.role, (newRole) => {
     formData.add_days = 30
     formData.blok = null
     formData.kamar = null
+    formData.is_tamping = false
+    formData.tamping_type = null
   }
   else if (newRole === 'USER') {
     formData.add_gb = 1
@@ -69,6 +75,8 @@ watch(() => formData.role, (newRole) => {
     formData.add_days = 0
     formData.blok = null
     formData.kamar = null
+    formData.is_tamping = false
+    formData.tamping_type = null
   }
 }, { immediate: true })
 
@@ -82,8 +90,25 @@ const availableRoles = computed(() => {
   return roles
 })
 
-const showAlamatSection = computed(() => formData.role === 'USER')
+const showAlamatSection = computed(() => formData.role === 'USER' && formData.is_tamping !== true)
+const showTampingSection = computed(() => formData.role === 'USER' && formData.is_tamping === true)
 const showQuotaFields = computed(() => formData.role === 'USER' || formData.role === 'KOMANDAN')
+
+const tampingOptions = [
+  'Tamping luar',
+  'Tamping AO',
+  'Tamping Pembinaan',
+  'Tamping kunjungan',
+  'Tamping kamtib',
+  'Tamping klinik',
+  'Tamping dapur',
+  'Tamping mesjid',
+  'Tamping p2u',
+  'Tamping BLK',
+  'Tamping kebersihan',
+  'Tamping Humas',
+  'Tamping kebun',
+].map(item => ({ title: item, value: item }))
 
 async function onSave() {
   if (!formRef.value)
@@ -112,6 +137,7 @@ const onClose = () => emit('update:modelValue', false)
 
 // Aturan validasi
 const requiredRule = (v: any) => !!v || 'Wajib diisi.'
+const tampingRequiredRule = (v: any) => !!v || 'Jenis tamping wajib dipilih.'
 function phoneRule(v: string) {
   if (!v)
     return true
@@ -127,6 +153,16 @@ function quotaRule(v: any) {
   // PERBAIKAN: Menggunakan Number.isNaN dan menambahkan kurung untuk kejelasan operasi
   return (!Number.isNaN(num) && num > 0) || 'Harus berupa angka lebih dari 0.'
 }
+
+watch(() => formData.is_tamping, (isTamping) => {
+  if (isTamping) {
+    formData.blok = null
+    formData.kamar = null
+  }
+  else {
+    formData.tamping_type = null
+  }
+})
 </script>
 
 <template>
@@ -193,6 +229,26 @@ function quotaRule(v: any) {
                 prepend-inner-icon="tabler-shield-check"
               />
             </VCol>
+
+            <VCol v-if="formData.role === 'USER'" cols="12">
+              <VSwitch v-model="formData.is_tamping" label="Tamping" color="primary" inset />
+              <div class="text-caption text-medium-emphasis mt-1">
+                Aktifkan jika pengguna termasuk tamping. Jika tamping aktif, blok/kamar akan dinonaktifkan.
+              </div>
+            </VCol>
+
+            <template v-if="showTampingSection">
+              <VCol cols="12">
+                <AppSelect
+                  v-model="formData.tamping_type"
+                  :items="tampingOptions"
+                  label="Jenis Tamping"
+                  placeholder="Pilih Jenis Tamping"
+                  :rules="[tampingRequiredRule]"
+                  prepend-inner-icon="tabler-building-bank"
+                />
+              </VCol>
+            </template>
 
             <template v-if="showAlamatSection">
               <VCol

@@ -26,3 +26,13 @@ export interface Package {
   // Misalnya:
   // user_profile: string | null; // Nama profile di MikroTik
 }
+
+export interface PackagePublic {
+  id: string
+  name: string
+  price: number
+  duration_days: number
+  data_quota_gb: number
+  is_active: boolean
+  description: string | null
+}

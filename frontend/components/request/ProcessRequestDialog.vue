@@ -1,8 +1,8 @@
 <script lang="ts" setup>
-import type { VForm } from 'vuetify/components'
 import AppTextarea from '@core/components/app-form-elements/AppTextarea.vue'
 import AppTextField from '@core/components/app-form-elements/AppTextField.vue'
 import { computed, ref, watch } from 'vue'
+import { VForm } from 'vuetify/components'
 
 // --- Interface & Props ---
 interface Requester {
@@ -33,7 +33,7 @@ const emit = defineEmits<{
 
 // --- Inisialisasi & State ---
 const { $api } = useNuxtApp()
-const formRef = ref<VForm>()
+const formRef = ref<InstanceType<typeof VForm> | null>(null)
 const loading = ref(false)
 const errorMessage = ref<string | null>(null)
 
@@ -48,6 +48,10 @@ const unlimited_duration_days = ref<string>('30') // Default 30 hari
 
 // [PENYEMPURNAAN] Computed property untuk mengecek tipe request
 const isUnlimitedRequest = computed(() => props.requestData.request_type === 'UNLIMITED')
+
+function dialogModelValueUpdate(val: boolean) {
+  emit('update:isDialogVisible', val)
+}
 
 // --- Watcher ---
 watch(() => props.isDialogVisible, (isVisible) => {
@@ -180,7 +184,7 @@ function formatRequestDetails(details: Record<string, any> | null): string {
 </script>
 
 <template>
-  <VDialog :model-value="isDialogVisible" max-width="600" persistent @update:model-value="(val) => emit('update:isDialogVisible', val)">
+  <VDialog :model-value="isDialogVisible" max-width="600" persistent @update:model-value="dialogModelValueUpdate">
     <VCard class="rounded-lg">
       <VForm ref="formRef" @submit.prevent="processRequest">
         <VCardItem class="pa-4 bg-primary">

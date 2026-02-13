@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { SearchResults } from '@db/app-bar-search/types'
 import type { RouteLocationRaw } from 'vue-router'
 import { useConfigStore } from '@core/stores/config'
 import Shepherd from 'shepherd.js'
@@ -20,6 +19,17 @@ const configStore = useConfigStore()
 interface SuggestionGroup {
   title: string
   content: Suggestion[]
+}
+
+interface SearchResultItemChild {
+  title: string
+  icon: string
+  url: RouteLocationRaw
+}
+
+interface SearchResultItem {
+  title: string
+  children: SearchResultItemChild[]
 }
 
 // 👉 Is App Search Bar Visible
@@ -89,14 +99,15 @@ const noDataSuggestions: Suggestion[] = [
 const searchQuery = ref('')
 
 const router = useRouter()
-const searchResult = ref<SearchResults[]>([])
+const { $api } = useNuxtApp()
+const searchResult = ref<SearchResultItem[]>([])
 
 async function fetchResults() {
   isLoading.value = true
 
-  const { data } = await useApi<any>(withQuery('/app-bar/search', { q: searchQuery.value }))
+  const data = await $api<SearchResultItem[]>(withQuery('/app-bar/search', { q: searchQuery.value }))
 
-  searchResult.value = data.value
+  searchResult.value = data ?? []
 
   // ℹ️ simulate loading: we have used setTimeout for better user experience your can remove it
   setTimeout(() => {
@@ -211,10 +222,10 @@ const LazyAppBarSearch = defineAsyncComponent(() => import('@core/components/App
     <!-- search result -->
     <template #searchResult="{ item }">
       <VListSubheader class="text-disabled custom-letter-spacing font-weight-regular ps-4">
-        {{ item.title }}
+        {{ (item as SearchResultItem).title }}
       </VListSubheader>
       <VListItem
-        v-for="list in item.children"
+        v-for="list in (item as SearchResultItem).children"
         :key="list.title"
         :to="list.url"
         @click="closeSearchBar"

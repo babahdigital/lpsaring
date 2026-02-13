@@ -2,6 +2,7 @@ import logging
 from logging.config import fileConfig
 
 from flask import current_app
+from sqlalchemy import text
 
 from alembic import context
 
@@ -95,6 +96,18 @@ def run_migrations_online():
         conf_args["process_revision_directives"] = process_revision_directives
 
     connectable = get_engine()
+
+    try:
+        with connectable.connect().execution_options(isolation_level="AUTOCOMMIT") as preflight_conn:
+            preflight_conn.execute(text(
+                "CREATE TABLE IF NOT EXISTS alembic_version (version_num VARCHAR(64) NOT NULL PRIMARY KEY)"
+            ))
+            preflight_conn.execute(text(
+                "ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(64)"
+            ))
+    except Exception:
+        # Table may not exist yet or already correct; ignore and proceed.
+        pass
 
     with connectable.connect() as connection:
         context.configure(

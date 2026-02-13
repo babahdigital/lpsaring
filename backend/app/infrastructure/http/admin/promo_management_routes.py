@@ -1,7 +1,6 @@
 # backend/app/infrastructure/http/admin/promo_management_routes.py
 import uuid
 from flask import Blueprint, jsonify, request, current_app
-from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from http import HTTPStatus
 from pydantic import ValidationError

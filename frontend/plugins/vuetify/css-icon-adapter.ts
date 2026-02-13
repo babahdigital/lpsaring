@@ -1,6 +1,8 @@
 // frontend/plugins/vuetify/css-icon-adapter.ts
-import type { IconProps, IconSet } from 'vuetify'
 import { h } from 'vue'
+
+interface LocalIconProps { icon?: string | unknown, class?: string }
+interface LocalIconSet { component: (props: LocalIconProps) => ReturnType<typeof h> }
 
 /**
  * Adapter ini mengintegrasikan sistem ikon berbasis CSS (dihasilkan oleh build-icons.ts) dengan Vuetify.
@@ -10,8 +12,8 @@ import { h } from 'vue'
  * Versi ini telah disempurnakan untuk secara cerdas menangani berbagai format nama ikon
  * tanpa menghasilkan peringatan yang tidak perlu di konsol.
  */
-const CssIconAdapter: IconSet = {
-  component: (props: IconProps & { class?: string }) => {
+const CssIconAdapter: LocalIconSet = {
+  component: (props: LocalIconProps & { class?: string }) => {
     const iconName = (props.icon as string) || ''
     let iconClass = ''
 

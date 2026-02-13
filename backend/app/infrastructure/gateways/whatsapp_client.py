@@ -1,7 +1,10 @@
 # backend/app/infrastructure/gateways/whatsapp_client.py (Disempurnakan dengan Fungsi PDF)
+from typing import Optional
+
 import requests
-import logging
 from flask import current_app
+
+from app.utils.circuit_breaker import record_failure, record_success, should_allow_call
 
 def send_whatsapp_message(recipient_number: str, message_body: str) -> bool:
     """
@@ -38,11 +41,16 @@ def send_whatsapp_message(recipient_number: str, message_body: str) -> bool:
         'countryCode': '0'
     }
 
+    if not should_allow_call("whatsapp"):
+        current_app.logger.warning("WhatsApp circuit breaker open. Skipping send.")
+        return False
+
     current_app.logger.info(f"Attempting to send WhatsApp to {target_number} via Fonnte (URL: {api_url})")
     current_app.logger.debug(f"Fonnte Payload: {payload}, Headers: {{'Authorization': '***'}}")
 
     try:
-        response = requests.post(api_url, headers=headers, data=payload, timeout=20)
+        timeout_seconds = int(current_app.config.get('WHATSAPP_HTTP_TIMEOUT_SECONDS', 15))
+        response = requests.post(api_url, headers=headers, data=payload, timeout=timeout_seconds)
         if not (200 <= response.status_code < 300):
              current_app.logger.warning(f"Fonnte API returned non-2xx status: {response.status_code} - {response.text[:200]}")
         try:
@@ -50,22 +58,28 @@ def send_whatsapp_message(recipient_number: str, message_body: str) -> bool:
             current_app.logger.info(f"Fonnte API Response for {target_number}: {response_json}")
             if response_json.get('status') is True:
                 current_app.logger.info(f"Fonnte reported SUCCESS for sending to {target_number}")
+                record_success("whatsapp")
                 return True
             else:
                 error_reason = response_json.get('reason', 'Unknown reason from Fonnte')
                 current_app.logger.error(f"Fonnte reported FAILURE for {target_number}: {error_reason}")
+                record_failure("whatsapp")
                 return False
         except ValueError:
             current_app.logger.error(f"Failed to decode Fonnte JSON response for {target_number}. Status: {response.status_code}, Response text: {response.text[:200]}")
+            record_failure("whatsapp")
             return False
     except requests.exceptions.Timeout:
         current_app.logger.error(f"Timeout error sending WhatsApp to {target_number} via Fonnte.")
+        record_failure("whatsapp")
         return False
     except requests.exceptions.RequestException as e:
         current_app.logger.error(f"Error sending WhatsApp to {target_number} via Fonnte: Request Exception - {e}", exc_info=False)
+        record_failure("whatsapp")
         return False
     except Exception as e:
         current_app.logger.error(f"Unexpected error sending WhatsApp via Fonnte to {target_number}: {e}", exc_info=True)
+        record_failure("whatsapp")
         return False
 
 # --- [PENAMBAHAN FUNGSI BARU DI SINI] ---
@@ -103,8 +117,71 @@ def send_whatsapp_with_pdf(recipient_number: str, caption: str, pdf_url: str, fi
          current_app.logger.error(f"Invalid target number format for Fonnte: {target_number}")
          return False
 
-    # Payload untuk mengirim file (document) via Fonnte
-    # 'message' digunakan sebagai caption, 'url' sebagai link ke file
+    def _download_pdf_bytes() -> Optional[bytes]:
+        if not pdf_url:
+            return None
+        try:
+            timeout_seconds = int(current_app.config.get('WHATSAPP_PDF_DOWNLOAD_TIMEOUT_SECONDS', 20))
+            response = requests.get(pdf_url, timeout=timeout_seconds)
+            if not (200 <= response.status_code < 300):
+                current_app.logger.warning(
+                    f"Gagal mengunduh PDF untuk WA. Status: {response.status_code} URL: {pdf_url}"
+                )
+                return None
+            return response.content
+        except requests.exceptions.RequestException as e:
+            current_app.logger.error(
+                f"Error mengunduh PDF untuk WA (URL: {pdf_url}): {e}", exc_info=False
+            )
+            return None
+
+    if not should_allow_call("whatsapp"):
+        current_app.logger.warning("WhatsApp circuit breaker open. Skipping PDF send.")
+        return False
+
+    current_app.logger.info(f"Attempting to send WhatsApp with PDF to {target_number} via Fonnte")
+
+    pdf_bytes = _download_pdf_bytes()
+    if pdf_bytes:
+        payload = {
+            'target': target_number,
+            'message': caption,
+            'countryCode': '0'
+        }
+        files = {
+            'file': (filename, pdf_bytes, 'application/pdf')
+        }
+        current_app.logger.debug("Fonnte File Payload: <binary file>, Headers: {'Authorization': '***'}")
+        try:
+            timeout_seconds = int(current_app.config.get('WHATSAPP_HTTP_TIMEOUT_SECONDS', 15))
+            response = requests.post(api_url, headers=headers, data=payload, files=files, timeout=timeout_seconds)
+            try:
+                response_json = response.json()
+            except ValueError:
+                current_app.logger.error(
+                    f"Gagal decode JSON response Fonnte (file upload). Status: {response.status_code}, Response: {response.text[:200]}"
+                )
+                record_failure("whatsapp")
+                return False
+            current_app.logger.info(f"Fonnte API File Response for {target_number}: {response_json}")
+            if response_json.get('status') is True:
+                current_app.logger.info(f"Fonnte reported SUCCESS for sending PDF to {target_number}")
+                record_success("whatsapp")
+                return True
+            error_reason = response_json.get('reason', 'Unknown reason from Fonnte')
+            current_app.logger.error(f"Fonnte reported FAILURE for PDF to {target_number}: {error_reason}")
+            record_failure("whatsapp")
+        except requests.exceptions.RequestException as e:
+            current_app.logger.error(
+                f"Error sending WhatsApp with PDF to {target_number}: Request Exception - {e}", exc_info=False
+            )
+            record_failure("whatsapp")
+        except Exception as e:
+            current_app.logger.error(
+                f"Unexpected error sending PDF via Fonnte to {target_number}: {e}", exc_info=True
+            )
+            record_failure("whatsapp")
+
     payload = {
         'target': target_number,
         'message': caption,
@@ -112,29 +189,36 @@ def send_whatsapp_with_pdf(recipient_number: str, caption: str, pdf_url: str, fi
         'filename': filename,
         'countryCode': '0'
     }
-
-    current_app.logger.info(f"Attempting to send WhatsApp with PDF to {target_number} via Fonnte")
-    current_app.logger.debug(f"Fonnte File Payload: {payload}, Headers: {{'Authorization': '***'}}")
-    
+    current_app.logger.info(
+        f"Fallback WA PDF via URL. target={target_number}, url={pdf_url}, filename={filename}"
+    )
     try:
-        # Fonnte tetap menggunakan POST dengan form-data (parameter 'data')
-        response = requests.post(api_url, headers=headers, data=payload, timeout=30) # Timeout lebih lama untuk media
-        
-        # Logika pemrosesan respons sama dengan pengiriman teks
-        response_json = response.json()
+        timeout_seconds = int(current_app.config.get('WHATSAPP_HTTP_TIMEOUT_SECONDS', 15))
+        response = requests.post(api_url, headers=headers, data=payload, timeout=timeout_seconds)
+        try:
+            response_json = response.json()
+        except ValueError:
+            current_app.logger.error(
+                f"Gagal decode JSON response Fonnte (url). Status: {response.status_code}, Response: {response.text[:200]}"
+            )
+            record_failure("whatsapp")
+            return False
         current_app.logger.info(f"Fonnte API File Response for {target_number}: {response_json}")
         if response_json.get('status') is True:
-            current_app.logger.info(f"Fonnte reported SUCCESS for sending PDF to {target_number}")
+            current_app.logger.info(f"Fonnte reported SUCCESS for sending PDF URL to {target_number}")
+            record_success("whatsapp")
             return True
-        else:
-            error_reason = response_json.get('reason', 'Unknown reason from Fonnte')
-            current_app.logger.error(f"Fonnte reported FAILURE for PDF to {target_number}: {error_reason}")
-            return False
+        error_reason = response_json.get('reason', 'Unknown reason from Fonnte')
+        current_app.logger.error(f"Fonnte reported FAILURE for PDF URL to {target_number}: {error_reason}")
+        record_failure("whatsapp")
+        return False
     except requests.exceptions.RequestException as e:
-        current_app.logger.error(f"Error sending WhatsApp with PDF to {target_number}: Request Exception - {e}", exc_info=False)
+        current_app.logger.error(f"Error sending WhatsApp with PDF URL to {target_number}: Request Exception - {e}", exc_info=False)
+        record_failure("whatsapp")
         return False
     except Exception as e:
-        current_app.logger.error(f"Unexpected error sending PDF via Fonnte to {target_number}: {e}", exc_info=True)
+        current_app.logger.error(f"Unexpected error sending PDF URL via Fonnte to {target_number}: {e}", exc_info=True)
+        record_failure("whatsapp")
         return False
 
 def send_otp_whatsapp(target_number: str, otp: str) -> bool:

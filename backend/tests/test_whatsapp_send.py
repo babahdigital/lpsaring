@@ -85,7 +85,7 @@ try:
     from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
     print("INFO: Fungsi 'send_whatsapp_message' berhasil diimpor.")
 except ImportError as e:
-    print(f"CRITICAL ERROR: Gagal impor 'send_whatsapp_message'. Periksa path 'app/infrastructure/gateways/whatsapp_client.py'.")
+    print("CRITICAL ERROR: Gagal impor 'send_whatsapp_message'. Periksa path 'app/infrastructure/gateways/whatsapp_client.py'.")
     print(f"Detail Error: {e}")
     sys.exit(1)
 except Exception as e:

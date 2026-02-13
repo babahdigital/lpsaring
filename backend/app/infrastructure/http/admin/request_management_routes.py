@@ -17,7 +17,7 @@ from app.infrastructure.http.decorators import admin_required
 from .schemas import RequestApprovalSchema, QuotaRequestListItemSchema, RequestApprovalAction
 from app.services.notification_service import get_notification_message
 from app.services import settings_service
-from app.utils.formatters import format_to_local_phone
+from app.utils.formatters import format_to_local_phone, get_app_local_datetime
 
 try:
     from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection, activate_or_update_hotspot_user
@@ -136,6 +136,10 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
     notification_context = {}
     mikrotik_username = format_to_local_phone(target_user.phone_number)
     now_utc = datetime.now(timezone.utc)
+    now_local = get_app_local_datetime()
+    max_unlimited_days = settings_service.get_setting_as_int('KOMANDAN_MAX_UNLIMITED_DAYS', 30)
+    max_quota_mb = settings_service.get_setting_as_int('KOMANDAN_MAX_QUOTA_MB', 51200)
+    max_quota_days = settings_service.get_setting_as_int('KOMANDAN_MAX_QUOTA_DAYS', 30)
     admin_action_type: Optional[AdminActionType] = None
     
     if data_input.action == RequestApprovalAction.APPROVE:
@@ -145,9 +149,12 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
         if req_to_process.request_type == RequestType.UNLIMITED:
             if not data_input.unlimited_duration_days:
                 return jsonify({"message": "Durasi hari untuk akses unlimited wajib diisi."}), HTTPStatus.BAD_REQUEST
+
+            if data_input.unlimited_duration_days > max_unlimited_days:
+                return jsonify({"message": "Durasi unlimited melebihi batas maksimum."}), HTTPStatus.BAD_REQUEST
             
             days_to_add = data_input.unlimited_duration_days
-            new_expiry_date = now_utc + timedelta(days=days_to_add)
+            new_expiry_date = now_local + timedelta(days=days_to_add)
 
             req_to_process.status = RequestStatus.APPROVED
             target_user.is_unlimited_user = True
@@ -162,7 +169,7 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
             # [PERBAIKAN] Menggunakan profil unlimited dari settings
             unlimited_profile = settings_service.get_setting('MIKROTIK_UNLIMITED_PROFILE', 'unlimited')
             # [PERBAIKAN] Menghitung session timeout dan menghapus limit bytes
-            timeout_seconds = int((new_expiry_date - now_utc).total_seconds())
+            timeout_seconds = int((new_expiry_date - now_local).total_seconds())
 
             success, msg = _handle_mikrotik_operation(
                 activate_or_update_hotspot_user, 
@@ -186,11 +193,16 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
             details = json.loads(req_to_process.request_details or '{}')
             mb_to_add = details.get('requested_mb', 0)
             days_to_add = details.get('requested_duration_days', 0)
+
+            if mb_to_add > max_quota_mb:
+                return jsonify({"message": "Permintaan kuota melebihi batas maksimum."}), HTTPStatus.BAD_REQUEST
+            if days_to_add > max_quota_days:
+                return jsonify({"message": "Durasi kuota melebihi batas maksimum."}), HTTPStatus.BAD_REQUEST
             
             target_user.is_unlimited_user = False
             target_user.total_quota_purchased_mb = (target_user.total_quota_purchased_mb or 0) + mb_to_add
             current_expiry = target_user.quota_expiry_date
-            new_expiry_date = (current_expiry if current_expiry and current_expiry > now_utc else now_utc) + timedelta(days=days_to_add)
+            new_expiry_date = (current_expiry if current_expiry and current_expiry > now_local else now_local) + timedelta(days=days_to_add)
             target_user.quota_expiry_date = new_expiry_date
             
             gb_added = round(mb_to_add / 1024, 2)
@@ -202,7 +214,7 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
             
             remaining_quota_mb = max(0, target_user.total_quota_purchased_mb - (target_user.total_quota_used_mb or 0))
             limit_bytes = int(remaining_quota_mb * 1024 * 1024)
-            timeout_seconds = int((new_expiry_date - now_utc).total_seconds())
+            timeout_seconds = int((new_expiry_date - now_local).total_seconds())
             
             komandan_profile = settings_service.get_setting('MIKROTIK_KOMANDAN_PROFILE', 'komandan')
             success, msg = _handle_mikrotik_operation(activate_or_update_hotspot_user, user_mikrotik_username=mikrotik_username, mikrotik_profile_name=komandan_profile, hotspot_password=target_user.mikrotik_password, comment=f"QUOTA {gb_added}GB/{days_to_add}d added by {current_admin.full_name}", limit_bytes_total=max(1, limit_bytes), session_timeout_seconds=max(0, timeout_seconds), server=target_user.mikrotik_server_name)
@@ -227,13 +239,18 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
         
         mb_to_add = data_input.granted_quota_mb or 0
         days_to_add = data_input.granted_duration_days or 0
+
+        if mb_to_add > max_quota_mb:
+            return jsonify({"message": "Kuota parsial melebihi batas maksimum."}), HTTPStatus.BAD_REQUEST
+        if days_to_add > max_quota_days:
+            return jsonify({"message": "Durasi parsial melebihi batas maksimum."}), HTTPStatus.BAD_REQUEST
         
         req_to_process.granted_details = json.dumps({ 'granted_mb': mb_to_add, 'granted_duration_days': days_to_add })
         
         target_user.is_unlimited_user = False
         target_user.total_quota_purchased_mb = (target_user.total_quota_purchased_mb or 0) + mb_to_add
         current_expiry = target_user.quota_expiry_date
-        new_expiry_date = (current_expiry if current_expiry and current_expiry > now_utc else now_utc) + timedelta(days=days_to_add)
+        new_expiry_date = (current_expiry if current_expiry and current_expiry > now_local else now_local) + timedelta(days=days_to_add)
         target_user.quota_expiry_date = new_expiry_date
         
         granted_gb = round(mb_to_add / 1024, 2)
@@ -245,7 +262,7 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
         
         remaining_quota_mb = max(0, target_user.total_quota_purchased_mb - (target_user.total_quota_used_mb or 0))
         limit_bytes = int(remaining_quota_mb * 1024 * 1024)
-        timeout_seconds = int((new_expiry_date - now_utc).total_seconds())
+        timeout_seconds = int((new_expiry_date - now_local).total_seconds())
         
         komandan_profile = settings_service.get_setting('MIKROTIK_KOMANDAN_PROFILE', 'komandan')
         success, msg = _handle_mikrotik_operation(activate_or_update_hotspot_user, user_mikrotik_username=mikrotik_username, mikrotik_profile_name=komandan_profile, hotspot_password=target_user.mikrotik_password, comment=f"Partial Grant {granted_gb}GB/{days_to_add}d by {current_admin.full_name}", limit_bytes_total=max(1, limit_bytes), session_timeout_seconds=max(0, timeout_seconds), server=target_user.mikrotik_server_name)

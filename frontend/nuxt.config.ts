@@ -7,16 +7,72 @@ import svgLoader from 'vite-svg-loader'
 // Helper untuk path
 const srcDir = fileURLToPath(new URL('.', import.meta.url))
 
-// Log environment variables untuk debugging
-console.log('Proxy Target:', process.env.NUXT_INTERNAL_API_BASE_URL)
-console.log('Public API URL:', process.env.NUXT_PUBLIC_API_BASE_URL)
+const normalizeUrl = (value: string) => value.replace(/\/+$/, '')
+const ensureApiSuffix = (value: string) => (normalizeUrl(value).endsWith('/api') ? normalizeUrl(value) : `${normalizeUrl(value)}/api`)
 
-const host = process.env.NUXT_HOST ?? 'localhost'
+const publicApiBaseUrl = process.env.NUXT_PUBLIC_API_BASE_URL ?? '/api'
+const appBaseUrl = process.env.NUXT_PUBLIC_APP_BASE_URL ?? ''
+const externalBaseUrl = process.env.NUXT_PUBLIC_EXTERNAL_BASE_URL ?? appBaseUrl
+const adminWhatsapp = process.env.NUXT_PUBLIC_ADMIN_WHATSAPP ?? ''
+const whatsappBaseUrl = process.env.NUXT_PUBLIC_WHATSAPP_BASE_URL ?? ''
+const captiveSuccessRedirectUrl = process.env.NUXT_PUBLIC_CAPTIVE_SUCCESS_REDIRECT_URL ?? appBaseUrl ?? ''
+const midtransSnapUrlProduction = process.env.NUXT_PUBLIC_MIDTRANS_SNAP_URL_PRODUCTION ?? ''
+const midtransSnapUrlSandbox = process.env.NUXT_PUBLIC_MIDTRANS_SNAP_URL_SANDBOX ?? ''
+const buyNowUrl = process.env.NUXT_PUBLIC_BUY_NOW_URL ?? ''
+const devBypassToken = process.env.NUXT_PUBLIC_DEV_BYPASS_TOKEN ?? ''
+const statusPageGuardEnabled = process.env.NUXT_PUBLIC_STATUS_PAGE_GUARD_ENABLED ?? 'false'
+const internalApiBaseUrl = ensureApiSuffix(process.env.NUXT_INTERNAL_API_BASE_URL ?? 'http://backend:5010')
+const internalApiOrigin = normalizeUrl(internalApiBaseUrl).replace(/\/api$/, '')
+const internalApiProxyTarget = `${internalApiOrigin}/api/**`
+const internalApiDevProxyTarget = internalApiOrigin
+
+// Log environment variables untuk debugging
+console.log('Proxy Target:', internalApiBaseUrl)
+console.log('Public API URL:', publicApiBaseUrl)
+
+const host = process.env.NUXT_HOST ?? process.env.HOST ?? '0.0.0.0'
 const port = Number.parseInt(process.env.NUXT_PORT ?? '3010', 10)
+
+const hmrHost = process.env.NUXT_PUBLIC_HMR_HOST?.trim()
+const hmrClientPortEnv = process.env.NUXT_PUBLIC_HMR_CLIENT_PORT
+const hmrClientPort = hmrClientPortEnv ? Number.parseInt(hmrClientPortEnv, 10) : undefined
+const hmrProtocol = process.env.NUXT_PUBLIC_HMR_PROTOCOL
+  ?? ((hmrClientPort === 443) ? 'wss' : 'ws')
+
+let derivedHmrHost = hmrHost
+let derivedHmrProtocol = hmrProtocol
+let derivedHmrClientPort = hmrClientPort
+let appUrl: URL | undefined
+
+if (appBaseUrl) {
+  try {
+    appUrl = new URL(appBaseUrl)
+  }
+  catch {
+    // ignore invalid appBaseUrl
+  }
+}
+
+if (appUrl && (!derivedHmrHost || !derivedHmrProtocol || !derivedHmrClientPort)) {
+  if (!derivedHmrHost)
+    derivedHmrHost = appUrl.hostname
+  if (!derivedHmrProtocol)
+    derivedHmrProtocol = appUrl.protocol === 'https:' ? 'wss' : 'ws'
+  if (!derivedHmrClientPort) {
+    const appPort = appUrl.port ? Number.parseInt(appUrl.port, 10) : undefined
+    derivedHmrClientPort = appPort ?? (derivedHmrProtocol === 'wss' ? 443 : 80)
+  }
+}
+
+if (!derivedHmrClientPort)
+  derivedHmrClientPort = derivedHmrProtocol === 'wss' ? 443 : port
 
 export default defineNuxtConfig({
   compatibilityDate: '2025-04-23',
   ssr: true,
+  ignore: [
+    '**/plugins/iconify/**',
+  ],
   devServer: {
     port,
     host,
@@ -47,19 +103,19 @@ export default defineNuxtConfig({
       link: [{
         rel: 'icon',
         type: 'image/x-icon',
-        href: `${process.env.NUXT_APP_BASE_URL ?? ''}/favicon.ico`,
+        href: `${appBaseUrl}/favicon.ico`,
       }],
     },
   },
 
   devtools: {
-    enabled: true,
+    enabled: process.env.NODE_ENV !== 'production',
   },
 
   css: [
     '@core/scss/template/index.scss',
     '@/assets/styles/styles.scss',
-    '@/plugins/iconify/icons.css',
+    '@/assets/iconify/icons.css',
   ],
 
   components: {
@@ -72,8 +128,6 @@ export default defineNuxtConfig({
 
   plugins: [
     '~/plugins/vuetify',
-    '~/plugins/apexcharts.client.ts',
-    '~/plugins/midtrans.client.ts',
     '~/plugins/api.ts',
   ],
 
@@ -96,6 +150,12 @@ export default defineNuxtConfig({
   // Blok typescript tidak lagi diperlukan karena alias sudah diatur di root
   typescript: {
     strict: true,
+    tsConfig: {
+      compilerOptions: {
+        types: ['vuetify-shims'],
+        typeRoots: ['../types', '../node_modules/@types'],
+      },
+    },
   },
 
   sourcemap: {
@@ -118,10 +178,55 @@ export default defineNuxtConfig({
     // resolve.alias tidak lagi diperlukan karena sudah diatur di root
     build: {
       chunkSizeWarningLimit: 1600,
+      rollupOptions: {
+        output: {
+          // Split large deps for better caching and smaller base chunk.
+          manualChunks(id) {
+            if (!id.includes('node_modules'))
+              return undefined
+
+            if (id.includes('vuetify'))
+              return 'vendor-vuetify'
+
+            if (id.includes('@iconify'))
+              return 'vendor-iconify'
+
+            if (id.includes('apexcharts') || id.includes('vue3-apexcharts'))
+              return 'vendor-apexcharts'
+
+            if (id.includes('swiper'))
+              return 'vendor-swiper'
+
+            if (id.includes('vue'))
+              return 'vendor-vue'
+
+            return 'vendor'
+          },
+        },
+      },
     },
     optimizeDeps: {
       exclude: ['vuetify'],
       entries: ['./**/*.vue'],
+    },
+    server: {
+      proxy: {
+        '/api': {
+          target: internalApiDevProxyTarget,
+          changeOrigin: true,
+        },
+      },
+      hmr: derivedHmrHost && derivedHmrHost.length > 0
+        ? {
+            protocol: derivedHmrProtocol,
+            host: derivedHmrHost,
+            clientPort: derivedHmrClientPort,
+          }
+        : {
+            protocol: 'ws',
+            host,
+            port,
+          },
     },
     plugins: [
       svgLoader(),
@@ -129,17 +234,15 @@ export default defineNuxtConfig({
         styles: { configFile: 'assets/styles/variables/_vuetify.scss' },
       }),
     ],
-    server: {
-      hmr: {
-        protocol: 'ws',
-        host,
-        port,
-      },
-    },
   },
 
   build: {
     transpile: ['vuetify', '@iconify/vue'],
+  },
+
+  routeRules: {
+    '/admin/login': { redirect: '/admin' },
+    '/admin/dasboard': { redirect: '/admin/dashboard' },
   },
 
   modules: [
@@ -151,22 +254,36 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     public: {
-      apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL ?? '/api',
+      apiBaseUrl: publicApiBaseUrl,
+      appBaseUrl,
+      externalBaseUrl,
+      adminWhatsapp,
+      whatsappBaseUrl,
+      captiveSuccessRedirectUrl,
       midtransClientKey: process.env.NUXT_PUBLIC_MIDTRANS_CLIENT_KEY ?? '',
       midtransEnv: process.env.NUXT_PUBLIC_MIDTRANS_ENV ?? 'sandbox',
-      mapboxAccessToken: process.env.MAPBOX_ACCESS_TOKEN ?? '',
+      midtransSnapUrlProduction,
+      midtransSnapUrlSandbox,
+      buyNowUrl,
+      devBypassToken,
+      statusPageGuardEnabled,
     },
-    internalApiBaseUrl: process.env.NUXT_INTERNAL_API_BASE_URL ?? 'http://backend:5010/api',
+    internalApiBaseUrl,
   },
 
   nitro: {
     devProxy: {
       '/api': {
-        target: process.env.NUXT_INTERNAL_API_BASE_URL ?? 'http://backend:5010/api',
+        target: internalApiDevProxyTarget,
         changeOrigin: true,
         headers: {
           Connection: 'keep-alive',
         },
+      },
+    },
+    routeRules: {
+      '/api/**': {
+        proxy: internalApiProxyTarget,
       },
     },
   },

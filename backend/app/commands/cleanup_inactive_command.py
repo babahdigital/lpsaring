@@ -9,6 +9,7 @@ import logging
 from app.extensions import db
 from app.infrastructure.db.models import User
 from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection, delete_hotspot_user
+from app.utils.formatters import format_app_date
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,7 @@ def cleanup_inactive_command():
 
     # Tentukan tanggal batas (cutoff date)
     cutoff_date = datetime.now() - relativedelta(months=INACTIVITY_MONTHS_THRESHOLD)
-    logger.info(f"Ambang batas waktu non-aktif: sebelum {cutoff_date.strftime('%Y-%m-%d')}")
+    logger.info(f"Ambang batas waktu non-aktif: sebelum {format_app_date(cutoff_date)}")
 
     # Cari pengguna yang quota_expiry_date nya sudah lewat dari tanggal batas
     users_to_delete = db.session.scalars(select(User).where(User.quota_expiry_date < cutoff_date)).all()

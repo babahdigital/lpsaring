@@ -11,21 +11,34 @@ export interface User {
   // [TAMBAHAN] Menambahkan properti lain dari backend untuk kelengkapan
   blok?: string | null
   kamar?: string | null
+  is_tamping?: boolean
+  tamping_type?: string | null
   is_unlimited_user?: boolean
   mikrotik_server_name?: string | null
   mikrotik_profile_name?: string | null
+  total_quota_purchased_mb?: number | null
+  total_quota_used_mb?: number | null
+  quota_expiry_date?: string | null
+  is_blocked?: boolean
+  blocked_reason?: string | null
+  created_at?: string
 }
 
 export interface RegistrationPayload {
   phone_number: string
   full_name: string
-  email: string
-  // tambahkan properti lain
+  blok?: string | null
+  kamar?: string | null
+  is_tamping?: boolean
+  tamping_type?: string | null
+  register_as_komandan?: boolean
 }
 
 export interface VerifyOtpResponse {
   access_token: string
   token_type: string // biasanya 'bearer'
+  session_token?: string | null
+  session_url?: string | null
   // tambahkan properti lain jika ada
 }
 
@@ -34,10 +47,17 @@ export interface RegisterResponse {
   // tambahkan properti lain jika ada
 }
 
+export interface ChangePasswordRequest {
+  current_password: string
+  new_password: string
+}
+
 // Interface umum untuk error API jika ada struktur standar
 export interface ApiErrorResponse {
   error?: string
   message?: string
   detail?: any // Bisa string atau array objek (untuk validation errors)
   statusCode?: number
+  status?: string
+  status_token?: string
 }

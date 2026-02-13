@@ -3,10 +3,8 @@ import type { VDataTableServer } from 'vuetify/labs/VDataTable'
 import { useNuxtApp } from '#app'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
-import ProfileManagementDialog from '@/components/packages/ProfileManagementDialog.vue' // <--- IMPORT DIALOG BARU
 import ProfileSetupDialog from '@/components/packages/ProfileSetupDialog.vue'
 import { useSnackbar } from '@/composables/useSnackbar'
-import { useAuthStore } from '@/store/auth' // <--- IMPORT AUTH STORE
 
 // --- TIPE DATA ---
 interface Profile {
@@ -28,8 +26,9 @@ interface Package {
 // --- INISIALISASI & STATE ---
 const { $api } = useNuxtApp()
 const { smAndDown } = useDisplay()
+const isHydrated = ref(false)
+const isMobile = computed(() => (isHydrated.value ? smAndDown.value : false))
 const snackbar = useSnackbar()
-const authStore = useAuthStore() // <--- INISIALISASI AUTH STORE
 
 const packages = ref<Package[]>([])
 const loading = ref(true)
@@ -42,7 +41,6 @@ const editedPackage = ref<Partial<Package>>({})
 
 // State untuk Dialog
 const showProfileSetupDialog = ref(false)
-const showProfileManagementDialog = ref(false) // <--- STATE UNTUK DIALOG BARU
 const profileErrorMessage = ref('')
 const lastFailedAction = ref<(() => void) | null>(null)
 
@@ -60,14 +58,17 @@ const defaultPackage: Partial<Package> = {
 }
 
 // --- FUNGSI & LOGIKA ---
-onMounted(fetchPackages)
+onMounted(() => {
+  isHydrated.value = true
+  fetchPackages()
+})
 
 // Perbaikan: Pengecekan `id` yang mungkin `undefined` dibuat eksplisit.
 const formTitle = computed(() => (editedPackage.value.id != null ? 'Edit Paket Jualan' : 'Tambah Paket Jualan'))
 
 const headers = [
   { title: 'NAMA PAKET', key: 'name', sortable: false },
-  { title: 'DETAIL & PROFIL', key: 'details', sortable: false, align: 'start' },
+  { title: 'DETAIL', key: 'details', sortable: false, align: 'start' },
   { title: 'HARGA', key: 'price', align: 'end' },
   { title: 'STATUS', key: 'is_active', align: 'center' },
   { title: 'AKSI', key: 'actions', sortable: false, align: 'center' },
@@ -244,16 +245,6 @@ useHead({ title: 'Manajemen Paket Jualan' })
         <VSpacer />
         <div class="d-flex flex-wrap gap-2">
           <VBtn
-            v-if="authStore.user?.role === 'SUPER_ADMIN'"
-            prepend-icon="tabler-server"
-            size="small"
-            variant="tonal"
-            color="secondary"
-            @click="showProfileManagementDialog = true"
-          >
-            Kelola Profil
-          </VBtn>
-          <VBtn
             prepend-icon="tabler-plus"
             size="small"
             @click="openDialog('edit')"
@@ -264,7 +255,7 @@ useHead({ title: 'Manajemen Paket Jualan' })
       </VCardText>
 
       <VDataTableServer
-        v-if="!smAndDown"
+        v-if="!isMobile"
         v-model:options="options"
         :headers="headers"
         :items="packages"
@@ -275,7 +266,6 @@ useHead({ title: 'Manajemen Paket Jualan' })
       >
         <template #item.details="{ item }">
           <div class="d-flex flex-column py-2">
-            <small class="text-caption text-medium-emphasis">Profil: {{ item.profile?.profile_name ?? 'N/A' }}</small>
             <div class="d-flex align-center gap-2">
               <VChip
                 v-if="item.data_quota_gb === 0"
@@ -358,6 +348,7 @@ useHead({ title: 'Manajemen Paket Jualan' })
     </VCard>
 
     <VDialog
+      v-if="isHydrated"
       v-model="dialog.edit"
       max-width="600px"
       persistent
@@ -383,7 +374,7 @@ useHead({ title: 'Manajemen Paket Jualan' })
                 v-model.number="editedPackage.data_quota_gb"
                 label="Kuota Data (GB)"
                 type="number"
-                :rules="[(v) => (v !== null && v >= 0) || 'Kuota harus angka positif']"
+                :rules="[(v: number | null) => (v !== null && v >= 0) || 'Kuota harus angka positif']"
                 min="0"
                 step="0.01"
                 :disabled="isUnlimited"
@@ -409,7 +400,7 @@ useHead({ title: 'Manajemen Paket Jualan' })
                 v-model.number="editedPackage.duration_days"
                 label="Masa Berlaku (Hari)"
                 type="number"
-                :rules="[(v) => (v !== null && v > 0) || 'Durasi harus lebih dari 0']"
+                :rules="[(v: number | null) => (v !== null && v > 0) || 'Durasi harus lebih dari 0']"
                 min="1"
               />
             </VCol>
@@ -423,7 +414,7 @@ useHead({ title: 'Manajemen Paket Jualan' })
                 type="text"
                 prefix="Rp"
                 placeholder="50.000"
-                :rules="[(v) => (unformatNumber(v) >= 0) || 'Harga harus angka positif']"
+                :rules="[(v: string | number | null) => (unformatNumber(typeof v === 'number' ? String(v) : v) >= 0) || 'Harga harus angka positif']"
               />
             </VCol>
             <VCol cols="12">
@@ -461,20 +452,17 @@ useHead({ title: 'Manajemen Paket Jualan' })
     </VDialog>
 
     <VDialog
+      v-if="isHydrated"
       v-model="dialog.delete"
       max-width="450px"
       persistent
     />
 
     <ProfileSetupDialog
+      v-if="isHydrated"
       v-model="showProfileSetupDialog"
       :error-message="profileErrorMessage"
       @profiles-created="onProfilesCreated"
-    />
-
-    <ProfileManagementDialog
-      v-model="showProfileManagementDialog"
-      @profiles-updated="fetchPackages"
     />
   </div>
 </template>

@@ -32,10 +32,12 @@ const highlighter = await getSingletonHighlighter({
   langs: ['vue'],
 })
 
-const codeSnippet = highlighter.codeToHtml(props.code[preferredCodeLanguage.value], {
-  lang: 'vue',
-  theme: 'dracula',
-})
+const codeSnippet = computed(() =>
+  highlighter.codeToHtml(props.code[preferredCodeLanguage.value], {
+    lang: 'vue',
+    theme: 'dracula',
+  }),
+)
 </script>
 
 <template>

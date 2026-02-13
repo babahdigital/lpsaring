@@ -1,23 +1,42 @@
-import antfu from '@antfu/eslint-config'
 import tsPlugin from '@typescript-eslint/eslint-plugin'
-import nPlugin from 'eslint-plugin-n'
+import tsParser from '@typescript-eslint/parser'
+import importPlugin from 'eslint-plugin-import'
+import promisePlugin from 'eslint-plugin-promise'
+import sonarjs from 'eslint-plugin-sonarjs'
+import casePolice from 'eslint-plugin-case-police'
+import regexpPlugin from 'eslint-plugin-regexp'
+import vuePlugin from 'eslint-plugin-vue'
+import vueParser from 'vue-eslint-parser'
 import globalsPkg from 'globals'
 
 const { browser, node } = globalsPkg
 
-export default antfu(
-  // Objek Konfigurasi Utama
+export default [
   {
-    vue: true,
-    typescript: true,
     ignores: [
       '**/migrations/**',
       'public/build/**',
       '.nuxt',
       'dist',
+      '**/.pnpm-store/**',
+      '**/*.json',
+      '**/*.jsonc',
+      '**/*.json5',
       'node_modules',
+      'server/routes/.well-known/**',
     ],
+  },
+  {
+    files: ['**/*.{js,jsx,ts,tsx,vue}'],
     languageOptions: {
+      parser: vueParser,
+      parserOptions: {
+        parser: tsParser,
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+        extraFileExtensions: ['.vue'],
+        project: './.nuxt/tsconfig.json',
+      },
       globals: {
         ...browser,
         ...node,
@@ -25,8 +44,13 @@ export default antfu(
       },
     },
     plugins: {
+      vue: vuePlugin,
       '@typescript-eslint': tsPlugin,
-      'n': nPlugin,
+      import: importPlugin,
+      promise: promisePlugin,
+      sonarjs,
+      'case-police': casePolice,
+      regexp: regexpPlugin,
     },
     rules: {
       'vue/v-slot-style': [
@@ -37,51 +61,12 @@ export default antfu(
           named: 'shorthand',
         },
       ],
-      'n/prefer-global/process': 'off',
+      'vue/valid-v-slot': ['error', { allowModifiers: true }],
+      'vue/custom-event-name-casing': 'off',
       '@typescript-eslint/no-redeclare': 'error',
-      'ts/no-redeclare': 'off',
       'no-console': ['warn', { allow: ['info', 'log', 'warn', 'error'] }],
     },
   },
-
-  // Objek Konfigurasi Terpisah untuk Override File Vue/TypeScript
-  {
-    files: ['**/*.{ts,tsx,vue}'],
-    // PENAMBAHAN BAGIAN INI UNTUK TYPE-AWARE LINTING
-    languageOptions: {
-      parserOptions: {
-        project: './.nuxt/tsconfig.json',
-        extraFileExtensions: ['.vue'],
-      },
-    },
-    rules: {
-      'vue/valid-v-slot': ['error', {
-        allowModifiers: true,
-      }],
-      'ts/strict-boolean-expressions': [
-        'error',
-        {
-          allowString: true,
-          allowNumber: true,
-          allowNullableObject: true,
-        },
-      ],
-      'unused-imports/no-unused-vars': [
-        'error',
-        {
-          vars: 'all',
-          varsIgnorePattern: '^_',
-          args: 'after-used',
-          argsIgnorePattern: '^_',
-          ignoreRestSiblings: true,
-          destructuredArrayIgnorePattern: '^_',
-        },
-      ],
-      'no-console': ['warn', { allow: ['info', 'log', 'warn', 'error'] }],
-    },
-  },
-
-  // Objek Konfigurasi Terpisah untuk Override File Konfigurasi
   {
     files: ['*.config.*'],
     rules: {
@@ -89,8 +74,6 @@ export default antfu(
       'no-console': 'off',
     },
   },
-
-  // Objek Konfigurasi Terpisah untuk Override File JSON
   {
     files: ['**/*.json'],
     rules: {
@@ -98,4 +81,4 @@ export default antfu(
       '@typescript-eslint/*': 'off',
     },
   },
-)
+]

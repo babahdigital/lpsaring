@@ -16,6 +16,9 @@ const props = defineProps<Props>()
 
 const emit = defineEmits<Emit>()
 
+const { public: { externalBaseUrl, appBaseUrl } } = useRuntimeConfig()
+const referLinkPlaceholder = (externalBaseUrl || appBaseUrl || '') as string
+
 function dialogVisibleUpdate(val: boolean) {
   emit('update:isDialogVisible', val)
 }
@@ -115,7 +118,7 @@ const referAndEarnSteps = [
           @submit.prevent="() => {}"
         >
           <AppTextField
-            placeholder="http://pixinvent.link"
+            :placeholder="referLinkPlaceholder"
             label="You can also copy and send it or share it on your social media. 🚀"
             class="refer-link-input"
           >

@@ -9,8 +9,12 @@ const authStore = useAuthStore()
 const isAdmin = computed(() => authStore.isAdmin)
 const isLoggedIn = computed(() => authStore.isLoggedIn)
 
-// Mengambil nilai pendapatan hari ini
-const todayRevenue = computed(() => dashboardStore.stats?.pendapatanHariIni ?? 0)
+// Mengambil nilai pendapatan minggu ini (backend mengirim key: pendapatanMingguIni)
+const todayRevenue = computed(() => {
+  return dashboardStore.stats?.pendapatanMingguIni
+    ?? dashboardStore.stats?.weeklyRevenue
+    ?? 0
+})
 
 // Helper untuk format mata uang yang sudah diperkuat
 function formatCurrency(value: number) {
@@ -43,13 +47,37 @@ onMounted(() => {
 
 <template>
   <div>
-    <VTooltip
-      text="Pendapatan Hari Ini"
-      location="bottom"
-    >
-      <template #activator="{ props }">
+    <ClientOnly>
+      <VTooltip
+        text="Pendapatan Minggu Ini"
+        location="bottom"
+      >
+        <template #activator="{ props }">
+          <VChip
+            v-bind="props"
+            color="primary"
+            variant="elevated"
+            prepend-icon="tabler-cash"
+            :disabled="dashboardStore.isLoading"
+          >
+            <template v-if="dashboardStore.isLoading">
+              <VProgressCircular
+                indeterminate
+                size="16"
+                width="2"
+                class="me-2"
+              />
+              <span>Memuat...</span>
+            </template>
+            <template v-else>
+              <strong>{{ todayRevenueDisplay }}</strong>
+            </template>
+          </VChip>
+        </template>
+      </VTooltip>
+
+      <template #fallback>
         <VChip
-          v-bind="props"
           color="primary"
           variant="elevated"
           prepend-icon="tabler-cash"
@@ -69,7 +97,7 @@ onMounted(() => {
           </template>
         </VChip>
       </template>
-    </VTooltip>
+    </ClientOnly>
   </div>
 </template>
 

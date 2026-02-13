@@ -20,8 +20,6 @@ $alert-prepend-icon-font-size: 1.375rem !important;
       block-size: 1.375rem !important;
       font-size: 1.375rem !important;
       inline-size: 1.375rem !important;
-      position: relative;
-      left: 4px;
     }
   }
 
@@ -83,7 +81,6 @@ $alert-prepend-icon-font-size: 1.375rem !important;
       &.text-#{$color-name} {
         .v-alert__prepend .v-icon {
           color: rgb(var(--v-theme-#{$color-name})) !important;
-          margin-left: 0rem;
         }
       }
 

@@ -16,4 +16,9 @@ export default [
     to: { path: '/riwayat' },
     icon: { icon: 'tabler-history' },
   },
+  {
+    title: 'Akun & Perangkat',
+    to: { path: '/akun' },
+    icon: { icon: 'tabler-user-cog' },
+  },
 ]

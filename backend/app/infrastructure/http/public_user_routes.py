@@ -62,7 +62,8 @@ def check_or_register_phone():
         current_app.logger.error(f"[Check Phone] Error database untuk nomor {phone_number}: {e}", exc_info=True)
         return jsonify({"success": False, "message": "Gagal proses database (check-or-register)."}), HTTPStatus.INTERNAL_SERVER_ERROR
     except Exception as e:
-        if db.session.is_active: db.session.rollback()
+        if db.session.is_active:
+            db.session.rollback()
         current_app.logger.error(f"[Check Phone] Error tidak terduga untuk nomor {phone_number}: {e}", exc_info=True)
         return jsonify({"success": False, "message": "Kesalahan internal server (check-or-register)."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
@@ -126,10 +127,18 @@ def validate_whatsapp_number():
             "message": "Layanan validasi tidak terkonfigurasi"
         }), HTTPStatus.INTERNAL_SERVER_ERROR
     
+    validate_url = current_app.config.get('WHATSAPP_VALIDATE_URL')
+    if not validate_url:
+        current_app.logger.error("[Validate WA] WHATSAPP_VALIDATE_URL tidak diatur.")
+        return jsonify({
+            "isValid": False,
+            "message": "Layanan validasi tidak terkonfigurasi"
+        }), HTTPStatus.INTERNAL_SERVER_ERROR
+
     target_number = phone_number_e164.lstrip('+')
     try:
         response = requests.post(
-            'https://api.fonnte.com/validate',
+            validate_url,
             headers={'Authorization': fonnte_token},
             data={'target': target_number},
             timeout=5  # Timeout 5 detik

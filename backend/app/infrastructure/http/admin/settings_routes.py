@@ -4,7 +4,7 @@
 from flask import Blueprint, jsonify, request, current_app
 from http import HTTPStatus
 from pydantic import ValidationError, BaseModel, Field, ConfigDict
-from typing import Optional, Dict, List
+from typing import Optional, Dict
 
 # Impor-impor esensial
 from app.extensions import db

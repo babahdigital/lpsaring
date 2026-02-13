@@ -1,26 +1,26 @@
 import type { SettingSchema } from '@/types/api/settings'
-// frontend/store/settings.ts
+import { Skins, Theme } from '@core/enums'
+import { AppContentLayoutNav, ContentWidth } from '@layouts/enums'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-// Impor semua enum dari lokasi sentral `frontend/types/enums.ts`
-import {
-  AppContentLayoutNav,
-  ContentWidth,
-  Skins,
-  Theme,
-} from '@/types/enums'
 
 import { useMaintenanceStore } from './maintenance'
 
 export const useSettingsStore = defineStore('settings', () => {
+  type ThemeValue = (typeof Theme)[keyof typeof Theme]
+  type SkinsValue = (typeof Skins)[keyof typeof Skins]
+  type LayoutValue = (typeof AppContentLayoutNav)[keyof typeof AppContentLayoutNav]
+  type ContentWidthValue = (typeof ContentWidth)[keyof typeof ContentWidth]
+
   // --- STATE ---
   const appName = ref('')
   const browserTitle = ref('')
-  const theme = ref<Theme>(Theme.System)
-  const skin = ref<Skins>(Skins.Bordered)
-  const layout = ref<AppContentLayoutNav>(AppContentLayoutNav.Horizontal)
-  const contentWidth = ref<ContentWidth>(ContentWidth.Boxed)
+  const theme = ref<ThemeValue>(Theme.System)
+  const skin = ref<SkinsValue>(Skins.Bordered)
+  const layout = ref<LayoutValue>(AppContentLayoutNav.Horizontal)
+  const contentWidth = ref<ContentWidthValue>(ContentWidth.Boxed)
   const isLoaded = ref(false)
+  const rawSettings = ref<Record<string, string | null | undefined>>({})
 
   const maintenanceStore = useMaintenanceStore()
 
@@ -37,6 +37,7 @@ export const useSettingsStore = defineStore('settings', () => {
   // --- ACTIONS ---
 
   function _updateAllStates(settings: Record<string, string | null | undefined>) {
+    rawSettings.value = { ...settings }
     // --- PERBAIKAN DI SINI: Mengganti || dengan ?? ---
     appName.value = settings.APP_NAME ?? 'Portal Hotspot'
     browserTitle.value = settings.APP_BROWSER_TITLE ?? 'Portal Hotspot'
@@ -71,6 +72,28 @@ export const useSettingsStore = defineStore('settings', () => {
     _updateAllStates(settings)
   }
 
+  function getSetting(key: string, fallback: string | null = null) {
+    const value = rawSettings.value[key]
+    if (value === undefined || value === null || value === '')
+      return fallback
+    return value
+  }
+
+  function getSettingAsInt(key: string, fallback: number) {
+    const value = getSetting(key, null)
+    if (value == null)
+      return fallback
+    const parsed = Number.parseInt(value, 10)
+    return Number.isNaN(parsed) ? fallback : parsed
+  }
+
+  function getSettingAsBool(key: string, fallback = false) {
+    const value = getSetting(key, null)
+    if (value == null)
+      return fallback
+    return value.toString().toLowerCase() === 'true'
+  }
+
   // --- RETURN ---
   return {
     appName,
@@ -80,8 +103,12 @@ export const useSettingsStore = defineStore('settings', () => {
     layout,
     contentWidth,
     isLoaded,
+    rawSettings,
     effectiveTheme,
     setSettings,
     setSettingsFromObject,
+    getSetting,
+    getSettingAsInt,
+    getSettingAsBool,
   }
 })

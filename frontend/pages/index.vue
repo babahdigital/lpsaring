@@ -1,9 +1,21 @@
 <script setup lang="ts">
-// Script bisa kosong atau berisi logika minimal jika diperlukan
-// Misalnya, definePageMeta untuk middleware spesifik halaman jika tidak global
-// definePageMeta({
-//   middleware: ['auth'] // Jika middleware tidak global
-// });
+import { onMounted } from 'vue'
+import { navigateTo } from '#app'
+import { useAuthStore } from '~/store/auth'
+
+definePageMeta({
+  layout: 'blank',
+})
+
+const authStore = useAuthStore()
+
+onMounted(async () => {
+  await authStore.initializeAuth()
+  if (authStore.isLoggedIn)
+    await navigateTo('/dashboard', { replace: true })
+  else
+    await navigateTo('/login', { replace: true })
+})
 </script>
 
 <template>

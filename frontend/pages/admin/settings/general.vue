@@ -63,7 +63,7 @@ onMounted(async () => {
 
   isLoading.value = true
   try {
-    const response = await $api<SettingSchema[]>('/api/admin/settings')
+    const response = await $api<SettingSchema[]>('/admin/settings')
 
     // Inisialisasi semua kemungkinan nilai agar tidak 'undefined'
     const initialSettings: Record<string, string> = {
@@ -121,7 +121,7 @@ async function handleSaveChanges() {
       }
     })
 
-    await $api('/api/admin/settings', {
+    await $api('/admin/settings', {
       method: 'PUT',
       body: { settings: settingsToSave },
     })
@@ -184,21 +184,29 @@ useHead({ title: 'Setting Aplikasi' })
         <VCardSubtitle>Kelola pengaturan umum, tampilan, dan integrasi aplikasi Anda.</VCardSubtitle>
       </VCardItem>
 
-      <VTabs v-model="tab" class="px-4">
-        <VTab value="umum">
-          <VIcon start icon="mdi-cog-outline" />
-          Umum & Maintenance
-        </VTab>
-        <VTab value="tampilan">
-          <VIcon start icon="mdi-view-dashboard-outline" />
-          Tampilan & Layout
-        </VTab>
-        <VTab value="integrasi">
-          <VIcon start icon="mdi-link-variant" />
-          Integrasi
-        </VTab>
-      </VTabs>
-      <VDivider />
+      <ClientOnly>
+        <VTabs v-model="tab" class="px-4">
+          <VTab value="umum">
+            <VIcon start icon="mdi-cog-outline" />
+            Umum & Maintenance
+          </VTab>
+          <VTab value="tampilan">
+            <VIcon start icon="mdi-view-dashboard-outline" />
+            Tampilan & Layout
+          </VTab>
+          <VTab value="integrasi">
+            <VIcon start icon="mdi-link-variant" />
+            Integrasi
+          </VTab>
+        </VTabs>
+        <VDivider />
+        <template #fallback>
+          <div class="px-4 py-2">
+            <VSkeletonLoader type="text@2" />
+          </div>
+          <VDivider />
+        </template>
+      </ClientOnly>
 
       <VCardText>
         <VProgressLinear v-if="isLoading" indeterminate class="mb-4" />

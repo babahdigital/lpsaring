@@ -1,7 +1,7 @@
 # backend/app/infrastructure/http/schemas/settings_schemas.py
 # --- FILE BARU ---
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import Optional, Dict
 
 class SettingSchema(BaseModel):

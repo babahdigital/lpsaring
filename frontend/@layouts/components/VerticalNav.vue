@@ -74,7 +74,7 @@ const hideTitleAndIcon = configStore.isVerticalNavMini(isHovered)
     <!-- 👉 Header -->
     <div class="nav-header">
       <slot name="nav-header">
-        <NuxtLink
+        <RouterLink
           to="/"
           class="app-logo app-title-wrapper"
         >
@@ -88,7 +88,7 @@ const hideTitleAndIcon = configStore.isVerticalNavMini(isHovered)
               {{ layoutConfig.app.title }}
             </h1>
           </Transition>
-        </NuxtLink>
+        </RouterLink>
         <!-- 👉 Vertical nav actions -->
         <!-- Show toggle collapsible in >md and close button in <md -->
         <div class="header-action">
@@ -125,7 +125,7 @@ const hideTitleAndIcon = configStore.isVerticalNavMini(isHovered)
       :update-is-vertical-nav-scrolled="updateIsVerticalNavScrolled"
     >
       <PerfectScrollbar
-        :key="configStore.isAppRTL"
+        :key="String(configStore.isAppRTL)"
         tag="ul"
         class="nav-items"
         :options="{ wheelPropagation: false }"

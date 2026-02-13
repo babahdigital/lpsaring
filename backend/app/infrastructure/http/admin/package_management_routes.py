@@ -6,13 +6,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from http import HTTPStatus
 from pydantic import BaseModel, Field, ValidationError, ConfigDict
-from typing import Optional, List
+from typing import Optional
 import uuid
 
 # Impor-impor esensial
 from app.extensions import db
 from app.infrastructure.db.models import Package, PackageProfile, Transaction, User
 from app.infrastructure.http.decorators import admin_required
+from app.services import settings_service
+from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection, _is_profile_valid
 
 # Definisi Blueprint
 package_management_bp = Blueprint('package_management_api', __name__)
@@ -59,17 +61,26 @@ def get_packages_list(current_admin: User):
 def create_package(current_admin: User):
     """
     Membuat paket jualan baru, dengan logika pemilihan profil otomatis.
-    - Paket dengan kuota (data_quota_gb > 0) akan menggunakan profil 'user'.
-    - Paket unlimited (data_quota_gb == 0) akan menggunakan profil 'unlimited'.
+    - Paket dengan kuota (data_quota_gb > 0) akan menggunakan profil dari settings.
+    - Paket unlimited (data_quota_gb == 0) akan menggunakan profil unlimited dari settings.
     """
     try:
         package_data = PackageSchema.model_validate(request.get_json())
 
-        # --- PERBAIKAN FINAL: Menggunakan nama profil 'user' untuk kuota ---
+        user_profile_name = (
+            settings_service.get_setting('MIKROTIK_USER_PROFILE')
+            or settings_service.get_setting('MIKROTIK_ACTIVE_PROFILE')
+            or 'user'
+        )
+        unlimited_profile_name = (
+            settings_service.get_setting('MIKROTIK_UNLIMITED_PROFILE')
+            or 'unlimited'
+        )
+
         if package_data.data_quota_gb == 0:
-            target_profile_name = 'unlimited'
+            target_profile_name = unlimited_profile_name
         else:
-            target_profile_name = 'user' # Menggunakan 'user' bukan 'srv-user'
+            target_profile_name = user_profile_name
 
         current_app.logger.info(f"Membuat paket '{package_data.name}'. Mencari profil Mikrotik target: '{target_profile_name}'")
 
@@ -78,9 +89,47 @@ def create_package(current_admin: User):
         )
 
         if not target_profile:
-            error_message = f"Konfigurasi sistem error. Profil '{target_profile_name}' yang dibutuhkan tidak ditemukan di database aplikasi. Harap buat profil tersebut melalui menu 'Kelola Profil'."
-            current_app.logger.critical(error_message)
-            return jsonify({"message": error_message}), HTTPStatus.CONFLICT
+            current_app.logger.warning(
+                "Profil '%s' belum ada di database. Verifikasi ke Mikrotik...",
+                target_profile_name,
+            )
+            with get_mikrotik_connection() as api:
+                if not api:
+                    error_message = (
+                        "Tidak bisa menghubungi Mikrotik untuk verifikasi profil. "
+                        "Pastikan koneksi Mikrotik aktif."
+                    )
+                    current_app.logger.error(error_message)
+                    return jsonify({"message": error_message}), HTTPStatus.CONFLICT
+                is_valid, resolved_name = _is_profile_valid(api, target_profile_name)
+
+            if not is_valid:
+                error_message = (
+                    f"Profil '{target_profile_name}' tidak ditemukan di Mikrotik. "
+                    "Silakan buat profil tersebut di Mikrotik terlebih dahulu."
+                )
+                current_app.logger.critical(error_message)
+                return jsonify({"message": error_message}), HTTPStatus.CONFLICT
+
+            try:
+                target_profile = PackageProfile(profile_name=resolved_name)
+                db.session.add(target_profile)
+                db.session.flush()
+                current_app.logger.info(
+                    "Profil '%s' dibuat otomatis di database dari Mikrotik.",
+                    resolved_name,
+                )
+            except IntegrityError:
+                db.session.rollback()
+                target_profile = db.session.scalar(
+                    db.select(PackageProfile).filter_by(profile_name=resolved_name)
+                )
+                if not target_profile:
+                    error_message = (
+                        f"Profil '{resolved_name}' gagal dibuat dan tidak ditemukan di database."
+                    )
+                    current_app.logger.error(error_message)
+                    return jsonify({"message": error_message}), HTTPStatus.CONFLICT
 
         package_data.profile_id = target_profile.id
 
@@ -108,7 +157,8 @@ def create_package(current_admin: User):
 def update_package(current_admin: User, package_id):
     """Memperbarui paket jualan yang ada."""
     pkg = db.session.get(Package, package_id)
-    if not pkg: return jsonify({"message": "Paket tidak ditemukan."}), HTTPStatus.NOT_FOUND
+    if not pkg:
+        return jsonify({"message": "Paket tidak ditemukan."}), HTTPStatus.NOT_FOUND
     try:
         package_data = PackageSchema.model_validate(request.get_json())
         update_dict = package_data.model_dump(exclude_unset=True, exclude={'id', 'profile', 'profile_id'})
@@ -120,7 +170,8 @@ def update_package(current_admin: User, package_id):
     except IntegrityError:
         db.session.rollback()
         return jsonify({"message": "Nama paket sudah ada."}), HTTPStatus.CONFLICT
-    except ValidationError as e: return jsonify({"errors": e.errors()}), HTTPStatus.UNPROCESSABLE_ENTITY
+    except ValidationError as e:
+        return jsonify({"errors": e.errors()}), HTTPStatus.UNPROCESSABLE_ENTITY
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Gagal memperbarui paket: {e}", exc_info=True)
@@ -131,7 +182,8 @@ def update_package(current_admin: User, package_id):
 def delete_package(current_admin: User, package_id):
     """Menghapus sebuah paket, mencegah penghapusan jika ada riwayat transaksi."""
     pkg = db.session.get(Package, package_id)
-    if not pkg: return jsonify({"message": "Paket tidak ditemukan."}), HTTPStatus.NOT_FOUND
+    if not pkg:
+        return jsonify({"message": "Paket tidak ditemukan."}), HTTPStatus.NOT_FOUND
     if db.session.query(Transaction.id).filter_by(package_id=pkg.id).first():
         return jsonify({"message": "Paket tidak dapat dihapus karena memiliki riwayat transaksi."}), HTTPStatus.CONFLICT
     db.session.delete(pkg)

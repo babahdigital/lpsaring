@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import type { Notification } from '@layouts/types'
+import { avatarText } from '@core/utils/formatters'
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar'
 
 interface Props {
@@ -11,7 +12,7 @@ interface Emit {
   (e: 'read', value: number[]): void
   (e: 'unread', value: number[]): void
   (e: 'remove', value: number): void
-  (e: 'clickNotification', value: Notification): void
+  (e: 'click:notification', value: Notification): void
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -121,7 +122,7 @@ function toggleReadUnread(isSeen: boolean, Id: number) {
                 lines="one"
                 min-height="66px"
                 class="list-item-hover-class"
-                @click="$emit('clickNotification', notification)"
+                @click="$emit('click:notification', notification)"
               >
                 <!-- Slot: Prepend -->
                 <!-- Handles Avatar: Image, Icon, Text -->

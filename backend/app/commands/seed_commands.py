@@ -7,6 +7,7 @@ import click
 from flask.cli import with_appcontext
 import uuid
 from decimal import Decimal
+from typing import Any, cast
 
 from app.extensions import db
 from app.infrastructure.db.models import Package, PackageProfile # Import PackageProfile juga
@@ -29,11 +30,9 @@ def seed_db_command():
         # data_quota_gb & duration_days disini deskriptif untuk profil itu sendiri.
         # Batasan sebenarnya akan diatur per user via Mikrotik Simple Queue.
 
-        default_profile = PackageProfile(
+        default_profile = cast(Any, PackageProfile)(
             id=uuid.uuid4(),
             profile_name='default-hotspot-profile',
-            data_quota_gb=Decimal('0.00'), # Ini adalah kuota deskriptif untuk profil, 0.00 berarti tidak ada kuota di level profil
-            duration_days=0, # Ini adalah durasi deskriptif untuk profil, 0 berarti tidak ada durasi di level profil
             description='Profil default untuk semua pengguna hotspot, batasan diatur per user via API.'
         )
         db.session.add(default_profile)
@@ -55,45 +54,50 @@ def seed_db_command():
         # yang nantinya akan di-lookup saat transaksi.
         # Untuk seeding, kita hanya perlu mencocokkan field yang ada di model Package.
 
-        package1 = Package(
+        package1 = cast(Any, Package)(
             id=uuid.uuid4(), name='Paket Kuota 1GB',
             description='Kuota internet 1GB untuk 30 hari.',
             price=Decimal('10000.00'),
             profile_id=default_profile.id, # Asosiasikan dengan profil default
-            speed_limit_kbps=51200, # Informasi deskriptif untuk aplikasi
+            data_quota_gb=Decimal('1.00'),
+            duration_days=30,
             is_active=True
         )
-        package2 = Package(
+        package2 = cast(Any, Package)(
             id=uuid.uuid4(), name='Paket Kuota 5GB',
             description='Kuota internet 5GB untuk 30 hari.',
             price=Decimal('25000.00'),
             profile_id=default_profile.id, # Asosiasikan dengan profil default
-            speed_limit_kbps=102400, # Informasi deskriptif untuk aplikasi
+            data_quota_gb=Decimal('5.00'),
+            duration_days=30,
             is_active=True
         )
-        package3 = Package(
+        package3 = cast(Any, Package)(
             id=uuid.uuid4(), name='Paket Kuota 10GB',
             description='Kuota internet 10GB untuk 30 hari.',
             price=Decimal('50000.00'),
             profile_id=default_profile.id, # Asosiasikan dengan profil default
-            speed_limit_kbps=None, # Tanpa batas kecepatan deskriptif
+            data_quota_gb=Decimal('10.00'),
+            duration_days=30,
             is_active=True
         )
-        package4 = Package(
+        package4 = cast(Any, Package)(
             id=uuid.uuid4(), name='Paket Hemat 500MB (Non-Aktif)',
             description='Paket coba kuota 500MB untuk 7 hari.',
             price=Decimal('5000.00'),
             profile_id=default_profile.id, # Asosiasikan dengan profil default
-            speed_limit_kbps=1024, # Informasi deskriptif untuk aplikasi
+            data_quota_gb=Decimal('0.50'),
+            duration_days=7,
             is_active=False
         )
         # --- BARU DITAMBAHKAN: Paket Unlimited ---
-        package5_unlimited = Package(
+        package5_unlimited = cast(Any, Package)(
             id=uuid.uuid4(), name='Paket Unlimited 30 Hari',
             description='Internet tanpa kuota, berlaku 30 hari.',
             price=Decimal('75000.00'),
             profile_id=default_profile.id, # Asosiasikan dengan profil default
-            speed_limit_kbps=None, # Kecepatan unlimited, diatur di Mikrotik Simple Queue
+            data_quota_gb=Decimal('0.00'),
+            duration_days=30,
             is_active=True
         )
         # ----------------------------------------

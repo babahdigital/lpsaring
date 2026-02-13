@@ -5,3 +5,5 @@ declare module '#imports' {
   export const definePageMeta: (meta: any) => void
   // Tambahkan composable lain sesuai kebutuhan
 }
+
+export {}

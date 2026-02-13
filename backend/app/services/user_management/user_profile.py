@@ -18,7 +18,29 @@ from .helpers import (
     _log_admin_action, _generate_password, _send_whatsapp_notification,
     _handle_mikrotik_operation
 )
-from app.infrastructure.gateways.mikrotik_client import activate_or_update_hotspot_user, set_hotspot_user_profile
+from app.infrastructure.gateways.mikrotik_client import (
+    activate_or_update_hotspot_user,
+    sync_address_list_for_user,
+)
+
+
+def _resolve_default_server() -> str:
+    return (
+        settings_service.get_setting('MIKROTIK_DEFAULT_SERVER', None)
+        or settings_service.get_setting('MIKROTIK_DEFAULT_SERVER_USER', 'srv-user')
+    )
+
+
+def _resolve_active_profile() -> str:
+    return (
+        settings_service.get_setting('MIKROTIK_ACTIVE_PROFILE', None)
+        or settings_service.get_setting('MIKROTIK_USER_PROFILE', 'user')
+        or settings_service.get_setting('MIKROTIK_DEFAULT_PROFILE', 'default')
+    )
+
+
+def _resolve_unlimited_profile() -> str:
+    return settings_service.get_setting('MIKROTIK_UNLIMITED_PROFILE', 'unlimited')
 
 def _get_active_registration_bonus() -> Optional[PromoEvent]:
     """
@@ -30,7 +52,7 @@ def _get_active_registration_bonus() -> Optional[PromoEvent]:
         PromoEvent.event_type == 'BONUS_REGISTRATION',
         PromoEvent.start_date <= now,
         or_(
-            PromoEvent.end_date == None,
+            PromoEvent.end_date.is_(None),
             PromoEvent.end_date >= now
         )
     ).order_by(PromoEvent.created_at.desc()).limit(1)
@@ -51,15 +73,24 @@ def create_user_by_admin(admin_actor: User, data: Dict[str, Any]) -> Tuple[bool,
         if db.session.scalar(select(User).filter_by(phone_number=phone_number)):
             return False, f"Nomor telepon {data['phone_number']} sudah terdaftar.", None
         
-        if new_role == UserRole.USER and (not data.get('blok') or not data.get('kamar')):
-            return False, "Blok dan Kamar wajib diisi untuk peran USER.", None
+        is_tamping = bool(data.get('is_tamping'))
+        tamping_type = data.get('tamping_type')
+        if new_role == UserRole.USER:
+            if is_tamping:
+                if not tamping_type:
+                    return False, "Jenis tamping wajib diisi untuk peran USER tamping.", None
+            else:
+                if not data.get('blok') or not data.get('kamar'):
+                    return False, "Blok dan Kamar wajib diisi untuk peran USER.", None
 
         new_user = User(
             full_name=data['full_name'],
             phone_number=phone_number,
             role=new_role,
-            blok=data.get('blok') if new_role == UserRole.USER else None,
-            kamar=f"Kamar_{data['kamar']}" if new_role == UserRole.USER and data.get('kamar') else None,
+            blok=data.get('blok') if new_role == UserRole.USER and not is_tamping else None,
+            kamar=f"Kamar_{data['kamar']}" if new_role == UserRole.USER and data.get('kamar') and not is_tamping else None,
+            is_tamping=is_tamping if new_role == UserRole.USER else False,
+            tamping_type=tamping_type if new_role == UserRole.USER and is_tamping else None,
             approval_status=ApprovalStatus.APPROVED,
             approved_at=datetime.now(dt_timezone.utc),
             approved_by_id=admin_actor.id,
@@ -67,22 +98,33 @@ def create_user_by_admin(admin_actor: User, data: Dict[str, Any]) -> Tuple[bool,
             mikrotik_password=_generate_password()
         )
 
+        add_gb = float(data.get('add_gb') or 0.0)
+        add_days = int(data.get('add_days') or 0)
+
+        default_server = _resolve_default_server()
+        active_profile = _resolve_active_profile()
+        unlimited_profile = _resolve_unlimited_profile()
+        inactive_profile = (
+            settings_service.get_setting('MIKROTIK_INACTIVE_PROFILE', None)
+            or settings_service.get_setting('MIKROTIK_DEFAULT_PROFILE', 'default')
+        )
+
         if new_role == UserRole.SUPER_ADMIN:
-            new_user.mikrotik_server_name = 'srv-support'
-            new_user.mikrotik_profile_name = 'support'
+            new_user.mikrotik_server_name = default_server
+            new_user.mikrotik_profile_name = unlimited_profile
             new_user.is_unlimited_user = True
             new_user.quota_expiry_date = None
         
         elif new_role == UserRole.ADMIN:
-            new_user.mikrotik_server_name = 'srv-komandan'
-            new_user.mikrotik_profile_name = 'unlimited'
+            new_user.mikrotik_server_name = default_server
+            new_user.mikrotik_profile_name = unlimited_profile
             new_user.is_unlimited_user = True
             initial_duration_days = int(settings_service.get_setting('ADMIN_INITIAL_DURATION_DAYS', '365'))
             new_user.quota_expiry_date = datetime.now(dt_timezone.utc) + timedelta(days=initial_duration_days)
 
         elif new_role == UserRole.KOMANDAN:
-            new_user.mikrotik_server_name = 'srv-komandan'
-            new_user.mikrotik_profile_name = 'komandan'
+            new_user.mikrotik_server_name = default_server
+            new_user.mikrotik_profile_name = active_profile
             new_user.is_unlimited_user = False 
             initial_quota_mb = int(settings_service.get_setting('KOMANDAN_INITIAL_QUOTA_MB', '5120'))
             initial_duration_days = int(settings_service.get_setting('KOMANDAN_INITIAL_DURATION_DAYS', '30'))
@@ -90,8 +132,8 @@ def create_user_by_admin(admin_actor: User, data: Dict[str, Any]) -> Tuple[bool,
             new_user.quota_expiry_date = datetime.now(dt_timezone.utc) + timedelta(days=initial_duration_days)
 
         elif new_role == UserRole.USER:
-            new_user.mikrotik_server_name = 'srv-user'
-            new_user.mikrotik_profile_name = 'user'
+            new_user.mikrotik_server_name = default_server
+            new_user.mikrotik_profile_name = active_profile
             new_user.is_unlimited_user = False
             
             active_bonus = _get_active_registration_bonus()
@@ -102,6 +144,16 @@ def create_user_by_admin(admin_actor: User, data: Dict[str, Any]) -> Tuple[bool,
             else:
                 new_user.total_quota_purchased_mb = 0
                 new_user.quota_expiry_date = None
+
+        if new_role in [UserRole.USER, UserRole.KOMANDAN] and (add_gb > 0 or add_days > 0):
+            new_user.total_quota_purchased_mb = int(add_gb * 1024)
+            if add_days > 0:
+                new_user.quota_expiry_date = datetime.now(dt_timezone.utc) + timedelta(days=add_days)
+            elif new_user.quota_expiry_date is None:
+                new_user.quota_expiry_date = None
+
+        if new_role == UserRole.USER and (new_user.total_quota_purchased_mb or 0) <= 0:
+            new_user.mikrotik_profile_name = inactive_profile
         
         if new_user.is_admin_role:
              portal_password = _generate_password(10)
@@ -117,7 +169,17 @@ def create_user_by_admin(admin_actor: User, data: Dict[str, Any]) -> Tuple[bool,
         db.session.commit()
 
         if new_user.is_admin_role:
-            context = { "password": portal_password, "link_admin_app": settings_service.get_setting("LINK_ADMIN_APP", "http://localhost/admin") }
+            default_admin_link = (
+                current_app.config.get("APP_LINK_ADMIN")
+                or current_app.config.get("APP_PUBLIC_BASE_URL")
+                or current_app.config.get("FRONTEND_URL")
+                or ""
+            )
+            context = {
+                "phone_number": format_to_local_phone(new_user.phone_number),
+                "password": portal_password,
+                "link_admin_app": settings_service.get_setting("LINK_ADMIN_APP", default_admin_link),
+            }
             _send_whatsapp_notification(phone_number, "admin_creation_success", context)
         else:
             # === [PERBAIKAN DI SINI] ===
@@ -183,7 +245,14 @@ def generate_user_admin_password(user_to_update: User, admin_actor: User) -> Tup
     user_to_update.password_hash = generate_password_hash(new_portal_password)
     _log_admin_action(admin_actor, user_to_update, AdminActionType.GENERATE_ADMIN_PASSWORD, {})
     
-    context = {"password": new_portal_password, "link_admin_app_change_password": settings_service.get_setting("LINK_ADMIN_CHANGE_PASSWORD", "http://localhost/akun")}
+    default_change_password_link = (
+        current_app.config.get("APP_LINK_ADMIN_CHANGE_PASSWORD")
+        or ""
+    )
+    context = {
+        "password": new_portal_password,
+        "link_admin_app_change_password": settings_service.get_setting("LINK_ADMIN_CHANGE_PASSWORD", default_change_password_link),
+    }
     _send_whatsapp_notification(user_to_update.phone_number, "admin_password_generated", context)
     
     return True, "Password portal baru berhasil dihasilkan dan dikirim via WhatsApp."
@@ -201,13 +270,45 @@ def update_user_by_admin_comprehensive(target_user: User, admin_actor: User, dat
         changes['full_name'] = data['full_name']
     
     if target_user.role == UserRole.USER:
-        if 'blok' in data and data.get('blok') != target_user.blok: target_user.blok = data.get('blok')
-        if 'kamar' in data and data.get('kamar') != target_user.kamar: target_user.kamar = f"Kamar_{data['kamar']}"
+        if 'is_tamping' in data and data.get('is_tamping') != target_user.is_tamping:
+            target_user.is_tamping = bool(data.get('is_tamping'))
+            changes['is_tamping'] = target_user.is_tamping
+
+        if target_user.is_tamping:
+            if 'tamping_type' in data and data.get('tamping_type') != target_user.tamping_type:
+                target_user.tamping_type = data.get('tamping_type')
+                changes['tamping_type'] = target_user.tamping_type
+            if target_user.blok is not None:
+                target_user.blok = None
+                changes['blok'] = None
+            if target_user.kamar is not None:
+                target_user.kamar = None
+                changes['kamar'] = None
+        else:
+            if 'blok' in data and data.get('blok') != target_user.blok:
+                target_user.blok = data.get('blok')
+            if 'kamar' in data and data.get('kamar') != target_user.kamar:
+                target_user.kamar = f"Kamar_{data['kamar']}"
+            if target_user.tamping_type is not None:
+                target_user.tamping_type = None
+                changes['tamping_type'] = None
 
     if 'is_active' in data and data['is_active'] != target_user.is_active:
         success, msg = _handle_user_activation(target_user, data['is_active'], admin_actor)
-        if not success: return False, msg, None
+        if not success:
+            return False, msg, None
         changes['is_active'] = data['is_active']
+
+    if 'is_blocked' in data and data['is_blocked'] != target_user.is_blocked:
+        reason = data.get('blocked_reason') or None
+        success, msg = _handle_user_blocking(target_user, bool(data['is_blocked']), admin_actor, reason)
+        if not success:
+            return False, msg, None
+        changes['is_blocked'] = bool(data['is_blocked'])
+        changes['blocked_reason'] = reason
+        if target_user.is_blocked:
+            _log_admin_action(admin_actor, target_user, AdminActionType.BLOCK_USER, changes)
+            return True, "Akun pengguna diblokir.", target_user
 
     if not target_user.is_active:
         _log_admin_action(admin_actor, target_user, AdminActionType.UPDATE_USER_PROFILE, changes)
@@ -216,40 +317,22 @@ def update_user_by_admin_comprehensive(target_user: User, admin_actor: User, dat
     if 'role' in data and UserRole(data['role']) != target_user.role:
         new_role = UserRole(data['role'])
         success, msg = role_service.change_user_role(target_user, new_role, admin_actor, data.get('blok'), data.get('kamar'))
-        if not success: return False, msg, None
+        if not success:
+            return False, msg, None
         changes['role'] = new_role.value
 
     if 'is_unlimited_user' in data and data['is_unlimited_user'] != target_user.is_unlimited_user:
         success, msg = quota_service.set_user_unlimited(target_user, admin_actor, data['is_unlimited_user'])
-        if not success: return False, msg, None
+        if not success:
+            return False, msg, None
         changes['is_unlimited_user'] = data['is_unlimited_user']
 
     add_gb, add_days = float(data.get('add_gb') or 0.0), int(data.get('add_days') or 0)
     if add_gb > 0 or add_days > 0:
-        if target_user.is_unlimited_user: return False, "Tidak dapat menambah kuota pada pengguna unlimited.", None
         success, msg = quota_service.inject_user_quota(target_user, admin_actor, int(add_gb * 1024), add_days)
-        if not success: return False, msg, None
+        if not success:
+            return False, msg, None
         changes['injected_quota'] = {'gb': add_gb, 'days': add_days}
-
-    if admin_actor.is_super_admin_role:
-        needs_manual_sync = False
-        server_override = data.get('mikrotik_server_name')
-        if server_override is not None and server_override != target_user.mikrotik_server_name:
-            target_user.mikrotik_server_name = server_override
-            changes['mikrotik_server_name'] = server_override
-            needs_manual_sync = True
-            
-        profile_override = data.get('mikrotik_profile_name')
-        if profile_override is not None and profile_override != target_user.mikrotik_profile_name:
-            target_user.mikrotik_profile_name = profile_override
-            changes['mikrotik_profile_name'] = profile_override
-            needs_manual_sync = True
-        
-        if needs_manual_sync:
-             success, msg = _sync_user_to_mikrotik(target_user, f"SA Override: {admin_actor.full_name}")
-             if not success:
-                 return False, f"Gagal override Mikrotik: {msg}", None
-             changes['mikrotik_synced'] = True
 
     if changes:
         _log_admin_action(admin_actor, target_user, AdminActionType.UPDATE_USER_PROFILE, changes)
@@ -264,23 +347,109 @@ def _handle_user_activation(user: User, should_be_active: bool, admin: User) -> 
     if should_be_active:
         if not user.mikrotik_profile_name or not user.mikrotik_server_name:
             return False, "Profil atau Server Mikrotik belum diatur."
-        return _sync_user_to_mikrotik(user, f"Re-activated by {admin.full_name}")
-    else:
-        current_app.logger.info(f"Deactivating user {user.full_name}. Setting profile to 'inactive' and limit-bytes-total to 1.")
+        success, msg = _sync_user_to_mikrotik(user, f"Re-activated by {admin.full_name}")
+        if success:
+            list_inactive = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_INACTIVE', 'inactive')
+            _handle_mikrotik_operation(
+                sync_address_list_for_user,
+                username=format_to_local_phone(user.phone_number),
+                target_list=None,
+                other_lists=[list_inactive],
+                comment=f"reactivated:{admin.full_name}"
+            )
+        return success, msg
+    current_app.logger.info(f"Deactivating user {user.full_name}. Setting profile to 'inactive' and limit-bytes-total to 1.")
+    inactive_profile = settings_service.get_setting('MIKROTIK_INACTIVE_PROFILE', 'inactive')
+    success, msg = _handle_mikrotik_operation(
+        activate_or_update_hotspot_user,
+        user_mikrotik_username=format_to_local_phone(user.phone_number),
+        hotspot_password=user.mikrotik_password,
+        mikrotik_profile_name=inactive_profile,
+        limit_bytes_total=1,
+        session_timeout='1s',
+        comment=f"Deactivated by {admin.full_name}",
+        server=user.mikrotik_server_name,
+        force_update_profile=True,
+    )
+    if success:
+        user.mikrotik_user_exists = True
+        list_inactive = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_INACTIVE', 'inactive')
+        list_expired = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_EXPIRED', 'expired')
+        list_habis = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_HABIS', 'habis')
+        _handle_mikrotik_operation(
+            sync_address_list_for_user,
+            username=format_to_local_phone(user.phone_number),
+            target_list=list_inactive,
+            other_lists=[list_expired, list_habis],
+            comment=f"admin_block:{admin.full_name}",
+        )
+        _send_whatsapp_notification(
+            user.phone_number,
+            "user_access_inactive",
+            {"full_name": user.full_name},
+        )
+    return success, msg
+
+
+def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reason: Optional[str]) -> Tuple[bool, str]:
+    user.is_blocked = should_be_blocked
+    user.blocked_reason = reason if should_be_blocked else None
+    user.blocked_at = datetime.now(dt_timezone.utc) if should_be_blocked else None
+    user.blocked_by_id = admin.id if should_be_blocked else None
+
+    if not user.mikrotik_password:
+        user.mikrotik_password = _generate_password()
+
+    if should_be_blocked:
+        blocked_profile = settings_service.get_setting('MIKROTIK_BLOCKED_PROFILE', 'inactive')
         success, msg = _handle_mikrotik_operation(
             activate_or_update_hotspot_user,
             user_mikrotik_username=format_to_local_phone(user.phone_number),
             hotspot_password=user.mikrotik_password,
-            mikrotik_profile_name='inactive',
+            mikrotik_profile_name=blocked_profile,
             limit_bytes_total=1,
             session_timeout='1s',
-            comment=f"Deactivated by {admin.full_name}",
+            comment=f"Blocked by {admin.full_name}",
             server=user.mikrotik_server_name,
-            force_update_profile=True
+            force_update_profile=True,
         )
         if success:
-            user.mikrotik_user_exists = True
+            list_blocked = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_BLOCKED', 'blocked')
+            list_active = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_ACTIVE', 'active')
+            list_fup = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_FUP', 'fup')
+            list_inactive = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_INACTIVE', 'inactive')
+            list_expired = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_EXPIRED', 'expired')
+            list_habis = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_HABIS', 'habis')
+            _handle_mikrotik_operation(
+                sync_address_list_for_user,
+                username=format_to_local_phone(user.phone_number),
+                target_list=list_blocked,
+                other_lists=[list_active, list_fup, list_inactive, list_expired, list_habis],
+                comment=f"blocked:{admin.full_name}"
+            )
+            _send_whatsapp_notification(
+                user.phone_number,
+                "user_access_blocked",
+                {
+                    "full_name": user.full_name,
+                    "reason": reason or "Tidak disebutkan",
+                },
+            )
         return success, msg
+
+    # Unblock path
+    success, msg = _sync_user_to_mikrotik(user, f"Unblocked by {admin.full_name}")
+    if success:
+        list_blocked = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_BLOCKED', 'blocked')
+        _handle_mikrotik_operation(
+            sync_address_list_for_user,
+            username=format_to_local_phone(user.phone_number),
+            target_list=None,
+            other_lists=[list_blocked],
+            comment=f"unblocked:{admin.full_name}"
+        )
+    _log_admin_action(admin, user, AdminActionType.UNBLOCK_USER, {"blocked_reason": reason})
+    return success, msg
 
 def _sync_user_to_mikrotik(user: User, comment: str) -> Tuple[bool, str]:
     limit_bytes, timeout = 0, '0s'
@@ -295,10 +464,14 @@ def _sync_user_to_mikrotik(user: User, comment: str) -> Tuple[bool, str]:
         hours, rem = divmod(rem, 3600)
         mins, secs = divmod(rem, 60)
         timeout_parts = []
-        if days > 0: timeout_parts.append(f"{days}d")
-        if hours > 0: timeout_parts.append(f"{hours}h")
-        if mins > 0: timeout_parts.append(f"{mins}m")
-        if secs > 0: timeout_parts.append(f"{secs}s")
+        if days > 0:
+            timeout_parts.append(f"{days}d")
+        if hours > 0:
+            timeout_parts.append(f"{hours}h")
+        if mins > 0:
+            timeout_parts.append(f"{mins}m")
+        if secs > 0:
+            timeout_parts.append(f"{secs}s")
         timeout = "".join(timeout_parts) if timeout_parts else '1s'
     else:
         timeout = '1s'
@@ -316,5 +489,6 @@ def _sync_user_to_mikrotik(user: User, comment: str) -> Tuple[bool, str]:
         force_update_profile=True, 
         comment=comment
     )
-    if success: user.mikrotik_user_exists = True
+    if success:
+        user.mikrotik_user_exists = True
     return success, msg

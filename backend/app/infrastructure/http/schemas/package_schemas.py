@@ -1,7 +1,7 @@
 # backend/app/infrastructure/http/schemas/package_schemas.py
 # VERSI: Disesuaikan dengan model Package terbaru.
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from uuid import UUID
 from typing import Optional
 

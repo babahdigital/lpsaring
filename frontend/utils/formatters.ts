@@ -50,3 +50,26 @@ export function normalize_to_e164(phoneNumber: string | null | undefined): strin
 
   return e164_number
 }
+
+export function format_to_local_phone(phoneNumber: string | null | undefined): string {
+  if (!phoneNumber)
+    return ''
+
+  const cleaned = phoneNumber.replace(/[\s\-()+]/g, '')
+  if (cleaned.startsWith('628'))
+    return `0${cleaned.substring(2)}`
+  if (cleaned.startsWith('8'))
+    return `0${cleaned}`
+  return cleaned
+}
+
+export function format_for_whatsapp_link(phoneNumber: string | null | undefined): string {
+  if (!phoneNumber)
+    return ''
+  const cleaned = phoneNumber.replace(/[\s\-()+]/g, '')
+  if (cleaned.startsWith('0'))
+    return `62${cleaned.substring(1)}`
+  if (cleaned.startsWith('62'))
+    return cleaned
+  return `62${cleaned}`
+}

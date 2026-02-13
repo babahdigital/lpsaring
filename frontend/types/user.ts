@@ -2,7 +2,7 @@
 
 // Basis untuk semua respons API
 interface BaseResponse {
-  success: boolean
+  success?: boolean
   message?: string
   error_code?: string
 }
@@ -13,6 +13,8 @@ export interface UserQuotaResponse extends BaseResponse {
   remaining_mb: number
   hotspot_username?: string | null
   last_sync_time?: string | null
+  is_unlimited_user?: boolean
+  quota_expiry_date?: string | null
 }
 
 export interface UserProfile {
@@ -31,7 +33,7 @@ export interface Period {
 }
 
 export interface WeeklyUsageResponse extends BaseResponse {
-  period: Period
+  period?: Period
   weekly_data: number[]
 }
 

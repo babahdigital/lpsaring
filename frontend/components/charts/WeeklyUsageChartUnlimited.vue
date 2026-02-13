@@ -72,12 +72,26 @@ const disabledOpacity = computed(() => {
 })
 
 const isLoadingInternalProcessing = computed(() => !weeklyDataProcessed.value && !props.parentLoading)
+const canInitChart = computed(() => !props.parentLoading && props.parentError == null)
+const hasNoWeeklyData = computed(() => {
+  const data = props.weeklyUsageData
+  if (!data)
+    return true
+
+  return Array.isArray(data.weekly_data) ? data.weekly_data.every(d => d === 0) : true
+})
+
+const lastWeeklyUsage = computed(() => {
+  const data = props.weeklyUsageData?.weekly_data ?? []
+  return data.length > 0 ? data[data.length - 1] : null
+})
 
 function formatQuota(value: number | null | undefined): string {
   const numericValue = value ?? 0
   if (numericValue >= 1024)
     return `${(numericValue / 1024).toFixed(2)} GB`
-  return `${numericValue.toFixed(0)} MB`
+  const mbDigits = numericValue % 1 === 0 ? 0 : 2
+  return `${numericValue.toFixed(mbDigits)} MB`
 }
 
 // Fungsi ini tidak lagi diperlukan karena tidak ada "usage chip" untuk unlimited
@@ -233,6 +247,10 @@ function handleChartError(err: Error, contextMessage: string = 'Error pada chart
 }
 
 async function attemptSetReady() {
+  if (!canInitChart.value) {
+    attemptSetReadyRetries = 0
+    return
+  }
   await vueNextTick()
   const containerEl = unref(chartContainerActualRef)
 
@@ -352,7 +370,7 @@ function updateChartData() {
   }
 
   let currentNoDataText = 'Belum ada penggunaan minggu ini.'
-  let newSeriesDataValues: number[] = Array.from({ length: 7 }).fill(0)
+  let newSeriesDataValues: number[] = Array.from({ length: 7 }, () => 0)
 
   if (newParentLoading) {
     currentNoDataText = 'Memuat data...'
@@ -372,7 +390,7 @@ function updateChartData() {
     }
   }
   // Tidak ada lagi kondisi !newQuotaData
-  else if (newWeeklyData?.success && Array.isArray(newWeeklyData.weekly_data)) {
+  else if (Array.isArray(newWeeklyData?.weekly_data)) {
     const rawSeriesData = newWeeklyData.weekly_data.slice(-7)
     while (rawSeriesData.length < 7) {
       rawSeriesData.unshift(0)
@@ -460,7 +478,7 @@ watch(() => props.dashboardRenderKey, async (_newKey, _oldKey) => {
 
   await vueNextTick()
   updateChartData()
-  if (!props.parentLoading) {
+  if (canInitChart.value) {
     attemptSetReady()
   }
 }, { immediate: true, flush: 'post' })
@@ -587,7 +605,7 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
                         />
                         <div v-else-if="!props.parentLoading" class="chart-fallback-container text-center pa-2 d-flex flex-column justify-center align-items-center" :style="{ height: '100%', width: '100%', minHeight: chartHeightInPx }">
                           <VProgressCircular v-if="isLoadingInternalProcessing === true" indeterminate size="28" color="primary" class="mb-2" />
-                          <VIcon v-else-if="isLoadingInternalProcessing !== true && (props.weeklyUsageData == null || props.weeklyUsageData.success !== true || (props.weeklyUsageData.weekly_data != null && props.weeklyUsageData.weekly_data.every(d => d === 0)))" size="32" :color="infoDisplayColor" class="mb-1">
+                          <VIcon v-else-if="!isLoadingInternalProcessing && hasNoWeeklyData" size="32" :color="infoDisplayColor" class="mb-1">
                             tabler-chart-infographic
                           </VIcon>
                           <p class="text-caption text-medium-emphasis">
@@ -621,7 +639,7 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
                         />
                         <div v-else-if="!props.parentLoading" class="chart-fallback-container text-center pa-2 d-flex flex-column justify-center align-items-center" :style="{ height: '100%', width: '100%', minHeight: chartHeightInPx }">
                           <VProgressCircular v-if="isLoadingInternalProcessing === true" indeterminate size="28" color="primary" class="mb-2" />
-                          <VIcon v-else-if="isLoadingInternalProcessing !== true && (props.weeklyUsageData == null || props.weeklyUsageData.success !== true || (props.weeklyUsageData.weekly_data != null && props.weeklyUsageData.weekly_data.every(d => d === 0)))" size="32" :color="infoDisplayColor" class="mb-1">
+                          <VIcon v-else-if="!isLoadingInternalProcessing && hasNoWeeklyData" size="32" :color="infoDisplayColor" class="mb-1">
                             tabler-chart-infographic
                           </VIcon>
                           <p class="text-caption text-medium-emphasis">
@@ -654,7 +672,7 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
                   </div>
                   <div class="summary-item-content d-flex flex-column align-center">
                     <h6 class="font-weight-medium summary-value">
-                      {{ (weeklyUsageData?.weekly_data ?? []).length > 0 ? formatQuota(weeklyUsageData.weekly_data[weeklyUsageData.weekly_data.length - 1]) : 'N/A' }}
+                      {{ lastWeeklyUsage != null ? formatQuota(lastWeeklyUsage) : 'N/A' }}
                     </h6>
                   </div>
                 </VCol>
@@ -685,6 +703,7 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
   display: flex;
   flex-direction: column;
   height: 100%;
+  overflow: visible;
 }
 .vuexy-card-shadow {
   box-shadow: 0 4px 18px 0 rgba(var(--v-shadow-key-umbra-color), 0.12);
@@ -707,6 +726,7 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
   flex-grow: 1;
   display: flex;
   flex-direction: column;
+  overflow: visible;
 }
 .vuexy-loading-overlay {
   position: absolute;
@@ -791,6 +811,10 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.weekly-chart-container-actual {
+  overflow: visible;
 }
 
 @media (max-width: 959.98px) {
@@ -878,6 +902,11 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
   border-radius: 6px !important;
   padding: 0.5rem 0.75rem !important;
   transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out;
+  z-index: 20;
+}
+
+:deep(.apexcharts-canvas) {
+  overflow: visible !important;
 }
 
 :deep(.apexcharts-tooltip-title) {

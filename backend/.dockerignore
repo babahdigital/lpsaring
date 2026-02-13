@@ -1,0 +1,36 @@
+# Python cache and test artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual envs and local tooling
+.venv/
+venv/
+env/
+.direnv/
+
+# Local env files
+.env
+.env.*
+!.env.example
+
+# Local/generated data
+backups/
+celerybeat-schedule
+logs/
+
+# VCS and editor
+.git
+.gitignore
+.gitattributes
+.vscode/
+.idea/
+
+# Docs and tests not required for runtime image
+docs/
+dev/
+tests/

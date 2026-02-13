@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import VueApexCharts from 'vue3-apexcharts'
+import { defineAsyncComponent } from 'vue'
+
+const VueApexCharts = defineAsyncComponent(async () => {
+  const module = await import('vue3-apexcharts')
+  return module.default
+})
 
 defineOptions({
   inheritAttrs: false,

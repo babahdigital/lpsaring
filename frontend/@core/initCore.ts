@@ -42,7 +42,7 @@ function _handleSkinChanges() {
   const configStore = useConfigStore()
 
   // Create skin default color so that we can revert back to original (default skin) color when switch to default skin from bordered skin
-  Object.values(themes.value).forEach((t) => {
+  Object.values(themes.value as Record<string, any>).forEach((t: any) => {
     t.colors['skin-default-background'] = t.colors.background
     t.colors['skin-default-surface'] = t.colors.surface
   })
@@ -50,7 +50,7 @@ function _handleSkinChanges() {
   watch(
     () => configStore.skin,
     (val) => {
-      Object.values(themes.value).forEach((t) => {
+      Object.values(themes.value as Record<string, any>).forEach((t: any) => {
         t.colors.background = t.colors[`skin-${val}-background`]
         t.colors.surface = t.colors[`skin-${val}-surface`]
       })

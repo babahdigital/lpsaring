@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import type { VForm, VTextField } from 'vuetify/components'
+import type { VForm } from 'vuetify/components'
 // Mengimpor tipe data `PackagePublic` yang sudah benar dari backend
 import type { PackagePublic as Package } from '~/types/package'
-import { useNuxtApp } from '#app'
+import { useFetch, useNuxtApp } from '#app'
 import { storeToRefs } from 'pinia'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useApiFetch } from '~/composables/useApiFetch'
 import { useAuthStore } from '~/store/auth'
 
 // --- STRUKTUR DATA DISESUAIKAN DENGAN RESPON API BACKEND ---
@@ -22,21 +21,45 @@ const authStore = useAuthStore()
 const router = useRouter()
 const route = useRoute()
 const { $api } = useNuxtApp()
+const { ensureMidtransReady } = useMidtransSnap()
 
-const { isLoggedIn, user, isLoadingUser } = storeToRefs(authStore)
+const { isLoggedIn, user, loadingUser } = storeToRefs(authStore)
+
+interface FocusableField { focus: () => void }
+
+interface SnapPayResult {
+  order_id: string
+}
+
+interface SnapInstance {
+  pay: (token: string, options: {
+    onSuccess: (result: SnapPayResult) => void
+    onPending: (result: SnapPayResult) => void
+    onError: (result: SnapPayResult) => void
+    onClose: () => void
+  }) => void
+}
+
+declare global {
+  interface Window {
+    snap?: SnapInstance
+  }
+}
 
 // --- PERBAIKAN PADA FUNGSI FETCH ---
 // DIPERBAIKI: Memberikan nilai default `ref(null)` untuk `fetchPackagesError`
 // untuk memastikan variabel ini selalu terdefinisi sebagai ref, bahkan jika `useApiFetch` tidak mengembalikan properti `error`.
-const { data: packageApiResponse, pending: isLoadingPackages, error: fetchPackagesError = ref(null), refresh: refreshPackages }
-  = useApiFetch<PackagesApiResponse>('/packages', {
-    key: 'publicPackages',
-    lazy: true,
-    server: true,
-    default: () => ({ data: [] as Package[], success: false, message: '' }),
-  })
+const packagesRequest = useFetch<PackagesApiResponse>('/packages', {
+  key: 'publicPackages',
+  lazy: true,
+  server: true,
+  $fetch: $api,
+})
 
-const packages = computed(() => (packageApiResponse.value?.data != null ? packageApiResponse.value.data : []))
+const { pending: isLoadingPackages, error: fetchPackagesError, refresh: refreshPackages } = packagesRequest
+const packageApiResponse = packagesRequest.data as Ref<PackagesApiResponse | null>
+
+const packages = computed(() => (packageApiResponse.value?.data ?? []))
 // --- AKHIR PERBAIKAN ---
 
 // State untuk dialog, formulir, pembayaran, dan notifikasi
@@ -45,11 +68,12 @@ const isContactFormValid = ref(false)
 const contactFormRef = ref<InstanceType<typeof VForm> | null>(null)
 const fullNameInput = ref('')
 const phoneNumberInput = ref('')
-const fullNameInputRef = ref<InstanceType<typeof VTextField> | null>(null)
+const fullNameInputRef = ref<FocusableField | null>(null)
 const isCheckingUser = ref(false)
 const contactSubmitError = ref<string | null>(null)
 const selectedPackageId = ref<string | null>(null)
 const isInitiatingPayment = ref<string | null>(null)
+const isHydrated = ref(false)
 
 const snackbarVisible = ref(false)
 const snackbarText = ref('')
@@ -100,6 +124,20 @@ function formatCurrency(value: number | undefined): string {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value)
 }
 
+function formatPricePerDay(price?: number | null, days?: number | null): string {
+  if (price == null || days == null || days <= 0)
+    return 'N/A'
+  const value = Math.round(price / days)
+  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value)
+}
+
+function formatPricePerGb(price?: number | null, quotaGb?: number | null): string {
+  if (price == null || quotaGb == null || quotaGb <= 0)
+    return 'N/A'
+  const value = Math.round(price / quotaGb)
+  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value)
+}
+
 function normalizePhoneNumber(phone: string | null | undefined): string {
   if (phone == null || phone === '')
     return ''
@@ -117,8 +155,9 @@ function normalizePhoneNumber(phone: string | null | undefined): string {
 const userGreeting = computed(() => {
   if (isLoggedIn.value && user.value) {
     const name = user.value.full_name
-    const nameToDisplay = (name != null && name.trim() !== '') ? name : user.value.phone_number
-    return `Halo, ${nameToDisplay.split(' ')[0]}!`
+    const nameToDisplay = (name != null && name.trim() !== '') ? name : (user.value.phone_number ?? '')
+    const firstName = nameToDisplay.split(' ')[0] || 'Pengguna'
+    return `Halo, ${firstName}!`
   }
   return null
 })
@@ -156,7 +195,7 @@ function handlePackageSelection(pkg: Package) {
   }
   else if (!isUserApprovedAndActive.value) {
     let warningMsg = 'Akun Anda belum aktif atau disetujui Admin untuk melakukan pembelian.'
-    if (user.value?.approval_status === 'PENDING_APPROVAL') {
+    if (user.value?.approval_status === 'PENDING') {
       warningMsg = 'Akun Anda sedang menunggu persetujuan Admin.'
     }
     else if (user.value?.approval_status === 'REJECTED') {
@@ -211,15 +250,27 @@ async function handleContactSubmit() {
 async function initiatePayment(packageId: string) {
   isInitiatingPayment.value = packageId
   try {
+    try {
+      await ensureMidtransReady()
+    }
+    catch (error) {
+      const fallbackMessage = error instanceof Error && error.message
+        ? error.message
+        : 'Gagal memuat Midtrans Snap.'
+      throw new Error(fallbackMessage)
+    }
+    if (window.snap == null) {
+      throw new Error('Midtrans belum siap. Silakan coba beberapa saat lagi.')
+    }
     const responseData = await $api<{ snap_token: string, order_id: string }>('/transactions/initiate', {
       method: 'POST',
       body: { package_id: packageId },
     })
     if ((responseData?.snap_token != null && responseData.snap_token !== '') && window.snap != null) {
       window.snap.pay(responseData.snap_token, {
-        onSuccess: result => router.push(`/payment/finish?status=success&order_id=${result.order_id}`),
-        onPending: result => router.push(`/payment/finish?status=pending&order_id=${result.order_id}`),
-        onError: result => router.push(`/payment/finish?status=error&order_id=${result.order_id}`),
+        onSuccess: (result: SnapPayResult) => router.push(`/payment/finish?status=success&order_id=${result.order_id}`),
+        onPending: (result: SnapPayResult) => router.push(`/payment/finish?status=pending&order_id=${result.order_id}`),
+        onError: (result: SnapPayResult) => router.push(`/payment/finish?status=error&order_id=${result.order_id}`),
         onClose: () => {
           if (router.currentRoute.value.path.startsWith('/payment/finish') !== true) {
             showSnackbar('Anda menutup jendela pembayaran.', 'info')
@@ -249,7 +300,8 @@ function closeContactDialog() {
 }
 
 onMounted(async () => {
-  if (authStore.isInitialized !== true) {
+  isHydrated.value = true
+  if (authStore.initialAuthCheckDone !== true) {
     await authStore.initializeAuth()
   }
   const query = route.query
@@ -276,17 +328,17 @@ useHead({ title: 'Beli Paket Hotspot' })
           DAFTAR PAKET HOTSPOT
         </h1>
         <div class="text-center mb-6" style="min-height: 40px;">
-          <v-btn v-if="!isLoggedIn && !isLoadingUser" variant="text" color="primary" @click="goToLogin">
-            <v-icon start icon="tabler:login" /> Sudah Punya Akun? Login
+          <v-btn v-if="!isLoggedIn && !loadingUser" variant="text" color="primary" @click="goToLogin">
+            <v-icon start icon="tabler-login" /> Sudah Punya Akun? Login
           </v-btn>
-          <div v-else-if="isLoadingUser" class="d-flex justify-center align-center text-medium-emphasis">
+          <div v-else-if="loadingUser" class="d-flex justify-center align-center text-medium-emphasis">
             <v-progress-circular indeterminate size="20" width="2" color="primary" class="mr-2" />
             <span>Memuat data pengguna...</span>
           </div>
           <div v-else-if="userGreeting != null" class="d-flex justify-center align-center text-body-1 text-medium-emphasis flex-wrap">
             <span class="mr-3">{{ userGreeting }}</span>
             <v-btn v-if="isUserApprovedAndActive" variant="outlined" color="primary" size="small" @click="goToDashboard">
-              <v-icon start icon="tabler:layout-dashboard" /> Ke Panel
+              <v-icon start icon="tabler-layout-dashboard" /> Ke Panel
             </v-btn>
           </div>
         </div>
@@ -333,7 +385,7 @@ useHead({ title: 'Beli Paket Hotspot' })
                     <v-list lines="one" density="compact" bg-color="transparent" class="py-0">
                       <v-list-item>
                         <template #prepend>
-                          <v-icon icon="tabler:database" size="small" class="mr-2" />
+                          <v-icon icon="tabler-database" size="small" class="mr-2" />
                         </template>
                         <v-list-item-title class="text-body-2">
                           Kuota: <span class="font-weight-medium">{{ formatQuota(pkg.data_quota_gb) }}</span>
@@ -341,7 +393,7 @@ useHead({ title: 'Beli Paket Hotspot' })
                       </v-list-item>
                       <v-list-item>
                         <template #prepend>
-                          <v-icon icon="tabler:gauge" size="small" class="mr-2" />
+                          <v-icon icon="tabler-gauge" size="small" class="mr-2" />
                         </template>
                         <v-list-item-title class="text-body-2">
                           Kecepatan: <span class="font-weight-medium">Unlimited</span>
@@ -349,10 +401,26 @@ useHead({ title: 'Beli Paket Hotspot' })
                       </v-list-item>
                       <v-list-item>
                         <template #prepend>
-                          <v-icon icon="tabler:calendar-time" size="small" class="mr-2" />
+                          <v-icon icon="tabler-calendar-time" size="small" class="mr-2" />
                         </template>
                         <v-list-item-title class="text-body-2">
                           Aktif: <span class="font-weight-medium">{{ pkg.duration_days }} Hari</span>
+                        </v-list-item-title>
+                      </v-list-item>
+                      <v-list-item>
+                        <template #prepend>
+                          <v-icon icon="tabler-receipt" size="small" class="mr-2" />
+                        </template>
+                        <v-list-item-title class="text-body-2">
+                          Harga / Hari: <span class="font-weight-medium">{{ formatPricePerDay(pkg.price, pkg.duration_days) }}</span>
+                        </v-list-item-title>
+                      </v-list-item>
+                      <v-list-item>
+                        <template #prepend>
+                          <v-icon icon="tabler-math-function" size="small" class="mr-2" />
+                        </template>
+                        <v-list-item-title class="text-body-2">
+                          Harga / GB: <span class="font-weight-medium">{{ formatPricePerGb(pkg.price, pkg.data_quota_gb) }}</span>
                         </v-list-item-title>
                       </v-list-item>
                     </v-list>
@@ -376,7 +444,7 @@ useHead({ title: 'Beli Paket Hotspot' })
             </v-row>
             <v-row v-else-if="!isLoadingPackages" justify="center">
               <v-col cols="12" class="text-center py-16 text-medium-emphasis">
-                <v-icon icon="tabler:package-off" size="x-large" class="mb-5" />
+                <v-icon icon="tabler-package-off" size="x-large" class="mb-5" />
                 <p class="text-h6">
                   Belum ada paket yang tersedia.
                 </p>
@@ -386,13 +454,13 @@ useHead({ title: 'Beli Paket Hotspot' })
         </v-col>
       </v-row>
 
-      <v-dialog v-model="showContactDialog" persistent max-width="500px" scrim="grey-darken-3" eager>
+      <v-dialog v-if="isHydrated" v-model="showContactDialog" persistent max-width="500px" scrim="grey-darken-3" eager>
         <v-card :loading="isCheckingUser" rounded="lg" :disabled="isCheckingUser">
           <v-card-title class="d-flex align-center py-3 px-4 bg-grey-lighten-4 border-b">
-            <v-icon icon="tabler:user-question" color="primary" start />
+            <v-icon icon="tabler-user-question" color="primary" start />
             <span class="text-h6 font-weight-medium">Periksa Nomor Telepon</span>
             <v-spacer />
-            <v-btn icon="tabler:x" flat size="small" :disabled="isCheckingUser === true" variant="text" @click="closeContactDialog" />
+            <v-btn icon="tabler-x" flat size="small" :disabled="isCheckingUser === true" variant="text" @click="closeContactDialog" />
           </v-card-title>
           <p class="text-caption px-4 pt-4 text-medium-emphasis">
             Masukkan nama dan nomor WhatsApp Anda untuk memeriksa apakah sudah terdaftar.
@@ -412,7 +480,7 @@ useHead({ title: 'Beli Paket Hotspot' })
                 class="mb-4"
                 :disabled="isCheckingUser"
                 hide-details="auto"
-                prepend-inner-icon="tabler:user"
+                prepend-inner-icon="tabler-user"
                 :rules="nameRules"
                 clearable
                 autofocus
@@ -428,7 +496,7 @@ useHead({ title: 'Beli Paket Hotspot' })
                 class="mb-1"
                 :disabled="isCheckingUser"
                 hide-details="auto"
-                prepend-inner-icon="tabler:brand-whatsapp"
+                prepend-inner-icon="tabler-brand-whatsapp"
                 :rules="phoneRules"
                 clearable
                 density="default"
@@ -441,7 +509,7 @@ useHead({ title: 'Beli Paket Hotspot' })
                 Batal
               </v-btn>
               <v-btn color="primary" variant="flat" type="submit" :loading="isCheckingUser" :disabled="isCheckingUser === true || isContactFormValid !== true">
-                <v-icon icon="tabler:user-search" start />
+                <v-icon icon="tabler-user-search" start />
                 Periksa Nomor
               </v-btn>
             </v-card-actions>
@@ -459,7 +527,7 @@ useHead({ title: 'Beli Paket Hotspot' })
       >
         {{ snackbarText }}
         <template #actions>
-          <v-btn icon="tabler:x" variant="text" @click="snackbarVisible = false" />
+          <v-btn icon="tabler-x" variant="text" @click="snackbarVisible = false" />
         </template>
       </v-snackbar>
     </v-col>

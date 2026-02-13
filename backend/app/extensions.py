@@ -9,6 +9,7 @@ from flask_limiter.util import get_remote_address
 
 # Import yang dibutuhkan untuk Celery
 from celery import Celery
+from celery.schedules import crontab
 import os
 from dotenv import load_dotenv
 
@@ -73,6 +74,34 @@ def make_celery_app(app=None):
         include=['app.tasks'] # Pastikan ini menunjuk ke file tasks Anda
     )
 
+    # Jadwal Celery Beat (dikonfigurasi via env untuk sinkronisasi kuota dan cleanup)
+    try:
+        sync_interval = int(os.environ.get('QUOTA_SYNC_INTERVAL_SECONDS', '300'))
+    except ValueError:
+        sync_interval = 300
+    schedule_seconds = min(sync_interval, 60)
+
+    celery_instance.conf.beat_schedule = {
+        'sync-hotspot-usage': {
+            'task': 'sync_hotspot_usage_task',
+            'schedule': schedule_seconds,
+        },
+        'cleanup-inactive-users': {
+            'task': 'cleanup_inactive_users_task',
+            'schedule': crontab(hour=3, minute=0),
+        },
+    }
+
+    if os.environ.get('WALLED_GARDEN_ENABLED', 'False').lower() == 'true':
+        try:
+            wg_interval = int(os.environ.get('WALLED_GARDEN_SYNC_INTERVAL_MINUTES', '30'))
+        except ValueError:
+            wg_interval = 30
+        celery_instance.conf.beat_schedule['sync-walled-garden'] = {
+            'task': 'sync_walled_garden_task',
+            'schedule': crontab(minute=f"*/{max(wg_interval, 1)}"),
+        }
+
     if app:
         # Konfigurasi Celery dari konfigurasi Flask app
         # Ini penting agar Celery memiliki akses ke konfigurasi Flask
@@ -90,3 +119,4 @@ def make_celery_app(app=None):
 
 # Inisialisasi Celery global
 celery_app = make_celery_app()
+celery = celery_app

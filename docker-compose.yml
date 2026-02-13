@@ -5,7 +5,7 @@ name: hotspot-portal
 
 services:
   db:
-    image: postgres:15-alpine
+    image: postgres:15
     container_name: hotspot_postgres_db
     environment:
       # Variabel ini diambil dari file .env di root project.
@@ -28,6 +28,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: hotspot_redis_cache
+    command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis_data:/data
     networks:
@@ -46,13 +47,10 @@ services:
       dockerfile: Dockerfile
     container_name: hotspot_flask_backend
     env_file:
-      - ./backend/.env
-    # Me-mount kode sumber untuk hot-reload selama development.
-    # Untuk produksi, baris ini harus dihapus.
+      - ./backend/.env.${APP_ENV:-public}
     volumes:
-      - ./backend:/app
-      # TAMBAHKAN VOLUME UNTUK FONT CACHE
       - font_cache:/app/.cache
+      - ./backend/backups:/app/backups
     ports:
       - "5010:5010"
     # Menggunakan YAML block scalar (|) untuk command yang panjang agar lebih mudah dibaca.
@@ -65,9 +63,6 @@ services:
       - "--bind"
       - "0.0.0.0:5010"
       - "run:app"
-      # Hapus --reload ini jika ini untuk produksi!
-      # Untuk development:
-      - "--reload"
       # Untuk produksi, ganti 1 dengan angka yang lebih tinggi (misal 5)
       - "--workers=4" # Sesuaikan jumlah worker sesuai CPU Anda (misal 2 * jumlah_core_CPU + 1)
       - "--timeout=60" # Meningkatkan timeout worker Gunicorn menjadi 60 detik
@@ -85,6 +80,23 @@ services:
       - hotspot_network
     restart: unless-stopped
 
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hotspot_flask_migrate
+    env_file:
+      - ./backend/.env.${APP_ENV:-public}
+    volumes:
+      - font_cache:/app/.cache
+    command: flask db upgrade
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - hotspot_network
+    restart: "no"
+
   # --- LAYANAN CELERY WORKER BARU ---
   celery_worker:
     build:
@@ -92,11 +104,13 @@ services:
       dockerfile: Dockerfile
     container_name: hotspot_celery_worker
     env_file:
-      - ./backend/.env
+      - ./backend/.env.${APP_ENV:-public}
     volumes:
-      - ./backend:/app
-    command: celery -A app.extensions.celery_app worker --loglevel=info
+      - font_cache:/app/.cache
+    command: /opt/venv/bin/celery -A app.extensions worker --loglevel=info
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:
@@ -106,6 +120,29 @@ services:
     restart: unless-stopped
   # --- AKHIR LAYANAN CELERY WORKER ---
 
+  # --- LAYANAN CELERY BEAT ---
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hotspot_celery_beat
+    env_file:
+      - ./backend/.env.${APP_ENV:-public}
+    volumes:
+      - font_cache:/app/.cache
+    command: /opt/venv/bin/celery -A app.extensions beat --loglevel=info
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - hotspot_network
+    restart: unless-stopped
+  # --- AKHIR LAYANAN CELERY BEAT ---
+
   frontend:
     build:
       context: ./frontend
@@ -114,11 +151,13 @@ services:
       target: development
     container_name: hotspot_nuxt_frontend
     env_file:
-      - ./frontend/.env
+      - ./.env.${APP_ENV:-public}
     environment:
       # Memastikan Nuxt dev server dapat diakses dari luar container oleh Nginx.
       HOST: '0.0.0.0'
       PORT: 3010
+      # Nonaktifkan warning Browserslist data lama di dev container
+      BROWSERSLIST_IGNORE_OLD_DATA: "1"
     # Me-mount kode sumber, tetapi menjaga node_modules dan .nuxt dari container.
     # Ini adalah pola yang benar untuk development frontend.
     volumes:
@@ -129,6 +168,8 @@ services:
       # Port ini diekspos terutama untuk debugging langsung ke Nuxt.
       # Akses utama pengguna akan melalui Nginx di port 80.
       - "3010:3010"
+    stop_signal: SIGINT
+    stop_grace_period: 30s
     command: pnpm run dev
     # depends_on untuk backend bisa diaktifkan jika diperlukan,
     # namun seringkali frontend modern dapat menangani jika API belum siap,
@@ -156,7 +197,21 @@ services:
       # tidak harus 'sehat'. Nginx cukup pintar untuk menangani jika upstream belum siap.
       backend:
         condition: service_started
-      frontend:
+    networks:
+      - hotspot_network
+    restart: unless-stopped
+
+  # --- CLOUDFLARED TUNNEL (HTTPS PUBLIC ACCESS) ---
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: hotspot_cloudflared
+    profiles:
+      - tunnel
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARED_TUNNEL_TOKEN}
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARED_TUNNEL_TOKEN}
+    depends_on:
+      nginx:
         condition: service_started
     networks:
       - hotspot_network

@@ -5,8 +5,11 @@ import os
 import sys
 import logging
 import uuid
+import json
+from typing import Optional
 from datetime import datetime, timezone as dt_timezone
 from logging.handlers import RotatingFileHandler
+from werkzeug.exceptions import HTTPException
 
 import redis
 from flask import Flask, current_app, request, jsonify
@@ -14,14 +17,18 @@ from http import HTTPStatus
 from jose import jwt, JWTError, ExpiredSignatureError
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from config import config_options, Config
+from config import config_options
 # Import celery_app dan make_celery_app dari extensions
-from .extensions import db, migrate, cors, limiter, celery_app, make_celery_app
+from .extensions import db, migrate, cors, limiter, make_celery_app
 from .infrastructure.db.models import UserRole
 from .infrastructure.http.json_provider import CustomJSONProvider
 from .services import settings_service
 
 module_log = logging.getLogger(__name__)
+
+
+class HotspotFlask(Flask):
+    redis_client_otp: Optional[redis.Redis]
 
 class RequestIdFilter(logging.Filter):
     """Menambahkan request_id ke setiap log record untuk kemudahan tracing."""
@@ -35,29 +42,60 @@ class RequestIdFilter(logging.Filter):
              record.request_id = 'N/A_NoRequestCtx_RuntimeError'
         return True
 
+
+class JsonLogFormatter(logging.Formatter):
+    def format(self, record):
+        payload = {
+            "timestamp": self.formatTime(record, datefmt="%d-%m-%Y %H:%M:%S"),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+            "request_id": getattr(record, "request_id", None),
+        }
+        if record.exc_info:
+            payload["exc_info"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=True)
+
 def setup_logging(app: Flask):
     """Mengkonfigurasi logging untuk aplikasi dengan konfigurasi yang fleksibel."""
     log_level_str = app.config.get('LOG_LEVEL', 'INFO').upper()
     log_level = getattr(logging, log_level_str, logging.INFO)
     
+    root_logger = logging.getLogger()
     app_logger = logging.getLogger('flask.app')
     werkzeug_logger = logging.getLogger('werkzeug')
-    app_logger.handlers.clear()
-    werkzeug_logger.handlers.clear()
-    app_logger.setLevel(log_level)
-    werkzeug_logger.setLevel(log_level)
+    gunicorn_error_logger = logging.getLogger('gunicorn.error')
+    gunicorn_access_logger = logging.getLogger('gunicorn.access')
+    sqlalchemy_engine_logger = logging.getLogger('sqlalchemy.engine')
+    sqlalchemy_pool_logger = logging.getLogger('sqlalchemy.pool')
 
-    log_formatter = logging.Formatter(
-        '%(asctime)s %(levelname)-8s [%(name)s] [%(request_id)s] %(message)s [in %(pathname)s:%(lineno)d]'
-    )
+    use_json = app.config.get('LOG_FORMAT_JSON', False)
+    if use_json:
+        log_formatter = JsonLogFormatter()
+    else:
+        log_formatter = logging.Formatter(
+            '%(asctime)s %(levelname)-8s [%(name)s] [%(request_id)s] %(message)s [in %(pathname)s:%(lineno)d]',
+            datefmt='%d-%m-%Y %H:%M:%S'
+        )
     request_id_filter = RequestIdFilter()
     stream_handler = logging.StreamHandler(sys.stdout)
     stream_handler.setFormatter(log_formatter)
     stream_handler.addFilter(request_id_filter)
-    app_logger.addHandler(stream_handler)
-    werkzeug_logger.addHandler(stream_handler)
-    app_logger.propagate = False
-    werkzeug_logger.propagate = False
+    loggers_to_config = [
+        root_logger,
+        app_logger,
+        werkzeug_logger,
+        gunicorn_error_logger,
+        gunicorn_access_logger,
+        sqlalchemy_engine_logger,
+        sqlalchemy_pool_logger,
+    ]
+    for logger in loggers_to_config:
+        logger.handlers.clear()
+        logger.setLevel(log_level)
+        logger.addHandler(stream_handler)
+        if logger is not root_logger:
+            logger.propagate = False
 
     if app.config.get('LOG_TO_FILE', False) and not app.testing:
         log_dir = app.config.get('LOG_DIR', 'logs')
@@ -86,14 +124,14 @@ def setup_logging(app: Flask):
             
     module_log.info(f"Setup logging selesai. Log Level: {log_level_str}")
 
-def register_extensions(app: Flask):
+def register_extensions(app: HotspotFlask):
     """Mendaftarkan semua ekstensi Flask."""
     module_log.info("Menginisialisasi ekstensi...")
     db.init_app(app)
     migrate.init_app(app, db)
     
-    frontend_url = app.config.get('FRONTEND_URL', 'http://localhost:3000')
-    allowed_origins = list(set([frontend_url] + app.config.get('CORS_ADDITIONAL_ORIGINS', [])))
+    frontend_url = app.config.get('FRONTEND_URL') or app.config.get('APP_PUBLIC_BASE_URL') or app.config.get('APP_LINK_USER')
+    allowed_origins = list(set([origin for origin in [frontend_url, *app.config.get('CORS_ADDITIONAL_ORIGINS', [])] if origin]))
     cors.init_app(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credentials=True)
     module_log.info(f"CORS diinisialisasi untuk origins: {allowed_origins}")
 
@@ -143,11 +181,13 @@ def register_blueprints(app: Flask):
         from .infrastructure.http.public_user_routes import public_user_bp
         from .infrastructure.http.public_promo_routes import public_promo_bp
         from .infrastructure.http.komandan.komandan_routes import komandan_bp
+        from .infrastructure.http.health_routes import health_bp
 
         blueprints = [
             (auth_bp, None), (packages_bp, None), (transactions_bp, None),
             (public_bp, None), (profile_bp, None), (data_bp, None),
-            (public_user_bp, None), (public_promo_bp, None), (komandan_bp, None)
+            (public_user_bp, None), (public_promo_bp, None), (komandan_bp, None),
+            (health_bp, None)
         ]
         
         for bp, prefix in blueprints:
@@ -164,11 +204,12 @@ def register_blueprints(app: Flask):
             from .infrastructure.http.admin_routes import admin_bp
             from .infrastructure.http.admin.request_management_routes import request_mgmt_bp
             from .infrastructure.http.admin.action_log_routes import action_log_bp
+            from .infrastructure.http.admin.metrics_routes import metrics_bp
 
             admin_blueprints = [
                 user_management_bp, package_management_bp, settings_management_bp,
                 profile_management_bp, promo_management_bp, admin_bp,
-                request_mgmt_bp, action_log_bp
+                request_mgmt_bp, action_log_bp, metrics_bp
             ]
             for bp in admin_blueprints:
                 app.register_blueprint(bp, url_prefix=ADMIN_API_PREFIX)
@@ -180,8 +221,32 @@ def register_blueprints(app: Flask):
     module_log.info("Pendaftaran blueprints selesai.")
 
 def register_models(_app: Flask):
-    from .infrastructure.db import models
+    from .infrastructure.db import models as _models  # noqa: F401
     module_log.debug("Modul DB Models telah diimpor.")
+
+
+def register_error_handlers(app: Flask) -> None:
+    def _is_api_request() -> bool:
+        return request.path.startswith('/api')
+
+    @app.errorhandler(HTTPException)
+    def handle_http_exception(error: HTTPException):
+        if not _is_api_request():
+            return error
+        payload = {
+            "error": error.description or error.name,
+            "status_code": error.code,
+        }
+        return jsonify(payload), error.code
+
+    @app.errorhandler(Exception)
+    def handle_unexpected_exception(error: Exception):
+        current_app.logger.error("Unhandled exception: %s", error, exc_info=True)
+        payload = {
+            "error": "Internal server error.",
+            "status_code": HTTPStatus.INTERNAL_SERVER_ERROR,
+        }
+        return jsonify(payload), HTTPStatus.INTERNAL_SERVER_ERROR
 
 # DIKEMBALIKAN: Fungsi untuk mendaftarkan rute tes
 def register_test_routes(app: Flask):
@@ -198,18 +263,28 @@ def register_commands(app: Flask):
     app.cli.add_command(sync_usage_command.sync_usage_command)
     module_log.info("Pendaftaran perintah CLI selesai.")
 
-def create_app(config_name: str = None) -> Flask:
+def create_app(config_name: Optional[str] = None) -> HotspotFlask:
     """Factory function untuk membuat dan mengkonfigurasi aplikasi Flask."""
-    config_name = config_name or os.getenv('FLASK_CONFIG', 'default')
-    app = Flask('hotspot_app')
+    config_name = config_name or os.getenv('FLASK_CONFIG') or 'default'
+    config_name_str: str = config_name
+    app = HotspotFlask('hotspot_app')
     app.json = CustomJSONProvider(app)
-    app.config.from_object(config_options[config_name])
+    app.config.from_object(config_options[config_name_str])
 
     # DIKEMBALIKAN: Konfigurasi ProxyFix yang lebih fleksibel
-    if app.config.get('PROXYFIX_X_FOR', 0) > 0:
+    if any([
+        app.config.get('PROXYFIX_X_FOR', 0) > 0,
+        app.config.get('PROXYFIX_X_PROTO', 0) > 0,
+        app.config.get('PROXYFIX_X_HOST', 0) > 0,
+        app.config.get('PROXYFIX_X_PORT', 0) > 0,
+        app.config.get('PROXYFIX_X_PREFIX', 0) > 0,
+    ]):
         proxy_fix_config = {
             'x_for': app.config.get('PROXYFIX_X_FOR', 1),
-            'x_proto': app.config.get('PROXYFIX_X_PROTO', 1)
+            'x_proto': app.config.get('PROXYFIX_X_PROTO', 1),
+            'x_host': app.config.get('PROXYFIX_X_HOST', 0),
+            'x_port': app.config.get('PROXYFIX_X_PORT', 0),
+            'x_prefix': app.config.get('PROXYFIX_X_PREFIX', 0),
         }
         app.wsgi_app = ProxyFix(app.wsgi_app, **proxy_fix_config)
     
@@ -224,7 +299,8 @@ def create_app(config_name: str = None) -> Flask:
     def check_maintenance_mode_hook():
         # DIKEMBALIKAN: Logika maintenance mode yang lebih komprehensif
         is_maintenance = settings_service.get_setting('MAINTENANCE_MODE_ACTIVE', 'False') == 'True'
-        if not is_maintenance: return
+        if not is_maintenance:
+            return
 
         # Izinkan akses ke endpoint public tertentu
         allowed_paths = ['/api/admin', '/api/auth', '/api/settings/public']
@@ -232,14 +308,22 @@ def create_app(config_name: str = None) -> Flask:
             return
 
         # Izinkan admin yang sudah login untuk bypass
+        token = None
         auth_header = request.headers.get('Authorization')
         if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(" ")[1]
+
+        if not token:
+            cookie_name = current_app.config.get('AUTH_COOKIE_NAME', 'auth_token')
+            token = request.cookies.get(cookie_name)
+
+        if token:
             try:
-                token = auth_header.split(" ")[1]
                 payload = jwt.decode(token, current_app.config['JWT_SECRET_KEY'], algorithms=[current_app.config['JWT_ALGORITHM']])
                 if payload.get('rl') in [UserRole.ADMIN.value, UserRole.SUPER_ADMIN.value]:
                     return
-            except (JWTError, ExpiredSignatureError): pass
+            except (JWTError, ExpiredSignatureError):
+                pass
         
         message = settings_service.get_setting('MAINTENANCE_MODE_MESSAGE', 'Aplikasi sedang dalam perbaikan.')
         return jsonify({"message": message}), HTTPStatus.SERVICE_UNAVAILABLE
@@ -249,6 +333,7 @@ def create_app(config_name: str = None) -> Flask:
     register_extensions(app) # Ini akan menginisialisasi semua ekstensi, termasuk Celery
     register_models(app)
     register_blueprints(app)
+    register_error_handlers(app)
     register_test_routes(app) # Memanggil kembali fungsi pendaftaran rute tes
     register_commands(app)
 

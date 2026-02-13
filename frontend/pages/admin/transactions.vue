@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { VDataTableServer } from 'vuetify/components'
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
 // --- Tipe Data ---
 interface Transaction {
@@ -48,13 +48,14 @@ const snackbar = ref({
   color: 'success',
   icon: 'tabler-check',
 })
+const isHydrated = ref(false)
 
 // --- Data Fetching Reaktif dengan useAsyncData ---
 const queryParams = computed(() => ({
   page: options.value.page,
   itemsPerPage: options.value.itemsPerPage,
-  sortBy: options.value.sortBy !== undefined && options.value.sortBy.length > 0 ? options.value.sortBy[0].key : 'created_at',
-  sortOrder: options.value.sortBy !== undefined && options.value.sortBy.length > 0 ? options.value.sortBy[0].order : 'desc',
+  sortBy: options.value.sortBy?.[0]?.key ?? 'created_at',
+  sortOrder: options.value.sortBy?.[0]?.order ?? 'desc',
   search: search.value,
   user_id: selectedUser.value?.id,
   start_date: startDate.value ? startDate.value.toISOString().split('T')[0] : undefined,
@@ -71,18 +72,34 @@ const { data: transactionData, pending: loading, error, refresh } = useAsyncData
   },
 )
 
+onMounted(() => {
+  isHydrated.value = true
+})
+
 // Perbaikan baris 88 (sesuai error user baris 75): Menangani nilai nullable number secara eksplisit
 const transactions = computed(() => transactionData.value?.items || [])
 const totalTransactions = computed(() => transactionData.value?.totalItems ?? 0) // Menggunakan ?? untuk explicit nullish check
 
-watch(error, (newError) => {
-  // Perbaikan baris 93 (sesuai error user baris 80): Menambahkan pengecekan eksplisit untuk newError.data
-  if (newError !== null && newError !== undefined) {
-    const errorMessage = (newError.data !== null && newError.data !== undefined && typeof newError.data.message === 'string' && newError.data.message !== '')
-      ? newError.data.message
-      : 'Gagal memuat data transaksi'
-    showSnackbar(errorMessage, 'error')
+function extractErrorMessage(err: unknown, fallback: string): string {
+  if (err && typeof err === 'object') {
+    const data = (err as { data?: unknown }).data
+    if (data && typeof data === 'object' && 'message' in data) {
+      const message = (data as { message?: unknown }).message
+      if (typeof message === 'string' && message !== '')
+        return message
+    }
+    if ('message' in err) {
+      const message = (err as { message?: unknown }).message
+      if (typeof message === 'string' && message !== '')
+        return message
+    }
   }
+  return fallback
+}
+
+watch(error, (newError) => {
+  if (newError !== null && newError !== undefined)
+    showSnackbar(extractErrorMessage(newError, 'Gagal memuat data transaksi'), 'error')
 })
 
 // --- Konfigurasi & Format ---
@@ -103,6 +120,8 @@ const statusColorMap: Record<Transaction['status'], string> = {
   CANCELLED: 'info',
   UNKNOWN: 'secondary',
 }
+
+const getStatusColor = (status: Transaction['status']) => statusColorMap[status]
 
 function formatStatus(status: string) {
   const statusMap: Record<string, string> = {
@@ -231,12 +250,8 @@ async function openUserFilterDialog() {
       userList.value = []
     }
   }
-  catch (e: any) {
-    // Perbaikan baris 231 (sesuai error user baris 230): Menambahkan pengecekan eksplisit untuk e.data
-    const errorMessage = (e.data !== null && e.data !== undefined && typeof e.data.message === 'string' && e.data.message !== '')
-      ? e.data.message
-      : 'Gagal memuat daftar pengguna.'
-    showSnackbar(errorMessage, 'error')
+  catch (e: unknown) {
+    showSnackbar(extractErrorMessage(e, 'Gagal memuat daftar pengguna.'), 'error')
     userList.value = []
   }
 }
@@ -264,10 +279,11 @@ async function exportReport(format: 'pdf' | 'csv') {
     const params = new URLSearchParams({ format, start_date: start, end_date: end })
     if (selectedUser.value !== null)
       params.append('user_id', selectedUser.value.id)
-    const data = await $api(`/admin/transactions/export?${params.toString()}`, { responseType: 'blob' })
+    const data = await $api<Blob>(`/admin/transactions/export?${params.toString()}`, { responseType: 'blob' as const })
     if (data === null || data === undefined)
       throw new Error('Tidak ada data laporan yang diterima')
-    const url = window.URL.createObjectURL(data)
+    const blob = data instanceof Blob ? data : new Blob([data as BlobPart])
+    const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
     link.setAttribute('download', `laporan-transaksi-${start}-to-${end}.${format}`)
@@ -277,12 +293,8 @@ async function exportReport(format: 'pdf' | 'csv') {
     window.URL.revokeObjectURL(url)
     showSnackbar('Laporan berhasil diunduh', 'success')
   }
-  catch (err: any) {
-    // Perbaikan baris 273 (sesuai error user baris 272): Menambahkan pengecekan eksplisit untuk err.data dan err.message
-    const errorMessage = (err.data !== null && err.data !== undefined && typeof err.data.message === 'string' && err.data.message !== '')
-      ? err.data.message
-      : ((typeof err.message === 'string' && err.message !== '') ? err.message : 'Kesalahan tidak diketahui')
-    showSnackbar(`Gagal mengunduh laporan: ${errorMessage}`, 'error')
+  catch (err: unknown) {
+    showSnackbar(`Gagal mengunduh laporan: ${extractErrorMessage(err, 'Kesalahan tidak diketahui')}`, 'error')
   }
   finally {
     exportLoading.value = false
@@ -506,7 +518,7 @@ useHead({ title: 'Laporan Penjualan' })
 
           <template #item.status="{ item }">
             <VChip
-              :color="statusColorMap[item.status]"
+              :color="getStatusColor(item.status as Transaction['status'])"
               size="small"
               :variant="item.status === 'PENDING' ? 'outlined' : 'flat'"
               class="status-chip"
@@ -544,7 +556,7 @@ useHead({ title: 'Laporan Penjualan' })
       </div>
     </VCard>
 
-    <VDialog v-model="isUserFilterDialogOpen" max-width="600px" scrollable>
+    <VDialog v-if="isHydrated" v-model="isUserFilterDialogOpen" max-width="600px" scrollable>
       <VCard class="user-dialog">
         <VCardTitle class="pa-4 bg-primary d-flex align-center">
           <span class="text-white font-weight-medium">Pilih Pengguna</span>

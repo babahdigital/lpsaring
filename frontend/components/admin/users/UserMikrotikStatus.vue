@@ -78,6 +78,15 @@ function formatBytes(bytes: number | string, decimals = 2) {
         </VAlert>
 
         <VAlert
+          v-if="!loading && statusData && statusData.live_available === false"
+          type="info"
+          variant="tonal"
+          class="mb-4"
+        >
+          {{ statusData.message || 'Live check MikroTik tidak tersedia. Data live belum bisa ditampilkan.' }}
+        </VAlert>
+
+        <VAlert
           v-if="!loading && statusData && !statusData.exists_on_mikrotik"
           type="warning"
           variant="tonal"

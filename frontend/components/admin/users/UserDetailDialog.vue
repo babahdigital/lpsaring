@@ -11,9 +11,13 @@ interface User {
   role: 'USER' | 'KOMANDAN' | 'ADMIN' | 'SUPER_ADMIN'
   approval_status: 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED'
   is_active: boolean
+  is_blocked?: boolean
+  blocked_reason?: string | null
   created_at: string
   blok: string | null
   kamar: string | null
+  is_tamping: boolean
+  tamping_type: string | null
   approved_at: string | null
   total_quota_purchased_mb: number
   total_quota_used_mb: number
@@ -34,11 +38,30 @@ interface QuotaInfo {
   statusColor: string
 }
 
-const props = defineProps<{ modelValue: boolean, user: User | null }>()
+interface PreviewContext {
+  action: 'deactivate' | 'delete'
+  days_inactive: number
+  threshold_days: number
+}
+
+const props = defineProps<{ modelValue: boolean, user: User | null, previewContext?: PreviewContext | null }>()
 const emit = defineEmits(['update:modelValue'])
 
 const roleMap = { USER: { text: 'User', color: 'info' }, KOMANDAN: { text: 'Komandan', color: 'success' }, ADMIN: { text: 'Admin', color: 'primary' }, SUPER_ADMIN: { text: 'Support', color: 'secondary' } }
 const statusMap = { APPROVED: { text: 'Disetujui', color: 'success' }, PENDING_APPROVAL: { text: 'Menunggu', color: 'warning' }, REJECTED: { text: 'Ditolak', color: 'error' } }
+const previewAlertMeta = computed(() => {
+  if (!props.previewContext)
+    return null
+
+  const isDelete = props.previewContext.action === 'delete'
+
+  return {
+    title: isDelete ? 'Kandidat Auto-Delete' : 'Kandidat Auto-Deactivate',
+    color: isDelete ? 'error' : 'warning',
+    icon: isDelete ? 'tabler-alert-triangle' : 'tabler-alert-circle',
+    text: `Pengguna tidak aktif selama ${props.previewContext.days_inactive} hari (threshold ${props.previewContext.threshold_days} hari).`,
+  }
+})
 
 function formatSimpleDateTime(dateString: string | null) {
   if (!dateString)
@@ -139,6 +162,17 @@ function onClose() {
       </VCardTitle>
       <VDivider />
       <VCardText class="pa-5" style="max-height: 70vh; overflow-y: auto;">
+        <VAlert
+          v-if="previewAlertMeta"
+          :color="previewAlertMeta.color"
+          :icon="previewAlertMeta.icon"
+          :title="previewAlertMeta.title"
+          variant="tonal"
+          class="mb-4"
+        >
+          {{ previewAlertMeta.text }}
+        </VAlert>
+
         <div class="text-overline mb-2">
           Informasi Dasar
         </div>
@@ -167,9 +201,13 @@ function onClose() {
               <VChip :color="props.user.is_active ? 'success' : 'error'" size="small" class="ms-2" label>
                 {{ props.user.is_active ? 'Aktif' : 'Nonaktif' }}
               </VChip>
+              <VChip v-if="props.user.is_blocked" color="error" size="small" class="ms-2" label>
+                Diblokir
+              </VChip>
             </template>
           </VListItem>
-          <VListItem v-if="props.user.blok && props.user.kamar" prepend-icon="tabler-building-community" title="Alamat" :subtitle="`Blok ${props.user.blok}, Kamar ${props.user.kamar.replace('Kamar_', '')}`" />
+          <VListItem v-if="props.user.is_tamping" prepend-icon="tabler-building-bank" title="Tamping" :subtitle="props.user.tamping_type || 'N/A'" />
+          <VListItem v-else-if="props.user.blok && props.user.kamar" prepend-icon="tabler-building-community" title="Alamat" :subtitle="`Blok ${props.user.blok}, Kamar ${props.user.kamar.replace('Kamar_', '')}`" />
         </VList>
 
         <template v-if="quotaDetails">
@@ -204,7 +242,7 @@ function onClose() {
             Pengguna belum memiliki paket kuota aktif.
           </VAlert>
         </template>
-        <div v-else-if="user.role === 'ADMIN' || user.role === 'SUPER_ADMIN'">
+        <div v-else-if="props.user.role === 'ADMIN' || props.user.role === 'SUPER_ADMIN'">
           <VDivider class="my-4" />
           <div class="text-overline mb-2">
             Informasi Kuota & Akses
@@ -231,6 +269,7 @@ function onClose() {
           </template>
           <VListItem prepend-icon="tabler-calendar-plus" title="Tanggal Pendaftaran" :subtitle="formatSimpleDateTime(props.user.created_at)" />
           <VListItem v-if="props.user.approval_status === 'APPROVED'" prepend-icon="tabler-calendar-check" title="Tanggal Disetujui" :subtitle="formatSimpleDateTime(props.user.approved_at)" />
+          <VListItem v-if="props.user.is_blocked" prepend-icon="tabler-ban" title="Alasan Blokir" :subtitle="props.user.blocked_reason || 'Tidak disebutkan'" />
         </VList>
       </VCardText>
       <VDivider />

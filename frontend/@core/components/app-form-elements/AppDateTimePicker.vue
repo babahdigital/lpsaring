@@ -5,7 +5,7 @@ import FlatPickr from 'vue-flatpickr-component'
 import { useTheme } from 'vuetify'
 
 // @ts-expect-error There won't be declaration file for it
-import { filterFieldProps, makeVFieldProps, VField } from 'vuetify/lib/components/VField/VField'
+import { makeVFieldProps, VField } from 'vuetify/lib/components/VField/VField'
 
 // @ts-expect-error There won't be declaration file for it
 import { makeVInputProps, VInput } from 'vuetify/lib/components/VInput/VInput'
@@ -19,6 +19,10 @@ defineOptions({
 })
 
 const props = defineProps({
+  modelValue: {
+    type: String,
+    default: '',
+  },
   autofocus: Boolean,
   counter: [Boolean, Number, String] as PropType<true | number | string>,
   counterValue: Function as PropType<(value: any) => number>,
@@ -49,7 +53,7 @@ interface Emit {
   (e: 'mousedown:control', val: MouseEvent): true
   (e: 'update:focused', val: MouseEvent): true
   (e: 'update:modelValue', val: string): void
-  (e: 'clickClear', el: MouseEvent): void
+  (e: 'click:clear', el: MouseEvent): void
 }
 
 const configStore = useConfigStore()
@@ -57,7 +61,7 @@ const attrs = useAttrs()
 
 const [rootAttrs, compAttrs] = filterInputAttrs(attrs)
 const inputProps = ref(VInput.filterProps(props))
-const fieldProps = ref(filterFieldProps(props))
+const fieldProps = ref(VField.filterProps(props))
 
 const refFlatPicker = ref()
 
@@ -84,7 +88,7 @@ function onClear(el: MouseEvent) {
   nextTick(() => {
     emit('update:modelValue', '')
 
-    emit('clickClear', el)
+    emit('click:clear', el)
   })
 }
 
@@ -115,7 +119,7 @@ function emitModelValue(val: string) {
 }
 
 watch(() => props, () => {
-  fieldProps.value = filterFieldProps(props)
+  fieldProps.value = VField.filterProps(props)
   inputProps.value = VInput.filterProps(props)
 }, {
   deep: true,
@@ -143,7 +147,7 @@ const elementId = computed (() => {
 
     <VInput
       v-bind="{ ...inputProps, ...rootAttrs }"
-      :model-value="modelValue"
+      :model-value="props.modelValue"
       :hide-details="props.hideDetails"
       :class="[{
         'v-text-field--prefixed': props.prefix,
@@ -164,7 +168,7 @@ const elementId = computed (() => {
           :dirty="isDirty.value || props.dirty"
           :error="isValid.value === false"
           :disabled="isDisabled.value"
-          @click-clear="onClear"
+          @click:clear="onClear"
         >
           <template #default="{ props: vFieldProps }">
             <div v-bind="vFieldProps">
@@ -173,7 +177,7 @@ const elementId = computed (() => {
                 v-if="!isInlinePicker"
                 v-bind="compAttrs"
                 ref="refFlatPicker"
-                :model-value="modelValue"
+                :model-value="props.modelValue"
                 :placeholder="props.placeholder"
                 :readonly="isReadonly.value"
                 class="flat-picker-custom-style h-100 w-100"
@@ -186,7 +190,7 @@ const elementId = computed (() => {
               <!-- simple input for inline prop -->
               <input
                 v-if="isInlinePicker"
-                :value="modelValue"
+                :value="props.modelValue"
                 :placeholder="props.placeholder"
                 :readonly="isReadonly.value"
                 class="flat-picker-custom-style h-100 w-100"
@@ -203,7 +207,7 @@ const elementId = computed (() => {
       v-if="isInlinePicker"
       v-bind="compAttrs"
       ref="refFlatPicker"
-      :model-value="modelValue"
+      :model-value="props.modelValue"
       @update:model-value="emitModelValue"
       @on-open="isCalendarOpen = true"
       @on-close="isCalendarOpen = false"

@@ -1,5 +1,16 @@
 {
-  // Mewarisi konfigurasi dasar dan definisi tipe dari Nuxt
-  // https://nuxt.com/docs/guide/concepts/typescript
-  "extends": "./.nuxt/tsconfig.json"
+  "extends": "./.nuxt/tsconfig.json",
+  "compilerOptions": {
+    "typeRoots": ["./types", "./node_modules/@types"],
+    "types": ["vuetify-shims"]
+  },
+  "include": [
+    "./**/*.ts",
+    "./**/*.tsx",
+    "./**/*.vue",
+    "./types/**/*.d.ts",
+    "./env.d.ts",
+    "./.nuxt/**/*.d.ts"
+  ],
+  "exclude": ["node_modules", "dist"]
 }

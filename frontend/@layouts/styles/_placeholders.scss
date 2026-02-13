@@ -2,7 +2,6 @@
 @use "@configured-variables" as variables;
 
 %boxed-content {
-  // Pindahkan semua deklarasi sebelum nested rule
   inline-size: 100%;
   margin-inline: auto;
   max-inline-size: variables.$layout-boxed-content-width;

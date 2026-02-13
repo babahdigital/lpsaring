@@ -1,0 +1,10 @@
+line-length = 120
+
+[lint]
+extend-ignore = [
+  "E701",
+  "E702",
+  "E711",
+  "E712",
+  "E402",
+]

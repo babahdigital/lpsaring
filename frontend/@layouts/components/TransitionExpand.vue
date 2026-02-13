@@ -23,8 +23,8 @@ export default defineComponent({
 
       // Force repaint to make sure the
       // animation is triggered correctly.
-
-      void getComputedStyle(element).height
+       
+      getComputedStyle(element).height
 
       // Trigger the animation.
       // We use `requestAnimationFrame` because we need
@@ -47,8 +47,8 @@ export default defineComponent({
 
       // Force repaint to make sure the
       // animation is triggered correctly.
-
-      void getComputedStyle(element).height
+       
+      getComputedStyle(element).height
 
       requestAnimationFrame(() => {
         element.style.height = '0px'
@@ -56,14 +56,14 @@ export default defineComponent({
     }
 
     return () => h(
-      Transition,
+      h(Transition),
       {
         name: 'expand',
         onEnter,
         onAfterEnter,
         onLeave,
       },
-      slots.default ? slots.default() : null,
+      () => slots.default?.(),
     )
   },
 })

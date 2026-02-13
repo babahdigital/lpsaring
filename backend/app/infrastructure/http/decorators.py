@@ -2,6 +2,7 @@
 # VERSI DIPERBARUI: Penambahan decorator @super_admin_required
 
 from functools import wraps
+import ipaddress
 from flask import request, jsonify, current_app
 from http import HTTPStatus
 import uuid
@@ -10,22 +11,114 @@ from jose import jwt, JWTError, ExpiredSignatureError
 from app.extensions import db
 from app.infrastructure.db.models import User
 from .schemas.auth_schemas import AuthErrorResponseSchema
+from app.utils.csrf_utils import is_trusted_origin
+from app.utils.request_utils import get_client_ip
+
+
+def _get_trusted_origins() -> list[str]:
+    configured = current_app.config.get('CSRF_TRUSTED_ORIGINS')
+    if isinstance(configured, (list, tuple)) and configured:
+        return [str(item) for item in configured if item]
+
+    fallback = [
+        current_app.config.get('FRONTEND_URL'),
+        current_app.config.get('APP_PUBLIC_BASE_URL'),
+        current_app.config.get('APP_LINK_USER'),
+    ]
+    extra = current_app.config.get('CORS_ADDITIONAL_ORIGINS', [])
+    if isinstance(extra, (list, tuple)):
+        fallback.extend(extra)
+    return [item for item in fallback if item]
+
+
+def _get_no_origin_allowed_ips() -> set[str]:
+    configured = current_app.config.get('CSRF_NO_ORIGIN_ALLOWED_IPS')
+    if isinstance(configured, (list, tuple)):
+        return {str(item).strip() for item in configured if str(item).strip()}
+    if isinstance(configured, str) and configured.strip():
+        return {item.strip() for item in configured.split(',') if item.strip()}
+    return set()
+
+
+def _is_no_origin_ip_allowed(client_ip: str, allowed_entries: set[str]) -> bool:
+    if not client_ip:
+        return False
+    try:
+        ip_obj = ipaddress.ip_address(client_ip)
+    except ValueError:
+        return False
+
+    for entry in allowed_entries:
+        if '/' in entry:
+            try:
+                if ip_obj in ipaddress.ip_network(entry, strict=False):
+                    return True
+            except ValueError:
+                continue
+        else:
+            if client_ip == entry:
+                return True
+    return False
+
+
+def _passes_csrf_guard() -> bool:
+    if request.method in ('GET', 'HEAD', 'OPTIONS'):
+        return True
+    if not current_app.config.get('CSRF_PROTECT_ENABLED', True):
+        return True
+
+    origin = request.headers.get('Origin')
+    referer = request.headers.get('Referer')
+    trusted = _get_trusted_origins()
+    if origin and is_trusted_origin(origin, trusted):
+        return True
+    if referer and is_trusted_origin(referer, trusted):
+        return True
+
+    if not origin and not referer:
+        if not current_app.config.get('CSRF_STRICT_NO_ORIGIN', False):
+            return True
+        client_ip = get_client_ip()
+        allowed_ips = _get_no_origin_allowed_ips()
+        if client_ip and _is_no_origin_ip_allowed(client_ip, allowed_ips):
+            return True
+        current_app.logger.warning(
+            "CSRF guard blocked no-origin request: ip=%s method=%s path=%s",
+            client_ip or "unknown",
+            request.method,
+            request.path,
+        )
+        return False
+    return False
 
 def token_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         token = None
+        token_source = None
         auth_header = request.headers.get('Authorization')
         error_response = AuthErrorResponseSchema(error="Unauthorized")
-        if not auth_header:
+        if auth_header:
+            parts = auth_header.split()
+            if parts[0].lower() != 'bearer' or len(parts) != 2:
+                error_response.error = "Invalid token header format."
+                return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
+            token = parts[1]
+            token_source = 'header'
+
+        if not token:
+            cookie_name = current_app.config.get('AUTH_COOKIE_NAME', 'auth_token')
+            cookie_token = request.cookies.get(cookie_name)
+            if cookie_token:
+                token = cookie_token
+                token_source = 'cookie'
+
+        if not token:
             return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
 
-        parts = auth_header.split()
-        if parts[0].lower() != 'bearer' or len(parts) != 2:
-            error_response.error = "Invalid token header format."
-            return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
-
-        token = parts[1]
+        if token_source == 'cookie' and not _passes_csrf_guard():
+            error_response.error = "Invalid origin."
+            return jsonify(error_response.model_dump()), HTTPStatus.FORBIDDEN
         try:
             payload = jwt.decode(
                 token,
@@ -41,6 +134,9 @@ def token_required(f):
             
             if not user_from_token.is_active:
                 error_response.error = "User account is inactive."
+                return jsonify(error_response.model_dump()), HTTPStatus.FORBIDDEN
+            if not user_from_token.is_approved:
+                error_response.error = "User account is not approved."
                 return jsonify(error_response.model_dump()), HTTPStatus.FORBIDDEN
 
         except ExpiredSignatureError:

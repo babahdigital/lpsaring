@@ -1,0 +1,49 @@
+# Override untuk development: frontend jalan di host, nginx proxy ke host.
+services:
+  backend:
+    volumes:
+      - ./backend:/app
+      - font_cache:/app/.cache
+    command:
+      - "gunicorn"
+      - "--bind"
+      - "0.0.0.0:5010"
+      - "run:app"
+      - "--reload"
+      - "--workers=4"
+      - "--timeout=60"
+      - "--log-level=info"
+      - "--access-logfile"
+      - "-"
+      - "--error-logfile"
+      - "-"
+
+  migrate:
+    volumes:
+      - ./backend:/app
+      - font_cache:/app/.cache
+
+  celery_worker:
+    volumes:
+      - ./backend:/app
+      - font_cache:/app/.cache
+
+  celery_beat:
+    volumes:
+      - ./backend:/app
+      - font_cache:/app/.cache
+
+  frontend:
+    # Jangan dijalankan di dev; aktifkan hanya jika perlu.
+    profiles:
+      - frontend
+
+  nginx:
+    volumes:
+      - ./infrastructure/nginx/conf.d/app.dev.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./infrastructure/nginx/logs:/var/log/nginx
+    depends_on:
+      backend:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

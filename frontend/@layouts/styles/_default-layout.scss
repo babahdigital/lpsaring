@@ -1,4 +1,4 @@
-// frontend/@layouts/styles/_default-layout.scss
+// These are styles which are both common in layout w/ vertical nav & horizontal nav
 @use "@layouts/styles/rtl";
 @use "@layouts/styles/placeholders";
 @use "@layouts/styles/mixins";
@@ -10,11 +10,12 @@ body {
 }
 
 .layout-page-content {
-  // Pindahkan deklarasi CSS di atas nested rule
   flex-grow: 1;
-  padding-block: 1.5rem; // TODO: Use grid gutter variable here
-  
-  @include mixins.boxed-content(true); // Nested rule
+
+  // TODO: Use grid gutter variable here
+  padding-block: 1.5rem;
+
+  @include mixins.boxed-content(true);
 }
 
 .layout-footer {

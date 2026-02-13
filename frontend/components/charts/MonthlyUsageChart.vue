@@ -118,15 +118,15 @@ function getRefactoredMonthlyOptions(
         options: {
           plotOptions: { bar: { columnWidth: '55%' } },
           yaxis: { labels: { show: false } },
-          grid: { padding: { right: 0, left: -15 } },
-          dataLabels: { style: { fontSize: '10px' } },
+          grid: { padding: { top: 14, right: 0, left: 8 } },
+          dataLabels: { style: { fontSize: '10px' }, offsetY: -24 },
         },
       },
       {
         breakpoint: 420, // xs (sangat kecil)
         options: {
           plotOptions: { bar: { columnWidth: '65%' } },
-          dataLabels: { style: { fontSize: '9px' }, offsetY: -15 },
+          dataLabels: { style: { fontSize: '9px' }, offsetY: -24 },
         },
       },
     )
@@ -139,7 +139,7 @@ function getRefactoredMonthlyOptions(
       type: 'bar',
       height: 310,
       toolbar: { show: false },
-      animations: { enabled: true, easing: 'easeinout', speed: 600, dynamicAnimation: { enabled: true, speed: 350 } },
+      animations: { enabled: true, easing: 'easeinout', speed: 600, dynamicAnimation: { enabled: true, speed: 350 } } as any,
     },
     plotOptions: {
       bar: {
@@ -150,7 +150,7 @@ function getRefactoredMonthlyOptions(
         dataLabels: { position: 'top' },
         states: { hover: { filter: { type: 'none' } } }, // Menghilangkan efek hover default pada bar
       },
-    },
+    } as any,
     colors: [_chartPrimaryColor],
     dataLabels: {
       enabled: true,
@@ -159,7 +159,7 @@ function getRefactoredMonthlyOptions(
         const useGb = seriesInfo?.meta?.useGbScale ?? false
         return formatQuotaForDisplay(val, useGb, true) // true untuk forDataLabel
       },
-      offsetY: -20,
+      offsetY: -30,
       style: {
         fontSize: '12px',
         colors: [_legendColor],
@@ -169,7 +169,7 @@ function getRefactoredMonthlyOptions(
     },
     grid: {
       show: false, // Grid utama disembunyikan
-      padding: { top: 0, bottom: 0, left: -10, right: -10 }, // Padding disesuaikan
+      padding: { top: 14, bottom: 0, left: 4, right: -10 }, // Padding kiri diperlebar agar label bulan awal tidak mepet
     },
     legend: { show: false },
     tooltip: {
@@ -238,7 +238,7 @@ const showLoadingOverlay = computed(() => {
 })
 
 const totalMonthlyUsageFormatted = computed(() => {
-  if (props.monthlyData?.success === true && Array.isArray(props.monthlyData.monthly_data) && hasValidProcessedData.value) {
+  if (Array.isArray(props.monthlyData?.monthly_data) && hasValidProcessedData.value) {
     const totalMb = props.monthlyData.monthly_data.reduce((sum, item) => sum + (item.usage_mb ?? 0), 0)
     // Menggunakan useGigaByteScale dari data yang sudah diproses untuk konsistensi
     const { useGigaByteScale } = processMonthlyDataForChart(props.monthlyData.monthly_data) // Re-proses untuk mendapatkan skala yang konsisten
@@ -283,9 +283,11 @@ function processMonthlyDataForChart(data: MonthlyUsageData[] | undefined | null)
   })
 
   const validDataPoints = processedCategories.map((cat, index) => ({ category: cat, value: processedApiSeriesDataMb[index], originalMY: result.originalMonthYear[index] })).filter(point => point.category !== 'N/A')
-  result.categories = validDataPoints.map(point => point.category)
-  result.originalMonthYear = validDataPoints.map(point => point.originalMY)
-  const finalApiSeriesDataMb = validDataPoints.map(point => point.value)
+  const maxDataPoints = mobile.value ? 6 : 12
+  const limitedDataPoints = validDataPoints.slice(-maxDataPoints)
+  result.categories = limitedDataPoints.map(point => point.category)
+  result.originalMonthYear = limitedDataPoints.map(point => point.originalMY)
+  const finalApiSeriesDataMb = limitedDataPoints.map(point => point.value)
 
   result.isValid = finalApiSeriesDataMb.length > 0 && result.categories.length > 0 && finalApiSeriesDataMb.length === result.categories.length
   result.allZero = result.isValid === false || finalApiSeriesDataMb.every(item => item === 0)
@@ -534,7 +536,7 @@ watch(
       hasValidProcessedData.value = false
       processedDataResult = processMonthlyDataForChart(null)
     }
-    else if (newData?.success === true && Array.isArray(newData.monthly_data)) {
+    else if (Array.isArray(newData?.monthly_data)) {
       processedDataResult = processMonthlyDataForChart(newData.monthly_data)
       hasValidProcessedData.value = processedDataResult.isValid && !processedDataResult.allZero
       if (processedDataResult.isValid === false)
@@ -561,25 +563,27 @@ watch(
     }]
 
     const baseOpts = getRefactoredMonthlyOptions(currentNoDataText, isDark, _chartPrimaryColor, _themeBorderColor, _themeLabelColor, _legendColor)
+    const baseXAxis = (baseOpts.xaxis as any) ?? {}
+    const baseYAxis = (baseOpts.yaxis as any) ?? {}
     monthlyUsageChartOptions.value = {
       ...baseOpts,
       colors: [_chartPrimaryColor], // Pastikan warna utama diterapkan
       xaxis: {
-        ...baseOpts.xaxis,
+        ...baseXAxis,
         categories: processedDataResult?.categories ?? [],
-        labels: { ...baseOpts.xaxis?.labels, style: { ...baseOpts.xaxis?.labels?.style, colors: _themeLabelColor } },
+        labels: { ...baseXAxis.labels, style: { ...baseXAxis.labels?.style, colors: _themeLabelColor } },
       },
       yaxis: {
-        ...baseOpts.yaxis,
+        ...baseYAxis,
         max: processedDataResult?.displayMax ?? 10,
         title: { text: undefined }, // Eksplisit hilangkan judul Y-axis
         labels: {
-          ...baseOpts.yaxis?.labels,
-          style: { ...baseOpts.yaxis?.labels?.style, colors: _themeLabelColor },
+          ...baseYAxis.labels,
+          style: { ...baseYAxis.labels?.style, colors: _themeLabelColor },
           formatter: (value: number) => formatQuotaForDisplay(value, processedDataResult?.useGigaByteScale ?? false),
         },
-        axisBorder: { ...baseOpts.yaxis?.axisBorder, color: _themeBorderColor },
-        axisTicks: { ...baseOpts.yaxis?.axisTicks, color: _themeBorderColor },
+        axisBorder: { ...baseYAxis.axisBorder, color: _themeBorderColor },
+        axisTicks: { ...baseYAxis.axisTicks, color: _themeBorderColor },
       },
       grid: { ...baseOpts.grid, borderColor: _themeBorderColor }, // Pastikan borderColor grid juga diupdate
       tooltip: {
@@ -761,6 +765,7 @@ watch(
   transition: box-shadow 0.25s ease;
   display: flex;
   flex-direction: column;
+  overflow: visible;
 }
 .vuexy-card:hover {
   box-shadow: 0 4px 25px 0 rgba(var(--v-shadow-key-umbra-color), 0.15);
@@ -819,6 +824,7 @@ watch(
 
 .halus { position: relative; top: 0px; margin: 0.5rem 1rem 2rem 1rem; line-height: 1.4; text-align: center; font-size: 0.8125rem; } /* Penyesuaian margin bottom */
 .chartbulan { padding: 0rem 0.5rem; margin-top: 0rem; display: flex; flex-direction: column; flex-grow: 1; }
+.chart-container { overflow: visible; }
 .vue-apexcharts { max-width: 100%; direction: ltr; padding-top: 20px; } /* Arah LTR untuk chart */
 .chart-fallback-container { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; flex-grow: 1; padding: 1rem; text-align: center; }
 
@@ -898,6 +904,11 @@ watch(
   border-radius: 6px !important;
   padding: 0.5rem 0.75rem !important;
   transition: opacity 0.2s ease-in-out;
+  z-index: 20;
+}
+
+.apexcharts-canvas {
+  overflow: visible !important;
 }
 
 .apexcharts-tooltip-title {

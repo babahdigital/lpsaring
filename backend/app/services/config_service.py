@@ -12,5 +12,6 @@ def get_app_links() -> Dict[str, str]:
     return {
         "user_app": current_app.config.get('APP_LINK_USER', ''),
         "admin_app": current_app.config.get('APP_LINK_ADMIN', ''),
-        "mikrotik_login": current_app.config.get('APP_LINK_MIKROTIK', '')
+        "mikrotik_login": current_app.config.get('APP_LINK_MIKROTIK', ''),
+        "admin_app_change_password": current_app.config.get('APP_LINK_ADMIN_CHANGE_PASSWORD', ''),
     }

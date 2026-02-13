@@ -24,8 +24,13 @@ def approve_user_account(user_to_approve: User, admin_actor: User) -> Tuple[bool
     if user_to_approve.approval_status != ApprovalStatus.PENDING_APPROVAL:
         return False, "Pengguna ini tidak dalam status menunggu persetujuan."
     
-    if user_to_approve.role == UserRole.USER and (not user_to_approve.blok or not user_to_approve.kamar):
-        return False, "Pengguna USER harus memiliki Blok dan Kamar."
+    if user_to_approve.role == UserRole.USER:
+        if user_to_approve.is_tamping:
+            if not user_to_approve.tamping_type:
+                return False, "Pengguna tamping harus memilih jenis tamping."
+        else:
+            if not user_to_approve.blok or not user_to_approve.kamar:
+                return False, "Pengguna USER harus memiliki Blok dan Kamar."
 
     mikrotik_username = format_to_local_phone(user_to_approve.phone_number)
     if not mikrotik_username:
@@ -37,12 +42,17 @@ def approve_user_account(user_to_approve: User, admin_actor: User) -> Tuple[bool
     mikrotik_profile = ''
     mikrotik_server = user_to_approve.mikrotik_server_name
     log_details = {}
+    inactive_profile = (
+        settings_service.get_setting('MIKROTIK_INACTIVE_PROFILE', None)
+        or settings_service.get_setting('MIKROTIK_DEFAULT_PROFILE', 'default')
+    )
     
     if user_to_approve.role == UserRole.KOMANDAN:
         initial_quota_mb = settings_service.get_setting_as_int('KOMANDAN_INITIAL_QUOTA_MB', 0)
         initial_duration_days = settings_service.get_setting_as_int('KOMANDAN_INITIAL_DURATION_DAYS', 30)
         mikrotik_profile = settings_service.get_setting('MIKROTIK_KOMANDAN_PROFILE', 'komandan')
-        if not mikrotik_server: mikrotik_server = 'srv-komandan'
+        if not mikrotik_server:
+            mikrotik_server = 'srv-komandan'
         log_details = {"role_approved": "KOMANDAN", "initial_quota_mb": initial_quota_mb, "initial_days": initial_duration_days}
     
     else: # Untuk USER
@@ -55,8 +65,12 @@ def approve_user_account(user_to_approve: User, admin_actor: User) -> Tuple[bool
             initial_quota_mb = settings_service.get_setting_as_int('USER_INITIAL_QUOTA_MB', 0)
         
         mikrotik_profile = settings_service.get_setting('MIKROTIK_USER_PROFILE', 'user')
-        if not mikrotik_server: mikrotik_server = 'srv-user'
+        if not mikrotik_server:
+            mikrotik_server = 'srv-user'
         log_details = {"role_approved": "USER", "bonus_mb": initial_quota_mb, "bonus_days": initial_duration_days}
+
+    if initial_quota_mb <= 0:
+        mikrotik_profile = inactive_profile
 
     user_to_approve.total_quota_purchased_mb = initial_quota_mb
     user_to_approve.quota_expiry_date = datetime.now(dt_timezone.utc) + timedelta(days=initial_duration_days) if initial_quota_mb > 0 else None

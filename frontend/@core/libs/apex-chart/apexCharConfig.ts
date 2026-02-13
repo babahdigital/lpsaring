@@ -1,8 +1,12 @@
-import type { ThemeInstance } from 'vuetify'
 import { hexToRgb } from '@core/utils/colorConverter'
 
+interface ThemeColors {
+  colors: Record<string, string>
+  variables: Record<string, string | number>
+}
+
 // 👉 Colors variables
-function colorVariables(themeColors: ThemeInstance['themes']['value']['colors']) {
+function colorVariables(themeColors: ThemeColors) {
   const themeSecondaryTextColor = `rgba(${hexToRgb(themeColors.colors['on-surface'])},${themeColors.variables['medium-emphasis-opacity']})`
   const themeDisabledTextColor = `rgba(${hexToRgb(themeColors.colors['on-surface'])},${themeColors.variables['disabled-opacity']})`
   const themeBorderColor = `rgba(${hexToRgb(String(themeColors.variables['border-color']))},${themeColors.variables['border-opacity']})`
@@ -11,7 +15,7 @@ function colorVariables(themeColors: ThemeInstance['themes']['value']['colors'])
   return { themeSecondaryTextColor, themeDisabledTextColor, themeBorderColor, themePrimaryTextColor }
 }
 
-export function getScatterChartConfig(themeColors: ThemeInstance['themes']['value']['colors']) {
+export function getScatterChartConfig(themeColors: ThemeColors) {
   const scatterColors = {
     series1: '#ff9f43',
     series2: '#7367f0',
@@ -66,7 +70,7 @@ export function getScatterChartConfig(themeColors: ThemeInstance['themes']['valu
     },
   }
 }
-export function getLineChartSimpleConfig(themeColors: ThemeInstance['themes']['value']['colors']) {
+export function getLineChartSimpleConfig(themeColors: ThemeColors) {
   const { themeBorderColor, themeDisabledTextColor } = colorVariables(themeColors)
 
   return {
@@ -133,7 +137,7 @@ export function getLineChartSimpleConfig(themeColors: ThemeInstance['themes']['v
   }
 }
 
-export function getBarChartConfig(themeColors: ThemeInstance['themes']['value']['colors']) {
+export function getBarChartConfig(themeColors: ThemeColors) {
   const { themeBorderColor, themeDisabledTextColor } = colorVariables(themeColors)
 
   return {
@@ -175,7 +179,7 @@ export function getBarChartConfig(themeColors: ThemeInstance['themes']['value'][
   }
 }
 
-export function getCandlestickChartConfig(themeColors: ThemeInstance['themes']['value']['colors']) {
+export function getCandlestickChartConfig(themeColors: ThemeColors) {
   const candlestickColors = {
     series1: '#28c76f',
     series2: '#ea5455',
@@ -226,7 +230,7 @@ export function getCandlestickChartConfig(themeColors: ThemeInstance['themes']['
     },
   }
 }
-export function getRadialBarChartConfig(themeColors: ThemeInstance['themes']['value']['colors']) {
+export function getRadialBarChartConfig(themeColors: ThemeColors) {
   const radialBarColors = {
     series1: '#fdd835',
     series2: '#32baff',
@@ -303,7 +307,7 @@ export function getRadialBarChartConfig(themeColors: ThemeInstance['themes']['va
   }
 }
 
-export function getDonutChartConfig(themeColors: ThemeInstance['themes']['value']['colors']) {
+export function getDonutChartConfig(themeColors: ThemeColors) {
   const donutColors = {
     series1: '#fdd835',
     series2: '#00d4bd',
@@ -398,7 +402,7 @@ export function getDonutChartConfig(themeColors: ThemeInstance['themes']['value'
   }
 }
 
-export function getAreaChartSplineConfig(themeColors: ThemeInstance['themes']['value']['colors']) {
+export function getAreaChartSplineConfig(themeColors: ThemeColors) {
   const areaColors = {
     series3: '#e0cffe',
     series2: '#b992fe',
@@ -478,7 +482,7 @@ export function getAreaChartSplineConfig(themeColors: ThemeInstance['themes']['v
   }
 }
 
-export function getColumnChartConfig(themeColors: ThemeInstance['themes']['value']['colors']) {
+export function getColumnChartConfig(themeColors: ThemeColors) {
   const columnColors = {
     series1: '#826af9',
     series2: '#d2b0ff',
@@ -562,7 +566,7 @@ export function getColumnChartConfig(themeColors: ThemeInstance['themes']['value
   }
 }
 
-export function getHeatMapChartConfig(themeColors: ThemeInstance['themes']['value']['colors']) {
+export function getHeatMapChartConfig(themeColors: ThemeColors) {
   const { themeSecondaryTextColor, themeDisabledTextColor } = colorVariables(themeColors)
 
   return {
@@ -623,7 +627,7 @@ export function getHeatMapChartConfig(themeColors: ThemeInstance['themes']['valu
   }
 }
 
-export function getRadarChartConfig(themeColors: ThemeInstance['themes']['value']['colors']) {
+export function getRadarChartConfig(themeColors: ThemeColors) {
   const radarColors = {
     series1: '#9b88fa',
     series2: '#ffa1a1',

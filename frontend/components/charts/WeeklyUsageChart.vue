@@ -72,12 +72,14 @@ const disabledOpacity = computed(() => {
 })
 
 const isLoadingInternalProcessing = computed(() => !weeklyDataProcessed.value && !props.parentLoading)
+const canInitChart = computed(() => !props.parentLoading && props.parentError == null && props.quotaData != null)
 
 function formatQuota(value: number | null | undefined): string {
   const numericValue = value ?? 0
   if (numericValue >= 1024)
     return `${(numericValue / 1024).toFixed(2)} GB`
-  return `${numericValue.toFixed(0)} MB`
+  const mbDigits = numericValue % 1 === 0 ? 0 : 2
+  return `${numericValue.toFixed(mbDigits)} MB`
 }
 
 function getUsageChipColor(used: number | null | undefined, purchased: number | null | undefined): string {
@@ -231,6 +233,10 @@ function handleChartError(err: Error, contextMessage: string = 'Error pada chart
 }
 
 async function attemptSetReady() {
+  if (!canInitChart.value) {
+    attemptSetReadyRetries = 0
+    return
+  }
   await vueNextTick()
   const containerEl = unref(chartContainerActualRef)
 
@@ -350,7 +356,7 @@ function updateChartData() {
   }
 
   let currentNoDataText = 'Belum ada penggunaan minggu ini.'
-  let newSeriesDataValues: number[] = Array.from({ length: 7 }).fill(0)
+  let newSeriesDataValues: number[] = Array.from({ length: 7 }, () => 0)
 
   if (newParentLoading) {
     currentNoDataText = 'Memuat data...'
@@ -373,7 +379,7 @@ function updateChartData() {
     currentNoDataText = 'Menunggu data kuota pengguna...'
     weeklyDataProcessed.value = false
   }
-  else if (newWeeklyData?.success && Array.isArray(newWeeklyData.weekly_data)) {
+  else if (Array.isArray(newWeeklyData?.weekly_data)) {
     const rawSeriesData = newWeeklyData.weekly_data.slice(-7)
     while (rawSeriesData.length < 7) {
       rawSeriesData.unshift(0)
@@ -460,7 +466,7 @@ watch(() => props.dashboardRenderKey, async (_newKey, _oldKey) => {
 
   await vueNextTick()
   updateChartData()
-  if (!props.parentLoading) {
+  if (canInitChart.value) {
     attemptSetReady()
   }
 }, { immediate: true, flush: 'post' })
@@ -843,6 +849,7 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
   display: flex;
   flex-direction: column;
   height: 100%;
+  overflow: visible;
 }
 .vuexy-card-shadow {
   box-shadow: 0 4px 18px 0 rgba(var(--v-shadow-key-umbra-color), 0.12);
@@ -865,6 +872,7 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
   flex-grow: 1;
   display: flex;
   flex-direction: column;
+  overflow: visible;
 }
 .vuexy-loading-overlay {
   position: absolute;
@@ -947,6 +955,10 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.weekly-chart-container-actual {
+  overflow: visible;
 }
 
 @media (max-width: 959.98px) {
@@ -1034,6 +1046,11 @@ watchDebounced([() => smAndDown.value, () => mobile.value], () => {
   border-radius: 6px !important;
   padding: 0.5rem 0.75rem !important;
   transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out;
+  z-index: 20;
+}
+
+:deep(.apexcharts-canvas) {
+  overflow: visible !important;
 }
 
 :deep(.apexcharts-tooltip-title) {

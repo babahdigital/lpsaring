@@ -1,54 +1,240 @@
 # backend/app/infrastructure/http/auth_routes.py
-import random
-import string
 import secrets
+import hashlib
+import itsdangerous
 from flask import Blueprint, request, jsonify, current_app
 from pydantic import ValidationError
 from http import HTTPStatus
 from datetime import datetime, timedelta, timezone as dt_timezone
-from jose import jwt, JWTError
+from jose import jwt
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 import uuid
 from werkzeug.security import check_password_hash, generate_password_hash
-from typing import Optional
+from typing import Any, Optional, cast
 
-from .decorators import token_required
+from .decorators import token_required, admin_required
 from app.utils.request_utils import get_client_ip
 from .schemas.auth_schemas import (
     RequestOtpRequestSchema, VerifyOtpRequestSchema,
     RequestOtpResponseSchema, VerifyOtpResponseSchema, AuthErrorResponseSchema,
     UserRegisterRequestSchema, UserRegisterResponseSchema,
-    ChangePasswordRequestSchema
+    ChangePasswordRequestSchema, SessionTokenRequestSchema, StatusTokenVerifyRequestSchema
 )
 from app.infrastructure.http.schemas.user_schemas import UserMeResponseSchema, UserProfileUpdateRequestSchema
-from app.extensions import db
+from app.extensions import db, limiter
 from app.infrastructure.db.models import (
-    User, UserRole, ApprovalStatus, UserLoginHistory,
-    NotificationRecipient, NotificationType, PromoEvent, PromoEventStatus
+    User, UserRole, ApprovalStatus, UserLoginHistory, UserDevice,
+    NotificationRecipient, NotificationType
 )
 from app.infrastructure.gateways.whatsapp_client import send_otp_whatsapp
 from user_agents import parse as parse_user_agent
 from app.services.notification_service import get_notification_message
 from app.services import settings_service
-from app.utils.formatters import format_datetime_to_wita, format_to_local_phone
+from app.utils.formatters import format_datetime_to_wita, format_to_local_phone, get_phone_number_variations, normalize_to_e164
 
 from app.services.user_management.helpers import _generate_password, _handle_mikrotik_operation
 from app.services.user_management.user_profile import _get_active_registration_bonus
 from app.infrastructure.gateways.mikrotik_client import activate_or_update_hotspot_user
+from app.services.device_management_service import (
+    apply_device_binding_for_login,
+    resolve_binding_context,
+    resolve_client_mac,
+    normalize_mac,
+)
+from app.services.hotspot_sync_service import sync_address_list_for_single_user
+from app.services.access_policy_service import is_hotspot_login_required
+from app.utils.metrics_utils import increment_metric
 
 try:
     from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
     WHATSAPP_AVAILABLE = True
 except ImportError:
     WHATSAPP_AVAILABLE = False
-    def send_whatsapp_message(to: str, body: str) -> bool:
+    def send_whatsapp_message(recipient_number: str, message_body: str) -> bool:
         current_app.logger.warning("WhatsApp client not available. Dummy send_whatsapp_message called.")
         return False
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
 # --- Helper functions ---
+
+def _get_auth_cookie_settings() -> dict:
+    cookie_name = current_app.config.get('AUTH_COOKIE_NAME', 'auth_token')
+    cookie_path = current_app.config.get('AUTH_COOKIE_PATH', '/')
+    cookie_domain = current_app.config.get('AUTH_COOKIE_DOMAIN')
+    cookie_samesite = current_app.config.get('AUTH_COOKIE_SAMESITE', 'Lax')
+    cookie_secure = current_app.config.get('AUTH_COOKIE_SECURE', False)
+    cookie_httponly = current_app.config.get('AUTH_COOKIE_HTTPONLY', True)
+    cookie_max_age = current_app.config.get('AUTH_COOKIE_MAX_AGE_SECONDS')
+
+    return {
+        'name': cookie_name,
+        'path': cookie_path,
+        'domain': cookie_domain,
+        'samesite': cookie_samesite,
+        'secure': cookie_secure,
+        'httponly': cookie_httponly,
+        'max_age': cookie_max_age,
+    }
+
+def _set_auth_cookie(response, token: str) -> None:
+    settings = _get_auth_cookie_settings()
+    response.set_cookie(
+        settings['name'],
+        token,
+        max_age=settings['max_age'],
+        httponly=settings['httponly'],
+        secure=settings['secure'],
+        samesite=settings['samesite'],
+        path=settings['path'],
+        domain=settings['domain'],
+    )
+
+def _clear_auth_cookie(response) -> None:
+    settings = _get_auth_cookie_settings()
+    response.set_cookie(
+        settings['name'],
+        '',
+        max_age=0,
+        expires=0,
+        httponly=settings['httponly'],
+        secure=settings['secure'],
+        samesite=settings['samesite'],
+        path=settings['path'],
+        domain=settings['domain'],
+    )
+
+def _extract_phone_from_request() -> Optional[str]:
+    payload = request.get_json(silent=True)
+    if isinstance(payload, dict):
+        return payload.get('phone_number')
+    if request.form:
+        return request.form.get('phone_number')
+    return None
+
+def _rate_limit_key_with_phone() -> str:
+    client_ip = get_client_ip() or ''
+    phone_number = _extract_phone_from_request()
+    if phone_number:
+        return f"{client_ip}:{phone_number}"
+    return client_ip
+
+def _rate_limit_key_with_ip() -> str:
+    client_ip = get_client_ip() or ''
+    return client_ip
+
+def _get_otp_fingerprint() -> str:
+    if not current_app.config.get('OTP_FINGERPRINT_ENABLED', True):
+        return ''
+    client_ip = get_client_ip() or ''
+    user_agent = request.headers.get('User-Agent') or ''
+    raw = f"{client_ip}|{user_agent}"
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+
+def _get_redis_client_otp() -> Any:
+    return getattr(cast(Any, current_app), 'redis_client_otp', None)
+
+def _validation_error_details(error: ValidationError) -> list[dict[str, Any]]:
+    return [dict(item) for item in error.errors()]
+
+def _is_otp_cooldown_active(phone_number: str) -> bool:
+    redis_client = _get_redis_client_otp()
+    if redis_client is None:
+        return False
+    try:
+        return redis_client.get(f"otp:cooldown:{phone_number}") is not None
+    except Exception:
+        return False
+
+# --- Status page token helpers ---
+
+_STATUS_TOKEN_ALLOWED = {'blocked', 'inactive', 'expired', 'habis', 'fup'}
+
+def _get_status_token_serializer() -> itsdangerous.URLSafeTimedSerializer:
+    secret_key = current_app.config.get('SECRET_KEY')
+    if not secret_key:
+        raise ValueError("SECRET_KEY tidak disetel untuk status token.")
+    return itsdangerous.URLSafeTimedSerializer(secret_key, salt='status-page-access')
+
+def _generate_status_token(status: str) -> Optional[str]:
+    if status not in _STATUS_TOKEN_ALLOWED:
+        return None
+    try:
+        serializer = _get_status_token_serializer()
+        payload = {
+            'status': status,
+            'nonce': secrets.token_urlsafe(8),
+        }
+        return serializer.dumps(payload)
+    except Exception as e:
+        current_app.logger.warning(f"Gagal membuat status token: {e}")
+        return None
+
+def _verify_status_token(token: str, expected_status: str) -> bool:
+    if expected_status not in _STATUS_TOKEN_ALLOWED:
+        return False
+    try:
+        serializer = _get_status_token_serializer()
+        max_age = int(current_app.config.get('STATUS_PAGE_TOKEN_MAX_AGE_SECONDS', 300))
+        payload = serializer.loads(token, max_age=max_age)
+        return isinstance(payload, dict) and payload.get('status') == expected_status
+    except (itsdangerous.SignatureExpired, itsdangerous.BadTimeSignature, itsdangerous.BadSignature):
+        return False
+    except Exception as e:
+        current_app.logger.warning(f"Gagal verifikasi status token: {e}")
+        return False
+
+def _build_status_error(status: str, message: str):
+    token = _generate_status_token(status)
+    return jsonify(AuthErrorResponseSchema(error=message, status=status, status_token=token).model_dump())
+
+def _set_otp_cooldown(phone_number: str) -> None:
+    redis_client = _get_redis_client_otp()
+    if redis_client is None:
+        return
+    try:
+        cooldown = int(current_app.config.get('OTP_REQUEST_COOLDOWN_SECONDS', 60))
+        redis_client.setex(f"otp:cooldown:{phone_number}", cooldown, "1")
+    except Exception:
+        return
+
+def _get_otp_fail_key(phone_number: str) -> str:
+    fingerprint = _get_otp_fingerprint()
+    if fingerprint:
+        return f"otp:fail:{phone_number}:{fingerprint}"
+    return f"otp:fail:{phone_number}"
+
+def _get_otp_fail_count(phone_number: str) -> int:
+    redis_client = _get_redis_client_otp()
+    if redis_client is None:
+        return 0
+    try:
+        raw = redis_client.get(_get_otp_fail_key(phone_number))
+        return int(raw) if raw else 0
+    except Exception:
+        return 0
+
+def _increment_otp_fail_count(phone_number: str) -> None:
+    redis_client = _get_redis_client_otp()
+    if redis_client is None:
+        return
+    try:
+        key = _get_otp_fail_key(phone_number)
+        window_seconds = int(current_app.config.get('OTP_VERIFY_WINDOW_SECONDS', 300))
+        redis_client.incr(key)
+        redis_client.expire(key, window_seconds)
+    except Exception:
+        return
+
+def _clear_otp_fail_count(phone_number: str) -> None:
+    redis_client = _get_redis_client_otp()
+    if redis_client is None:
+        return
+    try:
+        redis_client.delete(_get_otp_fail_key(phone_number))
+    except Exception:
+        return
 
 def generate_otp(length: int = 6) -> str:
     return "".join(str(secrets.randbelow(10)) for _ in range(length))
@@ -57,7 +243,7 @@ def store_otp_in_redis(phone_number: str, otp: str) -> bool:
     try:
         key = f"otp:{phone_number}"
         expire_seconds = current_app.config.get('OTP_EXPIRE_SECONDS', 300)
-        redis_client = current_app.redis_client_otp
+        redis_client = _get_redis_client_otp()
         if redis_client is None:
             current_app.logger.error("Redis client for OTP is not initialized.")
             return False
@@ -70,7 +256,7 @@ def store_otp_in_redis(phone_number: str, otp: str) -> bool:
 def verify_otp_from_redis(phone_number: str, otp_code: str) -> bool:
     try:
         key = f"otp:{phone_number}"
-        redis_client = current_app.redis_client_otp
+        redis_client = _get_redis_client_otp()
         if redis_client is None:
             current_app.logger.error("Redis client for OTP is not initialized.")
             return False
@@ -91,16 +277,48 @@ def create_access_token(data: dict) -> str:
     to_encode.update({"exp": expire_at_utc, "iat": datetime.now(dt_timezone.utc)})
     return jwt.encode(to_encode, current_app.config['JWT_SECRET_KEY'], algorithm=current_app.config['JWT_ALGORITHM'])
 
+def _store_session_token(user_id: uuid.UUID) -> Optional[str]:
+    redis_client = _get_redis_client_otp()
+    if redis_client is None:
+        current_app.logger.warning("Redis tidak tersedia untuk session token.")
+        return None
+    token = secrets.token_urlsafe(32)
+    key = f"session:{token}"
+    expire_seconds = current_app.config.get('SESSION_TOKEN_EXPIRE_SECONDS', 120)
+    try:
+        redis_client.setex(key, expire_seconds, str(user_id))
+        return token
+    except Exception as e:
+        current_app.logger.error(f"Gagal menyimpan session token: {e}", exc_info=True)
+        return None
+
+def _consume_session_token(token: str) -> Optional[uuid.UUID]:
+    redis_client = _get_redis_client_otp()
+    if redis_client is None:
+        return None
+    key = f"session:{token}"
+    try:
+        user_id_str = redis_client.get(key)
+        if not user_id_str:
+            return None
+        redis_client.delete(key)
+        return uuid.UUID(user_id_str)
+    except Exception as e:
+        current_app.logger.error(f"Gagal mengkonsumsi session token: {e}", exc_info=True)
+        return None
+
 # --- Routes ---
 
 @auth_bp.route('/register', methods=['POST'])
+@limiter.limit(lambda: current_app.config.get('REGISTER_RATE_LIMIT', '5 per minute;20 per hour'), key_func=_rate_limit_key_with_ip)
 def register_user():
     if not request.is_json:
         return jsonify(AuthErrorResponseSchema(error="Request body must be JSON.").model_dump()), HTTPStatus.BAD_REQUEST
     try:
         data_input = UserRegisterRequestSchema.model_validate(request.json)
         normalized_phone_number = data_input.phone_number
-        if db.session.execute(select(User.id).filter_by(phone_number=normalized_phone_number)).scalar_one_or_none():
+        phone_variations = get_phone_number_variations(normalized_phone_number)
+        if db.session.execute(select(User.id).where(User.phone_number.in_(phone_variations))).scalar_one_or_none():
             return jsonify(AuthErrorResponseSchema(error="Phone number is already registered.").model_dump()), HTTPStatus.CONFLICT
         
         ua_string = request.headers.get('User-Agent')
@@ -111,25 +329,40 @@ def register_user():
             device_brand = getattr(ua_info.device, 'brand', None)
             device_model = getattr(ua_info.device, 'model', None)
         
-        new_user_obj = User(
+        new_user_obj = cast(Any, User)(
             phone_number=normalized_phone_number, 
             full_name=data_input.full_name, 
             approval_status=ApprovalStatus.PENDING_APPROVAL, 
             is_active=False,
+            is_tamping=data_input.is_tamping,
+            tamping_type=data_input.tamping_type,
             device_brand=device_brand, 
             device_model=device_model, 
             raw_user_agent=raw_ua,
             is_unlimited_user=False
         )
         
+        default_user_server = settings_service.get_setting('MIKROTIK_DEFAULT_SERVER_USER', 'srv-user')
+        default_komandan_server = settings_service.get_setting('MIKROTIK_DEFAULT_SERVER_KOMANDAN', 'srv-komandan')
+
         if data_input.register_as_komandan:
             new_user_obj.role = UserRole.KOMANDAN
-            new_user_obj.mikrotik_server_name = 'srv-komandan'
+            new_user_obj.mikrotik_server_name = default_komandan_server
         else:
             new_user_obj.role = UserRole.USER
-            new_user_obj.mikrotik_server_name = 'srv-user'
-            new_user_obj.blok = data_input.blok
-            new_user_obj.kamar = data_input.kamar
+            new_user_obj.mikrotik_server_name = default_user_server
+            if data_input.is_tamping:
+                new_user_obj.blok = None
+                new_user_obj.kamar = None
+            else:
+                new_user_obj.blok = data_input.blok
+                new_user_obj.kamar = data_input.kamar
+
+        inactive_profile = (
+            settings_service.get_setting('MIKROTIK_INACTIVE_PROFILE', None)
+            or settings_service.get_setting('MIKROTIK_DEFAULT_PROFILE', 'default')
+        )
+        new_user_obj.mikrotik_profile_name = inactive_profile
 
         active_bonus = _get_active_registration_bonus()
         if active_bonus and active_bonus.bonus_value_mb and active_bonus.bonus_duration_days:
@@ -151,7 +384,7 @@ def register_user():
                 send_whatsapp_message(new_user_obj.phone_number, user_message)
 
                 recipients_query = select(User).join(NotificationRecipient, User.id == NotificationRecipient.admin_user_id).where(
-                    NotificationRecipient.notification_type == NotificationType.NEW_USER_REGISTRATION, User.is_active == True
+                    NotificationRecipient.notification_type == NotificationType.NEW_USER_REGISTRATION, User.is_active
                 )
                 recipients = db.session.scalars(recipients_query).all()
                 if recipients:
@@ -170,7 +403,7 @@ def register_user():
         
         return jsonify(UserRegisterResponseSchema(message="Registration successful. Your account is awaiting Admin approval.", user_id=new_user_obj.id, phone_number=new_user_obj.phone_number).model_dump()), HTTPStatus.CREATED
     except ValidationError as e:
-        return jsonify(AuthErrorResponseSchema(error="Invalid input.", details=e.errors()).model_dump()), HTTPStatus.UNPROCESSABLE_ENTITY
+        return jsonify(AuthErrorResponseSchema(error="Invalid input.", details=_validation_error_details(e)).model_dump()), HTTPStatus.UNPROCESSABLE_ENTITY
     except IntegrityError:
         db.session.rollback()
         return jsonify(AuthErrorResponseSchema(error="Phone number is already registered.").model_dump()), HTTPStatus.CONFLICT
@@ -180,58 +413,349 @@ def register_user():
         return jsonify(AuthErrorResponseSchema(error="An unexpected error occurred during registration.").model_dump()), HTTPStatus.INTERNAL_SERVER_ERROR
 
 @auth_bp.route('/request-otp', methods=['POST'])
+@limiter.limit(lambda: current_app.config.get('OTP_REQUEST_RATE_LIMIT', '5 per minute;20 per hour'), key_func=_rate_limit_key_with_phone)
 def request_otp():
-    if not request.is_json: return jsonify(AuthErrorResponseSchema(error="Request body must be JSON.").model_dump()), HTTPStatus.BAD_REQUEST
     try:
-        data = RequestOtpRequestSchema.model_validate(request.json)
-        user_for_otp = db.session.execute(select(User).filter_by(phone_number=data.phone_number)).scalar_one_or_none()
+        payload = request.get_json(silent=True)
+        if payload is None:
+            payload = request.form.to_dict() if request.form else None
+        if not payload:
+            return jsonify(AuthErrorResponseSchema(error="Request body must be JSON.").model_dump()), HTTPStatus.BAD_REQUEST
+        data = RequestOtpRequestSchema.model_validate(payload)
+        if _is_otp_cooldown_active(data.phone_number):
+            return jsonify(AuthErrorResponseSchema(error="Terlalu sering meminta OTP. Silakan coba beberapa saat lagi.").model_dump()), HTTPStatus.TOO_MANY_REQUESTS
+        phone_variations = get_phone_number_variations(data.phone_number)
+        user_for_otp = db.session.execute(select(User).where(User.phone_number.in_(phone_variations))).scalar_one_or_none()
         if not user_for_otp:
+            increment_metric("otp.request.failed")
             return jsonify(AuthErrorResponseSchema(error="Phone number is not registered.").model_dump()), HTTPStatus.NOT_FOUND
         if not user_for_otp.is_active or user_for_otp.approval_status != ApprovalStatus.APPROVED:
-            return jsonify(AuthErrorResponseSchema(error="Login failed. Your account is not active or approved yet.").model_dump()), HTTPStatus.FORBIDDEN
+            increment_metric("otp.request.failed")
+            return _build_status_error("inactive", "Login failed. Your account is not active or approved yet."), HTTPStatus.FORBIDDEN
         
         otp_generated = generate_otp()
         if not store_otp_in_redis(data.phone_number, otp_generated):
-            return jsonify(AuthErrorResponseSchema(error="Failed to process OTP request.").model_dump()), HTTPStatus.INTERNAL_SERVER_ERROR
+            if current_app.config.get('OTP_ALLOW_BYPASS', False):
+                current_app.logger.warning("Redis OTP unavailable; bypass mode enabled.")
+            else:
+                increment_metric("otp.request.failed")
+                return jsonify(AuthErrorResponseSchema(error="Failed to process OTP request.").model_dump()), HTTPStatus.INTERNAL_SERVER_ERROR
         
-        send_otp_whatsapp(data.phone_number, otp_generated)
+        send_otp_whatsapp(normalize_to_e164(data.phone_number), otp_generated)
+
+        _set_otp_cooldown(data.phone_number)
+        increment_metric("otp.request.success")
         
         return jsonify(RequestOtpResponseSchema().model_dump()), HTTPStatus.OK
     except ValidationError as e:
-        return jsonify(AuthErrorResponseSchema(error="Invalid input.", details=e.errors()).model_dump()), HTTPStatus.UNPROCESSABLE_ENTITY
+        return jsonify(AuthErrorResponseSchema(error="Invalid input.", details=_validation_error_details(e)).model_dump()), HTTPStatus.UNPROCESSABLE_ENTITY
     except Exception as e:
         current_app.logger.error(f"Unexpected error in /request-otp: {e}", exc_info=True)
         return jsonify(AuthErrorResponseSchema(error="An unexpected error occurred.").model_dump()), HTTPStatus.INTERNAL_SERVER_ERROR
 
 @auth_bp.route('/verify-otp', methods=['POST'])
+@limiter.limit(lambda: current_app.config.get('OTP_VERIFY_RATE_LIMIT', '10 per minute;60 per hour'), key_func=_rate_limit_key_with_phone)
 def verify_otp():
-    if not request.is_json: return jsonify(AuthErrorResponseSchema(error="Request body must be JSON.").model_dump()), HTTPStatus.BAD_REQUEST
     try:
-        data = VerifyOtpRequestSchema.model_validate(request.json)
-        if not verify_otp_from_redis(data.phone_number, data.otp):
+        payload = request.get_json(silent=True)
+        if payload is None:
+            payload = request.form.to_dict() if request.form else None
+        if not payload:
+            return jsonify(AuthErrorResponseSchema(error="Request body must be JSON.").model_dump()), HTTPStatus.BAD_REQUEST
+        data = VerifyOtpRequestSchema.model_validate(payload)
+        fail_count = _get_otp_fail_count(data.phone_number)
+        max_attempts = int(current_app.config.get('OTP_VERIFY_MAX_ATTEMPTS', 5))
+        if fail_count >= max_attempts:
+            increment_metric("otp.verify.failed")
+            return jsonify(AuthErrorResponseSchema(error="Terlalu banyak percobaan OTP. Silakan coba lagi nanti.").model_dump()), HTTPStatus.TOO_MANY_REQUESTS
+        otp_bypass_code = current_app.config.get('OTP_BYPASS_CODE', '000000')
+        bypass_allowed = current_app.config.get('OTP_ALLOW_BYPASS', False)
+        otp_ok = verify_otp_from_redis(data.phone_number, data.otp)
+        if not otp_ok and bypass_allowed and data.otp == otp_bypass_code:
+            current_app.logger.warning("OTP bypass digunakan untuk login.")
+            otp_ok = True
+        if not otp_ok:
+            _increment_otp_fail_count(data.phone_number)
+            increment_metric("otp.verify.failed")
             return jsonify(AuthErrorResponseSchema(error="Invalid or expired OTP code.").model_dump()), HTTPStatus.UNAUTHORIZED
+
+        _clear_otp_fail_count(data.phone_number)
+        increment_metric("otp.verify.success")
         
-        user_to_login = db.session.execute(select(User).filter_by(phone_number=data.phone_number)).scalar_one_or_none()
+        phone_variations = get_phone_number_variations(data.phone_number)
+        user_to_login = db.session.execute(select(User).where(User.phone_number.in_(phone_variations))).scalar_one_or_none()
         if not user_to_login:
             return jsonify(AuthErrorResponseSchema(error="User not found after OTP verification.").model_dump()), HTTPStatus.INTERNAL_SERVER_ERROR
         if not user_to_login.is_active or user_to_login.approval_status != ApprovalStatus.APPROVED:
-            return jsonify(AuthErrorResponseSchema(error="Account is not active or approved.").model_dump()), HTTPStatus.FORBIDDEN
+            return _build_status_error("inactive", "Account is not active or approved."), HTTPStatus.FORBIDDEN
+        if getattr(user_to_login, 'is_blocked', False):
+            return _build_status_error("blocked", "Akun Anda diblokir oleh Admin."), HTTPStatus.FORBIDDEN
         
+        client_ip = data.client_ip or get_client_ip()
+        client_mac = data.client_mac
+        user_agent = request.headers.get('User-Agent')
+
+        binding_context = resolve_binding_context(user_to_login, client_ip, client_mac)
+        if current_app.config.get('LOG_BINDING_DEBUG', False) or not client_ip:
+            current_app.logger.info(
+                "Verify-OTP binding context: "
+                "input_ip=%s input_mac=%s resolved_ip=%s ip_source=%s ip_msg=%s "
+                "resolved_mac=%s mac_source=%s mac_msg=%s",
+                binding_context.get("input_ip"),
+                binding_context.get("input_mac"),
+                binding_context.get("resolved_ip"),
+                binding_context.get("ip_source"),
+                binding_context.get("ip_message"),
+                binding_context.get("resolved_mac"),
+                binding_context.get("mac_source"),
+                binding_context.get("mac_message"),
+            )
+
+        if user_to_login.role in [UserRole.USER, UserRole.KOMANDAN]:
+            ok_binding, msg_binding, resolved_ip = apply_device_binding_for_login(user_to_login, client_ip, user_agent, client_mac)
+            if not ok_binding:
+                if msg_binding in ["Limit perangkat tercapai", "Perangkat belum diotorisasi"]:
+                    return jsonify(AuthErrorResponseSchema(error=msg_binding).model_dump()), HTTPStatus.FORBIDDEN
+                current_app.logger.warning(f"IP binding di-skip untuk user {user_to_login.id}: {msg_binding}")
+
+            if current_app.config.get('SYNC_ADDRESS_LIST_ON_LOGIN', True):
+                try:
+                    sync_address_list_for_single_user(user_to_login, client_ip=resolved_ip)
+                except Exception as e_sync:
+                    current_app.logger.warning(f"Gagal sync address-list saat login: {e_sync}")
+
         user_to_login.last_login_at = datetime.now(dt_timezone.utc)
-        new_login_entry = UserLoginHistory(user_id=user_to_login.id, ip_address=get_client_ip(), user_agent_string=request.headers.get('User-Agent'))
+        new_login_entry = cast(Any, UserLoginHistory)(user_id=user_to_login.id, ip_address=client_ip, user_agent_string=user_agent)
         db.session.add(new_login_entry)
         
         db.session.commit()
 
         jwt_payload = {"sub": str(user_to_login.id), "rl": user_to_login.role.value}
         access_token = create_access_token(data=jwt_payload)
-        return jsonify(VerifyOtpResponseSchema(access_token=access_token).model_dump()), HTTPStatus.OK
+
+        session_token = _store_session_token(user_to_login.id)
+        session_url = None
+        if session_token:
+            base_url = current_app.config.get('APP_PUBLIC_BASE_URL') or current_app.config.get('FRONTEND_URL') or current_app.config.get('APP_LINK_USER')
+            if base_url:
+                session_url = f"{base_url.rstrip('/')}/session/consume?token={session_token}&next=/dashboard"
+
+        hotspot_username: Optional[str] = None
+        hotspot_password: Optional[str] = None
+        hotspot_login_required = True
+        if user_to_login.role in [UserRole.USER, UserRole.KOMANDAN]:
+            hotspot_login_required = is_hotspot_login_required(user_to_login)
+            allow_hotspot_credentials = bool(data.client_ip or data.client_mac)
+            if not allow_hotspot_credentials and data.hotspot_login_context is True:
+                allow_hotspot_credentials = True
+                current_app.logger.info(
+                    "Hotspot credentials allowed via captive context without client_ip/client_mac for user=%s",
+                    user_to_login.id,
+                )
+            if hotspot_login_required and allow_hotspot_credentials:
+                hotspot_username = format_to_local_phone(user_to_login.phone_number)
+                hotspot_password = user_to_login.mikrotik_password
+
+        response = jsonify(
+            VerifyOtpResponseSchema(
+                access_token=access_token,
+                hotspot_username=hotspot_username,
+                hotspot_password=hotspot_password,
+                session_token=session_token,
+                session_url=session_url,
+                hotspot_login_required=hotspot_login_required,
+            ).model_dump()
+        )
+        _set_auth_cookie(response, access_token)
+        return response, HTTPStatus.OK
     except ValidationError as e:
-        return jsonify(AuthErrorResponseSchema(error="Invalid input.", details=e.errors()).model_dump()), HTTPStatus.UNPROCESSABLE_ENTITY
+        return jsonify(AuthErrorResponseSchema(error="Invalid input.", details=_validation_error_details(e)).model_dump()), HTTPStatus.UNPROCESSABLE_ENTITY
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Unexpected error in /verify-otp: {e}", exc_info=True)
         return jsonify(AuthErrorResponseSchema(error="An unexpected error occurred.").model_dump()), HTTPStatus.INTERNAL_SERVER_ERROR
+
+@auth_bp.route('/auto-login', methods=['POST'])
+@limiter.limit(lambda: current_app.config.get('AUTO_LOGIN_RATE_LIMIT', '60 per minute'), key_func=_rate_limit_key_with_ip)
+def auto_login():
+    try:
+        payload = request.get_json(silent=True)
+        if payload is None:
+            payload = request.form.to_dict() if request.form else {}
+
+        client_ip = payload.get('client_ip') if isinstance(payload, dict) else None
+        client_mac = payload.get('client_mac') if isinstance(payload, dict) else None
+        if not client_ip:
+            client_ip = get_client_ip()
+        if not client_ip:
+            return jsonify(AuthErrorResponseSchema(error="IP klien tidak ditemukan.").model_dump()), HTTPStatus.BAD_REQUEST
+
+        user_agent = request.headers.get('User-Agent')
+
+        resolved_mac = None
+        if client_mac:
+            resolved_mac = normalize_mac(client_mac)
+        else:
+            ok, mac, msg = resolve_client_mac(client_ip)
+            if ok and mac:
+                resolved_mac = mac
+            elif not ok:
+                current_app.logger.warning(f"Auto-login: gagal resolve MAC untuk IP {client_ip}: {msg}")
+
+        device_query = db.session.query(UserDevice).join(User).filter(
+            UserDevice.is_authorized.is_(True),
+            User.is_active.is_(True),
+            User.approval_status == ApprovalStatus.APPROVED,
+        )
+
+        device = None
+        if resolved_mac:
+            device = device_query.filter(UserDevice.mac_address == resolved_mac).first()
+        if not device:
+            device = device_query.filter(UserDevice.ip_address == client_ip).order_by(UserDevice.last_seen_at.desc()).first()
+
+        if not device or not device.user:
+            return jsonify(AuthErrorResponseSchema(error="Perangkat belum terdaftar atau belum diotorisasi.").model_dump()), HTTPStatus.UNAUTHORIZED
+
+        user = device.user
+        if getattr(user, 'is_blocked', False):
+            return _build_status_error("blocked", "Akun Anda diblokir oleh Admin."), HTTPStatus.FORBIDDEN
+
+        if user.role in [UserRole.USER, UserRole.KOMANDAN]:
+            ok_binding, msg_binding, resolved_ip = apply_device_binding_for_login(user, client_ip, user_agent, resolved_mac or device.mac_address)
+            if not ok_binding:
+                if msg_binding in ["Limit perangkat tercapai", "Perangkat belum diotorisasi"]:
+                    return jsonify(AuthErrorResponseSchema(error=msg_binding).model_dump()), HTTPStatus.FORBIDDEN
+                current_app.logger.warning(f"Auto-login: IP binding di-skip untuk user {user.id}: {msg_binding}")
+
+            if current_app.config.get('SYNC_ADDRESS_LIST_ON_LOGIN', True):
+                try:
+                    sync_address_list_for_single_user(user, client_ip=resolved_ip)
+                except Exception as e_sync:
+                    current_app.logger.warning(f"Auto-login: gagal sync address-list: {e_sync}")
+
+        user.last_login_at = datetime.now(dt_timezone.utc)
+        new_login_entry = cast(Any, UserLoginHistory)(user_id=user.id, ip_address=client_ip, user_agent_string=user_agent)
+        db.session.add(new_login_entry)
+        db.session.commit()
+
+        jwt_payload = {"sub": str(user.id), "rl": user.role.value}
+        access_token = create_access_token(data=jwt_payload)
+
+        hotspot_username: Optional[str] = None
+        hotspot_password: Optional[str] = None
+        hotspot_login_required = True
+        if user.role in [UserRole.USER, UserRole.KOMANDAN]:
+            hotspot_login_required = is_hotspot_login_required(user)
+
+        response = jsonify(
+            VerifyOtpResponseSchema(
+                access_token=access_token,
+                hotspot_username=hotspot_username,
+                hotspot_password=hotspot_password,
+                hotspot_login_required=hotspot_login_required,
+            ).model_dump()
+        )
+        _set_auth_cookie(response, access_token)
+        return response, HTTPStatus.OK
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Unexpected error in /auto-login: {e}", exc_info=True)
+        return jsonify(AuthErrorResponseSchema(error="An unexpected error occurred.").model_dump()), HTTPStatus.INTERNAL_SERVER_ERROR
+
+@auth_bp.route('/session/consume', methods=['POST'])
+@limiter.limit(lambda: current_app.config.get('SESSION_CONSUME_RATE_LIMIT', '30 per minute'), key_func=_rate_limit_key_with_ip)
+def consume_session_token():
+    try:
+        payload = request.get_json(silent=True)
+        if payload is None:
+            payload = request.form.to_dict() if request.form else None
+        if not payload:
+            return jsonify(AuthErrorResponseSchema(error="Request body must be JSON.").model_dump()), HTTPStatus.BAD_REQUEST
+
+        data = SessionTokenRequestSchema.model_validate(payload)
+        user_id = _consume_session_token(data.token)
+        if not user_id:
+            return jsonify(AuthErrorResponseSchema(error="Session token tidak valid atau kedaluwarsa.").model_dump()), HTTPStatus.UNAUTHORIZED
+
+        user = db.session.get(User, user_id)
+        if not user:
+            return jsonify(AuthErrorResponseSchema(error="User not found.").model_dump()), HTTPStatus.NOT_FOUND
+        if not user.is_active or user.approval_status != ApprovalStatus.APPROVED:
+            return _build_status_error("inactive", "Account is not active or approved."), HTTPStatus.FORBIDDEN
+        if getattr(user, 'is_blocked', False):
+            return _build_status_error("blocked", "Akun Anda diblokir oleh Admin."), HTTPStatus.FORBIDDEN
+
+        jwt_payload = {"sub": str(user.id), "rl": user.role.value}
+        access_token = create_access_token(data=jwt_payload)
+        response = jsonify(VerifyOtpResponseSchema(access_token=access_token).model_dump())
+        _set_auth_cookie(response, access_token)
+        return response, HTTPStatus.OK
+    except ValidationError as e:
+        return jsonify(AuthErrorResponseSchema(error="Invalid input.", details=_validation_error_details(e)).model_dump()), HTTPStatus.UNPROCESSABLE_ENTITY
+    except Exception as e:
+        current_app.logger.error(f"Unexpected error in /session/consume: {e}", exc_info=True)
+        return jsonify(AuthErrorResponseSchema(error="An unexpected error occurred.").model_dump()), HTTPStatus.INTERNAL_SERVER_ERROR
+
+@auth_bp.route('/status-token/verify', methods=['POST'])
+@limiter.limit(lambda: current_app.config.get('SESSION_CONSUME_RATE_LIMIT', '30 per minute'), key_func=_rate_limit_key_with_ip)
+def verify_status_token():
+    try:
+        payload = request.get_json(silent=True)
+        if payload is None:
+            payload = request.form.to_dict() if request.form else None
+        if not payload:
+            return jsonify(AuthErrorResponseSchema(error="Request body must be JSON.").model_dump()), HTTPStatus.BAD_REQUEST
+
+        data = StatusTokenVerifyRequestSchema.model_validate(payload)
+        is_valid = _verify_status_token(data.token, data.status)
+        return jsonify({"valid": is_valid}), HTTPStatus.OK
+    except ValidationError as e:
+        return jsonify(AuthErrorResponseSchema(error="Invalid input.", details=_validation_error_details(e)).model_dump()), HTTPStatus.UNPROCESSABLE_ENTITY
+    except Exception as e:
+        current_app.logger.error(f"Unexpected error in /status-token/verify: {e}", exc_info=True)
+        return jsonify(AuthErrorResponseSchema(error="An unexpected error occurred.").model_dump()), HTTPStatus.INTERNAL_SERVER_ERROR
+
+@auth_bp.route('/debug/binding', methods=['POST'])
+@admin_required
+def debug_binding(current_admin=None):
+    if current_app.config.get('FLASK_ENV') == 'production':
+        return jsonify(AuthErrorResponseSchema(error="Endpoint tidak tersedia.").model_dump()), HTTPStatus.NOT_FOUND
+
+    payload = request.get_json(silent=True)
+    if payload is None:
+        payload = request.form.to_dict() if request.form else None
+    if not payload or not isinstance(payload, dict):
+        return jsonify(AuthErrorResponseSchema(error="Request body must be JSON.").model_dump()), HTTPStatus.BAD_REQUEST
+
+    user_id_raw = payload.get('user_id')
+    phone_number = payload.get('phone_number')
+    client_ip = payload.get('client_ip')
+    client_mac = payload.get('client_mac')
+
+    user = None
+    if user_id_raw:
+        try:
+            user = db.session.get(User, uuid.UUID(str(user_id_raw)))
+        except (ValueError, TypeError):
+            return jsonify(AuthErrorResponseSchema(error="user_id tidak valid.").model_dump()), HTTPStatus.BAD_REQUEST
+    elif phone_number:
+        variations = get_phone_number_variations(str(phone_number))
+        user = db.session.execute(select(User).where(User.phone_number.in_(variations))).scalar_one_or_none()
+    else:
+        return jsonify(AuthErrorResponseSchema(error="user_id atau phone_number wajib diisi.").model_dump()), HTTPStatus.BAD_REQUEST
+
+    if not user:
+        return jsonify(AuthErrorResponseSchema(error="User not found.").model_dump()), HTTPStatus.NOT_FOUND
+
+    context = resolve_binding_context(user, client_ip, client_mac)
+    mac_only = (not context.get("input_ip")) and bool(context.get("input_mac")) and context.get("ip_source") == "device_mac"
+    return jsonify({
+        "user_id": str(user.id),
+        "phone_number": user.phone_number,
+        "binding": context,
+        "mac_only": mac_only,
+    }), HTTPStatus.OK
 
 @auth_bp.route('/me', methods=['GET'])
 @token_required
@@ -240,19 +764,27 @@ def get_current_user(current_user_id: uuid.UUID):
     if not user:
         return jsonify(AuthErrorResponseSchema(error="User not found.").model_dump()), HTTPStatus.NOT_FOUND
     if not user.is_active:
-        return jsonify(AuthErrorResponseSchema(error="User account is not active.").model_dump()), HTTPStatus.FORBIDDEN
+        return _build_status_error("inactive", "User account is not active."), HTTPStatus.FORBIDDEN
+    if getattr(user, 'is_blocked', False):
+        return _build_status_error("blocked", "Akun Anda diblokir oleh Admin."), HTTPStatus.FORBIDDEN
     try:
-        return jsonify(UserMeResponseSchema.model_validate(user).model_dump(mode='json')), HTTPStatus.OK
+        response = jsonify(UserMeResponseSchema.model_validate(user).model_dump(mode='json'))
+        jwt_payload = {"sub": str(user.id), "rl": user.role.value}
+        refreshed_access_token = create_access_token(data=jwt_payload)
+        _set_auth_cookie(response, refreshed_access_token)
+        return response, HTTPStatus.OK
     except ValidationError as e:
         current_app.logger.error(f"[/me] Pydantic validation FAILED for user {user.id}: {e}", exc_info=True)
-        return jsonify(AuthErrorResponseSchema(error="User data on server is invalid.", details=e.errors()).model_dump()), HTTPStatus.INTERNAL_SERVER_ERROR
+        return jsonify(AuthErrorResponseSchema(error="User data on server is invalid.", details=_validation_error_details(e)).model_dump()), HTTPStatus.INTERNAL_SERVER_ERROR
 
 @auth_bp.route('/me/profile', methods=['PUT'])
 @token_required
 def update_user_profile(current_user_id: uuid.UUID):
     user = db.session.get(User, current_user_id)
-    if not user: return jsonify(AuthErrorResponseSchema(error="User not found.").model_dump()), HTTPStatus.NOT_FOUND
-    if not request.is_json: return jsonify(AuthErrorResponseSchema(error="Request body must be JSON.").model_dump()), HTTPStatus.BAD_REQUEST
+    if not user:
+        return jsonify(AuthErrorResponseSchema(error="User not found.").model_dump()), HTTPStatus.NOT_FOUND
+    if not request.is_json:
+        return jsonify(AuthErrorResponseSchema(error="Request body must be JSON.").model_dump()), HTTPStatus.BAD_REQUEST
     
     if not user.is_active or user.approval_status != ApprovalStatus.APPROVED:
         return jsonify(AuthErrorResponseSchema(error="Your account is not active or approved to update profile.").model_dump()), HTTPStatus.FORBIDDEN
@@ -266,7 +798,7 @@ def update_user_profile(current_user_id: uuid.UUID):
         db.session.commit()
         return jsonify(UserMeResponseSchema.model_validate(user).model_dump(mode='json')), HTTPStatus.OK
     except ValidationError as e:
-        return jsonify(AuthErrorResponseSchema(error="Invalid input.", details=e.errors()).model_dump()), HTTPStatus.UNPROCESSABLE_ENTITY
+        return jsonify(AuthErrorResponseSchema(error="Invalid input.", details=_validation_error_details(e)).model_dump()), HTTPStatus.UNPROCESSABLE_ENTITY
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Failed to update user profile {user.id}: {e}", exc_info=True)
@@ -276,9 +808,12 @@ def update_user_profile(current_user_id: uuid.UUID):
 @token_required
 def reset_hotspot_password(current_user_id: uuid.UUID):
     current_user = db.session.get(User, current_user_id)
-    if not current_user: return jsonify({"message": "User not found."}), HTTPStatus.NOT_FOUND
-    if current_user.is_admin_role: return jsonify({"message": "Access denied. This feature is not for admin roles."}), HTTPStatus.FORBIDDEN
-    if not current_user.is_active or current_user.approval_status != ApprovalStatus.APPROVED: return jsonify({"message": "Your account is not active or approved. Cannot reset password."}), HTTPStatus.FORBIDDEN
+    if not current_user:
+        return jsonify({"message": "User not found."}), HTTPStatus.NOT_FOUND
+    if current_user.is_admin_role:
+        return jsonify({"message": "Access denied. This feature is not for admin roles."}), HTTPStatus.FORBIDDEN
+    if not current_user.is_active or current_user.approval_status != ApprovalStatus.APPROVED:
+        return jsonify({"message": "Your account is not active or approved. Cannot reset password."}), HTTPStatus.FORBIDDEN
 
     try:
         new_mikrotik_password = _generate_password(length=6, numeric_only=True)
@@ -291,7 +826,7 @@ def reset_hotspot_password(current_user_id: uuid.UUID):
             hotspot_password=new_mikrotik_password,
             mikrotik_profile_name=current_user.mikrotik_profile_name,
             server=current_user.mikrotik_server_name,
-            comment=f"Password reset by user via Portal"
+            comment="Password reset by user via Portal"
         )
 
         if not mikrotik_success:
@@ -301,7 +836,11 @@ def reset_hotspot_password(current_user_id: uuid.UUID):
         db.session.commit()
 
         if WHATSAPP_AVAILABLE and settings_service.get_setting('ENABLE_WHATSAPP_NOTIFICATIONS', 'False') == 'True':
-            context = {"full_name": current_user.full_name, "username": mikrotik_username, "password": new_mikrotik_password}
+            context = {
+                "full_name": current_user.full_name,
+                "hotspot_username": mikrotik_username,
+                "hotspot_password": new_mikrotik_password,
+            }
             message_body = get_notification_message("user_hotspot_password_reset_by_user", context)
             send_whatsapp_message(current_user.phone_number, message_body)
             
@@ -312,12 +851,17 @@ def reset_hotspot_password(current_user_id: uuid.UUID):
         return jsonify({"success": False, "message": "An internal error occurred."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 @auth_bp.route('/admin/login', methods=['POST'])
+@limiter.limit(lambda: current_app.config.get('ADMIN_LOGIN_RATE_LIMIT', '10 per minute;60 per hour'), key_func=_rate_limit_key_with_ip)
 def admin_login():
-    if not request.is_json: return jsonify({"message": "Request body must be JSON."}), HTTPStatus.BAD_REQUEST
+    if not request.is_json:
+        return jsonify({"message": "Request body must be JSON."}), HTTPStatus.BAD_REQUEST
     data = request.get_json()
     username_input = data.get('username')
     password = data.get('password')
-    if not username_input or not password: return jsonify({"message": "Username and password are required."}), HTTPStatus.BAD_REQUEST
+    if isinstance(username_input, str):
+        username_input = username_input.strip()
+    if not username_input or not password:
+        return jsonify({"message": "Username and password are required."}), HTTPStatus.BAD_REQUEST
     
     try:
         from app.infrastructure.http.schemas.auth_schemas import validate_phone_number
@@ -325,25 +869,49 @@ def admin_login():
     except ValueError as e:
         return jsonify({"message": str(e)}), HTTPStatus.BAD_REQUEST
     
-    user_to_login = db.session.execute(db.select(User).filter(User.phone_number == normalized_phone)).scalar_one_or_none()
+    phone_variations = get_phone_number_variations(normalized_phone)
+    user_to_login = db.session.execute(db.select(User).filter(User.phone_number.in_(phone_variations))).scalar_one_or_none()
     
-    if not user_to_login or not user_to_login.is_admin_role or not user_to_login.password_hash or not check_password_hash(user_to_login.password_hash, password):
+    if (
+        not user_to_login
+        or not user_to_login.is_admin_role
+        or not user_to_login.is_active
+        or user_to_login.approval_status != ApprovalStatus.APPROVED
+        or not user_to_login.password_hash
+        or not check_password_hash(user_to_login.password_hash, password)
+    ):
+        increment_metric("admin.login.failed")
         return jsonify({"message": "Invalid username or password."}), HTTPStatus.UNAUTHORIZED
     
     user_to_login.last_login_at = datetime.now(dt_timezone.utc)
-    new_login_entry = UserLoginHistory(user_id=user_to_login.id, ip_address=get_client_ip(), user_agent_string=request.headers.get('User-Agent'))
+    new_login_entry = cast(Any, UserLoginHistory)(user_id=user_to_login.id, ip_address=get_client_ip(), user_agent_string=request.headers.get('User-Agent'))
     db.session.add(new_login_entry)
     db.session.commit()
+
+    try:
+        if WHATSAPP_AVAILABLE and settings_service.get_setting('ENABLE_WHATSAPP_NOTIFICATIONS', 'False') == 'True':
+            context = {
+                "phone_number": format_to_local_phone(user_to_login.phone_number),
+                "login_time": format_datetime_to_wita(user_to_login.last_login_at),
+            }
+            message_body = get_notification_message("admin_login_notification", context)
+            send_whatsapp_message(user_to_login.phone_number, message_body)
+    except Exception as e_notify:
+        current_app.logger.error(f"Gagal mengirim notifikasi login admin: {e_notify}", exc_info=True)
     
     jwt_payload = {"sub": str(user_to_login.id), "rl": user_to_login.role.value}
     access_token = create_access_token(data=jwt_payload)
-    return jsonify(VerifyOtpResponseSchema(access_token=access_token).model_dump()), HTTPStatus.OK
+    increment_metric("admin.login.success")
+    response = jsonify(VerifyOtpResponseSchema(access_token=access_token).model_dump())
+    _set_auth_cookie(response, access_token)
+    return response, HTTPStatus.OK
 
 @auth_bp.route('/me/change-password', methods=['POST'])
 @token_required
 def change_my_password(current_user_id: uuid.UUID):
     user = db.session.get(User, current_user_id)
-    if not user: return jsonify({"message": "User not found."}), HTTPStatus.NOT_FOUND
+    if not user:
+        return jsonify({"message": "User not found."}), HTTPStatus.NOT_FOUND
 
     if not user.is_admin_role:
         return jsonify({"message": "This feature is for Admins only."}), HTTPStatus.FORBIDDEN
@@ -375,4 +943,6 @@ def change_my_password(current_user_id: uuid.UUID):
 @token_required
 def logout_user(current_user_id: uuid.UUID):
     current_app.logger.info(f"User {current_user_id} initiated logout.")
-    return jsonify({"message": "Logout successful"}), HTTPStatus.OK
+    response = jsonify({"message": "Logout successful"})
+    _clear_auth_cookie(response)
+    return response, HTTPStatus.OK

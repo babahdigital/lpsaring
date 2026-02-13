@@ -1,4 +1,5 @@
 <script setup lang="tsx">
+import { Direction, Layout, Skins, Theme } from '@core/enums'
 import { useConfigStore } from '@core/stores/config'
 import borderSkin from '@images/customizer-icons/border-light.svg'
 import collapsed from '@images/customizer-icons/collapsed-light.svg'
@@ -8,14 +9,14 @@ import horizontalLight from '@images/customizer-icons/horizontal-light.svg'
 import ltrSvg from '@images/customizer-icons/ltr-light.svg'
 import rtlSvg from '@images/customizer-icons/rtl-light.svg'
 import wideSvg from '@images/customizer-icons/wide-light.svg'
-import { cookieRef, namespaceConfig } from '@layouts/stores/config'
 
+import { AppContentLayoutNav, ContentWidth } from '@layouts/enums'
+import { cookieRef, namespaceConfig } from '@layouts/stores/config'
 import { themeConfig } from '@themeConfig'
 import { useStorage } from '@vueuse/core'
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar'
 import { useTheme } from 'vuetify'
 import { staticPrimaryColor, staticPrimaryDarkenColor } from '@/plugins/vuetify/theme'
-import { AppContentLayoutNav, ContentWidth, Direction, Layout, Skins, Theme } from '@/types/enums'
 
 const isNavDrawerOpen = ref(false)
 

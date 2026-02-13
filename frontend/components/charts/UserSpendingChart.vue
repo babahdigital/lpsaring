@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { hexToRgb } from '@layouts/utils'
 import { computed } from 'vue'
-import VueApexCharts from 'vue3-apexcharts'
 import { useDisplay, useTheme } from 'vuetify'
 
 const props = defineProps({
@@ -108,7 +107,7 @@ const chartOptions = computed(() => {
     tooltip: {
       enabled: true,
       theme: isDark ? 'dark' : 'light',
-      custom: ({ series, seriesIndex, dataPointIndex, w }) => {
+      custom: ({ series, seriesIndex, dataPointIndex, w }: { series: number[][], seriesIndex: number, dataPointIndex: number, w: any }) => {
         const day = w.config.xaxis.categories[dataPointIndex]
         const value = series[seriesIndex][dataPointIndex]
         return `<div class="simple-tooltip">${day}: ${simplifyNumber(value)}</div>`

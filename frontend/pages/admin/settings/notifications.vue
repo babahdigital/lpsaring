@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { NotificationType } from '@/types/api' // Asumsi Anda punya file tipe
+import type { NotificationType } from '@/types/api'
 import { useHead, useNuxtApp } from '#app'
 import { onMounted, reactive, ref, watch } from 'vue'
 import { useAuthStore } from '@/store/auth'
@@ -218,7 +218,7 @@ watch(selectedNotificationType, () => {
                   />
                 </template>
               </VListItem>
-              <VDivider v-if="index < recipients.length - 1" />
+              <VDivider v-if="Number(index) < recipients.length - 1" />
             </template>
           </VList>
           <p v-if="recipients.length === 0" class="text-center text-medium-emphasis py-6">

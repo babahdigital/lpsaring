@@ -1,21 +1,19 @@
 <script lang="ts" setup>
+// @layouts plugin
 import { VerticalNavLayout } from '@layouts'
 import { computed } from 'vue'
 
-import HeaderWeeklyRevenue from '@/components/admin/HeaderWeeklyRevenue.vue'
 // Components
+import HeaderWeeklyRevenue from '@/components/admin/HeaderWeeklyRevenue.vue'
 import Footer from '@/layouts/components/Footer.vue'
 import UserProfile from '@/layouts/components/UserProfile.vue'
 
-// PENYEMPURNAAN: Mengimpor fungsi dinamis dari sistem navigasi terpusat kita
-import { getHorizontalNavItems } from '@/navigation/horizontal'
+import { getVerticalNavItems } from '@/navigation/vertical'
 import { useAuthStore } from '~/store/auth'
 
 const authStore = useAuthStore()
 const isAdmin = computed(() => authStore.isAdmin || authStore.isSuperAdmin)
-
-// PENYEMPURNAAN: navItems sekarang menjadi computed property yang memanggil fungsi terpusat
-const navItems = computed(() => getHorizontalNavItems())
+const navItems = computed(() => getVerticalNavItems())
 </script>
 
 <template>
@@ -36,12 +34,10 @@ const navItems = computed(() => getHorizontalNavItems())
 
         <VSpacer />
 
-        <!-- Info Pendapatan Mingguan -->
         <HeaderWeeklyRevenue
           v-if="isAdmin"
           class="me-4"
         />
-
         <UserProfile />
       </div>
     </template>
@@ -53,5 +49,8 @@ const navItems = computed(() => getHorizontalNavItems())
     <template #footer>
       <Footer />
     </template>
+
+    <!-- 👉 Customizer -->
+    <!-- <TheCustomizer /> -->
   </VerticalNavLayout>
 </template>

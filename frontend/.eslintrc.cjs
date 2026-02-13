@@ -29,7 +29,7 @@ module.exports = {
     'regex',
     'regexp',
   ],
-  ignorePatterns: ['plugins/iconify/*.js', 'node_modules', 'dist', '*.d.ts', 'vendor', '*.json'],
+  ignorePatterns: ['plugins/iconify/*.js', 'node_modules', 'dist', '*.d.ts', 'vendor', '*.json', 'server/routes/.well-known/**'],
   rules: {
     'no-console': process.env.NODE_ENV === 'production' ? 'warn' : 'off',
     'no-debugger': process.env.NODE_ENV === 'production' ? 'warn' : 'off',
@@ -142,6 +142,8 @@ module.exports = {
     '@typescript-eslint/no-shadow': ['error'],
 
     '@typescript-eslint/consistent-type-imports': 'error',
+    '@typescript-eslint/strict-boolean-expressions': 'off',
+    'ts/strict-boolean-expressions': 'off',
 
     // Plugin: eslint-plugin-promise
     'promise/always-return': 'off',
@@ -230,6 +232,15 @@ module.exports = {
       '\.eslintrc\.cjs',
     ],
   },
+  overrides: [
+    {
+      files: ['**/*.ts', '**/*.tsx', '**/*.vue'],
+      rules: {
+        '@typescript-eslint/strict-boolean-expressions': 'off',
+        'ts/strict-boolean-expressions': 'off',
+      },
+    },
+  ],
   settings: {
     'import/resolver': {
       node: true,

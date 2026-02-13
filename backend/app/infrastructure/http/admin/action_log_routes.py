@@ -10,9 +10,10 @@ import io
 from datetime import datetime
 
 from app.extensions import db
-from app.infrastructure.db.models import AdminActionLog, User, AdminActionType
+from app.infrastructure.db.models import AdminActionLog, User
 from app.infrastructure.http.decorators import admin_required, super_admin_required
 from .schemas import AdminActionLogResponseSchema
+from app.utils.formatters import format_app_datetime, format_app_date
 
 action_log_bp = Blueprint('action_log_api', __name__)
 
@@ -130,7 +131,7 @@ def export_action_logs(current_admin: User):
             writer.writerow(['Waktu', 'Admin Pelaku', 'No. HP Admin', 'Aksi', 'Detail Aksi', 'Target Pengguna', 'No. HP Target'])
             for log in logs:
                 writer.writerow([
-                    log.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                    format_app_datetime(log.created_at),
                     log.admin.full_name if log.admin else 'N/A',
                     log.admin.phone_number if log.admin else 'N/A',
                     log.action_type.value if log.action_type else 'N/A',
@@ -139,17 +140,17 @@ def export_action_logs(current_admin: User):
                     log.target_user.phone_number if log.target_user else 'N/A'
                 ])
             mimetype = 'text/csv'
-            filename = f'log_aktivitas_{datetime.now().strftime("%Y%m%d")}.csv'
+            filename = f"log_aktivitas_{format_app_date(datetime.now()).replace('-', '')}.csv"
         else: # TXT format
             for log in logs:
-                output.write(f"Waktu         : {log.created_at.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                output.write(f"Waktu         : {format_app_datetime(log.created_at)}\n")
                 output.write(f"Admin Pelaku  : {log.admin.full_name if log.admin else 'N/A'}\n")
                 output.write(f"Aksi          : {log.action_type.value if log.action_type else 'N/A'}\n")
                 output.write(f"Detail        : {json.dumps(log.details) if isinstance(log.details, dict) else log.details}\n")
                 output.write(f"Target        : {log.target_user.full_name if log.target_user else 'N/A'}\n")
                 output.write("-" * 30 + "\n")
             mimetype = 'text/plain'
-            filename = f'log_aktivitas_{datetime.now().strftime("%Y%m%d")}.txt'
+            filename = f"log_aktivitas_{format_app_date(datetime.now()).replace('-', '')}.txt"
             
         return Response(
             output.getvalue(),

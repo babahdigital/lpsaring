@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import type { MonthlyUsageResponse, UserQuotaResponse, WeeklyUsageResponse } from '~/types/user'
-import { useCookie, useFetch } from '#app'
+import { useNuxtApp } from '#app'
 import { useDebounceFn } from '@vueuse/core'
-import { computed, defineAsyncComponent, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { usePromoStore } from '~/store/promo' // Import promo store
+import { useSnackbar } from '~/composables/useSnackbar'
+import { useApiFetch } from '~/composables/useApiFetch'
+import { useAuthStore } from '~/store/auth'
+import { useDisplay } from 'vuetify'
 
 // Impor komponen PromoAnnouncement DIHAPUS, diganti dengan sistem global di app.vue
 // const PromoAnnouncement = defineAsyncComponent(() => import('~/components/promo/PromoAnnouncement.vue'))
@@ -12,9 +16,15 @@ const WeeklyUsageChart = defineAsyncComponent(() => import('~/components/charts/
 const WeeklyUsageChartUnlimited = defineAsyncComponent(() => import('~/components/charts/WeeklyUsageChartUnlimited.vue'))
 const MonthlyUsageChart = defineAsyncComponent(() => import('~/components/charts/MonthlyUsageChart.vue'))
 
-const authToken = useCookie<string | null>('auth_token')
 const promoStore = usePromoStore() // Inisialisasi promo store
+const authStore = useAuthStore()
+const display = useDisplay()
 const pageTitle = 'Dashboard Pengguna'
+const { add: addSnackbar } = useSnackbar()
+
+const chartReady = ref(false)
+const chartDelayMs = computed(() => (display.smAndDown.value ? 1200 : 400))
+let chartTimer: ReturnType<typeof setTimeout> | null = null
 
 // --- TAMBAHAN BARU ---
 // State untuk menampilkan notifikasi promo di dashboard
@@ -22,8 +32,8 @@ const showPromoWarning = ref(false) // Default false, akan diatur oleh watcher
 const promoWarningMessage = computed(() => {
   if (promoStore.activePromo) {
     if (promoStore.activePromo.event_type === 'BONUS_REGISTRATION') {
-      const bonusMb = promoStore.activePromo.bonus_value_mb
-      const gbValue = (bonusMb !== null && bonusMb > 0) ? (bonusMb / 1024) : 0
+      const bonusMb = promoStore.activePromo.bonus_value_mb ?? 0
+      const gbValue = bonusMb > 0 ? (bonusMb / 1024) : 0
       const displayGb = gbValue % 1 === 0 ? gbValue : gbValue.toFixed(2)
       return `Ada promo bonus registrasi aktif! Dapatkan ${displayGb} GB kuota gratis.`
     }
@@ -45,36 +55,25 @@ watch(() => promoStore.activePromo, (newPromo) => {
 }, { immediate: true }) // Jalankan segera saat komponen dimuat
 // --- AKHIR TAMBAHAN BARU ---
 
-function getApiUrl(endpoint: string): string {
-  const clientBaseUrl = '/api'
-  return `${clientBaseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`
-}
-
-// Opsi fetch umum
-const commonFetchOptions = computed(() => ({
-  headers: { Authorization: `Bearer ${authToken.value}` },
-  server: false,
-}))
-
 // Fetch data kuota
-const quotaApiUrl = computed(() => authToken.value === null ? null : getApiUrl('/users/me/quota'))
-const { data: quotaData, pending: quotaPending, error: quotaError, refresh: refreshQuotaRaw } = useFetch<UserQuotaResponse>(
+const quotaApiUrl = computed(() => (authStore.isLoggedIn ? '/users/me/quota' : ''))
+const { data: quotaData, pending: quotaPending, error: quotaError, refresh: refreshQuotaRaw } = useApiFetch<UserQuotaResponse>(
   quotaApiUrl,
-  { ...commonFetchOptions.value, key: 'userQuotaData', default: () => ({ success: false, total_quota_purchased_mb: 0, total_quota_used_mb: 0, remaining_mb: 0, hotspot_username: '...', last_sync_time: null, is_unlimited_user: false }), immediate: false, watch: false },
+  { server: false, key: 'userQuotaData', default: () => ({ success: false, total_quota_purchased_mb: 0, total_quota_used_mb: 0, remaining_mb: 0, hotspot_username: '...', last_sync_time: null, is_unlimited_user: false, quota_expiry_date: null }), immediate: false, watch: false },
 )
 
 // Fetch data penggunaan mingguan
-const weeklyUsageApiUrl = computed(() => authToken.value === null ? null : getApiUrl('/users/me/weekly-usage'))
-const { data: weeklyUsageData, pending: weeklyUsagePending, error: weeklyUsageError, refresh: refreshWeeklyUsageRaw } = useFetch<WeeklyUsageResponse>(
+const weeklyUsageApiUrl = computed(() => (authStore.isLoggedIn ? '/users/me/weekly-usage' : ''))
+const { data: weeklyUsageData, pending: weeklyUsagePending, error: weeklyUsageError, refresh: refreshWeeklyUsageRaw } = useApiFetch<WeeklyUsageResponse>(
   weeklyUsageApiUrl,
-  { ...commonFetchOptions.value, key: 'weeklyUsageData', default: () => ({ success: false, weekly_data: [] }), immediate: false, watch: false },
+  { server: false, key: 'weeklyUsageData', default: () => ({ success: false, weekly_data: [], period: { start_date: '', end_date: '' } }), immediate: false, watch: false },
 )
 
 // Fetch data penggunaan bulanan
-const monthlyUsageApiUrl = computed(() => authToken.value === null ? null : getApiUrl('/users/me/monthly-usage'))
-const { data: monthlyUsageData, pending: monthlyChartPending, error: monthlyChartError, refresh: refreshMonthlyUsageRaw } = useFetch<MonthlyUsageResponse>(
+const monthlyUsageApiUrl = computed(() => (authStore.isLoggedIn ? '/users/me/monthly-usage' : ''))
+const { data: monthlyUsageData, pending: monthlyChartPending, error: monthlyChartError, refresh: refreshMonthlyUsageRaw } = useApiFetch<MonthlyUsageResponse>(
   monthlyUsageApiUrl,
-  { ...commonFetchOptions.value, key: 'monthlyUsageData', default: () => ({ success: false, monthly_data: [] }), immediate: false, watch: false },
+  { server: false, key: 'monthlyUsageData', default: () => ({ success: false, monthly_data: [] }), immediate: false, watch: false },
 )
 
 const fetchesInitiated = ref(false)
@@ -101,7 +100,7 @@ function createRefresher(rawRefresher: RefresherFunction | globalThis.Ref<unknow
   return async () => {
     if (typeof rawRefresher !== 'function')
       return
-    if (authToken.value === null)
+    if (!authStore.isLoggedIn)
       return
     showErrorAlert.value = true
     return rawRefresher()
@@ -135,7 +134,7 @@ async function performFetches() {
 }
 
 async function initialFetch() {
-  if (authToken.value !== null) {
+  if (authStore.isLoggedIn) {
     preFetchActions()
     await performFetches()
   }
@@ -145,8 +144,49 @@ async function initialFetch() {
   }
 }
 
+const deviceBindAttempted = ref(false)
+const pollingTimer = ref<ReturnType<typeof setInterval> | null>(null)
+
+async function tryBindCurrentDevice() {
+  if (!authStore.isLoggedIn)
+    return
+  if (deviceBindAttempted.value)
+    return
+  deviceBindAttempted.value = true
+  try {
+    const { $api } = useNuxtApp()
+    await $api('/users/me/devices/bind-current', { method: 'POST' })
+  }
+  catch {
+    addSnackbar({
+      title: 'Info Perangkat',
+      text: 'Gagal memperbarui perangkat. Jika sering diminta OTP lagi, nonaktifkan Private MAC untuk SSID hotspot.',
+      type: 'warning',
+      timeout: 6000,
+    })
+  }
+}
+
 onMounted(() => {
   initialFetch()
+  tryBindCurrentDevice()
+  chartTimer = setTimeout(() => {
+    chartReady.value = true
+  }, chartDelayMs.value)
+  if (authStore.isLoggedIn && pollingTimer.value == null) {
+    pollingTimer.value = setInterval(() => {
+      refreshAllData()
+    }, 60_000)
+  }
+})
+
+onUnmounted(() => {
+  if (pollingTimer.value != null)
+    clearInterval(pollingTimer.value)
+  pollingTimer.value = null
+  if (chartTimer != null)
+    clearTimeout(chartTimer)
+  chartTimer = null
 })
 
 watch(isFetching, (newValue, oldValue) => {
@@ -157,17 +197,26 @@ watch(isFetching, (newValue, oldValue) => {
   }
 })
 
-watch(authToken, (newToken, oldToken) => {
-  if (newToken !== null && newToken !== oldToken) {
+watch(() => authStore.isLoggedIn, (isLoggedIn, wasLoggedIn) => {
+  if (isLoggedIn && !wasLoggedIn) {
     initialFetch()
+    tryBindCurrentDevice()
+    if (pollingTimer.value == null) {
+      pollingTimer.value = setInterval(() => {
+        refreshAllData()
+      }, 60_000)
+    }
   }
-  else if (newToken === null && oldToken !== null) {
-    quotaData.value = { success: false, total_quota_purchased_mb: 0, total_quota_used_mb: 0, remaining_mb: 0, hotspot_username: '...', last_sync_time: null, is_unlimited_user: false }
-    weeklyUsageData.value = { success: false, weekly_data: [] }
+  else if (!isLoggedIn && wasLoggedIn) {
+    quotaData.value = { success: false, total_quota_purchased_mb: 0, total_quota_used_mb: 0, remaining_mb: 0, hotspot_username: '...', last_sync_time: null, is_unlimited_user: false, quota_expiry_date: null }
+    weeklyUsageData.value = { success: false, weekly_data: [], period: { start_date: '', end_date: '' } }
     monthlyUsageData.value = { success: false, monthly_data: [] }
     fetchesInitiated.value = false
     showErrorAlert.value = false
     dashboardRenderKey.value++
+    if (pollingTimer.value != null)
+      clearInterval(pollingTimer.value)
+    pollingTimer.value = null
   }
 })
 
@@ -203,7 +252,7 @@ function formatUsername(username: string | null | undefined): string {
 }
 
 async function refreshAllDataLogic() {
-  if (authToken.value === null)
+  if (!authStore.isLoggedIn)
     return
 
   preFetchActions()
@@ -217,10 +266,18 @@ useHead({ title: 'Dashboard User' })
 <template>
   <VContainer fluid class="dashboard-page-container vuexy-dashboard-container pa-4 pa-md-6">
     <VRow>
-      <VCol cols="12">
-        <h1 class="text-h5 mb-4 vuexy-page-title">
+      <VCol cols="12" class="d-flex align-center justify-space-between flex-wrap gap-2">
+        <h1 class="text-h5 mb-0 vuexy-page-title">
           {{ pageTitle }}
         </h1>
+        <VBtn
+          to="/akun"
+          variant="tonal"
+          size="small"
+          prepend-icon="tabler-device-mobile"
+        >
+          Kelola Perangkat
+        </VBtn>
       </VCol>
     </VRow>
 
@@ -354,39 +411,50 @@ useHead({ title: 'Dashboard User' })
                   </VCol>
                 </VRow>
 
-                <template v-if="quotaData?.is_unlimited_user">
-                  <WeeklyUsageChartUnlimited
-                    :weekly-usage-data="weeklyUsageData"
-                    :parent-loading="isFetching"
-                    :parent-error="weeklyUsageError"
-                    :dashboard-render-key="dashboardRenderKey"
-                    class="dashboard-chart-card"
-                    @refresh="refreshAllData"
-                  />
+                <template v-if="chartReady">
+                  <template v-if="quotaData?.is_unlimited_user">
+                    <WeeklyUsageChartUnlimited
+                      :weekly-usage-data="weeklyUsageData"
+                      :parent-loading="isFetching"
+                      :parent-error="weeklyUsageError"
+                      :dashboard-render-key="dashboardRenderKey"
+                      class="dashboard-chart-card"
+                      @refresh="refreshAllData"
+                    />
+                  </template>
+                  <template v-else>
+                    <WeeklyUsageChart
+                      :quota-data="quotaData"
+                      :weekly-usage-data="weeklyUsageData"
+                      :parent-loading="isFetching"
+                      :parent-error="quotaError || weeklyUsageError"
+                      :dashboard-render-key="dashboardRenderKey"
+                      class="dashboard-chart-card"
+                      @refresh="refreshAllData"
+                    />
+                  </template>
                 </template>
                 <template v-else>
-                  <WeeklyUsageChart
-                    :quota-data="quotaData"
-                    :weekly-usage-data="weeklyUsageData"
-                    :parent-loading="isFetching"
-                    :parent-error="quotaError || weeklyUsageError"
-                    :dashboard-render-key="dashboardRenderKey"
-                    class="dashboard-chart-card"
-                    @refresh="refreshAllData"
-                  />
+                  <VSkeletonLoader type="image" height="300px" class="vuexy-skeleton-card" />
                 </template>
               </VCol>
 
               <VCol cols="12" md="6" class="d-flex flex-column chart-column ga-4">
-                <MonthlyUsageChart
-                  :monthly-data="monthlyUsageData"
-                  :parent-loading="isFetching"
-                  :parent-error="monthlyChartError"
-                  :dashboard-render-key="dashboardRenderKey"
-                  class="dashboard-chart-card"
-                />
+                <template v-if="chartReady">
+                  <MonthlyUsageChart
+                    :monthly-data="monthlyUsageData"
+                    :parent-loading="isFetching"
+                    :parent-error="monthlyChartError"
+                    :dashboard-render-key="dashboardRenderKey"
+                    class="dashboard-chart-card"
+                  />
+                </template>
+                <template v-else>
+                  <VSkeletonLoader type="image" height="460px" class="vuexy-skeleton-card" />
+                </template>
               </VCol>
             </VRow>
+
           </div>
         </div>
 
@@ -430,6 +498,7 @@ useHead({ title: 'Dashboard User' })
     height: 100%;
     display: flex;
     flex-direction: column;
+  overflow: visible;
 }
 
 .chart-column {
@@ -538,7 +607,16 @@ useHead({ title: 'Dashboard User' })
 
 @media (max-width: 599.98px) {
   .dashboard-page-container {
-    padding: 1rem;
+    padding: 0.75rem;
+  }
+  .vuexy-dashboard-container {
+    max-width: 100%;
+  }
+  .dashboard-chart-card {
+    min-width: 0;
+  }
+  .ga-4 {
+    gap: 0.75rem;
   }
   .text-h5.vuexy-page-title {
     font-size: 1.25rem !important;

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sesi Anda Telah Berakhir</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="tailwindcss"></script>
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+    <div class="bg-white p-8 sm:p-10 rounded-2xl shadow-xl max-w-md w-11/12 text-center border-t-4 border-blue-500">
+        <!-- Icon: Refresh/Clock -->
+        <div class="w-20 h-20 mx-auto bg-blue-100 rounded-full flex items-center justify-center mb-5">
+            <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-refresh-alert" width="48" height="48" viewBox="0 0 24 24" stroke-width="1.5" stroke="#3b82f6" fill="none" stroke-linecap="round" stroke-linejoin="round">
+              <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+              <path d="M20 11a8.1 8.1 0 0 0 -15.5 -2m-.5 -4v4h4" />
+              <path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4" />
+              <path d="M12 9l0 3" />
+              <path d="M12 15l.01 0" />
+            </svg>
+        </div>
+        
+        <h1 class="text-2xl sm:text-3xl font-bold text-gray-800 mb-3">Sesi Anda Telah Berakhir</h1>
+        
+        <p class="text-gray-600 mb-6">
+            Sesi koneksi Anda telah berakhir atau perangkat Anda tidak lagi dikenali. Ini bisa terjadi jika Anda menggunakan perangkat baru atau MAC Address acak aktif.
+        </p>
+        
+        <a href="http://10.10.83.2/session.html" class="w-full block bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors duration-300">
+            Login Ulang di Portal
+        </a>
+        
+        <p class="text-xs text-gray-400 mt-4">
+            Dengan login ulang, sistem akan secara otomatis menyegarkan dan mendaftarkan kembali perangkat Anda.
+        </p>
+    </div>
+</body>
+</html>

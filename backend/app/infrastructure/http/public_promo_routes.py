@@ -25,7 +25,7 @@ def get_active_promos():
             PromoEvent.status == PromoEventStatus.ACTIVE,
             PromoEvent.start_date <= now,
             or_(
-                PromoEvent.end_date == None,
+                PromoEvent.end_date.is_(None),
                 PromoEvent.end_date >= now
             )
         ).order_by(PromoEvent.created_at.desc())

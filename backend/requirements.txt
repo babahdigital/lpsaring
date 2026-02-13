@@ -32,6 +32,10 @@ requests>=2.31.0 # Library standar untuk membuat HTTP request (misal ke API What
 midtransclient>=1.4.2 # Library resmi Midtrans untuk Python
 routeros-api>=0.13.0 # Jika akan menggunakan library ini untuk MikroTik nanti
 
+# Testing & Linting
+pytest>=9.0.0
+ruff>=0.15.0
+
 # Tambahkan library lain sesuai kebutuhan di masa depan
 weasyprint
 Jinja2

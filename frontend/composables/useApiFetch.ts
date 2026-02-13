@@ -14,10 +14,11 @@ export function useApiFetch<
   ErrorT extends OFetchError = OFetchError,
   DataT = ResT,
   PickKeys extends KeysOf<DataT> = KeysOf<DataT>,
+  DefaultT = DataT,
 >(
   request: string | Ref<string>,
-  options: UseFetchOptions<ResT, DataT, PickKeys> = {},
-): AsyncData<PickFrom<DataT, PickKeys>, ErrorT | null> {
+  options: UseFetchOptions<ResT, DataT, PickKeys, DefaultT> = {},
+): AsyncData<PickFrom<DataT, PickKeys> | DefaultT, ErrorT | null> {
   // Gunakan $api yang sudah disediakan oleh plugin api.ts
   // Opsi seperti baseURL dan interceptor sudah ditangani di sana.
   // Cukup teruskan opsi spesifik dari komponen.

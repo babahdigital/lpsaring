@@ -4,11 +4,13 @@ import { ref } from 'vue'
 
 // Definisikan tipe untuk respons API statistik
 interface DashboardStats {
-  totalUsers: number
-  pendingApprovals: number
-  activePackages: number
-  monthlyRevenue: number
-  weeklyRevenue: number
+  totalUsers?: number
+  pendingApprovals?: number
+  activePackages?: number
+  monthlyRevenue?: number
+  weeklyRevenue?: number
+  pendapatanMingguIni?: number
+  pendapatanHariIni?: number
 }
 
 export const useDashboardStore = defineStore('dashboard', () => {

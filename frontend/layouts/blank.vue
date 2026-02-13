@@ -5,26 +5,41 @@ const { injectSkinClasses } = useSkins()
 
 // ℹ️ This will inject classes in body tag for accurate styling
 injectSkinClasses()
+
+// SECTION: Loading Indicator
+const isFallbackStateActive = ref(false)
+const refLoadingIndicator = ref<any>(null)
+
+// watching if the fallback state is active and the refLoadingIndicator component is available
+watch([isFallbackStateActive, refLoadingIndicator], () => {
+  if (isFallbackStateActive.value && refLoadingIndicator.value)
+    refLoadingIndicator.value.fallbackHandle()
+
+  if (!isFallbackStateActive.value && refLoadingIndicator.value)
+    refLoadingIndicator.value.resolveHandle()
+}, { immediate: true })
+// !SECTION
 </script>
 
 <template>
-  <div class="layout-wrapper layout-blank">
-    <v-app>
-      <v-main>
-        <slot />
-      </v-main>
-    </v-app>
+  <AppLoadingIndicator ref="refLoadingIndicator" />
+
+  <div
+    class="layout-wrapper layout-blank"
+    data-allow-mismatch
+  >
+    <Suspense
+      :timeout="0"
+      @fallback="isFallbackStateActive = true"
+      @resolve="isFallbackStateActive = false"
+    >
+      <slot />
+    </Suspense>
   </div>
 </template>
 
 <style>
 .layout-wrapper.layout-blank {
-  min-height: 100vh;
-  display: flex;
   flex-direction: column;
-}
-
-.layout-wrapper.layout-blank > .v-application {
-  flex-grow: 1;
 }
 </style>

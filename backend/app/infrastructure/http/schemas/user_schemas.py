@@ -1,6 +1,5 @@
 # backend/app/infrastructure/http/schemas/user_schemas.py
 import uuid
-import re
 import enum
 from pydantic import (
     BaseModel, Field, field_validator, model_validator, ConfigDict
@@ -33,6 +32,8 @@ class UserBaseSchema(BaseModel):
     full_name: str = Field(..., example="Nama Lengkap Pengguna", min_length=2, max_length=100)
     blok: Optional[str] = Field(None, example="A")
     kamar: Optional[str] = Field(None, example="Kamar_1")
+    is_tamping: bool = Field(False, description="True jika pengguna tamping")
+    tamping_type: Optional[str] = Field(None, description="Jenis tamping jika pengguna tamping")
 
     @field_validator('phone_number', mode='before')
     @classmethod
@@ -77,13 +78,46 @@ class UserBaseSchema(BaseModel):
             raise ValueError(f"Kamar '{v}' tidak valid. Pilihan: {[k.value for k in UserKamar]} atau angka 1-6.")
         raise TypeError('Kamar harus berupa string.')
 
+    @field_validator('tamping_type', mode='before')
+    @classmethod
+    def validate_tamping_type(cls, v: Any) -> Optional[str]:
+        if v is None or v == '':
+            return None
+        if isinstance(v, str):
+            allowed = {
+                "Tamping luar",
+                "Tamping AO",
+                "Tamping Pembinaan",
+                "Tamping kunjungan",
+                "Tamping kamtib",
+                "Tamping klinik",
+                "Tamping dapur",
+                "Tamping mesjid",
+                "Tamping p2u",
+                "Tamping BLK",
+                "Tamping kebersihan",
+                "Tamping Humas",
+                "Tamping kebun",
+            }
+            if v in allowed:
+                return v
+            raise ValueError("Jenis tamping tidak valid.")
+        raise TypeError('Jenis tamping harus berupa string.')
+
 class UserCreateByAdminSchema(UserBaseSchema):
     role: UserRole = Field(..., example=UserRole.USER)
 
     @model_validator(mode='after')
     def check_blok_kamar_for_user_role(self) -> 'UserCreateByAdminSchema':
-        if self.role == UserRole.USER and (self.blok is None or self.kamar is None):
-            raise ValueError("Blok dan Kamar wajib diisi untuk pengguna biasa.")
+        if self.role == UserRole.USER:
+            if self.is_tamping:
+                if not self.tamping_type:
+                    raise ValueError("Jenis tamping wajib dipilih untuk pengguna tamping.")
+                if self.blok is not None or self.kamar is not None:
+                    raise ValueError("Blok dan Kamar tidak boleh diisi untuk pengguna tamping.")
+            else:
+                if self.blok is None or self.kamar is None:
+                    raise ValueError("Blok dan Kamar wajib diisi untuk pengguna biasa.")
         if self.role == UserRole.SUPER_ADMIN:
             raise ValueError('Peran Super Admin tidak dapat dibuat melalui API ini.')
         return self
@@ -92,9 +126,13 @@ class UserUpdateByAdminSchema(BaseModel):
     full_name: Optional[str] = Field(None, min_length=2, max_length=100)
     blok: Optional[UserBlok] = None
     kamar: Optional[UserKamar] = None
+    is_tamping: Optional[bool] = None
+    tamping_type: Optional[str] = None
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
     is_unlimited_user: Optional[bool] = None
+    is_blocked: Optional[bool] = None
+    blocked_reason: Optional[str] = None
     add_mb: Optional[int] = Field(None, ge=0)
     add_gb: Optional[float] = Field(None, ge=0.0, description="Kuota yang akan ditambahkan dalam Gigabyte. Akan dikonversi ke MB di backend.")
     add_days: Optional[int] = Field(None, ge=0)
@@ -125,6 +163,39 @@ class UserUpdateByAdminSchema(BaseModel):
             raise ValueError(f"Kamar '{v}' tidak valid. Pilihan: {[k.value for k in UserKamar]} atau angka 1-6.")
         raise TypeError('Kamar harus berupa string.')
 
+    @field_validator('tamping_type', mode='before')
+    @classmethod
+    def validate_tamping_type(cls, v: Any) -> Optional[str]:
+        if v is None or v == '':
+            return None
+        if isinstance(v, str):
+            allowed = {
+                "Tamping luar",
+                "Tamping AO",
+                "Tamping Pembinaan",
+                "Tamping kunjungan",
+                "Tamping kamtib",
+                "Tamping klinik",
+                "Tamping dapur",
+                "Tamping mesjid",
+                "Tamping p2u",
+                "Tamping BLK",
+                "Tamping kebersihan",
+                "Tamping Humas",
+                "Tamping kebun",
+            }
+            if v in allowed:
+                return v
+            raise ValueError("Jenis tamping tidak valid.")
+        raise TypeError('Jenis tamping harus berupa string.')
+
+    @model_validator(mode='after')
+    def check_tamping_rules(self) -> 'UserUpdateByAdminSchema':
+        if self.is_tamping is True:
+            if not self.tamping_type:
+                raise ValueError("Jenis tamping wajib dipilih untuk pengguna tamping.")
+        return self
+
 class UserChangeRoleSchema(BaseModel):
     """Skema untuk memvalidasi payload saat mengubah peran pengguna."""
     role: UserRole
@@ -151,6 +222,9 @@ class UserResponseSchema(UserBaseSchema):
     last_login_at: Optional[datetime]
     is_unlimited_user: bool
     quota_expiry_date: Optional[datetime]
+    is_blocked: bool
+    blocked_reason: Optional[str] = None
+    blocked_at: Optional[datetime] = None
 
     @field_validator('kamar', mode='before')
     @classmethod
@@ -169,15 +243,58 @@ class UserMeResponseSchema(UserResponseSchema):
 
 class UserProfileUpdateRequestSchema(BaseModel):
     full_name: str = Field(..., min_length=2)
-    blok: str
-    kamar: str
+    blok: Optional[str] = None
+    kamar: Optional[str] = None
+    is_tamping: Optional[bool] = None
+    tamping_type: Optional[str] = None
 
     @field_validator('blok', 'kamar', mode='before')
     @classmethod
-    def check_not_empty(cls, v: str) -> str:
+    def check_not_empty(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
         if not v or not v.strip():
             raise ValueError("Field tidak boleh kosong.")
         return v
+
+    @model_validator(mode='after')
+    def check_tamping_or_address(self) -> 'UserProfileUpdateRequestSchema':
+        has_address_fields = any([self.blok is not None, self.kamar is not None, self.is_tamping is not None, self.tamping_type is not None])
+        if not has_address_fields:
+            return self
+
+        if self.is_tamping is True:
+            if not self.tamping_type:
+                raise ValueError("Jenis tamping wajib dipilih untuk pengguna tamping.")
+            if self.blok or self.kamar:
+                raise ValueError("Blok dan Kamar tidak boleh diisi untuk pengguna tamping.")
+        else:
+            if not self.blok or not self.kamar:
+                raise ValueError("Blok dan Kamar wajib diisi untuk pengguna biasa.")
+        return self
+
+class AdminSelfProfileUpdateRequestSchema(BaseModel):
+    full_name: str = Field(..., min_length=2, max_length=100)
+    phone_number: Optional[str] = None
+
+    @field_validator('full_name', mode='before')
+    @classmethod
+    def validate_full_name(cls, v: Any) -> str:
+        if v is None:
+            raise ValueError('Nama Lengkap tidak boleh kosong.')
+        if isinstance(v, str):
+            stripped_v = v.strip()
+            if len(stripped_v) < 2:
+                raise ValueError('Nama Lengkap minimal 2 karakter.')
+            return stripped_v
+        raise TypeError('Nama Lengkap harus berupa string.')
+
+    @field_validator('phone_number', mode='before')
+    @classmethod
+    def validate_phone(cls, v: Any) -> Optional[str]:
+        if v is None or v == '':
+            return None
+        return validate_indonesian_phone_number(v)
 
 class PhoneCheckRequest(BaseModel):
     phone_number: str
@@ -204,9 +321,9 @@ class WhatsappValidationRequest(BaseModel):
         return validate_indonesian_phone_number(v)
 
 class UserQuotaResponse(BaseModel):
-    total_quota_purchased_mb: int
-    total_quota_used_mb: int
-    remaining_mb: int
+    total_quota_purchased_mb: float
+    total_quota_used_mb: float
+    remaining_mb: float
     hotspot_username: str
     last_sync_time: datetime
     is_unlimited_user: bool
@@ -229,6 +346,8 @@ class UserProfileResponseSchema(BaseModel):
     full_name: str
     blok: Optional[str]
     kamar: Optional[str]
+    is_tamping: bool
+    tamping_type: Optional[str]
     is_active: bool
     role: UserRole
     approval_status: ApprovalStatus
@@ -245,16 +364,21 @@ class UserProfileResponseSchema(BaseModel):
     @field_validator('blok', mode='plain')
     @classmethod
     def serialize_blok_to_plain_string(cls, v: Any) -> Optional[str]:
-        if isinstance(v, enum.Enum): return v.value
-        if isinstance(v, str) and v in [b.value for b in UserBlok]: return v
+        if isinstance(v, enum.Enum):
+            return v.value
+        if isinstance(v, str) and v in [b.value for b in UserBlok]:
+            return v
         return v
 
     @field_validator('kamar', mode='plain')
     @classmethod
     def serialize_kamar_to_plain_string(cls, v: Any) -> Optional[str]:
-        if isinstance(v, enum.Enum): return v.value
-        if isinstance(v, str) and v in [k.value for k in UserKamar]: return v
-        if isinstance(v, str) and v.startswith("Kamar_") and v[6:].isdigit(): return v[6:]
+        if isinstance(v, enum.Enum):
+            return v.value
+        if isinstance(v, str) and v in [k.value for k in UserKamar]:
+            return v
+        if isinstance(v, str) and v.startswith("Kamar_") and v[6:].isdigit():
+            return v[6:]
         return v
 
     model_config = ConfigDict(from_attributes=True)

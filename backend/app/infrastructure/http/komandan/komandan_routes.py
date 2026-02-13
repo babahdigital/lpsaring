@@ -2,6 +2,7 @@
 
 import json
 import uuid
+from datetime import timedelta
 from flask import Blueprint, request, jsonify, current_app
 from http import HTTPStatus
 from pydantic import ValidationError
@@ -16,6 +17,7 @@ from app.infrastructure.http.decorators import token_required
 from .schemas import QuotaRequestCreateSchema, QuotaRequestResponseSchema
 from app.services import settings_service
 from app.services.notification_service import get_notification_message
+from app.utils.formatters import get_app_local_datetime
 
 try:
     from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
@@ -30,7 +32,8 @@ komandan_bp = Blueprint('komandan_api', __name__, url_prefix='/api/komandan')
 @token_required
 def create_quota_request(current_user_id: uuid.UUID):
     current_user = db.session.get(User, current_user_id)
-    if not current_user: return jsonify({"message": "User not found."}), HTTPStatus.UNAUTHORIZED
+    if not current_user:
+        return jsonify({"message": "User not found."}), HTTPStatus.UNAUTHORIZED
 
     if current_user.role != UserRole.KOMANDAN:
         return jsonify({"message": "Hanya Komandan yang dapat mengakses fitur ini."}), HTTPStatus.FORBIDDEN
@@ -49,6 +52,67 @@ def create_quota_request(current_user_id: uuid.UUID):
         )
         if existing_pending_request:
             return jsonify({"message": "Anda sudah memiliki permintaan yang sedang diproses. Mohon tunggu hingga permintaan sebelumnya selesai."}), HTTPStatus.CONFLICT
+
+        if data_input.request_type == RequestType.UNLIMITED:
+            allow_unlimited = settings_service.get_setting('KOMANDAN_ALLOW_UNLIMITED_REQUEST', 'True') == 'True'
+            if not allow_unlimited:
+                return jsonify({"message": "Permintaan unlimited tidak diizinkan saat ini."}), HTTPStatus.FORBIDDEN
+
+        now_local = get_app_local_datetime()
+        window_hours = settings_service.get_setting_as_int('KOMANDAN_REQUEST_WINDOW_HOURS', 24)
+        max_per_window = settings_service.get_setting_as_int('KOMANDAN_REQUEST_MAX_PER_WINDOW', 1)
+        cooldown_hours = settings_service.get_setting_as_int('KOMANDAN_REQUEST_COOLDOWN_HOURS', 6)
+
+        if window_hours > 0 and max_per_window > 0:
+            window_start = now_local - timedelta(hours=window_hours)
+            recent_count = db.session.scalar(
+                select(db.func.count(QuotaRequest.id)).where(
+                    QuotaRequest.requester_id == current_user.id,
+                    QuotaRequest.created_at >= window_start
+                )
+            ) or 0
+            if recent_count >= max_per_window:
+                oldest_in_window = db.session.scalar(
+                    select(QuotaRequest.created_at).where(
+                        QuotaRequest.requester_id == current_user.id,
+                        QuotaRequest.created_at >= window_start
+                    ).order_by(QuotaRequest.created_at.asc())
+                )
+                retry_at = None
+                retry_after_seconds = None
+                if oldest_in_window:
+                    oldest_local = get_app_local_datetime(oldest_in_window)
+                    retry_at = oldest_local + timedelta(hours=window_hours)
+                    retry_after_seconds = max(0, int((retry_at - now_local).total_seconds()))
+                return jsonify({
+                    "message": "Batas permintaan dalam periode saat ini sudah tercapai.",
+                    "retry_at": retry_at.isoformat() if retry_at else None,
+                    "retry_after_seconds": retry_after_seconds
+                }), HTTPStatus.TOO_MANY_REQUESTS
+
+        if cooldown_hours > 0:
+            last_request = db.session.scalar(
+                select(QuotaRequest).where(
+                    QuotaRequest.requester_id == current_user.id
+                ).order_by(QuotaRequest.created_at.desc())
+            )
+            if last_request:
+                last_request_local = get_app_local_datetime(last_request.created_at)
+                next_allowed = last_request_local + timedelta(hours=cooldown_hours)
+                if now_local < next_allowed:
+                    return jsonify({
+                        "message": "Silakan tunggu sebelum mengajukan permintaan berikutnya.",
+                        "retry_at": next_allowed.isoformat(),
+                        "retry_after_seconds": max(0, int((next_allowed - now_local).total_seconds()))
+                    }), HTTPStatus.TOO_MANY_REQUESTS
+
+        if data_input.request_type == RequestType.QUOTA:
+            max_mb = settings_service.get_setting_as_int('KOMANDAN_MAX_QUOTA_MB', 51200)
+            max_days = settings_service.get_setting_as_int('KOMANDAN_MAX_QUOTA_DAYS', 30)
+            if data_input.requested_mb and data_input.requested_mb > max_mb:
+                return jsonify({"message": "Permintaan kuota melebihi batas maksimum."}), HTTPStatus.BAD_REQUEST
+            if data_input.requested_duration_days and data_input.requested_duration_days > max_days:
+                return jsonify({"message": "Durasi kuota melebihi batas maksimum."}), HTTPStatus.BAD_REQUEST
 
         new_request = QuotaRequest(
             requester_id=current_user.id,
@@ -70,7 +134,7 @@ def create_quota_request(current_user_id: uuid.UUID):
                     NotificationRecipient, User.id == NotificationRecipient.admin_user_id
                 ).where(
                     NotificationRecipient.notification_type == NotificationType.NEW_KOMANDAN_REQUEST,
-                    User.is_active == True
+                    User.is_active
                 )
                 recipients = db.session.scalars(recipients_query).all()
 
@@ -141,6 +205,12 @@ def get_my_requests_history(current_user_id: uuid.UUID):
         results = []
         for req in pagination.items:
             details = json.loads(req.request_details) if req.request_details else {}
+            granted_details = None
+            if req.granted_details:
+                try:
+                    granted_details = json.loads(req.granted_details)
+                except json.JSONDecodeError:
+                    granted_details = None
             results.append({
                 "id": str(req.id),
                 "created_at": req.created_at.isoformat(),
@@ -148,6 +218,7 @@ def get_my_requests_history(current_user_id: uuid.UUID):
                 "status": req.status.value,
                 "requested_mb": details.get("requested_mb"),
                 "requested_duration_days": details.get("requested_duration_days"),
+                "granted_details": granted_details,
                 "processed_at": req.processed_at.isoformat() if req.processed_at else None,
                 "rejection_reason": req.rejection_reason,
                 "processed_by_admin": req.processed_by.full_name if req.processed_by else None,

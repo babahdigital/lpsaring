@@ -1,4 +1,3 @@
-// frontend/@core/types.ts
 import type { I18nLanguage, LayoutConfig } from '@layouts/types'
 import type { LiteralUnion, ValueOf } from 'type-fest'
 import type { Skins } from './enums'
@@ -11,11 +10,9 @@ interface ExplicitThemeConfig {
     }
     theme: LiteralUnion<'light' | 'dark' | 'system', string>
     skin: ValueOf<typeof Skins>
-    isRTL?: boolean // PROPERI BARU DITAMBAHKAN
   }
   verticalNav: {
     isVerticalNavSemiDark: boolean
-    isMini?: boolean // PROPERI BARU DITAMBAHKAN
   }
 }
 
@@ -27,7 +24,7 @@ export interface CustomInputContent {
   desc?: string
   value: string
   subtitle?: string
-  icon?: string | object
+  icon?: any
   images?: string
 }
 

@@ -1,4 +1,3 @@
-// frontend\@core\stores\config.ts
 import { cookieRef, useLayoutConfigStore } from '@layouts/stores/config'
 import { themeConfig } from '@themeConfig'
 import { storeToRefs } from 'pinia'
@@ -59,7 +58,6 @@ export const useConfigStore = defineStore('config', () => {
 
 // SECTION Init
 export function initConfigStore() {
-  // Hapus onMounted dari sini
   const userPreferredColorScheme = usePreferredColorScheme()
   const vuetifyTheme = useTheme()
   const configStore = useConfigStore()
@@ -67,12 +65,19 @@ export function initConfigStore() {
   watch(
     [() => configStore.theme, userPreferredColorScheme],
     () => {
-      vuetifyTheme.global.name.value = configStore.theme === 'system'
+      const themetoUpdate = configStore.theme === 'system'
         ? userPreferredColorScheme.value === 'dark'
           ? 'dark'
           : 'light'
         : configStore.theme
+
+      vuetifyTheme.change(themetoUpdate)
     },
   )
+
+  onMounted(() => {
+    if (configStore.theme === 'system')
+      vuetifyTheme.change(userPreferredColorScheme.value)
+  })
 }
 // !SECTION

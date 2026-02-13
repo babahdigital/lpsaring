@@ -1,7 +1,8 @@
 <script lang="ts" setup>
 const vm = getCurrentInstance()
 
-const buyNowUrl = ref(vm?.appContext.config.globalProperties.buyNowUrl || 'https://1.envato.market/vuexy_admin')
+const { public: { buyNowUrl: buyNowUrlFromEnv } } = useRuntimeConfig()
+const buyNowUrl = ref((buyNowUrlFromEnv as string) || vm?.appContext.config.globalProperties.buyNowUrl || '')
 
 watch(buyNowUrl, (val) => {
   if (vm)

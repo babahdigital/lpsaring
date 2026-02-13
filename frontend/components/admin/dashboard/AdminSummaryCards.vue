@@ -6,7 +6,7 @@ import { useAuthStore } from '~/store/auth'
 const authStore = useAuthStore()
 
 // --- Role Check ---
-const isAdmin = computed(() => authStore.user?.is_admin === true)
+const isAdmin = computed(() => authStore.isAdmin)
 const _pageTitle = computed(() => isAdmin.value ? 'Dashboard Admin' : 'Dashboard Pengguna') // Beri prefix _
 
 // --- Placeholder Data (untuk statis) ---

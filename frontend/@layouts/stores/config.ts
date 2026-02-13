@@ -1,13 +1,9 @@
-import type { Ref } from 'vue'
-import { useCookie } from '#app'
+import { AppContentLayoutNav, NavbarType } from '@layouts/enums'
 import { injectionKeyIsVerticalNavHovered } from '@layouts/symbols'
 import { _setDirAttr } from '@layouts/utils'
+
+// ℹ️ We should not import themeConfig here but in urgency we are doing it for now
 import { layoutConfig } from '@themeConfig'
-import { useMediaQuery, useWindowScroll } from '@vueuse/core'
-import { defineStore } from 'pinia'
-import { computed, inject, ref, watch, watchEffect } from 'vue'
-import { useRoute } from 'vue-router'
-import { AppContentLayoutNav, NavbarType } from '@/types/enums'
 
 export const namespaceConfig = (str: string) => `${layoutConfig.app.title}-${str}`
 
@@ -18,51 +14,70 @@ export function cookieRef<T>(key: string, defaultValue: T) {
 export const useLayoutConfigStore = defineStore('layoutConfig', () => {
   const route = useRoute()
 
-  // Panggil composables yang menggunakan inject/lifecycle hooks di level atas
-  const { y: windowScrollY } = useWindowScroll()
-  const isVerticalNavHoveredStore = inject(injectionKeyIsVerticalNavHovered, ref(false))
+  const windowScrollY = ref(0)
 
-  // State Refs
+  if (import.meta.client) {
+    const { y } = useWindowScroll()
+
+    watchEffect(() => {
+      windowScrollY.value = y.value
+    })
+  }
+
+  // 👉 Navbar Type
   const navbarType = ref(layoutConfig.navbar.type)
-  const isNavbarBlurEnabled = cookieRef('isNavbarBlurEnabled', layoutConfig.navbar.navbarBlur)
-  const isVerticalNavCollapsed = cookieRef('isVerticalNavCollapsed', layoutConfig.verticalNav.isVerticalNavCollapsed)
-  const appContentWidth = cookieRef('appContentWidth', layoutConfig.app.contentWidth)
-  const appContentLayoutNav = ref(layoutConfig.app.contentLayoutNav)
-  const horizontalNavType = ref(layoutConfig.horizontalNav.type)
-  const horizontalNavPopoverOffset = ref(layoutConfig.horizontalNav.popoverOffset)
-  const footerType = ref(layoutConfig.footer.type)
-  const breakpointRefValue = ref(false)
-  const isAppRTL = ref(layoutConfig.app.isRTL)
 
-  // Watchers
+  // 👉 Navbar Type
+  const isNavbarBlurEnabled = cookieRef('isNavbarBlurEnabled', layoutConfig.navbar.navbarBlur)
+
+  // 👉 Vertical Nav Collapsed
+  const isVerticalNavCollapsed = cookieRef('isVerticalNavCollapsed', layoutConfig.verticalNav.isVerticalNavCollapsed)
+
+  // 👉 App Content Width
+  const appContentWidth = cookieRef('appContentWidth', layoutConfig.app.contentWidth)
+
+  // 👉 App Content Layout Nav
+  const appContentLayoutNav = ref(layoutConfig.app.contentLayoutNav)
+
   watch(appContentLayoutNav, (val) => {
+    // If Navbar type is hidden while switching to horizontal nav => Reset it to sticky
     if (val === AppContentLayoutNav.Horizontal) {
       if (navbarType.value === NavbarType.Hidden)
         navbarType.value = NavbarType.Sticky
+
       isVerticalNavCollapsed.value = false
     }
   })
 
+  // 👉 Horizontal Nav Type
+  const horizontalNavType = ref(layoutConfig.horizontalNav.type)
+
+  //  👉 Horizontal Nav Popover Offset
+  const horizontalNavPopoverOffset = ref(layoutConfig.horizontalNav.popoverOffset)
+
+  // 👉 Footer Type
+  const footerType = ref(layoutConfig.footer.type)
+
+  // 👉 Misc
+  const breakpointRef = ref(false)
+
+  // Sync with `useMediaQuery`
   watchEffect(() => {
-    breakpointRefValue.value = useMediaQuery(
+    breakpointRef.value = useMediaQuery(
       `(max-width: ${layoutConfig.app.overlayNavFromBreakpoint}px)`,
     ).value
   })
 
-  watch(isAppRTL, (val) => {
-    _setDirAttr(val ? 'rtl' : 'ltr')
-  })
-
-  // Computed Properties
   const isLessThanOverlayNavBreakpoint = computed({
     get() {
-      return breakpointRefValue.value
+      return breakpointRef.value // Getter for reactive state
     },
     set(value) {
-      breakpointRefValue.value = value
+      breakpointRef.value = value // Allow manual mutation
     },
   })
 
+  // 👉 Layout Classes
   const _layoutClasses = computed(() => {
     return [
       `layout-nav-type-${appContentLayoutNav.value}`,
@@ -71,35 +86,43 @@ export const useLayoutConfigStore = defineStore('layoutConfig', () => {
       {
         'layout-vertical-nav-collapsed':
           isVerticalNavCollapsed.value
-          && appContentLayoutNav.value === AppContentLayoutNav.Vertical
+          && appContentLayoutNav.value === 'vertical'
           && !isLessThanOverlayNavBreakpoint.value,
       },
-      { [`horizontal-nav-${horizontalNavType.value}`]: appContentLayoutNav.value === AppContentLayoutNav.Horizontal },
+      { [`horizontal-nav-${horizontalNavType.value}`]: appContentLayoutNav.value === 'horizontal' },
       `layout-content-width-${appContentWidth.value}`,
       { 'layout-overlay-nav': isLessThanOverlayNavBreakpoint.value },
-      { 'layout-navbar-hidden': navbarType.value === NavbarType.Hidden },
-      { 'layout-navbar-sticky': navbarType.value === NavbarType.Sticky && windowScrollY.value < (layoutConfig.navbar.stickOnScroll ?? 100) },
-      { 'layout-navbar-static': navbarType.value === NavbarType.Static },
-      // Diperbaiki: Hapus referensi ke NavbarType.Floating
-      { 'layout-vertical-nav-navbar-is-contained': layoutConfig.navbar.isContentWidthWide && appContentLayoutNav.value === AppContentLayoutNav.Vertical },
-      { 'layout-horizontal-nav-navbar-is-contained': layoutConfig.navbar.isContentWidthWide && appContentLayoutNav.value === AppContentLayoutNav.Horizontal },
-      { 'layout-footer-is-contained': layoutConfig.footer.isContentWidthWide },
-      { 'layout-footer-hidden': footerType.value === 'hidden' },
-      // Diperbaiki: Gunakan nilai langsung dari konfigurasi
-      { 'layout-vertical-nav-mini': isVerticalNavCollapsed.value && !isVerticalNavHoveredStore.value && !isLessThanOverlayNavBreakpoint.value },
-      { 'window-scrolled': windowScrollY.value > 0 },
+      { 'window-scrolled': unref(windowScrollY) },
       route.meta.layoutWrapperClasses ? route.meta.layoutWrapperClasses : null,
     ]
   })
 
-  // Methods
-  const isVerticalNavMini = (isVerticalNavHoveredPassed: Ref<boolean> | null = null) => {
-    const isVerticalNavHovered = isVerticalNavHoveredPassed || isVerticalNavHoveredStore
-    return computed(() => isVerticalNavCollapsed.value && !isVerticalNavHovered.value && !isLessThanOverlayNavBreakpoint.value)
+  // 👉 RTL
+  // const isAppRTL = ref(layoutConfig.app.isRTL)
+  const isAppRTL = ref(false)
+
+  watch(isAppRTL, (val) => {
+    _setDirAttr(val ? 'rtl' : 'ltr')
+  })
+
+  // 👉 Is Vertical Nav Mini
+  /*
+    This function will return true if current state is mini. Mini state means vertical nav is:
+      - Collapsed
+      - Isn't hovered by mouse
+      - nav is not less than overlay breakpoint (hence, isn't overlay menu)
+
+    ℹ️ We are getting `isVerticalNavHovered` as param instead of via `inject` because
+        we are using this in `VerticalNav.vue` component which provide it and I guess because
+        same component is providing & injecting we are getting undefined error
+  */
+  const isVerticalNavMini = (isVerticalNavHovered: Ref<boolean> | null = null) => {
+    const isVerticalNavHoveredLocal = isVerticalNavHovered || inject(injectionKeyIsVerticalNavHovered) || ref(false)
+
+    return computed(() => isVerticalNavCollapsed.value && !isVerticalNavHoveredLocal.value && !isLessThanOverlayNavBreakpoint.value)
   }
 
   return {
-    // Refs
     appContentWidth,
     appContentLayoutNav,
     navbarType,
@@ -110,12 +133,7 @@ export const useLayoutConfigStore = defineStore('layoutConfig', () => {
     footerType,
     isLessThanOverlayNavBreakpoint,
     isAppRTL,
-    windowScrollY,
-
-    // Computed
     _layoutClasses,
-
-    // Method
     isVerticalNavMini,
   }
 })

@@ -3,6 +3,7 @@ import type { NuxtError } from '#app'
 import { clearError } from '#app'
 // defineProps tidak lagi diimpor dari 'vue'
 import { computed } from 'vue' // computed tetap diimpor jika digunakan
+import { useRoute } from 'vue-router'
 
 // Mendefinisikan prop 'error' yang akan dikirim oleh Nuxt ke halaman ini
 // defineProps sekarang otomatis tersedia dalam <script setup>
@@ -11,6 +12,7 @@ const props = defineProps<{
 }>()
 
 const isDev = import.meta.dev
+const route = useRoute()
 
 const errorPageTitle = computed(() => {
   if (props.error?.statusCode === 404) {
@@ -24,7 +26,7 @@ const errorPageTitle = computed(() => {
 
 const errorMessage = computed(() => {
   if (props.error?.statusCode === 404) {
-    const urlPath = props.error.url || '(URL tidak diketahui)'
+    const urlPath = route.fullPath || '(URL tidak diketahui)'
     return `Maaf, kami tidak dapat menemukan halaman yang Anda cari di alamat ${urlPath}. Mungkin halaman tersebut telah dihapus, dipindahkan, atau URL yang Anda masukkan salah.`
   }
   if (props.error?.statusCode && props.error.statusCode >= 500 && props.error.statusCode < 600) {

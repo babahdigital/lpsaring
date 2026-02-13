@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import type { VDataTableServer } from 'vuetify/labs/VDataTable'
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import ProcessRequestDialog from '@/components/request/ProcessRequestDialog.vue'
 import { useSnackbar } from '@/composables/useSnackbar' // Menggunakan composable useSnackbar
@@ -21,11 +21,14 @@ interface QuotaRequest {
   processed_by: ProcessedBy | null
 }
 type Options = InstanceType<typeof VDataTableServer>['options']
+type SortItem = NonNullable<Options['sortBy']>[number]
 
 // --- Inisialisasi & State ---
 useHead({ title: 'Manajemen Permintaan' })
 const { $api } = useNuxtApp()
 const { smAndDown } = useDisplay()
+const isHydrated = ref(false)
+const isMobile = computed(() => (isHydrated.value ? smAndDown.value : false))
 const requests = ref<QuotaRequest[]>([])
 const loading = ref(true)
 const totalRequests = ref(0)
@@ -40,16 +43,21 @@ const { add: showSnackbar } = useSnackbar() // Menggunakan add dari useSnackbar 
 watch([options, statusFilter], () => {
   fetchRequests()
 }, { deep: true })
-onMounted(fetchRequests)
+onMounted(() => {
+  isHydrated.value = true
+  fetchRequests()
+})
 
 // --- Logika Inti ---
 async function fetchRequests() {
   loading.value = true
   try {
     const params = new URLSearchParams({ page: String(options.value.page), itemsPerPage: String(options.value.itemsPerPage) })
-    options.value.sortBy.forEach((sortItem) => {
-      params.append('sortBy', sortItem.key)
-      params.append('sortOrder', sortItem.order)
+    options.value.sortBy.forEach((sortItem: SortItem) => {
+      if (sortItem.key) {
+        params.append('sortBy', sortItem.key)
+        params.append('sortOrder', sortItem.order ?? 'asc')
+      }
     })
     if (statusFilter.value) {
       params.append('status', statusFilter.value)
@@ -130,14 +138,14 @@ const headers = [
   { title: 'AKSI', key: 'actions', sortable: false, align: 'center' },
 ]
 
-const statusMap = {
+const statusMap: Record<QuotaRequest['status'], { text: string, color: string, icon: string }> = {
   PENDING: { text: 'Menunggu', color: 'warning', icon: 'tabler-hourglass' },
   APPROVED: { text: 'Disetujui', color: 'success', icon: 'tabler-check' },
   REJECTED: { text: 'Ditolak', color: 'error', icon: 'tabler-x' },
   PARTIALLY_APPROVED: { text: 'Disetujui Sebagian', color: 'info', icon: 'tabler-discount-check' },
 }
 
-const requestTypeMap = {
+const requestTypeMap: Record<QuotaRequest['request_type'], { text: string, color: string, icon: string }> = {
   QUOTA: { text: 'Kuota', color: 'primary', icon: 'tabler-database' },
   UNLIMITED: { text: 'Unlimited', color: 'success', icon: 'tabler-infinity' },
 }
@@ -149,6 +157,9 @@ const filterItems = [
   { title: 'Ditolak', value: 'REJECTED' },
   { title: 'Disetujui Sebagian', value: 'PARTIALLY_APPROVED' },
 ]
+
+const getRequestTypeMeta = (type: QuotaRequest['request_type']) => requestTypeMap[type]
+const getStatusMeta = (status: QuotaRequest['status']) => statusMap[status]
 
 // [PERBAIKAN 1] Fungsi baru untuk format MB ke GB
 function formatQuotaToGB(mb: number | null | undefined): string {
@@ -195,7 +206,7 @@ function formatPhoneNumber(phone: string | null | undefined): string { // Perbai
         </VCardTitle>
         <VCardSubtitle>Proses permintaan kuota dan akses dari para Komandan.</VCardSubtitle>
         <template #append>
-          <div :style="{ width: smAndDown ? '100%' : '250px' }">
+          <div :style="{ width: isMobile ? '100%' : '250px' }">
             <VSelect v-model="statusFilter" :items="filterItems" label="Filter Status" density="compact" hide-details />
           </div>
         </template>
@@ -217,9 +228,9 @@ function formatPhoneNumber(phone: string | null | undefined): string { // Perbai
         </template>
 
         <template #item.request_type="{ item }">
-          <VChip :color="requestTypeMap[item.request_type]?.color" size="small" label>
-            <VIcon start :icon="requestTypeMap[item.request_type]?.icon" size="16" />
-            {{ requestTypeMap[item.request_type]?.text }}
+          <VChip :color="getRequestTypeMeta(item.request_type as QuotaRequest['request_type'])?.color" size="small" label>
+            <VIcon start :icon="getRequestTypeMeta(item.request_type as QuotaRequest['request_type'])?.icon" size="16" />
+            {{ getRequestTypeMeta(item.request_type as QuotaRequest['request_type'])?.text }}
           </VChip>
         </template>
 
@@ -235,8 +246,8 @@ function formatPhoneNumber(phone: string | null | undefined): string { // Perbai
         </template>
 
         <template #item.status="{ item }">
-          <VChip :color="statusMap[item.status]?.color" size="small" label>
-            {{ statusMap[item.status]?.text }}
+          <VChip :color="getStatusMeta(item.status as QuotaRequest['status'])?.color" size="small" label>
+            {{ getStatusMeta(item.status as QuotaRequest['status'])?.text }}
           </VChip>
         </template>
         <template #item.created_at="{ item }">
@@ -248,7 +259,7 @@ function formatPhoneNumber(phone: string | null | undefined): string { // Perbai
           </VBtn>
           <VTooltip v-else location="top" max-width="250px">
             <template #activator="{ props }">
-              <VIcon v-bind="props" :color="statusMap[item.status]?.color" :icon="statusMap[item.status]?.icon" />
+              <VIcon v-bind="props" :color="getStatusMeta(item.status as QuotaRequest['status'])?.color" :icon="getStatusMeta(item.status as QuotaRequest['status'])?.icon" />
             </template>
             <div class="pa-1">
               <p class="mb-1">

@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import type { VDataTableServer } from 'vuetify/labs/VDataTable'
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useSnackbar } from '@/composables/useSnackbar' // Pastikan ini diimpor jika useSnackbar digunakan
 
 // Menggunakan hook useDisplay untuk deteksi mobile
 const { mobile } = useDisplay()
+const isHydrated = ref(false)
+const isMobile = computed(() => (isHydrated.value ? mobile.value : false))
 
 // Tipe Data
 interface PromoEvent {
@@ -107,7 +109,7 @@ const endDateModel = computed({
 })
 
 const headers = computed(() => {
-  if (mobile.value) {
+  if (isMobile.value) {
     return [
       { title: 'Event', key: 'name', sortable: false },
       { title: 'Aksi', key: 'actions', sortable: false, align: 'end' },
@@ -268,6 +270,9 @@ async function deleteItemConfirm() {
 }
 
 useHead({ title: 'Manajemen Event & Promo' })
+onMounted(() => {
+  isHydrated.value = true
+})
 </script>
 
 <template>
@@ -291,14 +296,14 @@ useHead({ title: 'Manajemen Event & Promo' })
       :items-length="totalPromos"
       :loading="loading"
       class="text-no-wrap"
-      :item-value="item => item.id"
+      item-value="id"
       @update:options="options = $event"
     >
       <template #item.name="{ item }">
         <div class="d-flex flex-column py-2">
           <span class="font-weight-medium text-wrap">{{ item.name }}</span>
           <small class="text-disabled text-wrap" style="max-width: 300px;">{{ item.description }}</small>
-          <div v-if="mobile" class="mt-2 d-flex flex-column gap-1">
+          <div v-if="isMobile" class="mt-2 d-flex flex-column gap-1">
             <VChip :color="statusProps(item.status).color" size="x-small" label>
               {{ item.status }}
             </VChip>
@@ -338,7 +343,7 @@ useHead({ title: 'Manajemen Event & Promo' })
     </VDataTableServer>
   </VCard>
 
-  <VDialog v-model="isEditorDialogVisible" max-width="800px" persistent scrollable>
+  <VDialog v-if="isHydrated" v-model="isEditorDialogVisible" max-width="800px" persistent scrollable>
     <VCard>
       <VForm ref="form" @submit.prevent="saveEvent">
         <VCardTitle class="pa-4">
@@ -467,7 +472,7 @@ useHead({ title: 'Manajemen Event & Promo' })
     </VCard>
   </VDialog>
 
-  <VDialog v-model="isDeleteDialogVisible" max-width="500px" persistent>
+  <VDialog v-if="isHydrated" v-model="isDeleteDialogVisible" max-width="500px" persistent>
     <VCard>
       <VCardTitle class="text-h5">
         Konfirmasi Hapus

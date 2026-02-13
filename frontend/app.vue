@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import ScrollToTop from '@core/components/ScrollToTop.vue'
+import { Theme } from '@core/enums'
 import initCore from '@core/initCore'
 import { useConfigStore } from '@core/stores/config'
 import { hexToRgb } from '@core/utils/colorConverter'
@@ -7,7 +8,6 @@ import { hexToRgb } from '@core/utils/colorConverter'
 import { computed, onMounted, onUnmounted, ref, watchEffect } from 'vue'
 import { useRoute } from 'vue-router'
 import { useTheme } from 'vuetify'
-import { Theme } from '@/types/enums'
 import SnackbarWrapper from '~/components/layout/SnackbarWrapper.vue'
 import PromoFetcher from '~/components/promo/PromoFetcher.vue'
 
@@ -19,6 +19,7 @@ const configStore = useConfigStore()
 const settingsStore = useSettingsStore()
 const authStore = useAuthStore()
 const route = useRoute()
+const sessionCheckTimer = ref<ReturnType<typeof setInterval> | null>(null)
 
 // BARU: State untuk melacak apakah aplikasi sudah mounted di client
 const isMounted = ref(false)
@@ -26,8 +27,35 @@ const isMounted = ref(false)
 initCore()
 
 // BARU: Setelah komponen terpasang di client, ubah state menjadi true
+function startSessionCheck() {
+  if (sessionCheckTimer.value)
+    return
+  sessionCheckTimer.value = setInterval(() => {
+    authStore.refreshSessionStatus()
+  }, 60_000)
+}
+
+function stopSessionCheck() {
+  if (!sessionCheckTimer.value)
+    return
+  clearInterval(sessionCheckTimer.value)
+  sessionCheckTimer.value = null
+}
+
 onMounted(() => {
   isMounted.value = true
+})
+
+watchEffect(() => {
+  if (!import.meta.client)
+    return
+  if (authStore.isLoggedIn) {
+    authStore.refreshSessionStatus()
+    startSessionCheck()
+  }
+  else {
+    stopSessionCheck()
+  }
 })
 
 // Style untuk tema utama, tidak ada perubahan
@@ -67,6 +95,10 @@ if (import.meta.client) {
   })
 }
 
+onUnmounted(() => {
+  stopSessionCheck()
+})
+
 // SEO, tidak ada perubahan
 useHead({
   title: computed(() => settingsStore.browserTitle),
@@ -82,7 +114,7 @@ useHead({
   meta: [
     {
       name: 'description',
-      content: computed(() => settingsStore.appDescription || 'Aplikasi manajemen hotspot modern.'),
+      content: computed(() => settingsStore.appName || 'Aplikasi manajemen hotspot modern.'),
     },
   ],
 })

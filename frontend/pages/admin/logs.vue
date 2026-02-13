@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { VDataTableServer } from 'vuetify/labs/VDataTable'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import UserFilterDialog from '@/components/admin/log/UserFilterDialog.vue'
 import UserActionConfirmDialog from '@/components/admin/users/UserActionConfirmDialog.vue'
@@ -27,6 +27,8 @@ type DatatableOptions = InstanceType<typeof VDataTableServer>['options']
 // --- State Management ---
 const { $api } = useNuxtApp()
 const { smAndDown } = useDisplay()
+const isHydrated = ref(false)
+const isMobile = computed(() => (isHydrated.value ? smAndDown.value : false))
 const authStore = useAuthStore()
 const { add: showSnackbar } = useSnackbar()
 
@@ -76,9 +78,15 @@ const { data: fetchedData, pending: loading, error, refresh } = useAsyncData(
 const logList = computed(() => fetchedData.value?.items ?? [])
 const totalLogs = computed(() => fetchedData.value?.totalItems ?? 0)
 
+onMounted(() => {
+  isHydrated.value = true
+})
+
 watch(error, (newError) => {
-  if (newError)
-    showSnackbar({ type: 'error', title: 'Gagal Memuat Log', text: newError.data?.message ?? 'Terjadi kesalahan server.' })
+  if (newError) {
+    const errData = (newError as { data?: { message?: string } }).data
+    showSnackbar({ type: 'error', title: 'Gagal Memuat Log', text: errData?.message ?? 'Terjadi kesalahan server.' })
+  }
 })
 
 // --- Helper, Kamus, dan Fungsi Format ---
@@ -211,7 +219,7 @@ async function exportLogs(format: 'csv' | 'txt') {
   try {
     const exportParams = { ...queryParams.value, format, page: 1, itemsPerPage: -1 }
     const data = await $api('/admin/action-logs/export', { params: exportParams, responseType: 'blob' })
-    const url = window.URL.createObjectURL(new Blob([data]))
+    const url = window.URL.createObjectURL(new Blob([data as BlobPart]))
     const link = document.createElement('a')
     link.href = url
     link.setAttribute('download', `log-aktivitas-${new Date().toISOString().split('T')[0]}.${format}`)
@@ -252,7 +260,7 @@ const headers = computed(() => {
     { title: 'Detail Aksi', key: 'details', sortable: false, width: '30%' },
     { title: 'Target Pengguna', key: 'target_user', sortable: false },
   ]
-  return smAndDown.value ? base.filter(h => ['admin', 'action_type'].includes(h.key)) : base
+  return isMobile.value ? base.filter(h => ['admin', 'action_type'].includes(h.key)) : base
 })
 
 definePageMeta({ requiredRole: ['ADMIN', 'SUPER_ADMIN'] })
@@ -347,7 +355,7 @@ useHead({ title: 'Log Aktivitas Admin' })
       </VCardTitle>
 
       <client-only>
-        <VDataTableServer v-if="!smAndDown" v-model:options="options" :headers="headers" :items="logList" :items-length="totalLogs" :loading="loading" class="text-no-wrap" item-value="id">
+        <VDataTableServer v-if="!isMobile" v-model:options="options" :headers="headers" :items="logList" :items-length="totalLogs" :loading="loading" class="text-no-wrap" item-value="id">
           <template #item.created_at="{ item }">
             <VTooltip location="top">
               <template #activator="{ props }">

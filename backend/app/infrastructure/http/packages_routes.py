@@ -4,13 +4,13 @@
 # PERBAIKAN FINAL: Menambahkan import HTTPStatus untuk mengatasi NameError.
 
 from flask import Blueprint, jsonify, current_app
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import selectinload # Import selectinload
 from decimal import Decimal
-from typing import Optional, Any, Dict, List # Import List
+from typing import Optional, Any # Import List
 from http import HTTPStatus # <--- PERBAIKAN DI SINI
 
 from app.extensions import db
+from .schemas.package_schemas import PackagePublic
 
 # Flag untuk ketersediaan model, hindari akses current_app di luar konteks
 MODELS_AVAILABLE = False
@@ -36,8 +36,6 @@ except ImportError as e:
         data_quota_gb: float
         duration_days: int
 
-from .schemas.package_schemas import PackagePublic
-
 packages_bp = Blueprint('packages_api', __name__, url_prefix='/api/packages')
 
 @packages_bp.route('', methods=['GET'])
@@ -51,7 +49,7 @@ def get_packages():
     try:
         packages_db = db.session.query(Package)\
             .options(selectinload(Package.profile))\
-            .filter(Package.is_active == True)\
+            .filter(Package.is_active)\
             .order_by(Package.price)\
             .all()
         count = len(packages_db)

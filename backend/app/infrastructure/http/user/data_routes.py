@@ -2,18 +2,16 @@
 # Berisi endpoint yang menyajikan data dan statistik penggunaan untuk pengguna.
 
 from flask import Blueprint, request, jsonify, abort, current_app
+from functools import wraps
 from sqlalchemy import select, desc, func
 from sqlalchemy.orm import selectinload
-from sqlalchemy.exc import SQLAlchemyError
-from typing import Optional, List, Dict, Any
-from datetime import date, timedelta
+from datetime import timedelta
 from dateutil.relativedelta import relativedelta
 from http import HTTPStatus
-import uuid
 
 from app.extensions import db
 from app.infrastructure.db.models import (
-    User, DailyUsageLog, Transaction, TransactionStatus, Package, ApprovalStatus
+    User, DailyUsageLog, Transaction, TransactionStatus, ApprovalStatus
 )
 from ..schemas.user_schemas import (
     UserQuotaResponse, WeeklyUsageResponse,
@@ -21,9 +19,50 @@ from ..schemas.user_schemas import (
 )
 from ..decorators import token_required
 
-from app.utils.formatters import format_to_local_phone
+from app.utils.formatters import (
+    format_to_local_phone,
+    get_phone_number_variations,
+    get_app_local_datetime,
+    round_mb,
+)
 
 data_bp = Blueprint('user_data_api', __name__, url_prefix='/api/users')
+
+def _resolve_dev_bypass_user_id() -> str | None:
+    if current_app.config.get('FLASK_ENV') == 'production':
+        return None
+    if not current_app.config.get('DEV_BYPASS_USER_ENDPOINTS', False):
+        return None
+
+    bypass_token = current_app.config.get('DEV_BYPASS_TOKEN')
+    header_token = request.headers.get('X-Dev-Bypass')
+    if bypass_token and header_token != bypass_token:
+        return None
+
+    user_id = current_app.config.get('DEV_BYPASS_USER_ID')
+    if user_id:
+        return str(user_id)
+
+    phone = current_app.config.get('DEV_BYPASS_USER_PHONE')
+    if not phone:
+        return None
+
+    candidates = get_phone_number_variations(''.join(ch for ch in str(phone) if ch.isdigit()))
+    user = db.session.scalar(select(User).where(User.phone_number.in_(candidates)))
+    if user:
+        return str(user.id)
+    return None
+
+def token_required_or_dev_user(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        dev_user_id = _resolve_dev_bypass_user_id()
+        if dev_user_id is not None:
+            current_app.logger.warning("DEV bypass aktif untuk endpoint user data.")
+            return fn(dev_user_id, *args, **kwargs)
+        return token_required(fn)(*args, **kwargs)
+
+    return wrapper
 
 def _get_authenticated_user(user_id):
     """Helper untuk mengambil dan memvalidasi user dari ID token."""
@@ -35,19 +74,19 @@ def _get_authenticated_user(user_id):
     return user
 
 @data_bp.route('/me/quota', methods=['GET'])
-@token_required
+@token_required_or_dev_user
 def get_my_quota_status(current_user_id):
     user = _get_authenticated_user(current_user_id)
     try:
-        purchased_mb = int(user.total_quota_purchased_mb or 0)
-        used_mb = int(user.total_quota_used_mb or 0)
-        remaining_mb = max(0, purchased_mb - used_mb)
+        purchased_mb = float(user.total_quota_purchased_mb or 0.0)
+        used_mb = float(user.total_quota_used_mb or 0.0)
+        remaining_mb = max(0.0, round_mb(purchased_mb - used_mb))
         hotspot_username = format_to_local_phone(user.phone_number)
         last_sync_time = user.updated_at
 
         quota_data = UserQuotaResponse(
-            total_quota_purchased_mb=purchased_mb,
-            total_quota_used_mb=used_mb,
+            total_quota_purchased_mb=round_mb(purchased_mb),
+            total_quota_used_mb=round_mb(used_mb),
             remaining_mb=remaining_mb,
             hotspot_username=hotspot_username,
             last_sync_time=last_sync_time,
@@ -60,11 +99,11 @@ def get_my_quota_status(current_user_id):
         abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Gagal memproses data kuota.")
 
 @data_bp.route('/me/weekly-usage', methods=['GET'])
-@token_required
+@token_required_or_dev_user
 def get_my_weekly_usage(current_user_id):
     _get_authenticated_user(current_user_id)
     try:
-        today = date.today()
+        today = get_app_local_datetime().date()
         start_date = today - timedelta(days=6)
         stmt = select(DailyUsageLog.log_date, DailyUsageLog.usage_mb)\
             .where(DailyUsageLog.user_id == current_user_id, DailyUsageLog.log_date >= start_date, DailyUsageLog.log_date <= today)\
@@ -79,13 +118,12 @@ def get_my_weekly_usage(current_user_id):
 
 
 @data_bp.route('/me/monthly-usage', methods=['GET'])
-@token_required
+@token_required_or_dev_user
 def get_my_monthly_usage(current_user_id):
-    user = _get_authenticated_user(current_user_id)
     try:
         num_months_to_show = int(request.args.get('months', 12))
         num_months_to_show = min(max(num_months_to_show, 1), 24)
-        today = date.today()
+        today = get_app_local_datetime().date()
         start_month_date = (today.replace(day=1) - relativedelta(months=(num_months_to_show - 1)))
         
         month_year_col = func.to_char(DailyUsageLog.log_date, 'YYYY-MM').label('month_year')
@@ -108,24 +146,42 @@ def get_my_monthly_usage(current_user_id):
         abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Gagal memproses data penggunaan bulanan.")
 
 @data_bp.route('/me/weekly-spending', methods=['GET'])
-@token_required
+@token_required_or_dev_user
 def get_my_weekly_spending_summary(current_user_id):
     _get_authenticated_user(current_user_id)
     try:
-        today = date.today()
-        categories = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"]
-        daily_spending_data = []
-        total_this_week = 0.0
-        
-        for i in range(7):
-            current_date_in_loop = today - timedelta(days=(6 - i))
-            daily_total = db.session.scalar(select(func.sum(Transaction.amount)).where(
+        today = get_app_local_datetime().date()
+        start_date = today - timedelta(days=6)
+
+        spend_date_expr = func.date(func.coalesce(Transaction.payment_time, Transaction.created_at))
+        rows = db.session.execute(
+            select(
+                spend_date_expr.label('spend_date'),
+                func.sum(Transaction.amount).label('total_amount'),
+            ).where(
                 Transaction.user_id == current_user_id,
                 Transaction.status == TransactionStatus.SUCCESS,
-                func.date(Transaction.payment_time) == current_date_in_loop
-            )) or 0.0
-            daily_spending_data.append(float(daily_total))
-            total_this_week += float(daily_total)
+                spend_date_expr >= start_date,
+                spend_date_expr <= today,
+            ).group_by(
+                spend_date_expr,
+            ).order_by(
+                spend_date_expr.asc(),
+            )
+        ).all()
+
+        total_by_day = {row.spend_date: float(row.total_amount or 0.0) for row in rows}
+        day_names = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min']
+
+        categories = []
+        daily_spending_data = []
+        total_this_week = 0.0
+        for i in range(7):
+            current_date = start_date + timedelta(days=i)
+            categories.append(day_names[current_date.weekday()])
+            daily_total = float(total_by_day.get(current_date, 0.0))
+            daily_spending_data.append(daily_total)
+            total_this_week += daily_total
 
         return jsonify({"categories": categories, "series": [{"name": "Pengeluaran", "data": daily_spending_data}], "total_this_week": total_this_week}), HTTPStatus.OK
     except Exception as e:
@@ -133,7 +189,7 @@ def get_my_weekly_spending_summary(current_user_id):
         abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Gagal memproses data pengeluaran mingguan.")
 
 @data_bp.route('/me/transactions', methods=['GET'])
-@token_required
+@token_required_or_dev_user
 def get_my_transactions(current_user_id):
     _get_authenticated_user(current_user_id)
     try:

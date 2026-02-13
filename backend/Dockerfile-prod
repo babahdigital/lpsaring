@@ -28,7 +28,7 @@ RUN apt-get update -y && \
     libglib2.0-dev \
     libpango1.0-dev \
     libcairo2-dev \
-    libgdk-pixbuf2.0-dev \
+    libgdk-pixbuf-xlib-2.0-dev \
     # Hapus cache apt setelah install untuk menghemat ruang
     && rm -rf /var/lib/apt/lists/*
 
@@ -60,12 +60,13 @@ RUN apt-get update -y && \
     # Dependensi runtime sistem
     libpq5 \
     libffi8 \
+    postgresql-client \
     # Dependensi runtime WeasyPrint
     libglib2.0-0 \
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
     libcairo2 \
-    libgdk-pixbuf2.0-0 \
+    libgdk-pixbuf-xlib-2.0-0 \
     libfontconfig1 \
     libfreetype6 \
     libharfbuzz0b \

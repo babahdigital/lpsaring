@@ -4,11 +4,19 @@
 
 # Impor modul secara keseluruhan agar bisa dipanggil dari routes.
 # Ini adalah pendekatan yang lebih bersih dan sesuai dengan struktur routes yang baru.
-from . import user_approval
-from . import user_deletion
-from . import user_profile
-from . import user_quota
-from . import user_role
+from . import user_approval as user_approval
+from . import user_deletion as user_deletion
+from . import user_profile as user_profile
+from . import user_quota as user_quota
+from . import user_role as user_role
+
+__all__ = [
+	"user_approval",
+	"user_deletion",
+	"user_profile",
+	"user_quota",
+	"user_role",
+]
 
 # Dengan struktur ini, file lain (seperti user_management_routes.py) bisa melakukan:
 #
