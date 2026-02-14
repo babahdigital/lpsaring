@@ -20,6 +20,8 @@ Optional:
   --ssl-fullchain <FILE>        Local fullchain.pem path to upload (optional)
   --ssl-privkey <FILE>          Local privkey.pem path to upload (optional)
   --skip-pull                   Skip docker compose pull
+  --with-tunnel                 Paksa jalankan profile tunnel (cloudflared)
+  --no-tunnel                   Paksa nonaktifkan profile tunnel
   --skip-health                 Skip health check (curl /api/ping)
   --clean                       Run docker compose down -v --remove-orphans before deploy
   --allow-placeholders          Allow deploy even if .env.prod still contains CHANGE_ME_* values
@@ -54,6 +56,7 @@ LOCAL_DIR="$PWD"
 SSL_FULLCHAIN=""
 SSL_PRIVKEY=""
 SKIP_PULL="false"
+FORCE_TUNNEL_MODE="auto"
 SKIP_HEALTH="false"
 DO_CLEAN="false"
 ALLOW_PLACEHOLDERS="false"
@@ -70,6 +73,8 @@ while [[ $# -gt 0 ]]; do
     --ssl-fullchain) SSL_FULLCHAIN="${2:-}"; shift 2 ;;
     --ssl-privkey) SSL_PRIVKEY="${2:-}"; shift 2 ;;
     --skip-pull) SKIP_PULL="true"; shift ;;
+    --with-tunnel) FORCE_TUNNEL_MODE="on"; shift ;;
+    --no-tunnel) FORCE_TUNNEL_MODE="off"; shift ;;
     --skip-health) SKIP_HEALTH="true"; shift ;;
     --clean) DO_CLEAN="true"; shift ;;
     --allow-placeholders) ALLOW_PLACEHOLDERS="true"; shift ;;
@@ -132,6 +137,25 @@ if [[ -n "$SSL_PRIVKEY" ]] && [[ ! -f "$SSL_PRIVKEY" ]]; then
   exit 1
 fi
 
+tunnel_token_line=$(grep -E '^CLOUDFLARED_TUNNEL_TOKEN=' "$LOCAL_DIR/.env.prod" || true)
+tunnel_token_value="${tunnel_token_line#CLOUDFLARED_TUNNEL_TOKEN=}"
+if [[ "$FORCE_TUNNEL_MODE" == "on" ]]; then
+  ENABLE_TUNNEL="true"
+elif [[ "$FORCE_TUNNEL_MODE" == "off" ]]; then
+  ENABLE_TUNNEL="false"
+else
+  if [[ -n "$tunnel_token_value" ]]; then
+    ENABLE_TUNNEL="true"
+  else
+    ENABLE_TUNNEL="false"
+  fi
+fi
+
+if [[ "$ENABLE_TUNNEL" == "true" ]] && [[ -z "$tunnel_token_value" ]]; then
+  echo "ERROR: Tunnel diminta aktif tapi CLOUDFLARED_TUNNEL_TOKEN kosong di .env.prod" >&2
+  exit 1
+fi
+
 SSH_TARGET="$PI_USER@$PI_HOST"
 SSH_OPTS=(-p "$PI_PORT" -i "$SSH_KEY_EXPANDED" -o StrictHostKeyChecking=accept-new)
 SCP_OPTS=(-P "$PI_PORT" -i "$SSH_KEY_EXPANDED" -o StrictHostKeyChecking=accept-new)
@@ -141,6 +165,7 @@ echo "==> Local dir     : $LOCAL_DIR"
 echo "==> SSH key       : $SSH_KEY_EXPANDED"
 echo "==> SSH port      : $PI_PORT"
 echo "==> Rsync         : $HAS_RSYNC"
+echo "==> Tunnel mode   : $ENABLE_TUNNEL (source: $FORCE_TUNNEL_MODE)"
 echo "==> Dry run       : $DRY_RUN"
 
 timestamp=$(date +%Y%m%d_%H%M%S)
@@ -207,17 +232,29 @@ fi
 remote_deploy_cmd=$(cat <<EOF
 set -e
 cd "$REMOTE_DIR"
+COMPOSE_BASE="docker compose --env-file .env.prod -f docker-compose.prod.yml"
+if [ "$ENABLE_TUNNEL" = "true" ]; then
+  COMPOSE_UP="\$COMPOSE_BASE --profile tunnel"
+else
+  COMPOSE_UP="\$COMPOSE_BASE"
+fi
 if [ "$DO_CLEAN" = "true" ]; then
-  docker compose --env-file .env.prod -f docker-compose.prod.yml down -v --remove-orphans || true
+  \$COMPOSE_BASE down -v --remove-orphans || true
 fi
 if [ "$SKIP_PULL" = "false" ]; then
-  docker compose --env-file .env.prod -f docker-compose.prod.yml pull
+  \$COMPOSE_UP pull
 fi
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
-docker compose -f docker-compose.prod.yml ps
-if ! docker compose -f docker-compose.prod.yml ps --services --status running | grep -qx frontend; then
+\$COMPOSE_UP up -d
+\$COMPOSE_BASE ps
+if ! \$COMPOSE_BASE ps --services --status running | grep -qx frontend; then
   echo "ERROR: frontend container is not running after deploy" >&2
   exit 1
+fi
+if [ "$ENABLE_TUNNEL" = "true" ]; then
+  if ! \$COMPOSE_BASE ps --services --status running | grep -qx cloudflared; then
+    echo "ERROR: cloudflared tunnel is not running after deploy" >&2
+    exit 1
+  fi
 fi
 EOF
 )
