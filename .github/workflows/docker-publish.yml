@@ -19,6 +19,7 @@ on:
 
 env:
   DOCKER_BUILDKIT: "1"
+  BUILDKIT_PROGRESS: "plain"
 
 concurrency:
   group: docker-publish-${{ github.ref }}
@@ -90,7 +91,6 @@ jobs:
           context: ${{ matrix.context }}
           platforms: ${{ matrix.platforms }}
           push: true
-          progress: plain
           provenance: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
