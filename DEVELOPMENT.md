@@ -133,7 +133,7 @@ Restart Docker setelah perubahan konfigurasi/env:
 
 Uji cepat setelah perubahan keamanan:
 - `docker compose exec -T backend pytest`
-- `powershell.exe -ExecutionPolicy Bypass -File scripts/simulate_end_to_end.ps1 -AppEnv local`
+- `docker compose exec -T backend ruff check .`
 
 Catatan CSRF mode ketat (dev/staging):
 - Set `CSRF_STRICT_NO_ORIGIN=True`.
@@ -456,8 +456,7 @@ Set variabel agar URL publik konsisten dengan HTTPS:
 - Frontend: peringatan Vue Router untuk path Chrome DevTools (aman diabaikan).
 
 ## 12) Cara Menjalankan Full Test & Simulasi
-Full test otomatis tersedia di PowerShell script:
-- [scripts/simulate_end_to_end.ps1](scripts/simulate_end_to_end.ps1)
+Full test otomatis menggunakan kombinasi test backend + verifikasi endpoint utama.
 
 ### 12.1 Prasyarat
 - Docker Desktop aktif.
@@ -466,10 +465,10 @@ Full test otomatis tersedia di PowerShell script:
 
 ### 12.2 Menjalankan Full Test (Windows / PowerShell)
 Jalankan dari root proyek:
-- `./scripts/simulate_end_to_end.ps1`
+- `docker compose exec -T backend pytest`
 
 Jika perlu menyesuaikan URL atau nomor:
-- `./scripts/simulate_end_to_end.ps1 -BaseUrl http://10.0.0.6 -UserPhone 0811580039`
+- `curl -I http://localhost:80`
 
 Parameter yang sering disesuaikan:
 - `BaseUrl`: basis URL untuk API dan frontend (script akan memisahkan API vs frontend jika perlu).
@@ -479,21 +478,13 @@ Parameter yang sering disesuaikan:
 - `FreshStart`: reset DB + volume sebelum simulasi.
 - `CleanupAddressList`: bersihkan address-list untuk IP simulasi.
 
-### 12.3 Apa yang Dilakukan Script
+### 12.3 Alur Verifikasi Full Test
 1) Menyalakan container (db, redis, backend, celery, frontend, nginx).
-2) Menunggu backend siap (`/api/ping`) dan menentukan `ApiBaseUrl` + `FrontendBaseUrl`.
-3) Menjalankan migrasi & seed data.
-4) Membuat admin (idempotent) dan login admin.
-5) Set settings penting (IP binding, walled‑garden, profil expired).
-6) Registrasi user, approve user.
-7) Request OTP (dengan retry jika cooldown aktif) dan ambil OTP dari Redis (bypass untuk testing).
-8) Verify OTP via Nginx dengan header `X-Forwarded-For`.
-9) Debug binding resolution dan uji endpoint device binding.
-10) Uji halaman status frontend (login/captive) dan redirect berbasis cookie auth.
-11) Uji status signed (blocked/inactive) dari error token.
-12) Simulasi flow Komandan (request + approval) dengan IP terpisah (opsional).
-13) Simulasi transaksi paket (SUCCESS).
-14) Simulasi kuota (FUP/Habis/Expired), apply MikroTik, validasi address-list, lalu sync walled‑garden.
+2) Menunggu backend siap (`/api/ping`) dan frontend siap (`/`).
+3) Menjalankan migrasi database (`flask db upgrade`) bila diperlukan.
+4) Menjalankan test backend (`pytest`) dan lint backend (`ruff check`).
+5) Menjalankan lint frontend (`pnpm run lint`) dan typecheck (`pnpm run typecheck`).
+6) Verifikasi endpoint utama melalui Nginx (`/`, `/api/ping`, captive path).
 
 ### 12.4 Cara Validasi Hasil
 - Cek log backend untuk IP binding & login:

@@ -10,8 +10,6 @@ Lampiran wajib:
 - frontend/: Nuxt 3 + Vue 3 + Vuetify.
 - infrastructure/: konfigurasi Nginx dan deployment.
 - docs/: dokumentasi tambahan.
-- scripts/: helper utilitas.
-- mikrotik/: integrasi/skrip terkait Mikrotik.
 
 ## 2) Backend (backend/)
 - app/__init__.py: factory aplikasi, register blueprint.

@@ -37,7 +37,6 @@
 - Lihat log: `docker compose logs -f backend|frontend|nginx`.
 - Lint backend: `docker compose exec -T backend ruff check .` (config di backend/ruff.toml).
 - Lint frontend: `docker compose exec frontend pnpm run lint`.
-- Simulasi end-to-end (Windows): jalankan scripts/simulate_end_to_end.ps1.
 
 ## Aturan Wajib Saat Mengubah Kode
 - Jika mengubah file backend (backend/**), WAJIB jalankan: `docker compose exec -T backend ruff check .`.

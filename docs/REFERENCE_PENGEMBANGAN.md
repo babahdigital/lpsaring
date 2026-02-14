@@ -54,8 +54,6 @@ Struktur ringkas direktori utama:
 ├─ frontend/               # Aplikasi Nuxt 3 + Vuetify
 ├─ docs/                   # Dokumentasi proyek
 ├─ infrastructure/         # Konfigurasi infra/opsional
-├─ mikrotik/               # Konfigurasi terkait mikrotik
-├─ scripts/                # Script utilitas
 ├─ docker-compose.yml      # Docker compose utama (dev)
 ├─ docker-compose.prod.yml # Docker compose prod
 └─ README.md
