@@ -23,6 +23,8 @@ CMD ["pnpm", "run", "dev"]
 
 # --- Builder Stage ---
 FROM base AS builder
+ARG NODE_OPTIONS=--max-old-space-size=3072
+ENV NODE_OPTIONS=${NODE_OPTIONS}
 COPY --from=deps /app/node_modules /app/node_modules
 COPY . .
 # Gunakan cache untuk build Nuxt/Vite
