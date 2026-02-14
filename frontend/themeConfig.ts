@@ -7,8 +7,7 @@ import logo from '@images/logo.svg?raw'
 import { AppContentLayoutNav, ContentWidth, FooterType, HorizontalNavType, NavbarType } from '@layouts/enums'
 
 import { breakpointsVuetifyV3 } from '@vueuse/core'
-import { h } from 'vue'
-import { VIcon } from 'vuetify/components/VIcon'
+import { h, type Component } from 'vue'
 
 export const { themeConfig, layoutConfig } = defineThemeConfig({
   app: {
@@ -30,7 +29,7 @@ export const { themeConfig, layoutConfig } = defineThemeConfig({
     // Nilai ini akan segera ditimpa oleh pengaturan dari database di app.vue.
     theme: 'dark',
     skin: Skins.Bordered,
-    iconRenderer: VIcon,
+    iconRenderer: 'VIcon' as unknown as Component,
   },
   navbar: {
     type: NavbarType.Sticky,
