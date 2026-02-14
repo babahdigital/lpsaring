@@ -45,7 +45,7 @@ jobs:
           - service: frontend
             context: ./frontend
             image: babahdigital/sobigidul_frontend
-            platforms: linux/amd64
+            platforms: linux/amd64,linux/arm64
 
     steps:
       - name: Checkout repository

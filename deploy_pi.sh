@@ -244,6 +244,24 @@ fi
 if [ "$SKIP_PULL" = "false" ]; then
   \$COMPOSE_UP pull
 fi
+HOST_ARCH=\$(uname -m)
+EXPECTED_ARCH=""
+case "\$HOST_ARCH" in
+  aarch64|arm64) EXPECTED_ARCH="arm64" ;;
+  x86_64|amd64) EXPECTED_ARCH="amd64" ;;
+esac
+if [ -n "\$EXPECTED_ARCH" ]; then
+  FRONTEND_ARCH=\$(docker image inspect babahdigital/sobigidul_frontend:latest --format '{{.Architecture}}' 2>/dev/null || true)
+  BACKEND_ARCH=\$(docker image inspect babahdigital/sobigidul_backend:latest --format '{{.Architecture}}' 2>/dev/null || true)
+  if [ -n "\$FRONTEND_ARCH" ] && [ "\$FRONTEND_ARCH" != "\$EXPECTED_ARCH" ]; then
+    echo "ERROR: frontend image arch mismatch. expected=\$EXPECTED_ARCH actual=\$FRONTEND_ARCH" >&2
+    exit 1
+  fi
+  if [ -n "\$BACKEND_ARCH" ] && [ "\$BACKEND_ARCH" != "\$EXPECTED_ARCH" ]; then
+    echo "ERROR: backend image arch mismatch. expected=\$EXPECTED_ARCH actual=\$BACKEND_ARCH" >&2
+    exit 1
+  fi
+fi
 \$COMPOSE_UP up -d
 if ! \$COMPOSE_BASE ps --services --status running | grep -qx backend; then
   echo "Menunggu backend siap untuk migrasi..."

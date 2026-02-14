@@ -180,13 +180,12 @@ export default defineNuxtConfig({
       chunkSizeWarningLimit: 1600,
       rollupOptions: {
         output: {
-          // Split large deps for better caching and smaller base chunk.
+          // Split only clearly independent heavy deps.
+          // Hindari memecah ekosistem Vue/Vuetify secara agresif karena dapat
+          // memicu urutan inisialisasi modul yang tidak stabil di runtime.
           manualChunks(id) {
             if (!id.includes('node_modules'))
               return undefined
-
-            if (id.includes('vuetify'))
-              return 'vendor-vuetify'
 
             if (id.includes('@iconify'))
               return 'vendor-iconify'
@@ -197,10 +196,7 @@ export default defineNuxtConfig({
             if (id.includes('swiper'))
               return 'vendor-swiper'
 
-            if (id.includes('vue'))
-              return 'vendor-vue'
-
-            return 'vendor'
+            return undefined
           },
         },
       },
