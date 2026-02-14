@@ -69,5 +69,25 @@ jobs:
           push: false
           load: false
           tags: local/${{ matrix.name }}:ci-${{ github.sha }}
+          build-args: ${{ matrix.name == 'frontend' && 'NODE_OPTIONS=--max-old-space-size=3072' || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  docker-build-frontend-arm64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build frontend image arm64 (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          platforms: linux/arm64
+          push: false
+          load: false
+          tags: local/frontend:ci-arm64-${{ github.sha }}
+          build-args: |
+            NODE_OPTIONS=--max-old-space-size=3072
+          cache-from: type=gha,scope=frontend-arm64
+          cache-to: type=gha,mode=max,scope=frontend-arm64
