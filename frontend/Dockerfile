@@ -24,12 +24,13 @@ CMD ["pnpm", "run", "dev"]
 
 # --- Builder Stage ---
 FROM base AS builder
+ARG SKIP_ICON_BUILD=1
 COPY --from=deps /app/node_modules /app/node_modules
 COPY . .
 # Gunakan cache untuk build Nuxt/Vite
 RUN --mount=type=cache,target=/app/.nuxt \
     --mount=type=cache,target=/app/node_modules/.vite \
-    pnpm run build:icons && \
+    if [ "$SKIP_ICON_BUILD" != "1" ]; then pnpm run build:icons; fi && \
     pnpm run build
 
 # --- Runtime Stage ---
