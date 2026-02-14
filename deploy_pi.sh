@@ -288,6 +288,9 @@ if [ "$ENABLE_TUNNEL" = "true" ]; then
     exit 1
   fi
 fi
+if \$COMPOSE_BASE ps --services --status running | grep -qx nginx; then
+  \$COMPOSE_BASE exec -T nginx sh -lc 'nginx -t && nginx -s reload'
+fi
 EOF
 )
 
