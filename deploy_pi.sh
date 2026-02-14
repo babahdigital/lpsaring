@@ -15,7 +15,7 @@ Optional:
   --user <PI_USER>              SSH user (default: pi)
   --port <SSH_PORT>             SSH port (default: 1983)
   --key <SSH_KEY_PATH>          SSH private key (default: ~/.ssh/id_raspi_ed25519)
-  --remote-dir <REMOTE_DIR>     Remote deploy dir (default: /opt/lpsaring)
+  --remote-dir <REMOTE_DIR>     Remote deploy dir (default: /home/abdullah/sobigidul)
   --local-dir <LOCAL_DIR>       Local project dir (default: current directory)
   --ssl-fullchain <FILE>        Local fullchain.pem path to upload (optional)
   --ssl-privkey <FILE>          Local privkey.pem path to upload (optional)
@@ -32,7 +32,7 @@ Examples:
   ./deploy_pi.sh --host 192.168.1.20
 
   ./deploy_pi.sh --host 10.10.83.10 --user ubuntu --port 1983 \
-    --key ~/.ssh/id_raspi_ed25519 --remote-dir /opt/lpsaring
+    --key ~/.ssh/id_raspi_ed25519 --remote-dir /home/abdullah/sobigidul
 
   ./deploy_pi.sh --host 192.168.1.20 \
     --ssl-fullchain ~/certs/fullchain.pem \
@@ -51,7 +51,7 @@ PI_USER="pi"
 PI_HOST=""
 PI_PORT="1983"
 SSH_KEY="~/.ssh/id_raspi_ed25519"
-REMOTE_DIR="/opt/lpsaring"
+REMOTE_DIR="/home/abdullah/sobigidul"
 LOCAL_DIR="$PWD"
 SSL_FULLCHAIN=""
 SSL_PRIVKEY=""
@@ -245,6 +245,20 @@ if [ "$SKIP_PULL" = "false" ]; then
   \$COMPOSE_UP pull
 fi
 \$COMPOSE_UP up -d
+if ! \$COMPOSE_BASE ps --services --status running | grep -qx backend; then
+  echo "Menunggu backend siap untuk migrasi..."
+  for _ in \$(seq 1 30); do
+    if \$COMPOSE_BASE ps --services --status running | grep -qx backend; then
+      break
+    fi
+    sleep 2
+  done
+fi
+if ! \$COMPOSE_BASE ps --services --status running | grep -qx backend; then
+  echo "ERROR: backend container is not running, migration skipped" >&2
+  exit 1
+fi
+\$COMPOSE_BASE exec -T backend sh -lc '/opt/venv/bin/python -m flask db upgrade'
 \$COMPOSE_BASE ps
 if ! \$COMPOSE_BASE ps --services --status running | grep -qx frontend; then
   echo "ERROR: frontend container is not running after deploy" >&2

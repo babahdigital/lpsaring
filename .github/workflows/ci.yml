@@ -42,7 +42,10 @@ jobs:
       - name: Typecheck frontend
         working-directory: frontend
         run: pnpm run typecheck
-      - name: Build frontend
+      - name: Build frontend icons
+        working-directory: frontend
+        run: pnpm run build:icons
+      - name: Build frontend app
         working-directory: frontend
         run: pnpm run build
 
