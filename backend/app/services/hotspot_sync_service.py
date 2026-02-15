@@ -270,8 +270,7 @@ def _sync_address_list_status(
     date_str, time_str = get_app_date_time_strings(now)
     comment = (
         f"lpsaring|status={status_value}"
-        f"|user_id={user.id}"
-        f"|phone={username_08}"
+        f"|user={username_08}"
         f"|role={user.role.value}"
         f"|date={date_str}"
         f"|time={time_str}"
@@ -371,8 +370,7 @@ def _sync_address_list_status_for_ip(
     date_str, time_str = get_app_date_time_strings(now)
     comment = (
         f"lpsaring|status={status_value}"
-        f"|user_id={user.id}"
-        f"|phone={username_08}"
+        f"|user={username_08}"
         f"|role={user.role.value}"
         f"|ip={ip_address}"
         f"|date={date_str}"

@@ -256,7 +256,6 @@ async function handleVerifyOtp() {
     const loginResponse = await authStore.verifyOtp(numberToVerify, otpCode.value, {
       clientIp: clientIp || null,
       clientMac: clientMac || null,
-      hotspotLoginContext: Boolean(clientIp || clientMac),
     })
     if (loginResponse == null) {
       const statusRedirectPath = authStore.getStatusRedirectPath('login')
@@ -288,7 +287,7 @@ async function handleVerifyOtp() {
       if (sessionUrl)
         window.location.assign(sessionUrl)
       else
-        viewState.value = 'success'
+        await navigateTo('/dashboard', { replace: true })
     }
   }
   catch (error: any) {

@@ -359,6 +359,23 @@ async function openPreviewCandidate(candidate: InactiveCleanupCandidate, action:
     showSnackbar({ type: 'error', title: 'Terjadi Kesalahan', text: errorMessage })
   }
 }
+
+async function handlePreviewEditCandidate(candidate: InactiveCleanupCandidate) {
+  try {
+    const matchedUser = await resolvePreviewCandidateUser(candidate)
+    if (!matchedUser) {
+      showSnackbar({ type: 'warning', title: 'Data Tidak Ditemukan', text: 'User tidak ditemukan. Coba refresh data pengguna.' })
+      return
+    }
+    openEditDialog(matchedUser)
+  }
+  catch (error: any) {
+    const errorMessage = (typeof error.data?.message === 'string' && error.data.message !== '')
+      ? error.data.message
+      : 'Gagal membuka edit user dari preview cleanup.'
+    showSnackbar({ type: 'error', title: 'Terjadi Kesalahan', text: errorMessage })
+  }
+}
 async function handlePreviewCleanupAction(candidate: InactiveCleanupCandidate, action: CleanupActionType) {
   if (isPreviewActionLoading(candidate.id, action))
     return
@@ -580,6 +597,17 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
                       icon
                       size="x-small"
                       variant="text"
+                      color="primary"
+                      @click.stop="handlePreviewEditCandidate(item)"
+                    >
+                      <VIcon icon="tabler-edit" size="16" />
+                      <VTooltip activator="parent">Edit User</VTooltip>
+                    </VBtn>
+                    <VBtn
+                      v-if="canManageCandidate(item.role)"
+                      icon
+                      size="x-small"
+                      variant="text"
                       color="warning"
                       :loading="isPreviewActionLoading(item.id, 'deactivate')"
                       :disabled="isPreviewActionLoading(item.id, 'deactivate')"
@@ -609,6 +637,17 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
                 <template #append>
                   <div class="d-flex align-center gap-1">
                     <VChip size="x-small" color="error" label>{{ item.role }}</VChip>
+                    <VBtn
+                      v-if="canManageCandidate(item.role)"
+                      icon
+                      size="x-small"
+                      variant="text"
+                      color="primary"
+                      @click.stop="handlePreviewEditCandidate(item)"
+                    >
+                      <VIcon icon="tabler-edit" size="16" />
+                      <VTooltip activator="parent">Edit User</VTooltip>
+                    </VBtn>
                     <VBtn
                       v-if="canManageCandidate(item.role)"
                       icon

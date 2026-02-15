@@ -296,7 +296,7 @@ def register_or_update_device(
                 ),
                 server=user.mikrotik_server_name or settings['mikrotik_server_default'],
             )
-        _ensure_blocked_address_list(client_ip, f"limit-exceeded|user={user.id}|date={date_str}|time={time_str}")
+        _ensure_blocked_address_list(client_ip, f"limit-exceeded|user={username_08}|date={date_str}|time={time_str}")
         return False, "Limit perangkat tercapai", None
 
     is_authorized = not settings['require_explicit']
@@ -372,7 +372,7 @@ def apply_device_binding_for_login(
                 ),
                 server=user.mikrotik_server_name or settings['mikrotik_server_default'],
             )
-        _ensure_blocked_address_list(device.ip_address, f"pending-auth|user={user.id}|date={date_str}|time={time_str}")
+        _ensure_blocked_address_list(device.ip_address, f"pending-auth|user={username_08}|date={date_str}|time={time_str}")
         return False, "Perangkat belum diotorisasi", client_ip
 
     if not device.is_authorized and settings['require_explicit'] and bypass_explicit_auth:
