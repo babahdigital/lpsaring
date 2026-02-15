@@ -717,7 +717,7 @@ def cleanup_inactive_users() -> Dict[str, int]:
                 user.mikrotik_user_exists = False
                 counters['deactivated'] += 1
 
-    if db.session.dirty or db.session.new:
+    if db.session.dirty or db.session.new or db.session.deleted:
         db.session.commit()
 
     return counters
