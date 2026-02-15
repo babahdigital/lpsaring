@@ -256,7 +256,16 @@ def _sync_address_list_status(
     else:
         target_list = list_active
 
-    status_value = 'expired' if is_expired else ('habis' if remaining_mb <= 0 else ('fup' if remaining_percent <= fup_threshold else 'active'))
+    if is_expired:
+        status_value = 'expired'
+    elif user.is_unlimited_user:
+        status_value = 'unlimited'
+    elif remaining_mb <= 0:
+        status_value = 'habis'
+    elif remaining_percent <= fup_threshold:
+        status_value = 'fup'
+    else:
+        status_value = 'active'
     now = datetime.now(dt_timezone.utc)
     date_str, time_str = get_app_date_time_strings(now)
     comment = (

@@ -511,7 +511,7 @@ def verify_otp():
                 binding_context.get("mac_message"),
             )
 
-        if user_to_login.role in [UserRole.USER, UserRole.KOMANDAN]:
+        if user_to_login.role in [UserRole.USER, UserRole.KOMANDAN, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
             ok_binding, msg_binding, resolved_ip = apply_device_binding_for_login(
                 user_to_login,
                 client_ip,
@@ -548,19 +548,17 @@ def verify_otp():
 
         hotspot_username: Optional[str] = None
         hotspot_password: Optional[str] = None
-        hotspot_login_required = True
-        if user_to_login.role in [UserRole.USER, UserRole.KOMANDAN]:
-            hotspot_login_required = is_hotspot_login_required(user_to_login)
-            allow_hotspot_credentials = bool(data.client_ip or data.client_mac)
-            if not allow_hotspot_credentials and data.hotspot_login_context is True:
-                allow_hotspot_credentials = True
-                current_app.logger.info(
-                    "Hotspot credentials allowed via captive context without client_ip/client_mac for user=%s",
-                    user_to_login.id,
-                )
-            if hotspot_login_required and allow_hotspot_credentials:
-                hotspot_username = format_to_local_phone(user_to_login.phone_number)
-                hotspot_password = user_to_login.mikrotik_password
+        hotspot_login_required = is_hotspot_login_required(user_to_login)
+        allow_hotspot_credentials = bool(data.client_ip or data.client_mac)
+        if not allow_hotspot_credentials and data.hotspot_login_context is True:
+            allow_hotspot_credentials = True
+            current_app.logger.info(
+                "Hotspot credentials allowed via captive context without client_ip/client_mac for user=%s",
+                user_to_login.id,
+            )
+        if hotspot_login_required and allow_hotspot_credentials:
+            hotspot_username = format_to_local_phone(user_to_login.phone_number)
+            hotspot_password = user_to_login.mikrotik_password
 
         response = jsonify(
             VerifyOtpResponseSchema(
@@ -627,7 +625,7 @@ def auto_login():
         if getattr(user, 'is_blocked', False):
             return _build_status_error("blocked", "Akun Anda diblokir oleh Admin."), HTTPStatus.FORBIDDEN
 
-        if user.role in [UserRole.USER, UserRole.KOMANDAN]:
+        if user.role in [UserRole.USER, UserRole.KOMANDAN, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
             ok_binding, msg_binding, resolved_ip = apply_device_binding_for_login(user, client_ip, user_agent, resolved_mac or device.mac_address)
             if not ok_binding:
                 if msg_binding in ["Limit perangkat tercapai", "Perangkat belum diotorisasi"]:
@@ -650,9 +648,7 @@ def auto_login():
 
         hotspot_username: Optional[str] = None
         hotspot_password: Optional[str] = None
-        hotspot_login_required = True
-        if user.role in [UserRole.USER, UserRole.KOMANDAN]:
-            hotspot_login_required = is_hotspot_login_required(user)
+        hotspot_login_required = is_hotspot_login_required(user)
 
         response = jsonify(
             VerifyOtpResponseSchema(
