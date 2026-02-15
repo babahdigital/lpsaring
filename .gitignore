@@ -164,3 +164,6 @@ docs/
 *.md
 *.local
 *.public
+*logs.zip
+*.log
+tmp*
