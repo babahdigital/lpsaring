@@ -179,29 +179,6 @@ export default defineNuxtConfig({
     // resolve.alias tidak lagi diperlukan karena sudah diatur di root
     build: {
       chunkSizeWarningLimit: 1600,
-      rollupOptions: {
-        output: {
-          // Split large deps for better caching and smaller base chunk.
-          manualChunks(id) {
-            if (!id.includes('node_modules'))
-              return undefined
-
-            if (id.includes('vuetify'))
-              return 'vendor-vuetify'
-
-            if (id.includes('@iconify'))
-              return 'vendor-iconify'
-
-            if (id.includes('apexcharts') || id.includes('vue3-apexcharts'))
-              return 'vendor-apexcharts'
-
-            if (id.includes('swiper'))
-              return 'vendor-swiper'
-
-            return undefined
-          },
-        },
-      },
     },
     optimizeDeps: {
       exclude: ['vuetify'],
