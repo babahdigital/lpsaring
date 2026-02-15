@@ -6,7 +6,7 @@ import time
 import logging
 import re
 from contextlib import contextmanager
-from typing import Optional, Tuple, List, Dict, Any, Iterator, cast
+from typing import Optional, Tuple, List, Dict, Any, Iterator, cast, TypedDict
 import routeros_api
 import routeros_api.exceptions
 from flask import current_app
@@ -19,36 +19,53 @@ _connection_pool = None
 _pool_config_key = None
 
 
-def _get_mikrotik_config() -> Dict[str, Any]:
+class MikrotikConfig(TypedDict):
+    host: Optional[str]
+    username: Optional[str]
+    password: Optional[str]
+    port: int
+    use_ssl: bool
+    ssl_verify: bool
+    plaintext_login: bool
+
+
+def _get_mikrotik_config() -> MikrotikConfig:
     try:
-        host = current_app.config.get('MIKROTIK_HOST')
-        username = current_app.config.get('MIKROTIK_USERNAME') or current_app.config.get('MIKROTIK_USER')
-        password = current_app.config.get('MIKROTIK_PASSWORD')
-        port = int(current_app.config.get('MIKROTIK_PORT', 8728))
-        use_ssl = bool(str(current_app.config.get('MIKROTIK_USE_SSL', 'False')).lower() == 'true')
-        ssl_verify = bool(str(current_app.config.get('MIKROTIK_SSL_VERIFY', 'False')).lower() == 'true')
-        plaintext_login = bool(str(current_app.config.get('MIKROTIK_PLAIN_TEXT_LOGIN', 'True')).lower() == 'true')
+        host = cast(Optional[str], current_app.config.get('MIKROTIK_HOST'))
+        username = cast(
+            Optional[str],
+            (current_app.config.get('MIKROTIK_USERNAME') or current_app.config.get('MIKROTIK_USER')),
+        )
+        password = cast(Optional[str], current_app.config.get('MIKROTIK_PASSWORD'))
+        port_raw = current_app.config.get('MIKROTIK_PORT', 8728)
+        port = int(port_raw or 8728)
+        use_ssl = str(current_app.config.get('MIKROTIK_USE_SSL', 'False')).lower() == 'true'
+        ssl_verify = str(current_app.config.get('MIKROTIK_SSL_VERIFY', 'False')).lower() == 'true'
+        plaintext_login = str(current_app.config.get('MIKROTIK_PLAIN_TEXT_LOGIN', 'True')).lower() == 'true'
     except Exception:
         host = os.environ.get('MIKROTIK_HOST')
         username = os.environ.get('MIKROTIK_USERNAME') or os.environ.get('MIKROTIK_USER')
         password = os.environ.get('MIKROTIK_PASSWORD')
-        port = int(os.environ.get('MIKROTIK_PORT', 8728))
-        use_ssl = os.environ.get('MIKROTIK_USE_SSL', 'False').lower() == 'true'
-        ssl_verify = os.environ.get('MIKROTIK_SSL_VERIFY', 'False').lower() == 'true'
-        plaintext_login = os.environ.get('MIKROTIK_PLAIN_TEXT_LOGIN', 'True').lower() == 'true'
+        port = int(os.environ.get('MIKROTIK_PORT') or 8728)
+        use_ssl = (os.environ.get('MIKROTIK_USE_SSL', 'False')).lower() == 'true'
+        ssl_verify = (os.environ.get('MIKROTIK_SSL_VERIFY', 'False')).lower() == 'true'
+        plaintext_login = (os.environ.get('MIKROTIK_PLAIN_TEXT_LOGIN', 'True')).lower() == 'true'
 
-    return {
-        'host': host,
-        'username': username,
-        'password': password,
-        'port': port,
-        'use_ssl': use_ssl,
-        'ssl_verify': ssl_verify,
-        'plaintext_login': plaintext_login,
-    }
+    return cast(
+        MikrotikConfig,
+        {
+            'host': host,
+            'username': username,
+            'password': password,
+            'port': port,
+            'use_ssl': use_ssl,
+            'ssl_verify': ssl_verify,
+            'plaintext_login': plaintext_login,
+        },
+    )
 
 
-def _make_config_key(config: Dict[str, Any]) -> str:
+def _make_config_key(config: MikrotikConfig) -> str:
     return "|".join([
         str(config.get('host')),
         str(config.get('username')),
@@ -68,14 +85,23 @@ def init_mikrotik_pool():
     if not should_allow_call("mikrotik"):
         logger.warning("Mikrotik circuit breaker open. Skipping pool init.")
         return False
-    if not all([config.get('host'), config.get('username'), config.get('password')]):
+
+    host = config.get('host')
+    username = config.get('username')
+    password = config.get('password')
+    port = config.get('port')
+    use_ssl = config.get('use_ssl')
+    ssl_verify = config.get('ssl_verify')
+    plaintext_login = config.get('plaintext_login')
+
+    if host is None or username is None or password is None:
         logger.error("Konfigurasi MikroTik tidak lengkap")
         return False
-    try:
-        if config.get('username') is None or config.get('password') is None:
-            logger.error("Konfigurasi MikroTik tidak lengkap: username/password kosong")
-            return False
+    if host == "" or username == "" or password == "":
+        logger.error("Konfigurasi MikroTik tidak lengkap: host/username/password kosong")
+        return False
 
+    try:
         if _connection_pool is not None and _pool_config_key != config_key:
             try:
                 _connection_pool.disconnect()
@@ -83,16 +109,16 @@ def init_mikrotik_pool():
                 pass
 
         _connection_pool = routeros_api.RouterOsApiPool(
-            config.get('host'),
-            username=config.get('username'),
-            password=config.get('password'),
-            port=config.get('port'),
-            use_ssl=config.get('use_ssl'),
-            ssl_verify=config.get('ssl_verify'),
-            plaintext_login=config.get('plaintext_login')
+            host,
+            username=username,
+            password=password,
+            port=port,
+            use_ssl=use_ssl,
+            ssl_verify=ssl_verify,
+            plaintext_login=plaintext_login,
         )
         _pool_config_key = config_key
-        logger.info(f"Pool koneksi MikroTik berhasil diinisialisasi untuk {config.get('host')}")
+        logger.info(f"Pool koneksi MikroTik berhasil diinisialisasi untuk {host}")
         record_success("mikrotik")
         return True
     except Exception as e:
@@ -101,27 +127,35 @@ def init_mikrotik_pool():
         return False
 
 @contextmanager
-def get_mikrotik_connection() -> Iterator[Optional[Any]]:
+def get_mikrotik_connection(raise_on_error: bool = False) -> Iterator[Optional[Any]]:
     api_instance = None
-    try:
-        if not should_allow_call("mikrotik"):
-            logger.warning("Mikrotik circuit breaker open. Skipping connection.")
-            yield None
-            return
-        if not init_mikrotik_pool():
-            yield None
-            return
-        if _connection_pool is None:
-            yield None
-            return
 
+    if not should_allow_call("mikrotik"):
+        logger.warning("Mikrotik circuit breaker open. Skipping connection.")
+        yield None
+        return
+
+    if not init_mikrotik_pool() or _connection_pool is None:
+        yield None
+        return
+
+    try:
         api_instance = _connection_pool.get_api()
         record_success("mikrotik")
-        yield api_instance
     except Exception as e:
         logger.error(f"Error mendapatkan koneksi: {e}", exc_info=True)
         record_failure("mikrotik")
         yield None
+        return
+
+    try:
+        yield api_instance
+    except Exception as e:
+        logger.error(f"Error saat operasi MikroTik: {e}", exc_info=True)
+        record_failure("mikrotik")
+        if raise_on_error:
+            raise
+        return
     finally:
         if api_instance and _connection_pool:
             try:
