@@ -312,7 +312,8 @@ def apply_device_binding_for_login(
     user: User,
     client_ip: Optional[str],
     user_agent: Optional[str],
-    client_mac: Optional[str] = None
+    client_mac: Optional[str] = None,
+    bypass_explicit_auth: bool = False,
 ) -> Tuple[bool, str, Optional[str]]:
     settings = _get_settings()
     now = datetime.now(dt_timezone.utc)
@@ -354,7 +355,7 @@ def apply_device_binding_for_login(
     if not device:
         return False, "Device tidak valid", None
 
-    if not device.is_authorized and settings['require_explicit']:
+    if not device.is_authorized and settings['require_explicit'] and not bypass_explicit_auth:
         if settings['ip_binding_enabled']:
             _ensure_ip_binding(
                 mac_address=device.mac_address,
@@ -365,6 +366,14 @@ def apply_device_binding_for_login(
             )
         _ensure_blocked_address_list(device.ip_address, f"pending-auth|user={user.id}|date={date_str}|time={time_str}")
         return False, "Perangkat belum diotorisasi", client_ip
+
+    if not device.is_authorized and settings['require_explicit'] and bypass_explicit_auth:
+        logger.info(
+            "Bypass explicit device auth setelah OTP berhasil: user=%s mac=%s ip=%s",
+            user.id,
+            device.mac_address,
+            device.ip_address,
+        )
 
     if settings['ip_binding_enabled']:
         allowed_binding_type = resolve_allowed_binding_type_for_user(user)

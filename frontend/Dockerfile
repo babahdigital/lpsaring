@@ -1,7 +1,7 @@
 # frontend/Dockerfile (Optimized for Windows & CI)
 
 # --- Base Stage ---
-FROM node:18-slim AS base
+FROM --platform=$BUILDPLATFORM node:18-slim AS base
 WORKDIR /app
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
@@ -23,7 +23,7 @@ RUN --mount=type=cache,target=/root/.pnpm-store \
 FROM base AS development
 COPY --from=deps /app/node_modules /app/node_modules
 COPY . .
-RUN pnpm run build:icons
+RUN npx nuxt prepare && pnpm run build:icons
 EXPOSE 3010
 CMD ["pnpm", "run", "dev"]
 
@@ -31,10 +31,12 @@ CMD ["pnpm", "run", "dev"]
 FROM base AS builder
 COPY --from=deps /app/node_modules /app/node_modules
 COPY . .
+ARG NODE_OPTIONS=--max-old-space-size=3072
+ENV NODE_OPTIONS=${NODE_OPTIONS}
 # Gunakan cache untuk build Nuxt/Vite
 RUN --mount=type=cache,target=/app/.nuxt \
     --mount=type=cache,target=/app/node_modules/.vite \
-    pnpm run build:icons --if-present && \
+    npx nuxt prepare && \
     pnpm run build
 
 # --- Runtime Stage ---

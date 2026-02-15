@@ -7,7 +7,7 @@
     "dev": "nuxt dev",
     "dev:host": "nuxt dev --dotenv .env.local",
     "dev:public": "nuxt dev --dotenv .env.public --host 0.0.0.0 --port 3010",
-    "build": "pnpm run build:icons && node --max-old-space-size=4096 node_modules/nuxt/bin/nuxt.mjs build",
+    "build": "pnpm run build:icons && node node_modules/nuxt/bin/nuxt.mjs build",
     "lint": "eslint . --fix --ignore-pattern .output --ignore-pattern .nuxt --ignore-pattern .nitro",
     "typecheck": "nuxt typecheck",
     "test": "vitest run",

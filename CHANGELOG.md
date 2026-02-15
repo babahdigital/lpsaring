@@ -18,10 +18,13 @@ Lampiran wajib:
 ### Changed
 - Backend: sinkronisasi kuota menggunakan delta per-MAC (Redis last-bytes) + pembulatan MB konsisten.
 - Backend: kebijakan hotspot login/ip-binding kini mendukung mode campuran berbasis status user (`HOTSPOT_BYPASS_STATUSES`), bukan hanya global `IP_BINDING_TYPE_ALLOWED`.
+- Backend: verifikasi OTP kini mengizinkan auto-otorisasi perangkat pada login OTP agar tidak langsung masuk kondisi blokir pending-auth.
 - Frontend: tampilan kuota mendukung MB desimal pada chart.
 - Keamanan: CSRF origin guard untuk cookie auth dan JSON error handler konsisten.
 - Health endpoint selalu HTTP 200 dengan status `ok`/`degraded`.
 - Nginx: CSP produksi dipersempit (hapus `unsafe-eval`).
+- CI/CD: workflow publish memakai Dockerfile produksi eksplisit per service dan build arg `NODE_OPTIONS` untuk stabilitas build frontend.
+- Frontend: pipeline build Docker menambahkan `nuxt prepare` sebelum build untuk kompatibilitas `--ignore-scripts`.
 ### Added
 - Dokumentasi detail endpoint API (request/response).
 - Panduan kontribusi (flow PR, lint, testing).

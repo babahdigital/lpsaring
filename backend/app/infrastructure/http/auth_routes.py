@@ -512,7 +512,13 @@ def verify_otp():
             )
 
         if user_to_login.role in [UserRole.USER, UserRole.KOMANDAN]:
-            ok_binding, msg_binding, resolved_ip = apply_device_binding_for_login(user_to_login, client_ip, user_agent, client_mac)
+            ok_binding, msg_binding, resolved_ip = apply_device_binding_for_login(
+                user_to_login,
+                client_ip,
+                user_agent,
+                client_mac,
+                bypass_explicit_auth=True,
+            )
             if not ok_binding:
                 if msg_binding in ["Limit perangkat tercapai", "Perangkat belum diotorisasi"]:
                     return jsonify(AuthErrorResponseSchema(error=msg_binding).model_dump()), HTTPStatus.FORBIDDEN
