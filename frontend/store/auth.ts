@@ -511,7 +511,8 @@ export const useAuthStore = defineStore('auth', () => {
   async function initializeAuth() {
     const route = useRoute()
     const context: 'login' | 'captive' = route.path.startsWith('/captive') ? 'captive' : 'login'
-    const isGuestAuthRoute = route.path === '/login'
+    const isGuestAuthRoute = route.path === '/'
+      || route.path === '/login'
       || route.path.startsWith('/login/')
       || route.path === '/admin'
       || route.path === '/admin/login'
