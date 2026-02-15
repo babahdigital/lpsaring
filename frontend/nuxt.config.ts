@@ -198,10 +198,7 @@ export default defineNuxtConfig({
             if (id.includes('swiper'))
               return 'vendor-swiper'
 
-            if (id.includes('vue'))
-              return 'vendor-vue'
-
-            return 'vendor'
+            return undefined
           },
         },
       },
