@@ -38,6 +38,7 @@ const hmrClientPortEnv = process.env.NUXT_PUBLIC_HMR_CLIENT_PORT
 const hmrClientPort = hmrClientPortEnv ? Number.parseInt(hmrClientPortEnv, 10) : undefined
 const hmrProtocol = process.env.NUXT_PUBLIC_HMR_PROTOCOL
   ?? ((hmrClientPort === 443) ? 'wss' : 'ws')
+const isProductionBuild = process.env.NODE_ENV === 'production'
 
 let derivedHmrHost = hmrHost
 let derivedHmrProtocol = hmrProtocol
@@ -159,8 +160,8 @@ export default defineNuxtConfig({
   },
 
   sourcemap: {
-    server: true,
-    client: true,
+    server: !isProductionBuild,
+    client: !isProductionBuild,
   },
 
   vue: {

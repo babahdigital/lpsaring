@@ -29,7 +29,7 @@ module.exports = {
     'regex',
     'regexp',
   ],
-  ignorePatterns: ['plugins/iconify/*.js', 'node_modules', 'dist', '*.d.ts', 'vendor', '*.json', 'server/routes/.well-known/**'],
+  ignorePatterns: ['plugins/iconify/*.js', 'node_modules', '.nuxt', '.nitro', '.output', 'dist', '*.d.ts', 'vendor', '*.json', 'server/routes/.well-known/**'],
   rules: {
     'no-console': process.env.NODE_ENV === 'production' ? 'warn' : 'off',
     'no-debugger': process.env.NODE_ENV === 'production' ? 'warn' : 'off',

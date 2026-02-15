@@ -12,7 +12,12 @@ FROM base AS deps
 COPY package.json pnpm-lock.yaml* ./
 # Gunakan cache terpisah untuk instalasi dependensi
 RUN --mount=type=cache,target=/root/.pnpm-store \
-    pnpm install --frozen-lockfile --prod=false --ignore-scripts
+    pnpm install --frozen-lockfile --prod=false --ignore-scripts \
+    --prefer-offline \
+    --fetch-retries=5 \
+    --fetch-retry-factor=2 \
+    --fetch-retry-mintimeout=10000 \
+    --fetch-retry-maxtimeout=120000
 
 # --- Development Stage ---
 FROM base AS development
@@ -29,7 +34,7 @@ COPY . .
 # Gunakan cache untuk build Nuxt/Vite
 RUN --mount=type=cache,target=/app/.nuxt \
     --mount=type=cache,target=/app/node_modules/.vite \
-    pnpm run build:icons && \
+    pnpm run build:icons --if-present && \
     pnpm run build
 
 # --- Runtime Stage ---

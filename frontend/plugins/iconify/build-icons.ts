@@ -509,6 +509,7 @@ const target = join(__dirname, '..', '..', 'assets', 'iconify', 'icons.css')
   console.log(`Saved CSS to ${target}!`)
 })().catch((err) => {
   console.error(err)
+  process.exitCode = 1
 })
 
 /**
