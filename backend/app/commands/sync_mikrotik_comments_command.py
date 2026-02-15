@@ -14,7 +14,7 @@ from app.infrastructure.gateways.mikrotik_client import (
     upsert_ip_binding,
 )
 from app.services.device_management_service import normalize_mac
-from app.services.settings_service import settings_service
+from app.services import settings_service
 from app.utils.date_time import get_app_date_time_strings
 from app.utils.phone import format_to_local_phone
 
@@ -30,7 +30,9 @@ def _load_device_maps() -> Tuple[Dict[str, User], Dict[str, User]]:
         if not user or not user.phone_number:
             continue
         if device.mac_address:
-            mac_to_user[normalize_mac(device.mac_address)] = user
+            normalized = normalize_mac(device.mac_address)
+            if normalized:
+                mac_to_user[normalized] = user
         if device.ip_address:
             ip_to_user[str(device.ip_address)] = user
     return mac_to_user, ip_to_user
