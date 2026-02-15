@@ -136,6 +136,7 @@ def get_notification_message(template_key: str, context: Optional[Dict[str, Any]
         final_context["remaining_quota"] = _format_quota_human_readable(final_context.get("remaining_mb"))
     
     try:
+        template_string = _render_spintax(template_string)
         rendered = template_string.format(**final_context)
         return _render_spintax(rendered)
     except KeyError as e:
