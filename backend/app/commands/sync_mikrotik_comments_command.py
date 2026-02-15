@@ -10,10 +10,10 @@ from app.infrastructure.db.models import User, UserDevice
 from app.infrastructure.gateways.mikrotik_client import (
     _extract_user_id_from_comment,
     get_mikrotik_connection,
-    normalize_mac,
     upsert_address_list_entry,
     upsert_ip_binding,
 )
+from app.services.device_management_service import normalize_mac
 from app.services.settings_service import settings_service
 from app.utils.date_time import get_app_date_time_strings
 from app.utils.phone import format_to_local_phone
