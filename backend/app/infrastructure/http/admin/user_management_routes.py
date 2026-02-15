@@ -191,7 +191,12 @@ def update_my_profile(current_admin: User):
 @admin_required
 def get_users_list(current_admin: User):
     try:
-        page, per_page = request.args.get('page', 1, type=int), min(request.args.get('itemsPerPage', 10, type=int), 100)
+        page = request.args.get('page', 1, type=int)
+        per_page_raw = request.args.get('itemsPerPage', 10, type=int)
+        if per_page_raw == -1:
+            per_page = None
+        else:
+            per_page = min(max(int(per_page_raw or 10), 1), 100)
         search_query, role_filter = request.args.get('search', ''), request.args.get('role')
         sort_by, sort_order = request.args.get('sortBy', 'created_at'), request.args.get('sortOrder', 'desc')
         
@@ -199,7 +204,10 @@ def get_users_list(current_admin: User):
         if not current_admin.is_super_admin_role:
             query = query.where(User.role != UserRole.SUPER_ADMIN)
         if role_filter:
-            query = query.where(User.role == UserRole[role_filter.upper()])
+            try:
+                query = query.where(User.role == UserRole[role_filter.upper()])
+            except KeyError:
+                return jsonify({"message": "Role filter tidak valid."}), HTTPStatus.BAD_REQUEST
         if search_query:
             query = query.where(or_(User.full_name.ilike(f"%{search_query}%"), User.phone_number.in_(get_phone_number_variations(search_query))))
         
@@ -207,7 +215,11 @@ def get_users_list(current_admin: User):
         query = query.order_by(sort_col.desc() if sort_order == 'desc' else sort_col.asc())
 
         total = db.session.scalar(select(func.count()).select_from(query.subquery()))
-        users = db.session.scalars(query.limit(per_page).offset((page - 1) * per_page)).all()
+
+        if per_page is None:
+            users = db.session.scalars(query).all()
+        else:
+            users = db.session.scalars(query.limit(per_page).offset((page - 1) * per_page)).all()
         
         return jsonify({"items": [UserResponseSchema.from_orm(u).model_dump() for u in users], "totalItems": total}), HTTPStatus.OK
     except Exception as e:

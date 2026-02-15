@@ -8,7 +8,7 @@ from sqlalchemy import select, or_
 
 from app.extensions import db
 from app.infrastructure.db.models import User, UserRole, AdminActionType, ApprovalStatus, PromoEvent, PromoEventStatus
-from app.utils.formatters import format_to_local_phone, normalize_to_e164
+from app.utils.formatters import format_to_local_phone, normalize_to_e164, get_app_date_time_strings
 from app.services import settings_service
 
 # Impor service lain dari paket yang sama
@@ -20,7 +20,10 @@ from .helpers import (
 )
 from app.infrastructure.gateways.mikrotik_client import (
     activate_or_update_hotspot_user,
+    get_hotspot_ip_binding_user_map,
+    remove_address_list_entry,
     sync_address_list_for_user,
+    upsert_address_list_entry,
 )
 
 
@@ -379,12 +382,60 @@ def _handle_user_activation(user: User, should_be_active: bool, admin: User) -> 
         list_expired = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_EXPIRED', 'expired')
         list_habis = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_HABIS', 'habis')
         list_blocked = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_BLOCKED', 'blocked')
+
+        now = datetime.now(dt_timezone.utc)
+        date_str, time_str = get_app_date_time_strings(now)
+        username_08 = format_to_local_phone(user.phone_number) or ""
+        comment = (
+            f"lpsaring|status=inactive"
+            f"|user={username_08}"
+            f"|role={user.role.value}"
+            f"|date={date_str}"
+            f"|time={time_str}"
+        )
+
+        def _sync_inactive_with_fallback(api_connection, **kwargs):
+            ok, msg = sync_address_list_for_user(api_connection=api_connection, **kwargs)
+            if ok:
+                return ok, msg
+            if msg not in ("IP belum tersedia untuk user", "IP tidak ditemukan"):
+                return ok, msg
+
+            ok_map, binding_map, _map_msg = get_hotspot_ip_binding_user_map(api_connection)
+            if not ok_map:
+                return ok, msg
+
+            fallback_ip = None
+            for entry in binding_map.values():
+                if str(entry.get('user_id')) == str(user.id):
+                    address = entry.get('address')
+                    if address:
+                        fallback_ip = str(address)
+                        break
+            if not fallback_ip:
+                return ok, msg
+
+            ok_upsert, upsert_msg = upsert_address_list_entry(
+                api_connection=api_connection,
+                address=fallback_ip,
+                list_name=list_inactive,
+                comment=comment + f"|ip={fallback_ip}",
+            )
+            if not ok_upsert:
+                return False, upsert_msg
+
+            for list_name in [list_active, list_fup, list_blocked, list_expired, list_habis]:
+                if list_name and list_name != list_inactive:
+                    remove_address_list_entry(api_connection=api_connection, address=fallback_ip, list_name=list_name)
+
+            return True, "Sukses (fallback ip-binding)"
+
         _handle_mikrotik_operation(
-            sync_address_list_for_user,
+            _sync_inactive_with_fallback,
             username=format_to_local_phone(user.phone_number),
             target_list=list_inactive,
             other_lists=[list_active, list_fup, list_blocked, list_expired, list_habis],
-            comment=f"admin_block:{admin.full_name}",
+            comment=comment,
         )
         _send_whatsapp_notification(
             user.phone_number,
@@ -423,12 +474,60 @@ def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reas
             list_inactive = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_INACTIVE', 'inactive')
             list_expired = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_EXPIRED', 'expired')
             list_habis = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_HABIS', 'habis')
+
+            now = datetime.now(dt_timezone.utc)
+            date_str, time_str = get_app_date_time_strings(now)
+            username_08 = format_to_local_phone(user.phone_number) or ""
+            comment = (
+                f"lpsaring|status=blocked"
+                f"|user={username_08}"
+                f"|role={user.role.value}"
+                f"|date={date_str}"
+                f"|time={time_str}"
+            )
+
+            def _sync_blocked_with_fallback(api_connection, **kwargs):
+                ok, msg = sync_address_list_for_user(api_connection=api_connection, **kwargs)
+                if ok:
+                    return ok, msg
+                if msg not in ("IP belum tersedia untuk user", "IP tidak ditemukan"):
+                    return ok, msg
+
+                ok_map, binding_map, _map_msg = get_hotspot_ip_binding_user_map(api_connection)
+                if not ok_map:
+                    return ok, msg
+
+                fallback_ip = None
+                for entry in binding_map.values():
+                    if str(entry.get('user_id')) == str(user.id):
+                        address = entry.get('address')
+                        if address:
+                            fallback_ip = str(address)
+                            break
+                if not fallback_ip:
+                    return ok, msg
+
+                ok_upsert, upsert_msg = upsert_address_list_entry(
+                    api_connection=api_connection,
+                    address=fallback_ip,
+                    list_name=list_blocked,
+                    comment=comment + f"|ip={fallback_ip}",
+                )
+                if not ok_upsert:
+                    return False, upsert_msg
+
+                for list_name in [list_active, list_fup, list_inactive, list_expired, list_habis]:
+                    if list_name and list_name != list_blocked:
+                        remove_address_list_entry(api_connection=api_connection, address=fallback_ip, list_name=list_name)
+
+                return True, "Sukses (fallback ip-binding)"
+
             _handle_mikrotik_operation(
-                sync_address_list_for_user,
+                _sync_blocked_with_fallback,
                 username=format_to_local_phone(user.phone_number),
                 target_list=list_blocked,
                 other_lists=[list_active, list_fup, list_inactive, list_expired, list_habis],
-                comment=f"blocked:{admin.full_name}"
+                comment=comment,
             )
             _send_whatsapp_notification(
                 user.phone_number,

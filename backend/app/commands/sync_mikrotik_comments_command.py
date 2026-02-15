@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime, timezone as dt_timezone
 from typing import Dict, Optional, Tuple
 
@@ -56,6 +57,32 @@ def _build_address_list_comment(status_value: str, user: User, ip: Optional[str]
         parts.append(f"|ip={ip}")
     parts.append(f"|date={date_str}|time={time_str}")
     return "".join(parts)
+
+
+def _find_user_for_address_list_entry(address: str, old_comment: str, ip_to_user: Dict[str, User]) -> Optional[User]:
+    if address:
+        user = ip_to_user.get(str(address))
+        if user is not None:
+            return user
+
+    candidate = _extract_user_id_from_comment(old_comment)
+    if candidate:
+        try:
+            user = db.session.get(User, candidate)
+        except Exception:
+            user = None
+        if user is not None:
+            return user
+
+    match = re.search(r'(?:^|[|\s])phone=([^|\s]+)', str(old_comment or ''))
+    if match:
+        phone_raw = match.group(1).strip()
+        phone_08 = format_to_local_phone(phone_raw) or phone_raw
+        variations = {phone_raw, phone_08}
+        variations.update({phone_raw.replace(' ', ''), phone_08.replace(' ', '')})
+        return db.session.query(User).filter(User.phone_number.in_(list(variations))).first()
+
+    return None
 
 
 @click.command('sync-mikrotik-comments')
@@ -156,13 +183,13 @@ def sync_mikrotik_comments_command(apply_changes: bool, do_ip_binding: bool, do_
                 if not status_value:
                     continue
 
-                user = ip_to_user.get(str(address))
+                old_comment = entry.get('comment') or ''
+                user = _find_user_for_address_list_entry(str(address), str(old_comment), ip_to_user)
                 if not user:
                     updated['skipped'] += 1
                     continue
 
                 new_comment = _build_address_list_comment(status_value, user, str(address), now)
-                old_comment = entry.get('comment') or ''
                 if old_comment == new_comment:
                     continue
 
