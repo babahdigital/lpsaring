@@ -284,12 +284,16 @@ def register_or_update_device(
         db.session.flush()
         total_devices = db.session.scalar(sa.select(sa.func.count(UserDevice.id)).where(UserDevice.user_id == user.id)) or 0
     if total_devices >= settings['max_devices']:
+        username_08 = format_to_local_phone(user.phone_number) or ""
         if settings['ip_binding_enabled']:
             _ensure_ip_binding(
                 mac_address=mac_address,
                 ip_address=client_ip,
                 binding_type=settings['ip_binding_type_blocked'],
-                comment=f"limit-exceeded|user={user.id}|date={date_str}|time={time_str}",
+                comment=(
+                    f"limit-exceeded|user={username_08}|uid={user.id}|role={user.role.value}"
+                    f"|date={date_str}|time={time_str}"
+                ),
                 server=user.mikrotik_server_name or settings['mikrotik_server_default'],
             )
         _ensure_blocked_address_list(client_ip, f"limit-exceeded|user={user.id}|date={date_str}|time={time_str}")
@@ -356,12 +360,16 @@ def apply_device_binding_for_login(
         return False, "Device tidak valid", None
 
     if not device.is_authorized and settings['require_explicit'] and not bypass_explicit_auth:
+        username_08 = format_to_local_phone(user.phone_number) or ""
         if settings['ip_binding_enabled']:
             _ensure_ip_binding(
                 mac_address=device.mac_address,
                 ip_address=device.ip_address,
                 binding_type=settings['ip_binding_type_blocked'],
-                comment=f"pending-auth|user={user.id}|date={date_str}|time={time_str}",
+                comment=(
+                    f"pending-auth|user={username_08}|uid={user.id}|role={user.role.value}"
+                    f"|date={date_str}|time={time_str}"
+                ),
                 server=user.mikrotik_server_name or settings['mikrotik_server_default'],
             )
         _ensure_blocked_address_list(device.ip_address, f"pending-auth|user={user.id}|date={date_str}|time={time_str}")
@@ -376,12 +384,16 @@ def apply_device_binding_for_login(
         )
 
     if settings['ip_binding_enabled']:
+        username_08 = format_to_local_phone(user.phone_number) or ""
         allowed_binding_type = resolve_allowed_binding_type_for_user(user)
         _ensure_ip_binding(
             mac_address=device.mac_address,
             ip_address=device.ip_address,
             binding_type=allowed_binding_type,
-            comment=f"authorized|user={user.id}|date={date_str}|time={time_str}",
+            comment=(
+                f"authorized|user={username_08}|uid={user.id}|role={user.role.value}"
+                f"|date={date_str}|time={time_str}"
+            ),
             server=user.mikrotik_server_name or settings['mikrotik_server_default'],
         )
     _remove_blocked_address_list(device.ip_address)

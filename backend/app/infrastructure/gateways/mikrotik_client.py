@@ -370,7 +370,14 @@ def get_hotspot_host_usage_map(api_connection: Any) -> Tuple[bool, Dict[str, Dic
 def _extract_user_id_from_comment(comment: Optional[str]) -> Optional[str]:
     if not comment:
         return None
-    match = re.search(r'(?:^|[|\s])user=([^|\s]+)', str(comment))
+    text = str(comment)
+    match = re.search(r'(?:^|[|\s])uid=([^|\s]+)', text)
+    if match:
+        return match.group(1).strip() or None
+    match = re.search(r'(?:^|[|\s])user_id=([^|\s]+)', text)
+    if match:
+        return match.group(1).strip() or None
+    match = re.search(r'(?:^|[|\s])user=([^|\s]+)', text)
     if match:
         return match.group(1).strip() or None
     return None

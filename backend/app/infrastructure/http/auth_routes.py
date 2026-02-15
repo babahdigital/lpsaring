@@ -544,7 +544,7 @@ def verify_otp():
         if session_token:
             base_url = current_app.config.get('APP_PUBLIC_BASE_URL') or current_app.config.get('FRONTEND_URL') or current_app.config.get('APP_LINK_USER')
             if base_url:
-                session_url = f"{base_url.rstrip('/')}/session/consume?token={session_token}&next=/dashboard"
+                session_url = f"{base_url.rstrip('/')}/session/consume?token={session_token}&next=/akun"
 
         hotspot_username: Optional[str] = None
         hotspot_password: Optional[str] = None

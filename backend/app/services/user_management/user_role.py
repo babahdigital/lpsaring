@@ -22,6 +22,10 @@ def _resolve_default_server() -> str:
     )
 
 
+def _resolve_komandan_server() -> str:
+    return settings_service.get_setting('MIKROTIK_DEFAULT_SERVER_KOMANDAN', 'srv-komandan')
+
+
 def _resolve_active_profile() -> str:
     return (
         settings_service.get_setting('MIKROTIK_ACTIVE_PROFILE', None)
@@ -111,7 +115,7 @@ def change_user_role(user: User, new_role: UserRole, admin: User, blok: Optional
             if user.blok or user.kamar:
                 user.previous_blok, user.previous_kamar = user.blok, user.kamar
                 user.blok, user.kamar = None, None
-            user.mikrotik_server_name = default_server
+            user.mikrotik_server_name = _resolve_komandan_server()
             user.mikrotik_profile_name = active_profile
 
             try:

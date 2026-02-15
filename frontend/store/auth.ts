@@ -265,12 +265,23 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function verifyOtp(phoneNumber: string, otpCode: string): Promise<VerifyOtpResponse | null> {
+  async function verifyOtp(
+    phoneNumber: string,
+    otpCode: string,
+    clientInfo?: { clientIp?: string | null; clientMac?: string | null; hotspotLoginContext?: boolean | null },
+  ): Promise<VerifyOtpResponse | null> {
     async function performVerifyOtp(): Promise<VerifyOtpResponse> {
       const { $api } = useNuxtApp()
+      const payload = new URLSearchParams({ phone_number: phoneNumber, otp: otpCode })
+      if (clientInfo?.clientIp)
+        payload.set('client_ip', clientInfo.clientIp)
+      if (clientInfo?.clientMac)
+        payload.set('client_mac', clientInfo.clientMac)
+      if (clientInfo?.hotspotLoginContext === true)
+        payload.set('hotspot_login_context', 'true')
       const response = await $api<VerifyOtpResponse>('/auth/verify-otp', {
         method: 'POST',
-        body: new URLSearchParams({ phone_number: phoneNumber, otp: otpCode }),
+        body: payload,
       })
       // PERBAIKAN: Pengecekan eksplisit
       if (response != null) {

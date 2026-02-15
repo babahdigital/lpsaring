@@ -30,6 +30,7 @@ def _sync_ip_binding_for_authorized_devices(user, mikrotik_api: Any, date_str: s
         return
 
     target_binding_type = resolve_allowed_binding_type_for_user(user)
+    username_08 = format_to_local_phone(getattr(user, 'phone_number', None) or '') or ''
     server_name = getattr(user, 'mikrotik_server_name', None)
     synced_count = 0
 
@@ -48,7 +49,10 @@ def _sync_ip_binding_for_authorized_devices(user, mikrotik_api: Any, date_str: s
             address=ip_address,
             server=server_name,
             binding_type=target_binding_type,
-            comment=f"authorized|user={user.id}|source=transaction|date={date_str}|time={time_str}",
+            comment=(
+                f"authorized|user={username_08}|uid={user.id}|role={user.role.value}"
+                f"|source=transaction|date={date_str}|time={time_str}"
+            ),
         )
         if ok:
             synced_count += 1

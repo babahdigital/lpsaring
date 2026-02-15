@@ -36,7 +36,7 @@ onMounted(() => {
 
   authStore.initializeAuth().then(async () => {
     if (authStore.isLoggedIn && import.meta.client) {
-      const target = authStore.isAdmin ? '/admin/dashboard' : '/dashboard'
+      const target = authStore.isAdmin ? '/admin/dashboard' : '/akun'
       await navigateTo(target, { replace: true })
     }
   })
@@ -251,7 +251,13 @@ async function handleVerifyOtp() {
 
   try {
     const numberToVerify = normalize_to_e164(phoneNumber.value)
-    const loginResponse = await authStore.verifyOtp(numberToVerify, otpCode.value)
+    const clientIp = getQueryValueFromKeys(['client_ip', 'ip', 'client-ip'])
+    const clientMac = getQueryValueFromKeys(['client_mac', 'mac', 'mac-address', 'client-mac'])
+    const loginResponse = await authStore.verifyOtp(numberToVerify, otpCode.value, {
+      clientIp: clientIp || null,
+      clientMac: clientMac || null,
+      hotspotLoginContext: Boolean(clientIp || clientMac),
+    })
     if (loginResponse == null) {
       const statusRedirectPath = authStore.getStatusRedirectPath('login')
       if (statusRedirectPath && import.meta.client) {
@@ -282,7 +288,7 @@ async function handleVerifyOtp() {
       if (sessionUrl)
         window.location.assign(sessionUrl)
       else
-        await navigateTo('/dashboard', { replace: true })
+        viewState.value = 'success'
     }
   }
   catch (error: any) {

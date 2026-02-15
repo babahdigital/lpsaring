@@ -123,7 +123,7 @@ def create_user_by_admin(admin_actor: User, data: Dict[str, Any]) -> Tuple[bool,
             new_user.quota_expiry_date = datetime.now(dt_timezone.utc) + timedelta(days=initial_duration_days)
 
         elif new_role == UserRole.KOMANDAN:
-            new_user.mikrotik_server_name = default_server
+            new_user.mikrotik_server_name = settings_service.get_setting('MIKROTIK_DEFAULT_SERVER_KOMANDAN', 'srv-komandan')
             new_user.mikrotik_profile_name = active_profile
             new_user.is_unlimited_user = False 
             initial_quota_mb = int(settings_service.get_setting('KOMANDAN_INITIAL_QUOTA_MB', '5120'))

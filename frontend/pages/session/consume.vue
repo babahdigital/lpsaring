@@ -18,11 +18,11 @@ const loading = ref(true)
 
 function sanitizeNextPath(value: string | null): string {
   if (!value)
-    return '/dashboard'
+    return '/akun'
   if (!value.startsWith('/') || value.startsWith('//'))
-    return '/dashboard'
+    return '/akun'
   if (value.includes('://'))
-    return '/dashboard'
+    return '/akun'
   return value
 }
 
