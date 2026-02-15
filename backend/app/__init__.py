@@ -258,9 +258,11 @@ def register_test_routes(app: Flask):
 
 def register_commands(app: Flask):
     from .commands import user_commands, seed_commands, sync_usage_command
+    from .commands.bulk_reset_quota_command import bulk_reset_quota_command
     app.cli.add_command(user_commands.user_cli_bp)
     app.cli.add_command(seed_commands.seed_db_command)
     app.cli.add_command(sync_usage_command.sync_usage_command)
+    app.cli.add_command(bulk_reset_quota_command)
     module_log.info("Pendaftaran perintah CLI selesai.")
 
 def create_app(config_name: Optional[str] = None) -> HotspotFlask:
