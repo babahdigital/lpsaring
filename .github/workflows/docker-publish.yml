@@ -16,6 +16,16 @@ on:
         type: boolean
         required: false
         default: false
+      clean_before_deploy:
+        description: "Bersihkan cache Docker di awal deploy (aman)"
+        type: boolean
+        required: false
+        default: true
+      aggressive_cleanup:
+        description: "Cleanup agresif (image -a + volume prune) untuk hemat space"
+        type: boolean
+        required: false
+        default: false
 
 env:
   DOCKER_BUILDKIT: "1"
@@ -61,6 +71,29 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME || secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN || secrets.DOCKER_PASSWORD }}
+
+      - name: Docker disk usage (before cleanup)
+        if: ${{ inputs.clean_before_deploy == true || inputs.aggressive_cleanup == true }}
+        run: |
+          docker system df || true
+
+      - name: Safe cleanup (builder cache + dangling resources)
+        if: ${{ inputs.clean_before_deploy == true }}
+        run: |
+          docker builder prune -af || true
+          docker image prune -f || true
+          docker container prune -f || true
+
+      - name: Aggressive cleanup (optional)
+        if: ${{ inputs.aggressive_cleanup == true }}
+        run: |
+          docker image prune -a -f || true
+          docker volume prune -f || true
+
+      - name: Docker disk usage (after cleanup)
+        if: ${{ inputs.clean_before_deploy == true || inputs.aggressive_cleanup == true }}
+        run: |
+          docker system df || true
 
       - name: Docker metadata
         id: meta
@@ -110,11 +143,6 @@ jobs:
           cd "${REMOTE_DIR}"
           docker compose --env-file .env.prod -f docker-compose.prod.yml \
             down --remove-orphans || true
-
-      - name: Prune unused images & layers
-        run: |
-          docker image prune -a -f
-          docker volume prune -f || true
 
       - name: Pull new images
         run: |
