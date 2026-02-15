@@ -3,6 +3,7 @@ import authV1BottomShape from '@images/svg/auth-v1-bottom-shape.svg?raw'
 import authV1TopShape from '@images/svg/auth-v1-top-shape.svg?raw'
 import { VNodeRenderer } from '@layouts/components/VNodeRenderer'
 import { computed, h, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { useAuthStore } from '~/store/auth'
 
@@ -17,9 +18,26 @@ definePageMeta({
 // --- State Management dan Logika Login (Sama seperti sebelumnya) ---
 const authStore = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 const display = useDisplay()
 const isHydrated = ref(false)
 const isWidePadding = computed(() => (isHydrated.value ? display.smAndUp.value : false))
+
+function getSafeRedirectTarget(): string | null {
+  const redirectQuery = route.query.redirect
+  const redirectTarget = Array.isArray(redirectQuery) ? redirectQuery[0] : redirectQuery
+  if (typeof redirectTarget !== 'string' || !redirectTarget.startsWith('/'))
+    return null
+
+  const disallowedExactPaths = new Set(['/login', '/admin', '/admin/login', '/register', '/daftar', '/captive', '/session/consume'])
+  if (disallowedExactPaths.has(redirectTarget))
+    return null
+
+  if (redirectTarget.startsWith('/login/') || redirectTarget.startsWith('/captive/') || redirectTarget.startsWith('/session/consume/'))
+    return null
+
+  return redirectTarget
+}
 
 const form = ref({
   username: '',
@@ -42,7 +60,8 @@ async function handleLogin() {
     }
     const loginSuccess = await authStore.adminLogin(username, password)
     if (loginSuccess) {
-      await router.push('/admin/dashboard')
+      const redirectTarget = getSafeRedirectTarget()
+      await router.push(redirectTarget ?? '/admin/dashboard')
     }
     else {
       error.value = authStore.error || 'Login gagal, periksa kembali username dan password Anda.'

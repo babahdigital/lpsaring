@@ -166,6 +166,7 @@ def test_restore_backup_sql_replace_users_runs_preclean(monkeypatch, tmp_path):
 
 
 def test_whatsapp_test_send_success(monkeypatch):
+    monkeypatch.setattr(admin_routes, "validate_whatsapp_provider", lambda: (True, None))
     monkeypatch.setattr(admin_routes, "send_whatsapp_message", lambda phone, message: True)
 
     app = _make_app()
@@ -185,6 +186,7 @@ def test_whatsapp_test_send_success(monkeypatch):
 
 
 def test_whatsapp_test_send_returns_400_when_gateway_fails(monkeypatch):
+    monkeypatch.setattr(admin_routes, "validate_whatsapp_provider", lambda: (True, None))
     monkeypatch.setattr(admin_routes, "send_whatsapp_message", lambda phone, message: False)
 
     app = _make_app()
@@ -200,3 +202,24 @@ def test_whatsapp_test_send_returns_400_when_gateway_fails(monkeypatch):
 
     assert status == 400
     assert "Pengiriman WhatsApp gagal" in response.get_json()["message"]
+
+
+def test_whatsapp_test_send_returns_400_when_provider_not_ready(monkeypatch):
+    monkeypatch.setattr(admin_routes, "validate_whatsapp_provider", lambda: (False, "request invalid on disconnected device"))
+    monkeypatch.setattr(admin_routes, "send_whatsapp_message", lambda phone, message: True)
+
+    app = _make_app()
+    send_impl = _unwrap_decorators(admin_routes.send_whatsapp_test)
+
+    with app.test_request_context(
+        "/api/admin/whatsapp/test-send",
+        method="POST",
+        json={"phone_number": "08123456789", "message": "tes"},
+    ):
+        current_admin = cast(User, SimpleNamespace(id=1, username="tester"))
+        response, status = send_impl(current_admin=current_admin)
+
+    assert status == 400
+    payload = response.get_json()
+    assert payload["message"] == "Provider WhatsApp belum siap."
+    assert "disconnected" in payload["details"]

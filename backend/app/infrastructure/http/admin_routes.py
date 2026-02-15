@@ -13,7 +13,7 @@ import subprocess
 from sqlalchemy.engine import make_url
 
 from app.extensions import db
-from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
+from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message, validate_whatsapp_provider
 from app.infrastructure.db.models import (
     User, UserRole, Package, ApprovalStatus, Transaction,
     TransactionStatus, NotificationRecipient, NotificationType,
@@ -479,6 +479,13 @@ def send_whatsapp_test(current_admin: User):
             return jsonify({"message": "Nomor WhatsApp wajib diisi."}), HTTPStatus.BAD_REQUEST
         if len(message) > 1000:
             return jsonify({"message": "Pesan terlalu panjang (maks 1000 karakter)."}), HTTPStatus.BAD_REQUEST
+
+        provider_ok, provider_reason = validate_whatsapp_provider()
+        if not provider_ok:
+            return jsonify({
+                "message": "Provider WhatsApp belum siap.",
+                "details": provider_reason or "Periksa koneksi device WhatsApp di provider.",
+            }), HTTPStatus.BAD_REQUEST
 
         sent = send_whatsapp_message(phone_number, message)
         if not sent:

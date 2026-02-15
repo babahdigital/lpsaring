@@ -87,6 +87,21 @@ function getQueryValueFromKeys(keys: string[]): string {
   return ''
 }
 
+function getSafeRedirectTarget(): string | null {
+  const rawRedirect = getQueryValue('redirect')
+  if (!rawRedirect || !rawRedirect.startsWith('/'))
+    return null
+
+  const disallowedExactPaths = new Set(['/login', '/admin', '/admin/login', '/register', '/daftar', '/captive', '/session/consume'])
+  if (disallowedExactPaths.has(rawRedirect))
+    return null
+
+  if (rawRedirect.startsWith('/login/') || rawRedirect.startsWith('/captive/') || rawRedirect.startsWith('/session/consume/'))
+    return null
+
+  return rawRedirect
+}
+
 // --- Opsi untuk Select Input ---
 const blockOptions = Array.from({ length: 6 }, (_, i) => ({ title: `Blok ${String.fromCharCode(65 + i)}`, value: String.fromCharCode(65 + i) }))
 const kamarOptions = Array.from({ length: 6 }, (_, i) => ({ title: `Kamar ${i + 1}`, value: (i + 1).toString() }))
@@ -281,8 +296,10 @@ async function handleVerifyOtp() {
       const sessionUrl = loginResponse.session_url
       if (sessionUrl)
         window.location.assign(sessionUrl)
-      else
-        await navigateTo('/dashboard', { replace: true })
+      else {
+        const redirectTarget = getSafeRedirectTarget()
+        await navigateTo(redirectTarget ?? '/dashboard', { replace: true })
+      }
     }
   }
   catch (error: any) {

@@ -18,8 +18,11 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
     if (!redirectPath.startsWith('/'))
       return null
 
-    const disallowedPrefixes = ['/login', '/admin', '/register', '/daftar', '/captive', '/session/consume']
-    if (disallowedPrefixes.some(prefix => redirectPath === prefix || redirectPath.startsWith(`${prefix}/`)))
+    const disallowedExactPaths = new Set(['/login', '/admin', '/admin/login', '/register', '/daftar', '/captive', '/session/consume'])
+    if (disallowedExactPaths.has(redirectPath))
+      return null
+
+    if (redirectPath.startsWith('/login/') || redirectPath.startsWith('/captive/') || redirectPath.startsWith('/session/consume/'))
       return null
 
     return redirectPath

@@ -6,6 +6,40 @@ from flask import current_app
 
 from app.utils.circuit_breaker import record_failure, record_success, should_allow_call
 
+def validate_whatsapp_provider() -> tuple[bool, str | None]:
+    """Validasi status provider WhatsApp (Fonnte) sebelum kirim pesan."""
+    validate_url = current_app.config.get('WHATSAPP_VALIDATE_URL')
+    api_key = current_app.config.get('WHATSAPP_API_KEY')
+
+    if not validate_url or not isinstance(validate_url, str):
+        return False, 'WHATSAPP_VALIDATE_URL belum disetel.'
+    if not api_key or not isinstance(api_key, str):
+        return False, 'WHATSAPP_API_KEY belum disetel.'
+
+    try:
+        timeout_seconds = int(current_app.config.get('WHATSAPP_HTTP_TIMEOUT_SECONDS', 15))
+        response = requests.post(
+            validate_url,
+            headers={'Authorization': api_key},
+            timeout=timeout_seconds,
+        )
+        payload = response.json()
+    except requests.exceptions.Timeout:
+        return False, 'Timeout saat validasi status provider WhatsApp.'
+    except requests.exceptions.RequestException as e:
+        return False, f'Gagal menghubungi endpoint validasi WhatsApp: {e}'
+    except ValueError:
+        return False, 'Respons validasi WhatsApp bukan JSON yang valid.'
+
+    is_ok = payload.get('status') is True
+    if is_ok:
+        return True, None
+
+    reason = payload.get('reason')
+    if isinstance(reason, str) and reason:
+        return False, reason
+    return False, 'Provider WhatsApp belum siap (device/token belum valid).'
+
 def send_whatsapp_message(recipient_number: str, message_body: str) -> bool:
     """
     Mengirim pesan WhatsApp ke nomor tujuan menggunakan API Fonnte.

@@ -111,6 +111,7 @@ dist/ # Nuxt build output
 coverage/ # Test coverage
 logs/
 tmp/
+tmp/actions-debug/
 temp/
 *.tmp
 *.dump
@@ -164,3 +165,12 @@ docs/
 *.md
 *.local
 *.public
+
+# Local GitHub Actions debug artifacts
+runs_all.json
+actions_runs.json
+actions_runs_latest.json
+run_*.json
+run_*_jobs.json
+job_*_logs.txt
+job_*_logs.zip
