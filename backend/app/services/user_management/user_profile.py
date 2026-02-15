@@ -373,14 +373,17 @@ def _handle_user_activation(user: User, should_be_active: bool, admin: User) -> 
     )
     if success:
         user.mikrotik_user_exists = True
+        list_active = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_ACTIVE', 'active')
+        list_fup = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_FUP', 'fup')
         list_inactive = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_INACTIVE', 'inactive')
         list_expired = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_EXPIRED', 'expired')
         list_habis = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_HABIS', 'habis')
+        list_blocked = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_BLOCKED', 'blocked')
         _handle_mikrotik_operation(
             sync_address_list_for_user,
             username=format_to_local_phone(user.phone_number),
             target_list=list_inactive,
-            other_lists=[list_expired, list_habis],
+            other_lists=[list_active, list_fup, list_blocked, list_expired, list_habis],
             comment=f"admin_block:{admin.full_name}",
         )
         _send_whatsapp_notification(
