@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.extensions import db
-from app.infrastructure.db.models import ApprovalStatus, User, UserDevice, UserRole
+from app.infrastructure.db.models import ApprovalStatus, User, UserRole
 from app.infrastructure.gateways.mikrotik_client import (
     activate_or_update_hotspot_user,
     get_hotspot_host_usage_map,
