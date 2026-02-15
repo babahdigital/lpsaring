@@ -1,6 +1,8 @@
 # backend/app/services/notification_service.py (Disempurnakan dengan Tokenizer)
 import json
 import itsdangerous # [PENAMBAHAN] Impor library untuk token
+import random
+import re
 from flask import current_app
 from typing import Dict, Any, Optional
 
@@ -8,6 +10,32 @@ from app.services.config_service import get_app_links
 
 TEMPLATE_FILE_PATH = "app/notifications/templates.json"
 _templates_cache = None
+_SPINTAX_PATTERN = re.compile(r'\{([^{}|]+(?:\|[^{}|]+)+)\}')
+
+
+def _render_spintax(text: str) -> str:
+    if not isinstance(text, str) or '|' not in text:
+        return text
+
+    def _replace_once(source: str) -> tuple[str, bool]:
+        changed = False
+
+        def _replace(match: re.Match[str]) -> str:
+            nonlocal changed
+            changed = True
+            options = [option.strip() for option in match.group(1).split('|') if option.strip()]
+            if not options:
+                return match.group(0)
+            return random.choice(options)
+
+        return _SPINTAX_PATTERN.sub(_replace, source), changed
+
+    result = text
+    for _ in range(8):
+        result, changed = _replace_once(result)
+        if not changed:
+            break
+    return result
 
 
 def _format_quota_human_readable(remaining_mb: Any) -> str:
@@ -108,7 +136,8 @@ def get_notification_message(template_key: str, context: Optional[Dict[str, Any]
         final_context["remaining_quota"] = _format_quota_human_readable(final_context.get("remaining_mb"))
     
     try:
-        return template_string.format(**final_context)
+        rendered = template_string.format(**final_context)
+        return _render_spintax(rendered)
     except KeyError as e:
         current_app.logger.error(f"Placeholder hilang di konteks untuk template '{template_key}': {e}", exc_info=True)
         return f"Peringatan: Data untuk placeholder {e} pada template '{template_key}' tidak disediakan."

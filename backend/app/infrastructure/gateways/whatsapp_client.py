@@ -1,10 +1,28 @@
 # backend/app/infrastructure/gateways/whatsapp_client.py (Disempurnakan dengan Fungsi PDF)
 from typing import Optional
+import random
+import time
 
 import requests
 from flask import current_app
 
 from app.utils.circuit_breaker import record_failure, record_success, should_allow_call
+
+
+def _apply_send_delay() -> None:
+    min_ms = int(current_app.config.get('WHATSAPP_SEND_DELAY_MIN_MS', 400))
+    max_ms = int(current_app.config.get('WHATSAPP_SEND_DELAY_MAX_MS', 1200))
+
+    if min_ms < 0:
+        min_ms = 0
+    if max_ms < 0:
+        max_ms = 0
+    if max_ms < min_ms:
+        min_ms, max_ms = max_ms, min_ms
+
+    delay_ms = random.randint(min_ms, max_ms) if max_ms > min_ms else min_ms
+    if delay_ms > 0:
+        time.sleep(delay_ms / 1000.0)
 
 def validate_whatsapp_provider() -> tuple[bool, str | None]:
     """Validasi status provider WhatsApp (Fonnte) sebelum kirim pesan."""
@@ -78,6 +96,8 @@ def send_whatsapp_message(recipient_number: str, message_body: str) -> bool:
     if not should_allow_call("whatsapp"):
         current_app.logger.warning("WhatsApp circuit breaker open. Skipping send.")
         return False
+
+    _apply_send_delay()
 
     current_app.logger.info(f"Attempting to send WhatsApp to {target_number} via Fonnte (URL: {api_url})")
     current_app.logger.debug(f"Fonnte Payload: {payload}, Headers: {{'Authorization': '***'}}")
