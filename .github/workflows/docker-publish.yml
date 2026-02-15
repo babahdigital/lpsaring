@@ -129,6 +129,13 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME || secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN || secrets.DOCKER_PASSWORD }}
 
+      - name: Validate deploy env files
+        shell: bash
+        run: |
+          test -f .env.prod || { echo ".env.prod not found"; exit 1; }
+          test -f .env.public.prod || { echo ".env.public.prod not found"; exit 1; }
+          echo "Deploy env files are present (.env.prod + .env.public.prod)."
+
       - name: Stop current stack
         run: |
           docker compose --env-file .env.prod -f docker-compose.prod.yml \

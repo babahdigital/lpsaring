@@ -26,7 +26,7 @@ Portal hotspot berbasis web untuk manajemen paket, transaksi, dan integrasi pera
 - End user: login/registrasi, pembelian paket, pembayaran
 
 ## Mode Lingkungan
-- Development: `docker-compose.yml`
+- Development: `docker-compose.yml` + `docker-compose.dev.yml`
 - Production: `docker-compose.prod.yml`
 
 Catatan dev terbaru:
@@ -39,16 +39,13 @@ Catatan dev terbaru:
 - Pytest backend punya fallback sqlite in-memory saat env DB belum tersedia.
 
 ## Dukungan Raspberry Pi (arm64)
-Proyek ini bisa berjalan di Raspberry Pi **64-bit (arm64)**.
-Gunakan file override berikut:
-- [docker-compose.arm64.yml](docker-compose.arm64.yml)
+Proyek ini bisa berjalan di Raspberry Pi **64-bit (arm64)** menggunakan image multi-arch Docker Hub.
 
-Jalankan dengan:
-- `docker compose -f docker-compose.yml -f docker-compose.arm64.yml up -d`
+Jalankan production compose biasa:
+- `docker compose --env-file .env.prod -f docker-compose.prod.yml up -d`
 
 Catatan:
 - **Pi 32-bit (armv7)** tidak direkomendasikan.
-- Build image di Pi lebih lambat.
 - Pastikan OS Raspberry Pi 64-bit.
 
 ## Akses Layanan (Dev)

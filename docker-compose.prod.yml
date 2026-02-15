@@ -140,7 +140,7 @@ services:
     image: babahdigital/sobigidul_frontend:latest
     container_name: hotspot_prod_nuxt_frontend
     env_file:
-      - ./.env.${APP_ENV:-public.prod}
+      - ./.env.public.prod
     # Pastikan Nuxt Nitro memakai port 3010
     environment:
       - PORT=${NUXT_PORT:-3010}

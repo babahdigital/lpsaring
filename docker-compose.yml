@@ -47,7 +47,7 @@ services:
       dockerfile: Dockerfile
     container_name: hotspot_flask_backend
     env_file:
-      - ./backend/.env.${APP_ENV:-public}
+      - ${BACKEND_ENV_FILE:-./backend/.env.public}
     volumes:
       - font_cache:/app/.cache
       - ./backend/backups:/app/backups
@@ -86,7 +86,7 @@ services:
       dockerfile: Dockerfile
     container_name: hotspot_flask_migrate
     env_file:
-      - ./backend/.env.${APP_ENV:-public}
+      - ${BACKEND_ENV_FILE:-./backend/.env.public}
     volumes:
       - font_cache:/app/.cache
     command: flask db upgrade
@@ -104,7 +104,7 @@ services:
       dockerfile: Dockerfile
     container_name: hotspot_celery_worker
     env_file:
-      - ./backend/.env.${APP_ENV:-public}
+      - ${BACKEND_ENV_FILE:-./backend/.env.public}
     volumes:
       - font_cache:/app/.cache
     command: /opt/venv/bin/celery -A app.extensions worker --loglevel=info
@@ -127,7 +127,7 @@ services:
       dockerfile: Dockerfile
     container_name: hotspot_celery_beat
     env_file:
-      - ./backend/.env.${APP_ENV:-public}
+      - ${BACKEND_ENV_FILE:-./backend/.env.public}
     volumes:
       - font_cache:/app/.cache
     command: /opt/venv/bin/celery -A app.extensions beat --loglevel=info
@@ -151,7 +151,7 @@ services:
       target: development
     container_name: hotspot_nuxt_frontend
     env_file:
-      - ./.env.${APP_ENV:-public}
+      - ${FRONTEND_ENV_FILE:-./.env.public}
     environment:
       # Memastikan Nuxt dev server dapat diakses dari luar container oleh Nginx.
       HOST: '0.0.0.0'

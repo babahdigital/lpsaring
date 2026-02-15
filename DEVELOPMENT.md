@@ -37,36 +37,54 @@ Ringkasan struktur:
 
 ## 4) File Environment
 Siapkan file environment berikut:
-- Root profile env (dipakai juga oleh frontend container):
-  - `.env.public` untuk profile publik/dev
-  - `.env.public.prod` untuk profile production
-  - `APP_ENV` menentukan profile aktif (`public` atau `public.prod`)
-- Backend: backend/.env
-- Frontend: frontend/.env
+- Root frontend env:
+  - `.env.public` untuk development
+  - `.env.public.prod` untuk production
+- Root backend/compose env production:
+  - `.env.prod`
+- Backend env development:
+  - `backend/.env.public` (default)
+  - atau `backend/.env.local` jika ingin override lokal
 
 Template tersedia di:
 - .env.example
+- .env.prod.example
 - .env.public.prod.example
 - backend/.env.example
-- frontend/.env.example
+
+### Matriks tegas (dev / CI / live)
+- **Dev (hybrid)**
+  - Compose: `docker-compose.yml` + `docker-compose.dev.yml`
+  - Backend env: `./backend/.env.public` (atau override `BACKEND_ENV_FILE=./backend/.env.local`)
+  - Frontend env compose: `./.env.public` (atau override `FRONTEND_ENV_FILE=...`)
+- **CI build/publish image**
+  - Workflow: `.github/workflows/docker-publish.yml`
+  - Tidak memakai `docker-compose.yml` untuk build image
+  - Deploy job (opsional) memakai `docker compose --env-file .env.prod -f docker-compose.prod.yml ...`
+- **Live (server production)**
+  - Compose: `docker-compose.prod.yml`
+  - Backend env: `.env.prod`
+  - Frontend env: `.env.public.prod`
 
 Lampiran wajib untuk setiap pembaruan dokumen:
 - [.github/copilot-instructions.md](.github/copilot-instructions.md)
 
 ### Minimal yang perlu diisi
-Root .env
+Root `.env.prod` (production)
 - POSTGRES_DB
 - POSTGRES_USER
 - POSTGRES_PASSWORD
+- SECRET_KEY
+- JWT_SECRET_KEY
 
-backend/.env
+backend/.env.public
 - DB_USER, DB_PASSWORD, DB_HOST, DB_NAME, DATABASE_URL
 - SECRET_KEY, JWT_SECRET_KEY
 - MIDTRANS_* jika fitur pembayaran dipakai
 - WHATSAPP_* jika notifikasi WA dipakai
 - MIKROTIK_* jika integrasi mikrotik dipakai
 
-frontend/.env
+root .env.public
 - NUXT_PUBLIC_API_BASE_URL
 - NUXT_PUBLIC_MIDTRANS_CLIENT_KEY
 
@@ -80,13 +98,22 @@ Langkah umum:
 4) Akses aplikasi via Nginx
 
 Catatan environment (dev):
-- Gunakan `APP_ENV=local` agar backend memakai `backend/.env.local`.
-- E2E script otomatis memakai `APP_ENV=local` (atau override dengan `-AppEnv`).
+- Default backend env adalah `backend/.env.public`.
+- Jika perlu override lokal, jalankan compose dengan `BACKEND_ENV_FILE=./backend/.env.local`.
+- Jika perlu override env frontend dev, gunakan `FRONTEND_ENV_FILE=./.env.public` (atau file lain yang setara).
 
 Catatan environment (prod):
 - Jalankan compose prod dengan file interpolasi khusus: `docker compose --env-file .env.prod -f docker-compose.prod.yml up -d`.
-- Set `APP_ENV=public.prod` agar frontend container membaca profile root `.env.public.prod`.
+- Frontend production selalu membaca `.env.public.prod`.
 - Cloudflared di compose sekarang bersifat opsional (profile `tunnel`), aktifkan hanya jika token sudah valid.
+
+Contoh command yang direkomendasikan:
+- Dev default:
+  - `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d`
+- Dev dengan backend local profile:
+  - `BACKEND_ENV_FILE=./backend/.env.local docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d`
+- Live/prod:
+  - `docker compose --env-file .env.prod -f docker-compose.prod.yml up -d`
 
 Catatan:
 - Backend dan Celery akan bergantung pada Postgres & Redis
@@ -230,7 +257,7 @@ Gunakan aturan berikut agar error lint/bug tidak muncul lagi:
 ### Umum
 - Edit minimal: hanya file yang terkait perubahan.
 - Jangan menambah perubahan format/rapian jika tidak menyentuh fungsinya.
-- Semua env harus lewat **.env.local/.env** (frontend) & **backend/.env**.
+- Semua env harus lewat **.env.public/.env.public.prod/.env.prod** (root) dan **backend/.env.public** (dev).
 
 ## 5.5) Testing (Pytest)
 - Pytest backend memakai fallback `sqlite:///:memory:` saat env DB belum tersedia (khusus testing).
@@ -239,7 +266,7 @@ Gunakan aturan berikut agar error lint/bug tidak muncul lagi:
 ## 5.6) Catatan Keamanan Runtime
 - `/api/health` selalu mengembalikan HTTP 200 dengan status `ok`/`degraded` agar portal tidak dianggap down ketika satu dependency tidak sehat.
 - Autentikasi berbasis cookie memakai pemeriksaan origin untuk request non-GET/HEAD/OPTIONS.
-  - Atur `CSRF_PROTECT_ENABLED` dan `CSRF_TRUSTED_ORIGINS` di backend/.env sesuai domain portal.
+  - Atur `CSRF_PROTECT_ENABLED` dan `CSRF_TRUSTED_ORIGINS` di `backend/.env.public` (dev) atau `.env.prod` (prod) sesuai domain portal.
 
 ## 6) Menjalankan Secara Lokal (Opsional)
 **Peringatan:** jalur ini hanya untuk troubleshooting. Jangan gunakan untuk workflow utama agar tidak terjadi perbedaan hasil dengan Docker.
@@ -460,7 +487,7 @@ Full test otomatis menggunakan kombinasi test backend + verifikasi endpoint utam
 
 ### 12.1 Prasyarat
 - Docker Desktop aktif.
-- File environment sudah diisi (.env root, backend/.env, frontend/.env).
+- File environment sudah diisi (`.env.prod`, `.env.public`, `.env.public.prod`, `backend/.env.public`).
 - WhatsApp gateway dan MikroTik API sudah dikonfigurasi (opsional untuk simulasi penuh).
 
 ### 12.2 Menjalankan Full Test (Windows / PowerShell)
