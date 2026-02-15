@@ -511,38 +511,48 @@ export const useAuthStore = defineStore('auth', () => {
   async function initializeAuth() {
     const route = useRoute()
     const context: 'login' | 'captive' = route.path.startsWith('/captive') ? 'captive' : 'login'
+    const isGuestAuthRoute = route.path === '/login'
+      || route.path.startsWith('/login/')
+      || route.path === '/admin'
+      || route.path === '/admin/login'
+
+    const query = route.query ?? {}
+    const clientIp = (query.client_ip ?? query.ip ?? query['client-ip']) as string | undefined
+    const clientMac = (query.client_mac ?? query.mac ?? query['mac-address'] ?? query.mac_address) as string | undefined
+    const linkLoginOnly = typeof query.link_login_only === 'string' ? query.link_login_only : undefined
+    const hasCaptiveHints = Boolean(clientIp || clientMac || linkLoginOnly)
+
     const shouldAttemptAutoLogin = import.meta.client
       && user.value == null
       && autoLoginAttempted.value !== true
+      && !route.path.startsWith('/admin')
+      && hasCaptiveHints
 
     if (initialAuthCheckDone.value === true && !shouldAttemptAutoLogin)
       return
 
-    if (user.value == null) {
+    if (user.value == null && !isGuestAuthRoute) {
       await fetchUser(context)
     }
 
     if (user.value == null && shouldAttemptAutoLogin) {
       autoLoginAttempted.value = true
       try {
-        if (!route.path.startsWith('/admin')) {
-          const { $api } = useNuxtApp()
-          const query = route.query ?? {}
-          const clientIp = (query.client_ip ?? query.ip ?? query['client-ip']) as string | undefined
-          const clientMac = (query.client_mac ?? query.mac ?? query['mac-address'] ?? query['mac']) as string | undefined
-          const body: Record<string, string> = {}
-          if (clientIp)
-            body.client_ip = clientIp
-          if (clientMac)
-            body.client_mac = clientMac
+        const { $api } = useNuxtApp()
+        const body: Record<string, string> = {}
+        if (clientIp)
+          body.client_ip = clientIp
+        if (clientMac)
+          body.client_mac = clientMac
+        if (linkLoginOnly)
+          body.link_login_only = linkLoginOnly
 
-          const response = await $api<VerifyOtpResponse>('/auth/auto-login', {
-            method: 'POST',
-            ...(Object.keys(body).length > 0 ? { body } : {}),
-          })
-          if (response != null) {
-            await fetchUser(context)
-          }
+        const response = await $api<VerifyOtpResponse>('/auth/auto-login', {
+          method: 'POST',
+          ...(Object.keys(body).length > 0 ? { body } : {}),
+        })
+        if (response != null) {
+          await fetchUser(context)
         }
       }
       catch {

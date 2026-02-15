@@ -21,6 +21,7 @@ const midtransSnapUrlSandbox = process.env.NUXT_PUBLIC_MIDTRANS_SNAP_URL_SANDBOX
 const buyNowUrl = process.env.NUXT_PUBLIC_BUY_NOW_URL ?? ''
 const devBypassToken = process.env.NUXT_PUBLIC_DEV_BYPASS_TOKEN ?? ''
 const statusPageGuardEnabled = process.env.NUXT_PUBLIC_STATUS_PAGE_GUARD_ENABLED ?? 'false'
+const enableRemoteFonts = process.env.NUXT_PUBLIC_ENABLE_REMOTE_FONTS ?? 'false'
 const internalApiBaseUrl = ensureApiSuffix(process.env.NUXT_INTERNAL_API_BASE_URL ?? 'http://backend:5010')
 const internalApiOrigin = normalizeUrl(internalApiBaseUrl).replace(/\/api$/, '')
 const internalApiProxyTarget = `${internalApiOrigin}/api/**`
@@ -263,6 +264,7 @@ export default defineNuxtConfig({
       buyNowUrl,
       devBypassToken,
       statusPageGuardEnabled,
+      enableRemoteFonts,
     },
     internalApiBaseUrl,
   },
