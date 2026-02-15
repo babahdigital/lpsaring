@@ -15,8 +15,7 @@ from app.infrastructure.gateways.mikrotik_client import (
 )
 from app.services.device_management_service import normalize_mac
 from app.services import settings_service
-from app.utils.date_time import get_app_date_time_strings
-from app.utils.phone import format_to_local_phone
+from app.utils.formatters import format_to_local_phone, get_app_date_time_strings
 
 logger = logging.getLogger(__name__)
 
