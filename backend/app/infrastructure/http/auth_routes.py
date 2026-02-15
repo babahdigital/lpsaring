@@ -515,6 +515,8 @@ def verify_otp():
             ok_binding, msg_binding, resolved_ip = apply_device_binding_for_login(user_to_login, client_ip, user_agent, client_mac)
             if not ok_binding:
                 if msg_binding in ["Limit perangkat tercapai", "Perangkat belum diotorisasi"]:
+                    if msg_binding == "Perangkat belum diotorisasi":
+                        db.session.commit()
                     return jsonify(AuthErrorResponseSchema(error=msg_binding).model_dump()), HTTPStatus.FORBIDDEN
                 current_app.logger.warning(f"IP binding di-skip untuk user {user_to_login.id}: {msg_binding}")
 
@@ -625,6 +627,8 @@ def auto_login():
             ok_binding, msg_binding, resolved_ip = apply_device_binding_for_login(user, client_ip, user_agent, resolved_mac or device.mac_address)
             if not ok_binding:
                 if msg_binding in ["Limit perangkat tercapai", "Perangkat belum diotorisasi"]:
+                    if msg_binding == "Perangkat belum diotorisasi":
+                        db.session.commit()
                     return jsonify(AuthErrorResponseSchema(error=msg_binding).model_dump()), HTTPStatus.FORBIDDEN
                 current_app.logger.warning(f"Auto-login: IP binding di-skip untuk user {user.id}: {msg_binding}")
 
