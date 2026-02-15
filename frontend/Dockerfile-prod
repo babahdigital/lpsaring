@@ -35,8 +35,8 @@ RUN --mount=type=cache,target=/app/.nuxt \
 # Tahap final untuk menjalankan aplikasi produksi
 FROM node:18-slim AS runtime
 WORKDIR /app
-ENV NODE_ENV=production # Ini memastikan Nuxt berjalan dalam mode produksi
-COPY --from=builder /app/.output ./.output # Salin output build Nuxt
-COPY --from=builder /app/public ./public # Salin aset publik
-EXPOSE 3010 # Ekspos port aplikasi
-CMD ["node", ".output/server/index.mjs"] # Perintah untuk menjalankan aplikasi Nuxt produksi
+ENV NODE_ENV=production
+COPY --from=builder /app/.output ./.output
+COPY --from=builder /app/public ./public
+EXPOSE 3010
+CMD ["node", ".output/server/index.mjs"]
