@@ -232,12 +232,13 @@ def register_error_handlers(app: Flask) -> None:
     @app.errorhandler(HTTPException)
     def handle_http_exception(error: HTTPException):
         if not _is_api_request():
-            return error
+            return error.get_response()
+        status_code = int(error.code or HTTPStatus.INTERNAL_SERVER_ERROR)
         payload = {
             "error": error.description or error.name,
-            "status_code": error.code,
+            "status_code": status_code,
         }
-        return jsonify(payload), error.code
+        return jsonify(payload), status_code
 
     @app.errorhandler(Exception)
     def handle_unexpected_exception(error: Exception):

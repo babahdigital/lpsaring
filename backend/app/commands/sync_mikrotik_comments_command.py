@@ -61,7 +61,7 @@ def _build_address_list_comment(status_value: str, user: User, ip: Optional[str]
 @click.command('sync-mikrotik-comments')
 @click.option('--apply', 'apply_changes', is_flag=True, help='Terapkan perubahan (tanpa flag ini hanya dry-run).')
 @click.option('--ip-binding/--no-ip-binding', 'do_ip_binding', default=True, show_default=True)
-@click.option('--host/--no-host', 'do_host', default=True, show_default=True)
+@click.option('--host/--no-host', 'do_host', default=False, show_default=True)
 @click.option('--address-list/--no-address-list', 'do_address_list', default=True, show_default=True)
 @with_appcontext
 def sync_mikrotik_comments_command(apply_changes: bool, do_ip_binding: bool, do_host: bool, do_address_list: bool):
@@ -137,31 +137,10 @@ def sync_mikrotik_comments_command(apply_changes: bool, do_ip_binding: bool, do_
                 updated['ip_binding'] += 1
 
         if do_host:
-            host_resource = api.get_resource('/ip/hotspot/host')
-            hosts = host_resource.get()
-            for host in hosts:
-                host_id = host.get('id') or host.get('.id')
-                mac = host.get('mac-address')
-                address = host.get('address')
-                if not host_id or not mac:
-                    updated['skipped'] += 1
-                    continue
-                user = mac_to_user.get(normalize_mac(str(mac)))
-                if not user and address:
-                    user = ip_to_user.get(str(address))
-                if not user:
-                    updated['skipped'] += 1
-                    continue
-                prefix = 'host'
-                new_comment = _build_ip_binding_comment(prefix, user, now)
-                old_comment = host.get('comment') or ''
-                if old_comment == new_comment:
-                    continue
-                if not apply_changes:
-                    logger.info('DRY-RUN host mac=%s ip=%s old=%s new=%s', mac, address, old_comment, new_comment)
-                else:
-                    host_resource.set(**{'.id': host_id, 'comment': new_comment})
-                updated['host'] += 1
+            logger.warning(
+                "Host comment sync is disabled by default because many RouterOS versions expose /ip/hotspot/host as read-only (no set command). "
+                "Skip updating hotspot host comments."
+            )
 
         if do_address_list:
             address_resource = api.get_resource('/ip/firewall/address-list')
