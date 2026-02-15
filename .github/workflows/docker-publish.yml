@@ -92,6 +92,8 @@ jobs:
     needs: build-and-push
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy == true }}
     runs-on: [self-hosted, arm64, raspberrypi]      # label runner di Pi
+    env:
+      REMOTE_DIR: /home/abdullah/sobigidul
 
     steps:
       - name: Checkout repo (compose file)
@@ -105,7 +107,8 @@ jobs:
 
       - name: Stop current stack
         run: |
-          docker compose -f docker-compose.prod.yml \
+          cd "${REMOTE_DIR}"
+          docker compose --env-file .env.prod -f docker-compose.prod.yml \
             down --remove-orphans || true
 
       - name: Prune unused images & layers
@@ -115,9 +118,11 @@ jobs:
 
       - name: Pull new images
         run: |
-          docker compose -f docker-compose.prod.yml pull
+          cd "${REMOTE_DIR}"
+          docker compose --env-file .env.prod -f docker-compose.prod.yml pull
 
       - name: Start updated stack
         run: |
-          docker compose -f docker-compose.prod.yml \
+          cd "${REMOTE_DIR}"
+          docker compose --env-file .env.prod -f docker-compose.prod.yml \
             up -d --remove-orphans
