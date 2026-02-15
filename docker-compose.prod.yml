@@ -168,7 +168,9 @@ services:
       frontend:
         condition: service_started
     networks:
-      - hotspot_prod_network
+      hotspot_prod_network:
+        aliases:
+          - hotspot_nginx_proxy
     restart: always
 
   # ------------------------
