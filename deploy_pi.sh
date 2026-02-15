@@ -107,14 +107,23 @@ fi
 FILES=(
   "docker-compose.prod.yml"
   ".env.prod"
-  ".env.public.prod"
   "infrastructure/nginx/conf.d/app.prod.conf"
+)
+
+OPTIONAL_FILES=(
+  ".env.public.prod"
 )
 
 for rel in "${FILES[@]}"; do
   if [[ ! -f "$LOCAL_DIR/$rel" ]]; then
     echo "ERROR: required file missing: $LOCAL_DIR/$rel" >&2
     exit 1
+  fi
+done
+
+for rel in "${OPTIONAL_FILES[@]}"; do
+  if [[ ! -f "$LOCAL_DIR/$rel" ]]; then
+    echo "WARN: optional file missing (will not overwrite remote): $LOCAL_DIR/$rel" >&2
   fi
 done
 
@@ -151,11 +160,15 @@ mkdir -p "$REMOTE_DIR/infrastructure/nginx/ssl"
 mkdir -p "$REMOTE_DIR/infrastructure/nginx/logs"
 mkdir -p "$REMOTE_DIR/backend/backups"
 mkdir -p "$REMOTE_DIR/.deploy_backups/$timestamp"
-for f in docker-compose.prod.yml .env.prod .env.public.prod infrastructure/nginx/conf.d/app.prod.conf; do
+for f in docker-compose.prod.yml .env.prod infrastructure/nginx/conf.d/app.prod.conf; do
   if [ -f "$REMOTE_DIR/\$f" ]; then
     cp -a "$REMOTE_DIR/\$f" "$REMOTE_DIR/.deploy_backups/$timestamp/"
   fi
 done
+
+if [ -f "$REMOTE_DIR/.env.public.prod" ]; then
+  cp -a "$REMOTE_DIR/.env.public.prod" "$REMOTE_DIR/.deploy_backups/$timestamp/" || true
+fi
 EOF
 )
 
@@ -174,16 +187,23 @@ if [[ "$HAS_RSYNC" == "true" ]]; then
   "${rsync_cmd[@]}" \
     "$LOCAL_DIR/docker-compose.prod.yml" \
     "$LOCAL_DIR/.env.prod" \
-    "$LOCAL_DIR/.env.public.prod" \
     "$LOCAL_DIR/infrastructure/nginx/conf.d/app.prod.conf" \
     "$SSH_TARGET:$REMOTE_DIR/"
+
+  if [[ -f "$LOCAL_DIR/.env.public.prod" ]]; then
+    "${rsync_cmd[@]}" \
+      "$LOCAL_DIR/.env.public.prod" \
+      "$SSH_TARGET:$REMOTE_DIR/"
+  fi
 else
   if [[ "$DRY_RUN" == "true" ]]; then
     echo "[DRY-RUN] scp compose+env+nginx conf"
   else
     scp "${SCP_OPTS[@]}" "$LOCAL_DIR/docker-compose.prod.yml" "$SSH_TARGET:$REMOTE_DIR/"
     scp "${SCP_OPTS[@]}" "$LOCAL_DIR/.env.prod" "$SSH_TARGET:$REMOTE_DIR/"
-    scp "${SCP_OPTS[@]}" "$LOCAL_DIR/.env.public.prod" "$SSH_TARGET:$REMOTE_DIR/"
+    if [[ -f "$LOCAL_DIR/.env.public.prod" ]]; then
+      scp "${SCP_OPTS[@]}" "$LOCAL_DIR/.env.public.prod" "$SSH_TARGET:$REMOTE_DIR/"
+    fi
     scp "${SCP_OPTS[@]}" "$LOCAL_DIR/infrastructure/nginx/conf.d/app.prod.conf" "$SSH_TARGET:$REMOTE_DIR/infrastructure/nginx/conf.d/"
   fi
 fi
