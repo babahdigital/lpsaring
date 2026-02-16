@@ -5,6 +5,9 @@ Dokumen ini berisi perbaikan keamanan yang sudah diterapkan sekarang, serta keku
 Lampiran wajib:
 - [.github/copilot-instructions.md](../.github/copilot-instructions.md)
 
+## Log perubahan
+- Work log terbaru: [WORKLOG_2026-02-16.md](WORKLOG_2026-02-16.md)
+
 ## Perbaikan keamanan yang sudah diterapkan
 1) Cookie auth aman di produksi
    - `secure` otomatis aktif saat `NODE_ENV=production`.
