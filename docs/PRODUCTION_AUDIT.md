@@ -6,7 +6,8 @@ Lampiran wajib:
 - [.github/copilot-instructions.md](../.github/copilot-instructions.md)
 
 ## Log perubahan
-- Work log terbaru: [WORKLOG_2026-02-16.md](WORKLOG_2026-02-16.md)
+- Work log terbaru: [WORKLOG_2026-02-17.md](WORKLOG_2026-02-17.md)
+- Work log sebelumnya: [WORKLOG_2026-02-16.md](WORKLOG_2026-02-16.md)
 
 ## Refresh-token (session persisten) — catatan deploy produksi
 

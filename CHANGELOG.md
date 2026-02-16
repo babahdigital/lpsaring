@@ -37,6 +37,8 @@ Lampiran wajib:
 - Endpoint health check untuk DB/Redis/Mikrotik.
 - Endpoint metrics admin untuk OTP/payment/login.
 - Script verifikasi walled-garden.
+- Backend: script opsional `backend/scripts/normalize_phone_numbers.py` untuk scan/report/apply normalisasi `users.phone_number` ke E.164.
+- Deploy: opsi `--sync-phones` dan `--sync-phones-apply` di `deploy_pi.sh` untuk menjalankan normalisasi nomor telepon dari dalam container backend.
 
 ### Changed
 - Validasi nomor telepon ke format E.164 saat login/daftar.
@@ -50,6 +52,7 @@ Lampiran wajib:
 - Rate limit spesifik untuk OTP dan admin login ditambahkan.
 - CSP header diberlakukan di Nginx.
 - OTP anti-abuse memakai cooldown dan batas percobaan.
+- WhatsApp: notifikasi low-quota diperkecil agar tidak noise (default cukup 5%; FUP 20% tetap via notifikasi status).
 - Task Celery memakai retry/backoff dan DLQ sederhana.
 - Public settings di-cache untuk mengurangi beban DB.
 
@@ -61,6 +64,7 @@ Lampiran wajib:
 - Snap.js tidak terbaca karena script belum siap.
 - WSS HMR gagal saat 443 tidak aktif.
 - Log dan error handling saat inisiasi pembayaran.
+- Frontend (Admin Dashboard): tooltip ApexCharts tidak lagi redundant/duplikat pada chart donut "Paket Terlaris".
 
 ## [0.1.0] - 2026-02-08
 ### Added
