@@ -14,23 +14,28 @@ File ini sudah berisi stack lengkap dan sengaja **tidak** di-merge dengan `docke
 
 ## Menjalankan stack E2E
 Dari root repo:
-- `docker compose -f docker-compose.e2e.yml -p hotspot-portal-e2e up -d`
+- Pastikan env khusus E2E ada:
+	- `backend/.env.e2e`
+	- `frontend/.env.e2e`
+
+- Jalankan stack:
+	- `APP_ENV=e2e docker compose -f docker-compose.e2e.yml -p hotspot-portal-e2e up -d --build`
 
 Untuk reset total (hapus volume E2E):
-- `docker compose -f docker-compose.e2e.yml -p hotspot-portal-e2e down -v --remove-orphans`
+- `APP_ENV=e2e docker compose -f docker-compose.e2e.yml -p hotspot-portal-e2e down -v --remove-orphans`
 
 ## Menjalankan simulasi flow
 Gunakan script PowerShell:
-- `powershell.exe -ExecutionPolicy Bypass -File scripts/simulate_end_to_end.ps1 -UseE2ECompose:$true -ComposeProjectName hotspot-portal-e2e -UseOtpBypassOnly:$true -SkipMikrotik:$true -BaseUrl http://localhost:8089`
+- `APP_ENV=e2e powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/simulate_end_to_end.ps1 -UseIsolatedCompose 1 -ComposeProjectName hotspot-portal-e2e -IsolatedNginxPort 8089 -BaseUrl http://localhost:8089 -FreshStart 1 -Build 0 -UseOtpBypassOnly 1 -EnableMikrotikOps 0 -ApplyMikrotikOnQuotaSimulation 0 -CleanupAddressList 0`
 
 Catatan:
-- `-UseOtpBypassOnly:$true` memastikan script tidak memanggil request OTP (yang biasanya memicu WhatsApp).
-- `-SkipMikrotik:$true` men-skip check/cleanup/address-list yang butuh koneksi MikroTik sungguhan.
+- `-UseOtpBypassOnly 1` memastikan script tidak memanggil request OTP (yang biasanya memicu WhatsApp).
+- Jika mau uji integrasi MikroTik, set `-EnableMikrotikOps 1` dan pastikan `MIKROTIK_*` valid di `backend/.env.e2e`.
 
 ## Apa yang divalidasi terkait refresh-token
 Di dalam script ada tahap:
 - Verify OTP (sekali) untuk mendapatkan cookie
-- Panggil `POST /api/auth/refresh` berbasis cookie
-- Panggil endpoint protected tanpa `Authorization: Bearer ...`
+- Simulasi "browser ditutup": session baru hanya membawa cookie `refresh_token`
+- Panggil endpoint protected berbasis cookie (tanpa `Authorization: Bearer ...`)
 
 Jika tahap ini sukses, artinya user bisa tetap login setelah browser ditutup selama refresh cookie masih valid.

@@ -8,6 +8,39 @@ Lampiran wajib:
 ## Log perubahan
 - Work log terbaru: [WORKLOG_2026-02-16.md](WORKLOG_2026-02-16.md)
 
+## Refresh-token (session persisten) — catatan deploy produksi
+
+### Temuan (drift produksi)
+- Produksi bisa saja masih menjalankan image backend lama (belum ada endpoint refresh-token).
+- `.env.prod` di server bisa belum berisi variabel `REFRESH_*`.
+
+### Checklist deploy
+1) Pastikan `.env.prod` berisi konfigurasi refresh cookie (contoh):
+   - `REFRESH_TOKEN_EXPIRES_DAYS=30`
+   - `REFRESH_COOKIE_NAME=refresh_token`
+   - `REFRESH_COOKIE_HTTPONLY=True`
+   - `REFRESH_COOKIE_SECURE=True`
+   - `REFRESH_COOKIE_SAMESITE=Lax`
+   - `REFRESH_COOKIE_PATH=/`
+   - `REFRESH_COOKIE_DOMAIN=`
+   - `REFRESH_COOKIE_MAX_AGE_SECONDS=2592000`
+   - `REFRESH_TOKEN_RATE_LIMIT=60 per minute`
+
+2) Pull image terbaru dan restart service backend + celery:
+   - `docker compose -p hotspot-portal-prod -f docker-compose.prod.yml pull backend celery_worker celery_beat`
+   - `docker compose -p hotspot-portal-prod -f docker-compose.prod.yml up -d --force-recreate backend celery_worker celery_beat`
+
+3) Migrasi DB (wajib) untuk tabel `refresh_tokens`:
+   - Jalankan via python venv di container:
+     - `docker compose -p hotspot-portal-prod -f docker-compose.prod.yml exec backend /opt/venv/bin/python -m alembic -c /app/migrations/alembic.ini upgrade head`
+
+4) Verifikasi cepat:
+   - Cek endpoint ada:
+     - `docker compose -p hotspot-portal-prod -f docker-compose.prod.yml exec backend sh -lc "grep -n '/api/auth/refresh' /app/app/infrastructure/http/auth_routes.py | head"`
+   - Login OTP harus mengeluarkan 2 cookie:
+     - `auth_token` (pendek)
+     - `refresh_token` (panjang)
+
 ## Perbaikan keamanan yang sudah diterapkan
 1) Cookie auth aman di produksi
    - `secure` otomatis aktif saat `NODE_ENV=production`.
