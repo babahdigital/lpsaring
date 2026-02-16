@@ -62,10 +62,11 @@ def _find_user_for_ip(ip_address: str, mac_address: Optional[str], hotspot_user:
 
 @click.command('sync-mikrotik-access')
 @click.option('--ip', 'ip_address', required=True, help='IP lokal klien hotspot (contoh: 172.16.2.113).')
+@click.option('--phone', 'phone_number', required=False, help='Override target user (contoh: 0813... / +62...).')
 @click.option('--apply', 'apply_changes', is_flag=True, help='Terapkan perubahan (tanpa flag ini hanya diagnosis).')
 @click.option('--update-ip-binding/--no-update-ip-binding', default=True, show_default=True)
 @with_appcontext
-def sync_mikrotik_access_command(ip_address: str, apply_changes: bool, update_ip_binding: bool) -> None:
+def sync_mikrotik_access_command(ip_address: str, phone_number: Optional[str], apply_changes: bool, update_ip_binding: bool) -> None:
     """Paksa sinkronisasi akses MikroTik berdasarkan IP.
 
     Dipakai saat OTP sukses tapi akses belum kebuka karena backend tidak mendapat IP lokal/MAC.
@@ -118,7 +119,14 @@ def sync_mikrotik_access_command(ip_address: str, apply_changes: bool, update_ip
         if hotspot_user:
             click.echo(f"Hotspot user di host: {hotspot_user}")
 
-        user = _find_user_for_ip(ip_address, found_mac, hotspot_user)
+        user: Optional[User] = None
+        if phone_number:
+            user = _find_user_by_phone(phone_number)
+            if not user:
+                raise click.ClickException(f"User tidak ditemukan untuk phone={phone_number}")
+
+        if not user:
+            user = _find_user_for_ip(ip_address, found_mac, hotspot_user)
         if not user:
             raise click.ClickException(f"User tidak ketemu untuk ip={ip_address}. Cek apakah device pernah tersimpan di DB atau host belum punya user.")
 
