@@ -922,9 +922,21 @@ useHead({ title: 'Dashboard Admin' })
   }
 }
 
+/*
+ * Jangan paksa semua series-group tampil.
+ * ApexCharts menyembunyikan group yang tidak aktif (display:none).
+ * Override display:flex menyebabkan tooltip jadi redundant/duplikat.
+ */
 .apexcharts-tooltip-series-group {
-  display: flex !important;
   align-items: center !important;
+}
+
+.apexcharts-tooltip-series-group.apexcharts-active {
+  display: flex !important;
+}
+
+.apexcharts-tooltip-series-group:not(.apexcharts-active) {
+  display: none !important;
 }
 
 .apexcharts-tooltip-marker {
