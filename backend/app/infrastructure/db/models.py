@@ -259,6 +259,10 @@ class UserDevice(db.Model):
     last_seen_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     authorized_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    deauthorized_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    user: Mapped["User"] = relationship("User", back_populates="devices", lazy="joined")
+
 
 class RefreshToken(db.Model):
     __tablename__ = 'refresh_tokens'
@@ -286,9 +290,6 @@ class RefreshToken(db.Model):
 
     user: Mapped["User"] = relationship("User", lazy="joined")
     replaced_by: Mapped[Optional["RefreshToken"]] = relationship("RefreshToken", remote_side=[id], lazy="select")
-    deauthorized_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    user: Mapped["User"] = relationship("User", back_populates="devices")
 
 class NotificationRecipient(db.Model):
     __tablename__ = 'notification_recipients'
