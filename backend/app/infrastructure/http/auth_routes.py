@@ -525,6 +525,8 @@ def verify_otp():
         client_mac = data.client_mac
         user_agent = request.headers.get('User-Agent')
 
+        login_ip_for_history = client_ip
+
         binding_context = resolve_binding_context(user_to_login, client_ip, client_mac)
         if current_app.config.get('LOG_BINDING_DEBUG', False) or not client_ip:
             current_app.logger.info(
@@ -560,8 +562,20 @@ def verify_otp():
                 except Exception as e_sync:
                     current_app.logger.warning(f"Gagal sync address-list saat login: {e_sync}")
 
+            # Simpan IP yang sudah di-resolve (prioritas IP lokal hotspot) untuk riwayat login.
+            if resolved_ip:
+                login_ip_for_history = resolved_ip
+            else:
+                # Jika IP yang terlihat hanya IP publik/proxy, lebih baik simpan None daripada data menyesatkan.
+                try:
+                    from app.services.device_management_service import _is_client_ip_allowed  # type: ignore
+                    if not _is_client_ip_allowed(client_ip):
+                        login_ip_for_history = None
+                except Exception:
+                    pass
+
         user_to_login.last_login_at = datetime.now(dt_timezone.utc)
-        new_login_entry = cast(Any, UserLoginHistory)(user_id=user_to_login.id, ip_address=client_ip, user_agent_string=user_agent)
+        new_login_entry = cast(Any, UserLoginHistory)(user_id=user_to_login.id, ip_address=login_ip_for_history, user_agent_string=user_agent)
         db.session.add(new_login_entry)
         
         db.session.commit()
@@ -650,6 +664,8 @@ def auto_login():
         if not client_ip:
             return jsonify(AuthErrorResponseSchema(error="IP klien tidak ditemukan.").model_dump()), HTTPStatus.BAD_REQUEST
 
+        login_ip_for_history = client_ip
+
         user_agent = request.headers.get('User-Agent')
 
         resolved_mac = None
@@ -694,8 +710,18 @@ def auto_login():
                 except Exception as e_sync:
                     current_app.logger.warning(f"Auto-login: gagal sync address-list: {e_sync}")
 
+            if resolved_ip:
+                login_ip_for_history = resolved_ip
+            else:
+                try:
+                    from app.services.device_management_service import _is_client_ip_allowed  # type: ignore
+                    if not _is_client_ip_allowed(client_ip):
+                        login_ip_for_history = None
+                except Exception:
+                    pass
+
         user.last_login_at = datetime.now(dt_timezone.utc)
-        new_login_entry = cast(Any, UserLoginHistory)(user_id=user.id, ip_address=client_ip, user_agent_string=user_agent)
+        new_login_entry = cast(Any, UserLoginHistory)(user_id=user.id, ip_address=login_ip_for_history, user_agent_string=user_agent)
         db.session.add(new_login_entry)
         db.session.commit()
 
