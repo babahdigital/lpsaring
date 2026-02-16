@@ -8,7 +8,13 @@ from sqlalchemy import select, or_
 
 from app.extensions import db
 from app.infrastructure.db.models import User, UserRole, AdminActionType, ApprovalStatus, PromoEvent, PromoEventStatus
-from app.utils.formatters import format_to_local_phone, normalize_to_e164, get_app_date_time_strings
+from app.utils.formatters import (
+    format_to_local_phone,
+    get_app_date_time_strings,
+    get_phone_number_variations,
+    normalize_to_e164,
+    normalize_to_local,
+)
 from app.services import settings_service
 
 # Impor service lain dari paket yang sama
@@ -20,11 +26,13 @@ from .helpers import (
 )
 from app.infrastructure.gateways.mikrotik_client import (
     activate_or_update_hotspot_user,
+    delete_hotspot_user,
     get_hotspot_ip_binding_user_map,
     remove_address_list_entry,
     sync_address_list_for_user,
     upsert_address_list_entry,
 )
+from app.services.hotspot_sync_service import sync_address_list_for_single_user
 
 
 def _resolve_default_server() -> str:
@@ -267,6 +275,58 @@ def update_user_by_admin_comprehensive(target_user: User, admin_actor: User, dat
         return False, "Akses ditolak: Admin tidak dapat mengubah data admin lain.", None
         
     changes = {}
+
+    # --- Update phone_number (ADMIN/SUPER_ADMIN) ---
+    # Catatan: username hotspot berbasis nomor, jadi kita harus sync MikroTik agar user tetap bisa login.
+    raw_phone = None
+    if isinstance(data, dict):
+        raw_phone = data.get('phone_number') or data.get('phone')
+
+    if raw_phone:
+        if not admin_actor.is_super_admin_role and target_user.is_admin_role:
+            return False, "Akses ditolak: Admin tidak dapat mengubah nomor telepon admin lain.", None
+
+        try:
+            new_phone_local = normalize_to_local(str(raw_phone))
+        except Exception as e:
+            return False, f"Nomor telepon tidak valid: {e}", None
+
+        old_username_08 = format_to_local_phone(target_user.phone_number) or ""
+        new_username_08 = format_to_local_phone(new_phone_local) or ""
+
+        # Jika secara efektif sama (mis. +62 vs 08), anggap tidak berubah.
+        if new_username_08 and old_username_08 and new_username_08 != old_username_08:
+            variations = get_phone_number_variations(new_phone_local)
+            existing_user = db.session.execute(
+                select(User).where(User.phone_number.in_(variations), User.id != target_user.id)
+            ).scalar_one_or_none()
+            if existing_user:
+                return False, "Nomor telepon sudah digunakan.", None
+
+            target_user.phone_number = new_phone_local
+            changes['phone_number'] = new_phone_local
+
+            # Best-effort: sync MikroTik ke username baru lalu hapus username lama
+            if not target_user.mikrotik_password:
+                target_user.mikrotik_password = _generate_password()
+            if not target_user.mikrotik_profile_name:
+                target_user.mikrotik_profile_name = _resolve_active_profile()
+
+            if target_user.is_active and target_user.approval_status == ApprovalStatus.APPROVED:
+                ok_mt, msg_mt = _sync_user_to_mikrotik(
+                    target_user,
+                    f"Phone updated by {admin_actor.full_name} old={old_username_08}",
+                )
+                if not ok_mt:
+                    return False, f"Gagal sinkronisasi MikroTik setelah ganti nomor: {msg_mt}", None
+
+                if old_username_08 and new_username_08 and old_username_08 != new_username_08:
+                    _handle_mikrotik_operation(delete_hotspot_user, username=old_username_08)
+
+                try:
+                    sync_address_list_for_single_user(target_user)
+                except Exception:
+                    pass
 
     if 'full_name' in data and data['full_name'] != target_user.full_name:
         target_user.full_name = data['full_name']

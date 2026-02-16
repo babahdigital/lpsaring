@@ -123,6 +123,7 @@ class UserCreateByAdminSchema(UserBaseSchema):
         return self
 
 class UserUpdateByAdminSchema(BaseModel):
+    phone_number: Optional[str] = None
     full_name: Optional[str] = Field(None, min_length=2, max_length=100)
     blok: Optional[UserBlok] = None
     kamar: Optional[UserKamar] = None
@@ -136,6 +137,13 @@ class UserUpdateByAdminSchema(BaseModel):
     add_mb: Optional[int] = Field(None, ge=0)
     add_gb: Optional[float] = Field(None, ge=0.0, description="Kuota yang akan ditambahkan dalam Gigabyte. Akan dikonversi ke MB di backend.")
     add_days: Optional[int] = Field(None, ge=0)
+
+    @field_validator('phone_number', mode='before')
+    @classmethod
+    def validate_phone(cls, v: Any) -> Optional[str]:
+        if v is None or v == '':
+            return None
+        return validate_indonesian_phone_number(v)
 
 
     @field_validator('blok', mode='before')
