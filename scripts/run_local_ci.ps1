@@ -33,6 +33,22 @@ function Invoke-Compose([string[]]$ComposeArgs) {
   }
 }
 
+function Invoke-FrontendHost([string[]]$PnpmArgs) {
+  $frontendDir = Join-Path $ProjectRoot "frontend"
+  if (-not (Test-Path $frontendDir)) {
+    throw "Folder frontend tidak ditemukan: $frontendDir"
+  }
+  Push-Location $frontendDir
+  try {
+    & pnpm @PnpmArgs
+    if ($LASTEXITCODE -ne 0) {
+      throw "pnpm gagal (exit=$LASTEXITCODE): pnpm $($PnpmArgs -join ' ')"
+    }
+  } finally {
+    Pop-Location
+  }
+}
+
 Write-Host "[INFO] Compose: $ComposePath"
 Write-Host "[INFO] Project: $ComposeProjectName"
 Write-Host "[INFO] APP_ENV: $AppEnv"
@@ -51,9 +67,21 @@ if ($RunBackendTests) {
 }
 
 Write-Host "[STEP] Frontend lint (eslint)" -ForegroundColor Cyan
-Invoke-Compose @("run", "--rm", "frontend", "pnpm", "run", "lint")
+try {
+  Invoke-Compose @("run", "--rm", "frontend", "pnpm", "run", "lint")
+} catch {
+  Write-Host "[WARN] Frontend lint via docker compose gagal. Fallback ke pnpm host..." -ForegroundColor Yellow
+  Write-Host "[WARN] $($_.Exception.Message)" -ForegroundColor Yellow
+  Invoke-FrontendHost @("run", "lint")
+}
 
 Write-Host "[STEP] Frontend typecheck (nuxt typecheck)" -ForegroundColor Cyan
-Invoke-Compose @("run", "--rm", "frontend", "pnpm", "run", "typecheck")
+try {
+  Invoke-Compose @("run", "--rm", "frontend", "pnpm", "run", "typecheck")
+} catch {
+  Write-Host "[WARN] Frontend typecheck via docker compose gagal. Fallback ke pnpm host..." -ForegroundColor Yellow
+  Write-Host "[WARN] $($_.Exception.Message)" -ForegroundColor Yellow
+  Invoke-FrontendHost @("run", "typecheck")
+}
 
 Write-Host "[OK] Local CI checks passed." -ForegroundColor Green
