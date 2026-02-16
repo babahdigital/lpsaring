@@ -33,6 +33,19 @@ from app.services.notification_service import get_notification_message
 from app.services import settings_service
 from app.utils.formatters import format_datetime_to_wita, format_to_local_phone, get_phone_number_variations, normalize_to_e164
 
+from app.services.jwt_token_service import create_access_token
+from app.services.refresh_token_service import (
+    issue_refresh_token_for_user,
+    rotate_refresh_token,
+    revoke_refresh_token,
+)
+from app.utils.auth_cookie_utils import (
+    set_access_cookie,
+    clear_access_cookie,
+    set_refresh_cookie,
+    clear_refresh_cookie,
+)
+
 from app.services.user_management.helpers import _generate_password, _handle_mikrotik_operation
 from app.services.user_management.user_profile import _get_active_registration_bonus
 from app.infrastructure.gateways.mikrotik_client import activate_or_update_hotspot_user
@@ -59,51 +72,20 @@ auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
 # --- Helper functions ---
 
-def _get_auth_cookie_settings() -> dict:
-    cookie_name = current_app.config.get('AUTH_COOKIE_NAME', 'auth_token')
-    cookie_path = current_app.config.get('AUTH_COOKIE_PATH', '/')
-    cookie_domain = current_app.config.get('AUTH_COOKIE_DOMAIN')
-    cookie_samesite = current_app.config.get('AUTH_COOKIE_SAMESITE', 'Lax')
-    cookie_secure = current_app.config.get('AUTH_COOKIE_SECURE', False)
-    cookie_httponly = current_app.config.get('AUTH_COOKIE_HTTPONLY', True)
-    cookie_max_age = current_app.config.get('AUTH_COOKIE_MAX_AGE_SECONDS')
-
-    return {
-        'name': cookie_name,
-        'path': cookie_path,
-        'domain': cookie_domain,
-        'samesite': cookie_samesite,
-        'secure': cookie_secure,
-        'httponly': cookie_httponly,
-        'max_age': cookie_max_age,
-    }
-
 def _set_auth_cookie(response, token: str) -> None:
-    settings = _get_auth_cookie_settings()
-    response.set_cookie(
-        settings['name'],
-        token,
-        max_age=settings['max_age'],
-        httponly=settings['httponly'],
-        secure=settings['secure'],
-        samesite=settings['samesite'],
-        path=settings['path'],
-        domain=settings['domain'],
-    )
+    set_access_cookie(response, token)
+
 
 def _clear_auth_cookie(response) -> None:
-    settings = _get_auth_cookie_settings()
-    response.set_cookie(
-        settings['name'],
-        '',
-        max_age=0,
-        expires=0,
-        httponly=settings['httponly'],
-        secure=settings['secure'],
-        samesite=settings['samesite'],
-        path=settings['path'],
-        domain=settings['domain'],
-    )
+    clear_access_cookie(response)
+
+
+def _set_refresh_cookie(response, token: str) -> None:
+    set_refresh_cookie(response, token)
+
+
+def _clear_refresh_cookie(response) -> None:
+    clear_refresh_cookie(response)
 
 def _extract_phone_from_request() -> Optional[str]:
     payload = request.get_json(silent=True)
@@ -270,12 +252,7 @@ def verify_otp_from_redis(phone_number: str, otp_code: str) -> bool:
         current_app.logger.error(f"Failed to retrieve OTP from Redis for {phone_number}: {e}", exc_info=True)
         return False
 
-def create_access_token(data: dict) -> str:
-    to_encode = data.copy()
-    expire_delta = timedelta(minutes=current_app.config.get('JWT_ACCESS_TOKEN_EXPIRES_MINUTES', 120))
-    expire_at_utc = datetime.now(dt_timezone.utc) + expire_delta
-    to_encode.update({"exp": expire_at_utc, "iat": datetime.now(dt_timezone.utc)})
-    return jwt.encode(to_encode, current_app.config['JWT_SECRET_KEY'], algorithm=current_app.config['JWT_ALGORITHM'])
+## create_access_token dipindahkan ke app.services.jwt_token_service
 
 def _store_session_token(user_id: uuid.UUID) -> Optional[str]:
     redis_client = _get_redis_client_otp()
@@ -583,6 +560,8 @@ def verify_otp():
         jwt_payload = {"sub": str(user_to_login.id), "rl": user_to_login.role.value}
         access_token = create_access_token(data=jwt_payload)
 
+        refresh_token = issue_refresh_token_for_user(user_to_login.id, user_agent=user_agent)
+
         session_token = _store_session_token(user_to_login.id)
         session_url = None
         if session_token:
@@ -618,6 +597,7 @@ def verify_otp():
             ).model_dump()
         )
         _set_auth_cookie(response, access_token)
+        _set_refresh_cookie(response, refresh_token)
         return response, HTTPStatus.OK
     except ValidationError as e:
         return jsonify(AuthErrorResponseSchema(error="Invalid input.", details=_validation_error_details(e)).model_dump()), HTTPStatus.UNPROCESSABLE_ENTITY
@@ -728,6 +708,8 @@ def auto_login():
         jwt_payload = {"sub": str(user.id), "rl": user.role.value}
         access_token = create_access_token(data=jwt_payload)
 
+        refresh_token = issue_refresh_token_for_user(user.id, user_agent=user_agent)
+
         hotspot_username: Optional[str] = None
         hotspot_password: Optional[str] = None
         hotspot_login_required = is_hotspot_login_required(user)
@@ -741,6 +723,7 @@ def auto_login():
             ).model_dump()
         )
         _set_auth_cookie(response, access_token)
+        _set_refresh_cookie(response, refresh_token)
         return response, HTTPStatus.OK
     except Exception as e:
         db.session.rollback()
@@ -772,8 +755,11 @@ def consume_session_token():
 
         jwt_payload = {"sub": str(user.id), "rl": user.role.value}
         access_token = create_access_token(data=jwt_payload)
+
+        refresh_token = issue_refresh_token_for_user(user.id, user_agent=request.headers.get('User-Agent'))
         response = jsonify(VerifyOtpResponseSchema(access_token=access_token).model_dump())
         _set_auth_cookie(response, access_token)
+        _set_refresh_cookie(response, refresh_token)
         return response, HTTPStatus.OK
     except ValidationError as e:
         return jsonify(AuthErrorResponseSchema(error="Invalid input.", details=_validation_error_details(e)).model_dump()), HTTPStatus.UNPROCESSABLE_ENTITY
@@ -985,9 +971,45 @@ def admin_login():
     
     jwt_payload = {"sub": str(user_to_login.id), "rl": user_to_login.role.value}
     access_token = create_access_token(data=jwt_payload)
+    refresh_token = issue_refresh_token_for_user(user_to_login.id, user_agent=request.headers.get('User-Agent'))
     increment_metric("admin.login.success")
     response = jsonify(VerifyOtpResponseSchema(access_token=access_token).model_dump())
     _set_auth_cookie(response, access_token)
+    _set_refresh_cookie(response, refresh_token)
+    return response, HTTPStatus.OK
+
+
+@auth_bp.route('/refresh', methods=['POST'])
+@limiter.limit(lambda: current_app.config.get('REFRESH_TOKEN_RATE_LIMIT', '60 per minute'), key_func=_rate_limit_key_with_ip)
+def refresh_access_token():
+    refresh_cookie_name = current_app.config.get('REFRESH_COOKIE_NAME', 'refresh_token')
+    raw_refresh = request.cookies.get(refresh_cookie_name)
+    if not raw_refresh:
+        return jsonify(AuthErrorResponseSchema(error="Refresh token missing.").model_dump()), HTTPStatus.UNAUTHORIZED
+
+    user_agent = request.headers.get('User-Agent')
+    rotated = rotate_refresh_token(raw_refresh, user_agent=user_agent)
+    if not rotated:
+        return jsonify(AuthErrorResponseSchema(error="Refresh token invalid or expired.").model_dump()), HTTPStatus.UNAUTHORIZED
+
+    try:
+        user_id = uuid.UUID(rotated.user_id)
+    except Exception:
+        return jsonify(AuthErrorResponseSchema(error="Refresh token invalid.").model_dump()), HTTPStatus.UNAUTHORIZED
+
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify(AuthErrorResponseSchema(error="User not found.").model_dump()), HTTPStatus.UNAUTHORIZED
+    if not user.is_active or user.approval_status != ApprovalStatus.APPROVED:
+        return _build_status_error("inactive", "Account is not active or approved."), HTTPStatus.FORBIDDEN
+    if getattr(user, 'is_blocked', False):
+        return _build_status_error("blocked", "Akun Anda diblokir oleh Admin."), HTTPStatus.FORBIDDEN
+
+    jwt_payload = {"sub": str(user.id), "rl": user.role.value}
+    access_token = create_access_token(data=jwt_payload)
+    response = jsonify({"access_token": access_token, "token_type": "bearer"})
+    _set_auth_cookie(response, access_token)
+    _set_refresh_cookie(response, rotated.new_refresh_token)
     return response, HTTPStatus.OK
 
 @auth_bp.route('/me/change-password', methods=['POST'])
@@ -1027,6 +1049,15 @@ def change_my_password(current_user_id: uuid.UUID):
 @token_required
 def logout_user(current_user_id: uuid.UUID):
     current_app.logger.info(f"User {current_user_id} initiated logout.")
+    refresh_cookie_name = current_app.config.get('REFRESH_COOKIE_NAME', 'refresh_token')
+    raw_refresh = request.cookies.get(refresh_cookie_name)
+    if raw_refresh:
+        try:
+            revoke_refresh_token(raw_refresh)
+        except Exception:
+            pass
+
     response = jsonify({"message": "Logout successful"})
     _clear_auth_cookie(response)
+    _clear_refresh_cookie(response)
     return response, HTTPStatus.OK

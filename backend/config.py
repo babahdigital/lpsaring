@@ -204,6 +204,24 @@ class Config:
         JWT_ACCESS_TOKEN_EXPIRES_MINUTES * 60
     )
 
+    # --- Konfigurasi Refresh Token (Rotating Refresh Token via Cookie HttpOnly) ---
+    # Access token tetap pendek; refresh token yang panjang untuk UX "ingat saya".
+    REFRESH_TOKEN_EXPIRES_DAYS = get_env_int('REFRESH_TOKEN_EXPIRES_DAYS', 30)
+
+    REFRESH_COOKIE_NAME = os.environ.get('REFRESH_COOKIE_NAME', 'refresh_token')
+    REFRESH_COOKIE_HTTPONLY = get_env_bool('REFRESH_COOKIE_HTTPONLY', 'True')
+    REFRESH_COOKIE_SECURE = get_env_bool(
+        'REFRESH_COOKIE_SECURE',
+        'True' if FLASK_ENV == 'production' else 'False'
+    )
+    REFRESH_COOKIE_SAMESITE = os.environ.get('REFRESH_COOKIE_SAMESITE', AUTH_COOKIE_SAMESITE)
+    REFRESH_COOKIE_PATH = os.environ.get('REFRESH_COOKIE_PATH', AUTH_COOKIE_PATH)
+    REFRESH_COOKIE_DOMAIN = os.environ.get('REFRESH_COOKIE_DOMAIN', AUTH_COOKIE_DOMAIN)
+    REFRESH_COOKIE_MAX_AGE_SECONDS = get_env_int(
+        'REFRESH_COOKIE_MAX_AGE_SECONDS',
+        max(1, REFRESH_TOKEN_EXPIRES_DAYS) * 24 * 60 * 60,
+    )
+
     # --- Konfigurasi CSRF (Cookie Auth) ---
     CSRF_PROTECT_ENABLED = get_env_bool('CSRF_PROTECT_ENABLED', 'True')
     CSRF_TRUSTED_ORIGINS = get_env_list('CSRF_TRUSTED_ORIGINS', "[]")
@@ -263,6 +281,7 @@ class Config:
     REGISTER_RATE_LIMIT = os.environ.get('REGISTER_RATE_LIMIT', '5 per minute;20 per hour')
     SESSION_CONSUME_RATE_LIMIT = os.environ.get('SESSION_CONSUME_RATE_LIMIT', '30 per minute')
     AUTO_LOGIN_RATE_LIMIT = os.environ.get('AUTO_LOGIN_RATE_LIMIT', '60 per minute')
+    REFRESH_TOKEN_RATE_LIMIT = os.environ.get('REFRESH_TOKEN_RATE_LIMIT', '60 per minute')
     STATUS_PAGE_TOKEN_MAX_AGE_SECONDS = get_env_int('STATUS_PAGE_TOKEN_MAX_AGE_SECONDS', 300)
 
     # --- Konfigurasi Midtrans ---

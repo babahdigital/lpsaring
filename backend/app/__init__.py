@@ -12,7 +12,7 @@ from logging.handlers import RotatingFileHandler
 from werkzeug.exceptions import HTTPException
 
 import redis
-from flask import Flask, current_app, request, jsonify
+from flask import Flask, current_app, request, jsonify, g
 from http import HTTPStatus
 from jose import jwt, JWTError, ExpiredSignatureError
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -23,6 +23,7 @@ from .extensions import db, migrate, cors, limiter, make_celery_app
 from .infrastructure.db.models import UserRole
 from .infrastructure.http.json_provider import CustomJSONProvider
 from .services import settings_service
+from app.utils.auth_cookie_utils import set_access_cookie, set_refresh_cookie
 
 module_log = logging.getLogger(__name__)
 
@@ -436,6 +437,22 @@ def create_app(config_name: Optional[str] = None) -> HotspotFlask:
         
         message = settings_service.get_setting('MAINTENANCE_MODE_MESSAGE', 'Aplikasi sedang dalam perbaikan.')
         return jsonify({"message": message}), HTTPStatus.SERVICE_UNAVAILABLE
+
+    @app.after_request
+    def apply_refreshed_auth_cookies_hook(response):
+        # token_required dapat melakukan auto-refresh access token dari refresh cookie.
+        # Token baru disimpan di flask.g agar bisa dipasang ke response apa pun.
+        try:
+            new_access = getattr(g, 'new_access_token', None)
+            if isinstance(new_access, str) and new_access:
+                set_access_cookie(response, new_access)
+
+            new_refresh = getattr(g, 'new_refresh_token', None)
+            if isinstance(new_refresh, str) and new_refresh:
+                set_refresh_cookie(response, new_refresh)
+        except Exception:
+            pass
+        return response
 
     # --- Inisialisasi Komponen Aplikasi ---
     setup_logging(app)

@@ -3,7 +3,7 @@
 
 from functools import wraps
 import ipaddress
-from flask import request, jsonify, current_app
+from flask import request, jsonify, current_app, g
 from http import HTTPStatus
 import uuid
 from jose import jwt, JWTError, ExpiredSignatureError
@@ -13,6 +13,8 @@ from app.infrastructure.db.models import User
 from .schemas.auth_schemas import AuthErrorResponseSchema
 from app.utils.csrf_utils import is_trusted_origin
 from app.utils.request_utils import get_client_ip
+from app.services.refresh_token_service import rotate_refresh_token
+from app.services.jwt_token_service import create_access_token
 
 
 def _get_trusted_origins() -> list[str]:
@@ -114,6 +116,40 @@ def token_required(f):
                 token_source = 'cookie'
 
         if not token:
+            # Jika access token tidak ada, coba fallback ke refresh token (cookie) untuk UX persisten.
+            refresh_cookie_name = current_app.config.get('REFRESH_COOKIE_NAME', 'refresh_token')
+            raw_refresh = request.cookies.get(refresh_cookie_name)
+            if raw_refresh and not _passes_csrf_guard():
+                error_response.error = "Invalid origin."
+                return jsonify(error_response.model_dump()), HTTPStatus.FORBIDDEN
+
+            if raw_refresh:
+                rotated = rotate_refresh_token(raw_refresh, user_agent=request.headers.get('User-Agent'))
+                if rotated:
+                    try:
+                        user_uuid_from_token = uuid.UUID(rotated.user_id)
+                    except Exception:
+                        return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
+
+                    user_from_token = db.session.get(User, user_uuid_from_token)
+                    if not user_from_token:
+                        error_response.error = "User associated with token not found."
+                        return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
+
+                    if not user_from_token.is_active:
+                        error_response.error = "User account is inactive."
+                        return jsonify(error_response.model_dump()), HTTPStatus.FORBIDDEN
+                    if not user_from_token.is_approved:
+                        error_response.error = "User account is not approved."
+                        return jsonify(error_response.model_dump()), HTTPStatus.FORBIDDEN
+
+                    jwt_payload = {"sub": str(user_from_token.id), "rl": user_from_token.role.value}
+                    new_access = create_access_token(data=jwt_payload)
+                    g.new_access_token = new_access
+                    g.new_refresh_token = rotated.new_refresh_token
+
+                    return f(current_user_id=user_uuid_from_token, *args, **kwargs)
+
             return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
 
         if token_source == 'cookie' and not _passes_csrf_guard():
@@ -140,8 +176,50 @@ def token_required(f):
                 return jsonify(error_response.model_dump()), HTTPStatus.FORBIDDEN
 
         except ExpiredSignatureError:
-            error_response.error = "Token has expired."
-            return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
+            # Jika access token expired dan token berasal dari cookie, coba refresh.
+            if token_source != 'cookie':
+                error_response.error = "Token has expired."
+                return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
+
+            refresh_cookie_name = current_app.config.get('REFRESH_COOKIE_NAME', 'refresh_token')
+            raw_refresh = request.cookies.get(refresh_cookie_name)
+            if not raw_refresh:
+                error_response.error = "Token has expired."
+                return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
+
+            if not _passes_csrf_guard():
+                error_response.error = "Invalid origin."
+                return jsonify(error_response.model_dump()), HTTPStatus.FORBIDDEN
+
+            rotated = rotate_refresh_token(raw_refresh, user_agent=request.headers.get('User-Agent'))
+            if not rotated:
+                error_response.error = "Token has expired."
+                return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
+
+            try:
+                user_uuid_from_token = uuid.UUID(rotated.user_id)
+            except Exception:
+                error_response.error = "Token has expired."
+                return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
+
+            user_from_token = db.session.get(User, user_uuid_from_token)
+            if not user_from_token:
+                error_response.error = "User associated with token not found."
+                return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
+
+            if not user_from_token.is_active:
+                error_response.error = "User account is inactive."
+                return jsonify(error_response.model_dump()), HTTPStatus.FORBIDDEN
+            if not user_from_token.is_approved:
+                error_response.error = "User account is not approved."
+                return jsonify(error_response.model_dump()), HTTPStatus.FORBIDDEN
+
+            jwt_payload = {"sub": str(user_from_token.id), "rl": user_from_token.role.value}
+            new_access = create_access_token(data=jwt_payload)
+            g.new_access_token = new_access
+            g.new_refresh_token = rotated.new_refresh_token
+
+            return f(current_user_id=user_uuid_from_token, *args, **kwargs)
         except (JWTError, ValueError, TypeError) as e:
             error_response.error = f"Invalid token: {str(e)}"
             return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
