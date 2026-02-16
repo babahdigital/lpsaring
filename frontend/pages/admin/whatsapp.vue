@@ -76,13 +76,15 @@ function normalizeWaNumber(phone: string): string {
     return ''
 
   const raw = phone.replace(/[^\d+]/g, '')
-  if (raw.startsWith('+62'))
-    return `62${raw.slice(3)}`
-  if (raw.startsWith('62'))
-    return raw
-  if (raw.startsWith('0'))
-    return `62${raw.slice(1)}`
-  return raw
+  if (raw.startsWith('+'))
+    return raw.slice(1).replace(/[^\d]/g, '')
+  const digits = raw.replace(/[^\d]/g, '')
+  if (digits.startsWith('62'))
+    return digits
+  if (digits.startsWith('0'))
+    return `62${digits.slice(1)}`
+  // Jika user sudah memasukkan country code non-62 tanpa '+', biarkan.
+  return digits
 }
 
 function buildWaLink(phone: string): string {

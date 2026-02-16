@@ -154,8 +154,8 @@ Ringkasan perubahan yang berkaitan dengan autentikasi hotspot, captive portal, d
   - Gunakan `X-Forwarded-For` dan `ProxyFix` di Flask.
 
 3. **Host-network Nginx (Linux saja)**
-  - Tersedia override `docker-compose.hostnet.yml` + `app.host.conf`.
-  - **Tidak didukung di Docker Desktop Windows/macOS.**
+  - Jalankan reverse proxy (Nginx) di host agar `remote_addr` bisa menjadi IP asli.
+  - **Tidak didukung di Docker Desktop Windows/macOS** jika ingin memakai host networking.
 
 ### Rekomendasi
 - **Di Windows:** Gunakan redirect MikroTik dengan `ip`/`mac`.

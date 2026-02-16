@@ -32,12 +32,13 @@ def _log_admin_action(admin: User, target_user: User, action_type: AdminActionTy
     if admin.is_super_admin_role:
         return
     try:
-        log_entry = AdminActionLog(
-            admin_id=admin.id, 
-            target_user_id=target_user.id, 
-            action_type=action_type, 
-            details=json.dumps(details, default=str)
-        )
+        # NOTE: Hindari keyword-args pada declarative model agar Pylance tidak memunculkan
+        # `reportCallIssue` (model SQLAlchemy tidak selalu terinferensi memiliki __init__(**kwargs)).
+        log_entry = AdminActionLog()
+        log_entry.admin_id = admin.id
+        log_entry.target_user_id = target_user.id
+        log_entry.action_type = action_type
+        log_entry.details = json.dumps(details, default=str)
         db.session.add(log_entry)
     except Exception as e:
         current_app.logger.error(f"Gagal mencatat aksi admin: {e}", exc_info=True)
@@ -49,6 +50,16 @@ def _generate_password(length=6, numeric_only=True) -> str:
 
 def _handle_mikrotik_operation(operation_func: Callable, **kwargs: Any) -> Tuple[bool, Any]:
     """Menangani operasi Mikrotik dengan koneksi pool dan logging."""
+    try:
+        enabled_raw = settings_service.get_setting('ENABLE_MIKROTIK_OPERATIONS', 'True')
+        mikrotik_enabled = str(enabled_raw or '').strip().lower() in {'true', '1', 't', 'yes'}
+        if not mikrotik_enabled:
+            current_app.logger.info("Mikrotik operations disabled by setting. Skipping Mikrotik operation.")
+            return True, "Mikrotik operations disabled."
+    except Exception:
+        # fail-open: jika settings service bermasalah, jangan diam-diam mematikan MikroTik.
+        pass
+
     try:
         with get_mikrotik_connection() as api_conn:
             if not api_conn:

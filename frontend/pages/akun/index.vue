@@ -215,7 +215,17 @@ watch(() => authStore.currentUser, (newUser) => {
 // DIPERBAIKI: Aturan validasi menggunakan perbandingan eksplisit
 const requiredRule = (v: any) => (v !== null && v !== undefined && v !== '') || 'Wajib diisi.' // Perbaikan: Perbandingan eksplisit dengan null, undefined, dan string kosong
 const nameLengthRule = (v: string) => (v !== null && v !== undefined && v.length >= 2) || 'Nama minimal 2 karakter.' // Perbaikan: Perbandingan eksplisit
-const phoneRule = (v: string) => /^(?:\+62|0)8[1-9]\d{7,12}$/.test(v) || 'Format nomor telepon tidak valid.'
+const phoneRule = (v: string) => {
+  try {
+    normalize_to_e164(v)
+    return true
+  }
+  catch (error: any) {
+    return error instanceof Error && error.message !== ''
+      ? error.message
+      : 'Format nomor telepon tidak valid.'
+  }
+}
 const passwordLengthRule = (v: string) => (v !== null && v !== undefined && v.length >= 6) || 'Password minimal 6 karakter.' // Perbaikan: Perbandingan eksplisit
 const passwordMatchRule = (v: string) => v === passwordData.value.new_password || 'Password tidak cocok.'
 function formatDate(dateString?: string | Date | null) {

@@ -38,7 +38,7 @@ Lampiran wajib:
 ## POST /api/auth/register
 **Auth:** Tidak
 **Request (UserRegisterRequestSchema)**
-- `phone_number`: string (dinormalisasi ke format lokal 08xx)
+- `phone_number`: string (dinormalisasi ke format E.164, contoh: `+628...` atau `+675...`)
 - `full_name`: string (min 2)
 - `blok`: string (opsional)
 - `kamar`: string (opsional; angka 1-6 atau `Kamar_#`)
@@ -60,6 +60,10 @@ Lampiran wajib:
 **Auth:** Tidak
 **Request (RequestOtpRequestSchema)**
 - `phone_number`: string
+
+**Format yang diterima (contoh)**
+- Indonesia: `08xxxxxxxxxx`, `8xxxxxxxxx`, `62xxxxxxxxxx`, `+62xxxxxxxxxx`
+- Internasional: `+67512345678`, `67512345678`, `0067512345678`
 
 **Response 200 (RequestOtpResponseSchema)**
 - `message`: string

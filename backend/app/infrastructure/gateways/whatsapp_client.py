@@ -137,17 +137,20 @@ def send_whatsapp_message(recipient_number: str, message_body: str) -> bool:
 
     headers = {'Authorization': api_key}
     
-    if recipient_number.startswith('+'):
-        target_number = recipient_number[1:]
+    # Normalisasi ke format target Fonnte (digits-only). Gunakan countryCode=0 agar Fonnte tidak mengubah.
+    raw = (recipient_number or "").strip()
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    if not digits:
+        current_app.logger.error("Invalid target number format for Fonnte: empty after normalization")
+        return False
+
+    # Backward compatible untuk input lokal Indonesia (08xx / 8xx)
+    if digits.startswith('0'):
+        target_number = '62' + digits[1:]
+    elif digits.startswith('8'):
+        target_number = '62' + digits
     else:
-        if recipient_number.startswith('08'):
-             target_number = '62' + recipient_number[1:]
-        else:
-             target_number = recipient_number
-    
-    if not target_number.startswith('62'):
-         current_app.logger.error(f"Invalid target number format for Fonnte after processing: {target_number}. Expected '62...'")
-         return False
+        target_number = digits
 
     if not _check_whatsapp_rate_limit(target_number):
         return False
@@ -224,17 +227,18 @@ def send_whatsapp_with_pdf(recipient_number: str, caption: str, pdf_url: str, fi
 
     headers = {'Authorization': api_key}
     
-    if recipient_number.startswith('+'):
-        target_number = recipient_number[1:]
+    raw = (recipient_number or "").strip()
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    if not digits:
+        current_app.logger.error("Invalid target number format for Fonnte: empty after normalization")
+        return False
+
+    if digits.startswith('0'):
+        target_number = '62' + digits[1:]
+    elif digits.startswith('8'):
+        target_number = '62' + digits
     else:
-        if recipient_number.startswith('08'):
-             target_number = '62' + recipient_number[1:]
-        else:
-             target_number = recipient_number
-    
-    if not target_number.startswith('62'):
-         current_app.logger.error(f"Invalid target number format for Fonnte: {target_number}")
-         return False
+        target_number = digits
 
     def _download_pdf_bytes() -> Optional[bytes]:
         if not pdf_url:

@@ -69,19 +69,46 @@ def round_mb(value: float, precision: str = "0.01") -> float:
 
 def normalize_to_e164(phone_number: str) -> str:
     """
-    Menormalisasi berbagai format nomor telepon Indonesia ke format E.164 (+62).
-    Menerima format: 08xxx, +628xxx, 628xxx, 8xxx
-    Aturan validasi: 
-    - Panjang total 10-12 digit untuk format lokal (08xx)
-    - Digit setelah +62 harus 8-10 digit
+    Menormalisasi nomor telepon menjadi format E.164.
+
+    Dukungan:
+    - Indonesia (legacy): 08xxx, +628xxx, 628xxx, 8xxx -> +628xxx
+    - Internasional: +<digits> (mis. +675...) -> dipertahankan
+
+    Batasan panjang:
+    - E.164 generic: 8-14 digit (tanpa tanda '+')
+    - Indonesia: tetap divalidasi agar konsisten untuk pola +628...
     """
     if not phone_number or not isinstance(phone_number, str):
         raise ValueError("Nomor telepon tidak boleh kosong.")
+
+    raw = phone_number.strip()
+    if raw == "":
+        raise ValueError("Nomor telepon tidak boleh kosong.")
+
+    # Jika user sudah memberikan E.164 (+...), dukung untuk semua country code.
+    # Simpan hanya digit dan pertahankan prefix '+'
+    if raw.startswith('+'):
+        digits = re.sub(r'[^\d]', '', raw)
+        if not digits:
+            raise ValueError("Nomor telepon tidak boleh kosong.")
+        e164_number = '+' + digits
+        # Generic E.164: +[1-9]\d{7,14} -> 8-15 digit total (E.164 max 15 digits)
+        if not re.match(r'^\+[1-9]\d{7,14}$', e164_number):
+            raise ValueError("Format nomor telepon internasional tidak valid. Gunakan format +<kodeNegara><nomor>.")
+        return e164_number
     
     # Bersihkan semua karakter non-digit
-    cleaned = re.sub(r'[^\d]', '', phone_number)
+    cleaned = re.sub(r'[^\d]', '', raw)
     if not cleaned:
         raise ValueError("Nomor telepon tidak boleh kosong.")
+
+    # Dukungan prefix internasional umum: 00<cc><number> -> +<cc><number>
+    if cleaned.startswith('00') and len(cleaned) > 2:
+        cleaned = cleaned[2:]
+        if re.match(r'^[1-9]\d{7,14}$', cleaned):
+            return '+' + cleaned
+        raise ValueError("Format nomor telepon internasional tidak valid. Gunakan format +<kodeNegara><nomor>.")
     
     # Terima berbagai format awal
     if cleaned.startswith('0'):
@@ -94,15 +121,20 @@ def normalize_to_e164(phone_number: str) -> str:
         # Format 8xxx -> +628xxx
         e164_number = '+62' + cleaned
     else:
-        raise ValueError(f"Format awalan nomor telepon '{phone_number}' tidak valid. Gunakan awalan 08, 628, atau +628.")
+        # Jika bukan pola Indonesia, anggap input sudah mengandung country code tanpa '+' (mis. 675..., 44..., dll)
+        if re.match(r'^[1-9]\d{7,14}$', cleaned):
+            return '+' + cleaned
+        raise ValueError(f"Format awalan nomor telepon '{phone_number}' tidak valid. Gunakan awalan 08, 628, +628, atau format internasional +<kodeNegara>...")
 
-    # Validasi panjang: 12-14 digit untuk format E.164
-    if not (12 <= len(e164_number) <= 14):
-        raise ValueError("Panjang nomor telepon tidak valid. Harus antara 10-12 digit untuk format lokal (misal: 08xx).")
+    # Validasi panjang: untuk Indonesia (hasil normalisasi selalu +62...)
+    # Panjang total string (termasuk '+') biasanya 12-14 untuk nomor Indonesia yang umum.
+    # Namun tetap batasi agar tidak kebablasan.
+    if not (12 <= len(e164_number) <= 16):
+        raise ValueError("Panjang nomor telepon tidak valid.")
     
     # Validasi pola: setelah +628, harus ada 8-10 digit angka
     # [1-9] (digit pertama harus 1-9) + [0-9]{7,9} (7-9 digit berikutnya)
-    if not re.match(r'^\+628[1-9][0-9]{7,9}$', e164_number):
+    if not re.match(r'^\+628[1-9][0-9]{7,11}$', e164_number):
         raise ValueError(f"Nomor telepon '{phone_number}' memiliki format yang tidak valid.")
         
     return e164_number
@@ -113,7 +145,10 @@ def normalize_to_local(phone_number: str) -> str:
     Menggunakan validasi dari normalize_to_e164 agar format selalu konsisten.
     """
     e164_number = normalize_to_e164(phone_number)
-    return '0' + e164_number[3:]
+    if e164_number.startswith('+62'):
+        return '0' + e164_number[3:]
+    # Untuk non-Indonesia, tidak ada padanan "lokal" 08xx. Kembalikan E.164.
+    return e164_number
 
 def format_to_local_phone(phone_number: Optional[str]) -> Optional[str]:
     """Mengubah format E.164 (+62) atau format lain menjadi format lokal (08)."""
@@ -139,19 +174,31 @@ def format_to_local_phone(phone_number: Optional[str]) -> Optional[str]:
 
 def get_phone_number_variations(query: str) -> List[str]:
     """Menghasilkan variasi format nomor telepon untuk pencarian di database."""
-    if not query or not query.isdigit(): 
-        return [query] # Kembalikan query jika bukan digit (untuk pencarian nama)
+    if not query:
+        return [query]
+
+    raw = str(query).strip()
+    if raw == "":
+        return [raw]
+
+    # Untuk pencarian, kita terima input dengan '+' dan karakter non-digit.
+    # Jika hasilnya bukan digit sama sekali, fallback ke raw (mis. nama).
+    digits_only = re.sub(r'[^\d]', '', raw)
+    if digits_only == "":
+        return [raw]
     
-    variations = {query}
+    variations = {raw, digits_only}
     try:
-        normalized_query = normalize_to_e164(query)
-        local_part = normalized_query[3:]  # Hilangkan '+62'
-        
-        # Tambahkan variasi format
-        variations.add(normalized_query)      # +628xxx
-        variations.add('62' + local_part)     # 628xxx
-        variations.add('0' + local_part)      # 08xxx
-        variations.add(local_part)            # 8xxx
+        normalized_query = normalize_to_e164(raw)
+        variations.add(normalized_query)
+        variations.add(normalized_query.lstrip('+'))
+
+        # Jika Indonesia, tambahkan variasi lokal.
+        if normalized_query.startswith('+62'):
+            local_part = normalized_query[3:]  # hilangkan '+62'
+            variations.add('62' + local_part)     # 628xxx
+            variations.add('0' + local_part)      # 08xxx
+            variations.add(local_part)            # 8xxx
     except ValueError:
         # Jika normalisasi gagal, tetap gunakan query asli
         pass

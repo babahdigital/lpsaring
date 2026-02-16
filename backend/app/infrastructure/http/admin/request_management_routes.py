@@ -33,7 +33,15 @@ except ImportError:
 
 request_mgmt_bp = Blueprint('request_management_api', __name__)
 
+
+def _is_mikrotik_operations_enabled() -> bool:
+    raw = settings_service.get_setting('ENABLE_MIKROTIK_OPERATIONS', 'True')
+    return str(raw or '').strip().lower() in {'true', '1', 't', 'yes'}
+
 def _handle_mikrotik_operation(operation_func, **kwargs):
+    if not _is_mikrotik_operations_enabled():
+        current_app.logger.info("Mikrotik operations disabled by setting. Skipping Mikrotik operation.")
+        return True, "Mikrotik operations disabled."
     if not MIKROTIK_CLIENT_AVAILABLE:
         current_app.logger.warning("Mikrotik client not available. Skipping Mikrotik operation.")
         return False, "Mikrotik client not available."
@@ -48,12 +56,13 @@ def _handle_mikrotik_operation(operation_func, **kwargs):
         return False, f"Mikrotik Error: {str(e)}"
 
 def _log_admin_action(admin_id: uuid.UUID, target_user_id: uuid.UUID, action_type: AdminActionType, details: dict):
-    log_entry = AdminActionLog(
-        admin_id=admin_id,
-        target_user_id=target_user_id,
-        action_type=action_type,
-        details=json.dumps(details, default=str)
-    )
+    # NOTE: Hindari keyword-args pada declarative model agar Pylance tidak memunculkan
+    # `reportCallIssue` (model SQLAlchemy tidak selalu terinferensi memiliki __init__(**kwargs)).
+    log_entry = AdminActionLog()
+    log_entry.admin_id = admin_id
+    log_entry.target_user_id = target_user_id
+    log_entry.action_type = action_type
+    log_entry.details = json.dumps(details, default=str)
     db.session.add(log_entry)
 
 
@@ -123,7 +132,8 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
         return jsonify({"message": f"Permintaan ini sudah diproses dengan status: {req_to_process.status.name}"}), HTTPStatus.CONFLICT
 
     target_user = req_to_process.requester
-    if not target_user or not target_user.mikrotik_password:
+    mikrotik_ops_enabled = _is_mikrotik_operations_enabled()
+    if not target_user or (mikrotik_ops_enabled and not target_user.mikrotik_password):
         return jsonify({"message": "Pengguna pemohon atau password hotspot tidak ditemukan. Setujui pengguna terlebih dahulu."}), HTTPStatus.INTERNAL_SERVER_ERROR
         
     try:
@@ -184,7 +194,7 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
                 server=target_user.mikrotik_server_name, 
                 force_update_profile=True
             )
-            if not success:
+            if mikrotik_ops_enabled and not success:
                 db.session.rollback()
                 return jsonify({"message": f"Gagal sinkronisasi Mikrotik: {msg}"}), HTTPStatus.INTERNAL_SERVER_ERROR
         
@@ -218,7 +228,7 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
             
             komandan_profile = settings_service.get_setting('MIKROTIK_KOMANDAN_PROFILE', 'komandan')
             success, msg = _handle_mikrotik_operation(activate_or_update_hotspot_user, user_mikrotik_username=mikrotik_username, mikrotik_profile_name=komandan_profile, hotspot_password=target_user.mikrotik_password, comment=f"QUOTA {gb_added}GB/{days_to_add}d added by {current_admin.full_name}", limit_bytes_total=max(1, limit_bytes), session_timeout_seconds=max(0, timeout_seconds), server=target_user.mikrotik_server_name)
-            if not success:
+            if mikrotik_ops_enabled and not success:
                 db.session.rollback()
                 return jsonify({"message": f"Gagal sinkronisasi Mikrotik: {msg}"}), HTTPStatus.INTERNAL_SERVER_ERROR
 
@@ -266,7 +276,7 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
         
         komandan_profile = settings_service.get_setting('MIKROTIK_KOMANDAN_PROFILE', 'komandan')
         success, msg = _handle_mikrotik_operation(activate_or_update_hotspot_user, user_mikrotik_username=mikrotik_username, mikrotik_profile_name=komandan_profile, hotspot_password=target_user.mikrotik_password, comment=f"Partial Grant {granted_gb}GB/{days_to_add}d by {current_admin.full_name}", limit_bytes_total=max(1, limit_bytes), session_timeout_seconds=max(0, timeout_seconds), server=target_user.mikrotik_server_name)
-        if not success:
+        if mikrotik_ops_enabled and not success:
             db.session.rollback()
             return jsonify({"message": f"Gagal sinkronisasi Mikrotik: {msg}"}), HTTPStatus.INTERNAL_SERVER_ERROR
 

@@ -13,6 +13,10 @@ def test_normalize_to_e164_accepts_local_formats():
     assert normalize_to_e164("62811580039") == "+62811580039"
     assert normalize_to_e164("+62811580039") == "+62811580039"
     assert normalize_to_e164("811580039") == "+62811580039"
+    assert normalize_to_e164("67512345678") == "+67512345678"
+    assert normalize_to_e164("+67512345678") == "+67512345678"
+    assert normalize_to_e164("0067512345678") == "+67512345678"
+    assert normalize_to_e164("+123456789012345") == "+123456789012345"  # 15 digits (E.164 max)
 
 
 def test_normalize_to_e164_rejects_invalid():
@@ -21,7 +25,7 @@ def test_normalize_to_e164_rejects_invalid():
     with pytest.raises(ValueError):
         normalize_to_e164("1234")
     with pytest.raises(ValueError):
-        normalize_to_e164("7000000000")
+        normalize_to_e164("0000000000")
 
 
 def test_normalize_to_local():

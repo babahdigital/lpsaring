@@ -2,9 +2,14 @@
 // Ini adalah versi JavaScript/TypeScript dari fungsi yang ada di backend/app/utils/formatters.py
 
 /**
- * Menormalisasi berbagai format nomor telepon Indonesia ke format E.164 (+62).
+ * Menormalisasi nomor telepon ke format E.164.
  * Fungsi ini sengaja dibuat untuk mereplikasi logika di backend.
- * Aturan validasi: Nomor lokal (08xx) harus 10-12 digit.
+ * Dukungan:
+ * - Indonesia (legacy): 08xxx, 628xxx, +628xxx, 8xxx -> +628xxx
+ * - Internasional: +<digits> (mis. +675...) -> dipertahankan
+ *
+ * Batasan panjang:
+ * - E.164 generic: 8-14 digit (tanpa '+')
  * @param {string | null | undefined} phoneNumber - Nomor telepon dalam format lokal (misal: 0812..., 62812...).
  * @returns {string} Nomor telepon dalam format E.164.
  * @throws {Error} Jika format nomor telepon tidak valid.
@@ -15,10 +20,29 @@ export function normalize_to_e164(phoneNumber: string | null | undefined): strin
     throw new Error('Nomor telepon tidak boleh kosong.')
   }
 
-  const cleaned = phoneNumber.replace(/[\s\-()+]/g, '').trim()
+  const raw = phoneNumber.trim()
+  const cleaned = raw.replace(/[\s\-()]/g, '').trim()
   // PERBAIKAN: Mengganti !cleaned dengan pengecekan string kosong yang eksplisit
   if (cleaned === '') {
     throw new Error('Nomor telepon tidak boleh kosong.')
+  }
+
+  // Generic E.164: +[1-9]\d{7,14} (E.164 max 15 digits)
+  if (cleaned.startsWith('+')) {
+    const digits = cleaned.replace(/[^\d]/g, '')
+    const e164 = `+${digits}`
+    if (!/^\+[1-9]\d{7,14}$/.test(e164))
+      throw new Error('Format nomor telepon internasional tidak valid. Gunakan format +<kodeNegara><nomor>.')
+    return e164
+  }
+
+  // Prefix internasional umum: 00<cc><number> -> +<cc><number>
+  if (cleaned.startsWith('00') && cleaned.length > 2) {
+    const digits = cleaned.replace(/[^\d]/g, '').slice(2)
+    const e164 = `+${digits}`
+    if (!/^\+[1-9]\d{7,14}$/.test(e164))
+      throw new Error('Format nomor telepon internasional tidak valid. Gunakan format +<kodeNegara><nomor>.')
+    return e164
   }
 
   let e164_number = ''
@@ -35,18 +59,17 @@ export function normalize_to_e164(phoneNumber: string | null | undefined): strin
     e164_number = `+62${cleaned}`
   }
   else {
-    throw new Error(`Format awalan nomor telepon '${phoneNumber}' tidak valid. Gunakan awalan 08, 628, atau +628.`)
+    // Jika bukan pola Indonesia, anggap input sudah mengandung country code tanpa '+' (mis. 675..., 44..., dll)
+    const digits = cleaned.replace(/[^\d]/g, '')
+    const e164 = `+${digits}`
+    if (/^\+[1-9]\d{7,14}$/.test(e164))
+      return e164
+    throw new Error(`Format awalan nomor telepon '${phoneNumber}' tidak valid. Gunakan awalan 08, 628, +628, atau format internasional +<kodeNegara>...`)
   }
 
-  // Aturan baru: panjang total nomor lokal 10-12 digit, berarti E.164 adalah 12-14 digit.
-  if (e164_number.length < 12 || e164_number.length > 14) {
-    throw new Error(`Panjang nomor telepon tidak valid. Harus antara 10-12 digit untuk format lokal (misal: 08xx).`)
-  }
-
-  // Regex baru: setelah +628, harus ada 8-10 digit lagi.
-  if (!/^\+628[1-9]\d{7,9}$/.test(e164_number)) {
+  // Validasi Indonesia: setelah +628, harus ada 8-12 digit lagi (lebih longgar untuk variasi panjang)
+  if (!/^\+628[1-9]\d{7,11}$/.test(e164_number))
     throw new Error(`Nomor telepon '${phoneNumber}' memiliki format yang tidak valid.`)
-  }
 
   return e164_number
 }
@@ -66,10 +89,14 @@ export function format_to_local_phone(phoneNumber: string | null | undefined): s
 export function format_for_whatsapp_link(phoneNumber: string | null | undefined): string {
   if (!phoneNumber)
     return ''
-  const cleaned = phoneNumber.replace(/[\s\-()+]/g, '')
-  if (cleaned.startsWith('0'))
-    return `62${cleaned.substring(1)}`
-  if (cleaned.startsWith('62'))
-    return cleaned
-  return `62${cleaned}`
+  const cleaned = phoneNumber.replace(/[\s\-()]/g, '').trim()
+  if (cleaned.startsWith('+'))
+    return cleaned.substring(1).replace(/[^\d]/g, '')
+  const digits = cleaned.replace(/[^\d]/g, '')
+  if (digits.startsWith('0'))
+    return `62${digits.substring(1)}`
+  if (digits.startsWith('62'))
+    return digits
+  // Jika user sudah memasukkan country code selain 62 tanpa '+', biarkan apa adanya.
+  return digits
 }

@@ -1,0 +1,69 @@
+# E2E override: jalankan stack terpisah agar tidak mengganggu container dev.
+# Pakai dengan:
+#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml -p hotspot-portal-e2e up -d
+# Akses:
+#   http://localhost:8088
+
+services:
+  db:
+    container_name: hotspot_postgres_db_e2e
+    volumes:
+      - postgres_data_e2e:/var/lib/postgresql/data
+
+  redis:
+    container_name: hotspot_redis_cache_e2e
+    volumes:
+      - redis_data_e2e:/data
+
+  backend:
+    container_name: hotspot_flask_backend_e2e
+    ports:
+      - "5510:5010"
+    volumes:
+      - font_cache_e2e:/app/.cache
+      - backups_e2e:/app/backups
+
+  migrate:
+    container_name: hotspot_flask_migrate_e2e
+    volumes:
+      - font_cache_e2e:/app/.cache
+
+  celery_worker:
+    container_name: hotspot_celery_worker_e2e
+    volumes:
+      - font_cache_e2e:/app/.cache
+
+  celery_beat:
+    container_name: hotspot_celery_beat_e2e
+    volumes:
+      - font_cache_e2e:/app/.cache
+
+  frontend:
+    container_name: hotspot_nuxt_frontend_e2e
+    ports:
+      - "3310:3010"
+
+  nginx:
+    container_name: hotspot_nginx_proxy_e2e
+    ports:
+      - "8088:80"
+
+  cloudflared:
+    container_name: hotspot_cloudflared_e2e
+    # Jangan jalankan tunnel saat E2E lokal kecuali memang dibutuhkan.
+    profiles:
+      - tunnel
+
+volumes:
+  postgres_data_e2e:
+    driver: local
+  redis_data_e2e:
+    driver: local
+  font_cache_e2e:
+    driver: local
+  backups_e2e:
+    driver: local
+
+networks:
+  hotspot_network:
+    name: hotspot_portal_net_e2e

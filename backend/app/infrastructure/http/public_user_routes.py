@@ -9,6 +9,7 @@ from http import HTTPStatus
 
 from app.extensions import db
 from app.infrastructure.db.models import User
+from app.utils.formatters import get_phone_number_variations
 
 # --- PERBAIKAN IMPORT PATH ---
 # Impor skema dari direktori yang sama (http), lalu ke subdirektori schemas
@@ -28,6 +29,11 @@ def check_or_register_phone():
         if not json_data:
              current_app.logger.warning("[Check Phone] Request body is empty or not JSON.")
              return jsonify({"success": False, "message": "Request body tidak boleh kosong dan harus JSON."}), HTTPStatus.BAD_REQUEST
+
+        # Kompatibilitas payload frontend yang memakai camelCase
+        if isinstance(json_data, dict) and 'phoneNumber' in json_data and 'phone_number' not in json_data:
+            json_data['phone_number'] = json_data.get('phoneNumber')
+
         req_data = PhoneCheckRequest.model_validate(json_data)
         phone_number = req_data.phone_number
         full_name = req_data.full_name
@@ -40,7 +46,9 @@ def check_or_register_phone():
          return jsonify({"success": False, "message": "Format request tidak valid."}), HTTPStatus.BAD_REQUEST
 
     try:
-        user = db.session.execute(select(User).filter_by(phone_number=phone_number)).scalar_one_or_none()
+        # Toleransi data lama yang belum dinormalisasi / input format berbeda
+        variations = get_phone_number_variations(phone_number)
+        user = db.session.execute(select(User).where(User.phone_number.in_(variations))).scalar_one_or_none()
 
         if not user:
             current_app.logger.info(f"[Check Phone] Nomor {phone_number} belum terdaftar.")
@@ -104,7 +112,8 @@ def validate_whatsapp_number():
 
     # --- LANGKAH 1: Cek apakah nomor sudah ada di database ---
     try:
-        user_exists = db.session.scalar(select(User.id).filter_by(phone_number=phone_number_e164))
+        variations = get_phone_number_variations(phone_number_e164)
+        user_exists = db.session.scalar(select(User.id).where(User.phone_number.in_(variations)))
         if user_exists:
             current_app.logger.warning(f"[Validate WA] Nomor {phone_number_e164} sudah terdaftar di database.")
             return jsonify({
@@ -140,7 +149,7 @@ def validate_whatsapp_number():
         response = requests.post(
             validate_url,
             headers={'Authorization': fonnte_token},
-            data={'target': target_number},
+            data={'target': target_number, 'countryCode': '0'},
             timeout=5  # Timeout 5 detik
         )
         

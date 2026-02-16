@@ -81,7 +81,8 @@ def create_user_by_admin(admin_actor: User, data: Dict[str, Any]) -> Tuple[bool,
         if not phone_number:
             return False, "Format nomor telepon tidak valid.", None
         
-        if db.session.scalar(select(User).filter_by(phone_number=phone_number)):
+        variations = get_phone_number_variations(phone_number)
+        if db.session.scalar(select(User.id).where(User.phone_number.in_(variations))):
             return False, f"Nomor telepon {data['phone_number']} sudah terdaftar.", None
         
         is_tamping = bool(data.get('is_tamping'))
@@ -404,6 +405,12 @@ def update_user_by_admin_comprehensive(target_user: User, admin_actor: User, dat
 
 def _handle_user_activation(user: User, should_be_active: bool, admin: User) -> Tuple[bool, str]:
     user.is_active = should_be_active
+
+    mikrotik_enabled_raw = settings_service.get_setting('ENABLE_MIKROTIK_OPERATIONS', 'True')
+    mikrotik_enabled = str(mikrotik_enabled_raw or '').strip().lower() in {'true', '1', 't', 'yes'}
+    if not mikrotik_enabled:
+        return True, "Status pengguna berhasil diperbarui (Mikrotik dinonaktifkan)."
+
     if not user.mikrotik_password:
         user.mikrotik_password = _generate_password()
 

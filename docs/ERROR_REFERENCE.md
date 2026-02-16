@@ -112,3 +112,42 @@ Uncaught ReferenceError: Cannot access 'ee' before initialization
 **Verifikasi pasca deploy**:
 - Hard refresh (`Ctrl+F5`) atau uji incognito.
 - Pastikan referensi file `_nuxt/*` di browser sesuai output build terbaru.
+
+## 11) Pylance `reportCallIssue` pada model SQLAlchemy (keyword args)
+**Gejala**:
+- Pylance menampilkan error seperti:
+	- `No parameter named "admin_id"`
+	- `No parameter named "target_user_id"`
+	- dst.
+
+**Penyebab**:
+- Model SQLAlchemy declarative menerima `**kwargs` saat runtime, tetapi Pylance tidak selalu bisa menginfer signature `__init__`.
+
+**Solusi (pola yang dipakai di repo ini)**:
+- Hindari `Model(field=value, ...)` untuk model declarative yang memicu false-positive.
+- Gunakan pola set attribute:
+	- `obj = Model(); obj.field = value; ...`
+
+## 12) Vitest error `require() of ES Module ... not supported` (jsdom)
+**Gejala**:
+- `pnpm test` gagal dengan error ESM/CJS saat start worker, contoh:
+	- `require() of ES Module ... not supported`
+
+**Penyebab**:
+- Kombinasi dependency transitive (jsdom → html-encoding-sniffer → ESM module) tidak kompatibel dengan loader CJS pada environment tertentu.
+
+**Solusi cepat (untuk unit test non-DOM)**:
+- Jika test hanya unit test util tanpa DOM, set `vitest` environment ke `node` (bukan `jsdom`).
+- Jika butuh DOM test, alternatifnya: isolate test DOM ke config terpisah atau upgrade/downgrade dependency yang memicu ESM/CJS mismatch.
+
+## 13) Perubahan backend tidak kebaca di container (butuh rebuild)
+**Gejala**:
+- Setelah edit file Python di host, API di container masih pakai versi lama.
+
+**Penyebab**:
+- Mode default `docker-compose.yml` membuild backend menjadi image dan **tidak** me-mount source code `./backend:/app`.
+
+**Solusi**:
+- Pilihan A (default): rebuild backend:
+	- `docker compose up -d --build backend`
+- Pilihan B (dev mount): jalankan override yang memount source backend dan menyalakan reload.

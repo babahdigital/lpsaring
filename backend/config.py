@@ -1,42 +1,117 @@
 # backend/config.py
 import os
 import sys
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 import warnings
 import ast
 
-# --- Pemuatan File .env ---
-basedir = os.path.abspath(os.path.dirname(__file__))
-dotenv_path = None
-dotenv_candidate_names = []
-app_env = os.environ.get('APP_ENV') or os.environ.get('FLASK_ENV')
-if app_env:
-    dotenv_candidate_names.append(f".env.{app_env}")
-dotenv_candidate_names.extend([".env.local", ".env.public", ".env.prod"])
-current_dir = basedir
-for _ in range(4): # Naik hingga 4 level direktori untuk mencari .env
-    potential_path = os.path.join(current_dir, '.env')
-    if os.path.exists(potential_path):
-        dotenv_path = potential_path
-        break
-    for candidate_name in dotenv_candidate_names:
-        candidate_path = os.path.join(current_dir, candidate_name)
-        if os.path.exists(candidate_path):
-            dotenv_path = candidate_path
-            break
-    if dotenv_path:
-        break
-    parent_dir = os.path.dirname(current_dir)
-    if parent_dir == current_dir:
-        break
-    current_dir = parent_dir
+# --- Pemuatan File .env (multi-file overlay) ---
+# Tujuan:
+# - DEV: boleh overlay backend/.env.public -> backend/.env.local (local override public)
+# - PROD: pakai env produksi saja (biasanya di root .env.prod atau dimount jadi /app/.env)
+# - Jangan menimpa env yang sudah diset oleh Docker/OS (Docker env wins)
 
-if dotenv_path:
-    load_dotenv(dotenv_path=dotenv_path)
-    print(f"INFO: Berhasil memuat variabel lingkungan dari: {dotenv_path}")
-else:
-    warnings.warn("PERINGATAN: File .env tidak ditemukan. Aplikasi akan menggunakan default atau variabel sistem.")
-    print(f"INFO: Mencari .env di {basedir} dan direktori induknya.")
+basedir = os.path.abspath(os.path.dirname(__file__))
+
+
+def _iter_parent_dirs(start_dir: str, max_levels: int = 4):
+    current_dir = start_dir
+    for _ in range(max_levels + 1):
+        yield current_dir
+        parent_dir = os.path.dirname(current_dir)
+        if parent_dir == current_dir:
+            break
+        current_dir = parent_dir
+
+
+def _is_production_like() -> bool:
+    flask_env = (os.environ.get('FLASK_ENV') or '').strip().lower()
+    if flask_env == 'production':
+        return True
+    # APP_ENV kadang dipakai sebagai profile compose (mis. public.prod)
+    app_env_raw = (os.environ.get('APP_ENV') or '').strip().lower()
+    return app_env_raw in {'prod', 'production', 'public.prod', 'public_prod', 'publicprod'}
+
+
+def _discover_dotenv_paths() -> list[str]:
+    app_env = os.environ.get('APP_ENV') or os.environ.get('FLASK_ENV')
+    app_env = (app_env or '').strip()
+
+    is_prod = _is_production_like()
+
+    # Global (semua mode): hanya muat .env base. Ini juga yang dipakai docker volume mount di produksi (/app/.env).
+    global_names: list[str] = ['.env']
+
+    # Prod: izinkan fallback file khusus prod (terutama untuk run non-container).
+    # Catatan: pada deploy normal, .env.prod dimount menjadi /app/.env.
+    if is_prod:
+        global_names.extend(['.env.prod', '.env.production'])
+
+    # Dev: overlay hanya dari direktori backend (berdasarkan basedir) agar root .env.public tidak ikut terbaca.
+    backend_overlay_names: list[str] = []
+    if not is_prod:
+        # Public dulu, lalu local override.
+        backend_overlay_names.extend(['.env.public', '.env.local'])
+        # Jika ada profile tambahan, muat paling akhir (override).
+        if app_env and app_env not in {'public', 'local'}:
+            backend_overlay_names.append(f".env.{app_env}")
+
+    # Precedence antar direktori:
+    # - Root lebih "base", backend/ lebih "override".
+    # Jadi kita load dari parent -> child.
+    dirs = list(_iter_parent_dirs(basedir, max_levels=4))
+    dirs.reverse()
+
+    paths: list[str] = []
+    seen: set[str] = set()
+    for d in dirs:
+        for name in global_names:
+            p = os.path.join(d, name)
+            if os.path.exists(p) and p not in seen:
+                paths.append(p)
+                seen.add(p)
+
+        if not is_prod and d == basedir:
+            for name in backend_overlay_names:
+                p = os.path.join(d, name)
+                if os.path.exists(p) and p not in seen:
+                    paths.append(p)
+                    seen.add(p)
+    return paths
+
+
+def _load_dotenv_chain(paths: list[str]) -> None:
+    if not paths:
+        # Dalam Docker, env biasanya disuplai via `env_file`/`environment` sehingga file `.env` memang
+        # tidak tersedia di filesystem container. Jangan jadikan ini warning.
+        print(f"INFO: Tidak menemukan file dotenv; menggunakan environment OS/Docker (basedir={basedir}).")
+        return
+
+    merged: dict[str, str] = {}
+    loaded: list[str] = []
+    for p in paths:
+        try:
+            values = dotenv_values(p)
+        except Exception:
+            continue
+        # dotenv_values mengembalikan dict[str, Optional[str]]
+        for k, v in values.items():
+            if k is None or v is None:
+                continue
+            merged[str(k)] = str(v)
+        loaded.append(p)
+
+    # Set hanya jika belum ada di OS env (Docker env wins)
+    for k, v in merged.items():
+        if k not in os.environ:
+            os.environ[k] = v
+
+    print("INFO: Memuat env chain:")
+    for p in loaded:
+        print(f" - {p}")
+
+
+_load_dotenv_chain(_discover_dotenv_paths())
 
 def get_env_bool(var_name, default='False'):
     """Helper untuk mendapatkan boolean dari environment variable."""
@@ -221,6 +296,8 @@ class Config:
     MIKROTIK_PASSWORD = os.environ.get('MIKROTIK_PASSWORD')
     MIKROTIK_PORT = get_env_int('MIKROTIK_PORT', 8728)
     MIKROTIK_USE_SSL = get_env_bool('MIKROTIK_USE_SSL', 'False')
+    MIKROTIK_SSL_VERIFY = get_env_bool('MIKROTIK_SSL_VERIFY', 'False')
+    MIKROTIK_PLAIN_TEXT_LOGIN = get_env_bool('MIKROTIK_PLAIN_TEXT_LOGIN', 'True')
     MIKROTIK_DEFAULT_PROFILE = os.environ.get('MIKROTIK_DEFAULT_PROFILE', 'default')
     MIKROTIK_ACTIVE_PROFILE = os.environ.get('MIKROTIK_ACTIVE_PROFILE', MIKROTIK_DEFAULT_PROFILE)
     MIKROTIK_FUP_PROFILE = os.environ.get('MIKROTIK_FUP_PROFILE', 'fup')
@@ -383,9 +460,6 @@ class ProductionConfig(Config):
     MIKROTIK_SEND_LIMIT_BYTES_TOTAL = get_env_bool('MIKROTIK_SEND_LIMIT_BYTES_TOTAL', 'True')
     MIKROTIK_SEND_SESSION_TIMEOUT = get_env_bool('MIKROTIK_SEND_SESSION_TIMEOUT', 'True')
 
-    def __init__(self):
-        super().validate_production_config()
-
 
 class TestingConfig(Config):
     TESTING = True
@@ -411,10 +485,3 @@ config_options = {
     'testing': TestingConfig,
     'default': DevelopmentConfig
 }
-
-if (
-    Config.FLASK_ENV == 'production'
-    and os.environ.get('FLASK_CONFIG') is None
-    and 'pytest' not in sys.modules
-):
-    Config.validate_production_config()

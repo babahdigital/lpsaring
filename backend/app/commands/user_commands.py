@@ -7,7 +7,6 @@ from app.extensions import db
 from app.services import settings_service
 from app.utils.formatters import (
     normalize_to_e164,
-    normalize_to_local,
     format_to_local_phone,
     get_phone_number_variations,
     format_app_date,
@@ -185,7 +184,7 @@ def user_cli_bp():
 def normalize_phone_for_cli(phone_number_input: str) -> str:
     """Normalizes phone number input from CLI using common utility."""
     try:
-        return normalize_to_local(phone_number_input)
+        return normalize_to_e164(phone_number_input)
     except ValueError as e:
         raise click.BadParameter(str(e))
     except TypeError as e:

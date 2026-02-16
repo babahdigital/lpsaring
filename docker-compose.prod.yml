@@ -17,7 +17,7 @@ services:
     networks:
       - hotspot_prod_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} -q"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB} -q"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -43,6 +43,24 @@ services:
     restart: always
 
   # ------------------------
+  #  Database Migration (Alembic)
+  # ------------------------
+  migrate:
+    image: babahdigital/sobigidul_backend:latest
+    container_name: hotspot_prod_flask_migrate
+    env_file:
+      - .env.prod
+    volumes:
+      - ./.env.prod:/app/.env:ro
+    command: flask db upgrade
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - hotspot_prod_network
+    restart: "no"
+
+  # ------------------------
   #  Flask Backend (Gunicorn)
   # ------------------------
   backend:
@@ -58,8 +76,6 @@ services:
     volumes:
       - ./.env.prod:/app/.env:ro
       - ./backend/backups:/app/backups
-    environment:
-      - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     command:
       - "gunicorn"
       - "--bind"
@@ -70,9 +86,11 @@ services:
       - "--log-level=info"
       - "--access-logfile=-"
       - "--error-logfile=-"
-    ports:
-      - "5010:5010"
+    # Tidak mem-publish port ke host.
+    # Produksi WAJIB diakses melalui Cloudflare Tunnel -> nginx.
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:
@@ -96,13 +114,13 @@ services:
       - .env.prod
     volumes:
       - ./.env.prod:/app/.env:ro
-    environment:
-      - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     command: >
       /opt/venv/bin/celery -A app.extensions worker
       --loglevel=info
       --concurrency=4
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:
@@ -126,10 +144,10 @@ services:
       - .env.prod
     volumes:
       - ./.env.prod:/app/.env:ro
-    environment:
-      - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     command: /opt/venv/bin/celery -A app.extensions beat --loglevel=info
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       db:
         condition: service_healthy
       redis:
@@ -145,7 +163,7 @@ services:
     image: babahdigital/sobigidul_frontend:latest
     container_name: hotspot_prod_nuxt_frontend
     env_file:
-      - ./.env.${APP_ENV:-public.prod}
+      - ./.env.public.prod
     # Pastikan Nuxt Nitro memakai port 3010
     environment:
       - PORT=${NUXT_PORT:-3010}
@@ -159,10 +177,8 @@ services:
   nginx:
     image: nginx:stable-alpine
     container_name: hotspot_prod_nginx_proxy
-    ports:
-      - "80:80"
-      # Aktifkan 443 jika sudah punya sertifikat SSL
-      # - "443:443"
+    # Tidak mem-publish port ke host.
+    # Produksi WAJIB diakses melalui Cloudflare Tunnel.
     volumes:
       - ./infrastructure/nginx/conf.d/app.prod.conf:/etc/nginx/conf.d/default.conf:ro
       - ./infrastructure/nginx/logs:/var/log/nginx
@@ -182,13 +198,12 @@ services:
   #  Cloudflared Tunnel (HTTPS)
   # ------------------------
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    build:
+      context: ./infrastructure/cloudflared
     container_name: hotspot_prod_cloudflared
-    profiles:
-      - tunnel
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARED_TUNNEL_TOKEN}
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARED_TUNNEL_TOKEN:?Set CLOUDFLARED_TUNNEL_TOKEN in .env.prod}
     environment:
-      - TUNNEL_TOKEN=${CLOUDFLARED_TUNNEL_TOKEN}
+      - TUNNEL_TOKEN=${CLOUDFLARED_TUNNEL_TOKEN:?Set CLOUDFLARED_TUNNEL_TOKEN in .env.prod}
     depends_on:
       nginx:
         condition: service_started

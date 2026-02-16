@@ -142,8 +142,15 @@ function phoneRule(v: string) {
   if (!v)
     return true
 
-  // PERBAIKAN: Menggunakan non-capturing group (?:...) untuk menghilangkan error linter
-  return /^08\d{8,11}$/.test(v) || 'Format: 08... dengan total 10-13 digit.'
+  try {
+    normalize_to_e164(v)
+    return true
+  }
+  catch (error: any) {
+    return error instanceof Error && error.message !== ''
+      ? error.message
+      : 'Format nomor tidak valid.'
+  }
 }
 function quotaRule(v: any) {
   if (!showQuotaFields.value)

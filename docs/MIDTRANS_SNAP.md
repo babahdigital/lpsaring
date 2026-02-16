@@ -87,9 +87,10 @@ Gunakan kartu uji:
 - OTP/3DS: `112233`
 
 ## 4) Checklist Implementasi di Proyek Ini
-- [ ] Set `MIDTRANS_SERVER_KEY` & `MIDTRANS_CLIENT_KEY` di backend/.env
+- [ ] Set `MIDTRANS_SERVER_KEY` & `MIDTRANS_CLIENT_KEY` di `backend/.env.local` (dev) atau `.env.prod` (produksi)
 - [ ] Set `MIDTRANS_IS_PRODUCTION=False`
-- [ ] Set `NUXT_PUBLIC_MIDTRANS_CLIENT_KEY` di frontend/.env
+- [ ] Set `NUXT_PUBLIC_MIDTRANS_CLIENT_KEY` di `.env.public` (dev) / `.env.public.prod` (prod)
+	- Jika Nuxt jalan di host (opsional): pakai `frontend/.env.public` / `frontend/.env.local`
 - [ ] Implement endpoint backend untuk create Snap token
 - [ ] Frontend memanggil endpoint token, lalu `snap.pay` atau `snap.embed`
 - [ ] Buat endpoint webhook untuk notifikasi transaksi

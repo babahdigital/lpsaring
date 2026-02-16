@@ -70,6 +70,7 @@ docs/_build/
 # Virtualenv
 .env
 .env.prod
+.env.public
 .env.public.prod
 .venv
 .venv*/

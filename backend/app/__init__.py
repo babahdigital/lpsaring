@@ -27,6 +27,88 @@ from .services import settings_service
 module_log = logging.getLogger(__name__)
 
 
+def _ensure_dev_superadmin_if_configured(app: Flask) -> None:
+    """Create a SUPER_ADMIN user from env in development mode (idempotent).
+
+    Rules:
+    - Development only.
+    - Requires SUPERADMIN_PHONE + SUPERADMIN_PASSWORD.
+    - If a matching user already exists, do nothing.
+    - Safe under multi-worker (handles IntegrityError).
+    """
+
+    if app.testing:
+        return
+
+    flask_env = (os.getenv('FLASK_ENV') or '').strip().lower()
+    if flask_env != 'development':
+        return
+
+    phone_raw = (os.getenv('SUPERADMIN_PHONE') or '').strip()
+    password = os.getenv('SUPERADMIN_PASSWORD')
+    name = (os.getenv('SUPERADMIN_NAME') or 'Super Admin').strip() or 'Super Admin'
+
+    if not phone_raw or not password:
+        return
+
+    try:
+        from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
+        from werkzeug.security import generate_password_hash
+
+        from app.infrastructure.db.models import ApprovalStatus, User, UserRole
+        from app.utils.formatters import get_phone_number_variations, normalize_to_e164
+    except Exception:
+        module_log.exception("Dev superadmin bootstrap skipped: required modules not available")
+        return
+
+    with app.app_context():
+        variations = [v for v in (get_phone_number_variations(phone_raw) or []) if v]
+        if not variations:
+            module_log.warning("Dev superadmin bootstrap skipped: invalid SUPERADMIN_PHONE=%r", phone_raw)
+            return
+
+        try:
+            existing = db.session.query(User).filter(User.phone_number.in_(variations)).first()
+            if existing:
+                module_log.info(
+                    "Dev superadmin already exists (id=%s phone=%s role=%s); skipping",
+                    getattr(existing, 'id', None),
+                    getattr(existing, 'phone_number', None),
+                    getattr(getattr(existing, 'role', None), 'value', None),
+                )
+                return
+
+            phone_e164 = normalize_to_e164(phone_raw)
+
+            # SQLAlchemy declarative models accept kwargs at runtime, but Pylance
+            # can't reliably infer the generated __init__ signature.
+            # Set attributes explicitly to avoid reportCallIssue.
+            new_user = User()
+            new_user.phone_number = phone_e164
+            new_user.full_name = name
+            new_user.role = UserRole.SUPER_ADMIN
+            new_user.approval_status = ApprovalStatus.APPROVED
+            new_user.is_active = True
+            new_user.password_hash = generate_password_hash(password)
+            new_user.approved_at = datetime.now(dt_timezone.utc)
+            db.session.add(new_user)
+            db.session.commit()
+            module_log.warning(
+                "Dev superadmin created: phone=%s name=%s (role=SUPER_ADMIN)",
+                phone_e164,
+                name,
+            )
+        except IntegrityError:
+            db.session.rollback()
+            module_log.info("Dev superadmin bootstrap: created concurrently by another worker; skipping")
+        except (OperationalError, ProgrammingError):
+            db.session.rollback()
+            module_log.warning("Dev superadmin bootstrap skipped: database not ready")
+        except Exception:
+            db.session.rollback()
+            module_log.exception("Dev superadmin bootstrap failed")
+
+
 class HotspotFlask(Flask):
     redis_client_otp: Optional[redis.Redis]
 
@@ -270,11 +352,33 @@ def register_commands(app: Flask):
 
 def create_app(config_name: Optional[str] = None) -> HotspotFlask:
     """Factory function untuk membuat dan mengkonfigurasi aplikasi Flask."""
-    config_name = config_name or os.getenv('FLASK_CONFIG') or 'default'
-    config_name_str: str = config_name
+    def _resolve_config_name(explicit_name: Optional[str]) -> str:
+        if explicit_name:
+            return explicit_name
+        env_name = os.getenv('FLASK_CONFIG')
+        if env_name:
+            return env_name
+
+        flask_env = (os.getenv('FLASK_ENV') or '').strip().lower()
+        if flask_env == 'production':
+            return 'production'
+        if flask_env == 'testing':
+            return 'testing'
+        if flask_env == 'development':
+            return 'development'
+        return 'default'
+
+    config_name_str: str = _resolve_config_name(config_name)
     app = HotspotFlask('hotspot_app')
     app.json = CustomJSONProvider(app)
-    app.config.from_object(config_options[config_name_str])
+
+    config_cls = config_options[config_name_str]
+    app.config.from_object(config_cls)
+
+    # Pastikan validasi produksi selalu berjalan saat config production dipakai.
+    # (Flask `from_object` membaca atribut class tanpa memanggil `__init__`.)
+    if config_name_str == 'production' and hasattr(config_cls, 'validate_production_config'):
+        config_cls.validate_production_config()
 
     # DIKEMBALIKAN: Konfigurasi ProxyFix yang lebih fleksibel
     if any([
@@ -341,6 +445,8 @@ def create_app(config_name: Optional[str] = None) -> HotspotFlask:
     register_error_handlers(app)
     register_test_routes(app) # Memanggil kembali fungsi pendaftaran rute tes
     register_commands(app)
+
+    _ensure_dev_superadmin_if_configured(app)
 
     module_log.info(f"Inisialisasi aplikasi '{app.name}' selesai untuk environment '{config_name}'.")
     return app

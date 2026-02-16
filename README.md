@@ -39,8 +39,19 @@ Portal hotspot dengan backend Flask dan frontend Nuxt 3.
 - 2) Buat PR ke `main` lalu merge setelah review.
 - 3) Push ke `main` akan memicu publish image backend/frontend via GitHub Actions (`docker-publish.yml`).
 - 4) Untuk deploy ke Raspberry Pi, jalankan workflow manual `workflow_dispatch` dengan input `deploy=true`.
-- 5) Jika butuh tunnel Cloudflare, jalankan compose production dengan profile `tunnel` setelah token valid tersedia.
+- 5) Cloudflare Tunnel dijalankan via Docker Compose; simpan `CLOUDFLARED_TUNNEL_TOKEN` di root `.env` pada mesin yang menjalankan compose.
 
 Kebutuhan GitHub Secrets:
 - `DOCKERHUB_USERNAME`
 - `DOCKERHUB_TOKEN`
+
+## Template Env
+- `.env.example` (Compose-only)
+- `.env.public.example` (Frontend dev)
+- `.env.public.prod.example` (Frontend prod)
+- `backend/.env.public.example` (Backend dev public/non-secret)
+- `backend/.env.local.example` (Backend dev local/secret)
+- `backend/.env.example` (Backend full template, opsional/legacy)
+- `frontend/.env.public.example` (Nuxt public template, opsional jika jalan di host)
+- `frontend/.env.local.example` (Nuxt local template, opsional jika jalan di host)
+- `.env.prod.example` (Production runtime: backend + db + celery)

@@ -7,6 +7,7 @@ import { storeToRefs } from 'pinia'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '~/store/auth'
+import { normalize_to_e164 } from '~/utils/formatters'
 
 // --- STRUKTUR DATA DISESUAIKAN DENGAN RESPON API BACKEND ---
 // Interface ini diubah untuk mencocokkan struktur JSON dari backend (`"data": [...]`)
@@ -106,7 +107,17 @@ const nameRules = [
 ]
 const phoneRules = [
   (v: string) => (v != null && v.trim() !== '') || 'Nomor WhatsApp wajib diisi.',
-  (v: string) => /^\+628[1-9]\d{8,12}$/.test(normalizePhoneNumber(v)) === true || 'Format: +628xx... (11-15 digit).',
+  (v: string) => {
+    try {
+      normalize_to_e164(v)
+      return true
+    }
+    catch (error: any) {
+      return error instanceof Error && error.message !== ''
+        ? error.message
+        : 'Format nomor tidak valid. Gunakan format +<kodeNegara><nomor> atau format lokal 08...'
+    }
+  },
 ]
 
 // --- FUNGSI FORMATTING YANG DISEMPURNAKAN ---
@@ -141,14 +152,12 @@ function formatPricePerGb(price?: number | null, quotaGb?: number | null): strin
 function normalizePhoneNumber(phone: string | null | undefined): string {
   if (phone == null || phone === '')
     return ''
-  let cleaned = phone.replace(/[\s\-()+]/g, '')
-  if (cleaned.startsWith('08'))
-    cleaned = `+62${cleaned.substring(1)}`
-  else if (cleaned.startsWith('628'))
-    cleaned = `+${cleaned}`
-  else if (cleaned.startsWith('8') && cleaned.length >= 9)
-    cleaned = `+62${cleaned}`
-  return cleaned.startsWith('+628') ? cleaned : ''
+  try {
+    return normalize_to_e164(phone)
+  }
+  catch {
+    return ''
+  }
 }
 // --- AKHIR FUNGSI FORMATTING ---
 

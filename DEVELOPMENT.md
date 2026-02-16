@@ -28,6 +28,13 @@ Ringkasan struktur:
 - docker-compose.yml: stack development (db, redis, backend, celery, frontend, nginx)
 - docker-compose.prod.yml: stack production (menggunakan image build)
 
+## 2.1) Klasifikasi Docker Compose
+Development:
+- `docker-compose.yml`
+
+Production:
+- `docker-compose.prod.yml` (dipakai juga oleh workflow publish/deploy)
+
 ## 3) Layanan & Port Default (Development)
 - PostgreSQL: internal, tidak diekspose
 - Redis: internal, tidak diekspose
@@ -37,91 +44,138 @@ Ringkasan struktur:
 
 ## 4) File Environment
 Siapkan file environment berikut:
-- Root profile env (dipakai juga oleh frontend container):
-  - `.env.public` untuk profile publik/dev
-  - `.env.public.prod` untuk profile production
-  - `APP_ENV` menentukan profile aktif (`public` atau `public.prod`)
-- Backend: backend/.env
-- Frontend: frontend/.env
+- Root env (dipakai juga oleh frontend container):
+  - `.env.public` untuk development
+  - `.env.public.prod` untuk production
+
+- Root `.env` (compose-only): hanya untuk interpolation Compose (DB_*, token tunnel)
+- Backend (compose):
+  - Mengambil public URL dari `.env.public`.
+  - DB connection diambil dari `.env` (DB_* -> DATABASE_URL via docker-compose.yml)
+  - `backend/.env.local` opsional untuk override/secrets.
+- Frontend (compose):
+  - `.env.public` (dev)
+  - `.env.public.prod` (prod)
+
+Catatan: file `frontend/.env.*` hanya relevan jika menjalankan Nuxt **di luar** Docker (opsional).
+
+### 4.1) Peta Env (Dev vs Prod)
+
+| Lingkungan | File | Dipakai oleh | Isi utama |
+|---|---|---|---|
+| Dev | `.env` | Docker Compose interpolation | `DB_NAME/DB_USER/DB_PASSWORD`, token tunnel (opsional) |
+| Dev | `.env.public` | `frontend`, `backend`, `celery_*` (via `env_file`) | URL dev (`dev-lpsaring...`), `CORS_*`, `NUXT_PUBLIC_*` |
+| Dev (opsional) | `backend/.env.local` | backend loader (override) | secrets/override lokal (jangan commit) |
+| Prod | `.env.prod` | compose `--env-file`, backend/celery `env_file` + mount `/app/.env` | semua runtime produksi (DB, secrets, URL prod, Mikrotik, Midtrans, WA) |
+| Prod | `.env.public.prod` | `frontend` (via `env_file`) | `NUXT_PUBLIC_*` + URL prod |
 
 Template tersedia di:
 - .env.example
+- .env.public.example
 - .env.public.prod.example
+- backend/.env.public.example
+- backend/.env.local.example
 - backend/.env.example
+- frontend/.env.public.example
+- frontend/.env.local.example
 - frontend/.env.example
+
+Catatan penting (loader backend):
+- Backend sekarang dapat memuat beberapa file env secara berurutan (overlay). Urutan umumnya:
+  - base: `.env` (root) untuk kebutuhan minimal Compose dan/atau file mount `/app/.env`
+  - dev: hanya dari `backend/.env.public` → `backend/.env.local` (local override public)
+  - prod: hanya `.env` / `.env.prod` (tidak memuat root `.env.public` agar tidak tercampur dengan env frontend)
+- Environment yang sudah diset oleh Docker/OS **tidak ditimpa** oleh file `.env` (Docker env wins).
+
+Catatan dev:
+- Hindari menyetel `FLASK_ENV=production` di `backend/.env.public` / `backend/.env.local` saat development, karena backend akan menganggap mode produksi.
 
 Lampiran wajib untuk setiap pembaruan dokumen:
 - [.github/copilot-instructions.md](.github/copilot-instructions.md)
 
 ### Minimal yang perlu diisi
 Root .env
+- DB_NAME
+- DB_USER
+- DB_PASSWORD
+- CLOUDFLARED_TUNNEL_TOKEN (wajib; dipakai service `cloudflared` di Docker Compose)
+
+Root .env.public (frontend dev profile)
+- NUXT_PUBLIC_* (lihat `.env.public.example`)
+
+Root .env.prod (production)
 - POSTGRES_DB
 - POSTGRES_USER
 - POSTGRES_PASSWORD
+- DATABASE_URL
+- SECRET_KEY, JWT_SECRET_KEY, dan config backend lainnya (lihat `.env.prod.example`)
 
-backend/.env
-- DB_USER, DB_PASSWORD, DB_HOST, DB_NAME, DATABASE_URL
+Root .env.public.prod (frontend prod profile)
+- NUXT_PUBLIC_* (lihat `.env.public.prod.example`)
+
+backend/.env.public (dev public, tanpa secret)
+- APP_PUBLIC_BASE_URL / FRONTEND_URL / CORS_* / APP_LINK_*
+- PROXYFIX_* dan TRUSTED_PROXY_CIDRS (jika di belakang proxy)
+
+backend/.env.local (dev lokal, berisi secret)
+- DATABASE_URL atau DB_* fallback
 - SECRET_KEY, JWT_SECRET_KEY
-- MIDTRANS_* jika fitur pembayaran dipakai
-- WHATSAPP_* jika notifikasi WA dipakai
-- MIKROTIK_* jika integrasi mikrotik dipakai
+- MIDTRANS_* / WHATSAPP_* / MIKROTIK_* (sesuai kebutuhan)
 
-frontend/.env
-- NUXT_PUBLIC_API_BASE_URL
-- NUXT_PUBLIC_MIDTRANS_CLIENT_KEY
+frontend/.env.public + frontend/.env.local (opsional, jika Nuxt jalan di host)
+- NUXT_PUBLIC_* dan NUXT_INTERNAL_API_BASE_URL
 
 ## 5) Menjalankan via Docker Compose (Disarankan)
-Mode dev yang dipakai sekarang: **backend + db + nginx di Docker**, frontend Nuxt **jalan di host**, akses publik melalui **Cloudflare Tunnel (HTTPS)**.
+Mode dev default: semua service utama berjalan via Docker Compose (**backend + db + redis + frontend + nginx**).
 
 Langkah umum:
 1) Salin file .env dari template
-2) Jalankan stack Docker (tanpa frontend container)
-3) Jalankan Nuxt dev server di host
-4) Akses aplikasi via Nginx
+2) Jalankan stack Docker
+3) Akses aplikasi via Nginx
 
 Catatan environment (dev):
-- Gunakan `APP_ENV=local` agar backend memakai `backend/.env.local`.
-- E2E script otomatis memakai `APP_ENV=local` (atau override dengan `-AppEnv`).
+- Jika butuh secrets/override untuk backend, buat `backend/.env.local` (jangan commit).
 
 Catatan environment (prod):
-- Jalankan compose prod dengan file interpolasi khusus: `docker compose --env-file .env.prod -f docker-compose.prod.yml up -d`.
-- Set `APP_ENV=public.prod` agar frontend container membaca profile root `.env.public.prod`.
-- Cloudflared di compose sekarang bersifat opsional (profile `tunnel`), aktifkan hanya jika token sudah valid.
+- Jalankan compose prod: `docker compose -f docker-compose.prod.yml up -d`.
+- Pastikan `.env.public.prod` ada agar container frontend mendapat runtime config public.
+- Cloudflared dijalankan di Docker (dev & prod). Pastikan `CLOUDFLARED_TUNNEL_TOKEN` ada di root `.env` pada mesin yang menjalankan compose.
+
+Catatan penting:
+- Jangan jalankan prod compose dengan `--env-file .env.prod` karena `.env.prod` adalah runtime env_file untuk container, bukan file interpolation untuk compose.
+
+Konvensi yang disarankan:
+- PRODUKSI: gunakan root `.env.prod` (dipakai compose prod dan dimount ke backend sebagai `/app/.env`).
+- DEVELOPMENT: gunakan root `.env` (DB_*) + root `.env.public` (public URL + NUXT_PUBLIC_*) untuk menjalankan stack.
+  - `backend/.env.local` opsional untuk override/secrets saat dibutuhkan (jangan commit).
 
 Catatan:
 - Backend dan Celery akan bergantung pada Postgres & Redis
-- Nginx mengarah ke /api → backend:5010, dan / → frontend dev server di host
+- Nginx mengarah ke /api → backend:5010, dan / → frontend:3010
 - Kuota disinkronkan dari MikroTik dengan delta per-MAC dan pembulatan MB konsisten.
 - Pytest backend memakai fallback sqlite in-memory saat env DB belum tersedia.
 
-### 5.1) Mode Dev Hybrid (Direkomendasikan)
-Jalankan stack Docker (backend, db, redis, nginx):
-- `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d`
+### 5.1) Menjalankan (Dev)
+1) Siapkan file env (development)
+- Salin template berikut:
+  - `.env.example` -> `.env` (Compose-only)
+  - `.env.public.example` -> `.env.public` (frontend container, dev public)
+  - (Opsional) `backend/.env.local.example` -> `backend/.env.local` (secrets/local override)
 
-Pastikan frontend container **tidak** berjalan saat mode host:
-- `docker compose -f docker-compose.yml -f docker-compose.dev.yml stop frontend`
+2) Jalankan stack Docker:
+- `docker compose up -d`
 
-Jalankan Nuxt di host (wajib bind ke 0.0.0.0):
-- `pnpm dev --host 0.0.0.0 --port 3010`
-- atau `pnpm run dev:host`
+3) Akses aplikasi:
+- `http://localhost` (via Nginx)
 
-Untuk HTTPS publik via Cloudflare Tunnel, jalankan dengan env publik:
-- `pnpm run dev:public`
+### 5.1.1) Mode Dev (Mount backend, tanpa rebuild)
+Jika ingin perubahan kode backend langsung terbaca tanpa `docker compose ... --build`, gunakan override compose:
+- Jalankan:
+  - `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d`
 
-Status check cepat (hindari 504):
-- Host: `curl -I http://localhost:3010/_nuxt/`
-- Dari container Nginx: `docker exec hotspot_nginx_proxy sh -c "wget -S --spider -T 5 http://host.docker.internal:3010/_nuxt/"`
-
-Jika 504 masih muncul:
-- Pastikan dev server benar-benar hidup.
-- Pastikan port 3010 tidak diblokir firewall Windows.
-
-Jika ingin menjalankan frontend di Docker (opsional):
-- `docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile frontend up -d`
-
-Catatan VS Code (host):
-- Pastikan `pnpm` terpasang di host (mis. `corepack enable` atau `npm i -g pnpm`).
-- Jalankan `pnpm install` di folder `frontend/` agar TypeScript/Vue di VS Code tidak error.
+Catatan:
+- Override ini me-mount `./backend:/app` dan menjalankan gunicorn dengan `--reload` (polling) agar cocok untuk Docker Desktop Windows.
+- Celery worker/beat tidak auto-reload; restart container jika ada perubahan kode yang dipakai worker/beat.
 
 ### 5.2) Operasional Harian
 Log Docker:
@@ -139,23 +193,27 @@ Catatan CSRF mode ketat (dev/staging):
 - Set `CSRF_STRICT_NO_ORIGIN=True`.
 - Isi `CSRF_NO_ORIGIN_ALLOWED_IPS` dengan IP non-browser dan CIDR Docker (contoh `172.16.0.0/12`).
 
-Lint frontend (di host):
-- `pnpm run lint`
+Lint frontend (source of truth, di container):
+- `docker compose exec frontend pnpm run lint`
+
+Catatan VS Code (opsional):
+- Boleh `pnpm install` di host (folder `frontend/`) agar TypeScript/Vue terbaca tanpa error di editor.
+- Ini tidak menggantikan lint/typecheck/test di container.
 
 Lint backend (di container):
 - `docker compose exec -T backend ruff check .`
 
-Clear cache Nuxt/Vite (di host):
-- `rm -rf .nuxt .output .nitro node_modules/.vite`
+Clear cache Nuxt/Vite:
+- Jika Nuxt jalan di host (opsional): `rm -rf .nuxt .output .nitro node_modules/.vite`
+- Jika Nuxt jalan di Docker (default): restart container `frontend` (atau rebuild jika perlu)
 
 Jika muncul error seperti "Failed to load module script" pada `icons.css`:
-- Pastikan frontend **host** yang melayani `/\_nuxt/*`, bukan container frontend.
+- Pastikan service `frontend` yang melayani `/\_nuxt/*` benar-benar hidup dan Nginx mem-proxy ke `frontend:3010`.
 - Pastikan skema HMR (`ws`/`wss`) sesuai dengan skema halaman.
 
 Rebuild image (jika perlu):
-- `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build`
-- Recreate build (paksa container baru):
-  - `docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile frontend up -d --build --force-recreate`
+- `docker compose up -d --build`
+- Recreate build (paksa container baru): `docker compose up -d --build --force-recreate`
 
 ### 5.2.1) Catatan Performa Frontend
 - ApexCharts di-load secara async dan hanya dipakai di halaman chart.
@@ -166,7 +224,7 @@ Rebuild image (jika perlu):
 Catatan HTTPS + HMR:
 - Skema **harus konsisten**: jika akses lewat HTTPS, set `NUXT_PUBLIC_*` ke `https://` dan `NUXT_PUBLIC_HMR_PROTOCOL=wss`.
 - Mixed Content akan muncul jika halaman HTTPS mencoba HMR ke `ws://`.
-- Jika muncul HMR menuju `ws://localhost:5173`, biasanya dev server tidak memuat `.env.public`. Gunakan `pnpm run dev:public`.
+- Jika menjalankan Nuxt di host (opsional) dan HMR menuju `ws://localhost:5173`, biasanya dev server tidak memuat `.env.public`.
 - Untuk mode HTTPS via Cloudflare Tunnel, origin tetap HTTP di Nginx, tetapi header `X-Forwarded-Proto` dipakai agar backend mengetahui skema HTTPS.
 - Pastikan backend `.env.public` memakai URL `https://` agar CORS dan link konsisten.
 
@@ -184,7 +242,7 @@ Secrets yang wajib di GitHub repository:
 
 Catatan operasional:
 - Deploy ke Raspberry Pi **tidak otomatis** saat push; hanya berjalan saat manual dispatch dengan `deploy=true`.
-- Untuk menjalankan cloudflared di produksi: `docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tunnel up -d`.
+- Untuk menjalankan produksi + cloudflared: `docker compose -f docker-compose.prod.yml up -d`.
 - Jika tidak butuh HMR, pakai build produksi dan akses via Nginx/Cloudflare.
 
 ### 5.3.1) Alur Publish & Deploy (yang aktif saat ini)
@@ -244,8 +302,11 @@ Jalankan lint di host:
 Jika masih error, pastikan `pnpm install` sudah dijalankan sesuai mode.
 
 Catatan:
-- Pada mode dev hybrid, `pnpm install` dijalankan di host.
-- Pada mode frontend di Docker, jalankan `docker compose exec frontend pnpm install`.
+- `pnpm install` di **host** hanya opsional untuk kebutuhan VS Code (TypeScript/Vue terbaca, IntelliSense, dan mengurangi false error di editor).
+  - Ini **bukan** cara menjalankan aplikasi.
+- Workflow utama tetap di Docker:
+  - Runtime: frontend/backend selalu jalan di container.
+  - Lint/typecheck/test yang jadi acuan tetap dijalankan di container.
 
 ## 5.4) Aturan Coding (Wajib) – Cegah Error Berulang
 Gunakan aturan berikut agar error lint/bug tidak muncul lagi:
@@ -271,7 +332,10 @@ Gunakan aturan berikut agar error lint/bug tidak muncul lagi:
 ### Umum
 - Edit minimal: hanya file yang terkait perubahan.
 - Jangan menambah perubahan format/rapian jika tidak menyentuh fungsinya.
-- Semua env harus lewat **.env.local/.env** (frontend) & **backend/.env**.
+- Semua env harus lewat profile yang benar:
+  - Root `.env` (Compose-only)
+  - Root `.env.public*` (frontend container)
+  - `backend/.env.public` + `backend/.env.local` (backend)
 
 ## 5.5) Testing (Pytest)
 - Pytest backend memakai fallback `sqlite:///:memory:` saat env DB belum tersedia (khusus testing).
@@ -280,7 +344,7 @@ Gunakan aturan berikut agar error lint/bug tidak muncul lagi:
 ## 5.6) Catatan Keamanan Runtime
 - `/api/health` selalu mengembalikan HTTP 200 dengan status `ok`/`degraded` agar portal tidak dianggap down ketika satu dependency tidak sehat.
 - Autentikasi berbasis cookie memakai pemeriksaan origin untuk request non-GET/HEAD/OPTIONS.
-  - Atur `CSRF_PROTECT_ENABLED` dan `CSRF_TRUSTED_ORIGINS` di backend/.env sesuai domain portal.
+  - Atur `CSRF_PROTECT_ENABLED` dan `CSRF_TRUSTED_ORIGINS` di `.env.prod` (produksi) atau `backend/.env.local` (dev) sesuai domain portal.
 
 ## 6) Menjalankan Secara Lokal (Opsional)
 **Peringatan:** jalur ini hanya untuk troubleshooting. Jangan gunakan untuk workflow utama agar tidak terjadi perbedaan hasil dengan Docker.
@@ -358,56 +422,27 @@ Catatan sinkronisasi kuota:
 Gunakan Cloudflare Tunnel agar aplikasi bisa diakses dari luar dengan HTTPS tanpa membuka port publik.
 
 ### A) Buat Tunnel
-1. Install **cloudflared** (Zero Trust) di host.
-2. Buat tunnel baru di Dashboard Cloudflare Zero Trust.
-3. Download **credentials file** (JSON) dari Cloudflare.
+1. Buat tunnel baru di Dashboard Cloudflare Zero Trust.
+2. Buat Public Hostname (contoh `dev-lpsaring.babahdigital.net`) mengarah ke origin `http://hotspot_nginx_proxy:80`.
 
-### B) Konfigurasi cloudflared
-File konfigurasi tunnel ada di:
-- [infrastructure/cloudflared/config.yml](infrastructure/cloudflared/config.yml)
+### B) Token (wajib)
+Simpan token tunnel di root `.env` (file ini khusus untuk Docker Compose interpolation dan sudah di-ignore git):
+- `CLOUDFLARED_TUNNEL_TOKEN=<TOKEN_DARI_CLOUDFLARE_ZERO_TRUST>`
 
-Ubah hostname sesuai domain kamu (contoh):
-```yaml
-ingress:
-  - hostname: lpsaring.babahdigital.net
-    service: http://nginx:80
-  - service: http_status:404
-```
+### C) Jalankan (cloudflared tetap di Docker)
+- Dev: `docker compose up -d`
+- Prod: `docker compose -f docker-compose.prod.yml up -d`
 
-Jika menggunakan token, **tidak perlu** `credentials-file` di config.
-
-Contoh file konfigurasi (Windows) jika ingin standalone (opsional):
-```yaml
-# %USERPROFILE%\.cloudflared\config.yml
-ingress:
-  - hostname: hotspot.example.com
-    service: http://localhost:80
-  - service: http_status:404
-```
-
-Catatan:
-- Arahkan tunnel ke **Nginx (port 80)** karena Nginx sudah proxy `/api` ke backend.
-- Ganti `hotspot.example.com` dengan domain kamu.
-
-### C) Jalankan Tunnel
-```bash
-cloudflared tunnel run <NAMA_TUNNEL>
-```
-
-Untuk Docker Compose, set env di `.env.prod`:
-- `CLOUDFLARED_TUNNEL_TOKEN=<CLOUDFLARE_TUNNEL_TOKEN>`
-
-Untuk **development**, gunakan `.env` (root project):
-- `CLOUDFLARED_TUNNEL_TOKEN=<CLOUDFLARE_TUNNEL_TOKEN>`
-- `APP_PUBLIC_BASE_URL=https://lpsaring.babahdigital.net`
-- `FRONTEND_URL=https://lpsaring.babahdigital.net`
+Untuk runtime URL aplikasi (development), set di:
+- `.env.public` (frontend/Nuxt): `NUXT_PUBLIC_APP_BASE_URL=https://dev-lpsaring.babahdigital.net`
+- `backend/.env.public` (backend): `APP_PUBLIC_BASE_URL=https://dev-lpsaring.babahdigital.net` dan `FRONTEND_URL=https://dev-lpsaring.babahdigital.net`
 
 ### D) Verifikasi HTTPS
-1. Pastikan DNS `lpsaring.babahdigital.net` sudah **CNAME** ke tunnel.
+1. Pastikan DNS `dev-lpsaring.babahdigital.net` sudah **CNAME** ke tunnel.
 2. Jalankan stack + cloudflared.
 3. Cek:
-  - `https://lpsaring.babahdigital.net/`
-  - `https://lpsaring.babahdigital.net/api/ping`
+  - `https://dev-lpsaring.babahdigital.net/`
+  - `https://dev-lpsaring.babahdigital.net/api/ping`
 
   ## 10) Ringkasan Pekerjaan & Masalah (Sesi Ini)
   Bagian ini merangkum perubahan yang sudah dilakukan, masalah yang muncul, dan bagaimana cara menyelesaikannya.
@@ -416,9 +451,8 @@ Untuk **development**, gunakan `.env` (root project):
   - Tambah setup frontend testing: Vitest config, smoke test util formatters, dan script `test` + `test:watch`.
   - Perbaikan derivasi HMR di Nuxt agar mengikuti `NUXT_PUBLIC_APP_BASE_URL` (HTTP -> `ws`, HTTPS -> `wss`).
   - Rapikan UI halaman `/login` dan `/captive` agar konsisten dengan layout auth Vuetify.
-  - Dokumentasi dev hybrid diperbarui (frontend di host, backend + nginx di Docker) dan checklist testing.
+  - Dokumentasi development diperbarui dan checklist testing.
   - Penyesuaian `.env` untuk mode lokal (HTTP, `localhost`/`lpsaring.local`).
-  - Nginx dev diarahkan ke host dev server (`app.dev.conf`) dan dependensi frontend container dihapus dari `depends_on`.
 
   ### 10.2) Masalah yang Dihadapi
   - 504 saat memuat asset Nuxt/Vite (`/_nuxt/*`).
@@ -428,17 +462,12 @@ Untuk **development**, gunakan `.env` (root project):
   - Port 3010 sempat dipakai proses lain.
 
   ### 10.3) Penyelesaian
-  - Pastikan dev server Nuxt berjalan di host: `pnpm run dev:host` (bind `0.0.0.0:3010`).
   - Konfigurasi HMR mengikuti `NUXT_PUBLIC_APP_BASE_URL` dan `.env.local` (HTTP -> `ws`).
-  - Ubah `NUXT_INTERNAL_API_BASE_URL` ke `http://localhost:5010/api` untuk host dev.
-  - Nginx dev proxy ke `host.docker.internal:3010` melalui `app.dev.conf`.
-  - Restart Nginx dengan override dev: `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d nginx`.
   - Bersihkan cache Nuxt/Vite (`.nuxt`, `.output`, `.vite`) saat perlu.
   - Hentikan proses pemakai port 3010 dan restart dev server.
 
   ### 10.4) Catatan Verifikasi
   - Cek `_nuxt` dari host: `curl -I http://localhost:3010/_nuxt/`.
-  - Cek dari Nginx container: `docker exec hotspot_nginx_proxy sh -c "wget -S --spider -T 5 http://host.docker.internal:3010/_nuxt/"`.
   - Pastikan browser membuka `http://lpsaring.local` (bukan HTTPS) untuk menghindari `wss`.
 
 ### D) Update .env/.env.prod
@@ -487,7 +516,7 @@ Set variabel agar URL publik konsisten dengan HTTPS:
 - DNS/route portal tidak konsisten (sebaiknya pakai IP langsung saat testing).
 
 **Checklist perbaikan**:
-1) Walled‑Garden allow **dst-address=IP portal** (contoh 10.0.0.6) dan/atau **dst-host=dev.sobigidul.com**.
+1) Walled‑Garden allow **dst-address=IP portal** (contoh 10.0.0.6) dan/atau **dst-host=dev-lpsaring.babahdigital.net**.
 2) Pastikan akses portal pakai **http://IP/captive** (hindari HTTPS).
 3) Pastikan file `login.html` di MikroTik sudah versi terbaru.
 
@@ -501,15 +530,37 @@ Full test otomatis menggunakan kombinasi test backend + verifikasi endpoint utam
 
 ### 12.1 Prasyarat
 - Docker Desktop aktif.
-- File environment sudah diisi (.env root, backend/.env, frontend/.env).
-- WhatsApp gateway dan MikroTik API sudah dikonfigurasi (opsional untuk simulasi penuh).
+- File environment sudah diisi:
+  - Root `.env` (Compose-only: DB_*)
+  - Root `.env.public` (dev public URL + `NUXT_PUBLIC_*`)
+  - (Opsional) `backend/.env.local` jika butuh secrets/override lokal
+
+Catatan:
+- WhatsApp gateway dan MikroTik API bersifat opsional; jika belum dikonfigurasi, jalankan simulasi dengan `-CleanupAddressList:$false`.
 
 ### 12.2 Menjalankan Full Test (Windows / PowerShell)
 Jalankan dari root proyek:
+- `docker compose up -d`
 - `docker compose exec -T backend pytest`
 
+Menjalankan simulasi end-to-end (disarankan):
+
+- Mode aman (isolated, tidak mengganggu stack dev yang melayani `dev-lpsaring...`):
+  - `powershell -ExecutionPolicy Bypass -File .\scripts\simulate_end_to_end.ps1 -UseIsolatedCompose $true -FreshStart $true -CleanupAddressList $false -RunKomandanFlow $false`
+  - Script akan menjalankan stack E2E terpisah via `docker-compose.e2e.yml` dan otomatis memakai `BaseUrl=http://localhost:8088` jika `-BaseUrl` tidak diisi.
+
+- Mode legacy (TIDAK disarankan; memakai stack dev yang sama):
+  - `powershell -ExecutionPolicy Bypass -File .\scripts\simulate_end_to_end.ps1 -UseIsolatedCompose $false -BaseUrl http://localhost -FreshStart $true -CleanupAddressList $false -RunKomandanFlow $false`
+
+Catatan parameter boolean:
+- Bisa pakai `$true/$false` (PowerShell) atau `1/0` (mis. saat dipanggil dari shell lain).
+
 Jika perlu menyesuaikan URL atau nomor:
-- `curl -I http://localhost:80`
+- `curl -I http://localhost:8088`
+
+Catatan domain `dev-lpsaring.babahdigital.net`:
+- Domain itu biasanya di-serve melalui Cloudflare Tunnel dari stack dev.
+- Saat E2E berjalan di mode isolated, ia tidak (dan sebaiknya tidak) mengambil alih tunnel/domain tersebut.
 
 Parameter yang sering disesuaikan:
 - `BaseUrl`: basis URL untuk API dan frontend (script akan memisahkan API vs frontend jika perlu).
@@ -524,7 +575,7 @@ Parameter yang sering disesuaikan:
 2) Menunggu backend siap (`/api/ping`) dan frontend siap (`/`).
 3) Menjalankan migrasi database (`flask db upgrade`) bila diperlukan.
 4) Menjalankan test backend (`pytest`) dan lint backend (`ruff check`).
-5) Menjalankan lint frontend (`pnpm run lint`) dan typecheck (`pnpm run typecheck`).
+5) Menjalankan lint frontend (source of truth di container): `docker compose exec frontend pnpm run lint`.
 6) Verifikasi endpoint utama melalui Nginx (`/`, `/api/ping`, captive path).
 
 ### 12.4 Cara Validasi Hasil

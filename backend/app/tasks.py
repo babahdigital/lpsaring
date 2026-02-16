@@ -2,8 +2,6 @@
 import logging
 import json
 from datetime import datetime, timezone as dt_timezone
-# import os # Baris ini tidak lagi diperlukan jika kita mengimpor 'environ' secara langsung
-from os import environ # <-- Mengimpor 'environ' secara eksplisit dari modul 'os'
 
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_with_pdf, send_whatsapp_message
 from app.services.hotspot_sync_service import sync_hotspot_usage_and_profiles, cleanup_inactive_users
@@ -57,7 +55,7 @@ def send_whatsapp_invoice_task(self, recipient_number: str, caption: str, pdf_ur
     # Ini memastikan current_app tersedia untuk semua fungsi yang dipanggil dalam task
     # yang membutuhkan konteks aplikasi (misalnya, mengakses app.config)
     # environ.get sekarang akan berfungsi karena 'environ' telah diimpor secara langsung.
-    app = create_app(config_name=environ.get('FLASK_CONFIG', 'default')) 
+    app = create_app()
     
     with app.app_context():
         logger.info(f"Celery Task: Memulai pengiriman WhatsApp dengan PDF ke {recipient_number} untuk URL: {pdf_url}. Request ID: {request_id}")
@@ -102,7 +100,7 @@ def send_whatsapp_invoice_task(self, recipient_number: str, caption: str, pdf_ur
     retry_kwargs={"max_retries": 2},
 )
 def sync_hotspot_usage_task(self):
-    app = create_app(config_name=environ.get('FLASK_CONFIG', 'default'))
+    app = create_app()
     with app.app_context():
         logger.info("Celery Task: Memulai sinkronisasi kuota dan profil hotspot.")
         try:
@@ -137,7 +135,7 @@ def sync_hotspot_usage_task(self):
     retry_kwargs={"max_retries": 2},
 )
 def cleanup_inactive_users_task(self):
-    app = create_app(config_name=environ.get('FLASK_CONFIG', 'default'))
+    app = create_app()
     with app.app_context():
         logger.info("Celery Task: Memulai pembersihan pengguna tidak aktif.")
         try:
@@ -159,7 +157,7 @@ def cleanup_inactive_users_task(self):
     retry_kwargs={"max_retries": 2},
 )
 def sync_walled_garden_task(self):
-    app = create_app(config_name=environ.get('FLASK_CONFIG', 'default'))
+    app = create_app()
     with app.app_context():
         logger.info("Celery Task: Memulai sinkronisasi walled-garden.")
         try:

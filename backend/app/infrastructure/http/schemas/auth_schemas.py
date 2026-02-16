@@ -4,7 +4,7 @@ from typing import Optional, List, Dict, Any
 import uuid
 
 # Impor fungsi normalisasi dari helper terpusat
-from app.utils.formatters import normalize_to_local
+from app.utils.formatters import normalize_to_e164
 
 TAMPING_TYPES = [
     "Tamping luar",
@@ -28,8 +28,8 @@ def validate_phone_number(v: str) -> str:
     if not v:
         raise ValueError("Nomor telepon tidak boleh kosong.")
     try:
-        # Normalisasi ke format lokal 08xxx
-        return normalize_to_local(v)
+        # Normalisasi ke format E.164 (mendukung +<kodeNegara>...)
+        return normalize_to_e164(v)
     except ValueError as e:
         # Teruskan pesan error dari normalizer
         raise ValueError(str(e))

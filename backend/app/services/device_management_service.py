@@ -27,6 +27,15 @@ from app.services.access_policy_service import resolve_allowed_binding_type_for_
 logger = logging.getLogger(__name__)
 
 
+def _is_mikrotik_operations_enabled() -> bool:
+    try:
+        raw = settings_service.get_setting('ENABLE_MIKROTIK_OPERATIONS', 'True')
+        return str(raw or '').strip().lower() in {'true', '1', 't', 'yes'}
+    except Exception:
+        # fail-open: kalau settings service bermasalah jangan diam-diam mematikan MikroTik
+        return True
+
+
 def _get_settings() -> Dict[str, Any]:
     return {
         'ip_binding_enabled': settings_service.get_setting('IP_BINDING_ENABLED', 'True') == 'True',
@@ -64,6 +73,9 @@ def _ensure_ip_binding(
 ) -> None:
     if not mac_address:
         return
+    if not _is_mikrotik_operations_enabled():
+        logger.info("MikroTik ops disabled: skip ip-binding upsert")
+        return
     with get_mikrotik_connection() as api:
         if not api:
             logger.warning("Tidak bisa konek MikroTik untuk ip-binding")
@@ -81,6 +93,9 @@ def _ensure_ip_binding(
 def _ensure_blocked_address_list(ip_address: Optional[str], comment: str) -> None:
     if not ip_address:
         return
+    if not _is_mikrotik_operations_enabled():
+        logger.info("MikroTik ops disabled: skip address-list blocked upsert")
+        return
     list_blocked = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_BLOCKED', 'blocked') or 'blocked'
     with get_mikrotik_connection() as api:
         if not api:
@@ -91,6 +106,9 @@ def _ensure_blocked_address_list(ip_address: Optional[str], comment: str) -> Non
 
 def _remove_blocked_address_list(ip_address: Optional[str]) -> None:
     if not ip_address:
+        return
+    if not _is_mikrotik_operations_enabled():
+        logger.info("MikroTik ops disabled: skip address-list blocked remove")
         return
     list_blocked = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_BLOCKED', 'blocked') or 'blocked'
     with get_mikrotik_connection() as api:
@@ -103,6 +121,9 @@ def _remove_blocked_address_list(ip_address: Optional[str]) -> None:
 def _remove_ip_binding(mac_address: str, server: Optional[str]) -> None:
     if not mac_address:
         return
+    if not _is_mikrotik_operations_enabled():
+        logger.info("MikroTik ops disabled: skip ip-binding remove")
+        return
     with get_mikrotik_connection() as api:
         if not api:
             logger.warning("Tidak bisa konek MikroTik untuk remove ip-binding")
@@ -113,6 +134,8 @@ def _remove_ip_binding(mac_address: str, server: Optional[str]) -> None:
 def resolve_client_mac(client_ip: Optional[str]) -> Tuple[bool, Optional[str], str]:
     if not client_ip:
         return False, None, "IP klien tidak ditemukan"
+    if not _is_mikrotik_operations_enabled():
+        return False, None, "MikroTik operations disabled"
     with get_mikrotik_connection() as api:
         if not api:
             return False, None, "Koneksi MikroTik gagal"
@@ -148,6 +171,9 @@ def _is_client_ip_allowed(client_ip: Optional[str]) -> bool:
 def _resolve_binding_ip(user: User, client_ip: Optional[str]) -> Tuple[Optional[str], str, str]:
     if client_ip and _is_client_ip_allowed(client_ip):
         return client_ip, "client_ip", "IP klien valid"
+
+    if not _is_mikrotik_operations_enabled():
+        return None, "none", "MikroTik operations disabled"
 
     username_08 = format_to_local_phone(user.phone_number)
     with get_mikrotik_connection() as api:

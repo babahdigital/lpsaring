@@ -30,7 +30,6 @@ logs/
 .vscode/
 .idea/
 
-# Docs and tests not required for runtime image
+# Docs not required for runtime image
 docs/
 dev/
-tests/

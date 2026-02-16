@@ -17,7 +17,11 @@
 - Frontend: route di frontend/pages/, layout di frontend/layouts/, state di frontend/store/, composables di frontend/composables/.
 
 ## Konfigurasi & ENV
-- ENV dipisah: root .env (Compose), backend/.env, frontend/.env; template ada di .env.example dan subfolder.
+- ENV dipisah:
+	- Root `.env` = Compose-only (interpolation DB_*, token tunnel)
+	- Root `.env.public` / `.env.public.prod` = frontend (Nuxt) container runtime config
+	- `backend/.env.public` + `backend/.env.local` = backend runtime config (public knobs vs secrets)
+	- `frontend/.env.*` hanya dipakai jika Nuxt dijalankan di luar Docker (opsional)
 - `APP_PUBLIC_BASE_URL` dipakai untuk URL publik (invoice, webhook), wajib HTTPS saat produksi.
 - Settings runtime dibaca lewat `settings_service.get_setting()`; nilai DB kosong akan fallback ke ENV.
 - Mode OTP-only memakai `IP_BINDING_TYPE_ALLOWED=bypassed` sebagai default.
@@ -37,6 +41,10 @@
 - Lihat log: `docker compose logs -f backend|frontend|nginx`.
 - Lint backend: `docker compose exec -T backend ruff check .` (config di backend/ruff.toml).
 - Lint frontend: `docker compose exec frontend pnpm run lint`.
+
+Catatan VS Code (opsional):
+- Boleh jalankan `pnpm install` di host (folder `frontend/`) agar TypeScript/Vue language features terbaca tanpa error di editor.
+- Source of truth untuk lint/typecheck/test tetap dari container.
 
 ## Aturan Wajib Saat Mengubah Kode
 - Jika mengubah file backend (backend/**), WAJIB jalankan: `docker compose exec -T backend ruff check .`.

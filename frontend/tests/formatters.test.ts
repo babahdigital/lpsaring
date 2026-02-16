@@ -11,6 +11,10 @@ describe('formatters', () => {
     expect(normalize_to_e164('081234567890')).toBe('+6281234567890')
     expect(normalize_to_e164('6281234567890')).toBe('+6281234567890')
     expect(normalize_to_e164('+6281234567890')).toBe('+6281234567890')
+    expect(normalize_to_e164('+67512345678')).toBe('+67512345678')
+    expect(normalize_to_e164('67512345678')).toBe('+67512345678')
+    expect(normalize_to_e164('0067512345678')).toBe('+67512345678')
+    expect(normalize_to_e164('+123456789012345')).toBe('+123456789012345')
   })
 
   it('formats to local phone number', () => {
@@ -21,5 +25,6 @@ describe('formatters', () => {
   it('formats for whatsapp links', () => {
     expect(format_for_whatsapp_link('081234567890')).toBe('6281234567890')
     expect(format_for_whatsapp_link('6281234567890')).toBe('6281234567890')
+    expect(format_for_whatsapp_link('+67512345678')).toBe('67512345678')
   })
 })

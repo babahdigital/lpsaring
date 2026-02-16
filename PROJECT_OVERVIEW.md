@@ -29,9 +29,16 @@ Portal hotspot berbasis web untuk manajemen paket, transaksi, dan integrasi pera
 - Development: `docker-compose.yml`
 - Production: `docker-compose.prod.yml`
 
+## Template Environment
+- Root (Compose-only): `.env.example`
+- Frontend dev (public): `.env.public.example` → salin ke `.env.public`
+- Frontend prod (public): `.env.public.prod.example` → salin ke `.env.public.prod`
+- Backend dev public (non-secret): `backend/.env.public.example` → salin ke `backend/.env.public`
+- Backend dev local (secret): `backend/.env.local.example` → salin ke `backend/.env.local`
+- Production runtime (backend + db + celery + tunnel): `.env.prod.example` → salin ke `.env.prod`
+
 Catatan dev terbaru:
-- Frontend Nuxt berjalan di host (port 3010).
-- Backend + Redis + DB + Nginx berjalan di Docker (lihat `docker-compose.dev.yml`).
+- Frontend + backend + db + redis + nginx berjalan via `docker-compose.yml`.
 - ApexCharts di-load secara async saat chart dipakai.
 - Dependensi berat yang tidak dipakai (Tiptap, Chart.js) dihapus.
 - Sinkronisasi kuota memakai `/ip/hotspot/host`, akumulasi monotonic, dan auto-enroll device dari ip-binding.
@@ -40,11 +47,7 @@ Catatan dev terbaru:
 
 ## Dukungan Raspberry Pi (arm64)
 Proyek ini bisa berjalan di Raspberry Pi **64-bit (arm64)**.
-Gunakan file override berikut:
-- [docker-compose.arm64.yml](docker-compose.arm64.yml)
-
-Jalankan dengan:
-- `docker compose -f docker-compose.yml -f docker-compose.arm64.yml up -d`
+Image backend/frontend dipublish sebagai **multi-arch** (amd64 + arm64), jadi tidak perlu file override khusus.
 
 Catatan:
 - **Pi 32-bit (armv7)** tidak direkomendasikan.

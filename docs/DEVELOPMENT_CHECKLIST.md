@@ -14,11 +14,15 @@ Lampiran wajib:
 - [ ] useFetch/useApiFetch di-typed dengan benar.
 
 ## 3) Infrastruktur Dev
-- [ ] .env root, backend/.env, frontend/.env terisi.
+- [ ] Root `.env` (Compose-only) terisi minimal (DB_*; token tunnel opsional).
+- [ ] Root `.env.public` terisi (frontend dev profile).
+- [ ] `backend/.env.public` terisi (backend dev public knobs).
+- [ ] `backend/.env.local` terisi bila butuh secret (DB/MikroTik/Midtrans/WA).
 - [ ] Docker Compose berjalan tanpa error.
 - [ ] /api/ping dan halaman frontend bisa diakses.
-- [ ] Frontend dev server host aktif (port 3010).
-- [ ] `pnpm` terpasang di host dan `pnpm install` sudah dijalankan di `frontend/`.
+- [ ] Service `frontend` berjalan (port 3010) dan Nginx mem-proxy `/` ke `frontend:3010`.
+
+Catatan: jika menjalankan Nuxt di host (opsional), baru butuh `pnpm` di host dan `frontend/.env.*`.
 
 ## 4) Lint & Type Check
 - [ ] Jalankan lint frontend.
