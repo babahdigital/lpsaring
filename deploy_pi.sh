@@ -50,6 +50,7 @@ PI_HOST=""
 PI_PORT="1983"
 SSH_KEY="~/.ssh/id_raspi_ed25519"
 REMOTE_DIR="/opt/lpsaring"
+REMOTE_DIR_WAS_EXPLICIT="false"
 LOCAL_DIR="$PWD"
 SSL_FULLCHAIN=""
 SSL_PRIVKEY=""
@@ -65,7 +66,7 @@ while [[ $# -gt 0 ]]; do
     --user) PI_USER="${2:-}"; shift 2 ;;
     --port) PI_PORT="${2:-}"; shift 2 ;;
     --key) SSH_KEY="${2:-}"; shift 2 ;;
-    --remote-dir) REMOTE_DIR="${2:-}"; shift 2 ;;
+    --remote-dir) REMOTE_DIR="${2:-}"; REMOTE_DIR_WAS_EXPLICIT="true"; shift 2 ;;
     --local-dir) LOCAL_DIR="${2:-}"; shift 2 ;;
     --ssl-fullchain) SSL_FULLCHAIN="${2:-}"; shift 2 ;;
     --ssl-privkey) SSL_PRIVKEY="${2:-}"; shift 2 ;;
@@ -108,6 +109,7 @@ FILES=(
   "docker-compose.prod.yml"
   ".env.prod"
   "infrastructure/nginx/conf.d/app.prod.conf"
+  "infrastructure/cloudflared/Dockerfile"
 )
 
 OPTIONAL_FILES=(
@@ -145,6 +147,13 @@ SSH_TARGET="$PI_USER@$PI_HOST"
 SSH_OPTS=(-p "$PI_PORT" -i "$SSH_KEY_EXPANDED" -o StrictHostKeyChecking=accept-new)
 SCP_OPTS=(-P "$PI_PORT" -i "$SSH_KEY_EXPANDED" -o StrictHostKeyChecking=accept-new)
 
+if [[ "$REMOTE_DIR_WAS_EXPLICIT" == "false" ]]; then
+  # Auto-detect remote directory (legacy installs differ).
+  # Prefer /home/<user>/sobigidul if present, else fall back to /opt/lpsaring.
+  detected_remote_dir=$(ssh "${SSH_OPTS[@]}" "$SSH_TARGET" 'set -e; for d in "$HOME/sobigidul" "/opt/lpsaring" "$HOME/lpsaring"; do if [ -d "$d" ]; then echo "$d"; exit 0; fi; done; echo "/opt/lpsaring"')
+  REMOTE_DIR="$detected_remote_dir"
+fi
+
 echo "==> Target        : $SSH_TARGET:$REMOTE_DIR"
 echo "==> Local dir     : $LOCAL_DIR"
 echo "==> SSH key       : $SSH_KEY_EXPANDED"
@@ -156,6 +165,7 @@ timestamp=$(date +%Y%m%d_%H%M%S)
 remote_prepare_cmd=$(cat <<EOF
 set -e
 mkdir -p "$REMOTE_DIR/infrastructure/nginx/conf.d"
+mkdir -p "$REMOTE_DIR/infrastructure/cloudflared"
 mkdir -p "$REMOTE_DIR/infrastructure/nginx/ssl"
 mkdir -p "$REMOTE_DIR/infrastructure/nginx/logs"
 mkdir -p "$REMOTE_DIR/backend/backups"
@@ -190,6 +200,11 @@ if [[ "$HAS_RSYNC" == "true" ]]; then
     "$LOCAL_DIR/infrastructure/nginx/conf.d/app.prod.conf" \
     "$SSH_TARGET:$REMOTE_DIR/"
 
+  # Needed because docker-compose.prod.yml uses build context ./infrastructure/cloudflared
+  "${rsync_cmd[@]}" \
+    "$LOCAL_DIR/infrastructure/cloudflared/" \
+    "$SSH_TARGET:$REMOTE_DIR/infrastructure/cloudflared/"
+
   if [[ -f "$LOCAL_DIR/.env.public.prod" ]]; then
     "${rsync_cmd[@]}" \
       "$LOCAL_DIR/.env.public.prod" \
@@ -205,6 +220,7 @@ else
       scp "${SCP_OPTS[@]}" "$LOCAL_DIR/.env.public.prod" "$SSH_TARGET:$REMOTE_DIR/"
     fi
     scp "${SCP_OPTS[@]}" "$LOCAL_DIR/infrastructure/nginx/conf.d/app.prod.conf" "$SSH_TARGET:$REMOTE_DIR/infrastructure/nginx/conf.d/"
+    scp -r "${SCP_OPTS[@]}" "$LOCAL_DIR/infrastructure/cloudflared" "$SSH_TARGET:$REMOTE_DIR/infrastructure/"
   fi
 fi
 
