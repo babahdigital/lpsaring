@@ -56,6 +56,7 @@ services:
     env_file:
       - .env.prod
     volumes:
+      - ./.env.prod:/app/.env:ro
       - ./backend/backups:/app/backups
     environment:
       - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
@@ -93,6 +94,8 @@ services:
         max-file: "10"
     env_file:
       - .env.prod
+    volumes:
+      - ./.env.prod:/app/.env:ro
     environment:
       - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     command: >
@@ -121,6 +124,8 @@ services:
         max-file: "10"
     env_file:
       - .env.prod
+    volumes:
+      - ./.env.prod:/app/.env:ro
     environment:
       - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     command: /opt/venv/bin/celery -A app.extensions beat --loglevel=info
