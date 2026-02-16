@@ -62,7 +62,6 @@ services:
       OTP_BYPASS_CODE: "000000"
     volumes:
       - ./backend:/app
-      - font_cache_e2e:/app/.cache
       - backups_e2e:/app/backups
     ports:
       - "5011:5010"
@@ -97,7 +96,6 @@ services:
       - ./backend/.env.${APP_ENV:-local}
     volumes:
       - ./backend:/app
-      - font_cache_e2e:/app/.cache
     command: python -m flask db upgrade
     depends_on:
       db:
@@ -117,7 +115,6 @@ services:
       ENABLE_WHATSAPP_NOTIFICATIONS: "False"
     volumes:
       - ./backend:/app
-      - font_cache_e2e:/app/.cache
     command: celery -A app.extensions.celery_app worker --loglevel=info
     depends_on:
       migrate:
@@ -141,7 +138,6 @@ services:
       ENABLE_WHATSAPP_NOTIFICATIONS: "False"
     volumes:
       - ./backend:/app
-      - font_cache_e2e:/app/.cache
     command: celery -A app.extensions.celery_app beat --loglevel=info
     depends_on:
       migrate:
@@ -215,8 +211,6 @@ volumes:
   postgres_data_e2e:
     driver: local
   redis_data_e2e:
-    driver: local
-  font_cache_e2e:
     driver: local
   backups_e2e:
     driver: local
