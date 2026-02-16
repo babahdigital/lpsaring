@@ -207,6 +207,14 @@ class Config:
     WHATSAPP_SEND_DELAY_MIN_MS = get_env_int('WHATSAPP_SEND_DELAY_MIN_MS', 400)
     WHATSAPP_SEND_DELAY_MAX_MS = get_env_int('WHATSAPP_SEND_DELAY_MAX_MS', 1200)
 
+    # --- Rate limit WhatsApp (best-effort via Redis) ---
+    WHATSAPP_RATE_LIMIT_ENABLED = get_env_bool('WHATSAPP_RATE_LIMIT_ENABLED', 'True')
+    WHATSAPP_RATE_LIMIT_WINDOW_SECONDS = get_env_int('WHATSAPP_RATE_LIMIT_WINDOW_SECONDS', 60)
+    # Maks pesan per nomor per window (default: 3/menit)
+    WHATSAPP_RATE_LIMIT_PER_TARGET = get_env_int('WHATSAPP_RATE_LIMIT_PER_TARGET', 3)
+    # Maks pesan total seluruh sistem per window (default: 120/menit)
+    WHATSAPP_RATE_LIMIT_GLOBAL = get_env_int('WHATSAPP_RATE_LIMIT_GLOBAL', 120)
+
     # --- Konfigurasi MikroTik API ---
     MIKROTIK_HOST = os.environ.get('MIKROTIK_HOST')
     MIKROTIK_USERNAME = os.environ.get('MIKROTIK_USERNAME') or os.environ.get('MIKROTIK_USER')

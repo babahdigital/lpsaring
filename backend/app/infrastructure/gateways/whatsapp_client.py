@@ -2,11 +2,75 @@
 from typing import Optional
 import random
 import time
+from datetime import datetime, timezone
 
 import requests
 from flask import current_app
 
 from app.utils.circuit_breaker import record_failure, record_success, should_allow_call
+
+
+def _check_whatsapp_rate_limit(target_number: str) -> bool:
+    """Best-effort Redis rate limit untuk pengiriman WhatsApp.
+
+    Return True jika boleh kirim, False jika harus ditahan.
+    Jika Redis tidak tersedia, fail-open (boleh kirim).
+    """
+    if not current_app.config.get('WHATSAPP_RATE_LIMIT_ENABLED', True):
+        return True
+
+    redis_client = getattr(current_app, 'redis_client_otp', None)
+    if redis_client is None:
+        return True
+
+    try:
+        now = datetime.now(timezone.utc)
+        window_seconds = int(current_app.config.get('WHATSAPP_RATE_LIMIT_WINDOW_SECONDS', 60))
+        if window_seconds <= 0:
+            window_seconds = 60
+
+        per_target_limit = int(current_app.config.get('WHATSAPP_RATE_LIMIT_PER_TARGET', 3))
+        global_limit = int(current_app.config.get('WHATSAPP_RATE_LIMIT_GLOBAL', 120))
+        if per_target_limit < 0:
+            per_target_limit = 0
+        if global_limit < 0:
+            global_limit = 0
+
+        bucket = int(now.timestamp() // window_seconds)
+        key_global = f"wa:rl:global:{bucket}"
+        key_target = f"wa:rl:target:{target_number}:{bucket}"
+
+        pipe = redis_client.pipeline()
+        pipe.incr(key_global)
+        pipe.expire(key_global, window_seconds * 2)
+        pipe.incr(key_target)
+        pipe.expire(key_target, window_seconds * 2)
+        result = pipe.execute()
+
+        global_count = int(result[0] or 0)
+        target_count = int(result[2] or 0)
+
+        if global_limit and global_count > global_limit:
+            current_app.logger.warning(
+                "WhatsApp rate-limit global hit: count=%s limit=%s window=%ss",
+                global_count,
+                global_limit,
+                window_seconds,
+            )
+            return False
+        if per_target_limit and target_count > per_target_limit:
+            current_app.logger.warning(
+                "WhatsApp rate-limit target hit: target=%s count=%s limit=%s window=%ss",
+                target_number,
+                target_count,
+                per_target_limit,
+                window_seconds,
+            )
+            return False
+        return True
+    except Exception as e:
+        current_app.logger.warning("WhatsApp rate-limit check failed (fail-open): %s", e)
+        return True
 
 def _apply_send_delay() -> None:
     min_ms = int(current_app.config.get('WHATSAPP_SEND_DELAY_MIN_MS', 400))
@@ -84,6 +148,9 @@ def send_whatsapp_message(recipient_number: str, message_body: str) -> bool:
     if not target_number.startswith('62'):
          current_app.logger.error(f"Invalid target number format for Fonnte after processing: {target_number}. Expected '62...'")
          return False
+
+    if not _check_whatsapp_rate_limit(target_number):
+        return False
 
     payload = {
         'target': target_number,
