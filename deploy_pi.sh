@@ -268,7 +268,9 @@ if [[ "$SKIP_HEALTH" == "false" ]]; then
   remote_health_cmd=$(cat <<EOF
 set -e
 cd "$REMOTE_DIR"
-curl -fsS http://localhost/api/ping
+# nginx tidak wajib expose port 80 ke host (produksi bisa full via cloudflared).
+# Jadi health check dilakukan dari dalam container nginx.
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T nginx wget -qO- http://localhost/api/ping
 EOF
 )
 
