@@ -31,6 +31,8 @@ temp
 backend/.env
 frontend/.env
 !.env.example
+!.env.local.example
+!.env.public.example
 
 # Local databases
 *.sqlite
@@ -62,3 +64,5 @@ public/mockServiceWorker.js
 # Env files
 .env*
 !.env.example
+!.env.local.example
+!.env.public.example
