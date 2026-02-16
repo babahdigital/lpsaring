@@ -1,5 +1,6 @@
 import logging
 import re
+import uuid
 from datetime import datetime, timezone as dt_timezone
 from typing import Dict, Optional, Tuple
 
@@ -16,7 +17,7 @@ from app.infrastructure.gateways.mikrotik_client import (
 )
 from app.services.device_management_service import normalize_mac
 from app.services import settings_service
-from app.utils.formatters import format_to_local_phone, get_app_date_time_strings
+from app.utils.formatters import format_to_local_phone, get_app_date_time_strings, get_phone_number_variations
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +68,14 @@ def _find_user_for_address_list_entry(address: str, old_comment: str, ip_to_user
 
     candidate = _extract_user_id_from_comment(old_comment)
     if candidate:
+        coerced_uuid: Optional[uuid.UUID] = None
         try:
-            user = db.session.get(User, candidate)
+            coerced_uuid = uuid.UUID(str(candidate))
+        except Exception:
+            coerced_uuid = None
+
+        try:
+            user = db.session.get(User, coerced_uuid or candidate)
         except Exception:
             user = None
         if user is not None:
@@ -77,9 +84,10 @@ def _find_user_for_address_list_entry(address: str, old_comment: str, ip_to_user
     match = re.search(r'(?:^|[|\s])phone=([^|\s]+)', str(old_comment or ''))
     if match:
         phone_raw = match.group(1).strip()
-        phone_08 = format_to_local_phone(phone_raw) or phone_raw
-        variations = {phone_raw, phone_08}
-        variations.update({phone_raw.replace(' ', ''), phone_08.replace(' ', '')})
+        variations = set(get_phone_number_variations(phone_raw) or [])
+        variations.add(phone_raw)
+        variations.add((format_to_local_phone(phone_raw) or phone_raw))
+        variations = {v.replace(' ', '') for v in variations if v}
         return db.session.query(User).filter(User.phone_number.in_(list(variations))).first()
 
     return None

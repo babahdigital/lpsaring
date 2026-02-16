@@ -258,12 +258,13 @@ def register_test_routes(app: Flask):
     module_log.info("Rute tes '/api/ping' telah didaftarkan.")
 
 def register_commands(app: Flask):
-    from .commands import user_commands, seed_commands, sync_usage_command, sync_mikrotik_comments_command
+    from .commands import user_commands, seed_commands, sync_usage_command, sync_mikrotik_comments_command, sync_mikrotik_access_command
     from .commands.bulk_reset_quota_command import bulk_reset_quota_command
     app.cli.add_command(user_commands.user_cli_bp)
     app.cli.add_command(seed_commands.seed_db_command)
     app.cli.add_command(sync_usage_command.sync_usage_command)
     app.cli.add_command(sync_mikrotik_comments_command.sync_mikrotik_comments_command)
+    app.cli.add_command(sync_mikrotik_access_command.sync_mikrotik_access_command)
     app.cli.add_command(bulk_reset_quota_command)
     module_log.info("Pendaftaran perintah CLI selesai.")
 

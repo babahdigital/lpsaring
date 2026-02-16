@@ -462,6 +462,36 @@ def verify_otp():
             payload = request.form.to_dict() if request.form else None
         if not payload:
             return jsonify(AuthErrorResponseSchema(error="Request body must be JSON.").model_dump()), HTTPStatus.BAD_REQUEST
+
+        # Normalisasi key client identity (captive portal/MikroTik sering memakai variasi key).
+        if isinstance(payload, dict):
+            if not payload.get('client_ip'):
+                payload['client_ip'] = (
+                    payload.get('clientIp')
+                    or payload.get('ip')
+                    or payload.get('client-ip')
+                    or request.args.get('client_ip')
+                    or request.args.get('ip')
+                    or request.args.get('client-ip')
+                )
+            if not payload.get('client_mac'):
+                payload['client_mac'] = (
+                    payload.get('clientMac')
+                    or payload.get('mac')
+                    or payload.get('mac-address')
+                    or payload.get('client-mac')
+                    or request.args.get('client_mac')
+                    or request.args.get('mac')
+                    or request.args.get('mac-address')
+                    or request.args.get('client-mac')
+                )
+            if payload.get('hotspot_login_context') is None:
+                payload['hotspot_login_context'] = (
+                    payload.get('hotspotLoginContext')
+                    or request.args.get('hotspot_login_context')
+                    or request.args.get('hotspotLoginContext')
+                )
+
         data = VerifyOtpRequestSchema.model_validate(payload)
         fail_count = _get_otp_fail_count(data.phone_number)
         max_attempts = int(current_app.config.get('OTP_VERIFY_MAX_ATTEMPTS', 5))
@@ -589,6 +619,29 @@ def auto_login():
         payload = request.get_json(silent=True)
         if payload is None:
             payload = request.form.to_dict() if request.form else {}
+
+        # Normalisasi key client identity (menerima variasi key dari captive portal).
+        if isinstance(payload, dict):
+            if not payload.get('client_ip'):
+                payload['client_ip'] = (
+                    payload.get('clientIp')
+                    or payload.get('ip')
+                    or payload.get('client-ip')
+                    or request.args.get('client_ip')
+                    or request.args.get('ip')
+                    or request.args.get('client-ip')
+                )
+            if not payload.get('client_mac'):
+                payload['client_mac'] = (
+                    payload.get('clientMac')
+                    or payload.get('mac')
+                    or payload.get('mac-address')
+                    or payload.get('client-mac')
+                    or request.args.get('client_mac')
+                    or request.args.get('mac')
+                    or request.args.get('mac-address')
+                    or request.args.get('client-mac')
+                )
 
         client_ip = payload.get('client_ip') if isinstance(payload, dict) else None
         client_mac = payload.get('client_mac') if isinstance(payload, dict) else None

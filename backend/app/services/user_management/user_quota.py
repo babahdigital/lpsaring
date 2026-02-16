@@ -1,8 +1,10 @@
 # backend/app/services/user_management/user_quota.py
 
-from typing import Tuple
+from typing import Any, Tuple
 from datetime import timedelta
 from flask import current_app
+
+from datetime import datetime, timezone as dt_timezone
 
 from app.extensions import db
 from app.infrastructure.db.models import User, UserRole, AdminActionType
@@ -12,6 +14,54 @@ from app.services import settings_service
 # [PERBAIKAN] Impor fungsi `_generate_password` yang hilang dari helper.
 from .helpers import _log_admin_action, _generate_password, _handle_mikrotik_operation
 from app.infrastructure.gateways.mikrotik_client import activate_or_update_hotspot_user
+from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection, get_ip_by_mac, upsert_ip_binding
+from app.services.access_policy_service import resolve_allowed_binding_type_for_user
+from app.services.hotspot_sync_service import sync_address_list_for_single_user
+from app.utils.formatters import get_app_date_time_strings
+
+
+def _sync_ip_binding_for_authorized_devices(user: User, api_conn: Any, source: str) -> None:
+    if not api_conn or not getattr(user, 'devices', None):
+        return
+
+    target_binding_type = resolve_allowed_binding_type_for_user(user)
+    username_08 = format_to_local_phone(getattr(user, 'phone_number', None) or '') or ''
+    now_utc = datetime.now(dt_timezone.utc)
+    date_str, time_str = get_app_date_time_strings(now_utc)
+    server_name = getattr(user, 'mikrotik_server_name', None)
+
+    for device in user.devices:
+        if not getattr(device, 'is_authorized', False):
+            continue
+
+        mac_address = (getattr(device, 'mac_address', None) or '').strip().upper()
+        if not mac_address:
+            continue
+
+        ip_address = getattr(device, 'ip_address', None)
+        if not ip_address:
+            ok_ip, ip_from_mac, _msg = get_ip_by_mac(api_conn, mac_address)
+            if ok_ip and ip_from_mac:
+                ip_address = ip_from_mac
+
+        ok, msg = upsert_ip_binding(
+            api_connection=api_conn,
+            mac_address=mac_address,
+            address=ip_address,
+            server=server_name,
+            binding_type=target_binding_type,
+            comment=(
+                f"authorized|user={username_08}|uid={user.id}|role={user.role.value}"
+                f"|source={source}|date={date_str}|time={time_str}"
+            ),
+        )
+        if not ok:
+            current_app.logger.warning(
+                "Gagal sync ip-binding untuk user %s mac %s: %s",
+                user.id,
+                mac_address,
+                msg,
+            )
 
 def inject_user_quota(user: User, admin_actor: User, mb_to_add: int, days_to_add: int) -> Tuple[bool, str]:
     """
@@ -85,6 +135,27 @@ def inject_user_quota(user: User, admin_actor: User, mb_to_add: int, days_to_add
         return False, f"Gagal sinkronisasi dengan Mikrotik: {mikrotik_msg}"
     
     user.mikrotik_user_exists = True
+
+    # Sinkronisasi akses (address-list + ip-binding type) agar efek inject langsung terasa.
+    try:
+        sync_address_list_for_single_user(user)
+    except Exception as e:
+        current_app.logger.warning(
+            "Gagal sync address-list setelah inject untuk user %s: %s",
+            user.id,
+            e,
+        )
+
+    try:
+        with get_mikrotik_connection() as api_conn:
+            if api_conn:
+                _sync_ip_binding_for_authorized_devices(user, api_conn, source='inject_quota')
+    except Exception as e:
+        current_app.logger.warning(
+            "Gagal sync ip-binding setelah inject untuk user %s: %s",
+            user.id,
+            e,
+        )
 
     # Langkah 5: Catat Log dan Kirim Notifikasi
     _log_admin_action(admin_actor, user, AdminActionType.INJECT_QUOTA, {**action_details, "mikrotik_sync_success": mikrotik_success})
