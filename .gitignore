@@ -141,6 +141,8 @@ backend/backups/
 *.env
 backend/.env.local
 backend/.env.public
+backend/.env.e2e
+frontend/.env.e2e
 dev/
 secrets/
 credentials/
