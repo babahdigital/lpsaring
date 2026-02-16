@@ -152,7 +152,12 @@ def _send_quota_notifications(user: User, remaining_percent: float, remaining_mb
 
     template_key = 'komandan_quota_low' if user.role == UserRole.KOMANDAN else 'user_quota_low'
 
-    thresholds = sorted(_get_thresholds_from_env('QUOTA_NOTIFY_PERCENTAGES', [20, 10, 5]), reverse=True)
+    # Kurangi noise/duplikasi: notifikasi low-quota cukup di level rendah saja.
+    # FUP transition sudah mengirim notifikasi sendiri (contoh: 20%).
+    thresholds = sorted(_get_thresholds_from_env('QUOTA_NOTIFY_PERCENTAGES', [5]), reverse=True)
+    thresholds = [t for t in thresholds if isinstance(t, int) and 0 < t <= 5]
+    if not thresholds:
+        return
     last_level = user.last_quota_notification_level
 
     for threshold in thresholds:

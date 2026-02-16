@@ -22,6 +22,8 @@ Optional:
   --skip-pull                   Skip docker compose pull
   --skip-health                 Skip health check (curl /api/ping)
   --clean                       Run docker compose down -v --remove-orphans before deploy
+  --sync-phones                 After deploy, run phone normalization report (dry-run) inside backend container
+  --sync-phones-apply           After deploy, APPLY phone normalization to DB (aborts on duplicates)
   --allow-placeholders          Allow deploy even if .env.prod still contains CHANGE_ME_* values
   --dry-run                     Show actions without changing remote
   -h, --help                    Show this help
@@ -59,6 +61,8 @@ SKIP_HEALTH="false"
 DO_CLEAN="false"
 ALLOW_PLACEHOLDERS="false"
 DRY_RUN="false"
+SYNC_PHONES="false"
+SYNC_PHONES_APPLY="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -73,6 +77,8 @@ while [[ $# -gt 0 ]]; do
     --skip-pull) SKIP_PULL="true"; shift ;;
     --skip-health) SKIP_HEALTH="true"; shift ;;
     --clean) DO_CLEAN="true"; shift ;;
+    --sync-phones) SYNC_PHONES="true"; shift ;;
+    --sync-phones-apply) SYNC_PHONES_APPLY="true"; shift ;;
     --allow-placeholders) ALLOW_PLACEHOLDERS="true"; shift ;;
     --dry-run) DRY_RUN="true"; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -83,6 +89,11 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# If apply is requested, sync must run.
+if [[ "$SYNC_PHONES_APPLY" == "true" ]]; then
+  SYNC_PHONES="true"
+fi
 
 if [[ -z "$PI_HOST" ]]; then
   echo "ERROR: --host is required" >&2
@@ -160,6 +171,7 @@ echo "==> SSH key       : $SSH_KEY_EXPANDED"
 echo "==> SSH port      : $PI_PORT"
 echo "==> Rsync         : $HAS_RSYNC"
 echo "==> Dry run       : $DRY_RUN"
+echo "==> Sync phones   : $SYNC_PHONES (apply=$SYNC_PHONES_APPLY)"
 
 timestamp=$(date +%Y%m%d_%H%M%S)
 remote_prepare_cmd=$(cat <<EOF
@@ -279,6 +291,35 @@ EOF
   else
     ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "$remote_health_cmd"
     echo "==> Health check OK: /api/ping"
+  fi
+fi
+
+if [[ "$SYNC_PHONES" == "true" ]]; then
+  remote_sync_phones_cmd=$(cat <<EOF
+set -e
+cd "$REMOTE_DIR"
+script="/app/scripts/normalize_phone_numbers.py"
+
+echo "==> Phone sync: starting (apply=$SYNC_PHONES_APPLY)"
+if ! docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend test -f "\$script"; then
+  echo "ERROR: phone sync script not found in backend container: \$script" >&2
+  echo "       Pastikan image babahdigital/sobigidul_backend:latest sudah terbaru (docker compose pull) dan berisi script tersebut." >&2
+  exit 1
+fi
+
+if [ "$SYNC_PHONES_APPLY" = "true" ]; then
+  docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend python "\$script" --apply
+else
+  docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend python "\$script"
+fi
+echo "==> Phone sync: done"
+EOF
+)
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "[DRY-RUN] ssh ${SSH_OPTS[*]} $SSH_TARGET '<sync phones>'"
+  else
+    ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "$remote_sync_phones_cmd"
   fi
 fi
 
