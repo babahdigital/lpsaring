@@ -24,8 +24,9 @@ if (-not (Test-Path $ComposePath)) {
 # Compose E2E pakai APP_ENV untuk memilih env_file.
 $env:APP_ENV = $AppEnv
 
-function Invoke-Compose([string[]]$Args) {
-  $cmd = @("compose", "-f", $ComposePath, "-p", $ComposeProjectName, "--project-directory", $ProjectRoot) + $Args
+function Invoke-Compose([string[]]$ComposeArgs) {
+  # Jangan pakai nama parameter $Args karena bentrok dengan variabel otomatis PowerShell $args.
+  $cmd = @("compose", "-f", $ComposePath, "-p", $ComposeProjectName, "--project-directory", $ProjectRoot) + $ComposeArgs
   & docker @cmd
   if ($LASTEXITCODE -ne 0) {
     throw "docker compose gagal (exit=$LASTEXITCODE): docker $($cmd -join ' ')"
