@@ -16,9 +16,9 @@ services:
     image: postgres:15
     container_name: hotspot_postgres_db_e2e
     environment:
-      POSTGRES_DB: ${DB_NAME:-hotspot_e2e_db}
-      POSTGRES_USER: ${DB_USER:-hotspot_e2e_user}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-hotspot_e2e_password}
+      POSTGRES_DB: hotspot_e2e_db
+      POSTGRES_USER: hotspot_e2e_user
+      POSTGRES_PASSWORD: hotspot_e2e_password
     volumes:
       - postgres_data_e2e:/var/lib/postgresql/data
     networks:
@@ -98,7 +98,7 @@ services:
     volumes:
       - ./backend:/app
       - font_cache_e2e:/app/.cache
-    command: flask db upgrade
+    command: python -m flask db upgrade
     depends_on:
       db:
         condition: service_healthy
