@@ -462,22 +462,6 @@ function handleDelete(user: User) {
     action: async () => await performAction(`/admin/users/${user.id}`, 'DELETE', 'Aksi terhadap pengguna berhasil dilakukan.'),
   })
 }
-function handleResetHotspot(userId: string) {
-  openConfirmDialog({
-    title: 'Reset Password Hotspot',
-    message: 'Password hotspot baru akan dibuat dan dikirim ke pengguna via WhatsApp. Lanjutkan?',
-    color: 'warning',
-    action: async () => await performAction(`/admin/users/${userId}/reset-hotspot-password`, 'POST', 'Password hotspot berhasil direset.'),
-  })
-}
-function handleGenerateAdminPass(userId: string) {
-  openConfirmDialog({
-    title: 'Reset Password Portal',
-    message: 'Password portal baru akan dibuat dan dikirim ke admin via WhatsApp. Lanjutkan?',
-    color: 'info',
-    action: async () => await performAction(`/admin/users/${userId}/generate-admin-password`, 'POST', 'Password portal berhasil direset.'),
-  })
-}
 async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELETE' | 'PUT', successMessage: string, options: { body?: object } = {}, updatedItemId?: string) {
   loading.value = true
   try {
@@ -826,7 +810,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 
     <UserDetailDialog v-model="dialogState.view" :user="selectedUser" :preview-context="selectedUserPreviewContext" />
     <UserAddDialog v-model="dialogState.add" :loading="loading" :available-bloks="availableBloks" :available-kamars="availableKamars" :is-alamat-loading="isAlamatLoading" @save="handleSaveUser" />
-    <UserEditDialog v-if="dialogState.edit === true && editedUser !== null" v-model="dialogState.edit" :user="editedUser" :loading="loading" :available-bloks="availableBloks" :available-kamars="availableKamars" :is-alamat-loading="isAlamatLoading" :mikrotik-options="mikrotikOptions" @save="handleSaveUser" @reset-hotspot="handleResetHotspot" @generate-admin-pass="handleGenerateAdminPass" />
+    <UserEditDialog v-if="dialogState.edit === true && editedUser !== null" v-model="dialogState.edit" :user="editedUser" :loading="loading" :available-bloks="availableBloks" :available-kamars="availableKamars" :is-alamat-loading="isAlamatLoading" :mikrotik-options="mikrotikOptions" @save="handleSaveUser" />
     <UserActionConfirmDialog v-model="dialogState.confirm" :title="confirmProps.title" :message="confirmProps.message" :color="confirmProps.color" :loading="loading" @confirm="confirmProps.action" />
   </div>
 </template>

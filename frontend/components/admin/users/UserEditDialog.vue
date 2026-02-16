@@ -33,7 +33,7 @@ const props = defineProps<{
     }
   }
 }>()
-const emit = defineEmits(['update:modelValue', 'save', 'resetHotspot', 'generateAdminPass'])
+const emit = defineEmits(['update:modelValue', 'save'])
 const { $api } = useNuxtApp()
 const tab = ref('info')
 const { add: showSnackbar } = useSnackbar()
@@ -463,22 +463,6 @@ function onClose() {
         <VDivider />
 
         <VCardActions class="pa-4 d-flex">
-          <div v-if="props.user">
-            <VBtn v-if="isTargetAdminOrSuper !== true && formData.is_active === true" color="warning" variant="text" prepend-icon="tabler-key" @click="$emit('resetHotspot', props.user.id)">
-              Reset Pass Mikrotik
-            </VBtn>
-            <VMenu v-else-if="formData.is_active === true" location="top">
-              <template #activator="{ props: menuProps }">
-                <VBtn color="warning" variant="text" prepend-icon="tabler-key" v-bind="menuProps">
-                  Reset Password
-                </VBtn>
-              </template>
-              <VList>
-                <VListItem title="Password Mikrotik" prepend-icon="tabler-wifi" @click="$emit('resetHotspot', props.user.id)" />
-                <VListItem title="Password Portal" prepend-icon="tabler-shield-lock" @click="$emit('generateAdminPass', props.user.id)" />
-              </VList>
-            </VMenu>
-          </div>
           <VSpacer />
           <VBtn variant="tonal" color="secondary" @click="onClose">
             Batal
