@@ -6,7 +6,6 @@ from flask import Blueprint, request, jsonify, current_app
 from pydantic import ValidationError
 from http import HTTPStatus
 from datetime import datetime, timedelta, timezone as dt_timezone
-from jose import jwt
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 import uuid
