@@ -19,6 +19,17 @@ def test_normalize_to_e164_accepts_local_formats():
     assert normalize_to_e164("+123456789012345") == "+123456789012345"  # 15 digits (E.164 max)
 
 
+def test_normalize_to_e164_accepts_14_digit_id_mobile():
+    # 14 digit lokal (08 + 12 digit) masih valid di batas E.164 (max 15 digit)
+    assert normalize_to_e164("08123456789012") == "+628123456789012"
+
+
+def test_normalize_to_e164_accepts_international_examples():
+    assert normalize_to_e164("+441234567890") == "+441234567890"
+    assert normalize_to_e164("00441234567890") == "+441234567890"
+    assert normalize_to_e164("441234567890") == "+441234567890"
+
+
 def test_normalize_to_e164_rejects_invalid():
     with pytest.raises(ValueError):
         normalize_to_e164("")
@@ -26,6 +37,9 @@ def test_normalize_to_e164_rejects_invalid():
         normalize_to_e164("1234")
     with pytest.raises(ValueError):
         normalize_to_e164("0000000000")
+    with pytest.raises(ValueError):
+        # Awalan 0 non-08 ambigu untuk internasional; harus pakai + / 00
+        normalize_to_e164("02123456789")
 
 
 def test_normalize_to_local():

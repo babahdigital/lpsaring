@@ -94,11 +94,28 @@ def _extract_phone_from_request() -> Optional[str]:
         return request.form.get('phone_number')
     return None
 
+
+def _safe_normalize_phone_for_key(phone_number: str) -> str:
+    """Best-effort phone normalization for rate-limit keys.
+
+    Must never raise (limiter key_func cannot error).
+    """
+    try:
+        return normalize_to_e164(phone_number)
+    except Exception:
+        # fallback: digits-only if possible (avoid bypass via spaces/dashes)
+        digits_only = ''.join(ch for ch in str(phone_number) if ch.isdigit())
+        if digits_only:
+            return digits_only[:24]
+        # keep key stable but short
+        return 'invalid-phone'
+
 def _rate_limit_key_with_phone() -> str:
     client_ip = get_client_ip() or ''
     phone_number = _extract_phone_from_request()
     if phone_number:
-        return f"{client_ip}:{phone_number}"
+        normalized = _safe_normalize_phone_for_key(str(phone_number))
+        return f"{client_ip}:{normalized}"
     return client_ip
 
 def _rate_limit_key_with_ip() -> str:
@@ -292,7 +309,11 @@ def register_user():
         return jsonify(AuthErrorResponseSchema(error="Request body must be JSON.").model_dump()), HTTPStatus.BAD_REQUEST
     try:
         data_input = UserRegisterRequestSchema.model_validate(request.json)
-        normalized_phone_number = data_input.phone_number
+        try:
+            normalized_phone_number = normalize_to_e164(data_input.phone_number)
+        except ValueError as e:
+            return jsonify(AuthErrorResponseSchema(error=str(e)).model_dump()), HTTPStatus.UNPROCESSABLE_ENTITY
+
         phone_variations = get_phone_number_variations(normalized_phone_number)
         if db.session.execute(select(User.id).where(User.phone_number.in_(phone_variations))).scalar_one_or_none():
             return jsonify(AuthErrorResponseSchema(error="Phone number is already registered.").model_dump()), HTTPStatus.CONFLICT
@@ -398,9 +419,16 @@ def request_otp():
         if not payload:
             return jsonify(AuthErrorResponseSchema(error="Request body must be JSON.").model_dump()), HTTPStatus.BAD_REQUEST
         data = RequestOtpRequestSchema.model_validate(payload)
-        if _is_otp_cooldown_active(data.phone_number):
+
+        try:
+            phone_e164 = normalize_to_e164(data.phone_number)
+        except ValueError as e:
+            increment_metric("otp.request.failed")
+            return jsonify(AuthErrorResponseSchema(error=str(e)).model_dump()), HTTPStatus.UNPROCESSABLE_ENTITY
+
+        if _is_otp_cooldown_active(phone_e164):
             return jsonify(AuthErrorResponseSchema(error="Terlalu sering meminta OTP. Silakan coba beberapa saat lagi.").model_dump()), HTTPStatus.TOO_MANY_REQUESTS
-        phone_variations = get_phone_number_variations(data.phone_number)
+        phone_variations = get_phone_number_variations(phone_e164)
         user_for_otp = db.session.execute(select(User).where(User.phone_number.in_(phone_variations))).scalar_one_or_none()
         if not user_for_otp:
             increment_metric("otp.request.failed")
@@ -410,16 +438,16 @@ def request_otp():
             return _build_status_error("inactive", "Login failed. Your account is not active or approved yet."), HTTPStatus.FORBIDDEN
         
         otp_generated = generate_otp()
-        if not store_otp_in_redis(data.phone_number, otp_generated):
+        if not store_otp_in_redis(phone_e164, otp_generated):
             if current_app.config.get('OTP_ALLOW_BYPASS', False):
                 current_app.logger.warning("Redis OTP unavailable; bypass mode enabled.")
             else:
                 increment_metric("otp.request.failed")
                 return jsonify(AuthErrorResponseSchema(error="Failed to process OTP request.").model_dump()), HTTPStatus.INTERNAL_SERVER_ERROR
         
-        send_otp_whatsapp(normalize_to_e164(data.phone_number), otp_generated)
+        send_otp_whatsapp(phone_e164, otp_generated)
 
-        _set_otp_cooldown(data.phone_number)
+        _set_otp_cooldown(phone_e164)
         increment_metric("otp.request.success")
         
         return jsonify(RequestOtpResponseSchema().model_dump()), HTTPStatus.OK
@@ -469,26 +497,33 @@ def verify_otp():
                 )
 
         data = VerifyOtpRequestSchema.model_validate(payload)
-        fail_count = _get_otp_fail_count(data.phone_number)
+
+        try:
+            phone_e164 = normalize_to_e164(data.phone_number)
+        except ValueError as e:
+            increment_metric("otp.verify.failed")
+            return jsonify(AuthErrorResponseSchema(error=str(e)).model_dump()), HTTPStatus.UNPROCESSABLE_ENTITY
+
+        fail_count = _get_otp_fail_count(phone_e164)
         max_attempts = int(current_app.config.get('OTP_VERIFY_MAX_ATTEMPTS', 5))
         if fail_count >= max_attempts:
             increment_metric("otp.verify.failed")
             return jsonify(AuthErrorResponseSchema(error="Terlalu banyak percobaan OTP. Silakan coba lagi nanti.").model_dump()), HTTPStatus.TOO_MANY_REQUESTS
         otp_bypass_code = current_app.config.get('OTP_BYPASS_CODE', '000000')
         bypass_allowed = current_app.config.get('OTP_ALLOW_BYPASS', False)
-        otp_ok = verify_otp_from_redis(data.phone_number, data.otp)
+        otp_ok = verify_otp_from_redis(phone_e164, data.otp)
         if not otp_ok and bypass_allowed and data.otp == otp_bypass_code:
             current_app.logger.warning("OTP bypass digunakan untuk login.")
             otp_ok = True
         if not otp_ok:
-            _increment_otp_fail_count(data.phone_number)
+            _increment_otp_fail_count(phone_e164)
             increment_metric("otp.verify.failed")
             return jsonify(AuthErrorResponseSchema(error="Invalid or expired OTP code.").model_dump()), HTTPStatus.UNAUTHORIZED
 
-        _clear_otp_fail_count(data.phone_number)
+        _clear_otp_fail_count(phone_e164)
         increment_metric("otp.verify.success")
         
-        phone_variations = get_phone_number_variations(data.phone_number)
+        phone_variations = get_phone_number_variations(phone_e164)
         user_to_login = db.session.execute(select(User).where(User.phone_number.in_(phone_variations))).scalar_one_or_none()
         if not user_to_login:
             return jsonify(AuthErrorResponseSchema(error="User not found after OTP verification.").model_dump()), HTTPStatus.INTERNAL_SERVER_ERROR

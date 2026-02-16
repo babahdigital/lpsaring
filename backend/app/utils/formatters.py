@@ -112,6 +112,13 @@ def normalize_to_e164(phone_number: str) -> str:
     
     # Terima berbagai format awal
     if cleaned.startswith('0'):
+        # Untuk dukungan internasional: awalan 0 itu ambigu (tiap negara beda).
+        # Kita hanya dukung format lokal Indonesia untuk nomor seluler 08xxx.
+        if not cleaned.startswith('08'):
+            raise ValueError(
+                "Nomor telepon dengan awalan '0' hanya didukung untuk format Indonesia (08xxx). "
+                "Untuk nomor internasional gunakan format +<kodeNegara><nomor> atau 00<kodeNegara><nomor>."
+            )
         # Format 08xxx -> +628xxx
         e164_number = '+62' + cleaned[1:]
     elif cleaned.startswith('62'):
