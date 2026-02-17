@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from types import SimpleNamespace
 
 from flask import Flask
@@ -87,13 +87,13 @@ class _FakeSnap:
 class _FakeTransaction:
     def __init__(
         self,
-        id,
-        user_id,
-        package_id,
-        midtrans_order_id,
-        amount,
-        status,
-        expiry_time,
+        id=None,
+        user_id=None,
+        package_id=None,
+        midtrans_order_id=None,
+        amount=None,
+        status=None,
+        expiry_time=None,
     ):
         self.id = id
         self.user_id = user_id

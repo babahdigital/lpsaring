@@ -4,7 +4,7 @@
 import uuid
 import datetime
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.infrastructure.db.models import PromoEventType, PromoEventStatus
 
@@ -20,9 +20,10 @@ class PromoEventBaseSchema(BaseModel):
     # --- FIELD BARU UNTUK DURASI DITAMBAHKAN DI SINI ---
     bonus_duration_days: Optional[int] = Field(None, ge=1, description="Durasi masa aktif bonus dalam hari (jika ada).")
 
-    class Config:
-        use_enum_values = True # Mengirim nilai enum sebagai string untuk response JSON
-        from_attributes = True # Membaca data langsung dari objek model SQLAlchemy
+    model_config = ConfigDict(
+        use_enum_values=True,  # Mengirim nilai enum sebagai string untuk response JSON
+        from_attributes=True,  # Membaca data langsung dari objek model SQLAlchemy
+    )
 
 # Skema yang digunakan saat membuat event baru
 class PromoEventCreateSchema(PromoEventBaseSchema):
@@ -47,8 +48,7 @@ class UserInfoSchema(BaseModel):
     id: uuid.UUID
     full_name: str
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 # Skema untuk response data event, termasuk info admin yang membuat
 # Ini akan otomatis mewarisi `bonus_duration_days` dari `PromoEventBaseSchema`
@@ -58,5 +58,4 @@ class PromoEventResponseSchema(PromoEventBaseSchema):
     updated_at: datetime.datetime
     created_by: Optional[UserInfoSchema] = None
 
-    class Config:
-        from_attributes = True # Membaca data langsung dari objek model SQLAlchemy
+    model_config = ConfigDict(from_attributes=True)  # Membaca data langsung dari objek model SQLAlchemy

@@ -2,7 +2,7 @@
 # PENYEMPURNAAN: Membuat skema lebih konsisten dan tangguh
 # sejalan dengan arsitektur aplikasi secara keseluruhan.
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 import uuid
 
 # Impor tipe enum dari model database
@@ -35,11 +35,7 @@ class QuotaRequestResponseSchema(BaseModel):
     request_type: RequestType # Menggunakan tipe Enum langsung
     message: str
 
-    class Config:
-        """
-        Konfigurasi Pydantic untuk skema ini.
-        - from_attributes: Memungkinkan pembuatan skema dari objek model SQLAlchemy.
-        - use_enum_values: Memastikan nilai enum (string) yang dikirim dalam JSON, bukan objek enum.
-        """
-        from_attributes = True
-        use_enum_values = True
+    model_config = ConfigDict(
+        from_attributes=True,
+        use_enum_values=True,
+    )

@@ -1,7 +1,7 @@
 # backend/app/infrastructure/http/schemas/settings_schemas.py
 # --- FILE BARU ---
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, Dict
 
 class SettingSchema(BaseModel):
@@ -11,8 +11,7 @@ class SettingSchema(BaseModel):
     description: Optional[str]
     is_encrypted: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class SettingsUpdateSchema(BaseModel):
     """

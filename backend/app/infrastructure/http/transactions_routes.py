@@ -14,7 +14,7 @@ import midtransclient
 from flask import (
     Blueprint, abort, current_app, jsonify, make_response, render_template, request
 )
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.orm import selectinload
 
 from app.extensions import db
@@ -192,9 +192,8 @@ class _InitiateTransactionResponseSchema(BaseModel):
     transaction_id: uuid.UUID = Field(..., alias='id')
     order_id: str = Field(..., alias='midtrans_order_id')
     redirect_url: Optional[str] = Field(None, alias='snap_redirect_url')
-    
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)
 
 # --- ENDPOINTS ---
 @transactions_bp.route("/initiate", methods=["POST"])

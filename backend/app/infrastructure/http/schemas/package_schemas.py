@@ -1,7 +1,7 @@
 # backend/app/infrastructure/http/schemas/package_schemas.py
 # VERSI: Disesuaikan dengan model Package terbaru.
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from uuid import UUID
 from typing import Optional
 
@@ -23,5 +23,4 @@ class PackagePublic(BaseModel):
     speed_limit_kbps: Optional[int] = None
     is_active: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
