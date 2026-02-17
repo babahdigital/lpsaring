@@ -32,10 +32,10 @@ def validate_indonesian_phone_number(v: Any) -> str:
         raise ValueError(str(e))
 
 class UserBaseSchema(BaseModel):
-    phone_number: str = Field(..., example="+6281234567890")
-    full_name: str = Field(..., example="Nama Lengkap Pengguna", min_length=2, max_length=100)
-    blok: Optional[str] = Field(None, example="A")
-    kamar: Optional[str] = Field(None, example="Kamar_1")
+    phone_number: str = Field(..., examples=["+6281234567890"])
+    full_name: str = Field(..., examples=["Nama Lengkap Pengguna"], min_length=2, max_length=100)
+    blok: Optional[str] = Field(None, examples=["A"])
+    kamar: Optional[str] = Field(None, examples=["Kamar_1"])
     is_tamping: bool = Field(False, description="True jika pengguna tamping")
     tamping_type: Optional[str] = Field(None, description="Jenis tamping jika pengguna tamping")
 
@@ -99,7 +99,7 @@ class UserBaseSchema(BaseModel):
         raise TypeError('Jenis tamping harus berupa string.')
 
 class UserCreateByAdminSchema(UserBaseSchema):
-    role: UserRole = Field(..., example=UserRole.USER)
+    role: UserRole = Field(..., examples=[UserRole.USER])
 
     @field_validator('tamping_type', mode='before')
     @classmethod
