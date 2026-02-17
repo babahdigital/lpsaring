@@ -47,6 +47,12 @@ const notificationTypes: NotificationTypeItem[] = [
     subtitle: 'Notifikasi saat komandan mengajukan permintaan kuota/unlimited.',
     icon: 'tabler-mail-fast',
   },
+  {
+    title: 'Hutang Kuota Melebihi Batas',
+    value: 'QUOTA_DEBT_LIMIT_EXCEEDED',
+    subtitle: 'Notifikasi saat user diblokir karena hutang kuota melewati batas pengaman.',
+    icon: 'tabler-shield-lock',
+  },
 ]
 
 // --- Logika Inti ---

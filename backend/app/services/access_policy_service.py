@@ -115,6 +115,8 @@ def is_hotspot_login_required(user) -> bool:
 
 
 def resolve_allowed_binding_type_for_user(user) -> str:
+    if get_user_access_status(user) == 'blocked':
+        return 'blocked'
     if should_bypass_hotspot_login(user):
         return 'bypassed'
     return 'regular'

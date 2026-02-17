@@ -11,7 +11,17 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.extensions import db
-from app.infrastructure.db.models import User, UserRole, ApprovalStatus, DailyUsageLog, Transaction, UserDevice
+from app.infrastructure.db.models import (
+    User,
+    UserRole,
+    ApprovalStatus,
+    DailyUsageLog,
+    Transaction,
+    UserDevice,
+    Package,
+    NotificationRecipient,
+    NotificationType,
+)
 from app.infrastructure.gateways.mikrotik_client import (
     get_mikrotik_connection,
     get_hotspot_host_usage_map,
@@ -22,12 +32,22 @@ from app.infrastructure.gateways.mikrotik_client import (
     sync_address_list_for_user,
     upsert_address_list_entry,
     remove_address_list_entry,
+    upsert_ip_binding,
 )
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
 from app.services import settings_service
 from app.services.notification_service import get_notification_message
-from app.services.device_management_service import _remove_ip_binding, _remove_blocked_address_list, register_or_update_device
+from app.services.device_management_service import (
+    _remove_ip_binding,
+    _remove_blocked_address_list,
+    register_or_update_device,
+)
 from app.utils.formatters import format_to_local_phone, get_app_date_time_strings, get_app_local_datetime, round_mb
+from app.utils.quota_debt import (
+    compute_debt_mb,
+    estimate_debt_rp_from_cheapest_package,
+    format_rupiah,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -548,6 +568,24 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
     today = get_app_local_datetime().date()
     redis_client = _get_redis_client()
 
+    debt_limit_mb = settings_service.get_setting_as_int('QUOTA_DEBT_LIMIT_MB', 0)
+
+    cheapest_pkg = None
+    try:
+        cheapest_pkg = db.session.execute(
+            select(Package)
+            .where(Package.is_active.is_(True))
+            .where(Package.data_quota_gb > 0)
+            .order_by(Package.price.asc())
+            .limit(1)
+        ).scalar_one_or_none()
+    except Exception:
+        cheapest_pkg = None
+
+    cheapest_pkg_price = int(cheapest_pkg.price) if cheapest_pkg and cheapest_pkg.price is not None else None
+    cheapest_pkg_quota_gb = float(cheapest_pkg.data_quota_gb) if cheapest_pkg and cheapest_pkg.data_quota_gb is not None else None
+    cheapest_pkg_name = str(cheapest_pkg.name) if cheapest_pkg and cheapest_pkg.name else None
+
     with get_mikrotik_connection() as api:
         if not api:
             logger.error("Gagal mendapatkan koneksi MikroTik untuk sinkronisasi kuota.")
@@ -604,6 +642,101 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                         counters['updated_usage'] += 1
 
                 remaining_mb, remaining_percent = _calculate_remaining(user)
+                debt_mb = compute_debt_mb(float(user.total_quota_purchased_mb or 0.0), float(user.total_quota_used_mb or 0.0))
+
+                if debt_limit_mb > 0 and debt_mb >= float(debt_limit_mb):
+                    if not bool(user.is_blocked):
+                        now_utc = datetime.now(dt_timezone.utc)
+                        user.is_blocked = True
+                        estimate = estimate_debt_rp_from_cheapest_package(
+                            debt_mb=debt_mb,
+                            cheapest_package_price_rp=cheapest_pkg_price,
+                            cheapest_package_quota_gb=cheapest_pkg_quota_gb,
+                            cheapest_package_name=cheapest_pkg_name,
+                        )
+                        estimate_rp = estimate.estimated_rp_rounded
+                        estimate_rp_text = format_rupiah(estimate_rp) if isinstance(estimate_rp, int) else '-'
+                        debt_mb_text = f"{round_mb(debt_mb)}"
+
+                        user.blocked_reason = (
+                            f"quota_debt_limit|debt_mb={debt_mb_text}"
+                            + (f"|estimated_rp={estimate_rp}" if isinstance(estimate_rp, int) else "")
+                            + (f"|base_pkg={cheapest_pkg_name}" if cheapest_pkg_name else "")
+                        )
+                        user.blocked_at = now_utc
+
+                        username_08_for_block = username_08
+                        date_str, time_str = get_app_date_time_strings(now_utc)
+
+                        with get_mikrotik_connection() as api2:
+                            if api2:
+                                block_type = settings_service.get_ip_binding_type_setting('IP_BINDING_TYPE_BLOCKED', 'blocked')
+                                for device in (user.devices or []):
+                                    mac = (device.mac_address or '').upper()
+                                    if not mac:
+                                        continue
+                                    upsert_ip_binding(
+                                        api_connection=api2,
+                                        mac_address=mac,
+                                        binding_type=block_type,
+                                        comment=(
+                                            f"blocked|quota-debt-limit|user={username_08_for_block}|uid={user.id}|debt_mb={debt_mb_text}|date={date_str}|time={time_str}"
+                                        ),
+                                    )
+
+                                    if device.ip_address:
+                                        list_blocked = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_BLOCKED', 'blocked') or 'blocked'
+                                        upsert_address_list_entry(
+                                            api_connection=api2,
+                                            address=device.ip_address,
+                                            list_name=list_blocked,
+                                            comment=(
+                                                f"lpsaring|blocked|quota-debt-limit|user={username_08_for_block}|uid={user.id}|debt_mb={debt_mb_text}|date={date_str}|time={time_str}"
+                                            ),
+                                        )
+
+                        if settings_service.get_setting('ENABLE_WHATSAPP_NOTIFICATIONS', 'True') == 'True':
+                            try:
+                                user_msg = get_notification_message(
+                                    'user_quota_debt_blocked',
+                                    {
+                                        'full_name': user.full_name,
+                                        'phone_number': user.phone_number,
+                                        'debt_mb': debt_mb_text,
+                                        'estimated_rp': estimate_rp_text,
+                                        'base_package_name': cheapest_pkg_name or '-',
+                                    },
+                                )
+                                send_whatsapp_message(user.phone_number, user_msg)
+
+                                recipients_query = (
+                                    select(User)
+                                    .join(NotificationRecipient, User.id == NotificationRecipient.admin_user_id)
+                                    .where(
+                                        NotificationRecipient.notification_type == NotificationType.QUOTA_DEBT_LIMIT_EXCEEDED,
+                                        User.is_active,
+                                    )
+                                )
+                                admins = db.session.scalars(recipients_query).all()
+                                if admins:
+                                    admin_msg = get_notification_message(
+                                        'admin_quota_debt_blocked',
+                                        {
+                                            'full_name': user.full_name,
+                                            'phone_number': user.phone_number,
+                                            'debt_mb': debt_mb_text,
+                                            'estimated_rp': estimate_rp_text,
+                                            'base_package_name': cheapest_pkg_name or '-',
+                                        },
+                                    )
+                                    for admin in admins:
+                                        send_whatsapp_message(admin.phone_number, admin_msg)
+                            except Exception:
+                                logger.exception('Gagal kirim notifikasi quota debt limit untuk user %s', user.id)
+
+                    counters['processed'] += 1
+                    _release_sync_lock(redis_client, user.id)
+                    continue
                 now_local = get_app_local_datetime()
                 expiry_local = get_app_local_datetime(user.quota_expiry_date) if user.quota_expiry_date else None
                 is_expired = bool(expiry_local and expiry_local < now_local)

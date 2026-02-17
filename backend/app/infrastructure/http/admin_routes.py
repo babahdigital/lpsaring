@@ -557,7 +557,11 @@ def send_whatsapp_broadcast(current_admin: User):
 @super_admin_required
 def get_notification_recipients(current_admin: User):
     """Mengambil daftar admin dan status langganan mereka untuk tipe notifikasi tertentu."""
-    notification_type_str = request.args.get('type', 'NEW_USER_REGISTRATION')
+    notification_type_str = (
+        request.args.get('notification_type')
+        or request.args.get('type')
+        or 'NEW_USER_REGISTRATION'
+    )
     try:
         notification_type = NotificationType[notification_type_str.upper()]
     except KeyError:
