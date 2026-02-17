@@ -11,6 +11,10 @@ from datetime import datetime
 from app.infrastructure.db.models import UserRole, ApprovalStatus, UserBlok, UserKamar
 # Impor formatter terpusat
 from app.utils.formatters import normalize_to_e164
+from app.infrastructure.http.schemas.auth_schemas import TAMPING_TYPES
+
+
+ALLOWED_TAMPING_TYPES = set(TAMPING_TYPES)
 
 def validate_indonesian_phone_number(v: Any) -> str:
     """
@@ -81,31 +85,35 @@ class UserBaseSchema(BaseModel):
     @field_validator('tamping_type', mode='before')
     @classmethod
     def validate_tamping_type(cls, v: Any) -> Optional[str]:
-        if v is None or v == '':
+        # Catatan:
+        # - Schema ini dipakai untuk response (UserResponseSchema) juga.
+        # - Jangan strict di response karena bisa menyebabkan 500 jika DB punya nilai baru/legacy.
+        # - Validasi allowed dilakukan di schema request (create/update).
+        if v is None:
+            return None
+        if v == '':
             return None
         if isinstance(v, str):
-            allowed = {
-                "Tamping luar",
-                "Tamping AO",
-                "Tamping Pembinaan",
-                "Tamping kunjungan",
-                "Tamping kamtib",
-                "Tamping klinik",
-                "Tamping dapur",
-                "Tamping mesjid",
-                "Tamping p2u",
-                "Tamping BLK",
-                "Tamping kebersihan",
-                "Tamping Humas",
-                "Tamping kebun",
-            }
-            if v in allowed:
-                return v
-            raise ValueError("Jenis tamping tidak valid.")
+            stripped_v = v.strip()
+            return stripped_v if stripped_v else None
         raise TypeError('Jenis tamping harus berupa string.')
 
 class UserCreateByAdminSchema(UserBaseSchema):
     role: UserRole = Field(..., example=UserRole.USER)
+
+    @field_validator('tamping_type', mode='before')
+    @classmethod
+    def validate_tamping_type_allowed(cls, v: Any) -> Optional[str]:
+        if v is None or v == '':
+            return None
+        if isinstance(v, str):
+            stripped_v = v.strip()
+            if not stripped_v:
+                return None
+            if stripped_v in ALLOWED_TAMPING_TYPES:
+                return stripped_v
+            raise ValueError("Jenis tamping tidak valid.")
+        raise TypeError('Jenis tamping harus berupa string.')
 
     @model_validator(mode='after')
     def check_blok_kamar_for_user_role(self) -> 'UserCreateByAdminSchema':
@@ -177,23 +185,11 @@ class UserUpdateByAdminSchema(BaseModel):
         if v is None or v == '':
             return None
         if isinstance(v, str):
-            allowed = {
-                "Tamping luar",
-                "Tamping AO",
-                "Tamping Pembinaan",
-                "Tamping kunjungan",
-                "Tamping kamtib",
-                "Tamping klinik",
-                "Tamping dapur",
-                "Tamping mesjid",
-                "Tamping p2u",
-                "Tamping BLK",
-                "Tamping kebersihan",
-                "Tamping Humas",
-                "Tamping kebun",
-            }
-            if v in allowed:
-                return v
+            stripped_v = v.strip()
+            if not stripped_v:
+                return None
+            if stripped_v in ALLOWED_TAMPING_TYPES:
+                return stripped_v
             raise ValueError("Jenis tamping tidak valid.")
         raise TypeError('Jenis tamping harus berupa string.')
 
@@ -255,6 +251,20 @@ class UserProfileUpdateRequestSchema(BaseModel):
     kamar: Optional[str] = None
     is_tamping: Optional[bool] = None
     tamping_type: Optional[str] = None
+
+    @field_validator('tamping_type', mode='before')
+    @classmethod
+    def validate_tamping_type_allowed(cls, v: Any) -> Optional[str]:
+        if v is None or v == '':
+            return None
+        if isinstance(v, str):
+            stripped_v = v.strip()
+            if not stripped_v:
+                return None
+            if stripped_v in ALLOWED_TAMPING_TYPES:
+                return stripped_v
+            raise ValueError("Jenis tamping tidak valid.")
+        raise TypeError('Jenis tamping harus berupa string.')
 
     @field_validator('blok', 'kamar', mode='before')
     @classmethod
