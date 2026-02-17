@@ -34,8 +34,10 @@ const currentTab = ref<'login' | 'register'>('login')
 const registerFormRef = ref<InstanceType<typeof VForm> | null>(null)
 const regName = ref('')
 const regPhoneNumber = ref('')
+const regRole = ref<'USER' | 'TAMPING' | 'KOMANDAN'>('USER')
 const regBlock = ref<string | null>(null)
 const regKamar = ref<string | null>(null)
+const regTampingType = ref<string | null>(null)
 
 const registerHint = ref<string | null>(null)
 const apiStatus = ref<'ok' | 'degraded' | 'down'>('ok')
@@ -90,6 +92,40 @@ const requiredRule = (v: any) => (v !== null && v !== undefined && v !== '') || 
 
 const blockOptions = Array.from({ length: 6 }, (_, i) => ({ title: `Blok ${String.fromCharCode(65 + i)}`, value: String.fromCharCode(65 + i) }))
 const kamarOptions = Array.from({ length: 6 }, (_, i) => ({ title: `Kamar ${i + 1}`, value: (i + 1).toString() }))
+
+const showAddressFields = computed(() => regRole.value === 'USER')
+const showTampingFields = computed(() => regRole.value === 'TAMPING')
+
+const tampingOptions = [
+  'Tamping luar',
+  'Tamping AO',
+  'Tamping Pembinaan',
+  'Tamping kunjungan',
+  'Tamping kamtib',
+  'Tamping klinik',
+  'Tamping dapur',
+  'Tamping mesjid',
+  'Tamping p2u',
+  'Tamping BLK',
+  'Tamping kebersihan',
+  'Tamping Humas',
+  'Tamping kebun',
+].map(item => ({ title: item, value: item }))
+
+watch(regRole, (newRole) => {
+  if (newRole === 'TAMPING') {
+    regBlock.value = null
+    regKamar.value = null
+  }
+  else if (newRole === 'USER') {
+    regTampingType.value = null
+  }
+  else if (newRole === 'KOMANDAN') {
+    regBlock.value = null
+    regKamar.value = null
+    regTampingType.value = null
+  }
+})
 
 function getQueryValue(key: string): string {
   const value = route.query[key]
@@ -285,11 +321,11 @@ async function handleRegister() {
   const payload = {
     full_name: regName.value,
     phone_number: numberToSend,
-    blok: regBlock.value,
-    kamar: regKamar.value,
-    is_tamping: false,
-    tamping_type: null,
-    register_as_komandan: false,
+    blok: showAddressFields.value ? regBlock.value : null,
+    kamar: showAddressFields.value ? regKamar.value : null,
+    is_tamping: regRole.value === 'TAMPING',
+    tamping_type: regRole.value === 'TAMPING' ? regTampingType.value : null,
+    register_as_komandan: regRole.value === 'KOMANDAN',
   }
 
   const ok = await authStore.register(payload as any)
@@ -533,6 +569,18 @@ watch(() => authStore.message, (newMessage) => {
                 lazy-validation
                 @submit.prevent="handleRegister"
               >
+                <VRadioGroup
+                  v-model="regRole"
+                  inline
+                  label="Daftar sebagai:"
+                  class="mb-4"
+                  :disabled="isSubmitting"
+                >
+                  <VRadio label="User" value="USER" />
+                  <VRadio label="Tamping" value="TAMPING" />
+                  <VRadio label="Komandan" value="KOMANDAN" />
+                </VRadioGroup>
+
                 <AppTextField
                   v-model="regName"
                   label="Nama Lengkap"
@@ -543,26 +591,41 @@ watch(() => authStore.message, (newMessage) => {
                   class="mb-4"
                 />
 
-                <AppSelect
-                  v-model="regBlock"
-                  :items="blockOptions"
-                  label="Blok Tempat Tinggal"
-                  placeholder="Pilih Blok"
-                  prepend-inner-icon="tabler-map-pin"
-                  :rules="[requiredRule]"
-                  :disabled="isSubmitting"
-                  class="mb-4"
-                />
-                <AppSelect
-                  v-model="regKamar"
-                  :items="kamarOptions"
-                  label="Nomor Kamar"
-                  placeholder="Pilih Nomor Kamar"
-                  prepend-inner-icon="tabler-door"
-                  :rules="[requiredRule]"
-                  :disabled="isSubmitting"
-                  class="mb-4"
-                />
+                <div v-show="showTampingFields">
+                  <AppSelect
+                    v-model="regTampingType"
+                    :items="tampingOptions"
+                    label="Jenis Tamping"
+                    placeholder="Pilih Jenis Tamping"
+                    prepend-inner-icon="tabler-building-bank"
+                    :rules="showTampingFields ? [requiredRule] : []"
+                    :disabled="isSubmitting"
+                    class="mb-4"
+                  />
+                </div>
+
+                <div v-show="showAddressFields">
+                  <AppSelect
+                    v-model="regBlock"
+                    :items="blockOptions"
+                    label="Blok Tempat Tinggal"
+                    placeholder="Pilih Blok"
+                    prepend-inner-icon="tabler-map-pin"
+                    :rules="showAddressFields ? [requiredRule] : []"
+                    :disabled="isSubmitting"
+                    class="mb-4"
+                  />
+                  <AppSelect
+                    v-model="regKamar"
+                    :items="kamarOptions"
+                    label="Nomor Kamar"
+                    placeholder="Pilih Nomor Kamar"
+                    prepend-inner-icon="tabler-door"
+                    :rules="showAddressFields ? [requiredRule] : []"
+                    :disabled="isSubmitting"
+                    class="mb-4"
+                  />
+                </div>
 
                 <AppTextField
                   v-model="regPhoneNumber"
