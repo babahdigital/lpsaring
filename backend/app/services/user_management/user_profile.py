@@ -367,16 +367,23 @@ def update_user_by_admin_comprehensive(target_user: User, admin_actor: User, dat
             return False, msg, None
         changes['is_active'] = data['is_active']
 
+    # Note: unblock guard depends on up-to-date quota/unlimited state.
+    # If request includes add_gb/add_days or is_unlimited_user change, apply those first,
+    # then perform unblock so the debt calculation uses the new values.
+    pending_unblock = False
+    pending_unblock_reason = data.get('blocked_reason') or None
+
     if 'is_blocked' in data and data['is_blocked'] != target_user.is_blocked:
-        reason = data.get('blocked_reason') or None
-        success, msg = _handle_user_blocking(target_user, bool(data['is_blocked']), admin_actor, reason)
-        if not success:
-            return False, msg, None
-        changes['is_blocked'] = bool(data['is_blocked'])
-        changes['blocked_reason'] = reason
-        if target_user.is_blocked:
+        should_block = bool(data['is_blocked'])
+        if should_block:
+            success, msg = _handle_user_blocking(target_user, True, admin_actor, pending_unblock_reason)
+            if not success:
+                return False, msg, None
+            changes['is_blocked'] = True
+            changes['blocked_reason'] = pending_unblock_reason
             _log_admin_action(admin_actor, target_user, AdminActionType.BLOCK_USER, changes)
             return True, "Akun pengguna diblokir.", target_user
+        pending_unblock = True
 
     if not target_user.is_active:
         _log_admin_action(admin_actor, target_user, AdminActionType.UPDATE_USER_PROFILE, changes)
@@ -401,6 +408,13 @@ def update_user_by_admin_comprehensive(target_user: User, admin_actor: User, dat
         if not success:
             return False, msg, None
         changes['injected_quota'] = {'gb': add_gb, 'days': add_days}
+
+    if pending_unblock:
+        success, msg = _handle_user_blocking(target_user, False, admin_actor, pending_unblock_reason)
+        if not success:
+            return False, msg, None
+        changes['is_blocked'] = False
+        changes['blocked_reason'] = pending_unblock_reason
 
     if changes:
         _log_admin_action(admin_actor, target_user, AdminActionType.UPDATE_USER_PROFILE, changes)
