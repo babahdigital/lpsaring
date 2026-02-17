@@ -6,6 +6,7 @@ import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useAuthStore } from '@/store/auth'
 // [PERBAIKAN] Impor ini sekarang akan berhasil karena kita sudah membuat filenya.
 import { normalize_to_e164 } from '~/utils/formatters'
+import { TAMPING_OPTION_ITEMS } from '~/utils/constants'
 
 interface FormData {
   full_name: string
@@ -94,21 +95,7 @@ const showAlamatSection = computed(() => formData.role === 'USER' && formData.is
 const showTampingSection = computed(() => formData.role === 'USER' && formData.is_tamping === true)
 const showQuotaFields = computed(() => formData.role === 'USER' || formData.role === 'KOMANDAN')
 
-const tampingOptions = [
-  'Tamping luar',
-  'Tamping AO',
-  'Tamping Pembinaan',
-  'Tamping kunjungan',
-  'Tamping kamtib',
-  'Tamping klinik',
-  'Tamping dapur',
-  'Tamping mesjid',
-  'Tamping p2u',
-  'Tamping BLK',
-  'Tamping kebersihan',
-  'Tamping Humas',
-  'Tamping kebun',
-].map(item => ({ title: item, value: item }))
+const tampingOptions = TAMPING_OPTION_ITEMS
 
 async function onSave() {
   if (!formRef.value)

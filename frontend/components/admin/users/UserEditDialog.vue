@@ -5,6 +5,7 @@ import AppTextField from '@core/components/app-form-elements/AppTextField.vue'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useSnackbar } from '@/composables/useSnackbar'
 import { useAuthStore } from '@/store/auth'
+import { TAMPING_OPTION_ITEMS } from '~/utils/constants'
 
 const props = defineProps<{
   modelValue: boolean
@@ -115,21 +116,7 @@ const isSaveDisabled = computed(() => {
 const isTargetAdminOrSuper = computed(() => formData.role === 'ADMIN' || formData.role === 'SUPER_ADMIN')
 const isBlocked = computed(() => formData.is_blocked === true)
 
-const tampingOptions = [
-  'Tamping luar',
-  'Tamping AO',
-  'Tamping Pembinaan',
-  'Tamping kunjungan',
-  'Tamping kamtib',
-  'Tamping klinik',
-  'Tamping dapur',
-  'Tamping mesjid',
-  'Tamping p2u',
-  'Tamping BLK',
-  'Tamping kebersihan',
-  'Tamping Humas',
-  'Tamping kebun',
-].map(item => ({ title: item, value: item }))
+const tampingOptions = TAMPING_OPTION_ITEMS
 
 const fallbackMikrotikDefaults = {
   server_user: 'srv-user',

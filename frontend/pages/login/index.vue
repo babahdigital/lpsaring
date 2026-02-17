@@ -12,6 +12,7 @@ import { useDisplay } from 'vuetify'
 import { useSnackbar } from '~/composables/useSnackbar'
 import { useAuthStore } from '~/store/auth'
 import { normalize_to_e164 } from '~/utils/formatters'
+import { TAMPING_OPTION_ITEMS } from '~/utils/constants'
 
 definePageMeta({
   layout: 'blank',
@@ -90,22 +91,7 @@ function getQueryValueFromKeys(keys: string[]): string {
 // --- Opsi untuk Select Input ---
 const blockOptions = Array.from({ length: 6 }, (_, i) => ({ title: `Blok ${String.fromCharCode(65 + i)}`, value: String.fromCharCode(65 + i) }))
 const kamarOptions = Array.from({ length: 6 }, (_, i) => ({ title: `Kamar ${i + 1}`, value: (i + 1).toString() }))
-const tampingOptions = [
-  'Tamping luar',
-  'Tamping AO',
-  'Tamping Pembinaan',
-  'Tamping kunjungan',
-  'Tamping kamtib',
-  'Tamping kunci',
-  'Tamping klinik',
-  'Tamping dapur',
-  'Tamping mesjid',
-  'Tamping p2u',
-  'Tamping BLK',
-  'Tamping kebersihan',
-  'Tamping Humas',
-  'Tamping kebun',
-].map(item => ({ title: item, value: item }))
+const tampingOptions = TAMPING_OPTION_ITEMS
 
 // --- Aturan Validasi ---
 const phoneFormatRules = [

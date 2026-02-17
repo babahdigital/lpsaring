@@ -9,6 +9,7 @@ import { useRoute } from 'vue-router'
 import { useSnackbar } from '~/composables/useSnackbar'
 import { useAuthStore } from '~/store/auth'
 import { normalize_to_e164 } from '~/utils/formatters'
+import { TAMPING_OPTION_ITEMS } from '~/utils/constants'
 import { useApiFetch } from '~/composables/useApiFetch'
 
 definePageMeta({
@@ -96,22 +97,7 @@ const kamarOptions = Array.from({ length: 6 }, (_, i) => ({ title: `Kamar ${i + 
 const showAddressFields = computed(() => regRole.value === 'USER')
 const showTampingFields = computed(() => regRole.value === 'TAMPING')
 
-const tampingOptions = [
-  'Tamping luar',
-  'Tamping AO',
-  'Tamping Pembinaan',
-  'Tamping kunjungan',
-  'Tamping kamtib',
-  'Tamping kunci',
-  'Tamping klinik',
-  'Tamping dapur',
-  'Tamping mesjid',
-  'Tamping p2u',
-  'Tamping BLK',
-  'Tamping kebersihan',
-  'Tamping Humas',
-  'Tamping kebun',
-].map(item => ({ title: item, value: item }))
+const tampingOptions = TAMPING_OPTION_ITEMS
 
 watch(regRole, (newRole) => {
   if (newRole === 'TAMPING') {
