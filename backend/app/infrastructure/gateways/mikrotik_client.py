@@ -699,6 +699,29 @@ def upsert_dhcp_static_lease(
     except Exception as e:
         return False, str(e)
 
+
+def remove_dhcp_lease(
+    api_connection: Any,
+    mac_address: str,
+    server: Optional[str] = None,
+) -> Tuple[bool, str]:
+    mac_address = str(mac_address or '').strip().upper()
+    if not mac_address:
+        return False, "MAC address tidak valid"
+    try:
+        resource = api_connection.get_resource('/ip/dhcp-server/lease')
+        query: dict[str, Any] = {'mac-address': mac_address}
+        if server:
+            query['server'] = server
+        leases = resource.get(**query)
+        for lease in leases or []:
+            lease_id = lease.get('id') or lease.get('.id')
+            if lease_id:
+                resource.remove(id=lease_id)
+        return True, "Sukses"
+    except Exception as e:
+        return False, str(e)
+
 def upsert_ip_binding(
     api_connection: Any,
     mac_address: str,

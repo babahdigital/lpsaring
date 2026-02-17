@@ -20,6 +20,7 @@ from app.infrastructure.gateways.mikrotik_client import (
     upsert_ip_binding,
     remove_ip_binding,
     upsert_dhcp_static_lease,
+    remove_dhcp_lease,
     upsert_address_list_entry,
     remove_address_list_entry,
 )
@@ -44,6 +45,7 @@ def _get_settings() -> Dict[str, Any]:
         'ip_binding_type_blocked': settings_service.get_ip_binding_type_setting('IP_BINDING_TYPE_BLOCKED', 'blocked'),
         'ip_binding_fail_open': settings_service.get_setting('IP_BINDING_FAIL_OPEN', 'False') == 'True',
         'dhcp_static_lease_enabled': settings_service.get_setting('MIKROTIK_DHCP_STATIC_LEASE_ENABLED', 'False') == 'True',
+        'device_auto_replace_enabled': settings_service.get_setting('DEVICE_AUTO_REPLACE_ENABLED', 'False') == 'True',
         'max_devices': settings_service.get_setting_as_int('MAX_DEVICES_PER_USER', 3),
         'require_explicit': settings_service.get_setting('REQUIRE_EXPLICIT_DEVICE_AUTH', 'False') == 'True',
         'device_stale_days': settings_service.get_setting_as_int('DEVICE_STALE_DAYS', 30),
@@ -109,6 +111,21 @@ def _ensure_static_dhcp_lease(
         )
         if not ok:
             logger.warning("Gagal upsert DHCP static lease: mac=%s ip=%s msg=%s", mac_address, ip_address, msg)
+
+
+def _remove_dhcp_lease(mac_address: Optional[str], server: Optional[str]) -> None:
+    if not mac_address:
+        return
+    if not _is_mikrotik_operations_enabled():
+        logger.info("MikroTik ops disabled: skip DHCP lease remove")
+        return
+    with get_mikrotik_connection() as api:
+        if not api:
+            logger.warning("Tidak bisa konek MikroTik untuk remove DHCP lease")
+            return
+        ok, msg = remove_dhcp_lease(api_connection=api, mac_address=mac_address, server=server)
+        if not ok:
+            logger.warning("Gagal remove DHCP lease: mac=%s msg=%s", mac_address, msg)
 
 
 def _normalize_mac(mac: str) -> str:
@@ -304,7 +321,8 @@ def register_or_update_device(
     user: User,
     client_ip: Optional[str],
     user_agent: Optional[str],
-    client_mac: Optional[str] = None
+    client_mac: Optional[str] = None,
+    allow_replace: bool = False,
 ) -> Tuple[bool, str, Optional[UserDevice]]:
     settings = _get_settings()
     now = datetime.now(dt_timezone.utc)
@@ -377,20 +395,47 @@ def register_or_update_device(
         db.session.flush()
         total_devices = db.session.scalar(sa.select(sa.func.count(UserDevice.id)).where(UserDevice.user_id == user.id)) or 0
     if total_devices >= settings['max_devices']:
-        username_08 = format_to_local_phone(user.phone_number) or ""
-        if settings['ip_binding_enabled']:
-            _ensure_ip_binding(
-                mac_address=mac_address,
-                ip_address=client_ip,
-                binding_type=settings['ip_binding_type_blocked'],
-                comment=(
-                    f"limit-exceeded|user={username_08}|uid={user.id}|role={user.role.value}"
-                    f"|date={date_str}|time={time_str}"
-                ),
-                server=user.mikrotik_server_name or settings['mikrotik_server_default'],
-            )
-        _ensure_blocked_address_list(client_ip, f"limit-exceeded|user={username_08}|date={date_str}|time={time_str}")
-        return False, "Limit perangkat tercapai", None
+        if allow_replace and settings.get('device_auto_replace_enabled'):
+            devices = db.session.scalars(sa.select(UserDevice).where(UserDevice.user_id == user.id)).all()
+            candidates = [d for d in devices if (d.mac_address or '').upper() != (mac_address or '').upper()]
+            if candidates:
+                candidates.sort(
+                    key=lambda d: (
+                        bool(d.is_authorized),
+                        d.last_seen_at or d.first_seen_at or datetime.min.replace(tzinfo=dt_timezone.utc),
+                    )
+                )
+                evicted = candidates[0]
+
+                try:
+                    if settings['ip_binding_enabled'] and evicted.mac_address:
+                        _remove_ip_binding(evicted.mac_address, user.mikrotik_server_name or settings['mikrotik_server_default'])
+                    _remove_managed_address_lists(evicted.ip_address)
+                    if settings.get('dhcp_static_lease_enabled') and evicted.mac_address:
+                        _remove_dhcp_lease(evicted.mac_address, server=None)
+                except Exception:
+                    logger.warning("Gagal cleanup device yang di-evict: user=%s device=%s", user.id, evicted.id)
+
+                db.session.delete(evicted)
+                db.session.flush()
+
+                total_devices = db.session.scalar(sa.select(sa.func.count(UserDevice.id)).where(UserDevice.user_id == user.id)) or 0
+
+        if total_devices >= settings['max_devices']:
+            username_08 = format_to_local_phone(user.phone_number) or ""
+            if settings['ip_binding_enabled']:
+                _ensure_ip_binding(
+                    mac_address=mac_address,
+                    ip_address=client_ip,
+                    binding_type=settings['ip_binding_type_blocked'],
+                    comment=(
+                        f"limit-exceeded|user={username_08}|uid={user.id}|role={user.role.value}"
+                        f"|date={date_str}|time={time_str}"
+                    ),
+                    server=user.mikrotik_server_name or settings['mikrotik_server_default'],
+                )
+            _ensure_blocked_address_list(client_ip, f"limit-exceeded|user={username_08}|date={date_str}|time={time_str}")
+            return False, "Limit perangkat tercapai", None
 
     is_authorized = not settings['require_explicit']
     device = UserDevice()
@@ -442,7 +487,13 @@ def apply_device_binding_for_login(
             mac_only,
             ip_msg,
         )
-    ok, msg, device = register_or_update_device(user, client_ip, user_agent, client_mac)
+    ok, msg, device = register_or_update_device(
+        user,
+        client_ip,
+        user_agent,
+        client_mac,
+        allow_replace=bypass_explicit_auth,
+    )
     if not ok:
         return False, msg, None
 

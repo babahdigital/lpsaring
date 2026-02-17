@@ -205,7 +205,12 @@ def bind_current_device(current_user_id):
 
     client_ip = get_client_ip()
     user_agent = request.headers.get('User-Agent')
-    ok, msg, _resolved_ip = apply_device_binding_for_login(user, client_ip, user_agent)
+    ok, msg, _resolved_ip = apply_device_binding_for_login(
+        user,
+        client_ip,
+        user_agent,
+        bypass_explicit_auth=True,
+    )
     if not ok:
         return jsonify({"message": msg}), HTTPStatus.FORBIDDEN
 
