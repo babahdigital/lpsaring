@@ -19,6 +19,7 @@ from app.infrastructure.gateways.mikrotik_client import (
     get_ip_by_mac,
     upsert_ip_binding,
     remove_ip_binding,
+    upsert_dhcp_static_lease,
     upsert_address_list_entry,
     remove_address_list_entry,
 )
@@ -42,11 +43,72 @@ def _get_settings() -> Dict[str, Any]:
         'ip_binding_type_allowed': settings_service.get_ip_binding_type_setting('IP_BINDING_TYPE_ALLOWED', 'regular'),
         'ip_binding_type_blocked': settings_service.get_ip_binding_type_setting('IP_BINDING_TYPE_BLOCKED', 'blocked'),
         'ip_binding_fail_open': settings_service.get_setting('IP_BINDING_FAIL_OPEN', 'False') == 'True',
+        'dhcp_static_lease_enabled': settings_service.get_setting('MIKROTIK_DHCP_STATIC_LEASE_ENABLED', 'False') == 'True',
         'max_devices': settings_service.get_setting_as_int('MAX_DEVICES_PER_USER', 3),
         'require_explicit': settings_service.get_setting('REQUIRE_EXPLICIT_DEVICE_AUTH', 'False') == 'True',
         'device_stale_days': settings_service.get_setting_as_int('DEVICE_STALE_DAYS', 30),
         'mikrotik_server_default': settings_service.get_setting('MIKROTIK_DEFAULT_SERVER_USER', 'all'),
     }
+
+
+def _remove_managed_address_lists(ip_address: Optional[str]) -> None:
+    """Hapus IP dari semua address-list yang dikelola aplikasi.
+
+    Ini mengurangi kasus "stale list" saat IP device berubah (DHCP renew/roaming)
+    tapi firewall masih memutus koneksi karena IP lama masih tercatat di list tertentu.
+    """
+    if not ip_address:
+        return
+    if not _is_mikrotik_operations_enabled():
+        logger.info("MikroTik ops disabled: skip managed address-list cleanup")
+        return
+
+    keys = [
+        ('MIKROTIK_ADDRESS_LIST_BLOCKED', 'blocked'),
+        ('MIKROTIK_ADDRESS_LIST_ACTIVE', 'active'),
+        ('MIKROTIK_ADDRESS_LIST_FUP', 'fup'),
+        ('MIKROTIK_ADDRESS_LIST_HABIS', 'habis'),
+        ('MIKROTIK_ADDRESS_LIST_EXPIRED', 'expired'),
+        ('MIKROTIK_ADDRESS_LIST_INACTIVE', 'inactive'),
+    ]
+    list_names = [settings_service.get_setting(k, d) or d for k, d in keys]
+    list_names = [str(x).strip() for x in list_names if str(x or '').strip()]
+
+    with get_mikrotik_connection() as api:
+        if not api:
+            logger.warning("Tidak bisa konek MikroTik untuk cleanup address-list")
+            return
+        for list_name in list_names:
+            try:
+                remove_address_list_entry(api_connection=api, address=ip_address, list_name=list_name)
+            except Exception:
+                logger.info("Gagal remove address-list: ip=%s list=%s", ip_address, list_name)
+
+
+def _ensure_static_dhcp_lease(
+    mac_address: Optional[str],
+    ip_address: Optional[str],
+    comment: str,
+    server: Optional[str],
+) -> None:
+    if not mac_address or not ip_address:
+        return
+    if not _is_mikrotik_operations_enabled():
+        logger.info("MikroTik ops disabled: skip DHCP static lease")
+        return
+    with get_mikrotik_connection() as api:
+        if not api:
+            logger.warning("Tidak bisa konek MikroTik untuk DHCP static lease")
+            return
+        ok, msg = upsert_dhcp_static_lease(
+            api_connection=api,
+            mac_address=mac_address,
+            address=ip_address,
+            comment=comment,
+            server=server,
+        )
+        if not ok:
+            logger.warning("Gagal upsert DHCP static lease: mac=%s ip=%s msg=%s", mac_address, ip_address, msg)
 
 
 def _normalize_mac(mac: str) -> str:
@@ -285,10 +347,15 @@ def register_or_update_device(
     ))
 
     if device:
+        old_ip = device.ip_address
         device.last_seen_at = now
         device.ip_address = client_ip
         device.user_agent = (user_agent or device.user_agent)
         db.session.flush()
+
+        if old_ip and client_ip and str(old_ip).strip() != str(client_ip).strip():
+            _remove_managed_address_lists(str(old_ip))
+
         return True, "Device ditemukan", device
 
     total_devices = db.session.scalar(sa.select(sa.func.count(UserDevice.id)).where(UserDevice.user_id == user.id)) or 0
@@ -303,7 +370,7 @@ def register_or_update_device(
             try:
                 if settings['ip_binding_enabled']:
                     _remove_ip_binding(stale.mac_address, user.mikrotik_server_name or settings['mikrotik_server_default'])
-                _remove_blocked_address_list(stale.ip_address)
+                _remove_managed_address_lists(stale.ip_address)
             except Exception:
                 logger.warning(f"Gagal cleanup stale device {stale.id}")
             db.session.delete(stale)
@@ -424,6 +491,18 @@ def apply_device_binding_for_login(
         )
     _remove_blocked_address_list(device.ip_address)
 
+    if settings.get('dhcp_static_lease_enabled'):
+        username_08 = format_to_local_phone(user.phone_number) or ""
+        _ensure_static_dhcp_lease(
+            mac_address=device.mac_address,
+            ip_address=device.ip_address,
+            comment=(
+                f"lpsaring|static-dhcp|user={username_08}|uid={user.id}"
+                f"|date={date_str}|time={time_str}"
+            ),
+            server=None,
+        )
+
     device.is_authorized = True
     if not device.authorized_at:
         device.authorized_at = datetime.now(dt_timezone.utc)
@@ -437,5 +516,5 @@ def revoke_device(user: User, device: UserDevice) -> None:
     device.deauthorized_at = datetime.now(dt_timezone.utc)
     if settings['ip_binding_enabled']:
         _remove_ip_binding(device.mac_address, user.mikrotik_server_name or settings['mikrotik_server_default'])
-    _remove_blocked_address_list(device.ip_address)
+    _remove_managed_address_lists(device.ip_address)
     db.session.flush()

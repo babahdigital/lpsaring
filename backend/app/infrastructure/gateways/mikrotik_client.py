@@ -633,6 +633,72 @@ def get_ip_by_mac(api_connection: Any, mac_address: str) -> Tuple[bool, Optional
 
     return True, None, "IP tidak ditemukan"
 
+
+def upsert_dhcp_static_lease(
+    api_connection: Any,
+    mac_address: str,
+    address: str,
+    comment: Optional[str] = None,
+    server: Optional[str] = None,
+) -> Tuple[bool, str]:
+    """Buat/perbarui DHCP static lease (MAC -> IP).
+
+    Catatan:
+    - Ini opsional untuk menstabilkan IP supaya address-list berbasis IP tidak mudah stale.
+    - Jika lease yang ditemukan masih dynamic, coba `make-static` dulu.
+    """
+    mac_address = str(mac_address or '').strip().upper()
+    address = str(address or '').strip()
+    if not mac_address:
+        return False, "MAC address tidak valid"
+    if not address:
+        return False, "IP address tidak valid"
+
+    try:
+        resource = api_connection.get_resource('/ip/dhcp-server/lease')
+        leases = resource.get(**{'mac-address': mac_address})
+
+        chosen: Optional[dict] = None
+        if leases:
+            if server:
+                server_norm = str(server).strip()
+                for lease in leases:
+                    if str(lease.get('server') or '').strip() == server_norm:
+                        chosen = lease
+                        break
+            if not chosen:
+                chosen = leases[0]
+
+        if chosen:
+            lease_id = chosen.get('id') or chosen.get('.id')
+            if not lease_id:
+                return False, "Entri DHCP lease tidak memiliki ID"
+
+            is_dynamic = str(chosen.get('dynamic') or '').strip().lower() in {'true', 'yes', '1'}
+            if is_dynamic:
+                try:
+                    resource.call('make-static', {'numbers': lease_id})
+                except Exception as e:
+                    return False, f"Gagal make-static DHCP lease: {e}"
+
+            update_data: dict[str, Any] = {'.id': lease_id, 'address': address}
+            if comment is not None:
+                update_data['comment'] = comment
+            if server:
+                update_data['server'] = server
+            resource.set(**update_data)
+            return True, "Sukses"
+
+        add_data: dict[str, Any] = {'mac-address': mac_address, 'address': address}
+        if comment is not None:
+            add_data['comment'] = comment
+        if server:
+            add_data['server'] = server
+        resource.add(**add_data)
+        return True, "Sukses"
+    except Exception as e:
+        return False, str(e)
+
 def upsert_ip_binding(
     api_connection: Any,
     mac_address: str,
