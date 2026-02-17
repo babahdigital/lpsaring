@@ -129,6 +129,7 @@ docker-compose.override.yml
 backend/celerybeat-schedule
 backend/celerybeat-schedule.*
 backend/backups/
+backend/gunicorn.ctl
 
 # IDE / Editor specific
 .idea/
