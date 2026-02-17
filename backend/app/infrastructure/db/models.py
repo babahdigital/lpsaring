@@ -297,7 +297,10 @@ class NotificationRecipient(db.Model):
     __table_args__ = (UniqueConstraint('admin_user_id', 'notification_type', name='uq_notification_recipient_user_type'), Index('ix_notification_recipients_admin_user_id', 'admin_user_id'), {'extend_existing': True})
     id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
     admin_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('users.id', ondelete="CASCADE"), nullable=False)
-    notification_type: Mapped[NotificationType] = mapped_column(SQLAlchemyEnum(NotificationType, name="notification_type_enum", native_enum=False), nullable=False)
+    notification_type: Mapped[NotificationType] = mapped_column(
+        SQLAlchemyEnum(NotificationType, name="notification_type_enum", native_enum=False, length=64),
+        nullable=False,
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     admin: Mapped["User"] = relationship("User", back_populates="notification_subscriptions")
 
