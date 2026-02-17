@@ -13,7 +13,13 @@ def _match_comment(comment: Optional[str], user_id: uuid.UUID, username_08: str)
     if not comment:
         return False
     text = str(comment)
-    return f"user_id={user_id}" in text or f"phone={username_08}" in text or f"user={user_id}" in text
+    return (
+        f"uid={user_id}" in text
+        or f"user_id={user_id}" in text
+        or f"user={user_id}" in text
+        or f"user={username_08}" in text
+        or f"phone={username_08}" in text
+    )
 
 
 def main() -> int:
