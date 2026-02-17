@@ -1,6 +1,7 @@
 # backend/app/commands/sync_dhcp_leases_command.py
 
 import logging
+import ipaddress
 from datetime import datetime, timezone as dt_timezone
 from typing import Optional
 
@@ -44,6 +45,34 @@ def sync_dhcp_leases_command(limit: int, only_authorized: bool) -> None:
     if not enabled:
         click.echo('MIKROTIK_DHCP_STATIC_LEASE_ENABLED=False (fitur tidak aktif). Tetap bisa dijalankan, tapi disarankan aktifkan agar konsisten.')
 
+    dhcp_server_name = (settings_service.get_setting('MIKROTIK_DHCP_LEASE_SERVER_NAME', '') or '').strip() or None
+
+    # Respect configured client CIDRs to avoid binding leases to non-client subnets.
+    cidrs = []
+    try:
+        from flask import current_app
+        cidrs = current_app.config.get('HOTSPOT_CLIENT_IP_CIDRS', []) or []
+    except Exception:
+        cidrs = []
+
+    networks: list[ipaddress._BaseNetwork] = []
+    for cidr in cidrs:
+        try:
+            networks.append(ipaddress.ip_network(str(cidr), strict=False))
+        except Exception:
+            continue
+
+    def _is_allowed(ip_text: str) -> bool:
+        if not ip_text:
+            return False
+        if not networks:
+            return True
+        try:
+            ip_obj = ipaddress.ip_address(ip_text)
+        except Exception:
+            return False
+        return any(ip_obj in net for net in networks)
+
     where_clause = [UserDevice.mac_address.isnot(None)]
     if only_authorized:
         where_clause.append(UserDevice.is_authorized.is_(True))
@@ -86,6 +115,10 @@ def sync_dhcp_leases_command(limit: int, only_authorized: bool) -> None:
                 skipped_no_ip += 1
                 continue
 
+            if not _is_allowed(ip_from_mac):
+                skipped_no_ip += 1
+                continue
+
             username_08 = format_to_local_phone(user.phone_number) or ''
             comment = (
                 f"lpsaring|static-dhcp|user={username_08}|uid={user.id}"
@@ -97,7 +130,7 @@ def sync_dhcp_leases_command(limit: int, only_authorized: bool) -> None:
                 mac_address=mac,
                 address=ip_from_mac,
                 comment=comment,
-                server=None,
+                server=dhcp_server_name,
             )
             if ok_upsert:
                 synced += 1

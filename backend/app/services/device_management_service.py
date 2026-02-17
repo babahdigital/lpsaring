@@ -45,6 +45,7 @@ def _get_settings() -> Dict[str, Any]:
         'ip_binding_type_blocked': settings_service.get_ip_binding_type_setting('IP_BINDING_TYPE_BLOCKED', 'blocked'),
         'ip_binding_fail_open': settings_service.get_setting('IP_BINDING_FAIL_OPEN', 'False') == 'True',
         'dhcp_static_lease_enabled': settings_service.get_setting('MIKROTIK_DHCP_STATIC_LEASE_ENABLED', 'False') == 'True',
+        'dhcp_lease_server_name': (settings_service.get_setting('MIKROTIK_DHCP_LEASE_SERVER_NAME', '') or '').strip(),
         'device_auto_replace_enabled': settings_service.get_setting('DEVICE_AUTO_REPLACE_ENABLED', 'False') == 'True',
         'max_devices': settings_service.get_setting_as_int('MAX_DEVICES_PER_USER', 3),
         'require_explicit': settings_service.get_setting('REQUIRE_EXPLICIT_DEVICE_AUTH', 'False') == 'True',
@@ -544,6 +545,7 @@ def apply_device_binding_for_login(
 
     if settings.get('dhcp_static_lease_enabled'):
         username_08 = format_to_local_phone(user.phone_number) or ""
+        dhcp_server_name = settings.get('dhcp_lease_server_name') or None
         _ensure_static_dhcp_lease(
             mac_address=device.mac_address,
             ip_address=device.ip_address,
@@ -551,7 +553,7 @@ def apply_device_binding_for_login(
                 f"lpsaring|static-dhcp|user={username_08}|uid={user.id}"
                 f"|date={date_str}|time={time_str}"
             ),
-            server=None,
+            server=dhcp_server_name,
         )
 
     device.is_authorized = True

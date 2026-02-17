@@ -666,7 +666,11 @@ def upsert_dhcp_static_lease(
                     if str(lease.get('server') or '').strip() == server_norm:
                         chosen = lease
                         break
-            if not chosen:
+                # Jika tidak ada lease yang match server, update lease pertama yang ada
+                # (hindari membuat duplikat lease untuk MAC yang sama).
+                if not chosen:
+                    chosen = leases[0]
+            else:
                 chosen = leases[0]
 
         if chosen:
