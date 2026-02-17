@@ -645,8 +645,40 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                 debt_mb = compute_debt_mb(float(user.total_quota_purchased_mb or 0.0), float(user.total_quota_used_mb or 0.0))
 
                 if debt_limit_mb > 0 and debt_mb >= float(debt_limit_mb):
+                    now_utc = datetime.now(dt_timezone.utc)
+                    username_08_for_block = username_08
+                    debt_mb_text = f"{round_mb(debt_mb)}"
+                    date_str, time_str = get_app_date_time_strings(now_utc)
+
+                    # Always enforce MikroTik block (idempotent), even if user already blocked.
+                    if api:
+                        block_type = settings_service.get_ip_binding_type_setting('IP_BINDING_TYPE_BLOCKED', 'blocked')
+                        for device in (user.devices or []):
+                            mac = (device.mac_address or '').upper()
+                            if not mac:
+                                continue
+                            upsert_ip_binding(
+                                api_connection=api,
+                                mac_address=mac,
+                                binding_type=block_type,
+                                comment=(
+                                    f"blocked|quota-debt-limit|user={username_08_for_block}|uid={user.id}|debt_mb={debt_mb_text}|date={date_str}|time={time_str}"
+                                ),
+                            )
+
+                            if device.ip_address:
+                                list_blocked = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_BLOCKED', 'blocked') or 'blocked'
+                                upsert_address_list_entry(
+                                    api_connection=api,
+                                    address=device.ip_address,
+                                    list_name=list_blocked,
+                                    comment=(
+                                        f"lpsaring|blocked|quota-debt-limit|user={username_08_for_block}|uid={user.id}|debt_mb={debt_mb_text}|date={date_str}|time={time_str}"
+                                    ),
+                                )
+
+                    # Only flip DB blocked flags + send notifications once.
                     if not bool(user.is_blocked):
-                        now_utc = datetime.now(dt_timezone.utc)
                         user.is_blocked = True
                         estimate = estimate_debt_rp_from_cheapest_package(
                             debt_mb=debt_mb,
@@ -656,7 +688,6 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                         )
                         estimate_rp = estimate.estimated_rp_rounded
                         estimate_rp_text = format_rupiah(estimate_rp) if isinstance(estimate_rp, int) else '-'
-                        debt_mb_text = f"{round_mb(debt_mb)}"
 
                         user.blocked_reason = (
                             f"quota_debt_limit|debt_mb={debt_mb_text}"
@@ -664,35 +695,6 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                             + (f"|base_pkg={cheapest_pkg_name}" if cheapest_pkg_name else "")
                         )
                         user.blocked_at = now_utc
-
-                        username_08_for_block = username_08
-                        date_str, time_str = get_app_date_time_strings(now_utc)
-
-                        if api:
-                            block_type = settings_service.get_ip_binding_type_setting('IP_BINDING_TYPE_BLOCKED', 'blocked')
-                            for device in (user.devices or []):
-                                mac = (device.mac_address or '').upper()
-                                if not mac:
-                                    continue
-                                upsert_ip_binding(
-                                    api_connection=api,
-                                    mac_address=mac,
-                                    binding_type=block_type,
-                                    comment=(
-                                        f"blocked|quota-debt-limit|user={username_08_for_block}|uid={user.id}|debt_mb={debt_mb_text}|date={date_str}|time={time_str}"
-                                    ),
-                                )
-
-                                if device.ip_address:
-                                    list_blocked = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_BLOCKED', 'blocked') or 'blocked'
-                                    upsert_address_list_entry(
-                                        api_connection=api,
-                                        address=device.ip_address,
-                                        list_name=list_blocked,
-                                        comment=(
-                                            f"lpsaring|blocked|quota-debt-limit|user={username_08_for_block}|uid={user.id}|debt_mb={debt_mb_text}|date={date_str}|time={time_str}"
-                                        ),
-                                    )
 
                         if settings_service.get_setting('ENABLE_WHATSAPP_NOTIFICATIONS', 'True') == 'True':
                             try:
