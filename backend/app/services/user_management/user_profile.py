@@ -684,6 +684,75 @@ def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reas
                     if host_ip:
                         remove_address_list_entry(api_connection=api_connection, address=host_ip, list_name=list_blocked)
 
+            # Ensure user's status list is correct immediately (habis/aktif/fup/expired/inactive)
+            # using IP(s) from hotspot host table (if present).
+            try:
+                list_active = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_ACTIVE', 'active') or 'active'
+                list_fup = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_FUP', 'fup') or 'fup'
+                list_inactive = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_INACTIVE', 'inactive') or 'inactive'
+                list_expired = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_EXPIRED', 'expired') or 'expired'
+                list_habis = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_HABIS', 'habis') or 'habis'
+                fup_threshold = settings_service.get_setting_as_int('QUOTA_FUP_PERCENT', 20)
+
+                purchased_mb = float(user.total_quota_purchased_mb or 0.0)
+                used_mb = float(user.total_quota_used_mb or 0.0)
+                remaining_mb = max(0.0, purchased_mb - used_mb)
+                remaining_percent = 0.0
+                if purchased_mb > 0:
+                    remaining_percent = (remaining_mb / purchased_mb) * 100.0
+
+                now_utc = datetime.now(dt_timezone.utc)
+                is_expired = bool(user.quota_expiry_date and user.quota_expiry_date < now_utc)
+
+                if is_expired:
+                    target_list = list_expired
+                    status_value = 'expired'
+                elif user.is_unlimited_user:
+                    target_list = list_active
+                    status_value = 'unlimited'
+                elif purchased_mb <= 0 and not is_expired:
+                    target_list = list_inactive
+                    status_value = 'inactive'
+                elif remaining_mb <= 0:
+                    target_list = list_habis
+                    status_value = 'habis'
+                elif remaining_percent <= float(fup_threshold):
+                    target_list = list_fup
+                    status_value = 'fup'
+                else:
+                    target_list = list_active
+                    status_value = 'active'
+
+                other_lists = [list_active, list_fup, list_inactive, list_expired, list_habis, list_blocked]
+
+                if ok_host and host_map and macs:
+                    for mac in macs:
+                        host_ip = str(host_map.get(mac, {}).get('address') or '').strip()
+                        if not host_ip:
+                            continue
+                        upsert_address_list_entry(
+                            api_connection=api_connection,
+                            address=host_ip,
+                            list_name=target_list,
+                            comment=(
+                                f"lpsaring|status={status_value}"
+                                f"|user={username_08}"
+                                f"|role={user.role.value}"
+                                f"|source=unblock"
+                                f"|date={date_str}"
+                                f"|time={time_str}"
+                            ),
+                        )
+                        for list_name in other_lists:
+                            if list_name and list_name != target_list:
+                                remove_address_list_entry(
+                                    api_connection=api_connection,
+                                    address=host_ip,
+                                    list_name=list_name,
+                                )
+            except Exception:
+                pass
+
             # Extra cleanup: remove stale blocked entries that reference this user in comment,
             # even if the IP is no longer present in host table.
             try:
