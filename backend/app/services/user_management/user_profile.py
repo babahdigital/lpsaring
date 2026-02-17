@@ -43,6 +43,7 @@ def _resolve_default_server() -> str:
     return (
         settings_service.get_setting('MIKROTIK_DEFAULT_SERVER', None)
         or settings_service.get_setting('MIKROTIK_DEFAULT_SERVER_USER', 'srv-user')
+        or 'srv-user'
     )
 
 
@@ -51,11 +52,12 @@ def _resolve_active_profile() -> str:
         settings_service.get_setting('MIKROTIK_ACTIVE_PROFILE', None)
         or settings_service.get_setting('MIKROTIK_USER_PROFILE', 'user')
         or settings_service.get_setting('MIKROTIK_DEFAULT_PROFILE', 'default')
+        or 'user'
     )
 
 
 def _resolve_unlimited_profile() -> str:
-    return settings_service.get_setting('MIKROTIK_UNLIMITED_PROFILE', 'unlimited')
+    return settings_service.get_setting('MIKROTIK_UNLIMITED_PROFILE', 'unlimited') or 'unlimited'
 
 def _get_active_registration_bonus() -> Optional[PromoEvent]:
     """
@@ -99,20 +101,20 @@ def create_user_by_admin(admin_actor: User, data: Dict[str, Any]) -> Tuple[bool,
                 if not data.get('blok') or not data.get('kamar'):
                     return False, "Blok dan Kamar wajib diisi untuk peran USER.", None
 
-        new_user = User(
-            full_name=data['full_name'],
-            phone_number=phone_number,
-            role=new_role,
-            blok=data.get('blok') if new_role == UserRole.USER and not is_tamping else None,
-            kamar=f"Kamar_{data['kamar']}" if new_role == UserRole.USER and data.get('kamar') and not is_tamping else None,
-            is_tamping=is_tamping if new_role == UserRole.USER else False,
-            tamping_type=tamping_type if new_role == UserRole.USER and is_tamping else None,
-            approval_status=ApprovalStatus.APPROVED,
-            approved_at=datetime.now(dt_timezone.utc),
-            approved_by_id=admin_actor.id,
-            is_active=True,
-            mikrotik_password=_generate_password()
-        )
+        # Instantiate without kwargs to keep type-checkers happy with SQLAlchemy's dynamic init.
+        new_user = User()
+        new_user.full_name = data['full_name']
+        new_user.phone_number = phone_number
+        new_user.role = new_role
+        new_user.blok = data.get('blok') if new_role == UserRole.USER and not is_tamping else None
+        new_user.kamar = f"Kamar_{data['kamar']}" if new_role == UserRole.USER and data.get('kamar') and not is_tamping else None
+        new_user.is_tamping = is_tamping if new_role == UserRole.USER else False
+        new_user.tamping_type = tamping_type if new_role == UserRole.USER and is_tamping else None
+        new_user.approval_status = ApprovalStatus.APPROVED
+        new_user.approved_at = datetime.now(dt_timezone.utc)
+        new_user.approved_by_id = admin_actor.id
+        new_user.is_active = True
+        new_user.mikrotik_password = _generate_password()
 
         add_gb = float(data.get('add_gb') or 0.0)
         add_days = int(data.get('add_days') or 0)
@@ -135,15 +137,15 @@ def create_user_by_admin(admin_actor: User, data: Dict[str, Any]) -> Tuple[bool,
             new_user.mikrotik_server_name = default_server
             new_user.mikrotik_profile_name = unlimited_profile
             new_user.is_unlimited_user = True
-            initial_duration_days = int(settings_service.get_setting('ADMIN_INITIAL_DURATION_DAYS', '365'))
+            initial_duration_days = settings_service.get_setting_as_int('ADMIN_INITIAL_DURATION_DAYS', 365)
             new_user.quota_expiry_date = datetime.now(dt_timezone.utc) + timedelta(days=initial_duration_days)
 
         elif new_role == UserRole.KOMANDAN:
             new_user.mikrotik_server_name = settings_service.get_setting('MIKROTIK_DEFAULT_SERVER_KOMANDAN', 'srv-komandan')
             new_user.mikrotik_profile_name = active_profile
             new_user.is_unlimited_user = False 
-            initial_quota_mb = int(settings_service.get_setting('KOMANDAN_INITIAL_QUOTA_MB', '5120'))
-            initial_duration_days = int(settings_service.get_setting('KOMANDAN_INITIAL_DURATION_DAYS', '30'))
+            initial_quota_mb = settings_service.get_setting_as_int('KOMANDAN_INITIAL_QUOTA_MB', 5120)
+            initial_duration_days = settings_service.get_setting_as_int('KOMANDAN_INITIAL_DURATION_DAYS', 30)
             new_user.total_quota_purchased_mb = initial_quota_mb
             new_user.quota_expiry_date = datetime.now(dt_timezone.utc) + timedelta(days=initial_duration_days)
 
@@ -202,9 +204,9 @@ def create_user_by_admin(admin_actor: User, data: Dict[str, Any]) -> Tuple[bool,
             # Mengubah kunci 'username' -> 'hotspot_username' dan 'password' -> 'hotspot_password'
             # agar sesuai dengan template notifikasi.
             context = {
-                "full_name": new_user.full_name, 
-                "hotspot_username": format_to_local_phone(new_user.phone_number), 
-                "hotspot_password": new_user.mikrotik_password
+                "full_name": new_user.full_name,
+                "hotspot_username": format_to_local_phone(new_user.phone_number) or "",
+                "hotspot_password": new_user.mikrotik_password,
             }
             _send_whatsapp_notification(phone_number, "user_approve_with_password", context)
 
@@ -461,12 +463,12 @@ def _handle_user_activation(user: User, should_be_active: bool, admin: User) -> 
     )
     if success:
         user.mikrotik_user_exists = True
-        list_active = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_ACTIVE', 'active')
-        list_fup = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_FUP', 'fup')
-        list_inactive = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_INACTIVE', 'inactive')
-        list_expired = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_EXPIRED', 'expired')
-        list_habis = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_HABIS', 'habis')
-        list_blocked = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_BLOCKED', 'blocked')
+        list_active = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_ACTIVE', 'active') or 'active'
+        list_fup = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_FUP', 'fup') or 'fup'
+        list_inactive = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_INACTIVE', 'inactive') or 'inactive'
+        list_expired = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_EXPIRED', 'expired') or 'expired'
+        list_habis = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_HABIS', 'habis') or 'habis'
+        list_blocked = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_BLOCKED', 'blocked') or 'blocked'
 
         now = datetime.now(dt_timezone.utc)
         date_str, time_str = get_app_date_time_strings(now)
@@ -517,7 +519,7 @@ def _handle_user_activation(user: User, should_be_active: bool, admin: User) -> 
 
         _handle_mikrotik_operation(
             _sync_inactive_with_fallback,
-            username=format_to_local_phone(user.phone_number),
+            username=(format_to_local_phone(user.phone_number) or user.phone_number or ""),
             target_list=list_inactive,
             other_lists=[list_active, list_fup, list_blocked, list_expired, list_habis],
             comment=comment,
@@ -571,12 +573,12 @@ def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reas
             force_update_profile=True,
         )
         if success:
-            list_blocked = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_BLOCKED', 'blocked')
-            list_active = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_ACTIVE', 'active')
-            list_fup = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_FUP', 'fup')
-            list_inactive = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_INACTIVE', 'inactive')
-            list_expired = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_EXPIRED', 'expired')
-            list_habis = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_HABIS', 'habis')
+            list_blocked = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_BLOCKED', 'blocked') or 'blocked'
+            list_active = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_ACTIVE', 'active') or 'active'
+            list_fup = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_FUP', 'fup') or 'fup'
+            list_inactive = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_INACTIVE', 'inactive') or 'inactive'
+            list_expired = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_EXPIRED', 'expired') or 'expired'
+            list_habis = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_HABIS', 'habis') or 'habis'
 
             now = datetime.now(dt_timezone.utc)
             date_str, time_str = get_app_date_time_strings(now)
@@ -627,7 +629,7 @@ def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reas
 
             _handle_mikrotik_operation(
                 _sync_blocked_with_fallback,
-                username=format_to_local_phone(user.phone_number),
+                username=(format_to_local_phone(user.phone_number) or user.phone_number or ""),
                 target_list=list_blocked,
                 other_lists=[list_active, list_fup, list_inactive, list_expired, list_habis],
                 comment=comment,
@@ -655,7 +657,7 @@ def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reas
             # Remove from blocked list via normal path (if MikroTik can resolve IP from username).
             sync_address_list_for_user(
                 api_connection=api_connection,
-                username=format_to_local_phone(user.phone_number),
+                username=(format_to_local_phone(user.phone_number) or user.phone_number or ""),
                 target_list=None,
                 other_lists=[list_blocked],
                 comment=f"unblocked:{admin.full_name}",
@@ -681,6 +683,22 @@ def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reas
                     host_ip = str(host_map.get(mac, {}).get('address') or '').strip()
                     if host_ip:
                         remove_address_list_entry(api_connection=api_connection, address=host_ip, list_name=list_blocked)
+
+            # Extra cleanup: remove stale blocked entries that reference this user in comment,
+            # even if the IP is no longer present in host table.
+            try:
+                fw_resource = api_connection.get_resource('/ip/firewall/address-list')
+                blocked_rows = fw_resource.get(list=list_blocked)
+                token_uid = f"uid={user.id}"
+                token_user = f"user={username_08}"
+                for row in blocked_rows or []:
+                    c = str(row.get('comment') or '')
+                    if (token_uid in c) or (token_user in c) or (username_08 and username_08 in c):
+                        row_id = row.get('id') or row.get('.id')
+                        if row_id:
+                            fw_resource.remove(id=row_id)
+            except Exception:
+                pass
 
             for mac in macs:
                 upsert_ip_binding(
