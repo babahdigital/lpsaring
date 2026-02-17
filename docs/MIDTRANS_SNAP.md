@@ -96,6 +96,25 @@ Gunakan kartu uji:
 - [ ] Buat endpoint webhook untuk notifikasi transaksi
 - [ ] Set Notification URL & Redirect URLs di Dashboard
 
+## 6) Catatan Produksi Hotspot: Walled-Garden untuk Payment
+Pada hotspot, user dengan status **habis/expired** sering masih diizinkan mengakses:
+- portal/login,
+- banking,
+- payment gateway (Midtrans).
+
+Temuan penting RouterOS:
+- Wildcard seperti `*.domain.tld` **tidak selalu bekerja** untuk address-list/walled-garden host.
+- Untuk mencegah kasus "tombol bayar muter"/Snap tidak muncul, gunakan **allowlist host FQDN eksplisit**.
+
+Checklist ops (hotspot):
+- Pastikan domain Midtrans yang dibutuhkan oleh `snap.js` bisa diakses saat kuota habis.
+- Tambahkan legacy host jika diperlukan:
+	- `veritrans.co.id` (legacy)
+
+Catatan:
+- Daftar host yang dibutuhkan bisa berubah, jadi lakukan uji dari klien dengan kuota habis.
+- Sumber kebenaran perilaku akses habis/expired ada di policy MikroTik (walled-garden + address-list).
+
 ## 5) Referensi Lanjutan
 - Integration Guide: https://docs.midtrans.com/docs/snap-snap-integration-guide
 - Snap Advanced Features: https://docs.midtrans.com/docs/snap-advanced-feature

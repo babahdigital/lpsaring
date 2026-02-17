@@ -9,6 +9,9 @@ Lampiran wajib:
 - Work log terbaru: [WORKLOG_2026-02-17.md](WORKLOG_2026-02-17.md)
 - Work log sebelumnya: [WORKLOG_2026-02-16.md](WORKLOG_2026-02-16.md)
 
+## Runbook MikroTik (wajib dibaca untuk kasus “nyangkut”)
+- [OPERATIONS_MIKROTIK_SYNC.md](OPERATIONS_MIKROTIK_SYNC.md)
+
 ## Refresh-token (session persisten) — catatan deploy produksi
 
 ### Temuan (drift produksi)
@@ -51,6 +54,10 @@ Lampiran wajib:
    - `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`.
 4) Idempotency webhook Midtrans
    - Notifikasi duplikat diblokir via Redis TTL.
+
+5) Quota-debt hard block (cap hutang kuota)
+   - Jika `debt_mb >= QUOTA_DEBT_LIMIT_MB`, sistem melakukan hard-block (ip-binding blocked + address-list blocked) dan mengirim notifikasi WA.
+   - Pengecualian: `is_unlimited_user` dan role `KOMANDAN`.
 
 ## Checklist produksi (yang wajib dipenuhi)
 - HTTPS aktif (TLS termination di Nginx atau upstream).
@@ -113,6 +120,23 @@ P2 (nice-to-have):
 - Uji `CSRF_STRICT_NO_ORIGIN=True` di dev/staging terlebih dahulu.
 - Atur `CSRF_NO_ORIGIN_ALLOWED_IPS` untuk klien non-browser (contoh: MikroTik 10.10.83.1, server 10.10.83.2). Hapus IP host dev di produksi.
 - Gunakan allowlist berbasis CIDR untuk IP container (misalnya `172.16.0.0/12`) agar SSR Nuxt tidak terblokir.
+
+## MikroTik: dua kelas insiden yang paling sering
+1) **Duplikat ip-binding untuk MAC yang sama**
+   - Gejala: DB sudah `unblocked/unlimited`, tapi Winbox masih menunjukkan `type=blocked`.
+   - Akar: ada entry `server=all type=blocked` yang meng-override entry server spesifik.
+   - Mitigasi permanen: gateway `upsert_ip_binding()` sekarang melakukan dedupe konflik `server=all`.
+
+2) **Address-list `klient_blocked` “stale” karena IP berubah**
+   - Gejala: user sudah dibuka, tetapi IP lama masih ada di list blocked.
+   - Akar: address-list berbasis IP (DHCP/roaming).
+   - Mitigasi permanen: saat unblock, backend menghapus entry blocked berbasis token comment `uid=<uuid>` / `user=<08..>`.
+
+## Verifikasi cepat produksi (tanpa asumsi port host)
+Catatan: pada beberapa deployment, port 80 Nginx **tidak dipublish** ke host (hanya internal + cloudflared).
+
+Gunakan healthcheck dari dalam container Nginx:
+- `docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T nginx wget -qO- http://127.0.0.1/api/ping`
 
 ## SOP Recovery Redis & Kuota
 Tujuan: memulihkan sinkronisasi kuota jika Redis restart, data AOF bermasalah, atau `last_bytes` tidak konsisten.

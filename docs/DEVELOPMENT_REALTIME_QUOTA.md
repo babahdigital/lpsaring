@@ -58,6 +58,42 @@ Catatan:
 - Address-list dapat dijadikan sumber visual untuk seleksi manual (mis. hapus user lama), sementara logika hapus otomatis tetap mengikuti DB.
  - Jika sesi aktif tidak tersedia, sistem mencoba fallback ke ip-binding milik user atau IP hasil lookup MAC yang sudah authorized.
 
+## Quota-Debt Hard Block (Cap Hutang Kuota)
+Latar belakang:
+- Dengan kebijakan “kuota habis masih boleh akses banking/pay/WA”, pemakaian bisa terus naik sehingga `used_mb > purchased_mb`.
+- Ini memunculkan **hutang kuota** (debt) yang harus dibatasi.
+
+Definisi:
+- `debt_mb = max(0, used_mb - purchased_mb)`
+- `remaining_mb = max(0, purchased_mb - used_mb)`
+
+Konfigurasi:
+- `QUOTA_DEBT_LIMIT_MB` (int, default 0 = nonaktif)
+
+Perilaku saat `debt_mb >= QUOTA_DEBT_LIMIT_MB`:
+1) Sistem meng-enforce block MikroTik (idempotent):
+   - ip-binding type `blocked` untuk perangkat authorized.
+   - firewall address-list `MIKROTIK_ADDRESS_LIST_BLOCKED` untuk IP perangkat (jika diketahui).
+2) Sistem menandai DB `is_blocked=True` + `blocked_reason=quota_debt_limit|...` (sekali).
+3) Sistem mengirim WhatsApp:
+   - ke user,
+   - dan ke admin yang subscribe `NotificationType.QUOTA_DEBT_LIMIT_EXCEEDED`.
+
+Pengecualian hard block:
+- `is_unlimited_user=True`
+- role `KOMANDAN`
+
+Catatan admin:
+- “Unblock” **tidak membuat debt jadi 0**. Debt hanya turun jika kuota ditambah (inject/beli) atau used di-reset.
+- Endpoint admin menolak unblock jika debt masih >= limit (kecuali unlimited/komandan).
+- Untuk 1 kali aksi “Tambah Kuota + Unblock”, sistem harus apply kuota dulu baru unblock.
+
+Catatan operasional MikroTik:
+- Address-list berbasis IP dapat meninggalkan entry `blocked` yang stale saat IP berubah.
+- Versi backend terbaru melakukan cleanup unblock berbasis token comment `uid=<uuid>`/`user=<08..>` agar stale entry ikut terhapus.
+- Duplikat ip-binding (mis. `server=all type=blocked`) adalah penyebab umum user tetap blocked walau sudah dibuka.
+  Gateway MikroTik sekarang melakukan dedupe konflik ini.
+
 ## IP Binding (Batas Perangkat)
 Untuk membatasi jumlah perangkat per akun, gunakan **/ip/hotspot/ip-binding**:
 - **Mode campuran (rekomendasi saat ini)**: set `IP_BINDING_TYPE_ALLOWED=regular`, lalu atur status yang dibypass melalui `HOTSPOT_BYPASS_STATUSES` (default `['active','fup','unlimited']`).
