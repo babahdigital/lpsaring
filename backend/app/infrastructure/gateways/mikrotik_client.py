@@ -651,10 +651,32 @@ def upsert_ip_binding(
         return False, "MAC address tidak valid"
     try:
         resource = api_connection.get_resource('/ip/hotspot/ip-binding')
-        query = {'mac-address': mac_address}
-        if server:
-            query['server'] = server
-        entries = resource.get(**query)
+        # Ambil semua entry untuk MAC ini untuk menghindari duplikat/konflik.
+        # Kasus paling bermasalah: ada entry server=all dengan type=blocked yang meng-override entry server spesifik.
+        all_entries = resource.get(**{'mac-address': mac_address})
+
+        server_norm = (str(server).strip() if server else '')
+        entries: list[dict[str, Any]] = []
+        conflicts: list[dict[str, Any]] = []
+        for e in all_entries or []:
+            e_server = str(e.get('server') or '').strip()
+
+            # Jika kita sedang menulis untuk server spesifik, hapus semua entry server=all untuk MAC ini.
+            if server_norm and e_server.lower() == 'all':
+                conflicts.append(e)
+                continue
+
+            if not server_norm:
+                entries.append(e)
+            else:
+                if e_server == server_norm:
+                    entries.append(e)
+
+        for entry in conflicts:
+            entry_id = entry.get('id') or entry.get('.id')
+            if entry_id:
+                resource.remove(id=entry_id)
+
         payload = {'mac-address': mac_address, 'type': binding_type, 'disabled': 'false'}
         mac_only = True
         if server:
@@ -663,6 +685,15 @@ def upsert_ip_binding(
             payload['comment'] = comment
 
         if entries:
+            # Jika ada duplikat pada server yang sama, bersihkan agar hanya tersisa satu.
+            if len(entries) > 1:
+                keep = entries[0]
+                for extra in entries[1:]:
+                    extra_id = extra.get('id') or extra.get('.id')
+                    if extra_id:
+                        resource.remove(id=extra_id)
+                entries = [keep]
+
             # Jika entry lama mengunci address, recreate agar jadi MAC-only.
             if mac_only and any(str(e.get('address') or '').strip() for e in entries):
                 for entry in entries:
