@@ -644,7 +644,16 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                 remaining_mb, remaining_percent = _calculate_remaining(user)
                 debt_mb = compute_debt_mb(float(user.total_quota_purchased_mb or 0.0), float(user.total_quota_used_mb or 0.0))
 
-                if debt_limit_mb > 0 and debt_mb >= float(debt_limit_mb):
+                # Quota-debt hard block is NOT applied to:
+                # - unlimited users
+                # - KOMANDAN role
+                if bool(getattr(user, 'is_unlimited_user', False)) or getattr(user, 'role', None) == UserRole.KOMANDAN:
+                    now_local = get_app_local_datetime()
+                    expiry_local = get_app_local_datetime(user.quota_expiry_date) if user.quota_expiry_date else None
+                    is_expired = bool(expiry_local and expiry_local < now_local)
+                    target_profile = _resolve_target_profile(user, remaining_mb, remaining_percent, is_expired)
+
+                elif debt_limit_mb > 0 and debt_mb >= float(debt_limit_mb):
                     now_utc = datetime.now(dt_timezone.utc)
                     username_08_for_block = username_08
                     debt_mb_text = f"{round_mb(debt_mb)}"
@@ -738,10 +747,11 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                     counters['processed'] += 1
                     _release_sync_lock(redis_client, user.id)
                     continue
-                now_local = get_app_local_datetime()
-                expiry_local = get_app_local_datetime(user.quota_expiry_date) if user.quota_expiry_date else None
-                is_expired = bool(expiry_local and expiry_local < now_local)
-                target_profile = _resolve_target_profile(user, remaining_mb, remaining_percent, is_expired)
+                else:
+                    now_local = get_app_local_datetime()
+                    expiry_local = get_app_local_datetime(user.quota_expiry_date) if user.quota_expiry_date else None
+                    is_expired = bool(expiry_local and expiry_local < now_local)
+                    target_profile = _resolve_target_profile(user, remaining_mb, remaining_percent, is_expired)
 
                 if target_profile and user.mikrotik_profile_name != target_profile:
                     success_profile, message = set_hotspot_user_profile(api_connection=api, username_or_id=username_08, new_profile_name=target_profile)
