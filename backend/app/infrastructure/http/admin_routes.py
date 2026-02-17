@@ -8,6 +8,8 @@ from pydantic import ValidationError
 from decimal import Decimal
 import json
 import uuid
+import csv
+import io
 import os
 import pathlib
 import subprocess
@@ -801,8 +803,151 @@ def get_transaction_detail(current_admin: User, order_id: str):
 @admin_bp.route('/transactions/export', methods=['GET'])
 @admin_required
 def export_transactions(current_admin: User):
-    """Endpoint untuk ekspor data transaksi (belum diimplementasikan)."""
-    return jsonify({"message": "Fungsi ekspor sedang dalam pengembangan."}), HTTPStatus.NOT_IMPLEMENTED
+    """Unduh laporan penjualan (SUCCESS saja) untuk periode tertentu.
+
+    Query params:
+    - format: pdf|csv
+    - start_date: YYYY-MM-DD (wajib)
+    - end_date: YYYY-MM-DD (wajib)
+    - user_id: UUID (opsional)
+    """
+    try:
+        fmt = str(request.args.get('format', '') or '').strip().lower()
+        start_date_str = str(request.args.get('start_date', '') or '').strip()
+        end_date_str = str(request.args.get('end_date', '') or '').strip()
+        user_id_filter = request.args.get('user_id')
+
+        if fmt not in ('pdf', 'csv'):
+            return jsonify({"message": "format tidak valid. Gunakan pdf atau csv."}), HTTPStatus.BAD_REQUEST
+        if not start_date_str or not end_date_str:
+            return jsonify({"message": "start_date dan end_date wajib diisi."}), HTTPStatus.BAD_REQUEST
+
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({"message": "Format tanggal tidak valid. Gunakan YYYY-MM-DD."}), HTTPStatus.BAD_REQUEST
+
+        if end_date < start_date:
+            return jsonify({"message": "end_date tidak boleh lebih kecil dari start_date."}), HTTPStatus.BAD_REQUEST
+
+        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=dt_timezone.utc)
+        end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=dt_timezone.utc)
+
+        base_filters = [
+            Transaction.status == TransactionStatus.SUCCESS,
+            Transaction.created_at >= start_dt,
+            Transaction.created_at < end_dt,
+        ]
+
+        user_uuid: uuid.UUID | None = None
+        if user_id_filter:
+            try:
+                user_uuid = uuid.UUID(str(user_id_filter))
+                base_filters.append(Transaction.user_id == user_uuid)
+            except ValueError:
+                return jsonify({"message": "Invalid user_id format."}), HTTPStatus.BAD_REQUEST
+
+        # Ringkasan total
+        totals_row = db.session.execute(
+            select(
+                func.count(Transaction.id),
+                func.coalesce(func.sum(Transaction.amount), 0),
+            ).where(*base_filters)
+        ).one()
+
+        total_success = int(totals_row[0] or 0)
+        total_amount = int(totals_row[1] or 0)
+
+        # Top paket (best selling)
+        package_rows = db.session.execute(
+            select(
+                Package.name,
+                func.count(Transaction.id).label('qty'),
+                func.coalesce(func.sum(Transaction.amount), 0).label('revenue'),
+            )
+            .join(Package, Transaction.package_id == Package.id)
+            .where(*base_filters)
+            .group_by(Package.name)
+            .order_by(desc('revenue'), desc('qty'), Package.name.asc())
+        ).all()
+
+        # Breakdown metode pembayaran
+        method_rows = db.session.execute(
+            select(
+                Transaction.payment_method,
+                func.count(Transaction.id).label('qty'),
+                func.coalesce(func.sum(Transaction.amount), 0).label('revenue'),
+            )
+            .where(*base_filters)
+            .group_by(Transaction.payment_method)
+            .order_by(desc('revenue'), desc('qty'))
+        ).all()
+
+        if fmt == 'csv':
+            output = io.StringIO()
+            writer = csv.writer(output)
+
+            writer.writerow(["Laporan Penjualan (SUCCESS)"])
+            writer.writerow(["Periode", start_date_str, "s/d", end_date_str])
+            if user_uuid is not None:
+                writer.writerow(["Filter user_id", str(user_uuid)])
+            writer.writerow(["Total transaksi sukses", total_success])
+            writer.writerow(["Total pendapatan (IDR)", total_amount])
+            writer.writerow([])
+
+            writer.writerow(["Paket Terlaris"])
+            writer.writerow(["Rank", "Paket", "Qty", "Revenue (IDR)"])
+            for idx, row in enumerate(package_rows, start=1):
+                writer.writerow([idx, row[0], int(row[1] or 0), int(row[2] or 0)])
+
+            writer.writerow([])
+            writer.writerow(["Metode Pembayaran"])
+            writer.writerow(["Metode", "Qty", "Revenue (IDR)"])
+            for row in method_rows:
+                method = row[0] or "(unknown)"
+                writer.writerow([method, int(row[1] or 0), int(row[2] or 0)])
+
+            csv_bytes = output.getvalue().encode('utf-8-sig')
+            resp = make_response(csv_bytes)
+            resp.headers['Content-Type'] = 'text/csv; charset=utf-8'
+            resp.headers['Content-Disposition'] = f'attachment; filename="laporan-transaksi-{start_date_str}-to-{end_date_str}.csv"'
+            return resp
+
+        # pdf
+        if not WEASYPRINT_AVAILABLE or HTML is None:
+            return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
+
+        app_tz = dt_timezone(timedelta(hours=int(current_app.config.get("APP_TIMEZONE_OFFSET", 8))))
+        context = {
+            "start_date": start_date_str,
+            "end_date": end_date_str,
+            "generated_at": datetime.now(app_tz),
+            "total_success": total_success,
+            "total_amount": total_amount,
+            "packages": [
+                {"rank": idx, "name": r[0], "qty": int(r[1] or 0), "revenue": int(r[2] or 0)}
+                for idx, r in enumerate(package_rows, start=1)
+            ],
+            "methods": [
+                {"method": (r[0] or "(unknown)"), "qty": int(r[1] or 0), "revenue": int(r[2] or 0)}
+                for r in method_rows
+            ],
+            "business_name": current_app.config.get('BUSINESS_NAME', 'LPSaring'),
+        }
+
+        public_base_url = current_app.config.get('APP_PUBLIC_BASE_URL', request.url_root)
+        html_string = render_template('admin_sales_report.html', **context)
+        pdf_bytes = HTML(string=html_string, base_url=public_base_url).write_pdf()
+        if not pdf_bytes:
+            abort(HTTPStatus.INTERNAL_SERVER_ERROR, "Gagal menghasilkan file PDF.")
+        resp = make_response(pdf_bytes)
+        resp.headers['Content-Type'] = 'application/pdf'
+        resp.headers['Content-Disposition'] = f'attachment; filename="laporan-transaksi-{start_date_str}-to-{end_date_str}.pdf"'
+        return resp
+    except Exception as e:
+        current_app.logger.error(f"Error export transaksi: {e}", exc_info=True)
+        return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
 @admin_bp.route('/transactions/<order_id>/report.pdf', methods=['GET'])

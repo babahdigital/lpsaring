@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Laporan Penjualan</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Roboto', Arial, sans-serif;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #111827;
+      background: #ffffff;
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      max-width: 900px;
+      margin: 22px auto;
+      padding: 28px 32px;
+      border: 1px solid #e5e7eb;
+    }
+    h1 { margin: 0; font-size: 18px; font-weight: 700; }
+    .sub { margin-top: 4px; color: #6b7280; font-size: 11px; }
+    .summary {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      background: #f9fafb;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 16px;
+    }
+    .kv { display: flex; justify-content: space-between; gap: 12px; }
+    .k { color: #6b7280; }
+    .v { font-weight: 700; text-align: right; }
+
+    h2 {
+      margin: 18px 0 10px;
+      padding-top: 14px;
+      border-top: 1px solid #e5e7eb;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+    }
+    th, td {
+      border-bottom: 1px solid #e5e7eb;
+      padding: 8px 6px;
+      vertical-align: top;
+    }
+    th {
+      text-align: left;
+      color: #6b7280;
+      font-weight: 700;
+      background: #f9fafb;
+    }
+    td.num, th.num { text-align: right; }
+
+    .footer {
+      margin-top: 18px;
+      padding-top: 12px;
+      border-top: 1px solid #e5e7eb;
+      color: #6b7280;
+      font-size: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Laporan Penjualan (SUCCESS)</h1>
+    <div class="sub">{{ business_name }} • Periode: {{ start_date }} s/d {{ end_date }} • Dibuat: {{ generated_at.strftime('%d %b %Y %H:%M') }}</div>
+
+    <div class="summary">
+      <div class="kv"><div class="k">Total transaksi sukses</div><div class="v">{{ total_success }}</div></div>
+      <div class="kv"><div class="k">Total pendapatan (IDR)</div><div class="v">{{ total_amount }}</div></div>
+    </div>
+
+    <h2>Paket Terlaris</h2>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:60px;">Rank</th>
+          <th>Paket</th>
+          <th class="num" style="width:90px;">Qty</th>
+          <th class="num" style="width:140px;">Revenue (IDR)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if packages and packages|length > 0 %}
+          {% for p in packages %}
+            <tr>
+              <td>{{ p.rank }}</td>
+              <td>{{ p.name }}</td>
+              <td class="num">{{ p.qty }}</td>
+              <td class="num">{{ p.revenue }}</td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="4">Tidak ada transaksi sukses pada periode ini.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+
+    <h2>Metode Pembayaran</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Metode</th>
+          <th class="num" style="width:90px;">Qty</th>
+          <th class="num" style="width:140px;">Revenue (IDR)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if methods and methods|length > 0 %}
+          {% for m in methods %}
+            <tr>
+              <td>{{ m.method }}</td>
+              <td class="num">{{ m.qty }}</td>
+              <td class="num">{{ m.revenue }}</td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="3">Belum ada data metode pembayaran.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+
+    <div class="footer">
+      Catatan: laporan ini memakai data transaksi aplikasi (bukan rekap bulk dari Midtrans). Untuk rekonsiliasi, perlu status-check per order_id.
+    </div>
+  </div>
+</body>
+</html>
