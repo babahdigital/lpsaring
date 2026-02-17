@@ -12,6 +12,7 @@ TAMPING_TYPES = [
     "Tamping Pembinaan",
     "Tamping kunjungan",
     "Tamping kamtib",
+    "Tamping kunci",
     "Tamping klinik",
     "Tamping dapur",
     "Tamping mesjid",
