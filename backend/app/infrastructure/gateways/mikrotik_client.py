@@ -643,8 +643,9 @@ def upsert_ip_binding(
 ) -> Tuple[bool, str]:
     """Buat atau perbarui ip-binding untuk MAC tertentu.
 
-    Catatan: untuk binding type 'bypassed', kita sengaja membuat binding berbasis MAC saja
-    (tanpa mengunci ke IP) agar tetap stabil saat IP client berubah (DHCP/roaming).
+    Catatan: untuk menjaga stabilitas di jaringan hotspot (DHCP/roaming), ip-binding dibuat
+    berbasis MAC saja (tanpa mengunci ke IP) untuk semua type (regular/blocked/bypassed).
+    Policy firewall tetap dikelola via address-list (berbasis IP).
     """
     if not mac_address:
         return False, "MAC address tidak valid"
@@ -655,16 +656,14 @@ def upsert_ip_binding(
             query['server'] = server
         entries = resource.get(**query)
         payload = {'mac-address': mac_address, 'type': binding_type, 'disabled': 'false'}
-        mac_only = binding_type == 'bypassed'
-        if address and not mac_only:
-            payload['address'] = address
+        mac_only = True
         if server:
             payload['server'] = server
         if comment is not None:
             payload['comment'] = comment
 
         if entries:
-            # Jika bypassed tapi entry lama mengunci address, recreate agar jadi MAC-only.
+            # Jika entry lama mengunci address, recreate agar jadi MAC-only.
             if mac_only and any(str(e.get('address') or '').strip() for e in entries):
                 for entry in entries:
                     entry_id = entry.get('id') or entry.get('.id')
