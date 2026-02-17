@@ -16,6 +16,8 @@ from app.utils.formatters import (
     normalize_to_local,
 )
 from app.services import settings_service
+from app.services.access_policy_service import resolve_allowed_binding_type_for_user
+from app.utils.quota_debt import compute_debt_mb
 
 # Impor service lain dari paket yang sama
 from . import user_role as role_service
@@ -27,10 +29,12 @@ from .helpers import (
 from app.infrastructure.gateways.mikrotik_client import (
     activate_or_update_hotspot_user,
     delete_hotspot_user,
+    get_hotspot_host_usage_map,
     get_hotspot_ip_binding_user_map,
     remove_address_list_entry,
     sync_address_list_for_user,
     upsert_address_list_entry,
+    upsert_ip_binding,
 )
 from app.services.hotspot_sync_service import sync_address_list_for_single_user
 
@@ -513,6 +517,24 @@ def _handle_user_activation(user: User, should_be_active: bool, admin: User) -> 
 
 
 def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reason: Optional[str]) -> Tuple[bool, str]:
+    # Do not allow manual unblock if quota-debt hard block is enabled and the user still exceeds the limit.
+    # Exceptions: unlimited users and KOMANDAN.
+    if (
+        (not should_be_blocked)
+        and (not bool(getattr(user, 'is_unlimited_user', False)))
+        and getattr(user, 'role', None) != UserRole.KOMANDAN
+    ):
+        debt_limit_mb = settings_service.get_setting_as_int('QUOTA_DEBT_LIMIT_MB', 0)
+        if debt_limit_mb > 0:
+            purchased_mb = float(user.total_quota_purchased_mb or 0.0)
+            used_mb = float(user.total_quota_used_mb or 0.0)
+            debt_mb = compute_debt_mb(purchased_mb, used_mb)
+            if debt_mb >= float(debt_limit_mb):
+                return (
+                    False,
+                    f"Tidak bisa unblock: hutang kuota {debt_mb:.1f}MB >= limit {debt_limit_mb}MB. Tambah kuota atau naikkan limit dulu.",
+                )
+
     user.is_blocked = should_be_blocked
     user.blocked_reason = reason if should_be_blocked else None
     user.blocked_at = datetime.now(dt_timezone.utc) if should_be_blocked else None
@@ -609,14 +631,55 @@ def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reas
     # Unblock path
     success, msg = _sync_user_to_mikrotik(user, f"Unblocked by {admin.full_name}")
     if success:
-        list_blocked = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_BLOCKED', 'blocked')
-        _handle_mikrotik_operation(
-            sync_address_list_for_user,
-            username=format_to_local_phone(user.phone_number),
-            target_list=None,
-            other_lists=[list_blocked],
-            comment=f"unblocked:{admin.full_name}"
-        )
+        list_blocked = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_BLOCKED', 'blocked') or 'blocked'
+
+        now = datetime.now(dt_timezone.utc)
+        date_str, time_str = get_app_date_time_strings(now)
+        username_08 = format_to_local_phone(user.phone_number) or ""
+
+        def _unblock_cleanup(api_connection, **kwargs):
+            # Remove from blocked list via normal path (if MikroTik can resolve IP from username).
+            sync_address_list_for_user(
+                api_connection=api_connection,
+                username=format_to_local_phone(user.phone_number),
+                target_list=None,
+                other_lists=[list_blocked],
+                comment=f"unblocked:{admin.full_name}",
+            )
+
+            # Re-apply allowed ip-binding type (MAC-only) and remove blocked address-list using host table as fallback.
+            binding_type = resolve_allowed_binding_type_for_user(user)
+            comment = (
+                f"authorized|user={username_08}|uid={user.id}|role={user.role.value}"
+                f"|source=unblock|date={date_str}|time={time_str}"
+            )
+
+            ok_bind, binding_map, _bind_msg = get_hotspot_ip_binding_user_map(api_connection)
+            macs = []
+            if ok_bind:
+                for mac, entry in binding_map.items():
+                    if str(entry.get('user_id')) == str(user.id):
+                        macs.append(str(mac).upper())
+
+            ok_host, host_map, _host_msg = get_hotspot_host_usage_map(api_connection)
+            if ok_host and host_map and macs:
+                for mac in macs:
+                    host_ip = str(host_map.get(mac, {}).get('address') or '').strip()
+                    if host_ip:
+                        remove_address_list_entry(api_connection=api_connection, address=host_ip, list_name=list_blocked)
+
+            for mac in macs:
+                upsert_ip_binding(
+                    api_connection=api_connection,
+                    mac_address=mac,
+                    server=user.mikrotik_server_name,
+                    binding_type=binding_type,
+                    comment=comment,
+                )
+
+            return True, "Sukses (unblock cleanup)"
+
+        _handle_mikrotik_operation(_unblock_cleanup)
     _log_admin_action(admin, user, AdminActionType.UNBLOCK_USER, {"blocked_reason": reason})
     return success, msg
 
