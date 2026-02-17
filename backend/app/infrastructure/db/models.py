@@ -52,6 +52,12 @@ class TransactionStatus(enum.Enum):
     CANCELLED = "CANCELLED"
     UNKNOWN = "UNKNOWN"
 
+
+class TransactionEventSource(enum.Enum):
+    APP = "APP"
+    MIDTRANS_WEBHOOK = "MIDTRANS_WEBHOOK"
+    MIDTRANS_STATUS = "MIDTRANS_STATUS"
+
 class NotificationType(enum.Enum):
     NEW_USER_REGISTRATION = "NEW_USER_REGISTRATION"
     NEW_KOMANDAN_REQUEST = "NEW_KOMANDAN_REQUEST"
@@ -334,6 +340,40 @@ class Transaction(db.Model):
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     user: Mapped[Optional["User"]] = relationship("User", back_populates="transactions", lazy="select")
     package: Mapped["Package"] = relationship("Package", back_populates="transactions", lazy="select")
+    events: Mapped[List["TransactionEvent"]] = relationship(
+        "TransactionEvent",
+        back_populates="transaction",
+        cascade="all, delete-orphan",
+        lazy="select",
+    )
+
+
+class TransactionEvent(db.Model):
+    __tablename__ = 'transaction_events'
+    __table_args__ = (
+        Index('ix_transaction_events_transaction_id', 'transaction_id'),
+        Index('ix_transaction_events_created_at', 'created_at'),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    transaction_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey('transactions.id', ondelete='CASCADE', name='fk_transaction_events_transaction_id_transactions'),
+        nullable=False,
+    )
+    source: Mapped[TransactionEventSource] = mapped_column(
+        SQLAlchemyEnum(TransactionEventSource, name="transaction_event_source_enum", native_enum=False, length=32),
+        nullable=False,
+    )
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[Optional[TransactionStatus]] = mapped_column(
+        SQLAlchemyEnum(TransactionStatus, name="transaction_status_enum", native_enum=False),
+        nullable=True,
+    )
+    payload: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    transaction: Mapped["Transaction"] = relationship("Transaction", back_populates="events", lazy="select")
 
 class DailyUsageLog(db.Model):
     __tablename__ = 'daily_usage_logs'

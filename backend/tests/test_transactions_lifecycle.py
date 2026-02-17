@@ -162,7 +162,7 @@ def test_initiate_transaction_sets_unknown_and_expiry_and_finish_url(monkeypatch
     assert payload["snap_token"] == "dummy-token"
     assert payload["order_id"].startswith("HS-")
 
-    created_tx = fake_session.added[0]
+    created_tx = next(obj for obj in fake_session.added if isinstance(obj, _FakeTransaction))
     assert created_tx.status == TransactionStatus.UNKNOWN
     assert isinstance(created_tx.expiry_time, datetime)
     assert created_tx.expiry_time.tzinfo is not None
@@ -176,6 +176,7 @@ def test_cancel_transaction_sets_cancelled(monkeypatch):
     order_id = "HS-TESTORDER"
 
     fake_tx = SimpleNamespace(
+        id=uuid.uuid4(),
         midtrans_order_id=order_id,
         user_id=user_id,
         status=TransactionStatus.UNKNOWN,

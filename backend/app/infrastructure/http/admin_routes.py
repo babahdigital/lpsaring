@@ -1,11 +1,12 @@
 # backend/app/infrastructure/http/admin/admin_routes.py
-from flask import Blueprint, jsonify, request, current_app, send_file
+from flask import Blueprint, jsonify, request, current_app, send_file, abort, make_response, render_template
 from sqlalchemy import func, or_, select, desc
 from sqlalchemy.orm import selectinload
 from datetime import datetime, timezone as dt_timezone, timedelta
 from http import HTTPStatus
 from pydantic import ValidationError
 from decimal import Decimal
+import json
 import uuid
 import os
 import pathlib
@@ -17,13 +18,20 @@ from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
 from app.infrastructure.db.models import (
     User, UserRole, Package, ApprovalStatus, Transaction,
     TransactionStatus, NotificationRecipient, NotificationType,
-    QuotaRequest, RequestStatus
+    QuotaRequest, RequestStatus, TransactionEvent
 )
 from .decorators import admin_required, super_admin_required
 from .schemas.notification_schemas import NotificationRecipientUpdateSchema
 from app.utils.formatters import get_phone_number_variations
 
 admin_bp = Blueprint('admin_api', __name__)
+
+try:
+    from weasyprint import HTML
+    WEASYPRINT_AVAILABLE = True
+except Exception:
+    HTML = None
+    WEASYPRINT_AVAILABLE = False
 
 def _get_backup_dir() -> str:
     backup_dir = current_app.config.get('BACKUP_DIR', '/app/backups')
@@ -293,7 +301,10 @@ def create_backup(current_admin: User):
 
         cmd = _build_pg_dump_command(output_path)
         env = os.environ.copy()
-        db_url = make_url(current_app.config.get('SQLALCHEMY_DATABASE_URI'))
+        db_uri = current_app.config.get('SQLALCHEMY_DATABASE_URI')
+        if not isinstance(db_uri, str) or not db_uri:
+            raise RuntimeError("DATABASE_URL tidak disetel")
+        db_url = make_url(db_uri)
         if db_url.password:
             env["PGPASSWORD"] = db_url.password
 
@@ -407,7 +418,10 @@ def restore_backup(current_admin: User):
         else:
             cmd = _build_pg_restore_command(str(file_path))
         env = os.environ.copy()
-        db_url = make_url(current_app.config.get('SQLALCHEMY_DATABASE_URI'))
+        db_uri = current_app.config.get('SQLALCHEMY_DATABASE_URI')
+        if not isinstance(db_uri, str) or not db_uri:
+            raise RuntimeError("DATABASE_URL tidak disetel")
+        db_url = make_url(db_uri)
         if db_url.password:
             env['PGPASSWORD'] = db_url.password
 
@@ -608,7 +622,10 @@ def update_notification_recipients(current_admin: User):
             valid_admin_ids_q = select(User.id).where(User.id.in_(update_data.subscribed_admin_ids), User.role.in_([UserRole.ADMIN, UserRole.SUPER_ADMIN]))
             valid_admin_ids = db.session.scalars(valid_admin_ids_q).all()
             for admin_id in valid_admin_ids:
-                new_recipients.append(NotificationRecipient(admin_user_id=admin_id, notification_type=notification_type))
+                recipient = NotificationRecipient()
+                recipient.admin_user_id = admin_id
+                recipient.notification_type = notification_type
+                new_recipients.append(recipient)
             if new_recipients:
                 db.session.add_all(new_recipients)
         
@@ -698,11 +715,171 @@ def get_transactions_list(current_admin: User):
         current_app.logger.error(f"Error mengambil daftar transaksi: {e}", exc_info=True)
         return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
+
+@admin_bp.route('/transactions/<order_id>/detail', methods=['GET'])
+@admin_required
+def get_transaction_detail(current_admin: User, order_id: str):
+    """Mengambil detail satu transaksi (termasuk payload notifikasi Midtrans jika tersedia)."""
+    try:
+        order_id = (order_id or "").strip()
+        if not order_id:
+            return jsonify({"message": "order_id tidak boleh kosong."}), HTTPStatus.BAD_REQUEST
+
+        tx = db.session.scalar(
+            select(Transaction)
+            .where(Transaction.midtrans_order_id == order_id)
+            .options(selectinload(Transaction.user), selectinload(Transaction.package))
+        )
+
+        if tx is None:
+            return jsonify({"message": "Transaksi tidak ditemukan."}), HTTPStatus.NOT_FOUND
+
+        payload: object | None = None
+        if tx.midtrans_notification_payload:
+            try:
+                payload = json.loads(tx.midtrans_notification_payload)
+            except Exception:
+                payload = {"_raw": tx.midtrans_notification_payload}
+
+        events_q = (
+            select(TransactionEvent)
+            .where(TransactionEvent.transaction_id == tx.id)
+            .order_by(TransactionEvent.created_at.asc())
+        )
+        events = db.session.scalars(events_q).all()
+        events_payload = []
+        for ev in events:
+            ev_payload: object | None = None
+            if ev.payload:
+                try:
+                    ev_payload = json.loads(ev.payload)
+                except Exception:
+                    ev_payload = {"_raw": ev.payload}
+            events_payload.append(
+                {
+                    "id": str(ev.id),
+                    "created_at": ev.created_at.isoformat() if ev.created_at else None,
+                    "source": ev.source.value,
+                    "event_type": ev.event_type,
+                    "status": ev.status.value if ev.status else None,
+                    "payload": ev_payload,
+                }
+            )
+
+        return (
+            jsonify(
+                {
+                    "id": str(tx.id),
+                    "order_id": tx.midtrans_order_id,
+                    "amount": float(tx.amount),
+                    "status": tx.status.value,
+                    "created_at": tx.created_at.isoformat(),
+                    "updated_at": tx.updated_at.isoformat() if tx.updated_at else None,
+                    "midtrans_transaction_id": tx.midtrans_transaction_id,
+                    "payment_method": tx.payment_method,
+                    "payment_time": tx.payment_time.isoformat() if tx.payment_time else None,
+                    "expiry_time": tx.expiry_time.isoformat() if tx.expiry_time else None,
+                    "va_number": tx.va_number,
+                    "payment_code": tx.payment_code,
+                    "biller_code": tx.biller_code,
+                    "qr_code_url": tx.qr_code_url,
+                    "user": {
+                        "full_name": tx.user.full_name if tx.user else "N/A",
+                        "phone_number": tx.user.phone_number if tx.user else "N/A",
+                    },
+                    "package_name": tx.package.name if tx.package else "N/A",
+                    "midtrans_notification_payload": payload,
+                    "events": events_payload,
+                }
+            ),
+            HTTPStatus.OK,
+        )
+    except Exception as e:
+        current_app.logger.error(f"Error mengambil detail transaksi {order_id}: {e}", exc_info=True)
+        return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
 @admin_bp.route('/transactions/export', methods=['GET'])
 @admin_required
 def export_transactions(current_admin: User):
     """Endpoint untuk ekspor data transaksi (belum diimplementasikan)."""
     return jsonify({"message": "Fungsi ekspor sedang dalam pengembangan."}), HTTPStatus.NOT_IMPLEMENTED
+
+
+@admin_bp.route('/transactions/<order_id>/report.pdf', methods=['GET'])
+@admin_required
+def get_transaction_admin_report_pdf(current_admin: User, order_id: str):
+    """PDF Admin report (berbeda dari invoice user) untuk audit transaksi + histori event."""
+    if not WEASYPRINT_AVAILABLE or HTML is None:
+        abort(HTTPStatus.NOT_IMPLEMENTED, "Komponen PDF server tidak tersedia.")
+
+    order_id = (order_id or "").strip()
+    if not order_id:
+        abort(HTTPStatus.BAD_REQUEST, "order_id tidak boleh kosong.")
+
+    tx = db.session.scalar(
+        select(Transaction)
+        .where(Transaction.midtrans_order_id == order_id)
+        .options(selectinload(Transaction.user), selectinload(Transaction.package))
+    )
+    if tx is None:
+        abort(HTTPStatus.NOT_FOUND, "Transaksi tidak ditemukan.")
+
+    payload: object | None = None
+    if tx.midtrans_notification_payload:
+        try:
+            payload = json.loads(tx.midtrans_notification_payload)
+        except Exception:
+            payload = {"_raw": tx.midtrans_notification_payload}
+
+    events_q = (
+        select(TransactionEvent)
+        .where(TransactionEvent.transaction_id == tx.id)
+        .order_by(TransactionEvent.created_at.asc())
+    )
+    events = db.session.scalars(events_q).all()
+    events_payload = []
+    for ev in events:
+        ev_payload: object | None = None
+        if ev.payload:
+            try:
+                ev_payload = json.loads(ev.payload)
+            except Exception:
+                ev_payload = {"_raw": ev.payload}
+        events_payload.append(
+            {
+                "created_at": ev.created_at,
+                "source": ev.source.value,
+                "event_type": ev.event_type,
+                "status": ev.status.value if ev.status else None,
+                "payload": ev_payload,
+            }
+        )
+
+    app_tz = dt_timezone(timedelta(hours=int(current_app.config.get("APP_TIMEZONE_OFFSET", 8))))
+    context = {
+        "transaction": tx,
+        "user": tx.user,
+        "package": tx.package,
+        "status": tx.status.value,
+        "report_date_local": datetime.now(app_tz),
+        "business_name": current_app.config.get('BUSINESS_NAME', 'LPSaring'),
+        "business_address": current_app.config.get('BUSINESS_ADDRESS', ''),
+        "business_phone": current_app.config.get('BUSINESS_PHONE', ''),
+        "business_email": current_app.config.get('BUSINESS_EMAIL', ''),
+        "midtrans_payload": payload,
+        "events": events_payload,
+    }
+
+    public_base_url = current_app.config.get('APP_PUBLIC_BASE_URL', request.url_root)
+    html_string = render_template('admin_transaction_report.html', **context)
+    pdf_bytes = HTML(string=html_string, base_url=public_base_url).write_pdf()
+    if not pdf_bytes:
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, "Gagal menghasilkan file PDF.")
+
+    response = make_response(pdf_bytes)
+    response.headers['Content-Type'] = 'application/pdf'
+    response.headers['Content-Disposition'] = f'inline; filename="admin-report-{order_id}.pdf"'
+    return response
 
 # --- Endpoint /action-logs DIHAPUS DARI SINI ---
 # Logika ini sekarang sepenuhnya ditangani oleh action_log_routes.py

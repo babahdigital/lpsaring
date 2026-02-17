@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Report {{ transaction.midtrans_order_id }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Roboto', Arial, sans-serif;
+      font-size: 12px;
+      line-height: 1.45;
+      color: #111827;
+      background: #ffffff;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      max-width: 900px;
+      margin: 22px auto;
+      padding: 28px 32px;
+      border: 1px solid #e5e7eb;
+    }
+    .header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .title {
+      font-size: 18px;
+      font-weight: 700;
+      margin: 0;
+    }
+    .subtitle {
+      margin: 2px 0 0;
+      color: #6b7280;
+      font-size: 11px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 11px;
+      border: 1px solid #e5e7eb;
+    }
+    .badge.success { background: #ecfdf5; color: #065f46; border-color: #a7f3d0; }
+    .badge.pending { background: #fffbeb; color: #92400e; border-color: #fde68a; }
+    .badge.failed { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
+    .badge.expired { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
+    .badge.cancelled { background: #eff6ff; color: #1e40af; border-color: #bfdbfe; }
+    .badge.unknown { background: #f3f4f6; color: #374151; border-color: #e5e7eb; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px 18px;
+      margin-top: 10px;
+      padding-top: 12px;
+      border-top: 1px solid #e5e7eb;
+    }
+    .kv { display: flex; justify-content: space-between; gap: 12px; }
+    .k { color: #6b7280; }
+    .v { font-weight: 500; text-align: right; word-break: break-word; }
+
+    h2 {
+      font-size: 13px;
+      font-weight: 700;
+      margin: 18px 0 10px;
+      padding-top: 14px;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+    }
+    th, td {
+      border-bottom: 1px solid #e5e7eb;
+      padding: 8px 6px;
+      vertical-align: top;
+    }
+    th {
+      text-align: left;
+      color: #6b7280;
+      font-weight: 700;
+      background: #f9fafb;
+    }
+
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; }
+    .small { color: #6b7280; font-size: 10px; }
+    .json {
+      white-space: pre-wrap;
+      word-break: break-word;
+      border: 1px solid #e5e7eb;
+      background: #f9fafb;
+      padding: 10px;
+      border-radius: 8px;
+    }
+
+    .footer {
+      margin-top: 18px;
+      padding-top: 12px;
+      border-top: 1px solid #e5e7eb;
+      color: #6b7280;
+      font-size: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1 class="title">Laporan Transaksi (Admin)</h1>
+        <p class="subtitle">Order ID: <span class="mono">{{ transaction.midtrans_order_id }}</span> • Dicetak: {{ report_date_local.strftime('%d %b %Y %H:%M') }}</p>
+        {% if business_name %}
+          <p class="subtitle">{{ business_name }}{% if business_phone %} • {{ business_phone }}{% endif %}{% if business_email %} • {{ business_email }}{% endif %}</p>
+        {% endif %}
+        {% if business_address %}
+          <p class="subtitle">{{ business_address }}</p>
+        {% endif %}
+      </div>
+      {% set st = (transaction.status.value if transaction.status else '')|lower %}
+      <div class="badge {{ st }}">{{ transaction.status.value if transaction.status else '-' }}</div>
+    </div>
+
+    <div class="grid">
+      <div class="kv"><div class="k">Nama pengguna</div><div class="v">{{ user.full_name if user else 'N/A' }}</div></div>
+      <div class="kv"><div class="k">Telepon</div><div class="v">{{ user.phone_number if user else 'N/A' }}</div></div>
+      <div class="kv"><div class="k">Paket</div><div class="v">{{ package.name if package else 'N/A' }}</div></div>
+      <div class="kv"><div class="k">Jumlah</div><div class="v">{{ transaction.amount }}</div></div>
+      <div class="kv"><div class="k">Metode</div><div class="v">{{ transaction.payment_method or '-' }}</div></div>
+      <div class="kv"><div class="k">Midtrans trx id</div><div class="v mono">{{ transaction.midtrans_transaction_id or '-' }}</div></div>
+      <div class="kv"><div class="k">Dibuat</div><div class="v">{{ transaction.created_at.isoformat() if transaction.created_at else '-' }}</div></div>
+      <div class="kv"><div class="k">Diperbarui</div><div class="v">{{ transaction.updated_at.isoformat() if transaction.updated_at else '-' }}</div></div>
+      <div class="kv"><div class="k">Waktu bayar</div><div class="v">{{ transaction.payment_time.isoformat() if transaction.payment_time else '-' }}</div></div>
+      <div class="kv"><div class="k">Kadaluarsa</div><div class="v">{{ transaction.expiry_time.isoformat() if transaction.expiry_time else '-' }}</div></div>
+      <div class="kv"><div class="k">VA / Kode bayar</div><div class="v mono">{{ transaction.va_number or transaction.payment_code or '-' }}</div></div>
+      <div class="kv"><div class="k">Biller</div><div class="v mono">{{ transaction.biller_code or '-' }}</div></div>
+    </div>
+
+    <h2>Histori (Transaction Events)</h2>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 155px;">Waktu</th>
+          <th style="width: 130px;">Source</th>
+          <th style="width: 160px;">Event</th>
+          <th style="width: 120px;">Status</th>
+          <th>Ringkas Payload</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if events and events|length > 0 %}
+          {% for ev in events %}
+            <tr>
+              <td class="mono">{{ ev.created_at.isoformat() if ev.created_at else '-' }}</td>
+              <td>{{ ev.source }}</td>
+              <td class="mono">{{ ev.event_type }}</td>
+              <td>{{ ev.status or '-' }}</td>
+              <td class="small">
+                {% if ev.payload %}
+                  {{ ev.payload | tojson }}
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="5">Belum ada histori tersimpan.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+
+    <h2>Midtrans Notification Payload (Terakhir)</h2>
+    {% if midtrans_payload %}
+      <div class="json mono">{{ midtrans_payload | tojson(indent=2) }}</div>
+    {% else %}
+      <div class="small">Belum ada payload Midtrans tersimpan.</div>
+    {% endif %}
+
+    <div class="footer">
+      Dokumen ini untuk kebutuhan audit admin (bukan invoice user). Simpan untuk investigasi bila ada mismatch status.
+    </div>
+  </div>
+</body>
+</html>

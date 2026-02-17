@@ -10,11 +10,25 @@ interface Transaction {
   amount: number
   status: 'PENDING' | 'SUCCESS' | 'FAILED' | 'EXPIRED' | 'CANCELLED' | 'UNKNOWN'
   created_at: string
+  updated_at?: string | null
   payment_method?: string | null
   payment_time?: string | null
   expiry_time?: string | null
+  va_number?: string | null
+  payment_code?: string | null
+  biller_code?: string | null
+  qr_code_url?: string | null
   user: { full_name: string, phone_number: string }
   package_name: string
+  midtrans_notification_payload?: unknown | null
+  events?: Array<{
+    id: string
+    created_at: string | null
+    source: string
+    event_type: string
+    status: string | null
+    payload: unknown | null
+  }> | null
 }
 interface UserSelectItem {
   id: string
@@ -116,19 +130,28 @@ const headers = [
   { title: 'STATUS', key: 'status', sortable: true, width: '140px' },
   { title: 'KADALUARSA', key: 'expiry_time', sortable: false, width: '200px' },
   { title: 'TANGGAL', key: 'created_at', sortable: true, width: '200px' },
-  { title: 'AKSI', key: 'actions', sortable: false, width: '110px' },
+  { title: 'AKSI', key: 'actions', sortable: false, width: '160px' },
 ]
 
 const statusColorMap: Record<Transaction['status'], string> = {
   SUCCESS: 'success',
   PENDING: 'warning',
   FAILED: 'error',
-  EXPIRED: 'grey',
+  EXPIRED: 'error',
   CANCELLED: 'info',
   UNKNOWN: 'secondary',
 }
 
 const getStatusColor = (status: Transaction['status']) => statusColorMap[status]
+
+function getStatusVariant(status: Transaction['status']) {
+  if (status === 'SUCCESS')
+    return 'flat'
+  if (status === 'PENDING')
+    return 'outlined'
+  // Kadaluarsa/Gagal/Dibatalkan/Belum mulai dibuat lebih jelas
+  return 'tonal'
+}
 
 function formatStatus(status: string) {
   const statusMap: Record<string, string> = {
@@ -159,10 +182,85 @@ function formatPaymentMethod(method?: string | null): string {
   return map[m] ?? method
 }
 
-function openInvoice(orderId: string) {
+function openAdminReportPdf(orderId: string) {
   if (!orderId)
     return
-  window.open(`/api/transactions/${encodeURIComponent(orderId)}/invoice`, '_blank', 'noopener')
+  window.open(`/api/admin/transactions/${encodeURIComponent(orderId)}/report.pdf`, '_blank', 'noopener')
+}
+
+function printAdminReport(orderId: string) {
+  if (!orderId)
+    return
+
+  const url = `/api/admin/transactions/${encodeURIComponent(orderId)}/report.pdf`
+  const popup = window.open(url, '_blank', 'noopener')
+  // Best-effort: beberapa browser blok auto-print untuk PDF, jadi tetap buka tabnya.
+  if (!popup)
+    return
+
+  const timer = window.setInterval(() => {
+    try {
+      if (popup.closed) {
+        window.clearInterval(timer)
+        return
+      }
+      if (popup.document?.readyState === 'complete') {
+        window.clearInterval(timer)
+        popup.focus()
+        popup.print()
+      }
+    }
+    catch {
+      // cross-origin / PDF viewer; abaikan
+      window.clearInterval(timer)
+    }
+  }, 500)
+}
+
+const expandedOrderIds = ref<string[]>([])
+const detailCache = ref<Record<string, Transaction>>({})
+const detailLoading = ref<Record<string, boolean>>({})
+
+async function fetchTransactionDetail(orderId: string) {
+  if (!orderId)
+    return
+  if (detailCache.value[orderId])
+    return
+  if (detailLoading.value[orderId])
+    return
+
+  detailLoading.value = { ...detailLoading.value, [orderId]: true }
+  try {
+    const detail = await $api<Transaction>(`/admin/transactions/${encodeURIComponent(orderId)}/detail`)
+    detailCache.value = { ...detailCache.value, [orderId]: detail }
+  }
+  catch (err) {
+    showSnackbar(extractErrorMessage(err, 'Gagal memuat detail transaksi'), 'error')
+  }
+  finally {
+    detailLoading.value = { ...detailLoading.value, [orderId]: false }
+  }
+}
+
+async function toggleDetail(orderId: string) {
+  const current = expandedOrderIds.value
+  const isExpanded = current.includes(orderId)
+  expandedOrderIds.value = isExpanded ? current.filter(id => id !== orderId) : [...current, orderId]
+  if (!isExpanded)
+    await fetchTransactionDetail(orderId)
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
+}
+
+function formatMaybeDateTime(value: unknown): string {
+  if (typeof value !== 'string' || value === '')
+    return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime()))
+    return value
+  return formatDateTime(value)
 }
 
 // Fungsi baru untuk format nomor telepon
@@ -532,10 +630,12 @@ useHead({ title: 'Laporan Penjualan' })
           v-model:items-per-page="options.itemsPerPage"
           v-model:page="options.page"
           v-model:sort-by="options.sortBy"
+          v-model:expanded="expandedOrderIds"
           :headers="headers"
           :items="transactions"
           :items-length="totalTransactions"
           :loading="loading"
+          item-value="order_id"
           class="elevation-1 rounded data-table"
         >
           <template #item.user.full_name="{ item }">
@@ -550,8 +650,8 @@ useHead({ title: 'Laporan Penjualan' })
             <VChip
               :color="getStatusColor(item.status as Transaction['status'])"
               size="small"
-              :variant="item.status === 'PENDING' ? 'outlined' : 'flat'"
-              class="status-chip"
+              :variant="getStatusVariant(item.status as Transaction['status'])"
+              class="status-chip font-weight-bold"
             >
               {{ formatStatus(item.status) }}
             </VChip>
@@ -570,17 +670,160 @@ useHead({ title: 'Laporan Penjualan' })
           </template>
 
           <template #item.actions="{ item }">
-            <VBtn
-              v-if="item.status === 'SUCCESS'"
-              icon
-              variant="text"
-              size="small"
-              :title="`Invoice ${item.order_id}`"
-              @click="openInvoice(item.order_id)"
-            >
-              <VIcon icon="tabler-receipt" />
-            </VBtn>
-            <span v-else class="text-medium-emphasis">-</span>
+            <div class="d-flex align-center ga-1">
+              <VBtn
+                icon
+                variant="text"
+                size="small"
+                :title="`Detail ${item.order_id}`"
+                @click="toggleDetail(item.order_id)"
+              >
+                <VIcon icon="tabler-info-circle" />
+              </VBtn>
+
+              <VBtn
+                v-if="item.status === 'SUCCESS'"
+                icon
+                variant="text"
+                size="small"
+                :title="`PDF Admin ${item.order_id}`"
+                @click="openAdminReportPdf(item.order_id)"
+              >
+                <VIcon icon="tabler-file-type-pdf" />
+              </VBtn>
+
+              <VBtn
+                v-if="item.status === 'SUCCESS'"
+                icon
+                variant="text"
+                size="small"
+                :title="`Print ${item.order_id}`"
+                @click="printAdminReport(item.order_id)"
+              >
+                <VIcon icon="tabler-printer" />
+              </VBtn>
+            </div>
+          </template>
+
+          <template #expanded-row="{ columns, item }">
+            <tr>
+              <td :colspan="columns.length" class="pa-0">
+                <div class="pa-4" style="background-color: rgba(var(--v-theme-on-surface), 0.02);">
+                  <div v-if="detailLoading[item.order_id]" class="d-flex align-center ga-3">
+                    <VProgressCircular indeterminate size="20" color="primary" />
+                    <span class="text-medium-emphasis">Memuat detail transaksi...</span>
+                  </div>
+
+                  <div v-else>
+                    <div class="d-flex flex-wrap ga-6">
+                      <div>
+                        <div class="text-caption text-medium-emphasis">ID Invoice</div>
+                        <div class="font-weight-medium">{{ item.order_id }}</div>
+                      </div>
+                      <div>
+                        <div class="text-caption text-medium-emphasis">Pengguna</div>
+                        <div class="font-weight-medium">{{ item.user.full_name }}</div>
+                        <div class="text-caption text-medium-emphasis">{{ formatPhoneNumberForDisplay(item.user.phone_number) }}</div>
+                      </div>
+                      <div>
+                        <div class="text-caption text-medium-emphasis">Paket</div>
+                        <div class="font-weight-medium">{{ item.package_name }}</div>
+                      </div>
+                      <div>
+                        <div class="text-caption text-medium-emphasis">Jumlah</div>
+                        <div class="font-weight-medium">{{ formatCurrency(item.amount) }}</div>
+                      </div>
+                      <div>
+                        <div class="text-caption text-medium-emphasis">Metode</div>
+                        <div class="font-weight-medium">{{ formatPaymentMethod(item.payment_method) }}</div>
+                      </div>
+                      <div>
+                        <div class="text-caption text-medium-emphasis">Kadaluarsa</div>
+                        <div class="font-weight-medium">{{ item.expiry_time ? formatDateTime(item.expiry_time) : '-' }}</div>
+                      </div>
+                    </div>
+
+                    <VDivider class="my-4" />
+
+                    <div v-if="detailCache[item.order_id]" class="d-flex flex-wrap ga-6">
+                      <template v-if="item.status === 'SUCCESS'">
+                        <div>
+                          <div class="text-caption text-medium-emphasis">Midtrans Transaction ID</div>
+                          <div class="font-weight-medium">{{ detailCache[item.order_id].midtrans_transaction_id || '-' }}</div>
+                        </div>
+                        <div>
+                          <div class="text-caption text-medium-emphasis">Waktu Bayar</div>
+                          <div class="font-weight-medium">{{ detailCache[item.order_id].payment_time ? formatDateTime(detailCache[item.order_id].payment_time!) : '-' }}</div>
+                        </div>
+                      </template>
+
+                      <div>
+                        <div class="text-caption text-medium-emphasis">VA / Kode Bayar</div>
+                        <div class="font-weight-medium">
+                          {{ detailCache[item.order_id].va_number || detailCache[item.order_id].payment_code || '-' }}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div class="text-caption text-medium-emphasis">Biller Code</div>
+                        <div class="font-weight-medium">{{ detailCache[item.order_id].biller_code || '-' }}</div>
+                      </div>
+
+                      <div>
+                        <div class="text-caption text-medium-emphasis">QR Code URL</div>
+                        <div class="font-weight-medium">
+                          <a
+                            v-if="detailCache[item.order_id].qr_code_url"
+                            :href="detailCache[item.order_id].qr_code_url!"
+                            target="_blank"
+                            rel="noopener"
+                          >
+                            Buka
+                          </a>
+                          <span v-else>-</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div v-if="detailCache[item.order_id]?.midtrans_notification_payload" class="mt-4">
+                      <div class="text-caption text-medium-emphasis mb-2">Midtrans Notification Payload</div>
+                      <div class="payload-grid">
+                        <template v-for="(v, k) in (asRecord(detailCache[item.order_id].midtrans_notification_payload) || {})" :key="String(k)">
+                          <div class="payload-key">{{ String(k) }}</div>
+                          <div class="payload-value">
+                            <span v-if="typeof v === 'string' && (String(k).includes('time') || String(k).includes('expiry'))">
+                              {{ formatMaybeDateTime(v) }}
+                            </span>
+                            <span v-else-if="typeof v === 'object'">
+                              {{ JSON.stringify(v) }}
+                            </span>
+                            <span v-else>
+                              {{ String(v) }}
+                            </span>
+                          </div>
+                        </template>
+                      </div>
+                    </div>
+
+                    <div v-if="detailCache[item.order_id]?.events && detailCache[item.order_id]!.events!.length" class="mt-4">
+                      <div class="text-caption text-medium-emphasis mb-2">Histori Transaksi (APP / MIDTRANS)</div>
+                      <div class="payload-grid">
+                        <template v-for="ev in detailCache[item.order_id]!.events!" :key="ev.id">
+                          <div class="payload-key">
+                            {{ ev.created_at ? formatDateTime(ev.created_at) : '-' }}
+                          </div>
+                          <div class="payload-value">
+                            <span class="font-weight-medium">{{ ev.source }}</span>
+                            • <span class="mono">{{ ev.event_type }}</span>
+                            <span v-if="ev.status"> • {{ ev.status }}</span>
+                          </div>
+                        </template>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </td>
+            </tr>
           </template>
 
           <template #loading>
@@ -763,6 +1006,37 @@ useHead({ title: 'Laporan Penjualan' })
 }
 .search-field {
   width: 100%;
+}
+
+.status-chip {
+  font-weight: 600;
+  letter-spacing: 0.15px;
+}
+
+.payload-grid {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 8px 16px;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.payload-key {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  word-break: break-word;
+}
+
+.payload-value {
+  font-size: 13px;
+  color: rgba(var(--v-theme-on-surface), 0.9);
+  word-break: break-word;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
 }
 
 /* Perbaikan utama untuk alignment kalender */

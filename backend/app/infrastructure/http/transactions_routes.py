@@ -19,7 +19,13 @@ from sqlalchemy.orm import selectinload
 
 from app.extensions import db
 from app.infrastructure.db.models import (
-    ApprovalStatus, Package, Transaction, TransactionStatus, User
+    ApprovalStatus,
+    Package,
+    Transaction,
+    TransactionEvent,
+    TransactionEventSource,
+    TransactionStatus,
+    User,
 )
 from app.services.transaction_service import apply_package_and_sync_to_mikrotik
 from app.services.notification_service import (
@@ -51,6 +57,32 @@ transactions_bp = Blueprint(
         os.path.dirname(os.path.abspath(__file__)), "../../templates"
     ),
 )
+
+
+def _safe_json_dumps(value: object) -> str | None:
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except Exception:
+        return None
+
+
+def _log_transaction_event(
+    *,
+    session,
+    transaction: Transaction,
+    source: TransactionEventSource,
+    event_type: str,
+    status: TransactionStatus | None = None,
+    payload: object | None = None,
+) -> None:
+    ev = TransactionEvent()
+    ev.id = uuid.uuid4()
+    ev.transaction_id = transaction.id
+    ev.source = source
+    ev.event_type = event_type
+    ev.status = status
+    ev.payload = _safe_json_dumps(payload) if payload is not None else None
+    session.add(ev)
 
 # --- FUNGSI HELPER (Tidak ada perubahan) ---
 def get_midtrans_core_api_client():
@@ -271,6 +303,24 @@ def initiate_transaction(current_user_id: uuid.UUID):
 
         new_transaction.snap_token = snap_token
         new_transaction.snap_redirect_url = redirect_url
+
+        _log_transaction_event(
+            session=session,
+            transaction=new_transaction,
+            source=TransactionEventSource.APP,
+            event_type="INITIATED",
+            status=new_transaction.status,
+            payload={
+                "order_id": order_id,
+                "package_id": str(package.id),
+                "amount": gross_amount,
+                "expiry_time": new_transaction.expiry_time.isoformat() if new_transaction.expiry_time else None,
+                "snap_token_present": bool(snap_token),
+                "redirect_url": redirect_url,
+                "finish_url": finish_url,
+            },
+        )
+
         session.add(new_transaction)
         session.commit()
 
@@ -343,6 +393,15 @@ def handle_notification():
             return jsonify({"status": "ok"}), HTTPStatus.OK
 
         transaction.status = new_status
+
+        _log_transaction_event(
+            session=session,
+            transaction=transaction,
+            source=TransactionEventSource.MIDTRANS_WEBHOOK,
+            event_type="NOTIFICATION",
+            status=transaction.status,
+            payload=notification_payload,
+        )
         if notification_payload.get("transaction_id"):
             transaction.midtrans_transaction_id = notification_payload.get("transaction_id")
 
@@ -373,6 +432,14 @@ def handle_notification():
             with get_mikrotik_connection() as mikrotik_api:
                 is_success, message = apply_package_and_sync_to_mikrotik(transaction, mikrotik_api)
                 if is_success:
+                    _log_transaction_event(
+                        session=session,
+                        transaction=transaction,
+                        source=TransactionEventSource.APP,
+                        event_type="MIKROTIK_APPLY_SUCCESS",
+                        status=transaction.status,
+                        payload={"message": message},
+                    )
                     session.commit() # Commit transaksi DULU
                     current_app.logger.info(f"WEBHOOK: Transaksi {order_id} BERHASIL di-commit. Pesan: {message}")
                     increment_metric("payment.success")
@@ -427,6 +494,25 @@ def handle_notification():
                         current_app.logger.error(f"WEBHOOK: Gagal kirim notif WhatsApp {order_id}: {e_notif}", exc_info=True)
                 else:
                     session.rollback() # Rollback jika Mikrotik gagal
+                    try:
+                        transaction_after = (
+                            session.query(Transaction)
+                            .filter(Transaction.midtrans_order_id == order_id)
+                            .with_for_update()
+                            .first()
+                        )
+                        if transaction_after is not None:
+                            _log_transaction_event(
+                                session=session,
+                                transaction=transaction_after,
+                                source=TransactionEventSource.APP,
+                                event_type="MIKROTIK_APPLY_FAILED",
+                                status=transaction_after.status,
+                                payload={"message": message, "midtrans_status": midtrans_status},
+                            )
+                            session.commit()
+                    except Exception:
+                        session.rollback()
                     current_app.logger.error(f"WEBHOOK: Gagal apply paket ke Mikrotik untuk {order_id}. Rollback transaksi.")
                     increment_metric("payment.failed")
         else:
@@ -461,6 +547,7 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
 
         if transaction.status in (TransactionStatus.PENDING, TransactionStatus.UNKNOWN):
             try:
+                prev_status = transaction.status
                 # Throttle Midtrans status checks to avoid spamming Core API during frontend polling.
                 redis_client = getattr(current_app, "redis_client_otp", None)
                 if redis_client is not None:
@@ -487,6 +574,16 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
                 core_api = get_midtrans_core_api_client()
                 midtrans_status_response = core_api.transactions.status(order_id)
                 record_success("midtrans")
+
+                # Log Midtrans status check only when we actually call Core API (throttled above).
+                _log_transaction_event(
+                    session=session,
+                    transaction=transaction,
+                    source=TransactionEventSource.MIDTRANS_STATUS,
+                    event_type="STATUS_CHECK",
+                    status=transaction.status,
+                    payload=midtrans_status_response,
+                )
                 midtrans_trx_status_raw = midtrans_status_response.get("transaction_status")
                 midtrans_trx_status = str(midtrans_trx_status_raw).strip().lower() if isinstance(midtrans_trx_status_raw, str) else ""
                 fraud_status_raw = midtrans_status_response.get("fraud_status")
@@ -521,9 +618,36 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
                             abort(HTTPStatus.SERVICE_UNAVAILABLE, "Gagal koneksi ke sistem hotspot untuk sinkronisasi.")
                         is_success, message = apply_package_and_sync_to_mikrotik(transaction, mikrotik_api)
                         if is_success:
+                            _log_transaction_event(
+                                session=session,
+                                transaction=transaction,
+                                source=TransactionEventSource.APP,
+                                event_type="MIKROTIK_APPLY_SUCCESS",
+                                status=transaction.status,
+                                payload={"message": message},
+                            )
                             session.commit()
                         else:
                             session.rollback()
+                            try:
+                                transaction_after = (
+                                    session.query(Transaction)
+                                    .filter(Transaction.midtrans_order_id == order_id)
+                                    .with_for_update()
+                                    .first()
+                                )
+                                if transaction_after is not None:
+                                    _log_transaction_event(
+                                        session=session,
+                                        transaction=transaction_after,
+                                        source=TransactionEventSource.APP,
+                                        event_type="MIKROTIK_APPLY_FAILED",
+                                        status=transaction_after.status,
+                                        payload={"message": message},
+                                    )
+                                    session.commit()
+                            except Exception:
+                                session.rollback()
                             abort(HTTPStatus.INTERNAL_SERVER_ERROR, f"Gagal menerapkan paket: {message}")
                 else:
                     status_map: dict[str, TransactionStatus] = {"deny": TransactionStatus.FAILED, "expire": TransactionStatus.EXPIRED, "cancel": TransactionStatus.CANCELLED}
@@ -531,6 +655,17 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
                         if transaction.status != new_status:
                             transaction.status = new_status
                             session.commit()
+
+                if prev_status != transaction.status:
+                    _log_transaction_event(
+                        session=session,
+                        transaction=transaction,
+                        source=TransactionEventSource.APP,
+                        event_type="STATUS_CHANGED",
+                        status=transaction.status,
+                        payload={"from": prev_status.value, "to": transaction.status.value},
+                    )
+                    session.commit()
             except midtransclient.error_midtrans.MidtransAPIError as midtrans_err:
                 record_failure("midtrans")
                 current_app.logger.warning(f"GET Detail: Gagal cek status Midtrans untuk PENDING {order_id}: {midtrans_err.message}")
@@ -586,6 +721,14 @@ def cancel_transaction(current_user_id: uuid.UUID, order_id: str):
 
         if transaction.status in (TransactionStatus.UNKNOWN, TransactionStatus.PENDING):
             transaction.status = TransactionStatus.CANCELLED
+            _log_transaction_event(
+                session=session,
+                transaction=transaction,
+                source=TransactionEventSource.APP,
+                event_type="CANCELLED_BY_USER",
+                status=transaction.status,
+                payload={"order_id": order_id},
+            )
             session.commit()
         return jsonify({"success": True, "status": transaction.status.value}), HTTPStatus.OK
     except Exception as e:
