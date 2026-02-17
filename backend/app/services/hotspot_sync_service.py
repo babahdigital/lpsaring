@@ -668,32 +668,31 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                         username_08_for_block = username_08
                         date_str, time_str = get_app_date_time_strings(now_utc)
 
-                        with get_mikrotik_connection() as api2:
-                            if api2:
-                                block_type = settings_service.get_ip_binding_type_setting('IP_BINDING_TYPE_BLOCKED', 'blocked')
-                                for device in (user.devices or []):
-                                    mac = (device.mac_address or '').upper()
-                                    if not mac:
-                                        continue
-                                    upsert_ip_binding(
-                                        api_connection=api2,
-                                        mac_address=mac,
-                                        binding_type=block_type,
+                        if api:
+                            block_type = settings_service.get_ip_binding_type_setting('IP_BINDING_TYPE_BLOCKED', 'blocked')
+                            for device in (user.devices or []):
+                                mac = (device.mac_address or '').upper()
+                                if not mac:
+                                    continue
+                                upsert_ip_binding(
+                                    api_connection=api,
+                                    mac_address=mac,
+                                    binding_type=block_type,
+                                    comment=(
+                                        f"blocked|quota-debt-limit|user={username_08_for_block}|uid={user.id}|debt_mb={debt_mb_text}|date={date_str}|time={time_str}"
+                                    ),
+                                )
+
+                                if device.ip_address:
+                                    list_blocked = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_BLOCKED', 'blocked') or 'blocked'
+                                    upsert_address_list_entry(
+                                        api_connection=api,
+                                        address=device.ip_address,
+                                        list_name=list_blocked,
                                         comment=(
-                                            f"blocked|quota-debt-limit|user={username_08_for_block}|uid={user.id}|debt_mb={debt_mb_text}|date={date_str}|time={time_str}"
+                                            f"lpsaring|blocked|quota-debt-limit|user={username_08_for_block}|uid={user.id}|debt_mb={debt_mb_text}|date={date_str}|time={time_str}"
                                         ),
                                     )
-
-                                    if device.ip_address:
-                                        list_blocked = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_BLOCKED', 'blocked') or 'blocked'
-                                        upsert_address_list_entry(
-                                            api_connection=api2,
-                                            address=device.ip_address,
-                                            list_name=list_blocked,
-                                            comment=(
-                                                f"lpsaring|blocked|quota-debt-limit|user={username_08_for_block}|uid={user.id}|debt_mb={debt_mb_text}|date={date_str}|time={time_str}"
-                                            ),
-                                        )
 
                         if settings_service.get_setting('ENABLE_WHATSAPP_NOTIFICATIONS', 'True') == 'True':
                             try:
