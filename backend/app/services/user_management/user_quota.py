@@ -208,6 +208,33 @@ def set_user_unlimited(user: User, admin_actor: User, make_unlimited: bool) -> T
         return False, f"Gagal sinkronisasi Mikrotik: {mikrotik_msg}"
 
     user.mikrotik_user_exists = True
+
+    # Sinkronisasi akses (address-list + ip-binding type) agar perubahan unlimited langsung terasa.
+    # Catatan: kalau user masih diblokir manual, address-list akan tetap mengikuti status blocked.
+    try:
+        sync_address_list_for_single_user(user)
+    except Exception as e:
+        current_app.logger.warning(
+            "Gagal sync address-list setelah set unlimited untuk user %s: %s",
+            user.id,
+            e,
+        )
+
+    try:
+        with get_mikrotik_connection() as api_conn:
+            if api_conn:
+                _sync_ip_binding_for_authorized_devices(
+                    user,
+                    api_conn,
+                    source='set_unlimited',
+                )
+    except Exception as e:
+        current_app.logger.warning(
+            "Gagal sync ip-binding setelah set unlimited untuk user %s: %s",
+            user.id,
+            e,
+        )
+
     if not admin_actor.is_super_admin_role:
         _log_admin_action(admin_actor, user, action_type, {"status": make_unlimited, "profile": user.mikrotik_profile_name})
     
