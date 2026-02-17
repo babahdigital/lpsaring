@@ -669,3 +669,13 @@ watch(() => authStore.message, (newMessage) => {
     </div>
   </div>
 </template>
+
+<style lang="scss">
+@use "@core/scss/template/pages/page-auth.scss";
+
+.v-otp-input {
+  .v-otp-input__content {
+    padding-inline: 0;
+  }
+}
+</style>
