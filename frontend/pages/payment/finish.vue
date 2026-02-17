@@ -58,6 +58,8 @@ const isLoading = ref(true)
 const fetchError = ref<string | null>(null)
 const copySuccess = ref<string | null>(null)
 const isDownloadingInvoice = ref(false)
+const isPolling = ref(false)
+const pollAttempts = ref(0)
 const errorMessageFromQuery = ref<string | null>(
   typeof route.query.msg === 'string' ? decodeURIComponent(route.query.msg) : null,
 )
@@ -93,13 +95,42 @@ async function fetchTransactionDetails(orderId: string) {
   }
 }
 
+function isFinalStatus(status: TransactionStatus): boolean {
+  return status === 'SUCCESS' || status === 'FAILED' || status === 'EXPIRED' || status === 'CANCELLED'
+}
+
+async function pollTransactionUntilFinal(orderIdValue: string) {
+  if (isPolling.value === true)
+    return
+  isPolling.value = true
+  pollAttempts.value = 0
+  try {
+    while (pollAttempts.value < 40) {
+      pollAttempts.value += 1
+      await fetchTransactionDetails(orderIdValue)
+      const status = transactionDetails.value?.status
+      if (status != null && isFinalStatus(status))
+        break
+      await new Promise(resolve => setTimeout(resolve, 3000))
+    }
+  }
+  finally {
+    isPolling.value = false
+  }
+}
+
 onMounted(() => {
   isHydrated.value = true
   const orderIdFromQuery = route.query.order_id as string | undefined
   const statusFromQuery = typeof route.query.status === 'string' ? route.query.status.toUpperCase() : undefined
 
   if (typeof orderIdFromQuery === 'string' && orderIdFromQuery.trim() !== '') {
-    fetchTransactionDetails(orderIdFromQuery.trim())
+    const cleaned = orderIdFromQuery.trim()
+    void fetchTransactionDetails(cleaned).then(() => {
+      const status = transactionDetails.value?.status
+      if (status === 'PENDING' || status === 'UNKNOWN')
+        void pollTransactionUntilFinal(cleaned)
+    })
   }
   else if (statusFromQuery === 'ERROR' && errorMessageFromQuery.value != null) {
     fetchError.value = `Pembayaran Gagal: ${errorMessageFromQuery.value}`
@@ -191,6 +222,7 @@ const alertTitle = computed((): string => {
     case 'EXPIRED': return 'Waktu Pembayaran Habis'
     case 'CANCELLED': return 'Transaksi Dibatalkan'
     case 'ERROR': return 'Terjadi Kesalahan Pembayaran'
+    case 'UNKNOWN': return 'Pembayaran Belum Dimulai'
     default: return 'Status Transaksi Tidak Diketahui'
   }
 })
@@ -203,6 +235,7 @@ const alertIcon = computed((): string => {
     case 'EXPIRED': return 'tabler-clock-off'
     case 'CANCELLED': return 'tabler-ban'
     case 'ERROR': return 'tabler-alert-triangle'
+    case 'UNKNOWN': return 'tabler-loader-2'
     default: return 'tabler-help-circle'
   }
 })
@@ -226,7 +259,9 @@ const detailMessage = computed((): string => {
         return `Pembelian paket ${safePackageName} (${quotaDisplay} GB) untuk ${safeUsername} (${userName.value}) berhasil. Kredensial login akan atau sudah dikirim via WhatsApp ke ${safePhoneNumber}.`
       }
     case 'PENDING':
-      return `Mohon selesaikan pembayaran sebelum ${formatDate(transactionDetails.value?.expiry_time)} menggunakan instruksi di bawah ini.`
+      if (transactionDetails.value?.expiry_time)
+        return `Mohon selesaikan pembayaran sebelum ${formatDate(transactionDetails.value?.expiry_time)} menggunakan instruksi di bawah ini.`
+      return 'Mohon selesaikan pembayaran menggunakan instruksi yang ditampilkan di Midtrans. Status akan diperbarui otomatis.'
     case 'FAILED':
       return `Pembayaran untuk transaksi ${transactionDetails.value?.midtrans_order_id ?? ''} telah gagal. Silakan coba untuk memesan ulang.`
     case 'EXPIRED':
@@ -235,6 +270,8 @@ const detailMessage = computed((): string => {
       return `Transaksi ${transactionDetails.value?.midtrans_order_id ?? ''} telah dibatalkan.`
     case 'ERROR':
       return 'Terjadi kesalahan pada proses pembayaran. Jika Anda merasa ini adalah kesalahan sistem, silakan hubungi administrator.'
+    case 'UNKNOWN':
+      return 'Transaksi sudah dibuat, namun pembayaran belum dimulai atau status belum diterima. Silakan buka kembali pembayaran atau tunggu pembaruan status.'
     default:
       return 'Status transaksi ini belum dapat dipastikan. Sistem kami sedang melakukan pengecekan lebih lanjut.'
   }

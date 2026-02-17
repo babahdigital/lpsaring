@@ -673,7 +673,25 @@ def get_transactions_list(current_admin: User):
             query = query.order_by(desc(Transaction.created_at))
 
         pagination = db.paginate(query, page=page, per_page=per_page, error_out=False)
-        transactions_data = [{"id": str(tx.id), "order_id": tx.midtrans_order_id, "amount": float(tx.amount), "status": tx.status.value, "created_at": tx.created_at.isoformat(), "user": {"full_name": tx.user.full_name if tx.user else "N/A", "phone_number": tx.user.phone_number if tx.user else "N/A"}, "package_name": tx.package.name if tx.package else "N/A"} for tx in pagination.items]
+        transactions_data = [
+            {
+                "id": str(tx.id),
+                "order_id": tx.midtrans_order_id,
+                "amount": float(tx.amount),
+                "status": tx.status.value,
+                "created_at": tx.created_at.isoformat(),
+                "midtrans_transaction_id": tx.midtrans_transaction_id,
+                "payment_method": tx.payment_method,
+                "payment_time": tx.payment_time.isoformat() if tx.payment_time else None,
+                "expiry_time": tx.expiry_time.isoformat() if tx.expiry_time else None,
+                "user": {
+                    "full_name": tx.user.full_name if tx.user else "N/A",
+                    "phone_number": tx.user.phone_number if tx.user else "N/A",
+                },
+                "package_name": tx.package.name if tx.package else "N/A",
+            }
+            for tx in pagination.items
+        ]
         
         return jsonify({"items": transactions_data, "totalItems": pagination.total}), HTTPStatus.OK
     except Exception as e:

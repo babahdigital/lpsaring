@@ -1,12 +1,14 @@
 # backend/app/tasks.py
 import logging
 import json
-from datetime import datetime, timezone as dt_timezone
+from datetime import datetime, timedelta, timezone as dt_timezone
 
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_with_pdf, send_whatsapp_message
 from app.services.hotspot_sync_service import sync_hotspot_usage_and_profiles, cleanup_inactive_users
 from app.services import settings_service
 from app.services.walled_garden_service import sync_walled_garden
+from app.extensions import db
+from app.infrastructure.db.models import Transaction, TransactionStatus
 # Import create_app dari app/__init__.py
 from app import create_app
 # Kita akan menggunakan celery_app dari extensions.py sebagai decorator
@@ -167,4 +169,59 @@ def sync_walled_garden_task(self):
             logger.error(f"Celery Task: Walled-garden sync gagal: {e}", exc_info=True)
             if self.request.retries >= 2:
                 _record_task_failure(app, "sync_walled_garden_task", {}, str(e))
+            raise
+
+
+@celery_app.task(
+    name="expire_stale_transactions_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 2},
+)
+def expire_stale_transactions_task(self):
+    app = create_app()
+    with app.app_context():
+        now_utc = datetime.now(dt_timezone.utc)
+        try:
+            try:
+                expiry_minutes = int(app.config.get("MIDTRANS_DEFAULT_EXPIRY_MINUTES", 15))
+            except Exception:
+                expiry_minutes = 15
+            expiry_minutes = max(5, min(expiry_minutes, 24 * 60))
+            # Grace window to avoid expiring transactions too aggressively.
+            grace_minutes = 5
+            legacy_cutoff = now_utc - timedelta(minutes=(expiry_minutes + grace_minutes))
+
+            # Expire transactions that were initiated or pending but exceeded expiry_time.
+            q = (
+                db.session.query(Transaction)
+                .filter(Transaction.status.in_([TransactionStatus.UNKNOWN, TransactionStatus.PENDING]))
+                .filter(Transaction.expiry_time.isnot(None))
+                .filter(Transaction.expiry_time < now_utc)
+            )
+            to_expire = q.all()
+
+            # Also expire legacy rows that never had expiry_time set.
+            q_legacy = (
+                db.session.query(Transaction)
+                .filter(Transaction.status.in_([TransactionStatus.UNKNOWN, TransactionStatus.PENDING]))
+                .filter(Transaction.expiry_time.is_(None))
+                .filter(Transaction.created_at < legacy_cutoff)
+            )
+            to_expire.extend(q_legacy.all())
+
+            if not to_expire:
+                return
+
+            for tx in to_expire:
+                tx.status = TransactionStatus.EXPIRED
+
+            db.session.commit()
+            logger.info("Celery Task: Expired %s stale transactions.", len(to_expire))
+        except Exception as e:
+            logger.error("Celery Task: Expire stale transactions gagal: %s", e, exc_info=True)
+            if self.request.retries >= 2:
+                _record_task_failure(app, "expire_stale_transactions_task", {}, str(e))
             raise

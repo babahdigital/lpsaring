@@ -6,9 +6,13 @@ import { computed, onMounted, ref, watch } from 'vue'
 interface Transaction {
   id: string
   order_id: string
+  midtrans_transaction_id?: string | null
   amount: number
   status: 'PENDING' | 'SUCCESS' | 'FAILED' | 'EXPIRED' | 'CANCELLED' | 'UNKNOWN'
   created_at: string
+  payment_method?: string | null
+  payment_time?: string | null
+  expiry_time?: string | null
   user: { full_name: string, phone_number: string }
   package_name: string
 }
@@ -107,9 +111,12 @@ const headers = [
   { title: 'NAMA PENGGUNA', key: 'user.full_name', sortable: false, width: '200px' },
   { title: 'ID INVOICE', key: 'order_id', sortable: true, width: '200px' },
   { title: 'PAKET', key: 'package_name', sortable: false, width: '180px' },
+  { title: 'METODE', key: 'payment_method', sortable: false, width: '140px' },
   { title: 'JUMLAH', key: 'amount', sortable: true, align: 'end', width: '160px' },
   { title: 'STATUS', key: 'status', sortable: true, width: '140px' },
+  { title: 'KADALUARSA', key: 'expiry_time', sortable: false, width: '200px' },
   { title: 'TANGGAL', key: 'created_at', sortable: true, width: '200px' },
+  { title: 'AKSI', key: 'actions', sortable: false, width: '110px' },
 ]
 
 const statusColorMap: Record<Transaction['status'], string> = {
@@ -130,9 +137,32 @@ function formatStatus(status: string) {
     FAILED: 'Gagal',
     EXPIRED: 'Kadaluarsa',
     CANCELLED: 'Dibatalkan',
-    UNKNOWN: 'Tidak Diketahui',
+    UNKNOWN: 'Belum Mulai',
   }
   return statusMap[status] || status
+}
+
+function formatPaymentMethod(method?: string | null): string {
+  if (method == null || method === '')
+    return '-'
+  const m = method.toUpperCase()
+  const map: Record<string, string> = {
+    QRIS: 'QRIS',
+    GOPAY: 'GoPay',
+    SHOPEEPAY: 'ShopeePay',
+    BANK_TRANSFER: 'VA',
+    CREDIT_CARD: 'Kartu',
+    CSTORE: 'Konter',
+    ALFAMART: 'Alfamart',
+    INDOMARET: 'Indomaret',
+  }
+  return map[m] ?? method
+}
+
+function openInvoice(orderId: string) {
+  if (!orderId)
+    return
+  window.open(`/api/transactions/${encodeURIComponent(orderId)}/invoice`, '_blank', 'noopener')
 }
 
 // Fungsi baru untuk format nomor telepon
@@ -529,6 +559,28 @@ useHead({ title: 'Laporan Penjualan' })
 
           <template #item.created_at="{ item }">
             <span class="text-sm date-time">{{ formatDateTime(item.created_at) }}</span>
+          </template>
+
+          <template #item.payment_method="{ item }">
+            <span class="text-sm">{{ formatPaymentMethod(item.payment_method) }}</span>
+          </template>
+
+          <template #item.expiry_time="{ item }">
+            <span class="text-sm">{{ item.expiry_time ? formatDateTime(item.expiry_time) : '-' }}</span>
+          </template>
+
+          <template #item.actions="{ item }">
+            <VBtn
+              v-if="item.status === 'SUCCESS'"
+              icon
+              variant="text"
+              size="small"
+              :title="`Invoice ${item.order_id}`"
+              @click="openInvoice(item.order_id)"
+            >
+              <VIcon icon="tabler-receipt" />
+            </VBtn>
+            <span v-else class="text-medium-emphasis">-</span>
           </template>
 
           <template #loading>

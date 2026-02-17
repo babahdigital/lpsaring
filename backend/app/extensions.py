@@ -86,6 +86,10 @@ def make_celery_app(app=None):
             'task': 'sync_hotspot_usage_task',
             'schedule': schedule_seconds,
         },
+        'expire-stale-transactions': {
+            'task': 'expire_stale_transactions_task',
+            'schedule': 60,
+        },
         'cleanup-inactive-users': {
             'task': 'cleanup_inactive_users_task',
             'schedule': crontab(hour=3, minute=0),

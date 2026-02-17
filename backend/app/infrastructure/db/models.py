@@ -328,6 +328,7 @@ class Transaction(db.Model):
     payment_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     biller_code: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     qr_code_url: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    midtrans_notification_payload: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     hotspot_password: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

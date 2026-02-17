@@ -2,6 +2,7 @@
 # VERSI PERBAIKAN FINAL: Menggunakan base URL publik dari konfigurasi dan Celery.
 
 import hashlib
+import json
 import os
 import uuid
 from datetime import datetime, timedelta, timezone as dt_timezone
@@ -60,9 +61,9 @@ def get_midtrans_core_api_client():
     client = midtransclient.CoreApi(is_production=is_production, server_key=server_key)
     timeout_seconds = int(current_app.config.get("MIDTRANS_HTTP_TIMEOUT_SECONDS", 15))
     if hasattr(client, "timeout"):
-        client.timeout = timeout_seconds
+        client.timeout = timeout_seconds  # type: ignore[attr-defined]
     if hasattr(client, "http_client") and hasattr(client.http_client, "timeout"):
-        client.http_client.timeout = timeout_seconds
+        client.http_client.timeout = timeout_seconds  # type: ignore[attr-defined]
     return client
 
 def get_midtrans_snap_client():
@@ -74,9 +75,9 @@ def get_midtrans_snap_client():
     client = midtransclient.Snap(is_production=is_production, server_key=server_key, client_key=client_key)
     timeout_seconds = int(current_app.config.get("MIDTRANS_HTTP_TIMEOUT_SECONDS", 15))
     if hasattr(client, "timeout"):
-        client.timeout = timeout_seconds
+        client.timeout = timeout_seconds  # type: ignore[attr-defined]
     if hasattr(client, "http_client") and hasattr(client.http_client, "timeout"):
-        client.http_client.timeout = timeout_seconds
+        client.http_client.timeout = timeout_seconds  # type: ignore[attr-defined]
     return client
 
 def safe_parse_midtrans_datetime(dt_string: Optional[str]):
@@ -218,10 +219,24 @@ def initiate_transaction(current_user_id: uuid.UUID):
         order_id = f"HS-{uuid.uuid4().hex[:12].upper()}"
         gross_amount = int(package.price or 0)
 
-        new_transaction = Transaction(
-            id=uuid.uuid4(), user_id=user.id, package_id=package.id,
-            midtrans_order_id=order_id, amount=gross_amount, status=TransactionStatus.PENDING,
-        )
+        now_utc = datetime.now(dt_timezone.utc)
+        try:
+            expiry_minutes = int(current_app.config.get("MIDTRANS_DEFAULT_EXPIRY_MINUTES", 15))
+        except Exception:
+            expiry_minutes = 15
+        expiry_minutes = max(5, min(expiry_minutes, 24 * 60))
+        local_expiry_time = now_utc + timedelta(minutes=expiry_minutes)
+
+        # SQLAlchemy model init menerima keyword args, tetapi type-checker (Pylance)
+        # tidak mengenali signature dinamis tersebut. Gunakan assignment eksplisit.
+        new_transaction = Transaction()
+        new_transaction.id = uuid.uuid4()
+        new_transaction.user_id = user.id
+        new_transaction.package_id = package.id
+        new_transaction.midtrans_order_id = order_id
+        new_transaction.amount = gross_amount
+        new_transaction.status = TransactionStatus.UNKNOWN
+        new_transaction.expiry_time = local_expiry_time
         
         # PERBAIKAN: Gunakan base URL publik jika tersedia, jika tidak fallback ke frontend URL
         # Ini untuk callback finish yang dilihat oleh browser pengguna.
@@ -233,7 +248,8 @@ def initiate_transaction(current_user_id: uuid.UUID):
         if not base_callback_url:
             current_app.logger.error("APP_PUBLIC_BASE_URL/FRONTEND_URL/APP_LINK_USER belum dikonfigurasi.")
             abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="APP_PUBLIC_BASE_URL belum dikonfigurasi.")
-        finish_url = f"{base_callback_url.rstrip('/')}/payment/finish?order_id={order_id}&status=pending"
+        # Jangan hardcode status=pending: status final harus berdasarkan callback Snap atau webhook.
+        finish_url = f"{base_callback_url.rstrip('/')}/payment/finish?order_id={order_id}"
         
         snap_params = {
             "transaction_details": {"order_id": order_id, "gross_amount": gross_amount},
@@ -301,11 +317,24 @@ def handle_notification():
         if not transaction or transaction.status == TransactionStatus.SUCCESS:
             return jsonify({"status": "ok"}), HTTPStatus.OK
 
-        midtrans_status = notification_payload.get("transaction_status")
-        fraud_status = notification_payload.get("fraud_status")
-        payment_success = (midtrans_status in ["capture", "settlement"] and fraud_status == "accept")
+        # Simpan payload mentah agar admin bisa audit lengkap seperti data contoh.
+        try:
+            transaction.midtrans_notification_payload = json.dumps(notification_payload, ensure_ascii=False)
+        except Exception:
+            transaction.midtrans_notification_payload = None
+
+        midtrans_status_raw = notification_payload.get("transaction_status")
+        midtrans_status = str(midtrans_status_raw).strip().lower() if isinstance(midtrans_status_raw, str) else ""
+        fraud_status_raw = notification_payload.get("fraud_status")
+        fraud_status = str(fraud_status_raw).strip().lower() if isinstance(fraud_status_raw, str) else None
+        # settlement umumnya final sukses; capture butuh fraud accept (untuk kartu) namun bisa None untuk metode lain.
+        payment_success = False
+        if midtrans_status == "settlement":
+            payment_success = True
+        elif midtrans_status == "capture":
+            payment_success = (fraud_status in (None, "accept"))
         
-        status_map = {
+        status_map: dict[str, TransactionStatus] = {
             "capture": TransactionStatus.SUCCESS, "settlement": TransactionStatus.SUCCESS,
             "pending": TransactionStatus.PENDING, "deny": TransactionStatus.FAILED,
             "expire": TransactionStatus.EXPIRED, "cancel": TransactionStatus.CANCELLED,
@@ -318,6 +347,29 @@ def handle_notification():
         if notification_payload.get("transaction_id"):
             transaction.midtrans_transaction_id = notification_payload.get("transaction_id")
 
+        # Enrich kolom transaksi dari payload (baik pending maupun final) agar tabel admin lengkap.
+        if notification_payload.get("payment_type"):
+            transaction.payment_method = notification_payload.get("payment_type")
+
+        if parsed_expiry := safe_parse_midtrans_datetime(notification_payload.get("expiry_time")):
+            transaction.expiry_time = parsed_expiry
+
+        # Informasi pembayaran yang bisa dipakai di finish page.
+        transaction.va_number = extract_va_number(notification_payload) or transaction.va_number
+        if notification_payload.get("payment_code"):
+            transaction.payment_code = notification_payload.get("payment_code")
+        if notification_payload.get("biller_code"):
+            transaction.biller_code = notification_payload.get("biller_code")
+        transaction.qr_code_url = extract_qr_code_url(notification_payload) or transaction.qr_code_url
+
+        if payment_success:
+            # set payment time jika tersedia
+            transaction.payment_time = (
+                safe_parse_midtrans_datetime(notification_payload.get("settlement_time"))
+                or safe_parse_midtrans_datetime(notification_payload.get("transaction_time"))
+                or transaction.payment_time
+            )
+
         if payment_success:
             with get_mikrotik_connection() as mikrotik_api:
                 is_success, message = apply_package_and_sync_to_mikrotik(transaction, mikrotik_api)
@@ -328,6 +380,12 @@ def handle_notification():
                     try:
                         user = transaction.user
                         package = transaction.package
+                        if user is None or package is None:
+                            current_app.logger.error(
+                                "WEBHOOK: transaksi %s sukses tetapi user/package tidak ter-load. Skip WA invoice.",
+                                order_id,
+                            )
+                            return jsonify({"status": "ok"}), HTTPStatus.OK
                         temp_token = generate_temp_invoice_token(str(transaction.id))
 
                         base_url = (
@@ -402,24 +460,62 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
         if not requesting_user or (transaction.user_id != current_user_id and not requesting_user.is_admin_role):
             abort(HTTPStatus.FORBIDDEN, description="Anda tidak diizinkan melihat transaksi ini.")
 
-        if transaction.status == TransactionStatus.PENDING:
+        if transaction.status in (TransactionStatus.PENDING, TransactionStatus.UNKNOWN):
             try:
+                # Throttle Midtrans status checks to avoid spamming Core API during frontend polling.
+                redis_client = getattr(current_app, "redis_client_otp", None)
+                if redis_client is not None:
+                    try:
+                        ttl_seconds = int(current_app.config.get("MIDTRANS_STATUS_CHECK_THROTTLE_SECONDS", 8))
+                    except Exception:
+                        ttl_seconds = 8
+                    ttl_seconds = max(3, min(ttl_seconds, 60))
+                    throttle_key = f"midtrans:statuscheck:{order_id}"
+                    try:
+                        inserted = redis_client.set(throttle_key, "1", ex=ttl_seconds, nx=True)
+                        if inserted is None:
+                            # Skip calling Midtrans; return current DB state.
+                            raise StopIteration
+                    except StopIteration:
+                        raise
+                    except Exception:
+                        # If Redis fails, continue without throttle.
+                        pass
+
                 if not should_allow_call("midtrans"):
                     abort(HTTPStatus.SERVICE_UNAVAILABLE, "Midtrans sementara tidak tersedia.")
 
                 core_api = get_midtrans_core_api_client()
                 midtrans_status_response = core_api.transactions.status(order_id)
                 record_success("midtrans")
-                midtrans_trx_status = midtrans_status_response.get("transaction_status")
-                fraud_status = midtrans_status_response.get("fraud_status")
-                payment_success = (midtrans_trx_status in ["capture", "settlement"] and fraud_status == "accept")
+                midtrans_trx_status_raw = midtrans_status_response.get("transaction_status")
+                midtrans_trx_status = str(midtrans_trx_status_raw).strip().lower() if isinstance(midtrans_trx_status_raw, str) else ""
+                fraud_status_raw = midtrans_status_response.get("fraud_status")
+                fraud_status = str(fraud_status_raw).strip().lower() if isinstance(fraud_status_raw, str) else None
+                payment_success = False
+                if midtrans_trx_status == "settlement":
+                    payment_success = True
+                elif midtrans_trx_status == "capture":
+                    payment_success = (fraud_status in (None, "accept"))
+
+                try:
+                    transaction.midtrans_notification_payload = json.dumps(midtrans_status_response, ensure_ascii=False)
+                except Exception:
+                    pass
+
+                if midtrans_status_response.get("payment_type"):
+                    transaction.payment_method = midtrans_status_response.get("payment_type")
+                if parsed_expiry := safe_parse_midtrans_datetime(midtrans_status_response.get("expiry_time")):
+                    transaction.expiry_time = parsed_expiry
+                transaction.va_number = extract_va_number(midtrans_status_response) or transaction.va_number
+                transaction.qr_code_url = extract_qr_code_url(midtrans_status_response) or transaction.qr_code_url
 
                 if payment_success:
                     transaction.status = TransactionStatus.SUCCESS
-                    transaction.payment_method = midtrans_status_response.get("payment_type")
                     transaction.midtrans_transaction_id = midtrans_status_response.get("transaction_id")
                     transaction.payment_time = safe_parse_midtrans_datetime(midtrans_status_response.get("settlement_time")) or datetime.now(dt_timezone.utc)
-                    transaction.va_number = extract_va_number(midtrans_status_response)
+                    transaction.payment_code = midtrans_status_response.get("payment_code") or transaction.payment_code
+                    transaction.biller_code = midtrans_status_response.get("biller_code") or transaction.biller_code
 
                     with get_mikrotik_connection() as mikrotik_api:
                         if not mikrotik_api:
@@ -431,7 +527,7 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
                             session.rollback()
                             abort(HTTPStatus.INTERNAL_SERVER_ERROR, f"Gagal menerapkan paket: {message}")
                 else:
-                    status_map = {"deny": TransactionStatus.FAILED, "expire": TransactionStatus.EXPIRED, "cancel": TransactionStatus.CANCELLED}
+                    status_map: dict[str, TransactionStatus] = {"deny": TransactionStatus.FAILED, "expire": TransactionStatus.EXPIRED, "cancel": TransactionStatus.CANCELLED}
                     if new_status := status_map.get(midtrans_trx_status):
                         if transaction.status != new_status:
                             transaction.status = new_status
@@ -439,6 +535,8 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
             except midtransclient.error_midtrans.MidtransAPIError as midtrans_err:
                 record_failure("midtrans")
                 current_app.logger.warning(f"GET Detail: Gagal cek status Midtrans untuk PENDING {order_id}: {midtrans_err.message}")
+            except StopIteration:
+                pass
             except Exception as e_check_status:
                 record_failure("midtrans")
                 current_app.logger.error(f"GET Detail: Error tak terduga saat cek status Midtrans untuk PENDING {order_id}: {e_check_status}")
@@ -470,11 +568,41 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
         if session:
             session.remove()
 
+
+@transactions_bp.route("/<string:order_id>/cancel", methods=["POST"])
+@token_required
+def cancel_transaction(current_user_id: uuid.UUID, order_id: str):
+    session = db.session
+    try:
+        transaction = session.query(Transaction).filter(Transaction.midtrans_order_id == order_id).with_for_update().first()
+        if not transaction:
+            abort(HTTPStatus.NOT_FOUND, description=f"Transaksi dengan Order ID {order_id} tidak ditemukan.")
+
+        requesting_user = session.get(User, current_user_id)
+        if not requesting_user or (transaction.user_id != current_user_id and not requesting_user.is_admin_role):
+            abort(HTTPStatus.FORBIDDEN, description="Anda tidak diizinkan membatalkan transaksi ini.")
+
+        if transaction.status == TransactionStatus.SUCCESS:
+            return jsonify({"success": False, "message": "Transaksi sudah sukses dan tidak bisa dibatalkan."}), HTTPStatus.BAD_REQUEST
+
+        if transaction.status in (TransactionStatus.UNKNOWN, TransactionStatus.PENDING):
+            transaction.status = TransactionStatus.CANCELLED
+            session.commit()
+        return jsonify({"success": True, "status": transaction.status.value}), HTTPStatus.OK
+    except Exception as e:
+        if session.is_active:
+            session.rollback()
+        current_app.logger.error(f"Gagal membatalkan transaksi {order_id}: {e}", exc_info=True)
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Gagal membatalkan transaksi.")
+    finally:
+        session.remove()
+
 @transactions_bp.route("/<string:midtrans_order_id>/invoice", methods=["GET"])
 @token_required
 def get_transaction_invoice(current_user_id: uuid.UUID, midtrans_order_id: str):
     if not WEASYPRINT_AVAILABLE:
         abort(HTTPStatus.NOT_IMPLEMENTED, "Komponen PDF server tidak tersedia.")
+    assert HTML is not None
     session = db.session
     try:
         transaction = session.query(Transaction).options(selectinload(Transaction.user), selectinload(Transaction.package)).filter(Transaction.midtrans_order_id == midtrans_order_id).first()
@@ -485,9 +613,12 @@ def get_transaction_invoice(current_user_id: uuid.UUID, midtrans_order_id: str):
             abort(HTTPStatus.FORBIDDEN, "Anda tidak diizinkan mengakses invoice ini.")
         if transaction.status != TransactionStatus.SUCCESS:
             abort(HTTPStatus.BAD_REQUEST, "Invoice hanya tersedia untuk transaksi yang sudah sukses.")
+
+        if transaction.user is None:
+            abort(HTTPStatus.INTERNAL_SERVER_ERROR, "Data pengguna transaksi tidak tersedia.")
         
         app_tz = dt_timezone(timedelta(hours=int(current_app.config.get("APP_TIMEZONE_OFFSET", 8))))
-        user_kamar_display = transaction.user.kamar
+        user_kamar_display = getattr(transaction.user, "kamar", None)
         if user_kamar_display and user_kamar_display.startswith("Kamar_"):
              user_kamar_display = user_kamar_display.replace("Kamar_", "")
         context = {
@@ -525,7 +656,7 @@ def get_transaction_invoice(current_user_id: uuid.UUID, midtrans_order_id: str):
 # Tambahkan route baru untuk URL yang diakhiri dengan .pdf
 @transactions_bp.route("/invoice/temp/<string:token>.pdf", methods=["GET"])
 def get_temp_transaction_invoice(token: str):
-    if not WEASYPRINT_AVAILABLE or not HTML:
+    if not WEASYPRINT_AVAILABLE or HTML is None:
         abort(HTTPStatus.NOT_IMPLEMENTED, "Komponen PDF server tidak tersedia.")
 
     transaction_id = verify_temp_invoice_token(token, max_age_seconds=3600)
@@ -541,9 +672,13 @@ def get_temp_transaction_invoice(token: str):
 
         if not transaction or transaction.status != TransactionStatus.SUCCESS:
             abort(HTTPStatus.NOT_FOUND, "Invoice tidak ditemukan atau transaksi belum berhasil.")
+
+        if transaction.user is None:
+            abort(HTTPStatus.INTERNAL_SERVER_ERROR, "Data pengguna transaksi tidak tersedia.")
         
         app_tz = dt_timezone(timedelta(hours=int(current_app.config.get("APP_TIMEZONE_OFFSET", 8))))
-        user_kamar_display = transaction.user.kamar.replace("Kamar_", "") if transaction.user.kamar else ""
+        kamar_value = getattr(transaction.user, "kamar", None)
+        user_kamar_display = kamar_value.replace("Kamar_", "") if isinstance(kamar_value, str) and kamar_value else ""
         context = {
             'transaction': transaction, 'user': transaction.user, 'package': transaction.package,
             'user_kamar_value': user_kamar_display,

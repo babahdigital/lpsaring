@@ -136,12 +136,17 @@ async function initiatePayment(packageId: string) {
       body: { package_id: packageId },
     })
 
+    const initiatedOrderId = responseData?.order_id
+
     if ((responseData?.snap_token != null && responseData.snap_token !== '') && window.snap != null) {
       window.snap.pay(responseData.snap_token, {
         onSuccess: (result: SnapPayResult) => router.push(`/payment/finish?status=success&order_id=${result.order_id}`),
         onPending: (result: SnapPayResult) => router.push(`/payment/finish?status=pending&order_id=${result.order_id}`),
         onError: (result: SnapPayResult) => router.push(`/payment/finish?status=error&order_id=${result.order_id}`),
         onClose: () => {
+          if (typeof initiatedOrderId === 'string' && initiatedOrderId !== '') {
+            void $api(`/transactions/${encodeURIComponent(initiatedOrderId)}/cancel`, { method: 'POST' }).catch(() => {})
+          }
           addSnackbar({ type: 'info', title: 'Pembayaran', text: 'Anda menutup jendela pembayaran.' })
           isInitiatingPayment.value = null
         },
