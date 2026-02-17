@@ -53,7 +53,7 @@ services:
       dockerfile: Dockerfile
     container_name: hotspot_flask_backend_e2e
     env_file:
-      - ./backend/.env.${APP_ENV:-local}
+      - ./backend/.env.e2e
     environment:
       # E2E lokal: fokus flow/arsitektur, jangan benar-benar kirim WhatsApp
       ENABLE_WHATSAPP_NOTIFICATIONS: "False"
@@ -93,7 +93,7 @@ services:
       dockerfile: Dockerfile
     container_name: hotspot_flask_migrate_e2e
     env_file:
-      - ./backend/.env.${APP_ENV:-local}
+      - ./backend/.env.e2e
     volumes:
       - ./backend:/app
     command: python -m flask db upgrade
@@ -110,7 +110,7 @@ services:
       dockerfile: Dockerfile
     container_name: hotspot_celery_worker_e2e
     env_file:
-      - ./backend/.env.${APP_ENV:-local}
+      - ./backend/.env.e2e
     environment:
       ENABLE_WHATSAPP_NOTIFICATIONS: "False"
     volumes:
@@ -133,7 +133,7 @@ services:
       dockerfile: Dockerfile
     container_name: hotspot_celery_beat_e2e
     env_file:
-      - ./backend/.env.${APP_ENV:-local}
+      - ./backend/.env.e2e
     environment:
       ENABLE_WHATSAPP_NOTIFICATIONS: "False"
     volumes:
