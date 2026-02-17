@@ -48,9 +48,9 @@ const portalParams = ref({
 })
 
 const isSubmitting = computed(() => authStore.loading)
-const hasRequiredParams = computed(() => true)
 const hasClientIdentity = computed(() => Boolean(portalParams.value.clientIp && portalParams.value.clientMac))
-const canSubmit = computed(() => hasRequiredParams.value)
+const hotspotLoginOnlyUrl = computed(() => portalParams.value.linkLoginOnly || '')
+const canSubmit = computed(() => true)
 
 const phoneFormatRules = [
   (v: string) => {
@@ -94,15 +94,6 @@ function loadPortalParams() {
     clientMac: getQueryValueFromKeys(['client_mac', 'mac']),
     clientIp: getQueryValueFromKeys(['client_ip', 'ip']),
   }
-
-  if (!hasRequiredParams.value) {
-    errorMessage.value = 'IP/MAC perangkat belum terbaca. Silakan buka ulang portal dari WiFi hotspot.'
-    addSnackbar({
-      title: 'Parameter Hotspot Tidak Lengkap',
-      text: errorMessage.value,
-      type: 'warning',
-    })
-  }
 }
 
 onMounted(() => {
@@ -138,11 +129,6 @@ async function tryFocus(refInstance: { focus?: () => void } | null) {
 }
 
 async function handleRequestOtp() {
-  if (!hasRequiredParams.value) {
-    step.value = 'error'
-    errorMessage.value = 'Parameter login hotspot tidak lengkap. Silakan buka kembali halaman login dari WiFi.'
-    return
-  }
   if (loginFormRef.value === null)
     return
 
@@ -167,11 +153,6 @@ async function handleRequestOtp() {
 }
 
 async function handleVerifyOtp() {
-  if (!hasRequiredParams.value) {
-    step.value = 'error'
-    errorMessage.value = 'Parameter login hotspot tidak lengkap. Silakan buka kembali halaman login dari WiFi.'
-    return
-  }
   if (loginFormRef.value === null)
     return
 
@@ -187,7 +168,7 @@ async function handleVerifyOtp() {
     const result = await authStore.verifyOtpForCaptive(numberToVerify, otpCode.value, {
       clientIp: portalParams.value.clientIp,
       clientMac: portalParams.value.clientMac,
-      hotspotLoginContext: hasRequiredParams.value,
+      hotspotLoginContext: true,
     })
 
     if (result.response == null) {
@@ -322,21 +303,24 @@ watch(() => authStore.message, (newMessage) => {
 
           <VAlert
             v-if="!hasClientIdentity"
-            type="warning"
+            type="info"
             variant="tonal"
             density="compact"
             class="mb-4"
           >
             <div class="d-flex flex-column ga-3">
               <div>
-                Perangkat belum mengirim IP/MAC. Silakan buka halaman login hotspot Mikrotik agar data perangkat terbaca.
+                IP/MAC perangkat belum terbaca dari router. Jika Anda baru tersambung ke WiFi hotspot, buka login MikroTik (popup) lalu kembali ke halaman ini.
               </div>
               <VBtn
-                to="/portal"
+                v-if="hotspotLoginOnlyUrl"
+                :href="hotspotLoginOnlyUrl"
+                target="_blank"
+                rel="noopener"
                 size="small"
                 variant="outlined"
               >
-                Buka Portal Info
+                Buka Login MikroTik
               </VBtn>
             </div>
           </VAlert>

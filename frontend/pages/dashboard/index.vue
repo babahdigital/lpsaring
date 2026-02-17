@@ -4,7 +4,6 @@ import { useNuxtApp } from '#app'
 import { useDebounceFn } from '@vueuse/core'
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { usePromoStore } from '~/store/promo' // Import promo store
-import { useSnackbar } from '~/composables/useSnackbar'
 import { useApiFetch } from '~/composables/useApiFetch'
 import { useAuthStore } from '~/store/auth'
 import { useDisplay } from 'vuetify'
@@ -20,7 +19,6 @@ const promoStore = usePromoStore() // Inisialisasi promo store
 const authStore = useAuthStore()
 const display = useDisplay()
 const pageTitle = 'Dashboard Pengguna'
-const { add: addSnackbar } = useSnackbar()
 
 const chartReady = ref(false)
 const chartDelayMs = computed(() => (display.smAndDown.value ? 1200 : 400))
@@ -158,12 +156,7 @@ async function tryBindCurrentDevice() {
     await $api('/users/me/devices/bind-current', { method: 'POST' })
   }
   catch {
-    addSnackbar({
-      title: 'Info Perangkat',
-      text: 'Gagal memperbarui perangkat. Jika sering diminta OTP lagi, nonaktifkan Private MAC untuk SSID hotspot.',
-      type: 'warning',
-      timeout: 6000,
-    })
+    // Best-effort: bila gagal (mis. IP publik/proxy), jangan mengganggu UI.
   }
 }
 

@@ -1,7 +1,6 @@
-// frontend/components/SnackbarWrapper.vue
-
 <script lang="ts" setup>
 import { useSnackbar } from '@/composables/useSnackbar'
+import { computed } from 'vue'
 
 const { messages, remove } = useSnackbar()
 
@@ -11,23 +10,22 @@ const iconMap = {
   info: 'tabler-info-circle',
   warning: 'tabler-alert-triangle',
 }
+
+const visibleMessages = computed(() => {
+  return (messages.value || []).slice(0, 1)
+})
 </script>
 
 <template>
-  <div class="snackbar-wrapper">
-    <VScaleTransition
-      group
-      tag="div"
-    >
+  <div class="snackbar-wrapper" aria-live="polite" aria-atomic="true">
+    <VSlideYTransition group tag="div">
       <VAlert
-        v-for="message in messages"
+        v-for="message in visibleMessages"
         :key="message.id"
         :type="message.type"
         :title="message.title"
         variant="tonal"
-        class="mb-3"
-        max-width="420px"
-        elevation="2"
+        class="snackbar-alert"
         border="start"
         density="comfortable"
       >
@@ -35,51 +33,53 @@ const iconMap = {
           <VIcon
             :icon="iconMap[message.type]"
             :color="message.type"
-            size="24"
+            size="22"
           />
         </template>
 
         <template #append>
-          <VBtn
-            density="compact"
-            variant="text"
-            icon
-            @click="remove(message.id)"
-          >
-            <VIcon
-              icon="tabler-x"
-              :color="message.type"
-              size="20"
-            />
+          <VBtn density="compact" variant="text" icon @click="remove(message.id)">
+            <VIcon icon="tabler-x" :color="message.type" size="20" />
           </VBtn>
         </template>
 
-        <p
-          class="text-body-2 mb-0"
-          v-html="message.text"
-        />
+        <p class="text-body-2 mb-0">
+          {{ message.text }}
+        </p>
       </VAlert>
-    </VScaleTransition>
+    </VSlideYTransition>
   </div>
 </template>
 
 <style scoped>
 .snackbar-wrapper {
   position: fixed;
-  top: 24px;
-  right: 24px;
+  top: 12px;
+  left: 12px;
+  right: 12px;
   z-index: 9999;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  pointer-events: none;
+}
+
+.snackbar-alert {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  pointer-events: auto;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  background-color: rgba(var(--v-theme-surface), 0.88) !important;
 }
 
 @media (max-width: 600px) {
   .snackbar-wrapper {
-    top: 12px;
-    right: 12px;
-    left: 12px;
-    align-items: stretch;
+    top: 8px;
+    left: 8px;
+    right: 8px;
+  }
+
+  .snackbar-alert {
+    max-width: none;
   }
 }
 </style>
