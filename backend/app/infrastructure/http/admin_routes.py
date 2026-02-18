@@ -1115,8 +1115,43 @@ def create_qris_bill(current_admin: User):
 
     except midtransclient.error_midtrans.MidtransAPIError as e:
         session.rollback()
-        current_app.logger.error(f"Midtrans error saat create QRIS bill: {e.message}")
-        return jsonify({"message": "Gagal membuat tagihan di Midtrans.", "details": getattr(e, 'message', '')}), HTTPStatus.BAD_REQUEST
+        raw_message = getattr(e, 'message', '') or ''
+        current_app.logger.error(f"Midtrans error saat create QRIS bill: {raw_message}")
+
+        midtrans_status_code: str | None = None
+        midtrans_status_message: str | None = None
+        midtrans_error_id: str | None = None
+
+        # Coba parse potongan `API response: `...`` dari message Midtrans.
+        try:
+            marker = 'API response: `'
+            if marker in raw_message:
+                json_part = raw_message.split(marker, 1)[1]
+                json_part = json_part.split('`', 1)[0]
+                parsed = json.loads(json_part)
+                if isinstance(parsed, dict):
+                    if isinstance(parsed.get('status_code'), str):
+                        midtrans_status_code = parsed.get('status_code')
+                    if isinstance(parsed.get('status_message'), str):
+                        midtrans_status_message = parsed.get('status_message')
+                    if isinstance(parsed.get('id'), str):
+                        midtrans_error_id = parsed.get('id')
+        except Exception:
+            # Jika parsing gagal, tetap lanjutkan dengan message mentah.
+            pass
+
+        user_message = 'Gagal membuat tagihan QRIS di Midtrans.'
+        if midtrans_status_message:
+            user_message = f"Gagal membuat tagihan QRIS di Midtrans: {midtrans_status_message}"
+            if 'Payment channel is not activated' in midtrans_status_message:
+                user_message += ' (Aktifkan channel QRIS di dashboard Midtrans Production terlebih dahulu.)'
+
+        return jsonify({
+            "message": user_message,
+            "midtrans_status_code": midtrans_status_code,
+            "midtrans_status_message": midtrans_status_message,
+            "midtrans_error_id": midtrans_error_id,
+        }), HTTPStatus.BAD_REQUEST
     except Exception as e:
         session.rollback()
         current_app.logger.error(f"Error create QRIS bill: {e}", exc_info=True)

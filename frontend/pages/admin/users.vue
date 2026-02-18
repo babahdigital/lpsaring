@@ -249,8 +249,18 @@ async function createQrisBillForSelectedUser() {
     await fetchUsers()
   }
   catch (error: any) {
-    const errorMessage = (typeof error?.data?.message === 'string' && error.data.message !== '') ? error.data.message : 'Gagal membuat tagihan QRIS.'
-    showSnackbar({ type: 'error', title: 'Gagal', text: errorMessage })
+    const message = (typeof error?.data?.message === 'string' && error.data.message !== '')
+      ? error.data.message
+      : 'Gagal membuat tagihan QRIS.'
+    const midtransMsg = (typeof error?.data?.midtrans_status_message === 'string' && error.data.midtrans_status_message !== '')
+      ? error.data.midtrans_status_message
+      : ''
+
+    showSnackbar({
+      type: 'error',
+      title: 'Gagal',
+      text: midtransMsg ? `${message} (${midtransMsg})` : message,
+    })
   }
   finally {
     billLoading.value = false

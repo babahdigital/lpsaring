@@ -237,6 +237,7 @@ const tablerIcons = [
   'plug-connected-x',
   'plus',
   'question-mark',
+  'qrcode',
   'receipt',
   'receipt-2',
   'refresh',
