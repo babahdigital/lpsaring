@@ -1064,8 +1064,11 @@ def create_qris_bill(current_admin: User):
             return None
 
         charge_resp: object
+        attempted_payment_type = 'qris'
+        fallback_used = False
         try:
             # Attempt 1: Other QRIS (native QRIS) via payment_type=qris
+            attempted_payment_type = 'qris'
             charge_payload = {**base_payload, "payment_type": "qris"}
             charge_resp = core.charge(charge_payload)
         except midtransclient.error_midtrans.MidtransAPIError as e_charge:
@@ -1078,7 +1081,9 @@ def create_qris_bill(current_admin: User):
                     "Midtrans QRIS channel not active; fallback to GoPay Dynamic QRIS. order_id=%s",
                     order_id,
                 )
+                fallback_used = True
                 tx.payment_method = 'gopay'
+                attempted_payment_type = 'gopay'
                 charge_payload = {
                     **base_payload,
                     "payment_type": "gopay",
@@ -1188,13 +1193,32 @@ def create_qris_bill(current_admin: User):
         if midtrans_status_message:
             user_message = f"Gagal membuat tagihan QRIS di Midtrans: {midtrans_status_message}"
             if 'Payment channel is not activated' in midtrans_status_message:
-                user_message += ' (Aktifkan channel QRIS di dashboard Midtrans Production terlebih dahulu.)'
+                # Beri konteks channel yang sedang dicoba + apakah fallback sudah dilakukan.
+                tried = None
+                try:
+                    tried = attempted_payment_type  # type: ignore[name-defined]
+                except Exception:
+                    tried = None
+                try:
+                    used_fallback = bool(fallback_used)  # type: ignore[name-defined]
+                except Exception:
+                    used_fallback = False
+
+                if tried == 'gopay':
+                    user_message += ' (Channel GoPay/GoPay Dynamic QRIS belum aktif di Midtrans Production untuk Core API.)'
+                else:
+                    user_message += ' (Channel Other QRIS belum aktif di Midtrans Production.)'
+
+                if used_fallback:
+                    user_message += ' Sudah dicoba fallback ke GoPay Dynamic QRIS, namun masih ditolak.'
 
         return jsonify({
             "message": user_message,
             "midtrans_status_code": midtrans_status_code,
             "midtrans_status_message": midtrans_status_message,
             "midtrans_error_id": midtrans_error_id,
+            "attempted_payment_type": (attempted_payment_type if 'attempted_payment_type' in locals() else None),
+            "fallback_used": (fallback_used if 'fallback_used' in locals() else None),
         }), HTTPStatus.BAD_REQUEST
     except Exception as e:
         session.rollback()
