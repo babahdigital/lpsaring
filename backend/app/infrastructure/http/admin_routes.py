@@ -1031,12 +1031,13 @@ def create_qris_bill(current_admin: User):
         tx.amount = amount
         tx.status = TransactionStatus.PENDING
         tx.expiry_time = expiry_time
+        # Default: QRIS native (Other QRIS). Bisa auto-fallback ke GoPay Dynamic QRIS jika channel belum aktif.
         tx.payment_method = 'qris'
         session.add(tx)
 
         core = get_midtrans_core_api_client()
-        charge_payload: dict[str, object] = {
-            "payment_type": "qris",
+
+        base_payload: dict[str, object] = {
             "transaction_details": {"order_id": order_id, "gross_amount": amount},
             "item_details": [{
                 "id": str(package.id),
@@ -1049,7 +1050,44 @@ def create_qris_bill(current_admin: User):
                 "phone": format_to_local_phone(getattr(user, 'phone_number', '') or ''),
             },
         }
-        charge_resp = core.charge(charge_payload)
+
+        def _parse_midtrans_api_response_from_message(message: str) -> dict[str, object] | None:
+            try:
+                marker = 'API response: `'
+                if marker in message:
+                    json_part = message.split(marker, 1)[1]
+                    json_part = json_part.split('`', 1)[0]
+                    parsed = json.loads(json_part)
+                    return parsed if isinstance(parsed, dict) else None
+            except Exception:
+                return None
+            return None
+
+        charge_resp: object
+        try:
+            # Attempt 1: Other QRIS (native QRIS) via payment_type=qris
+            charge_payload = {**base_payload, "payment_type": "qris"}
+            charge_resp = core.charge(charge_payload)
+        except midtransclient.error_midtrans.MidtransAPIError as e_charge:
+            raw_message = getattr(e_charge, 'message', '') or ''
+            parsed = _parse_midtrans_api_response_from_message(raw_message) or {}
+            status_message = str(parsed.get('status_message') or '').strip()
+            # Jika channel QRIS native belum aktif, fallback ke GoPay Dynamic QRIS (masih scan QRIS).
+            if 'Payment channel is not activated' in status_message:
+                current_app.logger.warning(
+                    "Midtrans QRIS channel not active; fallback to GoPay Dynamic QRIS. order_id=%s",
+                    order_id,
+                )
+                tx.payment_method = 'gopay'
+                charge_payload = {
+                    **base_payload,
+                    "payment_type": "gopay",
+                    # Minimal config; Midtrans akan mengembalikan actions generate-qr-code.
+                    "gopay": {"enable_callback": False},
+                }
+                charge_resp = core.charge(charge_payload)
+            else:
+                raise
 
         try:
             tx.midtrans_notification_payload = json.dumps(charge_resp, ensure_ascii=False)
@@ -1057,14 +1095,18 @@ def create_qris_bill(current_admin: User):
             tx.midtrans_notification_payload = None
 
         if isinstance(charge_resp, dict):
-            if isinstance(charge_resp.get('transaction_id'), str):
-                tx.midtrans_transaction_id = charge_resp.get('transaction_id')
-            if parsed := safe_parse_midtrans_datetime(charge_resp.get('expiry_time')):
+            charge_resp_dict: dict[str, object] = charge_resp
+            transaction_id = charge_resp_dict.get('transaction_id')
+            if isinstance(transaction_id, str):
+                tx.midtrans_transaction_id = transaction_id
+            expiry_time_raw = charge_resp_dict.get('expiry_time')
+            expiry_time_str = expiry_time_raw if isinstance(expiry_time_raw, str) else None
+            if parsed := safe_parse_midtrans_datetime(expiry_time_str):
                 tx.expiry_time = parsed
-            tx.va_number = extract_va_number(charge_resp) or tx.va_number
-            tx.qr_code_url = extract_qr_code_url(charge_resp) or tx.qr_code_url
+            tx.va_number = extract_va_number(charge_resp_dict) or tx.va_number
+            tx.qr_code_url = extract_qr_code_url(charge_resp_dict) or tx.qr_code_url
 
-            midtrans_status = str(charge_resp.get('transaction_status') or '').strip().lower()
+            midtrans_status = str(charge_resp_dict.get('transaction_status') or '').strip().lower()
             if midtrans_status == 'pending':
                 tx.status = TransactionStatus.PENDING
             elif midtrans_status in ('settlement', 'capture'):
@@ -1084,6 +1126,7 @@ def create_qris_bill(current_admin: User):
                 "amount": amount,
                 "expiry_time": expiry_time.isoformat() if expiry_time is not None else None,
                 "qr_code_url": tx.qr_code_url,
+                "payment_method": tx.payment_method,
             },
             ensure_ascii=False,
         )
@@ -1111,6 +1154,7 @@ def create_qris_bill(current_admin: User):
             "order_id": order_id,
             "status": tx.status.value,
             "qr_code_url": tx.qr_code_url,
+            "payment_method": tx.payment_method,
         }), HTTPStatus.OK
 
     except midtransclient.error_midtrans.MidtransAPIError as e:
