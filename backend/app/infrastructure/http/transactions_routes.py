@@ -14,10 +14,11 @@ import midtransclient
 from flask import (
     Blueprint, abort, current_app, jsonify, make_response, render_template, request
 )
+import sqlalchemy as sa
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.orm import selectinload
 
-from app.extensions import db
+from app.extensions import db, limiter
 from app.infrastructure.db.models import (
     ApprovalStatus,
     Package,
@@ -245,6 +246,7 @@ class _InitiateTransactionResponseSchema(BaseModel):
 
 # --- ENDPOINTS ---
 @transactions_bp.route("/initiate", methods=["POST"])
+@limiter.limit(lambda: current_app.config.get("INITIATE_TRANSACTION_RATE_LIMIT", "10 per minute"))
 @token_required
 def initiate_transaction(current_user_id: uuid.UUID):
     req_data_dict = request.get_json(silent=True) or {}
@@ -263,10 +265,49 @@ def initiate_transaction(current_user_id: uuid.UUID):
         if not package or not package.is_active:
             abort(HTTPStatus.BAD_REQUEST, description="Paket tidak valid atau tidak aktif.")
         
-        order_id = f"HS-{uuid.uuid4().hex[:12].upper()}"
         gross_amount = int(package.price or 0)
 
         now_utc = datetime.now(dt_timezone.utc)
+
+        # Reuse existing active transaction to avoid creating many expired rows
+        # due to repeated clicks/refreshes.
+        existing_tx = (
+            session.query(Transaction)
+            .filter(Transaction.user_id == user.id)
+            .filter(Transaction.package_id == package.id)
+            .filter(Transaction.status.in_([TransactionStatus.UNKNOWN, TransactionStatus.PENDING]))
+            .filter(
+                sa.or_(
+                    Transaction.expiry_time.is_(None),
+                    Transaction.expiry_time > now_utc,
+                )
+            )
+            .order_by(Transaction.created_at.desc())
+            .first()
+        )
+        if existing_tx and (existing_tx.snap_token or existing_tx.snap_redirect_url):
+            _log_transaction_event(
+                session=session,
+                transaction=existing_tx,
+                source=TransactionEventSource.APP,
+                event_type="INITIATE_REUSED_EXISTING",
+                status=existing_tx.status,
+                payload={
+                    "order_id": existing_tx.midtrans_order_id,
+                    "package_id": str(existing_tx.package_id),
+                    "amount": int(existing_tx.amount or 0),
+                    "expiry_time": existing_tx.expiry_time.isoformat() if existing_tx.expiry_time else None,
+                    "snap_token_present": bool(existing_tx.snap_token),
+                    "redirect_url": existing_tx.snap_redirect_url,
+                    "reason": "existing_active_transaction",
+                },
+            )
+            session.commit()
+            response_data = _InitiateTransactionResponseSchema.model_validate(existing_tx, from_attributes=True)
+            return jsonify(response_data.model_dump(by_alias=False, exclude_none=True)), HTTPStatus.OK
+
+        order_id = f"HS-{uuid.uuid4().hex[:12].upper()}"
+
         try:
             expiry_minutes = int(current_app.config.get("MIDTRANS_DEFAULT_EXPIRY_MINUTES", 15))
         except Exception:
