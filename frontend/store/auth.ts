@@ -448,7 +448,14 @@ export const useAuthStore = defineStore('auth', () => {
     const { $api } = useNuxtApp()
     const isAdminRoute = import.meta.client ? useRoute().path.startsWith('/admin') : false
 
-    $api('/auth/logout', { method: 'POST' }).catch(() => {})
+    // Penting: tunggu request logout selesai agar cookie auth/refresh benar-benar terhapus
+    // sebelum kita redirect ke halaman yang punya guard (mis. /admin).
+    try {
+      await $api('/auth/logout', { method: 'POST' })
+    }
+    catch {
+      // Jika gagal, tetap lanjut bersihkan state lokal agar user tidak "terkunci".
+    }
 
     setUser(null)
     initialAuthCheckDone.value = false
