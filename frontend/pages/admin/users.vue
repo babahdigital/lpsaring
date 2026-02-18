@@ -33,6 +33,13 @@ interface User {
   quota_expiry_date: string | null
   approved_at: string | null
 }
+
+interface PackageItem {
+  id: string
+  name: string
+  price: number
+  is_active?: boolean
+}
 interface MikrotikOptionsResponse {
   serverOptions: string[]
   profileOptions: string[]
@@ -129,6 +136,12 @@ const cleanupPreview = ref<InactiveCleanupPreviewResponse | null>(null)
 const selectedUserPreviewContext = ref<UserDetailPreviewContext | null>(null)
 const previewActionLoading = ref<Record<string, boolean>>({})
 
+const isCreateBillDialogOpen = ref(false)
+const billLoading = ref(false)
+const billSelectedUser = ref<User | null>(null)
+const billSelectedPackage = ref<PackageItem | null>(null)
+const packageList = ref<PackageItem[]>([])
+
 // Perbaikan baris 67 (sesuai deskripsi error baris 56): Handle null/undefined secara eksplisit
 function formatPhoneNumberDisplay(phone: string | null): string | null {
   if (phone === null || phone === undefined || phone === '') {
@@ -137,6 +150,7 @@ function formatPhoneNumberDisplay(phone: string | null): string | null {
   return phone.startsWith('+62') ? `0${phone.substring(3)}` : phone
 }
 const formatCreatedAt = (date: string) => new Date(date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+const formatCurrency = (value: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(value)
 const roleMap: Record<User['role'], { text: string, color: string }> = { USER: { text: 'User', color: 'info' }, KOMANDAN: { text: 'Komandan', color: 'success' }, ADMIN: { text: 'Admin', color: 'primary' }, SUPER_ADMIN: { text: 'Support', color: 'secondary' } }
 const statusMap: Record<User['approval_status'], { text: string, color: string }> = { APPROVED: { text: 'Disetujui', color: 'success' }, PENDING_APPROVAL: { text: 'Menunggu', color: 'warning' }, REJECTED: { text: 'Ditolak', color: 'error' } }
 
@@ -191,6 +205,57 @@ watch(search, () => {
     fetchUsers()
   }, 500)
 })
+
+async function ensurePackagesLoaded() {
+  if (packageList.value.length > 0)
+    return
+  try {
+    const resp = await $api<{ items: PackageItem[], totalItems: number }>('/admin/packages', {
+      params: { page: 1, itemsPerPage: 100 },
+    })
+    if (resp && Array.isArray(resp.items))
+      packageList.value = resp.items.filter(p => p && (p.is_active ?? true))
+  }
+  catch {
+    packageList.value = []
+  }
+}
+
+async function openCreateBillDialogForUser(user: User) {
+  billSelectedUser.value = user
+  billSelectedPackage.value = null
+  isCreateBillDialogOpen.value = true
+  await ensurePackagesLoaded()
+}
+
+async function createQrisBillForSelectedUser() {
+  if (!billSelectedUser.value || !billSelectedPackage.value) {
+    showSnackbar({ type: 'warning', title: 'Lengkapi Data', text: 'Pilih paket terlebih dahulu.' })
+    return
+  }
+
+  billLoading.value = true
+  try {
+    const payload = {
+      user_id: billSelectedUser.value.id,
+      package_id: billSelectedPackage.value.id,
+    }
+    const resp = await $api<{ message: string, order_id: string, status: string, qr_code_url?: string | null }>('/admin/transactions/qris', {
+      method: 'POST',
+      body: payload,
+    })
+    showSnackbar({ type: 'success', title: 'Berhasil', text: `${resp.message} (${resp.order_id})` })
+    isCreateBillDialogOpen.value = false
+    await fetchUsers()
+  }
+  catch (error: any) {
+    const errorMessage = (typeof error?.data?.message === 'string' && error.data.message !== '') ? error.data.message : 'Gagal membuat tagihan QRIS.'
+    showSnackbar({ type: 'error', title: 'Gagal', text: errorMessage })
+  }
+  finally {
+    billLoading.value = false
+  }
+}
 
 async function fetchUsers() {
   loading.value = true
@@ -722,6 +787,11 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
               </VBtn>
             </template>
             <template v-else>
+              <VBtn icon variant="text" color="primary" size="small" @click="openCreateBillDialogForUser(item)">
+                <VIcon icon="tabler-qrcode" /><VTooltip activator="parent">
+                  Buat Tagihan QRIS
+                </VTooltip>
+              </VBtn>
               <VBtn v-if="(authStore.isSuperAdmin === true || authStore.isAdmin === true)" icon variant="text" color="primary" size="small" @click="openEditDialog(item)">
                 <VIcon icon="tabler-pencil" /><VTooltip activator="parent">
                   Edit
@@ -791,6 +861,11 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
                 </VBtn>
               </template>
               <template v-else>
+                <VBtn icon variant="text" color="primary" size="small" @click="openCreateBillDialogForUser(user)">
+                  <VIcon icon="tabler-qrcode" /><VTooltip activator="parent">
+                    Buat Tagihan QRIS
+                  </VTooltip>
+                </VBtn>
                 <VBtn v-if="(authStore.isSuperAdmin === true || authStore.isAdmin === true)" icon variant="text" color="primary" size="small" @click="openEditDialog(user)">
                   <VIcon icon="tabler-pencil" /><VTooltip activator="parent">
                     Edit
@@ -807,6 +882,54 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
         </VCard>
       </div>
     </VCard>
+
+    <VDialog v-if="isHydrated" v-model="isCreateBillDialogOpen" max-width="640px">
+      <VCard>
+        <VCardTitle class="pa-4 d-flex align-center">
+          <span class="font-weight-medium">Buat Tagihan QRIS</span>
+          <VSpacer />
+          <VBtn icon variant="text" @click="isCreateBillDialogOpen = false">
+            <VIcon icon="tabler-x" />
+          </VBtn>
+        </VCardTitle>
+        <VDivider />
+
+        <VCardText class="pa-4">
+          <VTextField
+            :model-value="billSelectedUser?.full_name || ''"
+            label="Pengguna"
+            variant="outlined"
+            density="comfortable"
+            readonly
+          />
+          <VAutocomplete
+            v-model="billSelectedPackage"
+            :items="packageList"
+            item-title="name"
+            return-object
+            label="Paket"
+            variant="outlined"
+            density="comfortable"
+            clearable
+            class="mt-4"
+            :disabled="billLoading"
+          />
+          <div v-if="billSelectedPackage" class="mt-3 text-medium-emphasis">
+            Harga: {{ formatCurrency(billSelectedPackage.price) }}
+          </div>
+        </VCardText>
+
+        <VCardActions class="pa-4">
+          <VSpacer />
+          <VBtn variant="text" :disabled="billLoading" @click="isCreateBillDialogOpen = false">
+            Batal
+          </VBtn>
+          <VBtn color="primary" :loading="billLoading" @click="createQrisBillForSelectedUser">
+            Kirim QRIS
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
 
     <UserDetailDialog v-model="dialogState.view" :user="selectedUser" :preview-context="selectedUserPreviewContext" />
     <UserAddDialog v-model="dialogState.add" :loading="loading" :available-bloks="availableBloks" :available-kamars="availableKamars" :is-alamat-loading="isAlamatLoading" @save="handleSaveUser" />

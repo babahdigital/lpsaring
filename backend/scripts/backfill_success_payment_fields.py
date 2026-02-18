@@ -19,6 +19,10 @@ Catatan:
 
 from __future__ import annotations
 
+import os
+import pathlib
+import sys
+
 import argparse
 import json
 import time
@@ -26,6 +30,15 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import select
+
+# Ensure repository root (/app) is importable when running inside containers.
+_repo_root = pathlib.Path(__file__).resolve().parents[1]
+if str(_repo_root) not in sys.path:
+    sys.path.insert(0, str(_repo_root))
+try:
+    os.chdir(str(_repo_root))
+except Exception:
+    pass
 
 from app.extensions import db
 from app.infrastructure.db.models import Transaction, TransactionEvent, TransactionEventSource, TransactionStatus

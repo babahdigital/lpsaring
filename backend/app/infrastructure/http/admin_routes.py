@@ -2,11 +2,12 @@
 from flask import Blueprint, jsonify, request, current_app, send_file, abort, make_response, render_template
 from sqlalchemy import func, or_, select, desc
 from sqlalchemy.orm import selectinload
-from datetime import datetime, timezone as dt_timezone, timedelta
+from datetime import datetime, timezone as dt_timezone, timedelta, time as dt_time
 from http import HTTPStatus
 from pydantic import ValidationError
 from decimal import Decimal
 import json
+import midtransclient
 import uuid
 import csv
 import io
@@ -16,15 +17,22 @@ import subprocess
 from sqlalchemy.engine import make_url
 
 from app.extensions import db
-from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
+from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message, send_whatsapp_with_image_url
 from app.infrastructure.db.models import (
     User, UserRole, Package, ApprovalStatus, Transaction,
     TransactionStatus, NotificationRecipient, NotificationType,
-    QuotaRequest, RequestStatus, TransactionEvent
+    QuotaRequest, RequestStatus, TransactionEvent, TransactionEventSource
 )
 from .decorators import admin_required, super_admin_required
 from .schemas.notification_schemas import NotificationRecipientUpdateSchema
-from app.utils.formatters import get_phone_number_variations
+from app.utils.formatters import get_phone_number_variations, format_to_local_phone
+
+from app.infrastructure.http.transactions_routes import (
+    extract_qr_code_url,
+    extract_va_number,
+    get_midtrans_core_api_client,
+    safe_parse_midtrans_datetime,
+)
 
 admin_bp = Blueprint('admin_api', __name__)
 
@@ -34,6 +42,28 @@ try:
 except Exception:
     HTML = None
     WEASYPRINT_AVAILABLE = False
+
+
+def _get_local_tz() -> dt_timezone:
+    try:
+        offset_hours = int(current_app.config.get("APP_TIMEZONE_OFFSET", 8))
+    except Exception:
+        offset_hours = 8
+    offset_hours = max(-12, min(offset_hours, 14))
+    return dt_timezone(timedelta(hours=offset_hours))
+
+
+def _parse_local_date_range_to_utc(start_date_str: str, end_date_str: str) -> tuple[datetime, datetime]:
+    """Parse YYYY-MM-DD as *local dates* and return [start_utc, end_utc) datetime range."""
+    start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+    end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+    if end_date < start_date:
+        raise ValueError("end_date < start_date")
+
+    local_tz = _get_local_tz()
+    start_local = datetime.combine(start_date, dt_time.min).replace(tzinfo=local_tz)
+    end_local = datetime.combine(end_date + timedelta(days=1), dt_time.min).replace(tzinfo=local_tz)
+    return start_local.astimezone(dt_timezone.utc), end_local.astimezone(dt_timezone.utc)
 
 def _get_backup_dir() -> str:
     backup_dir = current_app.config.get('BACKUP_DIR', '/app/backups')
@@ -669,12 +699,15 @@ def get_transactions_list(current_admin: User):
             except ValueError:
                 return jsonify({"message": "Invalid user_id format."}), HTTPStatus.BAD_REQUEST
         
-        if start_date_str:
-            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-            query = query.where(Transaction.created_at >= start_date)
-        if end_date_str:
-            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
-            query = query.where(Transaction.created_at < (end_date + timedelta(days=1)))
+        if start_date_str and end_date_str:
+            try:
+                start_utc, end_utc = _parse_local_date_range_to_utc(start_date_str, end_date_str)
+                query = query.where(Transaction.created_at >= start_utc)
+                query = query.where(Transaction.created_at < end_utc)
+            except ValueError:
+                return jsonify({"message": "Format tanggal tidak valid."}), HTTPStatus.BAD_REQUEST
+        elif start_date_str or end_date_str:
+            return jsonify({"message": "start_date dan end_date harus diisi keduanya."}), HTTPStatus.BAD_REQUEST
 
         if search_query:
             search_term = f"%{search_query}%"
@@ -831,8 +864,8 @@ def export_transactions(current_admin: User):
         if end_date < start_date:
             return jsonify({"message": "end_date tidak boleh lebih kecil dari start_date."}), HTTPStatus.BAD_REQUEST
 
-        start_dt = datetime.combine(start_date, datetime.min.time(), tzinfo=dt_timezone.utc)
-        end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=dt_timezone.utc)
+        # Interpret requested dates in local timezone, then convert to UTC for DB filtering.
+        start_dt, end_dt = _parse_local_date_range_to_utc(start_date_str, end_date_str)
 
         base_filters = [
             Transaction.status == TransactionStatus.SUCCESS,
@@ -947,6 +980,146 @@ def export_transactions(current_admin: User):
         return resp
     except Exception as e:
         current_app.logger.error(f"Error export transaksi: {e}", exc_info=True)
+        return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@admin_bp.route('/transactions/qris', methods=['POST'])
+@admin_required
+def create_qris_bill(current_admin: User):
+    """Admin membuat tagihan QRIS untuk user tertentu dan mengirim via WhatsApp."""
+    session = db.session
+    json_data = request.get_json(silent=True) or {}
+
+    user_id_raw = json_data.get('user_id')
+    package_id_raw = json_data.get('package_id')
+    if not user_id_raw or not package_id_raw:
+        return jsonify({"message": "user_id dan package_id wajib diisi."}), HTTPStatus.BAD_REQUEST
+
+    try:
+        user_id = uuid.UUID(str(user_id_raw))
+        package_id = uuid.UUID(str(package_id_raw))
+    except ValueError:
+        return jsonify({"message": "Format user_id/package_id tidak valid."}), HTTPStatus.BAD_REQUEST
+
+    try:
+        user = session.get(User, user_id)
+        if user is None:
+            return jsonify({"message": "User tidak ditemukan."}), HTTPStatus.NOT_FOUND
+
+        package = session.get(Package, package_id)
+        if package is None or not getattr(package, 'is_active', True):
+            return jsonify({"message": "Paket tidak valid atau tidak aktif."}), HTTPStatus.BAD_REQUEST
+
+        amount = int(getattr(package, 'price', 0) or 0)
+        if amount <= 0:
+            return jsonify({"message": "Harga paket tidak valid."}), HTTPStatus.BAD_REQUEST
+
+        order_id = f"HS-{uuid.uuid4().hex[:12].upper()}"
+        now_utc = datetime.now(dt_timezone.utc)
+        try:
+            expiry_minutes = int(current_app.config.get("MIDTRANS_DEFAULT_EXPIRY_MINUTES", 15))
+        except Exception:
+            expiry_minutes = 15
+        expiry_minutes = max(5, min(expiry_minutes, 24 * 60))
+        expiry_time = now_utc + timedelta(minutes=expiry_minutes)
+
+        tx = Transaction()
+        tx.id = uuid.uuid4()
+        tx.user_id = user.id
+        tx.package_id = package.id
+        tx.midtrans_order_id = order_id
+        tx.amount = amount
+        tx.status = TransactionStatus.PENDING
+        tx.expiry_time = expiry_time
+        tx.payment_method = 'qris'
+        session.add(tx)
+
+        core = get_midtrans_core_api_client()
+        charge_payload: dict[str, object] = {
+            "payment_type": "qris",
+            "transaction_details": {"order_id": order_id, "gross_amount": amount},
+            "item_details": [{
+                "id": str(package.id),
+                "price": amount,
+                "quantity": 1,
+                "name": str(getattr(package, 'name', 'Paket'))[:100],
+            }],
+            "customer_details": {
+                "first_name": str(getattr(user, 'full_name', None) or 'Pengguna')[:50],
+                "phone": format_to_local_phone(getattr(user, 'phone_number', '') or ''),
+            },
+        }
+        charge_resp = core.charge(charge_payload)
+
+        try:
+            tx.midtrans_notification_payload = json.dumps(charge_resp, ensure_ascii=False)
+        except Exception:
+            tx.midtrans_notification_payload = None
+
+        if isinstance(charge_resp, dict):
+            if isinstance(charge_resp.get('transaction_id'), str):
+                tx.midtrans_transaction_id = charge_resp.get('transaction_id')
+            if parsed := safe_parse_midtrans_datetime(charge_resp.get('expiry_time')):
+                tx.expiry_time = parsed
+            tx.va_number = extract_va_number(charge_resp) or tx.va_number
+            tx.qr_code_url = extract_qr_code_url(charge_resp) or tx.qr_code_url
+
+            midtrans_status = str(charge_resp.get('transaction_status') or '').strip().lower()
+            if midtrans_status == 'pending':
+                tx.status = TransactionStatus.PENDING
+            elif midtrans_status in ('settlement', 'capture'):
+                tx.status = TransactionStatus.SUCCESS
+
+        ev = TransactionEvent()
+        ev.transaction_id = tx.id
+        ev.source = TransactionEventSource.APP
+        ev.event_type = 'ADMIN_QRIS_BILL_CREATED'
+        ev.status = tx.status
+        expiry_time = tx.expiry_time
+        ev.payload = json.dumps(
+            {
+                "order_id": order_id,
+                "user_id": str(user.id),
+                "package_id": str(package.id),
+                "amount": amount,
+                "expiry_time": expiry_time.isoformat() if expiry_time is not None else None,
+                "qr_code_url": tx.qr_code_url,
+            },
+            ensure_ascii=False,
+        )
+        session.add(ev)
+        session.commit()
+
+        phone_number = getattr(user, 'phone_number', '') or ''
+        caption = (
+            f"📌 *Tagihan Pembelian Paket*\n\n"
+            f"Nama: *{getattr(user, 'full_name', '') or 'Pengguna'}*\n"
+            f"Paket: *{getattr(package, 'name', '') or 'Paket'}*\n"
+            f"Jumlah: *Rp {amount:,}*\n"
+            f"Invoice: *{order_id}*\n\n"
+            f"Silakan scan QRIS atau buka link QR." 
+        )
+
+        sent = False
+        if tx.qr_code_url:
+            sent = send_whatsapp_with_image_url(phone_number, caption, tx.qr_code_url, filename=f"qris-{order_id}.png")
+        if not sent:
+            send_whatsapp_message(phone_number, f"{caption}\n\nQR: {tx.qr_code_url or '-'}")
+
+        return jsonify({
+            "message": "Tagihan QRIS berhasil dibuat.",
+            "order_id": order_id,
+            "status": tx.status.value,
+            "qr_code_url": tx.qr_code_url,
+        }), HTTPStatus.OK
+
+    except midtransclient.error_midtrans.MidtransAPIError as e:
+        session.rollback()
+        current_app.logger.error(f"Midtrans error saat create QRIS bill: {e.message}")
+        return jsonify({"message": "Gagal membuat tagihan di Midtrans.", "details": getattr(e, 'message', '')}), HTTPStatus.BAD_REQUEST
+    except Exception as e:
+        session.rollback()
+        current_app.logger.error(f"Error create QRIS bill: {e}", exc_info=True)
         return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 

@@ -336,14 +336,104 @@ def send_whatsapp_with_pdf(recipient_number: str, caption: str, pdf_url: str, fi
         record_failure("whatsapp")
         return False
     except requests.exceptions.RequestException as e:
-        current_app.logger.error(f"Error sending WhatsApp with PDF URL to {target_number}: Request Exception - {e}", exc_info=False)
+        current_app.logger.error(
+            f"Error sending WhatsApp with PDF URL to {target_number}: Request Exception - {e}", exc_info=False
+        )
         record_failure("whatsapp")
         return False
     except Exception as e:
-        current_app.logger.error(f"Unexpected error sending PDF URL via Fonnte to {target_number}: {e}", exc_info=True)
+        current_app.logger.error(
+            f"Unexpected error sending PDF URL via Fonnte to {target_number}: {e}", exc_info=True
+        )
         record_failure("whatsapp")
         return False
 
+
+def send_whatsapp_with_image_url(recipient_number: str, caption: str, image_url: str, filename: str = "qris.png") -> bool:
+    """Mengirim pesan WhatsApp dengan lampiran gambar dari URL (best-effort).
+
+    Jika download gagal atau Fonnte menolak file, akan fallback ke kirim teks+URL.
+    """
+    api_url = current_app.config.get('WHATSAPP_API_URL')
+    api_key = current_app.config.get('WHATSAPP_API_KEY')
+
+    if not api_url or not api_key:
+        current_app.logger.error("WhatsApp API configuration is incomplete for media sending.")
+        return False
+
+    headers = {'Authorization': api_key}
+
+    raw = (recipient_number or "").strip()
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    if not digits:
+        current_app.logger.error("Invalid target number format for Fonnte: empty after normalization")
+        return False
+
+    if digits.startswith('0'):
+        target_number = '62' + digits[1:]
+    elif digits.startswith('8'):
+        target_number = '62' + digits
+    else:
+        target_number = digits
+
+    def _download_image_bytes() -> Optional[bytes]:
+        if not image_url:
+            return None
+        try:
+            timeout_seconds = int(current_app.config.get('WHATSAPP_PDF_DOWNLOAD_TIMEOUT_SECONDS', 20))
+            response = requests.get(image_url, timeout=timeout_seconds)
+            if not (200 <= response.status_code < 300):
+                current_app.logger.warning(
+                    f"Gagal mengunduh image untuk WA. Status: {response.status_code} URL: {image_url}"
+                )
+                return None
+            # Only attach if it's an image
+            ctype = (response.headers.get('Content-Type') or '').lower()
+            if 'image' not in ctype:
+                return None
+            return response.content
+        except requests.exceptions.RequestException as e:
+            current_app.logger.error(
+                f"Error mengunduh image untuk WA (URL: {image_url}): {e}", exc_info=False
+            )
+            return None
+
+    if not should_allow_call("whatsapp"):
+        current_app.logger.warning("WhatsApp circuit breaker open. Skipping image send.")
+        return False
+
+    current_app.logger.info(f"Attempting to send WhatsApp with image to {target_number} via Fonnte")
+
+    image_bytes = _download_image_bytes()
+    if image_bytes:
+        payload = {
+            'target': target_number,
+            'message': caption,
+            'countryCode': '0'
+        }
+        files = {
+            'file': (filename, image_bytes, 'image/png')
+        }
+        try:
+            timeout_seconds = int(current_app.config.get('WHATSAPP_HTTP_TIMEOUT_SECONDS', 15))
+            response = requests.post(api_url, headers=headers, data=payload, files=files, timeout=timeout_seconds)
+            try:
+                response_json = response.json()
+            except ValueError:
+                record_failure("whatsapp")
+                return False
+            if response_json.get('status') is True:
+                record_success("whatsapp")
+                return True
+            record_failure("whatsapp")
+        except requests.exceptions.RequestException:
+            record_failure("whatsapp")
+        except Exception:
+            record_failure("whatsapp")
+
+    # Fallback: send as URL in message.
+    message = f"{caption}\n\nQR/Link: {image_url}" if image_url else caption
+    return send_whatsapp_message(recipient_number, message)
 def send_otp_whatsapp(target_number: str, otp: str) -> bool:
     """Helper function untuk mengirim pesan OTP."""
     expire_minutes = current_app.config.get('OTP_EXPIRE_SECONDS', 300) // 60

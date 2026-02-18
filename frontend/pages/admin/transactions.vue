@@ -384,6 +384,20 @@ async function openUserFilterDialog() {
   }
 }
 
+async function ensureUsersLoaded() {
+  if (userList.value.length > 0)
+    return
+  try {
+    const responseData = await $api<{ items: UserSelectItem[] }>('/admin/users?all=true')
+    if (responseData && Array.isArray(responseData.items))
+      userList.value = responseData.items.filter(u => u.role === 'USER')
+  }
+  catch {
+    userList.value = []
+  }
+}
+
+
 const getUserInitials = (name: string) => name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
 function selectUser(user: UserSelectItem) {
   tempSelectedUser.value = user
@@ -715,29 +729,29 @@ useHead({ title: 'Laporan Penjualan' })
                   </div>
 
                   <div v-else>
-                    <div class="d-flex flex-wrap ga-6">
-                      <div>
+                    <div class="detail-row">
+                      <div class="detail-item">
                         <div class="text-caption text-medium-emphasis">ID Invoice</div>
                         <div class="font-weight-medium">{{ item.order_id }}</div>
                       </div>
-                      <div>
+                      <div class="detail-item">
                         <div class="text-caption text-medium-emphasis">Pengguna</div>
                         <div class="font-weight-medium">{{ item.user.full_name }}</div>
                         <div class="text-caption text-medium-emphasis">{{ formatPhoneNumberForDisplay(item.user.phone_number) }}</div>
                       </div>
-                      <div>
+                      <div class="detail-item">
                         <div class="text-caption text-medium-emphasis">Paket</div>
                         <div class="font-weight-medium">{{ item.package_name }}</div>
                       </div>
-                      <div>
+                      <div class="detail-item">
                         <div class="text-caption text-medium-emphasis">Jumlah</div>
                         <div class="font-weight-medium">{{ formatCurrency(item.amount) }}</div>
                       </div>
-                      <div>
+                      <div class="detail-item">
                         <div class="text-caption text-medium-emphasis">Metode</div>
                         <div class="font-weight-medium">{{ formatPaymentMethod(item.payment_method) }}</div>
                       </div>
-                      <div>
+                      <div class="detail-item">
                         <div class="text-caption text-medium-emphasis">Kadaluarsa</div>
                         <div class="font-weight-medium">{{ item.expiry_time ? formatDateTime(item.expiry_time) : '-' }}</div>
                       </div>
@@ -745,31 +759,31 @@ useHead({ title: 'Laporan Penjualan' })
 
                     <VDivider class="my-4" />
 
-                    <div v-if="detailCache[item.order_id]" class="d-flex flex-wrap ga-6">
+                    <div v-if="detailCache[item.order_id]" class="detail-row">
                       <template v-if="item.status === 'SUCCESS'">
-                        <div>
+                        <div class="detail-item">
                           <div class="text-caption text-medium-emphasis">Midtrans Transaction ID</div>
                           <div class="font-weight-medium">{{ detailCache[item.order_id].midtrans_transaction_id || '-' }}</div>
                         </div>
-                        <div>
+                        <div class="detail-item">
                           <div class="text-caption text-medium-emphasis">Waktu Bayar</div>
                           <div class="font-weight-medium">{{ detailCache[item.order_id].payment_time ? formatDateTime(detailCache[item.order_id].payment_time!) : '-' }}</div>
                         </div>
                       </template>
 
-                      <div>
+                      <div class="detail-item">
                         <div class="text-caption text-medium-emphasis">VA / Kode Bayar</div>
                         <div class="font-weight-medium">
                           {{ detailCache[item.order_id].va_number || detailCache[item.order_id].payment_code || '-' }}
                         </div>
                       </div>
 
-                      <div>
+                      <div class="detail-item">
                         <div class="text-caption text-medium-emphasis">Biller Code</div>
                         <div class="font-weight-medium">{{ detailCache[item.order_id].biller_code || '-' }}</div>
                       </div>
 
-                      <div>
+                      <div class="detail-item">
                         <div class="text-caption text-medium-emphasis">QR Code URL</div>
                         <div class="font-weight-medium">
                           <a
@@ -850,6 +864,7 @@ useHead({ title: 'Laporan Penjualan' })
         </VDataTableServer>
       </div>
     </VCard>
+
 
     <VDialog v-if="isHydrated" v-model="isUserFilterDialogOpen" max-width="600px" scrollable>
       <VCard class="user-dialog">
@@ -1011,6 +1026,18 @@ useHead({ title: 'Laporan Penjualan' })
 .status-chip {
   font-weight: 600;
   letter-spacing: 0.15px;
+}
+
+.detail-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  align-items: flex-start;
+}
+
+.detail-item {
+  flex: 1 1 220px;
+  min-width: 180px;
 }
 
 .payload-grid {
