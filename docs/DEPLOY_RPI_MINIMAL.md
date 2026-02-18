@@ -1,0 +1,225 @@
+# Deploy Minimal ke Raspberry Pi (Tanpa Clone Full Repo)
+
+Dokumen ini untuk skenario production ringan: **tidak perlu clone seluruh repository**.
+
+## 1) Struktur Folder di Raspberry Pi
+
+Buat struktur seperti ini:
+
+```text
+/home/abdullah/sobigidul/
+├─ docker-compose.prod.yml
+├─ .env.prod
+├─ .env.public.prod
+├─ infrastructure/
+│  └─ nginx/
+│     ├─ conf.d/
+│     │  └─ app.prod.conf
+│     ├─ ssl/
+│     │  ├─ fullchain.pem        # opsional (jika terminate SSL di Nginx)
+│     │  └─ privkey.pem          # opsional
+│     └─ logs/
+└─ backend/
+   └─ backups/
+```
+
+## 2) Persiapan Folder di Pi
+
+```bash
+sudo mkdir -p /home/abdullah/sobigidul/infrastructure/nginx/conf.d
+sudo mkdir -p /home/abdullah/sobigidul/infrastructure/nginx/ssl
+sudo mkdir -p /home/abdullah/sobigidul/infrastructure/nginx/logs
+sudo mkdir -p /home/abdullah/sobigidul/backend/backups
+sudo chown -R $USER:$USER /home/abdullah/sobigidul
+```
+
+## 3) Copy File dari Laptop ke Pi (SCP)
+
+Catatan: repository menyertakan template env:
+- `.env.prod.example` → salin menjadi `.env.prod` lalu isi nilai sebenarnya (jangan commit)
+- `.env.public.prod.example` → salin menjadi `.env.public.prod`
+
+Jalankan dari laptop (PowerShell/Git Bash), sesuaikan `PI_USER` dan `PI_HOST`:
+
+```bash
+PI_USER=pi
+PI_HOST=192.168.1.20
+PI_PORT=1983
+SSH_KEY=~/.ssh/id_raspi_ed25519
+LOCAL_ROOT=/d/Data/Projek/hotspot/lpsaring
+REMOTE_ROOT=/home/abdullah/sobigidul
+
+scp -P "$PI_PORT" -i "$SSH_KEY" "$LOCAL_ROOT/docker-compose.prod.yml" "$PI_USER@$PI_HOST:$REMOTE_ROOT/"
+scp -P "$PI_PORT" -i "$SSH_KEY" "$LOCAL_ROOT/.env.prod" "$PI_USER@$PI_HOST:$REMOTE_ROOT/"
+scp -P "$PI_PORT" -i "$SSH_KEY" "$LOCAL_ROOT/.env.public.prod" "$PI_USER@$PI_HOST:$REMOTE_ROOT/"
+scp -P "$PI_PORT" -i "$SSH_KEY" "$LOCAL_ROOT/infrastructure/nginx/conf.d/app.prod.conf" "$PI_USER@$PI_HOST:$REMOTE_ROOT/infrastructure/nginx/conf.d/"
+```
+
+### 3.1 Versi Langsung (Tanpa Variable)
+
+Ganti `<PI_USER>` dan `<PI_HOST>` lalu jalankan langsung:
+
+```bash
+scp -P 1983 -i ~/.ssh/id_raspi_ed25519 /d/Data/Projek/hotspot/lpsaring/docker-compose.prod.yml <PI_USER>@<PI_HOST>:/home/abdullah/sobigidul/
+scp -P 1983 -i ~/.ssh/id_raspi_ed25519 /d/Data/Projek/hotspot/lpsaring/.env.prod <PI_USER>@<PI_HOST>:/home/abdullah/sobigidul/
+scp -P 1983 -i ~/.ssh/id_raspi_ed25519 /d/Data/Projek/hotspot/lpsaring/.env.public.prod <PI_USER>@<PI_HOST>:/home/abdullah/sobigidul/
+scp -P 1983 -i ~/.ssh/id_raspi_ed25519 /d/Data/Projek/hotspot/lpsaring/infrastructure/nginx/conf.d/app.prod.conf <PI_USER>@<PI_HOST>:/home/abdullah/sobigidul/infrastructure/nginx/conf.d/
+```
+
+Jika pakai sertifikat lokal Nginx:
+
+```bash
+scp -P 1983 -i ~/.ssh/id_raspi_ed25519 /path/to/fullchain.pem <PI_USER>@<PI_HOST>:/home/abdullah/sobigidul/infrastructure/nginx/ssl/
+scp -P 1983 -i ~/.ssh/id_raspi_ed25519 /path/to/privkey.pem <PI_USER>@<PI_HOST>:/home/abdullah/sobigidul/infrastructure/nginx/ssl/
+```
+
+Jika pakai sertifikat lokal Nginx:
+
+```bash
+scp -P "$PI_PORT" -i "$SSH_KEY" /path/to/fullchain.pem "$PI_USER@$PI_HOST:$REMOTE_ROOT/infrastructure/nginx/ssl/"
+scp -P "$PI_PORT" -i "$SSH_KEY" /path/to/privkey.pem "$PI_USER@$PI_HOST:$REMOTE_ROOT/infrastructure/nginx/ssl/"
+```
+
+## 4) Alternatif Sinkronisasi (rsync)
+
+Lebih praktis untuk update berulang:
+
+```bash
+PI_USER=pi
+PI_HOST=192.168.1.20
+PI_PORT=1983
+SSH_KEY=~/.ssh/id_raspi_ed25519
+LOCAL_ROOT=/d/Data/Projek/hotspot/lpsaring
+REMOTE_ROOT=/home/abdullah/sobigidul
+
+rsync -avz --progress -e "ssh -p $PI_PORT -i $SSH_KEY" \
+  "$LOCAL_ROOT/docker-compose.prod.yml" \
+  "$LOCAL_ROOT/.env.prod" \
+  "$LOCAL_ROOT/.env.public.prod" \
+  "$LOCAL_ROOT/infrastructure/nginx/conf.d/app.prod.conf" \
+  "$PI_USER@$PI_HOST:$REMOTE_ROOT/"
+```
+
+### 4.1 rsync Langsung (Tanpa Variable)
+
+```bash
+rsync -avz --progress -e "ssh -p 1983 -i ~/.ssh/id_raspi_ed25519" \
+  /d/Data/Projek/hotspot/lpsaring/docker-compose.prod.yml \
+  /d/Data/Projek/hotspot/lpsaring/.env.prod \
+  /d/Data/Projek/hotspot/lpsaring/.env.public.prod \
+  /d/Data/Projek/hotspot/lpsaring/infrastructure/nginx/conf.d/app.prod.conf \
+  <PI_USER>@<PI_HOST>:/home/abdullah/sobigidul/
+```
+
+## 5) Jalankan Service di Pi
+
+SSH ke Pi lalu jalankan:
+
+```bash
+ssh -p 1983 -i ~/.ssh/id_raspi_ed25519 pi@192.168.1.20
+cd /home/abdullah/sobigidul
+docker compose --env-file .env.prod -f docker-compose.prod.yml pull
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml ps
+```
+
+Cek log:
+
+```bash
+docker compose -f docker-compose.prod.yml logs -f backend frontend nginx
+```
+
+### 5.1 One-shot SSH (Tanpa Masuk Shell Interaktif)
+
+```bash
+ssh -p 1983 -i ~/.ssh/id_raspi_ed25519 <PI_USER>@<PI_HOST> "cd /home/abdullah/sobigidul && docker compose --env-file .env.prod -f docker-compose.prod.yml pull && docker compose --env-file .env.prod -f docker-compose.prod.yml up -d && docker compose -f docker-compose.prod.yml ps"
+```
+
+## 6) Update Versi Aplikasi (Tanpa Clone Repo)
+
+Jika image baru sudah dipublish ke Docker Hub:
+
+```bash
+cd /home/abdullah/sobigidul
+docker compose --env-file .env.prod -f docker-compose.prod.yml pull
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+
+Jika ada perubahan skema DB, jalankan juga:
+
+```bash
+docker compose -f docker-compose.prod.yml exec -T backend flask db upgrade
+```
+
+## 6.1) Housekeeping: Rapikan transaksi EXPIRED
+
+Jika halaman transaksi admin penuh transaksi kadaluarsa (EXPIRED/FAILED/CANCELLED), bersihkan yang lama:
+
+Dry-run:
+
+```bash
+docker compose -f docker-compose.prod.yml exec -T backend flask cleanup-transactions --older-than-days 1
+```
+
+Apply:
+
+```bash
+docker compose -f docker-compose.prod.yml exec -T backend flask cleanup-transactions --older-than-days 1 --apply
+```
+```
+
+## 7) Catatan Penting
+
+- Pastikan file `.env.prod` terisi lengkap untuk backend dan service produksi.
+- Pastikan file `.env.public.prod` ada karena service frontend membaca file ini secara langsung.
+- Folder `backend/backups` harus ada agar bind mount tidak gagal.
+- Jika tidak pakai SSL di Nginx (SSL terminate di Cloudflare/Tunnel), folder `ssl` boleh kosong.
+
+## 8) Verifikasi Cepat
+
+```bash
+curl -I http://localhost
+curl -s http://localhost/api/ping
+```
+
+Jika port 80 tidak dipublish ke host (deployment internal + cloudflared), lakukan healthcheck dari dalam container Nginx:
+
+```bash
+cd /home/abdullah/sobigidul
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T nginx wget -qO- http://127.0.0.1/api/ping
+```
+
+Dari laptop:
+
+```bash
+curl -I http://<IP_PI>
+```
+
+## 9) One-Command Deploy Script (Direkomendasikan)
+
+Script siap pakai ada di root project: [deploy_pi.sh](../deploy_pi.sh).
+
+Contoh pakai:
+
+```bash
+./deploy_pi.sh --host <IP_PI>
+```
+
+Dengan opsi SSL:
+
+```bash
+./deploy_pi.sh --host <IP_PI> \
+  --ssl-fullchain /path/to/fullchain.pem \
+  --ssl-privkey /path/to/privkey.pem
+```
+
+Cek dulu tanpa eksekusi (dry-run):
+
+```bash
+./deploy_pi.sh --host <IP_PI> --dry-run
+```
+
+## 10) Wartelpas Runbook
+
+Untuk operasional `wartelpas.sobigidul.com` (Cloudflare Tunnel, Nginx routing, recovery SQLite korup, whitelist), lihat:
+
+- [docs/WARTELPAS_OPERATIONS.md](WARTELPAS_OPERATIONS.md)
