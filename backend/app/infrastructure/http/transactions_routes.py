@@ -198,6 +198,18 @@ def format_currency(value: Any) -> str:
     except Exception:
         return "Rp Error"
 
+def format_number(value: Any) -> str:
+    if value is None:
+        return "0"
+    try:
+        decimal_value = Decimal(value)
+        return f"{decimal_value:,.0f}".replace(",", ".")
+    except Exception:
+        try:
+            return str(value)
+        except Exception:
+            return "0"
+
 def format_status(value: str) -> str:
     if not isinstance(value, str):
         return value
@@ -210,6 +222,10 @@ def _format_datetime_short_filter(value):
 @transactions_bp.app_template_filter("format_currency")
 def _format_currency_filter(value):
     return format_currency(value)
+
+@transactions_bp.app_template_filter("format_number")
+def _format_number_filter(value):
+    return format_number(value)
 
 @transactions_bp.app_template_filter("format_status")
 def _format_status_filter(value):

@@ -4,13 +4,10 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Laporan Penjualan</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; }
     body {
-      font-family: 'Roboto', Arial, sans-serif;
+      font-family: Arial, sans-serif;
       font-size: 12px;
       line-height: 1.45;
       color: #111827;
@@ -66,6 +63,10 @@
     }
     td.num, th.num { text-align: right; }
 
+    th.col-rank { width: 60px; }
+    th.col-qty { width: 90px; }
+    th.col-revenue { width: 140px; }
+
     .footer {
       margin-top: 18px;
       padding-top: 12px;
@@ -81,18 +82,18 @@
     <div class="sub">{{ business_name }} • Periode: {{ start_date }} s/d {{ end_date }} • Dibuat: {{ generated_at.strftime('%d %b %Y %H:%M') }}</div>
 
     <div class="summary">
-      <div class="kv"><div class="k">Total transaksi sukses</div><div class="v">{{ total_success }}</div></div>
-      <div class="kv"><div class="k">Total pendapatan (IDR)</div><div class="v">{{ total_amount }}</div></div>
+      <div class="kv"><div class="k">Total transaksi sukses</div><div class="v">{{ total_success | format_number }}</div></div>
+      <div class="kv"><div class="k">Total pendapatan (IDR)</div><div class="v">{{ total_amount | format_currency }}</div></div>
     </div>
 
     <h2>Paket Terlaris</h2>
     <table>
       <thead>
         <tr>
-          <th style="width:60px;">Rank</th>
+          <th class="col-rank">Rank</th>
           <th>Paket</th>
-          <th class="num" style="width:90px;">Qty</th>
-          <th class="num" style="width:140px;">Revenue (IDR)</th>
+          <th class="num col-qty">Qty</th>
+          <th class="num col-revenue">Revenue (IDR)</th>
         </tr>
       </thead>
       <tbody>
@@ -101,8 +102,8 @@
             <tr>
               <td>{{ p.rank }}</td>
               <td>{{ p.name }}</td>
-              <td class="num">{{ p.qty }}</td>
-              <td class="num">{{ p.revenue }}</td>
+              <td class="num">{{ p.qty | format_number }}</td>
+              <td class="num">{{ p.revenue | format_currency }}</td>
             </tr>
           {% endfor %}
         {% else %}
@@ -116,8 +117,8 @@
       <thead>
         <tr>
           <th>Metode</th>
-          <th class="num" style="width:90px;">Qty</th>
-          <th class="num" style="width:140px;">Revenue (IDR)</th>
+          <th class="num col-qty">Qty</th>
+          <th class="num col-revenue">Revenue (IDR)</th>
         </tr>
       </thead>
       <tbody>
@@ -125,8 +126,8 @@
           {% for m in methods %}
             <tr>
               <td>{{ m.method }}</td>
-              <td class="num">{{ m.qty }}</td>
-              <td class="num">{{ m.revenue }}</td>
+              <td class="num">{{ m.qty | format_number }}</td>
+              <td class="num">{{ m.revenue | format_currency }}</td>
             </tr>
           {% endfor %}
         {% else %}

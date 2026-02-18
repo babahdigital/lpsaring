@@ -17,6 +17,7 @@
     "generate": "nuxt generate"
   },
   "dependencies": {
+    "@fontsource/public-sans": "^5.2.6",
     "@antfu/utils": "^9.2.0",
     "@casl/ability": "6.7.3",
     "@casl/vue": "2.2.2",
@@ -52,8 +53,7 @@
     "vue-prism-component": "2.0.0",
     "vue3-apexcharts": "1.8.0",
     "vue3-perfect-scrollbar": "2.0.0",
-    "vuetify": "^3.8.10",
-    "webfontloader": "1.6.28"
+    "vuetify": "^3.8.10"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^4.16.1",
@@ -79,7 +79,6 @@
     "@stylistic/stylelint-plugin": "3.1.2",
     "@types/http-proxy": "^1.17.16",
     "@types/node": "24.0.3",
-    "@types/webfontloader": "1.6.38",
     "@typescript-eslint/eslint-plugin": "^8.34.1",
     "@typescript-eslint/parser": "^8.34.1",
     "@vue/compiler-sfc": "^3.5.17",

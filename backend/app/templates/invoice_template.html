@@ -4,9 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Invoice {{ transaction.midtrans_order_id }}</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
         /* Reset dasar & box-sizing */
         * {
@@ -16,7 +13,7 @@
         }
 
         body {
-            font-family: 'Roboto', Arial, sans-serif;
+            font-family: Arial, sans-serif;
             font-size: 13px; /* Ukuran font dasar */
             line-height: 1.5;
             color: #202124; /* Warna teks utama Google */
@@ -244,30 +241,23 @@
 
         <div class="invoice-summary">
             <div class="details-column">
-                <dl>
-                    <div class="detail-item"><dt>Invoice number</dt><dd>{{ transaction.midtrans_order_id }}</dd></div>
-                    <div class="detail-item"><dt>Invoice date</dt><dd>{{ transaction.created_at | format_datetime_short }}</dd></div>
-                    {% if transaction.payment_settlement_time %}
-                    <div class="detail-item"><dt>Payment date</dt><dd>{{ transaction.payment_settlement_time | format_datetime_short }}</dd></div>
-                    {% endif %}
-                    {% if transaction.payment_method %}
-                    <div class="detail-item"><dt>Payment method</dt><dd>{{ transaction.payment_method | title }}</dd></div>
-                    {% endif %}
+                {% set status_lower = (transaction.status.value if transaction.status else '') | lower %}
+                {% if 'paid' in status_lower or 'settlement' in status_lower or 'success' in status_lower %}
+                    {% set status_class = 'status-paid' %}
+                {% elif 'pending' in status_lower %}
+                    {% set status_class = 'status-pending' %}
+                {% elif 'fail' in status_lower or 'cancel' in status_lower %}
+                    {% set status_class = 'status-failed' %}
+                {% elif 'expire' in status_lower %}
+                    {% set status_class = 'status-expired' %}
+                {% else %}
+                    {% set status_class = '' %} {# Default jika status tidak dikenali #}
+                {% endif %}
 
-                    {% set status_lower = (transaction.status.value if transaction.status else '') | lower %}
-                    {% if 'paid' in status_lower or 'settlement' in status_lower or 'success' in status_lower %}
-                        {% set status_class = 'status-paid' %}
-                    {% elif 'pending' in status_lower %}
-                        {% set status_class = 'status-pending' %}
-                    {% elif 'fail' in status_lower or 'cancel' in status_lower %}
-                        {% set status_class = 'status-failed' %}
-                    {% elif 'expire' in status_lower %}
-                        {% set status_class = 'status-expired' %}
-                    {% else %}
-                        {% set status_class = '' %} {# Default jika status tidak dikenali #}
-                    {% endif %}
-                    <div class="detail-item"><dt>Status</dt><dd><span class="status {{ status_class }}">{{ transaction.status.value | format_status }}</span></dd></div>
-                </dl>
+                {% set payment_date_value = (transaction.payment_settlement_time | format_datetime_short) if transaction.payment_settlement_time else '-' %}
+                {% set payment_method_value = (transaction.payment_method | title) if transaction.payment_method else '-' %}
+
+                <dl><div class="detail-item"><dt>Invoice number</dt><dd>{{ transaction.midtrans_order_id }}</dd></div><div class="detail-item"><dt>Invoice date</dt><dd>{{ transaction.created_at | format_datetime_short }}</dd></div><div class="detail-item"><dt>Payment date</dt><dd>{{ payment_date_value }}</dd></div><div class="detail-item"><dt>Payment method</dt><dd>{{ payment_method_value }}</dd></div><div class="detail-item"><dt>Status</dt><dd><span class="status {{ status_class }}">{{ transaction.status.value | format_status }}</span></dd></div></dl>
             </div>
             </div>
 

@@ -1,5 +1,6 @@
 // frontend/nuxt.config.ts
 
+import { defineNuxtConfig } from 'nuxt/config'
 import { fileURLToPath, URL } from 'node:url'
 import vuetify from 'vite-plugin-vuetify'
 import svgLoader from 'vite-svg-loader'
@@ -114,6 +115,7 @@ export default defineNuxtConfig({
   },
 
   css: [
+    '@/assets/styles/font-public-sans.css',
     '@core/scss/template/index.scss',
     '@/assets/styles/styles.scss',
     '@/assets/iconify/icons.css',
