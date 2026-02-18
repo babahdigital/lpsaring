@@ -30,6 +30,9 @@ class _FakeQuery:
     def filter(self, *_args, **_kwargs):
         return self
 
+    def order_by(self, *_args, **_kwargs):
+        return self
+
     def with_for_update(self):
         return self
 
@@ -84,7 +87,33 @@ class _FakeSnap:
         return {"token": "dummy-token", "redirect_url": "https://example.test"}
 
 
+class _FakeColumn:
+    def __eq__(self, _other):
+        return self
+
+    def __gt__(self, _other):
+        return self
+
+    def in_(self, _values):
+        return self
+
+    def is_(self, _value):
+        return self
+
+    def desc(self):
+        return self
+
+
 class _FakeTransaction:
+    # Provide class-level attributes to mimic SQLAlchemy columns.
+    # The production code references Transaction.user_id/package_id/etc at class level
+    # when building query filters.
+    user_id = _FakeColumn()
+    package_id = _FakeColumn()
+    status = _FakeColumn()
+    expiry_time = _FakeColumn()
+    created_at = _FakeColumn()
+
     def __init__(
         self,
         id=None,
@@ -144,9 +173,6 @@ def test_initiate_transaction_sets_unknown_and_expiry_and_finish_url(monkeypatch
     monkeypatch.setattr(transactions_routes, "get_midtrans_snap_client", lambda: _FakeSnap(capture))
     monkeypatch.setattr(transactions_routes, "should_allow_call", lambda _name: True)
 
-    # Replace SQLAlchemy Transaction model with a lightweight fake.
-    monkeypatch.setattr(transactions_routes, "Transaction", _FakeTransaction)
-
     app = _make_app()
     initiate_impl = _unwrap_decorators(transactions_routes.initiate_transaction)
 
@@ -162,7 +188,7 @@ def test_initiate_transaction_sets_unknown_and_expiry_and_finish_url(monkeypatch
     assert payload["snap_token"] == "dummy-token"
     assert payload["order_id"].startswith("HS-")
 
-    created_tx = next(obj for obj in fake_session.added if isinstance(obj, _FakeTransaction))
+    created_tx = next(obj for obj in fake_session.added if hasattr(obj, "midtrans_order_id") and hasattr(obj, "expiry_time"))
     assert created_tx.status == TransactionStatus.UNKNOWN
     assert isinstance(created_tx.expiry_time, datetime)
     assert created_tx.expiry_time.tzinfo is not None
