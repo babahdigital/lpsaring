@@ -1226,6 +1226,103 @@ def create_qris_bill(current_admin: User):
         return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
+@admin_bp.route('/midtrans/selftest', methods=['POST'])
+@admin_required
+def midtrans_selftest(current_admin: User):
+    """Self-test channel Midtrans untuk memastikan payment_type aktif (qris/gopay) via Core API.
+
+    Catatan:
+    - Ini akan memanggil endpoint charge Midtrans (bukan dry-run). Gunakan amount kecil.
+    - Tidak menyimpan transaksi ke database.
+    """
+    json_data = request.get_json(silent=True) or {}
+
+    payment_types_raw = json_data.get('payment_types')
+    if isinstance(payment_types_raw, list) and payment_types_raw:
+        payment_types = [str(x).strip().lower() for x in payment_types_raw if str(x).strip()]
+    else:
+        payment_types = ['qris', 'gopay']
+
+    try:
+        amount = int(json_data.get('amount') or 1000)
+    except Exception:
+        amount = 1000
+    amount = max(1000, min(amount, 50000))
+
+    def _parse_midtrans_api_response_from_message(message: str) -> dict[str, object] | None:
+        try:
+            marker = 'API response: `'
+            if marker in message:
+                json_part = message.split(marker, 1)[1]
+                json_part = json_part.split('`', 1)[0]
+                parsed = json.loads(json_part)
+                return parsed if isinstance(parsed, dict) else None
+        except Exception:
+            return None
+        return None
+
+    core = get_midtrans_core_api_client()
+    results: list[dict[str, object]] = []
+    for payment_type in payment_types:
+        order_id = f"MT-TEST-{payment_type.upper()}-{uuid.uuid4().hex[:10].upper()}"
+        payload: dict[str, object] = {
+            "payment_type": payment_type,
+            "transaction_details": {"order_id": order_id, "gross_amount": amount},
+            "item_details": [{
+                "id": f"selftest-{payment_type}",
+                "price": amount,
+                "quantity": 1,
+                "name": f"SelfTest {payment_type}"[:100],
+            }],
+            "customer_details": {
+                "first_name": (str(getattr(current_admin, 'full_name', '') or 'Admin')[:50]),
+                "phone": format_to_local_phone(str(getattr(current_admin, 'phone_number', '') or '')),
+            },
+        }
+        if payment_type == 'gopay':
+            payload["gopay"] = {"enable_callback": False}
+
+        try:
+            resp = core.charge(payload)
+            if isinstance(resp, dict):
+                results.append({
+                    "payment_type": payment_type,
+                    "order_id": order_id,
+                    "ok": True,
+                    "status_code": resp.get('status_code'),
+                    "status_message": resp.get('status_message'),
+                    "transaction_status": resp.get('transaction_status'),
+                    "transaction_id": resp.get('transaction_id'),
+                    "qr_code_url": extract_qr_code_url(resp),
+                    "raw": resp,
+                })
+            else:
+                results.append({
+                    "payment_type": payment_type,
+                    "order_id": order_id,
+                    "ok": True,
+                    "raw": resp,
+                })
+        except midtransclient.error_midtrans.MidtransAPIError as e:
+            raw_message = getattr(e, 'message', '') or ''
+            parsed = _parse_midtrans_api_response_from_message(raw_message) or {}
+            results.append({
+                "payment_type": payment_type,
+                "order_id": order_id,
+                "ok": False,
+                "error": raw_message,
+                "midtrans_status_code": parsed.get('status_code'),
+                "midtrans_status_message": parsed.get('status_message'),
+                "midtrans_error_id": parsed.get('id'),
+            })
+
+    return jsonify({
+        "is_production": bool(current_app.config.get('MIDTRANS_IS_PRODUCTION', False)),
+        "amount": amount,
+        "results": results,
+    }), HTTPStatus.OK
+
+
 @admin_bp.route('/transactions/<order_id>/report.pdf', methods=['GET'])
 @admin_required
 def get_transaction_admin_report_pdf(current_admin: User, order_id: str):
