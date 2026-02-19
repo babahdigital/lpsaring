@@ -1,0 +1,9 @@
+# Files that are not Markdown but may be linted by editor extensions
+.hintignore
+
+# Generated / vendor directories
+frontend/.nuxt/
+frontend/.output/
+frontend/.nitro/
+frontend/node_modules/
+backend/__pycache__/

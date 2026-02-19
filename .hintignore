@@ -1,0 +1,12 @@
+# Ignore generated/build outputs (Nuxt)
+frontend/.nuxt/**
+frontend/.output/**
+frontend/.nitro/**
+
+# Node deps
+frontend/node_modules/**
+**/node_modules/**
+
+# Tooling caches
+**/.cache/**
+**/.pnpm-store/**
