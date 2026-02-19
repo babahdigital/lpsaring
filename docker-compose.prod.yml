@@ -134,6 +134,7 @@ services:
     command: >
       /opt/venv/bin/celery -A app.extensions worker
       --loglevel=info
+      --logfile=/dev/stdout
       --concurrency=4
     depends_on:
       migrate:
@@ -161,7 +162,7 @@ services:
       - .env.prod
     volumes:
       - ./.env.prod:/app/.env:ro
-    command: /opt/venv/bin/celery -A app.extensions beat --loglevel=info
+    command: /opt/venv/bin/celery -A app.extensions beat --loglevel=info --logfile=/dev/stdout
     depends_on:
       migrate:
         condition: service_completed_successfully

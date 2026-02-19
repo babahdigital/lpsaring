@@ -66,9 +66,9 @@ def _get_thresholds_from_env(key: str, default: List[int]) -> List[int]:
             if parsed is None:
                 return default
             # values bisa berupa "[20,10,5]" atau "20,10,5"
-            if parsed.strip().startswith('['):
-                return [int(v) for v in parsed.strip('[]').split(',') if v.strip()]
-            return [int(v) for v in parsed.split(',') if v.strip()]
+            if parsed.strip().startswith("["):
+                return [int(v) for v in parsed.strip("[]").split(",") if v.strip()]
+            return [int(v) for v in parsed.split(",") if v.strip()]
     except Exception:
         return default
     return default
@@ -86,20 +86,20 @@ def _calculate_remaining(user: User) -> Tuple[float, float]:
 
 def _resolve_target_profile(user: User, remaining_mb: float, remaining_percent: float, is_expired: bool) -> str:
     inactive_profile = (
-        settings_service.get_setting('MIKROTIK_INACTIVE_PROFILE', None)
-        or settings_service.get_setting('MIKROTIK_DEFAULT_PROFILE', 'default')
-        or 'default'
+        settings_service.get_setting("MIKROTIK_INACTIVE_PROFILE", None)
+        or settings_service.get_setting("MIKROTIK_DEFAULT_PROFILE", "default")
+        or "default"
     )
     active_profile = (
-        settings_service.get_setting('MIKROTIK_ACTIVE_PROFILE', None)
-        or settings_service.get_setting('MIKROTIK_DEFAULT_PROFILE', 'default')
-        or 'default'
+        settings_service.get_setting("MIKROTIK_ACTIVE_PROFILE", None)
+        or settings_service.get_setting("MIKROTIK_DEFAULT_PROFILE", "default")
+        or "default"
     )
-    fup_profile = settings_service.get_setting('MIKROTIK_FUP_PROFILE', 'fup') or 'fup'
-    habis_profile = settings_service.get_setting('MIKROTIK_HABIS_PROFILE', 'habis') or 'habis'
-    unlimited_profile = settings_service.get_setting('MIKROTIK_UNLIMITED_PROFILE', 'unlimited') or 'unlimited'
-    expired_profile = settings_service.get_setting('MIKROTIK_EXPIRED_PROFILE', 'expired') or 'expired'
-    fup_threshold = settings_service.get_setting_as_int('QUOTA_FUP_PERCENT', 20)
+    fup_profile = settings_service.get_setting("MIKROTIK_FUP_PROFILE", "fup") or "fup"
+    habis_profile = settings_service.get_setting("MIKROTIK_HABIS_PROFILE", "habis") or "habis"
+    unlimited_profile = settings_service.get_setting("MIKROTIK_UNLIMITED_PROFILE", "unlimited") or "unlimited"
+    expired_profile = settings_service.get_setting("MIKROTIK_EXPIRED_PROFILE", "expired") or "expired"
+    fup_threshold = settings_service.get_setting_as_int("QUOTA_FUP_PERCENT", 20)
 
     if user.is_unlimited_user:
         return unlimited_profile
@@ -118,7 +118,9 @@ def _update_daily_usage_log(user: User, delta_mb: float, today: date) -> bool:
     if delta_mb <= 0.1:
         return False
 
-    daily_log = db.session.scalar(select(DailyUsageLog).where(DailyUsageLog.user_id == user.id, DailyUsageLog.log_date == today))
+    daily_log = db.session.scalar(
+        select(DailyUsageLog).where(DailyUsageLog.user_id == user.id, DailyUsageLog.log_date == today)
+    )
     if daily_log:
         daily_log.usage_mb = float(daily_log.usage_mb or 0.0) + float(delta_mb)
     else:
@@ -132,7 +134,7 @@ def _update_daily_usage_log(user: User, delta_mb: float, today: date) -> bool:
 
 def _get_redis_client():
     try:
-        return getattr(current_app, 'redis_client_otp', None)
+        return getattr(current_app, "redis_client_otp", None)
     except Exception:
         return None
 
@@ -170,11 +172,11 @@ def _send_quota_notifications(user: User, remaining_percent: float, remaining_mb
     if not user.total_quota_purchased_mb or user.total_quota_purchased_mb <= 0:
         return
 
-    template_key = 'komandan_quota_low' if user.role == UserRole.KOMANDAN else 'user_quota_low'
+    template_key = "komandan_quota_low" if user.role == UserRole.KOMANDAN else "user_quota_low"
 
     # Kurangi noise/duplikasi: notifikasi low-quota cukup di level rendah saja.
     # FUP transition sudah mengirim notifikasi sendiri (contoh: 20%).
-    thresholds = sorted(_get_thresholds_from_env('QUOTA_NOTIFY_PERCENTAGES', [5]), reverse=True)
+    thresholds = sorted(_get_thresholds_from_env("QUOTA_NOTIFY_PERCENTAGES", [5]), reverse=True)
     thresholds = [t for t in thresholds if isinstance(t, int) and 0 < t <= 5]
     if not thresholds:
         return
@@ -182,11 +184,14 @@ def _send_quota_notifications(user: User, remaining_percent: float, remaining_mb
 
     for threshold in thresholds:
         if remaining_percent <= threshold and (last_level is None or last_level > threshold):
-            message = get_notification_message(template_key, {
-                'full_name': user.full_name,
-                'remaining_percent': threshold,
-                'remaining_mb': remaining_mb,
-            })
+            message = get_notification_message(
+                template_key,
+                {
+                    "full_name": user.full_name,
+                    "remaining_percent": threshold,
+                    "remaining_mb": remaining_mb,
+                },
+            )
             if send_whatsapp_message(user.phone_number, message):
                 user.last_quota_notification_level = threshold
                 user.last_low_quota_notif_at = datetime.now(dt_timezone.utc)
@@ -201,7 +206,7 @@ def _send_expiry_notifications(user: User) -> None:
     if not user.total_quota_purchased_mb or user.total_quota_purchased_mb <= 0:
         return
 
-    template_key = 'komandan_quota_expiry_warning' if user.role == UserRole.KOMANDAN else 'user_quota_expiry_warning'
+    template_key = "komandan_quota_expiry_warning" if user.role == UserRole.KOMANDAN else "user_quota_expiry_warning"
 
     now_local = get_app_local_datetime()
     expiry_local = get_app_local_datetime(user.quota_expiry_date)
@@ -209,15 +214,18 @@ def _send_expiry_notifications(user: User) -> None:
     if remaining_days < 0:
         return
 
-    thresholds = sorted(_get_thresholds_from_env('QUOTA_EXPIRY_NOTIFY_DAYS', [7, 3, 1]), reverse=True)
+    thresholds = sorted(_get_thresholds_from_env("QUOTA_EXPIRY_NOTIFY_DAYS", [7, 3, 1]), reverse=True)
     last_level = user.last_expiry_notification_level
 
     for threshold in thresholds:
         if remaining_days <= threshold and (last_level is None or last_level > threshold):
-            message = get_notification_message(template_key, {
-                'full_name': user.full_name,
-                'remaining_days': threshold,
-            })
+            message = get_notification_message(
+                template_key,
+                {
+                    "full_name": user.full_name,
+                    "remaining_days": threshold,
+                },
+            )
             if send_whatsapp_message(user.phone_number, message):
                 user.last_expiry_notification_level = threshold
                 user.last_expiry_notif_at = datetime.now(dt_timezone.utc)
@@ -229,22 +237,22 @@ def _send_access_status_notification(
     status_key: str,
     context: Optional[Dict[str, Any]] = None,
 ) -> None:
-    if settings_service.get_setting('ENABLE_WHATSAPP_NOTIFICATIONS', 'True') != 'True':
+    if settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") != "True":
         return
     if not user.phone_number:
         return
 
     template_map = {
-        'expired': 'user_access_expired',
-        'fup': 'user_access_fup',
-        'habis': 'user_access_habis',
+        "expired": "user_access_expired",
+        "fup": "user_access_fup",
+        "habis": "user_access_habis",
     }
     template_key = template_map.get(status_key)
     if not template_key:
         return
 
     payload = {
-        'full_name': user.full_name,
+        "full_name": user.full_name,
         **(context or {}),
     }
     try:
@@ -255,22 +263,20 @@ def _send_access_status_notification(
 
 
 def _sync_address_list_status(
-    api: object,
-    user: User,
-    username_08: str,
-    remaining_mb: float,
-    remaining_percent: float,
-    is_expired: bool
+    api: object, user: User, username_08: str, remaining_mb: float, remaining_percent: float, is_expired: bool
 ) -> bool:
-    list_active = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_ACTIVE', 'active') or 'active'
-    list_fup = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_FUP', 'fup') or 'fup'
-    list_inactive = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_INACTIVE', 'inactive') or 'inactive'
-    list_expired = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_EXPIRED', 'expired') or 'expired'
-    list_habis = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_HABIS', 'habis') or 'habis'
-    fup_threshold = settings_service.get_setting_as_int('QUOTA_FUP_PERCENT', 20)
+    list_active = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active"
+    list_fup = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup"
+    list_inactive = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive"
+    list_expired = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired"
+    list_habis = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis"
+    list_blocked = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked"
+    fup_threshold = settings_service.get_setting_as_int("QUOTA_FUP_PERCENT", 20)
 
     target_list = None
-    if is_expired:
+    if bool(getattr(user, "is_blocked", False)):
+        target_list = list_blocked
+    elif is_expired:
         target_list = list_expired
     elif remaining_mb <= 0 and not user.is_unlimited_user:
         target_list = list_habis
@@ -281,32 +287,32 @@ def _sync_address_list_status(
     else:
         target_list = list_active
 
-    if is_expired:
-        status_value = 'expired'
+    if bool(getattr(user, "is_blocked", False)):
+        status_value = "blocked"
+    elif is_expired:
+        status_value = "expired"
     elif user.is_unlimited_user:
-        status_value = 'unlimited'
+        status_value = "unlimited"
     elif remaining_mb <= 0:
-        status_value = 'habis'
+        status_value = "habis"
     elif remaining_percent <= fup_threshold:
-        status_value = 'fup'
+        status_value = "fup"
     else:
-        status_value = 'active'
+        status_value = "active"
     now = datetime.now(dt_timezone.utc)
     date_str, time_str = get_app_date_time_strings(now)
     comment = (
-        f"lpsaring|status={status_value}"
-        f"|user={username_08}"
-        f"|role={user.role.value}"
-        f"|date={date_str}"
-        f"|time={time_str}"
+        f"lpsaring|status={status_value}|user={username_08}|role={user.role.value}|date={date_str}|time={time_str}"
     )
-    other_lists = [name for name in (list_active, list_fup, list_inactive, list_expired, list_habis) if name]
+    other_lists = [
+        name for name in (list_active, list_fup, list_inactive, list_expired, list_habis, list_blocked) if name
+    ]
     ok, msg = sync_address_list_for_user(
         api_connection=api,
         username=username_08,
         target_list=target_list,
         other_lists=other_lists or None,
-        comment=comment
+        comment=comment,
     )
     if not ok:
         logger.debug(f"Gagal sync address-list untuk {username_08}: {msg}")
@@ -316,22 +322,26 @@ def _sync_address_list_status(
                 user_id_str = str(user.id)
                 fallback_ip = None
                 for entry in binding_map.values():
-                    if str(entry.get('user_id')) == user_id_str:
-                        ip_address = entry.get('address')
+                    if str(entry.get("user_id")) == user_id_str:
+                        ip_address = entry.get("address")
                         if ip_address:
                             fallback_ip = str(ip_address)
                             break
                 if not fallback_ip:
-                    device_macs = db.session.scalars(select(UserDevice.mac_address).where(
-                        UserDevice.user_id == user.id,
-                        UserDevice.is_authorized.is_(True),
-                    ).order_by(UserDevice.last_seen_at.desc())).all()
+                    device_macs = db.session.scalars(
+                        select(UserDevice.mac_address)
+                        .where(
+                            UserDevice.user_id == user.id,
+                            UserDevice.is_authorized.is_(True),
+                        )
+                        .order_by(UserDevice.last_seen_at.desc())
+                    ).all()
                     for mac in device_macs:
                         if not mac:
                             continue
                         entry = binding_map.get(str(mac).upper())
-                        if entry and entry.get('address'):
-                            fallback_ip = str(entry.get('address'))
+                        if entry and entry.get("address"):
+                            fallback_ip = str(entry.get("address"))
                             break
                         ok_ip, ip_from_mac, _ip_msg = get_ip_by_mac(api, str(mac).upper())
                         if ok_ip and ip_from_mac:
@@ -351,25 +361,23 @@ def _sync_address_list_status(
 
 
 def _sync_address_list_status_for_ip(
-    api: object,
-    user: User,
-    ip_address: str,
-    remaining_mb: float,
-    remaining_percent: float,
-    is_expired: bool
+    api: object, user: User, ip_address: str, remaining_mb: float, remaining_percent: float, is_expired: bool
 ) -> bool:
     if not ip_address:
         return False
 
-    list_active = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_ACTIVE', 'active') or 'active'
-    list_fup = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_FUP', 'fup') or 'fup'
-    list_inactive = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_INACTIVE', 'inactive') or 'inactive'
-    list_expired = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_EXPIRED', 'expired') or 'expired'
-    list_habis = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_HABIS', 'habis') or 'habis'
-    fup_threshold = settings_service.get_setting_as_int('QUOTA_FUP_PERCENT', 20)
+    list_active = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active"
+    list_fup = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup"
+    list_inactive = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive"
+    list_expired = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired"
+    list_habis = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis"
+    list_blocked = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked"
+    fup_threshold = settings_service.get_setting_as_int("QUOTA_FUP_PERCENT", 20)
 
     target_list = None
-    if is_expired:
+    if bool(getattr(user, "is_blocked", False)):
+        target_list = list_blocked
+    elif is_expired:
         target_list = list_expired
     elif remaining_mb <= 0 and not user.is_unlimited_user:
         target_list = list_habis
@@ -381,16 +389,18 @@ def _sync_address_list_status_for_ip(
         target_list = list_active
 
     username_08 = format_to_local_phone(user.phone_number)
-    if is_expired:
-        status_value = 'expired'
+    if bool(getattr(user, "is_blocked", False)):
+        status_value = "blocked"
+    elif is_expired:
+        status_value = "expired"
     elif user.is_unlimited_user:
-        status_value = 'unlimited'
+        status_value = "unlimited"
     elif remaining_mb <= 0:
-        status_value = 'habis'
+        status_value = "habis"
     elif remaining_percent <= fup_threshold:
-        status_value = 'fup'
+        status_value = "fup"
     else:
-        status_value = 'active'
+        status_value = "active"
     now = datetime.now(dt_timezone.utc)
     date_str, time_str = get_app_date_time_strings(now)
     comment = (
@@ -410,7 +420,7 @@ def _sync_address_list_status_for_ip(
         logger.debug(f"Gagal upsert address-list untuk IP {ip_address}: {msg}")
         return False
 
-    for list_name in [list_active, list_fup, list_inactive, list_expired, list_habis]:
+    for list_name in [list_active, list_fup, list_inactive, list_expired, list_habis, list_blocked]:
         if list_name and list_name != target_list:
             remove_address_list_entry(api_connection=api, address=ip_address, list_name=list_name)
     return True
@@ -423,18 +433,18 @@ def _sum_host_usage_for_user(user: User, host_usage_map: Dict[str, Dict[str, Any
     total_out = 0
     found = False
     for device in user.devices:
-        mac = (device.mac_address or '').upper()
+        mac = (device.mac_address or "").upper()
         if not mac:
             continue
         host_usage = host_usage_map.get(mac)
         if not host_usage:
             continue
-        total_in += int(host_usage.get('bytes_in', 0))
-        total_out += int(host_usage.get('bytes_out', 0))
+        total_in += int(host_usage.get("bytes_in", 0))
+        total_out += int(host_usage.get("bytes_out", 0))
         found = True
     if not found:
         return None
-    return {'bytes_in': total_in, 'bytes_out': total_out}
+    return {"bytes_in": total_in, "bytes_out": total_out}
 
 
 def _calculate_usage_update(
@@ -451,13 +461,13 @@ def _calculate_usage_update(
     found = False
     now = datetime.now(dt_timezone.utc)
     for device in user.devices:
-        mac = (device.mac_address or '').upper()
+        mac = (device.mac_address or "").upper()
         if not mac:
             continue
         host_usage = host_usage_map.get(mac)
         if not host_usage:
             continue
-        bytes_total = int(host_usage.get('bytes_in', 0)) + int(host_usage.get('bytes_out', 0))
+        bytes_total = int(host_usage.get("bytes_in", 0)) + int(host_usage.get("bytes_out", 0))
         found = True
 
         key = f"{REDIS_LAST_BYTES_PREFIX}{mac}"
@@ -517,14 +527,14 @@ def _auto_enroll_devices_from_ip_binding(
 ) -> int:
     if not ip_binding_map:
         return 0
-    existing_macs = {((d.mac_address or '').upper()) for d in (user.devices or [])}
+    existing_macs = {((d.mac_address or "").upper()) for d in (user.devices or [])}
     added = 0
     for mac, entry in ip_binding_map.items():
-        if entry.get('user_id') != str(user.id):
+        if entry.get("user_id") != str(user.id):
             continue
         if mac in existing_macs:
             continue
-        ip_address = entry.get('address') or host_usage_map.get(mac, {}).get('address')
+        ip_address = entry.get("address") or host_usage_map.get(mac, {}).get("address")
         ok, msg, device = register_or_update_device(user, ip_address, None, client_mac=mac)
         if debug_log:
             logger.info(
@@ -545,22 +555,26 @@ def _auto_enroll_devices_from_ip_binding(
 
 def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
     counters = {
-        'processed': 0,
-        'updated_usage': 0,
-        'profile_updates': 0,
-        'failed': 0,
+        "processed": 0,
+        "updated_usage": 0,
+        "profile_updates": 0,
+        "failed": 0,
     }
     auto_enroll_users = 0
     auto_enroll_devices = 0
 
-    users_to_sync = db.session.scalars(select(User).where(
-        User.is_active,
-        User.role.in_([UserRole.USER, UserRole.KOMANDAN]),
-        User.approval_status == ApprovalStatus.APPROVED,
-    ).options(
-        selectinload(User.transactions).selectinload(Transaction.package),
-        selectinload(User.devices),
-    )).all()
+    users_to_sync = db.session.scalars(
+        select(User)
+        .where(
+            User.is_active,
+            User.role.in_([UserRole.USER, UserRole.KOMANDAN]),
+            User.approval_status == ApprovalStatus.APPROVED,
+        )
+        .options(
+            selectinload(User.transactions).selectinload(Transaction.package),
+            selectinload(User.devices),
+        )
+    ).all()
 
     if not users_to_sync:
         return counters
@@ -568,7 +582,7 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
     today = get_app_local_datetime().date()
     redis_client = _get_redis_client()
 
-    debt_limit_mb = settings_service.get_setting_as_int('QUOTA_DEBT_LIMIT_MB', 0)
+    debt_limit_mb = settings_service.get_setting_as_int("QUOTA_DEBT_LIMIT_MB", 0)
 
     cheapest_pkg = None
     try:
@@ -583,23 +597,25 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
         cheapest_pkg = None
 
     cheapest_pkg_price = int(cheapest_pkg.price) if cheapest_pkg and cheapest_pkg.price is not None else None
-    cheapest_pkg_quota_gb = float(cheapest_pkg.data_quota_gb) if cheapest_pkg and cheapest_pkg.data_quota_gb is not None else None
+    cheapest_pkg_quota_gb = (
+        float(cheapest_pkg.data_quota_gb) if cheapest_pkg and cheapest_pkg.data_quota_gb is not None else None
+    )
     cheapest_pkg_name = str(cheapest_pkg.name) if cheapest_pkg and cheapest_pkg.name else None
 
     with get_mikrotik_connection() as api:
         if not api:
             logger.error("Gagal mendapatkan koneksi MikroTik untuk sinkronisasi kuota.")
-            counters['failed'] = len(users_to_sync)
+            counters["failed"] = len(users_to_sync)
             return counters
 
         ok_host, host_usage_map, host_msg = get_hotspot_host_usage_map(api)
         if not ok_host:
             logger.error(f"Gagal mengambil data host Mikrotik: {host_msg}")
-            counters['failed'] = len(users_to_sync)
+            counters["failed"] = len(users_to_sync)
             return counters
 
         ip_binding_map: Dict[str, Dict[str, Any]] = {}
-        if settings_service.get_setting('AUTO_ENROLL_DEVICES_FROM_IP_BINDING', 'True') == 'True':
+        if settings_service.get_setting("AUTO_ENROLL_DEVICES_FROM_IP_BINDING", "True") == "True":
             ok_binding, binding_map, binding_msg = get_hotspot_ip_binding_user_map(api)
             if ok_binding:
                 ip_binding_map = binding_map
@@ -616,11 +632,11 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                     continue
 
                 if ip_binding_map:
-                    max_devices = settings_service.get_setting_as_int('MAX_DEVICES_PER_USER', 3)
+                    max_devices = settings_service.get_setting_as_int("MAX_DEVICES_PER_USER", 3)
                     existing_devices = len(user.devices or [])
                     available_slots = max(0, max_devices - existing_devices)
                     if available_slots > 0:
-                        debug_log = settings_service.get_setting('AUTO_ENROLL_DEBUG_LOG', 'False') == 'True'
+                        debug_log = settings_service.get_setting("AUTO_ENROLL_DEBUG_LOG", "False") == "True"
                         added_devices = _auto_enroll_devices_from_ip_binding(
                             user,
                             ip_binding_map,
@@ -639,15 +655,17 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                     _update_daily_usage_log(user, delta_mb, today)
                     if abs(new_total_usage_mb - old_usage_mb) >= 0.01:
                         user.total_quota_used_mb = new_total_usage_mb
-                        counters['updated_usage'] += 1
+                        counters["updated_usage"] += 1
 
                 remaining_mb, remaining_percent = _calculate_remaining(user)
-                debt_mb = compute_debt_mb(float(user.total_quota_purchased_mb or 0.0), float(user.total_quota_used_mb or 0.0))
+                debt_mb = compute_debt_mb(
+                    float(user.total_quota_purchased_mb or 0.0), float(user.total_quota_used_mb or 0.0)
+                )
 
                 # Quota-debt hard block is NOT applied to:
                 # - unlimited users
                 # - KOMANDAN role
-                if bool(getattr(user, 'is_unlimited_user', False)) or getattr(user, 'role', None) == UserRole.KOMANDAN:
+                if bool(getattr(user, "is_unlimited_user", False)) or getattr(user, "role", None) == UserRole.KOMANDAN:
                     now_local = get_app_local_datetime()
                     expiry_local = get_app_local_datetime(user.quota_expiry_date) if user.quota_expiry_date else None
                     is_expired = bool(expiry_local and expiry_local < now_local)
@@ -659,11 +677,20 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                     debt_mb_text = f"{round_mb(debt_mb)}"
                     date_str, time_str = get_app_date_time_strings(now_utc)
 
+                    list_blocked = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked"
+                    other_status_lists = [
+                        settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active",
+                        settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup",
+                        settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive",
+                        settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired",
+                        settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis",
+                    ]
+
                     # Always enforce MikroTik block (idempotent), even if user already blocked.
                     if api:
-                        block_type = settings_service.get_ip_binding_type_setting('IP_BINDING_TYPE_BLOCKED', 'blocked')
-                        for device in (user.devices or []):
-                            mac = (device.mac_address or '').upper()
+                        block_type = settings_service.get_ip_binding_type_setting("IP_BINDING_TYPE_BLOCKED", "blocked")
+                        for device in user.devices or []:
+                            mac = (device.mac_address or "").upper()
                             if not mac:
                                 continue
                             upsert_ip_binding(
@@ -676,7 +703,6 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                             )
 
                             if device.ip_address:
-                                list_blocked = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_BLOCKED', 'blocked') or 'blocked'
                                 upsert_address_list_entry(
                                     api_connection=api,
                                     address=device.ip_address,
@@ -685,6 +711,15 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                                         f"lpsaring|blocked|quota-debt-limit|user={username_08_for_block}|uid={user.id}|debt_mb={debt_mb_text}|date={date_str}|time={time_str}"
                                     ),
                                 )
+
+                                # Pastikan status address-list eksklusif: saat blocked, hapus status lain.
+                                for list_name in other_status_lists:
+                                    if list_name and list_name != list_blocked:
+                                        remove_address_list_entry(
+                                            api_connection=api,
+                                            address=device.ip_address,
+                                            list_name=list_name,
+                                        )
 
                     # Only flip DB blocked flags + send notifications once.
                     if not bool(user.is_blocked):
@@ -696,7 +731,7 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                             cheapest_package_name=cheapest_pkg_name,
                         )
                         estimate_rp = estimate.estimated_rp_rounded
-                        estimate_rp_text = format_rupiah(estimate_rp) if isinstance(estimate_rp, int) else '-'
+                        estimate_rp_text = format_rupiah(estimate_rp) if isinstance(estimate_rp, int) else "-"
 
                         user.blocked_reason = (
                             f"quota_debt_limit|debt_mb={debt_mb_text}"
@@ -705,16 +740,16 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                         )
                         user.blocked_at = now_utc
 
-                        if settings_service.get_setting('ENABLE_WHATSAPP_NOTIFICATIONS', 'True') == 'True':
+                        if settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") == "True":
                             try:
                                 user_msg = get_notification_message(
-                                    'user_quota_debt_blocked',
+                                    "user_quota_debt_blocked",
                                     {
-                                        'full_name': user.full_name,
-                                        'phone_number': user.phone_number,
-                                        'debt_mb': debt_mb_text,
-                                        'estimated_rp': estimate_rp_text,
-                                        'base_package_name': cheapest_pkg_name or '-',
+                                        "full_name": user.full_name,
+                                        "phone_number": user.phone_number,
+                                        "debt_mb": debt_mb_text,
+                                        "estimated_rp": estimate_rp_text,
+                                        "base_package_name": cheapest_pkg_name or "-",
                                     },
                                 )
                                 send_whatsapp_message(user.phone_number, user_msg)
@@ -723,28 +758,29 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                                     select(User)
                                     .join(NotificationRecipient, User.id == NotificationRecipient.admin_user_id)
                                     .where(
-                                        NotificationRecipient.notification_type == NotificationType.QUOTA_DEBT_LIMIT_EXCEEDED,
+                                        NotificationRecipient.notification_type
+                                        == NotificationType.QUOTA_DEBT_LIMIT_EXCEEDED,
                                         User.is_active,
                                     )
                                 )
                                 admins = db.session.scalars(recipients_query).all()
                                 if admins:
                                     admin_msg = get_notification_message(
-                                        'admin_quota_debt_blocked',
+                                        "admin_quota_debt_blocked",
                                         {
-                                            'full_name': user.full_name,
-                                            'phone_number': user.phone_number,
-                                            'debt_mb': debt_mb_text,
-                                            'estimated_rp': estimate_rp_text,
-                                            'base_package_name': cheapest_pkg_name or '-',
+                                            "full_name": user.full_name,
+                                            "phone_number": user.phone_number,
+                                            "debt_mb": debt_mb_text,
+                                            "estimated_rp": estimate_rp_text,
+                                            "base_package_name": cheapest_pkg_name or "-",
                                         },
                                     )
                                     for admin in admins:
                                         send_whatsapp_message(admin.phone_number, admin_msg)
                             except Exception:
-                                logger.exception('Gagal kirim notifikasi quota debt limit untuk user %s', user.id)
+                                logger.exception("Gagal kirim notifikasi quota debt limit untuk user %s", user.id)
 
-                    counters['processed'] += 1
+                    counters["processed"] += 1
                     _release_sync_lock(redis_client, user.id)
                     continue
                 else:
@@ -754,20 +790,24 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                     target_profile = _resolve_target_profile(user, remaining_mb, remaining_percent, is_expired)
 
                 if target_profile and user.mikrotik_profile_name != target_profile:
-                    success_profile, message = set_hotspot_user_profile(api_connection=api, username_or_id=username_08, new_profile_name=target_profile)
+                    success_profile, message = set_hotspot_user_profile(
+                        api_connection=api, username_or_id=username_08, new_profile_name=target_profile
+                    )
                     if success_profile:
                         user.mikrotik_profile_name = target_profile
-                        counters['profile_updates'] += 1
-                        expired_profile = settings_service.get_setting('MIKROTIK_EXPIRED_PROFILE', 'expired') or 'expired'
-                        habis_profile = settings_service.get_setting('MIKROTIK_HABIS_PROFILE', 'habis') or 'habis'
-                        fup_profile = settings_service.get_setting('MIKROTIK_FUP_PROFILE', 'fup') or 'fup'
+                        counters["profile_updates"] += 1
+                        expired_profile = (
+                            settings_service.get_setting("MIKROTIK_EXPIRED_PROFILE", "expired") or "expired"
+                        )
+                        habis_profile = settings_service.get_setting("MIKROTIK_HABIS_PROFILE", "habis") or "habis"
+                        fup_profile = settings_service.get_setting("MIKROTIK_FUP_PROFILE", "fup") or "fup"
                         status_key = None
                         if target_profile == expired_profile:
-                            status_key = 'expired'
+                            status_key = "expired"
                         elif target_profile == habis_profile:
-                            status_key = 'habis'
+                            status_key = "habis"
                         elif target_profile == fup_profile:
-                            status_key = 'fup'
+                            status_key = "fup"
 
                         if status_key:
                             expiry_date = None
@@ -778,9 +818,9 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                                 user,
                                 status_key,
                                 {
-                                    'remaining_mb': remaining_mb,
-                                    'remaining_percent': remaining_percent,
-                                    'expiry_date': expiry_date or "-",
+                                    "remaining_mb": remaining_mb,
+                                    "remaining_percent": remaining_percent,
+                                    "expiry_date": expiry_date or "-",
                                 },
                             )
                     else:
@@ -788,15 +828,15 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
 
                 _sync_address_list_status(api, user, username_08, remaining_mb, remaining_percent, is_expired)
 
-                if settings_service.get_setting('ENABLE_WHATSAPP_NOTIFICATIONS', 'True') == 'True':
+                if settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") == "True":
                     _send_quota_notifications(user, remaining_percent, remaining_mb)
                     _send_expiry_notifications(user)
 
-                counters['processed'] += 1
+                counters["processed"] += 1
                 _release_sync_lock(redis_client, user.id)
             except Exception as e:
                 logger.error(f"Error sinkronisasi user {user.id}: {e}", exc_info=True)
-                counters['failed'] += 1
+                counters["failed"] += 1
                 _release_sync_lock(redis_client, user.id)
 
     if auto_enroll_devices > 0:
@@ -836,15 +876,17 @@ def sync_address_list_for_single_user(user: User, client_ip: Optional[str] = Non
 
 
 def cleanup_inactive_users() -> Dict[str, int]:
-    counters = {'deactivated': 0, 'deleted': 0}
+    counters = {"deactivated": 0, "deleted": 0}
     now_utc = datetime.now(dt_timezone.utc)
-    deactivate_days = settings_service.get_setting_as_int('INACTIVE_DEACTIVATE_DAYS', 45)
-    delete_days = settings_service.get_setting_as_int('INACTIVE_DELETE_DAYS', 90)
+    deactivate_days = settings_service.get_setting_as_int("INACTIVE_DEACTIVATE_DAYS", 45)
+    delete_days = settings_service.get_setting_as_int("INACTIVE_DELETE_DAYS", 90)
 
-    users = db.session.scalars(select(User).where(
-        User.role.in_([UserRole.USER, UserRole.KOMANDAN]),
-        User.approval_status == ApprovalStatus.APPROVED,
-    )).all()
+    users = db.session.scalars(
+        select(User).where(
+            User.role.in_([UserRole.USER, UserRole.KOMANDAN]),
+            User.approval_status == ApprovalStatus.APPROVED,
+        )
+    ).all()
 
     with get_mikrotik_connection() as api:
         for user in users:
@@ -859,28 +901,28 @@ def cleanup_inactive_users() -> Dict[str, int]:
                 devices = db.session.scalars(select(UserDevice).where(UserDevice.user_id == user.id)).all()
                 for device in devices:
                     if device.mac_address:
-                        _remove_ip_binding(device.mac_address, user.mikrotik_server_name or 'all')
+                        _remove_ip_binding(device.mac_address, user.mikrotik_server_name or "all")
                     if device.ip_address:
                         _remove_blocked_address_list(device.ip_address)
                     db.session.delete(device)
                 if api and username_08:
                     delete_hotspot_user(api_connection=api, username=username_08)
                 db.session.delete(user)
-                counters['deleted'] += 1
+                counters["deleted"] += 1
                 continue
 
             if user.is_active and days_inactive >= deactivate_days:
                 devices = db.session.scalars(select(UserDevice).where(UserDevice.user_id == user.id)).all()
                 for device in devices:
                     if device.mac_address:
-                        _remove_ip_binding(device.mac_address, user.mikrotik_server_name or 'all')
+                        _remove_ip_binding(device.mac_address, user.mikrotik_server_name or "all")
                     if device.ip_address:
                         _remove_blocked_address_list(device.ip_address)
                 if api and username_08:
                     delete_hotspot_user(api_connection=api, username=username_08)
                 user.is_active = False
                 user.mikrotik_user_exists = False
-                counters['deactivated'] += 1
+                counters["deactivated"] += 1
 
     if db.session.dirty or db.session.new or db.session.deleted:
         db.session.commit()
