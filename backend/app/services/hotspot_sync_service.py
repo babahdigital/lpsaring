@@ -56,6 +56,50 @@ REDIS_LAST_BYTES_PREFIX = "quota:last_bytes:mac:"
 REDIS_SYNC_LOCK_PREFIX = "quota:sync_lock:user:"
 
 
+def _is_valid_ip_candidate(value: Optional[str]) -> bool:
+    if not value:
+        return False
+    ip = str(value).strip()
+    if not ip:
+        return False
+    if ip in {"0.0.0.0", "0.0.0.0/0"}:
+        return False
+    return True
+
+
+def _collect_candidate_ips_for_user(
+    user: User,
+    host_usage_map: Optional[Dict[str, Dict[str, Any]]] = None,
+    ip_binding_map: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> List[str]:
+    ips: List[str] = []
+    seen: set[str] = set()
+
+    def _add_ip(ip_value: Optional[str]) -> None:
+        if not _is_valid_ip_candidate(ip_value):
+            return
+        ip_str = str(ip_value).strip()
+        if ip_str in seen:
+            return
+        seen.add(ip_str)
+        ips.append(ip_str)
+
+    for device in user.devices or []:
+        if getattr(device, "ip_address", None):
+            _add_ip(str(device.ip_address))
+
+        mac = (getattr(device, "mac_address", None) or "").upper().strip()
+        if not mac:
+            continue
+
+        if host_usage_map:
+            _add_ip(host_usage_map.get(mac, {}).get("address"))
+        if ip_binding_map:
+            _add_ip(ip_binding_map.get(mac, {}).get("address"))
+
+    return ips
+
+
 def _get_thresholds_from_env(key: str, default: List[int]) -> List[int]:
     values = settings_service.get_setting(key, None)
     if values is None:
@@ -702,24 +746,30 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                                 ),
                             )
 
-                            if device.ip_address:
-                                upsert_address_list_entry(
-                                    api_connection=api,
-                                    address=device.ip_address,
-                                    list_name=list_blocked,
-                                    comment=(
-                                        f"lpsaring|blocked|quota-debt-limit|user={username_08_for_block}|uid={user.id}|debt_mb={debt_mb_text}|date={date_str}|time={time_str}"
-                                    ),
-                                )
+                        # Pastikan block diterapkan untuk semua IP yang terdeteksi (multi-device/IP).
+                        candidate_ips = _collect_candidate_ips_for_user(
+                            user,
+                            host_usage_map=host_usage_map,
+                            ip_binding_map=ip_binding_map,
+                        )
+                        for ip_address in candidate_ips:
+                            upsert_address_list_entry(
+                                api_connection=api,
+                                address=ip_address,
+                                list_name=list_blocked,
+                                comment=(
+                                    f"lpsaring|blocked|quota-debt-limit|user={username_08_for_block}|uid={user.id}|debt_mb={debt_mb_text}|date={date_str}|time={time_str}"
+                                ),
+                            )
 
-                                # Pastikan status address-list eksklusif: saat blocked, hapus status lain.
-                                for list_name in other_status_lists:
-                                    if list_name and list_name != list_blocked:
-                                        remove_address_list_entry(
-                                            api_connection=api,
-                                            address=device.ip_address,
-                                            list_name=list_name,
-                                        )
+                            # Pastikan status address-list eksklusif: saat blocked, hapus status lain.
+                            for list_name in other_status_lists:
+                                if list_name and list_name != list_blocked:
+                                    remove_address_list_entry(
+                                        api_connection=api,
+                                        address=ip_address,
+                                        list_name=list_name,
+                                    )
 
                     # Only flip DB blocked flags + send notifications once.
                     if not bool(user.is_blocked):
@@ -826,7 +876,20 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                     else:
                         logger.warning(f"Gagal update profil Mikrotik {username_08}: {message}")
 
-                _sync_address_list_status(api, user, username_08, remaining_mb, remaining_percent, is_expired)
+                # Sinkronkan address-list untuk semua IP yang terdeteksi (multi-device/IP).
+                candidate_ips = _collect_candidate_ips_for_user(
+                    user,
+                    host_usage_map=host_usage_map,
+                    ip_binding_map=ip_binding_map,
+                )
+                ok_any_ip = False
+                for ip_address in candidate_ips:
+                    if _sync_address_list_status_for_ip(api, user, ip_address, remaining_mb, remaining_percent, is_expired):
+                        ok_any_ip = True
+
+                # Fallback: gunakan resolusi IP by-username (active/host) bila belum ada IP yang valid.
+                if not ok_any_ip:
+                    _sync_address_list_status(api, user, username_08, remaining_mb, remaining_percent, is_expired)
 
                 if settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") == "True":
                     _send_quota_notifications(user, remaining_percent, remaining_mb)
@@ -869,10 +932,24 @@ def sync_address_list_for_single_user(user: User, client_ip: Optional[str] = Non
         if not api:
             logger.warning("Gagal konek MikroTik untuk sync address-list single user")
             return False
-        ok = _sync_address_list_status(api, user, username_08, remaining_mb, remaining_percent, is_expired)
-        if not ok and client_ip:
-            _sync_address_list_status_for_ip(api, user, client_ip, remaining_mb, remaining_percent, is_expired)
-    return True
+
+        ok_any_ip = False
+        ips: List[str] = []
+        if client_ip and _is_valid_ip_candidate(client_ip):
+            ips.append(str(client_ip).strip())
+        for device in user.devices or []:
+            ip_address = getattr(device, "ip_address", None)
+            if ip_address and _is_valid_ip_candidate(str(ip_address)):
+                ip_str = str(ip_address).strip()
+                if ip_str not in ips:
+                    ips.append(ip_str)
+
+        for ip_address in ips:
+            if _sync_address_list_status_for_ip(api, user, ip_address, remaining_mb, remaining_percent, is_expired):
+                ok_any_ip = True
+
+        ok_user_ip = _sync_address_list_status(api, user, username_08, remaining_mb, remaining_percent, is_expired)
+        return bool(ok_any_ip or ok_user_ip)
 
 
 def cleanup_inactive_users() -> Dict[str, int]:
