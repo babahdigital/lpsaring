@@ -155,6 +155,7 @@ export default defineNuxtConfig({
     strict: true,
     tsConfig: {
       compilerOptions: {
+        module: 'ESNext',
         types: ['vuetify-shims'],
         typeRoots: ['../types', '../node_modules/@types'],
       },
