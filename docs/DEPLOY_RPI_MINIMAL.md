@@ -36,6 +36,7 @@ sudo chown -R $USER:$USER /home/abdullah/sobigidul
 ## 3) Copy File dari Laptop ke Pi (SCP)
 
 Catatan: repository menyertakan template env:
+
 - `.env.prod.example` → salin menjadi `.env.prod` lalu isi nilai sebenarnya (jangan commit)
 - `.env.public.prod.example` → salin menjadi `.env.public.prod`
 
@@ -143,6 +144,7 @@ Jika image baru sudah dipublish ke Docker Hub:
 cd /home/abdullah/sobigidul
 docker compose --env-file .env.prod -f docker-compose.prod.yml pull
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+```
 
 Jika ada perubahan skema DB, jalankan juga:
 
@@ -164,7 +166,6 @@ Apply:
 
 ```bash
 docker compose -f docker-compose.prod.yml exec -T backend flask cleanup-transactions --older-than-days 1 --apply
-```
 ```
 
 ## 7) Catatan Penting
