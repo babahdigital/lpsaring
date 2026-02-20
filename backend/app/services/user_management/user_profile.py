@@ -143,7 +143,7 @@ def create_user_by_admin(admin_actor: User, data: Dict[str, Any]) -> Tuple[bool,
 
         elif new_role == UserRole.KOMANDAN:
             new_user.mikrotik_server_name = settings_service.get_setting('MIKROTIK_DEFAULT_SERVER_KOMANDAN', 'srv-komandan')
-            new_user.mikrotik_profile_name = active_profile
+            new_user.mikrotik_profile_name = settings_service.get_setting('MIKROTIK_KOMANDAN_PROFILE', 'komandan') or active_profile
             new_user.is_unlimited_user = False 
             initial_quota_mb = settings_service.get_setting_as_int('KOMANDAN_INITIAL_QUOTA_MB', 5120)
             initial_duration_days = settings_service.get_setting_as_int('KOMANDAN_INITIAL_DURATION_DAYS', 30)
@@ -406,59 +406,60 @@ def update_user_by_admin_comprehensive(target_user: User, admin_actor: User, dat
         changes['is_unlimited_user'] = data['is_unlimited_user']
 
     # Manual debt input / clear (admin-only)
-    debt_add_mb = 0
-    try:
-        debt_add_mb = int(data.get('debt_add_mb') or 0)
-    except (TypeError, ValueError):
+    if target_user.role != UserRole.KOMANDAN:
         debt_add_mb = 0
-
-    if debt_add_mb and debt_add_mb > 0:
-        ok_debt, msg_debt, _entry = debt_service.add_manual_debt(
-            user=target_user,
-            admin_actor=admin_actor,
-            amount_mb=debt_add_mb,
-            debt_date=data.get('debt_date'),
-            note=data.get('debt_note'),
-        )
-        if not ok_debt:
-            return False, msg_debt, None
-        changes['debt_add_mb'] = debt_add_mb
-        if data.get('debt_date'):
-            changes['debt_date'] = data.get('debt_date')
-
-    if data.get('debt_clear') is True:
-        paid_auto_mb, paid_manual_mb = debt_service.clear_all_debts_to_zero(
-            user=target_user,
-            admin_actor=admin_actor,
-            source='admin_clear',
-        )
-        changes['debt_cleared'] = {
-            'paid_auto_debt_mb': int(paid_auto_mb),
-            'paid_manual_debt_mb': int(paid_manual_mb),
-        }
         try:
-            sync_address_list_for_single_user(target_user)
-        except Exception:
-            pass
+            debt_add_mb = int(data.get('debt_add_mb') or 0)
+        except (TypeError, ValueError):
+            debt_add_mb = 0
 
-        # Optional WhatsApp: inform user debt is cleared.
-        try:
-            purchased_now = float(target_user.total_quota_purchased_mb or 0.0)
-            used_now = float(target_user.total_quota_used_mb or 0.0)
-            remaining_mb = max(0.0, purchased_now - used_now)
-            _send_whatsapp_notification(
-                target_user.phone_number,
-                'user_debt_cleared',
-                {
-                    'full_name': target_user.full_name,
-                    'paid_auto_debt_mb': int(paid_auto_mb),
-                    'paid_manual_debt_mb': int(paid_manual_mb),
-                    'paid_total_debt_mb': int(paid_auto_mb) + int(paid_manual_mb),
-                    'remaining_mb': float(remaining_mb),
-                },
+        if debt_add_mb and debt_add_mb > 0:
+            ok_debt, msg_debt, _entry = debt_service.add_manual_debt(
+                user=target_user,
+                admin_actor=admin_actor,
+                amount_mb=debt_add_mb,
+                debt_date=data.get('debt_date'),
+                note=data.get('debt_note'),
             )
-        except Exception:
-            pass
+            if not ok_debt:
+                return False, msg_debt, None
+            changes['debt_add_mb'] = debt_add_mb
+            if data.get('debt_date'):
+                changes['debt_date'] = data.get('debt_date')
+
+        if data.get('debt_clear') is True:
+            paid_auto_mb, paid_manual_mb = debt_service.clear_all_debts_to_zero(
+                user=target_user,
+                admin_actor=admin_actor,
+                source='admin_clear',
+            )
+            changes['debt_cleared'] = {
+                'paid_auto_debt_mb': int(paid_auto_mb),
+                'paid_manual_debt_mb': int(paid_manual_mb),
+            }
+            try:
+                sync_address_list_for_single_user(target_user)
+            except Exception:
+                pass
+
+            # Optional WhatsApp: inform user debt is cleared.
+            try:
+                purchased_now = float(target_user.total_quota_purchased_mb or 0.0)
+                used_now = float(target_user.total_quota_used_mb or 0.0)
+                remaining_mb = max(0.0, purchased_now - used_now)
+                _send_whatsapp_notification(
+                    target_user.phone_number,
+                    'user_debt_cleared',
+                    {
+                        'full_name': target_user.full_name,
+                        'paid_auto_debt_mb': int(paid_auto_mb),
+                        'paid_manual_debt_mb': int(paid_manual_mb),
+                        'paid_total_debt_mb': int(paid_auto_mb) + int(paid_manual_mb),
+                        'remaining_mb': float(remaining_mb),
+                    },
+                )
+            except Exception:
+                pass
 
     add_gb, add_days = float(data.get('add_gb') or 0.0), int(data.get('add_days') or 0)
     if add_gb > 0 or add_days > 0:

@@ -7,7 +7,7 @@ from typing import Optional, Tuple
 import sqlalchemy as sa
 
 from app.extensions import db
-from app.infrastructure.db.models import User, UserQuotaDebt
+from app.infrastructure.db.models import User, UserQuotaDebt, UserRole
 from app.utils.quota_debt import compute_debt_mb
 
 
@@ -22,6 +22,8 @@ def _ceil_mb(value_mb: float) -> int:
 
 
 def get_auto_debt_mb(user: User) -> float:
+    if getattr(user, "role", None) == UserRole.KOMANDAN:
+        return 0.0
     purchased_mb = float(getattr(user, "total_quota_purchased_mb", 0) or 0.0)
     used_mb = float(getattr(user, "total_quota_used_mb", 0) or 0.0)
     return float(compute_debt_mb(purchased_mb, used_mb))
@@ -48,6 +50,8 @@ def add_manual_debt(
     debt_date: Optional[date] = None,
     note: Optional[str] = None,
 ) -> Tuple[bool, str, Optional[UserQuotaDebt]]:
+    if getattr(user, "role", None) == UserRole.KOMANDAN:
+        return False, "Debt tidak berlaku untuk role KOMANDAN.", None
     try:
         amount_int = int(amount_mb)
     except (TypeError, ValueError):
@@ -77,6 +81,8 @@ def apply_manual_debt_payment(
     pay_mb: int,
     source: str,
 ) -> int:
+    if getattr(user, "role", None) == UserRole.KOMANDAN:
+        return 0
     """Apply payment (MB) to open manual debt entries, oldest-first.
 
     Returns actual MB paid (0..pay_mb).
@@ -143,6 +149,8 @@ def clear_all_debts_to_zero(
     admin_actor: Optional[User],
     source: str,
 ) -> Tuple[int, int]:
+    if getattr(user, "role", None) == UserRole.KOMANDAN:
+        return 0, 0
     """Clear (auto + manual) debt to 0.
 
     Returns (paid_auto_mb, paid_manual_mb).
@@ -165,6 +173,12 @@ def consume_injected_mb_for_debt(
     injected_mb: int,
     source: str,
 ) -> Tuple[int, int, int]:
+    if getattr(user, "role", None) == UserRole.KOMANDAN:
+        try:
+            injected = int(injected_mb)
+        except (TypeError, ValueError):
+            injected = 0
+        return 0, 0, max(0, injected)
     """Use injected MB to pay debts first.
 
     Allocation order: auto-debt first (settled by increasing purchased), then manual debt.

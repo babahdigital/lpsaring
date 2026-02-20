@@ -241,11 +241,14 @@ def set_user_unlimited(user: User, admin_actor: User, make_unlimited: bool) -> T
         status_text = "dijadikan"
     else: # Revoke unlimited
         action_type = AdminActionType.REVOKE_UNLIMITED_STATUS
-        user.mikrotik_profile_name = (
-            settings_service.get_setting('MIKROTIK_ACTIVE_PROFILE', None)
-            or settings_service.get_setting('MIKROTIK_USER_PROFILE', 'user')
-            or settings_service.get_setting('MIKROTIK_DEFAULT_PROFILE', 'default')
-        )
+        if getattr(user, 'role', None) == UserRole.KOMANDAN:
+            user.mikrotik_profile_name = settings_service.get_setting('MIKROTIK_KOMANDAN_PROFILE', 'komandan')
+        else:
+            user.mikrotik_profile_name = (
+                settings_service.get_setting('MIKROTIK_ACTIVE_PROFILE', None)
+                or settings_service.get_setting('MIKROTIK_USER_PROFILE', 'user')
+                or settings_service.get_setting('MIKROTIK_DEFAULT_PROFILE', 'default')
+            )
         limit_bytes_total = 1 
         session_timeout_seconds = 0
         status_text = "dikembalikan dari"

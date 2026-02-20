@@ -521,13 +521,14 @@ def get_mikrotik_form_options(current_admin: User):
             or settings_service.get_setting('MIKROTIK_USER_PROFILE', 'user')
             or settings_service.get_setting('MIKROTIK_DEFAULT_PROFILE', 'default')
         )
+        komandan_profile = settings_service.get_setting('MIKROTIK_KOMANDAN_PROFILE', None) or 'komandan'
         defaults = {
             "server_user": default_server,
             "server_komandan": default_server_komandan or default_server,
             "server_admin": default_server,
             "server_support": default_server,
             "profile_user": active_profile,
-            "profile_komandan": active_profile,
+            "profile_komandan": komandan_profile or active_profile,
             "profile_default": settings_service.get_setting('MIKROTIK_DEFAULT_PROFILE', 'default'),
             "profile_active": active_profile,
             "profile_fup": settings_service.get_setting('MIKROTIK_FUP_PROFILE', 'fup'),

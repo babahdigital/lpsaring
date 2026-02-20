@@ -201,11 +201,16 @@ function setDefaultMikrotikConfig(role: User['role'] | undefined) {
   const defaults = mikrotikDefaults.value
   switch (role) {
     case 'USER':
-    case 'KOMANDAN':
       if (formData.is_unlimited_user !== true) {
         formData.mikrotik_profile_name = defaults.profile_active || defaults.profile_user
       }
       formData.mikrotik_server_name = defaults.server_user
+      break
+    case 'KOMANDAN':
+      if (formData.is_unlimited_user !== true) {
+        formData.mikrotik_profile_name = defaults.profile_komandan || defaults.profile_active || defaults.profile_user
+      }
+      formData.mikrotik_server_name = defaults.server_komandan || defaults.server_user
       break
     case 'ADMIN':
     case 'SUPER_ADMIN':
@@ -311,14 +316,36 @@ async function onSave() {
   if (valid) {
     const payload = { ...formData }
 
-    if (payload.is_unlimited_user === true) {
-      payload.mikrotik_profile_name = mikrotikDefaults.value.profile_unlimited
+    const defaults = mikrotikDefaults.value
+
+    if (payload.is_active !== true) {
+      payload.mikrotik_profile_name = defaults.profile_inactive
+    }
+    else if (payload.role === 'ADMIN' || payload.role === 'SUPER_ADMIN') {
+      payload.is_unlimited_user = true
+      payload.mikrotik_profile_name = defaults.profile_unlimited
+    }
+    else if (payload.is_unlimited_user === true) {
+      payload.mikrotik_profile_name = defaults.profile_unlimited
+    }
+    else if (payload.role === 'KOMANDAN') {
+      payload.mikrotik_profile_name = defaults.profile_komandan || defaults.profile_active || defaults.profile_user
+    }
+    else {
+      payload.mikrotik_profile_name = defaults.profile_active || defaults.profile_user
     }
 
-    if (payload.is_unlimited_user !== true)
-      payload.mikrotik_profile_name = mikrotikDefaults.value.profile_active || mikrotikDefaults.value.profile_user
-
-    payload.mikrotik_server_name = mikrotikDefaults.value.server_user
+    if (payload.role === 'KOMANDAN') {
+      payload.mikrotik_server_name = defaults.server_komandan || defaults.server_user
+      // Debt tidak berlaku untuk komandan
+      payload.debt_clear = false
+      payload.debt_add_mb = 0
+      payload.debt_date = null
+      payload.debt_note = null
+    }
+    else {
+      payload.mikrotik_server_name = defaults.server_user
+    }
 
     if (payload.role === 'ADMIN' || payload.role === 'SUPER_ADMIN') {
       payload.is_unlimited_user = true
@@ -425,6 +452,7 @@ function openDebtPdf() {
                     inset
                     hint="Jika aktif, sistem akan melunasi debt otomatis+manual. kecuali ada inject."
                     persistent-hint
+                    v-if="formData.role !== 'KOMANDAN'"
                   />
                 </VCol>
 
@@ -495,81 +523,83 @@ function openDebtPdf() {
                     <AppTextField v-model.number="formData.add_days" label="Tambah Masa Aktif (Hari)" type="number" prepend-inner-icon="tabler-calendar-plus" />
                   </VCol>
 
-                  <VCol cols="12">
-                    <div class="text-overline">
-                      Debt Kuota
-                    </div>
-                  </VCol>
-
-                  <VCol cols="12">
-                    <VSheet rounded="lg" border class="pa-3">
-                      <div class="d-flex justify-space-between align-center mb-2">
-                        <div class="text-caption text-disabled">
-                          Status Debt
-                        </div>
-                        <div class="d-flex align-center gap-2">
-                          <VBtn
-                            v-if="debtTotalMb > 0"
-                            icon="tabler-list-details"
-                            size="x-small"
-                            variant="text"
-                            :title="'Lihat riwayat debt'"
-                            @click="openDebtLedger"
-                          />
-                          <VBtn
-                            v-if="debtTotalMb > 0"
-                            icon="tabler-printer"
-                            size="x-small"
-                            variant="text"
-                            :title="'PDF (print / simpan)'"
-                            @click="openDebtPdf"
-                          />
-                          <VChip :color="debtStatusMeta.color" size="x-small" label>
-                            <VIcon :icon="debtStatusMeta.icon" start size="16" />
-                            {{ debtStatusMeta.text }}
-                          </VChip>
-                        </div>
+                  <template v-if="formData.role !== 'KOMANDAN'">
+                    <VCol cols="12">
+                      <div class="text-overline">
+                        Debt Kuota
                       </div>
-                      <VRow dense>
-                        <VCol cols="12" sm="4">
-                          <div class="text-caption text-disabled">
-                            Debt Total
-                          </div>
-                          <div class="font-weight-medium">
-                            {{ formatMb(debtTotalMb) }} MB
-                          </div>
-                        </VCol>
-                        <VCol cols="12" sm="4">
-                          <div class="text-caption text-disabled">
-                            Debt Otomatis
-                          </div>
-                          <div class="font-weight-medium">
-                            {{ formatMb(debtAutoMb) }} MB
-                          </div>
-                        </VCol>
-                        <VCol cols="12" sm="4">
-                          <div class="text-caption text-disabled">
-                            Debt Manual
-                          </div>
-                          <div class="font-weight-medium">
-                            {{ formatMb(debtManualMb) }} MB
-                          </div>
-                        </VCol>
-                      </VRow>
-                    </VSheet>
-                  </VCol>
+                    </VCol>
 
-                  <VCol cols="12" md="6">
-                    <AppTextField v-model.number="formData.debt_add_mb" label="Tambah Debt Manual (MB)" type="number" prepend-inner-icon="tabler-alert-circle" />
-                  </VCol>
+                    <VCol cols="12">
+                      <VSheet rounded="lg" border class="pa-3">
+                        <div class="d-flex justify-space-between align-center mb-2">
+                          <div class="text-caption text-disabled">
+                            Status Debt
+                          </div>
+                          <div class="d-flex align-center gap-2">
+                            <VBtn
+                              v-if="debtTotalMb > 0"
+                              icon="tabler-list-details"
+                              size="x-small"
+                              variant="text"
+                              :title="'Lihat riwayat debt'"
+                              @click="openDebtLedger"
+                            />
+                            <VBtn
+                              v-if="debtTotalMb > 0"
+                              icon="tabler-printer"
+                              size="x-small"
+                              variant="text"
+                              :title="'PDF (print / simpan)'"
+                              @click="openDebtPdf"
+                            />
+                            <VChip :color="debtStatusMeta.color" size="x-small" label>
+                              <VIcon :icon="debtStatusMeta.icon" start size="16" />
+                              {{ debtStatusMeta.text }}
+                            </VChip>
+                          </div>
+                        </div>
+                        <VRow dense>
+                          <VCol cols="12" sm="4">
+                            <div class="text-caption text-disabled">
+                              Debt Total
+                            </div>
+                            <div class="font-weight-medium">
+                              {{ formatMb(debtTotalMb) }} MB
+                            </div>
+                          </VCol>
+                          <VCol cols="12" sm="4">
+                            <div class="text-caption text-disabled">
+                              Debt Otomatis
+                            </div>
+                            <div class="font-weight-medium">
+                              {{ formatMb(debtAutoMb) }} MB
+                            </div>
+                          </VCol>
+                          <VCol cols="12" sm="4">
+                            <div class="text-caption text-disabled">
+                              Debt Manual
+                            </div>
+                            <div class="font-weight-medium">
+                              {{ formatMb(debtManualMb) }} MB
+                            </div>
+                          </VCol>
+                        </VRow>
+                      </VSheet>
+                    </VCol>
 
-                  <VCol cols="12" md="6">
-                    <AppTextField v-model="formData.debt_date" label="Tanggal Debt" type="date" prepend-inner-icon="tabler-calendar" />
-                  </VCol>
+                    <VCol cols="12" md="6">
+                      <AppTextField v-model.number="formData.debt_add_mb" label="Tambah Debt Manual (MB)" type="number" prepend-inner-icon="tabler-alert-circle" />
+                    </VCol>
 
-                  <VCol cols="12">
-                    <AppTextField v-model="formData.debt_note" label="Catatan Debt (Opsional)" prepend-inner-icon="tabler-notes" />
-                  </VCol>
+                    <VCol cols="12" md="6">
+                      <AppTextField v-model="formData.debt_date" label="Tanggal Debt" type="date" prepend-inner-icon="tabler-calendar" />
+                    </VCol>
+
+                    <VCol cols="12">
+                      <AppTextField v-model="formData.debt_note" label="Catatan Debt (Opsional)" prepend-inner-icon="tabler-notes" />
+                    </VCol>
+                  </template>
 
                   <VCol cols="12">
                     <VDivider class="my-2" />

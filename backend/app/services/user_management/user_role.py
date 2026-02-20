@@ -5,8 +5,9 @@ from werkzeug.security import generate_password_hash
 from datetime import datetime, timezone as dt_timezone, timedelta
 from flask import current_app
 
-from app.infrastructure.db.models import User, UserRole, AdminActionType
+from app.infrastructure.db.models import User, UserRole, AdminActionType, UserQuotaDebt
 from app.utils.formatters import format_to_local_phone
+from app.extensions import db
 from app.services import settings_service
 from .helpers import (
     _log_admin_action, _generate_password, _send_whatsapp_notification,
@@ -24,6 +25,10 @@ def _resolve_default_server() -> str:
 
 def _resolve_komandan_server() -> str:
     return settings_service.get_setting('MIKROTIK_DEFAULT_SERVER_KOMANDAN', 'srv-komandan')
+
+
+def _resolve_komandan_profile() -> str:
+    return settings_service.get_setting('MIKROTIK_KOMANDAN_PROFILE', 'komandan')
 
 
 def _resolve_active_profile() -> str:
@@ -116,7 +121,17 @@ def change_user_role(user: User, new_role: UserRole, admin: User, blok: Optional
                 user.previous_blok, user.previous_kamar = user.blok, user.kamar
                 user.blok, user.kamar = None, None
             user.mikrotik_server_name = _resolve_komandan_server()
-            user.mikrotik_profile_name = active_profile
+            user.mikrotik_profile_name = _resolve_komandan_profile() or active_profile
+
+            # Debt tidak berlaku untuk KOMANDAN: bersihkan debt manual + ledger.
+            try:
+                user.manual_debt_mb = 0
+                user.manual_debt_updated_at = datetime.now(dt_timezone.utc)
+                db.session.execute(
+                    db.delete(UserQuotaDebt).where(UserQuotaDebt.user_id == user.id)
+                )
+            except Exception:
+                pass
 
             try:
                 initial_quota_mb_str = settings_service.get_setting('KOMANDAN_INITIAL_QUOTA_MB', '5120')
@@ -146,6 +161,11 @@ def change_user_role(user: User, new_role: UserRole, admin: User, blok: Optional
             user.blok, user.kamar = blok, kamar
             user.mikrotik_server_name = default_server
             user.mikrotik_profile_name = active_profile
+            # Pastikan debt manual tetap nol saat turun dari KOMANDAN.
+            try:
+                user.manual_debt_mb = int(user.manual_debt_mb or 0)
+            except Exception:
+                user.manual_debt_mb = 0
             _send_whatsapp_notification(user.phone_number, "user_downgrade_from_komandan", {"full_name": user.full_name})
     else:
         return False, f"Perubahan peran dari {old_role.value} ke {new_role.value} tidak didukung."
