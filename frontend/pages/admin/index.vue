@@ -8,15 +8,12 @@ import { useAuthStore } from '~/store/auth'
 
 definePageMeta({
   layout: 'blank',
-  auth: {
-    unauthenticatedOnly: true,
-    navigateAuthenticatedTo: '/admin/dashboard',
-  },
 })
 
 // --- State Management dan Logika Login (Sama seperti sebelumnya) ---
 const authStore = useAuthStore()
 const router = useRouter()
+const route = useRoute()
 const display = useDisplay()
 const isHydrated = ref(false)
 const isWidePadding = computed(() => (isHydrated.value ? display.smAndUp.value : false))
@@ -42,7 +39,15 @@ async function handleLogin() {
     }
     const loginSuccess = await authStore.adminLogin(username, password)
     if (loginSuccess) {
-      await router.push('/admin/dashboard')
+      const redirectQuery = route.query.redirect
+      const redirectTarget = Array.isArray(redirectQuery) ? redirectQuery[0] : redirectQuery
+      const isSafeAdminRedirect = typeof redirectTarget === 'string'
+        && redirectTarget.startsWith('/admin/')
+        && redirectTarget !== '/admin/login'
+        && redirectTarget !== '/admin'
+        && !redirectTarget.startsWith('/admin/login/')
+
+      await router.push(isSafeAdminRedirect ? redirectTarget : '/admin/dashboard')
     }
     else {
       error.value = authStore.error || 'Login gagal, periksa kembali username dan password Anda.'

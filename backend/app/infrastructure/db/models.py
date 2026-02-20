@@ -209,6 +209,11 @@ class User(db.Model):
     total_quota_used_mb: Mapped[float] = mapped_column(Numeric(precision=15, scale=2), nullable=False, default=0.0, server_default='0.0')
     quota_expiry_date: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     is_unlimited_user: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=expression.false())
+
+    # Telegram linking (per user)
+    telegram_chat_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    telegram_username: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    telegram_linked_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     device_brand: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     device_model: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     raw_user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

@@ -31,7 +31,7 @@ function startSessionCheck() {
   if (sessionCheckTimer.value)
     return
   sessionCheckTimer.value = setInterval(() => {
-    authStore.refreshSessionStatus()
+    authStore.refreshSessionStatus(route.path)
   }, 60_000)
 }
 
@@ -50,7 +50,7 @@ watchEffect(() => {
   if (!import.meta.client)
     return
   if (authStore.isLoggedIn) {
-    authStore.refreshSessionStatus()
+    authStore.refreshSessionStatus(route.path)
     startSessionCheck()
   }
   else {

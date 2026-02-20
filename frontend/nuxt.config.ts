@@ -34,6 +34,15 @@ console.log('Public API URL:', publicApiBaseUrl)
 const host = process.env.NUXT_HOST ?? process.env.HOST ?? '0.0.0.0'
 const port = Number.parseInt(process.env.NUXT_PORT ?? '3010', 10)
 
+const viteHmrHost = process.env.VITE_HMR_HOST?.trim()
+const viteHmrProtocol = (process.env.VITE_HMR_PROTOCOL as 'ws' | 'wss' | undefined)?.trim()
+const viteHmrClientPortRaw = process.env.VITE_HMR_CLIENT_PORT
+const viteHmrPortRaw = process.env.VITE_HMR_PORT
+const viteHmrPath = process.env.VITE_HMR_PATH?.trim()
+
+const viteHmrClientPort = viteHmrClientPortRaw ? Number.parseInt(viteHmrClientPortRaw, 10) : undefined
+const viteHmrPort = viteHmrPortRaw ? Number.parseInt(viteHmrPortRaw, 10) : undefined
+
 const hmrHost = process.env.NUXT_PUBLIC_HMR_HOST?.trim()
 const hmrClientPortEnv = process.env.NUXT_PUBLIC_HMR_CLIENT_PORT
 const hmrClientPort = hmrClientPortEnv ? Number.parseInt(hmrClientPortEnv, 10) : undefined
@@ -115,7 +124,16 @@ export default defineNuxtConfig({
   },
 
   css: [
-    '@/assets/styles/font-public-sans.css',
+    '@fontsource/public-sans/300.css',
+    '@fontsource/public-sans/400.css',
+    '@fontsource/public-sans/500.css',
+    '@fontsource/public-sans/600.css',
+    '@fontsource/public-sans/700.css',
+    '@fontsource/public-sans/300-italic.css',
+    '@fontsource/public-sans/400-italic.css',
+    '@fontsource/public-sans/500-italic.css',
+    '@fontsource/public-sans/600-italic.css',
+    '@fontsource/public-sans/700-italic.css',
     '@core/scss/template/index.scss',
     '@/assets/styles/styles.scss',
     '@/assets/iconify/icons.css',
@@ -194,17 +212,25 @@ export default defineNuxtConfig({
           changeOrigin: true,
         },
       },
-      hmr: derivedHmrHost && derivedHmrHost.length > 0
+      hmr: viteHmrHost && viteHmrHost.length > 0
         ? {
-            protocol: derivedHmrProtocol,
-            host: derivedHmrHost,
-            clientPort: derivedHmrClientPort,
+            protocol: viteHmrProtocol || 'wss',
+            host: viteHmrHost,
+            clientPort: viteHmrClientPort || 443,
+            port: viteHmrPort || 443,
+            path: viteHmrPath || '/_nuxt/',
           }
-        : {
-            protocol: 'ws',
-            host,
-            port,
-          },
+        : (derivedHmrHost && derivedHmrHost.length > 0
+            ? {
+                protocol: derivedHmrProtocol,
+                host: derivedHmrHost,
+                clientPort: derivedHmrClientPort,
+              }
+            : {
+                protocol: 'ws',
+                host,
+                port,
+              }),
     },
     plugins: [
       svgLoader(),
@@ -265,4 +291,4 @@ export default defineNuxtConfig({
       },
     },
   },
-})
+});

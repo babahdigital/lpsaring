@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 definePageMeta({
   layout: 'blank',
   auth: false,
+  public: true,
 })
 
 useHead({ title: 'Koneksi Berhasil' })

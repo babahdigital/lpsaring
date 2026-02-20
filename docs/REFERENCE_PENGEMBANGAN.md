@@ -158,6 +158,63 @@ Ringkasan perubahan yang berkaitan dengan autentikasi hotspot, captive portal, d
   - **Tidak didukung di Docker Desktop Windows/macOS** jika ingin memakai host networking.
 
 ### Rekomendasi
+
+---
+
+## 7) Usulan: Notifikasi Multi-Channel (WhatsApp + Telegram)
+
+Dokumen detail usulan Telegram:
+- [docs/TELEGRAM_NOTIFICATIONS_PROPOSAL.md](TELEGRAM_NOTIFICATIONS_PROPOSAL.md)
+
+Saat ini notifikasi sudah punya **sistem template** yang generik:
+- Template tersimpan di `backend/app/notifications/templates.json`
+- Rendering lewat `backend/app/services/notification_service.py:get_notification_message(template_key, context)`
+
+Artinya, menambah channel Telegram bisa **reuse template yang sama** (tanpa bikin template baru per-channel), lalu hanya mengganti “transport”-nya.
+
+### 7.1 Prinsip Desain
+- Template tetap 1 sumber (format string + spintax).
+- Channel pengiriman menjadi adapter:
+  - WhatsApp → `whatsapp_client.send_whatsapp_message(...)`
+  - Telegram → `telegram_client.send_telegram_message(...)` (baru)
+
+### 7.2 Scope yang paling aman (minimal)
+Mulai dari **notifikasi admin** (bukan user) karena:
+- admin sudah punya sistem subscription `NotificationRecipient (admin_user_id + notification_type)`
+- user Telegram membutuhkan pairing/registrasi chat id yang belum ada flow-nya
+
+### 7.3 Perubahan yang dibutuhkan (high-level)
+1) Tambah gateway baru:
+- `backend/app/infrastructure/gateways/telegram_client.py`
+- Implement `sendMessage` via Telegram Bot API.
+
+2) Tambah ENV secret (server-side):
+- `TELEGRAM_BOT_TOKEN=...`
+- Opsional: `TELEGRAM_API_BASE_URL=https://api.telegram.org` (default)
+
+3) Tentukan mapping “admin → chat_id”
+Opsi A (paling rapi, butuh migrasi kecil):
+- Tambah kolom `users.telegram_chat_id` (nullable)
+- Admin mengisi chat id (sementara via DB/manual) atau nanti lewat UI.
+
+Opsi B (tanpa migrasi DB, tetapi kurang fleksibel):
+- Simpan chat id di env: `TELEGRAM_ADMIN_CHAT_IDS=123,456`.
+
+4) Pengiriman
+- Saat trigger notifikasi (komandan request, quota debt limit, dsb):
+  - render message pakai `get_notification_message(...)`
+  - kirim via WhatsApp jika enabled
+  - kirim via Telegram jika token tersedia dan admin punya `chat_id`
+
+5) Pengaturan & uji coba
+- Kunci settings Telegram disimpan via Admin → Pengaturan → Integrasi (`ENABLE_TELEGRAM_NOTIFICATIONS`, `TELEGRAM_BOT_TOKEN`, dll).
+- Endpoint uji kirim (admin): `POST /api/admin/telegram/test-send`.
+
+### 7.4 Catatan Keamanan
+- Token bot Telegram adalah secret: hanya di `.env.prod` (jangan masuk `.env.public*`).
+- Hindari mencetak token ke log.
+
+Jika ingin saya implement, saya butuh keputusan: mapping chat id pakai Opsi A (kolom DB) atau Opsi B (env), dan target awalnya admin-only atau termasuk user.
 - **Di Windows:** Gunakan redirect MikroTik dengan `ip`/`mac`.
 - **Di Linux server produksi:** Gunakan host-network atau reverse proxy di host agar IP asli terbaca.
 

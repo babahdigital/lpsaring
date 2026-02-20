@@ -21,6 +21,8 @@ from .schemas.auth_schemas import (
     ChangePasswordRequestSchema, SessionTokenRequestSchema, StatusTokenVerifyRequestSchema
 )
 from app.infrastructure.http.schemas.user_schemas import UserMeResponseSchema, UserProfileUpdateRequestSchema
+from app.services.telegram_link_service import generate_user_link_token
+from app.services import settings_service
 from app.extensions import db, limiter
 from app.infrastructure.db.models import (
     User, UserRole, ApprovalStatus, UserLoginHistory, UserDevice,
@@ -29,7 +31,6 @@ from app.infrastructure.db.models import (
 from app.infrastructure.gateways.whatsapp_client import send_otp_whatsapp
 from user_agents import parse as parse_user_agent
 from app.services.notification_service import get_notification_message
-from app.services import settings_service
 from app.utils.formatters import format_datetime_to_wita, format_to_local_phone, get_phone_number_variations, normalize_to_e164
 
 from app.services.jwt_token_service import create_access_token
@@ -468,35 +469,42 @@ def verify_otp():
             return jsonify(AuthErrorResponseSchema(error="Request body must be JSON.").model_dump()), HTTPStatus.BAD_REQUEST
 
         # Normalisasi key client identity (captive portal/MikroTik sering memakai variasi key).
-        if isinstance(payload, dict):
-            if not payload.get('client_ip'):
-                payload['client_ip'] = (
-                    payload.get('clientIp')
-                    or payload.get('ip')
-                    or payload.get('client-ip')
+        payload_dict: dict[str, Any] = cast(dict[str, Any], payload) if isinstance(payload, dict) else {}
+        if payload_dict:
+            if not payload_dict.get('client_ip'):
+                candidate_ip = (
+                    payload_dict.get('clientIp')
+                    or payload_dict.get('ip')
+                    or payload_dict.get('client-ip')
                     or request.args.get('client_ip')
                     or request.args.get('ip')
                     or request.args.get('client-ip')
                 )
-            if not payload.get('client_mac'):
-                payload['client_mac'] = (
-                    payload.get('clientMac')
-                    or payload.get('mac')
-                    or payload.get('mac-address')
-                    or payload.get('client-mac')
+                if candidate_ip is not None:
+                    payload_dict['client_ip'] = candidate_ip
+            if not payload_dict.get('client_mac'):
+                candidate_mac = (
+                    payload_dict.get('clientMac')
+                    or payload_dict.get('mac')
+                    or payload_dict.get('mac-address')
+                    or payload_dict.get('client-mac')
                     or request.args.get('client_mac')
                     or request.args.get('mac')
                     or request.args.get('mac-address')
                     or request.args.get('client-mac')
                 )
-            if payload.get('hotspot_login_context') is None:
-                payload['hotspot_login_context'] = (
-                    payload.get('hotspotLoginContext')
+                if candidate_mac is not None:
+                    payload_dict['client_mac'] = candidate_mac
+            if payload_dict.get('hotspot_login_context') is None:
+                candidate_ctx = (
+                    payload_dict.get('hotspotLoginContext')
                     or request.args.get('hotspot_login_context')
                     or request.args.get('hotspotLoginContext')
                 )
+                if candidate_ctx is not None:
+                    payload_dict['hotspot_login_context'] = candidate_ctx
 
-        data = VerifyOtpRequestSchema.model_validate(payload)
+        data = VerifyOtpRequestSchema.model_validate(payload_dict)
 
         try:
             phone_e164 = normalize_to_e164(data.phone_number)
@@ -555,12 +563,30 @@ def verify_otp():
             )
 
         if user_to_login.role in [UserRole.USER, UserRole.KOMANDAN, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
+            # Jika explicit device auth diaktifkan, best-practice adalah:
+            # - device pertama user boleh auto-authorize setelah OTP berhasil
+            # - device berikutnya wajib explicit authorization (tidak bypass)
+            bypass_explicit = True
+            try:
+                require_explicit = (settings_service.get_setting('REQUIRE_EXPLICIT_DEVICE_AUTH', 'False') == 'True')
+                if require_explicit and user_to_login.role in [UserRole.USER, UserRole.KOMANDAN]:
+                    has_any_authorized_device = db.session.scalar(
+                        select(UserDevice.id).where(
+                            UserDevice.user_id == user_to_login.id,
+                            UserDevice.is_authorized.is_(True),
+                        ).limit(1)
+                    ) is not None
+                    bypass_explicit = not has_any_authorized_device
+            except Exception:
+                # Fail-safe: tetap gunakan perilaku lama (bypass) jika ada error query
+                bypass_explicit = True
+
             ok_binding, msg_binding, resolved_ip = apply_device_binding_for_login(
                 user_to_login,
                 client_ip,
                 user_agent,
                 client_mac,
-                bypass_explicit_auth=True,
+                bypass_explicit_auth=bypass_explicit,
             )
             if not ok_binding:
                 if msg_binding in ["Limit perangkat tercapai", "Perangkat belum diotorisasi"]:
@@ -649,30 +675,35 @@ def auto_login():
             payload = request.form.to_dict() if request.form else {}
 
         # Normalisasi key client identity (menerima variasi key dari captive portal).
-        if isinstance(payload, dict):
-            if not payload.get('client_ip'):
-                payload['client_ip'] = (
-                    payload.get('clientIp')
-                    or payload.get('ip')
-                    or payload.get('client-ip')
+        payload_dict: dict[str, Any] = cast(dict[str, Any], payload) if isinstance(payload, dict) else {}
+        if payload_dict:
+            if not payload_dict.get('client_ip'):
+                candidate_ip = (
+                    payload_dict.get('clientIp')
+                    or payload_dict.get('ip')
+                    or payload_dict.get('client-ip')
                     or request.args.get('client_ip')
                     or request.args.get('ip')
                     or request.args.get('client-ip')
                 )
-            if not payload.get('client_mac'):
-                payload['client_mac'] = (
-                    payload.get('clientMac')
-                    or payload.get('mac')
-                    or payload.get('mac-address')
-                    or payload.get('client-mac')
+                if candidate_ip is not None:
+                    payload_dict['client_ip'] = candidate_ip
+            if not payload_dict.get('client_mac'):
+                candidate_mac = (
+                    payload_dict.get('clientMac')
+                    or payload_dict.get('mac')
+                    or payload_dict.get('mac-address')
+                    or payload_dict.get('client-mac')
                     or request.args.get('client_mac')
                     or request.args.get('mac')
                     or request.args.get('mac-address')
                     or request.args.get('client-mac')
                 )
+                if candidate_mac is not None:
+                    payload_dict['client_mac'] = candidate_mac
 
-        client_ip = payload.get('client_ip') if isinstance(payload, dict) else None
-        client_mac = payload.get('client_mac') if isinstance(payload, dict) else None
+        client_ip = payload_dict.get('client_ip')
+        client_mac = payload_dict.get('client_mac')
         if not client_ip:
             client_ip = get_client_ip()
         if not client_ip:
@@ -880,6 +911,64 @@ def get_current_user(current_user_id: uuid.UUID):
     except ValidationError as e:
         current_app.logger.error(f"[/me] Pydantic validation FAILED for user {user.id}: {e}", exc_info=True)
         return jsonify(AuthErrorResponseSchema(error="User data on server is invalid.", details=_validation_error_details(e)).model_dump()), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@auth_bp.route('/me/telegram/status', methods=['GET'])
+@token_required
+def get_my_telegram_status(current_user_id: uuid.UUID):
+    user = db.session.get(User, current_user_id)
+    if not user:
+        return jsonify({"message": "User not found."}), HTTPStatus.NOT_FOUND
+
+    chat_id = getattr(user, 'telegram_chat_id', None)
+    username = getattr(user, 'telegram_username', None)
+    linked_at = getattr(user, 'telegram_linked_at', None)
+
+    return jsonify({
+        'linked': bool(chat_id),
+        'chat_id': chat_id,
+        'username': username,
+        'linked_at': linked_at.isoformat() if linked_at else None,
+    }), HTTPStatus.OK
+
+
+@auth_bp.route('/me/telegram/unlink', methods=['POST'])
+@token_required
+def unlink_my_telegram(current_user_id: uuid.UUID):
+    user = db.session.get(User, current_user_id)
+    if not user:
+        return jsonify({"message": "User not found."}), HTTPStatus.NOT_FOUND
+
+    user.telegram_chat_id = None
+    user.telegram_username = None
+    user.telegram_linked_at = None
+    db.session.commit()
+    return jsonify({'message': 'Telegram berhasil diputus.'}), HTTPStatus.OK
+
+
+@auth_bp.route('/me/telegram/link-token', methods=['POST'])
+@token_required
+def create_my_telegram_link_token(current_user_id: uuid.UUID):
+    user = db.session.get(User, current_user_id)
+    if not user:
+        return jsonify({"message": "User not found."}), HTTPStatus.NOT_FOUND
+
+    bot_username = str(settings_service.get_setting('TELEGRAM_BOT_USERNAME', '') or '').strip().lstrip('@')
+    if not bot_username:
+        return jsonify({
+            'message': 'TELEGRAM_BOT_USERNAME belum disetel oleh admin.',
+        }), HTTPStatus.BAD_REQUEST
+
+    token = generate_user_link_token(user_id=str(user.id))
+    link_url = f"https://t.me/{bot_username}?start={token}"
+    max_age = int(current_app.config.get('TELEGRAM_LINK_TOKEN_MAX_AGE_SECONDS', 600))
+
+    return jsonify({
+        'token': token,
+        'link_url': link_url,
+        'expires_in_seconds': max_age,
+        'bot_username': bot_username,
+    }), HTTPStatus.OK
 
 @auth_bp.route('/me/profile', methods=['PUT'])
 @token_required

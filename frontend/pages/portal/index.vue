@@ -4,6 +4,7 @@ import { computed } from 'vue'
 definePageMeta({
   layout: 'blank',
   auth: false,
+  public: true,
 })
 
 useHead({ title: 'Portal Info' })

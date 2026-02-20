@@ -11,7 +11,8 @@ from app.infrastructure.db.models import ApplicationSetting
 
 ENCRYPTED_KEYS: Set[str] = {
     'WHATSAPP_API_KEY', 'MIDTRANS_SERVER_KEY',
-    'MIDTRANS_CLIENT_KEY', 'MIKROTIK_PASSWORD'
+    'MIDTRANS_CLIENT_KEY', 'MIKROTIK_PASSWORD',
+    'TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET'
 }
 VALID_IP_BINDING_TYPES: Set[str] = {'bypassed', 'regular', 'blocked'}
 _fernet_instance = None

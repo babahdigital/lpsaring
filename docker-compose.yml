@@ -192,6 +192,16 @@ services:
       PORT: 3010
       # Nonaktifkan warning Browserslist data lama di dev container
       BROWSERSLIST_IGNORE_OLD_DATA: "1"
+      # Opsional: set ini jika akses dev lewat Cloudflare Tunnel / reverse proxy dan HMR websocket gagal
+      # Contoh:
+      #   VITE_HMR_HOST=dev-lpsaring.babahdigital.net
+      #   VITE_HMR_PROTOCOL=wss
+      #   VITE_HMR_CLIENT_PORT=443
+      VITE_HMR_HOST: ${VITE_HMR_HOST:-}
+      VITE_HMR_PROTOCOL: ${VITE_HMR_PROTOCOL:-}
+      VITE_HMR_CLIENT_PORT: ${VITE_HMR_CLIENT_PORT:-}
+      VITE_HMR_PORT: ${VITE_HMR_PORT:-}
+      VITE_HMR_PATH: ${VITE_HMR_PATH:-}
     # Me-mount kode sumber, tetapi menjaga node_modules dan .nuxt dari container.
     # Ini adalah pola yang benar untuk development frontend.
     volumes:
@@ -204,7 +214,15 @@ services:
       - "3010:3010"
     stop_signal: SIGINT
     stop_grace_period: 30s
-    command: pnpm run dev
+    command:
+      - sh
+      - -lc
+      - |
+          if [ ! -f node_modules/.modules.yaml ]; then
+            echo "[frontend] node_modules missing -> running pnpm install" >&2
+            CI=true pnpm install
+          fi
+          pnpm run dev
     # depends_on untuk backend bisa diaktifkan jika diperlukan,
     # namun seringkali frontend modern dapat menangani jika API belum siap,
     # sehingga tidak memblokir proses startup.
@@ -241,7 +259,7 @@ services:
     container_name: hotspot_cloudflared
     profiles:
       - tunnel
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARED_TUNNEL_TOKEN}
+    command: tunnel --no-autoupdate --protocol http2 run --token ${CLOUDFLARED_TUNNEL_TOKEN}
     environment:
       - TUNNEL_TOKEN=${CLOUDFLARED_TUNNEL_TOKEN}
     depends_on:

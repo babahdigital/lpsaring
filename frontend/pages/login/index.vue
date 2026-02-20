@@ -34,13 +34,6 @@ onMounted(() => {
   const tab = typeof route.query.tab === 'string' ? route.query.tab : ''
   if (tab === 'register')
     currentTab.value = 'register'
-
-  authStore.initializeAuth().then(async () => {
-    if (authStore.isLoggedIn && import.meta.client) {
-      const target = authStore.isAdmin ? '/admin/dashboard' : '/akun'
-      await navigateTo(target, { replace: true })
-    }
-  })
 })
 
 // --- State untuk Form Login ---
@@ -77,6 +70,34 @@ function getQueryValue(key: string): string {
   if (Array.isArray(value))
     return value[0] ?? ''
   return typeof value === 'string' ? value : ''
+}
+
+function getRedirectTargetAfterLogin(): string | null {
+  const redirectQuery = route.query.redirect
+  const redirectPath = Array.isArray(redirectQuery) ? redirectQuery[0] : redirectQuery
+  if (typeof redirectPath !== 'string' || redirectPath.length === 0)
+    return null
+  if (!redirectPath.startsWith('/') || redirectPath.startsWith('//'))
+    return null
+  if (redirectPath.includes('://'))
+    return null
+
+  // Hindari loop ke halaman auth/guest.
+  const disallowedPrefixes = ['/login', '/register', '/daftar', '/captive', '/session/consume']
+  if (disallowedPrefixes.some(prefix => redirectPath === prefix || redirectPath.startsWith(`${prefix}/`)))
+    return null
+
+  // Non-admin tidak boleh diarahkan ke area admin.
+  if (!authStore.isAdmin && (redirectPath === '/admin' || redirectPath.startsWith('/admin/')))
+    return null
+
+  // Admin boleh ke /admin/*, tapi jangan ke halaman login admin.
+  if (authStore.isAdmin) {
+    if (redirectPath === '/admin' || redirectPath === '/admin/login' || redirectPath.startsWith('/admin/login/'))
+      return null
+  }
+
+  return redirectPath
 }
 
 function getQueryValueFromKeys(keys: string[]): string {
@@ -273,8 +294,10 @@ async function handleVerifyOtp() {
       const sessionUrl = loginResponse.session_url
       if (sessionUrl)
         window.location.assign(sessionUrl)
-      else
-        await navigateTo('/dashboard', { replace: true })
+      else {
+        const redirectTarget = getRedirectTargetAfterLogin()
+        await navigateTo(redirectTarget ?? '/dashboard', { replace: true })
+      }
     }
   }
   catch (error: any) {

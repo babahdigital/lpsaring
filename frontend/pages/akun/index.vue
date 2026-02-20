@@ -45,6 +45,11 @@ const passwordData = ref<ChangePasswordRequest>({ current_password: '', new_pass
 const confirmPassword = ref('')
 const isPasswordVisible = ref(false)
 
+const telegramLoading = ref(false)
+const telegramError = ref<string | null>(null)
+const telegramStatus = ref<{ linked: boolean; chat_id?: string | null; username?: string | null; linked_at?: string | null } | null>(null)
+const telegramLinkUrl = ref<string | null>(null)
+
 // --- Computed Properties ---
 type UserWithMeta = User & { created_at?: string }
 const currentUser = computed<UserWithMeta | null>(() => authStore.currentUser as UserWithMeta | null)
@@ -94,12 +99,72 @@ async function loadInitialData() {
     populateEditForm()
     if (isUser.value === true) // Perbaikan: Perbandingan eksplisit
       fetchSpendingSummary()
+
+    loadTelegramStatus()
   }
   catch (error: any) {
     profileError.value = error.message
   }
   finally {
     profileLoading.value = false
+  }
+}
+
+async function loadTelegramStatus() {
+  telegramError.value = null
+  telegramLoading.value = true
+  try {
+    const status = await $api<{ linked: boolean; chat_id?: string | null; username?: string | null; linked_at?: string | null }>(
+      '/auth/me/telegram/status',
+      { method: 'GET' },
+    )
+    telegramStatus.value = status
+  }
+  catch (e: any) {
+    telegramStatus.value = null
+    telegramError.value = (e?.data?.message as string | undefined) || 'Gagal memuat status Telegram.'
+  }
+  finally {
+    telegramLoading.value = false
+  }
+}
+
+async function connectTelegram() {
+  telegramError.value = null
+  telegramLinkUrl.value = null
+  telegramLoading.value = true
+  try {
+    const result = await $api<{ link_url: string; expires_in_seconds: number; bot_username: string }>(
+      '/auth/me/telegram/link-token',
+      { method: 'POST' },
+    )
+    telegramLinkUrl.value = result.link_url
+
+    if (import.meta.client) {
+      window.open(result.link_url, '_blank', 'noopener,noreferrer')
+    }
+  }
+  catch (e: any) {
+    telegramError.value = (e?.data?.message as string | undefined) || 'Gagal membuat link Telegram.'
+  }
+  finally {
+    telegramLoading.value = false
+  }
+}
+
+async function disconnectTelegram() {
+  telegramError.value = null
+  telegramLoading.value = true
+  try {
+    await $api('/auth/me/telegram/unlink', { method: 'POST' })
+    telegramLinkUrl.value = null
+    await loadTelegramStatus()
+  }
+  catch (e: any) {
+    telegramError.value = (e?.data?.message as string | undefined) || 'Gagal memutus Telegram.'
+  }
+  finally {
+    telegramLoading.value = false
   }
 }
 async function saveProfile() {
@@ -313,6 +378,88 @@ useHead({ title: 'Pengaturan Akun' })
                   <VBtn color="secondary" variant="tonal" prepend-icon="tabler-key" @click="isPasswordDialogVisible = true">
                     Ubah Password Portal
                   </VBtn>
+                </div>
+              </VCardText>
+            </VCard>
+          </VCol>
+
+          <VCol cols="12">
+            <VCard>
+              <VCardItem>
+                <VCardTitle class="text-h5">
+                  Telegram
+                </VCardTitle>
+                <VCardSubtitle>Hubungkan Telegram agar sistem bisa mengirim notifikasi ke akun Anda.</VCardSubtitle>
+              </VCardItem>
+              <VCardText>
+                <VAlert v-if="telegramError" type="error" variant="tonal" density="compact" closable class="mb-4" @update:model-value="telegramError = null">
+                  {{ telegramError }}
+                </VAlert>
+
+                <VAlert
+                  v-if="telegramStatus?.linked === true"
+                  type="success"
+                  variant="tonal"
+                  density="compact"
+                  class="mb-4"
+                >
+                  Telegram sudah terhubung.
+                  <span v-if="telegramStatus.username"> (@{{ telegramStatus.username }})</span>
+                </VAlert>
+                <VAlert
+                  v-else
+                  type="info"
+                  variant="tonal"
+                  density="compact"
+                  class="mb-4"
+                >
+                  Klik "Connect Telegram" lalu tekan Start di bot Telegram.
+                </VAlert>
+
+                <div class="d-flex flex-wrap ga-3">
+                  <VBtn
+                    color="primary"
+                    variant="tonal"
+                    prepend-icon="tabler-brand-telegram"
+                    :loading="telegramLoading"
+                    :disabled="telegramLoading"
+                    @click="connectTelegram"
+                  >
+                    Connect Telegram
+                  </VBtn>
+
+                  <VBtn
+                    color="secondary"
+                    variant="text"
+                    prepend-icon="tabler-refresh"
+                    :loading="telegramLoading"
+                    :disabled="telegramLoading"
+                    @click="loadTelegramStatus"
+                  >
+                    Refresh Status
+                  </VBtn>
+
+                  <VBtn
+                    v-if="telegramStatus?.linked === true"
+                    color="error"
+                    variant="text"
+                    prepend-icon="tabler-unlink"
+                    :loading="telegramLoading"
+                    :disabled="telegramLoading"
+                    @click="disconnectTelegram"
+                  >
+                    Disconnect
+                  </VBtn>
+                </div>
+
+                <div v-if="telegramLinkUrl" class="mt-4">
+                  <div class="text-caption text-medium-emphasis mb-1">Link connect (berlaku singkat):</div>
+                  <VTextField
+                    :model-value="telegramLinkUrl"
+                    readonly
+                    variant="outlined"
+                    density="compact"
+                  />
                 </div>
               </VCardText>
             </VCard>

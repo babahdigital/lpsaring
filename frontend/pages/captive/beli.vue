@@ -35,6 +35,7 @@ declare global {
 definePageMeta({
   layout: 'blank',
   auth: false,
+  public: true,
 })
 
 useHead({ title: 'Beli Paket (Captive)' })

@@ -107,7 +107,7 @@ export const useAuthStore = defineStore('auth', () => {
     initialAuthCheckDone.value = true
   }
 
-  async function fetchUser(context: 'login' | 'captive' = 'login'): Promise<boolean> {
+  async function fetchUser(context: 'login' | 'captive' = 'login', currentPath?: string): Promise<boolean> {
     const { $api } = useNuxtApp()
     loadingUser.value = true
     try {
@@ -117,7 +117,7 @@ export const useAuthStore = defineStore('auth', () => {
       if (fetchedUser != null && fetchedUser.id != null) {
         setUser(fetchedUser)
         clearError()
-        await enforceAccessStatus(context)
+        await enforceAccessStatus(context, currentPath)
         return true
       }
       throw new Error('Format data pengguna dari server tidak valid.')
@@ -136,12 +136,17 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function enforceAccessStatus(context: 'login' | 'captive' = 'login') {
+  async function enforceAccessStatus(context: 'login' | 'captive' = 'login', currentPath?: string) {
+    // Admin/Super Admin tidak boleh dikenai guard kuota/status end-user.
+    // Jika data kuota admin di DB = 0 atau expired, jangan redirect ke halaman status/beli.
+    if (isAdmin.value === true)
+      return
+
     const status = getAccessStatusFromUser(user.value)
     if (status === 'ok')
       return
     if (import.meta.client) {
-      const route = useRoute()
+      const path = currentPath ?? useRoute().path
       const redirectPath = getRedirectPathForStatus(status, context)
       const allowPurchasePaths = status === 'habis' || status === 'expired'
         ? (context === 'captive'
@@ -149,7 +154,7 @@ export const useAuthStore = defineStore('auth', () => {
             : ['/beli', '/payment/finish', redirectPath])
         : [redirectPath]
 
-      if (allowPurchasePaths.includes(route.path))
+      if (allowPurchasePaths.includes(path))
         return
 
       if (redirectPath)
@@ -157,8 +162,8 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function refreshSessionStatus() {
-    const ok = await fetchUser('login')
+  async function refreshSessionStatus(currentPath?: string) {
+    const ok = await fetchUser('login', currentPath)
     if (ok !== true)
       return
   }
@@ -471,6 +476,11 @@ export const useAuthStore = defineStore('auth', () => {
   function getAccessStatusFromUser(inputUser: User | null): AccessStatus {
     if (inputUser == null)
       return 'ok'
+
+    // Admin/Super Admin tidak memakai konsep kuota portal end-user.
+    if (inputUser.role === 'ADMIN' || inputUser.role === 'SUPER_ADMIN')
+      return 'ok'
+
     if (inputUser.is_blocked === true)
       return 'blocked'
     if (inputUser.is_active !== true || inputUser.approval_status !== 'APPROVED')
@@ -526,9 +536,10 @@ export const useAuthStore = defineStore('auth', () => {
     return `${base}/${slugMap[status]}`
   }
 
-  async function initializeAuth() {
-    const route = useRoute()
-    const context: 'login' | 'captive' = route.path.startsWith('/captive') ? 'captive' : 'login'
+  async function initializeAuth(routeInfo?: { path: string; query?: Record<string, unknown> }) {
+    const route = routeInfo ?? useRoute()
+    const routePath = route?.path ?? ''
+    const context: 'login' | 'captive' = routePath.startsWith('/captive') ? 'captive' : 'login'
     const shouldAttemptAutoLogin = import.meta.client
       && user.value == null
       && autoLoginAttempted.value !== true
@@ -537,15 +548,15 @@ export const useAuthStore = defineStore('auth', () => {
       return
 
     if (user.value == null) {
-      await fetchUser(context)
+      await fetchUser(context, routePath)
     }
 
     if (user.value == null && shouldAttemptAutoLogin) {
       autoLoginAttempted.value = true
       try {
-        if (!route.path.startsWith('/admin')) {
+        if (!routePath.startsWith('/admin')) {
           const { $api } = useNuxtApp()
-          const query = route.query ?? {}
+          const query = (route as any)?.query ?? {}
           const clientIp = (query.client_ip ?? query.ip ?? query['client-ip']) as string | undefined
           const clientMac = (query.client_mac ?? query.mac ?? query['mac-address'] ?? query['mac']) as string | undefined
           const body: Record<string, string> = {}
@@ -559,7 +570,7 @@ export const useAuthStore = defineStore('auth', () => {
             ...(Object.keys(body).length > 0 ? { body } : {}),
           })
           if (response != null) {
-            await fetchUser(context)
+            await fetchUser(context, routePath)
           }
         }
       }

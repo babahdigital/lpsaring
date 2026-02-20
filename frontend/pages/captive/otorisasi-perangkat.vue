@@ -7,6 +7,7 @@ import { useAuthStore } from '~/store/auth'
 definePageMeta({
   layout: 'blank',
   auth: false,
+  public: true,
 })
 
 useHead({ title: 'Otorisasi Perangkat' })

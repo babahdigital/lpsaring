@@ -43,7 +43,7 @@ Catatan: repository menyertakan template env:
 Jalankan dari laptop (PowerShell/Git Bash), sesuaikan `PI_USER` dan `PI_HOST`:
 
 ```bash
-PI_USER=pi
+PI_USER=abdullah
 PI_HOST=192.168.1.20
 PI_PORT=1983
 SSH_KEY=~/.ssh/id_raspi_ed25519
@@ -72,13 +72,6 @@ Jika pakai sertifikat lokal Nginx:
 ```bash
 scp -P 1983 -i ~/.ssh/id_raspi_ed25519 /path/to/fullchain.pem <PI_USER>@<PI_HOST>:/home/abdullah/sobigidul/infrastructure/nginx/ssl/
 scp -P 1983 -i ~/.ssh/id_raspi_ed25519 /path/to/privkey.pem <PI_USER>@<PI_HOST>:/home/abdullah/sobigidul/infrastructure/nginx/ssl/
-```
-
-Jika pakai sertifikat lokal Nginx:
-
-```bash
-scp -P "$PI_PORT" -i "$SSH_KEY" /path/to/fullchain.pem "$PI_USER@$PI_HOST:$REMOTE_ROOT/infrastructure/nginx/ssl/"
-scp -P "$PI_PORT" -i "$SSH_KEY" /path/to/privkey.pem "$PI_USER@$PI_HOST:$REMOTE_ROOT/infrastructure/nginx/ssl/"
 ```
 
 ## 4) Alternatif Sinkronisasi (rsync)
@@ -172,6 +165,9 @@ docker compose -f docker-compose.prod.yml exec -T backend flask cleanup-transact
 
 - Pastikan file `.env.prod` terisi lengkap untuk backend dan service produksi.
 - Pastikan file `.env.public.prod` ada karena service frontend membaca file ini secara langsung.
+- Jika ingin tombol “Hubungi Admin” mengarah ke WhatsApp, isi juga di `.env.public.prod`:
+  - `NUXT_PUBLIC_ADMIN_WHATSAPP=+62...`
+  - `NUXT_PUBLIC_WHATSAPP_BASE_URL=https://wa.me`
 - Folder `backend/backups` harus ada agar bind mount tidak gagal.
 - Jika tidak pakai SSL di Nginx (SSL terminate di Cloudflare/Tunnel), folder `ssl` boleh kosong.
 

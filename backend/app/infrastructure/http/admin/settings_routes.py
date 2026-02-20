@@ -39,7 +39,16 @@ def get_application_settings(current_admin: User):
     try:
         settings_query = db.select(ApplicationSetting).order_by(ApplicationSetting.setting_key)
         settings = db.session.scalars(settings_query).all()
-        response_data = [SettingSchema.model_validate(s).model_dump(exclude_none=True) for s in settings]
+        response_data = []
+        for setting in settings:
+            # Penting: untuk kunci terenkripsi, kembalikan nilai yang sudah didekripsi.
+            # Jika mengirim ciphertext ke frontend, saat disimpan ulang akan terenkripsi lagi (double-encrypt)
+            # dan runtime tidak akan bisa mendekripsi.
+            value = settings_service.get_setting(setting.setting_key, '')
+            response_data.append({
+                'setting_key': setting.setting_key,
+                'setting_value': value if value is not None else '',
+            })
         return jsonify(response_data), HTTPStatus.OK
     except Exception as e:
         current_app.logger.error(f"Gagal mengambil pengaturan aplikasi: {e}", exc_info=True)
@@ -74,6 +83,13 @@ def update_application_settings(current_admin: User):
                 errors.append({"field": "ENABLE_WHATSAPP_NOTIFICATIONS", "message": "Nilai harus 'True' atau 'False'"})
             elif is_enabled_str == 'True' and not settings_dict.get('WHATSAPP_API_KEY'):
                 errors.append({"field": "WHATSAPP_API_KEY", "message": "API Key WhatsApp wajib diisi jika notifikasi diaktifkan"})
+
+        if 'ENABLE_TELEGRAM_NOTIFICATIONS' in settings_dict:
+            is_enabled_str = settings_dict.get('ENABLE_TELEGRAM_NOTIFICATIONS', 'False')
+            if is_enabled_str not in ['True', 'False']:
+                errors.append({"field": "ENABLE_TELEGRAM_NOTIFICATIONS", "message": "Nilai harus 'True' atau 'False'"})
+            elif is_enabled_str == 'True' and not settings_dict.get('TELEGRAM_BOT_TOKEN'):
+                errors.append({"field": "TELEGRAM_BOT_TOKEN", "message": "Bot Token Telegram wajib diisi jika notifikasi Telegram diaktifkan"})
         
         if errors:
             return jsonify({"errors": errors}), HTTPStatus.UNPROCESSABLE_ENTITY

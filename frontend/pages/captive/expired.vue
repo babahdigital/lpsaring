@@ -6,6 +6,7 @@ import { format_for_whatsapp_link, format_to_local_phone } from '~/utils/formatt
 definePageMeta({
   layout: 'blank',
   auth: false,
+  public: true,
 })
 
 useHead({ title: 'Masa Aktif Berakhir' })

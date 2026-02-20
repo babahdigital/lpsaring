@@ -265,12 +265,13 @@ def register_blueprints(app: Flask):
         from .infrastructure.http.public_promo_routes import public_promo_bp
         from .infrastructure.http.komandan.komandan_routes import komandan_bp
         from .infrastructure.http.health_routes import health_bp
+        from .infrastructure.http.telegram_webhook_routes import telegram_bp
 
         blueprints = [
             (auth_bp, None), (packages_bp, None), (transactions_bp, None),
             (public_bp, None), (profile_bp, None), (data_bp, None),
             (public_user_bp, None), (public_promo_bp, None), (komandan_bp, None),
-            (health_bp, None)
+            (health_bp, None), (telegram_bp, None)
         ]
         
         for bp, prefix in blueprints:

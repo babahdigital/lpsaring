@@ -27,7 +27,7 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
 
   const authStore = useAuthStore()
   if (!authStore.initialAuthCheckDone)
-    await authStore.initializeAuth()
+    await authStore.initializeAuth({ path: to.path, query: to.query as any })
 
   const user = authStore.currentUser ?? authStore.lastKnownUser
   const actualStatus = authStore.getAccessStatusFromUser(user)

@@ -5,6 +5,19 @@ Dokumen ini merangkum detail API Fonnte berdasarkan URL yang diberikan untuk keb
 Lampiran wajib:
 - [.github/copilot-instructions.md](../.github/copilot-instructions.md)
 
+## Catatan untuk Lpsaring (Hotspot)
+Di repo ini ada 2 konsep “WhatsApp” yang berbeda:
+
+1) **Notifikasi WhatsApp server-side (Fonnte)**
+- Dipakai backend untuk OTP/notifikasi transaksi/komandan/dll.
+- Menggunakan token API (secret) dan dikirim dari server.
+
+2) **Tombol “Hubungi Admin” di frontend (WhatsApp deep link)**
+- Hanya membuat URL `wa.me` dan membuka WhatsApp user (tanpa token).
+- Diatur oleh env public frontend (lihat `.env.public.prod`):
+  - `NUXT_PUBLIC_ADMIN_WHATSAPP=+62...`
+  - `NUXT_PUBLIC_WHATSAPP_BASE_URL=https://wa.me`
+
 ## 1) Ringkasan Endpoint Utama
 
 ### 1.1 Send Message (POST)

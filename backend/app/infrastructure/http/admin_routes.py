@@ -18,6 +18,7 @@ from sqlalchemy.engine import make_url
 
 from app.extensions import db
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message, send_whatsapp_with_image_url
+from app.infrastructure.gateways.telegram_client import send_telegram_message
 from app.infrastructure.db.models import (
     User, UserRole, Package, ApprovalStatus, Transaction,
     TransactionStatus, NotificationRecipient, NotificationType,
@@ -539,6 +540,34 @@ def send_whatsapp_test(current_admin: User):
     except Exception as e:
         current_app.logger.error(f"Error test-send WhatsApp admin: {e}", exc_info=True)
         return jsonify({"message": "Gagal mengirim WhatsApp uji coba."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@admin_bp.route('/telegram/test-send', methods=['POST'])
+@admin_required
+def send_telegram_test(current_admin: User):
+    try:
+        json_data = request.get_json(silent=True) or {}
+        chat_id = str(json_data.get('chat_id') or '').strip()
+        message = str(json_data.get('message') or '').strip() or 'Tes Telegram dari panel admin hotspot.'
+
+        if not chat_id:
+            return jsonify({"message": "chat_id Telegram wajib diisi."}), HTTPStatus.BAD_REQUEST
+        if len(message) > 4000:
+            return jsonify({"message": "Pesan terlalu panjang (maks 4000 karakter)."}), HTTPStatus.BAD_REQUEST
+
+        sent = send_telegram_message(chat_id, message)
+        if not sent:
+            return jsonify({
+                "message": "Pengiriman Telegram gagal. Cek konfigurasi bot token / chat_id.",
+            }), HTTPStatus.BAD_REQUEST
+
+        return jsonify({
+            "message": "Pesan Telegram uji coba berhasil dikirim.",
+            "target": chat_id,
+        }), HTTPStatus.OK
+    except Exception as e:
+        current_app.logger.error(f"Error test-send Telegram admin: {e}", exc_info=True)
+        return jsonify({"message": "Gagal mengirim Telegram uji coba."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
 @admin_bp.route('/whatsapp/broadcast', methods=['POST'])

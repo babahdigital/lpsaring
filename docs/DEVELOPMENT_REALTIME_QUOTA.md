@@ -49,12 +49,14 @@ Sistem menandai status user di MikroTik melalui **address-list** berbasis IP:
 - **Inactive** → dipakai saat user diblokir admin (deactivate manual). Masuk ke list `MIKROTIK_ADDRESS_LIST_INACTIVE`.
 - **Expired (waktu)** → masa aktif habis. Masuk ke list `MIKROTIK_ADDRESS_LIST_EXPIRED`.
 - **Habis (kuota)** → kuota 0. Masuk ke list `MIKROTIK_ADDRESS_LIST_HABIS`.
-- **Blocked (device)** → dipakai saat perangkat melebihi limit/pending auth. Masuk ke list `MIKROTIK_ADDRESS_LIST_BLOCKED`.
+- **Blocked (akses)** → dipakai saat user diblokir (mis. admin block atau quota-debt hard block). Masuk ke list `MIKROTIK_ADDRESS_LIST_BLOCKED`.
 
 Catatan:
 - Habis hanya untuk kuota, expired hanya untuk waktu.
 - Address-list dipakai sebagai tag status di RouterOS (walled-garden/queue/bypass bisa disusun dari list ini).
-- IP diambil dari sesi aktif/host hotspot. Jika user tidak sedang online, entry tidak bisa dibuat.
+- Target operasionalnya: **1 IP = 1 status list** (active/fup/habis/expired/inactive/blocked).
+- Versi backend terbaru melakukan sync untuk **semua IP kandidat** user (multi-device), tidak hanya 1 IP dari sesi aktif.
+- IP yang tidak valid (contoh `0.0.0.0`) diabaikan.
 - Address-list dapat dijadikan sumber visual untuk seleksi manual (mis. hapus user lama), sementara logika hapus otomatis tetap mengikuti DB.
  - Jika sesi aktif tidak tersedia, sistem mencoba fallback ke ip-binding milik user atau IP hasil lookup MAC yang sudah authorized.
 

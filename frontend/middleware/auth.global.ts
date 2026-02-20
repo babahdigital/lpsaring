@@ -10,6 +10,19 @@ import { useAuthStore } from '~/store/auth'
 export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => {
   const authStore = useAuthStore()
 
+  // Penting: Tunggu hingga pengecekan otentikasi awal selesai.
+  // Ini mencegah race condition di mana middleware berjalan sebelum user/token dimuat.
+  if (!authStore.initialAuthCheckDone) {
+    await authStore.initializeAuth({ path: to.path, query: to.query as any })
+  }
+
+  const isLoggedIn = authStore.isLoggedIn
+  const isAdmin = authStore.isAdmin
+
+  // Halaman publik: boleh diakses siapa pun, dan tidak dipaksa redirect ke dashboard.
+  // Catatan: `auth: false` dipakai untuk modul auth eksternal; jangan diasumsikan sebagai public.
+  const isPublicPage = Boolean((to.meta as any)?.public === true)
+
   const getRedirectTarget = (): string | null => {
     const redirectQuery = to.query.redirect
     const redirectPath = Array.isArray(redirectQuery) ? redirectQuery[0] : redirectQuery
@@ -18,21 +31,23 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
     if (!redirectPath.startsWith('/'))
       return null
 
-    const disallowedPrefixes = ['/login', '/admin', '/register', '/daftar', '/captive', '/session/consume']
+    // Selalu blokir rute auth/guest umum agar tidak terjadi loop.
+    const disallowedPrefixes = ['/login', '/register', '/daftar', '/captive', '/session/consume']
     if (disallowedPrefixes.some(prefix => redirectPath === prefix || redirectPath.startsWith(`${prefix}/`)))
+      return null
+
+    // Untuk admin/superadmin: izinkan redirect ke /admin/* KECUALI halaman login admin itu sendiri.
+    // Ini penting karena plugin API bisa menambahkan redirect=/admin/settings/... saat 401, dan
+    // jika kita blokir semua /admin, user akan selalu jatuh ke /admin/dashboard.
+    if (redirectPath === '/admin' || redirectPath === '/admin/login' || redirectPath.startsWith('/admin/login/'))
+      return null
+
+    // Untuk non-admin: jangan izinkan redirect ke area /admin.
+    if (!isAdmin && (redirectPath === '/admin' || redirectPath.startsWith('/admin/')))
       return null
 
     return redirectPath
   }
-
-  // Penting: Tunggu hingga pengecekan otentikasi awal selesai.
-  // Ini mencegah race condition di mana middleware berjalan sebelum user/token dimuat.
-  if (!authStore.initialAuthCheckDone) {
-    await authStore.initializeAuth()
-  }
-
-  const isLoggedIn = authStore.isLoggedIn
-  const isAdmin = authStore.isAdmin
 
   // Halaman yang dapat diakses oleh pengguna yang belum login (guest).
   // Rute root '/' tidak termasuk di sini karena akan di-redirect.
@@ -58,6 +73,10 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
 
   // --- Logika untuk Pengguna yang Belum Login ---
   if (!isLoggedIn) {
+    // Halaman public diizinkan untuk guest.
+    if (isPublicPage)
+      return
+
     // Jika tujuan rute BUKAN halaman untuk tamu, redirect ke halaman login yang sesuai.
     if (!GUEST_ROUTES.includes(to.path)) {
       // Jika mencoba akses path admin yang dilindungi (bukan /admin itu sendiri),
@@ -75,6 +94,10 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
   else {
     const userDashboard = '/dashboard'
     const adminDashboard = '/admin/dashboard'
+
+    // Halaman public diizinkan untuk semua role (hindari auto-redirect ke dashboard).
+    if (isPublicPage)
+      return
 
     if (to.path.startsWith('/captive'))
       return

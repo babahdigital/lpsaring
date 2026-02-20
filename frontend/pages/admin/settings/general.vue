@@ -7,9 +7,7 @@ import { useSettingsStore } from '@/store/settings'
 // Impor semua enum yang Anda gunakan di template atau script
 import { useMaintenanceStore } from '~/store/maintenance'
 
-definePageMeta({
-  requiredRole: ['SUPER_ADMIN'],
-})
+definePageMeta({})
 
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
@@ -20,6 +18,9 @@ const snackbar = useSnackbar()
 const tab = ref('umum')
 const isLoading = ref(true)
 const isSaving = ref(false)
+const testTelegramChatId = ref('')
+const testTelegramMessage = ref('Tes Telegram dari panel admin hotspot.')
+const isTestingTelegram = ref(false)
 
 // Objek lokal untuk menampung data form
 const localSettings = ref<Record<string, string>>({})
@@ -47,6 +48,13 @@ const whatsappLoginNotificationEnabled = computed({
   set: (val: boolean) => { localSettings.value.ENABLE_WHATSAPP_LOGIN_NOTIFICATION = val ? 'True' : 'False' },
 })
 
+const telegramEnabled = computed({
+  get: () => localSettings.value.ENABLE_TELEGRAM_NOTIFICATIONS === 'True',
+  set: (val: boolean) => {
+    localSettings.value.ENABLE_TELEGRAM_NOTIFICATIONS = val ? 'True' : 'False'
+  },
+})
+
 /**
  * Fungsi untuk menyimpan pengaturan ke cookies browser.
  */
@@ -58,9 +66,6 @@ function syncSettingsToCookies(savedSettings: Record<string, string>) {
 }
 
 onMounted(async () => {
-  if (!authStore.isSuperAdmin)
-    return navigateTo('/admin/dashboard', { replace: true })
-
   isLoading.value = true
   try {
     const response = await $api<SettingSchema[]>('/admin/settings')
@@ -70,6 +75,7 @@ onMounted(async () => {
       MAINTENANCE_MODE_ACTIVE: 'False',
       ENABLE_WHATSAPP_NOTIFICATIONS: 'False',
       ENABLE_WHATSAPP_LOGIN_NOTIFICATION: 'False', // PENAMBAHAN: Inisialisasi nilai default
+      ENABLE_TELEGRAM_NOTIFICATIONS: 'False',
       APP_NAME: '',
       APP_BROWSER_TITLE: '',
       THEME: 'system',
@@ -77,6 +83,10 @@ onMounted(async () => {
       LAYOUT: 'horizontal',
       CONTENT_WIDTH: 'boxed',
       WHATSAPP_API_KEY: '',
+      TELEGRAM_BOT_USERNAME: '',
+      TELEGRAM_BOT_TOKEN: '',
+      TELEGRAM_ADMIN_CHAT_IDS: '',
+      TELEGRAM_WEBHOOK_SECRET: '',
       MIDTRANS_SERVER_KEY: '',
       MIDTRANS_CLIENT_KEY: '',
       MIKROTIK_HOST: '',
@@ -109,7 +119,6 @@ async function handleSaveChanges() {
   isSaving.value = true
   try {
     const settingsToSave: Record<string, string> = { ...localSettings.value }
-
     Object.keys(settingsToSave).forEach((key) => {
       // Perbaikan: Hapus pengecekan `null` yang tidak perlu karena nilai sudah dijamin string.
       // Saring nilai yang kosong, kecuali 'MAINTENANCE_MODE_MESSAGE' jika mode maintenance tidak aktif
@@ -171,6 +180,32 @@ async function handleSaveChanges() {
   }
   finally {
     isSaving.value = false
+  }
+}
+
+async function handleTestTelegramSend() {
+  if (isTestingTelegram.value)
+    return
+  isTestingTelegram.value = true
+  try {
+    const chatId = testTelegramChatId.value.trim()
+    const message = testTelegramMessage.value.trim() || 'Tes Telegram dari panel admin hotspot.'
+    if (!chatId) {
+      snackbar.add({ type: 'warning', title: 'Validasi', text: 'chat_id Telegram wajib diisi.' })
+      return
+    }
+    await $api('/admin/telegram/test-send', {
+      method: 'POST',
+      body: { chat_id: chatId, message },
+    })
+    snackbar.add({ type: 'success', title: 'Berhasil', text: `Pesan Telegram terkirim ke chat_id ${chatId}.` })
+  }
+  catch (e: any) {
+    const msg = (e?.data?.message as string | undefined) || 'Gagal mengirim Telegram uji coba.'
+    snackbar.add({ type: 'error', title: 'Gagal', text: msg })
+  }
+  finally {
+    isTestingTelegram.value = false
   }
 }
 useHead({ title: 'Setting Aplikasi' })
@@ -407,7 +442,145 @@ useHead({ title: 'Setting Aplikasi' })
                       <VListItemSubtitle>Kunci API dari Fonnte.</VListItemSubtitle>
                     </VCol>
                     <VCol cols="12" md="8">
-                      <VTextField v-model="localSettings.WHATSAPP_API_KEY" label="API Key WhatsApp (Fonnte)" type="password" persistent-placeholder="Masukkan API Key Fonnte Anda" :disabled="!whatsappEnabled" variant="outlined" density="compact" />
+                      <VTextField v-model="localSettings.WHATSAPP_API_KEY" label="API Key WhatsApp (Fonnte)" type="password" persistent-placeholder placeholder="Masukkan API Key Fonnte Anda" :disabled="!whatsappEnabled" variant="outlined" density="compact" />
+                    </VCol>
+                  </VRow>
+                </VListItem>
+
+                <VDivider class="my-2" />
+
+                <VListSubheader>Telegram</VListSubheader>
+
+                <VListItem lines="three">
+                  <VRow no-gutters align="center">
+                    <VCol cols="12" md="4">
+                      <VListItemTitle class="mb-1">
+                        Notifikasi Telegram
+                      </VListItemTitle>
+                      <VListItemSubtitle>
+                        Saklar utama untuk pengiriman notifikasi via Telegram Bot.
+                      </VListItemSubtitle>
+                    </VCol>
+                    <VCol cols="12" md="8" class="d-flex justify-start justify-md-end">
+                      <VSwitch v-model="telegramEnabled" :label="telegramEnabled ? 'Aktif' : 'Tidak Aktif'" inset />
+                    </VCol>
+                  </VRow>
+                </VListItem>
+
+                <VListItem>
+                  <VRow no-gutters align="center">
+                    <VCol cols="12" md="4">
+                      <VListItemTitle class="mb-1">
+                        Bot Username
+                      </VListItemTitle>
+                      <VListItemSubtitle>Digunakan untuk deep link (opsional).</VListItemSubtitle>
+                    </VCol>
+                    <VCol cols="12" md="8">
+                      <VTextField v-model="localSettings.TELEGRAM_BOT_USERNAME" label="Telegram Bot Username" persistent-placeholder placeholder="Contoh: lpsaring_bot" :disabled="!telegramEnabled" variant="outlined" density="compact" />
+                    </VCol>
+                  </VRow>
+                </VListItem>
+
+                <VListItem>
+                  <VRow no-gutters align="center">
+                    <VCol cols="12" md="4">
+                      <VListItemTitle class="mb-1">
+                        Bot Token
+                      </VListItemTitle>
+                      <VListItemSubtitle>Token dari BotFather (server-side secret).</VListItemSubtitle>
+                    </VCol>
+                    <VCol cols="12" md="8">
+                      <VTextField v-model="localSettings.TELEGRAM_BOT_TOKEN" label="Telegram Bot Token" type="password" persistent-placeholder placeholder="123456:ABC..." :disabled="!telegramEnabled" variant="outlined" density="compact" />
+                    </VCol>
+                  </VRow>
+                </VListItem>
+
+                <VListItem>
+                  <VRow no-gutters align="center">
+                    <VCol cols="12" md="4">
+                      <VListItemTitle class="mb-1">
+                        Webhook Secret
+                      </VListItemTitle>
+                      <VListItemSubtitle>
+                        Secret untuk memvalidasi request webhook dari Telegram.
+                      </VListItemSubtitle>
+                    </VCol>
+                    <VCol cols="12" md="8">
+                      <VTextField
+                        v-model="localSettings.TELEGRAM_WEBHOOK_SECRET"
+                        label="Telegram Webhook Secret"
+                        type="password"
+                        persistent-placeholder
+                        placeholder="isi random string panjang"
+                        :disabled="!telegramEnabled"
+                        variant="outlined"
+                        density="compact"
+                      />
+                    </VCol>
+                  </VRow>
+                </VListItem>
+
+                <VListItem>
+                  <VRow no-gutters align="center">
+                    <VCol cols="12" md="4">
+                      <VListItemTitle class="mb-1">
+                        Admin Chat IDs
+                      </VListItemTitle>
+                      <VListItemSubtitle>
+                        Daftar chat_id admin untuk fase awal (pisahkan dengan koma).
+                      </VListItemSubtitle>
+                    </VCol>
+                    <VCol cols="12" md="8">
+                      <VTextField v-model="localSettings.TELEGRAM_ADMIN_CHAT_IDS" label="Telegram Admin Chat IDs" persistent-placeholder placeholder="Contoh: 123456789,987654321" :disabled="!telegramEnabled" variant="outlined" density="compact" />
+                    </VCol>
+                  </VRow>
+                </VListItem>
+
+                <VListItem>
+                  <VRow no-gutters align="center">
+                    <VCol cols="12" md="4">
+                      <VListItemTitle class="mb-1">
+                        Test Kirim Telegram
+                      </VListItemTitle>
+                      <VListItemSubtitle>
+                        Uji koneksi bot token + chat_id (tidak menyimpan apa pun).
+                      </VListItemSubtitle>
+                    </VCol>
+                    <VCol cols="12" md="8">
+                      <VRow>
+                        <VCol cols="12" sm="5">
+                          <VTextField
+                            v-model="testTelegramChatId"
+                            label="chat_id"
+                            placeholder="123456789"
+                            :disabled="!telegramEnabled || isTestingTelegram"
+                            variant="outlined"
+                            density="compact"
+                          />
+                        </VCol>
+                        <VCol cols="12" sm="7">
+                          <VTextField
+                            v-model="testTelegramMessage"
+                            label="Pesan"
+                            placeholder="Tes Telegram..."
+                            :disabled="!telegramEnabled || isTestingTelegram"
+                            variant="outlined"
+                            density="compact"
+                          />
+                        </VCol>
+                      </VRow>
+                      <div class="d-flex justify-end">
+                        <VBtn
+                          color="primary"
+                          variant="tonal"
+                          :loading="isTestingTelegram"
+                          :disabled="!telegramEnabled || isTestingTelegram"
+                          prepend-icon="tabler-send"
+                          @click="handleTestTelegramSend"
+                        >
+                          Kirim Test
+                        </VBtn>
+                      </div>
                     </VCol>
                   </VRow>
                 </VListItem>
@@ -426,10 +599,10 @@ useHead({ title: 'Setting Aplikasi' })
                     <VCol cols="12" md="8">
                       <VRow>
                         <VCol cols="12" sm="6">
-                          <VTextField v-model="localSettings.MIDTRANS_SERVER_KEY" label="Server Key Midtrans" type="password" persistent-placeholder="Masukkan Server Key" variant="outlined" density="compact" />
+                          <VTextField v-model="localSettings.MIDTRANS_SERVER_KEY" label="Server Key Midtrans" type="password" persistent-placeholder placeholder="Masukkan Server Key" variant="outlined" density="compact" />
                         </VCol>
                         <VCol cols="12" sm="6">
-                          <VTextField v-model="localSettings.MIDTRANS_CLIENT_KEY" label="Client Key Midtrans" type="password" persistent-placeholder="Masukkan Client Key" variant="outlined" density="compact" />
+                          <VTextField v-model="localSettings.MIDTRANS_CLIENT_KEY" label="Client Key Midtrans" type="password" persistent-placeholder placeholder="Masukkan Client Key" variant="outlined" density="compact" />
                         </VCol>
                       </VRow>
                     </VCol>
@@ -449,13 +622,13 @@ useHead({ title: 'Setting Aplikasi' })
                     <VCol cols="12" md="8">
                       <VRow>
                         <VCol cols="12" sm="4">
-                          <VTextField v-model="localSettings.MIKROTIK_HOST" label="Host MikroTik" persistent-placeholder="Alamat IP/domain" variant="outlined" density="compact" />
+                          <VTextField v-model="localSettings.MIKROTIK_HOST" label="Host MikroTik" persistent-placeholder placeholder="Alamat IP/domain" variant="outlined" density="compact" />
                         </VCol>
                         <VCol cols="12" sm="4">
-                          <VTextField v-model="localSettings.MIKROTIK_USER" label="User MikroTik" persistent-placeholder="Username API" variant="outlined" density="compact" />
+                          <VTextField v-model="localSettings.MIKROTIK_USER" label="User MikroTik" persistent-placeholder placeholder="Username API" variant="outlined" density="compact" />
                         </VCol>
                         <VCol cols="12" sm="4">
-                          <VTextField v-model="localSettings.MIKROTIK_PASSWORD" label="Password MikroTik" type="password" persistent-placeholder="Password API" variant="outlined" density="compact" />
+                          <VTextField v-model="localSettings.MIKROTIK_PASSWORD" label="Password MikroTik" type="password" persistent-placeholder placeholder="Password API" variant="outlined" density="compact" />
                         </VCol>
                       </VRow>
                     </VCol>

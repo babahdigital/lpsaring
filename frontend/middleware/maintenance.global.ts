@@ -14,7 +14,7 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
 
   // Pastikan status auth dan settings sudah dicek/dimuat sebelum middleware berjalan.
   if (!authStore.initialAuthCheckDone) {
-    await authStore.initializeAuth()
+    await authStore.initializeAuth({ path: to.path, query: to.query as any })
   }
 
   const isMaintenanceActive = maintenanceStore.isActive
