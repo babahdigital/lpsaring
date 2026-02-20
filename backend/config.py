@@ -393,6 +393,12 @@ class Config:
     TRUSTED_PROXY_CIDRS = get_env_list('TRUSTED_PROXY_CIDRS', "['127.0.0.1/32','10.0.0.0/8','172.16.0.0/12','192.168.0.0/16']")
     HOTSPOT_CLIENT_IP_CIDRS = get_env_list('HOTSPOT_CLIENT_IP_CIDRS', "['10.0.0.0/8','172.16.0.0/12','192.168.0.0/16']")
 
+    # Unauthorized host blocking (optional; used by `flask sync-unauthorized-hosts`)
+    # Default diarahkan hanya VLAN Klien.
+    MIKROTIK_UNAUTHORIZED_CIDRS = get_env_list('MIKROTIK_UNAUTHORIZED_CIDRS', "['172.16.2.0/23']")
+    # IP/range yang dikecualikan untuk maintenance. Contoh: ['172.16.2.3-7']
+    MIKROTIK_UNAUTHORIZED_EXEMPT_IPS = get_env_list('MIKROTIK_UNAUTHORIZED_EXEMPT_IPS', "['172.16.2.3-7']")
+
     OTP_ALLOW_BYPASS = get_env_bool('OTP_ALLOW_BYPASS', 'False')
     OTP_BYPASS_CODE = os.environ.get('OTP_BYPASS_CODE', '000000')
     SYNC_ADDRESS_LIST_ON_LOGIN = get_env_bool('SYNC_ADDRESS_LIST_ON_LOGIN', 'True')
