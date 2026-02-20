@@ -46,6 +46,8 @@ def sync_dhcp_leases_command(limit: int, only_authorized: bool) -> None:
         click.echo('MIKROTIK_DHCP_STATIC_LEASE_ENABLED=False (fitur tidak aktif). Tetap bisa dijalankan, tapi disarankan aktifkan agar konsisten.')
 
     dhcp_server_name = (settings_service.get_setting('MIKROTIK_DHCP_LEASE_SERVER_NAME', '') or '').strip() or None
+    if enabled and not dhcp_server_name:
+        raise click.ClickException('MIKROTIK_DHCP_LEASE_SERVER_NAME wajib diisi saat MIKROTIK_DHCP_STATIC_LEASE_ENABLED=True')
 
     # Respect configured client CIDRs to avoid binding leases to non-client subnets.
     cidrs = []

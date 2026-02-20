@@ -99,6 +99,12 @@ def _ensure_static_dhcp_lease(
     if not _is_mikrotik_operations_enabled():
         logger.info("MikroTik ops disabled: skip DHCP static lease")
         return
+    # Safety: if server pin is missing, don't attempt to manage static DHCP leases.
+    # Without a DHCP server name, MikroTik may have multiple leases across servers and we might touch the wrong one.
+    if not (server and str(server).strip()):
+        logger.warning('Skip DHCP static lease: MIKROTIK_DHCP_LEASE_SERVER_NAME kosong (butuh pin server).')
+        return
+
     with get_mikrotik_connection() as api:
         if not api:
             logger.warning("Tidak bisa konek MikroTik untuk DHCP static lease")

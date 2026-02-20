@@ -697,52 +697,85 @@ def upsert_dhcp_static_lease(
     if not address:
         return False, "IP address tidak valid"
 
+    managed_marker = None
+    if comment:
+        text = str(comment)
+        if 'lpsaring|static-dhcp' in text:
+            managed_marker = 'lpsaring|static-dhcp'
+
+    server_norm = (str(server).strip() if server is not None else '')
+    if server_norm == '':
+        server_norm = ''
+        server = None
+
+    # Safety: if this is a managed static-dhcp comment, require an explicit DHCP server pin.
+    # Otherwise, we could accidentally update a lease that belongs to another DHCP server (Kamtib/AOP/etc).
+    if managed_marker and server is None:
+        return False, 'MIKROTIK_DHCP_LEASE_SERVER_NAME wajib diset untuk managed static-dhcp (lpsaring|static-dhcp)'
+
     try:
         resource = api_connection.get_resource('/ip/dhcp-server/lease')
-        leases = resource.get(**{'mac-address': mac_address})
+        leases = resource.get(**{'mac-address': mac_address}) or []
+
+        # Cleanup any *managed* leases for this MAC that ended up on other DHCP servers.
+        # This prevents cross-server duplication caused by older behavior/misconfiguration.
+        if managed_marker and server is not None:
+            for lease in list(leases):
+                lease_id = lease.get('id') or lease.get('.id')
+                lease_server = str(lease.get('server') or '').strip()
+                lease_comment = str(lease.get('comment') or '')
+                if not lease_id:
+                    continue
+                if managed_marker not in lease_comment:
+                    continue
+                if lease_server == server_norm:
+                    continue
+                try:
+                    resource.remove(id=lease_id)
+                except Exception:
+                    # Best-effort cleanup.
+                    pass
+
+            # Refresh leases snapshot after cleanup attempts.
+            leases = resource.get(**{'mac-address': mac_address}) or []
 
         chosen: Optional[dict] = None
         if leases:
-            if server:
-                server_norm = str(server).strip()
+            if server is not None:
                 for lease in leases:
                     if str(lease.get('server') or '').strip() == server_norm:
                         chosen = lease
                         break
-                # Jika tidak ada lease yang match server, update lease pertama yang ada
-                # (hindari membuat duplikat lease untuk MAC yang sama).
-                if not chosen:
-                    chosen = leases[0]
             else:
                 chosen = leases[0]
 
         if chosen:
             lease_id = chosen.get('id') or chosen.get('.id')
             if not lease_id:
-                return False, "Entri DHCP lease tidak memiliki ID"
+                return False, 'Entri DHCP lease tidak memiliki ID'
 
             is_dynamic = str(chosen.get('dynamic') or '').strip().lower() in {'true', 'yes', '1'}
             if is_dynamic:
                 try:
                     resource.call('make-static', {'numbers': lease_id})
                 except Exception as e:
-                    return False, f"Gagal make-static DHCP lease: {e}"
+                    return False, f'Gagal make-static DHCP lease: {e}'
 
             update_data: dict[str, Any] = {'.id': lease_id, 'address': address}
             if comment is not None:
                 update_data['comment'] = comment
-            if server:
-                update_data['server'] = server
+            # NOTE: don't rewrite server when chosen already matches server_norm.
             resource.set(**update_data)
-            return True, "Sukses"
+            return True, 'Sukses'
 
+        # If server is pinned and no lease exists for that server, create a new one.
         add_data: dict[str, Any] = {'mac-address': mac_address, 'address': address}
         if comment is not None:
             add_data['comment'] = comment
-        if server:
-            add_data['server'] = server
+        if server is not None:
+            add_data['server'] = server_norm
         resource.add(**add_data)
-        return True, "Sukses"
+        return True, 'Sukses'
     except Exception as e:
         return False, str(e)
 
