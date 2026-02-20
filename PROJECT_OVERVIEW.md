@@ -17,6 +17,7 @@ Portal hotspot berbasis web untuk manajemen paket, transaksi, dan integrasi pera
 2) OTP diverifikasi; backend menentukan konteks klien (IP/MAC) dan mengikat perangkat (ip-binding + record device).
 	- Default terbaru: OTP sukses = device yang dipakai ikut **terotorisasi** (self-authorization) agar tidak ke-block saat MAC berubah (privacy/random).
 	- User juga bisa mengikat/mengelola perangkat dari UI (halaman akun) bila diperlukan.
+	- Opsional (disarankan): stabilkan IP dengan DHCP static lease (MAC -> IP) agar address-list (IP-based) tidak mudah stale; gunakan `MIKROTIK_DHCP_STATIC_LEASE_ENABLED=True` dan pin server `MIKROTIK_DHCP_LEASE_SERVER_NAME`.
 3) Status akses ditentukan dari kuota dan masa aktif; profil MikroTik disesuaikan.
 4) Address-list di MikroTik di-sync (active/fup/habis/expired/inactive) untuk policy.
 5) Walled-garden mengizinkan akses portal dan halaman status.

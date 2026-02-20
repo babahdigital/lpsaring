@@ -165,6 +165,10 @@ docker compose -f docker-compose.prod.yml exec -T backend flask cleanup-transact
 
 - Pastikan file `.env.prod` terisi lengkap untuk backend dan service produksi.
 - Cloudflare Tunnel dijalankan via `cloudflared` di `docker-compose.prod.yml`. Untuk stabilitas jaringan (menghindari error QUIC `timeout: no recent network activity`), protokol tunnel dipaksa menggunakan **HTTP/2**.
+- Jika memakai DHCP static lease (disarankan untuk mengurangi "putus-nyambung" akibat IP berubah), pastikan:
+  - `MIKROTIK_DHCP_STATIC_LEASE_ENABLED=True`
+  - `MIKROTIK_DHCP_LEASE_SERVER_NAME` menunjuk DHCP server hotspot utama (mis. `Klien`).
+  - Ingat: runtime settings dibaca via `settings_service.get_setting()` (prioritas DB `application_settings`, fallback ke ENV). Pastikan nilai DB tidak kosong/salah.
 - `.env.prod` dan `.env.public.prod` sebaiknya dianggap sebagai **sumber kebenaran di laptop** (lokal) lalu di-upload ke Pi saat deploy. Hindari edit manual di Pi agar konfigurasi tidak “drift”.
 - Pastikan file `.env.public.prod` ada karena service frontend membaca file ini secara langsung.
 - Jika ingin tombol “Hubungi Admin” mengarah ke WhatsApp, isi juga di `.env.public.prod`:

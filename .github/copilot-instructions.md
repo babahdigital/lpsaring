@@ -46,6 +46,10 @@ Prinsip: **lokal adalah source-of-truth**, Pi hanya target.
 	4) Publish image (tag `v*` atau `workflow_dispatch`) → tunggu hijau
 	5) Deploy Pi via `deploy_pi.sh --prune` (upload env lokal + pull + up -d + healthcheck)
 
+## Aturan Keamanan (WAJIB)
+- Jangan pernah menampilkan/menyalin secret ke chat/log (contoh: token tunnel, API key, password).
+- Hindari perintah yang mencetak secret secara tidak sengaja, misalnya `docker inspect` pada container yang membawa token sebagai argumen.
+
 Catatan workflow publish:
 - `.github/workflows/docker-publish.yml` jalan saat push tag `v*` atau manual `workflow_dispatch`.
 
@@ -60,6 +64,10 @@ Tujuan: user tidak “ke-block” setelah OTP sukses walau MAC berubah (privacy/
 - `REQUIRE_EXPLICIT_DEVICE_AUTH=True` mengaktifkan mekanisme `pending-auth` untuk device baru.
 - `OTP_AUTO_AUTHORIZE_DEVICE=True` (default) berarti **OTP sukses = user mengotorisasi device yang sedang dipakai**, sehingga tidak masuk `pending-auth` pada jalur OTP.
 - Pengecualian: jika login memakai `OTP_BYPASS_CODE`, auto-authorize tidak dilakukan (lebih aman).
+
+## Kebijakan DHCP Static Lease (Anti Putus-Nyambung)
+- Jika `MIKROTIK_DHCP_STATIC_LEASE_ENABLED=True`, WAJIB set `MIKROTIK_DHCP_LEASE_SERVER_NAME` ke DHCP server hotspot utama (mis. `Klien`).
+- Backend versi terbaru tidak akan menulis lease managed `lpsaring|static-dhcp` tanpa pin server, dan tidak akan mengupdate lease milik server lain.
 
 ## Dokumentasi Wajib
 - Setiap dokumen teknis yang diperbarui **wajib menyertakan tautan lampiran** ke `.github/copilot-instructions.md` sebagai pondasi pengembangan (dokumen ini tidak perlu melampirkan dirinya sendiri).
