@@ -203,12 +203,46 @@ def bind_current_device(current_user_id):
     if getattr(user, 'is_blocked', False):
         abort(HTTPStatus.FORBIDDEN, description="Akun Anda diblokir oleh Admin.")
 
-    client_ip = get_client_ip()
     user_agent = request.headers.get('User-Agent')
+
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    # Best-effort: terima input dari captive portal (query/body) bila tersedia.
+    client_ip = (
+        payload.get('client_ip')
+        or payload.get('clientIp')
+        or payload.get('ip')
+        or payload.get('client-ip')
+        or request.args.get('client_ip')
+        or request.args.get('ip')
+        or request.args.get('client-ip')
+        or None
+    )
+    client_mac = (
+        payload.get('client_mac')
+        or payload.get('clientMac')
+        or payload.get('mac')
+        or payload.get('mac-address')
+        or payload.get('client-mac')
+        or request.args.get('client_mac')
+        or request.args.get('mac')
+        or request.args.get('mac-address')
+        or request.args.get('client-mac')
+        or None
+    )
+
+    # Jika tidak ada client_ip dari portal, jangan pakai get_client_ip() mentah-mentah karena
+    # sering berupa IP publik/proxy. Biarkan service mencoba resolve IP dari MikroTik.
+    if not client_ip:
+        client_ip = None
+
     ok, msg, _resolved_ip = apply_device_binding_for_login(
         user,
         client_ip,
         user_agent,
+        client_mac,
         bypass_explicit_auth=True,
     )
     if not ok:

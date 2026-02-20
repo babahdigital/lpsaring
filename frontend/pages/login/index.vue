@@ -266,9 +266,19 @@ async function handleVerifyOtp() {
       clientMac: clientMac || null,
     })
     if (loginResponse == null) {
+      const errorText = authStore.error || ''
       const statusRedirectPath = authStore.getStatusRedirectPath('login')
       if (statusRedirectPath && import.meta.client) {
         await navigateTo(statusRedirectPath, { replace: true })
+        return
+      }
+
+      if (import.meta.client && errorText.includes('Perangkat belum diotorisasi')) {
+        await navigateTo('/captive/otorisasi-perangkat', { replace: true })
+        return
+      }
+      if (import.meta.client && errorText.includes('Limit perangkat tercapai')) {
+        await navigateTo('/akun', { replace: true })
         return
       }
       const errorStatus = authStore.getAccessStatusFromError(authStore.error)

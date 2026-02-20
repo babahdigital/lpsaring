@@ -523,10 +523,13 @@ def verify_otp():
             return jsonify(AuthErrorResponseSchema(error="Terlalu banyak percobaan OTP. Silakan coba lagi nanti.").model_dump()), HTTPStatus.TOO_MANY_REQUESTS
         otp_bypass_code = current_app.config.get('OTP_BYPASS_CODE', '000000')
         bypass_allowed = current_app.config.get('OTP_ALLOW_BYPASS', False)
+        used_bypass_code = False
+
         otp_ok = verify_otp_from_redis(phone_e164, data.otp)
         if not otp_ok and bypass_allowed and data.otp == otp_bypass_code:
             current_app.logger.warning("OTP bypass digunakan untuk login.")
             otp_ok = True
+            used_bypass_code = True
         if not otp_ok:
             _increment_otp_fail_count(phone_e164)
             increment_metric("otp.verify.failed")
@@ -567,23 +570,35 @@ def verify_otp():
             )
 
         if user_to_login.role in [UserRole.USER, UserRole.KOMANDAN, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
-            # Jika explicit device auth diaktifkan, best-practice adalah:
-            # - device pertama user boleh auto-authorize setelah OTP berhasil
-            # - device berikutnya wajib explicit authorization (tidak bypass)
-            bypass_explicit = True
-            try:
-                require_explicit = (settings_service.get_setting('REQUIRE_EXPLICIT_DEVICE_AUTH', 'False') == 'True')
-                if require_explicit and user_to_login.role in [UserRole.USER, UserRole.KOMANDAN]:
-                    has_any_authorized_device = db.session.scalar(
-                        select(UserDevice.id).where(
-                            UserDevice.user_id == user_to_login.id,
-                            UserDevice.is_authorized.is_(True),
-                        ).limit(1)
-                    ) is not None
-                    bypass_explicit = not has_any_authorized_device
-            except Exception:
-                # Fail-safe: tetap gunakan perilaku lama (bypass) jika ada error query
+            # Policy default: OTP sukses = user sudah memverifikasi dirinya sendiri.
+            # Jadi device/MAC yang sedang dipakai boleh langsung di-authorize (tidak masuk pending-auth).
+            #
+            # Catatan keamanan:
+            # - Jika OTP bypass code dipakai, kita JANGAN auto-authorize device.
+            # - Bisa dimatikan lewat config OTP_AUTO_AUTHORIZE_DEVICE=False.
+            otp_auto_authorize = current_app.config.get('OTP_AUTO_AUTHORIZE_DEVICE', True)
+
+            bypass_explicit = bool(otp_auto_authorize) and (not used_bypass_code)
+
+            # Fallback ke perilaku lama (opsional) jika auto-authorize dimatikan atau OTP bypass dipakai.
+            if not bypass_explicit:
+                # Jika explicit device auth diaktifkan, best-practice lama:
+                # - device pertama user boleh auto-authorize setelah OTP berhasil
+                # - device berikutnya wajib explicit authorization (tidak bypass)
                 bypass_explicit = True
+                try:
+                    require_explicit = (settings_service.get_setting('REQUIRE_EXPLICIT_DEVICE_AUTH', 'False') == 'True')
+                    if require_explicit and user_to_login.role in [UserRole.USER, UserRole.KOMANDAN]:
+                        has_any_authorized_device = db.session.scalar(
+                            select(UserDevice.id).where(
+                                UserDevice.user_id == user_to_login.id,
+                                UserDevice.is_authorized.is_(True),
+                            ).limit(1)
+                        ) is not None
+                        bypass_explicit = not has_any_authorized_device
+                except Exception:
+                    # Fail-safe: tetap gunakan perilaku lama (bypass) jika ada error query
+                    bypass_explicit = True
 
             ok_binding, msg_binding, resolved_ip = apply_device_binding_for_login(
                 user_to_login,

@@ -208,6 +208,11 @@ class Config:
     # Access token tetap pendek; refresh token yang panjang untuk UX "ingat saya".
     REFRESH_TOKEN_EXPIRES_DAYS = get_env_int('REFRESH_TOKEN_EXPIRES_DAYS', 30)
 
+    # --- Konfigurasi OTP / Device Authorization ---
+    # Default: OTP sukses dianggap self-authorization, jadi device/MAC yang dipakai boleh langsung authorized.
+    # Set False jika ingin kembali ke mode "device pertama saja" (atau murni admin authorization).
+    OTP_AUTO_AUTHORIZE_DEVICE = get_env_bool('OTP_AUTO_AUTHORIZE_DEVICE', 'True')
+
     REFRESH_COOKIE_NAME = os.environ.get('REFRESH_COOKIE_NAME', 'refresh_token')
     REFRESH_COOKIE_HTTPONLY = get_env_bool('REFRESH_COOKIE_HTTPONLY', 'True')
     REFRESH_COOKIE_SECURE = get_env_bool(
