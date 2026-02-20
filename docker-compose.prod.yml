@@ -218,7 +218,7 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: hotspot_prod_cloudflared
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARED_TUNNEL_TOKEN:?Set CLOUDFLARED_TUNNEL_TOKEN in .env.prod}
+    command: tunnel --no-autoupdate --protocol http2 run --token ${CLOUDFLARED_TUNNEL_TOKEN:?Set CLOUDFLARED_TUNNEL_TOKEN in .env.prod}
     environment:
       - TUNNEL_TOKEN=${CLOUDFLARED_TUNNEL_TOKEN:?Set CLOUDFLARED_TUNNEL_TOKEN in .env.prod}
     depends_on:

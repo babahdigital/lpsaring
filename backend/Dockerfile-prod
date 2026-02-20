@@ -83,6 +83,13 @@ ENV LANG=id_ID.UTF-8
 ENV LANGUAGE=id_ID:id
 ENV LC_ALL=id_ID.UTF-8
 
+# Pastikan fontconfig punya direktori cache yang writable.
+# Tanpa ini, beberapa library (mis. WeasyPrint) bisa spam: "Fontconfig error: No writable cache directories".
+RUN mkdir -p /app/.cache/fontconfig && \
+    chown -R ${APP_USER}:${APP_GROUP} /app/.cache
+ENV XDG_CACHE_HOME=/app/.cache
+ENV FC_CACHEDIR=/app/.cache/fontconfig
+
 # Salin virtual environment yang sudah berisi dependensi Python dari builder
 COPY --from=builder /opt/venv /opt/venv
 
