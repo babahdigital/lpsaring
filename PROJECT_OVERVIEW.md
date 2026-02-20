@@ -14,12 +14,17 @@ Portal hotspot berbasis web untuk manajemen paket, transaksi, dan integrasi pera
 
 ## Alur Aplikasi Ringkas
 1) User akses portal/captive dan request OTP.
-2) OTP diverifikasi; backend menentukan IP/MAC dan membuat ip-binding + device record.
+2) OTP diverifikasi; backend menentukan konteks klien (IP/MAC) dan mengikat perangkat (ip-binding + record device).
+	- Default terbaru: OTP sukses = device yang dipakai ikut **terotorisasi** (self-authorization) agar tidak ke-block saat MAC berubah (privacy/random).
+	- User juga bisa mengikat/mengelola perangkat dari UI (halaman akun) bila diperlukan.
 3) Status akses ditentukan dari kuota dan masa aktif; profil MikroTik disesuaikan.
 4) Address-list di MikroTik di-sync (active/fup/habis/expired/inactive) untuk policy.
 5) Walled-garden mengizinkan akses portal dan halaman status.
 6) Transaksi paket (Midtrans) menambah kuota dan memicu sinkronisasi.
 7) Komandan dapat request kuota/unlimited, admin melakukan approval.
+
+Catatan:
+- Untuk kasus device belum ada di DB (mis. MAC berubah), auto-login dapat melakukan fallback lewat sesi hotspot MikroTik by IP (best-effort) agar UX tidak putus.
 
 ## Untuk Siapa
 - Admin/Operator hotspot: mengelola user, paket, transaksi, promo

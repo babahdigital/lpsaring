@@ -74,9 +74,25 @@ Lampiran wajib:
 - `phone_number`: string
 - `otp`: string (6 digit)
 
+Opsional (untuk captive/redirect MikroTik):
+- `client_ip`: string (IP lokal klien hotspot)
+- `client_mac`: string (MAC klien; jika kosong backend akan mencoba resolve dari MikroTik)
+- `hotspot_login_context`: boolean (true jika dipanggil dari halaman captive)
+
 **Response 200 (VerifyOtpResponseSchema)**
 - `access_token`: string
 - `token_type`: string (`bearer`)
+
+Field tambahan (best-effort, tergantung mode hotspot):
+- `hotspot_login_required`: boolean
+- `hotspot_username`: string | null
+- `hotspot_password`: string | null
+- `session_token`: string | null
+- `session_url`: string | null
+
+Catatan penting:
+- Secara default, OTP sukses akan mengikat & mengotorisasi device yang sedang dipakai (lihat ENV `OTP_AUTO_AUTHORIZE_DEVICE`).
+- Jika OTP bypass code dipakai (`OTP_ALLOW_BYPASS=true` + `OTP_BYPASS_CODE`), auto-authorize device **tidak** dilakukan.
 
 ## GET /api/auth/me
 **Auth:** Ya

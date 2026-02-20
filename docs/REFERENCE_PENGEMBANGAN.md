@@ -114,6 +114,7 @@ Ringkasan perubahan yang berkaitan dengan autentikasi hotspot, captive portal, d
 2. **Auto-login dashboard dari `/login`**
   - `initializeAuth()` mencoba `/auth/auto-login` jika tidak ada token.
   - Jika query `ip`/`mac` tersedia (redirect dari MikroTik), maka `client_ip`/`client_mac` ikut dikirim.
+  - Fallback terbaru: jika device belum ada di DB, backend dapat membaca sesi hotspot aktif MikroTik by IP untuk memetakan user (best-effort) agar lebih toleran saat MAC berubah.
 
 3. **Captive flow tetap di halaman terhubung**
   - `dst` dipaksa ke `/captive/terhubung`.
@@ -130,6 +131,17 @@ Ringkasan perubahan yang berkaitan dengan autentikasi hotspot, captive portal, d
 6. **Normalisasi MAC & resolusi MAC yang lebih robust**
   - Decode URL-encoded MAC dan samakan separator.
   - Resolusi MAC lewat hotspot host/active/ARP/DHCP.
+
+8. **Otorisasi perangkat oleh user (self-service)**
+  - Jika mekanisme explicit device auth aktif (`REQUIRE_EXPLICIT_DEVICE_AUTH=True`), user dapat mengikat perangkatnya sendiri dari UI.
+  - Endpoint: `POST /api/users/me/devices/bind-current`.
+  - UI:
+    - `/akun` (DeviceManagerCard)
+    - `/captive/otorisasi-perangkat` (jika captive menerima error “Perangkat belum diotorisasi”)
+
+9. **OTP sukses = otorisasi perangkat (default)**
+  - `OTP_AUTO_AUTHORIZE_DEVICE=True` (default) membuat OTP sukses mengotorisasi device yang sedang dipakai agar tidak ke-block saat MAC berubah (privacy/random).
+  - Jika OTP bypass code dipakai, auto-authorize tidak dilakukan.
 
 7. **Perbaikan deteksi IP (ProxyFix + X-Forwarded-For)**
   - `get_client_ip()` sekarang bisa memakai X-Forwarded-For jika proxy dipercaya.

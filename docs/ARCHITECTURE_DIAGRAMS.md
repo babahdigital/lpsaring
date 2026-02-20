@@ -102,6 +102,7 @@ sequenceDiagram
   BE->>PG: load user + devices + write login_history
   BE->>MT: resolve MAC/IP (host/active/ARP/DHCP)
   BE->>MT: upsert ip-binding (MAC-only)
+  Note over FE,BE: Default terbaru: OTP sukses mengotorisasi device yang dipakai (menghindari pending-auth saat MAC berubah)
   BE->>MT: sync address-list status
   BE-->>U: 200 + Set-Cookie auth_token + refresh_token
 

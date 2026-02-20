@@ -10,10 +10,18 @@ Lampiran wajib:
   - Registrasi user (tamping atau non‑tamping).
 - POST /auth/request-otp
 - POST /auth/verify-otp
+- POST /auth/auto-login
+- POST /auth/session/consume
 - POST /auth/admin/login
 - GET /auth/me
 - PUT /auth/me/profile
 - POST /auth/me/change-password
+
+## 1.1) Devices (Self-service, User)
+- GET /users/me/devices
+- POST /users/me/devices/bind-current
+- PUT /users/me/devices/{id}/label
+- DELETE /users/me/devices/{id}
 
 ## 2) User Management (Admin)
 - GET /admin/users
