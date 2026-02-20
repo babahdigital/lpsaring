@@ -22,6 +22,7 @@ Optional:
   --skip-pull                   Skip docker compose pull
   --skip-health                 Skip health check (curl /api/ping)
   --clean                       Run docker compose down -v --remove-orphans before deploy
+  --prune                       Run safe docker prune on remote (containers/images/networks/build cache; keeps volumes)
   --sync-phones                 After deploy, run phone normalization report (dry-run) inside backend container
   --sync-phones-apply           After deploy, APPLY phone normalization to DB (aborts on duplicates)
   --allow-placeholders          Allow deploy even if .env.prod still contains CHANGE_ME_* values
@@ -59,6 +60,7 @@ SSL_PRIVKEY=""
 SKIP_PULL="false"
 SKIP_HEALTH="false"
 DO_CLEAN="false"
+DO_PRUNE="false"
 ALLOW_PLACEHOLDERS="false"
 DRY_RUN="false"
 SYNC_PHONES="false"
@@ -77,6 +79,7 @@ while [[ $# -gt 0 ]]; do
     --skip-pull) SKIP_PULL="true"; shift ;;
     --skip-health) SKIP_HEALTH="true"; shift ;;
     --clean) DO_CLEAN="true"; shift ;;
+    --prune) DO_PRUNE="true"; shift ;;
     --sync-phones) SYNC_PHONES="true"; shift ;;
     --sync-phones-apply) SYNC_PHONES_APPLY="true"; shift ;;
     --allow-placeholders) ALLOW_PLACEHOLDERS="true"; shift ;;
@@ -172,6 +175,7 @@ echo "==> SSH port      : $PI_PORT"
 echo "==> Rsync         : $HAS_RSYNC"
 echo "==> Dry run       : $DRY_RUN"
 echo "==> Sync phones   : $SYNC_PHONES (apply=$SYNC_PHONES_APPLY)"
+echo "==> Prune remote  : $DO_PRUNE (keeps volumes)"
 
 timestamp=$(date +%Y%m%d_%H%M%S)
 remote_prepare_cmd=$(cat <<EOF
@@ -257,6 +261,13 @@ set -e
 cd "$REMOTE_DIR"
 if [ "$DO_CLEAN" = "true" ]; then
   docker compose --env-file .env.prod -f docker-compose.prod.yml down -v --remove-orphans || true
+fi
+if [ "$DO_PRUNE" = "true" ]; then
+  echo "==> Prune: removing unused Docker resources (keeping volumes)"
+  docker container prune -f || true
+  docker image prune -af || true
+  docker network prune -f || true
+  docker builder prune -af || true
 fi
 if [ "$SKIP_PULL" = "false" ]; then
   docker compose --env-file .env.prod -f docker-compose.prod.yml pull
