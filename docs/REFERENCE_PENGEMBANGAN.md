@@ -354,7 +354,9 @@ Implikasi konfigurasi:
   - `IP_BINDING_FAIL_OPEN=False` agar gagal binding tidak membuka akses.
 
 3. **Approval perangkat**
-  - `REQUIRE_EXPLICIT_DEVICE_AUTH=True` jika ingin user/admin menyetujui perangkat baru.
+  - `REQUIRE_EXPLICIT_DEVICE_AUTH=True` jika ingin perangkat baru melewati mekanisme otorisasi (pending-auth).
+  - `OTP_AUTO_AUTHORIZE_DEVICE=True` (default) membuat **OTP sukses = user mengotorisasi device yang sedang dipakai**, sehingga tidak ke-block saat MAC berubah (privacy/random).
+  - Jika ingin benar-benar “admin approve device baru”, set `OTP_AUTO_AUTHORIZE_DEVICE=False`.
 
 4. **Walled garden hanya untuk portal/info**
   - Portal, API, dan domain pembayaran/WA di-allow untuk proses OTP.
