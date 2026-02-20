@@ -465,6 +465,49 @@ def get_hotspot_user_ip(api_connection: Any, username: str) -> Tuple[bool, Optio
 
     return True, None, "IP tidak ditemukan"
 
+
+def get_hotspot_active_session_by_ip(
+    api_connection: Any,
+    ip_address: str,
+) -> Tuple[bool, Optional[Dict[str, Any]], str]:
+    """Ambil info sesi hotspot untuk IP tertentu.
+
+    Dipakai untuk fallback saat perangkat belum terdaftar di DB, tetapi user sudah login via portal MikroTik.
+    Return dict minimal berisi: user, mac-address, server, address (jika tersedia).
+    """
+    if not ip_address:
+        return False, None, "IP address tidak valid"
+
+    try:
+        active_resource = api_connection.get_resource('/ip/hotspot/active')
+        actives = active_resource.get(address=ip_address)
+        if actives:
+            entry = actives[0]
+            return True, {
+                'user': entry.get('user'),
+                'mac-address': entry.get('mac-address'),
+                'server': entry.get('server'),
+                'address': entry.get('address') or ip_address,
+            }, "Sukses (hotspot active)"
+    except Exception:
+        pass
+
+    try:
+        host_resource = api_connection.get_resource('/ip/hotspot/host')
+        hosts = host_resource.get(address=ip_address)
+        if hosts:
+            entry = hosts[0]
+            return True, {
+                'user': entry.get('user'),
+                'mac-address': entry.get('mac-address'),
+                'server': entry.get('server'),
+                'address': entry.get('address') or ip_address,
+            }, "Sukses (hotspot host)"
+    except Exception as e:
+        return False, None, str(e)
+
+    return True, None, "Sesi hotspot tidak ditemukan"
+
 def upsert_address_list_entry(
     api_connection: Any,
     address: str,

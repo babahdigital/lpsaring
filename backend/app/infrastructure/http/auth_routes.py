@@ -48,7 +48,11 @@ from app.utils.auth_cookie_utils import (
 
 from app.services.user_management.helpers import _generate_password, _handle_mikrotik_operation
 from app.services.user_management.user_profile import _get_active_registration_bonus
-from app.infrastructure.gateways.mikrotik_client import activate_or_update_hotspot_user
+from app.infrastructure.gateways.mikrotik_client import (
+    activate_or_update_hotspot_user,
+    get_mikrotik_connection,
+    get_hotspot_active_session_by_ip,
+)
 from app.services.device_management_service import (
     apply_device_binding_for_login,
     resolve_binding_context,
@@ -735,15 +739,54 @@ def auto_login():
         if not device:
             device = device_query.filter(UserDevice.ip_address == client_ip).order_by(UserDevice.last_seen_at.desc()).first()
 
-        if not device or not device.user:
-            return jsonify(AuthErrorResponseSchema(error="Perangkat belum terdaftar atau belum diotorisasi.").model_dump()), HTTPStatus.UNAUTHORIZED
+        user = device.user if (device and getattr(device, 'user', None)) else None
 
-        user = device.user
+        # Fallback: device belum pernah terdaftar, tapi hotspot MikroTik sudah punya sesi aktif untuk IP ini.
+        # Ini membuat sistem lebih fleksibel untuk kasus pergantian MAC (privacy/random) atau login via portal MikroTik.
+        if user is None:
+            hotspot_username: Optional[str] = None
+            hotspot_mac: Optional[str] = None
+            try:
+                with get_mikrotik_connection() as api:
+                    if api:
+                        ok_sess, sess, _msg = get_hotspot_active_session_by_ip(api, str(client_ip))
+                        if ok_sess and sess:
+                            hotspot_username = str(sess.get('user') or '').strip() or None
+                            if sess.get('mac-address'):
+                                hotspot_mac = normalize_mac(str(sess.get('mac-address') or ''))
+            except Exception:
+                hotspot_username = None
+                hotspot_mac = None
+
+            if hotspot_username:
+                try:
+                    variations = get_phone_number_variations(hotspot_username)
+                except Exception:
+                    variations = []
+                if variations:
+                    user = db.session.execute(
+                        select(User).where(
+                            User.phone_number.in_(variations),
+                            User.is_active.is_(True),
+                            User.approval_status == ApprovalStatus.APPROVED,
+                        )
+                    ).scalar_one_or_none()
+
+                    if user and hotspot_mac:
+                        resolved_mac = hotspot_mac
+
+        if not user:
+            return jsonify(AuthErrorResponseSchema(error="Perangkat belum terdaftar atau belum diotorisasi.").model_dump()), HTTPStatus.UNAUTHORIZED
         if getattr(user, 'is_blocked', False):
             return _build_status_error("blocked", "Akun Anda diblokir oleh Admin."), HTTPStatus.FORBIDDEN
 
         if user.role in [UserRole.USER, UserRole.KOMANDAN, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
-            ok_binding, msg_binding, resolved_ip = apply_device_binding_for_login(user, client_ip, user_agent, resolved_mac or device.mac_address)
+            ok_binding, msg_binding, resolved_ip = apply_device_binding_for_login(
+                user,
+                client_ip,
+                user_agent,
+                resolved_mac,
+            )
             if not ok_binding:
                 if msg_binding in ["Limit perangkat tercapai", "Perangkat belum diotorisasi"]:
                     return jsonify(AuthErrorResponseSchema(error=msg_binding).model_dump()), HTTPStatus.FORBIDDEN
