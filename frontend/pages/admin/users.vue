@@ -190,6 +190,7 @@ const statusFilterOptions = [
   { text: 'Nonaktif (Akun)', value: 'inactive' },
   { text: 'Unlimited', value: 'unlimited' },
   { text: 'Debt', value: 'debt' },
+  { text: 'Habis (Kuota Habis)', value: 'habis' },
   { text: 'FUP', value: 'fup' },
   { text: 'Expired', value: 'expired' },
   { text: 'Inactive (Kuota / Tanpa Kuota)', value: 'inactive_quota' },

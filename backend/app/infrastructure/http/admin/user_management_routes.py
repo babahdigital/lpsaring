@@ -271,6 +271,19 @@ def get_users_list(current_admin: User):
                             sa.or_(User.quota_expiry_date.is_(None), User.quota_expiry_date >= now_utc),
                         )
                     )
+                elif status in {'habis', 'quota_habis', 'exhausted'}:
+                    # Mirror hotspot sync: habis when not blocked, not unlimited, purchased>0, remaining<=0,
+                    # and not expired.
+                    conditions.append(
+                        sa.and_(
+                            User.is_blocked.is_(False),
+                            User.is_unlimited_user.is_(False),
+                            User.is_active.is_(True),
+                            User.total_quota_purchased_mb > 0,
+                            remaining_num <= 0,
+                            sa.or_(User.quota_expiry_date.is_(None), User.quota_expiry_date >= now_utc),
+                        )
+                    )
                 elif status in {'inactive_quota', 'quota_inactive', 'no_quota'}:
                     # "Inactive" quota state: user aktif, bukan unlimited, purchased<=0, dan tidak expired.
                     conditions.append(
