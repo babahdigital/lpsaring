@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Report {{ transaction.midtrans_order_id }}</title>
   <style>
     * { box-sizing: border-box; }
@@ -164,8 +164,8 @@
         </tr>
       </thead>
       <tbody>
-        {% if events and events|length > 0 %}
-          {% for ev in events %}
+        <!--{% if events and events|length > 0 %}-->
+          <!--{% for ev in events %}-->
             <tr>
               <td class="mono">{{ ev.created_at_local or '-' }}</td>
               <td>{{ ev.source }}</td>
@@ -173,10 +173,10 @@
               <td>{{ ev.status or '-' }}</td>
               <td class="small mono">{{ ev.payload_summary or '-' }}</td>
             </tr>
-          {% endfor %}
-        {% else %}
+          <!--{% endfor %}-->
+        <!--{% else %}-->
           <tr><td colspan="5">Belum ada histori tersimpan.</td></tr>
-        {% endif %}
+        <!--{% endif %}-->
       </tbody>
     </table>
 

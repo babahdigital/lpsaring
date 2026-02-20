@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -259,6 +259,7 @@
 
                 <dl><div class="detail-item"><dt>Invoice number</dt><dd>{{ transaction.midtrans_order_id }}</dd></div><div class="detail-item"><dt>Invoice date</dt><dd>{{ transaction.created_at | format_datetime_short }}</dd></div><div class="detail-item"><dt>Payment date</dt><dd>{{ payment_date_value }}</dd></div><div class="detail-item"><dt>Payment method</dt><dd>{{ payment_method_value }}</dd></div><div class="detail-item"><dt>Status</dt><dd><span class="status {{ status_class }}">{{ transaction.status.value | format_status }}</span></dd></div></dl>
             </div>
+        </div>
 
         <table class="items-table">
             <thead>

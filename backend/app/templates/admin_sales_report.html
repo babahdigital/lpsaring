@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Laporan Penjualan</title>
   <style>
     * { box-sizing: border-box; }
@@ -100,13 +100,13 @@
           </tr>
         </thead>
         <tbody>
-          {% for r in period_summaries %}
+          <!--{% for r in period_summaries %}-->
             <tr>
               <td>{{ r.period }}</td>
               <td class="num">{{ r.qty | format_number }}</td>
               <td class="num">{{ r.revenue | format_currency }}</td>
             </tr>
-          {% endfor %}
+          <!--{% endfor %}-->
         </tbody>
       </table>
       <div class="note">Catatan: ringkasan periode dihitung berdasarkan waktu lokal (UTC offset aplikasi).</div>
@@ -123,18 +123,18 @@
         </tr>
       </thead>
       <tbody>
-        {% if packages and packages|length > 0 %}
-          {% for p in packages %}
+        <!--{% if packages and packages|length > 0 %}-->
+          <!--{% for p in packages %}-->
             <tr>
               <td>{{ p.rank }}</td>
               <td>{{ p.name }}</td>
               <td class="num">{{ p.qty | format_number }}</td>
               <td class="num">{{ p.revenue | format_currency }}</td>
             </tr>
-          {% endfor %}
-        {% else %}
+          <!--{% endfor %}-->
+        <!--{% else %}-->
           <tr><td colspan="4">Tidak ada transaksi sukses pada periode ini.</td></tr>
-        {% endif %}
+        <!--{% endif %}-->
       </tbody>
     </table>
 
@@ -148,17 +148,17 @@
         </tr>
       </thead>
       <tbody>
-        {% if methods and methods|length > 0 %}
-          {% for m in methods %}
+        <!--{% if methods and methods|length > 0 %}-->
+          <!--{% for m in methods %}-->
             <tr>
               <td>{{ m.method }}</td>
               <td class="num">{{ m.qty | format_number }}</td>
               <td class="num">{{ m.revenue | format_currency }}</td>
             </tr>
-          {% endfor %}
-        {% else %}
+          <!--{% endfor %}-->
+        <!--{% else %}-->
           <tr><td colspan="3">Belum ada data metode pembayaran.</td></tr>
-        {% endif %}
+        <!--{% endif %}-->
       </tbody>
     </table>
 
@@ -175,7 +175,7 @@
           </tr>
         </thead>
         <tbody>
-          {% for u in debt_users %}
+          <!--{% for u in debt_users %}-->
             <tr>
               <td>{{ u.full_name }}</td>
               <td>{{ u.phone_number }}</td>
@@ -183,7 +183,7 @@
               <td class="num">{{ u.debt_auto_mb | format_number }}</td>
               <td class="num">{{ u.debt_manual_mb | format_number }}</td>
             </tr>
-          {% endfor %}
+          <!--{% endfor %}-->
         </tbody>
       </table>
     {% endif %}

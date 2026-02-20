@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="id">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Laporan Debt Kuota</title>
     <style>
       * { box-sizing: border-box; }
@@ -70,28 +70,28 @@
         </tr>
       </thead>
       <tbody>
-        {% if items and items|length > 0 %}
-          {% for it in items %}
+        <!--{% if items and items|length > 0 %}-->
+          <!--{% for it in items %}-->
             <tr>
               <td class="nowrap">{{ it.debt_date or '-' }}</td>
               <td class="right nowrap">{{ it.amount_mb }}</td>
               <td class="right nowrap">{{ it.paid_mb }}</td>
               <td class="right nowrap">{{ it.remaining_mb }}</td>
               <td class="nowrap">
-                {% if it.is_paid %}
+                <!--{% if it.is_paid %}-->
                   <span class="badge badge-paid">LUNAS</span>
-                {% else %}
+                <!--{% else %}-->
                   <span class="badge badge-open">BELUM</span>
-                {% endif %}
+                <!--{% endif %}-->
               </td>
               <td>{{ it.note or '' }}</td>
             </tr>
-          {% endfor %}
-        {% else %}
+          <!--{% endfor %}-->
+        <!--{% else %}-->
           <tr>
             <td colspan="6" class="muted">Tidak ada riwayat debt manual.</td>
           </tr>
-        {% endif %}
+        <!--{% endif %}-->
       </tbody>
     </table>
   </body>
