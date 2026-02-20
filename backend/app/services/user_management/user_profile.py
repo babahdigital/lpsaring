@@ -440,7 +440,8 @@ def update_user_by_admin_comprehensive(target_user: User, admin_actor: User, dat
                 pass
 
     # Manual debt input / clear (admin-only)
-    if target_user.role != UserRole.KOMANDAN:
+    # Berlaku hanya untuk USER (termasuk tamping). Tidak berlaku untuk KOMANDAN/ADMIN/SUPER_ADMIN atau user unlimited.
+    if target_user.role == UserRole.USER and not bool(getattr(target_user, 'is_unlimited_user', False)):
         debt_package_id = data.get('debt_package_id')
         if debt_package_id:
             pkg = db.session.get(Package, debt_package_id)

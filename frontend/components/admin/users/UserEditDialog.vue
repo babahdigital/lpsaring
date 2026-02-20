@@ -180,6 +180,11 @@ watch(() => props.user, (newUser) => {
   }
 }, { immediate: true })
 
+watch(() => isDebtQuotaEnabled.value, (enabled) => {
+  if (enabled === true)
+    fetchAdminPackages().catch(() => {})
+})
+
 watch(() => formData.unlimited_time, (v) => {
   if (v === true)
     formData.add_days = 0
@@ -361,6 +366,10 @@ async function onSave() {
   if (valid) {
     const payload: any = { ...formData }
 
+    if (payload.role !== 'USER') {
+      isDebtQuotaEnabled.value = false
+    }
+
     if (isDebtQuotaEnabled.value !== true) {
       payload.debt_package_id = null
       payload.debt_date = null
@@ -516,7 +525,7 @@ function openDebtPdf() {
                     inset
                     hint="Aktifkan untuk menambah/mengelola debt kuota (berdasarkan paket)."
                     persistent-hint
-                    v-if="formData.role !== 'KOMANDAN'"
+                    v-if="formData.role === 'USER'"
                   />
                 </VCol>
 
@@ -587,7 +596,7 @@ function openDebtPdf() {
                     <AppTextField v-model.number="formData.add_days" label="Tambah Masa Aktif (Hari)" type="number" prepend-inner-icon="tabler-calendar-plus" />
                   </VCol>
 
-                  <template v-if="formData.role !== 'KOMANDAN' && isDebtQuotaEnabled">
+                  <template v-if="formData.role === 'USER' && isDebtQuotaEnabled">
                     <VCol cols="12">
                       <div class="text-overline">
                         Debt Kuota
