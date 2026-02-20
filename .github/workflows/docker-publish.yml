@@ -69,20 +69,20 @@ jobs:
 
       - name: Validasi Secret Docker Hub
         run: |
-          if [ -z "${{ secrets['DOCKERHUB_USERNAME'] }}" ] && [ -z "${{ secrets['DOCKER_USERNAME'] }}" ]; then
-            echo "Error: DOCKERHUB_USERNAME atau DOCKER_USERNAME secret tidak tersedia."
+          if [ -z "${{ secrets['DOCKER_USERNAME'] }}" ]; then
+            echo "Error: DOCKER_USERNAME secret tidak tersedia."
             exit 1
           fi
-          if [ -z "${{ secrets['DOCKERHUB_TOKEN'] }}" ] && [ -z "${{ secrets['DOCKER_PASSWORD'] }}" ]; then
-            echo "Error: DOCKERHUB_TOKEN atau DOCKER_PASSWORD secret tidak tersedia."
+          if [ -z "${{ secrets['DOCKER_PASSWORD'] }}" ]; then
+            echo "Error: DOCKER_PASSWORD secret tidak tersedia."
             exit 1
           fi
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets['DOCKERHUB_USERNAME'] || secrets['DOCKER_USERNAME'] }}
-          password: ${{ secrets['DOCKERHUB_TOKEN'] || secrets['DOCKER_PASSWORD'] }}
+          username: ${{ secrets['DOCKER_USERNAME'] }}
+          password: ${{ secrets['DOCKER_PASSWORD'] }}
 
       - name: Docker disk usage (before cleanup)
         if: ${{ github.event_name == 'workflow_dispatch' && (inputs.clean_before_deploy == true || inputs.aggressive_cleanup == true) }}
@@ -150,8 +150,8 @@ jobs:
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets['DOCKERHUB_USERNAME'] || secrets['DOCKER_USERNAME'] }}
-          password: ${{ secrets['DOCKERHUB_TOKEN'] || secrets['DOCKER_PASSWORD'] }}
+          username: ${{ secrets['DOCKER_USERNAME'] }}
+          password: ${{ secrets['DOCKER_PASSWORD'] }}
 
       - name: Stop current stack
         run: |
