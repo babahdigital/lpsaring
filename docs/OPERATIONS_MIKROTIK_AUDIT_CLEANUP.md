@@ -46,6 +46,14 @@ Jika hasil audit menunjukkan `stale_blocked_detected > 0`, lakukan cleanup:
 
 - `docker compose -f docker-compose.prod.yml exec backend python scripts/audit_mikrotik_total.py --cleanup-stale-blocked --apply`
 
+- `docker compose -f docker-compose.prod.yml exec backend /opt/venv/bin/python scripts/audit_mikrotik_total.py --print-json`
+Atau output manusia:
+
+- `docker compose -f docker-compose.prod.yml exec backend /opt/venv/bin/python scripts/audit_mikrotik_total.py`
+Jika hasil audit menunjukkan `stale_blocked_detected > 0`, lakukan cleanup:
+
+- `docker compose -f docker-compose.prod.yml exec backend /opt/venv/bin/python scripts/audit_mikrotik_total.py --cleanup-stale-blocked --apply`
+
 Efeknya:
 - Menghapus entry di `/ip/firewall/address-list` list `MIKROTIK_ADDRESS_LIST_BLOCKED` yang terdeteksi stale.
 - Tidak mengubah ip-binding.

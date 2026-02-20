@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import os
 import sys
 import uuid
 from dataclasses import dataclass
@@ -22,6 +23,13 @@ from datetime import datetime, timezone as dt_timezone
 from typing import Any, Optional
 
 import sqlalchemy as sa
+
+# Saat script dijalankan via path (contoh: `python scripts/audit_mikrotik_total.py`),
+# Python akan menambahkan direktori script (`/app/scripts`) ke sys.path, bukan root project.
+# Agar `import app` tetap berfungsi, pastikan root project (parent dari folder scripts) ada di sys.path.
+_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 
 from app import create_app
 from app.extensions import db
