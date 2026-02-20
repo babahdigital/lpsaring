@@ -6,7 +6,6 @@ name: Docker Publish & Optional Deploy
 
 on:
   push:
-    branches: ["main"]
     tags:
       - "v*"
   workflow_dispatch:
@@ -86,25 +85,25 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN || secrets.DOCKER_PASSWORD }}
 
       - name: Docker disk usage (before cleanup)
-        if: ${{ inputs.clean_before_deploy == true || inputs.aggressive_cleanup == true }}
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.clean_before_deploy == true || inputs.aggressive_cleanup == true) }}
         run: |
           docker system df || true
 
       - name: Safe cleanup (builder cache + dangling resources)
-        if: ${{ inputs.clean_before_deploy == true }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.clean_before_deploy == true }}
         run: |
           docker builder prune -af || true
           docker image prune -f || true
           docker container prune -f || true
 
       - name: Aggressive cleanup (optional)
-        if: ${{ inputs.aggressive_cleanup == true }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.aggressive_cleanup == true }}
         run: |
           docker image prune -a -f || true
           docker volume prune -f || true
 
       - name: Docker disk usage (after cleanup)
-        if: ${{ inputs.clean_before_deploy == true || inputs.aggressive_cleanup == true }}
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.clean_before_deploy == true || inputs.aggressive_cleanup == true) }}
         run: |
           docker system df || true
 
