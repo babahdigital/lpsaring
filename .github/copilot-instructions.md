@@ -18,10 +18,11 @@
 
 ## Konfigurasi & ENV
 - ENV dipisah:
-	- Root `.env` = Compose-only (interpolation DB_*, token tunnel)
-	- Root `.env.public` / `.env.public.prod` = frontend (Nuxt) container runtime config
-	- `backend/.env.public` + `backend/.env.local` = backend runtime config (public knobs vs secrets)
-	- `frontend/.env.*` hanya dipakai jika Nuxt dijalankan di luar Docker (opsional)
+	- Root `.env.prod` = **konfigurasi produksi** untuk backend/migrate/celery + compose (JANGAN di-commit; upload saat deploy).
+	- Root `.env.public.prod` = **konfigurasi produksi frontend** (Nuxt runtime) (JANGAN di-commit; upload saat deploy).
+	- Template: `.env.prod.example` / `.env.public.prod.example` ada di repo sebagai referensi variabel.
+	- `backend/.env.public` + `backend/.env.local` = overlay khusus DEV (bukan sumber kebenaran produksi).
+	- `frontend/.env.*` hanya dipakai jika Nuxt dijalankan di luar Docker (opsional).
 - `APP_PUBLIC_BASE_URL` dipakai untuk URL publik (invoice, webhook), wajib HTTPS saat produksi.
 - Settings runtime dibaca lewat `settings_service.get_setting()`; nilai DB kosong akan fallback ke ENV.
 - Mode OTP-only memakai `IP_BINDING_TYPE_ALLOWED=bypassed` sebagai default.
@@ -33,6 +34,33 @@
 - Walled-garden host/IP diatur via `WALLED_GARDEN_ALLOWED_HOSTS`/`WALLED_GARDEN_ALLOWED_IPS` dan disinkronkan ke MikroTik.
 - Midtrans & WA bergantung pada URL publik; gunakan Cloudflare Tunnel (lihat DEVELOPMENT.md bagian HTTPS).
 
+## Operasional & Deploy Produksi (WAJIB Sistematis)
+Prinsip: **lokal adalah source-of-truth**, Pi hanya target.
+
+- Jangan edit `.env.prod` / `.env.public.prod` langsung di Pi kecuali emergency. Jika emergency terjadi, perubahan WAJIB disalin balik ke file lokal dan di-deploy ulang agar tidak drift.
+- Jangan deploy ke Pi sebelum user meminta.
+- Alur rapi (default):
+	1) Perubahan code → lint/test lokal
+	2) `git commit` → `git push`
+	3) Tunggu CI hijau
+	4) Publish image (tag `v*` atau `workflow_dispatch`) → tunggu hijau
+	5) Deploy Pi via `deploy_pi.sh --prune` (upload env lokal + pull + up -d + healthcheck)
+
+Catatan workflow publish:
+- `.github/workflows/docker-publish.yml` jalan saat push tag `v*` atau manual `workflow_dispatch`.
+
+Referensi:
+- `docs/DEPLOY_RPI_MINIMAL.md`
+- `deploy_pi.sh`
+- `docs/OPERATIONS_MIKROTIK_SYNC.md`
+
+## Kebijakan Device/MAC (OTP, Random MAC)
+Tujuan: user tidak “ke-block” setelah OTP sukses walau MAC berubah (privacy/random MAC).
+
+- `REQUIRE_EXPLICIT_DEVICE_AUTH=True` mengaktifkan mekanisme `pending-auth` untuk device baru.
+- `OTP_AUTO_AUTHORIZE_DEVICE=True` (default) berarti **OTP sukses = user mengotorisasi device yang sedang dipakai**, sehingga tidak masuk `pending-auth` pada jalur OTP.
+- Pengecualian: jika login memakai `OTP_BYPASS_CODE`, auto-authorize tidak dilakukan (lebih aman).
+
 ## Dokumentasi Wajib
 - Setiap dokumen teknis yang diperbarui **wajib menyertakan tautan lampiran** ke `.github/copilot-instructions.md` sebagai pondasi pengembangan (dokumen ini tidak perlu melampirkan dirinya sendiri).
 
@@ -41,6 +69,10 @@
 - Lihat log: `docker compose logs -f backend|frontend|nginx`.
 - Lint backend: `docker compose exec -T backend ruff check .` (config di backend/ruff.toml).
 - Lint frontend: `docker compose exec frontend pnpm run lint`.
+
+Catatan:
+- CI mem-validasi backend dengan `python -m ruff check backend` (ruff error seperti F401 harus bersih sebelum deploy).
+- Jika menjalankan lint/test dari host (venv lokal), pastikan hasilnya sama dengan container/CI.
 
 Catatan VS Code (opsional):
 - Boleh jalankan `pnpm install` di host (folder `frontend/`) agar TypeScript/Vue language features terbaca tanpa error di editor.
@@ -52,6 +84,10 @@ Catatan VS Code (opsional):
 - Jika mengubah keduanya, jalankan kedua lint di atas.
 - Semua perintah dev dijalankan di container agar konsisten (lihat DEVELOPMENT.md).
 - Setiap perubahan perilaku/flow WAJIB update dokumentasi yang relevan (minimal docs/REFERENCE_PENGEMBANGAN.md dan/atau DEVELOPMENT.md) agar tidak ada kebingungan.
+
+Aturan deploy:
+- Jangan deploy bila CI belum hijau.
+- Jangan “patch cepat” di Pi (manual SSH edit). Gunakan `deploy_pi.sh` agar idempotent.
 
 ## Konvensi Proyek
 - Backend: hindari one-liner control flow; gunakan `is None`/`is not None`, bukan `== None`.
