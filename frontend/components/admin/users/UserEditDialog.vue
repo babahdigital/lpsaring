@@ -5,6 +5,7 @@ import AppTextField from '@core/components/app-form-elements/AppTextField.vue'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useSnackbar } from '@/composables/useSnackbar'
 import { useAuthStore } from '@/store/auth'
+import { usePackageStore } from '@/store/packages'
 import { TAMPING_OPTION_ITEMS } from '~/utils/constants'
 import UserDebtLedgerDialog from '@/components/admin/users/UserDebtLedgerDialog.vue'
 
@@ -73,9 +74,10 @@ interface LiveData {
 }
 
 const authStore = useAuthStore()
+const packageStore = usePackageStore()
 const formRef = ref<InstanceType<typeof VForm> | null>(null)
 
-function getInitialFormData(): Partial<User & { add_gb: number, add_days: number, unlimited_time: boolean, debt_add_mb: number, debt_date: string | null, debt_note: string | null, debt_clear: boolean }> {
+function getInitialFormData(): Partial<User & { add_gb: number, add_days: number, unlimited_time: boolean, debt_package_id: string | null, debt_date: string | null, debt_note: string | null }> {
   return {
     full_name: '',
     phone_number: '',
@@ -96,10 +98,9 @@ function getInitialFormData(): Partial<User & { add_gb: number, add_days: number
     add_gb: 0,
     add_days: 0,
     unlimited_time: false,
-    debt_add_mb: 0,
+    debt_package_id: null,
     debt_date: null,
     debt_note: null,
-    debt_clear: false,
   }
 }
 
@@ -107,6 +108,7 @@ const formData = reactive(getInitialFormData())
 const isCheckingMikrotik = ref(false)
 const liveData = ref<LiveData | null>(null)
 const isDebtLedgerOpen = ref(false)
+const isDebtQuotaEnabled = ref(false)
 
 const isRestrictedAdmin = computed(() => authStore.isAdmin && !authStore.isSuperAdmin)
 
@@ -161,10 +163,9 @@ watch(() => props.user, (newUser) => {
       add_gb: 0,
       add_days: 0,
       unlimited_time: Boolean((isEditingAdminOrSuper || newUser.is_unlimited_user) && !newUser.quota_expiry_date),
-      debt_add_mb: 0,
+      debt_package_id: null,
       debt_date: null,
       debt_note: null,
-      debt_clear: false,
       is_unlimited_user: isEditingAdminOrSuper || newUser.is_unlimited_user,
     })
   }
@@ -178,6 +179,16 @@ watch(() => formData.unlimited_time, (v) => {
 const debtAutoMb = computed(() => (props.user?.is_unlimited_user === true ? 0 : Number(props.user?.quota_debt_auto_mb ?? 0)))
 const debtManualMb = computed(() => (props.user?.is_unlimited_user === true ? 0 : Number(props.user?.quota_debt_manual_mb ?? props.user?.manual_debt_mb ?? 0)))
 const debtTotalMb = computed(() => (props.user?.is_unlimited_user === true ? 0 : Number(props.user?.quota_debt_total_mb ?? (debtAutoMb.value + debtManualMb.value))))
+
+const debtPackageOptions = computed(() => {
+  const pkgs = Array.isArray(packageStore.packages) ? packageStore.packages : []
+  return pkgs
+    .filter(pkg => pkg?.is_active === true && Number(pkg?.data_quota_gb ?? 0) > 0)
+    .map(pkg => ({
+      title: `${pkg.name} — ${Number(pkg.data_quota_gb).toLocaleString('id-ID')} GB — Rp ${Number(pkg.price ?? 0).toLocaleString('id-ID')}`,
+      value: pkg.id,
+    }))
+})
 
 const debtStatusMeta = computed(() => {
   const hasDebt = debtTotalMb.value > 0
@@ -197,6 +208,9 @@ function formatMb(value: number) {
 watch(() => props.modelValue, (isOpen) => {
   if (isOpen) {
     liveData.value = null
+    isDebtQuotaEnabled.value = false
+    // Best-effort load package list for debt selection.
+    packageStore.fetchPackages(false).catch(() => {})
     // PERBAIKAN: Memindahkan isi arrow function ke baris baru
     nextTick(() => {
       formRef.value?.resetValidation()
@@ -321,7 +335,13 @@ async function onSave() {
     return
   const { valid } = await formRef.value.validate()
   if (valid) {
-    const payload = { ...formData }
+    const payload: any = { ...formData }
+
+    if (isDebtQuotaEnabled.value !== true) {
+      payload.debt_package_id = null
+      payload.debt_date = null
+      payload.debt_note = null
+    }
 
     const defaults = mikrotikDefaults.value
 
@@ -345,8 +365,7 @@ async function onSave() {
     if (payload.role === 'KOMANDAN') {
       payload.mikrotik_server_name = defaults.server_komandan || defaults.server_user
       // Debt tidak berlaku untuk komandan
-      payload.debt_clear = false
-      payload.debt_add_mb = 0
+      payload.debt_package_id = null
       payload.debt_date = null
       payload.debt_note = null
     }
@@ -467,11 +486,11 @@ function openDebtPdf() {
 
                 <VCol v-if="canAdminInject && formData.is_active === true && isTargetAdminOrSuper !== true" cols="12">
                   <VSwitch
-                    v-model="formData.debt_clear"
-                    label="Clear/Lunas Debt (set jadi 0)"
-                    color="success"
+                    v-model="isDebtQuotaEnabled"
+                    label="Debt Kuota"
+                    color="primary"
                     inset
-                    hint="Jika aktif, sistem akan melunasi debt otomatis+manual. kecuali ada inject."
+                    hint="Aktifkan untuk menambah/mengelola debt kuota (berdasarkan paket)."
                     persistent-hint
                     v-if="formData.role !== 'KOMANDAN'"
                   />
@@ -544,7 +563,7 @@ function openDebtPdf() {
                     <AppTextField v-model.number="formData.add_days" label="Tambah Masa Aktif (Hari)" type="number" prepend-inner-icon="tabler-calendar-plus" />
                   </VCol>
 
-                  <template v-if="formData.role !== 'KOMANDAN'">
+                  <template v-if="formData.role !== 'KOMANDAN' && isDebtQuotaEnabled">
                     <VCol cols="12">
                       <div class="text-overline">
                         Debt Kuota
@@ -610,7 +629,7 @@ function openDebtPdf() {
                     </VCol>
 
                     <VCol cols="12" md="6">
-                      <AppTextField v-model.number="formData.debt_add_mb" label="Tambah Debt Manual (MB)" type="number" prepend-inner-icon="tabler-alert-circle" />
+                      <AppSelect v-model="formData.debt_package_id" :items="debtPackageOptions" label="Tambah Debt (Pilih Paket)" prepend-inner-icon="tabler-alert-circle" />
                     </VCol>
 
                     <VCol cols="12" md="6">

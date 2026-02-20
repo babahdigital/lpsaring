@@ -143,6 +143,48 @@ def apply_manual_debt_payment(
     return int(paid_total)
 
 
+def settle_manual_debt_item_to_zero(
+    *,
+    user: User,
+    admin_actor: Optional[User],
+    debt: UserQuotaDebt,
+    source: str,
+) -> int:
+    """Settle (pay) exactly one manual debt entry to zero.
+
+    Returns actual MB paid (0..remaining).
+    """
+    if getattr(user, "role", None) == UserRole.KOMANDAN:
+        return 0
+    if not debt or getattr(debt, "user_id", None) != getattr(user, "id", None):
+        return 0
+
+    try:
+        amount = int(getattr(debt, "amount_mb", 0) or 0)
+        already_paid = int(getattr(debt, "paid_mb", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+    remaining = max(0, amount - already_paid)
+    if remaining <= 0:
+        debt.is_paid = True
+        if getattr(debt, "paid_at", None) is None:
+            debt.paid_at = datetime.now(dt_timezone.utc)
+        return 0
+
+    now = datetime.now(dt_timezone.utc)
+    debt.paid_mb = int(amount)
+    debt.is_paid = True
+    debt.paid_at = now
+    debt.last_paid_by_id = getattr(admin_actor, "id", None)
+    debt.last_paid_source = (str(source)[:50] if source else None)
+
+    cached = int(getattr(user, "manual_debt_mb", 0) or 0)
+    user.manual_debt_mb = max(0, cached - remaining)
+    user.manual_debt_updated_at = now
+    return int(remaining)
+
+
 def clear_all_debts_to_zero(
     *,
     user: User,

@@ -15,6 +15,7 @@ from app.infrastructure.http.schemas.user_schemas import (
     AdminSelfProfileUpdateRequestSchema,
     UserQuotaDebtItemResponseSchema,
 )
+from app.services.user_management import user_debt as user_debt_service
 from app.utils.formatters import get_phone_number_variations
 
 from app.infrastructure.db.models import UserQuotaDebt
@@ -373,6 +374,37 @@ def get_user_manual_debts(current_admin: User, user_id: uuid.UUID):
     except Exception as e:
         current_app.logger.error(f"Error getting user debts {user_id}: {e}", exc_info=True)
         return jsonify({"message": "Gagal mengambil data debt pengguna."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@user_management_bp.route('/users/<uuid:user_id>/debts/<uuid:debt_id>/settle', methods=['POST'])
+@admin_required
+def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: uuid.UUID):
+    """Lunasi satu item debt manual (one-by-one), tanpa clear semua debt."""
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+
+    # RBAC: admin non-super tidak boleh mengakses data super admin.
+    if not current_admin.is_super_admin_role and user.role == UserRole.SUPER_ADMIN:
+        return jsonify({"message": "Akses ditolak."}), HTTPStatus.FORBIDDEN
+
+    debt = db.session.get(UserQuotaDebt, debt_id)
+    if not debt or getattr(debt, 'user_id', None) != user.id:
+        return jsonify({"message": "Item debt tidak ditemukan."}), HTTPStatus.NOT_FOUND
+
+    try:
+        paid_mb = user_debt_service.settle_manual_debt_item_to_zero(
+            user=user,
+            admin_actor=current_admin,
+            debt=debt,
+            source='admin_settle_item',
+        )
+        db.session.commit()
+        return jsonify({"message": "Debt berhasil dilunasi.", "paid_mb": int(paid_mb)}), HTTPStatus.OK
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error settling debt {debt_id} for user {user_id}: {e}", exc_info=True)
+        return jsonify({"message": "Gagal melunasi debt."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
 @user_management_bp.route('/users/<uuid:user_id>/debts/export', methods=['GET'])

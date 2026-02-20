@@ -99,6 +99,7 @@ type EditPayload = Partial<User> & {
   add_gb?: number
   add_days?: number
   is_unlimited_user?: boolean
+  debt_package_id?: string | null
   debt_add_mb?: number
   debt_date?: string | null
   debt_note?: string | null

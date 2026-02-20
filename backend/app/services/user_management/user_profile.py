@@ -7,7 +7,15 @@ from werkzeug.security import generate_password_hash
 from sqlalchemy import select, or_
 
 from app.extensions import db
-from app.infrastructure.db.models import User, UserRole, AdminActionType, ApprovalStatus, PromoEvent, PromoEventStatus
+from app.infrastructure.db.models import (
+    Package,
+    User,
+    UserRole,
+    AdminActionType,
+    ApprovalStatus,
+    PromoEvent,
+    PromoEventStatus,
+)
 from app.utils.formatters import (
     format_to_local_phone,
     get_app_date_time_strings,
@@ -433,6 +441,64 @@ def update_user_by_admin_comprehensive(target_user: User, admin_actor: User, dat
 
     # Manual debt input / clear (admin-only)
     if target_user.role != UserRole.KOMANDAN:
+        debt_package_id = data.get('debt_package_id')
+        if debt_package_id:
+            pkg = db.session.get(Package, debt_package_id)
+            if not pkg:
+                return False, "Paket debt tidak ditemukan.", None
+
+            try:
+                pkg_quota_gb = float(getattr(pkg, 'data_quota_gb', 0) or 0.0)
+            except (TypeError, ValueError):
+                pkg_quota_gb = 0.0
+            if pkg_quota_gb <= 0:
+                return False, "Paket debt harus memiliki kuota (GB) > 0.", None
+
+            debt_add_mb_pkg = int(round(pkg_quota_gb * 1024))
+            note = data.get('debt_note')
+            pkg_note = (
+                f"Paket: {getattr(pkg, 'name', '') or ''} "
+                f"({pkg_quota_gb:g} GB, Rp {int(getattr(pkg, 'price', 0) or 0):,})"
+            )
+            merged_note = pkg_note
+            if isinstance(note, str) and note.strip():
+                merged_note = f"{pkg_note} | {note.strip()}"
+
+            ok_debt, msg_debt, _entry = debt_service.add_manual_debt(
+                user=target_user,
+                admin_actor=admin_actor,
+                amount_mb=debt_add_mb_pkg,
+                debt_date=data.get('debt_date'),
+                note=merged_note,
+            )
+            if not ok_debt:
+                return False, msg_debt, None
+
+            # Optional WhatsApp: inform user a new manual debt item was created.
+            try:
+                debt_date_val = data.get('debt_date')
+                debt_date_text = str(debt_date_val) if debt_date_val else datetime.now(dt_timezone.utc).strftime('%Y-%m-%d')
+                total_debt_mb = float(getattr(target_user, 'quota_debt_total_mb', 0) or 0)
+                _send_whatsapp_notification(
+                    target_user.phone_number,
+                    'user_debt_added',
+                    {
+                        'full_name': target_user.full_name,
+                        'debt_date': debt_date_text,
+                        'debt_mb': int(debt_add_mb_pkg),
+                        'debt_gb': f"{(float(debt_add_mb_pkg) / 1024.0):.2f}",
+                        'total_debt_mb': int(total_debt_mb),
+                        'total_debt_gb': f"{(total_debt_mb / 1024.0):.2f}",
+                    },
+                )
+            except Exception:
+                pass
+
+            changes['debt_package_id'] = str(getattr(pkg, 'id', debt_package_id))
+            changes['debt_add_mb'] = int(debt_add_mb_pkg)
+            if data.get('debt_date'):
+                changes['debt_date'] = data.get('debt_date')
+
         debt_add_mb = 0
         try:
             debt_add_mb = int(data.get('debt_add_mb') or 0)
@@ -449,6 +515,26 @@ def update_user_by_admin_comprehensive(target_user: User, admin_actor: User, dat
             )
             if not ok_debt:
                 return False, msg_debt, None
+
+            # Optional WhatsApp: inform user a new manual debt item was created.
+            try:
+                debt_date_val = data.get('debt_date')
+                debt_date_text = str(debt_date_val) if debt_date_val else datetime.now(dt_timezone.utc).strftime('%Y-%m-%d')
+                total_debt_mb = float(getattr(target_user, 'quota_debt_total_mb', 0) or 0)
+                _send_whatsapp_notification(
+                    target_user.phone_number,
+                    'user_debt_added',
+                    {
+                        'full_name': target_user.full_name,
+                        'debt_date': debt_date_text,
+                        'debt_mb': int(debt_add_mb),
+                        'debt_gb': f"{(float(debt_add_mb) / 1024.0):.2f}",
+                        'total_debt_mb': int(total_debt_mb),
+                        'total_debt_gb': f"{(total_debt_mb / 1024.0):.2f}",
+                    },
+                )
+            except Exception:
+                pass
             changes['debt_add_mb'] = debt_add_mb
             if data.get('debt_date'):
                 changes['debt_date'] = data.get('debt_date')

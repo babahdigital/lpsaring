@@ -34,6 +34,7 @@ const { add: showSnackbar } = useSnackbar()
 const loading = ref(false)
 const items = ref<ManualDebtItem[]>([])
 const summary = ref<{ manual_debt_mb: number, open_items: number, paid_items: number, total_items: number } | null>(null)
+const settlingId = ref<string | null>(null)
 
 const debtAutoMb = computed(() => Number(props.user?.quota_debt_auto_mb ?? 0))
 const debtManualMb = computed(() => Number(props.user?.quota_debt_manual_mb ?? props.user?.manual_debt_mb ?? 0))
@@ -66,6 +67,26 @@ async function fetchLedger() {
   }
   finally {
     loading.value = false
+  }
+}
+
+async function settleItem(item: ManualDebtItem) {
+  if (!props.user)
+    return
+  if (item.is_paid === true)
+    return
+
+  settlingId.value = item.id
+  try {
+    await $api(`/admin/users/${props.user.id}/debts/${item.id}/settle`, { method: 'POST' })
+    showSnackbar({ type: 'success', title: 'Debt', text: 'Item debt berhasil dilunasi.' })
+    await fetchLedger()
+  }
+  catch (error: any) {
+    showSnackbar({ type: 'warning', title: 'Debt', text: error?.data?.message || 'Gagal melunasi item debt.' })
+  }
+  finally {
+    settlingId.value = null
   }
 }
 
@@ -136,6 +157,7 @@ watch(
               <th class="text-end">Sisa (MB)</th>
               <th>Status</th>
               <th>Catatan</th>
+              <th class="text-end">Aksi</th>
             </tr>
           </template>
 
@@ -151,6 +173,18 @@ watch(
                 </VChip>
               </td>
               <td style="min-width: 220px;">{{ item.note || '' }}</td>
+              <td class="text-end" style="min-width: 90px;">
+                <VBtn
+                  v-if="item.is_paid !== true"
+                  size="x-small"
+                  variant="tonal"
+                  color="success"
+                  :loading="settlingId === item.id"
+                  @click="settleItem(item)"
+                >
+                  Lunasi
+                </VBtn>
+              </td>
             </tr>
           </template>
 

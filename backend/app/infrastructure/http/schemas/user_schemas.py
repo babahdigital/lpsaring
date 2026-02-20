@@ -148,6 +148,7 @@ class UserUpdateByAdminSchema(BaseModel):
     add_days: Optional[int] = Field(None, ge=0)
 
     # Manual quota debt (MB)
+    debt_package_id: Optional[uuid.UUID] = Field(None, description="ID paket untuk membuat debt manual berdasarkan paket")
     debt_add_mb: Optional[int] = Field(None, ge=0, description="Tambah hutang kuota manual dalam MB")
     debt_date: Optional[date] = Field(None, description="Tanggal hutang (opsional)")
     debt_note: Optional[str] = Field(None, max_length=500)
@@ -375,7 +376,7 @@ class UserQuotaDebtItemResponseSchema(BaseModel):
     debt_date: Optional[date] = None
     amount_mb: int
     paid_mb: int
-    remaining_mb: int
+    remaining_mb: int = 0
     is_paid: bool
     paid_at: Optional[datetime] = None
     note: Optional[str] = None
