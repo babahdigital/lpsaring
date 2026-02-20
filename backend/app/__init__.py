@@ -343,6 +343,7 @@ def register_test_routes(app: Flask):
 
 def register_commands(app: Flask):
     from .commands import user_commands, seed_commands, sync_usage_command, sync_mikrotik_comments_command, sync_mikrotik_access_command, sync_dhcp_leases_command
+    from .commands.manual_debt_command import add_manual_debt_command
     from .commands.bulk_reset_quota_command import bulk_reset_quota_command
     from .commands.cleanup_transactions_command import cleanup_transactions_command
     app.cli.add_command(user_commands.user_cli_bp)
@@ -351,6 +352,7 @@ def register_commands(app: Flask):
     app.cli.add_command(sync_mikrotik_comments_command.sync_mikrotik_comments_command)
     app.cli.add_command(sync_mikrotik_access_command.sync_mikrotik_access_command)
     app.cli.add_command(sync_dhcp_leases_command.sync_dhcp_leases_command)
+    app.cli.add_command(add_manual_debt_command)
     app.cli.add_command(bulk_reset_quota_command)
     app.cli.add_command(cleanup_transactions_command)
     module_log.info("Pendaftaran perintah CLI selesai.")
