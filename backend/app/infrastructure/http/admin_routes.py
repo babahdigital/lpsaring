@@ -72,17 +72,42 @@ def _format_dt_local(value: datetime | None, *, with_seconds: bool = False) -> s
     if not value:
         return "-"
     try:
+        if getattr(value, "tzinfo", None) is None:
+            value = value.replace(tzinfo=dt_timezone.utc)
         local_tz = _get_local_tz()
         local_dt = value.astimezone(local_tz)
         fmt = "%d %b %Y %H:%M:%S" if with_seconds else "%d %b %Y %H:%M"
         offset_hours = int(current_app.config.get("APP_TIMEZONE_OFFSET", 8) or 8)
         sign = "+" if offset_hours >= 0 else "-"
-        return f"{local_dt.strftime(fmt)} (UTC{sign}{abs(offset_hours)})"
+        tz_label = current_app.config.get("APP_TIMEZONE_LABEL") or "WITA"
+        return f"{local_dt.strftime(fmt)} {tz_label} (UTC{sign}{abs(offset_hours)})"
     except Exception:
         try:
             return value.isoformat()
         except Exception:
             return "-"
+
+
+def _sanitize_midtrans_payload_for_report(payload: object | None) -> object | None:
+    if payload is None:
+        return None
+
+    if isinstance(payload, dict):
+        sanitized: dict[object, object] = {}
+        for k, v in payload.items():
+            try:
+                key_str = str(k)
+            except Exception:
+                key_str = ""
+            if key_str.lower() == "signature_key":
+                continue
+            sanitized[k] = _sanitize_midtrans_payload_for_report(v)
+        return sanitized
+
+    if isinstance(payload, list):
+        return [_sanitize_midtrans_payload_for_report(v) for v in payload]
+
+    return payload
 
 
 def _compact_json_summary(payload: object | None, *, max_len: int = 180) -> str:
@@ -1584,13 +1609,10 @@ def get_transaction_admin_report_pdf(current_admin: User, order_id: str):
     local_tz = _get_local_tz()
     user_phone_display = format_to_local_phone(tx.user.phone_number) if tx.user and tx.user.phone_number else None
 
-    midtrans_payload_sanitized: object | None = payload
+    midtrans_payload_sanitized: object | None = _sanitize_midtrans_payload_for_report(payload)
     midtrans_summary: dict[str, object] | None = None
-    if isinstance(payload, dict):
-        safe_payload = dict(payload)
-        if "signature_key" in safe_payload:
-            safe_payload.pop("signature_key", None)
-        midtrans_payload_sanitized = safe_payload
+    if isinstance(midtrans_payload_sanitized, dict):
+        safe_payload = dict(midtrans_payload_sanitized)
         midtrans_summary = {
             "payment_type": safe_payload.get("payment_type"),
             "transaction_status": safe_payload.get("transaction_status"),
