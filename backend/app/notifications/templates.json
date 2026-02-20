@@ -37,7 +37,6 @@
 
   "user_quota_injected": "✅ *Kuota Diperbarui*\n\nHalo *{full_name}*, kuota Anda telah diperbarui oleh Admin.\n\n- Inject: *{injected_gb} GB*\n- Potong hutang: *{paid_debt_gb} GB*\n- Kuota masuk: *{net_added_gb} GB*\n- Sisa kuota sekarang: *{remaining_quota}*\n\nPortal Hotspot: {link_user_app}",
   "user_debt_cleared": "✅ *Hutang Kuota Dilunasi*\n\nHalo *{full_name}*, hutang kuota Anda sudah dilunasi oleh Admin.\n\n- Lunas otomatis: *{paid_auto_debt_mb} MB*\n- Lunas manual: *{paid_manual_debt_mb} MB*\n- Total: *{paid_total_debt_mb} MB*\n\nSisa kuota sekarang: *{remaining_quota}*\n\nPortal Hotspot: {link_user_app}",
-  "user_debt_cleared_unblock": "✅ *Akses Dibuka & Hutang Dilunasi*\n\nHalo *{full_name}*, akun Anda sudah *dibuka (unblock)* dan hutang kuota sudah dilunasi.\n\n- Lunas otomatis: *{paid_auto_debt_mb} MB*\n- Lunas manual: *{paid_manual_debt_mb} MB*\n- Total: *{paid_total_debt_mb} MB*\n\nSisa kuota sekarang: *{remaining_quota}*\n\nPortal Hotspot: {link_user_app}"
-  ,
+  "user_debt_cleared_unblock": "✅ *Akses Dibuka & Hutang Dilunasi*\n\nHalo *{full_name}*, akun Anda sudah *dibuka (unblock)* dan hutang kuota sudah dilunasi.\n\n- Lunas otomatis: *{paid_auto_debt_mb} MB*\n- Lunas manual: *{paid_manual_debt_mb} MB*\n- Total: *{paid_total_debt_mb} MB*\n\nSisa kuota sekarang: *{remaining_quota}*\n\nPortal Hotspot: {link_user_app}",
   "user_debt_added": "⚠️ *Hutang Kuota Baru*\n\nHalo *{full_name}*, Admin mencatat hutang kuota baru.\n\n- Tanggal: *{debt_date}*\n- Jumlah: *{debt_gb} GB* (*{debt_mb} MB*)\n- Total hutang sekarang: *{total_debt_gb} GB* (*{total_debt_mb} MB*)\n\nSilakan hubungi Admin jika ada kekeliruan.\nPortal Hotspot: {link_user_app}"
 }

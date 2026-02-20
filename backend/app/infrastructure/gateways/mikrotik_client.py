@@ -401,6 +401,57 @@ def get_hotspot_host_usage_map(api_connection: Any) -> Tuple[bool, Dict[str, Dic
         return False, {}, str(e)
 
 
+def get_hotspot_hosts(api_connection: Any) -> Tuple[bool, List[Dict[str, Any]], str]:
+    """Ambil daftar /ip/hotspot/host mentah (untuk kebutuhan scan unauthorized)."""
+    try:
+        hosts = api_connection.get_resource('/ip/hotspot/host').get()
+        result: List[Dict[str, Any]] = []
+        for host in hosts:
+            # Normalize keys we care about.
+            result.append(
+                {
+                    'address': host.get('address'),
+                    'mac-address': host.get('mac-address'),
+                    'server': host.get('server'),
+                    'user': host.get('user'),
+                    'uptime': host.get('uptime'),
+                    'bypassed': host.get('bypassed'),
+                    'authorized': host.get('authorized'),
+                }
+            )
+        return True, result, 'Sukses'
+    except Exception as e:
+        return False, [], str(e)
+
+
+def get_firewall_address_list_entries(
+    api_connection: Any,
+    list_name: str,
+) -> Tuple[bool, List[Dict[str, Any]], str]:
+    """Ambil semua entri address-list untuk list tertentu."""
+    if not list_name:
+        return False, [], 'Nama list kosong'
+    try:
+        resource = api_connection.get_resource('/ip/firewall/address-list')
+        entries = resource.get(list=list_name)
+        normalized: List[Dict[str, Any]] = []
+        for e in entries:
+            entry_id = e.get('id') or e.get('.id')
+            normalized.append(
+                {
+                    'id': entry_id,
+                    'address': e.get('address'),
+                    'list': e.get('list'),
+                    'comment': e.get('comment'),
+                    'dynamic': e.get('dynamic'),
+                    'timeout': e.get('timeout'),
+                }
+            )
+        return True, normalized, 'Sukses'
+    except Exception as e:
+        return False, [], str(e)
+
+
 def _extract_user_id_from_comment(comment: Optional[str]) -> Optional[str]:
     if not comment:
         return None
