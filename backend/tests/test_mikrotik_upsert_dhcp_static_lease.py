@@ -1,5 +1,3 @@
-import pytest
-
 from app.infrastructure.gateways.mikrotik_client import upsert_dhcp_static_lease
 
 
@@ -15,7 +13,7 @@ class _FakeLeaseResource:
         mac = (query.get("mac-address") or "").upper()
         if not mac:
             return list(self._leases)
-        return [l for l in self._leases if str(l.get("mac-address") or "").upper() == mac]
+        return [lease for lease in self._leases if str(lease.get("mac-address") or "").upper() == mac]
 
     def add(self, **data):
         self.add_calls.append(dict(data))
@@ -29,7 +27,7 @@ class _FakeLeaseResource:
 
     def remove(self, id):
         self.remove_calls.append(id)
-        self._leases = [l for l in self._leases if str(l.get("id") or l.get(".id")) != str(id)]
+        self._leases = [lease for lease in self._leases if str(lease.get("id") or lease.get(".id")) != str(id)]
 
     def call(self, name, payload):
         self.call_calls.append((name, dict(payload)))

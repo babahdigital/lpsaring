@@ -5,7 +5,6 @@ import AppTextField from '@core/components/app-form-elements/AppTextField.vue'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useSnackbar } from '@/composables/useSnackbar'
 import { useAuthStore } from '@/store/auth'
-import { usePackageStore } from '@/store/packages'
 import { TAMPING_OPTION_ITEMS } from '~/utils/constants'
 import UserDebtLedgerDialog from '@/components/admin/users/UserDebtLedgerDialog.vue'
 
@@ -74,8 +73,18 @@ interface LiveData {
 }
 
 const authStore = useAuthStore()
-const packageStore = usePackageStore()
 const formRef = ref<InstanceType<typeof VForm> | null>(null)
+
+interface AdminPackage {
+  id: string
+  name: string
+  price: number
+  is_active: boolean
+  data_quota_gb: number
+}
+
+const adminPackages = ref<AdminPackage[]>([])
+const isPackagesLoading = ref(false)
 
 function getInitialFormData(): Partial<User & { add_gb: number, add_days: number, unlimited_time: boolean, debt_package_id: string | null, debt_date: string | null, debt_note: string | null }> {
   return {
@@ -181,14 +190,29 @@ const debtManualMb = computed(() => (props.user?.is_unlimited_user === true ? 0 
 const debtTotalMb = computed(() => (props.user?.is_unlimited_user === true ? 0 : Number(props.user?.quota_debt_total_mb ?? (debtAutoMb.value + debtManualMb.value))))
 
 const debtPackageOptions = computed(() => {
-  const pkgs = Array.isArray(packageStore.packages) ? packageStore.packages : []
-  return pkgs
-    .filter(pkg => pkg?.is_active === true && Number(pkg?.data_quota_gb ?? 0) > 0)
+  return adminPackages.value
+    .filter(pkg => pkg.is_active === true && Number(pkg.data_quota_gb ?? 0) > 0)
     .map(pkg => ({
       title: `${pkg.name} — ${Number(pkg.data_quota_gb).toLocaleString('id-ID')} GB — Rp ${Number(pkg.price ?? 0).toLocaleString('id-ID')}`,
       value: pkg.id,
     }))
 })
+
+async function fetchAdminPackages() {
+  if (isPackagesLoading.value)
+    return
+  isPackagesLoading.value = true
+  try {
+    const resp = await $api<{ items: AdminPackage[] }>(`/admin/packages?page=1&itemsPerPage=200`)
+    adminPackages.value = Array.isArray(resp.items) ? resp.items : []
+  }
+  catch {
+    adminPackages.value = []
+  }
+  finally {
+    isPackagesLoading.value = false
+  }
+}
 
 const debtStatusMeta = computed(() => {
   const hasDebt = debtTotalMb.value > 0
@@ -210,7 +234,7 @@ watch(() => props.modelValue, (isOpen) => {
     liveData.value = null
     isDebtQuotaEnabled.value = false
     // Best-effort load package list for debt selection.
-    packageStore.fetchPackages(false).catch(() => {})
+    fetchAdminPackages().catch(() => {})
     // PERBAIKAN: Memindahkan isi arrow function ke baris baru
     nextTick(() => {
       formRef.value?.resetValidation()
@@ -629,7 +653,7 @@ function openDebtPdf() {
                     </VCol>
 
                     <VCol cols="12" md="6">
-                      <AppSelect v-model="formData.debt_package_id" :items="debtPackageOptions" label="Tambah Debt (Pilih Paket)" prepend-inner-icon="tabler-alert-circle" />
+                      <AppSelect v-model="formData.debt_package_id" :items="debtPackageOptions" label="Tambah Debt (Pilih Paket)" prepend-inner-icon="tabler-alert-circle" :loading="isPackagesLoading" />
                     </VCol>
 
                     <VCol cols="12" md="6">
