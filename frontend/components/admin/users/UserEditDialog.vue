@@ -75,7 +75,7 @@ interface LiveData {
 const authStore = useAuthStore()
 const formRef = ref<InstanceType<typeof VForm> | null>(null)
 
-function getInitialFormData(): Partial<User & { add_gb: number, add_days: number, debt_add_mb: number, debt_date: string | null, debt_note: string | null, debt_clear: boolean }> {
+function getInitialFormData(): Partial<User & { add_gb: number, add_days: number, unlimited_time: boolean, debt_add_mb: number, debt_date: string | null, debt_note: string | null, debt_clear: boolean }> {
   return {
     full_name: '',
     phone_number: '',
@@ -95,6 +95,7 @@ function getInitialFormData(): Partial<User & { add_gb: number, add_days: number
     quota_expiry_date: null,
     add_gb: 0,
     add_days: 0,
+    unlimited_time: false,
     debt_add_mb: 0,
     debt_date: null,
     debt_note: null,
@@ -159,6 +160,7 @@ watch(() => props.user, (newUser) => {
       kamar: newUser.kamar != null ? newUser.kamar.replace('Kamar_', '') : null,
       add_gb: 0,
       add_days: 0,
+      unlimited_time: Boolean((isEditingAdminOrSuper || newUser.is_unlimited_user) && !newUser.quota_expiry_date),
       debt_add_mb: 0,
       debt_date: null,
       debt_note: null,
@@ -167,6 +169,11 @@ watch(() => props.user, (newUser) => {
     })
   }
 }, { immediate: true })
+
+watch(() => formData.unlimited_time, (v) => {
+  if (v === true)
+    formData.add_days = 0
+})
 
 const debtAutoMb = computed(() => Number(props.user?.quota_debt_auto_mb ?? 0))
 const debtManualMb = computed(() => Number(props.user?.quota_debt_manual_mb ?? props.user?.manual_debt_mb ?? 0))
@@ -347,6 +354,9 @@ async function onSave() {
       payload.mikrotik_server_name = defaults.server_user
     }
 
+    if (payload.is_unlimited_user === true && payload.unlimited_time === true)
+      payload.add_days = 0
+
     if (payload.role === 'ADMIN' || payload.role === 'SUPER_ADMIN') {
       payload.is_unlimited_user = true
       payload.add_gb = 0
@@ -442,6 +452,17 @@ function openDebtPdf() {
                   <VAlert v-else type="info" variant="tonal" density="compact" icon="tabler-shield-check">
                     Peran <strong>{{ formData.role }}</strong> secara otomatis mendapatkan akses <strong>Unlimited</strong>.
                   </VAlert>
+                </VCol>
+
+                <VCol v-if="canAdminInject && formData.is_active === true && isTargetAdminOrSuper !== true && formData.is_unlimited_user === true" cols="12">
+                  <VSwitch
+                    v-model="formData.unlimited_time"
+                    label="Unlimited Time (tanpa masa aktif/expiry)"
+                    color="primary"
+                    inset
+                    hint="Jika aktif, masa aktif akan dibuat tanpa batas (quota_expiry_date dikosongkan)."
+                    persistent-hint
+                  />
                 </VCol>
 
                 <VCol v-if="canAdminInject && formData.is_active === true && isTargetAdminOrSuper !== true" cols="12">

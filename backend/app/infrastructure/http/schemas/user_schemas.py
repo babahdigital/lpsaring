@@ -140,6 +140,7 @@ class UserUpdateByAdminSchema(BaseModel):
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
     is_unlimited_user: Optional[bool] = None
+    unlimited_time: Optional[bool] = Field(None, description="Jika true dan user unlimited, hapus quota_expiry_date (unlimited time)")
     is_blocked: Optional[bool] = None
     blocked_reason: Optional[str] = None
     add_mb: Optional[int] = Field(None, ge=0)

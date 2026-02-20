@@ -405,6 +405,32 @@ def update_user_by_admin_comprehensive(target_user: User, admin_actor: User, dat
             return False, msg, None
         changes['is_unlimited_user'] = data['is_unlimited_user']
 
+    # Unlimited time: clear quota_expiry_date for unlimited users (no time limit)
+    if data.get('unlimited_time') is True:
+        if not target_user.is_unlimited_user:
+            return False, "Unlimited time hanya bisa diaktifkan jika user sudah unlimited.", None
+        if target_user.quota_expiry_date is not None:
+            target_user.quota_expiry_date = None
+            changes['unlimited_time'] = True
+
+            # Ensure Mikrotik session-timeout is cleared (0) for truly unlimited time.
+            try:
+                if not target_user.mikrotik_password:
+                    target_user.mikrotik_password = _generate_password()
+                _handle_mikrotik_operation(
+                    activate_or_update_hotspot_user,
+                    user_mikrotik_username=format_to_local_phone(target_user.phone_number),
+                    hotspot_password=target_user.mikrotik_password,
+                    mikrotik_profile_name=target_user.mikrotik_profile_name,
+                    limit_bytes_total=0,
+                    session_timeout_seconds=0,
+                    server=target_user.mikrotik_server_name,
+                    force_update_profile=False,
+                    comment=f"Clear expiry for unlimited by {admin_actor.full_name}",
+                )
+            except Exception:
+                pass
+
     # Manual debt input / clear (admin-only)
     if target_user.role != UserRole.KOMANDAN:
         debt_add_mb = 0
@@ -462,6 +488,8 @@ def update_user_by_admin_comprehensive(target_user: User, admin_actor: User, dat
                 pass
 
     add_gb, add_days = float(data.get('add_gb') or 0.0), int(data.get('add_days') or 0)
+    if data.get('unlimited_time') is True:
+        add_days = 0
     if add_gb > 0 or add_days > 0:
         success, msg = quota_service.inject_user_quota(target_user, admin_actor, int(add_gb * 1024), add_days)
         if not success:
