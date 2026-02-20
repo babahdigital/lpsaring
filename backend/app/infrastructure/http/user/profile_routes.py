@@ -23,7 +23,6 @@ from app.infrastructure.db.models import User, UserRole, ApprovalStatus, UserLog
 from ..schemas.user_schemas import UserProfileResponseSchema, UserProfileUpdateRequestSchema
 from ..decorators import token_required
 from app.services.device_management_service import apply_device_binding_for_login, revoke_device
-from app.utils.request_utils import get_client_ip
 
 
 profile_bp = Blueprint('user_profile_api', __name__, url_prefix='/api/users')
