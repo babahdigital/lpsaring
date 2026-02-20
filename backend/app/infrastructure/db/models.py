@@ -262,7 +262,7 @@ class User(db.Model):
 
     @property
     def quota_debt_auto_mb(self) -> float:
-        if self.role == UserRole.KOMANDAN:
+        if self.role == UserRole.KOMANDAN or bool(getattr(self, 'is_unlimited_user', False)):
             return 0.0
         from app.utils.quota_debt import compute_debt_mb
 
@@ -272,7 +272,7 @@ class User(db.Model):
 
     @property
     def quota_debt_manual_mb(self) -> int:
-        if self.role == UserRole.KOMANDAN:
+        if self.role == UserRole.KOMANDAN or bool(getattr(self, 'is_unlimited_user', False)):
             return 0
         try:
             return int(self.manual_debt_mb or 0)
@@ -281,7 +281,7 @@ class User(db.Model):
 
     @property
     def quota_debt_total_mb(self) -> float:
-        if self.role == UserRole.KOMANDAN:
+        if self.role == UserRole.KOMANDAN or bool(getattr(self, 'is_unlimited_user', False)):
             return 0.0
         return float(self.quota_debt_auto_mb) + float(self.quota_debt_manual_mb)
 

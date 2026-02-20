@@ -175,9 +175,9 @@ watch(() => formData.unlimited_time, (v) => {
     formData.add_days = 0
 })
 
-const debtAutoMb = computed(() => Number(props.user?.quota_debt_auto_mb ?? 0))
-const debtManualMb = computed(() => Number(props.user?.quota_debt_manual_mb ?? props.user?.manual_debt_mb ?? 0))
-const debtTotalMb = computed(() => Number(props.user?.quota_debt_total_mb ?? (debtAutoMb.value + debtManualMb.value)))
+const debtAutoMb = computed(() => (props.user?.is_unlimited_user === true ? 0 : Number(props.user?.quota_debt_auto_mb ?? 0)))
+const debtManualMb = computed(() => (props.user?.is_unlimited_user === true ? 0 : Number(props.user?.quota_debt_manual_mb ?? props.user?.manual_debt_mb ?? 0)))
+const debtTotalMb = computed(() => (props.user?.is_unlimited_user === true ? 0 : Number(props.user?.quota_debt_total_mb ?? (debtAutoMb.value + debtManualMb.value))))
 
 const debtStatusMeta = computed(() => {
   const hasDebt = debtTotalMb.value > 0

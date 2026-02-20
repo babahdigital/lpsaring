@@ -254,7 +254,7 @@ def get_users_list(current_admin: User):
                 elif status in {'unlimited', 'unlimted'}:
                     conditions.append(User.is_unlimited_user.is_(True))
                 elif status in {'debt', 'hutang'}:
-                    conditions.append(total_debt > 0)
+                    conditions.append(sa.and_(User.is_unlimited_user.is_(False), total_debt > 0))
                 elif status in {'expired', 'expiried'}:
                     conditions.append(sa.and_(User.quota_expiry_date.is_not(None), User.quota_expiry_date < now_utc))
                 elif status in {'fup'}:
@@ -363,7 +363,7 @@ def get_user_manual_debts(current_admin: User, user_id: uuid.UUID):
             {
                 'items': items,
                 'summary': {
-                    'manual_debt_mb': int(getattr(user, 'manual_debt_mb', 0) or 0),
+                    'manual_debt_mb': int(getattr(user, 'quota_debt_manual_mb', 0) or 0),
                     'open_items': int(open_count),
                     'paid_items': int(paid_count),
                     'total_items': int(len(items)),
