@@ -67,6 +67,8 @@
     th.col-qty { width: 90px; }
     th.col-revenue { width: 140px; }
 
+    .note { color: #6b7280; font-size: 10px; }
+
     .footer {
       margin-top: 18px;
       padding-top: 12px;
@@ -85,6 +87,30 @@
       <div class="kv"><div class="k">Total transaksi sukses</div><div class="v">{{ total_success | format_number }}</div></div>
       <div class="kv"><div class="k">Total pendapatan (IDR)</div><div class="v">{{ total_amount | format_currency }}</div></div>
     </div>
+
+    {% if group_by and group_by != 'none' and period_summaries and period_summaries|length > 0 %}
+      {% set label = 'Harian' if group_by == 'daily' else ('Bulanan' if group_by == 'monthly' else 'Tahunan') %}
+      <h2>Ringkasan {{ label }}</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Periode</th>
+            <th class="num col-qty">Qty</th>
+            <th class="num col-revenue">Revenue (IDR)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in period_summaries %}
+            <tr>
+              <td>{{ r.period }}</td>
+              <td class="num">{{ r.qty | format_number }}</td>
+              <td class="num">{{ r.revenue | format_currency }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="note">Catatan: ringkasan periode dihitung berdasarkan waktu lokal (UTC offset aplikasi).</div>
+    {% endif %}
 
     <h2>Paket Terlaris</h2>
     <table>
@@ -135,6 +161,32 @@
         {% endif %}
       </tbody>
     </table>
+
+    {% if debt_users and debt_users|length > 0 %}
+      <h2>Daftar User Punya Debt (Saat Laporan Dibuat)</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Nama</th>
+            <th>Telepon</th>
+            <th class="num">Debt Total (MB)</th>
+            <th class="num">Debt Auto (MB)</th>
+            <th class="num">Debt Manual (MB)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in debt_users %}
+            <tr>
+              <td>{{ u.full_name }}</td>
+              <td>{{ u.phone_number }}</td>
+              <td class="num">{{ u.debt_total_mb | format_number }}</td>
+              <td class="num">{{ u.debt_auto_mb | format_number }}</td>
+              <td class="num">{{ u.debt_manual_mb | format_number }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
 
     <div class="footer">
       Catatan: laporan ini memakai data transaksi aplikasi (bukan rekap bulk dari Midtrans). Untuk rekonsiliasi, perlu status-check per order_id.

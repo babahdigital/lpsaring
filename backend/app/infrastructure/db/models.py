@@ -207,6 +207,10 @@ class User(db.Model):
     mikrotik_password: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     total_quota_purchased_mb: Mapped[int] = mapped_column(BigInteger(), nullable=False, default=0, server_default='0')
     total_quota_used_mb: Mapped[float] = mapped_column(Numeric(precision=15, scale=2), nullable=False, default=0.0, server_default='0.0')
+
+    # Manual debt (MB) entered by admin. This is separate from automatic debt computed as used - purchased.
+    manual_debt_mb: Mapped[int] = mapped_column(BigInteger(), nullable=False, default=0, server_default='0')
+    manual_debt_updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     quota_expiry_date: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     is_unlimited_user: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=expression.false())
 
@@ -238,6 +242,13 @@ class User(db.Model):
     created_action_logs: Mapped[List["AdminActionLog"]] = relationship("AdminActionLog", back_populates="admin", foreign_keys='AdminActionLog.admin_id')
     received_action_logs: Mapped[List["AdminActionLog"]] = relationship("AdminActionLog", back_populates="target_user", foreign_keys='AdminActionLog.target_user_id')
     devices: Mapped[List["UserDevice"]] = relationship("UserDevice", back_populates="user", cascade="all, delete-orphan", lazy="select")
+    manual_debts: Mapped[List["UserQuotaDebt"]] = relationship(
+        "UserQuotaDebt",
+        back_populates="user",
+        foreign_keys="UserQuotaDebt.user_id",
+        cascade="all, delete-orphan",
+        lazy="select",
+    )
 
     @property
     def is_admin_role(self) -> bool:
@@ -248,6 +259,54 @@ class User(db.Model):
     @property
     def is_approved(self) -> bool:
         return self.approval_status == ApprovalStatus.APPROVED
+
+    @property
+    def quota_debt_auto_mb(self) -> float:
+        from app.utils.quota_debt import compute_debt_mb
+
+        purchased_mb = float(self.total_quota_purchased_mb or 0.0)
+        used_mb = float(self.total_quota_used_mb or 0.0)
+        return float(compute_debt_mb(purchased_mb, used_mb))
+
+    @property
+    def quota_debt_manual_mb(self) -> int:
+        try:
+            return int(self.manual_debt_mb or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    @property
+    def quota_debt_total_mb(self) -> float:
+        return float(self.quota_debt_auto_mb) + float(self.quota_debt_manual_mb)
+
+
+class UserQuotaDebt(db.Model):
+    __tablename__ = 'user_quota_debts'
+    __table_args__ = (
+        Index('ix_user_quota_debts_user_id', 'user_id'),
+        Index('ix_user_quota_debts_is_paid', 'is_paid'),
+        {'extend_existing': True},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    last_paid_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+
+    debt_date: Mapped[Optional[datetime.date]] = mapped_column(Date, nullable=True)
+    amount_mb: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    paid_mb: Mapped[int] = mapped_column(BigInteger(), nullable=False, default=0, server_default='0')
+    is_paid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=expression.false())
+    paid_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_paid_source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    user: Mapped["User"] = relationship('User', back_populates='manual_debts', foreign_keys=[user_id])
+    created_by: Mapped[Optional["User"]] = relationship('User', foreign_keys=[created_by_id])
+    last_paid_by: Mapped[Optional["User"]] = relationship('User', foreign_keys=[last_paid_by_id])
 
 class UserDevice(db.Model):
     __tablename__ = 'user_devices'

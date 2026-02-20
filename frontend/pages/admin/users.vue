@@ -30,8 +30,15 @@ interface User {
   password_hash: string | null
   total_quota_purchased_mb: number
   total_quota_used_mb: number
+  manual_debt_mb?: number
+  quota_debt_auto_mb?: number
+  quota_debt_manual_mb?: number
+  quota_debt_total_mb?: number
   quota_expiry_date: string | null
   approved_at: string | null
+
+  is_blocked?: boolean
+  blocked_reason?: string | null
 }
 
 interface PackageItem {
@@ -88,7 +95,15 @@ interface InactiveCleanupPreviewResponse {
     delete_candidates: InactiveCleanupCandidate[]
   }
 }
-type EditPayload = Partial<User> & { add_gb?: number, add_days?: number, is_unlimited_user?: boolean }
+type EditPayload = Partial<User> & {
+  add_gb?: number
+  add_days?: number
+  is_unlimited_user?: boolean
+  debt_add_mb?: number
+  debt_date?: string | null
+  debt_note?: string | null
+  debt_clear?: boolean
+}
 type Options = InstanceType<typeof VDataTableServer>['options']
 
 const { $api } = useNuxtApp()
@@ -105,6 +120,8 @@ const totalUsers = ref(0)
 const search = ref('')
 const options = ref<Options>({ page: 1, itemsPerPage: 10, sortBy: [{ key: 'created_at', order: 'desc' }] })
 const roleFilter = ref<string | null>(null)
+const statusFilter = ref<string | null>(null)
+const tampingFilter = ref<'all' | 'tamping' | 'non_tamping'>('all')
 const dialogState = reactive({ view: false, add: false, edit: false, confirm: false })
 const selectedUser = ref<User | null>(null)
 const editedUser = ref<User | null>(null)
@@ -167,6 +184,33 @@ const roleFilterOptions = computed(() => {
   return allFilters
 })
 
+const statusFilterOptions = [
+  { text: 'Blocked', value: 'blocked' },
+  { text: 'Aktif', value: 'aktif' },
+  { text: 'Nonaktif (Akun)', value: 'inactive' },
+  { text: 'Unlimited', value: 'unlimited' },
+  { text: 'Debt', value: 'debt' },
+  { text: 'FUP', value: 'fup' },
+  { text: 'Expired', value: 'expired' },
+  { text: 'Inactive (Kuota / Tanpa Kuota)', value: 'inactive_quota' },
+]
+
+const roleFilterDropdownItems = computed(() => ([
+  { title: 'Semua', value: null },
+  ...roleFilterOptions.value.map(r => ({ title: r.text, value: r.value })),
+]))
+
+const statusFilterDropdownItems = computed(() => ([
+  { title: 'Semua', value: null },
+  ...statusFilterOptions.map(s => ({ title: s.text, value: s.value })),
+]))
+
+const tampingFilterDropdownItems = [
+  { title: 'Semua', value: 'all' },
+  { title: 'Tamping', value: 'tamping' },
+  { title: 'Non-Tamping', value: 'non_tamping' },
+]
+
 const headers = computed(() => {
   const base = [
     { title: 'PENGGUNA', key: 'full_name', sortable: true, minWidth: '250px' },
@@ -191,7 +235,7 @@ onMounted(() => {
   fetchMikrotikOptions()
   fetchInactiveCleanupPreview()
 })
-watch([() => options.value, roleFilter], () => {
+watch([() => options.value, roleFilter, statusFilter, tampingFilter], () => {
   if (options.value !== null && options.value !== undefined) // Perbaikan baris 91
     options.value.page = 1
   fetchUsers()
@@ -284,8 +328,20 @@ async function fetchUsers() {
     }
     if (search.value !== null && search.value !== '') // Perbaikan baris 119
       params.append('search', search.value)
-    if (roleFilter.value !== null && roleFilter.value !== '') // Perbaikan baris 126
+
+    const allowedRoles = new Set(roleFilterOptions.value.map(r => r.value))
+    if (roleFilter.value !== null && roleFilter.value !== '' && allowedRoles.has(roleFilter.value))
       params.append('role', roleFilter.value)
+
+    const allowedStatuses = new Set(statusFilterOptions.map(s => s.value))
+    if (statusFilter.value !== null && statusFilter.value !== '' && allowedStatuses.has(String(statusFilter.value)))
+      params.append('status', String(statusFilter.value))
+
+    if (tampingFilter.value === 'tamping')
+      params.append('tamping', '1')
+    else if (tampingFilter.value === 'non_tamping')
+      params.append('tamping', '0')
+
     const response = await $api<{ items: User[], totalItems: number }>(`/admin/users?${params.toString()}`)
     users.value = response.items
     totalUsers.value = response.totalItems
@@ -562,47 +618,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 
 <template>
   <div>
-    <VCard class="mb-6 rounded-lg">
-      <VCardItem>
-        <template #prepend>
-          <VIcon icon="tabler-users-group" color="primary" size="32" class="me-2" />
-        </template>
-        <VCardTitle class="text-h4">
-          Manajemen Pengguna
-        </VCardTitle>
-        <VCardSubtitle>Kelola semua akun yang terdaftar di sistem.</VCardSubtitle>
-        <template #append>
-          <div class="d-flex align-center gap-4" :style="{ width: isMobile ? '100%' : 'auto' }">
-            <div :style="{ width: isMobile ? 'calc(100% - 130px)' : '300px' }">
-              <AppTextField v-model="search" placeholder="Cari (Nama/No. HP)..." prepend-inner-icon="tabler-search" clearable density="compact" hide-details />
-            </div>
-            <VBtn prepend-icon="tabler-plus" @click="openAddUserDialog()">
-              Tambah Akun
-            </VBtn>
-          </div>
-        </template>
-      </VCardItem>
-      <VDivider v-if="!isMobile" />
-      <VCardText v-if="isHydrated && !isMobile">
-        <VRow align="center" no-gutters>
-          <VCol cols="12" md="auto" class="text-no-wrap me-md-4 mb-2 mb-md-0">
-            <span class="text-body-2 text-disabled">Fokus pada peran:</span>
-          </VCol>
-          <VCol cols="12" md="auto">
-            <VChipGroup v-model="roleFilter" mandatory selected-class="text-primary">
-              <VChip :value="null" size="small" label>
-                Semua
-              </VChip>
-              <VChip v-for="role in roleFilterOptions" :key="role.value" :value="role.value" size="small" label>
-                {{ role.text }}
-              </VChip>
-            </VChipGroup>
-          </VCol>
-        </VRow>
-      </VCardText>
-    </VCard>
-
-    <VCard class="rounded-lg mt-4">
+    <VCard class="rounded-lg mb-6">
       <VCardItem>
         <VCardTitle class="d-flex align-center">
           <VIcon icon="tabler-user-x" class="me-2" />
@@ -730,6 +746,68 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
       </VCardText>
     </VCard>
 
+    <VCard class="mb-6 rounded-lg">
+      <VCardItem>
+        <template #prepend>
+          <VIcon icon="tabler-users-group" color="primary" size="32" class="me-2" />
+        </template>
+        <VCardTitle class="text-h4">
+          Manajemen Pengguna
+        </VCardTitle>
+        <VCardSubtitle>Kelola semua akun yang terdaftar di sistem.</VCardSubtitle>
+        <template #append>
+          <div class="d-flex align-center gap-4" :style="{ width: isMobile ? '100%' : 'auto' }">
+            <div :style="{ width: isMobile ? 'calc(100% - 130px)' : '300px' }">
+              <AppTextField v-model="search" placeholder="Cari (Nama/No. HP)..." prepend-inner-icon="tabler-search" clearable density="compact" hide-details />
+            </div>
+            <VBtn prepend-icon="tabler-plus" @click="openAddUserDialog()">
+              Tambah Akun
+            </VBtn>
+          </div>
+        </template>
+      </VCardItem>
+      <VDivider v-if="!isMobile" />
+      <VCardText v-if="isHydrated && !isMobile">
+        <VRow align="center" class="mt-1" dense>
+          <VCol cols="12" md="4">
+            <VSelect
+              v-model="roleFilter"
+              :items="roleFilterDropdownItems"
+              item-title="title"
+              item-value="value"
+              label="Peran"
+              density="compact"
+              clearable
+              hide-details
+            />
+          </VCol>
+          <VCol cols="12" md="4">
+            <VSelect
+              v-model="statusFilter"
+              :items="statusFilterDropdownItems"
+              item-title="title"
+              item-value="value"
+              label="Status"
+              density="compact"
+              clearable
+              hide-details
+            />
+          </VCol>
+          <VCol cols="12" md="4">
+            <VSelect
+              v-model="tampingFilter"
+              :items="tampingFilterDropdownItems"
+              item-title="title"
+              item-value="value"
+              label="Tamping"
+              density="compact"
+              hide-details
+            />
+          </VCol>
+        </VRow>
+      </VCardText>
+    </VCard>
+
     <VCard class="rounded-lg">
       <VDataTableServer v-if="!isMobile" v-model:options="options" :headers="headers" :items="users" :items-length="totalUsers" :loading="loading" item-value="id" class="text-no-wrap">
         <template #item.full_name="{ item }">
@@ -746,6 +824,11 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
                     Tamping
                     <span v-if="item.tamping_type"> • {{ item.tamping_type }}</span>
                   </span>
+                </VChip>
+              </div>
+              <div v-if="(item.quota_debt_total_mb ?? 0) > 0" class="mt-1">
+                <VChip color="warning" size="x-small" label prepend-icon="tabler-alert-triangle">
+                  Hutang
                 </VChip>
               </div>
             </div>

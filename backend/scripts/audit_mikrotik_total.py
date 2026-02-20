@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections import Counter
 import re
 import os
 import sys
@@ -205,9 +206,13 @@ def main(argv: list[str]) -> int:
 
             report["counts"]["address_list_blocked_total"] = len(all_blocked_rows)
             report["counts"]["ip_binding_total"] = len(all_ipb_rows)
-            report["counts"]["ip_binding_blocked_total"] = sum(
-                1 for row in all_ipb_rows if str(row.get("type") or "").strip().lower() == "blocked"
+            ipb_type_counts = Counter(
+                (str(row.get("type") or "").strip().lower() or "(empty)") for row in all_ipb_rows
             )
+            report["counts"]["ip_binding_type_counts"] = dict(ipb_type_counts)
+            report["counts"]["ip_binding_regular_total"] = int(ipb_type_counts.get("regular", 0))
+            report["counts"]["ip_binding_bypassed_total"] = int(ipb_type_counts.get("bypassed", 0))
+            report["counts"]["ip_binding_blocked_total"] = int(ipb_type_counts.get("blocked", 0))
 
             stale_candidates: list[dict[str, Any]] = []
             for row in all_blocked_rows:

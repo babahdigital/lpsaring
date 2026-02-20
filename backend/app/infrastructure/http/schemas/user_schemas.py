@@ -5,7 +5,7 @@ from pydantic import (
     BaseModel, Field, field_validator, model_validator, ConfigDict
 )
 from typing import Optional, List, Any
-from datetime import datetime
+from datetime import datetime, date
 
 # Impor Enum dari models.py
 from app.infrastructure.db.models import UserRole, ApprovalStatus, UserBlok, UserKamar
@@ -146,6 +146,12 @@ class UserUpdateByAdminSchema(BaseModel):
     add_gb: Optional[float] = Field(None, ge=0.0, description="Kuota yang akan ditambahkan dalam Gigabyte. Akan dikonversi ke MB di backend.")
     add_days: Optional[int] = Field(None, ge=0)
 
+    # Manual quota debt (MB)
+    debt_add_mb: Optional[int] = Field(None, ge=0, description="Tambah hutang kuota manual dalam MB")
+    debt_date: Optional[date] = Field(None, description="Tanggal hutang (opsional)")
+    debt_note: Optional[str] = Field(None, max_length=500)
+    debt_clear: Optional[bool] = Field(None, description="Lunasi/clear semua debt (otomatis + manual) menjadi 0")
+
     @field_validator('phone_number', mode='before')
     @classmethod
     def validate_phone(cls, v: Any) -> Optional[str]:
@@ -218,6 +224,10 @@ class UserResponseSchema(UserBaseSchema):
     is_active: bool
     total_quota_purchased_mb: int
     total_quota_used_mb: float
+    manual_debt_mb: int
+    quota_debt_auto_mb: float
+    quota_debt_manual_mb: int
+    quota_debt_total_mb: float
     device_brand: Optional[str]
     device_model: Optional[str]
     created_at: datetime
@@ -357,6 +367,22 @@ class MonthlyUsageData(BaseModel):
 
 class MonthlyUsageResponse(BaseModel):
     monthly_data: List[MonthlyUsageData]
+
+
+class UserQuotaDebtItemResponseSchema(BaseModel):
+    id: uuid.UUID
+    debt_date: Optional[date] = None
+    amount_mb: int
+    paid_mb: int
+    remaining_mb: int
+    is_paid: bool
+    paid_at: Optional[datetime] = None
+    note: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    last_paid_source: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
 
 class UserProfileResponseSchema(BaseModel):
     id: uuid.UUID

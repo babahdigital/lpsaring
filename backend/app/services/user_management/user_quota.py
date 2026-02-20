@@ -12,7 +12,8 @@ from app.utils.formatters import format_to_local_phone, get_app_local_datetime
 from app.services import settings_service
 
 # [PERBAIKAN] Impor fungsi `_generate_password` yang hilang dari helper.
-from .helpers import _log_admin_action, _generate_password, _handle_mikrotik_operation
+from .helpers import _log_admin_action, _generate_password, _handle_mikrotik_operation, _send_whatsapp_notification
+from . import user_debt
 from app.infrastructure.gateways.mikrotik_client import activate_or_update_hotspot_user
 from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection, get_ip_by_mac, upsert_ip_binding
 from app.services.access_policy_service import resolve_allowed_binding_type_for_user
@@ -98,9 +99,24 @@ def inject_user_quota(user: User, admin_actor: User, mb_to_add: int, days_to_add
         comment = f"Extend unlimited {days_to_add}d by {admin_actor.full_name}"
         action_details = {"added_days_for_unlimited": days_to_add}
 
-    # Langkah 3: Logika untuk Pengguna TERBATAS (logika yang sudah ada, disempurnakan)
+    # Langkah 3: Logika untuk Pengguna TERBATAS
     else:
-        user.total_quota_purchased_mb = (user.total_quota_purchased_mb or 0) + mb_to_add
+        # Potong debt (otomatis + manual) terlebih dahulu dari quota inject.
+        purchased_before = int(user.total_quota_purchased_mb or 0)
+        used_before = float(user.total_quota_used_mb or 0.0)
+        manual_debt_before = int(getattr(user, 'manual_debt_mb', 0) or 0)
+
+        paid_auto_mb, paid_manual_mb, remaining_injected_mb = user_debt.consume_injected_mb_for_debt(
+            user=user,
+            admin_actor=admin_actor,
+            injected_mb=int(mb_to_add),
+            source='inject_quota',
+        )
+
+        # Sisa inject setelah debt lunas benar-benar menambah kuota.
+        if remaining_injected_mb > 0:
+            user.total_quota_purchased_mb = int(user.total_quota_purchased_mb or 0) + int(remaining_injected_mb)
+
         current_expiry = user.quota_expiry_date
         if days_to_add > 0:
             user.quota_expiry_date = (current_expiry if current_expiry and current_expiry > now else now) + timedelta(days=days_to_add)
@@ -110,7 +126,18 @@ def inject_user_quota(user: User, admin_actor: User, mb_to_add: int, days_to_add
         normalized_expiry = user.quota_expiry_date or now
         timeout_seconds = int((normalized_expiry - now).total_seconds())
         comment = f"Inject {mb_to_add}MB/{days_to_add}d by {admin_actor.full_name}"
-        action_details = {"added_mb": mb_to_add, "added_days": days_to_add}
+        action_details = {
+            "requested_inject_mb": int(mb_to_add),
+            "requested_inject_days": int(days_to_add),
+            "paid_auto_debt_mb": int(paid_auto_mb),
+            "paid_manual_debt_mb": int(paid_manual_mb),
+            "net_added_mb": int(remaining_injected_mb),
+            "manual_debt_before_mb": int(manual_debt_before),
+            "manual_debt_after_mb": int(getattr(user, 'manual_debt_mb', 0) or 0),
+            "purchased_before_mb": int(purchased_before),
+            "used_before_mb": float(used_before),
+            "purchased_after_mb": int(user.total_quota_purchased_mb or 0),
+        }
 
     # Langkah 4: Sinkronisasi ke Mikrotik
     if not user.mikrotik_password:
@@ -159,6 +186,37 @@ def inject_user_quota(user: User, admin_actor: User, mb_to_add: int, days_to_add
 
     # Langkah 5: Catat Log dan Kirim Notifikasi
     _log_admin_action(admin_actor, user, AdminActionType.INJECT_QUOTA, {**action_details, "mikrotik_sync_success": mikrotik_success})
+
+    # Notifikasi WhatsApp untuk inject quota (termasuk potongan debt).
+    try:
+        if not user.is_unlimited_user:
+            purchased_now = float(user.total_quota_purchased_mb or 0.0)
+            used_now = float(user.total_quota_used_mb or 0.0)
+            remaining_mb = max(0.0, purchased_now - used_now)
+
+            paid_auto_mb = int(action_details.get('paid_auto_debt_mb') or 0)
+            paid_manual_mb = int(action_details.get('paid_manual_debt_mb') or 0)
+            paid_total_mb = paid_auto_mb + paid_manual_mb
+
+            _send_whatsapp_notification(
+                user.phone_number,
+                'user_quota_injected',
+                {
+                    'full_name': user.full_name,
+                    'injected_mb': int(mb_to_add),
+                    'injected_gb': user_debt.mb_to_gb_str(int(mb_to_add)),
+                    'paid_debt_mb': int(paid_total_mb),
+                    'paid_debt_gb': user_debt.mb_to_gb_str(int(paid_total_mb)),
+                    'paid_debt_auto_mb': int(paid_auto_mb),
+                    'paid_debt_manual_mb': int(paid_manual_mb),
+                    'net_added_mb': int(action_details.get('net_added_mb') or 0),
+                    'net_added_gb': user_debt.mb_to_gb_str(int(action_details.get('net_added_mb') or 0)),
+                    'added_days': int(days_to_add),
+                    'remaining_mb': float(remaining_mb),
+                },
+            )
+    except Exception as e:
+        current_app.logger.warning('Gagal mengirim notifikasi inject quota untuk user %s: %s', user.id, e)
     
     return True, f"Berhasil memperbarui kuota/masa aktif untuk {user.full_name}."
 

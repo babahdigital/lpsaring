@@ -22,6 +22,7 @@ from app.utils.quota_debt import compute_debt_mb
 # Impor service lain dari paket yang sama
 from . import user_role as role_service
 from . import user_quota as quota_service
+from . import user_debt as debt_service
 from .helpers import (
     _log_admin_action, _generate_password, _send_whatsapp_notification,
     _handle_mikrotik_operation
@@ -404,6 +405,61 @@ def update_user_by_admin_comprehensive(target_user: User, admin_actor: User, dat
             return False, msg, None
         changes['is_unlimited_user'] = data['is_unlimited_user']
 
+    # Manual debt input / clear (admin-only)
+    debt_add_mb = 0
+    try:
+        debt_add_mb = int(data.get('debt_add_mb') or 0)
+    except (TypeError, ValueError):
+        debt_add_mb = 0
+
+    if debt_add_mb and debt_add_mb > 0:
+        ok_debt, msg_debt, _entry = debt_service.add_manual_debt(
+            user=target_user,
+            admin_actor=admin_actor,
+            amount_mb=debt_add_mb,
+            debt_date=data.get('debt_date'),
+            note=data.get('debt_note'),
+        )
+        if not ok_debt:
+            return False, msg_debt, None
+        changes['debt_add_mb'] = debt_add_mb
+        if data.get('debt_date'):
+            changes['debt_date'] = data.get('debt_date')
+
+    if data.get('debt_clear') is True:
+        paid_auto_mb, paid_manual_mb = debt_service.clear_all_debts_to_zero(
+            user=target_user,
+            admin_actor=admin_actor,
+            source='admin_clear',
+        )
+        changes['debt_cleared'] = {
+            'paid_auto_debt_mb': int(paid_auto_mb),
+            'paid_manual_debt_mb': int(paid_manual_mb),
+        }
+        try:
+            sync_address_list_for_single_user(target_user)
+        except Exception:
+            pass
+
+        # Optional WhatsApp: inform user debt is cleared.
+        try:
+            purchased_now = float(target_user.total_quota_purchased_mb or 0.0)
+            used_now = float(target_user.total_quota_used_mb or 0.0)
+            remaining_mb = max(0.0, purchased_now - used_now)
+            _send_whatsapp_notification(
+                target_user.phone_number,
+                'user_debt_cleared',
+                {
+                    'full_name': target_user.full_name,
+                    'paid_auto_debt_mb': int(paid_auto_mb),
+                    'paid_manual_debt_mb': int(paid_manual_mb),
+                    'paid_total_debt_mb': int(paid_auto_mb) + int(paid_manual_mb),
+                    'remaining_mb': float(remaining_mb),
+                },
+            )
+        except Exception:
+            pass
+
     add_gb, add_days = float(data.get('add_gb') or 0.0), int(data.get('add_days') or 0)
     if add_gb > 0 or add_days > 0:
         success, msg = quota_service.inject_user_quota(target_user, admin_actor, int(add_gb * 1024), add_days)
@@ -533,24 +589,6 @@ def _handle_user_activation(user: User, should_be_active: bool, admin: User) -> 
 
 
 def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reason: Optional[str]) -> Tuple[bool, str]:
-    # Do not allow manual unblock if quota-debt hard block is enabled and the user still exceeds the limit.
-    # Exceptions: unlimited users and KOMANDAN.
-    if (
-        (not should_be_blocked)
-        and (not bool(getattr(user, 'is_unlimited_user', False)))
-        and getattr(user, 'role', None) != UserRole.KOMANDAN
-    ):
-        debt_limit_mb = settings_service.get_setting_as_int('QUOTA_DEBT_LIMIT_MB', 0)
-        if debt_limit_mb > 0:
-            purchased_mb = float(user.total_quota_purchased_mb or 0.0)
-            used_mb = float(user.total_quota_used_mb or 0.0)
-            debt_mb = compute_debt_mb(purchased_mb, used_mb)
-            if debt_mb >= float(debt_limit_mb):
-                return (
-                    False,
-                    f"Tidak bisa unblock: hutang kuota {debt_mb:.1f}MB >= limit {debt_limit_mb}MB. Tambah kuota atau naikkan limit dulu.",
-                )
-
     user.is_blocked = should_be_blocked
     user.blocked_reason = reason if should_be_blocked else None
     user.blocked_at = datetime.now(dt_timezone.utc) if should_be_blocked else None
@@ -645,6 +683,15 @@ def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reas
         return success, msg
 
     # Unblock path
+    # Requirement: unblock should set debt (auto + manual) to 0.
+    manual_before = int(getattr(user, 'manual_debt_mb', 0) or 0)
+    auto_before = float(compute_debt_mb(float(user.total_quota_purchased_mb or 0.0), float(user.total_quota_used_mb or 0.0)))
+    paid_auto_mb, paid_manual_mb = debt_service.clear_all_debts_to_zero(
+        user=user,
+        admin_actor=admin,
+        source='unblock',
+    )
+
     success, msg = _sync_user_to_mikrotik(user, f"Unblocked by {admin.full_name}")
     if success:
         list_blocked = settings_service.get_setting('MIKROTIK_ADDRESS_LIST_BLOCKED', 'blocked') or 'blocked'
@@ -781,7 +828,39 @@ def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reas
             return True, "Sukses (unblock cleanup)"
 
         _handle_mikrotik_operation(_unblock_cleanup)
-    _log_admin_action(admin, user, AdminActionType.UNBLOCK_USER, {"blocked_reason": reason})
+
+    # Notify user: debt cleared + access unblocked.
+    try:
+        purchased_now = float(user.total_quota_purchased_mb or 0.0)
+        used_now = float(user.total_quota_used_mb or 0.0)
+        remaining_mb = max(0.0, purchased_now - used_now)
+        _send_whatsapp_notification(
+            user.phone_number,
+            'user_debt_cleared_unblock',
+            {
+                'full_name': user.full_name,
+                'paid_auto_debt_mb': int(paid_auto_mb),
+                'paid_manual_debt_mb': int(paid_manual_mb),
+                'paid_total_debt_mb': int(paid_auto_mb) + int(paid_manual_mb),
+                'manual_debt_before_mb': int(manual_before),
+                'auto_debt_before_mb': float(auto_before),
+                'remaining_mb': float(remaining_mb),
+                'reason': reason or '',
+            },
+        )
+    except Exception:
+        pass
+
+    _log_admin_action(
+        admin,
+        user,
+        AdminActionType.UNBLOCK_USER,
+        {
+            'blocked_reason': reason,
+            'paid_auto_debt_mb': int(paid_auto_mb),
+            'paid_manual_debt_mb': int(paid_manual_mb),
+        },
+    )
     return success, msg
 
 def _sync_user_to_mikrotik(user: User, comment: str) -> Tuple[bool, str]:

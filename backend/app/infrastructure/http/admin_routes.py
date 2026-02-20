@@ -15,6 +15,7 @@ import os
 import pathlib
 import subprocess
 from sqlalchemy.engine import make_url
+import sqlalchemy as sa
 
 from app.extensions import db
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message, send_whatsapp_with_image_url
@@ -65,6 +66,67 @@ def _parse_local_date_range_to_utc(start_date_str: str, end_date_str: str) -> tu
     start_local = datetime.combine(start_date, dt_time.min).replace(tzinfo=local_tz)
     end_local = datetime.combine(end_date + timedelta(days=1), dt_time.min).replace(tzinfo=local_tz)
     return start_local.astimezone(dt_timezone.utc), end_local.astimezone(dt_timezone.utc)
+
+
+def _format_dt_local(value: datetime | None, *, with_seconds: bool = False) -> str:
+    if not value:
+        return "-"
+    try:
+        local_tz = _get_local_tz()
+        local_dt = value.astimezone(local_tz)
+        fmt = "%d %b %Y %H:%M:%S" if with_seconds else "%d %b %Y %H:%M"
+        offset_hours = int(current_app.config.get("APP_TIMEZONE_OFFSET", 8) or 8)
+        sign = "+" if offset_hours >= 0 else "-"
+        return f"{local_dt.strftime(fmt)} (UTC{sign}{abs(offset_hours)})"
+    except Exception:
+        try:
+            return value.isoformat()
+        except Exception:
+            return "-"
+
+
+def _compact_json_summary(payload: object | None, *, max_len: int = 180) -> str:
+    if payload is None:
+        return "-"
+    if isinstance(payload, dict):
+        keys_priority = [
+            "transaction_status",
+            "status_code",
+            "status_message",
+            "payment_type",
+            "acquirer",
+            "issuer",
+            "settlement_time",
+            "transaction_time",
+            "expiry_time",
+            "fraud_status",
+            "gross_amount",
+            "transaction_id",
+            "order_id",
+            "message",
+            "reason",
+        ]
+        parts: list[str] = []
+        for k in keys_priority:
+            if k in payload and payload.get(k) not in (None, ""):
+                v = payload.get(k)
+                s = str(v)
+                if k == "signature_key" and len(s) > 18:
+                    s = s[:12] + "…" + s[-6:]
+                parts.append(f"{k}={s}")
+        if not parts:
+            try:
+                parts.append(json.dumps(payload, ensure_ascii=False)[:max_len])
+            except Exception:
+                parts.append(str(payload)[:max_len])
+        text = " | ".join(parts)
+    else:
+        text = str(payload)
+
+    text = " ".join(text.split())
+    if len(text) > max_len:
+        return text[: max_len - 1] + "…"
+    return text
 
 def _get_backup_dir() -> str:
     backup_dir = current_app.config.get('BACKUP_DIR', '/app/backups')
@@ -878,6 +940,9 @@ def export_transactions(current_admin: User):
         start_date_str = str(request.args.get('start_date', '') or '').strip()
         end_date_str = str(request.args.get('end_date', '') or '').strip()
         user_id_filter = request.args.get('user_id')
+        group_by = str(request.args.get('group_by', 'daily') or 'daily').strip().lower()
+        if group_by not in ('daily', 'monthly', 'yearly', 'none'):
+            return jsonify({"message": "group_by tidak valid. Gunakan daily|monthly|yearly|none."}), HTTPStatus.BAD_REQUEST
 
         if fmt not in ('pdf', 'csv'):
             return jsonify({"message": "format tidak valid. Gunakan pdf atau csv."}), HTTPStatus.BAD_REQUEST
@@ -946,6 +1011,58 @@ def export_transactions(current_admin: User):
             .order_by(desc('revenue'), desc('qty'))
         ).all()
 
+        # Ringkasan per periode (harian/bulanan/tahunan)
+        period_rows = []
+        if group_by != 'none':
+            try:
+                offset_hours = int(current_app.config.get('APP_TIMEZONE_OFFSET', 8) or 8)
+            except Exception:
+                offset_hours = 8
+            offset_hours = max(-12, min(offset_hours, 14))
+            local_created = Transaction.created_at + sa.text(f"INTERVAL '{offset_hours} hours'")
+
+            if group_by == 'daily':
+                period_expr = func.date(local_created)
+            elif group_by == 'monthly':
+                period_expr = func.date_trunc('month', local_created)
+            else:  # yearly
+                period_expr = func.date_trunc('year', local_created)
+
+            period_rows = db.session.execute(
+                select(
+                    period_expr.label('period'),
+                    func.count(Transaction.id).label('qty'),
+                    func.coalesce(func.sum(Transaction.amount), 0).label('revenue'),
+                )
+                .where(*base_filters)
+                .group_by(period_expr)
+                .order_by(period_expr.asc())
+            ).all()
+
+        # Optional: daftar user dengan debt (auto+manual) saat laporan dibuat.
+        purchased_num = sa.cast(User.total_quota_purchased_mb, sa.Numeric)
+        used_num = sa.cast(User.total_quota_used_mb, sa.Numeric)
+        auto_debt = sa.func.greatest(sa.cast(0, sa.Numeric), used_num - purchased_num)
+        manual_debt_num = sa.cast(func.coalesce(User.manual_debt_mb, 0), sa.Numeric)
+        total_debt = auto_debt + manual_debt_num
+
+        debt_users = db.session.execute(
+            select(
+                User.full_name,
+                User.phone_number,
+                auto_debt.label('auto_debt_mb'),
+                manual_debt_num.label('manual_debt_mb'),
+                total_debt.label('total_debt_mb'),
+            )
+            .where(
+                User.role.in_([UserRole.USER, UserRole.KOMANDAN]),
+                User.is_active.is_(True),
+                total_debt > 0,
+            )
+            .order_by(total_debt.desc(), User.full_name.asc())
+            .limit(100)
+        ).all()
+
         if fmt == 'csv':
             output = io.StringIO()
             writer = csv.writer(output)
@@ -957,6 +1074,21 @@ def export_transactions(current_admin: User):
             writer.writerow(["Total transaksi sukses", total_success])
             writer.writerow(["Total pendapatan (IDR)", total_amount])
             writer.writerow([])
+
+            if group_by != 'none':
+                label = 'Harian' if group_by == 'daily' else ('Bulanan' if group_by == 'monthly' else 'Tahunan')
+                writer.writerow([f"Ringkasan {label}"])
+                writer.writerow(["Periode", "Qty", "Revenue (IDR)"])
+                for row in period_rows:
+                    period = row[0]
+                    if group_by == 'daily':
+                        period_str = str(period)
+                    elif group_by == 'monthly':
+                        period_str = period.strftime('%Y-%m') if hasattr(period, 'strftime') else str(period)
+                    else:
+                        period_str = period.strftime('%Y') if hasattr(period, 'strftime') else str(period)
+                    writer.writerow([period_str, int(row[1] or 0), int(row[2] or 0)])
+                writer.writerow([])
 
             writer.writerow(["Paket Terlaris"])
             writer.writerow(["Rank", "Paket", "Qty", "Revenue (IDR)"])
@@ -970,6 +1102,19 @@ def export_transactions(current_admin: User):
                 method = row[0] or "(unknown)"
                 writer.writerow([method, int(row[1] or 0), int(row[2] or 0)])
 
+            if debt_users:
+                writer.writerow([])
+                writer.writerow(["Daftar User Punya Debt (saat laporan dibuat)"])
+                writer.writerow(["Nama", "Telepon", "Debt Total (MB)", "Debt Auto (MB)", "Debt Manual (MB)"])
+                for r in debt_users:
+                    writer.writerow([
+                        r[0],
+                        format_to_local_phone(r[1] or '') or (r[1] or ''),
+                        float(r[4] or 0),
+                        float(r[2] or 0),
+                        float(r[3] or 0),
+                    ])
+
             csv_bytes = output.getvalue().encode('utf-8-sig')
             resp = make_response(csv_bytes)
             resp.headers['Content-Type'] = 'text/csv; charset=utf-8'
@@ -980,13 +1125,44 @@ def export_transactions(current_admin: User):
         if not WEASYPRINT_AVAILABLE or HTML is None:
             return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
 
-        app_tz = dt_timezone(timedelta(hours=int(current_app.config.get("APP_TIMEZONE_OFFSET", 8))))
+        local_tz = _get_local_tz()
+
+        # Build period summaries for PDF
+        period_summaries = []
+        if group_by != 'none':
+            for row in period_rows:
+                period = row[0]
+                if group_by == 'daily':
+                    label = str(period)
+                elif group_by == 'monthly':
+                    label = period.strftime('%Y-%m') if hasattr(period, 'strftime') else str(period)
+                else:
+                    label = period.strftime('%Y') if hasattr(period, 'strftime') else str(period)
+                period_summaries.append({
+                    'period': label,
+                    'qty': int(row[1] or 0),
+                    'revenue': int(row[2] or 0),
+                })
+
+        debt_items = [
+            {
+                'full_name': r[0],
+                'phone_number': format_to_local_phone(r[1] or '') or (r[1] or ''),
+                'debt_total_mb': float(r[4] or 0),
+                'debt_auto_mb': float(r[2] or 0),
+                'debt_manual_mb': float(r[3] or 0),
+            }
+            for r in debt_users
+        ]
+
         context = {
             "start_date": start_date_str,
             "end_date": end_date_str,
-            "generated_at": datetime.now(app_tz),
+            "generated_at": datetime.now(local_tz),
             "total_success": total_success,
             "total_amount": total_amount,
+            "group_by": group_by,
+            "period_summaries": period_summaries,
             "packages": [
                 {"rank": idx, "name": r[0], "qty": int(r[1] or 0), "revenue": int(r[2] or 0)}
                 for idx, r in enumerate(package_rows, start=1)
@@ -995,6 +1171,7 @@ def export_transactions(current_admin: User):
                 {"method": (r[0] or "(unknown)"), "qty": int(r[1] or 0), "revenue": int(r[2] or 0)}
                 for r in method_rows
             ],
+            "debt_users": debt_items,
             "business_name": current_app.config.get('BUSINESS_NAME', 'LPSaring'),
         }
 
@@ -1395,25 +1572,56 @@ def get_transaction_admin_report_pdf(current_admin: User, order_id: str):
         events_payload.append(
             {
                 "created_at": ev.created_at,
+                "created_at_local": _format_dt_local(ev.created_at, with_seconds=True),
                 "source": ev.source.value,
                 "event_type": ev.event_type,
                 "status": ev.status.value if ev.status else None,
                 "payload": ev_payload,
+                "payload_summary": _compact_json_summary(ev_payload),
             }
         )
 
-    app_tz = dt_timezone(timedelta(hours=int(current_app.config.get("APP_TIMEZONE_OFFSET", 8))))
+    local_tz = _get_local_tz()
+    user_phone_display = format_to_local_phone(tx.user.phone_number) if tx.user and tx.user.phone_number else None
+
+    midtrans_payload_sanitized: object | None = payload
+    midtrans_summary: dict[str, object] | None = None
+    if isinstance(payload, dict):
+        safe_payload = dict(payload)
+        if "signature_key" in safe_payload:
+            safe_payload.pop("signature_key", None)
+        midtrans_payload_sanitized = safe_payload
+        midtrans_summary = {
+            "payment_type": safe_payload.get("payment_type"),
+            "transaction_status": safe_payload.get("transaction_status"),
+            "status_code": safe_payload.get("status_code"),
+            "status_message": safe_payload.get("status_message"),
+            "transaction_id": safe_payload.get("transaction_id"),
+            "acquirer": safe_payload.get("acquirer"),
+            "issuer": safe_payload.get("issuer"),
+            "transaction_time": safe_payload.get("transaction_time"),
+            "settlement_time": safe_payload.get("settlement_time"),
+            "expiry_time": safe_payload.get("expiry_time"),
+            "merchant_id": safe_payload.get("merchant_id"),
+        }
+
     context = {
         "transaction": tx,
         "user": tx.user,
         "package": tx.package,
         "status": tx.status.value,
-        "report_date_local": datetime.now(app_tz),
+        "report_date_local": datetime.now(local_tz),
+        "tx_created_at_local": _format_dt_local(tx.created_at),
+        "tx_updated_at_local": _format_dt_local(tx.updated_at),
+        "tx_payment_time_local": _format_dt_local(tx.payment_time),
+        "tx_expiry_time_local": _format_dt_local(tx.expiry_time),
+        "user_phone_display": user_phone_display or (tx.user.phone_number if tx.user else None),
         "business_name": current_app.config.get('BUSINESS_NAME', 'LPSaring'),
         "business_address": current_app.config.get('BUSINESS_ADDRESS', ''),
         "business_phone": current_app.config.get('BUSINESS_PHONE', ''),
         "business_email": current_app.config.get('BUSINESS_EMAIL', ''),
-        "midtrans_payload": payload,
+        "midtrans_payload": midtrans_payload_sanitized,
+        "midtrans_summary": midtrans_summary,
         "events": events_payload,
     }
 

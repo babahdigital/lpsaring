@@ -1,10 +1,11 @@
 # backend/app/infrastructure/http/admin/user_management_routes.py
 import uuid
 from datetime import datetime, timezone as dt_timezone
-from flask import Blueprint, jsonify, request, current_app
+from flask import Blueprint, jsonify, request, current_app, make_response, render_template
 from sqlalchemy import func, or_, select
 from http import HTTPStatus
 from pydantic import ValidationError
+import sqlalchemy as sa
 
 from app.extensions import db
 from app.infrastructure.db.models import User, UserRole, UserBlok, UserKamar, ApprovalStatus
@@ -12,8 +13,11 @@ from app.infrastructure.http.decorators import admin_required
 from app.infrastructure.http.schemas.user_schemas import (
     UserResponseSchema,
     AdminSelfProfileUpdateRequestSchema,
+    UserQuotaDebtItemResponseSchema,
 )
 from app.utils.formatters import get_phone_number_variations
+
+from app.infrastructure.db.models import UserQuotaDebt
 
 
 # [FIX] Menambahkan kembali impor yang hilang untuk endpoint /mikrotik-status
@@ -198,6 +202,13 @@ def get_users_list(current_admin: User):
         else:
             per_page = min(max(int(per_page_raw or 10), 1), 100)
         search_query, role_filter = request.args.get('search', ''), request.args.get('role')
+        tamping_filter = request.args.get('tamping', None)
+
+        # status filter(s): allow repeated ?status=x&status=y or comma separated.
+        status_values = request.args.getlist('status')
+        if len(status_values) == 1 and isinstance(status_values[0], str) and ',' in status_values[0]:
+            status_values = [v.strip() for v in status_values[0].split(',') if v.strip()]
+        status_values = [str(v).strip().lower() for v in (status_values or []) if str(v).strip()]
         sort_by, sort_order = request.args.get('sortBy', 'created_at'), request.args.get('sortOrder', 'desc')
         
         query = select(User)
@@ -210,6 +221,69 @@ def get_users_list(current_admin: User):
                 return jsonify({"message": "Role filter tidak valid."}), HTTPStatus.BAD_REQUEST
         if search_query:
             query = query.where(or_(User.full_name.ilike(f"%{search_query}%"), User.phone_number.in_(get_phone_number_variations(search_query))))
+
+        # Tamping filter: '1' (only tamping), '0' (exclude tamping)
+        if tamping_filter is not None and tamping_filter != '':
+            tf = str(tamping_filter).strip().lower()
+            if tf in {'1', 'true', 'yes', 'tamping'}:
+                query = query.where(User.is_tamping.is_(True))
+            elif tf in {'0', 'false', 'no', 'non', 'non-tamping', 'nontamping'}:
+                query = query.where(User.is_tamping.is_(False))
+
+        # Status filters (OR across selected values)
+        if status_values:
+            now_utc = datetime.now(dt_timezone.utc)
+            fup_threshold = float(settings_service.get_setting_as_int('QUOTA_FUP_PERCENT', 20) or 20)
+
+            purchased_num = sa.cast(User.total_quota_purchased_mb, sa.Numeric)
+            used_num = sa.cast(User.total_quota_used_mb, sa.Numeric)
+            remaining_num = purchased_num - used_num
+            remaining_percent = (remaining_num / func.nullif(purchased_num, 0)) * 100
+            auto_debt = sa.func.greatest(sa.cast(0, sa.Numeric), used_num - purchased_num)
+            manual_debt_num = sa.cast(func.coalesce(User.manual_debt_mb, 0), sa.Numeric)
+            total_debt = auto_debt + manual_debt_num
+
+            conditions = []
+            for status in status_values:
+                if status in {'blocked', 'block'}:
+                    conditions.append(User.is_blocked.is_(True))
+                elif status in {'active', 'aktif'}:
+                    conditions.append(User.is_active.is_(True))
+                elif status in {'inactive', 'nonaktif', 'disabled'}:
+                    conditions.append(User.is_active.is_(False))
+                elif status in {'unlimited', 'unlimted'}:
+                    conditions.append(User.is_unlimited_user.is_(True))
+                elif status in {'debt', 'hutang'}:
+                    conditions.append(total_debt > 0)
+                elif status in {'expired', 'expiried'}:
+                    conditions.append(sa.and_(User.quota_expiry_date.is_not(None), User.quota_expiry_date < now_utc))
+                elif status in {'fup'}:
+                    # Mirror hotspot sync: fup when not blocked, not unlimited, purchased>0, remaining>0,
+                    # remaining_percent <= threshold, and not expired.
+                    conditions.append(
+                        sa.and_(
+                            User.is_blocked.is_(False),
+                            User.is_unlimited_user.is_(False),
+                            User.is_active.is_(True),
+                            User.total_quota_purchased_mb > 0,
+                            remaining_num > 0,
+                            remaining_percent <= fup_threshold,
+                            sa.or_(User.quota_expiry_date.is_(None), User.quota_expiry_date >= now_utc),
+                        )
+                    )
+                elif status in {'inactive_quota', 'quota_inactive', 'no_quota'}:
+                    # "Inactive" quota state: user aktif, bukan unlimited, purchased<=0, dan tidak expired.
+                    conditions.append(
+                        sa.and_(
+                            User.is_active.is_(True),
+                            User.is_unlimited_user.is_(False),
+                            User.total_quota_purchased_mb <= 0,
+                            sa.or_(User.quota_expiry_date.is_(None), User.quota_expiry_date >= now_utc),
+                        )
+                    )
+
+            if conditions:
+                query = query.where(or_(*conditions))
         
         sort_col = getattr(User, sort_by, User.created_at)
         query = query.order_by(sort_col.desc() if sort_order == 'desc' else sort_col.asc())
@@ -225,6 +299,143 @@ def get_users_list(current_admin: User):
     except Exception as e:
         current_app.logger.error(f"Error getting user list: {e}", exc_info=True)
         return jsonify({"message": "Gagal mengambil data pengguna."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@user_management_bp.route('/users/<uuid:user_id>/debts', methods=['GET'])
+@admin_required
+def get_user_manual_debts(current_admin: User, user_id: uuid.UUID):
+    """Ambil ledger debt manual untuk user.
+
+    Dipakai UI agar status lunas / belum lunas jelas.
+    """
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+
+    # RBAC: admin non-super tidak boleh melihat data super admin.
+    if not current_admin.is_super_admin_role and user.role == UserRole.SUPER_ADMIN:
+        return jsonify({"message": "Akses ditolak."}), HTTPStatus.FORBIDDEN
+
+    try:
+        debts = db.session.scalars(
+            select(UserQuotaDebt)
+            .where(UserQuotaDebt.user_id == user.id)
+            .order_by(
+                UserQuotaDebt.debt_date.desc().nulls_last(),
+                UserQuotaDebt.created_at.desc(),
+            )
+        ).all()
+
+        items = []
+        open_count = 0
+        paid_count = 0
+        for d in debts:
+            amount = int(getattr(d, 'amount_mb', 0) or 0)
+            paid_mb = int(getattr(d, 'paid_mb', 0) or 0)
+            remaining = max(0, amount - paid_mb)
+            is_paid = bool(getattr(d, 'is_paid', False)) or remaining <= 0
+            if is_paid:
+                paid_count += 1
+            else:
+                open_count += 1
+
+            payload = UserQuotaDebtItemResponseSchema.from_orm(d).model_dump()
+            payload['remaining_mb'] = int(remaining)
+            payload['is_paid'] = bool(is_paid)
+            payload['paid_mb'] = int(paid_mb)
+            payload['amount_mb'] = int(amount)
+            items.append(payload)
+
+        return jsonify(
+            {
+                'items': items,
+                'summary': {
+                    'manual_debt_mb': int(getattr(user, 'manual_debt_mb', 0) or 0),
+                    'open_items': int(open_count),
+                    'paid_items': int(paid_count),
+                    'total_items': int(len(items)),
+                },
+            }
+        ), HTTPStatus.OK
+    except Exception as e:
+        current_app.logger.error(f"Error getting user debts {user_id}: {e}", exc_info=True)
+        return jsonify({"message": "Gagal mengambil data debt pengguna."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@user_management_bp.route('/users/<uuid:user_id>/debts/export', methods=['GET'])
+@admin_required
+def export_user_manual_debts_pdf(current_admin: User, user_id: uuid.UUID):
+    """Export riwayat debt user ke PDF (untuk print/share)."""
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+
+    # RBAC: admin non-super tidak boleh melihat data super admin.
+    if not current_admin.is_super_admin_role and user.role == UserRole.SUPER_ADMIN:
+        return jsonify({"message": "Akses ditolak."}), HTTPStatus.FORBIDDEN
+
+    fmt = (request.args.get('format') or 'pdf').strip().lower()
+    if fmt != 'pdf':
+        return jsonify({"message": "Format tidak didukung."}), HTTPStatus.BAD_REQUEST
+
+    try:
+        from weasyprint import HTML  # type: ignore
+    except Exception:
+        return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
+
+    try:
+        debts = db.session.scalars(
+            select(UserQuotaDebt)
+            .where(UserQuotaDebt.user_id == user.id)
+            .order_by(
+                UserQuotaDebt.debt_date.desc().nulls_last(),
+                UserQuotaDebt.created_at.desc(),
+            )
+        ).all()
+
+        items = []
+        for d in debts:
+            amount = int(getattr(d, 'amount_mb', 0) or 0)
+            paid_mb = int(getattr(d, 'paid_mb', 0) or 0)
+            remaining = max(0, amount - paid_mb)
+            is_paid = bool(getattr(d, 'is_paid', False)) or remaining <= 0
+            payload = UserQuotaDebtItemResponseSchema.from_orm(d).model_dump()
+            payload['remaining_mb'] = int(remaining)
+            payload['is_paid'] = bool(is_paid)
+            payload['paid_mb'] = int(paid_mb)
+            payload['amount_mb'] = int(amount)
+            items.append(payload)
+
+        debt_auto_mb = float(getattr(user, 'quota_debt_auto_mb', 0) or 0)
+        debt_manual_mb = float(getattr(user, 'quota_debt_manual_mb', 0) or 0)
+        debt_total_mb = float(getattr(user, 'quota_debt_total_mb', debt_auto_mb + debt_manual_mb) or 0)
+
+        context = {
+            'user': user,
+            'user_phone_display': format_to_local_phone(getattr(user, 'phone_number', '') or '')
+            or (getattr(user, 'phone_number', '') or ''),
+            'generated_at': datetime.now(dt_timezone.utc).strftime('%d %b %Y %H:%M UTC'),
+            'items': items,
+            'debt_auto_mb': debt_auto_mb,
+            'debt_manual_mb': debt_manual_mb,
+            'debt_total_mb': debt_total_mb,
+        }
+
+        public_base_url = current_app.config.get('APP_PUBLIC_BASE_URL', request.url_root)
+        html_string = render_template('admin_user_debt_report.html', **context)
+        pdf_bytes = HTML(string=html_string, base_url=public_base_url).write_pdf()
+        if not pdf_bytes:
+            return jsonify({"message": "Gagal menghasilkan file PDF."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+        safe_phone = (getattr(user, 'phone_number', '') or '').replace('+', '')
+        filename = f'debt-{safe_phone or user.id}-ledger.pdf'
+        resp = make_response(pdf_bytes)
+        resp.headers['Content-Type'] = 'application/pdf'
+        resp.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return resp
+    except Exception as e:
+        current_app.logger.error(f"Error export debt PDF for user {user_id}: {e}", exc_info=True)
+        return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
 @user_management_bp.route('/users/inactive-cleanup-preview', methods=['GET'])

@@ -54,6 +54,8 @@ logger = logging.getLogger(__name__)
 BYTES_PER_MB = 1024 * 1024
 REDIS_LAST_BYTES_PREFIX = "quota:last_bytes:mac:"
 REDIS_SYNC_LOCK_PREFIX = "quota:sync_lock:user:"
+REDIS_GLOBAL_SYNC_LOCK_KEY = "quota:sync_lock:global"
+REDIS_ACCESS_STATUS_DEDUPE_PREFIX = "wa:dedupe:access_status:"
 
 
 def _is_valid_ip_candidate(value: Optional[str]) -> bool:
@@ -183,6 +185,69 @@ def _get_redis_client():
         return None
 
 
+def _acquire_global_sync_lock(redis_client, ttl_seconds: int = 180) -> tuple[bool, str]:
+    """Cegah overlap `sync_hotspot_usage_and_profiles`.
+
+    Tanpa lock global, Celery Beat bisa men-trigger task tiap menit sementara run sebelumnya belum selesai.
+    Ini bisa memicu notifikasi WhatsApp status berulang (spam) dan update profile/address-list berulang.
+    """
+    if redis_client is None:
+        return True, ""
+    try:
+        ttl_seconds = int(ttl_seconds)
+    except Exception:
+        ttl_seconds = 180
+    if ttl_seconds <= 0:
+        ttl_seconds = 180
+
+    token = str(uuid.uuid4())
+    try:
+        ok = bool(redis_client.set(REDIS_GLOBAL_SYNC_LOCK_KEY, token, ex=ttl_seconds, nx=True))
+    except Exception:
+        return True, ""
+    return ok, token
+
+
+def _release_global_sync_lock(redis_client, token: str) -> None:
+    if redis_client is None:
+        return
+    if not token:
+        return
+    try:
+        current_token = redis_client.get(REDIS_GLOBAL_SYNC_LOCK_KEY)
+        if isinstance(current_token, (bytes, bytearray)):
+            current_token = current_token.decode("utf-8", errors="ignore")
+        if str(current_token or "") == str(token):
+            redis_client.delete(REDIS_GLOBAL_SYNC_LOCK_KEY)
+    except Exception:
+        return
+
+
+def _should_send_access_status_notification(redis_client, *, user_id: uuid.UUID, status_key: str) -> bool:
+    """Dedupe notifikasi status akses (FUP/Habis/Expired) untuk mencegah spam.
+
+    Fokus pada idempotensi: jika task overlap/retry, pesan yang sama jangan dikirim berkali-kali.
+    """
+    if redis_client is None:
+        return True
+    status = (status_key or "").strip().lower()
+    if not status:
+        return True
+
+    try:
+        ttl_seconds = int(current_app.config.get("WHATSAPP_ACCESS_STATUS_DEDUPE_SECONDS", 6 * 3600))
+    except Exception:
+        ttl_seconds = 6 * 3600
+    if ttl_seconds <= 0:
+        return True
+
+    key = f"{REDIS_ACCESS_STATUS_DEDUPE_PREFIX}{status}:{user_id}"
+    try:
+        return bool(redis_client.set(key, "1", ex=ttl_seconds, nx=True))
+    except Exception:
+        return True
+
+
 def _acquire_sync_lock(redis_client, user_id: uuid.UUID, ttl_seconds: int = 60) -> bool:
     if redis_client is None:
         return True
@@ -293,6 +358,10 @@ def _send_access_status_notification(
     }
     template_key = template_map.get(status_key)
     if not template_key:
+        return
+
+    redis_client = _get_redis_client()
+    if not _should_send_access_status_notification(redis_client, user_id=user.id, status_key=status_key):
         return
 
     payload = {
@@ -626,6 +695,14 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
     today = get_app_local_datetime().date()
     redis_client = _get_redis_client()
 
+    # Lock global untuk mencegah overlap antar-run.
+    # NOTE: ttl diset konservatif; kalau run panjang, Beat akan skip run berikutnya.
+    lock_ttl = int(current_app.config.get("QUOTA_SYNC_GLOBAL_LOCK_SECONDS", 180) or 180)
+    global_lock_ok, global_lock_token = _acquire_global_sync_lock(redis_client, ttl_seconds=lock_ttl)
+    if not global_lock_ok:
+        logger.info("Skip sync_hotspot_usage_and_profiles: global lock active")
+        return counters
+
     debt_limit_mb = settings_service.get_setting_as_int("QUOTA_DEBT_LIMIT_MB", 0)
 
     cheapest_pkg = None
@@ -646,177 +723,157 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
     )
     cheapest_pkg_name = str(cheapest_pkg.name) if cheapest_pkg and cheapest_pkg.name else None
 
-    with get_mikrotik_connection() as api:
-        if not api:
-            logger.error("Gagal mendapatkan koneksi MikroTik untuk sinkronisasi kuota.")
-            counters["failed"] = len(users_to_sync)
-            return counters
+    try:
+        with get_mikrotik_connection() as api:
+            if not api:
+                logger.error("Gagal mendapatkan koneksi MikroTik untuk sinkronisasi kuota.")
+                counters["failed"] = len(users_to_sync)
+                return counters
 
-        ok_host, host_usage_map, host_msg = get_hotspot_host_usage_map(api)
-        if not ok_host:
-            logger.error(f"Gagal mengambil data host Mikrotik: {host_msg}")
-            counters["failed"] = len(users_to_sync)
-            return counters
+            ok_host, host_usage_map, host_msg = get_hotspot_host_usage_map(api)
+            if not ok_host:
+                logger.error(f"Gagal mengambil data host Mikrotik: {host_msg}")
+                counters["failed"] = len(users_to_sync)
+                return counters
 
-        ip_binding_map: Dict[str, Dict[str, Any]] = {}
-        if settings_service.get_setting("AUTO_ENROLL_DEVICES_FROM_IP_BINDING", "True") == "True":
-            ok_binding, binding_map, binding_msg = get_hotspot_ip_binding_user_map(api)
-            if ok_binding:
-                ip_binding_map = binding_map
-            else:
-                logger.warning(f"Gagal mengambil data ip-binding Mikrotik: {binding_msg}")
+            ip_binding_map: Dict[str, Dict[str, Any]] = {}
+            if settings_service.get_setting("AUTO_ENROLL_DEVICES_FROM_IP_BINDING", "True") == "True":
+                ok_binding, binding_map, binding_msg = get_hotspot_ip_binding_user_map(api)
+                if ok_binding:
+                    ip_binding_map = binding_map
+                else:
+                    logger.warning(f"Gagal mengambil data ip-binding Mikrotik: {binding_msg}")
 
-        for user in users_to_sync:
-            try:
-                if not _acquire_sync_lock(redis_client, user.id):
-                    continue
-                username_08 = format_to_local_phone(user.phone_number)
-                if not username_08:
-                    _release_sync_lock(redis_client, user.id)
-                    continue
+            for user in users_to_sync:
+                try:
+                    if not _acquire_sync_lock(redis_client, user.id):
+                        continue
+                    username_08 = format_to_local_phone(user.phone_number)
+                    if not username_08:
+                        _release_sync_lock(redis_client, user.id)
+                        continue
 
-                if ip_binding_map:
-                    max_devices = settings_service.get_setting_as_int("MAX_DEVICES_PER_USER", 3)
-                    existing_devices = len(user.devices or [])
-                    available_slots = max(0, max_devices - existing_devices)
-                    if available_slots > 0:
-                        debug_log = settings_service.get_setting("AUTO_ENROLL_DEBUG_LOG", "False") == "True"
-                        added_devices = _auto_enroll_devices_from_ip_binding(
-                            user,
-                            ip_binding_map,
-                            host_usage_map,
-                            available_slots,
-                            debug_log,
-                        )
-                        if added_devices > 0:
-                            auto_enroll_users += 1
-                            auto_enroll_devices += added_devices
-
-                usage_update = _calculate_usage_update(user, host_usage_map, redis_client)
-                old_usage_mb = float(user.total_quota_used_mb or 0.0)
-                if usage_update:
-                    delta_mb, new_total_usage_mb = usage_update
-                    _update_daily_usage_log(user, delta_mb, today)
-                    if abs(new_total_usage_mb - old_usage_mb) >= 0.01:
-                        user.total_quota_used_mb = new_total_usage_mb
-                        counters["updated_usage"] += 1
-
-                remaining_mb, remaining_percent = _calculate_remaining(user)
-                debt_mb = compute_debt_mb(
-                    float(user.total_quota_purchased_mb or 0.0), float(user.total_quota_used_mb or 0.0)
-                )
-
-                # Quota-debt hard block is NOT applied to:
-                # - unlimited users
-                # - KOMANDAN role
-                if bool(getattr(user, "is_unlimited_user", False)) or getattr(user, "role", None) == UserRole.KOMANDAN:
-                    now_local = get_app_local_datetime()
-                    expiry_local = get_app_local_datetime(user.quota_expiry_date) if user.quota_expiry_date else None
-                    is_expired = bool(expiry_local and expiry_local < now_local)
-                    target_profile = _resolve_target_profile(user, remaining_mb, remaining_percent, is_expired)
-
-                elif debt_limit_mb > 0 and debt_mb >= float(debt_limit_mb):
-                    now_utc = datetime.now(dt_timezone.utc)
-                    username_08_for_block = username_08
-                    debt_mb_text = f"{round_mb(debt_mb)}"
-                    date_str, time_str = get_app_date_time_strings(now_utc)
-
-                    list_blocked = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked"
-                    other_status_lists = [
-                        settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active",
-                        settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup",
-                        settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive",
-                        settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired",
-                        settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis",
-                    ]
-
-                    # Always enforce MikroTik block (idempotent), even if user already blocked.
-                    if api:
-                        block_type = settings_service.get_ip_binding_type_setting("IP_BINDING_TYPE_BLOCKED", "blocked")
-                        for device in user.devices or []:
-                            mac = (device.mac_address or "").upper()
-                            if not mac:
-                                continue
-                            upsert_ip_binding(
-                                api_connection=api,
-                                mac_address=mac,
-                                binding_type=block_type,
-                                comment=(
-                                    f"blocked|quota-debt-limit|user={username_08_for_block}|uid={user.id}|debt_mb={debt_mb_text}|date={date_str}|time={time_str}"
-                                ),
+                    if ip_binding_map:
+                        max_devices = settings_service.get_setting_as_int("MAX_DEVICES_PER_USER", 3)
+                        existing_devices = len(user.devices or [])
+                        available_slots = max(0, max_devices - existing_devices)
+                        if available_slots > 0:
+                            debug_log = settings_service.get_setting("AUTO_ENROLL_DEBUG_LOG", "False") == "True"
+                            added_devices = _auto_enroll_devices_from_ip_binding(
+                                user,
+                                ip_binding_map,
+                                host_usage_map,
+                                available_slots,
+                                debug_log,
                             )
+                            if added_devices > 0:
+                                auto_enroll_users += 1
+                                auto_enroll_devices += added_devices
 
-                        # Pastikan block diterapkan untuk semua IP yang terdeteksi (multi-device/IP).
-                        candidate_ips = _collect_candidate_ips_for_user(
-                            user,
-                            host_usage_map=host_usage_map,
-                            ip_binding_map=ip_binding_map,
-                        )
-                        for ip_address in candidate_ips:
-                            upsert_address_list_entry(
-                                api_connection=api,
-                                address=ip_address,
-                                list_name=list_blocked,
-                                comment=(
-                                    f"lpsaring|blocked|quota-debt-limit|user={username_08_for_block}|uid={user.id}|debt_mb={debt_mb_text}|date={date_str}|time={time_str}"
-                                ),
+                    usage_update = _calculate_usage_update(user, host_usage_map, redis_client)
+                    old_usage_mb = float(user.total_quota_used_mb or 0.0)
+                    if usage_update:
+                        delta_mb, new_total_usage_mb = usage_update
+                        _update_daily_usage_log(user, delta_mb, today)
+                        if abs(new_total_usage_mb - old_usage_mb) >= 0.01:
+                            user.total_quota_used_mb = new_total_usage_mb
+                            counters["updated_usage"] += 1
+
+                    remaining_mb, remaining_percent = _calculate_remaining(user)
+                    debt_mb = compute_debt_mb(
+                        float(user.total_quota_purchased_mb or 0.0), float(user.total_quota_used_mb or 0.0)
+                    )
+
+                    # Quota-debt hard block is NOT applied to:
+                    # - unlimited users
+                    # - KOMANDAN role
+                    if bool(getattr(user, "is_unlimited_user", False)) or getattr(user, "role", None) == UserRole.KOMANDAN:
+                        now_local = get_app_local_datetime()
+                        expiry_local = get_app_local_datetime(user.quota_expiry_date) if user.quota_expiry_date else None
+                        is_expired = bool(expiry_local and expiry_local < now_local)
+                        target_profile = _resolve_target_profile(user, remaining_mb, remaining_percent, is_expired)
+
+                    elif debt_limit_mb > 0 and debt_mb >= float(debt_limit_mb):
+                        now_utc = datetime.now(dt_timezone.utc)
+                        username_08_for_block = username_08
+                        debt_mb_text = f"{round_mb(debt_mb)}"
+                        date_str, time_str = get_app_date_time_strings(now_utc)
+
+                        list_blocked = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked"
+                        other_status_lists = [
+                            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active",
+                            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup",
+                            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive",
+                            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired",
+                            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis",
+                        ]
+
+                        # Always enforce MikroTik block (idempotent), even if user already blocked.
+                        if api:
+                            block_type = settings_service.get_ip_binding_type_setting(
+                                "IP_BINDING_TYPE_BLOCKED", "blocked"
                             )
-
-                            # Pastikan status address-list eksklusif: saat blocked, hapus status lain.
-                            for list_name in other_status_lists:
-                                if list_name and list_name != list_blocked:
-                                    remove_address_list_entry(
-                                        api_connection=api,
-                                        address=ip_address,
-                                        list_name=list_name,
-                                    )
-
-                    # Only flip DB blocked flags + send notifications once.
-                    if not bool(user.is_blocked):
-                        user.is_blocked = True
-                        estimate = estimate_debt_rp_from_cheapest_package(
-                            debt_mb=debt_mb,
-                            cheapest_package_price_rp=cheapest_pkg_price,
-                            cheapest_package_quota_gb=cheapest_pkg_quota_gb,
-                            cheapest_package_name=cheapest_pkg_name,
-                        )
-                        estimate_rp = estimate.estimated_rp_rounded
-                        estimate_rp_text = format_rupiah(estimate_rp) if isinstance(estimate_rp, int) else "-"
-
-                        user.blocked_reason = (
-                            f"quota_debt_limit|debt_mb={debt_mb_text}"
-                            + (f"|estimated_rp={estimate_rp}" if isinstance(estimate_rp, int) else "")
-                            + (f"|base_pkg={cheapest_pkg_name}" if cheapest_pkg_name else "")
-                        )
-                        user.blocked_at = now_utc
-
-                        if settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") == "True":
-                            try:
-                                user_msg = get_notification_message(
-                                    "user_quota_debt_blocked",
-                                    {
-                                        "full_name": user.full_name,
-                                        "phone_number": user.phone_number,
-                                        "debt_mb": debt_mb_text,
-                                        "estimated_rp": estimate_rp_text,
-                                        "base_package_name": cheapest_pkg_name or "-",
-                                    },
+                            for device in user.devices or []:
+                                mac = (device.mac_address or "").upper()
+                                if not mac:
+                                    continue
+                                upsert_ip_binding(
+                                    api_connection=api,
+                                    mac_address=mac,
+                                    binding_type=block_type,
+                                    comment=(
+                                        f"blocked|quota-debt-limit|user={username_08_for_block}|uid={user.id}|debt_mb={debt_mb_text}|date={date_str}|time={time_str}"
+                                    ),
                                 )
-                                send_whatsapp_message(user.phone_number, user_msg)
 
-                                recipients_query = (
-                                    select(User)
-                                    .join(NotificationRecipient, User.id == NotificationRecipient.admin_user_id)
-                                    .where(
-                                        NotificationRecipient.notification_type
-                                        == NotificationType.QUOTA_DEBT_LIMIT_EXCEEDED,
-                                        User.is_active,
-                                    )
+                            # Pastikan block diterapkan untuk semua IP yang terdeteksi (multi-device/IP).
+                            candidate_ips = _collect_candidate_ips_for_user(
+                                user,
+                                host_usage_map=host_usage_map,
+                                ip_binding_map=ip_binding_map,
+                            )
+                            for ip_address in candidate_ips:
+                                upsert_address_list_entry(
+                                    api_connection=api,
+                                    address=ip_address,
+                                    list_name=list_blocked,
+                                    comment=(
+                                        f"lpsaring|blocked|quota-debt-limit|user={username_08_for_block}|uid={user.id}|debt_mb={debt_mb_text}|date={date_str}|time={time_str}"
+                                    ),
                                 )
-                                admins = db.session.scalars(recipients_query).all()
-                                if admins:
-                                    admin_msg = get_notification_message(
-                                        "admin_quota_debt_blocked",
+
+                                # Pastikan status address-list eksklusif: saat blocked, hapus status lain.
+                                for list_name in other_status_lists:
+                                    if list_name and list_name != list_blocked:
+                                        remove_address_list_entry(
+                                            api_connection=api,
+                                            address=ip_address,
+                                            list_name=list_name,
+                                        )
+
+                        # Only flip DB blocked flags + send notifications once.
+                        if not bool(user.is_blocked):
+                            user.is_blocked = True
+                            estimate = estimate_debt_rp_from_cheapest_package(
+                                debt_mb=debt_mb,
+                                cheapest_package_price_rp=cheapest_pkg_price,
+                                cheapest_package_quota_gb=cheapest_pkg_quota_gb,
+                                cheapest_package_name=cheapest_pkg_name,
+                            )
+                            estimate_rp = estimate.estimated_rp_rounded
+                            estimate_rp_text = format_rupiah(estimate_rp) if isinstance(estimate_rp, int) else "-"
+
+                            user.blocked_reason = (
+                                f"quota_debt_limit|debt_mb={debt_mb_text}"
+                                + (f"|estimated_rp={estimate_rp}" if isinstance(estimate_rp, int) else "")
+                                + (f"|base_pkg={cheapest_pkg_name}" if cheapest_pkg_name else "")
+                            )
+                            user.blocked_at = now_utc
+
+                            if settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") == "True":
+                                try:
+                                    user_msg = get_notification_message(
+                                        "user_quota_debt_blocked",
                                         {
                                             "full_name": user.full_name,
                                             "phone_number": user.phone_number,
@@ -825,93 +882,122 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                                             "base_package_name": cheapest_pkg_name or "-",
                                         },
                                     )
-                                    for admin in admins:
-                                        send_whatsapp_message(admin.phone_number, admin_msg)
-                            except Exception:
-                                logger.exception("Gagal kirim notifikasi quota debt limit untuk user %s", user.id)
+                                    send_whatsapp_message(user.phone_number, user_msg)
+
+                                    recipients_query = (
+                                        select(User)
+                                        .join(NotificationRecipient, User.id == NotificationRecipient.admin_user_id)
+                                        .where(
+                                            NotificationRecipient.notification_type
+                                            == NotificationType.QUOTA_DEBT_LIMIT_EXCEEDED,
+                                            User.is_active,
+                                        )
+                                    )
+                                    admins = db.session.scalars(recipients_query).all()
+                                    if admins:
+                                        admin_msg = get_notification_message(
+                                            "admin_quota_debt_blocked",
+                                            {
+                                                "full_name": user.full_name,
+                                                "phone_number": user.phone_number,
+                                                "debt_mb": debt_mb_text,
+                                                "estimated_rp": estimate_rp_text,
+                                                "base_package_name": cheapest_pkg_name or "-",
+                                            },
+                                        )
+                                        for admin in admins:
+                                            send_whatsapp_message(admin.phone_number, admin_msg)
+                                except Exception:
+                                    logger.exception(
+                                        "Gagal kirim notifikasi quota debt limit untuk user %s", user.id
+                                    )
+
+                        counters["processed"] += 1
+                        _release_sync_lock(redis_client, user.id)
+                        continue
+                    else:
+                        now_local = get_app_local_datetime()
+                        expiry_local = get_app_local_datetime(user.quota_expiry_date) if user.quota_expiry_date else None
+                        is_expired = bool(expiry_local and expiry_local < now_local)
+                        target_profile = _resolve_target_profile(user, remaining_mb, remaining_percent, is_expired)
+
+                    if target_profile and user.mikrotik_profile_name != target_profile:
+                        success_profile, message = set_hotspot_user_profile(
+                            api_connection=api, username_or_id=username_08, new_profile_name=target_profile
+                        )
+                        if success_profile:
+                            user.mikrotik_profile_name = target_profile
+                            counters["profile_updates"] += 1
+                            expired_profile = (
+                                settings_service.get_setting("MIKROTIK_EXPIRED_PROFILE", "expired") or "expired"
+                            )
+                            habis_profile = settings_service.get_setting("MIKROTIK_HABIS_PROFILE", "habis") or "habis"
+                            fup_profile = settings_service.get_setting("MIKROTIK_FUP_PROFILE", "fup") or "fup"
+                            status_key = None
+                            if target_profile == expired_profile:
+                                status_key = "expired"
+                            elif target_profile == habis_profile:
+                                status_key = "habis"
+                            elif target_profile == fup_profile:
+                                status_key = "fup"
+
+                            if status_key:
+                                expiry_date = None
+                                if user.quota_expiry_date:
+                                    exp_date_str, exp_time_str = get_app_date_time_strings(user.quota_expiry_date)
+                                    expiry_date = f"{exp_date_str} {exp_time_str}".strip()
+                                _send_access_status_notification(
+                                    user,
+                                    status_key,
+                                    {
+                                        "remaining_mb": remaining_mb,
+                                        "remaining_percent": remaining_percent,
+                                        "expiry_date": expiry_date or "-",
+                                    },
+                                )
+                        else:
+                            logger.warning(f"Gagal update profil Mikrotik {username_08}: {message}")
+
+                    # Sinkronkan address-list untuk semua IP yang terdeteksi (multi-device/IP).
+                    candidate_ips = _collect_candidate_ips_for_user(
+                        user,
+                        host_usage_map=host_usage_map,
+                        ip_binding_map=ip_binding_map,
+                    )
+                    ok_any_ip = False
+                    for ip_address in candidate_ips:
+                        if _sync_address_list_status_for_ip(
+                            api, user, ip_address, remaining_mb, remaining_percent, is_expired
+                        ):
+                            ok_any_ip = True
+
+                    # Fallback: gunakan resolusi IP by-username (active/host) bila belum ada IP yang valid.
+                    if not ok_any_ip:
+                        _sync_address_list_status(api, user, username_08, remaining_mb, remaining_percent, is_expired)
+
+                    if settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") == "True":
+                        _send_quota_notifications(user, remaining_percent, remaining_mb)
+                        _send_expiry_notifications(user)
 
                     counters["processed"] += 1
                     _release_sync_lock(redis_client, user.id)
-                    continue
-                else:
-                    now_local = get_app_local_datetime()
-                    expiry_local = get_app_local_datetime(user.quota_expiry_date) if user.quota_expiry_date else None
-                    is_expired = bool(expiry_local and expiry_local < now_local)
-                    target_profile = _resolve_target_profile(user, remaining_mb, remaining_percent, is_expired)
+                except Exception as e:
+                    logger.error(f"Error sinkronisasi user {user.id}: {e}", exc_info=True)
+                    counters["failed"] += 1
+                    _release_sync_lock(redis_client, user.id)
 
-                if target_profile and user.mikrotik_profile_name != target_profile:
-                    success_profile, message = set_hotspot_user_profile(
-                        api_connection=api, username_or_id=username_08, new_profile_name=target_profile
-                    )
-                    if success_profile:
-                        user.mikrotik_profile_name = target_profile
-                        counters["profile_updates"] += 1
-                        expired_profile = (
-                            settings_service.get_setting("MIKROTIK_EXPIRED_PROFILE", "expired") or "expired"
-                        )
-                        habis_profile = settings_service.get_setting("MIKROTIK_HABIS_PROFILE", "habis") or "habis"
-                        fup_profile = settings_service.get_setting("MIKROTIK_FUP_PROFILE", "fup") or "fup"
-                        status_key = None
-                        if target_profile == expired_profile:
-                            status_key = "expired"
-                        elif target_profile == habis_profile:
-                            status_key = "habis"
-                        elif target_profile == fup_profile:
-                            status_key = "fup"
+        if auto_enroll_devices > 0:
+            logger.info(
+                "Auto-enroll ringkas: users=%s devices=%s",
+                auto_enroll_users,
+                auto_enroll_devices,
+            )
 
-                        if status_key:
-                            expiry_date = None
-                            if user.quota_expiry_date:
-                                exp_date_str, exp_time_str = get_app_date_time_strings(user.quota_expiry_date)
-                                expiry_date = f"{exp_date_str} {exp_time_str}".strip()
-                            _send_access_status_notification(
-                                user,
-                                status_key,
-                                {
-                                    "remaining_mb": remaining_mb,
-                                    "remaining_percent": remaining_percent,
-                                    "expiry_date": expiry_date or "-",
-                                },
-                            )
-                    else:
-                        logger.warning(f"Gagal update profil Mikrotik {username_08}: {message}")
+        db.session.commit()
 
-                # Sinkronkan address-list untuk semua IP yang terdeteksi (multi-device/IP).
-                candidate_ips = _collect_candidate_ips_for_user(
-                    user,
-                    host_usage_map=host_usage_map,
-                    ip_binding_map=ip_binding_map,
-                )
-                ok_any_ip = False
-                for ip_address in candidate_ips:
-                    if _sync_address_list_status_for_ip(api, user, ip_address, remaining_mb, remaining_percent, is_expired):
-                        ok_any_ip = True
-
-                # Fallback: gunakan resolusi IP by-username (active/host) bila belum ada IP yang valid.
-                if not ok_any_ip:
-                    _sync_address_list_status(api, user, username_08, remaining_mb, remaining_percent, is_expired)
-
-                if settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") == "True":
-                    _send_quota_notifications(user, remaining_percent, remaining_mb)
-                    _send_expiry_notifications(user)
-
-                counters["processed"] += 1
-                _release_sync_lock(redis_client, user.id)
-            except Exception as e:
-                logger.error(f"Error sinkronisasi user {user.id}: {e}", exc_info=True)
-                counters["failed"] += 1
-                _release_sync_lock(redis_client, user.id)
-
-    if auto_enroll_devices > 0:
-        logger.info(
-            "Auto-enroll ringkas: users=%s devices=%s",
-            auto_enroll_users,
-            auto_enroll_devices,
-        )
-
-    db.session.commit()
-
-    return counters
+        return counters
+    finally:
+        _release_global_sync_lock(redis_client, global_lock_token)
 
 
 def sync_address_list_for_single_user(user: User, client_ip: Optional[str] = None) -> bool:

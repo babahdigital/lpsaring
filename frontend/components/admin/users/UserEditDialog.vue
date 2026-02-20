@@ -6,6 +6,7 @@ import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useSnackbar } from '@/composables/useSnackbar'
 import { useAuthStore } from '@/store/auth'
 import { TAMPING_OPTION_ITEMS } from '~/utils/constants'
+import UserDebtLedgerDialog from '@/components/admin/users/UserDebtLedgerDialog.vue'
 
 const props = defineProps<{
   modelValue: boolean
@@ -54,6 +55,10 @@ interface User {
   mikrotik_profile_name: string | null
   total_quota_purchased_mb: number
   total_quota_used_mb: number
+  manual_debt_mb?: number
+  quota_debt_auto_mb?: number
+  quota_debt_manual_mb?: number
+  quota_debt_total_mb?: number
   quota_expiry_date: string | null
   is_blocked?: boolean
   blocked_reason?: string | null
@@ -70,7 +75,7 @@ interface LiveData {
 const authStore = useAuthStore()
 const formRef = ref<InstanceType<typeof VForm> | null>(null)
 
-function getInitialFormData(): Partial<User & { add_gb: number, add_days: number }> {
+function getInitialFormData(): Partial<User & { add_gb: number, add_days: number, debt_add_mb: number, debt_date: string | null, debt_note: string | null, debt_clear: boolean }> {
   return {
     full_name: '',
     phone_number: '',
@@ -90,12 +95,17 @@ function getInitialFormData(): Partial<User & { add_gb: number, add_days: number
     quota_expiry_date: null,
     add_gb: 0,
     add_days: 0,
+    debt_add_mb: 0,
+    debt_date: null,
+    debt_note: null,
+    debt_clear: false,
   }
 }
 
 const formData = reactive(getInitialFormData())
 const isCheckingMikrotik = ref(false)
 const liveData = ref<LiveData | null>(null)
+const isDebtLedgerOpen = ref(false)
 
 const isRestrictedAdmin = computed(() => authStore.isAdmin && !authStore.isSuperAdmin)
 
@@ -149,10 +159,33 @@ watch(() => props.user, (newUser) => {
       kamar: newUser.kamar != null ? newUser.kamar.replace('Kamar_', '') : null,
       add_gb: 0,
       add_days: 0,
+      debt_add_mb: 0,
+      debt_date: null,
+      debt_note: null,
+      debt_clear: false,
       is_unlimited_user: isEditingAdminOrSuper || newUser.is_unlimited_user,
     })
   }
 }, { immediate: true })
+
+const debtAutoMb = computed(() => Number(props.user?.quota_debt_auto_mb ?? 0))
+const debtManualMb = computed(() => Number(props.user?.quota_debt_manual_mb ?? props.user?.manual_debt_mb ?? 0))
+const debtTotalMb = computed(() => Number(props.user?.quota_debt_total_mb ?? (debtAutoMb.value + debtManualMb.value)))
+
+const debtStatusMeta = computed(() => {
+  const hasDebt = debtTotalMb.value > 0
+  return {
+    text: hasDebt ? 'PUNYA HUTANG' : 'LUNAS',
+    color: hasDebt ? 'warning' : 'success',
+    icon: hasDebt ? 'tabler-alert-triangle' : 'tabler-circle-check',
+  }
+})
+
+function formatMb(value: number) {
+  if (!Number.isFinite(value))
+    return '0'
+  return value.toLocaleString('id-ID', { maximumFractionDigits: 2 })
+}
 
 watch(() => props.modelValue, (isOpen) => {
   if (isOpen) {
@@ -300,6 +333,18 @@ async function onSave() {
 function onClose() {
   emit('update:modelValue', false)
 }
+
+function openDebtLedger() {
+  if (!props.user)
+    return
+  isDebtLedgerOpen.value = true
+}
+
+function openDebtPdf() {
+  if (!props.user)
+    return
+  window.open(`/api/admin/users/${props.user.id}/debts/export?format=pdf`, '_blank', 'noopener')
+}
 </script>
 
 <template>
@@ -372,6 +417,17 @@ function onClose() {
                   </VAlert>
                 </VCol>
 
+                <VCol v-if="canAdminInject && formData.is_active === true && isTargetAdminOrSuper !== true" cols="12">
+                  <VSwitch
+                    v-model="formData.debt_clear"
+                    label="Clear/Lunas Debt (set jadi 0)"
+                    color="success"
+                    inset
+                    hint="Jika aktif, sistem akan melunasi debt otomatis+manual. kecuali ada inject."
+                    persistent-hint
+                  />
+                </VCol>
+
                 <VCol v-if="formData.is_active !== true" cols="12">
                   <VAlert type="warning" variant="tonal" density="compact" icon="tabler-plug-connected-x">
                     Opsi kuota dan akses tidak tersedia karena akun ini sedang <strong>NONAKTIF</strong>.
@@ -440,6 +496,82 @@ function onClose() {
                   </VCol>
 
                   <VCol cols="12">
+                    <div class="text-overline">
+                      Debt Kuota
+                    </div>
+                  </VCol>
+
+                  <VCol cols="12">
+                    <VSheet rounded="lg" border class="pa-3">
+                      <div class="d-flex justify-space-between align-center mb-2">
+                        <div class="text-caption text-disabled">
+                          Status Debt
+                        </div>
+                        <div class="d-flex align-center gap-2">
+                          <VBtn
+                            v-if="debtTotalMb > 0"
+                            icon="tabler-list-details"
+                            size="x-small"
+                            variant="text"
+                            :title="'Lihat riwayat debt'"
+                            @click="openDebtLedger"
+                          />
+                          <VBtn
+                            v-if="debtTotalMb > 0"
+                            icon="tabler-printer"
+                            size="x-small"
+                            variant="text"
+                            :title="'PDF (print / simpan)'"
+                            @click="openDebtPdf"
+                          />
+                          <VChip :color="debtStatusMeta.color" size="x-small" label>
+                            <VIcon :icon="debtStatusMeta.icon" start size="16" />
+                            {{ debtStatusMeta.text }}
+                          </VChip>
+                        </div>
+                      </div>
+                      <VRow dense>
+                        <VCol cols="12" sm="4">
+                          <div class="text-caption text-disabled">
+                            Debt Total
+                          </div>
+                          <div class="font-weight-medium">
+                            {{ formatMb(debtTotalMb) }} MB
+                          </div>
+                        </VCol>
+                        <VCol cols="12" sm="4">
+                          <div class="text-caption text-disabled">
+                            Debt Otomatis
+                          </div>
+                          <div class="font-weight-medium">
+                            {{ formatMb(debtAutoMb) }} MB
+                          </div>
+                        </VCol>
+                        <VCol cols="12" sm="4">
+                          <div class="text-caption text-disabled">
+                            Debt Manual
+                          </div>
+                          <div class="font-weight-medium">
+                            {{ formatMb(debtManualMb) }} MB
+                          </div>
+                        </VCol>
+                      </VRow>
+                    </VSheet>
+                  </VCol>
+
+                  <VCol cols="12" md="6">
+                    <AppTextField v-model.number="formData.debt_add_mb" label="Tambah Debt Manual (MB)" type="number" prepend-inner-icon="tabler-alert-circle" />
+                  </VCol>
+
+                  <VCol cols="12" md="6">
+                    <AppTextField v-model="formData.debt_date" label="Tanggal Debt" type="date" prepend-inner-icon="tabler-calendar" />
+                  </VCol>
+
+                  <VCol cols="12">
+                    <AppTextField v-model="formData.debt_note" label="Catatan Debt (Opsional)" prepend-inner-icon="tabler-notes" />
+                  </VCol>
+
+                  <VCol cols="12">
                     <VDivider class="my-2" />
                   </VCol>
                 </template>
@@ -461,4 +593,6 @@ function onClose() {
       </VForm>
     </VCard>
   </VDialog>
+
+  <UserDebtLedgerDialog v-model="isDebtLedgerOpen" :user="props.user" />
 </template>

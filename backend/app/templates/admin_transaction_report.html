@@ -66,6 +66,8 @@
     .kv { display: flex; justify-content: space-between; gap: 12px; }
     .k { color: #6b7280; }
     .v { font-weight: 500; text-align: right; word-break: break-word; }
+    .nowrap { white-space: nowrap; }
+    .v.nowrap { word-break: normal; }
 
     h2 {
       font-size: 13px;
@@ -107,6 +109,7 @@
       padding: 10px;
       border-radius: 8px;
     }
+    .mt-10 { margin-top: 10px; }
 
     .footer {
       margin-top: 18px;
@@ -122,7 +125,7 @@
     <div class="header">
       <div>
         <h1 class="title">Laporan Transaksi (Admin)</h1>
-        <p class="subtitle">Order ID: <span class="mono">{{ transaction.midtrans_order_id }}</span> • Dicetak: {{ report_date_local.strftime('%d %b %Y %H:%M') }}</p>
+        <p class="subtitle">Order ID: <span class="mono nowrap">{{ transaction.midtrans_order_id }}</span> • Dicetak: {{ report_date_local.strftime('%d %b %Y %H:%M') }}</p>
         {% if business_name %}
           <p class="subtitle">{{ business_name }}{% if business_phone %} • {{ business_phone }}{% endif %}{% if business_email %} • {{ business_email }}{% endif %}</p>
         {% endif %}
@@ -136,15 +139,15 @@
 
     <div class="grid">
       <div class="kv"><div class="k">Nama pengguna</div><div class="v">{{ user.full_name if user else 'N/A' }}</div></div>
-      <div class="kv"><div class="k">Telepon</div><div class="v">{{ user.phone_number if user else 'N/A' }}</div></div>
+      <div class="kv"><div class="k">Telepon</div><div class="v nowrap">{{ user_phone_display if user_phone_display else (user.phone_number if user else 'N/A') }}</div></div>
       <div class="kv"><div class="k">Paket</div><div class="v">{{ package.name if package else 'N/A' }}</div></div>
-      <div class="kv"><div class="k">Jumlah</div><div class="v">{{ transaction.amount | format_currency }}</div></div>
-      <div class="kv"><div class="k">Metode</div><div class="v">{{ transaction.payment_method or '-' }}</div></div>
-      <div class="kv"><div class="k">Midtrans trx id</div><div class="v mono">{{ transaction.midtrans_transaction_id or '-' }}</div></div>
-      <div class="kv"><div class="k">Dibuat</div><div class="v">{{ transaction.created_at.isoformat() if transaction.created_at else '-' }}</div></div>
-      <div class="kv"><div class="k">Diperbarui</div><div class="v">{{ transaction.updated_at.isoformat() if transaction.updated_at else '-' }}</div></div>
-      <div class="kv"><div class="k">Waktu bayar</div><div class="v">{{ transaction.payment_time.isoformat() if transaction.payment_time else '-' }}</div></div>
-      <div class="kv"><div class="k">Kadaluarsa</div><div class="v">{{ transaction.expiry_time.isoformat() if transaction.expiry_time else '-' }}</div></div>
+      <div class="kv"><div class="k">Jumlah</div><div class="v nowrap">{{ transaction.amount | format_currency }}</div></div>
+      <div class="kv"><div class="k">Metode</div><div class="v nowrap">{{ transaction.payment_method or '-' }}</div></div>
+      <div class="kv"><div class="k">Midtrans trx id</div><div class="v mono nowrap">{{ transaction.midtrans_transaction_id or '-' }}</div></div>
+      <div class="kv"><div class="k">Dibuat</div><div class="v nowrap">{{ tx_created_at_local }}</div></div>
+      <div class="kv"><div class="k">Diperbarui</div><div class="v nowrap">{{ tx_updated_at_local }}</div></div>
+      <div class="kv"><div class="k">Waktu bayar</div><div class="v nowrap">{{ tx_payment_time_local }}</div></div>
+      <div class="kv"><div class="k">Kadaluarsa</div><div class="v nowrap">{{ tx_expiry_time_local }}</div></div>
       <div class="kv"><div class="k">VA / Kode bayar</div><div class="v mono">{{ transaction.va_number or transaction.payment_code or '-' }}</div></div>
       <div class="kv"><div class="k">Biller</div><div class="v mono">{{ transaction.biller_code or '-' }}</div></div>
     </div>
@@ -164,17 +167,11 @@
         {% if events and events|length > 0 %}
           {% for ev in events %}
             <tr>
-              <td class="mono">{{ ev.created_at.isoformat() if ev.created_at else '-' }}</td>
+              <td class="mono">{{ ev.created_at_local or '-' }}</td>
               <td>{{ ev.source }}</td>
               <td class="mono">{{ ev.event_type }}</td>
               <td>{{ ev.status or '-' }}</td>
-              <td class="small">
-                {% if ev.payload %}
-                  {{ ev.payload | tojson }}
-                {% else %}
-                  -
-                {% endif %}
-              </td>
+              <td class="small mono">{{ ev.payload_summary or '-' }}</td>
             </tr>
           {% endfor %}
         {% else %}
@@ -185,7 +182,22 @@
 
     <h2>Midtrans Notification Payload (Terakhir)</h2>
     {% if midtrans_payload %}
-      <div class="json mono">{{ midtrans_payload | tojson(indent=2) }}</div>
+      {% if midtrans_summary %}
+        <div class="grid">
+          <div class="kv"><div class="k">payment_type</div><div class="v nowrap">{{ midtrans_summary.payment_type or '-' }}</div></div>
+          <div class="kv"><div class="k">transaction_status</div><div class="v nowrap">{{ midtrans_summary.transaction_status or '-' }}</div></div>
+          <div class="kv"><div class="k">status_code</div><div class="v nowrap">{{ midtrans_summary.status_code or '-' }}</div></div>
+          <div class="kv"><div class="k">status_message</div><div class="v">{{ midtrans_summary.status_message or '-' }}</div></div>
+          <div class="kv"><div class="k">transaction_id</div><div class="v mono nowrap">{{ midtrans_summary.transaction_id or '-' }}</div></div>
+          <div class="kv"><div class="k">merchant_id</div><div class="v mono nowrap">{{ midtrans_summary.merchant_id or '-' }}</div></div>
+          <div class="kv"><div class="k">acquirer</div><div class="v nowrap">{{ midtrans_summary.acquirer or '-' }}</div></div>
+          <div class="kv"><div class="k">issuer</div><div class="v nowrap">{{ midtrans_summary.issuer or '-' }}</div></div>
+          <div class="kv"><div class="k">transaction_time</div><div class="v nowrap">{{ midtrans_summary.transaction_time or '-' }}</div></div>
+          <div class="kv"><div class="k">settlement_time</div><div class="v nowrap">{{ midtrans_summary.settlement_time or '-' }}</div></div>
+          <div class="kv"><div class="k">expiry_time</div><div class="v nowrap">{{ midtrans_summary.expiry_time or '-' }}</div></div>
+        </div>
+      {% endif %}
+      <div class="json mono mt-10">{{ midtrans_payload | tojson(indent=2) }}</div>
     {% else %}
       <div class="small">Belum ada payload Midtrans tersimpan.</div>
     {% endif %}

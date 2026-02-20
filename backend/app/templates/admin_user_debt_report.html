@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Laporan Debt Kuota</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { font-family: sans-serif; font-size: 12px; color: #111; }
+      h1 { font-size: 18px; margin: 0 0 4px 0; }
+      .muted { color: #666; }
+      .row { display: flex; gap: 12px; flex-wrap: wrap; }
+      .card { border: 1px solid #ddd; border-radius: 8px; padding: 10px; }
+      .card-title { font-weight: 700; margin-bottom: 6px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+      th, td { border: 1px solid #ddd; padding: 6px 8px; vertical-align: top; }
+      th { background: #f5f5f5; text-align: left; }
+      .right { text-align: right; }
+      .nowrap { white-space: nowrap; }
+      .badge {
+        display: inline-block; padding: 2px 6px; border-radius: 999px;
+        border: 1px solid #ddd; font-size: 11px;
+      }
+      .badge-paid { background: #e8f5e9; border-color: #c8e6c9; }
+      .badge-open { background: #fff8e1; border-color: #ffe082; }
+      .mt-8 { margin-top: 8px; }
+      .card-flex { flex: 1 1 320px; }
+      .metric { flex: 1 1 140px; }
+    </style>
+  </head>
+  <body>
+    <h1>Laporan Debt Kuota</h1>
+    <div class="muted">Dicetak: {{ generated_at }}</div>
+
+    <div class="row mt-8">
+      <div class="card card-flex">
+        <div class="card-title">Pengguna</div>
+        <div><strong>{{ user.full_name }}</strong></div>
+        <div class="muted nowrap">{{ user_phone_display }}</div>
+      </div>
+
+      <div class="card card-flex">
+        <div class="card-title">Ringkasan</div>
+        <div class="row">
+          <div class="metric">
+            <div class="muted">Debt Otomatis</div>
+            <div><strong>{{ debt_auto_mb }} MB</strong></div>
+          </div>
+          <div class="metric">
+            <div class="muted">Debt Manual</div>
+            <div><strong>{{ debt_manual_mb }} MB</strong></div>
+          </div>
+          <div class="metric">
+            <div class="muted">Debt Total</div>
+            <div><strong>{{ debt_total_mb }} MB</strong></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th class="nowrap">Tanggal Debt</th>
+          <th class="right nowrap">Jumlah (MB)</th>
+          <th class="right nowrap">Dibayar (MB)</th>
+          <th class="right nowrap">Sisa (MB)</th>
+          <th class="nowrap">Status</th>
+          <th>Catatan</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if items and items|length > 0 %}
+          {% for it in items %}
+            <tr>
+              <td class="nowrap">{{ it.debt_date or '-' }}</td>
+              <td class="right nowrap">{{ it.amount_mb }}</td>
+              <td class="right nowrap">{{ it.paid_mb }}</td>
+              <td class="right nowrap">{{ it.remaining_mb }}</td>
+              <td class="nowrap">
+                {% if it.is_paid %}
+                  <span class="badge badge-paid">LUNAS</span>
+                {% else %}
+                  <span class="badge badge-open">BELUM</span>
+                {% endif %}
+              </td>
+              <td>{{ it.note or '' }}</td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="6" class="muted">Tidak ada riwayat debt manual.</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </body>
+</html>

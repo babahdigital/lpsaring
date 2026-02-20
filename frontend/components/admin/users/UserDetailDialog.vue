@@ -1,7 +1,8 @@
 <script lang="ts" setup>
 import { differenceInDays, format, isPast, isValid } from 'date-fns'
 import { id } from 'date-fns/locale'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useSnackbar } from '@/composables/useSnackbar'
 
 // Definisikan interface User
 interface User {
@@ -21,6 +22,10 @@ interface User {
   approved_at: string | null
   total_quota_purchased_mb: number
   total_quota_used_mb: number
+  manual_debt_mb?: number
+  quota_debt_auto_mb?: number
+  quota_debt_manual_mb?: number
+  quota_debt_total_mb?: number
   quota_expiry_date: string | null
   is_unlimited_user: boolean
 }
@@ -46,6 +51,25 @@ interface PreviewContext {
 
 const props = defineProps<{ modelValue: boolean, user: User | null, previewContext?: PreviewContext | null }>()
 const emit = defineEmits(['update:modelValue'])
+const { $api } = useNuxtApp()
+const { add: showSnackbar } = useSnackbar()
+
+interface ManualDebtItem {
+  id: string
+  debt_date: string | null
+  amount_mb: number
+  paid_mb: number
+  remaining_mb: number
+  is_paid: boolean
+  paid_at: string | null
+  note: string | null
+  created_at: string
+  last_paid_source?: string | null
+}
+
+const manualDebtItems = ref<ManualDebtItem[]>([])
+const manualDebtSummary = ref<{ manual_debt_mb: number, open_items: number, paid_items: number, total_items: number } | null>(null)
+const manualDebtLoading = ref(false)
 
 const roleMap = { USER: { text: 'User', color: 'info' }, KOMANDAN: { text: 'Komandan', color: 'success' }, ADMIN: { text: 'Admin', color: 'primary' }, SUPER_ADMIN: { text: 'Support', color: 'secondary' } }
 const statusMap = { APPROVED: { text: 'Disetujui', color: 'success' }, PENDING_APPROVAL: { text: 'Menunggu', color: 'warning' }, REJECTED: { text: 'Ditolak', color: 'error' } }
@@ -146,6 +170,69 @@ const quotaDetails = computed((): QuotaInfo | null => {
   }
 })
 
+const debtAutoMb = computed(() => Number(props.user?.quota_debt_auto_mb ?? 0))
+const debtManualMb = computed(() => Number(props.user?.quota_debt_manual_mb ?? props.user?.manual_debt_mb ?? 0))
+const debtTotalMb = computed(() => Number(props.user?.quota_debt_total_mb ?? (debtAutoMb.value + debtManualMb.value)))
+
+const debtStatusMeta = computed(() => {
+  const hasDebt = debtTotalMb.value > 0
+  return {
+    text: hasDebt ? 'PUNYA HUTANG' : 'LUNAS',
+    color: hasDebt ? 'warning' : 'success',
+    icon: hasDebt ? 'tabler-alert-triangle' : 'tabler-circle-check',
+  }
+})
+
+function formatMb(value: number) {
+  if (!Number.isFinite(value))
+    return '0'
+  return value.toLocaleString('id-ID', { maximumFractionDigits: 2 })
+}
+
+function formatDebtDate(value: string | null) {
+  if (!value)
+    return '-'
+  const dt = new Date(value)
+  return isValid(dt) ? format(dt, 'dd MMM yyyy', { locale: id }) : value
+}
+
+async function fetchManualDebtLedger() {
+  if (!props.user)
+    return
+  manualDebtLoading.value = true
+  manualDebtItems.value = []
+  manualDebtSummary.value = null
+  try {
+    const resp = await $api<{ items: ManualDebtItem[], summary: any }>(`/admin/users/${props.user.id}/debts`)
+    manualDebtItems.value = Array.isArray(resp.items) ? resp.items : []
+    manualDebtSummary.value = resp.summary ?? null
+  }
+  catch (error: any) {
+    showSnackbar({ type: 'warning', title: 'Debt', text: error?.data?.message || 'Gagal memuat riwayat debt.' })
+  }
+  finally {
+    manualDebtLoading.value = false
+  }
+}
+
+watch(
+  () => props.modelValue,
+  (isOpen) => {
+    if (!isOpen)
+      return
+    if (props.user)
+      fetchManualDebtLedger()
+  },
+)
+
+watch(
+  () => props.user?.id,
+  () => {
+    if (props.modelValue && props.user)
+      fetchManualDebtLedger()
+  },
+)
+
 function onClose() {
   emit('update:modelValue', false)
 }
@@ -204,6 +291,10 @@ function onClose() {
               <VChip v-if="props.user.is_blocked" color="error" size="small" class="ms-2" label>
                 Diblokir
               </VChip>
+              <VChip :color="debtStatusMeta.color" size="small" class="ms-2" label>
+                <VIcon :icon="debtStatusMeta.icon" start size="16" />
+                {{ debtStatusMeta.text }}
+              </VChip>
             </template>
           </VListItem>
           <VListItem v-if="props.user.is_tamping" prepend-icon="tabler-building-bank" title="Tamping" :subtitle="props.user.tamping_type || 'N/A'" />
@@ -241,6 +332,80 @@ function onClose() {
           <VAlert v-else variant="tonal" color="warning" icon="tabler-alert-circle" density="compact">
             Pengguna belum memiliki paket kuota aktif.
           </VAlert>
+
+          <VAlert
+            v-if="debtTotalMb > 0"
+            variant="tonal"
+            color="warning"
+            icon="tabler-alert-triangle"
+            class="mt-4"
+            density="compact"
+          >
+            Debt kuota terdeteksi: <strong>{{ formatMb(debtTotalMb) }} MB</strong>
+            (otomatis {{ formatMb(debtAutoMb) }} MB, manual {{ formatMb(debtManualMb) }} MB)
+          </VAlert>
+
+          <VSheet rounded="lg" border class="pa-3 mt-4">
+            <div class="d-flex justify-space-between align-center">
+              <div class="text-overline">
+                Riwayat Debt Manual
+              </div>
+              <VChip v-if="manualDebtSummary" size="x-small" label>
+                Open {{ manualDebtSummary.open_items }} / Total {{ manualDebtSummary.total_items }}
+              </VChip>
+            </div>
+
+            <VAlert v-if="manualDebtLoading" variant="tonal" density="compact" type="info" class="mt-2">
+              Memuat riwayat debt...
+            </VAlert>
+            <VAlert
+              v-else-if="manualDebtItems.length === 0"
+              variant="tonal"
+              density="compact"
+              type="info"
+              class="mt-2"
+            >
+              Belum ada entri debt manual.
+            </VAlert>
+
+            <VTable v-else density="compact" class="mt-2">
+              <thead>
+                <tr>
+                  <th>Tanggal</th>
+                  <th class="text-right">Jumlah</th>
+                  <th class="text-right">Dibayar</th>
+                  <th class="text-right">Sisa</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in manualDebtItems" :key="item.id">
+                  <td>
+                    <div class="text-body-2">
+                      {{ formatDebtDate(item.debt_date || item.created_at) }}
+                    </div>
+                    <div v-if="item.note" class="text-caption text-disabled">
+                      {{ item.note }}
+                    </div>
+                  </td>
+                  <td class="text-right">
+                    {{ formatMb(item.amount_mb) }}
+                  </td>
+                  <td class="text-right">
+                    {{ formatMb(item.paid_mb) }}
+                  </td>
+                  <td class="text-right">
+                    {{ formatMb(item.remaining_mb) }}
+                  </td>
+                  <td>
+                    <VChip :color="item.is_paid ? 'success' : 'warning'" size="x-small" label>
+                      {{ item.is_paid ? 'Lunas' : 'Belum' }}
+                    </VChip>
+                  </td>
+                </tr>
+              </tbody>
+            </VTable>
+          </VSheet>
         </template>
         <div v-else-if="props.user.role === 'ADMIN' || props.user.role === 'SUPER_ADMIN'">
           <VDivider class="my-4" />
