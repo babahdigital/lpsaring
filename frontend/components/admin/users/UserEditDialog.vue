@@ -596,7 +596,7 @@ function openDebtPdf() {
                     <AppTextField v-model.number="formData.add_days" label="Tambah Masa Aktif (Hari)" type="number" prepend-inner-icon="tabler-calendar-plus" />
                   </VCol>
 
-                  <template v-if="formData.role === 'USER' && isDebtQuotaEnabled">
+                  <template v-if="formData.role === 'USER'">
                     <VCol cols="12">
                       <div class="text-overline">
                         Tunggakan Kuota
@@ -661,17 +661,19 @@ function openDebtPdf() {
                       </VSheet>
                     </VCol>
 
-                    <VCol cols="12" md="6">
-                      <AppSelect v-model="formData.debt_package_id" :items="debtPackageOptions" label="Tambah Tunggakan (Pilih Paket)" prepend-inner-icon="tabler-alert-circle" :loading="isPackagesLoading" />
-                    </VCol>
+                    <template v-if="isDebtQuotaEnabled">
+                      <VCol cols="12" md="6">
+                        <AppSelect v-model="formData.debt_package_id" :items="debtPackageOptions" label="Tambah Tunggakan (Pilih Paket)" prepend-inner-icon="tabler-alert-circle" :loading="isPackagesLoading" />
+                      </VCol>
 
-                    <VCol cols="12" md="6">
-                      <AppTextField v-model="formData.debt_date" label="Tanggal Tunggakan" type="date" prepend-inner-icon="tabler-calendar" />
-                    </VCol>
+                      <VCol cols="12" md="6">
+                        <AppTextField v-model="formData.debt_date" label="Tanggal Tunggakan" type="date" prepend-inner-icon="tabler-calendar" />
+                      </VCol>
 
-                    <VCol cols="12">
-                      <AppTextField v-model="formData.debt_note" label="Catatan Tunggakan (Opsional)" prepend-inner-icon="tabler-notes" />
-                    </VCol>
+                      <VCol cols="12">
+                        <AppTextField v-model="formData.debt_note" label="Catatan Tunggakan (Opsional)" prepend-inner-icon="tabler-notes" />
+                      </VCol>
+                    </template>
                   </template>
 
                   <VCol cols="12">
