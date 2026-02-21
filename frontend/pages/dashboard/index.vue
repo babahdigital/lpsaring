@@ -284,6 +284,8 @@ const debtTotalMb = computed(() => Number(quotaData.value?.quota_debt_total_mb ?
 
 const debtEstimatedRp = computed(() => Number(quotaData.value?.quota_debt_total_estimated_rp ?? 0))
 
+const debtDonutSize = computed(() => (display.smAndDown.value ? 128 : 150))
+
 function clampPct(value: number): number {
   if (!Number.isFinite(value))
     return 0
@@ -389,14 +391,15 @@ const timeSpendingChartOptions = computed<ApexOptions>(() => {
           labels: {
             show: true,
             name: {
-              show: true,
+              // Hide series name/value to avoid cramped center text.
+              show: false,
               fontSize: '0.9rem',
               fontFamily: 'Public Sans',
               color: onSurfaceColor,
               offsetY: 18,
             },
             value: {
-              show: true,
+              show: false,
               fontSize: '1.25rem',
               fontFamily: 'Public Sans',
               color: onSurfaceColor,
@@ -415,6 +418,10 @@ const timeSpendingChartOptions = computed<ApexOptions>(() => {
               label: isUnlimited ? 'Unlimited' : 'Hutang',
               // Make label less contrasty than the number.
               color: 'rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity))',
+              fontSize: display.smAndDown.value ? '1.05rem' : '1.15rem',
+              fontFamily: 'Public Sans',
+              fontWeight: 700,
+              offsetY: display.smAndDown.value ? -2 : -4,
               formatter: () => {
                 const isUnlimitedInner = quotaData.value?.is_unlimited_user === true
                 if (isUnlimitedInner)
@@ -598,7 +605,7 @@ useHead({ title: 'Dashboard User' })
 
                 <VCard class="d-flex flex-column vuexy-card">
                   <VCardText class="py-5">
-                    <div class="d-flex justify-space-between align-center">
+                    <div class="debt-card-row">
                       <div class="d-flex flex-column ps-3">
                         <div class="d-flex align-center flex-wrap ga-2">
                           <h5 class="text-h5 mb-0 text-no-wrap">
@@ -687,15 +694,15 @@ useHead({ title: 'Dashboard User' })
                         <ClientOnly>
                           <apexchart
                             type="donut"
-                            height="150"
-                            width="150"
+                            :height="debtDonutSize"
+                            :width="debtDonutSize"
                             :options="timeSpendingChartOptions"
                             :series="timeSpendingChartSeries"
                           />
                           <template #fallback>
                             <div
                               class="d-flex align-center justify-center"
-                              style="height: 150px; width: 150px;"
+                              :style="{ height: `${debtDonutSize}px`, width: `${debtDonutSize}px` }"
                             >
                               <VProgressCircular indeterminate size="28" />
                             </div>
@@ -895,10 +902,23 @@ useHead({ title: 'Dashboard User' })
   border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity)) !important;
 }
 
+/* Some Vuetify tooltip variants render an inner content element */
+:deep(.v-overlay__content.debt-tooltip .v-tooltip__content) {
+  background-color: rgb(var(--v-theme-surface)) !important;
+  color: rgb(var(--v-theme-on-surface)) !important;
+}
+
 .debt-tooltip-content {
   min-width: 260px;
   max-width: 360px;
   line-height: 1.35;
+}
+
+.debt-card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
 }
 
 .debt-donut-wrap {
@@ -917,6 +937,25 @@ useHead({ title: 'Dashboard User' })
 :deep(.apexcharts-datalabel-label) {
   line-height: 1.1;
   opacity: var(--v-medium-emphasis-opacity);
+}
+
+/* Make label a bit smaller than value (so it's not competing) */
+:deep(.apexcharts-datalabel-label) {
+  font-size: 0.85rem;
+}
+
+@media (max-width: 599.98px) {
+  .debt-card-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .debt-donut-wrap {
+    width: 100%;
+    min-width: 0;
+    justify-content: flex-end;
+    padding-right: 12px;
+  }
 }
 
 @media (max-width: 959.98px) {
@@ -965,11 +1004,5 @@ useHead({ title: 'Dashboard User' })
 
 .vuexy-card {
   height: 100%;
-}
-
-.vuexy-card .v-card-text {
-  display: flex;
-  align-items: center;
-  flex-wrap: nowrap;
 }
 </style>
