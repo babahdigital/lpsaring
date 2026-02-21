@@ -403,6 +403,8 @@ const timeSpendingChartOptions = computed<ApexOptions>(() => {
               fontWeight: 700,
               offsetY: -10,
               formatter: (val: string) => {
+                if (quotaData.value?.is_unlimited_user === true)
+                  return 'Unlimited'
                 const n = Number(val)
                 return formatQuota(n)
               },
@@ -410,7 +412,7 @@ const timeSpendingChartOptions = computed<ApexOptions>(() => {
             total: {
               show: true,
               showAlways: true,
-              label: 'Total Debt',
+              label: isUnlimited ? 'Unlimited' : 'Total Hutang',
               color: onSurfaceColor,
               formatter: () => {
                 const isUnlimitedInner = quotaData.value?.is_unlimited_user === true
@@ -597,40 +599,76 @@ useHead({ title: 'Dashboard User' })
                   <VCardText class="py-5">
                     <div class="d-flex justify-space-between align-center">
                       <div class="d-flex flex-column ps-3">
-                        <div class="d-flex align-center">
-                          <h5 class="text-h5 mb-1 text-no-wrap">
-                            Time Spendings
-                            <span class="text-body-2 text-medium-emphasis ms-2">
-                              {{ quotaData?.is_unlimited_user ? 'Rp 0' : formatRp(debtEstimatedRp) }}
-                            </span>
+                        <div class="d-flex align-center flex-wrap ga-2">
+                          <h5 class="text-h5 mb-0 text-no-wrap">
+                            Tunggakan Kuota
                           </h5>
-                          <VTooltip location="bottom">
+
+                          <VChip
+                            size="x-small"
+                            label
+                            variant="tonal"
+                            color="primary"
+                          >
+                            {{ quotaData?.is_unlimited_user ? 'Rp 0' : formatRp(debtEstimatedRp) }}
+                          </VChip>
+
+                          <VTooltip
+                            location="bottom"
+                            theme="dark"
+                            content-class="debt-tooltip"
+                          >
                             <template #activator="{ props }">
                               <VIcon
                                 v-bind="props"
                                 icon="tabler-info-circle"
                                 size="18"
-                                class="ms-2 text-medium-emphasis"
+                                class="text-medium-emphasis"
                               />
                             </template>
-                            <div class="text-caption">
-                              <div class="font-weight-medium mb-1">Keterangan</div>
-                              <div>Total hutang: <strong>{{ quotaData?.is_unlimited_user ? 'Rp 0' : formatRp(debtEstimatedRp) }}</strong></div>
-                              <div>Debt total: <strong>{{ quotaData?.is_unlimited_user ? '0 MB' : formatQuota(debtTotalMb) }}</strong></div>
-                              <div>Debt auto/manual: {{ quotaData?.is_unlimited_user ? '0 MB / 0 MB' : `${formatQuota(debtAutoMb)} / ${formatQuota(debtManualMb)}` }}</div>
-                              <div>Kuota terpakai/sisa: {{ quotaData?.is_unlimited_user ? 'Unlimited' : `${formatQuota(quotaData?.total_quota_used_mb)} / ${formatQuota(quotaData?.remaining_mb)}` }}</div>
-                              <div>Terpakai 7 hari: {{ quotaData?.is_unlimited_user ? 'Unlimited' : formatQuota(weeklyUsedMb) }}</div>
+                            <div class="text-caption debt-tooltip-content">
+                              <div class="font-weight-medium mb-2">Keterangan</div>
+
+                              <div class="d-flex justify-space-between ga-4">
+                                <span class="text-medium-emphasis">Total hutang</span>
+                                <strong>{{ quotaData?.is_unlimited_user ? 'Rp 0' : formatRp(debtEstimatedRp) }}</strong>
+                              </div>
+                              <div class="d-flex justify-space-between ga-4">
+                                <span class="text-medium-emphasis">Debt total</span>
+                                <strong>{{ quotaData?.is_unlimited_user ? '0 MB' : formatQuota(debtTotalMb) }}</strong>
+                              </div>
+                              <div class="d-flex justify-space-between ga-4">
+                                <span class="text-medium-emphasis">Debt auto</span>
+                                <span>{{ quotaData?.is_unlimited_user ? '0 MB' : formatQuota(debtAutoMb) }}</span>
+                              </div>
+                              <div class="d-flex justify-space-between ga-4">
+                                <span class="text-medium-emphasis">Debt manual</span>
+                                <span>{{ quotaData?.is_unlimited_user ? '0 MB' : formatQuota(debtManualMb) }}</span>
+                              </div>
+                              <div class="d-flex justify-space-between ga-4">
+                                <span class="text-medium-emphasis">Kuota terpakai</span>
+                                <span>{{ quotaData?.is_unlimited_user ? 'Unlimited' : formatQuota(quotaData?.total_quota_used_mb) }}</span>
+                              </div>
+                              <div class="d-flex justify-space-between ga-4">
+                                <span class="text-medium-emphasis">Sisa kuota</span>
+                                <span>{{ quotaData?.is_unlimited_user ? 'Unlimited' : formatQuota(quotaData?.remaining_mb) }}</span>
+                              </div>
+                              <div class="d-flex justify-space-between ga-4">
+                                <span class="text-medium-emphasis">Terpakai 7 hari</span>
+                                <span>{{ quotaData?.is_unlimited_user ? 'Unlimited' : formatQuota(weeklyUsedMb) }}</span>
+                              </div>
                             </div>
                           </VTooltip>
                         </div>
 
                         <div class="text-body-1 mb-7">
-                          Weekly Report
-                          <span class="text-medium-emphasis"> • 7 hari: {{ quotaData?.is_unlimited_user ? 'Unlimited' : formatQuota(weeklyUsedMb) }}</span>
+                          Laporan Mingguan
+                          <span class="text-medium-emphasis"> • Terpakai 7 hari: {{ quotaData?.is_unlimited_user ? 'Unlimited' : formatQuota(weeklyUsedMb) }}</span>
                         </div>
 
                         <h4 class="text-h4 mb-2">
-                          {{ debtTotalParts.value }}<span class="text-medium-emphasis">{{ debtTotalParts.unit }}</span>
+                          {{ debtTotalParts.value }}
+                          <span class="text-medium-emphasis"> {{ debtTotalParts.unit }}</span>
                         </h4>
 
                         <div>
@@ -847,6 +885,18 @@ useHead({ title: 'Dashboard User' })
 
 .ga-4 {
   gap: 1.5rem;
+}
+
+:deep(.debt-tooltip) {
+  background-color: rgb(var(--v-theme-surface));
+  color: rgb(var(--v-theme-on-surface));
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+.debt-tooltip-content {
+  min-width: 260px;
+  max-width: 360px;
+  line-height: 1.35;
 }
 
 @media (max-width: 959.98px) {
