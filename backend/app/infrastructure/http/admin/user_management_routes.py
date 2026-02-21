@@ -8,7 +8,7 @@ from pydantic import ValidationError
 import sqlalchemy as sa
 
 from app.extensions import db
-from app.infrastructure.db.models import User, UserRole, UserBlok, UserKamar, ApprovalStatus, UserDevice, RefreshToken, AdminActionType
+from app.infrastructure.db.models import User, UserRole, UserBlok, UserKamar, ApprovalStatus, UserDevice, RefreshToken, AdminActionType, Package
 from app.infrastructure.http.decorators import admin_required
 from app.infrastructure.http.schemas.user_schemas import (
     UserResponseSchema,
@@ -22,13 +22,15 @@ from app.infrastructure.db.models import UserQuotaDebt
 
 
 # [FIX] Menambahkan kembali impor yang hilang untuk endpoint /mikrotik-status
-from app.utils.formatters import format_to_local_phone
+from app.utils.formatters import format_to_local_phone, get_app_local_datetime
 from app.services.user_management.helpers import _handle_mikrotik_operation, _send_whatsapp_notification
 from app.infrastructure.gateways.mikrotik_client import get_hotspot_user_details, get_mikrotik_connection
 
 from app.services.user_management.helpers import _log_admin_action
 
 from app.services import settings_service
+
+from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package
 from app.services.user_management import (
     user_approval,
     user_deletion,
@@ -746,6 +748,14 @@ def export_user_manual_debts_pdf(current_admin: User, user_id: uuid.UUID):
             remaining = max(0, amount - paid_mb)
             is_paid = bool(getattr(d, 'is_paid', False)) or remaining <= 0
             payload = UserQuotaDebtItemResponseSchema.from_orm(d).model_dump()
+            try:
+                if payload.get('debt_date'):
+                    # debt_date from schema is typically YYYY-MM-DD
+                    raw = str(payload.get('debt_date'))
+                    if len(raw) >= 10 and raw[4] == '-' and raw[7] == '-':
+                        payload['debt_date_display'] = f"{raw[8:10]}-{raw[5:7]}-{raw[0:4]}"
+            except Exception:
+                pass
             payload['remaining_mb'] = int(remaining)
             payload['is_paid'] = bool(is_paid)
             payload['paid_mb'] = int(paid_mb)
@@ -756,15 +766,59 @@ def export_user_manual_debts_pdf(current_admin: User, user_id: uuid.UUID):
         debt_manual_mb = float(getattr(user, 'quota_debt_manual_mb', 0) or 0)
         debt_total_mb = float(getattr(user, 'quota_debt_total_mb', debt_auto_mb + debt_manual_mb) or 0)
 
+        cheapest_pkg = None
+        try:
+            cheapest_pkg = db.session.execute(
+                select(Package)
+                .where(Package.is_active.is_(True))
+                .where(Package.data_quota_gb > 0)
+                .order_by(Package.price.asc())
+                .limit(1)
+            ).scalar_one_or_none()
+        except Exception:
+            cheapest_pkg = None
+
+        cheapest_pkg_price = int(cheapest_pkg.price) if cheapest_pkg and cheapest_pkg.price is not None else None
+        cheapest_pkg_quota_gb = (
+            float(cheapest_pkg.data_quota_gb) if cheapest_pkg and cheapest_pkg.data_quota_gb is not None else None
+        )
+        cheapest_pkg_name = str(cheapest_pkg.name) if cheapest_pkg and cheapest_pkg.name else None
+
+        est_auto = estimate_debt_rp_from_cheapest_package(
+            debt_mb=float(debt_auto_mb),
+            cheapest_package_price_rp=cheapest_pkg_price,
+            cheapest_package_quota_gb=cheapest_pkg_quota_gb,
+            cheapest_package_name=cheapest_pkg_name,
+        )
+        est_manual = estimate_debt_rp_from_cheapest_package(
+            debt_mb=float(debt_manual_mb),
+            cheapest_package_price_rp=cheapest_pkg_price,
+            cheapest_package_quota_gb=cheapest_pkg_quota_gb,
+            cheapest_package_name=cheapest_pkg_name,
+        )
+        est_total = estimate_debt_rp_from_cheapest_package(
+            debt_mb=float(debt_total_mb),
+            cheapest_package_price_rp=cheapest_pkg_price,
+            cheapest_package_quota_gb=cheapest_pkg_quota_gb,
+            cheapest_package_name=cheapest_pkg_name,
+        )
+
+        now_utc = datetime.now(dt_timezone.utc)
+        generated_local = get_app_local_datetime(now_utc).strftime('%d-%m-%Y %H:%M')
+
         context = {
             'user': user,
             'user_phone_display': format_to_local_phone(getattr(user, 'phone_number', '') or '')
             or (getattr(user, 'phone_number', '') or ''),
-            'generated_at': datetime.now(dt_timezone.utc).strftime('%d %b %Y %H:%M UTC'),
+            'generated_at': generated_local,
             'items': items,
             'debt_auto_mb': debt_auto_mb,
             'debt_manual_mb': debt_manual_mb,
             'debt_total_mb': debt_total_mb,
+            'debt_auto_estimated_rp': est_auto.estimated_rp_rounded or 0,
+            'debt_manual_estimated_rp': est_manual.estimated_rp_rounded or 0,
+            'debt_total_estimated_rp': est_total.estimated_rp_rounded or 0,
+            'estimate_base_package_name': cheapest_pkg_name,
         }
 
         public_base_url = current_app.config.get('APP_PUBLIC_BASE_URL', request.url_root)

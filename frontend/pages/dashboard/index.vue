@@ -57,7 +57,7 @@ watch(() => promoStore.activePromo, (newPromo) => {
 const quotaApiUrl = computed(() => (authStore.isLoggedIn ? '/users/me/quota' : ''))
 const { data: quotaData, pending: quotaPending, error: quotaError, refresh: refreshQuotaRaw } = useApiFetch<UserQuotaResponse>(
   quotaApiUrl,
-  { server: false, key: 'userQuotaData', default: () => ({ success: false, total_quota_purchased_mb: 0, total_quota_used_mb: 0, remaining_mb: 0, hotspot_username: '...', last_sync_time: null, is_unlimited_user: false, quota_expiry_date: null }), immediate: false, watch: false },
+  { server: false, key: 'userQuotaData', default: () => ({ success: false, total_quota_purchased_mb: 0, total_quota_used_mb: 0, remaining_mb: 0, quota_debt_auto_mb: 0, quota_debt_manual_mb: 0, quota_debt_total_mb: 0, hotspot_username: '...', last_sync_time: null, is_unlimited_user: false, quota_expiry_date: null }), immediate: false, watch: false },
 )
 
 // Fetch data penggunaan mingguan
@@ -201,7 +201,7 @@ watch(() => authStore.isLoggedIn, (isLoggedIn, wasLoggedIn) => {
     }
   }
   else if (!isLoggedIn && wasLoggedIn) {
-    quotaData.value = { success: false, total_quota_purchased_mb: 0, total_quota_used_mb: 0, remaining_mb: 0, hotspot_username: '...', last_sync_time: null, is_unlimited_user: false, quota_expiry_date: null }
+    quotaData.value = { success: false, total_quota_purchased_mb: 0, total_quota_used_mb: 0, remaining_mb: 0, quota_debt_auto_mb: 0, quota_debt_manual_mb: 0, quota_debt_total_mb: 0, hotspot_username: '...', last_sync_time: null, is_unlimited_user: false, quota_expiry_date: null }
     weeklyUsageData.value = { success: false, weekly_data: [], period: { start_date: '', end_date: '' } }
     monthlyUsageData.value = { success: false, monthly_data: [] }
     fetchesInitiated.value = false
@@ -243,6 +243,26 @@ function formatUsername(username: string | null | undefined): string {
     return 'Tidak Tersedia'
   return username.startsWith('+62') ? `0${username.substring(3)}` : username
 }
+
+function formatQuota(mbValue: number | null | undefined): string {
+  const mb = Number(mbValue ?? 0)
+  if (!Number.isFinite(mb) || mb <= 0)
+    return '0 MB'
+  if (mb < 1) {
+    const kb = mb * 1024
+    return `${Math.round(kb).toLocaleString('id-ID')} KB`
+  }
+  if (mb >= 1024) {
+    const gb = mb / 1024
+    const gbRounded = Math.round(gb * 100) / 100
+    return `${gbRounded.toLocaleString('id-ID', { maximumFractionDigits: 2 })} GB`
+  }
+  return `${Math.round(mb).toLocaleString('id-ID')} MB`
+}
+
+const debtAutoMb = computed(() => Number(quotaData.value?.quota_debt_auto_mb ?? 0))
+const debtManualMb = computed(() => Number(quotaData.value?.quota_debt_manual_mb ?? 0))
+const debtTotalMb = computed(() => Number(quotaData.value?.quota_debt_total_mb ?? (debtAutoMb.value + debtManualMb.value)))
 
 async function refreshAllDataLogic() {
   if (!authStore.isLoggedIn)
@@ -403,6 +423,51 @@ useHead({ title: 'Dashboard User' })
                     </VCard>
                   </VCol>
                 </VRow>
+
+                <VCard class="d-flex flex-column vuexy-card">
+                  <VCardItem class="vuexy-card-header">
+                    <VCardTitle class="vuexy-card-title">
+                      <VIcon icon="tabler-database" class="me-2" />Kuota & Tunggakan
+                    </VCardTitle>
+                  </VCardItem>
+                  <VDivider />
+                  <VCardText class="py-2 px-4">
+                    <VTable density="compact" class="w-100">
+                      <tbody>
+                        <tr>
+                          <td class="text-body-2 text-medium-emphasis">Kuota Terpakai</td>
+                          <td class="text-body-2 font-weight-medium text-right">
+                            {{ quotaData?.is_unlimited_user ? 'Unlimited' : formatQuota(quotaData?.total_quota_used_mb) }}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td class="text-body-2 text-medium-emphasis">Sisa Kuota</td>
+                          <td class="text-body-2 font-weight-medium text-right">
+                            {{ quotaData?.is_unlimited_user ? 'Unlimited' : formatQuota(quotaData?.remaining_mb) }}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td class="text-body-2 text-medium-emphasis">Tunggakan Otomatis</td>
+                          <td class="text-body-2 font-weight-medium text-right">
+                            {{ quotaData?.is_unlimited_user ? '0 MB' : formatQuota(debtAutoMb) }}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td class="text-body-2 text-medium-emphasis">Tunggakan Manual</td>
+                          <td class="text-body-2 font-weight-medium text-right">
+                            {{ quotaData?.is_unlimited_user ? '0 MB' : formatQuota(debtManualMb) }}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td class="text-body-2 text-medium-emphasis">Total Tunggakan</td>
+                          <td class="text-body-2 font-weight-bold text-right">
+                            {{ quotaData?.is_unlimited_user ? '0 MB' : formatQuota(debtTotalMb) }}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </VTable>
+                  </VCardText>
+                </VCard>
 
                 <template v-if="chartReady">
                   <template v-if="quotaData?.is_unlimited_user">

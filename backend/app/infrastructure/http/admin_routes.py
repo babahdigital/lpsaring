@@ -28,6 +28,7 @@ from app.infrastructure.db.models import (
 from .decorators import admin_required, super_admin_required
 from .schemas.notification_schemas import NotificationRecipientUpdateSchema
 from app.utils.formatters import get_phone_number_variations, format_to_local_phone
+from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package
 
 from app.infrastructure.http.transactions_routes import (
     extract_qr_code_url,
@@ -1065,10 +1066,21 @@ def export_transactions(current_admin: User):
             ).all()
 
         # Optional: daftar user dengan debt (auto+manual) saat laporan dibuat.
+        # IMPORTANT: harus konsisten dengan rule bisnis (dan UI):
+        # - KOMANDAN: debt tidak berlaku (0)
+        # - unlimited user: debt tidak berlaku (0)
         purchased_num = sa.cast(User.total_quota_purchased_mb, sa.Numeric)
         used_num = sa.cast(User.total_quota_used_mb, sa.Numeric)
-        auto_debt = sa.func.greatest(sa.cast(0, sa.Numeric), used_num - purchased_num)
-        manual_debt_num = sa.cast(func.coalesce(User.manual_debt_mb, 0), sa.Numeric)
+        auto_debt_raw = sa.func.greatest(sa.cast(0, sa.Numeric), used_num - purchased_num)
+        manual_debt_raw = sa.cast(func.coalesce(User.manual_debt_mb, 0), sa.Numeric)
+
+        debt_not_applicable = sa.or_(
+            User.role == UserRole.KOMANDAN,
+            User.is_unlimited_user.is_(True),
+        )
+
+        auto_debt = sa.case((debt_not_applicable, sa.cast(0, sa.Numeric)), else_=auto_debt_raw)
+        manual_debt_num = sa.case((debt_not_applicable, sa.cast(0, sa.Numeric)), else_=manual_debt_raw)
         total_debt = auto_debt + manual_debt_num
 
         debt_users = db.session.execute(
@@ -1082,6 +1094,7 @@ def export_transactions(current_admin: User):
             .where(
                 User.role.in_([UserRole.USER, UserRole.KOMANDAN]),
                 User.is_active.is_(True),
+                User.approval_status == ApprovalStatus.APPROVED,
                 total_debt > 0,
             )
             .order_by(total_debt.desc(), User.full_name.asc())
@@ -1158,7 +1171,7 @@ def export_transactions(current_admin: User):
             for row in period_rows:
                 period = row[0]
                 if group_by == 'daily':
-                    label = str(period)
+                    label = period.strftime('%d-%m-%Y') if hasattr(period, 'strftime') else str(period)
                 elif group_by == 'monthly':
                     label = period.strftime('%Y-%m') if hasattr(period, 'strftime') else str(period)
                 else:
@@ -1180,12 +1193,52 @@ def export_transactions(current_admin: User):
             for r in debt_users
         ]
 
+        cheapest_pkg = None
+        try:
+            cheapest_pkg = db.session.execute(
+                select(Package)
+                .where(Package.is_active.is_(True))
+                .where(Package.data_quota_gb > 0)
+                .order_by(Package.price.asc())
+                .limit(1)
+            ).scalar_one_or_none()
+        except Exception:
+            cheapest_pkg = None
+
+        cheapest_pkg_price = int(cheapest_pkg.price) if cheapest_pkg and cheapest_pkg.price is not None else None
+        cheapest_pkg_quota_gb = (
+            float(cheapest_pkg.data_quota_gb) if cheapest_pkg and cheapest_pkg.data_quota_gb is not None else None
+        )
+        cheapest_pkg_name = str(cheapest_pkg.name) if cheapest_pkg and cheapest_pkg.name else None
+
+        total_debt_mb_sum = float(sum(float(item.get('debt_total_mb') or 0) for item in debt_items))
+        est_total = estimate_debt_rp_from_cheapest_package(
+            debt_mb=total_debt_mb_sum,
+            cheapest_package_price_rp=cheapest_pkg_price,
+            cheapest_package_quota_gb=cheapest_pkg_quota_gb,
+            cheapest_package_name=cheapest_pkg_name,
+        )
+        estimated_debt_total_rp = int(est_total.estimated_rp_rounded or 0)
+        for item in debt_items:
+            est = estimate_debt_rp_from_cheapest_package(
+                debt_mb=float(item.get('debt_total_mb') or 0),
+                cheapest_package_price_rp=cheapest_pkg_price,
+                cheapest_package_quota_gb=cheapest_pkg_quota_gb,
+                cheapest_package_name=cheapest_pkg_name,
+            )
+            item['debt_estimated_rp'] = int(est.estimated_rp_rounded or 0)
+
         context = {
             "start_date": start_date_str,
             "end_date": end_date_str,
+            "start_date_display": start_date.strftime('%d-%m-%Y'),
+            "end_date_display": end_date.strftime('%d-%m-%Y'),
             "generated_at": datetime.now(local_tz),
             "total_success": total_success,
             "total_amount": total_amount,
+            "estimated_debt_total_rp": estimated_debt_total_rp,
+            "estimated_revenue_plus_debt_rp": int(total_amount or 0) + int(estimated_debt_total_rp or 0),
+            "estimate_base_package_name": cheapest_pkg_name,
             "group_by": group_by,
             "period_summaries": period_summaries,
             "packages": [

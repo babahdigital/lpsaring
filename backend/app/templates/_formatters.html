@@ -29,3 +29,8 @@
     {{- sign -}}{{ a | round(0, 'common') | int }} MB
   {%- endif -%}
 {%- endmacro -%}
+
+{%- macro fmt_rp(value_rp) -%}
+  {%- set v = (value_rp if value_rp is not none else 0) | int -%}
+  {{- ('{:,.0f}'.format(v)) | replace(',', '.') -}}
+{%- endmacro -%}

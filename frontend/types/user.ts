@@ -11,6 +11,9 @@ export interface UserQuotaResponse extends BaseResponse {
   total_quota_purchased_mb: number
   total_quota_used_mb: number
   remaining_mb: number
+  quota_debt_auto_mb?: number
+  quota_debt_manual_mb?: number
+  quota_debt_total_mb?: number
   hotspot_username?: string | null
   last_sync_time?: string | null
   is_unlimited_user?: boolean

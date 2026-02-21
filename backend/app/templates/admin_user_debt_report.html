@@ -30,7 +30,7 @@
     </style>
   </head>
   <body>
-    {%- from '_formatters.html' import fmt_quota -%}
+    {%- from '_formatters.html' import fmt_quota, fmt_rp -%}
 
     <h1>Laporan Debt Kuota</h1>
     <div class="muted">Dicetak: {{ generated_at }}</div>
@@ -48,17 +48,21 @@
           <div class="metric">
             <div class="muted">Debt Otomatis</div>
             <div><strong>{{ fmt_quota(debt_auto_mb) }}</strong></div>
+            <div class="muted">Rp {{ fmt_rp(debt_auto_estimated_rp) }}</div>
           </div>
           <div class="metric">
             <div class="muted">Debt Manual</div>
             <div><strong>{{ fmt_quota(debt_manual_mb) }}</strong></div>
+            <div class="muted">Rp {{ fmt_rp(debt_manual_estimated_rp) }}</div>
           </div>
           <div class="metric">
             <div class="muted">Debt Total</div>
             <div><strong>{{ fmt_quota(debt_total_mb) }}</strong></div>
+            <div class="muted">Rp {{ fmt_rp(debt_total_estimated_rp) }}</div>
           </div>
         </div>
         <div class="muted mt-6">Satuan otomatis KB/MB/GB (1 GB = 1024 MB)</div>
+        <div class="muted">Estimasi Rupiah dihitung pro-rata berdasarkan paket termurah aktif: {{ estimate_base_package_name or '-' }}.</div>
       </div>
     </div>
 
@@ -77,7 +81,7 @@
         <!--{% if items and items|length > 0 %}-->
           <!--{% for it in items %}-->
             <tr>
-              <td class="nowrap">{{ it.debt_date or '-' }}</td>
+              <td class="nowrap">{{ it.debt_date_display or it.debt_date or '-' }}</td>
               <td class="right nowrap">{{ fmt_quota(it.amount_mb) }}</td>
               <td class="right nowrap">{{ fmt_quota(it.paid_mb) }}</td>
               <td class="right nowrap">{{ fmt_quota(it.remaining_mb) }}</td>

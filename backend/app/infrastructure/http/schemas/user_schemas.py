@@ -354,6 +354,9 @@ class UserQuotaResponse(BaseModel):
     total_quota_purchased_mb: float
     total_quota_used_mb: float
     remaining_mb: float
+    quota_debt_auto_mb: float = 0
+    quota_debt_manual_mb: int = 0
+    quota_debt_total_mb: float = 0
     hotspot_username: str
     last_sync_time: datetime
     is_unlimited_user: bool

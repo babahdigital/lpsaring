@@ -18,6 +18,7 @@ from app.infrastructure.db.models import (
 )
 from app.utils.formatters import (
     format_to_local_phone,
+    get_app_local_datetime,
     get_app_date_time_strings,
     get_phone_number_variations,
     normalize_to_e164,
@@ -475,10 +476,24 @@ def update_user_by_admin_comprehensive(target_user: User, admin_actor: User, dat
             if not ok_debt:
                 return False, msg_debt, None
 
+            # CREDIT QUOTA: untuk kasus "hutang kuota", saat debt manual dibuat kita juga menambah kuota purchased
+            # agar user langsung mendapatkan kuota, sementara hutang tercatat.
+            try:
+                target_user.total_quota_purchased_mb = int(target_user.total_quota_purchased_mb or 0) + int(debt_add_mb_pkg)
+                changes['debt_credit_quota_mb'] = int(debt_add_mb_pkg)
+            except Exception:
+                pass
+
+            try:
+                # Best-effort: refresh Mikrotik lists/profile sesuai sisa kuota terbaru.
+                sync_address_list_for_single_user(target_user)
+            except Exception:
+                pass
+
             # Optional WhatsApp: inform user a new manual debt item was created.
             try:
-                debt_date_val = data.get('debt_date')
-                debt_date_text = str(debt_date_val) if debt_date_val else datetime.now(dt_timezone.utc).strftime('%Y-%m-%d')
+                debt_dt_utc = getattr(_entry, 'created_at', None) or datetime.now(dt_timezone.utc)
+                debt_date_text = get_app_local_datetime(debt_dt_utc).strftime('%d-%m-%Y %H:%M')
                 total_debt_mb = float(getattr(target_user, 'quota_debt_total_mb', 0) or 0)
                 _send_whatsapp_notification(
                     target_user.phone_number,
@@ -517,10 +532,22 @@ def update_user_by_admin_comprehensive(target_user: User, admin_actor: User, dat
             if not ok_debt:
                 return False, msg_debt, None
 
+            # CREDIT QUOTA: saat debt manual dibuat, juga tambah purchased agar user dapat kuota.
+            try:
+                target_user.total_quota_purchased_mb = int(target_user.total_quota_purchased_mb or 0) + int(debt_add_mb)
+                changes['debt_credit_quota_mb'] = int(debt_add_mb)
+            except Exception:
+                pass
+
+            try:
+                sync_address_list_for_single_user(target_user)
+            except Exception:
+                pass
+
             # Optional WhatsApp: inform user a new manual debt item was created.
             try:
-                debt_date_val = data.get('debt_date')
-                debt_date_text = str(debt_date_val) if debt_date_val else datetime.now(dt_timezone.utc).strftime('%Y-%m-%d')
+                debt_dt_utc = getattr(_entry, 'created_at', None) or datetime.now(dt_timezone.utc)
+                debt_date_text = get_app_local_datetime(debt_dt_utc).strftime('%d-%m-%Y %H:%M')
                 total_debt_mb = float(getattr(target_user, 'quota_debt_total_mb', 0) or 0)
                 _send_whatsapp_notification(
                     target_user.phone_number,

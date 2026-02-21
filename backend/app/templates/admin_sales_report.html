@@ -79,14 +79,16 @@
   </style>
 </head>
 <body>
-  {%- from '_formatters.html' import fmt_quota -%}
+  {%- from '_formatters.html' import fmt_quota, fmt_rp -%}
   <div class="container">
     <h1>Laporan Penjualan (SUCCESS)</h1>
-    <div class="sub">{{ business_name }} • Periode: {{ start_date }} s/d {{ end_date }} • Dibuat: {{ generated_at.strftime('%d %b %Y %H:%M') }}</div>
+    <div class="sub">{{ business_name }} • Periode: {{ start_date_display or start_date }} s/d {{ end_date_display or end_date }} • Dibuat: {{ generated_at.strftime('%d-%m-%Y %H:%M') }}</div>
 
     <div class="summary">
       <div class="kv"><div class="k">Total transaksi sukses</div><div class="v">{{ total_success | format_number }}</div></div>
       <div class="kv"><div class="k">Total pendapatan (IDR)</div><div class="v">{{ total_amount | format_currency }}</div></div>
+      <div class="kv"><div class="k">Estimasi total tunggakan (IDR)</div><div class="v">Rp {{ fmt_rp(estimated_debt_total_rp) }}</div></div>
+      <div class="kv"><div class="k">Potensi revenue (pendapatan + tunggakan)</div><div class="v">{{ estimated_revenue_plus_debt_rp | format_currency }}</div></div>
     </div>
 
     {% if group_by and group_by != 'none' and period_summaries and period_summaries|length > 0 %}
@@ -173,6 +175,7 @@
             <th class="num">Debt Total</th>
             <th class="num">Debt Auto</th>
             <th class="num">Debt Manual</th>
+            <th class="num">Estimasi (IDR)</th>
           </tr>
         </thead>
         <tbody>
@@ -183,11 +186,12 @@
               <td class="num">{{ fmt_quota(u.debt_total_mb) }}</td>
               <td class="num">{{ fmt_quota(u.debt_auto_mb) }}</td>
               <td class="num">{{ fmt_quota(u.debt_manual_mb) }}</td>
+              <td class="num">Rp {{ fmt_rp(u.debt_estimated_rp) }}</td>
             </tr>
           <!--{% endfor %}-->
         </tbody>
       </table>
-      <div class="note">Satuan debt otomatis KB/MB/GB (1 GB = 1024 MB).</div>
+      <div class="note">Satuan debt otomatis KB/MB/GB (1 GB = 1024 MB). Estimasi Rupiah pro-rata berdasarkan paket termurah aktif: {{ estimate_base_package_name or '-' }}.</div>
     {% endif %}
 
     <div class="footer">
