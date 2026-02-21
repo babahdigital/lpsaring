@@ -49,11 +49,20 @@ def sync_dhcp_leases_command(limit: int, only_authorized: bool) -> None:
     if enabled and not dhcp_server_name:
         raise click.ClickException('MIKROTIK_DHCP_LEASE_SERVER_NAME wajib diisi saat MIKROTIK_DHCP_STATIC_LEASE_ENABLED=True')
 
-    # Respect configured client CIDRs to avoid binding leases to non-client subnets.
+    # Respect configured CIDRs to avoid binding leases to non-client subnets.
+    # Prefer the same policy used by the runtime authorize flow:
+    # - MIKROTIK_DHCP_STATIC_LEASE_CIDRS (if set)
+    # - else MIKROTIK_UNAUTHORIZED_CIDRS (common: 172.16.2.0/23)
+    # - else fallback HOTSPOT_CLIENT_IP_CIDRS
     cidrs = []
     try:
         from flask import current_app
-        cidrs = current_app.config.get('HOTSPOT_CLIENT_IP_CIDRS', []) or []
+        cidrs = (
+            current_app.config.get('MIKROTIK_DHCP_STATIC_LEASE_CIDRS')
+            or current_app.config.get('MIKROTIK_UNAUTHORIZED_CIDRS')
+            or current_app.config.get('HOTSPOT_CLIENT_IP_CIDRS')
+            or []
+        )
     except Exception:
         cidrs = []
 

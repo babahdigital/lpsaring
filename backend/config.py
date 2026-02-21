@@ -396,6 +396,10 @@ class Config:
     # Unauthorized host blocking (optional; used by `flask sync-unauthorized-hosts`)
     # Default diarahkan hanya VLAN Klien.
     MIKROTIK_UNAUTHORIZED_CIDRS = get_env_list('MIKROTIK_UNAUTHORIZED_CIDRS', "['172.16.2.0/23']")
+
+    # Optional: lock managed static DHCP leases to specific client CIDRs.
+    # If empty, runtime logic will fall back to MIKROTIK_UNAUTHORIZED_CIDRS.
+    MIKROTIK_DHCP_STATIC_LEASE_CIDRS = get_env_list('MIKROTIK_DHCP_STATIC_LEASE_CIDRS', '[]')
     # IP/range yang dikecualikan untuk maintenance. Contoh: ['172.16.2.3-7']
     MIKROTIK_UNAUTHORIZED_EXEMPT_IPS = get_env_list('MIKROTIK_UNAUTHORIZED_EXEMPT_IPS', "['172.16.2.3-7']")
 

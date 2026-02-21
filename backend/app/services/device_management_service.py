@@ -99,6 +99,37 @@ def _ensure_static_dhcp_lease(
     if not _is_mikrotik_operations_enabled():
         logger.info("MikroTik ops disabled: skip DHCP static lease")
         return
+
+    # Safety: never pin a static DHCP lease outside the intended client subnets.
+    # This prevents accidental cross-VLAN/subnet leases (e.g., 172.16.8.x) being written
+    # under the 'Klien' DHCP server due to stale lease/ARP or misconfiguration.
+    allowed_cidrs = (
+        current_app.config.get('MIKROTIK_DHCP_STATIC_LEASE_CIDRS')
+        or current_app.config.get('MIKROTIK_UNAUTHORIZED_CIDRS')
+        or []
+    )
+    try:
+        ip_obj = ipaddress.ip_address(str(ip_address).strip())
+    except Exception:
+        logger.warning("Skip DHCP static lease: invalid ip=%s", ip_address)
+        return
+
+    networks = []
+    for cidr in list(allowed_cidrs or []):
+        try:
+            networks.append(ipaddress.ip_network(str(cidr), strict=False))
+        except Exception:
+            continue
+
+    if networks and not any(ip_obj in net for net in networks):
+        logger.warning(
+            "Skip DHCP static lease (out of allowed CIDRs): mac=%s ip=%s allowed=%s",
+            mac_address,
+            ip_address,
+            [str(n) for n in networks],
+        )
+        return
+
     # Safety: if server pin is missing, don't attempt to manage static DHCP leases.
     # Without a DHCP server name, MikroTik may have multiple leases across servers and we might touch the wrong one.
     if not (server and str(server).strip()):
