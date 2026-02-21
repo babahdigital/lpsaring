@@ -24,11 +24,14 @@
       .badge-paid { background: #e8f5e9; border-color: #c8e6c9; }
       .badge-open { background: #fff8e1; border-color: #ffe082; }
       .mt-8 { margin-top: 8px; }
+      .mt-6 { margin-top: 6px; }
       .card-flex { flex: 1 1 320px; }
       .metric { flex: 1 1 140px; }
     </style>
   </head>
   <body>
+    {%- from '_formatters.html' import fmt_quota -%}
+
     <h1>Laporan Debt Kuota</h1>
     <div class="muted">Dicetak: {{ generated_at }}</div>
 
@@ -44,17 +47,18 @@
         <div class="row">
           <div class="metric">
             <div class="muted">Debt Otomatis</div>
-            <div><strong>{{ debt_auto_mb }} MB</strong></div>
+            <div><strong>{{ fmt_quota(debt_auto_mb) }}</strong></div>
           </div>
           <div class="metric">
             <div class="muted">Debt Manual</div>
-            <div><strong>{{ debt_manual_mb }} MB</strong></div>
+            <div><strong>{{ fmt_quota(debt_manual_mb) }}</strong></div>
           </div>
           <div class="metric">
             <div class="muted">Debt Total</div>
-            <div><strong>{{ debt_total_mb }} MB</strong></div>
+            <div><strong>{{ fmt_quota(debt_total_mb) }}</strong></div>
           </div>
         </div>
+        <div class="muted mt-6">Satuan otomatis KB/MB/GB (1 GB = 1024 MB)</div>
       </div>
     </div>
 
@@ -62,9 +66,9 @@
       <thead>
         <tr>
           <th class="nowrap">Tanggal Debt</th>
-          <th class="right nowrap">Jumlah (MB)</th>
-          <th class="right nowrap">Dibayar (MB)</th>
-          <th class="right nowrap">Sisa (MB)</th>
+          <th class="right nowrap">Jumlah</th>
+          <th class="right nowrap">Dibayar</th>
+          <th class="right nowrap">Sisa</th>
           <th class="nowrap">Status</th>
           <th>Catatan</th>
         </tr>
@@ -74,9 +78,9 @@
           <!--{% for it in items %}-->
             <tr>
               <td class="nowrap">{{ it.debt_date or '-' }}</td>
-              <td class="right nowrap">{{ it.amount_mb }}</td>
-              <td class="right nowrap">{{ it.paid_mb }}</td>
-              <td class="right nowrap">{{ it.remaining_mb }}</td>
+              <td class="right nowrap">{{ fmt_quota(it.amount_mb) }}</td>
+              <td class="right nowrap">{{ fmt_quota(it.paid_mb) }}</td>
+              <td class="right nowrap">{{ fmt_quota(it.remaining_mb) }}</td>
               <td class="nowrap">
                 <!--{% if it.is_paid %}-->
                   <span class="badge badge-paid">LUNAS</span>

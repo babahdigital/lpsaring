@@ -185,16 +185,35 @@ def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
     macs = sorted({str(d.mac_address).strip().upper() for d in devices if getattr(d, 'mac_address', None)})
     ips = sorted({str(d.ip_address).strip() for d in devices if getattr(d, 'ip_address', None)})
 
+    username_08 = str(format_to_local_phone(getattr(user, 'phone_number', None)) or '').strip()
+    uid_marker = f"uid={user.id}"
+    user_marker = f"user={username_08}" if username_08 else ""
+
+    def _comment_matches_user(comment: object) -> bool:
+        if not comment:
+            return False
+        text = str(comment)
+        haystack = text.lower()
+        if uid_marker.lower() in haystack:
+            return True
+        if user_marker and user_marker.lower() in haystack:
+            return True
+        return False
+
     # Always clear refresh tokens (even if router ops fail).
     tokens_deleted = db.session.query(RefreshToken).filter(RefreshToken.user_id == user.id).delete(synchronize_session=False)
+    # Also clear device mappings so the next login is a true fresh enroll.
+    devices_deleted = db.session.query(UserDevice).filter(UserDevice.user_id == user.id).delete(synchronize_session=False)
 
     router_summary = {
         'mikrotik_connected': False,
         'active_sessions_removed': 0,
+        'hotspot_cookies_removed': 0,
         'ip_bindings_removed': 0,
         'dhcp_leases_removed': 0,
         'arp_entries_removed': 0,
         'address_list_entries_removed': 0,
+        'comment_tagged_entries_removed': 0,
         'errors': [],
     }
 
@@ -226,14 +245,31 @@ def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
                         router_summary['active_sessions_removed'] += _remove_all(active_res, active_res.get(**{'mac-address': mac}))
                     for ip in ips:
                         router_summary['active_sessions_removed'] += _remove_all(active_res, active_res.get(address=ip))
+                    if username_08:
+                        router_summary['active_sessions_removed'] += _remove_all(active_res, active_res.get(user=username_08))
                 except Exception as e:
                     router_summary['errors'].append(f"active_cleanup: {e}")
+
+                # Remove hotspot cookies to prevent auto-login.
+                try:
+                    cookie_res = api.get_resource('/ip/hotspot/cookie')
+                    for mac in macs:
+                        router_summary['hotspot_cookies_removed'] += _remove_all(cookie_res, cookie_res.get(**{'mac-address': mac}))
+                    if username_08:
+                        router_summary['hotspot_cookies_removed'] += _remove_all(cookie_res, cookie_res.get(user=username_08))
+                except Exception as e:
+                    router_summary['errors'].append(f"cookie_cleanup: {e}")
 
                 # Remove ip-binding by MAC.
                 try:
                     ipb_res = api.get_resource('/ip/hotspot/ip-binding')
                     for mac in macs:
                         router_summary['ip_bindings_removed'] += _remove_all(ipb_res, ipb_res.get(**{'mac-address': mac}))
+
+                    # Also remove ip-binding rows tagged with this user in comment (covers stale/missing device records).
+                    for row in (ipb_res.get() or []):
+                        if _comment_matches_user(row.get('comment')):
+                            router_summary['comment_tagged_entries_removed'] += _remove_all(ipb_res, [row])
                 except Exception as e:
                     router_summary['errors'].append(f"ip_binding_cleanup: {e}")
 
@@ -281,6 +317,16 @@ def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
                                 alist_res,
                                 alist_res.get(address=ip, list=list_name),
                             )
+
+                    # Also remove entries in managed lists by comment markers (uid/user), to catch stale IPs.
+                    for list_name in managed_lists:
+                        try:
+                            rows = alist_res.get(list=list_name) or []
+                            for row in rows:
+                                if _comment_matches_user(row.get('comment')):
+                                    router_summary['comment_tagged_entries_removed'] += _remove_all(alist_res, [row])
+                        except Exception as e:
+                            router_summary['errors'].append(f"address_list_comment_scan({list_name}): {e}")
                 except Exception as e:
                     router_summary['errors'].append(f"address_list_cleanup: {e}")
     except Exception as e:
@@ -293,9 +339,11 @@ def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
             action_type=AdminActionType.RESET_USER_LOGIN,
             details={
                 'tokens_deleted': int(tokens_deleted or 0),
-                'device_count': int(len(devices)),
+                'devices_deleted': int(devices_deleted or 0),
+                'device_count_before': int(len(devices)),
                 'macs': macs,
                 'ips': ips,
+                'username_08': username_08,
                 'router': router_summary,
             },
         )
@@ -310,7 +358,10 @@ def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
         current_app.logger.error(f"Error committing reset-login for user {user_id}: {e}", exc_info=True)
         return jsonify({"message": "Gagal menyimpan perubahan (token reset)."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
-    msg = f"Reset login berhasil. Token dibersihkan: {int(tokens_deleted or 0)}."
+    msg = (
+        f"Reset login berhasil. Token dibersihkan: {int(tokens_deleted or 0)}. "
+        f"Device dibersihkan: {int(devices_deleted or 0)}."
+    )
     if router_summary.get('mikrotik_connected') is not True:
         msg += " (Catatan: MikroTik tidak terhubung, cleanup router dilewati.)"
 
@@ -319,9 +370,11 @@ def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
             'message': msg,
             'summary': {
                 'tokens_deleted': int(tokens_deleted or 0),
-                'device_count': int(len(devices)),
+                'devices_deleted': int(devices_deleted or 0),
+                'device_count_before': int(len(devices)),
                 'mac_count': int(len(macs)),
                 'ip_count': int(len(ips)),
+                'username_08': username_08,
                 'router': router_summary,
             },
         }

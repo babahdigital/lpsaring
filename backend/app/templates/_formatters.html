@@ -1,0 +1,31 @@
+{# Reusable Jinja macros for admin PDF/HTML templates #}
+
+{%- macro fmt_quota(mb) -%}
+  {%- set v = (mb or 0) | float -%}
+  {%- set sign = '-' if v < 0 else '' -%}
+  {%- set a = (v * -1) if v < 0 else v -%}
+
+  {#
+    Input is in MB.
+    Output is dynamic KB/MB/GB with base 1024:
+      - < 1 MB => KB (rounded)
+      - 1..1023 MB => MB (rounded)
+      - >= 1024 MB => GB (up to 2 decimals, trimmed if .00)
+  #}
+  {%- if a < (1 / 1024) -%}
+    {{- sign -}}0 KB
+  {%- elif a < 1 -%}
+    {%- set kb = a * 1024 -%}
+    {{- sign -}}{{ kb | round(0, 'common') | int }} KB
+  {%- elif a >= 1024 -%}
+    {%- set gb = a / 1024 -%}
+    {%- set gb2 = gb | round(2, 'common') -%}
+    {%- if gb2 == (gb2 | round(0, 'common')) -%}
+      {{- sign -}}{{ gb2 | round(0, 'common') | int }} GB
+    {%- else -%}
+      {{- sign -}}{{ gb2 }} GB
+    {%- endif -%}
+  {%- else -%}
+    {{- sign -}}{{ a | round(0, 'common') | int }} MB
+  {%- endif -%}
+{%- endmacro -%}

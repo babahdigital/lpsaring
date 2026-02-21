@@ -79,6 +79,7 @@
   </style>
 </head>
 <body>
+  {%- from '_formatters.html' import fmt_quota -%}
   <div class="container">
     <h1>Laporan Penjualan (SUCCESS)</h1>
     <div class="sub">{{ business_name }} • Periode: {{ start_date }} s/d {{ end_date }} • Dibuat: {{ generated_at.strftime('%d %b %Y %H:%M') }}</div>
@@ -169,9 +170,9 @@
           <tr>
             <th>Nama</th>
             <th>Telepon</th>
-            <th class="num">Debt Total (MB)</th>
-            <th class="num">Debt Auto (MB)</th>
-            <th class="num">Debt Manual (MB)</th>
+            <th class="num">Debt Total</th>
+            <th class="num">Debt Auto</th>
+            <th class="num">Debt Manual</th>
           </tr>
         </thead>
         <tbody>
@@ -179,13 +180,14 @@
             <tr>
               <td>{{ u.full_name }}</td>
               <td>{{ u.phone_number }}</td>
-              <td class="num">{{ u.debt_total_mb | format_number }}</td>
-              <td class="num">{{ u.debt_auto_mb | format_number }}</td>
-              <td class="num">{{ u.debt_manual_mb | format_number }}</td>
+              <td class="num">{{ fmt_quota(u.debt_total_mb) }}</td>
+              <td class="num">{{ fmt_quota(u.debt_auto_mb) }}</td>
+              <td class="num">{{ fmt_quota(u.debt_manual_mb) }}</td>
             </tr>
           <!--{% endfor %}-->
         </tbody>
       </table>
+      <div class="note">Satuan debt otomatis KB/MB/GB (1 GB = 1024 MB).</div>
     {% endif %}
 
     <div class="footer">
