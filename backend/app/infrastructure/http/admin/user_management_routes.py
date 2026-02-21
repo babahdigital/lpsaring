@@ -8,7 +8,7 @@ from pydantic import ValidationError
 import sqlalchemy as sa
 
 from app.extensions import db
-from app.infrastructure.db.models import User, UserRole, UserBlok, UserKamar, ApprovalStatus
+from app.infrastructure.db.models import User, UserRole, UserBlok, UserKamar, ApprovalStatus, UserDevice, RefreshToken, AdminActionType
 from app.infrastructure.http.decorators import admin_required
 from app.infrastructure.http.schemas.user_schemas import (
     UserResponseSchema,
@@ -24,7 +24,9 @@ from app.infrastructure.db.models import UserQuotaDebt
 # [FIX] Menambahkan kembali impor yang hilang untuk endpoint /mikrotik-status
 from app.utils.formatters import format_to_local_phone
 from app.services.user_management.helpers import _handle_mikrotik_operation, _send_whatsapp_notification
-from app.infrastructure.gateways.mikrotik_client import get_hotspot_user_details
+from app.infrastructure.gateways.mikrotik_client import get_hotspot_user_details, get_mikrotik_connection
+
+from app.services.user_management.helpers import _log_admin_action
 
 from app.services import settings_service
 from app.services.user_management import (
@@ -160,6 +162,170 @@ def generate_admin_password_for_user(current_admin: User, user_id):
         return jsonify({"message": message}), HTTPStatus.FORBIDDEN
     db.session.commit()
     return jsonify({"message": message}), HTTPStatus.OK
+
+
+@user_management_bp.route('/users/<uuid:user_id>/reset-login', methods=['POST'])
+@admin_required
+def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
+    """Force user to login fresh without changing quota/status fields in DB.
+
+    - DB: delete all refresh tokens for the user.
+    - MikroTik (best-effort): clear hotspot active sessions, ip-binding, DHCP lease, ARP,
+      and managed address-lists for IPs found in user_devices.
+    """
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+
+    # RBAC: admin non-super tidak boleh mengakses data super admin.
+    if not current_admin.is_super_admin_role and user.role == UserRole.SUPER_ADMIN:
+        return jsonify({"message": "Akses ditolak."}), HTTPStatus.FORBIDDEN
+
+    devices = db.session.scalars(select(UserDevice).where(UserDevice.user_id == user.id)).all()
+    macs = sorted({str(d.mac_address).strip().upper() for d in devices if getattr(d, 'mac_address', None)})
+    ips = sorted({str(d.ip_address).strip() for d in devices if getattr(d, 'ip_address', None)})
+
+    # Always clear refresh tokens (even if router ops fail).
+    tokens_deleted = db.session.query(RefreshToken).filter(RefreshToken.user_id == user.id).delete(synchronize_session=False)
+
+    router_summary = {
+        'mikrotik_connected': False,
+        'active_sessions_removed': 0,
+        'ip_bindings_removed': 0,
+        'dhcp_leases_removed': 0,
+        'arp_entries_removed': 0,
+        'address_list_entries_removed': 0,
+        'errors': [],
+    }
+
+    def _row_id(row: dict) -> str | None:
+        return row.get('id') or row.get('.id')
+
+    def _remove_all(resource, rows) -> int:
+        removed = 0
+        for row in rows or []:
+            rid = _row_id(row)
+            if not rid:
+                continue
+            try:
+                resource.remove(id=rid)
+                removed += 1
+            except Exception as e:
+                router_summary['errors'].append(str(e))
+        return removed
+
+    try:
+        with get_mikrotik_connection(raise_on_error=False) as api:
+            if api:
+                router_summary['mikrotik_connected'] = True
+
+                # Kick active sessions by MAC and IP.
+                try:
+                    active_res = api.get_resource('/ip/hotspot/active')
+                    for mac in macs:
+                        router_summary['active_sessions_removed'] += _remove_all(active_res, active_res.get(**{'mac-address': mac}))
+                    for ip in ips:
+                        router_summary['active_sessions_removed'] += _remove_all(active_res, active_res.get(address=ip))
+                except Exception as e:
+                    router_summary['errors'].append(f"active_cleanup: {e}")
+
+                # Remove ip-binding by MAC.
+                try:
+                    ipb_res = api.get_resource('/ip/hotspot/ip-binding')
+                    for mac in macs:
+                        router_summary['ip_bindings_removed'] += _remove_all(ipb_res, ipb_res.get(**{'mac-address': mac}))
+                except Exception as e:
+                    router_summary['errors'].append(f"ip_binding_cleanup: {e}")
+
+                # Remove DHCP leases by MAC.
+                try:
+                    lease_res = api.get_resource('/ip/dhcp-server/lease')
+                    for mac in macs:
+                        router_summary['dhcp_leases_removed'] += _remove_all(lease_res, lease_res.get(**{'mac-address': mac}))
+                except Exception as e:
+                    router_summary['errors'].append(f"dhcp_lease_cleanup: {e}")
+
+                # Remove ARP entries by MAC and IP.
+                try:
+                    arp_res = api.get_resource('/ip/arp')
+                    for mac in macs:
+                        router_summary['arp_entries_removed'] += _remove_all(arp_res, arp_res.get(**{'mac-address': mac}))
+                    for ip in ips:
+                        router_summary['arp_entries_removed'] += _remove_all(arp_res, arp_res.get(address=ip))
+                except Exception as e:
+                    router_summary['errors'].append(f"arp_cleanup: {e}")
+
+                # Remove managed address-lists for all IPs.
+                try:
+                    alist_res = api.get_resource('/ip/firewall/address-list')
+
+                    managed_lists = []
+                    keys = [
+                        ('MIKROTIK_ADDRESS_LIST_BLOCKED', 'blocked'),
+                        ('MIKROTIK_ADDRESS_LIST_ACTIVE', 'active'),
+                        ('MIKROTIK_ADDRESS_LIST_FUP', 'fup'),
+                        ('MIKROTIK_ADDRESS_LIST_HABIS', 'habis'),
+                        ('MIKROTIK_ADDRESS_LIST_EXPIRED', 'expired'),
+                        ('MIKROTIK_ADDRESS_LIST_INACTIVE', 'inactive'),
+                        ('MIKROTIK_ADDRESS_LIST_UNAUTHORIZED', 'unauthorized'),
+                    ]
+                    for k, d in keys:
+                        name = settings_service.get_setting(k, d) or d
+                        name = str(name).strip()
+                        if name and name not in managed_lists:
+                            managed_lists.append(name)
+
+                    for ip in ips:
+                        for list_name in managed_lists:
+                            router_summary['address_list_entries_removed'] += _remove_all(
+                                alist_res,
+                                alist_res.get(address=ip, list=list_name),
+                            )
+                except Exception as e:
+                    router_summary['errors'].append(f"address_list_cleanup: {e}")
+    except Exception as e:
+        router_summary['errors'].append(f"mikrotik_connection: {e}")
+
+    try:
+        _log_admin_action(
+            admin=current_admin,
+            target_user=user,
+            action_type=AdminActionType.RESET_USER_LOGIN,
+            details={
+                'tokens_deleted': int(tokens_deleted or 0),
+                'device_count': int(len(devices)),
+                'macs': macs,
+                'ips': ips,
+                'router': router_summary,
+            },
+        )
+    except Exception:
+        # Logging must never block the main action.
+        pass
+
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error committing reset-login for user {user_id}: {e}", exc_info=True)
+        return jsonify({"message": "Gagal menyimpan perubahan (token reset)."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+    msg = f"Reset login berhasil. Token dibersihkan: {int(tokens_deleted or 0)}."
+    if router_summary.get('mikrotik_connected') is not True:
+        msg += " (Catatan: MikroTik tidak terhubung, cleanup router dilewati.)"
+
+    return jsonify(
+        {
+            'message': msg,
+            'summary': {
+                'tokens_deleted': int(tokens_deleted or 0),
+                'device_count': int(len(devices)),
+                'mac_count': int(len(macs)),
+                'ip_count': int(len(ips)),
+                'router': router_summary,
+            },
+        }
+    ), HTTPStatus.OK
 
 @user_management_bp.route('/users/me', methods=['PUT'])
 @admin_required

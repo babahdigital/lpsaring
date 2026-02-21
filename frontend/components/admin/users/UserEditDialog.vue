@@ -39,6 +39,7 @@ const emit = defineEmits(['update:modelValue', 'save'])
 const { $api } = useNuxtApp()
 const tab = ref('info')
 const { add: showSnackbar } = useSnackbar()
+const isResetLoginLoading = ref(false)
 
 interface User {
   id: string
@@ -359,6 +360,29 @@ async function checkAndApplyMikrotikStatus() {
   }
 }
 
+async function resetUserLogin() {
+  if (!props.user)
+    return
+
+  const ok = window.confirm(
+    `Reset login untuk ${props.user.full_name} (${props.user.phone_number})?\n\nAksi ini akan:\n- Menghapus semua refresh token\n- Membersihkan state MikroTik (address-list, ip-binding, DHCP lease, ARP, dan sesi aktif)\n\nStatus kuota/paket di database tidak diubah.`,
+  )
+  if (!ok)
+    return
+
+  isResetLoginLoading.value = true
+  try {
+    const res = await $api<any>(`/admin/users/${props.user.id}/reset-login`, { method: 'POST' })
+    showSnackbar({ type: 'success', title: 'Berhasil', text: res?.message || 'Reset login berhasil.' })
+  }
+  catch (error: any) {
+    showSnackbar({ type: 'error', title: 'Gagal', text: error.data?.message || 'Reset login gagal.' })
+  }
+  finally {
+    isResetLoginLoading.value = false
+  }
+}
+
 async function onSave() {
   if (!formRef.value)
     return
@@ -550,14 +574,24 @@ function openDebtPdf() {
                     <div class="text-overline">
                       Inject Kuota & Masa Aktif
                     </div>
-                    <VBtn
-                      v-if="canAdminInject"
-                      size="small" variant="tonal" color="info"
-                      :loading="isCheckingMikrotik" prepend-icon="tabler-refresh-dot"
-                      @click="checkAndApplyMikrotikStatus"
-                    >
-                      Cek Live Mikrotik
-                    </VBtn>
+                    <div class="d-flex align-center gap-2">
+                      <VBtn
+                        v-if="canAdminInject"
+                        size="small" variant="tonal" color="warning"
+                        :loading="isResetLoginLoading" prepend-icon="tabler-logout"
+                        @click="resetUserLogin"
+                      >
+                        Reset Login
+                      </VBtn>
+                      <VBtn
+                        v-if="canAdminInject"
+                        size="small" variant="tonal" color="info"
+                        :loading="isCheckingMikrotik" prepend-icon="tabler-refresh-dot"
+                        @click="checkAndApplyMikrotikStatus"
+                      >
+                        Cek Live Mikrotik
+                      </VBtn>
+                    </div>
                   </VCol>
 
                   <VCol v-if="liveData" cols="12">

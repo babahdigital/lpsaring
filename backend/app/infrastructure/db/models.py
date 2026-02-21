@@ -106,6 +106,8 @@ class AdminActionType(enum.Enum):
     BLOCK_USER = "BLOCK_USER"
     UNBLOCK_USER = "UNBLOCK_USER"
 
+    RESET_USER_LOGIN = "RESET_USER_LOGIN"
+
     # --- [PENAMBAHAN DI SINI] ---
     # Menambahkan tipe aksi spesifik untuk pemrosesan permintaan kuota.
     PROCESS_QUOTA_REQUEST_APPROVE = "PROCESS_QUOTA_REQUEST_APPROVE"

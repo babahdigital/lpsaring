@@ -1,6 +1,8 @@
 # backend/app/services/walled_garden_service.py
 import json
 import logging
+import socket
+import ipaddress
 from typing import List, Dict
 from urllib.parse import urlparse
 
@@ -29,6 +31,33 @@ def _get_list_setting(key: str) -> List[str]:
             return []
         return [item.strip().strip('"').strip("'") for item in val.split(',') if item.strip()]
     return []
+
+
+def _derive_private_ips_from_hosts(hosts: List[str]) -> List[str]:
+    """Resolve hosts and return private (RFC1918) IPs only.
+
+    Rationale: MikroTik walled-garden 'dst-host' can be unreliable for HTTPS depending
+    on router configuration/versions, but 'dst-address' works reliably.
+    We only auto-add PRIVATE IPs to avoid whitelisting large/variable public CDN ranges.
+    """
+    ips: set[str] = set()
+    for host in hosts or []:
+        h = str(host or '').strip()
+        if not h:
+            continue
+        try:
+            infos = socket.getaddrinfo(h, None)
+        except Exception:
+            continue
+        for info in infos:
+            try:
+                addr = info[4][0]
+                ip_obj = ipaddress.ip_address(str(addr))
+                if ip_obj.is_private:
+                    ips.add(str(ip_obj))
+            except Exception:
+                continue
+    return sorted(ips)
 
 
 def sync_walled_garden() -> Dict[str, str]:
@@ -65,6 +94,16 @@ def sync_walled_garden() -> Dict[str, str]:
         # De-dup + urut stabil
         if derived_hosts:
             allowed_hosts = sorted({h for h in derived_hosts if h})
+
+    # Best-effort: if allowed_ips is empty, try to derive private IPs from allowed_hosts.
+    # This supports setups where a local DNS entry maps the portal domain to a private IP.
+    if not allowed_ips and allowed_hosts:
+        try:
+            derived_private_ips = _derive_private_ips_from_hosts(allowed_hosts)
+            if derived_private_ips:
+                allowed_ips = derived_private_ips
+        except Exception:
+            pass
 
     with get_mikrotik_connection() as api:
         if not api:
