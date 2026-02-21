@@ -23,7 +23,7 @@ from app.infrastructure.db.models import UserQuotaDebt
 
 # [FIX] Menambahkan kembali impor yang hilang untuk endpoint /mikrotik-status
 from app.utils.formatters import format_to_local_phone
-from app.services.user_management.helpers import _handle_mikrotik_operation
+from app.services.user_management.helpers import _handle_mikrotik_operation, _send_whatsapp_notification
 from app.infrastructure.gateways.mikrotik_client import get_hotspot_user_details
 
 from app.services import settings_service
@@ -405,6 +405,88 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
         db.session.rollback()
         current_app.logger.error(f"Error settling debt {debt_id} for user {user_id}: {e}", exc_info=True)
         return jsonify({"message": "Gagal melunasi debt."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@user_management_bp.route('/users/<uuid:user_id>/debts/settle-all', methods=['POST'])
+@admin_required
+def settle_all_debts(current_admin: User, user_id: uuid.UUID):
+    """Lunasi semua tunggakan user (auto + manual) sekaligus.
+
+    - Manual: melunasi semua item ledger (oldest-first).
+    - Otomatis: menambah purchased_mb sampai debt otomatis menjadi 0.
+
+    Mengirim 1 notifikasi WhatsApp ke user (jika diaktifkan).
+    """
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+
+    # RBAC: admin non-super tidak boleh mengakses data super admin.
+    if not current_admin.is_super_admin_role and user.role == UserRole.SUPER_ADMIN:
+        return jsonify({"message": "Akses ditolak."}), HTTPStatus.FORBIDDEN
+
+    try:
+        # Snapshot for response / notification.
+        debt_auto_before = float(getattr(user, 'quota_debt_auto_mb', 0) or 0)
+        debt_manual_before = int(getattr(user, 'quota_debt_manual_mb', 0) or 0)
+        was_blocked = bool(getattr(user, 'is_blocked', False))
+        blocked_reason = str(getattr(user, 'blocked_reason', '') or '')
+
+        paid_auto_mb, paid_manual_mb = user_debt_service.clear_all_debts_to_zero(
+            user=user,
+            admin_actor=current_admin,
+            source='admin_settle_all',
+        )
+
+        unblocked = False
+        # Only auto-unblock if the system blocked the user due to quota debt limit.
+        if was_blocked and blocked_reason.startswith('quota_debt_limit|'):
+            user.is_blocked = False
+            user.blocked_reason = None
+            user.blocked_at = None
+            user.blocked_by_id = None
+            unblocked = True
+
+        db.session.commit()
+
+        # Notify user via WhatsApp (best-effort).
+        try:
+            purchased_now = float(getattr(user, 'total_quota_purchased_mb', 0) or 0)
+            used_now = float(getattr(user, 'total_quota_used_mb', 0) or 0)
+            remaining_mb = max(0.0, purchased_now - used_now)
+
+            paid_total_mb = int(paid_auto_mb) + int(paid_manual_mb)
+            # Avoid sending a confusing message when nothing was actually paid.
+            if paid_total_mb > 0:
+                template_key = 'user_debt_cleared_unblock' if unblocked else 'user_debt_cleared'
+                _send_whatsapp_notification(
+                    user.phone_number,
+                    template_key,
+                    {
+                        'full_name': user.full_name,
+                        'paid_auto_debt_mb': int(paid_auto_mb),
+                        'paid_manual_debt_mb': int(paid_manual_mb),
+                        'paid_total_debt_mb': int(paid_total_mb),
+                        'remaining_mb': float(remaining_mb),
+                    },
+                )
+        except Exception as e:
+            current_app.logger.warning('Gagal mengirim notifikasi lunas tunggakan untuk user %s: %s', user.id, e)
+
+        return jsonify(
+            {
+                'message': 'Tunggakan berhasil dilunasi.',
+                'paid_auto_mb': int(paid_auto_mb),
+                'paid_manual_mb': int(paid_manual_mb),
+                'debt_auto_before_mb': float(debt_auto_before),
+                'debt_manual_before_mb': int(debt_manual_before),
+                'unblocked': bool(unblocked),
+            }
+        ), HTTPStatus.OK
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error settling all debts for user {user_id}: {e}", exc_info=True)
+        return jsonify({"message": "Gagal melunasi tunggakan."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
 @user_management_bp.route('/users/<uuid:user_id>/debts/export', methods=['GET'])

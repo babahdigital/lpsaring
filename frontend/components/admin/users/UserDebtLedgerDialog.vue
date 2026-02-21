@@ -35,6 +35,7 @@ const loading = ref(false)
 const items = ref<ManualDebtItem[]>([])
 const summary = ref<{ manual_debt_mb: number, open_items: number, paid_items: number, total_items: number } | null>(null)
 const settlingId = ref<string | null>(null)
+const settlingAll = ref(false)
 
 const debtAutoMb = computed(() => Number(props.user?.quota_debt_auto_mb ?? 0))
 const debtManualMb = computed(() => Number(props.user?.quota_debt_manual_mb ?? props.user?.manual_debt_mb ?? 0))
@@ -87,6 +88,24 @@ async function settleItem(item: ManualDebtItem) {
   }
   finally {
     settlingId.value = null
+  }
+}
+
+async function settleAll() {
+  if (!props.user)
+    return
+
+  settlingAll.value = true
+  try {
+    await $api(`/admin/users/${props.user.id}/debts/settle-all`, { method: 'POST' })
+    showSnackbar({ type: 'success', title: 'Tunggakan', text: 'Semua tunggakan berhasil dilunasi.' })
+    await fetchLedger()
+  }
+  catch (error: any) {
+    showSnackbar({ type: 'warning', title: 'Tunggakan', text: error?.data?.message || 'Gagal melunasi semua tunggakan.' })
+  }
+  finally {
+    settlingAll.value = false
   }
 }
 
@@ -197,6 +216,15 @@ watch(
       <VDivider />
       <VCardActions class="pa-4">
         <VSpacer />
+        <VBtn
+          v-if="debtTotalMb > 0"
+          variant="tonal"
+          color="success"
+          :loading="settlingAll"
+          @click="settleAll"
+        >
+          Lunasi Semua
+        </VBtn>
         <VBtn variant="tonal" color="secondary" @click="close">
           Tutup
         </VBtn>
