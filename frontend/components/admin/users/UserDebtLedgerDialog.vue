@@ -63,7 +63,7 @@ async function fetchLedger() {
     summary.value = resp.summary ?? null
   }
   catch (error: any) {
-    showSnackbar({ type: 'warning', title: 'Debt', text: error?.data?.message || 'Gagal memuat riwayat debt.' })
+    showSnackbar({ type: 'warning', title: 'Tunggakan', text: error?.data?.message || 'Gagal memuat riwayat tunggakan.' })
   }
   finally {
     loading.value = false
@@ -79,11 +79,11 @@ async function settleItem(item: ManualDebtItem) {
   settlingId.value = item.id
   try {
     await $api(`/admin/users/${props.user.id}/debts/${item.id}/settle`, { method: 'POST' })
-    showSnackbar({ type: 'success', title: 'Debt', text: 'Item debt berhasil dilunasi.' })
+    showSnackbar({ type: 'success', title: 'Tunggakan', text: 'Item tunggakan berhasil ditandai lunas.' })
     await fetchLedger()
   }
   catch (error: any) {
-    showSnackbar({ type: 'warning', title: 'Debt', text: error?.data?.message || 'Gagal melunasi item debt.' })
+    showSnackbar({ type: 'warning', title: 'Tunggakan', text: error?.data?.message || 'Gagal menandai item tunggakan sebagai lunas.' })
   }
   finally {
     settlingId.value = null
@@ -112,7 +112,7 @@ watch(
     <VCard v-if="props.user">
       <VCardTitle class="pa-4 d-flex align-center bg-primary rounded-t-lg">
         <VIcon icon="tabler-notes" start />
-        <span class="headline text-white">Riwayat Debt</span>
+        <span class="headline text-white">Riwayat Tunggakan</span>
         <VSpacer />
         <VBtn icon="tabler-printer" variant="text" class="text-white" @click="openPdf" />
         <VBtn icon="tabler-x" variant="text" size="small" class="text-white" @click="close" />
@@ -128,10 +128,10 @@ watch(
             {{ props.user.phone_number }}
           </VChip>
           <VChip size="small" label color="warning" variant="tonal">
-            Debt Total: {{ debtTotalMb.toLocaleString('id-ID', { maximumFractionDigits: 2 }) }} MB
+            Total Tunggakan: {{ debtTotalMb.toLocaleString('id-ID', { maximumFractionDigits: 2 }) }} MB
           </VChip>
           <VChip size="small" label color="default" variant="tonal">
-            Auto: {{ debtAutoMb.toLocaleString('id-ID', { maximumFractionDigits: 2 }) }} MB
+            Otomatis: {{ debtAutoMb.toLocaleString('id-ID', { maximumFractionDigits: 2 }) }} MB
           </VChip>
           <VChip size="small" label color="default" variant="tonal">
             Manual: {{ debtManualMb.toLocaleString('id-ID', { maximumFractionDigits: 2 }) }} MB
@@ -169,7 +169,7 @@ watch(
               <td class="text-end">{{ Number(item.remaining_mb || 0).toLocaleString('id-ID') }}</td>
               <td>
                 <VChip :color="item.is_paid ? 'success' : 'warning'" size="x-small" label>
-                  {{ item.is_paid ? 'LUNAS' : 'BELUM' }}
+                  {{ item.is_paid ? 'LUNAS' : 'BELUM LUNAS' }}
                 </VChip>
               </td>
               <td style="min-width: 220px;">{{ item.note || '' }}</td>
@@ -201,7 +201,7 @@ watch(
           Tutup
         </VBtn>
         <VBtn color="primary" prepend-icon="tabler-file-type-pdf" @click="openPdf">
-          PDF (Print / Save)
+          PDF (Cetak / Simpan)
         </VBtn>
       </VCardActions>
     </VCard>

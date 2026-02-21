@@ -177,7 +177,7 @@ const debtTotalMb = computed(() => Number(props.user?.quota_debt_total_mb ?? (de
 const debtStatusMeta = computed(() => {
   const hasDebt = debtTotalMb.value > 0
   return {
-    text: hasDebt ? 'PUNYA HUTANG' : 'LUNAS',
+    text: hasDebt ? 'ADA TUNGGAKAN' : 'TIDAK ADA TUNGGAKAN',
     color: hasDebt ? 'warning' : 'success',
     icon: hasDebt ? 'tabler-alert-triangle' : 'tabler-circle-check',
   }
@@ -208,7 +208,7 @@ async function fetchManualDebtLedger() {
     manualDebtSummary.value = resp.summary ?? null
   }
   catch (error: any) {
-    showSnackbar({ type: 'warning', title: 'Debt', text: error?.data?.message || 'Gagal memuat riwayat debt.' })
+    showSnackbar({ type: 'warning', title: 'Tunggakan', text: error?.data?.message || 'Gagal memuat riwayat tunggakan.' })
   }
   finally {
     manualDebtLoading.value = false
@@ -341,22 +341,22 @@ function onClose() {
             class="mt-4"
             density="compact"
           >
-            Debt kuota terdeteksi: <strong>{{ formatMb(debtTotalMb) }} MB</strong>
+            Tunggakan kuota terdeteksi: <strong>{{ formatMb(debtTotalMb) }} MB</strong>
             (otomatis {{ formatMb(debtAutoMb) }} MB, manual {{ formatMb(debtManualMb) }} MB)
           </VAlert>
 
           <VSheet rounded="lg" border class="pa-3 mt-4">
             <div class="d-flex justify-space-between align-center">
               <div class="text-overline">
-                Riwayat Debt Manual
+                Riwayat Tunggakan Manual
               </div>
               <VChip v-if="manualDebtSummary" size="x-small" label>
-                Open {{ manualDebtSummary.open_items }} / Total {{ manualDebtSummary.total_items }}
+                Belum lunas {{ manualDebtSummary.open_items }} / Total {{ manualDebtSummary.total_items }}
               </VChip>
             </div>
 
             <VAlert v-if="manualDebtLoading" variant="tonal" density="compact" type="info" class="mt-2">
-              Memuat riwayat debt...
+              Memuat riwayat tunggakan...
             </VAlert>
             <VAlert
               v-else-if="manualDebtItems.length === 0"
@@ -365,7 +365,7 @@ function onClose() {
               type="info"
               class="mt-2"
             >
-              Belum ada entri debt manual.
+              Belum ada entri tunggakan manual.
             </VAlert>
 
             <VTable v-else density="compact" class="mt-2">

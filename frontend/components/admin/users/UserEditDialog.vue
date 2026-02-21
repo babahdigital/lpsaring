@@ -222,7 +222,7 @@ async function fetchAdminPackages() {
 const debtStatusMeta = computed(() => {
   const hasDebt = debtTotalMb.value > 0
   return {
-    text: hasDebt ? 'PUNYA HUTANG' : 'LUNAS',
+    text: hasDebt ? 'ADA TUNGGAKAN' : 'TIDAK ADA TUNGGAKAN',
     color: hasDebt ? 'warning' : 'success',
     icon: hasDebt ? 'tabler-alert-triangle' : 'tabler-circle-check',
   }
@@ -520,10 +520,10 @@ function openDebtPdf() {
                 <VCol v-if="canAdminInject && formData.is_active === true && isTargetAdminOrSuper !== true" cols="12">
                   <VSwitch
                     v-model="isDebtQuotaEnabled"
-                    label="Debt Kuota"
+                    label="Tunggakan Kuota"
                     color="primary"
                     inset
-                    hint="Aktifkan untuk menambah/mengelola debt kuota (berdasarkan paket)."
+                    hint="Aktifkan untuk menambah/mengelola tunggakan kuota (berdasarkan paket)."
                     persistent-hint
                     v-if="formData.role === 'USER'"
                   />
@@ -599,7 +599,7 @@ function openDebtPdf() {
                   <template v-if="formData.role === 'USER' && isDebtQuotaEnabled">
                     <VCol cols="12">
                       <div class="text-overline">
-                        Debt Kuota
+                        Tunggakan Kuota
                       </div>
                     </VCol>
 
@@ -607,7 +607,7 @@ function openDebtPdf() {
                       <VSheet rounded="lg" border class="pa-3">
                         <div class="d-flex justify-space-between align-center mb-2">
                           <div class="text-caption text-disabled">
-                            Status Debt
+                            Status Tunggakan
                           </div>
                           <div class="d-flex align-center gap-2">
                             <VBtn
@@ -615,7 +615,7 @@ function openDebtPdf() {
                               icon="tabler-list-details"
                               size="x-small"
                               variant="text"
-                              :title="'Lihat riwayat debt'"
+                              :title="'Lihat riwayat tunggakan'"
                               @click="openDebtLedger"
                             />
                             <VBtn
@@ -623,7 +623,7 @@ function openDebtPdf() {
                               icon="tabler-printer"
                               size="x-small"
                               variant="text"
-                              :title="'PDF (print / simpan)'"
+                              :title="'PDF (cetak / simpan)'"
                               @click="openDebtPdf"
                             />
                             <VChip :color="debtStatusMeta.color" size="x-small" label>
@@ -635,7 +635,7 @@ function openDebtPdf() {
                         <VRow dense>
                           <VCol cols="12" sm="4">
                             <div class="text-caption text-disabled">
-                              Debt Total
+                              Total Tunggakan
                             </div>
                             <div class="font-weight-medium">
                               {{ formatMb(debtTotalMb) }} MB
@@ -643,7 +643,7 @@ function openDebtPdf() {
                           </VCol>
                           <VCol cols="12" sm="4">
                             <div class="text-caption text-disabled">
-                              Debt Otomatis
+                              Tunggakan Otomatis
                             </div>
                             <div class="font-weight-medium">
                               {{ formatMb(debtAutoMb) }} MB
@@ -651,7 +651,7 @@ function openDebtPdf() {
                           </VCol>
                           <VCol cols="12" sm="4">
                             <div class="text-caption text-disabled">
-                              Debt Manual
+                              Tunggakan Manual
                             </div>
                             <div class="font-weight-medium">
                               {{ formatMb(debtManualMb) }} MB
@@ -662,15 +662,15 @@ function openDebtPdf() {
                     </VCol>
 
                     <VCol cols="12" md="6">
-                      <AppSelect v-model="formData.debt_package_id" :items="debtPackageOptions" label="Tambah Debt (Pilih Paket)" prepend-inner-icon="tabler-alert-circle" :loading="isPackagesLoading" />
+                      <AppSelect v-model="formData.debt_package_id" :items="debtPackageOptions" label="Tambah Tunggakan (Pilih Paket)" prepend-inner-icon="tabler-alert-circle" :loading="isPackagesLoading" />
                     </VCol>
 
                     <VCol cols="12" md="6">
-                      <AppTextField v-model="formData.debt_date" label="Tanggal Debt" type="date" prepend-inner-icon="tabler-calendar" />
+                      <AppTextField v-model="formData.debt_date" label="Tanggal Tunggakan" type="date" prepend-inner-icon="tabler-calendar" />
                     </VCol>
 
                     <VCol cols="12">
-                      <AppTextField v-model="formData.debt_note" label="Catatan Debt (Opsional)" prepend-inner-icon="tabler-notes" />
+                      <AppTextField v-model="formData.debt_note" label="Catatan Tunggakan (Opsional)" prepend-inner-icon="tabler-notes" />
                     </VCol>
                   </template>
 
