@@ -6,6 +6,12 @@ name: Docker Publish & Optional Deploy
 
 on:
   push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - '.github/workflows/docker-publish.yml'
     tags:
       - "v*"
   workflow_dispatch:
