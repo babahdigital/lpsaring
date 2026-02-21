@@ -412,8 +412,9 @@ const timeSpendingChartOptions = computed<ApexOptions>(() => {
             total: {
               show: true,
               showAlways: true,
-              label: isUnlimited ? 'Unlimited' : 'Total Hutang',
-              color: onSurfaceColor,
+              label: isUnlimited ? 'Unlimited' : 'Hutang',
+              // Make label less contrasty than the number.
+              color: 'rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity))',
               formatter: () => {
                 const isUnlimitedInner = quotaData.value?.is_unlimited_user === true
                 if (isUnlimitedInner)
@@ -682,7 +683,7 @@ useHead({ title: 'Dashboard User' })
                         </div>
                       </div>
 
-                      <div class="pe-2">
+                      <div class="debt-donut-wrap ms-auto pe-3">
                         <ClientOnly>
                           <apexchart
                             type="donut"
@@ -887,16 +888,35 @@ useHead({ title: 'Dashboard User' })
   gap: 1.5rem;
 }
 
-:deep(.debt-tooltip) {
-  background-color: rgb(var(--v-theme-surface));
-  color: rgb(var(--v-theme-on-surface));
-  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+/* VTooltip content-class is applied on v-overlay__content */
+:deep(.v-overlay__content.debt-tooltip) {
+  background-color: rgb(var(--v-theme-surface)) !important;
+  color: rgb(var(--v-theme-on-surface)) !important;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity)) !important;
 }
 
 .debt-tooltip-content {
   min-width: 260px;
   max-width: 360px;
   line-height: 1.35;
+}
+
+.debt-donut-wrap {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  min-width: 170px;
+}
+
+/* ApexCharts donut center label spacing */
+:deep(.apexcharts-datalabel-value) {
+  line-height: 1.05;
+}
+
+:deep(.apexcharts-datalabel-label) {
+  line-height: 1.1;
+  opacity: var(--v-medium-emphasis-opacity);
 }
 
 @media (max-width: 959.98px) {
