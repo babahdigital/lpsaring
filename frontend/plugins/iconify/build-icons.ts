@@ -224,6 +224,7 @@ const tablerIcons = [
   'minus',
   'moon-stars',
   'network',
+  'notes',
   'package',
   'package-off',
   'paperclip',
