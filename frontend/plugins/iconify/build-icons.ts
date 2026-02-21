@@ -100,6 +100,7 @@ const tablerIcons = [
   'brand-linkedin',
   'brand-linux',
   'brand-react-native',
+  'brand-telegram',
   'brand-twitter',
   'brand-twitter-filled',
   'brand-vue',

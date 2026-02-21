@@ -11,7 +11,7 @@ from http import HTTPStatus
 
 from app.extensions import db
 from app.infrastructure.db.models import (
-    User, DailyUsageLog, Transaction, TransactionStatus, ApprovalStatus
+    User, DailyUsageLog, Transaction, TransactionStatus, ApprovalStatus, Package
 )
 from ..schemas.user_schemas import (
     UserQuotaResponse, WeeklyUsageResponse,
@@ -25,6 +25,8 @@ from app.utils.formatters import (
     get_app_local_datetime,
     round_mb,
 )
+
+from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package
 
 data_bp = Blueprint('user_data_api', __name__, url_prefix='/api/users')
 
@@ -84,13 +86,37 @@ def get_my_quota_status(current_user_id):
         hotspot_username = format_to_local_phone(user.phone_number)
         last_sync_time = user.updated_at
 
+        debt_auto_mb = float(getattr(user, 'quota_debt_auto_mb', 0) or 0)
+        debt_manual_mb = int(getattr(user, 'quota_debt_manual_mb', 0) or 0)
+        debt_total_mb = float(getattr(user, 'quota_debt_total_mb', 0) or 0)
+
+        estimated_rp = 0
+        try:
+            cheapest_pkg = db.session.scalar(
+                select(Package)
+                .where(Package.is_active.is_(True))
+                .where(Package.data_quota_gb > 0)
+                .order_by(Package.price.asc())
+                .limit(1)
+            )
+            est = estimate_debt_rp_from_cheapest_package(
+                debt_mb=float(debt_total_mb),
+                cheapest_package_price_rp=int(cheapest_pkg.price) if cheapest_pkg and cheapest_pkg.price is not None else None,
+                cheapest_package_quota_gb=float(cheapest_pkg.data_quota_gb) if cheapest_pkg and cheapest_pkg.data_quota_gb is not None else None,
+                cheapest_package_name=str(cheapest_pkg.name) if cheapest_pkg and cheapest_pkg.name else None,
+            )
+            estimated_rp = int(est.estimated_rp_rounded or 0)
+        except Exception:
+            estimated_rp = 0
+
         quota_data = UserQuotaResponse(
             total_quota_purchased_mb=round_mb(purchased_mb),
             total_quota_used_mb=round_mb(used_mb),
             remaining_mb=remaining_mb,
-            quota_debt_auto_mb=float(getattr(user, 'quota_debt_auto_mb', 0) or 0),
-            quota_debt_manual_mb=int(getattr(user, 'quota_debt_manual_mb', 0) or 0),
-            quota_debt_total_mb=float(getattr(user, 'quota_debt_total_mb', 0) or 0),
+            quota_debt_auto_mb=debt_auto_mb,
+            quota_debt_manual_mb=debt_manual_mb,
+            quota_debt_total_mb=debt_total_mb,
+            quota_debt_total_estimated_rp=estimated_rp,
             hotspot_username=hotspot_username,
             last_sync_time=last_sync_time,
             is_unlimited_user=user.is_unlimited_user,

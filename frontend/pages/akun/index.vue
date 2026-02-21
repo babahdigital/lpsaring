@@ -7,10 +7,6 @@ import { useDisplay } from 'vuetify'
 import { useAuthStore } from '~/store/auth'
 import { normalize_to_e164 } from '~/utils/formatters'
 
-// --- [PERBAIKAN] Komponen sekarang dipanggil LoginHistoryCard (nama file tetap) ---
-const LoginHistoryCard = defineAsyncComponent({
-  loader: () => import('~/components/akun/LoginHistoryCard.vue'),
-})
 const UserSpendingChart = defineAsyncComponent({
   loader: () => import('~/components/charts/UserSpendingChart.vue'),
 })
@@ -384,85 +380,7 @@ useHead({ title: 'Pengaturan Akun' })
           </VCol>
 
           <VCol cols="12">
-            <VCard>
-              <VCardItem>
-                <VCardTitle class="text-h5">
-                  Telegram
-                </VCardTitle>
-                <VCardSubtitle>Hubungkan Telegram agar sistem bisa mengirim notifikasi ke akun Anda.</VCardSubtitle>
-              </VCardItem>
-              <VCardText>
-                <VAlert v-if="telegramError" type="error" variant="tonal" density="compact" closable class="mb-4" @update:model-value="telegramError = null">
-                  {{ telegramError }}
-                </VAlert>
-
-                <VAlert
-                  v-if="telegramStatus?.linked === true"
-                  type="success"
-                  variant="tonal"
-                  density="compact"
-                  class="mb-4"
-                >
-                  Telegram sudah terhubung.
-                  <span v-if="telegramStatus.username"> (@{{ telegramStatus.username }})</span>
-                </VAlert>
-                <VAlert
-                  v-else
-                  type="info"
-                  variant="tonal"
-                  density="compact"
-                  class="mb-4"
-                >
-                  Klik "Connect Telegram" lalu tekan Start di bot Telegram.
-                </VAlert>
-
-                <div class="d-flex flex-wrap ga-3">
-                  <VBtn
-                    color="primary"
-                    variant="tonal"
-                    prepend-icon="tabler-brand-telegram"
-                    :loading="telegramLoading"
-                    :disabled="telegramLoading"
-                    @click="connectTelegram"
-                  >
-                    Connect Telegram
-                  </VBtn>
-
-                  <VBtn
-                    color="secondary"
-                    variant="text"
-                    prepend-icon="tabler-refresh"
-                    :loading="telegramLoading"
-                    :disabled="telegramLoading"
-                    @click="loadTelegramStatus"
-                  >
-                    Refresh Status
-                  </VBtn>
-
-                  <VBtn
-                    v-if="telegramStatus?.linked === true"
-                    color="error"
-                    variant="text"
-                    prepend-icon="tabler-unlink"
-                    :loading="telegramLoading"
-                    :disabled="telegramLoading"
-                    @click="disconnectTelegram"
-                  >
-                    Disconnect
-                  </VBtn>
-                </div>
-
-                <div v-if="telegramLinkUrl" class="mt-4">
-                  <div class="text-caption text-medium-emphasis mb-1">Link connect (berlaku singkat):</div>
-                  <VTextField
-                    :model-value="telegramLinkUrl"
-                    readonly
-                    variant="outlined"
-                    density="compact"
-                  />
-                </div>
-              </VCardText>
-            </VCard>
+            <!-- Telegram card dipindahkan ke kolom kanan (menggantikan Riwayat Akses) -->
           </VCol>
 
           <VCol v-if="showDeviceManager" cols="12">
@@ -577,16 +495,81 @@ useHead({ title: 'Pengaturan Akun' })
             <VCard>
               <VCardItem>
                 <VCardTitle class="text-h5">
-                  Riwayat Akses
+                  Telegram
                 </VCardTitle>
-                <VCardSubtitle>Aktivitas login terakhir pada akun Anda.</VCardSubtitle>
+                <VCardSubtitle>Hubungkan Telegram agar sistem bisa mengirim notifikasi ke akun Anda.</VCardSubtitle>
               </VCardItem>
-              <ClientOnly>
-                <LoginHistoryCard v-if="deferredWidgetsReady" />
-              </ClientOnly>
-              <div v-if="!deferredWidgetsReady" class="text-center py-4">
-                <VProgressCircular indeterminate size="28" />
-              </div>
+              <VCardText>
+                <VAlert v-if="telegramError" type="error" variant="tonal" density="compact" closable class="mb-4" @update:model-value="telegramError = null">
+                  {{ telegramError }}
+                </VAlert>
+
+                <VAlert
+                  v-if="telegramStatus?.linked === true"
+                  type="success"
+                  variant="tonal"
+                  density="compact"
+                  class="mb-4"
+                >
+                  Telegram sudah terhubung.
+                  <span v-if="telegramStatus.username"> (@{{ telegramStatus.username }})</span>
+                </VAlert>
+                <VAlert
+                  v-else
+                  type="info"
+                  variant="tonal"
+                  density="compact"
+                  class="mb-4"
+                >
+                  Klik "Connect Telegram" lalu tekan Start di bot Telegram.
+                </VAlert>
+
+                <div class="d-flex flex-wrap ga-3">
+                  <VBtn
+                    color="primary"
+                    variant="tonal"
+                    prepend-icon="tabler-brand-telegram"
+                    :loading="telegramLoading"
+                    :disabled="telegramLoading"
+                    @click="connectTelegram"
+                  >
+                    Connect Telegram
+                  </VBtn>
+
+                  <VBtn
+                    color="secondary"
+                    variant="text"
+                    prepend-icon="tabler-refresh"
+                    :loading="telegramLoading"
+                    :disabled="telegramLoading"
+                    @click="loadTelegramStatus"
+                  >
+                    Refresh Status
+                  </VBtn>
+
+                  <VBtn
+                    v-if="telegramStatus?.linked === true"
+                    color="error"
+                    variant="text"
+                    prepend-icon="tabler-unlink"
+                    :loading="telegramLoading"
+                    :disabled="telegramLoading"
+                    @click="disconnectTelegram"
+                  >
+                    Disconnect
+                  </VBtn>
+                </div>
+
+                <div v-if="telegramLinkUrl" class="mt-4">
+                  <div class="text-caption text-medium-emphasis mb-1">Link connect (berlaku singkat):</div>
+                  <VTextField
+                    :model-value="telegramLinkUrl"
+                    readonly
+                    variant="outlined"
+                    density="compact"
+                  />
+                </div>
+              </VCardText>
             </VCard>
           </VCol>
         </VRow>

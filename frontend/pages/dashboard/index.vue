@@ -264,6 +264,64 @@ const debtAutoMb = computed(() => Number(quotaData.value?.quota_debt_auto_mb ?? 
 const debtManualMb = computed(() => Number(quotaData.value?.quota_debt_manual_mb ?? 0))
 const debtTotalMb = computed(() => Number(quotaData.value?.quota_debt_total_mb ?? (debtAutoMb.value + debtManualMb.value)))
 
+const debtEstimatedRp = computed(() => Number(quotaData.value?.quota_debt_total_estimated_rp ?? 0))
+
+function clampPct(value: number): number {
+  if (!Number.isFinite(value))
+    return 0
+  return Math.max(0, Math.min(100, Math.round(value)))
+}
+
+function formatRp(amount: number | null | undefined): string {
+  const v = Number(amount ?? 0)
+  if (!Number.isFinite(v) || v <= 0)
+    return 'Rp 0'
+  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(v)
+}
+
+const assignmentItems = computed(() => {
+  const isUnlimited = quotaData.value?.is_unlimited_user === true
+  const purchased = Number(quotaData.value?.total_quota_purchased_mb ?? 0)
+  const used = Number(quotaData.value?.total_quota_used_mb ?? 0)
+  const remaining = Number(quotaData.value?.remaining_mb ?? 0)
+
+  const usedPct = (!isUnlimited && purchased > 0) ? clampPct((used / purchased) * 100) : 0
+  const remainingPct = (!isUnlimited && purchased > 0) ? clampPct((remaining / purchased) * 100) : 0
+
+  const debtTotal = Number(debtTotalMb.value ?? 0)
+  const debtAuto = Number(debtAutoMb.value ?? 0)
+  const debtManual = Number(debtManualMb.value ?? 0)
+  const debtAutoPct = (!isUnlimited && debtTotal > 0) ? clampPct((debtAuto / debtTotal) * 100) : 0
+  const debtManualPct = (!isUnlimited && debtTotal > 0) ? clampPct((debtManual / debtTotal) * 100) : 0
+
+  return [
+    {
+      title: 'Kuota Terpakai',
+      subtitle: isUnlimited ? 'Unlimited' : formatQuota(used),
+      progress: usedPct,
+      color: 'primary',
+    },
+    {
+      title: 'Sisa Kuota',
+      subtitle: isUnlimited ? 'Unlimited' : formatQuota(remaining),
+      progress: remainingPct,
+      color: 'success',
+    },
+    {
+      title: 'Debt Otomatis',
+      subtitle: isUnlimited ? '0 MB' : formatQuota(debtAuto),
+      progress: debtAutoPct,
+      color: 'info',
+    },
+    {
+      title: 'Debt Manual',
+      subtitle: isUnlimited ? '0 MB' : formatQuota(debtManual),
+      progress: debtManualPct,
+      color: 'warning',
+    },
+  ]
+})
+
 async function refreshAllDataLogic() {
   if (!authStore.isLoggedIn)
     return
@@ -427,45 +485,42 @@ useHead({ title: 'Dashboard User' })
                 <VCard class="d-flex flex-column vuexy-card">
                   <VCardItem class="vuexy-card-header">
                     <VCardTitle class="vuexy-card-title">
-                      <VIcon icon="tabler-database" class="me-2" />Kuota & Tunggakan
+                      <VIcon icon="tabler-checkup-list" class="me-2" />Assignment Progress
                     </VCardTitle>
                   </VCardItem>
                   <VDivider />
-                  <VCardText class="py-2 px-4">
-                    <VTable density="compact" class="w-100">
-                      <tbody>
-                        <tr>
-                          <td class="text-body-2 text-medium-emphasis">Kuota Terpakai</td>
-                          <td class="text-body-2 font-weight-medium text-right">
-                            {{ quotaData?.is_unlimited_user ? 'Unlimited' : formatQuota(quotaData?.total_quota_used_mb) }}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td class="text-body-2 text-medium-emphasis">Sisa Kuota</td>
-                          <td class="text-body-2 font-weight-medium text-right">
-                            {{ quotaData?.is_unlimited_user ? 'Unlimited' : formatQuota(quotaData?.remaining_mb) }}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td class="text-body-2 text-medium-emphasis">Tunggakan Otomatis</td>
-                          <td class="text-body-2 font-weight-medium text-right">
-                            {{ quotaData?.is_unlimited_user ? '0 MB' : formatQuota(debtAutoMb) }}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td class="text-body-2 text-medium-emphasis">Tunggakan Manual</td>
-                          <td class="text-body-2 font-weight-medium text-right">
-                            {{ quotaData?.is_unlimited_user ? '0 MB' : formatQuota(debtManualMb) }}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td class="text-body-2 text-medium-emphasis">Total Tunggakan</td>
-                          <td class="text-body-2 font-weight-bold text-right">
-                            {{ quotaData?.is_unlimited_user ? '0 MB' : formatQuota(debtTotalMb) }}
-                          </td>
-                        </tr>
-                      </tbody>
-                    </VTable>
+                  <VCardText>
+                    <div class="d-flex align-center justify-space-between mb-3">
+                      <div class="text-body-2 text-medium-emphasis">
+                        Total hutang
+                      </div>
+                      <div class="text-body-2 font-weight-bold">
+                        {{ quotaData?.is_unlimited_user ? 'Rp 0' : formatRp(debtEstimatedRp) }}
+                      </div>
+                    </div>
+
+                    <VList class="card-list" density="compact">
+                      <VListItem v-for="item in assignmentItems" :key="item.title">
+                        <template #prepend>
+                          <VProgressCircular
+                            :model-value="item.progress"
+                            :size="54"
+                            class="me-4"
+                            :color="item.color"
+                          >
+                            <span class="text-body-1 text-high-emphasis font-weight-medium">
+                              {{ item.progress }}%
+                            </span>
+                          </VProgressCircular>
+                        </template>
+                        <VListItemTitle class="font-weight-medium mb-1 me-2">
+                          {{ item.title }}
+                        </VListItemTitle>
+                        <VListItemSubtitle class="me-2">
+                          {{ item.subtitle }}
+                        </VListItemSubtitle>
+                      </VListItem>
+                    </VList>
                   </VCardText>
                 </VCard>
 
@@ -610,6 +665,9 @@ useHead({ title: 'Dashboard User' })
 
 .v-list.v-list--density-compact {
   padding-block: 0.25rem;
+}
+.card-list {
+  --v-card-list-gap: 1.25rem;
 }
 .v-list-item.px-4 {
   padding-inline: 1rem !important;
