@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ApexOptions } from 'apexcharts'
 import type { MonthlyUsageResponse, UserQuotaResponse, WeeklyUsageResponse } from '~/types/user'
 import { useNuxtApp } from '#app'
 import { useDebounceFn } from '@vueuse/core'
@@ -6,7 +7,7 @@ import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, 
 import { usePromoStore } from '~/store/promo' // Import promo store
 import { useApiFetch } from '~/composables/useApiFetch'
 import { useAuthStore } from '~/store/auth'
-import { useDisplay } from 'vuetify'
+import { useDisplay, useTheme } from 'vuetify'
 
 // Impor komponen PromoAnnouncement DIHAPUS, diganti dengan sistem global di app.vue
 // const PromoAnnouncement = defineAsyncComponent(() => import('~/components/promo/PromoAnnouncement.vue'))
@@ -18,6 +19,7 @@ const MonthlyUsageChart = defineAsyncComponent(() => import('~/components/charts
 const promoStore = usePromoStore() // Inisialisasi promo store
 const authStore = useAuthStore()
 const display = useDisplay()
+const vuetifyTheme = useTheme()
 const pageTitle = 'Dashboard Pengguna'
 
 const chartReady = ref(false)
@@ -57,7 +59,7 @@ watch(() => promoStore.activePromo, (newPromo) => {
 const quotaApiUrl = computed(() => (authStore.isLoggedIn ? '/users/me/quota' : ''))
 const { data: quotaData, pending: quotaPending, error: quotaError, refresh: refreshQuotaRaw } = useApiFetch<UserQuotaResponse>(
   quotaApiUrl,
-  { server: false, key: 'userQuotaData', default: () => ({ success: false, total_quota_purchased_mb: 0, total_quota_used_mb: 0, remaining_mb: 0, quota_debt_auto_mb: 0, quota_debt_manual_mb: 0, quota_debt_total_mb: 0, hotspot_username: '...', last_sync_time: null, is_unlimited_user: false, quota_expiry_date: null }), immediate: false, watch: false },
+  { server: false, key: 'userQuotaData', default: () => ({ success: false, total_quota_purchased_mb: 0, total_quota_used_mb: 0, remaining_mb: 0, quota_debt_auto_mb: 0, quota_debt_manual_mb: 0, quota_debt_total_mb: 0, quota_debt_total_estimated_rp: 0, hotspot_username: '...', last_sync_time: null, is_unlimited_user: false, quota_expiry_date: null }), immediate: false, watch: false },
 )
 
 // Fetch data penggunaan mingguan
@@ -201,7 +203,7 @@ watch(() => authStore.isLoggedIn, (isLoggedIn, wasLoggedIn) => {
     }
   }
   else if (!isLoggedIn && wasLoggedIn) {
-    quotaData.value = { success: false, total_quota_purchased_mb: 0, total_quota_used_mb: 0, remaining_mb: 0, quota_debt_auto_mb: 0, quota_debt_manual_mb: 0, quota_debt_total_mb: 0, hotspot_username: '...', last_sync_time: null, is_unlimited_user: false, quota_expiry_date: null }
+    quotaData.value = { success: false, total_quota_purchased_mb: 0, total_quota_used_mb: 0, remaining_mb: 0, quota_debt_auto_mb: 0, quota_debt_manual_mb: 0, quota_debt_total_mb: 0, quota_debt_total_estimated_rp: 0, hotspot_username: '...', last_sync_time: null, is_unlimited_user: false, quota_expiry_date: null }
     weeklyUsageData.value = { success: false, weekly_data: [], period: { start_date: '', end_date: '' } }
     monthlyUsageData.value = { success: false, monthly_data: [] }
     fetchesInitiated.value = false
@@ -260,6 +262,22 @@ function formatQuota(mbValue: number | null | undefined): string {
   return `${Math.round(mb).toLocaleString('id-ID')} MB`
 }
 
+function formatQuotaParts(mbValue: number | null | undefined): { value: string; unit: 'KB' | 'MB' | 'GB' } {
+  const mb = Number(mbValue ?? 0)
+  if (!Number.isFinite(mb) || mb <= 0)
+    return { value: '0', unit: 'MB' }
+  if (mb < 1) {
+    const kb = Math.round(mb * 1024)
+    return { value: kb.toLocaleString('id-ID'), unit: 'KB' }
+  }
+  if (mb >= 1024) {
+    const gb = mb / 1024
+    const gbRounded = Math.round(gb * 100) / 100
+    return { value: gbRounded.toLocaleString('id-ID', { maximumFractionDigits: 2 }), unit: 'GB' }
+  }
+  return { value: Math.round(mb).toLocaleString('id-ID'), unit: 'MB' }
+}
+
 const debtAutoMb = computed(() => Number(quotaData.value?.quota_debt_auto_mb ?? 0))
 const debtManualMb = computed(() => Number(quotaData.value?.quota_debt_manual_mb ?? 0))
 const debtTotalMb = computed(() => Number(quotaData.value?.quota_debt_total_mb ?? (debtAutoMb.value + debtManualMb.value)))
@@ -279,47 +297,140 @@ function formatRp(amount: number | null | undefined): string {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(v)
 }
 
-const assignmentItems = computed(() => {
+const weeklyUsedMb = computed(() => {
+  const points = weeklyUsageData.value?.weekly_data
+  if (!Array.isArray(points))
+    return 0
+  return points.reduce((acc, n) => acc + Number(n || 0), 0)
+})
+
+const debtTotalParts = computed(() => {
   const isUnlimited = quotaData.value?.is_unlimited_user === true
+  if (isUnlimited)
+    return { value: '0', unit: 'MB' as const }
+  return formatQuotaParts(debtTotalMb.value)
+})
+
+const debtPctOfPurchased = computed(() => {
+  const isUnlimited = quotaData.value?.is_unlimited_user === true
+  if (isUnlimited)
+    return 0
   const purchased = Number(quotaData.value?.total_quota_purchased_mb ?? 0)
-  const used = Number(quotaData.value?.total_quota_used_mb ?? 0)
-  const remaining = Number(quotaData.value?.remaining_mb ?? 0)
+  const debt = Number(debtTotalMb.value ?? 0)
+  if (purchased <= 0 || debt <= 0)
+    return 0
+  const pct = (debt / purchased) * 100
+  return Math.max(0, Math.min(999, Math.round(pct * 10) / 10))
+})
 
-  const usedPct = (!isUnlimited && purchased > 0) ? clampPct((used / purchased) * 100) : 0
-  const remainingPct = (!isUnlimited && purchased > 0) ? clampPct((remaining / purchased) * 100) : 0
+const timeSpendingsChip = computed(() => {
+  const isUnlimited = quotaData.value?.is_unlimited_user === true
+  if (isUnlimited)
+    return { label: 'Unlimited', color: 'success' as const }
 
-  const debtTotal = Number(debtTotalMb.value ?? 0)
-  const debtAuto = Number(debtAutoMb.value ?? 0)
-  const debtManual = Number(debtManualMb.value ?? 0)
-  const debtAutoPct = (!isUnlimited && debtTotal > 0) ? clampPct((debtAuto / debtTotal) * 100) : 0
-  const debtManualPct = (!isUnlimited && debtTotal > 0) ? clampPct((debtManual / debtTotal) * 100) : 0
+  const debt = Number(debtTotalMb.value ?? 0)
+  if (debt <= 0)
+    return { label: '0%', color: 'success' as const }
 
-  return [
-    {
-      title: 'Kuota Terpakai',
-      subtitle: isUnlimited ? 'Unlimited' : formatQuota(used),
-      progress: usedPct,
-      color: 'primary',
+  const pct = debtPctOfPurchased.value
+  const label = `+${pct.toLocaleString('id-ID', { maximumFractionDigits: 1 })}%`
+  const color = pct >= 50 ? ('error' as const) : (pct >= 20 ? ('warning' as const) : ('success' as const))
+  return { label, color }
+})
+
+const timeSpendingChartSeries = computed(() => {
+  const isUnlimited = quotaData.value?.is_unlimited_user === true
+  if (isUnlimited)
+    return [1]
+
+  const auto = Math.max(0, Number(debtAutoMb.value ?? 0))
+  const manual = Math.max(0, Number(debtManualMb.value ?? 0))
+  const remaining = Math.max(0, Number(quotaData.value?.remaining_mb ?? 0))
+
+  const total = auto + manual + remaining
+  if (total <= 0)
+    return [1]
+
+  return [auto, manual, remaining]
+})
+
+const timeSpendingChartOptions = computed<ApexOptions>(() => {
+  const currentTheme = vuetifyTheme.current.value
+  const onSurfaceColor = currentTheme.colors['on-surface'] ?? currentTheme.colors.onSurface
+  const isUnlimited = quotaData.value?.is_unlimited_user === true
+
+  const labels = isUnlimited
+    ? ['Unlimited']
+    : ['Debt Auto', 'Debt Manual', 'Sisa Kuota']
+
+  const colors = isUnlimited
+    ? [currentTheme.colors.success]
+    : [
+        currentTheme.colors.info,
+        currentTheme.colors.warning,
+        currentTheme.colors.success,
+      ]
+
+  return {
+    chart: {
+      type: 'donut',
+      toolbar: { show: false },
+      sparkline: { enabled: true },
     },
-    {
-      title: 'Sisa Kuota',
-      subtitle: isUnlimited ? 'Unlimited' : formatQuota(remaining),
-      progress: remainingPct,
-      color: 'success',
+    labels,
+    colors,
+    stroke: { width: 0, colors: [currentTheme.colors.surface] },
+    dataLabels: { enabled: false },
+    legend: { show: false },
+    plotOptions: {
+      pie: {
+        donut: {
+          size: '72%',
+          labels: {
+            show: true,
+            name: {
+              show: true,
+              fontSize: '0.9rem',
+              fontFamily: 'Public Sans',
+              color: onSurfaceColor,
+              offsetY: 18,
+            },
+            value: {
+              show: true,
+              fontSize: '1.25rem',
+              fontFamily: 'Public Sans',
+              color: onSurfaceColor,
+              fontWeight: 700,
+              offsetY: -10,
+              formatter: (val: string) => {
+                const n = Number(val)
+                return formatQuota(n)
+              },
+            },
+            total: {
+              show: true,
+              showAlways: true,
+              label: 'Total Debt',
+              color: onSurfaceColor,
+              formatter: () => {
+                const isUnlimitedInner = quotaData.value?.is_unlimited_user === true
+                if (isUnlimitedInner)
+                  return 'Rp 0'
+                return formatRp(debtEstimatedRp.value)
+              },
+            },
+          },
+        },
+      },
     },
-    {
-      title: 'Debt Otomatis',
-      subtitle: isUnlimited ? '0 MB' : formatQuota(debtAuto),
-      progress: debtAutoPct,
-      color: 'info',
+    tooltip: {
+      enabled: true,
+      theme: 'dark',
+      y: {
+        formatter: (val: number) => formatQuota(val),
+      },
     },
-    {
-      title: 'Debt Manual',
-      subtitle: isUnlimited ? '0 MB' : formatQuota(debtManual),
-      progress: debtManualPct,
-      color: 'warning',
-    },
-  ]
+  }
 })
 
 async function refreshAllDataLogic() {
@@ -483,44 +594,76 @@ useHead({ title: 'Dashboard User' })
                 </VRow>
 
                 <VCard class="d-flex flex-column vuexy-card">
-                  <VCardItem class="vuexy-card-header">
-                    <VCardTitle class="vuexy-card-title">
-                      <VIcon icon="tabler-checkup-list" class="me-2" />Assignment Progress
-                    </VCardTitle>
-                  </VCardItem>
-                  <VDivider />
-                  <VCardText>
-                    <div class="d-flex align-center justify-space-between mb-3">
-                      <div class="text-body-2 text-medium-emphasis">
-                        Total hutang
+                  <VCardText class="py-5">
+                    <div class="d-flex justify-space-between align-center">
+                      <div class="d-flex flex-column ps-3">
+                        <div class="d-flex align-center">
+                          <h5 class="text-h5 mb-1 text-no-wrap">
+                            Time Spendings
+                            <span class="text-body-2 text-medium-emphasis ms-2">
+                              {{ quotaData?.is_unlimited_user ? 'Rp 0' : formatRp(debtEstimatedRp) }}
+                            </span>
+                          </h5>
+                          <VTooltip location="bottom">
+                            <template #activator="{ props }">
+                              <VIcon
+                                v-bind="props"
+                                icon="tabler-info-circle"
+                                size="18"
+                                class="ms-2 text-medium-emphasis"
+                              />
+                            </template>
+                            <div class="text-caption">
+                              <div class="font-weight-medium mb-1">Keterangan</div>
+                              <div>Total hutang: <strong>{{ quotaData?.is_unlimited_user ? 'Rp 0' : formatRp(debtEstimatedRp) }}</strong></div>
+                              <div>Debt total: <strong>{{ quotaData?.is_unlimited_user ? '0 MB' : formatQuota(debtTotalMb) }}</strong></div>
+                              <div>Debt auto/manual: {{ quotaData?.is_unlimited_user ? '0 MB / 0 MB' : `${formatQuota(debtAutoMb)} / ${formatQuota(debtManualMb)}` }}</div>
+                              <div>Kuota terpakai/sisa: {{ quotaData?.is_unlimited_user ? 'Unlimited' : `${formatQuota(quotaData?.total_quota_used_mb)} / ${formatQuota(quotaData?.remaining_mb)}` }}</div>
+                              <div>Terpakai 7 hari: {{ quotaData?.is_unlimited_user ? 'Unlimited' : formatQuota(weeklyUsedMb) }}</div>
+                            </div>
+                          </VTooltip>
+                        </div>
+
+                        <div class="text-body-1 mb-7">
+                          Weekly Report
+                          <span class="text-medium-emphasis"> • 7 hari: {{ quotaData?.is_unlimited_user ? 'Unlimited' : formatQuota(weeklyUsedMb) }}</span>
+                        </div>
+
+                        <h4 class="text-h4 mb-2">
+                          {{ debtTotalParts.value }}<span class="text-medium-emphasis">{{ debtTotalParts.unit }}</span>
+                        </h4>
+
+                        <div>
+                          <VChip
+                            :color="timeSpendingsChip.color"
+                            label
+                            size="small"
+                          >
+                            {{ timeSpendingsChip.label }}
+                          </VChip>
+                        </div>
                       </div>
-                      <div class="text-body-2 font-weight-bold">
-                        {{ quotaData?.is_unlimited_user ? 'Rp 0' : formatRp(debtEstimatedRp) }}
+
+                      <div class="pe-2">
+                        <ClientOnly>
+                          <apexchart
+                            type="donut"
+                            height="150"
+                            width="150"
+                            :options="timeSpendingChartOptions"
+                            :series="timeSpendingChartSeries"
+                          />
+                          <template #fallback>
+                            <div
+                              class="d-flex align-center justify-center"
+                              style="height: 150px; width: 150px;"
+                            >
+                              <VProgressCircular indeterminate size="28" />
+                            </div>
+                          </template>
+                        </ClientOnly>
                       </div>
                     </div>
-
-                    <VList class="card-list" density="compact">
-                      <VListItem v-for="item in assignmentItems" :key="item.title">
-                        <template #prepend>
-                          <VProgressCircular
-                            :model-value="item.progress"
-                            :size="54"
-                            class="me-4"
-                            :color="item.color"
-                          >
-                            <span class="text-body-1 text-high-emphasis font-weight-medium">
-                              {{ item.progress }}%
-                            </span>
-                          </VProgressCircular>
-                        </template>
-                        <VListItemTitle class="font-weight-medium mb-1 me-2">
-                          {{ item.title }}
-                        </VListItemTitle>
-                        <VListItemSubtitle class="me-2">
-                          {{ item.subtitle }}
-                        </VListItemSubtitle>
-                      </VListItem>
-                    </VList>
                   </VCardText>
                 </VCard>
 
@@ -665,9 +808,6 @@ useHead({ title: 'Dashboard User' })
 
 .v-list.v-list--density-compact {
   padding-block: 0.25rem;
-}
-.card-list {
-  --v-card-list-gap: 1.25rem;
 }
 .v-list-item.px-4 {
   padding-inline: 1rem !important;
