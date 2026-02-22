@@ -258,10 +258,17 @@ async function handleVerifyOtp() {
     return
 
   try {
+    const otpDigitsOnly = String(otpCode.value ?? '').replace(/\D/g, '')
+    const otpToSend = otpDigitsOnly.length >= 6 ? otpDigitsOnly.slice(-6) : otpDigitsOnly
+    if (otpToSend.length !== 6) {
+      authStore.setError('Kode OTP harus 6 digit.')
+      return
+    }
+
     const numberToVerify = normalize_to_e164(phoneNumber.value)
     const clientIp = getQueryValueFromKeys(['client_ip', 'ip', 'client-ip'])
     const clientMac = getQueryValueFromKeys(['client_mac', 'mac', 'mac-address', 'client-mac'])
-    const loginResponse = await authStore.verifyOtp(numberToVerify, otpCode.value, {
+    const loginResponse = await authStore.verifyOtp(numberToVerify, otpToSend, {
       clientIp: clientIp || null,
       clientMac: clientMac || null,
     })
@@ -540,7 +547,7 @@ watch(regRole, () => {
                       block
                       type="submit"
                       :loading="isSubmitting"
-                      :disabled="isSubmitting || otpCode.length !== 6"
+                      :disabled="isSubmitting || String(otpCode ?? '').replace(/\D/g, '').length < 6"
                     >
                       Verifikasi & Masuk
                     </VBtn>

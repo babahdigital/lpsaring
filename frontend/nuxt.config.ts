@@ -219,19 +219,22 @@ export default defineNuxtConfig({
           changeOrigin: true,
         },
       },
-      hmr: viteHmrHost && viteHmrHost.length > 0
+      // IMPORTANT:
+      // Jangan memaksa protocol `ws` secara default.
+      // Jika dev diakses via HTTPS (mis. reverse proxy / Cloudflare), browser butuh `wss://`.
+      // Dengan membiarkan HMR default, Vite akan meng-derive protocol dari `window.location`.
+      // Untuk remote HMR yang butuh override host/clientPort, gunakan env VITE_HMR_*.
+      hmr: (viteHmrHost && viteHmrHost.length > 0)
         ? {
             protocol: viteHmrProtocol || 'wss',
             host: viteHmrHost,
-            clientPort: viteHmrClientPort || 443,
-            port: viteHmrPort || 443,
+            clientPort: viteHmrClientPort || (viteHmrProtocol === 'ws' ? 80 : 443),
+            // `port` adalah port websocket server yang listen. Jangan default ke 443 karena itu
+            // akan membuat Vite mencoba bind port 443 dan gagal.
+            port: viteHmrPort,
             path: viteHmrPath || '/_nuxt/',
           }
-        : {
-            protocol: 'ws',
-            host: defaultHmrHost,
-            port,
-          },
+        : undefined,
     },
     plugins: [
       svgLoader(),

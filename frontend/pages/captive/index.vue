@@ -225,12 +225,16 @@ async function handleVerifyOtp() {
   if (valid !== true)
     return
 
-  if (otpCode.value.length !== 6)
+  const otpDigitsOnly = String(otpCode.value ?? '').replace(/\D/g, '')
+  const otpToSend = otpDigitsOnly.length >= 6 ? otpDigitsOnly.slice(-6) : otpDigitsOnly
+  if (otpToSend.length !== 6) {
+    authStore.setError('Kode OTP harus 6 digit.')
     return
+  }
 
   try {
     const numberToVerify = normalize_to_e164(phoneNumber.value)
-    const result = await authStore.verifyOtpForCaptive(numberToVerify, otpCode.value, {
+    const result = await authStore.verifyOtpForCaptive(numberToVerify, otpToSend, {
       clientIp: portalParams.value.clientIp,
       clientMac: portalParams.value.clientMac,
       hotspotLoginContext: true,
@@ -496,7 +500,7 @@ watch(() => authStore.message, (newMessage) => {
                     block
                     type="submit"
                     :loading="isSubmitting"
-                    :disabled="isSubmitting || otpCode.length !== 6 || !canSubmit"
+                    :disabled="isSubmitting || String(otpCode ?? '').replace(/\D/g, '').length < 6 || !canSubmit"
                   >
                     Verifikasi & Hubungkan
                   </VBtn>
