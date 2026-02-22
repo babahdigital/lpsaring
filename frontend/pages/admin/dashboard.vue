@@ -99,6 +99,15 @@ const { data: stats, pending, error, refresh } = useFetch<DashboardStats>(API_EN
   $fetch: $api,
 })
 
+const hasLoadedOnce = ref(false)
+watch(pending, (val) => {
+  if (val === false)
+    hasLoadedOnce.value = true
+}, { immediate: true })
+
+const showInitialSkeleton = computed(() => pending.value === true && hasLoadedOnce.value === false)
+const showSilentRefreshing = computed(() => pending.value === true && hasLoadedOnce.value === true)
+
 if (stats.value == null)
   stats.value = defaultStats
 
@@ -455,6 +464,14 @@ useHead({ title: 'Dashboard Admin' })
 
 <template>
   <div>
+    <VProgressLinear
+      v-if="showSilentRefreshing"
+      indeterminate
+      color="primary"
+      height="2"
+      class="mb-4"
+    />
+
     <VRow class="mb-4">
       <VCol
         v-for="(data, index) in statistics"
@@ -735,14 +752,14 @@ useHead({ title: 'Dashboard Admin' })
           <VCardText style="padding-bottom: 30px; padding-top: 25px;">
             <ClientOnly>
               <VueApexCharts
-                v-if="!pending && paketTerlarisChartSeries.length > 0 && paketTerlarisChartSeries.some((s: number) => s > 0)"
+                v-if="!showInitialSkeleton && paketTerlarisChartSeries.length > 0 && paketTerlarisChartSeries.some((s: number) => s > 0)"
                 type="donut"
                 height="350"
                 :options="paketTerlarisChartOptions"
                 :series="paketTerlarisChartSeries"
               />
               <div
-                v-else-if="!pending"
+                v-else-if="!showInitialSkeleton"
                 class="d-flex flex-column align-center justify-center text-center"
                 style="height: 350px;"
               >
@@ -848,7 +865,7 @@ useHead({ title: 'Dashboard Admin' })
               </VTimelineItem>
             </VTimeline>
             <div
-              v-else-if="!pending"
+              v-else-if="!showInitialSkeleton"
               class="d-flex flex-column align-center justify-center text-center"
               style="min-height: 300px;"
             >
