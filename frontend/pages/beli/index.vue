@@ -75,6 +75,7 @@ const contactSubmitError = ref<string | null>(null)
 const selectedPackageId = ref<string | null>(null)
 const isInitiatingPayment = ref<string | null>(null)
 const isHydrated = ref(false)
+const hasAutoInitiatedDebt = ref(false)
 
 const snackbarVisible = ref(false)
 const snackbarText = ref('')
@@ -307,6 +308,59 @@ async function initiatePayment(packageId: string) {
   }
 }
 
+async function initiateDebtSettlementPayment() {
+  if (isInitiatingPayment.value != null)
+    return
+  isInitiatingPayment.value = 'debt'
+  try {
+    try {
+      await ensureMidtransReady()
+    }
+    catch (error) {
+      const fallbackMessage = error instanceof Error && error.message
+        ? error.message
+        : 'Gagal memuat Midtrans Snap.'
+      throw new Error(fallbackMessage)
+    }
+    if (window.snap == null)
+      throw new Error('Midtrans belum siap. Silakan coba beberapa saat lagi.')
+
+    const responseData = await $api<{ snap_token: string, order_id: string }>('/transactions/debt/initiate', {
+      method: 'POST',
+    })
+    const initiatedOrderId = responseData?.order_id
+
+    if ((responseData?.snap_token != null && responseData.snap_token !== '') && window.snap != null) {
+      window.snap.pay(responseData.snap_token, {
+        onSuccess: (result: SnapPayResult) => router.push(`/payment/finish?status=success&order_id=${result.order_id}`),
+        onPending: (result: SnapPayResult) => router.push(`/payment/finish?status=pending&order_id=${result.order_id}`),
+        onError: (result: SnapPayResult) => router.push(`/payment/finish?status=error&order_id=${result.order_id}`),
+        onClose: () => {
+          if (typeof initiatedOrderId === 'string' && initiatedOrderId !== '') {
+            void $api(`/transactions/${encodeURIComponent(initiatedOrderId)}/cancel`, { method: 'POST' }).catch(() => {})
+          }
+          if (router.currentRoute.value.path.startsWith('/payment/finish') !== true)
+            showSnackbar('Anda menutup jendela pembayaran.', 'info')
+          isInitiatingPayment.value = null
+        },
+      })
+    }
+    else {
+      throw new Error('Gagal mendapatkan token pembayaran.')
+    }
+  }
+  catch (err: any) {
+    let errorMessage = 'Gagal memulai pembayaran.'
+    if (err != null && typeof err.data === 'object' && err.data != null) {
+      const message = err.data.message
+      if (typeof message === 'string' && message.length > 0)
+        errorMessage = message
+    }
+    showSnackbar(errorMessage, 'error', 8000)
+    isInitiatingPayment.value = null
+  }
+}
+
 function closeContactDialog() {
   if (isCheckingUser.value !== true)
     showContactDialog.value = false
@@ -317,6 +371,34 @@ onMounted(async () => {
   if (authStore.initialAuthCheckDone !== true) {
     await authStore.initializeAuth()
   }
+
+  // Jika pengguna datang dari tombol "Lunasi" di dashboard, otomatis buka pembayaran
+  // untuk paket termurah (backend sudah order_by price).
+  if (route.query?.intent === 'debt' && hasAutoInitiatedDebt.value !== true) {
+    hasAutoInitiatedDebt.value = true
+
+    if (!isLoggedIn.value) {
+      showSnackbar('Silakan login terlebih dulu untuk melunasi tunggakan.', 'warning', 6000)
+    }
+    else if (!isUserApprovedAndActive.value) {
+      showSnackbar('Akun Anda belum aktif atau belum disetujui Admin untuk melakukan pembayaran.', 'warning', 7000)
+    }
+    else {
+      try {
+        showSnackbar('Membuka pembayaran pelunasan tunggakan…', 'info', 4500)
+        await initiateDebtSettlementPayment()
+      }
+      catch {
+        showSnackbar('Gagal memulai pembayaran pelunasan tunggakan.', 'error', 7000)
+      }
+    }
+
+    // Bersihkan query agar tidak auto-trigger lagi saat refresh.
+    const nextQuery = { ...(route.query as Record<string, any>) }
+    delete nextQuery.intent
+    router.replace({ query: nextQuery })
+  }
+
   const query = route.query
   if (query.action === 'cancelled' && (query.order_id != null && query.order_id !== '')) {
     showSnackbar(`Pembayaran Order ID ${query.order_id} dibatalkan.`, 'info')

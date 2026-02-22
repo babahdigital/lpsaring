@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { VDataTableServer } from 'vuetify/labs/VDataTable'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useSnackbar } from '@/composables/useSnackbar' // Pastikan ini diimpor jika useSnackbar digunakan
 
@@ -32,6 +32,9 @@ const snackbar = useSnackbar() // Menggunakan composable useSnackbar
 const promoList = ref<PromoEvent[]>([])
 const totalPromos = ref(0)
 const loading = ref(true)
+const hasLoadedOnce = ref(false)
+const showInitialSkeleton = computed(() => loading.value === true && hasLoadedOnce.value === false)
+const showSilentRefreshing = computed(() => loading.value === true && hasLoadedOnce.value === true)
 const options = ref<DatatableOptions>({
   page: 1,
   itemsPerPage: 10,
@@ -39,6 +42,11 @@ const options = ref<DatatableOptions>({
   groupBy: [],
   search: undefined,
 })
+
+watch(loading, (val) => {
+  if (val === false)
+    hasLoadedOnce.value = true
+}, { immediate: true })
 
 const isEditorDialogVisible = ref(false)
 const isDeleteDialogVisible = ref(false)
@@ -287,6 +295,8 @@ onMounted(() => {
       </VBtn>
     </VCardTitle>
 
+    <VProgressLinear v-if="showSilentRefreshing" indeterminate color="primary" height="2" />
+
     <VDataTableServer
       v-model:items-per-page="options.itemsPerPage"
       v-model:page="options.page"
@@ -294,7 +304,7 @@ onMounted(() => {
       :headers="headers"
       :items="promoList"
       :items-length="totalPromos"
-      :loading="loading"
+      :loading="showInitialSkeleton"
       class="text-no-wrap"
       item-value="id"
       @update:options="options = $event"

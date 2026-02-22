@@ -27,6 +27,9 @@ useHead({ title: 'WhatsApp Pengguna' })
 const users = ref<UserRow[]>([])
 const totalUsers = ref(0)
 const loading = ref(false)
+const hasLoadedOnce = ref(false)
+const showInitialSkeleton = computed(() => loading.value === true && hasLoadedOnce.value === false)
+const showSilentRefreshing = computed(() => loading.value === true && hasLoadedOnce.value === true)
 const sendingTest = ref(false)
 const sendingBroadcast = ref(false)
 const testPhoneNumber = ref('')
@@ -206,6 +209,11 @@ watch([options, roleFilter], () => {
   fetchUsers()
 }, { deep: true })
 
+watch(loading, (val) => {
+  if (val === false)
+    hasLoadedOnce.value = true
+}, { immediate: true })
+
 onMounted(fetchUsers)
 </script>
 
@@ -321,12 +329,13 @@ onMounted(fetchUsers)
     </VRow>
 
     <VCard>
+      <VProgressLinear v-if="showSilentRefreshing" indeterminate color="primary" height="2" />
       <VDataTableServer
         v-model:options="options"
         :headers="headers"
         :items="users"
         :items-length="totalUsers"
-        :loading="loading"
+        :loading="showInitialSkeleton"
         class="text-no-wrap"
       >
         <template #item.role="{ item }">

@@ -31,6 +31,9 @@ const isHydrated = ref(false)
 const isMobile = computed(() => (isHydrated.value ? smAndDown.value : false))
 const requests = ref<QuotaRequest[]>([])
 const loading = ref(true)
+const hasLoadedOnce = ref(false)
+const showInitialSkeleton = computed(() => loading.value === true && hasLoadedOnce.value === false)
+const showSilentRefreshing = computed(() => loading.value === true && hasLoadedOnce.value === true)
 const totalRequests = ref(0)
 const options = ref<Options>({ page: 1, itemsPerPage: 10, sortBy: [{ key: 'created_at', order: 'desc' }], groupBy: [], search: undefined })
 const statusFilter = ref<'PENDING' | 'APPROVED' | 'REJECTED' | 'PARTIALLY_APPROVED' | null>('PENDING')
@@ -100,6 +103,7 @@ async function fetchRequests() {
   }
   finally {
     loading.value = false
+    hasLoadedOnce.value = true
   }
 }
 
@@ -214,7 +218,13 @@ function formatPhoneNumber(phone: string | null | undefined): string { // Perbai
     </VCard>
 
     <VCard class="rounded-lg">
-      <VDataTableServer v-model:options="options" :headers="headers" :items="requests" :items-length="totalRequests" :loading="loading" item-value="id" class="text-no-wrap">
+      <VProgressLinear
+        v-if="showSilentRefreshing"
+        indeterminate
+        color="primary"
+        height="2"
+      />
+      <VDataTableServer v-model:options="options" :headers="headers" :items="requests" :items-length="totalRequests" :loading="showInitialSkeleton" item-value="id" class="text-no-wrap">
         <template #item.requester.full_name="{ item }">
           <div class="d-flex align-center py-2">
             <VAvatar color="secondary" size="38" variant="tonal" class="me-3">

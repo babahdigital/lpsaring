@@ -3,7 +3,7 @@ import type { ApexOptions } from 'apexcharts'
 import type { UserQuotaResponse, WeeklyUsageResponse } from '~/types/user'
 import { hexToRgb } from '@layouts/utils'
 import { watchDebounced } from '@vueuse/core'
-import { computed, defineAsyncComponent, h, ref, unref, nextTick as vueNextTick, watch } from 'vue'
+import { computed, defineAsyncComponent, h, onBeforeUnmount, ref, unref, nextTick as vueNextTick, watch } from 'vue'
 import { useDisplay, useTheme } from 'vuetify'
 
 const props = defineProps<{
@@ -52,6 +52,8 @@ const lastParentLoading = ref(props.parentLoading)
 let attemptSetReadyRetries = 0
 const MAX_ATTEMPT_RETRIES = 10
 const RETRY_DELAY_MS = 350
+let retryTimeoutId: ReturnType<typeof setTimeout> | null = null
+let isUnmounted = false
 
 const currentThemeColors = computed(() => vuetifyTheme.current.value.colors ?? {})
 const currentThemeVariables = computed(() => vuetifyTheme.current.value.variables ?? {})
@@ -219,6 +221,26 @@ const quotaWeeklyBarOptions = computed<ApexOptions>(() => {
 const observer = ref<ResizeObserver | null>(null)
 let fallbackTimeoutId: ReturnType<typeof setTimeout> | null = null
 
+function _clearRetryTimeout() {
+  if (retryTimeoutId) {
+    clearTimeout(retryTimeoutId)
+    retryTimeoutId = null
+  }
+}
+
+onBeforeUnmount(() => {
+  isUnmounted = true
+  _clearRetryTimeout()
+  if (fallbackTimeoutId) {
+    clearTimeout(fallbackTimeoutId)
+    fallbackTimeoutId = null
+  }
+  if (observer.value) {
+    observer.value.disconnect()
+    observer.value = null
+  }
+})
+
 function handleChartError(err: Error, contextMessage: string = 'Error pada chart') {
   const messageStr = `[${chartComponentName}] ${contextMessage}: ${err.message}.`
   const stackStr = `Stack: ${err.stack || 'Tidak tersedia'}`
@@ -233,20 +255,33 @@ function handleChartError(err: Error, contextMessage: string = 'Error pada chart
 }
 
 async function attemptSetReady() {
+  if (isUnmounted)
+    return
+
   if (!canInitChart.value) {
     attemptSetReadyRetries = 0
+    _clearRetryTimeout()
     return
   }
   await vueNextTick()
+  if (isUnmounted)
+    return
+
   const containerEl = unref(chartContainerActualRef)
 
   if (!containerEl || !containerEl.isConnected || containerEl.offsetWidth === 0 || containerEl.offsetHeight === 0) {
     const reason = !containerEl ? 'tidak ditemukan' : (!containerEl.isConnected ? 'tidak terhubung' : 'dimensi nol')
     if (attemptSetReadyRetries < MAX_ATTEMPT_RETRIES) {
       attemptSetReadyRetries++
-      setTimeout(attemptSetReady, RETRY_DELAY_MS)
+      _clearRetryTimeout()
+      retryTimeoutId = setTimeout(attemptSetReady, RETRY_DELAY_MS)
     }
     else {
+      if (isUnmounted) {
+        attemptSetReadyRetries = 0
+        _clearRetryTimeout()
+        return
+      }
       const errorMsgStr = `Elemen kontainer chart (${reason}) setelah ${MAX_ATTEMPT_RETRIES} percobaan. Chart tidak dapat ditampilkan.`
       const errorObj = new Error(errorMsgStr)
       handleChartError(errorObj, 'Inisiasi Elemen Kontainer Gagal')
@@ -255,6 +290,7 @@ async function attemptSetReady() {
   }
 
   attemptSetReadyRetries = 0
+  _clearRetryTimeout()
   devErrorMessage.value = null
   if (observer.value) {
     observer.value.disconnect()

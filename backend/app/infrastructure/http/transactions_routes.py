@@ -25,14 +25,17 @@ from app.infrastructure.db.models import (
     TransactionEventSource,
     TransactionStatus,
     User,
+    UserQuotaDebt,
 )
 from app.services.transaction_service import apply_package_and_sync_to_mikrotik
+from app.services.user_management import user_debt as user_debt_service
 from app.services.notification_service import (
     generate_temp_invoice_token,
     get_notification_message,
     verify_temp_invoice_token,
 )
 from app.services import settings_service
+from app.services.hotspot_sync_service import sync_address_list_for_single_user
 from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection
 
 # from app.infrastructure.gateways.whatsapp_client import send_whatsapp_with_pdf # Tidak lagi dipanggil langsung
@@ -84,6 +87,160 @@ def _log_transaction_event(
     ev.status = status
     ev.payload = _safe_json_dumps(payload) if payload is not None else None
     session.add(ev)
+
+
+def _is_debt_settlement_order_id(order_id: str | None) -> bool:
+    return str(order_id or "").strip().startswith("DEBT-")
+
+
+def _extract_manual_debt_id_from_order_id(order_id: str | None) -> uuid.UUID | None:
+    """If order_id is a manual-debt settlement, return the UserQuotaDebt.id.
+
+    Format: DEBT-<uuid>~<suffix>
+    """
+    raw = str(order_id or "").strip()
+    if not raw.startswith("DEBT-"):
+        return None
+    if "~" not in raw:
+        return None
+    try:
+        core = raw[len("DEBT-") : raw.index("~")]
+        return uuid.UUID(core)
+    except Exception:
+        return None
+
+
+def _estimate_user_debt_rp(user: User) -> int:
+    """Estimate user's total debt value in Rupiah (rounded) based on cheapest active package."""
+    try:
+        debt_total_mb = float(getattr(user, "quota_debt_total_mb", 0) or 0)
+    except Exception:
+        debt_total_mb = 0.0
+    if debt_total_mb <= 0:
+        return 0
+
+    try:
+        cheapest_pkg = (
+            db.session.query(Package)
+            .filter(Package.is_active.is_(True))
+            .filter(Package.data_quota_gb > 0)
+            .order_by(Package.price.asc())
+            .first()
+        )
+        if not cheapest_pkg or cheapest_pkg.price is None or cheapest_pkg.data_quota_gb is None:
+            return 0
+
+        from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package
+
+        estimate = estimate_debt_rp_from_cheapest_package(
+            debt_mb=float(debt_total_mb),
+            cheapest_package_price_rp=int(cheapest_pkg.price),
+            cheapest_package_quota_gb=float(cheapest_pkg.data_quota_gb),
+            cheapest_package_name=str(getattr(cheapest_pkg, "name", "") or "") or None,
+        )
+        return int(estimate.estimated_rp_rounded or 0)
+    except Exception:
+        return 0
+
+
+def _estimate_debt_rp_for_mb(debt_mb: float) -> int:
+    """Estimate debt value in Rupiah (rounded) for a given MB using cheapest active package."""
+    try:
+        mb = float(debt_mb or 0)
+    except Exception:
+        mb = 0.0
+    if mb <= 0:
+        return 0
+
+    try:
+        cheapest_pkg = (
+            db.session.query(Package)
+            .filter(Package.is_active.is_(True))
+            .filter(Package.data_quota_gb > 0)
+            .order_by(Package.price.asc())
+            .first()
+        )
+        if not cheapest_pkg or cheapest_pkg.price is None or cheapest_pkg.data_quota_gb is None:
+            return 0
+
+        from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package
+
+        estimate = estimate_debt_rp_from_cheapest_package(
+            debt_mb=float(mb),
+            cheapest_package_price_rp=int(cheapest_pkg.price),
+            cheapest_package_quota_gb=float(cheapest_pkg.data_quota_gb),
+            cheapest_package_name=str(getattr(cheapest_pkg, "name", "") or "") or None,
+        )
+        return int(estimate.estimated_rp_rounded or 0)
+    except Exception:
+        return 0
+
+
+def _apply_debt_settlement_on_success(*, session, transaction: Transaction) -> dict[str, Any]:
+    user = getattr(transaction, "user", None)
+    if user is None:
+        raise ValueError("Transaksi pelunasan tunggakan tidak memiliki user.")
+
+    manual_debt_id = _extract_manual_debt_id_from_order_id(getattr(transaction, "midtrans_order_id", None))
+
+    debt_total_mb = float(getattr(user, "quota_debt_total_mb", 0) or 0)
+    if debt_total_mb <= 0:
+        return {"paid_auto_mb": 0, "paid_manual_mb": 0, "paid_total_mb": 0, "unblocked": False}
+
+    debt_auto_before = float(getattr(user, "quota_debt_auto_mb", 0) or 0)
+    debt_manual_before = int(getattr(user, "quota_debt_manual_mb", 0) or 0)
+    was_blocked = bool(getattr(user, "is_blocked", False))
+    blocked_reason = str(getattr(user, "blocked_reason", "") or "")
+
+    if manual_debt_id is not None:
+        debt_item = (
+            session.query(UserQuotaDebt)
+            .filter(UserQuotaDebt.id == manual_debt_id)
+            .filter(UserQuotaDebt.user_id == user.id)
+            .with_for_update()
+            .first()
+        )
+        paid_auto_mb = 0
+        paid_manual_mb = int(
+            user_debt_service.settle_manual_debt_item_to_zero(
+                user=user,
+                admin_actor=None,
+                debt=debt_item,
+                source="user_debt_settlement_payment_manual_item",
+            )
+        )
+    else:
+        paid_auto_mb, paid_manual_mb = user_debt_service.clear_all_debts_to_zero(
+            user=user,
+            admin_actor=None,
+            source="user_debt_settlement_payment",
+        )
+
+    unblocked = False
+    if was_blocked and blocked_reason.startswith("quota_debt_limit|"):
+        # Only auto-unblock when all debts are fully cleared.
+        if float(getattr(user, "quota_debt_total_mb", 0) or 0) <= 0:
+            user.is_blocked = False
+            user.blocked_reason = None
+            user.blocked_at = None
+            user.blocked_by_id = None
+            unblocked = True
+
+    session.commit()
+
+    try:
+        sync_address_list_for_single_user(user)
+    except Exception as e:
+        current_app.logger.warning("DEBT: gagal sync Mikrotik untuk user %s: %s", getattr(user, "id", "?"), e)
+
+    return {
+        "paid_auto_mb": int(paid_auto_mb),
+        "paid_manual_mb": int(paid_manual_mb),
+        "paid_total_mb": int(paid_auto_mb) + int(paid_manual_mb),
+        "debt_auto_before": float(debt_auto_before),
+        "debt_manual_before": int(debt_manual_before),
+        "unblocked": bool(unblocked),
+    }
 
 
 # --- FUNGSI HELPER (Tidak ada perubahan) ---
@@ -153,6 +310,12 @@ def extract_va_number(response_data: Dict[str, Any]):
 def extract_qr_code_url(response_data: Dict[str, Any]):
     actions = response_data.get("actions")
     if isinstance(actions, list):
+        # Prefer new GoPay Dynamic QRIS URL (generate-qr-code-v2) if present.
+        for action in actions:
+            action_name = str(action.get("name", "")).lower()
+            qr_url = action.get("url")
+            if qr_url and "generate-qr-code-v2" in action_name:
+                return qr_url
         for action in actions:
             action_name = action.get("name", "").lower()
             qr_url = action.get("url")
@@ -258,6 +421,15 @@ class _InitiateTransactionRequestSchema(BaseModel):
 
 
 class _InitiateTransactionResponseSchema(BaseModel):
+    snap_token: Optional[str] = Field(None, alias="snap_token")
+    transaction_id: uuid.UUID = Field(..., alias="id")
+    order_id: str = Field(..., alias="midtrans_order_id")
+    redirect_url: Optional[str] = Field(None, alias="snap_redirect_url")
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class _InitiateDebtSettlementResponseSchema(BaseModel):
     snap_token: Optional[str] = Field(None, alias="snap_token")
     transaction_id: uuid.UUID = Field(..., alias="id")
     order_id: str = Field(..., alias="midtrans_order_id")
@@ -388,6 +560,8 @@ def initiate_transaction(current_user_id: uuid.UUID):
         new_transaction.snap_token = snap_token
         new_transaction.snap_redirect_url = redirect_url
 
+        expiry_time = new_transaction.expiry_time
+
         _log_transaction_event(
             session=session,
             transaction=new_transaction,
@@ -398,7 +572,7 @@ def initiate_transaction(current_user_id: uuid.UUID):
                 "order_id": order_id,
                 "package_id": str(package.id),
                 "amount": gross_amount,
-                "expiry_time": new_transaction.expiry_time.isoformat() if new_transaction.expiry_time else None,
+                "expiry_time": expiry_time.isoformat() if expiry_time is not None else None,
                 "snap_token_present": bool(snap_token),
                 "redirect_url": redirect_url,
                 "finish_url": finish_url,
@@ -415,6 +589,178 @@ def initiate_transaction(current_user_id: uuid.UUID):
         record_failure("midtrans")
         db.session.rollback()
         current_app.logger.error(f"Error di initiate_transaction: {e}", exc_info=True)
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description=str(e))
+    finally:
+        db.session.remove()
+
+
+@transactions_bp.route("/debt/initiate", methods=["POST"])
+@limiter.limit(lambda: current_app.config.get("INITIATE_TRANSACTION_RATE_LIMIT", "10 per minute"))
+@token_required
+def initiate_debt_settlement_transaction(current_user_id: uuid.UUID):
+    """Initiate Midtrans Snap payment to settle user's quota debt."""
+    session = db.session
+    try:
+        req_data = request.get_json(silent=True) or {}
+        manual_debt_id_raw = req_data.get("manual_debt_id")
+        manual_debt_id: uuid.UUID | None = None
+        if manual_debt_id_raw is not None:
+            try:
+                manual_debt_id = uuid.UUID(str(manual_debt_id_raw))
+            except Exception:
+                abort(HTTPStatus.UNPROCESSABLE_ENTITY, description="manual_debt_id tidak valid.")
+
+        user = session.get(User, current_user_id)
+        if not user or not user.is_active or user.approval_status != ApprovalStatus.APPROVED:
+            abort(HTTPStatus.FORBIDDEN, description="Akun Anda belum aktif atau disetujui untuk melakukan transaksi.")
+
+        if bool(getattr(user, "is_unlimited_user", False)):
+            abort(HTTPStatus.BAD_REQUEST, description="Pengguna unlimited tidak memiliki tunggakan kuota.")
+
+        debt_total_mb = float(getattr(user, "quota_debt_total_mb", 0) or 0)
+        if debt_total_mb <= 0:
+            abort(HTTPStatus.BAD_REQUEST, description="Tidak ada tunggakan kuota untuk dilunasi.")
+
+        manual_item = None
+        manual_item_remaining_mb = 0.0
+        if manual_debt_id is not None:
+            manual_item = (
+                session.query(UserQuotaDebt)
+                .filter(UserQuotaDebt.id == manual_debt_id)
+                .filter(UserQuotaDebt.user_id == user.id)
+                .first()
+            )
+            if manual_item is None:
+                abort(HTTPStatus.NOT_FOUND, description="Hutang manual tidak ditemukan.")
+            try:
+                amount = int(getattr(manual_item, "amount_mb", 0) or 0)
+                paid = int(getattr(manual_item, "paid_mb", 0) or 0)
+            except Exception:
+                amount = 0
+                paid = 0
+            manual_item_remaining_mb = float(max(0, amount - paid))
+            if manual_item_remaining_mb <= 0:
+                abort(HTTPStatus.BAD_REQUEST, description="Hutang manual tersebut sudah lunas.")
+
+        gross_amount = int(
+            (_estimate_debt_rp_for_mb(manual_item_remaining_mb) if manual_debt_id is not None else _estimate_user_debt_rp(user))
+            or 0
+        )
+        if gross_amount <= 0:
+            abort(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                description="Estimasi tunggakan belum tersedia. Silakan hubungi admin atau coba lagi nanti.",
+            )
+
+        now_utc = datetime.now(dt_timezone.utc)
+        try:
+            expiry_minutes = int(current_app.config.get("MIDTRANS_DEFAULT_EXPIRY_MINUTES", 15))
+        except Exception:
+            expiry_minutes = 15
+        expiry_minutes = max(5, min(expiry_minutes, 24 * 60))
+        local_expiry_time = now_utc + timedelta(minutes=expiry_minutes)
+
+        existing_tx_query = (
+            session.query(Transaction)
+            .filter(Transaction.user_id == user.id)
+            .filter(Transaction.midtrans_order_id.like("DEBT-%"))
+            .filter(Transaction.status.in_([TransactionStatus.UNKNOWN, TransactionStatus.PENDING]))
+            .filter(sa.or_(Transaction.expiry_time.is_(None), Transaction.expiry_time > now_utc))
+            .order_by(Transaction.created_at.desc())
+        )
+
+        if manual_debt_id is not None:
+            existing_tx_query = existing_tx_query.filter(Transaction.midtrans_order_id.like(f"DEBT-{manual_debt_id}%"))
+
+        existing_tx = existing_tx_query.first()
+        if existing_tx and (existing_tx.snap_token or existing_tx.snap_redirect_url):
+            response_data = _InitiateDebtSettlementResponseSchema.model_validate(existing_tx, from_attributes=True)
+            return jsonify(response_data.model_dump(by_alias=False, exclude_none=True)), HTTPStatus.OK
+
+        if manual_debt_id is not None:
+            order_id = f"DEBT-{manual_debt_id}~{uuid.uuid4().hex[:6].upper()}"
+        else:
+            order_id = f"DEBT-{uuid.uuid4().hex[:12].upper()}"
+
+        new_transaction = Transaction()
+        new_transaction.id = uuid.uuid4()
+        new_transaction.user_id = user.id
+        new_transaction.package_id = None
+        new_transaction.midtrans_order_id = order_id
+        new_transaction.amount = int(gross_amount)
+        new_transaction.status = TransactionStatus.UNKNOWN
+        new_transaction.expiry_time = local_expiry_time
+
+        base_callback_url = (
+            current_app.config.get("APP_PUBLIC_BASE_URL")
+            or current_app.config.get("FRONTEND_URL")
+            or current_app.config.get("APP_LINK_USER")
+        )
+        if not base_callback_url:
+            abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="APP_PUBLIC_BASE_URL belum dikonfigurasi.")
+        finish_url = f"{base_callback_url.rstrip('/')}/payment/finish?order_id={order_id}&purpose=debt"
+
+        item_name = "Pelunasan Tunggakan Kuota" if manual_debt_id is None else "Pelunasan Hutang Manual" 
+        snap_params = {
+            "transaction_details": {"order_id": order_id, "gross_amount": int(gross_amount)},
+            "item_details": [
+                {
+                    "id": "DEBT_SETTLEMENT",
+                    "price": int(gross_amount),
+                    "quantity": 1,
+                    "name": item_name[:100],
+                }
+            ],
+            "customer_details": {
+                "first_name": user.full_name or "Pengguna",
+                "phone": format_to_local_phone(user.phone_number),
+            },
+            "callbacks": {"finish": finish_url},
+        }
+
+        if not should_allow_call("midtrans"):
+            abort(HTTPStatus.SERVICE_UNAVAILABLE, description="Midtrans sementara tidak tersedia.")
+
+        snap = get_midtrans_snap_client()
+        snap_response = snap.create_transaction(snap_params)
+        record_success("midtrans")
+
+        snap_token = snap_response.get("token")
+        redirect_url = snap_response.get("redirect_url")
+        if not snap_token and not redirect_url:
+            raise ValueError("Respons Midtrans tidak valid.")
+
+        new_transaction.snap_token = snap_token
+        new_transaction.snap_redirect_url = redirect_url
+
+        expiry_time = new_transaction.expiry_time
+
+        _log_transaction_event(
+            session=session,
+            transaction=new_transaction,
+            source=TransactionEventSource.APP,
+            event_type="DEBT_INITIATED",
+            status=new_transaction.status,
+            payload={
+                "order_id": order_id,
+                "amount": int(gross_amount),
+                "debt_total_mb": float(debt_total_mb),
+                "expiry_time": expiry_time.isoformat() if expiry_time is not None else None,
+                "snap_token_present": bool(snap_token),
+                "redirect_url": redirect_url,
+                "finish_url": finish_url,
+            },
+        )
+
+        session.add(new_transaction)
+        session.commit()
+
+        response_data = _InitiateDebtSettlementResponseSchema.model_validate(new_transaction, from_attributes=True)
+        return jsonify(response_data.model_dump(by_alias=False, exclude_none=True)), HTTPStatus.OK
+    except Exception as e:
+        record_failure("midtrans")
+        session.rollback()
+        current_app.logger.error("Error di initiate_debt_settlement_transaction: %s", e, exc_info=True)
         abort(HTTPStatus.INTERNAL_SERVER_ERROR, description=str(e))
     finally:
         db.session.remove()
@@ -531,98 +877,124 @@ def handle_notification():
             )
 
         if payment_success:
-            with get_mikrotik_connection() as mikrotik_api:
-                is_success, message = apply_package_and_sync_to_mikrotik(transaction, mikrotik_api)
-                if is_success:
+            # Special flow: user debt settlement (DEBT-*)
+            if _is_debt_settlement_order_id(order_id):
+                try:
+                    result = _apply_debt_settlement_on_success(session=session, transaction=transaction)
                     _log_transaction_event(
                         session=session,
                         transaction=transaction,
                         source=TransactionEventSource.APP,
-                        event_type="MIKROTIK_APPLY_SUCCESS",
+                        event_type="DEBT_SETTLED",
                         status=transaction.status,
-                        payload={"message": message},
+                        payload=result,
                     )
-                    session.commit()  # Commit transaksi DULU
-                    current_app.logger.info(f"WEBHOOK: Transaksi {order_id} BERHASIL di-commit. Pesan: {message}")
+                    session.commit()
+                    current_app.logger.info(
+                        "WEBHOOK: DEBT settlement %s berhasil. paid_total_mb=%s unblocked=%s",
+                        order_id,
+                        result.get("paid_total_mb"),
+                        result.get("unblocked"),
+                    )
                     increment_metric("payment.success")
-                    try:
-                        user = transaction.user
-                        package = transaction.package
-                        if user is None or package is None:
-                            current_app.logger.error(
-                                "WEBHOOK: transaksi %s sukses tetapi user/package tidak ter-load. Skip WA invoice.",
-                                order_id,
-                            )
-                            return jsonify({"status": "ok"}), HTTPStatus.OK
-                        temp_token = generate_temp_invoice_token(str(transaction.id))
-
-                        base_url = (
-                            settings_service.get_setting("APP_PUBLIC_BASE_URL")
-                            or settings_service.get_setting("FRONTEND_URL")
-                            or settings_service.get_setting("APP_LINK_USER")
-                            or request.url_root
-                        )
-                        if not base_url:
-                            current_app.logger.error(
-                                "APP_PUBLIC_BASE_URL tidak diatur dan request.url_root kosong. Tidak dapat membuat URL invoice untuk WhatsApp."
-                            )
-                            raise ValueError("Konfigurasi alamat publik aplikasi tidak ditemukan.")
-
-                        # --- PERUBAHAN KRUSIAL DI SINI: Tambahkan .pdf ke URL ---
-                        # Ini akan membuat URL yang berakhir dengan .pdf, membantu Fonnte mengidentifikasi formatnya.
-                        temp_invoice_url = f"{base_url.rstrip('/')}/api/transactions/invoice/temp/{temp_token}.pdf"
-                        # --- AKHIR PERUBAHAN ---
-
-                        msg_context = {
-                            "full_name": user.full_name,
-                            "order_id": transaction.midtrans_order_id,
-                            "package_name": package.name,
-                            "package_price": format_currency(package.price),
-                        }
-                        caption_message = get_notification_message("purchase_success_with_invoice", msg_context)
-                        filename = f"invoice-{transaction.midtrans_order_id}.pdf"
-
-                        current_app.logger.info(f"Mencoba mengirim WA dengan PDF dari URL: {temp_invoice_url}")
-
-                        request_id = request.environ.get("FLASK_REQUEST_ID", "")
-                        send_whatsapp_invoice_task.delay(
-                            str(user.phone_number),
-                            caption_message,
-                            temp_invoice_url,
-                            filename,
-                            request_id,
-                        )
-                        current_app.logger.info(f"Task pengiriman WhatsApp invoice untuk {order_id} dikirim ke Celery.")
-
-                    except Exception as e_notif:
-                        current_app.logger.error(
-                            f"WEBHOOK: Gagal kirim notif WhatsApp {order_id}: {e_notif}", exc_info=True
-                        )
-                else:
-                    session.rollback()  # Rollback jika Mikrotik gagal
-                    try:
-                        transaction_after = (
-                            session.query(Transaction)
-                            .filter(Transaction.midtrans_order_id == order_id)
-                            .with_for_update()
-                            .first()
-                        )
-                        if transaction_after is not None:
-                            _log_transaction_event(
-                                session=session,
-                                transaction=transaction_after,
-                                source=TransactionEventSource.APP,
-                                event_type="MIKROTIK_APPLY_FAILED",
-                                status=transaction_after.status,
-                                payload={"message": message, "midtrans_status": midtrans_status},
-                            )
-                            session.commit()
-                    except Exception:
-                        session.rollback()
-                    current_app.logger.error(
-                        f"WEBHOOK: Gagal apply paket ke Mikrotik untuk {order_id}. Rollback transaksi."
-                    )
+                except Exception as e:
+                    session.rollback()
+                    current_app.logger.error("WEBHOOK: gagal settle DEBT %s: %s", order_id, e, exc_info=True)
                     increment_metric("payment.failed")
+                    abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Gagal memproses pelunasan tunggakan.")
+            else:
+                with get_mikrotik_connection() as mikrotik_api:
+                    is_success, message = apply_package_and_sync_to_mikrotik(transaction, mikrotik_api)
+                    if is_success:
+                        _log_transaction_event(
+                            session=session,
+                            transaction=transaction,
+                            source=TransactionEventSource.APP,
+                            event_type="MIKROTIK_APPLY_SUCCESS",
+                            status=transaction.status,
+                            payload={"message": message},
+                        )
+                        session.commit()  # Commit transaksi DULU
+                        current_app.logger.info(f"WEBHOOK: Transaksi {order_id} BERHASIL di-commit. Pesan: {message}")
+                        increment_metric("payment.success")
+                        try:
+                            user = transaction.user
+                            package = transaction.package
+                            if user is None or package is None:
+                                current_app.logger.error(
+                                    "WEBHOOK: transaksi %s sukses tetapi user/package tidak ter-load. Skip WA invoice.",
+                                    order_id,
+                                )
+                                return jsonify({"status": "ok"}), HTTPStatus.OK
+                            temp_token = generate_temp_invoice_token(str(transaction.id))
+
+                            base_url = (
+                                settings_service.get_setting("APP_PUBLIC_BASE_URL")
+                                or settings_service.get_setting("FRONTEND_URL")
+                                or settings_service.get_setting("APP_LINK_USER")
+                                or request.url_root
+                            )
+                            if not base_url:
+                                current_app.logger.error(
+                                    "APP_PUBLIC_BASE_URL tidak diatur dan request.url_root kosong. Tidak dapat membuat URL invoice untuk WhatsApp."
+                                )
+                                raise ValueError("Konfigurasi alamat publik aplikasi tidak ditemukan.")
+
+                            # --- PERUBAHAN KRUSIAL DI SINI: Tambahkan .pdf ke URL ---
+                            # Ini akan membuat URL yang berakhir dengan .pdf, membantu Fonnte mengidentifikasi formatnya.
+                            temp_invoice_url = f"{base_url.rstrip('/')}/api/transactions/invoice/temp/{temp_token}.pdf"
+                            # --- AKHIR PERUBAHAN ---
+
+                            msg_context = {
+                                "full_name": user.full_name,
+                                "order_id": transaction.midtrans_order_id,
+                                "package_name": package.name,
+                                "package_price": format_currency(package.price),
+                            }
+                            caption_message = get_notification_message("purchase_success_with_invoice", msg_context)
+                            filename = f"invoice-{transaction.midtrans_order_id}.pdf"
+
+                            current_app.logger.info(f"Mencoba mengirim WA dengan PDF dari URL: {temp_invoice_url}")
+
+                            request_id = request.environ.get("FLASK_REQUEST_ID", "")
+                            send_whatsapp_invoice_task.delay(
+                                str(user.phone_number),
+                                caption_message,
+                                temp_invoice_url,
+                                filename,
+                                request_id,
+                            )
+                            current_app.logger.info(f"Task pengiriman WhatsApp invoice untuk {order_id} dikirim ke Celery.")
+
+                        except Exception as e_notif:
+                            current_app.logger.error(
+                                f"WEBHOOK: Gagal kirim notif WhatsApp {order_id}: {e_notif}", exc_info=True
+                            )
+                    else:
+                        session.rollback()  # Rollback jika Mikrotik gagal
+                        try:
+                            transaction_after = (
+                                session.query(Transaction)
+                                .filter(Transaction.midtrans_order_id == order_id)
+                                .with_for_update()
+                                .first()
+                            )
+                            if transaction_after is not None:
+                                _log_transaction_event(
+                                    session=session,
+                                    transaction=transaction_after,
+                                    source=TransactionEventSource.APP,
+                                    event_type="MIKROTIK_APPLY_FAILED",
+                                    status=transaction_after.status,
+                                    payload={"message": message, "midtrans_status": midtrans_status},
+                                )
+                                session.commit()
+                        except Exception:
+                            session.rollback()
+                        current_app.logger.error(
+                            f"WEBHOOK: Gagal apply paket ke Mikrotik untuk {order_id}. Rollback transaksi."
+                        )
+                        increment_metric("payment.failed")
         else:
             session.commit()  # Commit status transaksi yang berubah (pending, deny, expire, cancel)
             current_app.logger.info(f"WEBHOOK: Status transaksi {order_id} diupdate ke {transaction.status.value}.")

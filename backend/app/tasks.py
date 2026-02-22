@@ -1,6 +1,8 @@
 # backend/app/tasks.py
 import logging
 import json
+import calendar
+import secrets
 from datetime import datetime, timedelta, timezone as dt_timezone
 
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_with_pdf, send_whatsapp_message
@@ -8,7 +10,21 @@ from app.services.hotspot_sync_service import sync_hotspot_usage_and_profiles, c
 from app.services import settings_service
 from app.services.walled_garden_service import sync_walled_garden
 from app.extensions import db
-from app.infrastructure.db.models import Transaction, TransactionStatus
+from app.infrastructure.db.models import (
+    ApprovalStatus,
+    NotificationRecipient,
+    NotificationType,
+    Package,
+    Transaction,
+    TransactionStatus,
+    User,
+    UserRole,
+)
+from app.infrastructure.gateways.mikrotik_client import activate_or_update_hotspot_user
+from app.services.notification_service import get_notification_message
+from app.services.user_management.helpers import _handle_mikrotik_operation
+from app.utils.formatters import format_to_local_phone, get_app_local_datetime
+from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package, format_rupiah
 
 # Import create_app dari app/__init__.py
 from app import create_app
@@ -19,6 +35,164 @@ from app import create_app
 from app.extensions import celery_app
 
 logger = logging.getLogger(__name__)
+
+
+@celery_app.task(
+    name="enforce_end_of_month_debt_block_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 2},
+)
+def enforce_end_of_month_debt_block_task(self):
+    """At end-of-month, warn users with unpaid quota debt via WhatsApp, then block them.
+
+    - WhatsApp warning must be attempted first.
+    - Admin notifications are sent to subscribed recipients (NotificationType.QUOTA_DEBT_LIMIT_EXCEEDED).
+    """
+    app = create_app()
+    with app.app_context():
+        now_local = get_app_local_datetime()
+        last_day = calendar.monthrange(now_local.year, now_local.month)[1]
+
+        # Default: run enforcement only on the last day, at/after 23:00 local time.
+        try:
+            min_hour = int(app.config.get("DEBT_EOM_BLOCK_MIN_HOUR", 23))
+        except Exception:
+            min_hour = 23
+
+        if now_local.day != last_day or now_local.hour < min_hour:
+            return
+
+        if settings_service.get_setting("ENABLE_MIKROTIK_OPERATIONS", "True") != "True":
+            logger.info("EOM debt block: Mikrotik ops disabled; will still update DB + WhatsApp.")
+
+        cheapest_pkg = (
+            db.session.query(Package)
+            .filter(Package.is_active.is_(True))
+            .filter(Package.data_quota_gb > 0)
+            .order_by(Package.price.asc())
+            .first()
+        )
+
+        cheapest_pkg_price = int(getattr(cheapest_pkg, "price", 0) or 0)
+        cheapest_pkg_quota_gb = float(getattr(cheapest_pkg, "data_quota_gb", 0) or 0)
+        cheapest_pkg_name = str(getattr(cheapest_pkg, "name", "") or "") or "-"
+
+        users = (
+            db.session.query(User)
+            .filter(User.is_active.is_(True))
+            .filter(User.approval_status == ApprovalStatus.APPROVED)
+            .filter(User.role == UserRole.USER)
+            .filter(User.is_unlimited_user.is_(False))
+            .all()
+        )
+
+        enable_wa = settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") == "True"
+        blocked_profile = settings_service.get_setting("MIKROTIK_BLOCKED_PROFILE", "inactive") or "inactive"
+
+        recipients_query = (
+            db.select(User)
+            .join(NotificationRecipient, User.id == NotificationRecipient.admin_user_id)
+            .where(
+                NotificationRecipient.notification_type == NotificationType.QUOTA_DEBT_LIMIT_EXCEEDED,
+                User.is_active.is_(True),
+            )
+        )
+        subscribed_admins = db.session.scalars(recipients_query).all()
+
+        for user in users:
+            try:
+                debt_mb = float(getattr(user, "quota_debt_total_mb", 0) or 0)
+            except Exception:
+                debt_mb = 0.0
+
+            if debt_mb <= 0:
+                continue
+
+            if bool(getattr(user, "is_blocked", False)):
+                continue
+
+            estimate = estimate_debt_rp_from_cheapest_package(
+                debt_mb=debt_mb,
+                cheapest_package_price_rp=cheapest_pkg_price,
+                cheapest_package_quota_gb=cheapest_pkg_quota_gb,
+                cheapest_package_name=cheapest_pkg_name,
+            )
+            estimate_rp = estimate.estimated_rp_rounded
+            estimate_rp_text = format_rupiah(int(estimate_rp)) if isinstance(estimate_rp, int) else "-"
+
+            debt_mb_text = str(int(round(debt_mb)))
+
+            warned_ok = True
+            if enable_wa:
+                try:
+                    user_msg = get_notification_message(
+                        "user_quota_debt_end_of_month_warning",
+                        {
+                            "full_name": user.full_name,
+                            "phone_number": user.phone_number,
+                            "debt_mb": debt_mb_text,
+                            "estimated_rp": estimate_rp_text,
+                            "base_package_name": cheapest_pkg_name,
+                        },
+                    )
+                    warned_ok = bool(send_whatsapp_message(user.phone_number, user_msg))
+                except Exception:
+                    logger.exception("EOM debt block: gagal kirim WA warning ke user %s", getattr(user, "id", "?"))
+                    warned_ok = False
+
+            # Requirement: send WA first, then block.
+            if enable_wa and not warned_ok:
+                continue
+
+            try:
+                if not user.mikrotik_password:
+                    user.mikrotik_password = "".join(secrets.choice("0123456789") for _ in range(6))
+
+                username_08 = format_to_local_phone(user.phone_number) or user.phone_number or ""
+                comment = f"blocked|quota-debt-eom|user={username_08}"
+
+                _handle_mikrotik_operation(
+                    activate_or_update_hotspot_user,
+                    user_mikrotik_username=username_08,
+                    hotspot_password=user.mikrotik_password,
+                    mikrotik_profile_name=blocked_profile,
+                    limit_bytes_total=1,
+                    session_timeout="1s",
+                    comment=comment,
+                    server=user.mikrotik_server_name,
+                    force_update_profile=True,
+                )
+
+                user.is_blocked = True
+                user.blocked_reason = (
+                    f"quota_debt_end_of_month|debt_mb={debt_mb_text}"
+                    + (f"|estimated_rp={int(estimate_rp)}" if isinstance(estimate_rp, int) else "")
+                    + (f"|base_pkg={cheapest_pkg_name}" if cheapest_pkg_name else "")
+                )
+                user.blocked_at = datetime.now(dt_timezone.utc)
+                user.blocked_by_id = None
+                db.session.add(user)
+                db.session.commit()
+
+                if enable_wa and subscribed_admins:
+                    admin_msg = get_notification_message(
+                        "admin_quota_debt_end_of_month_blocked",
+                        {
+                            "full_name": user.full_name,
+                            "phone_number": user.phone_number,
+                            "debt_mb": debt_mb_text,
+                            "estimated_rp": estimate_rp_text,
+                            "base_package_name": cheapest_pkg_name,
+                        },
+                    )
+                    for admin in subscribed_admins:
+                        send_whatsapp_message(admin.phone_number, admin_msg)
+            except Exception:
+                db.session.rollback()
+                logger.exception("EOM debt block: gagal proses block untuk user %s", getattr(user, "id", "?"))
 
 
 def _record_task_failure(app, task_name: str, payload: dict, error_message: str) -> None:

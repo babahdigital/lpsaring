@@ -7,6 +7,7 @@ import { usePromoStore } from '~/store/promo' // Import promo store
 import { useApiFetch } from '~/composables/useApiFetch'
 import { useAuthStore } from '~/store/auth'
 import { useDisplay } from 'vuetify'
+import { useDebtSettlementPayment } from '~/composables/useDebtSettlementPayment'
 
 // Impor komponen PromoAnnouncement DIHAPUS, diganti dengan sistem global di app.vue
 // const PromoAnnouncement = defineAsyncComponent(() => import('~/components/promo/PromoAnnouncement.vue'))
@@ -14,11 +15,15 @@ import { useDisplay } from 'vuetify'
 const WeeklyUsageChart = defineAsyncComponent(() => import('~/components/charts/WeeklyUsageChart.vue'))
 const WeeklyUsageChartUnlimited = defineAsyncComponent(() => import('~/components/charts/WeeklyUsageChartUnlimited.vue'))
 const MonthlyUsageChart = defineAsyncComponent(() => import('~/components/charts/MonthlyUsageChart.vue'))
+const DeviceManagerCard = defineAsyncComponent(() => import('~/components/akun/DeviceManagerCard.vue'))
 
 const promoStore = usePromoStore() // Inisialisasi promo store
 const authStore = useAuthStore()
 const display = useDisplay()
 const pageTitle = 'Dashboard Pengguna'
+
+const deviceDialog = ref(false)
+const { paying: debtPaying, pay: payDebt } = useDebtSettlementPayment()
 
 const chartReady = ref(false)
 const chartDelayMs = computed(() => (display.smAndDown.value ? 1200 : 400))
@@ -74,20 +79,34 @@ const { data: monthlyUsageData, pending: monthlyChartPending, error: monthlyChar
   { server: false, key: 'monthlyUsageData', default: () => ({ success: false, monthly_data: [] }), immediate: false, watch: false },
 )
 
+interface WeeklySpendingResponse {
+  categories: string[]
+  series: Array<{ name: string; data: number[] }>
+  total_this_week: number
+}
+
+const weeklySpendingApiUrl = computed(() => (authStore.isLoggedIn ? '/users/me/weekly-spending' : ''))
+const { data: weeklySpendingData, pending: weeklySpendingPending, error: weeklySpendingError, refresh: refreshWeeklySpendingRaw } = useApiFetch<WeeklySpendingResponse>(
+  weeklySpendingApiUrl,
+  { server: false, key: 'weeklySpendingData', default: () => ({ categories: [], series: [{ name: 'Pengeluaran', data: [] }], total_this_week: 0 }), immediate: false, watch: false },
+)
+
 const fetchesInitiated = ref(false)
 const minSkeletonTimePassed = ref(false)
 const dashboardRenderKey = ref(0)
+const hasLoadedOnce = ref(false)
+const isRefreshingSilent = ref(false)
 
 const isFetching = computed(() => {
-  return quotaPending.value || weeklyUsagePending.value || monthlyChartPending.value
+  return quotaPending.value || weeklyUsagePending.value || monthlyChartPending.value || weeklySpendingPending.value
 })
 
 const shouldShowSkeleton = computed(() => {
-  return fetchesInitiated.value && (isFetching.value || !minSkeletonTimePassed.value)
+  return fetchesInitiated.value && hasLoadedOnce.value === false && (isFetching.value || !minSkeletonTimePassed.value)
 })
 
 const hasError = computed(() => {
-  return !!quotaError.value || !!weeklyUsageError.value || !!monthlyChartError.value
+  return !!quotaError.value || !!weeklyUsageError.value || !!monthlyChartError.value || !!weeklySpendingError.value
 })
 
 const showErrorAlert = ref(true)
@@ -108,6 +127,7 @@ function createRefresher(rawRefresher: RefresherFunction | globalThis.Ref<unknow
 const refreshQuota = createRefresher(refreshQuotaRaw)
 const refreshWeeklyUsage = createRefresher(refreshWeeklyUsageRaw)
 const refreshMonthlyUsage = createRefresher(refreshMonthlyUsageRaw)
+const refreshWeeklySpending = createRefresher(refreshWeeklySpendingRaw)
 
 function preFetchActions() {
   fetchesInitiated.value = true
@@ -124,6 +144,7 @@ async function performFetches() {
       refreshQuota(),
       refreshWeeklyUsage(),
       refreshMonthlyUsage(),
+      refreshWeeklySpending(),
     ])
   }
   catch (_e) {
@@ -135,10 +156,12 @@ async function initialFetch() {
   if (authStore.isLoggedIn) {
     preFetchActions()
     await performFetches()
+    hasLoadedOnce.value = true
   }
   else {
     fetchesInitiated.value = true
     minSkeletonTimePassed.value = true
+    hasLoadedOnce.value = true
   }
 }
 
@@ -184,6 +207,7 @@ onUnmounted(() => {
 
 watch(isFetching, (newValue, oldValue) => {
   if (fetchesInitiated.value && oldValue === true && newValue === false) {
+    hasLoadedOnce.value = true
     nextTick(() => {
       dashboardRenderKey.value++
     })
@@ -205,6 +229,7 @@ watch(() => authStore.isLoggedIn, (isLoggedIn, wasLoggedIn) => {
     weeklyUsageData.value = { success: false, weekly_data: [], period: { start_date: '', end_date: '' } }
     monthlyUsageData.value = { success: false, monthly_data: [] }
     fetchesInitiated.value = false
+    hasLoadedOnce.value = false
     showErrorAlert.value = false
     dashboardRenderKey.value++
     if (pollingTimer.value != null)
@@ -296,6 +321,20 @@ const weeklyUsedMb = computed(() => {
   return points.reduce((acc, n) => acc + Number(n || 0), 0)
 })
 
+const avgDailyUsedMb = computed(() => {
+  const total = Number(weeklyUsedMb.value || 0)
+  if (!Number.isFinite(total) || total <= 0)
+    return 0
+  return Math.round((total / 7) * 100) / 100
+})
+
+const totalSpendingThisWeek = computed(() => {
+  const v = Number((weeklySpendingData.value as any)?.total_this_week ?? 0)
+  if (!Number.isFinite(v) || v <= 0)
+    return 0
+  return v
+})
+
 const debtTotalParts = computed(() => {
   const isUnlimited = quotaData.value?.is_unlimited_user === true
   if (isUnlimited)
@@ -334,8 +373,16 @@ async function refreshAllDataLogic() {
   if (!authStore.isLoggedIn)
     return
 
-  preFetchActions()
-  await performFetches()
+  // Silent refresh: jangan tampilkan skeleton lagi jika data sudah pernah tampil.
+  if (hasLoadedOnce.value)
+    isRefreshingSilent.value = true
+  showErrorAlert.value = true
+  try {
+    await performFetches()
+  }
+  finally {
+    isRefreshingSilent.value = false
+  }
 }
 
 const refreshAllData = useDebounceFn(refreshAllDataLogic, 500, { maxWait: 2000 })
@@ -350,17 +397,31 @@ useHead({ title: 'Dashboard User' })
           {{ pageTitle }}
         </h1>
         <VBtn
-          to="/akun"
           variant="tonal"
           size="small"
           prepend-icon="tabler-device-mobile"
+          @click="deviceDialog = true"
         >
           Kelola Perangkat
         </VBtn>
       </VCol>
     </VRow>
 
+    <VDialog v-model="deviceDialog" max-width="900" scrollable>
+      <div class="pa-4">
+        <DeviceManagerCard />
+      </div>
+    </VDialog>
+
     <div>
+      <VProgressLinear
+        v-if="isRefreshingSilent"
+        indeterminate
+        color="primary"
+        height="2"
+        class="mb-4"
+      />
+
       <VAlert
         v-if="showPromoWarning"
         type="warning"
@@ -451,6 +512,69 @@ useHead({ title: 'Dashboard User' })
           </div>
 
           <div v-if="!hasError || !showErrorAlert" :key="dashboardRenderKey">
+            <!-- Ringkasan 7 Hari (gaya Statistics seperti Vuexy ecommerce dashboard) -->
+            <VCard class="vuexy-card mb-4" title="Ringkasan 7 Hari Terakhir">
+              <VCardText>
+                <VRow>
+                  <VCol cols="6" md="3">
+                    <div class="d-flex align-center gap-4 mt-md-9 mt-0">
+                      <VAvatar color="primary" variant="tonal" rounded size="40">
+                        <VIcon icon="tabler-calendar-stats" />
+                      </VAvatar>
+                      <div class="d-flex flex-column">
+                        <h5 class="text-h5">
+                          {{ quotaData?.is_unlimited_user ? 'Unlimited' : formatQuota(weeklyUsedMb) }}
+                        </h5>
+                        <div class="text-sm">Terpakai (7 hari)</div>
+                      </div>
+                    </div>
+                  </VCol>
+
+                  <VCol cols="6" md="3">
+                    <div class="d-flex align-center gap-4 mt-md-9 mt-0">
+                      <VAvatar color="info" variant="tonal" rounded size="40">
+                        <VIcon icon="tabler-chart-bar" />
+                      </VAvatar>
+                      <div class="d-flex flex-column">
+                        <h5 class="text-h5">
+                          {{ quotaData?.is_unlimited_user ? 'Unlimited' : formatQuota(avgDailyUsedMb) }}
+                        </h5>
+                        <div class="text-sm">Rata-rata / hari</div>
+                      </div>
+                    </div>
+                  </VCol>
+
+                  <VCol cols="6" md="3">
+                    <div class="d-flex align-center gap-4 mt-md-9 mt-0">
+                      <VAvatar color="success" variant="tonal" rounded size="40">
+                        <VIcon icon="tabler-cash" />
+                      </VAvatar>
+                      <div class="d-flex flex-column">
+                        <h5 class="text-h5">
+                          {{ formatRp(totalSpendingThisWeek) }}
+                        </h5>
+                        <div class="text-sm">Pengeluaran (7 hari)</div>
+                      </div>
+                    </div>
+                  </VCol>
+
+                  <VCol cols="6" md="3">
+                    <div class="d-flex align-center gap-4 mt-md-9 mt-0">
+                      <VAvatar color="warning" variant="tonal" rounded size="40">
+                        <VIcon icon="tabler-battery" />
+                      </VAvatar>
+                      <div class="d-flex flex-column">
+                        <h5 class="text-h5">
+                          {{ quotaData?.is_unlimited_user ? 'Unlimited' : formatQuota(quotaData?.remaining_mb) }}
+                        </h5>
+                        <div class="text-sm">Kuota tersisa</div>
+                      </div>
+                    </div>
+                  </VCol>
+                </VRow>
+              </VCardText>
+            </VCard>
+
             <VRow class="match-height">
               <VCol cols="12" md="6" class="d-flex flex-column chart-column ga-4">
                 <VRow class="fixed-height-cards">
@@ -514,50 +638,68 @@ useHead({ title: 'Dashboard User' })
                         >
                           {{ timeSpendingsChip.label }}
                         </VChip>
+
+                        <VBtn
+                          v-if="!quotaData?.is_unlimited_user && debtTotalMb > 0 && debtEstimatedRp > 0"
+                          size="small"
+                          color="warning"
+                          variant="flat"
+                          prepend-icon="tabler-credit-card"
+                          :loading="debtPaying"
+                          :disabled="debtPaying"
+                          @click="payDebt"
+                        >
+                          Lunasi
+                        </VBtn>
                       </div>
 
-                      <div class="text-body-1 mb-4">
-                        Laporan Mingguan
-                        <span class="text-medium-emphasis"> • Terpakai 7 hari: {{ quotaData?.is_unlimited_user ? 'Unlimited' : formatQuota(weeklyUsedMb) }}</span>
-                      </div>
+                      <VList class="card-list" density="compact">
+                        <VListItem class="py-2">
+                          <template #prepend>
+                            <VAvatar color="primary" variant="tonal" rounded size="38" class="me-1">
+                              <VIcon icon="tabler-cash" size="22" />
+                            </VAvatar>
+                          </template>
+                          <VListItemTitle class="me-2">Estimasi</VListItemTitle>
+                          <template #append>
+                            <span class="text-body-1 font-weight-medium">
+                              {{ quotaData?.is_unlimited_user ? 'Rp 0' : formatRp(debtEstimatedRp) }}
+                            </span>
+                          </template>
+                        </VListItem>
 
-                      <h4 class="text-h4 mb-4">
-                        {{ debtTotalParts.value }}
-                        <span class="text-medium-emphasis"> {{ debtTotalParts.unit }}</span>
-                      </h4>
+                        <VDivider class="my-2" />
 
-                      <VTable density="compact" class="debt-table">
-                        <tbody>
-                          <tr>
-                            <td class="text-medium-emphasis">Total hutang</td>
-                            <td class="text-end font-weight-medium">{{ quotaData?.is_unlimited_user ? 'Rp 0' : formatRp(debtEstimatedRp) }}</td>
-                          </tr>
-                          <tr>
-                            <td class="text-medium-emphasis">Debt total</td>
-                            <td class="text-end font-weight-medium">{{ quotaData?.is_unlimited_user ? '0 MB' : formatQuota(debtTotalMb) }}</td>
-                          </tr>
-                          <tr>
-                            <td class="text-medium-emphasis">Debt auto</td>
-                            <td class="text-end">{{ quotaData?.is_unlimited_user ? '0 MB' : formatQuota(debtAutoMb) }}</td>
-                          </tr>
-                          <tr>
-                            <td class="text-medium-emphasis">Debt manual</td>
-                            <td class="text-end">{{ quotaData?.is_unlimited_user ? '0 MB' : formatQuota(debtManualMb) }}</td>
-                          </tr>
-                          <tr>
-                            <td class="text-medium-emphasis">Kuota terpakai</td>
-                            <td class="text-end">{{ quotaData?.is_unlimited_user ? 'Unlimited' : formatQuota(quotaData?.total_quota_used_mb) }}</td>
-                          </tr>
-                          <tr>
-                            <td class="text-medium-emphasis">Sisa kuota</td>
-                            <td class="text-end">{{ quotaData?.is_unlimited_user ? 'Unlimited' : formatQuota(quotaData?.remaining_mb) }}</td>
-                          </tr>
-                          <tr>
-                            <td class="text-medium-emphasis">Terpakai 7 hari</td>
-                            <td class="text-end">{{ quotaData?.is_unlimited_user ? 'Unlimited' : formatQuota(weeklyUsedMb) }}</td>
-                          </tr>
-                        </tbody>
-                      </VTable>
+                        <VListItem v-if="!quotaData?.is_unlimited_user && debtTotalMb > 0" class="py-2">
+                          <template #prepend>
+                            <VAvatar color="info" variant="tonal" rounded size="38" class="me-1">
+                              <VIcon icon="tabler-robot" size="22" />
+                            </VAvatar>
+                          </template>
+                          <VListItemTitle class="me-2">Tunggakan otomatis</VListItemTitle>
+                          <template #append>
+                            <span class="text-body-1 font-weight-medium">
+                              {{ formatQuota(debtAutoMb) }}
+                            </span>
+                          </template>
+                        </VListItem>
+
+                        <VDivider v-if="!quotaData?.is_unlimited_user && debtManualMb > 0" class="my-2" />
+
+                        <VListItem v-if="!quotaData?.is_unlimited_user && debtManualMb > 0" class="py-2">
+                          <template #prepend>
+                            <VAvatar color="secondary" variant="tonal" rounded size="38" class="me-1">
+                              <VIcon icon="tabler-hand-stop" size="22" />
+                            </VAvatar>
+                          </template>
+                          <VListItemTitle class="me-2">Tunggakan manual</VListItemTitle>
+                          <template #append>
+                            <span class="text-body-1 font-weight-medium">
+                              {{ formatQuota(debtManualMb) }}
+                            </span>
+                          </template>
+                        </VListItem>
+                      </VList>
                     </div>
                   </VCardText>
                 </VCard>
@@ -744,12 +886,8 @@ useHead({ title: 'Dashboard User' })
   gap: 1.5rem;
 }
 
-.debt-table :deep(td) {
-  padding-inline: 0;
-}
-
-.debt-table :deep(tr + tr td) {
-  border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+.card-list {
+  --v-card-list-gap: 1.5rem;
 }
 
 @media (max-width: 959.98px) {

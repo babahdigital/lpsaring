@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import type { VDataTableServer } from 'vuetify/labs/VDataTable'
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import RequestFormDialog from '@/components/komandan/RequestFormDialog.vue'
 
 // --- [PENYEMPURNAAN] Interface data yang lebih rapi ---
@@ -29,6 +29,9 @@ const { $api } = useNuxtApp()
 
 const requests = ref<RequestHistoryItem[]>([])
 const loading = ref(true)
+const hasLoadedOnce = ref(false)
+const showInitialSkeleton = computed(() => loading.value === true && hasLoadedOnce.value === false)
+const showSilentRefreshing = computed(() => loading.value === true && hasLoadedOnce.value === true)
 const totalRequests = ref(0)
 const options = ref<Options>({
   page: 1,
@@ -44,6 +47,11 @@ const isRequestFormVisible = ref(false)
 // --- Watchers & Lifecycle ---
 watch(options, () => fetchRequests(), { deep: true })
 onMounted(fetchRequests)
+
+watch(loading, (val) => {
+  if (val === false)
+    hasLoadedOnce.value = true
+}, { immediate: true })
 
 // --- Logika Inti ---
 async function fetchRequests() {
@@ -155,12 +163,13 @@ useHead({ title: 'Request Quota' })
     </VCard>
 
     <VCard class="rounded-lg">
+      <VProgressLinear v-if="showSilentRefreshing" indeterminate color="primary" height="2" />
       <VDataTableServer
         v-model:options="options"
         :headers="headers"
         :items="requests"
         :items-length="totalRequests"
-        :loading="loading"
+        :loading="showInitialSkeleton"
         item-value="id"
         class="text-no-wrap"
       >
@@ -225,7 +234,7 @@ useHead({ title: 'Request Quota' })
         </template>
 
         <template #loading>
-          <VSkeletonLoader type="table-row@5" />
+          <VSkeletonLoader v-if="showInitialSkeleton" type="table-row@5" />
         </template>
       </VDataTableServer>
     </VCard>

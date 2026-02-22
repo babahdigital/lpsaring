@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useSnackbar } from '@/composables/useSnackbar'
 import { useAuthStore } from '@/store/auth'
 
@@ -21,6 +21,9 @@ useHead({ title: 'Backup & Restore Database' })
 
 const backups = ref<BackupItem[]>([])
 const loading = ref(false)
+const hasLoadedOnce = ref(false)
+const showInitialSkeleton = computed(() => loading.value === true && hasLoadedOnce.value === false)
+const showSilentRefreshing = computed(() => loading.value === true && hasLoadedOnce.value === true)
 const creating = ref(false)
 const uploading = ref(false)
 const restoring = ref(false)
@@ -140,6 +143,11 @@ async function restoreBackup() {
 }
 
 onMounted(fetchBackups)
+
+watch(loading, (val) => {
+  if (val === false)
+    hasLoadedOnce.value = true
+}, { immediate: true })
 </script>
 
 <template>
@@ -197,9 +205,10 @@ onMounted(fetchBackups)
     </VCard>
 
     <VCard>
+      <VProgressLinear v-if="showSilentRefreshing" indeterminate color="primary" height="2" />
       <VDataTable
         :items="backups"
-        :loading="loading"
+        :loading="showInitialSkeleton"
         class="text-no-wrap"
       >
         <template #headers>

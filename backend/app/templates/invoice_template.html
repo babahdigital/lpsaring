@@ -269,7 +269,12 @@
             </thead>
             <tbody>
                 <tr>
-                    <td class="description">Pembelian {{ package.name or 'Paket Layanan' }}</td>
+                                        {% set is_debt_settlement = (transaction.midtrans_order_id or '')[:5] == 'DEBT-' %}
+                                        {% if is_debt_settlement %}
+                                            <td class="description">Pelunasan Tunggakan Kuota</td>
+                                        {% else %}
+                                            <td class="description">Pembelian {{ package.name or 'Paket Layanan' }}</td>
+                                        {% endif %}
                     <td class="amount">{{ transaction.amount | format_currency }}</td> </tr>
                 </tbody>
         </table>

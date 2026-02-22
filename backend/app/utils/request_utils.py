@@ -47,6 +47,27 @@ def get_client_ip() -> Optional[str]:
             ]:
                 logger.debug(f"Header: {header} = {value}")
 
+    def _get_peer_ip_pre_proxyfix() -> Optional[str]:
+        """Return the immediate peer IP (socket source) before ProxyFix rewrites remote_addr.
+
+        When werkzeug ProxyFix is enabled, request.remote_addr becomes the *client* IP (left-most XFF).
+        For trust decisions (whether to accept forwarded headers), we must instead evaluate the peer
+        proxy IP (nginx / cloudflared / load balancer) to avoid false negatives and spoofing.
+        """
+        try:
+            orig = request.environ.get("werkzeug.proxy_fix.orig")
+            if isinstance(orig, dict):
+                peer = orig.get("REMOTE_ADDR")
+                if isinstance(peer, str) and peer.strip():
+                    return peer.strip()
+        except Exception:
+            pass
+
+        peer = request.environ.get("REMOTE_ADDR")
+        if isinstance(peer, str) and peer.strip():
+            return peer.strip()
+        return None
+
     def _is_trusted_proxy(ip_value: Optional[str]) -> bool:
         if not ip_value:
             return False
@@ -63,13 +84,15 @@ def get_client_ip() -> Optional[str]:
                 continue
         return False
 
+    peer_ip = _get_peer_ip_pre_proxyfix()
+
     # Prioritaskan header yang lebih spesifik jika dipercaya (misalnya Cloudflare)
     client_ip = request.headers.get("CF-Connecting-IP")
     if client_ip and current_app and current_app.config.get("TRUST_CF_CONNECTING_IP", False):
-        if _is_trusted_proxy(request.remote_addr):
+        if _is_trusted_proxy(peer_ip):
             logger.debug(f"IP determined from CF-Connecting-IP header: {client_ip}")
             return client_ip
-        logger.warning("CF-Connecting-IP diabaikan karena remote_addr tidak trusted.")
+        logger.warning("CF-Connecting-IP diabaikan karena peer proxy IP tidak trusted.")
 
     x_forwarded_for = request.headers.get("X-Forwarded-For")
     log_ip_info = bool(
@@ -80,7 +103,7 @@ def get_client_ip() -> Optional[str]:
         logger.info(f"X-Forwarded-For header: {x_forwarded_for}")
     if x_forwarded_for:
         logger.debug(f"Raw X-Forwarded-For header value: {x_forwarded_for}")
-        if _is_trusted_proxy(request.remote_addr):
+        if _is_trusted_proxy(peer_ip):
             for part in x_forwarded_for.split(","):
                 candidate = part.strip()
                 if not candidate:

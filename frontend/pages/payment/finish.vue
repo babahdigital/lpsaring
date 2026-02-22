@@ -69,6 +69,13 @@ const orderId = computed(() => {
   return typeof route.query.order_id === 'string' ? route.query.order_id : null
 })
 
+const isDebtSettlement = computed(() => {
+  const oid = orderId.value ?? ''
+  if (oid.startsWith('DEBT-'))
+    return true
+  return route.query.purpose === 'debt'
+})
+
 async function fetchTransactionDetails(orderId: string) {
   isLoading.value = true
   fetchError.value = null
@@ -170,7 +177,11 @@ const canDownloadInvoice = computed(() => finalStatus.value === 'SUCCESS' && inv
 
 const userPhoneNumberRaw = computed(() => transactionDetails.value?.user?.phone_number ?? null)
 const userName = computed(() => transactionDetails.value?.user?.full_name ?? 'Pengguna')
-const packageName = computed(() => transactionDetails.value?.package?.name ?? 'Paket Tidak Diketahui')
+const packageName = computed(() => {
+  if (isDebtSettlement.value)
+    return 'Pelunasan Tunggakan Kuota'
+  return transactionDetails.value?.package?.name ?? 'Paket Tidak Diketahui'
+})
 const paymentMethod = computed(() => transactionDetails.value?.payment_method ?? null)
 const displayHotspotUsername = computed(() => formatToLocalPhone(userPhoneNumberRaw.value) ?? '-')
 
@@ -243,6 +254,27 @@ const alertIcon = computed((): string => {
 const detailMessage = computed((): string => {
   if (finalStatus.value === 'ERROR' && errorMessageFromQuery.value != null && transactionDetails.value == null) {
     return errorMessageFromQuery.value
+  }
+
+  if (isDebtSettlement.value) {
+    switch (finalStatus.value) {
+      case 'SUCCESS':
+        return 'Pelunasan tunggakan kuota berhasil. Terima kasih — status akun akan kembali normal setelah sistem sinkronisasi.'
+      case 'PENDING':
+        return 'Pembayaran pelunasan tunggakan sedang menunggu. Selesaikan pembayaran sesuai instruksi agar tunggakan dihapus.'
+      case 'FAILED':
+        return 'Pembayaran pelunasan tunggakan gagal. Silakan coba lagi atau gunakan metode pembayaran lain.'
+      case 'EXPIRED':
+        return 'Waktu pembayaran pelunasan tunggakan sudah habis. Silakan mulai transaksi baru.'
+      case 'CANCELLED':
+        return 'Transaksi pelunasan tunggakan dibatalkan.'
+      case 'UNKNOWN':
+        return 'Pelunasan tunggakan belum dimulai atau status belum terbaca.'
+      case 'ERROR':
+        return 'Terjadi kesalahan saat proses pembayaran pelunasan tunggakan.'
+      default:
+        return 'Status transaksi pelunasan tunggakan tidak diketahui.'
+    }
   }
 
   const safePackageName = packageName.value ?? 'paket yang dipilih'

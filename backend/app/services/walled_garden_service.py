@@ -110,6 +110,7 @@ def sync_walled_garden() -> Dict[str, str]:
     with get_mikrotik_connection() as api:
         if not api:
             return {"status": "error", "message": "Koneksi MikroTik gagal"}
+        comment_prefix = comment_prefix or ""
         ok, msg = sync_walled_garden_rules(
             api_connection=api,
             allowed_hosts=allowed_hosts,

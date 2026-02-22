@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import type { NotificationType } from '@/types/api'
 import { useHead, useNuxtApp } from '#app'
-import { onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useAuthStore } from '@/store/auth'
 
 // --- Tipe Data ---
@@ -30,6 +30,10 @@ const loading = ref(true)
 const saveLoading = ref(false)
 const error = ref<string | null>(null)
 const snackbar = reactive({ show: false, text: '', color: 'info' })
+
+const hasLoadedOnce = ref(false)
+const showInitialSkeleton = computed(() => loading.value === true && hasLoadedOnce.value === false)
+const showSilentRefreshing = computed(() => loading.value === true && hasLoadedOnce.value === true)
 
 // --- State Baru untuk Seleksi Tipe Notifikasi ---
 const selectedNotificationType = ref<NotificationType>('NEW_USER_REGISTRATION')
@@ -141,6 +145,11 @@ onMounted(() => {
 watch(selectedNotificationType, () => {
   fetchRecipients()
 })
+
+watch(loading, (val) => {
+  if (val === false)
+    hasLoadedOnce.value = true
+}, { immediate: true })
 </script>
 
 <template>
@@ -184,7 +193,14 @@ watch(selectedNotificationType, () => {
 
         <VDivider />
 
-        <div v-if="loading === true">
+        <VProgressLinear
+          v-if="showSilentRefreshing"
+          indeterminate
+          color="primary"
+          height="2"
+        />
+
+        <div v-if="showInitialSkeleton">
           <VSkeletonLoader
             v-for="i in 4"
             :key="i"

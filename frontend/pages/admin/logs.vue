@@ -78,9 +78,18 @@ const { data: fetchedData, pending: loading, error, refresh } = useAsyncData(
 const logList = computed(() => fetchedData.value?.items ?? [])
 const totalLogs = computed(() => fetchedData.value?.totalItems ?? 0)
 
+const hasLoadedOnce = ref(false)
+const showInitialSkeleton = computed(() => loading.value === true && hasLoadedOnce.value === false)
+const showSilentRefreshing = computed(() => loading.value === true && hasLoadedOnce.value === true)
+
 onMounted(() => {
   isHydrated.value = true
 })
+
+watch(loading, (val) => {
+  if (val === false)
+    hasLoadedOnce.value = true
+}, { immediate: true })
 
 watch(error, (newError) => {
   if (newError) {
@@ -354,8 +363,15 @@ useHead({ title: 'Log Aktivitas Admin' })
         </div>
       </VCardTitle>
 
+      <VProgressLinear
+        v-if="showSilentRefreshing"
+        indeterminate
+        color="primary"
+        height="2"
+      />
+
       <client-only>
-        <VDataTableServer v-if="!isMobile" v-model:options="options" :headers="headers" :items="logList" :items-length="totalLogs" :loading="loading" class="text-no-wrap" item-value="id">
+        <VDataTableServer v-if="!isMobile" v-model:options="options" :headers="headers" :items="logList" :items-length="totalLogs" :loading="showInitialSkeleton" class="text-no-wrap" item-value="id">
           <template #item.created_at="{ item }">
             <VTooltip location="top">
               <template #activator="{ props }">
@@ -389,7 +405,7 @@ useHead({ title: 'Log Aktivitas Admin' })
             </div>
           </template>
           <template #loading>
-            <div class="pa-5">
+            <div v-if="showInitialSkeleton" class="pa-5">
               <div v-for="i in 5" :key="i" class="d-flex align-center w-100 pa-4">
                 <div class="flex-grow-1">
                   <VSkeletonLoader type="text" width="90%" />
@@ -403,7 +419,7 @@ useHead({ title: 'Log Aktivitas Admin' })
         </VDataTableServer>
 
         <div v-else class="pa-4">
-          <div v-if="loading" class="pa-5">
+          <div v-if="showInitialSkeleton" class="pa-5">
             <VCard v-for="i in 3" :key="i" class="mb-3">
               <VSkeletonLoader type="list-item-two-line" />
             </VCard>

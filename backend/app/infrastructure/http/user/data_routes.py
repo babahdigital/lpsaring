@@ -10,7 +10,15 @@ from dateutil.relativedelta import relativedelta
 from http import HTTPStatus
 
 from app.extensions import db
-from app.infrastructure.db.models import User, DailyUsageLog, Transaction, TransactionStatus, ApprovalStatus, Package
+from app.infrastructure.db.models import (
+    User,
+    DailyUsageLog,
+    Transaction,
+    TransactionStatus,
+    ApprovalStatus,
+    Package,
+    UserQuotaDebt,
+)
 from ..schemas.user_schemas import UserQuotaResponse, WeeklyUsageResponse, MonthlyUsageResponse, MonthlyUsageData
 from ..decorators import token_required
 
@@ -82,7 +90,7 @@ def get_my_quota_status(current_user_id):
         purchased_mb = float(user.total_quota_purchased_mb or 0.0)
         used_mb = float(user.total_quota_used_mb or 0.0)
         remaining_mb = max(0.0, round_mb(purchased_mb - used_mb))
-        hotspot_username = format_to_local_phone(user.phone_number)
+        hotspot_username = format_to_local_phone(user.phone_number) or ""
         last_sync_time = user.updated_at
 
         debt_auto_mb = float(getattr(user, "quota_debt_auto_mb", 0) or 0)
@@ -262,7 +270,11 @@ def get_my_transactions(current_user_id):
 
         transactions_data = []
         for tx in pagination.items:
-            pkg_name = tx.package.name if tx.package else "Paket Tidak Ditemukan"
+            order_id = str(tx.midtrans_order_id or "")
+            if order_id.startswith("DEBT-"):
+                pkg_name = "Pelunasan Tunggakan Kuota"
+            else:
+                pkg_name = tx.package.name if tx.package else "Paket Tidak Ditemukan"
 
             transactions_data.append(
                 {
@@ -293,3 +305,53 @@ def get_my_transactions(current_user_id):
     except Exception as e:
         current_app.logger.error(f"Error pada get_my_transactions: {e}", exc_info=True)
         abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Gagal mengambil riwayat transaksi.")
+
+
+@data_bp.route("/me/quota-debts", methods=["GET"])
+@token_required_or_dev_user
+def get_my_quota_debts(current_user_id):
+    """List manual quota debt entries (per-date) for the current user.
+
+    Query params:
+    - status: 'open' (default) or 'all'
+    """
+    _get_authenticated_user(current_user_id)
+    try:
+        status = (request.args.get("status") or "open").strip().lower()
+        include_paid = status == "all"
+
+        query = select(UserQuotaDebt).where(UserQuotaDebt.user_id == current_user_id)
+        if not include_paid:
+            query = query.where(UserQuotaDebt.is_paid.is_(False))
+        query = query.order_by(desc(UserQuotaDebt.debt_date).nulls_last(), desc(UserQuotaDebt.created_at))
+
+        items = []
+        for it in db.session.scalars(query).all():
+            try:
+                amount_mb = int(it.amount_mb or 0)
+            except (TypeError, ValueError):
+                amount_mb = 0
+            try:
+                paid_mb = int(it.paid_mb or 0)
+            except (TypeError, ValueError):
+                paid_mb = 0
+            remaining_mb = max(0, amount_mb - paid_mb)
+
+            items.append(
+                {
+                    "id": str(it.id),
+                    "debt_date": it.debt_date.isoformat() if it.debt_date else None,
+                    "amount_mb": amount_mb,
+                    "paid_mb": paid_mb,
+                    "remaining_mb": remaining_mb,
+                    "is_paid": bool(it.is_paid),
+                    "paid_at": it.paid_at.isoformat() if it.paid_at else None,
+                    "note": it.note,
+                    "created_at": it.created_at.isoformat() if it.created_at else None,
+                }
+            )
+
+        return jsonify({"success": True, "items": items}), HTTPStatus.OK
+    except Exception as e:
+        current_app.logger.error(f"Error pada get_my_quota_debts: {e}", exc_info=True)
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Gagal mengambil data tunggakan per tanggal.")

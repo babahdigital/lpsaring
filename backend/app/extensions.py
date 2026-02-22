@@ -165,6 +165,10 @@ def make_celery_app(app=None):
             "task": "sync_hotspot_usage_task",
             "schedule": schedule_seconds,
         },
+        "enforce-end-of-month-debt-block": {
+            "task": "enforce_end_of_month_debt_block_task",
+            "schedule": 3600,
+        },
         "expire-stale-transactions": {
             "task": "expire_stale_transactions_task",
             "schedule": 60,

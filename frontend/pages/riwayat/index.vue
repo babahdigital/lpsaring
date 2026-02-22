@@ -4,6 +4,8 @@ import { useNuxtApp, useRuntimeConfig } from '#app'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useApiFetch } from '~/composables/useApiFetch'
+import type { UserQuotaResponse } from '~/types/user'
+import { useDebtSettlementPayment } from '~/composables/useDebtSettlementPayment'
 
 // --- Tipe Data ---
 interface Transaction {
@@ -63,6 +65,112 @@ const snackbar = reactive({
 
 const downloadingInvoice = ref<string | null>(null)
 
+const { paying: debtPaying, pay: payDebt } = useDebtSettlementPayment()
+
+function payManualDebtItem(debtId: string) {
+  if (typeof debtId !== 'string' || debtId.trim() === '')
+    return
+  void payDebt(debtId)
+}
+
+// --- Data Tunggakan Kuota (untuk tombol Lunasi di Riwayat) ---
+const quotaApiUrl = computed(() => '/users/me/quota')
+const { data: quotaData } = useApiFetch<UserQuotaResponse>(
+  quotaApiUrl,
+  {
+    server: false,
+    key: 'userQuotaDataRiwayat',
+    default: () => ({
+      success: false,
+      total_quota_purchased_mb: 0,
+      total_quota_used_mb: 0,
+      remaining_mb: 0,
+      quota_debt_auto_mb: 0,
+      quota_debt_manual_mb: 0,
+      quota_debt_total_mb: 0,
+      quota_debt_total_estimated_rp: 0,
+      hotspot_username: '...',
+      last_sync_time: null,
+      is_unlimited_user: false,
+      quota_expiry_date: null,
+    }),
+    immediate: true,
+    watch: false,
+  },
+)
+
+const debtAutoMb = computed(() => Number(quotaData.value?.quota_debt_auto_mb ?? 0))
+const debtManualMb = computed(() => Number(quotaData.value?.quota_debt_manual_mb ?? 0))
+const debtTotalMb = computed(() => Number(quotaData.value?.quota_debt_total_mb ?? (debtAutoMb.value + debtManualMb.value)))
+const debtEstimatedRp = computed(() => Number(quotaData.value?.quota_debt_total_estimated_rp ?? 0))
+
+const showDebtCard = computed(() => {
+  if (quotaData.value?.is_unlimited_user === true)
+    return false
+  return debtTotalMb.value > 0 && debtEstimatedRp.value > 0
+})
+
+function formatQuota(mbValue: number | null | undefined): string {
+  const mb = Number(mbValue ?? 0)
+  if (!Number.isFinite(mb) || mb <= 0)
+    return '0 MB'
+  if (mb < 1)
+    return `${Math.round(mb * 1024).toLocaleString('id-ID')} KB`
+  if (mb >= 1024)
+    return `${(Math.round((mb / 1024) * 100) / 100).toLocaleString('id-ID', { maximumFractionDigits: 2 })} GB`
+  return `${Math.round(mb).toLocaleString('id-ID')} MB`
+}
+
+// --- Data Tunggakan Manual (Per Tanggal) ---
+interface QuotaDebtItem {
+  id: string
+  debt_date: string | null
+  amount_mb: number
+  paid_mb: number
+  remaining_mb: number
+  is_paid: boolean
+  paid_at: string | null
+  note: string | null
+  created_at: string | null
+}
+
+interface QuotaDebtApiResponse {
+  success: boolean
+  items: QuotaDebtItem[]
+  message?: string
+}
+
+const quotaDebtsApiUrl = computed(() => '/users/me/quota-debts?status=open')
+const { data: quotaDebtsData, pending: quotaDebtsPending, error: quotaDebtsError, refresh: refreshQuotaDebts } = useApiFetch<QuotaDebtApiResponse>(
+  quotaDebtsApiUrl,
+  {
+    server: false,
+    key: 'userQuotaDebtsRiwayat',
+    default: () => ({ success: false, items: [] }),
+    immediate: true,
+    watch: false,
+  },
+)
+
+const quotaDebtItems = computed(() => {
+  const items = quotaDebtsData.value?.items
+  return Array.isArray(items) ? items : []
+})
+
+function formatDebtDate(dateStr: string | null | undefined): string {
+  if (!dateStr)
+    return '-'
+  try {
+    const date = new Date(dateStr)
+    if (Number.isNaN(date.getTime()))
+      return '-'
+    return new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium' }).format(date)
+  }
+  catch {
+    return '-'
+  }
+}
+
 // --- Header Tabel (Responsif) ---
 const headers = computed(() => {
   const baseHeaders = [
@@ -109,12 +217,17 @@ const apiRequest = useApiFetch(apiUrl, {
 
 const { data: apiResponse, pending: loading, error: fetchError, refresh: _loadItems } = apiRequest
 
+const hasLoadedOnce = ref(false)
+const showInitialSkeleton = computed(() => loading.value === true && hasLoadedOnce.value === false)
+const showSilentRefreshing = computed(() => loading.value === true && hasLoadedOnce.value === true)
+
 const normalizedResponse = computed<ApiResponse | null>(() => apiResponse.value as ApiResponse | null)
 
 watch(normalizedResponse, (newData) => {
   // PERBAIKAN: Pengecekan boolean eksplisit
   if (newData?.success === true && Array.isArray(newData.transactions)) {
     transactions.value = newData.transactions
+    hasLoadedOnce.value = true
 
     // PERBAIKAN: Pengecekan null eksplisit
     if (newData.pagination != null) {
@@ -127,6 +240,7 @@ watch(normalizedResponse, (newData) => {
   else if (newData != null && newData.success === false) {
     transactions.value = []
     totalItems.value = 0
+    hasLoadedOnce.value = true
   }
 }, { immediate: true })
 
@@ -282,11 +396,155 @@ useHead({ title: 'Riwayat Transaksi' })
   <VContainer fluid>
     <VRow>
       <VCol cols="12">
-        <h1 class="text-h5 mb-4">
-          Riwayat Transaksi
-        </h1>
+        <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-4">
+          <h1 class="text-h5 mb-0">
+            Riwayat Transaksi
+          </h1>
+
+          <VBtn
+            v-if="showDebtCard"
+            size="small"
+            color="warning"
+            variant="flat"
+            prepend-icon="tabler-credit-card"
+            :loading="debtPaying"
+            :disabled="debtPaying"
+            @click="payDebt"
+          >
+            Lunasi Semua
+          </VBtn>
+        </div>
+
+        <VCard v-if="showDebtCard" variant="tonal" class="mb-4">
+          <VCardText class="py-4">
+            <div class="d-flex align-center justify-space-between flex-wrap gap-2">
+              <div>
+                <div class="text-subtitle-1 font-weight-medium">Tunggakan Kuota</div>
+                <div class="text-caption text-medium-emphasis">Estimasi: {{ formatCurrency(debtEstimatedRp) }}</div>
+              </div>
+
+              <VBtn
+                size="small"
+                color="warning"
+                variant="flat"
+                prepend-icon="tabler-credit-card"
+                :loading="debtPaying"
+                :disabled="debtPaying"
+                @click="payDebt"
+              >
+                Lunasi Semua
+              </VBtn>
+            </div>
+
+            <VList class="card-list mt-3" density="compact">
+              <VListItem class="py-2">
+                <template #prepend>
+                  <VAvatar color="primary" variant="tonal" rounded size="38" class="me-1">
+                    <VIcon icon="tabler-cash" size="22" />
+                  </VAvatar>
+                </template>
+                <VListItemTitle class="me-2">Estimasi</VListItemTitle>
+                <template #append>
+                  <span class="text-body-1 font-weight-medium">{{ formatCurrency(debtEstimatedRp) }}</span>
+                </template>
+              </VListItem>
+
+              <VDivider class="my-2" />
+
+              <VListItem v-if="debtTotalMb > 0" class="py-2">
+                <template #prepend>
+                  <VAvatar color="info" variant="tonal" rounded size="38" class="me-1">
+                    <VIcon icon="tabler-robot" size="22" />
+                  </VAvatar>
+                </template>
+                <VListItemTitle class="me-2">Tunggakan otomatis</VListItemTitle>
+                <template #append>
+                  <span class="text-body-1 font-weight-medium">{{ formatQuota(debtAutoMb) }}</span>
+                </template>
+              </VListItem>
+
+              <VDivider v-if="debtManualMb > 0" class="my-2" />
+
+              <VListItem v-if="debtManualMb > 0" class="py-2">
+                <template #prepend>
+                  <VAvatar color="secondary" variant="tonal" rounded size="38" class="me-1">
+                    <VIcon icon="tabler-hand-stop" size="22" />
+                  </VAvatar>
+                </template>
+                <VListItemTitle class="me-2">Tunggakan manual</VListItemTitle>
+                <template #append>
+                  <span class="text-body-1 font-weight-medium">{{ formatQuota(debtManualMb) }}</span>
+                </template>
+              </VListItem>
+            </VList>
+
+            <div class="mt-4">
+              <div class="text-subtitle-2 font-weight-medium mb-2">
+                Hutang manual per tanggal
+              </div>
+
+              <VAlert v-if="quotaDebtsError" type="error" variant="tonal" density="compact" class="mb-3">
+                Gagal memuat data hutang per tanggal.
+              </VAlert>
+
+              <div v-if="quotaDebtsPending" class="d-flex justify-center py-4">
+                <VProgressCircular indeterminate color="primary" />
+              </div>
+
+              <VTable v-else density="compact">
+                <thead>
+                  <tr>
+                    <th>Tanggal</th>
+                    <th class="text-end">Jumlah</th>
+                    <th class="text-end">Dibayar</th>
+                    <th class="text-end">Sisa</th>
+                    <th>Catatan</th>
+                    <th class="text-end">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="it in quotaDebtItems" :key="it.id">
+                    <td>{{ formatDebtDate(it.debt_date) }}</td>
+                    <td class="text-end">{{ formatQuota(it.amount_mb) }}</td>
+                    <td class="text-end">{{ formatQuota(it.paid_mb) }}</td>
+                    <td class="text-end font-weight-medium">{{ formatQuota(it.remaining_mb) }}</td>
+                    <td class="text-truncate" style="max-width: 220px">{{ it.note || '-' }}</td>
+                    <td class="text-end">
+                      <VBtn
+                        v-if="it.remaining_mb > 0"
+                        size="x-small"
+                        color="warning"
+                        variant="tonal"
+                        prepend-icon="tabler-credit-card"
+                        :loading="debtPaying"
+                        :disabled="debtPaying"
+                        @click="payManualDebtItem(it.id)"
+                      >
+                        Lunasi
+                      </VBtn>
+                    </td>
+                  </tr>
+                  <tr v-if="quotaDebtItems.length === 0">
+                    <td colspan="6" class="text-center text-medium-emphasis py-3">
+                      Tidak ada hutang manual yang belum lunas.
+                    </td>
+                  </tr>
+                </tbody>
+              </VTable>
+            </div>
+          </VCardText>
+        </VCard>
+
         <VCard>
           <VCardText>
+            <VProgressLinear
+              v-if="showSilentRefreshing"
+              indeterminate
+              color="primary"
+              height="2"
+              class="mb-4"
+            />
+
             <VAlert
               v-if="fetchError"
               type="error"
@@ -352,7 +610,7 @@ useHead({ title: 'Riwayat Transaksi' })
                   Belum ada riwayat transaksi.
                 </div>
 
-                <div v-if="loading" class="d-flex flex-column gap-3">
+                <div v-if="showInitialSkeleton" class="d-flex flex-column gap-3">
                   <VSkeletonLoader
                     v-for="i in 3"
                     :key="i"
@@ -377,7 +635,7 @@ useHead({ title: 'Riwayat Transaksi' })
                 :headers="headers"
                 :items="transactions"
                 :items-length="totalItems"
-                :loading="loading"
+                :loading="showInitialSkeleton"
                 :items-per-page="itemsPerPage"
                 :page="currentPage"
                 density="compact"

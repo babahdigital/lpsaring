@@ -117,6 +117,9 @@ const isMobile = computed(() => (isHydrated.value ? smAndDown.value : false))
 
 const users = ref<User[]>([])
 const loading = ref(true)
+const hasLoadedOnce = ref(false)
+const showInitialSkeleton = computed(() => loading.value === true && hasLoadedOnce.value === false)
+const showSilentRefreshing = computed(() => loading.value === true && hasLoadedOnce.value === true)
 const totalUsers = ref(0)
 const search = ref('')
 const options = ref<Options>({ page: 1, itemsPerPage: 10, sortBy: [{ key: 'created_at', order: 'desc' }] })
@@ -174,6 +177,11 @@ const statusMap: Record<User['approval_status'], { text: string, color: string }
 
 const getRoleMeta = (role: User['role']) => roleMap[role]
 const getStatusMeta = (status: User['approval_status']) => statusMap[status]
+
+watch(loading, (val) => {
+  if (val === false)
+    hasLoadedOnce.value = true
+}, { immediate: true })
 const roleFilterOptions = computed(() => {
   const allFilters = [{ text: 'User', value: 'USER' }, { text: 'Komandan', value: 'KOMANDAN' }]
   if (authStore.isAdmin === true || authStore.isSuperAdmin === true)
@@ -286,11 +294,17 @@ async function createQrisBillForSelectedUser() {
       user_id: billSelectedUser.value.id,
       package_id: billSelectedPackage.value.id,
     }
-    const resp = await $api<{ message: string, order_id: string, status: string, qr_code_url?: string | null }>('/admin/transactions/qris', {
+    const resp = await $api<{ message: string, order_id: string, status: string, qr_code_url?: string | null, whatsapp_sent?: boolean }>('/admin/transactions/qris', {
       method: 'POST',
       body: payload,
     })
-    showSnackbar({ type: 'success', title: 'Berhasil', text: `${resp.message} (${resp.order_id})` })
+
+    const sent = resp.whatsapp_sent !== false
+    showSnackbar({
+      type: sent ? 'success' : 'warning',
+      title: sent ? 'Berhasil' : 'Perlu Perhatian',
+      text: `${resp.message} (${resp.order_id})`,
+    })
     isCreateBillDialogOpen.value = false
     await fetchUsers()
   }
@@ -811,7 +825,8 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
     </VCard>
 
     <VCard class="rounded-lg">
-      <VDataTableServer v-if="!isMobile" v-model:options="options" :headers="headers" :items="users" :items-length="totalUsers" :loading="loading" item-value="id" class="text-no-wrap">
+      <VProgressLinear v-if="showSilentRefreshing" indeterminate color="primary" height="2" />
+      <VDataTableServer v-if="!isMobile" v-model:options="options" :headers="headers" :items="users" :items-length="totalUsers" :loading="showInitialSkeleton" item-value="id" class="text-no-wrap">
         <template #item.full_name="{ item }">
           <div class="d-flex align-center py-2">
             <VAvatar size="38" class="me-3" :color="getRoleMeta(item.role as User['role']).color" variant="tonal">
@@ -907,7 +922,12 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
         </template>
       </VDataTableServer>
       <div v-else class="pa-4">
-        <div v-if="users.length === 0 && loading === false" class="py-8 text-center text-medium-emphasis">
+        <div v-if="showInitialSkeleton" class="pa-5">
+          <VCard v-for="i in 3" :key="i" class="mb-3">
+            <VSkeletonLoader type="list-item-two-line" />
+          </VCard>
+        </div>
+        <div v-else-if="users.length === 0 && loading === false" class="py-8 text-center text-medium-emphasis">
           <VIcon icon="tabler-database-off" size="32" class="mb-2" /><p>Tidak ada data pengguna.</p>
         </div>
         <VCard v-for="user in users" v-else :key="user.id" class="mb-3">

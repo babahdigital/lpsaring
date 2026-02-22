@@ -32,6 +32,9 @@ const snackbar = useSnackbar()
 
 const packages = ref<Package[]>([])
 const loading = ref(true)
+const hasLoadedOnce = ref(false)
+const showInitialSkeleton = computed(() => loading.value === true && hasLoadedOnce.value === false)
+const showSilentRefreshing = computed(() => loading.value === true && hasLoadedOnce.value === true)
 const totalPackages = ref(0)
 const options = ref({ page: 1, itemsPerPage: 10, sortBy: [] as any[] })
 
@@ -91,6 +94,7 @@ async function fetchPackages() {
   }
   finally {
     loading.value = false
+    hasLoadedOnce.value = true
   }
 }
 
@@ -254,13 +258,20 @@ useHead({ title: 'Manajemen Paket Jualan' })
         </div>
       </VCardText>
 
+      <VProgressLinear
+        v-if="showSilentRefreshing"
+        indeterminate
+        color="primary"
+        height="2"
+      />
+
       <VDataTableServer
         v-if="!isMobile"
         v-model:options="options"
         :headers="headers"
         :items="packages"
         :items-length="totalPackages"
-        :loading="loading"
+        :loading="showInitialSkeleton"
         density="comfortable"
         @update:options="fetchPackages"
       >

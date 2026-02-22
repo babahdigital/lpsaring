@@ -67,6 +67,10 @@ const snackbar = ref({
   icon: 'tabler-check',
 })
 const isHydrated = ref(false)
+const hasLoadedOnce = ref(false)
+
+const showInitialSkeleton = computed(() => loading.value === true && hasLoadedOnce.value === false)
+const showSilentRefreshing = computed(() => loading.value === true && hasLoadedOnce.value === true)
 
 // --- Data Fetching Reaktif dengan useAsyncData ---
 const queryParams = computed(() => ({
@@ -119,6 +123,11 @@ watch(error, (newError) => {
   if (newError !== null && newError !== undefined)
     showSnackbar(extractErrorMessage(newError, 'Gagal memuat data transaksi'), 'error')
 })
+
+watch(loading, (val) => {
+  if (val === false)
+    hasLoadedOnce.value = true
+}, { immediate: true })
 
 // --- Konfigurasi & Format ---
 const headers = [
@@ -639,6 +648,12 @@ useHead({ title: 'Laporan Penjualan' })
           />
         </div>
       </VCardText>
+      <VProgressLinear
+        v-if="showSilentRefreshing"
+        indeterminate
+        color="primary"
+        height="2"
+      />
       <div class="px-6 pb-6">
         <VDataTableServer
           v-model:items-per-page="options.itemsPerPage"
@@ -648,7 +663,7 @@ useHead({ title: 'Laporan Penjualan' })
           :headers="headers"
           :items="transactions"
           :items-length="totalTransactions"
-          :loading="loading"
+          :loading="showInitialSkeleton"
           item-value="order_id"
           class="elevation-1 rounded data-table"
         >

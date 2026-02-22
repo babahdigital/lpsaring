@@ -33,6 +33,10 @@ if not all([MIKROTIK_HOST, MIKROTIK_USERNAME, MIKROTIK_PASSWORD]):
     print("❌ GAGAL: Harap pastikan MIKROTIK_HOST, MIKROTIK_USERNAME, dan MIKROTIK_PASSWORD terisi di file .env")
     sys.exit(1)
 
+assert isinstance(MIKROTIK_HOST, str)
+assert isinstance(MIKROTIK_USERNAME, str)
+assert isinstance(MIKROTIK_PASSWORD, str)
+
 # Inisialisasi pool koneksi
 try:
     print("🔄 Mencoba menginisialisasi pool koneksi...")
@@ -74,7 +78,7 @@ try:
     print("🎉 Tes Selesai. Koneksi dan operasi tulis ke Mikrotik BERHASIL.")
 
 except RouterOsApiError as e:
-    print(f"❌ GAGAL: Terjadi error API RouterOS. Pesan: {e.original_message}")
+    print(f"❌ GAGAL: Terjadi error API RouterOS. Pesan: {getattr(e, 'original_message', str(e))}")
 except Exception as e:
     print(f"❌ GAGAL: Terjadi error tidak terduga. Error: {e}")
 finally:

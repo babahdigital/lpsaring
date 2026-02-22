@@ -195,6 +195,11 @@ services:
   nginx:
     image: nginx:stable-alpine
     container_name: hotspot_prod_nginx_proxy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "10"
     # Tidak mem-publish port ke host.
     # Produksi WAJIB diakses melalui Cloudflare Tunnel.
     volumes:
@@ -218,6 +223,11 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: hotspot_prod_cloudflared
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "10"
     command: tunnel --no-autoupdate --protocol http2 run --token ${CLOUDFLARED_TUNNEL_TOKEN:?Set CLOUDFLARED_TUNNEL_TOKEN in .env.prod}
     environment:
       - TUNNEL_TOKEN=${CLOUDFLARED_TUNNEL_TOKEN:?Set CLOUDFLARED_TUNNEL_TOKEN in .env.prod}

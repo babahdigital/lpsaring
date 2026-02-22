@@ -88,6 +88,8 @@ def handle_my_profile(current_user_id):
             db.session.rollback()
             abort(HTTPStatus.INTERNAL_SERVER_ERROR, description=f"Kesalahan internal: {str(e)}")
 
+    abort(HTTPStatus.METHOD_NOT_ALLOWED, description="Metode tidak didukung.")
+
 
 @profile_bp.route("/me/reset-hotspot-password", methods=["POST"])
 @token_required
@@ -112,11 +114,10 @@ def reset_my_hotspot_password(current_user_id):
         if not api_conn:
             abort(HTTPStatus.INTERNAL_SERVER_ERROR, "Gagal koneksi ke sistem hotspot.")
 
-        mikrotik_profile_name = ""
-        if hasattr(user, "current_package_profile_name") and user.current_package_profile_name:
-            mikrotik_profile_name = user.current_package_profile_name
-        else:  # Fallback jika profil saat ini tidak tersimpan di user
+        mikrotik_profile_name = str(getattr(user, "current_package_profile_name", "") or "").strip()
+        if not mikrotik_profile_name:
             mikrotik_profile_name = settings_service.get_setting("MIKROTIK_DEFAULT_PROFILE", "default")
+        mikrotik_profile_name = str(mikrotik_profile_name or "default")
 
         success, msg = activate_or_update_hotspot_user(
             api_connection=api_conn,

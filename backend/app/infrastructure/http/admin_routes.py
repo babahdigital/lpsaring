@@ -1528,7 +1528,20 @@ def create_qris_bill(current_admin: User):
         tx.payment_method = "qris"
         session.add(tx)
 
-        core = get_midtrans_core_api_client()
+        try:
+            core = get_midtrans_core_api_client()
+        except ValueError as e_cfg:
+            # Konfigurasi Midtrans (SERVER KEY/CLIENT KEY) belum terpasang di server.
+            session.rollback()
+            return (
+                jsonify(
+                    {
+                        "message": "Midtrans belum dikonfigurasi di server. Pastikan SERVER KEY (dan CLIENT KEY jika diperlukan) sudah terpasang.",
+                        "details": str(e_cfg),
+                    }
+                ),
+                HTTPStatus.BAD_REQUEST,
+            )
 
         base_payload: dict[str, object] = {
             "transaction_details": {"order_id": order_id, "gross_amount": amount},
@@ -1570,8 +1583,17 @@ def create_qris_bill(current_admin: User):
             raw_message = getattr(e_charge, "message", "") or ""
             parsed = _parse_midtrans_api_response_from_message(raw_message) or {}
             status_message = str(parsed.get("status_message") or "").strip()
+            status_message_lower = status_message.lower()
             # Jika channel QRIS native belum aktif, fallback ke GoPay Dynamic QRIS (masih scan QRIS).
-            if "Payment channel is not activated" in status_message:
+            if any(
+                needle in status_message_lower
+                for needle in (
+                    "payment channel is not activated",
+                    "payment channel is not active",
+                    "not activated",
+                    "not active",
+                )
+            ):
                 current_app.logger.warning(
                     "Midtrans QRIS channel not active; fallback to GoPay Dynamic QRIS. order_id=%s",
                     order_id,
@@ -1649,15 +1671,23 @@ def create_qris_bill(current_admin: User):
         if not sent:
             send_whatsapp_message(phone_number, f"{caption}\n\nQR: {tx.qr_code_url or '-'}")
 
-        return jsonify(
-            {
-                "message": "Tagihan QRIS berhasil dibuat.",
-                "order_id": order_id,
-                "status": tx.status.value,
-                "qr_code_url": tx.qr_code_url,
-                "payment_method": tx.payment_method,
-            }
-        ), HTTPStatus.OK
+        message = "Tagihan QRIS berhasil dibuat."
+        if not sent:
+            message = "Tagihan QRIS berhasil dibuat, namun WhatsApp gagal terkirim (cek konfigurasi WA/nomor tujuan)."
+
+        return (
+            jsonify(
+                {
+                    "message": message,
+                    "order_id": order_id,
+                    "status": tx.status.value,
+                    "qr_code_url": tx.qr_code_url,
+                    "payment_method": tx.payment_method,
+                    "whatsapp_sent": bool(sent),
+                }
+            ),
+            HTTPStatus.OK,
+        )
 
     except midtransclient.error_midtrans.MidtransAPIError as e:
         session.rollback()
@@ -1686,6 +1716,9 @@ def create_qris_bill(current_admin: User):
             # Jika parsing gagal, tetap lanjutkan dengan message mentah.
             pass
 
+        is_prod = bool(current_app.config.get("MIDTRANS_IS_PRODUCTION", False))
+        env_label = "Production" if is_prod else "Sandbox"
+
         user_message = "Gagal membuat tagihan QRIS di Midtrans."
         if midtrans_status_message:
             user_message = f"Gagal membuat tagihan QRIS di Midtrans: {midtrans_status_message}"
@@ -1703,10 +1736,14 @@ def create_qris_bill(current_admin: User):
 
                 if tried == "gopay":
                     user_message += (
-                        " (Channel GoPay/GoPay Dynamic QRIS belum aktif di Midtrans Production untuk Core API.)"
+                        f" (Channel GoPay/QRIS Dinamis GoPay belum aktif di Midtrans {env_label} untuk Core API. "
+                        "Jika sudah aktif di Dashboard namun masih ditolak, pastikan SERVER KEY yang digunakan sesuai environment.)"
                     )
                 else:
-                    user_message += " (Channel Other QRIS belum aktif di Midtrans Production.)"
+                    user_message += (
+                        f" (Channel Other QRIS belum aktif di Midtrans {env_label}. "
+                        "Jika Anda memakai QRIS Dinamis GoPay, channel ini bisa saja tidak diaktifkan.)"
+                    )
 
                 if used_fallback:
                     user_message += " Sudah dicoba fallback ke GoPay Dynamic QRIS, namun masih ditolak."

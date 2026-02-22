@@ -545,10 +545,10 @@ class Transaction(db.Model):
         ForeignKey("users.id", ondelete="SET NULL", name="fk_transactions_user_id_users"),
         nullable=True,
     )
-    package_id: Mapped[uuid.UUID] = mapped_column(
+    package_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("packages.id", ondelete="RESTRICT", name="fk_transactions_package_id_packages"),
-        nullable=False,
+        nullable=True,
     )
     midtrans_order_id: Mapped[str] = mapped_column(String(100), nullable=False)
     midtrans_transaction_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
@@ -577,7 +577,7 @@ class Transaction(db.Model):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
     user: Mapped[Optional["User"]] = relationship("User", back_populates="transactions", lazy="select")
-    package: Mapped["Package"] = relationship("Package", back_populates="transactions", lazy="select")
+    package: Mapped[Optional["Package"]] = relationship("Package", back_populates="transactions", lazy="select")
     events: Mapped[List["TransactionEvent"]] = relationship(
         "TransactionEvent",
         back_populates="transaction",

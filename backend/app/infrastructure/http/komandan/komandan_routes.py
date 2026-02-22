@@ -133,15 +133,16 @@ def create_quota_request(current_user_id: uuid.UUID):
             if data_input.requested_duration_days and data_input.requested_duration_days > max_days:
                 return jsonify({"message": "Durasi kuota melebihi batas maksimum."}), HTTPStatus.BAD_REQUEST
 
-        new_request = QuotaRequest(
-            requester_id=current_user.id,
-            status=RequestStatus.PENDING,
-            request_type=data_input.request_type,
-            request_details=json.dumps(
+        new_request = QuotaRequest()
+        new_request.requester_id = current_user.id
+        new_request.status = RequestStatus.PENDING
+        new_request.request_type = data_input.request_type
+        new_request.request_details = (
+            json.dumps(
                 {"requested_mb": data_input.requested_mb, "requested_duration_days": data_input.requested_duration_days}
             )
             if data_input.request_type == RequestType.QUOTA
-            else None,
+            else None
         )
 
         db.session.add(new_request)
@@ -206,7 +207,7 @@ def get_my_requests_history(current_user_id: uuid.UUID):
         page = request.args.get("page", 1, type=int)
         per_page = min(request.args.get("itemsPerPage", 10, type=int), 50)
 
-        sort_by = request.args.get("sortBy")
+        sort_by = request.args.get("sortBy") or "created_at"
         sort_order = request.args.get("sortOrder", "desc").lower()
 
         sortable_columns = {
@@ -214,7 +215,7 @@ def get_my_requests_history(current_user_id: uuid.UUID):
             "status": QuotaRequest.status,
         }
 
-        order_column = sortable_columns.get(sort_by, QuotaRequest.created_at)
+        order_column = sortable_columns.get(str(sort_by), QuotaRequest.created_at)
         order_expression = desc(order_column) if sort_order == "desc" else asc(order_column)
 
         query = (
