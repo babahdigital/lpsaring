@@ -68,6 +68,7 @@ function _refreshAllData() {
       :items-per-page="5"
       density="compact"
       class="text-no-wrap"
+      hide-default-footer
     >
       <template #no-data>
         <div class="text-center py-4">

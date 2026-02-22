@@ -279,6 +279,7 @@ useHead({ title: 'Manajemen Paket Jualan' })
         :loading="showInitialSkeleton"
         density="comfortable"
         @update:options="fetchPackages"
+        hide-default-footer
       >
         <template #item.details="{ item }">
           <div class="d-flex flex-column py-2">
@@ -352,6 +353,14 @@ useHead({ title: 'Manajemen Paket Jualan' })
           </tr>
         </template>
       </VDataTableServer>
+
+      <TablePagination
+        v-if="!isMobile && totalPackages > 0"
+        :page="options.page"
+        :items-per-page="options.itemsPerPage"
+        :total-items="totalPackages"
+        @update:page="handleMobilePackagesPageUpdate"
+      />
 
       <div
         v-else

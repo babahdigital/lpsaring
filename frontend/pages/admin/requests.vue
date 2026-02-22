@@ -211,7 +211,7 @@ function formatPhoneNumber(phone: string | null | undefined): string { // Perbai
         <VCardSubtitle>Proses permintaan kuota dan akses dari para Komandan.</VCardSubtitle>
         <template #append>
           <div :style="{ width: isMobile ? '100%' : '250px' }">
-            <VSelect v-model="statusFilter" :items="filterItems" label="Filter Status" density="compact" hide-details />
+            <AppSelect v-model="statusFilter" :items="filterItems" label="Filter Status" density="compact" hide-details />
           </div>
         </template>
       </VCardItem>
@@ -224,7 +224,7 @@ function formatPhoneNumber(phone: string | null | undefined): string { // Perbai
         color="primary"
         height="2"
       />
-      <VDataTableServer v-model:options="options" :headers="headers" :items="requests" :items-length="totalRequests" :loading="showInitialSkeleton" item-value="id" class="text-no-wrap">
+      <VDataTableServer v-model:options="options" :headers="headers" :items="requests" :items-length="totalRequests" :loading="showInitialSkeleton" item-value="id" class="text-no-wrap" hide-default-footer>
         <template #item.requester.full_name="{ item }">
           <div class="d-flex align-center py-2">
             <VAvatar color="secondary" size="38" variant="tonal" class="me-3">
@@ -296,6 +296,14 @@ function formatPhoneNumber(phone: string | null | undefined): string { // Perbai
           <VSkeletonLoader type="table-row@10" />
         </template>
       </VDataTableServer>
+
+      <TablePagination
+        v-if="totalRequests > 0"
+        :page="options.page"
+        :items-per-page="options.itemsPerPage"
+        :total-items="totalRequests"
+        @update:page="val => (options.page = val)"
+      />
     </VCard>
 
     <ProcessRequestDialog v-if="selectedRequest" :is-dialog-visible="dialog" :request-data="selectedRequest" @update:is-dialog-visible="handleDialogClose" @processed="handleDialogClose(true)" />

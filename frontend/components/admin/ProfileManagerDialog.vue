@@ -170,6 +170,7 @@ async function handleAction(type: 'create' | 'update' | 'delete') {
             density="comfortable"
             class="elevation-0"
             @update:options="fetchProfiles"
+            hide-default-footer
           >
             <template #item.duration_days="{ item }">
               {{ item.duration_days }} Hari
@@ -215,13 +216,12 @@ async function handleAction(type: 'create' | 'update' | 'delete') {
             </template>
           </VDataTableServer>
 
-          <VPagination
-            v-if="totalProfiles > 0 && totalProfiles > options.itemsPerPage"
-            v-model="options.page"
-            :length="Math.ceil(totalProfiles / options.itemsPerPage)"
-            :total-visible="5"
-            density="comfortable"
-            class="mt-4"
+          <TablePagination
+            v-if="totalProfiles > 0"
+            :page="options.page"
+            :items-per-page="options.itemsPerPage"
+            :total-items="totalProfiles"
+            @update:page="val => (options.page = val)"
           />
         </VCard>
       </VCardText>

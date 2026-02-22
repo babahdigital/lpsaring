@@ -161,7 +161,7 @@ watch(loading, (val) => {
           <VCardSubtitle>Pilih jenis notifikasi yang ingin Anda kelola penerimanya.</VCardSubtitle>
         </VCardItem>
         <VCardText>
-          <VSelect
+          <AppSelect
             v-model="selectedNotificationType"
             :items="notificationTypes"
             item-title="title"
@@ -179,7 +179,7 @@ watch(loading, (val) => {
             <template #item="{ props, item }">
               <VListItem v-bind="props" :prepend-icon="item.raw.icon" :title="item.raw.title" :subtitle="item.raw.subtitle" />
             </template>
-          </VSelect>
+          </AppSelect>
         </VCardText>
       </VCard>
 

@@ -167,6 +167,7 @@ watch(
           density="compact"
           item-key="id"
           class="elevation-0"
+          hide-default-footer
         >
           <template #headers>
             <tr>

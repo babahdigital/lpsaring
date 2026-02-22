@@ -601,13 +601,12 @@ useHead({ title: 'Riwayat Transaksi' })
                 </div>
 
                 <!-- Pagination Mobile -->
-                <VPagination
+                <TablePagination
                   v-if="totalItems > 0"
-                  v-model="currentPage"
-                  :length="Math.ceil(totalItems / itemsPerPage)"
-                  density="comfortable"
-                  rounded="circle"
-                  class="mt-4"
+                  :page="currentPage"
+                  :items-per-page="itemsPerPage"
+                  :total-items="totalItems"
+                  @update:page="val => (currentPage = val)"
                 />
               </div>
 
@@ -629,6 +628,7 @@ useHead({ title: 'Riwayat Transaksi' })
                   { value: 50, title: '50' },
                 ]"
                 @update:options="handleOptionsUpdate"
+                hide-default-footer
               >
                 <template #[`item.created_at`]="props">
                   {{ formatDateTime(props.item.created_at) }}
@@ -671,6 +671,14 @@ useHead({ title: 'Riwayat Transaksi' })
                   <VSkeletonLoader type="table-row@5" />
                 </template>
               </VDataTableServer>
+
+              <TablePagination
+                v-if="!isMobile && totalItems > 0"
+                :page="currentPage"
+                :items-per-page="itemsPerPage"
+                :total-items="totalItems"
+                @update:page="val => (currentPage = val)"
+              />
 
               <template #placeholder>
                 <VSkeletonLoader type="table@1" />

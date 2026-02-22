@@ -139,6 +139,7 @@ function closeMainDialog() {
           :loading="loading"
           density="compact"
           class="border rounded"
+          hide-default-footer
         >
           <template #[`item.actions`]="{ item }">
             <div class="d-flex gap-1 justify-end">

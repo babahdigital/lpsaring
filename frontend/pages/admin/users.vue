@@ -792,7 +792,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
       <VCardText v-if="isHydrated && !isMobile">
         <VRow align="center" class="mt-1" dense>
           <VCol cols="12" md="4">
-            <VSelect
+            <AppSelect
               v-model="roleFilter"
               :items="roleFilterDropdownItems"
               item-title="title"
@@ -804,7 +804,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
             />
           </VCol>
           <VCol cols="12" md="4">
-            <VSelect
+            <AppSelect
               v-model="statusFilter"
               :items="statusFilterDropdownItems"
               item-title="title"
@@ -816,7 +816,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
             />
           </VCol>
           <VCol cols="12" md="4">
-            <VSelect
+            <AppSelect
               v-model="tampingFilter"
               :items="tampingFilterDropdownItems"
               item-title="title"
@@ -832,7 +832,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 
     <VCard class="rounded-lg">
       <VProgressLinear v-if="showSilentRefreshing" indeterminate color="primary" height="2" />
-      <VDataTableServer v-if="!isMobile" v-model:options="options" :headers="headers" :items="users" :items-length="totalUsers" :loading="showInitialSkeleton" item-value="id" class="text-no-wrap">
+      <VDataTableServer v-if="!isMobile" v-model:options="options" :headers="headers" :items="users" :items-length="totalUsers" :loading="showInitialSkeleton" item-value="id" class="text-no-wrap" hide-default-footer>
         <template #item.full_name="{ item }">
           <div class="d-flex align-center py-2">
             <VAvatar size="38" class="me-3" :color="getRoleMeta(item.role as User['role']).color" variant="tonal">
@@ -927,6 +927,14 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
           </div>
         </template>
       </VDataTableServer>
+
+      <TablePagination
+        v-if="!isMobile && totalUsers > 0"
+        :page="options.page"
+        :items-per-page="options.itemsPerPage"
+        :total-items="totalUsers"
+        @update:page="handleMobileUsersPageUpdate"
+      />
       <div v-else class="pa-4">
         <div v-if="showInitialSkeleton" class="pa-5">
           <VCard v-for="i in 3" :key="i" class="mb-3">

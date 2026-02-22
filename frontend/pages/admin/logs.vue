@@ -371,7 +371,7 @@ useHead({ title: 'Log Aktivitas Admin' })
       />
 
       <client-only>
-        <VDataTableServer v-if="!isMobile" v-model:options="options" :headers="headers" :items="logList" :items-length="totalLogs" :loading="showInitialSkeleton" class="text-no-wrap" item-value="id">
+        <VDataTableServer v-if="!isMobile" v-model:options="options" :headers="headers" :items="logList" :items-length="totalLogs" :loading="showInitialSkeleton" class="text-no-wrap" item-value="id" hide-default-footer>
           <template #item.created_at="{ item }">
             <VTooltip location="top">
               <template #activator="{ props }">
@@ -418,6 +418,14 @@ useHead({ title: 'Log Aktivitas Admin' })
           </template>
         </VDataTableServer>
 
+        <TablePagination
+          v-if="!isMobile && totalLogs > 0"
+          :page="options.page"
+          :items-per-page="options.itemsPerPage"
+          :total-items="totalLogs"
+          @update:page="val => (options.page = val)"
+        />
+
         <div v-else class="pa-4">
           <div v-if="showInitialSkeleton" class="pa-5">
             <VCard v-for="i in 3" :key="i" class="mb-3">
@@ -450,6 +458,14 @@ useHead({ title: 'Log Aktivitas Admin' })
               <div><strong>Detail:</strong> {{ formatLogDetails(log) }}</div>
             </VCardText>
           </VCard>
+
+          <TablePagination
+            v-if="totalLogs > 0"
+            :page="options.page"
+            :items-per-page="options.itemsPerPage"
+            :total-items="totalLogs"
+            @update:page="val => (options.page = val)"
+          />
         </div>
 
         <template #fallback>

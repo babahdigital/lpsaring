@@ -666,6 +666,7 @@ useHead({ title: 'Laporan Penjualan' })
           :loading="showInitialSkeleton"
           item-value="order_id"
           class="elevation-1 rounded data-table"
+          hide-default-footer
         >
           <template #item.user.full_name="{ item }">
             <span class="font-weight-medium user-name">{{ item.user.full_name }}</span>
@@ -877,6 +878,14 @@ useHead({ title: 'Laporan Penjualan' })
             </div>
           </template>
         </VDataTableServer>
+
+        <TablePagination
+          v-if="totalTransactions > 0"
+          :page="options.page"
+          :items-per-page="options.itemsPerPage"
+          :total-items="totalTransactions"
+          @update:page="val => (options.page = val)"
+        />
       </div>
     </VCard>
 

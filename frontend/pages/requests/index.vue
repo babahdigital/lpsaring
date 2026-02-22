@@ -172,6 +172,7 @@ useHead({ title: 'Request Quota' })
         :loading="showInitialSkeleton"
         item-value="id"
         class="text-no-wrap"
+        hide-default-footer
       >
         <template #item.created_at="{ item }">
           <span class="text-high-emphasis">{{ formatDateTime(item.created_at) }}</span>
@@ -237,6 +238,14 @@ useHead({ title: 'Request Quota' })
           <VSkeletonLoader v-if="showInitialSkeleton" type="table-row@5" />
         </template>
       </VDataTableServer>
+
+      <TablePagination
+        v-if="totalRequests > 0"
+        :page="options.page"
+        :items-per-page="options.itemsPerPage"
+        :total-items="totalRequests"
+        @update:page="val => (options.page = val)"
+      />
     </VCard>
 
     <RequestFormDialog

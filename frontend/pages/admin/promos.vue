@@ -308,6 +308,7 @@ onMounted(() => {
       class="text-no-wrap"
       item-value="id"
       @update:options="options = $event"
+      hide-default-footer
     >
       <template #item.name="{ item }">
         <div class="d-flex flex-column py-2">
@@ -351,6 +352,14 @@ onMounted(() => {
         </div>
       </template>
     </VDataTableServer>
+
+    <TablePagination
+      v-if="totalPromos > 0"
+      :page="options.page"
+      :items-per-page="options.itemsPerPage"
+      :total-items="totalPromos"
+      @update:page="val => (options.page = val)"
+    />
   </VCard>
 
   <VDialog v-if="isHydrated" v-model="isEditorDialogVisible" max-width="800px" persistent scrollable>
@@ -378,7 +387,7 @@ onMounted(() => {
               </VCol>
 
               <VCol cols="12" sm="6" md="4">
-                <VSelect
+                <AppSelect
                   v-model="editedItem.status"
                   :items="statusOptions"
                   label="Status"
@@ -387,7 +396,7 @@ onMounted(() => {
               </VCol>
 
               <VCol cols="12" sm="6" md="8">
-                <VSelect
+                <AppSelect
                   v-model="editedItem.event_type"
                   :items="typeOptions"
                   label="Tipe Event"

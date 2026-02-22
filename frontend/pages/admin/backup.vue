@@ -32,6 +32,22 @@ const selectedBackup = ref<BackupItem | null>(null)
 const uploadFile = ref<File | null>(null)
 const restoreReplaceUsers = ref(false)
 
+const page = ref(1)
+const itemsPerPage = ref(10)
+
+const totalBackups = computed(() => backups.value.length)
+const pagedBackups = computed(() => {
+  const startIndex = (page.value - 1) * itemsPerPage.value
+  const endIndex = startIndex + itemsPerPage.value
+  return backups.value.slice(startIndex, endIndex)
+})
+
+watch(totalBackups, () => {
+  const maxPage = Math.max(1, Math.ceil(totalBackups.value / itemsPerPage.value))
+  if (page.value > maxPage)
+    page.value = maxPage
+})
+
 function formatSize(bytes: number) {
   if (!bytes)
     return '0 B'
@@ -207,9 +223,10 @@ watch(loading, (val) => {
     <VCard>
       <VProgressLinear v-if="showSilentRefreshing" indeterminate color="primary" height="2" />
       <VDataTable
-        :items="backups"
+        :items="pagedBackups"
         :loading="showInitialSkeleton"
         class="text-no-wrap"
+        hide-default-footer
       >
         <template #headers>
           <tr>
@@ -255,6 +272,14 @@ watch(loading, (val) => {
           </div>
         </template>
       </VDataTable>
+
+      <TablePagination
+        v-if="totalBackups > 0"
+        :page="page"
+        :items-per-page="itemsPerPage"
+        :total-items="totalBackups"
+        @update:page="val => (page = val)"
+      />
     </VCard>
 
     <VDialog

@@ -311,7 +311,7 @@ onMounted(fetchUsers)
         />
       </VCol>
       <VCol cols="12" md="3">
-        <VSelect
+        <AppSelect
           v-model="roleFilter"
           :items="roleOptions"
           label="Filter Peran"
@@ -337,6 +337,7 @@ onMounted(fetchUsers)
         :items-length="totalUsers"
         :loading="showInitialSkeleton"
         class="text-no-wrap"
+        hide-default-footer
       >
         <template #item.role="{ item }">
           <VChip label size="small" color="primary" variant="tonal">
@@ -367,6 +368,14 @@ onMounted(fetchUsers)
           <span v-else class="text-disabled">Tidak tersedia</span>
         </template>
       </VDataTableServer>
+
+      <TablePagination
+        v-if="totalUsers > 0"
+        :page="options.page"
+        :items-per-page="options.itemsPerPage"
+        :total-items="totalUsers"
+        @update:page="val => (options.page = val)"
+      />
     </VCard>
   </div>
 </template>
