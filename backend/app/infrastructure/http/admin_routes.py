@@ -1577,7 +1577,14 @@ def create_qris_bill(current_admin: User):
         try:
             # Attempt 1: Other QRIS (native QRIS) via payment_type=qris
             attempted_payment_type = "qris"
-            charge_payload = {**base_payload, "payment_type": "qris"}
+            # Note: QRIS Core API supports multiple acquirers; we explicitly select GoPay
+            # to match our current operational setup.
+            # Ref: https://docs.midtrans.com/reference/qris
+            charge_payload = {
+                **base_payload,
+                "payment_type": "qris",
+                "qris": {"acquirer": "gopay"},
+            }
             charge_resp = core.charge(charge_payload)
         except midtransclient.error_midtrans.MidtransAPIError as e_charge:
             raw_message = getattr(e_charge, "message", "") or ""
