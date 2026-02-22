@@ -23,6 +23,7 @@ Optional:
   --skip-health                 Skip health check (curl /api/ping)
   --clean                       Run docker compose down -v --remove-orphans before deploy
   --prune                       Run safe docker prune on remote (containers/images/networks/build cache; keeps volumes)
+  --strict-minimal              Keep remote dir strictly minimal: only infrastructure/, docker-compose.prod.yml, .env.prod, .env.public.prod, backend/backups (no .deploy_backups)
   --sync-phones                 After deploy, run phone normalization report (dry-run) inside backend container
   --sync-phones-apply           After deploy, APPLY phone normalization to DB (aborts on duplicates)
   --allow-placeholders          Allow deploy even if .env.prod still contains CHANGE_ME_* values
@@ -65,6 +66,7 @@ ALLOW_PLACEHOLDERS="false"
 DRY_RUN="false"
 SYNC_PHONES="false"
 SYNC_PHONES_APPLY="false"
+STRICT_MINIMAL="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -80,6 +82,7 @@ while [[ $# -gt 0 ]]; do
     --skip-health) SKIP_HEALTH="true"; shift ;;
     --clean) DO_CLEAN="true"; shift ;;
     --prune) DO_PRUNE="true"; shift ;;
+    --strict-minimal) STRICT_MINIMAL="true"; shift ;;
     --sync-phones) SYNC_PHONES="true"; shift ;;
     --sync-phones-apply) SYNC_PHONES_APPLY="true"; shift ;;
     --allow-placeholders) ALLOW_PLACEHOLDERS="true"; shift ;;
@@ -123,7 +126,6 @@ FILES=(
   "docker-compose.prod.yml"
   ".env.prod"
   "infrastructure/nginx/conf.d/app.prod.conf"
-  "infrastructure/cloudflared/Dockerfile"
 )
 
 OPTIONAL_FILES=(
@@ -181,19 +183,31 @@ timestamp=$(date +%Y%m%d_%H%M%S)
 remote_prepare_cmd=$(cat <<EOF
 set -e
 mkdir -p "$REMOTE_DIR/infrastructure/nginx/conf.d"
-mkdir -p "$REMOTE_DIR/infrastructure/cloudflared"
 mkdir -p "$REMOTE_DIR/infrastructure/nginx/ssl"
 mkdir -p "$REMOTE_DIR/infrastructure/nginx/logs"
 mkdir -p "$REMOTE_DIR/backend/backups"
-mkdir -p "$REMOTE_DIR/.deploy_backups/$timestamp"
-for f in docker-compose.prod.yml .env.prod infrastructure/nginx/conf.d/app.prod.conf; do
-  if [ -f "$REMOTE_DIR/\$f" ]; then
-    cp -a "$REMOTE_DIR/\$f" "$REMOTE_DIR/.deploy_backups/$timestamp/"
-  fi
-done
 
-if [ -f "$REMOTE_DIR/.env.public.prod" ]; then
-  cp -a "$REMOTE_DIR/.env.public.prod" "$REMOTE_DIR/.deploy_backups/$timestamp/" || true
+if [ "$STRICT_MINIMAL" = "true" ]; then
+  # Hapus semua kecuali: infrastructure/, docker-compose.prod.yml, .env.prod, .env.public.prod, backend/
+  # Lalu bersihkan backend/ kecuali backups/
+  find "$REMOTE_DIR" -mindepth 1 -maxdepth 1 \
+    \( ! -name infrastructure ! -name backend ! -name docker-compose.prod.yml ! -name .env.prod ! -name .env.public.prod \) \
+    -exec rm -rf {} +
+
+  mkdir -p "$REMOTE_DIR/backend/backups"
+  find "$REMOTE_DIR/backend" -mindepth 1 -maxdepth 1 \( ! -name backups \) -exec rm -rf {} +
+else
+  # Default: buat backup ringan agar gampang rollback.
+  mkdir -p "$REMOTE_DIR/.deploy_backups/$timestamp"
+  for f in docker-compose.prod.yml .env.prod infrastructure/nginx/conf.d/app.prod.conf; do
+    if [ -f "$REMOTE_DIR/\$f" ]; then
+      cp -a "$REMOTE_DIR/\$f" "$REMOTE_DIR/.deploy_backups/$timestamp/"
+    fi
+  done
+
+  if [ -f "$REMOTE_DIR/.env.public.prod" ]; then
+    cp -a "$REMOTE_DIR/.env.public.prod" "$REMOTE_DIR/.deploy_backups/$timestamp/" || true
+  fi
 fi
 EOF
 )
@@ -216,11 +230,6 @@ if [[ "$HAS_RSYNC" == "true" ]]; then
     "$LOCAL_DIR/infrastructure/nginx/conf.d/app.prod.conf" \
     "$SSH_TARGET:$REMOTE_DIR/"
 
-  # Needed because docker-compose.prod.yml uses build context ./infrastructure/cloudflared
-  "${rsync_cmd[@]}" \
-    "$LOCAL_DIR/infrastructure/cloudflared/" \
-    "$SSH_TARGET:$REMOTE_DIR/infrastructure/cloudflared/"
-
   if [[ -f "$LOCAL_DIR/.env.public.prod" ]]; then
     "${rsync_cmd[@]}" \
       "$LOCAL_DIR/.env.public.prod" \
@@ -236,7 +245,6 @@ else
       scp "${SCP_OPTS[@]}" "$LOCAL_DIR/.env.public.prod" "$SSH_TARGET:$REMOTE_DIR/"
     fi
     scp "${SCP_OPTS[@]}" "$LOCAL_DIR/infrastructure/nginx/conf.d/app.prod.conf" "$SSH_TARGET:$REMOTE_DIR/infrastructure/nginx/conf.d/"
-    scp -r "${SCP_OPTS[@]}" "$LOCAL_DIR/infrastructure/cloudflared" "$SSH_TARGET:$REMOTE_DIR/infrastructure/"
   fi
 fi
 
@@ -273,8 +281,8 @@ if [ "$SKIP_PULL" = "false" ]; then
   docker compose --env-file .env.prod -f docker-compose.prod.yml pull
 fi
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
-docker compose -f docker-compose.prod.yml ps
-if ! docker compose -f docker-compose.prod.yml ps --services --status running | grep -qx frontend; then
+docker compose --env-file .env.prod -f docker-compose.prod.yml ps
+if ! docker compose --env-file .env.prod -f docker-compose.prod.yml ps --services --status running | grep -qx frontend; then
   echo "ERROR: frontend container is not running after deploy" >&2
   exit 1
 fi

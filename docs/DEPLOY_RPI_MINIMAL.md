@@ -114,19 +114,21 @@ ssh -p 1983 -i ~/.ssh/id_raspi_ed25519 pi@192.168.1.20
 cd /home/abdullah/sobigidul
 docker compose --env-file .env.prod -f docker-compose.prod.yml pull
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
-docker compose -f docker-compose.prod.yml ps
+docker compose --env-file .env.prod -f docker-compose.prod.yml ps
 ```
 
 Cek log:
 
 ```bash
-docker compose -f docker-compose.prod.yml logs -f backend frontend nginx
+docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f backend frontend nginx
 ```
+
+Catatan: karena `docker-compose.prod.yml` memakai variable `${...}` untuk cloudflared, semua perintah compose (termasuk `ps`, `logs`, `exec`) sebaiknya selalu pakai `--env-file .env.prod`.
 
 ### 5.1 One-shot SSH (Tanpa Masuk Shell Interaktif)
 
 ```bash
-ssh -p 1983 -i ~/.ssh/id_raspi_ed25519 <PI_USER>@<PI_HOST> "cd /home/abdullah/sobigidul && docker compose --env-file .env.prod -f docker-compose.prod.yml pull && docker compose --env-file .env.prod -f docker-compose.prod.yml up -d && docker compose -f docker-compose.prod.yml ps"
+ssh -p 1983 -i ~/.ssh/id_raspi_ed25519 <PI_USER>@<PI_HOST> "cd /home/abdullah/sobigidul && docker compose --env-file .env.prod -f docker-compose.prod.yml pull && docker compose --env-file .env.prod -f docker-compose.prod.yml up -d && docker compose --env-file .env.prod -f docker-compose.prod.yml ps"
 ```
 
 ## 6) Update Versi Aplikasi (Tanpa Clone Repo)
@@ -155,7 +157,7 @@ Jika `created` belum berubah setelah push terbaru, tunggu workflow publish seles
 Jika ada perubahan skema DB, jalankan juga:
 
 ```bash
-docker compose -f docker-compose.prod.yml exec -T backend flask db upgrade
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend flask db upgrade
 ```
 
 ## 6.1) Housekeeping: Rapikan transaksi EXPIRED
@@ -165,13 +167,13 @@ Jika halaman transaksi admin penuh transaksi kadaluarsa (EXPIRED/FAILED/CANCELLE
 Dry-run:
 
 ```bash
-docker compose -f docker-compose.prod.yml exec -T backend flask cleanup-transactions --older-than-days 1
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend flask cleanup-transactions --older-than-days 1
 ```
 
 Apply:
 
 ```bash
-docker compose -f docker-compose.prod.yml exec -T backend flask cleanup-transactions --older-than-days 1 --apply
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend flask cleanup-transactions --older-than-days 1 --apply
 ```
 
 ## 7) Catatan Penting
@@ -218,6 +220,16 @@ Contoh pakai:
 
 ```bash
 ./deploy_pi.sh --host <IP_PI>
+```
+
+Untuk skenario kamu (folder produksi dibuat **strict minimal** di `/home/abdullah/sobigidul`):
+
+```bash
+./deploy_pi.sh --host 10.10.83.2 --user abdullah --port 1983 \
+  --key ~/.ssh/id_raspi_ed25519 \
+  --remote-dir /home/abdullah/sobigidul \
+  --strict-minimal \
+  --prune
 ```
 
 Dengan opsi SSL:
