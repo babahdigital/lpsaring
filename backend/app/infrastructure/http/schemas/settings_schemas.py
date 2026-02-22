@@ -4,8 +4,10 @@
 from pydantic import BaseModel, ConfigDict
 from typing import Optional, Dict
 
+
 class SettingSchema(BaseModel):
     """Schema untuk menampilkan satu item pengaturan."""
+
     setting_key: str
     setting_value: Optional[str]
     description: Optional[str]
@@ -13,9 +15,11 @@ class SettingSchema(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class SettingsUpdateSchema(BaseModel):
     """
     Schema untuk menerima data pembaruan pengaturan.
     Strukturnya adalah dictionary key-value.
     """
+
     settings: Dict[str, str]

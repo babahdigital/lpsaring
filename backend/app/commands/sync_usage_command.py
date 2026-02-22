@@ -13,7 +13,8 @@ from app.services.hotspot_sync_service import sync_hotspot_usage_and_profiles
 
 logger = logging.getLogger(__name__)
 
-@click.command('sync-usage')
+
+@click.command("sync-usage")
 @with_appcontext
 def sync_usage_command():
     logger.info("Memulai sinkronisasi kuota dan profil pengguna dengan Mikrotik...")

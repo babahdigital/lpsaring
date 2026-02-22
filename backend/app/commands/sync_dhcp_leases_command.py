@@ -22,9 +22,9 @@ from app.utils.formatters import format_to_local_phone, get_app_date_time_string
 logger = logging.getLogger(__name__)
 
 
-@click.command('sync-dhcp-leases')
-@click.option('--limit', type=int, default=0, help='Batasi jumlah device yang diproses (0 = semua).')
-@click.option('--only-authorized/--all', default=True, help='Sync hanya device authorized atau semua device di DB.')
+@click.command("sync-dhcp-leases")
+@click.option("--limit", type=int, default=0, help="Batasi jumlah device yang diproses (0 = semua).")
+@click.option("--only-authorized/--all", default=True, help="Sync hanya device authorized atau semua device di DB.")
 @with_appcontext
 def sync_dhcp_leases_command(limit: int, only_authorized: bool) -> None:
     """Sync DHCP static leases di MikroTik untuk semua device yang tercatat.
@@ -41,13 +41,17 @@ def sync_dhcp_leases_command(limit: int, only_authorized: bool) -> None:
     - Jika device sedang tidak terlihat di MikroTik (tidak ada IP), device tersebut di-skip.
     """
 
-    enabled = settings_service.get_setting('MIKROTIK_DHCP_STATIC_LEASE_ENABLED', 'False') == 'True'
+    enabled = settings_service.get_setting("MIKROTIK_DHCP_STATIC_LEASE_ENABLED", "False") == "True"
     if not enabled:
-        click.echo('MIKROTIK_DHCP_STATIC_LEASE_ENABLED=False (fitur tidak aktif). Tetap bisa dijalankan, tapi disarankan aktifkan agar konsisten.')
+        click.echo(
+            "MIKROTIK_DHCP_STATIC_LEASE_ENABLED=False (fitur tidak aktif). Tetap bisa dijalankan, tapi disarankan aktifkan agar konsisten."
+        )
 
-    dhcp_server_name = (settings_service.get_setting('MIKROTIK_DHCP_LEASE_SERVER_NAME', '') or '').strip() or None
+    dhcp_server_name = (settings_service.get_setting("MIKROTIK_DHCP_LEASE_SERVER_NAME", "") or "").strip() or None
     if enabled and not dhcp_server_name:
-        raise click.ClickException('MIKROTIK_DHCP_LEASE_SERVER_NAME wajib diisi saat MIKROTIK_DHCP_STATIC_LEASE_ENABLED=True')
+        raise click.ClickException(
+            "MIKROTIK_DHCP_LEASE_SERVER_NAME wajib diisi saat MIKROTIK_DHCP_STATIC_LEASE_ENABLED=True"
+        )
 
     # Respect configured CIDRs to avoid binding leases to non-client subnets.
     # Prefer the same policy used by the runtime authorize flow:
@@ -57,10 +61,11 @@ def sync_dhcp_leases_command(limit: int, only_authorized: bool) -> None:
     cidrs = []
     try:
         from flask import current_app
+
         cidrs = (
-            current_app.config.get('MIKROTIK_DHCP_STATIC_LEASE_CIDRS')
-            or current_app.config.get('MIKROTIK_UNAUTHORIZED_CIDRS')
-            or current_app.config.get('HOTSPOT_CLIENT_IP_CIDRS')
+            current_app.config.get("MIKROTIK_DHCP_STATIC_LEASE_CIDRS")
+            or current_app.config.get("MIKROTIK_UNAUTHORIZED_CIDRS")
+            or current_app.config.get("HOTSPOT_CLIENT_IP_CIDRS")
             or []
         )
     except Exception:
@@ -108,11 +113,11 @@ def sync_dhcp_leases_command(limit: int, only_authorized: bool) -> None:
 
     with get_mikrotik_connection() as api:
         if not api:
-            raise click.ClickException('Gagal konek MikroTik')
+            raise click.ClickException("Gagal konek MikroTik")
 
         for device in devices:
             processed += 1
-            mac = str(device.mac_address or '').strip().upper()
+            mac = str(device.mac_address or "").strip().upper()
             if not mac:
                 continue
 
@@ -130,11 +135,8 @@ def sync_dhcp_leases_command(limit: int, only_authorized: bool) -> None:
                 skipped_no_ip += 1
                 continue
 
-            username_08 = format_to_local_phone(user.phone_number) or ''
-            comment = (
-                f"lpsaring|static-dhcp|user={username_08}|uid={user.id}"
-                f"|date={date_str}|time={time_str}"
-            )
+            username_08 = format_to_local_phone(user.phone_number) or ""
+            comment = f"lpsaring|static-dhcp|user={username_08}|uid={user.id}|date={date_str}|time={time_str}"
 
             ok_upsert, msg_upsert = upsert_dhcp_static_lease(
                 api_connection=api,

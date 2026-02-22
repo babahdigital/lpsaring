@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.infrastructure.db.models import PromoEventType, PromoEventStatus
 
+
 # Skema dasar untuk data yang sama di create dan update
 class PromoEventBaseSchema(BaseModel):
     name: str = Field(..., min_length=3, max_length=150, description="Nama event atau promo.")
@@ -25,9 +26,11 @@ class PromoEventBaseSchema(BaseModel):
         from_attributes=True,  # Membaca data langsung dari objek model SQLAlchemy
     )
 
+
 # Skema yang digunakan saat membuat event baru
 class PromoEventCreateSchema(PromoEventBaseSchema):
     pass
+
 
 # Skema yang digunakan saat memperbarui event yang ada
 # Semua field dibuat opsional
@@ -49,6 +52,7 @@ class UserInfoSchema(BaseModel):
     full_name: str
 
     model_config = ConfigDict(from_attributes=True)
+
 
 # Skema untuk response data event, termasuk info admin yang membuat
 # Ini akan otomatis mewarisi `bonus_duration_days` dari `PromoEventBaseSchema`

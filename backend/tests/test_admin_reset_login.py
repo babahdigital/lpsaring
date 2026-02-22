@@ -180,7 +180,12 @@ def test_reset_login_removes_hotspot_cookie_and_comment_tagged_entries(monkeypat
         ),
         "/ip/firewall/address-list": _Resource(
             [
-                {"id": "f1", "list": "blocked", "address": "172.16.0.10", "comment": f"lpsaring|{uid_marker}|user={user08}"},
+                {
+                    "id": "f1",
+                    "list": "blocked",
+                    "address": "172.16.0.10",
+                    "comment": f"lpsaring|{uid_marker}|user={user08}",
+                },
                 {"id": "f2", "list": "active", "address": "172.16.0.99", "comment": f"lpsaring|{uid_marker}"},
                 {"id": "f3", "list": "blocked", "address": "172.16.0.20", "comment": "other"},
             ]

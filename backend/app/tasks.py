@@ -9,8 +9,10 @@ from app.services import settings_service
 from app.services.walled_garden_service import sync_walled_garden
 from app.extensions import db
 from app.infrastructure.db.models import Transaction, TransactionStatus
+
 # Import create_app dari app/__init__.py
 from app import create_app
+
 # Kita akan menggunakan celery_app dari extensions.py sebagai decorator
 # Pastikan ini sesuai dengan cara Anda mengimpor celery_app di docker-compose.yml
 # `celery -A app.extensions.celery_app worker`
@@ -35,6 +37,7 @@ def _record_task_failure(app, task_name: str, payload: dict, error_message: str)
     except Exception:
         return
 
+
 @celery_app.task(
     name="send_whatsapp_invoice_task",
     bind=True,
@@ -43,10 +46,12 @@ def _record_task_failure(app, task_name: str, payload: dict, error_message: str)
     retry_jitter=True,
     retry_kwargs={"max_retries": 3},
 )
-def send_whatsapp_invoice_task(self, recipient_number: str, caption: str, pdf_url: str, filename: str, request_id: str = ''):
+def send_whatsapp_invoice_task(
+    self, recipient_number: str, caption: str, pdf_url: str, filename: str, request_id: str = ""
+):
     """
     Celery task untuk mengirim pesan WhatsApp dengan lampiran PDF.
-    
+
     Args:
         recipient_number (str): Nomor HP tujuan.
         caption (str): Teks/caption untuk pesan WhatsApp.
@@ -58,14 +63,18 @@ def send_whatsapp_invoice_task(self, recipient_number: str, caption: str, pdf_ur
     # yang membutuhkan konteks aplikasi (misalnya, mengakses app.config)
     # environ.get sekarang akan berfungsi karena 'environ' telah diimpor secara langsung.
     app = create_app()
-    
+
     with app.app_context():
-        logger.info(f"Celery Task: Memulai pengiriman WhatsApp dengan PDF ke {recipient_number} untuk URL: {pdf_url}. Request ID: {request_id}")
+        logger.info(
+            f"Celery Task: Memulai pengiriman WhatsApp dengan PDF ke {recipient_number} untuk URL: {pdf_url}. Request ID: {request_id}"
+        )
         try:
             # send_whatsapp_with_pdf sekarang akan memiliki akses ke current_app
             success = send_whatsapp_with_pdf(recipient_number, caption, pdf_url, filename)
             if not success:
-                logger.error(f"Celery Task: Gagal mengirim WhatsApp invoice ke {recipient_number} (Fonnte reported failure).")
+                logger.error(
+                    f"Celery Task: Gagal mengirim WhatsApp invoice ke {recipient_number} (Fonnte reported failure)."
+                )
                 # Fallback: kirim pesan teks tanpa PDF
                 text_success = send_whatsapp_message(recipient_number, caption)
                 if text_success:
@@ -76,7 +85,9 @@ def send_whatsapp_invoice_task(self, recipient_number: str, caption: str, pdf_ur
             else:
                 logger.info(f"Celery Task: Berhasil mengirim WhatsApp invoice ke {recipient_number}.")
         except Exception as e:
-            logger.error(f"Celery Task: Exception saat mengirim WhatsApp invoice ke {recipient_number}: {e}", exc_info=True)
+            logger.error(
+                f"Celery Task: Exception saat mengirim WhatsApp invoice ke {recipient_number}: {e}", exc_info=True
+            )
             if self.request.retries >= 3:
                 _record_task_failure(
                     app,
@@ -106,7 +117,7 @@ def sync_hotspot_usage_task(self):
     with app.app_context():
         logger.info("Celery Task: Memulai sinkronisasi kuota dan profil hotspot.")
         try:
-            sync_interval = settings_service.get_setting_as_int('QUOTA_SYNC_INTERVAL_SECONDS', 300)
+            sync_interval = settings_service.get_setting_as_int("QUOTA_SYNC_INTERVAL_SECONDS", 300)
             redis_client = getattr(app, "redis_client_otp", None)
             if redis_client is not None:
                 now_ts = int(datetime.now(dt_timezone.utc).timestamp())

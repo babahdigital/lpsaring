@@ -69,7 +69,7 @@ def estimate_debt_rp_from_cheapest_package(
         if quota_mb <= 0:
             raise InvalidOperation
         price_per_mb = price / quota_mb
-        estimated_raw = int((price_per_mb * Decimal(str(debt_mb))).to_integral_value(rounding='ROUND_HALF_UP'))
+        estimated_raw = int((price_per_mb * Decimal(str(debt_mb))).to_integral_value(rounding="ROUND_HALF_UP"))
     except (InvalidOperation, ValueError, TypeError):
         return DebtEstimate(
             debt_mb=float(debt_mb),

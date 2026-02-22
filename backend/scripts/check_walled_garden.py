@@ -12,30 +12,30 @@ def _get_list_setting(key: str) -> List[str]:
         return []
     if isinstance(value, str):
         val = value.strip()
-        if val.startswith('[') and val.endswith(']'):
+        if val.startswith("[") and val.endswith("]"):
             try:
                 parsed = json.loads(val)
                 if isinstance(parsed, list):
                     return [str(item).strip() for item in parsed if str(item).strip()]
             except json.JSONDecodeError:
-                val = val.strip('[]')
+                val = val.strip("[]")
         if not val:
             return []
-        return [item.strip().strip('"').strip("'") for item in val.split(',') if item.strip()]
+        return [item.strip().strip('"').strip("'") for item in val.split(",") if item.strip()]
     return []
 
 
 def main() -> int:
     app = create_app()
     with app.app_context():
-        enabled = settings_service.get_setting('WALLED_GARDEN_ENABLED', 'False') == 'True'
+        enabled = settings_service.get_setting("WALLED_GARDEN_ENABLED", "False") == "True"
         if not enabled:
             print("Walled garden disabled.")
             return 0
 
-        desired_hosts = sorted(set(_get_list_setting('WALLED_GARDEN_ALLOWED_HOSTS')))
-        desired_ips = sorted(set(_get_list_setting('WALLED_GARDEN_ALLOWED_IPS')))
-        comment_prefix = settings_service.get_setting('WALLED_GARDEN_MANAGED_COMMENT_PREFIX', 'lpsaring') or 'lpsaring'
+        desired_hosts = sorted(set(_get_list_setting("WALLED_GARDEN_ALLOWED_HOSTS")))
+        desired_ips = sorted(set(_get_list_setting("WALLED_GARDEN_ALLOWED_IPS")))
+        comment_prefix = settings_service.get_setting("WALLED_GARDEN_MANAGED_COMMENT_PREFIX", "lpsaring") or "lpsaring"
 
         with get_mikrotik_connection() as api:
             if api is None:
@@ -67,5 +67,5 @@ def main() -> int:
         return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise SystemExit(main())

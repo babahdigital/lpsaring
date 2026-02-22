@@ -8,7 +8,17 @@ from pydantic import ValidationError
 import sqlalchemy as sa
 
 from app.extensions import db
-from app.infrastructure.db.models import User, UserRole, UserBlok, UserKamar, ApprovalStatus, UserDevice, RefreshToken, AdminActionType, Package
+from app.infrastructure.db.models import (
+    User,
+    UserRole,
+    UserBlok,
+    UserKamar,
+    ApprovalStatus,
+    UserDevice,
+    RefreshToken,
+    AdminActionType,
+    Package,
+)
 from app.infrastructure.http.decorators import admin_required
 from app.infrastructure.http.schemas.user_schemas import (
     UserResponseSchema,
@@ -31,18 +41,15 @@ from app.services.user_management.helpers import _log_admin_action
 from app.services import settings_service
 
 from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package
-from app.services.user_management import (
-    user_approval,
-    user_deletion,
-    user_profile as user_profile_service
-)
+from app.services.user_management import user_approval, user_deletion, user_profile as user_profile_service
 
-user_management_bp = Blueprint('user_management_api', __name__)
+user_management_bp = Blueprint("user_management_api", __name__)
 
 # --- SEMUA ROUTE LAINNYA DI ATAS INI TIDAK BERUBAH ---
 # (create_user, update_user, approve_user, dll. tetap sama)
 
-@user_management_bp.route('/users', methods=['POST'])
+
+@user_management_bp.route("/users", methods=["POST"])
 @admin_required
 def create_user_by_admin(current_admin: User):
     data = request.get_json()
@@ -61,7 +68,8 @@ def create_user_by_admin(current_admin: User):
         current_app.logger.error(f"Error creating user: {e}", exc_info=True)
         return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
-@user_management_bp.route('/users/<uuid:user_id>', methods=['PUT'])
+
+@user_management_bp.route("/users/<uuid:user_id>", methods=["PUT"])
 @admin_required
 def update_user_by_admin(current_admin: User, user_id):
     user = db.session.get(User, user_id)
@@ -71,7 +79,9 @@ def update_user_by_admin(current_admin: User, user_id):
     if not data:
         return jsonify({"message": "Request data kosong."}), HTTPStatus.BAD_REQUEST
     try:
-        success, message, updated_user = user_profile_service.update_user_by_admin_comprehensive(user, current_admin, data)
+        success, message, updated_user = user_profile_service.update_user_by_admin_comprehensive(
+            user, current_admin, data
+        )
         if not success:
             db.session.rollback()
             return jsonify({"message": message}), HTTPStatus.BAD_REQUEST
@@ -83,7 +93,8 @@ def update_user_by_admin(current_admin: User, user_id):
         current_app.logger.error(f"Error updating user {user_id}: {e}", exc_info=True)
         return jsonify({"message": "Kesalahan internal server."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
-@user_management_bp.route('/users/<uuid:user_id>/approve', methods=['PATCH'])
+
+@user_management_bp.route("/users/<uuid:user_id>/approve", methods=["PATCH"])
 @admin_required
 def approve_user(current_admin: User, user_id):
     user = db.session.get(User, user_id)
@@ -102,7 +113,8 @@ def approve_user(current_admin: User, user_id):
         current_app.logger.error(f"Error approving user {user_id}: {e}", exc_info=True)
         return jsonify({"message": "Kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
-@user_management_bp.route('/users/<uuid:user_id>/reject', methods=['POST'])
+
+@user_management_bp.route("/users/<uuid:user_id>/reject", methods=["POST"])
 @admin_required
 def reject_user(current_admin: User, user_id):
     user = db.session.get(User, user_id)
@@ -115,21 +127,22 @@ def reject_user(current_admin: User, user_id):
     db.session.commit()
     return jsonify({"message": message}), HTTPStatus.OK
 
-@user_management_bp.route('/users/<uuid:user_id>', methods=['DELETE'])
+
+@user_management_bp.route("/users/<uuid:user_id>", methods=["DELETE"])
 @admin_required
 def delete_user(current_admin: User, user_id):
     user = db.session.get(User, user_id)
-    if not user: 
+    if not user:
         return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
 
     try:
         # [PERUBAHAN] Panggil fungsi baru yang lebih cerdas
         success, message = user_deletion.process_user_removal(user, current_admin)
-        
+
         if not success:
             db.session.rollback()
             return jsonify({"message": message}), HTTPStatus.FORBIDDEN
-        
+
         db.session.commit()
         return jsonify({"message": message}), HTTPStatus.OK
 
@@ -138,7 +151,8 @@ def delete_user(current_admin: User, user_id):
         current_app.logger.error(f"Error saat memproses penghapusan user {user_id}: {e}", exc_info=True)
         return jsonify({"message": "Terjadi kesalahan internal server."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
-@user_management_bp.route('/users/<uuid:user_id>/reset-hotspot-password', methods=['POST'])
+
+@user_management_bp.route("/users/<uuid:user_id>/reset-hotspot-password", methods=["POST"])
 @admin_required
 def admin_reset_hotspot_password(current_admin: User, user_id):
     user = db.session.get(User, user_id)
@@ -152,7 +166,8 @@ def admin_reset_hotspot_password(current_admin: User, user_id):
     db.session.refresh(user)
     return jsonify({"message": message}), HTTPStatus.OK
 
-@user_management_bp.route('/users/<uuid:user_id>/generate-admin-password', methods=['POST'])
+
+@user_management_bp.route("/users/<uuid:user_id>/generate-admin-password", methods=["POST"])
 @admin_required
 def generate_admin_password_for_user(current_admin: User, user_id):
     user = db.session.get(User, user_id)
@@ -166,7 +181,7 @@ def generate_admin_password_for_user(current_admin: User, user_id):
     return jsonify({"message": message}), HTTPStatus.OK
 
 
-@user_management_bp.route('/users/<uuid:user_id>/reset-login', methods=['POST'])
+@user_management_bp.route("/users/<uuid:user_id>/reset-login", methods=["POST"])
 @admin_required
 def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
     """Force user to login fresh without changing quota/status fields in DB.
@@ -184,10 +199,10 @@ def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
         return jsonify({"message": "Akses ditolak."}), HTTPStatus.FORBIDDEN
 
     devices = db.session.scalars(select(UserDevice).where(UserDevice.user_id == user.id)).all()
-    macs = sorted({str(d.mac_address).strip().upper() for d in devices if getattr(d, 'mac_address', None)})
-    ips = sorted({str(d.ip_address).strip() for d in devices if getattr(d, 'ip_address', None)})
+    macs = sorted({str(d.mac_address).strip().upper() for d in devices if getattr(d, "mac_address", None)})
+    ips = sorted({str(d.ip_address).strip() for d in devices if getattr(d, "ip_address", None)})
 
-    username_08 = str(format_to_local_phone(getattr(user, 'phone_number', None)) or '').strip()
+    username_08 = str(format_to_local_phone(getattr(user, "phone_number", None)) or "").strip()
     uid_marker = f"uid={user.id}"
     user_marker = f"user={username_08}" if username_08 else ""
 
@@ -203,24 +218,28 @@ def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
         return False
 
     # Always clear refresh tokens (even if router ops fail).
-    tokens_deleted = db.session.query(RefreshToken).filter(RefreshToken.user_id == user.id).delete(synchronize_session=False)
+    tokens_deleted = (
+        db.session.query(RefreshToken).filter(RefreshToken.user_id == user.id).delete(synchronize_session=False)
+    )
     # Also clear device mappings so the next login is a true fresh enroll.
-    devices_deleted = db.session.query(UserDevice).filter(UserDevice.user_id == user.id).delete(synchronize_session=False)
+    devices_deleted = (
+        db.session.query(UserDevice).filter(UserDevice.user_id == user.id).delete(synchronize_session=False)
+    )
 
     router_summary = {
-        'mikrotik_connected': False,
-        'active_sessions_removed': 0,
-        'hotspot_cookies_removed': 0,
-        'ip_bindings_removed': 0,
-        'dhcp_leases_removed': 0,
-        'arp_entries_removed': 0,
-        'address_list_entries_removed': 0,
-        'comment_tagged_entries_removed': 0,
-        'errors': [],
+        "mikrotik_connected": False,
+        "active_sessions_removed": 0,
+        "hotspot_cookies_removed": 0,
+        "ip_bindings_removed": 0,
+        "dhcp_leases_removed": 0,
+        "arp_entries_removed": 0,
+        "address_list_entries_removed": 0,
+        "comment_tagged_entries_removed": 0,
+        "errors": [],
     }
 
     def _row_id(row: dict) -> str | None:
-        return row.get('id') or row.get('.id')
+        return row.get("id") or row.get(".id")
 
     def _remove_all(resource, rows) -> int:
         removed = 0
@@ -232,80 +251,94 @@ def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
                 resource.remove(id=rid)
                 removed += 1
             except Exception as e:
-                router_summary['errors'].append(str(e))
+                router_summary["errors"].append(str(e))
         return removed
 
     try:
         with get_mikrotik_connection(raise_on_error=False) as api:
             if api:
-                router_summary['mikrotik_connected'] = True
+                router_summary["mikrotik_connected"] = True
 
                 # Kick active sessions by MAC and IP.
                 try:
-                    active_res = api.get_resource('/ip/hotspot/active')
+                    active_res = api.get_resource("/ip/hotspot/active")
                     for mac in macs:
-                        router_summary['active_sessions_removed'] += _remove_all(active_res, active_res.get(**{'mac-address': mac}))
+                        router_summary["active_sessions_removed"] += _remove_all(
+                            active_res, active_res.get(**{"mac-address": mac})
+                        )
                     for ip in ips:
-                        router_summary['active_sessions_removed'] += _remove_all(active_res, active_res.get(address=ip))
+                        router_summary["active_sessions_removed"] += _remove_all(active_res, active_res.get(address=ip))
                     if username_08:
-                        router_summary['active_sessions_removed'] += _remove_all(active_res, active_res.get(user=username_08))
+                        router_summary["active_sessions_removed"] += _remove_all(
+                            active_res, active_res.get(user=username_08)
+                        )
                 except Exception as e:
-                    router_summary['errors'].append(f"active_cleanup: {e}")
+                    router_summary["errors"].append(f"active_cleanup: {e}")
 
                 # Remove hotspot cookies to prevent auto-login.
                 try:
-                    cookie_res = api.get_resource('/ip/hotspot/cookie')
+                    cookie_res = api.get_resource("/ip/hotspot/cookie")
                     for mac in macs:
-                        router_summary['hotspot_cookies_removed'] += _remove_all(cookie_res, cookie_res.get(**{'mac-address': mac}))
+                        router_summary["hotspot_cookies_removed"] += _remove_all(
+                            cookie_res, cookie_res.get(**{"mac-address": mac})
+                        )
                     if username_08:
-                        router_summary['hotspot_cookies_removed'] += _remove_all(cookie_res, cookie_res.get(user=username_08))
+                        router_summary["hotspot_cookies_removed"] += _remove_all(
+                            cookie_res, cookie_res.get(user=username_08)
+                        )
                 except Exception as e:
-                    router_summary['errors'].append(f"cookie_cleanup: {e}")
+                    router_summary["errors"].append(f"cookie_cleanup: {e}")
 
                 # Remove ip-binding by MAC.
                 try:
-                    ipb_res = api.get_resource('/ip/hotspot/ip-binding')
+                    ipb_res = api.get_resource("/ip/hotspot/ip-binding")
                     for mac in macs:
-                        router_summary['ip_bindings_removed'] += _remove_all(ipb_res, ipb_res.get(**{'mac-address': mac}))
+                        router_summary["ip_bindings_removed"] += _remove_all(
+                            ipb_res, ipb_res.get(**{"mac-address": mac})
+                        )
 
                     # Also remove ip-binding rows tagged with this user in comment (covers stale/missing device records).
-                    for row in (ipb_res.get() or []):
-                        if _comment_matches_user(row.get('comment')):
-                            router_summary['comment_tagged_entries_removed'] += _remove_all(ipb_res, [row])
+                    for row in ipb_res.get() or []:
+                        if _comment_matches_user(row.get("comment")):
+                            router_summary["comment_tagged_entries_removed"] += _remove_all(ipb_res, [row])
                 except Exception as e:
-                    router_summary['errors'].append(f"ip_binding_cleanup: {e}")
+                    router_summary["errors"].append(f"ip_binding_cleanup: {e}")
 
                 # Remove DHCP leases by MAC.
                 try:
-                    lease_res = api.get_resource('/ip/dhcp-server/lease')
+                    lease_res = api.get_resource("/ip/dhcp-server/lease")
                     for mac in macs:
-                        router_summary['dhcp_leases_removed'] += _remove_all(lease_res, lease_res.get(**{'mac-address': mac}))
+                        router_summary["dhcp_leases_removed"] += _remove_all(
+                            lease_res, lease_res.get(**{"mac-address": mac})
+                        )
                 except Exception as e:
-                    router_summary['errors'].append(f"dhcp_lease_cleanup: {e}")
+                    router_summary["errors"].append(f"dhcp_lease_cleanup: {e}")
 
                 # Remove ARP entries by MAC and IP.
                 try:
-                    arp_res = api.get_resource('/ip/arp')
+                    arp_res = api.get_resource("/ip/arp")
                     for mac in macs:
-                        router_summary['arp_entries_removed'] += _remove_all(arp_res, arp_res.get(**{'mac-address': mac}))
+                        router_summary["arp_entries_removed"] += _remove_all(
+                            arp_res, arp_res.get(**{"mac-address": mac})
+                        )
                     for ip in ips:
-                        router_summary['arp_entries_removed'] += _remove_all(arp_res, arp_res.get(address=ip))
+                        router_summary["arp_entries_removed"] += _remove_all(arp_res, arp_res.get(address=ip))
                 except Exception as e:
-                    router_summary['errors'].append(f"arp_cleanup: {e}")
+                    router_summary["errors"].append(f"arp_cleanup: {e}")
 
                 # Remove managed address-lists for all IPs.
                 try:
-                    alist_res = api.get_resource('/ip/firewall/address-list')
+                    alist_res = api.get_resource("/ip/firewall/address-list")
 
                     managed_lists = []
                     keys = [
-                        ('MIKROTIK_ADDRESS_LIST_BLOCKED', 'blocked'),
-                        ('MIKROTIK_ADDRESS_LIST_ACTIVE', 'active'),
-                        ('MIKROTIK_ADDRESS_LIST_FUP', 'fup'),
-                        ('MIKROTIK_ADDRESS_LIST_HABIS', 'habis'),
-                        ('MIKROTIK_ADDRESS_LIST_EXPIRED', 'expired'),
-                        ('MIKROTIK_ADDRESS_LIST_INACTIVE', 'inactive'),
-                        ('MIKROTIK_ADDRESS_LIST_UNAUTHORIZED', 'unauthorized'),
+                        ("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked"),
+                        ("MIKROTIK_ADDRESS_LIST_ACTIVE", "active"),
+                        ("MIKROTIK_ADDRESS_LIST_FUP", "fup"),
+                        ("MIKROTIK_ADDRESS_LIST_HABIS", "habis"),
+                        ("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired"),
+                        ("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive"),
+                        ("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized"),
                     ]
                     for k, d in keys:
                         name = settings_service.get_setting(k, d) or d
@@ -315,7 +348,7 @@ def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
 
                     for ip in ips:
                         for list_name in managed_lists:
-                            router_summary['address_list_entries_removed'] += _remove_all(
+                            router_summary["address_list_entries_removed"] += _remove_all(
                                 alist_res,
                                 alist_res.get(address=ip, list=list_name),
                             )
@@ -325,14 +358,14 @@ def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
                         try:
                             rows = alist_res.get(list=list_name) or []
                             for row in rows:
-                                if _comment_matches_user(row.get('comment')):
-                                    router_summary['comment_tagged_entries_removed'] += _remove_all(alist_res, [row])
+                                if _comment_matches_user(row.get("comment")):
+                                    router_summary["comment_tagged_entries_removed"] += _remove_all(alist_res, [row])
                         except Exception as e:
-                            router_summary['errors'].append(f"address_list_comment_scan({list_name}): {e}")
+                            router_summary["errors"].append(f"address_list_comment_scan({list_name}): {e}")
                 except Exception as e:
-                    router_summary['errors'].append(f"address_list_cleanup: {e}")
+                    router_summary["errors"].append(f"address_list_cleanup: {e}")
     except Exception as e:
-        router_summary['errors'].append(f"mikrotik_connection: {e}")
+        router_summary["errors"].append(f"mikrotik_connection: {e}")
 
     try:
         _log_admin_action(
@@ -340,13 +373,13 @@ def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
             target_user=user,
             action_type=AdminActionType.RESET_USER_LOGIN,
             details={
-                'tokens_deleted': int(tokens_deleted or 0),
-                'devices_deleted': int(devices_deleted or 0),
-                'device_count_before': int(len(devices)),
-                'macs': macs,
-                'ips': ips,
-                'username_08': username_08,
-                'router': router_summary,
+                "tokens_deleted": int(tokens_deleted or 0),
+                "devices_deleted": int(devices_deleted or 0),
+                "device_count_before": int(len(devices)),
+                "macs": macs,
+                "ips": ips,
+                "username_08": username_08,
+                "router": router_summary,
             },
         )
     except Exception:
@@ -364,25 +397,26 @@ def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
         f"Reset login berhasil. Token dibersihkan: {int(tokens_deleted or 0)}. "
         f"Device dibersihkan: {int(devices_deleted or 0)}."
     )
-    if router_summary.get('mikrotik_connected') is not True:
+    if router_summary.get("mikrotik_connected") is not True:
         msg += " (Catatan: MikroTik tidak terhubung, cleanup router dilewati.)"
 
     return jsonify(
         {
-            'message': msg,
-            'summary': {
-                'tokens_deleted': int(tokens_deleted or 0),
-                'devices_deleted': int(devices_deleted or 0),
-                'device_count_before': int(len(devices)),
-                'mac_count': int(len(macs)),
-                'ip_count': int(len(ips)),
-                'username_08': username_08,
-                'router': router_summary,
+            "message": msg,
+            "summary": {
+                "tokens_deleted": int(tokens_deleted or 0),
+                "devices_deleted": int(devices_deleted or 0),
+                "device_count_before": int(len(devices)),
+                "mac_count": int(len(macs)),
+                "ip_count": int(len(ips)),
+                "username_08": username_08,
+                "router": router_summary,
             },
         }
     ), HTTPStatus.OK
 
-@user_management_bp.route('/users/me', methods=['PUT'])
+
+@user_management_bp.route("/users/me", methods=["PUT"])
 @admin_required
 def update_my_profile(current_admin: User):
     if not request.is_json:
@@ -412,27 +446,28 @@ def update_my_profile(current_admin: User):
         db.session.rollback()
         current_app.logger.error(f"Error updating admin profile {current_admin.id}: {e}", exc_info=True)
         return jsonify({"message": "Kesalahan internal server."}), HTTPStatus.INTERNAL_SERVER_ERROR
-    
-@user_management_bp.route('/users', methods=['GET'])
+
+
+@user_management_bp.route("/users", methods=["GET"])
 @admin_required
 def get_users_list(current_admin: User):
     try:
-        page = request.args.get('page', 1, type=int)
-        per_page_raw = request.args.get('itemsPerPage', 10, type=int)
+        page = request.args.get("page", 1, type=int)
+        per_page_raw = request.args.get("itemsPerPage", 10, type=int)
         if per_page_raw == -1:
             per_page = None
         else:
             per_page = min(max(int(per_page_raw or 10), 1), 100)
-        search_query, role_filter = request.args.get('search', ''), request.args.get('role')
-        tamping_filter = request.args.get('tamping', None)
+        search_query, role_filter = request.args.get("search", ""), request.args.get("role")
+        tamping_filter = request.args.get("tamping", None)
 
         # status filter(s): allow repeated ?status=x&status=y or comma separated.
-        status_values = request.args.getlist('status')
-        if len(status_values) == 1 and isinstance(status_values[0], str) and ',' in status_values[0]:
-            status_values = [v.strip() for v in status_values[0].split(',') if v.strip()]
+        status_values = request.args.getlist("status")
+        if len(status_values) == 1 and isinstance(status_values[0], str) and "," in status_values[0]:
+            status_values = [v.strip() for v in status_values[0].split(",") if v.strip()]
         status_values = [str(v).strip().lower() for v in (status_values or []) if str(v).strip()]
-        sort_by, sort_order = request.args.get('sortBy', 'created_at'), request.args.get('sortOrder', 'desc')
-        
+        sort_by, sort_order = request.args.get("sortBy", "created_at"), request.args.get("sortOrder", "desc")
+
         query = select(User)
         if not current_admin.is_super_admin_role:
             query = query.where(User.role != UserRole.SUPER_ADMIN)
@@ -442,20 +477,25 @@ def get_users_list(current_admin: User):
             except KeyError:
                 return jsonify({"message": "Role filter tidak valid."}), HTTPStatus.BAD_REQUEST
         if search_query:
-            query = query.where(or_(User.full_name.ilike(f"%{search_query}%"), User.phone_number.in_(get_phone_number_variations(search_query))))
+            query = query.where(
+                or_(
+                    User.full_name.ilike(f"%{search_query}%"),
+                    User.phone_number.in_(get_phone_number_variations(search_query)),
+                )
+            )
 
         # Tamping filter: '1' (only tamping), '0' (exclude tamping)
-        if tamping_filter is not None and tamping_filter != '':
+        if tamping_filter is not None and tamping_filter != "":
             tf = str(tamping_filter).strip().lower()
-            if tf in {'1', 'true', 'yes', 'tamping'}:
+            if tf in {"1", "true", "yes", "tamping"}:
                 query = query.where(User.is_tamping.is_(True))
-            elif tf in {'0', 'false', 'no', 'non', 'non-tamping', 'nontamping'}:
+            elif tf in {"0", "false", "no", "non", "non-tamping", "nontamping"}:
                 query = query.where(User.is_tamping.is_(False))
 
         # Status filters (OR across selected values)
         if status_values:
             now_utc = datetime.now(dt_timezone.utc)
-            fup_threshold = float(settings_service.get_setting_as_int('QUOTA_FUP_PERCENT', 20) or 20)
+            fup_threshold = float(settings_service.get_setting_as_int("QUOTA_FUP_PERCENT", 20) or 20)
 
             purchased_num = sa.cast(User.total_quota_purchased_mb, sa.Numeric)
             used_num = sa.cast(User.total_quota_used_mb, sa.Numeric)
@@ -467,19 +507,19 @@ def get_users_list(current_admin: User):
 
             conditions = []
             for status in status_values:
-                if status in {'blocked', 'block'}:
+                if status in {"blocked", "block"}:
                     conditions.append(User.is_blocked.is_(True))
-                elif status in {'active', 'aktif'}:
+                elif status in {"active", "aktif"}:
                     conditions.append(User.is_active.is_(True))
-                elif status in {'inactive', 'nonaktif', 'disabled'}:
+                elif status in {"inactive", "nonaktif", "disabled"}:
                     conditions.append(User.is_active.is_(False))
-                elif status in {'unlimited', 'unlimted'}:
+                elif status in {"unlimited", "unlimted"}:
                     conditions.append(User.is_unlimited_user.is_(True))
-                elif status in {'debt', 'hutang'}:
+                elif status in {"debt", "hutang"}:
                     conditions.append(sa.and_(User.is_unlimited_user.is_(False), total_debt > 0))
-                elif status in {'expired', 'expiried'}:
+                elif status in {"expired", "expiried"}:
                     conditions.append(sa.and_(User.quota_expiry_date.is_not(None), User.quota_expiry_date < now_utc))
-                elif status in {'fup'}:
+                elif status in {"fup"}:
                     # Mirror hotspot sync: fup when not blocked, not unlimited, purchased>0, remaining>0,
                     # remaining_percent <= threshold, and not expired.
                     conditions.append(
@@ -493,7 +533,7 @@ def get_users_list(current_admin: User):
                             sa.or_(User.quota_expiry_date.is_(None), User.quota_expiry_date >= now_utc),
                         )
                     )
-                elif status in {'habis', 'quota_habis', 'exhausted'}:
+                elif status in {"habis", "quota_habis", "exhausted"}:
                     # Mirror hotspot sync: habis when not blocked, not unlimited, purchased>0, remaining<=0,
                     # and not expired.
                     conditions.append(
@@ -506,7 +546,7 @@ def get_users_list(current_admin: User):
                             sa.or_(User.quota_expiry_date.is_(None), User.quota_expiry_date >= now_utc),
                         )
                     )
-                elif status in {'inactive_quota', 'quota_inactive', 'no_quota'}:
+                elif status in {"inactive_quota", "quota_inactive", "no_quota"}:
                     # "Inactive" quota state: user aktif, bukan unlimited, purchased<=0, dan tidak expired.
                     conditions.append(
                         sa.and_(
@@ -519,9 +559,9 @@ def get_users_list(current_admin: User):
 
             if conditions:
                 query = query.where(or_(*conditions))
-        
+
         sort_col = getattr(User, sort_by, User.created_at)
-        query = query.order_by(sort_col.desc() if sort_order == 'desc' else sort_col.asc())
+        query = query.order_by(sort_col.desc() if sort_order == "desc" else sort_col.asc())
 
         total = db.session.scalar(select(func.count()).select_from(query.subquery()))
 
@@ -529,14 +569,16 @@ def get_users_list(current_admin: User):
             users = db.session.scalars(query).all()
         else:
             users = db.session.scalars(query.limit(per_page).offset((page - 1) * per_page)).all()
-        
-        return jsonify({"items": [UserResponseSchema.from_orm(u).model_dump() for u in users], "totalItems": total}), HTTPStatus.OK
+
+        return jsonify(
+            {"items": [UserResponseSchema.from_orm(u).model_dump() for u in users], "totalItems": total}
+        ), HTTPStatus.OK
     except Exception as e:
         current_app.logger.error(f"Error getting user list: {e}", exc_info=True)
         return jsonify({"message": "Gagal mengambil data pengguna."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
-@user_management_bp.route('/users/<uuid:user_id>/debts', methods=['GET'])
+@user_management_bp.route("/users/<uuid:user_id>/debts", methods=["GET"])
 @admin_required
 def get_user_manual_debts(current_admin: User, user_id: uuid.UUID):
     """Ambil ledger debt manual untuk user.
@@ -565,30 +607,30 @@ def get_user_manual_debts(current_admin: User, user_id: uuid.UUID):
         open_count = 0
         paid_count = 0
         for d in debts:
-            amount = int(getattr(d, 'amount_mb', 0) or 0)
-            paid_mb = int(getattr(d, 'paid_mb', 0) or 0)
+            amount = int(getattr(d, "amount_mb", 0) or 0)
+            paid_mb = int(getattr(d, "paid_mb", 0) or 0)
             remaining = max(0, amount - paid_mb)
-            is_paid = bool(getattr(d, 'is_paid', False)) or remaining <= 0
+            is_paid = bool(getattr(d, "is_paid", False)) or remaining <= 0
             if is_paid:
                 paid_count += 1
             else:
                 open_count += 1
 
             payload = UserQuotaDebtItemResponseSchema.from_orm(d).model_dump()
-            payload['remaining_mb'] = int(remaining)
-            payload['is_paid'] = bool(is_paid)
-            payload['paid_mb'] = int(paid_mb)
-            payload['amount_mb'] = int(amount)
+            payload["remaining_mb"] = int(remaining)
+            payload["is_paid"] = bool(is_paid)
+            payload["paid_mb"] = int(paid_mb)
+            payload["amount_mb"] = int(amount)
             items.append(payload)
 
         return jsonify(
             {
-                'items': items,
-                'summary': {
-                    'manual_debt_mb': int(getattr(user, 'quota_debt_manual_mb', 0) or 0),
-                    'open_items': int(open_count),
-                    'paid_items': int(paid_count),
-                    'total_items': int(len(items)),
+                "items": items,
+                "summary": {
+                    "manual_debt_mb": int(getattr(user, "quota_debt_manual_mb", 0) or 0),
+                    "open_items": int(open_count),
+                    "paid_items": int(paid_count),
+                    "total_items": int(len(items)),
                 },
             }
         ), HTTPStatus.OK
@@ -597,7 +639,7 @@ def get_user_manual_debts(current_admin: User, user_id: uuid.UUID):
         return jsonify({"message": "Gagal mengambil data debt pengguna."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
-@user_management_bp.route('/users/<uuid:user_id>/debts/<uuid:debt_id>/settle', methods=['POST'])
+@user_management_bp.route("/users/<uuid:user_id>/debts/<uuid:debt_id>/settle", methods=["POST"])
 @admin_required
 def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: uuid.UUID):
     """Lunasi satu item debt manual (one-by-one), tanpa clear semua debt."""
@@ -610,7 +652,7 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
         return jsonify({"message": "Akses ditolak."}), HTTPStatus.FORBIDDEN
 
     debt = db.session.get(UserQuotaDebt, debt_id)
-    if not debt or getattr(debt, 'user_id', None) != user.id:
+    if not debt or getattr(debt, "user_id", None) != user.id:
         return jsonify({"message": "Item debt tidak ditemukan."}), HTTPStatus.NOT_FOUND
 
     try:
@@ -618,7 +660,7 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
             user=user,
             admin_actor=current_admin,
             debt=debt,
-            source='admin_settle_item',
+            source="admin_settle_item",
         )
         db.session.commit()
         return jsonify({"message": "Debt berhasil dilunasi.", "paid_mb": int(paid_mb)}), HTTPStatus.OK
@@ -628,7 +670,7 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
         return jsonify({"message": "Gagal melunasi debt."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
-@user_management_bp.route('/users/<uuid:user_id>/debts/settle-all', methods=['POST'])
+@user_management_bp.route("/users/<uuid:user_id>/debts/settle-all", methods=["POST"])
 @admin_required
 def settle_all_debts(current_admin: User, user_id: uuid.UUID):
     """Lunasi semua tunggakan user (auto + manual) sekaligus.
@@ -648,20 +690,20 @@ def settle_all_debts(current_admin: User, user_id: uuid.UUID):
 
     try:
         # Snapshot for response / notification.
-        debt_auto_before = float(getattr(user, 'quota_debt_auto_mb', 0) or 0)
-        debt_manual_before = int(getattr(user, 'quota_debt_manual_mb', 0) or 0)
-        was_blocked = bool(getattr(user, 'is_blocked', False))
-        blocked_reason = str(getattr(user, 'blocked_reason', '') or '')
+        debt_auto_before = float(getattr(user, "quota_debt_auto_mb", 0) or 0)
+        debt_manual_before = int(getattr(user, "quota_debt_manual_mb", 0) or 0)
+        was_blocked = bool(getattr(user, "is_blocked", False))
+        blocked_reason = str(getattr(user, "blocked_reason", "") or "")
 
         paid_auto_mb, paid_manual_mb = user_debt_service.clear_all_debts_to_zero(
             user=user,
             admin_actor=current_admin,
-            source='admin_settle_all',
+            source="admin_settle_all",
         )
 
         unblocked = False
         # Only auto-unblock if the system blocked the user due to quota debt limit.
-        if was_blocked and blocked_reason.startswith('quota_debt_limit|'):
+        if was_blocked and blocked_reason.startswith("quota_debt_limit|"):
             user.is_blocked = False
             user.blocked_reason = None
             user.blocked_at = None
@@ -672,36 +714,36 @@ def settle_all_debts(current_admin: User, user_id: uuid.UUID):
 
         # Notify user via WhatsApp (best-effort).
         try:
-            purchased_now = float(getattr(user, 'total_quota_purchased_mb', 0) or 0)
-            used_now = float(getattr(user, 'total_quota_used_mb', 0) or 0)
+            purchased_now = float(getattr(user, "total_quota_purchased_mb", 0) or 0)
+            used_now = float(getattr(user, "total_quota_used_mb", 0) or 0)
             remaining_mb = max(0.0, purchased_now - used_now)
 
             paid_total_mb = int(paid_auto_mb) + int(paid_manual_mb)
             # Avoid sending a confusing message when nothing was actually paid.
             if paid_total_mb > 0:
-                template_key = 'user_debt_cleared_unblock' if unblocked else 'user_debt_cleared'
+                template_key = "user_debt_cleared_unblock" if unblocked else "user_debt_cleared"
                 _send_whatsapp_notification(
                     user.phone_number,
                     template_key,
                     {
-                        'full_name': user.full_name,
-                        'paid_auto_debt_mb': int(paid_auto_mb),
-                        'paid_manual_debt_mb': int(paid_manual_mb),
-                        'paid_total_debt_mb': int(paid_total_mb),
-                        'remaining_mb': float(remaining_mb),
+                        "full_name": user.full_name,
+                        "paid_auto_debt_mb": int(paid_auto_mb),
+                        "paid_manual_debt_mb": int(paid_manual_mb),
+                        "paid_total_debt_mb": int(paid_total_mb),
+                        "remaining_mb": float(remaining_mb),
                     },
                 )
         except Exception as e:
-            current_app.logger.warning('Gagal mengirim notifikasi lunas tunggakan untuk user %s: %s', user.id, e)
+            current_app.logger.warning("Gagal mengirim notifikasi lunas tunggakan untuk user %s: %s", user.id, e)
 
         return jsonify(
             {
-                'message': 'Tunggakan berhasil dilunasi.',
-                'paid_auto_mb': int(paid_auto_mb),
-                'paid_manual_mb': int(paid_manual_mb),
-                'debt_auto_before_mb': float(debt_auto_before),
-                'debt_manual_before_mb': int(debt_manual_before),
-                'unblocked': bool(unblocked),
+                "message": "Tunggakan berhasil dilunasi.",
+                "paid_auto_mb": int(paid_auto_mb),
+                "paid_manual_mb": int(paid_manual_mb),
+                "debt_auto_before_mb": float(debt_auto_before),
+                "debt_manual_before_mb": int(debt_manual_before),
+                "unblocked": bool(unblocked),
             }
         ), HTTPStatus.OK
     except Exception as e:
@@ -710,7 +752,7 @@ def settle_all_debts(current_admin: User, user_id: uuid.UUID):
         return jsonify({"message": "Gagal melunasi tunggakan."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
-@user_management_bp.route('/users/<uuid:user_id>/debts/export', methods=['GET'])
+@user_management_bp.route("/users/<uuid:user_id>/debts/export", methods=["GET"])
 @admin_required
 def export_user_manual_debts_pdf(current_admin: User, user_id: uuid.UUID):
     """Export riwayat debt user ke PDF (untuk print/share)."""
@@ -722,8 +764,8 @@ def export_user_manual_debts_pdf(current_admin: User, user_id: uuid.UUID):
     if not current_admin.is_super_admin_role and user.role == UserRole.SUPER_ADMIN:
         return jsonify({"message": "Akses ditolak."}), HTTPStatus.FORBIDDEN
 
-    fmt = (request.args.get('format') or 'pdf').strip().lower()
-    if fmt != 'pdf':
+    fmt = (request.args.get("format") or "pdf").strip().lower()
+    if fmt != "pdf":
         return jsonify({"message": "Format tidak didukung."}), HTTPStatus.BAD_REQUEST
 
     try:
@@ -743,28 +785,28 @@ def export_user_manual_debts_pdf(current_admin: User, user_id: uuid.UUID):
 
         items = []
         for d in debts:
-            amount = int(getattr(d, 'amount_mb', 0) or 0)
-            paid_mb = int(getattr(d, 'paid_mb', 0) or 0)
+            amount = int(getattr(d, "amount_mb", 0) or 0)
+            paid_mb = int(getattr(d, "paid_mb", 0) or 0)
             remaining = max(0, amount - paid_mb)
-            is_paid = bool(getattr(d, 'is_paid', False)) or remaining <= 0
+            is_paid = bool(getattr(d, "is_paid", False)) or remaining <= 0
             payload = UserQuotaDebtItemResponseSchema.from_orm(d).model_dump()
             try:
-                if payload.get('debt_date'):
+                if payload.get("debt_date"):
                     # debt_date from schema is typically YYYY-MM-DD
-                    raw = str(payload.get('debt_date'))
-                    if len(raw) >= 10 and raw[4] == '-' and raw[7] == '-':
-                        payload['debt_date_display'] = f"{raw[8:10]}-{raw[5:7]}-{raw[0:4]}"
+                    raw = str(payload.get("debt_date"))
+                    if len(raw) >= 10 and raw[4] == "-" and raw[7] == "-":
+                        payload["debt_date_display"] = f"{raw[8:10]}-{raw[5:7]}-{raw[0:4]}"
             except Exception:
                 pass
-            payload['remaining_mb'] = int(remaining)
-            payload['is_paid'] = bool(is_paid)
-            payload['paid_mb'] = int(paid_mb)
-            payload['amount_mb'] = int(amount)
+            payload["remaining_mb"] = int(remaining)
+            payload["is_paid"] = bool(is_paid)
+            payload["paid_mb"] = int(paid_mb)
+            payload["amount_mb"] = int(amount)
             items.append(payload)
 
-        debt_auto_mb = float(getattr(user, 'quota_debt_auto_mb', 0) or 0)
-        debt_manual_mb = float(getattr(user, 'quota_debt_manual_mb', 0) or 0)
-        debt_total_mb = float(getattr(user, 'quota_debt_total_mb', debt_auto_mb + debt_manual_mb) or 0)
+        debt_auto_mb = float(getattr(user, "quota_debt_auto_mb", 0) or 0)
+        debt_manual_mb = float(getattr(user, "quota_debt_manual_mb", 0) or 0)
+        debt_total_mb = float(getattr(user, "quota_debt_total_mb", debt_auto_mb + debt_manual_mb) or 0)
 
         cheapest_pkg = None
         try:
@@ -804,48 +846,48 @@ def export_user_manual_debts_pdf(current_admin: User, user_id: uuid.UUID):
         )
 
         now_utc = datetime.now(dt_timezone.utc)
-        generated_local = get_app_local_datetime(now_utc).strftime('%d-%m-%Y %H:%M')
+        generated_local = get_app_local_datetime(now_utc).strftime("%d-%m-%Y %H:%M")
 
         context = {
-            'user': user,
-            'user_phone_display': format_to_local_phone(getattr(user, 'phone_number', '') or '')
-            or (getattr(user, 'phone_number', '') or ''),
-            'generated_at': generated_local,
-            'items': items,
-            'debt_auto_mb': debt_auto_mb,
-            'debt_manual_mb': debt_manual_mb,
-            'debt_total_mb': debt_total_mb,
-            'debt_auto_estimated_rp': est_auto.estimated_rp_rounded or 0,
-            'debt_manual_estimated_rp': est_manual.estimated_rp_rounded or 0,
-            'debt_total_estimated_rp': est_total.estimated_rp_rounded or 0,
-            'estimate_base_package_name': cheapest_pkg_name,
+            "user": user,
+            "user_phone_display": format_to_local_phone(getattr(user, "phone_number", "") or "")
+            or (getattr(user, "phone_number", "") or ""),
+            "generated_at": generated_local,
+            "items": items,
+            "debt_auto_mb": debt_auto_mb,
+            "debt_manual_mb": debt_manual_mb,
+            "debt_total_mb": debt_total_mb,
+            "debt_auto_estimated_rp": est_auto.estimated_rp_rounded or 0,
+            "debt_manual_estimated_rp": est_manual.estimated_rp_rounded or 0,
+            "debt_total_estimated_rp": est_total.estimated_rp_rounded or 0,
+            "estimate_base_package_name": cheapest_pkg_name,
         }
 
-        public_base_url = current_app.config.get('APP_PUBLIC_BASE_URL', request.url_root)
-        html_string = render_template('admin_user_debt_report.html', **context)
+        public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
+        html_string = render_template("admin_user_debt_report.html", **context)
         pdf_bytes = HTML(string=html_string, base_url=public_base_url).write_pdf()
         if not pdf_bytes:
             return jsonify({"message": "Gagal menghasilkan file PDF."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
-        safe_phone = (getattr(user, 'phone_number', '') or '').replace('+', '')
-        filename = f'debt-{safe_phone or user.id}-ledger.pdf'
+        safe_phone = (getattr(user, "phone_number", "") or "").replace("+", "")
+        filename = f"debt-{safe_phone or user.id}-ledger.pdf"
         resp = make_response(pdf_bytes)
-        resp.headers['Content-Type'] = 'application/pdf'
-        resp.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+        resp.headers["Content-Type"] = "application/pdf"
+        resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
         return resp
     except Exception as e:
         current_app.logger.error(f"Error export debt PDF for user {user_id}: {e}", exc_info=True)
         return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
-@user_management_bp.route('/users/inactive-cleanup-preview', methods=['GET'])
+@user_management_bp.route("/users/inactive-cleanup-preview", methods=["GET"])
 @admin_required
 def get_inactive_cleanup_preview(current_admin: User):
     try:
         now_utc = datetime.now(dt_timezone.utc)
-        deactivate_days = settings_service.get_setting_as_int('INACTIVE_DEACTIVATE_DAYS', 45)
-        delete_days = settings_service.get_setting_as_int('INACTIVE_DELETE_DAYS', 90)
-        limit = min(request.args.get('limit', 50, type=int), 200)
+        deactivate_days = settings_service.get_setting_as_int("INACTIVE_DEACTIVATE_DAYS", 45)
+        delete_days = settings_service.get_setting_as_int("INACTIVE_DELETE_DAYS", 90)
+        limit = min(request.args.get("limit", 50, type=int), 200)
 
         users = db.session.scalars(
             select(User).where(
@@ -881,47 +923,51 @@ def get_inactive_cleanup_preview(current_admin: User):
         delete_candidates.sort(key=lambda item: item["days_inactive"], reverse=True)
         deactivate_candidates.sort(key=lambda item: item["days_inactive"], reverse=True)
 
-        return jsonify({
-            "thresholds": {
-                "deactivate_days": deactivate_days,
-                "delete_days": delete_days,
-            },
-            "summary": {
-                "deactivate_candidates": len(deactivate_candidates),
-                "delete_candidates": len(delete_candidates),
-            },
-            "items": {
-                "deactivate_candidates": deactivate_candidates[:limit],
-                "delete_candidates": delete_candidates[:limit],
-            },
-        }), HTTPStatus.OK
+        return jsonify(
+            {
+                "thresholds": {
+                    "deactivate_days": deactivate_days,
+                    "delete_days": delete_days,
+                },
+                "summary": {
+                    "deactivate_candidates": len(deactivate_candidates),
+                    "delete_candidates": len(delete_candidates),
+                },
+                "items": {
+                    "deactivate_candidates": deactivate_candidates[:limit],
+                    "delete_candidates": delete_candidates[:limit],
+                },
+            }
+        ), HTTPStatus.OK
     except Exception as e:
         current_app.logger.error(f"Error preview cleanup pengguna tidak aktif: {e}", exc_info=True)
-        return jsonify({"message": "Gagal memuat preview cleanup pengguna tidak aktif."}), HTTPStatus.INTERNAL_SERVER_ERROR
+        return jsonify(
+            {"message": "Gagal memuat preview cleanup pengguna tidak aktif."}
+        ), HTTPStatus.INTERNAL_SERVER_ERROR
 
-@user_management_bp.route('/form-options/alamat', methods=['GET'])
+
+@user_management_bp.route("/form-options/alamat", methods=["GET"])
 @admin_required
 def get_alamat_form_options(current_admin: User):
-    return jsonify({
-        "bloks": [e.value for e in UserBlok],
-        "kamars": [e.value.replace('Kamar_', '') for e in UserKamar]
-    }), HTTPStatus.OK
+    return jsonify(
+        {"bloks": [e.value for e in UserBlok], "kamars": [e.value.replace("Kamar_", "") for e in UserKamar]}
+    ), HTTPStatus.OK
 
-@user_management_bp.route('/form-options/mikrotik', methods=['GET'])
+
+@user_management_bp.route("/form-options/mikrotik", methods=["GET"])
 @admin_required
 def get_mikrotik_form_options(current_admin: User):
     try:
-        default_server = (
-            settings_service.get_setting('MIKROTIK_DEFAULT_SERVER', None)
-            or settings_service.get_setting('MIKROTIK_DEFAULT_SERVER_USER', 'srv-user')
+        default_server = settings_service.get_setting("MIKROTIK_DEFAULT_SERVER", None) or settings_service.get_setting(
+            "MIKROTIK_DEFAULT_SERVER_USER", "srv-user"
         )
-        default_server_komandan = settings_service.get_setting('MIKROTIK_DEFAULT_SERVER_KOMANDAN', 'srv-komandan')
+        default_server_komandan = settings_service.get_setting("MIKROTIK_DEFAULT_SERVER_KOMANDAN", "srv-komandan")
         active_profile = (
-            settings_service.get_setting('MIKROTIK_ACTIVE_PROFILE', None)
-            or settings_service.get_setting('MIKROTIK_USER_PROFILE', 'user')
-            or settings_service.get_setting('MIKROTIK_DEFAULT_PROFILE', 'default')
+            settings_service.get_setting("MIKROTIK_ACTIVE_PROFILE", None)
+            or settings_service.get_setting("MIKROTIK_USER_PROFILE", "user")
+            or settings_service.get_setting("MIKROTIK_DEFAULT_PROFILE", "default")
         )
-        komandan_profile = settings_service.get_setting('MIKROTIK_KOMANDAN_PROFILE', None) or 'komandan'
+        komandan_profile = settings_service.get_setting("MIKROTIK_KOMANDAN_PROFILE", None) or "komandan"
         defaults = {
             "server_user": default_server,
             "server_komandan": default_server_komandan or default_server,
@@ -929,13 +975,13 @@ def get_mikrotik_form_options(current_admin: User):
             "server_support": default_server,
             "profile_user": active_profile,
             "profile_komandan": komandan_profile or active_profile,
-            "profile_default": settings_service.get_setting('MIKROTIK_DEFAULT_PROFILE', 'default'),
+            "profile_default": settings_service.get_setting("MIKROTIK_DEFAULT_PROFILE", "default"),
             "profile_active": active_profile,
-            "profile_fup": settings_service.get_setting('MIKROTIK_FUP_PROFILE', 'fup'),
-            "profile_habis": settings_service.get_setting('MIKROTIK_HABIS_PROFILE', 'habis'),
-            "profile_unlimited": settings_service.get_setting('MIKROTIK_UNLIMITED_PROFILE', 'unlimited'),
-            "profile_expired": settings_service.get_setting('MIKROTIK_EXPIRED_PROFILE', 'expired'),
-            "profile_inactive": settings_service.get_setting('MIKROTIK_INACTIVE_PROFILE', 'inactive'),
+            "profile_fup": settings_service.get_setting("MIKROTIK_FUP_PROFILE", "fup"),
+            "profile_habis": settings_service.get_setting("MIKROTIK_HABIS_PROFILE", "habis"),
+            "profile_unlimited": settings_service.get_setting("MIKROTIK_UNLIMITED_PROFILE", "unlimited"),
+            "profile_expired": settings_service.get_setting("MIKROTIK_EXPIRED_PROFILE", "expired"),
+            "profile_inactive": settings_service.get_setting("MIKROTIK_INACTIVE_PROFILE", "inactive"),
         }
 
         server_candidates = [
@@ -968,19 +1014,22 @@ def get_mikrotik_form_options(current_admin: User):
                 result.append(value)
             return result
 
-        return jsonify({
-            "serverOptions": _unique(server_candidates),
-            "profileOptions": _unique(profile_candidates),
-            "defaults": defaults,
-        }), HTTPStatus.OK
+        return jsonify(
+            {
+                "serverOptions": _unique(server_candidates),
+                "profileOptions": _unique(profile_candidates),
+                "defaults": defaults,
+            }
+        ), HTTPStatus.OK
     except Exception as e:
         current_app.logger.error(f"Gagal memuat opsi Mikrotik: {e}", exc_info=True)
         return jsonify({"message": "Gagal memuat opsi Mikrotik."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
+
 # ================================================================
 # === [DIKEMBALIKAN] Logika Live Check ke MikroTik dengan Error Handling Lengkap ===
 # ================================================================
-@user_management_bp.route('/users/<uuid:user_id>/mikrotik-status', methods=['GET'])
+@user_management_bp.route("/users/<uuid:user_id>/mikrotik-status", methods=["GET"])
 @admin_required
 def check_mikrotik_status(current_admin: User, user_id: uuid.UUID):
     """
@@ -993,10 +1042,9 @@ def check_mikrotik_status(current_admin: User, user_id: uuid.UUID):
 
         mikrotik_username = format_to_local_phone(user.phone_number)
         if not mikrotik_username:
-            return jsonify({
-                "exists_on_mikrotik": False,
-                "message": "Format nomor telepon pengguna tidak valid."
-            }), HTTPStatus.OK
+            return jsonify(
+                {"exists_on_mikrotik": False, "message": "Format nomor telepon pengguna tidak valid."}
+            ), HTTPStatus.OK
 
         operation_result = _handle_mikrotik_operation(
             get_hotspot_user_details,
@@ -1023,14 +1071,16 @@ def check_mikrotik_status(current_admin: User, user_id: uuid.UUID):
                 user_id,
                 mikrotik_message,
             )
-            return jsonify({
-                "user_id": str(user.id),
-                "exists_on_mikrotik": bool(user.mikrotik_user_exists),
-                "details": None,
-                "live_available": False,
-                "message": "Live check MikroTik tidak tersedia. Menampilkan data lokal database.",
-                "reason": mikrotik_message,
-            }), HTTPStatus.OK
+            return jsonify(
+                {
+                    "user_id": str(user.id),
+                    "exists_on_mikrotik": bool(user.mikrotik_user_exists),
+                    "details": None,
+                    "live_available": False,
+                    "message": "Live check MikroTik tidak tersedia. Menampilkan data lokal database.",
+                    "reason": mikrotik_message,
+                }
+            ), HTTPStatus.OK
 
         user_exists = details is not None
 
@@ -1038,14 +1088,22 @@ def check_mikrotik_status(current_admin: User, user_id: uuid.UUID):
             user.mikrotik_user_exists = user_exists
             db.session.commit()
 
-        return jsonify({
-            "user_id": str(user.id),
-            "exists_on_mikrotik": user_exists,
-            "details": details,
-            "live_available": True,
-            "message": "Data live MikroTik berhasil dimuat." if user_exists else "Pengguna tidak ditemukan di MikroTik.",
-        }), HTTPStatus.OK
+        return jsonify(
+            {
+                "user_id": str(user.id),
+                "exists_on_mikrotik": user_exists,
+                "details": details,
+                "live_available": True,
+                "message": "Data live MikroTik berhasil dimuat."
+                if user_exists
+                else "Pengguna tidak ditemukan di MikroTik.",
+            }
+        ), HTTPStatus.OK
 
     except Exception as e:
-        current_app.logger.error(f"Kesalahan tak terduga di endpoint mikrotik-status untuk user {user_id}: {e}", exc_info=True)
-        return jsonify({"message": "Terjadi kesalahan internal tak terduga pada server."}), HTTPStatus.INTERNAL_SERVER_ERROR
+        current_app.logger.error(
+            f"Kesalahan tak terduga di endpoint mikrotik-status untuk user {user_id}: {e}", exc_info=True
+        )
+        return jsonify(
+            {"message": "Terjadi kesalahan internal tak terduga pada server."}
+        ), HTTPStatus.INTERNAL_SERVER_ERROR

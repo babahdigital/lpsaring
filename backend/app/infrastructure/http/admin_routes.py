@@ -21,9 +21,18 @@ from app.extensions import db
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message, send_whatsapp_with_image_url
 from app.infrastructure.gateways.telegram_client import send_telegram_message
 from app.infrastructure.db.models import (
-    User, UserRole, Package, ApprovalStatus, Transaction,
-    TransactionStatus, NotificationRecipient, NotificationType,
-    QuotaRequest, RequestStatus, TransactionEvent, TransactionEventSource
+    User,
+    UserRole,
+    Package,
+    ApprovalStatus,
+    Transaction,
+    TransactionStatus,
+    NotificationRecipient,
+    NotificationType,
+    QuotaRequest,
+    RequestStatus,
+    TransactionEvent,
+    TransactionEventSource,
 )
 from .decorators import admin_required, super_admin_required
 from .schemas.notification_schemas import NotificationRecipientUpdateSchema
@@ -37,10 +46,11 @@ from app.infrastructure.http.transactions_routes import (
     safe_parse_midtrans_datetime,
 )
 
-admin_bp = Blueprint('admin_api', __name__)
+admin_bp = Blueprint("admin_api", __name__)
 
 try:
     from weasyprint import HTML
+
     WEASYPRINT_AVAILABLE = True
 except Exception:
     HTML = None
@@ -154,13 +164,15 @@ def _compact_json_summary(payload: object | None, *, max_len: int = 180) -> str:
         return text[: max_len - 1] + "…"
     return text
 
+
 def _get_backup_dir() -> str:
-    backup_dir = current_app.config.get('BACKUP_DIR', '/app/backups')
+    backup_dir = current_app.config.get("BACKUP_DIR", "/app/backups")
     os.makedirs(backup_dir, exist_ok=True)
     return backup_dir
 
+
 def _build_pg_dump_command(output_path: str) -> list[str]:
-    db_url = current_app.config.get('SQLALCHEMY_DATABASE_URI')
+    db_url = current_app.config.get("SQLALCHEMY_DATABASE_URI")
     if not db_url:
         raise RuntimeError("DATABASE_URL tidak disetel")
 
@@ -175,17 +187,22 @@ def _build_pg_dump_command(output_path: str) -> list[str]:
     port = url.port or 5432
     return [
         "pg_dump",
-        "-h", host,
-        "-p", str(port),
-        "-U", url.username,
-        "-F", "c",
-        "-f", output_path,
+        "-h",
+        host,
+        "-p",
+        str(port),
+        "-U",
+        url.username,
+        "-F",
+        "c",
+        "-f",
+        output_path,
         url.database,
     ]
 
 
 def _build_pg_restore_command(input_path: str) -> list[str]:
-    db_url = current_app.config.get('SQLALCHEMY_DATABASE_URI')
+    db_url = current_app.config.get("SQLALCHEMY_DATABASE_URI")
     if not db_url:
         raise RuntimeError("DATABASE_URL tidak disetel")
 
@@ -200,10 +217,14 @@ def _build_pg_restore_command(input_path: str) -> list[str]:
     port = url.port or 5432
     return [
         "pg_restore",
-        "-h", host,
-        "-p", str(port),
-        "-U", url.username,
-        "-d", url.database,
+        "-h",
+        host,
+        "-p",
+        str(port),
+        "-U",
+        url.username,
+        "-d",
+        url.database,
         "--clean",
         "--if-exists",
         "--no-owner",
@@ -213,7 +234,7 @@ def _build_pg_restore_command(input_path: str) -> list[str]:
 
 
 def _build_psql_restore_command(input_path: str) -> list[str]:
-    db_url = current_app.config.get('SQLALCHEMY_DATABASE_URI')
+    db_url = current_app.config.get("SQLALCHEMY_DATABASE_URI")
     if not db_url:
         raise RuntimeError("DATABASE_URL tidak disetel")
 
@@ -228,17 +249,23 @@ def _build_psql_restore_command(input_path: str) -> list[str]:
     port = url.port or 5432
     return [
         "psql",
-        "-h", host,
-        "-p", str(port),
-        "-U", url.username,
-        "-d", url.database,
-        "-v", "ON_ERROR_STOP=1",
-        "-f", input_path,
+        "-h",
+        host,
+        "-p",
+        str(port),
+        "-U",
+        url.username,
+        "-d",
+        url.database,
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-f",
+        input_path,
     ]
 
 
 def _build_psql_statement_command(statement: str) -> list[str]:
-    db_url = current_app.config.get('SQLALCHEMY_DATABASE_URI')
+    db_url = current_app.config.get("SQLALCHEMY_DATABASE_URI")
     if not db_url:
         raise RuntimeError("DATABASE_URL tidak disetel")
 
@@ -253,21 +280,27 @@ def _build_psql_statement_command(statement: str) -> list[str]:
     port = url.port or 5432
     return [
         "psql",
-        "-h", host,
-        "-p", str(port),
-        "-U", url.username,
-        "-d", url.database,
-        "-v", "ON_ERROR_STOP=1",
-        "-c", statement,
+        "-h",
+        host,
+        "-p",
+        str(port),
+        "-U",
+        url.username,
+        "-d",
+        url.database,
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-c",
+        statement,
     ]
 
 
 def _sanitize_sql_dump_for_restore(file_path: pathlib.Path) -> tuple[pathlib.Path, int]:
-    original_content = file_path.read_text(encoding='utf-8', errors='replace')
+    original_content = file_path.read_text(encoding="utf-8", errors="replace")
     filtered_lines = []
     removed_lines = 0
     for line in original_content.splitlines(keepends=True):
-        if line.lstrip().startswith('pg_dump:'):
+        if line.lstrip().startswith("pg_dump:"):
             removed_lines += 1
             continue
         filtered_lines.append(line)
@@ -277,10 +310,11 @@ def _sanitize_sql_dump_for_restore(file_path: pathlib.Path) -> tuple[pathlib.Pat
 
     sanitized_name = f"{file_path.stem}.sanitized_{uuid.uuid4().hex}{file_path.suffix}"
     sanitized_path = file_path.parent / sanitized_name
-    sanitized_path.write_text(''.join(filtered_lines), encoding='utf-8')
+    sanitized_path.write_text("".join(filtered_lines), encoding="utf-8")
     return sanitized_path, removed_lines
 
-@admin_bp.route('/dashboard/stats', methods=['GET'])
+
+@admin_bp.route("/dashboard/stats", methods=["GET"])
 @admin_required
 def get_dashboard_stats(current_admin: User):
     """Menyediakan statistik komprehensif untuk dasbor admin."""
@@ -294,52 +328,164 @@ def get_dashboard_stats(current_admin: User):
         start_30_days_utc = start_of_today_utc - timedelta(days=29)
         seven_days_from_now = now_utc + timedelta(days=7)
 
-        revenue_today = db.session.scalar(select(func.sum(Transaction.amount)).where(Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_of_today_utc)) or Decimal('0.00')
-        revenue_yesterday = db.session.scalar(select(func.sum(Transaction.amount)).where(Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_of_yesterday_utc, Transaction.created_at < start_of_today_utc)) or Decimal('0.00')
-        revenue_month = db.session.scalar(select(func.sum(Transaction.amount)).where(Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_of_month_utc)) or Decimal('0.00')
-        revenue_week = db.session.scalar(select(func.sum(Transaction.amount)).where(Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_7_days_utc)) or Decimal('0.00')
-        revenue_prev_week = db.session.scalar(select(func.sum(Transaction.amount)).where(Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_prev_7_days_utc, Transaction.created_at < start_7_days_utc)) or Decimal('0.00')
+        revenue_today = db.session.scalar(
+            select(func.sum(Transaction.amount)).where(
+                Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_of_today_utc
+            )
+        ) or Decimal("0.00")
+        revenue_yesterday = db.session.scalar(
+            select(func.sum(Transaction.amount)).where(
+                Transaction.status == TransactionStatus.SUCCESS,
+                Transaction.created_at >= start_of_yesterday_utc,
+                Transaction.created_at < start_of_today_utc,
+            )
+        ) or Decimal("0.00")
+        revenue_month = db.session.scalar(
+            select(func.sum(Transaction.amount)).where(
+                Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_of_month_utc
+            )
+        ) or Decimal("0.00")
+        revenue_week = db.session.scalar(
+            select(func.sum(Transaction.amount)).where(
+                Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_7_days_utc
+            )
+        ) or Decimal("0.00")
+        revenue_prev_week = db.session.scalar(
+            select(func.sum(Transaction.amount)).where(
+                Transaction.status == TransactionStatus.SUCCESS,
+                Transaction.created_at >= start_prev_7_days_utc,
+                Transaction.created_at < start_7_days_utc,
+            )
+        ) or Decimal("0.00")
 
-        transaksi_hari_ini = db.session.scalar(select(func.count(Transaction.id)).where(Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_of_today_utc)) or 0
-        transaksi_minggu_ini = db.session.scalar(select(func.count(Transaction.id)).where(Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_7_days_utc)) or 0
-        transaksi_minggu_lalu = db.session.scalar(select(func.count(Transaction.id)).where(Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_prev_7_days_utc, Transaction.created_at < start_7_days_utc)) or 0
+        transaksi_hari_ini = (
+            db.session.scalar(
+                select(func.count(Transaction.id)).where(
+                    Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_of_today_utc
+                )
+            )
+            or 0
+        )
+        transaksi_minggu_ini = (
+            db.session.scalar(
+                select(func.count(Transaction.id)).where(
+                    Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_7_days_utc
+                )
+            )
+            or 0
+        )
+        transaksi_minggu_lalu = (
+            db.session.scalar(
+                select(func.count(Transaction.id)).where(
+                    Transaction.status == TransactionStatus.SUCCESS,
+                    Transaction.created_at >= start_prev_7_days_utc,
+                    Transaction.created_at < start_7_days_utc,
+                )
+            )
+            or 0
+        )
 
-        new_registrants = db.session.scalar(select(func.count(User.id)).where(User.approval_status == ApprovalStatus.PENDING_APPROVAL)) or 0
-        active_users = db.session.scalar(select(func.count(User.id)).where(User.approval_status == ApprovalStatus.APPROVED, User.is_active.is_(True))) or 0
-        expiring_soon_users = db.session.scalar(select(func.count(User.id)).where(User.quota_expiry_date.between(now_utc, seven_days_from_now))) or 0
+        new_registrants = (
+            db.session.scalar(
+                select(func.count(User.id)).where(User.approval_status == ApprovalStatus.PENDING_APPROVAL)
+            )
+            or 0
+        )
+        active_users = (
+            db.session.scalar(
+                select(func.count(User.id)).where(
+                    User.approval_status == ApprovalStatus.APPROVED, User.is_active.is_(True)
+                )
+            )
+            or 0
+        )
+        expiring_soon_users = (
+            db.session.scalar(
+                select(func.count(User.id)).where(User.quota_expiry_date.between(now_utc, seven_days_from_now))
+            )
+            or 0
+        )
 
-        kuota_terjual_gb = db.session.scalar(select(func.sum(Package.data_quota_gb)).select_from(Transaction).join(Package).where(Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_of_month_utc, Package.data_quota_gb > 0)) or Decimal('0.0')
-        kuota_terjual_7hari_gb = db.session.scalar(select(func.sum(Package.data_quota_gb)).select_from(Transaction).join(Package).where(Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_7_days_utc, Package.data_quota_gb > 0)) or Decimal('0.0')
-        kuota_terjual_prev_7hari_gb = db.session.scalar(select(func.sum(Package.data_quota_gb)).select_from(Transaction).join(Package).where(Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_prev_7_days_utc, Transaction.created_at < start_7_days_utc, Package.data_quota_gb > 0)) or Decimal('0.0')
+        kuota_terjual_gb = db.session.scalar(
+            select(func.sum(Package.data_quota_gb))
+            .select_from(Transaction)
+            .join(Package)
+            .where(
+                Transaction.status == TransactionStatus.SUCCESS,
+                Transaction.created_at >= start_of_month_utc,
+                Package.data_quota_gb > 0,
+            )
+        ) or Decimal("0.0")
+        kuota_terjual_7hari_gb = db.session.scalar(
+            select(func.sum(Package.data_quota_gb))
+            .select_from(Transaction)
+            .join(Package)
+            .where(
+                Transaction.status == TransactionStatus.SUCCESS,
+                Transaction.created_at >= start_7_days_utc,
+                Package.data_quota_gb > 0,
+            )
+        ) or Decimal("0.0")
+        kuota_terjual_prev_7hari_gb = db.session.scalar(
+            select(func.sum(Package.data_quota_gb))
+            .select_from(Transaction)
+            .join(Package)
+            .where(
+                Transaction.status == TransactionStatus.SUCCESS,
+                Transaction.created_at >= start_prev_7_days_utc,
+                Transaction.created_at < start_7_days_utc,
+                Package.data_quota_gb > 0,
+            )
+        ) or Decimal("0.0")
 
         kuota_terjual_mb = float(kuota_terjual_gb) * 1024
         kuota_terjual_7hari_mb = float(kuota_terjual_7hari_gb) * 1024
         kuota_terjual_prev_7hari_mb = float(kuota_terjual_prev_7hari_gb) * 1024
 
-        latest_transactions_q = select(Transaction).options(
-            selectinload(Transaction.user).load_only(User.full_name, User.phone_number),
-            selectinload(Transaction.package).load_only(Package.name)
-        ).where(Transaction.status == TransactionStatus.SUCCESS).order_by(desc(Transaction.created_at)).limit(5)
+        latest_transactions_q = (
+            select(Transaction)
+            .options(
+                selectinload(Transaction.user).load_only(User.full_name, User.phone_number),
+                selectinload(Transaction.package).load_only(Package.name),
+            )
+            .where(Transaction.status == TransactionStatus.SUCCESS)
+            .order_by(desc(Transaction.created_at))
+            .limit(5)
+        )
         latest_transactions = db.session.scalars(latest_transactions_q).all()
-        transaksi_terakhir_data = [{
-            "id": str(tx.id),
-            "amount": float(tx.amount),
-            "created_at": tx.created_at.isoformat(),
-            "package": {"name": tx.package.name if tx.package else "N/A"},
-            "user": {
-                "full_name": tx.user.full_name if tx.user else "Pengguna Dihapus",
-                "phone_number": tx.user.phone_number if tx.user else None,
+        transaksi_terakhir_data = [
+            {
+                "id": str(tx.id),
+                "amount": float(tx.amount),
+                "created_at": tx.created_at.isoformat(),
+                "package": {"name": tx.package.name if tx.package else "N/A"},
+                "user": {
+                    "full_name": tx.user.full_name if tx.user else "Pengguna Dihapus",
+                    "phone_number": tx.user.phone_number if tx.user else None,
+                },
             }
-        } for tx in latest_transactions]
-        
-        top_packages_q = select(Package.name, func.count(Transaction.id).label('sales_count')).select_from(Transaction).join(Package).where(Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_of_month_utc).group_by(Package.name).order_by(desc('sales_count')).limit(5)
+            for tx in latest_transactions
+        ]
+
+        top_packages_q = (
+            select(Package.name, func.count(Transaction.id).label("sales_count"))
+            .select_from(Transaction)
+            .join(Package)
+            .where(Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_of_month_utc)
+            .group_by(Package.name)
+            .order_by(desc("sales_count"))
+            .limit(5)
+        )
         top_packages = db.session.execute(top_packages_q).all()
         paket_terlaris_data = [{"name": name, "count": count} for name, count in top_packages]
-        
-        pending_requests_count = db.session.scalar(select(func.count(QuotaRequest.id)).where(QuotaRequest.status == RequestStatus.PENDING)) or 0
+
+        pending_requests_count = (
+            db.session.scalar(select(func.count(QuotaRequest.id)).where(QuotaRequest.status == RequestStatus.PENDING))
+            or 0
+        )
 
         daily_revenue_rows = db.session.execute(
-            select(func.date(Transaction.created_at).label('day'), func.sum(Transaction.amount))
+            select(func.date(Transaction.created_at).label("day"), func.sum(Transaction.amount))
             .where(Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_30_days_utc)
             .group_by(func.date(Transaction.created_at))
             .order_by(func.date(Transaction.created_at))
@@ -347,10 +493,14 @@ def get_dashboard_stats(current_admin: User):
         daily_revenue_map = {row[0]: float(row[1] or 0) for row in daily_revenue_rows}
 
         daily_quota_rows = db.session.execute(
-            select(func.date(Transaction.created_at).label('day'), func.sum(Package.data_quota_gb))
+            select(func.date(Transaction.created_at).label("day"), func.sum(Package.data_quota_gb))
             .select_from(Transaction)
             .join(Package)
-            .where(Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_7_days_utc, Package.data_quota_gb > 0)
+            .where(
+                Transaction.status == TransactionStatus.SUCCESS,
+                Transaction.created_at >= start_7_days_utc,
+                Package.data_quota_gb > 0,
+            )
             .group_by(func.date(Transaction.created_at))
             .order_by(func.date(Transaction.created_at))
         ).all()
@@ -367,7 +517,8 @@ def get_dashboard_stats(current_admin: User):
             kuota_per_hari.append(daily_quota_map.get(day, 0))
 
         stats = {
-            "pendapatanHariIni": float(revenue_today), "pendapatanBulanIni": float(revenue_month),
+            "pendapatanHariIni": float(revenue_today),
+            "pendapatanBulanIni": float(revenue_month),
             "pendapatanKemarin": float(revenue_yesterday),
             "pendapatanMingguIni": float(revenue_week),
             "pendapatanMingguLalu": float(revenue_prev_week),
@@ -391,7 +542,8 @@ def get_dashboard_stats(current_admin: User):
         current_app.logger.error(f"Error di endpoint dashboard/stats: {e}", exc_info=True)
         return jsonify({"message": "Gagal memuat statistik dasbor."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
-@admin_bp.route('/backups', methods=['GET'])
+
+@admin_bp.route("/backups", methods=["GET"])
 @admin_required
 def list_backups(current_admin: User):
     try:
@@ -400,29 +552,32 @@ def list_backups(current_admin: User):
         for pattern in ("*.dump", "*.sql"):
             for entry in pathlib.Path(backup_dir).glob(pattern):
                 stat = entry.stat()
-                items.append({
-                    "name": entry.name,
-                    "size_bytes": stat.st_size,
-                    "created_at": datetime.fromtimestamp(stat.st_mtime, tz=dt_timezone.utc).isoformat(),
-                })
+                items.append(
+                    {
+                        "name": entry.name,
+                        "size_bytes": stat.st_size,
+                        "created_at": datetime.fromtimestamp(stat.st_mtime, tz=dt_timezone.utc).isoformat(),
+                    }
+                )
         items.sort(key=lambda x: x["created_at"], reverse=True)
         return jsonify({"items": items}), HTTPStatus.OK
     except Exception as e:
         current_app.logger.error(f"Error mengambil daftar backup: {e}", exc_info=True)
         return jsonify({"message": "Gagal mengambil daftar backup."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
-@admin_bp.route('/backups', methods=['POST'])
+
+@admin_bp.route("/backups", methods=["POST"])
 @admin_required
 def create_backup(current_admin: User):
     try:
         backup_dir = _get_backup_dir()
-        timestamp = datetime.now(dt_timezone.utc).strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now(dt_timezone.utc).strftime("%Y%m%d_%H%M%S")
         filename = f"backup_{timestamp}.dump"
         output_path = os.path.join(backup_dir, filename)
 
         cmd = _build_pg_dump_command(output_path)
         env = os.environ.copy()
-        db_uri = current_app.config.get('SQLALCHEMY_DATABASE_URI')
+        db_uri = current_app.config.get("SQLALCHEMY_DATABASE_URI")
         if not isinstance(db_uri, str) or not db_uri:
             raise RuntimeError("DATABASE_URL tidak disetel")
         db_url = make_url(db_uri)
@@ -435,11 +590,13 @@ def create_backup(current_admin: User):
             return jsonify({"message": "Backup gagal dijalankan."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
         stat = pathlib.Path(output_path).stat()
-        return jsonify({
-            "name": filename,
-            "size_bytes": stat.st_size,
-            "created_at": datetime.fromtimestamp(stat.st_mtime, tz=dt_timezone.utc).isoformat(),
-        }), HTTPStatus.OK
+        return jsonify(
+            {
+                "name": filename,
+                "size_bytes": stat.st_size,
+                "created_at": datetime.fromtimestamp(stat.st_mtime, tz=dt_timezone.utc).isoformat(),
+            }
+        ), HTTPStatus.OK
     except FileNotFoundError:
         return jsonify({"message": "pg_dump tidak tersedia di server."}), HTTPStatus.BAD_REQUEST
     except RuntimeError as e:
@@ -448,7 +605,8 @@ def create_backup(current_admin: User):
         current_app.logger.error(f"Error membuat backup: {e}", exc_info=True)
         return jsonify({"message": "Gagal membuat backup."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
-@admin_bp.route('/backups/<path:filename>', methods=['GET'])
+
+@admin_bp.route("/backups/<path:filename>", methods=["GET"])
 @admin_required
 def download_backup(current_admin: User, filename: str):
     backup_dir = _get_backup_dir()
@@ -459,73 +617,79 @@ def download_backup(current_admin: User, filename: str):
     return send_file(file_path, as_attachment=True)
 
 
-@admin_bp.route('/backups/upload', methods=['POST'])
+@admin_bp.route("/backups/upload", methods=["POST"])
 @super_admin_required
 def upload_backup(current_admin: User):
     try:
-        uploaded_file = request.files.get('file')
+        uploaded_file = request.files.get("file")
         if uploaded_file is None:
             return jsonify({"message": "File backup wajib diunggah."}), HTTPStatus.BAD_REQUEST
 
-        original_name = pathlib.Path(uploaded_file.filename or '').name
+        original_name = pathlib.Path(uploaded_file.filename or "").name
         if not original_name:
             return jsonify({"message": "Nama file tidak valid."}), HTTPStatus.BAD_REQUEST
 
         extension = pathlib.Path(original_name).suffix.lower()
-        if extension not in ('.dump', '.sql'):
+        if extension not in (".dump", ".sql"):
             return jsonify({"message": "Format file tidak didukung. Gunakan .dump atau .sql"}), HTTPStatus.BAD_REQUEST
 
         backup_dir = pathlib.Path(_get_backup_dir())
         stem = pathlib.Path(original_name).stem
-        timestamp = datetime.now(dt_timezone.utc).strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now(dt_timezone.utc).strftime("%Y%m%d_%H%M%S")
         save_name = f"upload_{timestamp}_{stem}{extension}"
         target_path = backup_dir / save_name
         uploaded_file.save(target_path)
 
         stat = target_path.stat()
-        return jsonify({
-            "message": "File backup berhasil diunggah.",
-            "name": save_name,
-            "size_bytes": stat.st_size,
-            "created_at": datetime.fromtimestamp(stat.st_mtime, tz=dt_timezone.utc).isoformat(),
-        }), HTTPStatus.OK
+        return jsonify(
+            {
+                "message": "File backup berhasil diunggah.",
+                "name": save_name,
+                "size_bytes": stat.st_size,
+                "created_at": datetime.fromtimestamp(stat.st_mtime, tz=dt_timezone.utc).isoformat(),
+            }
+        ), HTTPStatus.OK
     except Exception as e:
         current_app.logger.error(f"Error upload backup: {e}", exc_info=True)
         return jsonify({"message": "Gagal mengunggah file backup."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
-@admin_bp.route('/backups/restore', methods=['POST'])
+@admin_bp.route("/backups/restore", methods=["POST"])
 @super_admin_required
 def restore_backup(current_admin: User):
     temporary_restore_path: pathlib.Path | None = None
     try:
         json_data = request.get_json(silent=True) or {}
-        filename = str(json_data.get('filename') or '').strip()
-        confirm = str(json_data.get('confirm') or '').strip().upper()
-        restore_mode = str(json_data.get('restore_mode') or 'merge').strip().lower()
+        filename = str(json_data.get("filename") or "").strip()
+        confirm = str(json_data.get("confirm") or "").strip().upper()
+        restore_mode = str(json_data.get("restore_mode") or "merge").strip().lower()
 
         if not filename:
             return jsonify({"message": "filename wajib diisi."}), HTTPStatus.BAD_REQUEST
-        if confirm != 'RESTORE':
+        if confirm != "RESTORE":
             return jsonify({"message": "Konfirmasi restore tidak valid."}), HTTPStatus.BAD_REQUEST
-        if restore_mode not in ('merge', 'replace_users'):
-            return jsonify({"message": "restore_mode tidak valid. Gunakan 'merge' atau 'replace_users'."}), HTTPStatus.BAD_REQUEST
+        if restore_mode not in ("merge", "replace_users"):
+            return jsonify(
+                {"message": "restore_mode tidak valid. Gunakan 'merge' atau 'replace_users'."}
+            ), HTTPStatus.BAD_REQUEST
 
         backup_dir = _get_backup_dir()
         safe_name = pathlib.Path(filename).name
         file_path = pathlib.Path(backup_dir) / safe_name
         extension = file_path.suffix.lower()
-        if extension not in ('.dump', '.sql'):
+        if extension not in (".dump", ".sql"):
             return jsonify({"message": "Format file backup tidak didukung."}), HTTPStatus.BAD_REQUEST
-        if extension != '.sql' and restore_mode != 'merge':
-            return jsonify({"message": "restore_mode selain 'merge' hanya didukung untuk file .sql"}), HTTPStatus.BAD_REQUEST
+        if extension != ".sql" and restore_mode != "merge":
+            return jsonify(
+                {"message": "restore_mode selain 'merge' hanya didukung untuk file .sql"}
+            ), HTTPStatus.BAD_REQUEST
         if not file_path.exists() or not file_path.is_file():
             return jsonify({"message": "File backup tidak ditemukan."}), HTTPStatus.NOT_FOUND
 
         db.session.remove()
         db.engine.dispose()
 
-        if extension == '.sql':
+        if extension == ".sql":
             sanitized_path, removed_lines = _sanitize_sql_dump_for_restore(file_path)
             if removed_lines > 0:
                 current_app.logger.warning(
@@ -539,30 +703,31 @@ def restore_backup(current_admin: User):
         else:
             cmd = _build_pg_restore_command(str(file_path))
         env = os.environ.copy()
-        db_uri = current_app.config.get('SQLALCHEMY_DATABASE_URI')
+        db_uri = current_app.config.get("SQLALCHEMY_DATABASE_URI")
         if not isinstance(db_uri, str) or not db_uri:
             raise RuntimeError("DATABASE_URL tidak disetel")
         db_url = make_url(db_uri)
         if db_url.password:
-            env['PGPASSWORD'] = db_url.password
+            env["PGPASSWORD"] = db_url.password
 
-        if extension == '.sql' and restore_mode == 'replace_users':
-            pre_cmd = _build_psql_statement_command('TRUNCATE TABLE public.users RESTART IDENTITY CASCADE;')
+        if extension == ".sql" and restore_mode == "replace_users":
+            pre_cmd = _build_psql_statement_command("TRUNCATE TABLE public.users RESTART IDENTITY CASCADE;")
             pre_result = subprocess.run(pre_cmd, env=env, capture_output=True, text=True, check=False)
             if pre_result.returncode != 0:
-                pre_stderr = (pre_result.stderr or '').strip()
+                pre_stderr = (pre_result.stderr or "").strip()
                 current_app.logger.error(f"Pre-clean users sebelum restore gagal: {pre_stderr}")
-                return jsonify({
-                    "message": "Pre-clean data users gagal dijalankan sebelum restore.",
-                    "details": pre_stderr[:500],
-                }), HTTPStatus.INTERNAL_SERVER_ERROR
+                return jsonify(
+                    {
+                        "message": "Pre-clean data users gagal dijalankan sebelum restore.",
+                        "details": pre_stderr[:500],
+                    }
+                ), HTTPStatus.INTERNAL_SERVER_ERROR
 
         result = subprocess.run(cmd, env=env, capture_output=True, text=True, check=False)
         if result.returncode != 0:
-            stderr_text = (result.stderr or '').strip()
+            stderr_text = (result.stderr or "").strip()
             only_transaction_timeout_warning = (
-                extension == '.dump'
-                and 'unrecognized configuration parameter "transaction_timeout"' in stderr_text
+                extension == ".dump" and 'unrecognized configuration parameter "transaction_timeout"' in stderr_text
             )
 
             if only_transaction_timeout_warning:
@@ -572,16 +737,20 @@ def restore_backup(current_admin: User):
                 )
             else:
                 current_app.logger.error(f"pg_restore gagal: {stderr_text}")
-                return jsonify({
-                    "message": "Restore gagal dijalankan.",
-                    "details": stderr_text[:500],
-                }), HTTPStatus.INTERNAL_SERVER_ERROR
+                return jsonify(
+                    {
+                        "message": "Restore gagal dijalankan.",
+                        "details": stderr_text[:500],
+                    }
+                ), HTTPStatus.INTERNAL_SERVER_ERROR
 
-        return jsonify({
-            "message": "Restore database berhasil dijalankan.",
-            "filename": safe_name,
-            "restore_mode": restore_mode,
-        }), HTTPStatus.OK
+        return jsonify(
+            {
+                "message": "Restore database berhasil dijalankan.",
+                "filename": safe_name,
+                "restore_mode": restore_mode,
+            }
+        ), HTTPStatus.OK
     except FileNotFoundError:
         return jsonify({"message": "pg_restore/psql tidak tersedia di server."}), HTTPStatus.BAD_REQUEST
     except RuntimeError as e:
@@ -602,13 +771,13 @@ def restore_backup(current_admin: User):
                 )
 
 
-@admin_bp.route('/whatsapp/test-send', methods=['POST'])
+@admin_bp.route("/whatsapp/test-send", methods=["POST"])
 @admin_required
 def send_whatsapp_test(current_admin: User):
     try:
         json_data = request.get_json(silent=True) or {}
-        phone_number = str(json_data.get('phone_number') or '').strip()
-        message = str(json_data.get('message') or '').strip() or 'Tes WhatsApp dari panel admin hotspot.'
+        phone_number = str(json_data.get("phone_number") or "").strip()
+        message = str(json_data.get("message") or "").strip() or "Tes WhatsApp dari panel admin hotspot."
 
         if not phone_number:
             return jsonify({"message": "Nomor WhatsApp wajib diisi."}), HTTPStatus.BAD_REQUEST
@@ -617,26 +786,30 @@ def send_whatsapp_test(current_admin: User):
 
         sent = send_whatsapp_message(phone_number, message)
         if not sent:
-            return jsonify({
-                "message": "Pengiriman WhatsApp gagal. Cek konfigurasi Fonnte/token/nomor tujuan.",
-            }), HTTPStatus.BAD_REQUEST
+            return jsonify(
+                {
+                    "message": "Pengiriman WhatsApp gagal. Cek konfigurasi Fonnte/token/nomor tujuan.",
+                }
+            ), HTTPStatus.BAD_REQUEST
 
-        return jsonify({
-            "message": "Pesan WhatsApp uji coba berhasil dikirim.",
-            "target": phone_number,
-        }), HTTPStatus.OK
+        return jsonify(
+            {
+                "message": "Pesan WhatsApp uji coba berhasil dikirim.",
+                "target": phone_number,
+            }
+        ), HTTPStatus.OK
     except Exception as e:
         current_app.logger.error(f"Error test-send WhatsApp admin: {e}", exc_info=True)
         return jsonify({"message": "Gagal mengirim WhatsApp uji coba."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
-@admin_bp.route('/telegram/test-send', methods=['POST'])
+@admin_bp.route("/telegram/test-send", methods=["POST"])
 @admin_required
 def send_telegram_test(current_admin: User):
     try:
         json_data = request.get_json(silent=True) or {}
-        chat_id = str(json_data.get('chat_id') or '').strip()
-        message = str(json_data.get('message') or '').strip() or 'Tes Telegram dari panel admin hotspot.'
+        chat_id = str(json_data.get("chat_id") or "").strip()
+        message = str(json_data.get("message") or "").strip() or "Tes Telegram dari panel admin hotspot."
 
         if not chat_id:
             return jsonify({"message": "chat_id Telegram wajib diisi."}), HTTPStatus.BAD_REQUEST
@@ -645,26 +818,30 @@ def send_telegram_test(current_admin: User):
 
         sent = send_telegram_message(chat_id, message)
         if not sent:
-            return jsonify({
-                "message": "Pengiriman Telegram gagal. Cek konfigurasi bot token / chat_id.",
-            }), HTTPStatus.BAD_REQUEST
+            return jsonify(
+                {
+                    "message": "Pengiriman Telegram gagal. Cek konfigurasi bot token / chat_id.",
+                }
+            ), HTTPStatus.BAD_REQUEST
 
-        return jsonify({
-            "message": "Pesan Telegram uji coba berhasil dikirim.",
-            "target": chat_id,
-        }), HTTPStatus.OK
+        return jsonify(
+            {
+                "message": "Pesan Telegram uji coba berhasil dikirim.",
+                "target": chat_id,
+            }
+        ), HTTPStatus.OK
     except Exception as e:
         current_app.logger.error(f"Error test-send Telegram admin: {e}", exc_info=True)
         return jsonify({"message": "Gagal mengirim Telegram uji coba."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
-@admin_bp.route('/whatsapp/broadcast', methods=['POST'])
+@admin_bp.route("/whatsapp/broadcast", methods=["POST"])
 @admin_required
 def send_whatsapp_broadcast(current_admin: User):
     try:
         json_data = request.get_json(silent=True) or {}
-        target_role = str(json_data.get('target_role') or '').strip().upper()
-        message = str(json_data.get('message') or '').strip()
+        target_role = str(json_data.get("target_role") or "").strip().upper()
+        message = str(json_data.get("message") or "").strip()
 
         if target_role not in {UserRole.USER.value, UserRole.KOMANDAN.value}:
             return jsonify({"message": "Filter role tidak valid. Gunakan USER atau KOMANDAN."}), HTTPStatus.BAD_REQUEST
@@ -677,23 +854,25 @@ def send_whatsapp_broadcast(current_admin: User):
             User.role == UserRole[target_role],
             User.approval_status == ApprovalStatus.APPROVED,
             User.phone_number.isnot(None),
-            User.phone_number != '',
+            User.phone_number != "",
         )
         recipients = db.session.scalars(recipients_query).all()
 
         if not recipients:
-            return jsonify({
-                "message": f"Tidak ada penerima untuk role {target_role}.",
-                "target_role": target_role,
-                "total_recipients": 0,
-                "sent_count": 0,
-                "failed_count": 0,
-            }), HTTPStatus.OK
+            return jsonify(
+                {
+                    "message": f"Tidak ada penerima untuk role {target_role}.",
+                    "target_role": target_role,
+                    "total_recipients": 0,
+                    "sent_count": 0,
+                    "failed_count": 0,
+                }
+            ), HTTPStatus.OK
 
         sent_count = 0
         failed_numbers = []
         for user in recipients:
-            phone_number = str(user.phone_number or '').strip()
+            phone_number = str(user.phone_number or "").strip()
             if not phone_number:
                 failed_numbers.append(phone_number)
                 continue
@@ -704,71 +883,81 @@ def send_whatsapp_broadcast(current_admin: User):
                 failed_numbers.append(phone_number)
 
         failed_count = len(recipients) - sent_count
-        return jsonify({
-            "message": "Pengiriman WhatsApp massal selesai diproses.",
-            "target_role": target_role,
-            "total_recipients": len(recipients),
-            "sent_count": sent_count,
-            "failed_count": failed_count,
-            "failed_numbers": failed_numbers[:20],
-        }), HTTPStatus.OK
+        return jsonify(
+            {
+                "message": "Pengiriman WhatsApp massal selesai diproses.",
+                "target_role": target_role,
+                "total_recipients": len(recipients),
+                "sent_count": sent_count,
+                "failed_count": failed_count,
+                "failed_numbers": failed_numbers[:20],
+            }
+        ), HTTPStatus.OK
     except Exception as e:
         current_app.logger.error(f"Error broadcast WhatsApp admin: {e}", exc_info=True)
         return jsonify({"message": "Gagal memproses pengiriman WhatsApp massal."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
-@admin_bp.route('/notification-recipients', methods=['GET'])
+
+@admin_bp.route("/notification-recipients", methods=["GET"])
 @super_admin_required
 def get_notification_recipients(current_admin: User):
     """Mengambil daftar admin dan status langganan mereka untuk tipe notifikasi tertentu."""
-    notification_type_str = (
-        request.args.get('notification_type')
-        or request.args.get('type')
-        or 'NEW_USER_REGISTRATION'
-    )
+    notification_type_str = request.args.get("notification_type") or request.args.get("type") or "NEW_USER_REGISTRATION"
     try:
         notification_type = NotificationType[notification_type_str.upper()]
     except KeyError:
         return jsonify({"message": f"Tipe notifikasi tidak valid: {notification_type_str}"}), HTTPStatus.BAD_REQUEST
 
     try:
-        all_admins_query = select(User).where(User.role.in_([UserRole.ADMIN, UserRole.SUPER_ADMIN])).order_by(User.full_name.asc())
+        all_admins_query = (
+            select(User).where(User.role.in_([UserRole.ADMIN, UserRole.SUPER_ADMIN])).order_by(User.full_name.asc())
+        )
         all_admins = db.session.scalars(all_admins_query).all()
-        
-        subscribed_admin_ids_query = select(NotificationRecipient.admin_user_id).where(NotificationRecipient.notification_type == notification_type)
+
+        subscribed_admin_ids_query = select(NotificationRecipient.admin_user_id).where(
+            NotificationRecipient.notification_type == notification_type
+        )
         subscribed_admin_ids = set(db.session.scalars(subscribed_admin_ids_query).all())
-        
+
         response_data = []
         for admin in all_admins:
             status_data = {
-                "id": str(admin.id), 
-                "full_name": admin.full_name, 
-                "phone_number": admin.phone_number, 
-                "is_subscribed": admin.id in subscribed_admin_ids
+                "id": str(admin.id),
+                "full_name": admin.full_name,
+                "phone_number": admin.phone_number,
+                "is_subscribed": admin.id in subscribed_admin_ids,
             }
             response_data.append(status_data)
-        
+
         return jsonify(response_data), HTTPStatus.OK
     except Exception as e:
-        current_app.logger.error(f"Error mengambil daftar penerima notifikasi untuk tipe {notification_type.name}: {e}", exc_info=True)
+        current_app.logger.error(
+            f"Error mengambil daftar penerima notifikasi untuk tipe {notification_type.name}: {e}", exc_info=True
+        )
         return jsonify({"message": "Terjadi kesalahan internal saat mengambil data."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
-@admin_bp.route('/notification-recipients', methods=['POST'])
+
+@admin_bp.route("/notification-recipients", methods=["POST"])
 @super_admin_required
 def update_notification_recipients(current_admin: User):
     """Memperbarui daftar penerima untuk tipe notifikasi tertentu dari payload."""
     json_data = request.get_json()
     if not json_data:
         return jsonify({"message": "Request body tidak boleh kosong."}), HTTPStatus.BAD_REQUEST
-    
+
     try:
         update_data = NotificationRecipientUpdateSchema.model_validate(json_data)
         notification_type = update_data.notification_type
-        
-        db.session.execute(db.delete(NotificationRecipient).where(NotificationRecipient.notification_type == notification_type))
-        
+
+        db.session.execute(
+            db.delete(NotificationRecipient).where(NotificationRecipient.notification_type == notification_type)
+        )
+
         new_recipients = []
         if update_data.subscribed_admin_ids:
-            valid_admin_ids_q = select(User.id).where(User.id.in_(update_data.subscribed_admin_ids), User.role.in_([UserRole.ADMIN, UserRole.SUPER_ADMIN]))
+            valid_admin_ids_q = select(User.id).where(
+                User.id.in_(update_data.subscribed_admin_ids), User.role.in_([UserRole.ADMIN, UserRole.SUPER_ADMIN])
+            )
             valid_admin_ids = db.session.scalars(valid_admin_ids_q).all()
             for admin_id in valid_admin_ids:
                 recipient = NotificationRecipient()
@@ -777,9 +966,11 @@ def update_notification_recipients(current_admin: User):
                 new_recipients.append(recipient)
             if new_recipients:
                 db.session.add_all(new_recipients)
-        
+
         db.session.commit()
-        return jsonify({"message": "Pengaturan notifikasi berhasil disimpan.", "total_recipients": len(new_recipients)}), HTTPStatus.OK
+        return jsonify(
+            {"message": "Pengaturan notifikasi berhasil disimpan.", "total_recipients": len(new_recipients)}
+        ), HTTPStatus.OK
     except ValidationError as e:
         return jsonify({"errors": e.errors()}), HTTPStatus.UNPROCESSABLE_ENTITY
     except Exception as e:
@@ -787,25 +978,23 @@ def update_notification_recipients(current_admin: User):
         current_app.logger.error(f"Gagal memperbarui penerima notifikasi: {e}", exc_info=True)
         return jsonify({"message": "Terjadi kesalahan internal saat menyimpan data."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
-@admin_bp.route('/transactions', methods=['GET'])
+
+@admin_bp.route("/transactions", methods=["GET"])
 @admin_required
 def get_transactions_list(current_admin: User):
     """Mengambil daftar transaksi dengan paginasi dan filter."""
     try:
-        page = request.args.get('page', 1, type=int)
-        per_page = min(request.args.get('itemsPerPage', 10, type=int), 100)
-        sort_by = request.args.get('sortBy', 'created_at')
-        sort_order = request.args.get('sortOrder', 'desc')
-        search_query = request.args.get('search', '').strip()
-        user_id_filter = request.args.get('user_id')
-        start_date_str = request.args.get('start_date')
-        end_date_str = request.args.get('end_date')
+        page = request.args.get("page", 1, type=int)
+        per_page = min(request.args.get("itemsPerPage", 10, type=int), 100)
+        sort_by = request.args.get("sortBy", "created_at")
+        sort_order = request.args.get("sortOrder", "desc")
+        search_query = request.args.get("search", "").strip()
+        user_id_filter = request.args.get("user_id")
+        start_date_str = request.args.get("start_date")
+        end_date_str = request.args.get("end_date")
 
-        query = db.select(Transaction).options(
-            selectinload(Transaction.user),
-            selectinload(Transaction.package)
-        )
-        
+        query = db.select(Transaction).options(selectinload(Transaction.user), selectinload(Transaction.package))
+
         if search_query:
             query = query.outerjoin(User, Transaction.user_id == User.id)
 
@@ -815,7 +1004,7 @@ def get_transactions_list(current_admin: User):
                 query = query.where(Transaction.user_id == user_uuid)
             except ValueError:
                 return jsonify({"message": "Invalid user_id format."}), HTTPStatus.BAD_REQUEST
-        
+
         if start_date_str and end_date_str:
             try:
                 start_utc, end_utc = _parse_local_date_range_to_utc(start_date_str, end_date_str)
@@ -829,15 +1018,25 @@ def get_transactions_list(current_admin: User):
         if search_query:
             search_term = f"%{search_query}%"
             phone_variations = get_phone_number_variations(search_query)
-            query = query.where(or_(
-                Transaction.midtrans_order_id.ilike(search_term),
-                User.full_name.ilike(search_term),
-                User.phone_number.in_(phone_variations) if phone_variations else User.phone_number.ilike(search_term)
-            ))
+            query = query.where(
+                or_(
+                    Transaction.midtrans_order_id.ilike(search_term),
+                    User.full_name.ilike(search_term),
+                    User.phone_number.in_(phone_variations)
+                    if phone_variations
+                    else User.phone_number.ilike(search_term),
+                )
+            )
 
-        sortable_columns = {'created_at': Transaction.created_at, 'amount': Transaction.amount, 'status': Transaction.status}
+        sortable_columns = {
+            "created_at": Transaction.created_at,
+            "amount": Transaction.amount,
+            "status": Transaction.status,
+        }
         if sort_by in sortable_columns:
-            query = query.order_by(desc(sortable_columns[sort_by]) if sort_order == 'desc' else sortable_columns[sort_by])
+            query = query.order_by(
+                desc(sortable_columns[sort_by]) if sort_order == "desc" else sortable_columns[sort_by]
+            )
         else:
             query = query.order_by(desc(Transaction.created_at))
 
@@ -861,14 +1060,14 @@ def get_transactions_list(current_admin: User):
             }
             for tx in pagination.items
         ]
-        
+
         return jsonify({"items": transactions_data, "totalItems": pagination.total}), HTTPStatus.OK
     except Exception as e:
         current_app.logger.error(f"Error mengambil daftar transaksi: {e}", exc_info=True)
         return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
-@admin_bp.route('/transactions/<order_id>/detail', methods=['GET'])
+@admin_bp.route("/transactions/<order_id>/detail", methods=["GET"])
 @admin_required
 def get_transaction_detail(current_admin: User, order_id: str):
     """Mengambil detail satu transaksi (termasuk payload notifikasi Midtrans jika tersedia)."""
@@ -950,7 +1149,8 @@ def get_transaction_detail(current_admin: User, order_id: str):
         current_app.logger.error(f"Error mengambil detail transaksi {order_id}: {e}", exc_info=True)
         return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
-@admin_bp.route('/transactions/export', methods=['GET'])
+
+@admin_bp.route("/transactions/export", methods=["GET"])
 @admin_required
 def export_transactions(current_admin: User):
     """Unduh laporan penjualan (SUCCESS saja) untuk periode tertentu.
@@ -962,22 +1162,24 @@ def export_transactions(current_admin: User):
     - user_id: UUID (opsional)
     """
     try:
-        fmt = str(request.args.get('format', '') or '').strip().lower()
-        start_date_str = str(request.args.get('start_date', '') or '').strip()
-        end_date_str = str(request.args.get('end_date', '') or '').strip()
-        user_id_filter = request.args.get('user_id')
-        group_by = str(request.args.get('group_by', 'daily') or 'daily').strip().lower()
-        if group_by not in ('daily', 'monthly', 'yearly', 'none'):
-            return jsonify({"message": "group_by tidak valid. Gunakan daily|monthly|yearly|none."}), HTTPStatus.BAD_REQUEST
+        fmt = str(request.args.get("format", "") or "").strip().lower()
+        start_date_str = str(request.args.get("start_date", "") or "").strip()
+        end_date_str = str(request.args.get("end_date", "") or "").strip()
+        user_id_filter = request.args.get("user_id")
+        group_by = str(request.args.get("group_by", "daily") or "daily").strip().lower()
+        if group_by not in ("daily", "monthly", "yearly", "none"):
+            return jsonify(
+                {"message": "group_by tidak valid. Gunakan daily|monthly|yearly|none."}
+            ), HTTPStatus.BAD_REQUEST
 
-        if fmt not in ('pdf', 'csv'):
+        if fmt not in ("pdf", "csv"):
             return jsonify({"message": "format tidak valid. Gunakan pdf atau csv."}), HTTPStatus.BAD_REQUEST
         if not start_date_str or not end_date_str:
             return jsonify({"message": "start_date dan end_date wajib diisi."}), HTTPStatus.BAD_REQUEST
 
         try:
-            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+            end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
         except ValueError:
             return jsonify({"message": "Format tanggal tidak valid. Gunakan YYYY-MM-DD."}), HTTPStatus.BAD_REQUEST
 
@@ -1016,49 +1218,49 @@ def export_transactions(current_admin: User):
         package_rows = db.session.execute(
             select(
                 Package.name,
-                func.count(Transaction.id).label('qty'),
-                func.coalesce(func.sum(Transaction.amount), 0).label('revenue'),
+                func.count(Transaction.id).label("qty"),
+                func.coalesce(func.sum(Transaction.amount), 0).label("revenue"),
             )
             .join(Package, Transaction.package_id == Package.id)
             .where(*base_filters)
             .group_by(Package.name)
-            .order_by(desc('revenue'), desc('qty'), Package.name.asc())
+            .order_by(desc("revenue"), desc("qty"), Package.name.asc())
         ).all()
 
         # Breakdown metode pembayaran
         method_rows = db.session.execute(
             select(
                 Transaction.payment_method,
-                func.count(Transaction.id).label('qty'),
-                func.coalesce(func.sum(Transaction.amount), 0).label('revenue'),
+                func.count(Transaction.id).label("qty"),
+                func.coalesce(func.sum(Transaction.amount), 0).label("revenue"),
             )
             .where(*base_filters)
             .group_by(Transaction.payment_method)
-            .order_by(desc('revenue'), desc('qty'))
+            .order_by(desc("revenue"), desc("qty"))
         ).all()
 
         # Ringkasan per periode (harian/bulanan/tahunan)
         period_rows = []
-        if group_by != 'none':
+        if group_by != "none":
             try:
-                offset_hours = int(current_app.config.get('APP_TIMEZONE_OFFSET', 8) or 8)
+                offset_hours = int(current_app.config.get("APP_TIMEZONE_OFFSET", 8) or 8)
             except Exception:
                 offset_hours = 8
             offset_hours = max(-12, min(offset_hours, 14))
             local_created = Transaction.created_at + sa.text(f"INTERVAL '{offset_hours} hours'")
 
-            if group_by == 'daily':
+            if group_by == "daily":
                 period_expr = func.date(local_created)
-            elif group_by == 'monthly':
-                period_expr = func.date_trunc('month', local_created)
+            elif group_by == "monthly":
+                period_expr = func.date_trunc("month", local_created)
             else:  # yearly
-                period_expr = func.date_trunc('year', local_created)
+                period_expr = func.date_trunc("year", local_created)
 
             period_rows = db.session.execute(
                 select(
-                    period_expr.label('period'),
-                    func.count(Transaction.id).label('qty'),
-                    func.coalesce(func.sum(Transaction.amount), 0).label('revenue'),
+                    period_expr.label("period"),
+                    func.count(Transaction.id).label("qty"),
+                    func.coalesce(func.sum(Transaction.amount), 0).label("revenue"),
                 )
                 .where(*base_filters)
                 .group_by(period_expr)
@@ -1087,9 +1289,9 @@ def export_transactions(current_admin: User):
             select(
                 User.full_name,
                 User.phone_number,
-                auto_debt.label('auto_debt_mb'),
-                manual_debt_num.label('manual_debt_mb'),
-                total_debt.label('total_debt_mb'),
+                auto_debt.label("auto_debt_mb"),
+                manual_debt_num.label("manual_debt_mb"),
+                total_debt.label("total_debt_mb"),
             )
             .where(
                 User.role.in_([UserRole.USER, UserRole.KOMANDAN]),
@@ -1101,7 +1303,7 @@ def export_transactions(current_admin: User):
             .limit(100)
         ).all()
 
-        if fmt == 'csv':
+        if fmt == "csv":
             output = io.StringIO()
             writer = csv.writer(output)
 
@@ -1113,18 +1315,18 @@ def export_transactions(current_admin: User):
             writer.writerow(["Total pendapatan (IDR)", total_amount])
             writer.writerow([])
 
-            if group_by != 'none':
-                label = 'Harian' if group_by == 'daily' else ('Bulanan' if group_by == 'monthly' else 'Tahunan')
+            if group_by != "none":
+                label = "Harian" if group_by == "daily" else ("Bulanan" if group_by == "monthly" else "Tahunan")
                 writer.writerow([f"Ringkasan {label}"])
                 writer.writerow(["Periode", "Qty", "Revenue (IDR)"])
                 for row in period_rows:
                     period = row[0]
-                    if group_by == 'daily':
+                    if group_by == "daily":
                         period_str = str(period)
-                    elif group_by == 'monthly':
-                        period_str = period.strftime('%Y-%m') if hasattr(period, 'strftime') else str(period)
+                    elif group_by == "monthly":
+                        period_str = period.strftime("%Y-%m") if hasattr(period, "strftime") else str(period)
                     else:
-                        period_str = period.strftime('%Y') if hasattr(period, 'strftime') else str(period)
+                        period_str = period.strftime("%Y") if hasattr(period, "strftime") else str(period)
                     writer.writerow([period_str, int(row[1] or 0), int(row[2] or 0)])
                 writer.writerow([])
 
@@ -1145,18 +1347,22 @@ def export_transactions(current_admin: User):
                 writer.writerow(["Daftar User Punya Debt (saat laporan dibuat)"])
                 writer.writerow(["Nama", "Telepon", "Debt Total (MB)", "Debt Auto (MB)", "Debt Manual (MB)"])
                 for r in debt_users:
-                    writer.writerow([
-                        r[0],
-                        format_to_local_phone(r[1] or '') or (r[1] or ''),
-                        float(r[4] or 0),
-                        float(r[2] or 0),
-                        float(r[3] or 0),
-                    ])
+                    writer.writerow(
+                        [
+                            r[0],
+                            format_to_local_phone(r[1] or "") or (r[1] or ""),
+                            float(r[4] or 0),
+                            float(r[2] or 0),
+                            float(r[3] or 0),
+                        ]
+                    )
 
-            csv_bytes = output.getvalue().encode('utf-8-sig')
+            csv_bytes = output.getvalue().encode("utf-8-sig")
             resp = make_response(csv_bytes)
-            resp.headers['Content-Type'] = 'text/csv; charset=utf-8'
-            resp.headers['Content-Disposition'] = f'attachment; filename="laporan-transaksi-{start_date_str}-to-{end_date_str}.csv"'
+            resp.headers["Content-Type"] = "text/csv; charset=utf-8"
+            resp.headers["Content-Disposition"] = (
+                f'attachment; filename="laporan-transaksi-{start_date_str}-to-{end_date_str}.csv"'
+            )
             return resp
 
         # pdf
@@ -1167,28 +1373,30 @@ def export_transactions(current_admin: User):
 
         # Build period summaries for PDF
         period_summaries = []
-        if group_by != 'none':
+        if group_by != "none":
             for row in period_rows:
                 period = row[0]
-                if group_by == 'daily':
-                    label = period.strftime('%d-%m-%Y') if hasattr(period, 'strftime') else str(period)
-                elif group_by == 'monthly':
-                    label = period.strftime('%Y-%m') if hasattr(period, 'strftime') else str(period)
+                if group_by == "daily":
+                    label = period.strftime("%d-%m-%Y") if hasattr(period, "strftime") else str(period)
+                elif group_by == "monthly":
+                    label = period.strftime("%Y-%m") if hasattr(period, "strftime") else str(period)
                 else:
-                    label = period.strftime('%Y') if hasattr(period, 'strftime') else str(period)
-                period_summaries.append({
-                    'period': label,
-                    'qty': int(row[1] or 0),
-                    'revenue': int(row[2] or 0),
-                })
+                    label = period.strftime("%Y") if hasattr(period, "strftime") else str(period)
+                period_summaries.append(
+                    {
+                        "period": label,
+                        "qty": int(row[1] or 0),
+                        "revenue": int(row[2] or 0),
+                    }
+                )
 
         debt_items = [
             {
-                'full_name': r[0],
-                'phone_number': format_to_local_phone(r[1] or '') or (r[1] or ''),
-                'debt_total_mb': float(r[4] or 0),
-                'debt_auto_mb': float(r[2] or 0),
-                'debt_manual_mb': float(r[3] or 0),
+                "full_name": r[0],
+                "phone_number": format_to_local_phone(r[1] or "") or (r[1] or ""),
+                "debt_total_mb": float(r[4] or 0),
+                "debt_auto_mb": float(r[2] or 0),
+                "debt_manual_mb": float(r[3] or 0),
             }
             for r in debt_users
         ]
@@ -1211,7 +1419,7 @@ def export_transactions(current_admin: User):
         )
         cheapest_pkg_name = str(cheapest_pkg.name) if cheapest_pkg and cheapest_pkg.name else None
 
-        total_debt_mb_sum = float(sum(float(item.get('debt_total_mb') or 0) for item in debt_items))
+        total_debt_mb_sum = float(sum(float(item.get("debt_total_mb") or 0) for item in debt_items))
         est_total = estimate_debt_rp_from_cheapest_package(
             debt_mb=total_debt_mb_sum,
             cheapest_package_price_rp=cheapest_pkg_price,
@@ -1221,18 +1429,18 @@ def export_transactions(current_admin: User):
         estimated_debt_total_rp = int(est_total.estimated_rp_rounded or 0)
         for item in debt_items:
             est = estimate_debt_rp_from_cheapest_package(
-                debt_mb=float(item.get('debt_total_mb') or 0),
+                debt_mb=float(item.get("debt_total_mb") or 0),
                 cheapest_package_price_rp=cheapest_pkg_price,
                 cheapest_package_quota_gb=cheapest_pkg_quota_gb,
                 cheapest_package_name=cheapest_pkg_name,
             )
-            item['debt_estimated_rp'] = int(est.estimated_rp_rounded or 0)
+            item["debt_estimated_rp"] = int(est.estimated_rp_rounded or 0)
 
         context = {
             "start_date": start_date_str,
             "end_date": end_date_str,
-            "start_date_display": start_date.strftime('%d-%m-%Y'),
-            "end_date_display": end_date.strftime('%d-%m-%Y'),
+            "start_date_display": start_date.strftime("%d-%m-%Y"),
+            "end_date_display": end_date.strftime("%d-%m-%Y"),
             "generated_at": datetime.now(local_tz),
             "total_success": total_success,
             "total_amount": total_amount,
@@ -1246,36 +1454,37 @@ def export_transactions(current_admin: User):
                 for idx, r in enumerate(package_rows, start=1)
             ],
             "methods": [
-                {"method": (r[0] or "(unknown)"), "qty": int(r[1] or 0), "revenue": int(r[2] or 0)}
-                for r in method_rows
+                {"method": (r[0] or "(unknown)"), "qty": int(r[1] or 0), "revenue": int(r[2] or 0)} for r in method_rows
             ],
             "debt_users": debt_items,
-            "business_name": current_app.config.get('BUSINESS_NAME', 'LPSaring'),
+            "business_name": current_app.config.get("BUSINESS_NAME", "LPSaring"),
         }
 
-        public_base_url = current_app.config.get('APP_PUBLIC_BASE_URL', request.url_root)
-        html_string = render_template('admin_sales_report.html', **context)
+        public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
+        html_string = render_template("admin_sales_report.html", **context)
         pdf_bytes = HTML(string=html_string, base_url=public_base_url).write_pdf()
         if not pdf_bytes:
             abort(HTTPStatus.INTERNAL_SERVER_ERROR, "Gagal menghasilkan file PDF.")
         resp = make_response(pdf_bytes)
-        resp.headers['Content-Type'] = 'application/pdf'
-        resp.headers['Content-Disposition'] = f'attachment; filename="laporan-transaksi-{start_date_str}-to-{end_date_str}.pdf"'
+        resp.headers["Content-Type"] = "application/pdf"
+        resp.headers["Content-Disposition"] = (
+            f'attachment; filename="laporan-transaksi-{start_date_str}-to-{end_date_str}.pdf"'
+        )
         return resp
     except Exception as e:
         current_app.logger.error(f"Error export transaksi: {e}", exc_info=True)
         return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
-@admin_bp.route('/transactions/qris', methods=['POST'])
+@admin_bp.route("/transactions/qris", methods=["POST"])
 @admin_required
 def create_qris_bill(current_admin: User):
     """Admin membuat tagihan QRIS untuk user tertentu dan mengirim via WhatsApp."""
     session = db.session
     json_data = request.get_json(silent=True) or {}
 
-    user_id_raw = json_data.get('user_id')
-    package_id_raw = json_data.get('package_id')
+    user_id_raw = json_data.get("user_id")
+    package_id_raw = json_data.get("package_id")
     if not user_id_raw or not package_id_raw:
         return jsonify({"message": "user_id dan package_id wajib diisi."}), HTTPStatus.BAD_REQUEST
 
@@ -1291,10 +1500,10 @@ def create_qris_bill(current_admin: User):
             return jsonify({"message": "User tidak ditemukan."}), HTTPStatus.NOT_FOUND
 
         package = session.get(Package, package_id)
-        if package is None or not getattr(package, 'is_active', True):
+        if package is None or not getattr(package, "is_active", True):
             return jsonify({"message": "Paket tidak valid atau tidak aktif."}), HTTPStatus.BAD_REQUEST
 
-        amount = int(getattr(package, 'price', 0) or 0)
+        amount = int(getattr(package, "price", 0) or 0)
         if amount <= 0:
             return jsonify({"message": "Harga paket tidak valid."}), HTTPStatus.BAD_REQUEST
 
@@ -1316,31 +1525,33 @@ def create_qris_bill(current_admin: User):
         tx.status = TransactionStatus.PENDING
         tx.expiry_time = expiry_time
         # Default: QRIS native (Other QRIS). Bisa auto-fallback ke GoPay Dynamic QRIS jika channel belum aktif.
-        tx.payment_method = 'qris'
+        tx.payment_method = "qris"
         session.add(tx)
 
         core = get_midtrans_core_api_client()
 
         base_payload: dict[str, object] = {
             "transaction_details": {"order_id": order_id, "gross_amount": amount},
-            "item_details": [{
-                "id": str(package.id),
-                "price": amount,
-                "quantity": 1,
-                "name": str(getattr(package, 'name', 'Paket'))[:100],
-            }],
+            "item_details": [
+                {
+                    "id": str(package.id),
+                    "price": amount,
+                    "quantity": 1,
+                    "name": str(getattr(package, "name", "Paket"))[:100],
+                }
+            ],
             "customer_details": {
-                "first_name": str(getattr(user, 'full_name', None) or 'Pengguna')[:50],
-                "phone": format_to_local_phone(getattr(user, 'phone_number', '') or ''),
+                "first_name": str(getattr(user, "full_name", None) or "Pengguna")[:50],
+                "phone": format_to_local_phone(getattr(user, "phone_number", "") or ""),
             },
         }
 
         def _parse_midtrans_api_response_from_message(message: str) -> dict[str, object] | None:
             try:
-                marker = 'API response: `'
+                marker = "API response: `"
                 if marker in message:
                     json_part = message.split(marker, 1)[1]
-                    json_part = json_part.split('`', 1)[0]
+                    json_part = json_part.split("`", 1)[0]
                     parsed = json.loads(json_part)
                     return parsed if isinstance(parsed, dict) else None
             except Exception:
@@ -1348,26 +1559,26 @@ def create_qris_bill(current_admin: User):
             return None
 
         charge_resp: object
-        attempted_payment_type = 'qris'
+        attempted_payment_type = "qris"
         fallback_used = False
         try:
             # Attempt 1: Other QRIS (native QRIS) via payment_type=qris
-            attempted_payment_type = 'qris'
+            attempted_payment_type = "qris"
             charge_payload = {**base_payload, "payment_type": "qris"}
             charge_resp = core.charge(charge_payload)
         except midtransclient.error_midtrans.MidtransAPIError as e_charge:
-            raw_message = getattr(e_charge, 'message', '') or ''
+            raw_message = getattr(e_charge, "message", "") or ""
             parsed = _parse_midtrans_api_response_from_message(raw_message) or {}
-            status_message = str(parsed.get('status_message') or '').strip()
+            status_message = str(parsed.get("status_message") or "").strip()
             # Jika channel QRIS native belum aktif, fallback ke GoPay Dynamic QRIS (masih scan QRIS).
-            if 'Payment channel is not activated' in status_message:
+            if "Payment channel is not activated" in status_message:
                 current_app.logger.warning(
                     "Midtrans QRIS channel not active; fallback to GoPay Dynamic QRIS. order_id=%s",
                     order_id,
                 )
                 fallback_used = True
-                tx.payment_method = 'gopay'
-                attempted_payment_type = 'gopay'
+                tx.payment_method = "gopay"
+                attempted_payment_type = "gopay"
                 charge_payload = {
                     **base_payload,
                     "payment_type": "gopay",
@@ -1385,26 +1596,26 @@ def create_qris_bill(current_admin: User):
 
         if isinstance(charge_resp, dict):
             charge_resp_dict: dict[str, object] = charge_resp
-            transaction_id = charge_resp_dict.get('transaction_id')
+            transaction_id = charge_resp_dict.get("transaction_id")
             if isinstance(transaction_id, str):
                 tx.midtrans_transaction_id = transaction_id
-            expiry_time_raw = charge_resp_dict.get('expiry_time')
+            expiry_time_raw = charge_resp_dict.get("expiry_time")
             expiry_time_str = expiry_time_raw if isinstance(expiry_time_raw, str) else None
             if parsed := safe_parse_midtrans_datetime(expiry_time_str):
                 tx.expiry_time = parsed
             tx.va_number = extract_va_number(charge_resp_dict) or tx.va_number
             tx.qr_code_url = extract_qr_code_url(charge_resp_dict) or tx.qr_code_url
 
-            midtrans_status = str(charge_resp_dict.get('transaction_status') or '').strip().lower()
-            if midtrans_status == 'pending':
+            midtrans_status = str(charge_resp_dict.get("transaction_status") or "").strip().lower()
+            if midtrans_status == "pending":
                 tx.status = TransactionStatus.PENDING
-            elif midtrans_status in ('settlement', 'capture'):
+            elif midtrans_status in ("settlement", "capture"):
                 tx.status = TransactionStatus.SUCCESS
 
         ev = TransactionEvent()
         ev.transaction_id = tx.id
         ev.source = TransactionEventSource.APP
-        ev.event_type = 'ADMIN_QRIS_BILL_CREATED'
+        ev.event_type = "ADMIN_QRIS_BILL_CREATED"
         ev.status = tx.status
         expiry_time = tx.expiry_time
         ev.payload = json.dumps(
@@ -1422,14 +1633,14 @@ def create_qris_bill(current_admin: User):
         session.add(ev)
         session.commit()
 
-        phone_number = getattr(user, 'phone_number', '') or ''
+        phone_number = getattr(user, "phone_number", "") or ""
         caption = (
             f"📌 *Tagihan Pembelian Paket*\n\n"
             f"Nama: *{getattr(user, 'full_name', '') or 'Pengguna'}*\n"
             f"Paket: *{getattr(package, 'name', '') or 'Paket'}*\n"
             f"Jumlah: *Rp {amount:,}*\n"
             f"Invoice: *{order_id}*\n\n"
-            f"Silakan scan QRIS atau buka link QR." 
+            f"Silakan scan QRIS atau buka link QR."
         )
 
         sent = False
@@ -1438,17 +1649,19 @@ def create_qris_bill(current_admin: User):
         if not sent:
             send_whatsapp_message(phone_number, f"{caption}\n\nQR: {tx.qr_code_url or '-'}")
 
-        return jsonify({
-            "message": "Tagihan QRIS berhasil dibuat.",
-            "order_id": order_id,
-            "status": tx.status.value,
-            "qr_code_url": tx.qr_code_url,
-            "payment_method": tx.payment_method,
-        }), HTTPStatus.OK
+        return jsonify(
+            {
+                "message": "Tagihan QRIS berhasil dibuat.",
+                "order_id": order_id,
+                "status": tx.status.value,
+                "qr_code_url": tx.qr_code_url,
+                "payment_method": tx.payment_method,
+            }
+        ), HTTPStatus.OK
 
     except midtransclient.error_midtrans.MidtransAPIError as e:
         session.rollback()
-        raw_message = getattr(e, 'message', '') or ''
+        raw_message = getattr(e, "message", "") or ""
         current_app.logger.error(f"Midtrans error saat create QRIS bill: {raw_message}")
 
         midtrans_status_code: str | None = None
@@ -1457,26 +1670,26 @@ def create_qris_bill(current_admin: User):
 
         # Coba parse potongan `API response: `...`` dari message Midtrans.
         try:
-            marker = 'API response: `'
+            marker = "API response: `"
             if marker in raw_message:
                 json_part = raw_message.split(marker, 1)[1]
-                json_part = json_part.split('`', 1)[0]
+                json_part = json_part.split("`", 1)[0]
                 parsed = json.loads(json_part)
                 if isinstance(parsed, dict):
-                    if isinstance(parsed.get('status_code'), str):
-                        midtrans_status_code = parsed.get('status_code')
-                    if isinstance(parsed.get('status_message'), str):
-                        midtrans_status_message = parsed.get('status_message')
-                    if isinstance(parsed.get('id'), str):
-                        midtrans_error_id = parsed.get('id')
+                    if isinstance(parsed.get("status_code"), str):
+                        midtrans_status_code = parsed.get("status_code")
+                    if isinstance(parsed.get("status_message"), str):
+                        midtrans_status_message = parsed.get("status_message")
+                    if isinstance(parsed.get("id"), str):
+                        midtrans_error_id = parsed.get("id")
         except Exception:
             # Jika parsing gagal, tetap lanjutkan dengan message mentah.
             pass
 
-        user_message = 'Gagal membuat tagihan QRIS di Midtrans.'
+        user_message = "Gagal membuat tagihan QRIS di Midtrans."
         if midtrans_status_message:
             user_message = f"Gagal membuat tagihan QRIS di Midtrans: {midtrans_status_message}"
-            if 'Payment channel is not activated' in midtrans_status_message:
+            if "Payment channel is not activated" in midtrans_status_message:
                 # Beri konteks channel yang sedang dicoba + apakah fallback sudah dilakukan.
                 tried = None
                 try:
@@ -1488,29 +1701,33 @@ def create_qris_bill(current_admin: User):
                 except Exception:
                     used_fallback = False
 
-                if tried == 'gopay':
-                    user_message += ' (Channel GoPay/GoPay Dynamic QRIS belum aktif di Midtrans Production untuk Core API.)'
+                if tried == "gopay":
+                    user_message += (
+                        " (Channel GoPay/GoPay Dynamic QRIS belum aktif di Midtrans Production untuk Core API.)"
+                    )
                 else:
-                    user_message += ' (Channel Other QRIS belum aktif di Midtrans Production.)'
+                    user_message += " (Channel Other QRIS belum aktif di Midtrans Production.)"
 
                 if used_fallback:
-                    user_message += ' Sudah dicoba fallback ke GoPay Dynamic QRIS, namun masih ditolak.'
+                    user_message += " Sudah dicoba fallback ke GoPay Dynamic QRIS, namun masih ditolak."
 
-        return jsonify({
-            "message": user_message,
-            "midtrans_status_code": midtrans_status_code,
-            "midtrans_status_message": midtrans_status_message,
-            "midtrans_error_id": midtrans_error_id,
-            "attempted_payment_type": (attempted_payment_type if 'attempted_payment_type' in locals() else None),
-            "fallback_used": (fallback_used if 'fallback_used' in locals() else None),
-        }), HTTPStatus.BAD_REQUEST
+        return jsonify(
+            {
+                "message": user_message,
+                "midtrans_status_code": midtrans_status_code,
+                "midtrans_status_message": midtrans_status_message,
+                "midtrans_error_id": midtrans_error_id,
+                "attempted_payment_type": (attempted_payment_type if "attempted_payment_type" in locals() else None),
+                "fallback_used": (fallback_used if "fallback_used" in locals() else None),
+            }
+        ), HTTPStatus.BAD_REQUEST
     except Exception as e:
         session.rollback()
         current_app.logger.error(f"Error create QRIS bill: {e}", exc_info=True)
         return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
-@admin_bp.route('/midtrans/selftest', methods=['POST'])
+@admin_bp.route("/midtrans/selftest", methods=["POST"])
 @admin_required
 def midtrans_selftest(current_admin: User):
     """Self-test channel Midtrans untuk memastikan payment_type aktif (qris/gopay) via Core API.
@@ -1521,24 +1738,24 @@ def midtrans_selftest(current_admin: User):
     """
     json_data = request.get_json(silent=True) or {}
 
-    payment_types_raw = json_data.get('payment_types')
+    payment_types_raw = json_data.get("payment_types")
     if isinstance(payment_types_raw, list) and payment_types_raw:
         payment_types = [str(x).strip().lower() for x in payment_types_raw if str(x).strip()]
     else:
-        payment_types = ['qris', 'gopay']
+        payment_types = ["qris", "gopay"]
 
     try:
-        amount = int(json_data.get('amount') or 1000)
+        amount = int(json_data.get("amount") or 1000)
     except Exception:
         amount = 1000
     amount = max(1000, min(amount, 50000))
 
     def _parse_midtrans_api_response_from_message(message: str) -> dict[str, object] | None:
         try:
-            marker = 'API response: `'
+            marker = "API response: `"
             if marker in message:
                 json_part = message.split(marker, 1)[1]
-                json_part = json_part.split('`', 1)[0]
+                json_part = json_part.split("`", 1)[0]
                 parsed = json.loads(json_part)
                 return parsed if isinstance(parsed, dict) else None
         except Exception:
@@ -1552,62 +1769,72 @@ def midtrans_selftest(current_admin: User):
         payload: dict[str, object] = {
             "payment_type": payment_type,
             "transaction_details": {"order_id": order_id, "gross_amount": amount},
-            "item_details": [{
-                "id": f"selftest-{payment_type}",
-                "price": amount,
-                "quantity": 1,
-                "name": f"SelfTest {payment_type}"[:100],
-            }],
+            "item_details": [
+                {
+                    "id": f"selftest-{payment_type}",
+                    "price": amount,
+                    "quantity": 1,
+                    "name": f"SelfTest {payment_type}"[:100],
+                }
+            ],
             "customer_details": {
-                "first_name": (str(getattr(current_admin, 'full_name', '') or 'Admin')[:50]),
-                "phone": format_to_local_phone(str(getattr(current_admin, 'phone_number', '') or '')),
+                "first_name": (str(getattr(current_admin, "full_name", "") or "Admin")[:50]),
+                "phone": format_to_local_phone(str(getattr(current_admin, "phone_number", "") or "")),
             },
         }
-        if payment_type == 'gopay':
+        if payment_type == "gopay":
             payload["gopay"] = {"enable_callback": False}
 
         try:
             resp = core.charge(payload)
             if isinstance(resp, dict):
-                results.append({
-                    "payment_type": payment_type,
-                    "order_id": order_id,
-                    "ok": True,
-                    "status_code": resp.get('status_code'),
-                    "status_message": resp.get('status_message'),
-                    "transaction_status": resp.get('transaction_status'),
-                    "transaction_id": resp.get('transaction_id'),
-                    "qr_code_url": extract_qr_code_url(resp),
-                    "raw": resp,
-                })
+                results.append(
+                    {
+                        "payment_type": payment_type,
+                        "order_id": order_id,
+                        "ok": True,
+                        "status_code": resp.get("status_code"),
+                        "status_message": resp.get("status_message"),
+                        "transaction_status": resp.get("transaction_status"),
+                        "transaction_id": resp.get("transaction_id"),
+                        "qr_code_url": extract_qr_code_url(resp),
+                        "raw": resp,
+                    }
+                )
             else:
-                results.append({
+                results.append(
+                    {
+                        "payment_type": payment_type,
+                        "order_id": order_id,
+                        "ok": True,
+                        "raw": resp,
+                    }
+                )
+        except midtransclient.error_midtrans.MidtransAPIError as e:
+            raw_message = getattr(e, "message", "") or ""
+            parsed = _parse_midtrans_api_response_from_message(raw_message) or {}
+            results.append(
+                {
                     "payment_type": payment_type,
                     "order_id": order_id,
-                    "ok": True,
-                    "raw": resp,
-                })
-        except midtransclient.error_midtrans.MidtransAPIError as e:
-            raw_message = getattr(e, 'message', '') or ''
-            parsed = _parse_midtrans_api_response_from_message(raw_message) or {}
-            results.append({
-                "payment_type": payment_type,
-                "order_id": order_id,
-                "ok": False,
-                "error": raw_message,
-                "midtrans_status_code": parsed.get('status_code'),
-                "midtrans_status_message": parsed.get('status_message'),
-                "midtrans_error_id": parsed.get('id'),
-            })
+                    "ok": False,
+                    "error": raw_message,
+                    "midtrans_status_code": parsed.get("status_code"),
+                    "midtrans_status_message": parsed.get("status_message"),
+                    "midtrans_error_id": parsed.get("id"),
+                }
+            )
 
-    return jsonify({
-        "is_production": bool(current_app.config.get('MIDTRANS_IS_PRODUCTION', False)),
-        "amount": amount,
-        "results": results,
-    }), HTTPStatus.OK
+    return jsonify(
+        {
+            "is_production": bool(current_app.config.get("MIDTRANS_IS_PRODUCTION", False)),
+            "amount": amount,
+            "results": results,
+        }
+    ), HTTPStatus.OK
 
 
-@admin_bp.route('/transactions/<order_id>/report.pdf', methods=['GET'])
+@admin_bp.route("/transactions/<order_id>/report.pdf", methods=["GET"])
 @admin_required
 def get_transaction_admin_report_pdf(current_admin: User, order_id: str):
     """PDF Admin report (berbeda dari invoice user) untuk audit transaksi + histori event."""
@@ -1691,25 +1918,26 @@ def get_transaction_admin_report_pdf(current_admin: User, order_id: str):
         "tx_payment_time_local": _format_dt_local(tx.payment_time),
         "tx_expiry_time_local": _format_dt_local(tx.expiry_time),
         "user_phone_display": user_phone_display or (tx.user.phone_number if tx.user else None),
-        "business_name": current_app.config.get('BUSINESS_NAME', 'LPSaring'),
-        "business_address": current_app.config.get('BUSINESS_ADDRESS', ''),
-        "business_phone": current_app.config.get('BUSINESS_PHONE', ''),
-        "business_email": current_app.config.get('BUSINESS_EMAIL', ''),
+        "business_name": current_app.config.get("BUSINESS_NAME", "LPSaring"),
+        "business_address": current_app.config.get("BUSINESS_ADDRESS", ""),
+        "business_phone": current_app.config.get("BUSINESS_PHONE", ""),
+        "business_email": current_app.config.get("BUSINESS_EMAIL", ""),
         "midtrans_payload": midtrans_payload_sanitized,
         "midtrans_summary": midtrans_summary,
         "events": events_payload,
     }
 
-    public_base_url = current_app.config.get('APP_PUBLIC_BASE_URL', request.url_root)
-    html_string = render_template('admin_transaction_report.html', **context)
+    public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
+    html_string = render_template("admin_transaction_report.html", **context)
     pdf_bytes = HTML(string=html_string, base_url=public_base_url).write_pdf()
     if not pdf_bytes:
         abort(HTTPStatus.INTERNAL_SERVER_ERROR, "Gagal menghasilkan file PDF.")
 
     response = make_response(pdf_bytes)
-    response.headers['Content-Type'] = 'application/pdf'
-    response.headers['Content-Disposition'] = f'inline; filename="admin-report-{order_id}.pdf"'
+    response.headers["Content-Type"] = "application/pdf"
+    response.headers["Content-Disposition"] = f'inline; filename="admin-report-{order_id}.pdf"'
     return response
+
 
 # --- Endpoint /action-logs DIHAPUS DARI SINI ---
 # Logika ini sekarang sepenuhnya ditangani oleh action_log_routes.py

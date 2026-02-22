@@ -60,13 +60,15 @@ def _find_user_for_ip(ip_address: str, mac_address: Optional[str], hotspot_user:
     return None
 
 
-@click.command('sync-mikrotik-access')
-@click.option('--ip', 'ip_address', required=True, help='IP lokal klien hotspot (contoh: 172.16.2.113).')
-@click.option('--phone', 'phone_number', required=False, help='Override target user (contoh: 0813... / +62...).')
-@click.option('--apply', 'apply_changes', is_flag=True, help='Terapkan perubahan (tanpa flag ini hanya diagnosis).')
-@click.option('--update-ip-binding/--no-update-ip-binding', default=True, show_default=True)
+@click.command("sync-mikrotik-access")
+@click.option("--ip", "ip_address", required=True, help="IP lokal klien hotspot (contoh: 172.16.2.113).")
+@click.option("--phone", "phone_number", required=False, help="Override target user (contoh: 0813... / +62...).")
+@click.option("--apply", "apply_changes", is_flag=True, help="Terapkan perubahan (tanpa flag ini hanya diagnosis).")
+@click.option("--update-ip-binding/--no-update-ip-binding", default=True, show_default=True)
 @with_appcontext
-def sync_mikrotik_access_command(ip_address: str, phone_number: Optional[str], apply_changes: bool, update_ip_binding: bool) -> None:
+def sync_mikrotik_access_command(
+    ip_address: str, phone_number: Optional[str], apply_changes: bool, update_ip_binding: bool
+) -> None:
     """Paksa sinkronisasi akses MikroTik berdasarkan IP.
 
     Dipakai saat OTP sukses tapi akses belum kebuka karena backend tidak mendapat IP lokal/MAC.
@@ -77,42 +79,44 @@ def sync_mikrotik_access_command(ip_address: str, phone_number: Optional[str], a
     - Opsional: upsert ip-binding untuk MAC (binding type mengikuti access policy).
     """
 
-    ip_address = (ip_address or '').strip()
+    ip_address = (ip_address or "").strip()
     if not ip_address:
-        raise click.ClickException('IP tidak valid')
+        raise click.ClickException("IP tidak valid")
 
     now = datetime.now(dt_timezone.utc)
     date_str, time_str = get_app_date_time_strings(now)
 
     with get_mikrotik_connection() as api:
         if not api:
-            raise click.ClickException('Gagal konek MikroTik')
+            raise click.ClickException("Gagal konek MikroTik")
 
         ok_host, host_usage_map, host_msg = get_hotspot_host_usage_map(api)
         if not ok_host:
-            raise click.ClickException(f'Gagal ambil hotspot host: {host_msg}')
+            raise click.ClickException(f"Gagal ambil hotspot host: {host_msg}")
 
         found_mac: Optional[str] = None
         found_host: Optional[dict] = None
         for mac, entry in host_usage_map.items():
-            if str(entry.get('address') or '').strip() == ip_address:
+            if str(entry.get("address") or "").strip() == ip_address:
                 found_mac = str(mac).upper()
                 found_host = entry
                 break
 
         if found_mac:
-            bypassed = (found_host or {}).get('bypassed')
-            authorized = (found_host or {}).get('authorized')
+            bypassed = (found_host or {}).get("bypassed")
+            authorized = (found_host or {}).get("authorized")
             click.echo(f"Host ditemukan: ip={ip_address} mac={found_mac} bypassed={bypassed} authorized={authorized}")
         else:
-            click.echo(f"Host TIDAK ditemukan untuk ip={ip_address}. (Kemungkinan IP sudah ganti / host table belum ada)")
+            click.echo(
+                f"Host TIDAK ditemukan untuk ip={ip_address}. (Kemungkinan IP sudah ganti / host table belum ada)"
+            )
 
         # Coba ambil field 'user' dari /ip/hotspot/host langsung, karena helper map tidak menyertakan.
         hotspot_user: Optional[str] = None
         try:
-            host_rows = api.get_resource('/ip/hotspot/host').get(address=ip_address)
+            host_rows = api.get_resource("/ip/hotspot/host").get(address=ip_address)
             if host_rows:
-                hotspot_user = host_rows[0].get('user')
+                hotspot_user = host_rows[0].get("user")
         except Exception:
             hotspot_user = None
 
@@ -128,14 +132,18 @@ def sync_mikrotik_access_command(ip_address: str, phone_number: Optional[str], a
         if not user:
             user = _find_user_for_ip(ip_address, found_mac, hotspot_user)
         if not user:
-            raise click.ClickException(f"User tidak ketemu untuk ip={ip_address}. Cek apakah device pernah tersimpan di DB atau host belum punya user.")
+            raise click.ClickException(
+                f"User tidak ketemu untuk ip={ip_address}. Cek apakah device pernah tersimpan di DB atau host belum punya user."
+            )
 
         username_08 = format_to_local_phone(user.phone_number) or user.phone_number
         click.echo(f"Target user: id={user.id} phone={username_08} role={user.role.value}")
 
         # 1) Sync address-list
         if not apply_changes:
-            click.echo("DRY-RUN: akan sync address-list untuk user (berdasarkan DB quota/status) dengan client_ip di atas")
+            click.echo(
+                "DRY-RUN: akan sync address-list untuk user (berdasarkan DB quota/status) dengan client_ip di atas"
+            )
         else:
             ok = sync_address_list_for_single_user(user, client_ip=ip_address)
             click.echo(f"APPLY: sync address-list => {ok}")
@@ -148,13 +156,15 @@ def sync_mikrotik_access_command(ip_address: str, phone_number: Optional[str], a
                 f"|source=sync-ip|date={date_str}|time={time_str}"
             )
             if not apply_changes:
-                click.echo(f"DRY-RUN: akan upsert ip-binding mac={found_mac} ip={ip_address} type={binding_type} comment={comment}")
+                click.echo(
+                    f"DRY-RUN: akan upsert ip-binding mac={found_mac} ip={ip_address} type={binding_type} comment={comment}"
+                )
             else:
                 ok, msg = upsert_ip_binding(
                     api_connection=api,
                     mac_address=found_mac,
                     address=ip_address,
-                    server=getattr(user, 'mikrotik_server_name', None),
+                    server=getattr(user, "mikrotik_server_name", None),
                     binding_type=binding_type,
                     comment=comment,
                 )

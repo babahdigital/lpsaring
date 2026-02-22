@@ -8,6 +8,7 @@ from typing import List
 
 from app.infrastructure.db.models import NotificationType
 
+
 class NotificationRecipientStatusSchema(BaseModel):
     id: uuid.UUID = Field(..., description="ID Pengguna (Admin)")
     full_name: str = Field(..., description="Nama Lengkap Admin")
@@ -16,9 +17,13 @@ class NotificationRecipientStatusSchema(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
 class NotificationRecipientUpdateSchema(BaseModel):
-    subscribed_admin_ids: List[uuid.UUID] = Field(..., description="Daftar lengkap ID admin yang harus berlangganan notifikasi.")
+    subscribed_admin_ids: List[uuid.UUID] = Field(
+        ..., description="Daftar lengkap ID admin yang harus berlangganan notifikasi."
+    )
     notification_type: NotificationType = Field(..., description="Jenis notifikasi yang diatur.")
+
 
 class NotificationUpdateResponseSchema(BaseModel):
     success: bool = True

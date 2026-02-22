@@ -10,9 +10,10 @@ from decimal import Decimal
 from typing import Any, cast
 
 from app.extensions import db
-from app.infrastructure.db.models import Package, PackageProfile # Import PackageProfile juga
+from app.infrastructure.db.models import Package, PackageProfile  # Import PackageProfile juga
 
-@click.command('seed-db')
+
+@click.command("seed-db")
 @with_appcontext
 def seed_db_command():
     """Mengisi database dengan data paket awal yang disesuaikan."""
@@ -20,7 +21,7 @@ def seed_db_command():
 
     # Cek apakah sudah ada Package atau PackageProfile
     if db.session.query(Package).first() or db.session.query(PackageProfile).first():
-        click.echo('Database already contains package or profile data. Seeding cancelled.')
+        click.echo("Database already contains package or profile data. Seeding cancelled.")
         return
 
     click.echo("Creating sample PackageProfiles and Packages...")
@@ -32,11 +33,11 @@ def seed_db_command():
 
         default_profile = cast(Any, PackageProfile)(
             id=uuid.uuid4(),
-            profile_name='default-hotspot-profile',
-            description='Profil default untuk semua pengguna hotspot, batasan diatur per user via API.'
+            profile_name="default-hotspot-profile",
+            description="Profil default untuk semua pengguna hotspot, batasan diatur per user via API.",
         )
         db.session.add(default_profile)
-        db.session.flush() # Agar default_profile.id terisi
+        db.session.flush()  # Agar default_profile.id terisi
 
         # --- Buat Paket-paket berdasarkan profil yang sudah dibuat ---
         # Paket ini akan memiliki kuota dan durasi yang melekat pada definisi paketnya,
@@ -55,55 +56,60 @@ def seed_db_command():
         # Untuk seeding, kita hanya perlu mencocokkan field yang ada di model Package.
 
         package1 = cast(Any, Package)(
-            id=uuid.uuid4(), name='Paket Kuota 1GB',
-            description='Kuota internet 1GB untuk 30 hari.',
-            price=Decimal('10000.00'),
-            profile_id=default_profile.id, # Asosiasikan dengan profil default
-            data_quota_gb=Decimal('1.00'),
+            id=uuid.uuid4(),
+            name="Paket Kuota 1GB",
+            description="Kuota internet 1GB untuk 30 hari.",
+            price=Decimal("10000.00"),
+            profile_id=default_profile.id,  # Asosiasikan dengan profil default
+            data_quota_gb=Decimal("1.00"),
             duration_days=30,
-            is_active=True
+            is_active=True,
         )
         package2 = cast(Any, Package)(
-            id=uuid.uuid4(), name='Paket Kuota 5GB',
-            description='Kuota internet 5GB untuk 30 hari.',
-            price=Decimal('25000.00'),
-            profile_id=default_profile.id, # Asosiasikan dengan profil default
-            data_quota_gb=Decimal('5.00'),
+            id=uuid.uuid4(),
+            name="Paket Kuota 5GB",
+            description="Kuota internet 5GB untuk 30 hari.",
+            price=Decimal("25000.00"),
+            profile_id=default_profile.id,  # Asosiasikan dengan profil default
+            data_quota_gb=Decimal("5.00"),
             duration_days=30,
-            is_active=True
+            is_active=True,
         )
         package3 = cast(Any, Package)(
-            id=uuid.uuid4(), name='Paket Kuota 10GB',
-            description='Kuota internet 10GB untuk 30 hari.',
-            price=Decimal('50000.00'),
-            profile_id=default_profile.id, # Asosiasikan dengan profil default
-            data_quota_gb=Decimal('10.00'),
+            id=uuid.uuid4(),
+            name="Paket Kuota 10GB",
+            description="Kuota internet 10GB untuk 30 hari.",
+            price=Decimal("50000.00"),
+            profile_id=default_profile.id,  # Asosiasikan dengan profil default
+            data_quota_gb=Decimal("10.00"),
             duration_days=30,
-            is_active=True
+            is_active=True,
         )
         package4 = cast(Any, Package)(
-            id=uuid.uuid4(), name='Paket Hemat 500MB (Non-Aktif)',
-            description='Paket coba kuota 500MB untuk 7 hari.',
-            price=Decimal('5000.00'),
-            profile_id=default_profile.id, # Asosiasikan dengan profil default
-            data_quota_gb=Decimal('0.50'),
+            id=uuid.uuid4(),
+            name="Paket Hemat 500MB (Non-Aktif)",
+            description="Paket coba kuota 500MB untuk 7 hari.",
+            price=Decimal("5000.00"),
+            profile_id=default_profile.id,  # Asosiasikan dengan profil default
+            data_quota_gb=Decimal("0.50"),
             duration_days=7,
-            is_active=False
+            is_active=False,
         )
         # --- BARU DITAMBAHKAN: Paket Unlimited ---
         package5_unlimited = cast(Any, Package)(
-            id=uuid.uuid4(), name='Paket Unlimited 30 Hari',
-            description='Internet tanpa kuota, berlaku 30 hari.',
-            price=Decimal('75000.00'),
-            profile_id=default_profile.id, # Asosiasikan dengan profil default
-            data_quota_gb=Decimal('0.00'),
+            id=uuid.uuid4(),
+            name="Paket Unlimited 30 Hari",
+            description="Internet tanpa kuota, berlaku 30 hari.",
+            price=Decimal("75000.00"),
+            profile_id=default_profile.id,  # Asosiasikan dengan profil default
+            data_quota_gb=Decimal("0.00"),
             duration_days=30,
-            is_active=True
+            is_active=True,
         )
         # ----------------------------------------
 
         packages_to_add = [package1, package2, package3, package4, package5_unlimited]
-        
+
         click.echo(f"Attempting to add {len(packages_to_add)} packages and 1 profile...")
         db.session.add_all(packages_to_add)
         db.session.commit()
@@ -112,5 +118,6 @@ def seed_db_command():
     except Exception as e:
         db.session.rollback()
         import traceback
+
         click.echo(f"Error while seeding database: {e}", err=True)
         click.echo(traceback.format_exc(), err=True)

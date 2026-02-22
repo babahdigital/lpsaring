@@ -112,7 +112,9 @@ def _extract_qr_code_url(payload: dict[str, Any]) -> str | None:
     return None
 
 
-def _log_event(session, tx: Transaction, changes: dict[str, Any], source: TransactionEventSource, event_type: str) -> None:
+def _log_event(
+    session, tx: Transaction, changes: dict[str, Any], source: TransactionEventSource, event_type: str
+) -> None:
     ev = TransactionEvent()
     ev.transaction_id = tx.id
     ev.source = source
@@ -208,7 +210,9 @@ def backfill(*, days: int, apply: bool, fetch_midtrans: bool, sleep_seconds: flo
         if (tx.payment_method is None or tx.payment_method == "") and isinstance(payload.get("payment_type"), str):
             changes["payment_method"] = payload.get("payment_type")
 
-        if (tx.midtrans_transaction_id is None or tx.midtrans_transaction_id == "") and isinstance(payload.get("transaction_id"), str):
+        if (tx.midtrans_transaction_id is None or tx.midtrans_transaction_id == "") and isinstance(
+            payload.get("transaction_id"), str
+        ):
             changes["midtrans_transaction_id"] = payload.get("transaction_id")
 
         if tx.expiry_time is None:
@@ -216,9 +220,8 @@ def backfill(*, days: int, apply: bool, fetch_midtrans: bool, sleep_seconds: flo
                 changes["expiry_time"] = parsed
 
         if tx.payment_time is None:
-            parsed = (
-                _safe_parse_midtrans_datetime(payload.get("settlement_time"))
-                or _safe_parse_midtrans_datetime(payload.get("transaction_time"))
+            parsed = _safe_parse_midtrans_datetime(payload.get("settlement_time")) or _safe_parse_midtrans_datetime(
+                payload.get("transaction_time")
             )
             if parsed is not None:
                 changes["payment_time"] = parsed

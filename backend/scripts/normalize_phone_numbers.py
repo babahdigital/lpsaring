@@ -22,9 +22,13 @@ def _iter_users() -> Iterable[User]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Normalize users.phone_number to E.164 (+<countrycode>...) with duplicate detection.")
+    parser = argparse.ArgumentParser(
+        description="Normalize users.phone_number to E.164 (+<countrycode>...) with duplicate detection."
+    )
     parser.add_argument("--apply", action="store_true", help="Apply changes to DB (default: dry-run only)")
-    parser.add_argument("--allow-duplicates", action="store_true", help="Do not fail on duplicates (still reports them)")
+    parser.add_argument(
+        "--allow-duplicates", action="store_true", help="Do not fail on duplicates (still reports them)"
+    )
     parser.add_argument("--limit", type=int, default=0, help="Limit number of users processed (0 = all)")
     args = parser.parse_args()
 

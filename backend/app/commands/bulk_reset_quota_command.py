@@ -62,7 +62,9 @@ def _is_user_expired(user: User, now_utc: datetime) -> bool:
 
 
 @click.command("bulk-reset-quota")
-@click.option("--quota-mb", type=int, default=10240, show_default=True, help="Set total_quota_purchased_mb (MB). 10240=10GB")
+@click.option(
+    "--quota-mb", type=int, default=10240, show_default=True, help="Set total_quota_purchased_mb (MB). 10240=10GB"
+)
 @click.option(
     "--expiry",
     type=click.Choice(["end-of-month", "keep"], case_sensitive=False),
@@ -72,7 +74,9 @@ def _is_user_expired(user: User, now_utc: datetime) -> bool:
 )
 @click.option("--apply-mikrotik/--no-mikrotik", default=True, show_default=True)
 @click.option("--dry-run/--apply", default=True, show_default=True)
-@click.option("--limit", type=int, default=0, show_default=True, help="Limit number of eligible users processed (0 = all).")
+@click.option(
+    "--limit", type=int, default=0, show_default=True, help="Limit number of eligible users processed (0 = all)."
+)
 @with_appcontext
 def bulk_reset_quota_command(
     quota_mb: int,
@@ -132,18 +136,26 @@ def bulk_reset_quota_command(
     if limit and limit > 0:
         eligible_users = eligible_users[:limit]
 
-    click.echo(f"SCOPE users={counters.scope_users} eligible_reset={counters.eligible_reset} expired_skip={counters.expired_skip} limit={limit or 'ALL'}")
-    click.echo(f"PARAM quota_mb={quota_mb} expiry={expiry} expiry_target_utc={expiry_target_utc.isoformat() if expiry_target_utc else 'KEEP'} mikrotik={apply_mikrotik} mode={'DRY_RUN' if dry_run else 'APPLY'}")
+    click.echo(
+        f"SCOPE users={counters.scope_users} eligible_reset={counters.eligible_reset} expired_skip={counters.expired_skip} limit={limit or 'ALL'}"
+    )
+    click.echo(
+        f"PARAM quota_mb={quota_mb} expiry={expiry} expiry_target_utc={expiry_target_utc.isoformat() if expiry_target_utc else 'KEEP'} mikrotik={apply_mikrotik} mode={'DRY_RUN' if dry_run else 'APPLY'}"
+    )
 
     if dry_run:
         sample_e = eligible_users[:5]
         sample_x = expired_users[:5]
         click.echo("SAMPLE eligible_reset (max 5)")
         for i, u in enumerate(sample_e, 1):
-            click.echo(f"  {i}. {u.phone_number} | {u.full_name} | expiry={u.quota_expiry_date.isoformat() if u.quota_expiry_date else '-'}")
+            click.echo(
+                f"  {i}. {u.phone_number} | {u.full_name} | expiry={u.quota_expiry_date.isoformat() if u.quota_expiry_date else '-'}"
+            )
         click.echo("SAMPLE expired_skip (max 5)")
         for i, u in enumerate(sample_x, 1):
-            click.echo(f"  {i}. {u.phone_number} | {u.full_name} | expiry={u.quota_expiry_date.isoformat() if u.quota_expiry_date else '-'}")
+            click.echo(
+                f"  {i}. {u.phone_number} | {u.full_name} | expiry={u.quota_expiry_date.isoformat() if u.quota_expiry_date else '-'}"
+            )
         return
 
     redis_client = getattr(current_app, "redis_client_otp", None)
@@ -220,7 +232,9 @@ def bulk_reset_quota_command(
             if is_expired:
                 target_profile = expired_profile
             if target_profile:
-                ok, _msg = set_hotspot_user_profile(api_connection=api, username_or_id=username_08, new_profile_name=target_profile)
+                ok, _msg = set_hotspot_user_profile(
+                    api_connection=api, username_or_id=username_08, new_profile_name=target_profile
+                )
                 if ok:
                     user.mikrotik_profile_name = target_profile
                     counters.mikrotik_profile_updated += 1
@@ -255,7 +269,9 @@ def bulk_reset_quota_command(
                 username_08 = format_to_local_phone(user.phone_number)
                 if not username_08:
                     continue
-                ok, _msg = set_hotspot_user_profile(api_connection=api, username_or_id=username_08, new_profile_name=expired_profile)
+                ok, _msg = set_hotspot_user_profile(
+                    api_connection=api, username_or_id=username_08, new_profile_name=expired_profile
+                )
                 if ok:
                     user.mikrotik_profile_name = expired_profile
                     counters.mikrotik_profile_updated += 1

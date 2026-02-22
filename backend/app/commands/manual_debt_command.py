@@ -61,9 +61,7 @@ def add_manual_debt_command(
     if not normalized:
         raise click.ClickException("Nomor telepon tidak valid.")
 
-    user = db.session.scalar(
-        sa.select(User).where(User.phone_number.in_(get_phone_number_variations(normalized)))
-    )
+    user = db.session.scalar(sa.select(User).where(User.phone_number.in_(get_phone_number_variations(normalized))))
     if not user:
         raise click.ClickException(f"User tidak ditemukan untuk nomor: {phone}")
 
@@ -80,7 +78,7 @@ def add_manual_debt_command(
         raise click.ClickException("Gunakan salah satu: --package-id atau --amount-mb (jangan keduanya).")
 
     resolved_amount_mb = 0
-    resolved_note = (note.strip() if isinstance(note, str) and note.strip() else None)
+    resolved_note = note.strip() if isinstance(note, str) and note.strip() else None
 
     if pkg_uuid:
         pkg = db.session.get(Package, pkg_uuid)
@@ -96,8 +94,7 @@ def add_manual_debt_command(
 
         resolved_amount_mb = int(round(pkg_quota_gb * 1024))
         pkg_note = (
-            f"Paket: {getattr(pkg, 'name', '') or ''} "
-            f"({pkg_quota_gb:g} GB, Rp {int(getattr(pkg, 'price', 0) or 0):,})"
+            f"Paket: {getattr(pkg, 'name', '') or ''} ({pkg_quota_gb:g} GB, Rp {int(getattr(pkg, 'price', 0) or 0):,})"
         )
         resolved_note = pkg_note if not resolved_note else f"{pkg_note} | {resolved_note}"
     else:

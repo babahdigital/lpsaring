@@ -92,9 +92,7 @@ def test_restore_backup_returns_500_for_unknown_pg_restore_error(monkeypatch, tm
 def test_restore_backup_sql_sanitizes_pg_dump_warning_lines(monkeypatch, tmp_path):
     backup_file = tmp_path / "sample.sql"
     backup_file.write_text(
-        "pg_dump: warning: there are circular foreign-key constraints\n"
-        "-- PostgreSQL database dump\n"
-        "SELECT 1;\n",
+        "pg_dump: warning: there are circular foreign-key constraints\n-- PostgreSQL database dump\nSELECT 1;\n",
         encoding="utf-8",
     )
 

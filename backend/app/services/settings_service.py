@@ -10,26 +10,31 @@ from app.extensions import db
 from app.infrastructure.db.models import ApplicationSetting
 
 ENCRYPTED_KEYS: Set[str] = {
-    'WHATSAPP_API_KEY', 'MIDTRANS_SERVER_KEY',
-    'MIDTRANS_CLIENT_KEY', 'MIKROTIK_PASSWORD',
-    'TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET'
+    "WHATSAPP_API_KEY",
+    "MIDTRANS_SERVER_KEY",
+    "MIDTRANS_CLIENT_KEY",
+    "MIKROTIK_PASSWORD",
+    "TELEGRAM_BOT_TOKEN",
+    "TELEGRAM_WEBHOOK_SECRET",
 }
-VALID_IP_BINDING_TYPES: Set[str] = {'bypassed', 'regular', 'blocked'}
+VALID_IP_BINDING_TYPES: Set[str] = {"bypassed", "regular", "blocked"}
 _fernet_instance = None
+
 
 def _get_fernet() -> Fernet:
     global _fernet_instance
     if _fernet_instance is None:
-        secret_key = current_app.config.get('SECRET_KEY')
+        secret_key = current_app.config.get("SECRET_KEY")
         if not secret_key:
             raise ValueError("SECRET_KEY tidak disetel di konfigurasi aplikasi.")
-        
+
         hasher = hashlib.sha256()
-        hasher.update(secret_key.encode('utf-8'))
+        hasher.update(secret_key.encode("utf-8"))
         derived_key = hasher.digest()
         fernet_key = base64.urlsafe_b64encode(derived_key)
         _fernet_instance = Fernet(fernet_key)
     return _fernet_instance
+
 
 def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
     try:
@@ -40,12 +45,12 @@ def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
                     return os.getenv(key, default)
                 try:
                     fernet = _get_fernet()
-                    return fernet.decrypt(setting.setting_value.encode('utf-8')).decode('utf-8')
+                    return fernet.decrypt(setting.setting_value.encode("utf-8")).decode("utf-8")
                 except InvalidToken:
                     current_app.logger.error(f"Gagal mendekripsi pengaturan '{key}'. Token tidak valid.")
                     return os.getenv(key, default)
             else:
-                if setting.setting_value in (None, ''):
+                if setting.setting_value in (None, ""):
                     return os.getenv(key, default)
                 return setting.setting_value
         else:
@@ -53,6 +58,7 @@ def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
     except Exception as e:
         current_app.logger.error(f"Error saat mengambil pengaturan '{key}': {e}", exc_info=True)
         return os.getenv(key, default)
+
 
 # [PENAMBAHAN] Fungsi yang sebelumnya hilang, untuk mengatasi AttributeError
 def get_setting_as_int(key: str, default: int) -> int:
@@ -77,6 +83,7 @@ def get_ip_binding_type_setting(key: str, default: str) -> str:
     )
     return default
 
+
 def update_settings(settings_data: Dict[str, str]) -> None:
     """Mempersiapkan pembaruan pengaturan di dalam sesi TANPA commit."""
     fernet = _get_fernet()
@@ -87,14 +94,14 @@ def update_settings(settings_data: Dict[str, str]) -> None:
             db.session.add(setting)
         if key in ENCRYPTED_KEYS:
             setting.is_encrypted = True
-            setting.setting_value = fernet.encrypt(value.encode('utf-8')).decode('utf-8')
+            setting.setting_value = fernet.encrypt(value.encode("utf-8")).decode("utf-8")
         else:
             setting.is_encrypted = False
             setting.setting_value = value
 
     try:
-        redis_client = getattr(current_app, 'redis_client_otp', None)
+        redis_client = getattr(current_app, "redis_client_otp", None)
         if redis_client is not None:
-            redis_client.delete('cache:public_settings')
+            redis_client.delete("cache:public_settings")
     except Exception:
         pass

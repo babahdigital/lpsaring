@@ -54,7 +54,9 @@ def main() -> int:
 
             hotspot_users = api.get_resource("/ip/hotspot/user").get(name=username_08)
             if hotspot_users:
-                print(f"Hotspot user ditemukan: profile={hotspot_users[0].get('profile')} server={hotspot_users[0].get('server')}")
+                print(
+                    f"Hotspot user ditemukan: profile={hotspot_users[0].get('profile')} server={hotspot_users[0].get('server')}"
+                )
             else:
                 print("Hotspot user tidak ditemukan.")
 
@@ -75,7 +77,9 @@ def main() -> int:
 
             print(f"IP binding match count: {len(matched_bindings)}")
             for entry in matched_bindings:
-                print(f"  - mac={entry.get('mac-address')} ip={entry.get('address')} type={entry.get('type')} comment={entry.get('comment')}")
+                print(
+                    f"  - mac={entry.get('mac-address')} ip={entry.get('address')} type={entry.get('type')} comment={entry.get('comment')}"
+                )
 
             addr_list = api.get_resource("/ip/firewall/address-list").get()
             matched_addr = []

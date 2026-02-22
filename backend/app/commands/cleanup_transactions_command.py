@@ -60,7 +60,9 @@ def cleanup_transactions_command(older_than_days: int, statuses: tuple[str, ...]
     )
 
     total = q.count()
-    click.echo(f"Found {total} transactions to cleanup (older_than_days={older_than_days}, statuses={[s.value for s in status_list]}).")
+    click.echo(
+        f"Found {total} transactions to cleanup (older_than_days={older_than_days}, statuses={[s.value for s in status_list]})."
+    )
 
     if dry_run:
         click.echo("Dry-run: tidak ada data yang dihapus.")
@@ -68,5 +70,10 @@ def cleanup_transactions_command(older_than_days: int, statuses: tuple[str, ...]
 
     deleted = q.delete(synchronize_session=False)
     db.session.commit()
-    current_app.logger.info("cleanup-transactions deleted=%s cutoff=%s statuses=%s", deleted, cutoff.isoformat(), [s.value for s in status_list])
+    current_app.logger.info(
+        "cleanup-transactions deleted=%s cutoff=%s statuses=%s",
+        deleted,
+        cutoff.isoformat(),
+        [s.value for s in status_list],
+    )
     click.echo(f"Deleted {deleted} transactions.")

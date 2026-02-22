@@ -11,6 +11,7 @@ from .helpers import _log_admin_action, _handle_mikrotik_operation
 from app.infrastructure.gateways.mikrotik_client import delete_hotspot_user
 from app.services.device_management_service import _remove_ip_binding, _remove_blocked_address_list
 
+
 def process_user_removal(user_to_remove: User, admin_actor: User) -> Tuple[bool, str]:
     """
     Memproses penghapusan atau penonaktifan pengguna berdasarkan peran admin.
@@ -23,7 +24,7 @@ def process_user_removal(user_to_remove: User, admin_actor: User) -> Tuple[bool,
     # Super Admin tidak dapat dihapus
     if user_to_remove.role == UserRole.SUPER_ADMIN:
         return False, "Akses ditolak: Super Admin tidak dapat dihapus."
-    
+
     # Admin biasa tidak bisa menargetkan Admin lain atau Super Admin
     if not admin_actor.is_super_admin_role and user_to_remove.is_admin_role:
         return False, "Akses ditolak: Anda tidak punya izin untuk menghapus/menonaktifkan admin lain."
@@ -34,7 +35,7 @@ def process_user_removal(user_to_remove: User, admin_actor: User) -> Tuple[bool,
     def _cleanup_devices() -> None:
         for device in devices:
             if device.mac_address:
-                _remove_ip_binding(device.mac_address, user_to_remove.mikrotik_server_name or 'all')
+                _remove_ip_binding(device.mac_address, user_to_remove.mikrotik_server_name or "all")
             if device.ip_address:
                 _remove_blocked_address_list(device.ip_address)
             db.session.delete(device)
@@ -47,18 +48,18 @@ def process_user_removal(user_to_remove: User, admin_actor: User) -> Tuple[bool,
             if not success and "tidak ditemukan" not in msg:
                 return False, f"Gagal menghapus pengguna di Mikrotik ({msg}). Pengguna di database TIDAK dihapus."
         _cleanup_devices()
-        
+
         # [PERBAIKAN BUG] Memanggil _log_admin_action dengan argumen yang benar
         if not admin_actor.is_super_admin_role:
             _log_admin_action(
-                admin_actor, 
-                user_to_remove, 
-                AdminActionType.MANUAL_USER_DELETE, 
+                admin_actor,
+                user_to_remove,
+                AdminActionType.MANUAL_USER_DELETE,
                 details={
                     "deleted_user_name": user_to_remove.full_name,
                     "deleted_user_phone": user_to_remove.phone_number,
-                    "mikrotik_status": "Berhasil"
-                }
+                    "mikrotik_status": "Berhasil",
+                },
             )
         db.session.delete(user_to_remove)
         return True, f"Pengguna {user_to_remove.full_name} berhasil DIHAPUS secara permanen."
@@ -71,10 +72,7 @@ def process_user_removal(user_to_remove: User, admin_actor: User) -> Tuple[bool,
 
         # Hapus user di Mikrotik juga untuk admin biasa
         if mikrotik_username:
-            mikrotik_success, mikrotik_msg = _handle_mikrotik_operation(
-                delete_hotspot_user,
-                username=mikrotik_username
-            )
+            mikrotik_success, mikrotik_msg = _handle_mikrotik_operation(delete_hotspot_user, username=mikrotik_username)
             if not mikrotik_success and "tidak ditemukan" not in mikrotik_msg:
                 return False, f"Gagal menghapus pengguna di Mikrotik: {mikrotik_msg}. Aksi dibatalkan."
 
@@ -86,7 +84,7 @@ def process_user_removal(user_to_remove: User, admin_actor: User) -> Tuple[bool,
         _log_admin_action(
             admin_actor,
             user_to_remove,
-            AdminActionType.DEACTIVATE_USER, # Menggunakan tipe log yang lebih sesuai
-            details={"reason": "Admin 'delete' action"}
+            AdminActionType.DEACTIVATE_USER,  # Menggunakan tipe log yang lebih sesuai
+            details={"reason": "Admin 'delete' action"},
         )
         return True, f"Pengguna {user_to_remove.full_name} berhasil DINONAKTIFKAN dan dihapus dari Mikrotik."

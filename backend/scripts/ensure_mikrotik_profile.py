@@ -7,9 +7,9 @@ from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection
 
 
 def _profile_exists(api: Any, name: str) -> bool:
-    profiles = api.get_resource('/ip/hotspot/user/profile').get()
+    profiles = api.get_resource("/ip/hotspot/user/profile").get()
     for p in profiles:
-        if str(p.get('name', '')).lower() == name.lower():
+        if str(p.get("name", "")).lower() == name.lower():
             return True
     return False
 
@@ -41,7 +41,7 @@ def main() -> None:
             if args.comment:
                 payload["comment"] = args.comment
 
-            api.get_resource('/ip/hotspot/user/profile').add(**payload)
+            api.get_resource("/ip/hotspot/user/profile").add(**payload)
             print(f"Profil '{args.name}' berhasil dibuat.")
 
 

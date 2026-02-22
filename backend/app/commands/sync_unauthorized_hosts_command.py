@@ -108,9 +108,7 @@ def sync_unauthorized_hosts_command(
         or "unauthorized"
     )
     resolved_timeout = (
-        timeout
-        or settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED_TIMEOUT", "1h")
-        or "1h"
+        timeout or settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED_TIMEOUT", "1h") or "1h"
     )
     resolved_min_uptime = int(
         min_uptime_minutes
@@ -133,9 +131,7 @@ def sync_unauthorized_hosts_command(
         )
 
     exempt_tokens = (
-        list(exempt_ips)
-        if exempt_ips
-        else list(current_app.config.get("MIKROTIK_UNAUTHORIZED_EXEMPT_IPS", []) or [])
+        list(exempt_ips) if exempt_ips else list(current_app.config.get("MIKROTIK_UNAUTHORIZED_EXEMPT_IPS", []) or [])
     )
     exempt_set = expand_ip_tokens(exempt_tokens)
 

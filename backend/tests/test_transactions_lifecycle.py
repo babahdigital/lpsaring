@@ -188,7 +188,9 @@ def test_initiate_transaction_sets_unknown_and_expiry_and_finish_url(monkeypatch
     assert payload["snap_token"] == "dummy-token"
     assert payload["order_id"].startswith("HS-")
 
-    created_tx = next(obj for obj in fake_session.added if hasattr(obj, "midtrans_order_id") and hasattr(obj, "expiry_time"))
+    created_tx = next(
+        obj for obj in fake_session.added if hasattr(obj, "midtrans_order_id") and hasattr(obj, "expiry_time")
+    )
     assert created_tx.status == TransactionStatus.UNKNOWN
     assert isinstance(created_tx.expiry_time, datetime)
     assert created_tx.expiry_time.tzinfo is not None

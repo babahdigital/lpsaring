@@ -5,16 +5,18 @@ from pydantic import BaseModel, ConfigDict
 from uuid import UUID
 from typing import Optional
 
+
 # ==============================================================================
 # PackagePublic: Skema untuk respons API GET /api/packages
 # ==============================================================================
 class PackagePublic(BaseModel):
     """Skema untuk menampilkan data paket ke publik via API."""
+
     id: UUID
     name: str
     price: int
     description: Optional[str] = None
-    
+
     # --- PENYESUAIAN DENGAN MODEL BARU ---
     duration_days: int
     data_quota_gb: float

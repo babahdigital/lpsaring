@@ -206,9 +206,7 @@ def main(argv: list[str]) -> int:
 
             report["counts"]["address_list_blocked_total"] = len(all_blocked_rows)
             report["counts"]["ip_binding_total"] = len(all_ipb_rows)
-            ipb_type_counts = Counter(
-                (str(row.get("type") or "").strip().lower() or "(empty)") for row in all_ipb_rows
-            )
+            ipb_type_counts = Counter((str(row.get("type") or "").strip().lower() or "(empty)") for row in all_ipb_rows)
             report["counts"]["ip_binding_type_counts"] = dict(ipb_type_counts)
             report["counts"]["ip_binding_regular_total"] = int(ipb_type_counts.get("regular", 0))
             report["counts"]["ip_binding_bypassed_total"] = int(ipb_type_counts.get("bypassed", 0))

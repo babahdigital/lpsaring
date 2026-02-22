@@ -15,9 +15,10 @@ logger = logging.getLogger(__name__)
 
 # --- Konfigurasi ---
 # Pengguna dianggap tidak aktif jika tanggal kadaluarsanya sudah lewat dari X bulan
-INACTIVITY_MONTHS_THRESHOLD = 6 
+INACTIVITY_MONTHS_THRESHOLD = 6
 
-@click.command('cleanup-inactive')
+
+@click.command("cleanup-inactive")
 @with_appcontext
 def cleanup_inactive_command():
     """
@@ -36,26 +37,26 @@ def cleanup_inactive_command():
     if not users_to_delete:
         logger.info("Tidak ada pengguna tidak aktif yang perlu dihapus.")
         return
-        
+
     logger.info(f"Ditemukan {len(users_to_delete)} pengguna tidak aktif untuk dihapus.")
-    
+
     success_count = 0
     fail_count = 0
-    
+
     with get_mikrotik_connection() as api:
         if not api:
             logger.error("Gagal mendapatkan koneksi MikroTik. Proses dibatalkan.")
             return
-            
+
         for user in users_to_delete:
             logger.warning(f"Menghapus pengguna: {user.full_name} (kadaluarsa pada {user.quota_expiry_date})...")
-            
+
             # 1. Hapus dari MikroTik
             mikrotik_success, msg = delete_hotspot_user(api, user.phone_number)
             if not mikrotik_success:
                 logger.error(f"  -> Gagal menghapus {user.full_name} dari MikroTik: {msg}")
                 fail_count += 1
-                continue # Lanjut ke user berikutnya jika gagal di MT
+                continue  # Lanjut ke user berikutnya jika gagal di MT
 
             # 2. Hapus dari Database
             try:

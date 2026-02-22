@@ -26,23 +26,23 @@ logger = logging.getLogger(__name__)
 
 
 def _sync_ip_binding_for_authorized_devices(user, mikrotik_api: Any, date_str: str, time_str: str) -> None:
-    if not mikrotik_api or not getattr(user, 'devices', None):
+    if not mikrotik_api or not getattr(user, "devices", None):
         return
 
     target_binding_type = resolve_allowed_binding_type_for_user(user)
-    username_08 = format_to_local_phone(getattr(user, 'phone_number', None) or '') or ''
-    server_name = getattr(user, 'mikrotik_server_name', None)
+    username_08 = format_to_local_phone(getattr(user, "phone_number", None) or "") or ""
+    server_name = getattr(user, "mikrotik_server_name", None)
     synced_count = 0
 
     for device in user.devices:
-        if not getattr(device, 'is_authorized', False):
+        if not getattr(device, "is_authorized", False):
             continue
 
-        mac_address = (getattr(device, 'mac_address', None) or '').strip().upper()
+        mac_address = (getattr(device, "mac_address", None) or "").strip().upper()
         if not mac_address:
             continue
 
-        ip_address = getattr(device, 'ip_address', None)
+        ip_address = getattr(device, "ip_address", None)
         ok, message = upsert_ip_binding(
             api_connection=mikrotik_api,
             mac_address=mac_address,
@@ -89,29 +89,29 @@ def _resolve_candidate_ips(user, mikrotik_api: Any) -> list[str]:
     if mikrotik_api:
         ok_binding, binding_map, _msg = get_hotspot_ip_binding_user_map(mikrotik_api)
         if ok_binding and binding_map:
-            user_id_str = str(getattr(user, 'id', ''))
+            user_id_str = str(getattr(user, "id", ""))
             for entry in binding_map.values():
-                if str(entry.get('user_id')) != user_id_str:
+                if str(entry.get("user_id")) != user_id_str:
                     continue
-                _add_candidate_ip(candidates, seen, entry.get('address'))
+                _add_candidate_ip(candidates, seen, entry.get("address"))
 
         ok_host, host_usage_map, _msg = get_hotspot_host_usage_map(mikrotik_api)
-        if ok_host and host_usage_map and getattr(user, 'devices', None):
+        if ok_host and host_usage_map and getattr(user, "devices", None):
             for device in user.devices:
-                mac = (device.mac_address or '').upper()
+                mac = (device.mac_address or "").upper()
                 if not mac:
                     continue
                 host_entry = host_usage_map.get(mac)
                 if host_entry:
-                    _add_candidate_ip(candidates, seen, host_entry.get('address'))
+                    _add_candidate_ip(candidates, seen, host_entry.get("address"))
 
-    if getattr(user, 'devices', None):
+    if getattr(user, "devices", None):
         for device in user.devices:
             _add_candidate_ip(candidates, seen, device.ip_address)
 
         if mikrotik_api:
             for device in user.devices:
-                mac = (device.mac_address or '').upper()
+                mac = (device.mac_address or "").upper()
                 if not mac:
                     continue
                 ok_ip, ip_from_mac, _msg = get_ip_by_mac(mikrotik_api, mac)
@@ -126,9 +126,7 @@ def generate_random_password(length: int = 6) -> str:
     return "".join(secrets.choice(string.digits) for _ in range(length))
 
 
-def apply_package_and_sync_to_mikrotik(
-    transaction: Transaction, mikrotik_api: Any
-) -> tuple[bool, str]:
+def apply_package_and_sync_to_mikrotik(transaction: Transaction, mikrotik_api: Any) -> tuple[bool, str]:
     """
     Logika inti yang disempurnakan.
     1. Menerapkan manfaat paket ke objek User.
@@ -148,9 +146,7 @@ def apply_package_and_sync_to_mikrotik(
         logger.error(msg)
         return False, msg
 
-    logger.info(
-        f"Menerapkan paket '{package.name}' ke pengguna '{user.full_name}' dari transaksi {transaction.id}."
-    )
+    logger.info(f"Menerapkan paket '{package.name}' ke pengguna '{user.full_name}' dari transaksi {transaction.id}.")
 
     is_unlimited_package = Decimal(str(package.data_quota_gb)) == Decimal("0")
     user.is_unlimited_user = is_unlimited_package
@@ -161,12 +157,8 @@ def apply_package_and_sync_to_mikrotik(
     else:
         user.is_unlimited_user = False
         added_quota_mb = int(float(package.data_quota_gb) * 1024)
-        user.total_quota_purchased_mb = (
-            user.total_quota_purchased_mb or 0
-        ) + added_quota_mb
-        logger.info(
-            f"User ID {user.id} diproses sebagai PENGGUNA BERKUOTA dengan tambahan {added_quota_mb} MB."
-        )
+        user.total_quota_purchased_mb = (user.total_quota_purchased_mb or 0) + added_quota_mb
+        logger.info(f"User ID {user.id} diproses sebagai PENGGUNA BERKUOTA dengan tambahan {added_quota_mb} MB.")
 
     duration_to_add = timedelta(days=package.duration_days)
     now_utc = datetime.now(dt_timezone.utc)
@@ -177,9 +169,7 @@ def apply_package_and_sync_to_mikrotik(
     else:
         user.quota_expiry_date = now_utc + duration_to_add
 
-    if not user.mikrotik_password or not (
-        len(user.mikrotik_password) == 6 and user.mikrotik_password.isdigit()
-    ):
+    if not user.mikrotik_password or not (len(user.mikrotik_password) == 6 and user.mikrotik_password.isdigit()):
         user.mikrotik_password = generate_random_password()
     transaction.hotspot_password = user.mikrotik_password
 
@@ -196,35 +186,31 @@ def apply_package_and_sync_to_mikrotik(
 
     mikrotik_profile_to_set = package.profile.profile_name
     if user.is_unlimited_user:
-        unlimited_profile_name = settings_service.get_setting('MIKROTIK_UNLIMITED_PROFILE', 'unlimited')
+        unlimited_profile_name = settings_service.get_setting("MIKROTIK_UNLIMITED_PROFILE", "unlimited")
         logger.info(
             f"User ID {user.id} adalah UNLIMITED. Mengganti profil dari '{mikrotik_profile_to_set}' menjadi '{unlimited_profile_name}'."
         )
         mikrotik_profile_to_set = unlimited_profile_name
 
-    limit_bytes_total = (
-        0
-        if user.is_unlimited_user
-        else int((user.total_quota_purchased_mb or 0) * 1024 * 1024)
-    )
+    limit_bytes_total = 0 if user.is_unlimited_user else int((user.total_quota_purchased_mb or 0) * 1024 * 1024)
     expiry_date = user.quota_expiry_date or now_utc
     session_timeout_seconds = max(0, int((expiry_date - now_utc).total_seconds()))
 
     # --- PENYEMPURNAAN: Menyiapkan parameter server secara dinamis ---
     params_for_mt = {
-        'api_connection': mikrotik_api,
-        'user_mikrotik_username': hotspot_username,
-        'mikrotik_profile_name': mikrotik_profile_to_set,
-        'hotspot_password': user.mikrotik_password,
-        'comment': f"Order:{transaction.midtrans_order_id}|package={package.name}|date={date_str}|time={time_str}",
-        'limit_bytes_total': limit_bytes_total,
-        'session_timeout_seconds': session_timeout_seconds,
-        'force_update_profile': True,
+        "api_connection": mikrotik_api,
+        "user_mikrotik_username": hotspot_username,
+        "mikrotik_profile_name": mikrotik_profile_to_set,
+        "hotspot_password": user.mikrotik_password,
+        "comment": f"Order:{transaction.midtrans_order_id}|package={package.name}|date={date_str}|time={time_str}",
+        "limit_bytes_total": limit_bytes_total,
+        "session_timeout_seconds": session_timeout_seconds,
+        "force_update_profile": True,
     }
 
     # Tambahkan parameter 'server' hanya jika ada nilainya di data user
-    if hasattr(user, 'mikrotik_server_name') and user.mikrotik_server_name:
-        params_for_mt['server'] = user.mikrotik_server_name
+    if hasattr(user, "mikrotik_server_name") and user.mikrotik_server_name:
+        params_for_mt["server"] = user.mikrotik_server_name
         logger.info(
             f"Sinkronisasi ke Mikrotik untuk user '{hotspot_username}' pada SERVER: '{user.mikrotik_server_name}', PROFIL: '{mikrotik_profile_to_set}'."
         )
@@ -238,9 +224,7 @@ def apply_package_and_sync_to_mikrotik(
     success_mt, msg_mt = activate_or_update_hotspot_user(**params_for_mt)
 
     if not success_mt:
-        logger.error(
-            f"SINKRONISASI MIKROTIK GAGAL untuk user '{hotspot_username}'. Pesan: {msg_mt}."
-        )
+        logger.error(f"SINKRONISASI MIKROTIK GAGAL untuk user '{hotspot_username}'. Pesan: {msg_mt}.")
         return False, f"Gagal sinkronisasi ke Mikrotik: {msg_mt}"
 
     _sync_ip_binding_for_authorized_devices(user, mikrotik_api, date_str, time_str)
@@ -280,9 +264,7 @@ def apply_package_and_sync_to_mikrotik(
     try:
         db.session.add(user)
         db.session.add(transaction)
-        logger.info(
-            f"Sinkronisasi Mikrotik BERHASIL untuk user '{hotspot_username}'. Perubahan siap di-commit."
-        )
+        logger.info(f"Sinkronisasi Mikrotik BERHASIL untuk user '{hotspot_username}'. Perubahan siap di-commit.")
         return True, "Paket berhasil diterapkan dan disinkronkan ke Mikrotik."
     except SQLAlchemyError as e:
         logger.error(

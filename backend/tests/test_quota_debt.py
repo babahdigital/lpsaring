@@ -22,9 +22,9 @@ def test_round_up_rp_to_10k():
 
 
 def test_format_rupiah():
-    assert format_rupiah(0) == '0'
-    assert format_rupiah(1000) == '1.000'
-    assert format_rupiah(60000) == '60.000'
+    assert format_rupiah(0) == "0"
+    assert format_rupiah(1000) == "1.000"
+    assert format_rupiah(60000) == "60.000"
 
 
 def test_estimate_debt_rp_from_cheapest_package_happy_path():
@@ -34,7 +34,7 @@ def test_estimate_debt_rp_from_cheapest_package_happy_path():
         debt_mb=500.0,
         cheapest_package_price_rp=50000,
         cheapest_package_quota_gb=10.0,
-        cheapest_package_name='Paket 10GB',
+        cheapest_package_name="Paket 10GB",
     )
     assert est.debt_mb == 500.0
     assert est.estimated_rp_raw is not None

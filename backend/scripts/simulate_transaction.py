@@ -43,9 +43,7 @@ def _apply_package_to_user(user: User, package: Package, now_utc: datetime) -> N
     else:
         user.quota_expiry_date = now_utc + duration_to_add
 
-    if not user.mikrotik_password or not (
-        len(user.mikrotik_password) == 6 and user.mikrotik_password.isdigit()
-    ):
+    if not user.mikrotik_password or not (len(user.mikrotik_password) == 6 and user.mikrotik_password.isdigit()):
         user.mikrotik_password = generate_random_password()
 
 

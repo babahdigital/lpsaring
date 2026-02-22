@@ -35,7 +35,9 @@ def _compute_used(total_mb: int, status: str, fup_threshold: int, used_override:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Simulate quota status for a user.")
     parser.add_argument("--phone", required=True, help="Nomor telepon user (08... / +62...)")
-    parser.add_argument("--status", required=True, choices=["active", "fup", "habis", "expired", "unlimited"], help="Target status")
+    parser.add_argument(
+        "--status", required=True, choices=["active", "fup", "habis", "expired", "unlimited"], help="Target status"
+    )
     parser.add_argument("--total-mb", type=int, default=1000, help="Total kuota (MB)")
     parser.add_argument("--used-mb", type=int, default=None, help="Override kuota terpakai (MB)")
     parser.add_argument("--expiry-days", type=int, default=30, help="Jumlah hari sampai expired (untuk non-expired)")
@@ -62,7 +64,9 @@ def main() -> None:
         else:
             user.is_unlimited_user = False
             user.total_quota_purchased_mb = max(0, args.total_mb)
-            user.total_quota_used_mb = _compute_used(user.total_quota_purchased_mb, args.status, fup_threshold, args.used_mb)
+            user.total_quota_used_mb = _compute_used(
+                user.total_quota_purchased_mb, args.status, fup_threshold, args.used_mb
+            )
             if args.status == "expired":
                 user.quota_expiry_date = now - timedelta(days=1)
             else:

@@ -6,11 +6,11 @@ from sqlalchemy import text
 from app.extensions import db
 from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection
 
-health_bp = Blueprint('health', __name__, url_prefix='/api/health')
+health_bp = Blueprint("health", __name__, url_prefix="/api/health")
 
 
-@health_bp.route('', methods=['GET'])
-@health_bp.route('/', methods=['GET'])
+@health_bp.route("", methods=["GET"])
+@health_bp.route("/", methods=["GET"])
 def health_check():
     checks = {
         "database": False,
@@ -19,7 +19,7 @@ def health_check():
     }
 
     try:
-        db.session.execute(text('SELECT 1'))
+        db.session.execute(text("SELECT 1"))
         checks["database"] = True
     except Exception:
         checks["database"] = False
@@ -36,7 +36,7 @@ def health_check():
         with get_mikrotik_connection() as api:
             if api is not None:
                 try:
-                    api.get_resource('/system/identity').get()
+                    api.get_resource("/system/identity").get()
                     checks["mikrotik"] = True
                 except Exception:
                     checks["mikrotik"] = False

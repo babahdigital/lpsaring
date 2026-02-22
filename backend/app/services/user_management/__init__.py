@@ -1,5 +1,5 @@
 # backend/app/services/user_management/__init__.py
-# VERSI FINAL: File ini menginisialisasi paket user_management 
+# VERSI FINAL: File ini menginisialisasi paket user_management
 # dengan cara mengekspos modul-modul service, bukan fungsi individual.
 
 # Impor modul secara keseluruhan agar bisa dipanggil dari routes.
@@ -11,11 +11,11 @@ from . import user_quota as user_quota
 from . import user_role as user_role
 
 __all__ = [
-	"user_approval",
-	"user_deletion",
-	"user_profile",
-	"user_quota",
-	"user_role",
+    "user_approval",
+    "user_deletion",
+    "user_profile",
+    "user_quota",
+    "user_role",
 ]
 
 # Dengan struktur ini, file lain (seperti user_management_routes.py) bisa melakukan:

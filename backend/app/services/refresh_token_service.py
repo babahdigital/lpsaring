@@ -14,7 +14,7 @@ from app.utils.request_utils import get_client_ip
 
 
 def _hash_token(raw_token: str) -> str:
-    return hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
+    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
 
 @dataclass
@@ -29,7 +29,7 @@ def issue_refresh_token_for_user(user_id, user_agent: Optional[str] = None) -> s
     token_hash = _hash_token(raw)
 
     now = datetime.now(dt_timezone.utc)
-    days = int(current_app.config.get('REFRESH_TOKEN_EXPIRES_DAYS', 30) or 30)
+    days = int(current_app.config.get("REFRESH_TOKEN_EXPIRES_DAYS", 30) or 30)
     if days <= 0:
         days = 30
     expires_at = now + timedelta(days=days)
@@ -46,7 +46,7 @@ def issue_refresh_token_for_user(user_id, user_agent: Optional[str] = None) -> s
     rt.issued_at = now
     rt.expires_at = expires_at
     rt.ip_address = ip_address
-    rt.user_agent = (user_agent[:255] if user_agent else None)
+    rt.user_agent = user_agent[:255] if user_agent else None
 
     db.session.add(rt)
     db.session.flush()
@@ -62,11 +62,15 @@ def rotate_refresh_token(raw_token: str, user_agent: Optional[str] = None) -> Op
     now = datetime.now(dt_timezone.utc)
     token_hash = _hash_token(raw_token)
 
-    existing = db.session.query(RefreshToken).filter(
-        RefreshToken.token_hash == token_hash,
-        RefreshToken.revoked_at.is_(None),
-        RefreshToken.expires_at > now,
-    ).first()
+    existing = (
+        db.session.query(RefreshToken)
+        .filter(
+            RefreshToken.token_hash == token_hash,
+            RefreshToken.revoked_at.is_(None),
+            RefreshToken.expires_at > now,
+        )
+        .first()
+    )
 
     if not existing:
         return None
@@ -75,7 +79,7 @@ def rotate_refresh_token(raw_token: str, user_agent: Optional[str] = None) -> Op
     new_raw = secrets.token_urlsafe(48)
     new_hash = _hash_token(new_raw)
 
-    days = int(current_app.config.get('REFRESH_TOKEN_EXPIRES_DAYS', 30) or 30)
+    days = int(current_app.config.get("REFRESH_TOKEN_EXPIRES_DAYS", 30) or 30)
     if days <= 0:
         days = 30
     expires_at = now + timedelta(days=days)
@@ -92,7 +96,7 @@ def rotate_refresh_token(raw_token: str, user_agent: Optional[str] = None) -> Op
     replacement.issued_at = now
     replacement.expires_at = expires_at
     replacement.ip_address = ip_address
-    replacement.user_agent = (user_agent[:255] if user_agent else None)
+    replacement.user_agent = user_agent[:255] if user_agent else None
 
     db.session.add(replacement)
     db.session.flush()
@@ -112,10 +116,14 @@ def revoke_refresh_token(raw_token: str) -> bool:
     now = datetime.now(dt_timezone.utc)
     token_hash = _hash_token(raw_token)
 
-    existing = db.session.query(RefreshToken).filter(
-        RefreshToken.token_hash == token_hash,
-        RefreshToken.revoked_at.is_(None),
-    ).first()
+    existing = (
+        db.session.query(RefreshToken)
+        .filter(
+            RefreshToken.token_hash == token_hash,
+            RefreshToken.revoked_at.is_(None),
+        )
+        .first()
+    )
 
     if not existing:
         return False

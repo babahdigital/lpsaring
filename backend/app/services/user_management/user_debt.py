@@ -68,7 +68,7 @@ def add_manual_debt(
     entry.amount_mb = amount_int
     entry.paid_mb = 0
     entry.is_paid = False
-    entry.note = (note.strip() if isinstance(note, str) and note.strip() else None)
+    entry.note = note.strip() if isinstance(note, str) and note.strip() else None
     db.session.add(entry)
 
     user.manual_debt_mb = int(getattr(user, "manual_debt_mb", 0) or 0) + amount_int
@@ -130,7 +130,7 @@ def apply_manual_debt_payment(
 
         debt.paid_mb = already_paid + pay_now
         debt.last_paid_by_id = getattr(admin_actor, "id", None)
-        debt.last_paid_source = (str(source)[:50] if source else None)
+        debt.last_paid_source = str(source)[:50] if source else None
         if debt.paid_mb >= amount:
             debt.is_paid = True
             debt.paid_at = now
@@ -179,7 +179,7 @@ def settle_manual_debt_item_to_zero(
     debt.is_paid = True
     debt.paid_at = now
     debt.last_paid_by_id = getattr(admin_actor, "id", None)
-    debt.last_paid_source = (str(source)[:50] if source else None)
+    debt.last_paid_source = str(source)[:50] if source else None
 
     cached = int(getattr(user, "manual_debt_mb", 0) or 0)
     user.manual_debt_mb = max(0, cached - remaining)

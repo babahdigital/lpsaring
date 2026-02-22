@@ -787,9 +787,14 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                     # Quota-debt hard block is NOT applied to:
                     # - unlimited users
                     # - KOMANDAN role
-                    if bool(getattr(user, "is_unlimited_user", False)) or getattr(user, "role", None) == UserRole.KOMANDAN:
+                    if (
+                        bool(getattr(user, "is_unlimited_user", False))
+                        or getattr(user, "role", None) == UserRole.KOMANDAN
+                    ):
                         now_local = get_app_local_datetime()
-                        expiry_local = get_app_local_datetime(user.quota_expiry_date) if user.quota_expiry_date else None
+                        expiry_local = (
+                            get_app_local_datetime(user.quota_expiry_date) if user.quota_expiry_date else None
+                        )
                         is_expired = bool(expiry_local and expiry_local < now_local)
                         target_profile = _resolve_target_profile(user, remaining_mb, remaining_percent, is_expired)
 
@@ -799,7 +804,9 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                         debt_mb_text = f"{round_mb(debt_mb)}"
                         date_str, time_str = get_app_date_time_strings(now_utc)
 
-                        list_blocked = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked"
+                        list_blocked = (
+                            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked"
+                        )
                         other_status_lists = [
                             settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active",
                             settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup",
@@ -908,16 +915,16 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                                         for admin in admins:
                                             send_whatsapp_message(admin.phone_number, admin_msg)
                                 except Exception:
-                                    logger.exception(
-                                        "Gagal kirim notifikasi quota debt limit untuk user %s", user.id
-                                    )
+                                    logger.exception("Gagal kirim notifikasi quota debt limit untuk user %s", user.id)
 
                         counters["processed"] += 1
                         _release_sync_lock(redis_client, user.id)
                         continue
                     else:
                         now_local = get_app_local_datetime()
-                        expiry_local = get_app_local_datetime(user.quota_expiry_date) if user.quota_expiry_date else None
+                        expiry_local = (
+                            get_app_local_datetime(user.quota_expiry_date) if user.quota_expiry_date else None
+                        )
                         is_expired = bool(expiry_local and expiry_local < now_local)
                         target_profile = _resolve_target_profile(user, remaining_mb, remaining_percent, is_expired)
 

@@ -17,13 +17,15 @@ from app.services import settings_service
 from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection, _is_profile_valid
 
 # Definisi Blueprint
-package_management_bp = Blueprint('package_management_api', __name__)
+package_management_bp = Blueprint("package_management_api", __name__)
+
 
 # --- Skema Pydantic untuk Paket ---
 class ProfileSimpleSchema(BaseModel):
     id: uuid.UUID
     profile_name: str
     model_config = ConfigDict(from_attributes=True)
+
 
 class PackageSchema(BaseModel):
     id: Optional[uuid.UUID] = None
@@ -39,24 +41,27 @@ class PackageSchema(BaseModel):
 
 
 # --- Rute CRUD untuk Paket (Packages) ---
-@package_management_bp.route('/packages', methods=['GET'])
+@package_management_bp.route("/packages", methods=["GET"])
 @admin_required
 def get_packages_list(current_admin: User):
     """Mengambil daftar paket jualan dengan paginasi."""
     try:
-        page = request.args.get('page', 1, type=int)
-        per_page = min(request.args.get('itemsPerPage', 10, type=int), 100)
+        page = request.args.get("page", 1, type=int)
+        per_page = min(request.args.get("itemsPerPage", 10, type=int), 100)
         query = db.select(Package).options(selectinload(Package.profile)).order_by(Package.created_at.desc())
         pagination = db.paginate(query, page=page, per_page=per_page, error_out=False)
-        return jsonify({
-            "items": [PackageSchema.from_orm(p).model_dump() for p in pagination.items],
-            "totalItems": pagination.total
-        }), HTTPStatus.OK
+        return jsonify(
+            {
+                "items": [PackageSchema.from_orm(p).model_dump() for p in pagination.items],
+                "totalItems": pagination.total,
+            }
+        ), HTTPStatus.OK
     except Exception as e:
         current_app.logger.error(f"Error retrieving package list: {e}", exc_info=True)
         return jsonify({"message": "Gagal memuat daftar paket."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
-@package_management_bp.route('/packages', methods=['POST'])
+
+@package_management_bp.route("/packages", methods=["POST"])
 @admin_required
 def create_package(current_admin: User):
     """
@@ -68,25 +73,22 @@ def create_package(current_admin: User):
         package_data = PackageSchema.model_validate(request.get_json())
 
         user_profile_name = (
-            settings_service.get_setting('MIKROTIK_USER_PROFILE')
-            or settings_service.get_setting('MIKROTIK_ACTIVE_PROFILE')
-            or 'user'
+            settings_service.get_setting("MIKROTIK_USER_PROFILE")
+            or settings_service.get_setting("MIKROTIK_ACTIVE_PROFILE")
+            or "user"
         )
-        unlimited_profile_name = (
-            settings_service.get_setting('MIKROTIK_UNLIMITED_PROFILE')
-            or 'unlimited'
-        )
+        unlimited_profile_name = settings_service.get_setting("MIKROTIK_UNLIMITED_PROFILE") or "unlimited"
 
         if package_data.data_quota_gb == 0:
             target_profile_name = unlimited_profile_name
         else:
             target_profile_name = user_profile_name
 
-        current_app.logger.info(f"Membuat paket '{package_data.name}'. Mencari profil Mikrotik target: '{target_profile_name}'")
-
-        target_profile = db.session.scalar(
-            db.select(PackageProfile).filter_by(profile_name=target_profile_name)
+        current_app.logger.info(
+            f"Membuat paket '{package_data.name}'. Mencari profil Mikrotik target: '{target_profile_name}'"
         )
+
+        target_profile = db.session.scalar(db.select(PackageProfile).filter_by(profile_name=target_profile_name))
 
         if not target_profile:
             current_app.logger.warning(
@@ -96,8 +98,7 @@ def create_package(current_admin: User):
             with get_mikrotik_connection() as api:
                 if not api:
                     error_message = (
-                        "Tidak bisa menghubungi Mikrotik untuk verifikasi profil. "
-                        "Pastikan koneksi Mikrotik aktif."
+                        "Tidak bisa menghubungi Mikrotik untuk verifikasi profil. Pastikan koneksi Mikrotik aktif."
                     )
                     current_app.logger.error(error_message)
                     return jsonify({"message": error_message}), HTTPStatus.CONFLICT
@@ -121,26 +122,24 @@ def create_package(current_admin: User):
                 )
             except IntegrityError:
                 db.session.rollback()
-                target_profile = db.session.scalar(
-                    db.select(PackageProfile).filter_by(profile_name=resolved_name)
-                )
+                target_profile = db.session.scalar(db.select(PackageProfile).filter_by(profile_name=resolved_name))
                 if not target_profile:
-                    error_message = (
-                        f"Profil '{resolved_name}' gagal dibuat dan tidak ditemukan di database."
-                    )
+                    error_message = f"Profil '{resolved_name}' gagal dibuat dan tidak ditemukan di database."
                     current_app.logger.error(error_message)
                     return jsonify({"message": error_message}), HTTPStatus.CONFLICT
 
         package_data.profile_id = target_profile.id
 
-        new_package = Package(**package_data.model_dump(exclude={'id', 'profile'}))
+        new_package = Package(**package_data.model_dump(exclude={"id", "profile"}))
         db.session.add(new_package)
         db.session.commit()
-        
+
         created_package = db.session.get(Package, new_package.id)
-        current_app.logger.info(f"Paket '{created_package.name}' (ID: {created_package.id}) berhasil dibuat dengan profile_id: {created_package.profile_id} (Profil: '{target_profile_name}')")
+        current_app.logger.info(
+            f"Paket '{created_package.name}' (ID: {created_package.id}) berhasil dibuat dengan profile_id: {created_package.profile_id} (Profil: '{target_profile_name}')"
+        )
         return jsonify(PackageSchema.from_orm(created_package).model_dump()), HTTPStatus.CREATED
-        
+
     except IntegrityError:
         db.session.rollback()
         return jsonify({"message": "Nama paket sudah ada."}), HTTPStatus.CONFLICT
@@ -151,8 +150,9 @@ def create_package(current_admin: User):
         current_app.logger.error(f"Gagal menyimpan paket: {e}", exc_info=True)
         return jsonify({"message": "Gagal menyimpan paket."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
+
 # Rute PUT dan DELETE tetap sama dan tidak perlu diubah.
-@package_management_bp.route('/packages/<uuid:package_id>', methods=['PUT'])
+@package_management_bp.route("/packages/<uuid:package_id>", methods=["PUT"])
 @admin_required
 def update_package(current_admin: User, package_id):
     """Memperbarui paket jualan yang ada."""
@@ -161,7 +161,7 @@ def update_package(current_admin: User, package_id):
         return jsonify({"message": "Paket tidak ditemukan."}), HTTPStatus.NOT_FOUND
     try:
         package_data = PackageSchema.model_validate(request.get_json())
-        update_dict = package_data.model_dump(exclude_unset=True, exclude={'id', 'profile', 'profile_id'})
+        update_dict = package_data.model_dump(exclude_unset=True, exclude={"id", "profile", "profile_id"})
         for key, value in update_dict.items():
             setattr(pkg, key, value)
         db.session.commit()
@@ -177,7 +177,8 @@ def update_package(current_admin: User, package_id):
         current_app.logger.error(f"Gagal memperbarui paket: {e}", exc_info=True)
         return jsonify({"message": "Gagal memperbarui paket."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
-@package_management_bp.route('/packages/<uuid:package_id>', methods=['DELETE'])
+
+@package_management_bp.route("/packages/<uuid:package_id>", methods=["DELETE"])
 @admin_required
 def delete_package(current_admin: User, package_id):
     """Menghapus sebuah paket, mencegah penghapusan jika ada riwayat transaksi."""

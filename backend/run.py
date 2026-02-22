@@ -1,5 +1,5 @@
 # backend/run.py
-from app import create_app # Import factory function create_app dari package app (app/__init__.py)
+from app import create_app  # Import factory function create_app dari package app (app/__init__.py)
 
 # Ambil konfigurasi dari environment variable (opsional, bisa juga di handle dalam create_app)
 # config_name = os.getenv('FLASK_CONFIG', 'development') # Contoh jika menggunakan config class
@@ -14,9 +14,9 @@ app = create_app()
 # saat dijalankan via Gunicorn, tapi tidak masalah untuk tetap ada jika Anda
 # sewaktu-waktu ingin menjalankan `python run.py` langsung di local (di luar docker).
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Anda bisa menentukan host dan port di sini jika menjalankan langsung,
     # tapi Gunicorn akan mengontrol ini saat via Docker Compose.
     # Gunakan host='0.0.0.0' agar bisa diakses dari luar container (jika port di-expose).
     # Debug mode sebaiknya dikontrol oleh environment variable/config.
-    app.run(host='0.0.0.0', port=5010) # Port 5000 adalah contoh default Flask
+    app.run(host="0.0.0.0", port=5010)  # Port 5000 adalah contoh default Flask
