@@ -151,3 +151,51 @@ Uncaught ReferenceError: Cannot access 'ee' before initialization
 - Pilihan A (default): rebuild backend:
 	- `docker compose up -d --build backend`
 - Pilihan B (dev mount): jalankan override yang memount source backend dan menyalakan reload.
+
+## 14) OTP terkirim tapi user tidak bisa login (verify-otp tidak terpanggil)
+**Gejala**:
+- User klik “Kirim OTP” berhasil (OTP masuk WhatsApp), tapi setelah input OTP tombol verifikasi tidak jalan / tidak ada perubahan.
+- Di log backend hanya terlihat `POST /api/auth/request-otp` (200), sementara `POST /api/auth/verify-otp` tidak muncul.
+
+**Akar masalah umum**:
+- Frontend terlalu ketat memakai `otpCode.length === 6`.
+	- Jika OTP dipaste mengandung spasi/strip/teks (mis. `Kode: 123 456`), panjang menjadi bukan 6.
+	- Pada beberapa device, binding `VOtpInput` bisa menghasilkan nilai non-string sehingga `.length` tidak valid.
+
+**Solusi yang dipakai di repo ini**:
+- Sanitasi OTP di frontend: ambil digit saja dan kirim 6 digit terakhir.
+- Kondisi disable tombol verifikasi juga memakai hasil sanitasi digit.
+
+**Verifikasi (Production)**:
+```bash
+docker logs --since 2h hotspot_prod_flask_backend | egrep -a 'POST /api/auth/(request-otp|verify-otp)'
+```
+
+Jika `verify-otp` tidak ada, masalahnya di client/submit (bukan reset-login atau MikroTik).
+
+## 15) Mixed Content HMR (HTTPS page → ws:// diblok)
+**Gejala**:
+```text
+Mixed Content: The page was loaded over HTTPS, but attempted to connect to the insecure WebSocket endpoint 'ws://.../_nuxt/...'
+```
+
+**Akar masalah**:
+- HMR client mencoba konek lewat `ws://` sementara origin page `https://` (browser memblokir).
+
+**Solusi**:
+- Jangan memaksa `hmr.protocol = 'ws'` secara default.
+- Biarkan Vite derive dari `window.location` (HTTPS → WSS).
+- Jika perlu override untuk remote dev, gunakan env `VITE_HMR_HOST`, `VITE_HMR_PROTOCOL=wss`, `VITE_HMR_CLIENT_PORT=443`.
+
+## 16) vue3-apexcharts error `Cannot read properties of null (reading 'destroy')`
+**Gejala**:
+```text
+Uncaught (in promise) TypeError: Cannot read properties of null (reading 'destroy')
+```
+
+**Konteks umum**:
+- Terjadi saat chart re-render cepat (resize observer / hydration / conditional render) sehingga instance chart sudah null saat watcher mencoba destroy.
+
+**Mitigasi yang disarankan**:
+- Hindari mount/unmount chart berulang pada area yang sangat reaktif.
+- Jika UX tidak presisi di mobile, pertimbangkan fallback tabel (lebih stabil dan jelas).

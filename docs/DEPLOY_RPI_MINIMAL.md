@@ -139,6 +139,19 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml pull
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 ```
 
+### 6.0) Pastikan image `:latest` benar-benar baru
+
+Kadang perubahan sudah di-push ke Git, tapi workflow Docker publish belum selesai, sehingga `pull` masih mengambil digest lama.
+
+Cek timestamp/digest image yang ada di Pi:
+
+```bash
+docker image inspect babahdigital/sobigidul_frontend:latest --format 'id={{.Id}} created={{.Created}}'
+docker image inspect babahdigital/sobigidul_backend:latest --format 'id={{.Id}} created={{.Created}}'
+```
+
+Jika `created` belum berubah setelah push terbaru, tunggu workflow publish selesai lalu jalankan `pull` ulang.
+
 Jika ada perubahan skema DB, jalankan juga:
 
 ```bash
