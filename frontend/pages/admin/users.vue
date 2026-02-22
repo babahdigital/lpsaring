@@ -832,6 +832,15 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 
     <VCard class="rounded-lg">
       <VProgressLinear v-if="showSilentRefreshing" indeterminate color="primary" height="2" />
+
+      <VCardText v-if="!isMobile" class="py-4 px-6">
+        <DataTableToolbar
+          v-model:items-per-page="options.itemsPerPage"
+          :show-search="false"
+          @update:items-per-page="() => (options.page = 1)"
+        />
+      </VCardText>
+
       <VDataTableServer v-if="!isMobile" v-model:options="options" :headers="headers" :items="users" :items-length="totalUsers" :loading="showInitialSkeleton" item-value="id" class="text-no-wrap" hide-default-footer>
         <template #item.full_name="{ item }">
           <div class="d-flex align-center py-2">

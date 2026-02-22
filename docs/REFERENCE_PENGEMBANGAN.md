@@ -398,3 +398,22 @@ Kebijakan pembatasan request dikendalikan oleh ENV:
 - `KOMANDAN_MAX_UNLIMITED_DAYS`
 
 Logika approval menggunakan batas di atas untuk mencegah over‑grant.
+
+---
+
+## 13) Standardisasi UI (Tables / Select / Pagination / Toolbar)
+
+Tujuan utama: membuat UI tabel (admin & user) selaras gaya Vuexy dan mengurangi styling ad-hoc per halaman.
+
+Dokumen acuan:
+- [docs/UI_STYLING_STANDARDS.md](UI_STYLING_STANDARDS.md)
+- [docs/WORKLOG_2026-02-23.md](WORKLOG_2026-02-23.md)
+
+Komponen standar:
+- `frontend/@core/components/DataTableToolbar.vue` (entries selector + search ala demo)
+- `frontend/@core/components/TablePagination.vue` (pagination tunggal)
+- `frontend/@core/components/app-form-elements/AppSelect.vue` (select wrapper)
+
+Catatan penting:
+- Gunakan `hide-default-footer` di `VDataTableServer/VDataTable`, lalu pasang `TablePagination`.
+- Untuk kasus spesifik spacing list, gunakan class khusus (contoh: `.debt-card-list`) agar tidak merusak global.

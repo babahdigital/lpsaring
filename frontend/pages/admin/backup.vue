@@ -222,6 +222,15 @@ watch(loading, (val) => {
 
     <VCard>
       <VProgressLinear v-if="showSilentRefreshing" indeterminate color="primary" height="2" />
+
+      <VCardText class="py-4 px-6">
+        <DataTableToolbar
+          v-model:items-per-page="itemsPerPage"
+          :show-search="false"
+          @update:items-per-page="() => (page = 1)"
+        />
+      </VCardText>
+
       <VDataTable
         :items="pagedBackups"
         :loading="showInitialSkeleton"

@@ -224,6 +224,15 @@ function formatPhoneNumber(phone: string | null | undefined): string { // Perbai
         color="primary"
         height="2"
       />
+
+      <VCardText class="py-4 px-6">
+        <DataTableToolbar
+          v-model:items-per-page="options.itemsPerPage"
+          :show-search="false"
+          @update:items-per-page="() => (options.page = 1)"
+        />
+      </VCardText>
+
       <VDataTableServer v-model:options="options" :headers="headers" :items="requests" :items-length="totalRequests" :loading="showInitialSkeleton" item-value="id" class="text-no-wrap" hide-default-footer>
         <template #item.requester.full_name="{ item }">
           <div class="d-flex align-center py-2">

@@ -600,53 +600,44 @@ useHead({ title: 'Laporan Penjualan' })
       </VCardText>
       <VDivider />
 
-      <VCardText class="d-flex flex-column flex-sm-row py-4 gap-4 align-stretch align-sm-center px-6">
-        <div>
-          <VMenu offset-y>
-            <template #activator="{ props }">
-              <VBtn
-                color="primary"
-                v-bind="props"
-                prepend-icon="tabler-download"
-                variant="tonal"
-                class="export-btn"
-                :loading="exportLoading"
-              >
-                Unduh Laporan
-              </VBtn>
-            </template>
-            <VList density="compact">
-              <VListItem @click="exportReport('pdf')">
-                <template #prepend>
-                  <VIcon icon="tabler-file-type-pdf" class="text-error" />
-                </template>
-                <VListItemTitle>PDF</VListItemTitle>
-              </VListItem>
-              <VListItem @click="exportReport('csv')">
-                <template #prepend>
-                  <VIcon icon="tabler-file-type-csv" class="text-success" />
-                </template>
-                <VListItemTitle>CSV</VListItemTitle>
-              </VListItem>
-            </VList>
-          </VMenu>
-        </div>
-
-        <VSpacer class="d-none d-sm-block" />
-
-        <div class="search-container">
-          <VTextField
-            v-model="search"
-            placeholder="Cari ID Invoice..."
-            density="compact"
-            variant="outlined"
-            clearable
-            prepend-inner-icon="tabler-search"
-            single-line
-            hide-details
-            class="search-field"
-          />
-        </div>
+      <VCardText class="py-4 px-6">
+        <DataTableToolbar
+          v-model:items-per-page="options.itemsPerPage"
+          v-model:search="search"
+          search-placeholder="Cari ID Invoice..."
+          @update:items-per-page="() => (options.page = 1)"
+        >
+          <template #start>
+            <VMenu offset-y>
+              <template #activator="{ props }">
+                <VBtn
+                  color="primary"
+                  v-bind="props"
+                  prepend-icon="tabler-download"
+                  variant="tonal"
+                  class="export-btn"
+                  :loading="exportLoading"
+                >
+                  Unduh Laporan
+                </VBtn>
+              </template>
+              <VList density="compact">
+                <VListItem @click="exportReport('pdf')">
+                  <template #prepend>
+                    <VIcon icon="tabler-file-type-pdf" class="text-error" />
+                  </template>
+                  <VListItemTitle>PDF</VListItemTitle>
+                </VListItem>
+                <VListItem @click="exportReport('csv')">
+                  <template #prepend>
+                    <VIcon icon="tabler-file-type-csv" class="text-success" />
+                  </template>
+                  <VListItemTitle>CSV</VListItemTitle>
+                </VListItem>
+              </VList>
+            </VMenu>
+          </template>
+        </DataTableToolbar>
       </VCardText>
       <VProgressLinear
         v-if="showSilentRefreshing"

@@ -611,25 +611,28 @@ useHead({ title: 'Riwayat Transaksi' })
               </div>
 
               <!-- Tampilan Desktop (Tabel) -->
-              <VDataTableServer
-                v-else
-                :headers="headers"
-                :items="transactions"
-                :items-length="totalItems"
-                :loading="showInitialSkeleton"
-                :items-per-page="itemsPerPage"
-                :page="currentPage"
-                density="compact"
-                class="elevation-1"
-                item-value="id"
-                :items-per-page-options="[
-                  { value: 10, title: '10' },
-                  { value: 25, title: '25' },
-                  { value: 50, title: '50' },
-                ]"
-                @update:options="handleOptionsUpdate"
-                hide-default-footer
-              >
+              <div v-else>
+                <div class="pb-2">
+                  <DataTableToolbar
+                    v-model:items-per-page="itemsPerPage"
+                    :show-search="false"
+                    @update:items-per-page="() => (currentPage = 1)"
+                  />
+                </div>
+
+                <VDataTableServer
+                  :headers="headers"
+                  :items="transactions"
+                  :items-length="totalItems"
+                  :loading="showInitialSkeleton"
+                  :items-per-page="itemsPerPage"
+                  :page="currentPage"
+                  density="compact"
+                  class="elevation-1"
+                  item-value="id"
+                  @update:options="handleOptionsUpdate"
+                  hide-default-footer
+                >
                 <template #[`item.created_at`]="props">
                   {{ formatDateTime(props.item.created_at) }}
                 </template>
@@ -670,7 +673,8 @@ useHead({ title: 'Riwayat Transaksi' })
                 <template #loading>
                   <VSkeletonLoader type="table-row@5" />
                 </template>
-              </VDataTableServer>
+                </VDataTableServer>
+              </div>
 
               <TablePagination
                 v-if="!isMobile && totalItems > 0"

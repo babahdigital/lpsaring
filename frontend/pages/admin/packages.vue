@@ -270,6 +270,14 @@ useHead({ title: 'Manajemen Paket Jualan' })
         height="2"
       />
 
+      <VCardText class="py-4 px-6">
+        <DataTableToolbar
+          v-model:items-per-page="options.itemsPerPage"
+          :show-search="false"
+          @update:items-per-page="() => (options.page = 1)"
+        />
+      </VCardText>
+
       <VDataTableServer
         v-if="!isMobile"
         v-model:options="options"

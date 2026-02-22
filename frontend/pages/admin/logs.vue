@@ -286,13 +286,6 @@ useHead({ title: 'Log Aktivitas Admin' })
         </VCardTitle>
       </VCardItem>
       <VCardText class="pa-5 pt-0">
-        <AppTextField
-          v-model="search"
-          placeholder="Cari di semua data log (nama, aksi, detail, alasan, dll...)"
-          prepend-inner-icon="tabler-search"
-          clearable
-          class="mb-4"
-        />
         <VRow class="d-flex flex-wrap gap-y-4 align-center">
           <VCol cols="12" sm="6" md="3">
             <VTextField id="start-date-activator" :model-value="formatDate(startDate)" label="Tanggal Mulai" readonly clearable prepend-inner-icon="tabler-calendar" @click:clear="startDate = null" />
@@ -362,6 +355,21 @@ useHead({ title: 'Log Aktivitas Admin' })
           </VBtn>
         </div>
       </VCardTitle>
+
+      <VCardText class="py-4 px-6">
+        <DataTableToolbar
+          v-model:items-per-page="options.itemsPerPage"
+          v-model:search="search"
+          search-placeholder="Cari di semua data log..."
+          @update:items-per-page="() => (options.page = 1)"
+        >
+          <template #end>
+            <div class="text-body-2 text-disabled">
+              {{ totalLogs }} log
+            </div>
+          </template>
+        </DataTableToolbar>
+      </VCardText>
 
       <VProgressLinear
         v-if="showSilentRefreshing"

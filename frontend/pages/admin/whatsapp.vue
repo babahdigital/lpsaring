@@ -302,15 +302,6 @@ onMounted(fetchUsers)
 
     <VRow class="mb-4">
       <VCol cols="12" md="6">
-        <VTextField
-          v-model="search"
-          label="Cari nama atau nomor"
-          clearable
-          prepend-inner-icon="tabler-search"
-          density="comfortable"
-        />
-      </VCol>
-      <VCol cols="12" md="3">
         <AppSelect
           v-model="roleFilter"
           :items="roleOptions"
@@ -321,7 +312,7 @@ onMounted(fetchUsers)
           density="comfortable"
         />
       </VCol>
-      <VCol cols="12" md="3" class="d-flex align-center">
+      <VCol cols="12" md="6" class="d-flex align-center justify-end">
         <div class="text-body-2 text-disabled">
           Total: {{ totalUsers }} pengguna
         </div>
@@ -330,6 +321,16 @@ onMounted(fetchUsers)
 
     <VCard>
       <VProgressLinear v-if="showSilentRefreshing" indeterminate color="primary" height="2" />
+
+      <VCardText class="py-4 px-6">
+        <DataTableToolbar
+          v-model:items-per-page="options.itemsPerPage"
+          v-model:search="search"
+          search-placeholder="Cari nama atau nomor..."
+          @update:items-per-page="() => (options.page = 1)"
+        />
+      </VCardText>
+
       <VDataTableServer
         v-model:options="options"
         :headers="headers"
