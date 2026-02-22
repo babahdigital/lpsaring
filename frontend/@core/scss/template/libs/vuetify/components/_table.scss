@@ -1,4 +1,26 @@
 // 👉 Table
+.v-table,
+.v-data-table {
+  // Vuexy-like basic table styling
+  .v-table__wrapper > table {
+    thead th {
+      background-color: rgba(var(--v-theme-on-surface), 0.04);
+    }
+
+    tbody tr {
+      td,
+      th {
+        border-block-end: 1px solid rgb(var(--v-border-color));
+      }
+
+      &:hover > td,
+      &:hover > th {
+        background-color: rgba(var(--v-theme-on-surface), 0.03);
+      }
+    }
+  }
+}
+
 .v-table {
   th {
     color: rgba(var(--v-theme-on-surface), var(--v-high-emphasis-opacity)) !important;

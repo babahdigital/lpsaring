@@ -167,6 +167,40 @@ body,
   }
 }
 
+// 👉 Debt card list (tighter + consistent spacing)
+// Used for "Tunggakan Kuota" cards where dividers are shown between rows.
+.debt-card-list {
+  --v-card-list-gap: 10px;
+
+  &.v-list {
+    padding-block: 0;
+  }
+
+  .v-list-item {
+    min-block-size: unset;
+    min-block-size: auto !important;
+    padding-block: 8px !important;
+    padding-inline: 0 !important;
+
+    > .v-ripple__container {
+      opacity: 0;
+    }
+
+    &:not(:last-child) {
+      padding-block-end: var(--v-card-list-gap) !important;
+    }
+  }
+
+  .v-list-item:hover,
+  .v-list-item:focus,
+  .v-list-item:active,
+  .v-list-item.active {
+    > .v-list-item__overlay {
+      opacity: 0 !important;
+    }
+  }
+}
+
 // 👉 Divider
 .v-divider {
   color: rgb(var(--v-border-color));

@@ -370,6 +370,12 @@ async function fetchUsers() {
     loading.value = false
   }
 }
+
+async function handleMobileUsersPageUpdate(page: number) {
+  if (options.value != null)
+    options.value.page = page
+  await fetchUsers()
+}
 async function fetchAlamatOptions() {
   if (availableBloks.value.length > 0)
     return
@@ -995,6 +1001,14 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
             </div>
           </VCardActions>
         </VCard>
+
+        <TablePagination
+          v-if="totalUsers > 0"
+          :page="options.page"
+          :items-per-page="options.itemsPerPage"
+          :total-items="totalUsers"
+          @update:page="handleMobileUsersPageUpdate"
+        />
       </div>
     </VCard>
 

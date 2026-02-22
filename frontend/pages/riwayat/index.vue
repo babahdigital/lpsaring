@@ -419,38 +419,20 @@ useHead({ title: 'Riwayat Transaksi' })
           <VCardText class="py-4">
             <div class="d-flex align-center justify-space-between flex-wrap gap-2">
               <div>
-                <div class="text-subtitle-1 font-weight-medium">Tunggakan Kuota</div>
-                <div class="text-caption text-medium-emphasis">Estimasi: {{ formatCurrency(debtEstimatedRp) }}</div>
+                <div class="text-subtitle-1 font-weight-medium">
+                  Tunggakan Kuota
+                </div>
+                <div class="text-caption text-medium-emphasis">
+                  Estimasi
+                </div>
               </div>
 
-              <VBtn
-                size="small"
-                color="warning"
-                variant="flat"
-                prepend-icon="tabler-credit-card"
-                :loading="debtPaying"
-                :disabled="debtPaying"
-                @click="payDebt"
-              >
-                Lunasi Semua
-              </VBtn>
+              <div class="text-body-1 font-weight-medium">
+                {{ formatCurrency(debtEstimatedRp) }}
+              </div>
             </div>
 
-            <VList class="card-list mt-3" density="compact">
-              <VListItem class="py-2">
-                <template #prepend>
-                  <VAvatar color="primary" variant="tonal" rounded size="38" class="me-1">
-                    <VIcon icon="tabler-cash" size="22" />
-                  </VAvatar>
-                </template>
-                <VListItemTitle class="me-2">Estimasi</VListItemTitle>
-                <template #append>
-                  <span class="text-body-1 font-weight-medium">{{ formatCurrency(debtEstimatedRp) }}</span>
-                </template>
-              </VListItem>
-
-              <VDivider class="my-2" />
-
+            <VList class="debt-card-list mt-3" density="compact">
               <VListItem v-if="debtTotalMb > 0" class="py-2">
                 <template #prepend>
                   <VAvatar color="info" variant="tonal" rounded size="38" class="me-1">
@@ -463,7 +445,7 @@ useHead({ title: 'Riwayat Transaksi' })
                 </template>
               </VListItem>
 
-              <VDivider v-if="debtManualMb > 0" class="my-2" />
+              <VDivider v-if="debtManualMb > 0" class="my-0" />
 
               <VListItem v-if="debtManualMb > 0" class="py-2">
                 <template #prepend>

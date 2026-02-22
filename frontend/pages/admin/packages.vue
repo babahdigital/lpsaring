@@ -98,6 +98,11 @@ async function fetchPackages() {
   }
 }
 
+async function handleMobilePackagesPageUpdate(page: number) {
+  options.value.page = page
+  await fetchPackages()
+}
+
 function openDialog(type: 'edit' | 'delete', pkg: Package | null = null) {
   if (type === 'edit') {
     const { profile, ...restOfPkg } = pkg || {}
@@ -352,9 +357,82 @@ useHead({ title: 'Manajemen Paket Jualan' })
         v-else
         class="pa-4"
       >
-        <p class="text-center text-disabled">
-          Tampilan tabel tidak tersedia di layar kecil. Gunakan mode daftar untuk mobile.
-        </p>
+        <div v-if="showInitialSkeleton" class="py-2">
+          <VCard v-for="i in 3" :key="i" class="mb-3">
+            <VCardText>
+              <VSkeletonLoader type="list-item-two-line" />
+            </VCardText>
+          </VCard>
+        </div>
+
+        <div v-else-if="packages.length === 0" class="py-10 text-center text-medium-emphasis">
+          <VIcon icon="tabler-package" size="32" class="mb-2" />
+          <p class="mb-0">Tidak ada paket.</p>
+        </div>
+
+        <div v-else>
+          <VCard
+            v-for="pkg in packages"
+            :key="pkg.id"
+            class="mb-3"
+          >
+            <VCardText class="d-flex align-start justify-space-between gap-3">
+              <div>
+                <div class="text-subtitle-1 font-weight-medium">
+                  {{ pkg.name }}
+                </div>
+                <div class="text-body-2 text-medium-emphasis">
+                  Rp {{ formatNumber(pkg.price) }}
+                </div>
+                <div class="d-flex align-center flex-wrap gap-2 mt-2">
+                  <VChip
+                    v-if="pkg.data_quota_gb === 0"
+                    color="success"
+                    size="x-small"
+                    label
+                  >
+                    Unlimited
+                  </VChip>
+                  <VChip
+                    v-else
+                    color="info"
+                    size="x-small"
+                    label
+                  >
+                    {{ pkg.data_quota_gb }} GB
+                  </VChip>
+                  <VChip color="secondary" size="x-small" label>
+                    {{ pkg.duration_days }} Hari
+                  </VChip>
+                  <VChip
+                    :color="pkg.is_active ? 'success' : 'error'"
+                    size="x-small"
+                    label
+                  >
+                    {{ pkg.is_active ? 'Aktif' : 'Nonaktif' }}
+                  </VChip>
+                </div>
+              </div>
+
+              <div class="d-flex flex-column align-end gap-1">
+                <VBtn icon variant="text" size="small" @click="openDialog('edit', pkg)">
+                  <VIcon icon="tabler-pencil" size="18" />
+                </VBtn>
+                <VBtn icon variant="text" size="small" @click="openDialog('delete', pkg)">
+                  <VIcon icon="tabler-trash" size="18" />
+                </VBtn>
+              </div>
+            </VCardText>
+          </VCard>
+
+          <TablePagination
+            v-if="totalPackages > 0"
+            :page="options.page"
+            :items-per-page="options.itemsPerPage"
+            :total-items="totalPackages"
+            @update:page="handleMobilePackagesPageUpdate"
+          />
+        </div>
       </div>
     </VCard>
 

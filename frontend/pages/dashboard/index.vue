@@ -617,27 +617,29 @@ useHead({ title: 'Dashboard User' })
                 <VCard class="d-flex flex-column vuexy-card">
                   <VCardText class="py-5">
                     <div class="d-flex flex-column ps-3">
-                      <div class="d-flex align-center flex-wrap ga-2 mb-4">
-                        <h5 class="text-h5 mb-0 text-no-wrap">
-                          Tunggakan Kuota
-                        </h5>
+                      <div class="d-flex align-center justify-space-between flex-wrap ga-2 mb-4">
+                        <div class="d-flex align-center flex-wrap ga-2">
+                          <h5 class="text-h5 mb-0 text-no-wrap">
+                            Tunggakan Kuota
+                          </h5>
 
-                        <VChip
-                          size="x-small"
-                          label
-                          variant="tonal"
-                          color="primary"
-                        >
-                          {{ quotaData?.is_unlimited_user ? 'Rp 0' : formatRp(debtEstimatedRp) }}
-                        </VChip>
+                          <VChip
+                            size="x-small"
+                            label
+                            variant="tonal"
+                            color="primary"
+                          >
+                            {{ quotaData?.is_unlimited_user ? 'Rp 0' : formatRp(debtEstimatedRp) }}
+                          </VChip>
 
-                        <VChip
-                          :color="timeSpendingsChip.color"
-                          label
-                          size="small"
-                        >
-                          {{ timeSpendingsChip.label }}
-                        </VChip>
+                          <VChip
+                            :color="timeSpendingsChip.color"
+                            label
+                            size="small"
+                          >
+                            {{ timeSpendingsChip.label }}
+                          </VChip>
+                        </div>
 
                         <VBtn
                           v-if="!quotaData?.is_unlimited_user && debtTotalMb > 0 && debtEstimatedRp > 0"
@@ -653,7 +655,7 @@ useHead({ title: 'Dashboard User' })
                         </VBtn>
                       </div>
 
-                      <VList class="card-list" density="compact">
+                      <VList class="debt-card-list" density="compact">
                         <VListItem class="py-2">
                           <template #prepend>
                             <VAvatar color="primary" variant="tonal" rounded size="38" class="me-1">
@@ -668,7 +670,7 @@ useHead({ title: 'Dashboard User' })
                           </template>
                         </VListItem>
 
-                        <VDivider class="my-2" />
+                        <VDivider class="my-0" />
 
                         <VListItem v-if="!quotaData?.is_unlimited_user && debtTotalMb > 0" class="py-2">
                           <template #prepend>
@@ -684,7 +686,7 @@ useHead({ title: 'Dashboard User' })
                           </template>
                         </VListItem>
 
-                        <VDivider v-if="!quotaData?.is_unlimited_user && debtManualMb > 0" class="my-2" />
+                        <VDivider v-if="!quotaData?.is_unlimited_user && debtManualMb > 0" class="my-0" />
 
                         <VListItem v-if="!quotaData?.is_unlimited_user && debtManualMb > 0" class="py-2">
                           <template #prepend>
