@@ -153,49 +153,50 @@ watch(dialogVisible, (isOpening) => {
               color="primary"
             />
           </div>
-          <VList
-            v-else
-            lines="two"
-            density="comfortable"
-          >
-            <template v-if="filteredUserList.length > 0">
-              <VListItem
-                v-for="user in filteredUserList"
-                :key="user.id"
-                class="user-item"
-                :class="{ 'bg-light-primary': tempSelectedUser?.id === user.id }"
-                @click="selectUser(user)"
-              >
-                <template #prepend>
-                  <VAvatar
-                    color="primary"
-                    size="40"
-                  >
-                    <span class="text-white">{{ getUserInitials(user.full_name) }}</span>
-                  </VAvatar>
-                </template>
-                <VListItemTitle class="font-weight-medium">
-                  {{ user.full_name }}
-                </VListItemTitle>
-                <VListItemSubtitle class="text-medium-emphasis">
-                  {{ formatPhoneNumberForDisplay(user.phone_number) }} ({{ user.role }})
-                </VListItemSubtitle>
-              </VListItem>
-            </template>
-            <VListItem
-              v-else
-              class="text-center py-8"
+          <AppPerfectScrollbar v-else class="user-list-scroll">
+            <VList
+              lines="two"
+              density="comfortable"
             >
-              <VIcon
-                size="48"
-                color="grey"
-                icon="tabler-user-off"
-              />
-              <VListItemTitle class="text-grey mt-4">
-                Pengguna tidak ditemukan
-              </VListItemTitle>
-            </VListItem>
-          </VList>
+              <template v-if="filteredUserList.length > 0">
+                <VListItem
+                  v-for="user in filteredUserList"
+                  :key="user.id"
+                  class="user-item"
+                  :class="{ 'bg-light-primary': tempSelectedUser?.id === user.id }"
+                  @click="selectUser(user)"
+                >
+                  <template #prepend>
+                    <VAvatar
+                      color="primary"
+                      size="40"
+                    >
+                      <span class="text-white">{{ getUserInitials(user.full_name) }}</span>
+                    </VAvatar>
+                  </template>
+                  <VListItemTitle class="font-weight-medium">
+                    {{ user.full_name }}
+                  </VListItemTitle>
+                  <VListItemSubtitle class="text-medium-emphasis">
+                    {{ formatPhoneNumberForDisplay(user.phone_number) }} ({{ user.role }})
+                  </VListItemSubtitle>
+                </VListItem>
+              </template>
+              <VListItem
+                v-else
+                class="text-center py-8"
+              >
+                <VIcon
+                  size="48"
+                  color="grey"
+                  icon="tabler-user-off"
+                />
+                <VListItemTitle class="text-grey mt-4">
+                  Pengguna tidak ditemukan
+                </VListItemTitle>
+              </VListItem>
+            </VList>
+          </AppPerfectScrollbar>
         </VSheet>
       </VCardText>
       <VDivider />
@@ -223,7 +224,9 @@ watch(dialogVisible, (isOpening) => {
 <style scoped>
 .user-list-container {
   max-height: 400px;
-  overflow-y: auto;
+}
+.user-list-scroll {
+  max-height: 400px;
 }
 .user-item {
   cursor: pointer;

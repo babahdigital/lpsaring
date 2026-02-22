@@ -51,11 +51,11 @@ function onDialogClose() {
 
         <VDivider class="my-6" />
 
-        <div class="description-content">
+        <AppPerfectScrollbar class="description-content">
           <p class="text-body-1" style="white-space: pre-wrap;">
             {{ activePromo.description || 'Tidak ada informasi lebih lanjut.' }}
           </p>
-        </div>
+        </AppPerfectScrollbar>
       </VCardText>
 
       <VCardActions class="pa-4 pt-2 mt-4">
@@ -116,20 +116,9 @@ function onDialogClose() {
 }
 .description-content {
   max-height: 250px;
-  overflow-y: auto;
   padding: 0 12px;
   margin: 0 -12px;
   text-align: left;
   color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity));
-}
-.description-content::-webkit-scrollbar {
-  width: 6px;
-}
-.description-content::-webkit-scrollbar-track {
-  background: transparent;
-}
-.description-content::-webkit-scrollbar-thumb {
-  background-color: rgba(var(--v-theme-on-surface), 0.2);
-  border-radius: 10px;
 }
 </style>

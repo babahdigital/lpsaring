@@ -148,7 +148,7 @@ async function handleAction(type: 'create' | 'update' | 'delete') {
         </VToolbarItems>
       </VToolbar>
 
-      <VCardText class="flex-grow-1 pa-4" style="overflow-y: auto;">
+      <AppPerfectScrollbar class="flex-grow-1 pa-4">
         <VCard class="h-100">
           <VCardText class="d-flex justify-end pa-2">
             <VBtn
@@ -224,7 +224,7 @@ async function handleAction(type: 'create' | 'update' | 'delete') {
             @update:page="val => (options.page = val)"
           />
         </VCard>
-      </VCardText>
+      </AppPerfectScrollbar>
     </VCard>
 
     <VDialog

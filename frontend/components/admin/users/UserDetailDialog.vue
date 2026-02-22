@@ -239,7 +239,7 @@ function onClose() {
 </script>
 
 <template>
-  <VDialog :model-value="props.modelValue" max-width="600" persistent scrollable @update:model-value="onClose">
+  <VDialog :model-value="props.modelValue" max-width="600" persistent @update:model-value="onClose">
     <VCard v-if="props.user">
       <VCardTitle class="text-h6 d-flex align-center pa-4 bg-primary text-white rounded-t-lg">
         <VIcon start icon="tabler-user-circle" />
@@ -248,7 +248,7 @@ function onClose() {
         <VBtn icon="tabler-x" variant="text" size="small" class="text-white" @click="onClose" />
       </VCardTitle>
       <VDivider />
-      <VCardText class="pa-5" style="max-height: 70vh; overflow-y: auto;">
+      <AppPerfectScrollbar class="pa-5" style="max-height: 70vh;">
         <VAlert
           v-if="previewAlertMeta"
           :color="previewAlertMeta.color"
@@ -435,8 +435,8 @@ function onClose() {
           <VListItem prepend-icon="tabler-calendar-plus" title="Tanggal Pendaftaran" :subtitle="formatSimpleDateTime(props.user.created_at)" />
           <VListItem v-if="props.user.approval_status === 'APPROVED'" prepend-icon="tabler-calendar-check" title="Tanggal Disetujui" :subtitle="formatSimpleDateTime(props.user.approved_at)" />
           <VListItem v-if="props.user.is_blocked" prepend-icon="tabler-ban" title="Alasan Blokir" :subtitle="props.user.blocked_reason || 'Tidak disebutkan'" />
-        </VList>
-      </VCardText>
+          </VList>
+        </AppPerfectScrollbar>
       <VDivider />
       <VCardActions class="pa-4 d-flex justify-end">
         <VBtn variant="tonal" color="secondary" @click="onClose">

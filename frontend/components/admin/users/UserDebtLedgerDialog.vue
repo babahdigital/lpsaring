@@ -127,7 +127,7 @@ watch(
 </script>
 
 <template>
-  <VDialog :model-value="props.modelValue" max-width="900" persistent scrollable @update:model-value="close">
+  <VDialog :model-value="props.modelValue" max-width="900" persistent @update:model-value="close">
     <VCard v-if="props.user">
       <VCardTitle class="pa-4 d-flex align-center bg-primary rounded-t-lg">
         <VIcon icon="tabler-notes" start />
@@ -138,7 +138,7 @@ watch(
       </VCardTitle>
       <VDivider />
 
-      <VCardText class="pa-5" style="max-height: 70vh; overflow-y: auto;">
+      <AppPerfectScrollbar class="pa-5" style="max-height: 70vh;">
         <div class="d-flex flex-wrap gap-2 mb-4">
           <VChip size="small" label color="info" variant="tonal">
             {{ props.user.full_name }}
@@ -212,7 +212,7 @@ watch(
             <div class="text-caption text-disabled pa-4">Tidak ada data.</div>
           </template>
         </VDataTable>
-      </VCardText>
+      </AppPerfectScrollbar>
 
       <VDivider />
       <VCardActions class="pa-4">

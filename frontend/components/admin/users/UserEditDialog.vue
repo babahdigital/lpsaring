@@ -461,7 +461,7 @@ function openDebtPdf() {
 </script>
 
 <template>
-  <VDialog :model-value="props.modelValue" max-width="700px" persistent scrollable @update:model-value="onClose">
+  <VDialog :model-value="props.modelValue" max-width="700px" persistent @update:model-value="onClose">
     <VCard>
       <VForm ref="formRef" @submit.prevent="onSave">
         <VCardTitle class="pa-4 d-flex align-center bg-primary rounded-t-lg">
@@ -481,7 +481,7 @@ function openDebtPdf() {
         </VTabs>
         <VDivider />
 
-        <VCardText class="pa-5" style="max-height: 65vh; overflow-y: auto;">
+        <AppPerfectScrollbar class="pa-5" style="max-height: 65vh;">
           <VWindow v-model="tab" class="mt-2">
             <VWindowItem value="info">
               <VRow>
@@ -717,7 +717,7 @@ function openDebtPdf() {
               </VRow>
             </VWindowItem>
           </VWindow>
-        </VCardText>
+        </AppPerfectScrollbar>
         <VDivider />
 
         <VCardActions class="pa-4 d-flex">

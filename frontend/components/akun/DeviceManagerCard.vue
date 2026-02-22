@@ -214,9 +214,10 @@ onMounted(() => {
         Belum ada perangkat terdaftar.
       </VAlert>
 
-      <VList v-else lines="three" density="compact" class="card-list device-list">
-        <template v-for="(item, index) in devices" :key="item.id">
-          <VListItem>
+      <AppPerfectScrollbar v-else class="device-list">
+        <VList lines="three" density="compact" class="card-list">
+          <template v-for="(item, index) in devices" :key="item.id">
+            <VListItem>
           <VListItemTitle class="font-weight-semibold text-subtitle-1">
             {{ getDeviceLabel(item) }}
           </VListItemTitle>
@@ -269,8 +270,9 @@ onMounted(() => {
           </template>
           </VListItem>
           <VDivider v-if="index < devices.length - 1" class="my-2" />
-        </template>
-      </VList>
+          </template>
+        </VList>
+      </AppPerfectScrollbar>
     </VCardText>
 
     <VDialog v-model="confirmDialog" max-width="420">
@@ -358,6 +360,5 @@ onMounted(() => {
 }
 .device-list {
   max-height: 420px;
-  overflow-y: auto;
 }
 </style>

@@ -20,6 +20,18 @@ Tujuan dokumen ini: memastikan semua halaman UI (admin & user) mengikuti pola ya
 
 ## Komponen standar yang wajib dipakai
 
+### 0) AppPerfectScrollbar
+
+Gunakan ini untuk semua container yang butuh scroll (dialog body, list panjang, panel/filter sidebar), agar scrollbar konsisten seperti demo Vuexy (Perfect Scrollbar).
+
+File:
+- frontend/@core/components/AppPerfectScrollbar.vue
+
+Aturan:
+- Jangan pakai `style="overflow-y: auto"` untuk container UI yang ingin distandarkan.
+- Cukup set batas tinggi: `max-height: ...` lalu bungkus konten dengan `AppPerfectScrollbar`.
+- Hindari `VDialog scrollable` jika isi dialog sudah memakai `AppPerfectScrollbar` (mencegah double scrollbar).
+
 ### 1) DataTableToolbar
 
 Gunakan untuk layout ala demo:
