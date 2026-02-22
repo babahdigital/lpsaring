@@ -609,6 +609,14 @@ def verify_otp():
             )
             if not ok_binding:
                 if msg_binding in ["Limit perangkat tercapai", "Perangkat belum diotorisasi"]:
+                    current_app.logger.warning(
+                        "Verify-OTP denied by device binding policy: user_id=%s phone=%s ip=%s mac=%s msg=%s",
+                        user_to_login.id,
+                        user_to_login.phone_number,
+                        client_ip,
+                        client_mac,
+                        msg_binding,
+                    )
                     return jsonify(AuthErrorResponseSchema(error=msg_binding).model_dump()), HTTPStatus.FORBIDDEN
                 current_app.logger.warning(f"IP binding di-skip untuk user {user_to_login.id}: {msg_binding}")
 

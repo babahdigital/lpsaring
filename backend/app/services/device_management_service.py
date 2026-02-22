@@ -461,6 +461,16 @@ def register_or_update_device(
 
         if total_devices >= settings['max_devices']:
             username_08 = format_to_local_phone(user.phone_number) or ""
+            logger.warning(
+                "Device limit exceeded: user=%s max_devices=%s total_devices=%s ip=%s mac=%s allow_replace=%s auto_replace_enabled=%s",
+                user.id,
+                settings['max_devices'],
+                total_devices,
+                client_ip,
+                mac_address,
+                bool(allow_replace),
+                bool(settings.get('device_auto_replace_enabled')),
+            )
             if settings['ip_binding_enabled']:
                 _ensure_ip_binding(
                     mac_address=mac_address,
