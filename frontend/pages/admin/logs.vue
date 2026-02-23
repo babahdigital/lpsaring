@@ -177,14 +177,23 @@ function formatLogDetails(log: AdminActionLog): string {
       case 'CREATE_USER': return `Membuat pengguna baru dengan peran '${details.role}'.`
       case 'DEACTIVATE_USER': return `Alasan: ${details.reason ?? 'Tidak ada'}.`
       case 'INJECT_QUOTA': {
+        const addedMbRaw = details.added_mb ?? details.requested_inject_mb
+        const addedDaysRaw = details.added_days ?? details.requested_inject_days
+        const addedMb = Number(addedMbRaw ?? 0)
+        const addedDays = Number(addedDaysRaw ?? 0)
+
         const addedParts: string[] = []
-        if (details.added_mb != null && Number(details.added_mb) > 0)
-          addedParts.push(`${(Number(details.added_mb) / 1024).toFixed(2)} GB`)
+        if (!Number.isNaN(addedMb) && addedMb > 0)
+          addedParts.push(`${(addedMb / 1024).toFixed(2)} GB`)
+        if (!Number.isNaN(addedDays) && addedDays > 0)
+          addedParts.push(`${addedDays} hari`)
 
-        if (details.added_days != null && Number(details.added_days) > 0)
-          addedParts.push(`${details.added_days} hari`)
+        let suffix = ''
+        const netAddedMb = Number(details.net_added_mb ?? 0)
+        if (!Number.isNaN(netAddedMb) && netAddedMb > 0 && netAddedMb !== addedMb)
+          suffix = ` (net ${(netAddedMb / 1024).toFixed(2)} GB)`
 
-        return `Menambah ${addedParts.join(' & ')}.`
+        return `Menambah ${addedParts.join(' & ')}${suffix}.`
       }
       case 'SET_UNLIMITED_STATUS':
       case 'REVOKE_UNLIMITED_STATUS':

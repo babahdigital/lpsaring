@@ -626,7 +626,8 @@ def update_user_by_admin_comprehensive(
         success, msg = quota_service.inject_user_quota(target_user, admin_actor, int(add_gb * 1024), add_days)
         if not success:
             return False, msg, None
-        changes["injected_quota"] = {"gb": add_gb, "days": add_days}
+        # NOTE: Quota injection already writes a dedicated admin log (INJECT_QUOTA).
+        # Avoid duplicating the same action as UPDATE_USER_PROFILE.
 
     if pending_unblock:
         success, msg = _handle_user_blocking(target_user, False, admin_actor, pending_unblock_reason)

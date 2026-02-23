@@ -100,7 +100,12 @@ def inject_user_quota(user: User, admin_actor: User, mb_to_add: int, days_to_add
         timeout_seconds = int((normalized_expiry - now).total_seconds())
         limit_bytes_total = 0  # Unlimited tidak punya batasan kuota
         comment = f"Extend unlimited {days_to_add}d by {admin_actor.full_name}"
-        action_details = {"added_days_for_unlimited": days_to_add}
+        action_details = {
+            "added_days_for_unlimited": int(days_to_add),
+            # Keys used by admin log UI formatter.
+            "added_mb": 0,
+            "added_days": int(days_to_add),
+        }
 
     # Langkah 3: Logika untuk Pengguna TERBATAS
     else:
@@ -134,6 +139,9 @@ def inject_user_quota(user: User, admin_actor: User, mb_to_add: int, days_to_add
         action_details = {
             "requested_inject_mb": int(mb_to_add),
             "requested_inject_days": int(days_to_add),
+            # Keys used by admin log UI formatter.
+            "added_mb": int(mb_to_add),
+            "added_days": int(days_to_add),
             "paid_auto_debt_mb": int(paid_auto_mb),
             "paid_manual_debt_mb": int(paid_manual_mb),
             "net_added_mb": int(remaining_injected_mb),

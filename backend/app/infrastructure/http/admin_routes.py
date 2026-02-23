@@ -1178,7 +1178,7 @@ def export_transactions(current_admin: User):
     """Unduh laporan penjualan (SUCCESS saja) untuk periode tertentu.
 
     Query params:
-    - format: pdf|csv
+    - format: pdf
     - start_date: YYYY-MM-DD (wajib)
     - end_date: YYYY-MM-DD (wajib)
     - user_id: UUID (opsional)
@@ -1194,8 +1194,9 @@ def export_transactions(current_admin: User):
                 {"message": "group_by tidak valid. Gunakan daily|monthly|yearly|none."}
             ), HTTPStatus.BAD_REQUEST
 
-        if fmt not in ("pdf", "csv"):
-            return jsonify({"message": "format tidak valid. Gunakan pdf atau csv."}), HTTPStatus.BAD_REQUEST
+        if fmt and fmt != "pdf":
+            return jsonify({"message": "format tidak valid. Gunakan pdf."}), HTTPStatus.BAD_REQUEST
+        fmt = "pdf"
         if not start_date_str or not end_date_str:
             return jsonify({"message": "start_date dan end_date wajib diisi."}), HTTPStatus.BAD_REQUEST
 

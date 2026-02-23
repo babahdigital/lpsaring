@@ -416,7 +416,7 @@ function confirmUserSelection() {
   userSearch.value = ''
 }
 
-async function exportReport(format: 'pdf' | 'csv') {
+async function exportReport(format: 'pdf') {
   if (startDate.value === null) {
     showSnackbar('Pilih tanggal mulai terlebih dahulu', 'warning')
     return
@@ -448,6 +448,10 @@ async function exportReport(format: 'pdf' | 'csv') {
   finally {
     exportLoading.value = false
   }
+}
+
+async function exportReportPdfOnly() {
+  return exportReport('pdf')
 }
 
 useHead({ title: 'Laporan Penjualan' })
@@ -532,9 +536,11 @@ useHead({ title: 'Laporan Penjualan' })
 
           <VCol cols="12" sm="6" md="3" lg="3">
             <VBtn
+              block
               prepend-icon="tabler-user-search"
               variant="outlined"
               color="primary"
+              height="48"
               class="filter-btn"
               @click="openUserFilterDialog"
             >
@@ -542,19 +548,21 @@ useHead({ title: 'Laporan Penjualan' })
             </VBtn>
           </VCol>
 
-          <VCol cols="12" sm="6" md="3" lg="3" class="d-flex align-center gap-2 flex-wrap">
+          <VCol cols="12" sm="6" md="3" lg="3" class="d-flex align-center gap-2">
             <VBtn
+              height="48"
               prepend-icon="tabler-filter"
               color="primary"
-              class="action-btn"
+              class="action-btn flex-grow-1"
               @click="applyFilter"
             >
               Terapkan
             </VBtn>
             <VBtn
+              height="48"
               prepend-icon="tabler-filter-off"
               variant="tonal"
-              class="action-btn"
+              class="action-btn flex-grow-1"
               @click="clearAllFilters"
             >
               Reset
@@ -600,34 +608,16 @@ useHead({ title: 'Laporan Penjualan' })
           @update:items-per-page="() => (options.page = 1)"
         >
           <template #start>
-            <VMenu offset-y>
-              <template #activator="{ props }">
-                <VBtn
-                  color="primary"
-                  v-bind="props"
-                  prepend-icon="tabler-download"
-                  variant="tonal"
-                  class="export-btn"
-                  :loading="exportLoading"
-                >
-                  Unduh Laporan
-                </VBtn>
-              </template>
-              <VList density="compact">
-                <VListItem @click="exportReport('pdf')">
-                  <template #prepend>
-                    <VIcon icon="tabler-file-type-pdf" class="text-error" />
-                  </template>
-                  <VListItemTitle>PDF</VListItemTitle>
-                </VListItem>
-                <VListItem @click="exportReport('csv')">
-                  <template #prepend>
-                    <VIcon icon="tabler-file-type-csv" class="text-success" />
-                  </template>
-                  <VListItemTitle>CSV</VListItemTitle>
-                </VListItem>
-              </VList>
-            </VMenu>
+            <VBtn
+              color="primary"
+              prepend-icon="tabler-download"
+              variant="tonal"
+              class="export-btn"
+              :loading="exportLoading"
+              @click="exportReportPdfOnly"
+            >
+              Unduh Laporan (PDF)
+            </VBtn>
           </template>
         </DataTableToolbar>
       </VCardText>
