@@ -277,7 +277,7 @@ useHead({ title: 'Setting Aplikasi' })
                       </VListItemSubtitle>
                     </VCol>
                     <VCol cols="12" md="8" class="overflow-visible">
-                      <VTextarea v-model="localSettings.MAINTENANCE_MODE_MESSAGE" label="Pesan Maintenance" placeholder="Contoh: Aplikasi sedang dalam perbaikan..." rows="3" :disabled="!maintenanceModeActive" variant="outlined" density="comfortable" />
+                      <VTextarea v-model="localSettings.MAINTENANCE_MODE_MESSAGE" placeholder="Contoh: Aplikasi sedang dalam perbaikan..." persistent-placeholder rows="3" :disabled="!maintenanceModeActive" variant="outlined" density="comfortable" />
                     </VCol>
                   </VRow>
                 </VListItem>
