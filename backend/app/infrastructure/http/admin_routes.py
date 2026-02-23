@@ -28,6 +28,8 @@ from app.infrastructure.db.models import (
     ApprovalStatus,
     Transaction,
     TransactionStatus,
+    AdminActionLog,
+    AdminActionType,
     NotificationRecipient,
     NotificationType,
     QuotaRequest,
@@ -1660,6 +1662,38 @@ def create_qris_bill(current_admin: User):
                 tx.status = TransactionStatus.PENDING
             elif midtrans_status in ("settlement", "capture"):
                 tx.status = TransactionStatus.SUCCESS
+
+        disable_super_admin_logs = str(os.getenv("DISABLE_SUPER_ADMIN_ACTION_LOGS", "false") or "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "y",
+            "on",
+        }
+        if not (disable_super_admin_logs and current_admin.is_super_admin_role):
+            try:
+                expiry_time_val = tx.expiry_time
+                log_entry = AdminActionLog()
+                log_entry.admin_id = current_admin.id
+                log_entry.target_user_id = user.id
+                log_entry.action_type = AdminActionType.CREATE_QRIS_BILL
+                log_entry.details = json.dumps(
+                    {
+                        "order_id": order_id,
+                        "user_id": str(user.id),
+                        "package_id": str(package.id),
+                        "package_name": str(getattr(package, "name", "") or ""),
+                        "amount": amount,
+                        "payment_method": tx.payment_method,
+                        "qr_code_url": tx.qr_code_url,
+                        "expiry_time": (expiry_time_val.isoformat() if expiry_time_val is not None else None),
+                    },
+                    default=str,
+                    ensure_ascii=False,
+                )
+                session.add(log_entry)
+            except Exception as e:
+                current_app.logger.error(f"Gagal mencatat log CREATE_QRIS_BILL: {e}", exc_info=True)
 
         ev = TransactionEvent()
         ev.transaction_id = tx.id
