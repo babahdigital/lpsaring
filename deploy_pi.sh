@@ -27,6 +27,12 @@ Optional:
   --sync-phones                 After deploy, run phone normalization report (dry-run) inside backend container
   --sync-phones-apply           After deploy, APPLY phone normalization to DB (aborts on duplicates)
   --allow-placeholders          Allow deploy even if .env.prod still contains CHANGE_ME_* values
+  --wait-ci                     Wait for GitHub Actions/Checks to be green for current commit before deploying
+  --wait-ci-timeout <SECONDS>   Max seconds to wait for CI (default: 1800)
+  --wait-ci-interval <SECONDS>  Poll interval seconds for CI status (default: 15)
+  --wait-ci-ref <REF>           Git ref/sha to check (default: HEAD)
+  --github-owner <OWNER>        Override GitHub owner (auto-detected from origin)
+  --github-repo <REPO>          Override GitHub repo (auto-detected from origin)
   --dry-run                     Show actions without changing remote
   -h, --help                    Show this help
 
@@ -49,6 +55,216 @@ require_cmd() {
   }
 }
 
+has_cmd() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+pick_python() {
+  if has_cmd python; then
+    echo python
+    return 0
+  fi
+  if has_cmd python3; then
+    echo python3
+    return 0
+  fi
+  return 1
+}
+
+detect_github_owner_repo_from_origin() {
+  # Supports:
+  # - git@github.com:OWNER/REPO.git
+  # - https://github.com/OWNER/REPO.git
+  # - https://github.com/OWNER/REPO
+  local origin_url="$1"
+  local cleaned
+  cleaned="$origin_url"
+  cleaned="${cleaned%.git}"
+  cleaned="${cleaned#git@github.com:}"
+  cleaned="${cleaned#https://github.com/}"
+  cleaned="${cleaned#http://github.com/}"
+
+  if [[ "$cleaned" != */* ]]; then
+    return 1
+  fi
+
+  echo "$cleaned"
+}
+
+github_api_get() {
+  # Args: <url>
+  # Uses GH_TOKEN or GITHUB_TOKEN
+  local url="$1"
+  local token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+
+  if [[ -z "$token" ]]; then
+    echo "ERROR: --wait-ci membutuhkan GH_TOKEN atau GITHUB_TOKEN di environment" >&2
+    return 2
+  fi
+
+  curl -sS \
+    -H "Authorization: Bearer $token" \
+    -H "Accept: application/vnd.github+json" \
+    "$url"
+}
+
+compute_ci_state() {
+  # Returns: success | pending | failure | unknown
+  # Uses GitHub checks API first (check-runs), falls back to combined status.
+  local owner="$1"
+  local repo="$2"
+  local sha="$3"
+
+  local py
+  py=$(pick_python 2>/dev/null || true)
+
+  local checks_url="https://api.github.com/repos/$owner/$repo/commits/$sha/check-runs"
+  local status_url="https://api.github.com/repos/$owner/$repo/commits/$sha/status"
+
+  local checks_json
+  checks_json=$(github_api_get "$checks_url")
+  rc=$?
+  if [[ $rc -eq 2 ]]; then
+    return 2
+  fi
+  if [[ $rc -ne 0 ]]; then
+    checks_json=""
+  fi
+
+  if [[ -n "$checks_json" && -n "$py" ]]; then
+    "$py" - <<'PY' "$checks_json" || echo unknown
+import json, sys
+
+raw = sys.argv[1]
+try:
+    data = json.loads(raw)
+except Exception:
+    print('unknown')
+    raise SystemExit(0)
+
+check_runs = data.get('check_runs')
+if not isinstance(check_runs, list) or len(check_runs) == 0:
+    print('unknown')
+    raise SystemExit(0)
+
+any_pending = False
+any_failure = False
+
+for cr in check_runs:
+    if not isinstance(cr, dict):
+        continue
+    status = (cr.get('status') or '').lower()
+    conclusion = (cr.get('conclusion') or '').lower()
+
+    if status in ('queued', 'in_progress', 'pending'):
+        any_pending = True
+        continue
+
+    if conclusion in ('failure', 'cancelled', 'timed_out', 'action_required', 'stale'):
+        any_failure = True
+    elif conclusion in ('success', 'neutral', 'skipped'):
+        pass
+    elif conclusion == '':
+        any_pending = True
+    else:
+        any_pending = True
+
+if any_failure:
+    print('failure')
+elif any_pending:
+    print('pending')
+else:
+    print('success')
+PY
+    return 0
+  fi
+
+  local status_json
+  status_json=$(github_api_get "$status_url")
+  rc=$?
+  if [[ $rc -eq 2 ]]; then
+    return 2
+  fi
+  if [[ $rc -ne 0 ]]; then
+    status_json=""
+  fi
+  if [[ -n "$status_json" && -n "$py" ]]; then
+    "$py" - <<'PY' "$status_json" || echo unknown
+import json, sys
+
+raw = sys.argv[1]
+try:
+    data = json.loads(raw)
+except Exception:
+    print('unknown')
+    raise SystemExit(0)
+
+state = (data.get('state') or '').lower()
+if state in ('success', 'pending', 'failure', 'error'):
+    print('failure' if state in ('failure', 'error') else state)
+else:
+    print('unknown')
+PY
+    return 0
+  fi
+
+  echo unknown
+}
+
+wait_for_ci_green() {
+  local owner="$1"
+  local repo="$2"
+  local sha="$3"
+  local timeout_s="$4"
+  local interval_s="$5"
+
+  echo "==> CI Guard      : waiting for GitHub checks to be green ($owner/$repo@$sha)"
+  echo "==> CI Timeout    : ${timeout_s}s (poll=${interval_s}s)"
+
+  local start
+  start=$(date +%s)
+
+  while true; do
+    local state
+    state=$(compute_ci_state "$owner" "$repo" "$sha")
+    rc=$?
+    if [[ $rc -eq 2 ]]; then
+      # Missing token or auth failure message already printed.
+      return 2
+    fi
+    if [[ $rc -ne 0 ]]; then
+      state="unknown"
+    fi
+
+    case "$state" in
+      success)
+        echo "==> CI Status     : success"
+        return 0
+        ;;
+      failure)
+        echo "ERROR: CI status is failure for $owner/$repo@$sha. Abort deploy." >&2
+        return 1
+        ;;
+      pending)
+        echo "==> CI Status     : pending"
+        ;;
+      *)
+        echo "WARN: tidak bisa menentukan status CI (unknown). Akan coba lagi..." >&2
+        ;;
+    esac
+
+    local now elapsed
+    now=$(date +%s)
+    elapsed=$((now - start))
+    if (( elapsed >= timeout_s )); then
+      echo "ERROR: timeout menunggu CI hijau (${timeout_s}s). Abort deploy." >&2
+      return 1
+    fi
+
+    sleep "$interval_s"
+  done
+}
+
 PI_USER="pi"
 PI_HOST=""
 PI_PORT="1983"
@@ -68,6 +284,13 @@ SYNC_PHONES="false"
 SYNC_PHONES_APPLY="false"
 STRICT_MINIMAL="false"
 
+WAIT_CI="false"
+WAIT_CI_TIMEOUT="1800"
+WAIT_CI_INTERVAL="15"
+WAIT_CI_REF="HEAD"
+GITHUB_OWNER=""
+GITHUB_REPO=""
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --host) PI_HOST="${2:-}"; shift 2 ;;
@@ -86,6 +309,12 @@ while [[ $# -gt 0 ]]; do
     --sync-phones) SYNC_PHONES="true"; shift ;;
     --sync-phones-apply) SYNC_PHONES_APPLY="true"; shift ;;
     --allow-placeholders) ALLOW_PLACEHOLDERS="true"; shift ;;
+    --wait-ci) WAIT_CI="true"; shift ;;
+    --wait-ci-timeout) WAIT_CI_TIMEOUT="${2:-}"; shift 2 ;;
+    --wait-ci-interval) WAIT_CI_INTERVAL="${2:-}"; shift 2 ;;
+    --wait-ci-ref) WAIT_CI_REF="${2:-}"; shift 2 ;;
+    --github-owner) GITHUB_OWNER="${2:-}"; shift 2 ;;
+    --github-repo) GITHUB_REPO="${2:-}"; shift 2 ;;
     --dry-run) DRY_RUN="true"; shift ;;
     -h|--help) usage; exit 0 ;;
     *)
@@ -105,6 +334,46 @@ if [[ -z "$PI_HOST" ]]; then
   echo "ERROR: --host is required" >&2
   usage
   exit 1
+fi
+
+if [[ "$WAIT_CI" == "true" ]]; then
+  require_cmd curl
+  require_cmd git
+
+  py_bin=$(pick_python 2>/dev/null || true)
+  if [[ -z "$py_bin" ]]; then
+    echo "ERROR: python tidak ditemukan. Install python atau pastikan 'python' ada di PATH untuk --wait-ci" >&2
+    exit 1
+  fi
+
+  # Resolve repo owner/name
+  if [[ -z "$GITHUB_OWNER" || -z "$GITHUB_REPO" ]]; then
+    origin_url=$(git -C "$LOCAL_DIR" remote get-url origin 2>/dev/null || true)
+    if [[ -n "$origin_url" ]]; then
+      owner_repo=$(detect_github_owner_repo_from_origin "$origin_url" 2>/dev/null || true)
+      if [[ -n "$owner_repo" ]]; then
+        if [[ -z "$GITHUB_OWNER" ]]; then
+          GITHUB_OWNER="${owner_repo%%/*}"
+        fi
+        if [[ -z "$GITHUB_REPO" ]]; then
+          GITHUB_REPO="${owner_repo##*/}"
+        fi
+      fi
+    fi
+  fi
+
+  if [[ -z "$GITHUB_OWNER" || -z "$GITHUB_REPO" ]]; then
+    echo "ERROR: tidak bisa auto-detect GitHub owner/repo. Isi dengan --github-owner dan --github-repo" >&2
+    exit 1
+  fi
+
+  ci_sha=$(git -C "$LOCAL_DIR" rev-parse "$WAIT_CI_REF" 2>/dev/null || true)
+  if [[ -z "$ci_sha" ]]; then
+    echo "ERROR: tidak bisa resolve --wait-ci-ref '$WAIT_CI_REF'" >&2
+    exit 1
+  fi
+
+  wait_for_ci_green "$GITHUB_OWNER" "$GITHUB_REPO" "$ci_sha" "$WAIT_CI_TIMEOUT" "$WAIT_CI_INTERVAL"
 fi
 
 require_cmd ssh
