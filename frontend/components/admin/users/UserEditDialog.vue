@@ -209,7 +209,7 @@ async function fetchAdminPackages() {
     return
   isPackagesLoading.value = true
   try {
-    const resp = await $api<{ items: AdminPackage[] }>(`/admin/packages?page=1&itemsPerPage=200`)
+    const resp = await $api<{ items: AdminPackage[] }>(`/admin/packages?page=1&itemsPerPage=100&sortBy=price&sortOrder=asc`)
     adminPackages.value = Array.isArray(resp.items) ? resp.items : []
   }
   catch {

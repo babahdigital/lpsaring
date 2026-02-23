@@ -532,11 +532,9 @@ useHead({ title: 'Laporan Penjualan' })
 
           <VCol cols="12" sm="6" md="3" lg="3">
             <VBtn
-              block
               prepend-icon="tabler-user-search"
               variant="outlined"
               color="primary"
-              height="56"
               class="filter-btn"
               @click="openUserFilterDialog"
             >
@@ -548,8 +546,7 @@ useHead({ title: 'Laporan Penjualan' })
             <VBtn
               prepend-icon="tabler-filter"
               color="primary"
-              height="56"
-              class="action-btn flex-grow-1"
+              class="action-btn"
               @click="applyFilter"
             >
               Terapkan
@@ -557,8 +554,7 @@ useHead({ title: 'Laporan Penjualan' })
             <VBtn
               prepend-icon="tabler-filter-off"
               variant="tonal"
-              height="56"
-              class="action-btn flex-grow-1"
+              class="action-btn"
               @click="clearAllFilters"
             >
               Reset

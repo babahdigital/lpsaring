@@ -83,6 +83,8 @@ async function fetchPackages() {
     const params = new URLSearchParams({
       page: String(options.value.page),
       itemsPerPage: String(options.value.itemsPerPage),
+      sortBy: 'price',
+      sortOrder: 'asc',
     })
     const response = await $api<{ items: Package[], totalItems: number }>(`/admin/packages?${params.toString()}`)
     packages.value = response.items

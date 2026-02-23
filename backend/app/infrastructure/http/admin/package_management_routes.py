@@ -48,7 +48,28 @@ def get_packages_list(current_admin: User):
     try:
         page = request.args.get("page", 1, type=int)
         per_page = min(request.args.get("itemsPerPage", 10, type=int), 100)
-        query = db.select(Package).options(selectinload(Package.profile)).order_by(Package.created_at.desc())
+
+        sort_by = (request.args.get("sortBy") or "created_at").strip()
+        sort_order = (request.args.get("sortOrder") or "desc").strip().lower()
+        is_asc = sort_order == "asc"
+
+        sort_columns = {
+            "created_at": Package.created_at,
+            "name": Package.name,
+            "price": Package.price,
+            "data_quota_gb": Package.data_quota_gb,
+            "duration_days": Package.duration_days,
+            "is_active": Package.is_active,
+        }
+        sort_col = sort_columns.get(sort_by, Package.created_at)
+        sort_expr = sort_col.asc() if is_asc else sort_col.desc()
+
+        # Stable ordering: when primary sort ties, fall back to created_at desc.
+        query = (
+            db.select(Package)
+            .options(selectinload(Package.profile))
+            .order_by(sort_expr, Package.created_at.desc())
+        )
         pagination = db.paginate(query, page=page, per_page=per_page, error_out=False)
         return jsonify(
             {

@@ -300,12 +300,12 @@ useHead({ title: 'Log Aktivitas Admin' })
             </VMenu>
           </VCol>
           <VCol cols="12" sm="6" md="3">
-            <VBtn block prepend-icon="tabler-user-shield" variant="outlined" color="primary" height="56" @click="openUserFilter('admin')">
+            <VBtn prepend-icon="tabler-user-shield" variant="outlined" color="primary" @click="openUserFilter('admin')">
               Filter Admin
             </VBtn>
           </VCol>
           <VCol cols="12" sm="6" md="3">
-            <VBtn block prepend-icon="tabler-user-search" variant="outlined" color="primary" height="56" @click="openUserFilter('target')">
+            <VBtn prepend-icon="tabler-user-search" variant="outlined" color="primary" @click="openUserFilter('target')">
               Filter Target
             </VBtn>
           </VCol>

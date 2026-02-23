@@ -37,7 +37,7 @@ const testMessage = ref('Tes WhatsApp dari panel admin hotspot.')
 const broadcastRole = ref<'USER' | 'KOMANDAN'>('KOMANDAN')
 const broadcastMessage = ref('')
 const search = ref('')
-const roleFilter = ref<string | null>(null)
+const roleFilter = ref<string>('')
 const options = ref<Options>({ page: 1, itemsPerPage: 10, sortBy: [{ key: 'created_at', order: 'desc' }] })
 
 const roleOptions = computed(() => {
@@ -325,7 +325,6 @@ onMounted(fetchUsers)
           label="Filter Peran"
           item-title="text"
           item-value="value"
-          clearable
           density="comfortable"
         />
       </VCol>

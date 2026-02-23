@@ -274,7 +274,7 @@ async function ensurePackagesLoaded() {
     return
   try {
     const resp = await $api<{ items: PackageItem[], totalItems: number }>('/admin/packages', {
-      params: { page: 1, itemsPerPage: 100 },
+      params: { page: 1, itemsPerPage: 100, sortBy: 'price', sortOrder: 'asc' },
     })
     if (resp && Array.isArray(resp.items))
       packageList.value = resp.items.filter(p => p && (p.is_active ?? true))
