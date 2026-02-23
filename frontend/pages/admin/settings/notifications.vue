@@ -171,115 +171,121 @@ watch(loading, (val) => {
 <template>
   <div>
     <template v-if="authStore.isSuperAdmin === true">
-      <VCard class="mb-6">
-        <VCardItem>
-          <VCardTitle>Pilih Jenis Notifikasi</VCardTitle>
-          <VCardSubtitle>Pilih jenis notifikasi yang ingin Anda kelola penerimanya.</VCardSubtitle>
-        </VCardItem>
-        <VCardText>
-          <AppSelect
-            v-model="selectedNotificationType"
-            :items="notificationTypes"
-            item-title="title"
-            item-value="value"
-            label="Jenis Notifikasi"
-            clearable
-            hide-details
-          >
-            <template #selection="{ item }">
-              <div class="d-flex align-center">
-                <VIcon :icon="item.raw.icon" class="me-3" />
-                <span>{{ item.raw.title }}</span>
-              </div>
-            </template>
-            <template #item="{ props, item }">
-              <VListItem v-bind="props" :prepend-icon="item.raw.icon" :title="item.raw.title" :subtitle="item.raw.subtitle" />
-            </template>
-          </AppSelect>
-        </VCardText>
-      </VCard>
-
-      <VCard>
-        <VCardItem>
-          <VCardTitle>Manajemen Penerima Notifikasi</VCardTitle>
-          <VCardSubtitle>
-            Atur admin mana saja yang akan menerima notifikasi WhatsApp untuk jenis yang dipilih.
-          </VCardSubtitle>
-        </VCardItem>
-
-        <VDivider />
-
-        <VProgressLinear
-          v-if="showSilentRefreshing"
-          indeterminate
-          color="primary"
-          height="2"
-        />
-
-        <div v-if="showInitialSkeleton">
-          <VSkeletonLoader
-            v-for="i in 4"
-            :key="i"
-            type="list-item-two-line"
-            class="mx-4 my-2"
-          />
-        </div>
-
-        <div v-else-if="error !== null" class="text-center pa-8">
-          <VIcon icon="tabler-alert-triangle" size="48" color="error" class="mb-2" />
-          <p class="mb-4">
-            {{ error }}
-          </p>
-          <VBtn color="primary" @click="fetchRecipients">
-            Coba Lagi
-          </VBtn>
-        </div>
-
-        <VCardText v-else>
-          <VList lines="two">
-            <template v-for="(recipient, index) in recipients" :key="recipient.id">
-              <VListItem>
-                <VListItemTitle class="font-weight-medium text-wrap">
-                  {{ recipient.full_name }}
-                </VListItemTitle>
-                <VListItemSubtitle class="text-wrap">
-                  {{ recipient.phone_number }}
-                </VListItemSubtitle>
-
-                <template #append>
-                  <VSwitch
-                    v-model="recipient.is_subscribed"
-                    color="primary"
-                    inset
-                    hide-details
-                    aria-label="Aktifkan Notifikasi"
-                  />
+      <VRow class="notification-settings-layout" align="start">
+        <VCol cols="12" md="4">
+          <VCard>
+            <VCardItem>
+              <VCardTitle>Pilih Jenis Notifikasi</VCardTitle>
+              <VCardSubtitle>Pilih jenis notifikasi yang ingin Anda kelola penerimanya.</VCardSubtitle>
+            </VCardItem>
+            <VCardText>
+              <AppSelect
+                v-model="selectedNotificationType"
+                :items="notificationTypes"
+                item-title="title"
+                item-value="value"
+                label="Jenis Notifikasi"
+                clearable
+                hide-details
+              >
+                <template #selection="{ item }">
+                  <div class="d-flex align-center">
+                    <VIcon :icon="item.raw.icon" class="me-3" />
+                    <span class="text-wrap">{{ item.raw.title }}</span>
+                  </div>
                 </template>
-              </VListItem>
-              <VDivider v-if="Number(index) < recipients.length - 1" />
-            </template>
-          </VList>
-          <p v-if="recipients.length === 0" class="text-center text-medium-emphasis py-6">
-            Tidak ada admin yang dapat dikonfigurasi.
-          </p>
-        </VCardText>
+                <template #item="{ props, item }">
+                  <VListItem v-bind="props" :prepend-icon="item.raw.icon" :title="item.raw.title" :subtitle="item.raw.subtitle" />
+                </template>
+              </AppSelect>
+            </VCardText>
+          </VCard>
+        </VCol>
 
-        <VDivider />
+        <VCol cols="12" md="8">
+          <VCard>
+            <VCardItem>
+              <VCardTitle>Manajemen Penerima Notifikasi</VCardTitle>
+              <VCardSubtitle>
+                Tentukan admin mana saja yang menerima notifikasi untuk jenis yang dipilih.
+              </VCardSubtitle>
+            </VCardItem>
 
-        <VCardActions class="pa-4">
-          <VSpacer />
-          <VBtn
-            color="primary"
-            variant="elevated"
-            prepend-icon="tabler-device-floppy"
-            :loading="saveLoading"
-            :disabled="loading === true || error !== null"
-            @click="saveSettings"
-          >
-            Simpan Perubahan
-          </VBtn>
-        </VCardActions>
-      </VCard>
+            <VDivider />
+
+            <VProgressLinear
+              v-if="showSilentRefreshing"
+              indeterminate
+              color="primary"
+              height="2"
+            />
+
+            <div v-if="showInitialSkeleton">
+              <VSkeletonLoader
+                v-for="i in 4"
+                :key="i"
+                type="list-item-two-line"
+                class="mx-4 my-2"
+              />
+            </div>
+
+            <div v-else-if="error !== null" class="text-center pa-8">
+              <VIcon icon="tabler-alert-triangle" size="48" color="error" class="mb-2" />
+              <p class="mb-4">
+                {{ error }}
+              </p>
+              <VBtn color="primary" @click="fetchRecipients">
+                Coba Lagi
+              </VBtn>
+            </div>
+
+            <VCardText v-else>
+              <VList lines="two" class="recipient-list">
+                <template v-for="(recipient, index) in recipients" :key="recipient.id">
+                  <VListItem class="recipient-list__item">
+                    <VListItemTitle class="font-weight-medium text-wrap">
+                      {{ recipient.full_name }}
+                    </VListItemTitle>
+                    <VListItemSubtitle class="text-wrap">
+                      {{ recipient.phone_number }}
+                    </VListItemSubtitle>
+
+                    <template #append>
+                      <VSwitch
+                        v-model="recipient.is_subscribed"
+                        color="primary"
+                        inset
+                        hide-details
+                        aria-label="Aktifkan Notifikasi"
+                      />
+                    </template>
+                  </VListItem>
+                  <VDivider v-if="Number(index) < recipients.length - 1" />
+                </template>
+              </VList>
+              <p v-if="recipients.length === 0" class="text-center text-medium-emphasis py-6">
+                Tidak ada admin yang dapat dikonfigurasi.
+              </p>
+            </VCardText>
+
+            <VDivider />
+
+            <VCardActions class="pa-4 flex-wrap">
+              <VSpacer />
+              <VBtn
+                color="primary"
+                variant="elevated"
+                prepend-icon="tabler-device-floppy"
+                :loading="saveLoading"
+                :disabled="loading === true || error !== null"
+                @click="saveSettings"
+              >
+                Simpan Perubahan
+              </VBtn>
+            </VCardActions>
+          </VCard>
+        </VCol>
+      </VRow>
     </template>
 
     <template v-else>
@@ -298,3 +304,15 @@ watch(loading, (val) => {
 
   </div>
 </template>
+
+<style scoped>
+.recipient-list__item :deep(.v-list-item__append) {
+  align-self: flex-start;
+}
+
+@media (max-width: 599px) {
+  .recipient-list__item :deep(.v-list-item__append) {
+    margin-top: 0.25rem;
+  }
+}
+</style>

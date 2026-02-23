@@ -277,36 +277,48 @@ useHead({ title: 'Setting Aplikasi' })
         <VCardSubtitle>Kelola pengaturan umum, tampilan, dan integrasi aplikasi Anda.</VCardSubtitle>
       </VCardItem>
 
-      <ClientOnly>
-        <VTabs v-model="tab" class="px-4 settings-tabs" show-arrows density="compact">
-          <VTab value="umum">
-            <VIcon start icon="mdi-cog-outline" />
-            Umum & Maintenance
-          </VTab>
-          <VTab value="tampilan">
-            <VIcon start icon="mdi-view-dashboard-outline" />
-            Tampilan & Layout
-          </VTab>
-          <VTab value="integrasi">
-            <VIcon start icon="mdi-link-variant" />
-            Integrasi
-          </VTab>
-        </VTabs>
-        <VDivider />
-        <template #fallback>
-          <div class="px-4 py-2">
-            <VSkeletonLoader type="text@2" />
-          </div>
-          <VDivider />
-        </template>
-      </ClientOnly>
-
       <VCardText>
         <VProgressLinear v-if="isLoading" indeterminate class="mb-4" />
-        <VWindow v-else v-model="tab" class="disable-tab-transition settings-window">
-          <VWindowItem value="umum">
-            <div>
-              <div class="d-flex flex-column gap-y-4">
+
+        <VRow v-else class="settings-layout" align="start">
+          <VCol cols="12" md="4" class="settings-layout__nav">
+            <ClientOnly>
+              <div class="text-caption text-medium-emphasis mb-2">
+                Kategori Pengaturan
+              </div>
+              <VTabs
+                v-model="tab"
+                direction="vertical"
+                class="v-tabs-pill settings-tabs"
+                density="compact"
+              >
+                <VTab value="umum" class="settings-tab">
+                  <VIcon start icon="mdi-cog-outline" />
+                  Umum & Maintenance
+                </VTab>
+                <VTab value="tampilan" class="settings-tab">
+                  <VIcon start icon="mdi-view-dashboard-outline" />
+                  Tampilan & Layout
+                </VTab>
+                <VTab value="integrasi" class="settings-tab">
+                  <VIcon start icon="mdi-link-variant" />
+                  Integrasi
+                </VTab>
+              </VTabs>
+
+              <template #fallback>
+                <div class="py-2">
+                  <VSkeletonLoader type="text@2" />
+                </div>
+              </template>
+            </ClientOnly>
+          </VCol>
+
+          <VCol cols="12" md="8" class="settings-layout__content">
+            <VWindow v-model="tab" class="disable-tab-transition settings-window" :touch="false">
+              <VWindowItem value="umum">
+                <div>
+                  <div class="d-flex flex-column gap-y-4">
                 <VListSubheader>Mode Maintenance</VListSubheader>
                 <VListItem lines="three" class="overflow-visible">
                   <VRow no-gutters align="center">
@@ -382,12 +394,12 @@ useHead({ title: 'Setting Aplikasi' })
                   Simpan Perubahan
                 </VBtn>
               </VCardActions>
-            </div>
-          </VWindowItem>
+                </div>
+              </VWindowItem>
 
-          <VWindowItem value="tampilan">
-            <div>
-              <div class="d-flex flex-column gap-y-4">
+              <VWindowItem value="tampilan">
+                <div>
+                  <div class="d-flex flex-column gap-y-4">
                 <VListItem>
                   <VRow no-gutters align="center">
                     <VCol cols="12" md="4">
@@ -451,12 +463,12 @@ useHead({ title: 'Setting Aplikasi' })
                   Simpan Perubahan
                 </VBtn>
               </VCardActions>
-            </div>
-          </VWindowItem>
+                </div>
+              </VWindowItem>
 
-          <VWindowItem value="integrasi">
-            <div>
-              <div class="d-flex flex-column gap-y-4">
+              <VWindowItem value="integrasi">
+                <div>
+                  <div class="d-flex flex-column gap-y-4">
                 <VListSubheader>WhatsApp (Fonnte)</VListSubheader>
 
                 <VListItem lines="three">
@@ -676,37 +688,33 @@ useHead({ title: 'Setting Aplikasi' })
                         Mode Pembayaran
                       </VListItemTitle>
                       <VListItemSubtitle>
-                        Pilih Snap (UI Midtrans) atau Core API (tanpa Snap) untuk QRIS/GoPay/VA.
+                        Snap memakai halaman pembayaran Midtrans. Core API menampilkan metode secara langsung (QRIS/GoPay/VA).
                       </VListItemSubtitle>
                     </VCol>
                     <VCol cols="12" md="8">
-                      <VSelect
+                      <AppSelect
                         v-model="localSettings.PAYMENT_PROVIDER_MODE"
                         label="Mode Pembayaran"
-                        persistent-placeholder
                         :items="[
                           { title: 'Snap (default)', value: 'snap' },
                           { title: 'Core API (tanpa Snap)', value: 'core_api' },
                         ]"
                         item-title="title"
                         item-value="value"
-                        variant="outlined"
                         density="comfortable"
                       />
                     </VCol>
                   </VRow>
                 </VListItem>
 
-                <VListItem>
+                <VListItem v-if="isCoreApiMode">
                   <VRow no-gutters align="start">
                     <VCol cols="12" md="4" class="pb-2 pb-md-0">
                       <VListItemTitle class="mb-1">
                         Metode Pembayaran
                       </VListItemTitle>
                       <VListItemSubtitle class="core-api-subtitle">
-                        {{ isCoreApiMode
-                          ? 'Pilih metode yang ditampilkan di halaman beli saat mode Core API aktif.'
-                          : 'Batasi metode yang dipakai untuk dropdown tagihan (dan referensi pembayaran) saat mode Snap aktif.' }}
+                        Pilih metode yang ditampilkan saat Core API aktif.
                       </VListItemSubtitle>
                     </VCol>
                     <VCol cols="12" md="8">
@@ -726,16 +734,14 @@ useHead({ title: 'Setting Aplikasi' })
                   </VRow>
                 </VListItem>
 
-                <VListItem>
+                <VListItem v-if="isCoreApiMode && isCoreApiVaEnabled">
                   <VRow no-gutters align="start">
                     <VCol cols="12" md="4" class="pb-2 pb-md-0">
                       <VListItemTitle class="mb-1">
                         Bank Virtual Account
                       </VListItemTitle>
                       <VListItemSubtitle class="core-api-subtitle">
-                        {{ isCoreApiVaEnabled
-                          ? 'Pilih bank yang tersedia saat pengguna memilih pembayaran VA.'
-                          : 'Aktifkan metode Virtual Account (VA) untuk memilih bank.' }}
+                        Pilih bank yang tersedia saat pengguna memilih pembayaran VA.
                       </VListItemSubtitle>
                     </VCol>
                     <VCol cols="12" md="8">
@@ -748,7 +754,6 @@ useHead({ title: 'Setting Aplikasi' })
                             class="core-api-checkbox"
                             density="comfortable"
                             hide-details
-                            :disabled="!isCoreApiVaEnabled"
                           />
                         </div>
                       </div>
@@ -788,9 +793,11 @@ useHead({ title: 'Setting Aplikasi' })
                   Simpan Perubahan
                 </VBtn>
               </VCardActions>
-            </div>
-          </VWindowItem>
-        </VWindow>
+                </div>
+              </VWindowItem>
+            </VWindow>
+          </VCol>
+        </VRow>
       </VCardText>
     </VCard>
   </div>
@@ -801,12 +808,30 @@ useHead({ title: 'Setting Aplikasi' })
   gap: 1rem 0;
 }
 
+.settings-layout__nav {
+  padding-top: 0;
+}
+
+.settings-layout__content {
+  padding-top: 0;
+}
+
 .settings-window {
   min-height: 0;
 }
 
+.settings-tabs {
+  width: 100%;
+}
+
 .settings-tabs :deep(.v-tab) {
   max-width: none;
+}
+
+.settings-tab {
+  justify-content: flex-start;
+  white-space: normal;
+  text-align: start;
 }
 
 .core-api-subtitle {
