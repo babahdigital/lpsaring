@@ -1675,6 +1675,10 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
             "status": transaction.status.value,
             "amount": float(transaction.amount or 0.0),
             "payment_method": transaction.payment_method,
+            "snap_token": transaction.snap_token if getattr(transaction, "snap_token", None) else None,
+            "snap_redirect_url": (
+                transaction.snap_redirect_url if getattr(transaction, "snap_token", None) else None
+            ),
             "deeplink_redirect_url": (
                 transaction.snap_redirect_url
                 if (transaction.snap_token is None and transaction.snap_redirect_url)
