@@ -506,7 +506,7 @@ useHead({ title: 'Log Aktivitas Admin' })
           @update:page="val => (options.page = val)"
         />
 
-        <div v-else class="pa-4">
+        <div v-if="isMobile" class="pa-4">
           <div v-if="showInitialSkeleton" class="pa-5">
             <VCard v-for="i in 3" :key="i" class="mb-3">
               <VSkeletonLoader type="list-item-two-line" />

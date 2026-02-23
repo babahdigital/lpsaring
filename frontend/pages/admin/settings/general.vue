@@ -305,7 +305,7 @@ useHead({ title: 'Setting Aplikasi' })
         <VProgressLinear v-if="isLoading" indeterminate class="mb-4" />
         <VWindow v-else v-model="tab" class="disable-tab-transition settings-window">
           <VWindowItem value="umum">
-            <VForm @submit.prevent="handleSaveChanges">
+            <div>
               <div class="d-flex flex-column gap-y-4">
                 <VListSubheader>Mode Maintenance</VListSubheader>
                 <VListItem lines="three" class="overflow-visible">
@@ -378,15 +378,15 @@ useHead({ title: 'Setting Aplikasi' })
 
               <VCardActions class="mt-6 px-0">
                 <VSpacer />
-                <VBtn type="submit" :loading="isSaving" prepend-icon="mdi-content-save-outline">
+                <VBtn :loading="isSaving" prepend-icon="mdi-content-save-outline" @click="handleSaveChanges">
                   Simpan Perubahan
                 </VBtn>
               </VCardActions>
-            </VForm>
+            </div>
           </VWindowItem>
 
           <VWindowItem value="tampilan">
-            <VForm @submit.prevent="handleSaveChanges">
+            <div>
               <div class="d-flex flex-column gap-y-4">
                 <VListItem>
                   <VRow no-gutters align="center">
@@ -447,15 +447,15 @@ useHead({ title: 'Setting Aplikasi' })
               </div>
               <VCardActions class="mt-6 px-0">
                 <VSpacer />
-                <VBtn type="submit" :loading="isSaving" prepend-icon="mdi-content-save-outline">
+                <VBtn :loading="isSaving" prepend-icon="mdi-content-save-outline" @click="handleSaveChanges">
                   Simpan Perubahan
                 </VBtn>
               </VCardActions>
-            </VForm>
+            </div>
           </VWindowItem>
 
           <VWindowItem value="integrasi">
-            <VForm @submit.prevent="handleSaveChanges">
+            <div>
               <div class="d-flex flex-column gap-y-4">
                 <VListSubheader>WhatsApp (Fonnte)</VListSubheader>
 
@@ -782,11 +782,11 @@ useHead({ title: 'Setting Aplikasi' })
               </div>
               <VCardActions class="mt-6 px-0">
                 <VSpacer />
-                <VBtn type="submit" :loading="isSaving" prepend-icon="mdi-content-save-outline">
+                <VBtn :loading="isSaving" prepend-icon="mdi-content-save-outline" @click="handleSaveChanges">
                   Simpan Perubahan
                 </VBtn>
               </VCardActions>
-            </VForm>
+            </div>
           </VWindowItem>
         </VWindow>
       </VCardText>

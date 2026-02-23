@@ -17,6 +17,7 @@ import pathlib
 import subprocess
 from sqlalchemy.engine import make_url
 import sqlalchemy as sa
+import requests
 
 from app.extensions import db
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
@@ -1583,6 +1584,8 @@ def create_bill(current_admin: User):
     session = db.session
     json_data = request.get_json(silent=True) or {}
 
+    error_id = uuid.uuid4().hex[:10].upper()
+
     user_id_raw = json_data.get("user_id")
     package_id_raw = json_data.get("package_id")
     if not user_id_raw or not package_id_raw:
@@ -1813,6 +1816,24 @@ def create_bill(current_admin: User):
 
             try:
                 snap_response = snap.create_transaction(snap_params)  # type: ignore[union-attr]
+            except requests.exceptions.RequestException as e_req:
+                current_app.logger.error(
+                    "Midtrans network error (snap create_transaction). error_id=%s order_id=%s err=%s",
+                    error_id,
+                    order_id,
+                    e_req,
+                    exc_info=True,
+                )
+                session.rollback()
+                return (
+                    jsonify(
+                        {
+                            "message": "Midtrans tidak dapat diakses saat ini. Coba lagi beberapa saat.",
+                            "error_id": error_id,
+                        }
+                    ),
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                )
             except midtransclient.error_midtrans.MidtransAPIError:
                 raise
 
@@ -2150,8 +2171,16 @@ def create_bill(current_admin: User):
         ), HTTPStatus.BAD_REQUEST
     except Exception as e:
         session.rollback()
-        current_app.logger.error(f"Error create bill: {e}", exc_info=True)
-        return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
+        current_app.logger.error(
+            "Error create bill. error_id=%s err=%s",
+            error_id,
+            e,
+            exc_info=True,
+        )
+        return (
+            jsonify({"message": "Terjadi kesalahan internal.", "error_id": error_id}),
+            HTTPStatus.INTERNAL_SERVER_ERROR,
+        )
 
 
 @admin_bp.route("/midtrans/selftest", methods=["POST"])

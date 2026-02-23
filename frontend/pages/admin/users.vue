@@ -219,6 +219,11 @@ const billVaBankOptions = computed(() => {
     .filter(x => typeof x.value === 'string' && x.value !== '')
 })
 
+const userNoDataMessage = computed(() => {
+  const q = String(search.value || '').trim()
+  return q !== '' ? 'Tidak ada data pengguna yang cocok.' : 'Tidak ada data pengguna.'
+})
+
 // Perbaikan baris 67 (sesuai deskripsi error baris 56): Handle null/undefined secara eksplisit
 function formatPhoneNumberDisplay(phone: string | null): string | null {
   if (phone === null || phone === undefined || phone === '') {
@@ -1018,7 +1023,8 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
         </template>
         <template #no-data>
           <div class="py-8 text-center text-medium-emphasis">
-            <VIcon icon="tabler-database-off" size="32" class="mb-2" /><p>Tidak ada data pengguna yang cocok.</p>
+            <VIcon icon="tabler-database-off" size="32" class="mb-2" />
+            <p>{{ userNoDataMessage }}</p>
           </div>
         </template>
       </VDataTableServer>
@@ -1030,14 +1036,16 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
         :total-items="totalUsers"
         @update:page="handleMobileUsersPageUpdate"
       />
-      <div v-else class="pa-4">
+
+      <div v-if="isMobile" class="pa-4">
         <div v-if="showInitialSkeleton" class="pa-5">
           <VCard v-for="i in 3" :key="i" class="mb-3">
             <VSkeletonLoader type="list-item-two-line" />
           </VCard>
         </div>
         <div v-else-if="users.length === 0 && loading === false" class="py-8 text-center text-medium-emphasis">
-          <VIcon icon="tabler-database-off" size="32" class="mb-2" /><p>Tidak ada data pengguna.</p>
+          <VIcon icon="tabler-database-off" size="32" class="mb-2" />
+          <p>{{ userNoDataMessage }}</p>
         </div>
         <VCard v-for="user in users" v-else :key="user.id" class="mb-3">
           <VCardText>
