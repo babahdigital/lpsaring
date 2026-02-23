@@ -211,7 +211,7 @@ function formatPhoneNumber(phone: string | null | undefined): string { // Perbai
         <VCardSubtitle>Proses permintaan kuota dan akses dari para Komandan.</VCardSubtitle>
         <template #append>
           <div :style="{ width: isMobile ? '100%' : '250px' }">
-            <AppSelect v-model="statusFilter" :items="filterItems" label="Filter Status" density="compact" hide-details />
+            <AppSelect v-model="statusFilter" :items="filterItems" label="Filter Status" density="comfortable" hide-details />
           </div>
         </template>
       </VCardItem>

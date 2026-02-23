@@ -62,13 +62,6 @@ interface BackupListResponse {
 }
 
 // --- State & Fetching ---
-const snackbar = ref({
-  visible: false,
-  text: '',
-  color: 'success',
-  icon: 'tabler-check',
-})
-
 const { $api } = useNuxtApp()
 
 const defaultStats: DashboardStats = {
@@ -893,23 +886,6 @@ useHead({ title: 'Dashboard Admin' })
         </VCard>
       </VCol>
     </VRow>
-
-
-    <VSnackbar
-      v-model="snackbar.visible"
-      :color="snackbar.color"
-      :timeout="3000"
-      location="top right"
-      variant="tonal"
-    >
-      <div class="d-flex align-center">
-        <VIcon
-          :icon="snackbar.icon"
-          class="me-3"
-        />
-        <span>{{ snackbar.text }}</span>
-      </div>
-    </VSnackbar>
   </div>
 </template>
 

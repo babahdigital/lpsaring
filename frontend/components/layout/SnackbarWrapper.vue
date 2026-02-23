@@ -12,7 +12,7 @@ const iconMap = {
 }
 
 const visibleMessages = computed(() => {
-  return (messages.value || []).slice(0, 1)
+  return (messages.value || []).slice(0, 3)
 })
 </script>
 
@@ -25,7 +25,7 @@ const visibleMessages = computed(() => {
         :type="message.type"
         :title="message.title"
         variant="tonal"
-        class="snackbar-alert"
+        class="snackbar-alert mb-3"
         border="start"
         density="comfortable"
       >
@@ -55,16 +55,16 @@ const visibleMessages = computed(() => {
 .snackbar-wrapper {
   position: fixed;
   top: 12px;
-  left: 12px;
   right: 12px;
   z-index: 9999;
   pointer-events: none;
+  width: 100%;
+  max-width: 420px;
 }
 
 .snackbar-alert {
   width: 100%;
-  max-width: 960px;
-  margin: 0 auto;
+  margin: 0;
   pointer-events: auto;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -76,10 +76,11 @@ const visibleMessages = computed(() => {
     top: 8px;
     left: 8px;
     right: 8px;
+    max-width: none;
   }
 
   .snackbar-alert {
-    max-width: none;
+    margin: 0;
   }
 }
 </style>

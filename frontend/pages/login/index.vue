@@ -587,7 +587,7 @@ watch(regRole, () => {
                 >
                   <VRadioGroup
                     v-model="regRole"
-                    inline
+                    :inline="isWidePadding"
                     label="Saya mendaftar sebagai:"
                     class="mb-4"
                     :disabled="isSubmitting"

@@ -516,7 +516,7 @@ useHead({ title: 'Dashboard User' })
             <VCard class="vuexy-card mb-4" title="Ringkasan 7 Hari Terakhir">
               <VCardText>
                 <VRow>
-                  <VCol cols="6" md="3">
+                  <VCol cols="12" sm="6" md="3">
                     <div class="d-flex align-center gap-4 mt-md-9 mt-0">
                       <VAvatar color="primary" variant="tonal" rounded size="40">
                         <VIcon icon="tabler-calendar-stats" />
@@ -530,7 +530,7 @@ useHead({ title: 'Dashboard User' })
                     </div>
                   </VCol>
 
-                  <VCol cols="6" md="3">
+                  <VCol cols="12" sm="6" md="3">
                     <div class="d-flex align-center gap-4 mt-md-9 mt-0">
                       <VAvatar color="info" variant="tonal" rounded size="40">
                         <VIcon icon="tabler-chart-bar" />
@@ -544,7 +544,7 @@ useHead({ title: 'Dashboard User' })
                     </div>
                   </VCol>
 
-                  <VCol cols="6" md="3">
+                  <VCol cols="12" sm="6" md="3">
                     <div class="d-flex align-center gap-4 mt-md-9 mt-0">
                       <VAvatar color="success" variant="tonal" rounded size="40">
                         <VIcon icon="tabler-cash" />
@@ -558,7 +558,7 @@ useHead({ title: 'Dashboard User' })
                     </div>
                   </VCol>
 
-                  <VCol cols="6" md="3">
+                  <VCol cols="12" sm="6" md="3">
                     <div class="d-flex align-center gap-4 mt-md-9 mt-0">
                       <VAvatar color="warning" variant="tonal" rounded size="40">
                         <VIcon icon="tabler-battery" />

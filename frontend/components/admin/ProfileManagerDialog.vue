@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import type { VDataTableServer } from 'vuetify/labs/VDataTable'
 import { computed, reactive, ref, watch } from 'vue'
+import { useSnackbar } from '@/composables/useSnackbar'
 
 const props = defineProps({ modelValue: { type: Boolean, required: true } })
 const emit = defineEmits(['update:modelValue', 'profilesUpdated'])
@@ -20,11 +21,12 @@ const loading = ref(true)
 const totalProfiles = ref(0)
 const options = ref<Options>({ page: 1, itemsPerPage: 5, sortBy: [] })
 const dialog = reactive({ edit: false, delete: false })
-const snackbar = reactive({ show: false, text: '', color: 'info' })
 const selectedProfile = ref<Profile | null>(null)
 const editedProfile = ref<Partial<Profile>>({})
 const defaultProfile = { profile_name: '', description: '', duration_days: 30, data_quota_gb: 1 }
 const isUnlimitedSwitch = ref(false)
+
+const { add: addSnackbar } = useSnackbar()
 
 const isDialogVisible = computed({
   get: () => props.modelValue,
@@ -98,16 +100,16 @@ async function handleAction(type: 'create' | 'update' | 'delete') {
   }
   try {
     await $api(endpoint, { method, body })
-    snackbar.text = successMessage
-    snackbar.color = 'success'
-    snackbar.show = true
+    addSnackbar({ type: 'success', title: 'Berhasil', text: successMessage })
     await fetchProfiles()
     emit('profilesUpdated')
   }
   catch (error: any) {
-    snackbar.text = `Error: ${error.data?.message || 'Terjadi kesalahan'}`
-    snackbar.color = 'error'
-    snackbar.show = true
+    addSnackbar({
+      type: 'error',
+      title: 'Gagal',
+      text: `Error: ${error.data?.message ?? 'Terjadi kesalahan'}`,
+    })
   }
   finally {
     dialog.edit = false
@@ -334,14 +336,6 @@ async function handleAction(type: 'create' | 'update' | 'delete') {
       </VCard>
     </VDialog>
 
-    <VSnackbar
-      v-model="snackbar.show"
-      :color="snackbar.color"
-      :timeout="3000"
-      location="top center"
-    >
-      {{ snackbar.text }}
-    </VSnackbar>
   </VDialog>
 </template>
 

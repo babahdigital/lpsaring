@@ -277,7 +277,7 @@ useHead({ title: 'Setting Aplikasi' })
                       </VListItemSubtitle>
                     </VCol>
                     <VCol cols="12" md="8">
-                      <VTextarea v-model="localSettings.MAINTENANCE_MODE_MESSAGE" label="Pesan Maintenance" placeholder="Contoh: Aplikasi sedang dalam perbaikan..." rows="3" :disabled="!maintenanceModeActive" variant="outlined" density="compact" />
+                      <VTextarea v-model="localSettings.MAINTENANCE_MODE_MESSAGE" label="Pesan Maintenance" placeholder="Contoh: Aplikasi sedang dalam perbaikan..." rows="3" :disabled="!maintenanceModeActive" variant="outlined" density="comfortable" />
                     </VCol>
                   </VRow>
                 </VListItem>
@@ -296,7 +296,7 @@ useHead({ title: 'Setting Aplikasi' })
                       </VListItemSubtitle>
                     </VCol>
                     <VCol cols="12" md="8">
-                      <VTextField v-model="localSettings.APP_NAME" label="Nama Aplikasi" persistent-placeholder placeholder="Contoh: Portal Hotspot Sobigidul" variant="outlined" density="compact" />
+                      <VTextField v-model="localSettings.APP_NAME" label="Nama Aplikasi" persistent-placeholder placeholder="Contoh: Portal Hotspot Sobigidul" variant="outlined" density="comfortable" />
                     </VCol>
                   </VRow>
                 </VListItem>
@@ -312,7 +312,7 @@ useHead({ title: 'Setting Aplikasi' })
                       </VListItemSubtitle>
                     </VCol>
                     <VCol cols="12" md="8">
-                      <VTextField v-model="localSettings.APP_BROWSER_TITLE" label="Judul di Browser" persistent-placeholder placeholder="Contoh: Hotspot Sobigidul" variant="outlined" density="compact" />
+                      <VTextField v-model="localSettings.APP_BROWSER_TITLE" label="Judul di Browser" persistent-placeholder placeholder="Contoh: Hotspot Sobigidul" variant="outlined" density="comfortable" />
                     </VCol>
                   </VRow>
                 </VListItem>
@@ -442,7 +442,7 @@ useHead({ title: 'Setting Aplikasi' })
                       <VListItemSubtitle>Kunci API dari Fonnte.</VListItemSubtitle>
                     </VCol>
                     <VCol cols="12" md="8">
-                      <VTextField v-model="localSettings.WHATSAPP_API_KEY" label="API Key WhatsApp (Fonnte)" type="password" persistent-placeholder placeholder="Masukkan API Key Fonnte Anda" :disabled="!whatsappEnabled" variant="outlined" density="compact" />
+                      <VTextField v-model="localSettings.WHATSAPP_API_KEY" label="API Key WhatsApp (Fonnte)" type="password" persistent-placeholder placeholder="Masukkan API Key Fonnte Anda" :disabled="!whatsappEnabled" variant="outlined" density="comfortable" />
                     </VCol>
                   </VRow>
                 </VListItem>
@@ -476,7 +476,7 @@ useHead({ title: 'Setting Aplikasi' })
                       <VListItemSubtitle>Digunakan untuk deep link (opsional).</VListItemSubtitle>
                     </VCol>
                     <VCol cols="12" md="8">
-                      <VTextField v-model="localSettings.TELEGRAM_BOT_USERNAME" label="Telegram Bot Username" persistent-placeholder placeholder="Contoh: lpsaring_bot" :disabled="!telegramEnabled" variant="outlined" density="compact" />
+                      <VTextField v-model="localSettings.TELEGRAM_BOT_USERNAME" label="Telegram Bot Username" persistent-placeholder placeholder="Contoh: lpsaring_bot" :disabled="!telegramEnabled" variant="outlined" density="comfortable" />
                     </VCol>
                   </VRow>
                 </VListItem>
@@ -490,7 +490,7 @@ useHead({ title: 'Setting Aplikasi' })
                       <VListItemSubtitle>Token dari BotFather (server-side secret).</VListItemSubtitle>
                     </VCol>
                     <VCol cols="12" md="8">
-                      <VTextField v-model="localSettings.TELEGRAM_BOT_TOKEN" label="Telegram Bot Token" type="password" persistent-placeholder placeholder="123456:ABC..." :disabled="!telegramEnabled" variant="outlined" density="compact" />
+                      <VTextField v-model="localSettings.TELEGRAM_BOT_TOKEN" label="Telegram Bot Token" type="password" persistent-placeholder placeholder="123456:ABC..." :disabled="!telegramEnabled" variant="outlined" density="comfortable" />
                     </VCol>
                   </VRow>
                 </VListItem>
@@ -514,7 +514,7 @@ useHead({ title: 'Setting Aplikasi' })
                         placeholder="isi random string panjang"
                         :disabled="!telegramEnabled"
                         variant="outlined"
-                        density="compact"
+                        density="comfortable"
                       />
                     </VCol>
                   </VRow>
@@ -531,7 +531,7 @@ useHead({ title: 'Setting Aplikasi' })
                       </VListItemSubtitle>
                     </VCol>
                     <VCol cols="12" md="8">
-                      <VTextField v-model="localSettings.TELEGRAM_ADMIN_CHAT_IDS" label="Telegram Admin Chat IDs" persistent-placeholder placeholder="Contoh: 123456789,987654321" :disabled="!telegramEnabled" variant="outlined" density="compact" />
+                      <VTextField v-model="localSettings.TELEGRAM_ADMIN_CHAT_IDS" label="Telegram Admin Chat IDs" persistent-placeholder placeholder="Contoh: 123456789,987654321" :disabled="!telegramEnabled" variant="outlined" density="comfortable" />
                     </VCol>
                   </VRow>
                 </VListItem>
@@ -555,7 +555,7 @@ useHead({ title: 'Setting Aplikasi' })
                             placeholder="123456789"
                             :disabled="!telegramEnabled || isTestingTelegram"
                             variant="outlined"
-                            density="compact"
+                            density="comfortable"
                           />
                         </VCol>
                         <VCol cols="12" sm="7">
@@ -565,7 +565,7 @@ useHead({ title: 'Setting Aplikasi' })
                             placeholder="Tes Telegram..."
                             :disabled="!telegramEnabled || isTestingTelegram"
                             variant="outlined"
-                            density="compact"
+                            density="comfortable"
                           />
                         </VCol>
                       </VRow>
@@ -599,10 +599,10 @@ useHead({ title: 'Setting Aplikasi' })
                     <VCol cols="12" md="8">
                       <VRow>
                         <VCol cols="12" sm="6">
-                          <VTextField v-model="localSettings.MIDTRANS_SERVER_KEY" label="Server Key Midtrans" type="password" persistent-placeholder placeholder="Masukkan Server Key" variant="outlined" density="compact" />
+                          <VTextField v-model="localSettings.MIDTRANS_SERVER_KEY" label="Server Key Midtrans" type="password" persistent-placeholder placeholder="Masukkan Server Key" variant="outlined" density="comfortable" />
                         </VCol>
                         <VCol cols="12" sm="6">
-                          <VTextField v-model="localSettings.MIDTRANS_CLIENT_KEY" label="Client Key Midtrans" type="password" persistent-placeholder placeholder="Masukkan Client Key" variant="outlined" density="compact" />
+                          <VTextField v-model="localSettings.MIDTRANS_CLIENT_KEY" label="Client Key Midtrans" type="password" persistent-placeholder placeholder="Masukkan Client Key" variant="outlined" density="comfortable" />
                         </VCol>
                       </VRow>
                     </VCol>
@@ -622,13 +622,13 @@ useHead({ title: 'Setting Aplikasi' })
                     <VCol cols="12" md="8">
                       <VRow>
                         <VCol cols="12" sm="4">
-                          <VTextField v-model="localSettings.MIKROTIK_HOST" label="Host MikroTik" persistent-placeholder placeholder="Alamat IP/domain" variant="outlined" density="compact" />
+                          <VTextField v-model="localSettings.MIKROTIK_HOST" label="Host MikroTik" persistent-placeholder placeholder="Alamat IP/domain" variant="outlined" density="comfortable" />
                         </VCol>
                         <VCol cols="12" sm="4">
-                          <VTextField v-model="localSettings.MIKROTIK_USER" label="User MikroTik" persistent-placeholder placeholder="Username API" variant="outlined" density="compact" />
+                          <VTextField v-model="localSettings.MIKROTIK_USER" label="User MikroTik" persistent-placeholder placeholder="Username API" variant="outlined" density="comfortable" />
                         </VCol>
                         <VCol cols="12" sm="4">
-                          <VTextField v-model="localSettings.MIKROTIK_PASSWORD" label="Password MikroTik" type="password" persistent-placeholder placeholder="Password API" variant="outlined" density="compact" />
+                          <VTextField v-model="localSettings.MIKROTIK_PASSWORD" label="Password MikroTik" type="password" persistent-placeholder placeholder="Password API" variant="outlined" density="comfortable" />
                         </VCol>
                       </VRow>
                     </VCol>

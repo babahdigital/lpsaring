@@ -29,8 +29,6 @@ const label = computed(() => useAttrs().label as string | undefined)
     />
     <VSelect
       v-bind="{
-        density: 'comfortable',
-        hideDetails: 'auto',
         ...$attrs,
         class: null,
         label: undefined,

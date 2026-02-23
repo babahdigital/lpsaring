@@ -36,14 +36,15 @@ function onClose() {
     @update:model-value="onClose"
   >
     <VCard>
-      <VCardTitle class="d-flex align-center">
-        <span class="headline">{{ props.title }}</span>
-        <VSpacer />
-        <VBtn
-          icon="tabler-x"
-          variant="text"
-          @click="onClose"
-        />
+      <VCardTitle>
+        <div class="dialog-titlebar">
+          <div class="dialog-titlebar__title">
+            <span class="headline">{{ props.title }}</span>
+          </div>
+          <div class="dialog-titlebar__actions">
+            <VBtn icon="tabler-x" variant="text" @click="onClose" />
+          </div>
+        </div>
       </VCardTitle>
       <VDivider />
       <VCardText class="pt-4">
@@ -75,3 +76,35 @@ function onClose() {
     </VCard>
   </VDialog>
 </template>
+
+<style scoped>
+.dialog-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.dialog-titlebar__title {
+  min-width: 0;
+}
+
+.dialog-titlebar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 600px) {
+  .dialog-titlebar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .dialog-titlebar__actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+</style>

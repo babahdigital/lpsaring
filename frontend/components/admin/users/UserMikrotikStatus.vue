@@ -46,7 +46,7 @@ function formatBytes(bytes: number | string, decimals = 2) {
 
 <template>
   <div>
-    <div class="d-flex align-center gap-4 mb-4">
+    <div class="mikrotik-titlebar mb-4">
       <h6 class="text-h6">
         Status Live Mikrotik
       </h6>
@@ -154,3 +154,23 @@ function formatBytes(bytes: number | string, decimals = 2) {
     </VCard>
   </div>
 </template>
+
+<style scoped>
+.mikrotik-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+@media (max-width: 600px) {
+  .mikrotik-titlebar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .mikrotik-titlebar :deep(.v-btn) {
+    width: 100%;
+  }
+}
+</style>

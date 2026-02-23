@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import type { AsyncData } from '#app'
 import { useNuxtApp, useRuntimeConfig } from '#app'
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useApiFetch } from '~/composables/useApiFetch'
 import type { UserQuotaResponse } from '~/types/user'
 import { useDebtSettlementPayment } from '~/composables/useDebtSettlementPayment'
+import { useSnackbar } from '@/composables/useSnackbar'
 
 // --- Tipe Data ---
 interface Transaction {
@@ -56,12 +57,15 @@ const itemsPerPage = ref(10)
 const totalItems = ref(0)
 const sortBy = ref<any[]>([])
 
-const snackbar = reactive({
-  show: false,
-  text: '',
-  color: 'info',
-  timeout: 3000,
-})
+const { add: addSnackbar } = useSnackbar()
+
+function toast(type: 'success' | 'error' | 'info' | 'warning', text: string, title?: string) {
+  addSnackbar({
+    type,
+    title: title ?? (type === 'success' ? 'Berhasil' : type === 'error' ? 'Gagal' : type === 'warning' ? 'Peringatan' : 'Info'),
+    text,
+  })
+}
 
 const downloadingInvoice = ref<string | null>(null)
 
@@ -332,9 +336,7 @@ function isDownloadable(status: string | undefined | null): boolean {
 
 async function downloadInvoice(midtransOrderId: string) {
   downloadingInvoice.value = midtransOrderId
-  snackbar.text = `Memulai download invoice ${midtransOrderId}...`
-  snackbar.color = 'info'
-  snackbar.show = true
+  toast('info', `Memulai download invoice ${midtransOrderId}...`)
 
   const invoicePath = `/transactions/${midtransOrderId}/invoice`
   const invoiceDownloadUrl = `${(runtimeConfig.public.apiBaseUrl ?? '/api').replace(/\/$/, '')}${invoicePath}`
@@ -343,9 +345,7 @@ async function downloadInvoice(midtransOrderId: string) {
     if (import.meta.client) {
       const newWindow = window.open(invoiceDownloadUrl, '_blank')
       if (newWindow) {
-        snackbar.text = `Invoice ${midtransOrderId} sedang dibuka di tab baru.`
-        snackbar.color = 'success'
-        snackbar.show = true
+        toast('success', `Invoice ${midtransOrderId} sedang dibuka di tab baru.`)
         return
       }
     }
@@ -369,16 +369,12 @@ async function downloadInvoice(midtransOrderId: string) {
     document.body.removeChild(link)
     URL.revokeObjectURL(objectUrl)
 
-    snackbar.text = `Invoice ${midtransOrderId} berhasil diunduh.`
-    snackbar.color = 'success'
-    snackbar.show = true
+    toast('success', `Invoice ${midtransOrderId} berhasil diunduh.`)
   }
   catch (err: any) {
     // PERBAIKAN: Mengganti || dengan ?? untuk nilai fallback
     const message = err.data?.message ?? err.message ?? 'Gagal mengunduh invoice.'
-    snackbar.text = message
-    snackbar.color = 'error'
-    snackbar.show = true
+    toast('error', message)
   }
   finally {
     downloadingInvoice.value = null
@@ -696,22 +692,6 @@ useHead({ title: 'Riwayat Transaksi' })
       </VCol>
     </VRow>
 
-    <VSnackbar
-      v-model="snackbar.show"
-      :color="snackbar.color"
-      :timeout="snackbar.timeout"
-    >
-      {{ snackbar.text }}
-      <template #actions>
-        <VBtn
-          color="white"
-          variant="text"
-          @click="snackbar.show = false"
-        >
-          Tutup
-        </VBtn>
-      </template>
-    </VSnackbar>
   </VContainer>
 </template>
 

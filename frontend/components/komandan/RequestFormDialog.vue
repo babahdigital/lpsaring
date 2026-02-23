@@ -216,30 +216,30 @@ function formatRetryAt(isoString: string | null) {
         ref="formRef"
         @submit.prevent="handleSubmit"
       >
-        <VCardItem class="pa-4 bg-primary">
-          <template #prepend>
-            <VIcon
-              icon="tabler-mail-plus"
-              color="white"
-              size="28"
-            />
-          </template>
-          <VCardTitle class="text-h5 text-white">
-            Formulir Pengajuan
-          </VCardTitle>
-          <VCardSubtitle class="text-white">
-            Ajukan permintaan kuota atau akses unlimited
-          </VCardSubtitle>
-          <template #append>
-            <VBtn
-              icon="tabler-x"
-              variant="text"
-              size="small"
-              class="text-white"
-              @click="closeDialog"
-            />
-          </template>
-        </VCardItem>
+        <VCardTitle class="pa-4 bg-primary">
+          <div class="dialog-titlebar">
+            <div class="dialog-titlebar__title">
+              <VIcon
+                icon="tabler-mail-plus"
+                color="white"
+                size="24"
+              />
+              <div class="d-flex flex-column">
+                <span class="text-h6 text-white">Formulir Pengajuan</span>
+                <span class="text-body-2 text-white">Ajukan permintaan kuota atau akses unlimited</span>
+              </div>
+            </div>
+            <div class="dialog-titlebar__actions">
+              <VBtn
+                icon="tabler-x"
+                variant="text"
+                size="small"
+                class="text-white"
+                @click="closeDialog"
+              />
+            </div>
+          </div>
+        </VCardTitle>
 
         <VCardText class="pa-5">
           <p class="text-subtitle-1 font-weight-medium mb-3">

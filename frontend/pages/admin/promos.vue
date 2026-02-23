@@ -285,7 +285,7 @@ onMounted(() => {
 
 <template>
   <VCard>
-    <VCardTitle class="d-flex align-center pa-4">
+    <VCardTitle class="d-flex align-center flex-wrap gap-2 pa-4">
       <h2 class="text-h5">
         Manajemen Event & Promo
       </h2>

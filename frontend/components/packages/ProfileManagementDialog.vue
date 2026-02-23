@@ -104,19 +104,24 @@ function closeMainDialog() {
     persistent
   >
     <VCard>
-      <VCardTitle class="d-flex align-center pa-4">
-        <VIcon
-          start
-          icon="tabler-server"
-        />
-        <span class="text-h6">Kelola Profil Teknis</span>
-        <VSpacer />
-        <VBtn
-          icon="tabler-x"
-          variant="text"
-          size="small"
-          @click="closeMainDialog"
-        />
+      <VCardTitle class="pa-4">
+        <div class="dialog-titlebar">
+          <div class="dialog-titlebar__title">
+            <VIcon
+              icon="tabler-server"
+              size="22"
+            />
+            <span class="text-h6">Kelola Profil Teknis</span>
+          </div>
+          <div class="dialog-titlebar__actions">
+            <VBtn
+              icon="tabler-x"
+              variant="text"
+              size="small"
+              @click="closeMainDialog"
+            />
+          </div>
+        </div>
       </VCardTitle>
       <VDivider />
 

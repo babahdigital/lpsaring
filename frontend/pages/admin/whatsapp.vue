@@ -225,7 +225,7 @@ onMounted(fetchUsers)
         <VCardSubtitle>Kirim pesan ke semua pengguna berdasarkan role: User atau Komandan.</VCardSubtitle>
       </VCardItem>
       <VCardText>
-        <VRow>
+        <VRow align="end">
           <VCol cols="12" md="3">
             <VSelect
               v-model="broadcastRole"
@@ -236,7 +236,6 @@ onMounted(fetchUsers)
               label="Target Penerima"
               item-title="title"
               item-value="value"
-              density="comfortable"
             />
           </VCol>
           <VCol cols="12" md="7">
@@ -246,13 +245,13 @@ onMounted(fetchUsers)
               rows="2"
               auto-grow
               counter="1000"
-              density="comfortable"
             />
           </VCol>
-          <VCol cols="12" md="2" class="d-flex align-center">
+          <VCol cols="12" md="2" class="d-flex align-end">
             <VBtn
               block
               color="primary"
+              height="56"
               :loading="sendingBroadcast"
               :disabled="sendingBroadcast"
               @click="sendBroadcastMessage"
@@ -270,26 +269,25 @@ onMounted(fetchUsers)
         <VCardSubtitle>Validasi konfigurasi Fonnte dari panel admin.</VCardSubtitle>
       </VCardItem>
       <VCardText>
-        <VRow>
+        <VRow align="end">
           <VCol cols="12" md="4">
             <VTextField
               v-model="testPhoneNumber"
               label="Nomor Tujuan"
               placeholder="08xxxxxxxxxx / 62xxxxxxxxxx"
-              density="comfortable"
             />
           </VCol>
           <VCol cols="12" md="6">
             <VTextField
               v-model="testMessage"
               label="Pesan Uji"
-              density="comfortable"
             />
           </VCol>
-          <VCol cols="12" md="2" class="d-flex align-center">
+          <VCol cols="12" md="2" class="d-flex align-end">
             <VBtn
               block
               color="success"
+              height="56"
               :loading="sendingTest"
               @click="sendTestMessage"
             >

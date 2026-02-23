@@ -566,7 +566,7 @@ useHead({ title: 'Pengaturan Akun' })
                     :model-value="telegramLinkUrl"
                     readonly
                     variant="outlined"
-                    density="compact"
+                    density="comfortable"
                   />
                 </div>
               </VCardText>
@@ -578,10 +578,15 @@ useHead({ title: 'Pengaturan Akun' })
 
     <VDialog v-if="isHydrated" v-model="isPasswordDialogVisible" max-width="500px" persistent>
       <VCard>
-        <VCardTitle class="d-flex align-center">
-          Ubah Password Portal
-          <VSpacer />
-          <VBtn icon="tabler-x" variant="text" @click="isPasswordDialogVisible = false" />
+        <VCardTitle class="pa-4">
+          <div class="dialog-titlebar">
+            <div class="dialog-titlebar__title">
+              <span class="text-h6">Ubah Password Portal</span>
+            </div>
+            <div class="dialog-titlebar__actions">
+              <VBtn icon="tabler-x" variant="text" @click="isPasswordDialogVisible = false" />
+            </div>
+          </div>
         </VCardTitle>
         <VDivider />
         <VCardText class="pt-4">
@@ -591,13 +596,13 @@ useHead({ title: 'Pengaturan Akun' })
           <VForm ref="passwordFormRef" @submit.prevent="changePassword">
             <VRow>
               <VCol cols="12">
-                <AppTextField v-model="passwordData.current_password" label="Password Saat Ini" :type="isPasswordVisible ? 'text' : 'password'" :append-inner-icon="isPasswordVisible ? 'tabler-eye-off' : 'tabler-eye'" :rules="[requiredRule]" density="compact" autocomplete="current-password" @click:append-inner="isPasswordVisible = !isPasswordVisible" />
+                <AppTextField v-model="passwordData.current_password" label="Password Saat Ini" :type="isPasswordVisible ? 'text' : 'password'" :append-inner-icon="isPasswordVisible ? 'tabler-eye-off' : 'tabler-eye'" :rules="[requiredRule]" density="comfortable" autocomplete="current-password" @click:append-inner="isPasswordVisible = !isPasswordVisible" />
               </VCol>
               <VCol cols="12">
-                <AppTextField v-model="passwordData.new_password" label="Password Baru" :type="isPasswordVisible ? 'text' : 'password'" :rules="[requiredRule, passwordLengthRule]" density="compact" autocomplete="new-password" />
+                <AppTextField v-model="passwordData.new_password" label="Password Baru" :type="isPasswordVisible ? 'text' : 'password'" :rules="[requiredRule, passwordLengthRule]" density="comfortable" autocomplete="new-password" />
               </VCol>
               <VCol cols="12">
-                <AppTextField v-model="confirmPassword" label="Konfirmasi Password Baru" :type="isPasswordVisible ? 'text' : 'password'" :rules="[requiredRule, passwordMatchRule]" density="compact" autocomplete="new-password" />
+                <AppTextField v-model="confirmPassword" label="Konfirmasi Password Baru" :type="isPasswordVisible ? 'text' : 'password'" :rules="[requiredRule, passwordMatchRule]" density="comfortable" autocomplete="new-password" />
               </VCol>
             </VRow>
           </VForm>
@@ -638,6 +643,37 @@ useHead({ title: 'Pengaturan Akun' })
     flex-direction: column;
   }
 
+  .dialog-titlebar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dialog-titlebar__actions {
+    justify-content: flex-end;
+    width: 100%;
+  }
+
+
+.dialog-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dialog-titlebar__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.dialog-titlebar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
   .ringkasan-summary {
     width: 100%;
     text-align: left !important;

@@ -642,7 +642,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
   <div>
     <VCard class="rounded-lg mb-6">
       <VCardItem>
-        <VCardTitle class="d-flex align-center">
+        <VCardTitle class="d-flex align-center flex-wrap gap-2">
           <VIcon icon="tabler-user-x" class="me-2" />
           Preview Cleanup User Tidak Aktif
         </VCardTitle>
@@ -780,9 +780,9 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
         <template #append>
           <div class="d-flex align-center gap-4" :style="{ width: isMobile ? '100%' : 'auto' }">
             <div :style="{ width: isMobile ? 'calc(100% - 130px)' : '300px' }">
-              <AppTextField v-model="search" placeholder="Cari (Nama/No. HP)..." prepend-inner-icon="tabler-search" clearable density="compact" hide-details />
+              <AppTextField v-model="search" placeholder="Cari (Nama/No. HP)..." prepend-inner-icon="tabler-search" clearable density="comfortable" hide-details />
             </div>
-            <VBtn prepend-icon="tabler-plus" @click="openAddUserDialog()">
+            <VBtn prepend-icon="tabler-plus" height="56" style="min-width: 130px" @click="openAddUserDialog()">
               Tambah Akun
             </VBtn>
           </div>
@@ -798,7 +798,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
               item-title="title"
               item-value="value"
               label="Peran"
-              density="compact"
+              density="comfortable"
               clearable
               hide-details
             />
@@ -810,7 +810,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
               item-title="title"
               item-value="value"
               label="Status"
-              density="compact"
+              density="comfortable"
               clearable
               hide-details
             />
@@ -822,7 +822,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
               item-title="title"
               item-value="value"
               label="Tamping"
-              density="compact"
+              density="comfortable"
               hide-details
             />
           </VCol>
@@ -1031,12 +1031,17 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 
     <VDialog v-if="isHydrated" v-model="isCreateBillDialogOpen" max-width="640px">
       <VCard>
-        <VCardTitle class="pa-4 d-flex align-center">
-          <span class="font-weight-medium">Buat Tagihan QRIS</span>
-          <VSpacer />
-          <VBtn icon variant="text" @click="isCreateBillDialogOpen = false">
-            <VIcon icon="tabler-x" />
-          </VBtn>
+        <VCardTitle class="pa-4">
+          <div class="dialog-titlebar">
+            <div class="dialog-titlebar__title">
+              <span class="font-weight-medium">Buat Tagihan QRIS</span>
+            </div>
+            <div class="dialog-titlebar__actions">
+              <VBtn icon variant="text" @click="isCreateBillDialogOpen = false">
+                <VIcon icon="tabler-x" />
+              </VBtn>
+            </div>
+          </div>
         </VCardTitle>
         <VDivider />
 

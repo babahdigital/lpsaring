@@ -85,22 +85,22 @@ export default {
   VCheckbox: {
     // set v-checkbox default color to primary
     color: 'primary',
-    density: 'comfortable',
+    density: 'default',
     hideDetails: 'auto',
   },
   VRadioGroup: {
     color: 'primary',
-    density: 'comfortable',
+    density: 'default',
     hideDetails: 'auto',
   },
   VRadio: {
-    density: 'comfortable',
+    density: 'default',
     hideDetails: 'auto',
   },
   VSelect: {
     variant: 'outlined',
     color: 'primary',
-    density: 'comfortable',
+    density: 'default',
     hideDetails: 'auto',
     VChip: {
       label: true,
@@ -136,14 +136,14 @@ export default {
   },
   VTextField: {
     variant: 'outlined',
-    density: 'comfortable',
+    density: 'default',
     color: 'primary',
     hideDetails: 'auto',
   },
   VAutocomplete: {
     variant: 'outlined',
     color: 'primary',
-    density: 'comfortable',
+    density: 'default',
     hideDetails: 'auto',
     menuProps: {
       contentClass: 'app-autocomplete__content v-autocomplete__content',
@@ -154,7 +154,7 @@ export default {
   },
   VCombobox: {
     variant: 'outlined',
-    density: 'comfortable',
+    density: 'default',
     color: 'primary',
     hideDetails: 'auto',
     VChip: {
@@ -163,13 +163,13 @@ export default {
   },
   VFileInput: {
     variant: 'outlined',
-    density: 'comfortable',
+    density: 'default',
     color: 'primary',
     hideDetails: 'auto',
   },
   VTextarea: {
     variant: 'outlined',
-    density: 'comfortable',
+    density: 'default',
     color: 'primary',
     hideDetails: 'auto',
   },

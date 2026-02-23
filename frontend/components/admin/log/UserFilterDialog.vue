@@ -105,24 +105,30 @@ watch(dialogVisible, (isOpening) => {
     persistent
   >
     <VCard>
-      <VCardTitle class="pa-4 bg-primary d-flex align-center">
-        <VIcon
-          start
-          :icon="mode === 'admin' ? 'tabler-user-shield' : 'tabler-user-search'"
-        />
-        <span class="text-white font-weight-medium">{{ dialogTitle }}</span>
-        <VSpacer />
-        <VBtn
-          icon
-          variant="text"
-          @click="closeDialog"
-        >
-          <VIcon
-            color="white"
-            icon="tabler-x"
-            size="24"
-          />
-        </VBtn>
+      <VCardTitle class="pa-4 bg-primary">
+        <div class="dialog-titlebar">
+          <div class="dialog-titlebar__title">
+            <VIcon
+              :icon="mode === 'admin' ? 'tabler-user-shield' : 'tabler-user-search'"
+              color="white"
+              size="22"
+            />
+            <span class="text-white font-weight-medium">{{ dialogTitle }}</span>
+          </div>
+          <div class="dialog-titlebar__actions">
+            <VBtn
+              icon
+              variant="text"
+              @click="closeDialog"
+            >
+              <VIcon
+                color="white"
+                icon="tabler-x"
+                size="24"
+              />
+            </VBtn>
+          </div>
+        </div>
       </VCardTitle>
       <VDivider />
 

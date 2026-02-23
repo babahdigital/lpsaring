@@ -241,11 +241,16 @@ function onClose() {
 <template>
   <VDialog :model-value="props.modelValue" max-width="600" persistent @update:model-value="onClose">
     <VCard v-if="props.user">
-      <VCardTitle class="text-h6 d-flex align-center pa-4 bg-primary text-white rounded-t-lg">
-        <VIcon start icon="tabler-user-circle" />
-        Detail Pengguna
-        <VSpacer />
-        <VBtn icon="tabler-x" variant="text" size="small" class="text-white" @click="onClose" />
+      <VCardTitle class="text-h6 pa-4 bg-primary text-white rounded-t-lg">
+        <div class="dialog-titlebar">
+          <div class="dialog-titlebar__title">
+            <VIcon start icon="tabler-user-circle" />
+            <span>Detail Pengguna</span>
+          </div>
+          <div class="dialog-titlebar__actions">
+            <VBtn icon="tabler-x" variant="text" size="small" class="text-white" @click="onClose" />
+          </div>
+        </div>
       </VCardTitle>
       <VDivider />
       <AppPerfectScrollbar class="pa-5" style="max-height: 70vh;">
@@ -449,4 +454,37 @@ function onClose() {
 
 <style scoped>
  .v-list-item { padding-inline: 4px !important; }
+
+.dialog-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.dialog-titlebar__title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.dialog-titlebar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 600px) {
+  .dialog-titlebar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .dialog-titlebar__actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
 </style>

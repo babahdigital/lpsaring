@@ -187,17 +187,17 @@ function formatRequestDetails(details: Record<string, any> | null): string {
   <VDialog :model-value="isDialogVisible" max-width="600" persistent @update:model-value="dialogModelValueUpdate">
     <VCard class="rounded-lg">
       <VForm ref="formRef" @submit.prevent="processRequest">
-        <VCardItem class="pa-4 bg-primary">
-          <template #prepend>
-            <VIcon icon="tabler-mail-forward" color="white" size="28" />
-          </template>
-          <VCardTitle class="text-h5 text-white">
-            Proses Permintaan
-          </VCardTitle>
-          <template #append>
-            <VBtn icon="tabler-x" variant="text" size="small" class="text-white" @click="closeDialog" />
-          </template>
-        </VCardItem>
+        <VCardTitle class="pa-4 bg-primary">
+          <div class="dialog-titlebar">
+            <div class="dialog-titlebar__title">
+              <VIcon icon="tabler-mail-forward" color="white" size="24" />
+              <span class="text-h6 text-white">Proses Permintaan</span>
+            </div>
+            <div class="dialog-titlebar__actions">
+              <VBtn icon="tabler-x" variant="text" size="small" class="text-white" @click="closeDialog" />
+            </div>
+          </div>
+        </VCardTitle>
         <VDivider />
 
         <VCardText class="pt-4">

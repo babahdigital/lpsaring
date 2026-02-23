@@ -47,3 +47,38 @@
 .bg-custom-background {
   background-color: rgb(var(--v-table-header-color));
 }
+
+// Dialog title layout: keep title/actions aligned and prevent truncation on mobile.
+// Used by multiple dialogs (admin & user) to match Vuexy-like header behavior.
+.dialog-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dialog-titlebar__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.dialog-titlebar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 599.98px) {
+  .dialog-titlebar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dialog-titlebar__actions {
+    justify-content: flex-end;
+    width: 100%;
+  }
+}

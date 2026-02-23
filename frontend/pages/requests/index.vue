@@ -2,6 +2,7 @@
 import type { VDataTableServer } from 'vuetify/labs/VDataTable'
 import { computed, onMounted, ref, watch } from 'vue'
 import RequestFormDialog from '@/components/komandan/RequestFormDialog.vue'
+import { useSnackbar } from '@/composables/useSnackbar'
 
 // --- [PENYEMPURNAAN] Interface data yang lebih rapi ---
 interface RequestHistoryItem {
@@ -41,8 +42,9 @@ const options = ref<Options>({
   search: undefined,
 })
 
-const snackbar = reactive({ show: false, text: '', color: 'info' })
 const isRequestFormVisible = ref(false)
+
+const { add: addSnackbar } = useSnackbar()
 
 // --- Watchers & Lifecycle ---
 watch(options, () => fetchRequests(), { deep: true })
@@ -135,10 +137,12 @@ function formatDateTime(dateString: string | null) {
   })
 }
 
-function showSnackbar(text: string, color = 'info') {
-  snackbar.text = text
-  snackbar.color = color
-  snackbar.show = true
+function showSnackbar(text: string, color: 'success' | 'error' | 'warning' | 'info' = 'info') {
+  addSnackbar({
+    type: color,
+    title: color === 'success' ? 'Berhasil' : color === 'error' ? 'Gagal' : color === 'warning' ? 'Peringatan' : 'Info',
+    text,
+  })
 }
 useHead({ title: 'Request Quota' })
 </script>
@@ -262,13 +266,5 @@ useHead({ title: 'Request Quota' })
       @submitted="fetchRequests"
     />
 
-    <VSnackbar
-      v-model="snackbar.show"
-      :color="snackbar.color"
-      :timeout="4000"
-      location="top end"
-    >
-      {{ snackbar.text }}
-    </VSnackbar>
   </div>
 </template>

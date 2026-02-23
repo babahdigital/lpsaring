@@ -49,7 +49,7 @@ const entriesOptions = computed(() => {
       <AppSelect
         v-model="itemsPerPageProxy"
         :items="entriesOptions"
-        density="compact"
+        density="comfortable"
         hide-details
         style="max-width: 90px"
       />
@@ -67,15 +67,28 @@ const entriesOptions = computed(() => {
         <AppTextField
           v-model="searchProxy"
           :placeholder="props.searchPlaceholder"
-          density="compact"
+          density="comfortable"
           variant="outlined"
           clearable
           prepend-inner-icon="tabler-search"
           single-line
           hide-details
-          style="min-width: 220px"
+          class="datatable-toolbar__search"
         />
       </template>
     </div>
   </div>
 </template>
+
+<style scoped>
+.datatable-toolbar__search {
+  min-width: 220px;
+}
+
+@media (max-width: 600px) {
+  .datatable-toolbar__search {
+    width: 100%;
+    min-width: 0;
+  }
+}
+</style>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { VDataTableServer } from 'vuetify/components'
 import { computed, onMounted, ref, watch } from 'vue'
+import { useSnackbar } from '@/composables/useSnackbar'
 
 // --- Tipe Data ---
 interface Transaction {
@@ -60,12 +61,7 @@ const isUserFilterDialogOpen = ref(false)
 const userList = ref<UserSelectItem[]>([])
 const userSearch = ref('')
 
-const snackbar = ref({
-  visible: false,
-  text: '',
-  color: 'success',
-  icon: 'tabler-check',
-})
+const { add: addSnackbar } = useSnackbar()
 const isHydrated = ref(false)
 const hasLoadedOnce = ref(false)
 
@@ -335,15 +331,17 @@ const filteredUserList = computed(() => {
 
 // --- Logika & Fungsi ---
 function showSnackbar(text: string, type: 'success' | 'error' | 'warning' = 'success') {
-  // Perbaikan baris 247: Menambahkan pengecekan eksplisit untuk type dan objek config
-  const config = { success: { color: 'success', icon: 'tabler-check' }, error: { color: 'error', icon: 'tabler-alert-circle' }, warning: { color: 'warning', icon: 'tabler-alert-triangle' } }[type]
-  if (config !== undefined && config !== null) {
-    snackbar.value = { text, color: config.color, icon: config.icon, visible: true }
+  const titleMap: Record<typeof type, string> = {
+    success: 'Berhasil',
+    error: 'Gagal',
+    warning: 'Perhatian',
   }
-  else {
-    // Fallback jika type tidak dikenal, bisa disesuaikan
-    snackbar.value = { text, color: 'info', icon: 'tabler-info-circle', visible: true }
-  }
+
+  addSnackbar({
+    type,
+    title: titleMap[type],
+    text,
+  })
 }
 
 const applyFilter = () => refresh()
@@ -469,7 +467,6 @@ useHead({ title: 'Laporan Penjualan' })
               prepend-inner-icon="tabler-calendar"
               readonly
               clearable
-              density="comfortable"
               variant="outlined"
               class="date-field"
               :class="{ 'active-field': startDate !== null }"
@@ -506,7 +503,6 @@ useHead({ title: 'Laporan Penjualan' })
               readonly
               clearable
               :disabled="startDate === null"
-              density="comfortable"
               variant="outlined"
               class="date-field"
               :class="{ 'active-field': endDate !== null }"
@@ -540,7 +536,7 @@ useHead({ title: 'Laporan Penjualan' })
               prepend-icon="tabler-user-search"
               variant="outlined"
               color="primary"
-              height="48"
+              height="56"
               class="filter-btn"
               @click="openUserFilterDialog"
             >
@@ -552,7 +548,7 @@ useHead({ title: 'Laporan Penjualan' })
             <VBtn
               prepend-icon="tabler-filter"
               color="primary"
-              height="48"
+              height="56"
               class="action-btn flex-grow-1"
               @click="applyFilter"
             >
@@ -561,7 +557,7 @@ useHead({ title: 'Laporan Penjualan' })
             <VBtn
               prepend-icon="tabler-filter-off"
               variant="tonal"
-              height="48"
+              height="56"
               class="action-btn flex-grow-1"
               @click="clearAllFilters"
             >
@@ -883,12 +879,17 @@ useHead({ title: 'Laporan Penjualan' })
 
     <VDialog v-if="isHydrated" v-model="isUserFilterDialogOpen" max-width="600px" scrollable>
       <VCard class="user-dialog">
-        <VCardTitle class="pa-4 bg-primary d-flex align-center">
-          <span class="text-white font-weight-medium">Pilih Pengguna</span>
-          <VSpacer />
-          <VBtn icon variant="text" @click="isUserFilterDialogOpen = false">
-            <VIcon color="white" icon="tabler-x" size="24" />
-          </VBtn>
+        <VCardTitle class="pa-4 bg-primary">
+          <div class="dialog-titlebar">
+            <div class="dialog-titlebar__title">
+              <span class="text-white font-weight-medium">Pilih Pengguna</span>
+            </div>
+            <div class="dialog-titlebar__actions">
+              <VBtn icon variant="text" @click="isUserFilterDialogOpen = false">
+                <VIcon color="white" icon="tabler-x" size="24" />
+              </VBtn>
+            </div>
+          </div>
         </VCardTitle>
         <VDivider />
         <VCardText class="pa-4">
@@ -897,14 +898,13 @@ useHead({ title: 'Laporan Penjualan' })
             label="Cari pengguna..."
             prepend-inner-icon="tabler-search"
             variant="outlined"
-            density="comfortable"
             autofocus
             clearable
             class="mb-4 user-search"
           />
 
           <div class="mt-2 user-list-container">
-            <VList lines="two" density="comfortable">
+            <VList lines="two">
               <template v-if="filteredUserList.length > 0">
                 <VListItem
                   v-for="user in filteredUserList"
@@ -946,20 +946,6 @@ useHead({ title: 'Laporan Penjualan' })
         </VCardActions>
       </VCard>
     </VDialog>
-    <VSnackbar
-      v-model="snackbar.visible"
-      :color="snackbar.color"
-      :timeout="3000"
-      location="top right"
-      variant="tonal"
-      elevation="0"
-      class="snackbar"
-    >
-      <div class="d-flex align-center">
-        <VIcon :icon="snackbar.icon" class="me-2" />
-        <span class="snackbar-text">{{ snackbar.text }}</span>
-      </div>
-    </VSnackbar>
   </div>
 </template>
 
@@ -1023,12 +1009,38 @@ useHead({ title: 'Laporan Penjualan' })
 .user-item:hover {
   background-color: rgba(var(--v-theme-primary), 0.05);
 }
-.snackbar {
-  font-size: 14px;
-  border-radius: 8px;
+
+.dialog-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
 }
-.snackbar-text {
-  font-weight: 500;
+
+.dialog-titlebar__title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.dialog-titlebar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 600px) {
+  .dialog-titlebar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .dialog-titlebar__actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
 }
 .search-container {
   flex: 1;

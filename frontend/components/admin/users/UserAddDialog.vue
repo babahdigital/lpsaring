@@ -172,19 +172,16 @@ watch(() => formData.is_tamping, (isTamping) => {
         ref="formRef"
         @submit.prevent="onSave"
       >
-        <VCardTitle class="pa-4 d-flex align-center bg-primary rounded-t-lg">
-          <VIcon
-            icon="tabler-user-plus"
-            start
-          />
-          <span class="headline text-white">Tambah Pengguna Baru</span>
-          <VSpacer />
-          <VBtn
-            icon="tabler-x"
-            variant="text"
-            class="text-white"
-            @click="onClose"
-          />
+        <VCardTitle class="pa-4 bg-primary rounded-t-lg">
+          <div class="dialog-titlebar">
+            <div class="dialog-titlebar__title">
+              <VIcon icon="tabler-user-plus" start />
+              <span class="headline text-white">Tambah Pengguna Baru</span>
+            </div>
+            <div class="dialog-titlebar__actions">
+              <VBtn icon="tabler-x" variant="text" class="text-white" @click="onClose" />
+            </div>
+          </div>
         </VCardTitle>
         <VDivider />
         <VCardText
@@ -334,3 +331,38 @@ watch(() => formData.is_tamping, (isTamping) => {
     </VCard>
   </VDialog>
 </template>
+
+<style scoped>
+.dialog-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.dialog-titlebar__title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.dialog-titlebar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 600px) {
+  .dialog-titlebar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .dialog-titlebar__actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+</style>

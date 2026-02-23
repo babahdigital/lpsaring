@@ -464,11 +464,16 @@ function openDebtPdf() {
   <VDialog :model-value="props.modelValue" max-width="700px" persistent @update:model-value="onClose">
     <VCard>
       <VForm ref="formRef" @submit.prevent="onSave">
-        <VCardTitle class="pa-4 d-flex align-center bg-primary rounded-t-lg">
-          <VIcon icon="tabler-user-edit" start />
-          <span class="headline text-white">Edit Pengguna</span>
-          <VSpacer />
-          <VBtn icon="tabler-x" variant="text" size="small" class="text-white" @click="onClose" />
+        <VCardTitle class="pa-4 bg-primary rounded-t-lg">
+          <div class="dialog-titlebar">
+            <div class="dialog-titlebar__title">
+              <VIcon icon="tabler-user-edit" start />
+              <span class="headline text-white">Edit Pengguna</span>
+            </div>
+            <div class="dialog-titlebar__actions">
+              <VBtn icon="tabler-x" variant="text" size="small" class="text-white" @click="onClose" />
+            </div>
+          </div>
         </VCardTitle>
 
         <VTabs v-model="tab" grow class="rounded-0">
@@ -570,11 +575,11 @@ function openDebtPdf() {
                     <VDivider class="my-2" />
                   </VCol>
 
-                  <VCol cols="12" class="d-flex justify-space-between align-center">
+                  <VCol cols="12" class="inject-actions">
                     <div class="text-overline">
                       Inject Kuota & Masa Aktif
                     </div>
-                    <div class="d-flex align-center gap-2">
+                    <div class="inject-actions__buttons">
                       <VBtn
                         v-if="canAdminInject"
                         size="small" variant="tonal" color="warning"
@@ -735,3 +740,67 @@ function openDebtPdf() {
 
   <UserDebtLedgerDialog v-model="isDebtLedgerOpen" :user="props.user" />
 </template>
+
+<style scoped>
+.dialog-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.dialog-titlebar__title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.dialog-titlebar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inject-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.inject-actions__buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 600px) {
+  .dialog-titlebar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .dialog-titlebar__actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .inject-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .inject-actions__buttons {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .inject-actions__buttons :deep(.v-btn) {
+    width: 100%;
+  }
+}
+</style>

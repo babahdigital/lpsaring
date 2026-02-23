@@ -280,7 +280,7 @@ useHead({ title: 'Log Aktivitas Admin' })
   <div>
     <VCard class="mb-6 rounded-lg">
       <VCardItem>
-        <VCardTitle class="d-flex align-center">
+        <VCardTitle class="d-flex align-center flex-wrap gap-2">
           <VIcon icon="tabler-filter" class="me-2" />
           Filter & Pencarian Log
         </VCardTitle>

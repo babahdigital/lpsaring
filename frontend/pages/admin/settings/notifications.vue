@@ -3,6 +3,7 @@ import type { NotificationType } from '@/types/api'
 import { useHead, useNuxtApp } from '#app'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useAuthStore } from '@/store/auth'
+import { useSnackbar } from '@/composables/useSnackbar'
 
 // --- Tipe Data ---
 interface AdminRecipient {
@@ -29,7 +30,7 @@ const recipients = ref<AdminRecipient[]>([])
 const loading = ref(true)
 const saveLoading = ref(false)
 const error = ref<string | null>(null)
-const snackbar = reactive({ show: false, text: '', color: 'info' })
+const { add: addSnackbar } = useSnackbar()
 
 const hasLoadedOnce = ref(false)
 const showInitialSkeleton = computed(() => loading.value === true && hasLoadedOnce.value === false)
@@ -129,9 +130,24 @@ async function saveSettings() {
  * Menampilkan notifikasi snackbar.
  */
 function showSnackbar(text: string, color: string = 'info') {
-  snackbar.text = text
-  snackbar.color = color
-  snackbar.show = true
+  const normalized = String(color || '').toLowerCase()
+
+  const type = (normalized === 'success' || normalized === 'error' || normalized === 'warning')
+    ? (normalized as 'success' | 'error' | 'warning')
+    : 'info'
+
+  const titleMap: Record<typeof type, string> = {
+    success: 'Berhasil',
+    error: 'Gagal',
+    warning: 'Perhatian',
+    info: 'Info',
+  }
+
+  addSnackbar({
+    type,
+    title: titleMap[type],
+    text,
+  })
 }
 
 // --- Lifecycle & Watchers ---
@@ -280,21 +296,5 @@ watch(loading, (val) => {
       </VCard>
     </template>
 
-    <VSnackbar
-      v-model="snackbar.show"
-      :color="snackbar.color"
-      :timeout="4000"
-      location="top end"
-    >
-      {{ snackbar.text }}
-      <template #actions>
-        <VBtn
-          icon="tabler-x"
-          variant="text"
-          color="white"
-          @click="snackbar.show = false"
-        />
-      </template>
-    </VSnackbar>
   </div>
 </template>
