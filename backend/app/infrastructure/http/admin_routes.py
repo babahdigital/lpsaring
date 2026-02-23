@@ -1559,11 +1559,17 @@ def _get_enabled_core_api_va_banks_for_admin() -> list[str]:
     return ["bni", "bca", "bri", "mandiri", "permata", "cimb"]
 
 
+def _get_payment_provider_mode_for_admin() -> str:
+    raw = settings_service.get_setting("PAYMENT_PROVIDER_MODE", None)
+    mode = str(raw or "").strip().lower()
+    return "core_api" if mode == "core_api" else "snap"
+
+
 @admin_bp.route("/transactions/qris", methods=["POST"])
 @admin_bp.route("/transactions/bill", methods=["POST"])
 @admin_required
 def create_bill(current_admin: User):
-    """Admin membuat tagihan (Core API) untuk user tertentu dan mengirim via WhatsApp.
+    """Admin membuat tagihan (Snap/Core API) untuk user tertentu dan mengirim via WhatsApp.
 
     Payload:
     - user_id: UUID
@@ -1607,12 +1613,14 @@ def create_bill(current_admin: User):
         if payment_method is None:
             payment_method = "qris"
 
-        enabled_methods = _get_enabled_core_api_methods_for_admin()
+            provider_mode = _get_payment_provider_mode_for_admin()
+
+            enabled_methods = _get_enabled_core_api_methods_for_admin()
         if payment_method not in set(enabled_methods):
             return (
                 jsonify(
                     {
-                        "message": "Metode pembayaran ini tidak diaktifkan di pengaturan Core API.",
+                            "message": "Metode pembayaran ini tidak diaktifkan di pengaturan.",
                         "payment_method": payment_method,
                         "enabled_methods": enabled_methods,
                     }
@@ -1662,10 +1670,15 @@ def create_bill(current_admin: User):
         tx.payment_method = payment_method
         session.add(tx)
 
+        # Midtrans client init depends on provider mode.
+        core = None
+        snap = None
         try:
-            core = get_midtrans_core_api_client()
+            if provider_mode == "snap":
+                snap = get_midtrans_snap_client()
+            else:
+                core = get_midtrans_core_api_client()
         except ValueError as e_cfg:
-            # Konfigurasi Midtrans (SERVER KEY/CLIENT KEY) belum terpasang di server.
             session.rollback()
             return (
                 jsonify(
@@ -1748,98 +1761,158 @@ def create_bill(current_admin: User):
             elif midtrans_status in ("settlement", "capture"):
                 tx.status = TransactionStatus.SUCCESS
 
-        charge_resp: object
         attempted_payment_type = payment_method
         attempted_va_bank = va_bank
         fallback_used = False
-        try:
+
+        if provider_mode == "snap":
+            # Create Snap transaction so user can pay from /payment/status using Snap UI.
+            enabled_payments: list[str]
+            snap_params: dict[str, object] = {
+                "transaction_details": {"order_id": order_id, "gross_amount": amount},
+                "item_details": [
+                    {
+                        "id": str(package.id),
+                        "price": amount,
+                        "quantity": 1,
+                        "name": str(getattr(package, "name", "Paket") or "Paket")[:100],
+                    }
+                ],
+                "customer_details": {
+                    "first_name": str(getattr(user, "full_name", None) or "Pengguna")[:50],
+                    "phone": format_to_local_phone(getattr(user, "phone_number", "") or ""),
+                },
+                "callbacks": {"finish": f"{(current_app.config.get('APP_PUBLIC_BASE_URL') or request.url_root).rstrip('/')}/payment/status"},
+            }
+
             if payment_method == "qris":
-                # Attempt 1: Other QRIS (native QRIS) via payment_type=qris
-                # Note: QRIS Core API supports multiple acquirers; we explicitly select GoPay.
-                # Ref: https://docs.midtrans.com/reference/qris
-                attempted_payment_type = "qris"
-                charge_payload = {
-                    **base_payload,
-                    "payment_type": "qris",
-                    "qris": {"acquirer": "gopay"},
-                }
-                charge_resp = core.charge(charge_payload)
-
+                enabled_payments = ["qris"]
+                tx.payment_method = "qris"
             elif payment_method == "gopay":
-                attempted_payment_type = "gopay"
-                charge_payload = {
-                    **base_payload,
-                    "payment_type": "gopay",
-                    "gopay": {"enable_callback": True, "callback_url": status_url},
-                }
-                charge_resp = core.charge(charge_payload)
-
-            elif payment_method == "shopeepay":
-                attempted_payment_type = "shopeepay"
-                charge_payload = {
-                    **base_payload,
-                    "payment_type": "shopeepay",
-                    "shopeepay": {"callback_url": status_url},
-                }
-                charge_resp = core.charge(charge_payload)
-
-            else:
-                # payment_method == "va"
-                bank = va_bank or "bni"
-                attempted_payment_type = "va"
-                attempted_va_bank = bank
-                if bank == "mandiri":
-                    tx.payment_method = "echannel"
-                    charge_payload = {
-                        **base_payload,
-                        "payment_type": "echannel",
-                        "echannel": {
-                            "bill_info1": "Pembayaran Hotspot",
-                            "bill_info2": str(getattr(package, "name", "Paket") or "Paket")[:18],
-                        },
-                    }
-                    charge_resp = core.charge(charge_payload)
-                else:
-                    tx.payment_method = f"{bank}_va"
-                    charge_payload = {
-                        **base_payload,
-                        "payment_type": "bank_transfer",
-                        "bank_transfer": {"bank": bank},
-                    }
-                    charge_resp = core.charge(charge_payload)
-        except midtransclient.error_midtrans.MidtransAPIError as e_charge:
-            raw_message = getattr(e_charge, "message", "") or ""
-            parsed = _parse_midtrans_api_response_from_message(raw_message) or {}
-            status_message = str(parsed.get("status_message") or "").strip()
-            status_message_lower = status_message.lower()
-            # Jika channel QRIS native belum aktif, fallback ke GoPay Dynamic QRIS (masih scan QRIS).
-            if payment_method == "qris" and any(
-                needle in status_message_lower
-                for needle in (
-                    "payment channel is not activated",
-                    "payment channel is not active",
-                    "not activated",
-                    "not active",
-                )
-            ):
-                current_app.logger.warning(
-                    "Midtrans QRIS channel not active; fallback to GoPay Dynamic QRIS. order_id=%s",
-                    order_id,
-                )
-                fallback_used = True
+                enabled_payments = ["gopay"]
                 tx.payment_method = "gopay"
-                attempted_payment_type = "gopay"
-                charge_payload = {
-                    **base_payload,
-                    "payment_type": "gopay",
-                    # Minimal config; Midtrans akan mengembalikan actions generate-qr-code.
-                    "gopay": {"enable_callback": True, "callback_url": status_url},
-                }
-                charge_resp = core.charge(charge_payload)
+            elif payment_method == "shopeepay":
+                enabled_payments = ["shopeepay"]
+                tx.payment_method = "shopeepay"
             else:
+                # VA
+                bank = va_bank or "bni"
+                if bank == "mandiri":
+                    enabled_payments = ["echannel"]
+                    tx.payment_method = "echannel"
+                    snap_params["echannel"] = {
+                        "bill_info1": "Pembayaran Hotspot",
+                        "bill_info2": str(getattr(package, "name", "Paket") or "Paket")[:18],
+                    }
+                else:
+                    enabled_payments = ["bank_transfer"]
+                    tx.payment_method = f"{bank}_va"
+                    snap_params["bank_transfer"] = {"bank": bank}
+
+            snap_params["enabled_payments"] = enabled_payments
+
+            try:
+                snap_response = snap.create_transaction(snap_params)  # type: ignore[union-attr]
+            except midtransclient.error_midtrans.MidtransAPIError:
                 raise
 
-        _apply_charge_result_to_tx(charge_resp)
+            snap_token = snap_response.get("token") if isinstance(snap_response, dict) else None
+            redirect_url = snap_response.get("redirect_url") if isinstance(snap_response, dict) else None
+            if not snap_token and not redirect_url:
+                raise ValueError("Respons Midtrans Snap tidak valid.")
+
+            tx.snap_token = str(snap_token).strip() if snap_token else None
+            tx.snap_redirect_url = str(redirect_url).strip() if redirect_url else None
+            tx.qr_code_url = None
+            tx.va_number = None
+            tx.payment_code = None
+            tx.biller_code = None
+            tx.status = TransactionStatus.UNKNOWN
+        else:
+            # Core API charge (existing behavior)
+            charge_resp: object
+            try:
+                if payment_method == "qris":
+                    attempted_payment_type = "qris"
+                    charge_payload = {
+                        **base_payload,
+                        "payment_type": "qris",
+                        "qris": {"acquirer": "gopay"},
+                    }
+                    charge_resp = core.charge(charge_payload)  # type: ignore[union-attr]
+
+                elif payment_method == "gopay":
+                    attempted_payment_type = "gopay"
+                    charge_payload = {
+                        **base_payload,
+                        "payment_type": "gopay",
+                        "gopay": {"enable_callback": True, "callback_url": status_url},
+                    }
+                    charge_resp = core.charge(charge_payload)  # type: ignore[union-attr]
+
+                elif payment_method == "shopeepay":
+                    attempted_payment_type = "shopeepay"
+                    charge_payload = {
+                        **base_payload,
+                        "payment_type": "shopeepay",
+                        "shopeepay": {"callback_url": status_url},
+                    }
+                    charge_resp = core.charge(charge_payload)  # type: ignore[union-attr]
+
+                else:
+                    bank = va_bank or "bni"
+                    attempted_payment_type = "va"
+                    attempted_va_bank = bank
+                    if bank == "mandiri":
+                        tx.payment_method = "echannel"
+                        charge_payload = {
+                            **base_payload,
+                            "payment_type": "echannel",
+                            "echannel": {
+                                "bill_info1": "Pembayaran Hotspot",
+                                "bill_info2": str(getattr(package, "name", "Paket") or "Paket")[:18],
+                            },
+                        }
+                        charge_resp = core.charge(charge_payload)  # type: ignore[union-attr]
+                    else:
+                        tx.payment_method = f"{bank}_va"
+                        charge_payload = {
+                            **base_payload,
+                            "payment_type": "bank_transfer",
+                            "bank_transfer": {"bank": bank},
+                        }
+                        charge_resp = core.charge(charge_payload)  # type: ignore[union-attr]
+            except midtransclient.error_midtrans.MidtransAPIError as e_charge:
+                raw_message = getattr(e_charge, "message", "") or ""
+                parsed = _parse_midtrans_api_response_from_message(raw_message) or {}
+                status_message = str(parsed.get("status_message") or "").strip()
+                status_message_lower = status_message.lower()
+                if payment_method == "qris" and any(
+                    needle in status_message_lower
+                    for needle in (
+                        "payment channel is not activated",
+                        "payment channel is not active",
+                        "not activated",
+                        "not active",
+                    )
+                ):
+                    current_app.logger.warning(
+                        "Midtrans QRIS channel not active; fallback to GoPay Dynamic QRIS. order_id=%s",
+                        order_id,
+                    )
+                    fallback_used = True
+                    tx.payment_method = "gopay"
+                    attempted_payment_type = "gopay"
+                    charge_payload = {
+                        **base_payload,
+                        "payment_type": "gopay",
+                        "gopay": {"enable_callback": True, "callback_url": status_url},
+                    }
+                    charge_resp = core.charge(charge_payload)  # type: ignore[union-attr]
+                else:
+                    raise
+
+            _apply_charge_result_to_tx(charge_resp)
 
         disable_super_admin_logs = str(os.getenv("DISABLE_SUPER_ADMIN_ACTION_LOGS", "false") or "").strip().lower() in {
             "1",
@@ -1969,14 +2042,17 @@ def create_bill(current_admin: User):
                 f"Status & pembayaran: {status_url}",
             ]
         )
-        if payment_method == "qris":
-            caption_lines.append("Buka link status untuk menampilkan QR dan melakukan pembayaran.")
-        elif payment_method == "gopay":
-            caption_lines.append("Buka link status lalu ikuti instruksi (tombol deeplink/QR jika tersedia).")
-        elif payment_method == "shopeepay":
-            caption_lines.append("Buka link status lalu ikuti instruksi (tombol deeplink/QR jika tersedia).")
+        if provider_mode == "snap":
+            caption_lines.append("Buka link status lalu klik tombol Bayar untuk melanjutkan pembayaran.")
         else:
-            caption_lines.append("Buka link status untuk melihat detail pembayaran dan status invoice.")
+            if payment_method == "qris":
+                caption_lines.append("Buka link status untuk menampilkan QR dan melakukan pembayaran.")
+            elif payment_method == "gopay":
+                caption_lines.append("Buka link status lalu ikuti instruksi (tombol deeplink/QR jika tersedia).")
+            elif payment_method == "shopeepay":
+                caption_lines.append("Buka link status lalu ikuti instruksi (tombol deeplink/QR jika tersedia).")
+            else:
+                caption_lines.append("Buka link status untuk melihat detail pembayaran dan status invoice.")
 
         sent = send_whatsapp_message(phone_number, "\n".join(caption_lines))
 
