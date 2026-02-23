@@ -289,9 +289,13 @@ onMounted(fetchUsers)
               </VCol>
 
               <VCol cols="12">
-                <VTextField
+                <VTextarea
                   v-model="testMessage"
                   label="Pesan Uji"
+                  rows="3"
+                  max-rows="6"
+                  auto-grow
+                  counter="1000"
                   density="comfortable"
                 />
               </VCol>
