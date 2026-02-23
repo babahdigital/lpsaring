@@ -1688,8 +1688,7 @@ def create_qris_bill(current_admin: User):
             f"Nama: *{getattr(user, 'full_name', '') or 'Pengguna'}*\n"
             f"Paket: *{getattr(package, 'name', '') or 'Paket'}*\n"
             f"Jumlah: *Rp {amount:,}*\n"
-            f"Invoice: *{order_id}*\n\n"
-            f"Silakan scan QRIS atau buka link QR."
+            f"Invoice: *{order_id}*"
         )
 
         sent = False
