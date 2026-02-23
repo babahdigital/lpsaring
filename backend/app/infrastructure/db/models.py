@@ -135,6 +135,9 @@ class AdminActionType(enum.Enum):
     PROCESS_QUOTA_REQUEST_REJECT = "PROCESS_QUOTA_REQUEST_REJECT"
     PROCESS_QUOTA_REQUEST_PARTIALLY_APPROVED = "PROCESS_QUOTA_REQUEST_PARTIALLY_APPROVED"
 
+    # Generic fallback for any admin mutation endpoint that does not have a specific action type.
+    ADMIN_API_MUTATION = "ADMIN_API_MUTATION"
+
     CREATE_QRIS_BILL = "CREATE_QRIS_BILL"
 
 

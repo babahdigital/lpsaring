@@ -56,6 +56,13 @@ def _log_admin_action(admin: User, target_user: User, action_type: AdminActionTy
     if disable_super_admin_logs and admin.is_super_admin_role:
         return
     try:
+        try:
+            from flask import has_request_context, g
+
+            if has_request_context():
+                g.admin_action_logged = True
+        except Exception:
+            pass
         # NOTE: Hindari keyword-args pada declarative model agar Pylance tidak memunculkan
         # `reportCallIssue` (model SQLAlchemy tidak selalu terinferensi memiliki __init__(**kwargs)).
         log_entry = AdminActionLog()

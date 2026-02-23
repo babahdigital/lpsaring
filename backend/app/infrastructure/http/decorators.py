@@ -3,13 +3,15 @@
 
 from functools import wraps
 import ipaddress
-from flask import request, jsonify, current_app, g
+from flask import request, jsonify, current_app, g, make_response
 from http import HTTPStatus
 import uuid
+import json
+import os
 from jose import jwt, JWTError, ExpiredSignatureError
 
 from app.extensions import db
-from app.infrastructure.db.models import User
+from app.infrastructure.db.models import User, AdminActionLog, AdminActionType
 from .schemas.auth_schemas import AuthErrorResponseSchema
 from app.utils.csrf_utils import is_trusted_origin
 from app.utils.request_utils import get_client_ip
@@ -243,7 +245,84 @@ def admin_required(f):
                 AuthErrorResponseSchema(error="Akses ditolak. Memerlukan hak akses Admin.").model_dump()
             ), HTTPStatus.FORBIDDEN
 
-        return f(current_admin=admin_user, *args, **kwargs)
+        resp = f(current_admin=admin_user, *args, **kwargs)
+
+        try:
+            if request.method in ("POST", "PUT", "PATCH", "DELETE") and not getattr(g, "admin_action_logged", False):
+                disable_super_admin_logs = (
+                    str(os.getenv("DISABLE_SUPER_ADMIN_ACTION_LOGS", "false") or "").strip().lower()
+                    in {"1", "true", "yes", "y", "on"}
+                )
+                if not (disable_super_admin_logs and getattr(admin_user, "is_super_admin_role", False)):
+                    response_obj = make_response(resp)
+
+                    def _sanitize(value: object, *, depth: int = 0) -> object:
+                        if depth > 4:
+                            return "(truncated)"
+                        if value is None:
+                            return None
+                        if isinstance(value, (int, float, bool)):
+                            return value
+                        if isinstance(value, str):
+                            return value if len(value) <= 500 else (value[:500] + "…")
+                        if isinstance(value, (list, tuple)):
+                            items = list(value)[:50]
+                            return [_sanitize(v, depth=depth + 1) for v in items]
+                        if isinstance(value, dict):
+                            blocked = {
+                                "password",
+                                "new_password",
+                                "otp",
+                                "token",
+                                "access_token",
+                                "refresh_token",
+                                "authorization",
+                                "server_key",
+                                "client_key",
+                                "signature",
+                                "signature_key",
+                            }
+                            sanitized: dict[str, object] = {}
+                            for k, v in list(value.items())[:100]:
+                                key = str(k)
+                                if key.lower() in blocked:
+                                    sanitized[key] = "(redacted)"
+                                else:
+                                    sanitized[key] = _sanitize(v, depth=depth + 1)
+                            return sanitized
+                        try:
+                            return str(value)
+                        except Exception:
+                            return "(unserializable)"
+
+                    payload: object | None = None
+                    try:
+                        payload = request.get_json(silent=True)
+                    except Exception:
+                        payload = None
+
+                    log_entry = AdminActionLog()
+                    log_entry.admin_id = admin_user.id
+                    log_entry.target_user_id = None
+                    log_entry.action_type = AdminActionType.ADMIN_API_MUTATION
+                    log_entry.details = json.dumps(
+                        {
+                            "method": request.method,
+                            "path": request.path,
+                            "query": _sanitize(dict(request.args)),
+                            "json": _sanitize(payload),
+                            "status_code": int(getattr(response_obj, "status_code", 0) or 0),
+                        },
+                        ensure_ascii=False,
+                        default=str,
+                    )
+                    db.session.add(log_entry)
+                    db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Gagal mencatat ADMIN_API_MUTATION: {e}", exc_info=True)
+
+        return resp
 
     return decorated_function
 
@@ -266,6 +345,83 @@ def super_admin_required(f):
                 AuthErrorResponseSchema(error="Akses ditolak. Memerlukan hak akses Super Admin.").model_dump()
             ), HTTPStatus.FORBIDDEN
 
-        return f(current_admin=super_admin_user, *args, **kwargs)
+        resp = f(current_admin=super_admin_user, *args, **kwargs)
+
+        try:
+            if request.method in ("POST", "PUT", "PATCH", "DELETE") and not getattr(g, "admin_action_logged", False):
+                disable_super_admin_logs = (
+                    str(os.getenv("DISABLE_SUPER_ADMIN_ACTION_LOGS", "false") or "").strip().lower()
+                    in {"1", "true", "yes", "y", "on"}
+                )
+                if not (disable_super_admin_logs and getattr(super_admin_user, "is_super_admin_role", False)):
+                    response_obj = make_response(resp)
+
+                    def _sanitize(value: object, *, depth: int = 0) -> object:
+                        if depth > 4:
+                            return "(truncated)"
+                        if value is None:
+                            return None
+                        if isinstance(value, (int, float, bool)):
+                            return value
+                        if isinstance(value, str):
+                            return value if len(value) <= 500 else (value[:500] + "…")
+                        if isinstance(value, (list, tuple)):
+                            items = list(value)[:50]
+                            return [_sanitize(v, depth=depth + 1) for v in items]
+                        if isinstance(value, dict):
+                            blocked = {
+                                "password",
+                                "new_password",
+                                "otp",
+                                "token",
+                                "access_token",
+                                "refresh_token",
+                                "authorization",
+                                "server_key",
+                                "client_key",
+                                "signature",
+                                "signature_key",
+                            }
+                            sanitized: dict[str, object] = {}
+                            for k, v in list(value.items())[:100]:
+                                key = str(k)
+                                if key.lower() in blocked:
+                                    sanitized[key] = "(redacted)"
+                                else:
+                                    sanitized[key] = _sanitize(v, depth=depth + 1)
+                            return sanitized
+                        try:
+                            return str(value)
+                        except Exception:
+                            return "(unserializable)"
+
+                    payload: object | None = None
+                    try:
+                        payload = request.get_json(silent=True)
+                    except Exception:
+                        payload = None
+
+                    log_entry = AdminActionLog()
+                    log_entry.admin_id = super_admin_user.id
+                    log_entry.target_user_id = None
+                    log_entry.action_type = AdminActionType.ADMIN_API_MUTATION
+                    log_entry.details = json.dumps(
+                        {
+                            "method": request.method,
+                            "path": request.path,
+                            "query": _sanitize(dict(request.args)),
+                            "json": _sanitize(payload),
+                            "status_code": int(getattr(response_obj, "status_code", 0) or 0),
+                        },
+                        ensure_ascii=False,
+                        default=str,
+                    )
+                    db.session.add(log_entry)
+                    db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Gagal mencatat ADMIN_API_MUTATION: {e}", exc_info=True)
+
+        return resp
 
     return decorated_function

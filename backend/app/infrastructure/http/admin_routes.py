@@ -1672,6 +1672,13 @@ def create_qris_bill(current_admin: User):
         }
         if not (disable_super_admin_logs and current_admin.is_super_admin_role):
             try:
+                try:
+                    from flask import has_request_context, g
+
+                    if has_request_context():
+                        g.admin_action_logged = True
+                except Exception:
+                    pass
                 expiry_time_val = tx.expiry_time
                 log_entry = AdminActionLog()
                 log_entry.admin_id = current_admin.id
