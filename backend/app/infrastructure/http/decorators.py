@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from jose import jwt, JWTError, ExpiredSignatureError
 
 from app.extensions import db
-from app.infrastructure.db.models import User, AdminActionLog, AdminActionType
+from app.infrastructure.db.models import User, AdminActionType
 from .schemas.auth_schemas import AuthErrorResponseSchema
 from app.utils.csrf_utils import is_trusted_origin
 from app.utils.request_utils import get_client_ip
