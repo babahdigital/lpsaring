@@ -1076,7 +1076,6 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
           >
             <template #item="{ props, item }">
               <VListItem v-bind="props">
-                <VListItemTitle>{{ item.raw.name }}</VListItemTitle>
                 <VListItemSubtitle class="text-medium-emphasis">
                   Kuota: <span class="font-weight-medium">{{ formatQuotaGb(item.raw.data_quota_gb) }}</span>
                   <span class="mx-1">•</span>
