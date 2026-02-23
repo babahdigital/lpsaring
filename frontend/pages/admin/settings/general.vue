@@ -250,7 +250,7 @@ useHead({ title: 'Setting Aplikasi' })
             <VForm @submit.prevent="handleSaveChanges">
               <div class="d-flex flex-column gap-y-4">
                 <VListSubheader>Mode Maintenance</VListSubheader>
-                <VListItem lines="three">
+                <VListItem lines="three" class="overflow-visible">
                   <VRow no-gutters align="center">
                     <VCol cols="12" md="4">
                       <VListItemTitle class="mb-1">
@@ -276,7 +276,7 @@ useHead({ title: 'Setting Aplikasi' })
                         Teks yang akan ditampilkan di halaman maintenance.
                       </VListItemSubtitle>
                     </VCol>
-                    <VCol cols="12" md="8">
+                    <VCol cols="12" md="8" class="overflow-visible">
                       <VTextarea v-model="localSettings.MAINTENANCE_MODE_MESSAGE" label="Pesan Maintenance" placeholder="Contoh: Aplikasi sedang dalam perbaikan..." rows="3" :disabled="!maintenanceModeActive" variant="outlined" density="comfortable" />
                     </VCol>
                   </VRow>
