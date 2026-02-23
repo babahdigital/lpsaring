@@ -4,7 +4,7 @@ Lampiran wajib:
 - [.github/copilot-instructions.md](../.github/copilot-instructions.md)
 
 ## Ringkasan Tujuan
-Dokumen ini mendeskripsikan pengembangan logika **kuota real-time** dengan sumber kebenaran di DB, sinkronisasi berkala dari MikroTik, **FUP di 20%**, notifikasi WhatsApp bertahap (20% → 10% → 5%), notifikasi masa aktif (H-7/H-3/H-1), serta **auto-deactivate** dan **auto-delete** pengguna tidak aktif.
+Dokumen ini mendeskripsikan pengembangan logika **kuota real-time** dengan sumber kebenaran di DB, sinkronisasi berkala dari MikroTik, **FUP berbasis ambang sisa kuota (MB)**, notifikasi WhatsApp low-quota berbasis **MB**, notifikasi masa aktif (H-7/H-3/H-1), serta **auto-deactivate** dan **auto-delete** pengguna tidak aktif.
 
 ## Keputusan & Best Practice
 - **Sumber kebenaran kuota: DB**. MikroTik digunakan sebagai _feeder_ counter; DB menyimpan total dipakai dan histori penggunaan.
@@ -12,8 +12,8 @@ Dokumen ini mendeskripsikan pengembangan logika **kuota real-time** dengan sumbe
 - **Interval dinamis**: task dijalankan lebih sering, tetapi akan skip jika belum mencapai `QUOTA_SYNC_INTERVAL_SECONDS` (throttle via Redis).
 - **Persistensi counter per-MAC**: simpan `last_bytes` per MAC di DB sebagai fallback jika Redis restart, agar delta tetap stabil.
 - **Persistensi delta**: aktifkan Redis AOF atau simpan `last_bytes` per MAC di DB agar tidak hilang saat restart/power loss.
-- **FUP**: otomatis saat sisa kuota ≤ 20%.
-- **Notifikasi kuota**: hanya sekali per level (20%, 10%, 5%) untuk menghindari spam.
+- **FUP**: otomatis saat sisa kuota ≤ ambang `QUOTA_FUP_THRESHOLD_MB`.
+- **Notifikasi kuota**: hanya sekali per level `QUOTA_NOTIFY_REMAINING_MB` (contoh: `[500]`) untuk menghindari spam.
 - **Notifikasi masa aktif**: H-7, H-3, H-1.
 - **Komandan non-unlimited** juga menerima notifikasi kuota menipis dan masa aktif.
 - **Timezone**: perhitungan expiry dan pesan mengikuti `APP_TIMEZONE` (default `Asia/Makassar`).
@@ -28,7 +28,7 @@ Dokumen ini mendeskripsikan pengembangan logika **kuota real-time** dengan sumbe
 2. Mengambil counter penggunaan dari MikroTik (/ip/hotspot/host) secara batch.
 3. Auto-enroll perangkat dari `/ip/hotspot/ip-binding` (comment `user=<id>`) sebelum menghitung pemakaian.
 4. Update `total_quota_used_mb` dan `DailyUsageLog` berdasarkan delta.
-4. Hitung sisa kuota & persen.
+4. Hitung sisa kuota (MB). (Persen boleh dihitung untuk display/telemetri, tapi bukan threshold.)
 5. Tentukan profil MikroTik:
    - Unlimited → `MIKROTIK_UNLIMITED_PROFILE`
    - Expired → `MIKROTIK_EXPIRED_PROFILE`
@@ -159,8 +159,8 @@ Disediakan di backend/.env.example:
 - `WALLED_GARDEN_MANAGED_COMMENT_PREFIX`
 - `WALLED_GARDEN_SYNC_INTERVAL_MINUTES`
 - `QUOTA_SYNC_INTERVAL_SECONDS`
-- `QUOTA_FUP_PERCENT`
-- `QUOTA_NOTIFY_PERCENTAGES`
+- `QUOTA_FUP_THRESHOLD_MB`
+- `QUOTA_NOTIFY_REMAINING_MB`
 - `QUOTA_EXPIRY_NOTIFY_DAYS`
 - `INACTIVE_DEACTIVATE_DAYS`
 - `INACTIVE_DELETE_DAYS`
@@ -201,8 +201,8 @@ Disediakan di backend/.env.example:
 
 ## Langkah Validasi
 1. Pastikan Celery Worker & Beat berjalan.
-2. Uji perubahan profil saat sisa kuota melewati 20%.
-3. Uji notifikasi WA di level 20/10/5 dan H-7/H-3/H-1.
+2. Uji perubahan profil saat sisa kuota melewati ambang FUP (MB).
+3. Uji notifikasi WA saat sisa kuota melewati ambang low-quota (MB) dan H-7/H-3/H-1.
 4. Uji auto-deactivate & delete dengan memanipulasi `last_login_at`.
 5. Uji login dari perangkat baru hingga batas `MAX_DEVICES_PER_USER` tercapai.
 6. Uji bind perangkat saat ini dan update label perangkat.
