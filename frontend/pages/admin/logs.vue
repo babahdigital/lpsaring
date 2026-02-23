@@ -76,6 +76,69 @@ const { data: fetchedData, pending: loading, error, refresh } = useAsyncData(
 )
 
 const logList = computed(() => fetchedData.value?.items ?? [])
+const displayLogList = computed(() => {
+  const items = logList.value
+  if (items.length <= 1)
+    return items
+
+  function safeParseDetails(details: string | null): any {
+    if (!details)
+      return null
+    try {
+      return JSON.parse(details)
+    }
+    catch {
+      return null
+    }
+  }
+
+  const injectTimesByPair: Record<string, number[]> = {}
+  for (const item of items) {
+    if (item.action_type !== 'INJECT_QUOTA')
+      continue
+    const adminId = item.admin?.id
+    const targetId = item.target_user?.id
+    if (!adminId || !targetId)
+      continue
+    const t = new Date(item.created_at).getTime()
+    if (!Number.isFinite(t))
+      continue
+    const key = `${adminId}|${targetId}`
+    ;(injectTimesByPair[key] ??= []).push(t)
+  }
+
+  const MAX_DIFF_MS = 120_000
+
+  return items.filter(item => {
+    if (item.action_type !== 'UPDATE_USER_PROFILE')
+      return true
+
+    const details = safeParseDetails(item.details)
+    if (details == null || typeof details !== 'object' || Array.isArray(details))
+      return true
+
+    const keys = Object.keys(details)
+    if (keys.length !== 1 || keys[0] !== 'injected_quota')
+      return true
+
+    const adminId = item.admin?.id
+    const targetId = item.target_user?.id
+    if (!adminId || !targetId)
+      return true
+
+    const injectTimes = injectTimesByPair[`${adminId}|${targetId}`]
+    if (!injectTimes || injectTimes.length === 0)
+      return true
+
+    const t = new Date(item.created_at).getTime()
+    if (!Number.isFinite(t))
+      return true
+
+    // Legacy behavior: injection was logged twice (INJECT_QUOTA + UPDATE_USER_PROFILE injected_quota).
+    // If we find a nearby INJECT_QUOTA for the same admin+target, hide the UPDATE_USER_PROFILE row.
+    return !injectTimes.some(x => Math.abs(x - t) <= MAX_DIFF_MS)
+  })
+})
 const totalLogs = computed(() => fetchedData.value?.totalItems ?? 0)
 
 const hasLoadedOnce = ref(false)
@@ -388,7 +451,7 @@ useHead({ title: 'Log Aktivitas Admin' })
       />
 
       <client-only>
-        <VDataTableServer v-if="!isMobile" v-model:options="options" :headers="headers" :items="logList" :items-length="totalLogs" :loading="showInitialSkeleton" class="text-no-wrap" item-value="id" hide-default-footer>
+        <VDataTableServer v-if="!isMobile" v-model:options="options" :headers="headers" :items="displayLogList" :items-length="totalLogs" :loading="showInitialSkeleton" class="text-no-wrap" item-value="id" hide-default-footer>
           <template #item.created_at="{ item }">
             <VTooltip location="top">
               <template #activator="{ props }">
@@ -449,10 +512,10 @@ useHead({ title: 'Log Aktivitas Admin' })
               <VSkeletonLoader type="list-item-two-line" />
             </VCard>
           </div>
-          <div v-else-if="logList.length === 0" class="py-8 text-center text-disabled">
+          <div v-else-if="displayLogList.length === 0" class="py-8 text-center text-disabled">
             <VIcon icon="tabler-database-off" size="32" class="mb-2" /><p>Tidak ada data log.</p>
           </div>
-          <VCard v-for="log in logList" v-else :key="log.id" class="mb-3">
+          <VCard v-for="log in displayLogList" v-else :key="log.id" class="mb-3">
             <VList lines="two" density="compact" class="py-0">
               <VListItem>
                 <template #prepend>
