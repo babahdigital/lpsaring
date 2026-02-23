@@ -1,6 +1,7 @@
 # backend/app/infrastructure/http/admin/request_management_routes.py
 
 import json
+import os
 import uuid
 from flask import Blueprint, jsonify, request, current_app
 from http import HTTPStatus
@@ -60,11 +61,20 @@ def _handle_mikrotik_operation(operation_func, **kwargs):
         return False, f"Mikrotik Error: {str(e)}"
 
 
-def _log_admin_action(admin_id: uuid.UUID, target_user_id: uuid.UUID, action_type: AdminActionType, details: dict):
+def _log_admin_action(admin: User, target_user_id: uuid.UUID, action_type: AdminActionType, details: dict):
+    disable_super_admin_logs = str(os.getenv("DISABLE_SUPER_ADMIN_ACTION_LOGS", "false") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    }
+    if disable_super_admin_logs and getattr(admin, "is_super_admin_role", False):
+        return
     # NOTE: Hindari keyword-args pada declarative model agar Pylance tidak memunculkan
     # `reportCallIssue` (model SQLAlchemy tidak selalu terinferensi memiliki __init__(**kwargs)).
     log_entry = AdminActionLog()
-    log_entry.admin_id = admin_id
+    log_entry.admin_id = admin.id
     log_entry.target_user_id = target_user_id
     log_entry.action_type = action_type
     log_entry.details = json.dumps(details, default=str)
@@ -322,7 +332,7 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
     req_to_process.processed_by_id = current_admin.id
     req_to_process.processed_at = now_utc
     if admin_action_type:
-        _log_admin_action(current_admin.id, target_user.id, admin_action_type, action_details)
+        _log_admin_action(current_admin, target_user.id, admin_action_type, action_details)
 
     try:
         db.session.commit()

@@ -2,6 +2,7 @@
 # File ini HARUS ADA dan berisi kode di bawah ini.
 
 import json
+import os
 import secrets
 import string
 from flask import current_app
@@ -39,8 +40,20 @@ def _send_whatsapp_notification(user_phone: str, template_key: str, context: dic
 
 
 def _log_admin_action(admin: User, target_user: User, action_type: AdminActionType, details: dict):
-    """Mencatat aksi admin ke log, tidak mencatat jika pelakunya adalah Superadmin."""
-    if admin.is_super_admin_role:
+    """Mencatat aksi admin ke log.
+
+    Catatan:
+    - Semua ADMIN wajib tercatat.
+    - SUPER_ADMIN tercatat juga, kecuali `DISABLE_SUPER_ADMIN_ACTION_LOGS=true`.
+    """
+    disable_super_admin_logs = str(os.getenv("DISABLE_SUPER_ADMIN_ACTION_LOGS", "false") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "y",
+        "on",
+    }
+    if disable_super_admin_logs and admin.is_super_admin_role:
         return
     try:
         # NOTE: Hindari keyword-args pada declarative model agar Pylance tidak memunculkan

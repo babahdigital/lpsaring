@@ -300,12 +300,12 @@ useHead({ title: 'Log Aktivitas Admin' })
             </VMenu>
           </VCol>
           <VCol cols="12" sm="6" md="3">
-            <VBtn prepend-icon="tabler-user-shield" variant="outlined" color="primary" @click="openUserFilter('admin')">
+            <VBtn block prepend-icon="tabler-user-shield" variant="outlined" color="primary" height="48" @click="openUserFilter('admin')">
               Filter Admin
             </VBtn>
           </VCol>
           <VCol cols="12" sm="6" md="3">
-            <VBtn prepend-icon="tabler-user-search" variant="outlined" color="primary" @click="openUserFilter('target')">
+            <VBtn block prepend-icon="tabler-user-search" variant="outlined" color="primary" height="48" @click="openUserFilter('target')">
               Filter Target
             </VBtn>
           </VCol>
@@ -356,7 +356,7 @@ useHead({ title: 'Log Aktivitas Admin' })
         </div>
       </VCardTitle>
 
-      <VCardText class="py-4 px-6">
+      <VCardText class="py-3 px-6 logs-toolbar">
         <DataTableToolbar
           v-model:items-per-page="options.itemsPerPage"
           v-model:search="search"
@@ -488,3 +488,9 @@ useHead({ title: 'Log Aktivitas Admin' })
     <UserActionConfirmDialog v-model="confirmDialog.visible" :title="confirmDialog.title" :message="confirmDialog.message" color="error" :loading="loading" @confirm="confirmDialog.action" />
   </div>
 </template>
+
+<style scoped>
+.logs-toolbar :deep(.datatable-toolbar__search) {
+  min-width: 320px;
+}
+</style>
