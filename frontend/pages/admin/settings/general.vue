@@ -277,52 +277,41 @@ useHead({ title: 'Setting Aplikasi' })
         <VCardSubtitle>Kelola pengaturan umum, tampilan, dan integrasi aplikasi Anda.</VCardSubtitle>
       </VCardItem>
 
+      <ClientOnly>
+        <VTabs v-model="tab" class="px-4 settings-tabs" show-arrows density="compact">
+          <VTab value="umum">
+            <VIcon start icon="mdi-cog-outline" />
+            Umum & Maintenance
+          </VTab>
+          <VTab value="tampilan">
+            <VIcon start icon="mdi-view-dashboard-outline" />
+            Tampilan & Layout
+          </VTab>
+          <VTab value="integrasi">
+            <VIcon start icon="mdi-link-variant" />
+            Integrasi
+          </VTab>
+        </VTabs>
+        <VDivider />
+        <template #fallback>
+          <div class="px-4 py-2">
+            <VSkeletonLoader type="text@2" />
+          </div>
+          <VDivider />
+        </template>
+      </ClientOnly>
+
       <VCardText>
         <VProgressLinear v-if="isLoading" indeterminate class="mb-4" />
 
-        <VRow v-else class="settings-layout" align="start">
-          <VCol cols="12" md="4" class="settings-layout__nav">
-            <ClientOnly>
-              <div class="text-caption text-medium-emphasis mb-2">
-                Kategori Pengaturan
-              </div>
-              <VTabs
-                v-model="tab"
-                direction="vertical"
-                class="v-tabs-pill settings-tabs"
-                density="compact"
-              >
-                <VTab value="umum" class="settings-tab">
-                  <VIcon start icon="mdi-cog-outline" />
-                  Umum & Maintenance
-                </VTab>
-                <VTab value="tampilan" class="settings-tab">
-                  <VIcon start icon="mdi-view-dashboard-outline" />
-                  Tampilan & Layout
-                </VTab>
-                <VTab value="integrasi" class="settings-tab">
-                  <VIcon start icon="mdi-link-variant" />
-                  Integrasi
-                </VTab>
-              </VTabs>
-
-              <template #fallback>
-                <div class="py-2">
-                  <VSkeletonLoader type="text@2" />
-                </div>
-              </template>
-            </ClientOnly>
-          </VCol>
-
-          <VCol cols="12" md="8" class="settings-layout__content">
-            <VWindow v-model="tab" class="disable-tab-transition settings-window" :touch="false">
-              <VWindowItem value="umum">
-                <div>
-                  <div class="d-flex flex-column gap-y-4">
+        <VWindow v-else v-model="tab" class="disable-tab-transition settings-window" :touch="false">
+          <VWindowItem value="umum">
+            <div>
+              <div class="d-flex flex-column gap-y-4">
                 <VListSubheader>Mode Maintenance</VListSubheader>
                 <VListItem lines="three" class="overflow-visible">
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4" class="text-start text-md-right">
+                    <VCol cols="12" md="4" class="text-start">
                       <VListItemTitle class="mb-1">
                         Status Mode Maintenance
                       </VListItemTitle>
@@ -330,7 +319,7 @@ useHead({ title: 'Setting Aplikasi' })
                         Aktifkan untuk menampilkan halaman maintenance di seluruh aplikasi, kecuali halaman admin.
                       </VListItemSubtitle>
                     </VCol>
-                    <VCol cols="12" md="8" class="d-flex justify-start justify-md-end">
+                    <VCol cols="12" md="8" class="d-flex justify-start">
                       <VSwitch v-model="maintenanceModeActive" :label="maintenanceModeActive ? 'AKTIF' : 'TIDAK AKTIF'" color="error" inset />
                     </VCol>
                   </VRow>
@@ -394,12 +383,12 @@ useHead({ title: 'Setting Aplikasi' })
                   Simpan Perubahan
                 </VBtn>
               </VCardActions>
-                </div>
-              </VWindowItem>
+            </div>
+          </VWindowItem>
 
-              <VWindowItem value="tampilan">
-                <div>
-                  <div class="d-flex flex-column gap-y-4">
+          <VWindowItem value="tampilan">
+            <div>
+              <div class="d-flex flex-column gap-y-4">
                 <VListItem>
                   <VRow no-gutters align="center">
                     <VCol cols="12" md="4">
@@ -463,17 +452,17 @@ useHead({ title: 'Setting Aplikasi' })
                   Simpan Perubahan
                 </VBtn>
               </VCardActions>
-                </div>
-              </VWindowItem>
+            </div>
+          </VWindowItem>
 
-              <VWindowItem value="integrasi">
-                <div>
-                  <div class="d-flex flex-column gap-y-4">
+          <VWindowItem value="integrasi">
+            <div>
+              <div class="d-flex flex-column gap-y-4">
                 <VListSubheader>WhatsApp (Fonnte)</VListSubheader>
 
                 <VListItem lines="three">
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4" class="text-start text-md-right">
+                    <VCol cols="12" md="4" class="text-start">
                       <VListItemTitle class="mb-1">
                         Notifikasi WhatsApp
                       </VListItemTitle>
@@ -481,7 +470,7 @@ useHead({ title: 'Setting Aplikasi' })
                         Saklar utama untuk semua fitur notifikasi via WhatsApp.
                       </VListItemSubtitle>
                     </VCol>
-                    <VCol cols="12" md="8" class="d-flex justify-start justify-md-end">
+                    <VCol cols="12" md="8" class="d-flex justify-start">
                       <VSwitch v-model="whatsappEnabled" :label="whatsappEnabled ? 'Aktif' : 'Tidak Aktif'" inset />
                     </VCol>
                   </VRow>
@@ -489,7 +478,7 @@ useHead({ title: 'Setting Aplikasi' })
 
                 <VListItem lines="three">
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4" class="text-start text-md-right">
+                    <VCol cols="12" md="4" class="text-start">
                       <VListItemTitle class="mb-1">
                         Notifikasi Login Admin
                       </VListItemTitle>
@@ -497,7 +486,7 @@ useHead({ title: 'Setting Aplikasi' })
                         Kirim notifikasi saat admin atau super admin login.
                       </VListItemSubtitle>
                     </VCol>
-                    <VCol cols="12" md="8" class="d-flex justify-start justify-md-end">
+                    <VCol cols="12" md="8" class="d-flex justify-start">
                       <VSwitch v-model="whatsappLoginNotificationEnabled" :label="whatsappLoginNotificationEnabled ? 'Aktif' : 'Tidak Aktif'" :disabled="!whatsappEnabled" inset />
                     </VCol>
                   </VRow>
@@ -523,7 +512,7 @@ useHead({ title: 'Setting Aplikasi' })
 
                 <VListItem lines="three">
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4" class="text-start text-md-right">
+                    <VCol cols="12" md="4" class="text-start">
                       <VListItemTitle class="mb-1">
                         Notifikasi Telegram
                       </VListItemTitle>
@@ -531,7 +520,7 @@ useHead({ title: 'Setting Aplikasi' })
                         Saklar utama untuk pengiriman notifikasi via Telegram Bot.
                       </VListItemSubtitle>
                     </VCol>
-                    <VCol cols="12" md="8" class="d-flex justify-start justify-md-end">
+                    <VCol cols="12" md="8" class="d-flex justify-start">
                       <VSwitch v-model="telegramEnabled" :label="telegramEnabled ? 'Aktif' : 'Tidak Aktif'" inset />
                     </VCol>
                   </VRow>
@@ -608,7 +597,7 @@ useHead({ title: 'Setting Aplikasi' })
 
                 <VListItem>
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4" class="text-start text-md-right">
+                    <VCol cols="12" md="4" class="text-start">
                       <VListItemTitle class="mb-1">
                         Test Kirim Telegram
                       </VListItemTitle>
@@ -765,7 +754,7 @@ useHead({ title: 'Setting Aplikasi' })
                 <VListSubheader>MikroTik</VListSubheader>
                 <VListItem>
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4" class="text-start text-md-right">
+                    <VCol cols="12" md="4" class="text-start">
                       <VListItemTitle class="mb-1">
                         Kredensial MikroTik
                       </VListItemTitle>
@@ -793,11 +782,9 @@ useHead({ title: 'Setting Aplikasi' })
                   Simpan Perubahan
                 </VBtn>
               </VCardActions>
-                </div>
-              </VWindowItem>
-            </VWindow>
-          </VCol>
-        </VRow>
+            </div>
+          </VWindowItem>
+        </VWindow>
       </VCardText>
     </VCard>
   </div>
@@ -808,14 +795,6 @@ useHead({ title: 'Setting Aplikasi' })
   gap: 1rem 0;
 }
 
-.settings-layout__nav {
-  padding-top: 0;
-}
-
-.settings-layout__content {
-  padding-top: 0;
-}
-
 .settings-window {
   min-height: 0;
 }
@@ -824,14 +803,12 @@ useHead({ title: 'Setting Aplikasi' })
   width: 100%;
 }
 
-.settings-tabs :deep(.v-tab) {
-  max-width: none;
+.settings-tabs :deep(.v-slide-group__content) {
+  justify-content: center;
 }
 
-.settings-tab {
-  justify-content: flex-start;
-  white-space: normal;
-  text-align: start;
+.settings-tabs :deep(.v-tab) {
+  max-width: none;
 }
 
 .core-api-subtitle {
