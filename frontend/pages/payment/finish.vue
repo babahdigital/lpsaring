@@ -31,6 +31,8 @@ interface TransactionDetails {
   status: TransactionStatus
   amount?: number | null
   payment_method?: string | null
+  snap_token?: string | null
+  snap_redirect_url?: string | null
   deeplink_redirect_url?: string | null
   payment_time?: string | null
   expiry_time?: string | null
@@ -50,6 +52,7 @@ const { $api } = useNuxtApp()
 const runtimeConfig = useRuntimeConfig()
 const { add: addSnackbar } = useSnackbar()
 const { smAndDown } = useDisplay()
+const { ensureMidtransReady } = useMidtransSnap()
 const isHydrated = ref(false)
 const isMobile = computed(() => (isHydrated.value ? smAndDown.value : false))
 
@@ -517,6 +520,88 @@ const showSpecificPendingInstructions = computed(() => {
   return hasVa || hasEchannel || hasQr || hasDeeplink
 })
 
+interface SnapPayResult {
+  order_id: string
+}
+
+interface SnapInstance {
+  pay: (token: string, options: {
+    onSuccess: (result: SnapPayResult) => void
+    onPending: (result: SnapPayResult) => void
+    onError: (result: SnapPayResult) => void
+    onClose: () => void
+  }) => void
+}
+
+declare global {
+  interface Window {
+    snap?: SnapInstance
+  }
+}
+
+const snapToken = computed(() => {
+  const token = transactionDetails.value?.snap_token
+  return (typeof token === 'string' && token.trim() !== '') ? token.trim() : null
+})
+
+const showSnapPaySection = computed(() => {
+  if (snapToken.value == null)
+    return false
+  return finalStatus.value === 'UNKNOWN' || finalStatus.value === 'PENDING'
+})
+
+const isPayingWithSnap = ref(false)
+
+async function openSnapPayment() {
+  if (isPayingWithSnap.value)
+    return
+  const token = snapToken.value
+  if (!token) {
+    addSnackbar({ type: 'warning', title: 'Tidak Tersedia', text: 'Token pembayaran Snap tidak tersedia.' })
+    return
+  }
+
+  isPayingWithSnap.value = true
+  try {
+    await ensureMidtransReady()
+    if (!window.snap) {
+      throw new Error('Snap.js siap, tetapi window.snap tidak tersedia.')
+    }
+
+    window.snap.pay(token, {
+      onSuccess: async (result) => {
+        const oid = (result?.order_id || orderId.value || '').toString()
+        if (oid)
+          await router.push({ path: '/payment/status', query: { order_id: oid } })
+        await refreshStatus()
+      },
+      onPending: async (result) => {
+        const oid = (result?.order_id || orderId.value || '').toString()
+        if (oid)
+          await router.push({ path: '/payment/status', query: { order_id: oid } })
+        await refreshStatus()
+      },
+      onError: async (result) => {
+        const oid = (result?.order_id || orderId.value || '').toString()
+        addSnackbar({ type: 'error', title: 'Gagal', text: 'Pembayaran gagal diproses. Silakan coba lagi.' })
+        if (oid)
+          await router.push({ path: '/payment/status', query: { order_id: oid } })
+        await refreshStatus()
+      },
+      onClose: () => {
+        addSnackbar({ type: 'info', title: 'Dibatalkan', text: 'Jendela pembayaran ditutup.' })
+      },
+    })
+  }
+  catch (err: any) {
+    const msg = err?.message || 'Gagal membuka pembayaran Snap.'
+    addSnackbar({ type: 'error', title: 'Gagal', text: msg })
+  }
+  finally {
+    isPayingWithSnap.value = false
+  }
+}
+
 const qrValue = computed(() => transactionDetails.value?.qr_code_url ?? '')
 const showQrCode = computed(() => {
   if (finalStatus.value !== 'PENDING' || qrValue.value === '')
@@ -737,6 +822,28 @@ useHead({
                       />
                     </template>
                   </v-tooltip>
+                </div>
+              </v-alert>
+
+              <v-alert
+                v-if="showSnapPaySection"
+                type="info"
+                variant="tonal"
+                density="comfortable"
+                class="mt-6"
+              >
+                <div class="d-flex flex-column flex-sm-row align-start align-sm-center" style="gap: 12px;">
+                  <div class="flex-grow-1">
+                    Lanjutkan pembayaran dengan membuka halaman pembayaran Midtrans.
+                  </div>
+                  <v-btn
+                    color="primary"
+                    :loading="isPayingWithSnap"
+                    :disabled="isPayingWithSnap"
+                    @click="openSnapPayment"
+                  >
+                    Bayar
+                  </v-btn>
                 </div>
               </v-alert>
             </div>

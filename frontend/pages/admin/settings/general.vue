@@ -278,7 +278,7 @@ useHead({ title: 'Setting Aplikasi' })
       </VCardItem>
 
       <ClientOnly>
-        <VTabs v-model="tab" class="px-4">
+        <VTabs v-model="tab" class="px-4 settings-tabs" show-arrows density="compact">
           <VTab value="umum">
             <VIcon start icon="mdi-cog-outline" />
             Umum & Maintenance
@@ -303,7 +303,7 @@ useHead({ title: 'Setting Aplikasi' })
 
       <VCardText>
         <VProgressLinear v-if="isLoading" indeterminate class="mb-4" />
-        <VWindow v-else v-model="tab" class="disable-tab-transition" :style="{ 'min-height': '400px' }">
+        <VWindow v-else v-model="tab" class="disable-tab-transition settings-window">
           <VWindowItem value="umum">
             <VForm @submit.prevent="handleSaveChanges">
               <div class="d-flex flex-column gap-y-4">
@@ -695,14 +695,16 @@ useHead({ title: 'Setting Aplikasi' })
                   </VRow>
                 </VListItem>
 
-                <VListItem v-if="isCoreApiMode">
+                <VListItem>
                   <VRow no-gutters align="start">
                     <VCol cols="12" md="4" class="pb-2 pb-md-0">
                       <VListItemTitle class="mb-1">
-                        Metode Core API
+                        Metode Pembayaran
                       </VListItemTitle>
                       <VListItemSubtitle class="core-api-subtitle">
-                        Pilih metode yang ditampilkan di halaman beli saat mode Core API aktif.
+                        {{ isCoreApiMode
+                          ? 'Pilih metode yang ditampilkan di halaman beli saat mode Core API aktif.'
+                          : 'Batasi metode yang dipakai untuk dropdown tagihan (dan referensi pembayaran) saat mode Snap aktif.' }}
                       </VListItemSubtitle>
                     </VCol>
                     <VCol cols="12" md="8">
@@ -722,7 +724,7 @@ useHead({ title: 'Setting Aplikasi' })
                   </VRow>
                 </VListItem>
 
-                <VListItem v-if="isCoreApiMode">
+                <VListItem>
                   <VRow no-gutters align="start">
                     <VCol cols="12" md="4" class="pb-2 pb-md-0">
                       <VListItemTitle class="mb-1">
@@ -795,6 +797,14 @@ useHead({ title: 'Setting Aplikasi' })
 <style scoped>
 .gap-y-4 {
   gap: 1rem 0;
+}
+
+.settings-window {
+  min-height: 0;
+}
+
+.settings-tabs :deep(.v-tab) {
+  max-width: none;
 }
 
 .core-api-subtitle {
