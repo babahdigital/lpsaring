@@ -422,13 +422,15 @@ def update_user_by_admin_comprehensive(
         )
         if not success:
             return False, msg, None
-        changes["role"] = new_role.value
+        # NOTE: role_service already writes a dedicated admin log (CHANGE_USER_ROLE / UPGRADE / DOWNGRADE).
+        # Avoid duplicating the same action as UPDATE_USER_PROFILE.
 
     if "is_unlimited_user" in data and data["is_unlimited_user"] != target_user.is_unlimited_user:
         success, msg = quota_service.set_user_unlimited(target_user, admin_actor, data["is_unlimited_user"])
         if not success:
             return False, msg, None
-        changes["is_unlimited_user"] = data["is_unlimited_user"]
+        # NOTE: set_user_unlimited writes SET_UNLIMITED_STATUS / REVOKE_UNLIMITED_STATUS.
+        # Avoid duplicating the same action as UPDATE_USER_PROFILE.
 
     # Unlimited time: clear quota_expiry_date for unlimited users (no time limit)
     if data.get("unlimited_time") is True:
@@ -633,8 +635,8 @@ def update_user_by_admin_comprehensive(
         success, msg = _handle_user_blocking(target_user, False, admin_actor, pending_unblock_reason)
         if not success:
             return False, msg, None
-        changes["is_blocked"] = False
-        changes["blocked_reason"] = pending_unblock_reason
+        # NOTE: unblock writes a dedicated admin log (UNBLOCK_USER).
+        # Avoid duplicating the same action as UPDATE_USER_PROFILE.
 
     if changes:
         _log_admin_action(admin_actor, target_user, AdminActionType.UPDATE_USER_PROFILE, changes)
