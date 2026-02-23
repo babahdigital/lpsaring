@@ -23,7 +23,9 @@ Portal hotspot dengan backend Flask dan frontend Nuxt 3.
 - [CHANGELOG.md](CHANGELOG.md)
 
 ## Dokumentasi Integrasi
+- [docs/PAYMENTS.md](docs/PAYMENTS.md)
 - [docs/MIDTRANS_SNAP.md](docs/MIDTRANS_SNAP.md)
+- [docs/TRANSACTIONS_MIDTRANS_LIFECYCLE.md](docs/TRANSACTIONS_MIDTRANS_LIFECYCLE.md)
 - [docs/DOKUMENTASI_WHATSAPP_FONNTE.md](docs/DOKUMENTASI_WHATSAPP_FONNTE.md)
 
 ## Catatan Singkat

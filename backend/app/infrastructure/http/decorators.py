@@ -250,10 +250,9 @@ def admin_required(f):
 
         try:
             if request.method in ("POST", "PUT", "PATCH", "DELETE") and not getattr(g, "admin_action_logged", False):
-                disable_super_admin_logs = (
-                    str(os.getenv("DISABLE_SUPER_ADMIN_ACTION_LOGS", "false") or "").strip().lower()
-                    in {"1", "true", "yes", "y", "on"}
-                )
+                disable_super_admin_logs = str(
+                    os.getenv("DISABLE_SUPER_ADMIN_ACTION_LOGS", "false") or ""
+                ).strip().lower() in {"1", "true", "yes", "y", "on"}
                 if not (disable_super_admin_logs and getattr(admin_user, "is_super_admin_role", False)):
                     response_obj = make_response(resp)
 
@@ -361,10 +360,9 @@ def super_admin_required(f):
 
         try:
             if request.method in ("POST", "PUT", "PATCH", "DELETE") and not getattr(g, "admin_action_logged", False):
-                disable_super_admin_logs = (
-                    str(os.getenv("DISABLE_SUPER_ADMIN_ACTION_LOGS", "false") or "").strip().lower()
-                    in {"1", "true", "yes", "y", "on"}
-                )
+                disable_super_admin_logs = str(
+                    os.getenv("DISABLE_SUPER_ADMIN_ACTION_LOGS", "false") or ""
+                ).strip().lower() in {"1", "true", "yes", "y", "on"}
                 if not (disable_super_admin_logs and getattr(super_admin_user, "is_super_admin_role", False)):
                     response_obj = make_response(resp)
 

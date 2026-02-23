@@ -7,6 +7,7 @@ import { storeToRefs } from 'pinia'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '~/store/auth'
+import { useSettingsStore } from '~/store/settings'
 import { normalize_to_e164 } from '~/utils/formatters'
 
 // --- STRUKTUR DATA DISESUAIKAN DENGAN RESPON API BACKEND ---
@@ -19,6 +20,7 @@ interface PackagesApiResponse {
 // --- AKHIR PENYESUAIAN STRUKTUR DATA ---
 
 const authStore = useAuthStore()
+const settingsStore = useSettingsStore()
 const router = useRouter()
 const route = useRoute()
 const { $api } = useNuxtApp()
@@ -30,6 +32,16 @@ interface FocusableField { focus: () => void }
 
 interface SnapPayResult {
   order_id: string
+}
+
+type PaymentMethod = 'qris' | 'gopay' | 'shopeepay' | 'va'
+type VaBank = 'bca' | 'bni' | 'bri' | 'mandiri' | 'permata' | 'cimb'
+
+interface InitiateResponse {
+  order_id?: string
+  snap_token?: string | null
+  redirect_url?: string | null
+  provider_mode?: 'snap' | 'core_api'
 }
 
 interface SnapInstance {
@@ -76,6 +88,115 @@ const selectedPackageId = ref<string | null>(null)
 const isInitiatingPayment = ref<string | null>(null)
 const isHydrated = ref(false)
 const hasAutoInitiatedDebt = ref(false)
+
+const showPaymentMethodDialog = ref(false)
+const pendingPaymentPackageId = ref<string | null>(null)
+
+const selectedPaymentMethod = ref<PaymentMethod>('qris')
+const selectedVaBank = ref<VaBank>('bni')
+
+function parseCsvList(value: string | null | undefined): string[] {
+  const raw = (value ?? '').toString().trim()
+  if (raw === '')
+    return []
+  return Array.from(new Set(raw.split(',').map(p => p.trim().toLowerCase()).filter(Boolean)))
+}
+
+const providerMode = computed<'snap' | 'core_api'>(() => {
+  const raw = (settingsStore.getSetting('PAYMENT_PROVIDER_MODE', 'snap') ?? 'snap').toString().trim().toLowerCase()
+  return raw === 'core_api' ? 'core_api' : 'snap'
+})
+
+const coreApiEnabledMethods = computed<PaymentMethod[]>(() => {
+  const parsed = parseCsvList(settingsStore.getSetting('CORE_API_ENABLED_PAYMENT_METHODS', 'qris,gopay,va'))
+  const allowed: PaymentMethod[] = ['qris', 'gopay', 'shopeepay', 'va']
+  const enabled = allowed.filter(m => parsed.includes(m))
+  return enabled.length > 0 ? enabled : ['qris', 'gopay', 'va']
+})
+
+const coreApiEnabledVaBanks = computed<VaBank[]>(() => {
+  const parsed = parseCsvList(settingsStore.getSetting('CORE_API_ENABLED_VA_BANKS', 'bca,bni,bri,mandiri,permata,cimb'))
+  const allowed: VaBank[] = ['bca', 'bni', 'bri', 'mandiri', 'permata', 'cimb']
+  const enabled = allowed.filter(b => parsed.includes(b))
+  return enabled.length > 0 ? enabled : allowed
+})
+
+const allPaymentMethodItems = [
+  {
+    value: 'qris' as const,
+    title: 'QRIS',
+    subtitle: 'Scan QR dari aplikasi pembayaran',
+    icon: 'tabler-qrcode',
+  },
+  {
+    value: 'gopay' as const,
+    title: 'GoPay',
+    subtitle: 'Buka GoPay / scan QR jika tersedia',
+    icon: 'tabler-wallet',
+  },
+  {
+    value: 'shopeepay' as const,
+    title: 'ShopeePay',
+    subtitle: 'Buka ShopeePay / scan QR jika tersedia',
+    icon: 'tabler-wallet',
+  },
+  {
+    value: 'va' as const,
+    title: 'Transfer Virtual Account',
+    subtitle: 'Pilih bank, lalu transfer via VA',
+    icon: 'tabler-building-bank',
+  },
+] as const
+
+const availablePaymentMethodItems = computed(() => {
+  if (providerMode.value === 'core_api') {
+    const enabled = new Set(coreApiEnabledMethods.value)
+    return allPaymentMethodItems.filter(i => enabled.has(i.value))
+  }
+  // Snap mode: keep existing options to avoid changing behavior.
+  return allPaymentMethodItems.filter(i => i.value !== 'shopeepay')
+})
+
+const vaBankItems = [
+  { title: 'BCA', value: 'bca' },
+  { title: 'BNI', value: 'bni' },
+  { title: 'BRI', value: 'bri' },
+  { title: 'Mandiri', value: 'mandiri' },
+  { title: 'Permata', value: 'permata' },
+  { title: 'CIMB Niaga', value: 'cimb' },
+] as const
+
+const availableVaBankItems = computed(() => {
+  if (providerMode.value !== 'core_api')
+    return vaBankItems
+  const enabled = new Set(coreApiEnabledVaBanks.value)
+  return vaBankItems.filter(i => enabled.has(i.value))
+})
+
+watch(availablePaymentMethodItems, (items) => {
+  const first = items[0]?.value
+  if (!first)
+    return
+  if (!items.some(i => i.value === selectedPaymentMethod.value))
+    selectedPaymentMethod.value = first
+}, { immediate: true })
+
+watch([selectedPaymentMethod, availableVaBankItems], () => {
+  if (selectedPaymentMethod.value !== 'va')
+    return
+  const items = availableVaBankItems.value
+  const first = items[0]?.value
+  if (!first)
+    return
+  if (!items.some(i => i.value === selectedVaBank.value))
+    selectedVaBank.value = first
+}, { immediate: true })
+
+const selectedPackageForPayment = computed(() => {
+  if (pendingPaymentPackageId.value == null)
+    return null
+  return packages.value.find(p => p.id === pendingPaymentPackageId.value) ?? null
+})
 
 const snackbarVisible = ref(false)
 const snackbarText = ref('')
@@ -191,6 +312,30 @@ function goToDashboard() {
   router.push('/dashboard')
 }
 
+function openPaymentMethodDialog(packageId: string) {
+  // Snap mode: langsung buka Midtrans Snap (tanpa popup pilih metode)
+  if (providerMode.value === 'snap') {
+    void initiatePayment(packageId)
+    return
+  }
+
+  pendingPaymentPackageId.value = packageId
+  showPaymentMethodDialog.value = true
+}
+
+function closePaymentMethodDialog() {
+  showPaymentMethodDialog.value = false
+  pendingPaymentPackageId.value = null
+}
+
+async function confirmPaymentMethod() {
+  if (pendingPaymentPackageId.value == null)
+    return
+  const packageId = pendingPaymentPackageId.value
+  closePaymentMethodDialog()
+  await initiatePayment(packageId)
+}
+
 // Logika penanganan event (tidak ada perubahan)
 function handlePackageSelection(pkg: Package) {
   if (pkg?.id == null || pkg.is_active !== true || isInitiatingPayment.value != null)
@@ -214,7 +359,7 @@ function handlePackageSelection(pkg: Package) {
     showSnackbar(warningMsg, 'warning', 7000)
   }
   else if (user.value?.id != null) {
-    initiatePayment(pkg.id)
+    openPaymentMethodDialog(pkg.id)
   }
 }
 
@@ -260,40 +405,48 @@ async function handleContactSubmit() {
 async function initiatePayment(packageId: string) {
   isInitiatingPayment.value = packageId
   try {
-    try {
-      await ensureMidtransReady()
-    }
-    catch (error) {
-      const fallbackMessage = error instanceof Error && error.message
-        ? error.message
-        : 'Gagal memuat Midtrans Snap.'
-      throw new Error(fallbackMessage)
-    }
-    if (window.snap == null) {
-      throw new Error('Midtrans belum siap. Silakan coba beberapa saat lagi.')
-    }
-    const responseData = await $api<{ snap_token: string, order_id: string }>('/transactions/initiate', {
+    const responseData = await $api<InitiateResponse>('/transactions/initiate', {
       method: 'POST',
-      body: { package_id: packageId },
+      body: {
+        package_id: packageId,
+        payment_method: selectedPaymentMethod.value,
+        va_bank: selectedPaymentMethod.value === 'va' ? selectedVaBank.value : undefined,
+      },
     })
     const initiatedOrderId = responseData?.order_id
-    if ((responseData?.snap_token != null && responseData.snap_token !== '') && window.snap != null) {
-      window.snap.pay(responseData.snap_token, {
-        onSuccess: (result: SnapPayResult) => router.push(`/payment/finish?status=success&order_id=${result.order_id}`),
-        onPending: (result: SnapPayResult) => router.push(`/payment/finish?status=pending&order_id=${result.order_id}`),
-        onError: (result: SnapPayResult) => router.push(`/payment/finish?status=error&order_id=${result.order_id}`),
+
+    const snapToken = (typeof responseData?.snap_token === 'string' && responseData.snap_token.trim() !== '')
+      ? responseData.snap_token
+      : null
+
+    if (snapToken) {
+      await ensureMidtransReady()
+      if (window.snap == null)
+        throw new Error('Midtrans Snap belum siap. Silakan coba beberapa saat lagi.')
+
+      window.snap.pay(snapToken, {
+        onSuccess: (result: SnapPayResult) => router.push(`/payment/status?status=success&order_id=${result.order_id}`),
+        onPending: (result: SnapPayResult) => router.push(`/payment/status?status=pending&order_id=${result.order_id}`),
+        onError: (result: SnapPayResult) => router.push(`/payment/status?status=error&order_id=${result.order_id}`),
         onClose: () => {
           if (typeof initiatedOrderId === 'string' && initiatedOrderId !== '') {
             void $api(`/transactions/${encodeURIComponent(initiatedOrderId)}/cancel`, { method: 'POST' }).catch(() => {})
           }
-          if (router.currentRoute.value.path.startsWith('/payment/finish') !== true) {
+          if (router.currentRoute.value.path.startsWith('/payment/') !== true) {
             showSnackbar('Anda menutup jendela pembayaran.', 'info')
           }
           isInitiatingPayment.value = null
         },
       })
     }
-    else { throw new Error('Gagal mendapatkan token pembayaran.') }
+    else if (typeof initiatedOrderId === 'string' && initiatedOrderId.trim() !== '') {
+      // Core API mode: proceed to status/instructions page.
+      await router.push(`/payment/status?order_id=${encodeURIComponent(initiatedOrderId)}`)
+      isInitiatingPayment.value = null
+    }
+    else {
+      throw new Error('Gagal memulai pembayaran (Order ID tidak tersedia).')
+    }
   }
   catch (err: any) {
     let errorMessage = 'Gagal memulai pembayaran.'
@@ -313,40 +466,46 @@ async function initiateDebtSettlementPayment() {
     return
   isInitiatingPayment.value = 'debt'
   try {
-    try {
-      await ensureMidtransReady()
-    }
-    catch (error) {
-      const fallbackMessage = error instanceof Error && error.message
-        ? error.message
-        : 'Gagal memuat Midtrans Snap.'
-      throw new Error(fallbackMessage)
-    }
-    if (window.snap == null)
-      throw new Error('Midtrans belum siap. Silakan coba beberapa saat lagi.')
-
-    const responseData = await $api<{ snap_token: string, order_id: string }>('/transactions/debt/initiate', {
+    const responseData = await $api<InitiateResponse>('/transactions/debt/initiate', {
       method: 'POST',
+      body: {
+        payment_method: selectedPaymentMethod.value,
+        va_bank: selectedPaymentMethod.value === 'va' ? selectedVaBank.value : undefined,
+      },
     })
     const initiatedOrderId = responseData?.order_id
 
-    if ((responseData?.snap_token != null && responseData.snap_token !== '') && window.snap != null) {
-      window.snap.pay(responseData.snap_token, {
-        onSuccess: (result: SnapPayResult) => router.push(`/payment/finish?status=success&order_id=${result.order_id}`),
-        onPending: (result: SnapPayResult) => router.push(`/payment/finish?status=pending&order_id=${result.order_id}`),
-        onError: (result: SnapPayResult) => router.push(`/payment/finish?status=error&order_id=${result.order_id}`),
+    const snapToken = (typeof responseData?.snap_token === 'string' && responseData.snap_token.trim() !== '')
+      ? responseData.snap_token
+      : null
+
+    if (snapToken) {
+      await ensureMidtransReady()
+      if (window.snap == null)
+        throw new Error('Midtrans Snap belum siap. Silakan coba beberapa saat lagi.')
+
+      window.snap.pay(snapToken, {
+        onSuccess: (result: SnapPayResult) => router.push(`/payment/status?status=success&order_id=${result.order_id}`),
+        onPending: (result: SnapPayResult) => router.push(`/payment/status?status=pending&order_id=${result.order_id}`),
+        onError: (result: SnapPayResult) => router.push(`/payment/status?status=error&order_id=${result.order_id}`),
         onClose: () => {
           if (typeof initiatedOrderId === 'string' && initiatedOrderId !== '') {
             void $api(`/transactions/${encodeURIComponent(initiatedOrderId)}/cancel`, { method: 'POST' }).catch(() => {})
           }
-          if (router.currentRoute.value.path.startsWith('/payment/finish') !== true)
+          if (router.currentRoute.value.path.startsWith('/payment/') !== true)
             showSnackbar('Anda menutup jendela pembayaran.', 'info')
           isInitiatingPayment.value = null
         },
       })
     }
     else {
-      throw new Error('Gagal mendapatkan token pembayaran.')
+      if (typeof initiatedOrderId === 'string' && initiatedOrderId.trim() !== '') {
+        await router.push(`/payment/status?order_id=${encodeURIComponent(initiatedOrderId)}&purpose=debt`)
+        isInitiatingPayment.value = null
+      }
+      else {
+        throw new Error('Gagal memulai pembayaran (Order ID tidak tersedia).')
+      }
     }
   }
   catch (err: any) {
@@ -437,6 +596,7 @@ useHead({ title: 'Beli Paket Hotspot' })
             </v-btn>
           </div>
         </div>
+
       </v-container>
 
       <v-row class="ma-0" align="start" justify="center">
@@ -549,6 +709,77 @@ useHead({ title: 'Beli Paket Hotspot' })
         </v-col>
       </v-row>
 
+      <v-dialog v-if="isHydrated" v-model="showPaymentMethodDialog" max-width="560px" scrim="grey-darken-3" eager>
+        <v-card rounded="lg">
+          <v-card-title class="d-flex align-center py-3 px-4 bg-grey-lighten-4 border-b">
+            <v-icon icon="tabler-credit-card" color="primary" start />
+            <span class="text-h6 font-weight-medium">Pilih Metode Pembayaran</span>
+            <v-spacer />
+            <v-btn icon="tabler-x" flat size="small" variant="text" @click="closePaymentMethodDialog" />
+          </v-card-title>
+
+          <v-card-text class="px-4 pt-4">
+            <p v-if="selectedPackageForPayment" class="text-caption text-medium-emphasis mb-3">
+              Paket: <span class="font-weight-medium">{{ selectedPackageForPayment.name }}</span>
+              <span class="mx-1">•</span>
+              <span class="font-weight-medium">{{ formatCurrency(selectedPackageForPayment.price) }}</span>
+            </p>
+
+            <v-radio-group v-model="selectedPaymentMethod" class="mt-1 payment-method-group">
+              <v-radio
+                v-for="item in availablePaymentMethodItems"
+                :key="item.value"
+                :value="item.value"
+                class="payment-method-radio"
+              >
+                <template #label>
+                  <div class="d-flex align-center payment-method-label">
+                    <v-icon :icon="item.icon" color="primary" />
+                    <div class="payment-method-text">
+                      <div class="text-body-1 font-weight-medium">
+                        {{ item.title }}
+                      </div>
+                      <div class="text-caption text-medium-emphasis">
+                        {{ item.subtitle }}
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </v-radio>
+            </v-radio-group>
+
+            <v-select
+              v-if="selectedPaymentMethod === 'va'"
+              v-model="selectedVaBank"
+              class="mt-2"
+              label="Pilih Bank VA"
+              persistent-placeholder
+              :items="availableVaBankItems"
+              item-title="title"
+              item-value="value"
+              variant="outlined"
+              density="comfortable"
+            />
+          </v-card-text>
+
+          <v-divider />
+          <v-card-actions class="px-4 py-3 bg-grey-lighten-5">
+            <v-spacer />
+            <v-btn color="grey-darken-1" variant="text" @click="closePaymentMethodDialog">
+              Batal
+            </v-btn>
+            <v-btn
+              color="primary"
+              variant="flat"
+              :disabled="pendingPaymentPackageId == null || isInitiatingPayment != null"
+              @click="confirmPaymentMethod"
+            >
+              Lanjutkan Pembayaran
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+
       <v-dialog v-if="isHydrated" v-model="showContactDialog" persistent max-width="500px" scrim="grey-darken-3" eager>
         <v-card :loading="isCheckingUser" rounded="lg" :disabled="isCheckingUser">
           <v-card-title class="d-flex align-center py-3 px-4 bg-grey-lighten-4 border-b">
@@ -646,5 +877,19 @@ useHead({ title: 'Beli Paket Hotspot' })
 }
 .v-list-item {
   padding-inline: 0px !important;
+}
+
+.payment-method-label {
+  gap: 14px;
+  padding-block: 10px;
+}
+
+.payment-method-text {
+  display: flex;
+  flex-direction: column;
+}
+
+:deep(.payment-method-radio .v-selection-control) {
+  min-height: 56px;
 }
 </style>

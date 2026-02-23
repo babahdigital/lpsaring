@@ -9,6 +9,7 @@ type DebtInitiateResponse = {
   midtrans_order_id?: string | null
   snap_token?: string | null
   redirect_url?: string | null
+  provider_mode?: 'snap' | 'core_api'
 }
 
 interface MidtransPayResult {
@@ -41,40 +42,35 @@ export function useDebtSettlementPayment() {
         ? response.snap_token
         : null
 
-      if (!orderId || !snapToken) {
-        snackbar.add({
-          type: 'error',
-          title: 'Gagal',
-          text: !orderId
-            ? 'Tidak bisa memulai pembayaran (Order ID tidak tersedia).'
-            : 'Tidak bisa memulai pembayaran (Snap token tidak tersedia).',
-        })
+      if (!orderId) {
+        snackbar.add({ type: 'error', title: 'Gagal', text: 'Tidak bisa memulai pembayaran (Order ID tidak tersedia).' })
+        return
+      }
+
+      if (!snapToken) {
+        // Core API mode: show instructions + polling in finish page.
+        void router.push(`/payment/status?order_id=${encodeURIComponent(orderId)}&purpose=debt`)
         return
       }
 
       await ensureMidtransReady()
-
       if (!window.snap?.pay) {
-        snackbar.add({
-          type: 'error',
-          title: 'Gagal',
-          text: 'Snap.js tidak tersedia di browser. Coba refresh halaman.',
-        })
+        snackbar.add({ type: 'error', title: 'Gagal', text: 'Snap.js tidak tersedia di browser. Coba refresh halaman.' })
         return
       }
 
       window.snap.pay(snapToken, {
         onSuccess: (result: MidtransPayResult) => {
           const oid = encodeURIComponent(result?.order_id || orderId)
-          void router.push(`/payment/finish?order_id=${oid}&status=SUCCESS&purpose=debt`)
+          void router.push(`/payment/status?order_id=${oid}&status=SUCCESS&purpose=debt`)
         },
         onPending: (result: MidtransPayResult) => {
           const oid = encodeURIComponent(result?.order_id || orderId)
-          void router.push(`/payment/finish?order_id=${oid}&status=PENDING&purpose=debt`)
+          void router.push(`/payment/status?order_id=${oid}&status=PENDING&purpose=debt`)
         },
         onError: (result: MidtransPayResult) => {
           const oid = encodeURIComponent(result?.order_id || orderId)
-          void router.push(`/payment/finish?order_id=${oid}&status=ERROR&purpose=debt`)
+          void router.push(`/payment/status?order_id=${oid}&status=ERROR&purpose=debt`)
         },
         onClose: () => {
           snackbar.add({

@@ -65,11 +65,7 @@ def get_packages_list(current_admin: User):
         sort_expr = sort_col.asc() if is_asc else sort_col.desc()
 
         # Stable ordering: when primary sort ties, fall back to created_at desc.
-        query = (
-            db.select(Package)
-            .options(selectinload(Package.profile))
-            .order_by(sort_expr, Package.created_at.desc())
-        )
+        query = db.select(Package).options(selectinload(Package.profile)).order_by(sort_expr, Package.created_at.desc())
         pagination = db.paginate(query, page=page, per_page=per_page, error_out=False)
         return jsonify(
             {

@@ -15,6 +15,8 @@ Lampiran wajib:
   - `{ "error": "...", "details": [...] }`
 - Endpoint lain sering memakai:
   - `{ "message": "..." }` atau `{ "success": false, "message": "..." }`
+- Untuk error HTTP dari Flask/Werkzeug, API akan mengembalikan:
+  - `{ "error": "...", "message": "...", "status_code": <int> }`
 - Untuk detail validasi Pydantic: `details` / `errors` berisi array error.
 
 ---
@@ -170,6 +172,92 @@ Array `SettingSchema`:
 - `is_encrypted`: boolean
 
 ---
+
+# 8) Transactions (Payments)
+
+Catatan penting:
+- URL user-facing untuk status pembayaran adalah `/payment/status?order_id=...`.
+- `/payment/finish` dipertahankan untuk kompatibilitas callback/legacy, namun UI utama tetap `/payment/status`.
+
+## POST /api/transactions/initiate
+**Auth:** Ya (user)
+
+**Request**
+- `package_id`: UUID
+- `payment_method`: string (opsional)
+  - `qris` | `gopay` | `va` | `shopeepay`
+- `va_bank`: string (opsional; dipakai jika `payment_method=va`)
+  - `bca` | `bni` | `bri` | `mandiri` | `permata` | `cimb`
+
+**Perilaku (berdasarkan setting `PAYMENT_PROVIDER_MODE`)**
+- `snap`:
+  - Response akan berisi `snap_token` dan frontend akan membuka Snap UI.
+- `core_api`:
+  - Response akan berisi `order_id` tanpa `snap_token`.
+  - Frontend mengarahkan user ke `/payment/status?order_id=...`.
+
+**Response 200**
+- `order_id`: string (Midtrans order_id)
+- `snap_token`: string | null (hanya mode Snap)
+- `redirect_url`: string | null (Snap redirect atau deeplink Core API)
+- `provider_mode`: `snap` | `core_api`
+
+## POST /api/transactions/debt/initiate
+**Auth:** Ya (user)
+
+**Request**
+- `payment_method` / `va_bank` sama seperti initiate normal.
+- `manual_debt_id`: string (opsional)
+
+## GET /api/transactions/by-order-id/{order_id}
+**Auth:** Ya (user)
+
+Response berisi detail transaksi + instruksi pembayaran (VA/QR/deeplink) jika status masih `PENDING`.
+
+Field penting:
+- `status`: `SUCCESS|PENDING|FAILED|EXPIRED|CANCELLED|ERROR|UNKNOWN`
+- `payment_method`: string (contoh: `qris`, `gopay`, `echannel`, `bni_va`)
+- `qr_code_url`: string | null
+- `deeplink_redirect_url`: string | null (GoPay/ShopeePay Core API)
+- `va_number`: string | null
+- `payment_code`: string | null (Mandiri bill key)
+- `biller_code`: string | null
+
+## GET /api/transactions/{order_id}/qr
+**Auth:** Ya (user)
+
+Proxy QR image untuk menghindari CORS + mengurangi dependency browser ke domain provider.
+
+Query:
+- `download=1` untuk memaksa attachment.
+
+## POST /api/transactions/{order_id}/cancel
+**Auth:** Ya (user)
+
+Dipakai saat user menutup popup Snap (status jadi `CANCELLED`).
+
+---
+
+# 9) Admin – Transactions
+
+## POST /api/admin/transactions/bill
+**Auth:** Ya (admin)
+
+Membuat tagihan untuk user tertentu menggunakan Midtrans Core API dan mengirim instruksi via WhatsApp.
+
+**Request**
+- `user_id`: UUID
+- `package_id`: UUID
+- `payment_method`: `qris|gopay|va|shopeepay` (default `qris`)
+- `va_bank`: jika `payment_method=va`
+
+Catatan:
+- Opsi `payment_method` dan `va_bank` akan divalidasi terhadap setting:
+  - `CORE_API_ENABLED_PAYMENT_METHODS`
+  - `CORE_API_ENABLED_VA_BANKS`
+
+Alias kompatibilitas:
+- `POST /api/admin/transactions/qris` (perilaku sama)
 
 # 5) Public User
 ## POST /api/users/check-or-register

@@ -55,6 +55,61 @@ const telegramEnabled = computed({
   },
 })
 
+function parseCsvList(value: string | null | undefined): string[] {
+  const raw = (value ?? '').toString().trim()
+  if (raw === '')
+    return []
+  const parts = raw.split(',').map(p => p.trim().toLowerCase()).filter(Boolean)
+  // keep order, unique
+  return Array.from(new Set(parts))
+}
+
+function toCsvList(values: string[]): string {
+  return values.map(v => v.trim().toLowerCase()).filter(Boolean).join(',')
+}
+
+const isCoreApiMode = computed(() => (localSettings.value.PAYMENT_PROVIDER_MODE ?? 'snap') === 'core_api')
+
+const coreApiEnabledPaymentMethods = computed<string[]>({
+  get: () => {
+    const raw = localSettings.value.CORE_API_ENABLED_PAYMENT_METHODS
+    const parsed = parseCsvList(raw)
+    return parsed.length > 0 ? parsed : ['qris', 'gopay', 'va']
+  },
+  set: (val: string[]) => {
+    localSettings.value.CORE_API_ENABLED_PAYMENT_METHODS = toCsvList(val)
+  },
+})
+
+const isCoreApiVaEnabled = computed(() => coreApiEnabledPaymentMethods.value.includes('va'))
+
+const coreApiEnabledVaBanks = computed<string[]>({
+  get: () => {
+    const raw = localSettings.value.CORE_API_ENABLED_VA_BANKS
+    const parsed = parseCsvList(raw)
+    return parsed.length > 0 ? parsed : ['bca', 'bni', 'bri', 'mandiri', 'permata', 'cimb']
+  },
+  set: (val: string[]) => {
+    localSettings.value.CORE_API_ENABLED_VA_BANKS = toCsvList(val)
+  },
+})
+
+const coreApiMethodCheckboxItems = [
+  { label: 'QRIS', value: 'qris' },
+  { label: 'GoPay', value: 'gopay' },
+  { label: 'ShopeePay', value: 'shopeepay' },
+  { label: 'Virtual Account (VA)', value: 'va' },
+] as const
+
+const coreApiVaBankCheckboxItems = [
+  { label: 'BCA', value: 'bca' },
+  { label: 'BNI', value: 'bni' },
+  { label: 'BRI', value: 'bri' },
+  { label: 'Mandiri', value: 'mandiri' },
+  { label: 'Permata', value: 'permata' },
+  { label: 'CIMB Niaga', value: 'cimb' },
+] as const
+
 /**
  * Fungsi untuk menyimpan pengaturan ke cookies browser.
  */
@@ -89,6 +144,9 @@ onMounted(async () => {
       TELEGRAM_WEBHOOK_SECRET: '',
       MIDTRANS_SERVER_KEY: '',
       MIDTRANS_CLIENT_KEY: '',
+      PAYMENT_PROVIDER_MODE: 'snap',
+      CORE_API_ENABLED_PAYMENT_METHODS: 'qris,gopay,va',
+      CORE_API_ENABLED_VA_BANKS: 'bca,bni,bri,mandiri,permata,cimb',
       MIKROTIK_HOST: '',
       MIKROTIK_USER: '',
       MIKROTIK_PASSWORD: '',
@@ -609,6 +667,91 @@ useHead({ title: 'Setting Aplikasi' })
                   </VRow>
                 </VListItem>
 
+                <VListItem lines="three">
+                  <VRow no-gutters align="center">
+                    <VCol cols="12" md="4">
+                      <VListItemTitle class="mb-1">
+                        Mode Pembayaran
+                      </VListItemTitle>
+                      <VListItemSubtitle>
+                        Pilih Snap (UI Midtrans) atau Core API (tanpa Snap) untuk QRIS/GoPay/VA.
+                      </VListItemSubtitle>
+                    </VCol>
+                    <VCol cols="12" md="8">
+                      <VSelect
+                        v-model="localSettings.PAYMENT_PROVIDER_MODE"
+                        label="Mode Pembayaran"
+                        persistent-placeholder
+                        :items="[
+                          { title: 'Snap (default)', value: 'snap' },
+                          { title: 'Core API (tanpa Snap)', value: 'core_api' },
+                        ]"
+                        item-title="title"
+                        item-value="value"
+                        variant="outlined"
+                        density="comfortable"
+                      />
+                    </VCol>
+                  </VRow>
+                </VListItem>
+
+                <VListItem v-if="isCoreApiMode">
+                  <VRow no-gutters align="start">
+                    <VCol cols="12" md="4" class="pb-2 pb-md-0">
+                      <VListItemTitle class="mb-1">
+                        Metode Core API
+                      </VListItemTitle>
+                      <VListItemSubtitle class="core-api-subtitle">
+                        Pilih metode yang ditampilkan di halaman beli saat mode Core API aktif.
+                      </VListItemSubtitle>
+                    </VCol>
+                    <VCol cols="12" md="8">
+                      <div class="core-api-grid">
+                        <div v-for="item in coreApiMethodCheckboxItems" :key="item.value" class="core-api-grid__item">
+                          <VCheckbox
+                            v-model="coreApiEnabledPaymentMethods"
+                            :value="item.value"
+                            :label="item.label"
+                            class="core-api-checkbox"
+                            density="comfortable"
+                            hide-details
+                          />
+                        </div>
+                      </div>
+                    </VCol>
+                  </VRow>
+                </VListItem>
+
+                <VListItem v-if="isCoreApiMode">
+                  <VRow no-gutters align="start">
+                    <VCol cols="12" md="4" class="pb-2 pb-md-0">
+                      <VListItemTitle class="mb-1">
+                        Bank Virtual Account
+                      </VListItemTitle>
+                      <VListItemSubtitle class="core-api-subtitle">
+                        {{ isCoreApiVaEnabled
+                          ? 'Pilih bank yang tersedia saat pengguna memilih pembayaran VA.'
+                          : 'Aktifkan metode Virtual Account (VA) untuk memilih bank.' }}
+                      </VListItemSubtitle>
+                    </VCol>
+                    <VCol cols="12" md="8">
+                      <div class="core-api-grid">
+                        <div v-for="item in coreApiVaBankCheckboxItems" :key="item.value" class="core-api-grid__item">
+                          <VCheckbox
+                            v-model="coreApiEnabledVaBanks"
+                            :value="item.value"
+                            :label="item.label"
+                            class="core-api-checkbox"
+                            density="comfortable"
+                            hide-details
+                            :disabled="!isCoreApiVaEnabled"
+                          />
+                        </div>
+                      </div>
+                    </VCol>
+                  </VRow>
+                </VListItem>
+
                 <VDivider class="my-2" />
                 <VListSubheader>MikroTik</VListSubheader>
                 <VListItem>
@@ -652,5 +795,35 @@ useHead({ title: 'Setting Aplikasi' })
 <style scoped>
 .gap-y-4 {
   gap: 1rem 0;
+}
+
+.core-api-subtitle {
+  white-space: normal;
+}
+
+.core-api-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.25rem 0.75rem;
+}
+
+@media (min-width: 600px) {
+  .core-api-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.core-api-grid__item {
+  min-height: 44px;
+  display: flex;
+  align-items: flex-start;
+}
+
+.core-api-checkbox :deep(.v-label) {
+  white-space: normal;
+}
+
+.core-api-checkbox :deep(.v-selection-control__wrapper) {
+  align-self: flex-start;
 }
 </style>

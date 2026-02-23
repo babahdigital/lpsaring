@@ -12,9 +12,11 @@ from typing import Any, Dict, Optional
 
 import midtransclient
 from flask import Blueprint, abort, current_app, jsonify, make_response, render_template, request
+import requests
 import sqlalchemy as sa
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.orm import selectinload
+from werkzeug.exceptions import HTTPException
 
 from app.extensions import db, limiter
 from app.infrastructure.db.models import (
@@ -296,9 +298,6 @@ def extract_va_number(response_data: Dict[str, Any]):
         "bni_va_number",
         "bri_va_number",
         "cimb_va_number",
-        "mandiri_bill_key",
-        "bill_key",
-        "payment_code",
         "va_number",
     ]
     for field in specific_fields:
@@ -322,6 +321,211 @@ def extract_qr_code_url(response_data: Dict[str, Any]):
             if qr_url and "generate-qr-code" in action_name:
                 return qr_url
     return response_data.get("qr_code_url")
+
+
+def _is_qr_payment_type(payment_type: str | None) -> bool:
+    pt = str(payment_type or "").strip().lower()
+    return pt in {"qris", "gopay", "shopeepay"}
+
+
+def extract_action_url(response_data: Dict[str, Any], *, action_name_contains: str) -> str | None:
+    needle = str(action_name_contains or "").strip().lower()
+    if needle == "":
+        return None
+    actions = response_data.get("actions")
+    if not isinstance(actions, list):
+        return None
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        name = str(action.get("name", "")).strip().lower()
+        url = action.get("url")
+        if url and needle in name:
+            return str(url).strip()
+    return None
+
+
+def _normalize_payment_provider_mode(value: str | None) -> str:
+    raw = str(value or "").strip().lower()
+    if raw in {"core", "coreapi", "core_api", "core-api", "core api"}:
+        return "core_api"
+    if raw in {"snap", "snap_ui", "snap-ui", "snap ui"}:
+        return "snap"
+    return "snap"
+
+
+def _get_payment_provider_mode() -> str:
+    # Default to Snap for backward compatibility.
+    raw = (
+        settings_service.get_setting("PAYMENT_PROVIDER_MODE", None)
+        or current_app.config.get("PAYMENT_PROVIDER_MODE")
+        or "snap"
+    )
+    return _normalize_payment_provider_mode(str(raw))
+
+
+def _normalize_payment_method(value: str | None) -> str | None:
+    raw = str(value or "").strip().lower()
+    if raw in {"qris", "gopay", "va", "shopeepay"}:
+        return raw
+    return None
+
+
+def _normalize_va_bank(value: str | None) -> str | None:
+    raw = str(value or "").strip().lower()
+    if raw in {"bca", "bni", "bri", "cimb", "mandiri", "permata"}:
+        return raw
+    return None
+
+
+_CORE_API_METHOD_ORDER: tuple[str, ...] = ("qris", "gopay", "va", "shopeepay")
+_CORE_API_VA_BANK_ORDER: tuple[str, ...] = ("bni", "bca", "bri", "mandiri", "permata", "cimb")
+
+
+def _parse_csv_values(raw: str | None) -> list[str]:
+    if raw is None:
+        return []
+    text = str(raw).strip()
+    if not text:
+        return []
+    parts = [p.strip().lower() for p in text.split(",")]
+    return [p for p in parts if p]
+
+
+def _get_core_api_enabled_payment_methods() -> list[str]:
+    # Default to existing behavior (QRIS/GoPay/VA) when setting is missing.
+    raw = settings_service.get_setting("CORE_API_ENABLED_PAYMENT_METHODS", None)
+    selected = set(_parse_csv_values(raw))
+    enabled = [m for m in _CORE_API_METHOD_ORDER if m in selected]
+    if enabled:
+        return enabled
+    return ["qris", "gopay", "va"]
+
+
+def _get_core_api_enabled_va_banks() -> list[str]:
+    raw = settings_service.get_setting("CORE_API_ENABLED_VA_BANKS", None)
+    selected = set(_parse_csv_values(raw))
+    enabled = [b for b in _CORE_API_VA_BANK_ORDER if b in selected]
+    if enabled:
+        return enabled
+    return list(_CORE_API_VA_BANK_ORDER)
+
+
+def _is_core_api_method_enabled(method: str, enabled_methods: list[str]) -> bool:
+    m = str(method or "").strip().lower()
+    return m in set(enabled_methods)
+
+
+def _is_core_api_va_bank_enabled(bank: str, enabled_banks: list[str]) -> bool:
+    b = str(bank or "").strip().lower()
+    return b in set(enabled_banks)
+
+
+def _tx_has_snap_initiation_data(tx: Transaction) -> bool:
+    return bool(getattr(tx, "snap_token", None) or getattr(tx, "snap_redirect_url", None))
+
+
+def _tx_has_core_initiation_data(tx: Transaction) -> bool:
+    if getattr(tx, "qr_code_url", None):
+        return True
+    if getattr(tx, "va_number", None):
+        return True
+    if getattr(tx, "payment_code", None) and getattr(tx, "biller_code", None):
+        return True
+    return False
+
+
+def _tx_matches_requested_core_payment(
+    tx: Transaction,
+    *,
+    requested_method: str | None,
+    requested_va_bank: str | None,
+) -> bool:
+    method = requested_method or "qris"
+
+    tx_pm = str(getattr(tx, "payment_method", "") or "").strip().lower()
+
+    if method in {"qris", "gopay", "shopeepay"}:
+        # payment_method should be set on initiation; if not, fall back to stored initiation fields.
+        if tx_pm:
+            return tx_pm == method
+        if method == "qris":
+            return bool(getattr(tx, "qr_code_url", None))
+        if method == "gopay":
+            return bool(getattr(tx, "snap_redirect_url", None) or getattr(tx, "qr_code_url", None))
+        if method == "shopeepay":
+            return bool(getattr(tx, "snap_redirect_url", None) or getattr(tx, "qr_code_url", None))
+        return False
+
+    # method == "va"
+    bank = requested_va_bank or "bni"
+    if bank == "mandiri":
+        if tx_pm:
+            return tx_pm == "echannel"
+        return bool(getattr(tx, "payment_code", None) and getattr(tx, "biller_code", None))
+
+    if tx_pm:
+        return tx_pm == f"{bank}_va"
+    return False
+
+
+def _build_core_api_charge_payload(
+    *,
+    order_id: str,
+    gross_amount: int,
+    item_id: str,
+    item_name: str,
+    customer_name: str,
+    customer_phone: str,
+    expiry_minutes: int,
+    finish_url: str,
+    method: str,
+    va_bank: str | None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "transaction_details": {"order_id": order_id, "gross_amount": int(gross_amount)},
+        "item_details": [{"id": item_id, "price": int(gross_amount), "quantity": 1, "name": item_name[:100]}],
+        "customer_details": {
+            "first_name": customer_name or "Pengguna",
+            "phone": customer_phone,
+        },
+        "custom_expiry": {"expiry_duration": int(expiry_minutes), "unit": "minute"},
+    }
+
+    if method == "qris":
+        payload["payment_type"] = "qris"
+        payload["qris"] = {"acquirer": "gopay"}
+        return payload
+
+    if method == "gopay":
+        payload["payment_type"] = "gopay"
+        payload["gopay"] = {
+            "enable_callback": True,
+            "callback_url": str(finish_url),
+        }
+        return payload
+
+    if method == "shopeepay":
+        payload["payment_type"] = "shopeepay"
+        # ShopeePay Core API supports callback_url; keep payload minimal.
+        payload["shopeepay"] = {
+            "callback_url": str(finish_url),
+        }
+        return payload
+
+    # method == "va"
+    bank = va_bank or "bni"
+    if bank == "mandiri":
+        payload["payment_type"] = "echannel"
+        payload["echannel"] = {
+            "bill_info1": "Pembayaran Hotspot",
+            "bill_info2": item_name[:18] or "Hotspot",
+        }
+        return payload
+
+    payload["payment_type"] = "bank_transfer"
+    payload["bank_transfer"] = {"bank": bank}
+    return payload
 
 
 def _build_webhook_idempotency_key(payload: Dict[str, Any]) -> Optional[str]:
@@ -418,6 +622,8 @@ def _format_status_filter(value):
 # --- Skema Pydantic ---
 class _InitiateTransactionRequestSchema(BaseModel):
     package_id: uuid.UUID
+    payment_method: Optional[str] = None
+    va_bank: Optional[str] = None
 
 
 class _InitiateTransactionResponseSchema(BaseModel):
@@ -425,6 +631,13 @@ class _InitiateTransactionResponseSchema(BaseModel):
     transaction_id: uuid.UUID = Field(..., alias="id")
     order_id: str = Field(..., alias="midtrans_order_id")
     redirect_url: Optional[str] = Field(None, alias="snap_redirect_url")
+    payment_method: Optional[str] = Field(None, alias="payment_method")
+    midtrans_transaction_id: Optional[str] = Field(None, alias="midtrans_transaction_id")
+    expiry_time: Optional[datetime] = Field(None, alias="expiry_time")
+    va_number: Optional[str] = Field(None, alias="va_number")
+    payment_code: Optional[str] = Field(None, alias="payment_code")
+    biller_code: Optional[str] = Field(None, alias="biller_code")
+    qr_code_url: Optional[str] = Field(None, alias="qr_code_url")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -434,6 +647,13 @@ class _InitiateDebtSettlementResponseSchema(BaseModel):
     transaction_id: uuid.UUID = Field(..., alias="id")
     order_id: str = Field(..., alias="midtrans_order_id")
     redirect_url: Optional[str] = Field(None, alias="snap_redirect_url")
+    payment_method: Optional[str] = Field(None, alias="payment_method")
+    midtrans_transaction_id: Optional[str] = Field(None, alias="midtrans_transaction_id")
+    expiry_time: Optional[datetime] = Field(None, alias="expiry_time")
+    va_number: Optional[str] = Field(None, alias="va_number")
+    payment_code: Optional[str] = Field(None, alias="payment_code")
+    biller_code: Optional[str] = Field(None, alias="biller_code")
+    qr_code_url: Optional[str] = Field(None, alias="qr_code_url")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -463,6 +683,23 @@ def initiate_transaction(current_user_id: uuid.UUID):
 
         gross_amount = int(package.price or 0)
 
+        provider_mode = _get_payment_provider_mode()
+        requested_method = _normalize_payment_method(getattr(req_data, "payment_method", None))
+        requested_va_bank = _normalize_va_bank(getattr(req_data, "va_bank", None))
+
+        enabled_core_methods: list[str] = []
+        enabled_core_va_banks: list[str] = []
+        if provider_mode == "core_api":
+            enabled_core_methods = _get_core_api_enabled_payment_methods()
+            enabled_core_va_banks = _get_core_api_enabled_va_banks()
+
+            if requested_method is not None and not _is_core_api_method_enabled(requested_method, enabled_core_methods):
+                abort(HTTPStatus.UNPROCESSABLE_ENTITY, description="Metode pembayaran tidak tersedia.")
+
+            if requested_method == "va" and requested_va_bank is not None:
+                if not _is_core_api_va_bank_enabled(requested_va_bank, enabled_core_va_banks):
+                    abort(HTTPStatus.UNPROCESSABLE_ENTITY, description="Bank VA tidak tersedia.")
+
         now_utc = datetime.now(dt_timezone.utc)
 
         # Reuse existing active transaction to avoid creating many expired rows
@@ -481,28 +718,67 @@ def initiate_transaction(current_user_id: uuid.UUID):
             .order_by(Transaction.created_at.desc())
             .first()
         )
-        if existing_tx and (existing_tx.snap_token or existing_tx.snap_redirect_url):
-            _log_transaction_event(
-                session=session,
-                transaction=existing_tx,
-                source=TransactionEventSource.APP,
-                event_type="INITIATE_REUSED_EXISTING",
-                status=existing_tx.status,
-                payload={
-                    "order_id": existing_tx.midtrans_order_id,
-                    "package_id": str(existing_tx.package_id),
-                    "amount": int(existing_tx.amount or 0),
-                    "expiry_time": existing_tx.expiry_time.isoformat() if existing_tx.expiry_time else None,
-                    "snap_token_present": bool(existing_tx.snap_token),
-                    "redirect_url": existing_tx.snap_redirect_url,
-                    "reason": "existing_active_transaction",
-                },
+        if existing_tx:
+            can_reuse = (
+                _tx_has_snap_initiation_data(existing_tx)
+                if provider_mode == "snap"
+                else _tx_has_core_initiation_data(existing_tx)
             )
-            session.commit()
-            response_data = _InitiateTransactionResponseSchema.model_validate(existing_tx, from_attributes=True)
-            return jsonify(response_data.model_dump(by_alias=False, exclude_none=True)), HTTPStatus.OK
+            if can_reuse and provider_mode == "core_api":
+                # For Core API mode, only reuse if user requested the same payment method/bank.
+                if not _tx_matches_requested_core_payment(
+                    existing_tx,
+                    requested_method=requested_method,
+                    requested_va_bank=requested_va_bank,
+                ):
+                    existing_tx.status = TransactionStatus.CANCELLED
+                    _log_transaction_event(
+                        session=session,
+                        transaction=existing_tx,
+                        source=TransactionEventSource.APP,
+                        event_type="CANCELLED_BY_NEW_INITIATE",
+                        status=existing_tx.status,
+                        payload={
+                            "order_id": existing_tx.midtrans_order_id,
+                            "requested_method": requested_method,
+                            "requested_va_bank": requested_va_bank,
+                            "reason": "requested_payment_mismatch",
+                        },
+                    )
+                    session.commit()
+                    can_reuse = False
 
-        order_id = f"HS-{uuid.uuid4().hex[:12].upper()}"
+            if can_reuse:
+                _log_transaction_event(
+                    session=session,
+                    transaction=existing_tx,
+                    source=TransactionEventSource.APP,
+                    event_type="INITIATE_REUSED_EXISTING",
+                    status=existing_tx.status,
+                    payload={
+                        "order_id": existing_tx.midtrans_order_id,
+                        "package_id": str(existing_tx.package_id),
+                        "amount": int(existing_tx.amount or 0),
+                        "expiry_time": existing_tx.expiry_time.isoformat() if existing_tx.expiry_time else None,
+                        "provider_mode": provider_mode,
+                        "snap_token_present": bool(existing_tx.snap_token),
+                        "redirect_url": existing_tx.snap_redirect_url,
+                        "qr_code_url_present": bool(getattr(existing_tx, "qr_code_url", None)),
+                        "va_number_present": bool(getattr(existing_tx, "va_number", None)),
+                        "reason": "existing_active_transaction",
+                    },
+                )
+                session.commit()
+                response_data = _InitiateTransactionResponseSchema.model_validate(existing_tx, from_attributes=True)
+                payload = response_data.model_dump(by_alias=False, exclude_none=True)
+                payload["provider_mode"] = provider_mode
+                return jsonify(payload), HTTPStatus.OK
+
+        order_prefix = str(current_app.config.get("MIDTRANS_ORDER_ID_PREFIX", "BD-LPSR")).strip()
+        order_prefix = order_prefix.strip("-")
+        if not order_prefix:
+            order_prefix = "BD-LPSR"
+        order_id = f"{order_prefix}-{uuid.uuid4().hex[:12].upper()}"
 
         try:
             expiry_minutes = int(current_app.config.get("MIDTRANS_DEFAULT_EXPIRY_MINUTES", 15))
@@ -532,33 +808,110 @@ def initiate_transaction(current_user_id: uuid.UUID):
         if not base_callback_url:
             current_app.logger.error("APP_PUBLIC_BASE_URL/FRONTEND_URL/APP_LINK_USER belum dikonfigurasi.")
             abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="APP_PUBLIC_BASE_URL belum dikonfigurasi.")
-        # Jangan hardcode status=pending: status final harus berdasarkan callback Snap atau webhook.
-        finish_url = f"{base_callback_url.rstrip('/')}/payment/finish?order_id={order_id}"
-
-        snap_params = {
-            "transaction_details": {"order_id": order_id, "gross_amount": gross_amount},
-            "item_details": [{"id": str(package.id), "price": gross_amount, "quantity": 1, "name": package.name[:100]}],
-            "customer_details": {
-                "first_name": user.full_name or "Pengguna",
-                "phone": format_to_local_phone(user.phone_number),
-            },
-            "callbacks": {"finish": finish_url},
-        }
+        finish_url_base = f"{base_callback_url.rstrip('/')}/payment/finish"
+        # Core API callback_url: keep order_id in query because provider deeplink callbacks may not append params.
+        finish_url = f"{finish_url_base}?order_id={order_id}"
 
         if not should_allow_call("midtrans"):
             abort(HTTPStatus.SERVICE_UNAVAILABLE, description="Midtrans sementara tidak tersedia.")
 
-        snap = get_midtrans_snap_client()
-        snap_response = snap.create_transaction(snap_params)
-        record_success("midtrans")
+        snap_token: str | None = None
+        redirect_url: str | None = None
 
-        snap_token = snap_response.get("token")
-        redirect_url = snap_response.get("redirect_url")
-        if not snap_token and not redirect_url:
-            raise ValueError("Respons Midtrans tidak valid.")
+        if provider_mode == "snap":
+            snap_params = {
+                "transaction_details": {"order_id": order_id, "gross_amount": gross_amount},
+                "item_details": [
+                    {"id": str(package.id), "price": gross_amount, "quantity": 1, "name": package.name[:100]}
+                ],
+                "customer_details": {
+                    "first_name": user.full_name or "Pengguna",
+                    "phone": format_to_local_phone(user.phone_number),
+                },
+                # Snap finish redirect biasanya sudah menambahkan order_id sendiri.
+                # Jika kita tambahkan order_id juga, bisa jadi query duplicate (?order_id=..&order_id=..).
+                "callbacks": {"finish": finish_url_base},
+            }
 
-        new_transaction.snap_token = snap_token
-        new_transaction.snap_redirect_url = redirect_url
+            snap = get_midtrans_snap_client()
+            snap_response = snap.create_transaction(snap_params)
+            record_success("midtrans")
+
+            snap_token = snap_response.get("token")
+            redirect_url = snap_response.get("redirect_url")
+            if not snap_token and not redirect_url:
+                raise ValueError("Respons Midtrans tidak valid.")
+
+            new_transaction.snap_token = snap_token
+            new_transaction.snap_redirect_url = redirect_url
+            new_transaction.status = TransactionStatus.UNKNOWN
+        else:
+            # Core API flow (no Snap UI). Default method is QRIS.
+            method = requested_method or (enabled_core_methods[0] if enabled_core_methods else "qris")
+            if enabled_core_methods and not _is_core_api_method_enabled(method, enabled_core_methods):
+                abort(HTTPStatus.UNPROCESSABLE_ENTITY, description="Metode pembayaran tidak tersedia.")
+
+            va_bank = requested_va_bank
+            if method == "va":
+                if enabled_core_va_banks:
+                    if va_bank is None:
+                        # Prefer BNI when allowed, otherwise first enabled bank.
+                        va_bank = "bni" if "bni" in enabled_core_va_banks else enabled_core_va_banks[0]
+                    elif not _is_core_api_va_bank_enabled(va_bank, enabled_core_va_banks):
+                        abort(HTTPStatus.UNPROCESSABLE_ENTITY, description="Bank VA tidak tersedia.")
+
+            core_api = get_midtrans_core_api_client()
+            charge_payload = _build_core_api_charge_payload(
+                order_id=order_id,
+                gross_amount=gross_amount,
+                item_id=str(package.id),
+                item_name=str(package.name or "Paket"),
+                customer_name=str(user.full_name or "Pengguna"),
+                customer_phone=(format_to_local_phone(user.phone_number) or ""),
+                expiry_minutes=expiry_minutes,
+                finish_url=finish_url,
+                method=method,
+                va_bank=va_bank,
+            )
+
+            charge_response = core_api.charge(charge_payload)
+            record_success("midtrans")
+
+            payment_type = str(charge_response.get("payment_type") or "").strip().lower() or None
+            midtrans_trx_id = charge_response.get("transaction_id")
+
+            new_transaction.midtrans_transaction_id = str(midtrans_trx_id).strip() if midtrans_trx_id else None
+            new_transaction.snap_token = None
+            # Reuse snap_redirect_url column to store non-snap deeplink redirect URL (e.g., GoPay app deeplink).
+            new_transaction.snap_redirect_url = None
+
+            # Mark as pending so /payment/finish can show instructions.
+            new_transaction.status = TransactionStatus.PENDING
+
+            # Normalize payment_method stored for UI display.
+            if method == "va":
+                bank = va_bank or "bni"
+                if bank == "mandiri" or payment_type == "echannel":
+                    new_transaction.payment_method = "echannel"
+                    bill_key = charge_response.get("bill_key") or charge_response.get("mandiri_bill_key")
+                    biller_code = charge_response.get("biller_code")
+                    new_transaction.payment_code = str(bill_key).strip() if bill_key else None
+                    new_transaction.biller_code = str(biller_code).strip() if biller_code else None
+                else:
+                    new_transaction.payment_method = f"{bank}_va"
+                    new_transaction.va_number = extract_va_number(charge_response)
+            else:
+                new_transaction.payment_method = payment_type or method
+
+            if method in {"gopay", "shopeepay"}:
+                deeplink = extract_action_url(charge_response, action_name_contains="deeplink-redirect")
+                if deeplink:
+                    new_transaction.snap_redirect_url = deeplink
+
+            if _is_qr_payment_type(payment_type or method):
+                new_transaction.qr_code_url = extract_qr_code_url(charge_response)
+            else:
+                new_transaction.qr_code_url = None
 
         expiry_time = new_transaction.expiry_time
 
@@ -573,9 +926,14 @@ def initiate_transaction(current_user_id: uuid.UUID):
                 "package_id": str(package.id),
                 "amount": gross_amount,
                 "expiry_time": expiry_time.isoformat() if expiry_time is not None else None,
+                "provider_mode": provider_mode,
+                "requested_method": requested_method,
+                "requested_va_bank": requested_va_bank,
                 "snap_token_present": bool(snap_token),
                 "redirect_url": redirect_url,
                 "finish_url": finish_url,
+                "qr_code_url_present": bool(getattr(new_transaction, "qr_code_url", None)),
+                "va_number_present": bool(getattr(new_transaction, "va_number", None)),
             },
         )
 
@@ -583,8 +941,13 @@ def initiate_transaction(current_user_id: uuid.UUID):
         session.commit()
 
         response_data = _InitiateTransactionResponseSchema.model_validate(new_transaction, from_attributes=True)
-        return jsonify(response_data.model_dump(by_alias=False, exclude_none=True)), HTTPStatus.OK
+        payload = response_data.model_dump(by_alias=False, exclude_none=True)
+        payload["provider_mode"] = provider_mode
+        return jsonify(payload), HTTPStatus.OK
 
+    except HTTPException:
+        # Preserve intended HTTP status codes from abort()/werkzeug.
+        raise
     except Exception as e:
         record_failure("midtrans")
         db.session.rollback()
@@ -609,6 +972,23 @@ def initiate_debt_settlement_transaction(current_user_id: uuid.UUID):
                 manual_debt_id = uuid.UUID(str(manual_debt_id_raw))
             except Exception:
                 abort(HTTPStatus.UNPROCESSABLE_ENTITY, description="manual_debt_id tidak valid.")
+
+        provider_mode = _get_payment_provider_mode()
+        requested_method = _normalize_payment_method(req_data.get("payment_method"))
+        requested_va_bank = _normalize_va_bank(req_data.get("va_bank"))
+
+        enabled_core_methods: list[str] = []
+        enabled_core_va_banks: list[str] = []
+        if provider_mode == "core_api":
+            enabled_core_methods = _get_core_api_enabled_payment_methods()
+            enabled_core_va_banks = _get_core_api_enabled_va_banks()
+
+            if requested_method is not None and not _is_core_api_method_enabled(requested_method, enabled_core_methods):
+                abort(HTTPStatus.UNPROCESSABLE_ENTITY, description="Metode pembayaran tidak tersedia.")
+
+            if requested_method == "va" and requested_va_bank is not None:
+                if not _is_core_api_va_bank_enabled(requested_va_bank, enabled_core_va_banks):
+                    abort(HTTPStatus.UNPROCESSABLE_ENTITY, description="Bank VA tidak tersedia.")
 
         user = session.get(User, current_user_id)
         if not user or not user.is_active or user.approval_status != ApprovalStatus.APPROVED:
@@ -643,7 +1023,11 @@ def initiate_debt_settlement_transaction(current_user_id: uuid.UUID):
                 abort(HTTPStatus.BAD_REQUEST, description="Hutang manual tersebut sudah lunas.")
 
         gross_amount = int(
-            (_estimate_debt_rp_for_mb(manual_item_remaining_mb) if manual_debt_id is not None else _estimate_user_debt_rp(user))
+            (
+                _estimate_debt_rp_for_mb(manual_item_remaining_mb)
+                if manual_debt_id is not None
+                else _estimate_user_debt_rp(user)
+            )
             or 0
         )
         if gross_amount <= 0:
@@ -673,9 +1057,17 @@ def initiate_debt_settlement_transaction(current_user_id: uuid.UUID):
             existing_tx_query = existing_tx_query.filter(Transaction.midtrans_order_id.like(f"DEBT-{manual_debt_id}%"))
 
         existing_tx = existing_tx_query.first()
-        if existing_tx and (existing_tx.snap_token or existing_tx.snap_redirect_url):
-            response_data = _InitiateDebtSettlementResponseSchema.model_validate(existing_tx, from_attributes=True)
-            return jsonify(response_data.model_dump(by_alias=False, exclude_none=True)), HTTPStatus.OK
+        if existing_tx:
+            can_reuse = (
+                _tx_has_snap_initiation_data(existing_tx)
+                if provider_mode == "snap"
+                else _tx_has_core_initiation_data(existing_tx)
+            )
+            if can_reuse:
+                response_data = _InitiateDebtSettlementResponseSchema.model_validate(existing_tx, from_attributes=True)
+                payload = response_data.model_dump(by_alias=False, exclude_none=True)
+                payload["provider_mode"] = provider_mode
+                return jsonify(payload), HTTPStatus.OK
 
         if manual_debt_id is not None:
             order_id = f"DEBT-{manual_debt_id}~{uuid.uuid4().hex[:6].upper()}"
@@ -698,40 +1090,107 @@ def initiate_debt_settlement_transaction(current_user_id: uuid.UUID):
         )
         if not base_callback_url:
             abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="APP_PUBLIC_BASE_URL belum dikonfigurasi.")
-        finish_url = f"{base_callback_url.rstrip('/')}/payment/finish?order_id={order_id}&purpose=debt"
-
-        item_name = "Pelunasan Tunggakan Kuota" if manual_debt_id is None else "Pelunasan Hutang Manual" 
-        snap_params = {
-            "transaction_details": {"order_id": order_id, "gross_amount": int(gross_amount)},
-            "item_details": [
-                {
-                    "id": "DEBT_SETTLEMENT",
-                    "price": int(gross_amount),
-                    "quantity": 1,
-                    "name": item_name[:100],
-                }
-            ],
-            "customer_details": {
-                "first_name": user.full_name or "Pengguna",
-                "phone": format_to_local_phone(user.phone_number),
-            },
-            "callbacks": {"finish": finish_url},
-        }
+        finish_url_base = f"{base_callback_url.rstrip('/')}/payment/finish"
+        finish_url = f"{finish_url_base}?order_id={order_id}&purpose=debt"
 
         if not should_allow_call("midtrans"):
             abort(HTTPStatus.SERVICE_UNAVAILABLE, description="Midtrans sementara tidak tersedia.")
 
-        snap = get_midtrans_snap_client()
-        snap_response = snap.create_transaction(snap_params)
-        record_success("midtrans")
+        item_name = "Pelunasan Tunggakan Kuota" if manual_debt_id is None else "Pelunasan Hutang Manual"
 
-        snap_token = snap_response.get("token")
-        redirect_url = snap_response.get("redirect_url")
-        if not snap_token and not redirect_url:
-            raise ValueError("Respons Midtrans tidak valid.")
+        snap_token: str | None = None
+        redirect_url: str | None = None
 
-        new_transaction.snap_token = snap_token
-        new_transaction.snap_redirect_url = redirect_url
+        if provider_mode == "snap":
+            snap_params = {
+                "transaction_details": {"order_id": order_id, "gross_amount": int(gross_amount)},
+                "item_details": [
+                    {
+                        "id": "DEBT_SETTLEMENT",
+                        "price": int(gross_amount),
+                        "quantity": 1,
+                        "name": item_name[:100],
+                    }
+                ],
+                "customer_details": {
+                    "first_name": user.full_name or "Pengguna",
+                    "phone": format_to_local_phone(user.phone_number),
+                },
+                "callbacks": {"finish": finish_url_base},
+            }
+
+            snap = get_midtrans_snap_client()
+            snap_response = snap.create_transaction(snap_params)
+            record_success("midtrans")
+
+            snap_token = snap_response.get("token")
+            redirect_url = snap_response.get("redirect_url")
+            if not snap_token and not redirect_url:
+                raise ValueError("Respons Midtrans tidak valid.")
+
+            new_transaction.snap_token = snap_token
+            new_transaction.snap_redirect_url = redirect_url
+            new_transaction.status = TransactionStatus.UNKNOWN
+        else:
+            method = requested_method or (enabled_core_methods[0] if enabled_core_methods else "qris")
+            if enabled_core_methods and not _is_core_api_method_enabled(method, enabled_core_methods):
+                abort(HTTPStatus.UNPROCESSABLE_ENTITY, description="Metode pembayaran tidak tersedia.")
+
+            va_bank = requested_va_bank
+            if method == "va":
+                if enabled_core_va_banks:
+                    if va_bank is None:
+                        va_bank = "bni" if "bni" in enabled_core_va_banks else enabled_core_va_banks[0]
+                    elif not _is_core_api_va_bank_enabled(va_bank, enabled_core_va_banks):
+                        abort(HTTPStatus.UNPROCESSABLE_ENTITY, description="Bank VA tidak tersedia.")
+
+            core_api = get_midtrans_core_api_client()
+            charge_payload = _build_core_api_charge_payload(
+                order_id=order_id,
+                gross_amount=int(gross_amount),
+                item_id="DEBT_SETTLEMENT",
+                item_name=item_name,
+                customer_name=str(user.full_name or "Pengguna"),
+                customer_phone=(format_to_local_phone(user.phone_number) or ""),
+                expiry_minutes=expiry_minutes,
+                finish_url=finish_url,
+                method=method,
+                va_bank=va_bank,
+            )
+            charge_response = core_api.charge(charge_payload)
+            record_success("midtrans")
+
+            payment_type = str(charge_response.get("payment_type") or "").strip().lower() or None
+            midtrans_trx_id = charge_response.get("transaction_id")
+            new_transaction.midtrans_transaction_id = str(midtrans_trx_id).strip() if midtrans_trx_id else None
+            new_transaction.snap_token = None
+            # Reuse snap_redirect_url column to store non-snap deeplink redirect URL (e.g., GoPay app deeplink).
+            new_transaction.snap_redirect_url = None
+            new_transaction.status = TransactionStatus.PENDING
+
+            if method == "va":
+                bank = va_bank or "bni"
+                if bank == "mandiri" or payment_type == "echannel":
+                    new_transaction.payment_method = "echannel"
+                    bill_key = charge_response.get("bill_key") or charge_response.get("mandiri_bill_key")
+                    biller_code = charge_response.get("biller_code")
+                    new_transaction.payment_code = str(bill_key).strip() if bill_key else None
+                    new_transaction.biller_code = str(biller_code).strip() if biller_code else None
+                else:
+                    new_transaction.payment_method = f"{bank}_va"
+                    new_transaction.va_number = extract_va_number(charge_response)
+            else:
+                new_transaction.payment_method = payment_type or method
+
+            if method in {"gopay", "shopeepay"}:
+                deeplink = extract_action_url(charge_response, action_name_contains="deeplink-redirect")
+                if deeplink:
+                    new_transaction.snap_redirect_url = deeplink
+
+            if _is_qr_payment_type(payment_type or method):
+                new_transaction.qr_code_url = extract_qr_code_url(charge_response)
+            else:
+                new_transaction.qr_code_url = None
 
         expiry_time = new_transaction.expiry_time
 
@@ -746,9 +1205,14 @@ def initiate_debt_settlement_transaction(current_user_id: uuid.UUID):
                 "amount": int(gross_amount),
                 "debt_total_mb": float(debt_total_mb),
                 "expiry_time": expiry_time.isoformat() if expiry_time is not None else None,
+                "provider_mode": provider_mode,
+                "requested_method": requested_method,
+                "requested_va_bank": requested_va_bank,
                 "snap_token_present": bool(snap_token),
                 "redirect_url": redirect_url,
                 "finish_url": finish_url,
+                "qr_code_url_present": bool(getattr(new_transaction, "qr_code_url", None)),
+                "va_number_present": bool(getattr(new_transaction, "va_number", None)),
             },
         )
 
@@ -756,7 +1220,11 @@ def initiate_debt_settlement_transaction(current_user_id: uuid.UUID):
         session.commit()
 
         response_data = _InitiateDebtSettlementResponseSchema.model_validate(new_transaction, from_attributes=True)
-        return jsonify(response_data.model_dump(by_alias=False, exclude_none=True)), HTTPStatus.OK
+        payload = response_data.model_dump(by_alias=False, exclude_none=True)
+        payload["provider_mode"] = provider_mode
+        return jsonify(payload), HTTPStatus.OK
+    except HTTPException:
+        raise
     except Exception as e:
         record_failure("midtrans")
         session.rollback()
@@ -854,7 +1322,7 @@ def handle_notification():
             transaction.midtrans_transaction_id = notification_payload.get("transaction_id")
 
         # Enrich kolom transaksi dari payload (baik pending maupun final) agar tabel admin lengkap.
-        if notification_payload.get("payment_type"):
+        if notification_payload.get("payment_type") and not transaction.payment_method:
             transaction.payment_method = notification_payload.get("payment_type")
 
         if parsed_expiry := safe_parse_midtrans_datetime(notification_payload.get("expiry_time")):
@@ -862,11 +1330,20 @@ def handle_notification():
 
         # Informasi pembayaran yang bisa dipakai di finish page.
         transaction.va_number = extract_va_number(notification_payload) or transaction.va_number
-        if notification_payload.get("payment_code"):
-            transaction.payment_code = notification_payload.get("payment_code")
-        if notification_payload.get("biller_code"):
-            transaction.biller_code = notification_payload.get("biller_code")
-        transaction.qr_code_url = extract_qr_code_url(notification_payload) or transaction.qr_code_url
+
+        bill_key = notification_payload.get("bill_key") or notification_payload.get("mandiri_bill_key")
+        biller_code = notification_payload.get("biller_code")
+        payment_code = notification_payload.get("payment_code")
+
+        if bill_key and not transaction.payment_code:
+            transaction.payment_code = bill_key
+        if payment_code and not transaction.payment_code:
+            transaction.payment_code = payment_code
+        if biller_code and not transaction.biller_code:
+            transaction.biller_code = biller_code
+
+        if _is_qr_payment_type(notification_payload.get("payment_type")):
+            transaction.qr_code_url = extract_qr_code_url(notification_payload) or transaction.qr_code_url
 
         if payment_success:
             # set payment time jika tersedia
@@ -964,7 +1441,9 @@ def handle_notification():
                                 filename,
                                 request_id,
                             )
-                            current_app.logger.info(f"Task pengiriman WhatsApp invoice untuk {order_id} dikirim ke Celery.")
+                            current_app.logger.info(
+                                f"Task pengiriman WhatsApp invoice untuk {order_id} dikirim ke Celery."
+                            )
 
                         except Exception as e_notif:
                             current_app.logger.error(
@@ -1087,12 +1566,25 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
                 except Exception:
                     pass
 
-                if midtrans_status_response.get("payment_type"):
+                if midtrans_status_response.get("payment_type") and not transaction.payment_method:
                     transaction.payment_method = midtrans_status_response.get("payment_type")
                 if parsed_expiry := safe_parse_midtrans_datetime(midtrans_status_response.get("expiry_time")):
                     transaction.expiry_time = parsed_expiry
                 transaction.va_number = extract_va_number(midtrans_status_response) or transaction.va_number
-                transaction.qr_code_url = extract_qr_code_url(midtrans_status_response) or transaction.qr_code_url
+                if _is_qr_payment_type(midtrans_status_response.get("payment_type")):
+                    transaction.qr_code_url = extract_qr_code_url(midtrans_status_response) or transaction.qr_code_url
+
+                # Echannel (Mandiri Bill Payment) info can exist while still pending.
+                bill_key = midtrans_status_response.get("bill_key") or midtrans_status_response.get("mandiri_bill_key")
+                biller_code = midtrans_status_response.get("biller_code")
+                payment_code = midtrans_status_response.get("payment_code")
+
+                if bill_key and not transaction.payment_code:
+                    transaction.payment_code = bill_key
+                if payment_code and not transaction.payment_code:
+                    transaction.payment_code = payment_code
+                if biller_code and not transaction.biller_code:
+                    transaction.biller_code = biller_code
 
                 if payment_success:
                     transaction.status = TransactionStatus.SUCCESS
@@ -1183,6 +1675,11 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
             "status": transaction.status.value,
             "amount": float(transaction.amount or 0.0),
             "payment_method": transaction.payment_method,
+            "deeplink_redirect_url": (
+                transaction.snap_redirect_url
+                if (transaction.snap_token is None and transaction.snap_redirect_url)
+                else None
+            ),
             "payment_time": transaction.payment_time.isoformat() if transaction.payment_time else None,
             "expiry_time": transaction.expiry_time.isoformat() if transaction.expiry_time else None,
             "va_number": transaction.va_number,
@@ -1210,7 +1707,9 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
             if u
             else None,
         }
-        return jsonify(response_data), HTTPStatus.OK
+        response = jsonify(response_data)
+        response.headers["Cache-Control"] = "no-store"
+        return response, HTTPStatus.OK
     except Exception as e:
         if session.is_active:
             session.rollback()
@@ -1325,6 +1824,55 @@ def get_transaction_invoice(current_user_id: uuid.UUID, midtrans_order_id: str):
     finally:
         if session:
             session.remove()
+
+
+@transactions_bp.route("/<string:midtrans_order_id>/qr", methods=["GET"])
+@token_required
+def get_transaction_qr(current_user_id: uuid.UUID, midtrans_order_id: str):
+    session = db.session
+    try:
+        transaction = session.query(Transaction).filter(Transaction.midtrans_order_id == midtrans_order_id).first()
+        if not transaction:
+            abort(HTTPStatus.NOT_FOUND, "Transaksi tidak ditemukan.")
+
+        requesting_user = session.get(User, current_user_id)
+        if not requesting_user or (transaction.user_id != current_user_id and not requesting_user.is_admin_role):
+            abort(HTTPStatus.FORBIDDEN, "Anda tidak diizinkan mengakses QR ini.")
+
+        qr_url = str(getattr(transaction, "qr_code_url", "") or "").strip()
+        if not qr_url:
+            abort(HTTPStatus.NOT_FOUND, "QR Code tidak tersedia untuk transaksi ini.")
+
+        timeout_seconds = int(current_app.config.get("MIDTRANS_HTTP_TIMEOUT_SECONDS", 15))
+        upstream = requests.get(qr_url, timeout=timeout_seconds)
+        if upstream.status_code >= 400:
+            abort(HTTPStatus.BAD_GATEWAY, "Gagal mengambil QR Code dari provider pembayaran.")
+
+        content_type = upstream.headers.get("Content-Type") or "application/octet-stream"
+        ext = ""
+        if "png" in content_type:
+            ext = ".png"
+        elif "svg" in content_type:
+            ext = ".svg"
+        elif "jpeg" in content_type or "jpg" in content_type:
+            ext = ".jpg"
+
+        response = make_response(upstream.content)
+        response.headers["Content-Type"] = content_type
+        download = str(request.args.get("download", "")).strip().lower() in {"1", "true", "yes"}
+        disposition = "attachment" if download else "inline"
+        response.headers["Content-Disposition"] = f'{disposition}; filename="{midtrans_order_id}-qr{ext}"'
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except HTTPException:
+        raise
+    except Exception as e:
+        if session.is_active:
+            session.rollback()
+        current_app.logger.error(f"Error saat mengambil QR untuk {midtrans_order_id}: {e}", exc_info=True)
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description=f"Kesalahan tak terduga: {e}")
+    finally:
+        session.remove()
 
 
 @transactions_bp.route("/invoice/temp/<string:token>", methods=["GET"])

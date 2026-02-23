@@ -152,6 +152,48 @@ Uncaught ReferenceError: Cannot access 'ee' before initialization
 	- `docker compose up -d --build backend`
 - Pilihan B (dev mount): jalankan override yang memount source backend dan menyalakan reload.
 
+## 17) Docker BuildKit snapshot error (cache corruption)
+**Gejala**:
+- `docker compose build` gagal dengan error snapshot/cache (BuildKit).
+
+**Penyebab umum**:
+- Cache BuildKit korup (terutama setelah build berulang / disk penuh / crash).
+
+**Solusi cepat**:
+- Bersihkan cache builder lalu build ulang:
+	- `docker builder prune -af`
+	- `docker system prune -af` (lebih agresif; hati-hati)
+
+## 18) `abort(422)` berubah jadi 500 (HTTPException tertangkap)
+**Gejala**:
+- Backend seharusnya balas 422, tetapi yang keluar 500.
+
+**Penyebab**:
+- `HTTPException` dari `abort()` tertangkap oleh `except Exception` lalu dibungkus ulang.
+
+**Solusi**:
+- Tambahkan handler `except HTTPException: raise` sebelum `except Exception`.
+
+## 19) Query `order_id` double di callback Snap finish
+**Gejala**:
+- URL jadi seperti `.../payment/finish?order_id=AAA&order_id=AAA`.
+
+**Penyebab**:
+- Finish URL sudah mengandung `order_id` tetapi Snap juga menambahkan `order_id`.
+
+**Solusi**:
+- Untuk Snap callbacks, pakai base URL tanpa query (mis. `/payment/finish`).
+
+## 20) Snap.js masih ter-load saat mode Core API
+**Gejala**:
+- Browser tetap request `snap.js` walau mode Core API.
+
+**Penyebab**:
+- Plugin frontend auto-load Snap.js di banyak halaman.
+
+**Solusi**:
+- Snap.js harus lazy-load hanya saat benar-benar dipakai (`useMidtransSnap()`), bukan dari plugin global.
+
 ## 14) OTP terkirim tapi user tidak bisa login (verify-otp tidak terpanggil)
 **Gejala**:
 - User klik “Kirim OTP” berhasil (OTP masuk WhatsApp), tapi setelah input OTP tombol verifikasi tidak jalan / tidak ada perubahan.

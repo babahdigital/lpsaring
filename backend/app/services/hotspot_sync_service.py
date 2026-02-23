@@ -399,7 +399,9 @@ def _sync_address_list_status(
         target_list = list_habis
     elif user.is_unlimited_user:
         target_list = list_active
-    elif float(getattr(user, "total_quota_purchased_mb", 0) or 0) > fup_threshold_mb and remaining_mb <= fup_threshold_mb:
+    elif (
+        float(getattr(user, "total_quota_purchased_mb", 0) or 0) > fup_threshold_mb and remaining_mb <= fup_threshold_mb
+    ):
         target_list = list_fup
     else:
         target_list = list_active
@@ -412,7 +414,9 @@ def _sync_address_list_status(
         status_value = "unlimited"
     elif remaining_mb <= 0:
         status_value = "habis"
-    elif float(getattr(user, "total_quota_purchased_mb", 0) or 0) > fup_threshold_mb and remaining_mb <= fup_threshold_mb:
+    elif (
+        float(getattr(user, "total_quota_purchased_mb", 0) or 0) > fup_threshold_mb and remaining_mb <= fup_threshold_mb
+    ):
         status_value = "fup"
     else:
         status_value = "active"
@@ -500,7 +504,9 @@ def _sync_address_list_status_for_ip(
         target_list = list_habis
     elif user.is_unlimited_user:
         target_list = list_active
-    elif float(getattr(user, "total_quota_purchased_mb", 0) or 0) > fup_threshold_mb and remaining_mb <= fup_threshold_mb:
+    elif (
+        float(getattr(user, "total_quota_purchased_mb", 0) or 0) > fup_threshold_mb and remaining_mb <= fup_threshold_mb
+    ):
         target_list = list_fup
     else:
         target_list = list_active
@@ -514,7 +520,9 @@ def _sync_address_list_status_for_ip(
         status_value = "unlimited"
     elif remaining_mb <= 0:
         status_value = "habis"
-    elif float(getattr(user, "total_quota_purchased_mb", 0) or 0) > fup_threshold_mb and remaining_mb <= fup_threshold_mb:
+    elif (
+        float(getattr(user, "total_quota_purchased_mb", 0) or 0) > fup_threshold_mb and remaining_mb <= fup_threshold_mb
+    ):
         status_value = "fup"
     else:
         status_value = "active"

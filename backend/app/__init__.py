@@ -343,8 +343,10 @@ def register_error_handlers(app: Flask) -> None:
         if not _is_api_request():
             return error.get_response()
         status_code = int(error.code or HTTPStatus.INTERNAL_SERVER_ERROR)
+        message = error.description or error.name
         payload = {
-            "error": error.description or error.name,
+            "error": message,
+            "message": message,
             "status_code": status_code,
         }
         return jsonify(payload), status_code

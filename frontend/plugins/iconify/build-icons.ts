@@ -173,6 +173,7 @@ const tablerIcons = [
   'edit',
   'edit-circle',
   'error-404',
+  'external-link',
   'eye',
   'eye-off',
   'file-alert',

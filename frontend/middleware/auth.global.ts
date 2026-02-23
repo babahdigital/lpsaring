@@ -86,7 +86,9 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
       }
       // Jika mencoba akses path user yang dilindungi, arahkan ke login user.
       if (!to.path.startsWith('/admin')) {
-        return navigateTo('/login', { replace: true })
+        // Simpan tujuan awal agar setelah login tidak jatuh ke dashboard.
+        const redirect = encodeURIComponent(to.fullPath)
+        return navigateTo(`/login?redirect=${redirect}`, { replace: true })
       }
     }
   }
@@ -127,7 +129,7 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
         return
 
       if (accessStatus === 'expired' || accessStatus === 'habis') {
-        const allowedPaths = ['/beli', '/payment/finish', statusRouteMap.expired, statusRouteMap.habis]
+        const allowedPaths = ['/beli', '/payment/status', '/payment/finish', statusRouteMap.expired, statusRouteMap.habis]
         if (!allowedPaths.includes(to.path))
           return navigateTo('/beli', { replace: true })
       }

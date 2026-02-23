@@ -12,6 +12,21 @@ from app.infrastructure.db.models import ApplicationSetting, User
 from app.infrastructure.http.decorators import super_admin_required
 from app.services import settings_service
 
+
+_ALLOWED_CORE_API_METHODS = {"qris", "gopay", "va", "shopeepay"}
+_ALLOWED_VA_BANKS = {"bca", "bni", "bri", "cimb", "mandiri", "permata"}
+
+
+def _parse_csv_set(value: str | None) -> set[str]:
+    if value is None:
+        return set()
+    raw = str(value).strip()
+    if not raw:
+        return set()
+    parts = [p.strip().lower() for p in raw.split(",")]
+    return {p for p in parts if p}
+
+
 # Blueprint ini sudah didaftarkan dengan prefix /api/admin di __init__.py
 settings_management_bp = Blueprint("settings_management_api", __name__)
 
@@ -108,6 +123,70 @@ def update_application_settings(current_admin: User):
                         "message": "Bot Token Telegram wajib diisi jika notifikasi Telegram diaktifkan",
                     }
                 )
+
+        mode_raw = None
+        if "PAYMENT_PROVIDER_MODE" in settings_dict:
+            mode_raw = str(settings_dict.get("PAYMENT_PROVIDER_MODE", "")).strip().lower()
+            if mode_raw not in ["snap", "core_api", "coreapi", "core-api"]:
+                errors.append(
+                    {
+                        "field": "PAYMENT_PROVIDER_MODE",
+                        "message": "Nilai harus 'snap' atau 'core_api'",
+                    }
+                )
+
+        # Core API payment options validation (only enforced when Core API is active).
+        effective_mode_raw = mode_raw
+        if effective_mode_raw is None:
+            effective_mode_raw = (
+                str(settings_service.get_setting("PAYMENT_PROVIDER_MODE", "snap") or "snap").strip().lower()
+            )
+        effective_mode = "core_api" if effective_mode_raw in {"core_api", "coreapi", "core-api"} else "snap"
+
+        if effective_mode == "core_api":
+            methods_raw = settings_dict.get(
+                "CORE_API_ENABLED_PAYMENT_METHODS",
+                settings_service.get_setting("CORE_API_ENABLED_PAYMENT_METHODS", "qris,gopay,va") or "qris,gopay,va",
+            )
+            methods = _parse_csv_set(methods_raw)
+            invalid_methods = sorted(m for m in methods if m not in _ALLOWED_CORE_API_METHODS)
+            if invalid_methods:
+                errors.append(
+                    {
+                        "field": "CORE_API_ENABLED_PAYMENT_METHODS",
+                        "message": f"Metode tidak dikenali: {', '.join(invalid_methods)}",
+                    }
+                )
+            if not methods:
+                errors.append(
+                    {
+                        "field": "CORE_API_ENABLED_PAYMENT_METHODS",
+                        "message": "Minimal pilih 1 metode pembayaran untuk Core API.",
+                    }
+                )
+
+            if "va" in methods:
+                banks_raw = settings_dict.get(
+                    "CORE_API_ENABLED_VA_BANKS",
+                    settings_service.get_setting("CORE_API_ENABLED_VA_BANKS", "bca,bni,bri,mandiri,permata,cimb")
+                    or "bca,bni,bri,mandiri,permata,cimb",
+                )
+                banks = _parse_csv_set(banks_raw)
+                invalid_banks = sorted(b for b in banks if b not in _ALLOWED_VA_BANKS)
+                if invalid_banks:
+                    errors.append(
+                        {
+                            "field": "CORE_API_ENABLED_VA_BANKS",
+                            "message": f"Bank VA tidak dikenali: {', '.join(invalid_banks)}",
+                        }
+                    )
+                if not banks:
+                    errors.append(
+                        {
+                            "field": "CORE_API_ENABLED_VA_BANKS",
+                            "message": "Minimal pilih 1 bank untuk Virtual Account.",
+                        }
+                    )
 
         if errors:
             return jsonify({"errors": errors}), HTTPStatus.UNPROCESSABLE_ENTITY

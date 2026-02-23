@@ -19,7 +19,7 @@ from sqlalchemy.engine import make_url
 import sqlalchemy as sa
 
 from app.extensions import db
-from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message, send_whatsapp_with_image_url
+from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
 from app.infrastructure.gateways.telegram_client import send_telegram_message
 from app.infrastructure.db.models import (
     User,
@@ -43,11 +43,14 @@ from app.utils.formatters import get_phone_number_variations, format_to_local_ph
 from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package
 
 from app.infrastructure.http.transactions_routes import (
+    extract_action_url,
     extract_qr_code_url,
     extract_va_number,
     get_midtrans_core_api_client,
     safe_parse_midtrans_datetime,
 )
+
+from app.services import settings_service
 
 admin_bp = Blueprint("admin_api", __name__)
 
@@ -1499,10 +1502,78 @@ def export_transactions(current_admin: User):
         return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
+def _normalize_admin_payment_method(value: str | None) -> str | None:
+    raw = str(value or "").strip().lower()
+    if raw in {"qris", "gopay", "va", "shopeepay"}:
+        return raw
+    return None
+
+
+def _normalize_admin_va_bank(value: str | None) -> str | None:
+    raw = str(value or "").strip().lower()
+    if raw in {"bca", "bni", "bri", "cimb", "mandiri", "permata"}:
+        return raw
+    return None
+
+
+def _build_public_status_url(order_id: str) -> str:
+    base = current_app.config.get("APP_PUBLIC_BASE_URL") or request.url_root
+    base = str(base or "").strip() or request.url_root
+    return f"{base.rstrip('/')}/payment/status?order_id={order_id}"
+
+
+def _build_admin_bill_order_id() -> str:
+    prefix = str(current_app.config.get("ADMIN_BILL_ORDER_ID_PREFIX", "BD-LPSR") or "BD-LPSR").strip()
+    if prefix == "":
+        prefix = "BD-LPSR"
+    token = uuid.uuid4().hex[:12].upper()
+    return f"{prefix}-{token}"
+
+
+def _parse_csv_values(raw: str | None) -> list[str]:
+    if raw is None:
+        return []
+    text = str(raw).strip()
+    if not text:
+        return []
+    parts = [p.strip().lower() for p in text.split(",")]
+    return [p for p in parts if p]
+
+
+def _get_enabled_core_api_methods_for_admin() -> list[str]:
+    raw = settings_service.get_setting("CORE_API_ENABLED_PAYMENT_METHODS", None)
+    selected = set(_parse_csv_values(raw))
+    # Keep stable order.
+    ordered = [m for m in ("qris", "gopay", "va", "shopeepay") if m in selected]
+    if ordered:
+        return ordered
+    return ["qris", "gopay", "va"]
+
+
+def _get_enabled_core_api_va_banks_for_admin() -> list[str]:
+    raw = settings_service.get_setting("CORE_API_ENABLED_VA_BANKS", None)
+    selected = set(_parse_csv_values(raw))
+    ordered = [b for b in ("bni", "bca", "bri", "mandiri", "permata", "cimb") if b in selected]
+    if ordered:
+        return ordered
+    return ["bni", "bca", "bri", "mandiri", "permata", "cimb"]
+
+
 @admin_bp.route("/transactions/qris", methods=["POST"])
+@admin_bp.route("/transactions/bill", methods=["POST"])
 @admin_required
-def create_qris_bill(current_admin: User):
-    """Admin membuat tagihan QRIS untuk user tertentu dan mengirim via WhatsApp."""
+def create_bill(current_admin: User):
+    """Admin membuat tagihan (Core API) untuk user tertentu dan mengirim via WhatsApp.
+
+    Payload:
+    - user_id: UUID
+    - package_id: UUID
+    - payment_method: qris|va|gopay|shopeepay (optional; default qris)
+    - va_bank: bca|bni|bri|mandiri|permata|cimb (required when payment_method=va)
+
+    Catatan:
+    - Endpoint /transactions/qris dipertahankan untuk kompatibilitas; ia sekarang alias dari endpoint ini.
+    """
     session = db.session
     json_data = request.get_json(silent=True) or {}
 
@@ -1530,7 +1601,45 @@ def create_qris_bill(current_admin: User):
         if amount <= 0:
             return jsonify({"message": "Harga paket tidak valid."}), HTTPStatus.BAD_REQUEST
 
-        order_id = f"HS-{uuid.uuid4().hex[:12].upper()}"
+        payment_method = _normalize_admin_payment_method(
+            json_data.get("payment_method") or json_data.get("method") or json_data.get("payment_type")
+        )
+        if payment_method is None:
+            payment_method = "qris"
+
+        enabled_methods = _get_enabled_core_api_methods_for_admin()
+        if payment_method not in set(enabled_methods):
+            return (
+                jsonify(
+                    {
+                        "message": "Metode pembayaran ini tidak diaktifkan di pengaturan Core API.",
+                        "payment_method": payment_method,
+                        "enabled_methods": enabled_methods,
+                    }
+                ),
+                HTTPStatus.BAD_REQUEST,
+            )
+
+        va_bank = _normalize_admin_va_bank(json_data.get("va_bank") or json_data.get("bank"))
+        if payment_method == "va" and va_bank is None:
+            # Default ke BNI untuk meminimalkan friksi jika admin tidak memilih bank.
+            va_bank = "bni"
+
+        enabled_va_banks = _get_enabled_core_api_va_banks_for_admin()
+        if payment_method == "va":
+            if va_bank not in set(enabled_va_banks):
+                return (
+                    jsonify(
+                        {
+                            "message": "Bank VA ini tidak diaktifkan di pengaturan Core API.",
+                            "va_bank": va_bank,
+                            "enabled_va_banks": enabled_va_banks,
+                        }
+                    ),
+                    HTTPStatus.BAD_REQUEST,
+                )
+
+        order_id = _build_admin_bill_order_id()
         now_utc = datetime.now(dt_timezone.utc)
         try:
             expiry_minutes = int(current_app.config.get("MIDTRANS_DEFAULT_EXPIRY_MINUTES", 15))
@@ -1538,6 +1647,8 @@ def create_qris_bill(current_admin: User):
             expiry_minutes = 15
         expiry_minutes = max(5, min(expiry_minutes, 24 * 60))
         expiry_time = now_utc + timedelta(minutes=expiry_minutes)
+
+        status_url = _build_public_status_url(order_id)
 
         tx = Transaction()
         tx.id = uuid.uuid4()
@@ -1548,7 +1659,7 @@ def create_qris_bill(current_admin: User):
         tx.status = TransactionStatus.PENDING
         tx.expiry_time = expiry_time
         # Default: QRIS native (Other QRIS). Bisa auto-fallback ke GoPay Dynamic QRIS jika channel belum aktif.
-        tx.payment_method = "qris"
+        tx.payment_method = payment_method
         session.add(tx)
 
         try:
@@ -1580,6 +1691,7 @@ def create_qris_bill(current_admin: User):
                 "first_name": str(getattr(user, "full_name", None) or "Pengguna")[:50],
                 "phone": format_to_local_phone(getattr(user, "phone_number", "") or ""),
             },
+            "custom_expiry": {"expiry_duration": int(expiry_minutes), "unit": "minute"},
         }
 
         def _parse_midtrans_api_response_from_message(message: str) -> dict[str, object] | None:
@@ -1594,28 +1706,114 @@ def create_qris_bill(current_admin: User):
                 return None
             return None
 
+        def _apply_charge_result_to_tx(resp: object) -> None:
+            try:
+                tx.midtrans_notification_payload = json.dumps(resp, ensure_ascii=False)
+            except Exception:
+                tx.midtrans_notification_payload = None
+
+            if not isinstance(resp, dict):
+                return
+
+            transaction_id = resp.get("transaction_id")
+            if isinstance(transaction_id, str):
+                tx.midtrans_transaction_id = transaction_id
+
+            expiry_time_raw = resp.get("expiry_time")
+            expiry_time_str = expiry_time_raw if isinstance(expiry_time_raw, str) else None
+            if parsed := safe_parse_midtrans_datetime(expiry_time_str):
+                tx.expiry_time = parsed
+
+            # QR payments (qris/gopay) may contain actions.
+            tx.qr_code_url = extract_qr_code_url(resp) or tx.qr_code_url
+
+            deeplink = extract_action_url(resp, action_name_contains="deeplink-redirect")
+            if deeplink:
+                # Reuse snap_redirect_url column for non-snap deeplink.
+                tx.snap_redirect_url = deeplink
+
+            tx.va_number = extract_va_number(resp) or tx.va_number
+
+            # Mandiri e-channel bill key + biller code.
+            bill_key = resp.get("bill_key") or resp.get("mandiri_bill_key")
+            biller_code = resp.get("biller_code")
+            if bill_key:
+                tx.payment_code = str(bill_key).strip()
+            if biller_code:
+                tx.biller_code = str(biller_code).strip()
+
+            midtrans_status = str(resp.get("transaction_status") or "").strip().lower()
+            if midtrans_status == "pending":
+                tx.status = TransactionStatus.PENDING
+            elif midtrans_status in ("settlement", "capture"):
+                tx.status = TransactionStatus.SUCCESS
+
         charge_resp: object
-        attempted_payment_type = "qris"
+        attempted_payment_type = payment_method
+        attempted_va_bank = va_bank
         fallback_used = False
         try:
-            # Attempt 1: Other QRIS (native QRIS) via payment_type=qris
-            attempted_payment_type = "qris"
-            # Note: QRIS Core API supports multiple acquirers; we explicitly select GoPay
-            # to match our current operational setup.
-            # Ref: https://docs.midtrans.com/reference/qris
-            charge_payload = {
-                **base_payload,
-                "payment_type": "qris",
-                "qris": {"acquirer": "gopay"},
-            }
-            charge_resp = core.charge(charge_payload)
+            if payment_method == "qris":
+                # Attempt 1: Other QRIS (native QRIS) via payment_type=qris
+                # Note: QRIS Core API supports multiple acquirers; we explicitly select GoPay.
+                # Ref: https://docs.midtrans.com/reference/qris
+                attempted_payment_type = "qris"
+                charge_payload = {
+                    **base_payload,
+                    "payment_type": "qris",
+                    "qris": {"acquirer": "gopay"},
+                }
+                charge_resp = core.charge(charge_payload)
+
+            elif payment_method == "gopay":
+                attempted_payment_type = "gopay"
+                charge_payload = {
+                    **base_payload,
+                    "payment_type": "gopay",
+                    "gopay": {"enable_callback": True, "callback_url": status_url},
+                }
+                charge_resp = core.charge(charge_payload)
+
+            elif payment_method == "shopeepay":
+                attempted_payment_type = "shopeepay"
+                charge_payload = {
+                    **base_payload,
+                    "payment_type": "shopeepay",
+                    "shopeepay": {"callback_url": status_url},
+                }
+                charge_resp = core.charge(charge_payload)
+
+            else:
+                # payment_method == "va"
+                bank = va_bank or "bni"
+                attempted_payment_type = "va"
+                attempted_va_bank = bank
+                if bank == "mandiri":
+                    tx.payment_method = "echannel"
+                    charge_payload = {
+                        **base_payload,
+                        "payment_type": "echannel",
+                        "echannel": {
+                            "bill_info1": "Pembayaran Hotspot",
+                            "bill_info2": str(getattr(package, "name", "Paket") or "Paket")[:18],
+                        },
+                    }
+                    charge_resp = core.charge(charge_payload)
+                else:
+                    tx.payment_method = f"{bank}_va"
+                    charge_payload = {
+                        **base_payload,
+                        "payment_type": "bank_transfer",
+                        "bank_transfer": {"bank": bank},
+                    }
+                    charge_resp = core.charge(charge_payload)
         except midtransclient.error_midtrans.MidtransAPIError as e_charge:
             raw_message = getattr(e_charge, "message", "") or ""
             parsed = _parse_midtrans_api_response_from_message(raw_message) or {}
             status_message = str(parsed.get("status_message") or "").strip()
             status_message_lower = status_message.lower()
             # Jika channel QRIS native belum aktif, fallback ke GoPay Dynamic QRIS (masih scan QRIS).
-            if any(
+            if payment_method == "qris" and any(
                 needle in status_message_lower
                 for needle in (
                     "payment channel is not activated",
@@ -1635,34 +1833,13 @@ def create_qris_bill(current_admin: User):
                     **base_payload,
                     "payment_type": "gopay",
                     # Minimal config; Midtrans akan mengembalikan actions generate-qr-code.
-                    "gopay": {"enable_callback": False},
+                    "gopay": {"enable_callback": True, "callback_url": status_url},
                 }
                 charge_resp = core.charge(charge_payload)
             else:
                 raise
 
-        try:
-            tx.midtrans_notification_payload = json.dumps(charge_resp, ensure_ascii=False)
-        except Exception:
-            tx.midtrans_notification_payload = None
-
-        if isinstance(charge_resp, dict):
-            charge_resp_dict: dict[str, object] = charge_resp
-            transaction_id = charge_resp_dict.get("transaction_id")
-            if isinstance(transaction_id, str):
-                tx.midtrans_transaction_id = transaction_id
-            expiry_time_raw = charge_resp_dict.get("expiry_time")
-            expiry_time_str = expiry_time_raw if isinstance(expiry_time_raw, str) else None
-            if parsed := safe_parse_midtrans_datetime(expiry_time_str):
-                tx.expiry_time = parsed
-            tx.va_number = extract_va_number(charge_resp_dict) or tx.va_number
-            tx.qr_code_url = extract_qr_code_url(charge_resp_dict) or tx.qr_code_url
-
-            midtrans_status = str(charge_resp_dict.get("transaction_status") or "").strip().lower()
-            if midtrans_status == "pending":
-                tx.status = TransactionStatus.PENDING
-            elif midtrans_status in ("settlement", "capture"):
-                tx.status = TransactionStatus.SUCCESS
+        _apply_charge_result_to_tx(charge_resp)
 
         disable_super_admin_logs = str(os.getenv("DISABLE_SUPER_ADMIN_ACTION_LOGS", "false") or "").strip().lower() in {
             "1",
@@ -1693,6 +1870,8 @@ def create_qris_bill(current_admin: User):
                         "package_name": str(getattr(package, "name", "") or ""),
                         "amount": amount,
                         "payment_method": tx.payment_method,
+                        "requested_payment_method": payment_method,
+                        "requested_va_bank": va_bank,
                         "qr_code_url": tx.qr_code_url,
                         "expiry_time": (expiry_time_val.isoformat() if expiry_time_val is not None else None),
                     },
@@ -1718,6 +1897,8 @@ def create_qris_bill(current_admin: User):
                 "expiry_time": expiry_time.isoformat() if expiry_time is not None else None,
                 "qr_code_url": tx.qr_code_url,
                 "payment_method": tx.payment_method,
+                "requested_payment_method": payment_method,
+                "requested_va_bank": va_bank,
             },
             ensure_ascii=False,
         )
@@ -1737,25 +1918,71 @@ def create_qris_bill(current_admin: User):
 
         duration_label = f"{pkg_duration_days} Hari" if pkg_duration_days is not None else "-"
 
-        caption = (
-            f"📌 *Tagihan Pembelian Paket*\n\n"
-            f"Nama: *{getattr(user, 'full_name', '') or 'Pengguna'}*\n"
-            f"Paket: *{getattr(package, 'name', '') or 'Paket'}*\n"
-            f"Kuota: *{quota_label}*\n"
-            f"Masa aktif: *{duration_label}*\n"
-            f"Jumlah: *Rp {amount:,}*\n"
-            f"Invoice: *{order_id}*"
+        method_label = (
+            "QRIS"
+            if payment_method == "qris"
+            else ("GoPay" if payment_method == "gopay" else ("ShopeePay" if payment_method == "shopeepay" else "VA"))
         )
+        caption_lines = [
+            "📌 *Tagihan Pembelian Paket*",
+            "",
+            f"Nama: *{getattr(user, 'full_name', '') or 'Pengguna'}*",
+            f"Paket: *{getattr(package, 'name', '') or 'Paket'}*",
+            f"Kuota: *{quota_label}*",
+            f"Masa aktif: *{duration_label}*",
+            f"Harga: *Rp {amount:,}*",
+            f"Invoice: *{order_id}*",
+        ]
 
-        sent = False
-        if tx.qr_code_url:
-            sent = send_whatsapp_with_image_url(phone_number, caption, tx.qr_code_url, filename=f"qris-{order_id}.png")
-        if not sent:
-            send_whatsapp_message(phone_number, f"{caption}\n\nQR: {tx.qr_code_url or '-'}")
+        if payment_method == "va":
+            bank_key = str(va_bank or "bni").strip().lower()
+            if str(tx.payment_method or "").strip().lower() == "echannel":
+                bank_key = "mandiri"
 
-        message = "Tagihan QRIS berhasil dibuat."
+            bank_label_map = {
+                "bca": "BCA",
+                "bni": "BNI",
+                "bri": "BRI",
+                "mandiri": "Mandiri",
+                "permata": "Permata",
+                "cimb": "CIMB Niaga",
+            }
+            caption_lines.append(f"Bank: *{bank_label_map.get(bank_key, bank_key.upper() or 'VA')}*")
+        else:
+            caption_lines.append(f"Metode: *{method_label}*")
+
+        if payment_method == "va":
+            bank = (va_bank or "bni").upper()
+            # Mandiri e-channel uses biller_code + bill_key.
+            if (va_bank or "") == "mandiri" or str(tx.payment_method or "") == "echannel":
+                if tx.payment_code:
+                    caption_lines.append(f"Bill Key: *{tx.payment_code}*")
+                if tx.biller_code:
+                    caption_lines.append(f"Biller Code: *{tx.biller_code}*")
+            else:
+                if tx.va_number:
+                    caption_lines.append(f"VA {bank}: *{tx.va_number}*")
+
+        caption_lines.extend(
+            [
+                "",
+                f"Status & pembayaran: {status_url}",
+            ]
+        )
+        if payment_method == "qris":
+            caption_lines.append("Buka link status untuk menampilkan QR dan melakukan pembayaran.")
+        elif payment_method == "gopay":
+            caption_lines.append("Buka link status lalu ikuti instruksi (tombol deeplink/QR jika tersedia).")
+        elif payment_method == "shopeepay":
+            caption_lines.append("Buka link status lalu ikuti instruksi (tombol deeplink/QR jika tersedia).")
+        else:
+            caption_lines.append("Buka link status untuk melihat detail pembayaran dan status invoice.")
+
+        sent = send_whatsapp_message(phone_number, "\n".join(caption_lines))
+
+        message = "Tagihan berhasil dibuat."
         if not sent:
-            message = "Tagihan QRIS berhasil dibuat, namun WhatsApp gagal terkirim (cek konfigurasi WA/nomor tujuan)."
+            message = "Tagihan berhasil dibuat, namun WhatsApp gagal terkirim (cek konfigurasi WA/nomor tujuan)."
 
         return (
             jsonify(
@@ -1765,7 +1992,11 @@ def create_qris_bill(current_admin: User):
                     "status": tx.status.value,
                     "qr_code_url": tx.qr_code_url,
                     "payment_method": tx.payment_method,
+                    "status_url": status_url,
                     "whatsapp_sent": bool(sent),
+                    "va_number": tx.va_number,
+                    "payment_code": tx.payment_code,
+                    "biller_code": tx.biller_code,
                 }
             ),
             HTTPStatus.OK,
@@ -1801,9 +2032,9 @@ def create_qris_bill(current_admin: User):
         is_prod = bool(current_app.config.get("MIDTRANS_IS_PRODUCTION", False))
         env_label = "Production" if is_prod else "Sandbox"
 
-        user_message = "Gagal membuat tagihan QRIS di Midtrans."
+        user_message = "Gagal membuat tagihan di Midtrans."
         if midtrans_status_message:
-            user_message = f"Gagal membuat tagihan QRIS di Midtrans: {midtrans_status_message}"
+            user_message = f"Gagal membuat tagihan di Midtrans: {midtrans_status_message}"
             if "Payment channel is not activated" in midtrans_status_message:
                 # Beri konteks channel yang sedang dicoba + apakah fallback sudah dilakukan.
                 tried = None
@@ -1837,12 +2068,13 @@ def create_qris_bill(current_admin: User):
                 "midtrans_status_message": midtrans_status_message,
                 "midtrans_error_id": midtrans_error_id,
                 "attempted_payment_type": (attempted_payment_type if "attempted_payment_type" in locals() else None),
+                "attempted_va_bank": (attempted_va_bank if "attempted_va_bank" in locals() else None),
                 "fallback_used": (fallback_used if "fallback_used" in locals() else None),
             }
         ), HTTPStatus.BAD_REQUEST
     except Exception as e:
         session.rollback()
-        current_app.logger.error(f"Error create QRIS bill: {e}", exc_info=True)
+        current_app.logger.error(f"Error create bill: {e}", exc_info=True)
         return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 

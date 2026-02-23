@@ -42,6 +42,23 @@ Production:
 - Frontend (Nuxt dev server): 3010 (host → container)
 - Nginx: 80 (host → container)
 
+## 3.1) Pembayaran (Snap vs Core API)
+
+Mode pembayaran dikontrol dari Setting Admin:
+- `PAYMENT_PROVIDER_MODE=snap` → pembayaran via Snap UI (Snap.js di-load lazy saat diperlukan).
+- `PAYMENT_PROVIDER_MODE=core_api` → tanpa Snap UI (server-to-server), mendukung QRIS/GoPay/VA (+ ShopeePay jika channel aktif).
+
+URL status pembayaran (yang dibagikan ke user) adalah:
+- `/payment/status?order_id=...`
+
+Env terkait prefix invoice:
+- `MIDTRANS_ORDER_ID_PREFIX` → prefix order_id untuk transaksi user (beli paket).
+- `ADMIN_BILL_ORDER_ID_PREFIX` → prefix order_id untuk tagihan yang dibuat admin.
+
+Dokumen rujukan:
+- `docs/TRANSACTIONS_MIDTRANS_LIFECYCLE.md`
+- `docs/MIDTRANS_SNAP.md`
+
 ## 4) File Environment
 Siapkan file environment berikut:
 - Root env (dipakai juga oleh frontend container):

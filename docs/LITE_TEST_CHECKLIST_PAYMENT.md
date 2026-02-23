@@ -1,26 +1,38 @@
 # Lite Test Checklist – Payment/Transactions
 
-Checklist ini fokus hanya pada perubahan payment lifecycle + UI finish + admin transaksi.
-
+Checklist ini fokus pada payment lifecycle + halaman status + admin tagihan.
 
 ## A) Backend (manual cepat)
 
-- Initiate: pastikan transaksi baru statusnya `UNKNOWN` (bukan `PENDING`).
-- Snap close: tutup popup Snap → status transaksi menjadi `CANCELLED`.
-- Pending: pilih metode bayar VA/QRIS → status menjadi `PENDING`, `expiry_time` terisi.
-- Success: selesaikan pembayaran → webhook mengubah `SUCCESS` dan paket ter-apply.
-- Expiry: biarkan `UNKNOWN/PENDING` lewat batas → task mengubah ke `EXPIRED`.
+### Mode Snap (`PAYMENT_PROVIDER_MODE=snap`)
+- Initiate: transaksi baru status `UNKNOWN` (Snap token/redirect ada).
+- Snap close: tutup popup Snap → status menjadi `CANCELLED`.
+- Pending/Success: status final mengikuti webhook Midtrans.
 
+### Mode Core API (`PAYMENT_PROVIDER_MODE=core_api`)
+- Initiate: transaksi baru status `PENDING` dan field instruksi terisi sesuai metode:
+	- QRIS/GoPay/ShopeePay → `qr_code_url` (dan kadang deeplink)
+	- VA bank → `va_number`
+	- Mandiri (echannel) → `payment_code` + `biller_code`
+- Status final: webhook mengubah jadi `SUCCESS/FAILED/EXPIRED/...`.
+
+### Umum
+- Expiry: biarkan `UNKNOWN/PENDING` lewat batas → task mengubah ke `EXPIRED`.
 
 ## B) Frontend (UI)
 
-- Tombol bayar: tidak menampilkan “Menunggu” kecuali ada `onPending` atau webhook.
-- Halaman finish: `UNKNOWN` → “Belum Dimulai” + polling; `PENDING` → instruksi + expiry; `SUCCESS` → invoice aktif.
-- Admin transaksi: kolom metode/kadaluwarsa terisi bila ada; tombol invoice hanya muncul untuk `SUCCESS`.
+- URL status canonical: buka `/payment/status?order_id=...` (tanpa redirect).
+- Core API: QR ditampilkan via proxy backend `/api/transactions/<order_id>/qr` (tidak direct ke domain provider).
+- Snap.js: hanya lazy-load saat mode Snap dipakai (tidak ter-load saat Core API).
 
+## C) Admin (Buat Tagihan)
 
-## C) Automated (repo)
+- Admin → Users → Buat Tagihan:
+	- Dropdown metode + bank VA mengikuti setting `CORE_API_ENABLED_PAYMENT_METHODS` + `CORE_API_ENABLED_VA_BANKS`.
+	- WhatsApp berisi link `/payment/status?order_id=...` + detail VA/echannel bila metode VA.
+
+## D) Automated (repo)
 
 - Backend: `python -m ruff check .`
 - Frontend: `pnpm lint`
-- Backend tests (lite): `pytest -q tests/test_transactions_lifecycle.py`
+- Backend tests (lite): `pytest -q backend/tests/test_transactions_lifecycle.py`

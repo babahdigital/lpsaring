@@ -9,6 +9,7 @@ import UserDetailDialog from '@/components/admin/users/UserDetailDialog.vue'
 import UserEditDialog from '@/components/admin/users/UserEditDialog.vue'
 import { useSnackbar } from '@/composables/useSnackbar'
 import { useAuthStore } from '@/store/auth'
+import { useSettingsStore } from '@/store/settings'
 
 interface User {
   id: string
@@ -112,6 +113,7 @@ type Options = InstanceType<typeof VDataTableServer>['options']
 const { $api } = useNuxtApp()
 const { smAndDown } = useDisplay()
 const authStore = useAuthStore()
+const settingsStore = useSettingsStore()
 const { add: showSnackbar } = useSnackbar()
 
 const isHydrated = ref(false)
@@ -164,6 +166,58 @@ const billLoading = ref(false)
 const billSelectedUser = ref<User | null>(null)
 const billSelectedPackage = ref<PackageItem | null>(null)
 const packageList = ref<PackageItem[]>([])
+
+type BillPaymentMethod = 'qris' | 'va' | 'gopay' | 'shopeepay'
+const billPaymentMethod = ref<BillPaymentMethod>('qris')
+const billVaBank = ref<'bni' | 'bca' | 'bri' | 'mandiri' | 'permata' | 'cimb'>('bni')
+
+function parseCsvList(value: unknown): string[] {
+  const raw = (value ?? '').toString().trim()
+  if (raw === '')
+    return []
+  const parts = raw.split(',').map(p => p.trim().toLowerCase()).filter(Boolean)
+  return Array.from(new Set(parts))
+}
+
+const enabledCoreApiMethods = computed(() => {
+  const parsed = parseCsvList(settingsStore.getSetting('CORE_API_ENABLED_PAYMENT_METHODS', 'qris,gopay,va'))
+  const allowed = new Set(['qris', 'gopay', 'va', 'shopeepay'])
+  const normalized = parsed.filter(x => allowed.has(x))
+  return normalized.length > 0 ? normalized : ['qris', 'gopay', 'va']
+})
+
+const enabledCoreApiVaBanks = computed(() => {
+  const parsed = parseCsvList(settingsStore.getSetting('CORE_API_ENABLED_VA_BANKS', 'bca,bni,bri,mandiri,permata,cimb'))
+  const allowed = new Set(['bca', 'bni', 'bri', 'mandiri', 'permata', 'cimb'])
+  const normalized = parsed.filter(x => allowed.has(x))
+  return normalized.length > 0 ? normalized : ['bca', 'bni', 'bri', 'mandiri', 'permata', 'cimb']
+})
+
+const billPaymentMethodOptions = computed(() => {
+  const labels: Record<string, string> = {
+    qris: 'QRIS',
+    va: 'VA',
+    gopay: 'GoPay',
+    shopeepay: 'ShopeePay',
+  }
+  return enabledCoreApiMethods.value
+    .map(m => ({ title: labels[m] ?? m, value: m }))
+    .filter(x => typeof x.value === 'string' && x.value !== '')
+})
+
+const billVaBankOptions = computed(() => {
+  const labels: Record<string, string> = {
+    bni: 'BNI',
+    bca: 'BCA',
+    bri: 'BRI',
+    mandiri: 'Mandiri',
+    permata: 'Permata',
+    cimb: 'CIMB Niaga',
+  }
+  return enabledCoreApiVaBanks.value
+    .map(b => ({ title: labels[b] ?? b.toUpperCase(), value: b }))
+    .filter(x => typeof x.value === 'string' && x.value !== '')
+})
 
 // Perbaikan baris 67 (sesuai deskripsi error baris 56): Handle null/undefined secara eksplisit
 function formatPhoneNumberDisplay(phone: string | null): string | null {
@@ -287,23 +341,46 @@ async function ensurePackagesLoaded() {
 async function openCreateBillDialogForUser(user: User) {
   billSelectedUser.value = user
   billSelectedPackage.value = null
+  const methods = enabledCoreApiMethods.value
+  billPaymentMethod.value = (methods.includes('qris') ? 'qris' : (methods[0] as BillPaymentMethod))
+  const banks = enabledCoreApiVaBanks.value
+  billVaBank.value = (banks.includes('bni') ? 'bni' : (banks[0] as any))
   isCreateBillDialogOpen.value = true
   await ensurePackagesLoaded()
 }
 
-async function createQrisBillForSelectedUser() {
+watch([enabledCoreApiMethods, enabledCoreApiVaBanks], () => {
+  const methods = enabledCoreApiMethods.value
+  if (!methods.includes(billPaymentMethod.value))
+    billPaymentMethod.value = (methods.includes('qris') ? 'qris' : (methods[0] as BillPaymentMethod))
+
+  const banks = enabledCoreApiVaBanks.value
+  if (!banks.includes(billVaBank.value))
+    billVaBank.value = (banks.includes('bni') ? 'bni' : (banks[0] as any))
+})
+
+async function createBillForSelectedUser() {
   if (!billSelectedUser.value || !billSelectedPackage.value) {
     showSnackbar({ type: 'warning', title: 'Lengkapi Data', text: 'Pilih paket terlebih dahulu.' })
     return
   }
 
+  if (billPaymentMethod.value === 'va' && !billVaBank.value) {
+    showSnackbar({ type: 'warning', title: 'Lengkapi Data', text: 'Pilih bank untuk VA.' })
+    return
+  }
+
   billLoading.value = true
   try {
-    const payload = {
+    const payload: Record<string, any> = {
       user_id: billSelectedUser.value.id,
       package_id: billSelectedPackage.value.id,
+      payment_method: billPaymentMethod.value,
     }
-    const resp = await $api<{ message: string, order_id: string, status: string, qr_code_url?: string | null, whatsapp_sent?: boolean }>('/admin/transactions/qris', {
+    if (billPaymentMethod.value === 'va')
+      payload.va_bank = billVaBank.value
+
+    const resp = await $api<{ message: string, order_id: string, status: string, status_url?: string, whatsapp_sent?: boolean }>('/admin/transactions/bill', {
       method: 'POST',
       body: payload,
     })
@@ -320,7 +397,7 @@ async function createQrisBillForSelectedUser() {
   catch (error: any) {
     const message = (typeof error?.data?.message === 'string' && error.data.message !== '')
       ? error.data.message
-      : 'Gagal membuat tagihan QRIS.'
+      : 'Gagal membuat tagihan.'
     const midtransMsg = (typeof error?.data?.midtrans_status_message === 'string' && error.data.midtrans_status_message !== '')
       ? error.data.midtrans_status_message
       : ''
@@ -923,7 +1000,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
             <template v-else>
               <VBtn icon variant="text" color="primary" size="small" @click="openCreateBillDialogForUser(item)">
                 <VIcon icon="tabler-qrcode" /><VTooltip activator="parent">
-                  Buat Tagihan QRIS
+                  Buat Tagihan
                 </VTooltip>
               </VBtn>
               <VBtn v-if="(authStore.isSuperAdmin === true || authStore.isAdmin === true)" icon variant="text" color="primary" size="small" @click="openEditDialog(item)">
@@ -1010,7 +1087,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
               <template v-else>
                 <VBtn icon variant="text" color="primary" size="small" @click="openCreateBillDialogForUser(user)">
                   <VIcon icon="tabler-qrcode" /><VTooltip activator="parent">
-                    Buat Tagihan QRIS
+                  Buat Tagihan
                   </VTooltip>
                 </VBtn>
                 <VBtn v-if="(authStore.isSuperAdmin === true || authStore.isAdmin === true)" icon variant="text" color="primary" size="small" @click="openEditDialog(user)">
@@ -1043,7 +1120,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
         <VCardTitle class="pa-4">
           <div class="dialog-titlebar">
             <div class="dialog-titlebar__title">
-              <span class="font-weight-medium">Buat Tagihan QRIS</span>
+              <span class="font-weight-medium">Buat Tagihan</span>
             </div>
             <div class="dialog-titlebar__actions">
               <VBtn icon variant="text" @click="isCreateBillDialogOpen = false">
@@ -1062,6 +1139,32 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
             density="comfortable"
             readonly
           />
+
+          <VSelect
+            v-model="billPaymentMethod"
+            :items="billPaymentMethodOptions"
+            item-title="title"
+            item-value="value"
+            label="Metode Pembayaran"
+            variant="outlined"
+            density="comfortable"
+            class="mt-4"
+            :disabled="billLoading"
+          />
+
+          <VSelect
+            v-if="billPaymentMethod === 'va'"
+            v-model="billVaBank"
+            :items="billVaBankOptions"
+            item-title="title"
+            item-value="value"
+            label="Bank VA"
+            variant="outlined"
+            density="comfortable"
+            class="mt-4"
+            :disabled="billLoading"
+          />
+
           <VAutocomplete
             v-model="billSelectedPackage"
             :items="packageList"
@@ -1102,8 +1205,8 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
           <VBtn variant="text" :disabled="billLoading" @click="isCreateBillDialogOpen = false">
             Batal
           </VBtn>
-          <VBtn color="primary" :loading="billLoading" @click="createQrisBillForSelectedUser">
-            Kirim QRIS
+          <VBtn color="primary" :loading="billLoading" @click="createBillForSelectedUser">
+            Kirim Tagihan
           </VBtn>
         </VCardActions>
       </VCard>

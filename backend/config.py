@@ -320,6 +320,14 @@ class Config:
     MIDTRANS_HTTP_TIMEOUT_SECONDS = get_env_int("MIDTRANS_HTTP_TIMEOUT_SECONDS", 15)
     MIDTRANS_WEBHOOK_IDEMPOTENCY_TTL_SECONDS = get_env_int("MIDTRANS_WEBHOOK_IDEMPOTENCY_TTL_SECONDS", 86400)
 
+    # Prefix untuk order_id transaksi user (endpoint /api/transactions/initiate).
+    # Contoh: BD-LPSR -> hasil: BD-LPSR-1A2B3C4D5E6F
+    MIDTRANS_ORDER_ID_PREFIX = os.environ.get("MIDTRANS_ORDER_ID_PREFIX", "BD-LPSR")
+
+    # Prefix untuk order_id tagihan admin (Midtrans Core API).
+    # Contoh: BD-LPSR -> hasil: BD-LPSR-1A2B3C4D5E6F
+    ADMIN_BILL_ORDER_ID_PREFIX = os.environ.get("ADMIN_BILL_ORDER_ID_PREFIX", "BD-LPSR")
+
     # --- Konfigurasi WhatsApp API ---
     WHATSAPP_API_URL = os.environ.get("WHATSAPP_API_URL")
     WHATSAPP_VALIDATE_URL = os.environ.get("WHATSAPP_VALIDATE_URL")

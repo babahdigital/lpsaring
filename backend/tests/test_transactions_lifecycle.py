@@ -87,6 +87,16 @@ class _FakeSnap:
         return {"token": "dummy-token", "redirect_url": "https://example.test"}
 
 
+class _FakeCoreApi:
+    def __init__(self, capture, response):
+        self._capture = capture
+        self._response = response
+
+    def charge(self, payload):
+        self._capture["charge_payload"] = payload
+        return self._response
+
+
 class _FakeColumn:
     def __eq__(self, _other):
         return self
@@ -186,7 +196,7 @@ def test_initiate_transaction_sets_unknown_and_expiry_and_finish_url(monkeypatch
     assert status == 200
     payload = resp.get_json()
     assert payload["snap_token"] == "dummy-token"
-    assert payload["order_id"].startswith("HS-")
+    assert payload["order_id"].startswith("BD-LPSR-")
 
     created_tx = next(
         obj for obj in fake_session.added if hasattr(obj, "midtrans_order_id") and hasattr(obj, "expiry_time")
@@ -199,9 +209,132 @@ def test_initiate_transaction_sets_unknown_and_expiry_and_finish_url(monkeypatch
     assert "status=pending" not in finish_url
 
 
+def test_initiate_transaction_core_api_sets_pending_and_qr_fields(monkeypatch):
+    user_id = uuid.uuid4()
+    pkg_id = uuid.uuid4()
+
+    fake_user = SimpleNamespace(
+        id=user_id,
+        is_active=True,
+        approval_status=ApprovalStatus.APPROVED,
+        full_name="User",
+        phone_number="+6281234567890",
+    )
+    fake_package = SimpleNamespace(id=pkg_id, is_active=True, price=200000, name="Paket")
+
+    fake_session = _FakeSession(user=fake_user, package=fake_package)
+    monkeypatch.setattr(transactions_routes, "db", _FakeDB(fake_session))
+    monkeypatch.setattr(transactions_routes, "should_allow_call", lambda _name: True)
+
+    # Force provider mode to core_api.
+    def _fake_get_setting(key, default=None):
+        if key == "PAYMENT_PROVIDER_MODE":
+            return "core_api"
+        return default
+
+    monkeypatch.setattr(transactions_routes.settings_service, "get_setting", _fake_get_setting)
+
+    capture = {}
+    fake_charge_resp = {
+        "payment_type": "qris",
+        "transaction_id": "trx-123",
+        "actions": [
+            {"name": "generate-qr-code", "url": "https://qris.example/qr"},
+        ],
+    }
+    monkeypatch.setattr(
+        transactions_routes, "get_midtrans_core_api_client", lambda: _FakeCoreApi(capture, fake_charge_resp)
+    )
+
+    app = _make_app()
+    initiate_impl = _unwrap_decorators(transactions_routes.initiate_transaction)
+
+    with app.test_request_context(
+        "/api/transactions/initiate",
+        method="POST",
+        json={"package_id": str(pkg_id), "payment_method": "qris"},
+    ):
+        resp, status = initiate_impl(current_user_id=user_id)
+
+    assert status == 200
+    payload = resp.get_json()
+    assert payload["provider_mode"] == "core_api"
+    assert payload["order_id"].startswith("BD-LPSR-")
+    assert "snap_token" not in payload
+
+    created_tx = next(
+        obj for obj in fake_session.added if hasattr(obj, "midtrans_order_id") and hasattr(obj, "expiry_time")
+    )
+    assert created_tx.status == TransactionStatus.PENDING
+    assert created_tx.qr_code_url == "https://qris.example/qr"
+    assert created_tx.midtrans_transaction_id == "trx-123"
+
+    charge_payload = capture.get("charge_payload")
+    assert isinstance(charge_payload, dict)
+    assert charge_payload.get("payment_type") == "qris"
+
+
+def test_initiate_transaction_core_api_gopay_stores_deeplink_redirect(monkeypatch):
+    user_id = uuid.uuid4()
+    pkg_id = uuid.uuid4()
+
+    fake_user = SimpleNamespace(
+        id=user_id,
+        is_active=True,
+        approval_status=ApprovalStatus.APPROVED,
+        full_name="User",
+        phone_number="+6281234567890",
+    )
+    fake_package = SimpleNamespace(id=pkg_id, is_active=True, price=44000, name="Paket")
+
+    fake_session = _FakeSession(user=fake_user, package=fake_package)
+    monkeypatch.setattr(transactions_routes, "db", _FakeDB(fake_session))
+    monkeypatch.setattr(transactions_routes, "should_allow_call", lambda _name: True)
+
+    def _fake_get_setting(key, default=None):
+        if key == "PAYMENT_PROVIDER_MODE":
+            return "core_api"
+        return default
+
+    monkeypatch.setattr(transactions_routes.settings_service, "get_setting", _fake_get_setting)
+
+    capture = {}
+    fake_charge_resp = {
+        "payment_type": "gopay",
+        "transaction_id": "trx-999",
+        "actions": [
+            {"name": "generate-qr-code", "url": "https://gopay.example/qr"},
+            {"name": "deeplink-redirect", "url": "gopay://pay?ref=abc"},
+        ],
+    }
+    monkeypatch.setattr(
+        transactions_routes, "get_midtrans_core_api_client", lambda: _FakeCoreApi(capture, fake_charge_resp)
+    )
+
+    app = _make_app()
+    initiate_impl = _unwrap_decorators(transactions_routes.initiate_transaction)
+
+    with app.test_request_context(
+        "/api/transactions/initiate",
+        method="POST",
+        json={"package_id": str(pkg_id), "payment_method": "gopay"},
+    ):
+        resp, status = initiate_impl(current_user_id=user_id)
+
+    assert status == 200
+    payload = resp.get_json()
+    assert payload["provider_mode"] == "core_api"
+    assert payload["redirect_url"] == "gopay://pay?ref=abc"
+
+    created_tx = next(obj for obj in fake_session.added if hasattr(obj, "midtrans_order_id"))
+    assert created_tx.status == TransactionStatus.PENDING
+    assert created_tx.qr_code_url == "https://gopay.example/qr"
+    assert created_tx.snap_redirect_url == "gopay://pay?ref=abc"
+
+
 def test_cancel_transaction_sets_cancelled(monkeypatch):
     user_id = uuid.uuid4()
-    order_id = "HS-TESTORDER"
+    order_id = "BD-LPSR-TESTORDER"
 
     fake_tx = SimpleNamespace(
         id=uuid.uuid4(),

@@ -150,8 +150,8 @@ export const useAuthStore = defineStore('auth', () => {
       const redirectPath = getRedirectPathForStatus(status, context)
       const allowPurchasePaths = status === 'habis' || status === 'expired'
         ? (context === 'captive'
-            ? ['/captive/beli', '/payment/finish', redirectPath]
-            : ['/beli', '/payment/finish', redirectPath])
+            ? ['/captive/beli', '/payment/status', '/payment/finish', redirectPath]
+            : ['/beli', '/payment/status', '/payment/finish', redirectPath])
         : [redirectPath]
 
       if (allowPurchasePaths.includes(path))

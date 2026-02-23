@@ -12,14 +12,24 @@ Gunakan **Server Key** dan **Client Key** dari Sandbox terlebih dulu. Di project
 - Backend: `MIDTRANS_SERVER_KEY`, `MIDTRANS_CLIENT_KEY`, `MIDTRANS_IS_PRODUCTION=False`
 - Frontend: `NUXT_PUBLIC_MIDTRANS_CLIENT_KEY`
 
-## 2) Alur Integrasi (Ringkas)
+## 2) Mode Pembayaran di Proyek Ini
+Proyek ini mendukung 2 mode pembayaran (Setting Admin → General):
+
+- `snap` (default): menggunakan Snap UI di browser.
+- `core_api`: tanpa Snap UI (server-to-server), mendukung QRIS/GoPay/VA (+ ShopeePay jika channel aktif).
+
+Catatan penting:
+- Saat `core_api` aktif, Snap.js **tidak** di-load sama sekali.
+- Saat `snap` aktif, Snap.js hanya di-load **lazy** saat dibutuhkan (bukan auto-load di semua halaman).
+
+## 3) Alur Integrasi (Ringkas)
 Urutan integrasi Snap:
 1. Backend membuat transaksi dan mendapatkan `token` Snap.
 2. Frontend menampilkan Snap menggunakan `snap.js` + `token`.
 3. Customer bayar di Snap.
 4. Backend menerima status via HTTP Notification/Webhook.
 
-## 3) Detail Langkah Integrasi
+## 4) Detail Langkah Integrasi
 ### A) Persiapan
 - Buat akun Midtrans (Merchant Admin Portal).
 - Ambil **Sandbox API Keys** (Server Key & Client Key).
@@ -42,9 +52,11 @@ Respons sukses akan mengembalikan:
 > Catatan: disarankan mengirim `customer_details`, `item_details`, dan data transaksi lainnya agar tercatat di Dashboard Midtrans.
 
 ### C) Frontend – Tampilkan Snap
-Tambahkan `snap.js` (Sandbox):
+Di proyek ini, Snap.js tidak dipasang statik di template.
+Snap.js di-load secara **lazy** hanya saat mode `snap` dipakai.
+
+URL Snap.js (Sandbox):
 - `https://app.sandbox.midtrans.com/snap/snap.js`
-- Set `data-client-key="<CLIENT_KEY_SANDBOX>"`
 
 Metode tampilan:
 - **Pop‑up**: `window.snap.pay('<TOKEN>')`
@@ -96,7 +108,7 @@ Gunakan kartu uji:
 - [ ] Buat endpoint webhook untuk notifikasi transaksi
 - [ ] Set Notification URL & Redirect URLs di Dashboard
 
-## 6) Catatan Produksi Hotspot: Walled-Garden untuk Payment
+## 5) Catatan Produksi Hotspot: Walled-Garden untuk Payment
 Pada hotspot, user dengan status **habis/expired** sering masih diizinkan mengakses:
 - portal/login,
 - banking,
@@ -107,15 +119,19 @@ Temuan penting RouterOS:
 - Untuk mencegah kasus "tombol bayar muter"/Snap tidak muncul, gunakan **allowlist host FQDN eksplisit**.
 
 Checklist ops (hotspot):
-- Pastikan domain Midtrans yang dibutuhkan oleh `snap.js` bisa diakses saat kuota habis.
-- Tambahkan legacy host jika diperlukan:
-	- `veritrans.co.id` (legacy)
+- Jika memakai mode `snap`: pastikan domain Midtrans yang dibutuhkan oleh Snap.js bisa diakses saat kuota habis.
+- Jika memakai mode `core_api`: UI tidak memakai Snap.js, sehingga dependency walled-garden ke domain Snap.js bisa dikurangi.
+	- Untuk QRIS/GoPay/ShopeePay, aplikasi tetap perlu bisa mengakses link status portal dan (jika tampil) QR/redirect app.
+	- QR image ditampilkan via proxy backend (`/api/transactions/<order_id>/qr`) agar browser tidak perlu langsung akses domain Midtrans.
+
+Tambahkan legacy host jika diperlukan:
+- `veritrans.co.id` (legacy)
 
 Catatan:
 - Daftar host yang dibutuhkan bisa berubah, jadi lakukan uji dari klien dengan kuota habis.
 - Sumber kebenaran perilaku akses habis/expired ada di policy MikroTik (walled-garden + address-list).
 
-## 5) Referensi Lanjutan
+## 6) Referensi Lanjutan
 - Integration Guide: https://docs.midtrans.com/docs/snap-snap-integration-guide
 - Snap Advanced Features: https://docs.midtrans.com/docs/snap-advanced-feature
 - Snap JS Reference: https://docs.midtrans.com/reference/snap-js

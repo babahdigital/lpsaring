@@ -41,8 +41,17 @@ Lampiran wajib:
 ## 4) Packages & Transactions
 - GET /packages
 - POST /transactions/initiate
+- POST /transactions/debt/initiate
+- GET /transactions/by-order-id/{order_id}
+- POST /transactions/{order_id}/cancel
+- GET /transactions/{order_id}/invoice
+- GET /transactions/{order_id}/qr
 - GET /admin/transactions
 - GET /admin/transactions/export
+
+## 4.1) Admin – Buat Tagihan (User tertentu)
+- POST /admin/transactions/bill
+  - Alias kompatibilitas: POST /admin/transactions/qris
 
 ## 5) Maintenance & Misc
 - GET /admin/dashboard/stats
