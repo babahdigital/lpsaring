@@ -8,6 +8,7 @@ from http import HTTPStatus
 import uuid
 import json
 import os
+import sqlalchemy as sa
 from jose import jwt, JWTError, ExpiredSignatureError
 
 from app.extensions import db
@@ -301,11 +302,7 @@ def admin_required(f):
                     except Exception:
                         payload = None
 
-                    log_entry = AdminActionLog()
-                    log_entry.admin_id = admin_user.id
-                    log_entry.target_user_id = None
-                    log_entry.action_type = AdminActionType.ADMIN_API_MUTATION
-                    log_entry.details = json.dumps(
+                    details_json = json.dumps(
                         {
                             "method": request.method,
                             "path": request.path,
@@ -316,10 +313,25 @@ def admin_required(f):
                         ensure_ascii=False,
                         default=str,
                     )
-                    db.session.add(log_entry)
-                    db.session.commit()
+
+                    stmt = sa.text(
+                        """
+                        INSERT INTO admin_action_logs (id, admin_id, target_user_id, action_type, details)
+                        VALUES (:id, :admin_id, :target_user_id, :action_type, :details)
+                        """
+                    )
+                    with db.engine.begin() as conn:
+                        conn.execute(
+                            stmt,
+                            {
+                                "id": str(uuid.uuid4()),
+                                "admin_id": str(admin_user.id),
+                                "target_user_id": None,
+                                "action_type": AdminActionType.ADMIN_API_MUTATION.value,
+                                "details": details_json,
+                            },
+                        )
         except Exception as e:
-            db.session.rollback()
             current_app.logger.error(f"Gagal mencatat ADMIN_API_MUTATION: {e}", exc_info=True)
 
         return resp
@@ -401,11 +413,7 @@ def super_admin_required(f):
                     except Exception:
                         payload = None
 
-                    log_entry = AdminActionLog()
-                    log_entry.admin_id = super_admin_user.id
-                    log_entry.target_user_id = None
-                    log_entry.action_type = AdminActionType.ADMIN_API_MUTATION
-                    log_entry.details = json.dumps(
+                    details_json = json.dumps(
                         {
                             "method": request.method,
                             "path": request.path,
@@ -416,10 +424,25 @@ def super_admin_required(f):
                         ensure_ascii=False,
                         default=str,
                     )
-                    db.session.add(log_entry)
-                    db.session.commit()
+
+                    stmt = sa.text(
+                        """
+                        INSERT INTO admin_action_logs (id, admin_id, target_user_id, action_type, details)
+                        VALUES (:id, :admin_id, :target_user_id, :action_type, :details)
+                        """
+                    )
+                    with db.engine.begin() as conn:
+                        conn.execute(
+                            stmt,
+                            {
+                                "id": str(uuid.uuid4()),
+                                "admin_id": str(super_admin_user.id),
+                                "target_user_id": None,
+                                "action_type": AdminActionType.ADMIN_API_MUTATION.value,
+                                "details": details_json,
+                            },
+                        )
         except Exception as e:
-            db.session.rollback()
             current_app.logger.error(f"Gagal mencatat ADMIN_API_MUTATION: {e}", exc_info=True)
 
         return resp
