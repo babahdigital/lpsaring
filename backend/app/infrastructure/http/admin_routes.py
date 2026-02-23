@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, request, current_app, send_file, abort, ma
 from sqlalchemy import func, or_, select, desc
 from sqlalchemy.orm import selectinload
 from datetime import datetime, timezone as dt_timezone, timedelta, time as dt_time
+from zoneinfo import ZoneInfo
 from http import HTTPStatus
 from pydantic import ValidationError
 from decimal import Decimal
@@ -319,13 +320,30 @@ def _sanitize_sql_dump_for_restore(file_path: pathlib.Path) -> tuple[pathlib.Pat
 def get_dashboard_stats(current_admin: User):
     """Menyediakan statistik komprehensif untuk dasbor admin."""
     try:
-        now_utc = datetime.now(dt_timezone.utc)
-        start_of_today_utc = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
-        start_of_yesterday_utc = start_of_today_utc - timedelta(days=1)
-        start_of_month_utc = now_utc.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        tz_local = ZoneInfo("Asia/Jakarta")
+        now_local = datetime.now(tz_local)
+        now_utc = now_local.astimezone(dt_timezone.utc)
+
+        start_of_today_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_of_yesterday_local = start_of_today_local - timedelta(days=1)
+        start_of_month_local = start_of_today_local.replace(day=1)
+
+        # Minggu kalender: Senin 00:00 WIB s.d. saat ini
+        start_of_week_local = start_of_today_local - timedelta(days=start_of_today_local.weekday())
+        start_of_prev_week_local = start_of_week_local - timedelta(days=7)
+
+        start_of_today_utc = start_of_today_local.astimezone(dt_timezone.utc)
+        start_of_yesterday_utc = start_of_yesterday_local.astimezone(dt_timezone.utc)
+        start_of_month_utc = start_of_month_local.astimezone(dt_timezone.utc)
+        start_30_days_utc = start_of_today_utc - timedelta(days=29)
+
+        start_of_week_utc = start_of_week_local.astimezone(dt_timezone.utc)
+        start_of_prev_week_utc = start_of_prev_week_local.astimezone(dt_timezone.utc)
+
+        # Tetap dipakai untuk kebutuhan lain (mis. card kuota 7 hari)
         start_7_days_utc = start_of_today_utc - timedelta(days=6)
         start_prev_7_days_utc = start_7_days_utc - timedelta(days=7)
-        start_30_days_utc = start_of_today_utc - timedelta(days=29)
+
         seven_days_from_now = now_utc + timedelta(days=7)
 
         revenue_today = db.session.scalar(
@@ -347,14 +365,15 @@ def get_dashboard_stats(current_admin: User):
         ) or Decimal("0.00")
         revenue_week = db.session.scalar(
             select(func.sum(Transaction.amount)).where(
-                Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_7_days_utc
+                Transaction.status == TransactionStatus.SUCCESS,
+                Transaction.created_at >= start_of_week_utc,
             )
         ) or Decimal("0.00")
         revenue_prev_week = db.session.scalar(
             select(func.sum(Transaction.amount)).where(
                 Transaction.status == TransactionStatus.SUCCESS,
-                Transaction.created_at >= start_prev_7_days_utc,
-                Transaction.created_at < start_7_days_utc,
+                Transaction.created_at >= start_of_prev_week_utc,
+                Transaction.created_at < start_of_week_utc,
             )
         ) or Decimal("0.00")
 
@@ -369,7 +388,8 @@ def get_dashboard_stats(current_admin: User):
         transaksi_minggu_ini = (
             db.session.scalar(
                 select(func.count(Transaction.id)).where(
-                    Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_7_days_utc
+                    Transaction.status == TransactionStatus.SUCCESS,
+                    Transaction.created_at >= start_of_week_utc,
                 )
             )
             or 0
@@ -378,8 +398,8 @@ def get_dashboard_stats(current_admin: User):
             db.session.scalar(
                 select(func.count(Transaction.id)).where(
                     Transaction.status == TransactionStatus.SUCCESS,
-                    Transaction.created_at >= start_prev_7_days_utc,
-                    Transaction.created_at < start_7_days_utc,
+                    Transaction.created_at >= start_of_prev_week_utc,
+                    Transaction.created_at < start_of_week_utc,
                 )
             )
             or 0
