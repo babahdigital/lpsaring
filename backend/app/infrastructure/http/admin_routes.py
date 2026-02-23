@@ -1617,14 +1617,14 @@ def create_bill(current_admin: User):
         if payment_method is None:
             payment_method = "qris"
 
-            provider_mode = _get_payment_provider_mode_for_admin()
+        provider_mode = _get_payment_provider_mode_for_admin()
 
-            enabled_methods = _get_enabled_core_api_methods_for_admin()
+        enabled_methods = _get_enabled_core_api_methods_for_admin()
         if payment_method not in set(enabled_methods):
             return (
                 jsonify(
                     {
-                            "message": "Metode pembayaran ini tidak diaktifkan di pengaturan.",
+                        "message": "Metode pembayaran ini tidak diaktifkan di pengaturan.",
                         "payment_method": payment_method,
                         "enabled_methods": enabled_methods,
                     }
