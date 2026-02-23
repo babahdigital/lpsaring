@@ -219,84 +219,95 @@ onMounted(fetchUsers)
 
 <template>
   <div>
-    <VCard class="mb-4">
-      <VCardItem>
-        <VCardTitle>Kirim Informasi Massal</VCardTitle>
-        <VCardSubtitle>Kirim pesan ke semua pengguna berdasarkan role: User atau Komandan.</VCardSubtitle>
-      </VCardItem>
-      <VCardText>
-        <VRow align="end">
-          <VCol cols="12" md="3">
-            <VSelect
-              v-model="broadcastRole"
-              :items="[
-                { title: 'Semua User', value: 'USER' },
-                { title: 'Semua Komandan', value: 'KOMANDAN' },
-              ]"
-              label="Target Penerima"
-              item-title="title"
-              item-value="value"
-            />
-          </VCol>
-          <VCol cols="12" md="7">
-            <VTextarea
-              v-model="broadcastMessage"
-              label="Pesan Informasi"
-              rows="2"
-              auto-grow
-              counter="1000"
-            />
-          </VCol>
-          <VCol cols="12" md="2" class="d-flex align-end">
-            <VBtn
-              block
-              color="primary"
-              height="56"
-              :loading="sendingBroadcast"
-              :disabled="sendingBroadcast"
-              @click="sendBroadcastMessage"
-            >
-              Kirim Massal
-            </VBtn>
-          </VCol>
-        </VRow>
-      </VCardText>
-    </VCard>
+    <VRow class="mb-4" align="stretch">
+      <VCol cols="12" lg="6">
+        <VCard class="h-100">
+          <VCardItem>
+            <VCardTitle>Kirim Informasi Massal</VCardTitle>
+            <VCardSubtitle>Kirim pesan ke semua pengguna berdasarkan role: User atau Komandan.</VCardSubtitle>
+          </VCardItem>
+          <VCardText>
+            <VRow class="wa-form-row" align="end">
+              <VCol cols="12" xl="4">
+                <VSelect
+                  v-model="broadcastRole"
+                  :items="[
+                    { title: 'Semua User', value: 'USER' },
+                    { title: 'Semua Komandan', value: 'KOMANDAN' },
+                  ]"
+                  label="Target Penerima"
+                  item-title="title"
+                  item-value="value"
+                  density="comfortable"
+                />
+              </VCol>
+              <VCol cols="12" xl="6">
+                <VTextarea
+                  v-model="broadcastMessage"
+                  label="Pesan Informasi"
+                  rows="2"
+                  max-rows="4"
+                  auto-grow
+                  counter="1000"
+                  density="comfortable"
+                />
+              </VCol>
+              <VCol cols="12" xl="2" class="d-flex wa-form-actions">
+                <VBtn
+                  block
+                  color="primary"
+                  height="56"
+                  :loading="sendingBroadcast"
+                  :disabled="sendingBroadcast"
+                  @click="sendBroadcastMessage"
+                >
+                  Kirim Massal
+                </VBtn>
+              </VCol>
+            </VRow>
+          </VCardText>
+        </VCard>
+      </VCol>
 
-    <VCard class="mb-4">
-      <VCardItem>
-        <VCardTitle>Tes Pengiriman WhatsApp</VCardTitle>
-        <VCardSubtitle>Validasi konfigurasi Fonnte dari panel admin.</VCardSubtitle>
-      </VCardItem>
-      <VCardText>
-        <VRow align="end">
-          <VCol cols="12" md="4">
-            <VTextField
-              v-model="testPhoneNumber"
-              label="Nomor Tujuan"
-              placeholder="08xxxxxxxxxx / 62xxxxxxxxxx"
-            />
-          </VCol>
-          <VCol cols="12" md="6">
-            <VTextField
-              v-model="testMessage"
-              label="Pesan Uji"
-            />
-          </VCol>
-          <VCol cols="12" md="2" class="d-flex align-end">
-            <VBtn
-              block
-              color="success"
-              height="56"
-              :loading="sendingTest"
-              @click="sendTestMessage"
-            >
-              Kirim Tes
-            </VBtn>
-          </VCol>
-        </VRow>
-      </VCardText>
-    </VCard>
+      <VCol cols="12" lg="6">
+        <VCard class="h-100">
+          <VCardItem>
+            <VCardTitle>Tes Pengiriman WhatsApp</VCardTitle>
+            <VCardSubtitle>Validasi konfigurasi Fonnte dari panel admin.</VCardSubtitle>
+          </VCardItem>
+          <VCardText>
+            <VRow class="wa-form-row" align="end">
+              <VCol cols="12" xl="4">
+                <VTextField
+                  v-model="testPhoneNumber"
+                  label="Nomor Tujuan"
+                  placeholder="08xxxxxxxxxx / 62xxxxxxxxxx"
+                  density="comfortable"
+                />
+              </VCol>
+              <VCol cols="12" xl="6">
+                <VTextField
+                  v-model="testMessage"
+                  label="Pesan Uji"
+                  density="comfortable"
+                />
+              </VCol>
+              <VCol cols="12" xl="2" class="d-flex wa-form-actions">
+                <VBtn
+                  block
+                  color="success"
+                  height="56"
+                  :loading="sendingTest"
+                  @click="sendTestMessage"
+                >
+                  Kirim Tes
+                </VBtn>
+              </VCol>
+            </VRow>
+          </VCardText>
+        </VCard>
+      </VCol>
+    </VRow>
 
     <VRow class="mb-4">
       <VCol cols="12" md="6">
@@ -378,3 +389,9 @@ onMounted(fetchUsers)
     </VCard>
   </div>
 </template>
+
+<style scoped>
+.wa-form-actions {
+  align-items: flex-end;
+}
+</style>

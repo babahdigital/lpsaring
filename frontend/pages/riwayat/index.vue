@@ -469,46 +469,56 @@ useHead({ title: 'Riwayat Transaksi' })
                 <VProgressCircular indeterminate color="primary" />
               </div>
 
-              <VTable v-else density="compact">
-                <thead>
-                  <tr>
-                    <th>Tanggal</th>
-                    <th class="text-end">Jumlah</th>
-                    <th class="text-end">Dibayar</th>
-                    <th class="text-end">Sisa</th>
-                    <th>Catatan</th>
-                    <th class="text-end">Aksi</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="it in quotaDebtItems" :key="it.id">
-                    <td>{{ formatDebtDate(it.debt_date) }}</td>
-                    <td class="text-end">{{ formatQuota(it.amount_mb) }}</td>
-                    <td class="text-end">{{ formatQuota(it.paid_mb) }}</td>
-                    <td class="text-end font-weight-medium">{{ formatQuota(it.remaining_mb) }}</td>
-                    <td class="text-truncate" style="max-width: 220px">{{ it.note || '-' }}</td>
-                    <td class="text-end">
-                      <VBtn
-                        v-if="it.remaining_mb > 0"
-                        size="x-small"
-                        color="warning"
-                        variant="tonal"
-                        prepend-icon="tabler-credit-card"
-                        :loading="debtPaying"
-                        :disabled="debtPaying"
-                        @click="payManualDebtItem(it.id)"
-                      >
-                        Lunasi
-                      </VBtn>
-                    </td>
-                  </tr>
-                  <tr v-if="quotaDebtItems.length === 0">
-                    <td colspan="6" class="text-center text-medium-emphasis py-3">
-                      Tidak ada hutang manual yang belum lunas.
-                    </td>
-                  </tr>
-                </tbody>
-              </VTable>
+              <div class="debt-ledger-scroll">
+                <VTable v-else density="compact" class="debt-ledger-table">
+                  <colgroup>
+                    <col style="width: 124px;">
+                    <col style="width: 110px;">
+                    <col style="width: 110px;">
+                    <col style="width: 110px;">
+                    <col style="width: 260px;">
+                    <col style="width: 110px;">
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th class="text-no-wrap">Tanggal</th>
+                      <th class="text-end text-no-wrap">Jumlah</th>
+                      <th class="text-end text-no-wrap">Dibayar</th>
+                      <th class="text-end text-no-wrap">Sisa</th>
+                      <th class="text-no-wrap">Catatan</th>
+                      <th class="text-end text-no-wrap">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="it in quotaDebtItems" :key="it.id">
+                      <td class="text-no-wrap">{{ formatDebtDate(it.debt_date) }}</td>
+                      <td class="text-end text-no-wrap">{{ formatQuota(it.amount_mb) }}</td>
+                      <td class="text-end text-no-wrap">{{ formatQuota(it.paid_mb) }}</td>
+                      <td class="text-end font-weight-medium text-no-wrap">{{ formatQuota(it.remaining_mb) }}</td>
+                      <td class="debt-ledger-note">{{ it.note || '-' }}</td>
+                      <td class="text-end text-no-wrap">
+                        <VBtn
+                          v-if="it.remaining_mb > 0"
+                          size="x-small"
+                          color="warning"
+                          variant="tonal"
+                          prepend-icon="tabler-credit-card"
+                          :loading="debtPaying"
+                          :disabled="debtPaying"
+                          @click="payManualDebtItem(it.id)"
+                        >
+                          Lunasi
+                        </VBtn>
+                      </td>
+                    </tr>
+                    <tr v-if="quotaDebtItems.length === 0">
+                      <td colspan="6" class="text-center text-medium-emphasis py-3">
+                        Tidak ada hutang manual yang belum lunas.
+                      </td>
+                    </tr>
+                  </tbody>
+                </VTable>
+              </div>
             </div>
           </VCardText>
         </VCard>
@@ -727,5 +737,23 @@ useHead({ title: 'Riwayat Transaksi' })
   .v-btn {
     font-size: 0.75rem;
   }
+}
+
+.debt-ledger-scroll {
+  overflow-x: auto;
+  padding-block-end: 6px;
+}
+
+/* VTable merender <div class="v-table__wrapper"><table>... */
+.debt-ledger-table :deep(.v-table__wrapper > table) {
+  min-width: 740px;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.debt-ledger-note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>
