@@ -239,10 +239,10 @@ watch(loading, (val) => {
           <VList lines="two">
             <template v-for="(recipient, index) in recipients" :key="recipient.id">
               <VListItem>
-                <VListItemTitle class="font-weight-medium">
+                <VListItemTitle class="font-weight-medium text-wrap">
                   {{ recipient.full_name }}
                 </VListItemTitle>
-                <VListItemSubtitle>
+                <VListItemSubtitle class="text-wrap">
                   {{ recipient.phone_number }}
                 </VListItemSubtitle>
 

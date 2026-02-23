@@ -310,7 +310,7 @@ useHead({ title: 'Setting Aplikasi' })
                 <VListSubheader>Mode Maintenance</VListSubheader>
                 <VListItem lines="three" class="overflow-visible">
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4">
+                    <VCol cols="12" md="4" class="text-start text-md-right">
                       <VListItemTitle class="mb-1">
                         Status Mode Maintenance
                       </VListItemTitle>
@@ -461,7 +461,7 @@ useHead({ title: 'Setting Aplikasi' })
 
                 <VListItem lines="three">
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4">
+                    <VCol cols="12" md="4" class="text-start text-md-right">
                       <VListItemTitle class="mb-1">
                         Notifikasi WhatsApp
                       </VListItemTitle>
@@ -477,7 +477,7 @@ useHead({ title: 'Setting Aplikasi' })
 
                 <VListItem lines="three">
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4">
+                    <VCol cols="12" md="4" class="text-start text-md-right">
                       <VListItemTitle class="mb-1">
                         Notifikasi Login Admin
                       </VListItemTitle>
@@ -511,7 +511,7 @@ useHead({ title: 'Setting Aplikasi' })
 
                 <VListItem lines="three">
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4">
+                    <VCol cols="12" md="4" class="text-start text-md-right">
                       <VListItemTitle class="mb-1">
                         Notifikasi Telegram
                       </VListItemTitle>
@@ -596,7 +596,7 @@ useHead({ title: 'Setting Aplikasi' })
 
                 <VListItem>
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4">
+                    <VCol cols="12" md="4" class="text-start text-md-right">
                       <VListItemTitle class="mb-1">
                         Test Kirim Telegram
                       </VListItemTitle>
@@ -606,7 +606,7 @@ useHead({ title: 'Setting Aplikasi' })
                     </VCol>
                     <VCol cols="12" md="8">
                       <VRow>
-                        <VCol cols="12" sm="5">
+                        <VCol cols="12" sm="6" md="5">
                           <VTextField
                             v-model="testTelegramChatId"
                             label="chat_id"
@@ -614,9 +614,10 @@ useHead({ title: 'Setting Aplikasi' })
                             :disabled="!telegramEnabled || isTestingTelegram"
                             variant="outlined"
                             density="comfortable"
+                            hide-details
                           />
                         </VCol>
-                        <VCol cols="12" sm="7">
+                        <VCol cols="12" sm="6" md="7">
                           <VTextField
                             v-model="testTelegramMessage"
                             label="Pesan"
@@ -624,10 +625,11 @@ useHead({ title: 'Setting Aplikasi' })
                             :disabled="!telegramEnabled || isTestingTelegram"
                             variant="outlined"
                             density="comfortable"
+                            hide-details
                           />
                         </VCol>
                       </VRow>
-                      <div class="d-flex justify-end">
+                      <div class="d-flex justify-end mt-2">
                         <VBtn
                           color="primary"
                           variant="tonal"
@@ -758,7 +760,7 @@ useHead({ title: 'Setting Aplikasi' })
                 <VListSubheader>MikroTik</VListSubheader>
                 <VListItem>
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4">
+                    <VCol cols="12" md="4" class="text-start text-md-right">
                       <VListItemTitle class="mb-1">
                         Kredensial MikroTik
                       </VListItemTitle>
@@ -766,13 +768,13 @@ useHead({ title: 'Setting Aplikasi' })
                     </VCol>
                     <VCol cols="12" md="8">
                       <VRow>
-                        <VCol cols="12" sm="4">
+                        <VCol cols="12" sm="6" md="4">
                           <VTextField v-model="localSettings.MIKROTIK_HOST" label="Host MikroTik" persistent-placeholder placeholder="Alamat IP/domain" variant="outlined" density="comfortable" />
                         </VCol>
-                        <VCol cols="12" sm="4">
+                        <VCol cols="12" sm="6" md="4">
                           <VTextField v-model="localSettings.MIKROTIK_USER" label="User MikroTik" persistent-placeholder placeholder="Username API" variant="outlined" density="comfortable" />
                         </VCol>
-                        <VCol cols="12" sm="4">
+                        <VCol cols="12" sm="12" md="4">
                           <VTextField v-model="localSettings.MIKROTIK_PASSWORD" label="Password MikroTik" type="password" persistent-placeholder placeholder="Password API" variant="outlined" density="comfortable" />
                         </VCol>
                       </VRow>
@@ -814,7 +816,7 @@ useHead({ title: 'Setting Aplikasi' })
 .core-api-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 0.25rem 0.75rem;
+  gap: 0.5rem 1rem;
 }
 
 @media (min-width: 600px) {
