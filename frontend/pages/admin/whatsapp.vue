@@ -227,8 +227,8 @@ onMounted(fetchUsers)
             <VCardSubtitle>Kirim pesan ke semua pengguna berdasarkan role: User atau Komandan.</VCardSubtitle>
           </VCardItem>
           <VCardText>
-            <VRow class="wa-form-row" align="end">
-              <VCol cols="12" xl="4">
+            <VRow>
+              <VCol cols="12">
                 <VSelect
                   v-model="broadcastRole"
                   :items="[
@@ -241,18 +241,20 @@ onMounted(fetchUsers)
                   density="comfortable"
                 />
               </VCol>
-              <VCol cols="12" xl="6">
+
+              <VCol cols="12">
                 <VTextarea
                   v-model="broadcastMessage"
                   label="Pesan Informasi"
-                  rows="2"
-                  max-rows="4"
+                  rows="3"
+                  max-rows="6"
                   auto-grow
                   counter="1000"
                   density="comfortable"
                 />
               </VCol>
-              <VCol cols="12" xl="2" class="d-flex wa-form-actions">
+
+              <VCol cols="12">
                 <VBtn
                   block
                   color="primary"
@@ -276,8 +278,8 @@ onMounted(fetchUsers)
             <VCardSubtitle>Validasi konfigurasi Fonnte dari panel admin.</VCardSubtitle>
           </VCardItem>
           <VCardText>
-            <VRow class="wa-form-row" align="end">
-              <VCol cols="12" xl="4">
+            <VRow>
+              <VCol cols="12">
                 <VTextField
                   v-model="testPhoneNumber"
                   label="Nomor Tujuan"
@@ -285,14 +287,16 @@ onMounted(fetchUsers)
                   density="comfortable"
                 />
               </VCol>
-              <VCol cols="12" xl="6">
+
+              <VCol cols="12">
                 <VTextField
                   v-model="testMessage"
                   label="Pesan Uji"
                   density="comfortable"
                 />
               </VCol>
-              <VCol cols="12" xl="2" class="d-flex wa-form-actions">
+
+              <VCol cols="12">
                 <VBtn
                   block
                   color="success"
@@ -389,9 +393,3 @@ onMounted(fetchUsers)
     </VCard>
   </div>
 </template>
-
-<style scoped>
-.wa-form-actions {
-  align-items: flex-end;
-}
-</style>
