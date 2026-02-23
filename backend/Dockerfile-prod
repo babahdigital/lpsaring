@@ -84,7 +84,7 @@ RUN apt-get update -y && \
 ENV LANG=id_ID.UTF-8
 ENV LANGUAGE=id_ID:id
 ENV LC_ALL=id_ID.UTF-8
-ENV TZ=Asia/Jakarta
+ENV TZ=Asia/Makassar
 
 # Pastikan fontconfig punya direktori cache yang writable.
 # Tanpa ini, beberapa library (mis. WeasyPrint) bisa spam: "Fontconfig error: No writable cache directories".

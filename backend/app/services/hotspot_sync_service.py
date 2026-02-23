@@ -1045,6 +1045,18 @@ def sync_address_list_for_single_user(user: User, client_ip: Optional[str] = Non
         return bool(ok_any_ip or ok_user_ip)
 
 
+def resolve_target_profile_for_user(user: User) -> str:
+    """Resolve MikroTik profile for a single user using the same rules as the periodic sync.
+
+    This is used by actions like quota injection so profile changes (ex: leaving FUP) can be applied immediately.
+    """
+    remaining_mb, remaining_percent = _calculate_remaining(user)
+    now_local = get_app_local_datetime()
+    expiry_local = get_app_local_datetime(user.quota_expiry_date) if user.quota_expiry_date else None
+    is_expired = bool(expiry_local and expiry_local < now_local)
+    return _resolve_target_profile(user, remaining_mb, remaining_percent, is_expired)
+
+
 def cleanup_inactive_users() -> Dict[str, int]:
     counters = {"deactivated": 0, "deleted": 0}
     now_utc = datetime.now(dt_timezone.utc)

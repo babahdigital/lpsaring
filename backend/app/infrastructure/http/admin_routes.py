@@ -320,7 +320,7 @@ def _sanitize_sql_dump_for_restore(file_path: pathlib.Path) -> tuple[pathlib.Pat
 def get_dashboard_stats(current_admin: User):
     """Menyediakan statistik komprehensif untuk dasbor admin."""
     try:
-        tz_local = ZoneInfo("Asia/Jakarta")
+        tz_local = ZoneInfo("Asia/Makassar")
         now_local = datetime.now(tz_local)
         now_utc = now_local.astimezone(dt_timezone.utc)
 

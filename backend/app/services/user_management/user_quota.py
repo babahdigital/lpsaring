@@ -17,7 +17,7 @@ from . import user_debt
 from app.infrastructure.gateways.mikrotik_client import activate_or_update_hotspot_user
 from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection, get_ip_by_mac, upsert_ip_binding
 from app.services.access_policy_service import resolve_allowed_binding_type_for_user
-from app.services.hotspot_sync_service import sync_address_list_for_single_user
+from app.services.hotspot_sync_service import resolve_target_profile_for_user, sync_address_list_for_single_user
 from app.utils.formatters import get_app_date_time_strings
 
 
@@ -148,16 +148,23 @@ def inject_user_quota(user: User, admin_actor: User, mb_to_add: int, days_to_add
     if not user.mikrotik_password:
         user.mikrotik_password = _generate_password()
 
+    target_profile = resolve_target_profile_for_user(user)
+    current_profile = (getattr(user, "mikrotik_profile_name", None) or "").strip()
+    should_force_profile_update = (not current_profile) or (target_profile != current_profile)
+
+    action_details["target_profile"] = target_profile
+    action_details["force_profile_update"] = bool(should_force_profile_update)
+
     mikrotik_success, mikrotik_msg = _handle_mikrotik_operation(
         activate_or_update_hotspot_user,
         user_mikrotik_username=format_to_local_phone(user.phone_number),
         hotspot_password=user.mikrotik_password,
-        mikrotik_profile_name=user.mikrotik_profile_name,
+        mikrotik_profile_name=target_profile,
         comment=comment,
         limit_bytes_total=max(0, limit_bytes_total),
         session_timeout_seconds=max(0, timeout_seconds),
         server=user.mikrotik_server_name,
-        force_update_profile=False,  # Tidak perlu ganti profil, hanya update limit
+        force_update_profile=should_force_profile_update,
     )
 
     if not mikrotik_success:
@@ -167,6 +174,7 @@ def inject_user_quota(user: User, admin_actor: User, mb_to_add: int, days_to_add
         return False, f"Gagal sinkronisasi dengan Mikrotik: {mikrotik_msg}"
 
     user.mikrotik_user_exists = True
+    user.mikrotik_profile_name = target_profile
 
     # Sinkronisasi akses (address-list + ip-binding type) agar efek inject langsung terasa.
     try:
