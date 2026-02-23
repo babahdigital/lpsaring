@@ -311,7 +311,7 @@ useHead({ title: 'Setting Aplikasi' })
                 <VListSubheader>Mode Maintenance</VListSubheader>
                 <VListItem lines="three" class="overflow-visible">
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4" class="text-start">
+                    <VCol cols="12" md="4" class="text-start pb-2 pb-md-0">
                       <VListItemTitle class="mb-1">
                         Status Mode Maintenance
                       </VListItemTitle>
@@ -319,7 +319,7 @@ useHead({ title: 'Setting Aplikasi' })
                         Aktifkan untuk menampilkan halaman maintenance di seluruh aplikasi, kecuali halaman admin.
                       </VListItemSubtitle>
                     </VCol>
-                    <VCol cols="12" md="8" class="d-flex justify-start">
+                    <VCol cols="12" md="8" class="d-flex justify-end mt-2 mt-md-0">
                       <VSwitch v-model="maintenanceModeActive" :label="maintenanceModeActive ? 'AKTIF' : 'TIDAK AKTIF'" color="error" inset />
                     </VCol>
                   </VRow>
@@ -327,7 +327,7 @@ useHead({ title: 'Setting Aplikasi' })
 
                 <VListItem lines="three">
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4">
+                    <VCol cols="12" md="4" class="pb-2 pb-md-0">
                       <VListItemTitle class="mb-1">
                         Pesan Maintenance
                       </VListItemTitle>
@@ -336,7 +336,7 @@ useHead({ title: 'Setting Aplikasi' })
                       </VListItemSubtitle>
                     </VCol>
                     <VCol cols="12" md="8" class="overflow-visible">
-                      <VTextarea v-model="localSettings.MAINTENANCE_MODE_MESSAGE" placeholder="Contoh: Aplikasi sedang dalam perbaikan..." persistent-placeholder rows="3" :disabled="!maintenanceModeActive" variant="outlined" density="comfortable" />
+                      <AppTextarea v-model="localSettings.MAINTENANCE_MODE_MESSAGE" placeholder="Contoh: Aplikasi sedang dalam perbaikan..." persistent-placeholder rows="3" :disabled="!maintenanceModeActive" density="comfortable" />
                     </VCol>
                   </VRow>
                 </VListItem>
@@ -346,7 +346,7 @@ useHead({ title: 'Setting Aplikasi' })
 
                 <VListItem>
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4">
+                    <VCol cols="12" md="4" class="pb-2 pb-md-0">
                       <VListItemTitle class="mb-1">
                         Nama Aplikasi
                       </VListItemTitle>
@@ -355,14 +355,14 @@ useHead({ title: 'Setting Aplikasi' })
                       </VListItemSubtitle>
                     </VCol>
                     <VCol cols="12" md="8">
-                      <VTextField v-model="localSettings.APP_NAME" label="Nama Aplikasi" persistent-placeholder placeholder="Contoh: Portal Hotspot Sobigidul" variant="outlined" density="comfortable" />
+                      <AppTextField v-model="localSettings.APP_NAME" label="Nama Aplikasi" persistent-placeholder placeholder="Contoh: Portal Hotspot Sobigidul" density="comfortable" />
                     </VCol>
                   </VRow>
                 </VListItem>
 
                 <VListItem>
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4">
+                    <VCol cols="12" md="4" class="pb-2 pb-md-0">
                       <VListItemTitle class="mb-1">
                         Judul di Browser
                       </VListItemTitle>
@@ -371,7 +371,7 @@ useHead({ title: 'Setting Aplikasi' })
                       </VListItemSubtitle>
                     </VCol>
                     <VCol cols="12" md="8">
-                      <VTextField v-model="localSettings.APP_BROWSER_TITLE" label="Judul di Browser" persistent-placeholder placeholder="Contoh: Hotspot Sobigidul" variant="outlined" density="comfortable" />
+                      <AppTextField v-model="localSettings.APP_BROWSER_TITLE" label="Judul di Browser" persistent-placeholder placeholder="Contoh: Hotspot Sobigidul" density="comfortable" />
                     </VCol>
                   </VRow>
                 </VListItem>
@@ -379,7 +379,7 @@ useHead({ title: 'Setting Aplikasi' })
 
               <VCardActions class="mt-6 px-0">
                 <VSpacer />
-                <VBtn :loading="isSaving" prepend-icon="mdi-content-save-outline" @click="handleSaveChanges">
+                <VBtn color="primary" variant="elevated" :loading="isSaving" prepend-icon="mdi-content-save-outline" @click="handleSaveChanges">
                   Simpan Perubahan
                 </VBtn>
               </VCardActions>
@@ -448,7 +448,7 @@ useHead({ title: 'Setting Aplikasi' })
               </div>
               <VCardActions class="mt-6 px-0">
                 <VSpacer />
-                <VBtn :loading="isSaving" prepend-icon="mdi-content-save-outline" @click="handleSaveChanges">
+                <VBtn color="primary" variant="elevated" :loading="isSaving" prepend-icon="mdi-content-save-outline" @click="handleSaveChanges">
                   Simpan Perubahan
                 </VBtn>
               </VCardActions>
@@ -462,7 +462,7 @@ useHead({ title: 'Setting Aplikasi' })
 
                 <VListItem lines="three">
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4" class="text-start">
+                    <VCol cols="12" md="4" class="text-start pb-2 pb-md-0">
                       <VListItemTitle class="mb-1">
                         Notifikasi WhatsApp
                       </VListItemTitle>
@@ -470,7 +470,7 @@ useHead({ title: 'Setting Aplikasi' })
                         Saklar utama untuk semua fitur notifikasi via WhatsApp.
                       </VListItemSubtitle>
                     </VCol>
-                    <VCol cols="12" md="8" class="d-flex justify-start">
+                    <VCol cols="12" md="8" class="d-flex justify-end mt-2 mt-md-0">
                       <VSwitch v-model="whatsappEnabled" :label="whatsappEnabled ? 'Aktif' : 'Tidak Aktif'" inset />
                     </VCol>
                   </VRow>
@@ -478,7 +478,7 @@ useHead({ title: 'Setting Aplikasi' })
 
                 <VListItem lines="three">
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4" class="text-start">
+                    <VCol cols="12" md="4" class="text-start pb-2 pb-md-0">
                       <VListItemTitle class="mb-1">
                         Notifikasi Login Admin
                       </VListItemTitle>
@@ -486,7 +486,7 @@ useHead({ title: 'Setting Aplikasi' })
                         Kirim notifikasi saat admin atau super admin login.
                       </VListItemSubtitle>
                     </VCol>
-                    <VCol cols="12" md="8" class="d-flex justify-start">
+                    <VCol cols="12" md="8" class="d-flex justify-end mt-2 mt-md-0">
                       <VSwitch v-model="whatsappLoginNotificationEnabled" :label="whatsappLoginNotificationEnabled ? 'Aktif' : 'Tidak Aktif'" :disabled="!whatsappEnabled" inset />
                     </VCol>
                   </VRow>
@@ -494,14 +494,14 @@ useHead({ title: 'Setting Aplikasi' })
 
                 <VListItem>
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4">
+                    <VCol cols="12" md="4" class="pb-2 pb-md-0">
                       <VListItemTitle class="mb-1">
                         API Key Fonnte
                       </VListItemTitle>
                       <VListItemSubtitle>Kunci API dari Fonnte.</VListItemSubtitle>
                     </VCol>
                     <VCol cols="12" md="8">
-                      <VTextField v-model="localSettings.WHATSAPP_API_KEY" label="API Key WhatsApp (Fonnte)" type="password" persistent-placeholder placeholder="Masukkan API Key Fonnte Anda" :disabled="!whatsappEnabled" variant="outlined" density="comfortable" />
+                      <AppTextField v-model="localSettings.WHATSAPP_API_KEY" label="API Key WhatsApp (Fonnte)" type="password" persistent-placeholder placeholder="Masukkan API Key Fonnte Anda" :disabled="!whatsappEnabled" density="comfortable" />
                     </VCol>
                   </VRow>
                 </VListItem>
@@ -512,7 +512,7 @@ useHead({ title: 'Setting Aplikasi' })
 
                 <VListItem lines="three">
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4" class="text-start">
+                    <VCol cols="12" md="4" class="text-start pb-2 pb-md-0">
                       <VListItemTitle class="mb-1">
                         Notifikasi Telegram
                       </VListItemTitle>
@@ -520,7 +520,7 @@ useHead({ title: 'Setting Aplikasi' })
                         Saklar utama untuk pengiriman notifikasi via Telegram Bot.
                       </VListItemSubtitle>
                     </VCol>
-                    <VCol cols="12" md="8" class="d-flex justify-start">
+                    <VCol cols="12" md="8" class="d-flex justify-end mt-2 mt-md-0">
                       <VSwitch v-model="telegramEnabled" :label="telegramEnabled ? 'Aktif' : 'Tidak Aktif'" inset />
                     </VCol>
                   </VRow>
@@ -528,35 +528,35 @@ useHead({ title: 'Setting Aplikasi' })
 
                 <VListItem>
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4">
+                    <VCol cols="12" md="4" class="pb-2 pb-md-0">
                       <VListItemTitle class="mb-1">
                         Bot Username
                       </VListItemTitle>
                       <VListItemSubtitle>Digunakan untuk deep link (opsional).</VListItemSubtitle>
                     </VCol>
                     <VCol cols="12" md="8">
-                      <VTextField v-model="localSettings.TELEGRAM_BOT_USERNAME" label="Telegram Bot Username" persistent-placeholder placeholder="Contoh: lpsaring_bot" :disabled="!telegramEnabled" variant="outlined" density="comfortable" />
+                      <AppTextField v-model="localSettings.TELEGRAM_BOT_USERNAME" label="Telegram Bot Username" persistent-placeholder placeholder="Contoh: lpsaring_bot" :disabled="!telegramEnabled" density="comfortable" />
                     </VCol>
                   </VRow>
                 </VListItem>
 
                 <VListItem>
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4">
+                    <VCol cols="12" md="4" class="pb-2 pb-md-0">
                       <VListItemTitle class="mb-1">
                         Bot Token
                       </VListItemTitle>
                       <VListItemSubtitle>Token dari BotFather (server-side secret).</VListItemSubtitle>
                     </VCol>
                     <VCol cols="12" md="8">
-                      <VTextField v-model="localSettings.TELEGRAM_BOT_TOKEN" label="Telegram Bot Token" type="password" persistent-placeholder placeholder="123456:ABC..." :disabled="!telegramEnabled" variant="outlined" density="comfortable" />
+                      <AppTextField v-model="localSettings.TELEGRAM_BOT_TOKEN" label="Telegram Bot Token" type="password" persistent-placeholder placeholder="123456:ABC..." :disabled="!telegramEnabled" density="comfortable" />
                     </VCol>
                   </VRow>
                 </VListItem>
 
                 <VListItem>
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4">
+                    <VCol cols="12" md="4" class="pb-2 pb-md-0">
                       <VListItemTitle class="mb-1">
                         Webhook Secret
                       </VListItemTitle>
@@ -565,14 +565,13 @@ useHead({ title: 'Setting Aplikasi' })
                       </VListItemSubtitle>
                     </VCol>
                     <VCol cols="12" md="8">
-                      <VTextField
+                      <AppTextField
                         v-model="localSettings.TELEGRAM_WEBHOOK_SECRET"
                         label="Telegram Webhook Secret"
                         type="password"
                         persistent-placeholder
                         placeholder="isi random string panjang"
                         :disabled="!telegramEnabled"
-                        variant="outlined"
                         density="comfortable"
                       />
                     </VCol>
@@ -581,7 +580,7 @@ useHead({ title: 'Setting Aplikasi' })
 
                 <VListItem>
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4">
+                    <VCol cols="12" md="4" class="pb-2 pb-md-0">
                       <VListItemTitle class="mb-1">
                         Admin Chat IDs
                       </VListItemTitle>
@@ -590,14 +589,14 @@ useHead({ title: 'Setting Aplikasi' })
                       </VListItemSubtitle>
                     </VCol>
                     <VCol cols="12" md="8">
-                      <VTextField v-model="localSettings.TELEGRAM_ADMIN_CHAT_IDS" label="Telegram Admin Chat IDs" persistent-placeholder placeholder="Contoh: 123456789,987654321" :disabled="!telegramEnabled" variant="outlined" density="comfortable" />
+                      <AppTextField v-model="localSettings.TELEGRAM_ADMIN_CHAT_IDS" label="Telegram Admin Chat IDs" persistent-placeholder placeholder="Contoh: 123456789,987654321" :disabled="!telegramEnabled" density="comfortable" />
                     </VCol>
                   </VRow>
                 </VListItem>
 
                 <VListItem>
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4" class="text-start">
+                    <VCol cols="12" md="4" class="text-start pb-2 pb-md-0">
                       <VListItemTitle class="mb-1">
                         Test Kirim Telegram
                       </VListItemTitle>
@@ -608,23 +607,21 @@ useHead({ title: 'Setting Aplikasi' })
                     <VCol cols="12" md="8">
                       <VRow>
                         <VCol cols="12" sm="6" md="5">
-                          <VTextField
+                          <AppTextField
                             v-model="testTelegramChatId"
                             label="chat_id"
                             placeholder="123456789"
                             :disabled="!telegramEnabled || isTestingTelegram"
-                            variant="outlined"
                             density="comfortable"
                             hide-details
                           />
                         </VCol>
                         <VCol cols="12" sm="6" md="7">
-                          <VTextField
+                          <AppTextField
                             v-model="testTelegramMessage"
                             label="Pesan"
                             placeholder="Tes Telegram..."
                             :disabled="!telegramEnabled || isTestingTelegram"
-                            variant="outlined"
                             density="comfortable"
                             hide-details
                           />
@@ -633,7 +630,7 @@ useHead({ title: 'Setting Aplikasi' })
                       <div class="d-flex justify-end mt-2">
                         <VBtn
                           color="primary"
-                          variant="tonal"
+                          variant="elevated"
                           :loading="isTestingTelegram"
                           :disabled="!telegramEnabled || isTestingTelegram"
                           prepend-icon="tabler-send"
@@ -651,7 +648,7 @@ useHead({ title: 'Setting Aplikasi' })
 
                 <VListItem>
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4">
+                    <VCol cols="12" md="4" class="pb-2 pb-md-0">
                       <VListItemTitle class="mb-1">
                         Kunci Midtrans
                       </VListItemTitle>
@@ -660,10 +657,10 @@ useHead({ title: 'Setting Aplikasi' })
                     <VCol cols="12" md="8">
                       <VRow>
                         <VCol cols="12" sm="6">
-                          <VTextField v-model="localSettings.MIDTRANS_SERVER_KEY" label="Server Key Midtrans" type="password" persistent-placeholder placeholder="Masukkan Server Key" variant="outlined" density="comfortable" />
+                          <AppTextField v-model="localSettings.MIDTRANS_SERVER_KEY" label="Server Key Midtrans" type="password" persistent-placeholder placeholder="Masukkan Server Key" density="comfortable" />
                         </VCol>
                         <VCol cols="12" sm="6">
-                          <VTextField v-model="localSettings.MIDTRANS_CLIENT_KEY" label="Client Key Midtrans" type="password" persistent-placeholder placeholder="Masukkan Client Key" variant="outlined" density="comfortable" />
+                          <AppTextField v-model="localSettings.MIDTRANS_CLIENT_KEY" label="Client Key Midtrans" type="password" persistent-placeholder placeholder="Masukkan Client Key" density="comfortable" />
                         </VCol>
                       </VRow>
                     </VCol>
@@ -672,7 +669,7 @@ useHead({ title: 'Setting Aplikasi' })
 
                 <VListItem lines="three">
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4">
+                    <VCol cols="12" md="4" class="pb-2 pb-md-0">
                       <VListItemTitle class="mb-1">
                         Mode Pembayaran
                       </VListItemTitle>
@@ -754,7 +751,7 @@ useHead({ title: 'Setting Aplikasi' })
                 <VListSubheader>MikroTik</VListSubheader>
                 <VListItem>
                   <VRow no-gutters align="center">
-                    <VCol cols="12" md="4" class="text-start">
+                    <VCol cols="12" md="4" class="text-start pb-2 pb-md-0">
                       <VListItemTitle class="mb-1">
                         Kredensial MikroTik
                       </VListItemTitle>
@@ -763,13 +760,13 @@ useHead({ title: 'Setting Aplikasi' })
                     <VCol cols="12" md="8">
                       <VRow>
                         <VCol cols="12" sm="6" md="4">
-                          <VTextField v-model="localSettings.MIKROTIK_HOST" label="Host MikroTik" persistent-placeholder placeholder="Alamat IP/domain" variant="outlined" density="comfortable" />
+                          <AppTextField v-model="localSettings.MIKROTIK_HOST" label="Host MikroTik" persistent-placeholder placeholder="Alamat IP/domain" density="comfortable" />
                         </VCol>
                         <VCol cols="12" sm="6" md="4">
-                          <VTextField v-model="localSettings.MIKROTIK_USER" label="User MikroTik" persistent-placeholder placeholder="Username API" variant="outlined" density="comfortable" />
+                          <AppTextField v-model="localSettings.MIKROTIK_USER" label="User MikroTik" persistent-placeholder placeholder="Username API" density="comfortable" />
                         </VCol>
                         <VCol cols="12" sm="12" md="4">
-                          <VTextField v-model="localSettings.MIKROTIK_PASSWORD" label="Password MikroTik" type="password" persistent-placeholder placeholder="Password API" variant="outlined" density="comfortable" />
+                          <AppTextField v-model="localSettings.MIKROTIK_PASSWORD" label="Password MikroTik" type="password" persistent-placeholder placeholder="Password API" density="comfortable" />
                         </VCol>
                       </VRow>
                     </VCol>
@@ -778,7 +775,7 @@ useHead({ title: 'Setting Aplikasi' })
               </div>
               <VCardActions class="mt-6 px-0">
                 <VSpacer />
-                <VBtn :loading="isSaving" prepend-icon="mdi-content-save-outline" @click="handleSaveChanges">
+                <VBtn color="primary" variant="elevated" :loading="isSaving" prepend-icon="mdi-content-save-outline" @click="handleSaveChanges">
                   Simpan Perubahan
                 </VBtn>
               </VCardActions>
