@@ -45,6 +45,8 @@ interface PackageItem {
   id: string
   name: string
   price: number
+  data_quota_gb?: number | null
+  duration_days?: number | null
   is_active?: boolean
 }
 interface MikrotikOptionsResponse {
@@ -172,6 +174,13 @@ function formatPhoneNumberDisplay(phone: string | null): string | null {
 }
 const formatCreatedAt = (date: string) => new Date(date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
 const formatCurrency = (value: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(value)
+function formatQuotaGb(value?: number | null): string {
+  if (value === null || value === undefined)
+    return 'N/A'
+  if (value === 0)
+    return 'Unlimited'
+  return `${value} GB`
+}
 const roleMap: Record<User['role'], { text: string, color: string }> = { USER: { text: 'User', color: 'info' }, KOMANDAN: { text: 'Komandan', color: 'success' }, ADMIN: { text: 'Admin', color: 'primary' }, SUPER_ADMIN: { text: 'Support', color: 'secondary' } }
 const statusMap: Record<User['approval_status'], { text: string, color: string }> = { APPROVED: { text: 'Disetujui', color: 'success' }, PENDING_APPROVAL: { text: 'Menunggu', color: 'warning' }, REJECTED: { text: 'Ditolak', color: 'error' } }
 
@@ -1064,9 +1073,28 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
             clearable
             class="mt-4"
             :disabled="billLoading"
-          />
+          >
+            <template #item="{ props, item }">
+              <VListItem v-bind="props">
+                <VListItemTitle>{{ item.raw.name }}</VListItemTitle>
+                <VListItemSubtitle class="text-medium-emphasis">
+                  Kuota: <span class="font-weight-medium">{{ formatQuotaGb(item.raw.data_quota_gb) }}</span>
+                  <span class="mx-1">•</span>
+                  Harga: <span class="font-weight-medium">{{ formatCurrency(item.raw.price) }}</span>
+                </VListItemSubtitle>
+              </VListItem>
+            </template>
+
+            <template #selection="{ item }">
+              <span class="text-no-wrap">
+                {{ item.raw.name }} — {{ formatQuotaGb(item.raw.data_quota_gb) }} — {{ formatCurrency(item.raw.price) }}
+              </span>
+            </template>
+          </VAutocomplete>
+
           <div v-if="billSelectedPackage" class="mt-3 text-medium-emphasis">
-            Harga: {{ formatCurrency(billSelectedPackage.price) }}
+            <div>Kuota: {{ formatQuotaGb(billSelectedPackage.data_quota_gb) }}</div>
+            <div>Harga: {{ formatCurrency(billSelectedPackage.price) }}</div>
           </div>
         </VCardText>
 
