@@ -1683,10 +1683,24 @@ def create_qris_bill(current_admin: User):
         session.commit()
 
         phone_number = getattr(user, "phone_number", "") or ""
+
+        pkg_quota_gb = getattr(package, "data_quota_gb", None)
+        pkg_duration_days = getattr(package, "duration_days", None)
+        if pkg_quota_gb is None:
+            quota_label = "-"
+        elif pkg_quota_gb == 0:
+            quota_label = "Unlimited"
+        else:
+            quota_label = f"{pkg_quota_gb} GB"
+
+        duration_label = f"{pkg_duration_days} Hari" if pkg_duration_days is not None else "-"
+
         caption = (
             f"📌 *Tagihan Pembelian Paket*\n\n"
             f"Nama: *{getattr(user, 'full_name', '') or 'Pengguna'}*\n"
             f"Paket: *{getattr(package, 'name', '') or 'Paket'}*\n"
+            f"Kuota: *{quota_label}*\n"
+            f"Masa aktif: *{duration_label}*\n"
             f"Jumlah: *Rp {amount:,}*\n"
             f"Invoice: *{order_id}*"
         )
