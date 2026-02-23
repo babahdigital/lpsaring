@@ -73,7 +73,11 @@ export const iconify = {
         ...props,
 
         // As we are using class based icons
-        class: [props.icon],
+        // NOTE: @mdi/font requires the base class 'mdi' in addition to 'mdi-xxx'
+        // e.g. <i class="mdi mdi-cog-outline"></i>
+        class: typeof props.icon === 'string' && props.icon.startsWith('mdi-')
+          ? ['mdi', props.icon]
+          : [props.icon],
 
         // Remove used props from DOM rendering
         tag: undefined,

@@ -8,6 +8,7 @@ import defaults from './defaults'
 import { icons } from './icons'
 import { staticPrimaryColor, staticPrimaryDarkenColor, themes } from './theme'
 import '@core/scss/template/libs/vuetify/index.scss'
+import '@mdi/font/css/materialdesignicons.css'
 import 'vuetify/styles'
 
 export default defineNuxtPlugin((nuxtApp) => {
