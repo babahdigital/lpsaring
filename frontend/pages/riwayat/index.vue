@@ -469,8 +469,8 @@ useHead({ title: 'Riwayat Transaksi' })
                 <VProgressCircular indeterminate color="primary" />
               </div>
 
-              <div class="debt-ledger-scroll">
-                <VTable v-else density="compact" class="debt-ledger-table">
+              <div v-else class="debt-ledger-scroll">
+                <VTable density="compact" class="debt-ledger-table">
                   <colgroup>
                     <col style="width: 124px;">
                     <col style="width: 110px;">
