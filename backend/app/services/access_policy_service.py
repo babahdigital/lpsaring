@@ -94,11 +94,8 @@ def get_user_access_status(user) -> str:
     if purchased_mb <= 0 or remaining_mb <= 0:
         return "habis"
 
-    remaining_percent = 0.0
-    if purchased_mb > 0:
-        remaining_percent = (remaining_mb / purchased_mb) * 100
-    fup_percent = settings_service.get_setting_as_int("QUOTA_FUP_PERCENT", 20)
-    if remaining_percent <= fup_percent:
+    fup_threshold_mb = float(settings_service.get_setting_as_int("QUOTA_FUP_THRESHOLD_MB", 3072) or 3072)
+    if purchased_mb > fup_threshold_mb and remaining_mb <= fup_threshold_mb:
         return "fup"
 
     return "active"

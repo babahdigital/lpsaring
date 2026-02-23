@@ -11,7 +11,7 @@ class _Role:
         self.value = value
 
 
-def _patch_settings(monkeypatch, *, fup_threshold: int = 20):
+def _patch_settings(monkeypatch, *, fup_threshold_mb: int = 3072):
     mapping = {
         "MIKROTIK_ADDRESS_LIST_ACTIVE": "active_list",
         "MIKROTIK_ADDRESS_LIST_FUP": "fup_list",
@@ -25,8 +25,8 @@ def _patch_settings(monkeypatch, *, fup_threshold: int = 20):
         return mapping.get(key, default)
 
     def fake_get_setting_as_int(key: str, default: int = 0) -> int:
-        if key == "QUOTA_FUP_PERCENT":
-            return fup_threshold
+        if key == "QUOTA_FUP_THRESHOLD_MB":
+            return fup_threshold_mb
         return default
 
     monkeypatch.setattr(svc.settings_service, "get_setting", fake_get_setting)
@@ -80,7 +80,7 @@ def test_sync_address_list_blocked_has_priority_and_cleans_other_lists(monkeypat
 
 
 def test_sync_address_list_non_blocked_removes_blocked_if_present(monkeypatch):
-    _patch_settings(monkeypatch, fup_threshold=20)
+    _patch_settings(monkeypatch, fup_threshold_mb=3072)
 
     capture = {}
 
@@ -99,6 +99,7 @@ def test_sync_address_list_non_blocked_removes_blocked_if_present(monkeypatch):
         is_blocked=False,
         role=_Role("USER"),
         phone_number="081234567890",
+        total_quota_purchased_mb=10240,
     )
 
     ok = svc._sync_address_list_status(
@@ -106,7 +107,7 @@ def test_sync_address_list_non_blocked_removes_blocked_if_present(monkeypatch):
         user=cast(Any, user),
         username_08="081234567890",
         remaining_mb=100.0,
-        remaining_percent=10.0,  # <= fup_threshold
+        remaining_percent=10.0,
         is_expired=False,
     )
 

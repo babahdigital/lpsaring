@@ -899,14 +899,11 @@ def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reas
                 list_inactive = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive"
                 list_expired = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired"
                 list_habis = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis"
-                fup_threshold = settings_service.get_setting_as_int("QUOTA_FUP_PERCENT", 20)
+                fup_threshold_mb = float(settings_service.get_setting_as_int("QUOTA_FUP_THRESHOLD_MB", 3072) or 3072)
 
                 purchased_mb = float(user.total_quota_purchased_mb or 0.0)
                 used_mb = float(user.total_quota_used_mb or 0.0)
                 remaining_mb = max(0.0, purchased_mb - used_mb)
-                remaining_percent = 0.0
-                if purchased_mb > 0:
-                    remaining_percent = (remaining_mb / purchased_mb) * 100.0
 
                 now_utc = datetime.now(dt_timezone.utc)
                 is_expired = bool(user.quota_expiry_date and user.quota_expiry_date < now_utc)
@@ -923,7 +920,7 @@ def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reas
                 elif remaining_mb <= 0:
                     target_list = list_habis
                     status_value = "habis"
-                elif remaining_percent <= float(fup_threshold):
+                elif purchased_mb > fup_threshold_mb and remaining_mb <= fup_threshold_mb:
                     target_list = list_fup
                     status_value = "fup"
                 else:

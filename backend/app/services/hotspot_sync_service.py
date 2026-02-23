@@ -145,7 +145,7 @@ def _resolve_target_profile(user: User, remaining_mb: float, remaining_percent: 
     habis_profile = settings_service.get_setting("MIKROTIK_HABIS_PROFILE", "habis") or "habis"
     unlimited_profile = settings_service.get_setting("MIKROTIK_UNLIMITED_PROFILE", "unlimited") or "unlimited"
     expired_profile = settings_service.get_setting("MIKROTIK_EXPIRED_PROFILE", "expired") or "expired"
-    fup_threshold = settings_service.get_setting_as_int("QUOTA_FUP_PERCENT", 20)
+    fup_threshold_mb = float(settings_service.get_setting_as_int("QUOTA_FUP_THRESHOLD_MB", 3072) or 3072)
 
     if user.is_unlimited_user:
         return unlimited_profile
@@ -155,7 +155,7 @@ def _resolve_target_profile(user: User, remaining_mb: float, remaining_percent: 
         return expired_profile
     if remaining_mb <= 0:
         return habis_profile
-    if remaining_percent <= fup_threshold:
+    if float(getattr(user, "total_quota_purchased_mb", 0) or 0) > fup_threshold_mb and remaining_mb <= fup_threshold_mb:
         return fup_profile
     return active_profile
 
@@ -283,21 +283,25 @@ def _send_quota_notifications(user: User, remaining_percent: float, remaining_mb
 
     template_key = "komandan_quota_low" if user.role == UserRole.KOMANDAN else "user_quota_low"
 
-    # Kurangi noise/duplikasi: notifikasi low-quota cukup di level rendah saja.
-    # FUP transition sudah mengirim notifikasi sendiri (contoh: 20%).
-    thresholds = sorted(_get_thresholds_from_env("QUOTA_NOTIFY_PERCENTAGES", [5]), reverse=True)
-    thresholds = [t for t in thresholds if isinstance(t, int) and 0 < t <= 5]
+    # Notifikasi low-quota berbasis sisa kuota (MB). Default: 500MB.
+    thresholds = sorted(_get_thresholds_from_env("QUOTA_NOTIFY_REMAINING_MB", [500]), reverse=True)
+    thresholds = [t for t in thresholds if isinstance(t, int) and t > 0]
     if not thresholds:
         return
     last_level = user.last_quota_notification_level
 
+    # Backward compatibility: sebelumnya last_level menyimpan persen (<= 100).
+    # Jika sekarang threshold berbasis MB (umumnya > 100), reset agar notifikasi bisa jalan lagi.
+    if last_level is not None and isinstance(last_level, int) and last_level <= 100 and max(thresholds) > 100:
+        last_level = None
+
     for threshold in thresholds:
-        if remaining_percent <= threshold and (last_level is None or last_level > threshold):
+        if remaining_mb <= float(threshold) and (last_level is None or last_level > threshold):
             message = get_notification_message(
                 template_key,
                 {
                     "full_name": user.full_name,
-                    "remaining_percent": threshold,
+                    "remaining_percent": remaining_percent,
                     "remaining_mb": remaining_mb,
                 },
             )
@@ -384,7 +388,7 @@ def _sync_address_list_status(
     list_expired = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired"
     list_habis = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis"
     list_blocked = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked"
-    fup_threshold = settings_service.get_setting_as_int("QUOTA_FUP_PERCENT", 20)
+    fup_threshold_mb = float(settings_service.get_setting_as_int("QUOTA_FUP_THRESHOLD_MB", 3072) or 3072)
 
     target_list = None
     if bool(getattr(user, "is_blocked", False)):
@@ -395,7 +399,7 @@ def _sync_address_list_status(
         target_list = list_habis
     elif user.is_unlimited_user:
         target_list = list_active
-    elif remaining_percent <= fup_threshold:
+    elif float(getattr(user, "total_quota_purchased_mb", 0) or 0) > fup_threshold_mb and remaining_mb <= fup_threshold_mb:
         target_list = list_fup
     else:
         target_list = list_active
@@ -408,7 +412,7 @@ def _sync_address_list_status(
         status_value = "unlimited"
     elif remaining_mb <= 0:
         status_value = "habis"
-    elif remaining_percent <= fup_threshold:
+    elif float(getattr(user, "total_quota_purchased_mb", 0) or 0) > fup_threshold_mb and remaining_mb <= fup_threshold_mb:
         status_value = "fup"
     else:
         status_value = "active"
@@ -485,7 +489,7 @@ def _sync_address_list_status_for_ip(
     list_expired = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired"
     list_habis = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis"
     list_blocked = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked"
-    fup_threshold = settings_service.get_setting_as_int("QUOTA_FUP_PERCENT", 20)
+    fup_threshold_mb = float(settings_service.get_setting_as_int("QUOTA_FUP_THRESHOLD_MB", 3072) or 3072)
 
     target_list = None
     if bool(getattr(user, "is_blocked", False)):
@@ -496,7 +500,7 @@ def _sync_address_list_status_for_ip(
         target_list = list_habis
     elif user.is_unlimited_user:
         target_list = list_active
-    elif remaining_percent <= fup_threshold:
+    elif float(getattr(user, "total_quota_purchased_mb", 0) or 0) > fup_threshold_mb and remaining_mb <= fup_threshold_mb:
         target_list = list_fup
     else:
         target_list = list_active
@@ -510,7 +514,7 @@ def _sync_address_list_status_for_ip(
         status_value = "unlimited"
     elif remaining_mb <= 0:
         status_value = "habis"
-    elif remaining_percent <= fup_threshold:
+    elif float(getattr(user, "total_quota_purchased_mb", 0) or 0) > fup_threshold_mb and remaining_mb <= fup_threshold_mb:
         status_value = "fup"
     else:
         status_value = "active"

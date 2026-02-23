@@ -14,15 +14,19 @@ from app.services.hotspot_sync_service import _calculate_remaining, _resolve_tar
 from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection, set_hotspot_user_profile
 
 
-def _compute_used(total_mb: int, status: str, fup_threshold: int, used_override: Optional[int]) -> int:
+def _compute_used(total_mb: int, status: str, fup_threshold_mb: int, used_override: Optional[int]) -> int:
     if used_override is not None:
         return max(0, used_override)
 
     if status == "active":
         return max(0, int(total_mb * 0.1))
     if status == "fup":
-        # Remaining <= fup_threshold
-        return max(0, int(total_mb - (total_mb * fup_threshold / 100)) + 1)
+        # Remaining <= fup_threshold_mb (and purchased_mb should be > fup_threshold_mb to truly enter FUP)
+        if total_mb <= 0:
+            return 0
+        desired_remaining = max(0, min(int(fup_threshold_mb), int(total_mb)) - 1)
+        used = int(total_mb) - int(desired_remaining)
+        return max(0, min(int(total_mb), int(used)))
     if status == "habis":
         return max(0, total_mb)
     if status == "expired":
@@ -54,7 +58,7 @@ def main() -> None:
             return
 
         now = datetime.now(dt_timezone.utc)
-        fup_threshold = settings_service.get_setting_as_int("QUOTA_FUP_PERCENT", 20)
+        fup_threshold_mb = settings_service.get_setting_as_int("QUOTA_FUP_THRESHOLD_MB", 3072)
 
         if args.status == "unlimited":
             user.is_unlimited_user = True
@@ -65,7 +69,7 @@ def main() -> None:
             user.is_unlimited_user = False
             user.total_quota_purchased_mb = max(0, args.total_mb)
             user.total_quota_used_mb = _compute_used(
-                user.total_quota_purchased_mb, args.status, fup_threshold, args.used_mb
+                user.total_quota_purchased_mb, args.status, int(fup_threshold_mb), args.used_mb
             )
             if args.status == "expired":
                 user.quota_expiry_date = now - timedelta(days=1)

@@ -495,12 +495,11 @@ def get_users_list(current_admin: User):
         # Status filters (OR across selected values)
         if status_values:
             now_utc = datetime.now(dt_timezone.utc)
-            fup_threshold = float(settings_service.get_setting_as_int("QUOTA_FUP_PERCENT", 20) or 20)
+            fup_threshold_mb = float(settings_service.get_setting_as_int("QUOTA_FUP_THRESHOLD_MB", 3072) or 3072)
 
             purchased_num = sa.cast(User.total_quota_purchased_mb, sa.Numeric)
             used_num = sa.cast(User.total_quota_used_mb, sa.Numeric)
             remaining_num = purchased_num - used_num
-            remaining_percent = (remaining_num / func.nullif(purchased_num, 0)) * 100
             auto_debt = sa.func.greatest(sa.cast(0, sa.Numeric), used_num - purchased_num)
             manual_debt_num = sa.cast(func.coalesce(User.manual_debt_mb, 0), sa.Numeric)
             total_debt = auto_debt + manual_debt_num
@@ -521,15 +520,15 @@ def get_users_list(current_admin: User):
                     conditions.append(sa.and_(User.quota_expiry_date.is_not(None), User.quota_expiry_date < now_utc))
                 elif status in {"fup"}:
                     # Mirror hotspot sync: fup when not blocked, not unlimited, purchased>0, remaining>0,
-                    # remaining_percent <= threshold, and not expired.
+                    # remaining_mb <= threshold, and not expired.
                     conditions.append(
                         sa.and_(
                             User.is_blocked.is_(False),
                             User.is_unlimited_user.is_(False),
                             User.is_active.is_(True),
-                            User.total_quota_purchased_mb > 0,
+                            User.total_quota_purchased_mb > fup_threshold_mb,
                             remaining_num > 0,
-                            remaining_percent <= fup_threshold,
+                            remaining_num <= fup_threshold_mb,
                             sa.or_(User.quota_expiry_date.is_(None), User.quota_expiry_date >= now_utc),
                         )
                     )
