@@ -558,7 +558,7 @@ class Transaction(db.Model):
     midtrans_order_id: Mapped[str] = mapped_column(String(100), nullable=False)
     midtrans_transaction_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     snap_token: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
-    snap_redirect_url: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    snap_redirect_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
     status: Mapped[TransactionStatus] = mapped_column(
         SQLAlchemyEnum(TransactionStatus, name="transaction_status_enum", native_enum=False),
