@@ -66,6 +66,10 @@ onMounted(() => {
   fetchPackages()
 })
 
+watch(options, () => {
+  fetchPackages()
+}, { deep: true })
+
 // Perbaikan: Pengecekan `id` yang mungkin `undefined` dibuat eksplisit.
 const formTitle = computed(() => (editedPackage.value.id != null ? 'Edit Paket Jualan' : 'Tambah Paket Jualan'))
 
@@ -100,9 +104,8 @@ async function fetchPackages() {
   }
 }
 
-async function handleMobilePackagesPageUpdate(page: number) {
+function handlePackagesPageUpdate(page: number) {
   options.value.page = page
-  await fetchPackages()
 }
 
 function openDialog(type: 'edit' | 'delete', pkg: Package | null = null) {
@@ -288,7 +291,6 @@ useHead({ title: 'Manajemen Paket Jualan' })
         :items-length="totalPackages"
         :loading="showInitialSkeleton"
         density="comfortable"
-        @update:options="fetchPackages"
         hide-default-footer
       >
         <template #item.details="{ item }">
@@ -369,7 +371,7 @@ useHead({ title: 'Manajemen Paket Jualan' })
         :page="options.page"
         :items-per-page="options.itemsPerPage"
         :total-items="totalPackages"
-        @update:page="handleMobilePackagesPageUpdate"
+        @update:page="handlePackagesPageUpdate"
       />
 
       <div
@@ -449,7 +451,7 @@ useHead({ title: 'Manajemen Paket Jualan' })
             :page="options.page"
             :items-per-page="options.itemsPerPage"
             :total-items="totalPackages"
-            @update:page="handleMobilePackagesPageUpdate"
+            @update:page="handlePackagesPageUpdate"
           />
         </div>
       </div>

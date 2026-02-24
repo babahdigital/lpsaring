@@ -37,6 +37,11 @@ watch(isDialogVisible, (newValue) => {
     fetchProfiles()
 })
 
+watch(options, () => {
+  if (isDialogVisible.value === true)
+    fetchProfiles()
+}, { deep: true })
+
 const formTitle = computed(() => (editedProfile.value.id ? 'Edit Profil' : 'Tambah Profil Baru'))
 const headers = [
   { title: 'PROFIL', key: 'profile_name' },
@@ -171,7 +176,6 @@ async function handleAction(type: 'create' | 'update' | 'delete') {
             :loading="loading"
             density="comfortable"
             class="elevation-0"
-            @update:options="fetchProfiles"
             hide-default-footer
           >
             <template #item.duration_days="{ item }">
