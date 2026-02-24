@@ -118,16 +118,6 @@ function updateThemeClassInCalendar() {
 watch(() => configStore.theme, updateThemeClassInCalendar)
 
 onMounted(() => {
-  // Ensure calendar popup is not trapped inside container overflow.
-  // Only set when user didn't provide `appendTo` explicitly.
-  try {
-    if (!isInlinePicker.value && compAttrs.config && compAttrs.config.appendTo == null && typeof document !== 'undefined')
-      compAttrs.config.appendTo = document.body
-  }
-  catch {
-    // ignore
-  }
-
   updateThemeClassInCalendar()
 })
 
@@ -577,6 +567,20 @@ input[altinputclass="inlinePicker"] {
       inset-inline-start: 0;
       text-align: start;
     }
+  }
+}
+
+@media (max-width: 600px) {
+  .flatpickr-calendar {
+    inline-size: min(17rem, calc(100vw - 1.5rem));
+    max-inline-size: calc(100vw - 1.5rem);
+  }
+
+  .flatpickr-calendar .flatpickr-days,
+  .flatpickr-calendar .flatpickr-rContainer .flatpickr-days,
+  .flatpickr-calendar .flatpickr-rContainer .flatpickr-days .dayContainer {
+    inline-size: 100%;
+    min-inline-size: 100%;
   }
 }
 </style>
