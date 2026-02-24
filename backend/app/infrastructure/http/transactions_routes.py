@@ -1822,11 +1822,48 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
         session.refresh(transaction)
         p = transaction.package
         u = transaction.user
+
+        is_debt_settlement = _is_debt_settlement_order_id(transaction.midtrans_order_id)
+        manual_debt_id = (
+            _extract_manual_debt_id_from_order_id(transaction.midtrans_order_id) if is_debt_settlement else None
+        )
+
+        debt_type: str | None = None
+        debt_mb: int | None = None
+        debt_note: str | None = None
+        if is_debt_settlement:
+            if manual_debt_id is not None:
+                debt_type = "manual"
+                try:
+                    debt_row = session.get(UserQuotaDebt, manual_debt_id)
+                except Exception:
+                    debt_row = None
+                if debt_row is not None:
+                    try:
+                        debt_mb = int(max(0, int(debt_row.amount_mb or 0) - int(debt_row.paid_mb or 0)))
+                    except Exception:
+                        debt_mb = None
+                    try:
+                        debt_note = str(debt_row.note or "").strip() or None
+                    except Exception:
+                        debt_note = None
+            else:
+                debt_type = "auto"
+                try:
+                    debt_mb_float = float(getattr(u, "quota_debt_auto_mb", 0.0) or 0.0) if u is not None else 0.0
+                    debt_mb = int(round(max(0.0, debt_mb_float)))
+                except Exception:
+                    debt_mb = None
+
         response_data = {
             "id": str(transaction.id),
             "midtrans_order_id": transaction.midtrans_order_id,
             "midtrans_transaction_id": transaction.midtrans_transaction_id,
             "status": transaction.status.value,
+            "purpose": "debt" if is_debt_settlement else "purchase",
+            "debt_type": debt_type,
+            "debt_mb": debt_mb,
+            "debt_note": debt_note,
             "amount": float(transaction.amount or 0.0),
             "payment_method": transaction.payment_method,
             "snap_token": transaction.snap_token if getattr(transaction, "snap_token", None) else None,

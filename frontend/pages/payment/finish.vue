@@ -29,6 +29,10 @@ interface TransactionDetails {
   midtrans_order_id: string
   midtrans_transaction_id?: string | null
   status: TransactionStatus
+  purpose?: string | null
+  debt_type?: 'auto' | 'manual' | null
+  debt_mb?: number | null
+  debt_note?: string | null
   amount?: number | null
   payment_method?: string | null
   snap_token?: string | null
@@ -81,10 +85,21 @@ const orderId = computed(() => {
 
 const isDebtSettlement = computed(() => {
   const oid = orderId.value ?? ''
+  if (transactionDetails.value?.purpose === 'debt')
+    return true
   if (oid.startsWith('DEBT-'))
     return true
   return route.query.purpose === 'debt'
 })
+
+function formatDebtMb(value?: number | null): string | null {
+  if (value == null)
+    return null
+  const n = Math.round(Number(value))
+  if (!Number.isFinite(n) || n <= 0)
+    return null
+  return `${n} MB`
+}
 
 async function fetchTransactionDetails(orderId: string, options?: { showLoading?: boolean, silent?: boolean }) {
   const showLoading = options?.showLoading !== false
@@ -176,10 +191,28 @@ const canDownloadInvoice = computed(() => finalStatus.value === 'SUCCESS' && inv
 const userPhoneNumberRaw = computed(() => transactionDetails.value?.user?.phone_number ?? null)
 const userName = computed(() => transactionDetails.value?.user?.full_name ?? 'Pengguna')
 const packageName = computed(() => {
-  if (isDebtSettlement.value)
+  if (isDebtSettlement.value) {
+    const debtType = transactionDetails.value?.debt_type ?? null
+    if (debtType === 'auto') {
+      const mbText = formatDebtMb(transactionDetails.value?.debt_mb ?? null)
+      if (mbText)
+        return `Bayar Kuota ${mbText}`
+      return 'Pelunasan Tunggakan Kuota'
+    }
+
+    if (debtType === 'manual') {
+      const note = String(transactionDetails.value?.debt_note ?? '').trim()
+      if (note)
+        return note
+      return 'Pelunasan Hutang Manual'
+    }
+
     return 'Pelunasan Tunggakan Kuota'
+  }
   return transactionDetails.value?.package?.name ?? 'Paket Tidak Diketahui'
 })
+
+const debtNote = computed(() => (isDebtSettlement.value ? 'Pelunasan Tunggakan Quota' : null))
 const paymentMethod = computed(() => transactionDetails.value?.payment_method ?? null)
 const displayHotspotUsername = computed(() => formatToLocalPhone(userPhoneNumberRaw.value) ?? '-')
 
@@ -776,6 +809,11 @@ useHead({
               <div class="d-flex flex-column flex-sm-row justify-space-between align-start align-sm-center mb-3 finish-kv" style="gap: 6px;">
                 <span class="text-body-2 text-medium-emphasis">Paket</span>
                 <span class="font-weight-semibold break-anywhere">{{ packageName }}</span>
+              </div>
+
+              <div v-if="debtNote" class="d-flex flex-column flex-sm-row justify-space-between align-start align-sm-center mb-3 finish-kv" style="gap: 6px;">
+                <span class="text-body-2 text-medium-emphasis">Catatan</span>
+                <span class="font-weight-semibold break-anywhere">{{ debtNote }}</span>
               </div>
 
               <div class="d-flex flex-column flex-sm-row justify-space-between align-start align-sm-center" style="gap: 6px;">
