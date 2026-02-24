@@ -389,7 +389,7 @@ function onClose() {
               Belum ada entri tunggakan manual.
             </VAlert>
 
-            <VTable v-else density="compact" class="mt-2">
+            <VTable v-else density="compact" class="mt-2 manual-debt-table">
               <thead>
                 <tr>
                   <th>Tanggal</th>
@@ -402,10 +402,10 @@ function onClose() {
               <tbody>
                 <tr v-for="item in manualDebtItems" :key="item.id">
                   <td>
-                    <div class="text-body-2">
+                    <div class="text-body-2 manual-debt-table__date">
                       {{ formatDebtDate(item.debt_date || item.created_at) }}
                     </div>
-                    <div v-if="item.note" class="text-caption text-disabled">
+                    <div v-if="item.note" class="text-caption text-disabled manual-debt-table__note">
                       {{ item.note }}
                     </div>
                   </td>
@@ -490,6 +490,20 @@ function onClose() {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.manual-debt-table :deep(th),
+.manual-debt-table :deep(td) {
+  padding-block: 10px;
+}
+
+.manual-debt-table__date {
+  line-height: 1.25rem;
+}
+
+.manual-debt-table__note {
+  margin-top: 4px;
+  line-height: 1.15rem;
 }
 
 @media (max-width: 600px) {

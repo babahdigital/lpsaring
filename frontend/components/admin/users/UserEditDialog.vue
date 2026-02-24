@@ -583,10 +583,10 @@ function openDebtPdf() {
                 <VCol cols="12">
                   <VRow>
                     <VCol cols="12" md="6">
-                      <VSwitch v-model="formData.is_active" label="Akun Aktif" color="success" inset hint="Menonaktifkan akan memutus akses pengguna." persistent-hint />
+                      <VSwitch v-model="formData.is_active" class="admin-switch" label="Akun Aktif" color="success" inset hint="Matikan untuk putus akses." />
                     </VCol>
                     <VCol cols="12" md="6">
-                      <VSwitch v-model="formData.is_blocked" label="Blokir Akun" color="error" inset hint="Blokir berbeda dengan nonaktif. Akun tetap tercatat, tetapi akses ditolak." persistent-hint />
+                      <VSwitch v-model="formData.is_blocked" class="admin-switch" label="Blokir Akun" color="error" inset hint="Blokir = login ditolak." />
                     </VCol>
                   </VRow>
                 </VCol>
@@ -596,7 +596,7 @@ function openDebtPdf() {
                 </VCol>
 
                 <VCol v-if="canAdminInject && formData.is_active === true" cols="12" md="6">
-                  <VSwitch v-if="isTargetAdminOrSuper !== true" v-model="formData.is_unlimited_user" label="Akses Internet Unlimited" color="primary" inset />
+                  <VSwitch v-if="isTargetAdminOrSuper !== true" v-model="formData.is_unlimited_user" class="admin-switch" label="Akses Internet Unlimited" color="primary" inset />
                   <VAlert v-else type="info" variant="tonal" density="compact" icon="tabler-shield-check">
                     Peran <strong>{{ formData.role }}</strong> secara otomatis mendapatkan akses <strong>Unlimited</strong>.
                   </VAlert>
@@ -605,22 +605,22 @@ function openDebtPdf() {
                 <VCol v-if="canAdminInject && formData.is_active === true && isTargetAdminOrSuper !== true && formData.is_unlimited_user === true" cols="12" md="6">
                   <VSwitch
                     v-model="formData.unlimited_time"
+                    class="admin-switch"
                     label="Unlimited Time (tanpa masa aktif/expiry)"
                     color="primary"
                     inset
-                    hint="Jika aktif, masa aktif akan dibuat tanpa batas (quota_expiry_date dikosongkan)."
-                    persistent-hint
+                    hint="Jika aktif, expiry dikosongkan."
                   />
                 </VCol>
 
                 <VCol v-if="canAdminInject && formData.is_active === true && isTargetAdminOrSuper !== true" cols="12" md="6">
                   <VSwitch
                     v-model="isDebtQuotaEnabled"
+                    class="admin-switch"
                     label="Tunggakan Kuota"
                     color="primary"
                     inset
-                    hint="Aktifkan untuk menambah/mengelola tunggakan kuota (berdasarkan paket)."
-                    persistent-hint
+                    hint="Aktifkan untuk menambah/mengelola tunggakan."
                     v-if="formData.role === 'USER'"
                   />
                 </VCol>
@@ -888,6 +888,10 @@ function openDebtPdf() {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.admin-switch :deep(.v-messages__message) {
+  line-height: 1.25rem;
 }
 
 @media (max-width: 600px) {

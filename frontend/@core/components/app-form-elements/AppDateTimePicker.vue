@@ -76,6 +76,10 @@ if (compAttrs.config && compAttrs.config.inline) {
 }
 
 compAttrs.config = {
+  // Default behavior: keep calendar positioned relative to the field wrapper.
+  // This avoids wrong popup positioning when used inside dialogs / scroll containers.
+  static: compAttrs.config?.static ?? true,
+  position: compAttrs.config?.position ?? 'below',
   ...compAttrs.config,
   prevArrow: '<i class="tabler-chevron-left v-icon" style="font-size: 20px; height: 20px; width: 20px;"></i>',
   nextArrow: '<i class="tabler-chevron-right v-icon" style="font-size: 20px; height: 20px; width: 20px;"></i>',
@@ -249,7 +253,8 @@ input[altinputclass="inlinePicker"] {
   @include mixins.elevation(6);
 
   background-color: rgb(var(--v-theme-surface));
-  inline-size: 16.875rem;
+  font-size: 0.95rem;
+  inline-size: 18.5rem;
 
   .flatpickr-day:focus {
     border-color: rgba(var(--v-border-color), var(--v-border-opacity));
