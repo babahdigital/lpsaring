@@ -81,6 +81,21 @@ Checklist:
 3. Pagination di bawah table:
    - `TablePagination`
 
+### Catatan penting: pola watcher untuk pagination server-side
+
+Masalah yang sering terjadi:
+- Klik nomor halaman “tidak jalan” karena ada watcher yang selalu mereset `page=1` setiap `options` berubah.
+
+Pola yang dipakai di repo ini:
+1. Watch `options` (deep) hanya untuk **fetch**:
+   - `watch(options, fetchFn, { deep: true })`
+2. Watch filter/search saja yang **mereset page**:
+   - saat filter/search berubah → set `options.page = 1` → fetch
+
+Prinsip:
+- Page change = fetch, bukan reset.
+- Reset page hanya untuk perubahan filter/query yang bisa mengubah total hasil.
+
 ### Local table (VDataTable)
 
 Jika paging dikelola manual (computed `pagedItems`), tetap gunakan:

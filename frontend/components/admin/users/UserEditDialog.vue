@@ -791,7 +791,15 @@ function openDebtPdf() {
 
                     <template v-if="isDebtQuotaEnabled">
                       <VCol cols="12" md="6">
-                        <AppSelect v-model="formData.debt_package_id" :items="debtPackageOptions" label="Tambah Tunggakan (Pilih Paket)" prepend-inner-icon="tabler-alert-circle" :loading="isPackagesLoading" />
+                        <AppSelect
+                          v-model="formData.debt_package_id"
+                          :items="debtPackageOptions"
+                          label="Tambah Tunggakan (Pilih Paket)"
+                          prepend-inner-icon="tabler-alert-circle"
+                          :loading="isPackagesLoading"
+                          density="comfortable"
+                          hide-details
+                        />
                       </VCol>
 
                       <VCol cols="12" md="6">
@@ -800,12 +808,21 @@ function openDebtPdf() {
                           label="Tanggal Tunggakan"
                           placeholder="Pilih tanggal"
                           prepend-inner-icon="tabler-calendar"
-                          :config="{ dateFormat: 'Y-m-d', enableTime: false }"
+                          density="comfortable"
+                          hide-details
+                          :config="{ dateFormat: 'Y-m-d', enableTime: false, static: false, position: 'below' }"
                         />
                       </VCol>
 
                       <VCol cols="12">
-                        <AppTextField v-model="formData.debt_note" label="Catatan Tunggakan (Opsional)" placeholder="Contoh: advance untuk akses sementara" prepend-inner-icon="tabler-notes" />
+                        <AppTextField
+                          v-model="formData.debt_note"
+                          label="Catatan Tunggakan (Opsional)"
+                          placeholder="Contoh: advance untuk akses sementara"
+                          prepend-inner-icon="tabler-notes"
+                          density="comfortable"
+                          hide-details
+                        />
                       </VCol>
                     </template>
                   </template>

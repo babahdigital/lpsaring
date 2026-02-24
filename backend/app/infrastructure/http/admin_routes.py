@@ -757,11 +757,26 @@ def restore_backup(current_admin: User):
                 extension == ".dump" and 'unrecognized configuration parameter "transaction_timeout"' in stderr_text
             )
 
+            unsupported_dump_version = (
+                extension == ".dump" and "unsupported version" in stderr_text.lower() and "file header" in stderr_text.lower()
+            )
+
             if only_transaction_timeout_warning:
                 current_app.logger.warning(
                     "pg_restore selesai dengan warning kompatibilitas transaction_timeout: %s",
                     stderr_text,
                 )
+            elif unsupported_dump_version:
+                # Biasanya terjadi jika file .dump dibuat oleh pg_dump versi lebih baru
+                # (contoh: dump v16+ tidak bisa dibaca oleh pg_restore v15).
+                current_app.logger.error(f"pg_restore gagal (dump version mismatch): {stderr_text}")
+                return jsonify(
+                    {
+                        "message": "Restore gagal: format file backup lebih baru dari versi pg_restore di server.",
+                        "details": stderr_text[:500],
+                        "hint": "Buat backup ulang dari server ini (Admin → Backup) atau restore memakai pg_restore versi yang sama/lebih baru.",
+                    }
+                ), HTTPStatus.BAD_REQUEST
             else:
                 current_app.logger.error(f"pg_restore gagal: {stderr_text}")
                 return jsonify(

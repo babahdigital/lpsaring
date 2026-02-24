@@ -816,7 +816,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
         <VCardTitle class="admin-users__cleanup-title">
           <div class="admin-users__cleanup-titleText">
             <VIcon icon="tabler-user-x" class="me-2" />
-            <span>Preview Cleanup User Tidak Aktif</span>
+            <span>Preview Cleanup Nonaktif</span>
           </div>
 
           <VBtn
@@ -951,8 +951,8 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
           Manajemen Pengguna
         </VCardTitle>
         <VCardSubtitle>Kelola semua akun yang terdaftar di sistem.</VCardSubtitle>
-        <template #append>
-          <div class="admin-users__toolbar" :class="{ 'admin-users__toolbar--mobile': isMobile }">
+        <template v-if="!isMobile" #append>
+          <div class="admin-users__toolbar">
             <div class="admin-users__search">
               <AppTextField
                 v-model="search"
@@ -967,7 +967,6 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
             <VBtn
               prepend-icon="tabler-plus"
               height="56"
-              :block="isMobile"
               class="admin-users__addBtn"
               @click="openAddUserDialog()"
             >
@@ -976,6 +975,30 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
           </div>
         </template>
       </VCardItem>
+
+      <!-- Mobile: 3 baris (Search di bawah judul, tombol di bawah search) -->
+      <VCardText v-if="isHydrated && isMobile" class="pt-0">
+        <div class="admin-users__toolbarMobile">
+          <AppTextField
+            v-model="search"
+            placeholder="Cari (Nama/No. HP)..."
+            prepend-inner-icon="tabler-search"
+            clearable
+            density="comfortable"
+            hide-details
+          />
+
+          <VBtn
+            prepend-icon="tabler-plus"
+            :height="44"
+            block
+            class="admin-users__addBtnMobile"
+            @click="openAddUserDialog()"
+          >
+            Tambah Akun
+          </VBtn>
+        </div>
+      </VCardText>
       <VDivider v-if="!isMobile" />
       <VCardText v-if="isHydrated && !isMobile">
         <VRow align="center" class="mt-1" dense>
@@ -1378,6 +1401,16 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 
 .admin-users__cleanup-refresh {
   flex-shrink: 0;
+}
+
+.admin-users__toolbarMobile {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-users__addBtnMobile {
+  align-self: stretch;
 }
 
 .admin-users__toolbar {

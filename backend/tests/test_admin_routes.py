@@ -89,6 +89,39 @@ def test_restore_backup_returns_500_for_unknown_pg_restore_error(monkeypatch, tm
     assert "relation public.users" in payload["details"]
 
 
+def test_restore_backup_returns_400_for_unsupported_dump_version(monkeypatch, tmp_path):
+    backup_file = tmp_path / "sample.dump"
+    backup_file.write_text("dummy", encoding="utf-8")
+
+    monkeypatch.setattr(admin_routes, "db", _fake_db())
+    monkeypatch.setattr(admin_routes, "_get_backup_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(
+        admin_routes.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=1,
+            stderr="pg_restore: error: unsupported version (1.16) in file header",
+        ),
+    )
+
+    app = _make_app()
+    restore_impl = _unwrap_decorators(admin_routes.restore_backup)
+
+    with app.test_request_context(
+        "/api/admin/backups/restore",
+        method="POST",
+        json={"filename": "sample.dump", "confirm": "RESTORE"},
+    ):
+        current_admin = cast(User, SimpleNamespace(id=1, username="tester"))
+        response, status = restore_impl(current_admin=current_admin)
+
+    assert status == 400
+    payload = response.get_json()
+    assert "format file backup" in payload["message"]
+    assert "unsupported version" in payload["details"]
+    assert "hint" in payload
+
+
 def test_restore_backup_sql_sanitizes_pg_dump_warning_lines(monkeypatch, tmp_path):
     backup_file = tmp_path / "sample.sql"
     backup_file.write_text(

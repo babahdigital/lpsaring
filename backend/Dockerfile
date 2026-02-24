@@ -1,8 +1,9 @@
 # backend/Dockerfile (Versi Disempurnakan)
 
 # --- Base Stage ---
-# Menggunakan image Python 3.11 slim sebagai dasar (Debian Bookworm)
-FROM python:3.11-slim AS base
+# Menggunakan image Python 3.11 slim sebagai dasar (pin ke Debian Bookworm)
+# Penting untuk menjaga versi `postgresql-client` stabil dan kompatibel dengan server Postgres 15.
+FROM python:3.11-slim-bookworm AS base
 
 # Set environment variables untuk Python dan Pip
 ENV PYTHONUNBUFFERED=1 \
@@ -62,7 +63,7 @@ RUN apt-get update -y && \
     # Dependensi runtime sistem
     libpq5 \
     libffi8 \
-    postgresql-client \
+    postgresql-client-15 \
     # Dependensi runtime WeasyPrint
     libglib2.0-0 \
     libpango-1.0-0 \

@@ -78,7 +78,9 @@ if (compAttrs.config && compAttrs.config.inline) {
 compAttrs.config = {
   // Default behavior: keep calendar positioned relative to the field wrapper.
   // This avoids wrong popup positioning when used inside dialogs / scroll containers.
-  static: compAttrs.config?.static ?? true,
+  // NOTE: `static: true` can get clipped by Vuetify field wrappers (overflow) inside dialogs.
+  // Default to `false` so the calendar can render above overlays.
+  static: compAttrs.config?.static ?? false,
   position: compAttrs.config?.position ?? 'below',
   ...compAttrs.config,
   prevArrow: '<i class="tabler-chevron-left v-icon" style="font-size: 20px; height: 20px; width: 20px;"></i>',
@@ -115,6 +117,16 @@ function updateThemeClassInCalendar() {
 watch(() => configStore.theme, updateThemeClassInCalendar)
 
 onMounted(() => {
+  // Ensure calendar popup is not trapped inside container overflow.
+  // Only set when user didn't provide `appendTo` explicitly.
+  try {
+    if (!isInlinePicker.value && compAttrs.config && compAttrs.config.appendTo == null && typeof document !== 'undefined')
+      compAttrs.config.appendTo = document.body
+  }
+  catch {
+    // ignore
+  }
+
   updateThemeClassInCalendar()
 })
 
