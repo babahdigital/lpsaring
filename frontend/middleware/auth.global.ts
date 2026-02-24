@@ -18,6 +18,7 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
 
   const isLoggedIn = authStore.isLoggedIn
   const isAdmin = authStore.isAdmin
+  const isKomandan = authStore.isKomandan
 
   // Halaman publik: boleh diakses siapa pun, dan tidak dipaksa redirect ke dashboard.
   // Catatan: `auth: false` dipakai untuk modul auth eksternal; jangan diasumsikan sebagai public.
@@ -115,6 +116,17 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
       return navigateTo(adminDashboard, { replace: true })
     }
 
+    // Aturan khusus Komandan:
+    // - Komandan tidak belanja paket dan tidak memakai riwayat transaksi biasa.
+    // - Hanya Komandan yang boleh mengakses halaman request.
+    if (!isAdmin) {
+      if (isKomandan && (to.path === '/beli' || to.path.startsWith('/beli/') || to.path === '/riwayat' || to.path.startsWith('/riwayat/')))
+        return navigateTo('/requests', { replace: true })
+
+      if (!isKomandan && (to.path === '/requests' || to.path.startsWith('/requests/')))
+        return navigateTo(userDashboard, { replace: true })
+    }
+
     if (!isAdmin) {
       const accessStatus = authStore.getAccessStatusFromUser(authStore.currentUser ?? authStore.lastKnownUser)
       const statusRouteMap: Record<string, string> = {
@@ -129,9 +141,10 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
         return
 
       if (accessStatus === 'expired' || accessStatus === 'habis') {
-        const allowedPaths = ['/beli', '/payment/status', '/payment/finish', statusRouteMap.expired, statusRouteMap.habis]
+        const destination = isKomandan ? '/requests' : '/beli'
+        const allowedPaths = [destination, '/payment/status', '/payment/finish', statusRouteMap.expired, statusRouteMap.habis]
         if (!allowedPaths.includes(to.path))
-          return navigateTo('/beli', { replace: true })
+          return navigateTo(destination, { replace: true })
       }
     }
 

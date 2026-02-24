@@ -3,6 +3,7 @@
 
 import hashlib
 import json
+import math
 import os
 import uuid
 import base64
@@ -28,6 +29,7 @@ from app.infrastructure.db.models import (
     TransactionEventSource,
     TransactionStatus,
     User,
+    UserRole,
     UserQuotaDebt,
 )
 from app.services.transaction_service import apply_package_and_sync_to_mikrotik
@@ -359,7 +361,9 @@ def _apply_debt_settlement_on_success(*, session, transaction: Transaction) -> d
         )
 
     unblocked = False
-    if was_blocked and blocked_reason.startswith("quota_debt_limit|"):
+    if was_blocked and (
+        blocked_reason.startswith("quota_debt_limit|") or blocked_reason.startswith("quota_debt_end_of_month|")
+    ):
         # Only auto-unblock when all debts are fully cleared.
         if float(getattr(user, "quota_debt_total_mb", 0) or 0) <= 0:
             user.is_blocked = False
@@ -820,6 +824,35 @@ def initiate_transaction(current_user_id: uuid.UUID):
         package = session.query(Package).get(req_data.package_id)
         if not package or not package.is_active:
             abort(HTTPStatus.BAD_REQUEST, description="Paket tidak valid atau tidak aktif.")
+
+        # Rule: if user has debts (auto+manual), they may only purchase a package with quota > total debt.
+        # This ensures the user receives net quota after debt is deducted first.
+        try:
+            debt_total_mb = float(getattr(user, "quota_debt_total_mb", 0) or 0)
+        except Exception:
+            debt_total_mb = 0.0
+        try:
+            package_quota_gb = float(getattr(package, "data_quota_gb", 0) or 0)
+        except Exception:
+            package_quota_gb = 0.0
+        package_quota_mb = int(package_quota_gb * 1024) if package_quota_gb and package_quota_gb > 0 else 0
+        if (
+            bool(getattr(user, "is_unlimited_user", False)) is False
+            and getattr(user, "role", None) == UserRole.USER
+            and debt_total_mb > 0
+            and package_quota_mb > 0
+        ):
+            required_mb = int(math.ceil(debt_total_mb))
+            if package_quota_mb <= required_mb:
+                required_gb = round(required_mb / 1024.0, 2)
+                abort(
+                    HTTPStatus.BAD_REQUEST,
+                    description=(
+                        "Paket terlalu kecil karena Anda memiliki tunggakan kuota. "
+                        f"Total tunggakan: {required_mb} MB (~{required_gb} GB). "
+                        "Silakan pilih paket yang lebih besar agar sisa kuota menjadi positif."
+                    ),
+                )
 
         gross_amount = int(package.price or 0)
 

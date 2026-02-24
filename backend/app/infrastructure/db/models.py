@@ -287,6 +287,10 @@ class User(db.Model):
         Numeric(precision=15, scale=2), nullable=False, default=0.0, server_default="0.0"
     )
 
+    # Auto-debt offset (MB) used to settle automatic debt WITHOUT increasing purchased quota.
+    # Effective auto debt = max(0, used - purchased - auto_debt_offset).
+    auto_debt_offset_mb: Mapped[int] = mapped_column(BigInteger(), nullable=False, default=0, server_default="0")
+
     # Manual debt (MB) entered by admin. This is separate from automatic debt computed as used - purchased.
     manual_debt_mb: Mapped[int] = mapped_column(BigInteger(), nullable=False, default=0, server_default="0")
     manual_debt_updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -387,8 +391,12 @@ class User(db.Model):
         from app.utils.quota_debt import compute_debt_mb
 
         purchased_mb = float(self.total_quota_purchased_mb or 0.0)
+        try:
+            offset_mb = float(getattr(self, "auto_debt_offset_mb", 0) or 0.0)
+        except Exception:
+            offset_mb = 0.0
         used_mb = float(self.total_quota_used_mb or 0.0)
-        return float(compute_debt_mb(purchased_mb, used_mb))
+        return float(compute_debt_mb(purchased_mb + offset_mb, used_mb))
 
     @property
     def quota_debt_manual_mb(self) -> int:

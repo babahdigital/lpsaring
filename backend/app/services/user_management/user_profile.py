@@ -494,13 +494,23 @@ def update_user_by_admin_comprehensive(
             if not ok_debt:
                 return False, msg_debt, None
 
-            # CREDIT QUOTA: untuk kasus "hutang kuota", saat debt manual dibuat kita juga menambah kuota purchased
-            # agar user langsung mendapatkan kuota, sementara hutang tercatat.
+            # CREDIT QUOTA (advance): untuk kasus "hutang kuota", saat debt manual dibuat kita juga memberi kuota
+            # agar user bisa akses. Rule: kuota advance dipakai untuk melunasi AUTO debt dulu (jika ada),
+            # sisa menjadi kuota bersih. Manual debt (termasuk yang baru dibuat) tetap tercatat.
             try:
-                target_user.total_quota_purchased_mb = int(target_user.total_quota_purchased_mb or 0) + int(
-                    debt_add_mb_pkg
+                paid_auto_mb, remaining_credit_mb = debt_service.consume_injected_mb_for_auto_debt_only(
+                    user=target_user,
+                    admin_actor=admin_actor,
+                    injected_mb=int(debt_add_mb_pkg),
+                    source="admin_debt_advance_pkg",
                 )
+                if remaining_credit_mb > 0:
+                    target_user.total_quota_purchased_mb = int(target_user.total_quota_purchased_mb or 0) + int(
+                        remaining_credit_mb
+                    )
                 changes["debt_credit_quota_mb"] = int(debt_add_mb_pkg)
+                changes["debt_paid_auto_before_credit_mb"] = int(paid_auto_mb)
+                changes["debt_net_quota_mb"] = int(remaining_credit_mb)
             except Exception:
                 pass
 
@@ -552,10 +562,22 @@ def update_user_by_admin_comprehensive(
             if not ok_debt:
                 return False, msg_debt, None
 
-            # CREDIT QUOTA: saat debt manual dibuat, juga tambah purchased agar user dapat kuota.
+            # CREDIT QUOTA (advance): saat debt manual dibuat, juga beri kuota agar user bisa akses.
+            # Rule: kuota advance dipakai untuk melunasi AUTO debt dulu (jika ada), sisa menjadi kuota bersih.
             try:
-                target_user.total_quota_purchased_mb = int(target_user.total_quota_purchased_mb or 0) + int(debt_add_mb)
+                paid_auto_mb, remaining_credit_mb = debt_service.consume_injected_mb_for_auto_debt_only(
+                    user=target_user,
+                    admin_actor=admin_actor,
+                    injected_mb=int(debt_add_mb),
+                    source="admin_debt_advance",
+                )
+                if remaining_credit_mb > 0:
+                    target_user.total_quota_purchased_mb = int(target_user.total_quota_purchased_mb or 0) + int(
+                        remaining_credit_mb
+                    )
                 changes["debt_credit_quota_mb"] = int(debt_add_mb)
+                changes["debt_paid_auto_before_credit_mb"] = int(paid_auto_mb)
+                changes["debt_net_quota_mb"] = int(remaining_credit_mb)
             except Exception:
                 pass
 
@@ -625,6 +647,18 @@ def update_user_by_admin_comprehensive(
     if data.get("unlimited_time") is True:
         add_days = 0
     if add_gb > 0 or add_days > 0:
+        # Requirement: inject must be blocked when user has any quota debt.
+        try:
+            debt_total_mb = float(getattr(target_user, "quota_debt_total_mb", 0) or 0)
+        except Exception:
+            debt_total_mb = 0.0
+        if debt_total_mb > 0 and not bool(getattr(target_user, "is_unlimited_user", False)):
+            return (
+                False,
+                "Inject kuota tidak bisa dilakukan karena user masih memiliki tunggakan. "
+                "Silakan clear tunggakan terlebih dahulu, atau tambahkan tunggakan via paket (advance).",
+                None,
+            )
         success, msg = quota_service.inject_user_quota(target_user, admin_actor, int(add_gb * 1024), add_days)
         if not success:
             return False, msg, None

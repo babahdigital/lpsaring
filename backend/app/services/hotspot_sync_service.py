@@ -808,9 +808,14 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                             counters["updated_usage"] += 1
 
                     remaining_mb, remaining_percent = _calculate_remaining(user)
-                    debt_mb = compute_debt_mb(
-                        float(user.total_quota_purchased_mb or 0.0), float(user.total_quota_used_mb or 0.0)
-                    )
+
+                    # Effective auto-debt must include auto-debt offset (settled via payments/admin actions).
+                    try:
+                        debt_mb = float(getattr(user, "quota_debt_auto_mb", 0) or 0.0)
+                    except Exception:
+                        debt_mb = compute_debt_mb(
+                            float(user.total_quota_purchased_mb or 0.0), float(user.total_quota_used_mb or 0.0)
+                        )
 
                     # Quota-debt hard block is NOT applied to:
                     # - unlimited users

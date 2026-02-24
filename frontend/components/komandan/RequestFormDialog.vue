@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { VForm } from 'vuetify/components'
+import { useDisplay } from 'vuetify'
 import { useSnackbar } from '@/composables/useSnackbar'
 import { useSettingsStore } from '@/store/settings'
 
@@ -18,6 +19,8 @@ const emit = defineEmits<{
 const { $api } = useNuxtApp()
 const settingsStore = useSettingsStore()
 const { add: showSnackbar } = useSnackbar()
+const display = useDisplay()
+const isMobile = computed(() => display.smAndDown.value)
 
 // [PENYEMPURNAAN] Pilihan preset untuk kuota dan durasi tetap sama,
 // karena sudah menggunakan praktik yang baik (menampilkan GB, mengirim MB).
@@ -82,6 +85,20 @@ const retryCountdownText = computed(() => {
   const seconds = total % 60
   const padded = [hours, minutes, seconds].map(part => String(part).padStart(2, '0'))
   return `Coba lagi dalam ${padded.join(':')}`
+})
+
+const maxQuotaHint = computed(() => {
+  const maxMb = Number(maxQuotaMb.value ?? 0)
+  const maxDays = Number(maxQuotaDays.value ?? 0)
+  const gb = maxMb > 0 ? (maxMb / 1024).toFixed(2).replace(/\.00$/, '') : null
+  const days = maxDays > 0 ? String(maxDays) : null
+  if (!gb && !days)
+    return null
+  if (gb && days)
+    return `Maksimal ${gb} GB dan ${days} hari per permintaan.`
+  if (gb)
+    return `Maksimal ${gb} GB per permintaan.`
+  return `Maksimal ${days} hari per permintaan.`
 })
 
 // Aturan Validasi
@@ -207,11 +224,12 @@ function formatRetryAt(isoString: string | null) {
 <template>
   <VDialog
     :model-value="modelValue"
-    max-width="600"
+    :fullscreen="isMobile"
+    :max-width="isMobile ? undefined : 600"
     persistent
     @update:model-value="closeDialog"
   >
-    <VCard class="rounded-lg">
+    <VCard :class="isMobile ? 'rounded-0' : 'rounded-lg'">
       <VForm
         ref="formRef"
         @submit.prevent="handleSubmit"
@@ -242,14 +260,21 @@ function formatRetryAt(isoString: string | null) {
         </VCardTitle>
 
         <VCardText class="pa-5">
-          <p class="text-subtitle-1 font-weight-medium mb-3">
-            Pilih Tipe Permintaan
-          </p>
-          <VRadioGroup
-            v-model="requestType"
-            inline
-            class="mb-4"
-          >
+          <div class="d-flex flex-column ga-3">
+            <div>
+              <p class="text-subtitle-1 font-weight-medium mb-1">
+                Pilih Tipe Permintaan
+              </p>
+              <p v-if="maxQuotaHint" class="text-body-2 text-medium-emphasis mb-0">
+                {{ maxQuotaHint }}
+              </p>
+            </div>
+
+            <VRadioGroup
+              v-model="requestType"
+              :inline="!isMobile"
+              class="mb-0"
+            >
             <VRadio
               label="Kuota Reguler"
               value="QUOTA"
@@ -259,104 +284,104 @@ function formatRetryAt(isoString: string | null) {
               value="UNLIMITED"
               :disabled="!allowUnlimited"
             />
-          </VRadioGroup>
+            </VRadioGroup>
 
-          <VAlert
-            v-if="!allowUnlimited"
-            type="warning"
-            variant="tonal"
-            density="compact"
-            class="mb-4"
-            icon="tabler-alert-triangle"
-          >
-            Akses unlimited sedang dinonaktifkan oleh kebijakan.
-          </VAlert>
-
-          <VDivider class="my-4" />
-
-          <VExpandTransition>
-            <div v-if="requestType === 'QUOTA'">
-              <p class="text-subtitle-1 font-weight-medium mb-3">
-                Isi Detail Kuota
-              </p>
-              <VRow>
-                <VCol
-                  cols="12"
-                  sm="6"
-                >
-                  <AppSelect
-                    v-model="requestedMb"
-                    label="Jumlah Kuota"
-                    :items="quotaOptions"
-                    placeholder="Pilih jumlah GB"
-                    :rules="[requiredRule]"
-                    prepend-inner-icon="tabler-database"
-                  />
-                </VCol>
-                <VCol
-                  cols="12"
-                  sm="6"
-                >
-                  <AppSelect
-                    v-model="requestedDurationDays"
-                    label="Masa Aktif"
-                    :items="durationOptions"
-                    placeholder="Pilih lama hari"
-                    :rules="[requiredRule]"
-                    prepend-inner-icon="tabler-calendar-plus"
-                  />
-                </VCol>
-              </VRow>
-            </div>
-          </VExpandTransition>
-
-          <VExpandTransition>
             <VAlert
-              v-if="requestType === 'UNLIMITED'"
-              type="info"
+              v-if="!allowUnlimited"
+              type="warning"
               variant="tonal"
-              class="mt-2"
-              icon="tabler-shield-check"
               density="compact"
+              icon="tabler-alert-triangle"
             >
-              Permintaan akses unlimited akan ditinjau dan disetujui secara manual oleh Admin, termasuk penentuan masa aktifnya.
+              Akses unlimited sedang dinonaktifkan oleh kebijakan.
             </VAlert>
-          </VExpandTransition>
 
-          <VAlert
-            v-if="errorMessage"
-            type="error"
-            variant="tonal"
-            class="mt-4"
-          >
-            <div>{{ errorMessage }}</div>
-            <div v-if="retryCountdownText" class="mt-2">
-              {{ retryCountdownText }}
-            </div>
-            <div v-if="formatRetryAt(retryAtIso)" class="text-medium-emphasis mt-1">
-              Jadwal ulang: {{ formatRetryAt(retryAtIso) }}
-            </div>
-          </VAlert>
+            <VDivider class="my-2" />
+
+            <VExpandTransition>
+              <div v-if="requestType === 'QUOTA'">
+                <p class="text-subtitle-1 font-weight-medium mb-3">
+                  Detail Kuota
+                </p>
+                <VRow>
+                  <VCol cols="12" sm="6">
+                    <AppSelect
+                      v-model="requestedMb"
+                      label="Jumlah Kuota"
+                      :items="quotaOptions"
+                      placeholder="Pilih jumlah GB"
+                      :rules="[requiredRule]"
+                      prepend-inner-icon="tabler-database"
+                    />
+                  </VCol>
+                  <VCol cols="12" sm="6">
+                    <AppSelect
+                      v-model="requestedDurationDays"
+                      label="Masa Aktif"
+                      :items="durationOptions"
+                      placeholder="Pilih lama hari"
+                      :rules="[requiredRule]"
+                      prepend-inner-icon="tabler-calendar-plus"
+                    />
+                  </VCol>
+                </VRow>
+              </div>
+            </VExpandTransition>
+
+            <VExpandTransition>
+              <VAlert
+                v-if="requestType === 'UNLIMITED'"
+                type="info"
+                variant="tonal"
+                icon="tabler-shield-check"
+                density="compact"
+              >
+                Permintaan akses unlimited akan ditinjau manual oleh Admin, termasuk penentuan masa aktifnya.
+              </VAlert>
+            </VExpandTransition>
+
+            <VAlert
+              v-if="errorMessage"
+              type="error"
+              variant="tonal"
+            >
+              <div>{{ errorMessage }}</div>
+              <div v-if="retryCountdownText" class="mt-2">
+                {{ retryCountdownText }}
+              </div>
+              <div v-if="formatRetryAt(retryAtIso)" class="text-medium-emphasis mt-1">
+                Jadwal ulang: {{ formatRetryAt(retryAtIso) }}
+              </div>
+            </VAlert>
+          </div>
         </VCardText>
 
         <VDivider />
         <VCardActions class="pa-4">
-          <VSpacer />
-          <VBtn
-            variant="tonal"
-            color="secondary"
-            @click="closeDialog"
-          >
-            Batal
-          </VBtn>
-          <VBtn
-            type="submit"
-            color="primary"
-            :loading="loading"
-            prepend-icon="tabler-send"
-          >
-            Kirim Permintaan
-          </VBtn>
+          <VRow class="w-100" align="center" no-gutters>
+            <VCol cols="12" sm="auto" class="pe-sm-2 mb-2 mb-sm-0">
+              <VBtn
+                variant="tonal"
+                color="secondary"
+                :block="isMobile"
+                @click="closeDialog"
+              >
+                Batal
+              </VBtn>
+            </VCol>
+
+            <VCol cols="12" sm="auto" class="flex-grow-1 d-flex justify-sm-end">
+              <VBtn
+                type="submit"
+                color="primary"
+                :loading="loading"
+                prepend-icon="tabler-send"
+                :block="isMobile"
+              >
+                Kirim Permintaan
+              </VBtn>
+            </VCol>
+          </VRow>
         </VCardActions>
       </VForm>
     </VCard>

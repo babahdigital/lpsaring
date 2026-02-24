@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import type { VDataTableServer } from 'vuetify/labs/VDataTable'
 import { computed, onMounted, ref, watch } from 'vue'
+import { useDisplay } from 'vuetify'
 import RequestFormDialog from '@/components/komandan/RequestFormDialog.vue'
 import { useSnackbar } from '@/composables/useSnackbar'
 
@@ -25,8 +26,11 @@ type Options = InstanceType<typeof VDataTableServer>['options']
 type SortItem = NonNullable<Options['sortBy']>[number]
 
 // --- Inisialisasi & State ---
-useHead({ title: 'Riwayat Permintaan Saya' })
+useHead({ title: 'Riwayat Permintaan' })
 const { $api } = useNuxtApp()
+
+const display = useDisplay()
+const isMobile = computed(() => display.smAndDown.value)
 
 const requests = ref<RequestHistoryItem[]>([])
 const loading = ref(true)
@@ -144,26 +148,41 @@ function showSnackbar(text: string, color: 'success' | 'error' | 'warning' | 'in
     text,
   })
 }
-useHead({ title: 'Request Quota' })
 </script>
 
 <template>
   <div>
     <VCard class="mb-6 rounded-lg">
-      <VCardItem>
-        <template #prepend>
-          <VIcon icon="tabler-history" color="primary" size="32" class="me-2" />
-        </template>
-        <VCardTitle class="text-h4">
-          Riwayat Permintaan
-        </VCardTitle>
-        <VCardSubtitle>Lacak status semua permintaan yang telah Anda ajukan.</VCardSubtitle>
-        <template #append>
-          <VBtn prepend-icon="tabler-plus" @click="isRequestFormVisible = true">
-            Buat Permintaan Baru
-          </VBtn>
-        </template>
-      </VCardItem>
+      <VCardText class="py-5 px-6">
+        <VRow align="center" class="ga-4" no-gutters>
+          <VCol cols="12" sm="8" class="d-flex align-center">
+            <VAvatar color="primary" variant="tonal" rounded size="42" class="me-3">
+              <VIcon icon="tabler-history" size="22" />
+            </VAvatar>
+
+            <div class="d-flex flex-column min-w-0">
+              <div :class="isMobile ? 'text-h5' : 'text-h4'" class="font-weight-medium text-high-emphasis text-wrap">
+                Riwayat Permintaan
+              </div>
+              <div class="text-body-2 text-medium-emphasis text-wrap">
+                Lacak status semua permintaan yang telah Anda ajukan.
+              </div>
+            </div>
+          </VCol>
+
+          <VCol cols="12" sm="4" class="d-flex justify-sm-end">
+            <VBtn
+              color="primary"
+              prepend-icon="tabler-plus"
+              :block="isMobile"
+              :size="isMobile ? 'small' : 'default'"
+              @click="isRequestFormVisible = true"
+            >
+              Buat Permintaan Baru
+            </VBtn>
+          </VCol>
+        </VRow>
+      </VCardText>
     </VCard>
 
     <VCard class="rounded-lg">
@@ -184,7 +203,7 @@ useHead({ title: 'Request Quota' })
         :items-length="totalRequests"
         :loading="showInitialSkeleton"
         item-value="id"
-        class="text-no-wrap"
+        :class="isMobile ? '' : 'text-no-wrap'"
         hide-default-footer
       >
         <template #item.created_at="{ item }">
@@ -231,7 +250,7 @@ useHead({ title: 'Request Quota' })
           <div v-if="item.status !== 'PENDING'" class="d-flex flex-column">
             <span class="text-high-emphasis">{{ formatDateTime(item.processed_at) }}</span>
             <small class="text-medium-emphasis">oleh {{ item.processed_by_admin || 'Admin' }}</small>
-            <small v-if="item.rejection_reason" class="text-error mt-1" style="max-width: 200px; white-space: normal;">
+            <small v-if="item.rejection_reason" class="text-error mt-1" style="max-width: 260px; white-space: normal;">
               Alasan: {{ item.rejection_reason }}
             </small>
           </div>
@@ -268,3 +287,17 @@ useHead({ title: 'Request Quota' })
 
   </div>
 </template>
+
+<style scoped>
+/* Mobile-friendly: allow horizontal scroll for tables with many columns */
+:deep(.v-table__wrapper) {
+  overflow-x: auto;
+}
+
+@media (max-width: 600px) {
+  /* Vuetify renders: <div class="v-table__wrapper"><table>... */
+  :deep(.v-table__wrapper > table) {
+    min-width: 820px;
+  }
+}
+</style>

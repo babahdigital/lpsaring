@@ -195,6 +195,14 @@ const debtAutoMb = computed(() => (props.user?.is_unlimited_user === true ? 0 : 
 const debtManualMb = computed(() => (props.user?.is_unlimited_user === true ? 0 : Number(props.user?.quota_debt_manual_mb ?? props.user?.manual_debt_mb ?? 0)))
 const debtTotalMb = computed(() => (props.user?.is_unlimited_user === true ? 0 : Number(props.user?.quota_debt_total_mb ?? (debtAutoMb.value + debtManualMb.value))))
 
+const isInjectBlockedByDebt = computed(() => {
+  if (formData.is_unlimited_user === true)
+    return false
+  if (formData.role !== 'USER')
+    return false
+  return debtTotalMb.value > 0
+})
+
 const debtPackageOptions = computed(() => {
   return adminPackages.value
     .filter(pkg => pkg.is_active === true && Number(pkg.data_quota_gb ?? 0) > 0)
@@ -274,6 +282,12 @@ function setDefaultMikrotikConfig(role: User['role'] | undefined) {
 watch(() => formData.role, (newRole) => {
   if (newRole === 'ADMIN' || newRole === 'SUPER_ADMIN') {
     formData.is_unlimited_user = true
+    formData.blok = null
+    formData.kamar = null
+    formData.is_tamping = false
+    formData.tamping_type = null
+  }
+  else if (newRole === 'KOMANDAN') {
     formData.blok = null
     formData.kamar = null
     formData.is_tamping = false
@@ -628,11 +642,31 @@ function openDebtPdf() {
                   </VCol>
 
                   <VCol v-if="formData.is_unlimited_user !== true" cols="12" md="6">
-                    <AppTextField v-model.number="formData.add_gb" label="Tambah Kuota (GB)" type="number" prepend-inner-icon="tabler-database-plus" />
+                    <AppTextField
+                      v-model.number="formData.add_gb"
+                      label="Tambah Kuota (GB)"
+                      type="number"
+                      prepend-inner-icon="tabler-database-plus"
+                      :disabled="isInjectBlockedByDebt"
+                    />
                   </VCol>
 
                   <VCol cols="12" md="6">
-                    <AppTextField v-model.number="formData.add_days" label="Tambah Masa Aktif (Hari)" type="number" prepend-inner-icon="tabler-calendar-plus" />
+                    <AppTextField
+                      v-model.number="formData.add_days"
+                      label="Tambah Masa Aktif (Hari)"
+                      type="number"
+                      prepend-inner-icon="tabler-calendar-plus"
+                      :disabled="isInjectBlockedByDebt"
+                    />
+                  </VCol>
+
+                  <VCol v-if="isInjectBlockedByDebt" cols="12">
+                    <VAlert type="warning" variant="tonal" density="compact" icon="tabler-alert-triangle">
+                      Inject kuota dinonaktifkan karena user masih memiliki tunggakan.
+                      Gunakan <strong>Tunggakan Kuota → Tambah Tunggakan (Pilih Paket)</strong> untuk memberi akses (advance),
+                      atau lunasi/clear tunggakan terlebih dahulu.
+                    </VAlert>
                   </VCol>
 
                   <template v-if="formData.role === 'USER'">

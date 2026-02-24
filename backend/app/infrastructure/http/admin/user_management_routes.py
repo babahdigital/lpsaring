@@ -701,13 +701,16 @@ def settle_all_debts(current_admin: User, user_id: uuid.UUID):
         )
 
         unblocked = False
-        # Only auto-unblock if the system blocked the user due to quota debt limit.
-        if was_blocked and blocked_reason.startswith("quota_debt_limit|"):
-            user.is_blocked = False
-            user.blocked_reason = None
-            user.blocked_at = None
-            user.blocked_by_id = None
-            unblocked = True
+        # Auto-unblock if user was blocked due to debt (limit or end-of-month) and all debts are fully cleared.
+        if was_blocked and (
+            blocked_reason.startswith("quota_debt_limit|") or blocked_reason.startswith("quota_debt_end_of_month|")
+        ):
+            if float(getattr(user, "quota_debt_total_mb", 0) or 0) <= 0:
+                user.is_blocked = False
+                user.blocked_reason = None
+                user.blocked_at = None
+                user.blocked_by_id = None
+                unblocked = True
 
         db.session.commit()
 

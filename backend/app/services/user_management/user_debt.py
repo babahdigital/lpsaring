@@ -25,20 +25,25 @@ def get_auto_debt_mb(user: User) -> float:
     if getattr(user, "role", None) == UserRole.KOMANDAN:
         return 0.0
     purchased_mb = float(getattr(user, "total_quota_purchased_mb", 0) or 0.0)
+    try:
+        offset_mb = float(getattr(user, "auto_debt_offset_mb", 0) or 0.0)
+    except Exception:
+        offset_mb = 0.0
     used_mb = float(getattr(user, "total_quota_used_mb", 0) or 0.0)
-    return float(compute_debt_mb(purchased_mb, used_mb))
+    return float(compute_debt_mb(purchased_mb + offset_mb, used_mb))
 
 
 def settle_auto_debt_to_zero(user: User) -> int:
-    """Settle automatic debt by increasing purchased MB until used <= purchased.
+    """Settle automatic debt by increasing auto-debt offset until used <= purchased + offset.
 
-    Returns amount of MB added to purchased (>=0).
+    This clears auto-debt WITHOUT increasing purchased quota.
+    Returns amount of MB applied to offset (>=0).
     """
     debt_mb = get_auto_debt_mb(user)
     pay_mb = _ceil_mb(debt_mb)
     if pay_mb <= 0:
         return 0
-    user.total_quota_purchased_mb = int(user.total_quota_purchased_mb or 0) + int(pay_mb)
+    user.auto_debt_offset_mb = int(getattr(user, "auto_debt_offset_mb", 0) or 0) + int(pay_mb)
     return int(pay_mb)
 
 
@@ -223,11 +228,15 @@ def consume_injected_mb_for_debt(
         except (TypeError, ValueError):
             injected = 0
         return 0, 0, max(0, injected)
-    """Use injected MB to pay debts first.
+        """Use injected MB to pay debts first.
 
-    Allocation order: auto-debt first (settled by increasing purchased), then manual debt.
-    Returns (paid_auto_mb, paid_manual_mb, remaining_injected_mb).
-    """
+        Allocation order:
+            1) auto-debt: cleared via auto_debt_offset_mb (does NOT reduce injected quota)
+            2) manual debt: repaid by consuming injected quota (reduces net added quota)
+
+        Returns (paid_auto_mb, paid_manual_mb, remaining_injected_mb).
+        NOTE: remaining_injected_mb is reduced only by paid_manual_mb.
+        """
     try:
         injected = int(injected_mb)
     except (TypeError, ValueError):
@@ -239,8 +248,8 @@ def consume_injected_mb_for_debt(
     auto_need_mb = _ceil_mb(auto_debt)
     paid_auto = min(injected, auto_need_mb)
     if paid_auto > 0:
-        user.total_quota_purchased_mb = int(user.total_quota_purchased_mb or 0) + int(paid_auto)
-        injected -= paid_auto
+        # Clear auto-debt without consuming injected quota.
+        user.auto_debt_offset_mb = int(getattr(user, "auto_debt_offset_mb", 0) or 0) + int(paid_auto)
 
     manual_balance = int(getattr(user, "manual_debt_mb", 0) or 0)
     paid_manual = 0
@@ -254,6 +263,41 @@ def consume_injected_mb_for_debt(
         injected -= paid_manual
 
     return int(paid_auto), int(paid_manual), int(max(0, injected))
+
+
+def consume_injected_mb_for_auto_debt_only(
+    *,
+    user: User,
+    admin_actor: Optional[User],
+    injected_mb: int,
+    source: str,
+) -> Tuple[int, int]:
+    """Use injected MB to settle AUTO debt only (no manual debt payment).
+
+    Returns (paid_auto_mb, remaining_injected_mb).
+    """
+    if getattr(user, "role", None) == UserRole.KOMANDAN:
+        try:
+            injected = int(injected_mb)
+        except (TypeError, ValueError):
+            injected = 0
+        return 0, max(0, injected)
+
+    try:
+        injected = int(injected_mb)
+    except (TypeError, ValueError):
+        return 0, 0
+    if injected <= 0:
+        return 0, 0
+
+    auto_debt = get_auto_debt_mb(user)
+    auto_need_mb = _ceil_mb(auto_debt)
+    paid_auto = min(injected, auto_need_mb)
+    if paid_auto > 0:
+        # Clear auto-debt without consuming injected quota.
+        user.auto_debt_offset_mb = int(getattr(user, "auto_debt_offset_mb", 0) or 0) + int(paid_auto)
+
+    return int(paid_auto), int(max(0, injected))
 
 
 def mb_to_gb_str(value_mb: int) -> str:

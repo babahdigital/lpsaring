@@ -25,6 +25,16 @@ from app.utils.formatters import format_to_local_phone, get_app_date_time_string
 logger = logging.getLogger(__name__)
 
 
+def _ceil_mb(value_mb: float) -> int:
+    try:
+        value = float(value_mb or 0.0)
+    except Exception:
+        return 0
+    if value <= 0:
+        return 0
+    return int(value) if float(int(value)) == value else int(value) + 1
+
+
 def _sync_ip_binding_for_authorized_devices(user, mikrotik_api: Any, date_str: str, time_str: str) -> None:
     if not mikrotik_api or not getattr(user, "devices", None):
         return
@@ -157,8 +167,40 @@ def apply_package_and_sync_to_mikrotik(transaction: Transaction, mikrotik_api: A
     else:
         user.is_unlimited_user = False
         added_quota_mb = int(float(package.data_quota_gb) * 1024)
-        user.total_quota_purchased_mb = (user.total_quota_purchased_mb or 0) + added_quota_mb
-        logger.info(f"User ID {user.id} diproses sebagai PENGGUNA BERKUOTA dengan tambahan {added_quota_mb} MB.")
+
+        # Apply quota by deducting debts first (auto then manual), then add remaining as net purchased quota.
+        from app.services.user_management import user_debt as user_debt_service
+
+        debt_total_before = float(getattr(user, "quota_debt_total_mb", 0) or 0)
+        required_mb = _ceil_mb(debt_total_before)
+        if required_mb > 0 and added_quota_mb <= required_mb:
+            # This should be prevented by initiate validation, but guard here to avoid inconsistent state.
+            logger.warning(
+                "Package quota too small for debts: user=%s order=%s added_mb=%s debt_total_mb=%s",
+                getattr(user, "id", "?"),
+                getattr(transaction, "midtrans_order_id", "?"),
+                added_quota_mb,
+                debt_total_before,
+            )
+
+        paid_auto_mb, paid_manual_mb, remaining_injected_mb = user_debt_service.consume_injected_mb_for_debt(
+            user=user,
+            admin_actor=None,
+            injected_mb=int(added_quota_mb),
+            source="purchase_package",
+        )
+
+        if remaining_injected_mb > 0:
+            user.total_quota_purchased_mb = int(user.total_quota_purchased_mb or 0) + int(remaining_injected_mb)
+
+        logger.info(
+            "User %s: package applied. added_mb=%s paid_auto_mb=%s paid_manual_mb=%s net_added_mb=%s",
+            getattr(user, "id", "?"),
+            added_quota_mb,
+            paid_auto_mb,
+            paid_manual_mb,
+            remaining_injected_mb,
+        )
 
     duration_to_add = timedelta(days=package.duration_days)
     now_utc = datetime.now(dt_timezone.utc)

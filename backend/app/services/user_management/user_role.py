@@ -5,12 +5,12 @@ from werkzeug.security import generate_password_hash
 from datetime import datetime, timezone as dt_timezone, timedelta
 from flask import current_app
 
-from app.infrastructure.db.models import User, UserRole, AdminActionType, UserQuotaDebt
+from app.infrastructure.db.models import User, UserRole, AdminActionType
 from app.utils.formatters import format_to_local_phone
-from app.extensions import db
 from app.services import settings_service
 from .helpers import _log_admin_action, _generate_password, _send_whatsapp_notification, _handle_mikrotik_operation
 from app.infrastructure.gateways.mikrotik_client import activate_or_update_hotspot_user
+from . import user_debt as debt_service
 
 
 def _resolve_default_server() -> str:
@@ -65,6 +65,24 @@ def change_user_role(
     original_role_profile = user.mikrotik_profile_name
     original_role_server = user.mikrotik_server_name
 
+    # Normalisasi aturan role change:
+    # - Saat upgrade/downgrade, badge tamping tidak berlaku → selalu dihapus.
+    # - Saat upgrade ke KOMANDAN/ADMIN, hutang harus dianggap selesai (dibersihkan).
+    # Catatan: clear debt dilakukan sebelum user.role diubah ke KOMANDAN (karena debt_service no-op untuk KOMANDAN).
+    try:
+        user.is_tamping = False
+        user.tamping_type = None
+    except Exception:
+        pass
+
+    if new_role in {UserRole.KOMANDAN, UserRole.ADMIN, UserRole.SUPER_ADMIN}:
+        try:
+            # Best-effort settle all debts to zero (auto + manual).
+            debt_service.clear_all_debts_to_zero(user=user, admin_actor=admin, source=f"role_change_to_{new_role.value}")
+        except Exception:
+            # Jangan menghalangi perubahan role hanya karena debt cleanup gagal.
+            pass
+
     # Logika untuk upgrade ke Admin
     if new_role == UserRole.ADMIN and old_role != UserRole.ADMIN:
         action_type = AdminActionType.UPGRADE_TO_ADMIN
@@ -81,7 +99,9 @@ def change_user_role(
         new_portal_password = _generate_password()
         user.password_hash = generate_password_hash(new_portal_password)
         _send_whatsapp_notification(
-            user.phone_number, "user_upgrade_to_admin_with_password", {"password": new_portal_password}
+            user.phone_number,
+            "user_upgrade_to_admin_with_password",
+            {"full_name": user.full_name, "password": new_portal_password},
         )
 
         user.mikrotik_password = new_portal_password
@@ -92,6 +112,17 @@ def change_user_role(
         user.password_hash = None
         user.role = new_role
         user.is_unlimited_user = False
+
+        # Pastikan tamping dan hutang tidak terbawa setelah downgrade.
+        try:
+            user.is_tamping = False
+            user.tamping_type = None
+        except Exception:
+            pass
+        try:
+            debt_service.clear_all_debts_to_zero(user=user, admin_actor=admin, source=f"role_change_from_admin_to_{new_role.value}")
+        except Exception:
+            pass
 
         user.blok = user.previous_blok or (blok if blok else None)
         user.kamar = user.previous_kamar or (kamar if kamar else None)
@@ -117,20 +148,26 @@ def change_user_role(
 
     # Logika perubahan antara User dan Komandan
     elif (old_role, new_role) in [(UserRole.USER, UserRole.KOMANDAN), (UserRole.KOMANDAN, UserRole.USER)]:
-        user.role = new_role
         if new_role == UserRole.KOMANDAN:
             action_type = AdminActionType.CHANGE_USER_ROLE
+
+            # Bersihkan hutang terlebih dahulu (sebelum role diubah ke KOMANDAN).
+            try:
+                debt_service.clear_all_debts_to_zero(user=user, admin_actor=admin, source="role_upgrade_to_komandan")
+            except Exception:
+                pass
+
+            user.role = new_role
             if user.blok or user.kamar:
                 user.previous_blok, user.previous_kamar = user.blok, user.kamar
                 user.blok, user.kamar = None, None
             user.mikrotik_server_name = _resolve_komandan_server()
             user.mikrotik_profile_name = _resolve_komandan_profile() or active_profile
 
-            # Debt tidak berlaku untuk KOMANDAN: bersihkan debt manual + ledger.
+            # Debt tidak berlaku untuk KOMANDAN: paksa cache manual debt 0 (ledger tetap disimpan sebagai histori).
             try:
                 user.manual_debt_mb = 0
                 user.manual_debt_updated_at = datetime.now(dt_timezone.utc)
-                db.session.execute(db.delete(UserQuotaDebt).where(UserQuotaDebt.user_id == user.id))
             except Exception:
                 pass
 
@@ -165,9 +202,23 @@ def change_user_role(
             action_type = AdminActionType.CHANGE_USER_ROLE
             if not blok or not kamar:
                 return False, "Blok dan Kamar wajib diisi saat mengubah peran menjadi USER."
+
+            user.role = new_role
             user.blok, user.kamar = blok, kamar
             user.mikrotik_server_name = default_server
             user.mikrotik_profile_name = active_profile
+
+            # Pastikan tamping dan hutang tidak terbawa saat turun dari KOMANDAN.
+            try:
+                user.is_tamping = False
+                user.tamping_type = None
+            except Exception:
+                pass
+            try:
+                debt_service.clear_all_debts_to_zero(user=user, admin_actor=admin, source="role_downgrade_from_komandan")
+            except Exception:
+                pass
+
             # Pastikan debt manual tetap nol saat turun dari KOMANDAN.
             try:
                 user.manual_debt_mb = int(user.manual_debt_mb or 0)

@@ -212,7 +212,7 @@ interface WeeklySpendingResponse {
   total_this_week: number
 }
 
-const weeklySpendingApiUrl = computed(() => (authStore.isLoggedIn ? '/users/me/weekly-spending' : ''))
+const weeklySpendingApiUrl = computed(() => (authStore.isLoggedIn && !authStore.isKomandan ? '/users/me/weekly-spending' : ''))
 const { data: weeklySpendingData, pending: weeklySpendingPending, error: weeklySpendingError, refresh: refreshWeeklySpendingRaw } = useApiFetch<WeeklySpendingResponse>(
   weeklySpendingApiUrl,
   { server: false, key: 'weeklySpendingData', default: () => ({ categories: [], series: [{ name: 'Pengeluaran', data: [] }], total_this_week: 0 }), immediate: false, watch: false },
@@ -267,12 +267,15 @@ function preFetchActions() {
 
 async function performFetches() {
   try {
-    await Promise.allSettled([
+    const tasks = [
       refreshQuota(),
       refreshWeeklyUsage(),
       refreshMonthlyUsage(),
-      refreshWeeklySpending(),
-    ])
+    ]
+    if (!authStore.isKomandan)
+      tasks.push(refreshWeeklySpending())
+
+    await Promise.allSettled(tasks)
   }
   catch (_e) {
     console.error('Dashboard: Error saat Promise.allSettled untuk pengambilan data:', _e)
@@ -513,7 +516,7 @@ async function refreshAllDataLogic() {
 }
 
 const refreshAllData = useDebounceFn(refreshAllDataLogic, 500, { maxWait: 2000 })
-useHead({ title: 'Dashboard User' })
+useHead({ title: authStore.isKomandan ? 'Dashboard Komandan' : 'Dashboard User' })
 </script>
 
 <template>
@@ -668,7 +671,7 @@ useHead({ title: 'Dashboard User' })
                     </div>
                   </VCol>
 
-                  <VCol cols="12" sm="6" md="3">
+                  <VCol v-if="!authStore.isKomandan" cols="12" sm="6" md="3">
                     <div class="d-flex align-center gap-4 mt-md-9 mt-0">
                       <VAvatar color="success" variant="tonal" rounded size="40">
                         <VIcon icon="tabler-cash" />
@@ -738,7 +741,7 @@ useHead({ title: 'Dashboard User' })
                   </VCol>
                 </VRow>
 
-                <VCard class="d-flex flex-column vuexy-card">
+                <VCard v-if="!authStore.isKomandan" class="d-flex flex-column vuexy-card">
                   <VCardText class="py-5">
                     <div class="d-flex flex-column ps-3">
                       <div class="d-flex align-center justify-space-between flex-wrap ga-2 mb-4">
