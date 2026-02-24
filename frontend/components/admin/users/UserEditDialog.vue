@@ -2,6 +2,8 @@
 import type { VForm } from 'vuetify/components'
 import AppSelect from '@core/components/app-form-elements/AppSelect.vue'
 import AppTextField from '@core/components/app-form-elements/AppTextField.vue'
+import AppDateTimePicker from '@core/components/app-form-elements/AppDateTimePicker.vue'
+import CustomRadiosWithIcon from '@core/components/app-form-elements/CustomRadiosWithIcon.vue'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useSnackbar } from '@/composables/useSnackbar'
@@ -90,7 +92,7 @@ interface AdminPackage {
 const adminPackages = ref<AdminPackage[]>([])
 const isPackagesLoading = ref(false)
 
-function getInitialFormData(): Partial<User & { add_gb: number, add_days: number, unlimited_time: boolean, debt_package_id: string | null, debt_date: string | null, debt_note: string | null }> {
+function getInitialFormData(): Partial<User & { add_gb: number | null, add_days: number | null, unlimited_time: boolean, debt_package_id: string | null, debt_date: string | null, debt_note: string | null }> {
   return {
     full_name: '',
     phone_number: '',
@@ -108,8 +110,8 @@ function getInitialFormData(): Partial<User & { add_gb: number, add_days: number
     total_quota_purchased_mb: 0,
     total_quota_used_mb: 0,
     quota_expiry_date: null,
-    add_gb: 0,
-    add_days: 0,
+    add_gb: null,
+    add_days: null,
     unlimited_time: false,
     debt_package_id: null,
     debt_date: null,
@@ -173,8 +175,8 @@ watch(() => props.user, (newUser) => {
     const isEditingAdminOrSuper = newUser.role === 'ADMIN' || newUser.role === 'SUPER_ADMIN'
     Object.assign(formData, getInitialFormData(), newUser, {
       kamar: newUser.kamar != null ? newUser.kamar.replace('Kamar_', '') : null,
-      add_gb: 0,
-      add_days: 0,
+      add_gb: null,
+      add_days: null,
       unlimited_time: Boolean((isEditingAdminOrSuper || newUser.is_unlimited_user) && !newUser.quota_expiry_date),
       debt_package_id: null,
       debt_date: null,
@@ -191,8 +193,38 @@ watch(() => isDebtQuotaEnabled.value, (enabled) => {
 
 watch(() => formData.unlimited_time, (v) => {
   if (v === true)
-    formData.add_days = 0
+    formData.add_days = null
 })
+
+const sectionOptions = computed(() => {
+  return [
+    {
+      title: 'Info Pengguna',
+      desc: 'Data dasar, peran, dan alamat.',
+      value: 'info',
+      icon: { icon: 'tabler-user', size: '28' },
+    },
+    {
+      title: 'Akses & Kuota',
+      desc: 'Akses, inject, dan tunggakan kuota.',
+      value: 'akses',
+      icon: { icon: 'tabler-shield-check', size: '28' },
+    },
+  ]
+})
+
+const shouldShowDebtSection = computed(() => {
+  if (formData.role !== 'USER')
+    return false
+  return debtTotalMb.value > 0 || isDebtQuotaEnabled.value === true
+})
+
+function toNumberOrZero(value: unknown): number {
+  if (value === '' || value == null)
+    return 0
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
 
 const debtAutoMb = computed(() => (props.user?.is_unlimited_user === true ? 0 : Number(props.user?.quota_debt_auto_mb ?? 0)))
 const debtManualMb = computed(() => (props.user?.is_unlimited_user === true ? 0 : Number(props.user?.quota_debt_manual_mb ?? props.user?.manual_debt_mb ?? 0)))
@@ -407,6 +439,9 @@ async function onSave() {
   if (valid) {
     const payload: any = { ...formData }
 
+    payload.add_gb = toNumberOrZero(payload.add_gb)
+    payload.add_days = toNumberOrZero(payload.add_days)
+
     if (payload.role !== 'USER') {
       isDebtQuotaEnabled.value = false
     }
@@ -490,18 +525,28 @@ function openDebtPdf() {
           <VBtn icon="tabler-x" variant="text" class="text-white" @click="onClose" />
         </VToolbar>
 
-        <VTabs v-model="tab" grow>
-          <VTab value="info">Info Pengguna</VTab>
-          <VTab value="akses">Akses & Kuota</VTab>
-        </VTabs>
-        <VDivider />
+        <div class="admin-user-edit__container pa-4 pa-md-6 pb-0">
+          <CustomRadiosWithIcon
+            v-model:selected-radio="tab"
+            :radio-content="sectionOptions"
+            :grid-column="{ cols: '12', sm: '6' }"
+          />
+        </div>
+        <VDivider class="mt-2" />
 
         <AppPerfectScrollbar class="flex-grow-1 pa-4 pa-md-6">
-          <VWindow v-model="tab" class="mt-2">
+          <div class="admin-user-edit__container">
+            <VWindow v-model="tab" class="mt-2">
             <VWindowItem value="info">
               <VRow>
                 <VCol cols="12">
-                  <AppTextField v-model="formData.full_name" label="Nama Lengkap" :disabled="isRestrictedAdmin" prepend-inner-icon="tabler-user" />
+                  <AppTextField
+                    v-model="formData.full_name"
+                    label="Nama Lengkap"
+                    placeholder="Masukkan nama lengkap"
+                    :disabled="isRestrictedAdmin"
+                    prepend-inner-icon="tabler-user"
+                  />
                 </VCol>
                 <VCol cols="12" md="6">
                   <AppTextField :model-value="props.user?.phone_number?.startsWith('+62') ? `0${props.user.phone_number.substring(3)}` : props.user?.phone_number" label="Nomor Telepon" disabled prepend-inner-icon="tabler-phone" />
@@ -513,13 +558,13 @@ function openDebtPdf() {
                   <VSwitch v-model="formData.is_tamping" label="Tamping" color="primary" inset :disabled="isRestrictedAdmin" />
                 </VCol>
                 <VCol v-if="formData.role === 'USER' && formData.is_tamping" cols="12" md="6">
-                  <AppSelect v-model="formData.tamping_type" :items="tampingOptions" label="Jenis Tamping" :disabled="isRestrictedAdmin" prepend-inner-icon="tabler-building-bank" />
+                  <AppSelect v-model="formData.tamping_type" :items="tampingOptions" label="Jenis Tamping" placeholder="Pilih jenis tamping" :disabled="isRestrictedAdmin" prepend-inner-icon="tabler-building-bank" />
                 </VCol>
                 <VCol v-if="formData.role === 'USER' && !formData.is_tamping" cols="12" md="6">
-                  <AppSelect v-model="formData.blok" :items="props.availableBloks" :loading="props.isAlamatLoading" label="Blok" :disabled="isRestrictedAdmin" prepend-inner-icon="tabler-building" />
+                  <AppSelect v-model="formData.blok" :items="props.availableBloks" :loading="props.isAlamatLoading" label="Blok" placeholder="Pilih blok" :disabled="isRestrictedAdmin" prepend-inner-icon="tabler-building" />
                 </VCol>
                 <VCol v-if="formData.role === 'USER' && !formData.is_tamping" cols="12" md="6">
-                  <AppSelect v-model="formData.kamar" :items="props.availableKamars" :loading="props.isAlamatLoading" label="Kamar" :disabled="isRestrictedAdmin" prepend-inner-icon="tabler-door" />
+                  <AppSelect v-model="formData.kamar" :items="props.availableKamars" :loading="props.isAlamatLoading" label="Kamar" placeholder="Pilih kamar" :disabled="isRestrictedAdmin" prepend-inner-icon="tabler-door" />
                 </VCol>
               </VRow>
             </VWindowItem>
@@ -527,25 +572,28 @@ function openDebtPdf() {
             <VWindowItem value="akses">
               <VRow>
                 <VCol cols="12">
-                  <VSwitch v-model="formData.is_active" label="Akun Aktif" color="success" inset hint="Menonaktifkan akan memutus akses pengguna." persistent-hint />
-                </VCol>
-
-                <VCol cols="12">
-                  <VSwitch v-model="formData.is_blocked" label="Blokir Akun" color="error" inset hint="Blokir berbeda dengan nonaktif. Akun tetap tercatat, tetapi akses ditolak." persistent-hint />
+                  <VRow>
+                    <VCol cols="12" md="6">
+                      <VSwitch v-model="formData.is_active" label="Akun Aktif" color="success" inset hint="Menonaktifkan akan memutus akses pengguna." persistent-hint />
+                    </VCol>
+                    <VCol cols="12" md="6">
+                      <VSwitch v-model="formData.is_blocked" label="Blokir Akun" color="error" inset hint="Blokir berbeda dengan nonaktif. Akun tetap tercatat, tetapi akses ditolak." persistent-hint />
+                    </VCol>
+                  </VRow>
                 </VCol>
 
                 <VCol v-if="isBlocked" cols="12">
                   <AppTextField v-model="formData.blocked_reason" label="Alasan Blokir" placeholder="Contoh: Pelanggaran aturan penggunaan" prepend-inner-icon="tabler-alert-triangle" />
                 </VCol>
 
-                <VCol v-if="canAdminInject && formData.is_active === true" cols="12">
+                <VCol v-if="canAdminInject && formData.is_active === true" cols="12" md="6">
                   <VSwitch v-if="isTargetAdminOrSuper !== true" v-model="formData.is_unlimited_user" label="Akses Internet Unlimited" color="primary" inset />
                   <VAlert v-else type="info" variant="tonal" density="compact" icon="tabler-shield-check">
                     Peran <strong>{{ formData.role }}</strong> secara otomatis mendapatkan akses <strong>Unlimited</strong>.
                   </VAlert>
                 </VCol>
 
-                <VCol v-if="canAdminInject && formData.is_active === true && isTargetAdminOrSuper !== true && formData.is_unlimited_user === true" cols="12">
+                <VCol v-if="canAdminInject && formData.is_active === true && isTargetAdminOrSuper !== true && formData.is_unlimited_user === true" cols="12" md="6">
                   <VSwitch
                     v-model="formData.unlimited_time"
                     label="Unlimited Time (tanpa masa aktif/expiry)"
@@ -556,7 +604,7 @@ function openDebtPdf() {
                   />
                 </VCol>
 
-                <VCol v-if="canAdminInject && formData.is_active === true && isTargetAdminOrSuper !== true" cols="12">
+                <VCol v-if="canAdminInject && formData.is_active === true && isTargetAdminOrSuper !== true" cols="12" md="6">
                   <VSwitch
                     v-model="isDebtQuotaEnabled"
                     label="Tunggakan Kuota"
@@ -639,9 +687,10 @@ function openDebtPdf() {
 
                   <VCol v-if="formData.is_unlimited_user !== true" cols="12" md="6">
                     <AppTextField
-                      v-model.number="formData.add_gb"
+                      v-model="formData.add_gb"
                       label="Tambah Kuota (GB)"
                       type="number"
+                      placeholder="Contoh: 10"
                       prepend-inner-icon="tabler-database-plus"
                       :disabled="isInjectBlockedByDebt"
                     />
@@ -649,9 +698,10 @@ function openDebtPdf() {
 
                   <VCol v-if="formData.unlimited_time !== true" cols="12" md="6">
                     <AppTextField
-                      v-model.number="formData.add_days"
+                      v-model="formData.add_days"
                       label="Tambah Masa Aktif (Hari)"
                       type="number"
+                      placeholder="Contoh: 30"
                       prepend-inner-icon="tabler-calendar-plus"
                       :disabled="isInjectBlockedByDebt"
                     />
@@ -665,7 +715,7 @@ function openDebtPdf() {
                     </VAlert>
                   </VCol>
 
-                  <template v-if="formData.role === 'USER'">
+                  <template v-if="shouldShowDebtSection">
                     <VCol cols="12">
                       <div class="text-overline">
                         Tunggakan Kuota
@@ -736,11 +786,17 @@ function openDebtPdf() {
                       </VCol>
 
                       <VCol cols="12" md="6">
-                        <AppTextField v-model="formData.debt_date" label="Tanggal Tunggakan" type="date" prepend-inner-icon="tabler-calendar" />
+                        <AppDateTimePicker
+                          v-model="formData.debt_date"
+                          label="Tanggal Tunggakan"
+                          placeholder="Pilih tanggal"
+                          prepend-inner-icon="tabler-calendar"
+                          :config="{ dateFormat: 'Y-m-d', enableTime: false }"
+                        />
                       </VCol>
 
                       <VCol cols="12">
-                        <AppTextField v-model="formData.debt_note" label="Catatan Tunggakan (Opsional)" prepend-inner-icon="tabler-notes" />
+                        <AppTextField v-model="formData.debt_note" label="Catatan Tunggakan (Opsional)" placeholder="Contoh: advance untuk akses sementara" prepend-inner-icon="tabler-notes" />
                       </VCol>
                     </template>
                   </template>
@@ -751,7 +807,8 @@ function openDebtPdf() {
                 </template>
               </VRow>
             </VWindowItem>
-          </VWindow>
+            </VWindow>
+          </div>
         </AppPerfectScrollbar>
 
         <VDivider />
@@ -783,6 +840,12 @@ function openDebtPdf() {
 </template>
 
 <style scoped>
+.admin-user-edit__container {
+  width: 100%;
+  max-width: 960px;
+  margin-inline: auto;
+}
+
 .dialog-titlebar {
   display: flex;
   align-items: center;
