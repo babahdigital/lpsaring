@@ -22,7 +22,6 @@ const promoStore = usePromoStore() // Inisialisasi promo store
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
 const display = useDisplay()
-const pageTitle = 'Dashboard Pengguna'
 
 const deviceDialog = ref(false)
 const { paying: debtPaying, pay: payDebt } = useDebtSettlementPayment()
@@ -520,10 +519,7 @@ useHead({ title: 'Dashboard User' })
 <template>
   <VContainer fluid class="dashboard-page-container vuexy-dashboard-container pa-4 pa-md-6">
     <VRow>
-      <VCol cols="12" class="d-flex align-center justify-space-between flex-wrap gap-2">
-        <h1 class="text-h5 mb-0 vuexy-page-title">
-          {{ pageTitle }}
-        </h1>
+      <VCol cols="12" class="d-flex align-center justify-end flex-wrap gap-2">
         <VBtn
           variant="tonal"
           size="small"
