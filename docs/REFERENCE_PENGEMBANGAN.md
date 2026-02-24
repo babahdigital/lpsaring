@@ -238,6 +238,12 @@ Jika ingin saya implement, saya butuh keputusan: mapping chat id pakai Opsi A (k
 - Layout navbar: 
   - `frontend/layouts/components/DefaultLayoutWithVerticalNav.vue`
   - `frontend/layouts/components/DefaultLayoutWithHorizontalNav.vue`
+
+---
+
+## 8) Devlog & Insiden (Feb 2026)
+
+- Devlog 2026-02-24 (Ops + Payment + Debt): [docs/DEVLOG_2026-02-24.md](DEVLOG_2026-02-24.md)
 - User profile: `frontend/layouts/components/UserProfile.vue`
 - Footer: `frontend/layouts/components/Footer.vue`
 - Navigasi: `frontend/navigation/*`

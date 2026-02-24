@@ -57,6 +57,13 @@ Lampiran wajib:
 - Public settings di-cache untuk mengurangi beban DB.
 
 ### Fixed
+- Frontend: pelunasan tunggakan (Lunasi) tidak lagi mengirim event click sebagai `manual_debt_id` (fix 422).
+- Frontend: dialog metode pembayaran pelunasan disamakan dengan dialog di `/beli` (dashboard/riwayat), termasuk per-item hutang manual.
+- Backend: estimasi harga hutang kuota memilih paket referensi berdasarkan kecocokan kuota (closest-fit), bukan termurah-by-price.
+- CI/Backend: perbaikan Ruff `F821` akibat variabel sisa pasca refactor.
+
+### Changed
+- Frontend: saat Core API aktif, GoPay/ShopeePay dapat redirect langsung ke deeplink bila backend mengembalikan `redirect_url`.
 - OTP request 400 akibat body kosong.
 - Redirect captive yang berulang (link_orig).
 - Ikon Tabler tidak muncul (nama ikon diperbaiki).
