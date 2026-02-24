@@ -26,6 +26,8 @@ interface InitiateResponse {
   snap_token?: string | null
   redirect_url?: string | null
   provider_mode?: 'snap' | 'core_api'
+  status_token?: string | null
+  status_url?: string | null
 }
 
 interface SnapInstance {
@@ -252,6 +254,10 @@ async function initiatePayment(packageId: string) {
 
     const initiatedOrderId = responseData?.order_id
 
+    const statusToken = (typeof responseData?.status_token === 'string' && responseData.status_token.trim() !== '')
+      ? responseData.status_token.trim()
+      : null
+
     const provider = (responseData?.provider_mode ?? providerMode.value) === 'core_api' ? 'core_api' : 'snap'
 
     const redirectUrl = (typeof responseData?.redirect_url === 'string' && responseData.redirect_url.trim() !== '')
@@ -278,12 +284,17 @@ async function initiatePayment(packageId: string) {
       }
 
       window.snap.pay(snapToken, {
-        onSuccess: (result: SnapPayResult) => router.push(`/payment/status?status=success&order_id=${result.order_id}`),
-        onPending: (result: SnapPayResult) => router.push(`/payment/status?status=pending&order_id=${result.order_id}`),
-        onError: (result: SnapPayResult) => router.push(`/payment/status?status=error&order_id=${result.order_id}`),
+        onSuccess: (result: SnapPayResult) => router.push(`/payment/status?status=success&order_id=${result.order_id}${statusToken ? `&t=${encodeURIComponent(statusToken)}` : ''}`),
+        onPending: (result: SnapPayResult) => router.push(`/payment/status?status=pending&order_id=${result.order_id}${statusToken ? `&t=${encodeURIComponent(statusToken)}` : ''}`),
+        onError: (result: SnapPayResult) => router.push(`/payment/status?status=error&order_id=${result.order_id}${statusToken ? `&t=${encodeURIComponent(statusToken)}` : ''}`),
         onClose: () => {
           if (typeof initiatedOrderId === 'string' && initiatedOrderId !== '') {
-            void $api(`/transactions/${encodeURIComponent(initiatedOrderId)}/cancel`, { method: 'POST' }).catch(() => {})
+            if (statusToken) {
+              void $api(`/transactions/public/${encodeURIComponent(initiatedOrderId)}/cancel?t=${encodeURIComponent(statusToken)}`, { method: 'POST' }).catch(() => {})
+            }
+            else {
+              void $api(`/transactions/${encodeURIComponent(initiatedOrderId)}/cancel`, { method: 'POST' }).catch(() => {})
+            }
           }
           addSnackbar({ type: 'info', title: 'Pembayaran', text: 'Anda menutup jendela pembayaran.' })
           isInitiatingPayment.value = null
@@ -295,7 +306,7 @@ async function initiatePayment(packageId: string) {
       window.location.href = redirectUrl
     }
     else if (typeof initiatedOrderId === 'string' && initiatedOrderId.trim() !== '') {
-      await router.push(`/payment/status?order_id=${encodeURIComponent(initiatedOrderId)}`)
+      await router.push(`/payment/status?order_id=${encodeURIComponent(initiatedOrderId)}${statusToken ? `&t=${encodeURIComponent(statusToken)}` : ''}`)
       isInitiatingPayment.value = null
     }
     else {

@@ -11,6 +11,8 @@ type DebtInitiateResponse = {
   redirect_url?: string | null
   payment_method?: string | null
   provider_mode?: 'snap' | 'core_api'
+  status_token?: string | null
+  status_url?: string | null
 }
 
 type PaymentMethod = 'qris' | 'gopay' | 'shopeepay' | 'va'
@@ -65,6 +67,10 @@ export function useDebtSettlementPayment() {
         ? response.snap_token
         : null
 
+      const statusToken = typeof response?.status_token === 'string' && response.status_token.trim() !== ''
+        ? response.status_token.trim()
+        : null
+
       const provider = (response?.provider_mode ?? 'snap') === 'core_api' ? 'core_api' : 'snap'
       const redirectUrl = typeof response?.redirect_url === 'string' && response.redirect_url.trim() !== ''
         ? response.redirect_url.trim()
@@ -90,7 +96,7 @@ export function useDebtSettlementPayment() {
         }
 
         // Fallback: show instructions + polling.
-        void router.push(`/payment/status?order_id=${encodeURIComponent(orderId)}&purpose=debt`)
+        void router.push(`/payment/status?order_id=${encodeURIComponent(orderId)}&purpose=debt${statusToken ? `&t=${encodeURIComponent(statusToken)}` : ''}`)
         return
       }
 
@@ -103,17 +109,31 @@ export function useDebtSettlementPayment() {
       window.snap.pay(snapToken, {
         onSuccess: (result: MidtransPayResult) => {
           const oid = encodeURIComponent(result?.order_id || orderId)
-          void router.push(`/payment/status?order_id=${oid}&status=SUCCESS&purpose=debt`)
+          void router.push(`/payment/status?order_id=${oid}&status=SUCCESS&purpose=debt${statusToken ? `&t=${encodeURIComponent(statusToken)}` : ''}`)
         },
         onPending: (result: MidtransPayResult) => {
           const oid = encodeURIComponent(result?.order_id || orderId)
-          void router.push(`/payment/status?order_id=${oid}&status=PENDING&purpose=debt`)
+          void router.push(`/payment/status?order_id=${oid}&status=PENDING&purpose=debt${statusToken ? `&t=${encodeURIComponent(statusToken)}` : ''}`)
         },
         onError: (result: MidtransPayResult) => {
           const oid = encodeURIComponent(result?.order_id || orderId)
-          void router.push(`/payment/status?order_id=${oid}&status=ERROR&purpose=debt`)
+          void router.push(`/payment/status?order_id=${oid}&status=ERROR&purpose=debt${statusToken ? `&t=${encodeURIComponent(statusToken)}` : ''}`)
         },
         onClose: () => {
+          try {
+            const oid = (orderId || '').toString()
+            if (oid) {
+              if (statusToken) {
+                void $api(`/transactions/public/${encodeURIComponent(oid)}/cancel?t=${encodeURIComponent(statusToken)}`, { method: 'POST' }).catch(() => {})
+              }
+              else {
+                void $api(`/transactions/${encodeURIComponent(oid)}/cancel`, { method: 'POST' }).catch(() => {})
+              }
+            }
+          }
+          catch {
+            // ignore
+          }
           snackbar.add({
             type: 'info',
             title: 'Ditutup',

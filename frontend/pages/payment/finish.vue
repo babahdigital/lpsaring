@@ -70,6 +70,13 @@ const isPolling = ref(false)
 const errorMessageFromQuery = ref<string | null>(
   typeof route.query.msg === 'string' ? decodeURIComponent(route.query.msg) : null,
 )
+
+const statusTokenFromQuery = computed(() => {
+  const raw = (route.query.t ?? route.query.token)
+  if (Array.isArray(raw))
+    return typeof raw[0] === 'string' ? raw[0].trim() || null : null
+  return typeof raw === 'string' ? raw.trim() || null : null
+})
 const orderIdFromQuery = computed(() => {
   const raw = route.query.order_id
   if (Array.isArray(raw))
@@ -120,6 +127,25 @@ async function fetchTransactionDetails(orderId: string, options?: { showLoading?
     transactionDetails.value = response
   }
   catch (err: any) {
+    // If user opens a shareable link from WhatsApp/another device, they may not have auth cookies.
+    // Fallback to public, token-protected endpoint when `t` is provided.
+    const statusCode = err?.response?.status ?? err?.statusCode
+    if ((statusCode === 401 || statusCode === 403) && statusTokenFromQuery.value) {
+      try {
+        const publicUrl = `/transactions/public/by-order-id/${encodeURIComponent(orderId)}?t=${encodeURIComponent(statusTokenFromQuery.value)}`
+        const publicResponse = await $api<TransactionDetails>(publicUrl)
+        if (publicResponse == null || typeof publicResponse !== 'object' || publicResponse.midtrans_order_id == null || publicResponse.status == null)
+          throw new Error('Respons API public tidak valid atau tidak lengkap.')
+        transactionDetails.value = publicResponse
+        fetchError.value = null
+        return
+      }
+      catch (fallbackErr: any) {
+        // continue to normal error handling below
+        err = fallbackErr
+      }
+    }
+
     if (silent)
       return
     const status = err.response?.status ?? err.statusCode ?? 'N/A'
@@ -404,6 +430,21 @@ async function refreshStatus() {
     await fetchTransactionDetails(orderId.value, { showLoading: false })
 }
 
+async function cancelTransactionSilently(orderIdToCancel: string) {
+  try {
+    if (statusTokenFromQuery.value) {
+      const url = `/transactions/public/${encodeURIComponent(orderIdToCancel)}/cancel?t=${encodeURIComponent(statusTokenFromQuery.value)}`
+      await $api(url, { method: 'POST' })
+    }
+    else {
+      await $api(`/transactions/${encodeURIComponent(orderIdToCancel)}/cancel`, { method: 'POST' })
+    }
+  }
+  catch {
+    // ignore (unauthorized, already final, network error)
+  }
+}
+
 async function downloadInvoice() {
   if (invoicePath.value === '' || isDownloadingInvoice.value)
     return
@@ -439,6 +480,8 @@ const qrDownloadUrl = computed(() => {
   if (!orderId.value)
     return ''
   const base = (runtimeConfig.public.apiBaseUrl ?? '/api').replace(/\/$/, '')
+  if (statusTokenFromQuery.value)
+    return `${base}/transactions/public/${encodeURIComponent(orderId.value)}/qr?t=${encodeURIComponent(statusTokenFromQuery.value)}&download=1`
   return `${base}/transactions/${encodeURIComponent(orderId.value)}/qr?download=1`
 })
 
@@ -446,6 +489,8 @@ const qrViewUrl = computed(() => {
   if (!orderId.value)
     return ''
   const base = (runtimeConfig.public.apiBaseUrl ?? '/api').replace(/\/$/, '')
+  if (statusTokenFromQuery.value)
+    return `${base}/transactions/public/${encodeURIComponent(orderId.value)}/qr?t=${encodeURIComponent(statusTokenFromQuery.value)}`
   return `${base}/transactions/${encodeURIComponent(orderId.value)}/qr`
 })
 
@@ -601,36 +646,59 @@ async function openSnapPayment() {
       throw new Error('Snap.js siap, tetapi window.snap tidak tersedia.')
     }
 
+    // snap.pay is callback-based (non-async). Keep loading state until one of callbacks fires.
     window.snap.pay(token, {
       onSuccess: async (result) => {
-        const oid = (result?.order_id || orderId.value || '').toString()
-        if (oid)
-          await router.push({ path: '/payment/status', query: { order_id: oid } })
-        await refreshStatus()
+        try {
+          const oid = (result?.order_id || orderId.value || '').toString()
+          if (oid)
+            await router.push({ path: '/payment/status', query: { order_id: oid, t: statusTokenFromQuery.value ?? undefined } })
+          await refreshStatus()
+        }
+        finally {
+          isPayingWithSnap.value = false
+        }
       },
       onPending: async (result) => {
-        const oid = (result?.order_id || orderId.value || '').toString()
-        if (oid)
-          await router.push({ path: '/payment/status', query: { order_id: oid } })
-        await refreshStatus()
+        try {
+          const oid = (result?.order_id || orderId.value || '').toString()
+          if (oid)
+            await router.push({ path: '/payment/status', query: { order_id: oid, t: statusTokenFromQuery.value ?? undefined } })
+          await refreshStatus()
+        }
+        finally {
+          isPayingWithSnap.value = false
+        }
       },
       onError: async (result) => {
-        const oid = (result?.order_id || orderId.value || '').toString()
-        addSnackbar({ type: 'error', title: 'Gagal', text: 'Pembayaran gagal diproses. Silakan coba lagi.' })
-        if (oid)
-          await router.push({ path: '/payment/status', query: { order_id: oid } })
-        await refreshStatus()
+        try {
+          const oid = (result?.order_id || orderId.value || '').toString()
+          addSnackbar({ type: 'error', title: 'Gagal', text: 'Pembayaran gagal diproses. Silakan coba lagi.' })
+          if (oid)
+            await router.push({ path: '/payment/status', query: { order_id: oid, t: statusTokenFromQuery.value ?? undefined } })
+          await refreshStatus()
+        }
+        finally {
+          isPayingWithSnap.value = false
+        }
       },
-      onClose: () => {
-        addSnackbar({ type: 'info', title: 'Dibatalkan', text: 'Jendela pembayaran ditutup.' })
+      onClose: async () => {
+        try {
+          addSnackbar({ type: 'info', title: 'Dibatalkan', text: 'Jendela pembayaran ditutup.' })
+          const oid = (orderId.value || '').toString()
+          if (oid)
+            await cancelTransactionSilently(oid)
+          await refreshStatus()
+        }
+        finally {
+          isPayingWithSnap.value = false
+        }
       },
     })
   }
   catch (err: any) {
     const msg = err?.message || 'Gagal membuka pembayaran Snap.'
     addSnackbar({ type: 'error', title: 'Gagal', text: msg })
-  }
-  finally {
     isPayingWithSnap.value = false
   }
 }
