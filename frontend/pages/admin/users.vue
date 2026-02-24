@@ -950,7 +950,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
         <VCardTitle class="text-h4">
           Manajemen Pengguna
         </VCardTitle>
-        <VCardSubtitle>Kelola semua akun yang terdaftar di sistem.</VCardSubtitle>
+        <VCardSubtitle class="admin-users__subtitle">Kelola semua akun yang terdaftar di sistem.</VCardSubtitle>
         <template v-if="!isMobile" #append>
           <div class="admin-users__toolbar">
             <div class="admin-users__search">
@@ -1407,6 +1407,12 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.admin-users__subtitle {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .admin-users__addBtnMobile {

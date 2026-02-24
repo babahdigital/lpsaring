@@ -81,7 +81,8 @@ compAttrs.config = {
   // NOTE: `static: true` can get clipped by Vuetify field wrappers (overflow) inside dialogs.
   // Default to `false` so the calendar can render above overlays.
   static: compAttrs.config?.static ?? false,
-  position: compAttrs.config?.position ?? 'below',
+  // Force Flatpickr UI on mobile to avoid native picker inconsistencies in fullscreen dialogs.
+  disableMobile: compAttrs.config?.disableMobile ?? true,
   ...compAttrs.config,
   prevArrow: '<i class="tabler-chevron-left v-icon" style="font-size: 20px; height: 20px; width: 20px;"></i>',
   nextArrow: '<i class="tabler-chevron-right v-icon" style="font-size: 20px; height: 20px; width: 20px;"></i>',
@@ -130,9 +131,17 @@ onMounted(() => {
   updateThemeClassInCalendar()
 })
 
-function emitModelValue(val: string) {
-  emit('update:modelValue', val)
+function emitModelValue(val: unknown) {
+  if (Array.isArray(val)) {
+    emit('update:modelValue', val.length > 0 ? String(val[0]) : '')
+
+    return
+  }
+
+  emit('update:modelValue', val == null ? '' : String(val))
 }
+
+const modelValueNormalized = computed(() => props.modelValue ?? '')
 
 watch(() => props, () => {
   fieldProps.value = VField.filterProps(props)
@@ -163,7 +172,7 @@ const elementId = computed (() => {
 
     <VInput
       v-bind="{ ...inputProps, ...rootAttrs }"
-      :model-value="props.modelValue"
+      :model-value="modelValueNormalized"
       :hide-details="props.hideDetails"
       :class="[{
         'v-text-field--prefixed': props.prefix,
@@ -193,7 +202,7 @@ const elementId = computed (() => {
                 v-if="!isInlinePicker"
                 v-bind="compAttrs"
                 ref="refFlatPicker"
-                :model-value="props.modelValue"
+                :model-value="modelValueNormalized"
                 :placeholder="props.placeholder"
                 :readonly="isReadonly.value"
                 class="flat-picker-custom-style h-100 w-100"
@@ -206,7 +215,7 @@ const elementId = computed (() => {
               <!-- simple input for inline prop -->
               <input
                 v-if="isInlinePicker"
-                :value="props.modelValue"
+                :value="modelValueNormalized"
                 :placeholder="props.placeholder"
                 :readonly="isReadonly.value"
                 class="flat-picker-custom-style h-100 w-100"
@@ -223,7 +232,7 @@ const elementId = computed (() => {
       v-if="isInlinePicker"
       v-bind="compAttrs"
       ref="refFlatPicker"
-      :model-value="props.modelValue"
+      :model-value="modelValueNormalized"
       @update:model-value="emitModelValue"
       @on-open="isCalendarOpen = true"
       @on-close="isCalendarOpen = false"
