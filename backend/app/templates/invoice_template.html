@@ -269,9 +269,11 @@
             </thead>
             <tbody>
                 <tr>
-                                        {% set _debt_prefix = ((config.get('DEBT_ORDER_ID_PREFIX', 'DEBT') or 'DEBT') | upper) ~ '-' %}
+                                        {% set _debt_prefix_raw = ((config.get('DEBT_ORDER_ID_PREFIX', 'DEBT') or 'DEBT') | upper) %}
+                                        {% set _debt_prefix = _debt_prefix_raw ~ '-' %}
+                                        {% set _debt_prefix_legacy = (_debt_prefix_raw | replace('-', '') | replace('_', '')) ~ '-' %}
                                         {% set _oid = (transaction.midtrans_order_id or '') %}
-                                        {% set is_debt_settlement = _oid.startswith(_debt_prefix) or _oid.startswith('DEBT-') %}
+                                        {% set is_debt_settlement = _oid.startswith(_debt_prefix) or _oid.startswith(_debt_prefix_legacy) or _oid.startswith('DEBT-') %}
                                         {% if is_debt_settlement %}
                                             <td class="description">Pelunasan Tunggakan Kuota</td>
                                         {% else %}
