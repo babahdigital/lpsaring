@@ -23,6 +23,22 @@ body {
   .layout-page-content {
     padding-inline: 0.75rem;
   }
+
+  /* Keep navbar/footer aligned with page content on mobile */
+  .layout-wrapper {
+    overflow-x: hidden;
+  }
+
+  .layout-navbar-and-nav-container,
+  .layout-content-wrapper {
+    overflow-x: hidden;
+  }
+
+  .navbar-content-container,
+  .footer-content-container,
+  .horizontal-nav-content-container {
+    padding-inline: 0.75rem !important;
+  }
 }
 
 .layout-footer {

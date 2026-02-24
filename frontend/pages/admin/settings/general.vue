@@ -826,16 +826,6 @@ useHead({ title: 'Setting Aplikasi' })
   justify-content: center;
 }
 
-/* Prevent sideways scroll: allow tabs to wrap on small screens */
-.settings-tabs :deep(.v-slide-group__container) {
-  overflow: visible;
-}
-
-.settings-tabs :deep(.v-slide-group__content) {
-  flex-wrap: wrap;
-  row-gap: 0.25rem;
-}
-
 .settings-window {
   overflow-x: hidden;
 }
