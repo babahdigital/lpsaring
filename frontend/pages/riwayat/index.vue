@@ -105,6 +105,7 @@ const coreApiEnabledVaBanks = computed<VaBank[]>(() => {
 const showDebtPaymentDialog = ref(false)
 const selectedDebtMethod = ref<PaymentMethod>('qris')
 const selectedDebtVaBank = ref<VaBank>('bni')
+const pendingManualDebtId = ref<string | null>(null)
 
 const allDebtPaymentMethodItems = [
   {
@@ -172,6 +173,7 @@ watch([selectedDebtMethod, availableDebtVaBankItems], () => {
 }, { immediate: true })
 
 function openDebtPaymentDialog() {
+  pendingManualDebtId.value = null
   const methods = coreApiEnabledMethods.value
   selectedDebtMethod.value = methods.includes(selectedDebtMethod.value) ? selectedDebtMethod.value : (methods[0] ?? 'qris')
   const banks = coreApiEnabledVaBanks.value
@@ -179,6 +181,24 @@ function openDebtPaymentDialog() {
     ? selectedDebtVaBank.value
     : (banks.includes('bni') ? 'bni' : (banks[0] ?? 'bni'))
   showDebtPaymentDialog.value = true
+}
+
+function openDebtPaymentDialogForManualItem(debtId: string) {
+  if (typeof debtId !== 'string' || debtId.trim() === '')
+    return
+  pendingManualDebtId.value = debtId
+  const methods = coreApiEnabledMethods.value
+  selectedDebtMethod.value = methods.includes(selectedDebtMethod.value) ? selectedDebtMethod.value : (methods[0] ?? 'qris')
+  const banks = coreApiEnabledVaBanks.value
+  selectedDebtVaBank.value = banks.includes(selectedDebtVaBank.value)
+    ? selectedDebtVaBank.value
+    : (banks.includes('bni') ? 'bni' : (banks[0] ?? 'bni'))
+  showDebtPaymentDialog.value = true
+}
+
+function closeDebtPaymentDialog() {
+  showDebtPaymentDialog.value = false
+  pendingManualDebtId.value = null
 }
 
 function handleDebtPayClick() {
@@ -195,15 +215,33 @@ function confirmDebtPayment() {
     payment_method: method,
     va_bank: method === 'va' ? selectedDebtVaBank.value : undefined,
   }
-  showDebtPaymentDialog.value = false
+  const manualDebtId = pendingManualDebtId.value
+  closeDebtPaymentDialog()
+
+  if (typeof manualDebtId === 'string' && manualDebtId.trim() !== '') {
+    void payDebt({ manualDebtId, ...body } as any)
+    return
+  }
+
   void payDebt(body as any)
 }
 
 function payManualDebtItem(debtId: string) {
   if (typeof debtId !== 'string' || debtId.trim() === '')
     return
+  if (providerMode.value === 'core_api') {
+    openDebtPaymentDialogForManualItem(debtId)
+    return
+  }
   void payDebt(debtId)
 }
+
+const selectedManualDebtItem = computed(() => {
+  const id = pendingManualDebtId.value
+  if (id == null)
+    return null
+  return quotaDebtItems.value.find(it => it.id === id) ?? null
+})
 
 // --- Data Tunggakan Kuota (untuk tombol Lunasi di Riwayat) ---
 const quotaApiUrl = computed(() => '/users/me/quota')
@@ -657,11 +695,16 @@ useHead({ title: 'Riwayat Transaksi' })
               <VIcon icon="tabler-credit-card" color="primary" start />
               <span class="text-h6 font-weight-medium">Pilih Metode Pembayaran</span>
               <VSpacer />
-              <VBtn icon="tabler-x" flat size="small" variant="text" @click="showDebtPaymentDialog = false" />
+              <VBtn icon="tabler-x" flat size="small" variant="text" @click="closeDebtPaymentDialog" />
             </VCardTitle>
 
             <VCardText class="px-4 pt-4">
-              <p class="text-caption text-medium-emphasis mb-3">
+              <p v-if="selectedManualDebtItem" class="text-caption text-medium-emphasis mb-3">
+                Hutang: <span class="font-weight-medium">{{ formatDebtDate(selectedManualDebtItem.debt_date) }}</span>
+                <span class="mx-1">•</span>
+                <span class="font-weight-medium">{{ formatQuota(selectedManualDebtItem.remaining_mb) }}</span>
+              </p>
+              <p v-else class="text-caption text-medium-emphasis mb-3">
                 Tunggakan: <span class="font-weight-medium">{{ formatCurrency(debtEstimatedRp) }}</span>
               </p>
 
@@ -705,7 +748,7 @@ useHead({ title: 'Riwayat Transaksi' })
             <VDivider />
             <VCardActions class="px-4 py-3 bg-grey-lighten-5">
               <VSpacer />
-              <VBtn color="grey-darken-1" variant="text" @click="showDebtPaymentDialog = false">
+              <VBtn color="grey-darken-1" variant="text" @click="closeDebtPaymentDialog">
                 Batal
               </VBtn>
               <VBtn color="primary" variant="flat" :loading="debtPaying" :disabled="debtPaying" @click="confirmDebtPayment">
