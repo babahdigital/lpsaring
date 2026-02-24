@@ -50,6 +50,7 @@ Mode pembayaran dikontrol dari Setting Admin:
 
 URL status pembayaran (yang dibagikan ke user) adalah:
 - `/payment/status?order_id=...`
+  - Untuk link shareable lintas device (mis. via WhatsApp), server bisa menambahkan token bertanda tangan: `/payment/status?order_id=...&t=<SIGNED_TOKEN>`
 
 Env terkait prefix invoice:
 - `MIDTRANS_ORDER_ID_PREFIX` → prefix order_id untuk transaksi user (beli paket).

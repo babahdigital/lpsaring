@@ -22,14 +22,16 @@ Checklist ini fokus pada payment lifecycle + halaman status + admin tagihan.
 ## B) Frontend (UI)
 
 - URL status canonical: buka `/payment/status?order_id=...` (tanpa redirect).
+	- Untuk link shareable lintas device (mis. dari WhatsApp), URL bisa membawa token: `/payment/status?order_id=...&t=<SIGNED_TOKEN>`.
 - Core API: QR ditampilkan via proxy backend `/api/transactions/<order_id>/qr` (tidak direct ke domain provider).
+	- Jika link membawa `t`, QR diambil via endpoint public: `/api/transactions/public/<order_id>/qr?t=...`.
 - Snap.js: hanya lazy-load saat mode Snap dipakai (tidak ter-load saat Core API).
 
 ## C) Admin (Buat Tagihan)
 
 - Admin → Users → Buat Tagihan:
 	- Dropdown metode + bank VA mengikuti setting `CORE_API_ENABLED_PAYMENT_METHODS` + `CORE_API_ENABLED_VA_BANKS`.
-	- WhatsApp berisi link `/payment/status?order_id=...` + detail VA/echannel bila metode VA.
+	- WhatsApp berisi link `/payment/status?order_id=...` (idealnya dengan `&t=...` jika ingin bisa dibuka tanpa login) + detail VA/echannel bila metode VA.
 
 ## D) Automated (repo)
 

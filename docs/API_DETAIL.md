@@ -177,6 +177,7 @@ Array `SettingSchema`:
 
 Catatan penting:
 - URL user-facing untuk status pembayaran adalah `/payment/status?order_id=...`.
+  - Untuk link shareable lintas device (mis. dibuka tanpa cookie sesi), backend dapat menambahkan token bertanda tangan: `/payment/status?order_id=...&t=<SIGNED_TOKEN>`.
 - `/payment/finish` dipertahankan untuk kompatibilitas callback/legacy, namun UI utama tetap `/payment/status`.
 
 ## POST /api/transactions/initiate
@@ -201,6 +202,8 @@ Catatan penting:
 - `snap_token`: string | null (hanya mode Snap)
 - `redirect_url`: string | null (Snap redirect atau deeplink Core API)
 - `provider_mode`: `snap` | `core_api`
+- `status_token`: string | null (opsional; token bertanda tangan untuk akses public read-only)
+- `status_url`: string | null (opsional; URL `/payment/status?...&t=...` yang siap dibagikan)
 
 ## POST /api/transactions/debt/initiate
 **Auth:** Ya (user)
@@ -208,6 +211,14 @@ Catatan penting:
 **Request**
 - `payment_method` / `va_bank` sama seperti initiate normal.
 - `manual_debt_id`: string (opsional)
+
+**Response 200**
+- `order_id`: string (Midtrans order_id)
+- `snap_token`: string | null (hanya mode Snap)
+- `redirect_url`: string | null (Snap redirect atau deeplink Core API)
+- `provider_mode`: `snap` | `core_api`
+- `status_token`: string | null (opsional; token bertanda tangan untuk akses public read-only)
+- `status_url`: string | null (opsional; URL `/payment/status?...&t=...` yang siap dibagikan)
 
 ## GET /api/transactions/by-order-id/{order_id}
 **Auth:** Ya (user)
@@ -235,6 +246,34 @@ Query:
 **Auth:** Ya (user)
 
 Dipakai saat user menutup popup Snap (status jadi `CANCELLED`).
+
+---
+
+## GET /api/transactions/public/by-order-id/{order_id}
+**Auth:** Tidak (token `t` wajib)
+
+Endpoint public *read-only* untuk status transaksi agar link WhatsApp bisa dibuka di device lain tanpa cookie sesi.
+
+Query:
+- `t`: signed token (time-limited) yang terikat ke `order_id`.
+
+Catatan keamanan:
+- Response menyamarkan data sensitif (contoh: `user.phone_number` dan `user.id`).
+- `hotspot_password` selalu `null` pada mode public.
+
+## GET /api/transactions/public/{order_id}/qr
+**Auth:** Tidak (token `t` wajib)
+
+Proxy QR image untuk mode public.
+
+Query:
+- `t`: signed token.
+- `download=1` untuk memaksa attachment.
+
+## POST /api/transactions/public/{order_id}/cancel
+**Auth:** Tidak (token `t` wajib)
+
+Versi public dari cancel transaksi (dipakai saat user menutup Snap dari link shareable).
 
 ---
 

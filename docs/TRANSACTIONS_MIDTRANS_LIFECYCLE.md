@@ -30,7 +30,9 @@ Catatan:
 1. Frontend `POST /api/transactions/initiate`.
 2. Backend membuat record transaksi `UNKNOWN` (Snap token/redirect tersedia) + menyimpan `expiry_time`.
 3. Frontend memanggil `window.snap.pay(token, callbacks)`.
-4. Jika user menutup Snap tanpa bayar: frontend memanggil `POST /api/transactions/{order_id}/cancel` → status `CANCELLED`.
+4. Jika user menutup Snap tanpa bayar: frontend memanggil cancel endpoint → status `CANCELLED`.
+  - Normal (authenticated): `POST /api/transactions/{order_id}/cancel`
+  - Public shareable link (pakai token `t`): `POST /api/transactions/public/{order_id}/cancel?t=...`
 5. Jika status berubah:
   - Midtrans memanggil webhook `POST /api/transactions/notification`.
   - Backend menyimpan payload mentah (`midtrans_notification_payload`) dan mengisi kolom penting (payment_type, expiry_time, VA/QR, dst).
@@ -41,12 +43,16 @@ Catatan:
 2. Backend membuat record transaksi `PENDING` + menyimpan field instruksi pembayaran (QR/VA/deeplink) jika tersedia.
 3. Frontend mengarahkan user ke URL status (canonical):
   - `/payment/status?order_id=<order_id>`
+  - Untuk link shareable lintas device: `/payment/status?order_id=<order_id>&t=<SIGNED_TOKEN>`
 4. Midtrans webhook `POST /api/transactions/notification` akan mengubah status menjadi final (`SUCCESS/FAILED/EXPIRED/...`).
 
 
 ## 3) URL Status (Canonical)
 URL yang dibagikan ke user dan dipakai internal adalah:
 - `/payment/status?order_id=...`
+
+Untuk akses public (mis. link WhatsApp yang dibuka di device lain tanpa cookie sesi), backend dapat menambahkan token bertanda tangan:
+- `/payment/status?order_id=...&t=<SIGNED_TOKEN>`
 
 Catatan:
 - `/payment/finish` tetap ada untuk kompatibilitas callback/legacy, tapi UI user-facing memakai `/payment/status`.

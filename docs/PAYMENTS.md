@@ -8,7 +8,13 @@ Dokumen ini adalah indeks/pondasi untuk semua perubahan pembayaran.
   - `PAYMENT_PROVIDER_MODE=core_api` → tanpa Snap UI (server-to-server), instruksi ditampilkan di portal
 - URL status pembayaran (canonical, dibagikan ke user):
   - `/payment/status?order_id=...`
+  - Untuk link shareable lintas device (mis. via WhatsApp), server dapat menambahkan token bertanda tangan:
+    - `/payment/status?order_id=...&t=<SIGNED_TOKEN>`
 - `/payment/finish` dipertahankan untuk kompatibilitas callback/legacy.
+  - Untuk Snap, callback finish tidak membawa `order_id` (untuk mencegah query double), tetapi token `t` boleh dibawa.
+
+## Keamanan Link Status (Public)
+- Endpoint public yang memakai `t` bersifat *read-only* dan akan menyamarkan data sensitif user (contoh: nomor HP / internal id) agar aman jika link tersebar.
 
 ## Perilaku Penting
 - Snap.js **tidak** auto-load global.
@@ -16,6 +22,9 @@ Dokumen ini adalah indeks/pondasi untuk semua perubahan pembayaran.
 - Core API menampilkan QR via proxy backend untuk menghindari CORS + mengurangi dependency browser ke domain provider:
   - `GET /api/transactions/<order_id>/qr` (inline)
   - `GET /api/transactions/<order_id>/qr?download=1`
+  - Untuk akses public (link membawa `t`):
+    - `GET /api/transactions/public/<order_id>/qr?t=...` (inline)
+    - `GET /api/transactions/public/<order_id>/qr?t=...&download=1`
 
 ## Admin – Buat Tagihan
 - Admin → Users → Buat Tagihan
