@@ -813,21 +813,24 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
   <div>
     <VCard class="rounded-lg mb-6">
       <VCardItem>
-        <VCardTitle class="d-flex align-center flex-wrap gap-2">
-          <VIcon icon="tabler-user-x" class="me-2" />
-          Preview Cleanup User Tidak Aktif
-        </VCardTitle>
-        <template #append>
+        <VCardTitle class="admin-users__cleanup-title">
+          <div class="admin-users__cleanup-titleText">
+            <VIcon icon="tabler-user-x" class="me-2" />
+            <span>Preview Cleanup User Tidak Aktif</span>
+          </div>
+
           <VBtn
+            class="admin-users__cleanup-refresh"
             size="small"
             variant="tonal"
             color="info"
+            :block="isMobile"
             :loading="cleanupPreviewLoading"
             @click="fetchInactiveCleanupPreview"
           >
             Refresh
           </VBtn>
-        </template>
+        </VCardTitle>
       </VCardItem>
       <VCardText>
         <div class="d-flex flex-wrap gap-2 mb-3">
@@ -949,11 +952,25 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
         </VCardTitle>
         <VCardSubtitle>Kelola semua akun yang terdaftar di sistem.</VCardSubtitle>
         <template #append>
-          <div class="d-flex align-center gap-4" :style="{ width: isMobile ? '100%' : 'auto' }">
-            <div :style="{ width: isMobile ? 'calc(100% - 130px)' : '300px' }">
-              <AppTextField v-model="search" placeholder="Cari (Nama/No. HP)..." prepend-inner-icon="tabler-search" clearable density="comfortable" hide-details />
+          <div class="admin-users__toolbar" :class="{ 'admin-users__toolbar--mobile': isMobile }">
+            <div class="admin-users__search">
+              <AppTextField
+                v-model="search"
+                placeholder="Cari (Nama/No. HP)..."
+                prepend-inner-icon="tabler-search"
+                clearable
+                density="comfortable"
+                hide-details
+              />
             </div>
-            <VBtn prepend-icon="tabler-plus" height="56" style="min-width: 130px" @click="openAddUserDialog()">
+
+            <VBtn
+              prepend-icon="tabler-plus"
+              height="56"
+              :block="isMobile"
+              class="admin-users__addBtn"
+              @click="openAddUserDialog()"
+            >
               Tambah Akun
             </VBtn>
           </div>
@@ -1159,13 +1176,13 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
         </div>
         <VCard v-for="user in users" v-else :key="user.id" class="mb-3">
           <VCardText>
-            <div class="d-flex justify-space-between">
-              <div class="d-flex align-center py-2">
+            <div class="admin-users__mobile-cardHeader">
+              <div class="admin-users__mobile-user">
                 <VAvatar size="32" class="me-3" :color="getRoleMeta(user.role).color" variant="tonal">
                   <span class="text-sm font-weight-medium">{{ user.full_name.substring(0, 2).toUpperCase() }}</span>
                 </VAvatar>
-                <div class="d-flex flex-column">
-                  <span class="font-weight-medium text-high-emphasis">{{ user.full_name }}</span>
+                <div class="d-flex flex-column admin-users__mobile-userText">
+                  <span class="font-weight-medium text-high-emphasis text-truncate">{{ user.full_name }}</span>
                   <small class="text-medium-emphasis">{{ formatPhoneNumberDisplay(user.phone_number) }}</small>
                   <div v-if="user.is_tamping" class="mt-1">
                     <VChip color="primary" size="x-small" label prepend-icon="tabler-building-bank">
@@ -1177,7 +1194,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
                   </div>
                 </div>
               </div>
-              <VChip :color="getStatusMeta(user.approval_status).color" size="small" label>
+              <VChip class="admin-users__mobile-status" :color="getStatusMeta(user.approval_status).color" size="small" label>
                 {{ getStatusMeta(user.approval_status).text }}
               </VChip>
             </div>
@@ -1336,3 +1353,95 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
     <UserActionConfirmDialog v-model="dialogState.confirm" :title="confirmProps.title" :message="confirmProps.message" :color="confirmProps.color" :loading="loading" @confirm="confirmProps.action" />
   </div>
 </template>
+
+<style scoped>
+.admin-users__cleanup-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.admin-users__cleanup-titleText {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.admin-users__cleanup-titleText span {
+  white-space: normal;
+  line-height: 1.25rem;
+}
+
+.admin-users__cleanup-refresh {
+  flex-shrink: 0;
+}
+
+.admin-users__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.admin-users__toolbar--mobile {
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  gap: 12px;
+}
+
+.admin-users__search {
+  width: 300px;
+}
+
+.admin-users__toolbar--mobile .admin-users__search {
+  width: 100%;
+}
+
+.admin-users__addBtn {
+  min-width: 160px;
+}
+
+.admin-users__toolbar--mobile .admin-users__addBtn {
+  width: 100%;
+}
+
+.admin-users__mobile-cardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-users__mobile-user {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 12px;
+}
+
+.admin-users__mobile-userText {
+  min-width: 0;
+}
+
+.admin-users__mobile-status {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* Make mobile icon buttons easier to tap */
+@media (max-width: 600px) {
+  :deep(.v-card-actions) {
+    padding-block: 8px;
+  }
+
+  :deep(.v-card-actions .v-btn) {
+    min-height: 40px;
+    min-width: 40px;
+  }
+}
+</style>
