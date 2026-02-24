@@ -125,6 +125,12 @@ const liveData = ref<LiveData | null>(null)
 const isDebtLedgerOpen = ref(false)
 const isDebtQuotaEnabled = ref(false)
 
+function getTodayYmd(): string {
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+}
+
 const isRestrictedAdmin = computed(() => authStore.isAdmin && !authStore.isSuperAdmin)
 
 const canAdminInject = computed(() => {
@@ -187,8 +193,11 @@ watch(() => props.user, (newUser) => {
 }, { immediate: true })
 
 watch(() => isDebtQuotaEnabled.value, (enabled) => {
-  if (enabled === true)
+  if (enabled === true) {
+    if (formData.debt_date == null || String(formData.debt_date).trim() === '')
+      formData.debt_date = getTodayYmd()
     fetchAdminPackages().catch(() => {})
+  }
 })
 
 watch(() => formData.unlimited_time, (v) => {

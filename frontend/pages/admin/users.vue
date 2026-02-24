@@ -240,6 +240,71 @@ function formatQuotaGb(value?: number | null): string {
     return 'Unlimited'
   return `${value} GB`
 }
+
+function formatQuotaFromMb(mb: number): string {
+  const safe = Number(mb)
+  if (!Number.isFinite(safe) || safe <= 0)
+    return '0 MB'
+  if (safe < 1024)
+    return `${Math.round(safe)} MB`
+
+  const gb = safe / 1024
+  const formatted = gb < 10
+    ? gb.toFixed(1)
+    : gb.toFixed(0)
+  return `${formatted.replace(/\.0$/, '')} GB`
+}
+
+function getUserDebtTotalMb(user: User): number {
+  if (user.is_unlimited_user === true)
+    return 0
+  const direct = Number(user.quota_debt_total_mb ?? 0)
+  if (Number.isFinite(direct) && direct > 0)
+    return direct
+  const autoMb = Number(user.quota_debt_auto_mb ?? 0)
+  const manualMb = Number(user.quota_debt_manual_mb ?? user.manual_debt_mb ?? 0)
+  return (Number.isFinite(autoMb) ? autoMb : 0) + (Number.isFinite(manualMb) ? manualMb : 0)
+}
+
+type UserProfileLabel = 'Aktif' | 'Blocked' | 'FUP' | 'Habis' | 'Expired' | 'Unlimited' | 'Nonaktif'
+function getUserProfileMeta(user: User): { text: UserProfileLabel, color: string, icon: string, tooltip?: string } {
+  if (user.is_blocked === true)
+    return { text: 'Blocked', color: 'error', icon: 'tabler-lock', tooltip: user.blocked_reason ?? undefined }
+
+  if (user.is_unlimited_user === true)
+    return { text: 'Unlimited', color: 'success', icon: 'tabler-infinity' }
+
+  if (user.is_active === false)
+    return { text: 'Nonaktif', color: 'secondary', icon: 'tabler-user-off' }
+
+  const profile = String(user.mikrotik_profile_name ?? '').trim()
+  const d = mikrotikOptions.value?.defaults
+  const profileLower = profile.toLowerCase()
+  const match = (v?: string | null) => String(v ?? '').trim().toLowerCase() !== '' && profileLower === String(v ?? '').trim().toLowerCase()
+
+  if (match(d?.profile_fup))
+    return { text: 'FUP', color: 'info', icon: 'tabler-chart-arrows-vertical' }
+  if (match(d?.profile_habis))
+    return { text: 'Habis', color: 'warning', icon: 'tabler-battery-off' }
+
+  const now = new Date()
+  if (match(d?.profile_expired))
+    return { text: 'Expired', color: 'error', icon: 'tabler-calendar-x' }
+  if (typeof user.quota_expiry_date === 'string' && user.quota_expiry_date !== '') {
+    const expiry = new Date(user.quota_expiry_date)
+    if (!Number.isNaN(expiry.getTime()) && expiry.getTime() < now.getTime())
+      return { text: 'Expired', color: 'error', icon: 'tabler-calendar-x' }
+  }
+
+  if (match(d?.profile_unlimited))
+    return { text: 'Unlimited', color: 'success', icon: 'tabler-infinity' }
+  if (match(d?.profile_inactive))
+    return { text: 'Nonaktif', color: 'secondary', icon: 'tabler-user-off' }
+  if (match(d?.profile_active) || match(d?.profile_default))
+    return { text: 'Aktif', color: 'success', icon: 'tabler-circle-check' }
+
+  return { text: 'Aktif', color: 'success', icon: 'tabler-circle-check', tooltip: profile !== '' ? `Profile: ${profile}` : undefined }
+}
 const roleMap: Record<User['role'], { text: string, color: string }> = { USER: { text: 'User', color: 'info' }, KOMANDAN: { text: 'Komandan', color: 'success' }, ADMIN: { text: 'Admin', color: 'primary' }, SUPER_ADMIN: { text: 'Support', color: 'secondary' } }
 const statusMap: Record<User['approval_status'], { text: string, color: string }> = { APPROVED: { text: 'Disetujui', color: 'success' }, PENDING_APPROVAL: { text: 'Menunggu', color: 'warning' }, REJECTED: { text: 'Ditolak', color: 'error' } }
 
@@ -293,6 +358,7 @@ const headers = computed(() => {
   const base = [
     { title: 'PENGGUNA', key: 'full_name', sortable: true, minWidth: '250px' },
     { title: 'STATUS', key: 'approval_status', sortable: true },
+    { title: 'PROFILE', key: 'profile', sortable: false, minWidth: '160px' },
     { title: 'PERAN', key: 'role', sortable: true },
     { title: 'KONEKSI', key: 'is_active', sortable: true, align: 'center' },
     { title: 'TGL DAFTAR', key: 'created_at', sortable: true },
@@ -949,10 +1015,14 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
                   </span>
                 </VChip>
               </div>
-              <div v-if="(item.quota_debt_total_mb ?? 0) > 0" class="mt-1">
-                <VChip color="warning" size="x-small" label prepend-icon="tabler-alert-triangle">
-                  Hutang
-                </VChip>
+              <div v-if="getUserDebtTotalMb(item) > 0" class="mt-1">
+                <VTooltip :text="`Debt: ${getUserDebtTotalMb(item)} MB`" location="top">
+                  <template #activator="{ props: tooltipProps }">
+                    <VChip v-bind="tooltipProps" color="warning" size="x-small" label prepend-icon="tabler-alert-triangle">
+                      Debt {{ formatQuotaFromMb(getUserDebtTotalMb(item)) }}
+                    </VChip>
+                  </template>
+                </VTooltip>
               </div>
             </div>
             <VTooltip v-if="item.is_unlimited_user === true" location="top">
@@ -968,6 +1038,32 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
             {{ getStatusMeta(item.approval_status as User['approval_status']).text }}
           </VChip>
         </template>
+
+        <template #item.profile="{ item }">
+          <div class="d-flex flex-column ga-1 py-2">
+            <VTooltip v-if="getUserProfileMeta(item).tooltip" :text="getUserProfileMeta(item).tooltip" location="top">
+              <template #activator="{ props: tooltipProps }">
+                <VChip v-bind="tooltipProps" :color="getUserProfileMeta(item).color" size="x-small" label>
+                  <VIcon :icon="getUserProfileMeta(item).icon" start size="16" />
+                  {{ getUserProfileMeta(item).text }}
+                </VChip>
+              </template>
+            </VTooltip>
+            <VChip v-else :color="getUserProfileMeta(item).color" size="x-small" label>
+              <VIcon :icon="getUserProfileMeta(item).icon" start size="16" />
+              {{ getUserProfileMeta(item).text }}
+            </VChip>
+
+            <VTooltip v-if="getUserDebtTotalMb(item) > 0" :text="`Debt: ${getUserDebtTotalMb(item)} MB`" location="top">
+              <template #activator="{ props: tooltipProps }">
+                <VChip v-bind="tooltipProps" color="warning" size="x-small" label prepend-icon="tabler-alert-triangle">
+                  Debt {{ formatQuotaFromMb(getUserDebtTotalMb(item)) }}
+                </VChip>
+              </template>
+            </VTooltip>
+          </div>
+        </template>
+
         <template #item.role="{ item }">
           <VChip :color="getRoleMeta(item.role as User['role']).color" size="small" label>
             {{ getRoleMeta(item.role as User['role']).text }}
