@@ -106,6 +106,71 @@ const showDebtPaymentDialog = ref(false)
 const selectedDebtMethod = ref<PaymentMethod>('qris')
 const selectedDebtVaBank = ref<VaBank>('bni')
 
+const allDebtPaymentMethodItems = [
+  {
+    value: 'qris' as const,
+    title: 'QRIS',
+    subtitle: 'Scan QR dari aplikasi pembayaran',
+    icon: 'tabler-qrcode',
+  },
+  {
+    value: 'gopay' as const,
+    title: 'GoPay',
+    subtitle: 'Buka GoPay / scan QR jika tersedia',
+    icon: 'tabler-wallet',
+  },
+  {
+    value: 'shopeepay' as const,
+    title: 'ShopeePay',
+    subtitle: 'Buka ShopeePay / scan QR jika tersedia',
+    icon: 'tabler-wallet',
+  },
+  {
+    value: 'va' as const,
+    title: 'Transfer Virtual Account',
+    subtitle: 'Pilih bank, lalu transfer via VA',
+    icon: 'tabler-building-bank',
+  },
+] as const
+
+const availableDebtPaymentMethodItems = computed(() => {
+  const enabled = new Set(coreApiEnabledMethods.value)
+  return allDebtPaymentMethodItems.filter(i => enabled.has(i.value))
+})
+
+const vaBankItems = [
+  { title: 'BCA', value: 'bca' },
+  { title: 'BNI', value: 'bni' },
+  { title: 'BRI', value: 'bri' },
+  { title: 'Mandiri', value: 'mandiri' },
+  { title: 'Permata', value: 'permata' },
+  { title: 'CIMB Niaga', value: 'cimb' },
+] as const
+
+const availableDebtVaBankItems = computed(() => {
+  const enabled = new Set(coreApiEnabledVaBanks.value)
+  return vaBankItems.filter(i => enabled.has(i.value))
+})
+
+watch(availableDebtPaymentMethodItems, (items) => {
+  const first = items[0]?.value
+  if (!first)
+    return
+  if (!items.some(i => i.value === selectedDebtMethod.value))
+    selectedDebtMethod.value = first
+}, { immediate: true })
+
+watch([selectedDebtMethod, availableDebtVaBankItems], () => {
+  if (selectedDebtMethod.value !== 'va')
+    return
+  const items = availableDebtVaBankItems.value
+  const first = items[0]?.value
+  if (!first)
+    return
+  if (!items.some(i => i.value === selectedDebtVaBank.value))
+    selectedDebtVaBank.value = first
+}, { immediate: true })
+
 function openDebtPaymentDialog() {
   const methods = coreApiEnabledMethods.value
   selectedDebtMethod.value = methods.includes(selectedDebtMethod.value) ? selectedDebtMethod.value : (methods[0] ?? 'qris')
@@ -586,38 +651,65 @@ useHead({ title: 'Riwayat Transaksi' })
           </VCardText>
         </VCard>
 
-        <VDialog v-model="showDebtPaymentDialog" max-width="420">
-          <VCard>
-            <VCardTitle class="text-h6">Pilih Metode Pembayaran</VCardTitle>
-            <VCardText>
-              <div class="text-body-2 text-medium-emphasis mb-3">
-                Pilih metode untuk pelunasan tunggakan.
-              </div>
+        <VDialog v-if="isHydrated" v-model="showDebtPaymentDialog" max-width="560px" scrim="grey-darken-3" eager>
+          <VCard rounded="lg">
+            <VCardTitle class="d-flex align-center py-3 px-4 bg-grey-lighten-4 border-b">
+              <VIcon icon="tabler-credit-card" color="primary" start />
+              <span class="text-h6 font-weight-medium">Pilih Metode Pembayaran</span>
+              <VSpacer />
+              <VBtn icon="tabler-x" flat size="small" variant="text" @click="showDebtPaymentDialog = false" />
+            </VCardTitle>
 
-              <VRadioGroup v-model="selectedDebtMethod" density="compact">
+            <VCardText class="px-4 pt-4">
+              <p class="text-caption text-medium-emphasis mb-3">
+                Tunggakan: <span class="font-weight-medium">{{ formatCurrency(debtEstimatedRp) }}</span>
+              </p>
+
+              <VRadioGroup v-model="selectedDebtMethod" class="mt-1 payment-method-group">
                 <VRadio
-                  v-for="m in coreApiEnabledMethods"
-                  :key="m"
-                  :value="m"
-                  :label="m === 'qris' ? 'QRIS' : m === 'gopay' ? 'GoPay' : m === 'shopeepay' ? 'ShopeePay' : 'Virtual Account'"
-                />
+                  v-for="item in availableDebtPaymentMethodItems"
+                  :key="item.value"
+                  :value="item.value"
+                  class="payment-method-radio"
+                >
+                  <template #label>
+                    <div class="d-flex align-center payment-method-label">
+                      <VIcon :icon="item.icon" color="primary" />
+                      <div class="payment-method-text">
+                        <div class="text-body-1 font-weight-medium">
+                          {{ item.title }}
+                        </div>
+                        <div class="text-caption text-medium-emphasis">
+                          {{ item.subtitle }}
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                </VRadio>
               </VRadioGroup>
 
               <VSelect
                 v-if="selectedDebtMethod === 'va'"
                 v-model="selectedDebtVaBank"
-                :items="coreApiEnabledVaBanks"
-                label="Bank VA"
-                density="compact"
-                hide-details
                 class="mt-2"
+                label="Pilih Bank VA"
+                persistent-placeholder
+                :items="availableDebtVaBankItems"
+                item-title="title"
+                item-value="value"
+                variant="outlined"
+                density="comfortable"
               />
             </VCardText>
-            <VCardActions>
+
+            <VDivider />
+            <VCardActions class="px-4 py-3 bg-grey-lighten-5">
               <VSpacer />
-              <VBtn variant="text" @click="showDebtPaymentDialog = false">Batal</VBtn>
+              <VBtn color="grey-darken-1" variant="text" @click="showDebtPaymentDialog = false">
+                Batal
+              </VBtn>
               <VBtn color="primary" variant="flat" :loading="debtPaying" :disabled="debtPaying" @click="confirmDebtPayment">
-                Lanjut
+                Lanjutkan Pembayaran
               </VBtn>
             </VCardActions>
           </VCard>
@@ -855,5 +947,19 @@ useHead({ title: 'Riwayat Transaksi' })
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.payment-method-label {
+  gap: 14px;
+  padding-block: 10px;
+}
+
+.payment-method-text {
+  display: flex;
+  flex-direction: column;
+}
+
+:deep(.payment-method-radio .v-selection-control) {
+  min-height: 56px;
 }
 </style>
