@@ -1429,25 +1429,45 @@ def export_transactions(current_admin: User):
             for r in debt_users
         ]
 
-        cheapest_pkg = None
+        ref_packages = []
         try:
-            cheapest_pkg = db.session.execute(
-                select(Package)
-                .where(Package.is_active.is_(True))
-                .where(Package.data_quota_gb > 0)
-                .order_by(Package.price.asc())
-                .limit(1)
-            ).scalar_one_or_none()
+            ref_packages = (
+                db.session.execute(
+                    select(Package)
+                    .where(Package.is_active.is_(True))
+                    .where(Package.data_quota_gb.is_not(None))
+                    .where(Package.data_quota_gb > 0)
+                    .where(Package.price.is_not(None))
+                    .where(Package.price > 0)
+                    .order_by(Package.data_quota_gb.asc(), Package.price.asc())
+                )
+                .scalars()
+                .all()
+            )
         except Exception:
-            cheapest_pkg = None
+            ref_packages = []
 
-        cheapest_pkg_price = int(cheapest_pkg.price) if cheapest_pkg and cheapest_pkg.price is not None else None
-        cheapest_pkg_quota_gb = (
-            float(cheapest_pkg.data_quota_gb) if cheapest_pkg and cheapest_pkg.data_quota_gb is not None else None
-        )
-        cheapest_pkg_name = str(cheapest_pkg.name) if cheapest_pkg and cheapest_pkg.name else None
+        def _pick_ref_pkg_for_mb(value_mb: float) -> Package | None:
+            try:
+                mb = float(value_mb or 0)
+            except Exception:
+                mb = 0.0
+            if mb <= 0 or not ref_packages:
+                return None
+            debt_gb = mb / 1024.0
+            for pkg in ref_packages:
+                try:
+                    if float(pkg.data_quota_gb or 0) >= debt_gb:
+                        return pkg
+                except Exception:
+                    continue
+            return ref_packages[-1] if ref_packages else None
 
         total_debt_mb_sum = float(sum(float(item.get("debt_total_mb") or 0) for item in debt_items))
+        total_ref_pkg = _pick_ref_pkg_for_mb(total_debt_mb_sum)
+        cheapest_pkg_price = int(getattr(total_ref_pkg, "price", 0) or 0) if total_ref_pkg else None
+        cheapest_pkg_quota_gb = float(getattr(total_ref_pkg, "data_quota_gb", 0) or 0) if total_ref_pkg else None
+        cheapest_pkg_name = str(getattr(total_ref_pkg, "name", "") or "") or None if total_ref_pkg else None
         est_total = estimate_debt_rp_from_cheapest_package(
             debt_mb=total_debt_mb_sum,
             cheapest_package_price_rp=cheapest_pkg_price,
@@ -1456,11 +1476,12 @@ def export_transactions(current_admin: User):
         )
         estimated_debt_total_rp = int(est_total.estimated_rp_rounded or 0)
         for item in debt_items:
+            item_ref = _pick_ref_pkg_for_mb(float(item.get("debt_total_mb") or 0))
             est = estimate_debt_rp_from_cheapest_package(
                 debt_mb=float(item.get("debt_total_mb") or 0),
-                cheapest_package_price_rp=cheapest_pkg_price,
-                cheapest_package_quota_gb=cheapest_pkg_quota_gb,
-                cheapest_package_name=cheapest_pkg_name,
+                cheapest_package_price_rp=int(getattr(item_ref, "price", 0) or 0) if item_ref else None,
+                cheapest_package_quota_gb=float(getattr(item_ref, "data_quota_gb", 0) or 0) if item_ref else None,
+                cheapest_package_name=str(getattr(item_ref, "name", "") or "") or None if item_ref else None,
             )
             item["debt_estimated_rp"] = int(est.estimated_rp_rounded or 0)
 

@@ -16,12 +16,35 @@ class DebtEstimate:
 
 
 def compute_debt_mb(purchased_mb: float, used_mb: float) -> float:
-    try:
-        purchased = float(purchased_mb or 0.0)
-        used = float(used_mb or 0.0)
-    except (TypeError, ValueError):
+    """Return debt in MB with better numeric stability.
+
+    Inputs may come from floats (e.g., converted from bytes) and can carry
+    floating precision artifacts. Use Decimal(str(...)) to avoid negative/near-zero
+    drift (e.g., -1e-12).
+    """
+
+    def _to_decimal(value: object) -> Decimal:
+        if value in (None, ""):
+            return Decimal("0")
+        try:
+            return Decimal(str(value))
+        except Exception:
+            return Decimal("0")
+
+    purchased = _to_decimal(purchased_mb)
+    used = _to_decimal(used_mb)
+    debt = used - purchased
+
+    if debt <= 0:
         return 0.0
-    return max(0.0, used - purchased)
+
+    # Quantize to 2 decimals MB to keep output stable for UI/logs.
+    try:
+        debt = debt.quantize(Decimal("0.01"), rounding="ROUND_HALF_UP")
+    except Exception:
+        pass
+
+    return float(debt)
 
 
 def round_up_rp_to_10k(value_rp: int) -> int:

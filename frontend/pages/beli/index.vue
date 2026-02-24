@@ -415,6 +415,12 @@ async function initiatePayment(packageId: string) {
     })
     const initiatedOrderId = responseData?.order_id
 
+    const provider = (responseData?.provider_mode ?? providerMode.value) === 'core_api' ? 'core_api' : 'snap'
+
+    const redirectUrl = (typeof responseData?.redirect_url === 'string' && responseData.redirect_url.trim() !== '')
+      ? responseData.redirect_url.trim()
+      : null
+
     const snapToken = (typeof responseData?.snap_token === 'string' && responseData.snap_token.trim() !== '')
       ? responseData.snap_token
       : null
@@ -438,6 +444,11 @@ async function initiatePayment(packageId: string) {
           isInitiatingPayment.value = null
         },
       })
+    }
+    else if (provider === 'core_api' && (selectedPaymentMethod.value === 'gopay' || selectedPaymentMethod.value === 'shopeepay') && redirectUrl) {
+      // Core API app deeplink: redirect langsung (user gesture) untuk memaksimalkan sukses di mobile.
+      isInitiatingPayment.value = null
+      window.location.href = redirectUrl
     }
     else if (typeof initiatedOrderId === 'string' && initiatedOrderId.trim() !== '') {
       // Core API mode: proceed to status/instructions page.
@@ -475,6 +486,12 @@ async function initiateDebtSettlementPayment() {
     })
     const initiatedOrderId = responseData?.order_id
 
+    const provider = (responseData?.provider_mode ?? providerMode.value) === 'core_api' ? 'core_api' : 'snap'
+
+    const redirectUrl = (typeof responseData?.redirect_url === 'string' && responseData.redirect_url.trim() !== '')
+      ? responseData.redirect_url.trim()
+      : null
+
     const snapToken = (typeof responseData?.snap_token === 'string' && responseData.snap_token.trim() !== '')
       ? responseData.snap_token
       : null
@@ -497,6 +514,10 @@ async function initiateDebtSettlementPayment() {
           isInitiatingPayment.value = null
         },
       })
+    }
+    else if (provider === 'core_api' && (selectedPaymentMethod.value === 'gopay' || selectedPaymentMethod.value === 'shopeepay') && redirectUrl) {
+      isInitiatingPayment.value = null
+      window.location.href = redirectUrl
     }
     else {
       if (typeof initiatedOrderId === 'string' && initiatedOrderId.trim() !== '') {

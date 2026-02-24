@@ -807,42 +807,44 @@ def export_user_manual_debts_pdf(current_admin: User, user_id: uuid.UUID):
         debt_manual_mb = float(getattr(user, "quota_debt_manual_mb", 0) or 0)
         debt_total_mb = float(getattr(user, "quota_debt_total_mb", debt_auto_mb + debt_manual_mb) or 0)
 
-        cheapest_pkg = None
-        try:
-            cheapest_pkg = db.session.execute(
+        def _pick_ref_pkg_for_debt_mb(value_mb: float) -> Package | None:
+            try:
+                mb = float(value_mb or 0)
+            except Exception:
+                mb = 0.0
+            if mb <= 0:
+                return None
+            debt_gb = mb / 1024.0
+
+            base_q = (
                 select(Package)
                 .where(Package.is_active.is_(True))
+                .where(Package.data_quota_gb.is_not(None))
                 .where(Package.data_quota_gb > 0)
-                .order_by(Package.price.asc())
+                .where(Package.price.is_not(None))
+                .where(Package.price > 0)
+            )
+            ref = db.session.execute(
+                base_q.where(Package.data_quota_gb >= debt_gb)
+                .order_by(Package.data_quota_gb.asc(), Package.price.asc())
                 .limit(1)
             ).scalar_one_or_none()
-        except Exception:
-            cheapest_pkg = None
+            if ref is None:
+                ref = db.session.execute(base_q.order_by(Package.data_quota_gb.desc(), Package.price.asc()).limit(1)).scalar_one_or_none()
+            return ref
 
-        cheapest_pkg_price = int(cheapest_pkg.price) if cheapest_pkg and cheapest_pkg.price is not None else None
-        cheapest_pkg_quota_gb = (
-            float(cheapest_pkg.data_quota_gb) if cheapest_pkg and cheapest_pkg.data_quota_gb is not None else None
-        )
-        cheapest_pkg_name = str(cheapest_pkg.name) if cheapest_pkg and cheapest_pkg.name else None
+        def _estimate_for_mb(value_mb: float):
+            pkg = _pick_ref_pkg_for_debt_mb(value_mb)
+            return estimate_debt_rp_from_cheapest_package(
+                debt_mb=float(value_mb or 0),
+                cheapest_package_price_rp=int(pkg.price) if pkg and pkg.price is not None else None,
+                cheapest_package_quota_gb=float(pkg.data_quota_gb) if pkg and pkg.data_quota_gb is not None else None,
+                cheapest_package_name=str(pkg.name) if pkg and pkg.name else None,
+            )
 
-        est_auto = estimate_debt_rp_from_cheapest_package(
-            debt_mb=float(debt_auto_mb),
-            cheapest_package_price_rp=cheapest_pkg_price,
-            cheapest_package_quota_gb=cheapest_pkg_quota_gb,
-            cheapest_package_name=cheapest_pkg_name,
-        )
-        est_manual = estimate_debt_rp_from_cheapest_package(
-            debt_mb=float(debt_manual_mb),
-            cheapest_package_price_rp=cheapest_pkg_price,
-            cheapest_package_quota_gb=cheapest_pkg_quota_gb,
-            cheapest_package_name=cheapest_pkg_name,
-        )
-        est_total = estimate_debt_rp_from_cheapest_package(
-            debt_mb=float(debt_total_mb),
-            cheapest_package_price_rp=cheapest_pkg_price,
-            cheapest_package_quota_gb=cheapest_pkg_quota_gb,
-            cheapest_package_name=cheapest_pkg_name,
-        )
+        est_auto = _estimate_for_mb(debt_auto_mb)
+        est_manual = _estimate_for_mb(debt_manual_mb)
+        est_total = _estimate_for_mb(debt_total_mb)
 
         now_utc = datetime.now(dt_timezone.utc)
         generated_local = get_app_local_datetime(now_utc).strftime("%d-%m-%Y %H:%M")

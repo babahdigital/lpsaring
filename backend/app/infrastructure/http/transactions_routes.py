@@ -122,23 +122,35 @@ def _estimate_user_debt_rp(user: User) -> int:
         return 0
 
     try:
-        cheapest_pkg = (
+        debt_gb = float(debt_total_mb) / 1024.0
+
+        base_q = (
             db.session.query(Package)
             .filter(Package.is_active.is_(True))
+            .filter(Package.data_quota_gb.isnot(None))
             .filter(Package.data_quota_gb > 0)
-            .order_by(Package.price.asc())
+            .filter(Package.price.isnot(None))
+            .filter(Package.price > 0)
+        )
+
+        ref_pkg = (
+            base_q.filter(Package.data_quota_gb >= debt_gb)
+            .order_by(Package.data_quota_gb.asc(), Package.price.asc())
             .first()
         )
-        if not cheapest_pkg or cheapest_pkg.price is None or cheapest_pkg.data_quota_gb is None:
+        if ref_pkg is None:
+            ref_pkg = base_q.order_by(Package.data_quota_gb.desc(), Package.price.asc()).first()
+
+        if not ref_pkg or ref_pkg.price is None or ref_pkg.data_quota_gb is None:
             return 0
 
         from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package
 
         estimate = estimate_debt_rp_from_cheapest_package(
             debt_mb=float(debt_total_mb),
-            cheapest_package_price_rp=int(cheapest_pkg.price),
-            cheapest_package_quota_gb=float(cheapest_pkg.data_quota_gb),
-            cheapest_package_name=str(getattr(cheapest_pkg, "name", "") or "") or None,
+            cheapest_package_price_rp=int(ref_pkg.price),
+            cheapest_package_quota_gb=float(ref_pkg.data_quota_gb),
+            cheapest_package_name=str(getattr(ref_pkg, "name", "") or "") or None,
         )
         return int(estimate.estimated_rp_rounded or 0)
     except Exception:
@@ -155,23 +167,35 @@ def _estimate_debt_rp_for_mb(debt_mb: float) -> int:
         return 0
 
     try:
-        cheapest_pkg = (
+        debt_gb = float(mb) / 1024.0
+
+        base_q = (
             db.session.query(Package)
             .filter(Package.is_active.is_(True))
+            .filter(Package.data_quota_gb.isnot(None))
             .filter(Package.data_quota_gb > 0)
-            .order_by(Package.price.asc())
+            .filter(Package.price.isnot(None))
+            .filter(Package.price > 0)
+        )
+
+        ref_pkg = (
+            base_q.filter(Package.data_quota_gb >= debt_gb)
+            .order_by(Package.data_quota_gb.asc(), Package.price.asc())
             .first()
         )
-        if not cheapest_pkg or cheapest_pkg.price is None or cheapest_pkg.data_quota_gb is None:
+        if ref_pkg is None:
+            ref_pkg = base_q.order_by(Package.data_quota_gb.desc(), Package.price.asc()).first()
+
+        if not ref_pkg or ref_pkg.price is None or ref_pkg.data_quota_gb is None:
             return 0
 
         from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package
 
         estimate = estimate_debt_rp_from_cheapest_package(
             debt_mb=float(mb),
-            cheapest_package_price_rp=int(cheapest_pkg.price),
-            cheapest_package_quota_gb=float(cheapest_pkg.data_quota_gb),
-            cheapest_package_name=str(getattr(cheapest_pkg, "name", "") or "") or None,
+            cheapest_package_price_rp=int(ref_pkg.price),
+            cheapest_package_quota_gb=float(ref_pkg.data_quota_gb),
+            cheapest_package_name=str(getattr(ref_pkg, "name", "") or "") or None,
         )
         return int(estimate.estimated_rp_rounded or 0)
     except Exception:

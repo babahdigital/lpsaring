@@ -99,22 +99,41 @@ def get_my_quota_status(current_user_id):
 
         estimated_rp = 0
         try:
-            cheapest_pkg = db.session.scalar(
+            debt_gb = float(debt_total_mb) / 1024.0 if float(debt_total_mb) > 0 else 0.0
+
+            pkg_base_query = (
                 select(Package)
                 .where(Package.is_active.is_(True))
+                .where(Package.data_quota_gb.is_not(None))
                 .where(Package.data_quota_gb > 0)
-                .order_by(Package.price.asc())
-                .limit(1)
+                .where(Package.price.is_not(None))
+                .where(Package.price > 0)
             )
+
+            # Pick the smallest package that can cover the debt (closest >= debt_gb).
+            ref_pkg = None
+            if debt_gb > 0:
+                ref_pkg = db.session.scalar(
+                    pkg_base_query.where(Package.data_quota_gb >= debt_gb)
+                    .order_by(Package.data_quota_gb.asc(), Package.price.asc())
+                    .limit(1)
+                )
+
+            # Fallback: use the largest package (if debt exceeds max quota).
+            if ref_pkg is None:
+                ref_pkg = db.session.scalar(
+                    pkg_base_query.order_by(Package.data_quota_gb.desc(), Package.price.asc()).limit(1)
+                )
+
             est = estimate_debt_rp_from_cheapest_package(
                 debt_mb=float(debt_total_mb),
-                cheapest_package_price_rp=int(cheapest_pkg.price)
-                if cheapest_pkg and cheapest_pkg.price is not None
+                cheapest_package_price_rp=int(ref_pkg.price)
+                if ref_pkg and ref_pkg.price is not None
                 else None,
-                cheapest_package_quota_gb=float(cheapest_pkg.data_quota_gb)
-                if cheapest_pkg and cheapest_pkg.data_quota_gb is not None
+                cheapest_package_quota_gb=float(ref_pkg.data_quota_gb)
+                if ref_pkg and ref_pkg.data_quota_gb is not None
                 else None,
-                cheapest_package_name=str(cheapest_pkg.name) if cheapest_pkg and cheapest_pkg.name else None,
+                cheapest_package_name=str(ref_pkg.name) if ref_pkg and ref_pkg.name else None,
             )
             estimated_rp = int(est.estimated_rp_rounded or 0)
         except Exception:

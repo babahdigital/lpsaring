@@ -7,6 +7,7 @@ import { useApiFetch } from '~/composables/useApiFetch'
 import type { UserQuotaResponse } from '~/types/user'
 import { useDebtSettlementPayment } from '~/composables/useDebtSettlementPayment'
 import { useSnackbar } from '@/composables/useSnackbar'
+import { useSettingsStore } from '~/store/settings'
 
 // --- Tipe Data ---
 interface Transaction {
@@ -58,6 +59,7 @@ const totalItems = ref(0)
 const sortBy = ref<any[]>([])
 
 const { add: addSnackbar } = useSnackbar()
+const settingsStore = useSettingsStore()
 
 function toast(type: 'success' | 'error' | 'info' | 'warning', text: string, title?: string) {
   addSnackbar({
@@ -70,6 +72,67 @@ function toast(type: 'success' | 'error' | 'info' | 'warning', text: string, tit
 const downloadingInvoice = ref<string | null>(null)
 
 const { paying: debtPaying, pay: payDebt } = useDebtSettlementPayment()
+
+type PaymentMethod = 'qris' | 'gopay' | 'shopeepay' | 'va'
+type VaBank = 'bca' | 'bni' | 'bri' | 'mandiri' | 'permata' | 'cimb'
+
+function parseCsvList(value: string | null | undefined): string[] {
+  const raw = (value ?? '').toString().trim()
+  if (raw === '')
+    return []
+  return Array.from(new Set(raw.split(',').map(p => p.trim().toLowerCase()).filter(Boolean)))
+}
+
+const providerMode = computed<'snap' | 'core_api'>(() => {
+  const raw = (settingsStore.getSetting('PAYMENT_PROVIDER_MODE', 'snap') ?? 'snap').toString().trim().toLowerCase()
+  return raw === 'core_api' ? 'core_api' : 'snap'
+})
+
+const coreApiEnabledMethods = computed<PaymentMethod[]>(() => {
+  const parsed = parseCsvList(settingsStore.getSetting('CORE_API_ENABLED_PAYMENT_METHODS', 'qris,gopay,va'))
+  const allowed: PaymentMethod[] = ['qris', 'gopay', 'shopeepay', 'va']
+  const enabled = allowed.filter(m => parsed.includes(m))
+  return enabled.length > 0 ? enabled : ['qris', 'gopay', 'va']
+})
+
+const coreApiEnabledVaBanks = computed<VaBank[]>(() => {
+  const parsed = parseCsvList(settingsStore.getSetting('CORE_API_ENABLED_VA_BANKS', 'bca,bni,bri,mandiri,permata,cimb'))
+  const allowed: VaBank[] = ['bca', 'bni', 'bri', 'mandiri', 'permata', 'cimb']
+  const enabled = allowed.filter(b => parsed.includes(b))
+  return enabled.length > 0 ? enabled : ['bni', 'bca', 'mandiri', 'bri', 'permata', 'cimb']
+})
+
+const showDebtPaymentDialog = ref(false)
+const selectedDebtMethod = ref<PaymentMethod>('qris')
+const selectedDebtVaBank = ref<VaBank>('bni')
+
+function openDebtPaymentDialog() {
+  const methods = coreApiEnabledMethods.value
+  selectedDebtMethod.value = methods.includes(selectedDebtMethod.value) ? selectedDebtMethod.value : (methods[0] ?? 'qris')
+  const banks = coreApiEnabledVaBanks.value
+  selectedDebtVaBank.value = banks.includes(selectedDebtVaBank.value)
+    ? selectedDebtVaBank.value
+    : (banks.includes('bni') ? 'bni' : (banks[0] ?? 'bni'))
+  showDebtPaymentDialog.value = true
+}
+
+function handleDebtPayClick() {
+  if (providerMode.value === 'core_api') {
+    openDebtPaymentDialog()
+    return
+  }
+  void payDebt()
+}
+
+function confirmDebtPayment() {
+  const method = selectedDebtMethod.value
+  const body = {
+    payment_method: method,
+    va_bank: method === 'va' ? selectedDebtVaBank.value : undefined,
+  }
+  showDebtPaymentDialog.value = false
+  void payDebt(body as any)
+}
 
 function payManualDebtItem(debtId: string) {
   if (typeof debtId !== 'string' || debtId.trim() === '')
@@ -405,7 +468,7 @@ useHead({ title: 'Riwayat Transaksi' })
             prepend-icon="tabler-credit-card"
             :loading="debtPaying"
             :disabled="debtPaying"
-            @click="payDebt"
+            @click="handleDebtPayClick()"
           >
             Lunasi Semua
           </VBtn>
@@ -522,6 +585,43 @@ useHead({ title: 'Riwayat Transaksi' })
             </div>
           </VCardText>
         </VCard>
+
+        <VDialog v-model="showDebtPaymentDialog" max-width="420">
+          <VCard>
+            <VCardTitle class="text-h6">Pilih Metode Pembayaran</VCardTitle>
+            <VCardText>
+              <div class="text-body-2 text-medium-emphasis mb-3">
+                Pilih metode untuk pelunasan tunggakan.
+              </div>
+
+              <VRadioGroup v-model="selectedDebtMethod" density="compact">
+                <VRadio
+                  v-for="m in coreApiEnabledMethods"
+                  :key="m"
+                  :value="m"
+                  :label="m === 'qris' ? 'QRIS' : m === 'gopay' ? 'GoPay' : m === 'shopeepay' ? 'ShopeePay' : 'Virtual Account'"
+                />
+              </VRadioGroup>
+
+              <VSelect
+                v-if="selectedDebtMethod === 'va'"
+                v-model="selectedDebtVaBank"
+                :items="coreApiEnabledVaBanks"
+                label="Bank VA"
+                density="compact"
+                hide-details
+                class="mt-2"
+              />
+            </VCardText>
+            <VCardActions>
+              <VSpacer />
+              <VBtn variant="text" @click="showDebtPaymentDialog = false">Batal</VBtn>
+              <VBtn color="primary" variant="flat" :loading="debtPaying" :disabled="debtPaying" @click="confirmDebtPayment">
+                Lanjut
+              </VBtn>
+            </VCardActions>
+          </VCard>
+        </VDialog>
 
         <VCard>
           <VCardText>

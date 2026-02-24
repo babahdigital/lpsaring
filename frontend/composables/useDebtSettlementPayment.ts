@@ -9,7 +9,16 @@ type DebtInitiateResponse = {
   midtrans_order_id?: string | null
   snap_token?: string | null
   redirect_url?: string | null
+  payment_method?: string | null
   provider_mode?: 'snap' | 'core_api'
+}
+
+type PaymentMethod = 'qris' | 'gopay' | 'shopeepay' | 'va'
+
+type PayOptions = {
+  manualDebtId?: string
+  payment_method?: PaymentMethod
+  va_bank?: string
 }
 
 interface MidtransPayResult {
@@ -24,15 +33,29 @@ export function useDebtSettlementPayment() {
 
   const paying = ref(false)
 
-  async function pay(manualDebtId?: string) {
+  async function pay(arg?: string | PayOptions) {
     if (paying.value)
       return
 
     paying.value = true
     try {
+      const options: PayOptions = typeof arg === 'string'
+        ? { manualDebtId: arg }
+        : (arg ?? {})
+
+      const requestedMethod = options.payment_method
+
+      const body: Record<string, any> = {}
+      if (typeof options.manualDebtId === 'string' && options.manualDebtId.trim() !== '')
+        body.manual_debt_id = options.manualDebtId
+      if (typeof options.payment_method === 'string' && options.payment_method.trim() !== '')
+        body.payment_method = options.payment_method
+      if (options.payment_method === 'va' && typeof options.va_bank === 'string' && options.va_bank.trim() !== '')
+        body.va_bank = options.va_bank
+
       const response = await $api<DebtInitiateResponse>('/transactions/debt/initiate', {
         method: 'POST',
-        body: manualDebtId ? { manual_debt_id: manualDebtId } : undefined,
+        body: Object.keys(body).length > 0 ? body : undefined,
       })
 
       const orderId = typeof response?.order_id === 'string' && response.order_id.trim() !== ''
@@ -42,13 +65,31 @@ export function useDebtSettlementPayment() {
         ? response.snap_token
         : null
 
+      const provider = (response?.provider_mode ?? 'snap') === 'core_api' ? 'core_api' : 'snap'
+      const redirectUrl = typeof response?.redirect_url === 'string' && response.redirect_url.trim() !== ''
+        ? response.redirect_url.trim()
+        : null
+
+      const responsePm = typeof response?.payment_method === 'string' && response.payment_method.trim() !== ''
+        ? response.payment_method.trim().toLowerCase()
+        : null
+
       if (!orderId) {
         snackbar.add({ type: 'error', title: 'Gagal', text: 'Tidak bisa memulai pembayaran (Order ID tidak tersedia).' })
         return
       }
 
       if (!snapToken) {
-        // Core API mode: show instructions + polling in finish page.
+        const wantsDeeplink = requestedMethod === 'gopay' || requestedMethod === 'shopeepay'
+        const isDeeplinkPm = responsePm === 'gopay' || responsePm === 'shopeepay'
+
+        // Core API mode: untuk GoPay/ShopeePay redirect langsung jika ada deeplink.
+        if (provider === 'core_api' && redirectUrl && (wantsDeeplink || isDeeplinkPm)) {
+          window.location.href = redirectUrl
+          return
+        }
+
+        // Fallback: show instructions + polling.
         void router.push(`/payment/status?order_id=${encodeURIComponent(orderId)}&purpose=debt`)
         return
       }

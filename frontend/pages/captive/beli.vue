@@ -252,6 +252,12 @@ async function initiatePayment(packageId: string) {
 
     const initiatedOrderId = responseData?.order_id
 
+    const provider = (responseData?.provider_mode ?? providerMode.value) === 'core_api' ? 'core_api' : 'snap'
+
+    const redirectUrl = (typeof responseData?.redirect_url === 'string' && responseData.redirect_url.trim() !== '')
+      ? responseData.redirect_url.trim()
+      : null
+
     const snapToken = (typeof responseData?.snap_token === 'string' && responseData.snap_token.trim() !== '')
       ? responseData.snap_token
       : null
@@ -283,6 +289,10 @@ async function initiatePayment(packageId: string) {
           isInitiatingPayment.value = null
         },
       })
+    }
+    else if (provider === 'core_api' && (selectedPaymentMethod.value === 'gopay' || selectedPaymentMethod.value === 'shopeepay') && redirectUrl) {
+      isInitiatingPayment.value = null
+      window.location.href = redirectUrl
     }
     else if (typeof initiatedOrderId === 'string' && initiatedOrderId.trim() !== '') {
       await router.push(`/payment/status?order_id=${encodeURIComponent(initiatedOrderId)}`)

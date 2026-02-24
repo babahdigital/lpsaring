@@ -717,23 +717,39 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
 
     debt_limit_mb = settings_service.get_setting_as_int("QUOTA_DEBT_LIMIT_MB", 0)
 
-    cheapest_pkg = None
+    ref_packages = []
     try:
-        cheapest_pkg = db.session.execute(
-            select(Package)
-            .where(Package.is_active.is_(True))
-            .where(Package.data_quota_gb > 0)
-            .order_by(Package.price.asc())
-            .limit(1)
-        ).scalar_one_or_none()
+        ref_packages = (
+            db.session.execute(
+                select(Package)
+                .where(Package.is_active.is_(True))
+                .where(Package.data_quota_gb.is_not(None))
+                .where(Package.data_quota_gb > 0)
+                .where(Package.price.is_not(None))
+                .where(Package.price > 0)
+                .order_by(Package.data_quota_gb.asc(), Package.price.asc())
+            )
+            .scalars()
+            .all()
+        )
     except Exception:
-        cheapest_pkg = None
+        ref_packages = []
 
-    cheapest_pkg_price = int(cheapest_pkg.price) if cheapest_pkg and cheapest_pkg.price is not None else None
-    cheapest_pkg_quota_gb = (
-        float(cheapest_pkg.data_quota_gb) if cheapest_pkg and cheapest_pkg.data_quota_gb is not None else None
-    )
-    cheapest_pkg_name = str(cheapest_pkg.name) if cheapest_pkg and cheapest_pkg.name else None
+    def _pick_ref_pkg_for_debt_mb(value_mb: float) -> Package | None:
+        try:
+            mb = float(value_mb or 0)
+        except Exception:
+            mb = 0.0
+        if mb <= 0 or not ref_packages:
+            return None
+        debt_gb = mb / 1024.0
+        for pkg in ref_packages:
+            try:
+                if float(pkg.data_quota_gb or 0) >= debt_gb:
+                    return pkg
+            except Exception:
+                continue
+        return ref_packages[-1] if ref_packages else None
 
     try:
         with get_mikrotik_connection() as api:
@@ -873,11 +889,16 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                         # Only flip DB blocked flags + send notifications once.
                         if not bool(user.is_blocked):
                             user.is_blocked = True
+                            ref_pkg = _pick_ref_pkg_for_debt_mb(debt_mb)
+                            ref_pkg_price = int(getattr(ref_pkg, "price", 0) or 0) if ref_pkg else 0
+                            ref_pkg_quota_gb = float(getattr(ref_pkg, "data_quota_gb", 0) or 0) if ref_pkg else 0
+                            ref_pkg_name = str(getattr(ref_pkg, "name", "") or "") or None if ref_pkg else None
+
                             estimate = estimate_debt_rp_from_cheapest_package(
                                 debt_mb=debt_mb,
-                                cheapest_package_price_rp=cheapest_pkg_price,
-                                cheapest_package_quota_gb=cheapest_pkg_quota_gb,
-                                cheapest_package_name=cheapest_pkg_name,
+                                cheapest_package_price_rp=ref_pkg_price,
+                                cheapest_package_quota_gb=ref_pkg_quota_gb,
+                                cheapest_package_name=ref_pkg_name,
                             )
                             estimate_rp = estimate.estimated_rp_rounded
                             estimate_rp_text = format_rupiah(estimate_rp) if isinstance(estimate_rp, int) else "-"
@@ -885,7 +906,7 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                             user.blocked_reason = (
                                 f"quota_debt_limit|debt_mb={debt_mb_text}"
                                 + (f"|estimated_rp={estimate_rp}" if isinstance(estimate_rp, int) else "")
-                                + (f"|base_pkg={cheapest_pkg_name}" if cheapest_pkg_name else "")
+                                + (f"|base_pkg={ref_pkg_name}" if ref_pkg_name else "")
                             )
                             user.blocked_at = now_utc
 
@@ -898,7 +919,7 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                                             "phone_number": user.phone_number,
                                             "debt_mb": debt_mb_text,
                                             "estimated_rp": estimate_rp_text,
-                                            "base_package_name": cheapest_pkg_name or "-",
+                                            "base_package_name": ref_pkg_name or "-",
                                         },
                                     )
                                     send_whatsapp_message(user.phone_number, user_msg)
@@ -921,7 +942,7 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                                                 "phone_number": user.phone_number,
                                                 "debt_mb": debt_mb_text,
                                                 "estimated_rp": estimate_rp_text,
-                                                "base_package_name": cheapest_pkg_name or "-",
+                                                "base_package_name": ref_pkg_name or "-",
                                             },
                                         )
                                         for admin in admins:

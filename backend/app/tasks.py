@@ -68,17 +68,32 @@ def enforce_end_of_month_debt_block_task(self):
         if settings_service.get_setting("ENABLE_MIKROTIK_OPERATIONS", "True") != "True":
             logger.info("EOM debt block: Mikrotik ops disabled; will still update DB + WhatsApp.")
 
-        cheapest_pkg = (
+        ref_packages = (
             db.session.query(Package)
             .filter(Package.is_active.is_(True))
+            .filter(Package.data_quota_gb.isnot(None))
             .filter(Package.data_quota_gb > 0)
-            .order_by(Package.price.asc())
-            .first()
+            .filter(Package.price.isnot(None))
+            .filter(Package.price > 0)
+            .order_by(Package.data_quota_gb.asc(), Package.price.asc())
+            .all()
         )
 
-        cheapest_pkg_price = int(getattr(cheapest_pkg, "price", 0) or 0)
-        cheapest_pkg_quota_gb = float(getattr(cheapest_pkg, "data_quota_gb", 0) or 0)
-        cheapest_pkg_name = str(getattr(cheapest_pkg, "name", "") or "") or "-"
+        def _pick_ref_pkg_for_debt_mb(value_mb: float) -> Package | None:
+            try:
+                mb = float(value_mb or 0)
+            except Exception:
+                mb = 0.0
+            if mb <= 0 or not ref_packages:
+                return None
+            debt_gb = mb / 1024.0
+            for pkg in ref_packages:
+                try:
+                    if float(pkg.data_quota_gb or 0) >= debt_gb:
+                        return pkg
+                except Exception:
+                    continue
+            return ref_packages[-1]
 
         users = (
             db.session.query(User)
@@ -114,11 +129,12 @@ def enforce_end_of_month_debt_block_task(self):
             if bool(getattr(user, "is_blocked", False)):
                 continue
 
+            ref_pkg = _pick_ref_pkg_for_debt_mb(debt_mb)
             estimate = estimate_debt_rp_from_cheapest_package(
                 debt_mb=debt_mb,
-                cheapest_package_price_rp=cheapest_pkg_price,
-                cheapest_package_quota_gb=cheapest_pkg_quota_gb,
-                cheapest_package_name=cheapest_pkg_name,
+                cheapest_package_price_rp=int(getattr(ref_pkg, "price", 0) or 0) if ref_pkg else 0,
+                cheapest_package_quota_gb=float(getattr(ref_pkg, "data_quota_gb", 0) or 0) if ref_pkg else 0,
+                cheapest_package_name=str(getattr(ref_pkg, "name", "") or "") or "-" if ref_pkg else "-",
             )
             estimate_rp = estimate.estimated_rp_rounded
             estimate_rp_text = format_rupiah(int(estimate_rp)) if isinstance(estimate_rp, int) else "-"
@@ -135,7 +151,7 @@ def enforce_end_of_month_debt_block_task(self):
                             "phone_number": user.phone_number,
                             "debt_mb": debt_mb_text,
                             "estimated_rp": estimate_rp_text,
-                            "base_package_name": cheapest_pkg_name,
+                            "base_package_name": str(getattr(ref_pkg, "name", "") or "") or "-",
                         },
                     )
                     warned_ok = bool(send_whatsapp_message(user.phone_number, user_msg))
