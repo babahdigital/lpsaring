@@ -157,6 +157,7 @@ class _FakeTransaction:
 
 def _make_app() -> Flask:
     app = Flask(__name__)
+    app.config["SECRET_KEY"] = "unit-test-secret"
     app.config["APP_PUBLIC_BASE_URL"] = "https://lpsaring.example"
     app.config["MIDTRANS_IS_PRODUCTION"] = False
     app.config["MIDTRANS_DEFAULT_EXPIRY_MINUTES"] = 15

@@ -1542,7 +1542,14 @@ def _normalize_admin_va_bank(value: str | None) -> str | None:
 def _build_public_status_url(order_id: str) -> str:
     base = current_app.config.get("APP_PUBLIC_BASE_URL") or request.url_root
     base = str(base or "").strip() or request.url_root
-    return f"{base.rstrip('/')}/payment/status?order_id={order_id}"
+    try:
+        from app.services.transaction_status_link_service import generate_transaction_status_token
+
+        token = generate_transaction_status_token(order_id)
+        return f"{base.rstrip('/')}/payment/status?order_id={order_id}&t={token}"
+    except Exception:
+        # Fallback to legacy URL (may require session/cookie).
+        return f"{base.rstrip('/')}/payment/status?order_id={order_id}"
 
 
 def _build_admin_bill_order_id() -> str:
@@ -1681,7 +1688,16 @@ def create_bill(current_admin: User):
         expiry_minutes = max(5, min(expiry_minutes, 24 * 60))
         expiry_time = now_utc + timedelta(minutes=expiry_minutes)
 
-        status_url = _build_public_status_url(order_id)
+        try:
+            from app.services.transaction_status_link_service import generate_transaction_status_token
+
+            status_token = generate_transaction_status_token(order_id)
+            base = current_app.config.get("APP_PUBLIC_BASE_URL") or request.url_root
+            base = str(base or "").strip() or request.url_root
+            status_url = f"{base.rstrip('/')}/payment/status?order_id={order_id}&t={status_token}"
+        except Exception:
+            status_token = None
+            status_url = _build_public_status_url(order_id)
 
         tx = Transaction()
         tx.id = uuid.uuid4()
@@ -1807,7 +1823,12 @@ def create_bill(current_admin: User):
                     "first_name": str(getattr(user, "full_name", None) or "Pengguna")[:50],
                     "phone": format_to_local_phone(getattr(user, "phone_number", "") or ""),
                 },
-                "callbacks": {"finish": f"{(current_app.config.get('APP_PUBLIC_BASE_URL') or request.url_root).rstrip('/')}/payment/status"},
+                "callbacks": {
+                    "finish": (
+                        f"{(current_app.config.get('APP_PUBLIC_BASE_URL') or request.url_root).rstrip('/')}/payment/status"
+                        + (f"?t={status_token}" if status_token else "")
+                    )
+                },
             }
 
             if payment_method == "qris":

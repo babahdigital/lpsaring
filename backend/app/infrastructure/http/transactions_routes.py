@@ -37,6 +37,10 @@ from app.services.notification_service import (
     get_notification_message,
     verify_temp_invoice_token,
 )
+from app.services.transaction_status_link_service import (
+    generate_transaction_status_token,
+    verify_transaction_status_token,
+)
 from app.services import settings_service
 from app.services.hotspot_sync_service import sync_address_list_for_single_user
 from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection
@@ -908,6 +912,20 @@ def initiate_transaction(current_user_id: uuid.UUID):
                 response_data = _InitiateTransactionResponseSchema.model_validate(existing_tx, from_attributes=True)
                 payload = response_data.model_dump(by_alias=False, exclude_none=True)
                 payload["provider_mode"] = provider_mode
+                try:
+                    base_callback_url = (
+                        current_app.config.get("APP_PUBLIC_BASE_URL")
+                        or current_app.config.get("FRONTEND_URL")
+                        or current_app.config.get("APP_LINK_USER")
+                    )
+                    if base_callback_url:
+                        status_token = generate_transaction_status_token(existing_tx.midtrans_order_id)
+                        payload["status_token"] = status_token
+                        payload["status_url"] = (
+                            f"{str(base_callback_url).rstrip('/')}/payment/status?order_id={existing_tx.midtrans_order_id}&t={status_token}"
+                        )
+                except Exception:
+                    pass
                 return jsonify(payload), HTTPStatus.OK
 
         order_prefix = str(current_app.config.get("MIDTRANS_ORDER_ID_PREFIX", "BD-LPSR")).strip()
@@ -915,6 +933,8 @@ def initiate_transaction(current_user_id: uuid.UUID):
         if not order_prefix:
             order_prefix = "BD-LPSR"
         order_id = f"{order_prefix}-{uuid.uuid4().hex[:12].upper()}"
+        # Signed token for public, read-only status page access (shareable / WhatsApp).
+        status_token = generate_transaction_status_token(order_id)
 
         try:
             expiry_minutes = int(current_app.config.get("MIDTRANS_DEFAULT_EXPIRY_MINUTES", 15))
@@ -945,8 +965,16 @@ def initiate_transaction(current_user_id: uuid.UUID):
             current_app.logger.error("APP_PUBLIC_BASE_URL/FRONTEND_URL/APP_LINK_USER belum dikonfigurasi.")
             abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="APP_PUBLIC_BASE_URL belum dikonfigurasi.")
         finish_url_base = f"{base_callback_url.rstrip('/')}/payment/finish"
-        # Core API callback_url: keep order_id in query because provider deeplink callbacks may not append params.
-        finish_url = f"{finish_url_base}?order_id={order_id}"
+
+        # Canonical, shareable status URL (public token attached).
+        status_url = f"{base_callback_url.rstrip('/')}/payment/status?order_id={order_id}&t={status_token}"
+
+        # Snap finish callbacks should not include order_id to avoid duplicate query params.
+        # Attach token so the finish page can load status without requiring login.
+        finish_url_base_with_token = f"{finish_url_base}?t={status_token}"
+
+        # Core API callback_url should include order_id (and token). Use canonical status page.
+        finish_url = status_url
 
         if not should_allow_call("midtrans"):
             abort(HTTPStatus.SERVICE_UNAVAILABLE, description="Midtrans sementara tidak tersedia.")
@@ -966,7 +994,7 @@ def initiate_transaction(current_user_id: uuid.UUID):
                 },
                 # Snap finish redirect biasanya sudah menambahkan order_id sendiri.
                 # Jika kita tambahkan order_id juga, bisa jadi query duplicate (?order_id=..&order_id=..).
-                "callbacks": {"finish": finish_url_base},
+                "callbacks": {"finish": finish_url_base_with_token},
             }
 
             snap = get_midtrans_snap_client()
@@ -1079,6 +1107,8 @@ def initiate_transaction(current_user_id: uuid.UUID):
         response_data = _InitiateTransactionResponseSchema.model_validate(new_transaction, from_attributes=True)
         payload = response_data.model_dump(by_alias=False, exclude_none=True)
         payload["provider_mode"] = provider_mode
+        payload["status_token"] = status_token
+        payload["status_url"] = status_url
         return jsonify(payload), HTTPStatus.OK
 
     except HTTPException:
@@ -1219,6 +1249,21 @@ def initiate_debt_settlement_transaction(current_user_id: uuid.UUID):
                 response_data = _InitiateDebtSettlementResponseSchema.model_validate(existing_tx, from_attributes=True)
                 payload = response_data.model_dump(by_alias=False, exclude_none=True)
                 payload["provider_mode"] = provider_mode
+                try:
+                    status_token = generate_transaction_status_token(existing_tx.midtrans_order_id)
+                    base_callback_url = (
+                        current_app.config.get("APP_PUBLIC_BASE_URL")
+                        or current_app.config.get("FRONTEND_URL")
+                        or current_app.config.get("APP_LINK_USER")
+                        or ""
+                    )
+                    if base_callback_url:
+                        payload["status_token"] = status_token
+                        payload["status_url"] = (
+                            f"{str(base_callback_url).rstrip('/')}/payment/status?order_id={existing_tx.midtrans_order_id}&t={status_token}"
+                        )
+                except Exception:
+                    pass
                 return jsonify(payload), HTTPStatus.OK
 
         debt_prefix = _get_primary_debt_order_prefix()
@@ -1227,6 +1272,8 @@ def initiate_debt_settlement_transaction(current_user_id: uuid.UUID):
             order_id = f"{debt_prefix}-{manual_core}~{uuid.uuid4().hex[:4].upper()}"
         else:
             order_id = f"{debt_prefix}-{uuid.uuid4().hex[:12].upper()}"
+
+        status_token = generate_transaction_status_token(order_id)
 
         new_transaction = Transaction()
         new_transaction.id = uuid.uuid4()
@@ -1245,7 +1292,9 @@ def initiate_debt_settlement_transaction(current_user_id: uuid.UUID):
         if not base_callback_url:
             abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="APP_PUBLIC_BASE_URL belum dikonfigurasi.")
         finish_url_base = f"{base_callback_url.rstrip('/')}/payment/finish"
-        finish_url = f"{finish_url_base}?order_id={order_id}&purpose=debt"
+        status_url = f"{base_callback_url.rstrip('/')}/payment/status?order_id={order_id}&purpose=debt&t={status_token}"
+        finish_url_base_with_token = f"{finish_url_base}?t={status_token}"
+        finish_url = status_url
 
         if not should_allow_call("midtrans"):
             abort(HTTPStatus.SERVICE_UNAVAILABLE, description="Midtrans sementara tidak tersedia.")
@@ -1270,7 +1319,7 @@ def initiate_debt_settlement_transaction(current_user_id: uuid.UUID):
                     "first_name": user.full_name or "Pengguna",
                     "phone": format_to_local_phone(user.phone_number),
                 },
-                "callbacks": {"finish": finish_url_base},
+                "callbacks": {"finish": finish_url_base_with_token},
             }
 
             snap = get_midtrans_snap_client()
@@ -1376,6 +1425,8 @@ def initiate_debt_settlement_transaction(current_user_id: uuid.UUID):
         response_data = _InitiateDebtSettlementResponseSchema.model_validate(new_transaction, from_attributes=True)
         payload = response_data.model_dump(by_alias=False, exclude_none=True)
         payload["provider_mode"] = provider_mode
+        payload["status_token"] = status_token
+        payload["status_url"] = status_url
         return jsonify(payload), HTTPStatus.OK
     except HTTPException:
         raise
@@ -1576,11 +1627,17 @@ def handle_notification():
                             temp_invoice_url = f"{base_url.rstrip('/')}/api/transactions/invoice/temp/{temp_token}.pdf"
                             # --- AKHIR PERUBAHAN ---
 
+                            status_token = generate_transaction_status_token(transaction.midtrans_order_id)
+                            status_url = (
+                                f"{base_url.rstrip('/')}/payment/status?order_id={transaction.midtrans_order_id}&t={status_token}"
+                            )
+
                             msg_context = {
                                 "full_name": user.full_name,
                                 "order_id": transaction.midtrans_order_id,
                                 "package_name": package.name,
                                 "package_price": format_currency(package.price),
+                                "status_url": status_url,
                             }
                             caption_message = get_notification_message("purchase_success_with_invoice", msg_context)
                             filename = f"invoice-{transaction.midtrans_order_id}.pdf"
@@ -1915,6 +1972,331 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
     finally:
         if session:
             session.remove()
+
+@transactions_bp.route("/public/by-order-id/<string:order_id>", methods=["GET"])
+def get_transaction_by_order_id_public(order_id: str):
+    """Public, read-only transaction status endpoint protected by a signed token.
+
+    Query params:
+    - t: signed token (itsdangerous) bound to order_id, time-limited.
+    """
+
+    token = str(request.args.get("t", "") or "").strip()
+    if not verify_transaction_status_token(token, expected_order_id=order_id):
+        abort(HTTPStatus.FORBIDDEN, description="Token status tidak valid atau kedaluwarsa.")
+
+    session = db.session
+    try:
+        transaction = (
+            session.query(Transaction)
+            .filter(Transaction.midtrans_order_id == order_id)
+            .options(
+                selectinload(Transaction.user),
+                selectinload(Transaction.package).selectinload(Package.profile),
+            )
+            .first()
+        )
+        if not transaction:
+            abort(HTTPStatus.NOT_FOUND, description=f"Transaksi dengan Order ID {order_id} tidak ditemukan.")
+
+        # Keep reconciliation behavior consistent with authenticated endpoint.
+        if transaction.status in (TransactionStatus.PENDING, TransactionStatus.UNKNOWN):
+            try:
+                prev_status = transaction.status
+
+                redis_client = getattr(current_app, "redis_client_otp", None)
+                if redis_client is not None:
+                    try:
+                        ttl_seconds = int(current_app.config.get("MIDTRANS_STATUS_CHECK_THROTTLE_SECONDS", 8))
+                    except Exception:
+                        ttl_seconds = 8
+                    ttl_seconds = max(3, min(ttl_seconds, 60))
+                    throttle_key = f"midtrans:statuscheck:{order_id}"
+                    try:
+                        inserted = redis_client.set(throttle_key, "1", ex=ttl_seconds, nx=True)
+                        if inserted is None:
+                            raise StopIteration
+                    except StopIteration:
+                        raise
+                    except Exception:
+                        pass
+
+                if not should_allow_call("midtrans"):
+                    abort(HTTPStatus.SERVICE_UNAVAILABLE, "Midtrans sementara tidak tersedia.")
+
+                core_api = get_midtrans_core_api_client()
+                midtrans_status_response = core_api.transactions.status(order_id)
+                record_success("midtrans")
+
+                _log_transaction_event(
+                    session=session,
+                    transaction=transaction,
+                    source=TransactionEventSource.MIDTRANS_STATUS,
+                    event_type="STATUS_CHECK",
+                    status=transaction.status,
+                    payload=midtrans_status_response,
+                )
+
+                midtrans_trx_status_raw = midtrans_status_response.get("transaction_status")
+                midtrans_trx_status = (
+                    str(midtrans_trx_status_raw).strip().lower() if isinstance(midtrans_trx_status_raw, str) else ""
+                )
+                fraud_status_raw = midtrans_status_response.get("fraud_status")
+                fraud_status = str(fraud_status_raw).strip().lower() if isinstance(fraud_status_raw, str) else None
+                payment_success = False
+                if midtrans_trx_status == "settlement":
+                    payment_success = True
+                elif midtrans_trx_status == "capture":
+                    payment_success = fraud_status in (None, "accept")
+
+                try:
+                    transaction.midtrans_notification_payload = json.dumps(midtrans_status_response, ensure_ascii=False)
+                except Exception:
+                    pass
+
+                if midtrans_status_response.get("payment_type") and not transaction.payment_method:
+                    transaction.payment_method = midtrans_status_response.get("payment_type")
+                if parsed_expiry := safe_parse_midtrans_datetime(midtrans_status_response.get("expiry_time")):
+                    transaction.expiry_time = parsed_expiry
+                transaction.va_number = extract_va_number(midtrans_status_response) or transaction.va_number
+                if _is_qr_payment_type(midtrans_status_response.get("payment_type")):
+                    transaction.qr_code_url = extract_qr_code_url(midtrans_status_response) or transaction.qr_code_url
+
+                bill_key = midtrans_status_response.get("bill_key") or midtrans_status_response.get("mandiri_bill_key")
+                biller_code = midtrans_status_response.get("biller_code")
+                payment_code = midtrans_status_response.get("payment_code")
+
+                if bill_key and not transaction.payment_code:
+                    transaction.payment_code = bill_key
+                if payment_code and not transaction.payment_code:
+                    transaction.payment_code = payment_code
+                if biller_code and not transaction.biller_code:
+                    transaction.biller_code = biller_code
+
+                if payment_success:
+                    transaction.status = TransactionStatus.SUCCESS
+                    transaction.midtrans_transaction_id = midtrans_status_response.get("transaction_id")
+                    transaction.payment_time = safe_parse_midtrans_datetime(
+                        midtrans_status_response.get("settlement_time")
+                    ) or datetime.now(dt_timezone.utc)
+
+                    with get_mikrotik_connection() as mikrotik_api:
+                        if not mikrotik_api:
+                            abort(HTTPStatus.SERVICE_UNAVAILABLE, "Gagal koneksi ke sistem hotspot untuk sinkronisasi.")
+                        is_success, message = apply_package_and_sync_to_mikrotik(transaction, mikrotik_api)
+                        if is_success:
+                            _log_transaction_event(
+                                session=session,
+                                transaction=transaction,
+                                source=TransactionEventSource.APP,
+                                event_type="MIKROTIK_APPLY_SUCCESS",
+                                status=transaction.status,
+                                payload={"message": message},
+                            )
+                            session.commit()
+                        else:
+                            session.rollback()
+                            abort(HTTPStatus.INTERNAL_SERVER_ERROR, f"Gagal menerapkan paket: {message}")
+                else:
+                    status_map: dict[str, TransactionStatus] = {
+                        "deny": TransactionStatus.FAILED,
+                        "expire": TransactionStatus.EXPIRED,
+                        "cancel": TransactionStatus.CANCELLED,
+                    }
+                    if new_status := status_map.get(midtrans_trx_status):
+                        if transaction.status != new_status:
+                            transaction.status = new_status
+                            session.commit()
+
+                if prev_status != transaction.status:
+                    _log_transaction_event(
+                        session=session,
+                        transaction=transaction,
+                        source=TransactionEventSource.APP,
+                        event_type="STATUS_CHANGED",
+                        status=transaction.status,
+                        payload={"from": prev_status.value, "to": transaction.status.value},
+                    )
+                    session.commit()
+            except midtransclient.error_midtrans.MidtransAPIError as midtrans_err:
+                record_failure("midtrans")
+                current_app.logger.warning(
+                    f"GET Public Detail: Gagal cek status Midtrans untuk PENDING {order_id}: {midtrans_err.message}"
+                )
+            except StopIteration:
+                pass
+            except Exception as e_check_status:
+                record_failure("midtrans")
+                current_app.logger.error(
+                    f"GET Public Detail: Error tak terduga saat cek status Midtrans untuk PENDING {order_id}: {e_check_status}"
+                )
+
+        try:
+            session.refresh(transaction)
+        except Exception:
+            pass
+
+        # Reuse response structure, but never expose hotspot_password in public mode.
+        p = transaction.package
+        u = transaction.user
+
+        is_debt_settlement = _is_debt_settlement_order_id(transaction.midtrans_order_id)
+        manual_debt_id = (
+            _extract_manual_debt_id_from_order_id(transaction.midtrans_order_id) if is_debt_settlement else None
+        )
+
+        debt_type: str | None = None
+        debt_mb: int | None = None
+        debt_note: str | None = None
+        if is_debt_settlement:
+            if manual_debt_id is not None:
+                debt_type = "manual"
+                try:
+                    debt_row = session.get(UserQuotaDebt, manual_debt_id)
+                except Exception:
+                    debt_row = None
+                if debt_row is not None:
+                    try:
+                        debt_mb = int(max(0, int(debt_row.amount_mb or 0) - int(debt_row.paid_mb or 0)))
+                    except Exception:
+                        debt_mb = None
+                    try:
+                        debt_note = str(debt_row.note or "").strip() or None
+                    except Exception:
+                        debt_note = None
+            else:
+                debt_type = "auto"
+                try:
+                    debt_mb_float = float(getattr(u, "quota_debt_auto_mb", 0.0) or 0.0) if u is not None else 0.0
+                    debt_mb = int(round(max(0.0, debt_mb_float)))
+                except Exception:
+                    debt_mb = None
+
+        response_data = {
+            "id": str(transaction.id),
+            "midtrans_order_id": transaction.midtrans_order_id,
+            "midtrans_transaction_id": transaction.midtrans_transaction_id,
+            "status": transaction.status.value,
+            "purpose": "debt" if is_debt_settlement else "purchase",
+            "debt_type": debt_type,
+            "debt_mb": debt_mb,
+            "debt_note": debt_note,
+            "amount": float(transaction.amount or 0.0),
+            "payment_method": transaction.payment_method,
+            "snap_token": transaction.snap_token if getattr(transaction, "snap_token", None) else None,
+            "snap_redirect_url": (
+                transaction.snap_redirect_url if getattr(transaction, "snap_token", None) else None
+            ),
+            "deeplink_redirect_url": (
+                transaction.snap_redirect_url
+                if (transaction.snap_token is None and transaction.snap_redirect_url)
+                else None
+            ),
+            "payment_time": transaction.payment_time.isoformat() if transaction.payment_time else None,
+            "expiry_time": transaction.expiry_time.isoformat() if transaction.expiry_time else None,
+            "va_number": transaction.va_number,
+            "payment_code": transaction.payment_code,
+            "biller_code": getattr(transaction, "biller_code", None),
+            "qr_code_url": transaction.qr_code_url,
+            "hotspot_password": None,
+            "package": {
+                "id": str(p.id),
+                "name": p.name,
+                "description": p.description,
+                "price": float(p.price or 0.0),
+                "data_quota_gb": float(p.data_quota_gb or 0.0),
+            }
+            if p
+            else None,
+            "user": {
+                # Public endpoint: do not leak PII (phone number / internal IDs).
+                "id": "",
+                "phone_number": "-",
+                "full_name": u.full_name,
+                "quota_expiry_date": u.quota_expiry_date.isoformat() if u.quota_expiry_date else None,
+            }
+            if u
+            else None,
+        }
+
+        response = jsonify(response_data)
+        response.headers["Cache-Control"] = "no-store"
+        return response, HTTPStatus.OK
+    finally:
+        session.remove()
+
+
+@transactions_bp.route("/public/<string:order_id>/cancel", methods=["POST"])
+def cancel_transaction_public(order_id: str):
+    token = str(request.args.get("t", "") or "").strip()
+    if not verify_transaction_status_token(token, expected_order_id=order_id):
+        abort(HTTPStatus.FORBIDDEN, description="Token status tidak valid atau kedaluwarsa.")
+
+    session = db.session
+    try:
+        transaction = session.query(Transaction).filter(Transaction.midtrans_order_id == order_id).with_for_update().first()
+        if not transaction:
+            abort(HTTPStatus.NOT_FOUND, description=f"Transaksi dengan Order ID {order_id} tidak ditemukan.")
+
+        if transaction.status == TransactionStatus.SUCCESS:
+            return jsonify({"success": False, "message": "Transaksi sudah sukses dan tidak bisa dibatalkan."}), HTTPStatus.BAD_REQUEST
+
+        if transaction.status in (TransactionStatus.UNKNOWN, TransactionStatus.PENDING):
+            transaction.status = TransactionStatus.CANCELLED
+            _log_transaction_event(
+                session=session,
+                transaction=transaction,
+                source=TransactionEventSource.APP,
+                event_type="CANCELLED_BY_USER_PUBLIC",
+                status=transaction.status,
+                payload={"order_id": order_id},
+            )
+            session.commit()
+
+        return jsonify({"success": True, "status": transaction.status.value}), HTTPStatus.OK
+    finally:
+        session.remove()
+
+
+@transactions_bp.route("/public/<string:midtrans_order_id>/qr", methods=["GET"])
+def get_transaction_qr_public(midtrans_order_id: str):
+    token = str(request.args.get("t", "") or "").strip()
+    if not verify_transaction_status_token(token, expected_order_id=midtrans_order_id):
+        abort(HTTPStatus.FORBIDDEN, description="Token status tidak valid atau kedaluwarsa.")
+
+    session = db.session
+    try:
+        transaction = session.query(Transaction).filter(Transaction.midtrans_order_id == midtrans_order_id).first()
+        if not transaction:
+            abort(HTTPStatus.NOT_FOUND, "Transaksi tidak ditemukan.")
+
+        qr_url = str(getattr(transaction, "qr_code_url", "") or "").strip()
+        if not qr_url:
+            abort(HTTPStatus.NOT_FOUND, "QR Code tidak tersedia untuk transaksi ini.")
+
+        timeout_seconds = int(current_app.config.get("MIDTRANS_HTTP_TIMEOUT_SECONDS", 15))
+        upstream = requests.get(qr_url, timeout=timeout_seconds)
+        if upstream.status_code >= 400:
+            abort(HTTPStatus.BAD_GATEWAY, "Gagal mengambil QR Code dari provider pembayaran.")
+
+        content_type = upstream.headers.get("Content-Type") or "application/octet-stream"
+        ext = ""
+        if "png" in content_type:
+            ext = ".png"
+        elif "svg" in content_type:
+            ext = ".svg"
+        elif "jpeg" in content_type or "jpg" in content_type:
+            ext = ".jpg"
+
+        response = make_response(upstream.content)
+        response.headers["Content-Type"] = content_type
+        download = str(request.args.get("download", "")).strip().lower() in {"1", "true", "yes"}
+        disposition = "attachment" if download else "inline"
+        response.headers["Content-Disposition"] = f'{disposition}; filename="{midtrans_order_id}-qr{ext}"'
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    finally:
+        session.remove()
 
 
 @transactions_bp.route("/<string:order_id>/cancel", methods=["POST"])
