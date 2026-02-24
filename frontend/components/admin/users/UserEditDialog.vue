@@ -651,7 +651,7 @@ function openDebtPdf() {
                     />
                   </VCol>
 
-                  <VCol cols="12" md="6">
+                  <VCol v-if="formData.unlimited_time !== true" cols="12" md="6">
                     <AppTextField
                       v-model.number="formData.add_days"
                       label="Tambah Masa Aktif (Hari)"

@@ -258,11 +258,16 @@ def bind_current_device(current_user_id):
         client_mac,
         bypass_explicit_auth=True,
     )
+    best_effort_raw = request.args.get("best_effort") or request.args.get("best-effort")
+    best_effort = str(best_effort_raw).lower() in {"1", "true", "yes", "y", "on"}
+
     if not ok:
+        if best_effort:
+            return jsonify({"success": False, "bound": False, "message": msg}), HTTPStatus.OK
         return jsonify({"message": msg}), HTTPStatus.FORBIDDEN
 
     db.session.commit()
-    return jsonify({"message": "Perangkat berhasil diikat."}), HTTPStatus.OK
+    return jsonify({"success": True, "bound": True, "message": "Perangkat berhasil diikat."}), HTTPStatus.OK
 
 
 @profile_bp.route("/me/devices/<uuid:device_id>", methods=["DELETE"])

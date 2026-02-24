@@ -833,7 +833,9 @@ def export_user_manual_debts_pdf(current_admin: User, user_id: uuid.UUID):
                 .limit(1)
             ).scalar_one_or_none()
             if ref is None:
-                ref = db.session.execute(base_q.order_by(Package.data_quota_gb.desc(), Package.price.asc()).limit(1)).scalar_one_or_none()
+                ref = db.session.execute(
+                    base_q.order_by(Package.data_quota_gb.desc(), Package.price.asc()).limit(1)
+                ).scalar_one_or_none()
             return ref
 
         def _estimate_for_mb(value_mb: float):

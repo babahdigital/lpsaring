@@ -78,7 +78,9 @@ def change_user_role(
     if new_role in {UserRole.KOMANDAN, UserRole.ADMIN, UserRole.SUPER_ADMIN}:
         try:
             # Best-effort settle all debts to zero (auto + manual).
-            debt_service.clear_all_debts_to_zero(user=user, admin_actor=admin, source=f"role_change_to_{new_role.value}")
+            debt_service.clear_all_debts_to_zero(
+                user=user, admin_actor=admin, source=f"role_change_to_{new_role.value}"
+            )
         except Exception:
             # Jangan menghalangi perubahan role hanya karena debt cleanup gagal.
             pass
@@ -120,7 +122,9 @@ def change_user_role(
         except Exception:
             pass
         try:
-            debt_service.clear_all_debts_to_zero(user=user, admin_actor=admin, source=f"role_change_from_admin_to_{new_role.value}")
+            debt_service.clear_all_debts_to_zero(
+                user=user, admin_actor=admin, source=f"role_change_from_admin_to_{new_role.value}"
+            )
         except Exception:
             pass
 
@@ -215,7 +219,9 @@ def change_user_role(
             except Exception:
                 pass
             try:
-                debt_service.clear_all_debts_to_zero(user=user, admin_actor=admin, source="role_downgrade_from_komandan")
+                debt_service.clear_all_debts_to_zero(
+                    user=user, admin_actor=admin, source="role_downgrade_from_komandan"
+                )
             except Exception:
                 pass
 

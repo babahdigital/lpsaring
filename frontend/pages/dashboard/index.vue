@@ -225,7 +225,8 @@ const hasLoadedOnce = ref(false)
 const isRefreshingSilent = ref(false)
 
 const isFetching = computed(() => {
-  return quotaPending.value || weeklyUsagePending.value || monthlyChartPending.value || weeklySpendingPending.value
+  const weeklySpendingIsFetching = authStore.isKomandan ? false : weeklySpendingPending.value
+  return quotaPending.value || weeklyUsagePending.value || monthlyChartPending.value || weeklySpendingIsFetching
 })
 
 const shouldShowSkeleton = computed(() => {
@@ -233,7 +234,8 @@ const shouldShowSkeleton = computed(() => {
 })
 
 const hasError = computed(() => {
-  return !!quotaError.value || !!weeklyUsageError.value || !!monthlyChartError.value || !!weeklySpendingError.value
+  const weeklySpendingHasError = authStore.isKomandan ? false : !!weeklySpendingError.value
+  return !!quotaError.value || !!weeklyUsageError.value || !!monthlyChartError.value || weeklySpendingHasError
 })
 
 const showErrorAlert = ref(true)
@@ -306,7 +308,7 @@ async function tryBindCurrentDevice() {
   deviceBindAttempted.value = true
   try {
     const { $api } = useNuxtApp()
-    await $api('/users/me/devices/bind-current', { method: 'POST' })
+    await $api('/users/me/devices/bind-current?best_effort=1', { method: 'POST' })
   }
   catch {
     // Best-effort: bila gagal (mis. IP publik/proxy), jangan mengganggu UI.
@@ -837,7 +839,7 @@ useHead({ title: authStore.isKomandan ? 'Dashboard Komandan' : 'Dashboard User' 
                   <template v-if="quotaData?.is_unlimited_user">
                     <WeeklyUsageChartUnlimited
                       :weekly-usage-data="weeklyUsageData"
-                      :parent-loading="isFetching"
+                      :parent-loading="weeklyUsagePending"
                       :parent-error="weeklyUsageError"
                       :dashboard-render-key="dashboardRenderKey"
                       class="dashboard-chart-card"
@@ -848,7 +850,7 @@ useHead({ title: authStore.isKomandan ? 'Dashboard Komandan' : 'Dashboard User' 
                     <WeeklyUsageChart
                       :quota-data="quotaData"
                       :weekly-usage-data="weeklyUsageData"
-                      :parent-loading="isFetching"
+                      :parent-loading="quotaPending || weeklyUsagePending"
                       :parent-error="quotaError || weeklyUsageError"
                       :dashboard-render-key="dashboardRenderKey"
                       class="dashboard-chart-card"
@@ -865,7 +867,7 @@ useHead({ title: authStore.isKomandan ? 'Dashboard Komandan' : 'Dashboard User' 
                 <template v-if="chartReady">
                   <MonthlyUsageChart
                     :monthly-data="monthlyUsageData"
-                    :parent-loading="isFetching"
+                    :parent-loading="monthlyChartPending"
                     :parent-error="monthlyChartError"
                     :dashboard-render-key="dashboardRenderKey"
                     class="dashboard-chart-card"

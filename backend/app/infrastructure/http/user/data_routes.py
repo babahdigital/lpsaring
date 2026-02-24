@@ -127,9 +127,7 @@ def get_my_quota_status(current_user_id):
 
             est = estimate_debt_rp_from_cheapest_package(
                 debt_mb=float(debt_total_mb),
-                cheapest_package_price_rp=int(ref_pkg.price)
-                if ref_pkg and ref_pkg.price is not None
-                else None,
+                cheapest_package_price_rp=int(ref_pkg.price) if ref_pkg and ref_pkg.price is not None else None,
                 cheapest_package_quota_gb=float(ref_pkg.data_quota_gb)
                 if ref_pkg and ref_pkg.data_quota_gb is not None
                 else None,
@@ -290,7 +288,9 @@ def get_my_transactions(current_user_id):
         transactions_data = []
         for tx in pagination.items:
             order_id = str(tx.midtrans_order_id or "")
-            debt_prefix_raw = str(current_app.config.get("DEBT_ORDER_ID_PREFIX", "DEBT") or "DEBT").strip().upper() or "DEBT"
+            debt_prefix_raw = (
+                str(current_app.config.get("DEBT_ORDER_ID_PREFIX", "DEBT") or "DEBT").strip().upper() or "DEBT"
+            )
             debt_prefix_legacy = "".join(ch for ch in debt_prefix_raw if ch.isalnum()).strip() or debt_prefix_raw
             debt_prefixes = {debt_prefix_raw, debt_prefix_legacy, "DEBT"}
             is_debt_settlement = any(order_id.startswith(f"{p}-") for p in debt_prefixes)

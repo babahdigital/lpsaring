@@ -1661,9 +1661,7 @@ def handle_notification():
                             # --- AKHIR PERUBAHAN ---
 
                             status_token = generate_transaction_status_token(transaction.midtrans_order_id)
-                            status_url = (
-                                f"{base_url.rstrip('/')}/payment/status?order_id={transaction.midtrans_order_id}&t={status_token}"
-                            )
+                            status_url = f"{base_url.rstrip('/')}/payment/status?order_id={transaction.midtrans_order_id}&t={status_token}"
 
                             msg_context = {
                                 "full_name": user.full_name,
@@ -1957,9 +1955,7 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
             "amount": float(transaction.amount or 0.0),
             "payment_method": transaction.payment_method,
             "snap_token": transaction.snap_token if getattr(transaction, "snap_token", None) else None,
-            "snap_redirect_url": (
-                transaction.snap_redirect_url if getattr(transaction, "snap_token", None) else None
-            ),
+            "snap_redirect_url": (transaction.snap_redirect_url if getattr(transaction, "snap_token", None) else None),
             "deeplink_redirect_url": (
                 transaction.snap_redirect_url
                 if (transaction.snap_token is None and transaction.snap_redirect_url)
@@ -2005,6 +2001,7 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
     finally:
         if session:
             session.remove()
+
 
 @transactions_bp.route("/public/by-order-id/<string:order_id>", methods=["GET"])
 @limiter.limit(lambda: current_app.config.get("PUBLIC_TRANSACTION_STATUS_RATE_LIMIT", "60 per minute"))
@@ -2218,9 +2215,7 @@ def get_transaction_by_order_id_public(order_id: str):
             "amount": float(transaction.amount or 0.0),
             "payment_method": transaction.payment_method,
             "snap_token": transaction.snap_token if getattr(transaction, "snap_token", None) else None,
-            "snap_redirect_url": (
-                transaction.snap_redirect_url if getattr(transaction, "snap_token", None) else None
-            ),
+            "snap_redirect_url": (transaction.snap_redirect_url if getattr(transaction, "snap_token", None) else None),
             "deeplink_redirect_url": (
                 transaction.snap_redirect_url
                 if (transaction.snap_token is None and transaction.snap_redirect_url)
@@ -2269,12 +2264,16 @@ def cancel_transaction_public(order_id: str):
 
     session = db.session
     try:
-        transaction = session.query(Transaction).filter(Transaction.midtrans_order_id == order_id).with_for_update().first()
+        transaction = (
+            session.query(Transaction).filter(Transaction.midtrans_order_id == order_id).with_for_update().first()
+        )
         if not transaction:
             abort(HTTPStatus.NOT_FOUND, description=f"Transaksi dengan Order ID {order_id} tidak ditemukan.")
 
         if transaction.status == TransactionStatus.SUCCESS:
-            return jsonify({"success": False, "message": "Transaksi sudah sukses dan tidak bisa dibatalkan."}), HTTPStatus.BAD_REQUEST
+            return jsonify(
+                {"success": False, "message": "Transaksi sudah sukses dan tidak bisa dibatalkan."}
+            ), HTTPStatus.BAD_REQUEST
 
         if transaction.status in (TransactionStatus.UNKNOWN, TransactionStatus.PENDING):
             transaction.status = TransactionStatus.CANCELLED
