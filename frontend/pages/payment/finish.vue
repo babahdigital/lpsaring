@@ -797,8 +797,8 @@ useHead({
 </script>
 
 <template>
-  <v-container fluid class="fill-height bg-background pa-0 ma-0 finish-no-x">
-    <v-row justify="center" align="center" class="fill-height py-md-10 py-6 px-4">
+  <v-container fluid class="fill-height bg-background pa-0 ma-0 finish-no-x finish-shell">
+    <v-row justify="center" align="center" class="fill-height py-md-10 py-6 px-4 finish-shell-row">
       <v-col cols="12" class="mx-auto finish-max">
         <div v-if="isLoading && !transactionDetails" class="text-center pa-10">
           <v-progress-circular indeterminate color="primary" size="64" width="6" />
@@ -1301,6 +1301,15 @@ useHead({
 
 .finish-no-x {
   overflow-x: hidden;
+}
+
+.finish-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.finish-shell-row {
+  min-height: inherit;
 }
 
 .finish-kv {

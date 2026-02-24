@@ -1995,7 +1995,7 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
         if session.is_active:
             session.rollback()
         current_app.logger.error(f"Kesalahan tak terduga saat mengambil detail transaksi: {e}", exc_info=True)
-        if isinstance(e, (HTTPStatus, midtransclient.error_midtrans.MidtransAPIError)):
+        if isinstance(e, (HTTPException, midtransclient.error_midtrans.MidtransAPIError)):
             raise e
         abort(HTTPStatus.INTERNAL_SERVER_ERROR, description=f"Kesalahan tak terduga: {e}")
     finally:

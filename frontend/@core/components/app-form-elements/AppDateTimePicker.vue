@@ -121,6 +121,44 @@ onMounted(() => {
   updateThemeClassInCalendar()
 })
 
+function forceCalendarBelowInput() {
+  if (typeof window === 'undefined')
+    return
+
+  const fp = refFlatPicker.value?.fp
+  const calendar = fp?.calendarContainer as HTMLElement | undefined
+  const input = fp?._input as HTMLElement | undefined
+  if (!calendar || !input)
+    return
+
+  const inputRect = input.getBoundingClientRect()
+  const calendarWidth = calendar.offsetWidth || 300
+  const minLeft = window.scrollX + 8
+  const maxLeft = window.scrollX + window.innerWidth - calendarWidth - 8
+  const desiredLeft = inputRect.left + window.scrollX
+  const safeLeft = Math.max(minLeft, Math.min(desiredLeft, maxLeft))
+  const top = inputRect.bottom + window.scrollY + 8
+
+  calendar.style.top = `${top}px`
+  calendar.style.left = `${safeLeft}px`
+  calendar.style.right = 'auto'
+  calendar.classList.remove('arrowBottom')
+  calendar.classList.add('arrowTop')
+}
+
+function handleCalendarOpen() {
+  isCalendarOpen.value = true
+  nextTick(() => {
+    forceCalendarBelowInput()
+    window.requestAnimationFrame(() => forceCalendarBelowInput())
+  })
+}
+
+function handleCalendarClose(validate?: () => void) {
+  isCalendarOpen.value = false
+  validate?.()
+}
+
 function emitModelValue(val: unknown) {
   if (Array.isArray(val)) {
     emit('update:modelValue', val.length > 0 ? String(val[0]) : '')
@@ -205,8 +243,8 @@ const elementId = computed (() => {
                 :readonly="isReadonly.value"
                 class="flat-picker-custom-style h-100 w-100"
                 :disabled="isReadonly.value"
-                @on-open="isCalendarOpen = true"
-                @on-close="isCalendarOpen = false; validate()"
+                @on-open="handleCalendarOpen"
+                @on-close="handleCalendarClose(validate)"
                 @update:model-value="emitModelValue"
               />
 
@@ -233,8 +271,8 @@ const elementId = computed (() => {
       ref="refFlatPicker"
       :model-value="modelValueNormalized"
       @update:model-value="emitModelValue"
-      @on-open="isCalendarOpen = true"
-      @on-close="isCalendarOpen = false"
+      @on-open="handleCalendarOpen"
+      @on-close="handleCalendarClose()"
     />
   </div>
 </template>
@@ -572,8 +610,15 @@ input[altinputclass="inlinePicker"] {
 
 @media (max-width: 600px) {
   .flatpickr-calendar {
-    inline-size: min(17rem, calc(100vw - 1.5rem));
-    max-inline-size: calc(100vw - 1.5rem);
+    inline-size: min(15rem, calc(100vw - 2rem));
+    max-inline-size: calc(100vw - 2rem);
+    font-size: 0.875rem;
+  }
+
+  .flatpickr-calendar .flatpickr-day {
+    block-size: 2rem;
+    line-height: 2rem;
+    max-inline-size: 2rem;
   }
 
   .flatpickr-calendar .flatpickr-days,
