@@ -1974,6 +1974,7 @@ def get_transaction_by_order_id(current_user_id: uuid.UUID, order_id: str):
             session.remove()
 
 @transactions_bp.route("/public/by-order-id/<string:order_id>", methods=["GET"])
+@limiter.limit(lambda: current_app.config.get("PUBLIC_TRANSACTION_STATUS_RATE_LIMIT", "60 per minute"))
 def get_transaction_by_order_id_public(order_id: str):
     """Public, read-only transaction status endpoint protected by a signed token.
 
@@ -2227,6 +2228,7 @@ def get_transaction_by_order_id_public(order_id: str):
 
 
 @transactions_bp.route("/public/<string:order_id>/cancel", methods=["POST"])
+@limiter.limit(lambda: current_app.config.get("PUBLIC_TRANSACTION_CANCEL_RATE_LIMIT", "20 per minute"))
 def cancel_transaction_public(order_id: str):
     token = str(request.args.get("t", "") or "").strip()
     if not verify_transaction_status_token(token, expected_order_id=order_id):
@@ -2259,6 +2261,7 @@ def cancel_transaction_public(order_id: str):
 
 
 @transactions_bp.route("/public/<string:midtrans_order_id>/qr", methods=["GET"])
+@limiter.limit(lambda: current_app.config.get("PUBLIC_TRANSACTION_QR_RATE_LIMIT", "30 per minute"))
 def get_transaction_qr_public(midtrans_order_id: str):
     token = str(request.args.get("t", "") or "").strip()
     if not verify_transaction_status_token(token, expected_order_id=midtrans_order_id):

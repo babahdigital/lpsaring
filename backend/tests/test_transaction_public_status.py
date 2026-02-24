@@ -37,6 +37,7 @@ class _FakeQuery:
 class _FakeSession:
     def __init__(self, transaction=None):
         self._transaction = transaction
+        self.added = []
 
     def query(self, model):
         if model.__name__ == "Transaction":
@@ -48,6 +49,9 @@ class _FakeSession:
 
     def refresh(self, _obj):
         return None
+
+    def add(self, obj):
+        self.added.append(obj)
 
     def commit(self):
         return None
@@ -159,3 +163,99 @@ def test_public_status_endpoint_returns_data_with_valid_token(monkeypatch):
     assert payload.get("hotspot_password") is None
     assert payload.get("user", {}).get("phone_number") == "-"
     assert payload.get("user", {}).get("id") == ""
+
+
+def test_public_cancel_endpoint_sets_cancelled_for_unknown(monkeypatch):
+    order_id = "BD-LPSR-TESTORDER"
+
+    fake_tx = SimpleNamespace(
+        id=uuid.uuid4(),
+        midtrans_order_id=order_id,
+        status=TransactionStatus.UNKNOWN,
+    )
+
+    fake_session = _FakeSession(transaction=fake_tx)
+    monkeypatch.setattr(transactions_routes, "db", _FakeDB(fake_session))
+
+    app = _make_app()
+    impl = _unwrap_decorators(transactions_routes.cancel_transaction_public)
+
+    with app.app_context():
+        token = generate_transaction_status_token(order_id)
+
+    with app.test_request_context(
+        f"/api/transactions/public/{order_id}/cancel?t={token}",
+        method="POST",
+    ):
+        resp, status = impl(order_id=order_id)
+
+    assert status == 200
+    payload = resp.get_json()
+    assert payload.get("success") is True
+    assert payload.get("status") == TransactionStatus.CANCELLED.value
+    assert fake_tx.status == TransactionStatus.CANCELLED
+    assert len(fake_session.added) >= 1
+
+
+def test_public_cancel_endpoint_rejects_success_transaction(monkeypatch):
+    order_id = "BD-LPSR-TESTORDER"
+
+    fake_tx = SimpleNamespace(
+        id=uuid.uuid4(),
+        midtrans_order_id=order_id,
+        status=TransactionStatus.SUCCESS,
+    )
+
+    monkeypatch.setattr(transactions_routes, "db", _FakeDB(_FakeSession(transaction=fake_tx)))
+
+    app = _make_app()
+    impl = _unwrap_decorators(transactions_routes.cancel_transaction_public)
+
+    with app.app_context():
+        token = generate_transaction_status_token(order_id)
+
+    with app.test_request_context(
+        f"/api/transactions/public/{order_id}/cancel?t={token}",
+        method="POST",
+    ):
+        resp, status = impl(order_id=order_id)
+
+    assert status == 400
+    payload = resp.get_json()
+    assert payload.get("success") is False
+
+
+def test_public_qr_endpoint_proxies_image(monkeypatch):
+    order_id = "BD-LPSR-TESTORDER"
+
+    fake_tx = SimpleNamespace(
+        id=uuid.uuid4(),
+        midtrans_order_id=order_id,
+        status=TransactionStatus.PENDING,
+        qr_code_url="https://qris.example/qr",
+    )
+
+    monkeypatch.setattr(transactions_routes, "db", _FakeDB(_FakeSession(transaction=fake_tx)))
+
+    class _Resp:
+        status_code = 200
+        headers = {"Content-Type": "image/png"}
+        content = b"PNGDATA"
+
+    monkeypatch.setattr(transactions_routes.requests, "get", lambda *_a, **_kw: _Resp())
+
+    app = _make_app()
+    impl = _unwrap_decorators(transactions_routes.get_transaction_qr_public)
+
+    with app.app_context():
+        token = generate_transaction_status_token(order_id)
+
+    with app.test_request_context(
+        f"/api/transactions/public/{order_id}/qr?t={token}",
+        method="GET",
+    ):
+        resp = impl(midtrans_order_id=order_id)
+
+    assert resp.status_code == 200
+    assert resp.data == b"PNGDATA"
+    assert "image/png" in (resp.headers.get("Content-Type") or "")
