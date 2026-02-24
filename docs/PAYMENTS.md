@@ -35,6 +35,12 @@ Dokumen ini adalah indeks/pondasi untuk semua perubahan pembayaran.
   - `CORE_API_ENABLED_VA_BANKS`
 
 ## Env yang Relevan
+- TTL token link status shareable (public):
+  - `TRANSACTION_STATUS_TOKEN_MAX_AGE_SECONDS` (default 7 hari; clamp min 5 menit, max 30 hari)
+- Rate limit endpoint public (Flask-Limiter):
+  - `PUBLIC_TRANSACTION_STATUS_RATE_LIMIT` (default `60 per minute`)
+  - `PUBLIC_TRANSACTION_QR_RATE_LIMIT` (default `30 per minute`)
+  - `PUBLIC_TRANSACTION_CANCEL_RATE_LIMIT` (default `20 per minute`)
 - Prefix order_id transaksi user (beli paket):
   - `MIDTRANS_ORDER_ID_PREFIX=BD-LPSR`
 - Prefix order_id tagihan admin:

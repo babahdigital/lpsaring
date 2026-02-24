@@ -52,6 +52,13 @@ URL status pembayaran (yang dibagikan ke user) adalah:
 - `/payment/status?order_id=...`
   - Untuk link shareable lintas device (mis. via WhatsApp), server bisa menambahkan token bertanda tangan: `/payment/status?order_id=...&t=<SIGNED_TOKEN>`
 
+Env terkait link status shareable (public):
+- `TRANSACTION_STATUS_TOKEN_MAX_AGE_SECONDS` → TTL token `t` (default 7 hari; dibatasi min 5 menit, max 30 hari).
+- Rate limit endpoint public (Flask-Limiter):
+  - `PUBLIC_TRANSACTION_STATUS_RATE_LIMIT` (default `60 per minute`)
+  - `PUBLIC_TRANSACTION_QR_RATE_LIMIT` (default `30 per minute`)
+  - `PUBLIC_TRANSACTION_CANCEL_RATE_LIMIT` (default `20 per minute`)
+
 Env terkait prefix invoice:
 - `MIDTRANS_ORDER_ID_PREFIX` → prefix order_id untuk transaksi user (beli paket).
 - `ADMIN_BILL_ORDER_ID_PREFIX` → prefix order_id untuk tagihan yang dibuat admin.
