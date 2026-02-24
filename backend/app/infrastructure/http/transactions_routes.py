@@ -104,7 +104,17 @@ def _get_primary_debt_order_prefix() -> str:
         return "DEBT"
     raw = str(current_app.config.get("DEBT_ORDER_ID_PREFIX", "DEBT") or "DEBT").strip()
     raw = raw.upper()
-    return raw if raw else "DEBT"
+
+    # Midtrans limit: transaction_details.order_id <= 50 chars.
+    # Worst-case manual-debt format:
+    #   <prefix>-<manual_debt_id_hex>~<suffix>
+    # where manual_debt_id_hex is 32 chars and suffix is 6 chars.
+    # Total = len(prefix) + 1 + 32 + 1 + 6 = len(prefix) + 40
+    # Therefore keep prefix <= 10 to stay <= 50.
+    allowed = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    cleaned = "".join(ch for ch in raw if ch in allowed)
+    cleaned = cleaned[:10]
+    return cleaned if cleaned else "DEBT"
 
 
 def _get_debt_order_prefixes() -> list[str]:
@@ -1107,7 +1117,13 @@ def initiate_debt_settlement_transaction(current_user_id: uuid.UUID):
         )
 
         if manual_debt_id is not None:
-            manual_like_filters = [Transaction.midtrans_order_id.like(f"{p}-{manual_debt_id}%") for p in debt_prefixes]
+            manual_uuid = str(manual_debt_id)
+            manual_hex = str(getattr(manual_debt_id, "hex", "") or "").upper()
+            manual_like_filters: list[sa.ColumnElement[bool]] = []
+            for p in debt_prefixes:
+                manual_like_filters.append(Transaction.midtrans_order_id.like(f"{p}-{manual_uuid}%"))
+                if manual_hex:
+                    manual_like_filters.append(Transaction.midtrans_order_id.like(f"{p}-{manual_hex}%"))
             existing_tx_query = existing_tx_query.filter(sa.or_(*manual_like_filters))
 
         existing_tx = existing_tx_query.first()
@@ -1125,7 +1141,9 @@ def initiate_debt_settlement_transaction(current_user_id: uuid.UUID):
 
         debt_prefix = _get_primary_debt_order_prefix()
         if manual_debt_id is not None:
-            order_id = f"{debt_prefix}-{manual_debt_id}~{uuid.uuid4().hex[:6].upper()}"
+            manual_hex = str(getattr(manual_debt_id, "hex", "") or "").upper()
+            manual_core = manual_hex if manual_hex else str(manual_debt_id)
+            order_id = f"{debt_prefix}-{manual_core}~{uuid.uuid4().hex[:6].upper()}"
         else:
             order_id = f"{debt_prefix}-{uuid.uuid4().hex[:12].upper()}"
 
