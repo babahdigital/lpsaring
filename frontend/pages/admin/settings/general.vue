@@ -319,7 +319,7 @@ useHead({ title: 'Setting Aplikasi' })
                         Aktifkan untuk menampilkan halaman maintenance di seluruh aplikasi, kecuali halaman admin.
                       </VListItemSubtitle>
                     </VCol>
-                    <VCol cols="12" md="8" class="d-flex justify-end mt-2 mt-md-0">
+                    <VCol cols="12" md="8" class="d-flex justify-start justify-md-end mt-2 mt-md-0">
                       <VSwitch v-model="maintenanceModeActive" :label="maintenanceModeActive ? 'AKTIF' : 'TIDAK AKTIF'" color="error" inset />
                     </VCol>
                   </VRow>
@@ -377,9 +377,16 @@ useHead({ title: 'Setting Aplikasi' })
                 </VListItem>
               </div>
 
-              <VCardActions class="mt-6 px-0">
-                <VSpacer />
-                <VBtn color="primary" variant="elevated" :loading="isSaving" prepend-icon="mdi-content-save-outline" @click="handleSaveChanges">
+              <VCardActions class="mt-6 px-0 flex-column flex-sm-row">
+                <VSpacer class="d-none d-sm-flex" />
+                <VBtn
+                  class="w-100 w-sm-auto"
+                  color="primary"
+                  variant="elevated"
+                  :loading="isSaving"
+                  prepend-icon="mdi-content-save-outline"
+                  @click="handleSaveChanges"
+                >
                   Simpan Perubahan
                 </VBtn>
               </VCardActions>
@@ -446,9 +453,16 @@ useHead({ title: 'Setting Aplikasi' })
                   </VRow>
                 </VListItem>
               </div>
-              <VCardActions class="mt-6 px-0">
-                <VSpacer />
-                <VBtn color="primary" variant="elevated" :loading="isSaving" prepend-icon="mdi-content-save-outline" @click="handleSaveChanges">
+              <VCardActions class="mt-6 px-0 flex-column flex-sm-row">
+                <VSpacer class="d-none d-sm-flex" />
+                <VBtn
+                  class="w-100 w-sm-auto"
+                  color="primary"
+                  variant="elevated"
+                  :loading="isSaving"
+                  prepend-icon="mdi-content-save-outline"
+                  @click="handleSaveChanges"
+                >
                   Simpan Perubahan
                 </VBtn>
               </VCardActions>
@@ -470,7 +484,7 @@ useHead({ title: 'Setting Aplikasi' })
                         Saklar utama untuk semua fitur notifikasi via WhatsApp.
                       </VListItemSubtitle>
                     </VCol>
-                    <VCol cols="12" md="8" class="d-flex justify-end mt-2 mt-md-0">
+                    <VCol cols="12" md="8" class="d-flex justify-start justify-md-end mt-2 mt-md-0">
                       <VSwitch v-model="whatsappEnabled" :label="whatsappEnabled ? 'Aktif' : 'Tidak Aktif'" inset />
                     </VCol>
                   </VRow>
@@ -486,7 +500,7 @@ useHead({ title: 'Setting Aplikasi' })
                         Kirim notifikasi saat admin atau super admin login.
                       </VListItemSubtitle>
                     </VCol>
-                    <VCol cols="12" md="8" class="d-flex justify-end mt-2 mt-md-0">
+                    <VCol cols="12" md="8" class="d-flex justify-start justify-md-end mt-2 mt-md-0">
                       <VSwitch v-model="whatsappLoginNotificationEnabled" :label="whatsappLoginNotificationEnabled ? 'Aktif' : 'Tidak Aktif'" :disabled="!whatsappEnabled" inset />
                     </VCol>
                   </VRow>
@@ -520,7 +534,7 @@ useHead({ title: 'Setting Aplikasi' })
                         Saklar utama untuk pengiriman notifikasi via Telegram Bot.
                       </VListItemSubtitle>
                     </VCol>
-                    <VCol cols="12" md="8" class="d-flex justify-end mt-2 mt-md-0">
+                    <VCol cols="12" md="8" class="d-flex justify-start justify-md-end mt-2 mt-md-0">
                       <VSwitch v-model="telegramEnabled" :label="telegramEnabled ? 'Aktif' : 'Tidak Aktif'" inset />
                     </VCol>
                   </VRow>
@@ -627,8 +641,9 @@ useHead({ title: 'Setting Aplikasi' })
                           />
                         </VCol>
                       </VRow>
-                      <div class="d-flex justify-end mt-2">
+                      <div class="d-flex flex-column flex-sm-row justify-start justify-sm-end mt-2">
                         <VBtn
+                          class="w-100 w-sm-auto"
                           color="primary"
                           variant="elevated"
                           :loading="isTestingTelegram"
@@ -773,9 +788,16 @@ useHead({ title: 'Setting Aplikasi' })
                   </VRow>
                 </VListItem>
               </div>
-              <VCardActions class="mt-6 px-0">
-                <VSpacer />
-                <VBtn color="primary" variant="elevated" :loading="isSaving" prepend-icon="mdi-content-save-outline" @click="handleSaveChanges">
+              <VCardActions class="mt-6 px-0 flex-column flex-sm-row">
+                <VSpacer class="d-none d-sm-flex" />
+                <VBtn
+                  class="w-100 w-sm-auto"
+                  color="primary"
+                  variant="elevated"
+                  :loading="isSaving"
+                  prepend-icon="mdi-content-save-outline"
+                  @click="handleSaveChanges"
+                >
                   Simpan Perubahan
                 </VBtn>
               </VCardActions>
@@ -802,6 +824,31 @@ useHead({ title: 'Setting Aplikasi' })
 
 .settings-tabs :deep(.v-slide-group__content) {
   justify-content: center;
+}
+
+/* Prevent sideways scroll: allow tabs to wrap on small screens */
+.settings-tabs :deep(.v-slide-group__container) {
+  overflow: visible;
+}
+
+.settings-tabs :deep(.v-slide-group__content) {
+  flex-wrap: wrap;
+  row-gap: 0.25rem;
+}
+
+.settings-window {
+  overflow-x: hidden;
+}
+
+.settings-window :deep(.v-window__container) {
+  overflow-x: hidden;
+}
+
+/* Ensure all fields don't force horizontal overflow */
+.settings-window :deep(.v-field),
+.settings-window :deep(.v-input),
+.settings-window :deep(.v-selection-control) {
+  max-width: 100%;
 }
 
 .settings-tabs :deep(.v-tab) {
