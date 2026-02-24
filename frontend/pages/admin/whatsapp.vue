@@ -199,15 +199,25 @@ let searchTimeout: ReturnType<typeof setTimeout>
 watch(search, () => {
   clearTimeout(searchTimeout)
   searchTimeout = setTimeout(() => {
-    options.value.page = 1
+    if (options.value.page !== 1) {
+      options.value.page = 1
+      return
+    }
     fetchUsers()
   }, 400)
 })
 
-watch([options, roleFilter], () => {
-  options.value.page = 1
+watch(options, () => {
   fetchUsers()
 }, { deep: true })
+
+watch(roleFilter, () => {
+  if (options.value.page !== 1) {
+    options.value.page = 1
+    return
+  }
+  fetchUsers()
+})
 
 watch(loading, (val) => {
   if (val === false)

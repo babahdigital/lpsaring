@@ -379,18 +379,33 @@ onMounted(() => {
   fetchMikrotikOptions()
   fetchInactiveCleanupPreview()
 })
-watch([() => options.value, roleFilter, statusFilter, tampingFilter], () => {
-  if (options.value !== null && options.value !== undefined) // Perbaikan baris 91
+
+function resetToFirstPageAndFetchUsers() {
+  if (options.value == null) {
+    fetchUsers()
+    return
+  }
+
+  if (options.value.page !== 1) {
     options.value.page = 1
+    return
+  }
+
+  fetchUsers()
+}
+
+watch(options, () => {
   fetchUsers()
 }, { deep: true })
+
+watch([roleFilter, statusFilter, tampingFilter], () => {
+  resetToFirstPageAndFetchUsers()
+})
 let searchTimeout: ReturnType<typeof setTimeout>
 watch(search, () => {
   clearTimeout(searchTimeout)
   searchTimeout = setTimeout(() => {
-    if (options.value !== null && options.value !== undefined) // Perbaikan baris 99
-      options.value.page = 1
-    fetchUsers()
+    resetToFirstPageAndFetchUsers()
   }, 500)
 })
 
@@ -531,7 +546,6 @@ async function fetchUsers() {
 async function handleMobileUsersPageUpdate(page: number) {
   if (options.value != null)
     options.value.page = page
-  await fetchUsers()
 }
 async function fetchAlamatOptions() {
   if (availableBloks.value.length > 0)
