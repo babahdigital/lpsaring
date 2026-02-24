@@ -313,6 +313,17 @@ class Config:
     REFRESH_TOKEN_RATE_LIMIT = os.environ.get("REFRESH_TOKEN_RATE_LIMIT", "60 per minute")
     STATUS_PAGE_TOKEN_MAX_AGE_SECONDS = get_env_int("STATUS_PAGE_TOKEN_MAX_AGE_SECONDS", 300)
 
+    # Signed token for public transaction status links (shareable via WhatsApp).
+    TRANSACTION_STATUS_TOKEN_MAX_AGE_SECONDS = get_env_int(
+        "TRANSACTION_STATUS_TOKEN_MAX_AGE_SECONDS",
+        7 * 24 * 3600,
+    )
+
+    # Rate-limit public transaction endpoints protected by `t`.
+    PUBLIC_TRANSACTION_STATUS_RATE_LIMIT = os.environ.get("PUBLIC_TRANSACTION_STATUS_RATE_LIMIT", "60 per minute")
+    PUBLIC_TRANSACTION_QR_RATE_LIMIT = os.environ.get("PUBLIC_TRANSACTION_QR_RATE_LIMIT", "30 per minute")
+    PUBLIC_TRANSACTION_CANCEL_RATE_LIMIT = os.environ.get("PUBLIC_TRANSACTION_CANCEL_RATE_LIMIT", "20 per minute")
+
     # --- Konfigurasi Midtrans ---
     MIDTRANS_SERVER_KEY = os.environ.get("MIDTRANS_SERVER_KEY")
     MIDTRANS_CLIENT_KEY = os.environ.get("MIDTRANS_CLIENT_KEY")
