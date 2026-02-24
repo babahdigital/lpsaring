@@ -851,6 +851,12 @@ useHead({ title: 'Setting Aplikasi' })
   max-width: 100%;
 }
 
+/* Make section titles (VListSubheader) and items align on the same left edge */
+.settings-window :deep(.v-list-subheader),
+.settings-window :deep(.v-list-item) {
+  padding-inline: 0 !important;
+}
+
 .settings-tabs :deep(.v-tab) {
   max-width: none;
 }

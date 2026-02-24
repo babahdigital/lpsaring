@@ -18,6 +18,13 @@ body {
   @include mixins.boxed-content(true);
 }
 
+// On mobile/portrait, reduce boxed inline padding so content feels full-width.
+@media (max-width: 599px) {
+  .layout-page-content {
+    padding-inline: 0.75rem;
+  }
+}
+
 .layout-footer {
   .footer-content-container {
     block-size: variables.$layout-vertical-nav-footer-height;
