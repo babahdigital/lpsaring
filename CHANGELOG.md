@@ -14,6 +14,7 @@ Lampiran wajib:
 - CI: workflow sederhana untuk lint backend, pytest, dan lint frontend.
 - Backend: mode CSRF ketat untuk request tanpa Origin/Referer dengan allowlist IP/CIDR.
 - Backend: unit test CSRF guard dan normalisasi MAC.
+- Backend: env `DEBT_ORDER_ID_PREFIX` untuk mengubah prefix order_id pelunasan tunggakan (tetap kompatibel dengan order lama `DEBT-...`).
 
 ### Changed
 - Backend: sinkronisasi kuota menggunakan delta per-MAC (Redis last-bytes) + pembulatan MB konsisten.
