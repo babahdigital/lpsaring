@@ -107,22 +107,40 @@ def _get_primary_debt_order_prefix() -> str:
     raw = raw.upper()
 
     # Midtrans limit: transaction_details.order_id <= 50 chars.
-    # Worst-case manual-debt format:
-    #   <prefix>-<manual_debt_id_hex>~<suffix>
-    # where manual_debt_id_hex is 32 chars and suffix is 6 chars.
-    # Total = len(prefix) + 1 + 32 + 1 + 6 = len(prefix) + 40
-    # Therefore keep prefix <= 10 to stay <= 50.
-    allowed = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    # Manual-debt format:
+    #   <prefix>-<manual_debt_id_core>~<suffix>
+    # where manual_debt_id_core uses base64url UUID (22 chars) and suffix is 4 chars.
+    # Total = len(prefix) + 1 + 22 + 1 + 4 = len(prefix) + 28
+    # Therefore keep prefix <= 22 to stay <= 50.
+    allowed = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-_"
     cleaned = "".join(ch for ch in raw if ch in allowed)
-    cleaned = cleaned[:10]
+    cleaned = cleaned.strip("-_")
+    cleaned = cleaned[:22].rstrip("-_")
     return cleaned if cleaned else "DEBT"
+
+
+def _get_legacy_debt_order_prefixes() -> list[str]:
+    """Return legacy-compatible prefixes derived from current env.
+
+    Historically, the prefix was sanitized to alphanumeric-only, so values like
+    "BD-DBLP" became "BDDBLP". Keep recognizing those older prefixes to ensure
+    existing transactions can still be detected/parsed.
+    """
+    primary = _get_primary_debt_order_prefix()
+    legacy_alnum = "".join(ch for ch in primary if ch.isalnum()).strip()
+    prefixes: list[str] = []
+    for p in (primary, legacy_alnum):
+        p = str(p or "").strip().upper()
+        if p and p not in prefixes:
+            prefixes.append(p)
+    return prefixes
 
 
 def _get_debt_order_prefixes() -> list[str]:
     # Backward compatibility: always recognize legacy "DEBT-".
-    primary = _get_primary_debt_order_prefix()
+    derived = _get_legacy_debt_order_prefixes()
     prefixes: list[str] = []
-    for p in (primary, "DEBT"):
+    for p in (*derived, "DEBT"):
         p = str(p or "").strip().upper()
         if p and p not in prefixes:
             prefixes.append(p)
@@ -155,10 +173,16 @@ def _encode_uuid_base32(u: uuid.UUID) -> str:
     return base64.b32encode(u.bytes).decode("ascii").rstrip("=")
 
 
+def _encode_uuid_base64url(u: uuid.UUID) -> str:
+    # 16 bytes -> 22 chars base64url (no padding). Uses A-Za-z0-9_-.
+    return base64.urlsafe_b64encode(u.bytes).decode("ascii").rstrip("=")
+
+
 def _parse_manual_debt_id_core(core: str) -> uuid.UUID:
     # Accept legacy formats:
     # - UUID dashed (36 chars)
     # - UUID hex (32 chars)
+    # - Base64URL no-padding (22 chars)
     # - Base32 no-padding (26 chars)
     raw = str(core or "").strip()
     if raw == "":
@@ -175,6 +199,17 @@ def _parse_manual_debt_id_core(core: str) -> uuid.UUID:
     if len(hex_candidate) == 32:
         try:
             return uuid.UUID(hex=hex_candidate)
+        except Exception:
+            pass
+
+    # Try Base64URL (no padding).
+    b64 = raw.strip()
+    if b64:
+        try:
+            pad_len = (-len(b64)) % 4
+            data = base64.urlsafe_b64decode(b64 + ("=" * pad_len))
+            if len(data) == 16:
+                return uuid.UUID(bytes=data)
         except Exception:
             pass
 
@@ -1160,12 +1195,15 @@ def initiate_debt_settlement_transaction(current_user_id: uuid.UUID):
         if manual_debt_id is not None:
             manual_uuid = str(manual_debt_id)
             manual_hex = str(getattr(manual_debt_id, "hex", "") or "").upper()
+            manual_b64 = _encode_uuid_base64url(manual_debt_id)
             manual_b32 = _encode_uuid_base32(manual_debt_id)
             manual_like_filters: list[sa.ColumnElement[bool]] = []
             for p in debt_prefixes:
                 manual_like_filters.append(Transaction.midtrans_order_id.like(f"{p}-{manual_uuid}%"))
                 if manual_hex:
                     manual_like_filters.append(Transaction.midtrans_order_id.like(f"{p}-{manual_hex}%"))
+                if manual_b64:
+                    manual_like_filters.append(Transaction.midtrans_order_id.like(f"{p}-{manual_b64}%"))
                 if manual_b32:
                     manual_like_filters.append(Transaction.midtrans_order_id.like(f"{p}-{manual_b32}%"))
             existing_tx_query = existing_tx_query.filter(sa.or_(*manual_like_filters))
@@ -1185,8 +1223,8 @@ def initiate_debt_settlement_transaction(current_user_id: uuid.UUID):
 
         debt_prefix = _get_primary_debt_order_prefix()
         if manual_debt_id is not None:
-            manual_core = _encode_uuid_base32(manual_debt_id)
-            order_id = f"{debt_prefix}-{manual_core}~{uuid.uuid4().hex[:6].upper()}"
+            manual_core = _encode_uuid_base64url(manual_debt_id)
+            order_id = f"{debt_prefix}-{manual_core}~{uuid.uuid4().hex[:4].upper()}"
         else:
             order_id = f"{debt_prefix}-{uuid.uuid4().hex[:12].upper()}"
 
