@@ -232,6 +232,33 @@ Untuk skenario kamu (folder produksi dibuat **strict minimal** di `/home/abdulla
   --prune
 ```
 
+### 9.1 (Opsional) Tunggu CI hijau dulu: `--wait-ci`
+
+Jika workflow Docker publish belum selesai, deploy terlalu cepat bisa membuat Pi menarik image `:latest` yang **masih digest lama**.
+
+Solusi: gunakan `--wait-ci` agar script menunggu GitHub checks/Actions hijau untuk commit saat ini.
+
+Syarat:
+- Set salah satu env berikut di terminal yang sama saat menjalankan deploy:
+  - `GH_TOKEN` atau `GITHUB_TOKEN`
+
+Contoh:
+
+```bash
+export GH_TOKEN="<TOKEN>"   # jangan commit / jangan tulis ke repo
+
+./deploy_pi.sh --host 10.10.83.2 --user abdullah --port 1983 \
+  --key ~/.ssh/id_raspi_ed25519 \
+  --remote-dir /home/abdullah/sobigidul \
+  --strict-minimal \
+  --wait-ci \
+  --prune
+```
+
+Catatan (Windows):
+- `export GH_TOKEN=...` hanya berlaku untuk sesi terminal itu saja.
+- Pastikan menjalankan `./deploy_pi.sh ... --wait-ci` pada terminal yang sama yang sudah men-set token.
+
 Dengan opsi SSL:
 
 ```bash
