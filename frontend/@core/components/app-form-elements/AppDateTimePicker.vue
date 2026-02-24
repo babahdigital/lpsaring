@@ -64,6 +64,7 @@ const inputProps = ref(VInput.filterProps(props))
 const fieldProps = ref(VField.filterProps(props))
 
 const refFlatPicker = ref()
+const fallbackElementId = useId()
 
 const { focused } = useFocus(refFlatPicker)
 const isCalendarOpen = ref(false)
@@ -152,11 +153,18 @@ watch(() => props, () => {
 })
 
 const elementId = computed (() => {
-  const _elementIdToken = fieldProps.value.id || fieldProps.value.label || inputProps.value.id
+  const elementIdToken = fieldProps.value.id || inputProps.value.id || fieldProps.value.label
 
-  const _id = useId()
+  if (!elementIdToken)
+    return fallbackElementId
 
-  return _elementIdToken ? `app-picker-field-${_elementIdToken}` : _id
+  const normalizedToken = String(elementIdToken)
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+  return normalizedToken ? `app-picker-field-${normalizedToken}` : fallbackElementId
 })
 </script>
 
@@ -202,6 +210,7 @@ const elementId = computed (() => {
                 v-if="!isInlinePicker"
                 v-bind="compAttrs"
                 ref="refFlatPicker"
+                :id="elementId"
                 :model-value="modelValueNormalized"
                 :placeholder="props.placeholder"
                 :readonly="isReadonly.value"
@@ -215,6 +224,7 @@ const elementId = computed (() => {
               <!-- simple input for inline prop -->
               <input
                 v-if="isInlinePicker"
+                :id="elementId"
                 :value="modelValueNormalized"
                 :placeholder="props.placeholder"
                 :readonly="isReadonly.value"
@@ -417,7 +427,7 @@ input[altinputclass="inlinePicker"] {
 
   &.open {
     // Open calendar above overlay
-    z-index: 2401;
+    z-index: 9999;
   }
 
   &.hasTime.open {
