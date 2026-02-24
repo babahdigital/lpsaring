@@ -152,6 +152,45 @@ Uncaught ReferenceError: Cannot access 'ee' before initialization
 	- `docker compose up -d --build backend`
 - Pilihan B (dev mount): jalankan override yang memount source backend dan menyalakan reload.
 
+## 21) Vue template error: `Invalid end tag.`
+**Gejala**:
+- VS Code / Vue compiler menampilkan error:
+	- `Invalid end tag.`
+
+**Akar masalah umum**:
+- Ada tag penutup dobel saat refactor layout (contoh: `</VWindow>` tertulis dua kali).
+
+**Solusi**:
+- Buka area yang ditandai error, cek struktur nesting template.
+- Pastikan jumlah tag pembuka/penutup seimbang (terutama `VWindow`, `VRow/VCol`, `VDialog/VCard`).
+
+## 22) Background bind device 403: `/users/me/devices/bind-current`
+**Gejala**:
+- Di console/network terlihat `POST /api/users/me/devices/bind-current` sering 403.
+
+**Penyebab umum**:
+- Binding device gagal (IP/MAC tidak resolvable, policy device limit, atau konteks captive portal tidak lengkap).
+
+**Solusi yang dipakai di repo ini**:
+- Tambah mode best-effort dengan query `?best_effort=1`.
+	- Jika binding gagal, endpoint mengembalikan `200` dengan `success:false` (tidak spam 403).
+	- 403 tetap untuk akun nonaktif / blocked.
+
+## 23) CSP report-only spam: `Content-Security-Policy-Report-Only` / `script-src 'none'`
+**Gejala**:
+- Console spam laporan CSP report-only.
+
+**Penyebab umum**:
+- Ada lebih dari satu layer yang menyuntikkan CSP (upstream app + nginx + edge), sehingga policy bertabrakan.
+
+**Mitigasi yang dipakai**:
+- Di Nginx, hide CSP headers dari upstream agar hanya CSP Nginx yang terlihat:
+	- `proxy_hide_header Content-Security-Policy;`
+	- `proxy_hide_header Content-Security-Policy-Report-Only;`
+
+**Catatan**:
+- Jika masih muncul, kemungkinan berasal dari Cloudflare/edge (di luar container nginx).
+
 ## 17) Docker BuildKit snapshot error (cache corruption)
 **Gejala**:
 - `docker compose build` gagal dengan error snapshot/cache (BuildKit).

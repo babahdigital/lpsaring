@@ -244,6 +244,7 @@ Jika ingin saya implement, saya butuh keputusan: mapping chat id pakai Opsi A (k
 ## 8) Devlog & Insiden (Feb 2026)
 
 - Devlog 2026-02-24 (Ops + Payment + Debt): [docs/DEVLOG_2026-02-24.md](DEVLOG_2026-02-24.md)
+- Devlog 2026-02-25 (Stabilisasi Produksi + UX Dialog): [docs/DEVLOG_2026-02-25.md](DEVLOG_2026-02-25.md)
 - User profile: `frontend/layouts/components/UserProfile.vue`
 - Footer: `frontend/layouts/components/Footer.vue`
 - Navigasi: `frontend/navigation/*`

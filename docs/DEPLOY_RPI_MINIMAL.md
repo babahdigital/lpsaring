@@ -219,6 +219,30 @@ Script siap pakai ada di root project: [deploy_pi.sh](../deploy_pi.sh).
 Contoh pakai:
 
 ```bash
+bash ./deploy_pi.sh --host 10.10.83.2 --user abdullah --port 1983 --remote-dir /home/abdullah/sobigidul --prune
+```
+
+Catatan opsi:
+- `--prune`: safe prune (container/image/network/builder) dan **tidak** menghapus volume.
+- Jangan gunakan `--clean` kecuali benar-benar ingin reset total (karena menjalankan `down -v`).
+
+### 9.1) Verifikasi migrate benar-benar sukses
+
+Walau service `migrate` otomatis jalan saat `docker compose up -d` (karena `backend` depends_on migrate), tetap disarankan verifikasi exit code:
+
+```bash
+ssh -p 1983 -i ~/.ssh/id_raspi_ed25519 abdullah@10.10.83.2 \
+  'cd /home/abdullah/sobigidul && \
+   echo MIGRATE_EXIT=$(docker inspect -f "{{.State.ExitCode}}" hotspot_prod_flask_migrate) && \
+   echo MIGRATE_STATUS=$(docker inspect -f "{{.State.Status}}" hotspot_prod_flask_migrate) && \
+   docker logs --tail 50 hotspot_prod_flask_migrate'
+```
+
+Expected:
+- `MIGRATE_EXIT=0`
+- `MIGRATE_STATUS=exited`
+
+```bash
 ./deploy_pi.sh --host <IP_PI>
 ```
 
