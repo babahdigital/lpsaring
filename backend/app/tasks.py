@@ -130,11 +130,12 @@ def enforce_end_of_month_debt_block_task(self):
                 continue
 
             ref_pkg = _pick_ref_pkg_for_debt_mb(debt_mb)
+            base_pkg_name = str(getattr(ref_pkg, "name", "") or "") or "-"
             estimate = estimate_debt_rp_from_cheapest_package(
                 debt_mb=debt_mb,
                 cheapest_package_price_rp=int(getattr(ref_pkg, "price", 0) or 0) if ref_pkg else 0,
                 cheapest_package_quota_gb=float(getattr(ref_pkg, "data_quota_gb", 0) or 0) if ref_pkg else 0,
-                cheapest_package_name=str(getattr(ref_pkg, "name", "") or "") or "-" if ref_pkg else "-",
+                cheapest_package_name=base_pkg_name,
             )
             estimate_rp = estimate.estimated_rp_rounded
             estimate_rp_text = format_rupiah(int(estimate_rp)) if isinstance(estimate_rp, int) else "-"
@@ -151,7 +152,7 @@ def enforce_end_of_month_debt_block_task(self):
                             "phone_number": user.phone_number,
                             "debt_mb": debt_mb_text,
                             "estimated_rp": estimate_rp_text,
-                            "base_package_name": str(getattr(ref_pkg, "name", "") or "") or "-",
+                            "base_package_name": base_pkg_name,
                         },
                     )
                     warned_ok = bool(send_whatsapp_message(user.phone_number, user_msg))
@@ -186,7 +187,7 @@ def enforce_end_of_month_debt_block_task(self):
                 user.blocked_reason = (
                     f"quota_debt_end_of_month|debt_mb={debt_mb_text}"
                     + (f"|estimated_rp={int(estimate_rp)}" if isinstance(estimate_rp, int) else "")
-                    + (f"|base_pkg={cheapest_pkg_name}" if cheapest_pkg_name else "")
+                    + (f"|base_pkg={base_pkg_name}" if base_pkg_name else "")
                 )
                 user.blocked_at = datetime.now(dt_timezone.utc)
                 user.blocked_by_id = None
@@ -201,7 +202,7 @@ def enforce_end_of_month_debt_block_task(self):
                             "phone_number": user.phone_number,
                             "debt_mb": debt_mb_text,
                             "estimated_rp": estimate_rp_text,
-                            "base_package_name": cheapest_pkg_name,
+                            "base_package_name": base_pkg_name,
                         },
                     )
                     for admin in subscribed_admins:

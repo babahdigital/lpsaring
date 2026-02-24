@@ -861,7 +861,7 @@ def export_user_manual_debts_pdf(current_admin: User, user_id: uuid.UUID):
             "debt_auto_estimated_rp": est_auto.estimated_rp_rounded or 0,
             "debt_manual_estimated_rp": est_manual.estimated_rp_rounded or 0,
             "debt_total_estimated_rp": est_total.estimated_rp_rounded or 0,
-            "estimate_base_package_name": cheapest_pkg_name,
+            "estimate_base_package_name": est_total.package_name,
         }
 
         public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
