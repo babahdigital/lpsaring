@@ -810,7 +810,7 @@ function openDebtPdf() {
                           prepend-inner-icon="tabler-calendar"
                           density="comfortable"
                           hide-details
-                          :config="{ dateFormat: 'Y-m-d', enableTime: false, static: false, disableMobile: true }"
+                          :config="{ dateFormat: 'Y-m-d', enableTime: false, static: false, position: 'below' }"
                         />
                       </VCol>
 

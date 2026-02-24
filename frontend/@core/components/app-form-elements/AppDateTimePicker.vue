@@ -82,8 +82,7 @@ compAttrs.config = {
   // NOTE: `static: true` can get clipped by Vuetify field wrappers (overflow) inside dialogs.
   // Default to `false` so the calendar can render above overlays.
   static: compAttrs.config?.static ?? false,
-  // Force Flatpickr UI on mobile to avoid native picker inconsistencies in fullscreen dialogs.
-  disableMobile: compAttrs.config?.disableMobile ?? true,
+  position: compAttrs.config?.position ?? 'below',
   ...compAttrs.config,
   prevArrow: '<i class="tabler-chevron-left v-icon" style="font-size: 20px; height: 20px; width: 20px;"></i>',
   nextArrow: '<i class="tabler-chevron-right v-icon" style="font-size: 20px; height: 20px; width: 20px;"></i>',
@@ -427,7 +426,7 @@ input[altinputclass="inlinePicker"] {
 
   &.open {
     // Open calendar above overlay
-    z-index: 9999;
+    z-index: 2401;
   }
 
   &.hasTime.open {
