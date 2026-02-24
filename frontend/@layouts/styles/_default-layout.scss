@@ -34,10 +34,26 @@ body {
     overflow-x: hidden;
   }
 
-  .navbar-content-container,
-  .footer-content-container,
-  .horizontal-nav-content-container {
-    padding-inline: 0.75rem !important;
+  /* Match admin/user perceived width: navbar + footer align with page content on mobile */
+  .layout-wrapper.layout-nav-type-vertical {
+    .layout-navbar,
+    .layout-footer {
+      padding-inline: 0.75rem !important;
+    }
+
+    /* Depending on config, boxed padding can be applied to container instead of wrapper */
+    .navbar-content-container,
+    .footer-content-container {
+      padding-inline: 0.75rem !important;
+    }
+  }
+
+  .layout-wrapper.layout-nav-type-horizontal {
+    .navbar-content-container,
+    .footer-content-container,
+    .horizontal-nav-content-container {
+      padding-inline: 0.75rem !important;
+    }
   }
 }
 
