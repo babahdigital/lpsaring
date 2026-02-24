@@ -229,37 +229,26 @@ function formatRetryAt(isoString: string | null) {
     persistent
     @update:model-value="closeDialog"
   >
-    <VCard :class="isMobile ? 'rounded-0' : 'rounded-lg'">
+    <VCard :class="isMobile ? 'rounded-0 d-flex flex-column fill-height' : 'rounded-lg'">
       <VForm
         ref="formRef"
         @submit.prevent="handleSubmit"
       >
-        <VCardTitle class="pa-4 bg-primary">
-          <div class="dialog-titlebar">
-            <div class="dialog-titlebar__title">
-              <VIcon
-                icon="tabler-mail-plus"
-                color="white"
-                size="24"
-              />
+        <VToolbar color="primary" density="comfortable">
+          <VToolbarTitle class="text-white">
+            <div class="d-flex align-center ga-3">
+              <VIcon icon="tabler-mail-plus" color="white" size="24" />
               <div class="d-flex flex-column">
                 <span class="text-h6 text-white">Formulir Pengajuan</span>
                 <span class="text-body-2 text-white">Ajukan permintaan kuota atau akses unlimited</span>
               </div>
             </div>
-            <div class="dialog-titlebar__actions">
-              <VBtn
-                icon="tabler-x"
-                variant="text"
-                size="small"
-                class="text-white"
-                @click="closeDialog"
-              />
-            </div>
-          </div>
-        </VCardTitle>
+          </VToolbarTitle>
+          <VSpacer />
+          <VBtn icon="tabler-x" variant="text" class="text-white" @click="closeDialog" />
+        </VToolbar>
 
-        <VCardText class="pa-5">
+        <VCardText class="pa-5" :class="isMobile ? 'flex-grow-1 overflow-y-auto' : ''">
           <div class="d-flex flex-column ga-3">
             <div>
               <p class="text-subtitle-1 font-weight-medium mb-1">
@@ -275,15 +264,15 @@ function formatRetryAt(isoString: string | null) {
               :inline="!isMobile"
               class="mb-0"
             >
-            <VRadio
-              label="Kuota Reguler"
-              value="QUOTA"
-            />
-            <VRadio
-              label="Akses Unlimited"
-              value="UNLIMITED"
-              :disabled="!allowUnlimited"
-            />
+              <VRadio
+                label="Kuota Reguler"
+                value="QUOTA"
+              />
+              <VRadio
+                label="Akses Unlimited"
+                value="UNLIMITED"
+                :disabled="!allowUnlimited"
+              />
             </VRadioGroup>
 
             <VAlert

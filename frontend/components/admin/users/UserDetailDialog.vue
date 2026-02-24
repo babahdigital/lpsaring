@@ -2,6 +2,7 @@
 import { differenceInDays, format, isPast, isValid } from 'date-fns'
 import { id } from 'date-fns/locale'
 import { computed, ref, watch } from 'vue'
+import { useDisplay } from 'vuetify'
 import { useSnackbar } from '@/composables/useSnackbar'
 
 // Definisikan interface User
@@ -53,6 +54,8 @@ const props = defineProps<{ modelValue: boolean, user: User | null, previewConte
 const emit = defineEmits(['update:modelValue'])
 const { $api } = useNuxtApp()
 const { add: showSnackbar } = useSnackbar()
+const display = useDisplay()
+const isMobile = computed(() => display.smAndDown.value)
 
 interface ManualDebtItem {
   id: string
@@ -170,9 +173,16 @@ const quotaDetails = computed((): QuotaInfo | null => {
   }
 })
 
-const debtAutoMb = computed(() => Number(props.user?.quota_debt_auto_mb ?? 0))
-const debtManualMb = computed(() => Number(props.user?.quota_debt_manual_mb ?? props.user?.manual_debt_mb ?? 0))
-const debtTotalMb = computed(() => Number(props.user?.quota_debt_total_mb ?? (debtAutoMb.value + debtManualMb.value)))
+const debtAutoMb = computed(() => (props.user?.is_unlimited_user === true ? 0 : Number(props.user?.quota_debt_auto_mb ?? 0)))
+const debtManualMb = computed(() => (props.user?.is_unlimited_user === true ? 0 : Number(props.user?.quota_debt_manual_mb ?? props.user?.manual_debt_mb ?? 0)))
+const debtTotalMb = computed(() => (props.user?.is_unlimited_user === true ? 0 : Number(props.user?.quota_debt_total_mb ?? (debtAutoMb.value + debtManualMb.value))))
+
+const hasDebt = computed(() => debtTotalMb.value > 0)
+
+const shouldShowManualDebtSection = computed(() => {
+  const totalItems = Number(manualDebtSummary.value?.total_items ?? 0)
+  return manualDebtLoading.value || manualDebtItems.value.length > 0 || totalItems > 0
+})
 
 const debtStatusMeta = computed(() => {
   const hasDebt = debtTotalMb.value > 0
@@ -239,9 +249,15 @@ function onClose() {
 </script>
 
 <template>
-  <VDialog :model-value="props.modelValue" max-width="600" persistent @update:model-value="onClose">
-    <VCard v-if="props.user">
-      <VCardTitle class="text-h6 pa-4 bg-primary text-white rounded-t-lg">
+  <VDialog
+    :model-value="props.modelValue"
+    :fullscreen="isMobile"
+    :max-width="isMobile ? undefined : 900"
+    persistent
+    @update:model-value="onClose"
+  >
+    <VCard v-if="props.user" :class="isMobile ? 'rounded-0' : 'rounded-lg'">
+      <VCardTitle class="text-h6 pa-4 bg-primary text-white" :class="isMobile ? '' : 'rounded-t-lg'">
         <div class="dialog-titlebar">
           <div class="dialog-titlebar__title">
             <VIcon start icon="tabler-user-circle" />
@@ -253,7 +269,7 @@ function onClose() {
         </div>
       </VCardTitle>
       <VDivider />
-      <AppPerfectScrollbar class="pa-5" style="max-height: 70vh;">
+      <AppPerfectScrollbar class="pa-4 pa-md-6" :style="isMobile ? 'max-height: calc(100vh - 128px);' : 'max-height: 70vh;'">
         <VAlert
           v-if="previewAlertMeta"
           :color="previewAlertMeta.color"
@@ -296,7 +312,7 @@ function onClose() {
               <VChip v-if="props.user.is_blocked" color="error" size="small" class="ms-2" label>
                 Diblokir
               </VChip>
-              <VChip :color="debtStatusMeta.color" size="small" class="ms-2" label>
+              <VChip v-if="hasDebt" :color="debtStatusMeta.color" size="small" class="ms-2" label>
                 <VIcon :icon="debtStatusMeta.icon" start size="16" />
                 {{ debtStatusMeta.text }}
               </VChip>
@@ -339,7 +355,7 @@ function onClose() {
           </VAlert>
 
           <VAlert
-            v-if="debtTotalMb > 0"
+            v-if="hasDebt"
             variant="tonal"
             color="warning"
             icon="tabler-alert-triangle"
@@ -350,7 +366,7 @@ function onClose() {
             (otomatis {{ formatMb(debtAutoMb) }} MB, manual {{ formatMb(debtManualMb) }} MB)
           </VAlert>
 
-          <VSheet rounded="lg" border class="pa-3 mt-4">
+          <VSheet v-if="shouldShowManualDebtSection" rounded="lg" border class="pa-3 mt-4">
             <div class="d-flex justify-space-between align-center">
               <div class="text-overline">
                 Riwayat Tunggakan Manual

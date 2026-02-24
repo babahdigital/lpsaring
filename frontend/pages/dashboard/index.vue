@@ -437,6 +437,14 @@ const debtAutoMb = computed(() => Number(quotaData.value?.quota_debt_auto_mb ?? 
 const debtManualMb = computed(() => Number(quotaData.value?.quota_debt_manual_mb ?? 0))
 const debtTotalMb = computed(() => Number(quotaData.value?.quota_debt_total_mb ?? (debtAutoMb.value + debtManualMb.value)))
 
+const shouldShowDebtCard = computed(() => {
+  if (authStore.isKomandan)
+    return false
+  if (quotaData.value?.is_unlimited_user === true)
+    return false
+  return debtTotalMb.value > 0
+})
+
 const debtEstimatedRp = computed(() => Number(quotaData.value?.quota_debt_total_estimated_rp ?? 0))
 
 function formatRp(amount: number | null | undefined): string {
@@ -536,10 +544,20 @@ useHead({ title: authStore.isKomandan ? 'Dashboard Komandan' : 'Dashboard User' 
       </VCol>
     </VRow>
 
-    <VDialog v-model="deviceDialog" max-width="900" scrollable>
-      <div class="pa-4">
-        <DeviceManagerCard />
-      </div>
+    <VDialog v-model="deviceDialog" fullscreen persistent>
+      <VCard class="d-flex flex-column fill-height rounded-0">
+        <VToolbar color="primary" density="comfortable">
+          <VToolbarTitle class="text-white">
+            Kelola Perangkat
+          </VToolbarTitle>
+          <VSpacer />
+          <VBtn icon="tabler-x" variant="text" class="text-white" @click="deviceDialog = false" />
+        </VToolbar>
+
+        <VCardText class="flex-grow-1 overflow-y-auto pa-4">
+          <DeviceManagerCard />
+        </VCardText>
+      </VCard>
     </VDialog>
 
     <div>
@@ -743,7 +761,7 @@ useHead({ title: authStore.isKomandan ? 'Dashboard Komandan' : 'Dashboard User' 
                   </VCol>
                 </VRow>
 
-                <VCard v-if="!authStore.isKomandan" class="d-flex flex-column vuexy-card">
+                <VCard v-if="shouldShowDebtCard" class="d-flex flex-column vuexy-card">
                   <VCardText class="py-5">
                     <div class="d-flex flex-column ps-3">
                       <div class="d-flex align-center justify-space-between flex-wrap ga-2 mb-4">
@@ -771,7 +789,7 @@ useHead({ title: authStore.isKomandan ? 'Dashboard Komandan' : 'Dashboard User' 
                         </div>
 
                         <VBtn
-                          v-if="!quotaData?.is_unlimited_user && debtTotalMb > 0 && debtEstimatedRp > 0"
+                          v-if="debtTotalMb > 0 && debtEstimatedRp > 0"
                           size="small"
                           color="warning"
                           variant="flat"
@@ -801,7 +819,7 @@ useHead({ title: authStore.isKomandan ? 'Dashboard Komandan' : 'Dashboard User' 
 
                         <VDivider class="my-0" />
 
-                        <VListItem v-if="!quotaData?.is_unlimited_user && debtTotalMb > 0" class="py-2">
+                        <VListItem v-if="debtTotalMb > 0" class="py-2">
                           <template #prepend>
                             <VAvatar color="info" variant="tonal" rounded size="38" class="me-1">
                               <VIcon icon="tabler-robot" size="22" />
@@ -815,9 +833,9 @@ useHead({ title: authStore.isKomandan ? 'Dashboard Komandan' : 'Dashboard User' 
                           </template>
                         </VListItem>
 
-                        <VDivider v-if="!quotaData?.is_unlimited_user && debtManualMb > 0" class="my-0" />
+                        <VDivider v-if="debtManualMb > 0" class="my-0" />
 
-                        <VListItem v-if="!quotaData?.is_unlimited_user && debtManualMb > 0" class="py-2">
+                        <VListItem v-if="debtManualMb > 0" class="py-2">
                           <template #prepend>
                             <VAvatar color="secondary" variant="tonal" rounded size="38" class="me-1">
                               <VIcon icon="tabler-hand-stop" size="22" />

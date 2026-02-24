@@ -3,6 +3,7 @@ import type { VForm } from 'vuetify/components'
 import AppSelect from '@core/components/app-form-elements/AppSelect.vue'
 import AppTextField from '@core/components/app-form-elements/AppTextField.vue'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { useDisplay } from 'vuetify'
 import { useSnackbar } from '@/composables/useSnackbar'
 import { useAuthStore } from '@/store/auth'
 import { TAMPING_OPTION_ITEMS } from '~/utils/constants'
@@ -74,6 +75,8 @@ interface LiveData {
 }
 
 const authStore = useAuthStore()
+const display = useDisplay()
+const isMobile = computed(() => display.smAndDown.value)
 const formRef = ref<InstanceType<typeof VForm> | null>(null)
 
 interface AdminPackage {
@@ -475,32 +478,25 @@ function openDebtPdf() {
 </script>
 
 <template>
-  <VDialog :model-value="props.modelValue" max-width="700px" persistent @update:model-value="onClose">
-    <VCard>
-      <VForm ref="formRef" @submit.prevent="onSave">
-        <VCardTitle class="pa-4 bg-primary rounded-t-lg">
-          <div class="dialog-titlebar">
-            <div class="dialog-titlebar__title">
-              <VIcon icon="tabler-user-edit" start />
-              <span class="headline text-white">Edit Pengguna</span>
-            </div>
-            <div class="dialog-titlebar__actions">
-              <VBtn icon="tabler-x" variant="text" size="small" class="text-white" @click="onClose" />
-            </div>
-          </div>
-        </VCardTitle>
+  <VDialog :model-value="props.modelValue" fullscreen persistent @update:model-value="onClose">
+    <VCard class="d-flex flex-column fill-height rounded-0">
+      <VForm ref="formRef" class="d-flex flex-column fill-height" @submit.prevent="onSave">
+        <VToolbar color="primary" density="comfortable">
+          <VToolbarTitle class="text-white d-flex align-center ga-2">
+            <VIcon icon="tabler-user-edit" />
+            <span class="headline text-white">Edit Pengguna</span>
+          </VToolbarTitle>
+          <VSpacer />
+          <VBtn icon="tabler-x" variant="text" class="text-white" @click="onClose" />
+        </VToolbar>
 
-        <VTabs v-model="tab" grow class="rounded-0">
-          <VTab value="info">
-            Info Pengguna
-          </VTab>
-          <VTab value="akses">
-            Akses & Kuota
-          </VTab>
+        <VTabs v-model="tab" grow>
+          <VTab value="info">Info Pengguna</VTab>
+          <VTab value="akses">Akses & Kuota</VTab>
         </VTabs>
         <VDivider />
 
-        <AppPerfectScrollbar class="pa-5" style="max-height: 65vh;">
+        <AppPerfectScrollbar class="flex-grow-1 pa-4 pa-md-6">
           <VWindow v-model="tab" class="mt-2">
             <VWindowItem value="info">
               <VRow>
@@ -757,14 +753,25 @@ function openDebtPdf() {
             </VWindowItem>
           </VWindow>
         </AppPerfectScrollbar>
-        <VDivider />
 
-        <VCardActions class="pa-4 d-flex">
-          <VSpacer />
-          <VBtn variant="tonal" color="secondary" @click="onClose">
+        <VDivider />
+        <VCardActions class="pa-4 d-flex" :class="isMobile ? 'flex-column ga-3' : 'justify-end'">
+          <VBtn
+            variant="tonal"
+            color="secondary"
+            :block="isMobile"
+            @click="onClose"
+          >
             Batal
           </VBtn>
-          <VBtn type="submit" color="primary" :loading="props.loading" :disabled="isSaveDisabled" prepend-icon="tabler-device-floppy">
+          <VBtn
+            type="submit"
+            color="primary"
+            :block="isMobile"
+            :loading="props.loading"
+            :disabled="isSaveDisabled"
+            prepend-icon="tabler-device-floppy"
+          >
             Simpan Perubahan
           </VBtn>
         </VCardActions>
