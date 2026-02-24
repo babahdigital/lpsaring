@@ -35,7 +35,7 @@ Dokumen ini adalah indeks/pondasi untuk semua perubahan pembayaran.
   - Format default:
     - Total tunggakan: `DEBT-40BF16F55C2B`
     - Hutang manual: `DEBT-<manual_debt_id>~<suffix>`
-      - Format baru (lebih pendek, aman batas 50 char Midtrans): `<manual_debt_id>` = UUID hex 32 char
+      - Format baru (lebih pendek, aman batas 50 char Midtrans): `<manual_debt_id>` = UUID Base32 tanpa padding (26 char)
       - Masih kompatibel dengan format lama: UUID dengan dash (36 char)
 
 ## Dokumen Detail

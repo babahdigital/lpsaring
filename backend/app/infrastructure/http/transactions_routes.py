@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import uuid
+import base64
 from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
 from http import HTTPStatus
@@ -142,10 +143,50 @@ def _extract_manual_debt_id_from_order_id(order_id: str | None) -> uuid.UUID | N
             continue
         try:
             core = raw[len(prefix) : raw.index("~")]
-            return uuid.UUID(core)
+            parsed = _parse_manual_debt_id_core(core)
+            return parsed
         except Exception:
             return None
     return None
+
+
+def _encode_uuid_base32(u: uuid.UUID) -> str:
+    # 16 bytes -> 26 chars base32 (no padding). Uses A-Z2-7.
+    return base64.b32encode(u.bytes).decode("ascii").rstrip("=")
+
+
+def _parse_manual_debt_id_core(core: str) -> uuid.UUID:
+    # Accept legacy formats:
+    # - UUID dashed (36 chars)
+    # - UUID hex (32 chars)
+    # - Base32 no-padding (26 chars)
+    raw = str(core or "").strip()
+    if raw == "":
+        raise ValueError("empty core")
+
+    # Try standard UUID parsing first (dashed).
+    try:
+        return uuid.UUID(raw)
+    except Exception:
+        pass
+
+    # Try 32 hex.
+    hex_candidate = raw.replace("-", "").strip()
+    if len(hex_candidate) == 32:
+        try:
+            return uuid.UUID(hex=hex_candidate)
+        except Exception:
+            pass
+
+    # Try Base32 (no padding).
+    # Add '=' padding to multiple of 8.
+    b32 = raw.upper()
+    pad_len = (-len(b32)) % 8
+    b32_padded = b32 + ("=" * pad_len)
+    data = base64.b32decode(b32_padded, casefold=True)
+    if len(data) != 16:
+        raise ValueError("invalid base32 uuid bytes")
+    return uuid.UUID(bytes=data)
 
 
 def _estimate_user_debt_rp(user: User) -> int:
@@ -1119,11 +1160,14 @@ def initiate_debt_settlement_transaction(current_user_id: uuid.UUID):
         if manual_debt_id is not None:
             manual_uuid = str(manual_debt_id)
             manual_hex = str(getattr(manual_debt_id, "hex", "") or "").upper()
+            manual_b32 = _encode_uuid_base32(manual_debt_id)
             manual_like_filters: list[sa.ColumnElement[bool]] = []
             for p in debt_prefixes:
                 manual_like_filters.append(Transaction.midtrans_order_id.like(f"{p}-{manual_uuid}%"))
                 if manual_hex:
                     manual_like_filters.append(Transaction.midtrans_order_id.like(f"{p}-{manual_hex}%"))
+                if manual_b32:
+                    manual_like_filters.append(Transaction.midtrans_order_id.like(f"{p}-{manual_b32}%"))
             existing_tx_query = existing_tx_query.filter(sa.or_(*manual_like_filters))
 
         existing_tx = existing_tx_query.first()
@@ -1141,8 +1185,7 @@ def initiate_debt_settlement_transaction(current_user_id: uuid.UUID):
 
         debt_prefix = _get_primary_debt_order_prefix()
         if manual_debt_id is not None:
-            manual_hex = str(getattr(manual_debt_id, "hex", "") or "").upper()
-            manual_core = manual_hex if manual_hex else str(manual_debt_id)
+            manual_core = _encode_uuid_base32(manual_debt_id)
             order_id = f"{debt_prefix}-{manual_core}~{uuid.uuid4().hex[:6].upper()}"
         else:
             order_id = f"{debt_prefix}-{uuid.uuid4().hex[:12].upper()}"
