@@ -11,7 +11,7 @@ from http import HTTPStatus
 from typing import Any, Dict, Optional
 
 import midtransclient
-from flask import Blueprint, abort, current_app, jsonify, make_response, render_template, request
+from flask import Blueprint, abort, current_app, has_app_context, jsonify, make_response, render_template, request
 import requests
 import sqlalchemy as sa
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -92,24 +92,50 @@ def _log_transaction_event(
 
 
 def _is_debt_settlement_order_id(order_id: str | None) -> bool:
-    return str(order_id or "").strip().startswith("DEBT-")
+    raw = str(order_id or "").strip()
+    for p in _get_debt_order_prefixes():
+        if raw.startswith(f"{p}-"):
+            return True
+    return False
+
+
+def _get_primary_debt_order_prefix() -> str:
+    if not has_app_context():
+        return "DEBT"
+    raw = str(current_app.config.get("DEBT_ORDER_ID_PREFIX", "DEBT") or "DEBT").strip()
+    raw = raw.upper()
+    return raw if raw else "DEBT"
+
+
+def _get_debt_order_prefixes() -> list[str]:
+    # Backward compatibility: always recognize legacy "DEBT-".
+    primary = _get_primary_debt_order_prefix()
+    prefixes: list[str] = []
+    for p in (primary, "DEBT"):
+        p = str(p or "").strip().upper()
+        if p and p not in prefixes:
+            prefixes.append(p)
+    return prefixes
 
 
 def _extract_manual_debt_id_from_order_id(order_id: str | None) -> uuid.UUID | None:
     """If order_id is a manual-debt settlement, return the UserQuotaDebt.id.
 
-    Format: DEBT-<uuid>~<suffix>
+    Format: <prefix>-<uuid>~<suffix>
     """
     raw = str(order_id or "").strip()
-    if not raw.startswith("DEBT-"):
-        return None
     if "~" not in raw:
         return None
-    try:
-        core = raw[len("DEBT-") : raw.index("~")]
-        return uuid.UUID(core)
-    except Exception:
-        return None
+    for p in _get_debt_order_prefixes():
+        prefix = f"{p}-"
+        if not raw.startswith(prefix):
+            continue
+        try:
+            core = raw[len(prefix) : raw.index("~")]
+            return uuid.UUID(core)
+        except Exception:
+            return None
+    return None
 
 
 def _estimate_user_debt_rp(user: User) -> int:
@@ -1068,17 +1094,21 @@ def initiate_debt_settlement_transaction(current_user_id: uuid.UUID):
         expiry_minutes = max(5, min(expiry_minutes, 24 * 60))
         local_expiry_time = now_utc + timedelta(minutes=expiry_minutes)
 
+        debt_prefixes = _get_debt_order_prefixes()
+        debt_like_filters = [Transaction.midtrans_order_id.like(f"{p}-%") for p in debt_prefixes]
+
         existing_tx_query = (
             session.query(Transaction)
             .filter(Transaction.user_id == user.id)
-            .filter(Transaction.midtrans_order_id.like("DEBT-%"))
+            .filter(sa.or_(*debt_like_filters))
             .filter(Transaction.status.in_([TransactionStatus.UNKNOWN, TransactionStatus.PENDING]))
             .filter(sa.or_(Transaction.expiry_time.is_(None), Transaction.expiry_time > now_utc))
             .order_by(Transaction.created_at.desc())
         )
 
         if manual_debt_id is not None:
-            existing_tx_query = existing_tx_query.filter(Transaction.midtrans_order_id.like(f"DEBT-{manual_debt_id}%"))
+            manual_like_filters = [Transaction.midtrans_order_id.like(f"{p}-{manual_debt_id}%") for p in debt_prefixes]
+            existing_tx_query = existing_tx_query.filter(sa.or_(*manual_like_filters))
 
         existing_tx = existing_tx_query.first()
         if existing_tx:
@@ -1093,10 +1123,11 @@ def initiate_debt_settlement_transaction(current_user_id: uuid.UUID):
                 payload["provider_mode"] = provider_mode
                 return jsonify(payload), HTTPStatus.OK
 
+        debt_prefix = _get_primary_debt_order_prefix()
         if manual_debt_id is not None:
-            order_id = f"DEBT-{manual_debt_id}~{uuid.uuid4().hex[:6].upper()}"
+            order_id = f"{debt_prefix}-{manual_debt_id}~{uuid.uuid4().hex[:6].upper()}"
         else:
-            order_id = f"DEBT-{uuid.uuid4().hex[:12].upper()}"
+            order_id = f"{debt_prefix}-{uuid.uuid4().hex[:12].upper()}"
 
         new_transaction = Transaction()
         new_transaction.id = uuid.uuid4()

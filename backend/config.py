@@ -328,6 +328,13 @@ class Config:
     # Contoh: BD-LPSR -> hasil: BD-LPSR-1A2B3C4D5E6F
     ADMIN_BILL_ORDER_ID_PREFIX = os.environ.get("ADMIN_BILL_ORDER_ID_PREFIX", "BD-LPSR")
 
+    # Prefix untuk order_id pelunasan tunggakan/hutang kuota (debt settlement).
+    # Default: DEBT -> hasil:
+    # - Total tunggakan: DEBT-40BF16F55C2B
+    # - Hutang manual: DEBT-<uuid>~<suffix>
+    # Catatan: untuk kompatibilitas, sistem tetap mengenali prefix legacy 'DEBT-' walaupun env ini diubah.
+    DEBT_ORDER_ID_PREFIX = os.environ.get("DEBT_ORDER_ID_PREFIX", "DEBT")
+
     # --- Konfigurasi WhatsApp API ---
     WHATSAPP_API_URL = os.environ.get("WHATSAPP_API_URL")
     WHATSAPP_VALIDATE_URL = os.environ.get("WHATSAPP_VALIDATE_URL")

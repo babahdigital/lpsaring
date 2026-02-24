@@ -290,7 +290,11 @@ def get_my_transactions(current_user_id):
         transactions_data = []
         for tx in pagination.items:
             order_id = str(tx.midtrans_order_id or "")
-            if order_id.startswith("DEBT-"):
+            debt_prefix = str(current_app.config.get("DEBT_ORDER_ID_PREFIX", "DEBT") or "DEBT").strip().upper() or "DEBT"
+            debt_prefixes = {debt_prefix, "DEBT"}
+            is_debt_settlement = any(order_id.startswith(f"{p}-") for p in debt_prefixes)
+
+            if is_debt_settlement:
                 pkg_name = "Pelunasan Tunggakan Kuota"
             else:
                 pkg_name = tx.package.name if tx.package else "Paket Tidak Ditemukan"
