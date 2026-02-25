@@ -69,12 +69,12 @@ useHead({ title: `Terms of Service - Merchant Center ${merchantName.value}` })
           <h2 class="text-h6 mt-6 mb-2">6. Kontak Merchant</h2>
           <ul class="pl-6">
             <li>
-              Email:
+              Email CS: 
               <a v-if="supportEmail" :href="`mailto:${supportEmail}`">{{ supportEmail }}</a>
               <span v-else>-</span>
             </li>
             <li>
-              WhatsApp CS:
+              WhatsApp CS: 
               <a v-if="supportWhatsAppHref" :href="supportWhatsAppHref" target="_blank" rel="noopener noreferrer">
                 {{ supportWhatsAppFormatted }}
               </a>

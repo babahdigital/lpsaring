@@ -16,15 +16,30 @@ export function useMerchantProfile() {
     return String(runtimeConfig.public.adminWhatsapp ?? '').trim()
   })
 
-  const supportWhatsAppFormatted = computed(() => supportWhatsAppRaw.value.replace(/[^0-9+]/g, ''))
+  const supportWhatsAppSanitized = computed(() => supportWhatsAppRaw.value.replace(/[^0-9+]/g, ''))
+
+  const supportWhatsAppFormatted = computed(() => {
+    const raw = supportWhatsAppSanitized.value
+    if (!raw)
+      return ''
+
+    if (raw.startsWith('+62'))
+      return `0${raw.slice(3)}`
+
+    if (raw.startsWith('62'))
+      return `0${raw.slice(2)}`
+
+    return raw
+  })
 
   const supportWhatsAppHref = computed(() => {
-    const raw = supportWhatsAppFormatted.value
+    const raw = supportWhatsAppSanitized.value
     if (raw === '')
       return null
 
     const base = String(runtimeConfig.public.whatsappBaseUrl ?? 'https://wa.me').replace(/\/$/, '')
-    const phonePath = raw.replace(/^\+/, '')
+    const plain = raw.replace(/^\+/, '')
+    const phonePath = plain.startsWith('0') ? `62${plain.slice(1)}` : plain
 
     return `${base}/${phonePath}`
   })
