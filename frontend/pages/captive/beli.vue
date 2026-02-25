@@ -97,6 +97,10 @@ function canPurchasePackage(pkg: Package): boolean {
   return pkg.is_active === true || (isDemoModeEnabled.value === true && isTestingPackage(pkg))
 }
 
+function isPackageSelectable(pkg: Package): boolean {
+  return canPurchasePackage(pkg) && !isDemoDisabledPackage(pkg)
+}
+
 function getPackageDisabledTooltip(pkg: Package): string | null {
   if (isDemoDisabledPackage(pkg))
     return 'Mode demo aktif: hanya paket Testing yang tersedia.'
@@ -122,7 +126,7 @@ const visiblePackages = computed(() => {
 })
 
 const featuredPackageId = computed(() => {
-  const firstPurchasable = visiblePackages.value.find(pkg => canPurchasePackage(pkg))
+  const firstPurchasable = visiblePackages.value.find(pkg => isPackageSelectable(pkg))
   return firstPurchasable?.id ?? null
 })
 
@@ -466,8 +470,8 @@ onMounted(async () => {
         <h1 class="text-h4 text-sm-h3 text-md-h2 font-weight-bold mb-3 text-high-emphasis">
           Pilih Paket Internet Anda
         </h1>
-        <p class="text-body-1 text-sm-h6 text-medium-emphasis">
-          Pilih paket yang sesuai kebutuhan dan lanjutkan pembayaran dengan aman melalui Midtrans.
+        <p class="text-body-1 text-sm-h6 text-medium-emphasis package-hero-subtitle">
+          Dapatkan akses internet super cepat. Pilih paket yang sesuai dengan kebutuhan aktivitas digital Anda hari ini.
         </p>
       </div>
 
@@ -562,15 +566,16 @@ onMounted(async () => {
                   class="package-card d-flex flex-column flex-grow-1"
                   :class="{
                     'package-card--featured': pkg.id === featuredPackageId,
-                    'package-card--disabled': !canPurchasePackage(pkg) || isDemoDisabledPackage(pkg),
+                    'package-card--available': isPackageSelectable(pkg),
+                    'package-card--disabled': !isPackageSelectable(pkg),
                   }"
-                  rounded="xl"
+                  rounded="lg"
                   :disabled="!canPurchasePackage(pkg) || isInitiatingPayment != null || isDemoDisabledPackage(pkg)"
                   @click="handlePackageSelection(pkg)"
                 >
-                  <v-card-item class="pb-1">
+                  <v-card-item class="package-card-head pb-1">
                     <v-chip
-                      v-if="canPurchasePackage(pkg)"
+                      v-if="isPackageSelectable(pkg)"
                       color="primary"
                       size="x-small"
                       variant="flat"
@@ -578,10 +583,10 @@ onMounted(async () => {
                     >
                       Tersedia
                     </v-chip>
-                    <v-card-title class="text-h6 font-weight-bold text-wrap px-0 mb-1">
+                    <v-card-title class="text-h6 font-weight-bold text-wrap px-0 mb-2 text-center package-title">
                       {{ pkg.name }}
                     </v-card-title>
-                    <v-card-subtitle class="text-h5 font-weight-bold text-primary px-0 opacity-100">
+                    <v-card-subtitle class="text-h4 font-weight-bold text-primary px-0 opacity-100 text-center package-price">
                       {{ formatCurrency(pkg.price) }}
                     </v-card-subtitle>
                   </v-card-item>
@@ -630,6 +635,7 @@ onMounted(async () => {
                       color="primary"
                       variant="flat"
                       size="large"
+                      class="package-action-btn"
                       :disabled="!canPurchasePackage(pkg) || isInitiatingPayment != null || isDemoDisabledPackage(pkg)"
                       :loading="isInitiatingPayment === pkg.id"
                       @click.stop="handlePackageSelection(pkg)"
@@ -691,8 +697,8 @@ onMounted(async () => {
   top: 0;
   z-index: 20;
   border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
-  background: transparent;
-  backdrop-filter: none;
+  background: rgba(var(--v-theme-surface), 0.96);
+  backdrop-filter: blur(8px);
 }
 
 .beli-brand-icon {
@@ -706,15 +712,25 @@ onMounted(async () => {
 }
 
 .package-card {
+  position: relative;
+  overflow: visible;
   border: 1px solid rgba(var(--v-border-color), 0.34);
   background: rgba(var(--v-theme-surface), 0.96);
+  width: 100%;
+  max-width: 332px;
+  margin-inline: auto;
   min-height: 100%;
   transition: all 0.22s ease;
 }
 
 .package-card--featured {
   border-color: rgba(var(--v-theme-primary), 0.9);
-  box-shadow: 0 8px 24px rgba(var(--v-theme-primary), 0.2);
+  box-shadow: 0 8px 24px rgba(var(--v-theme-primary), 0.24);
+}
+
+.package-card--available {
+  border-color: rgba(var(--v-theme-primary), 0.52);
+  box-shadow: inset 0 0 0 1px rgba(var(--v-theme-primary), 0.08);
 }
 
 .package-card--disabled {
@@ -722,18 +738,34 @@ onMounted(async () => {
 }
 
 .package-card:hover:not([disabled]) {
-  transform: translateY(-4px);
-  border-color: rgba(var(--v-theme-primary), 0.6);
-  box-shadow: 0 8px 26px rgba(var(--v-theme-primary), 0.16);
+  transform: translateY(-2px);
+  border-color: rgba(var(--v-theme-primary), 0.72);
+  box-shadow: 0 10px 28px rgba(var(--v-theme-primary), 0.22);
 }
 
 .package-detail-wrap {
   border: 1px solid rgba(var(--v-border-color), 0.22);
-  background: rgba(var(--v-theme-surface), 0.78);
+  background: rgba(var(--v-theme-background), 0.58);
 }
 
 .package-status-chip {
-  align-self: flex-start;
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+}
+
+.package-card-head {
+  padding-top: 1.1rem;
+}
+
+.package-title {
+  line-height: 1.25;
+}
+
+.package-price {
+  min-height: 2.2rem;
 }
 
 .package-detail-row {
@@ -746,11 +778,19 @@ onMounted(async () => {
 }
 
 .package-grid {
-  row-gap: 0.25rem;
+  margin-inline: -12px;
 }
 
 .package-grid-col {
+  padding: 12px;
   min-width: 0;
+}
+
+.package-hero-subtitle {
+  max-width: 40rem;
+  margin-inline: auto;
+  font-size: clamp(0.92rem, 2.8vw, 1.02rem);
+  line-height: 1.65;
 }
 
 .beli-skeleton {
@@ -759,7 +799,11 @@ onMounted(async () => {
 
 .beli-footer {
   border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
-  background: transparent;
+  background: rgba(var(--v-theme-surface), 0.96);
+}
+
+.package-action-btn {
+  border-radius: 12px;
 }
 
 .footer-link {
