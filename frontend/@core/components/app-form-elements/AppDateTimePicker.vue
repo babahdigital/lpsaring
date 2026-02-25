@@ -69,6 +69,8 @@ const fallbackElementId = useId()
 const { focused } = useFocus(refFlatPicker)
 const isCalendarOpen = ref(false)
 const isInlinePicker = ref(false)
+const repositionRafId = ref<number | null>(null)
+let detachCalendarPositionListeners: (() => void) | null = null
 
 // flat picker prop manipulation
 if (compAttrs.config && compAttrs.config.inline) {
@@ -141,31 +143,6 @@ onMounted(() => {
   bindPositionElement()
 })
 
-function forceCalendarBelowInput() {
-  if (typeof window === 'undefined')
-    return
-
-  const fp = refFlatPicker.value?.fp
-  const calendar = fp?.calendarContainer as HTMLElement | undefined
-  const input = getFlatpickrVisibleInput(fp)
-  if (!calendar || !input)
-    return
-
-  const inputRect = input.getBoundingClientRect()
-  const calendarWidth = calendar.offsetWidth || 300
-  const minLeft = window.scrollX + 8
-  const maxLeft = window.scrollX + window.innerWidth - calendarWidth - 8
-  const desiredLeft = inputRect.left + window.scrollX
-  const safeLeft = Math.max(minLeft, Math.min(desiredLeft, maxLeft))
-  const top = inputRect.bottom + window.scrollY + 8
-
-  calendar.style.top = `${top}px`
-  calendar.style.left = `${safeLeft}px`
-  calendar.style.right = 'auto'
-  calendar.classList.remove('arrowBottom')
-  calendar.classList.add('arrowTop')
-}
-
 function bindPositionElement() {
   const fp = refFlatPicker.value?.fp
   if (!fp)
@@ -176,17 +153,76 @@ function bindPositionElement() {
     fp.set('positionElement', anchor)
 }
 
+function repositionCalendar() {
+  const fp = refFlatPicker.value?.fp
+  if (!fp)
+    return
+
+  bindPositionElement()
+  fp._positionCalendar?.()
+}
+
+function scheduleCalendarReposition() {
+  if (typeof window === 'undefined')
+    return
+
+  if (repositionRafId.value !== null)
+    window.cancelAnimationFrame(repositionRafId.value)
+
+  repositionRafId.value = window.requestAnimationFrame(() => {
+    repositionRafId.value = null
+    repositionCalendar()
+  })
+}
+
+function removeCalendarPositionListeners() {
+  if (detachCalendarPositionListeners) {
+    detachCalendarPositionListeners()
+    detachCalendarPositionListeners = null
+  }
+
+  if (typeof window !== 'undefined' && repositionRafId.value !== null) {
+    window.cancelAnimationFrame(repositionRafId.value)
+    repositionRafId.value = null
+  }
+}
+
+function addCalendarPositionListeners() {
+  if (typeof window === 'undefined')
+    return
+
+  removeCalendarPositionListeners()
+
+  const onViewportChange = () => {
+    if (isCalendarOpen.value)
+      scheduleCalendarReposition()
+  }
+
+  window.addEventListener('scroll', onViewportChange, true)
+  window.addEventListener('resize', onViewportChange)
+  window.visualViewport?.addEventListener('resize', onViewportChange)
+  window.visualViewport?.addEventListener('scroll', onViewportChange)
+
+  detachCalendarPositionListeners = () => {
+    window.removeEventListener('scroll', onViewportChange, true)
+    window.removeEventListener('resize', onViewportChange)
+    window.visualViewport?.removeEventListener('resize', onViewportChange)
+    window.visualViewport?.removeEventListener('scroll', onViewportChange)
+  }
+}
+
 function handleCalendarOpen() {
   isCalendarOpen.value = true
+  addCalendarPositionListeners()
   nextTick(() => {
-    bindPositionElement()
-    forceCalendarBelowInput()
-    window.requestAnimationFrame(() => forceCalendarBelowInput())
+    scheduleCalendarReposition()
+    window.requestAnimationFrame(() => scheduleCalendarReposition())
   })
 }
 
 function handleCalendarClose(validate?: () => void) {
   isCalendarOpen.value = false
+  removeCalendarPositionListeners()
   validate?.()
 }
 
@@ -208,6 +244,10 @@ watch(() => props, () => {
 }, {
   deep: true,
   immediate: true,
+})
+
+onBeforeUnmount(() => {
+  removeCalendarPositionListeners()
 })
 
 const elementId = computed (() => {
