@@ -77,7 +77,11 @@ const statusTokenFromQuery = computed(() => {
     return typeof raw[0] === 'string' ? raw[0].trim() || null : null
   return typeof raw === 'string' ? raw.trim() || null : null
 })
-const isPublicView = computed(() => statusTokenFromQuery.value != null)
+const isPublicView = computed(() => {
+  if (statusTokenFromQuery.value != null)
+    return true
+  return transactionDetails.value?.user?.id === ''
+})
 const orderIdFromQuery = computed(() => {
   const raw = route.query.order_id
   if (Array.isArray(raw))
@@ -271,7 +275,11 @@ function formatToLocalPhone(phoneNumber?: string | null): string | null {
   const raw = phoneNumber.trim()
   if (raw === '')
     return null
+  if (raw === '-' || raw.toLowerCase() === 'null' || raw.toLowerCase() === 'undefined')
+    return null
   const cleaned = raw.replace(/\D/g, '')
+  if (cleaned === '')
+    return null
   if (cleaned.startsWith('62'))
     return `0${cleaned.substring(2)}`
   return raw
@@ -384,17 +392,20 @@ const detailMessage = computed((): string => {
   }
 
   const safePackageName = packageName.value ?? 'paket yang dipilih'
-  const safeUsername = displayHotspotUsername.value ?? 'akun Anda'
-  const safePhoneNumber = formatToLocalPhone(userPhoneNumberRaw.value) ?? 'nomor Anda'
+  const safeUsername = displayHotspotUsername.value
+  const safeDisplayName = String(userName.value ?? '').trim()
+  const quotaRaw = transactionDetails.value?.package?.data_quota_gb
+  const hasQuota = typeof quotaRaw === 'number' && Number.isFinite(quotaRaw) && quotaRaw > 0
+  const quotaLabel = hasQuota ? ` (${quotaRaw} GB)` : ''
 
   switch (finalStatus.value) {
     case 'SUCCESS':
-      if (transactionDetails.value?.package?.data_quota_gb === 0) {
-        return `Langganan paket ${safePackageName} Anda telah berhasil diaktifkan. Anda kini dapat menggunakan internet tanpa batas kuota hingga ${formatDate(transactionDetails.value?.user?.quota_expiry_date)}. Kredensial login akan atau sudah dikirim via WhatsApp ke ${safePhoneNumber}.`
-      }
-      else {
-        const quotaDisplay = transactionDetails.value?.package?.data_quota_gb
-        return `Pembelian paket ${safePackageName} (${quotaDisplay} GB) untuk ${safeUsername} (${userName.value}) berhasil. Kredensial login akan atau sudah dikirim via WhatsApp ke ${safePhoneNumber}.`
+      {
+        const identityLabel = [safeUsername, safeDisplayName].filter(v => v && v !== '').join(' · ')
+        const purchaseMessage = identityLabel
+          ? `Pembelian paket ${safePackageName}${quotaLabel} untuk ${identityLabel} berhasil.`
+          : `Pembelian paket ${safePackageName}${quotaLabel} berhasil.`
+        return `${purchaseMessage} Status layanan telah diperbarui.`
       }
     case 'PENDING':
       if (transactionDetails.value?.expiry_time)
