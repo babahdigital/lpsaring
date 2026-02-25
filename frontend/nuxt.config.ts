@@ -16,6 +16,11 @@ const appBaseUrl = process.env.NUXT_PUBLIC_APP_BASE_URL ?? ''
 const externalBaseUrl = process.env.NUXT_PUBLIC_EXTERNAL_BASE_URL ?? appBaseUrl
 const adminWhatsapp = process.env.NUXT_PUBLIC_ADMIN_WHATSAPP ?? ''
 const whatsappBaseUrl = process.env.NUXT_PUBLIC_WHATSAPP_BASE_URL ?? ''
+const merchantName = process.env.NUXT_PUBLIC_MERCHANT_NAME ?? 'Babah Digital'
+const merchantBusinessType = process.env.NUXT_PUBLIC_MERCHANT_BUSINESS_TYPE ?? 'Jasa Telekomunikasi / ISP (Produk Digital)'
+const merchantAddress = process.env.NUXT_PUBLIC_MERCHANT_ADDRESS ?? ''
+const merchantSupportEmail = process.env.NUXT_PUBLIC_MERCHANT_SUPPORT_EMAIL ?? ''
+const merchantSupportWhatsapp = process.env.NUXT_PUBLIC_MERCHANT_SUPPORT_WHATSAPP ?? adminWhatsapp
 const captiveSuccessRedirectUrl = process.env.NUXT_PUBLIC_CAPTIVE_SUCCESS_REDIRECT_URL ?? appBaseUrl ?? ''
 const midtransSnapUrlProduction = process.env.NUXT_PUBLIC_MIDTRANS_SNAP_URL_PRODUCTION ?? ''
 const midtransSnapUrlSandbox = process.env.NUXT_PUBLIC_MIDTRANS_SNAP_URL_SANDBOX ?? ''
@@ -267,6 +272,11 @@ export default defineNuxtConfig({
       externalBaseUrl,
       adminWhatsapp,
       whatsappBaseUrl,
+      merchantName,
+      merchantBusinessType,
+      merchantAddress,
+      merchantSupportEmail,
+      merchantSupportWhatsapp,
       captiveSuccessRedirectUrl,
       midtransClientKey: process.env.NUXT_PUBLIC_MIDTRANS_CLIENT_KEY ?? '',
       midtransEnv: process.env.NUXT_PUBLIC_MIDTRANS_ENV ?? 'sandbox',

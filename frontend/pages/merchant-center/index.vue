@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { PackagePublic } from '~/types/package'
-import { useFetch, useNuxtApp, useRuntimeConfig } from '#app'
+import { useFetch, useNuxtApp } from '#app'
 
 interface PackagesApiResponse {
   data: PackagePublic[]
@@ -15,8 +15,15 @@ definePageMeta({
 
 useHead({ title: 'Merchant Center - Babah Digital' })
 
-const runtimeConfig = useRuntimeConfig()
 const { $api } = useNuxtApp()
+const {
+  merchantName,
+  merchantBusinessType,
+  merchantAddress,
+  supportEmail,
+  supportWhatsAppFormatted,
+  supportWhatsAppHref,
+} = useMerchantProfile()
 
 const packagesRequest = useFetch<PackagesApiResponse>('/packages', {
   key: 'merchantCenterPackages',
@@ -28,24 +35,6 @@ const packagesRequest = useFetch<PackagesApiResponse>('/packages', {
 const { pending: isLoadingPackages, error: fetchPackagesError, refresh: refreshPackages } = packagesRequest
 const packageApiResponse = packagesRequest.data as Ref<PackagesApiResponse | null>
 const packages = computed(() => packageApiResponse.value?.data ?? [])
-
-const merchantName = 'Babah Digital'
-const merchantAddress = 'Jl. Rp Soeparto No. 48, Banjarbaru, Kalimantan Selatan 70714'
-const supportEmail = 'support@babahdigital.com'
-
-const supportWhatsAppRaw = computed(() => String(runtimeConfig.public.adminWhatsapp ?? '').trim())
-const supportWhatsAppFormatted = computed(() => supportWhatsAppRaw.value.replace(/[^0-9+]/g, ''))
-
-const supportWhatsAppHref = computed(() => {
-  const raw = supportWhatsAppFormatted.value
-  if (raw === '')
-    return null
-
-  const base = String(runtimeConfig.public.whatsappBaseUrl ?? 'https://wa.me').replace(/\/$/, '')
-  const phonePath = raw.replace(/^\+/, '')
-
-  return `${base}/${phonePath}`
-})
 
 function formatRupiah(value: number | null | undefined): string {
   const parsed = Number(value ?? 0)
@@ -163,9 +152,13 @@ function formatQuota(gb: number | null | undefined): string {
             </VCardItem>
             <VCardText>
               <p class="mb-2"><strong>Nama:</strong> {{ merchantName }}</p>
-              <p class="mb-2"><strong>Bidang:</strong> Jasa Telekomunikasi / ISP (Produk Digital)</p>
-              <p class="mb-2"><strong>Alamat:</strong> {{ merchantAddress }}</p>
-              <p class="mb-2"><strong>Email CS:</strong> <a :href="`mailto:${supportEmail}`">{{ supportEmail }}</a></p>
+              <p class="mb-2"><strong>Bidang:</strong> {{ merchantBusinessType }}</p>
+              <p class="mb-2"><strong>Alamat:</strong> {{ merchantAddress || '-' }}</p>
+              <p class="mb-2">
+                <strong>Email CS:</strong>
+                <a v-if="supportEmail" :href="`mailto:${supportEmail}`">{{ supportEmail }}</a>
+                <span v-else>-</span>
+              </p>
               <p class="mb-0">
                 <strong>WhatsApp CS:</strong>
                 <a v-if="supportWhatsAppHref" :href="supportWhatsAppHref" target="_blank" rel="noopener noreferrer">

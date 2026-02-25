@@ -1,10 +1,18 @@
 <script setup lang="ts">
+const {
+  merchantName,
+  merchantAddress,
+  supportEmail,
+  supportWhatsAppFormatted,
+  supportWhatsAppHref,
+} = useMerchantProfile()
+
 definePageMeta({
   layout: 'blank',
   public: true,
 })
 
-useHead({ title: 'Terms of Service - Merchant Center Babah Digital' })
+useHead({ title: `Terms of Service - Merchant Center ${merchantName.value}` })
 </script>
 
 <template>
@@ -24,7 +32,7 @@ useHead({ title: 'Terms of Service - Merchant Center Babah Digital' })
       <VCard rounded="xl">
         <VCardText class="pa-6 pa-md-8 text-body-1">
           <p>
-            Dengan menggunakan layanan Babah Digital, pengguna menyetujui syarat dan ketentuan berikut.
+            Dengan menggunakan layanan {{ merchantName }}, pengguna menyetujui syarat dan ketentuan berikut.
           </p>
 
           <h2 class="text-h6 mt-6 mb-2">1. Produk dan Harga</h2>
@@ -37,7 +45,7 @@ useHead({ title: 'Terms of Service - Merchant Center Babah Digital' })
           <h2 class="text-h6 mt-6 mb-2">2. Delivery Policy</h2>
           <p>
             Aktivasi paket dilakukan secara digital dan otomatis setelah pembayaran terkonfirmasi berhasil.
-            Estimasi pengiriman layanan: instan/real-time.
+            Status pembayaran dapat dipantau melalui halaman status transaksi yang disediakan sistem.
           </p>
 
           <h2 class="text-h6 mt-6 mb-2">3. Billing dan Pengiriman</h2>
@@ -49,7 +57,8 @@ useHead({ title: 'Terms of Service - Merchant Center Babah Digital' })
           <h2 class="text-h6 mt-6 mb-2">4. Refund Policy</h2>
           <p>
             Pembelian produk digital pada prinsipnya tidak dapat dibatalkan atau diuangkan kembali.
-            Pengembalian dana dapat diproses untuk kasus tertentu, misalnya pembayaran sukses namun layanan tidak masuk akibat gangguan sistem.
+            Pengembalian dana dapat diproses untuk kasus tertentu, misalnya pembayaran sukses namun layanan tidak terprovisioning
+            akibat gangguan sistem setelah proses verifikasi internal.
           </p>
 
           <h2 class="text-h6 mt-6 mb-2">5. Penggunaan yang Diperbolehkan</h2>
@@ -59,8 +68,19 @@ useHead({ title: 'Terms of Service - Merchant Center Babah Digital' })
 
           <h2 class="text-h6 mt-6 mb-2">6. Kontak Merchant</h2>
           <ul class="pl-6">
-            <li>Email: <a href="mailto:support@babahdigital.com">support@babahdigital.com</a></li>
-            <li>Alamat Merchant: Jl. Rp Soeparto No. 48, Banjarbaru, Kalimantan Selatan 70714</li>
+            <li>
+              Email:
+              <a v-if="supportEmail" :href="`mailto:${supportEmail}`">{{ supportEmail }}</a>
+              <span v-else>-</span>
+            </li>
+            <li>
+              WhatsApp CS:
+              <a v-if="supportWhatsAppHref" :href="supportWhatsAppHref" target="_blank" rel="noopener noreferrer">
+                {{ supportWhatsAppFormatted }}
+              </a>
+              <span v-else>-</span>
+            </li>
+            <li>Alamat Merchant: {{ merchantAddress || '-' }}</li>
           </ul>
 
           <h2 class="text-h6 mt-6 mb-2">7. Perubahan Ketentuan</h2>

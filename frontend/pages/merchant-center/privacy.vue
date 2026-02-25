@@ -1,10 +1,18 @@
 <script setup lang="ts">
+const {
+  merchantName,
+  merchantAddress,
+  supportEmail,
+  supportWhatsAppFormatted,
+  supportWhatsAppHref,
+} = useMerchantProfile()
+
 definePageMeta({
   layout: 'blank',
   public: true,
 })
 
-useHead({ title: 'Privacy Policy - Merchant Center Babah Digital' })
+useHead({ title: `Privacy Policy - Merchant Center ${merchantName.value}` })
 </script>
 
 <template>
@@ -24,7 +32,7 @@ useHead({ title: 'Privacy Policy - Merchant Center Babah Digital' })
       <VCard rounded="xl">
         <VCardText class="pa-6 pa-md-8 text-body-1">
           <p>
-            Babah Digital menghargai privasi pelanggan. Kebijakan ini menjelaskan bagaimana data pelanggan
+            {{ merchantName }} menghargai privasi pelanggan. Kebijakan ini menjelaskan bagaimana data pelanggan
             dikumpulkan, digunakan, dan dilindungi dalam layanan hotspot dan pembayaran digital.
           </p>
 
@@ -32,13 +40,14 @@ useHead({ title: 'Privacy Policy - Merchant Center Babah Digital' })
           <ul class="pl-6">
             <li>Data identitas akun: nama, nomor HP, dan informasi profil pengguna.</li>
             <li>Data transaksi: paket yang dipilih, nominal pembayaran, status transaksi, dan waktu transaksi.</li>
-            <li>Data operasional layanan: log autentikasi, data perangkat, dan metadata teknis yang relevan untuk keamanan layanan.</li>
+            <li>Data operasional layanan: log OTP/auth, data perangkat, client IP/MAC, dan metadata teknis untuk keamanan layanan.</li>
           </ul>
 
           <h2 class="text-h6 mt-6 mb-2">2. Tujuan Penggunaan Data</h2>
           <ul class="pl-6">
             <li>Memberikan akses layanan internet sesuai paket yang dibeli.</li>
             <li>Memproses pembayaran melalui payment gateway resmi.</li>
+            <li>Menyediakan halaman status pembayaran dan notifikasi transaksi kepada pelanggan.</li>
             <li>Mengelola dukungan pelanggan, audit transaksi, dan pencegahan penyalahgunaan layanan.</li>
           </ul>
 
@@ -61,8 +70,19 @@ useHead({ title: 'Privacy Policy - Merchant Center Babah Digital' })
 
           <h2 class="text-h6 mt-6 mb-2">6. Kontak Privasi</h2>
           <ul class="pl-6">
-            <li>Email: <a href="mailto:support@babahdigital.com">support@babahdigital.com</a></li>
-            <li>Alamat Merchant: Jl. Rp Soeparto No. 48, Banjarbaru, Kalimantan Selatan 70714</li>
+            <li>
+              Email:
+              <a v-if="supportEmail" :href="`mailto:${supportEmail}`">{{ supportEmail }}</a>
+              <span v-else>-</span>
+            </li>
+            <li>
+              WhatsApp CS:
+              <a v-if="supportWhatsAppHref" :href="supportWhatsAppHref" target="_blank" rel="noopener noreferrer">
+                {{ supportWhatsAppFormatted }}
+              </a>
+              <span v-else>-</span>
+            </li>
+            <li>Alamat Merchant: {{ merchantAddress || '-' }}</li>
           </ul>
 
           <p class="text-medium-emphasis mt-8 mb-0">
