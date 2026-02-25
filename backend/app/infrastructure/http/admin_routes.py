@@ -1,23 +1,17 @@
 # backend/app/infrastructure/http/admin/admin_routes.py
-from flask import Blueprint, jsonify, request, current_app, send_file, abort, make_response, render_template
+from flask import Blueprint, jsonify, current_app
 from sqlalchemy import func, or_, select, desc
 from sqlalchemy.orm import selectinload
 from datetime import datetime, timezone as dt_timezone, timedelta, time as dt_time
 from zoneinfo import ZoneInfo
 from http import HTTPStatus
-from pydantic import ValidationError
 from decimal import Decimal
 import json
-import midtransclient
 import uuid
-import csv
-import io
 import os
 import pathlib
-import subprocess
+import subprocess  # noqa: F401
 from sqlalchemy.engine import make_url
-import sqlalchemy as sa
-import requests
 
 from app.extensions import db
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
@@ -31,19 +25,13 @@ from app.infrastructure.db.models import (
     TransactionStatus,
     AdminActionLog,
     AdminActionType,
-    NotificationRecipient,
-    NotificationType,
     QuotaRequest,
     RequestStatus,
     TransactionEvent,
     TransactionEventSource,
 )
 from .decorators import admin_required, super_admin_required
-from .schemas.notification_schemas import NotificationRecipientUpdateSchema
-from app.utils.formatters import get_phone_number_variations, format_to_local_phone
-from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package
-
-from app.infrastructure.http.transactions_routes import (
+from .transactions_routes import (
     extract_action_url,
     extract_qr_code_url,
     extract_va_number,
@@ -51,8 +39,30 @@ from app.infrastructure.http.transactions_routes import (
     get_midtrans_snap_client,
     safe_parse_midtrans_datetime,
 )
-
+from .admin_contexts.backups import (
+    list_backups_impl,
+    create_backup_impl,
+    download_backup_impl,
+    upload_backup_impl,
+    restore_backup_impl,
+)
+from .admin_contexts.notifications import (
+    send_whatsapp_test_impl,
+    send_telegram_test_impl,
+    send_whatsapp_broadcast_impl,
+    get_notification_recipients_impl,
+    update_notification_recipients_impl,
+)
+from .admin_contexts.transactions import (
+    get_transactions_list_impl,
+    get_transaction_detail_impl,
+    export_transactions_impl,
+)
+from .admin_contexts.billing import create_bill_impl, midtrans_selftest_impl
+from .admin_contexts.reports import get_transaction_admin_report_pdf_impl
 from app.services import settings_service
+from app.utils.formatters import get_phone_number_variations, format_to_local_phone
+from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package
 
 admin_bp = Blueprint("admin_api", __name__)
 
@@ -105,72 +115,6 @@ def _format_dt_local(value: datetime | None, *, with_seconds: bool = False) -> s
             return value.isoformat()
         except Exception:
             return "-"
-
-
-def _sanitize_midtrans_payload_for_report(payload: object | None) -> object | None:
-    if payload is None:
-        return None
-
-    if isinstance(payload, dict):
-        sanitized: dict[object, object] = {}
-        for k, v in payload.items():
-            try:
-                key_str = str(k)
-            except Exception:
-                key_str = ""
-            if key_str.lower() == "signature_key":
-                continue
-            sanitized[k] = _sanitize_midtrans_payload_for_report(v)
-        return sanitized
-
-    if isinstance(payload, list):
-        return [_sanitize_midtrans_payload_for_report(v) for v in payload]
-
-    return payload
-
-
-def _compact_json_summary(payload: object | None, *, max_len: int = 180) -> str:
-    if payload is None:
-        return "-"
-    if isinstance(payload, dict):
-        keys_priority = [
-            "transaction_status",
-            "status_code",
-            "status_message",
-            "payment_type",
-            "acquirer",
-            "issuer",
-            "settlement_time",
-            "transaction_time",
-            "expiry_time",
-            "fraud_status",
-            "gross_amount",
-            "transaction_id",
-            "order_id",
-            "message",
-            "reason",
-        ]
-        parts: list[str] = []
-        for k in keys_priority:
-            if k in payload and payload.get(k) not in (None, ""):
-                v = payload.get(k)
-                s = str(v)
-                if k == "signature_key" and len(s) > 18:
-                    s = s[:12] + "…" + s[-6:]
-                parts.append(f"{k}={s}")
-        if not parts:
-            try:
-                parts.append(json.dumps(payload, ensure_ascii=False)[:max_len])
-            except Exception:
-                parts.append(str(payload)[:max_len])
-        text = " | ".join(parts)
-    else:
-        text = str(payload)
-
-    text = " ".join(text.split())
-    if len(text) > max_len:
-        return text[: max_len - 1] + "…"
-    return text
 
 
 def _get_backup_dir() -> str:
@@ -367,7 +311,8 @@ def get_dashboard_stats(current_admin: User):
         ) or Decimal("0.00")
         revenue_month = db.session.scalar(
             select(func.sum(Transaction.amount)).where(
-                Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_of_month_utc
+                Transaction.status == TransactionStatus.SUCCESS,
+                Transaction.created_at >= start_of_month_utc,
             )
         ) or Decimal("0.00")
         revenue_week = db.session.scalar(
@@ -387,7 +332,8 @@ def get_dashboard_stats(current_admin: User):
         transaksi_hari_ini = (
             db.session.scalar(
                 select(func.count(Transaction.id)).where(
-                    Transaction.status == TransactionStatus.SUCCESS, Transaction.created_at >= start_of_today_utc
+                    Transaction.status == TransactionStatus.SUCCESS,
+                    Transaction.created_at >= start_of_today_utc,
                 )
             )
             or 0
@@ -413,10 +359,7 @@ def get_dashboard_stats(current_admin: User):
         )
 
         new_registrants = (
-            db.session.scalar(
-                select(func.count(User.id)).where(User.approval_status == ApprovalStatus.PENDING_APPROVAL)
-            )
-            or 0
+            db.session.scalar(select(func.count(User.id)).where(User.created_at >= start_of_today_utc)) or 0
         )
         active_users = (
             db.session.scalar(
@@ -573,623 +516,101 @@ def get_dashboard_stats(current_admin: User):
 @admin_bp.route("/backups", methods=["GET"])
 @admin_required
 def list_backups(current_admin: User):
-    try:
-        backup_dir = _get_backup_dir()
-        items = []
-        for pattern in ("*.dump", "*.sql"):
-            for entry in pathlib.Path(backup_dir).glob(pattern):
-                stat = entry.stat()
-                items.append(
-                    {
-                        "name": entry.name,
-                        "size_bytes": stat.st_size,
-                        "created_at": datetime.fromtimestamp(stat.st_mtime, tz=dt_timezone.utc).isoformat(),
-                    }
-                )
-        items.sort(key=lambda x: x["created_at"], reverse=True)
-        return jsonify({"items": items}), HTTPStatus.OK
-    except Exception as e:
-        current_app.logger.error(f"Error mengambil daftar backup: {e}", exc_info=True)
-        return jsonify({"message": "Gagal mengambil daftar backup."}), HTTPStatus.INTERNAL_SERVER_ERROR
+    return list_backups_impl(get_backup_dir=_get_backup_dir)
 
 
 @admin_bp.route("/backups", methods=["POST"])
 @admin_required
 def create_backup(current_admin: User):
-    try:
-        backup_dir = _get_backup_dir()
-        timestamp = datetime.now(dt_timezone.utc).strftime("%Y%m%d_%H%M%S")
-        filename = f"backup_{timestamp}.dump"
-        output_path = os.path.join(backup_dir, filename)
-
-        cmd = _build_pg_dump_command(output_path)
-        env = os.environ.copy()
-        db_uri = current_app.config.get("SQLALCHEMY_DATABASE_URI")
-        if not isinstance(db_uri, str) or not db_uri:
-            raise RuntimeError("DATABASE_URL tidak disetel")
-        db_url = make_url(db_uri)
-        if db_url.password:
-            env["PGPASSWORD"] = db_url.password
-
-        result = subprocess.run(cmd, env=env, capture_output=True, text=True, check=False)
-        if result.returncode != 0:
-            current_app.logger.error(f"pg_dump gagal: {result.stderr}")
-            return jsonify({"message": "Backup gagal dijalankan."}), HTTPStatus.INTERNAL_SERVER_ERROR
-
-        stat = pathlib.Path(output_path).stat()
-        return jsonify(
-            {
-                "name": filename,
-                "size_bytes": stat.st_size,
-                "created_at": datetime.fromtimestamp(stat.st_mtime, tz=dt_timezone.utc).isoformat(),
-            }
-        ), HTTPStatus.OK
-    except FileNotFoundError:
-        return jsonify({"message": "pg_dump tidak tersedia di server."}), HTTPStatus.BAD_REQUEST
-    except RuntimeError as e:
-        return jsonify({"message": str(e)}), HTTPStatus.BAD_REQUEST
-    except Exception as e:
-        current_app.logger.error(f"Error membuat backup: {e}", exc_info=True)
-        return jsonify({"message": "Gagal membuat backup."}), HTTPStatus.INTERNAL_SERVER_ERROR
+    return create_backup_impl(get_backup_dir=_get_backup_dir, build_pg_dump_command=_build_pg_dump_command)
 
 
 @admin_bp.route("/backups/<path:filename>", methods=["GET"])
 @admin_required
 def download_backup(current_admin: User, filename: str):
-    backup_dir = _get_backup_dir()
-    safe_name = pathlib.Path(filename).name
-    file_path = pathlib.Path(backup_dir) / safe_name
-    if not file_path.exists() or not file_path.is_file():
-        return jsonify({"message": "File backup tidak ditemukan."}), HTTPStatus.NOT_FOUND
-    return send_file(file_path, as_attachment=True)
+    return download_backup_impl(filename=filename, get_backup_dir=_get_backup_dir)
 
 
 @admin_bp.route("/backups/upload", methods=["POST"])
 @super_admin_required
 def upload_backup(current_admin: User):
-    try:
-        uploaded_file = request.files.get("file")
-        if uploaded_file is None:
-            return jsonify({"message": "File backup wajib diunggah."}), HTTPStatus.BAD_REQUEST
-
-        original_name = pathlib.Path(uploaded_file.filename or "").name
-        if not original_name:
-            return jsonify({"message": "Nama file tidak valid."}), HTTPStatus.BAD_REQUEST
-
-        extension = pathlib.Path(original_name).suffix.lower()
-        if extension not in (".dump", ".sql"):
-            return jsonify({"message": "Format file tidak didukung. Gunakan .dump atau .sql"}), HTTPStatus.BAD_REQUEST
-
-        backup_dir = pathlib.Path(_get_backup_dir())
-        stem = pathlib.Path(original_name).stem
-        timestamp = datetime.now(dt_timezone.utc).strftime("%Y%m%d_%H%M%S")
-        save_name = f"upload_{timestamp}_{stem}{extension}"
-        target_path = backup_dir / save_name
-        uploaded_file.save(target_path)
-
-        stat = target_path.stat()
-        return jsonify(
-            {
-                "message": "File backup berhasil diunggah.",
-                "name": save_name,
-                "size_bytes": stat.st_size,
-                "created_at": datetime.fromtimestamp(stat.st_mtime, tz=dt_timezone.utc).isoformat(),
-            }
-        ), HTTPStatus.OK
-    except Exception as e:
-        current_app.logger.error(f"Error upload backup: {e}", exc_info=True)
-        return jsonify({"message": "Gagal mengunggah file backup."}), HTTPStatus.INTERNAL_SERVER_ERROR
+    return upload_backup_impl(get_backup_dir=_get_backup_dir)
 
 
 @admin_bp.route("/backups/restore", methods=["POST"])
 @super_admin_required
 def restore_backup(current_admin: User):
-    temporary_restore_path: pathlib.Path | None = None
-    try:
-        json_data = request.get_json(silent=True) or {}
-        filename = str(json_data.get("filename") or "").strip()
-        confirm = str(json_data.get("confirm") or "").strip().upper()
-        restore_mode = str(json_data.get("restore_mode") or "merge").strip().lower()
-
-        if not filename:
-            return jsonify({"message": "filename wajib diisi."}), HTTPStatus.BAD_REQUEST
-        if confirm != "RESTORE":
-            return jsonify({"message": "Konfirmasi restore tidak valid."}), HTTPStatus.BAD_REQUEST
-        if restore_mode not in ("merge", "replace_users"):
-            return jsonify(
-                {"message": "restore_mode tidak valid. Gunakan 'merge' atau 'replace_users'."}
-            ), HTTPStatus.BAD_REQUEST
-
-        backup_dir = _get_backup_dir()
-        safe_name = pathlib.Path(filename).name
-        file_path = pathlib.Path(backup_dir) / safe_name
-        extension = file_path.suffix.lower()
-        if extension not in (".dump", ".sql"):
-            return jsonify({"message": "Format file backup tidak didukung."}), HTTPStatus.BAD_REQUEST
-        if extension != ".sql" and restore_mode != "merge":
-            return jsonify(
-                {"message": "restore_mode selain 'merge' hanya didukung untuk file .sql"}
-            ), HTTPStatus.BAD_REQUEST
-        if not file_path.exists() or not file_path.is_file():
-            return jsonify({"message": "File backup tidak ditemukan."}), HTTPStatus.NOT_FOUND
-
-        db.session.remove()
-        db.engine.dispose()
-
-        if extension == ".sql":
-            sanitized_path, removed_lines = _sanitize_sql_dump_for_restore(file_path)
-            if removed_lines > 0:
-                current_app.logger.warning(
-                    "Restore SQL: %s baris warning pg_dump dihapus otomatis dari %s",
-                    removed_lines,
-                    safe_name,
-                )
-            if sanitized_path != file_path:
-                temporary_restore_path = sanitized_path
-            cmd = _build_psql_restore_command(str(sanitized_path))
-        else:
-            cmd = _build_pg_restore_command(str(file_path))
-        env = os.environ.copy()
-        db_uri = current_app.config.get("SQLALCHEMY_DATABASE_URI")
-        if not isinstance(db_uri, str) or not db_uri:
-            raise RuntimeError("DATABASE_URL tidak disetel")
-        db_url = make_url(db_uri)
-        if db_url.password:
-            env["PGPASSWORD"] = db_url.password
-
-        if extension == ".sql" and restore_mode == "replace_users":
-            pre_cmd = _build_psql_statement_command("TRUNCATE TABLE public.users RESTART IDENTITY CASCADE;")
-            pre_result = subprocess.run(pre_cmd, env=env, capture_output=True, text=True, check=False)
-            if pre_result.returncode != 0:
-                pre_stderr = (pre_result.stderr or "").strip()
-                current_app.logger.error(f"Pre-clean users sebelum restore gagal: {pre_stderr}")
-                return jsonify(
-                    {
-                        "message": "Pre-clean data users gagal dijalankan sebelum restore.",
-                        "details": pre_stderr[:500],
-                    }
-                ), HTTPStatus.INTERNAL_SERVER_ERROR
-
-        result = subprocess.run(cmd, env=env, capture_output=True, text=True, check=False)
-        if result.returncode != 0:
-            stderr_text = (result.stderr or "").strip()
-            only_transaction_timeout_warning = (
-                extension == ".dump" and 'unrecognized configuration parameter "transaction_timeout"' in stderr_text
-            )
-
-            unsupported_dump_version = (
-                extension == ".dump" and "unsupported version" in stderr_text.lower() and "file header" in stderr_text.lower()
-            )
-
-            if only_transaction_timeout_warning:
-                current_app.logger.warning(
-                    "pg_restore selesai dengan warning kompatibilitas transaction_timeout: %s",
-                    stderr_text,
-                )
-            elif unsupported_dump_version:
-                # Biasanya terjadi jika file .dump dibuat oleh pg_dump versi lebih baru
-                # (contoh: dump v16+ tidak bisa dibaca oleh pg_restore v15).
-                current_app.logger.error(f"pg_restore gagal (dump version mismatch): {stderr_text}")
-                return jsonify(
-                    {
-                        "message": "Restore gagal: format file backup lebih baru dari versi pg_restore di server.",
-                        "details": stderr_text[:500],
-                        "hint": "Buat backup ulang dari server ini (Admin → Backup) atau restore memakai pg_restore versi yang sama/lebih baru.",
-                    }
-                ), HTTPStatus.BAD_REQUEST
-            else:
-                current_app.logger.error(f"pg_restore gagal: {stderr_text}")
-                return jsonify(
-                    {
-                        "message": "Restore gagal dijalankan.",
-                        "details": stderr_text[:500],
-                    }
-                ), HTTPStatus.INTERNAL_SERVER_ERROR
-
-        return jsonify(
-            {
-                "message": "Restore database berhasil dijalankan.",
-                "filename": safe_name,
-                "restore_mode": restore_mode,
-            }
-        ), HTTPStatus.OK
-    except FileNotFoundError:
-        return jsonify({"message": "pg_restore/psql tidak tersedia di server."}), HTTPStatus.BAD_REQUEST
-    except RuntimeError as e:
-        return jsonify({"message": str(e)}), HTTPStatus.BAD_REQUEST
-    except Exception as e:
-        current_app.logger.error(f"Error restore backup: {e}", exc_info=True)
-        return jsonify({"message": "Gagal menjalankan restore backup."}), HTTPStatus.INTERNAL_SERVER_ERROR
-    finally:
-        if temporary_restore_path is not None:
-            try:
-                if temporary_restore_path.exists():
-                    temporary_restore_path.unlink()
-            except Exception as cleanup_error:
-                current_app.logger.warning(
-                    "Gagal menghapus file sementara restore %s: %s",
-                    str(temporary_restore_path),
-                    cleanup_error,
-                )
+    return restore_backup_impl(
+        db=db,
+        get_backup_dir=_get_backup_dir,
+        sanitize_sql_dump_for_restore=_sanitize_sql_dump_for_restore,
+        build_psql_restore_command=_build_psql_restore_command,
+        build_pg_restore_command=_build_pg_restore_command,
+        build_psql_statement_command=_build_psql_statement_command,
+    )
 
 
 @admin_bp.route("/whatsapp/test-send", methods=["POST"])
 @admin_required
 def send_whatsapp_test(current_admin: User):
-    try:
-        json_data = request.get_json(silent=True) or {}
-        phone_number = str(json_data.get("phone_number") or "").strip()
-        message = str(json_data.get("message") or "").strip() or "Tes WhatsApp dari panel admin hotspot."
-
-        if not phone_number:
-            return jsonify({"message": "Nomor WhatsApp wajib diisi."}), HTTPStatus.BAD_REQUEST
-        if len(message) > 1000:
-            return jsonify({"message": "Pesan terlalu panjang (maks 1000 karakter)."}), HTTPStatus.BAD_REQUEST
-
-        sent = send_whatsapp_message(phone_number, message)
-        if not sent:
-            return jsonify(
-                {
-                    "message": "Pengiriman WhatsApp gagal. Cek konfigurasi Fonnte/token/nomor tujuan.",
-                }
-            ), HTTPStatus.BAD_REQUEST
-
-        return jsonify(
-            {
-                "message": "Pesan WhatsApp uji coba berhasil dikirim.",
-                "target": phone_number,
-            }
-        ), HTTPStatus.OK
-    except Exception as e:
-        current_app.logger.error(f"Error test-send WhatsApp admin: {e}", exc_info=True)
-        return jsonify({"message": "Gagal mengirim WhatsApp uji coba."}), HTTPStatus.INTERNAL_SERVER_ERROR
+    return send_whatsapp_test_impl(send_whatsapp_message=send_whatsapp_message)
 
 
 @admin_bp.route("/telegram/test-send", methods=["POST"])
 @admin_required
 def send_telegram_test(current_admin: User):
-    try:
-        json_data = request.get_json(silent=True) or {}
-        chat_id = str(json_data.get("chat_id") or "").strip()
-        message = str(json_data.get("message") or "").strip() or "Tes Telegram dari panel admin hotspot."
-
-        if not chat_id:
-            return jsonify({"message": "chat_id Telegram wajib diisi."}), HTTPStatus.BAD_REQUEST
-        if len(message) > 4000:
-            return jsonify({"message": "Pesan terlalu panjang (maks 4000 karakter)."}), HTTPStatus.BAD_REQUEST
-
-        sent = send_telegram_message(chat_id, message)
-        if not sent:
-            return jsonify(
-                {
-                    "message": "Pengiriman Telegram gagal. Cek konfigurasi bot token / chat_id.",
-                }
-            ), HTTPStatus.BAD_REQUEST
-
-        return jsonify(
-            {
-                "message": "Pesan Telegram uji coba berhasil dikirim.",
-                "target": chat_id,
-            }
-        ), HTTPStatus.OK
-    except Exception as e:
-        current_app.logger.error(f"Error test-send Telegram admin: {e}", exc_info=True)
-        return jsonify({"message": "Gagal mengirim Telegram uji coba."}), HTTPStatus.INTERNAL_SERVER_ERROR
+    return send_telegram_test_impl(send_telegram_message=send_telegram_message)
 
 
 @admin_bp.route("/whatsapp/broadcast", methods=["POST"])
 @admin_required
 def send_whatsapp_broadcast(current_admin: User):
-    try:
-        json_data = request.get_json(silent=True) or {}
-        target_role = str(json_data.get("target_role") or "").strip().upper()
-        message = str(json_data.get("message") or "").strip()
-
-        if target_role not in {UserRole.USER.value, UserRole.KOMANDAN.value}:
-            return jsonify({"message": "Filter role tidak valid. Gunakan USER atau KOMANDAN."}), HTTPStatus.BAD_REQUEST
-        if not message:
-            return jsonify({"message": "Pesan wajib diisi."}), HTTPStatus.BAD_REQUEST
-        if len(message) > 1000:
-            return jsonify({"message": "Pesan terlalu panjang (maks 1000 karakter)."}), HTTPStatus.BAD_REQUEST
-
-        recipients_query = select(User).where(
-            User.role == UserRole[target_role],
-            User.approval_status == ApprovalStatus.APPROVED,
-            User.phone_number.isnot(None),
-            User.phone_number != "",
-        )
-        recipients = db.session.scalars(recipients_query).all()
-
-        if not recipients:
-            return jsonify(
-                {
-                    "message": f"Tidak ada penerima untuk role {target_role}.",
-                    "target_role": target_role,
-                    "total_recipients": 0,
-                    "sent_count": 0,
-                    "failed_count": 0,
-                }
-            ), HTTPStatus.OK
-
-        sent_count = 0
-        failed_numbers = []
-        for user in recipients:
-            phone_number = str(user.phone_number or "").strip()
-            if not phone_number:
-                failed_numbers.append(phone_number)
-                continue
-            sent = send_whatsapp_message(phone_number, message)
-            if sent:
-                sent_count += 1
-            else:
-                failed_numbers.append(phone_number)
-
-        failed_count = len(recipients) - sent_count
-        return jsonify(
-            {
-                "message": "Pengiriman WhatsApp massal selesai diproses.",
-                "target_role": target_role,
-                "total_recipients": len(recipients),
-                "sent_count": sent_count,
-                "failed_count": failed_count,
-                "failed_numbers": failed_numbers[:20],
-            }
-        ), HTTPStatus.OK
-    except Exception as e:
-        current_app.logger.error(f"Error broadcast WhatsApp admin: {e}", exc_info=True)
-        return jsonify({"message": "Gagal memproses pengiriman WhatsApp massal."}), HTTPStatus.INTERNAL_SERVER_ERROR
+    return send_whatsapp_broadcast_impl(db=db, send_whatsapp_message=send_whatsapp_message)
 
 
 @admin_bp.route("/notification-recipients", methods=["GET"])
 @super_admin_required
 def get_notification_recipients(current_admin: User):
     """Mengambil daftar admin dan status langganan mereka untuk tipe notifikasi tertentu."""
-    notification_type_str = request.args.get("notification_type") or request.args.get("type") or "NEW_USER_REGISTRATION"
-    try:
-        notification_type = NotificationType[notification_type_str.upper()]
-    except KeyError:
-        return jsonify({"message": f"Tipe notifikasi tidak valid: {notification_type_str}"}), HTTPStatus.BAD_REQUEST
-
-    try:
-        all_admins_query = (
-            select(User).where(User.role.in_([UserRole.ADMIN, UserRole.SUPER_ADMIN])).order_by(User.full_name.asc())
-        )
-        all_admins = db.session.scalars(all_admins_query).all()
-
-        subscribed_admin_ids_query = select(NotificationRecipient.admin_user_id).where(
-            NotificationRecipient.notification_type == notification_type
-        )
-        subscribed_admin_ids = set(db.session.scalars(subscribed_admin_ids_query).all())
-
-        response_data = []
-        for admin in all_admins:
-            status_data = {
-                "id": str(admin.id),
-                "full_name": admin.full_name,
-                "phone_number": admin.phone_number,
-                "is_subscribed": admin.id in subscribed_admin_ids,
-            }
-            response_data.append(status_data)
-
-        return jsonify(response_data), HTTPStatus.OK
-    except Exception as e:
-        current_app.logger.error(
-            f"Error mengambil daftar penerima notifikasi untuk tipe {notification_type.name}: {e}", exc_info=True
-        )
-        return jsonify({"message": "Terjadi kesalahan internal saat mengambil data."}), HTTPStatus.INTERNAL_SERVER_ERROR
+    return get_notification_recipients_impl(db=db)
 
 
 @admin_bp.route("/notification-recipients", methods=["POST"])
 @super_admin_required
 def update_notification_recipients(current_admin: User):
     """Memperbarui daftar penerima untuk tipe notifikasi tertentu dari payload."""
-    json_data = request.get_json()
-    if not json_data:
-        return jsonify({"message": "Request body tidak boleh kosong."}), HTTPStatus.BAD_REQUEST
-
-    try:
-        update_data = NotificationRecipientUpdateSchema.model_validate(json_data)
-        notification_type = update_data.notification_type
-
-        db.session.execute(
-            db.delete(NotificationRecipient).where(NotificationRecipient.notification_type == notification_type)
-        )
-
-        new_recipients = []
-        if update_data.subscribed_admin_ids:
-            valid_admin_ids_q = select(User.id).where(
-                User.id.in_(update_data.subscribed_admin_ids), User.role.in_([UserRole.ADMIN, UserRole.SUPER_ADMIN])
-            )
-            valid_admin_ids = db.session.scalars(valid_admin_ids_q).all()
-            for admin_id in valid_admin_ids:
-                recipient = NotificationRecipient()
-                recipient.admin_user_id = admin_id
-                recipient.notification_type = notification_type
-                new_recipients.append(recipient)
-            if new_recipients:
-                db.session.add_all(new_recipients)
-
-        db.session.commit()
-        return jsonify(
-            {"message": "Pengaturan notifikasi berhasil disimpan.", "total_recipients": len(new_recipients)}
-        ), HTTPStatus.OK
-    except ValidationError as e:
-        return jsonify({"errors": e.errors()}), HTTPStatus.UNPROCESSABLE_ENTITY
-    except Exception as e:
-        db.session.rollback()
-        current_app.logger.error(f"Gagal memperbarui penerima notifikasi: {e}", exc_info=True)
-        return jsonify({"message": "Terjadi kesalahan internal saat menyimpan data."}), HTTPStatus.INTERNAL_SERVER_ERROR
+    return update_notification_recipients_impl(db=db)
 
 
 @admin_bp.route("/transactions", methods=["GET"])
 @admin_required
 def get_transactions_list(current_admin: User):
     """Mengambil daftar transaksi dengan paginasi dan filter."""
-    try:
-        page = request.args.get("page", 1, type=int)
-        per_page = min(request.args.get("itemsPerPage", 10, type=int), 100)
-        sort_by = request.args.get("sortBy", "created_at")
-        sort_order = request.args.get("sortOrder", "desc")
-        search_query = request.args.get("search", "").strip()
-        user_id_filter = request.args.get("user_id")
-        start_date_str = request.args.get("start_date")
-        end_date_str = request.args.get("end_date")
-
-        query = db.select(Transaction).options(selectinload(Transaction.user), selectinload(Transaction.package))
-
-        if search_query:
-            query = query.outerjoin(User, Transaction.user_id == User.id)
-
-        if user_id_filter:
-            try:
-                user_uuid = uuid.UUID(user_id_filter)
-                query = query.where(Transaction.user_id == user_uuid)
-            except ValueError:
-                return jsonify({"message": "Invalid user_id format."}), HTTPStatus.BAD_REQUEST
-
-        if start_date_str and end_date_str:
-            try:
-                start_utc, end_utc = _parse_local_date_range_to_utc(start_date_str, end_date_str)
-                query = query.where(Transaction.created_at >= start_utc)
-                query = query.where(Transaction.created_at < end_utc)
-            except ValueError:
-                return jsonify({"message": "Format tanggal tidak valid."}), HTTPStatus.BAD_REQUEST
-        elif start_date_str or end_date_str:
-            return jsonify({"message": "start_date dan end_date harus diisi keduanya."}), HTTPStatus.BAD_REQUEST
-
-        if search_query:
-            search_term = f"%{search_query}%"
-            phone_variations = get_phone_number_variations(search_query)
-            query = query.where(
-                or_(
-                    Transaction.midtrans_order_id.ilike(search_term),
-                    User.full_name.ilike(search_term),
-                    User.phone_number.in_(phone_variations)
-                    if phone_variations
-                    else User.phone_number.ilike(search_term),
-                )
-            )
-
-        sortable_columns = {
-            "created_at": Transaction.created_at,
-            "amount": Transaction.amount,
-            "status": Transaction.status,
-        }
-        if sort_by in sortable_columns:
-            query = query.order_by(
-                desc(sortable_columns[sort_by]) if sort_order == "desc" else sortable_columns[sort_by]
-            )
-        else:
-            query = query.order_by(desc(Transaction.created_at))
-
-        pagination = db.paginate(query, page=page, per_page=per_page, error_out=False)
-        transactions_data = [
-            {
-                "id": str(tx.id),
-                "order_id": tx.midtrans_order_id,
-                "amount": float(tx.amount),
-                "status": tx.status.value,
-                "created_at": tx.created_at.isoformat(),
-                "midtrans_transaction_id": tx.midtrans_transaction_id,
-                "payment_method": tx.payment_method,
-                "payment_time": tx.payment_time.isoformat() if tx.payment_time else None,
-                "expiry_time": tx.expiry_time.isoformat() if tx.expiry_time else None,
-                "user": {
-                    "full_name": tx.user.full_name if tx.user else "N/A",
-                    "phone_number": tx.user.phone_number if tx.user else "N/A",
-                },
-                "package_name": tx.package.name if tx.package else "N/A",
-            }
-            for tx in pagination.items
-        ]
-
-        return jsonify({"items": transactions_data, "totalItems": pagination.total}), HTTPStatus.OK
-    except Exception as e:
-        current_app.logger.error(f"Error mengambil daftar transaksi: {e}", exc_info=True)
-        return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
+    return get_transactions_list_impl(
+        db=db,
+        parse_local_date_range_to_utc=_parse_local_date_range_to_utc,
+        get_phone_number_variations=get_phone_number_variations,
+        User=User,
+        Transaction=Transaction,
+        selectinload=selectinload,
+        or_=or_,
+        desc=desc,
+    )
 
 
 @admin_bp.route("/transactions/<order_id>/detail", methods=["GET"])
 @admin_required
 def get_transaction_detail(current_admin: User, order_id: str):
     """Mengambil detail satu transaksi (termasuk payload notifikasi Midtrans jika tersedia)."""
-    try:
-        order_id = (order_id or "").strip()
-        if not order_id:
-            return jsonify({"message": "order_id tidak boleh kosong."}), HTTPStatus.BAD_REQUEST
-
-        tx = db.session.scalar(
-            select(Transaction)
-            .where(Transaction.midtrans_order_id == order_id)
-            .options(selectinload(Transaction.user), selectinload(Transaction.package))
-        )
-
-        if tx is None:
-            return jsonify({"message": "Transaksi tidak ditemukan."}), HTTPStatus.NOT_FOUND
-
-        payload: object | None = None
-        if tx.midtrans_notification_payload:
-            try:
-                payload = json.loads(tx.midtrans_notification_payload)
-            except Exception:
-                payload = {"_raw": tx.midtrans_notification_payload}
-
-        events_q = (
-            select(TransactionEvent)
-            .where(TransactionEvent.transaction_id == tx.id)
-            .order_by(TransactionEvent.created_at.asc())
-        )
-        events = db.session.scalars(events_q).all()
-        events_payload = []
-        for ev in events:
-            ev_payload: object | None = None
-            if ev.payload:
-                try:
-                    ev_payload = json.loads(ev.payload)
-                except Exception:
-                    ev_payload = {"_raw": ev.payload}
-            events_payload.append(
-                {
-                    "id": str(ev.id),
-                    "created_at": ev.created_at.isoformat() if ev.created_at else None,
-                    "source": ev.source.value,
-                    "event_type": ev.event_type,
-                    "status": ev.status.value if ev.status else None,
-                    "payload": ev_payload,
-                }
-            )
-
-        return (
-            jsonify(
-                {
-                    "id": str(tx.id),
-                    "order_id": tx.midtrans_order_id,
-                    "amount": float(tx.amount),
-                    "status": tx.status.value,
-                    "created_at": tx.created_at.isoformat(),
-                    "updated_at": tx.updated_at.isoformat() if tx.updated_at else None,
-                    "midtrans_transaction_id": tx.midtrans_transaction_id,
-                    "payment_method": tx.payment_method,
-                    "payment_time": tx.payment_time.isoformat() if tx.payment_time else None,
-                    "expiry_time": tx.expiry_time.isoformat() if tx.expiry_time else None,
-                    "va_number": tx.va_number,
-                    "payment_code": tx.payment_code,
-                    "biller_code": tx.biller_code,
-                    "qr_code_url": tx.qr_code_url,
-                    "user": {
-                        "full_name": tx.user.full_name if tx.user else "N/A",
-                        "phone_number": tx.user.phone_number if tx.user else "N/A",
-                    },
-                    "package_name": tx.package.name if tx.package else "N/A",
-                    "midtrans_notification_payload": payload,
-                    "events": events_payload,
-                }
-            ),
-            HTTPStatus.OK,
-        )
-    except Exception as e:
-        current_app.logger.error(f"Error mengambil detail transaksi {order_id}: {e}", exc_info=True)
-        return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
+    return get_transaction_detail_impl(
+        db=db,
+        order_id=order_id,
+        Transaction=Transaction,
+        TransactionEvent=TransactionEvent,
+        select=select,
+        selectinload=selectinload,
+        json_module=json,
+    )
 
 
 @admin_bp.route("/transactions/export", methods=["GET"])
@@ -1203,411 +624,24 @@ def export_transactions(current_admin: User):
     - end_date: YYYY-MM-DD (wajib)
     - user_id: UUID (opsional)
     """
-    try:
-        fmt = str(request.args.get("format", "") or "").strip().lower()
-        start_date_str = str(request.args.get("start_date", "") or "").strip()
-        end_date_str = str(request.args.get("end_date", "") or "").strip()
-        user_id_filter = request.args.get("user_id")
-        group_by = str(request.args.get("group_by", "daily") or "daily").strip().lower()
-        if group_by not in ("daily", "monthly", "yearly", "none"):
-            return jsonify(
-                {"message": "group_by tidak valid. Gunakan daily|monthly|yearly|none."}
-            ), HTTPStatus.BAD_REQUEST
-
-        if fmt and fmt != "pdf":
-            return jsonify({"message": "format tidak valid. Gunakan pdf."}), HTTPStatus.BAD_REQUEST
-        fmt = "pdf"
-        if not start_date_str or not end_date_str:
-            return jsonify({"message": "start_date dan end_date wajib diisi."}), HTTPStatus.BAD_REQUEST
-
-        try:
-            start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
-            end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
-        except ValueError:
-            return jsonify({"message": "Format tanggal tidak valid. Gunakan YYYY-MM-DD."}), HTTPStatus.BAD_REQUEST
-
-        if end_date < start_date:
-            return jsonify({"message": "end_date tidak boleh lebih kecil dari start_date."}), HTTPStatus.BAD_REQUEST
-
-        # Interpret requested dates in local timezone, then convert to UTC for DB filtering.
-        start_dt, end_dt = _parse_local_date_range_to_utc(start_date_str, end_date_str)
-
-        base_filters = [
-            Transaction.status == TransactionStatus.SUCCESS,
-            Transaction.created_at >= start_dt,
-            Transaction.created_at < end_dt,
-        ]
-
-        user_uuid: uuid.UUID | None = None
-        if user_id_filter:
-            try:
-                user_uuid = uuid.UUID(str(user_id_filter))
-                base_filters.append(Transaction.user_id == user_uuid)
-            except ValueError:
-                return jsonify({"message": "Invalid user_id format."}), HTTPStatus.BAD_REQUEST
-
-        # Ringkasan total
-        totals_row = db.session.execute(
-            select(
-                func.count(Transaction.id),
-                func.coalesce(func.sum(Transaction.amount), 0),
-            ).where(*base_filters)
-        ).one()
-
-        total_success = int(totals_row[0] or 0)
-        total_amount = int(totals_row[1] or 0)
-
-        # Top paket (best selling)
-        package_rows = db.session.execute(
-            select(
-                Package.name,
-                func.count(Transaction.id).label("qty"),
-                func.coalesce(func.sum(Transaction.amount), 0).label("revenue"),
-            )
-            .join(Package, Transaction.package_id == Package.id)
-            .where(*base_filters)
-            .group_by(Package.name)
-            .order_by(desc("revenue"), desc("qty"), Package.name.asc())
-        ).all()
-
-        # Breakdown metode pembayaran
-        method_rows = db.session.execute(
-            select(
-                Transaction.payment_method,
-                func.count(Transaction.id).label("qty"),
-                func.coalesce(func.sum(Transaction.amount), 0).label("revenue"),
-            )
-            .where(*base_filters)
-            .group_by(Transaction.payment_method)
-            .order_by(desc("revenue"), desc("qty"))
-        ).all()
-
-        # Ringkasan per periode (harian/bulanan/tahunan)
-        period_rows = []
-        if group_by != "none":
-            try:
-                offset_hours = int(current_app.config.get("APP_TIMEZONE_OFFSET", 8) or 8)
-            except Exception:
-                offset_hours = 8
-            offset_hours = max(-12, min(offset_hours, 14))
-            local_created = Transaction.created_at + sa.text(f"INTERVAL '{offset_hours} hours'")
-
-            if group_by == "daily":
-                period_expr = func.date(local_created)
-            elif group_by == "monthly":
-                period_expr = func.date_trunc("month", local_created)
-            else:  # yearly
-                period_expr = func.date_trunc("year", local_created)
-
-            period_rows = db.session.execute(
-                select(
-                    period_expr.label("period"),
-                    func.count(Transaction.id).label("qty"),
-                    func.coalesce(func.sum(Transaction.amount), 0).label("revenue"),
-                )
-                .where(*base_filters)
-                .group_by(period_expr)
-                .order_by(period_expr.asc())
-            ).all()
-
-        # Optional: daftar user dengan debt (auto+manual) saat laporan dibuat.
-        # IMPORTANT: harus konsisten dengan rule bisnis (dan UI):
-        # - KOMANDAN: debt tidak berlaku (0)
-        # - unlimited user: debt tidak berlaku (0)
-        purchased_num = sa.cast(User.total_quota_purchased_mb, sa.Numeric)
-        used_num = sa.cast(User.total_quota_used_mb, sa.Numeric)
-        auto_debt_raw = sa.func.greatest(sa.cast(0, sa.Numeric), used_num - purchased_num)
-        manual_debt_raw = sa.cast(func.coalesce(User.manual_debt_mb, 0), sa.Numeric)
-
-        debt_not_applicable = sa.or_(
-            User.role == UserRole.KOMANDAN,
-            User.is_unlimited_user.is_(True),
-        )
-
-        auto_debt = sa.case((debt_not_applicable, sa.cast(0, sa.Numeric)), else_=auto_debt_raw)
-        manual_debt_num = sa.case((debt_not_applicable, sa.cast(0, sa.Numeric)), else_=manual_debt_raw)
-        total_debt = auto_debt + manual_debt_num
-
-        debt_users = db.session.execute(
-            select(
-                User.full_name,
-                User.phone_number,
-                auto_debt.label("auto_debt_mb"),
-                manual_debt_num.label("manual_debt_mb"),
-                total_debt.label("total_debt_mb"),
-            )
-            .where(
-                User.role.in_([UserRole.USER, UserRole.KOMANDAN]),
-                User.is_active.is_(True),
-                User.approval_status == ApprovalStatus.APPROVED,
-                total_debt > 0,
-            )
-            .order_by(total_debt.desc(), User.full_name.asc())
-            .limit(100)
-        ).all()
-
-        if fmt == "csv":
-            output = io.StringIO()
-            writer = csv.writer(output)
-
-            writer.writerow(["Laporan Penjualan (SUCCESS)"])
-            writer.writerow(["Periode", start_date_str, "s/d", end_date_str])
-            if user_uuid is not None:
-                writer.writerow(["Filter user_id", str(user_uuid)])
-            writer.writerow(["Total transaksi sukses", total_success])
-            writer.writerow(["Total pendapatan (IDR)", total_amount])
-            writer.writerow([])
-
-            if group_by != "none":
-                label = "Harian" if group_by == "daily" else ("Bulanan" if group_by == "monthly" else "Tahunan")
-                writer.writerow([f"Ringkasan {label}"])
-                writer.writerow(["Periode", "Qty", "Revenue (IDR)"])
-                for row in period_rows:
-                    period = row[0]
-                    if group_by == "daily":
-                        period_str = str(period)
-                    elif group_by == "monthly":
-                        period_str = period.strftime("%Y-%m") if hasattr(period, "strftime") else str(period)
-                    else:
-                        period_str = period.strftime("%Y") if hasattr(period, "strftime") else str(period)
-                    writer.writerow([period_str, int(row[1] or 0), int(row[2] or 0)])
-                writer.writerow([])
-
-            writer.writerow(["Paket Terlaris"])
-            writer.writerow(["Rank", "Paket", "Qty", "Revenue (IDR)"])
-            for idx, row in enumerate(package_rows, start=1):
-                writer.writerow([idx, row[0], int(row[1] or 0), int(row[2] or 0)])
-
-            writer.writerow([])
-            writer.writerow(["Metode Pembayaran"])
-            writer.writerow(["Metode", "Qty", "Revenue (IDR)"])
-            for row in method_rows:
-                method = row[0] or "(unknown)"
-                writer.writerow([method, int(row[1] or 0), int(row[2] or 0)])
-
-            if debt_users:
-                writer.writerow([])
-                writer.writerow(["Daftar User Punya Debt (saat laporan dibuat)"])
-                writer.writerow(["Nama", "Telepon", "Debt Total (MB)", "Debt Auto (MB)", "Debt Manual (MB)"])
-                for r in debt_users:
-                    writer.writerow(
-                        [
-                            r[0],
-                            format_to_local_phone(r[1] or "") or (r[1] or ""),
-                            float(r[4] or 0),
-                            float(r[2] or 0),
-                            float(r[3] or 0),
-                        ]
-                    )
-
-            csv_bytes = output.getvalue().encode("utf-8-sig")
-            resp = make_response(csv_bytes)
-            resp.headers["Content-Type"] = "text/csv; charset=utf-8"
-            resp.headers["Content-Disposition"] = (
-                f'attachment; filename="laporan-transaksi-{start_date_str}-to-{end_date_str}.csv"'
-            )
-            return resp
-
-        # pdf
-        if not WEASYPRINT_AVAILABLE or HTML is None:
-            return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
-
-        local_tz = _get_local_tz()
-
-        # Build period summaries for PDF
-        period_summaries = []
-        if group_by != "none":
-            for row in period_rows:
-                period = row[0]
-                if group_by == "daily":
-                    label = period.strftime("%d-%m-%Y") if hasattr(period, "strftime") else str(period)
-                elif group_by == "monthly":
-                    label = period.strftime("%Y-%m") if hasattr(period, "strftime") else str(period)
-                else:
-                    label = period.strftime("%Y") if hasattr(period, "strftime") else str(period)
-                period_summaries.append(
-                    {
-                        "period": label,
-                        "qty": int(row[1] or 0),
-                        "revenue": int(row[2] or 0),
-                    }
-                )
-
-        debt_items = [
-            {
-                "full_name": r[0],
-                "phone_number": format_to_local_phone(r[1] or "") or (r[1] or ""),
-                "debt_total_mb": float(r[4] or 0),
-                "debt_auto_mb": float(r[2] or 0),
-                "debt_manual_mb": float(r[3] or 0),
-            }
-            for r in debt_users
-        ]
-
-        ref_packages = []
-        try:
-            ref_packages = (
-                db.session.execute(
-                    select(Package)
-                    .where(Package.is_active.is_(True))
-                    .where(Package.data_quota_gb.is_not(None))
-                    .where(Package.data_quota_gb > 0)
-                    .where(Package.price.is_not(None))
-                    .where(Package.price > 0)
-                    .order_by(Package.data_quota_gb.asc(), Package.price.asc())
-                )
-                .scalars()
-                .all()
-            )
-        except Exception:
-            ref_packages = []
-
-        def _pick_ref_pkg_for_mb(value_mb: float) -> Package | None:
-            try:
-                mb = float(value_mb or 0)
-            except Exception:
-                mb = 0.0
-            if mb <= 0 or not ref_packages:
-                return None
-            debt_gb = mb / 1024.0
-            for pkg in ref_packages:
-                try:
-                    if float(pkg.data_quota_gb or 0) >= debt_gb:
-                        return pkg
-                except Exception:
-                    continue
-            return ref_packages[-1] if ref_packages else None
-
-        total_debt_mb_sum = float(sum(float(item.get("debt_total_mb") or 0) for item in debt_items))
-        total_ref_pkg = _pick_ref_pkg_for_mb(total_debt_mb_sum)
-        cheapest_pkg_price = int(getattr(total_ref_pkg, "price", 0) or 0) if total_ref_pkg else None
-        cheapest_pkg_quota_gb = float(getattr(total_ref_pkg, "data_quota_gb", 0) or 0) if total_ref_pkg else None
-        cheapest_pkg_name = str(getattr(total_ref_pkg, "name", "") or "") or None if total_ref_pkg else None
-        est_total = estimate_debt_rp_from_cheapest_package(
-            debt_mb=total_debt_mb_sum,
-            cheapest_package_price_rp=cheapest_pkg_price,
-            cheapest_package_quota_gb=cheapest_pkg_quota_gb,
-            cheapest_package_name=cheapest_pkg_name,
-        )
-        estimated_debt_total_rp = int(est_total.estimated_rp_rounded or 0)
-        for item in debt_items:
-            item_ref = _pick_ref_pkg_for_mb(float(item.get("debt_total_mb") or 0))
-            est = estimate_debt_rp_from_cheapest_package(
-                debt_mb=float(item.get("debt_total_mb") or 0),
-                cheapest_package_price_rp=int(getattr(item_ref, "price", 0) or 0) if item_ref else None,
-                cheapest_package_quota_gb=float(getattr(item_ref, "data_quota_gb", 0) or 0) if item_ref else None,
-                cheapest_package_name=str(getattr(item_ref, "name", "") or "") or None if item_ref else None,
-            )
-            item["debt_estimated_rp"] = int(est.estimated_rp_rounded or 0)
-
-        context = {
-            "start_date": start_date_str,
-            "end_date": end_date_str,
-            "start_date_display": start_date.strftime("%d-%m-%Y"),
-            "end_date_display": end_date.strftime("%d-%m-%Y"),
-            "generated_at": datetime.now(local_tz),
-            "total_success": total_success,
-            "total_amount": total_amount,
-            "estimated_debt_total_rp": estimated_debt_total_rp,
-            "estimated_revenue_plus_debt_rp": int(total_amount or 0) + int(estimated_debt_total_rp or 0),
-            "estimate_base_package_name": cheapest_pkg_name,
-            "group_by": group_by,
-            "period_summaries": period_summaries,
-            "packages": [
-                {"rank": idx, "name": r[0], "qty": int(r[1] or 0), "revenue": int(r[2] or 0)}
-                for idx, r in enumerate(package_rows, start=1)
-            ],
-            "methods": [
-                {"method": (r[0] or "(unknown)"), "qty": int(r[1] or 0), "revenue": int(r[2] or 0)} for r in method_rows
-            ],
-            "debt_users": debt_items,
-            "business_name": current_app.config.get("BUSINESS_NAME", "LPSaring"),
-        }
-
-        public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
-        html_string = render_template("admin_sales_report.html", **context)
-        pdf_bytes = HTML(string=html_string, base_url=public_base_url).write_pdf()
-        if not pdf_bytes:
-            abort(HTTPStatus.INTERNAL_SERVER_ERROR, "Gagal menghasilkan file PDF.")
-        resp = make_response(pdf_bytes)
-        resp.headers["Content-Type"] = "application/pdf"
-        resp.headers["Content-Disposition"] = (
-            f'attachment; filename="laporan-transaksi-{start_date_str}-to-{end_date_str}.pdf"'
-        )
-        return resp
-    except Exception as e:
-        current_app.logger.error(f"Error export transaksi: {e}", exc_info=True)
-        return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
-
-
-def _normalize_admin_payment_method(value: str | None) -> str | None:
-    raw = str(value or "").strip().lower()
-    if raw in {"qris", "gopay", "va", "shopeepay"}:
-        return raw
-    return None
-
-
-def _normalize_admin_va_bank(value: str | None) -> str | None:
-    raw = str(value or "").strip().lower()
-    if raw in {"bca", "bni", "bri", "cimb", "mandiri", "permata"}:
-        return raw
-    return None
-
-
-def _build_public_status_url(order_id: str) -> str:
-    base = current_app.config.get("APP_PUBLIC_BASE_URL") or request.url_root
-    base = str(base or "").strip() or request.url_root
-    try:
-        from app.services.transaction_status_link_service import generate_transaction_status_token
-
-        token = generate_transaction_status_token(order_id)
-        return f"{base.rstrip('/')}/payment/status?order_id={order_id}&t={token}"
-    except Exception:
-        # Fallback to legacy URL (may require session/cookie).
-        return f"{base.rstrip('/')}/payment/status?order_id={order_id}"
-
-
-def _build_admin_bill_order_id() -> str:
-    prefix = str(current_app.config.get("ADMIN_BILL_ORDER_ID_PREFIX", "BD-LPSR") or "BD-LPSR").strip()
-    if prefix == "":
-        prefix = "BD-LPSR"
-    token = uuid.uuid4().hex[:12].upper()
-    return f"{prefix}-{token}"
-
-
-def _parse_csv_values(raw: str | None) -> list[str]:
-    if raw is None:
-        return []
-    text = str(raw).strip()
-    if not text:
-        return []
-    parts = [p.strip().lower() for p in text.split(",")]
-    return [p for p in parts if p]
-
-
-def _get_enabled_core_api_methods_for_admin() -> list[str]:
-    raw = settings_service.get_setting("CORE_API_ENABLED_PAYMENT_METHODS", None)
-    selected = set(_parse_csv_values(raw))
-    # Keep stable order.
-    ordered = [m for m in ("qris", "gopay", "va", "shopeepay") if m in selected]
-    if ordered:
-        return ordered
-    return ["qris", "gopay", "va"]
-
-
-def _get_enabled_core_api_va_banks_for_admin() -> list[str]:
-    raw = settings_service.get_setting("CORE_API_ENABLED_VA_BANKS", None)
-    selected = set(_parse_csv_values(raw))
-    ordered = [b for b in ("bni", "bca", "bri", "mandiri", "permata", "cimb") if b in selected]
-    if ordered:
-        return ordered
-    return ["bni", "bca", "bri", "mandiri", "permata", "cimb"]
-
-
-def _get_payment_provider_mode_for_admin() -> str:
-    raw = settings_service.get_setting("PAYMENT_PROVIDER_MODE", None)
-    mode = str(raw or "").strip().lower()
-    return "core_api" if mode == "core_api" else "snap"
+    return export_transactions_impl(
+        db=db,
+        WEASYPRINT_AVAILABLE=WEASYPRINT_AVAILABLE,
+        HTML=HTML,
+        parse_local_date_range_to_utc=_parse_local_date_range_to_utc,
+        get_local_tz=_get_local_tz,
+        estimate_debt_rp_from_cheapest_package=estimate_debt_rp_from_cheapest_package,
+        format_to_local_phone=format_to_local_phone,
+        Package=Package,
+        Transaction=Transaction,
+        TransactionStatus=TransactionStatus,
+        User=User,
+        UserRole=UserRole,
+        ApprovalStatus=ApprovalStatus,
+        func=func,
+        select=select,
+        desc=desc,
+    )
 
 
 @admin_bp.route("/transactions/qris", methods=["POST"])
@@ -1625,620 +659,27 @@ def create_bill(current_admin: User):
     Catatan:
     - Endpoint /transactions/qris dipertahankan untuk kompatibilitas; ia sekarang alias dari endpoint ini.
     """
-    session = db.session
-    json_data = request.get_json(silent=True) or {}
-
-    error_id = uuid.uuid4().hex[:10].upper()
-
-    user_id_raw = json_data.get("user_id")
-    package_id_raw = json_data.get("package_id")
-    if not user_id_raw or not package_id_raw:
-        return jsonify({"message": "user_id dan package_id wajib diisi."}), HTTPStatus.BAD_REQUEST
-
-    try:
-        user_id = uuid.UUID(str(user_id_raw))
-        package_id = uuid.UUID(str(package_id_raw))
-    except ValueError:
-        return jsonify({"message": "Format user_id/package_id tidak valid."}), HTTPStatus.BAD_REQUEST
-
-    try:
-        user = session.get(User, user_id)
-        if user is None:
-            return jsonify({"message": "User tidak ditemukan."}), HTTPStatus.NOT_FOUND
-
-        package = session.get(Package, package_id)
-        if package is None or not getattr(package, "is_active", True):
-            return jsonify({"message": "Paket tidak valid atau tidak aktif."}), HTTPStatus.BAD_REQUEST
-
-        amount = int(getattr(package, "price", 0) or 0)
-        if amount <= 0:
-            return jsonify({"message": "Harga paket tidak valid."}), HTTPStatus.BAD_REQUEST
-
-        payment_method = _normalize_admin_payment_method(
-            json_data.get("payment_method") or json_data.get("method") or json_data.get("payment_type")
-        )
-        if payment_method is None:
-            payment_method = "qris"
-
-        provider_mode = _get_payment_provider_mode_for_admin()
-
-        enabled_methods = _get_enabled_core_api_methods_for_admin()
-        if payment_method not in set(enabled_methods):
-            return (
-                jsonify(
-                    {
-                        "message": "Metode pembayaran ini tidak diaktifkan di pengaturan.",
-                        "payment_method": payment_method,
-                        "enabled_methods": enabled_methods,
-                    }
-                ),
-                HTTPStatus.BAD_REQUEST,
-            )
-
-        va_bank = _normalize_admin_va_bank(json_data.get("va_bank") or json_data.get("bank"))
-        if payment_method == "va" and va_bank is None:
-            # Default ke BNI untuk meminimalkan friksi jika admin tidak memilih bank.
-            va_bank = "bni"
-
-        enabled_va_banks = _get_enabled_core_api_va_banks_for_admin()
-        if payment_method == "va":
-            if va_bank not in set(enabled_va_banks):
-                return (
-                    jsonify(
-                        {
-                            "message": "Bank VA ini tidak diaktifkan di pengaturan Core API.",
-                            "va_bank": va_bank,
-                            "enabled_va_banks": enabled_va_banks,
-                        }
-                    ),
-                    HTTPStatus.BAD_REQUEST,
-                )
-
-        order_id = _build_admin_bill_order_id()
-        now_utc = datetime.now(dt_timezone.utc)
-        try:
-            expiry_minutes = int(current_app.config.get("MIDTRANS_DEFAULT_EXPIRY_MINUTES", 15))
-        except Exception:
-            expiry_minutes = 15
-        expiry_minutes = max(5, min(expiry_minutes, 24 * 60))
-        expiry_time = now_utc + timedelta(minutes=expiry_minutes)
-
-        try:
-            from app.services.transaction_status_link_service import generate_transaction_status_token
-
-            status_token = generate_transaction_status_token(order_id)
-            base = current_app.config.get("APP_PUBLIC_BASE_URL") or request.url_root
-            base = str(base or "").strip() or request.url_root
-            status_url = f"{base.rstrip('/')}/payment/status?order_id={order_id}&t={status_token}"
-        except Exception:
-            status_token = None
-            status_url = _build_public_status_url(order_id)
-
-        tx = Transaction()
-        tx.id = uuid.uuid4()
-        tx.user_id = user.id
-        tx.package_id = package.id
-        tx.midtrans_order_id = order_id
-        tx.amount = amount
-        tx.status = TransactionStatus.PENDING
-        tx.expiry_time = expiry_time
-        # Default: QRIS native (Other QRIS). Bisa auto-fallback ke GoPay Dynamic QRIS jika channel belum aktif.
-        tx.payment_method = payment_method
-        session.add(tx)
-
-        # Midtrans client init depends on provider mode.
-        core = None
-        snap = None
-        try:
-            if provider_mode == "snap":
-                snap = get_midtrans_snap_client()
-            else:
-                core = get_midtrans_core_api_client()
-        except ValueError as e_cfg:
-            session.rollback()
-            return (
-                jsonify(
-                    {
-                        "message": "Midtrans belum dikonfigurasi di server. Pastikan SERVER KEY (dan CLIENT KEY jika diperlukan) sudah terpasang.",
-                        "details": str(e_cfg),
-                    }
-                ),
-                HTTPStatus.BAD_REQUEST,
-            )
-
-        base_payload: dict[str, object] = {
-            "transaction_details": {"order_id": order_id, "gross_amount": amount},
-            "item_details": [
-                {
-                    "id": str(package.id),
-                    "price": amount,
-                    "quantity": 1,
-                    "name": str(getattr(package, "name", "Paket"))[:100],
-                }
-            ],
-            "customer_details": {
-                "first_name": str(getattr(user, "full_name", None) or "Pengguna")[:50],
-                "phone": format_to_local_phone(getattr(user, "phone_number", "") or ""),
-            },
-            "custom_expiry": {"expiry_duration": int(expiry_minutes), "unit": "minute"},
-        }
-
-        def _parse_midtrans_api_response_from_message(message: str) -> dict[str, object] | None:
-            try:
-                marker = "API response: `"
-                if marker in message:
-                    json_part = message.split(marker, 1)[1]
-                    json_part = json_part.split("`", 1)[0]
-                    parsed = json.loads(json_part)
-                    return parsed if isinstance(parsed, dict) else None
-            except Exception:
-                return None
-            return None
-
-        def _apply_charge_result_to_tx(resp: object) -> None:
-            try:
-                tx.midtrans_notification_payload = json.dumps(resp, ensure_ascii=False)
-            except Exception:
-                tx.midtrans_notification_payload = None
-
-            if not isinstance(resp, dict):
-                return
-
-            transaction_id = resp.get("transaction_id")
-            if isinstance(transaction_id, str):
-                tx.midtrans_transaction_id = transaction_id
-
-            expiry_time_raw = resp.get("expiry_time")
-            expiry_time_str = expiry_time_raw if isinstance(expiry_time_raw, str) else None
-            if parsed := safe_parse_midtrans_datetime(expiry_time_str):
-                tx.expiry_time = parsed
-
-            # QR payments (qris/gopay) may contain actions.
-            tx.qr_code_url = extract_qr_code_url(resp) or tx.qr_code_url
-
-            deeplink = extract_action_url(resp, action_name_contains="deeplink-redirect")
-            if deeplink:
-                # Reuse snap_redirect_url column for non-snap deeplink.
-                tx.snap_redirect_url = deeplink
-
-            tx.va_number = extract_va_number(resp) or tx.va_number
-
-            # Mandiri e-channel bill key + biller code.
-            bill_key = resp.get("bill_key") or resp.get("mandiri_bill_key")
-            biller_code = resp.get("biller_code")
-            if bill_key:
-                tx.payment_code = str(bill_key).strip()
-            if biller_code:
-                tx.biller_code = str(biller_code).strip()
-
-            midtrans_status = str(resp.get("transaction_status") or "").strip().lower()
-            if midtrans_status == "pending":
-                tx.status = TransactionStatus.PENDING
-            elif midtrans_status in ("settlement", "capture"):
-                tx.status = TransactionStatus.SUCCESS
-
-        attempted_payment_type = payment_method
-        attempted_va_bank = va_bank
-        fallback_used = False
-
-        if provider_mode == "snap":
-            # Create Snap transaction so user can pay from /payment/status using Snap UI.
-            enabled_payments: list[str]
-            snap_params: dict[str, object] = {
-                "transaction_details": {"order_id": order_id, "gross_amount": amount},
-                "item_details": [
-                    {
-                        "id": str(package.id),
-                        "price": amount,
-                        "quantity": 1,
-                        "name": str(getattr(package, "name", "Paket") or "Paket")[:100],
-                    }
-                ],
-                "customer_details": {
-                    "first_name": str(getattr(user, "full_name", None) or "Pengguna")[:50],
-                    "phone": format_to_local_phone(getattr(user, "phone_number", "") or ""),
-                },
-                "callbacks": {
-                    "finish": (
-                        f"{(current_app.config.get('APP_PUBLIC_BASE_URL') or request.url_root).rstrip('/')}/payment/status"
-                        + (f"?t={status_token}" if status_token else "")
-                    )
-                },
-            }
-
-            if payment_method == "qris":
-                enabled_payments = ["qris"]
-                tx.payment_method = "qris"
-            elif payment_method == "gopay":
-                enabled_payments = ["gopay"]
-                tx.payment_method = "gopay"
-            elif payment_method == "shopeepay":
-                enabled_payments = ["shopeepay"]
-                tx.payment_method = "shopeepay"
-            else:
-                # VA
-                bank = va_bank or "bni"
-                if bank == "mandiri":
-                    enabled_payments = ["echannel"]
-                    tx.payment_method = "echannel"
-                    snap_params["echannel"] = {
-                        "bill_info1": "Pembayaran Hotspot",
-                        "bill_info2": str(getattr(package, "name", "Paket") or "Paket")[:18],
-                    }
-                else:
-                    enabled_payments = ["bank_transfer"]
-                    tx.payment_method = f"{bank}_va"
-                    snap_params["bank_transfer"] = {"bank": bank}
-
-            snap_params["enabled_payments"] = enabled_payments
-
-            try:
-                snap_response = snap.create_transaction(snap_params)  # type: ignore[union-attr]
-            except requests.exceptions.RequestException as e_req:
-                current_app.logger.error(
-                    "Midtrans network error (snap create_transaction). error_id=%s order_id=%s err=%s",
-                    error_id,
-                    order_id,
-                    e_req,
-                    exc_info=True,
-                )
-                session.rollback()
-                return (
-                    jsonify(
-                        {
-                            "message": "Midtrans tidak dapat diakses saat ini. Coba lagi beberapa saat.",
-                            "error_id": error_id,
-                        }
-                    ),
-                    HTTPStatus.SERVICE_UNAVAILABLE,
-                )
-            except midtransclient.error_midtrans.MidtransAPIError:
-                raise
-
-            snap_token = snap_response.get("token") if isinstance(snap_response, dict) else None
-            redirect_url = snap_response.get("redirect_url") if isinstance(snap_response, dict) else None
-            if not snap_token and not redirect_url:
-                raise ValueError("Respons Midtrans Snap tidak valid.")
-
-            tx.snap_token = str(snap_token).strip() if snap_token else None
-            tx.snap_redirect_url = str(redirect_url).strip() if redirect_url else None
-            tx.qr_code_url = None
-            tx.va_number = None
-            tx.payment_code = None
-            tx.biller_code = None
-            tx.status = TransactionStatus.UNKNOWN
-        else:
-            # Core API charge (existing behavior)
-            charge_resp: object
-            try:
-                if payment_method == "qris":
-                    attempted_payment_type = "qris"
-                    charge_payload = {
-                        **base_payload,
-                        "payment_type": "qris",
-                        "qris": {"acquirer": "gopay"},
-                    }
-                    charge_resp = core.charge(charge_payload)  # type: ignore[union-attr]
-
-                elif payment_method == "gopay":
-                    attempted_payment_type = "gopay"
-                    charge_payload = {
-                        **base_payload,
-                        "payment_type": "gopay",
-                        "gopay": {"enable_callback": True, "callback_url": status_url},
-                    }
-                    charge_resp = core.charge(charge_payload)  # type: ignore[union-attr]
-
-                elif payment_method == "shopeepay":
-                    attempted_payment_type = "shopeepay"
-                    charge_payload = {
-                        **base_payload,
-                        "payment_type": "shopeepay",
-                        "shopeepay": {"callback_url": status_url},
-                    }
-                    charge_resp = core.charge(charge_payload)  # type: ignore[union-attr]
-
-                else:
-                    bank = va_bank or "bni"
-                    attempted_payment_type = "va"
-                    attempted_va_bank = bank
-                    if bank == "mandiri":
-                        tx.payment_method = "echannel"
-                        charge_payload = {
-                            **base_payload,
-                            "payment_type": "echannel",
-                            "echannel": {
-                                "bill_info1": "Pembayaran Hotspot",
-                                "bill_info2": str(getattr(package, "name", "Paket") or "Paket")[:18],
-                            },
-                        }
-                        charge_resp = core.charge(charge_payload)  # type: ignore[union-attr]
-                    else:
-                        tx.payment_method = f"{bank}_va"
-                        charge_payload = {
-                            **base_payload,
-                            "payment_type": "bank_transfer",
-                            "bank_transfer": {"bank": bank},
-                        }
-                        charge_resp = core.charge(charge_payload)  # type: ignore[union-attr]
-            except midtransclient.error_midtrans.MidtransAPIError as e_charge:
-                raw_message = getattr(e_charge, "message", "") or ""
-                parsed = _parse_midtrans_api_response_from_message(raw_message) or {}
-                status_message = str(parsed.get("status_message") or "").strip()
-                status_message_lower = status_message.lower()
-                if payment_method == "qris" and any(
-                    needle in status_message_lower
-                    for needle in (
-                        "payment channel is not activated",
-                        "payment channel is not active",
-                        "not activated",
-                        "not active",
-                    )
-                ):
-                    current_app.logger.warning(
-                        "Midtrans QRIS channel not active; fallback to GoPay Dynamic QRIS. order_id=%s",
-                        order_id,
-                    )
-                    fallback_used = True
-                    tx.payment_method = "gopay"
-                    attempted_payment_type = "gopay"
-                    charge_payload = {
-                        **base_payload,
-                        "payment_type": "gopay",
-                        "gopay": {"enable_callback": True, "callback_url": status_url},
-                    }
-                    charge_resp = core.charge(charge_payload)  # type: ignore[union-attr]
-                else:
-                    raise
-
-            _apply_charge_result_to_tx(charge_resp)
-
-        disable_super_admin_logs = str(os.getenv("DISABLE_SUPER_ADMIN_ACTION_LOGS", "false") or "").strip().lower() in {
-            "1",
-            "true",
-            "yes",
-            "y",
-            "on",
-        }
-        if not (disable_super_admin_logs and current_admin.is_super_admin_role):
-            try:
-                try:
-                    from flask import has_request_context, g
-
-                    if has_request_context():
-                        g.admin_action_logged = True
-                except Exception:
-                    pass
-                expiry_time_val = tx.expiry_time
-                log_entry = AdminActionLog()
-                log_entry.admin_id = current_admin.id
-                log_entry.target_user_id = user.id
-                log_entry.action_type = AdminActionType.CREATE_QRIS_BILL
-                log_entry.details = json.dumps(
-                    {
-                        "order_id": order_id,
-                        "user_id": str(user.id),
-                        "package_id": str(package.id),
-                        "package_name": str(getattr(package, "name", "") or ""),
-                        "amount": amount,
-                        "payment_method": tx.payment_method,
-                        "requested_payment_method": payment_method,
-                        "requested_va_bank": va_bank,
-                        "qr_code_url": tx.qr_code_url,
-                        "expiry_time": (expiry_time_val.isoformat() if expiry_time_val is not None else None),
-                    },
-                    default=str,
-                    ensure_ascii=False,
-                )
-                session.add(log_entry)
-            except Exception as e:
-                current_app.logger.error(f"Gagal mencatat log CREATE_QRIS_BILL: {e}", exc_info=True)
-
-        ev = TransactionEvent()
-        ev.transaction_id = tx.id
-        ev.source = TransactionEventSource.APP
-        ev.event_type = "ADMIN_QRIS_BILL_CREATED"
-        ev.status = tx.status
-        expiry_time = tx.expiry_time
-        ev.payload = json.dumps(
-            {
-                "order_id": order_id,
-                "user_id": str(user.id),
-                "package_id": str(package.id),
-                "amount": amount,
-                "expiry_time": expiry_time.isoformat() if expiry_time is not None else None,
-                "qr_code_url": tx.qr_code_url,
-                "payment_method": tx.payment_method,
-                "requested_payment_method": payment_method,
-                "requested_va_bank": va_bank,
-            },
-            ensure_ascii=False,
-        )
-        session.add(ev)
-        session.commit()
-
-        phone_number = getattr(user, "phone_number", "") or ""
-
-        pkg_quota_gb = getattr(package, "data_quota_gb", None)
-        pkg_duration_days = getattr(package, "duration_days", None)
-        if pkg_quota_gb is None:
-            quota_label = "-"
-        elif pkg_quota_gb == 0:
-            quota_label = "Unlimited"
-        else:
-            quota_label = f"{pkg_quota_gb} GB"
-
-        duration_label = f"{pkg_duration_days} Hari" if pkg_duration_days is not None else "-"
-
-        method_label = (
-            "QRIS"
-            if payment_method == "qris"
-            else ("GoPay" if payment_method == "gopay" else ("ShopeePay" if payment_method == "shopeepay" else "VA"))
-        )
-        caption_lines = [
-            "📌 *Tagihan Pembelian Paket*",
-            "",
-            f"Nama: *{getattr(user, 'full_name', '') or 'Pengguna'}*",
-            f"Paket: *{getattr(package, 'name', '') or 'Paket'}*",
-            f"Kuota: *{quota_label}*",
-            f"Masa aktif: *{duration_label}*",
-            f"Harga: *Rp {amount:,}*",
-            f"Invoice: *{order_id}*",
-        ]
-
-        if payment_method == "va":
-            bank_key = str(va_bank or "bni").strip().lower()
-            if str(tx.payment_method or "").strip().lower() == "echannel":
-                bank_key = "mandiri"
-
-            bank_label_map = {
-                "bca": "BCA",
-                "bni": "BNI",
-                "bri": "BRI",
-                "mandiri": "Mandiri",
-                "permata": "Permata",
-                "cimb": "CIMB Niaga",
-            }
-            caption_lines.append(f"Bank: *{bank_label_map.get(bank_key, bank_key.upper() or 'VA')}*")
-        else:
-            caption_lines.append(f"Metode: *{method_label}*")
-
-        if payment_method == "va":
-            bank = (va_bank or "bni").upper()
-            # Mandiri e-channel uses biller_code + bill_key.
-            if (va_bank or "") == "mandiri" or str(tx.payment_method or "") == "echannel":
-                if tx.payment_code:
-                    caption_lines.append(f"Bill Key: *{tx.payment_code}*")
-                if tx.biller_code:
-                    caption_lines.append(f"Biller Code: *{tx.biller_code}*")
-            else:
-                if tx.va_number:
-                    caption_lines.append(f"VA {bank}: *{tx.va_number}*")
-
-        caption_lines.extend(
-            [
-                "",
-                f"Status & pembayaran: {status_url}",
-            ]
-        )
-        if provider_mode == "snap":
-            caption_lines.append("Buka link status lalu klik tombol Bayar untuk melanjutkan pembayaran.")
-        else:
-            if payment_method == "qris":
-                caption_lines.append("Buka link status untuk menampilkan QR dan melakukan pembayaran.")
-            elif payment_method == "gopay":
-                caption_lines.append("Buka link status lalu ikuti instruksi (tombol deeplink/QR jika tersedia).")
-            elif payment_method == "shopeepay":
-                caption_lines.append("Buka link status lalu ikuti instruksi (tombol deeplink/QR jika tersedia).")
-            else:
-                caption_lines.append("Buka link status untuk melihat detail pembayaran dan status invoice.")
-
-        sent = send_whatsapp_message(phone_number, "\n".join(caption_lines))
-
-        message = "Tagihan berhasil dibuat."
-        if not sent:
-            message = "Tagihan berhasil dibuat, namun WhatsApp gagal terkirim (cek konfigurasi WA/nomor tujuan)."
-
-        return (
-            jsonify(
-                {
-                    "message": message,
-                    "order_id": order_id,
-                    "status": tx.status.value,
-                    "qr_code_url": tx.qr_code_url,
-                    "payment_method": tx.payment_method,
-                    "status_url": status_url,
-                    "whatsapp_sent": bool(sent),
-                    "va_number": tx.va_number,
-                    "payment_code": tx.payment_code,
-                    "biller_code": tx.biller_code,
-                }
-            ),
-            HTTPStatus.OK,
-        )
-
-    except midtransclient.error_midtrans.MidtransAPIError as e:
-        session.rollback()
-        raw_message = getattr(e, "message", "") or ""
-        current_app.logger.error(f"Midtrans error saat create QRIS bill: {raw_message}")
-
-        midtrans_status_code: str | None = None
-        midtrans_status_message: str | None = None
-        midtrans_error_id: str | None = None
-
-        # Coba parse potongan `API response: `...`` dari message Midtrans.
-        try:
-            marker = "API response: `"
-            if marker in raw_message:
-                json_part = raw_message.split(marker, 1)[1]
-                json_part = json_part.split("`", 1)[0]
-                parsed = json.loads(json_part)
-                if isinstance(parsed, dict):
-                    if isinstance(parsed.get("status_code"), str):
-                        midtrans_status_code = parsed.get("status_code")
-                    if isinstance(parsed.get("status_message"), str):
-                        midtrans_status_message = parsed.get("status_message")
-                    if isinstance(parsed.get("id"), str):
-                        midtrans_error_id = parsed.get("id")
-        except Exception:
-            # Jika parsing gagal, tetap lanjutkan dengan message mentah.
-            pass
-
-        is_prod = bool(current_app.config.get("MIDTRANS_IS_PRODUCTION", False))
-        env_label = "Production" if is_prod else "Sandbox"
-
-        user_message = "Gagal membuat tagihan di Midtrans."
-        if midtrans_status_message:
-            user_message = f"Gagal membuat tagihan di Midtrans: {midtrans_status_message}"
-            if "Payment channel is not activated" in midtrans_status_message:
-                # Beri konteks channel yang sedang dicoba + apakah fallback sudah dilakukan.
-                tried = None
-                try:
-                    tried = attempted_payment_type  # type: ignore[name-defined]
-                except Exception:
-                    tried = None
-                try:
-                    used_fallback = bool(fallback_used)  # type: ignore[name-defined]
-                except Exception:
-                    used_fallback = False
-
-                if tried == "gopay":
-                    user_message += (
-                        f" (Channel GoPay/QRIS Dinamis GoPay belum aktif di Midtrans {env_label} untuk Core API. "
-                        "Jika sudah aktif di Dashboard namun masih ditolak, pastikan SERVER KEY yang digunakan sesuai environment.)"
-                    )
-                else:
-                    user_message += (
-                        f" (Channel Other QRIS belum aktif di Midtrans {env_label}. "
-                        "Jika Anda memakai QRIS Dinamis GoPay, channel ini bisa saja tidak diaktifkan.)"
-                    )
-
-                if used_fallback:
-                    user_message += " Sudah dicoba fallback ke GoPay Dynamic QRIS, namun masih ditolak."
-
-        return jsonify(
-            {
-                "message": user_message,
-                "midtrans_status_code": midtrans_status_code,
-                "midtrans_status_message": midtrans_status_message,
-                "midtrans_error_id": midtrans_error_id,
-                "attempted_payment_type": (attempted_payment_type if "attempted_payment_type" in locals() else None),
-                "attempted_va_bank": (attempted_va_bank if "attempted_va_bank" in locals() else None),
-                "fallback_used": (fallback_used if "fallback_used" in locals() else None),
-            }
-        ), HTTPStatus.BAD_REQUEST
-    except Exception as e:
-        session.rollback()
-        current_app.logger.error(
-            "Error create bill. error_id=%s err=%s",
-            error_id,
-            e,
-            exc_info=True,
-        )
-        return (
-            jsonify({"message": "Terjadi kesalahan internal.", "error_id": error_id}),
-            HTTPStatus.INTERNAL_SERVER_ERROR,
-        )
+    return create_bill_impl(
+        db=db,
+        current_admin=current_admin,
+        settings_service=settings_service,
+        User=User,
+        Package=Package,
+        Transaction=Transaction,
+        TransactionStatus=TransactionStatus,
+        AdminActionLog=AdminActionLog,
+        AdminActionType=AdminActionType,
+        TransactionEvent=TransactionEvent,
+        TransactionEventSource=TransactionEventSource,
+        format_to_local_phone=format_to_local_phone,
+        get_midtrans_snap_client=get_midtrans_snap_client,
+        get_midtrans_core_api_client=get_midtrans_core_api_client,
+        safe_parse_midtrans_datetime=safe_parse_midtrans_datetime,
+        extract_qr_code_url=extract_qr_code_url,
+        extract_va_number=extract_va_number,
+        extract_action_url=extract_action_url,
+        send_whatsapp_message=send_whatsapp_message,
+    )
 
 
 @admin_bp.route("/midtrans/selftest", methods=["POST"])
@@ -2250,207 +691,30 @@ def midtrans_selftest(current_admin: User):
     - Ini akan memanggil endpoint charge Midtrans (bukan dry-run). Gunakan amount kecil.
     - Tidak menyimpan transaksi ke database.
     """
-    json_data = request.get_json(silent=True) or {}
-
-    payment_types_raw = json_data.get("payment_types")
-    if isinstance(payment_types_raw, list) and payment_types_raw:
-        payment_types = [str(x).strip().lower() for x in payment_types_raw if str(x).strip()]
-    else:
-        payment_types = ["qris", "gopay"]
-
-    try:
-        amount = int(json_data.get("amount") or 1000)
-    except Exception:
-        amount = 1000
-    amount = max(1000, min(amount, 50000))
-
-    def _parse_midtrans_api_response_from_message(message: str) -> dict[str, object] | None:
-        try:
-            marker = "API response: `"
-            if marker in message:
-                json_part = message.split(marker, 1)[1]
-                json_part = json_part.split("`", 1)[0]
-                parsed = json.loads(json_part)
-                return parsed if isinstance(parsed, dict) else None
-        except Exception:
-            return None
-        return None
-
-    core = get_midtrans_core_api_client()
-    results: list[dict[str, object]] = []
-    for payment_type in payment_types:
-        order_id = f"MT-TEST-{payment_type.upper()}-{uuid.uuid4().hex[:10].upper()}"
-        payload: dict[str, object] = {
-            "payment_type": payment_type,
-            "transaction_details": {"order_id": order_id, "gross_amount": amount},
-            "item_details": [
-                {
-                    "id": f"selftest-{payment_type}",
-                    "price": amount,
-                    "quantity": 1,
-                    "name": f"SelfTest {payment_type}"[:100],
-                }
-            ],
-            "customer_details": {
-                "first_name": (str(getattr(current_admin, "full_name", "") or "Admin")[:50]),
-                "phone": format_to_local_phone(str(getattr(current_admin, "phone_number", "") or "")),
-            },
-        }
-        if payment_type == "gopay":
-            payload["gopay"] = {"enable_callback": False}
-
-        try:
-            resp = core.charge(payload)
-            if isinstance(resp, dict):
-                results.append(
-                    {
-                        "payment_type": payment_type,
-                        "order_id": order_id,
-                        "ok": True,
-                        "status_code": resp.get("status_code"),
-                        "status_message": resp.get("status_message"),
-                        "transaction_status": resp.get("transaction_status"),
-                        "transaction_id": resp.get("transaction_id"),
-                        "qr_code_url": extract_qr_code_url(resp),
-                        "raw": resp,
-                    }
-                )
-            else:
-                results.append(
-                    {
-                        "payment_type": payment_type,
-                        "order_id": order_id,
-                        "ok": True,
-                        "raw": resp,
-                    }
-                )
-        except midtransclient.error_midtrans.MidtransAPIError as e:
-            raw_message = getattr(e, "message", "") or ""
-            parsed = _parse_midtrans_api_response_from_message(raw_message) or {}
-            results.append(
-                {
-                    "payment_type": payment_type,
-                    "order_id": order_id,
-                    "ok": False,
-                    "error": raw_message,
-                    "midtrans_status_code": parsed.get("status_code"),
-                    "midtrans_status_message": parsed.get("status_message"),
-                    "midtrans_error_id": parsed.get("id"),
-                }
-            )
-
-    return jsonify(
-        {
-            "is_production": bool(current_app.config.get("MIDTRANS_IS_PRODUCTION", False)),
-            "amount": amount,
-            "results": results,
-        }
-    ), HTTPStatus.OK
+    return midtrans_selftest_impl(
+        current_admin=current_admin,
+        get_midtrans_core_api_client=get_midtrans_core_api_client,
+        format_to_local_phone=format_to_local_phone,
+        extract_qr_code_url=extract_qr_code_url,
+    )
 
 
 @admin_bp.route("/transactions/<order_id>/report.pdf", methods=["GET"])
 @admin_required
 def get_transaction_admin_report_pdf(current_admin: User, order_id: str):
     """PDF Admin report (berbeda dari invoice user) untuk audit transaksi + histori event."""
-    if not WEASYPRINT_AVAILABLE or HTML is None:
-        abort(HTTPStatus.NOT_IMPLEMENTED, "Komponen PDF server tidak tersedia.")
-
-    order_id = (order_id or "").strip()
-    if not order_id:
-        abort(HTTPStatus.BAD_REQUEST, "order_id tidak boleh kosong.")
-
-    tx = db.session.scalar(
-        select(Transaction)
-        .where(Transaction.midtrans_order_id == order_id)
-        .options(selectinload(Transaction.user), selectinload(Transaction.package))
+    return get_transaction_admin_report_pdf_impl(
+        db=db,
+        order_id=order_id,
+        WEASYPRINT_AVAILABLE=WEASYPRINT_AVAILABLE,
+        HTML=HTML,
+        get_local_tz=_get_local_tz,
+        format_to_local_phone=format_to_local_phone,
+        Transaction=Transaction,
+        TransactionEvent=TransactionEvent,
+        select=select,
+        selectinload=selectinload,
     )
-    if tx is None:
-        abort(HTTPStatus.NOT_FOUND, "Transaksi tidak ditemukan.")
-
-    payload: object | None = None
-    if tx.midtrans_notification_payload:
-        try:
-            payload = json.loads(tx.midtrans_notification_payload)
-        except Exception:
-            payload = {"_raw": tx.midtrans_notification_payload}
-
-    events_q = (
-        select(TransactionEvent)
-        .where(TransactionEvent.transaction_id == tx.id)
-        .order_by(TransactionEvent.created_at.asc())
-    )
-    events = db.session.scalars(events_q).all()
-    events_payload = []
-    for ev in events:
-        ev_payload: object | None = None
-        if ev.payload:
-            try:
-                ev_payload = json.loads(ev.payload)
-            except Exception:
-                ev_payload = {"_raw": ev.payload}
-        events_payload.append(
-            {
-                "created_at": ev.created_at,
-                "created_at_local": _format_dt_local(ev.created_at, with_seconds=True),
-                "source": ev.source.value,
-                "event_type": ev.event_type,
-                "status": ev.status.value if ev.status else None,
-                "payload": ev_payload,
-                "payload_summary": _compact_json_summary(ev_payload),
-            }
-        )
-
-    local_tz = _get_local_tz()
-    user_phone_display = format_to_local_phone(tx.user.phone_number) if tx.user and tx.user.phone_number else None
-
-    midtrans_payload_sanitized: object | None = _sanitize_midtrans_payload_for_report(payload)
-    midtrans_summary: dict[str, object] | None = None
-    if isinstance(midtrans_payload_sanitized, dict):
-        safe_payload = dict(midtrans_payload_sanitized)
-        midtrans_summary = {
-            "payment_type": safe_payload.get("payment_type"),
-            "transaction_status": safe_payload.get("transaction_status"),
-            "status_code": safe_payload.get("status_code"),
-            "status_message": safe_payload.get("status_message"),
-            "transaction_id": safe_payload.get("transaction_id"),
-            "acquirer": safe_payload.get("acquirer"),
-            "issuer": safe_payload.get("issuer"),
-            "transaction_time": safe_payload.get("transaction_time"),
-            "settlement_time": safe_payload.get("settlement_time"),
-            "expiry_time": safe_payload.get("expiry_time"),
-            "merchant_id": safe_payload.get("merchant_id"),
-        }
-
-    context = {
-        "transaction": tx,
-        "user": tx.user,
-        "package": tx.package,
-        "status": tx.status.value,
-        "report_date_local": datetime.now(local_tz),
-        "tx_created_at_local": _format_dt_local(tx.created_at),
-        "tx_updated_at_local": _format_dt_local(tx.updated_at),
-        "tx_payment_time_local": _format_dt_local(tx.payment_time),
-        "tx_expiry_time_local": _format_dt_local(tx.expiry_time),
-        "user_phone_display": user_phone_display or (tx.user.phone_number if tx.user else None),
-        "business_name": current_app.config.get("BUSINESS_NAME", "LPSaring"),
-        "business_address": current_app.config.get("BUSINESS_ADDRESS", ""),
-        "business_phone": current_app.config.get("BUSINESS_PHONE", ""),
-        "business_email": current_app.config.get("BUSINESS_EMAIL", ""),
-        "midtrans_payload": midtrans_payload_sanitized,
-        "midtrans_summary": midtrans_summary,
-        "events": events_payload,
-    }
-
-    public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
-    html_string = render_template("admin_transaction_report.html", **context)
-    pdf_bytes = HTML(string=html_string, base_url=public_base_url).write_pdf()
-    if not pdf_bytes:
-        abort(HTTPStatus.INTERNAL_SERVER_ERROR, "Gagal menghasilkan file PDF.")
-
-    response = make_response(pdf_bytes)
-    response.headers["Content-Type"] = "application/pdf"
-    response.headers["Content-Disposition"] = f'inline; filename="admin-report-{order_id}.pdf"'
-    return response
 
 
 # --- Endpoint /action-logs DIHAPUS DARI SINI ---

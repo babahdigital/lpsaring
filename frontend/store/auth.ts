@@ -8,6 +8,7 @@ import type {
 import { navigateTo, useNuxtApp, useRoute } from '#app'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+import { resolveAccessStatusFromUser } from '@/utils/authAccess'
 
 type RegisterResponse = AuthRegisterResponseContract
 type RegistrationPayload = AuthRegisterRequestContract
@@ -485,37 +486,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function getAccessStatusFromUser(inputUser: User | null): AccessStatus {
-    if (inputUser == null)
-      return 'ok'
-
-    // Admin/Super Admin tidak memakai konsep kuota portal end-user.
-    if (inputUser.role === 'ADMIN' || inputUser.role === 'SUPER_ADMIN')
-      return 'ok'
-
-    if (inputUser.is_blocked === true)
-      return 'blocked'
-    if (inputUser.is_active !== true || inputUser.approval_status !== 'APPROVED')
-      return 'inactive'
-    if (inputUser.is_unlimited_user === true)
-      return 'ok'
-
-    const total = inputUser.total_quota_purchased_mb ?? 0
-    const used = inputUser.total_quota_used_mb ?? 0
-    const remaining = total - used
-    const expiryDate = inputUser.quota_expiry_date ? new Date(inputUser.quota_expiry_date) : null
-    const isExpired = Boolean(expiryDate && expiryDate.getTime() < Date.now())
-    const profileName = (inputUser.mikrotik_profile_name || '').toLowerCase()
-
-    if (isExpired)
-      return 'expired'
-    if (total <= 0)
-      return 'habis'
-    if (total > 0 && remaining <= 0)
-      return 'habis'
-    if (profileName.includes('fup'))
-      return 'fup'
-
-    return 'ok'
+    return resolveAccessStatusFromUser(inputUser)
   }
 
   function getAccessStatusFromError(errorText: string | null): AccessStatus | null {
@@ -558,39 +529,42 @@ export const useAuthStore = defineStore('auth', () => {
     if (initialAuthCheckDone.value === true && !shouldAttemptAutoLogin)
       return
 
-    if (user.value == null) {
-      await fetchUser(context, routePath)
-    }
+    try {
+      if (user.value == null) {
+        await fetchUser(context, routePath)
+      }
 
-    if (user.value == null && shouldAttemptAutoLogin) {
-      autoLoginAttempted.value = true
-      try {
-        if (!routePath.startsWith('/admin')) {
-          const { $api } = useNuxtApp()
-          const query = (route as any)?.query ?? {}
-          const clientIp = (query.client_ip ?? query.ip ?? query['client-ip']) as string | undefined
-          const clientMac = (query.client_mac ?? query.mac ?? query['mac-address'] ?? query['mac']) as string | undefined
-          const body: Record<string, string> = {}
-          if (clientIp)
-            body.client_ip = clientIp
-          if (clientMac)
-            body.client_mac = clientMac
+      if (user.value == null && shouldAttemptAutoLogin) {
+        autoLoginAttempted.value = true
+        try {
+          if (!routePath.startsWith('/admin')) {
+            const { $api } = useNuxtApp()
+            const query = (route as any)?.query ?? {}
+            const clientIp = (query.client_ip ?? query.ip ?? query['client-ip']) as string | undefined
+            const clientMac = (query.client_mac ?? query.mac ?? query['mac-address'] ?? query['mac']) as string | undefined
+            const body: Record<string, string> = {}
+            if (clientIp)
+              body.client_ip = clientIp
+            if (clientMac)
+              body.client_mac = clientMac
 
-          const response = await $api<VerifyOtpResponse>('/auth/auto-login', {
-            method: 'POST',
-            ...(Object.keys(body).length > 0 ? { body } : {}),
-          })
-          if (response != null) {
-            await fetchUser(context, routePath)
+            const response = await $api<VerifyOtpResponse>('/auth/auto-login', {
+              method: 'POST',
+              ...(Object.keys(body).length > 0 ? { body } : {}),
+            })
+            if (response != null) {
+              await fetchUser(context, routePath)
+            }
           }
         }
-      }
-      catch {
-        // Auto-login bersifat best-effort, tidak perlu error ke UI
+        catch {
+          // Auto-login bersifat best-effort, tidak perlu error ke UI
+        }
       }
     }
-
-    initialAuthCheckDone.value = true
+    finally {
+      initialAuthCheckDone.value = true
+    }
   }
 
   return {

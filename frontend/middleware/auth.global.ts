@@ -2,6 +2,7 @@
 import type { RouteLocationNormalized } from 'vue-router'
 import { defineNuxtRouteMiddleware, navigateTo } from '#app'
 import { useAuthStore } from '~/store/auth'
+import { normalizeRedirectTarget } from '~/utils/authGuards'
 
 /**
  * Middleware untuk otentikasi dan otorisasi.
@@ -27,27 +28,26 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
   const getRedirectTarget = (): string | null => {
     const redirectQuery = to.query.redirect
     const redirectPath = Array.isArray(redirectQuery) ? redirectQuery[0] : redirectQuery
-    if (typeof redirectPath !== 'string' || redirectPath.length === 0)
-      return null
-    if (!redirectPath.startsWith('/'))
+    const normalized = normalizeRedirectTarget(redirectPath, '')
+    if (normalized.length === 0)
       return null
 
     // Selalu blokir rute auth/guest umum agar tidak terjadi loop.
     const disallowedPrefixes = ['/login', '/register', '/daftar', '/captive', '/session/consume']
-    if (disallowedPrefixes.some(prefix => redirectPath === prefix || redirectPath.startsWith(`${prefix}/`)))
+    if (disallowedPrefixes.some(prefix => normalized === prefix || normalized.startsWith(`${prefix}/`)))
       return null
 
     // Untuk admin/superadmin: izinkan redirect ke /admin/* KECUALI halaman login admin itu sendiri.
     // Ini penting karena plugin API bisa menambahkan redirect=/admin/settings/... saat 401, dan
     // jika kita blokir semua /admin, user akan selalu jatuh ke /admin/dashboard.
-    if (redirectPath === '/admin' || redirectPath === '/admin/login' || redirectPath.startsWith('/admin/login/'))
+    if (normalized === '/admin' || normalized === '/admin/login' || normalized.startsWith('/admin/login/'))
       return null
 
     // Untuk non-admin: jangan izinkan redirect ke area /admin.
-    if (!isAdmin && (redirectPath === '/admin' || redirectPath.startsWith('/admin/')))
+    if (!isAdmin && (normalized === '/admin' || normalized.startsWith('/admin/')))
       return null
 
-    return redirectPath
+    return normalized
   }
 
   // Halaman yang dapat diakses oleh pengguna yang belum login (guest).

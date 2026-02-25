@@ -271,6 +271,26 @@ Catatan HTTPS + HMR:
 ### 5.3) Build Image di GitHub Actions
 Workflow publish image ada di `.github/workflows/docker-publish.yml`.
 
+### 5.3.0) Kebijakan Build Frontend (CI vs Lokal)
+
+Kebijakan yang dipakai sekarang:
+- Lokal (dev harian): **tidak wajib** `pnpm run build` setiap perubahan.
+  - Fokus ke `lint + typecheck + focused tests + E2E isolated`.
+- CI Pull Request:
+  - Build frontend **kondisional** (hanya saat ada perubahan runtime-critical frontend).
+- CI Push ke `main`:
+  - Build frontend **selalu jalan** sebagai final safety gate sebelum rilis lanjutan.
+
+Perubahan yang dianggap runtime-critical (contoh):
+- `frontend/pages/**`, `frontend/components/**`, `frontend/layouts/**`
+- `frontend/middleware/**`, `frontend/plugins/**`, `frontend/store/**`
+- `frontend/composables/**`, `frontend/utils/**`, `frontend/types/**`
+- `frontend/app.vue`, `frontend/nuxt.config.ts`, `frontend/package.json`, `frontend/pnpm-lock.yaml`
+
+Catatan:
+- Jika ragu apakah perubahan memengaruhi runtime, jalankan build.
+- E2E lokal tetap penting untuk validasi flow bisnis, tetapi tidak menggantikan build gate di CI `main`.
+
 Perilaku workflow:
 - Push ke `main`: build + push image backend/frontend ke Docker Hub.
 - Push tag `v*`: build + push image dengan tag versi.

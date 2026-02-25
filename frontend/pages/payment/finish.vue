@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { TransactionDetailResponseContract, TransactionStatusContract } from '~/types/api/contracts'
 import { useNuxtApp, useRuntimeConfig } from '#app'
-import { ClientOnly } from '#components'
 import StatusActionButtons from '~/components/payment/StatusActionButtons.vue'
 import StatusHeader from '~/components/payment/StatusHeader.vue'
 import { format, isValid as isValidDate, parseISO } from 'date-fns'
@@ -10,6 +9,10 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { useSnackbar } from '~/composables/useSnackbar'
+import { fetchTransactionByOrderIdWithFallback, usePaymentPublicTokenFlow } from '~/composables/usePaymentPublicTokenFlow'
+import { usePaymentStatusPolling } from '~/composables/usePaymentStatusPolling'
+import { usePaymentInstructions } from '~/composables/usePaymentInstructions'
+import { usePaymentSnapAction } from '~/composables/usePaymentSnapAction'
 
 type TransactionDetails = TransactionDetailResponseContract
 
@@ -29,27 +32,15 @@ const isRefreshing = ref(false)
 const fetchError = ref<string | null>(null)
 const copySuccess = ref<string | null>(null)
 const isDownloadingInvoice = ref(false)
-const isPolling = ref(false)
 const errorMessageFromQuery = ref<string | null>(
   typeof route.query.msg === 'string' ? decodeURIComponent(route.query.msg) : null,
 )
 
-const statusTokenFromQuery = computed(() => {
-  const raw = (route.query.t ?? route.query.token)
-  if (Array.isArray(raw))
-    return typeof raw[0] === 'string' ? raw[0].trim() || null : null
-  return typeof raw === 'string' ? raw.trim() || null : null
-})
+const { statusTokenFromQuery, orderIdFromQuery } = usePaymentPublicTokenFlow(route)
 const isPublicView = computed(() => {
   if (statusTokenFromQuery.value != null)
     return true
   return transactionDetails.value?.user?.id === ''
-})
-const orderIdFromQuery = computed(() => {
-  const raw = route.query.order_id
-  if (Array.isArray(raw))
-    return typeof raw[0] === 'string' ? raw[0] : null
-  return typeof raw === 'string' ? raw : null
 })
 
 const orderId = computed(() => {
@@ -76,6 +67,14 @@ function formatDebtMb(value?: number | null): string | null {
   return `${n} MB`
 }
 
+function isValidTransactionDetails(data: unknown): data is TransactionDetails {
+  if (data == null || typeof data !== 'object')
+    return false
+
+  const obj = data as Record<string, unknown>
+  return typeof obj.midtrans_order_id === 'string' && typeof obj.status === 'string'
+}
+
 async function fetchTransactionDetails(orderId: string, options?: { showLoading?: boolean, silent?: boolean }) {
   const showLoading = options?.showLoading !== false
   const silent = options?.silent === true
@@ -88,31 +87,15 @@ async function fetchTransactionDetails(orderId: string, options?: { showLoading?
   if (!silent)
     fetchError.value = null
   try {
-    const response = await $api<TransactionDetails>(`/transactions/by-order-id/${orderId}`)
-    if (response == null || typeof response !== 'object' || response.midtrans_order_id == null || response.status == null) {
-      throw new Error('Respons API tidak valid atau tidak lengkap.')
-    }
+    const response = await fetchTransactionByOrderIdWithFallback<TransactionDetails>({
+      orderId,
+      statusToken: statusTokenFromQuery.value,
+      apiFetch: path => $api<TransactionDetails>(path),
+      validate: isValidTransactionDetails,
+    })
     transactionDetails.value = response
   }
   catch (err: any) {
-    // If user opens a shareable link from WhatsApp/another device, they may not have auth cookies.
-    // Fallback to public, token-protected endpoint when `t` is provided.
-    const statusCode = err?.response?.status ?? err?.statusCode
-    if ((statusCode === 401 || statusCode === 403) && statusTokenFromQuery.value) {
-      try {
-        const publicUrl = `/transactions/public/by-order-id/${encodeURIComponent(orderId)}?t=${encodeURIComponent(statusTokenFromQuery.value)}`
-        const publicResponse = await $api<TransactionDetails>(publicUrl)
-        if (publicResponse == null || typeof publicResponse !== 'object' || publicResponse.midtrans_order_id == null || publicResponse.status == null)
-          throw new Error('Respons API public tidak valid atau tidak lengkap.')
-        transactionDetails.value = publicResponse
-        fetchError.value = null
-        return
-      }
-      catch (fallbackErr: any) {
-        // continue to normal error handling below
-        err = fallbackErr
-      }
-    }
 
     if (silent)
       return
@@ -130,10 +113,6 @@ async function fetchTransactionDetails(orderId: string, options?: { showLoading?
     isLoading.value = false
     isRefreshing.value = false
   }
-}
-
-function isFinalStatus(status: TransactionStatusContract): boolean {
-  return status === 'SUCCESS' || status === 'FAILED' || status === 'EXPIRED' || status === 'CANCELLED'
 }
 
 onMounted(() => {
@@ -503,30 +482,6 @@ function goToHistory() {
   router.push('/riwayat')
 }
 
-const vaInstructionTitle = computed(() => {
-  const pm = paymentMethod.value?.toLowerCase() ?? ''
-  if (pm.includes('bca'))
-    return 'Cara bayar VA BCA'
-  if (pm.includes('bni'))
-    return 'Cara bayar VA BNI'
-  if (pm.includes('bri'))
-    return 'Cara bayar VA BRI'
-  if (pm.includes('permata'))
-    return 'Cara bayar VA Permata'
-  if (pm.includes('cimb'))
-    return 'Cara bayar VA CIMB'
-  return 'Cara bayar Virtual Account'
-})
-
-const vaInstructions = computed(() => {
-  return [
-    'Buka aplikasi mobile banking / internet banking / ATM bank Anda.',
-    'Pilih menu Transfer → Virtual Account.',
-    'Masukkan nomor Virtual Account di atas, lalu konfirmasi pembayaran.',
-    'Kembali ke halaman ini dan klik “Cek Status Pembayaran”.',
-  ]
-})
-
 const vaNumberLabel = computed(() => {
   const bank = getBankNameFromVA(paymentMethod.value)
   return bank ? `VA ${bank}` : 'VA'
@@ -603,25 +558,6 @@ const showSpecificPendingInstructions = computed(() => {
   return hasVa || hasEchannel || hasQr || hasDeeplink
 })
 
-interface SnapPayResult {
-  order_id: string
-}
-
-interface SnapInstance {
-  pay: (token: string, options: {
-    onSuccess: (result: SnapPayResult) => void
-    onPending: (result: SnapPayResult) => void
-    onError: (result: SnapPayResult) => void
-    onClose: () => void
-  }) => void
-}
-
-declare global {
-  interface Window {
-    snap?: SnapInstance
-  }
-}
-
 const snapToken = computed(() => {
   const token = transactionDetails.value?.snap_token
   return (typeof token === 'string' && token.trim() !== '') ? token.trim() : null
@@ -632,81 +568,6 @@ const showSnapPaySection = computed(() => {
     return false
   return finalStatus.value === 'UNKNOWN' || finalStatus.value === 'PENDING'
 })
-
-const isPayingWithSnap = ref(false)
-
-async function openSnapPayment() {
-  if (isPayingWithSnap.value)
-    return
-  const token = snapToken.value
-  if (!token) {
-    addSnackbar({ type: 'warning', title: 'Tidak Tersedia', text: 'Token pembayaran Snap tidak tersedia.' })
-    return
-  }
-
-  isPayingWithSnap.value = true
-  try {
-    await ensureMidtransReady()
-    if (!window.snap) {
-      throw new Error('Snap.js siap, tetapi window.snap tidak tersedia.')
-    }
-
-    // snap.pay is callback-based (non-async). Keep loading state until one of callbacks fires.
-    window.snap.pay(token, {
-      onSuccess: async (result) => {
-        try {
-          const oid = (result?.order_id || orderId.value || '').toString()
-          if (oid)
-            await router.push({ path: '/payment/status', query: { order_id: oid, t: statusTokenFromQuery.value ?? undefined } })
-          await refreshStatus()
-        }
-        finally {
-          isPayingWithSnap.value = false
-        }
-      },
-      onPending: async (result) => {
-        try {
-          const oid = (result?.order_id || orderId.value || '').toString()
-          if (oid)
-            await router.push({ path: '/payment/status', query: { order_id: oid, t: statusTokenFromQuery.value ?? undefined } })
-          await refreshStatus()
-        }
-        finally {
-          isPayingWithSnap.value = false
-        }
-      },
-      onError: async (result) => {
-        try {
-          const oid = (result?.order_id || orderId.value || '').toString()
-          addSnackbar({ type: 'error', title: 'Gagal', text: 'Pembayaran gagal diproses. Silakan coba lagi.' })
-          if (oid)
-            await router.push({ path: '/payment/status', query: { order_id: oid, t: statusTokenFromQuery.value ?? undefined } })
-          await refreshStatus()
-        }
-        finally {
-          isPayingWithSnap.value = false
-        }
-      },
-      onClose: async () => {
-        try {
-          addSnackbar({ type: 'info', title: 'Dibatalkan', text: 'Jendela pembayaran ditutup.' })
-          const oid = (orderId.value || '').toString()
-          if (oid)
-            await cancelTransactionSilently(oid)
-          await refreshStatus()
-        }
-        finally {
-          isPayingWithSnap.value = false
-        }
-      },
-    })
-  }
-  catch (err: any) {
-    const msg = err?.message || 'Gagal membuka pembayaran Snap.'
-    addSnackbar({ type: 'error', title: 'Gagal', text: msg })
-    isPayingWithSnap.value = false
-  }
-}
 
 const qrValue = computed(() => transactionDetails.value?.qr_code_url ?? '')
 const showQrCode = computed(() => {
@@ -754,34 +615,41 @@ const showAppInstructions = computed(() => {
   return appDeeplinkUrl.value != null && deeplinkAppName.value != null
 })
 
-const qrisInstructions = computed(() => {
-  return [
-    'Buka aplikasi pembayaran (BCA, Mandiri, GoPay, OVO, dll).',
-    'Pilih menu Scan QR.',
-    'Pindai QR Code di atas atau download QR lalu unggah dari galeri Anda.',
-    'Periksa detail pembayaran dan konfirmasi.',
-  ]
+const {
+  vaInstructionTitle,
+  vaInstructions,
+  qrisInstructions,
+  appDeeplinkInstructions,
+} = usePaymentInstructions({
+  paymentMethod,
+  deeplinkAppName,
 })
 
-const appDeeplinkInstructions = computed(() => {
-  const appName = deeplinkAppName.value
-  if (appName === 'GoPay') {
-    return [
-      'Klik tombol "Buka Aplikasi GoPay" di bawah.',
-      'Aplikasi Gojek/GoPay akan terbuka otomatis (jika tersedia di perangkat Anda).',
-      'Periksa nominal tagihan dan klik konfirmasi bayar.',
-      'Masukkan PIN GoPay Anda untuk menyelesaikan transaksi.',
-    ]
-  }
-  if (appName === 'ShopeePay') {
-    return [
-      'Klik tombol "Buka ShopeePay" di bawah.',
-      'Aplikasi Shopee akan terbuka otomatis (jika tersedia di perangkat Anda).',
-      'Buka menu ShopeePay dan konfirmasi pembayaran.',
-      'Masukkan PIN ShopeePay Anda untuk menyelesaikan transaksi.',
-    ]
-  }
-  return []
+async function navigateToStatus(orderIdValue: string, token?: string | null) {
+  await router.push({
+    path: '/payment/status',
+    query: {
+      order_id: orderIdValue,
+      t: token ?? undefined,
+    },
+  })
+}
+
+const { isPayingWithSnap, openSnapPayment } = usePaymentSnapAction({
+  snapToken,
+  orderId,
+  statusToken: statusTokenFromQuery,
+  ensureMidtransReady,
+  refreshStatus,
+  cancelTransactionSilently,
+  navigateToStatus,
+  notify: addSnackbar,
+})
+
+usePaymentStatusPolling({
+  finalStatus,
+  refreshStatus,
+  intervalMs: 8000,
 })
 
 function openAppDeeplink() {

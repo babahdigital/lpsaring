@@ -555,6 +555,24 @@ if ! docker compose --env-file .env.prod -f docker-compose.prod.yml ps --service
   echo "ERROR: frontend container is not running after deploy" >&2
   exit 1
 fi
+
+echo "==> Menunggu frontend siap melayani request..."
+frontend_ready=0
+for i in \$(seq 1 60); do
+  if docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T nginx sh -lc "wget -q -O /dev/null http://frontend:3010/login" >/dev/null 2>&1; then
+    frontend_ready=1
+    break
+  fi
+  sleep 2
+done
+
+if [ "\$frontend_ready" -ne 1 ]; then
+  echo "ERROR: frontend belum siap setelah 120 detik" >&2
+  docker compose --env-file .env.prod -f docker-compose.prod.yml logs --tail=120 frontend || true
+  exit 1
+fi
+
+echo "==> Frontend readiness OK"
 EOF
 )
 
@@ -571,14 +589,26 @@ cd "$REMOTE_DIR"
 # nginx tidak wajib expose port 80 ke host (produksi bisa full via cloudflared).
 # Jadi health check dilakukan dari dalam container nginx.
 docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T nginx wget -qO- http://127.0.0.1/api/ping
+
+# Validasi jalur frontend dan static assets _nuxt melalui ingress nginx
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T nginx sh -lc '
+set -e
+wget -q -O /tmp/login.html http://127.0.0.1/login
+asset_path=\$(tr "\"" "\n" < /tmp/login.html | grep "^/_nuxt/" | grep -v "^/_nuxt/\$" | head -n 1 || true)
+if [ -z "\$asset_path" ]; then
+  echo "ERROR: tidak menemukan referensi _nuxt asset dari /login" >&2
+  exit 1
+fi
+wget -q -O /dev/null "http://127.0.0.1\$asset_path"
+'
 EOF
 )
 
   if [[ "$DRY_RUN" == "true" ]]; then
-    echo "[DRY-RUN] ssh ${SSH_OPTS[*]} $SSH_TARGET 'curl http://localhost/api/ping'"
+    echo "[DRY-RUN] ssh ${SSH_OPTS[*]} $SSH_TARGET 'health check /api/ping + /login + sample _nuxt asset'"
   else
     ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "$remote_health_cmd"
-    echo "==> Health check OK: /api/ping"
+    echo "==> Health check OK: /api/ping + /login + _nuxt asset"
   fi
 fi
 

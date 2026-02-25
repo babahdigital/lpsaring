@@ -90,6 +90,15 @@ Agar transaksi bisa diaudit seperti contoh payload notifikasi Midtrans:
   - `expiry_time`
   - `va_number`, `payment_code`, `biller_code`, `qr_code_url`
 
+Tambahan observability event:
+- Event transaksi disimpan melalui `backend/app/infrastructure/http/transactions/events.py` dengan payload terstruktur:
+  - `schema: transaction_event.v1`
+  - `source`
+  - `event_type`
+  - `status`
+  - `data` (payload event asli)
+- Tujuan: menjaga konsistensi parsing event lintas route webhook/reconcile/audit.
+
 
 ## 7) QR Code Proxy (CORS/Offline-friendly)
 Untuk mode Core API yang menampilkan QR, frontend tidak mengambil QR langsung dari domain Midtrans.

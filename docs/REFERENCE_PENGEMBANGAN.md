@@ -92,6 +92,28 @@ frontend/
 └─ package.json
 ```
 
+### Update Struktur (Batch 2026-02-26)
+
+Backend:
+- `backend/app/infrastructure/http/admin_contexts/`:
+  - `backups.py`, `notifications.py`, `transactions.py`, `billing.py`, `reports.py`
+- `backend/app/infrastructure/http/transactions/` tetap menjadi modul lifecycle transaksi yang dipakai `transactions_routes.py`.
+
+Frontend:
+- Payment status flow dipecah ke composables:
+  - `frontend/composables/usePaymentPublicTokenFlow.ts`
+  - `frontend/composables/usePaymentStatusPolling.ts`
+  - `frontend/composables/usePaymentInstructions.ts`
+  - `frontend/composables/usePaymentSnapAction.ts`
+- Unit tests baru:
+  - `frontend/tests/payment-composables.test.ts`
+  - `frontend/tests/payment-status-polling.test.ts`
+
+CI:
+- Focused frontend tests kini mencakup auth + payment composables/polling.
+- Manifest file focused tests dipublish ke `GITHUB_STEP_SUMMARY` melalui `FOCUSED_FRONTEND_TESTS`.
+- Contract gate aktif via `scripts/contract_gate.py` + smoke test `backend/tests/test_openapi_contract_smoke.py`.
+
 ---
 
 ## 4) Catatan Pengembangan
@@ -261,6 +283,8 @@ Jika ingin saya implement, saya butuh keputusan: mapping chat id pakai Opsi A (k
 - Pastikan `nuxi typecheck` (atau `pnpm run build`) tidak error.
 - Validasi UI header/footer di layout vertical & horizontal.
 - Jika menambah icon, pastikan bundling `frontend/plugins/iconify/build-icons.ts` sudah sesuai.
+- Untuk perubahan payment/auth frontend, jalankan focused tests auth + payment.
+- Untuk perubahan signature endpoint prioritas backend, pastikan OpenAPI + typed contract + `docs/API_DETAIL.md` ikut diperbarui.
 
 ---
 

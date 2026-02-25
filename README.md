@@ -39,8 +39,15 @@ Portal hotspot dengan backend Flask dan frontend Nuxt 3.
 - Dependensi Tiptap dan Chart.js dihapus karena tidak digunakan.
 - Build analyze: `pnpm nuxi build --analyze`.
 
+## Policy Build Frontend (Lokal vs CI)
+- Lokal (pre-commit harian): tidak wajib `pnpm run build` di setiap perubahan.
+- Jalur cepat wajib: lint + typecheck + focused tests + E2E isolated.
+- CI Pull Request: build frontend hanya saat ada perubahan runtime-critical frontend.
+- CI push ke `main`: build frontend selalu jalan sebagai final safety gate.
+- Detail checklist eksekusi: [docs/DEVELOPMENT_CHECKLIST.md](docs/DEVELOPMENT_CHECKLIST.md).
+
 ## Checklist Release Singkat
-- 1) Pastikan branch fitur sudah bersih dan CI hijau (lint, test, typecheck, build).
+- 1) Pastikan branch fitur sudah bersih dan CI hijau (lint, test, typecheck; build sesuai policy trigger).
 - 2) Buat PR ke `main` lalu merge setelah review.
 - 3) Push ke `main` akan memicu publish image backend/frontend via GitHub Actions (`docker-publish.yml`).
 - 4) Untuk deploy ke Raspberry Pi, jalankan workflow manual `workflow_dispatch` dengan input `deploy=true`.

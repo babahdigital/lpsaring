@@ -15,6 +15,6 @@ export default defineNuxtPlugin(async (_nuxtApp) => {
   else {
     // Di sisi client, kita juga panggil untuk memastikan inisialisasi jika
     // karena suatu hal tidak berjalan di server.
-    authStore.initializeAuth()
+    await authStore.initializeAuth()
   }
 })

@@ -7,12 +7,16 @@
 
 ## Arsitektur & Alur Data Penting
 - Auth & captive flow: login/OTP di backend/app/infrastructure/http/auth_routes.py → frontend/pages/captive/ dan frontend/pages/login/.
-- Transaksi: backend/app/infrastructure/http/transactions_routes.py → Midtrans Snap → webhook update status → apply paket ke MikroTik.
+- Transaksi: backend/app/infrastructure/http/transactions_routes.py (+ modul `transactions/*`) → Midtrans (Snap/Core API) → webhook update status → apply paket ke MikroTik.
+- Admin transaksi: `backend/app/infrastructure/http/admin_routes.py` sekarang delegasi ke `backend/app/infrastructure/http/admin_contexts/*` (backups/notifications/transactions/billing/reports).
 - WA invoice: Celery task di backend/app/tasks.py mengirim PDF; URL dibangun dari `APP_PUBLIC_BASE_URL`.
 - Walled-garden sync: backend/app/services/walled_garden_service.py → MikroTik; host/IP allowlist wajib di-setting.
 
 ## Struktur & Alur Kode
 - Backend entry: backend/app/__init__.py (factory `create_app()`), route di backend/app/infrastructure/http/, logika bisnis di backend/app/services/.
+- Modular HTTP backend:
+	- `backend/app/infrastructure/http/transactions/` untuk lifecycle transaksi (initiation/public/authenticated/webhook/invoice/idempotency/events).
+	- `backend/app/infrastructure/http/admin_contexts/` untuk bounded context admin.
 - Celery task di backend/app/tasks.py; model SQLAlchemy di backend/app/infrastructure/db/models/.
 - Frontend: route di frontend/pages/, layout di frontend/layouts/, state di frontend/store/, composables di frontend/composables/.
 
@@ -77,6 +81,10 @@ Tujuan: user tidak “ke-block” setelah OTP sukses walau MAC berubah (privacy/
 - Lihat log: `docker compose logs -f backend|frontend|nginx`.
 - Lint backend: `docker compose exec -T backend ruff check .` (config di backend/ruff.toml).
 - Lint frontend: `docker compose exec frontend pnpm run lint`.
+- Focused frontend tests (auth + payment):
+	- `docker compose exec frontend pnpm run test -- tests/auth-access.test.ts tests/auth-guards.test.ts tests/payment-composables.test.ts tests/payment-status-polling.test.ts`
+- Smoke kontrak OpenAPI backend:
+	- `docker compose exec -T backend python -m pytest backend/tests/test_openapi_contract_smoke.py -q`
 
 Catatan:
 - CI mem-validasi backend dengan `python -m ruff check backend` (ruff error seperti F401 harus bersih sebelum deploy).
@@ -90,6 +98,11 @@ Catatan VS Code (opsional):
 - Jika mengubah file backend (backend/**), WAJIB jalankan: `docker compose exec -T backend ruff check .`.
 - Jika mengubah file frontend (frontend/**), WAJIB jalankan: `docker compose exec frontend pnpm run lint`.
 - Jika mengubah keduanya, jalankan kedua lint di atas.
+- Jika mengubah flow payment/auth frontend, WAJIB jalankan focused frontend tests auth+payment.
+- Jika mengubah signature endpoint prioritas (`backend/app/infrastructure/http/**`), WAJIB sinkronkan:
+	- `contracts/openapi/openapi.v1.yaml`
+	- `frontend/types/api/contracts.ts`
+	- `docs/API_DETAIL.md`
 - Semua perintah dev dijalankan di container agar konsisten (lihat DEVELOPMENT.md).
 - Setiap perubahan perilaku/flow WAJIB update dokumentasi yang relevan (minimal docs/REFERENCE_PENGEMBANGAN.md dan/atau DEVELOPMENT.md) agar tidak ada kebingungan.
 

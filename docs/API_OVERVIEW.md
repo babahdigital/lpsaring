@@ -43,11 +43,16 @@ Lampiran wajib:
 - POST /transactions/initiate
 - POST /transactions/debt/initiate
 - GET /transactions/by-order-id/{order_id}
+- GET /transactions/public/by-order-id/{order_id}
 - POST /transactions/{order_id}/cancel
+- POST /transactions/public/{order_id}/cancel
 - GET /transactions/{order_id}/invoice
 - GET /transactions/{order_id}/qr
+- GET /transactions/public/{order_id}/qr
 - GET /admin/transactions
 - GET /admin/transactions/export
+- GET /admin/transactions/{order_id}/detail
+- GET /admin/transactions/{order_id}/report.pdf
 
 ## 4.1) Admin – Buat Tagihan (User tertentu)
 - POST /admin/transactions/bill
@@ -60,3 +65,7 @@ Lampiran wajib:
 ## Catatan
 - Field tamping: is_tamping (boolean), tamping_type (string, wajib jika is_tamping true).
 - Non‑tamping: blok + kamar wajib.
+- Dokumen ini bersifat high-level; kontrak prioritas yang menjadi sumber kebenaran ada di:
+  - `contracts/openapi/openapi.v1.yaml`
+  - `frontend/types/api/contracts.ts`
+  - `docs/API_DETAIL.md`

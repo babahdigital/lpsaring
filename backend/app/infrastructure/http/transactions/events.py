@@ -11,6 +11,22 @@ def safe_json_dumps(value: object) -> str | None:
         return None
 
 
+def _build_event_payload(
+    *,
+    source: TransactionEventSource,
+    event_type: str,
+    status: TransactionStatus | None,
+    payload: object | None,
+) -> dict[str, object | None]:
+    return {
+        "schema": "transaction_event.v1",
+        "source": source.value if hasattr(source, "value") else str(source),
+        "event_type": event_type,
+        "status": status.value if status is not None else None,
+        "data": payload,
+    }
+
+
 def log_transaction_event(
     *,
     session,
@@ -26,5 +42,12 @@ def log_transaction_event(
     ev.source = source
     ev.event_type = event_type
     ev.status = status
-    ev.payload = safe_json_dumps(payload) if payload is not None else None
+    ev.payload = safe_json_dumps(
+        _build_event_payload(
+            source=source,
+            event_type=event_type,
+            status=status,
+            payload=payload,
+        )
+    )
     session.add(ev)

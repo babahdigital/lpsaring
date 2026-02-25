@@ -80,3 +80,25 @@ Catatan perilaku:
   - `docs/LITE_TEST_CHECKLIST_PAYMENT.md`
 - Error reference:
   - `docs/ERROR_REFERENCE.md`
+
+## Frontend Payment Refactor (Status Page)
+
+Halaman `frontend/pages/payment/finish.vue` sekarang menggunakan composable terpisah untuk memudahkan maintainability tanpa mengubah UX utama:
+
+- `usePaymentPublicTokenFlow`:
+  - normalisasi query `order_id` + token `t`/`token`
+  - fallback authenticated → public endpoint untuk link shareable
+- `usePaymentStatusPolling`:
+  - polling ringan selama status belum final
+- `usePaymentInstructions`:
+  - instruksi VA/QR/deeplink terpusat
+- `usePaymentSnapAction`:
+  - callback Snap (`onSuccess`/`onPending`/`onError`/`onClose`) terstandardisasi
+
+## Test Coverage Payment (Focused)
+
+Focused tests yang aktif:
+- `frontend/tests/payment-composables.test.ts`
+- `frontend/tests/payment-status-polling.test.ts`
+
+Keduanya ikut dijalankan pada CI step focused frontend tests bersama auth guard tests.

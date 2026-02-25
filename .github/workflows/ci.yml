@@ -15,8 +15,11 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      frontend_build: ${{ steps.filter.outputs.frontend_build }}
       docker: ${{ steps.filter.outputs.docker }}
       ci: ${{ steps.filter.outputs.ci }}
+      contracts: ${{ steps.filter.outputs.contracts }}
+      docs: ${{ steps.filter.outputs.docs }}
     steps:
       - uses: actions/checkout@v4
       - name: Detect changed paths
@@ -28,25 +31,69 @@ jobs:
               - 'backend/**'
             frontend:
               - 'frontend/**'
+            frontend_build:
+              - 'frontend/app.vue'
+              - 'frontend/nuxt.config.ts'
+              - 'frontend/package.json'
+              - 'frontend/pnpm-lock.yaml'
+              - 'frontend/pages/**'
+              - 'frontend/components/**'
+              - 'frontend/layouts/**'
+              - 'frontend/middleware/**'
+              - 'frontend/plugins/**'
+              - 'frontend/store/**'
+              - 'frontend/composables/**'
+              - 'frontend/utils/**'
+              - 'frontend/types/**'
+              - 'frontend/@core/**'
+              - 'frontend/@layouts/**'
             docker:
               - 'docker-compose*.yml'
               - 'backend/Dockerfile*'
               - 'frontend/Dockerfile*'
             ci:
               - '.github/workflows/**'
+            contracts:
+              - 'contracts/openapi/**'
+              - 'frontend/types/api/contracts.ts'
+            docs:
+              - 'docs/API_DETAIL.md'
+              - 'docs/OPENAPI_CONTRACT_WORKFLOW.md'
       - name: Show change summary
         run: |
           echo "backend=${{ steps.filter.outputs.backend }}"
           echo "frontend=${{ steps.filter.outputs.frontend }}"
+          echo "frontend_build=${{ steps.filter.outputs.frontend_build }}"
           echo "docker=${{ steps.filter.outputs.docker }}"
           echo "ci=${{ steps.filter.outputs.ci }}"
+          echo "contracts=${{ steps.filter.outputs.contracts }}"
+          echo "docs=${{ steps.filter.outputs.docs }}"
           {
             echo "### Path Change Summary"
             echo "- backend: ${{ steps.filter.outputs.backend }}"
             echo "- frontend: ${{ steps.filter.outputs.frontend }}"
+            echo "- frontend_build: ${{ steps.filter.outputs.frontend_build }}"
             echo "- docker: ${{ steps.filter.outputs.docker }}"
             echo "- ci: ${{ steps.filter.outputs.ci }}"
+            echo "- contracts: ${{ steps.filter.outputs.contracts }}"
+            echo "- docs: ${{ steps.filter.outputs.docs }}"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  contract-gate:
+    needs: changes
+    if: ${{ needs.changes.outputs.backend == 'true' || needs.changes.outputs.contracts == 'true' || needs.changes.outputs.docs == 'true' || needs.changes.outputs.ci == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Contract gate (OpenAPI + typed contract + API detail)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python scripts/contract_gate.py --base "$BASE_SHA" --head "$HEAD_SHA"
 
   backend:
     needs: changes
@@ -91,15 +138,36 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: pnpm install
+      - name: UI standards gate (no runtime import from Vuexy full-version)
+        run: python3 scripts/enforce_ui_standards.py
       - name: Lint frontend
         working-directory: frontend
         run: pnpm run lint
       - name: Typecheck frontend
         working-directory: frontend
         run: pnpm run typecheck
+      - name: Publish focused frontend test manifest
+        run: |
+          TEST_FILES="tests/auth-access.test.ts tests/auth-guards.test.ts tests/payment-composables.test.ts tests/payment-status-polling.test.ts"
+          echo "FOCUSED_FRONTEND_TESTS=$TEST_FILES" >> "$GITHUB_ENV"
+          {
+            echo "### Frontend Focused Tests"
+            for t in $TEST_FILES; do
+              echo "- $t"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Run focused frontend unit tests (auth + payment)
+        working-directory: frontend
+        run: pnpm run test -- $FOCUSED_FRONTEND_TESTS
       - name: Build frontend
+        if: ${{ github.event_name == 'push' || needs.changes.outputs.frontend_build == 'true' || needs.changes.outputs.ci == 'true' }}
         working-directory: frontend
         run: pnpm run build
+      - name: Skip build (PR non-runtime changes)
+        if: ${{ github.event_name != 'push' && needs.changes.outputs.frontend_build != 'true' && needs.changes.outputs.ci != 'true' }}
+        run: |
+          echo "Frontend build skipped: no runtime-critical frontend changes in this PR."
+          echo "Build will still run on push to main." >> "$GITHUB_STEP_SUMMARY"
 
   docker-build:
     needs: changes
