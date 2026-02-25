@@ -1,45 +1,45 @@
 # backend/requirements.txt
+# Pinned versions (production-tested, reproducible build)
+
 # Core Flask & Web
-Flask>=2.3,<3.0 # Framework web utama
-python-dotenv>=1.0.0 # Untuk memuat variabel dari file .env
-Flask-Cors>=4.0.0 # Mengizinkan request dari frontend (domain berbeda)
-Gunicorn>=21.0.0 # WSGI Server untuk produksi (lebih baik dari server bawaan Flask)
+Flask==2.3.3
+python-dotenv==1.2.1
+Flask-Cors==6.0.2
+gunicorn==25.0.3
+Werkzeug==3.1.5
+itsdangerous==2.2.0
+Jinja2==3.1.6
 
 # Database & ORM
-SQLAlchemy>=2.0,<2.1 # Object-Relational Mapper untuk interaksi database
-psycopg2-binary>=2.9.0 # Driver agar Python bisa 'bicara' dengan PostgreSQL
-Flask-Migrate>=4.0.0 # Alat bantu untuk migrasi skema database (menggunakan Alembic)
-Alembic>=1.10.0 # Library inti untuk migrasi database
+SQLAlchemy==2.0.46
+Flask-SQLAlchemy==3.1.1
+psycopg2-binary==2.9.11
+Flask-Migrate==4.1.0
+alembic==1.18.4
 
-# Validasi & Serialisasi Data
-# Pydantic>=2.0.0 # Untuk validasi data request/response API dengan mudah (sangat berguna!)
-pydantic[email]>=2.0
-# Marshmallow>=3.19.0 # Alternatif/tambahan untuk serialisasi/deserialisasi
-# Flask-Marshmallow>=1.0.0
+# Validation & data modeling
+pydantic[email]==2.12.5
 
-# Task Queue (untuk tugas background seperti kirim WA)
-celery>=5.3.0 # Framework task queue
-redis>=5.0.0 # Diperlukan sebagai broker & backend hasil untuk Celery
-# flower>=2.0.0 # Opsional: Antarmuka web untuk monitoring Celery
+# Task queue
+celery==5.6.2
+redis==7.1.1
 
-# Keamanan
-python-jose[cryptography]>=3.3.0
-cryptography>=41.0.0 # Untuk enkripsi data jika diperlukan nanti
-Flask-Limiter>=3.0.0 # Untuk membatasi jumlah request API (rate limiting)
+# Security
+python-jose[cryptography]==3.5.0
+cryptography==46.0.5
+Flask-Limiter==4.1.1
 
-# API Client & Lain-lain
-requests>=2.31.0 # Library standar untuk membuat HTTP request (misal ke API WhatsApp)
-midtransclient>=1.4.2 # Library resmi Midtrans untuk Python
-routeros-api>=0.13.0 # Jika akan menggunakan library ini untuk MikroTik nanti
+# API clients & integrations
+requests==2.32.5
+chardet==5.2.0
+midtransclient==1.4.2
+routeros-api==0.21.0
+user-agents==2.2.0
+pytz==2025.2
 
-# Testing & Linting
-pytest>=9.0.0
-ruff>=0.15.0
+# PDF / templating
+weasyprint==68.1
 
-# Tambahkan library lain sesuai kebutuhan di masa depan
-weasyprint
-Jinja2
-user-agents
-Werkzeug>=2.0.0
-pytz
-itsdangerous
+# Testing & linting
+pytest==9.0.2
+ruff==0.15.1

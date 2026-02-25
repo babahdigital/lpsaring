@@ -1,22 +1,72 @@
 name: ci
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: ["main"]
   pull_request:
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      docker: ${{ steps.filter.outputs.docker }}
+      ci: ${{ steps.filter.outputs.ci }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+            docker:
+              - 'docker-compose*.yml'
+              - 'backend/Dockerfile*'
+              - 'frontend/Dockerfile*'
+            ci:
+              - '.github/workflows/**'
+      - name: Show change summary
+        run: |
+          echo "backend=${{ steps.filter.outputs.backend }}"
+          echo "frontend=${{ steps.filter.outputs.frontend }}"
+          echo "docker=${{ steps.filter.outputs.docker }}"
+          echo "ci=${{ steps.filter.outputs.ci }}"
+          {
+            echo "### Path Change Summary"
+            echo "- backend: ${{ steps.filter.outputs.backend }}"
+            echo "- frontend: ${{ steps.filter.outputs.frontend }}"
+            echo "- docker: ${{ steps.filter.outputs.docker }}"
+            echo "- ci: ${{ steps.filter.outputs.ci }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   backend:
+    needs: changes
+    if: ${{ needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: |
+            backend/requirements.lock.txt
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r backend/requirements.txt
+          python -m pip install -r backend/requirements.lock.txt
+      - name: Dependency hygiene gate
+        run: |
+          python backend/scripts/refresh_lock_and_validate.py --skip-tests
       - name: Lint backend
         run: |
           python -m ruff check backend
@@ -25,12 +75,16 @@ jobs:
           python -m pytest backend/tests --ignore=backend/tests/test_whatsapp_send.py
 
   frontend:
+    needs: changes
+    if: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.ci == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
       - name: Enable corepack
         run: corepack enable
       - name: Install frontend dependencies
@@ -47,6 +101,8 @@ jobs:
         run: pnpm run build
 
   docker-build:
+    needs: changes
+    if: ${{ needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.docker == 'true' || needs.changes.outputs.ci == 'true' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

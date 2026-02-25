@@ -25,6 +25,7 @@ from .infrastructure.db.models import UserRole
 from .infrastructure.http.json_provider import CustomJSONProvider
 from .services import settings_service
 from app.utils.auth_cookie_utils import set_access_cookie, set_refresh_cookie
+from app.infrastructure.http.error_envelope import error_response_from_http_exception, error_response
 
 module_log = logging.getLogger(__name__)
 
@@ -342,23 +343,12 @@ def register_error_handlers(app: Flask) -> None:
     def handle_http_exception(error: HTTPException):
         if not _is_api_request():
             return error.get_response()
-        status_code = int(error.code or HTTPStatus.INTERNAL_SERVER_ERROR)
-        message = error.description or error.name
-        payload = {
-            "error": message,
-            "message": message,
-            "status_code": status_code,
-        }
-        return jsonify(payload), status_code
+        return error_response_from_http_exception(error)
 
     @app.errorhandler(Exception)
     def handle_unexpected_exception(error: Exception):
         current_app.logger.error("Unhandled exception: %s", error, exc_info=True)
-        payload = {
-            "error": "Internal server error.",
-            "status_code": HTTPStatus.INTERNAL_SERVER_ERROR,
-        }
-        return jsonify(payload), HTTPStatus.INTERNAL_SERVER_ERROR
+        return error_response("Internal server error.", status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
 
 
 # DIKEMBALIKAN: Fungsi untuk mendaftarkan rute tes
@@ -502,6 +492,43 @@ def create_app(config_name: Optional[str] = None) -> HotspotFlask:
             new_refresh = getattr(g, "new_refresh_token", None)
             if isinstance(new_refresh, str) and new_refresh:
                 set_refresh_cookie(response, new_refresh)
+        except Exception:
+            pass
+
+        try:
+            is_api_path = str(getattr(request, "path", "") or "").startswith("/api")
+            is_error_status = int(getattr(response, "status_code", 0) or 0) >= 400
+            if is_api_path and is_error_status and response.mimetype == "application/json":
+                payload = response.get_json(silent=True)
+                if isinstance(payload, dict):
+                    message = payload.get("error") or payload.get("message") or "Internal server error."
+                    if not isinstance(message, str) or not message.strip():
+                        message = "Internal server error."
+                    details = payload.get("details")
+                    existing_code = payload.get("code")
+
+                    normalized = {
+                        "success": False,
+                        "error": message,
+                        "message": message,
+                        "status_code": int(response.status_code),
+                        "code": (
+                            existing_code
+                            if isinstance(existing_code, str) and existing_code.strip()
+                            else f"HTTP_{int(response.status_code)}"
+                        ),
+                    }
+                    request_id = request.environ.get("FLASK_REQUEST_ID")
+                    if isinstance(request_id, str) and request_id.strip():
+                        normalized["request_id"] = request_id
+                    if details is not None:
+                        normalized["details"] = details
+
+                    for key, value in payload.items():
+                        if key not in normalized and value is not None:
+                            normalized[key] = value
+
+                    response.set_data(app.json.dumps(normalized))
         except Exception:
             pass
         return response

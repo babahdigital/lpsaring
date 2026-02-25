@@ -1,21 +1,19 @@
+import type {
+  PaymentMethodContract,
+  TransactionInitiateResponseContract,
+} from '~/types/api/contracts'
 import { useNuxtApp } from '#app'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMidtransSnap } from '~/composables/useMidtransSnap'
 import { useSnackbar } from '~/composables/useSnackbar'
 
-type DebtInitiateResponse = {
-  order_id?: string | null
+type DebtInitiateResponse = TransactionInitiateResponseContract & {
   midtrans_order_id?: string | null
-  snap_token?: string | null
-  redirect_url?: string | null
   payment_method?: string | null
-  provider_mode?: 'snap' | 'core_api'
-  status_token?: string | null
-  status_url?: string | null
 }
 
-type PaymentMethod = 'qris' | 'gopay' | 'shopeepay' | 'va'
+type PaymentMethod = PaymentMethodContract
 
 type PayOptions = {
   manualDebtId?: string

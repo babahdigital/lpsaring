@@ -1,5 +1,10 @@
 <script setup lang="ts">
 import type { PackagePublic as Package } from '~/types/package'
+import type {
+  PaymentMethodContract,
+  TransactionInitiateResponseContract,
+  VaBankContract,
+} from '~/types/api/contracts'
 import { useFetch, useNuxtApp } from '#app'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, ref, watch } from 'vue'
@@ -18,17 +23,9 @@ interface SnapPayResult {
   order_id: string
 }
 
-type PaymentMethod = 'qris' | 'gopay' | 'shopeepay' | 'va'
-type VaBank = 'bca' | 'bni' | 'bri' | 'mandiri' | 'permata' | 'cimb'
-
-interface InitiateResponse {
-  order_id?: string
-  snap_token?: string | null
-  redirect_url?: string | null
-  provider_mode?: 'snap' | 'core_api'
-  status_token?: string | null
-  status_url?: string | null
-}
+type PaymentMethod = PaymentMethodContract
+type VaBank = VaBankContract
+type InitiateResponse = TransactionInitiateResponseContract
 
 interface SnapInstance {
   pay: (token: string, options: {

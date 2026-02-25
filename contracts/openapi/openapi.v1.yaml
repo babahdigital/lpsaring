@@ -1,0 +1,1031 @@
+openapi: 3.0.3
+info:
+  title: Lpsaring API Contract
+  version: 1.0.0
+  description: |
+    Source of truth kontrak API domain prioritas (Auth, Profile, Devices, Transactions).
+    Ruang lingkup ini sengaja fokus untuk mengurangi drift backend-frontend pada flow kritikal.
+servers:
+  - url: /api
+    description: Relative API base path
+
+tags:
+  - name: Auth
+  - name: Profile
+  - name: Devices
+  - name: Transactions
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register user baru
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRegisterRequest'
+      responses:
+        '201':
+          description: User berhasil dibuat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthRegisterResponse'
+        '409':
+          $ref: '#/components/responses/ErrorConflict'
+        '422':
+          $ref: '#/components/responses/ErrorValidation'
+
+  /auth/request-otp:
+    post:
+      tags: [Auth]
+      summary: Request OTP ke WhatsApp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthRequestOtpRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AuthRequestOtpRequest'
+      responses:
+        '200':
+          description: OTP berhasil dikirim
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '429':
+          $ref: '#/components/responses/ErrorRateLimit'
+
+  /auth/verify-otp:
+    post:
+      tags: [Auth]
+      summary: Verifikasi OTP dan login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthVerifyOtpRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AuthVerifyOtpRequest'
+      responses:
+        '200':
+          description: OTP valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthVerifyOtpResponse'
+        '400':
+          $ref: '#/components/responses/ErrorBadRequest'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+
+  /auth/session/consume:
+    post:
+      tags: [Auth]
+      summary: Consume session token (cross-device login handoff)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+      responses:
+        '200':
+          description: Session token valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthVerifyOtpResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Profil user login
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserMeResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+
+  /auth/me/profile:
+    put:
+      tags: [Auth]
+      summary: Update profil user saat ini
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserProfileUpdateRequest'
+      responses:
+        '200':
+          description: Profil terupdate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserMeResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '422':
+          $ref: '#/components/responses/ErrorValidation'
+
+  /users/me/profile:
+    get:
+      tags: [Profile]
+      summary: Ambil profil user (namespace /users)
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserMeResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+    put:
+      tags: [Profile]
+      summary: Update profil user (namespace /users)
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserProfileUpdateRequest'
+      responses:
+        '200':
+          description: Profil terupdate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserMeResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '422':
+          $ref: '#/components/responses/ErrorValidation'
+
+  /users/me/devices:
+    get:
+      tags: [Devices]
+      summary: List perangkat user
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Device list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [devices]
+                properties:
+                  devices:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/UserDevice'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+
+  /users/me/devices/bind-current:
+    post:
+      tags: [Devices]
+      summary: Bind perangkat current context
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: query
+          name: best_effort
+          schema:
+            type: boolean
+          description: Jika true, kegagalan bind dibalas 200 success=false (bukan 403)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                client_ip:
+                  type: string
+                client_mac:
+                  type: string
+      responses:
+        '200':
+          description: Bind result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceBindResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+
+  /users/me/devices/{device_id}/label:
+    put:
+      tags: [Devices]
+      summary: Update label perangkat
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: device_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [label]
+              properties:
+                label:
+                  type: string
+      responses:
+        '200':
+          description: Label updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+
+  /users/me/devices/{device_id}:
+    delete:
+      tags: [Devices]
+      summary: Hapus perangkat user
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: device_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Device revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+
+  /transactions/initiate:
+    post:
+      tags: [Transactions]
+      summary: Initiate pembelian paket
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionInitiateRequest'
+      responses:
+        '200':
+          description: Initiate success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionInitiateResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '422':
+          $ref: '#/components/responses/ErrorValidation'
+
+  /transactions/debt/initiate:
+    post:
+      tags: [Transactions]
+      summary: Initiate pelunasan debt
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionDebtInitiateRequest'
+      responses:
+        '200':
+          description: Debt initiate success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionInitiateResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+
+  /transactions/by-order-id/{order_id}:
+    get:
+      tags: [Transactions]
+      summary: Detail transaksi authenticated
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: order_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Transaction detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionDetailResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+
+  /transactions/public/by-order-id/{order_id}:
+    get:
+      tags: [Transactions]
+      summary: Detail transaksi public (signed token)
+      parameters:
+        - in: path
+          name: order_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: t
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Transaction detail (masked)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionDetailResponsePublic'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+
+  /transactions/{order_id}/cancel:
+    post:
+      tags: [Transactions]
+      summary: Cancel transaksi authenticated
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: order_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cancel result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionCancelResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+
+  /transactions/public/{order_id}/cancel:
+    post:
+      tags: [Transactions]
+      summary: Cancel transaksi public (signed token)
+      parameters:
+        - in: path
+          name: order_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: t
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cancel result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionCancelResponse'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+
+  /transactions/{order_id}/qr:
+    get:
+      tags: [Transactions]
+      summary: QR proxy authenticated
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: order_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: download
+          required: false
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: QR binary
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/svg+xml:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+
+  /transactions/public/{order_id}/qr:
+    get:
+      tags: [Transactions]
+      summary: QR proxy public (signed token)
+      parameters:
+        - in: path
+          name: order_id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: t
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: download
+          required: false
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: QR binary
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/svg+xml:
+              schema:
+                type: string
+                format: binary
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: auth_token
+
+  responses:
+    ErrorBadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ErrorUnauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ErrorForbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ErrorNotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ErrorConflict:
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ErrorRateLimit:
+      description: Too many requests
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ErrorValidation:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ErrorResponse'
+              - type: object
+                properties:
+                  details:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ValidationErrorDetail'
+
+  schemas:
+    MessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Stable machine-readable error code
+          example: AUTH_UNAUTHORIZED
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationErrorDetail'
+        request_id:
+          type: string
+
+    ValidationErrorDetail:
+      type: object
+      properties:
+        loc:
+          type: array
+          items:
+            oneOf:
+              - type: string
+              - type: integer
+        msg:
+          type: string
+        type:
+          type: string
+
+    AuthRegisterRequest:
+      type: object
+      required: [phone_number, full_name]
+      properties:
+        phone_number:
+          type: string
+        full_name:
+          type: string
+          minLength: 2
+        blok:
+          type: string
+          nullable: true
+        kamar:
+          type: string
+          nullable: true
+        is_tamping:
+          type: boolean
+          default: false
+        tamping_type:
+          type: string
+          nullable: true
+        register_as_komandan:
+          type: boolean
+          default: false
+
+    AuthRegisterResponse:
+      type: object
+      required: [message, user_id, phone_number]
+      properties:
+        message:
+          type: string
+        user_id:
+          type: string
+          format: uuid
+        phone_number:
+          type: string
+
+    AuthRequestOtpRequest:
+      type: object
+      required: [phone_number]
+      properties:
+        phone_number:
+          type: string
+
+    AuthVerifyOtpRequest:
+      type: object
+      required: [phone_number, otp]
+      properties:
+        phone_number:
+          type: string
+        otp:
+          type: string
+          minLength: 6
+          maxLength: 6
+        client_ip:
+          type: string
+          nullable: true
+        client_mac:
+          type: string
+          nullable: true
+        hotspot_login_context:
+          type: boolean
+          nullable: true
+
+    AuthVerifyOtpResponse:
+      type: object
+      required: [access_token, token_type]
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+        hotspot_login_required:
+          type: boolean
+          nullable: true
+        hotspot_username:
+          type: string
+          nullable: true
+        hotspot_password:
+          type: string
+          nullable: true
+        session_token:
+          type: string
+          nullable: true
+        session_url:
+          type: string
+          nullable: true
+
+    UserMeResponse:
+      type: object
+      required: [id, phone_number, full_name, role, approval_status, is_active]
+      properties:
+        id:
+          type: string
+          format: uuid
+        phone_number:
+          type: string
+        full_name:
+          type: string
+        blok:
+          type: string
+          nullable: true
+        kamar:
+          type: string
+          nullable: true
+        is_tamping:
+          type: boolean
+          nullable: true
+        tamping_type:
+          type: string
+          nullable: true
+        role:
+          type: string
+          enum: [USER, KOMANDAN, ADMIN, SUPER_ADMIN]
+        approval_status:
+          type: string
+          enum: [PENDING_APPROVAL, APPROVED, REJECTED]
+        is_active:
+          type: boolean
+        is_unlimited_user:
+          type: boolean
+          nullable: true
+        total_quota_purchased_mb:
+          type: number
+          nullable: true
+        total_quota_used_mb:
+          type: number
+          nullable: true
+        quota_expiry_date:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+        approved_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_login_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    UserProfileUpdateRequest:
+      type: object
+      properties:
+        full_name:
+          type: string
+        blok:
+          type: string
+          nullable: true
+        kamar:
+          type: string
+          nullable: true
+        is_tamping:
+          type: boolean
+          nullable: true
+        tamping_type:
+          type: string
+          nullable: true
+
+    UserDevice:
+      type: object
+      required: [id, mac_address, is_authorized]
+      properties:
+        id:
+          type: string
+          format: uuid
+        mac_address:
+          type: string
+        ip_address:
+          type: string
+          nullable: true
+        label:
+          type: string
+          nullable: true
+        is_authorized:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_seen_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    DeviceBindResponse:
+      type: object
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        device:
+          $ref: '#/components/schemas/UserDevice'
+
+    TransactionInitiateRequest:
+      type: object
+      required: [package_id]
+      properties:
+        package_id:
+          type: string
+          format: uuid
+        payment_method:
+          type: string
+          enum: [qris, gopay, va, shopeepay]
+          nullable: true
+        va_bank:
+          type: string
+          enum: [bca, bni, bri, mandiri, permata, cimb]
+          nullable: true
+
+    TransactionDebtInitiateRequest:
+      type: object
+      properties:
+        payment_method:
+          type: string
+          enum: [qris, gopay, va, shopeepay]
+          nullable: true
+        va_bank:
+          type: string
+          enum: [bca, bni, bri, mandiri, permata, cimb]
+          nullable: true
+        manual_debt_id:
+          type: string
+          nullable: true
+
+    TransactionInitiateResponse:
+      type: object
+      required: [order_id, provider_mode]
+      properties:
+        order_id:
+          type: string
+        snap_token:
+          type: string
+          nullable: true
+        redirect_url:
+          type: string
+          nullable: true
+        provider_mode:
+          type: string
+          enum: [snap, core_api]
+        status_token:
+          type: string
+          nullable: true
+        status_url:
+          type: string
+          nullable: true
+
+    TransactionPackageSummary:
+      type: object
+      nullable: true
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        price:
+          type: number
+          nullable: true
+        data_quota_gb:
+          type: number
+          nullable: true
+        is_unlimited:
+          type: boolean
+          nullable: true
+
+    TransactionUserSummary:
+      type: object
+      nullable: true
+      properties:
+        id:
+          type: string
+          nullable: true
+        phone_number:
+          type: string
+          nullable: true
+        full_name:
+          type: string
+          nullable: true
+        quota_expiry_date:
+          type: string
+          format: date-time
+          nullable: true
+        is_unlimited_user:
+          type: boolean
+          nullable: true
+
+    TransactionDetailResponse:
+      type: object
+      required: [id, midtrans_order_id, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        midtrans_order_id:
+          type: string
+        midtrans_transaction_id:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [SUCCESS, PENDING, FAILED, EXPIRED, CANCELLED, ERROR, UNKNOWN]
+        purpose:
+          type: string
+          enum: [purchase, debt]
+          nullable: true
+        debt_type:
+          type: string
+          enum: [auto, manual]
+          nullable: true
+        debt_mb:
+          type: integer
+          nullable: true
+        debt_note:
+          type: string
+          nullable: true
+        amount:
+          type: number
+          nullable: true
+        payment_method:
+          type: string
+          nullable: true
+        snap_token:
+          type: string
+          nullable: true
+        snap_redirect_url:
+          type: string
+          nullable: true
+        deeplink_redirect_url:
+          type: string
+          nullable: true
+        payment_time:
+          type: string
+          format: date-time
+          nullable: true
+        expiry_time:
+          type: string
+          format: date-time
+          nullable: true
+        va_number:
+          type: string
+          nullable: true
+        payment_code:
+          type: string
+          nullable: true
+        biller_code:
+          type: string
+          nullable: true
+        qr_code_url:
+          type: string
+          nullable: true
+        hotspot_password:
+          type: string
+          nullable: true
+        package:
+          $ref: '#/components/schemas/TransactionPackageSummary'
+        user:
+          $ref: '#/components/schemas/TransactionUserSummary'
+
+    TransactionDetailResponsePublic:
+      allOf:
+        - $ref: '#/components/schemas/TransactionDetailResponse'
+        - type: object
+          properties:
+            hotspot_password:
+              type: string
+              nullable: true
+              example: null
+
+    TransactionCancelResponse:
+      type: object
+      required: [success, status]
+      properties:
+        success:
+          type: boolean
+        status:
+          type: string
+        message:
+          type: string
+          nullable: true

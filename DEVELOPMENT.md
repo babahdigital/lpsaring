@@ -214,6 +214,21 @@ Uji cepat setelah perubahan keamanan:
 - `docker compose exec -T backend pytest`
 - `docker compose exec -T backend ruff check .`
 
+### 5.2.1) One-command refresh lockfile + validasi
+
+Untuk maintenance dependency backend yang konsisten, gunakan script berikut dari folder `backend/`:
+
+- Refresh lockfile + cek sinkronisasi + jalankan regresi targeted:
+  - `python scripts/refresh_lock_and_validate.py`
+
+- Refresh lockfile + cek sinkronisasi saja (tanpa test):
+  - `python scripts/refresh_lock_and_validate.py --skip-tests`
+
+Script ini menjalankan urutan:
+1. `pip freeze` -> `requirements.lock.txt`
+2. checker sinkronisasi `requirements.txt` vs `requirements.lock.txt`
+3. regresi targeted transaksi + auth OTP (opsional)
+
 Catatan CSRF mode ketat (dev/staging):
 - Set `CSRF_STRICT_NO_ORIGIN=True`.
 - Isi `CSRF_NO_ORIGIN_ALLOWED_IPS` dengan IP non-browser dan CIDR Docker (contoh `172.16.0.0/12`).

@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import type { TransactionDetailResponseContract, TransactionStatusContract } from '~/types/api/contracts'
 import { useNuxtApp, useRuntimeConfig } from '#app'
 import { ClientOnly } from '#components'
+import StatusActionButtons from '~/components/payment/StatusActionButtons.vue'
+import StatusHeader from '~/components/payment/StatusHeader.vue'
 import { format, isValid as isValidDate, parseISO } from 'date-fns'
 import { id as dateLocaleId } from 'date-fns/locale'
 import { computed, onMounted, ref } from 'vue'
@@ -8,47 +11,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { useSnackbar } from '~/composables/useSnackbar'
 
-// --- Interface Data Disesuaikan dengan Backend (snake_case) ---
-interface PackageDetails {
-  id: string
-  name: string
-  description?: string | null
-  price?: number | null
-  data_quota_gb?: number | null
-}
-interface UserDetails {
-  id: string
-  phone_number: string
-  full_name?: string | null
-  quota_expiry_date?: string | null
-}
-type TransactionStatus = 'SUCCESS' | 'PENDING' | 'FAILED' | 'EXPIRED' | 'CANCELLED' | 'ERROR' | 'UNKNOWN'
-
-interface TransactionDetails {
-  id: string
-  midtrans_order_id: string
-  midtrans_transaction_id?: string | null
-  status: TransactionStatus
-  purpose?: string | null
-  debt_type?: 'auto' | 'manual' | null
-  debt_mb?: number | null
-  debt_note?: string | null
-  amount?: number | null
-  payment_method?: string | null
-  snap_token?: string | null
-  snap_redirect_url?: string | null
-  deeplink_redirect_url?: string | null
-  payment_time?: string | null
-  expiry_time?: string | null
-  va_number?: string | null
-  payment_code?: string | null
-  biller_code?: string | null
-  qr_code_url?: string | null
-  hotspot_password?: string | null
-  package?: PackageDetails | null
-  user?: UserDetails | null
-}
-// --- Akhir Interface Data ---
+type TransactionDetails = TransactionDetailResponseContract
 
 const route = useRoute()
 const router = useRouter()
@@ -169,7 +132,7 @@ async function fetchTransactionDetails(orderId: string, options?: { showLoading?
   }
 }
 
-function isFinalStatus(status: TransactionStatus): boolean {
+function isFinalStatus(status: TransactionStatusContract): boolean {
   return status === 'SUCCESS' || status === 'FAILED' || status === 'EXPIRED' || status === 'CANCELLED'
 }
 
@@ -193,8 +156,8 @@ onMounted(() => {
   }
 })
 
-const finalStatus = computed((): TransactionStatus => {
-  const statusFromQuery = typeof route.query.status === 'string' ? route.query.status.toUpperCase() as TransactionStatus : undefined
+const finalStatus = computed((): TransactionStatusContract => {
+  const statusFromQuery = typeof route.query.status === 'string' ? route.query.status.toUpperCase() as TransactionStatusContract : undefined
   if (transactionDetails.value?.status != null && transactionDetails.value.status !== 'UNKNOWN') {
     return transactionDetails.value.status
   }
@@ -536,6 +499,10 @@ function goToDashboard() {
   router.push({ path: '/dashboard' })
 }
 
+function goToHistory() {
+  router.push('/riwayat')
+}
+
 const vaInstructionTitle = computed(() => {
   const pm = paymentMethod.value?.toLowerCase() ?? ''
   if (pm.includes('bca'))
@@ -861,35 +828,15 @@ useHead({
         </v-card>
 
         <v-card v-else-if="transactionDetails" variant="flat" border class="mx-auto finish-card overflow-hidden bg-surface elevation-12">
-          <div class="px-sm-8 px-6 pt-10 pb-6 text-center">
-            <v-avatar size="80" :color="alertType" variant="tonal" class="mb-5">
-              <v-icon :icon="alertIcon" :color="alertType" size="38" />
-            </v-avatar>
-
-            <h1 class="text-h5 font-weight-bold mb-2 text-high-emphasis finish-header-title">
-              {{ alertTitle }}
-            </h1>
-
-            <p class="text-body-1 text-medium-emphasis finish-header-desc" style="line-height: 1.7;">
-              {{ detailMessage }}
-            </p>
-
-            <div class="d-flex justify-center flex-wrap mt-5" style="gap: 10px;">
-              <v-chip :color="alertType" variant="tonal" class="font-weight-bold">
-                {{ finalStatus }}
-              </v-chip>
-              <v-chip v-if="isPublicView" color="info" variant="tonal" class="font-weight-medium">
-                Link Publik
-              </v-chip>
-              <v-chip v-if="paymentMethodBadgeLabel" color="primary" variant="tonal" class="font-weight-medium">
-                {{ paymentMethodBadgeLabel }}
-              </v-chip>
-            </div>
-
-            <p v-if="finalStatus === 'SUCCESS'" class="text-body-2 text-medium-emphasis mt-4 mb-0">
-              Silakan sambungkan ulang WiFi jika belum aktif.
-            </p>
-          </div>
+          <StatusHeader
+            :alert-type="alertType"
+            :alert-icon="alertIcon"
+            :alert-title="alertTitle"
+            :detail-message="detailMessage"
+            :final-status="finalStatus"
+            :is-public-view="isPublicView"
+            :payment-method-badge-label="paymentMethodBadgeLabel ?? undefined"
+          />
 
           <v-divider />
 
@@ -1158,180 +1105,22 @@ useHead({
           </div>
 
           <v-divider />
-          <div class="px-sm-8 px-6 pb-10 pt-6 d-flex flex-column" style="gap: 14px;">
-            <!-- PENDING actions -->
-            <template v-if="finalStatus === 'PENDING'">
-              <v-btn
-                v-if="showAppDeeplinkButton"
-                block
-                size="large"
-                rounded="lg"
-                color="success"
-                variant="flat"
-                prepend-icon="tabler-external-link"
-                @click="openAppDeeplink"
-              >
-                Buka {{ deeplinkAppName }}
-              </v-btn>
-
-              <v-btn
-                v-else-if="showQrCode"
-                block
-                size="large"
-                rounded="lg"
-                color="primary"
-                variant="flat"
-                prepend-icon="tabler-download"
-                :href="qrDownloadUrl"
-                target="_blank"
-                :disabled="qrDownloadUrl === ''"
-              >
-                Download QR Code
-              </v-btn>
-
-              <v-btn
-                v-else
-                block
-                size="large"
-                rounded="lg"
-                color="primary"
-                variant="flat"
-                prepend-icon="tabler-refresh"
-                :disabled="isRefreshing"
-                @click="refreshStatus"
-              >
-                Cek Status Pembayaran
-              </v-btn>
-
-              <v-btn
-                v-if="showAppDeeplinkButton || showQrCode"
-                block
-                size="large"
-                rounded="lg"
-                color="secondary"
-                variant="text"
-                class="text-medium-emphasis"
-                prepend-icon="tabler-refresh"
-                :disabled="isRefreshing"
-                @click="refreshStatus"
-              >
-                Cek Status Pembayaran
-              </v-btn>
-              <v-btn
-                v-else
-                block
-                size="large"
-                rounded="lg"
-                color="secondary"
-                variant="text"
-                class="text-medium-emphasis"
-                prepend-icon="tabler-shopping-cart-plus"
-                @click="goToSelectPackage"
-              >
-                Buat Pesanan Baru
-              </v-btn>
-            </template>
-
-            <!-- SUCCESS actions -->
-            <template v-else-if="finalStatus === 'SUCCESS'">
-              <v-btn
-                v-if="!isPublicView"
-                block
-                size="large"
-                rounded="lg"
-                color="primary"
-                variant="flat"
-                prepend-icon="tabler-layout-dashboard"
-                @click="goToDashboard"
-              >
-                Kembali ke Dashboard
-              </v-btn>
-
-              <v-btn
-                block
-                size="large"
-                rounded="lg"
-                :color="isPublicView ? 'primary' : 'secondary'"
-                :variant="isPublicView ? 'flat' : 'text'"
-                class="text-medium-emphasis"
-                :prepend-icon="isPublicView ? 'tabler-arrow-left' : 'tabler-history'"
-                @click="isPublicView ? goToSelectPackage() : router.push('/riwayat')"
-              >
-                {{ isPublicView ? 'Kembali ke Beranda' : 'Lihat Riwayat Transaksi' }}
-              </v-btn>
-
-            </template>
-
-            <!-- CANCELLED actions -->
-            <template v-else-if="finalStatus === 'CANCELLED'">
-              <v-btn
-                block
-                size="large"
-                rounded="lg"
-                color="primary"
-                variant="flat"
-                prepend-icon="tabler-shopping-cart-plus"
-                @click="goToSelectPackage"
-              >
-                Buat Pesanan Baru
-              </v-btn>
-
-              <v-btn
-                block
-                size="large"
-                rounded="lg"
-                color="secondary"
-                variant="text"
-                class="text-medium-emphasis"
-                prepend-icon="tabler-arrow-left"
-                @click="goToSelectPackage"
-              >
-                Kembali ke Beranda
-              </v-btn>
-            </template>
-
-            <!-- FAILED/EXPIRED/ERROR/UNKNOWN actions -->
-            <template v-else>
-              <v-btn
-                block
-                size="large"
-                rounded="lg"
-                color="primary"
-                variant="flat"
-                prepend-icon="tabler-refresh"
-                @click="goToSelectPackage"
-              >
-                Ulangi Pembayaran
-              </v-btn>
-
-              <v-btn
-                v-if="supportWaUrl"
-                block
-                size="large"
-                rounded="lg"
-                color="secondary"
-                variant="text"
-                class="text-medium-emphasis"
-                prepend-icon="tabler-brand-whatsapp"
-                @click="openSupportWhatsApp"
-              >
-                Hubungi Bantuan
-              </v-btn>
-              <v-btn
-                v-else
-                block
-                size="large"
-                rounded="lg"
-                color="secondary"
-                variant="text"
-                class="text-medium-emphasis"
-                prepend-icon="tabler-arrow-left"
-                @click="goToSelectPackage"
-              >
-                Kembali
-              </v-btn>
-            </template>
-          </div>
+          <StatusActionButtons
+            :final-status="finalStatus"
+            :is-public-view="isPublicView"
+            :is-refreshing="isRefreshing"
+            :show-app-deeplink-button="showAppDeeplinkButton"
+            :show-qr-code="showQrCode"
+            :deeplink-app-name="deeplinkAppName ?? 'Aplikasi'"
+            :qr-download-url="qrDownloadUrl"
+            :support-wa-url="supportWaUrl ?? ''"
+            @open-app-deeplink="openAppDeeplink"
+            @refresh-status="refreshStatus"
+            @go-select-package="goToSelectPackage"
+            @go-dashboard="goToDashboard"
+            @go-history="goToHistory"
+            @open-support-whatsapp="openSupportWhatsApp"
+          />
         </v-card>
       </v-col>
     </v-row>

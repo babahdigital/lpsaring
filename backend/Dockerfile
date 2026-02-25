@@ -35,13 +35,13 @@ RUN apt-get update -y && \
     # Hapus cache apt setelah install untuk menghemat ruang
     && rm -rf /var/lib/apt/lists/*
 
-# Salin file requirements.txt
-COPY requirements.txt .
+# Salin file requirements
+COPY requirements.txt requirements.lock.txt ./
 
 # --- OPTIMASI #1: Membuat dan menggunakan virtual environment ---
 RUN python -m venv /opt/venv
 RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+    pip install -r requirements.lock.txt
 
 # --- Runtime Stage ---
 # Tahap final untuk menjalankan aplikasi

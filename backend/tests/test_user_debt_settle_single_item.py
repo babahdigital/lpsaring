@@ -1,4 +1,5 @@
 import uuid
+from typing import Any, cast
 from app.services.user_management import user_debt
 
 
@@ -26,9 +27,9 @@ def test_settle_single_manual_debt_item_pays_remaining_and_updates_cached_balanc
     debt = _Debt(user_id=user.id, amount_mb=500, paid_mb=100)
 
     paid = user_debt.settle_manual_debt_item_to_zero(
-        user=user,
+        user=cast(Any, user),
         admin_actor=None,
-        debt=debt,
+        debt=cast(Any, debt),
         source="test",
     )
 
@@ -44,9 +45,9 @@ def test_settle_single_manual_debt_item_noop_when_wrong_user():
     debt = _Debt(user_id=uuid.uuid4(), amount_mb=500, paid_mb=0)
 
     paid = user_debt.settle_manual_debt_item_to_zero(
-        user=user,
+        user=cast(Any, user),
         admin_actor=None,
-        debt=debt,
+        debt=cast(Any, debt),
         source="test",
     )
     assert paid == 0

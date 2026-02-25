@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 import routeros_api
+from routeros_api.exceptions import RouterOsApiCommunicationError, RouterOsApiConnectionError
 
 # Load environment variables dari backend/.env
 dotenv_path = os.path.join(os.path.dirname(__file__), ".env")
@@ -11,6 +12,9 @@ MIKROTIK_USER = os.getenv("MIKROTIK_USER")
 MIKROTIK_PASSWORD = os.getenv("MIKROTIK_PASSWORD")
 MIKROTIK_PORT = int(os.getenv("MIKROTIK_PORT", 8728))  # Default port jika tidak ada
 MIKROTIK_USE_SSL = os.getenv("MIKROTIK_USE_SSL", "false").lower() == "true"
+
+if not MIKROTIK_HOST or not MIKROTIK_USER or not MIKROTIK_PASSWORD:
+    raise RuntimeError("Missing required MikroTik env vars: MIKROTIK_HOST, MIKROTIK_USER, MIKROTIK_PASSWORD")
 
 print(f"Attempting to connect to {MIKROTIK_HOST}:{MIKROTIK_PORT} as user '{MIKROTIK_USER}' (SSL: {MIKROTIK_USE_SSL})")
 
@@ -34,10 +38,10 @@ try:
     connection.disconnect()
     print("Connection closed.")
 
-except routeros_api.exceptions.RouterOsApiCommunicationError as e:
+except RouterOsApiCommunicationError as e:
     print(f"!!! Communication Error: {e}")  # Ini error yang kita hadapi
     print("!!! Double check username, password, policies, and allowed addresses in MikroTik and .env")
-except routeros_api.exceptions.RouterOsApiConnectionError as e:
+except RouterOsApiConnectionError as e:
     print(f"!!! Connection Error: {e}")
     print("!!! Double check host IP, port, API service status in MikroTik, and network connectivity/firewalls")
 except Exception as e:

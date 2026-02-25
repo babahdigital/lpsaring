@@ -14,6 +14,8 @@ Portal hotspot dengan backend Flask dan frontend Nuxt 3.
 - [docs/BACKUP_RESTORE_OPERATIONS.md](docs/BACKUP_RESTORE_OPERATIONS.md)
 - [docs/API_OVERVIEW.md](docs/API_OVERVIEW.md)
 - [docs/API_DETAIL.md](docs/API_DETAIL.md)
+- [contracts/openapi/openapi.v1.yaml](contracts/openapi/openapi.v1.yaml)
+- [docs/OPENAPI_CONTRACT_WORKFLOW.md](docs/OPENAPI_CONTRACT_WORKFLOW.md)
 - [docs/ERROR_REFERENCE.md](docs/ERROR_REFERENCE.md)
 - [docs/PUBLISH_FLOW_AND_ERROR_STATUS.md](docs/PUBLISH_FLOW_AND_ERROR_STATUS.md)
 - [docs/OPERATIONS_MIKROTIK_SYNC.md](docs/OPERATIONS_MIKROTIK_SYNC.md)

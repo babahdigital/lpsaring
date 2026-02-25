@@ -3,7 +3,7 @@
 
 from functools import wraps
 import ipaddress
-from flask import request, jsonify, current_app, g, make_response
+from flask import request, current_app, g, make_response
 from http import HTTPStatus
 import uuid
 import json
@@ -13,11 +13,15 @@ from jose import jwt, JWTError, ExpiredSignatureError
 
 from app.extensions import db
 from app.infrastructure.db.models import User, AdminActionType
-from .schemas.auth_schemas import AuthErrorResponseSchema
+from app.infrastructure.http.error_envelope import error_response
 from app.utils.csrf_utils import is_trusted_origin
 from app.utils.request_utils import get_client_ip
 from app.services.refresh_token_service import rotate_refresh_token
 from app.services.jwt_token_service import create_access_token
+
+
+def _auth_error(message: str, status: HTTPStatus, code: str):
+    return error_response(message, status_code=status, code=code)
 
 
 def _get_trusted_origins() -> list[str]:
@@ -103,12 +107,10 @@ def token_required(f):
         token = None
         token_source = None
         auth_header = request.headers.get("Authorization")
-        error_response = AuthErrorResponseSchema(error="Unauthorized")
         if auth_header:
             parts = auth_header.split()
             if parts[0].lower() != "bearer" or len(parts) != 2:
-                error_response.error = "Invalid token header format."
-                return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
+                return _auth_error("Invalid token header format.", HTTPStatus.UNAUTHORIZED, "AUTH_HEADER_INVALID")
             token = parts[1]
             token_source = "header"
 
@@ -124,8 +126,7 @@ def token_required(f):
             refresh_cookie_name = current_app.config.get("REFRESH_COOKIE_NAME", "refresh_token")
             raw_refresh = request.cookies.get(refresh_cookie_name)
             if raw_refresh and not _passes_csrf_guard():
-                error_response.error = "Invalid origin."
-                return jsonify(error_response.model_dump()), HTTPStatus.FORBIDDEN
+                return _auth_error("Invalid origin.", HTTPStatus.FORBIDDEN, "AUTH_ORIGIN_INVALID")
 
             if raw_refresh:
                 rotated = rotate_refresh_token(raw_refresh, user_agent=request.headers.get("User-Agent"))
@@ -133,19 +134,20 @@ def token_required(f):
                     try:
                         user_uuid_from_token = uuid.UUID(rotated.user_id)
                     except Exception:
-                        return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
+                        return _auth_error("Unauthorized", HTTPStatus.UNAUTHORIZED, "AUTH_UNAUTHORIZED")
 
                     user_from_token = db.session.get(User, user_uuid_from_token)
                     if not user_from_token:
-                        error_response.error = "User associated with token not found."
-                        return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
+                        return _auth_error(
+                            "User associated with token not found.",
+                            HTTPStatus.UNAUTHORIZED,
+                            "AUTH_USER_NOT_FOUND",
+                        )
 
                     if not user_from_token.is_active:
-                        error_response.error = "User account is inactive."
-                        return jsonify(error_response.model_dump()), HTTPStatus.FORBIDDEN
+                        return _auth_error("User account is inactive.", HTTPStatus.FORBIDDEN, "AUTH_USER_INACTIVE")
                     if not user_from_token.is_approved:
-                        error_response.error = "User account is not approved."
-                        return jsonify(error_response.model_dump()), HTTPStatus.FORBIDDEN
+                        return _auth_error("User account is not approved.", HTTPStatus.FORBIDDEN, "AUTH_USER_UNAPPROVED")
 
                     jwt_payload = {"sub": str(user_from_token.id), "rl": user_from_token.role.value}
                     new_access = create_access_token(data=jwt_payload)
@@ -154,11 +156,10 @@ def token_required(f):
 
                     return f(current_user_id=user_uuid_from_token, *args, **kwargs)
 
-            return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
+            return _auth_error("Unauthorized", HTTPStatus.UNAUTHORIZED, "AUTH_UNAUTHORIZED")
 
         if token_source == "cookie" and not _passes_csrf_guard():
-            error_response.error = "Invalid origin."
-            return jsonify(error_response.model_dump()), HTTPStatus.FORBIDDEN
+            return _auth_error("Invalid origin.", HTTPStatus.FORBIDDEN, "AUTH_ORIGIN_INVALID")
         try:
             payload = jwt.decode(
                 token, current_app.config["JWT_SECRET_KEY"], algorithms=[current_app.config["JWT_ALGORITHM"]]
@@ -167,54 +168,43 @@ def token_required(f):
             user_from_token = db.session.get(User, user_uuid_from_token)
 
             if not user_from_token:
-                error_response.error = "User associated with token not found."
-                return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
+                return _auth_error("User associated with token not found.", HTTPStatus.UNAUTHORIZED, "AUTH_USER_NOT_FOUND")
 
             if not user_from_token.is_active:
-                error_response.error = "User account is inactive."
-                return jsonify(error_response.model_dump()), HTTPStatus.FORBIDDEN
+                return _auth_error("User account is inactive.", HTTPStatus.FORBIDDEN, "AUTH_USER_INACTIVE")
             if not user_from_token.is_approved:
-                error_response.error = "User account is not approved."
-                return jsonify(error_response.model_dump()), HTTPStatus.FORBIDDEN
+                return _auth_error("User account is not approved.", HTTPStatus.FORBIDDEN, "AUTH_USER_UNAPPROVED")
 
         except ExpiredSignatureError:
             # Jika access token expired dan token berasal dari cookie, coba refresh.
             if token_source != "cookie":
-                error_response.error = "Token has expired."
-                return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
+                return _auth_error("Token has expired.", HTTPStatus.UNAUTHORIZED, "AUTH_TOKEN_EXPIRED")
 
             refresh_cookie_name = current_app.config.get("REFRESH_COOKIE_NAME", "refresh_token")
             raw_refresh = request.cookies.get(refresh_cookie_name)
             if not raw_refresh:
-                error_response.error = "Token has expired."
-                return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
+                return _auth_error("Token has expired.", HTTPStatus.UNAUTHORIZED, "AUTH_TOKEN_EXPIRED")
 
             if not _passes_csrf_guard():
-                error_response.error = "Invalid origin."
-                return jsonify(error_response.model_dump()), HTTPStatus.FORBIDDEN
+                return _auth_error("Invalid origin.", HTTPStatus.FORBIDDEN, "AUTH_ORIGIN_INVALID")
 
             rotated = rotate_refresh_token(raw_refresh, user_agent=request.headers.get("User-Agent"))
             if not rotated:
-                error_response.error = "Token has expired."
-                return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
+                return _auth_error("Token has expired.", HTTPStatus.UNAUTHORIZED, "AUTH_TOKEN_EXPIRED")
 
             try:
                 user_uuid_from_token = uuid.UUID(rotated.user_id)
             except Exception:
-                error_response.error = "Token has expired."
-                return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
+                return _auth_error("Token has expired.", HTTPStatus.UNAUTHORIZED, "AUTH_TOKEN_EXPIRED")
 
             user_from_token = db.session.get(User, user_uuid_from_token)
             if not user_from_token:
-                error_response.error = "User associated with token not found."
-                return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
+                return _auth_error("User associated with token not found.", HTTPStatus.UNAUTHORIZED, "AUTH_USER_NOT_FOUND")
 
             if not user_from_token.is_active:
-                error_response.error = "User account is inactive."
-                return jsonify(error_response.model_dump()), HTTPStatus.FORBIDDEN
+                return _auth_error("User account is inactive.", HTTPStatus.FORBIDDEN, "AUTH_USER_INACTIVE")
             if not user_from_token.is_approved:
-                error_response.error = "User account is not approved."
-                return jsonify(error_response.model_dump()), HTTPStatus.FORBIDDEN
+                return _auth_error("User account is not approved.", HTTPStatus.FORBIDDEN, "AUTH_USER_UNAPPROVED")
 
             jwt_payload = {"sub": str(user_from_token.id), "rl": user_from_token.role.value}
             new_access = create_access_token(data=jwt_payload)
@@ -223,8 +213,7 @@ def token_required(f):
 
             return f(current_user_id=user_uuid_from_token, *args, **kwargs)
         except (JWTError, ValueError, TypeError) as e:
-            error_response.error = f"Invalid token: {str(e)}"
-            return jsonify(error_response.model_dump()), HTTPStatus.UNAUTHORIZED
+            return _auth_error(f"Invalid token: {str(e)}", HTTPStatus.UNAUTHORIZED, "AUTH_TOKEN_INVALID")
 
         return f(current_user_id=user_uuid_from_token, *args, **kwargs)
 
@@ -242,9 +231,7 @@ def admin_required(f):
                 f"Akses DITOLAK ke rute admin. User ID: {current_user_id}, "
                 f"Role: {admin_user.role.value if admin_user and admin_user.role else 'Tidak Ditemukan'}"
             )
-            return jsonify(
-                AuthErrorResponseSchema(error="Akses ditolak. Memerlukan hak akses Admin.").model_dump()
-            ), HTTPStatus.FORBIDDEN
+            return _auth_error("Akses ditolak. Memerlukan hak akses Admin.", HTTPStatus.FORBIDDEN, "AUTH_ADMIN_REQUIRED")
 
         resp = f(current_admin=admin_user, *args, **kwargs)
 
@@ -352,9 +339,11 @@ def super_admin_required(f):
                 f"Role: {super_admin_user.role.value if super_admin_user and super_admin_user.role else 'Tidak Ditemukan'}"
             )
             # Pesan error sesuai dengan rencana pengembangan
-            return jsonify(
-                AuthErrorResponseSchema(error="Akses ditolak. Memerlukan hak akses Super Admin.").model_dump()
-            ), HTTPStatus.FORBIDDEN
+            return _auth_error(
+                "Akses ditolak. Memerlukan hak akses Super Admin.",
+                HTTPStatus.FORBIDDEN,
+                "AUTH_SUPER_ADMIN_REQUIRED",
+            )
 
         resp = f(current_admin=super_admin_user, *args, **kwargs)
 

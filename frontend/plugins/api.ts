@@ -3,6 +3,12 @@ import { ofetch } from 'ofetch'
 import { useAuthStore } from '~/store/auth'
 import { navigateTo, useRequestHeaders, useRoute } from '#app'
 
+function createRequestId(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function')
+    return globalThis.crypto.randomUUID()
+  return `req-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
 /**
  * Plugin universal untuk membuat instance $fetch yang sudah dikonfigurasi.
  * Ini menangani baseURL yang berbeda untuk server/klien dan memastikan cookie
@@ -41,20 +47,34 @@ export default defineNuxtPlugin((nuxtApp) => {
 
     // Interceptor yang dijalankan SEBELUM setiap permintaan.
     onRequest({ options }) {
+      const headers = new Headers(options.headers)
+
+      if (!headers.has('X-Request-ID')) {
+        if (import.meta.server) {
+          const requestHeaders = useRequestHeaders(['x-request-id'])
+          const incomingRequestId = requestHeaders['x-request-id']
+          if (typeof incomingRequestId === 'string' && incomingRequestId.trim() !== '')
+            headers.set('X-Request-ID', incomingRequestId)
+          else
+            headers.set('X-Request-ID', createRequestId())
+        }
+        else {
+          headers.set('X-Request-ID', createRequestId())
+        }
+      }
+
       if (import.meta.server) {
-        const headers = new Headers(options.headers)
         const requestHeaders = useRequestHeaders(['cookie'])
         if (requestHeaders.cookie) {
           headers.set('cookie', requestHeaders.cookie)
         }
-        options.headers = headers
       }
       const devBypassToken = config.public.devBypassToken
       if (devBypassToken) {
-        const headers = new Headers(options.headers)
         headers.set('X-Dev-Bypass', devBypassToken)
-        options.headers = headers
       }
+
+      options.headers = headers
     },
 
     // Interceptor yang dijalankan SETELAH permintaan yang GAGAL.

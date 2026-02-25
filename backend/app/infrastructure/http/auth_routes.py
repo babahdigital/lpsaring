@@ -78,6 +78,7 @@ from app.services.device_management_service import (
 from app.services.hotspot_sync_service import sync_address_list_for_single_user
 from app.services.access_policy_service import is_hotspot_login_required
 from app.utils.metrics_utils import increment_metric
+from app.infrastructure.http.error_envelope import build_error_payload, error_response
 
 try:
     from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
@@ -254,7 +255,13 @@ def _verify_status_token(token: str, expected_status: str) -> bool:
 
 def _build_status_error(status: str, message: str):
     token = _generate_status_token(status)
-    return jsonify(AuthErrorResponseSchema(error=message, status=status, status_token=token).model_dump())
+    payload = build_error_payload(
+        message,
+        status_code=HTTPStatus.FORBIDDEN,
+        code="STATUS_TOKEN_INVALID",
+        extra={"status": status, "status_token": token},
+    )
+    return jsonify(payload)
 
 
 def _set_otp_cooldown(phone_number: str) -> None:
@@ -1390,7 +1397,7 @@ def reset_hotspot_password(current_user_id: uuid.UUID):
         current_app.logger.error(
             f"Internal error while resetting hotspot password for user {current_user.id}: {e}", exc_info=True
         )
-        return jsonify({"success": False, "message": "An internal error occurred."}), HTTPStatus.INTERNAL_SERVER_ERROR
+        return error_response("An internal error occurred.", status_code=HTTPStatus.INTERNAL_SERVER_ERROR)
 
 
 @auth_bp.route("/admin/login", methods=["POST"])

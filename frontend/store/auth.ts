@@ -1,9 +1,20 @@
-import type { RegisterResponse, RegistrationPayload, User, VerifyOtpResponse } from '~/types/auth'
+import type {
+  ApiErrorEnvelope,
+  AuthRegisterRequestContract,
+  AuthRegisterResponseContract,
+  AuthVerifyOtpResponseContract,
+  UserMeResponseContract,
+} from '~/types/api/contracts'
 import { navigateTo, useNuxtApp, useRoute } from '#app'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 
-function extractErrorMessage(errorData: any, defaultMessage: string): string {
+type RegisterResponse = AuthRegisterResponseContract
+type RegistrationPayload = AuthRegisterRequestContract
+type User = UserMeResponseContract
+type VerifyOtpResponse = AuthVerifyOtpResponseContract
+
+function extractErrorMessage(errorData: ApiErrorEnvelope | any, defaultMessage: string): string {
   // PERBAIKAN: Pengecekan null/undefined yang eksplisit
   if (errorData == null)
     return defaultMessage
