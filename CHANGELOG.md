@@ -23,6 +23,13 @@ Lampiran wajib:
 - Legal page merchant/privacy/terms diselaraskan gaya visualnya mengikuti acuan internal desain, termasuk penyempurnaan pass kedua agar tampilan lebih halus.
 - Normalisasi tampilan nomor WhatsApp merchant untuk konteks Indonesia (`+62/62` tampil sebagai `0...`), sementara non-Indonesia tetap format internasional.
 - Dokumentasi devlog/worklog/error reference diperbarui untuk mencatat hasil deploy produksi dan status issue yang masih terbuka.
+- Demo flow pembelian paket kini sepenuhnya berbasis status user login (`is_demo_user`) dari backend, bukan toggle global frontend.
+- UI halaman beli dan captive disederhanakan untuk mode demo: informasi mode memakai badge ringkas dan label tombol paket terblokir diperpendek.
+
+### Fixed
+- Backend `/api/packages`: paket testing nonaktif tidak lagi muncul ke user reguler; hanya user demo yang eligible dapat melihat paket demo nonaktif.
+- Frontend `/beli` dan `/captive/beli`: label tombol disable mode demo diperbaiki agar lebih pendek dan konsisten.
+- Deploy produksi terbaru via `deploy_pi.sh --prune` berhasil dengan health check `/api/ping` OK.
 
 ### Known Issues
 - Datepicker/kalender pada skenario dialog tertentu masih dapat menunjukkan perilaku popup yang belum konsisten; status masih open untuk sesi perbaikan lanjutan.

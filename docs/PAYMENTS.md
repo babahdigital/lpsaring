@@ -68,6 +68,8 @@ Catatan perilaku:
 - Bypass OTP hanya berlaku untuk user yang memenuhi kriteria demo.
 - Paket nonaktif dapat ditampilkan/dibeli untuk user demo sesuai konfigurasi env.
 - User reguler tetap mengikuti aturan normal (tanpa bypass dan tanpa akses paket testing).
+- Enforce visibilitas paket demo dilakukan di backend berdasarkan requester terautentikasi (status `is_demo_user`), bukan mengandalkan toggle global di frontend.
+- Frontend hanya menjadi representasi UI dari status user; flag public demo frontend bersifat opsional/kompatibilitas dan bukan sumber otorisasi utama.
 
 ## Dokumen Detail
 - Lifecycle transaksi + data yang disimpan:

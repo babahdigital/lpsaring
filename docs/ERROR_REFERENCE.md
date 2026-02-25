@@ -298,4 +298,20 @@ Uncaught (in promise) TypeError: Cannot read properties of null (reading 'destro
 
 **Mitigasi yang disarankan**:
 - Hindari mount/unmount chart berulang pada area yang sangat reaktif.
+
+## 25) Paket testing nonaktif terlihat ke user reguler
+**Gejala**:
+- Pada mode demo, paket testing nonaktif kadang masih muncul di list paket untuk user reguler.
+
+**Penyebab**:
+- Kontrol visibilitas demo terlalu bergantung pada state UI/frontend, belum sepenuhnya difilter berdasarkan requester di backend.
+
+**Solusi yang dipakai di repo ini**:
+- Backend endpoint `/api/packages` memvalidasi requester terautentikasi dan eligibility demo user.
+- Paket demo nonaktif hanya ditambahkan untuk user demo yang eligible.
+- Frontend tetap menampilkan state UI sesuai hasil backend + status `is_demo_user`.
+
+**Verifikasi**:
+- User reguler: paket testing nonaktif tidak muncul.
+- User demo eligible: paket testing tampil dan paket non-testing terblokir sesuai kebijakan demo.
 - Jika UX tidak presisi di mobile, pertimbangkan fallback tabel (lebih stabil dan jelas).
