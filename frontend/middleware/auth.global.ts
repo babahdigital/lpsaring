@@ -9,6 +9,11 @@ import { normalizeRedirectTarget } from '~/utils/authGuards'
  * Berjalan setelah middleware maintenance.
  */
 export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => {
+  const LEGAL_PUBLIC_PATHS = ['/merchant-center/privacy', '/merchant-center/terms', '/privacy', '/terms']
+  const isLegalPublicPath = LEGAL_PUBLIC_PATHS.some(path => to.path === path || to.path.startsWith(`${path}/`))
+  if (isLegalPublicPath)
+    return
+
   const authStore = useAuthStore()
 
   // Penting: Tunggu hingga pengecekan otentikasi awal selesai.

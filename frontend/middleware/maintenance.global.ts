@@ -9,6 +9,9 @@ import { useMaintenanceStore } from '~/store/maintenance'
  * Logika ini diprioritaskan untuk mengontrol akses selama maintenance.
  */
 export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => {
+  const LEGAL_PUBLIC_PATHS = ['/merchant-center/privacy', '/merchant-center/terms', '/privacy', '/terms']
+  const isLegalPublicPath = LEGAL_PUBLIC_PATHS.some(path => to.path === path || to.path.startsWith(`${path}/`))
+
   const maintenanceStore = useMaintenanceStore()
   const authStore = useAuthStore()
 
@@ -26,6 +29,9 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
 
   // Jika Mode Maintenance AKTIF
   if (isMaintenanceActive) {
+    if (isLegalPublicPath)
+      return
+
     // KASUS 1: Pengguna adalah ADMIN atau SUPER_ADMIN yang sudah login.
     if (isUserLoggedInAdmin) {
       // PERBAIKAN: Izinkan akses ke semua halaman di dalam '/admin' DAN ke halaman '/akun'.
