@@ -31,6 +31,12 @@ const route = useRoute()
 const { $api } = useNuxtApp()
 const { ensureMidtransReady } = useMidtransSnap()
 const runtimeConfig = useRuntimeConfig()
+const merchantBrandBase = computed(() => {
+  const raw = String(runtimeConfig.public.merchantLogo ?? runtimeConfig.public.merchantName ?? 'LPSaring').trim()
+  if (raw === '')
+    return 'LPSaring'
+  return raw.replace(/\s*net$/i, '').trim() || 'LPSaring'
+})
 
 const { isLoggedIn, user, loadingUser } = storeToRefs(authStore)
 
@@ -677,7 +683,7 @@ useHead({ title: 'Beli Paket Hotspot' })
             <v-icon icon="tabler-wifi" color="primary" size="22" />
           </div>
           <div class="text-h6 font-weight-bold">
-            Hotspot<span class="text-primary">Net</span>
+            {{ merchantBrandBase }}<span class="text-primary">Net</span>
           </div>
         </div>
 
@@ -737,8 +743,8 @@ useHead({ title: 'Beli Paket Hotspot' })
         </v-col>
       </v-row>
 
-      <v-row v-else-if="visiblePackages.length > 0" dense>
-        <v-col v-for="pkg in visiblePackages" :key="pkg.id" cols="12" sm="6" md="4" lg="3" class="d-flex">
+      <v-row v-else-if="visiblePackages.length > 0" class="package-grid">
+        <v-col v-for="pkg in visiblePackages" :key="pkg.id" cols="12" sm="6" md="4" lg="3" class="package-grid-col d-flex">
           <v-tooltip :disabled="isDemoDisabledPackage(pkg) !== true" location="top" max-width="280">
             <template #activator="{ props }">
               <div v-bind="props" class="w-100 d-flex">
@@ -752,13 +758,13 @@ useHead({ title: 'Beli Paket Hotspot' })
                   :disabled="!canPurchasePackage(pkg) || isInitiatingPayment != null || isDemoDisabledPackage(pkg)"
                   @click="handlePackageSelection(pkg)"
                 >
-                  <v-card-item class="pb-2">
+                  <v-card-item class="pb-1">
                     <v-chip
-                      v-if="pkg.id === featuredPackageId"
+                      v-if="canPurchasePackage(pkg)"
                       color="primary"
                       size="x-small"
                       variant="flat"
-                      class="mb-3 font-weight-bold"
+                      class="mb-3 font-weight-bold package-status-chip"
                     >
                       Tersedia
                     </v-chip>
@@ -772,32 +778,36 @@ useHead({ title: 'Beli Paket Hotspot' })
 
                   <v-card-text class="pt-0 pb-2 flex-grow-1">
                     <div class="package-detail-wrap pa-3 rounded-lg mb-4">
-                      <v-list density="compact" lines="one" bg-color="transparent" class="py-0">
-                        <v-list-item class="px-0">
-                          <template #prepend><v-icon icon="tabler-database" size="small" class="mr-2" /></template>
-                          <v-list-item-title class="text-body-2">Kuota: <span class="font-weight-medium">{{ formatQuota(pkg.data_quota_gb) }}</span></v-list-item-title>
-                        </v-list-item>
-                        <v-list-item class="px-0">
-                          <template #prepend><v-icon icon="tabler-gauge" size="small" class="mr-2" /></template>
-                          <v-list-item-title class="text-body-2">Kecepatan: <span class="font-weight-medium">Unlimited</span></v-list-item-title>
-                        </v-list-item>
-                        <v-list-item class="px-0">
-                          <template #prepend><v-icon icon="tabler-calendar-time" size="small" class="mr-2" /></template>
-                          <v-list-item-title class="text-body-2">Aktif: <span class="font-weight-medium">{{ pkg.duration_days }} Hari</span></v-list-item-title>
-                        </v-list-item>
-                      </v-list>
+                      <div class="package-detail-row d-flex align-center mb-2">
+                        <v-icon icon="tabler-circle-check" size="18" color="success" class="mr-2" />
+                        <span class="text-body-2">Kuota: <span class="font-weight-bold">{{ formatQuota(pkg.data_quota_gb) }}</span></span>
+                      </div>
+                      <div class="package-detail-row d-flex align-center mb-2">
+                        <v-icon icon="tabler-circle-check" size="18" color="success" class="mr-2" />
+                        <span class="text-body-2">Kecepatan: <span class="font-weight-bold">Unlimited</span></span>
+                      </div>
+                      <div class="package-detail-row d-flex align-center">
+                        <v-icon icon="tabler-circle-check" size="18" color="success" class="mr-2" />
+                        <span class="text-body-2">Aktif: <span class="font-weight-bold">{{ pkg.duration_days }} Hari</span></span>
+                      </div>
                     </div>
 
-                    <v-list density="compact" lines="one" bg-color="transparent" class="py-0 package-metrics">
-                      <v-list-item class="px-0">
-                        <template #prepend><v-icon icon="tabler-receipt" size="small" class="mr-2" /></template>
-                        <v-list-item-title class="text-body-2">Harga / Hari: <span class="font-weight-medium">{{ formatPricePerDay(pkg.price, pkg.duration_days) }}</span></v-list-item-title>
-                      </v-list-item>
-                      <v-list-item class="px-0">
-                        <template #prepend><v-icon icon="tabler-chart-pie" size="small" class="mr-2" /></template>
-                        <v-list-item-title class="text-body-2">Harga / GB: <span class="font-weight-medium">{{ formatPricePerGb(pkg.price, pkg.data_quota_gb) }}</span></v-list-item-title>
-                      </v-list-item>
-                    </v-list>
+                    <div class="package-metrics">
+                      <div class="package-metric-row d-flex align-center justify-space-between py-1">
+                        <span class="text-body-2 text-medium-emphasis d-flex align-center">
+                          <v-icon icon="tabler-receipt" size="17" class="mr-2" />
+                          Harga / Hari
+                        </span>
+                        <span class="text-body-2 font-weight-bold">{{ formatPricePerDay(pkg.price, pkg.duration_days) }}</span>
+                      </div>
+                      <div class="package-metric-row d-flex align-center justify-space-between py-1">
+                        <span class="text-body-2 text-medium-emphasis d-flex align-center">
+                          <v-icon icon="tabler-chart-pie" size="17" class="mr-2" />
+                          Harga / GB
+                        </span>
+                        <span class="text-body-2 font-weight-bold">{{ formatPricePerGb(pkg.price, pkg.data_quota_gb) }}</span>
+                      </div>
+                    </div>
 
                     <p v-if="pkg.description != null && pkg.description !== ''" class="text-caption text-medium-emphasis mt-3 mb-0">
                       {{ pkg.description }}
@@ -840,10 +850,10 @@ useHead({ title: 'Beli Paket Hotspot' })
           © 2026 {{ runtimeConfig.public.merchantName }}. All rights reserved.
         </p>
         <div class="d-flex align-center ga-4 text-caption">
-          <NuxtLink class="footer-link" to="/merchant-center/privacy">
+          <NuxtLink class="footer-link" :to="{ path: '/merchant-center/privacy', query: { from: 'beli' } }">
             Privacy
           </NuxtLink>
-          <NuxtLink class="footer-link" to="/merchant-center/terms">
+          <NuxtLink class="footer-link" :to="{ path: '/merchant-center/terms', query: { from: 'beli' } }">
             Syarat & Ketentuan
           </NuxtLink>
         </div>
@@ -1019,8 +1029,8 @@ useHead({ title: 'Beli Paket Hotspot' })
   top: 0;
   z-index: 20;
   border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
-  background: rgba(var(--v-theme-surface), 0.96);
-  backdrop-filter: blur(10px);
+  background: transparent;
+  backdrop-filter: none;
 }
 
 .beli-brand-icon {
@@ -1034,14 +1044,14 @@ useHead({ title: 'Beli Paket Hotspot' })
 }
 
 .package-card {
-  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
-  background: rgba(var(--v-theme-surface), 0.7);
-  backdrop-filter: blur(8px);
+  border: 1px solid rgba(var(--v-border-color), 0.34);
+  background: rgba(var(--v-theme-surface), 0.96);
+  min-height: 100%;
   transition: all 0.22s ease;
 }
 
 .package-card--featured {
-  border: 2px solid rgba(var(--v-theme-primary), 0.8);
+  border-color: rgba(var(--v-theme-primary), 0.9);
   box-shadow: 0 8px 24px rgba(var(--v-theme-primary), 0.2);
 }
 
@@ -1056,7 +1066,29 @@ useHead({ title: 'Beli Paket Hotspot' })
 }
 
 .package-detail-wrap {
-  background: rgba(var(--v-theme-surface), 0.52);
+  border: 1px solid rgba(var(--v-border-color), 0.22);
+  background: rgba(var(--v-theme-surface), 0.78);
+}
+
+.package-status-chip {
+  align-self: flex-start;
+}
+
+.package-detail-row {
+  color: rgba(var(--v-theme-on-surface), 0.95);
+}
+
+.package-metrics {
+  border-top: 1px solid rgba(var(--v-border-color), 0.22);
+  padding-top: 0.5rem;
+}
+
+.package-grid {
+  row-gap: 0.25rem;
+}
+
+.package-grid-col {
+  min-width: 0;
 }
 
 .beli-skeleton {
@@ -1065,7 +1097,7 @@ useHead({ title: 'Beli Paket Hotspot' })
 
 .beli-footer {
   border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
-  background: rgba(var(--v-theme-surface), 0.92);
+  background: transparent;
 }
 
 .footer-link {

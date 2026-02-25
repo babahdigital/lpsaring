@@ -17,6 +17,7 @@ const externalBaseUrl = process.env.NUXT_PUBLIC_EXTERNAL_BASE_URL ?? appBaseUrl
 const adminWhatsapp = process.env.NUXT_PUBLIC_ADMIN_WHATSAPP ?? ''
 const whatsappBaseUrl = process.env.NUXT_PUBLIC_WHATSAPP_BASE_URL ?? ''
 const merchantName = process.env.NUXT_PUBLIC_MERCHANT_NAME ?? 'Babah Digital'
+const merchantLogo = process.env.NUXT_PUBLIC_MERCHANT_LOGO ?? merchantName
 const merchantBusinessType = process.env.NUXT_PUBLIC_MERCHANT_BUSINESS_TYPE ?? 'Jasa Telekomunikasi / ISP (Produk Digital)'
 const merchantAddress = process.env.NUXT_PUBLIC_MERCHANT_ADDRESS ?? ''
 const merchantSupportEmail = process.env.NUXT_PUBLIC_MERCHANT_SUPPORT_EMAIL ?? ''
@@ -274,6 +275,7 @@ export default defineNuxtConfig({
       adminWhatsapp,
       whatsappBaseUrl,
       merchantName,
+      merchantLogo,
       merchantBusinessType,
       merchantAddress,
       merchantSupportEmail,

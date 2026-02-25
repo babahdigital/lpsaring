@@ -6,6 +6,59 @@ const {
   supportWhatsAppFormatted,
   supportWhatsAppHref,
 } = useMerchantProfile()
+const route = useRoute()
+const referrerBackPath = ref<string | null>(null)
+
+const sourceFromQuery = computed(() => {
+  const raw = route.query.from
+  return typeof raw === 'string' ? raw.trim().toLowerCase() : ''
+})
+
+const backPath = computed(() => {
+  if (sourceFromQuery.value === 'beli')
+    return '/beli'
+  if (sourceFromQuery.value === 'dashboard')
+    return '/dashboard'
+  if (sourceFromQuery.value === 'merchant')
+    return '/merchant-center'
+  return referrerBackPath.value ?? '/merchant-center'
+})
+
+const legalSource = computed(() => {
+  if (sourceFromQuery.value === 'beli' || sourceFromQuery.value === 'dashboard' || sourceFromQuery.value === 'merchant')
+    return sourceFromQuery.value
+
+  if (backPath.value.startsWith('/dashboard'))
+    return 'dashboard'
+  if (backPath.value.startsWith('/beli') || backPath.value.startsWith('/captive/beli'))
+    return 'beli'
+  return 'merchant'
+})
+
+onMounted(() => {
+  if (!import.meta.client || document.referrer === '')
+    return
+
+  try {
+    const pathname = new URL(document.referrer).pathname
+
+    if (pathname.startsWith('/dashboard')) {
+      referrerBackPath.value = '/dashboard'
+      return
+    }
+
+    if (pathname.startsWith('/beli') || pathname.startsWith('/captive/beli')) {
+      referrerBackPath.value = '/beli'
+      return
+    }
+
+    if (pathname.startsWith('/merchant-center'))
+      referrerBackPath.value = '/merchant-center'
+  }
+  catch {
+    referrerBackPath.value = null
+  }
+})
 
 definePageMeta({
   layout: 'blank',
@@ -26,8 +79,8 @@ useHead({ title: `Privacy Policy - Merchant Center ${merchantName.value}` })
               <h1 class="text-h5 text-sm-h4 font-weight-bold text-white mb-0">Privacy Policy</h1>
             </div>
             <div class="doc-actions">
-              <VBtn class="doc-action-btn" variant="tonal" color="secondary" to="/merchant-center">Kembali</VBtn>
-              <VBtn class="doc-action-btn" variant="flat" color="primary" to="/merchant-center/terms">Terms Of Service</VBtn>
+              <VBtn class="doc-action-btn" variant="tonal" color="secondary" :to="backPath">Kembali</VBtn>
+              <VBtn class="doc-action-btn" variant="flat" color="primary" :to="{ path: '/merchant-center/terms', query: { from: legalSource } }">Terms Of Service</VBtn>
             </div>
           </div>
         </VCardText>

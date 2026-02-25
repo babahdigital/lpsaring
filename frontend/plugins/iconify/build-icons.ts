@@ -127,6 +127,7 @@ const tablerIcons = [
   'chart-bar-off',
   'chart-donut-3',
   'chart-infographic',
+  'chart-pie',
   'chart-pie-off',
   'check',
   'checkbox',

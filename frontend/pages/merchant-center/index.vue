@@ -72,10 +72,10 @@ function formatQuota(gb: number | null | undefined): string {
             </div>
 
             <div class="hero-actions w-100 w-md-auto">
-              <VBtn class="hero-btn" variant="outlined" color="white" to="/merchant-center/privacy" size="large">
+              <VBtn class="hero-btn" variant="outlined" color="white" :to="{ path: '/merchant-center/privacy', query: { from: 'merchant' } }" size="large">
                 Privacy Policy
               </VBtn>
-              <VBtn class="hero-btn" variant="flat" color="white" to="/merchant-center/terms" size="large">
+              <VBtn class="hero-btn" variant="flat" color="white" :to="{ path: '/merchant-center/terms', query: { from: 'merchant' } }" size="large">
                 Terms Of Service
               </VBtn>
             </div>
@@ -201,8 +201,8 @@ function formatQuota(gb: number | null | undefined): string {
               </ul>
 
               <div class="d-flex flex-column ga-3">
-                <VBtn block variant="tonal" color="secondary" to="/merchant-center/privacy">Lihat Privacy Policy</VBtn>
-                <VBtn block variant="tonal" color="secondary" to="/merchant-center/terms">Lihat Terms Of Service</VBtn>
+                <VBtn block variant="tonal" color="secondary" :to="{ path: '/merchant-center/privacy', query: { from: 'merchant' } }">Lihat Privacy Policy</VBtn>
+                <VBtn block variant="tonal" color="secondary" :to="{ path: '/merchant-center/terms', query: { from: 'merchant' } }">Lihat Terms Of Service</VBtn>
               </div>
             </VCardText>
           </VCard>
