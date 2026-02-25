@@ -1026,6 +1026,7 @@ useHead({ title: 'Beli Paket Hotspot' })
   flex-direction: column;
   min-height: 100vh;
   background: rgb(var(--v-theme-background));
+  overflow-x: hidden;
 }
 
 .beli-shell {
@@ -1134,6 +1135,8 @@ useHead({ title: 'Beli Paket Hotspot' })
 .package-hero-subtitle {
   font-size: 1.125rem !important;
   line-height: 1.75rem;
+  display: inline-block;
+  max-width: 640px;
 }
 
 .beli-skeleton {
@@ -1175,6 +1178,18 @@ useHead({ title: 'Beli Paket Hotspot' })
 @media (max-width: 600px) {
   .beli-header {
     position: relative;
+  }
+
+  .package-grid {
+    margin-inline: 0;
+  }
+
+  .package-grid-col {
+    padding-inline: 0;
+  }
+
+  .package-card {
+    max-width: 100%;
   }
 }
 

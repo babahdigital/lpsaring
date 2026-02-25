@@ -688,6 +688,7 @@ onMounted(async () => {
   flex-direction: column;
   min-height: 100vh;
   background: rgb(var(--v-theme-background));
+  overflow-x: hidden;
 }
 
 .beli-shell {
@@ -796,6 +797,8 @@ onMounted(async () => {
 .package-hero-subtitle {
   font-size: 1.125rem !important;
   line-height: 1.75rem;
+  display: inline-block;
+  max-width: 640px;
 }
 
 .beli-skeleton {
@@ -837,6 +840,18 @@ onMounted(async () => {
 @media (max-width: 600px) {
   .beli-header {
     position: relative;
+  }
+
+  .package-grid {
+    margin-inline: 0;
+  }
+
+  .package-grid-col {
+    padding-inline: 0;
+  }
+
+  .package-card {
+    max-width: 100%;
   }
 }
 </style>
