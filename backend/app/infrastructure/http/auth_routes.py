@@ -118,7 +118,39 @@ def _extract_phone_from_request() -> Optional[str]:
         return payload.get("phone_number")
     if request.form:
         return request.form.get("phone_number")
-    return None
+
+
+def _is_demo_phone_allowed(phone_e164: str) -> bool:
+    if not current_app.config.get("DEMO_MODE_ENABLED", False):
+        return False
+
+    if current_app.config.get("DEMO_ALLOW_ANY_PHONE", False):
+        return True
+
+    allowed_raw = current_app.config.get("DEMO_ALLOWED_PHONES") or []
+    if not isinstance(allowed_raw, list) or len(allowed_raw) == 0:
+        return False
+
+    target_variants = set(get_phone_number_variations(phone_e164))
+
+    for candidate in allowed_raw:
+        if candidate is None:
+            continue
+
+        raw_phone = str(candidate).strip()
+        if raw_phone == "":
+            continue
+
+        try:
+            normalized_candidate = normalize_to_e164(raw_phone)
+        except ValueError:
+            continue
+
+        candidate_variants = set(get_phone_number_variations(normalized_candidate))
+        if target_variants.intersection(candidate_variants):
+            return True
+
+    return False
 
 
 def _safe_normalize_phone_for_key(phone_number: str) -> str:
@@ -512,11 +544,21 @@ def request_otp():
                     error="Terlalu sering meminta OTP. Silakan coba beberapa saat lagi."
                 ).model_dump()
             ), HTTPStatus.TOO_MANY_REQUESTS
+
+        demo_phone_allowed = _is_demo_phone_allowed(phone_e164)
         phone_variations = get_phone_number_variations(phone_e164)
         user_for_otp = db.session.execute(
             select(User).where(User.phone_number.in_(phone_variations))
         ).scalar_one_or_none()
         if not user_for_otp:
+            if demo_phone_allowed:
+                _set_otp_cooldown(phone_e164)
+                increment_metric("otp.request.success")
+                current_app.logger.warning("OTP request demo accepted for non-registered phone: %s", phone_e164)
+                return jsonify(
+                    RequestOtpResponseSchema(message="Kode OTP berhasil diproses. Silakan lanjut verifikasi.").model_dump()
+                ), HTTPStatus.OK
+
             increment_metric("otp.request.failed")
             return jsonify(
                 AuthErrorResponseSchema(error="Phone number is not registered.").model_dump()
@@ -620,15 +662,25 @@ def verify_otp():
             return jsonify(
                 AuthErrorResponseSchema(error="Terlalu banyak percobaan OTP. Silakan coba lagi nanti.").model_dump()
             ), HTTPStatus.TOO_MANY_REQUESTS
-        otp_bypass_code = current_app.config.get("OTP_BYPASS_CODE", "000000")
+        otp_bypass_code = str(current_app.config.get("OTP_BYPASS_CODE", "000000") or "000000")
         bypass_allowed = current_app.config.get("OTP_ALLOW_BYPASS", False)
+        demo_bypass_code = str(current_app.config.get("DEMO_BYPASS_OTP_CODE", "000000") or "000000")
+        demo_bypass_allowed = _is_demo_phone_allowed(phone_e164)
         used_bypass_code = False
+        used_demo_bypass = False
 
         otp_ok = verify_otp_from_redis(phone_e164, data.otp)
-        if not otp_ok and bypass_allowed and data.otp == otp_bypass_code:
-            current_app.logger.warning("OTP bypass digunakan untuk login.")
-            otp_ok = True
-            used_bypass_code = True
+        if not otp_ok:
+            if bypass_allowed and data.otp == otp_bypass_code:
+                current_app.logger.warning("OTP bypass global digunakan untuk login.")
+                otp_ok = True
+                used_bypass_code = True
+            elif demo_bypass_allowed and data.otp == demo_bypass_code:
+                current_app.logger.warning("OTP bypass demo digunakan untuk nomor whitelist demo.")
+                otp_ok = True
+                used_bypass_code = True
+                used_demo_bypass = True
+
         if not otp_ok:
             _increment_otp_fail_count(phone_e164)
             increment_metric("otp.verify.failed")
@@ -643,6 +695,40 @@ def verify_otp():
         user_to_login = db.session.execute(
             select(User).where(User.phone_number.in_(phone_variations))
         ).scalar_one_or_none()
+
+        if user_to_login is None and used_demo_bypass and current_app.config.get("DEMO_MODE_ENABLED", False):
+            now_utc = datetime.now(dt_timezone.utc)
+            local_phone = format_to_local_phone(phone_e164)
+            fallback_name = f"Demo User {local_phone[-4:]}" if local_phone and len(local_phone) >= 4 else "Demo User"
+
+            demo_user = User()
+            demo_user.phone_number = phone_e164
+            demo_user.full_name = fallback_name
+            demo_user.password_hash = generate_password_hash(secrets.token_urlsafe(12))
+            demo_user.role = UserRole.USER
+            demo_user.approval_status = ApprovalStatus.APPROVED
+            demo_user.is_active = True
+            demo_user.approved_at = now_utc
+            demo_user.approved_by_id = None
+            demo_user.last_login_at = now_utc
+            demo_user.mikrotik_user_exists = False
+
+            db.session.add(demo_user)
+            try:
+                db.session.flush()
+            except IntegrityError:
+                db.session.rollback()
+                user_to_login = db.session.execute(
+                    select(User).where(User.phone_number.in_(phone_variations))
+                ).scalar_one_or_none()
+            else:
+                user_to_login = demo_user
+                current_app.logger.warning(
+                    "Demo user auto-provisioned via demo bypass: phone=%s user_id=%s",
+                    phone_e164,
+                    str(demo_user.id),
+                )
+
         if not user_to_login:
             return jsonify(
                 AuthErrorResponseSchema(error="User not found after OTP verification.").model_dump()

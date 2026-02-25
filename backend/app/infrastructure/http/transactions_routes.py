@@ -48,7 +48,7 @@ from app.services.hotspot_sync_service import sync_address_list_for_single_user
 from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection
 
 # from app.infrastructure.gateways.whatsapp_client import send_whatsapp_with_pdf # Tidak lagi dipanggil langsung
-from app.utils.formatters import format_to_local_phone
+from app.utils.formatters import format_to_local_phone, get_phone_number_variations, normalize_to_e164
 from .decorators import token_required
 from app.utils.circuit_breaker import record_failure, record_success, should_allow_call
 from app.utils.metrics_utils import increment_metric
@@ -77,6 +77,79 @@ def _safe_json_dumps(value: object) -> str | None:
         return json.dumps(value, ensure_ascii=False)
     except Exception:
         return None
+
+
+def _normalize_phone_digits(value: str | None) -> str:
+    return "".join(ch for ch in str(value or "") if ch.isdigit())
+
+
+def _is_demo_user_eligible(user: User | None) -> bool:
+    if user is None:
+        return False
+
+    if not bool(current_app.config.get("DEMO_MODE_ENABLED", False)):
+        return False
+
+    if bool(current_app.config.get("DEMO_ALLOW_ANY_PHONE", False)):
+        return True
+
+    allowed_raw = current_app.config.get("DEMO_ALLOWED_PHONES") or []
+    if not isinstance(allowed_raw, list) or len(allowed_raw) == 0:
+        return False
+
+    user_phone_raw = str(getattr(user, "phone_number", "") or "").strip()
+    if user_phone_raw == "":
+        return False
+
+    user_digits_variants: set[str] = {_normalize_phone_digits(user_phone_raw)}
+    try:
+        normalized_user = normalize_to_e164(user_phone_raw)
+        for var in get_phone_number_variations(normalized_user):
+            user_digits_variants.add(_normalize_phone_digits(var))
+    except Exception:
+        pass
+
+    user_digits_variants = {v for v in user_digits_variants if v}
+    if not user_digits_variants:
+        return False
+
+    for candidate in allowed_raw:
+        candidate_raw = str(candidate or "").strip()
+        if candidate_raw == "":
+            continue
+
+        candidate_digits_variants: set[str] = {_normalize_phone_digits(candidate_raw)}
+        try:
+            normalized_candidate = normalize_to_e164(candidate_raw)
+            for var in get_phone_number_variations(normalized_candidate):
+                candidate_digits_variants.add(_normalize_phone_digits(var))
+        except Exception:
+            pass
+
+        candidate_digits_variants = {v for v in candidate_digits_variants if v}
+        if user_digits_variants.intersection(candidate_digits_variants):
+            return True
+
+    return False
+
+
+def _get_demo_package_ids() -> set[uuid.UUID]:
+    if not bool(current_app.config.get("DEMO_MODE_ENABLED", False)):
+        return set()
+    if not bool(current_app.config.get("DEMO_SHOW_TEST_PACKAGE", False)):
+        return set()
+
+    raw = current_app.config.get("DEMO_PACKAGE_IDS") or []
+    if not isinstance(raw, list):
+        return set()
+
+    result: set[uuid.UUID] = set()
+    for item in raw:
+        try:
+            result.add(uuid.UUID(str(item)))
+        except Exception:
+            continue
+    return result
 
 
 def _log_transaction_event(
@@ -822,7 +895,11 @@ def initiate_transaction(current_user_id: uuid.UUID):
             abort(HTTPStatus.FORBIDDEN, description="Akun Anda belum aktif atau disetujui untuk melakukan transaksi.")
 
         package = session.query(Package).get(req_data.package_id)
-        if not package or not package.is_active:
+        demo_package_ids = _get_demo_package_ids()
+        is_demo_package = package is not None and package.id in demo_package_ids
+        can_use_demo_package = is_demo_package and _is_demo_user_eligible(user)
+
+        if not package or (not package.is_active and not can_use_demo_package):
             abort(HTTPStatus.BAD_REQUEST, description="Paket tidak valid atau tidak aktif.")
 
         # Rule: if user has debts (auto+manual), they may only purchase a package with quota > total debt.

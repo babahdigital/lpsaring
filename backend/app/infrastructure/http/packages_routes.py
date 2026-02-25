@@ -6,6 +6,7 @@
 from flask import Blueprint, jsonify, current_app
 from sqlalchemy.orm import selectinload  # Import selectinload
 from http import HTTPStatus  # <--- PERBAIKAN DI SINI
+import uuid
 
 from app.extensions import db
 from app.infrastructure.db.models import Package as PackageModel
@@ -33,6 +34,32 @@ def get_packages():
             .order_by(PackageModel.price.asc())
             .all()
         )
+
+        demo_mode_enabled = bool(current_app.config.get("DEMO_MODE_ENABLED", False))
+        demo_show_test_package = bool(current_app.config.get("DEMO_SHOW_TEST_PACKAGE", False))
+        demo_package_ids_raw = current_app.config.get("DEMO_PACKAGE_IDS") or []
+        demo_package_ids: set[uuid.UUID] = set()
+
+        if demo_mode_enabled and demo_show_test_package and isinstance(demo_package_ids_raw, list):
+            for raw in demo_package_ids_raw:
+                try:
+                    demo_package_ids.add(uuid.UUID(str(raw)))
+                except Exception:
+                    continue
+
+        if demo_package_ids:
+            demo_packages = (
+                db.session.query(PackageModel)
+                .options(selectinload(PackageModel.profile))
+                .filter(PackageModel.id.in_(list(demo_package_ids)))
+                .all()
+            )
+            existing_ids = {pkg.id for pkg in packages_db}
+            for pkg in demo_packages:
+                if pkg.id not in existing_ids:
+                    packages_db.append(pkg)
+
+            packages_db.sort(key=lambda p: (int(getattr(p, "price", 0) or 0), str(getattr(p, "name", ""))))
         count = len(packages_db)
         current_app.logger.info(f"Retrieved {count} active packages from database.")
 
@@ -49,8 +76,12 @@ def get_packages():
                 )
             current_app.logger.debug("--- End Inspecting Package Objects ---")
 
-        packages_validated = [PackagePublic.model_validate(pkg) for pkg in packages_db]
-        packages_list = [pkg.model_dump(mode="json") for pkg in packages_validated]
+        packages_list = []
+        for pkg in packages_db:
+            serialized = PackagePublic.model_validate(pkg).model_dump(mode="json")
+            if pkg.id in demo_package_ids:
+                serialized["is_active"] = True
+            packages_list.append(serialized)
 
         return jsonify(
             {

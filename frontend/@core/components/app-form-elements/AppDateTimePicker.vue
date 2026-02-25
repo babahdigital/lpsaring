@@ -160,6 +160,26 @@ function repositionCalendar() {
 
   bindPositionElement()
   fp._positionCalendar?.()
+
+  const calendar = fp.calendarContainer as HTMLElement | undefined
+  const anchor = getFlatpickrVisibleInput(fp)
+  if (!calendar || !anchor || typeof window === 'undefined')
+    return
+
+  const anchorRect = anchor.getBoundingClientRect()
+  const calendarWidth = calendar.offsetWidth || 300
+  const viewportPadding = 8
+  const rawLeft = anchorRect.left + window.scrollX
+  const minLeft = window.scrollX + viewportPadding
+  const maxLeft = window.scrollX + window.innerWidth - calendarWidth - viewportPadding
+  const safeLeft = Math.max(minLeft, Math.min(rawLeft, maxLeft))
+  const top = anchorRect.bottom + window.scrollY + 4
+
+  calendar.style.left = `${safeLeft}px`
+  calendar.style.right = 'auto'
+  calendar.style.top = `${top}px`
+  calendar.classList.remove('arrowBottom')
+  calendar.classList.add('arrowTop')
 }
 
 function scheduleCalendarReposition() {
