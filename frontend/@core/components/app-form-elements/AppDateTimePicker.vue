@@ -103,6 +103,25 @@ const vuetifyTheme = useTheme()
 
 const vuetifyThemesName = Object.keys(vuetifyTheme.themes.value)
 
+function getFlatpickrVisibleInput(instance?: any): HTMLElement | null {
+  if (!instance)
+    return null
+
+  const altInput = instance.altInput as HTMLElement | undefined
+  if (altInput instanceof HTMLElement)
+    return altInput
+
+  const directInput = instance.input as HTMLElement | undefined
+  if (directInput instanceof HTMLElement)
+    return directInput
+
+  const fallbackInput = instance._input as HTMLElement | undefined
+  if (fallbackInput instanceof HTMLElement)
+    return fallbackInput
+
+  return null
+}
+
 // Themes class added to flat-picker component for light and dark support
 function updateThemeClassInCalendar() {
   // ℹ️ Flatpickr don't render it's instance in mobile and device simulator
@@ -119,6 +138,7 @@ watch(() => configStore.theme, updateThemeClassInCalendar)
 
 onMounted(() => {
   updateThemeClassInCalendar()
+  bindPositionElement()
 })
 
 function forceCalendarBelowInput() {
@@ -127,7 +147,7 @@ function forceCalendarBelowInput() {
 
   const fp = refFlatPicker.value?.fp
   const calendar = fp?.calendarContainer as HTMLElement | undefined
-  const input = fp?._input as HTMLElement | undefined
+  const input = getFlatpickrVisibleInput(fp)
   if (!calendar || !input)
     return
 
@@ -146,9 +166,20 @@ function forceCalendarBelowInput() {
   calendar.classList.add('arrowTop')
 }
 
+function bindPositionElement() {
+  const fp = refFlatPicker.value?.fp
+  if (!fp)
+    return
+
+  const anchor = getFlatpickrVisibleInput(fp)
+  if (anchor)
+    fp.set('positionElement', anchor)
+}
+
 function handleCalendarOpen() {
   isCalendarOpen.value = true
   nextTick(() => {
+    bindPositionElement()
     forceCalendarBelowInput()
     window.requestAnimationFrame(() => forceCalendarBelowInput())
   })
