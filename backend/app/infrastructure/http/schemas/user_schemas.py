@@ -267,7 +267,7 @@ class UserResponseSchema(UserBaseSchema):
 
 
 class UserMeResponseSchema(UserResponseSchema):
-    pass
+    is_demo_user: bool = False
 
 
 class UserProfileUpdateRequestSchema(BaseModel):

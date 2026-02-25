@@ -1222,7 +1222,9 @@ def get_current_user(current_user_id: uuid.UUID):
     if getattr(user, "is_blocked", False):
         return _build_status_error("blocked", "Akun Anda diblokir oleh Admin."), HTTPStatus.FORBIDDEN
     try:
-        response = jsonify(UserMeResponseSchema.model_validate(user).model_dump(mode="json"))
+        payload = UserMeResponseSchema.model_validate(user).model_dump(mode="json")
+        payload["is_demo_user"] = _is_demo_phone_allowed(str(user.phone_number or ""))
+        response = jsonify(payload)
         jwt_payload = {"sub": str(user.id), "rl": user.role.value}
         refreshed_access_token = create_access_token(data=jwt_payload)
         _set_auth_cookie(response, refreshed_access_token)
@@ -1321,7 +1323,9 @@ def update_user_profile(current_user_id: uuid.UUID):
             user.blok = update_data.blok
             user.kamar = update_data.kamar
         db.session.commit()
-        return jsonify(UserMeResponseSchema.model_validate(user).model_dump(mode="json")), HTTPStatus.OK
+        payload = UserMeResponseSchema.model_validate(user).model_dump(mode="json")
+        payload["is_demo_user"] = _is_demo_phone_allowed(str(user.phone_number or ""))
+        return jsonify(payload), HTTPStatus.OK
     except ValidationError as e:
         return jsonify(
             AuthErrorResponseSchema(error="Invalid input.", details=_validation_error_details(e)).model_dump()

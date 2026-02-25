@@ -1,5 +1,6 @@
 export interface User {
   id: string
+  is_demo_user?: boolean
   phone_number?: string
   email?: string
   full_name?: string

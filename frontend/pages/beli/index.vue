@@ -21,7 +21,6 @@ interface PackagesApiResponse {
 
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
-const runtimeConfig = useRuntimeConfig()
 const router = useRouter()
 const route = useRoute()
 const { $api } = useNuxtApp()
@@ -76,13 +75,7 @@ const { pending: isLoadingPackages, error: fetchPackagesError, refresh: refreshP
 const packageApiResponse = packagesRequest.data as Ref<PackagesApiResponse | null>
 
 const packages = computed(() => (packageApiResponse.value?.data ?? []))
-
-function parseBooleanFlag(value: unknown): boolean {
-  const normalized = String(value ?? '').trim().toLowerCase()
-  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on'
-}
-
-const isDemoModeEnabled = computed(() => parseBooleanFlag(runtimeConfig.public.demoModeEnabled))
+const isDemoModeEnabled = computed(() => isLoggedIn.value === true && user.value?.is_demo_user === true)
 
 function isTestingPackage(pkg: Package): boolean {
   return String(pkg?.name ?? '').trim().toLowerCase().includes('testing')
@@ -99,6 +92,14 @@ function getPackageDisabledReason(pkg: Package): string | null {
     return 'Paket ini sedang tidak tersedia.'
   return null
 }
+
+const visiblePackages = computed(() => {
+  return packages.value.filter((pkg) => {
+    if (pkg.is_active === true)
+      return true
+    return isDemoModeEnabled.value === true && isTestingPackage(pkg)
+  })
+})
 // --- AKHIR PERBAIKAN ---
 
 // State untuk dialog, formulir, pembayaran, dan notifikasi
@@ -221,7 +222,7 @@ watch([selectedPaymentMethod, availableVaBankItems], () => {
 const selectedPackageForPayment = computed(() => {
   if (pendingPaymentPackageId.value == null)
     return null
-  return packages.value.find(p => p.id === pendingPaymentPackageId.value) ?? null
+  return visiblePackages.value.find(p => p.id === pendingPaymentPackageId.value) ?? null
 })
 
 const snackbarVisible = ref(false)
@@ -700,8 +701,8 @@ useHead({ title: 'Beli Paket Hotspot' })
             >
               Mode demo aktif. Hanya paket <strong>Testing</strong> yang bisa dipilih.
             </v-alert>
-            <v-row v-if="packages.length > 0" dense justify="center">
-              <v-col v-for="pkg in packages" :key="pkg.id" cols="12" sm="6" md="4" lg="3" class="pa-2 d-flex">
+            <v-row v-if="visiblePackages.length > 0" dense justify="center">
+              <v-col v-for="pkg in visiblePackages" :key="pkg.id" cols="12" sm="6" md="4" lg="3" class="pa-2 d-flex">
                 <v-tooltip :disabled="isDemoDisabledPackage(pkg) !== true" location="top" max-width="280">
                   <template #activator="{ props }">
                     <div v-bind="props" class="d-flex flex-column flex-grow-1 w-100">
