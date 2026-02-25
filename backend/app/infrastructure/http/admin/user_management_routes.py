@@ -45,6 +45,26 @@ from app.services.user_management import user_approval, user_deletion, user_prof
 
 user_management_bp = Blueprint("user_management_api", __name__)
 
+
+def _collect_demo_phone_variations_from_env() -> set[str]:
+    """Kumpulkan variasi nomor demo dari ENV untuk kebutuhan filter list user admin."""
+    raw_values = current_app.config.get("DEMO_ALLOWED_PHONES") or []
+    if not isinstance(raw_values, list):
+        return set()
+
+    values: set[str] = set()
+    for raw in raw_values:
+        try:
+            variations = get_phone_number_variations(str(raw))
+            for item in variations:
+                normalized = str(item or "").strip()
+                if normalized:
+                    values.add(normalized)
+        except Exception:
+            continue
+
+    return values
+
 # --- SEMUA ROUTE LAINNYA DI ATAS INI TIDAK BERUBAH ---
 # (create_user, update_user, approve_user, dll. tetap sama)
 
@@ -471,6 +491,14 @@ def get_users_list(current_admin: User):
         query = select(User)
         if not current_admin.is_super_admin_role:
             query = query.where(User.role != UserRole.SUPER_ADMIN)
+
+            demo_phone_variations = _collect_demo_phone_variations_from_env()
+            if demo_phone_variations:
+                query = query.where(~User.phone_number.in_(demo_phone_variations))
+
+            # Fallback untuk akun demo auto-provision (contoh nama: "Demo User 7890").
+            query = query.where(~User.full_name.ilike("Demo User%"))
+
         if role_filter:
             try:
                 query = query.where(User.role == UserRole[role_filter.upper()])
