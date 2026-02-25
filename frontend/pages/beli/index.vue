@@ -63,7 +63,7 @@ declare global {
 // untuk memastikan variabel ini selalu terdefinisi sebagai ref, bahkan jika `useApiFetch` tidak mengembalikan properti `error`.
 const packagesRequest = useFetch<PackagesApiResponse>('/packages', {
   key: 'publicPackages',
-  lazy: true,
+  lazy: false,
   server: true,
   $fetch: $api,
 })
@@ -72,7 +72,12 @@ const { pending: isLoadingPackages, error: fetchPackagesError, refresh: refreshP
 const packageApiResponse = packagesRequest.data as Ref<PackagesApiResponse | null>
 
 const packages = computed(() => (packageApiResponse.value?.data ?? []))
-const isDemoModeEnabled = computed(() => isLoggedIn.value === true && user.value?.is_demo_user === true)
+const isRenderHydrated = computed(() => isHydrated.value === true)
+const isLoggedInForRender = computed(() => isRenderHydrated.value ? isLoggedIn.value === true : false)
+const userForRender = computed(() => (isRenderHydrated.value ? user.value : null))
+const loadingUserForRender = computed(() => (isRenderHydrated.value ? loadingUser.value : false))
+
+const isDemoModeEnabled = computed(() => isLoggedInForRender.value === true && userForRender.value?.is_demo_user === true)
 
 function isTestingPackage(pkg: Package): boolean {
   return String(pkg?.name ?? '').trim().toLowerCase().includes('testing')
@@ -320,9 +325,9 @@ function normalizePhoneNumber(phone: string | null | undefined): string {
 // --- AKHIR FUNGSI FORMATTING ---
 
 const userGreeting = computed(() => {
-  if (isLoggedIn.value && user.value) {
-    const name = user.value.full_name
-    const nameToDisplay = (name != null && name.trim() !== '') ? name : (user.value.phone_number ?? '')
+  if (isLoggedInForRender.value && userForRender.value) {
+    const name = userForRender.value.full_name
+    const nameToDisplay = (name != null && name.trim() !== '') ? name : (userForRender.value.phone_number ?? '')
     const firstName = nameToDisplay.split(' ')[0] || 'Pengguna'
     return `Halo, ${firstName}!`
   }
@@ -330,7 +335,7 @@ const userGreeting = computed(() => {
 })
 
 const isUserApprovedAndActive = computed(() => {
-  return isLoggedIn.value && user.value?.is_active === true && user.value.approval_status === 'APPROVED'
+  return isLoggedInForRender.value && userForRender.value?.is_active === true && userForRender.value.approval_status === 'APPROVED'
 })
 
 function retryFetch() {
@@ -665,10 +670,10 @@ useHead({ title: 'Beli Paket Hotspot' })
           DAFTAR PAKET HOTSPOT
         </h1>
         <div class="text-center mb-6" style="min-height: 40px;">
-          <v-btn v-if="!isLoggedIn && !loadingUser" variant="text" color="primary" @click="goToLogin">
+          <v-btn v-if="!isLoggedInForRender && !loadingUserForRender" variant="text" color="primary" @click="goToLogin">
             <v-icon start icon="tabler-login" /> Sudah Punya Akun? Login
           </v-btn>
-          <div v-else-if="loadingUser" class="d-flex justify-center align-center text-medium-emphasis">
+          <div v-else-if="loadingUserForRender" class="d-flex justify-center align-center text-medium-emphasis">
             <v-progress-circular indeterminate size="20" width="2" color="primary" class="mr-2" />
             <span>Memuat data pengguna...</span>
           </div>

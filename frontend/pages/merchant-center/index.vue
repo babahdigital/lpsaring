@@ -28,7 +28,7 @@ const {
 const packagesRequest = useFetch<PackagesApiResponse>('/packages', {
   key: 'merchantCenterPackages',
   server: true,
-  lazy: true,
+  lazy: false,
   $fetch: $api,
 })
 

@@ -100,6 +100,7 @@ watch(pending, (val) => {
 
 const showInitialSkeleton = computed(() => pending.value === true && hasLoadedOnce.value === false)
 const showSilentRefreshing = computed(() => pending.value === true && hasLoadedOnce.value === true)
+const currentMonthLabel = ref('-')
 
 if (stats.value == null)
   stats.value = defaultStats
@@ -142,6 +143,7 @@ watch(backupFileCount, (newCount) => {
 })
 
 onMounted(async () => {
+  currentMonthLabel.value = new Date().toLocaleString('id-ID', { month: 'long' })
   await fetchBackupFileCount()
 })
 
@@ -704,7 +706,7 @@ useHead({ title: 'Dashboard Admin' })
               Pendapatan Bulan Ini
             </h5>
             <p class="mb-0">
-              Total Penjualan Bulan {{ new Date().toLocaleString('id-ID', { month: 'long' }) }}
+              Total Penjualan Bulan {{ currentMonthLabel }}
             </p>
             <h4 class="text-h4">
               {{ formatCurrency(stats?.pendapatanBulanIni) }}

@@ -30,7 +30,8 @@ useHead({ title: 'Riwayat Permintaan' })
 const { $api } = useNuxtApp()
 
 const display = useDisplay()
-const isMobile = computed(() => display.smAndDown.value)
+const isHydrated = ref(false)
+const isMobile = computed(() => (isHydrated.value ? display.smAndDown.value : false))
 
 const requests = ref<RequestHistoryItem[]>([])
 const loading = ref(true)
@@ -52,7 +53,10 @@ const { add: addSnackbar } = useSnackbar()
 
 // --- Watchers & Lifecycle ---
 watch(options, () => fetchRequests(), { deep: true })
-onMounted(fetchRequests)
+onMounted(() => {
+  isHydrated.value = true
+  fetchRequests()
+})
 
 watch(loading, (val) => {
   if (val === false)
