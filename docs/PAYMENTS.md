@@ -53,6 +53,22 @@ Dokumen ini adalah indeks/pondasi untuk semua perubahan pembayaran.
       - Format baru (lebih pendek, aman batas 50 char Midtrans): `<manual_debt_id>` = UUID Base64URL tanpa padding (22 char)
       - Masih kompatibel dengan format lama: UUID dengan dash (36 char) / hex (32 char) / Base32 tanpa padding (26 char)
 
+## Demo Mode (Uji Flow Pembayaran tanpa Mengganggu User Reguler)
+
+Untuk kebutuhan demo/staging yang dijalankan di environment produksi secara terkontrol, tersedia flag backend berikut:
+
+- `DEMO_MODE_ENABLED`
+- `DEMO_ALLOW_ANY_PHONE`
+- `DEMO_ALLOWED_PHONES`
+- `DEMO_BYPASS_OTP_CODE`
+- `DEMO_SHOW_TEST_PACKAGE`
+- `DEMO_PACKAGE_IDS`
+
+Catatan perilaku:
+- Bypass OTP hanya berlaku untuk user yang memenuhi kriteria demo.
+- Paket nonaktif dapat ditampilkan/dibeli untuk user demo sesuai konfigurasi env.
+- User reguler tetap mengikuti aturan normal (tanpa bypass dan tanpa akses paket testing).
+
 ## Dokumen Detail
 - Lifecycle transaksi + data yang disimpan:
   - `docs/TRANSACTIONS_MIDTRANS_LIFECYCLE.md`

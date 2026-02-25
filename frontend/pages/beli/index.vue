@@ -21,6 +21,7 @@ interface PackagesApiResponse {
 
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
+const runtimeConfig = useRuntimeConfig()
 const router = useRouter()
 const route = useRoute()
 const { $api } = useNuxtApp()
@@ -75,6 +76,29 @@ const { pending: isLoadingPackages, error: fetchPackagesError, refresh: refreshP
 const packageApiResponse = packagesRequest.data as Ref<PackagesApiResponse | null>
 
 const packages = computed(() => (packageApiResponse.value?.data ?? []))
+
+function parseBooleanFlag(value: unknown): boolean {
+  const normalized = String(value ?? '').trim().toLowerCase()
+  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on'
+}
+
+const isDemoModeEnabled = computed(() => parseBooleanFlag(runtimeConfig.public.demoModeEnabled))
+
+function isTestingPackage(pkg: Package): boolean {
+  return String(pkg?.name ?? '').trim().toLowerCase().includes('testing')
+}
+
+function isDemoDisabledPackage(pkg: Package): boolean {
+  return isDemoModeEnabled.value === true && !isTestingPackage(pkg)
+}
+
+function getPackageDisabledReason(pkg: Package): string | null {
+  if (isDemoDisabledPackage(pkg))
+    return 'Mode demo aktif: hanya paket Testing yang tersedia.'
+  if (pkg.is_active !== true)
+    return 'Paket ini sedang tidak tersedia.'
+  return null
+}
 // --- AKHIR PERBAIKAN ---
 
 // State untuk dialog, formulir, pembayaran, dan notifikasi
@@ -340,7 +364,15 @@ async function confirmPaymentMethod() {
 
 // Logika penanganan event (tidak ada perubahan)
 function handlePackageSelection(pkg: Package) {
-  if (pkg?.id == null || pkg.is_active !== true || isInitiatingPayment.value != null)
+  if (pkg?.id == null || isInitiatingPayment.value != null)
+    return
+
+  if (isDemoDisabledPackage(pkg)) {
+    showSnackbar('Mode demo aktif: hanya paket Testing yang bisa dipilih.', 'warning', 6000)
+    return
+  }
+
+  if (pkg.is_active !== true)
     return
   selectedPackageId.value = pkg.id
   if (!isLoggedIn.value) {
@@ -660,14 +692,25 @@ useHead({ title: 'Beli Paket Hotspot' })
             </v-col>
           </v-row>
           <div v-else class="px-lg-10 px-md-4 px-sm-2">
+            <v-alert
+              v-if="isDemoModeEnabled"
+              type="warning"
+              variant="tonal"
+              class="mb-4"
+            >
+              Mode demo aktif. Hanya paket <strong>Testing</strong> yang bisa dipilih.
+            </v-alert>
             <v-row v-if="packages.length > 0" dense justify="center">
               <v-col v-for="pkg in packages" :key="pkg.id" cols="12" sm="6" md="4" lg="3" class="pa-2 d-flex">
-                <v-card
-                  class="d-flex flex-column flex-grow-1"
-                  variant="outlined" hover rounded="lg"
-                  :disabled="pkg.is_active !== true || isInitiatingPayment != null"
-                  @click="handlePackageSelection(pkg)"
-                >
+                <v-tooltip :disabled="isDemoDisabledPackage(pkg) !== true" location="top" max-width="280">
+                  <template #activator="{ props }">
+                    <div v-bind="props" class="d-flex flex-column flex-grow-1 w-100">
+                      <v-card
+                        class="d-flex flex-column flex-grow-1"
+                        variant="outlined" hover rounded="lg"
+                        :disabled="pkg.is_active !== true || isInitiatingPayment != null || isDemoDisabledPackage(pkg)"
+                        @click="handlePackageSelection(pkg)"
+                      >
                   <v-card-item class="text-left">
                     <v-card-title class="text-h6 text-wrap font-weight-bold mb-2">
                       {{ pkg.name }}
@@ -728,14 +771,18 @@ useHead({ title: 'Beli Paket Hotspot' })
                   <v-card-actions class="pa-4 mt-auto">
                     <v-btn
                       block color="primary" variant="flat" size="large"
-                      :disabled="pkg.is_active !== true || isInitiatingPayment != null"
+                      :disabled="pkg.is_active !== true || isInitiatingPayment != null || isDemoDisabledPackage(pkg)"
                       :loading="isInitiatingPayment === pkg.id"
                       @click.stop="handlePackageSelection(pkg)"
                     >
-                      {{ pkg.is_active === true ? 'Beli Sekarang' : 'Tidak Tersedia' }}
+                      {{ getPackageDisabledReason(pkg) ?? 'Beli Sekarang' }}
                     </v-btn>
                   </v-card-actions>
-                </v-card>
+                      </v-card>
+                    </div>
+                  </template>
+                  {{ getPackageDisabledReason(pkg) }}
+                </v-tooltip>
               </v-col>
             </v-row>
             <v-row v-else-if="!isLoadingPackages" justify="center">

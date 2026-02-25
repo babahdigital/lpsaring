@@ -21,6 +21,7 @@ const merchantBusinessType = process.env.NUXT_PUBLIC_MERCHANT_BUSINESS_TYPE ?? '
 const merchantAddress = process.env.NUXT_PUBLIC_MERCHANT_ADDRESS ?? ''
 const merchantSupportEmail = process.env.NUXT_PUBLIC_MERCHANT_SUPPORT_EMAIL ?? ''
 const merchantSupportWhatsapp = process.env.NUXT_PUBLIC_MERCHANT_SUPPORT_WHATSAPP ?? adminWhatsapp
+const demoModeEnabled = process.env.NUXT_PUBLIC_DEMO_MODE_ENABLED ?? 'false'
 const captiveSuccessRedirectUrl = process.env.NUXT_PUBLIC_CAPTIVE_SUCCESS_REDIRECT_URL ?? appBaseUrl ?? ''
 const midtransSnapUrlProduction = process.env.NUXT_PUBLIC_MIDTRANS_SNAP_URL_PRODUCTION ?? ''
 const midtransSnapUrlSandbox = process.env.NUXT_PUBLIC_MIDTRANS_SNAP_URL_SANDBOX ?? ''
@@ -277,6 +278,7 @@ export default defineNuxtConfig({
       merchantAddress,
       merchantSupportEmail,
       merchantSupportWhatsapp,
+      demoModeEnabled,
       captiveSuccessRedirectUrl,
       midtransClientKey: process.env.NUXT_PUBLIC_MIDTRANS_CLIENT_KEY ?? '',
       midtransEnv: process.env.NUXT_PUBLIC_MIDTRANS_ENV ?? 'sandbox',

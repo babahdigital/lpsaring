@@ -260,6 +260,25 @@ Jika `verify-otp` tidak ada, masalahnya di client/submit (bukan reset-login atau
 Mixed Content: The page was loaded over HTTPS, but attempted to connect to the insecure WebSocket endpoint 'ws://.../_nuxt/...'
 ```
 
+## 24) Datepicker/Kalender masih tidak konsisten di dialog
+**Gejala**:
+- Pada skenario tertentu (terutama dialog fullscreen/scrollable), popup kalender kadang terasa tidak stabil posisinya atau interaksi tidak konsisten.
+
+**Konteks**:
+- Sudah ada perbaikan sebelumnya untuk positioning/ukuran Flatpickr, namun laporan terbaru menunjukkan isu masih muncul di sebagian alur.
+
+**Penyebab yang paling mungkin**:
+- Konflik antara positioning popup dengan container dialog yang memiliki kombinasi `overflow`, transform, dan viewport mobile.
+- Re-render komponen input saat state dialog berubah cepat (open/close/switch tab) sehingga state popup ikut reset.
+
+**Status saat ini**:
+- **Open / Known Issue**.
+
+**Arah penyempurnaan**:
+1. Standarisasi wrapper date input dan opsi Flatpickr pada semua dialog terkait.
+2. Pastikan append target popup konsisten (hindari menempel pada parent yang terpotong overflow).
+3. Tambahkan regression checklist khusus kalender di mobile + desktop sebelum rilis.
+
 **Akar masalah**:
 - HMR client mencoba konek lewat `ws://` sementara origin page `https://` (browser memblokir).
 

@@ -9,6 +9,25 @@ Lampiran wajib:
 ## [Unreleased]
 
 ### Added
+- Frontend: halaman publik merchant center (`/merchant-center`, `/merchant-center/privacy`, `/merchant-center/terms`) dengan konten legal yang disesuaikan untuk alur produksi.
+- Frontend: composable profil merchant terpusat untuk konsumsi data identitas dan kontak merchant lintas halaman legal.
+- Konfigurasi public runtime baru untuk identitas merchant:
+	- `NUXT_PUBLIC_MERCHANT_NAME`
+	- `NUXT_PUBLIC_MERCHANT_BUSINESS_TYPE`
+	- `NUXT_PUBLIC_MERCHANT_ADDRESS`
+	- `NUXT_PUBLIC_MERCHANT_SUPPORT_EMAIL`
+	- `NUXT_PUBLIC_MERCHANT_SUPPORT_WHATSAPP`
+- Backend: kontrol demo mode berbasis ENV untuk OTP bypass terkontrol dan visibilitas/pembelian paket testing pada user demo.
+
+### Changed
+- Legal page merchant/privacy/terms diselaraskan gaya visualnya mengikuti acuan internal desain, termasuk penyempurnaan pass kedua agar tampilan lebih halus.
+- Normalisasi tampilan nomor WhatsApp merchant untuk konteks Indonesia (`+62/62` tampil sebagai `0...`), sementara non-Indonesia tetap format internasional.
+- Dokumentasi devlog/worklog/error reference diperbarui untuk mencatat hasil deploy produksi dan status issue yang masih terbuka.
+
+### Known Issues
+- Datepicker/kalender pada skenario dialog tertentu masih dapat menunjukkan perilaku popup yang belum konsisten; status masih open untuk sesi perbaikan lanjutan.
+
+### Added
 - Backend: fallback sqlite in-memory untuk pytest saat env DB belum tersedia.
 - Frontend: script `typecheck` dan perbaikan typing `useApiFetch` untuk default data.
 - CI: workflow sederhana untuk lint backend, pytest, dan lint frontend.
