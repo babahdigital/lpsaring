@@ -77,6 +77,7 @@ const statusTokenFromQuery = computed(() => {
     return typeof raw[0] === 'string' ? raw[0].trim() || null : null
   return typeof raw === 'string' ? raw.trim() || null : null
 })
+const isPublicView = computed(() => statusTokenFromQuery.value != null)
 const orderIdFromQuery = computed(() => {
   const raw = route.query.order_id
   if (Array.isArray(raw))
@@ -212,7 +213,7 @@ const invoiceDownloadUrl = computed(() => {
   return `${base}${invoicePath.value}`
 })
 
-const canDownloadInvoice = computed(() => finalStatus.value === 'SUCCESS' && invoicePath.value !== '')
+const canDownloadInvoice = computed(() => !isPublicView.value && finalStatus.value === 'SUCCESS' && invoicePath.value !== '')
 
 const userPhoneNumberRaw = computed(() => transactionDetails.value?.user?.phone_number ?? null)
 const userName = computed(() => transactionDetails.value?.user?.full_name ?? 'Pengguna')
@@ -240,7 +241,7 @@ const packageName = computed(() => {
 
 const debtNote = computed(() => (isDebtSettlement.value ? 'Pelunasan Tunggakan Quota' : null))
 const paymentMethod = computed(() => transactionDetails.value?.payment_method ?? null)
-const displayHotspotUsername = computed(() => formatToLocalPhone(userPhoneNumberRaw.value) ?? '-')
+const displayHotspotUsername = computed(() => formatToLocalPhone(userPhoneNumberRaw.value))
 
 const paymentMethodBadgeLabel = computed(() => {
   const pm = String(paymentMethod.value ?? '').trim().toLowerCase()
@@ -264,13 +265,16 @@ const paymentMethodBadgeLabel = computed(() => {
   return pm.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
 })
 
-function formatToLocalPhone(phoneNumber?: string | null): string {
+function formatToLocalPhone(phoneNumber?: string | null): string | null {
   if (phoneNumber == null)
-    return '-'
-  const cleaned = phoneNumber.replace(/\D/g, '')
+    return null
+  const raw = phoneNumber.trim()
+  if (raw === '')
+    return null
+  const cleaned = raw.replace(/\D/g, '')
   if (cleaned.startsWith('62'))
     return `0${cleaned.substring(2)}`
-  return phoneNumber
+  return raw
 }
 
 function formatDate(isoString?: string | null): string {
@@ -331,6 +335,29 @@ const alertIcon = computed((): string => {
 })
 
 const detailMessage = computed((): string => {
+  if (isPublicView.value) {
+    switch (finalStatus.value) {
+      case 'SUCCESS':
+        return 'Pembayaran telah berhasil diverifikasi oleh sistem.'
+      case 'PENDING':
+        if (transactionDetails.value?.expiry_time)
+          return `Silakan selesaikan pembayaran sebelum ${formatDate(transactionDetails.value?.expiry_time)}.`
+        return 'Pembayaran masih menunggu penyelesaian.'
+      case 'FAILED':
+        return 'Pembayaran gagal diproses.'
+      case 'EXPIRED':
+        return 'Waktu pembayaran sudah habis.'
+      case 'CANCELLED':
+        return 'Transaksi telah dibatalkan.'
+      case 'ERROR':
+        return 'Terjadi kesalahan saat memuat status pembayaran.'
+      case 'UNKNOWN':
+        return 'Status pembayaran belum tersedia.'
+      default:
+        return 'Status transaksi belum dapat dipastikan.'
+    }
+  }
+
   if (finalStatus.value === 'ERROR' && errorMessageFromQuery.value != null && transactionDetails.value == null) {
     return errorMessageFromQuery.value
   }
@@ -828,17 +855,20 @@ useHead({
               <v-icon :icon="alertIcon" :color="alertType" size="38" />
             </v-avatar>
 
-            <h1 class="text-h5 font-weight-bold mb-2 text-high-emphasis">
+            <h1 class="text-h5 font-weight-bold mb-2 text-high-emphasis finish-header-title">
               {{ alertTitle }}
             </h1>
 
-            <p class="text-body-1 text-medium-emphasis" style="line-height: 1.7;">
+            <p class="text-body-1 text-medium-emphasis finish-header-desc" style="line-height: 1.7;">
               {{ detailMessage }}
             </p>
 
             <div class="d-flex justify-center flex-wrap mt-5" style="gap: 10px;">
               <v-chip :color="alertType" variant="tonal" class="font-weight-bold">
                 {{ finalStatus }}
+              </v-chip>
+              <v-chip v-if="isPublicView" color="info" variant="tonal" class="font-weight-medium">
+                Link Publik
               </v-chip>
               <v-chip v-if="paymentMethodBadgeLabel" color="primary" variant="tonal" class="font-weight-medium">
                 {{ paymentMethodBadgeLabel }}
@@ -854,12 +884,12 @@ useHead({
 
           <v-card-text class="pa-0">
             <div class="px-sm-8 px-6 py-6">
-              <div v-if="userName" class="d-flex flex-column flex-sm-row justify-space-between align-start align-sm-center mb-3 finish-kv" style="gap: 6px;">
+              <div v-if="userName && !isPublicView" class="d-flex flex-column flex-sm-row justify-space-between align-start align-sm-center mb-3 finish-kv" style="gap: 6px;">
                 <span class="text-body-2 text-medium-emphasis">Nama Pengguna</span>
                 <span class="font-weight-semibold break-anywhere">{{ userName }}</span>
               </div>
 
-              <div class="d-flex flex-column flex-sm-row justify-space-between align-start align-sm-center mb-3 finish-kv" style="gap: 6px;">
+              <div v-if="displayHotspotUsername && !isPublicView" class="d-flex flex-column flex-sm-row justify-space-between align-start align-sm-center mb-3 finish-kv" style="gap: 6px;">
                 <span class="text-body-2 text-medium-emphasis">Nomor</span>
                 <span class="font-weight-semibold break-anywhere">{{ displayHotspotUsername }}</span>
               </div>
@@ -869,7 +899,7 @@ useHead({
                 <span class="font-weight-bold text-primary break-anywhere">{{ transactionDetails.midtrans_order_id }}</span>
               </div>
 
-              <div v-if="transactionDetails.midtrans_transaction_id" class="d-flex flex-column flex-sm-row justify-space-between align-start align-sm-center mb-3 finish-kv" style="gap: 6px;">
+              <div v-if="transactionDetails.midtrans_transaction_id && !isPublicView" class="d-flex flex-column flex-sm-row justify-space-between align-start align-sm-center mb-3 finish-kv" style="gap: 6px;">
                 <span class="text-body-2 text-medium-emphasis">ID Pembayaran</span>
                 <span class="font-weight-bold font-mono break-anywhere">{{ transactionDetails.midtrans_transaction_id }}</span>
               </div>
@@ -879,7 +909,7 @@ useHead({
                 <span class="font-weight-semibold break-anywhere">{{ packageName }}</span>
               </div>
 
-              <div v-if="debtNote" class="d-flex flex-column flex-sm-row justify-space-between align-start align-sm-center mb-3 finish-kv" style="gap: 6px;">
+              <div v-if="debtNote && !isPublicView" class="d-flex flex-column flex-sm-row justify-space-between align-start align-sm-center mb-3 finish-kv" style="gap: 6px;">
                 <span class="text-body-2 text-medium-emphasis">Catatan</span>
                 <span class="font-weight-semibold break-anywhere">{{ debtNote }}</span>
               </div>
@@ -892,7 +922,7 @@ useHead({
               </div>
 
               <v-alert
-                v-if="statusInfoBox"
+                v-if="statusInfoBox && !isPublicView"
                 :type="statusInfoBox.type"
                 variant="tonal"
                 density="comfortable"
@@ -1194,6 +1224,7 @@ useHead({
             <!-- SUCCESS actions -->
             <template v-else-if="finalStatus === 'SUCCESS'">
               <v-btn
+                v-if="!isPublicView"
                 block
                 size="large"
                 rounded="lg"
@@ -1209,13 +1240,13 @@ useHead({
                 block
                 size="large"
                 rounded="lg"
-                color="secondary"
-                variant="text"
+                :color="isPublicView ? 'primary' : 'secondary'"
+                :variant="isPublicView ? 'flat' : 'text'"
                 class="text-medium-emphasis"
-                prepend-icon="tabler-history"
-                @click="router.push('/riwayat')"
+                :prepend-icon="isPublicView ? 'tabler-arrow-left' : 'tabler-history'"
+                @click="isPublicView ? goToSelectPackage() : router.push('/riwayat')"
               >
-                Lihat Riwayat Transaksi
+                {{ isPublicView ? 'Kembali ke Beranda' : 'Lihat Riwayat Transaksi' }}
               </v-btn>
 
             </template>
@@ -1314,6 +1345,12 @@ useHead({
 
 .finish-kv {
   min-width: 0;
+}
+
+.finish-header-title,
+.finish-header-desc {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .break-anywhere {

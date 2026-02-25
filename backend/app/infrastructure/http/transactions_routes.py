@@ -2366,6 +2366,8 @@ def cancel_transaction(current_user_id: uuid.UUID, order_id: str):
             )
             session.commit()
         return jsonify({"success": True, "status": transaction.status.value}), HTTPStatus.OK
+    except HTTPException:
+        raise
     except Exception as e:
         if session.is_active:
             session.rollback()
@@ -2426,11 +2428,13 @@ def get_transaction_invoice(current_user_id: uuid.UUID, midtrans_order_id: str):
         response.headers["Content-Type"] = "application/pdf"
         response.headers["Content-Disposition"] = f'inline; filename="invoice-{midtrans_order_id}.pdf"'
         return response
+    except HTTPException:
+        raise
     except Exception as e:
         if session.is_active:
             session.rollback()
         current_app.logger.error(f"Error saat membuat invoice PDF untuk {midtrans_order_id}: {e}", exc_info=True)
-        if isinstance(e, (HTTPStatus, midtransclient.error_midtrans.MidtransAPIError)):
+        if isinstance(e, midtransclient.error_midtrans.MidtransAPIError):
             raise e
         abort(HTTPStatus.INTERNAL_SERVER_ERROR, description=f"Kesalahan tak terduga saat membuat invoice: {e}")
     finally:
@@ -2538,6 +2542,8 @@ def get_temp_transaction_invoice(token: str):
         response.headers["Content-Disposition"] = f'inline; filename="invoice-{transaction.midtrans_order_id}.pdf"'
 
         return response
+    except HTTPException:
+        raise
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error saat membuat invoice sementara PDF: {e}", exc_info=True)
