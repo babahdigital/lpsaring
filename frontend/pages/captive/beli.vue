@@ -679,6 +679,10 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.v-card-actions {
+  padding: 20px 22px 30px !important;
+}
+
 .beli-page {
   display: flex;
   flex-direction: column;
@@ -745,7 +749,7 @@ onMounted(async () => {
 
 .package-detail-wrap {
   border: 1px solid rgba(var(--v-border-color), 0.22);
-  background: rgba(var(--v-theme-background), 0.58);
+  background-color: rgb(33 37 54 / var(--tw-bg-opacity, 1));
 }
 
 .package-status-chip {
@@ -754,10 +758,13 @@ onMounted(async () => {
   left: 50%;
   transform: translateX(-50%);
   z-index: 2;
+  border-radius: 9999px !important;
+  padding: 12px 15px !important;
 }
 
 .package-card-head {
-  padding-top: 1.1rem;
+  padding-top: 2rem;
+  padding-bottom: 1rem !important;
 }
 
 .package-title {
@@ -787,10 +794,8 @@ onMounted(async () => {
 }
 
 .package-hero-subtitle {
-  max-width: 40rem;
-  margin-inline: auto;
-  font-size: clamp(0.92rem, 2.8vw, 1.02rem);
-  line-height: 1.65;
+  font-size: 1.125rem !important;
+  line-height: 1.75rem;
 }
 
 .beli-skeleton {
