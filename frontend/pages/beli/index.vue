@@ -99,7 +99,7 @@ function getPackageDisabledTooltip(pkg: Package): string | null {
 
 function getPackageButtonLabel(pkg: Package): string {
   if (isDemoDisabledPackage(pkg))
-    return 'Khusus Demo'
+    return 'Disable'
   if (!canPurchasePackage(pkg))
     return 'Tidak Tersedia'
   return 'Beli Sekarang'
@@ -705,14 +705,11 @@ useHead({ title: 'Beli Paket Hotspot' })
             </v-col>
           </v-row>
           <div v-else class="px-lg-10 px-md-4 px-sm-2">
-            <v-alert
-              v-if="isDemoModeEnabled"
-              type="warning"
-              variant="tonal"
-              class="mb-4"
-            >
-              Mode demo aktif. Hanya paket <strong>Testing</strong> yang bisa dipilih.
-            </v-alert>
+            <div v-if="isDemoModeEnabled" class="mb-4 d-flex justify-start">
+              <v-chip color="warning" variant="flat" size="small">
+                Demo
+              </v-chip>
+            </div>
             <v-row v-if="visiblePackages.length > 0" dense justify="center">
               <v-col v-for="pkg in visiblePackages" :key="pkg.id" cols="12" sm="6" md="4" lg="3" class="pa-2 d-flex">
                 <v-tooltip :disabled="isDemoDisabledPackage(pkg) !== true" location="top" max-width="280">
