@@ -81,12 +81,24 @@ function isDemoDisabledPackage(pkg: Package): boolean {
   return isDemoModeEnabled.value === true && !isTestingPackage(pkg)
 }
 
-function getPackageDisabledReason(pkg: Package): string | null {
+function canPurchasePackage(pkg: Package): boolean {
+  return pkg.is_active === true || (isDemoModeEnabled.value === true && isTestingPackage(pkg))
+}
+
+function getPackageDisabledTooltip(pkg: Package): string | null {
   if (isDemoDisabledPackage(pkg))
     return 'Mode demo aktif: hanya paket Testing yang tersedia.'
-  if (pkg.is_active !== true)
+  if (!canPurchasePackage(pkg))
     return 'Paket ini sedang tidak tersedia.'
   return null
+}
+
+function getPackageButtonLabel(pkg: Package): string {
+  if (isDemoDisabledPackage(pkg))
+    return 'Khusus Demo'
+  if (!canPurchasePackage(pkg))
+    return 'Tidak Tersedia'
+  return 'Bayar Sekarang'
 }
 
 const visiblePackages = computed(() => {
@@ -361,7 +373,7 @@ function handlePackageSelection(pkg: Package) {
     return
   }
 
-  if (pkg.is_active !== true)
+  if (!canPurchasePackage(pkg))
     return
 
   if (!isLoggedIn.value) {
@@ -505,7 +517,7 @@ onMounted(async () => {
                         variant="outlined"
                         hover
                         rounded="lg"
-                        :disabled="pkg.is_active !== true || isInitiatingPayment != null || isDemoDisabledPackage(pkg)"
+                        :disabled="!canPurchasePackage(pkg) || isInitiatingPayment != null || isDemoDisabledPackage(pkg)"
                         @click="handlePackageSelection(pkg)"
                       >
                   <v-card-item class="text-left">
@@ -563,17 +575,17 @@ onMounted(async () => {
                       color="primary"
                       variant="flat"
                       size="large"
-                      :disabled="pkg.is_active !== true || isInitiatingPayment != null || isDemoDisabledPackage(pkg)"
+                      :disabled="!canPurchasePackage(pkg) || isInitiatingPayment != null || isDemoDisabledPackage(pkg)"
                       :loading="isInitiatingPayment === pkg.id"
                       @click.stop="handlePackageSelection(pkg)"
                     >
-                      {{ getPackageDisabledReason(pkg) ?? 'Bayar Sekarang' }}
+                      {{ getPackageButtonLabel(pkg) }}
                     </v-btn>
                   </v-card-actions>
                       </v-card>
                     </div>
                   </template>
-                  {{ getPackageDisabledReason(pkg) }}
+                  {{ getPackageDisabledTooltip(pkg) }}
                 </v-tooltip>
               </v-col>
             </v-row>
