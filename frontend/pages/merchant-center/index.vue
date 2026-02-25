@@ -58,7 +58,7 @@ function formatQuota(gb: number | null | undefined): string {
 <template>
   <div class="merchant-center-page">
     <VContainer class="py-4 py-sm-6 py-md-10">
-      <VCard class="merchant-hero mb-6 mb-sm-8" rounded="0">
+      <VCard class="merchant-hero mb-6 mb-sm-8" rounded="xl">
         <VCardText class="pa-6 pa-sm-8 pa-md-10">
           <div class="d-flex flex-column flex-md-row align-start align-md-center justify-space-between ga-6">
             <div class="w-100 w-md-auto">
@@ -85,7 +85,7 @@ function formatQuota(gb: number | null | undefined): string {
 
       <VRow class="ga-0" align="start">
         <VCol cols="12" lg="8" class="pe-lg-4">
-          <VCard class="surface-card mb-6 mb-lg-0" rounded="0" variant="outlined">
+          <VCard class="surface-card mb-6 mb-lg-0" rounded="xl" variant="outlined">
             <VCardText class="pa-6 pa-sm-8">
               <div class="mb-6 mb-sm-8">
                 <h2 class="section-title mb-2">Produk & Harga</h2>
@@ -117,7 +117,7 @@ function formatQuota(gb: number | null | undefined): string {
                   sm="6"
                   class="d-flex"
                 >
-                  <VCard variant="outlined" class="w-100 package-card" rounded="0">
+                  <VCard variant="outlined" class="w-100 package-card" rounded="xl">
                     <VCardText class="pa-5 pa-sm-6 d-flex flex-column h-100">
                       <div class="d-flex align-start justify-space-between mb-4 mb-sm-5 ga-2">
                         <h3 class="text-subtitle-1 font-weight-bold text-white mb-0">
@@ -151,7 +151,7 @@ function formatQuota(gb: number | null | undefined): string {
         </VCol>
 
         <VCol cols="12" lg="4" class="ps-lg-4">
-          <VCard class="surface-card mb-6" rounded="0" variant="outlined">
+          <VCard class="surface-card mb-6" rounded="xl" variant="outlined">
             <VCardText class="pa-6 pa-sm-8">
               <div class="section-head mb-5 mb-sm-6">
                 <span class="section-head-accent" />
@@ -187,7 +187,7 @@ function formatQuota(gb: number | null | undefined): string {
             </VCardText>
           </VCard>
 
-          <VCard class="surface-card" rounded="0" variant="outlined">
+          <VCard class="surface-card" rounded="xl" variant="outlined">
             <VCardText class="pa-6 pa-sm-8">
               <div class="section-head mb-5 mb-sm-6">
                 <span class="section-head-accent" />
@@ -219,9 +219,8 @@ function formatQuota(gb: number | null | undefined): string {
 }
 
 .merchant-hero {
-  border-radius: 1rem;
   background: linear-gradient(135deg, rgba(var(--v-theme-primary), 1) 0%, rgba(var(--v-theme-primary), 0.74) 100%);
-  box-shadow: 0 12px 30px rgba(var(--v-theme-primary), 0.22);
+  box-shadow: 0 8px 20px rgba(var(--v-theme-primary), 0.2);
 }
 
 .hero-overline {
@@ -259,9 +258,9 @@ function formatQuota(gb: number | null | undefined): string {
 }
 
 .surface-card {
-  border-radius: 1rem;
-  box-shadow: 0 10px 24px rgba(15, 20, 34, 0.22);
-  border-color: rgba(var(--v-border-color), 0.4) !important;
+  background-color: rgba(var(--v-theme-surface), 1);
+  box-shadow: 0 4px 14px rgba(15, 20, 34, 0.14);
+  border-color: rgba(var(--v-border-color), 0.28) !important;
 }
 
 .section-title {
@@ -277,22 +276,22 @@ function formatQuota(gb: number | null | undefined): string {
 }
 
 .package-card {
-  border-radius: 0.85rem;
-  box-shadow: 0 6px 16px rgba(15, 20, 34, 0.18);
-  border-color: rgba(var(--v-border-color), 0.45) !important;
+  background-color: rgba(var(--v-theme-surface), 1);
+  box-shadow: 0 2px 8px rgba(15, 20, 34, 0.1);
+  border-color: rgba(var(--v-border-color), 0.28) !important;
   transition: transform 0.28s ease, box-shadow 0.28s ease, border-color 0.28s ease;
 }
 
 .package-card {
   &:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 14px 30px rgba(var(--v-theme-primary), 0.18);
-    border-color: rgba(var(--v-theme-primary), 0.5) !important;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(var(--v-theme-primary), 0.16);
+    border-color: rgba(var(--v-theme-primary), 0.34) !important;
   }
 }
 
 .package-divider {
-  border-top: 1px solid rgba(var(--v-border-color), 0.3);
+  border-top: 1px solid rgba(var(--v-border-color), 0.22);
 }
 
 .section-head {

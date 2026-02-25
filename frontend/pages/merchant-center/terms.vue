@@ -18,7 +18,7 @@ useHead({ title: `Terms of Service - Merchant Center ${merchantName.value}` })
 <template>
   <div class="merchant-doc-page">
     <VContainer class="py-4 py-sm-6 py-md-10" style="max-inline-size: 980px;">
-      <VCard class="doc-header mb-6" rounded="0" variant="outlined">
+      <VCard class="doc-header mb-6" rounded="xl" variant="outlined">
         <VCardText class="pa-5 pa-sm-6">
           <div class="d-flex flex-column flex-sm-row align-start align-sm-center justify-space-between ga-4">
             <div>
@@ -33,7 +33,7 @@ useHead({ title: `Terms of Service - Merchant Center ${merchantName.value}` })
         </VCardText>
       </VCard>
 
-      <VCard class="doc-card" rounded="0" variant="outlined">
+      <VCard class="doc-card" rounded="xl" variant="outlined">
         <VCardText class="pa-6 pa-sm-8 pa-md-10">
           <p class="doc-intro">
             Dengan menggunakan layanan {{ merchantName }}, pengguna menyetujui syarat dan ketentuan berikut.
@@ -123,9 +123,9 @@ useHead({ title: `Terms of Service - Merchant Center ${merchantName.value}` })
 
 .doc-header,
 .doc-card {
-  border-radius: 1rem;
-  border-color: rgba(var(--v-border-color), 0.4) !important;
-  box-shadow: 0 10px 24px rgba(15, 20, 34, 0.2);
+  background-color: rgba(var(--v-theme-surface), 1);
+  border-color: rgba(var(--v-border-color), 0.28) !important;
+  box-shadow: 0 4px 14px rgba(15, 20, 34, 0.14);
 }
 
 .doc-overline {
@@ -166,7 +166,7 @@ useHead({ title: `Terms of Service - Merchant Center ${merchantName.value}` })
   line-height: 1.4;
   margin-block-end: 0.85rem;
   padding-block-end: 0.65rem;
-  border-bottom: 1px solid rgba(var(--v-border-color), 0.3);
+  border-bottom: 1px solid rgba(var(--v-border-color), 0.22);
 }
 
 .doc-list {
@@ -215,7 +215,7 @@ useHead({ title: `Terms of Service - Merchant Center ${merchantName.value}` })
 .doc-updated {
   margin-block-start: 2rem;
   padding-block-start: 1.3rem;
-  border-top: 1px solid rgba(var(--v-border-color), 0.4);
+  border-top: 1px solid rgba(var(--v-border-color), 0.24);
   color: rgba(var(--v-theme-on-surface), 0.62);
   font-size: 0.8rem;
   font-weight: 600;
