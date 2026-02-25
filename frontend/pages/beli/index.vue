@@ -30,6 +30,7 @@ const router = useRouter()
 const route = useRoute()
 const { $api } = useNuxtApp()
 const { ensureMidtransReady } = useMidtransSnap()
+const runtimeConfig = useRuntimeConfig()
 
 const { isLoggedIn, user, loadingUser } = storeToRefs(authStore)
 
@@ -113,6 +114,11 @@ const visiblePackages = computed(() => {
       return true
     return isDemoModeEnabled.value === true && isTestingPackage(pkg)
   })
+})
+
+const featuredPackageId = computed(() => {
+  const firstPurchasable = visiblePackages.value.find(pkg => canPurchasePackage(pkg))
+  return firstPurchasable?.id ?? null
 })
 // --- AKHIR PERBAIKAN ---
 
@@ -663,126 +669,147 @@ useHead({ title: 'Beli Paket Hotspot' })
 </script>
 
 <template>
-  <v-container fluid class="pa-0 ma-0 bg-grey-lighten-5 full-height-container">
-    <v-col cols="12" style="max-width: 1300px;" class="mx-auto">
-      <v-container fluid class="py-8 px-lg-12 px-md-6 px-sm-4">
-        <h1 class="text-h4 text-sm-h3 font-weight-bold mb-2 text-center text-grey-darken-3">
-          DAFTAR PAKET HOTSPOT
-        </h1>
-        <div class="text-center mb-6" style="min-height: 40px;">
-          <v-btn v-if="!isLoggedInForRender && !loadingUserForRender" variant="text" color="primary" @click="goToLogin">
-            <v-icon start icon="tabler-login" /> Sudah Punya Akun? Login
-          </v-btn>
-          <div v-else-if="loadingUserForRender" class="d-flex justify-center align-center text-medium-emphasis">
-            <v-progress-circular indeterminate size="20" width="2" color="primary" class="mr-2" />
-            <span>Memuat data pengguna...</span>
+  <v-container fluid class="pa-0 beli-page">
+    <header class="beli-header">
+      <div class="beli-shell d-flex align-center justify-space-between py-3 px-4 px-sm-6 px-md-8">
+        <div class="d-flex align-center">
+          <div class="beli-brand-icon mr-3">
+            <v-icon icon="tabler-wifi" color="primary" size="22" />
           </div>
-          <div v-else-if="userGreeting != null" class="d-flex justify-center align-center text-body-1 text-medium-emphasis flex-wrap">
-            <span class="mr-3">{{ userGreeting }}</span>
-            <v-btn v-if="isUserApprovedAndActive" variant="outlined" color="primary" size="small" @click="goToDashboard">
-              <v-icon start icon="tabler-layout-dashboard" /> Ke Panel
-            </v-btn>
+          <div class="text-h6 font-weight-bold">
+            Hotspot<span class="text-primary">Net</span>
           </div>
         </div>
 
-      </v-container>
-
-      <v-row class="ma-0" align="start" justify="center">
-        <v-col cols="12">
-          <v-row v-if="isLoadingPackages" justify="center" dense class="px-lg-10 px-md-4 px-sm-2">
-            <v-col v-for="n in 4" :key="`skel-pkg-${n}`" cols="12" sm="6" md="4" lg="3">
-              <v-skeleton-loader type="image, article, actions" height="320" />
-            </v-col>
-          </v-row>
-          <v-row v-else-if="fetchPackagesError" justify="center" class="px-lg-10 px-md-4 px-sm-2">
-            <v-col cols="12" md="8" lg="6">
-              <v-alert type="error" title="Gagal Memuat Paket" variant="tonal" prominent>
-                <p class="mb-4">
-                  Tidak dapat mengambil daftar paket dari server.
-                </p>
-                <v-btn color="error" @click="retryFetch">
-                  Coba Lagi
-                </v-btn>
-              </v-alert>
-            </v-col>
-          </v-row>
-          <div v-else class="px-lg-10 px-md-4 px-sm-2">
-            <div v-if="isDemoModeEnabled" class="mb-4 d-flex justify-start">
-              <v-chip color="warning" variant="flat" size="small">
-                Demo
-              </v-chip>
+        <div class="d-flex align-center ga-2 ga-sm-3">
+          <div v-if="loadingUserForRender" class="d-flex align-center text-caption text-medium-emphasis">
+            <v-progress-circular indeterminate size="18" width="2" color="primary" class="mr-2" />
+            Memuat...
+          </div>
+          <template v-else-if="isLoggedInForRender && userGreeting != null">
+            <div class="text-right d-none d-md-flex flex-column">
+              <span class="text-body-2 font-weight-bold line-height-1">{{ userGreeting }}</span>
+              <span class="text-caption text-medium-emphasis line-height-1">{{ isUserApprovedAndActive ? 'User Aktif' : 'Menunggu Aktivasi' }}</span>
             </div>
-            <v-row v-if="visiblePackages.length > 0" dense justify="center">
-              <v-col v-for="pkg in visiblePackages" :key="pkg.id" cols="12" sm="6" md="4" lg="3" class="pa-2 d-flex">
-                <v-tooltip :disabled="isDemoDisabledPackage(pkg) !== true" location="top" max-width="280">
-                  <template #activator="{ props }">
-                    <div v-bind="props" class="d-flex flex-column flex-grow-1 w-100">
-                      <v-card
-                        class="d-flex flex-column flex-grow-1"
-                        variant="outlined" hover rounded="lg"
-                        :disabled="!canPurchasePackage(pkg) || isInitiatingPayment != null || isDemoDisabledPackage(pkg)"
-                        @click="handlePackageSelection(pkg)"
-                      >
-                  <v-card-item class="text-left">
-                    <v-card-title class="text-h6 text-wrap font-weight-bold mb-2">
+            <v-btn v-if="isUserApprovedAndActive" color="primary" variant="tonal" size="small" @click="goToDashboard">
+              <v-icon icon="tabler-layout-dashboard" start />
+              Ke Panel
+            </v-btn>
+          </template>
+          <v-btn v-else color="primary" variant="tonal" size="small" @click="goToLogin">
+            <v-icon icon="tabler-login" start />
+            Login
+          </v-btn>
+        </div>
+      </div>
+    </header>
+
+    <main class="beli-shell px-4 px-sm-6 px-md-8 py-10 py-sm-12">
+      <div class="text-center mx-auto mb-10" style="max-width: 760px;">
+        <v-chip
+          :color="isDemoModeEnabled ? 'warning' : 'primary'"
+          variant="tonal"
+          size="small"
+          class="font-weight-bold mb-4"
+        >
+          {{ isDemoModeEnabled ? 'Mode Demo' : 'Paket Hotspot' }}
+        </v-chip>
+        <h1 class="text-h4 text-sm-h3 text-md-h2 font-weight-bold mb-3 text-high-emphasis">
+          Pilih Paket Internet Anda
+        </h1>
+        <p class="text-body-1 text-sm-h6 text-medium-emphasis">
+          Pilih paket yang sesuai kebutuhan dan lanjutkan pembayaran dengan aman melalui Midtrans.
+        </p>
+      </div>
+
+      <v-row v-if="isLoadingPackages" dense>
+        <v-col v-for="n in 6" :key="`skel-pkg-${n}`" cols="12" sm="6" md="4" lg="3">
+          <v-skeleton-loader class="beli-skeleton" type="heading, paragraph, paragraph, button" />
+        </v-col>
+      </v-row>
+
+      <v-row v-else-if="fetchPackagesError" justify="center">
+        <v-col cols="12" md="8" lg="6">
+          <v-alert type="error" title="Gagal Memuat Paket" variant="tonal" prominent>
+            <p class="mb-4">Tidak dapat mengambil daftar paket dari server.</p>
+            <v-btn color="error" @click="retryFetch">Coba Lagi</v-btn>
+          </v-alert>
+        </v-col>
+      </v-row>
+
+      <v-row v-else-if="visiblePackages.length > 0" dense>
+        <v-col v-for="pkg in visiblePackages" :key="pkg.id" cols="12" sm="6" md="4" lg="3" class="d-flex">
+          <v-tooltip :disabled="isDemoDisabledPackage(pkg) !== true" location="top" max-width="280">
+            <template #activator="{ props }">
+              <div v-bind="props" class="w-100 d-flex">
+                <v-card
+                  class="package-card d-flex flex-column flex-grow-1"
+                  :class="{
+                    'package-card--featured': pkg.id === featuredPackageId,
+                    'package-card--disabled': !canPurchasePackage(pkg) || isDemoDisabledPackage(pkg),
+                  }"
+                  rounded="xl"
+                  :disabled="!canPurchasePackage(pkg) || isInitiatingPayment != null || isDemoDisabledPackage(pkg)"
+                  @click="handlePackageSelection(pkg)"
+                >
+                  <v-card-item class="pb-2">
+                    <v-chip
+                      v-if="pkg.id === featuredPackageId"
+                      color="primary"
+                      size="x-small"
+                      variant="flat"
+                      class="mb-3 font-weight-bold"
+                    >
+                      Tersedia
+                    </v-chip>
+                    <v-card-title class="text-h6 font-weight-bold text-wrap px-0 mb-1">
                       {{ pkg.name }}
                     </v-card-title>
-                    <v-card-subtitle class="text-h5 font-weight-bold text-primary">
+                    <v-card-subtitle class="text-h5 font-weight-bold text-primary px-0 opacity-100">
                       {{ formatCurrency(pkg.price) }}
                     </v-card-subtitle>
                   </v-card-item>
 
-                  <v-card-text class="flex-grow-1 py-2 text-left">
-                    <v-list lines="one" density="compact" bg-color="transparent" class="py-0">
-                      <v-list-item>
-                        <template #prepend>
-                          <v-icon icon="tabler-database" size="small" class="mr-2" />
-                        </template>
-                        <v-list-item-title class="text-body-2">
-                          Kuota: <span class="font-weight-medium">{{ formatQuota(pkg.data_quota_gb) }}</span>
-                        </v-list-item-title>
+                  <v-card-text class="pt-0 pb-2 flex-grow-1">
+                    <div class="package-detail-wrap pa-3 rounded-lg mb-4">
+                      <v-list density="compact" lines="one" bg-color="transparent" class="py-0">
+                        <v-list-item class="px-0">
+                          <template #prepend><v-icon icon="tabler-database" size="small" class="mr-2" /></template>
+                          <v-list-item-title class="text-body-2">Kuota: <span class="font-weight-medium">{{ formatQuota(pkg.data_quota_gb) }}</span></v-list-item-title>
+                        </v-list-item>
+                        <v-list-item class="px-0">
+                          <template #prepend><v-icon icon="tabler-gauge" size="small" class="mr-2" /></template>
+                          <v-list-item-title class="text-body-2">Kecepatan: <span class="font-weight-medium">Unlimited</span></v-list-item-title>
+                        </v-list-item>
+                        <v-list-item class="px-0">
+                          <template #prepend><v-icon icon="tabler-calendar-time" size="small" class="mr-2" /></template>
+                          <v-list-item-title class="text-body-2">Aktif: <span class="font-weight-medium">{{ pkg.duration_days }} Hari</span></v-list-item-title>
+                        </v-list-item>
+                      </v-list>
+                    </div>
+
+                    <v-list density="compact" lines="one" bg-color="transparent" class="py-0 package-metrics">
+                      <v-list-item class="px-0">
+                        <template #prepend><v-icon icon="tabler-receipt" size="small" class="mr-2" /></template>
+                        <v-list-item-title class="text-body-2">Harga / Hari: <span class="font-weight-medium">{{ formatPricePerDay(pkg.price, pkg.duration_days) }}</span></v-list-item-title>
                       </v-list-item>
-                      <v-list-item>
-                        <template #prepend>
-                          <v-icon icon="tabler-gauge" size="small" class="mr-2" />
-                        </template>
-                        <v-list-item-title class="text-body-2">
-                          Kecepatan: <span class="font-weight-medium">Unlimited</span>
-                        </v-list-item-title>
-                      </v-list-item>
-                      <v-list-item>
-                        <template #prepend>
-                          <v-icon icon="tabler-calendar-time" size="small" class="mr-2" />
-                        </template>
-                        <v-list-item-title class="text-body-2">
-                          Aktif: <span class="font-weight-medium">{{ pkg.duration_days }} Hari</span>
-                        </v-list-item-title>
-                      </v-list-item>
-                      <v-list-item>
-                        <template #prepend>
-                          <v-icon icon="tabler-receipt" size="small" class="mr-2" />
-                        </template>
-                        <v-list-item-title class="text-body-2">
-                          Harga / Hari: <span class="font-weight-medium">{{ formatPricePerDay(pkg.price, pkg.duration_days) }}</span>
-                        </v-list-item-title>
-                      </v-list-item>
-                      <v-list-item>
-                        <template #prepend>
-                          <v-icon icon="tabler-math-function" size="small" class="mr-2" />
-                        </template>
-                        <v-list-item-title class="text-body-2">
-                          Harga / GB: <span class="font-weight-medium">{{ formatPricePerGb(pkg.price, pkg.data_quota_gb) }}</span>
-                        </v-list-item-title>
+                      <v-list-item class="px-0">
+                        <template #prepend><v-icon icon="tabler-chart-pie" size="small" class="mr-2" /></template>
+                        <v-list-item-title class="text-body-2">Harga / GB: <span class="font-weight-medium">{{ formatPricePerGb(pkg.price, pkg.data_quota_gb) }}</span></v-list-item-title>
                       </v-list-item>
                     </v-list>
-                    <p v-if="pkg.description != null && pkg.description !== ''" class="text-caption text-medium-emphasis mt-3 px-1">
+
+                    <p v-if="pkg.description != null && pkg.description !== ''" class="text-caption text-medium-emphasis mt-3 mb-0">
                       {{ pkg.description }}
                     </p>
                   </v-card-text>
 
-                  <v-card-actions class="pa-4 mt-auto">
+                  <v-card-actions class="pa-4 pt-2 mt-auto">
                     <v-btn
-                      block color="primary" variant="flat" size="large"
+                      block
+                      color="primary"
+                      variant="flat"
+                      size="large"
                       :disabled="!canPurchasePackage(pkg) || isInitiatingPayment != null || isDemoDisabledPackage(pkg)"
                       :loading="isInitiatingPayment === pkg.id"
                       @click.stop="handlePackageSelection(pkg)"
@@ -790,24 +817,38 @@ useHead({ title: 'Beli Paket Hotspot' })
                       {{ getPackageButtonLabel(pkg) }}
                     </v-btn>
                   </v-card-actions>
-                      </v-card>
-                    </div>
-                  </template>
-                  {{ getPackageDisabledTooltip(pkg) }}
-                </v-tooltip>
-              </v-col>
-            </v-row>
-            <v-row v-else-if="!isLoadingPackages" justify="center">
-              <v-col cols="12" class="text-center py-16 text-medium-emphasis">
-                <v-icon icon="tabler-package-off" size="x-large" class="mb-5" />
-                <p class="text-h6">
-                  Belum ada paket yang tersedia.
-                </p>
-              </v-col>
-            </v-row>
-          </div>
+                </v-card>
+              </div>
+            </template>
+            {{ getPackageDisabledTooltip(pkg) }}
+          </v-tooltip>
         </v-col>
       </v-row>
+
+      <v-row v-else justify="center">
+        <v-col cols="12" md="8" lg="6">
+          <v-alert type="info" variant="tonal" prominent>
+            Belum ada paket yang tersedia.
+          </v-alert>
+        </v-col>
+      </v-row>
+    </main>
+
+    <footer class="beli-footer mt-auto">
+      <div class="beli-shell d-flex flex-column flex-sm-row align-center justify-space-between px-4 px-sm-6 px-md-8 py-5 ga-3">
+        <p class="text-caption text-medium-emphasis mb-0 text-center text-sm-left">
+          © 2026 {{ runtimeConfig.public.merchantName }}. All rights reserved.
+        </p>
+        <div class="d-flex align-center ga-4 text-caption">
+          <NuxtLink class="footer-link" to="/merchant-center/privacy">
+            Privacy
+          </NuxtLink>
+          <NuxtLink class="footer-link" to="/merchant-center/terms">
+            Syarat & Ketentuan
+          </NuxtLink>
+        </div>
+      </div>
+    </footer>
 
       <v-dialog v-if="isHydrated" v-model="showPaymentMethodDialog" max-width="560px" scrim="grey-darken-3" eager>
         <v-card rounded="lg">
@@ -956,27 +997,88 @@ useHead({ title: 'Beli Paket Hotspot' })
           <v-btn icon="tabler-x" variant="text" @click="snackbarVisible = false" />
         </template>
       </v-snackbar>
-    </v-col>
   </v-container>
 </template>
 
 <style scoped>
-/* DIUBAH: Penambahan style untuk centering halaman penuh */
-.full-height-container {
+.beli-page {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  align-items: center;
   min-height: 100vh;
-  text-align: center;
+  background: rgb(var(--v-theme-background));
 }
 
-.v-card:hover:not([disabled]) {
-  border-color: rgba(var(--v-theme-primary), 0.6);
-  box-shadow: 0 6px 14px rgba(var(--v-theme-primary), 0.1);
+.beli-shell {
+  width: 100%;
+  max-width: 1340px;
+  margin: 0 auto;
 }
+
+.beli-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  border-bottom: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  background: rgba(var(--v-theme-surface), 0.96);
+  backdrop-filter: blur(10px);
+}
+
+.beli-brand-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(var(--v-theme-primary), 0.12);
+}
+
+.package-card {
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  background: rgba(var(--v-theme-surface), 0.7);
+  backdrop-filter: blur(8px);
+  transition: all 0.22s ease;
+}
+
+.package-card--featured {
+  border: 2px solid rgba(var(--v-theme-primary), 0.8);
+  box-shadow: 0 8px 24px rgba(var(--v-theme-primary), 0.2);
+}
+
+.package-card--disabled {
+  opacity: 0.66;
+}
+
+.package-card:hover:not([disabled]) {
+  transform: translateY(-4px);
+  border-color: rgba(var(--v-theme-primary), 0.6);
+  box-shadow: 0 8px 26px rgba(var(--v-theme-primary), 0.16);
+}
+
+.package-detail-wrap {
+  background: rgba(var(--v-theme-surface), 0.52);
+}
+
+.beli-skeleton {
+  border-radius: 16px;
+}
+
+.beli-footer {
+  border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  background: rgba(var(--v-theme-surface), 0.92);
+}
+
+.footer-link {
+  color: rgba(var(--v-theme-on-surface), 0.66);
+  text-decoration: none;
+}
+
+.footer-link:hover {
+  color: rgb(var(--v-theme-primary));
+}
+
 .v-list-item {
-  padding-inline: 0px !important;
+  padding-inline: 0 !important;
 }
 
 .payment-method-label {
@@ -987,6 +1089,12 @@ useHead({ title: 'Beli Paket Hotspot' })
 .payment-method-text {
   display: flex;
   flex-direction: column;
+}
+
+@media (max-width: 600px) {
+  .beli-header {
+    position: relative;
+  }
 }
 
 :deep(.payment-method-radio .v-selection-control) {
