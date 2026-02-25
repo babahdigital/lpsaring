@@ -304,7 +304,8 @@ useHead({ title: 'Setting Aplikasi' })
       <VCardText>
         <VProgressLinear v-if="isLoading" indeterminate class="mb-4" />
 
-        <VWindow v-else v-model="tab" class="disable-tab-transition settings-window" :touch="false">
+        <form v-else @submit.prevent="handleSaveChanges">
+          <VWindow v-model="tab" class="disable-tab-transition settings-window" :touch="false">
           <VWindowItem value="umum">
             <div>
               <div class="d-flex flex-column gap-y-4">
@@ -383,9 +384,9 @@ useHead({ title: 'Setting Aplikasi' })
                   class="w-100 w-sm-auto"
                   color="primary"
                   variant="elevated"
+                  type="submit"
                   :loading="isSaving"
                   prepend-icon="mdi-content-save-outline"
-                  @click="handleSaveChanges"
                 >
                   Simpan Perubahan
                 </VBtn>
@@ -459,9 +460,9 @@ useHead({ title: 'Setting Aplikasi' })
                   class="w-100 w-sm-auto"
                   color="primary"
                   variant="elevated"
+                  type="submit"
                   :loading="isSaving"
                   prepend-icon="mdi-content-save-outline"
-                  @click="handleSaveChanges"
                 >
                   Simpan Perubahan
                 </VBtn>
@@ -794,16 +795,17 @@ useHead({ title: 'Setting Aplikasi' })
                   class="w-100 w-sm-auto"
                   color="primary"
                   variant="elevated"
+                  type="submit"
                   :loading="isSaving"
                   prepend-icon="mdi-content-save-outline"
-                  @click="handleSaveChanges"
                 >
                   Simpan Perubahan
                 </VBtn>
               </VCardActions>
             </div>
           </VWindowItem>
-        </VWindow>
+          </VWindow>
+        </form>
       </VCardText>
     </VCard>
   </div>

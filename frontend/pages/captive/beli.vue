@@ -61,14 +61,19 @@ const { add: addSnackbar } = useSnackbar()
 const packagesRequest = useFetch<PackagesApiResponse>('/packages', {
   key: 'captivePackages',
   lazy: true,
-  server: true,
+  server: false,
   $fetch: $api,
 })
 
 const { pending: isLoadingPackages, error: fetchPackagesError, refresh: refreshPackages } = packagesRequest
 const packageApiResponse = packagesRequest.data as Ref<PackagesApiResponse | null>
 const packages = computed(() => (packageApiResponse.value?.data ?? []))
-const isDemoModeEnabled = computed(() => isLoggedIn.value === true && user.value?.is_demo_user === true)
+const isHydrated = ref(false)
+const isDemoModeEnabled = computed(() => {
+  if (!isHydrated.value)
+    return false
+  return isLoggedIn.value === true && user.value?.is_demo_user === true
+})
 
 function isTestingPackage(pkg: Package): boolean {
   return String(pkg?.name ?? '').trim().toLowerCase().includes('testing')
@@ -388,6 +393,7 @@ function handlePackageSelection(pkg: Package) {
 }
 
 onMounted(async () => {
+  isHydrated.value = true
   if (authStore.initialAuthCheckDone !== true) {
     await authStore.initializeAuth()
   }
