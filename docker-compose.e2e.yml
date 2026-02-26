@@ -60,6 +60,9 @@ services:
       # Pastikan OTP bypass bisa dipakai oleh script E2E
       OTP_ALLOW_BYPASS: "True"
       OTP_BYPASS_CODE: "000000"
+      # Hindari Fontconfig error saat cache directory pada mount /app tidak writable
+      XDG_CACHE_HOME: "/tmp/.cache"
+      FC_CACHEDIR: "/tmp/.cache/fontconfig"
     volumes:
       - ./backend:/app
       - backups_e2e:/app/backups
@@ -94,6 +97,9 @@ services:
     container_name: hotspot_flask_migrate_e2e
     env_file:
       - ./backend/.env.e2e
+    environment:
+      XDG_CACHE_HOME: "/tmp/.cache"
+      FC_CACHEDIR: "/tmp/.cache/fontconfig"
     volumes:
       - ./backend:/app
     command: python -m flask db upgrade
@@ -113,6 +119,8 @@ services:
       - ./backend/.env.e2e
     environment:
       ENABLE_WHATSAPP_NOTIFICATIONS: "False"
+      XDG_CACHE_HOME: "/tmp/.cache"
+      FC_CACHEDIR: "/tmp/.cache/fontconfig"
     volumes:
       - ./backend:/app
     command: celery -A app.extensions.celery_app worker --loglevel=info
@@ -136,6 +144,8 @@ services:
       - ./backend/.env.e2e
     environment:
       ENABLE_WHATSAPP_NOTIFICATIONS: "False"
+      XDG_CACHE_HOME: "/tmp/.cache"
+      FC_CACHEDIR: "/tmp/.cache/fontconfig"
     volumes:
       - ./backend:/app
     command: celery -A app.extensions.celery_app beat --loglevel=info

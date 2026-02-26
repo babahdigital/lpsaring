@@ -74,8 +74,9 @@ Konfigurasi:
 
 Perilaku saat `debt_mb >= QUOTA_DEBT_LIMIT_MB`:
 1) Sistem meng-enforce block MikroTik (idempotent):
-   - ip-binding type `blocked` untuk perangkat authorized.
+   - profile user dipaksa ke `MIKROTIK_BLOCKED_PROFILE`.
    - firewall address-list `MIKROTIK_ADDRESS_LIST_BLOCKED` untuk IP perangkat (jika diketahui).
+   - ip-binding tetap non-blocked (`regular`).
 2) Sistem menandai DB `is_blocked=True` + `blocked_reason=quota_debt_limit|...` (sekali).
 3) Sistem mengirim WhatsApp:
    - ke user,

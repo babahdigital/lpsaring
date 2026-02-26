@@ -19,9 +19,6 @@ from app.infrastructure.db.models import (
     DailyUsageLog,
     Transaction,
     UserDevice,
-    Package,
-    NotificationRecipient,
-    NotificationType,
 )
 from app.infrastructure.gateways.mikrotik_client import (
     get_mikrotik_connection,
@@ -46,8 +43,6 @@ from app.services.device_management_service import (
 from app.utils.formatters import format_to_local_phone, get_app_date_time_strings, get_app_local_datetime, round_mb
 from app.utils.quota_debt import (
     compute_debt_mb,
-    estimate_debt_rp_from_cheapest_package,
-    format_rupiah,
 )
 from app.utils.metrics_utils import increment_metric
 
@@ -140,6 +135,62 @@ def _resolve_auto_quota_debt_for_limit(user: User) -> float:
         return float(getattr(user, "quota_debt_auto_mb", 0) or 0.0)
     except Exception:
         return float(compute_debt_mb(float(user.total_quota_purchased_mb or 0.0), float(user.total_quota_used_mb or 0.0)))
+
+
+def _is_auto_debt_blocked(user: User) -> bool:
+    if not bool(getattr(user, "is_blocked", False)):
+        return False
+    reason = str(getattr(user, "blocked_reason", "") or "").strip().lower()
+    return reason.startswith("quota_debt_limit|") or reason.startswith("quota_auto_debt_limit|")
+
+
+def _apply_auto_debt_limit_block_state(user: User, source: str = "sync_usage") -> bool:
+    """Apply auto debt threshold policy and return whether blocked list/profile should be forced.
+
+    Policy:
+    - If auto debt >= QUOTA_DEBT_LIMIT_MB: set app blocked with debt-limit reason.
+    - If previously auto-debt-blocked and now below limit (or limit disabled): unblock.
+    - Unlimited/KOMANDAN are excluded from this threshold enforcement.
+    """
+    is_auto_blocked = _is_auto_debt_blocked(user)
+
+    if bool(getattr(user, "is_unlimited_user", False)) or getattr(user, "role", None) == UserRole.KOMANDAN:
+        if is_auto_blocked:
+            user.is_blocked = False
+            user.blocked_reason = None
+            user.blocked_at = None
+            user.blocked_by_id = None
+        return False
+
+    limit_mb = float(settings_service.get_setting_as_int("QUOTA_DEBT_LIMIT_MB", 0) or 0)
+    if limit_mb <= 0:
+        if is_auto_blocked:
+            user.is_blocked = False
+            user.blocked_reason = None
+            user.blocked_at = None
+            user.blocked_by_id = None
+        return False
+
+    auto_debt_mb = float(_resolve_auto_quota_debt_for_limit(user) or 0.0)
+    reached_limit = auto_debt_mb >= limit_mb
+
+    if reached_limit:
+        if (not bool(getattr(user, "is_blocked", False))) or is_auto_blocked:
+            user.is_blocked = True
+            user.blocked_reason = (
+                f"quota_debt_limit|debt_mb={auto_debt_mb:.2f}|limit_mb={int(limit_mb)}|source={source}"
+            )
+            if getattr(user, "blocked_at", None) is None:
+                user.blocked_at = datetime.now(dt_timezone.utc)
+            user.blocked_by_id = None
+        return True
+
+    if is_auto_blocked:
+        user.is_blocked = False
+        user.blocked_reason = None
+        user.blocked_at = None
+        user.blocked_by_id = None
+    return False
 
 
 def _resolve_target_profile(user: User, remaining_mb: float, remaining_percent: float, is_expired: bool) -> str:
@@ -403,7 +454,13 @@ def _send_access_status_notification(
 
 
 def _sync_address_list_status(
-    api: object, user: User, username_08: str, remaining_mb: float, remaining_percent: float, is_expired: bool
+    api: object,
+    user: User,
+    username_08: str,
+    remaining_mb: float,
+    remaining_percent: float,
+    is_expired: bool,
+    force_blocked: bool = False,
 ) -> bool:
     list_active = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active"
     list_fup = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup"
@@ -415,8 +472,9 @@ def _sync_address_list_status(
 
     target_list = None
     hard_block = is_network_hard_block_required(user)
+    blocked_for_list = bool(force_blocked or bool(getattr(user, "is_blocked", False)))
 
-    if hard_block:
+    if blocked_for_list:
         target_list = list_blocked
     elif is_expired:
         target_list = list_expired
@@ -431,7 +489,7 @@ def _sync_address_list_status(
     else:
         target_list = list_active
 
-    if hard_block:
+    if blocked_for_list:
         status_value = "blocked"
     elif is_expired:
         status_value = "expired"
@@ -507,7 +565,13 @@ def _sync_address_list_status(
 
 
 def _sync_address_list_status_for_ip(
-    api: object, user: User, ip_address: str, remaining_mb: float, remaining_percent: float, is_expired: bool
+    api: object,
+    user: User,
+    ip_address: str,
+    remaining_mb: float,
+    remaining_percent: float,
+    is_expired: bool,
+    force_blocked: bool = False,
 ) -> bool:
     if not ip_address:
         return False
@@ -522,8 +586,9 @@ def _sync_address_list_status_for_ip(
 
     target_list = None
     hard_block = is_network_hard_block_required(user)
+    blocked_for_list = bool(force_blocked or bool(getattr(user, "is_blocked", False)))
 
-    if hard_block:
+    if blocked_for_list:
         target_list = list_blocked
     elif is_expired:
         target_list = list_expired
@@ -539,7 +604,7 @@ def _sync_address_list_status_for_ip(
         target_list = list_active
 
     username_08 = format_to_local_phone(user.phone_number)
-    if hard_block:
+    if blocked_for_list:
         status_value = "blocked"
     elif is_expired:
         status_value = "expired"
@@ -742,42 +807,6 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
         logger.info("Skip sync_hotspot_usage_and_profiles: global lock active")
         return counters
 
-    debt_limit_mb = settings_service.get_setting_as_int("QUOTA_DEBT_LIMIT_MB", 0)
-
-    ref_packages = []
-    try:
-        ref_packages = (
-            db.session.execute(
-                select(Package)
-                .where(Package.is_active.is_(True))
-                .where(Package.data_quota_gb.is_not(None))
-                .where(Package.data_quota_gb > 0)
-                .where(Package.price.is_not(None))
-                .where(Package.price > 0)
-                .order_by(Package.data_quota_gb.asc(), Package.price.asc())
-            )
-            .scalars()
-            .all()
-        )
-    except Exception:
-        ref_packages = []
-
-    def _pick_ref_pkg_for_debt_mb(value_mb: float) -> Package | None:
-        try:
-            mb = float(value_mb or 0)
-        except Exception:
-            mb = 0.0
-        if mb <= 0 or not ref_packages:
-            return None
-        debt_gb = mb / 1024.0
-        for pkg in ref_packages:
-            try:
-                if float(pkg.data_quota_gb or 0) >= debt_gb:
-                    return pkg
-            except Exception:
-                continue
-        return ref_packages[-1] if ref_packages else None
-
     try:
         with get_mikrotik_connection() as api:
             if not api:
@@ -836,7 +865,8 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
 
                     remaining_mb, remaining_percent = _calculate_remaining(user)
 
-                    debt_mb = _resolve_auto_quota_debt_for_limit(user)
+                    force_blocked_status = _apply_auto_debt_limit_block_state(user, source="sync_usage")
+                    blocked_profile = settings_service.get_setting("MIKROTIK_BLOCKED_PROFILE", "inactive") or "inactive"
 
                     # Quota-debt hard block is NOT applied to:
                     # - unlimited users
@@ -852,77 +882,6 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                         is_expired = bool(expiry_local and expiry_local < now_local)
                         target_profile = _resolve_target_profile(user, remaining_mb, remaining_percent, is_expired)
 
-                    elif debt_limit_mb > 0 and debt_mb >= float(debt_limit_mb):
-                        now_utc = datetime.now(dt_timezone.utc)
-                        debt_mb_text = f"{round_mb(debt_mb)}"
-
-                        # Only flip DB blocked flags + send notifications once.
-                        if not bool(user.is_blocked):
-                            user.is_blocked = True
-                            ref_pkg = _pick_ref_pkg_for_debt_mb(debt_mb)
-                            ref_pkg_price = int(getattr(ref_pkg, "price", 0) or 0) if ref_pkg else 0
-                            ref_pkg_quota_gb = float(getattr(ref_pkg, "data_quota_gb", 0) or 0) if ref_pkg else 0
-                            ref_pkg_name = str(getattr(ref_pkg, "name", "") or "") or None if ref_pkg else None
-
-                            estimate = estimate_debt_rp_from_cheapest_package(
-                                debt_mb=debt_mb,
-                                cheapest_package_price_rp=ref_pkg_price,
-                                cheapest_package_quota_gb=ref_pkg_quota_gb,
-                                cheapest_package_name=ref_pkg_name,
-                            )
-                            estimate_rp = estimate.estimated_rp_rounded
-                            estimate_rp_text = format_rupiah(estimate_rp) if isinstance(estimate_rp, int) else "-"
-
-                            user.blocked_reason = (
-                                f"quota_auto_debt_limit|debt_mb={debt_mb_text}"
-                                + (f"|estimated_rp={estimate_rp}" if isinstance(estimate_rp, int) else "")
-                                + (f"|base_pkg={ref_pkg_name}" if ref_pkg_name else "")
-                            )
-                            user.blocked_at = now_utc
-
-                            if settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") == "True":
-                                try:
-                                    user_msg = get_notification_message(
-                                        "user_quota_debt_blocked",
-                                        {
-                                            "full_name": user.full_name,
-                                            "phone_number": user.phone_number,
-                                            "debt_mb": debt_mb_text,
-                                            "estimated_rp": estimate_rp_text,
-                                            "base_package_name": ref_pkg_name or "-",
-                                        },
-                                    )
-                                    send_whatsapp_message(user.phone_number, user_msg)
-
-                                    recipients_query = (
-                                        select(User)
-                                        .join(NotificationRecipient, User.id == NotificationRecipient.admin_user_id)
-                                        .where(
-                                            NotificationRecipient.notification_type
-                                            == NotificationType.QUOTA_DEBT_LIMIT_EXCEEDED,
-                                            User.is_active,
-                                        )
-                                    )
-                                    admins = db.session.scalars(recipients_query).all()
-                                    if admins:
-                                        admin_msg = get_notification_message(
-                                            "admin_quota_debt_blocked",
-                                            {
-                                                "full_name": user.full_name,
-                                                "phone_number": user.phone_number,
-                                                "debt_mb": debt_mb_text,
-                                                "estimated_rp": estimate_rp_text,
-                                                "base_package_name": ref_pkg_name or "-",
-                                            },
-                                        )
-                                        for admin in admins:
-                                            send_whatsapp_message(admin.phone_number, admin_msg)
-                                except Exception:
-                                    logger.exception("Gagal kirim notifikasi quota debt limit untuk user %s", user.id)
-
-                        counters["processed"] += 1
-                        _release_sync_lock(redis_client, user.id)
-                        continue
                     else:
                         now_local = get_app_local_datetime()
                         expiry_local = (
@@ -930,6 +889,11 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                         )
                         is_expired = bool(expiry_local and expiry_local < now_local)
                         target_profile = _resolve_target_profile(user, remaining_mb, remaining_percent, is_expired)
+
+                    if bool(getattr(user, "is_blocked", False)):
+                        target_profile = blocked_profile
+                        if _is_auto_debt_blocked(user):
+                            force_blocked_status = True
 
                     if target_profile and user.mikrotik_profile_name != target_profile:
                         success_profile, message = set_hotspot_user_profile(
@@ -977,13 +941,27 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                     ok_any_ip = False
                     for ip_address in candidate_ips:
                         if _sync_address_list_status_for_ip(
-                            api, user, ip_address, remaining_mb, remaining_percent, is_expired
+                            api,
+                            user,
+                            ip_address,
+                            remaining_mb,
+                            remaining_percent,
+                            is_expired,
+                            force_blocked=force_blocked_status,
                         ):
                             ok_any_ip = True
 
                     # Fallback: gunakan resolusi IP by-username (active/host) bila belum ada IP yang valid.
                     if not ok_any_ip:
-                        _sync_address_list_status(api, user, username_08, remaining_mb, remaining_percent, is_expired)
+                        _sync_address_list_status(
+                            api,
+                            user,
+                            username_08,
+                            remaining_mb,
+                            remaining_percent,
+                            is_expired,
+                            force_blocked=force_blocked_status,
+                        )
 
                     if settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") == "True":
                         _send_quota_notifications(user, remaining_percent, remaining_mb)
@@ -1023,6 +1001,7 @@ def sync_address_list_for_single_user(user: User, client_ip: Optional[str] = Non
     now_local = get_app_local_datetime()
     expiry_local = get_app_local_datetime(user.quota_expiry_date) if user.quota_expiry_date else None
     is_expired = bool(expiry_local and expiry_local < now_local)
+    force_blocked_status = _apply_auto_debt_limit_block_state(user, source="sync_single")
 
     with get_mikrotik_connection() as api:
         if not api:
@@ -1041,10 +1020,26 @@ def sync_address_list_for_single_user(user: User, client_ip: Optional[str] = Non
                     ips.append(ip_str)
 
         for ip_address in ips:
-            if _sync_address_list_status_for_ip(api, user, ip_address, remaining_mb, remaining_percent, is_expired):
+            if _sync_address_list_status_for_ip(
+                api,
+                user,
+                ip_address,
+                remaining_mb,
+                remaining_percent,
+                is_expired,
+                force_blocked=force_blocked_status,
+            ):
                 ok_any_ip = True
 
-        ok_user_ip = _sync_address_list_status(api, user, username_08, remaining_mb, remaining_percent, is_expired)
+        ok_user_ip = _sync_address_list_status(
+            api,
+            user,
+            username_08,
+            remaining_mb,
+            remaining_percent,
+            is_expired,
+            force_blocked=force_blocked_status,
+        )
         return bool(ok_any_ip or ok_user_ip)
 
 
@@ -1053,7 +1048,10 @@ def resolve_target_profile_for_user(user: User) -> str:
 
     This is used by actions like quota injection so profile changes (ex: leaving FUP) can be applied immediately.
     """
+    _apply_auto_debt_limit_block_state(user, source="resolve_profile")
     remaining_mb, remaining_percent = _calculate_remaining(user)
+    if bool(getattr(user, "is_blocked", False)):
+        return settings_service.get_setting("MIKROTIK_BLOCKED_PROFILE", "inactive") or "inactive"
     now_local = get_app_local_datetime()
     expiry_local = get_app_local_datetime(user.quota_expiry_date) if user.quota_expiry_date else None
     is_expired = bool(expiry_local and expiry_local < now_local)

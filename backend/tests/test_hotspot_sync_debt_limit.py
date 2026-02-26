@@ -65,3 +65,52 @@ def test_unlimited_user_with_expired_time_uses_expired_profile(monkeypatch):
     )
 
     assert result == "profile-expired"
+
+
+def test_apply_auto_debt_limit_block_state_sets_block_when_limit_reached(monkeypatch):
+    monkeypatch.setattr(
+        svc.settings_service,
+        "get_setting_as_int",
+        lambda key, default=0: 500 if key == "QUOTA_DEBT_LIMIT_MB" else default,
+    )
+
+    user = SimpleNamespace(
+        is_unlimited_user=False,
+        role=None,
+        is_blocked=False,
+        blocked_reason=None,
+        blocked_at=None,
+        blocked_by_id=None,
+        quota_debt_auto_mb=650.0,
+    )
+
+    forced = svc._apply_auto_debt_limit_block_state(user, source="test")
+
+    assert forced is True
+    assert user.is_blocked is True
+    assert str(user.blocked_reason).startswith("quota_debt_limit|")
+
+
+def test_apply_auto_debt_limit_block_state_unblocks_previous_auto_block_below_limit(monkeypatch):
+    monkeypatch.setattr(
+        svc.settings_service,
+        "get_setting_as_int",
+        lambda key, default=0: 500 if key == "QUOTA_DEBT_LIMIT_MB" else default,
+    )
+
+    user = SimpleNamespace(
+        is_unlimited_user=False,
+        role=None,
+        is_blocked=True,
+        blocked_reason="quota_debt_limit|debt_mb=700.00|limit_mb=500|source=sync_usage",
+        blocked_at=datetime.now(timezone.utc),
+        blocked_by_id=None,
+        quota_debt_auto_mb=120.0,
+    )
+
+    forced = svc._apply_auto_debt_limit_block_state(user, source="test")
+
+    assert forced is False
+    assert user.is_blocked is False
+    assert user.blocked_reason is None
+    assert user.blocked_at is None

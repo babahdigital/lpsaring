@@ -525,6 +525,9 @@ def update_user_by_admin_comprehensive(
                 debt_dt_utc = getattr(_entry, "created_at", None) or datetime.now(dt_timezone.utc)
                 debt_date_text = get_app_local_datetime(debt_dt_utc).strftime("%d-%m-%Y %H:%M")
                 total_debt_mb = float(getattr(target_user, "quota_debt_total_mb", 0) or 0)
+                total_manual_debt_mb = int(getattr(target_user, "manual_debt_mb", 0) or 0)
+                auto_deducted_mb = int(changes.get("debt_paid_auto_before_credit_mb") or 0)
+                effective_quota_mb = int(changes.get("debt_net_quota_mb") or 0)
                 _send_whatsapp_notification(
                     target_user.phone_number,
                     "user_debt_added",
@@ -535,6 +538,11 @@ def update_user_by_admin_comprehensive(
                         "debt_gb": f"{(float(debt_add_mb_pkg) / 1024.0):.2f}",
                         "total_debt_mb": int(total_debt_mb),
                         "total_debt_gb": f"{(total_debt_mb / 1024.0):.2f}",
+                        "total_manual_debt_mb": int(total_manual_debt_mb),
+                        "total_manual_debt_gb": f"{(float(total_manual_debt_mb) / 1024.0):.2f}",
+                        "auto_debt_deducted_mb": int(auto_deducted_mb),
+                        "effective_quota_mb": int(effective_quota_mb),
+                        "effective_quota_gb": f"{(float(effective_quota_mb) / 1024.0):.2f} GB",
                     },
                 )
             except Exception:
@@ -591,6 +599,9 @@ def update_user_by_admin_comprehensive(
                 debt_dt_utc = getattr(_entry, "created_at", None) or datetime.now(dt_timezone.utc)
                 debt_date_text = get_app_local_datetime(debt_dt_utc).strftime("%d-%m-%Y %H:%M")
                 total_debt_mb = float(getattr(target_user, "quota_debt_total_mb", 0) or 0)
+                total_manual_debt_mb = int(getattr(target_user, "manual_debt_mb", 0) or 0)
+                auto_deducted_mb = int(changes.get("debt_paid_auto_before_credit_mb") or 0)
+                effective_quota_mb = int(changes.get("debt_net_quota_mb") or 0)
                 _send_whatsapp_notification(
                     target_user.phone_number,
                     "user_debt_added",
@@ -601,6 +612,11 @@ def update_user_by_admin_comprehensive(
                         "debt_gb": f"{(float(debt_add_mb) / 1024.0):.2f}",
                         "total_debt_mb": int(total_debt_mb),
                         "total_debt_gb": f"{(total_debt_mb / 1024.0):.2f}",
+                        "total_manual_debt_mb": int(total_manual_debt_mb),
+                        "total_manual_debt_gb": f"{(float(total_manual_debt_mb) / 1024.0):.2f}",
+                        "auto_debt_deducted_mb": int(auto_deducted_mb),
+                        "effective_quota_mb": int(effective_quota_mb),
+                        "effective_quota_gb": f"{(float(effective_quota_mb) / 1024.0):.2f} GB",
                     },
                 )
             except Exception:
@@ -647,12 +663,9 @@ def update_user_by_admin_comprehensive(
     if data.get("unlimited_time") is True:
         add_days = 0
     if add_gb > 0 or add_days > 0:
-        # Requirement: inject must be blocked when user has any quota debt.
-        try:
-            debt_total_mb = float(getattr(target_user, "quota_debt_total_mb", 0) or 0)
-        except Exception:
-            debt_total_mb = 0.0
-        if debt_total_mb > 0 and not bool(getattr(target_user, "is_unlimited_user", False)):
+        # Requirement: inject is blocked only when MANUAL debt exists.
+        manual_debt_mb = int(getattr(target_user, "manual_debt_mb", 0) or 0)
+        if manual_debt_mb > 0 and not bool(getattr(target_user, "is_unlimited_user", False)):
             return (
                 False,
                 "Inject kuota tidak bisa dilakukan karena user masih memiliki tunggakan. "

@@ -64,6 +64,25 @@ def _normalize_link_value(value: Any, fallback: str = "") -> str:
     return value_str
 
 
+def _humanize_access_reason(reason: Any) -> str:
+    reason_raw = str(reason or "").strip()
+    if not reason_raw:
+        return "Tidak disebutkan"
+
+    reason_lower = reason_raw.lower()
+
+    if reason_lower.startswith("quota_auto_debt_limit|") or reason_lower.startswith("quota_debt_limit|"):
+        return "Pemakaian melebihi kuota telah melewati batas pengaman (auto debt)."
+
+    if reason_lower.startswith("quota_manual_debt_end_of_month|") or reason_lower.startswith("quota_debt_end_of_month|"):
+        return "Tunggakan kuota akhir bulan belum dilunasi."
+
+    if reason_lower.startswith("manual_admin_block|") or reason_lower.startswith("admin_manual_block|"):
+        return "Akun dibatasi oleh Admin."
+
+    return reason_raw
+
+
 # --- [PENAMBAHAN BLOK BARU] ---
 def _get_serializer() -> itsdangerous.URLSafeTimedSerializer:
     """Membuat instance serializer dengan secret key dari konfigurasi aplikasi."""
@@ -134,6 +153,12 @@ def get_notification_message(template_key: str, context: Optional[Dict[str, Any]
         "link_admin_app_change_password": link_admin_change,
         **context,
     }
+
+    if template_key in {"user_access_blocked", "user_access_invalid"}:
+        reason_raw = final_context.get("reason", "")
+        final_context["reason_raw"] = str(reason_raw or "").strip()
+        final_context["reason_human"] = _humanize_access_reason(reason_raw)
+        final_context["reason"] = final_context["reason_human"]
 
     for key in ("link_user_app", "link_admin_app", "link_mikrotik_login", "link_admin_app_change_password"):
         final_context[key] = _normalize_link_value(final_context.get(key), final_context.get("link_user_app", ""))

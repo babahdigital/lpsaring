@@ -119,7 +119,7 @@ def test_sync_address_list_non_blocked_removes_blocked_if_present(monkeypatch):
     assert "status=fup" in capture["comment"]
 
 
-def test_sync_address_list_auto_debt_blocked_user_uses_habis_not_blocked(monkeypatch):
+def test_sync_address_list_auto_debt_blocked_user_uses_blocked_list(monkeypatch):
     _patch_settings(monkeypatch, fup_threshold_mb=3072)
 
     capture = {}
@@ -153,5 +153,5 @@ def test_sync_address_list_auto_debt_blocked_user_uses_habis_not_blocked(monkeyp
     )
 
     assert ok is True
-    assert capture["target_list"] == "habis_list"
-    assert "status=habis" in capture["comment"]
+    assert capture["target_list"] == "blocked_list"
+    assert "status=blocked" in capture["comment"]

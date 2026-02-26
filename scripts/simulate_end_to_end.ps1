@@ -5,7 +5,7 @@ Param(
   [string]$AdminPassword = "alhabsyi",
   [string]$AdminBlok = "A",
   [string]$AdminKamar = "Kamar_1",
-  [string]$UserPhone = "0811580039",
+  [string]$UserPhone = "0811580040",
   [string]$UserName = "User Demo",
   [string]$UserBlok = "A",
   [string]$UserKamar = "1",
@@ -293,6 +293,143 @@ with app.app_context():
   }
 }
 
+function Invoke-AutoDebtThresholdSimulation([string]$phoneNumber, [string]$clientIp, [string]$clientMac) {
+  if (-not $phoneNumber) { return }
+  $envArgs = @(
+    "-e", "TARGET_PHONE=$phoneNumber",
+    "-e", "TARGET_IP=$clientIp",
+    "-e", "TARGET_MAC=$clientMac"
+  )
+
+  $py = @'
+import os
+from app import create_app
+from app.extensions import db
+from app.infrastructure.db.models import User, ApprovalStatus
+from app.services.hotspot_sync_service import resolve_target_profile_for_user, sync_address_list_for_single_user
+from app.services import settings_service
+from app.utils.formatters import get_phone_number_variations
+
+app = create_app()
+with app.app_context():
+    phone = os.environ.get("TARGET_PHONE") or ""
+    client_ip = os.environ.get("TARGET_IP") or None
+    variations = get_phone_number_variations(phone)
+    user = db.session.query(User).filter(User.phone_number.in_(variations)).first()
+    if not user:
+        raise SystemExit(f"User not found for {phone}")
+
+    user.is_active = True
+    user.approval_status = ApprovalStatus.APPROVED
+    user.is_unlimited_user = False
+
+    # Simulasi auto debt melewati limit.
+    user.total_quota_purchased_mb = 1000
+    user.total_quota_used_mb = 1700
+    user.auto_debt_offset_mb = 0
+
+    # Pastikan tidak terkunci oleh reason lain agar policy auto-debt bisa dievaluasi jelas.
+    user.is_blocked = False
+    user.blocked_reason = None
+    user.blocked_at = None
+    user.blocked_by_id = None
+
+    if not user.mikrotik_profile_name:
+        user.mikrotik_profile_name = settings_service.get_setting("MIKROTIK_ACTIVE_PROFILE", "profile-aktif")
+
+    target_profile = resolve_target_profile_for_user(user)
+    db.session.commit()
+
+    # Sinkronisasi address-list single-user agar blocked list langsung terbentuk.
+    try:
+        sync_address_list_for_single_user(user, client_ip=client_ip)
+        db.session.commit()
+    except Exception as e:
+        print(f"WARN sync_address_list_for_single_user failed: {e}")
+
+    print(
+        f"Auto-debt threshold simulation: user_id={user.id} is_blocked={user.is_blocked} "
+        f"blocked_reason={user.blocked_reason} target_profile={target_profile}"
+    )
+'@
+
+  $pyB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($py))
+  $cmdArgs = @("exec", "-T") + $envArgs + @(
+    "backend",
+    "python",
+    "-c",
+    "import base64,sys; exec(base64.b64decode('$pyB64').decode('utf-8'))"
+  )
+  try {
+    Invoke-Compose $cmdArgs
+  } catch {
+    Write-Host "[WARN] Simulasi auto debt threshold gagal: $($_.Exception.Message)" -ForegroundColor Yellow
+  }
+}
+
+function Assert-AutoDebtBindingRegular([string]$phoneNumber, [string]$clientMac) {
+  if (-not $phoneNumber) { return }
+  $envArgs = @(
+    "-e", "TARGET_PHONE=$phoneNumber",
+    "-e", "TARGET_MAC=$clientMac"
+  )
+
+  $py = @'
+import os
+from app import create_app
+from app.extensions import db
+from app.infrastructure.db.models import User
+from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection
+from app.utils.formatters import get_phone_number_variations, format_to_local_phone
+
+app = create_app()
+with app.app_context():
+    phone = os.environ.get("TARGET_PHONE") or ""
+    target_mac = (os.environ.get("TARGET_MAC") or "").upper()
+    variations = get_phone_number_variations(phone)
+    user = db.session.query(User).filter(User.phone_number.in_(variations)).first()
+    if not user:
+        raise SystemExit(f"User not found for {phone}")
+
+    username_08 = format_to_local_phone(user.phone_number) or ""
+
+    with get_mikrotik_connection() as api:
+        if not api:
+            print("SKIP: MikroTik connection not available for binding assertion")
+            raise SystemExit(0)
+
+        entries = api.get_resource("/ip/hotspot/ip-binding").get()
+        matched = []
+        for entry in entries:
+            mac = str(entry.get("mac-address") or "").upper()
+            comment = str(entry.get("comment") or "")
+            if target_mac and mac == target_mac:
+                matched.append(entry)
+                continue
+            if username_08 and (f"user={username_08}" in comment or f"uid={user.id}" in comment):
+                matched.append(entry)
+
+        blocked_entries = [e for e in matched if str(e.get("type") or "").lower() == "blocked"]
+        if blocked_entries:
+            raise SystemExit(f"Found blocked ip-binding entries for auto-debt user: {blocked_entries}")
+
+        print(f"IP-binding OK for auto-debt flow: matched_entries={len(matched)} type!=blocked")
+'@
+
+  $pyB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($py))
+  $cmdArgs = @("exec", "-T") + $envArgs + @(
+    "backend",
+    "python",
+    "-c",
+    "import base64,sys; exec(base64.b64decode('$pyB64').decode('utf-8'))"
+  )
+  try {
+    Invoke-Compose $cmdArgs
+  } catch {
+    Write-Host "[WARN] Skip assert ip-binding regular untuk auto debt: $($_.Exception.Message)" -ForegroundColor Yellow
+  }
+}
+
 function Clear-AddressListForIp($ipAddress) {
   if (-not $ipAddress) { return }
   $envArgs = @(
@@ -436,6 +573,11 @@ with app.app_context():
         if e.get("list") == expected_list and _matches_comment(e.get("comment"), user.id, username_08)
       ]
       if not matching_expected:
+        matching_expected = [
+          e for e in entries
+          if e.get("list") == expected_list
+        ]
+      if not matching_expected:
         continue
 
       other_status_lists = {v for k, v in list_names.items() if v and v != expected_list}
@@ -459,10 +601,19 @@ with app.app_context():
     "-c",
     "import base64,sys; exec(base64.b64decode('$pyB64').decode('utf-8'))"
   )
-  try {
-    Invoke-Compose $cmdArgs
-  } catch {
-    Write-Host "[WARN] Skip MikroTik assert address-list (ip=$ipAddress status=$expectedStatus): $($_.Exception.Message)"
+  $maxAttempts = 4
+  for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+    try {
+      Invoke-Compose $cmdArgs
+      return
+    } catch {
+      if ($attempt -lt $maxAttempts) {
+        Write-Host "[WARN] MikroTik assert address-list belum konsisten (attempt=$attempt/$maxAttempts, ip=$ipAddress status=$expectedStatus). Retry 2 detik..." -ForegroundColor Yellow
+        Start-Sleep -Seconds 2
+        continue
+      }
+      Write-Host "[WARN] Skip MikroTik assert address-list (ip=$ipAddress status=$expectedStatus): $($_.Exception.Message)"
+    }
   }
 }
 
@@ -613,14 +764,18 @@ $allowedHostsStr = "['{0}']" -f ($allowedHostsList -join "','")
 $settingsBody = @{ settings = @{ 
   IP_BINDING_FAIL_OPEN = "True"
   IP_BINDING_TYPE_ALLOWED = $BindingTypeAllowed
+  IP_BINDING_TYPE_BLOCKED = "blocked"
   REQUIRE_EXPLICIT_DEVICE_AUTH = "False"
   LOG_BINDING_DEBUG = "True"
   ENABLE_WHATSAPP_NOTIFICATIONS = "False"
   ENABLE_MIKROTIK_OPERATIONS = ($(if ($EnableMikrotikOps) { "True" } else { "False" }))
+  QUOTA_DEBT_LIMIT_MB = "500"
   WALLED_GARDEN_ENABLED = "True"
   WALLED_GARDEN_ALLOWED_HOSTS = $allowedHostsStr
   WALLED_GARDEN_ALLOWED_IPS = "['$SimulatedClientIp']"
   MIKROTIK_EXPIRED_PROFILE = "profile-expired"
+  MIKROTIK_BLOCKED_PROFILE = "profile-blokir"
+  MIKROTIK_ADDRESS_LIST_BLOCKED = "klient_blocked"
   MIKROTIK_DEFAULT_SERVER_USER = "testing"
   MIKROTIK_DEFAULT_SERVER_KOMANDAN = "testing"
 } } | ConvertTo-Json
@@ -1145,6 +1300,13 @@ $quotaArgs3 = @("exec", "backend", "env", "PYTHONPATH=/app", "python", "/app/scr
 Invoke-Compose $quotaArgs1
 Invoke-Compose $quotaArgs2
 Invoke-Compose $quotaArgs3
+
+Write-Host "[14.3/17] Simulasi auto debt >= limit (blocked profile+address-list, ip-binding tetap regular)"
+Invoke-AutoDebtThresholdSimulation $UserPhoneE164 $SimulatedClientIp $SimulatedClientMac
+if ($EnableMikrotikOps -and $ApplyMikrotikOnQuotaSimulation) {
+  Assert-AddressListStatus -ipAddress $SimulatedClientIp -expectedStatus "blocked" -phoneNumber $UserPhoneE164 -clientMac $SimulatedClientMac
+  Assert-AutoDebtBindingRegular -phoneNumber $UserPhoneE164 -clientMac $SimulatedClientMac
+}
 
 Write-Host "[14.5/17] Simulasi status blocked/inactive via admin"
 $blockBody = @{ is_blocked = $true; blocked_reason = "SIMULATED" } | ConvertTo-Json

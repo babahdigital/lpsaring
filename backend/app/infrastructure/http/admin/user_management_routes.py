@@ -1030,6 +1030,7 @@ def get_mikrotik_form_options(current_admin: User):
             "profile_habis": settings_service.get_setting("MIKROTIK_HABIS_PROFILE", "habis"),
             "profile_unlimited": settings_service.get_setting("MIKROTIK_UNLIMITED_PROFILE", "unlimited"),
             "profile_expired": settings_service.get_setting("MIKROTIK_EXPIRED_PROFILE", "expired"),
+            "profile_blocked": settings_service.get_setting("MIKROTIK_BLOCKED_PROFILE", "inactive"),
             "profile_inactive": settings_service.get_setting("MIKROTIK_INACTIVE_PROFILE", "inactive"),
         }
 
@@ -1048,6 +1049,7 @@ def get_mikrotik_form_options(current_admin: User):
             defaults.get("profile_habis"),
             defaults.get("profile_unlimited"),
             defaults.get("profile_expired"),
+            defaults.get("profile_blocked"),
             defaults.get("profile_inactive"),
         ]
 

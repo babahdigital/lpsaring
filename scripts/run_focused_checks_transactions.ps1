@@ -34,6 +34,9 @@ if (-not $SkipBackend) {
 
     Invoke-Checked "Backend tests (pytest focused)" {
       & $Python -m pytest -q `
+        tests/test_hotspot_sync_debt_limit.py `
+        tests/test_access_policy_block_rules.py `
+        tests/test_policy_invariants_matrix.py `
         tests/test_admin_routes.py `
         tests/test_transactions_lifecycle.py `
         tests/test_whatsapp_send.py

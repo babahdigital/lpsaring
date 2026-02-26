@@ -240,11 +240,10 @@ def consume_injected_mb_for_debt(
         """Use injected MB to pay debts first.
 
         Allocation order:
-            1) auto-debt: cleared via auto_debt_offset_mb (does NOT reduce injected quota)
-            2) manual debt: repaid by consuming injected quota (reduces net added quota)
+            1) auto-debt: settled first and consumes injected quota
+            2) manual debt: repaid by consuming remaining injected quota
 
         Returns (paid_auto_mb, paid_manual_mb, remaining_injected_mb).
-        NOTE: remaining_injected_mb is reduced only by paid_manual_mb.
         """
     try:
         injected = int(injected_mb)
@@ -257,8 +256,8 @@ def consume_injected_mb_for_debt(
     auto_need_mb = _ceil_mb(auto_debt)
     paid_auto = min(injected, auto_need_mb)
     if paid_auto > 0:
-        # Clear auto-debt without consuming injected quota.
         user.auto_debt_offset_mb = int(getattr(user, "auto_debt_offset_mb", 0) or 0) + int(paid_auto)
+        injected -= paid_auto
 
     manual_balance = int(getattr(user, "manual_debt_mb", 0) or 0)
     paid_manual = 0
@@ -303,8 +302,8 @@ def consume_injected_mb_for_auto_debt_only(
     auto_need_mb = _ceil_mb(auto_debt)
     paid_auto = min(injected, auto_need_mb)
     if paid_auto > 0:
-        # Clear auto-debt without consuming injected quota.
         user.auto_debt_offset_mb = int(getattr(user, "auto_debt_offset_mb", 0) or 0) + int(paid_auto)
+        injected -= paid_auto
 
     return int(paid_auto), int(max(0, injected))
 

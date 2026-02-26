@@ -91,3 +91,28 @@ def test_purchase_success_with_invoice_accepts_status_url(monkeypatch, app):
 
     assert "Peringatan:" not in message
     assert "payment/status" in message
+
+
+def test_user_access_blocked_humanizes_legacy_reason(monkeypatch, app):
+    from app.services import notification_service
+
+    monkeypatch.setattr(
+        notification_service,
+        "_load_templates",
+        lambda: {
+            "user_access_blocked": "Halo {full_name}. Alasan: {reason_human}",
+        },
+    )
+    monkeypatch.setattr(notification_service, "get_app_links", lambda: {})
+
+    with app.app_context():
+        message = notification_service.get_notification_message(
+            "user_access_blocked",
+            {
+                "full_name": "M Ragil Saputra",
+                "reason": "quota_debt_limit|debt_mb=25600.00|source=manual_enforce_2026-02-26",
+            },
+        )
+
+    assert "quota_debt_limit|" not in message
+    assert "batas pengaman" in message

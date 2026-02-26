@@ -56,7 +56,7 @@ Lampiran wajib:
    - Notifikasi duplikat diblokir via Redis TTL.
 
 5) Quota-debt hard block (cap hutang kuota)
-   - Jika `debt_mb >= QUOTA_DEBT_LIMIT_MB`, sistem melakukan hard-block (ip-binding blocked + address-list blocked) dan mengirim notifikasi WA.
+   - Jika `debt_mb >= QUOTA_DEBT_LIMIT_MB`, sistem melakukan hard-block terbatas (profile blocked + address-list blocked, ip-binding tetap regular) dan mengirim notifikasi WA.
    - Pengecualian: `is_unlimited_user` dan role `KOMANDAN`.
 
 ## Checklist produksi (yang wajib dipenuhi)

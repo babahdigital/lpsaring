@@ -109,12 +109,9 @@ def inject_user_quota(user: User, admin_actor: User, mb_to_add: int, days_to_add
 
     # Langkah 3: Logika untuk Pengguna TERBATAS
     else:
-        # Requirement: injection must be disabled when the user has any quota debt.
-        try:
-            debt_total_mb = float(getattr(user, "quota_debt_total_mb", 0) or 0)
-        except Exception:
-            debt_total_mb = 0.0
-        if debt_total_mb > 0:
+        # Requirement: injection is disabled only when there is MANUAL debt.
+        manual_debt_mb = int(getattr(user, "manual_debt_mb", 0) or 0)
+        if manual_debt_mb > 0:
             return (
                 False,
                 "Tidak bisa inject kuota karena pengguna masih memiliki tunggakan. "
@@ -246,6 +243,8 @@ def inject_user_quota(user: User, admin_actor: User, mb_to_add: int, days_to_add
                     "paid_debt_manual_mb": int(paid_manual_mb),
                     "net_added_mb": int(action_details.get("net_added_mb") or 0),
                     "net_added_gb": user_debt.mb_to_gb_str(int(action_details.get("net_added_mb") or 0)),
+                    "effective_quota_mb": int(action_details.get("net_added_mb") or 0),
+                    "effective_quota_gb": user_debt.mb_to_gb_str(int(action_details.get("net_added_mb") or 0)),
                     "added_days": int(days_to_add),
                     "remaining_mb": float(remaining_mb),
                 },
