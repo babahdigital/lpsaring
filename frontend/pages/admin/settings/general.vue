@@ -55,6 +55,13 @@ const telegramEnabled = computed({
   },
 })
 
+const demoModeEnabled = computed({
+  get: () => localSettings.value.DEMO_MODE_ENABLED === 'True',
+  set: (val: boolean) => {
+    localSettings.value.DEMO_MODE_ENABLED = val ? 'True' : 'False'
+  },
+})
+
 function parseCsvList(value: string | null | undefined): string[] {
   const raw = (value ?? '').toString().trim()
   if (raw === '')
@@ -131,6 +138,7 @@ onMounted(async () => {
       ENABLE_WHATSAPP_NOTIFICATIONS: 'False',
       ENABLE_WHATSAPP_LOGIN_NOTIFICATION: 'False', // PENAMBAHAN: Inisialisasi nilai default
       ENABLE_TELEGRAM_NOTIFICATIONS: 'False',
+      DEMO_MODE_ENABLED: 'False',
       APP_NAME: '',
       APP_BROWSER_TITLE: '',
       THEME: 'system',
@@ -322,6 +330,22 @@ useHead({ title: 'Setting Aplikasi' })
                     </VCol>
                     <VCol cols="12" md="8" class="d-flex justify-start justify-md-end mt-2 mt-md-0">
                       <VSwitch v-model="maintenanceModeActive" :label="maintenanceModeActive ? 'AKTIF' : 'TIDAK AKTIF'" color="error" inset />
+                    </VCol>
+                  </VRow>
+                </VListItem>
+
+                <VListItem lines="three" class="overflow-visible">
+                  <VRow no-gutters align="center">
+                    <VCol cols="12" md="4" class="text-start pb-2 pb-md-0">
+                      <VListItemTitle class="mb-1">
+                        Demo Mode (Payment Only)
+                      </VListItemTitle>
+                      <VListItemSubtitle>
+                        ON/OFF mode demo untuk akun whitelist. Detail whitelist dan paket demo tetap diatur via env.
+                      </VListItemSubtitle>
+                    </VCol>
+                    <VCol cols="12" md="8" class="d-flex justify-start justify-md-end mt-2 mt-md-0">
+                      <VSwitch v-model="demoModeEnabled" :label="demoModeEnabled ? 'AKTIF' : 'TIDAK AKTIF'" color="warning" inset />
                     </VCol>
                   </VRow>
                 </VListItem>

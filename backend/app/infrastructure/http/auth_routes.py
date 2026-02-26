@@ -133,7 +133,11 @@ def _extract_phone_from_request() -> Optional[str]:
 
 
 def _is_demo_phone_allowed(phone_e164: str) -> bool:
-    if not current_app.config.get("DEMO_MODE_ENABLED", False):
+    demo_mode_enabled = settings_service.get_setting_as_bool(
+        "DEMO_MODE_ENABLED",
+        bool(current_app.config.get("DEMO_MODE_ENABLED", False)),
+    )
+    if not demo_mode_enabled:
         return False
 
     allowed_raw = current_app.config.get("DEMO_ALLOWED_PHONES") or []

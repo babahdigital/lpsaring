@@ -18,6 +18,7 @@ from app.utils.csrf_utils import is_trusted_origin
 from app.utils.request_utils import get_client_ip
 from app.services.refresh_token_service import rotate_refresh_token
 from app.services.jwt_token_service import create_access_token
+from app.services import settings_service
 from app.utils.formatters import get_phone_number_variations, normalize_to_e164
 
 
@@ -26,7 +27,11 @@ def _auth_error(message: str, status: HTTPStatus, code: str):
 
 
 def _is_demo_user_by_phone(phone_number: str | None) -> bool:
-    if not current_app.config.get("DEMO_MODE_ENABLED", False):
+    demo_mode_enabled = settings_service.get_setting_as_bool(
+        "DEMO_MODE_ENABLED",
+        bool(current_app.config.get("DEMO_MODE_ENABLED", False)),
+    )
+    if not demo_mode_enabled:
         return False
 
     raw_phone = str(phone_number or "").strip()

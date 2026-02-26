@@ -70,6 +70,18 @@ def get_setting_as_int(key: str, default: int) -> int:
         return default
 
 
+def get_setting_as_bool(key: str, default: bool) -> bool:
+    value_raw = get_setting(key, "True" if default else "False")
+    if isinstance(value_raw, bool):
+        return value_raw
+    value = str(value_raw or "").strip().lower()
+    if value in {"true", "1", "yes", "y", "on", "t"}:
+        return True
+    if value in {"false", "0", "no", "n", "off", "f"}:
+        return False
+    return default
+
+
 def get_ip_binding_type_setting(key: str, default: str) -> str:
     value_raw = get_setting(key, default)
     value = str(value_raw or default).strip().lower()

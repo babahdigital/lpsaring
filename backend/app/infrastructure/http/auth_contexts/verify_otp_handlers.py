@@ -138,7 +138,7 @@ def verify_otp_impl(
         ).scalar_one_or_none()
 
         if not user_to_login:
-            if used_demo_bypass and current_app.config.get("DEMO_MODE_ENABLED", False):
+            if used_demo_bypass:
                 return jsonify(
                     AuthErrorResponseSchema(error="Nomor demo belum disiapkan oleh sistem.").model_dump()
                 ), HTTPStatus.FORBIDDEN

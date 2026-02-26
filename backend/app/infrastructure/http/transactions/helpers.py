@@ -4,6 +4,7 @@ import uuid
 from flask import current_app, has_app_context
 
 from app.infrastructure.db.models import User
+from app.services import settings_service
 from app.utils.formatters import get_phone_number_variations, normalize_to_e164
 
 
@@ -15,7 +16,11 @@ def _is_demo_user_eligible(user: User | None) -> bool:
     if user is None:
         return False
 
-    if not bool(current_app.config.get("DEMO_MODE_ENABLED", False)):
+    demo_mode_enabled = settings_service.get_setting_as_bool(
+        "DEMO_MODE_ENABLED",
+        bool(current_app.config.get("DEMO_MODE_ENABLED", False)),
+    )
+    if not demo_mode_enabled:
         return False
 
     allowed_raw = current_app.config.get("DEMO_ALLOWED_PHONES") or []
@@ -59,7 +64,11 @@ def _is_demo_user_eligible(user: User | None) -> bool:
 
 
 def _get_demo_package_ids() -> set[uuid.UUID]:
-    if not bool(current_app.config.get("DEMO_MODE_ENABLED", False)):
+    demo_mode_enabled = settings_service.get_setting_as_bool(
+        "DEMO_MODE_ENABLED",
+        bool(current_app.config.get("DEMO_MODE_ENABLED", False)),
+    )
+    if not demo_mode_enabled:
         return set()
     if not bool(current_app.config.get("DEMO_SHOW_TEST_PACKAGE", False)):
         return set()

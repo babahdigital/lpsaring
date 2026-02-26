@@ -124,6 +124,11 @@ def update_application_settings(current_admin: User):
                     }
                 )
 
+        if "DEMO_MODE_ENABLED" in settings_dict:
+            demo_enabled_str = settings_dict.get("DEMO_MODE_ENABLED", "False")
+            if demo_enabled_str not in ["True", "False"]:
+                errors.append({"field": "DEMO_MODE_ENABLED", "message": "Nilai harus 'True' atau 'False'"})
+
         mode_raw = None
         if "PAYMENT_PROVIDER_MODE" in settings_dict:
             mode_raw = str(settings_dict.get("PAYMENT_PROVIDER_MODE", "")).strip().lower()
