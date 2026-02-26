@@ -1,5 +1,3 @@
-import json
-from datetime import datetime, timezone as dt_timezone
 from http import HTTPStatus
 
 import midtransclient
@@ -7,9 +5,8 @@ from flask import abort, current_app, jsonify, make_response
 from werkzeug.exceptions import HTTPException
 
 from app.infrastructure.db.models import Transaction, TransactionEventSource, TransactionStatus, User, UserQuotaDebt
-from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection
-from app.services.transaction_service import apply_package_and_sync_to_mikrotik
 from app.infrastructure.http.error_envelope import error_response
+from app.infrastructure.http.transactions.reconcile_service import reconcile_pending_transaction
 
 
 def get_transaction_by_order_id_impl(
@@ -51,181 +48,23 @@ def get_transaction_by_order_id_impl(
         if not requesting_user or (transaction.user_id != current_user_id and not requesting_user.is_admin_role):
             abort(HTTPStatus.FORBIDDEN, description="Anda tidak diizinkan melihat transaksi ini.")
 
-        if transaction.status in (TransactionStatus.PENDING, TransactionStatus.UNKNOWN):
-            try:
-                prev_status = transaction.status
-                redis_client = getattr(current_app, "redis_client_otp", None)
-                if redis_client is not None:
-                    try:
-                        ttl_seconds = int(current_app.config.get("MIDTRANS_STATUS_CHECK_THROTTLE_SECONDS", 8))
-                    except Exception:
-                        ttl_seconds = 8
-                    ttl_seconds = max(3, min(ttl_seconds, 60))
-                    throttle_key = f"midtrans:statuscheck:{order_id}"
-                    try:
-                        inserted = redis_client.set(throttle_key, "1", ex=ttl_seconds, nx=True)
-                        if inserted is None:
-                            raise StopIteration
-                    except StopIteration:
-                        raise
-                    except Exception:
-                        pass
-
-                if not should_allow_call("midtrans"):
-                    abort(HTTPStatus.SERVICE_UNAVAILABLE, "Midtrans sementara tidak tersedia.")
-
-                core_api = get_midtrans_core_api_client()
-                midtrans_status_response = core_api.transactions.status(order_id)
-                record_success("midtrans")
-
-                log_transaction_event(
-                    session=session,
-                    transaction=transaction,
-                    source=TransactionEventSource.MIDTRANS_STATUS,
-                    event_type="STATUS_CHECK",
-                    status=transaction.status,
-                    payload=midtrans_status_response,
-                )
-                midtrans_trx_status_raw = midtrans_status_response.get("transaction_status")
-                midtrans_trx_status = (
-                    str(midtrans_trx_status_raw).strip().lower() if isinstance(midtrans_trx_status_raw, str) else ""
-                )
-                fraud_status_raw = midtrans_status_response.get("fraud_status")
-                fraud_status = str(fraud_status_raw).strip().lower() if isinstance(fraud_status_raw, str) else None
-                payment_success = False
-                if midtrans_trx_status == "settlement":
-                    payment_success = True
-                elif midtrans_trx_status == "capture":
-                    payment_success = fraud_status in (None, "accept")
-
-                try:
-                    transaction.midtrans_notification_payload = json.dumps(midtrans_status_response, ensure_ascii=False)
-                except Exception:
-                    pass
-
-                if midtrans_status_response.get("payment_type") and not transaction.payment_method:
-                    transaction.payment_method = midtrans_status_response.get("payment_type")
-                if parsed_expiry := safe_parse_midtrans_datetime(midtrans_status_response.get("expiry_time")):
-                    transaction.expiry_time = parsed_expiry
-                transaction.va_number = extract_va_number(midtrans_status_response) or transaction.va_number
-                if is_qr_payment_type(midtrans_status_response.get("payment_type")):
-                    transaction.qr_code_url = extract_qr_code_url(midtrans_status_response) or transaction.qr_code_url
-
-                bill_key = midtrans_status_response.get("bill_key") or midtrans_status_response.get("mandiri_bill_key")
-                biller_code = midtrans_status_response.get("biller_code")
-                payment_code = midtrans_status_response.get("payment_code")
-
-                if bill_key and not transaction.payment_code:
-                    transaction.payment_code = bill_key
-                if payment_code and not transaction.payment_code:
-                    transaction.payment_code = payment_code
-                if biller_code and not transaction.biller_code:
-                    transaction.biller_code = biller_code
-
-                if payment_success:
-                    transaction.status = TransactionStatus.SUCCESS
-                    transaction.midtrans_transaction_id = midtrans_status_response.get("transaction_id")
-                    transaction.payment_time = safe_parse_midtrans_datetime(
-                        midtrans_status_response.get("settlement_time")
-                    ) or datetime.now(dt_timezone.utc)
-                    transaction.payment_code = midtrans_status_response.get("payment_code") or transaction.payment_code
-                    transaction.biller_code = midtrans_status_response.get("biller_code") or transaction.biller_code
-
-                    should_apply, effect_lock_key = begin_order_effect(order_id=order_id, effect_name="hotspot_apply")
-                    if not should_apply:
-                        current_app.logger.info(
-                            "GET Detail: skip duplicate hotspot apply side-effect untuk order %s (effect lock/done).",
-                            order_id,
-                        )
-                        session.commit()
-                    else:
-                        with get_mikrotik_connection() as mikrotik_api:
-                            if not mikrotik_api:
-                                finish_order_effect(
-                                    order_id=order_id,
-                                    lock_key=effect_lock_key,
-                                    success=False,
-                                    effect_name="hotspot_apply",
-                                )
-                                abort(HTTPStatus.SERVICE_UNAVAILABLE, "Gagal koneksi ke sistem hotspot untuk sinkronisasi.")
-                            is_success, message = apply_package_and_sync_to_mikrotik(transaction, mikrotik_api)
-                            if is_success:
-                                log_transaction_event(
-                                    session=session,
-                                    transaction=transaction,
-                                    source=TransactionEventSource.APP,
-                                    event_type="MIKROTIK_APPLY_SUCCESS",
-                                    status=transaction.status,
-                                    payload={"message": message},
-                                )
-                                session.commit()
-                                finish_order_effect(
-                                    order_id=order_id,
-                                    lock_key=effect_lock_key,
-                                    success=True,
-                                    effect_name="hotspot_apply",
-                                )
-                            else:
-                                finish_order_effect(
-                                    order_id=order_id,
-                                    lock_key=effect_lock_key,
-                                    success=False,
-                                    effect_name="hotspot_apply",
-                                )
-                                session.rollback()
-                                try:
-                                    transaction_after = (
-                                        session.query(Transaction)
-                                        .filter(Transaction.midtrans_order_id == order_id)
-                                        .with_for_update()
-                                        .first()
-                                    )
-                                    if transaction_after is not None:
-                                        log_transaction_event(
-                                            session=session,
-                                            transaction=transaction_after,
-                                            source=TransactionEventSource.APP,
-                                            event_type="MIKROTIK_APPLY_FAILED",
-                                            status=transaction_after.status,
-                                            payload={"message": message},
-                                        )
-                                        session.commit()
-                                except Exception:
-                                    session.rollback()
-                                abort(HTTPStatus.INTERNAL_SERVER_ERROR, f"Gagal menerapkan paket: {message}")
-                else:
-                    status_map: dict[str, TransactionStatus] = {
-                        "deny": TransactionStatus.FAILED,
-                        "expire": TransactionStatus.EXPIRED,
-                        "cancel": TransactionStatus.CANCELLED,
-                    }
-                    if new_status := status_map.get(midtrans_trx_status):
-                        if transaction.status != new_status:
-                            transaction.status = new_status
-                            session.commit()
-
-                if prev_status != transaction.status:
-                    log_transaction_event(
-                        session=session,
-                        transaction=transaction,
-                        source=TransactionEventSource.APP,
-                        event_type="STATUS_CHANGED",
-                        status=transaction.status,
-                        payload={"from": prev_status.value, "to": transaction.status.value},
-                    )
-                    session.commit()
-            except midtransclient.error_midtrans.MidtransAPIError as midtrans_err:
-                record_failure("midtrans")
-                current_app.logger.warning(
-                    f"GET Detail: Gagal cek status Midtrans untuk PENDING {order_id}: {midtrans_err.message}"
-                )
-            except StopIteration:
-                pass
-            except Exception as e_check_status:
-                record_failure("midtrans")
-                current_app.logger.error(
-                    f"GET Detail: Error tak terduga saat cek status Midtrans untuk PENDING {order_id}: {e_check_status}"
-                )
+        reconcile_pending_transaction(
+            transaction=transaction,
+            session=session,
+            order_id=order_id,
+            route_label="auth_get_transaction_by_order_id",
+            should_allow_call=should_allow_call,
+            get_midtrans_core_api_client=get_midtrans_core_api_client,
+            record_success=record_success,
+            record_failure=record_failure,
+            log_transaction_event=log_transaction_event,
+            safe_parse_midtrans_datetime=safe_parse_midtrans_datetime,
+            extract_va_number=extract_va_number,
+            is_qr_payment_type=is_qr_payment_type,
+            extract_qr_code_url=extract_qr_code_url,
+            begin_order_effect=begin_order_effect,
+            finish_order_effect=finish_order_effect,
+        )
 
         session.refresh(transaction)
         p = transaction.package

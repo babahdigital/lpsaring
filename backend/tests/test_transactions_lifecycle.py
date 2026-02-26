@@ -894,3 +894,129 @@ def test_webhook_debt_settlement_success_runs_unblock_flow(monkeypatch):
     assert fake_tx.status == TransactionStatus.SUCCESS
     assert "payment.success" in metrics
     assert any(getattr(obj, "event_type", None) == "DEBT_SETTLED" for obj in fake_session.added)
+
+
+def test_webhook_skips_duplicate_hotspot_apply_side_effect(monkeypatch):
+    order_id = "BD-LPSR-SKIP-APPLY-001"
+    fake_tx = SimpleNamespace(
+        id=uuid.uuid4(),
+        midtrans_order_id=order_id,
+        midtrans_transaction_id=None,
+        status=TransactionStatus.PENDING,
+        payment_method=None,
+        payment_time=None,
+        expiry_time=None,
+        va_number=None,
+        payment_code=None,
+        biller_code=None,
+        qr_code_url=None,
+        midtrans_notification_payload=None,
+        user=None,
+        package=None,
+    )
+    fake_session = _FakeSession(transaction=fake_tx)
+
+    monkeypatch.setattr(transactions_routes, "db", _FakeDB(fake_session))
+    monkeypatch.setattr(transactions_routes, "_begin_order_effect", lambda **_kwargs: (False, None))
+
+    def _should_not_run(*_args, **_kwargs):
+        raise AssertionError("Mikrotik side effect should not run for duplicate/locked order effect")
+
+    monkeypatch.setattr(
+        transactions_routes,
+        "_deps",
+        lambda: SimpleNamespace(
+            build_notification_dependencies=lambda: {
+                "db": transactions_routes.db,
+                "is_duplicate_webhook": lambda _payload: False,
+                "increment_metric": lambda _name: None,
+                "log_transaction_event": lambda **_kwargs: None,
+                "safe_parse_midtrans_datetime": transactions_routes.safe_parse_midtrans_datetime,
+                "extract_va_number": transactions_routes.extract_va_number,
+                "extract_qr_code_url": transactions_routes.extract_qr_code_url,
+                "is_qr_payment_type": transactions_routes._is_qr_payment_type,
+                "is_debt_settlement_order_id": transactions_routes._is_debt_settlement_order_id,
+                "apply_debt_settlement_on_success": transactions_routes._apply_debt_settlement_on_success,
+                "send_whatsapp_invoice_task": transactions_routes.send_whatsapp_invoice_task,
+                "format_currency_fn": transactions_routes.format_currency,
+                "begin_order_effect": transactions_routes._begin_order_effect,
+                "finish_order_effect": transactions_routes._finish_order_effect,
+            }
+        ),
+    )
+    monkeypatch.setattr(transactions_routes, "get_mikrotik_core_api_client", _should_not_run, raising=False)
+
+    app = _make_app()
+    webhook_impl = _unwrap_decorators(transactions_routes.handle_notification)
+
+    with app.test_request_context(
+        "/api/transactions/notification",
+        method="POST",
+        json={
+            "order_id": order_id,
+            "transaction_status": "settlement",
+            "status_code": "200",
+            "gross_amount": "44000.00",
+            "transaction_id": "trx-skip-001",
+            "payment_type": "qris",
+        },
+    ):
+        resp, status = webhook_impl()
+
+    assert status == 200
+    payload = resp.get_json()
+    assert payload.get("status") == "ok"
+    assert "duplicate" in str(payload.get("message", "")).lower()
+
+
+def test_webhook_rejects_missing_signature_in_production_like_env(monkeypatch):
+    app = _make_app()
+    app.config["FLASK_ENV"] = "production"
+
+    webhook_impl = _unwrap_decorators(transactions_routes.handle_notification)
+
+    with app.test_request_context(
+        "/api/transactions/notification",
+        method="POST",
+        json={
+            "order_id": "BD-LPSR-PROD-001",
+            "transaction_status": "pending",
+            "status_code": "201",
+            "gross_amount": "44000.00",
+        },
+    ):
+        resp, status = webhook_impl()
+
+    assert status == 403
+    payload = resp.get_json()
+    assert payload.get("status") == "error"
+    assert "signature" in str(payload.get("message", "")).lower()
+
+
+def test_webhook_signature_validation_can_be_disabled_explicitly(monkeypatch):
+    app = _make_app()
+    app.config["FLASK_ENV"] = "production"
+    app.config["MIDTRANS_REQUIRE_SIGNATURE_VALIDATION"] = False
+
+    monkeypatch.setattr(transactions_routes, "_is_duplicate_webhook", lambda _payload: True)
+    metrics = []
+    monkeypatch.setattr(transactions_routes, "increment_metric", lambda name: metrics.append(name))
+
+    webhook_impl = _unwrap_decorators(transactions_routes.handle_notification)
+
+    with app.test_request_context(
+        "/api/transactions/notification",
+        method="POST",
+        json={
+            "order_id": "BD-LPSR-PROD-002",
+            "transaction_status": "pending",
+            "status_code": "201",
+            "gross_amount": "44000.00",
+        },
+    ):
+        resp, status = webhook_impl()
+
+    assert status == 200
+    payload = resp.get_json()
+    assert payload.get("status") == "ok"
+    assert "payment.webhook.duplicate" in metrics

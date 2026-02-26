@@ -4,7 +4,7 @@ import uuid
 from types import SimpleNamespace
 from typing import Any, cast
 
-from app.infrastructure.http import transactions_routes
+from app.infrastructure.http.transactions import debt_helpers
 
 
 class _FakeQuery:
@@ -65,11 +65,11 @@ def test_apply_debt_settlement_manual_item_path(monkeypatch):
         called['auto'] = True
         return (0, 0)
 
-    monkeypatch.setattr(transactions_routes.user_debt_service, 'settle_manual_debt_item_to_zero', _fake_settle_manual)
-    monkeypatch.setattr(transactions_routes.user_debt_service, 'clear_all_debts_to_zero', _fake_clear_all)
-    monkeypatch.setattr(transactions_routes, 'sync_address_list_for_single_user', lambda _user: called.__setitem__('sync', True))
+    monkeypatch.setattr(debt_helpers.user_debt_service, 'settle_manual_debt_item_to_zero', _fake_settle_manual)
+    monkeypatch.setattr(debt_helpers.user_debt_service, 'clear_all_debts_to_zero', _fake_clear_all)
+    monkeypatch.setattr(debt_helpers, 'sync_address_list_for_single_user', lambda _user: called.__setitem__('sync', True))
 
-    result = transactions_routes._apply_debt_settlement_on_success(
+    result = debt_helpers.apply_debt_settlement_on_success(
         session=fake_session,
         transaction=cast(Any, transaction),
     )
@@ -111,11 +111,11 @@ def test_apply_debt_settlement_auto_path(monkeypatch):
         user.quota_debt_auto_mb = 0
         return (1024, 0)
 
-    monkeypatch.setattr(transactions_routes.user_debt_service, 'settle_manual_debt_item_to_zero', _fake_settle_manual)
-    monkeypatch.setattr(transactions_routes.user_debt_service, 'clear_all_debts_to_zero', _fake_clear_all)
-    monkeypatch.setattr(transactions_routes, 'sync_address_list_for_single_user', lambda _user: None)
+    monkeypatch.setattr(debt_helpers.user_debt_service, 'settle_manual_debt_item_to_zero', _fake_settle_manual)
+    monkeypatch.setattr(debt_helpers.user_debt_service, 'clear_all_debts_to_zero', _fake_clear_all)
+    monkeypatch.setattr(debt_helpers, 'sync_address_list_for_single_user', lambda _user: None)
 
-    result = transactions_routes._apply_debt_settlement_on_success(
+    result = debt_helpers.apply_debt_settlement_on_success(
         session=fake_session,
         transaction=cast(Any, transaction),
     )

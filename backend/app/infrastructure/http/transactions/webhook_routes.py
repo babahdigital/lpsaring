@@ -47,14 +47,25 @@ def handle_notification_impl(
         return jsonify({"status": "ok", "message": "Payload tidak lengkap"}), HTTPStatus.OK
 
     server_key = current_app.config.get("MIDTRANS_SERVER_KEY")
+    require_signature_validation_cfg = current_app.config.get("MIDTRANS_REQUIRE_SIGNATURE_VALIDATION")
+    if isinstance(require_signature_validation_cfg, bool):
+        require_signature_validation = require_signature_validation_cfg
+    else:
+        flask_env = str(current_app.config.get("FLASK_ENV", "") or "").strip().lower()
+        require_signature_validation = flask_env == "production" or bool(
+            current_app.config.get("MIDTRANS_IS_PRODUCTION", False)
+        )
+
+    signature_key = notification_payload.get("signature_key")
     gross_amount_str = notification_payload.get("gross_amount", "0")
     gross_amount_str_for_hash = gross_amount_str if "." in gross_amount_str else gross_amount_str + ".00"
     string_to_hash = f"{order_id}{notification_payload.get('status_code')}{gross_amount_str_for_hash}{server_key}"
     calculated_signature = hashlib.sha512(string_to_hash.encode("utf-8")).hexdigest()
-    if calculated_signature != notification_payload.get("signature_key") and current_app.config.get(
-        "MIDTRANS_IS_PRODUCTION", False
-    ):
-        return jsonify({"status": "error", "message": "Signature tidak valid"}), HTTPStatus.FORBIDDEN
+    if require_signature_validation:
+        if not server_key or not signature_key:
+            return jsonify({"status": "error", "message": "Signature tidak valid"}), HTTPStatus.FORBIDDEN
+        if calculated_signature != signature_key:
+            return jsonify({"status": "error", "message": "Signature tidak valid"}), HTTPStatus.FORBIDDEN
 
     if is_duplicate_webhook(notification_payload):
         increment_metric("payment.webhook.duplicate")

@@ -2,6 +2,8 @@
 
 Dokumen ini untuk skenario production ringan: **tidak perlu clone seluruh repository**.
 
+Referensi standar command: [OPERATIONS_COMMAND_STANDARD.md](./OPERATIONS_COMMAND_STANDARD.md).
+
 ## 1) Struktur Folder di Raspberry Pi
 
 Buat struktur seperti ini:
@@ -112,15 +114,16 @@ SSH ke Pi lalu jalankan:
 ```bash
 ssh -p 1983 -i ~/.ssh/id_raspi_ed25519 pi@192.168.1.20
 cd /home/abdullah/sobigidul
-docker compose --env-file .env.prod -f docker-compose.prod.yml pull
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
-docker compose --env-file .env.prod -f docker-compose.prod.yml ps
+COMPOSE_PROD="docker compose --env-file .env.prod -f docker-compose.prod.yml"
+$COMPOSE_PROD pull
+$COMPOSE_PROD up -d --remove-orphans
+$COMPOSE_PROD ps
 ```
 
 Cek log:
 
 ```bash
-docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f backend frontend nginx
+$COMPOSE_PROD logs -f backend frontend nginx
 ```
 
 Catatan: karena `docker-compose.prod.yml` memakai variable `${...}` untuk cloudflared, semua perintah compose (termasuk `ps`, `logs`, `exec`) sebaiknya selalu pakai `--env-file .env.prod`.
@@ -137,8 +140,9 @@ Jika image baru sudah dipublish ke Docker Hub:
 
 ```bash
 cd /home/abdullah/sobigidul
-docker compose --env-file .env.prod -f docker-compose.prod.yml pull
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+COMPOSE_PROD="docker compose --env-file .env.prod -f docker-compose.prod.yml"
+$COMPOSE_PROD pull
+$COMPOSE_PROD up -d --remove-orphans
 ```
 
 ### 6.0) Pastikan image `:latest` benar-benar baru
@@ -157,7 +161,7 @@ Jika `created` belum berubah setelah push terbaru, tunggu workflow publish seles
 Jika ada perubahan skema DB, jalankan juga:
 
 ```bash
-docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend flask db upgrade
+$COMPOSE_PROD exec -T backend flask db upgrade
 ```
 
 ## 6.1) Housekeeping: Rapikan transaksi EXPIRED

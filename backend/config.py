@@ -328,6 +328,10 @@ class Config:
     MIDTRANS_SERVER_KEY = os.environ.get("MIDTRANS_SERVER_KEY")
     MIDTRANS_CLIENT_KEY = os.environ.get("MIDTRANS_CLIENT_KEY")
     MIDTRANS_IS_PRODUCTION = get_env_bool("MIDTRANS_IS_PRODUCTION", "False")
+    MIDTRANS_REQUIRE_SIGNATURE_VALIDATION = get_env_bool(
+        "MIDTRANS_REQUIRE_SIGNATURE_VALIDATION",
+        "True" if FLASK_ENV == "production" else "False",
+    )
     MIDTRANS_HTTP_TIMEOUT_SECONDS = get_env_int("MIDTRANS_HTTP_TIMEOUT_SECONDS", 15)
     MIDTRANS_WEBHOOK_IDEMPOTENCY_TTL_SECONDS = get_env_int("MIDTRANS_WEBHOOK_IDEMPOTENCY_TTL_SECONDS", 86400)
 
@@ -522,6 +526,10 @@ class Config:
             if not cls.MIDTRANS_SERVER_KEY or not cls.MIDTRANS_CLIENT_KEY:
                 warnings.warn(
                     "PERINGATAN PRODUKSI: Kunci Midtrans (SERVER/CLIENT) tidak disetel. Fitur pembayaran tidak akan berfungsi."
+                )
+            if not cls.MIDTRANS_REQUIRE_SIGNATURE_VALIDATION:
+                warnings.warn(
+                    "PERINGATAN PRODUKSI: MIDTRANS_REQUIRE_SIGNATURE_VALIDATION=False. Webhook Midtrans tidak aman."
                 )
             if cls.ENABLE_WHATSAPP_NOTIFICATIONS and (not cls.WHATSAPP_API_URL or not cls.WHATSAPP_API_KEY):
                 warnings.warn(

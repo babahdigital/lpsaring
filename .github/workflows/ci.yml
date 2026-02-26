@@ -140,6 +140,13 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: pnpm install
+      - name: Prod config hygiene (dev bypass must be empty on release build)
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        run: |
+          if [ -n "${NUXT_PUBLIC_DEV_BYPASS_TOKEN:-}" ]; then
+            echo "ERROR: NUXT_PUBLIC_DEV_BYPASS_TOKEN terisi pada build release."
+            exit 1
+          fi
       - name: UI standards gate (no runtime import from Vuexy full-version)
         run: python3 scripts/enforce_ui_standards.py
       - name: Lint frontend

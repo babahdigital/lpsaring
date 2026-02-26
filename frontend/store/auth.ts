@@ -9,6 +9,7 @@ import { navigateTo, useNuxtApp, useRoute } from '#app'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { resolveAccessStatusFromUser } from '@/utils/authAccess'
+import { getStatusRouteForAccessStatus } from '~/utils/authRoutePolicy'
 
 type RegisterResponse = AuthRegisterResponseContract
 type RegistrationPayload = AuthRegisterRequestContract
@@ -503,19 +504,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function getRedirectPathForStatus(status: AccessStatus, context: 'login' | 'captive'): string | null {
-    if (status === 'ok')
-      return null
-
-    const base = context === 'captive' ? '/captive' : '/login'
-    const slugMap: Record<AccessStatus, string> = {
-      ok: '',
-      blocked: context === 'captive' ? 'blokir' : 'blocked',
-      inactive: 'inactive',
-      expired: 'expired',
-      habis: 'habis',
-      fup: 'fup',
-    }
-    return `${base}/${slugMap[status]}`
+    return getStatusRouteForAccessStatus(status, context)
   }
 
   async function initializeAuth(routeInfo?: { path: string; query?: Record<string, unknown> }) {

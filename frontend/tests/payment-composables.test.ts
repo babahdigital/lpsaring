@@ -7,6 +7,7 @@ import {
 } from '../composables/usePaymentPublicTokenFlow'
 import { usePaymentInstructions } from '../composables/usePaymentInstructions'
 import { usePaymentSnapAction } from '../composables/usePaymentSnapAction'
+import { usePaymentInvoiceQrDeeplink } from '../composables/usePaymentInvoiceQrDeeplink'
 
 describe('usePaymentPublicTokenFlow', () => {
   it('reads token and order_id from route query', () => {
@@ -231,5 +232,63 @@ describe('usePaymentSnapAction', () => {
     expect(navigateToStatus).toHaveBeenCalledWith('ORDER-SUCCESS-1', 'TOK-SUCCESS-1')
     expect(refreshStatus).toHaveBeenCalledTimes(1)
     expect(isPayingWithSnap.value).toBe(false)
+  })
+})
+
+describe('usePaymentInvoiceQrDeeplink', () => {
+  it('builds public QR url with status token and enables invoice only for private SUCCESS', () => {
+    const notify = vi.fn()
+
+    const composable = usePaymentInvoiceQrDeeplink({
+      apiBaseUrl: computed(() => '/api'),
+      orderId: computed(() => 'ORDER-QR-1'),
+      statusToken: computed(() => 'TOK-QR-1'),
+      finalStatus: computed(() => 'SUCCESS'),
+      isPublicView: computed(() => false),
+      isMobile: computed(() => false),
+      transactionDetails: computed(() => ({
+        id: '1',
+        midtrans_order_id: 'ORDER-QR-1',
+        status: 'SUCCESS',
+        qr_code_url: 'https://example.test/qr',
+      } as any)),
+      paymentMethod: computed(() => 'qris'),
+      apiFetch: vi.fn(),
+      notify,
+      runtimePublicConfig: {},
+    })
+
+    expect(composable.qrViewUrl.value).toBe('/api/transactions/public/ORDER-QR-1/qr?t=TOK-QR-1')
+    expect(composable.qrDownloadUrl.value).toBe('/api/transactions/public/ORDER-QR-1/qr?t=TOK-QR-1&download=1')
+    expect(composable.canDownloadInvoice.value).toBe(true)
+  })
+
+  it('resolves app deeplink metadata and support WA url from runtime config', () => {
+    const composable = usePaymentInvoiceQrDeeplink({
+      apiBaseUrl: computed(() => '/api'),
+      orderId: computed(() => 'ORDER-APP-1'),
+      statusToken: computed(() => null),
+      finalStatus: computed(() => 'PENDING'),
+      isPublicView: computed(() => true),
+      isMobile: computed(() => true),
+      transactionDetails: computed(() => ({
+        id: '2',
+        midtrans_order_id: 'ORDER-APP-1',
+        status: 'PENDING',
+        deeplink_redirect_url: 'gojek://gopay/pay',
+      } as any)),
+      paymentMethod: computed(() => 'gopay'),
+      apiFetch: vi.fn(),
+      notify: vi.fn(),
+      runtimePublicConfig: {
+        adminWhatsapp: '+6281234567890',
+        whatsappBaseUrl: 'https://wa.me',
+      },
+    })
+
+    expect(composable.deeplinkAppName.value).toBe('GoPay')
+    expect(composable.showAppDeeplinkButton.value).toBe(true)
+    expect(composable.supportWaUrl.value).toBe('https://wa.me/6281234567890')
+    expect(composable.qrSize.value).toBe(220)
   })
 })

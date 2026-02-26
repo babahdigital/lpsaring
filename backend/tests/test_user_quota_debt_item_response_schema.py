@@ -22,7 +22,7 @@ def test_user_quota_debt_item_response_schema_from_orm_allows_computed_fields_de
         last_paid_source=None,
     )
 
-    payload = UserQuotaDebtItemResponseSchema.from_orm(debt).model_dump()
+    payload = UserQuotaDebtItemResponseSchema.model_validate(debt).model_dump()
     assert payload["amount_mb"] == 123
     assert payload["paid_mb"] == 0
     assert payload["remaining_mb"] == 0

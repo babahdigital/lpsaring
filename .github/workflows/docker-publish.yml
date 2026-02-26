@@ -123,6 +123,14 @@ jobs:
             type=sha
             type=ref,event=tag
 
+      - name: Prod config hygiene (frontend dev bypass token)
+        if: ${{ matrix.service == 'frontend' }}
+        run: |
+          if [ -n "${NUXT_PUBLIC_DEV_BYPASS_TOKEN:-}" ]; then
+            echo "ERROR: NUXT_PUBLIC_DEV_BYPASS_TOKEN terisi. Build image frontend production diblokir."
+            exit 1
+          fi
+
       - name: Build & push ${{ matrix.service }}
         uses: docker/build-push-action@v5
         with:

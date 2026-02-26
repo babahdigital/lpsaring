@@ -3,14 +3,14 @@ import type { RouteLocationNormalized } from 'vue-router'
 import { defineNuxtRouteMiddleware, navigateTo } from '#app'
 import { useAuthStore } from '~/store/auth'
 import { useMaintenanceStore } from '~/store/maintenance'
+import { isLegalPublicPath } from '~/utils/authRoutePolicy'
 
 /**
  * Middleware untuk menangani Maintenance Mode.
  * Logika ini diprioritaskan untuk mengontrol akses selama maintenance.
  */
 export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => {
-  const LEGAL_PUBLIC_PATHS = ['/merchant-center/privacy', '/merchant-center/terms', '/privacy', '/terms']
-  const isLegalPublicPath = LEGAL_PUBLIC_PATHS.some(path => to.path === path || to.path.startsWith(`${path}/`))
+  const isPathLegalPublic = isLegalPublicPath(to.path)
 
   const maintenanceStore = useMaintenanceStore()
   const authStore = useAuthStore()
@@ -29,7 +29,7 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
 
   // Jika Mode Maintenance AKTIF
   if (isMaintenanceActive) {
-    if (isLegalPublicPath)
+    if (isPathLegalPublic)
       return
 
     // KASUS 1: Pengguna adalah ADMIN atau SUPER_ADMIN yang sudah login.
