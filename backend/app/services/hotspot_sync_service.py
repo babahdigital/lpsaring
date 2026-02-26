@@ -33,7 +33,6 @@ from app.infrastructure.gateways.mikrotik_client import (
 )
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
 from app.services import settings_service
-from app.services.access_policy_service import is_network_hard_block_required
 from app.services.notification_service import get_notification_message
 from app.services.device_management_service import (
     _remove_ip_binding,
@@ -471,7 +470,6 @@ def _sync_address_list_status(
     fup_threshold_mb = float(settings_service.get_setting_as_int("QUOTA_FUP_THRESHOLD_MB", 3072) or 3072)
 
     target_list = None
-    hard_block = is_network_hard_block_required(user)
     blocked_for_list = bool(force_blocked or bool(getattr(user, "is_blocked", False)))
 
     if blocked_for_list:
@@ -585,7 +583,6 @@ def _sync_address_list_status_for_ip(
     fup_threshold_mb = float(settings_service.get_setting_as_int("QUOTA_FUP_THRESHOLD_MB", 3072) or 3072)
 
     target_list = None
-    hard_block = is_network_hard_block_required(user)
     blocked_for_list = bool(force_blocked or bool(getattr(user, "is_blocked", False)))
 
     if blocked_for_list:
