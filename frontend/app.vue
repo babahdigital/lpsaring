@@ -49,6 +49,9 @@ onMounted(() => {
 watchEffect(() => {
   if (!import.meta.client)
     return
+  if (!isMounted.value)
+    return
+
   if (authStore.isLoggedIn) {
     authStore.refreshSessionStatus(route.path)
     startSessionCheck()
