@@ -386,14 +386,17 @@ def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
                             )
 
                     # Also remove entries in managed lists by comment markers (uid/user), to catch stale IPs.
-                    for list_name in managed_lists:
-                        try:
-                            rows = alist_res.get(list=list_name) or []
-                            for row in rows:
-                                if _comment_matches_user(row.get("comment")):
-                                    router_summary["comment_tagged_entries_removed"] += _remove_all(alist_res, [row])
-                        except Exception as e:
-                            router_summary["errors"].append(f"address_list_comment_scan({list_name}): {e}")
+                    # NOTE: beberapa RouterOS mengembalikan trap untuk filter `get(list=...)`; lebih aman scan-all lalu filter lokal.
+                    managed_set = set(managed_lists)
+                    try:
+                        for row in alist_res.get() or []:
+                            row_list = str(row.get("list") or "").strip()
+                            if row_list not in managed_set:
+                                continue
+                            if _comment_matches_user(row.get("comment")):
+                                router_summary["comment_tagged_entries_removed"] += _remove_all(alist_res, [row])
+                    except Exception as e:
+                        router_summary["errors"].append(f"address_list_comment_scan: {e}")
                 except Exception as e:
                     router_summary["errors"].append(f"address_list_cleanup: {e}")
     except Exception as e:

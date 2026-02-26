@@ -168,27 +168,6 @@ onMounted(async () => {
 
 const reliabilitySummary = computed(() => buildReliabilitySummary(adminMetrics.value))
 
-const reliabilityCards = computed(() => [
-  {
-    title: 'Webhook Duplikat',
-    icon: 'tabler-repeat',
-    color: 'warning',
-    stats: String(reliabilitySummary.value.duplicateWebhookCount),
-  },
-  {
-    title: 'Redis Idempotency Degraded',
-    icon: 'tabler-shield-exclamation',
-    color: reliabilitySummary.value.paymentIdempotencyDegraded ? 'error' : 'success',
-    stats: String(reliabilitySummary.value.paymentIdempotencyRedisUnavailableCount),
-  },
-  {
-    title: 'Hotspot Lock Degraded',
-    icon: 'tabler-plug-connected-x',
-    color: reliabilitySummary.value.hotspotSyncLockDegraded ? 'error' : 'success',
-    stats: String(reliabilitySummary.value.hotspotSyncLockDegradedCount),
-  },
-])
-
 const reliabilitySignalItems = computed(() => [
   {
     key: 'payment-idempotency',
@@ -536,80 +515,6 @@ useHead({ title: 'Dashboard Admin' })
       class="mb-4"
     />
 
-    <VRow
-      class="mb-4"
-      match-height
-    >
-      <VCol
-        cols="12"
-        md="9"
-      >
-        <VRow>
-          <VCol
-            v-for="item in reliabilityCards"
-            :key="item.title"
-            cols="12"
-            sm="6"
-            md="4"
-          >
-            <CardStatisticsHorizontal
-              :title="item.title"
-              :icon="item.icon"
-              :color="item.color"
-              :stats="item.stats"
-            />
-          </VCol>
-        </VRow>
-      </VCol>
-
-      <VCol
-        cols="12"
-        md="3"
-      >
-        <VCard class="h-100">
-          <VCardItem>
-            <VCardTitle>Reliability Analytics</VCardTitle>
-            <VCardSubtitle>Payment & Captive Guard</VCardSubtitle>
-            <template #append>
-              <VChip
-                size="small"
-                label
-                :color="overallReliabilityHealthy ? 'success' : 'error'"
-              >
-                {{ overallReliabilityHealthy ? 'Overall Healthy' : 'Needs Attention' }}
-              </VChip>
-            </template>
-          </VCardItem>
-          <VCardText>
-            <div
-              v-for="signal in reliabilitySignalItems"
-              :key="signal.key"
-              class="mb-4"
-            >
-              <div class="d-flex align-center justify-space-between mb-1">
-                <span class="text-body-2">{{ signal.label }}</span>
-                <VChip
-                  size="small"
-                  label
-                  :color="signal.degraded ? 'error' : 'success'"
-                >
-                  {{ signal.degraded ? 'Degraded' : 'Healthy' }}
-                </VChip>
-              </div>
-              <div class="text-caption text-disabled">
-                {{ signal.detail }}
-              </div>
-            </div>
-
-            <div class="d-flex align-center justify-space-between text-caption text-disabled">
-              <span>Sumber data</span>
-              <span>{{ metricsPending ? 'refreshing...' : '/admin/metrics' }}</span>
-            </div>
-          </VCardText>
-        </VCard>
-      </VCol>
-    </VRow>
-
     <VRow class="mb-4">
       <VCol
         v-for="(data, index) in statistics"
@@ -852,7 +757,7 @@ useHead({ title: 'Dashboard Admin' })
       </VCol>
     </VRow>
 
-    <VRow>
+    <VRow class="mb-4">
       <VCol
         cols="12"
         md="5"
@@ -1001,6 +906,86 @@ useHead({ title: 'Dashboard Admin' })
                 color="primary"
                 size="64"
               />
+            </div>
+          </VCardText>
+        </VCard>
+      </VCol>
+    </VRow>
+
+    <VRow>
+      <VCol cols="12">
+        <VCard>
+          <VCardItem>
+            <VCardTitle>Reliability Analytics</VCardTitle>
+            <VCardSubtitle>Ringkasan non-urgent (payment idempotency & captive guard)</VCardSubtitle>
+            <template #append>
+              <VChip
+                size="small"
+                label
+                :color="overallReliabilityHealthy ? 'success' : 'error'"
+              >
+                {{ overallReliabilityHealthy ? 'Overall Healthy' : 'Needs Attention' }}
+              </VChip>
+            </template>
+          </VCardItem>
+          <VCardText>
+            <VRow>
+              <VCol
+                cols="12"
+                md="4"
+              >
+                <div class="d-flex align-center gap-2 mb-1">
+                  <VIcon
+                    icon="tabler-repeat"
+                    size="18"
+                    class="text-warning"
+                  />
+                  <span class="text-body-2">Webhook Duplikat</span>
+                </div>
+                <div class="text-h6">
+                  {{ reliabilitySummary.duplicateWebhookCount }}
+                </div>
+              </VCol>
+
+              <VCol
+                cols="12"
+                md="4"
+              >
+                <div class="d-flex align-center gap-2 mb-1">
+                  <VIcon
+                    icon="tabler-shield-exclamation"
+                    size="18"
+                    :class="reliabilitySummary.paymentIdempotencyDegraded ? 'text-error' : 'text-success'"
+                  />
+                  <span class="text-body-2">Payment Idempotency</span>
+                </div>
+                <div class="text-body-1">
+                  {{ reliabilitySummary.paymentIdempotencyDegraded ? 'Degraded' : 'Healthy' }}
+                  <span class="text-caption text-disabled ms-2">Redis unavailable: {{ reliabilitySummary.paymentIdempotencyRedisUnavailableCount }}</span>
+                </div>
+              </VCol>
+
+              <VCol
+                cols="12"
+                md="4"
+              >
+                <div class="d-flex align-center gap-2 mb-1">
+                  <VIcon
+                    icon="tabler-plug-connected-x"
+                    size="18"
+                    :class="reliabilitySummary.hotspotSyncLockDegraded ? 'text-error' : 'text-success'"
+                  />
+                  <span class="text-body-2">Hotspot Sync Lock</span>
+                </div>
+                <div class="text-body-1">
+                  {{ reliabilitySummary.hotspotSyncLockDegraded ? 'Degraded' : 'Healthy' }}
+                  <span class="text-caption text-disabled ms-2">Lock degraded: {{ reliabilitySummary.hotspotSyncLockDegradedCount }}</span>
+                </div>
+              </VCol>
+            </VRow>
+
+            <div class="d-flex align-center justify-end text-caption text-disabled mt-2">
+              <span>Sumber data: {{ metricsPending ? 'refreshing...' : '/admin/metrics' }}</span>
             </div>
           </VCardText>
         </VCard>
