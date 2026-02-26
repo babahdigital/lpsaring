@@ -9,6 +9,7 @@ import { useAuthStore } from '~/store/auth'
 import { useDisplay } from 'vuetify'
 import { useDebtSettlementPayment } from '~/composables/useDebtSettlementPayment'
 import { useSettingsStore } from '~/store/settings'
+import { formatCurrencyIdr, formatDateTimeMakassarId, formatNumberId } from '~/utils/formatters'
 
 // Impor komponen PromoAnnouncement DIHAPUS, diganti dengan sistem global di app.vue
 // const PromoAnnouncement = defineAsyncComponent(() => import('~/components/promo/PromoAnnouncement.vue'))
@@ -374,21 +375,10 @@ function formatDateTime(dateTimeString: string | null | undefined): string {
   if (dateTimeString == null)
     return 'N/A'
   try {
-    const date = new Date(dateTimeString)
-    if (Number.isNaN(date.getTime()))
+    const formatted = formatDateTimeMakassarId(dateTimeString)
+    if (formatted === '-')
       return 'Tanggal Invalid'
-
-    return new Intl.DateTimeFormat('id-ID', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      timeZone: 'Asia/Makassar',
-      hour12: false,
-      timeZoneName: 'shortOffset',
-    }).format(date).replace('GMT+8', 'WITA')
+    return formatted
   }
   catch {
     return 'Error Format'
@@ -407,14 +397,14 @@ function formatQuota(mbValue: number | null | undefined): string {
     return '0 MB'
   if (mb < 1) {
     const kb = mb * 1024
-    return `${Math.round(kb).toLocaleString('id-ID')} KB`
+    return `${formatNumberId(Math.round(kb), 0, 0)} KB`
   }
   if (mb >= 1024) {
     const gb = mb / 1024
     const gbRounded = Math.round(gb * 100) / 100
-    return `${gbRounded.toLocaleString('id-ID', { maximumFractionDigits: 2 })} GB`
+    return `${formatNumberId(gbRounded, 2, 0)} GB`
   }
-  return `${Math.round(mb).toLocaleString('id-ID')} MB`
+  return `${formatNumberId(Math.round(mb), 0, 0)} MB`
 }
 
 function formatQuotaParts(mbValue: number | null | undefined): { value: string; unit: 'KB' | 'MB' | 'GB' } {
@@ -423,14 +413,14 @@ function formatQuotaParts(mbValue: number | null | undefined): { value: string; 
     return { value: '0', unit: 'MB' }
   if (mb < 1) {
     const kb = Math.round(mb * 1024)
-    return { value: kb.toLocaleString('id-ID'), unit: 'KB' }
+    return { value: formatNumberId(kb, 0, 0), unit: 'KB' }
   }
   if (mb >= 1024) {
     const gb = mb / 1024
     const gbRounded = Math.round(gb * 100) / 100
-    return { value: gbRounded.toLocaleString('id-ID', { maximumFractionDigits: 2 }), unit: 'GB' }
+    return { value: formatNumberId(gbRounded, 2, 0), unit: 'GB' }
   }
-  return { value: Math.round(mb).toLocaleString('id-ID'), unit: 'MB' }
+  return { value: formatNumberId(Math.round(mb), 0, 0), unit: 'MB' }
 }
 
 const debtAutoMb = computed(() => Number(quotaData.value?.quota_debt_auto_mb ?? 0))
@@ -451,7 +441,7 @@ function formatRp(amount: number | null | undefined): string {
   const v = Number(amount ?? 0)
   if (!Number.isFinite(v) || v <= 0)
     return 'Rp 0'
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(v)
+  return formatCurrencyIdr(v)
 }
 
 const weeklyUsedMb = computed(() => {
@@ -504,7 +494,7 @@ const timeSpendingsChip = computed(() => {
     return { label: '0%', color: 'success' as const }
 
   const pct = debtPctOfPurchased.value
-  const label = `+${pct.toLocaleString('id-ID', { maximumFractionDigits: 1 })}%`
+  const label = `+${formatNumberId(pct, 1, 0)}%`
   const color = pct >= 50 ? ('error' as const) : (pct >= 20 ? ('warning' as const) : ('success' as const))
   return { label, color }
 })

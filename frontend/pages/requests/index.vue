@@ -4,6 +4,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import RequestFormDialog from '@/components/komandan/RequestFormDialog.vue'
 import { useSnackbar } from '@/composables/useSnackbar'
+import { formatDateTimeShortMonthId } from '~/utils/formatters'
 
 // --- [PENYEMPURNAAN] Interface data yang lebih rapi ---
 interface RequestHistoryItem {
@@ -136,13 +137,7 @@ function formatDateTime(dateString: string | null) {
   // PERBAIKAN: Mengganti !dateString dengan pengecekan null dan string kosong yang eksplisit.
   if (dateString == null || dateString === '')
     return '-'
-  return new Date(dateString).toLocaleString('id-ID', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  return formatDateTimeShortMonthId(dateString, 7)
 }
 
 function showSnackbar(text: string, color: 'success' | 'error' | 'warning' | 'info' = 'info') {

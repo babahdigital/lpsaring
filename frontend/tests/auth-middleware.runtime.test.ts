@@ -96,4 +96,36 @@ describe('auth.global runtime', () => {
 
     expect(authStoreState.initializeAuth).toHaveBeenCalledWith({ path: '/login', query: {} })
   })
+
+  it('never redirects legal privacy path regardless of user status', async () => {
+    const middleware = (await import('../middleware/auth.global')).default
+    authStoreState.isLoggedIn = true
+    authStoreState.getAccessStatusFromUser = vi.fn().mockReturnValue('blocked')
+
+    await middleware({
+      path: '/merchant-center/privacy',
+      fullPath: '/merchant-center/privacy?from=beli',
+      query: { from: 'beli' },
+      meta: {},
+    } as any)
+
+    expect(navigateToMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps legal terms path open with from=beli for non-ok user without auth init', async () => {
+    const middleware = (await import('../middleware/auth.global')).default
+    authStoreState.initialAuthCheckDone = false
+    authStoreState.isLoggedIn = true
+    authStoreState.getAccessStatusFromUser = vi.fn().mockReturnValue('expired')
+
+    await middleware({
+      path: '/merchant-center/terms',
+      fullPath: '/merchant-center/terms?from=beli',
+      query: { from: 'beli' },
+      meta: {},
+    } as any)
+
+    expect(navigateToMock).not.toHaveBeenCalled()
+    expect(authStoreState.initializeAuth).not.toHaveBeenCalled()
+  })
 })

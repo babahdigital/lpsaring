@@ -68,7 +68,7 @@ const vAppStyle = computed(() => {
 
 // Logika sinkronisasi tema, tidak ada perubahan
 watchEffect(() => {
-  if (import.meta.client && settingsStore.isLoaded) {
+  if (import.meta.client && isMounted.value && settingsStore.isLoaded) {
     configStore.skin = settingsStore.skin
     configStore.appContentLayoutNav = settingsStore.layout
     configStore.appContentWidth = settingsStore.contentWidth

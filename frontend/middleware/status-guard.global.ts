@@ -1,6 +1,7 @@
 import type { RouteLocationNormalized } from 'vue-router'
 import { defineNuxtRouteMiddleware, navigateTo, useNuxtApp, useRuntimeConfig } from '#app'
 import { useAuthStore } from '~/store/auth'
+import { isLegalPublicPath } from '~/utils/authRoutePolicy'
 
 const STATUS_PATHS: Record<string, 'blocked' | 'inactive' | 'expired' | 'habis' | 'fup'> = {
   '/login/blocked': 'blocked',
@@ -16,6 +17,9 @@ const STATUS_PATHS: Record<string, 'blocked' | 'inactive' | 'expired' | 'habis' 
 }
 
 export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => {
+  if (isLegalPublicPath(to.path))
+    return
+
   const expectedStatus = STATUS_PATHS[to.path]
   if (!expectedStatus)
     return

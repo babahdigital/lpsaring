@@ -100,3 +100,95 @@ export function format_for_whatsapp_link(phoneNumber: string | null | undefined)
   // Jika user sudah memasukkan country code selain 62 tanpa '+', biarkan apa adanya.
   return digits
 }
+
+type DateInput = string | number | Date | null | undefined
+
+const MONTH_SHORT_ID = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'] as const
+const MONTH_LONG_ID = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'] as const
+
+function groupThousandsId(value: string): string {
+  return value.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+}
+
+function getOffsetDateParts(input: DateInput, offsetHours: number) {
+  const parsed = input instanceof Date ? new Date(input.getTime()) : new Date(input as string | number)
+  if (Number.isNaN(parsed.getTime()))
+    return null
+
+  const shifted = new Date(parsed.getTime() + (offsetHours * 60 * 60 * 1000))
+
+  return {
+    day: shifted.getUTCDate(),
+    month: shifted.getUTCMonth(),
+    year: shifted.getUTCFullYear(),
+    hours: shifted.getUTCHours(),
+    minutes: shifted.getUTCMinutes(),
+    seconds: shifted.getUTCSeconds(),
+  }
+}
+
+function pad2(value: number): string {
+  return value.toString().padStart(2, '0')
+}
+
+export function formatNumberId(value: number | null | undefined, maximumFractionDigits = 0, minimumFractionDigits = 0): string {
+  const parsed = Number(value ?? 0)
+  if (!Number.isFinite(parsed))
+    return '0'
+
+  const decimals = Math.max(0, Math.min(20, maximumFractionDigits))
+  const minDecimals = Math.max(0, Math.min(decimals, minimumFractionDigits))
+  const sign = parsed < 0 ? '-' : ''
+  const fixed = Math.abs(parsed).toFixed(decimals)
+  const [integerRaw, fractionRaw = ''] = fixed.split('.')
+  const groupedInteger = groupThousandsId(integerRaw)
+
+  if (decimals === 0)
+    return `${sign}${groupedInteger}`
+
+  const fractionTrimmed = fractionRaw.replace(/0+$/, '')
+  const fractionPadded = fractionTrimmed.padEnd(minDecimals, '0')
+  return fractionPadded.length > 0
+    ? `${sign}${groupedInteger},${fractionPadded}`
+    : `${sign}${groupedInteger}`
+}
+
+export function formatCurrencyIdr(value: number | null | undefined): string {
+  return `Rp${formatNumberId(value, 0, 0)}`
+}
+
+export function formatDateMediumId(input: DateInput, offsetHours = 7): string {
+  const parts = getOffsetDateParts(input, offsetHours)
+  if (!parts)
+    return '-'
+  return `${pad2(parts.day)} ${MONTH_SHORT_ID[parts.month]} ${parts.year}`
+}
+
+export function formatDateLongId(input: DateInput, offsetHours = 7): string {
+  const parts = getOffsetDateParts(input, offsetHours)
+  if (!parts)
+    return '-'
+  return `${pad2(parts.day)} ${MONTH_LONG_ID[parts.month]} ${parts.year}`
+}
+
+export function formatDateTimeShortNumericId(input: DateInput, offsetHours = 7): string {
+  const parts = getOffsetDateParts(input, offsetHours)
+  if (!parts)
+    return '-'
+  const year2 = parts.year.toString().slice(-2)
+  return `${pad2(parts.day)}/${pad2(parts.month + 1)}/${year2} ${pad2(parts.hours)}:${pad2(parts.minutes)}`
+}
+
+export function formatDateTimeShortMonthId(input: DateInput, offsetHours = 7): string {
+  const parts = getOffsetDateParts(input, offsetHours)
+  if (!parts)
+    return '-'
+  return `${pad2(parts.day)} ${MONTH_SHORT_ID[parts.month]} ${parts.year} ${pad2(parts.hours)}:${pad2(parts.minutes)}`
+}
+
+export function formatDateTimeMakassarId(input: DateInput): string {
+  const parts = getOffsetDateParts(input, 8)
+  if (!parts)
+    return '-'
+  return `${pad2(parts.day)} ${MONTH_SHORT_ID[parts.month]} ${parts.year} ${pad2(parts.hours)}:${pad2(parts.minutes)}:${pad2(parts.seconds)} WITA`
+}

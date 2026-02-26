@@ -311,21 +311,23 @@ function formatQuota(gb: number | undefined): string {
 function formatCurrency(value: number | undefined): string {
   if (value === undefined || value === null)
     return 'Harga N/A'
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value)
+  const normalized = Math.round(value)
+  const formatted = normalized.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  return `Rp${formatted}`
 }
 
 function formatPricePerDay(price?: number | null, days?: number | null): string {
   if (price == null || days == null || days <= 0)
     return 'N/A'
   const value = Math.round(price / days)
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value)
+  return formatCurrency(value)
 }
 
 function formatPricePerGb(price?: number | null, quotaGb?: number | null): string {
   if (price == null || quotaGb == null || quotaGb <= 0)
     return 'N/A'
   const value = Math.round(price / quotaGb)
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value)
+  return formatCurrency(value)
 }
 
 function normalizePhoneNumber(phone: string | null | undefined): string {

@@ -9,7 +9,7 @@ import { navigateTo, useNuxtApp, useRoute } from '#app'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { resolveAccessStatusFromUser } from '@/utils/authAccess'
-import { getStatusRouteForAccessStatus } from '~/utils/authRoutePolicy'
+import { getStatusRouteForAccessStatus, isLegalPublicPath } from '~/utils/authRoutePolicy'
 
 type RegisterResponse = AuthRegisterResponseContract
 type RegistrationPayload = AuthRegisterRequestContract
@@ -160,6 +160,9 @@ export const useAuthStore = defineStore('auth', () => {
       return
     if (import.meta.client) {
       const path = currentPath ?? useRoute().path
+      if (isLegalPublicPath(path))
+        return
+
       const redirectPath = getRedirectPathForStatus(status, context)
       const allowPurchasePaths = status === 'habis' || status === 'expired'
         ? (context === 'captive'

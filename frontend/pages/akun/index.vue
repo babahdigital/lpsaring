@@ -5,7 +5,7 @@ import { useNuxtApp } from '#app'
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useAuthStore } from '~/store/auth'
-import { normalize_to_e164 } from '~/utils/formatters'
+import { formatCurrencyIdr, formatDateLongId, normalize_to_e164 } from '~/utils/formatters'
 
 const UserSpendingChart = defineAsyncComponent({
   loader: () => import('~/components/charts/UserSpendingChart.vue'),
@@ -68,7 +68,7 @@ const displayRole = computed(() => {
 })
 
 // --- Fungsi-Fungsi ---
-const formatCurrency = (amount: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount)
+const formatCurrency = (amount: number) => formatCurrencyIdr(amount)
 
 function formatPhoneNumberForDisplay(phone?: string | null): string {
   if (phone === null || phone === undefined || phone === '') // Perbaikan: Handle null, undefined, dan string kosong secara eksplisit
@@ -292,7 +292,8 @@ const passwordMatchRule = (v: string) => v === passwordData.value.new_password |
 function formatDate(dateString?: string | Date | null) {
   if (dateString === null || dateString === undefined || dateString === '') // Perbaikan: Handle null, undefined, dan string kosong secara eksplisit
     return 'N/A'
-  return new Date(dateString).toLocaleString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })
+  const formatted = formatDateLongId(dateString, 7)
+  return formatted === '-' ? 'N/A' : formatted
 }
 
 useHead({ title: 'Pengaturan Akun' })

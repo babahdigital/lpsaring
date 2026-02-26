@@ -278,21 +278,23 @@ function formatQuota(gb: number | undefined): string {
 function formatCurrency(value: number | undefined): string {
   if (value === undefined || value === null)
     return 'Harga N/A'
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value)
+  const normalized = Math.round(value)
+  const formatted = normalized.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  return `Rp${formatted}`
 }
 
 function formatPricePerDay(price?: number | null, days?: number | null): string {
   if (price == null || days == null || days <= 0)
     return 'N/A'
   const value = Math.round(price / days)
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value)
+  return formatCurrency(value)
 }
 
 function formatPricePerGb(price?: number | null, quotaGb?: number | null): string {
   if (price == null || quotaGb == null || quotaGb <= 0)
     return 'N/A'
   const value = Math.round(price / quotaGb)
-  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value)
+  return formatCurrency(value)
 }
 
 function goToLogin() {
@@ -475,7 +477,7 @@ onMounted(async () => {
         </p>
       </div>
 
-      <v-dialog v-model="showPaymentMethodDialog" max-width="560px" scrim="grey-darken-3" eager>
+      <v-dialog v-if="isHydrated" v-model="showPaymentMethodDialog" max-width="560px" scrim="grey-darken-3" eager>
         <v-card rounded="lg">
           <v-card-title class="d-flex align-center py-3 px-4 bg-grey-lighten-4 border-b">
             <v-icon icon="tabler-credit-card" color="primary" start />

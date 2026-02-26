@@ -8,6 +8,7 @@ import type { UserQuotaResponse } from '~/types/user'
 import { useDebtSettlementPayment } from '~/composables/useDebtSettlementPayment'
 import { useSnackbar } from '@/composables/useSnackbar'
 import { useSettingsStore } from '~/store/settings'
+import { formatCurrencyIdr, formatDateMediumId, formatDateTimeShortNumericId, formatNumberId } from '~/utils/formatters'
 
 // --- Tipe Data ---
 interface Transaction {
@@ -285,10 +286,10 @@ function formatQuota(mbValue: number | null | undefined): string {
   if (!Number.isFinite(mb) || mb <= 0)
     return '0 MB'
   if (mb < 1)
-    return `${Math.round(mb * 1024).toLocaleString('id-ID')} KB`
+    return `${formatNumberId(Math.round(mb * 1024), 0, 0)} KB`
   if (mb >= 1024)
-    return `${(Math.round((mb / 1024) * 100) / 100).toLocaleString('id-ID', { maximumFractionDigits: 2 })} GB`
-  return `${Math.round(mb).toLocaleString('id-ID')} MB`
+    return `${formatNumberId(Math.round((mb / 1024) * 100) / 100, 2, 0)} GB`
+  return `${formatNumberId(Math.round(mb), 0, 0)} MB`
 }
 
 // --- Data Tunggakan Manual (Per Tanggal) ---
@@ -331,10 +332,10 @@ function formatDebtDate(dateStr: string | null | undefined): string {
   if (!dateStr)
     return '-'
   try {
-    const date = new Date(dateStr)
-    if (Number.isNaN(date.getTime()))
+    const formatted = formatDateMediumId(dateStr, 7)
+    if (formatted === '-')
       return '-'
-    return new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium' }).format(date)
+    return formatted
   }
   catch {
     return '-'
@@ -431,17 +432,10 @@ function formatDateTime(dateTimeString: string | null | undefined): string {
     return '-'
 
   try {
-    const date = new Date(dateTimeString)
-    return Number.isNaN(date.getTime())
+    const formatted = formatDateTimeShortNumericId(dateTimeString, 7)
+    return formatted === '-'
       ? 'Tanggal Invalid'
-      : date.toLocaleString('id-ID', {
-          day: '2-digit',
-          month: '2-digit',
-          year: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false,
-        }).replace(/\./g, ':').replace(',', '')
+      : formatted
   }
   catch {
     return 'Error Format'
@@ -452,12 +446,7 @@ function formatCurrency(value: number | null | undefined): string {
   const numValue = Number(value ?? 0)
   return Number.isNaN(numValue)
     ? 'Jumlah Invalid'
-    : new Intl.NumberFormat('id-ID', {
-        style: 'currency',
-        currency: 'IDR',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0,
-      }).format(numValue)
+    : formatCurrencyIdr(numValue)
 }
 
 function getStatusColor(status: string | undefined | null): string {
