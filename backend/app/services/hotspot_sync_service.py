@@ -33,7 +33,6 @@ from app.infrastructure.gateways.mikrotik_client import (
     sync_address_list_for_user,
     upsert_address_list_entry,
     remove_address_list_entry,
-    upsert_ip_binding,
 )
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
 from app.services import settings_service
