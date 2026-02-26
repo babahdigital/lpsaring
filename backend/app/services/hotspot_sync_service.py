@@ -39,7 +39,14 @@ from app.services.device_management_service import (
     _remove_blocked_address_list,
     register_or_update_device,
 )
-from app.utils.formatters import format_to_local_phone, get_app_date_time_strings, get_app_local_datetime, round_mb
+from app.utils.formatters import (
+    format_to_local_phone,
+    get_app_date_time_strings,
+    get_app_local_datetime,
+    get_phone_number_variations,
+    normalize_to_e164,
+    round_mb,
+)
 from app.utils.quota_debt import (
     compute_debt_mb,
 )
@@ -54,6 +61,45 @@ REDIS_GLOBAL_SYNC_LOCK_KEY = "quota:sync_lock:global"
 REDIS_ACCESS_STATUS_DEDUPE_PREFIX = "wa:dedupe:access_status:"
 LOCAL_GLOBAL_SYNC_LOCK_TOKEN = "__local_global_sync_lock__"
 _local_global_sync_lock = threading.Lock()
+
+
+def _is_demo_phone_whitelisted(phone_number: Optional[str]) -> bool:
+    if not phone_number:
+        return False
+
+    try:
+        normalized_phone = normalize_to_e164(str(phone_number))
+    except ValueError:
+        return False
+
+    allowed_raw = current_app.config.get("DEMO_ALLOWED_PHONES") or []
+    if not isinstance(allowed_raw, list) or len(allowed_raw) == 0:
+        return False
+
+    target_variants = set(get_phone_number_variations(normalized_phone))
+
+    for candidate in allowed_raw:
+        if candidate is None:
+            continue
+
+        raw_phone = str(candidate).strip()
+        if raw_phone == "":
+            continue
+
+        try:
+            normalized_candidate = normalize_to_e164(raw_phone)
+        except ValueError:
+            continue
+
+        candidate_variants = set(get_phone_number_variations(normalized_candidate))
+        if target_variants.intersection(candidate_variants):
+            return True
+
+    return False
+
+
+def _is_demo_user(user: User) -> bool:
+    return _is_demo_phone_whitelisted(getattr(user, "phone_number", None))
 
 
 def _is_valid_ip_candidate(value: Optional[str]) -> bool:
@@ -827,6 +873,9 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
 
             for user in users_to_sync:
                 try:
+                    if _is_demo_user(user):
+                        continue
+
                     if not _acquire_sync_lock(redis_client, user.id):
                         continue
                     username_08 = format_to_local_phone(user.phone_number)
@@ -988,6 +1037,8 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
 def sync_address_list_for_single_user(user: User, client_ip: Optional[str] = None) -> bool:
     """Sync address-list status for a single user based on DB counters."""
     if not user or not user.is_active or user.approval_status != ApprovalStatus.APPROVED:
+        return False
+    if _is_demo_user(user):
         return False
 
     username_08 = format_to_local_phone(user.phone_number)

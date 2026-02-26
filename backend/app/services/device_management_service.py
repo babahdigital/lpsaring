@@ -232,6 +232,20 @@ def _remove_blocked_address_list(ip_address: Optional[str]) -> None:
         remove_address_list_entry(api_connection=api, address=ip_address, list_name=list_blocked)
 
 
+def _remove_unauthorized_address_list(ip_address: Optional[str]) -> None:
+    if not ip_address:
+        return
+    if not _is_mikrotik_operations_enabled():
+        logger.info("MikroTik ops disabled: skip address-list unauthorized remove")
+        return
+    list_unauthorized = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized") or "unauthorized"
+    with get_mikrotik_connection() as api:
+        if not api:
+            logger.warning("Tidak bisa konek MikroTik untuk remove address-list unauthorized")
+            return
+        remove_address_list_entry(api_connection=api, address=ip_address, list_name=list_unauthorized)
+
+
 def _remove_ip_binding(mac_address: str, server: Optional[str]) -> None:
     if not mac_address:
         return
@@ -601,6 +615,7 @@ def apply_device_binding_for_login(
             server=user.mikrotik_server_name or settings["mikrotik_server_default"],
         )
     _remove_blocked_address_list(device.ip_address)
+    _remove_unauthorized_address_list(device.ip_address)
 
     if settings.get("dhcp_static_lease_enabled"):
         username_08 = format_to_local_phone(user.phone_number) or ""

@@ -20,7 +20,9 @@ def request_otp_impl(
     normalize_to_e164,
     increment_metric,
     is_otp_cooldown_active,
+    is_demo_mode_enabled,
     is_demo_phone_allowed,
+    is_demo_phone_whitelisted,
     get_phone_number_variations,
     set_otp_cooldown,
     build_status_error,
@@ -41,6 +43,15 @@ def request_otp_impl(
         except ValueError as e:
             increment_metric("otp.request.failed")
             return jsonify(AuthErrorResponseSchema(error=str(e)).model_dump()), HTTPStatus.UNPROCESSABLE_ENTITY
+
+        demo_phone_whitelisted = is_demo_phone_whitelisted(phone_e164)
+        demo_mode_enabled = is_demo_mode_enabled()
+        if demo_phone_whitelisted and not demo_mode_enabled:
+            increment_metric("otp.request.failed")
+            current_app.logger.warning("OTP request blocked (demo disabled): %s", phone_e164)
+            return jsonify(
+                AuthErrorResponseSchema(error="Mode demo sedang nonaktif.").model_dump()
+            ), HTTPStatus.FORBIDDEN
 
         if is_otp_cooldown_active(phone_e164):
             return jsonify(

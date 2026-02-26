@@ -73,6 +73,8 @@ Catatan perilaku:
 ## Dokumen Detail
 - Lifecycle transaksi + data yang disimpan:
   - `docs/TRANSACTIONS_MIDTRANS_LIFECYCLE.md`
+- SOP operasional demo mode (Admin ON/OFF + env baseline):
+  - `docs/DEMO_MODE_ADMIN_SOP.md`
 - Snap mode (referensi internal):
   - `docs/MIDTRANS_SNAP.md`
 - Checklist test cepat:

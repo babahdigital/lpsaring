@@ -1,4 +1,4 @@
-export type AccessStatus = 'ok' | 'blocked' | 'inactive' | 'expired' | 'habis' | 'fup'
+import type { AccessStatus } from './authAccess'
 export type GuardContext = 'login' | 'captive'
 
 export const LEGAL_PUBLIC_PATHS = ['/merchant-center/privacy', '/merchant-center/terms', '/privacy', '/terms']

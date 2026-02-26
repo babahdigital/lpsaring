@@ -132,14 +132,14 @@ def _extract_phone_from_request() -> Optional[str]:
         return request.form.get("phone_number")
 
 
-def _is_demo_phone_allowed(phone_e164: str) -> bool:
-    demo_mode_enabled = settings_service.get_setting_as_bool(
+def _is_demo_mode_enabled() -> bool:
+    return settings_service.get_setting_as_bool(
         "DEMO_MODE_ENABLED",
         bool(current_app.config.get("DEMO_MODE_ENABLED", False)),
     )
-    if not demo_mode_enabled:
-        return False
 
+
+def _is_demo_phone_whitelisted(phone_e164: str) -> bool:
     allowed_raw = current_app.config.get("DEMO_ALLOWED_PHONES") or []
     if not isinstance(allowed_raw, list) or len(allowed_raw) == 0:
         return False
@@ -164,6 +164,12 @@ def _is_demo_phone_allowed(phone_e164: str) -> bool:
             return True
 
     return False
+
+
+def _is_demo_phone_allowed(phone_e164: str) -> bool:
+    if not _is_demo_mode_enabled():
+        return False
+    return _is_demo_phone_whitelisted(phone_e164)
 
 
 def _safe_normalize_phone_for_key(phone_number: str) -> str:
@@ -553,7 +559,9 @@ def request_otp():
         normalize_to_e164=normalize_to_e164,
         increment_metric=increment_metric,
         is_otp_cooldown_active=_is_otp_cooldown_active,
+        is_demo_mode_enabled=_is_demo_mode_enabled,
         is_demo_phone_allowed=_is_demo_phone_allowed,
+        is_demo_phone_whitelisted=_is_demo_phone_whitelisted,
         get_phone_number_variations=get_phone_number_variations,
         set_otp_cooldown=_set_otp_cooldown,
         build_status_error=_build_status_error,
