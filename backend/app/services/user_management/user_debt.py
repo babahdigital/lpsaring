@@ -22,7 +22,7 @@ def _ceil_mb(value_mb: float) -> int:
 
 
 def get_auto_debt_mb(user: User) -> float:
-    if getattr(user, "role", None) == UserRole.KOMANDAN:
+    if getattr(user, "role", None) == UserRole.KOMANDAN or bool(getattr(user, "is_unlimited_user", False)):
         return 0.0
     purchased_mb = float(getattr(user, "total_quota_purchased_mb", 0) or 0.0)
     try:
@@ -200,6 +200,15 @@ def clear_all_debts_to_zero(
 ) -> Tuple[int, int]:
     if getattr(user, "role", None) == UserRole.KOMANDAN:
         return 0, 0
+    if bool(getattr(user, "is_unlimited_user", False)):
+        manual_balance = int(getattr(user, "manual_debt_mb", 0) or 0)
+        paid_manual_mb = apply_manual_debt_payment(
+            user=user,
+            admin_actor=admin_actor,
+            pay_mb=manual_balance,
+            source=source,
+        )
+        return 0, int(paid_manual_mb)
     """Clear (auto + manual) debt to 0.
 
     Returns (paid_auto_mb, paid_manual_mb).

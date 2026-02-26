@@ -170,12 +170,14 @@ def test_reset_login_removes_hotspot_cookie_and_comment_tagged_entries(monkeypat
             [
                 {"id": "l1", "mac-address": "AA:BB:CC:DD:EE:FF"},
                 {"id": "l2", "mac-address": "11:22:33:44:55:66"},
+                {"id": "l3", "mac-address": "66:55:44:33:22:11", "comment": f"legacy|{uid_marker}"},
             ]
         ),
         "/ip/arp": _Resource(
             [
                 {"id": "p1", "mac-address": "AA:BB:CC:DD:EE:FF", "address": "172.16.0.10"},
                 {"id": "p2", "mac-address": "11:22:33:44:55:66", "address": "172.16.0.20"},
+                {"id": "p3", "address": "172.16.0.77", "comment": f"lpsaring|user={user08}"},
             ]
         ),
         "/ip/firewall/address-list": _Resource(
@@ -220,5 +222,9 @@ def test_reset_login_removes_hotspot_cookie_and_comment_tagged_entries(monkeypat
     # Ensure at least the matching items are removed in resources
     assert "c1" in resources["/ip/hotspot/cookie"].removed_ids
     assert "b1" in resources["/ip/hotspot/ip-binding"].removed_ids
+    assert "l1" in resources["/ip/dhcp-server/lease"].removed_ids
+    assert "l3" in resources["/ip/dhcp-server/lease"].removed_ids
+    assert "p1" in resources["/ip/arp"].removed_ids
+    assert "p3" in resources["/ip/arp"].removed_ids
     assert "f1" in resources["/ip/firewall/address-list"].removed_ids
     assert "f2" in resources["/ip/firewall/address-list"].removed_ids

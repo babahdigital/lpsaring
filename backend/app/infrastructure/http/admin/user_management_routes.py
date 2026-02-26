@@ -324,17 +324,24 @@ def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
                 except Exception as e:
                     router_summary["errors"].append(f"ip_binding_cleanup: {e}")
 
-                # Remove DHCP leases by MAC.
+                # Remove DHCP leases by MAC/IP and comment markers.
                 try:
                     lease_res = api.get_resource("/ip/dhcp-server/lease")
                     for mac in macs:
                         router_summary["dhcp_leases_removed"] += _remove_all(
                             lease_res, lease_res.get(**{"mac-address": mac})
                         )
+                    for ip in ips:
+                        router_summary["dhcp_leases_removed"] += _remove_all(lease_res, lease_res.get(address=ip))
+
+                    # Also remove lease rows tagged with this user in comment (covers stale/missing device records).
+                    for row in lease_res.get() or []:
+                        if _comment_matches_user(row.get("comment")):
+                            router_summary["comment_tagged_entries_removed"] += _remove_all(lease_res, [row])
                 except Exception as e:
                     router_summary["errors"].append(f"dhcp_lease_cleanup: {e}")
 
-                # Remove ARP entries by MAC and IP.
+                # Remove ARP entries by MAC/IP and comment markers.
                 try:
                     arp_res = api.get_resource("/ip/arp")
                     for mac in macs:
@@ -343,6 +350,11 @@ def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
                         )
                     for ip in ips:
                         router_summary["arp_entries_removed"] += _remove_all(arp_res, arp_res.get(address=ip))
+
+                    # Also remove ARP rows tagged with this user in comment (covers stale/missing device records).
+                    for row in arp_res.get() or []:
+                        if _comment_matches_user(row.get("comment")):
+                            router_summary["comment_tagged_entries_removed"] += _remove_all(arp_res, [row])
                 except Exception as e:
                     router_summary["errors"].append(f"arp_cleanup: {e}")
 

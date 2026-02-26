@@ -306,6 +306,30 @@ def set_user_unlimited(user: User, admin_actor: User, make_unlimited: bool) -> T
 
     user.mikrotik_user_exists = True
 
+    if make_unlimited:
+        try:
+            user_debt.clear_all_debts_to_zero(
+                user=user,
+                admin_actor=admin_actor,
+                source="set_unlimited",
+            )
+        except Exception as e:
+            current_app.logger.warning(
+                "Gagal clear debt saat set unlimited untuk user %s: %s",
+                user.id,
+                e,
+            )
+
+        blocked_reason = str(getattr(user, "blocked_reason", "") or "")
+        if bool(getattr(user, "is_blocked", False)) and (
+            blocked_reason.startswith("quota_auto_debt_limit|")
+            or blocked_reason.startswith("quota_manual_debt_end_of_month|")
+        ):
+            user.is_blocked = False
+            user.blocked_reason = None
+            user.blocked_at = None
+            user.blocked_by_id = None
+
     # Sinkronisasi akses (address-list + ip-binding type) agar perubahan unlimited langsung terasa.
     # Catatan: kalau user masih diblokir manual, address-list akan tetap mengikuti status blocked.
     try:
