@@ -10,9 +10,7 @@ from app.infrastructure.db.models import (
     TransactionStatus,
     UserQuotaDebt,
 )
-from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection
 from app.services.transaction_status_link_service import verify_transaction_status_token
-from app.services.transaction_service import apply_package_and_sync_to_mikrotik
 from app.infrastructure.http.error_envelope import error_response
 from app.infrastructure.http.transactions.reconcile_service import reconcile_pending_transaction
 

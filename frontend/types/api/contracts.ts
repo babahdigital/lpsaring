@@ -1,5 +1,6 @@
 export type ApiRole = 'USER' | 'KOMANDAN' | 'ADMIN' | 'SUPER_ADMIN'
 export type ApiApprovalStatus = 'PENDING' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED'
+export const API_CONTRACT_REVISION = '2026-02-26-internal-refactor-no-signature-change' as const
 
 export interface ApiErrorDetail {
   loc?: Array<string | number>

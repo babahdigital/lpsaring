@@ -66,3 +66,8 @@ Jika ada perubahan signature endpoint prioritas (route/path/method), PR harus me
 3. `docs/API_DETAIL.md`
 
 CI akan gagal jika syarat ini tidak terpenuhi.
+
+## Addendum 2026-02-26
+- Batch hardening transaksi/payment melakukan refactor internal wiring dan pemecahan concern frontend.
+- Tidak ada perubahan signature endpoint prioritas (path/method tetap).
+- Sinkronisasi dokumen ini, OpenAPI, dan typed contract dilakukan untuk memenuhi contract gate CI.

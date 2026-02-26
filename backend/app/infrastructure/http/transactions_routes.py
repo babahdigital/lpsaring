@@ -15,7 +15,6 @@ from sqlalchemy.orm import selectinload
 from app.extensions import db, limiter
 from app.infrastructure.db.models import (
     Package,
-    Transaction,
 )
 from app.services.notification_service import verify_temp_invoice_token
 from app.services.transaction_status_link_service import generate_transaction_status_token

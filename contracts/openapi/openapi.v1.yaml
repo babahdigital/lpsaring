@@ -5,6 +5,7 @@ info:
   description: |
     Source of truth kontrak API domain prioritas (Auth, Profile, Devices, Transactions).
     Ruang lingkup ini sengaja fokus untuk mengurangi drift backend-frontend pada flow kritikal.
+    Revisi internal 2026-02-26: refactor wiring transaksi/payment tanpa perubahan signature endpoint.
 servers:
   - url: /api
     description: Relative API base path
