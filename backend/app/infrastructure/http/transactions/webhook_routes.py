@@ -11,6 +11,7 @@ from app.services import settings_service
 from app.services.notification_service import generate_temp_invoice_token, get_notification_message
 from app.services.transaction_service import apply_package_and_sync_to_mikrotik
 from app.services.transaction_status_link_service import generate_transaction_status_token
+from .helpers import _is_demo_user_eligible
 
 
 def handle_notification_impl(
@@ -182,6 +183,72 @@ def handle_notification_impl(
                         HTTPStatus.INTERNAL_SERVER_ERROR,
                     )
             else:
+                is_demo_user = _is_demo_user_eligible(getattr(transaction, "user", None))
+                if is_demo_user:
+                    skip_msg = "Demo payment-only: skip MikroTik sync."
+                    log_transaction_event(
+                        session=session,
+                        transaction=transaction,
+                        source=TransactionEventSource.APP,
+                        event_type="DEMO_PAYMENT_ONLY_SKIP_MIKROTIK",
+                        status=transaction.status,
+                        payload={"message": skip_msg},
+                    )
+                    session.commit()
+                    current_app.logger.info("WEBHOOK: %s order_id=%s", skip_msg, order_id)
+                    increment_metric("payment.success")
+                    try:
+                        user = transaction.user
+                        package = transaction.package
+                        if user is None or package is None:
+                            current_app.logger.error(
+                                "WEBHOOK: transaksi %s sukses tetapi user/package tidak ter-load. Skip WA invoice.",
+                                order_id,
+                            )
+                            return jsonify({"status": "ok"}), HTTPStatus.OK
+                        temp_token = generate_temp_invoice_token(str(transaction.id))
+
+                        base_url = (
+                            settings_service.get_setting("APP_PUBLIC_BASE_URL")
+                            or settings_service.get_setting("FRONTEND_URL")
+                            or settings_service.get_setting("APP_LINK_USER")
+                            or request.url_root
+                        )
+                        if not base_url:
+                            current_app.logger.error(
+                                "APP_PUBLIC_BASE_URL tidak diatur dan request.url_root kosong. Tidak dapat membuat URL invoice untuk WhatsApp."
+                            )
+                            raise ValueError("Konfigurasi alamat publik aplikasi tidak ditemukan.")
+
+                        temp_invoice_url = f"{base_url.rstrip('/')}/api/transactions/invoice/temp/{temp_token}.pdf"
+
+                        status_token = generate_transaction_status_token(transaction.midtrans_order_id)
+                        status_url = f"{base_url.rstrip('/')}/payment/status?order_id={transaction.midtrans_order_id}&t={status_token}"
+
+                        msg_context = {
+                            "full_name": user.full_name,
+                            "order_id": transaction.midtrans_order_id,
+                            "package_name": package.name,
+                            "package_price": format_currency_fn(package.price),
+                            "status_url": status_url,
+                        }
+                        caption_message = get_notification_message("purchase_success_with_invoice", msg_context)
+                        filename = f"invoice-{transaction.midtrans_order_id}.pdf"
+
+                        request_id = request.environ.get("FLASK_REQUEST_ID", "")
+                        send_whatsapp_invoice_task.delay(
+                            str(user.phone_number),
+                            caption_message,
+                            temp_invoice_url,
+                            filename,
+                            request_id,
+                        )
+                    except Exception as e_notif:
+                        current_app.logger.error(
+                            f"WEBHOOK: Gagal kirim notif WhatsApp {order_id}: {e_notif}", exc_info=True
+                        )
+                    return jsonify({"status": "ok"}), HTTPStatus.OK
+
                 should_apply, effect_lock_key = begin_order_effect(
                     order_id=order_id,
                     effect_name="hotspot_apply",

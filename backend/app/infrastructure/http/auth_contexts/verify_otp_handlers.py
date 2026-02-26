@@ -7,7 +7,6 @@ from typing import Any, Optional, cast
 from flask import current_app, jsonify
 from pydantic import ValidationError
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 
 
 def verify_otp_impl(
@@ -138,40 +137,11 @@ def verify_otp_impl(
             select(User).where(User.phone_number.in_(phone_variations))
         ).scalar_one_or_none()
 
-        if user_to_login is None and used_demo_bypass and current_app.config.get("DEMO_MODE_ENABLED", False):
-            now_utc = datetime.now(dt_timezone.utc)
-            local_phone = format_to_local_phone(phone_e164)
-            fallback_name = f"Demo User {local_phone[-4:]}" if local_phone and len(local_phone) >= 4 else "Demo User"
-
-            demo_user = User()
-            demo_user.phone_number = phone_e164
-            demo_user.full_name = fallback_name
-            demo_user.password_hash = generate_password_hash(secrets_module.token_urlsafe(12))
-            demo_user.role = UserRole.USER
-            demo_user.approval_status = ApprovalStatus.APPROVED
-            demo_user.is_active = True
-            demo_user.approved_at = now_utc
-            demo_user.approved_by_id = None
-            demo_user.last_login_at = now_utc
-            demo_user.mikrotik_user_exists = False
-
-            db.session.add(demo_user)
-            try:
-                db.session.flush()
-            except IntegrityError:
-                db.session.rollback()
-                user_to_login = db.session.execute(
-                    select(User).where(User.phone_number.in_(phone_variations))
-                ).scalar_one_or_none()
-            else:
-                user_to_login = demo_user
-                current_app.logger.warning(
-                    "Demo user auto-provisioned via demo bypass: phone=%s user_id=%s",
-                    phone_e164,
-                    str(demo_user.id),
-                )
-
         if not user_to_login:
+            if used_demo_bypass and current_app.config.get("DEMO_MODE_ENABLED", False):
+                return jsonify(
+                    AuthErrorResponseSchema(error="Nomor demo belum disiapkan oleh sistem.").model_dump()
+                ), HTTPStatus.FORBIDDEN
             return jsonify(
                 AuthErrorResponseSchema(error="User not found after OTP verification.").model_dump()
             ), HTTPStatus.INTERNAL_SERVER_ERROR
@@ -179,6 +149,8 @@ def verify_otp_impl(
             return build_status_error("inactive", "Account is not active or approved."), HTTPStatus.FORBIDDEN
         if getattr(user_to_login, "is_blocked", False):
             return build_status_error("blocked", "Akun Anda diblokir oleh Admin."), HTTPStatus.FORBIDDEN
+
+        is_demo_login = bool(is_demo_phone_allowed(phone_e164))
 
         client_ip = data.client_ip
         client_mac = data.client_mac
@@ -202,7 +174,7 @@ def verify_otp_impl(
                 binding_context.get("mac_message"),
             )
 
-        if user_to_login.role in [UserRole.USER, UserRole.KOMANDAN, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
+        if (not is_demo_login) and user_to_login.role in [UserRole.USER, UserRole.KOMANDAN, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
             otp_auto_authorize = current_app.config.get("OTP_AUTO_AUTHORIZE_DEVICE", True)
             bypass_explicit = bool(otp_auto_authorize) and (not used_bypass_code)
 
@@ -262,6 +234,11 @@ def verify_otp_impl(
                         login_ip_for_history = None
                 except Exception:
                     pass
+        elif is_demo_login:
+            current_app.logger.info(
+                "Verify-OTP demo payment-only: skip device binding/address-list sync for user_id=%s",
+                user_to_login.id,
+            )
 
         user_to_login.last_login_at = datetime.now(dt_timezone.utc)
         new_login_entry = cast(Any, UserLoginHistory)(

@@ -11,6 +11,7 @@ from flask import abort, current_app, has_request_context, request
 from app.infrastructure.db.models import Transaction, TransactionEventSource, TransactionStatus
 from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection
 from app.services.transaction_service import apply_package_and_sync_to_mikrotik
+from .helpers import _is_demo_user_eligible
 
 
 def _log_tx(route_label: str, level: str, message: str, **context: Any) -> None:
@@ -149,6 +150,29 @@ def reconcile_pending_transaction(
             ) or datetime.now(dt_timezone.utc)
             transaction.payment_code = midtrans_status_response.get("payment_code") or transaction.payment_code
             transaction.biller_code = midtrans_status_response.get("biller_code") or transaction.biller_code
+
+            if _is_demo_user_eligible(getattr(transaction, "user", None)):
+                log_transaction_event(
+                    session=session,
+                    transaction=transaction,
+                    source=TransactionEventSource.APP,
+                    event_type="DEMO_PAYMENT_ONLY_SKIP_MIKROTIK",
+                    status=transaction.status,
+                    payload={"message": "Demo payment-only: skip MikroTik sync."},
+                )
+                session.commit()
+                _log_tx(
+                    route_label,
+                    "info",
+                    "Demo payment-only transaction committed without MikroTik sync",
+                    order_id=order_id,
+                    event="demo_skip_mikrotik",
+                    user_id=str(getattr(transaction, "user_id", "") or ""),
+                    status_before=prev_status.value,
+                    status_after=transaction.status.value,
+                    request_id=request_id,
+                )
+                return
 
             should_apply, effect_lock_key = begin_order_effect(
                 order_id=order_id,

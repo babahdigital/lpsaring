@@ -58,14 +58,13 @@ Dokumen ini adalah indeks/pondasi untuk semua perubahan pembayaran.
 Untuk kebutuhan demo/staging yang dijalankan di environment produksi secara terkontrol, tersedia flag backend berikut:
 
 - `DEMO_MODE_ENABLED`
-- `DEMO_ALLOW_ANY_PHONE`
 - `DEMO_ALLOWED_PHONES`
 - `DEMO_BYPASS_OTP_CODE`
 - `DEMO_SHOW_TEST_PACKAGE`
 - `DEMO_PACKAGE_IDS`
 
 Catatan perilaku:
-- Bypass OTP hanya berlaku untuk user yang memenuhi kriteria demo.
+- Bypass OTP hanya berlaku untuk nomor yang sudah ada di `DEMO_ALLOWED_PHONES` dan sudah disiapkan sistem.
 - Paket nonaktif dapat ditampilkan/dibeli untuk user demo sesuai konfigurasi env.
 - User reguler tetap mengikuti aturan normal (tanpa bypass dan tanpa akses paket testing).
 - Enforce visibilitas paket demo dilakukan di backend berdasarkan requester terautentikasi (status `is_demo_user`), bukan mengandalkan toggle global di frontend.

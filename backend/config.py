@@ -463,7 +463,6 @@ class Config:
     OTP_ALLOW_BYPASS = get_env_bool("OTP_ALLOW_BYPASS", "False")
     OTP_BYPASS_CODE = os.environ.get("OTP_BYPASS_CODE", "000000")
     DEMO_MODE_ENABLED = get_env_bool("DEMO_MODE_ENABLED", "False")
-    DEMO_ALLOW_ANY_PHONE = get_env_bool("DEMO_ALLOW_ANY_PHONE", "False")
     DEMO_ALLOWED_PHONES = get_env_list("DEMO_ALLOWED_PHONES", "[]")
     DEMO_BYPASS_OTP_CODE = os.environ.get("DEMO_BYPASS_OTP_CODE", "000000")
     DEMO_SHOW_TEST_PACKAGE = get_env_bool("DEMO_SHOW_TEST_PACKAGE", "False")

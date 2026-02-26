@@ -56,12 +56,11 @@ def request_otp_impl(
         ).scalar_one_or_none()
         if not user_for_otp:
             if demo_phone_allowed:
-                set_otp_cooldown(phone_e164)
-                increment_metric("otp.request.success")
-                current_app.logger.warning("OTP request demo accepted for non-registered phone: %s", phone_e164)
+                increment_metric("otp.request.failed")
+                current_app.logger.warning("OTP request demo denied (phone not provisioned): %s", phone_e164)
                 return jsonify(
-                    RequestOtpResponseSchema(message="Kode OTP berhasil diproses. Silakan lanjut verifikasi.").model_dump()
-                ), HTTPStatus.OK
+                    AuthErrorResponseSchema(error="Nomor demo belum disiapkan oleh sistem.").model_dump()
+                ), HTTPStatus.FORBIDDEN
 
             increment_metric("otp.request.failed")
             return jsonify(

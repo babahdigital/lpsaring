@@ -57,6 +57,7 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
   else {
     const userDashboard = '/dashboard'
     const adminDashboard = '/admin/dashboard'
+    const isDemoUser = authStore.currentUser?.is_demo_user === true
 
     // Halaman public diizinkan untuk semua role (hindari auto-redirect ke dashboard).
     if (isPublicPage)
@@ -65,6 +66,13 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
     const roleRedirect = resolveLoggedInRoleRedirect(to.path, isAdmin, isKomandan)
     if (roleRedirect)
       return navigateTo(roleRedirect, { replace: true })
+
+    if (!isAdmin && isDemoUser) {
+      const demoAllowedPaths = ['/beli', '/captive/beli', '/payment/status', '/payment/finish']
+      const isAllowedDemoPath = demoAllowedPaths.some(path => to.path === path || to.path.startsWith(`${path}/`))
+      if (!isAllowedDemoPath)
+        return navigateTo('/beli', { replace: true })
+    }
 
     if (!isAdmin) {
       const accessStatus = authStore.getAccessStatusFromUser(authStore.currentUser ?? authStore.lastKnownUser)

@@ -18,10 +18,55 @@ from app.utils.csrf_utils import is_trusted_origin
 from app.utils.request_utils import get_client_ip
 from app.services.refresh_token_service import rotate_refresh_token
 from app.services.jwt_token_service import create_access_token
+from app.utils.formatters import get_phone_number_variations, normalize_to_e164
 
 
 def _auth_error(message: str, status: HTTPStatus, code: str):
     return error_response(message, status_code=status, code=code)
+
+
+def _is_demo_user_by_phone(phone_number: str | None) -> bool:
+    if not current_app.config.get("DEMO_MODE_ENABLED", False):
+        return False
+
+    raw_phone = str(phone_number or "").strip()
+    if raw_phone == "":
+        return False
+
+    allowed_raw = current_app.config.get("DEMO_ALLOWED_PHONES") or []
+    if not isinstance(allowed_raw, list) or len(allowed_raw) == 0:
+        return False
+
+    try:
+        normalized_user = normalize_to_e164(raw_phone)
+    except Exception:
+        return False
+
+    user_variants = set(get_phone_number_variations(normalized_user))
+    for candidate in allowed_raw:
+        candidate_raw = str(candidate or "").strip()
+        if candidate_raw == "":
+            continue
+        try:
+            normalized_candidate = normalize_to_e164(candidate_raw)
+        except Exception:
+            continue
+
+        candidate_variants = set(get_phone_number_variations(normalized_candidate))
+        if user_variants.intersection(candidate_variants):
+            return True
+
+    return False
+
+
+def _is_demo_path_allowed(path: str) -> bool:
+    allowed_prefixes = (
+        "/api/transactions",
+        "/api/packages",
+        "/api/auth/me",
+        "/api/auth/logout",
+    )
+    return any(path == prefix or path.startswith(f"{prefix}/") for prefix in allowed_prefixes)
 
 
 def _get_trusted_origins() -> list[str]:
@@ -149,6 +194,15 @@ def token_required(f):
                     if not user_from_token.is_approved:
                         return _auth_error("User account is not approved.", HTTPStatus.FORBIDDEN, "AUTH_USER_UNAPPROVED")
 
+                    if _is_demo_user_by_phone(getattr(user_from_token, "phone_number", None)) and not _is_demo_path_allowed(
+                        request.path
+                    ):
+                        return _auth_error(
+                            "Akun demo hanya diizinkan mengakses alur pembayaran.",
+                            HTTPStatus.FORBIDDEN,
+                            "AUTH_DEMO_SCOPE_RESTRICTED",
+                        )
+
                     jwt_payload = {"sub": str(user_from_token.id), "rl": user_from_token.role.value}
                     new_access = create_access_token(data=jwt_payload)
                     g.new_access_token = new_access
@@ -174,6 +228,15 @@ def token_required(f):
                 return _auth_error("User account is inactive.", HTTPStatus.FORBIDDEN, "AUTH_USER_INACTIVE")
             if not user_from_token.is_approved:
                 return _auth_error("User account is not approved.", HTTPStatus.FORBIDDEN, "AUTH_USER_UNAPPROVED")
+
+            if _is_demo_user_by_phone(getattr(user_from_token, "phone_number", None)) and not _is_demo_path_allowed(
+                request.path
+            ):
+                return _auth_error(
+                    "Akun demo hanya diizinkan mengakses alur pembayaran.",
+                    HTTPStatus.FORBIDDEN,
+                    "AUTH_DEMO_SCOPE_RESTRICTED",
+                )
 
         except ExpiredSignatureError:
             # Jika access token expired dan token berasal dari cookie, coba refresh.
@@ -205,6 +268,15 @@ def token_required(f):
                 return _auth_error("User account is inactive.", HTTPStatus.FORBIDDEN, "AUTH_USER_INACTIVE")
             if not user_from_token.is_approved:
                 return _auth_error("User account is not approved.", HTTPStatus.FORBIDDEN, "AUTH_USER_UNAPPROVED")
+
+            if _is_demo_user_by_phone(getattr(user_from_token, "phone_number", None)) and not _is_demo_path_allowed(
+                request.path
+            ):
+                return _auth_error(
+                    "Akun demo hanya diizinkan mengakses alur pembayaran.",
+                    HTTPStatus.FORBIDDEN,
+                    "AUTH_DEMO_SCOPE_RESTRICTED",
+                )
 
             jwt_payload = {"sub": str(user_from_token.id), "rl": user_from_token.role.value}
             new_access = create_access_token(data=jwt_payload)

@@ -29,9 +29,6 @@ def _is_demo_user_eligible(user: User | None) -> bool:
     if not bool(current_app.config.get("DEMO_MODE_ENABLED", False)):
         return False
 
-    if bool(current_app.config.get("DEMO_ALLOW_ANY_PHONE", False)):
-        return True
-
     allowed_raw = current_app.config.get("DEMO_ALLOWED_PHONES") or []
     if not isinstance(allowed_raw, list) or len(allowed_raw) == 0:
         return False
