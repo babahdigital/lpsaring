@@ -916,8 +916,14 @@ def test_webhook_skips_duplicate_hotspot_apply_side_effect(monkeypatch):
     )
     fake_session = _FakeSession(transaction=fake_tx)
 
+    begin_effect_calls = []
+
+    def _fake_begin_order_effect(**kwargs):
+        begin_effect_calls.append(kwargs)
+        return False, None
+
     monkeypatch.setattr(transactions_routes, "db", _FakeDB(fake_session))
-    monkeypatch.setattr(transactions_routes, "_begin_order_effect", lambda **_kwargs: (False, None))
+    monkeypatch.setattr(transactions_routes, "_begin_order_effect", _fake_begin_order_effect)
 
     def _should_not_run(*_args, **_kwargs):
         raise AssertionError("Mikrotik side effect should not run for duplicate/locked order effect")
@@ -967,6 +973,8 @@ def test_webhook_skips_duplicate_hotspot_apply_side_effect(monkeypatch):
     payload = resp.get_json()
     assert payload.get("status") == "ok"
     assert "duplicate" in str(payload.get("message", "")).lower()
+    assert len(begin_effect_calls) == 1
+    assert begin_effect_calls[0].get("session") is fake_session
 
 
 def test_webhook_rejects_missing_signature_in_production_like_env(monkeypatch):

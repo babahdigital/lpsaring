@@ -4,6 +4,7 @@ import json
 import calendar
 import secrets
 from datetime import datetime, timedelta, timezone as dt_timezone
+from sqlalchemy.orm import selectinload
 
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_with_pdf, send_whatsapp_message
 from app.services.hotspot_sync_service import sync_hotspot_usage_and_profiles, cleanup_inactive_users
@@ -20,9 +21,17 @@ from app.infrastructure.db.models import (
     User,
     UserRole,
 )
-from app.infrastructure.gateways.mikrotik_client import activate_or_update_hotspot_user
+from app.infrastructure.gateways.mikrotik_client import (
+    activate_or_update_hotspot_user,
+    get_hotspot_host_usage_map,
+    get_mikrotik_connection,
+    remove_address_list_entry,
+    upsert_address_list_entry,
+    upsert_ip_binding,
+)
 from app.services.notification_service import get_notification_message
 from app.services.user_management.helpers import _handle_mikrotik_operation
+from app.commands.sync_unauthorized_hosts_command import sync_unauthorized_hosts_command
 from app.utils.formatters import format_to_local_phone, get_app_local_datetime
 from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package, format_rupiah
 
@@ -101,11 +110,21 @@ def enforce_end_of_month_debt_block_task(self):
             .filter(User.approval_status == ApprovalStatus.APPROVED)
             .filter(User.role == UserRole.USER)
             .filter(User.is_unlimited_user.is_(False))
+            .options(selectinload(User.devices))
             .all()
         )
 
         enable_wa = settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") == "True"
         blocked_profile = settings_service.get_setting("MIKROTIK_BLOCKED_PROFILE", "inactive") or "inactive"
+        list_blocked = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked"
+        other_status_lists = [
+            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active",
+            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup",
+            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive",
+            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired",
+            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis",
+        ]
+        blocked_binding_type = settings_service.get_ip_binding_type_setting("IP_BINDING_TYPE_BLOCKED", "blocked")
 
         recipients_query = (
             db.select(User)
@@ -118,6 +137,10 @@ def enforce_end_of_month_debt_block_task(self):
         subscribed_admins = db.session.scalars(recipients_query).all()
 
         for user in users:
+            manual_debt_mb = int(getattr(user, "manual_debt_mb", 0) or 0)
+            if manual_debt_mb <= 0:
+                continue
+
             try:
                 debt_mb = float(getattr(user, "quota_debt_total_mb", 0) or 0)
             except Exception:
@@ -185,12 +208,50 @@ def enforce_end_of_month_debt_block_task(self):
 
                 user.is_blocked = True
                 user.blocked_reason = (
-                    f"quota_debt_end_of_month|debt_mb={debt_mb_text}"
+                    f"quota_manual_debt_end_of_month|debt_mb={debt_mb_text}|manual_debt_mb={manual_debt_mb}"
                     + (f"|estimated_rp={int(estimate_rp)}" if isinstance(estimate_rp, int) else "")
                     + (f"|base_pkg={base_pkg_name}" if base_pkg_name else "")
                 )
                 user.blocked_at = datetime.now(dt_timezone.utc)
                 user.blocked_by_id = None
+
+                # Rule: manual debt EOM wajib hard-block di ip-binding + address-list blocked.
+                with get_mikrotik_connection() as api:
+                    if api:
+                        ok_host, host_map, _host_msg = get_hotspot_host_usage_map(api)
+                        host_map = host_map if ok_host else {}
+
+                        for device in user.devices or []:
+                            mac = str(getattr(device, "mac_address", "") or "").upper().strip()
+                            if not mac:
+                                continue
+                            upsert_ip_binding(
+                                api_connection=api,
+                                mac_address=mac,
+                                binding_type=blocked_binding_type,
+                                comment=f"blocked|manual-debt-eom|user={username_08}|uid={user.id}",
+                            )
+
+                            ip_addr = str(getattr(device, "ip_address", "") or "").strip()
+                            if not ip_addr:
+                                ip_addr = str(host_map.get(mac, {}).get("address") or "").strip()
+                            if not ip_addr:
+                                continue
+
+                            upsert_address_list_entry(
+                                api_connection=api,
+                                address=ip_addr,
+                                list_name=list_blocked,
+                                comment=f"lpsaring|status=blocked|reason=manual-debt-eom|user={username_08}|uid={user.id}",
+                            )
+                            for list_name in other_status_lists:
+                                if list_name and list_name != list_blocked:
+                                    remove_address_list_entry(
+                                        api_connection=api,
+                                        address=ip_addr,
+                                        list_name=list_name,
+                                    )
+
                 db.session.add(user)
                 db.session.commit()
 
@@ -327,6 +388,35 @@ def sync_hotspot_usage_task(self):
             logger.error(f"Celery Task: Sinkronisasi gagal: {e}", exc_info=True)
             if self.request.retries >= 2:
                 _record_task_failure(app, "sync_hotspot_usage_task", {}, str(e))
+            raise
+
+
+@celery_app.task(
+    name="sync_unauthorized_hosts_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 2},
+)
+def sync_unauthorized_hosts_task(self):
+    app = create_app()
+    with app.app_context():
+        if settings_service.get_setting("ENABLE_MIKROTIK_OPERATIONS", "True") != "True":
+            logger.info("Celery Task: Skip sync unauthorized hosts (MikroTik operations disabled).")
+            return
+
+        logger.info("Celery Task: Memulai sinkronisasi unauthorized hosts.")
+        try:
+            sync_unauthorized_hosts_command.main(args=["--apply"], standalone_mode=False)
+            logger.info("Celery Task: Sinkronisasi unauthorized hosts selesai.")
+        except SystemExit as e:
+            if int(getattr(e, "code", 0) or 0) != 0:
+                raise RuntimeError(f"sync-unauthorized-hosts exit code {e.code}")
+        except Exception as e:
+            logger.error(f"Celery Task: Sinkronisasi unauthorized hosts gagal: {e}", exc_info=True)
+            if self.request.retries >= 2:
+                _record_task_failure(app, "sync_unauthorized_hosts_task", {}, str(e))
             raise
 
 

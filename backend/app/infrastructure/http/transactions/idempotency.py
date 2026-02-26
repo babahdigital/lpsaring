@@ -2,6 +2,9 @@ from typing import Any, Optional
 
 from flask import current_app
 
+from app.infrastructure.db.models import Transaction, TransactionEvent
+from app.utils.metrics_utils import increment_metric
+
 
 def build_webhook_idempotency_key(payload: dict[str, Any]) -> Optional[str]:
     order_id = payload.get("order_id")
@@ -40,9 +43,38 @@ def _build_order_effect_lock_key(*, order_id: str, effect_name: str) -> str:
     return f"midtrans:effect:lock:{effect_name}:{order_id}"
 
 
-def begin_order_effect(*, order_id: str, effect_name: str = "hotspot_apply") -> tuple[bool, str | None]:
+def _build_db_effect_done_event_type(*, effect_name: str) -> str:
+    if effect_name == "hotspot_apply":
+        return "MIKROTIK_APPLY_SUCCESS"
+    return f"EFFECT_DONE_{effect_name.upper()}"
+
+
+def _is_effect_done_in_db(*, session: Any, order_id: str, effect_name: str) -> bool:
+    event_type = _build_db_effect_done_event_type(effect_name=effect_name)
+    try:
+        exists = (
+            session.query(TransactionEvent.id)
+            .join(Transaction, Transaction.id == TransactionEvent.transaction_id)
+            .filter(Transaction.midtrans_order_id == order_id)
+            .filter(TransactionEvent.event_type == event_type)
+            .first()
+        )
+        return exists is not None
+    except Exception:
+        return False
+
+
+def begin_order_effect(
+    *,
+    order_id: str,
+    effect_name: str = "hotspot_apply",
+    session: Any | None = None,
+) -> tuple[bool, str | None]:
     redis_client = getattr(current_app, "redis_client_otp", None)
     if redis_client is None:
+        increment_metric("payment.idempotency.redis_unavailable")
+        if session is not None and _is_effect_done_in_db(session=session, order_id=order_id, effect_name=effect_name):
+            return False, None
         return True, None
 
     done_key = _build_order_effect_done_key(order_id=order_id, effect_name=effect_name)
@@ -52,6 +84,9 @@ def begin_order_effect(*, order_id: str, effect_name: str = "hotspot_apply") -> 
         if redis_client.get(done_key) is not None:
             return False, None
     except Exception:
+        increment_metric("payment.idempotency.redis_unavailable")
+        if session is not None and _is_effect_done_in_db(session=session, order_id=order_id, effect_name=effect_name):
+            return False, None
         return True, None
 
     try:
@@ -66,6 +101,9 @@ def begin_order_effect(*, order_id: str, effect_name: str = "hotspot_apply") -> 
             return False, None
         return True, lock_key
     except Exception:
+        increment_metric("payment.idempotency.redis_unavailable")
+        if session is not None and _is_effect_done_in_db(session=session, order_id=order_id, effect_name=effect_name):
+            return False, None
         return True, None
 
 

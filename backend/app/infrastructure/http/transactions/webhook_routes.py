@@ -182,7 +182,11 @@ def handle_notification_impl(
                         HTTPStatus.INTERNAL_SERVER_ERROR,
                     )
             else:
-                should_apply, effect_lock_key = begin_order_effect(order_id=order_id, effect_name="hotspot_apply")
+                should_apply, effect_lock_key = begin_order_effect(
+                    order_id=order_id,
+                    effect_name="hotspot_apply",
+                    session=session,
+                )
                 if not should_apply:
                     current_app.logger.info(
                         "WEBHOOK: skip duplicate hotspot apply side-effect untuk order %s (effect lock/done).",

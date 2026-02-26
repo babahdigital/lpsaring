@@ -18,8 +18,15 @@ def get_admin_metrics(current_admin):
         "otp.verify.failed",
         "payment.success",
         "payment.failed",
+        "payment.webhook.duplicate",
+        "payment.idempotency.redis_unavailable",
+        "hotspot.sync.lock.degraded",
         "admin.login.success",
         "admin.login.failed",
     ]
     metrics = get_metrics(metric_keys)
-    return jsonify({"metrics": metrics}), HTTPStatus.OK
+    reliability_signals = {
+        "payment_idempotency_degraded": int(metrics.get("payment.idempotency.redis_unavailable", 0)) > 0,
+        "hotspot_sync_lock_degraded": int(metrics.get("hotspot.sync.lock.degraded", 0)) > 0,
+    }
+    return jsonify({"metrics": metrics, "reliability_signals": reliability_signals}), HTTPStatus.OK

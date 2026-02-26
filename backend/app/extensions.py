@@ -189,6 +189,16 @@ def make_celery_app(app=None):
             "schedule": crontab(minute=f"*/{max(wg_interval, 1)}"),
         }
 
+    if os.environ.get("ENABLE_MIKROTIK_OPERATIONS", "True").lower() == "true":
+        try:
+            unauthorized_interval = int(os.environ.get("UNAUTHORIZED_SYNC_INTERVAL_SECONDS", "120"))
+        except ValueError:
+            unauthorized_interval = 120
+        celery_instance.conf.beat_schedule["sync-unauthorized-hosts"] = {
+            "task": "sync_unauthorized_hosts_task",
+            "schedule": max(30, unauthorized_interval),
+        }
+
     if app:
         # Konfigurasi Celery dari konfigurasi Flask app
         # Ini penting agar Celery memiliki akses ke konfigurasi Flask

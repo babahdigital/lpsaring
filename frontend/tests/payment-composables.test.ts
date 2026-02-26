@@ -77,6 +77,25 @@ describe('fetchTransactionByOrderIdWithFallback', () => {
     )
   })
 
+  it('falls back to public endpoint on 403 with token', async () => {
+    const forbiddenErr = { response: { status: 403 } }
+    const apiFetch = vi
+      .fn()
+      .mockRejectedValueOnce(forbiddenErr)
+      .mockResolvedValueOnce({ order_id: 'OID-403', status: 'PENDING' })
+
+    const result = await fetchTransactionByOrderIdWithFallback({
+      orderId: 'OID-403',
+      statusToken: 'tok-403',
+      apiFetch,
+      validate: (data): data is { order_id: string, status: string } => Boolean((data as any)?.order_id),
+    })
+
+    expect(result.order_id).toBe('OID-403')
+    expect(apiFetch).toHaveBeenNthCalledWith(1, '/transactions/by-order-id/OID-403')
+    expect(apiFetch).toHaveBeenNthCalledWith(2, '/transactions/public/by-order-id/OID-403?t=tok-403')
+  })
+
   it('rethrows when unauthorized without token', async () => {
     const unauthorizedErr = { response: { status: 401 } }
     const apiFetch = vi.fn().mockRejectedValue(unauthorizedErr)

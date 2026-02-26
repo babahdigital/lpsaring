@@ -3,6 +3,7 @@ import { useFetch, useNuxtApp } from '#app'
 import { hexToRgb } from '@layouts/utils'
 import { computed, defineAsyncComponent, h, onMounted, ref, watch } from 'vue'
 import { useTheme } from 'vuetify'
+import { buildReliabilitySummary } from '~/utils/adminMetrics'
 
 const API_ENDPOINT = '/admin/dashboard/stats'
 
@@ -61,6 +62,14 @@ interface BackupListResponse {
   items?: Array<unknown>
 }
 
+interface AdminMetricsResponse {
+  metrics?: Record<string, number | null | undefined>
+  reliability_signals?: {
+    payment_idempotency_degraded?: boolean
+    hotspot_sync_lock_degraded?: boolean
+  }
+}
+
 // --- State & Fetching ---
 const { $api } = useNuxtApp()
 
@@ -92,6 +101,16 @@ const { data: stats, pending, error, refresh } = useFetch<DashboardStats>(API_EN
   $fetch: $api,
 })
 
+const {
+  data: adminMetrics,
+  pending: metricsPending,
+  refresh: refreshMetrics,
+} = useFetch<AdminMetricsResponse>('/admin/metrics', {
+  lazy: true,
+  server: false,
+  $fetch: $api,
+})
+
 const hasLoadedOnce = ref(false)
 watch(pending, (val) => {
   if (val === false)
@@ -109,10 +128,10 @@ const vuetifyTheme = useTheme()
 
 // --- Data untuk Kartu Statistik Atas (Diperbarui) ---
 const statistics = ref([
-  { icon: 'tabler-mail-fast', color: 'info', title: 'Permintaan Tertunda', value: 0, change: null as number | null, isHover: false, to: '/admin/requests' },
-  { icon: 'tabler-user-search', color: 'warning', title: 'Menunggu Persetujuan', value: 0, change: null as number | null, isHover: false, to: '/admin/users' },
-  { icon: 'tabler-calendar-exclamation', color: 'secondary', title: 'Akan Kadaluwarsa', value: 0, change: null as number | null, isHover: false, to: '/admin/users' },
-  { icon: 'tabler-database-export', color: 'primary', title: 'File Backup', value: 0, change: null as number | null, isHover: false },
+  { icon: 'tabler-mail-fast', color: 'info', title: 'Permintaan Tertunda', value: 0, to: '/admin/requests' },
+  { icon: 'tabler-calendar-exclamation', color: 'warning', title: 'Akan Kadaluwarsa', value: 0, to: '/admin/users' },
+  { icon: 'tabler-user-search', color: 'secondary', title: 'Menunggu Persetujuan', value: 0, to: '/admin/users' },
+  { icon: 'tabler-database-export', color: 'primary', title: 'File Backup', value: 0 },
 ])
 
 const backupFileCount = ref(0)
@@ -146,6 +165,56 @@ onMounted(async () => {
   currentMonthLabel.value = new Date().toLocaleString('id-ID', { month: 'long' })
   await fetchBackupFileCount()
 })
+
+const reliabilitySummary = computed(() => buildReliabilitySummary(adminMetrics.value))
+
+const reliabilityCards = computed(() => [
+  {
+    title: 'Webhook Duplikat',
+    icon: 'tabler-repeat',
+    color: 'warning',
+    stats: String(reliabilitySummary.value.duplicateWebhookCount),
+  },
+  {
+    title: 'Redis Idempotency Degraded',
+    icon: 'tabler-shield-exclamation',
+    color: reliabilitySummary.value.paymentIdempotencyDegraded ? 'error' : 'success',
+    stats: String(reliabilitySummary.value.paymentIdempotencyRedisUnavailableCount),
+  },
+  {
+    title: 'Hotspot Lock Degraded',
+    icon: 'tabler-plug-connected-x',
+    color: reliabilitySummary.value.hotspotSyncLockDegraded ? 'error' : 'success',
+    stats: String(reliabilitySummary.value.hotspotSyncLockDegradedCount),
+  },
+])
+
+const reliabilitySignalItems = computed(() => [
+  {
+    key: 'payment-idempotency',
+    label: 'Payment Idempotency',
+    degraded: reliabilitySummary.value.paymentIdempotencyDegraded,
+    detail: `Redis unavailable: ${reliabilitySummary.value.paymentIdempotencyRedisUnavailableCount}`,
+  },
+  {
+    key: 'hotspot-sync-lock',
+    label: 'Hotspot Sync Lock',
+    degraded: reliabilitySummary.value.hotspotSyncLockDegraded,
+    detail: `Lock degraded: ${reliabilitySummary.value.hotspotSyncLockDegradedCount}`,
+  },
+])
+
+const overallReliabilityHealthy = computed(() => {
+  return reliabilitySignalItems.value.every(item => item.degraded === false)
+})
+
+async function handleRefreshDashboard() {
+  await Promise.all([
+    refresh(),
+    refreshMetrics(),
+    fetchBackupFileCount(),
+  ])
+}
 
 // --- Logika Perbandingan ---
 const perbandinganPendapatanMingguan = computed(() => {
@@ -467,6 +536,80 @@ useHead({ title: 'Dashboard Admin' })
       class="mb-4"
     />
 
+    <VRow
+      class="mb-4"
+      match-height
+    >
+      <VCol
+        cols="12"
+        md="9"
+      >
+        <VRow>
+          <VCol
+            v-for="item in reliabilityCards"
+            :key="item.title"
+            cols="12"
+            sm="6"
+            md="4"
+          >
+            <CardStatisticsHorizontal
+              :title="item.title"
+              :icon="item.icon"
+              :color="item.color"
+              :stats="item.stats"
+            />
+          </VCol>
+        </VRow>
+      </VCol>
+
+      <VCol
+        cols="12"
+        md="3"
+      >
+        <VCard class="h-100">
+          <VCardItem>
+            <VCardTitle>Reliability Analytics</VCardTitle>
+            <VCardSubtitle>Payment & Captive Guard</VCardSubtitle>
+            <template #append>
+              <VChip
+                size="small"
+                label
+                :color="overallReliabilityHealthy ? 'success' : 'error'"
+              >
+                {{ overallReliabilityHealthy ? 'Overall Healthy' : 'Needs Attention' }}
+              </VChip>
+            </template>
+          </VCardItem>
+          <VCardText>
+            <div
+              v-for="signal in reliabilitySignalItems"
+              :key="signal.key"
+              class="mb-4"
+            >
+              <div class="d-flex align-center justify-space-between mb-1">
+                <span class="text-body-2">{{ signal.label }}</span>
+                <VChip
+                  size="small"
+                  label
+                  :color="signal.degraded ? 'error' : 'success'"
+                >
+                  {{ signal.degraded ? 'Degraded' : 'Healthy' }}
+                </VChip>
+              </div>
+              <div class="text-caption text-disabled">
+                {{ signal.detail }}
+              </div>
+            </div>
+
+            <div class="d-flex align-center justify-space-between text-caption text-disabled">
+              <span>Sumber data</span>
+              <span>{{ metricsPending ? 'refreshing...' : '/admin/metrics' }}</span>
+            </div>
+          </VCardText>
+        </VCard>
+      </VCol>
+    </VRow>
+
     <VRow class="mb-4">
       <VCol
         v-for="(data, index) in statistics"
@@ -475,47 +618,22 @@ useHead({ title: 'Dashboard Admin' })
         md="3"
         sm="6"
       >
-        <VCard
-          class="logistics-card-statistics cursor-pointer"
-          :style="data.isHover ? `border-block-end-color: rgb(var(--v-theme-${data.color}))` : `border-block-end-color: rgba(var(--v-theme-${data.color}),0.38)`"
-          @mouseenter="data.isHover = true"
-          @mouseleave="data.isHover = false"
+        <div
+          class="dashboard-clickable-stat-card"
+          :class="{ 'dashboard-clickable-stat-card--disabled': !data.to }"
+          :role="data.to ? 'button' : undefined"
+          :tabindex="data.to ? 0 : undefined"
           @click="handleCardClick(data.to)"
+          @keydown.enter.prevent="handleCardClick(data.to)"
+          @keydown.space.prevent="handleCardClick(data.to)"
         >
-          <VCardText>
-            <div class="d-flex align-center gap-x-4 mb-1">
-              <VAvatar
-                variant="tonal"
-                :color="data.color"
-                rounded
-              >
-                <VIcon
-                  :icon="data.icon"
-                  size="28"
-                />
-              </VAvatar>
-              <h4 class="text-h4">
-                {{ data.value }}
-              </h4>
-            </div>
-            <div class="text-body-1 mb-1">
-              {{ data.title }}
-            </div>
-            <div class="d-flex gap-x-2 align-center">
-              <template v-if="data.change !== null && data.change !== undefined">
-                <h6
-                  class="text-h6"
-                  :class="data.change >= 0 ? 'text-success' : 'text-error'"
-                >
-                  {{ (data.change > 0) ? '+' : '' }}{{ data.change.toFixed(1) }}%
-                </h6>
-                <div class="text-disabled">
-                  {{ data.title === 'Penggunaan Kuota' ? 'dari minggu lalu' : 'dari kemarin' }}
-                </div>
-              </template>
-            </div>
-          </VCardText>
-        </VCard>
+          <CardStatisticsHorizontal
+            :title="data.title"
+            :icon="data.icon"
+            :color="data.color"
+            :stats="String(data.value)"
+          />
+        </div>
       </VCol>
     </VRow>
 
@@ -805,7 +923,7 @@ useHead({ title: 'Dashboard Admin' })
                   variant="text"
                   size="small"
                   color="default"
-                  @click="refresh"
+                  @click="handleRefreshDashboard"
                 >
                   <VIcon
                     size="24"
@@ -895,25 +1013,23 @@ useHead({ title: 'Dashboard Admin' })
 @use "@core/scss/template/libs/apex-chart.scss";
 @use "@core/scss/base/mixins" as mixins;
 
-.logistics-card-statistics {
-  border-block-end-style: solid;
-  border-block-end-width: 2px;
+.dashboard-clickable-stat-card {
+  cursor: pointer;
+  border-radius: 6px;
+  transition: transform 0.12s ease-out;
+
   &:hover {
-    border-block-end-width: 3px;
-    margin-block-end: -1px;
-    @include mixins.elevation(8);
-    transition: all 0.1s ease-out;
+    transform: translateY(-2px);
+    @include mixins.elevation(4);
   }
 }
 
-.skin--bordered {
-  .logistics-card-statistics {
-    border-block-end-width: 2px;
-    &:hover {
-      border-block-end-width: 3px;
-      margin-block-end: -2px;
-      transition: all 0.1s ease-out;
-    }
+.dashboard-clickable-stat-card--disabled {
+  cursor: default;
+
+  &:hover {
+    transform: none;
+    box-shadow: none;
   }
 }
 

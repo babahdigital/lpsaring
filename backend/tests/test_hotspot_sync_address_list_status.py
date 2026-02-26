@@ -117,3 +117,41 @@ def test_sync_address_list_non_blocked_removes_blocked_if_present(monkeypatch):
     # Critical: blocked list is part of other_lists so it gets removed when user isn't blocked.
     assert "blocked_list" in capture["other_lists"]
     assert "status=fup" in capture["comment"]
+
+
+def test_sync_address_list_auto_debt_blocked_user_uses_habis_not_blocked(monkeypatch):
+    _patch_settings(monkeypatch, fup_threshold_mb=3072)
+
+    capture = {}
+
+    def fake_sync_address_list_for_user(
+        *, api_connection, username, target_list, other_lists=None, comment=None, timeout=None
+    ):
+        capture["target_list"] = target_list
+        capture["other_lists"] = list(other_lists or [])
+        capture["comment"] = comment or ""
+        return True, "Sukses"
+
+    monkeypatch.setattr(svc, "sync_address_list_for_user", fake_sync_address_list_for_user)
+
+    user = SimpleNamespace(
+        is_unlimited_user=False,
+        is_blocked=True,
+        blocked_reason="quota_auto_debt_limit|debt_mb=640",
+        role=_Role("USER"),
+        phone_number="081234567890",
+        total_quota_purchased_mb=10240,
+    )
+
+    ok = svc._sync_address_list_status(
+        api=object(),
+        user=cast(Any, user),
+        username_08="081234567890",
+        remaining_mb=0.0,
+        remaining_percent=0.0,
+        is_expired=False,
+    )
+
+    assert ok is True
+    assert capture["target_list"] == "habis_list"
+    assert "status=habis" in capture["comment"]

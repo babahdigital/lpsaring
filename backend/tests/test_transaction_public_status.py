@@ -117,6 +117,45 @@ def test_public_status_endpoint_requires_valid_token(monkeypatch):
             assert getattr(e, "code", None) in (401, 403)
 
 
+def test_public_status_endpoint_rejects_missing_token(monkeypatch):
+    order_id = "BD-LPSR-MISSING-TOKEN"
+
+    fake_tx = SimpleNamespace(
+        id=uuid.uuid4(),
+        midtrans_order_id=order_id,
+        midtrans_transaction_id=None,
+        status=TransactionStatus.PENDING,
+        amount=55000,
+        payment_method="qris",
+        snap_token=None,
+        snap_redirect_url=None,
+        payment_time=None,
+        expiry_time=None,
+        va_number=None,
+        payment_code=None,
+        biller_code=None,
+        qr_code_url=None,
+        hotspot_password=None,
+        package=None,
+        user=None,
+    )
+
+    monkeypatch.setattr(transactions_routes, "db", _FakeDB(_FakeSession(transaction=fake_tx)))
+
+    app = _make_app()
+    impl = _unwrap_decorators(transactions_routes.get_transaction_by_order_id_public)
+
+    with app.test_request_context(
+        f"/api/transactions/public/by-order-id/{order_id}",
+        method="GET",
+    ):
+        try:
+            impl(order_id=order_id)
+            assert False, "expected abort"
+        except Exception as e:
+            assert getattr(e, "code", None) in (401, 403)
+
+
 def test_public_status_endpoint_returns_data_with_valid_token(monkeypatch):
     order_id = "BD-LPSR-TESTORDER"
 
@@ -163,6 +202,45 @@ def test_public_status_endpoint_returns_data_with_valid_token(monkeypatch):
     assert payload.get("hotspot_password") is None
     assert payload.get("user", {}).get("phone_number") == "-"
     assert payload.get("user", {}).get("id") == ""
+
+
+def test_public_status_endpoint_rejects_malformed_token(monkeypatch):
+    order_id = "BD-LPSR-MALFORMED-TOKEN"
+
+    fake_tx = SimpleNamespace(
+        id=uuid.uuid4(),
+        midtrans_order_id=order_id,
+        midtrans_transaction_id=None,
+        status=TransactionStatus.PENDING,
+        amount=44000,
+        payment_method="qris",
+        snap_token=None,
+        snap_redirect_url=None,
+        payment_time=None,
+        expiry_time=None,
+        va_number=None,
+        payment_code=None,
+        biller_code=None,
+        qr_code_url=None,
+        hotspot_password=None,
+        package=None,
+        user=None,
+    )
+
+    monkeypatch.setattr(transactions_routes, "db", _FakeDB(_FakeSession(transaction=fake_tx)))
+
+    app = _make_app()
+    impl = _unwrap_decorators(transactions_routes.get_transaction_by_order_id_public)
+
+    with app.test_request_context(
+        f"/api/transactions/public/by-order-id/{order_id}?t=not-a-valid-status-token",
+        method="GET",
+    ):
+        try:
+            impl(order_id=order_id)
+            assert False, "expected abort"
+        except Exception as e:
+            assert getattr(e, "code", None) in (401, 403)
 
 
 def test_public_cancel_endpoint_sets_cancelled_for_unknown(monkeypatch):

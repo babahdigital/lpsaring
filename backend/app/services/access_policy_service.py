@@ -21,6 +21,22 @@ VALID_ACCESS_STATUSES = {
 DEFAULT_BYPASS_STATUSES = {"active", "fup", "unlimited"}
 
 
+def is_network_hard_block_required(user) -> bool:
+    if user is None:
+        return False
+    if not bool(getattr(user, "is_blocked", False)):
+        return False
+
+    reason = str(getattr(user, "blocked_reason", "") or "").strip().lower()
+
+    # Auto debt block: tetap blocked di level aplikasi, tetapi network tidak hard-block.
+    if reason.startswith("quota_debt_limit|") or reason.startswith("quota_auto_debt_limit|"):
+        return False
+
+    # Default untuk blok lain (manual admin, end-of-month manual debt, dsb): hard-block aktif.
+    return True
+
+
 def _normalize_statuses(values: Iterable[str]) -> Set[str]:
     result: Set[str] = set()
     for value in values:
@@ -112,8 +128,10 @@ def is_hotspot_login_required(user) -> bool:
 
 
 def resolve_allowed_binding_type_for_user(user) -> str:
-    if get_user_access_status(user) == "blocked":
+    if get_user_access_status(user) == "blocked" and is_network_hard_block_required(user):
         return "blocked"
+    if get_user_access_status(user) == "blocked":
+        return "regular"
     if should_bypass_hotspot_login(user):
         return "bypassed"
     return "regular"

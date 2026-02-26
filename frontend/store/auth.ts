@@ -55,6 +55,7 @@ export const useAuthStore = defineStore('auth', () => {
   const lastAuthErrorCode = ref<number | null>(null)
   const autoLoginAttempted = ref(false)
   const lastStatusRedirect = ref<{ status: AccessStatus; sig?: string | null } | null>(null)
+  const logoutInProgress = ref(false)
 
   const isLoggedIn = computed(() => user.value != null)
   const currentUser = computed(() => user.value)
@@ -466,8 +467,12 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function logout(performRedirect: boolean = true) {
+    if (logoutInProgress.value)
+      return
+
+    logoutInProgress.value = true
     const { $api } = useNuxtApp()
-    const isAdminRoute = import.meta.client ? useRoute().path.startsWith('/admin') : false
+    const shouldRedirectToAdminLogin = isAdmin.value === true
 
     // Penting: tunggu request logout selesai agar cookie auth/refresh benar-benar terhapus
     // sebelum kita redirect ke halaman yang punya guard (mis. /admin).
@@ -480,12 +485,20 @@ export const useAuthStore = defineStore('auth', () => {
 
     setUser(null)
     initialAuthCheckDone.value = false
+    autoLoginAttempted.value = false
+    lastStatusRedirect.value = null
+    lastAuthErrorCode.value = null
     if (performRedirect)
       lastKnownUser.value = null
 
-    if (performRedirect && import.meta.client) {
-      setMessage('Anda telah berhasil logout.')
-      await navigateTo(isAdminRoute ? '/admin' : '/login', { replace: true })
+    try {
+      if (performRedirect && import.meta.client) {
+        setMessage('Anda telah berhasil logout.')
+        await navigateTo(shouldRedirectToAdminLogin ? '/admin' : '/login', { replace: true })
+      }
+    }
+    finally {
+      logoutInProgress.value = false
     }
   }
 

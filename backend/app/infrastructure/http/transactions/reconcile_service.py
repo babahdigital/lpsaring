@@ -150,7 +150,11 @@ def reconcile_pending_transaction(
             transaction.payment_code = midtrans_status_response.get("payment_code") or transaction.payment_code
             transaction.biller_code = midtrans_status_response.get("biller_code") or transaction.biller_code
 
-            should_apply, effect_lock_key = begin_order_effect(order_id=order_id, effect_name="hotspot_apply")
+            should_apply, effect_lock_key = begin_order_effect(
+                order_id=order_id,
+                effect_name="hotspot_apply",
+                session=session,
+            )
             if not should_apply:
                 _log_tx(
                     route_label,
