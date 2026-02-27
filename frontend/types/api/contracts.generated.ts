@@ -1,8 +1,8 @@
-/* eslint-disable */
+ 
 // AUTO-GENERATED FILE. DO NOT EDIT MANUALLY.
 // Source: contracts/openapi/openapi.v1.yaml
 
-export const OPENAPI_SOURCE_SHA256 = 'c78ac6ede0c20a0db1e13ef4e7419d53f644db980a1279b6c3800fb4ff13907f' as const
+export const OPENAPI_SOURCE_SHA256 = '2ea6b9fc45610361cfc634e0cc1af01a2e821dac49301daf9743e28220c58497' as const
 export const API_CONTRACT_REVISION = 'openapi-1.0.0' as const
 
 export type MessageResponse = { message: string }
@@ -15,7 +15,7 @@ export type AuthVerifyOtpRequest = { phone_number: string; otp: string; client_i
 export type AuthAutoLoginRequest = { client_ip?: string | null; client_mac?: string | null }
 export type StatusTokenVerifyRequest = { status: string; token: string }
 export type StatusTokenVerifyResponse = { valid: boolean }
-export type AuthVerifyOtpResponse = { access_token: string; token_type: string; hotspot_login_required?: boolean | null; hotspot_username?: string | null; hotspot_password?: string | null; session_token?: string | null; session_url?: string | null }
+export type AuthVerifyOtpResponse = { access_token: string; token_type: string; hotspot_login_required?: boolean | null; hotspot_session_active?: boolean | null; hotspot_username?: string | null; hotspot_password?: string | null; session_token?: string | null; session_url?: string | null }
 export type UserMeResponse = { id: string; phone_number: string; full_name: string; blok?: string | null; kamar?: string | null; is_tamping?: boolean | null; tamping_type?: string | null; role: 'USER' | 'KOMANDAN' | 'ADMIN' | 'SUPER_ADMIN'; approval_status: 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED'; is_active: boolean; is_unlimited_user?: boolean | null; total_quota_purchased_mb?: number | null; total_quota_used_mb?: number | null; quota_expiry_date?: string | null; created_at?: string | null; updated_at?: string | null; approved_at?: string | null; last_login_at?: string | null }
 export type UserProfileUpdateRequest = { full_name?: string; blok?: string | null; kamar?: string | null; is_tamping?: boolean | null; tamping_type?: string | null }
 export type UserDevice = { id: string; mac_address: string; ip_address?: string | null; label?: string | null; is_authorized: boolean; created_at?: string | null; updated_at?: string | null; last_seen_at?: string | null }

@@ -50,6 +50,15 @@ const appLandingUrl = computed(() => {
     return appBase
   return 'https://lpsaring.babahdigital.net'
 })
+const mikrotikLoginUrl = computed(() => {
+  const fromRouter = String(portalParams.value.linkLoginOnly || '').trim()
+  if (fromRouter)
+    return fromRouter
+  const appLink = String(runtimeConfig.public.appLinkMikrotik ?? '').trim()
+  if (appLink)
+    return appLink
+  return String(runtimeConfig.public.mikrotikLoginUrl ?? '').trim()
+})
 
 watch(regRole, (nextRole) => {
   if (nextRole === 'USER') {
@@ -82,9 +91,9 @@ function getQueryValueFromKeys(keys: string[]): string {
 
 function loadPortalParams() {
   portalParams.value = {
-    linkLoginOnly: getQueryValueFromKeys(['link_login_only', 'link-login-only', 'link_login', 'link-login']),
-    clientMac: getQueryValueFromKeys(['client_mac', 'mac']),
-    clientIp: getQueryValueFromKeys(['client_ip', 'ip']),
+    linkLoginOnly: getQueryValueFromKeys(['link_login_only', 'link-login-only', 'link_login', 'link-login', 'linkloginonly']),
+    clientMac: getQueryValueFromKeys(['client_mac', 'client-mac', 'mac', 'mac-address']),
+    clientIp: getQueryValueFromKeys(['client_ip', 'client-ip', 'ip']),
   }
 }
 
@@ -302,7 +311,7 @@ onMounted(async () => {
 
       <p v-if="mode === 'login' && !hasClientIdentity" class="alert warn">
         IP/MAC belum terbaca dari router.
-        <a v-if="portalParams.linkLoginOnly" :href="portalParams.linkLoginOnly" target="_blank" rel="noopener">Buka login MikroTik</a>
+        <a v-if="mikrotikLoginUrl" :href="mikrotikLoginUrl" target="_blank" rel="noopener">Buka login MikroTik</a>
       </p>
 
       <form v-if="mode === 'login' && step === 'phone'" class="form" @submit.prevent="requestOtp">

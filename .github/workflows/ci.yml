@@ -81,7 +81,7 @@ jobs:
 
   contract-gate:
     needs: changes
-    if: ${{ needs.changes.outputs.backend == 'true' || needs.changes.outputs.contracts == 'true' || needs.changes.outputs.docs == 'true' || needs.changes.outputs.ci == 'true' }}
+    if: ${{ needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.contracts == 'true' || needs.changes.outputs.docs == 'true' || needs.changes.outputs.ci == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -90,6 +90,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: API quality gate (OpenAPI integrity + generated sync)
+        run: |
+          python scripts/api_quality_gate.py
+      - name: Access status parity gate (FE/BE/docs)
+        run: |
+          python scripts/access_status_parity_gate.py
       - name: Contract gate (OpenAPI + typed contract + API detail)
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -157,7 +163,7 @@ jobs:
         run: pnpm run typecheck
       - name: Publish focused frontend test manifest
         run: |
-          TEST_FILES="tests/auth-access.test.ts tests/auth-guards.test.ts tests/payment-composables.test.ts tests/payment-status-polling.test.ts"
+          TEST_FILES="tests/auth-access.test.ts tests/auth-guards.test.ts tests/access-status-parity.contract.test.ts tests/payment-composables.test.ts tests/payment-status-polling.test.ts"
           echo "FOCUSED_FRONTEND_TESTS=$TEST_FILES" >> "$GITHUB_ENV"
           {
             echo "### Frontend Focused Tests"

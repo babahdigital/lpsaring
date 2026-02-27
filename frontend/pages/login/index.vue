@@ -308,9 +308,14 @@ async function handleVerifyOtp() {
       return
     }
     if (import.meta.client) {
+      if (loginResponse.hotspot_login_required === true && loginResponse.hotspot_session_active === false && !clientIp && !clientMac) {
+        await navigateTo('/login/hotspot-required', { replace: true })
+        return
+      }
+
       const sessionUrl = loginResponse.session_url
       if (sessionUrl)
-        window.location.assign(sessionUrl)
+        window.location.replace(sessionUrl)
       else {
         const redirectTarget = getRedirectTargetAfterLogin()
         await navigateTo(redirectTarget ?? '/dashboard', { replace: true })

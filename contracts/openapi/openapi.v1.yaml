@@ -1127,6 +1127,9 @@ components:
         hotspot_login_required:
           type: boolean
           nullable: true
+        hotspot_session_active:
+          type: boolean
+          nullable: true
         hotspot_username:
           type: string
           nullable: true

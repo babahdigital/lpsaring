@@ -27,6 +27,8 @@ const captiveSuccessRedirectUrl = process.env.NUXT_PUBLIC_CAPTIVE_SUCCESS_REDIRE
 const midtransSnapUrlProduction = process.env.NUXT_PUBLIC_MIDTRANS_SNAP_URL_PRODUCTION ?? ''
 const midtransSnapUrlSandbox = process.env.NUXT_PUBLIC_MIDTRANS_SNAP_URL_SANDBOX ?? ''
 const buyNowUrl = process.env.NUXT_PUBLIC_BUY_NOW_URL ?? ''
+const mikrotikLoginUrl = process.env.NUXT_PUBLIC_MIKROTIK_LOGIN_URL ?? ''
+const appLinkMikrotik = process.env.NUXT_PUBLIC_APP_LINK_MIKROTIK ?? process.env.APP_LINK_MIKROTIK ?? ''
 const devBypassToken = process.env.NUXT_PUBLIC_DEV_BYPASS_TOKEN ?? ''
 const statusPageGuardEnabled = process.env.NUXT_PUBLIC_STATUS_PAGE_GUARD_ENABLED ?? 'false'
 const internalApiBaseUrl = ensureApiSuffix(process.env.NUXT_INTERNAL_API_BASE_URL ?? 'http://backend:5010')
@@ -56,6 +58,21 @@ const hmrClientPort = hmrClientPortEnv ? Number.parseInt(hmrClientPortEnv, 10) :
 const hmrProtocol = process.env.NUXT_PUBLIC_HMR_PROTOCOL
   ?? ((hmrClientPort === 443) ? 'wss' : 'ws')
 const isProductionBuild = process.env.NODE_ENV === 'production'
+
+if (isProductionBuild) {
+  const missingRequiredEnv: string[] = []
+  if (!appBaseUrl || appBaseUrl.trim().length === 0)
+    missingRequiredEnv.push('NUXT_PUBLIC_APP_BASE_URL')
+  if (!publicApiBaseUrl || publicApiBaseUrl.trim().length === 0)
+    missingRequiredEnv.push('NUXT_PUBLIC_API_BASE_URL')
+
+  if (missingRequiredEnv.length > 0) {
+    throw new Error(
+      `[nuxt-config] Missing required production env: ${missingRequiredEnv.join(', ')}. `
+      + 'Please set them before running a production build.',
+    )
+  }
+}
 
 let derivedHmrHost = hmrHost
 let derivedHmrProtocol = hmrProtocol
@@ -99,6 +116,7 @@ const explicitHmrHost = viteHmrHost && viteHmrHost.length > 0
   : (derivedHmrHost && derivedHmrHost.length > 0 ? derivedHmrHost : undefined)
 const explicitHmrProtocol = viteHmrProtocol || (derivedHmrProtocol as 'ws' | 'wss' | undefined)
 const explicitHmrClientPort = viteHmrClientPort || derivedHmrClientPort
+const explicitHmrPath = viteHmrPath && viteHmrPath.length > 0 ? viteHmrPath : undefined
 
 export default defineNuxtConfig({
   compatibilityDate: '2025-04-23',
@@ -247,7 +265,7 @@ export default defineNuxtConfig({
             // `port` adalah port websocket server yang listen. Jangan default ke 443 karena itu
             // akan membuat Vite mencoba bind port 443 dan gagal.
             port: viteHmrPort,
-            path: viteHmrPath || '/_nuxt/',
+            path: explicitHmrPath,
           }
         : undefined,
     },
@@ -306,6 +324,8 @@ export default defineNuxtConfig({
       midtransSnapUrlProduction,
       midtransSnapUrlSandbox,
       buyNowUrl,
+      mikrotikLoginUrl,
+      appLinkMikrotik,
       devBypassToken,
       statusPageGuardEnabled,
     },

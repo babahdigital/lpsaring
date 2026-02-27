@@ -53,6 +53,7 @@ from app.infrastructure.gateways.mikrotik_client import (
     activate_or_update_hotspot_user,
     get_mikrotik_connection,
     get_hotspot_active_session_by_ip,
+    has_hotspot_ip_binding_for_user,
 )
 from app.services.device_management_service import (
     apply_device_binding_for_login,
@@ -257,6 +258,8 @@ def verify_otp():
         settings_service=settings_service,
         generate_password_hash=generate_password_hash,
         secrets_module=secrets,
+        get_mikrotik_connection=get_mikrotik_connection,
+        has_hotspot_ip_binding_for_user=has_hotspot_ip_binding_for_user,
     )
 
 

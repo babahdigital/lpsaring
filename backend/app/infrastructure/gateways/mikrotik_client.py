@@ -518,6 +518,52 @@ def get_hotspot_ip_binding_user_map(api_connection: Any) -> Tuple[bool, Dict[str
         return False, {}, str(e)
 
 
+def has_hotspot_ip_binding_for_user(
+    api_connection: Any,
+    *,
+    username: Optional[str] = None,
+    user_id: Optional[str] = None,
+    mac_address: Optional[str] = None,
+) -> Tuple[bool, bool, str]:
+    """Cek apakah user memiliki ip-binding non-blocked.
+
+    Match user berdasarkan token comment (`user=...`, `uid=...`) dan opsional dipersempit oleh MAC.
+    Return: (success, has_binding, message)
+    """
+    username_norm = str(username or "").strip()
+    user_id_norm = str(user_id or "").strip()
+    mac_norm = str(mac_address or "").strip().upper()
+
+    if not username_norm and not user_id_norm:
+        return False, False, "Identitas user tidak valid"
+
+    try:
+        resource = api_connection.get_resource("/ip/hotspot/ip-binding")
+        query: Dict[str, Any] = {}
+        if mac_norm:
+            query["mac-address"] = mac_norm
+
+        bindings = resource.get(**query) if query else resource.get()
+        for entry in bindings or []:
+            entry_type = str(entry.get("type") or "").strip().lower()
+            if entry_type == "blocked":
+                continue
+
+            comment_user = _extract_user_id_from_comment(entry.get("comment"))
+            if not comment_user:
+                continue
+
+            comment_user_norm = str(comment_user).strip()
+            if username_norm and comment_user_norm == username_norm:
+                return True, True, "Sukses"
+            if user_id_norm and comment_user_norm == user_id_norm:
+                return True, True, "Sukses"
+
+        return True, False, "IP binding user tidak ditemukan"
+    except Exception as e:
+        return False, False, str(e)
+
+
 def get_hotspot_user_ip(api_connection: Any, username: str) -> Tuple[bool, Optional[str], str]:
     """Mencari IP user berdasarkan sesi aktif atau host hotspot."""
     if not username:

@@ -65,6 +65,8 @@ def get_hotspot_bypass_statuses() -> Set[str]:
     raw_setting = settings_service.get_setting("HOTSPOT_BYPASS_STATUSES", None)
 
     if isinstance(raw_setting, str):
+        if raw_setting.strip() == "[]":
+            return set()
         parsed = _parse_statuses_from_text(raw_setting)
         if parsed:
             return parsed
@@ -72,9 +74,11 @@ def get_hotspot_bypass_statuses() -> Set[str]:
     config_value = current_app.config.get("HOTSPOT_BYPASS_STATUSES", None)
     if isinstance(config_value, list):
         parsed = _normalize_statuses(config_value)
-        if parsed:
+        if parsed or len(config_value) == 0:
             return parsed
     if isinstance(config_value, str):
+        if config_value.strip() == "[]":
+            return set()
         parsed = _parse_statuses_from_text(config_value)
         if parsed:
             return parsed
