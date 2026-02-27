@@ -32,7 +32,11 @@ FROM base AS builder
 COPY --from=deps /app/node_modules /app/node_modules
 COPY . .
 ARG NODE_OPTIONS=--max-old-space-size=3072
+ARG NUXT_PUBLIC_APP_BASE_URL
+ARG NUXT_PUBLIC_API_BASE_URL
 ENV NODE_OPTIONS=${NODE_OPTIONS}
+ENV NUXT_PUBLIC_APP_BASE_URL=${NUXT_PUBLIC_APP_BASE_URL}
+ENV NUXT_PUBLIC_API_BASE_URL=${NUXT_PUBLIC_API_BASE_URL}
 # Gunakan cache untuk build Nuxt/Vite
 RUN --mount=type=cache,target=/app/.nuxt \
     --mount=type=cache,target=/app/node_modules/.vite \

@@ -18,6 +18,11 @@ OPENAPI_PATH = ROOT / "contracts" / "openapi" / "openapi.v1.yaml"
 OUTPUT_PATH = ROOT / "frontend" / "types" / "api" / "contracts.generated.ts"
 
 
+def compute_openapi_source_sha(path: Path) -> str:
+    content = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
 def to_pascal(name: str) -> str:
     chunks = re.split(r"[^a-zA-Z0-9]+", name)
     return "".join(chunk[:1].upper() + chunk[1:] for chunk in chunks if chunk)
@@ -144,8 +149,7 @@ def load_openapi() -> dict[str, Any]:
 
 
 def generate() -> str:
-    raw = OPENAPI_PATH.read_bytes()
-    source_sha = hashlib.sha256(raw).hexdigest()
+    source_sha = compute_openapi_source_sha(OPENAPI_PATH)
     spec = load_openapi()
 
     info_obj = spec.get("info")

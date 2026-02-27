@@ -53,6 +53,11 @@ REQUIRED_PRIORITY_PATHS = {
 }
 
 
+def compute_openapi_source_sha(path: Path) -> str:
+    content = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
 def load_yaml(path: Path) -> dict[str, Any]:
     loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
     return dict(loaded) if isinstance(loaded, Mapping) else {}
@@ -113,7 +118,7 @@ def check_generated_sync() -> list[str]:
     if not GENERATED_TS_PATH.exists():
         return [f"Missing generated contracts file: {GENERATED_TS_PATH}"]
 
-    source_sha = hashlib.sha256(OPENAPI_PATH.read_bytes()).hexdigest()
+    source_sha = compute_openapi_source_sha(OPENAPI_PATH)
     content = GENERATED_TS_PATH.read_text(encoding="utf-8")
     match = re.search(r"OPENAPI_SOURCE_SHA256\s*=\s*'([0-9a-f]+)'", content)
     if not match:
