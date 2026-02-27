@@ -52,6 +52,10 @@ def _get_settings() -> Dict[str, Any]:
         "require_explicit": settings_service.get_setting("REQUIRE_EXPLICIT_DEVICE_AUTH", "False") == "True",
         "device_stale_days": settings_service.get_setting_as_int("DEVICE_STALE_DAYS", 30),
         "mikrotik_server_default": settings_service.get_setting("MIKROTIK_DEFAULT_SERVER_USER", "all"),
+        "global_mac_claim_transfer_enabled": settings_service.get_setting(
+            "DEVICE_GLOBAL_MAC_CLAIM_TRANSFER_ENABLED", "True"
+        )
+        == "True",
     }
 
 
@@ -428,6 +432,57 @@ def register_or_update_device(
             _remove_managed_address_lists(str(old_ip))
 
         return True, "Device ditemukan", device
+
+    cross_user_device = db.session.scalar(
+        sa.select(UserDevice)
+        .where(UserDevice.mac_address == mac_address, UserDevice.user_id != user.id)
+        .order_by(UserDevice.is_authorized.desc(), UserDevice.last_seen_at.desc())
+        .limit(1)
+    )
+    if cross_user_device:
+        if not settings.get("global_mac_claim_transfer_enabled"):
+            return False, "MAC sudah terdaftar pada user lain", None
+
+        is_authorized_elsewhere = bool(getattr(cross_user_device, "is_authorized", False))
+        allow_takeover = bool(allow_replace) or (not is_authorized_elsewhere)
+
+        if not allow_takeover and int(settings.get("device_stale_days") or 0) > 0:
+            stale_cutoff = datetime.now(dt_timezone.utc) - timedelta(days=int(settings["device_stale_days"]))
+            last_seen = getattr(cross_user_device, "last_seen_at", None)
+            if last_seen and last_seen < stale_cutoff:
+                allow_takeover = True
+
+        if not allow_takeover:
+            return False, "MAC sudah dipakai perangkat user lain (aktif)", None
+
+        previous_owner = db.session.get(User, cross_user_device.user_id)
+        previous_server = (
+            getattr(previous_owner, "mikrotik_server_name", None)
+            if previous_owner is not None
+            else settings["mikrotik_server_default"]
+        )
+        try:
+            if settings["ip_binding_enabled"]:
+                _remove_ip_binding(cross_user_device.mac_address, previous_server)
+            _remove_managed_address_lists(cross_user_device.ip_address)
+            if settings.get("dhcp_static_lease_enabled"):
+                _remove_dhcp_lease(cross_user_device.mac_address, server=None)
+        except Exception:
+            logger.warning(
+                "Gagal cleanup artefak device sebelum claim-transfer: mac=%s old_user=%s",
+                mac_address,
+                getattr(previous_owner, "id", None),
+            )
+
+        cross_user_device.user_id = user.id
+        cross_user_device.ip_address = client_ip
+        cross_user_device.user_agent = user_agent or cross_user_device.user_agent
+        cross_user_device.last_seen_at = now
+        cross_user_device.is_authorized = not settings["require_explicit"]
+        cross_user_device.authorized_at = now if cross_user_device.is_authorized else None
+        cross_user_device.deauthorized_at = None
+        db.session.flush()
+        return True, "Device dipindahkan dari user lain", cross_user_device
 
     total_devices = db.session.scalar(sa.select(sa.func.count(UserDevice.id)).where(UserDevice.user_id == user.id)) or 0
     if total_devices >= settings["max_devices"] and settings["device_stale_days"] > 0:

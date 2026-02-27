@@ -5,6 +5,7 @@ from datetime import datetime
 from types import SimpleNamespace
 
 from flask import Flask
+from app.utils.block_reasons import build_auto_debt_limit_reason
 import pytest
 
 from app.infrastructure.http import transactions_routes
@@ -836,7 +837,7 @@ def test_webhook_debt_settlement_success_runs_unblock_flow(monkeypatch):
     fake_user = SimpleNamespace(
         id=uuid.uuid4(),
         is_blocked=True,
-        blocked_reason="quota_debt_limit|auto",
+        blocked_reason=build_auto_debt_limit_reason(debt_mb=300, limit_mb=500, source="webhook_test"),
         quota_debt_total_mb=300,
     )
     fake_tx = SimpleNamespace(

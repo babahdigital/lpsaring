@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import app.services.hotspot_sync_service as svc
+from app.utils.block_reasons import build_auto_debt_limit_reason
 
 
 class _Role:
@@ -137,7 +138,7 @@ def test_sync_address_list_auto_debt_blocked_user_uses_blocked_list(monkeypatch)
     user = SimpleNamespace(
         is_unlimited_user=False,
         is_blocked=True,
-        blocked_reason="quota_auto_debt_limit|debt_mb=640",
+        blocked_reason=build_auto_debt_limit_reason(debt_mb=640, limit_mb=500, source="test"),
         role=_Role("USER"),
         phone_number="081234567890",
         total_quota_purchased_mb=10240,

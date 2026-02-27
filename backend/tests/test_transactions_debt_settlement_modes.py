@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from app.infrastructure.http.transactions import debt_helpers
+from app.utils.block_reasons import build_auto_debt_limit_reason, build_manual_debt_eom_reason
 
 
 class _FakeQuery:
@@ -43,7 +44,7 @@ def test_apply_debt_settlement_manual_item_path(monkeypatch):
         quota_debt_auto_mb=0,
         quota_debt_manual_mb=2048,
         is_blocked=True,
-        blocked_reason='quota_debt_limit|hard',
+        blocked_reason=build_auto_debt_limit_reason(debt_mb=2048, limit_mb=500, source='test'),
         blocked_at='x',
         blocked_by_id=uuid.uuid4(),
     )
@@ -91,7 +92,7 @@ def test_apply_debt_settlement_auto_path(monkeypatch):
         quota_debt_auto_mb=1024,
         quota_debt_manual_mb=0,
         is_blocked=True,
-        blocked_reason='quota_debt_end_of_month|enforced',
+        blocked_reason=build_manual_debt_eom_reason(debt_mb_text='1024', manual_debt_mb=1024),
         blocked_at='x',
         blocked_by_id=uuid.uuid4(),
     )

@@ -50,6 +50,7 @@ from app.utils.formatters import (
 from app.utils.quota_debt import (
     compute_debt_mb,
 )
+from app.utils.block_reasons import is_auto_debt_limit_reason, build_auto_debt_limit_reason
 from app.utils.metrics_utils import increment_metric
 
 logger = logging.getLogger(__name__)
@@ -185,8 +186,8 @@ def _resolve_auto_quota_debt_for_limit(user: User) -> float:
 def _is_auto_debt_blocked(user: User) -> bool:
     if not bool(getattr(user, "is_blocked", False)):
         return False
-    reason = str(getattr(user, "blocked_reason", "") or "").strip().lower()
-    return reason.startswith("quota_debt_limit|") or reason.startswith("quota_auto_debt_limit|")
+    reason = getattr(user, "blocked_reason", "")
+    return is_auto_debt_limit_reason(reason)
 
 
 def _apply_auto_debt_limit_block_state(user: User, source: str = "sync_usage") -> bool:
@@ -222,8 +223,10 @@ def _apply_auto_debt_limit_block_state(user: User, source: str = "sync_usage") -
     if reached_limit:
         if (not bool(getattr(user, "is_blocked", False))) or is_auto_blocked:
             user.is_blocked = True
-            user.blocked_reason = (
-                f"quota_debt_limit|debt_mb={auto_debt_mb:.2f}|limit_mb={int(limit_mb)}|source={source}"
+            user.blocked_reason = build_auto_debt_limit_reason(
+                debt_mb=auto_debt_mb,
+                limit_mb=int(limit_mb),
+                source=source,
             )
             if getattr(user, "blocked_at", None) is None:
                 user.blocked_at = datetime.now(dt_timezone.utc)
@@ -269,7 +272,7 @@ def _resolve_target_profile(user: User, remaining_mb: float, remaining_percent: 
 
 
 def _update_daily_usage_log(user: User, delta_mb: float, today: date) -> bool:
-    if delta_mb <= 0.1:
+    if delta_mb <= 0:
         return False
 
     daily_log = db.session.scalar(

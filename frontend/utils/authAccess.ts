@@ -25,9 +25,6 @@ export function resolveAccessStatusFromUser(inputUser: UserLike | null, nowMs = 
   if (inputUser.is_active !== true || inputUser.approval_status !== 'APPROVED')
     return 'inactive'
 
-  if (inputUser.is_unlimited_user === true)
-    return 'ok'
-
   const total = inputUser.total_quota_purchased_mb ?? 0
   const used = inputUser.total_quota_used_mb ?? 0
   const remaining = total - used
@@ -37,6 +34,8 @@ export function resolveAccessStatusFromUser(inputUser: UserLike | null, nowMs = 
 
   if (isExpired)
     return 'expired'
+  if (inputUser.is_unlimited_user === true)
+    return 'ok'
   if (total <= 0)
     return 'habis'
   if (total > 0 && remaining <= 0)

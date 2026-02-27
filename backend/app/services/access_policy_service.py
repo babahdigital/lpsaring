@@ -5,6 +5,7 @@ from typing import Iterable, Set
 from flask import current_app
 
 from app.services import settings_service
+from app.utils.block_reasons import is_auto_debt_limit_reason
 from app.utils.formatters import get_app_local_datetime
 
 
@@ -27,10 +28,10 @@ def is_network_hard_block_required(user) -> bool:
     if not bool(getattr(user, "is_blocked", False)):
         return False
 
-    reason = str(getattr(user, "blocked_reason", "") or "").strip().lower()
+    reason = getattr(user, "blocked_reason", "")
 
     # Auto debt block: tetap blocked di level aplikasi, tetapi network tidak hard-block.
-    if reason.startswith("quota_debt_limit|") or reason.startswith("quota_auto_debt_limit|"):
+    if is_auto_debt_limit_reason(reason):
         return False
 
     # Default untuk blok lain (manual admin, end-of-month manual debt, dsb): hard-block aktif.
@@ -93,19 +94,19 @@ def get_user_access_status(user) -> str:
     if (not bool(getattr(user, "is_active", False))) or approval_status_value != "APPROVED":
         return "inactive"
 
-    if bool(getattr(user, "is_unlimited_user", False)):
-        return "unlimited"
-
-    purchased_mb = float(getattr(user, "total_quota_purchased_mb", 0) or 0.0)
-    used_mb = float(getattr(user, "total_quota_used_mb", 0) or 0.0)
-    remaining_mb = max(0.0, purchased_mb - used_mb)
-
     expiry_date = getattr(user, "quota_expiry_date", None)
     if expiry_date is not None:
         now_local = get_app_local_datetime()
         expiry_local = get_app_local_datetime(expiry_date)
         if expiry_local < now_local:
             return "expired"
+
+    if bool(getattr(user, "is_unlimited_user", False)):
+        return "unlimited"
+
+    purchased_mb = float(getattr(user, "total_quota_purchased_mb", 0) or 0.0)
+    used_mb = float(getattr(user, "total_quota_used_mb", 0) or 0.0)
+    remaining_mb = max(0.0, purchased_mb - used_mb)
 
     if purchased_mb <= 0 or remaining_mb <= 0:
         return "habis"

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.services import access_policy_service as policy
+from app.utils.block_reasons import build_auto_debt_limit_reason, build_manual_debt_eom_reason
 
 
 def _approved_user(**overrides):
@@ -26,10 +27,30 @@ def _approved_user(**overrides):
 @pytest.mark.parametrize(
     "user,expected_status",
     [
-        (_approved_user(is_blocked=True, blocked_reason="quota_auto_debt_limit|debt_mb=700"), "blocked"),
+        (
+            _approved_user(
+                is_blocked=True,
+                blocked_reason=build_auto_debt_limit_reason(debt_mb=700, limit_mb=500, source="test"),
+            ),
+            "blocked",
+        ),
         (_approved_user(is_active=False), "inactive"),
         (_approved_user(approval_status="PENDING_APPROVAL"), "inactive"),
         (_approved_user(is_unlimited_user=True, quota_expiry_date=None), "unlimited"),
+        (
+            _approved_user(
+                is_unlimited_user=True,
+                quota_expiry_date=datetime.now(timezone.utc) + timedelta(days=3),
+            ),
+            "unlimited",
+        ),
+        (
+            _approved_user(
+                is_unlimited_user=True,
+                quota_expiry_date=datetime.now(timezone.utc) - timedelta(minutes=1),
+            ),
+            "expired",
+        ),
         (_approved_user(quota_expiry_date=datetime.now(timezone.utc) - timedelta(minutes=1)), "expired"),
         (_approved_user(total_quota_purchased_mb=1024, total_quota_used_mb=1024), "habis"),
         (_approved_user(total_quota_purchased_mb=8192, total_quota_used_mb=7168), "fup"),
@@ -43,14 +64,20 @@ def test_policy_invariant_status_matrix(monkeypatch, user, expected_status):
 
 
 def test_policy_invariant_auto_debt_block_is_not_network_hard_block():
-    user = _approved_user(is_blocked=True, blocked_reason="quota_auto_debt_limit|debt_mb=800")
+    user = _approved_user(
+        is_blocked=True,
+        blocked_reason=build_auto_debt_limit_reason(debt_mb=800, limit_mb=500, source="test"),
+    )
 
     assert policy.is_network_hard_block_required(user) is False
     assert policy.resolve_allowed_binding_type_for_user(user) == "regular"
 
 
 def test_policy_invariant_manual_eom_block_is_network_hard_block():
-    user = _approved_user(is_blocked=True, blocked_reason="quota_manual_debt_end_of_month|manual_debt_mb=10240")
+    user = _approved_user(
+        is_blocked=True,
+        blocked_reason=build_manual_debt_eom_reason(debt_mb_text="10240", manual_debt_mb=10240),
+    )
 
     assert policy.is_network_hard_block_required(user) is True
     assert policy.resolve_allowed_binding_type_for_user(user) == "blocked"

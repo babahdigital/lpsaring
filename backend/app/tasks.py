@@ -3,6 +3,9 @@ import logging
 import json
 import calendar
 import secrets
+import subprocess
+import sys
+from pathlib import Path
 from datetime import datetime, timedelta, timezone as dt_timezone
 from sqlalchemy.orm import selectinload
 
@@ -32,6 +35,7 @@ from app.infrastructure.gateways.mikrotik_client import (
 from app.services.notification_service import get_notification_message
 from app.services.user_management.helpers import _handle_mikrotik_operation
 from app.commands.sync_unauthorized_hosts_command import sync_unauthorized_hosts_command
+from app.utils.block_reasons import build_manual_debt_eom_reason
 from app.utils.formatters import format_to_local_phone, get_app_local_datetime
 from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package, format_rupiah
 
@@ -207,10 +211,11 @@ def enforce_end_of_month_debt_block_task(self):
                 )
 
                 user.is_blocked = True
-                user.blocked_reason = (
-                    f"quota_manual_debt_end_of_month|debt_mb={debt_mb_text}|manual_debt_mb={manual_debt_mb}"
-                    + (f"|estimated_rp={int(estimate_rp)}" if isinstance(estimate_rp, int) else "")
-                    + (f"|base_pkg={base_pkg_name}" if base_pkg_name else "")
+                user.blocked_reason = build_manual_debt_eom_reason(
+                    debt_mb_text=debt_mb_text,
+                    manual_debt_mb=manual_debt_mb,
+                    estimated_rp=int(estimate_rp) if isinstance(estimate_rp, int) else None,
+                    base_pkg_name=base_pkg_name,
                 )
                 user.blocked_at = datetime.now(dt_timezone.utc)
                 user.blocked_by_id = None
@@ -288,6 +293,64 @@ def _record_task_failure(app, task_name: str, payload: dict, error_message: str)
         redis_client.rpush(dlq_key, json.dumps(item))
     except Exception:
         return
+
+
+@celery_app.task(
+    name="audit_mikrotik_reconciliation_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 2},
+)
+def audit_mikrotik_reconciliation_task(self):
+    app = create_app()
+    with app.app_context():
+        if settings_service.get_setting("ENABLE_MIKROTIK_OPERATIONS", "True") != "True":
+            logger.info("Celery Task: Skip audit MikroTik (MikroTik operations disabled).")
+            return
+
+        if settings_service.get_setting("ENABLE_MIKROTIK_AUDIT_RECONCILIATION", "True") != "True":
+            logger.info("Celery Task: Skip audit MikroTik (reconciliation disabled by setting).")
+            return
+
+        backend_root = Path(__file__).resolve().parents[1]
+        script_path = backend_root / "scripts" / "audit_mikrotik_total.py"
+        if not script_path.exists():
+            logger.warning("Celery Task: Script audit tidak ditemukan: %s", script_path)
+            return
+
+        cmd = [sys.executable, str(script_path), "--limit", "30"]
+        if settings_service.get_setting("MIKROTIK_AUDIT_AUTO_CLEANUP_STALE_BLOCKED", "False") == "True":
+            cmd.extend(["--cleanup-stale-blocked", "--apply"])
+
+        logger.info("Celery Task: Menjalankan audit MikroTik reconciliation harian.")
+        try:
+            completed = subprocess.run(
+                cmd,
+                cwd=str(backend_root),
+                capture_output=True,
+                text=True,
+                timeout=600,
+                check=False,
+            )
+            stdout = (completed.stdout or "").strip()
+            stderr = (completed.stderr or "").strip()
+
+            if completed.returncode != 0:
+                raise RuntimeError(
+                    f"audit_mikrotik_total exit={completed.returncode}; stderr={stderr or '-'}"
+                )
+
+            if stdout:
+                logger.info("Celery Task: Audit MikroTik selesai. Summary:\n%s", stdout[-8000:])
+            else:
+                logger.info("Celery Task: Audit MikroTik selesai tanpa output.")
+        except Exception as e:
+            logger.error("Celery Task: Audit MikroTik gagal: %s", e, exc_info=True)
+            if self.request.retries >= 2:
+                _record_task_failure(app, "audit_mikrotik_reconciliation_task", {}, str(e))
+            raise
 
 
 @celery_app.task(

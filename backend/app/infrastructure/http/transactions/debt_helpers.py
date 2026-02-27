@@ -8,6 +8,7 @@ from app.extensions import db
 from app.infrastructure.db.models import Package, Transaction, User, UserQuotaDebt
 from app.services.user_management import user_debt as user_debt_service
 from app.services.hotspot_sync_service import sync_address_list_for_single_user
+from app.utils.block_reasons import is_debt_block_reason
 
 from .helpers import _extract_manual_debt_id_from_order_id
 
@@ -141,9 +142,7 @@ def apply_debt_settlement_on_success(*, session, transaction: Transaction) -> di
         )
 
     unblocked = False
-    if was_blocked and (
-        blocked_reason.startswith("quota_debt_limit|") or blocked_reason.startswith("quota_debt_end_of_month|")
-    ):
+    if was_blocked and is_debt_block_reason(blocked_reason):
         if float(getattr(user, "quota_debt_total_mb", 0) or 0) <= 0:
             user.is_blocked = False
             user.blocked_reason = None

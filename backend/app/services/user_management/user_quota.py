@@ -19,6 +19,7 @@ from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection,
 from app.services.access_policy_service import resolve_allowed_binding_type_for_user
 from app.services.hotspot_sync_service import resolve_target_profile_for_user, sync_address_list_for_single_user
 from app.utils.formatters import get_app_date_time_strings
+from app.utils.block_reasons import is_debt_block_reason
 
 
 def _sync_ip_binding_for_authorized_devices(user: User, api_conn: Any, source: str) -> None:
@@ -320,10 +321,7 @@ def set_user_unlimited(user: User, admin_actor: User, make_unlimited: bool) -> T
             )
 
         blocked_reason = str(getattr(user, "blocked_reason", "") or "")
-        if bool(getattr(user, "is_blocked", False)) and (
-            blocked_reason.startswith("quota_auto_debt_limit|")
-            or blocked_reason.startswith("quota_manual_debt_end_of_month|")
-        ):
+        if bool(getattr(user, "is_blocked", False)) and is_debt_block_reason(blocked_reason):
             user.is_blocked = False
             user.blocked_reason = None
             user.blocked_at = None

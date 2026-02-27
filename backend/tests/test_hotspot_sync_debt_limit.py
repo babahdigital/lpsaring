@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from datetime import datetime, timezone, timedelta
 
 import app.services.hotspot_sync_service as svc
+from app.utils.block_reasons import AUTO_DEBT_LIMIT_PREFIX, build_auto_debt_limit_reason
 
 
 class _ExplosiveDebt:
@@ -88,7 +89,7 @@ def test_apply_auto_debt_limit_block_state_sets_block_when_limit_reached(monkeyp
 
     assert forced is True
     assert user.is_blocked is True
-    assert str(user.blocked_reason).startswith("quota_debt_limit|")
+    assert str(user.blocked_reason).startswith(AUTO_DEBT_LIMIT_PREFIX)
 
 
 def test_apply_auto_debt_limit_block_state_unblocks_previous_auto_block_below_limit(monkeypatch):
@@ -102,7 +103,7 @@ def test_apply_auto_debt_limit_block_state_unblocks_previous_auto_block_below_li
         is_unlimited_user=False,
         role=None,
         is_blocked=True,
-        blocked_reason="quota_debt_limit|debt_mb=700.00|limit_mb=500|source=sync_usage",
+        blocked_reason=build_auto_debt_limit_reason(debt_mb=700, limit_mb=500, source="sync_usage"),
         blocked_at=datetime.now(timezone.utc),
         blocked_by_id=None,
         quota_debt_auto_mb=120.0,

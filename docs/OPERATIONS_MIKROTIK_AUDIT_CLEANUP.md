@@ -84,3 +84,38 @@ Penyebab paling umum:
 Langkah lanjut:
 - Cek log `celery_beat`, `celery_worker`, dan `backend`.
 - Jalankan audit di atas untuk melihat apakah backend bisa connect ke MikroTik dari lingkungan produksi.
+
+## 6) Audit harian otomatis (Celery)
+
+Sistem menyediakan task harian `audit_mikrotik_reconciliation_task` untuk menjalankan audit reconciliation otomatis.
+
+Kontrol utama (env/settings):
+- `ENABLE_MIKROTIK_AUDIT_RECONCILIATION=True|False`
+- `MIKROTIK_AUDIT_CRON_HOUR` (default `4`)
+- `MIKROTIK_AUDIT_CRON_MINUTE` (default `15`)
+- `MIKROTIK_AUDIT_AUTO_CLEANUP_STALE_BLOCKED=True|False` (opsional aktifkan cleanup saat task harian)
+
+Catatan:
+- Mode default task harian adalah audit/report (tanpa cleanup).
+- Cleanup otomatis hanya berjalan jika `MIKROTIK_AUDIT_AUTO_CLEANUP_STALE_BLOCKED=True`.
+
+## 7) Guard MAC lintas user (self-authorize)
+
+Untuk mencegah konflik attribution kuota karena MAC ganda lintas akun:
+
+- Sistem menerapkan guard claim-transfer MAC lintas user di service device.
+- Saat MAC terdeteksi sudah dipakai akun lain dan masih aktif, claim akan ditolak kecuali alur takeover terkontrol (mis. flow yang mengizinkan replace).
+- Kontrol via `DEVICE_GLOBAL_MAC_CLAIM_TRANSFER_ENABLED` (default `True`).
+
+## 8) Hardening DB untuk MAC global (bertahap)
+
+Migration `20260227_add_safe_global_mac_unique_index` menambahkan penguatan di level database secara aman:
+
+- Membuat index bantu: `ix_user_devices_mac_authorized` (`WHERE is_authorized = TRUE`).
+- Jika **tidak ada** duplikasi MAC authorized saat migration dijalankan, sistem otomatis membuat unique index global:
+  - `uq_user_devices_authorized_mac_global` pada `UPPER(mac_address)` dengan filter `is_authorized = TRUE`.
+- Jika masih ada duplikasi, migration tetap sukses (deploy tidak terblokir), dan unique index global belum dibuat sampai data konflik dibersihkan.
+
+Rekomendasi ops:
+- Jalankan audit konflik MAC terlebih dulu sebelum maintenance window.
+- Setelah duplikasi dibersihkan, jalankan migration ulang/lanjutkan deployment untuk mengaktifkan unique index global.

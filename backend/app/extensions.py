@@ -199,6 +199,20 @@ def make_celery_app(app=None):
             "schedule": max(30, unauthorized_interval),
         }
 
+        if os.environ.get("ENABLE_MIKROTIK_AUDIT_RECONCILIATION", "True").lower() == "true":
+            try:
+                audit_hour = int(os.environ.get("MIKROTIK_AUDIT_CRON_HOUR", "4"))
+            except ValueError:
+                audit_hour = 4
+            try:
+                audit_minute = int(os.environ.get("MIKROTIK_AUDIT_CRON_MINUTE", "15"))
+            except ValueError:
+                audit_minute = 15
+            celery_instance.conf.beat_schedule["audit-mikrotik-reconciliation"] = {
+                "task": "audit_mikrotik_reconciliation_task",
+                "schedule": crontab(hour=max(0, min(audit_hour, 23)), minute=max(0, min(audit_minute, 59))),
+            }
+
     if app:
         # Konfigurasi Celery dari konfigurasi Flask app
         # Ini penting agar Celery memiliki akses ke konfigurasi Flask

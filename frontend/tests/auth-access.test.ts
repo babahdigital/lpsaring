@@ -22,6 +22,35 @@ describe('resolveAccessStatusFromUser', () => {
     }, now)).toBe('expired')
   })
 
+  it('returns ok for unlimited quota with active expiry (unlimited time not enabled)', () => {
+    const now = Date.parse('2026-01-01T00:00:00.000Z')
+    expect(resolveAccessStatusFromUser({
+      is_active: true,
+      approval_status: 'APPROVED',
+      is_unlimited_user: true,
+      quota_expiry_date: '2026-01-10T00:00:00.000Z',
+    }, now)).toBe('ok')
+  })
+
+  it('returns expired for unlimited quota when expiry already passed', () => {
+    const now = Date.parse('2026-01-01T00:00:00.000Z')
+    expect(resolveAccessStatusFromUser({
+      is_active: true,
+      approval_status: 'APPROVED',
+      is_unlimited_user: true,
+      quota_expiry_date: '2025-12-31T00:00:00.000Z',
+    }, now)).toBe('expired')
+  })
+
+  it('returns ok for unlimited quota with unlimited time', () => {
+    expect(resolveAccessStatusFromUser({
+      is_active: true,
+      approval_status: 'APPROVED',
+      is_unlimited_user: true,
+      quota_expiry_date: null,
+    })).toBe('ok')
+  })
+
   it('returns habis when purchased quota is empty or depleted', () => {
     expect(resolveAccessStatusFromUser({
       is_active: true,

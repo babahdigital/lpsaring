@@ -3,12 +3,13 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from app.services.access_policy_service import is_network_hard_block_required, resolve_allowed_binding_type_for_user
+from app.utils.block_reasons import build_auto_debt_limit_reason, build_manual_debt_eom_reason
 
 
 def test_network_hard_block_false_for_auto_debt_block_reason():
     user = SimpleNamespace(
         is_blocked=True,
-        blocked_reason="quota_auto_debt_limit|debt_mb=512",
+        blocked_reason=build_auto_debt_limit_reason(debt_mb=512, limit_mb=500, source="test"),
         is_active=True,
         approval_status="APPROVED",
         is_unlimited_user=False,
@@ -23,7 +24,7 @@ def test_network_hard_block_false_for_auto_debt_block_reason():
 def test_network_hard_block_true_for_manual_eom_block_reason():
     user = SimpleNamespace(
         is_blocked=True,
-        blocked_reason="quota_manual_debt_end_of_month|manual_debt_mb=10240",
+        blocked_reason=build_manual_debt_eom_reason(debt_mb_text="10240", manual_debt_mb=10240),
         is_active=True,
         approval_status="APPROVED",
         is_unlimited_user=False,
@@ -43,7 +44,7 @@ def test_binding_type_blocked_only_for_hard_blocked_user(monkeypatch):
 
     auto_blocked = SimpleNamespace(
         is_blocked=True,
-        blocked_reason="quota_auto_debt_limit|debt_mb=900",
+        blocked_reason=build_auto_debt_limit_reason(debt_mb=900, limit_mb=500, source="test"),
         is_active=True,
         approval_status="APPROVED",
         is_unlimited_user=False,
@@ -53,7 +54,7 @@ def test_binding_type_blocked_only_for_hard_blocked_user(monkeypatch):
     )
     manual_blocked = SimpleNamespace(
         is_blocked=True,
-        blocked_reason="quota_manual_debt_end_of_month|manual_debt_mb=10240",
+        blocked_reason=build_manual_debt_eom_reason(debt_mb_text="10240", manual_debt_mb=10240),
         is_active=True,
         approval_status="APPROVED",
         is_unlimited_user=False,

@@ -1,0 +1,122 @@
+[
+  {
+    "name": "blocked_user",
+    "user": {
+      "is_blocked": true,
+      "is_active": true,
+      "approval_status": "APPROVED",
+      "is_unlimited_user": false,
+      "total_quota_purchased_mb": 8192,
+      "total_quota_used_mb": 1024,
+      "quota_expiry_date": "2099-01-01T00:00:00+00:00",
+      "mikrotik_profile_name": "active"
+    },
+    "expected_backend": "blocked",
+    "expected_frontend": "blocked"
+  },
+  {
+    "name": "inactive_user",
+    "user": {
+      "is_blocked": false,
+      "is_active": false,
+      "approval_status": "APPROVED",
+      "is_unlimited_user": false,
+      "total_quota_purchased_mb": 8192,
+      "total_quota_used_mb": 1024,
+      "quota_expiry_date": "2099-01-01T00:00:00+00:00",
+      "mikrotik_profile_name": "active"
+    },
+    "expected_backend": "inactive",
+    "expected_frontend": "inactive"
+  },
+  {
+    "name": "expired_time_bound",
+    "user": {
+      "is_blocked": false,
+      "is_active": true,
+      "approval_status": "APPROVED",
+      "is_unlimited_user": false,
+      "total_quota_purchased_mb": 8192,
+      "total_quota_used_mb": 1024,
+      "quota_expiry_date": "2000-01-01T00:00:00+00:00",
+      "mikrotik_profile_name": "active"
+    },
+    "expected_backend": "expired",
+    "expected_frontend": "expired"
+  },
+  {
+    "name": "habis_quota",
+    "user": {
+      "is_blocked": false,
+      "is_active": true,
+      "approval_status": "APPROVED",
+      "is_unlimited_user": false,
+      "total_quota_purchased_mb": 1024,
+      "total_quota_used_mb": 1024,
+      "quota_expiry_date": "2099-01-01T00:00:00+00:00",
+      "mikrotik_profile_name": "active"
+    },
+    "expected_backend": "habis",
+    "expected_frontend": "habis"
+  },
+  {
+    "name": "fup_user",
+    "user": {
+      "is_blocked": false,
+      "is_active": true,
+      "approval_status": "APPROVED",
+      "is_unlimited_user": false,
+      "total_quota_purchased_mb": 8192,
+      "total_quota_used_mb": 7168,
+      "quota_expiry_date": "2099-01-01T00:00:00+00:00",
+      "mikrotik_profile_name": "paket_fup_malam"
+    },
+    "expected_backend": "fup",
+    "expected_frontend": "fup"
+  },
+  {
+    "name": "active_normal",
+    "user": {
+      "is_blocked": false,
+      "is_active": true,
+      "approval_status": "APPROVED",
+      "is_unlimited_user": false,
+      "total_quota_purchased_mb": 8192,
+      "total_quota_used_mb": 1024,
+      "quota_expiry_date": "2099-01-01T00:00:00+00:00",
+      "mikrotik_profile_name": "active"
+    },
+    "expected_backend": "active",
+    "expected_frontend": "ok"
+  },
+  {
+    "name": "unlimited_with_future_expiry",
+    "user": {
+      "is_blocked": false,
+      "is_active": true,
+      "approval_status": "APPROVED",
+      "is_unlimited_user": true,
+      "total_quota_purchased_mb": 0,
+      "total_quota_used_mb": 0,
+      "quota_expiry_date": "2099-01-01T00:00:00+00:00",
+      "mikrotik_profile_name": "unlimited"
+    },
+    "expected_backend": "unlimited",
+    "expected_frontend": "ok"
+  },
+  {
+    "name": "unlimited_without_expiry",
+    "user": {
+      "is_blocked": false,
+      "is_active": true,
+      "approval_status": "APPROVED",
+      "is_unlimited_user": true,
+      "total_quota_purchased_mb": 0,
+      "total_quota_used_mb": 0,
+      "quota_expiry_date": null,
+      "mikrotik_profile_name": "unlimited"
+    },
+    "expected_backend": "unlimited",
+    "expected_frontend": "ok"
+  }
+]

@@ -7,6 +7,7 @@ from flask import current_app
 from typing import Dict, Any, Optional
 
 from app.services.config_service import get_app_links
+from app.utils.block_reasons import is_auto_debt_limit_reason, is_manual_debt_eom_reason
 
 TEMPLATE_FILE_PATH = "app/notifications/templates.json"
 _templates_cache = None
@@ -69,13 +70,13 @@ def _humanize_access_reason(reason: Any) -> str:
     if not reason_raw:
         return "Tidak disebutkan"
 
-    reason_lower = reason_raw.lower()
-
-    if reason_lower.startswith("quota_auto_debt_limit|") or reason_lower.startswith("quota_debt_limit|"):
+    if is_auto_debt_limit_reason(reason_raw):
         return "Pemakaian melebihi kuota telah melewati batas pengaman (auto debt)."
 
-    if reason_lower.startswith("quota_manual_debt_end_of_month|") or reason_lower.startswith("quota_debt_end_of_month|"):
+    if is_manual_debt_eom_reason(reason_raw):
         return "Tunggakan kuota akhir bulan belum dilunasi."
+
+    reason_lower = reason_raw.lower()
 
     if reason_lower.startswith("manual_admin_block|") or reason_lower.startswith("admin_manual_block|"):
         return "Akun dibatasi oleh Admin."
