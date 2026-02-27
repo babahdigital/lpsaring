@@ -37,6 +37,7 @@ from app.services.user_management.helpers import _handle_mikrotik_operation
 from app.commands.sync_unauthorized_hosts_command import sync_unauthorized_hosts_command
 from app.utils.block_reasons import build_manual_debt_eom_reason
 from app.utils.formatters import format_to_local_phone, get_app_local_datetime
+from app.utils.metrics_utils import increment_metric
 from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package, format_rupiah
 
 # Import create_app dari app/__init__.py
@@ -140,6 +141,14 @@ def enforce_end_of_month_debt_block_task(self):
         )
         subscribed_admins = db.session.scalars(recipients_query).all()
 
+        summary = {
+            "eligible": 0,
+            "warn_failed": 0,
+            "blocked_success": 0,
+            "block_failed": 0,
+            "admin_notify_failed": 0,
+        }
+
         for user in users:
             manual_debt_mb = int(getattr(user, "manual_debt_mb", 0) or 0)
             if manual_debt_mb <= 0:
@@ -155,6 +164,8 @@ def enforce_end_of_month_debt_block_task(self):
 
             if bool(getattr(user, "is_blocked", False)):
                 continue
+
+            summary["eligible"] += 1
 
             ref_pkg = _pick_ref_pkg_for_debt_mb(debt_mb)
             base_pkg_name = str(getattr(ref_pkg, "name", "") or "") or "-"
@@ -189,6 +200,7 @@ def enforce_end_of_month_debt_block_task(self):
 
             # Requirement: send WA first, then block.
             if enable_wa and not warned_ok:
+                summary["warn_failed"] += 1
                 continue
 
             try:
@@ -259,6 +271,7 @@ def enforce_end_of_month_debt_block_task(self):
 
                 db.session.add(user)
                 db.session.commit()
+                summary["blocked_success"] += 1
 
                 if enable_wa and subscribed_admins:
                     admin_msg = get_notification_message(
@@ -272,10 +285,41 @@ def enforce_end_of_month_debt_block_task(self):
                         },
                     )
                     for admin in subscribed_admins:
-                        send_whatsapp_message(admin.phone_number, admin_msg)
+                        try:
+                            sent = bool(send_whatsapp_message(admin.phone_number, admin_msg))
+                            if not sent:
+                                summary["admin_notify_failed"] += 1
+                        except Exception:
+                            summary["admin_notify_failed"] += 1
+                            logger.exception(
+                                "EOM debt block: gagal kirim WA admin %s utk user %s",
+                                getattr(admin, "id", "?"),
+                                getattr(user, "id", "?"),
+                            )
             except Exception:
                 db.session.rollback()
+                summary["block_failed"] += 1
                 logger.exception("EOM debt block: gagal proses block untuk user %s", getattr(user, "id", "?"))
+
+        if summary["eligible"] > 0:
+            increment_metric("eom.debt_block.eligible", summary["eligible"])
+        if summary["warn_failed"] > 0:
+            increment_metric("eom.debt_block.warn_failed", summary["warn_failed"])
+        if summary["blocked_success"] > 0:
+            increment_metric("eom.debt_block.success", summary["blocked_success"])
+        if summary["block_failed"] > 0:
+            increment_metric("eom.debt_block.failed", summary["block_failed"])
+        if summary["admin_notify_failed"] > 0:
+            increment_metric("eom.debt_block.admin_notify_failed", summary["admin_notify_failed"])
+
+        logger.info(
+            "EOM debt block summary: eligible=%s warn_failed=%s blocked_success=%s block_failed=%s admin_notify_failed=%s",
+            summary["eligible"],
+            summary["warn_failed"],
+            summary["blocked_success"],
+            summary["block_failed"],
+            summary["admin_notify_failed"],
+        )
 
 
 def _record_task_failure(app, task_name: str, payload: dict, error_message: str) -> None:

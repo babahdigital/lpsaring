@@ -51,7 +51,7 @@ def test_apply_debt_settlement_manual_item_path(monkeypatch):
     transaction = SimpleNamespace(user=user, midtrans_order_id=f'DEBT-{manual_debt_id}~BD-LPSR-ORDER')
     fake_session = _FakeSession(debt_item=SimpleNamespace(id=manual_debt_id, user_id=user.id))
 
-    called = {'manual': False, 'auto': False, 'sync': False}
+    called = {'manual': False, 'auto': False}
 
     def _fake_settle_manual(*, user, admin_actor, debt, source):
         called['manual'] = True
@@ -68,7 +68,6 @@ def test_apply_debt_settlement_manual_item_path(monkeypatch):
 
     monkeypatch.setattr(debt_helpers.user_debt_service, 'settle_manual_debt_item_to_zero', _fake_settle_manual)
     monkeypatch.setattr(debt_helpers.user_debt_service, 'clear_all_debts_to_zero', _fake_clear_all)
-    monkeypatch.setattr(debt_helpers, 'sync_address_list_for_single_user', lambda _user: called.__setitem__('sync', True))
 
     result = debt_helpers.apply_debt_settlement_on_success(
         session=fake_session,
@@ -77,8 +76,7 @@ def test_apply_debt_settlement_manual_item_path(monkeypatch):
 
     assert called['manual'] is True
     assert called['auto'] is False
-    assert called['sync'] is True
-    assert fake_session.commits == 1
+    assert fake_session.commits == 0
     assert result['paid_manual_mb'] == 2048
     assert result['paid_auto_mb'] == 0
     assert result['unblocked'] is True
@@ -114,7 +112,6 @@ def test_apply_debt_settlement_auto_path(monkeypatch):
 
     monkeypatch.setattr(debt_helpers.user_debt_service, 'settle_manual_debt_item_to_zero', _fake_settle_manual)
     monkeypatch.setattr(debt_helpers.user_debt_service, 'clear_all_debts_to_zero', _fake_clear_all)
-    monkeypatch.setattr(debt_helpers, 'sync_address_list_for_single_user', lambda _user: None)
 
     result = debt_helpers.apply_debt_settlement_on_success(
         session=fake_session,
@@ -123,7 +120,7 @@ def test_apply_debt_settlement_auto_path(monkeypatch):
 
     assert called['manual'] is False
     assert called['auto'] is True
-    assert fake_session.commits == 1
+    assert fake_session.commits == 0
     assert result['paid_auto_mb'] == 1024
     assert result['paid_manual_mb'] == 0
     assert result['unblocked'] is True

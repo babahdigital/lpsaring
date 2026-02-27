@@ -9,6 +9,7 @@ from app.infrastructure.db.models import Transaction, TransactionEventSource, Tr
 from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection
 from app.services import settings_service
 from app.services.notification_service import generate_temp_invoice_token, get_notification_message
+from app.services.hotspot_sync_service import sync_address_list_for_single_user
 from app.services.transaction_service import apply_package_and_sync_to_mikrotik
 from app.services.transaction_status_link_service import generate_transaction_status_token
 from .helpers import _is_demo_user_eligible
@@ -167,6 +168,14 @@ def handle_notification_impl(
                         payload=result,
                     )
                     session.commit()
+                    try:
+                        sync_address_list_for_single_user(transaction.user)
+                    except Exception as sync_err:
+                        current_app.logger.warning(
+                            "WEBHOOK: DEBT settlement %s commit ok tetapi sync MikroTik gagal: %s",
+                            order_id,
+                            sync_err,
+                        )
                     current_app.logger.info(
                         "WEBHOOK: DEBT settlement %s berhasil. paid_total_mb=%s unblocked=%s",
                         order_id,

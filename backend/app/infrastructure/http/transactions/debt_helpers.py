@@ -2,12 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from flask import current_app
-
 from app.extensions import db
 from app.infrastructure.db.models import Package, Transaction, User, UserQuotaDebt
 from app.services.user_management import user_debt as user_debt_service
-from app.services.hotspot_sync_service import sync_address_list_for_single_user
 from app.utils.block_reasons import is_debt_block_reason
 
 from .helpers import _extract_manual_debt_id_from_order_id
@@ -149,13 +146,6 @@ def apply_debt_settlement_on_success(*, session, transaction: Transaction) -> di
             user.blocked_at = None
             user.blocked_by_id = None
             unblocked = True
-
-    session.commit()
-
-    try:
-        sync_address_list_for_single_user(user)
-    except Exception as e:
-        current_app.logger.warning("DEBT: gagal sync Mikrotik untuk user %s: %s", getattr(user, "id", "?"), e)
 
     return {
         "paid_auto_mb": int(paid_auto_mb),

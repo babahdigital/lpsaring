@@ -8,7 +8,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from flask import current_app
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import selectinload
 
 from app.extensions import db
@@ -62,6 +62,7 @@ REDIS_GLOBAL_SYNC_LOCK_KEY = "quota:sync_lock:global"
 REDIS_ACCESS_STATUS_DEDUPE_PREFIX = "wa:dedupe:access_status:"
 LOCAL_GLOBAL_SYNC_LOCK_TOKEN = "__local_global_sync_lock__"
 _local_global_sync_lock = threading.Lock()
+_thread_local_state = threading.local()
 
 
 def _is_demo_phone_whitelisted(phone_number: Optional[str]) -> bool:
@@ -371,23 +372,85 @@ def _should_send_access_status_notification(redis_client, *, user_id: uuid.UUID,
 
 
 def _acquire_sync_lock(redis_client, user_id: uuid.UUID, ttl_seconds: int = 60) -> bool:
+    lock_key = _get_user_advisory_lock_key(user_id)
+
     if redis_client is None:
-        return True
+        increment_metric("hotspot.sync.lock.degraded")
+        return _try_acquire_db_sync_lock(lock_key)
+
     key = f"{REDIS_SYNC_LOCK_PREFIX}{user_id}"
     try:
         return bool(redis_client.set(key, "1", ex=ttl_seconds, nx=True))
     except Exception:
-        return True
+        increment_metric("hotspot.sync.lock.degraded")
+        return _try_acquire_db_sync_lock(lock_key)
 
 
 def _release_sync_lock(redis_client, user_id: uuid.UUID) -> None:
+    lock_key = _get_user_advisory_lock_key(user_id)
+
     if redis_client is None:
+        _release_db_sync_lock(lock_key)
         return
+
     key = f"{REDIS_SYNC_LOCK_PREFIX}{user_id}"
     try:
         redis_client.delete(key)
     except Exception:
+        pass
+
+    _release_db_sync_lock(lock_key)
+
+
+def _get_thread_local_db_lock_set() -> set[int]:
+    held = getattr(_thread_local_state, "db_sync_lock_keys", None)
+    if held is None:
+        held = set()
+        _thread_local_state.db_sync_lock_keys = held
+    return held
+
+
+def _get_user_advisory_lock_key(user_id: uuid.UUID) -> int:
+    try:
+        user_uuid = user_id if isinstance(user_id, uuid.UUID) else uuid.UUID(str(user_id))
+        return int(user_uuid.int % ((1 << 63) - 1))
+    except Exception:
+        return abs(hash(str(user_id))) % ((1 << 63) - 1)
+
+
+def _is_postgresql_engine() -> bool:
+    try:
+        return str(db.session.bind.dialect.name).strip().lower() == "postgresql"
+    except Exception:
+        return False
+
+
+def _try_acquire_db_sync_lock(lock_key: int) -> bool:
+    if not _is_postgresql_engine():
+        return False
+
+    try:
+        acquired = bool(db.session.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": int(lock_key)}).scalar())
+    except Exception:
+        return False
+
+    if acquired:
+        _get_thread_local_db_lock_set().add(int(lock_key))
+    return acquired
+
+
+def _release_db_sync_lock(lock_key: int) -> None:
+    held = _get_thread_local_db_lock_set()
+    if int(lock_key) not in held:
         return
+
+    if _is_postgresql_engine():
+        try:
+            db.session.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": int(lock_key)})
+        except Exception:
+            return
+
+    held.discard(int(lock_key))
 
 
 def _round_mb_value(value: float) -> float:
