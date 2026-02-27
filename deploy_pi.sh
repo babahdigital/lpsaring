@@ -549,7 +549,14 @@ fi
 if [ "$SKIP_PULL" = "false" ]; then
   docker compose --env-file .env.prod -f docker-compose.prod.yml pull
 fi
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+echo "==> Ensure db/redis running for migration..."
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d db redis
+
+echo "==> Run explicit migration (idempotent)..."
+docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm migrate
+
+echo "==> Start updated stack..."
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --remove-orphans
 docker compose --env-file .env.prod -f docker-compose.prod.yml ps
 if ! docker compose --env-file .env.prod -f docker-compose.prod.yml ps --services --status running | grep -qx frontend; then
   echo "ERROR: frontend container is not running after deploy" >&2
