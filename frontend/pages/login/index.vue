@@ -712,4 +712,8 @@ watch(regRole, () => {
     padding-inline: 0;
   }
 }
+
+.auth-wrapper {
+  min-block-size: 100dvh;
+}
 </style>

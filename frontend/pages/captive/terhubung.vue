@@ -65,7 +65,7 @@ onMounted(() => {
 
 <template>
   <div class="auth-wrapper d-flex align-center justify-center pa-4">
-    <VCard class="auth-card" max-width="560">
+    <VCard class="auth-card" max-width="420">
       <VCardText class="text-center">
         <VIcon icon="tabler-circle-check" size="56" class="mb-4" color="success" />
         <h4 class="text-h5 mb-2">
@@ -101,3 +101,9 @@ onMounted(() => {
     </VCard>
   </div>
 </template>
+
+<style scoped>
+.auth-wrapper {
+  min-block-size: 100dvh;
+}
+</style>

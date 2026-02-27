@@ -158,6 +158,10 @@ function goTo(path: string) {
 </template>
 
 <style scoped>
+.auth-wrapper {
+  min-block-size: 100dvh;
+}
+
 .policy-card {
   border-radius: 16px;
 }

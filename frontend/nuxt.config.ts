@@ -41,8 +41,6 @@ console.log('Public API URL:', publicApiBaseUrl)
 const host = process.env.NUXT_HOST ?? process.env.HOST ?? '0.0.0.0'
 const port = Number.parseInt(process.env.NUXT_PORT ?? '3010', 10)
 
-const defaultHmrHost = host === '0.0.0.0' ? 'localhost' : host
-
 const viteHmrHost = process.env.VITE_HMR_HOST?.trim()
 const viteHmrProtocol = (process.env.VITE_HMR_PROTOCOL as 'ws' | 'wss' | undefined)?.trim()
 const viteHmrClientPortRaw = process.env.VITE_HMR_CLIENT_PORT
@@ -73,12 +71,16 @@ if (appBaseUrl) {
   }
 }
 
-// NOTE:
-// Jangan otomatis men-derive HMR host dari APP base URL saat dev lokal.
-// Jika APP_BASE_URL menunjuk domain https (mis. dev-lpsaring.*), Vite client akan mencoba connect
-// ke wss://domain/_nuxt dan gagal jika websocket tidak diproxy.
-// Untuk remote dev/HMR lewat domain, set env VITE_HMR_HOST / VITE_HMR_PROTOCOL / VITE_HMR_CLIENT_PORT.
-if (isProductionBuild && appUrl && (!derivedHmrHost || !derivedHmrProtocol || !derivedHmrClientPort)) {
+// Derive HMR dari APP_BASE_URL untuk:
+// 1) production build, atau
+// 2) dev yang diakses lewat domain (reverse proxy / tunnel) ketika host bind 0.0.0.0.
+// Ini mencegah fallback client ke localhost:5173 pada browser remote.
+const canDeriveFromAppUrlInDev = !isProductionBuild
+  && host === '0.0.0.0'
+  && appUrl != null
+  && !['localhost', '127.0.0.1', '::1'].includes(appUrl.hostname)
+
+if ((isProductionBuild || canDeriveFromAppUrlInDev) && appUrl && (!derivedHmrHost || !derivedHmrProtocol || !derivedHmrClientPort)) {
   if (!derivedHmrHost)
     derivedHmrHost = appUrl.hostname
   if (!derivedHmrProtocol)
@@ -91,6 +93,12 @@ if (isProductionBuild && appUrl && (!derivedHmrHost || !derivedHmrProtocol || !d
 
 if (!derivedHmrClientPort)
   derivedHmrClientPort = derivedHmrProtocol === 'wss' ? 443 : port
+
+const explicitHmrHost = viteHmrHost && viteHmrHost.length > 0
+  ? viteHmrHost
+  : (derivedHmrHost && derivedHmrHost.length > 0 ? derivedHmrHost : undefined)
+const explicitHmrProtocol = viteHmrProtocol || (derivedHmrProtocol as 'ws' | 'wss' | undefined)
+const explicitHmrClientPort = viteHmrClientPort || derivedHmrClientPort
 
 export default defineNuxtConfig({
   compatibilityDate: '2025-04-23',
@@ -231,11 +239,11 @@ export default defineNuxtConfig({
       // Jika dev diakses via HTTPS (mis. reverse proxy / Cloudflare), browser butuh `wss://`.
       // Dengan membiarkan HMR default, Vite akan meng-derive protocol dari `window.location`.
       // Untuk remote HMR yang butuh override host/clientPort, gunakan env VITE_HMR_*.
-      hmr: (viteHmrHost && viteHmrHost.length > 0)
+      hmr: explicitHmrHost
         ? {
-            protocol: viteHmrProtocol || 'wss',
-            host: viteHmrHost,
-            clientPort: viteHmrClientPort || (viteHmrProtocol === 'ws' ? 80 : 443),
+        protocol: explicitHmrProtocol || 'wss',
+        host: explicitHmrHost,
+        clientPort: explicitHmrClientPort || ((explicitHmrProtocol || 'wss') === 'ws' ? 80 : 443),
             // `port` adalah port websocket server yang listen. Jangan default ke 443 karena itu
             // akan membuat Vite mencoba bind port 443 dan gagal.
             port: viteHmrPort,
