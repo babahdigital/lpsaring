@@ -67,13 +67,12 @@ describe('resolveAccessStatusFromUser', () => {
     })).toBe('habis')
   })
 
-  it('returns fup when profile indicates fup and quota still available', () => {
+  it('returns fup when quota enters FUP threshold and still available', () => {
     expect(resolveAccessStatusFromUser({
       is_active: true,
       approval_status: 'APPROVED',
-      total_quota_purchased_mb: 100,
-      total_quota_used_mb: 20,
-      mikrotik_profile_name: 'paket_fup_malam',
+      total_quota_purchased_mb: 5000,
+      total_quota_used_mb: 2100,
     })).toBe('fup')
   })
 

@@ -86,6 +86,16 @@ def verify_otp_impl(
                 )
                 if candidate_ctx is not None:
                     payload_dict["hotspot_login_context"] = candidate_ctx
+            if payload_dict.get("confirm_device_takeover") is None:
+                candidate_takeover = (
+                    payload_dict.get("confirmDeviceTakeover")
+                    or payload_dict.get("confirm_takeover")
+                    or request.args.get("confirm_device_takeover")
+                    or request.args.get("confirmDeviceTakeover")
+                    or request.args.get("confirm_takeover")
+                )
+                if candidate_takeover is not None:
+                    payload_dict["confirm_device_takeover"] = candidate_takeover
 
         data = VerifyOtpRequestSchema.model_validate(payload_dict)
 
@@ -198,15 +208,35 @@ def verify_otp_impl(
                 except Exception:
                     bypass_explicit = True
 
+            trusted_takeover_source = (
+                binding_context.get("mac_source") == "mikrotik"
+                and bool(binding_context.get("resolved_mac"))
+            )
+            allow_cross_user_transfer = bool(data.confirm_device_takeover) and trusted_takeover_source and (not used_bypass_code)
+
+            if bool(data.confirm_device_takeover) and not trusted_takeover_source:
+                current_app.logger.warning(
+                    "Verify-OTP takeover ignored: untrusted MAC source user_id=%s input_mac=%s mac_source=%s",
+                    user_to_login.id,
+                    client_mac,
+                    binding_context.get("mac_source"),
+                )
+
             ok_binding, msg_binding, resolved_ip = apply_device_binding_for_login(
                 user_to_login,
                 client_ip,
                 user_agent,
                 client_mac,
                 bypass_explicit_auth=bypass_explicit,
+                allow_cross_user_transfer=allow_cross_user_transfer,
             )
             if not ok_binding:
-                if msg_binding in ["Limit perangkat tercapai", "Perangkat belum diotorisasi"]:
+                if msg_binding in [
+                    "Limit perangkat tercapai",
+                    "Perangkat belum diotorisasi",
+                    "MAC sudah terdaftar pada user lain. Konfirmasi takeover diperlukan.",
+                    "MAC sudah dipakai perangkat user lain (aktif)",
+                ]:
                     current_app.logger.warning(
                         "Verify-OTP denied by device binding policy: user_id=%s phone=%s ip=%s mac=%s msg=%s",
                         user_to_login.id,

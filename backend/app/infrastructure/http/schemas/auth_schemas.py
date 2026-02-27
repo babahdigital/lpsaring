@@ -52,6 +52,7 @@ class VerifyOtpRequestSchema(BaseModel):
     client_ip: Optional[str] = None
     client_mac: Optional[str] = None
     hotspot_login_context: Optional[bool] = None
+    confirm_device_takeover: Optional[bool] = None
     _normalize_phone = field_validator("phone_number", mode="before")(validate_phone_number)
 
 

@@ -29,13 +29,18 @@ def test_openapi_priority_paths_and_methods_present():
     spec_text = spec_path.read_text(encoding='utf-8')
 
     expected = {
+        '/auth/auto-login': {'post'},
+        '/auth/admin/login': {'post'},
+        '/auth/status-token/verify': {'post'},
         '/auth/me': {'get'},
+        '/users/me/quota-debts': {'get'},
         '/transactions/initiate': {'post'},
         '/transactions/debt/initiate': {'post'},
         '/transactions/by-order-id/{order_id}': {'get'},
         '/transactions/public/by-order-id/{order_id}': {'get'},
         '/transactions/{order_id}/cancel': {'post'},
         '/transactions/public/{order_id}/cancel': {'post'},
+        '/admin/transactions/bill': {'post'},
     }
 
     missing_paths = [path for path in expected if f'  {path}:' not in spec_text]

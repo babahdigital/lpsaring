@@ -381,6 +381,7 @@ def register_or_update_device(
     user_agent: Optional[str],
     client_mac: Optional[str] = None,
     allow_replace: bool = False,
+    allow_cross_user_transfer: bool = False,
 ) -> Tuple[bool, str, Optional[UserDevice]]:
     settings = _get_settings()
     now = datetime.now(dt_timezone.utc)
@@ -442,6 +443,9 @@ def register_or_update_device(
     if cross_user_device:
         if not settings.get("global_mac_claim_transfer_enabled"):
             return False, "MAC sudah terdaftar pada user lain", None
+
+        if not allow_cross_user_transfer:
+            return False, "MAC sudah terdaftar pada user lain. Konfirmasi takeover diperlukan.", None
 
         is_authorized_elsewhere = bool(getattr(cross_user_device, "is_authorized", False))
         allow_takeover = bool(allow_replace) or (not is_authorized_elsewhere)
@@ -584,6 +588,7 @@ def apply_device_binding_for_login(
     user_agent: Optional[str],
     client_mac: Optional[str] = None,
     bypass_explicit_auth: bool = False,
+    allow_cross_user_transfer: bool = False,
 ) -> Tuple[bool, str, Optional[str]]:
     settings = _get_settings()
     now = datetime.now(dt_timezone.utc)
@@ -621,6 +626,7 @@ def apply_device_binding_for_login(
         user_agent,
         client_mac,
         allow_replace=bypass_explicit_auth,
+        allow_cross_user_transfer=allow_cross_user_transfer,
     )
     if not ok:
         return False, msg, None

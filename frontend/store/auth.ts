@@ -503,6 +503,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function getAccessStatusFromUser(inputUser: User | null): AccessStatus {
+    if (inputUser == null)
+      return 'ok'
     return resolveAccessStatusFromUser(inputUser)
   }
 

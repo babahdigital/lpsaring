@@ -1,8 +1,8 @@
- 
+/* eslint-disable */
 // AUTO-GENERATED FILE. DO NOT EDIT MANUALLY.
 // Source: contracts/openapi/openapi.v1.yaml
 
-export const OPENAPI_SOURCE_SHA256 = '3547665c920b980db94f8a92734b20d554e2e68ae7829627b140184af540b54b' as const
+export const OPENAPI_SOURCE_SHA256 = 'c78ac6ede0c20a0db1e13ef4e7419d53f644db980a1279b6c3800fb4ff13907f' as const
 export const API_CONTRACT_REVISION = 'openapi-1.0.0' as const
 
 export type MessageResponse = { message: string }
@@ -11,12 +11,17 @@ export type ValidationErrorDetail = { loc?: Array<string | number>; msg?: string
 export type AuthRegisterRequest = { phone_number: string; full_name: string; blok?: string | null; kamar?: string | null; is_tamping?: boolean; tamping_type?: string | null; register_as_komandan?: boolean }
 export type AuthRegisterResponse = { message: string; user_id: string; phone_number: string }
 export type AuthRequestOtpRequest = { phone_number: string }
-export type AuthVerifyOtpRequest = { phone_number: string; otp: string; client_ip?: string | null; client_mac?: string | null; hotspot_login_context?: boolean | null }
+export type AuthVerifyOtpRequest = { phone_number: string; otp: string; client_ip?: string | null; client_mac?: string | null; hotspot_login_context?: boolean | null; confirm_device_takeover?: boolean | null }
+export type AuthAutoLoginRequest = { client_ip?: string | null; client_mac?: string | null }
+export type StatusTokenVerifyRequest = { status: string; token: string }
+export type StatusTokenVerifyResponse = { valid: boolean }
 export type AuthVerifyOtpResponse = { access_token: string; token_type: string; hotspot_login_required?: boolean | null; hotspot_username?: string | null; hotspot_password?: string | null; session_token?: string | null; session_url?: string | null }
 export type UserMeResponse = { id: string; phone_number: string; full_name: string; blok?: string | null; kamar?: string | null; is_tamping?: boolean | null; tamping_type?: string | null; role: 'USER' | 'KOMANDAN' | 'ADMIN' | 'SUPER_ADMIN'; approval_status: 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED'; is_active: boolean; is_unlimited_user?: boolean | null; total_quota_purchased_mb?: number | null; total_quota_used_mb?: number | null; quota_expiry_date?: string | null; created_at?: string | null; updated_at?: string | null; approved_at?: string | null; last_login_at?: string | null }
 export type UserProfileUpdateRequest = { full_name?: string; blok?: string | null; kamar?: string | null; is_tamping?: boolean | null; tamping_type?: string | null }
 export type UserDevice = { id: string; mac_address: string; ip_address?: string | null; label?: string | null; is_authorized: boolean; created_at?: string | null; updated_at?: string | null; last_seen_at?: string | null }
 export type DeviceBindResponse = { success: boolean; message: string; device?: UserDevice }
+export type UserQuotaDebtItem = { id: string; debt_date?: string | null; amount_mb: number; paid_mb: number; remaining_mb: number; is_paid: boolean; paid_at?: string | null; note?: string | null; created_at?: string | null }
+export type UserQuotaDebtListResponse = { success: boolean; items: Array<UserQuotaDebtItem> }
 export type TransactionInitiateRequest = { package_id: string; payment_method?: 'qris' | 'gopay' | 'va' | 'shopeepay' | null; va_bank?: 'bca' | 'bni' | 'bri' | 'mandiri' | 'permata' | 'cimb' | null }
 export type TransactionDebtInitiateRequest = { payment_method?: 'qris' | 'gopay' | 'va' | 'shopeepay' | null; va_bank?: 'bca' | 'bni' | 'bri' | 'mandiri' | 'permata' | 'cimb' | null; manual_debt_id?: string | null }
 export type TransactionInitiateResponse = { order_id: string; snap_token?: string | null; redirect_url?: string | null; provider_mode: 'snap' | 'core_api'; status_token?: string | null; status_url?: string | null }
@@ -38,6 +43,8 @@ export type AdminQuotaRequestItem = { id: string; user_id: string; request_type:
 export type AdminQuotaRequestListResponse = { items: Array<AdminQuotaRequestItem> }
 export type AdminQuotaRequestProcessRequest = { action: 'approve' | 'reject'; approved_mb?: number | null; approved_days?: number | null; note?: string | null }
 export type AdminTransactionListResponse = { items: Array<TransactionDetailResponse>; meta: PaginationMeta }
+export type AdminTransactionBillRequest = { user_id: string; package_id: string; payment_method?: 'qris' | 'gopay' | 'va' | 'shopeepay' | null; va_bank?: 'bca' | 'bni' | 'bri' | 'mandiri' | 'permata' | 'cimb' | null }
+export type AdminTransactionBillResponse = { message: string; order_id: string; status: string; status_url?: string | null; whatsapp_sent?: boolean | null }
 
 export interface GeneratedApiContractMap {
   'GET /admin/quota-requests': {
@@ -65,6 +72,11 @@ export interface GeneratedApiContractMap {
     response: AdminTransactionListResponse
     error: ErrorResponse
   }
+  'POST /admin/transactions/bill': {
+    request: AdminTransactionBillRequest
+    response: AdminTransactionBillResponse
+    error: ErrorResponse
+  }
   'GET /admin/transactions/{order_id}/detail': {
     request: never
     response: TransactionDetailResponse
@@ -83,6 +95,16 @@ export interface GeneratedApiContractMap {
   'PUT /admin/users/{user_id}': {
     request: AdminUserUpdateRequest
     response: AdminUserMutationResponse
+    error: ErrorResponse
+  }
+  'POST /auth/admin/login': {
+    request: { username: string; password: string }
+    response: AuthVerifyOtpResponse
+    error: ErrorResponse
+  }
+  'POST /auth/auto-login': {
+    request: AuthAutoLoginRequest
+    response: AuthVerifyOtpResponse
     error: ErrorResponse
   }
   'GET /auth/me': {
@@ -108,6 +130,11 @@ export interface GeneratedApiContractMap {
   'POST /auth/session/consume': {
     request: { token: string }
     response: AuthVerifyOtpResponse
+    error: ErrorResponse
+  }
+  'POST /auth/status-token/verify': {
+    request: StatusTokenVerifyRequest
+    response: StatusTokenVerifyResponse
     error: ErrorResponse
   }
   'POST /auth/verify-otp': {
@@ -183,6 +210,11 @@ export interface GeneratedApiContractMap {
   'PUT /users/me/profile': {
     request: UserProfileUpdateRequest
     response: UserMeResponse
+    error: ErrorResponse
+  }
+  'GET /users/me/quota-debts': {
+    request: never
+    response: UserQuotaDebtListResponse
     error: ErrorResponse
   }
 }

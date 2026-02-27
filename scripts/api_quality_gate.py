@@ -22,10 +22,14 @@ REQUIRED_PRIORITY_PATHS = {
     "/auth/register",
     "/auth/request-otp",
     "/auth/verify-otp",
+    "/auth/auto-login",
+    "/auth/admin/login",
+    "/auth/status-token/verify",
     "/auth/session/consume",
     "/auth/me",
     "/auth/me/profile",
     "/users/me/profile",
+    "/users/me/quota-debts",
     "/users/me/devices",
     "/users/me/devices/bind-current",
     "/users/me/devices/{device_id}",
@@ -44,6 +48,7 @@ REQUIRED_PRIORITY_PATHS = {
     "/admin/quota-requests",
     "/admin/quota-requests/{request_id}/process",
     "/admin/transactions",
+    "/admin/transactions/bill",
     "/admin/transactions/{order_id}/detail",
 }
 

@@ -95,6 +95,80 @@ paths:
         '403':
           $ref: '#/components/responses/ErrorForbidden'
 
+  /auth/auto-login:
+    post:
+      tags: [Auth]
+      summary: Auto login berbasis context captive (IP/MAC)
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthAutoLoginRequest'
+      responses:
+        '200':
+          description: Auto login berhasil
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthVerifyOtpResponse'
+        '400':
+          $ref: '#/components/responses/ErrorBadRequest'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+
+  /auth/admin/login:
+    post:
+      tags: [Auth]
+      summary: Login admin via username dan password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login admin berhasil
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthVerifyOtpResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+
+  /auth/status-token/verify:
+    post:
+      tags: [Auth]
+      summary: Verifikasi signature status page token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusTokenVerifyRequest'
+      responses:
+        '200':
+          description: Hasil verifikasi token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusTokenVerifyResponse'
+        '400':
+          $ref: '#/components/responses/ErrorBadRequest'
+        '422':
+          $ref: '#/components/responses/ErrorValidation'
+
   /auth/session/consume:
     post:
       tags: [Auth]
@@ -200,6 +274,32 @@ paths:
           $ref: '#/components/responses/ErrorUnauthorized'
         '422':
           $ref: '#/components/responses/ErrorValidation'
+
+  /users/me/quota-debts:
+    get:
+      tags: [Profile]
+      summary: List manual quota debt milik user saat ini
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+            enum: [open, all]
+      responses:
+        '200':
+          description: List quota debt user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserQuotaDebtListResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
 
   /users/me/devices:
     get:
@@ -766,6 +866,35 @@ paths:
         '403':
           $ref: '#/components/responses/ErrorForbidden'
 
+  /admin/transactions/bill:
+    post:
+      tags: [AdminTransactions]
+      summary: Buat tagihan transaksi untuk user tertentu
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminTransactionBillRequest'
+      responses:
+        '201':
+          description: Tagihan berhasil dibuat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTransactionBillResponse'
+        '400':
+          $ref: '#/components/responses/ErrorBadRequest'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+
   /admin/transactions/{order_id}/detail:
     get:
       tags: [AdminTransactions]
@@ -957,6 +1086,35 @@ components:
         hotspot_login_context:
           type: boolean
           nullable: true
+        confirm_device_takeover:
+          type: boolean
+          nullable: true
+
+    AuthAutoLoginRequest:
+      type: object
+      properties:
+        client_ip:
+          type: string
+          nullable: true
+        client_mac:
+          type: string
+          nullable: true
+
+    StatusTokenVerifyRequest:
+      type: object
+      required: [status, token]
+      properties:
+        status:
+          type: string
+        token:
+          type: string
+
+    StatusTokenVerifyResponse:
+      type: object
+      required: [valid]
+      properties:
+        valid:
+          type: boolean
 
     AuthVerifyOtpResponse:
       type: object
@@ -1101,6 +1259,48 @@ components:
           type: string
         device:
           $ref: '#/components/schemas/UserDevice'
+
+    UserQuotaDebtItem:
+      type: object
+      required: [id, amount_mb, paid_mb, remaining_mb, is_paid]
+      properties:
+        id:
+          type: string
+          format: uuid
+        debt_date:
+          type: string
+          format: date
+          nullable: true
+        amount_mb:
+          type: integer
+        paid_mb:
+          type: integer
+        remaining_mb:
+          type: integer
+        is_paid:
+          type: boolean
+        paid_at:
+          type: string
+          format: date-time
+          nullable: true
+        note:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    UserQuotaDebtListResponse:
+      type: object
+      required: [success, items]
+      properties:
+        success:
+          type: boolean
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserQuotaDebtItem'
 
     TransactionInitiateRequest:
       type: object
@@ -1494,3 +1694,39 @@ components:
             $ref: '#/components/schemas/TransactionDetailResponse'
         meta:
           $ref: '#/components/schemas/PaginationMeta'
+
+    AdminTransactionBillRequest:
+      type: object
+      required: [user_id, package_id]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        package_id:
+          type: string
+          format: uuid
+        payment_method:
+          type: string
+          enum: [qris, gopay, va, shopeepay]
+          nullable: true
+        va_bank:
+          type: string
+          enum: [bca, bni, bri, mandiri, permata, cimb]
+          nullable: true
+
+    AdminTransactionBillResponse:
+      type: object
+      required: [message, order_id, status]
+      properties:
+        message:
+          type: string
+        order_id:
+          type: string
+        status:
+          type: string
+        status_url:
+          type: string
+          nullable: true
+        whatsapp_sent:
+          type: boolean
+          nullable: true

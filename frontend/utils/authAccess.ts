@@ -9,12 +9,13 @@ interface UserLike {
   total_quota_purchased_mb?: number | null
   total_quota_used_mb?: number | null
   quota_expiry_date?: string | null
-  mikrotik_profile_name?: string | null
 }
+
+const QUOTA_FUP_THRESHOLD_MB = 3072
 
 export function resolveAccessStatusFromUser(inputUser: UserLike | null, nowMs = Date.now()): AccessStatus {
   if (inputUser == null)
-    return 'ok'
+    return 'inactive'
 
   if (inputUser.role === 'ADMIN' || inputUser.role === 'SUPER_ADMIN')
     return 'ok'
@@ -30,7 +31,6 @@ export function resolveAccessStatusFromUser(inputUser: UserLike | null, nowMs = 
   const remaining = total - used
   const expiryDate = inputUser.quota_expiry_date ? new Date(inputUser.quota_expiry_date) : null
   const isExpired = Boolean(expiryDate && expiryDate.getTime() < nowMs)
-  const profileName = (inputUser.mikrotik_profile_name || '').toLowerCase()
 
   if (isExpired)
     return 'expired'
@@ -40,7 +40,7 @@ export function resolveAccessStatusFromUser(inputUser: UserLike | null, nowMs = 
     return 'habis'
   if (total > 0 && remaining <= 0)
     return 'habis'
-  if (profileName.includes('fup'))
+  if (total > QUOTA_FUP_THRESHOLD_MB && remaining <= QUOTA_FUP_THRESHOLD_MB)
     return 'fup'
 
   return 'ok'
