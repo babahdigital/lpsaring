@@ -157,6 +157,11 @@ Disediakan di backend/.env.example:
 - `WALLED_GARDEN_ENABLED`
 - `WALLED_GARDEN_ALLOWED_HOSTS`
 - `WALLED_GARDEN_ALLOWED_IPS`
+- `WALLED_GARDEN_AUTO_INCLUDE_EXTERNAL_HOSTS`
+- `WALLED_GARDEN_AUTO_INCLUDE_PORTAL_HOSTS`
+- `WALLED_GARDEN_INCLUDE_MIDTRANS_HOSTS`
+- `WALLED_GARDEN_INCLUDE_MESSAGING_HOSTS`
+- `WALLED_GARDEN_EXTRA_EXTERNAL_URLS`
 - `WALLED_GARDEN_MANAGED_COMMENT_PREFIX`
 - `WALLED_GARDEN_SYNC_INTERVAL_MINUTES`
 - `QUOTA_SYNC_INTERVAL_SECONDS`
@@ -209,3 +214,4 @@ Disediakan di backend/.env.example:
 6. Uji bind perangkat saat ini dan update label perangkat.
 7. Uji self-service hapus perangkat dan login kembali dari perangkat baru.
 8. Uji walled-garden sync saat `WALLED_GARDEN_ENABLED=True`.
+9. Jalankan inventory host eksternal: `python backend/scripts/scan_external_hosts.py` lalu review output `tmp/external_hosts_inventory.json`.
