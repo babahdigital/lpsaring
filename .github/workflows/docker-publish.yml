@@ -143,6 +143,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             NODE_OPTIONS=--max-old-space-size=3072
+            NUXT_PUBLIC_APP_BASE_URL=https://lpsaring.babahdigital.net
+            NUXT_PUBLIC_API_BASE_URL=/api
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
