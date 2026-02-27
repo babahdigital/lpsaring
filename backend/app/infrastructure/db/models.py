@@ -18,6 +18,7 @@ from sqlalchemy import (
     Date,
     String,
     Integer,
+    JSON,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship, Mapped, mapped_column
@@ -371,6 +372,13 @@ class User(db.Model):
         cascade="all, delete-orphan",
         lazy="select",
     )
+    quota_mutation_logs: Mapped[List["QuotaMutationLedger"]] = relationship(
+        "QuotaMutationLedger",
+        back_populates="user",
+        foreign_keys="QuotaMutationLedger.user_id",
+        cascade="all, delete-orphan",
+        lazy="select",
+    )
 
     @property
     def is_admin_role(self) -> bool:
@@ -709,6 +717,39 @@ class AdminActionLog(db.Model):
     target_user: Mapped[Optional["User"]] = relationship(
         "User", foreign_keys=[target_user_id], back_populates="received_action_logs"
     )
+
+
+class QuotaMutationLedger(db.Model):
+    __tablename__ = "quota_mutation_ledger"
+    __table_args__ = (
+        Index("ix_quota_mutation_ledger_user_created", "user_id", "created_at"),
+        Index("ix_quota_mutation_ledger_source", "source"),
+        UniqueConstraint(
+            "user_id",
+            "source",
+            "idempotency_key",
+            name="uq_quota_mutation_ledger_user_source_idempotency",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    actor_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    source: Mapped[str] = mapped_column(String(80), nullable=False)
+    idempotency_key: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    before_state: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    after_state: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    event_details: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id], back_populates="quota_mutation_logs")
+    actor: Mapped[Optional["User"]] = relationship("User", foreign_keys=[actor_user_id])
 
 
 class QuotaRequest(db.Model):

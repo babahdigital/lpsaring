@@ -39,6 +39,12 @@ from app.services.device_management_service import (
     _remove_blocked_address_list,
     register_or_update_device,
 )
+from app.services.access_policy_service import resolve_allowed_binding_type_for_user
+from app.services.quota_mutation_ledger_service import (
+    append_quota_mutation_event,
+    lock_user_quota_row,
+    snapshot_user_quota_state,
+)
 from app.utils.formatters import (
     format_to_local_phone,
     get_app_date_time_strings,
@@ -189,6 +195,34 @@ def _is_auto_debt_blocked(user: User) -> bool:
         return False
     reason = getattr(user, "blocked_reason", "")
     return is_auto_debt_limit_reason(reason)
+
+
+def _emit_policy_binding_mismatch_metrics(user: User, ip_binding_map: Optional[Dict[str, Dict[str, Any]]]) -> None:
+    if not ip_binding_map:
+        return
+    if not _is_auto_debt_blocked(user):
+        return
+
+    expected_binding_type = str(resolve_allowed_binding_type_for_user(user) or "").strip().lower()
+    if expected_binding_type != "regular":
+        increment_metric("policy.mismatch.auto_debt_expected_non_regular")
+        return
+
+    mismatch_count = 0
+    for device in user.devices or []:
+        mac = str(getattr(device, "mac_address", "") or "").strip().upper()
+        if not mac:
+            continue
+        binding_entry = ip_binding_map.get(mac)
+        if not binding_entry:
+            continue
+        actual_binding_type = str(binding_entry.get("type") or "").strip().lower()
+        if actual_binding_type == "blocked":
+            mismatch_count += 1
+
+    if mismatch_count > 0:
+        increment_metric("policy.mismatch.auto_debt_blocked_ip_binding")
+        increment_metric("policy.mismatch.auto_debt_blocked_ip_binding.devices", mismatch_count)
 
 
 def _apply_auto_debt_limit_block_state(user: User, source: str = "sync_usage") -> bool:
@@ -420,7 +454,9 @@ def _get_user_advisory_lock_key(user_id: uuid.UUID) -> int:
 
 def _is_postgresql_engine() -> bool:
     try:
-        return str(db.session.bind.dialect.name).strip().lower() == "postgresql"
+        bind = db.session.get_bind()
+        dialect_name = getattr(getattr(bind, "dialect", None), "name", "")
+        return str(dialect_name).strip().lower() == "postgresql"
     except Exception:
         return False
 
@@ -972,8 +1008,21 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                         delta_mb, new_total_usage_mb = usage_update
                         _update_daily_usage_log(user, delta_mb, today)
                         if abs(new_total_usage_mb - old_usage_mb) >= 0.01:
+                            lock_user_quota_row(user)
+                            before_state = snapshot_user_quota_state(user)
                             user.total_quota_used_mb = new_total_usage_mb
                             counters["updated_usage"] += 1
+                            append_quota_mutation_event(
+                                user=user,
+                                source="hotspot.sync_usage",
+                                before_state=before_state,
+                                after_state=snapshot_user_quota_state(user),
+                                idempotency_key=(f"sync_usage:{user.id}:{today.isoformat()}:{round(new_total_usage_mb,2)}")[:128],
+                                event_details={
+                                    "delta_mb": float(round(delta_mb, 2)),
+                                    "new_total_usage_mb": float(round(new_total_usage_mb, 2)),
+                                },
+                            )
 
                     remaining_mb, remaining_percent = _calculate_remaining(user)
 
@@ -1006,6 +1055,8 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                         target_profile = blocked_profile
                         if _is_auto_debt_blocked(user):
                             force_blocked_status = True
+
+                    _emit_policy_binding_mismatch_metrics(user, ip_binding_map)
 
                     if target_profile and user.mikrotik_profile_name != target_profile:
                         success_profile, message = set_hotspot_user_profile(

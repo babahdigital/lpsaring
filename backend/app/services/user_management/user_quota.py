@@ -18,6 +18,11 @@ from app.infrastructure.gateways.mikrotik_client import activate_or_update_hotsp
 from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection, get_ip_by_mac, upsert_ip_binding
 from app.services.access_policy_service import resolve_allowed_binding_type_for_user
 from app.services.hotspot_sync_service import resolve_target_profile_for_user, sync_address_list_for_single_user
+from app.services.quota_mutation_ledger_service import (
+    append_quota_mutation_event,
+    lock_user_quota_row,
+    snapshot_user_quota_state,
+)
 from app.utils.formatters import get_app_date_time_strings
 from app.utils.block_reasons import is_debt_block_reason
 
@@ -82,6 +87,9 @@ def inject_user_quota(user: User, admin_actor: User, mb_to_add: int, days_to_add
     if mb_to_add == 0 and days_to_add == 0:
         return False, "Tidak ada yang ditambahkan."
 
+    lock_user_quota_row(user)
+    before_state = snapshot_user_quota_state(user)
+
     now = get_app_local_datetime()
 
     # Langkah 2: Logika untuk Pengguna UNLIMITED
@@ -101,7 +109,7 @@ def inject_user_quota(user: User, admin_actor: User, mb_to_add: int, days_to_add
         timeout_seconds = int((normalized_expiry - now).total_seconds())
         limit_bytes_total = 0  # Unlimited tidak punya batasan kuota
         comment = f"Extend unlimited {days_to_add}d by {admin_actor.full_name}"
-        action_details = {
+        action_details: dict[str, Any] = {
             "added_days_for_unlimited": int(days_to_add),
             # Keys used by admin log UI formatter.
             "added_mb": 0,
@@ -146,7 +154,7 @@ def inject_user_quota(user: User, admin_actor: User, mb_to_add: int, days_to_add
         normalized_expiry = user.quota_expiry_date or now
         timeout_seconds = int((normalized_expiry - now).total_seconds())
         comment = f"Inject {mb_to_add}MB/{days_to_add}d by {admin_actor.full_name}"
-        action_details = {
+        action_details: dict[str, Any] = {
             "requested_inject_mb": int(mb_to_add),
             "requested_inject_days": int(days_to_add),
             # Keys used by admin log UI formatter.
@@ -253,6 +261,20 @@ def inject_user_quota(user: User, admin_actor: User, mb_to_add: int, days_to_add
     except Exception as e:
         current_app.logger.warning("Gagal mengirim notifikasi inject quota untuk user %s: %s", user.id, e)
 
+    append_quota_mutation_event(
+        user=user,
+        source="quota.inject",
+        before_state=before_state,
+        after_state=snapshot_user_quota_state(user),
+        actor_user_id=getattr(admin_actor, "id", None),
+        event_details={
+            "requested_inject_mb": int(mb_to_add),
+            "requested_inject_days": int(days_to_add),
+            "net_added_mb": int(action_details.get("net_added_mb") or 0),
+            "target_profile": str(action_details.get("target_profile") or ""),
+        },
+    )
+
     return True, f"Berhasil memperbarui kuota/masa aktif untuk {user.full_name}."
 
 
@@ -262,6 +284,9 @@ def set_user_unlimited(user: User, admin_actor: User, make_unlimited: bool) -> T
     """
     if user.is_unlimited_user == make_unlimited:
         return True, "Pengguna sudah dalam status yang diminta."
+
+    lock_user_quota_row(user)
+    before_state = snapshot_user_quota_state(user)
 
     # Panggilan `_generate_password` di sini yang sebelumnya menyebabkan error.
     if not user.mikrotik_password:
@@ -357,5 +382,14 @@ def set_user_unlimited(user: User, admin_actor: User, make_unlimited: bool) -> T
         _log_admin_action(
             admin_actor, user, action_type, {"status": make_unlimited, "profile": user.mikrotik_profile_name}
         )
+
+    append_quota_mutation_event(
+        user=user,
+        source="quota.set_unlimited",
+        before_state=before_state,
+        after_state=snapshot_user_quota_state(user),
+        actor_user_id=getattr(admin_actor, "id", None),
+        event_details={"status": bool(make_unlimited), "profile": str(user.mikrotik_profile_name or "")},
+    )
 
     return True, f"Status unlimited untuk {user.full_name} berhasil {status_text} unlimited."

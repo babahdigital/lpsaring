@@ -17,6 +17,8 @@ Lampiran wajib:
   - `cd frontend && pnpm vitest run tests/auth-access.test.ts tests/auth-guards.test.ts tests/payment-composables.test.ts tests/payment-status-polling.test.ts`
 - [x] Backend test:
   - `cd backend && python -m pytest -q`
+- [x] Backend stress tests (jika menyentuh quota/debt lock, sync, atau concurrency):
+  - `cd backend && python -m pytest -m stress -q`
 - [x] OpenAPI contract smoke:
   - `cd backend && python -m pytest -q tests/test_openapi_contract_smoke.py`
 - [x] Contract gate:
@@ -78,6 +80,7 @@ Catatan:
   - `frontend/types/api/contracts.ts`
   - `docs/API_DETAIL.md`
 - [x] Jika ubah alur penting: update doc teknis terkait (`DEVELOPMENT.md`/devlog/ops doc).
+- [x] Jika ubah kebijakan operasional aktif: sinkronkan `docs/CANONICAL_SPEC.md` + `docs/RUNBOOK_ACTIVE_INDEX.md`.
 
 ## G) Log Eksekusi PR Ini
 

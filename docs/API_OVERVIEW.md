@@ -1,4 +1,11 @@
-# Ringkasan API (High-Level)
+# API Overview (Archived)
+
+> Status: **Arsip referensi** (bukan sumber kebenaran kontrak).
+>
+> Canonical API docs:
+> - `contracts/openapi/openapi.v1.yaml`
+> - `docs/API_DETAIL.md`
+> - `docs/OPENAPI_CONTRACT_WORKFLOW.md`
 
 Dokumen ini ringkas dan fokus pada modul inti. Untuk detail lengkap, lihat source di backend/app/infrastructure/http/.
 

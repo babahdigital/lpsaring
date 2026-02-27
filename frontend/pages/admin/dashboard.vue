@@ -67,6 +67,27 @@ interface AdminMetricsResponse {
   reliability_signals?: {
     payment_idempotency_degraded?: boolean
     hotspot_sync_lock_degraded?: boolean
+    policy_parity_degraded?: boolean
+  }
+}
+
+interface AccessParityItem {
+  user_id: string
+  phone_number: string
+  mac: string
+  ip?: string | null
+  app_status: string
+  expected_binding_type: string
+  actual_binding_type?: string | null
+  address_list_statuses: string[]
+  mismatches: string[]
+}
+
+interface AccessParityResponse {
+  items?: AccessParityItem[]
+  summary?: {
+    users?: number
+    mismatches?: number
   }
 }
 
@@ -106,6 +127,16 @@ const {
   pending: metricsPending,
   refresh: refreshMetrics,
 } = useFetch<AdminMetricsResponse>('/admin/metrics', {
+  lazy: true,
+  server: false,
+  $fetch: $api,
+})
+
+const {
+  data: accessParity,
+  pending: parityPending,
+  refresh: refreshParity,
+} = useFetch<AccessParityResponse>('/admin/metrics/access-parity', {
   lazy: true,
   server: false,
   $fetch: $api,
@@ -181,6 +212,12 @@ const reliabilitySignalItems = computed(() => [
     degraded: reliabilitySummary.value.hotspotSyncLockDegraded,
     detail: `Lock degraded: ${reliabilitySummary.value.hotspotSyncLockDegradedCount}`,
   },
+  {
+    key: 'policy-parity',
+    label: 'Policy Parity',
+    degraded: reliabilitySummary.value.policyParityDegraded,
+    detail: `Mismatch users: ${reliabilitySummary.value.policyParityMismatchCount} (devices: ${reliabilitySummary.value.policyParityMismatchDeviceCount})`,
+  },
 ])
 
 const overallReliabilityHealthy = computed(() => {
@@ -191,9 +228,16 @@ async function handleRefreshDashboard() {
   await Promise.all([
     refresh(),
     refreshMetrics(),
+    refreshParity(),
     fetchBackupFileCount(),
   ])
 }
+
+const accessParityItems = computed(() => accessParity.value?.items ?? [])
+const accessParitySummary = computed(() => ({
+  users: accessParity.value?.summary?.users ?? 0,
+  mismatches: accessParity.value?.summary?.mismatches ?? 0,
+}))
 
 // --- Logika Perbandingan ---
 const perbandinganPendapatanMingguan = computed(() => {
@@ -918,7 +962,7 @@ useHead({ title: 'Dashboard Admin' })
           <VCardItem>
             <VCardTitle>Reliability Analytics</VCardTitle>
             <VCardSubtitle>Ringkasan non-urgent (payment idempotency & captive guard)</VCardSubtitle>
-            <template #append>
+            <div class="mt-2">
               <VChip
                 size="small"
                 label
@@ -926,13 +970,13 @@ useHead({ title: 'Dashboard Admin' })
               >
                 {{ overallReliabilityHealthy ? 'Overall Healthy' : 'Needs Attention' }}
               </VChip>
-            </template>
+            </div>
           </VCardItem>
           <VCardText>
             <VRow>
               <VCol
                 cols="12"
-                md="4"
+                md="3"
               >
                 <div class="d-flex align-center gap-2 mb-1">
                   <VIcon
@@ -949,7 +993,7 @@ useHead({ title: 'Dashboard Admin' })
 
               <VCol
                 cols="12"
-                md="4"
+                md="3"
               >
                 <div class="d-flex align-center gap-2 mb-1">
                   <VIcon
@@ -967,7 +1011,7 @@ useHead({ title: 'Dashboard Admin' })
 
               <VCol
                 cols="12"
-                md="4"
+                md="3"
               >
                 <div class="d-flex align-center gap-2 mb-1">
                   <VIcon
@@ -982,11 +1026,83 @@ useHead({ title: 'Dashboard Admin' })
                   <span class="text-caption text-disabled ms-2">Lock degraded: {{ reliabilitySummary.hotspotSyncLockDegradedCount }}</span>
                 </div>
               </VCol>
+
+              <VCol
+                cols="12"
+                md="3"
+              >
+                <div class="d-flex align-center gap-2 mb-1">
+                  <VIcon
+                    icon="tabler-activity-heartbeat"
+                    size="18"
+                    :class="reliabilitySummary.policyParityDegraded ? 'text-error' : 'text-success'"
+                  />
+                  <span class="text-body-2">Policy Parity</span>
+                </div>
+                <div class="text-body-1">
+                  {{ reliabilitySummary.policyParityDegraded ? 'Degraded' : 'Healthy' }}
+                  <span class="text-caption text-disabled ms-2">Mismatch users: {{ reliabilitySummary.policyParityMismatchCount }}</span>
+                </div>
+              </VCol>
             </VRow>
 
             <div class="d-flex align-center justify-end text-caption text-disabled mt-2">
               <span>Sumber data: {{ metricsPending ? 'refreshing...' : '/admin/metrics' }}</span>
             </div>
+          </VCardText>
+        </VCard>
+      </VCol>
+    </VRow>
+
+    <VRow class="mt-4">
+      <VCol cols="12">
+        <VCard>
+          <VCardItem>
+            <VCardTitle>Access Policy Parity (App vs MikroTik)</VCardTitle>
+            <VCardSubtitle>Deteksi mismatch status app, ip-binding type, dan address-list per device</VCardSubtitle>
+            <div class="mt-2">
+              <VChip
+                size="small"
+                label
+                :color="accessParitySummary.mismatches > 0 ? 'error' : 'success'"
+              >
+                {{ accessParitySummary.mismatches }} mismatch / {{ accessParitySummary.users }} users
+              </VChip>
+            </div>
+          </VCardItem>
+          <VCardText>
+            <div v-if="parityPending" class="text-caption text-disabled mb-2">
+              memuat parity realtime...
+            </div>
+            <VTable density="compact">
+              <thead>
+                <tr>
+                  <th>Phone</th>
+                  <th>MAC</th>
+                  <th>IP</th>
+                  <th>App</th>
+                  <th>Binding (exp/act)</th>
+                  <th>Address-list</th>
+                  <th>Mismatch</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in accessParityItems.slice(0, 20)" :key="`${item.user_id}-${item.mac}`">
+                  <td>{{ item.phone_number }}</td>
+                  <td>{{ item.mac }}</td>
+                  <td>{{ item.ip || '-' }}</td>
+                  <td>{{ item.app_status }}</td>
+                  <td>{{ item.expected_binding_type }} / {{ item.actual_binding_type || '-' }}</td>
+                  <td>{{ item.address_list_statuses.join(', ') || '-' }}</td>
+                  <td>{{ item.mismatches.join(', ') }}</td>
+                </tr>
+                <tr v-if="accessParityItems.length === 0">
+                  <td colspan="7" class="text-center text-disabled py-4">
+                    Tidak ada mismatch parity.
+                  </td>
+                </tr>
+              </tbody>
+            </VTable>
           </VCardText>
         </VCard>
       </VCol>

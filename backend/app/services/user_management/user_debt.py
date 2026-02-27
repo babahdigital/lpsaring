@@ -8,6 +8,11 @@ import sqlalchemy as sa
 
 from app.extensions import db
 from app.infrastructure.db.models import User, UserQuotaDebt, UserRole
+from app.services.quota_mutation_ledger_service import (
+    append_quota_mutation_event,
+    lock_user_quota_row,
+    snapshot_user_quota_state,
+)
 from app.utils.quota_debt import compute_debt_mb
 
 
@@ -39,11 +44,20 @@ def settle_auto_debt_to_zero(user: User) -> int:
     This clears auto-debt WITHOUT increasing purchased quota.
     Returns amount of MB applied to offset (>=0).
     """
+    lock_user_quota_row(user)
+    before_state = snapshot_user_quota_state(user)
     debt_mb = get_auto_debt_mb(user)
     pay_mb = _ceil_mb(debt_mb)
     if pay_mb <= 0:
         return 0
     user.auto_debt_offset_mb = int(getattr(user, "auto_debt_offset_mb", 0) or 0) + int(pay_mb)
+    append_quota_mutation_event(
+        user=user,
+        source="debt.settle_auto_to_zero",
+        before_state=before_state,
+        after_state=snapshot_user_quota_state(user),
+        event_details={"paid_auto_mb": int(pay_mb)},
+    )
     return int(pay_mb)
 
 
@@ -55,6 +69,8 @@ def add_manual_debt(
     debt_date: Optional[date] = None,
     note: Optional[str] = None,
 ) -> Tuple[bool, str, Optional[UserQuotaDebt]]:
+    lock_user_quota_row(user)
+    before_state = snapshot_user_quota_state(user)
     if getattr(user, "role", None) == UserRole.KOMANDAN:
         return False, "Debt tidak berlaku untuk role KOMANDAN.", None
     if bool(getattr(user, "is_unlimited_user", False)):
@@ -78,6 +94,14 @@ def add_manual_debt(
 
     user.manual_debt_mb = int(getattr(user, "manual_debt_mb", 0) or 0) + amount_int
     user.manual_debt_updated_at = datetime.now(dt_timezone.utc)
+    append_quota_mutation_event(
+        user=user,
+        source="debt.add_manual",
+        before_state=before_state,
+        after_state=snapshot_user_quota_state(user),
+        actor_user_id=getattr(admin_actor, "id", None),
+        event_details={"amount_mb": int(amount_int), "note": entry.note},
+    )
     return True, "Debt berhasil ditambahkan.", entry
 
 
@@ -88,6 +112,8 @@ def apply_manual_debt_payment(
     pay_mb: int,
     source: str,
 ) -> int:
+    lock_user_quota_row(user)
+    before_state = snapshot_user_quota_state(user)
     if getattr(user, "role", None) == UserRole.KOMANDAN:
         return 0
     """Apply payment (MB) to open manual debt entries, oldest-first.
@@ -147,6 +173,15 @@ def apply_manual_debt_payment(
         user.manual_debt_mb = max(0, cached - paid_total)
         user.manual_debt_updated_at = now
 
+    append_quota_mutation_event(
+        user=user,
+        source=f"debt.apply_manual_payment:{str(source or 'unknown')[:48]}",
+        before_state=before_state,
+        after_state=snapshot_user_quota_state(user),
+        actor_user_id=getattr(admin_actor, "id", None),
+        event_details={"paid_manual_mb": int(paid_total)},
+    )
+
     return int(paid_total)
 
 
@@ -161,6 +196,8 @@ def settle_manual_debt_item_to_zero(
 
     Returns actual MB paid (0..remaining).
     """
+    lock_user_quota_row(user)
+    before_state = snapshot_user_quota_state(user)
     if getattr(user, "role", None) == UserRole.KOMANDAN:
         return 0
     if not debt or getattr(debt, "user_id", None) != getattr(user, "id", None):
@@ -189,6 +226,14 @@ def settle_manual_debt_item_to_zero(
     cached = int(getattr(user, "manual_debt_mb", 0) or 0)
     user.manual_debt_mb = max(0, cached - remaining)
     user.manual_debt_updated_at = now
+    append_quota_mutation_event(
+        user=user,
+        source=f"debt.settle_manual_item:{str(source or 'unknown')[:44]}",
+        before_state=before_state,
+        after_state=snapshot_user_quota_state(user),
+        actor_user_id=getattr(admin_actor, "id", None),
+        event_details={"paid_manual_mb": int(remaining), "debt_item_id": str(getattr(debt, 'id', '') or '')},
+    )
     return int(remaining)
 
 
@@ -198,6 +243,8 @@ def clear_all_debts_to_zero(
     admin_actor: Optional[User],
     source: str,
 ) -> Tuple[int, int]:
+    lock_user_quota_row(user)
+    before_state = snapshot_user_quota_state(user)
     if getattr(user, "role", None) == UserRole.KOMANDAN:
         return 0, 0
     if bool(getattr(user, "is_unlimited_user", False)):
@@ -207,6 +254,14 @@ def clear_all_debts_to_zero(
             admin_actor=admin_actor,
             pay_mb=manual_balance,
             source=source,
+        )
+        append_quota_mutation_event(
+            user=user,
+            source=f"debt.clear_all:{str(source or 'unknown')[:56]}",
+            before_state=before_state,
+            after_state=snapshot_user_quota_state(user),
+            actor_user_id=getattr(admin_actor, "id", None),
+            event_details={"paid_auto_mb": 0, "paid_manual_mb": int(paid_manual_mb)},
         )
         return 0, int(paid_manual_mb)
     """Clear (auto + manual) debt to 0.
@@ -221,6 +276,14 @@ def clear_all_debts_to_zero(
         pay_mb=manual_balance,
         source=source,
     )
+    append_quota_mutation_event(
+        user=user,
+        source=f"debt.clear_all:{str(source or 'unknown')[:56]}",
+        before_state=before_state,
+        after_state=snapshot_user_quota_state(user),
+        actor_user_id=getattr(admin_actor, "id", None),
+        event_details={"paid_auto_mb": int(paid_auto_mb), "paid_manual_mb": int(paid_manual_mb)},
+    )
     return int(paid_auto_mb), int(paid_manual_mb)
 
 
@@ -231,6 +294,8 @@ def consume_injected_mb_for_debt(
     injected_mb: int,
     source: str,
 ) -> Tuple[int, int, int]:
+    lock_user_quota_row(user)
+    before_state = snapshot_user_quota_state(user)
     if getattr(user, "role", None) == UserRole.KOMANDAN:
         try:
             injected = int(injected_mb)
@@ -270,6 +335,18 @@ def consume_injected_mb_for_debt(
         )
         injected -= paid_manual
 
+    append_quota_mutation_event(
+        user=user,
+        source=f"debt.consume_injected:{str(source or 'unknown')[:50]}",
+        before_state=before_state,
+        after_state=snapshot_user_quota_state(user),
+        actor_user_id=getattr(admin_actor, "id", None),
+        event_details={
+            "paid_auto_mb": int(paid_auto),
+            "paid_manual_mb": int(paid_manual),
+            "remaining_injected_mb": int(max(0, injected)),
+        },
+    )
     return int(paid_auto), int(paid_manual), int(max(0, injected))
 
 
@@ -291,6 +368,9 @@ def consume_injected_mb_for_auto_debt_only(
             injected = 0
         return 0, max(0, injected)
 
+    lock_user_quota_row(user)
+    before_state = snapshot_user_quota_state(user)
+
     try:
         injected = int(injected_mb)
     except (TypeError, ValueError):
@@ -305,6 +385,14 @@ def consume_injected_mb_for_auto_debt_only(
         user.auto_debt_offset_mb = int(getattr(user, "auto_debt_offset_mb", 0) or 0) + int(paid_auto)
         injected -= paid_auto
 
+    append_quota_mutation_event(
+        user=user,
+        source=f"debt.consume_injected_auto_only:{str(source or 'unknown')[:40]}",
+        before_state=before_state,
+        after_state=snapshot_user_quota_state(user),
+        actor_user_id=getattr(admin_actor, "id", None),
+        event_details={"paid_auto_mb": int(paid_auto), "remaining_injected_mb": int(max(0, injected))},
+    )
     return int(paid_auto), int(max(0, injected))
 
 

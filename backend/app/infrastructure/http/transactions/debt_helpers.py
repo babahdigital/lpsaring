@@ -4,6 +4,11 @@ from typing import Any
 
 from app.extensions import db
 from app.infrastructure.db.models import Package, Transaction, User, UserQuotaDebt
+from app.services.quota_mutation_ledger_service import (
+    append_quota_mutation_event,
+    lock_user_quota_row,
+    snapshot_user_quota_state,
+)
 from app.services.user_management import user_debt as user_debt_service
 from app.utils.block_reasons import is_debt_block_reason
 
@@ -103,6 +108,9 @@ def apply_debt_settlement_on_success(*, session, transaction: Transaction) -> di
     if user is None:
         raise ValueError("Transaksi pelunasan tunggakan tidak memiliki user.")
 
+    lock_user_quota_row(user)
+    before_state = snapshot_user_quota_state(user)
+
     manual_debt_id = _extract_manual_debt_id_from_order_id(getattr(transaction, "midtrans_order_id", None))
 
     debt_total_mb = float(getattr(user, "quota_debt_total_mb", 0) or 0)
@@ -146,6 +154,21 @@ def apply_debt_settlement_on_success(*, session, transaction: Transaction) -> di
             user.blocked_at = None
             user.blocked_by_id = None
             unblocked = True
+
+    append_quota_mutation_event(
+        user=user,
+        source="transactions.debt_settlement_success",
+        before_state=before_state,
+        after_state=snapshot_user_quota_state(user),
+        idempotency_key=str(getattr(transaction, "midtrans_order_id", "") or "")[:128] or None,
+        event_details={
+            "transaction_id": str(getattr(transaction, "id", "") or ""),
+            "order_id": str(getattr(transaction, "midtrans_order_id", "") or ""),
+            "paid_auto_mb": int(paid_auto_mb),
+            "paid_manual_mb": int(paid_manual_mb),
+            "unblocked": bool(unblocked),
+        },
+    )
 
     return {
         "paid_auto_mb": int(paid_auto_mb),

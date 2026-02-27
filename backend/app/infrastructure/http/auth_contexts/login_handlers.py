@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone as dt_timezone
 from http import HTTPStatus
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 from flask import current_app, jsonify
-from sqlalchemy import select
 
 
 def auto_login_impl(
@@ -103,38 +102,6 @@ def auto_login_impl(
             )
 
         user = device.user if (device and getattr(device, "user", None)) else None
-
-        if user is None:
-            hotspot_username: Optional[str] = None
-            hotspot_mac: Optional[str] = None
-            try:
-                with get_mikrotik_connection() as api:
-                    if api:
-                        ok_sess, sess, _msg = get_hotspot_active_session_by_ip(api, str(client_ip))
-                        if ok_sess and sess:
-                            hotspot_username = str(sess.get("user") or "").strip() or None
-                            if sess.get("mac-address"):
-                                hotspot_mac = normalize_mac(str(sess.get("mac-address") or ""))
-            except Exception:
-                hotspot_username = None
-                hotspot_mac = None
-
-            if hotspot_username:
-                try:
-                    variations = get_phone_number_variations(hotspot_username)
-                except Exception:
-                    variations = []
-                if variations:
-                    user = db.session.execute(
-                        select(User).where(
-                            User.phone_number.in_(variations),
-                            User.is_active.is_(True),
-                            User.approval_status == ApprovalStatus.APPROVED,
-                        )
-                    ).scalar_one_or_none()
-
-                    if user and hotspot_mac:
-                        resolved_mac = hotspot_mac
 
         if not user:
             return jsonify(
