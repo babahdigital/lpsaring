@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 CRITICAL_CONTRACT_FILES = {
     "contracts/openapi/openapi.v1.yaml",
+    "frontend/types/api/contracts.generated.ts",
     "frontend/types/api/contracts.ts",
 }
 

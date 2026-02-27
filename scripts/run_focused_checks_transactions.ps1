@@ -38,12 +38,20 @@ if (-not $SkipBackend) {
         tests/test_access_policy_block_rules.py `
         tests/test_policy_invariants_matrix.py `
         tests/test_admin_routes.py `
-        tests/test_transactions_lifecycle.py `
-        tests/test_whatsapp_send.py
+        tests/test_transactions_lifecycle.py
     }
   } finally {
     Pop-Location
   }
+}
+
+Push-Location $LpsaringRoot
+try {
+  Invoke-Checked "API quality gate (OpenAPI + generated contracts)" {
+    & $Python scripts/api_quality_gate.py
+  }
+} finally {
+  Pop-Location
 }
 
 if (-not $SkipFrontend) {

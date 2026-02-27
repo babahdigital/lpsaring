@@ -15,6 +15,10 @@ tags:
   - name: Profile
   - name: Devices
   - name: Transactions
+  - name: AdminUsers
+  - name: AdminTransactions
+  - name: AdminSettings
+  - name: AdminRequests
 
 paths:
   /auth/register:
@@ -532,6 +536,263 @@ paths:
         '403':
           $ref: '#/components/responses/ErrorForbidden'
 
+  /admin/users:
+    get:
+      tags: [AdminUsers]
+      summary: List users (admin)
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: query
+          name: page
+          required: false
+          schema:
+            type: integer
+        - in: query
+          name: per_page
+          required: false
+          schema:
+            type: integer
+        - in: query
+          name: search
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paged users
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserListResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+    post:
+      tags: [AdminUsers]
+      summary: Create user (admin)
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUserCreateRequest'
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserMutationResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '422':
+          $ref: '#/components/responses/ErrorValidation'
+
+  /admin/users/{user_id}:
+    put:
+      tags: [AdminUsers]
+      summary: Update user (admin)
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUserUpdateRequest'
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserMutationResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+
+  /admin/settings:
+    get:
+      tags: [AdminSettings]
+      summary: Get settings (admin)
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Settings list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSettingsListResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+    put:
+      tags: [AdminSettings]
+      summary: Update settings (admin)
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSettingsUpdateRequest'
+      responses:
+        '200':
+          description: Settings updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+
+  /admin/quota-requests:
+    get:
+      tags: [AdminRequests]
+      summary: List quota requests (admin)
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Quota request list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminQuotaRequestListResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+
+  /admin/quota-requests/{request_id}/process:
+    post:
+      tags: [AdminRequests]
+      summary: Process quota request (admin)
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: request_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminQuotaRequestProcessRequest'
+      responses:
+        '200':
+          description: Request processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+
+  /admin/transactions:
+    get:
+      tags: [AdminTransactions]
+      summary: List transactions (admin)
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: query
+          name: page
+          required: false
+          schema:
+            type: integer
+        - in: query
+          name: per_page
+          required: false
+          schema:
+            type: integer
+        - in: query
+          name: status
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Paged transactions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTransactionListResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+
+  /admin/transactions/{order_id}/detail:
+    get:
+      tags: [AdminTransactions]
+      summary: Transaction detail (admin)
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: order_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Transaction detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionDetailResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1030,3 +1291,206 @@ components:
         message:
           type: string
           nullable: true
+
+    AdminUserListItem:
+      allOf:
+        - $ref: '#/components/schemas/UserMeResponse'
+        - type: object
+          properties:
+            profile_name:
+              type: string
+              nullable: true
+            quota_debt_total_mb:
+              type: number
+              nullable: true
+
+    PaginationMeta:
+      type: object
+      required: [page, per_page, total]
+      properties:
+        page:
+          type: integer
+        per_page:
+          type: integer
+        total:
+          type: integer
+
+    AdminUserListResponse:
+      type: object
+      required: [items, meta]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminUserListItem'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    AdminUserCreateRequest:
+      type: object
+      required: [phone_number, full_name]
+      properties:
+        phone_number:
+          type: string
+        full_name:
+          type: string
+        role:
+          type: string
+          enum: [USER, KOMANDAN, ADMIN, SUPER_ADMIN]
+        blok:
+          type: string
+          nullable: true
+        kamar:
+          type: string
+          nullable: true
+        is_tamping:
+          type: boolean
+          nullable: true
+        tamping_type:
+          type: string
+          nullable: true
+
+    AdminUserUpdateRequest:
+      type: object
+      properties:
+        full_name:
+          type: string
+        role:
+          type: string
+          enum: [USER, KOMANDAN, ADMIN, SUPER_ADMIN]
+        is_active:
+          type: boolean
+        approval_status:
+          type: string
+          enum: [PENDING_APPROVAL, APPROVED, REJECTED]
+        is_blocked:
+          type: boolean
+          nullable: true
+        blocked_reason:
+          type: string
+          nullable: true
+        blok:
+          type: string
+          nullable: true
+        kamar:
+          type: string
+          nullable: true
+
+    AdminUserMutationResponse:
+      type: object
+      required: [message, user]
+      properties:
+        message:
+          type: string
+        user:
+          $ref: '#/components/schemas/UserMeResponse'
+
+    SettingItem:
+      type: object
+      required: [key, value]
+      properties:
+        key:
+          type: string
+        value:
+          oneOf:
+            - type: string
+            - type: number
+            - type: boolean
+          nullable: true
+        description:
+          type: string
+          nullable: true
+
+    AdminSettingsListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SettingItem'
+
+    AdminSettingsUpdateRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [key, value]
+            properties:
+              key:
+                type: string
+              value:
+                oneOf:
+                  - type: string
+                  - type: number
+                  - type: boolean
+                nullable: true
+
+    AdminQuotaRequestItem:
+      type: object
+      required: [id, user_id, request_type, requested_at, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        request_type:
+          type: string
+          enum: [QUOTA, UNLIMITED]
+        requested_mb:
+          type: integer
+          nullable: true
+        requested_days:
+          type: integer
+          nullable: true
+        status:
+          type: string
+          enum: [PENDING, APPROVED, REJECTED]
+        note:
+          type: string
+          nullable: true
+        requested_at:
+          type: string
+          format: date-time
+
+    AdminQuotaRequestListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminQuotaRequestItem'
+
+    AdminQuotaRequestProcessRequest:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [approve, reject]
+        approved_mb:
+          type: integer
+          nullable: true
+        approved_days:
+          type: integer
+          nullable: true
+        note:
+          type: string
+          nullable: true
+
+    AdminTransactionListResponse:
+      type: object
+      required: [items, meta]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionDetailResponse'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'

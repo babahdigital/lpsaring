@@ -4,7 +4,7 @@ Dokumen ini sekarang menjadi **ringkasan semigenerated** dari kontrak API priori
 
 Sumber kebenaran utama:
 - `contracts/openapi/openapi.v1.yaml`
-- `frontend/types/api/contracts.ts`
+- `frontend/types/api/contracts.generated.ts`
 
 Lampiran wajib:
 - [.github/copilot-instructions.md](../.github/copilot-instructions.md)
@@ -44,6 +44,23 @@ Lampiran wajib:
 - `GET /api/transactions/{order_id}/qr`
 - `GET /api/transactions/public/{order_id}/qr`
 
+### 5) Admin Users
+- `GET /api/admin/users`
+- `POST /api/admin/users`
+- `PUT /api/admin/users/{user_id}`
+
+### 6) Admin Transactions
+- `GET /api/admin/transactions`
+- `GET /api/admin/transactions/{order_id}/detail`
+
+### 7) Admin Settings
+- `GET /api/admin/settings`
+- `PUT /api/admin/settings`
+
+### 8) Admin Requests
+- `GET /api/admin/quota-requests`
+- `POST /api/admin/quota-requests/{request_id}/process`
+
 ## Konvensi Error (Target Konsolidasi)
 - Gunakan envelope standar:
   - `code`
@@ -62,8 +79,9 @@ Untuk detail operasional, edge-case, dan catatan implementasi runtime (yang tida
 ## Rule Update Wajib (CI Gate)
 Jika ada perubahan signature endpoint prioritas (route/path/method), PR harus mengubah:
 1. `contracts/openapi/openapi.v1.yaml`
-2. `frontend/types/api/contracts.ts`
-3. `docs/API_DETAIL.md`
+2. `frontend/types/api/contracts.generated.ts`
+3. `frontend/types/api/contracts.ts`
+4. `docs/API_DETAIL.md`
 
 CI akan gagal jika syarat ini tidak terpenuhi.
 

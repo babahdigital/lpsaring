@@ -2,7 +2,8 @@ Param(
   [string]$BaseUrl = "http://localhost",
   [string]$AdminPhone = "0817701083",
   [string]$AdminName = "Super Admin",
-  [string]$AdminPassword = "alhabsyi",
+  [Alias('AdminPassword')]
+  [string]$AdminPortalSecret = "alhabsyi",
   [string]$AdminBlok = "A",
   [string]$AdminKamar = "Kamar_1",
   [string]$UserPhone = "0811580040",
@@ -42,48 +43,10 @@ Param(
 
 $ErrorActionPreference = "Stop"
 
-function Normalize-Bool([object]$Value, [bool]$Default) {
-  if ($null -eq $Value) { return $Default }
-  if ($Value -is [bool]) { return [bool]$Value }
-  $s = ("$Value").Trim().ToLowerInvariant()
-  if ($s -in @('1','true','t','yes','y','on')) { return $true }
-  if ($s -in @('0','false','f','no','n','off')) { return $false }
-  return $Default
-}
-
-function Normalize-PhoneToE164([string]$Phone) {
-  if (-not $Phone) { return $Phone }
-  $raw = ("$Phone").Trim()
-  if (-not $raw) { return $raw }
-
-  # Jika sudah +E.164, bersihkan ke +digits.
-  if ($raw.StartsWith('+')) {
-    $digits = ($raw -replace '[^0-9]', '')
-    return ('+' + $digits)
-  }
-
-  $digits = ($raw -replace '[^0-9]', '')
-  if (-not $digits) { return $raw }
-
-  # 00<cc><number> => +<cc><number>
-  if ($digits.StartsWith('00') -and $digits.Length -gt 2) {
-    return ('+' + $digits.Substring(2))
-  }
-
-  # Indonesia legacy handling
-  if ($digits.StartsWith('0')) {
-    return ('+62' + $digits.Substring(1))
-  }
-  if ($digits.StartsWith('8')) {
-    return ('+62' + $digits)
-  }
-  if ($digits.StartsWith('62')) {
-    return ('+' + $digits)
-  }
-
-  # Asumsi internasional tanpa '+' (mis. 675...)
-  return ('+' + $digits)
-}
+[string]$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $ScriptDir "e2e/lib/Common.ps1")
+. (Join-Path $ScriptDir "e2e/lib/StatusPolicy.ps1")
+. (Join-Path $ScriptDir "e2e/lib/BackendStateOps.ps1")
 
 $FreshStart = Normalize-Bool $FreshStart $true
 $CleanupAddressList = Normalize-Bool $CleanupAddressList $true
@@ -106,37 +69,10 @@ if (-not $UseOtpBypassOnly) {
   throw "Mode non-bypass dinonaktifkan. Jalankan dengan -UseOtpBypassOnly true agar tidak mengirim OTP real."
 }
 
-function Get-DotEnvValue([string]$Path, [string]$Key) {
-  if (-not (Test-Path $Path)) { return $null }
-  $lines = Get-Content -Path $Path -ErrorAction SilentlyContinue
-  foreach ($line in $lines) {
-    $t = ("$line").Trim()
-    if (-not $t -or $t.StartsWith('#')) { continue }
-    $idx = $t.IndexOf('=')
-    if ($idx -lt 1) { continue }
-    $k = $t.Substring(0, $idx).Trim()
-    if ($k -ne $Key) { continue }
-    $v = $t.Substring($idx + 1).Trim()
-    if ($v.StartsWith('"') -and $v.EndsWith('"')) { $v = $v.Substring(1, $v.Length - 2) }
-    return $v
-  }
-  return $null
-}
-
-function Get-HostFromUrl([string]$Url) {
-  try {
-    if (-not $Url) { return $null }
-    $u = [Uri]$Url
-    return $u.Host
-  } catch {
-    return $null
-  }
-}
-
 if ($env:E2E_BASE_URL) { $BaseUrl = $env:E2E_BASE_URL }
 if ($env:E2E_ADMIN_PHONE) { $AdminPhone = $env:E2E_ADMIN_PHONE }
 if ($env:E2E_ADMIN_NAME) { $AdminName = $env:E2E_ADMIN_NAME }
-if ($env:E2E_ADMIN_PASSWORD) { $AdminPassword = $env:E2E_ADMIN_PASSWORD }
+if ($env:E2E_ADMIN_PASSWORD) { $AdminPortalSecret = $env:E2E_ADMIN_PASSWORD }
 if ($env:E2E_USER_PHONE) { $UserPhone = $env:E2E_USER_PHONE }
 if ($env:E2E_USER_NAME) { $UserName = $env:E2E_USER_NAME }
 if ($env:E2E_USER_BLOK) { $UserBlok = $env:E2E_USER_BLOK }
@@ -145,11 +81,8 @@ if ($env:E2E_CLIENT_IP) { $SimulatedClientIp = $env:E2E_CLIENT_IP }
 if ($env:E2E_CLIENT_MAC) { $SimulatedClientMac = $env:E2E_CLIENT_MAC }
 
 # Normalisasi nomor agar konsisten dengan backend (OTP Redis key menggunakan nomor yang sudah dinormalisasi).
-$AdminPhoneE164 = Normalize-PhoneToE164 $AdminPhone
 $UserPhoneE164 = Normalize-PhoneToE164 $UserPhone
-$KomandanPhoneE164 = Normalize-PhoneToE164 $KomandanPhone
 
-[string]$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 [string]$ProjectRoot = Split-Path -Parent $ScriptDir
 [string]$ComposeFile = Join-Path $ProjectRoot "docker-compose.yml"
 [string]$ComposeE2EStandaloneFile = Join-Path $ProjectRoot "docker-compose.e2e.yml"
@@ -201,421 +134,6 @@ if (-not $UseIsolatedCompose) {
 
 # Deprecated: APP_ENV tidak lagi dipakai untuk memilih env_file di compose.
 # Tetap dipertahankan sebagai parameter agar kompatibel dengan pemanggilan lama.
-
-function Invoke-Compose([string[]]$ComposeArgs) {
-  $cmd = @("compose", "-f", $ComposeFile)
-  if ($UseIsolatedCompose) {
-    # Project name dipakai agar `down -v` hanya menyentuh stack E2E.
-    $cmd += @("-p", $ComposeProjectName)
-  }
-  $cmd += @("--project-directory", $ProjectRoot) + $ComposeArgs
-  & docker @cmd
-  if ($LASTEXITCODE -ne 0) {
-    throw "docker compose gagal (exit=$LASTEXITCODE): docker $($cmd -join ' ')"
-  }
-}
-
-function Test-BindingDebug($baseUrl, $adminToken, $label, $userId, $clientIp, $clientMac) {
-  $body = @{
-    user_id = $userId
-    client_ip = $clientIp
-    client_mac = $clientMac
-  } | ConvertTo-Json
-  try {
-    $result = Invoke-RestMethod -Method Post -Uri "$baseUrl/api/auth/debug/binding" -Headers @{ Authorization = "Bearer $adminToken" } -ContentType "application/json" -Body $body
-    $binding = $result.binding
-    Write-Host "Binding debug ($label): input_ip=$($binding.input_ip) input_mac=$($binding.input_mac) resolved_ip=$($binding.resolved_ip) ip_source=$($binding.ip_source) ip_msg=$($binding.ip_message) resolved_mac=$($binding.resolved_mac) mac_source=$($binding.mac_source) mac_msg=$($binding.mac_message)"
-  } catch {
-    Write-Host "Binding debug ($label) gagal: $($_.Exception.Message)"
-  }
-}
-
-function Force-UserActiveDirect([string]$phoneNumber) {
-  if (-not $phoneNumber) { return }
-  $envArgs = @(
-    "-e", "TARGET_PHONE=$phoneNumber"
-  )
-
-  $py = @'
-import os
-from app import create_app
-from app.extensions import db
-from app.infrastructure.db.models import User, ApprovalStatus, UserRole
-from app.utils.formatters import get_phone_number_variations
-from app.services import settings_service
-
-app = create_app()
-with app.app_context():
-    phone = os.environ.get("TARGET_PHONE") or ""
-    variations = get_phone_number_variations(phone)
-    user = db.session.query(User).filter(User.phone_number.in_(variations)).first()
-    if not user:
-        print(f"Force-activate skipped: user not found for {phone}")
-        raise SystemExit(0)
-
-    user.is_blocked = False
-    user.blocked_reason = None
-    user.is_active = True
-    user.approval_status = ApprovalStatus.APPROVED
-
-    # Pastikan field MikroTik minimal terisi agar endpoint admin update tidak gagal
-    # saat ENABLE_MIKROTIK_OPERATIONS=True.
-    try:
-      if not user.mikrotik_server_name:
-        if getattr(user, 'role', None) == UserRole.KOMANDAN:
-          user.mikrotik_server_name = settings_service.get_setting('MIKROTIK_DEFAULT_SERVER_KOMANDAN', 'testing')
-        else:
-          user.mikrotik_server_name = settings_service.get_setting('MIKROTIK_DEFAULT_SERVER_USER', 'testing')
-    except Exception:
-      pass
-
-    try:
-      if not user.mikrotik_profile_name:
-        user.mikrotik_profile_name = settings_service.get_setting('MIKROTIK_ACTIVE_PROFILE', 'profile-aktif')
-    except Exception:
-      pass
-
-    db.session.commit()
-    print(f"Force-activate OK: user_id={user.id} phone={user.phone_number}")
-'@
-
-  $pyB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($py))
-  $cmdArgs = @("exec", "-T") + $envArgs + @(
-    "backend",
-    "python",
-    "-c",
-    "import base64,sys; exec(base64.b64decode('$pyB64').decode('utf-8'))"
-  )
-  try {
-    Invoke-Compose $cmdArgs | Out-Null
-  } catch {
-    Write-Host "[WARN] Force-activate gagal untuk phone=${phoneNumber}: $($_.Exception.Message)" -ForegroundColor Yellow
-  }
-}
-
-function Invoke-AutoDebtThresholdSimulation([string]$phoneNumber, [string]$clientIp, [string]$clientMac) {
-  if (-not $phoneNumber) { return }
-  $envArgs = @(
-    "-e", "TARGET_PHONE=$phoneNumber",
-    "-e", "TARGET_IP=$clientIp",
-    "-e", "TARGET_MAC=$clientMac"
-  )
-
-  $py = @'
-import os
-from app import create_app
-from app.extensions import db
-from app.infrastructure.db.models import User, ApprovalStatus
-from app.services.hotspot_sync_service import resolve_target_profile_for_user, sync_address_list_for_single_user
-from app.services import settings_service
-from app.utils.formatters import get_phone_number_variations
-
-app = create_app()
-with app.app_context():
-    phone = os.environ.get("TARGET_PHONE") or ""
-    client_ip = os.environ.get("TARGET_IP") or None
-    variations = get_phone_number_variations(phone)
-    user = db.session.query(User).filter(User.phone_number.in_(variations)).first()
-    if not user:
-        raise SystemExit(f"User not found for {phone}")
-
-    user.is_active = True
-    user.approval_status = ApprovalStatus.APPROVED
-    user.is_unlimited_user = False
-
-    # Simulasi auto debt melewati limit.
-    user.total_quota_purchased_mb = 1000
-    user.total_quota_used_mb = 1700
-    user.auto_debt_offset_mb = 0
-
-    # Pastikan tidak terkunci oleh reason lain agar policy auto-debt bisa dievaluasi jelas.
-    user.is_blocked = False
-    user.blocked_reason = None
-    user.blocked_at = None
-    user.blocked_by_id = None
-
-    if not user.mikrotik_profile_name:
-        user.mikrotik_profile_name = settings_service.get_setting("MIKROTIK_ACTIVE_PROFILE", "profile-aktif")
-
-    target_profile = resolve_target_profile_for_user(user)
-    db.session.commit()
-
-    # Sinkronisasi address-list single-user agar blocked list langsung terbentuk.
-    try:
-        sync_address_list_for_single_user(user, client_ip=client_ip)
-        db.session.commit()
-    except Exception as e:
-        print(f"WARN sync_address_list_for_single_user failed: {e}")
-
-    print(
-        f"Auto-debt threshold simulation: user_id={user.id} is_blocked={user.is_blocked} "
-        f"blocked_reason={user.blocked_reason} target_profile={target_profile}"
-    )
-'@
-
-  $pyB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($py))
-  $cmdArgs = @("exec", "-T") + $envArgs + @(
-    "backend",
-    "python",
-    "-c",
-    "import base64,sys; exec(base64.b64decode('$pyB64').decode('utf-8'))"
-  )
-  try {
-    Invoke-Compose $cmdArgs
-  } catch {
-    Write-Host "[WARN] Simulasi auto debt threshold gagal: $($_.Exception.Message)" -ForegroundColor Yellow
-  }
-}
-
-function Assert-AutoDebtBindingRegular([string]$phoneNumber, [string]$clientMac) {
-  if (-not $phoneNumber) { return }
-  $envArgs = @(
-    "-e", "TARGET_PHONE=$phoneNumber",
-    "-e", "TARGET_MAC=$clientMac"
-  )
-
-  $py = @'
-import os
-from app import create_app
-from app.extensions import db
-from app.infrastructure.db.models import User
-from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection
-from app.utils.formatters import get_phone_number_variations, format_to_local_phone
-
-app = create_app()
-with app.app_context():
-    phone = os.environ.get("TARGET_PHONE") or ""
-    target_mac = (os.environ.get("TARGET_MAC") or "").upper()
-    variations = get_phone_number_variations(phone)
-    user = db.session.query(User).filter(User.phone_number.in_(variations)).first()
-    if not user:
-        raise SystemExit(f"User not found for {phone}")
-
-    username_08 = format_to_local_phone(user.phone_number) or ""
-
-    with get_mikrotik_connection() as api:
-        if not api:
-            print("SKIP: MikroTik connection not available for binding assertion")
-            raise SystemExit(0)
-
-        entries = api.get_resource("/ip/hotspot/ip-binding").get()
-        matched = []
-        for entry in entries:
-            mac = str(entry.get("mac-address") or "").upper()
-            comment = str(entry.get("comment") or "")
-            if target_mac and mac == target_mac:
-                matched.append(entry)
-                continue
-            if username_08 and (f"user={username_08}" in comment or f"uid={user.id}" in comment):
-                matched.append(entry)
-
-        blocked_entries = [e for e in matched if str(e.get("type") or "").lower() == "blocked"]
-        if blocked_entries:
-            raise SystemExit(f"Found blocked ip-binding entries for auto-debt user: {blocked_entries}")
-
-        print(f"IP-binding OK for auto-debt flow: matched_entries={len(matched)} type!=blocked")
-'@
-
-  $pyB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($py))
-  $cmdArgs = @("exec", "-T") + $envArgs + @(
-    "backend",
-    "python",
-    "-c",
-    "import base64,sys; exec(base64.b64decode('$pyB64').decode('utf-8'))"
-  )
-  try {
-    Invoke-Compose $cmdArgs
-  } catch {
-    Write-Host "[WARN] Skip assert ip-binding regular untuk auto debt: $($_.Exception.Message)" -ForegroundColor Yellow
-  }
-}
-
-function Clear-AddressListForIp($ipAddress) {
-  if (-not $ipAddress) { return }
-  $envArgs = @(
-    "-e", "TARGET_IP=$ipAddress"
-  )
-
-  $py = @'
-import os
-from app import create_app
-from app.services import settings_service
-from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection, remove_address_list_entry
-
-app = create_app()
-with app.app_context():
-    target_ip = os.environ.get("TARGET_IP")
-    if not target_ip:
-        raise SystemExit("TARGET_IP empty")
-
-    list_names = [
-        settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active"),
-        settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup"),
-        settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive"),
-        settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired"),
-        settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis"),
-        settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked"),
-    ]
-
-    removed = 0
-    with get_mikrotik_connection() as api:
-        if not api:
-            raise SystemExit("MikroTik connection failed")
-        for list_name in list_names:
-            if not list_name:
-                continue
-            ok, _msg = remove_address_list_entry(api, target_ip, list_name)
-            if ok:
-                removed += 1
-    print(f"Cleanup address-list: ip={target_ip} removed={removed}")
-'@
-
-  $pyB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($py))
-  $cmdArgs = @("exec", "-T") + $envArgs + @(
-    "backend",
-    "python",
-    "-c",
-    "import base64,sys; exec(base64.b64decode('$pyB64').decode('utf-8'))"
-  )
-  try {
-    Invoke-Compose $cmdArgs
-  } catch {
-    Write-Host "[WARN] Skip MikroTik cleanup address-list (ip=$ipAddress): $($_.Exception.Message)"
-  }
-}
-
-function Assert-AddressListStatus($ipAddress, $expectedStatus, $phoneNumber, $clientMac) {
-  if (-not $ipAddress -or -not $expectedStatus) { return }
-  $envArgs = @(
-    "-e", "TARGET_IP=$ipAddress",
-    "-e", "EXPECTED_STATUS=$expectedStatus",
-    "-e", "TARGET_PHONE=$phoneNumber",
-    "-e", "TARGET_MAC=$clientMac"
-  )
-
-  $py = @'
-import os
-from app import create_app
-from app.extensions import db
-from app.infrastructure.db.models import User
-from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection
-from app.services import settings_service
-from app.utils.formatters import get_phone_number_variations, format_to_local_phone
-
-STATUS_KEYS = {
-  "active": "MIKROTIK_ADDRESS_LIST_ACTIVE",
-  "fup": "MIKROTIK_ADDRESS_LIST_FUP",
-  "habis": "MIKROTIK_ADDRESS_LIST_HABIS",
-  "expired": "MIKROTIK_ADDRESS_LIST_EXPIRED",
-  "inactive": "MIKROTIK_ADDRESS_LIST_INACTIVE",
-  "blocked": "MIKROTIK_ADDRESS_LIST_BLOCKED",
-}
-
-def _matches_comment(comment, user_id, username_08):
-  if not comment:
-    return False
-  text = str(comment)
-  return f"user_id={user_id}" in text or f"phone={username_08}" in text or f"user={user_id}" in text
-
-app = create_app()
-with app.app_context():
-  target_ip = os.environ.get("TARGET_IP")
-  expected_status = (os.environ.get("EXPECTED_STATUS") or "").lower()
-  phone = os.environ.get("TARGET_PHONE") or ""
-  target_mac = (os.environ.get("TARGET_MAC") or "").upper()
-  if not target_ip:
-    raise SystemExit("TARGET_IP empty")
-  if expected_status not in STATUS_KEYS:
-    raise SystemExit(f"Unknown EXPECTED_STATUS: {expected_status}")
-
-  variations = get_phone_number_variations(phone)
-  user = db.session.query(User).filter(User.phone_number.in_(variations)).first()
-  if not user:
-    raise SystemExit("User not found for address-list validation")
-  username_08 = format_to_local_phone(user.phone_number) or ""
-
-  list_names = {
-    key: (settings_service.get_setting(cfg, key) or key)
-    for key, cfg in STATUS_KEYS.items()
-  }
-  expected_list = list_names[expected_status]
-
-  with get_mikrotik_connection() as api:
-    if not api:
-      raise SystemExit("MikroTik connection failed")
-
-    candidate_ips = []
-    if target_ip:
-      candidate_ips.append(target_ip)
-
-    bindings = api.get_resource("/ip/hotspot/ip-binding").get()
-    for entry in bindings:
-      mac = str(entry.get("mac-address") or "").upper()
-      address = str(entry.get("address") or "")
-      comment = entry.get("comment")
-      if target_mac and mac == target_mac and address:
-        candidate_ips.append(address)
-        continue
-      if _matches_comment(comment, user.id, username_08) and address:
-        candidate_ips.append(address)
-
-    seen = set()
-    candidate_ips = [ip for ip in candidate_ips if ip and not (ip in seen or seen.add(ip))]
-
-    success = False
-    for ip in candidate_ips:
-      entries = api.get_resource("/ip/firewall/address-list").get(address=ip)
-      if not entries:
-        continue
-
-      matching_expected = [
-        e for e in entries
-        if e.get("list") == expected_list and _matches_comment(e.get("comment"), user.id, username_08)
-      ]
-      if not matching_expected:
-        matching_expected = [
-          e for e in entries
-          if e.get("list") == expected_list
-        ]
-      if not matching_expected:
-        continue
-
-      other_status_lists = {v for k, v in list_names.items() if v and v != expected_list}
-      conflicts = [e for e in entries if e.get("list") in other_status_lists]
-      if conflicts:
-        lists = ",".join(sorted({str(e.get("list")) for e in conflicts}))
-        raise SystemExit(f"Conflicting lists for ip={ip}: {lists}")
-
-      print(f"Address-list OK: ip={ip} status={expected_status} list={expected_list}")
-      success = True
-      break
-
-    if not success:
-      raise SystemExit(f"Expected list '{expected_list}' not found for ip(s)={candidate_ips}")
-'@
-
-  $pyB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($py))
-  $cmdArgs = @("exec", "-T") + $envArgs + @(
-    "backend",
-    "python",
-    "-c",
-    "import base64,sys; exec(base64.b64decode('$pyB64').decode('utf-8'))"
-  )
-  $maxAttempts = 4
-  for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
-    try {
-      Invoke-Compose $cmdArgs
-      return
-    } catch {
-      if ($attempt -lt $maxAttempts) {
-        Write-Host "[WARN] MikroTik assert address-list belum konsisten (attempt=$attempt/$maxAttempts, ip=$ipAddress status=$expectedStatus). Retry 2 detik..." -ForegroundColor Yellow
-        Start-Sleep -Seconds 2
-        continue
-      }
-      Write-Host "[WARN] Skip MikroTik assert address-list (ip=$ipAddress status=$expectedStatus): $($_.Exception.Message)"
-    }
-  }
-}
 
 Write-Host "[1/14] Start containers"
 if ($FreshStart) {
@@ -736,13 +254,13 @@ Invoke-Compose @("exec", "-T", "backend", "flask", "seed-db")
 
 Write-Host "[4/14] Create super admin (skip if already exists)"
 try {
-  Invoke-Compose @("exec", "-T", "backend", "flask", "user", "create-admin", "--phone", $AdminPhone, "--name", $AdminName, "--role", "1", "--portal-password", $AdminPassword, "--blok", $AdminBlok, "--kamar", $AdminKamar)
+  Invoke-Compose @("exec", "-T", "backend", "flask", "user", "create-admin", "--phone", $AdminPhone, "--name", $AdminName, "--role", "1", "--portal-password", $AdminPortalSecret, "--blok", $AdminBlok, "--kamar", $AdminKamar)
 } catch {
   Write-Host "Admin mungkin sudah ada, lanjutkan..."
 }
 
 Write-Host "[5/14] Admin login"
-$adminLoginBody = @{ username = $AdminPhone; password = $AdminPassword } | ConvertTo-Json
+$adminLoginBody = @{ username = $AdminPhone; password = $AdminPortalSecret } | ConvertTo-Json
 $adminLogin = Invoke-RestMethod -Method Post -Uri "$ApiBaseUrl/api/auth/admin/login" -ContentType "application/json" -Body $adminLoginBody
 $adminToken = $adminLogin.access_token
 
@@ -815,7 +333,7 @@ try {
 }
 
 Write-Host "[7.6/14] Force user aktif (DB direct; tanpa MikroTik)"
-Force-UserActiveDirect $UserPhoneE164
+Set-UserLifecycleState $UserPhoneE164
 
 Write-Host "[8/14] OTP bypass (tanpa request-otp)"
 $otp = $OtpBypassCode
@@ -905,185 +423,6 @@ $cookieOriginHeaders = @{
 }
 Invoke-RestMethod -Method Post -Uri "$ApiBaseUrl/api/users/me/devices/bind-current" -WebSession $userSession -Headers $cookieOriginHeaders
 
-function Get-AccessStatusFromUser($user) {
-  if ($user.is_blocked -eq $true) { return "blocked" }
-  if ($user.is_active -ne $true -or $user.approval_status -ne "APPROVED") { return "inactive" }
-  if ($user.is_unlimited_user -eq $true) { return "ok" }
-
-  $totalRaw = $user.total_quota_purchased_mb
-  if ($null -eq $totalRaw) { $totalRaw = 0 }
-  $total = [double]$totalRaw
-
-  $usedRaw = $user.total_quota_used_mb
-  if ($null -eq $usedRaw) { $usedRaw = 0 }
-  $used = [double]$usedRaw
-  $remaining = $total - $used
-  $expiryDate = $null
-  if ($user.quota_expiry_date) { $expiryDate = [datetime]::Parse($user.quota_expiry_date) }
-  $isExpired = $false
-  if ($expiryDate -ne $null) { $isExpired = $expiryDate.ToUniversalTime() -lt (Get-Date).ToUniversalTime() }
-  $profileNameRaw = $user.mikrotik_profile_name
-  if ($null -eq $profileNameRaw) { $profileNameRaw = "" }
-  $profileName = $profileNameRaw.ToString().ToLower()
-
-  if ($isExpired) { return "expired" }
-  if ($total -le 0) { return "habis" }
-  if ($total -gt 0 -and $remaining -le 0) { return "habis" }
-  if ($profileName.Contains("fup")) { return "fup" }
-  return "ok"
-}
-
-function Show-ExpectedRedirect($status, $context) {
-  $base = if ($context -eq "captive") { "/captive" } else { "/login" }
-  $map = @{
-    ok = ""
-    blocked = if ($context -eq "captive") { "blokir" } else { "blocked" }
-    inactive = "inactive"
-    expired = "expired"
-    habis = "habis"
-    fup = "fup"
-  }
-  $slug = $map[$status]
-  if (-not $slug) { return $base }
-  return "$base/$slug"
-}
-
-function Parse-ErrorJson($err) {
-  $message = $err.ErrorDetails.Message
-  if (-not $message) { return $null }
-  try {
-    return $message | ConvertFrom-Json
-  } catch {
-    return $null
-  }
-}
-
-function Set-UserStatus($status, $totalMb, $usedMb, $expiryDays, $profileName) {
-  $envArgs = @(
-    "-e", "TARGET_PHONE=$UserPhone",
-    "-e", "TARGET_STATUS=$status",
-    "-e", "TOTAL_MB=$totalMb",
-    "-e", "USED_MB=$usedMb",
-    "-e", "EXPIRY_DAYS=$expiryDays",
-    "-e", "PROFILE_NAME=$profileName"
-  )
-
-  $py = @'
-import os
-from datetime import datetime, timezone, timedelta
-from app import create_app
-from app.extensions import db
-from app.infrastructure.db.models import User, ApprovalStatus
-from app.utils.formatters import get_phone_number_variations
-
-app = create_app()
-with app.app_context():
-    phone = os.environ.get("TARGET_PHONE")
-    status = os.environ.get("TARGET_STATUS")
-    total_mb = float(os.environ.get("TOTAL_MB", "0"))
-    used_mb = float(os.environ.get("USED_MB", "0"))
-    expiry_days = int(os.environ.get("EXPIRY_DAYS", "0"))
-    profile = os.environ.get("PROFILE_NAME") or None
-
-    variations = get_phone_number_variations(phone)
-    user = db.session.query(User).filter(User.phone_number.in_(variations)).first()
-    if not user:
-      raise SystemExit("User not found for status update")
-
-    if status == "blocked":
-        user.is_blocked = True
-        user.blocked_reason = "Simulated"
-        user.is_active = True
-        user.approval_status = ApprovalStatus.APPROVED
-    elif status == "inactive":
-        user.is_blocked = False
-        user.is_active = False
-        user.approval_status = ApprovalStatus.APPROVED
-    else:
-        user.is_blocked = False
-        user.is_active = True
-        user.approval_status = ApprovalStatus.APPROVED
-
-    user.total_quota_purchased_mb = total_mb
-    user.total_quota_used_mb = used_mb
-    if expiry_days != 0:
-        user.quota_expiry_date = datetime.now(timezone.utc) + timedelta(days=expiry_days)
-    else:
-        user.quota_expiry_date = None
-
-    if profile:
-        user.mikrotik_profile_name = profile
-
-    db.session.commit()
-    print(f"User status updated: {status}")
-'@
-
-  $pyB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($py))
-  $cmdArgs = @("exec", "-T") + $envArgs + @(
-    "backend",
-    "python",
-    "-c",
-    "import base64,sys; exec(base64.b64decode('$pyB64').decode('utf-8'))"
-  )
-  Invoke-Compose $cmdArgs
-}
-
-function Test-RedirectWithCookie($baseUrl, $cookieValue, $label) {
-  $paths = @(
-    "/dashboard",
-    "/beli",
-    "/payment/finish",
-    "/login/expired",
-    "/login/habis",
-    "/login/fup"
-  )
-  Write-Host "--- Redirect check ($label) ---"
-  foreach ($path in $paths) {
-    $headers = curl.exe -s -o NUL -D - -H "Cookie: $cookieValue" "$baseUrl$path"
-    $statusLine = ($headers | Select-String -Pattern "^HTTP/").Line
-    $location = ($headers | Select-String -Pattern "^Location:" -CaseSensitive:$false | Select-Object -First 1).Line
-    if (-not $location) { $location = "" }
-    Write-Host "Page $path => $statusLine $location"
-  }
-}
-
-
-function Test-SignedStatusPage($baseUrl, $status, $sig) {
-  if (-not $status -or -not $sig) { return }
-  $path = if ($status -eq "blocked") { "/login/blocked" } elseif ($status -eq "inactive") { "/login/inactive" } else { "/login/$status" }
-  $url = "$baseUrl$path?status=$status&sig=$sig"
-  $headers = curl.exe -s -o NUL -D - $url
-  $statusLine = ($headers | Select-String -Pattern "^HTTP/").Line
-  $location = ($headers | Select-String -Pattern "^Location:" -CaseSensitive:$false | Select-Object -First 1).Line
-  if (-not $location) { $location = "" }
-  Write-Host "Signed page $path => $statusLine $location"
-}
-
-function Test-StatusPages($baseUrl, [bool]$failOnNotFound = $true) {
-  $paths = @(
-    "/login/blocked",
-    "/login/inactive",
-    "/login/expired",
-    "/login/habis",
-    "/login/fup",
-    "/captive/blokir",
-    "/captive/inactive",
-    "/captive/expired",
-    "/captive/habis",
-    "/captive/fup"
-  )
-  foreach ($path in $paths) {
-    $headers = curl.exe -s -o NUL -D - "$baseUrl$path"
-    $statusLine = ($headers | Select-String -Pattern "^HTTP/").Line
-    $location = ($headers | Select-String -Pattern "^Location:" -CaseSensitive:$false | Select-Object -First 1).Line
-    if (-not $location) { $location = "" }
-    Write-Host "Page $path => $statusLine $location"
-    if ($failOnNotFound -and $statusLine -match "\s404\s") {
-      throw "Status page tidak ditemukan: $path"
-    }
-  }
-}
-
 Write-Host "[11.5/14] Uji halaman status (frontend)"
 Test-StatusPages $FrontendBaseUrl
 
@@ -1102,8 +441,6 @@ Test-RedirectWithCookie $FrontendBaseUrl $authCookie "fup"
 Write-Host "[11.7/14] Uji status signed (blocked/inactive)"
 Set-UserStatus "blocked" 1024 0 7 "user"
 
-$blockedOtpRequested = $false
-$blockedOtpRequested = $true
 $blockedOtp = $OtpBypassCode
 $blockedVerifyBody = @{ phone_number = $UserPhoneE164; otp = $blockedOtp; hotspot_login_context = $false } | ConvertTo-Json
 try {
@@ -1148,7 +485,6 @@ if ($UseOtpBypassOnly) {
     }
   }
   if (-not $inactiveOtpRequested) { throw "Gagal request OTP inactive setelah retry." }
-  $inactiveOtp = $OtpBypassCode
 }
 
 Write-Host "[11.8/14] Reset user ke aktif (agar flow Komandan tidak terblokir)"
@@ -1198,7 +534,7 @@ if ($RunKomandanFlow) {
       Write-Host "Gagal memastikan unblock Komandan (mungkin sudah unblocked), lanjutkan..."
     }
 
-    Force-UserActiveDirect $komandanAttemptPhoneE164
+    Set-UserLifecycleState $komandanAttemptPhoneE164
 
     $komandanOtpRequested = $false
     if ($UseOtpBypassOnly) {
@@ -1347,7 +683,6 @@ try {
 Write-Host "[15/17] (skip) Redis/MikroTik usage sync smoke (OTP-only)"
 
 Write-Host "[16/17] Verify OTP (OTP-only; tanpa client_ip/client_mac)"
-$noContextOtpRequested = $true
 $noContextOtp = $OtpBypassCode
 $noContextVerifyBody = @{ phone_number = $UserPhoneE164; otp = $noContextOtp; hotspot_login_context = $false } | ConvertTo-Json
 try {

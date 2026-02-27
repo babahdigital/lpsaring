@@ -1,4 +1,4 @@
-import type { AccessStatus } from './authAccess'
+import type { AccessStatus } from '~/types/accessStatus'
 export type GuardContext = 'login' | 'captive'
 
 export const LEGAL_PUBLIC_PATHS = ['/merchant-center/privacy', '/merchant-center/terms', '/privacy', '/terms']

@@ -7,6 +7,10 @@ from pathlib import Path
 FORBIDDEN_PATTERNS = (
     'typescript-version/full-version',
     'starter-kit/src',
+    'from "../../typescript-version/full-version',
+    "from '../../typescript-version/full-version",
+    'from "../typescript-version/full-version',
+    "from '../typescript-version/full-version",
 )
 
 ALLOWED_EXTENSIONS = {'.ts', '.tsx', '.vue', '.js', '.jsx', '.mjs', '.cjs'}
@@ -27,6 +31,12 @@ def iter_frontend_source(frontend_dir: Path):
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
     frontend_dir = repo_root / 'frontend'
+    strategy_doc = repo_root / 'docs' / 'VUEXY_BASELINE_STRATEGY.md'
+
+    if not strategy_doc.exists():
+        print('[ui-standards] FAILED: missing docs/VUEXY_BASELINE_STRATEGY.md')
+        return 1
+
     if not frontend_dir.exists():
         print('[ui-standards] frontend directory not found; skip')
         return 0

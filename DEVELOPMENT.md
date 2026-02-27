@@ -243,6 +243,10 @@ Catatan VS Code (opsional):
 Lint backend (di container):
 - `docker compose exec -T backend ruff check .`
 
+Quality gate API contract (root):
+- `python scripts/api_quality_gate.py`
+- `python scripts/generate_ts_contracts_from_openapi.py` (jika OpenAPI berubah)
+
 Clear cache Nuxt/Vite:
 - Jika Nuxt jalan di host (opsional): `rm -rf .nuxt .output .nitro node_modules/.vite`
 - Jika Nuxt jalan di Docker (default): restart container `frontend` (atau rebuild jika perlu)

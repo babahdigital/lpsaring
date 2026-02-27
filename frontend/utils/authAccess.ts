@@ -1,4 +1,4 @@
-export type AccessStatus = 'ok' | 'blocked' | 'inactive' | 'expired' | 'habis' | 'fup'
+import type { AccessStatus } from '~/types/accessStatus'
 
 interface UserLike {
   role?: string | null
