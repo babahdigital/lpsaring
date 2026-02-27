@@ -963,6 +963,39 @@ paths:
         '503':
           $ref: '#/components/responses/ErrorBadRequest'
 
+  /admin/metrics/access-parity/fix:
+    post:
+      tags: [AdminMetrics]
+      summary: Paksa sinkronisasi parity untuk satu item mismatch
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminAccessParityFixRequest'
+      responses:
+        '200':
+          description: Eksekusi parity fix berhasil
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAccessParityFixResponse'
+        '400':
+          $ref: '#/components/responses/ErrorBadRequest'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+        '502':
+          $ref: '#/components/responses/ErrorBadRequest'
+        '503':
+          $ref: '#/components/responses/ErrorBadRequest'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1844,3 +1877,39 @@ components:
             $ref: '#/components/schemas/AccessParityItem'
         summary:
           $ref: '#/components/schemas/AccessParitySummary'
+
+    AdminAccessParityFixRequest:
+      type: object
+      required: [user_id]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        mac:
+          type: string
+          nullable: true
+        ip:
+          type: string
+          nullable: true
+
+    AdminAccessParityFixResponse:
+      type: object
+      required: [message, user_id, expected_binding_type, binding_updated, address_list_synced]
+      properties:
+        message:
+          type: string
+        user_id:
+          type: string
+          format: uuid
+        mac:
+          type: string
+          nullable: true
+        resolved_ip:
+          type: string
+          nullable: true
+        expected_binding_type:
+          type: string
+        binding_updated:
+          type: boolean
+        address_list_synced:
+          type: boolean

@@ -91,6 +91,16 @@ interface AccessParityResponse {
   }
 }
 
+interface AccessParityFixResponse {
+  message?: string
+  user_id?: string
+  mac?: string | null
+  resolved_ip?: string | null
+  expected_binding_type?: string
+  binding_updated?: boolean
+  address_list_synced?: boolean
+}
+
 // --- State & Fetching ---
 const { $api } = useNuxtApp()
 
@@ -238,6 +248,43 @@ const accessParitySummary = computed(() => ({
   users: accessParity.value?.summary?.users ?? 0,
   mismatches: accessParity.value?.summary?.mismatches ?? 0,
 }))
+const fixingParityByKey = ref<Record<string, boolean>>({})
+const parityFixMessage = ref('')
+const parityFixError = ref('')
+
+function getParityKey(item: AccessParityItem): string {
+  return `${item.user_id}-${item.mac}`
+}
+
+async function handleFixParityItem(item: AccessParityItem) {
+  const key = getParityKey(item)
+  if (fixingParityByKey.value[key])
+    return
+
+  fixingParityByKey.value[key] = true
+  parityFixMessage.value = ''
+  parityFixError.value = ''
+
+  try {
+    const result = await $api<AccessParityFixResponse>('/admin/metrics/access-parity/fix', {
+      method: 'POST',
+      body: {
+        user_id: item.user_id,
+        mac: item.mac,
+        ip: item.ip ?? null,
+      },
+    })
+    parityFixMessage.value = result?.message || `Fix parity berhasil untuk ${item.phone_number}`
+    await Promise.all([refreshParity(), refreshMetrics()])
+  }
+  catch (error) {
+    const errMsg = (error as Error)?.message || 'Gagal eksekusi parity fix.'
+    parityFixError.value = errMsg
+  }
+  finally {
+    delete fixingParityByKey.value[key]
+  }
+}
 
 // --- Logika Perbandingan ---
 const perbandinganPendapatanMingguan = computed(() => {
@@ -1074,6 +1121,12 @@ useHead({ title: 'Dashboard Admin' })
             <div v-if="parityPending" class="text-caption text-disabled mb-2">
               memuat parity realtime...
             </div>
+            <div v-if="parityFixMessage" class="text-caption text-success mb-2">
+              {{ parityFixMessage }}
+            </div>
+            <div v-if="parityFixError" class="text-caption text-error mb-2">
+              {{ parityFixError }}
+            </div>
             <VTable density="compact">
               <thead>
                 <tr>
@@ -1084,6 +1137,7 @@ useHead({ title: 'Dashboard Admin' })
                   <th>Binding (exp/act)</th>
                   <th>Address-list</th>
                   <th>Mismatch</th>
+                  <th>Aksi</th>
                 </tr>
               </thead>
               <tbody>
@@ -1095,9 +1149,21 @@ useHead({ title: 'Dashboard Admin' })
                   <td>{{ item.expected_binding_type }} / {{ item.actual_binding_type || '-' }}</td>
                   <td>{{ item.address_list_statuses.join(', ') || '-' }}</td>
                   <td>{{ item.mismatches.join(', ') }}</td>
+                  <td>
+                    <VBtn
+                      size="x-small"
+                      color="primary"
+                      variant="tonal"
+                      :loading="Boolean(fixingParityByKey[getParityKey(item)])"
+                      :disabled="Boolean(fixingParityByKey[getParityKey(item)])"
+                      @click="handleFixParityItem(item)"
+                    >
+                      Fix
+                    </VBtn>
+                  </td>
                 </tr>
                 <tr v-if="accessParityItems.length === 0">
-                  <td colspan="7" class="text-center text-disabled py-4">
+                  <td colspan="8" class="text-center text-disabled py-4">
                     Tidak ada mismatch parity.
                   </td>
                 </tr>

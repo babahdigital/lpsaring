@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any, cast
+import uuid
+
+from flask import Flask
 
 import app.services.hotspot_sync_service as svc
 from app.utils.block_reasons import build_auto_debt_limit_reason
@@ -156,3 +159,85 @@ def test_sync_address_list_auto_debt_blocked_user_uses_blocked_list(monkeypatch)
     assert ok is True
     assert capture["target_list"] == "blocked_list"
     assert "status=blocked" in capture["comment"]
+
+
+def test_self_heal_policy_binding_repairs_mismatch(monkeypatch):
+    app = Flask(__name__)
+    app.config["ENABLE_POLICY_BINDING_SELF_HEAL"] = True
+
+    calls = {"count": 0, "binding_type": None}
+
+    def _fake_upsert_ip_binding(*, api_connection, mac_address, address=None, server=None, binding_type="regular", comment=None):
+        calls["count"] += 1
+        calls["binding_type"] = binding_type
+        return True, "ok"
+
+    monkeypatch.setattr(svc, "upsert_ip_binding", _fake_upsert_ip_binding)
+    monkeypatch.setattr(svc, "resolve_allowed_binding_type_for_user", lambda _u: "regular")
+
+    user = SimpleNamespace(
+        id=uuid.uuid4(),
+        role=_Role("USER"),
+        phone_number="081234567890",
+        mikrotik_server_name="srv-user",
+        devices=[
+            SimpleNamespace(
+                is_authorized=True,
+                mac_address="DA:B2:F3:B8:94:D2",
+                ip_address="172.16.3.179",
+            )
+        ],
+    )
+    ip_binding_map = {
+        "DA:B2:F3:B8:94:D2": {
+            "type": "bypassed",
+            "address": "172.16.3.179",
+        }
+    }
+
+    with app.app_context():
+        healed = svc._self_heal_policy_binding_for_user(
+            api=object(),
+            user=cast(Any, user),
+            ip_binding_map=ip_binding_map,
+            host_usage_map={},
+        )
+
+    assert healed == 1
+    assert calls["count"] == 1
+    assert calls["binding_type"] == "regular"
+    assert ip_binding_map["DA:B2:F3:B8:94:D2"]["type"] == "regular"
+
+
+def test_self_heal_policy_binding_respects_disable_toggle(monkeypatch):
+    app = Flask(__name__)
+    app.config["ENABLE_POLICY_BINDING_SELF_HEAL"] = False
+
+    calls = {"count": 0}
+
+    def _fake_upsert_ip_binding(*, api_connection, mac_address, address=None, server=None, binding_type="regular", comment=None):
+        calls["count"] += 1
+        return True, "ok"
+
+    monkeypatch.setattr(svc, "upsert_ip_binding", _fake_upsert_ip_binding)
+    monkeypatch.setattr(svc, "resolve_allowed_binding_type_for_user", lambda _u: "regular")
+
+    user = SimpleNamespace(
+        id=uuid.uuid4(),
+        role=_Role("USER"),
+        phone_number="081234567890",
+        mikrotik_server_name="srv-user",
+        devices=[SimpleNamespace(is_authorized=True, mac_address="DA:B2:F3:B8:94:D2", ip_address="172.16.3.179")],
+    )
+    ip_binding_map = {"DA:B2:F3:B8:94:D2": {"type": "bypassed"}}
+
+    with app.app_context():
+        healed = svc._self_heal_policy_binding_for_user(
+            api=object(),
+            user=cast(Any, user),
+            ip_binding_map=ip_binding_map,
+            host_usage_map={},
+        )
+
+    assert healed == 0
+    assert calls["count"] == 0

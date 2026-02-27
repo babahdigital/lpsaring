@@ -2,7 +2,7 @@
 // AUTO-GENERATED FILE. DO NOT EDIT MANUALLY.
 // Source: contracts/openapi/openapi.v1.yaml
 
-export const OPENAPI_SOURCE_SHA256 = '698f337ab48566c5521c2afbf4e8e3fbaa8f9973df3e9329275c0c006b2112fc' as const
+export const OPENAPI_SOURCE_SHA256 = '94fac84f8dc5715548d6558b836ec6bb5bb3671cdd3df38af3e0572cc713cf8f' as const
 export const API_CONTRACT_REVISION = 'openapi-1.0.0' as const
 
 export type MessageResponse = { message: string }
@@ -50,6 +50,8 @@ export type AdminMetricsResponse = { metrics?: { [key: string]: number }; reliab
 export type AccessParityItem = { user_id: string; phone_number: string; mac: string; ip?: string | null; app_status: string; expected_binding_type: string; actual_binding_type?: string | null; address_list_statuses: Array<string>; mismatches: Array<string> }
 export type AccessParitySummary = { users: number; mismatches: number }
 export type AdminAccessParityResponse = { items: Array<AccessParityItem>; summary: AccessParitySummary }
+export type AdminAccessParityFixRequest = { user_id: string; mac?: string | null; ip?: string | null }
+export type AdminAccessParityFixResponse = { message: string; user_id: string; mac?: string | null; resolved_ip?: string | null; expected_binding_type: string; binding_updated: boolean; address_list_synced: boolean }
 
 export interface GeneratedApiContractMap {
   'GET /admin/metrics': {
@@ -60,6 +62,11 @@ export interface GeneratedApiContractMap {
   'GET /admin/metrics/access-parity': {
     request: never
     response: AdminAccessParityResponse
+    error: ErrorResponse
+  }
+  'POST /admin/metrics/access-parity/fix': {
+    request: AdminAccessParityFixRequest
+    response: AdminAccessParityFixResponse
     error: ErrorResponse
   }
   'GET /admin/quota-requests': {

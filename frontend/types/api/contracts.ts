@@ -30,6 +30,8 @@ export {
   type AdminMetricsResponse,
   type AdminAccessParityResponse,
   type AccessParityItem,
+  type AdminAccessParityFixRequest,
+  type AdminAccessParityFixResponse,
 } from './contracts.generated'
 
 import type {

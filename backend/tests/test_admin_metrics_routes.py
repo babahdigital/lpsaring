@@ -80,3 +80,15 @@ def test_get_access_parity_returns_empty_summary_when_no_users(monkeypatch):
     assert status == 200
     payload = resp.get_json()
     assert payload == {"items": [], "summary": {"users": 0, "mismatches": 0}}
+
+
+def test_fix_access_parity_requires_user_id():
+    app = _make_app()
+    impl = _unwrap_decorators(metrics_routes.fix_access_parity)
+
+    with app.app_context(), app.test_request_context(json={"mac": "AA:BB:CC:DD:EE:FF"}):
+        resp, status = impl(current_admin=SimpleNamespace(id="admin-1"))
+
+    assert status == 400
+    payload = resp.get_json()
+    assert "user_id" in str(payload.get("message", "")).lower()

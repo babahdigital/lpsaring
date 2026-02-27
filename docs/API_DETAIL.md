@@ -64,6 +64,7 @@ Lampiran wajib:
 ### 9) Admin Metrics
 - `GET /api/admin/metrics`
 - `GET /api/admin/metrics/access-parity`
+- `POST /api/admin/metrics/access-parity/fix`
 
 ## Konvensi Error (Target Konsolidasi)
 - Gunakan envelope standar:

@@ -29,6 +29,7 @@ from app.infrastructure.gateways.mikrotik_client import (
     delete_hotspot_user,
     sync_address_list_for_user,
     upsert_address_list_entry,
+    upsert_ip_binding,
     remove_address_list_entry,
 )
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
@@ -223,6 +224,79 @@ def _emit_policy_binding_mismatch_metrics(user: User, ip_binding_map: Optional[D
     if mismatch_count > 0:
         increment_metric("policy.mismatch.auto_debt_blocked_ip_binding")
         increment_metric("policy.mismatch.auto_debt_blocked_ip_binding.devices", mismatch_count)
+
+
+def _self_heal_policy_binding_for_user(
+    api: object,
+    user: User,
+    ip_binding_map: Optional[Dict[str, Dict[str, Any]]],
+    host_usage_map: Optional[Dict[str, Dict[str, Any]]],
+) -> int:
+    if not api or not user or not ip_binding_map:
+        return 0
+
+    enabled_cfg = current_app.config.get("ENABLE_POLICY_BINDING_SELF_HEAL", "True")
+    enabled_raw = str(enabled_cfg).strip().lower()
+    if enabled_raw not in {"1", "true", "yes", "on"}:
+        return 0
+
+    expected_binding_type = str(resolve_allowed_binding_type_for_user(user) or "regular").strip().lower()
+    if not expected_binding_type:
+        return 0
+
+    now_utc = datetime.now(dt_timezone.utc)
+    date_str, time_str = get_app_date_time_strings(now_utc)
+    username_08 = format_to_local_phone(getattr(user, "phone_number", None) or "") or str(
+        getattr(user, "phone_number", "") or ""
+    )
+
+    repaired = 0
+    for device in user.devices or []:
+        if not bool(getattr(device, "is_authorized", False)):
+            continue
+
+        mac = str(getattr(device, "mac_address", "") or "").strip().upper()
+        if not mac:
+            continue
+
+        current_entry = ip_binding_map.get(mac) or {}
+        actual_binding_type = str(current_entry.get("type") or "").strip().lower()
+        if actual_binding_type == expected_binding_type:
+            continue
+
+        ip_addr = str(getattr(device, "ip_address", "") or "").strip()
+        if not ip_addr and host_usage_map:
+            ip_addr = str((host_usage_map.get(mac) or {}).get("address") or "").strip()
+
+        ok, msg = upsert_ip_binding(
+            api_connection=api,
+            mac_address=mac,
+            address=ip_addr or None,
+            server=getattr(user, "mikrotik_server_name", None),
+            binding_type=expected_binding_type,
+            comment=(
+                f"authorized|user={username_08}|uid={user.id}|role={user.role.value}"
+                f"|source=sync-self-heal|date={date_str}|time={time_str}"
+            ),
+        )
+        if ok:
+            repaired += 1
+            increment_metric("policy.binding_self_heal.repaired")
+            entry = ip_binding_map.setdefault(mac, {})
+            entry["type"] = expected_binding_type
+            if ip_addr:
+                entry["address"] = ip_addr
+        else:
+            increment_metric("policy.binding_self_heal.failed")
+            logger.warning(
+                "Policy self-heal gagal update ip-binding user=%s mac=%s expected=%s: %s",
+                user.id,
+                mac,
+                expected_binding_type,
+                msg,
+            )
+
+    return repaired
 
 
 def _apply_auto_debt_limit_block_state(user: User, source: str = "sync_usage") -> bool:
@@ -920,6 +994,7 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
         "processed": 0,
         "updated_usage": 0,
         "profile_updates": 0,
+        "binding_self_healed": 0,
         "failed": 0,
     }
     auto_enroll_users = 0
@@ -1055,6 +1130,15 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                         target_profile = blocked_profile
                         if _is_auto_debt_blocked(user):
                             force_blocked_status = True
+
+                    healed_count = _self_heal_policy_binding_for_user(
+                        api,
+                        user,
+                        ip_binding_map=ip_binding_map,
+                        host_usage_map=host_usage_map,
+                    )
+                    if healed_count > 0:
+                        counters["binding_self_healed"] += healed_count
 
                     _emit_policy_binding_mismatch_metrics(user, ip_binding_map)
 
