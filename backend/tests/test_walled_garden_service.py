@@ -16,6 +16,24 @@ class _FakeMikrotikCtx:
         return False
 
 
+class _FakeAddressListResource:
+    def __init__(self, rows: list[dict]):
+        self._rows = rows
+
+    def get(self, **kwargs):
+        return self._rows
+
+
+class _FakeApi:
+    def __init__(self, address_list_rows: list[dict]):
+        self._resource = _FakeAddressListResource(address_list_rows)
+
+    def get_resource(self, path: str):
+        if path == "/ip/firewall/address-list":
+            return self._resource
+        raise KeyError(path)
+
+
 def _make_app() -> Flask:
     app = Flask(__name__)
     app.config["APP_PUBLIC_BASE_URL"] = "https://portal.example.com"
@@ -96,3 +114,42 @@ def test_sync_walled_garden_auto_include_disabled_keeps_portal_fallback(monkeypa
     assert result["status"] == "success"
     assert "portal.example.com" in captured["allowed_hosts"]
     assert "app.sandbox.midtrans.com" not in captured["allowed_hosts"]
+
+
+def test_sync_walled_garden_resolves_ips_from_address_list_names(monkeypatch):
+    app = _make_app()
+
+    setting_map = {
+        "WALLED_GARDEN_ENABLED": "True",
+        "WALLED_GARDEN_ALLOWED_HOSTS": "[]",
+        "WALLED_GARDEN_ALLOWED_IPS": "[]",
+        "WALLED_GARDEN_ALLOWED_IP_LIST_NAMES": '["klient_aktif","klient_fup"]',
+        "WALLED_GARDEN_AUTO_INCLUDE_EXTERNAL_HOSTS": "False",
+    }
+
+    monkeypatch.setattr(service.settings_service, "get_setting", lambda key, default=None: setting_map.get(key, default))
+
+    captured = {}
+
+    def _fake_sync_rules(*, api_connection, allowed_hosts, allowed_ips, comment_prefix):
+        captured["allowed_ips"] = list(allowed_ips)
+        return True, "ok"
+
+    fake_api = _FakeApi(
+        [
+            {"list": "klient_aktif", "address": "172.16.2.10"},
+            {"list": "klient_fup", "address": "172.16.2.0/24"},
+            {"list": "klient_aktif", "address": "172.16.2.10"},
+            {"list": "klient_blocked", "address": "172.16.2.99"},
+            {"list": "klient_fup", "address": "172.16.2.3-7"},
+        ]
+    )
+
+    monkeypatch.setattr(service, "get_mikrotik_connection", lambda: _FakeMikrotikCtx(fake_api))
+    monkeypatch.setattr(service, "sync_walled_garden_rules", _fake_sync_rules)
+
+    with app.app_context():
+        result = service.sync_walled_garden()
+
+    assert result["status"] == "success"
+    assert sorted(captured["allowed_ips"]) == ["172.16.2.0/24", "172.16.2.10"]

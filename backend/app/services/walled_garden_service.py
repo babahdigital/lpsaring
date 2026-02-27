@@ -3,7 +3,7 @@ import json
 import logging
 import socket
 import ipaddress
-from typing import List, Dict, Iterable
+from typing import List, Dict, Iterable, Any
 from urllib.parse import urlparse
 
 from flask import current_app
@@ -135,13 +135,51 @@ def _derive_private_ips_from_hosts(hosts: List[str]) -> List[str]:
     return sorted(ips)
 
 
+def _normalize_ip_targets(values: Iterable[str]) -> List[str]:
+    normalized: set[str] = set()
+    for value in values or []:
+        raw = str(value or "").strip()
+        if not raw:
+            continue
+        try:
+            if "/" in raw:
+                normalized.add(str(ipaddress.ip_network(raw, strict=False)))
+            else:
+                normalized.add(str(ipaddress.ip_address(raw)))
+        except ValueError:
+            continue
+    return sorted(normalized)
+
+
+def _derive_ips_from_address_lists(api_connection: Any, list_names: List[str]) -> List[str]:
+    target_lists = {str(name or "").strip() for name in list_names if str(name or "").strip()}
+    if not target_lists:
+        return []
+
+    try:
+        resource = api_connection.get_resource("/ip/firewall/address-list")
+        entries = resource.get()
+    except Exception as exc:
+        logger.warning("Gagal mengambil address-list MikroTik untuk walled-garden: %s", exc)
+        return []
+
+    collected: List[str] = []
+    for entry in entries:
+        list_name = str(entry.get("list") or "").strip()
+        if list_name not in target_lists:
+            continue
+        collected.append(str(entry.get("address") or "").strip())
+    return _normalize_ip_targets(collected)
+
+
 def sync_walled_garden() -> Dict[str, str]:
     enabled = settings_service.get_setting("WALLED_GARDEN_ENABLED", "False") == "True"
     if not enabled:
         return {"status": "disabled"}
 
     allowed_hosts = _get_list_setting("WALLED_GARDEN_ALLOWED_HOSTS")
-    allowed_ips = _get_list_setting("WALLED_GARDEN_ALLOWED_IPS")
+    allowed_ips = _normalize_ip_targets(_get_list_setting("WALLED_GARDEN_ALLOWED_IPS"))
+    allowed_ip_list_names = _get_list_setting("WALLED_GARDEN_ALLOWED_IP_LIST_NAMES")
     comment_prefix = settings_service.get_setting("WALLED_GARDEN_MANAGED_COMMENT_PREFIX", "lpsaring")
 
     # Tambahkan host eksternal penting secara otomatis agar portal/payment tetap bisa diakses
@@ -151,19 +189,25 @@ def sync_walled_garden() -> Dict[str, str]:
     elif not allowed_hosts:
         allowed_hosts = _derive_portal_hosts()
 
-    # Best-effort: if allowed_ips is empty, try to derive private IPs from allowed_hosts.
-    # This supports setups where a local DNS entry maps the portal domain to a private IP.
-    if not allowed_ips and allowed_hosts:
-        try:
-            derived_private_ips = _derive_private_ips_from_hosts(allowed_hosts)
-            if derived_private_ips:
-                allowed_ips = derived_private_ips
-        except Exception:
-            pass
-
     with get_mikrotik_connection() as api:
         if not api:
             return {"status": "error", "message": "Koneksi MikroTik gagal"}
+
+        if allowed_ip_list_names:
+            derived_list_ips = _derive_ips_from_address_lists(api, allowed_ip_list_names)
+            if derived_list_ips:
+                allowed_ips = sorted({*allowed_ips, *derived_list_ips})
+
+        # Best-effort: if allowed_ips is still empty, try deriving private IPs from allowed_hosts.
+        # This supports setups where local DNS maps portal domains to private IPs.
+        if not allowed_ips and allowed_hosts:
+            try:
+                derived_private_ips = _derive_private_ips_from_hosts(allowed_hosts)
+                if derived_private_ips:
+                    allowed_ips = derived_private_ips
+            except Exception:
+                pass
+
         comment_prefix = comment_prefix or ""
         ok, msg = sync_walled_garden_rules(
             api_connection=api,
