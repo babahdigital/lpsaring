@@ -4,6 +4,11 @@ export type GuardContext = 'login' | 'captive'
 export const LEGAL_PUBLIC_PATHS = ['/merchant-center/privacy', '/merchant-center/terms', '/privacy', '/terms']
 
 export const STATUS_ROUTES = [
+  '/policy/blocked',
+  '/policy/inactive',
+  '/policy/expired',
+  '/policy/habis',
+  '/policy/fup',
   '/login/blocked',
   '/login/inactive',
   '/login/expired',
@@ -25,7 +30,7 @@ export function isLegalPublicPath(path: string): boolean {
 export function getStatusRouteForAccessStatus(status: AccessStatus, context: GuardContext): string | null {
   const slugMap: Record<AccessStatus, string> = {
     ok: '',
-    blocked: context === 'captive' ? 'blokir' : 'blocked',
+    blocked: 'blocked',
     inactive: 'inactive',
     expired: 'expired',
     habis: 'habis',
@@ -34,6 +39,5 @@ export function getStatusRouteForAccessStatus(status: AccessStatus, context: Gua
   const slug = slugMap[status]
   if (!slug)
     return null
-  const base = context === 'captive' ? '/captive' : '/login'
-  return `${base}/${slug}`
+  return `/policy/${slug}`
 }

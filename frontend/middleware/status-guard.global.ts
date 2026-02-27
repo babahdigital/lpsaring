@@ -4,6 +4,11 @@ import { useAuthStore } from '~/store/auth'
 import { isLegalPublicPath } from '~/utils/authRoutePolicy'
 
 const STATUS_PATHS: Record<string, 'blocked' | 'inactive' | 'expired' | 'habis' | 'fup'> = {
+  '/policy/blocked': 'blocked',
+  '/policy/inactive': 'inactive',
+  '/policy/expired': 'expired',
+  '/policy/habis': 'habis',
+  '/policy/fup': 'fup',
   '/login/blocked': 'blocked',
   '/login/inactive': 'inactive',
   '/login/expired': 'expired',

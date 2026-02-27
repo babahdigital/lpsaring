@@ -252,8 +252,11 @@ async function handleVerifyOtp() {
         return
       }
       if (errorText.includes('Limit perangkat tercapai')) {
-        await navigateTo('/captive/blokir', { replace: true })
-        return
+        const blockedPath = authStore.getRedirectPathForStatus('blocked', 'captive')
+        if (blockedPath) {
+          await navigateTo(blockedPath, { replace: true })
+          return
+        }
       }
       const errorStatus = result.errorStatus ?? authStore.getAccessStatusFromError(errorText)
       if (errorStatus !== null) {

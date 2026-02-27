@@ -6,7 +6,7 @@ export function getSafeRedirectTarget(redirectValue: unknown, isAdmin: boolean):
   if (normalized.length === 0)
     return null
 
-  const disallowedPrefixes = ['/login', '/register', '/daftar', '/captive', '/session/consume']
+  const disallowedPrefixes = ['/login', '/register', '/daftar', '/captive', '/policy', '/session/consume']
   if (disallowedPrefixes.some(prefix => normalized === prefix || normalized.startsWith(`${prefix}/`)))
     return null
 
