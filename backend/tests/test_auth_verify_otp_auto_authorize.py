@@ -182,3 +182,61 @@ def test_verify_otp_does_not_auto_authorize_when_using_bypass_code(monkeypatch):
     assert cast(dict, response.get_json())["access_token"] == "access"
     # Since user already has an authorized device, fallback legacy policy should NOT bypass explicit auth.
     assert captured["bypass"] is False
+
+
+def test_verify_otp_still_self_authorizes_when_otp_auto_authorize_disabled(monkeypatch):
+    captured: dict[str, Any] = {"bypass": None}
+
+    user = SimpleNamespace(
+        id="user-2",
+        phone_number="+628123000111",
+        role=UserRole.USER,
+        is_active=True,
+        approval_status=ApprovalStatus.APPROVED,
+        is_blocked=False,
+        mikrotik_password="pw",
+        last_login_at=None,
+    )
+
+    # Simulasikan user yang sudah punya device authorized; tetap harus self-authorize saat OTP valid normal.
+    fake_session = _FakeSession(user, scalar_value="existing-device-id")
+    monkeypatch.setattr(auth_routes, "db", _FakeDb(fake_session))
+
+    monkeypatch.setattr(auth_routes, "verify_otp_from_redis", lambda *_a, **_k: True)
+    monkeypatch.setattr(auth_routes, "normalize_to_e164", lambda p: p)
+    monkeypatch.setattr(auth_routes, "get_phone_number_variations", lambda p: [p])
+    monkeypatch.setattr(auth_routes.settings_service, "get_setting", lambda *_a, **_k: "True")
+
+    def _fake_apply_binding(*_args, **kwargs):
+        captured["bypass"] = kwargs.get("bypass_explicit_auth")
+        return True, "ok", "172.16.0.22"
+
+    monkeypatch.setattr(auth_routes, "apply_device_binding_for_login", _fake_apply_binding)
+    monkeypatch.setattr(auth_routes, "sync_address_list_for_single_user", lambda *_a, **_k: None)
+    monkeypatch.setattr(auth_routes, "create_access_token", lambda *_a, **_k: "access")
+    monkeypatch.setattr(auth_routes, "issue_refresh_token_for_user", lambda *_a, **_k: "refresh")
+    monkeypatch.setattr(auth_routes, "is_hotspot_login_required", lambda *_a, **_k: False)
+    monkeypatch.setattr(auth_routes, "_store_session_token", lambda *_a, **_k: None)
+    monkeypatch.setattr(auth_routes, "UserLoginHistory", lambda **kw: SimpleNamespace(**kw))
+
+    app = _make_app()
+    app.config.update(OTP_AUTO_AUTHORIZE_DEVICE=False)
+    verify_impl = _unwrap_decorators(auth_routes.verify_otp)
+
+    with app.test_request_context(
+        "/api/auth/verify-otp",
+        method="POST",
+        json={
+            "phone_number": "+628123000111",
+            "otp": "123456",
+            "client_ip": "172.16.0.22",
+            "client_mac": "AA:BB:CC:00:11:22",
+            "hotspot_login_context": True,
+        },
+        headers={"User-Agent": "pytest"},
+    ):
+        response, status = verify_impl()
+
+    assert status == 200
+    assert response.get_json()["access_token"] == "access"
+    assert captured["bypass"] is True

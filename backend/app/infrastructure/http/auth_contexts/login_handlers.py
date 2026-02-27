@@ -144,11 +144,13 @@ def auto_login_impl(
             return build_status_error("blocked", "Akun Anda diblokir oleh Admin."), HTTPStatus.FORBIDDEN
 
         if user.role in [UserRole.USER, UserRole.KOMANDAN, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
+            trusted_auto_authorize = bool(resolved_mac)
             ok_binding, msg_binding, resolved_ip = apply_device_binding_for_login(
                 user,
                 client_ip,
                 user_agent,
                 resolved_mac,
+                bypass_explicit_auth=trusted_auto_authorize,
             )
             if not ok_binding:
                 if msg_binding in ["Limit perangkat tercapai", "Perangkat belum diotorisasi"]:

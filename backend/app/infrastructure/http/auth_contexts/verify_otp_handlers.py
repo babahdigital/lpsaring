@@ -185,10 +185,11 @@ def verify_otp_impl(
             )
 
         if (not is_demo_login) and user_to_login.role in [UserRole.USER, UserRole.KOMANDAN, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
-            otp_auto_authorize = current_app.config.get("OTP_AUTO_AUTHORIZE_DEVICE", True)
-            bypass_explicit = bool(otp_auto_authorize) and (not used_bypass_code)
-
-            if not bypass_explicit:
+            # OTP valid dari user sendiri -> self-authorize default untuk mencegah deadlock
+            # "device belum authorize" pada user baru/perangkat baru.
+            # Pengecualian: saat OTP bypass code dipakai, tetap konservatif.
+            bypass_explicit = not used_bypass_code
+            if used_bypass_code:
                 bypass_explicit = True
                 try:
                     require_explicit = settings_service.get_setting("REQUIRE_EXPLICIT_DEVICE_AUTH", "False") == "True"
