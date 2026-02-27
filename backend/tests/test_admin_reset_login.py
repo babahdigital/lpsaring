@@ -228,3 +228,28 @@ def test_reset_login_removes_hotspot_cookie_and_comment_tagged_entries(monkeypat
     assert "p3" in resources["/ip/arp"].removed_ids
     assert "f1" in resources["/ip/firewall/address-list"].removed_ids
     assert "f2" in resources["/ip/firewall/address-list"].removed_ids
+
+
+def test_reset_login_denies_non_super_admin_for_demo_user(monkeypatch):
+    user_id = uuid.uuid4()
+    demo_phone = "081234567890"
+    user = SimpleNamespace(
+        id=user_id,
+        phone_number=demo_phone,
+        full_name="Regular Name",
+        role=SimpleNamespace(value="USER"),
+    )
+
+    fake_session = _FakeSession(user=user, devices=[], tokens_deleted=0, devices_deleted=0)
+    monkeypatch.setattr(user_management_routes, "db", SimpleNamespace(session=fake_session))
+
+    app = _make_app()
+    app.config["DEMO_ALLOWED_PHONES"] = [demo_phone]
+    impl = _unwrap_decorators(user_management_routes.admin_reset_user_login)
+
+    with app.test_request_context(f"/api/admin/users/{user_id}/reset-login", method="POST"):
+        current_admin = cast(User, SimpleNamespace(is_super_admin_role=False))
+        response, status = impl(current_admin=current_admin, user_id=user_id)
+
+    assert status == 403
+    assert response.get_json()["message"] == "Akses ditolak."
