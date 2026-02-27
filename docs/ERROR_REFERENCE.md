@@ -191,6 +191,28 @@ Uncaught ReferenceError: Cannot access 'ee' before initialization
 **Catatan**:
 - Jika masih muncul, kemungkinan berasal dari Cloudflare/edge (di luar container nginx).
 
+## 26) SSH remote log audit salah quote: `No such container: ...bash_completion...`
+**Gejala**:
+- Saat menjalankan loop log audit via SSH, output docker menunjukkan error container tidak ditemukan dengan nama aneh (mis. path bash completion).
+
+**Penyebab**:
+- Ekspansi shell lokal/remote bercampur karena quoting command multi-layer tidak aman.
+
+**Solusi**:
+- Gunakan quoting ketat untuk command remote (hindari wildcard expansion tidak sengaja).
+- Untuk loop berkala, kirim script kecil yang dieksekusi utuh di sisi remote, bukan rangkaian quote bertingkat yang rapuh.
+
+## 27) Info sync: `Skip sync_hotspot_usage_and_profiles: global lock active`
+**Gejala**:
+- Muncul log info bahwa task sync dilewati karena global lock aktif.
+
+**Makna**:
+- Ini adalah proteksi overlap task (bukan crash), terjadi saat eksekusi sebelumnya masih memegang lock.
+
+**Tindakan**:
+- Anggap normal bila sesekali dan task berikutnya tetap sukses.
+- Investigasi hanya jika terjadi terus-menerus disertai backlog/anomali performa.
+
 ## 17) Docker BuildKit snapshot error (cache corruption)
 **Gejala**:
 - `docker compose build` gagal dengan error snapshot/cache (BuildKit).

@@ -65,6 +65,28 @@ def _collect_demo_phone_variations_from_env() -> set[str]:
 
     return values
 
+
+def _is_demo_user(user: User | None) -> bool:
+    if not user:
+        return False
+
+    phone = str(getattr(user, "phone_number", "") or "").strip()
+    if phone:
+        demo_phone_variations = _collect_demo_phone_variations_from_env()
+        if demo_phone_variations and phone in demo_phone_variations:
+            return True
+
+    full_name = str(getattr(user, "full_name", "") or "").strip()
+    return bool(full_name and full_name.lower().startswith("demo user"))
+
+
+def _deny_non_super_admin_target_access(current_admin: User, target_user: User):
+    if current_admin.is_super_admin_role:
+        return None
+    if target_user.role == UserRole.SUPER_ADMIN or _is_demo_user(target_user):
+        return jsonify({"message": "Akses ditolak."}), HTTPStatus.FORBIDDEN
+    return None
+
 # --- SEMUA ROUTE LAINNYA DI ATAS INI TIDAK BERUBAH ---
 # (create_user, update_user, approve_user, dll. tetap sama)
 
@@ -95,6 +117,9 @@ def update_user_by_admin(current_admin: User, user_id):
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+    denied_response = _deny_non_super_admin_target_access(current_admin, user)
+    if denied_response:
+        return denied_response
     data = request.get_json()
     if not data:
         return jsonify({"message": "Request data kosong."}), HTTPStatus.BAD_REQUEST
@@ -120,6 +145,9 @@ def approve_user(current_admin: User, user_id):
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({"message": "Pengguna tidak ditemukan"}), HTTPStatus.NOT_FOUND
+    denied_response = _deny_non_super_admin_target_access(current_admin, user)
+    if denied_response:
+        return denied_response
     try:
         success, message = user_approval.approve_user_account(user, current_admin)
         if not success:
@@ -140,6 +168,9 @@ def reject_user(current_admin: User, user_id):
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({"message": "Pengguna tidak ditemukan"}), HTTPStatus.NOT_FOUND
+    denied_response = _deny_non_super_admin_target_access(current_admin, user)
+    if denied_response:
+        return denied_response
     success, message = user_approval.reject_user_account(user, current_admin)
     if not success:
         db.session.rollback()
@@ -154,6 +185,9 @@ def delete_user(current_admin: User, user_id):
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+    denied_response = _deny_non_super_admin_target_access(current_admin, user)
+    if denied_response:
+        return denied_response
 
     try:
         # [PERUBAHAN] Panggil fungsi baru yang lebih cerdas
@@ -178,6 +212,9 @@ def admin_reset_hotspot_password(current_admin: User, user_id):
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({"message": "Pengguna tidak ditemukan"}), HTTPStatus.NOT_FOUND
+    denied_response = _deny_non_super_admin_target_access(current_admin, user)
+    if denied_response:
+        return denied_response
     success, message = user_profile_service.reset_user_hotspot_password(user, current_admin)
     if not success:
         db.session.rollback()
@@ -193,6 +230,9 @@ def generate_admin_password_for_user(current_admin: User, user_id):
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({"message": "Pengguna tidak ditemukan"}), HTTPStatus.NOT_FOUND
+    denied_response = _deny_non_super_admin_target_access(current_admin, user)
+    if denied_response:
+        return denied_response
     success, message = user_profile_service.generate_user_admin_password(user, current_admin)
     if not success:
         db.session.rollback()
@@ -213,10 +253,9 @@ def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
-
-    # RBAC: admin non-super tidak boleh mengakses data super admin.
-    if not current_admin.is_super_admin_role and user.role == UserRole.SUPER_ADMIN:
-        return jsonify({"message": "Akses ditolak."}), HTTPStatus.FORBIDDEN
+    denied_response = _deny_non_super_admin_target_access(current_admin, user)
+    if denied_response:
+        return denied_response
 
     devices = db.session.scalars(select(UserDevice).where(UserDevice.user_id == user.id)).all()
     macs = sorted({str(d.mac_address).strip().upper() for d in devices if getattr(d, "mac_address", None)})
@@ -630,10 +669,9 @@ def get_user_manual_debts(current_admin: User, user_id: uuid.UUID):
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
-
-    # RBAC: admin non-super tidak boleh melihat data super admin.
-    if not current_admin.is_super_admin_role and user.role == UserRole.SUPER_ADMIN:
-        return jsonify({"message": "Akses ditolak."}), HTTPStatus.FORBIDDEN
+    denied_response = _deny_non_super_admin_target_access(current_admin, user)
+    if denied_response:
+        return denied_response
 
     try:
         debts = db.session.scalars(
@@ -688,10 +726,9 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
-
-    # RBAC: admin non-super tidak boleh mengakses data super admin.
-    if not current_admin.is_super_admin_role and user.role == UserRole.SUPER_ADMIN:
-        return jsonify({"message": "Akses ditolak."}), HTTPStatus.FORBIDDEN
+    denied_response = _deny_non_super_admin_target_access(current_admin, user)
+    if denied_response:
+        return denied_response
 
     debt = db.session.get(UserQuotaDebt, debt_id)
     if not debt or getattr(debt, "user_id", None) != user.id:
@@ -725,10 +762,9 @@ def settle_all_debts(current_admin: User, user_id: uuid.UUID):
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
-
-    # RBAC: admin non-super tidak boleh mengakses data super admin.
-    if not current_admin.is_super_admin_role and user.role == UserRole.SUPER_ADMIN:
-        return jsonify({"message": "Akses ditolak."}), HTTPStatus.FORBIDDEN
+    denied_response = _deny_non_super_admin_target_access(current_admin, user)
+    if denied_response:
+        return denied_response
 
     try:
         # Snapshot for response / notification.
@@ -804,10 +840,9 @@ def export_user_manual_debts_pdf(current_admin: User, user_id: uuid.UUID):
     user = db.session.get(User, user_id)
     if not user:
         return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
-
-    # RBAC: admin non-super tidak boleh melihat data super admin.
-    if not current_admin.is_super_admin_role and user.role == UserRole.SUPER_ADMIN:
-        return jsonify({"message": "Akses ditolak."}), HTTPStatus.FORBIDDEN
+    denied_response = _deny_non_super_admin_target_access(current_admin, user)
+    if denied_response:
+        return denied_response
 
     fmt = (request.args.get("format") or "pdf").strip().lower()
     if fmt != "pdf":
@@ -1090,6 +1125,9 @@ def check_mikrotik_status(current_admin: User, user_id: uuid.UUID):
         user = db.session.get(User, user_id)
         if not user:
             return jsonify({"message": "Pengguna tidak ditemukan di database."}), HTTPStatus.NOT_FOUND
+        denied_response = _deny_non_super_admin_target_access(current_admin, user)
+        if denied_response:
+            return denied_response
 
         mikrotik_username = format_to_local_phone(user.phone_number)
         if not mikrotik_username:

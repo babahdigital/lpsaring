@@ -9,6 +9,19 @@ Lampiran wajib:
 - Work log terbaru: [WORKLOG_2026-02-17.md](WORKLOG_2026-02-17.md)
 - Work log sebelumnya: [WORKLOG_2026-02-16.md](WORKLOG_2026-02-16.md)
 
+## Audit terbaru: Demo payment-only hardening (2026-02-26)
+
+Ringkasan hasil implementasi dan verifikasi:
+- Request OTP untuk nomor whitelist demo ditolak `403` saat mode demo OFF.
+- User demo dikeluarkan dari sync MikroTik periodik maupun single-user.
+- Login sukses membersihkan address-list `blocked` dan `unauthorized` (best-effort).
+- RBAC endpoint admin by-id diperketat: non-super-admin tidak boleh mengakses target `SUPER_ADMIN` maupun target user demo.
+
+Verifikasi operasional pasca deploy:
+- Deploy produksi `--prune` berhasil, health check backend normal (`pong`).
+- Sampling log runtime backend/celery (6 menit) tidak menemukan traceback/error kritikal baru.
+- Event info `global lock active` pada sync teramati sesekali sebagai proteksi overlap task.
+
 ## Runbook MikroTik (wajib dibaca untuk kasus “nyangkut”)
 - [OPERATIONS_MIKROTIK_SYNC.md](OPERATIONS_MIKROTIK_SYNC.md)
 

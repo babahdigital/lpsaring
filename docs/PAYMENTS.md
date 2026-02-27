@@ -65,10 +65,12 @@ Untuk kebutuhan demo/staging yang dijalankan di environment produksi secara terk
 
 Catatan perilaku:
 - Bypass OTP hanya berlaku untuk nomor yang sudah ada di `DEMO_ALLOWED_PHONES` dan sudah disiapkan sistem.
+- Jika nomor termasuk whitelist demo tetapi mode demo OFF, request OTP ditolak `403` (tidak fallback ke OTP normal).
 - Paket nonaktif dapat ditampilkan/dibeli untuk user demo sesuai konfigurasi env.
 - User reguler tetap mengikuti aturan normal (tanpa bypass dan tanpa akses paket testing).
 - Enforce visibilitas paket demo dilakukan di backend berdasarkan requester terautentikasi (status `is_demo_user`), bukan mengandalkan toggle global di frontend.
 - Frontend hanya menjadi representasi UI dari status user; flag public demo frontend bersifat opsional/kompatibilitas dan bukan sumber otorisasi utama.
+- User demo dikecualikan dari sinkronisasi MikroTik periodik maupun single-user (payment-only behavior).
 
 ## Dokumen Detail
 - Lifecycle transaksi + data yang disimpan:
