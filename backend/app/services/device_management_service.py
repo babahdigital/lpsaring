@@ -53,7 +53,7 @@ def _get_settings() -> Dict[str, Any]:
         "device_stale_days": settings_service.get_setting_as_int("DEVICE_STALE_DAYS", 30),
         "mikrotik_server_default": settings_service.get_setting("MIKROTIK_DEFAULT_SERVER_USER", "all"),
         "global_mac_claim_transfer_enabled": settings_service.get_setting(
-            "DEVICE_GLOBAL_MAC_CLAIM_TRANSFER_ENABLED", "True"
+            "DEVICE_GLOBAL_MAC_CLAIM_TRANSFER_ENABLED", "False"
         )
         == "True",
     }

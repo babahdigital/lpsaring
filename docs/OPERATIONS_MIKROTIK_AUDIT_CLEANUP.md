@@ -105,7 +105,7 @@ Untuk mencegah konflik attribution kuota karena MAC ganda lintas akun:
 
 - Sistem menerapkan guard claim-transfer MAC lintas user di service device.
 - Saat MAC terdeteksi sudah dipakai akun lain dan masih aktif, claim akan ditolak kecuali alur takeover terkontrol (mis. flow yang mengizinkan replace).
-- Kontrol via `DEVICE_GLOBAL_MAC_CLAIM_TRANSFER_ENABLED` (default `True`).
+- Kontrol via `DEVICE_GLOBAL_MAC_CLAIM_TRANSFER_ENABLED` (default `False`).
 
 ## 8) Hardening DB untuk MAC global (bertahap)
 
