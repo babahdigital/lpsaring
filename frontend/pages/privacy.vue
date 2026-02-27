@@ -1,6 +1,6 @@
 <script setup lang="ts">
 const route = useRoute()
-await navigateTo({ path: '/policy/blocked', query: route.query }, { replace: true })
+await navigateTo({ path: '/merchant-center/privacy', query: route.query }, { replace: true })
 </script>
 
 <template>

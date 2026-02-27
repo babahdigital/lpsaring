@@ -30,7 +30,7 @@ const legalSource = computed(() => {
 
   if (backPath.value.startsWith('/dashboard'))
     return 'dashboard'
-  if (backPath.value.startsWith('/beli') || backPath.value.startsWith('/captive/beli'))
+  if (backPath.value.startsWith('/beli'))
     return 'beli'
   return 'merchant'
 })
@@ -47,7 +47,7 @@ onMounted(() => {
       return
     }
 
-    if (pathname.startsWith('/beli') || pathname.startsWith('/captive/beli')) {
+    if (pathname.startsWith('/beli')) {
       referrerBackPath.value = '/beli'
       return
     }

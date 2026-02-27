@@ -53,13 +53,13 @@ describe('status-guard.global runtime', () => {
     expect(verifyMock).not.toHaveBeenCalled()
   })
 
-  it('redirects non-matching login status page to /login', async () => {
+  it('redirects non-matching policy status page to /login', async () => {
     const middleware = (await import('../middleware/status-guard.global')).default
     authStoreState.getAccessStatusFromUser = vi.fn().mockReturnValue('ok')
 
     await middleware({
-      path: '/login/blocked',
-      fullPath: '/login/blocked',
+      path: '/policy/blocked',
+      fullPath: '/policy/blocked',
       query: {},
       meta: {},
     } as any)

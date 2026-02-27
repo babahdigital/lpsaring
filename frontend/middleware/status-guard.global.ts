@@ -9,16 +9,6 @@ const STATUS_PATHS: Record<string, 'blocked' | 'inactive' | 'expired' | 'habis' 
   '/policy/expired': 'expired',
   '/policy/habis': 'habis',
   '/policy/fup': 'fup',
-  '/login/blocked': 'blocked',
-  '/login/inactive': 'inactive',
-  '/login/expired': 'expired',
-  '/login/habis': 'habis',
-  '/login/fup': 'fup',
-  '/captive/blokir': 'blocked',
-  '/captive/inactive': 'inactive',
-  '/captive/expired': 'expired',
-  '/captive/habis': 'habis',
-  '/captive/fup': 'fup',
 }
 
 export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => {

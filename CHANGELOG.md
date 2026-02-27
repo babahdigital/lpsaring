@@ -8,6 +8,18 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Changed (2026-02-27)
+- Frontend status routing dipusatkan ke `/policy/*`; halaman status legacy di `/login/*` dan `/captive/*` dihapus dari `pages` dan diganti kompatibilitas redirect via `routeRules` Nuxt.
+- Flow captive diperketat dengan `captive_context` (sessionStorage) agar konteks captive tidak dapat menavigasi ke area terbatas (`/dashboard`, `/beli`, `/requests`, `/akun`) untuk user non-admin.
+- Halaman `captive/terhubung` disederhanakan menjadi CTA tunggal (`Mulai Browsing`) + auto-close/fallback redirect yang aman.
+- Route pembelian captive dipusatkan: `/captive/beli` tidak lagi memiliki implementasi halaman terpisah; akses lama tetap diarahkan ke `/beli`.
+- Legal docs dibuat publik pada root route (`/privacy`, `/terms`) sebagai alias ke halaman legal utama agar tidak terkesan eksklusif merchant-only.
+
+### Fixed (2026-02-27)
+- Konsistensi middleware auth/status-guard dibersihkan dari dependensi route status legacy.
+- Referensi legal back-navigation dan allowlist pembelian diperbarui agar tidak lagi bergantung pada path legacy `/captive/beli`.
+- Regression test middleware diperluas untuk kasus captive-context blocking dan diselaraskan dengan route policy terpusat.
+
 ### Added
 - Frontend: halaman publik merchant center (`/merchant-center`, `/merchant-center/privacy`, `/merchant-center/terms`) dengan konten legal yang disesuaikan untuk alur produksi.
 - Frontend: composable profil merchant terpusat untuk konsumsi data identitas dan kontak merchant lintas halaman legal.

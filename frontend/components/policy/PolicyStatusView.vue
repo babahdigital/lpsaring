@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useAuthStore } from '~/store/auth'
+import { isCaptiveContextActive, isRestrictedInCaptiveContext } from '~/utils/captiveContext'
 import { format_for_whatsapp_link, format_to_local_phone } from '~/utils/formatters'
 
 type PolicyStatus = 'blocked' | 'inactive' | 'expired' | 'habis' | 'fup'
@@ -91,6 +92,18 @@ const viewModel = computed(() => {
   }
 })
 
+const effectivePrimaryLabel = computed(() => {
+  if (isCaptiveContextActive() && isRestrictedInCaptiveContext(viewModel.value.primaryPath))
+    return 'Kembali ke Portal Captive'
+  return viewModel.value.primaryLabel
+})
+
+const effectivePrimaryPath = computed(() => {
+  if (isCaptiveContextActive() && isRestrictedInCaptiveContext(viewModel.value.primaryPath))
+    return '/captive'
+  return viewModel.value.primaryPath
+})
+
 const whatsappHref = computed(() => {
   const adminNumberForLink = format_for_whatsapp_link(adminContact)
   if (!whatsappBase || !adminNumberForLink)
@@ -127,8 +140,8 @@ function goTo(path: string) {
         </p>
 
         <div class="d-flex flex-column ga-3">
-          <VBtn color="primary" size="large" block @click="goTo(viewModel.primaryPath)">
-            {{ viewModel.primaryLabel }}
+          <VBtn color="primary" size="large" block @click="goTo(effectivePrimaryPath)">
+            {{ effectivePrimaryLabel }}
           </VBtn>
 
           <VBtn variant="tonal" color="success" size="large" block @click="goTo(viewModel.secondaryPath)">

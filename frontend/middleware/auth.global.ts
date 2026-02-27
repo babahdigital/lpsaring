@@ -3,6 +3,7 @@ import type { RouteLocationNormalized } from 'vue-router'
 import { defineNuxtRouteMiddleware, navigateTo } from '#app'
 import { useAuthStore } from '../store/auth'
 import { getStatusRouteForAccessStatus, GUEST_ROUTES, isLegalPublicPath } from '../utils/authRoutePolicy'
+import { isCaptiveContextActive, isCaptiveRoutePath, isRestrictedInCaptiveContext, markCaptiveContextActive } from '../utils/captiveContext'
 import {
   getSafeRedirectTarget,
   resolveExpiredOrHabisRedirect,
@@ -17,6 +18,9 @@ import {
 export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => {
   if (isLegalPublicPath(to.path))
     return
+
+  if (isCaptiveRoutePath(to.path))
+    markCaptiveContextActive()
 
   const authStore = useAuthStore()
 
@@ -68,13 +72,21 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
       return navigateTo(roleRedirect, { replace: true })
 
     if (!isAdmin && isDemoUser) {
-      const demoAllowedPaths = ['/beli', '/captive/beli', '/payment/status', '/payment/finish']
+      const demoAllowedPaths = ['/beli', '/payment/status', '/payment/finish']
       const isAllowedDemoPath = demoAllowedPaths.some(path => to.path === path || to.path.startsWith(`${path}/`))
       if (!isAllowedDemoPath)
         return navigateTo('/beli', { replace: true })
     }
 
     if (!isAdmin) {
+      if (isCaptiveContextActive() && isRestrictedInCaptiveContext(to.path)) {
+        const accessStatus = authStore.getAccessStatusFromUser(authStore.currentUser ?? authStore.lastKnownUser)
+        const captiveStatusRoute = getStatusRouteForAccessStatus(accessStatus, 'captive')
+        if (captiveStatusRoute && captiveStatusRoute !== to.path)
+          return navigateTo(captiveStatusRoute, { replace: true })
+        return navigateTo('/captive/terhubung', { replace: true })
+      }
+
       const accessStatus = authStore.getAccessStatusFromUser(authStore.currentUser ?? authStore.lastKnownUser)
       const statusRoute = getStatusRouteForAccessStatus(accessStatus, 'login')
       if (statusRoute && to.path === statusRoute)

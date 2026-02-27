@@ -1,7 +1,23 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const navigateToMock = vi.fn()
 let authStoreState: any
+
+function createSessionStorageMock(initial: Record<string, string> = {}) {
+  const store = new Map<string, string>(Object.entries(initial))
+  return {
+    getItem: (key: string) => (store.has(key) ? store.get(key)! : null),
+    setItem: (key: string, value: string) => {
+      store.set(key, String(value))
+    },
+    removeItem: (key: string) => {
+      store.delete(key)
+    },
+    clear: () => {
+      store.clear()
+    },
+  }
+}
 
 vi.mock('#app', () => ({
   defineNuxtRouteMiddleware: (handler: any) => handler,
@@ -25,6 +41,10 @@ describe('auth.global runtime', () => {
       lastKnownUser: null,
       getAccessStatusFromUser: vi.fn().mockReturnValue('ok'),
     }
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it('redirects guest protected user path to login with encoded redirect', async () => {
@@ -67,6 +87,28 @@ describe('auth.global runtime', () => {
     } as any)
 
     expect(navigateToMock).toHaveBeenCalledWith('/dashboard', { replace: true })
+  })
+
+  it('blocks dashboard path when captive context is active', async () => {
+    const middleware = (await import('../middleware/auth.global')).default
+    authStoreState.isLoggedIn = true
+    authStoreState.currentUser = { id: 'u-1', role: 'USER' }
+    authStoreState.getAccessStatusFromUser = vi.fn().mockReturnValue('ok')
+
+    vi.stubGlobal('window', {
+      sessionStorage: createSessionStorageMock({
+        captive_context_active: '1',
+      }),
+    } as any)
+
+    await middleware({
+      path: '/dashboard',
+      fullPath: '/dashboard',
+      query: {},
+      meta: {},
+    } as any)
+
+    expect(navigateToMock).toHaveBeenCalledWith('/captive/terhubung', { replace: true })
   })
 
   it('resolves safe redirect query when logged in and visiting guest route', async () => {

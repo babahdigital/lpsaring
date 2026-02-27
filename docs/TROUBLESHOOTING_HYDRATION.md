@@ -15,7 +15,7 @@ Lampiran wajib:
 
 **Lokasi utama (historis + lanjutan):**
 - Halaman `admin/users`.
-- Halaman `beli` dan `captive/beli` (khususnya saat flow auth/session demo login).
+- Halaman `beli` (historis sebelumnya juga mencakup `captive/beli`, kini sudah dipusatkan ke `/beli`).
 - Komponen yang terlibat: `VChipGroup`, layout responsif yang memakai `useDisplay`, serta elemen dialog/status yang sensitif terhadap timing hydration.
 
 ---
@@ -48,7 +48,7 @@ Di `frontend/pages/admin/users.vue`:
 
 ### E. Kurangi render dini komponen sensitif di flow beli
 - Komponen dialog/payment state yang mudah mismatch dirender setelah hydration siap.
-- Diterapkan pada halaman `frontend/pages/beli/index.vue` dan `frontend/pages/captive/beli.vue`.
+- Diterapkan pada halaman `frontend/pages/beli/index.vue` (historis juga pernah diterapkan pada `frontend/pages/captive/beli.vue` sebelum sentralisasi route).
 
 ---
 
@@ -59,8 +59,6 @@ Di `frontend/pages/admin/users.vue`:
   - Render `VChipGroup` setelah hydration
 - `frontend/pages/beli/index.vue`
   - Format nominal deterministik dan penyesuaian render aman hydration
-- `frontend/pages/captive/beli.vue`
-  - Format nominal deterministik, gating komponen payment dialog
 - `frontend/utils/formatters.ts`
   - Helper format konsisten SSR/client
 - `frontend/plugins/01.auth.ts`
@@ -74,7 +72,7 @@ Di `frontend/pages/admin/users.vue`:
 
 1. Refresh halaman `/admin/users`.
 2. Pastikan warning hydration terkait `VChipGroup` tidak muncul lagi.
-3. Uji halaman `/beli` dan `/captive/beli` setelah login (termasuk akun demo), pastikan warning hydration mismatch berkurang/hilang.
+3. Uji halaman `/beli` setelah login (termasuk akun demo), pastikan warning hydration mismatch berkurang/hilang.
 4. Verifikasi halaman legal (`/merchant-center/privacy`, `/merchant-center/terms`) tetap bisa dibuka walau status akun non-ok.
 5. Jika masih ada mismatch, identifikasi komponen yang menggunakan `useDisplay`/`window` API atau mutasi store pada fase hydration, lalu terapkan strategi serupa.
 

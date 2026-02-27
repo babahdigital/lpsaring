@@ -9,16 +9,6 @@ export const STATUS_ROUTES = [
   '/policy/expired',
   '/policy/habis',
   '/policy/fup',
-  '/login/blocked',
-  '/login/inactive',
-  '/login/expired',
-  '/login/habis',
-  '/login/fup',
-  '/captive/blokir',
-  '/captive/inactive',
-  '/captive/expired',
-  '/captive/habis',
-  '/captive/fup',
 ]
 
 export const GUEST_ROUTES = ['/login', '/register', '/daftar', '/admin', '/admin/login', '/captive', '/session/consume', ...STATUS_ROUTES]

@@ -258,6 +258,17 @@ export default defineNuxtConfig({
   routeRules: {
     '/admin/login': { redirect: '/admin' },
     '/admin/dasboard': { redirect: '/admin/dashboard' },
+    '/login/blocked': { redirect: '/policy/blocked' },
+    '/login/inactive': { redirect: '/policy/inactive' },
+    '/login/expired': { redirect: '/policy/expired' },
+    '/login/habis': { redirect: '/policy/habis' },
+    '/login/fup': { redirect: '/policy/fup' },
+    '/captive/blokir': { redirect: '/policy/blocked' },
+    '/captive/inactive': { redirect: '/policy/inactive' },
+    '/captive/expired': { redirect: '/policy/expired' },
+    '/captive/habis': { redirect: '/policy/habis' },
+    '/captive/fup': { redirect: '/policy/fup' },
+    '/captive/beli': { redirect: '/beli' },
   },
 
   modules: [
