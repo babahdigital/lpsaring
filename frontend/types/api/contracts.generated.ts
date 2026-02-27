@@ -1,8 +1,8 @@
- 
+/* eslint-disable */
 // AUTO-GENERATED FILE. DO NOT EDIT MANUALLY.
 // Source: contracts/openapi/openapi.v1.yaml
 
-export const OPENAPI_SOURCE_SHA256 = 'd3b91450d1857cef2340f9ed3bb8679711a4777b265e220a3f5d84875e4434d7' as const
+export const OPENAPI_SOURCE_SHA256 = '698f337ab48566c5521c2afbf4e8e3fbaa8f9973df3e9329275c0c006b2112fc' as const
 export const API_CONTRACT_REVISION = 'openapi-1.0.0' as const
 
 export type MessageResponse = { message: string }
@@ -45,8 +45,23 @@ export type AdminQuotaRequestProcessRequest = { action: 'approve' | 'reject'; ap
 export type AdminTransactionListResponse = { items: Array<TransactionDetailResponse>; meta: PaginationMeta }
 export type AdminTransactionBillRequest = { user_id: string; package_id: string; payment_method?: 'qris' | 'gopay' | 'va' | 'shopeepay' | null; va_bank?: 'bca' | 'bni' | 'bri' | 'mandiri' | 'permata' | 'cimb' | null }
 export type AdminTransactionBillResponse = { message: string; order_id: string; status: string; status_url?: string | null; whatsapp_sent?: boolean | null }
+export type AdminMetricsReliabilitySignals = { payment_idempotency_degraded?: boolean; hotspot_sync_lock_degraded?: boolean; policy_parity_degraded?: boolean }
+export type AdminMetricsResponse = { metrics?: { [key: string]: number }; reliability_signals?: AdminMetricsReliabilitySignals }
+export type AccessParityItem = { user_id: string; phone_number: string; mac: string; ip?: string | null; app_status: string; expected_binding_type: string; actual_binding_type?: string | null; address_list_statuses: Array<string>; mismatches: Array<string> }
+export type AccessParitySummary = { users: number; mismatches: number }
+export type AdminAccessParityResponse = { items: Array<AccessParityItem>; summary: AccessParitySummary }
 
 export interface GeneratedApiContractMap {
+  'GET /admin/metrics': {
+    request: never
+    response: AdminMetricsResponse
+    error: ErrorResponse
+  }
+  'GET /admin/metrics/access-parity': {
+    request: never
+    response: AdminAccessParityResponse
+    error: ErrorResponse
+  }
   'GET /admin/quota-requests': {
     request: never
     response: AdminQuotaRequestListResponse

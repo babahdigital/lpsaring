@@ -19,6 +19,7 @@ tags:
   - name: AdminTransactions
   - name: AdminSettings
   - name: AdminRequests
+  - name: AdminMetrics
 
 paths:
   /auth/register:
@@ -922,6 +923,46 @@ paths:
         '404':
           $ref: '#/components/responses/ErrorNotFound'
 
+  /admin/metrics:
+    get:
+      tags: [AdminMetrics]
+      summary: Ambil metrik reliabilitas admin
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Ringkasan metrik reliabilitas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMetricsResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+
+  /admin/metrics/access-parity:
+    get:
+      tags: [AdminMetrics]
+      summary: Deteksi mismatch policy app vs MikroTik per device
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Daftar mismatch parity akses
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAccessParityResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '503':
+          $ref: '#/components/responses/ErrorBadRequest'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1733,3 +1774,73 @@ components:
         whatsapp_sent:
           type: boolean
           nullable: true
+
+    AdminMetricsReliabilitySignals:
+      type: object
+      properties:
+        payment_idempotency_degraded:
+          type: boolean
+        hotspot_sync_lock_degraded:
+          type: boolean
+        policy_parity_degraded:
+          type: boolean
+
+    AdminMetricsResponse:
+      type: object
+      properties:
+        metrics:
+          type: object
+          additionalProperties:
+            type: number
+        reliability_signals:
+          $ref: '#/components/schemas/AdminMetricsReliabilitySignals'
+
+    AccessParityItem:
+      type: object
+      required: [user_id, phone_number, mac, app_status, expected_binding_type, address_list_statuses, mismatches]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        phone_number:
+          type: string
+        mac:
+          type: string
+        ip:
+          type: string
+          nullable: true
+        app_status:
+          type: string
+        expected_binding_type:
+          type: string
+        actual_binding_type:
+          type: string
+          nullable: true
+        address_list_statuses:
+          type: array
+          items:
+            type: string
+        mismatches:
+          type: array
+          items:
+            type: string
+
+    AccessParitySummary:
+      type: object
+      required: [users, mismatches]
+      properties:
+        users:
+          type: integer
+        mismatches:
+          type: integer
+
+    AdminAccessParityResponse:
+      type: object
+      required: [items, summary]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccessParityItem'
+        summary:
+          $ref: '#/components/schemas/AccessParitySummary'

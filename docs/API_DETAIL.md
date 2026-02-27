@@ -61,6 +61,10 @@ Lampiran wajib:
 - `GET /api/admin/quota-requests`
 - `POST /api/admin/quota-requests/{request_id}/process`
 
+### 9) Admin Metrics
+- `GET /api/admin/metrics`
+- `GET /api/admin/metrics/access-parity`
+
 ## Konvensi Error (Target Konsolidasi)
 - Gunakan envelope standar:
   - `code`
