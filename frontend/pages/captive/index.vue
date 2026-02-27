@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '~/store/auth'
 import { TAMPING_OPTION_ITEMS } from '~/utils/constants'
@@ -42,11 +42,26 @@ const isSubmitting = computed(() => authStore.loading)
 const hasClientIdentity = computed(() => Boolean(portalParams.value.clientIp && portalParams.value.clientMac))
 const showAddressFields = computed(() => regRole.value === 'USER')
 const showTampingFields = computed(() => regRole.value === 'TAMPING')
+const blockOptions = Array.from({ length: 6 }, (_, i) => ({ title: `Blok ${String.fromCharCode(65 + i)}`, value: String.fromCharCode(65 + i) }))
+const kamarOptions = Array.from({ length: 6 }, (_, i) => ({ title: `Kamar ${i + 1}`, value: (i + 1).toString() }))
 const appLandingUrl = computed(() => {
   const appBase = String(runtimeConfig.public.appBaseUrl ?? '').trim()
   if (appBase)
     return appBase
   return 'https://lpsaring.babahdigital.net'
+})
+
+watch(regRole, (nextRole) => {
+  if (nextRole === 'USER') {
+    regTampingType.value = ''
+    return
+  }
+
+  regBlock.value = ''
+  regKamar.value = ''
+
+  if (nextRole === 'KOMANDAN')
+    regTampingType.value = ''
 })
 
 function getQueryValue(key: string): string {
@@ -341,10 +356,20 @@ onMounted(async () => {
 
         <template v-if="showAddressFields">
           <label for="reg-block">Blok</label>
-          <input id="reg-block" v-model="regBlock" type="text" autocomplete="off" placeholder="Contoh: A" :disabled="isSubmitting">
+          <select id="reg-block" v-model="regBlock" :disabled="isSubmitting">
+            <option value="">Pilih blok</option>
+            <option v-for="item in blockOptions" :key="item.value" :value="item.value">
+              {{ item.title }}
+            </option>
+          </select>
 
           <label for="reg-kamar">Kamar</label>
-          <input id="reg-kamar" v-model="regKamar" type="text" autocomplete="off" placeholder="Contoh: 1" :disabled="isSubmitting">
+          <select id="reg-kamar" v-model="regKamar" :disabled="isSubmitting">
+            <option value="">Pilih kamar</option>
+            <option v-for="item in kamarOptions" :key="item.value" :value="item.value">
+              {{ item.title }}
+            </option>
+          </select>
         </template>
 
         <template v-if="showTampingFields">
@@ -373,19 +398,44 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+:root {
+  color-scheme: light dark;
+}
+
 .captive-page {
+  --cp-bg: #f3f4f6;
+  --cp-surface: #ffffff;
+  --cp-text: #111827;
+  --cp-muted: #6b7280;
+  --cp-border: rgba(107, 114, 128, 0.45);
+  --cp-primary: #2563eb;
+
   min-height: 100vh;
   display: grid;
   place-items: center;
   padding: 16px;
+  background: var(--cp-bg);
+  color: var(--cp-text);
+}
+
+@media (prefers-color-scheme: dark) {
+  .captive-page {
+    --cp-bg: #1f2338;
+    --cp-surface: #2b314d;
+    --cp-text: #e5e7eb;
+    --cp-muted: #cbd5e1;
+    --cp-border: rgba(148, 163, 184, 0.35);
+    --cp-primary: #3b82f6;
+  }
 }
 
 .box {
   width: 100%;
   max-width: 360px;
-  border: 1px solid rgba(127, 127, 127, 0.3);
+  border: 1px solid var(--cp-border);
   border-radius: 10px;
   padding: 16px;
+  background: var(--cp-surface);
 }
 
 h1 {
@@ -395,7 +445,7 @@ h1 {
 
 .muted {
   margin: 0 0 16px;
-  opacity: 0.8;
+  color: var(--cp-muted);
   font-size: 14px;
 }
 
@@ -414,15 +464,15 @@ h1 {
 
 .switch {
   height: 34px;
-  border: 1px solid rgba(127, 127, 127, 0.5);
+  border: 1px solid var(--cp-border);
   border-radius: 8px;
-  background: transparent;
-  color: inherit;
+  background: var(--cp-surface);
+  color: var(--cp-text);
 }
 
 .switch.active {
-  background: #2563eb;
-  border-color: #2563eb;
+  background: var(--cp-primary);
+  border-color: var(--cp-primary);
   color: white;
 }
 
@@ -433,20 +483,26 @@ label {
 input {
   width: 100%;
   height: 38px;
-  border: 1px solid rgba(127, 127, 127, 0.5);
+  border: 1px solid var(--cp-border);
   border-radius: 8px;
   padding: 0 10px;
-  background: transparent;
+  background: var(--cp-surface);
+  color: var(--cp-text);
 }
 
 select {
   width: 100%;
   height: 38px;
-  border: 1px solid rgba(127, 127, 127, 0.5);
+  border: 1px solid var(--cp-border);
   border-radius: 8px;
   padding: 0 10px;
-  background: transparent;
-  color: inherit;
+  background: var(--cp-surface);
+  color: var(--cp-text);
+}
+
+option {
+  background: var(--cp-surface);
+  color: var(--cp-text);
 }
 
 button {
@@ -454,7 +510,7 @@ button {
   border: 0;
   border-radius: 8px;
   cursor: pointer;
-  background: #2563eb;
+  background: var(--cp-primary);
   color: white;
 }
 
@@ -464,9 +520,9 @@ button:disabled {
 }
 
 button.ghost {
-  background: transparent;
-  border: 1px solid rgba(127, 127, 127, 0.5);
-  color: inherit;
+  background: var(--cp-surface);
+  border: 1px solid var(--cp-border);
+  color: var(--cp-text);
 }
 
 .alert {
@@ -512,7 +568,7 @@ button.ghost {
 }
 
 a {
-  color: #2563eb;
+  color: var(--cp-primary);
   text-decoration: none;
 }
 </style>
