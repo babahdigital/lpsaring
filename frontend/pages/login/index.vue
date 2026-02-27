@@ -12,6 +12,7 @@ import { useDisplay } from 'vuetify'
 import { useSnackbar } from '~/composables/useSnackbar'
 import { useAuthStore } from '~/store/auth'
 import { normalize_to_e164 } from '~/utils/formatters'
+import { shouldRedirectToHotspotRequired } from '~/utils/hotspotRedirect'
 import { TAMPING_OPTION_ITEMS } from '~/utils/constants'
 
 definePageMeta({
@@ -308,7 +309,10 @@ async function handleVerifyOtp() {
       return
     }
     if (import.meta.client) {
-      if (loginResponse.hotspot_login_required === true && loginResponse.hotspot_session_active === false && !clientIp && !clientMac) {
+      if (shouldRedirectToHotspotRequired({
+        hotspotLoginRequired: loginResponse.hotspot_login_required,
+        hotspotSessionActive: loginResponse.hotspot_session_active,
+      })) {
         await navigateTo('/login/hotspot-required', { replace: true })
         return
       }
