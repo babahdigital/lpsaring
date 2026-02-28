@@ -96,25 +96,49 @@ jobs:
               .sort((a, b) => new Date(b.last_accessed_at) - new Date(a.last_accessed_at))
 
             const deleteCandidates = sortedCaches.slice(keepCaches)
-            const validDeleteCandidates = deleteCandidates.filter(cache => cache && cache.id)
-            const skippedInvalid = deleteCandidates.length - validDeleteCandidates.length
             let deleted = 0
             let failed = 0
+            let skippedInvalid = 0
+            let deletedById = 0
+            let deletedByKeyRef = 0
 
-            for (const cache of validDeleteCandidates) {
+            for (const cache of deleteCandidates) {
+              if (!cache) {
+                skippedInvalid += 1
+                continue
+              }
+
+              const cacheId = cache.id
+              const cacheKey = cache.key
+              const cacheRef = cache.ref
+
               try {
-                await github.request('DELETE /repos/{owner}/{repo}/actions/caches/{cache_id}', {
-                  owner,
-                  repo,
-                  cache_id: cache.id,
-                })
+                if (cacheId) {
+                  await github.request('DELETE /repos/{owner}/{repo}/actions/caches/{cache_id}', {
+                    owner,
+                    repo,
+                    cache_id: cacheId,
+                  })
+                  deletedById += 1
+                } else if (cacheKey && cacheRef) {
+                  await github.request('DELETE /repos/{owner}/{repo}/actions/caches', {
+                    owner,
+                    repo,
+                    key: cacheKey,
+                    ref: cacheRef,
+                  })
+                  deletedByKeyRef += 1
+                } else {
+                  skippedInvalid += 1
+                  continue
+                }
                 deleted += 1
               } catch (error) {
                 failed += 1
-                core.warning(`Failed deleting cache ${cache.id}: ${error.message}`)
+                core.warning(`Failed deleting cache id=${cacheId || '-'} key=${cacheKey || '-'} ref=${cacheRef || '-'}: ${error.message}`)
               }
             }
 
             core.notice(
-              `Cache cleanup: total=${allCaches.length}, kept=${Math.min(allCaches.length, keepCaches)}, candidates=${deleteCandidates.length}, skipped_invalid=${skippedInvalid}, deleted=${deleted}, failed=${failed}`
+              `Cache cleanup: total=${allCaches.length}, kept=${Math.min(allCaches.length, keepCaches)}, candidates=${deleteCandidates.length}, skipped_invalid=${skippedInvalid}, deleted=${deleted}, deleted_by_id=${deletedById}, deleted_by_key_ref=${deletedByKeyRef}, failed=${failed}`
             )
