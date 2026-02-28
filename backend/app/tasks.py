@@ -5,6 +5,7 @@ import calendar
 import secrets
 import subprocess
 import sys
+import re
 from pathlib import Path
 from datetime import datetime, timedelta, timezone as dt_timezone
 from sqlalchemy.orm import selectinload
@@ -51,6 +52,31 @@ from app import create_app
 from app.extensions import celery_app
 
 logger = logging.getLogger(__name__)
+
+_MIKROTIK_DURATION_PART = re.compile(r"(\d+)([wdhms])", re.IGNORECASE)
+
+
+def _parse_mikrotik_duration_seconds(value: str) -> int:
+    text = str(value or "").strip().lower()
+    if not text:
+        return 0
+
+    multipliers = {
+        "w": 7 * 24 * 60 * 60,
+        "d": 24 * 60 * 60,
+        "h": 60 * 60,
+        "m": 60,
+        "s": 1,
+    }
+
+    total = 0
+    for amount_text, unit in _MIKROTIK_DURATION_PART.findall(text):
+        try:
+            total += int(amount_text) * multipliers[unit.lower()]
+        except Exception:
+            continue
+
+    return max(0, total)
 
 
 @celery_app.task(
@@ -610,6 +636,129 @@ def sync_unauthorized_hosts_task(self):
             logger.error(f"Celery Task: Sinkronisasi unauthorized hosts gagal: {e}", exc_info=True)
             if self.request.retries >= 2:
                 _record_task_failure(app, "sync_unauthorized_hosts_task", {}, str(e))
+            raise
+
+
+@celery_app.task(
+    name="cleanup_waiting_dhcp_arp_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 2},
+)
+def cleanup_waiting_dhcp_arp_task(self):
+    app = create_app()
+    with app.app_context():
+        if settings_service.get_setting("ENABLE_MIKROTIK_OPERATIONS", "True") != "True":
+            logger.info("Celery Task: Skip cleanup waiting DHCP/ARP (MikroTik operations disabled).")
+            return
+
+        if settings_service.get_setting("AUTO_CLEANUP_WAITING_DHCP_ARP_ENABLED", "False") != "True":
+            logger.info("Celery Task: Skip cleanup waiting DHCP/ARP (feature disabled).")
+            return
+
+        keyword = (
+            settings_service.get_setting("AUTO_CLEANUP_WAITING_DHCP_ARP_COMMENT_KEYWORD", "lpsaring|static-dhcp")
+            or "lpsaring|static-dhcp"
+        ).strip().lower()
+        min_last_seen_seconds = max(
+            0,
+            settings_service.get_setting_as_int("AUTO_CLEANUP_WAITING_DHCP_ARP_MIN_LAST_SEEN_SECONDS", 6 * 60 * 60),
+        )
+
+        logger.info(
+            "Celery Task: Memulai cleanup waiting DHCP/ARP (keyword=%s, min_last_seen_seconds=%s).",
+            keyword,
+            min_last_seen_seconds,
+        )
+
+        try:
+            with get_mikrotik_connection() as api:
+                if not api:
+                    raise RuntimeError("Gagal konek MikroTik")
+
+                lease_res = api.get_resource("/ip/dhcp-server/lease")
+                arp_res = api.get_resource("/ip/arp")
+
+                leases = lease_res.get() or []
+                arp_rows = arp_res.get() or []
+                arp_by_ip = {
+                    str(row.get("address") or "").strip(): row
+                    for row in arp_rows
+                    if str(row.get("address") or "").strip()
+                }
+                arp_by_mac = {
+                    str(row.get("mac-address") or "").strip().upper(): row
+                    for row in arp_rows
+                    if str(row.get("mac-address") or "").strip()
+                }
+
+                summary = {
+                    "waiting_candidates": 0,
+                    "skipped_recent": 0,
+                    "lease_removed": 0,
+                    "arp_removed": 0,
+                    "lease_failed": 0,
+                    "arp_failed": 0,
+                }
+                removed_arp_ids: set[str] = set()
+
+                for lease in leases:
+                    status = str(lease.get("status") or "").strip().lower()
+                    comment_text = str(lease.get("comment") or "").lower()
+                    if status != "waiting" or keyword not in comment_text:
+                        continue
+
+                    summary["waiting_candidates"] += 1
+
+                    last_seen_text = str(lease.get("last-seen") or "").strip()
+                    last_seen_seconds = _parse_mikrotik_duration_seconds(last_seen_text)
+                    if last_seen_seconds and last_seen_seconds < min_last_seen_seconds:
+                        summary["skipped_recent"] += 1
+                        continue
+
+                    ip_text = str(lease.get("address") or "").strip()
+                    mac_text = str(lease.get("mac-address") or "").strip().upper()
+                    lease_id = lease.get(".id") or lease.get("id")
+
+                    if lease_id:
+                        try:
+                            lease_res.remove(id=lease_id)
+                            summary["lease_removed"] += 1
+                        except Exception:
+                            summary["lease_failed"] += 1
+                            logger.exception(
+                                "Celery Task: Gagal remove waiting lease id=%s ip=%s mac=%s",
+                                lease_id,
+                                ip_text,
+                                mac_text,
+                            )
+
+                    arp_row = arp_by_ip.get(ip_text) or arp_by_mac.get(mac_text)
+                    arp_id = (arp_row or {}).get(".id") or (arp_row or {}).get("id")
+                    if arp_id and str(arp_id) not in removed_arp_ids:
+                        try:
+                            arp_res.remove(id=arp_id)
+                            removed_arp_ids.add(str(arp_id))
+                            summary["arp_removed"] += 1
+                        except Exception:
+                            summary["arp_failed"] += 1
+                            logger.exception(
+                                "Celery Task: Gagal remove ARP id=%s ip=%s mac=%s",
+                                arp_id,
+                                ip_text,
+                                mac_text,
+                            )
+
+                logger.info(
+                    "Celery Task: Cleanup waiting DHCP/ARP selesai. %s",
+                    json.dumps(summary, ensure_ascii=False),
+                )
+        except Exception as e:
+            logger.error("Celery Task: Cleanup waiting DHCP/ARP gagal: %s", e, exc_info=True)
+            if self.request.retries >= 2:
+                _record_task_failure(app, "cleanup_waiting_dhcp_arp_task", {}, str(e))
             raise
 
 

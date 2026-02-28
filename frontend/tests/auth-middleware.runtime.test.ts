@@ -121,6 +121,76 @@ describe('auth.global runtime', () => {
     expect(navigateToMock).toHaveBeenCalledWith('/captive/terhubung', { replace: true })
   })
 
+  it('allows dashboard path for fup user even when captive context is active', async () => {
+    const middleware = (await import('../middleware/auth.global')).default
+    authStoreState.isLoggedIn = true
+    authStoreState.currentUser = { id: 'u-1', role: 'USER' }
+    authStoreState.getAccessStatusFromUser = vi.fn().mockReturnValue('fup')
+
+    vi.stubGlobal('window', {
+      sessionStorage: createSessionStorageMock({
+        captive_context_active: '1',
+      }),
+    } as any)
+
+    await middleware({
+      path: '/dashboard',
+      fullPath: '/dashboard',
+      query: {},
+      meta: {},
+    } as any)
+
+    expect(navigateToMock).not.toHaveBeenCalled()
+  })
+
+  it('allows quota purchase path for fup user even when captive context is active', async () => {
+    const middleware = (await import('../middleware/auth.global')).default
+    authStoreState.isLoggedIn = true
+    authStoreState.currentUser = { id: 'u-1', role: 'USER' }
+    authStoreState.getAccessStatusFromUser = vi.fn().mockReturnValue('fup')
+
+    vi.stubGlobal('window', {
+      sessionStorage: createSessionStorageMock({
+        captive_context_active: '1',
+      }),
+    } as any)
+
+    await middleware({
+      path: '/beli',
+      fullPath: '/beli',
+      query: {},
+      meta: {},
+    } as any)
+
+    expect(navigateToMock).not.toHaveBeenCalled()
+  })
+
+  it('allows quota purchase path for expired/habis user even when captive context is active', async () => {
+    const middleware = (await import('../middleware/auth.global')).default
+    authStoreState.isLoggedIn = true
+    authStoreState.currentUser = { id: 'u-1', role: 'USER' }
+
+    vi.stubGlobal('window', {
+      sessionStorage: createSessionStorageMock({
+        captive_context_active: '1',
+      }),
+    } as any)
+
+    for (const status of ['expired', 'habis']) {
+      navigateToMock.mockReset()
+      authStoreState.getAccessStatusFromUser = vi.fn().mockReturnValue(status)
+
+      await middleware({
+        path: '/beli',
+        fullPath: '/beli',
+        query: {},
+        meta: {},
+      } as any)
+
+      expect(navigateToMock).not.toHaveBeenCalled()
+    }
+  })
+
   it('resolves safe redirect query when logged in and visiting guest route', async () => {
     const middleware = (await import('../middleware/auth.global')).default
     authStoreState.isLoggedIn = true

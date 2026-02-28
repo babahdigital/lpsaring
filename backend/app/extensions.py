@@ -199,6 +199,16 @@ def make_celery_app(app=None):
             "schedule": max(30, unauthorized_interval),
         }
 
+        if os.environ.get("AUTO_CLEANUP_WAITING_DHCP_ARP_ENABLED", "False").lower() == "true":
+            try:
+                cleanup_waiting_interval = int(os.environ.get("AUTO_CLEANUP_WAITING_DHCP_ARP_INTERVAL_SECONDS", "300"))
+            except ValueError:
+                cleanup_waiting_interval = 300
+            celery_instance.conf.beat_schedule["cleanup-waiting-dhcp-arp"] = {
+                "task": "cleanup_waiting_dhcp_arp_task",
+                "schedule": max(60, cleanup_waiting_interval),
+            }
+
         try:
             parity_guard_interval = int(os.environ.get("POLICY_PARITY_GUARD_INTERVAL_SECONDS", "600"))
         except ValueError:

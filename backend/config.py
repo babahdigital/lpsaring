@@ -466,6 +466,14 @@ class Config:
     # Optional: lock managed static DHCP leases to specific client CIDRs.
     # If empty, runtime logic will fall back to MIKROTIK_UNAUTHORIZED_CIDRS.
     MIKROTIK_DHCP_STATIC_LEASE_CIDRS = get_env_list("MIKROTIK_DHCP_STATIC_LEASE_CIDRS", "[]")
+    AUTO_CLEANUP_WAITING_DHCP_ARP_ENABLED = get_env_bool("AUTO_CLEANUP_WAITING_DHCP_ARP_ENABLED", "False")
+    AUTO_CLEANUP_WAITING_DHCP_ARP_INTERVAL_SECONDS = get_env_int("AUTO_CLEANUP_WAITING_DHCP_ARP_INTERVAL_SECONDS", 300)
+    AUTO_CLEANUP_WAITING_DHCP_ARP_MIN_LAST_SEEN_SECONDS = get_env_int(
+        "AUTO_CLEANUP_WAITING_DHCP_ARP_MIN_LAST_SEEN_SECONDS", 21600
+    )
+    AUTO_CLEANUP_WAITING_DHCP_ARP_COMMENT_KEYWORD = os.environ.get(
+        "AUTO_CLEANUP_WAITING_DHCP_ARP_COMMENT_KEYWORD", "lpsaring|static-dhcp"
+    )
     # IP/range yang dikecualikan untuk maintenance. Contoh: ['172.16.2.3-7']
     MIKROTIK_UNAUTHORIZED_EXEMPT_IPS = get_env_list("MIKROTIK_UNAUTHORIZED_EXEMPT_IPS", "['172.16.2.3-7']")
 

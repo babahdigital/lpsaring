@@ -96,10 +96,12 @@ jobs:
               .sort((a, b) => new Date(b.last_accessed_at) - new Date(a.last_accessed_at))
 
             const deleteCandidates = sortedCaches.slice(keepCaches)
+            const validDeleteCandidates = deleteCandidates.filter(cache => cache && cache.id)
+            const skippedInvalid = deleteCandidates.length - validDeleteCandidates.length
             let deleted = 0
             let failed = 0
 
-            for (const cache of deleteCandidates) {
+            for (const cache of validDeleteCandidates) {
               try {
                 await github.request('DELETE /repos/{owner}/{repo}/actions/caches/{cache_id}', {
                   owner,
@@ -114,5 +116,5 @@ jobs:
             }
 
             core.notice(
-              `Cache cleanup: total=${allCaches.length}, kept=${Math.min(allCaches.length, keepCaches)}, deleted=${deleted}, failed=${failed}`
+              `Cache cleanup: total=${allCaches.length}, kept=${Math.min(allCaches.length, keepCaches)}, candidates=${deleteCandidates.length}, skipped_invalid=${skippedInvalid}, deleted=${deleted}, failed=${failed}`
             )
