@@ -14,10 +14,10 @@ export default defineNuxtPlugin(async (nuxtApp) => {
   }
   else {
     // Di sisi client, hindari mutasi state auth saat fase hydration.
-    // Fallback inisialisasi dilakukan setelah app mounted bila masih belum terinisialisasi.
+    // Fallback inisialisasi dilakukan setelah app mounted.
+    // `initializeAuth` sudah idempotent dan akan return cepat bila tidak perlu,
+    // tetapi tetap perlu dipanggil agar auto-login best-effort bisa berjalan di client.
     nuxtApp.hook('app:mounted', async () => {
-      if (authStore.initialAuthCheckDone === true)
-        return
       await authStore.initializeAuth()
     })
   }
