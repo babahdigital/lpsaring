@@ -154,6 +154,7 @@ def _passes_csrf_guard() -> bool:
 def token_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        is_logout_path = request.path == "/api/auth/logout"
         token = None
         token_source = None
         auth_header = request.headers.get("Authorization")
@@ -208,10 +209,11 @@ def token_required(f):
                             "AUTH_DEMO_SCOPE_RESTRICTED",
                         )
 
-                    jwt_payload = {"sub": str(user_from_token.id), "rl": user_from_token.role.value}
-                    new_access = create_access_token(data=jwt_payload)
-                    g.new_access_token = new_access
-                    g.new_refresh_token = rotated.new_refresh_token
+                    if not is_logout_path:
+                        jwt_payload = {"sub": str(user_from_token.id), "rl": user_from_token.role.value}
+                        new_access = create_access_token(data=jwt_payload)
+                        g.new_access_token = new_access
+                        g.new_refresh_token = rotated.new_refresh_token
 
                     return f(current_user_id=user_uuid_from_token, *args, **kwargs)
 
@@ -283,10 +285,11 @@ def token_required(f):
                     "AUTH_DEMO_SCOPE_RESTRICTED",
                 )
 
-            jwt_payload = {"sub": str(user_from_token.id), "rl": user_from_token.role.value}
-            new_access = create_access_token(data=jwt_payload)
-            g.new_access_token = new_access
-            g.new_refresh_token = rotated.new_refresh_token
+            if not is_logout_path:
+                jwt_payload = {"sub": str(user_from_token.id), "rl": user_from_token.role.value}
+                new_access = create_access_token(data=jwt_payload)
+                g.new_access_token = new_access
+                g.new_refresh_token = rotated.new_refresh_token
 
             return f(current_user_id=user_uuid_from_token, *args, **kwargs)
         except (JWTError, ValueError, TypeError) as e:

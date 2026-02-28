@@ -3,7 +3,8 @@ from __future__ import annotations
 import uuid
 from types import SimpleNamespace
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, g
+from jose import ExpiredSignatureError
 
 from app.infrastructure.http import decorators
 
@@ -162,3 +163,60 @@ def test_token_required_refresh_fallback_allows_demo_user_payment_scope(monkeypa
     assert status == 200
     assert payload["ok"] is True
     assert payload["current_user_id"] == str(demo_user.id)
+
+
+def test_token_required_logout_refresh_fallback_does_not_set_new_tokens(monkeypatch):
+    app = _make_app()
+    non_demo_user = _make_user("+628112223334")
+
+    monkeypatch.setattr(decorators, "db", SimpleNamespace(session=_FakeSession(non_demo_user)))
+    monkeypatch.setattr(
+        decorators,
+        "rotate_refresh_token",
+        lambda *_a, **_k: SimpleNamespace(user_id=str(non_demo_user.id), new_refresh_token="new-refresh"),
+    )
+    monkeypatch.setattr(decorators, "create_access_token", lambda *_a, **_k: "new-access")
+
+    protected = _protected_endpoint()
+
+    with app.test_request_context(
+        "/api/auth/logout",
+        method="POST",
+        headers={"Cookie": "refresh_token=dummy-refresh-token"},
+    ):
+        response, status = protected()
+        payload = response.get_json()
+        assert status == 200
+        assert payload["ok"] is True
+        assert payload["current_user_id"] == str(non_demo_user.id)
+        assert not hasattr(g, "new_access_token")
+        assert not hasattr(g, "new_refresh_token")
+
+
+def test_token_required_logout_expired_cookie_does_not_set_new_tokens(monkeypatch):
+    app = _make_app()
+    non_demo_user = _make_user("+628112223334")
+
+    monkeypatch.setattr(decorators, "db", SimpleNamespace(session=_FakeSession(non_demo_user)))
+    monkeypatch.setattr(decorators.jwt, "decode", lambda *_a, **_k: (_ for _ in ()).throw(ExpiredSignatureError("expired")))
+    monkeypatch.setattr(
+        decorators,
+        "rotate_refresh_token",
+        lambda *_a, **_k: SimpleNamespace(user_id=str(non_demo_user.id), new_refresh_token="new-refresh"),
+    )
+    monkeypatch.setattr(decorators, "create_access_token", lambda *_a, **_k: "new-access")
+
+    protected = _protected_endpoint()
+
+    with app.test_request_context(
+        "/api/auth/logout",
+        method="POST",
+        headers={"Cookie": "auth_token=expired-cookie-token; refresh_token=dummy-refresh-token"},
+    ):
+        response, status = protected()
+        payload = response.get_json()
+        assert status == 200
+        assert payload["ok"] is True
+        assert payload["current_user_id"] == str(non_demo_user.id)
+        assert not hasattr(g, "new_access_token")
+        assert not hasattr(g, "new_refresh_token")
