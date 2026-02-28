@@ -25,7 +25,7 @@ from app.utils.formatters import (
     normalize_to_local,
 )
 from app.services import settings_service
-from app.services.access_policy_service import resolve_allowed_binding_type_for_user
+from app.services.access_policy_service import get_user_access_status, resolve_allowed_binding_type_for_user
 from app.services.quota_mutation_ledger_service import append_quota_mutation_event, snapshot_user_quota_state
 from app.utils.quota_debt import compute_debt_mb
 
@@ -66,6 +66,13 @@ def _resolve_active_profile() -> str:
 
 def _resolve_unlimited_profile() -> str:
     return settings_service.get_setting("MIKROTIK_UNLIMITED_PROFILE", "unlimited") or "unlimited"
+
+
+def _resolve_unblock_notification_template(user: User) -> str:
+    status = str(get_user_access_status(user) or "").strip().lower()
+    if status in {"active", "fup", "unlimited"}:
+        return "user_debt_cleared_unblock"
+    return "user_debt_cleared"
 
 
 def _get_active_registration_bonus() -> Optional[PromoEvent]:
@@ -1055,9 +1062,10 @@ def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reas
         purchased_now = float(user.total_quota_purchased_mb or 0.0)
         used_now = float(user.total_quota_used_mb or 0.0)
         remaining_mb = max(0.0, purchased_now - used_now)
+        template_key = _resolve_unblock_notification_template(user)
         _send_whatsapp_notification(
             user.phone_number,
-            "user_debt_cleared_unblock",
+            template_key,
             {
                 "full_name": user.full_name,
                 "paid_auto_debt_mb": int(paid_auto_mb),
