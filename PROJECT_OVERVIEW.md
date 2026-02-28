@@ -25,7 +25,8 @@ Portal hotspot berbasis web untuk manajemen paket, transaksi, dan integrasi pera
 7) Komandan dapat request kuota/unlimited, admin melakukan approval.
 
 Catatan:
-- Untuk kasus device belum ada di DB (mis. MAC berubah), auto-login dapat melakukan fallback lewat sesi hotspot MikroTik by IP (best-effort) agar UX tidak putus.
+- Untuk kasus device belum ada di DB (mis. MAC berubah), authority identitas tetap berbasis MAC router + ownership ip-binding/device.
+- Tidak ada fallback identity user dari sesi hotspot aktif by-IP (`/ip/hotspot/active`).
 
 ## Untuk Siapa
 - Admin/Operator hotspot: mengelola user, paket, transaksi, promo

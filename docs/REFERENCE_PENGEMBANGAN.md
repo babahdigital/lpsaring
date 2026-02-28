@@ -154,7 +154,7 @@ Ringkasan perubahan yang berkaitan dengan autentikasi hotspot, captive portal, d
 
 6. **Normalisasi MAC & resolusi MAC yang lebih robust**
   - Decode URL-encoded MAC dan samakan separator.
-  - Resolusi MAC lewat hotspot host/active/ARP/DHCP.
+  - Resolusi MAC lewat hotspot host/ARP/DHCP.
 
 8. **Otorisasi perangkat oleh user (self-service)**
   - Jika mekanisme explicit device auth aktif (`REQUIRE_EXPLICIT_DEVICE_AUTH=True`), user dapat mengikat perangkatnya sendiri dari UI.

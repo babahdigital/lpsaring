@@ -423,7 +423,7 @@ async function resetUserLogin() {
     return
 
   const ok = window.confirm(
-    `Reset login untuk ${props.user.full_name} (${props.user.phone_number})?\n\nAksi ini akan:\n- Menghapus semua refresh token\n- Menghapus semua device (user_devices) agar enroll ulang\n- Membersihkan state MikroTik (cookie, address-list, ip-binding, DHCP lease, ARP, dan sesi aktif)\n\nStatus kuota/paket di database tidak diubah.`,
+    `Reset login untuk ${props.user.full_name} (${props.user.phone_number})?\n\nAksi ini akan:\n- Menghapus semua refresh token\n- Menghapus semua device (user_devices) agar enroll ulang\n- Membersihkan state MikroTik (address-list terkelola, ip-binding, DHCP lease, dan ARP)\n\nStatus kuota/paket di database tidak diubah.`,
   )
   if (!ok)
     return

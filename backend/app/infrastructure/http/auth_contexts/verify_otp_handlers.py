@@ -23,6 +23,7 @@ def verify_otp_impl(
     VerifyOtpResponseSchema,
     AuthErrorResponseSchema,
     normalize_to_e164,
+    normalize_mac,
     get_phone_number_variations,
     is_demo_phone_allowed,
     get_otp_fail_count,
@@ -47,6 +48,7 @@ def verify_otp_impl(
     secrets_module,
     get_mikrotik_connection,
     has_hotspot_ip_binding_for_user,
+    resolve_client_mac,
 ):
     try:
         if not payload:
@@ -188,9 +190,49 @@ def verify_otp_impl(
                 binding_context.get("mac_message"),
             )
 
+        authoritative_binding_mac: Optional[str] = None
+        resolved_ip = str(binding_context.get("resolved_ip") or "").strip() or None
+        incoming_mac = normalize_mac(client_mac) if client_mac else None
+        if resolved_ip:
+            ok_router_mac, router_mac_raw, router_mac_msg = resolve_client_mac(resolved_ip)
+            if not ok_router_mac:
+                current_app.logger.warning(
+                    "Verify-OTP rejected: gagal verifikasi MAC router ip=%s user=%s msg=%s",
+                    resolved_ip,
+                    user_to_login.id,
+                    router_mac_msg,
+                )
+                return jsonify(
+                    AuthErrorResponseSchema(error="Tidak dapat memverifikasi perangkat dari router.").model_dump()
+                ), HTTPStatus.SERVICE_UNAVAILABLE
+
+            authoritative_binding_mac = normalize_mac(router_mac_raw) if router_mac_raw else None
+            if not authoritative_binding_mac:
+                return jsonify(
+                    AuthErrorResponseSchema(error="Perangkat belum terdeteksi di router.").model_dump()
+                ), HTTPStatus.UNAUTHORIZED
+
+            if incoming_mac and incoming_mac != authoritative_binding_mac:
+                current_app.logger.warning(
+                    "Verify-OTP rejected due MAC mismatch: ip=%s incoming_mac=%s router_mac=%s user=%s",
+                    resolved_ip,
+                    incoming_mac,
+                    authoritative_binding_mac,
+                    user_to_login.id,
+                )
+                return jsonify(
+                    AuthErrorResponseSchema(error="Identitas perangkat tidak valid.").model_dump()
+                ), HTTPStatus.FORBIDDEN
+
+            binding_context["resolved_mac"] = authoritative_binding_mac
+            binding_context["mac_source"] = "mikrotik"
+            binding_context["mac_message"] = "MAC authoritative dari router"
+        elif incoming_mac:
+            authoritative_binding_mac = incoming_mac
+
         if hotspot_login_required:
             username_for_hotspot = format_to_local_phone(user_to_login.phone_number)
-            binding_mac = str(binding_context.get("resolved_mac") or data.client_mac or "").strip() or None
+            binding_mac = str(authoritative_binding_mac or binding_context.get("resolved_mac") or "").strip() or None
             if username_for_hotspot:
                 try:
                     with get_mikrotik_connection() as api_connection:
@@ -253,7 +295,7 @@ def verify_otp_impl(
                 user_to_login,
                 client_ip,
                 user_agent,
-                client_mac,
+                authoritative_binding_mac,
                 bypass_explicit_auth=bypass_explicit,
                 allow_cross_user_transfer=allow_cross_user_transfer,
             )

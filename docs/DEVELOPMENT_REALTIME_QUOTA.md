@@ -116,7 +116,7 @@ Untuk membatasi jumlah perangkat per akun, gunakan **/ip/hotspot/ip-binding**:
 
 Catatan perilaku:
 - Pembuatan ip-binding saat OTP login memakai `client_ip` (atau IP hasil resolve dari `client_ip`) dan MAC hasil resolve dari IP jika MAC tidak dikirim.
-- Jika `client_ip` kosong/tidak valid dan MAC tersedia, backend mencoba resolve IP dari hotspot host/active/ARP/DHCP berdasarkan MAC.
+- Jika `client_ip` kosong/tidak valid dan MAC tersedia, backend mencoba resolve IP dari hotspot host/ARP/DHCP berdasarkan MAC.
 - Fallback address-list via ip-binding/MAC tetap dipakai saat sinkronisasi status.
 
 Rekomendasi gabungan:

@@ -52,6 +52,7 @@ export const useAuthStore = defineStore('auth', () => {
   const error = ref<string | null>(null)
   const message = ref<string | null>(null)
   const initialAuthCheckDone = ref(false)
+  const lastUserFetchAt = ref(0)
   const lastAuthErrorCode = ref<number | null>(null)
   const autoLoginAttempted = ref(false)
   const lastStatusRedirect = ref<{ status: AccessStatus; sig?: string | null } | null>(null)
@@ -114,6 +115,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   function clearSession(reasonCode?: number | null) {
     setUser(null)
+    lastUserFetchAt.value = 0
     if (reasonCode != null)
       lastAuthErrorCode.value = reasonCode
     else
@@ -130,6 +132,7 @@ export const useAuthStore = defineStore('auth', () => {
       // PERBAIKAN: Pengecekan eksplisit
       if (fetchedUser != null && fetchedUser.id != null) {
         setUser(fetchedUser)
+        lastUserFetchAt.value = Date.now()
         clearError()
         await enforceAccessStatus(context, currentPath)
         return true
@@ -482,6 +485,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     setUser(null)
+    lastUserFetchAt.value = 0
     initialAuthCheckDone.value = false
     autoLoginAttempted.value = false
     lastStatusRedirect.value = null
@@ -531,8 +535,12 @@ export const useAuthStore = defineStore('auth', () => {
       && user.value == null
       && autoLoginAttempted.value !== true
 
-    if (initialAuthCheckDone.value === true && !shouldAttemptAutoLogin)
+    if (initialAuthCheckDone.value === true && !shouldAttemptAutoLogin) {
+      const staleAfterMs = 15000
+      if (user.value != null && (Date.now() - lastUserFetchAt.value) > staleAfterMs)
+        await fetchUser(context, routePath)
       return
+    }
 
     try {
       if (user.value == null) {

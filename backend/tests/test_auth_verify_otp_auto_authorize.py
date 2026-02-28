@@ -84,6 +84,7 @@ def test_verify_otp_auto_authorizes_device_even_if_user_already_has_authorized_d
     monkeypatch.setattr(auth_routes, "get_phone_number_variations", lambda p: [p])
 
     monkeypatch.setattr(auth_routes.settings_service, "get_setting", lambda *_a, **_k: "True")
+    monkeypatch.setattr(auth_routes, "resolve_client_mac", lambda *_a, **_k: (True, "AA:BB:CC:DD:EE:FF", "ok"))
 
     def _fake_apply_binding(*_args, **kwargs):
         captured["bypass"] = kwargs.get("bypass_explicit_auth")
@@ -145,6 +146,7 @@ def test_verify_otp_does_not_auto_authorize_when_using_bypass_code(monkeypatch):
     monkeypatch.setattr(auth_routes, "get_phone_number_variations", lambda p: [p])
 
     monkeypatch.setattr(auth_routes.settings_service, "get_setting", lambda *_a, **_k: "True")
+    monkeypatch.setattr(auth_routes, "resolve_client_mac", lambda *_a, **_k: (True, "AA:BB:CC:DD:EE:FF", "ok"))
 
     def _fake_apply_binding(*_args, **kwargs):
         captured["bypass"] = kwargs.get("bypass_explicit_auth")
@@ -207,6 +209,7 @@ def test_verify_otp_still_self_authorizes_when_otp_auto_authorize_disabled(monke
     monkeypatch.setattr(auth_routes, "normalize_to_e164", lambda p: p)
     monkeypatch.setattr(auth_routes, "get_phone_number_variations", lambda p: [p])
     monkeypatch.setattr(auth_routes.settings_service, "get_setting", lambda *_a, **_k: "True")
+    monkeypatch.setattr(auth_routes, "resolve_client_mac", lambda *_a, **_k: (True, "AA:BB:CC:00:11:22", "ok"))
 
     def _fake_apply_binding(*_args, **kwargs):
         captured["bypass"] = kwargs.get("bypass_explicit_auth")
@@ -263,6 +266,7 @@ def test_verify_otp_hotspot_session_active_uses_precheck_not_post_binding(monkey
     monkeypatch.setattr(auth_routes, "get_phone_number_variations", lambda p: [p])
 
     monkeypatch.setattr(auth_routes.settings_service, "get_setting", lambda *_a, **_k: "True")
+    monkeypatch.setattr(auth_routes, "resolve_client_mac", lambda *_a, **_k: (True, "AA:BB:CC:11:22:33", "ok"))
 
     monkeypatch.setattr(
         auth_routes,

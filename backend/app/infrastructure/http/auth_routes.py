@@ -173,6 +173,7 @@ def register_user():
         UserRegisterResponseSchema=UserRegisterResponseSchema,
         AuthErrorResponseSchema=AuthErrorResponseSchema,
         normalize_to_e164=normalize_to_e164,
+        normalize_mac=normalize_mac,
         get_phone_number_variations=get_phone_number_variations,
         settings_service=settings_service,
         get_active_registration_bonus=_get_active_registration_bonus,
@@ -260,6 +261,7 @@ def verify_otp():
         secrets_module=secrets,
         get_mikrotik_connection=get_mikrotik_connection,
         has_hotspot_ip_binding_for_user=has_hotspot_ip_binding_for_user,
+        resolve_client_mac=resolve_client_mac,
     )
 
 
@@ -377,12 +379,16 @@ def get_current_user(current_user_id: uuid.UUID):
 @auth_bp.route("/hotspot-session-status", methods=["GET"])
 @token_required
 def get_hotspot_session_status(current_user_id: uuid.UUID):
+    query_args = request.args
     return get_hotspot_session_status_impl(
         current_user_id=current_user_id,
         db=db,
         User=User,
         AuthErrorResponseSchema=AuthErrorResponseSchema,
+        query_args=query_args,
         format_to_local_phone=format_to_local_phone,
+        normalize_mac=normalize_mac,
+        resolve_client_mac=resolve_client_mac,
         is_hotspot_login_required=is_hotspot_login_required,
         get_mikrotik_connection=get_mikrotik_connection,
         has_hotspot_ip_binding_for_user=has_hotspot_ip_binding_for_user,

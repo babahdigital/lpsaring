@@ -398,6 +398,9 @@ class Config:
     IP_BINDING_TYPE_ALLOWED = os.environ.get("IP_BINDING_TYPE_ALLOWED", "regular")
     IP_BINDING_TYPE_BLOCKED = os.environ.get("IP_BINDING_TYPE_BLOCKED", "blocked")
     HOTSPOT_BYPASS_STATUSES = get_env_list("HOTSPOT_BYPASS_STATUSES", "['active','fup','unlimited']")
+    HOTSPOT_SESSION_STATUS_ALLOW_USER_LEVEL_FALLBACK = get_env_bool(
+        "HOTSPOT_SESSION_STATUS_ALLOW_USER_LEVEL_FALLBACK", "True"
+    )
     IP_BINDING_FAIL_OPEN = get_env_bool("IP_BINDING_FAIL_OPEN", "False")
     MAX_DEVICES_PER_USER = get_env_int("MAX_DEVICES_PER_USER", 3)
     REQUIRE_EXPLICIT_DEVICE_AUTH = get_env_bool("REQUIRE_EXPLICIT_DEVICE_AUTH", "False")
