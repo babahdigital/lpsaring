@@ -57,6 +57,7 @@ export const useAuthStore = defineStore('auth', () => {
   const autoLoginAttempted = ref(false)
   const lastStatusRedirect = ref<{ status: AccessStatus; sig?: string | null } | null>(null)
   const logoutInProgress = ref(false)
+  const resetLoginInProgress = ref(false)
 
   const isLoggedIn = computed(() => user.value != null)
   const currentUser = computed(() => user.value)
@@ -495,12 +496,77 @@ export const useAuthStore = defineStore('auth', () => {
 
     try {
       if (performRedirect && import.meta.client) {
+        const runtimeConfig = useRuntimeConfig()
+        const mikrotikLink = String(runtimeConfig.public.appLinkMikrotik ?? '').trim()
+        if (!shouldRedirectToAdminLogin && mikrotikLink.length > 0) {
+          const route = useRoute()
+          const routeQuery = (route?.query ?? {}) as Record<string, unknown>
+          const clientIpRaw = routeQuery.client_ip ?? routeQuery.ip ?? routeQuery['client-ip']
+          const clientMacRaw = routeQuery.client_mac ?? routeQuery.mac ?? routeQuery['mac-address'] ?? routeQuery['client-mac']
+          const clientIp = Array.isArray(clientIpRaw) ? String(clientIpRaw[0] ?? '').trim() : String(clientIpRaw ?? '').trim()
+          const clientMac = Array.isArray(clientMacRaw) ? String(clientMacRaw[0] ?? '').trim() : String(clientMacRaw ?? '').trim()
+
+          const target = new URL(mikrotikLink, window.location.origin)
+          if (clientIp)
+            target.searchParams.set('client_ip', clientIp)
+          if (clientMac)
+            target.searchParams.set('client_mac', clientMac)
+
+          window.location.assign(target.toString())
+          return
+        }
+
         setMessage('Anda telah berhasil logout.')
         await navigateTo(shouldRedirectToAdminLogin ? '/admin' : '/login', { replace: true })
       }
     }
     finally {
       logoutInProgress.value = false
+    }
+  }
+
+  async function resetLogin(): Promise<boolean> {
+    if (resetLoginInProgress.value)
+      return false
+
+    resetLoginInProgress.value = true
+    clearError()
+    clearMessage()
+    try {
+      const { $api } = useNuxtApp()
+      await $api('/auth/reset-login', { method: 'POST' })
+
+      if (import.meta.client) {
+        const runtimeConfig = useRuntimeConfig()
+        const mikrotikLink = String(runtimeConfig.public.appLinkMikrotik ?? '').trim()
+        if (mikrotikLink.length > 0) {
+          const route = useRoute()
+          const routeQuery = (route?.query ?? {}) as Record<string, unknown>
+          const clientIpRaw = routeQuery.client_ip ?? routeQuery.ip ?? routeQuery['client-ip']
+          const clientMacRaw = routeQuery.client_mac ?? routeQuery.mac ?? routeQuery['mac-address'] ?? routeQuery['client-mac']
+          const clientIp = Array.isArray(clientIpRaw) ? String(clientIpRaw[0] ?? '').trim() : String(clientIpRaw ?? '').trim()
+          const clientMac = Array.isArray(clientMacRaw) ? String(clientMacRaw[0] ?? '').trim() : String(clientMacRaw ?? '').trim()
+
+          const target = new URL(mikrotikLink, window.location.origin)
+          if (clientIp)
+            target.searchParams.set('client_ip', clientIp)
+          if (clientMac)
+            target.searchParams.set('client_mac', clientMac)
+
+          window.location.assign(target.toString())
+          return true
+        }
+      }
+
+      setMessage('Reset login berhasil. Silakan login hotspot ulang jika diperlukan.')
+      return true
+    }
+    catch (err: any) {
+      setError(extractErrorMessage(err.data, 'Reset login gagal. Silakan coba lagi.'))
+      return false
+    }
+    finally {
+      resetLoginInProgress.value = false
     }
   }
 
@@ -609,9 +675,11 @@ export const useAuthStore = defineStore('auth', () => {
     consumeSessionToken,
     authorizeDevice,
     logout,
+    resetLogin,
     initializeAuth,
     lastAuthErrorCode,
     lastStatusRedirect,
+    resetLoginInProgress,
     getAccessStatusFromUser,
     getAccessStatusFromError,
     getRedirectPathForStatus,

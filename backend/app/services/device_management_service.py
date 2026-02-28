@@ -21,6 +21,8 @@ from app.infrastructure.gateways.mikrotik_client import (
     remove_ip_binding,
     upsert_dhcp_static_lease,
     remove_dhcp_lease,
+    remove_arp_entries,
+    remove_hotspot_host_entries,
     upsert_address_list_entry,
     remove_address_list_entry,
 )
@@ -703,3 +705,105 @@ def revoke_device(user: User, device: UserDevice) -> None:
         _remove_ip_binding(device.mac_address, user.mikrotik_server_name or settings["mikrotik_server_default"])
     _remove_managed_address_lists(device.ip_address)
     db.session.flush()
+
+
+def reset_user_network_on_logout(user: User) -> Dict[str, Any]:
+    summary: Dict[str, Any] = {
+        "devices_seen": 0,
+        "ip_binding_removed": 0,
+        "dhcp_removed": 0,
+        "arp_removed": 0,
+        "host_removed": 0,
+        "address_list_cleaned": 0,
+        "failures": 0,
+        "mikrotik_ops_enabled": True,
+    }
+
+    if not user:
+        summary["mikrotik_ops_enabled"] = False
+        return summary
+
+    if not _is_mikrotik_operations_enabled():
+        summary["mikrotik_ops_enabled"] = False
+        return summary
+
+    settings = _get_settings()
+    server_name = user.mikrotik_server_name or settings["mikrotik_server_default"]
+    dhcp_server_name = settings.get("dhcp_lease_server_name") or None
+    username_08 = format_to_local_phone(user.phone_number) or ""
+
+    devices = db.session.scalars(sa.select(UserDevice).where(UserDevice.user_id == user.id)).all()
+    summary["devices_seen"] = len(devices)
+
+    with get_mikrotik_connection() as api:
+        if not api:
+            summary["mikrotik_ops_enabled"] = False
+            return summary
+
+        if username_08:
+            ok_host_user, _msg_host_user, removed_host_user = remove_hotspot_host_entries(
+                api_connection=api,
+                username=username_08,
+            )
+            if ok_host_user:
+                summary["host_removed"] += int(removed_host_user or 0)
+            else:
+                summary["failures"] += 1
+
+        seen_mac: set[str] = set()
+        seen_ip: set[str] = set()
+
+        for device in devices:
+            mac = str(getattr(device, "mac_address", "") or "").strip().upper()
+            ip = str(getattr(device, "ip_address", "") or "").strip()
+
+            if mac and mac not in seen_mac:
+                seen_mac.add(mac)
+
+                ok_binding, _msg_binding = remove_ip_binding(api_connection=api, mac_address=mac, server=server_name)
+                if ok_binding:
+                    summary["ip_binding_removed"] += 1
+                else:
+                    summary["failures"] += 1
+
+                ok_dhcp, _msg_dhcp = remove_dhcp_lease(api_connection=api, mac_address=mac, server=dhcp_server_name)
+                if ok_dhcp:
+                    summary["dhcp_removed"] += 1
+                else:
+                    summary["failures"] += 1
+
+                if not ip:
+                    ok_ip, resolved_ip, _msg_ip = get_ip_by_mac(api_connection=api, mac_address=mac)
+                    if ok_ip and resolved_ip:
+                        ip = str(resolved_ip).strip()
+
+                ok_host, _msg_host, removed_host = remove_hotspot_host_entries(
+                    api_connection=api,
+                    mac_address=mac,
+                    address=ip or None,
+                    username=username_08 or None,
+                )
+                if ok_host:
+                    summary["host_removed"] += int(removed_host or 0)
+                else:
+                    summary["failures"] += 1
+
+                ok_arp, _msg_arp, removed_arp = remove_arp_entries(
+                    api_connection=api,
+                    mac_address=mac,
+                    address=ip or None,
+                )
+                if ok_arp:
+                    summary["arp_removed"] += int(removed_arp or 0)
+                else:
+                    summary["failures"] += 1
+
+            if ip and ip not in seen_ip:
+                seen_ip.add(ip)
+                try:
+                    _remove_managed_address_lists(ip)
+                    summary["address_list_cleaned"] += 1
+                except Exception:
+                    summary["failures"] += 1
+
+    return summary

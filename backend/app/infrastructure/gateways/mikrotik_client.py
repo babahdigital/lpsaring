@@ -878,6 +878,84 @@ def remove_dhcp_lease(
         return False, str(e)
 
 
+def remove_hotspot_host_entries(
+    api_connection: Any,
+    mac_address: Optional[str] = None,
+    address: Optional[str] = None,
+    username: Optional[str] = None,
+) -> Tuple[bool, str, int]:
+    mac_norm = str(mac_address or "").strip().upper()
+    address_norm = str(address or "").strip()
+    username_norm = str(username or "").strip()
+    if not mac_norm and not address_norm and not username_norm:
+        return False, "Filter hotspot host tidak valid", 0
+
+    try:
+        resource = api_connection.get_resource("/ip/hotspot/host")
+        query: dict[str, Any] = {}
+        if mac_norm:
+            query["mac-address"] = mac_norm
+        if address_norm:
+            query["address"] = address_norm
+        if username_norm:
+            query["user"] = username_norm
+
+        entries = resource.get(**query)
+        removed = 0
+        for entry in entries or []:
+            entry_id = entry.get("id") or entry.get(".id")
+            if not entry_id:
+                continue
+            try:
+                resource.remove(id=entry_id)
+            except Exception:
+                try:
+                    resource.remove(**{".id": entry_id})
+                except Exception:
+                    continue
+            removed += 1
+        return True, "Sukses", removed
+    except Exception as e:
+        return False, str(e), 0
+
+
+def remove_arp_entries(
+    api_connection: Any,
+    mac_address: Optional[str] = None,
+    address: Optional[str] = None,
+) -> Tuple[bool, str, int]:
+    mac_norm = str(mac_address or "").strip().upper()
+    address_norm = str(address or "").strip()
+    if not mac_norm and not address_norm:
+        return False, "Filter ARP tidak valid", 0
+
+    try:
+        resource = api_connection.get_resource("/ip/arp")
+        query: dict[str, Any] = {}
+        if mac_norm:
+            query["mac-address"] = mac_norm
+        if address_norm:
+            query["address"] = address_norm
+
+        entries = resource.get(**query)
+        removed = 0
+        for entry in entries or []:
+            entry_id = entry.get("id") or entry.get(".id")
+            if not entry_id:
+                continue
+            try:
+                resource.remove(id=entry_id)
+            except Exception:
+                try:
+                    resource.remove(**{".id": entry_id})
+                except Exception:
+                    continue
+            removed += 1
+        return True, "Sukses", removed
+    except Exception as e:
+        return False, str(e), 0
+
+
 def upsert_ip_binding(
     api_connection: Any,
     mac_address: str,

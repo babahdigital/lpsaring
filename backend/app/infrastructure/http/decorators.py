@@ -70,6 +70,7 @@ def _is_demo_path_allowed(path: str) -> bool:
         "/api/packages",
         "/api/auth/me",
         "/api/auth/logout",
+        "/api/auth/reset-login",
     )
     return any(path == prefix or path.startswith(f"{prefix}/") for prefix in allowed_prefixes)
 
@@ -154,7 +155,7 @@ def _passes_csrf_guard() -> bool:
 def token_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        is_logout_path = request.path == "/api/auth/logout"
+        is_logout_or_reset_path = request.path in {"/api/auth/logout", "/api/auth/reset-login"}
         token = None
         token_source = None
         auth_header = request.headers.get("Authorization")
@@ -195,9 +196,9 @@ def token_required(f):
                             "AUTH_USER_NOT_FOUND",
                         )
 
-                    if not user_from_token.is_active:
+                    if not user_from_token.is_active and not is_logout_or_reset_path:
                         return _auth_error("User account is inactive.", HTTPStatus.FORBIDDEN, "AUTH_USER_INACTIVE")
-                    if not user_from_token.is_approved:
+                    if not user_from_token.is_approved and not is_logout_or_reset_path:
                         return _auth_error("User account is not approved.", HTTPStatus.FORBIDDEN, "AUTH_USER_UNAPPROVED")
 
                     if _is_demo_user_by_phone(getattr(user_from_token, "phone_number", None)) and not _is_demo_path_allowed(
@@ -209,7 +210,7 @@ def token_required(f):
                             "AUTH_DEMO_SCOPE_RESTRICTED",
                         )
 
-                    if not is_logout_path:
+                    if not is_logout_or_reset_path:
                         jwt_payload = {"sub": str(user_from_token.id), "rl": user_from_token.role.value}
                         new_access = create_access_token(data=jwt_payload)
                         g.new_access_token = new_access
@@ -231,9 +232,9 @@ def token_required(f):
             if not user_from_token:
                 return _auth_error("User associated with token not found.", HTTPStatus.UNAUTHORIZED, "AUTH_USER_NOT_FOUND")
 
-            if not user_from_token.is_active:
+            if not user_from_token.is_active and not is_logout_or_reset_path:
                 return _auth_error("User account is inactive.", HTTPStatus.FORBIDDEN, "AUTH_USER_INACTIVE")
-            if not user_from_token.is_approved:
+            if not user_from_token.is_approved and not is_logout_or_reset_path:
                 return _auth_error("User account is not approved.", HTTPStatus.FORBIDDEN, "AUTH_USER_UNAPPROVED")
 
             if _is_demo_user_by_phone(getattr(user_from_token, "phone_number", None)) and not _is_demo_path_allowed(
@@ -271,9 +272,9 @@ def token_required(f):
             if not user_from_token:
                 return _auth_error("User associated with token not found.", HTTPStatus.UNAUTHORIZED, "AUTH_USER_NOT_FOUND")
 
-            if not user_from_token.is_active:
+            if not user_from_token.is_active and not is_logout_or_reset_path:
                 return _auth_error("User account is inactive.", HTTPStatus.FORBIDDEN, "AUTH_USER_INACTIVE")
-            if not user_from_token.is_approved:
+            if not user_from_token.is_approved and not is_logout_or_reset_path:
                 return _auth_error("User account is not approved.", HTTPStatus.FORBIDDEN, "AUTH_USER_UNAPPROVED")
 
             if _is_demo_user_by_phone(getattr(user_from_token, "phone_number", None)) and not _is_demo_path_allowed(
@@ -285,7 +286,7 @@ def token_required(f):
                     "AUTH_DEMO_SCOPE_RESTRICTED",
                 )
 
-            if not is_logout_path:
+            if not is_logout_or_reset_path:
                 jwt_payload = {"sub": str(user_from_token.id), "rl": user_from_token.role.value}
                 new_access = create_access_token(data=jwt_payload)
                 g.new_access_token = new_access

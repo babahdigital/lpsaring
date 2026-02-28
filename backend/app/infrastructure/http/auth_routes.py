@@ -59,6 +59,7 @@ from app.services.device_management_service import (
     resolve_binding_context,
     resolve_client_mac,
     normalize_mac,
+    reset_user_network_on_logout,
 )
 from app.services.hotspot_sync_service import sync_address_list_for_single_user
 from app.services.access_policy_service import is_hotspot_login_required
@@ -72,6 +73,7 @@ from app.infrastructure.http.auth_contexts.admin_auth_handlers import (
     admin_login_impl,
     refresh_access_token_impl,
     logout_user_impl,
+    reset_login_user_impl,
 )
 from app.infrastructure.http.auth_contexts.login_handlers import auto_login_impl
 from app.infrastructure.http.auth_contexts.status_handlers import verify_status_token_impl, debug_binding_impl
@@ -540,7 +542,22 @@ def logout_user(current_user_id: uuid.UUID):
         current_user_id=current_user_id,
         request=request,
         current_app=current_app,
+        db=db,
+        User=User,
         revoke_refresh_token=revoke_refresh_token,
         clear_auth_cookie=_clear_auth_cookie,
         clear_refresh_cookie=_clear_refresh_cookie,
+        cleanup_user_network_on_logout=reset_user_network_on_logout,
+    )
+
+
+@auth_bp.route("/reset-login", methods=["POST"])
+@token_required
+def reset_login_user(current_user_id: uuid.UUID):
+    return reset_login_user_impl(
+        current_user_id=current_user_id,
+        current_app=current_app,
+        db=db,
+        User=User,
+        cleanup_user_network_on_logout=reset_user_network_on_logout,
     )

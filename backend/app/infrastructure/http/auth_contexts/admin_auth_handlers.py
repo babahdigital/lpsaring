@@ -138,8 +138,40 @@ def refresh_access_token_impl(
     return response, HTTPStatus.OK
 
 
-def logout_user_impl(*, current_user_id, request, current_app, revoke_refresh_token, clear_auth_cookie, clear_refresh_cookie):
+def logout_user_impl(
+    *,
+    current_user_id,
+    request,
+    current_app,
+    db,
+    User,
+    revoke_refresh_token,
+    clear_auth_cookie,
+    clear_refresh_cookie,
+    cleanup_user_network_on_logout,
+):
     current_app.logger.info(f"User {current_user_id} initiated logout.")
+
+    try:
+        user = db.session.get(User, current_user_id)
+    except Exception:
+        user = None
+
+    if user is not None and cleanup_user_network_on_logout is not None:
+        try:
+            cleanup_summary = cleanup_user_network_on_logout(user)
+            current_app.logger.info(
+                "Logout network reset summary user=%s: %s",
+                current_user_id,
+                cleanup_summary,
+            )
+        except Exception as e:
+            current_app.logger.warning(
+                "Logout network reset gagal untuk user=%s: %s",
+                current_user_id,
+                e,
+            )
+
     refresh_cookie_name = current_app.config.get("REFRESH_COOKIE_NAME", "refresh_token")
     raw_refresh = request.cookies.get(refresh_cookie_name)
     if raw_refresh:
@@ -152,3 +184,49 @@ def logout_user_impl(*, current_user_id, request, current_app, revoke_refresh_to
     clear_auth_cookie(response)
     clear_refresh_cookie(response)
     return response, HTTPStatus.OK
+
+
+def reset_login_user_impl(
+    *,
+    current_user_id,
+    current_app,
+    db,
+    User,
+    cleanup_user_network_on_logout,
+):
+    current_app.logger.info(f"User {current_user_id} initiated reset-login.")
+
+    try:
+        user = db.session.get(User, current_user_id)
+    except Exception:
+        user = None
+
+    if user is None:
+        return jsonify({"message": "User tidak ditemukan."}), HTTPStatus.NOT_FOUND
+
+    cleanup_summary: dict[str, Any] = {}
+    if cleanup_user_network_on_logout is not None:
+        try:
+            cleanup_summary = cleanup_user_network_on_logout(user)
+            current_app.logger.info(
+                "Reset-login network summary user=%s: %s",
+                current_user_id,
+                cleanup_summary,
+            )
+        except Exception as e:
+            current_app.logger.warning(
+                "Reset-login gagal untuk user=%s: %s",
+                current_user_id,
+                e,
+            )
+            return jsonify({"message": "Reset login gagal. Silakan coba lagi."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+    return (
+        jsonify(
+            {
+                "message": "Reset login berhasil. Silakan login hotspot ulang jika diperlukan.",
+                "network_reset": cleanup_summary,
+            }
+        ),
+        HTTPStatus.OK,
+    )
