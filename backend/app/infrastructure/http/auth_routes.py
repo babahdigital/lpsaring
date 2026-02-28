@@ -173,7 +173,6 @@ def register_user():
         UserRegisterResponseSchema=UserRegisterResponseSchema,
         AuthErrorResponseSchema=AuthErrorResponseSchema,
         normalize_to_e164=normalize_to_e164,
-        normalize_mac=normalize_mac,
         get_phone_number_variations=get_phone_number_variations,
         settings_service=settings_service,
         get_active_registration_bonus=_get_active_registration_bonus,
