@@ -45,13 +45,49 @@ def _resolve_base_head(base: str | None, head: str | None) -> tuple[str, str]:
     return "HEAD~1", resolved_head
 
 
+def _run_diff_with_range_fallback(
+    *,
+    base: str,
+    head: str,
+    diff_options: list[str],
+    pathspec: list[str] | None = None,
+) -> str:
+    primary_range = f"{base}...{head}"
+    primary_cmd = ["diff", *diff_options, primary_range]
+    if pathspec:
+        primary_cmd.extend(["--", *pathspec])
+
+    try:
+        return _run_git(primary_cmd)
+    except RuntimeError as exc:
+        error_text = str(exc).lower()
+        recoverable = (
+            "invalid symmetric difference expression" in error_text
+            or "bad revision" in error_text
+            or "unknown revision" in error_text
+        )
+        if not recoverable:
+            raise
+
+    fallback_range = f"{head}~1..{head}"
+    fallback_cmd = ["diff", *diff_options, fallback_range]
+    if pathspec:
+        fallback_cmd.extend(["--", *pathspec])
+    return _run_git(fallback_cmd)
+
+
 def _changed_files(base: str, head: str) -> list[str]:
-    out = _run_git(["diff", "--name-only", f"{base}...{head}"])
+    out = _run_diff_with_range_fallback(base=base, head=head, diff_options=["--name-only"])
     return [line.strip() for line in out.splitlines() if line.strip()]
 
 
 def _contains_endpoint_signature_change(base: str, head: str, file_path: str) -> bool:
-    diff = _run_git(["diff", "--unified=0", f"{base}...{head}", "--", file_path])
+    diff = _run_diff_with_range_fallback(
+        base=base,
+        head=head,
+        diff_options=["--unified=0"],
+        pathspec=[file_path],
+    )
     for line in diff.splitlines():
         if not line.startswith(("+", "-")):
             continue
