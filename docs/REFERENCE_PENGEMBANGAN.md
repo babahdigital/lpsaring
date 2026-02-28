@@ -288,7 +288,8 @@ Jika ingin saya implement, saya butuh keputusan: mapping chat id pakai Opsi A (k
 - Pastikan `pnpm run lint` bersih.
 - Pastikan `nuxi typecheck` (atau `pnpm run build`) tidak error.
 - Validasi UI header/footer di layout vertical & horizontal.
-- Jika menambah icon, pastikan bundling `frontend/plugins/iconify/build-icons.ts` sudah sesuai.
+- Jika menambah icon frontend, WAJIB cek `frontend/plugins/iconify/build-icons.ts`.
+- Jika icon belum ada di list bundle (mis. `tablerIcons`), tambahkan dulu sebelum dipakai di komponen.
 - Untuk perubahan payment/auth frontend, jalankan focused tests auth + payment.
 - Untuk perubahan signature endpoint prioritas backend, pastikan OpenAPI + typed contract + `docs/API_DETAIL.md` ikut diperbarui.
 

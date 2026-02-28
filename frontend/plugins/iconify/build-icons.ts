@@ -62,6 +62,7 @@ interface BundleScriptConfig {
 
 const tablerIcons = [
   'adjustments-horizontal',
+  'activity-heartbeat',
   'alarm',
   'alert-circle',
   'alert-circle-filled',
