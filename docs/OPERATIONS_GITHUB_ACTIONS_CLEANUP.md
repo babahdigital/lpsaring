@@ -6,7 +6,7 @@ Dokumen ini merangkum prosedur operasional untuk:
 
 Status terkini (2026-02-28):
 - housekeeping otomatis sudah aktif via workflow `Actions Housekeeping`,
-- default retention aman: `keep_runs=15`, `keep_caches=50`,
+- default retention ketat: `keep_runs=2`, `keep_caches=0`,
 - tetap tersedia prosedur manual untuk pembersihan darurat.
 
 > Catatan keamanan: jangan menulis token/secret di dokumen ini.
@@ -127,10 +127,10 @@ Ditambahkan workflow baru:
 - `.github/workflows/actions-housekeeping.yml`
 
 Fungsi:
-- schedule harian (`cron: 15 2 * * *`),
+- schedule tiap 6 jam (`cron: 0 */6 * * *`),
 - manual trigger (`workflow_dispatch`) dengan parameter:
-  - `keep_runs` (default `15`),
-  - `keep_caches` (default `50`).
+  - `keep_runs` (default `2`, dibatasi max `30`),
+  - `keep_caches` (default `0`, dibatasi max `20`).
 
 Cara kerja:
 - hapus run **completed** lama di luar batas `keep_runs`,
@@ -149,5 +149,5 @@ Trade-off:
 
 ### F. Rekomendasi default
 
-- Gunakan baseline aman: `keep_runs=15`, `keep_caches=50`.
-- Saat incident storage berat, jalankan manual housekeeping dengan parameter lebih agresif sementara.
+- Gunakan baseline ketat: `keep_runs=2`, `keep_caches=0`.
+- Saat investigasi historis diperlukan, jalankan manual housekeeping sementara dengan nilai lebih longgar.
