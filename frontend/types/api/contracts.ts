@@ -8,6 +8,7 @@ export {
   type AuthRequestOtpRequest as AuthRequestOtpRequestContract,
   type AuthVerifyOtpRequest as AuthVerifyOtpRequestContract,
   type AuthVerifyOtpResponse as AuthVerifyOtpResponseContract,
+  type AuthHotspotSessionStatusResponse as AuthHotspotSessionStatusResponseContract,
   type UserProfileUpdateRequest as UserProfileUpdateRequestContract,
   type UserDevice as UserDeviceContract,
   type DeviceBindResponse as DeviceBindResponseContract,

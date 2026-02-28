@@ -211,6 +211,23 @@ paths:
         '401':
           $ref: '#/components/responses/ErrorUnauthorized'
 
+  /auth/hotspot-session-status:
+    get:
+      tags: [Auth]
+      summary: Status sesi hotspot realtime untuk user login
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Status hotspot saat ini
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthHotspotSessionStatusResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+
   /auth/me/profile:
     put:
       tags: [Auth]
@@ -1215,6 +1232,16 @@ components:
           nullable: true
         session_url:
           type: string
+          nullable: true
+
+    AuthHotspotSessionStatusResponse:
+      type: object
+      required: [hotspot_login_required]
+      properties:
+        hotspot_login_required:
+          type: boolean
+        hotspot_session_active:
+          type: boolean
           nullable: true
 
     UserMeResponse:
