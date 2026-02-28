@@ -26,6 +26,7 @@ from app.utils.formatters import (
 )
 from app.services import settings_service
 from app.services.access_policy_service import resolve_allowed_binding_type_for_user
+from app.services.quota_mutation_ledger_service import append_quota_mutation_event, snapshot_user_quota_state
 from app.utils.quota_debt import compute_debt_mb
 
 # Impor service lain dari paket yang sama
@@ -797,6 +798,7 @@ def _handle_user_activation(user: User, should_be_active: bool, admin: User) -> 
 
 
 def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reason: Optional[str]) -> Tuple[bool, str]:
+    before_state = snapshot_user_quota_state(user)
     user.is_blocked = should_be_blocked
     user.blocked_reason = reason if should_be_blocked else None
     user.blocked_at = datetime.now(dt_timezone.utc) if should_be_blocked else None
@@ -886,6 +888,18 @@ def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reas
                     "reason": reason or "Tidak disebutkan",
                 },
             )
+        append_quota_mutation_event(
+            user=user,
+            source="policy.block_transition:admin_action",
+            before_state=before_state,
+            after_state=snapshot_user_quota_state(user),
+            actor_user_id=getattr(admin, "id", None),
+            event_details={
+                "action": "block",
+                "reason": str(reason or "") or None,
+                "source": "admin_profile_update",
+            },
+        )
         return success, msg
 
     # Unblock path
@@ -965,8 +979,8 @@ def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reas
                     target_list = list_active
                     status_value = "unlimited"
                 elif purchased_mb <= 0 and not is_expired:
-                    target_list = list_inactive
-                    status_value = "inactive"
+                    target_list = list_habis
+                    status_value = "habis"
                 elif remaining_mb <= 0:
                     target_list = list_habis
                     status_value = "habis"
@@ -1066,6 +1080,18 @@ def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reas
             "blocked_reason": reason,
             "paid_auto_debt_mb": int(paid_auto_mb),
             "paid_manual_debt_mb": int(paid_manual_mb),
+        },
+    )
+    append_quota_mutation_event(
+        user=user,
+        source="policy.block_transition:admin_action",
+        before_state=before_state,
+        after_state=snapshot_user_quota_state(user),
+        actor_user_id=getattr(admin, "id", None),
+        event_details={
+            "action": "block" if should_be_blocked else "unblock",
+            "reason": str(reason or "") or None,
+            "source": "admin_profile_update",
         },
     )
     return success, msg

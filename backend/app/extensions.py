@@ -199,6 +199,16 @@ def make_celery_app(app=None):
             "schedule": max(30, unauthorized_interval),
         }
 
+        try:
+            parity_guard_interval = int(os.environ.get("POLICY_PARITY_GUARD_INTERVAL_SECONDS", "600"))
+        except ValueError:
+            parity_guard_interval = 600
+        if os.environ.get("ENABLE_POLICY_PARITY_GUARD", "True").lower() == "true":
+            celery_instance.conf.beat_schedule["policy-parity-guard"] = {
+                "task": "policy_parity_guard_task",
+                "schedule": max(60, parity_guard_interval),
+            }
+
         if os.environ.get("ENABLE_MIKROTIK_AUDIT_RECONCILIATION", "True").lower() == "true":
             try:
                 audit_hour = int(os.environ.get("MIKROTIK_AUDIT_CRON_HOUR", "4"))

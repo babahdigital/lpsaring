@@ -308,6 +308,16 @@ def _apply_auto_debt_limit_block_state(user: User, source: str = "sync_usage") -
     - Unlimited/KOMANDAN are excluded from this threshold enforcement.
     """
     is_auto_blocked = _is_auto_debt_blocked(user)
+    before_state = snapshot_user_quota_state(user)
+
+    def _record_policy_transition(action: str, details: dict[str, Any]) -> None:
+        append_quota_mutation_event(
+            user=user,
+            source=f"policy.block_transition:{source}",
+            before_state=before_state,
+            after_state=snapshot_user_quota_state(user),
+            event_details={"action": action, **details},
+        )
 
     if bool(getattr(user, "is_unlimited_user", False)) or getattr(user, "role", None) == UserRole.KOMANDAN:
         if is_auto_blocked:
@@ -315,6 +325,7 @@ def _apply_auto_debt_limit_block_state(user: User, source: str = "sync_usage") -
             user.blocked_reason = None
             user.blocked_at = None
             user.blocked_by_id = None
+            _record_policy_transition("unblock_auto_debt_exempt", {"reason": "unlimited_or_komandan"})
         return False
 
     limit_mb = float(settings_service.get_setting_as_int("QUOTA_DEBT_LIMIT_MB", 0) or 0)
@@ -324,13 +335,14 @@ def _apply_auto_debt_limit_block_state(user: User, source: str = "sync_usage") -
             user.blocked_reason = None
             user.blocked_at = None
             user.blocked_by_id = None
+            _record_policy_transition("unblock_auto_debt_limit_disabled", {"limit_mb": float(limit_mb)})
         return False
 
     auto_debt_mb = float(_resolve_auto_quota_debt_for_limit(user) or 0.0)
     reached_limit = auto_debt_mb >= limit_mb
 
     if reached_limit:
-        if (not bool(getattr(user, "is_blocked", False))) or is_auto_blocked:
+        if not bool(getattr(user, "is_blocked", False)):
             user.is_blocked = True
             user.blocked_reason = build_auto_debt_limit_reason(
                 debt_mb=auto_debt_mb,
@@ -340,6 +352,13 @@ def _apply_auto_debt_limit_block_state(user: User, source: str = "sync_usage") -
             if getattr(user, "blocked_at", None) is None:
                 user.blocked_at = datetime.now(dt_timezone.utc)
             user.blocked_by_id = None
+            _record_policy_transition(
+                "block_auto_debt_limit",
+                {
+                    "debt_mb": float(auto_debt_mb),
+                    "limit_mb": float(limit_mb),
+                },
+            )
         return True
 
     if is_auto_blocked:
@@ -347,15 +366,17 @@ def _apply_auto_debt_limit_block_state(user: User, source: str = "sync_usage") -
         user.blocked_reason = None
         user.blocked_at = None
         user.blocked_by_id = None
+        _record_policy_transition(
+            "unblock_auto_debt_below_limit",
+            {
+                "debt_mb": float(auto_debt_mb),
+                "limit_mb": float(limit_mb),
+            },
+        )
     return False
 
 
 def _resolve_target_profile(user: User, remaining_mb: float, remaining_percent: float, is_expired: bool) -> str:
-    inactive_profile = (
-        settings_service.get_setting("MIKROTIK_INACTIVE_PROFILE", None)
-        or settings_service.get_setting("MIKROTIK_DEFAULT_PROFILE", "default")
-        or "default"
-    )
     active_profile = (
         settings_service.get_setting("MIKROTIK_ACTIVE_PROFILE", None)
         or settings_service.get_setting("MIKROTIK_DEFAULT_PROFILE", "default")
@@ -372,7 +393,7 @@ def _resolve_target_profile(user: User, remaining_mb: float, remaining_percent: 
     if user.is_unlimited_user:
         return unlimited_profile
     if (user.total_quota_purchased_mb or 0) <= 0 and not is_expired:
-        return inactive_profile
+        return habis_profile
     if remaining_mb <= 0:
         return habis_profile
     if float(getattr(user, "total_quota_purchased_mb", 0) or 0) > fup_threshold_mb and remaining_mb <= fup_threshold_mb:

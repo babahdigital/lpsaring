@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 from typing import Any, cast
+from contextlib import contextmanager
 
 from flask import Flask
 
@@ -240,3 +241,69 @@ def test_verify_otp_still_self_authorizes_when_otp_auto_authorize_disabled(monke
     assert status == 200
     assert response.get_json()["access_token"] == "access"
     assert captured["bypass"] is True
+
+
+def test_verify_otp_hotspot_session_active_uses_precheck_not_post_binding(monkeypatch):
+    user = SimpleNamespace(
+        id="user-3",
+        phone_number="+628123999000",
+        role=UserRole.USER,
+        is_active=True,
+        approval_status=ApprovalStatus.APPROVED,
+        is_blocked=False,
+        mikrotik_password="pw",
+        last_login_at=None,
+    )
+
+    fake_session = _FakeSession(user, scalar_value=None)
+    monkeypatch.setattr(auth_routes, "db", _FakeDb(fake_session))
+
+    monkeypatch.setattr(auth_routes, "verify_otp_from_redis", lambda *_a, **_k: True)
+    monkeypatch.setattr(auth_routes, "normalize_to_e164", lambda p: p)
+    monkeypatch.setattr(auth_routes, "get_phone_number_variations", lambda p: [p])
+
+    monkeypatch.setattr(auth_routes.settings_service, "get_setting", lambda *_a, **_k: "True")
+
+    monkeypatch.setattr(
+        auth_routes,
+        "apply_device_binding_for_login",
+        lambda *_a, **_k: (True, "ok", "172.16.0.33"),
+    )
+    monkeypatch.setattr(auth_routes, "sync_address_list_for_single_user", lambda *_a, **_k: None)
+    monkeypatch.setattr(auth_routes, "create_access_token", lambda *_a, **_k: "access")
+    monkeypatch.setattr(auth_routes, "issue_refresh_token_for_user", lambda *_a, **_k: "refresh")
+    monkeypatch.setattr(auth_routes, "is_hotspot_login_required", lambda *_a, **_k: True)
+    monkeypatch.setattr(auth_routes, "_store_session_token", lambda *_a, **_k: None)
+    monkeypatch.setattr(auth_routes, "UserLoginHistory", lambda **kw: SimpleNamespace(**kw))
+    monkeypatch.setattr(
+        auth_routes,
+        "has_hotspot_ip_binding_for_user",
+        lambda *_a, **_k: (True, False, "not-found"),
+    )
+
+    @contextmanager
+    def _fake_conn(*_args, **_kwargs):
+        yield object()
+
+    monkeypatch.setattr(auth_routes, "get_mikrotik_connection", _fake_conn)
+
+    app = _make_app()
+    verify_impl = _unwrap_decorators(auth_routes.verify_otp)
+
+    with app.test_request_context(
+        "/api/auth/verify-otp",
+        method="POST",
+        json={
+            "phone_number": "+628123999000",
+            "otp": "123456",
+            "client_ip": "172.16.0.33",
+            "client_mac": "AA:BB:CC:11:22:33",
+        },
+        headers={"User-Agent": "pytest"},
+    ):
+        response, status = verify_impl()
+
+    assert status == 200
+    payload = cast(dict, response.get_json())
+    assert payload["hotspot_login_required"] is True
+    assert payload["hotspot_session_active"] is False

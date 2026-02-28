@@ -169,6 +169,8 @@ def verify_otp_impl(
         user_agent = request.headers.get("User-Agent")
 
         login_ip_for_history = client_ip
+        hotspot_login_required = is_hotspot_login_required(user_to_login)
+        hotspot_session_active: Optional[bool] = None
 
         binding_context = resolve_binding_context(user_to_login, client_ip, client_mac)
         if current_app.config.get("LOG_BINDING_DEBUG", False) or not client_ip:
@@ -185,6 +187,28 @@ def verify_otp_impl(
                 binding_context.get("mac_source"),
                 binding_context.get("mac_message"),
             )
+
+        if hotspot_login_required:
+            username_for_hotspot = format_to_local_phone(user_to_login.phone_number)
+            binding_mac = str(binding_context.get("resolved_mac") or data.client_mac or "").strip() or None
+            if username_for_hotspot:
+                try:
+                    with get_mikrotik_connection() as api_connection:
+                        if api_connection:
+                            ok_binding_check, has_binding, _ = has_hotspot_ip_binding_for_user(
+                                api_connection,
+                                username=username_for_hotspot,
+                                user_id=str(user_to_login.id),
+                                mac_address=binding_mac,
+                            )
+                            if ok_binding_check:
+                                hotspot_session_active = has_binding
+                except Exception as check_err:
+                    current_app.logger.warning(
+                        "Verify-OTP hotspot ip-binding pre-check failed for user=%s: %s",
+                        user_to_login.id,
+                        check_err,
+                    )
 
         if (not is_demo_login) and user_to_login.role in [UserRole.USER, UserRole.KOMANDAN, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
             # OTP valid dari user sendiri -> self-authorize default untuk mencegah deadlock
@@ -302,30 +326,6 @@ def verify_otp_impl(
 
         hotspot_username: Optional[str] = None
         hotspot_password: Optional[str] = None
-        hotspot_login_required = is_hotspot_login_required(user_to_login)
-        hotspot_session_active: Optional[bool] = None
-
-        if hotspot_login_required:
-            username_for_hotspot = format_to_local_phone(user_to_login.phone_number)
-            binding_mac = str(binding_context.get("resolved_mac") or data.client_mac or "").strip() or None
-            if username_for_hotspot:
-                try:
-                    with get_mikrotik_connection() as api_connection:
-                        if api_connection:
-                            ok_binding_check, has_binding, _ = has_hotspot_ip_binding_for_user(
-                                api_connection,
-                                username=username_for_hotspot,
-                                user_id=str(user_to_login.id),
-                                mac_address=binding_mac,
-                            )
-                            if ok_binding_check:
-                                hotspot_session_active = has_binding
-                except Exception as check_err:
-                    current_app.logger.warning(
-                        "Verify-OTP hotspot ip-binding check failed for user=%s: %s",
-                        user_to_login.id,
-                        check_err,
-                    )
 
         allow_hotspot_credentials = bool(data.client_ip or data.client_mac)
         if not allow_hotspot_credentials and data.hotspot_login_context is True:

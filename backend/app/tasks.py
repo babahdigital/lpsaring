@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_with_pdf, send_whatsapp_message
 from app.services.hotspot_sync_service import sync_hotspot_usage_and_profiles, cleanup_inactive_users
 from app.services import settings_service
+from app.services.access_parity_service import collect_access_parity_report
 from app.services.walled_garden_service import sync_walled_garden
 from app.extensions import db
 from app.infrastructure.db.models import (
@@ -33,6 +34,7 @@ from app.infrastructure.gateways.mikrotik_client import (
     upsert_ip_binding,
 )
 from app.services.notification_service import get_notification_message
+from app.services.quota_mutation_ledger_service import append_quota_mutation_event, lock_user_quota_row, snapshot_user_quota_state
 from app.services.user_management.helpers import _handle_mikrotik_operation
 from app.commands.sync_unauthorized_hosts_command import sync_unauthorized_hosts_command
 from app.utils.block_reasons import build_manual_debt_eom_reason
@@ -204,6 +206,9 @@ def enforce_end_of_month_debt_block_task(self):
                 continue
 
             try:
+                lock_user_quota_row(user)
+                before_state = snapshot_user_quota_state(user)
+
                 if not user.mikrotik_password:
                     user.mikrotik_password = "".join(secrets.choice("0123456789") for _ in range(6))
 
@@ -270,6 +275,18 @@ def enforce_end_of_month_debt_block_task(self):
                                     )
 
                 db.session.add(user)
+                append_quota_mutation_event(
+                    user=user,
+                    source="policy.block_transition:manual_debt_eom",
+                    before_state=before_state,
+                    after_state=snapshot_user_quota_state(user),
+                    event_details={
+                        "action": "block",
+                        "reason": str(getattr(user, "blocked_reason", "") or "") or None,
+                        "manual_debt_mb": int(manual_debt_mb),
+                        "debt_mb": float(debt_mb),
+                    },
+                )
                 db.session.commit()
                 summary["blocked_success"] += 1
 
@@ -394,6 +411,75 @@ def audit_mikrotik_reconciliation_task(self):
             logger.error("Celery Task: Audit MikroTik gagal: %s", e, exc_info=True)
             if self.request.retries >= 2:
                 _record_task_failure(app, "audit_mikrotik_reconciliation_task", {}, str(e))
+            raise
+
+
+@celery_app.task(
+    name="policy_parity_guard_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 2},
+)
+def policy_parity_guard_task(self):
+    app = create_app()
+    with app.app_context():
+        if settings_service.get_setting("ENABLE_MIKROTIK_OPERATIONS", "True") != "True":
+            logger.info("Celery Task: Skip policy parity guard (MikroTik operations disabled).")
+            return
+
+        logger.info("Celery Task: Menjalankan policy parity guard.")
+        try:
+            report = collect_access_parity_report(max_items=300)
+            if not report.get("ok", False):
+                reason = str(report.get("reason") or "unknown")
+                logger.warning("Celery Task: Policy parity guard unavailable. reason=%s", reason)
+                return
+
+            summary = report.get("summary", {}) or {}
+            mismatches = int(summary.get("mismatches", 0) or 0)
+            mismatch_types = summary.get("mismatch_types", {}) or {}
+
+            if mismatches > 0:
+                increment_metric("policy.parity.guard.mismatches", mismatches)
+                increment_metric("policy.parity.guard.binding_type", int(mismatch_types.get("binding_type", 0) or 0))
+                increment_metric("policy.parity.guard.address_list", int(mismatch_types.get("address_list", 0) or 0))
+                increment_metric(
+                    "policy.parity.guard.address_list_multi_status",
+                    int(mismatch_types.get("address_list_multi_status", 0) or 0),
+                )
+
+            redis_client = getattr(app, "redis_client_otp", None)
+            if redis_client is not None:
+                try:
+                    redis_client.set(
+                        "policy_parity:last_report",
+                        json.dumps(
+                            {
+                                "generated_at": datetime.now(dt_timezone.utc).isoformat(),
+                                "summary": summary,
+                                "items": report.get("items", [])[:100],
+                            }
+                        ),
+                        ex=24 * 3600,
+                    )
+                except Exception:
+                    pass
+
+            if mismatches > 0:
+                top_items = report.get("items", [])[:5]
+                logger.warning(
+                    "Policy parity guard detected mismatches=%s detail=%s",
+                    mismatches,
+                    json.dumps(top_items, ensure_ascii=False),
+                )
+            else:
+                logger.info("Policy parity guard: no mismatch detected.")
+        except Exception as e:
+            logger.error("Celery Task: Policy parity guard gagal: %s", e, exc_info=True)
+            if self.request.retries >= 2:
+                _record_task_failure(app, "policy_parity_guard_task", {}, str(e))
             raise
 
 

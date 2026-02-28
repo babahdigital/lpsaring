@@ -9,15 +9,12 @@ from app.extensions import db
 from app.infrastructure.http.decorators import admin_required
 from app.infrastructure.db.models import ApprovalStatus, User, UserRole
 from app.infrastructure.gateways.mikrotik_client import (
-    get_firewall_address_list_entries,
-    get_hotspot_host_usage_map,
-    get_hotspot_ip_binding_user_map,
     get_ip_by_mac,
     get_mikrotik_connection,
     upsert_ip_binding,
 )
-from app.services import settings_service
-from app.services.access_policy_service import get_user_access_status, resolve_allowed_binding_type_for_user
+from app.services.access_policy_service import resolve_allowed_binding_type_for_user
+from app.services.access_parity_service import collect_access_parity_report
 from app.services.hotspot_sync_service import sync_address_list_for_single_user
 from app.utils.formatters import format_to_local_phone, get_app_date_time_strings
 from app.utils.metrics_utils import get_metrics
@@ -55,105 +52,14 @@ def get_admin_metrics(current_admin):
 @metrics_bp.route("/metrics/access-parity", methods=["GET"])
 @admin_required
 def get_access_parity(current_admin):
-    users = db_users = db.session.scalars(
-        select(User)
-        .where(
-            User.is_active.is_(True),
-            User.approval_status == ApprovalStatus.APPROVED,
-            User.role.in_([UserRole.USER, UserRole.KOMANDAN]),
-        )
-        .options(selectinload(User.devices))
-    ).all()
-
-    if not users:
-        return jsonify({"items": [], "summary": {"users": 0, "mismatches": 0}}), HTTPStatus.OK
-
-    list_names = {
-        "active": settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active",
-        "fup": settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup",
-        "habis": settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis",
-        "expired": settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired",
-        "inactive": settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive",
-        "blocked": settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked",
-    }
-    items: list[dict] = []
-
-    with get_mikrotik_connection() as api:
-        if not api:
-            return jsonify({"message": "MikroTik connection unavailable."}), HTTPStatus.SERVICE_UNAVAILABLE
-
-        ok_host, host_map, _host_msg = get_hotspot_host_usage_map(api)
-        if not ok_host:
-            host_map = {}
-
-        ok_ipb, ip_binding_map, _ipb_msg = get_hotspot_ip_binding_user_map(api)
-        if not ok_ipb:
-            ip_binding_map = {}
-
-        ip_to_statuses: dict[str, set[str]] = {}
-        for status_key, list_name in list_names.items():
-            ok_list, entries, _msg = get_firewall_address_list_entries(api, list_name)
-            if not ok_list:
-                continue
-            for entry in entries:
-                ip_addr = str(entry.get("address") or "").strip()
-                if not ip_addr:
-                    continue
-                bucket = ip_to_statuses.setdefault(ip_addr, set())
-                bucket.add(status_key)
-
-        for user in users:
-            app_status = str(get_user_access_status(user) or "inactive")
-            expected_binding_type = str(resolve_allowed_binding_type_for_user(user) or "regular")
-
-            for device in user.devices or []:
-                mac = str(getattr(device, "mac_address", "") or "").strip().upper()
-                if not mac:
-                    continue
-
-                ip_addr = str(getattr(device, "ip_address", "") or "").strip()
-                if not ip_addr:
-                    ip_addr = str(host_map.get(mac, {}).get("address") or "").strip()
-
-                binding_entry = ip_binding_map.get(mac) or {}
-                actual_binding_type = str(binding_entry.get("type") or "").strip().lower() or None
-
-                statuses_for_ip = sorted(ip_to_statuses.get(ip_addr, set())) if ip_addr else []
-
-                mismatches: list[str] = []
-                if actual_binding_type and actual_binding_type != str(expected_binding_type).lower():
-                    mismatches.append("binding_type")
-
-                if ip_addr and statuses_for_ip:
-                    canonical_app_status = "active" if app_status == "unlimited" else app_status
-                    if canonical_app_status not in statuses_for_ip:
-                        mismatches.append("address_list")
-
-                if len(statuses_for_ip) > 1:
-                    mismatches.append("address_list_multi_status")
-
-                if mismatches:
-                    items.append(
-                        {
-                            "user_id": str(user.id),
-                            "phone_number": user.phone_number,
-                            "mac": mac,
-                            "ip": ip_addr or None,
-                            "app_status": app_status,
-                            "expected_binding_type": expected_binding_type,
-                            "actual_binding_type": actual_binding_type,
-                            "address_list_statuses": statuses_for_ip,
-                            "mismatches": sorted(set(mismatches)),
-                        }
-                    )
+    report = collect_access_parity_report()
+    if not report.get("ok", False) and report.get("reason") == "mikrotik_unavailable":
+        return jsonify({"message": "MikroTik connection unavailable."}), HTTPStatus.SERVICE_UNAVAILABLE
 
     return jsonify(
         {
-            "items": items,
-            "summary": {
-                "users": len(db_users),
-                "mismatches": len(items),
-            },
+            "items": report.get("items", []),
+            "summary": report.get("summary", {"users": 0, "mismatches": 0}),
         }
     ), HTTPStatus.OK
 

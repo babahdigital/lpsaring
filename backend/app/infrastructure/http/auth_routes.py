@@ -68,6 +68,7 @@ from app.infrastructure.http.error_envelope import build_error_payload, error_re
 from app.infrastructure.http.auth_contexts.otp_handlers import request_otp_impl
 from app.infrastructure.http.auth_contexts.session_handlers import consume_session_token_impl
 from app.infrastructure.http.auth_contexts.profile_handlers import get_current_user_impl, update_user_profile_impl
+from app.infrastructure.http.auth_contexts.hotspot_status_handlers import get_hotspot_session_status_impl
 from app.infrastructure.http.auth_contexts.admin_auth_handlers import (
     admin_login_impl,
     refresh_access_token_impl,
@@ -372,6 +373,21 @@ def get_current_user(current_user_id: uuid.UUID):
         create_access_token=create_access_token,
         set_auth_cookie=_set_auth_cookie,
         validation_error_details=_validation_error_details,
+    )
+
+
+@auth_bp.route("/hotspot-session-status", methods=["GET"])
+@token_required
+def get_hotspot_session_status(current_user_id: uuid.UUID):
+    return get_hotspot_session_status_impl(
+        current_user_id=current_user_id,
+        db=db,
+        User=User,
+        AuthErrorResponseSchema=AuthErrorResponseSchema,
+        format_to_local_phone=format_to_local_phone,
+        is_hotspot_login_required=is_hotspot_login_required,
+        get_mikrotik_connection=get_mikrotik_connection,
+        has_hotspot_ip_binding_for_user=has_hotspot_ip_binding_for_user,
     )
 
 

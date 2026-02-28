@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { ref } from 'vue'
 
 definePageMeta({
   layout: 'blank',
@@ -10,6 +11,9 @@ definePageMeta({
 useHead({ title: 'Login Hotspot Diperlukan' })
 
 const runtimeConfig = useRuntimeConfig()
+const { $api } = useNuxtApp()
+const rechecking = ref(false)
+const statusMessage = ref('')
 
 const appBaseUrl = computed(() => String(runtimeConfig.public.appBaseUrl ?? '').trim())
 const mikrotikLoginUrl = computed(() => {
@@ -35,7 +39,29 @@ function openHotspotLogin() {
 }
 
 async function continueToPortal() {
-  await navigateTo('/dashboard', { replace: true })
+  rechecking.value = true
+  statusMessage.value = ''
+  try {
+    const response = await $api<{ hotspot_login_required?: boolean | null, hotspot_session_active?: boolean | null }>('/auth/hotspot-session-status', {
+      method: 'GET',
+    })
+
+    const hotspotRequired = response?.hotspot_login_required === true
+    const hotspotActive = response?.hotspot_session_active === true
+
+    if (!hotspotRequired || hotspotActive) {
+      await navigateTo('/dashboard', { replace: true })
+      return
+    }
+
+    statusMessage.value = 'Sesi hotspot belum aktif. Silakan login MikroTik terlebih dahulu, lalu cek lagi.'
+  }
+  catch {
+    statusMessage.value = 'Gagal memeriksa status hotspot. Pastikan koneksi portal tersedia lalu coba lagi.'
+  }
+  finally {
+    rechecking.value = false
+  }
 }
 </script>
 
@@ -57,12 +83,22 @@ async function continueToPortal() {
           Jika sudah login hotspot, klik <strong>Saya Sudah Login Hotspot</strong> untuk lanjut ke portal.
         </VAlert>
 
+        <VAlert
+          v-if="statusMessage"
+          type="warning"
+          variant="tonal"
+          density="comfortable"
+          class="mb-6 text-start"
+        >
+          {{ statusMessage }}
+        </VAlert>
+
         <div class="d-flex flex-column ga-3">
           <VBtn color="primary" size="large" block @click="openHotspotLogin">
             Buka Login MikroTik
           </VBtn>
 
-          <VBtn variant="tonal" color="success" size="large" block @click="continueToPortal">
+          <VBtn variant="tonal" color="success" size="large" block :loading="rechecking" :disabled="rechecking" @click="continueToPortal">
             Saya Sudah Login Hotspot
           </VBtn>
         </div>

@@ -16,11 +16,11 @@ describe('shouldRedirectToHotspotRequired', () => {
     })).toBe(false)
   })
 
-  it('returns false when session state is unknown', () => {
+  it('returns true when session state is unknown', () => {
     expect(shouldRedirectToHotspotRequired({
       hotspotLoginRequired: true,
       hotspotSessionActive: null,
-    })).toBe(false)
+    })).toBe(true)
   })
 
   it('returns false when hotspot login is not required', () => {

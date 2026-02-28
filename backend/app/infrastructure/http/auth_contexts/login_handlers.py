@@ -70,18 +70,41 @@ def auto_login_impl(
                 AuthErrorResponseSchema(error="IP klien tidak ditemukan.").model_dump()
             ), HTTPStatus.BAD_REQUEST
 
+        from app.services.device_management_service import _is_client_ip_allowed  # type: ignore
+
+        if not _is_client_ip_allowed(client_ip):
+            return jsonify(
+                AuthErrorResponseSchema(error="IP klien di luar jaringan hotspot yang diizinkan.").model_dump()
+            ), HTTPStatus.FORBIDDEN
+
         login_ip_for_history = client_ip
         user_agent = request.headers.get("User-Agent")
 
-        resolved_mac = None
+        ok_mac, router_mac, mac_msg = resolve_client_mac(client_ip)
+        if not ok_mac:
+            current_app.logger.warning("Auto-login: gagal verifikasi MAC dari router untuk ip=%s: %s", client_ip, mac_msg)
+            return jsonify(
+                AuthErrorResponseSchema(error="Tidak dapat memverifikasi perangkat dari router.").model_dump()
+            ), HTTPStatus.SERVICE_UNAVAILABLE
+
+        resolved_mac = normalize_mac(router_mac) if router_mac else None
+        if not resolved_mac:
+            return jsonify(
+                AuthErrorResponseSchema(error="Perangkat belum terdeteksi di router.").model_dump()
+            ), HTTPStatus.UNAUTHORIZED
+
         if client_mac:
-            resolved_mac = normalize_mac(client_mac)
-        else:
-            ok, mac, msg = resolve_client_mac(client_ip)
-            if ok and mac:
-                resolved_mac = mac
-            elif not ok:
-                current_app.logger.warning(f"Auto-login: gagal resolve MAC untuk IP {client_ip}: {msg}")
+            incoming_mac = normalize_mac(client_mac)
+            if incoming_mac and incoming_mac != resolved_mac:
+                current_app.logger.warning(
+                    "Auto-login rejected due MAC mismatch: ip=%s incoming_mac=%s router_mac=%s",
+                    client_ip,
+                    incoming_mac,
+                    resolved_mac,
+                )
+                return jsonify(
+                    AuthErrorResponseSchema(error="Identitas perangkat tidak valid.").model_dump()
+                ), HTTPStatus.FORBIDDEN
 
         device_query = (
             db.session.query(UserDevice)
@@ -96,10 +119,8 @@ def auto_login_impl(
         device = None
         if resolved_mac:
             device = device_query.filter(UserDevice.mac_address == resolved_mac).first()
-        if not device:
-            device = (
-                device_query.filter(UserDevice.ip_address == client_ip).order_by(UserDevice.last_seen_at.desc()).first()
-            )
+        # Security: do not use IP-only identity lookup for auto-login.
+        # IP can be reused by DHCP; trusted identity must remain MAC-based.
 
         user = device.user if (device and getattr(device, "user", None)) else None
 

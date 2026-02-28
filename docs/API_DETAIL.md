@@ -20,6 +20,8 @@ Lampiran wajib:
 - `POST /api/auth/register`
 - `POST /api/auth/request-otp`
 - `POST /api/auth/verify-otp`
+- `POST /api/auth/auto-login`
+- `GET /api/auth/hotspot-session-status`
 - `POST /api/auth/session/consume`
 - `GET /api/auth/me`
 - `PUT /api/auth/me/profile`
@@ -94,3 +96,11 @@ CI akan gagal jika syarat ini tidak terpenuhi.
 - Batch hardening transaksi/payment melakukan refactor internal wiring dan pemecahan concern frontend.
 - Tidak ada perubahan signature endpoint prioritas (path/method tetap).
 - Sinkronisasi dokumen ini, OpenAPI, dan typed contract dilakukan untuk memenuhi contract gate CI.
+
+## Addendum 2026-02-28
+- Auth/captive flow diperluas dengan endpoint verifikasi sesi hotspot realtime: `GET /api/auth/hotspot-session-status`.
+- Flow auto-login (`POST /api/auth/auto-login`) sekarang diwajibkan melewati trusted identity path:
+  - IP klien harus berada dalam `HOTSPOT_CLIENT_IP_CIDRS`,
+  - MAC authoritative diambil dari router (bukan authority dari payload mentah),
+  - mismatch `client_mac` request vs MAC router ditolak hard.
+- Flow verify OTP mempertahankan prinsip tidak memetakan user dari active-session by-IP; keputusan hotspot-required memakai state ip-binding ownership user.

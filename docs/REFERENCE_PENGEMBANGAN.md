@@ -136,7 +136,9 @@ Ringkasan perubahan yang berkaitan dengan autentikasi hotspot, captive portal, d
 2. **Auto-login dashboard dari `/login`**
   - `initializeAuth()` mencoba `/auth/auto-login` jika tidak ada token.
   - Jika query `ip`/`mac` tersedia (redirect dari MikroTik), maka `client_ip`/`client_mac` ikut dikirim.
-  - Fallback terbaru: jika device belum ada di DB, backend dapat membaca sesi hotspot aktif MikroTik by IP untuk memetakan user (best-effort) agar lebih toleran saat MAC berubah.
+  - Authority identitas tetap dari MAC yang diverifikasi router; `client_mac` request hanya sebagai hint/validasi mismatch.
+  - Request auto-login ditolak jika IP klien di luar `HOTSPOT_CLIENT_IP_CIDRS`.
+  - Tidak ada fallback pemetaan user dari sesi hotspot aktif by-IP.
 
 3. **Captive flow tetap di halaman terhubung**
   - `dst` dipaksa ke `/captive/terhubung`.
@@ -181,7 +183,8 @@ Ringkasan perubahan yang berkaitan dengan autentikasi hotspot, captive portal, d
 ### Opsi Produksi yang Disarankan
 1. **Akses lewat redirect MikroTik (paling aman)**
   - Pastikan login page MikroTik menyertakan parameter `ip` dan `mac`.
-  - Frontend akan mengirim `client_ip`/`client_mac` ke `/auth/auto-login`.
+  - Frontend akan mengirim `client_ip`/`client_mac` ke `/auth/auto-login` sebagai hint.
+  - Backend tetap memvalidasi identitas final dari resolve MAC router.
 
 2. **Proxy membaca IP asli**
   - Jalankan reverse proxy di host (bukan bridge Docker) sehingga `remote_addr` = IP asli.
@@ -192,6 +195,9 @@ Ringkasan perubahan yang berkaitan dengan autentikasi hotspot, captive portal, d
   - **Tidak didukung di Docker Desktop Windows/macOS** jika ingin memakai host networking.
 
 ### Rekomendasi
+
+- Gunakan endpoint re-check `GET /api/auth/hotspot-session-status` pada halaman `/login/hotspot-required` sebelum mengarahkan user ke dashboard.
+- Untuk Cloudflare Tunnel, pastikan `TRUST_CF_CONNECTING_IP=True`, `TRUSTED_PROXY_CIDRS` sesuai peer aktual, dan whitelist no-origin CSRF tetap ketat.
 
 ---
 

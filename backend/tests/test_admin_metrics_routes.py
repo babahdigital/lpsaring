@@ -65,11 +65,23 @@ def test_get_admin_metrics_exposes_reliability_signals(monkeypatch):
 
 
 def test_get_access_parity_returns_empty_summary_when_no_users(monkeypatch):
-    class _EmptyScalars:
-        def all(self):
-            return []
-
-    monkeypatch.setattr(metrics_routes.db.session, "scalars", lambda *_args, **_kwargs: _EmptyScalars())
+    monkeypatch.setattr(
+        metrics_routes,
+        "collect_access_parity_report",
+        lambda **_kwargs: {
+            "ok": True,
+            "items": [],
+            "summary": {
+                "users": 0,
+                "mismatches": 0,
+                "mismatch_types": {
+                    "binding_type": 0,
+                    "address_list": 0,
+                    "address_list_multi_status": 0,
+                },
+            },
+        },
+    )
 
     app = _make_app()
     impl = _unwrap_decorators(metrics_routes.get_access_parity)
@@ -79,7 +91,9 @@ def test_get_access_parity_returns_empty_summary_when_no_users(monkeypatch):
 
     assert status == 200
     payload = resp.get_json()
-    assert payload == {"items": [], "summary": {"users": 0, "mismatches": 0}}
+    assert payload["items"] == []
+    assert payload["summary"]["users"] == 0
+    assert payload["summary"]["mismatches"] == 0
 
 
 def test_fix_access_parity_requires_user_id():

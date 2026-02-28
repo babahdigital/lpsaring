@@ -4,5 +4,5 @@ type HotspotRedirectInput = {
 }
 
 export function shouldRedirectToHotspotRequired(input: HotspotRedirectInput): boolean {
-  return input.hotspotLoginRequired === true && input.hotspotSessionActive === false
+  return input.hotspotLoginRequired === true && input.hotspotSessionActive !== true
 }

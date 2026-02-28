@@ -110,6 +110,10 @@ def apply_debt_settlement_on_success(*, session, transaction: Transaction) -> di
 
     lock_user_quota_row(user)
     before_state = snapshot_user_quota_state(user)
+    before_policy = {
+        "is_blocked": bool(getattr(user, "is_blocked", False)),
+        "blocked_reason": str(getattr(user, "blocked_reason", "") or "") or None,
+    }
 
     manual_debt_id = _extract_manual_debt_id_from_order_id(getattr(transaction, "midtrans_order_id", None))
 
@@ -169,6 +173,23 @@ def apply_debt_settlement_on_success(*, session, transaction: Transaction) -> di
             "unblocked": bool(unblocked),
         },
     )
+
+    if before_policy["is_blocked"] != bool(getattr(user, "is_blocked", False)) or before_policy["blocked_reason"] != (
+        str(getattr(user, "blocked_reason", "") or "") or None
+    ):
+        append_quota_mutation_event(
+            user=user,
+            source="policy.block_transition:transactions.debt_settlement",
+            before_state=before_state,
+            after_state=snapshot_user_quota_state(user),
+            idempotency_key=(str(getattr(transaction, "midtrans_order_id", "") or "")[:120] + ":policy")
+            or None,
+            event_details={
+                "action": "unblock" if unblocked else "policy_state_update",
+                "order_id": str(getattr(transaction, "midtrans_order_id", "") or "") or None,
+                "transaction_id": str(getattr(transaction, "id", "") or "") or None,
+            },
+        )
 
     return {
         "paid_auto_mb": int(paid_auto_mb),
