@@ -310,4 +310,5 @@ def test_verify_otp_hotspot_session_active_uses_precheck_not_post_binding(monkey
     assert status == 200
     payload = cast(dict, response.get_json())
     assert payload["hotspot_login_required"] is True
+    assert payload["hotspot_binding_active"] is False
     assert payload["hotspot_session_active"] is False

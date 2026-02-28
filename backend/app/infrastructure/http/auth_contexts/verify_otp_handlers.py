@@ -172,7 +172,7 @@ def verify_otp_impl(
 
         login_ip_for_history = client_ip
         hotspot_login_required = is_hotspot_login_required(user_to_login)
-        hotspot_session_active: Optional[bool] = None
+        hotspot_binding_active: Optional[bool] = None
 
         binding_context = resolve_binding_context(user_to_login, client_ip, client_mac)
         if current_app.config.get("LOG_BINDING_DEBUG", False) or not client_ip:
@@ -244,7 +244,7 @@ def verify_otp_impl(
                                 mac_address=binding_mac,
                             )
                             if ok_binding_check:
-                                hotspot_session_active = has_binding
+                                hotspot_binding_active = has_binding
                 except Exception as check_err:
                     current_app.logger.warning(
                         "Verify-OTP hotspot ip-binding pre-check failed for user=%s: %s",
@@ -388,7 +388,8 @@ def verify_otp_impl(
                 session_token=session_token,
                 session_url=session_url,
                 hotspot_login_required=hotspot_login_required,
-                hotspot_session_active=hotspot_session_active,
+                hotspot_binding_active=hotspot_binding_active,
+                hotspot_session_active=hotspot_binding_active,
             ).model_dump()
         )
         set_auth_cookie(response, access_token)

@@ -100,13 +100,14 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
       try {
         const { $api } = useNuxtApp()
         const identityQuery = pickHotspotIdentityQuery(routeQuery)
-        const hotspotStatus = await $api<{ hotspot_login_required?: boolean | null, hotspot_session_active?: boolean | null }>('/auth/hotspot-session-status', {
+        const hotspotStatus = await $api<{ hotspot_login_required?: boolean | null, hotspot_binding_active?: boolean | null, hotspot_session_active?: boolean | null }>('/auth/hotspot-session-status', {
           method: 'GET',
           query: identityQuery,
         })
 
         if (shouldRedirectToHotspotRequired({
           hotspotLoginRequired: hotspotStatus?.hotspot_login_required,
+          hotspotBindingActive: hotspotStatus?.hotspot_binding_active,
           hotspotSessionActive: hotspotStatus?.hotspot_session_active,
         })) {
           const hotspotQuery = pickHotspotIdentityQuery(routeQuery)

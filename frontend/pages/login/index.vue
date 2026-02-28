@@ -311,6 +311,7 @@ async function handleVerifyOtp() {
     if (import.meta.client) {
       if (shouldRedirectToHotspotRequired({
         hotspotLoginRequired: loginResponse.hotspot_login_required,
+        hotspotBindingActive: loginResponse.hotspot_binding_active,
         hotspotSessionActive: loginResponse.hotspot_session_active,
       })) {
         await navigateTo('/login/hotspot-required', { replace: true })

@@ -105,6 +105,7 @@ class VerifyOtpResponseSchema(BaseModel):
     session_token: Optional[str] = None
     session_url: Optional[str] = None
     hotspot_login_required: Optional[bool] = None
+    hotspot_binding_active: Optional[bool] = None
     hotspot_session_active: Optional[bool] = None
 
 

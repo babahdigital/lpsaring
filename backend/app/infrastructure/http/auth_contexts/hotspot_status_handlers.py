@@ -24,7 +24,7 @@ def get_hotspot_session_status_impl(
         return jsonify(AuthErrorResponseSchema(error="User not found.").model_dump()), HTTPStatus.NOT_FOUND
 
     hotspot_login_required = bool(is_hotspot_login_required(user))
-    hotspot_session_active = None
+    hotspot_binding_active = None
     hotspot_hint_applied = False
 
     def _first_non_empty(*keys):
@@ -63,12 +63,13 @@ def get_hotspot_session_status_impl(
                         hotspot_hint_applied = True
                         binding_mac = router_mac
                         if incoming_mac and incoming_mac != router_mac:
-                            hotspot_session_active = False
+                            hotspot_binding_active = False
                             return (
                                 jsonify(
                                     {
                                         "hotspot_login_required": hotspot_login_required,
-                                        "hotspot_session_active": hotspot_session_active,
+                                        "hotspot_binding_active": hotspot_binding_active,
+                                        "hotspot_session_active": hotspot_binding_active,
                                         "hotspot_hint_applied": hotspot_hint_applied,
                                     }
                                 ),
@@ -85,11 +86,11 @@ def get_hotspot_session_status_impl(
                             mac_address=binding_mac,
                         )
                         if ok_binding_check:
-                            hotspot_session_active = bool(has_binding)
+                            hotspot_binding_active = bool(has_binding)
 
                         if (
                             allow_user_level_fallback
-                            and hotspot_session_active is not True
+                            and hotspot_binding_active is not True
                             and binding_mac
                         ):
                             ok_fallback, has_fallback_binding, _ = has_hotspot_ip_binding_for_user(
@@ -99,15 +100,16 @@ def get_hotspot_session_status_impl(
                                 mac_address=None,
                             )
                             if ok_fallback:
-                                hotspot_session_active = bool(has_fallback_binding)
+                                hotspot_binding_active = bool(has_fallback_binding)
             except Exception:
-                hotspot_session_active = None
+                hotspot_binding_active = None
 
     return (
         jsonify(
             {
                 "hotspot_login_required": hotspot_login_required,
-                "hotspot_session_active": hotspot_session_active,
+                "hotspot_binding_active": hotspot_binding_active,
+                "hotspot_session_active": hotspot_binding_active,
                 "hotspot_hint_applied": hotspot_hint_applied,
             }
         ),

@@ -9,7 +9,7 @@ Dokumen ini merangkum sinkronisasi dokumentasi terhadap implementasi terbaru pad
   - hard reject untuk IP di luar `HOTSPOT_CLIENT_IP_CIDRS`,
   - reject mismatch `client_mac` request vs MAC router.
 - Precision `POST /api/auth/verify-otp`:
-  - pre-check `hotspot_session_active` berbasis ip-binding ownership user,
+  - pre-check `hotspot_binding_active` berbasis ip-binding ownership user,
   - tetap tidak memakai active-session by-IP sebagai identity authority.
 - Endpoint baru re-check captive/hotspot:
   - `GET /api/auth/hotspot-session-status`.
@@ -41,6 +41,7 @@ Dokumen ini merangkum sinkronisasi dokumentasi terhadap implementasi terbaru pad
 ## Catatan Verifikasi
 
 - Endpoint `GET /api/auth/hotspot-session-status` sudah terdokumentasi konsisten pada API ringkas, matriks operasional, dan referensi pengembangan.
+- Terminologi respons auth/hotspot distandarkan ke `hotspot_binding_active` dengan alias legacy `hotspot_session_active`.
 - Narasi legacy yang menyatakan fallback identity dari active-session by-IP telah dihapus/dikoreksi.
 - Dependency operasional terhadap `/ip/hotspot/active` telah dibersihkan dari jalur identity/auth dan reset-login; resolver kini murni memakai `ip-binding + hotspot host + ARP + DHCP lease`.
 - Runbook parity kini mencakup guard periodik otomatis dan variabel env operasional.

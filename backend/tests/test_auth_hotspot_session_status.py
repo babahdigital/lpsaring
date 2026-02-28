@@ -61,6 +61,7 @@ def test_hotspot_session_status_reports_active_binding():
     assert status == 200
     payload = response.get_json()
     assert payload["hotspot_login_required"] is True
+    assert payload["hotspot_binding_active"] is True
     assert payload["hotspot_session_active"] is True
     assert payload["hotspot_hint_applied"] is False
 
@@ -91,6 +92,7 @@ def test_hotspot_session_status_reports_inactive_when_binding_missing():
     assert status == 200
     payload = response.get_json()
     assert payload["hotspot_login_required"] is True
+    assert payload["hotspot_binding_active"] is False
     assert payload["hotspot_session_active"] is False
 
 
@@ -128,6 +130,7 @@ def test_hotspot_session_status_checks_mac_hint_first_then_fallback():
     assert status == 200
     payload = response.get_json()
     assert payload["hotspot_login_required"] is True
+    assert payload["hotspot_binding_active"] is True
     assert payload["hotspot_session_active"] is True
     assert payload["hotspot_hint_applied"] is True
 
@@ -158,5 +161,6 @@ def test_hotspot_session_status_rejects_mismatched_mac_hint():
     assert status == 200
     payload = response.get_json()
     assert payload["hotspot_login_required"] is True
+    assert payload["hotspot_binding_active"] is False
     assert payload["hotspot_session_active"] is False
     assert payload["hotspot_hint_applied"] is True

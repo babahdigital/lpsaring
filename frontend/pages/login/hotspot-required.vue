@@ -66,7 +66,7 @@ async function continueToPortal() {
     const clientIp = getQueryValueFromKeys(['client_ip', 'ip', 'client-ip'])
     const clientMac = getQueryValueFromKeys(['client_mac', 'mac', 'mac-address', 'client-mac'])
 
-    const response = await $api<{ hotspot_login_required?: boolean | null, hotspot_session_active?: boolean | null }>('/auth/hotspot-session-status', {
+    const response = await $api<{ hotspot_login_required?: boolean | null, hotspot_binding_active?: boolean | null, hotspot_session_active?: boolean | null }>('/auth/hotspot-session-status', {
       method: 'GET',
       query: {
         ...(clientIp ? { client_ip: clientIp } : {}),
@@ -75,7 +75,7 @@ async function continueToPortal() {
     })
 
     const hotspotRequired = response?.hotspot_login_required === true
-    const hotspotActive = response?.hotspot_session_active === true
+    const hotspotActive = (response?.hotspot_binding_active ?? response?.hotspot_session_active) === true
 
     if (!hotspotRequired || hotspotActive) {
       await authStore.refreshSessionStatus('/login/hotspot-required')

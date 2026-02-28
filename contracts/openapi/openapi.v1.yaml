@@ -1218,9 +1218,13 @@ components:
         hotspot_login_required:
           type: boolean
           nullable: true
+        hotspot_binding_active:
+          type: boolean
+          nullable: true
         hotspot_session_active:
           type: boolean
           nullable: true
+          deprecated: true
         hotspot_username:
           type: string
           nullable: true
@@ -1240,9 +1244,13 @@ components:
       properties:
         hotspot_login_required:
           type: boolean
+        hotspot_binding_active:
+          type: boolean
+          nullable: true
         hotspot_session_active:
           type: boolean
           nullable: true
+          deprecated: true
 
     UserMeResponse:
       type: object

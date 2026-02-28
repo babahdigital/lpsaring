@@ -146,6 +146,8 @@ def sync_unauthorized_hosts_command(
     skipped_exempt = 0
     to_add = 0
     to_remove = 0
+    failed_add_or_refresh = 0
+    failed_remove = 0
 
     with get_mikrotik_connection() as api:
         if not api:
@@ -205,18 +207,35 @@ def sync_unauthorized_hosts_command(
             if addr and addr not in desired:
                 to_remove += 1
                 if apply:
-                    remove_address_list_entry(api, addr, resolved_list)
+                    ok_remove, _remove_msg = remove_address_list_entry(api, addr, resolved_list)
+                    if not ok_remove:
+                        failed_remove += 1
 
         # Upsert desired entries.
         for addr, comment in desired.items():
             to_add += 1
             if apply:
-                upsert_address_list_entry(api, addr, resolved_list, comment=comment, timeout=resolved_timeout)
+                ok_upsert, _upsert_msg = upsert_address_list_entry(
+                    api,
+                    addr,
+                    resolved_list,
+                    comment=comment,
+                    timeout=resolved_timeout,
+                )
+                if not ok_upsert:
+                    failed_add_or_refresh += 1
 
     click.echo(
         f"processed_hosts={processed} desired_block_ips={len(desired)} "
         f"would_add_or_refresh={to_add} would_remove={to_remove} apply={apply} "
+        f"failed_add_or_refresh={failed_add_or_refresh} failed_remove={failed_remove} "
         f"skipped_no_ip={skipped_no_ip} skipped_not_allowed={skipped_not_allowed} "
         f"skipped_exempt={skipped_exempt} "
         f"skipped_low_uptime={skipped_low_uptime} skipped_authorized_or_bypassed={skipped_authorized}"
     )
+
+    if apply and (failed_add_or_refresh > 0 or failed_remove > 0):
+        raise click.ClickException(
+            "Sinkronisasi unauthorized selesai dengan kegagalan operasi router: "
+            f"failed_add_or_refresh={failed_add_or_refresh}, failed_remove={failed_remove}"
+        )

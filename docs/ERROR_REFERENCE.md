@@ -258,6 +258,59 @@ Uncaught ReferenceError: Cannot access 'ee' before initialization
 ## 14) OTP terkirim tapi user tidak bisa login (verify-otp tidak terpanggil)
 **Gejala**:
 - User klik “Kirim OTP” berhasil (OTP masuk WhatsApp), tapi setelah input OTP tombol verifikasi tidak jalan / tidak ada perubahan.
+
+## 28) Auto-login tidak pernah terpanggil di client (OTP berulang)
+**Gejala**:
+- Pada log produksi terlihat dominan `request-otp`/`verify-otp`, tetapi endpoint `POST /api/auth/auto-login` nyaris/tidak terlihat.
+- User cenderung berulang meminta OTP meski sebelumnya sudah pernah login di perangkat yang sama.
+
+**Penyebab**:
+- Inisialisasi auth sisi client tidak konsisten memanggil jalur best-effort auto-login setelah hydration.
+
+**Solusi**:
+- Pastikan plugin auth memanggil `initializeAuth()` di `app:mounted` pada sisi client.
+- Pertahankan `initializeAuth()` idempotent di store agar pemanggilan aman.
+
+**Verifikasi**:
+- Pantau rasio endpoint:
+	- `/api/auth/auto-login`
+	- `/api/auth/request-otp`
+	- `/api/auth/verify-otp`
+- Target: terdapat hit `auto-login` pada skenario session valid/perangkat terotorisasi.
+
+## 29) User sudah login (JWT valid) tapi tidak diarahkan ke `login/hotspot-required`
+**Gejala**:
+- User sudah punya session/JWT, membuka `/login` atau `/`, namun tidak diarahkan ke `login/hotspot-required` padahal hotspot session belum aktif.
+
+**Penyebab**:
+- Middleware guard route guest belum melakukan precheck `GET /api/auth/hotspot-session-status` untuk user yang sudah login.
+
+**Solusi**:
+- Tambahkan precheck hotspot di `auth.global.ts` untuk route guest (`/`, `/login`, `/register`, `/daftar`) pada user non-admin.
+- Jika `hotspot_login_required === true` dan `hotspot_binding_active !== true`, redirect ke `/login/hotspot-required` (termasuk passthrough `client_ip`/`client_mac` jika ada).
+- Jika precheck gagal, fallback ke flow normal (best-effort, tidak hard-fail).
+- `hotspot_session_active` adalah alias legacy untuk kompatibilitas klien lama.
+
+**Verifikasi**:
+- Unit/runtime test skenario berikut harus lulus:
+	- hotspot required + inactive => redirect hotspot-required,
+	- hotspot required + active => tidak redirect hotspot-required,
+	- precheck error => fallback normal,
+	- admin => skip precheck.
+
+## 30) `useNuxtApp` tidak diimport eksplisit pada middleware (silent failure dalam `try/catch`)
+**Gejala**:
+- Test menunjukkan endpoint precheck tidak pernah dipanggil (`$api` call count = 0), tetapi middleware tampak tidak crash karena tertutup `try/catch`.
+
+**Penyebab**:
+- Composable global dipakai tanpa import eksplisit di konteks middleware + harness test tertentu.
+
+**Solusi**:
+- Import eksplisit dari `#app`:
+	- `import { defineNuxtRouteMiddleware, navigateTo, useNuxtApp } from '#app'`
+
+**Catatan**:
+- Error jenis ini berbahaya karena bisa tersembunyi oleh fallback `catch`, jadi perlu test call assertion (bukan hanya assertion redirect akhir).
 - Di log backend hanya terlihat `POST /api/auth/request-otp` (200), sementara `POST /api/auth/verify-otp` tidak muncul.
 
 **Akar masalah umum**:

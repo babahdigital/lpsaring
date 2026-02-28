@@ -38,6 +38,7 @@ describe('auth.global runtime', () => {
     apiMock.mockReset()
     apiMock.mockResolvedValue({
       hotspot_login_required: false,
+      hotspot_binding_active: null,
       hotspot_session_active: null,
     })
     authStoreState = {
@@ -185,6 +186,7 @@ describe('auth.global runtime', () => {
     authStoreState.isLoggedIn = true
     apiMock.mockResolvedValue({
       hotspot_login_required: true,
+      hotspot_binding_active: false,
       hotspot_session_active: false,
     })
 
@@ -213,6 +215,7 @@ describe('auth.global runtime', () => {
     authStoreState.isLoggedIn = true
     apiMock.mockResolvedValue({
       hotspot_login_required: true,
+      hotspot_binding_active: true,
       hotspot_session_active: true,
     })
 

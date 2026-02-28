@@ -631,10 +631,18 @@ def remove_address_list_entry(api_connection: Any, address: str, list_name: str)
     try:
         resource = api_connection.get_resource("/ip/firewall/address-list")
         entries = resource.get(address=address, list=list_name)
+        removed = 0
         for entry in entries:
-            entry_id = entry.get("id") or entry.get(".id")
+            entry_id = entry.get(".id") or entry.get("id")
             if entry_id:
-                resource.remove(id=entry_id)
+                try:
+                    resource.remove(**{".id": entry_id})
+                except Exception:
+                    resource.remove(id=entry_id)
+                removed += 1
+
+        if entries and removed == 0:
+            return False, "Entri ditemukan tetapi gagal dihapus (ID tidak valid)"
         return True, "Sukses"
     except Exception as e:
         return False, str(e)
