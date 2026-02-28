@@ -1,7 +1,6 @@
 type HotspotRedirectInput = {
   hotspotLoginRequired?: boolean | null
   hotspotBindingActive?: boolean | null
-  hotspotSessionActive?: boolean | null
 }
 
 export type HotspotAccessStatus = 'ok' | 'blocked' | 'inactive' | 'expired' | 'habis' | 'fup'
@@ -15,8 +14,7 @@ const STATUS_ROUTE_MAP: Record<Exclude<HotspotAccessStatus, 'ok'>, string> = {
 }
 
 export function shouldRedirectToHotspotRequired(input: HotspotRedirectInput): boolean {
-  const bindingActive = input.hotspotBindingActive ?? input.hotspotSessionActive
-  return input.hotspotLoginRequired === true && bindingActive !== true
+  return input.hotspotLoginRequired === true && input.hotspotBindingActive !== true
 }
 
 export function resolvePostHotspotRecheckRoute(status: HotspotAccessStatus): string {

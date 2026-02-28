@@ -597,9 +597,16 @@ export const useAuthStore = defineStore('auth', () => {
     const route = routeInfo ?? useRoute()
     const routePath = route?.path ?? ''
     const context: 'login' | 'captive' = routePath.startsWith('/captive') ? 'captive' : 'login'
+    const query = (route as any)?.query ?? {}
+    const clientIp = (query.client_ip ?? query.ip ?? query['client-ip']) as string | undefined
+    const clientMac = (query.client_mac ?? query.mac ?? query['mac-address'] ?? query['mac']) as string | undefined
+    const hasIdentityHints = Boolean(clientIp || clientMac)
+    const isCaptiveRoute = routePath.startsWith('/captive')
+    const shouldAttemptAutoLoginForRoute = isCaptiveRoute || hasIdentityHints
     const shouldAttemptAutoLogin = import.meta.client
       && user.value == null
       && autoLoginAttempted.value !== true
+      && shouldAttemptAutoLoginForRoute
 
     if (initialAuthCheckDone.value === true && !shouldAttemptAutoLogin) {
       const staleAfterMs = 15000
@@ -618,9 +625,6 @@ export const useAuthStore = defineStore('auth', () => {
         try {
           if (!routePath.startsWith('/admin')) {
             const { $api } = useNuxtApp()
-            const query = (route as any)?.query ?? {}
-            const clientIp = (query.client_ip ?? query.ip ?? query['client-ip']) as string | undefined
-            const clientMac = (query.client_mac ?? query.mac ?? query['mac-address'] ?? query['mac']) as string | undefined
             const body: Record<string, string> = {}
             if (clientIp)
               body.client_ip = clientIp

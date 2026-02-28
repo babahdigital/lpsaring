@@ -312,9 +312,16 @@ async function handleVerifyOtp() {
       if (shouldRedirectToHotspotRequired({
         hotspotLoginRequired: loginResponse.hotspot_login_required,
         hotspotBindingActive: loginResponse.hotspot_binding_active,
-        hotspotSessionActive: loginResponse.hotspot_session_active,
       })) {
-        await navigateTo('/login/hotspot-required', { replace: true })
+        const hotspotQuery = new URLSearchParams()
+        if (clientIp)
+          hotspotQuery.set('client_ip', clientIp)
+        if (clientMac)
+          hotspotQuery.set('client_mac', clientMac)
+        const hotspotRequiredPath = hotspotQuery.toString().length > 0
+          ? `/login/hotspot-required?${hotspotQuery.toString()}`
+          : '/login/hotspot-required'
+        await navigateTo(hotspotRequiredPath, { replace: true })
         return
       }
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from http import HTTPStatus
 
-from flask import jsonify
+from flask import current_app, jsonify
 
 
 def get_hotspot_session_status_impl(
@@ -27,6 +27,9 @@ def get_hotspot_session_status_impl(
     hotspot_login_required = bool(is_hotspot_login_required(user))
     hotspot_binding_active = None
     hotspot_hint_applied = False
+    binding_lookup_mode = "none"
+    fallback_attempted = False
+    fallback_applied = False
 
     def _first_non_empty(*keys):
         for key in keys:
@@ -47,8 +50,6 @@ def get_hotspot_session_status_impl(
             binding_mac = incoming_mac
             allow_user_level_fallback = True
             try:
-                from flask import current_app
-
                 allow_user_level_fallback = (
                     str(current_app.config.get("HOTSPOT_SESSION_STATUS_ALLOW_USER_LEVEL_FALLBACK", "False")).strip().lower()
                     in {"1", "true", "yes", "on"}
@@ -63,19 +64,33 @@ def get_hotspot_session_status_impl(
                     if router_mac:
                         hotspot_hint_applied = True
                         binding_mac = router_mac
+                        binding_lookup_mode = "router-mac"
                         if incoming_mac and incoming_mac != router_mac:
                             hotspot_binding_active = False
+                            current_app.logger.info(
+                                "hotspot_session_status_decision user_id=%s username=%s input_ip=%s input_mac=%s resolved_mac=%s binding_active=%s lookup_mode=%s fallback_attempted=%s fallback_applied=%s reason=mac_hint_mismatch",
+                                user.id,
+                                username_for_hotspot,
+                                client_ip_hint,
+                                incoming_mac,
+                                router_mac,
+                                hotspot_binding_active,
+                                binding_lookup_mode,
+                                fallback_attempted,
+                                fallback_applied,
+                            )
                             return (
                                 jsonify(
                                     {
                                         "hotspot_login_required": hotspot_login_required,
                                         "hotspot_binding_active": hotspot_binding_active,
-                                        "hotspot_session_active": hotspot_binding_active,
                                         "hotspot_hint_applied": hotspot_hint_applied,
                                     }
                                 ),
                                 HTTPStatus.OK,
                             )
+            if binding_lookup_mode == "none":
+                binding_lookup_mode = "hint-or-user"
 
             try:
                 with get_mikrotik_connection() as api_connection:
@@ -97,6 +112,7 @@ def get_hotspot_session_status_impl(
                                     should_try_user_level_fallback = True
 
                             if should_try_user_level_fallback:
+                                fallback_attempted = True
                                 ok_fallback, has_fallback_binding, _ = has_hotspot_ip_binding_for_user(
                                     api_connection,
                                     username=username_for_hotspot,
@@ -105,15 +121,30 @@ def get_hotspot_session_status_impl(
                                 )
                                 if ok_fallback:
                                     hotspot_binding_active = bool(has_fallback_binding)
+                                    fallback_applied = True
+                                    binding_lookup_mode = "user-fallback"
             except Exception:
                 hotspot_binding_active = None
+
+    current_app.logger.info(
+        "hotspot_session_status_decision user_id=%s username=%s input_ip=%s input_mac=%s binding_active=%s login_required=%s hint_applied=%s lookup_mode=%s fallback_attempted=%s fallback_applied=%s",
+        user.id,
+        format_to_local_phone(getattr(user, "phone_number", None) or ""),
+        _first_non_empty("client_ip", "ip", "client-ip"),
+        normalize_mac(_first_non_empty("client_mac", "mac", "mac-address", "client-mac") or ""),
+        hotspot_binding_active,
+        hotspot_login_required,
+        hotspot_hint_applied,
+        binding_lookup_mode,
+        fallback_attempted,
+        fallback_applied,
+    )
 
     return (
         jsonify(
             {
                 "hotspot_login_required": hotspot_login_required,
                 "hotspot_binding_active": hotspot_binding_active,
-                "hotspot_session_active": hotspot_binding_active,
                 "hotspot_hint_applied": hotspot_hint_applied,
             }
         ),

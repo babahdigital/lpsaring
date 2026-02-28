@@ -2,31 +2,31 @@ import { describe, expect, it } from 'vitest'
 import { resolvePostHotspotRecheckRoute, shouldRedirectToHotspotRequired } from '../utils/hotspotRedirect'
 
 describe('shouldRedirectToHotspotRequired', () => {
-  it('returns true when hotspot login required and session explicitly inactive', () => {
+  it('returns true when hotspot login required and binding explicitly inactive', () => {
     expect(shouldRedirectToHotspotRequired({
       hotspotLoginRequired: true,
-      hotspotSessionActive: false,
+      hotspotBindingActive: false,
     })).toBe(true)
   })
 
-  it('returns false when session is active', () => {
+  it('returns false when binding is active', () => {
     expect(shouldRedirectToHotspotRequired({
       hotspotLoginRequired: true,
-      hotspotSessionActive: true,
+      hotspotBindingActive: true,
     })).toBe(false)
   })
 
-  it('returns true when session state is unknown', () => {
+  it('returns true when binding state is unknown', () => {
     expect(shouldRedirectToHotspotRequired({
       hotspotLoginRequired: true,
-      hotspotSessionActive: null,
+      hotspotBindingActive: null,
     })).toBe(true)
   })
 
   it('returns false when hotspot login is not required', () => {
     expect(shouldRedirectToHotspotRequired({
       hotspotLoginRequired: false,
-      hotspotSessionActive: false,
+      hotspotBindingActive: false,
     })).toBe(false)
   })
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useAuthStore } from '~/store/auth'
 definePageMeta({
   layout: 'blank',
@@ -13,6 +13,7 @@ const authStore = useAuthStore()
 const { public: { captiveSuccessRedirectUrl } } = useRuntimeConfig()
 const countdown = ref(5)
 const isClosing = ref(false)
+let statusRecheckInterval: ReturnType<typeof setInterval> | null = null
 
 function isConnectedStatus(status: string): boolean {
   return status === 'ok' || status === 'fup'
@@ -30,6 +31,40 @@ function startAutoClose() {
     }
     countdown.value -= 1
   }, 1000)
+}
+
+function stopStatusRecheck() {
+  if (statusRecheckInterval != null) {
+    clearInterval(statusRecheckInterval)
+    statusRecheckInterval = null
+  }
+}
+
+async function recheckAccessStatus() {
+  await authStore.refreshSessionStatus('/captive/terhubung')
+  const latestUser = authStore.currentUser ?? authStore.lastKnownUser
+  if (!latestUser) {
+    await navigateTo('/captive', { replace: true })
+    return
+  }
+
+  const latestStatus = authStore.getAccessStatusFromUser(latestUser)
+  if (!isConnectedStatus(latestStatus)) {
+    stopStatusRecheck()
+    const redirectPath = authStore.getRedirectPathForStatus(latestStatus, 'captive') || '/captive'
+    await navigateTo(redirectPath, { replace: true })
+  }
+}
+
+function startStatusRecheck() {
+  if (!import.meta.client)
+    return
+  stopStatusRecheck()
+  statusRecheckInterval = setInterval(() => {
+    recheckAccessStatus().catch(() => {
+      // best-effort periodic check
+    })
+  }, 4000)
 }
 
 function handleDone() {
@@ -59,7 +94,15 @@ onMounted(() => {
     return
   }
 
+  recheckAccessStatus().catch(() => {
+    // best-effort immediate check
+  })
+  startStatusRecheck()
   startAutoClose()
+})
+
+onBeforeUnmount(() => {
+  stopStatusRecheck()
 })
 </script>
 

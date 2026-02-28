@@ -169,6 +169,20 @@ def verify_otp_impl(
         client_ip = data.client_ip
         client_mac = data.client_mac
         user_agent = request.headers.get("User-Agent")
+        is_production_like = str(current_app.config.get("FLASK_ENV", "")).strip().lower() == "production"
+        require_trusted_captive_context = bool(
+            current_app.config.get("VERIFY_OTP_REQUIRE_TRUSTED_CAPTIVE_CONTEXT_PRODUCTION", True)
+        ) and is_production_like
+        allow_raw_client_mac_fallback = bool(current_app.config.get("VERIFY_OTP_ALLOW_RAW_CLIENT_MAC_FALLBACK", False))
+
+        if require_trusted_captive_context and data.hotspot_login_context is True and not (client_ip or client_mac):
+            current_app.logger.warning(
+                "Verify-OTP rejected: hotspot context without identity in production user_agent=%s",
+                user_agent,
+            )
+            return jsonify(
+                AuthErrorResponseSchema(error="Konteks hotspot tidak valid. Silakan login dari halaman captive yang resmi.").model_dump()
+            ), HTTPStatus.FORBIDDEN
 
         login_ip_for_history = client_ip
         hotspot_login_required = is_hotspot_login_required(user_to_login)
@@ -228,7 +242,17 @@ def verify_otp_impl(
             binding_context["mac_source"] = "mikrotik"
             binding_context["mac_message"] = "MAC authoritative dari router"
         elif incoming_mac:
-            authoritative_binding_mac = incoming_mac
+            if allow_raw_client_mac_fallback and not require_trusted_captive_context:
+                authoritative_binding_mac = incoming_mac
+            else:
+                current_app.logger.warning(
+                    "Verify-OTP rejected: raw client_mac without authoritative router MAC user=%s incoming_mac=%s",
+                    user_to_login.id,
+                    incoming_mac,
+                )
+                return jsonify(
+                    AuthErrorResponseSchema(error="Identitas perangkat tidak valid.").model_dump()
+                ), HTTPStatus.FORBIDDEN
 
         if hotspot_login_required:
             username_for_hotspot = format_to_local_phone(user_to_login.phone_number)
@@ -389,7 +413,6 @@ def verify_otp_impl(
                 session_url=session_url,
                 hotspot_login_required=hotspot_login_required,
                 hotspot_binding_active=hotspot_binding_active,
-                hotspot_session_active=hotspot_binding_active,
             ).model_dump()
         )
         set_auth_cookie(response, access_token)

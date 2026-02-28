@@ -63,7 +63,6 @@ def test_hotspot_session_status_reports_active_binding():
     payload = response.get_json()
     assert payload["hotspot_login_required"] is True
     assert payload["hotspot_binding_active"] is True
-    assert payload["hotspot_session_active"] is True
     assert payload["hotspot_hint_applied"] is False
 
 
@@ -95,7 +94,6 @@ def test_hotspot_session_status_reports_inactive_when_binding_missing():
     payload = response.get_json()
     assert payload["hotspot_login_required"] is True
     assert payload["hotspot_binding_active"] is False
-    assert payload["hotspot_session_active"] is False
 
 
 def test_hotspot_session_status_checks_mac_hint_then_fallback_when_ip_matches_hotspot_user_ip():
@@ -134,7 +132,6 @@ def test_hotspot_session_status_checks_mac_hint_then_fallback_when_ip_matches_ho
     payload = response.get_json()
     assert payload["hotspot_login_required"] is True
     assert payload["hotspot_binding_active"] is True
-    assert payload["hotspot_session_active"] is True
     assert payload["hotspot_hint_applied"] is True
 
 
@@ -174,7 +171,6 @@ def test_hotspot_session_status_does_not_fallback_when_ip_mismatch():
     payload = response.get_json()
     assert payload["hotspot_login_required"] is True
     assert payload["hotspot_binding_active"] is False
-    assert payload["hotspot_session_active"] is False
     assert payload["hotspot_hint_applied"] is True
 
 
@@ -206,5 +202,4 @@ def test_hotspot_session_status_rejects_mismatched_mac_hint():
     payload = response.get_json()
     assert payload["hotspot_login_required"] is True
     assert payload["hotspot_binding_active"] is False
-    assert payload["hotspot_session_active"] is False
     assert payload["hotspot_hint_applied"] is True

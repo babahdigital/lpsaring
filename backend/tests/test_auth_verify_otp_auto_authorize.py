@@ -246,7 +246,7 @@ def test_verify_otp_still_self_authorizes_when_otp_auto_authorize_disabled(monke
     assert captured["bypass"] is True
 
 
-def test_verify_otp_hotspot_session_active_uses_precheck_not_post_binding(monkeypatch):
+def test_verify_otp_hotspot_binding_active_uses_precheck_not_post_binding(monkeypatch):
     user = SimpleNamespace(
         id="user-3",
         phone_number="+628123999000",
@@ -311,4 +311,44 @@ def test_verify_otp_hotspot_session_active_uses_precheck_not_post_binding(monkey
     payload = cast(dict, response.get_json())
     assert payload["hotspot_login_required"] is True
     assert payload["hotspot_binding_active"] is False
-    assert payload["hotspot_session_active"] is False
+
+
+def test_verify_otp_rejects_hotspot_context_without_identity_in_production(monkeypatch):
+    user = SimpleNamespace(
+        id="user-4",
+        phone_number="+628123111222",
+        role=UserRole.USER,
+        is_active=True,
+        approval_status=ApprovalStatus.APPROVED,
+        is_blocked=False,
+        mikrotik_password="pw",
+        last_login_at=None,
+    )
+
+    fake_session = _FakeSession(user, scalar_value=None)
+    monkeypatch.setattr(auth_routes, "db", _FakeDb(fake_session))
+    monkeypatch.setattr(auth_routes, "verify_otp_from_redis", lambda *_a, **_k: True)
+    monkeypatch.setattr(auth_routes, "normalize_to_e164", lambda p: p)
+    monkeypatch.setattr(auth_routes, "get_phone_number_variations", lambda p: [p])
+
+    app = _make_app()
+    app.config.update(
+        FLASK_ENV="production",
+        VERIFY_OTP_REQUIRE_TRUSTED_CAPTIVE_CONTEXT_PRODUCTION=True,
+    )
+    verify_impl = _unwrap_decorators(auth_routes.verify_otp)
+
+    with app.test_request_context(
+        "/api/auth/verify-otp",
+        method="POST",
+        json={
+            "phone_number": "+628123111222",
+            "otp": "123456",
+            "hotspot_login_context": True,
+        },
+        headers={"User-Agent": "pytest"},
+    ):
+        response, status = verify_impl()
+
+    assert status == 403
+    assert "konteks hotspot" in cast(str, response.get_json().get("error", "")).lower()
