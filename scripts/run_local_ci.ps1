@@ -15,10 +15,32 @@ $ErrorActionPreference = "Stop"
 
 [string]$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 [string]$ProjectRoot = Split-Path -Parent $ScriptDir
-[string]$ComposePath = Join-Path $ProjectRoot $ComposeFile
+
+function Resolve-ComposePath([string]$InputPath) {
+  if (-not $InputPath) { return $null }
+
+  $candidates = @()
+  if ([System.IO.Path]::IsPathRooted($InputPath)) {
+    $candidates += $InputPath
+  } else {
+    $candidates += (Join-Path $ProjectRoot $InputPath)
+    $candidates += (Join-Path (Split-Path -Parent $ProjectRoot) $InputPath)
+    $candidates += (Join-Path (Get-Location).Path $InputPath)
+  }
+
+  foreach ($candidate in $candidates) {
+    if (Test-Path $candidate) {
+      return (Resolve-Path $candidate).Path
+    }
+  }
+
+  return $null
+}
+
+[string]$ComposePath = Resolve-ComposePath $ComposeFile
 
 if (-not (Test-Path $ComposePath)) {
-  throw "Compose file tidak ditemukan: $ComposePath"
+  throw "Compose file tidak ditemukan: $ComposeFile"
 }
 
 # Compose E2E pakai APP_ENV untuk memilih env_file.

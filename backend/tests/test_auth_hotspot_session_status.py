@@ -56,6 +56,7 @@ def test_hotspot_session_status_reports_active_binding():
             is_hotspot_login_required=lambda *_a, **_k: True,
             get_mikrotik_connection=_conn,
             has_hotspot_ip_binding_for_user=lambda *_a, **_k: (True, True, "ok"),
+            get_hotspot_user_ip=lambda *_a, **_k: (True, None, "no-ip"),
         )
 
     assert status == 200
@@ -87,6 +88,7 @@ def test_hotspot_session_status_reports_inactive_when_binding_missing():
             is_hotspot_login_required=lambda *_a, **_k: True,
             get_mikrotik_connection=_conn,
             has_hotspot_ip_binding_for_user=lambda *_a, **_k: (True, False, "not-found"),
+            get_hotspot_user_ip=lambda *_a, **_k: (True, None, "no-ip"),
         )
 
     assert status == 200
@@ -96,7 +98,7 @@ def test_hotspot_session_status_reports_inactive_when_binding_missing():
     assert payload["hotspot_session_active"] is False
 
 
-def test_hotspot_session_status_checks_mac_hint_first_then_fallback():
+def test_hotspot_session_status_checks_mac_hint_then_fallback_when_ip_matches_hotspot_user_ip():
     app = _make_app()
     app.config.update(HOTSPOT_SESSION_STATUS_ALLOW_USER_LEVEL_FALLBACK=True)
     user = SimpleNamespace(id="u-3", phone_number="+628122333444")
@@ -125,6 +127,7 @@ def test_hotspot_session_status_checks_mac_hint_first_then_fallback():
             is_hotspot_login_required=lambda *_a, **_k: True,
             get_mikrotik_connection=_conn,
             has_hotspot_ip_binding_for_user=_has_binding,
+            get_hotspot_user_ip=lambda *_a, **_k: (True, "172.16.2.10", "Sukses (hotspot host)"),
         )
 
     assert status == 200
@@ -132,6 +135,46 @@ def test_hotspot_session_status_checks_mac_hint_first_then_fallback():
     assert payload["hotspot_login_required"] is True
     assert payload["hotspot_binding_active"] is True
     assert payload["hotspot_session_active"] is True
+    assert payload["hotspot_hint_applied"] is True
+
+
+def test_hotspot_session_status_does_not_fallback_when_ip_mismatch():
+    app = _make_app()
+    app.config.update(HOTSPOT_SESSION_STATUS_ALLOW_USER_LEVEL_FALLBACK=True)
+    user = SimpleNamespace(id="u-3b", phone_number="+628122333445")
+
+    @contextmanager
+    def _conn(*_args, **_kwargs):
+        yield object()
+
+    def _has_binding(_api, *, username, user_id, mac_address):
+        if mac_address == "AA:BB:CC:DD:EE:11":
+            return True, False, "mac-not-found"
+        if mac_address is None:
+            return True, True, "user-level-found"
+        return True, False, "not-found"
+
+    with app.app_context():
+        response, status = get_hotspot_session_status_impl(
+            current_user_id="u-3b",
+            db=_FakeDb(user),
+            User=SimpleNamespace,
+            AuthErrorResponseSchema=_SchemaStub,
+            query_args={"client_ip": "172.16.2.10", "client_mac": "aa:bb:cc:dd:ee:11"},
+            format_to_local_phone=lambda *_a, **_k: "08122333445",
+            normalize_mac=lambda value: str(value or "").strip().upper() or None,
+            resolve_client_mac=lambda *_a, **_k: (True, "AA:BB:CC:DD:EE:11", "ok"),
+            is_hotspot_login_required=lambda *_a, **_k: True,
+            get_mikrotik_connection=_conn,
+            has_hotspot_ip_binding_for_user=_has_binding,
+            get_hotspot_user_ip=lambda *_a, **_k: (True, "172.16.99.99", "Sukses (hotspot host)"),
+        )
+
+    assert status == 200
+    payload = response.get_json()
+    assert payload["hotspot_login_required"] is True
+    assert payload["hotspot_binding_active"] is False
+    assert payload["hotspot_session_active"] is False
     assert payload["hotspot_hint_applied"] is True
 
 
@@ -156,6 +199,7 @@ def test_hotspot_session_status_rejects_mismatched_mac_hint():
             is_hotspot_login_required=lambda *_a, **_k: True,
             get_mikrotik_connection=_conn,
             has_hotspot_ip_binding_for_user=lambda *_a, **_k: (True, True, "ok"),
+            get_hotspot_user_ip=lambda *_a, **_k: (True, None, "no-ip"),
         )
 
     assert status == 200

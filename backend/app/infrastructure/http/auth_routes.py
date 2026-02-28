@@ -53,6 +53,7 @@ from app.infrastructure.gateways.mikrotik_client import (
     activate_or_update_hotspot_user,
     get_mikrotik_connection,
     has_hotspot_ip_binding_for_user,
+    get_hotspot_user_ip,
 )
 from app.services.device_management_service import (
     apply_device_binding_for_login,
@@ -394,6 +395,7 @@ def get_hotspot_session_status(current_user_id: uuid.UUID):
         is_hotspot_login_required=is_hotspot_login_required,
         get_mikrotik_connection=get_mikrotik_connection,
         has_hotspot_ip_binding_for_user=has_hotspot_ip_binding_for_user,
+        get_hotspot_user_ip=get_hotspot_user_ip,
     )
 
 

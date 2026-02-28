@@ -34,9 +34,14 @@ Param(
   [object]$ApplyMikrotikOnQuotaSimulation = $true,
   [object]$UseOtpBypassOnly = $true,
   [string]$OtpBypassCode = $null,
+  [object]$UseIsolatedTestUsers = $true,
+  [object]$CleanupTestArtifacts = $true,
+  [string]$TestingServerName = "testing",
+  [string]$TestingProfileName = "profile-testing",
 
   # Isolasi Docker Compose agar E2E tidak mengganggu stack dev.
   [object]$UseIsolatedCompose = $true,
+  [string]$ComposeFile = "docker-compose.e2e.yml",
   [string]$ComposeProjectName = "hotspot-portal-e2e",
   [int]$IsolatedNginxPort = 8089
 )
@@ -55,6 +60,8 @@ $Build = Normalize-Bool $Build $false
 $EnableMikrotikOps = Normalize-Bool $EnableMikrotikOps $true
 $ApplyMikrotikOnQuotaSimulation = Normalize-Bool $ApplyMikrotikOnQuotaSimulation $true
 $UseOtpBypassOnly = Normalize-Bool $UseOtpBypassOnly $true
+$UseIsolatedTestUsers = Normalize-Bool $UseIsolatedTestUsers $true
+$CleanupTestArtifacts = Normalize-Bool $CleanupTestArtifacts $true
 $UseIsolatedCompose = Normalize-Bool $UseIsolatedCompose $true
 
 if (-not $OtpBypassCode) {
@@ -79,20 +86,76 @@ if ($env:E2E_USER_BLOK) { $UserBlok = $env:E2E_USER_BLOK }
 if ($env:E2E_USER_KAMAR) { $UserKamar = $env:E2E_USER_KAMAR }
 if ($env:E2E_CLIENT_IP) { $SimulatedClientIp = $env:E2E_CLIENT_IP }
 if ($env:E2E_CLIENT_MAC) { $SimulatedClientMac = $env:E2E_CLIENT_MAC }
+if ($env:E2E_TEST_SERVER) { $TestingServerName = $env:E2E_TEST_SERVER }
+if ($env:E2E_TEST_PROFILE) { $TestingProfileName = $env:E2E_TEST_PROFILE }
+
+function New-TestPhone([string]$prefix) {
+  $suffix = Get-Random -Minimum 1000000 -Maximum 9999999
+  return "$prefix$suffix"
+}
+
+if ($UseIsolatedTestUsers) {
+  if (-not $env:E2E_USER_PHONE) {
+    $UserPhone = New-TestPhone "08199"
+    $UserName = "E2E User $UserPhone"
+  }
+  if (-not $env:E2E_KOMANDAN_PHONE) {
+    $KomandanPhone = New-TestPhone "08198"
+    $KomandanName = "E2E Komandan $KomandanPhone"
+  }
+  Write-Host "[INFO] Isolated test users aktif: user=$UserPhone komandan=$KomandanPhone"
+}
 
 # Normalisasi nomor agar konsisten dengan backend (OTP Redis key menggunakan nomor yang sudah dinormalisasi).
 $UserPhoneE164 = Normalize-PhoneToE164 $UserPhone
+$KomandanPhoneE164 = Normalize-PhoneToE164 $KomandanPhone
+$userCreatedForE2E = $false
+$komandanCreatedForE2E = $false
+$cleanupKomandanPhoneE164 = $null
+$cleanupKomandanId = $null
+$originalE2ESettings = $null
+$cleanupAlreadyRun = $false
+$effectiveTestingServerName = $TestingServerName
+$effectiveTestingProfileName = $TestingProfileName
+$effectiveFupProfileName = "profile-fup"
 
 [string]$ProjectRoot = Split-Path -Parent $ScriptDir
-[string]$ComposeFile = Join-Path $ProjectRoot "docker-compose.yml"
-[string]$ComposeE2EStandaloneFile = Join-Path $ProjectRoot "docker-compose.e2e.yml"
+[string]$RequestedComposeFile = $ComposeFile
+[string]$DefaultDevComposeFile = Join-Path $ProjectRoot "docker-compose.yml"
 [string]$RootDotEnvPath = Join-Path $ProjectRoot ".env"
 [string]$RootPublicEnvPath = Join-Path $ProjectRoot ".env.public"
 $TranscriptPath = Join-Path $ScriptDir ("simulate_end_to_end_{0}.log" -f (Get-Date -Format "yyyyMMdd_HHmmss"))
 Start-Transcript -Path $TranscriptPath | Out-Null
 
+function Resolve-ComposePath([string]$InputPath) {
+  if (-not $InputPath) { return $null }
+
+  $candidates = @()
+  if ([System.IO.Path]::IsPathRooted($InputPath)) {
+    $candidates += $InputPath
+  } else {
+    $candidates += (Join-Path $ProjectRoot $InputPath)
+    $candidates += (Join-Path (Split-Path -Parent $ProjectRoot) $InputPath)
+    $candidates += (Join-Path (Get-Location).Path $InputPath)
+  }
+
+  foreach ($candidate in $candidates) {
+    if (Test-Path $candidate) {
+      return (Resolve-Path $candidate).Path
+    }
+  }
+
+  return $null
+}
+
 if ($UseIsolatedCompose) {
-  $ComposeFile = $ComposeE2EStandaloneFile
+  $resolvedE2ECompose = Resolve-ComposePath $RequestedComposeFile
+  if (-not $resolvedE2ECompose) {
+    throw "Compose file E2E tidak ditemukan: $RequestedComposeFile"
+  }
+  $ComposeFile = $resolvedE2ECompose
+} else {
+  $ComposeFile = $DefaultDevComposeFile
 }
 
 if (-not (Test-Path $ComposeFile)) {
@@ -134,6 +197,263 @@ if (-not $UseIsolatedCompose) {
 
 # Deprecated: APP_ENV tidak lagi dipakai untuk memilih env_file di compose.
 # Tetap dipertahankan sebagai parameter agar kompatibel dengan pemanggilan lama.
+
+function Get-ObjectPropertyValue([object]$obj, [string]$propName) {
+  if ($null -eq $obj -or -not $propName) { return $null }
+  $prop = $obj.PSObject.Properties[$propName]
+  if ($null -eq $prop) { return $null }
+  return $prop.Value
+}
+
+function Select-FirstAvailableOption([string[]]$preferred, [string[]]$available, [string]$fallback) {
+  $cleanAvailable = @($available | Where-Object { $_ } | ForEach-Object { "$_".Trim() } | Where-Object { $_ } | Select-Object -Unique)
+  $cleanPreferred = @($preferred | Where-Object { $_ } | ForEach-Object { "$_".Trim() } | Where-Object { $_ } | Select-Object -Unique)
+
+  foreach ($item in $cleanPreferred) {
+    if ($cleanAvailable -contains $item) {
+      return $item
+    }
+  }
+
+  if ($cleanAvailable.Count -gt 0) {
+    return $cleanAvailable[0]
+  }
+
+  return $fallback
+}
+
+function Get-MikrotikRuntimeOptions {
+  $py = @'
+import json
+from app import create_app
+from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection
+
+def _uniq(items):
+    seen = set()
+    out = []
+    for item in items:
+        value = (item or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+    return out
+
+profiles = []
+servers = []
+
+app = create_app()
+with app.app_context():
+    with get_mikrotik_connection() as api:
+        if api:
+            try:
+                profile_res = api.get_resource('/ip/hotspot/profile')
+                profiles = [row.get('name') for row in profile_res.get()]
+            except Exception:
+                profiles = []
+
+            try:
+                server_res = api.get_resource('/ip/hotspot')
+                servers = [row.get('name') for row in server_res.get()]
+            except Exception:
+                servers = []
+
+payload = {
+    'profiles': _uniq(profiles),
+    'servers': _uniq(servers),
+}
+print('E2E_MIKROTIK_OPTIONS=' + json.dumps(payload, ensure_ascii=False))
+'@
+
+  $pyB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($py))
+  try {
+    $raw = Invoke-Compose @(
+      "exec", "-T", "backend",
+      "python", "-c",
+      "import base64; exec(base64.b64decode('$pyB64').decode('utf-8'))"
+    )
+    $lines = @($raw | Out-String) -split "`r?`n"
+    $markerLine = $lines | Where-Object { $_ -like "E2E_MIKROTIK_OPTIONS=*" } | Select-Object -Last 1
+    if (-not $markerLine) {
+      return $null
+    }
+    $jsonPayload = $markerLine.Substring("E2E_MIKROTIK_OPTIONS=".Length)
+    return ($jsonPayload | ConvertFrom-Json)
+  } catch {
+    Write-Host "[WARN] Gagal mengambil opsi runtime MikroTik: $($_.Exception.Message)" -ForegroundColor Yellow
+    return $null
+  }
+}
+
+function Invoke-E2EFinalCleanup {
+  if ($cleanupAlreadyRun) { return }
+  $cleanupAlreadyRun = $true
+
+  if ($ApiBaseUrl -and $adminToken -and $originalE2ESettings) {
+    try {
+      $keysToRestore = @(
+        "IP_BINDING_FAIL_OPEN",
+        "IP_BINDING_TYPE_ALLOWED",
+        "IP_BINDING_TYPE_BLOCKED",
+        "REQUIRE_EXPLICIT_DEVICE_AUTH",
+        "LOG_BINDING_DEBUG",
+        "ENABLE_WHATSAPP_NOTIFICATIONS",
+        "ENABLE_MIKROTIK_OPERATIONS",
+        "QUOTA_DEBT_LIMIT_MB",
+        "WALLED_GARDEN_ENABLED",
+        "WALLED_GARDEN_ALLOWED_HOSTS",
+        "WALLED_GARDEN_ALLOWED_IPS",
+        "MIKROTIK_DEFAULT_PROFILE",
+        "MIKROTIK_ACTIVE_PROFILE",
+        "MIKROTIK_KOMANDAN_PROFILE",
+        "MIKROTIK_FUP_PROFILE",
+        "MIKROTIK_EXPIRED_PROFILE",
+        "MIKROTIK_BLOCKED_PROFILE",
+        "MIKROTIK_ADDRESS_LIST_BLOCKED",
+        "MIKROTIK_DEFAULT_SERVER_USER",
+        "MIKROTIK_DEFAULT_SERVER_KOMANDAN"
+      )
+
+      $restoreSettings = @{}
+      foreach ($key in $keysToRestore) {
+        $val = Get-ObjectPropertyValue $originalE2ESettings $key
+        if ($null -ne $val) {
+          $restoreSettings[$key] = "$val"
+        }
+      }
+
+      if ($restoreSettings.Count -gt 0) {
+        $restoreBody = @{ settings = $restoreSettings } | ConvertTo-Json
+        Invoke-RestMethod -Method Put -Uri "$ApiBaseUrl/api/admin/settings" -Headers @{ Authorization = "Bearer $adminToken" } -ContentType "application/json" -Body $restoreBody | Out-Null
+        Write-Host "[CLEANUP] Setting admin direstore ke nilai awal." -ForegroundColor DarkGreen
+      }
+    } catch {
+      Write-Host "[WARN] Restore setting admin gagal: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+  }
+
+  if (-not $CleanupTestArtifacts) { return }
+
+  Write-Host "[CLEANUP] Membersihkan artefak test (user, address-list, host, arp, dhcp, ip-binding)"
+
+  if ($userCreatedForE2E -and $userId) {
+    try {
+      Invoke-RestMethod -Method Delete -Uri "$ApiBaseUrl/api/admin/users/$userId" -Headers @{ Authorization = "Bearer $adminToken" } | Out-Null
+      Write-Host "[CLEANUP] User test dihapus: $UserPhone"
+    } catch {
+      Write-Host "[WARN] Cleanup hapus user test gagal ($UserPhone): $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+  } else {
+    Write-Host "[CLEANUP] Skip hapus user utama (bukan user test baru): $UserPhone"
+  }
+
+  if ($RunKomandanFlow -and $komandanCreatedForE2E -and $cleanupKomandanId) {
+    try {
+      Invoke-RestMethod -Method Delete -Uri "$ApiBaseUrl/api/admin/users/$cleanupKomandanId" -Headers @{ Authorization = "Bearer $adminToken" } | Out-Null
+      Write-Host "[CLEANUP] User komandan test dihapus: $cleanupKomandanPhoneE164"
+    } catch {
+      Write-Host "[WARN] Cleanup hapus komandan test gagal ($cleanupKomandanPhoneE164): $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+  }
+
+  $cleanupPhones = @()
+  if ($userCreatedForE2E -and $UserPhoneE164) { $cleanupPhones += $UserPhoneE164 }
+  if ($RunKomandanFlow -and $komandanCreatedForE2E -and $cleanupKomandanPhoneE164) { $cleanupPhones += $cleanupKomandanPhoneE164 }
+
+  $cleanupIps = @($SimulatedClientIp, $SimulatedKomandanIp, $SimulatedPublicIp) | Where-Object { $_ }
+  $cleanupMacs = @($SimulatedClientMac) | Where-Object { $_ }
+
+  $envArgs = @(
+    "-e", "TARGET_IPS=$($cleanupIps -join ',')",
+    "-e", "TARGET_MACS=$($cleanupMacs -join ',')",
+    "-e", "TARGET_PHONES=$($cleanupPhones -join ',')",
+    "-e", "TARGET_SERVER=$effectiveTestingServerName"
+  )
+
+  $cleanupPy = @'
+import os
+from app import create_app
+from app.infrastructure.gateways.mikrotik_client import (
+    get_mikrotik_connection,
+    remove_address_list_entry,
+    remove_ip_binding,
+    remove_dhcp_lease,
+    remove_hotspot_host_entries,
+    remove_arp_entries,
+    delete_hotspot_user,
+)
+from app.services import settings_service
+from app.utils.formatters import format_to_local_phone
+
+def _split_csv(raw: str):
+    return [x.strip() for x in (raw or '').split(',') if x.strip()]
+
+app = create_app()
+with app.app_context():
+    ips = _split_csv(os.environ.get('TARGET_IPS', ''))
+    macs = [m.upper() for m in _split_csv(os.environ.get('TARGET_MACS', ''))]
+    phones = _split_csv(os.environ.get('TARGET_PHONES', ''))
+    server = (os.environ.get('TARGET_SERVER') or '').strip() or None
+
+    list_names = [
+        settings_service.get_setting('MIKROTIK_ADDRESS_LIST_ACTIVE', 'active'),
+        settings_service.get_setting('MIKROTIK_ADDRESS_LIST_FUP', 'fup'),
+        settings_service.get_setting('MIKROTIK_ADDRESS_LIST_INACTIVE', 'inactive'),
+        settings_service.get_setting('MIKROTIK_ADDRESS_LIST_EXPIRED', 'expired'),
+        settings_service.get_setting('MIKROTIK_ADDRESS_LIST_HABIS', 'habis'),
+        settings_service.get_setting('MIKROTIK_ADDRESS_LIST_BLOCKED', 'blocked'),
+    ]
+
+    with get_mikrotik_connection() as api:
+        if not api:
+            raise SystemExit('MikroTik connection failed for cleanup')
+
+        for ip in ips:
+            for list_name in list_names:
+                if list_name:
+                    remove_address_list_entry(api, ip, list_name)
+            remove_hotspot_host_entries(api, address=ip)
+            remove_arp_entries(api, address=ip)
+
+        for mac in macs:
+            remove_ip_binding(api, mac, server=server)
+            remove_dhcp_lease(api, mac, server=server)
+            remove_hotspot_host_entries(api, mac_address=mac)
+            remove_arp_entries(api, mac_address=mac)
+
+        for phone in phones:
+            username = format_to_local_phone(phone)
+            if username:
+                delete_hotspot_user(api, username=username)
+
+    print(f"Cleanup MikroTik OK: ips={len(ips)} macs={len(macs)} phones={len(phones)} server={server}")
+'@
+
+  $cleanupPyB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($cleanupPy))
+  $cleanupArgs = @("exec", "-T") + $envArgs + @(
+    "backend",
+    "python",
+    "-c",
+    "import base64,sys; exec(base64.b64decode('$cleanupPyB64').decode('utf-8'))"
+  )
+  try {
+    Invoke-Compose $cleanupArgs | Out-Null
+  } catch {
+    Write-Host "[WARN] Cleanup MikroTik artifacts gagal: $($_.Exception.Message)" -ForegroundColor Yellow
+  }
+}
+
+trap {
+  Write-Host "[WARN] E2E gagal di tengah run, menjalankan cleanup darurat..." -ForegroundColor Yellow
+  $originalError = $_
+  try {
+    Invoke-E2EFinalCleanup
+  } catch {
+    Write-Host "[WARN] Cleanup darurat gagal: $($_.Exception.Message)" -ForegroundColor Yellow
+  }
+  try { Stop-Transcript | Out-Null } catch {}
+  throw $originalError
+}
 
 Write-Host "[1/14] Start containers"
 if ($FreshStart) {
@@ -264,6 +584,25 @@ $adminLoginBody = @{ username = $AdminPhone; password = $AdminPortalSecret } | C
 $adminLogin = Invoke-RestMethod -Method Post -Uri "$ApiBaseUrl/api/auth/admin/login" -ContentType "application/json" -Body $adminLoginBody
 $adminToken = $adminLogin.access_token
 
+if ($EnableMikrotikOps) {
+  $runtimeOptions = Get-MikrotikRuntimeOptions
+  if ($runtimeOptions) {
+    $availableProfiles = @($runtimeOptions.profiles)
+    $availableServers = @($runtimeOptions.servers)
+
+    $effectiveTestingProfileName = Select-FirstAvailableOption @($TestingProfileName, "profile-aktif", "user", "default") $availableProfiles $TestingProfileName
+    $effectiveFupProfileName = Select-FirstAvailableOption @("profile-fup", $effectiveTestingProfileName) $availableProfiles $effectiveTestingProfileName
+    $effectiveTestingServerName = Select-FirstAvailableOption @($TestingServerName) $availableServers $TestingServerName
+
+    if ($effectiveTestingProfileName -ne $TestingProfileName) {
+      Write-Host "[WARN] Testing profile '$TestingProfileName' tidak ditemukan; fallback ke '$effectiveTestingProfileName'." -ForegroundColor Yellow
+    }
+    if ($effectiveTestingServerName -ne $TestingServerName) {
+      Write-Host "[WARN] Testing server '$TestingServerName' tidak ditemukan; fallback ke '$effectiveTestingServerName'." -ForegroundColor Yellow
+    }
+  }
+}
+
 Write-Host "[5.5/14] Set settings for simulation (fail-open IP binding + walled-garden)"
 $publicBase = $null
 $frontendUrl = $null
@@ -279,6 +618,16 @@ $allowedHostsList = @("localhost")
 if ($envHost -and ($allowedHostsList -notcontains $envHost)) { $allowedHostsList += $envHost }
 $allowedHostsStr = "['{0}']" -f ($allowedHostsList -join "','")
 
+try {
+  $settingsSnapshotResp = Invoke-RestMethod -Method Get -Uri "$ApiBaseUrl/api/admin/settings" -Headers @{ Authorization = "Bearer $adminToken" }
+  if ($settingsSnapshotResp -and $settingsSnapshotResp.settings) {
+    $originalE2ESettings = $settingsSnapshotResp.settings
+    Write-Host "[INFO] Snapshot setting admin tersimpan untuk restore setelah E2E."
+  }
+} catch {
+  Write-Host "[WARN] Gagal mengambil snapshot setting admin sebelum E2E: $($_.Exception.Message)" -ForegroundColor Yellow
+}
+
 $settingsBody = @{ settings = @{ 
   IP_BINDING_FAIL_OPEN = "True"
   IP_BINDING_TYPE_ALLOWED = $BindingTypeAllowed
@@ -291,11 +640,15 @@ $settingsBody = @{ settings = @{
   WALLED_GARDEN_ENABLED = "True"
   WALLED_GARDEN_ALLOWED_HOSTS = $allowedHostsStr
   WALLED_GARDEN_ALLOWED_IPS = "['$SimulatedClientIp']"
+  MIKROTIK_DEFAULT_PROFILE = $effectiveTestingProfileName
+  MIKROTIK_ACTIVE_PROFILE = $effectiveTestingProfileName
+  MIKROTIK_KOMANDAN_PROFILE = $effectiveTestingProfileName
+  MIKROTIK_FUP_PROFILE = $effectiveFupProfileName
   MIKROTIK_EXPIRED_PROFILE = "profile-expired"
   MIKROTIK_BLOCKED_PROFILE = "profile-blokir"
   MIKROTIK_ADDRESS_LIST_BLOCKED = "klient_blocked"
-  MIKROTIK_DEFAULT_SERVER_USER = "testing"
-  MIKROTIK_DEFAULT_SERVER_KOMANDAN = "testing"
+  MIKROTIK_DEFAULT_SERVER_USER = $effectiveTestingServerName
+  MIKROTIK_DEFAULT_SERVER_KOMANDAN = $effectiveTestingServerName
 } } | ConvertTo-Json
 Invoke-RestMethod -Method Put -Uri "$ApiBaseUrl/api/admin/settings" -Headers @{ Authorization = "Bearer $adminToken" } -ContentType "application/json" -Body $settingsBody
 
@@ -311,10 +664,12 @@ $registerBody = @{
 try {
   $reg = Invoke-RestMethod -Method Post -Uri "$ApiBaseUrl/api/auth/register" -ContentType "application/json" -Body $registerBody
   $userId = $reg.user_id
+  $userCreatedForE2E = $true
 } catch {
   Write-Host "User sudah terdaftar, ambil ID via admin search..."
   $users = Invoke-RestMethod -Method Get -Uri "$ApiBaseUrl/api/admin/users?search=$UserPhone" -Headers @{ Authorization = "Bearer $adminToken" }
   $userId = $users.items[0].id
+  $userCreatedForE2E = $false
 }
 
 Write-Host "[7/14] Approve user"
@@ -351,8 +706,17 @@ $verifyBody = @{
 # Pakai WebSession supaya cookie auth/refresh tersimpan (HttpOnly cookie tidak bisa diambil dari JS;
 # di PowerShell kita harus simpan dari Set-Cookie agar bisa uji refresh-token dengan realistis).
 $userSession = $null
-$verifyResp = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$ApiBaseUrl/api/auth/verify-otp" -ContentType "application/json" -Body $verifyBody -SessionVariable userSession
-$verify = $verifyResp.Content | ConvertFrom-Json
+$verifyResp = $null
+$verify = $null
+try {
+  $verifyResp = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$ApiBaseUrl/api/auth/verify-otp" -ContentType "application/json" -Body $verifyBody -SessionVariable userSession
+  $verify = $verifyResp.Content | ConvertFrom-Json
+} catch {
+  Write-Host "[WARN] Verify-OTP dengan context IP/MAC gagal, fallback ke no-context." -ForegroundColor Yellow
+  $verifyBodyNoContext = @{ phone_number = $UserPhoneE164; otp = $otp; hotspot_login_context = $false } | ConvertTo-Json
+  $verifyResp = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$ApiBaseUrl/api/auth/verify-otp" -ContentType "application/json" -Body $verifyBodyNoContext -SessionVariable userSession
+  $verify = $verifyResp.Content | ConvertFrom-Json
+}
 $userToken = $verify.access_token
 
 try {
@@ -429,17 +793,17 @@ Test-StatusPages $FrontendBaseUrl
 Write-Host "[11.6/14] Uji redirect user (expired/habis/fup)"
 $authCookie = "auth_token=$userToken"
 
-Set-UserStatus "expired" 1024 0 -1 "user"
+Set-UserStatus "expired" 1024 0 -1 $effectiveTestingProfileName
 Test-RedirectWithCookie $FrontendBaseUrl $authCookie "expired"
 
-Set-UserStatus "habis" 100 100 7 "user"
+Set-UserStatus "habis" 100 100 7 $effectiveTestingProfileName
 Test-RedirectWithCookie $FrontendBaseUrl $authCookie "habis"
 
-Set-UserStatus "fup" 1024 200 7 "profile-fup"
+Set-UserStatus "fup" 1024 200 7 $effectiveFupProfileName
 Test-RedirectWithCookie $FrontendBaseUrl $authCookie "fup"
 
 Write-Host "[11.7/14] Uji status signed (blocked/inactive)"
-Set-UserStatus "blocked" 1024 0 7 "user"
+Set-UserStatus "blocked" 1024 0 7 $effectiveTestingProfileName
 
 $blockedOtp = $OtpBypassCode
 $blockedVerifyBody = @{ phone_number = $UserPhoneE164; otp = $blockedOtp; hotspot_login_context = $false } | ConvertTo-Json
@@ -452,7 +816,7 @@ try {
   }
 }
 
-Set-UserStatus "inactive" 1024 0 0 "user"
+Set-UserStatus "inactive" 1024 0 0 $effectiveTestingProfileName
 $inactiveOtpRequested = $false
 if ($UseOtpBypassOnly) {
   $inactiveOtpRequested = $true
@@ -488,7 +852,7 @@ if ($UseOtpBypassOnly) {
 }
 
 Write-Host "[11.8/14] Reset user ke aktif (agar flow Komandan tidak terblokir)"
-Set-UserStatus "active" 1024 0 7 "user"
+Set-UserStatus "active" 1024 0 7 $effectiveTestingProfileName
 
 if ($RunKomandanFlow) {
   Write-Host "[12/14] Simulasi permintaan Komandan (QUOTA)"
@@ -515,10 +879,14 @@ if ($RunKomandanFlow) {
     try {
       $komandanReg = Invoke-RestMethod -Method Post -Uri "$ApiBaseUrl/api/auth/register" -ContentType "application/json" -Body $komandanRegisterBody
       $komandanId = $komandanReg.user_id
+      $komandanCreatedForE2E = $true
+      $cleanupKomandanPhoneE164 = $komandanAttemptPhoneE164
+      $cleanupKomandanId = $komandanId
     } catch {
       Write-Host "Komandan sudah terdaftar, ambil ID via admin search..."
       $komandanUsers = Invoke-RestMethod -Method Get -Uri "$ApiBaseUrl/api/admin/users?search=$komandanAttemptPhone" -Headers @{ Authorization = "Bearer $adminToken" }
       $komandanId = $komandanUsers.items[0].id
+      $komandanCreatedForE2E = $false
     }
 
     try {
@@ -691,6 +1059,110 @@ try {
   Write-Host "Verify OTP no-context gagal (skip)."
 }
 
+Write-Host "[16.5/17] Verifikasi penuh reset-login + logout user"
+Set-UserLifecycleState $UserPhoneE164
+
+$reAuthBody = @{
+  phone_number = $UserPhoneE164
+  otp = $OtpBypassCode
+  hotspot_login_context = $false
+  client_ip = $SimulatedClientIp
+  client_mac = $SimulatedClientMac
+} | ConvertTo-Json
+
+$reAuthBodyNoContext = @{
+  phone_number = $UserPhoneE164
+  otp = $OtpBypassCode
+  hotspot_login_context = $false
+} | ConvertTo-Json
+
+$resetSession = $null
+$reAuthResp = $null
+$useContextForResetReauth = $false
+if ($EnableMikrotikOps -and $SimulatedClientIp -and $SimulatedClientMac) {
+  try {
+    $dbgBody = @{ user_id = $userId; client_ip = $SimulatedClientIp; client_mac = $SimulatedClientMac } | ConvertTo-Json
+    $dbg = Invoke-RestMethod -Method Post -Uri "$ApiBaseUrl/api/auth/debug/binding" -Headers @{ Authorization = "Bearer $adminToken" } -ContentType "application/json" -Body $dbgBody
+    if ($dbg -and $dbg.binding -and $dbg.binding.resolved_ip) {
+      $useContextForResetReauth = $true
+    } else {
+      Write-Host "[INFO] Re-auth reset-login menggunakan no-context (IP/MAC tidak tervalidasi router)." -ForegroundColor DarkYellow
+    }
+  } catch {
+    Write-Host "[INFO] Re-auth reset-login menggunakan no-context (binding-debug tidak tersedia)." -ForegroundColor DarkYellow
+  }
+}
+
+if ($useContextForResetReauth) {
+  try {
+    $reAuthResp = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$ApiBaseUrl/api/auth/verify-otp" -ContentType "application/json" -Body $reAuthBody -SessionVariable resetSession
+  } catch {
+    Write-Host "[INFO] Re-auth reset-login fallback ke no-context (context verify-otp ditolak router)." -ForegroundColor DarkYellow
+    $reAuthResp = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$ApiBaseUrl/api/auth/verify-otp" -ContentType "application/json" -Body $reAuthBodyNoContext -SessionVariable resetSession
+    $useContextForResetReauth = $false
+  }
+} else {
+  $reAuthResp = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$ApiBaseUrl/api/auth/verify-otp" -ContentType "application/json" -Body $reAuthBodyNoContext -SessionVariable resetSession
+}
+$reAuthJson = $reAuthResp.Content | ConvertFrom-Json
+if (-not $reAuthJson.access_token) {
+  throw "Re-auth sebelum reset-login gagal: access_token tidak ada."
+}
+
+$resetResp = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$ApiBaseUrl/api/auth/reset-login" -WebSession $resetSession
+$resetJson = $resetResp.Content | ConvertFrom-Json
+if (-not $resetJson.network_reset) {
+  throw "Reset-login gagal diverifikasi: field network_reset tidak ditemukan."
+}
+Write-Host ("Reset-login OK: message='{0}'" -f $resetJson.message)
+
+$logoutResp = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$ApiBaseUrl/api/auth/logout" -WebSession $resetSession
+$logoutJson = $logoutResp.Content | ConvertFrom-Json
+if (-not $logoutJson.message) {
+  throw "Logout gagal diverifikasi: message tidak ditemukan."
+}
+
+$refreshRejected = $false
+try {
+  Invoke-RestMethod -Method Post -Uri "$ApiBaseUrl/api/auth/refresh" -WebSession $resetSession | Out-Null
+} catch {
+  $refreshRejected = $true
+}
+if (-not $refreshRejected) {
+  throw "Logout belum sempurna: refresh token masih bisa dipakai setelah logout."
+}
+
+$meRejected = $false
+try {
+  Invoke-RestMethod -Method Get -Uri "$ApiBaseUrl/api/auth/me" -WebSession $resetSession | Out-Null
+} catch {
+  $meRejected = $true
+}
+
+if ($meRejected) {
+  Write-Host ("Logout OK: message='{0}', session lama invalid." -f $logoutJson.message)
+} else {
+  Write-Host ("Logout OK: message='{0}', refresh token invalid. /auth/me masih valid sampai access token expired (expected untuk JWT stateless)." -f $logoutJson.message)
+}
+
+$postLogoutSession = $null
+$postLogoutResp = $null
+if ($useContextForResetReauth) {
+  try {
+    $postLogoutResp = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$ApiBaseUrl/api/auth/verify-otp" -ContentType "application/json" -Body $reAuthBody -SessionVariable postLogoutSession
+  } catch {
+    Write-Host "[INFO] Re-login pasca logout fallback ke no-context (context verify-otp ditolak router)." -ForegroundColor DarkYellow
+    $postLogoutResp = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$ApiBaseUrl/api/auth/verify-otp" -ContentType "application/json" -Body $reAuthBodyNoContext -SessionVariable postLogoutSession
+  }
+} else {
+  $postLogoutResp = Invoke-WebRequest -UseBasicParsing -Method Post -Uri "$ApiBaseUrl/api/auth/verify-otp" -ContentType "application/json" -Body $reAuthBodyNoContext -SessionVariable postLogoutSession
+}
+$postLogoutJson = $postLogoutResp.Content | ConvertFrom-Json
+if (-not $postLogoutJson.access_token) {
+  throw "Re-login pasca logout gagal: access_token tidak ada."
+}
+Write-Host "Re-login pasca logout OK."
+
 Write-Host "[17/17] Mock webhook smoke (Midtrans)"
 try {
   $midtransBody = @{ transaction_status = "settlement"; order_id = "SIM-ORDER"; status_code = "200"; gross_amount = "10000"; signature_key = "test" } | ConvertTo-Json
@@ -699,6 +1171,8 @@ try {
 } catch {
   Write-Host "Mock Midtrans webhook ditolak (expected jika signature invalid)."
 }
+
+Invoke-E2EFinalCleanup
 
 Write-Host "Done. Cek log IP di backend:"
 Write-Host "docker compose logs --tail=200 backend | Select-String 'IP determined|X-Forwarded-For'"

@@ -8,6 +8,18 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Fixed (2026-03-01)
+- Backend hotspot session status tetap berbasis `ip-binding` (tanpa `/ip/hotspot/active`) dan menutup false-positive status `terhubung` akibat fallback user-level yang terlalu longgar.
+- Fallback `HOTSPOT_SESSION_STATUS_ALLOW_USER_LEVEL_FALLBACK` kini default **False**; ketika diaktifkan pun fallback hanya dijalankan jika `client_ip` cocok dengan hasil `get_hotspot_user_ip` (sumber hotspot host/DHCP lease/ARP).
+- Route wiring endpoint `/api/auth/hotspot-session-status` diperbarui agar menggunakan `get_hotspot_user_ip` sebagai validasi silang sebelum fallback user-level.
+
+### Added (2026-03-01)
+- Test backend untuk hotspot-session-status diperluas: skenario fallback berbasis kecocokan IP ditambahkan, termasuk guard saat IP mismatch agar tidak mengangkat status `terhubung` secara keliru.
+
+### Changed (2026-03-01)
+- Script `scripts/run_local_ci.ps1` kini memakai resolver path compose yang lebih robust (absolute/relative/workspace-relative).
+- Script `scripts/simulate_end_to_end.ps1` diperkuat untuk jalur E2E: resolve compose path fleksibel, isolasi user test, cleanup artefak test, snapshot+restore admin settings, fallback verify-otp no-context, serta verifikasi reset-login/logout/re-login yang lebih deterministik.
+
 ### Changed (2026-02-27)
 - Frontend status routing dipusatkan ke `/policy/*`; halaman status legacy di `/login/*` dan `/captive/*` dihapus dari `pages` dan diganti kompatibilitas redirect via `routeRules` Nuxt.
 - Flow captive diperketat dengan `captive_context` (sessionStorage) agar konteks captive tidak dapat menavigasi ke area terbatas (`/dashboard`, `/beli`, `/requests`, `/akun`) untuk user non-admin.
