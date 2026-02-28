@@ -133,7 +133,7 @@ def test_reset_login_deletes_tokens_and_devices_even_when_mikrotik_unavailable(m
     assert payload["summary"]["router"]["mikrotik_connected"] is False
 
 
-def test_reset_login_removes_hotspot_cookie_and_comment_tagged_entries(monkeypatch):
+def test_reset_login_removes_comment_tagged_router_entries(monkeypatch):
     user_id = uuid.uuid4()
     uid_marker = f"uid={user_id}"
     user08 = "08123456789"
@@ -148,18 +148,6 @@ def test_reset_login_removes_hotspot_cookie_and_comment_tagged_entries(monkeypat
     monkeypatch.setattr(user_management_routes.settings_service, "get_setting", lambda *args, **kwargs: args[1])
 
     resources = {
-        "/ip/hotspot/active": _Resource(
-            [
-                {"id": "a1", "mac-address": "AA:BB:CC:DD:EE:FF", "address": "172.16.0.10", "user": user08},
-                {"id": "a2", "mac-address": "11:22:33:44:55:66", "address": "172.16.0.20", "user": "0899"},
-            ]
-        ),
-        "/ip/hotspot/cookie": _Resource(
-            [
-                {"id": "c1", "mac-address": "AA:BB:CC:DD:EE:FF", "user": user08},
-                {"id": "c2", "mac-address": "11:22:33:44:55:66", "user": "0899"},
-            ]
-        ),
         "/ip/hotspot/ip-binding": _Resource(
             [
                 {"id": "b1", "mac-address": "AA:BB:CC:DD:EE:FF", "comment": f"lpsaring | {uid_marker} | user={user08}"},
@@ -213,14 +201,10 @@ def test_reset_login_removes_hotspot_cookie_and_comment_tagged_entries(monkeypat
     payload = response.get_json()["summary"]
     assert payload["router"]["mikrotik_connected"] is True
 
-    # Cookie removed
-    assert payload["router"]["hotspot_cookies_removed"] >= 1
-
     # Comment-tagged removals are tracked
     assert payload["router"]["comment_tagged_entries_removed"] >= 1
 
     # Ensure at least the matching items are removed in resources
-    assert "c1" in resources["/ip/hotspot/cookie"].removed_ids
     assert "b1" in resources["/ip/hotspot/ip-binding"].removed_ids
     assert "l1" in resources["/ip/dhcp-server/lease"].removed_ids
     assert "l3" in resources["/ip/dhcp-server/lease"].removed_ids

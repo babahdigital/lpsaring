@@ -311,18 +311,6 @@ def delete_hotspot_user(api_connection: Any, username: str, max_retries: int = 3
 
     logger.info(f"[MIKROTIK DELETE] Memulai proses hapus untuk user: {username}")
 
-    # Hapus sesi aktif
-    try:
-        active_resource = api_connection.get_resource("/ip/hotspot/active")
-        active_sessions = active_resource.get(user=username)
-        if active_sessions:
-            session_id = active_sessions[0].get("id") or active_sessions[0].get(".id")
-            if session_id:
-                active_resource.remove(id=session_id)
-                logger.info(f"[MIKROTIK DELETE] Sesi aktif untuk {username} berhasil dihapus.")
-    except Exception as e:
-        logger.warning(f"[MIKROTIK DELETE] Gagal menghapus sesi aktif untuk {username}: {e}")
-
     # Hapus user dari /ip/hotspot/user
     user_resource = api_connection.get_resource("/ip/hotspot/user")
     for attempt in range(max_retries):
@@ -565,81 +553,46 @@ def has_hotspot_ip_binding_for_user(
 
 
 def get_hotspot_user_ip(api_connection: Any, username: str) -> Tuple[bool, Optional[str], str]:
-    """Mencari IP user berdasarkan sesi aktif atau host hotspot."""
+    """Mencari IP user berdasarkan host hotspot, DHCP lease, atau ARP."""
     if not username:
         return False, None, "Username tidak valid"
-    try:
-        active_resource = api_connection.get_resource("/ip/hotspot/active")
-        active_sessions = active_resource.get(user=username)
-        if active_sessions:
-            address = active_sessions[0].get("address")
-            if address:
-                return True, str(address), "Sukses"
-    except Exception:
-        pass
-
     try:
         host_resource = api_connection.get_resource("/ip/hotspot/host")
         hosts = host_resource.get(user=username)
         if hosts:
             address = hosts[0].get("address")
             if address:
-                return True, str(address), "Sukses"
-    except Exception as e:
-        return False, None, str(e)
-
-    return True, None, "IP tidak ditemukan"
-
-
-def get_hotspot_active_session_by_ip(
-    api_connection: Any,
-    ip_address: str,
-) -> Tuple[bool, Optional[Dict[str, Any]], str]:
-    """Ambil info sesi hotspot untuk IP tertentu.
-
-    Dipakai untuk fallback saat perangkat belum terdaftar di DB, tetapi user sudah login via portal MikroTik.
-    Return dict minimal berisi: user, mac-address, server, address (jika tersedia).
-    """
-    if not ip_address:
-        return False, None, "IP address tidak valid"
-
-    try:
-        active_resource = api_connection.get_resource("/ip/hotspot/active")
-        actives = active_resource.get(address=ip_address)
-        if actives:
-            entry = actives[0]
-            return (
-                True,
-                {
-                    "user": entry.get("user"),
-                    "mac-address": entry.get("mac-address"),
-                    "server": entry.get("server"),
-                    "address": entry.get("address") or ip_address,
-                },
-                "Sukses (hotspot active)",
-            )
+                return True, str(address), "Sukses (hotspot host)"
     except Exception:
         pass
 
     try:
-        host_resource = api_connection.get_resource("/ip/hotspot/host")
-        hosts = host_resource.get(address=ip_address)
-        if hosts:
-            entry = hosts[0]
-            return (
-                True,
-                {
-                    "user": entry.get("user"),
-                    "mac-address": entry.get("mac-address"),
-                    "server": entry.get("server"),
-                    "address": entry.get("address") or ip_address,
-                },
-                "Sukses (hotspot host)",
-            )
+        lease_resource = api_connection.get_resource("/ip/dhcp-server/lease")
+        leases = lease_resource.get()
+        marker = f"user={username}".lower()
+        for lease in leases or []:
+            comment = str(lease.get("comment") or "").lower()
+            if marker in comment:
+                address = lease.get("address")
+                if address:
+                    return True, str(address), "Sukses (DHCP lease)"
+    except Exception:
+        pass
+
+    try:
+        arp_resource = api_connection.get_resource("/ip/arp")
+        arps = arp_resource.get()
+        marker = f"user={username}".lower()
+        for arp in arps or []:
+            comment = str(arp.get("comment") or "").lower()
+            if marker in comment:
+                address = arp.get("address")
+                if address:
+                    return True, str(address), "Sukses (ARP)"
     except Exception as e:
         return False, None, str(e)
 
-    return True, None, "Sesi hotspot tidak ditemukan"
+    return True, None, "IP tidak ditemukan"
 
 
 def upsert_address_list_entry(
@@ -716,7 +669,7 @@ def sync_address_list_for_user(
 
 
 def get_mac_by_ip(api_connection: Any, ip_address: str) -> Tuple[bool, Optional[str], str]:
-    """Mencari MAC address berdasarkan IP melalui hotspot host, active, ARP, atau DHCP lease."""
+    """Mencari MAC address berdasarkan IP melalui hotspot host, ARP, atau DHCP lease."""
     if not ip_address:
         return False, None, "IP address tidak valid"
 
@@ -727,16 +680,6 @@ def get_mac_by_ip(api_connection: Any, ip_address: str) -> Tuple[bool, Optional[
             mac = hosts[0].get("mac-address")
             if mac:
                 return True, str(mac), "Sukses (hotspot host)"
-    except Exception:
-        pass
-
-    try:
-        active_resource = api_connection.get_resource("/ip/hotspot/active")
-        actives = active_resource.get(address=ip_address)
-        if actives:
-            mac = actives[0].get("mac-address")
-            if mac:
-                return True, str(mac), "Sukses (hotspot active)"
     except Exception:
         pass
 
@@ -764,7 +707,7 @@ def get_mac_by_ip(api_connection: Any, ip_address: str) -> Tuple[bool, Optional[
 
 
 def get_ip_by_mac(api_connection: Any, mac_address: str) -> Tuple[bool, Optional[str], str]:
-    """Mencari IP address berdasarkan MAC melalui hotspot host, active, ARP, atau DHCP lease."""
+    """Mencari IP address berdasarkan MAC melalui hotspot host, ARP, atau DHCP lease."""
     if not mac_address:
         return False, None, "MAC address tidak valid"
 
@@ -775,16 +718,6 @@ def get_ip_by_mac(api_connection: Any, mac_address: str) -> Tuple[bool, Optional
             address = hosts[0].get("address")
             if address:
                 return True, str(address), "Sukses (hotspot host)"
-    except Exception:
-        pass
-
-    try:
-        active_resource = api_connection.get_resource("/ip/hotspot/active")
-        actives = active_resource.get(**{"mac-address": mac_address})
-        if actives:
-            address = actives[0].get("address")
-            if address:
-                return True, str(address), "Sukses (hotspot active)"
     except Exception:
         pass
 

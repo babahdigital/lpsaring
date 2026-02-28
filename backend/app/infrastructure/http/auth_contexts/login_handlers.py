@@ -24,7 +24,6 @@ def auto_login_impl(
     resolve_client_mac,
     get_phone_number_variations,
     get_mikrotik_connection,
-    get_hotspot_active_session_by_ip,
     apply_device_binding_for_login,
     sync_address_list_for_single_user,
     create_access_token,

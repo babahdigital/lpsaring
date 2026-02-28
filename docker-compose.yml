@@ -185,7 +185,7 @@ services:
       target: development
     container_name: hotspot_nuxt_frontend
     env_file:
-      - ./.env.public
+      - ./frontend/.env.public
     environment:
       # Memastikan Nuxt dev server dapat diakses dari luar container oleh Nginx.
       HOST: '0.0.0.0'

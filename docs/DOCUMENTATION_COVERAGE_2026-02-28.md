@@ -42,5 +42,6 @@ Dokumen ini merangkum sinkronisasi dokumentasi terhadap implementasi terbaru pad
 
 - Endpoint `GET /api/auth/hotspot-session-status` sudah terdokumentasi konsisten pada API ringkas, matriks operasional, dan referensi pengembangan.
 - Narasi legacy yang menyatakan fallback identity dari active-session by-IP telah dihapus/dikoreksi.
+- Dependency operasional terhadap `/ip/hotspot/active` telah dibersihkan dari jalur identity/auth dan reset-login; resolver kini murni memakai `ip-binding + hotspot host + ARP + DHCP lease`.
 - Runbook parity kini mencakup guard periodik otomatis dan variabel env operasional.
 - Checklist Cloudflare mencerminkan baseline produksi terbaru untuk captive flow dan CSRF no-origin whitelist.

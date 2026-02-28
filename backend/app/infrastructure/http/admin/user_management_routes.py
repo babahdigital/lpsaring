@@ -248,7 +248,7 @@ def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
     """Force user to login fresh without changing quota/status fields in DB.
 
     - DB: delete all refresh tokens for the user.
-    - MikroTik (best-effort): clear hotspot active sessions, ip-binding, DHCP lease, ARP,
+        - MikroTik (best-effort): clear ip-binding, DHCP lease, ARP,
       and managed address-lists for IPs found in user_devices.
     """
     user = db.session.get(User, user_id)
@@ -288,8 +288,6 @@ def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
 
     router_summary = {
         "mikrotik_connected": False,
-        "active_sessions_removed": 0,
-        "hotspot_cookies_removed": 0,
         "ip_bindings_removed": 0,
         "dhcp_leases_removed": 0,
         "arp_entries_removed": 0,
@@ -318,36 +316,6 @@ def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
         with get_mikrotik_connection(raise_on_error=False) as api:
             if api:
                 router_summary["mikrotik_connected"] = True
-
-                # Kick active sessions by MAC and IP.
-                try:
-                    active_res = api.get_resource("/ip/hotspot/active")
-                    for mac in macs:
-                        router_summary["active_sessions_removed"] += _remove_all(
-                            active_res, active_res.get(**{"mac-address": mac})
-                        )
-                    for ip in ips:
-                        router_summary["active_sessions_removed"] += _remove_all(active_res, active_res.get(address=ip))
-                    if username_08:
-                        router_summary["active_sessions_removed"] += _remove_all(
-                            active_res, active_res.get(user=username_08)
-                        )
-                except Exception as e:
-                    router_summary["errors"].append(f"active_cleanup: {e}")
-
-                # Remove hotspot cookies to prevent auto-login.
-                try:
-                    cookie_res = api.get_resource("/ip/hotspot/cookie")
-                    for mac in macs:
-                        router_summary["hotspot_cookies_removed"] += _remove_all(
-                            cookie_res, cookie_res.get(**{"mac-address": mac})
-                        )
-                    if username_08:
-                        router_summary["hotspot_cookies_removed"] += _remove_all(
-                            cookie_res, cookie_res.get(user=username_08)
-                        )
-                except Exception as e:
-                    router_summary["errors"].append(f"cookie_cleanup: {e}")
 
                 # Remove ip-binding by MAC.
                 try:

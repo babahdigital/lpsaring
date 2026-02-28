@@ -3,7 +3,6 @@
 Portal hotspot dengan backend Flask dan frontend Nuxt 3.
 
 ## Dokumentasi Utama
-- [.github/copilot-instructions.md](.github/copilot-instructions.md)
 - [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)
 - [DEVELOPMENT.md](DEVELOPMENT.md)
 - [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)
@@ -24,6 +23,7 @@ Portal hotspot dengan backend Flask dan frontend Nuxt 3.
 - [docs/ERROR_REFERENCE.md](docs/ERROR_REFERENCE.md)
 - [docs/TRANSACTIONS_STATE_INVARIANTS.md](docs/TRANSACTIONS_STATE_INVARIANTS.md)
 - [docs/OPERATIONAL_API_MATRIX.md](docs/OPERATIONAL_API_MATRIX.md)
+- [docs/ENV_FILE_MATRIX.md](docs/ENV_FILE_MATRIX.md)
 - [docs/OPERATIONS_COMMAND_STANDARD.md](docs/OPERATIONS_COMMAND_STANDARD.md)
 - [docs/PUBLISH_FLOW_AND_ERROR_STATUS.md](docs/PUBLISH_FLOW_AND_ERROR_STATUS.md)
 - [docs/OPERATIONS_MIKROTIK_SYNC.md](docs/OPERATIONS_MIKROTIK_SYNC.md)
@@ -66,12 +66,39 @@ Kebutuhan GitHub Secrets:
 - `DOCKERHUB_TOKEN`
 
 ## Template Env
-- `.env.example` (Compose-only)
-- `.env.public.example` (Frontend dev)
-- `.env.public.prod.example` (Frontend prod)
-- `backend/.env.public.example` (Backend dev public/non-secret)
-- `backend/.env.local.example` (Backend dev local/secret)
-- `backend/.env.example` (Backend full template, opsional/legacy)
-- `frontend/.env.public.example` (Nuxt public template, opsional jika jalan di host)
-- `frontend/.env.local.example` (Nuxt local template, opsional jika jalan di host)
-- `.env.prod.example` (Production runtime: backend + db + celery)
+- `.env.example` (root Compose interpolation only)
+- `.env.prod.example` (production runtime: backend + db + celery)
+- `.env.public.prod.example` (production frontend public runtime)
+- `backend/.env.public.example` (backend dev non-secret)
+- `backend/.env.local.example` (backend dev local/secret)
+- `backend/.env.example` (backend full template, opsional/legacy)
+- `frontend/.env.public.example` (frontend dev profile untuk docker dev)
+- `frontend/.env.local.example` (frontend local profile untuk e2e/host-local)
+
+Lihat pemetaan lengkap file env per mode di [docs/ENV_FILE_MATRIX.md](docs/ENV_FILE_MATRIX.md).
+
+## Quick Commands (Dev vs E2E)
+
+### Dev (docker compose utama)
+- Siapkan env:
+	- copy `.env.example` -> `.env`
+	- copy `backend/.env.public.example` -> `backend/.env.public`
+	- copy `backend/.env.local.example` -> `backend/.env.local`
+	- copy `frontend/.env.public.example` -> `frontend/.env.public`
+- Jalankan:
+	- `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d`
+- Akses:
+	- Frontend/Nginx: `http://localhost`
+
+### E2E (isolated localhost)
+- Siapkan env:
+	- pastikan `backend/.env.e2e` ada
+	- copy `frontend/.env.local.example` -> `frontend/.env.local`
+- Jalankan:
+	- `docker compose -f docker-compose.e2e.yml -p hotspot-portal-e2e up -d`
+- Akses:
+	- Frontend/Nginx: `http://localhost:8089`
+
+### Stop & cleanup
+- Dev stop: `docker compose -f docker-compose.yml -f docker-compose.dev.yml down`
+- E2E stop: `docker compose -f docker-compose.e2e.yml -p hotspot-portal-e2e down`

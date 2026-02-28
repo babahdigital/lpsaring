@@ -101,7 +101,6 @@ def _deps(db_obj):
         normalize_mac=lambda v: str(v or "").strip().upper() if v else None,
         get_phone_number_variations=lambda v: [v],
         get_mikrotik_connection=lambda: None,
-        get_hotspot_active_session_by_ip=lambda *_a, **_k: (True, None, "unused"),
         sync_address_list_for_single_user=lambda *_a, **_k: True,
         create_access_token=lambda **_k: "access-token",
         issue_refresh_token_for_user=lambda *_a, **_k: "refresh-token",

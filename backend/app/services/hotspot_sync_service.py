@@ -38,6 +38,7 @@ from app.services.notification_service import get_notification_message
 from app.services.device_management_service import (
     _remove_ip_binding,
     _remove_blocked_address_list,
+    _ensure_static_dhcp_lease,
     register_or_update_device,
 )
 from app.services.access_policy_service import resolve_allowed_binding_type_for_user
@@ -286,6 +287,20 @@ def _self_heal_policy_binding_for_user(
             entry["type"] = expected_binding_type
             if ip_addr:
                 entry["address"] = ip_addr
+
+            if ip_addr:
+                dhcp_server_name = (
+                    settings_service.get_setting("MIKROTIK_DHCP_LEASE_SERVER_NAME", "") or ""
+                ).strip() or None
+                _ensure_static_dhcp_lease(
+                    mac_address=mac,
+                    ip_address=ip_addr,
+                    comment=(
+                        f"lpsaring|static-dhcp|user={username_08}|uid={user.id}|role={user.role.value}"
+                        f"|source=sync-self-heal|date={date_str}|time={time_str}"
+                    ),
+                    server=dhcp_server_name,
+                )
         else:
             increment_metric("policy.binding_self_heal.failed")
             logger.warning(

@@ -8,6 +8,8 @@
 # - Backend:  5011 -> container 5010
 # - Frontend: 3011 -> container 3010
 # - Nginx:    8089 -> container 80
+# Catatan: mode E2E ini sengaja tanpa Cloudflare Tunnel.
+# Tujuan utama E2E: validasi alur via localhost secara deterministik.
 
 name: hotspot-portal-e2e
 
@@ -148,7 +150,7 @@ services:
       FC_CACHEDIR: "/tmp/.cache/fontconfig"
     volumes:
       - ./backend:/app
-    command: celery -A app.extensions.celery_app beat --loglevel=info
+    command: celery -A app.extensions.celery_app beat --loglevel=info --schedule=/tmp/celerybeat-schedule
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -167,7 +169,7 @@ services:
       target: development
     container_name: hotspot_nuxt_frontend_e2e
     env_file:
-      - ./frontend/.env.${APP_ENV:-local}
+      - ./frontend/.env.local
     environment:
       HOST: "0.0.0.0"
       PORT: 3010
@@ -199,23 +201,6 @@ services:
     networks:
       - hotspot_network
     restart: unless-stopped
-
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: hotspot_cloudflared_e2e
-    command: tunnel --no-autoupdate --protocol http2 --config /etc/cloudflared/config.yml run
-    environment:
-      - TUNNEL_TOKEN=${CLOUDFLARED_TUNNEL_TOKEN}
-    volumes:
-      - ./infrastructure/cloudflared/config.yml:/etc/cloudflared/config.yml:ro
-    depends_on:
-      nginx:
-        condition: service_started
-    networks:
-      - hotspot_network
-    restart: unless-stopped
-    profiles:
-      - tunnel
 
 volumes:
   postgres_data_e2e:
