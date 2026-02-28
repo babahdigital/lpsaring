@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 from types import SimpleNamespace
+from typing import Any, cast
 
 import app.services.device_management_service as dms
 from app.services.device_management_service import normalize_mac, reset_user_network_on_logout
@@ -84,7 +85,7 @@ def test_reset_user_network_on_logout_cleans_all_network_artifacts(monkeypatch):
     monkeypatch.setattr(dms, "remove_arp_entries", _remove_arp_entries)
     monkeypatch.setattr(dms, "_remove_managed_address_lists", lambda _ip: calls.__setitem__("address_list", calls["address_list"] + 1))
 
-    summary = reset_user_network_on_logout(user)
+    summary = reset_user_network_on_logout(cast(Any, user))
 
     assert summary["devices_seen"] == 2
     assert summary["ip_binding_removed"] == 2
@@ -104,7 +105,7 @@ def test_reset_user_network_on_logout_disabled_mikrotik(monkeypatch):
     user = SimpleNamespace(id="u-1", phone_number="08123456789", mikrotik_server_name="all")
     monkeypatch.setattr(dms, "_is_mikrotik_operations_enabled", lambda: False)
 
-    summary = reset_user_network_on_logout(user)
+    summary = reset_user_network_on_logout(cast(Any, user))
 
     assert summary["mikrotik_ops_enabled"] is False
     assert summary["devices_seen"] == 0
