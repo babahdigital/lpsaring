@@ -237,6 +237,7 @@ def verify_otp():
         VerifyOtpResponseSchema=VerifyOtpResponseSchema,
         AuthErrorResponseSchema=AuthErrorResponseSchema,
         normalize_to_e164=normalize_to_e164,
+        normalize_mac=normalize_mac,
         get_phone_number_variations=get_phone_number_variations,
         is_demo_phone_allowed=_is_demo_phone_allowed,
         get_otp_fail_count=_get_otp_fail_count,
