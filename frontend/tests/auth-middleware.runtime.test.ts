@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const navigateToMock = vi.fn()
+const apiMock = vi.fn()
 let authStoreState: any
 
 function createSessionStorageMock(initial: Record<string, string> = {}) {
@@ -22,6 +23,9 @@ function createSessionStorageMock(initial: Record<string, string> = {}) {
 vi.mock('#app', () => ({
   defineNuxtRouteMiddleware: (handler: any) => handler,
   navigateTo: (...args: any[]) => navigateToMock(...args),
+  useNuxtApp: () => ({
+    $api: (...args: any[]) => apiMock(...args),
+  }),
 }))
 
 vi.mock('../store/auth', () => ({
@@ -31,6 +35,11 @@ vi.mock('../store/auth', () => ({
 describe('auth.global runtime', () => {
   beforeEach(() => {
     navigateToMock.mockReset()
+    apiMock.mockReset()
+    apiMock.mockResolvedValue({
+      hotspot_login_required: false,
+      hotspot_session_active: null,
+    })
     authStoreState = {
       initialAuthCheckDone: true,
       initializeAuth: vi.fn().mockResolvedValue(undefined),
@@ -169,5 +178,84 @@ describe('auth.global runtime', () => {
 
     expect(navigateToMock).not.toHaveBeenCalled()
     expect(authStoreState.initializeAuth).not.toHaveBeenCalled()
+  })
+
+  it('redirects logged-in user on login route to hotspot-required when hotspot session is still required', async () => {
+    const middleware = (await import('../middleware/auth.global')).default
+    authStoreState.isLoggedIn = true
+    apiMock.mockResolvedValue({
+      hotspot_login_required: true,
+      hotspot_session_active: false,
+    })
+
+    await middleware({
+      path: '/login',
+      fullPath: '/login?client_ip=172.16.2.10&client_mac=AA:BB:CC:DD:EE:FF',
+      query: {
+        client_ip: '172.16.2.10',
+        client_mac: 'AA:BB:CC:DD:EE:FF',
+      },
+      meta: {},
+    } as any)
+
+    expect(apiMock).toHaveBeenCalledWith('/auth/hotspot-session-status', {
+      method: 'GET',
+      query: {
+        client_ip: '172.16.2.10',
+        client_mac: 'AA:BB:CC:DD:EE:FF',
+      },
+    })
+    expect(navigateToMock).toHaveBeenCalledWith('/login/hotspot-required?client_ip=172.16.2.10&client_mac=AA%3ABB%3ACC%3ADD%3AEE%3AFF', { replace: true })
+  })
+
+  it('does not redirect to hotspot-required when hotspot session already active', async () => {
+    const middleware = (await import('../middleware/auth.global')).default
+    authStoreState.isLoggedIn = true
+    apiMock.mockResolvedValue({
+      hotspot_login_required: true,
+      hotspot_session_active: true,
+    })
+
+    await middleware({
+      path: '/login',
+      fullPath: '/login',
+      query: {},
+      meta: {},
+    } as any)
+
+    expect(apiMock).toHaveBeenCalledTimes(1)
+    expect(navigateToMock).toHaveBeenCalledWith('/dashboard', { replace: true })
+  })
+
+  it('falls back to normal guard redirect when hotspot status check fails', async () => {
+    const middleware = (await import('../middleware/auth.global')).default
+    authStoreState.isLoggedIn = true
+    apiMock.mockRejectedValue(new Error('network down'))
+
+    await middleware({
+      path: '/login',
+      fullPath: '/login',
+      query: {},
+      meta: {},
+    } as any)
+
+    expect(apiMock).toHaveBeenCalledTimes(1)
+    expect(navigateToMock).toHaveBeenCalledWith('/dashboard', { replace: true })
+  })
+
+  it('skips hotspot precheck for admin user', async () => {
+    const middleware = (await import('../middleware/auth.global')).default
+    authStoreState.isLoggedIn = true
+    authStoreState.isAdmin = true
+
+    await middleware({
+      path: '/login',
+      fullPath: '/login',
+      query: {},
+      meta: {},
+    } as any)
+
+    expect(apiMock).not.toHaveBeenCalled()
+    expect(navigateToMock).toHaveBeenCalledWith('/admin/dashboard', { replace: true })
   })
 })

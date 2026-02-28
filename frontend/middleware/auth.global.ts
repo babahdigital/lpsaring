@@ -1,6 +1,6 @@
 // frontend/middleware/auth.global.ts
 import type { RouteLocationNormalized } from 'vue-router'
-import { defineNuxtRouteMiddleware, navigateTo } from '#app'
+import { defineNuxtRouteMiddleware, navigateTo, useNuxtApp } from '#app'
 import { useAuthStore } from '../store/auth'
 import { getStatusRouteForAccessStatus, GUEST_ROUTES, isLegalPublicPath } from '../utils/authRoutePolicy'
 import { isCaptiveContextActive, isCaptiveRoutePath, isRestrictedInCaptiveContext, markCaptiveContextActive } from '../utils/captiveContext'
@@ -10,6 +10,34 @@ import {
   resolveGuestProtectedRedirect,
   resolveLoggedInRoleRedirect,
 } from '../utils/authGuardDecisions'
+import { shouldRedirectToHotspotRequired } from '../utils/hotspotRedirect'
+
+const HOTSPOT_PRECHECK_ROUTES = new Set<string>(['/', '/login', '/register', '/daftar'])
+
+function getQueryValueFromKeys(query: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = query[key]
+    if (Array.isArray(value)) {
+      const first = String(value[0] ?? '').trim()
+      if (first)
+        return first
+      continue
+    }
+    const text = String(value ?? '').trim()
+    if (text)
+      return text
+  }
+  return null
+}
+
+function pickHotspotIdentityQuery(query: Record<string, unknown>): Record<string, string> {
+  const clientIp = getQueryValueFromKeys(query, ['client_ip', 'ip', 'client-ip'])
+  const clientMac = getQueryValueFromKeys(query, ['client_mac', 'mac', 'mac-address', 'client-mac'])
+  return {
+    ...(clientIp ? { client_ip: clientIp } : {}),
+    ...(clientMac ? { client_mac: clientMac } : {}),
+  }
+}
 
 /**
  * Middleware untuk otentikasi dan otorisasi.
@@ -62,10 +90,37 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
     const userDashboard = '/dashboard'
     const adminDashboard = '/admin/dashboard'
     const isDemoUser = authStore.currentUser?.is_demo_user === true
+    const routeQuery = (to.query as Record<string, unknown>) ?? {}
 
     // Halaman public diizinkan untuk semua role (hindari auto-redirect ke dashboard).
     if (isPublicPage)
       return
+
+    if (!isAdmin && HOTSPOT_PRECHECK_ROUTES.has(to.path)) {
+      try {
+        const { $api } = useNuxtApp()
+        const identityQuery = pickHotspotIdentityQuery(routeQuery)
+        const hotspotStatus = await $api<{ hotspot_login_required?: boolean | null, hotspot_session_active?: boolean | null }>('/auth/hotspot-session-status', {
+          method: 'GET',
+          query: identityQuery,
+        })
+
+        if (shouldRedirectToHotspotRequired({
+          hotspotLoginRequired: hotspotStatus?.hotspot_login_required,
+          hotspotSessionActive: hotspotStatus?.hotspot_session_active,
+        })) {
+          const hotspotQuery = pickHotspotIdentityQuery(routeQuery)
+          const queryString = new URLSearchParams(hotspotQuery).toString()
+          const hotspotRequiredPath = queryString.length > 0
+            ? `/login/hotspot-required?${queryString}`
+            : '/login/hotspot-required'
+          return navigateTo(hotspotRequiredPath, { replace: true })
+        }
+      }
+      catch {
+        // Best effort. Jika endpoint status gagal, lanjut ke alur guard normal.
+      }
+    }
 
     const roleRedirect = resolveLoggedInRoleRedirect(to.path, isAdmin, isKomandan)
     if (roleRedirect)
