@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useAuthStore } from '~/store/auth'
+import { clearCaptiveContext } from '~/utils/captiveContext'
 definePageMeta({
   layout: 'blank',
   auth: false,
@@ -72,6 +73,7 @@ function handleDone() {
     return
 
   isClosing.value = true
+  clearCaptiveContext()
   if (import.meta.client) {
     window.close()
     setTimeout(() => {

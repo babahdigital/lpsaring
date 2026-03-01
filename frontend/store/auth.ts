@@ -44,6 +44,9 @@ function extractErrorMessage(errorData: ApiErrorEnvelope | any, defaultMessage: 
 
 export const useAuthStore = defineStore('auth', () => {
   type AccessStatus = 'ok' | 'blocked' | 'inactive' | 'expired' | 'habis' | 'fup'
+  const LAST_MIKROTIK_LOGIN_HINT_KEY = 'lpsaring:last-mikrotik-login-link'
+  const LAST_AUTOLOGIN_ATTEMPT_KEY = 'lpsaring:last-autologin-attempt'
+  const AUTO_LOGIN_RETRY_COOLDOWN_MS = 20000
 
   const user = ref<User | null>(null)
   const lastKnownUser = ref<User | null>(null)
@@ -55,6 +58,8 @@ export const useAuthStore = defineStore('auth', () => {
   const lastUserFetchAt = ref(0)
   const lastAuthErrorCode = ref<number | null>(null)
   const autoLoginAttempted = ref(false)
+  const lastAutoLoginAttemptAt = ref(0)
+  const lastAutoLoginAttemptSignature = ref('')
   const lastStatusRedirect = ref<{ status: AccessStatus; sig?: string | null } | null>(null)
   const logoutInProgress = ref(false)
   const resetLoginInProgress = ref(false)
@@ -67,6 +72,168 @@ export const useAuthStore = defineStore('auth', () => {
   const isUserApprovedAndActive = computed(() =>
     user.value != null && user.value.is_active === true && user.value.approval_status === 'APPROVED',
   )
+
+  function getFirstQueryValue(query: Record<string, unknown>, keys: string[]): string {
+    for (const key of keys) {
+      const raw = query[key]
+      const value = Array.isArray(raw) ? String(raw[0] ?? '').trim() : String(raw ?? '').trim()
+      if (value.length > 0)
+        return value
+    }
+    return ''
+  }
+
+  function decodeOnceSafe(input: string): string {
+    try {
+      return decodeURIComponent(input)
+    }
+    catch {
+      return input
+    }
+  }
+
+  function readMikrotikLoginHintFromRoute(query: Record<string, unknown>): string {
+    const direct = getFirstQueryValue(query, ['link_login_only', 'link-login-only', 'link_login', 'link-login', 'linkloginonly'])
+    if (direct.length > 0)
+      return direct
+
+    const redirectRaw = getFirstQueryValue(query, ['redirect'])
+    if (!redirectRaw || !redirectRaw.includes('link_login_only='))
+      return ''
+
+    try {
+      const parsed = new URL(redirectRaw, 'https://example.invalid')
+      const nested = String(parsed.searchParams.get('link_login_only') ?? '').trim()
+      if (nested.length > 0)
+        return decodeOnceSafe(nested)
+    }
+    catch {
+      const decoded = decodeOnceSafe(redirectRaw)
+      const marker = 'link_login_only='
+      const markerIndex = decoded.indexOf(marker)
+      if (markerIndex >= 0) {
+        const afterMarker = decoded.slice(markerIndex + marker.length)
+        const endIndex = afterMarker.indexOf('&')
+        return decodeOnceSafe((endIndex >= 0 ? afterMarker.slice(0, endIndex) : afterMarker).trim())
+      }
+    }
+
+    return ''
+  }
+
+  function rememberMikrotikLoginHint(link: string) {
+    if (!import.meta.client)
+      return
+    const normalized = String(link ?? '').trim()
+    if (normalized.length === 0)
+      return
+    try {
+      sessionStorage.setItem(LAST_MIKROTIK_LOGIN_HINT_KEY, normalized)
+    }
+    catch {
+      // ignore storage errors
+    }
+  }
+
+  function getStoredMikrotikLoginHint(): string {
+    if (!import.meta.client)
+      return ''
+    try {
+      return String(sessionStorage.getItem(LAST_MIKROTIK_LOGIN_HINT_KEY) ?? '').trim()
+    }
+    catch {
+      return ''
+    }
+  }
+
+  function isIPhoneSafari(): boolean {
+    if (!import.meta.client)
+      return false
+    const ua = String(window.navigator.userAgent ?? '')
+    const isIphone = /iPhone/i.test(ua)
+    const isSafari = /Safari/i.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/i.test(ua)
+    return isIphone && isSafari
+  }
+
+  function shouldAvoidDirectExternalRedirect(target: URL): boolean {
+    return isIPhoneSafari() && target.hostname.toLowerCase().endsWith('.local')
+  }
+
+  function resolveMikrotikLinkFromContext(
+    query: Record<string, unknown>,
+    runtimeConfig: ReturnType<typeof useRuntimeConfig>,
+  ): string {
+    const fromRoute = readMikrotikLoginHintFromRoute(query)
+    if (fromRoute.length > 0)
+      return fromRoute
+
+    const fromStoredHint = getStoredMikrotikLoginHint()
+    if (fromStoredHint.length > 0)
+      return fromStoredHint
+
+    const appLink = String(runtimeConfig.public.appLinkMikrotik ?? '').trim()
+    if (appLink.length > 0)
+      return appLink
+
+    return String(runtimeConfig.public.mikrotikLoginUrl ?? '').trim()
+  }
+
+  function getAutoLoginAttemptSignature(routePath: string, clientIp: string, clientMac: string): string {
+    return [routePath || '-', clientIp || '-', clientMac || '-'].join('|')
+  }
+
+  function rememberAutoLoginAttempt(signature: string) {
+    const nowMs = Date.now()
+    lastAutoLoginAttemptAt.value = nowMs
+    lastAutoLoginAttemptSignature.value = signature
+
+    if (!import.meta.client)
+      return
+    try {
+      sessionStorage.setItem(LAST_AUTOLOGIN_ATTEMPT_KEY, JSON.stringify({ signature, at: nowMs }))
+    }
+    catch {
+      // ignore storage errors
+    }
+  }
+
+  function readStoredAutoLoginAttempt(): { signature: string, at: number } | null {
+    if (!import.meta.client)
+      return null
+    try {
+      const raw = sessionStorage.getItem(LAST_AUTOLOGIN_ATTEMPT_KEY)
+      if (!raw)
+        return null
+      const parsed = JSON.parse(raw) as { signature?: unknown, at?: unknown }
+      const signature = typeof parsed?.signature === 'string' ? parsed.signature : ''
+      const at = Number(parsed?.at ?? 0)
+      if (!signature || !Number.isFinite(at) || at <= 0)
+        return null
+      return { signature, at }
+    }
+    catch {
+      return null
+    }
+  }
+
+  function isAutoLoginRetryCoolingDown(signature: string): boolean {
+    const nowMs = Date.now()
+    if (lastAutoLoginAttemptSignature.value === signature && (nowMs - lastAutoLoginAttemptAt.value) < AUTO_LOGIN_RETRY_COOLDOWN_MS)
+      return true
+
+    const stored = readStoredAutoLoginAttempt()
+    if (!stored)
+      return false
+
+    const isSameSignature = stored.signature === signature
+    const isWithinCooldown = (nowMs - stored.at) < AUTO_LOGIN_RETRY_COOLDOWN_MS
+    if (isSameSignature && isWithinCooldown) {
+      lastAutoLoginAttemptSignature.value = stored.signature
+      lastAutoLoginAttemptAt.value = stored.at
+      return true
+    }
+    return false
+  }
 
   function clearError() {
     error.value = null
@@ -497,10 +664,10 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       if (performRedirect && import.meta.client) {
         const runtimeConfig = useRuntimeConfig()
-        const mikrotikLink = String(runtimeConfig.public.appLinkMikrotik ?? '').trim()
-        if (!shouldRedirectToAdminLogin && mikrotikLink.length > 0) {
           const route = useRoute()
           const routeQuery = (route?.query ?? {}) as Record<string, unknown>
+        const mikrotikLink = resolveMikrotikLinkFromContext(routeQuery, runtimeConfig)
+        if (!shouldRedirectToAdminLogin && mikrotikLink.length > 0) {
           const clientIpRaw = routeQuery.client_ip ?? routeQuery.ip ?? routeQuery['client-ip']
           const clientMacRaw = routeQuery.client_mac ?? routeQuery.mac ?? routeQuery['mac-address'] ?? routeQuery['client-mac']
           const clientIp = Array.isArray(clientIpRaw) ? String(clientIpRaw[0] ?? '').trim() : String(clientIpRaw ?? '').trim()
@@ -511,6 +678,22 @@ export const useAuthStore = defineStore('auth', () => {
             target.searchParams.set('client_ip', clientIp)
           if (clientMac)
             target.searchParams.set('client_mac', clientMac)
+
+          rememberMikrotikLoginHint(target.toString())
+
+          if (shouldAvoidDirectExternalRedirect(target)) {
+            setMessage('iPhone Safari terdeteksi. Buka login hotspot secara manual dari tombol pada halaman berikutnya.')
+            const queryParams = new URLSearchParams()
+            if (clientIp)
+              queryParams.set('client_ip', clientIp)
+            if (clientMac)
+              queryParams.set('client_mac', clientMac)
+            const hotspotRequiredPath = queryParams.toString().length > 0
+              ? `/login/hotspot-required?${queryParams.toString()}`
+              : '/login/hotspot-required'
+            await navigateTo(hotspotRequiredPath, { replace: true })
+            return
+          }
 
           window.location.assign(target.toString())
 
@@ -548,10 +731,10 @@ export const useAuthStore = defineStore('auth', () => {
 
       if (import.meta.client) {
         const runtimeConfig = useRuntimeConfig()
-        const mikrotikLink = String(runtimeConfig.public.appLinkMikrotik ?? '').trim()
-        if (mikrotikLink.length > 0) {
           const route = useRoute()
           const routeQuery = (route?.query ?? {}) as Record<string, unknown>
+        const mikrotikLink = resolveMikrotikLinkFromContext(routeQuery, runtimeConfig)
+        if (mikrotikLink.length > 0) {
           const clientIpRaw = routeQuery.client_ip ?? routeQuery.ip ?? routeQuery['client-ip']
           const clientMacRaw = routeQuery.client_mac ?? routeQuery.mac ?? routeQuery['mac-address'] ?? routeQuery['client-mac']
           const clientIp = Array.isArray(clientIpRaw) ? String(clientIpRaw[0] ?? '').trim() : String(clientIpRaw ?? '').trim()
@@ -562,6 +745,22 @@ export const useAuthStore = defineStore('auth', () => {
             target.searchParams.set('client_ip', clientIp)
           if (clientMac)
             target.searchParams.set('client_mac', clientMac)
+
+          rememberMikrotikLoginHint(target.toString())
+
+          if (shouldAvoidDirectExternalRedirect(target)) {
+            setMessage('iPhone Safari terdeteksi. Buka login hotspot secara manual dari tombol pada halaman berikutnya.')
+            const queryParams = new URLSearchParams()
+            if (clientIp)
+              queryParams.set('client_ip', clientIp)
+            if (clientMac)
+              queryParams.set('client_mac', clientMac)
+            const hotspotRequiredPath = queryParams.toString().length > 0
+              ? `/login/hotspot-required?${queryParams.toString()}`
+              : '/login/hotspot-required'
+            await navigateTo(hotspotRequiredPath, { replace: true })
+            return true
+          }
 
           window.location.assign(target.toString())
 
@@ -616,15 +815,22 @@ export const useAuthStore = defineStore('auth', () => {
     const routePath = route?.path ?? ''
     const context: 'login' | 'captive' = routePath.startsWith('/captive') ? 'captive' : 'login'
     const query = (route as any)?.query ?? {}
-    const clientIp = (query.client_ip ?? query.ip ?? query['client-ip']) as string | undefined
-    const clientMac = (query.client_mac ?? query.mac ?? query['mac-address'] ?? query['mac']) as string | undefined
+    const mikrotikHint = readMikrotikLoginHintFromRoute(query as Record<string, unknown>)
+    if (mikrotikHint.length > 0)
+      rememberMikrotikLoginHint(mikrotikHint)
+
+    const queryRecord = query as Record<string, unknown>
+    const clientIp = getFirstQueryValue(queryRecord, ['client_ip', 'ip', 'client-ip'])
+    const clientMac = getFirstQueryValue(queryRecord, ['client_mac', 'mac', 'mac-address', 'client-mac'])
     const hasIdentityHints = Boolean(clientIp || clientMac)
-    const isCaptiveRoute = routePath.startsWith('/captive')
-    const shouldAttemptAutoLoginForRoute = isCaptiveRoute || hasIdentityHints
+    const shouldAttemptAutoLoginForRoute = hasIdentityHints
+    const autoLoginSignature = getAutoLoginAttemptSignature(routePath, clientIp, clientMac)
+    const autoLoginCoolingDown = shouldAttemptAutoLoginForRoute && isAutoLoginRetryCoolingDown(autoLoginSignature)
     const shouldAttemptAutoLogin = import.meta.client
       && user.value == null
       && autoLoginAttempted.value !== true
       && shouldAttemptAutoLoginForRoute
+      && autoLoginCoolingDown !== true
 
     if (initialAuthCheckDone.value === true && !shouldAttemptAutoLogin) {
       const staleAfterMs = 15000
@@ -640,6 +846,7 @@ export const useAuthStore = defineStore('auth', () => {
 
       if (user.value == null && shouldAttemptAutoLogin) {
         autoLoginAttempted.value = true
+        rememberAutoLoginAttempt(autoLoginSignature)
         try {
           if (!routePath.startsWith('/admin')) {
             const { $api } = useNuxtApp()

@@ -18,6 +18,16 @@ export function markCaptiveContextActive(): void {
   }
 }
 
+export function clearCaptiveContext(): void {
+  try {
+    const storage = getSessionStorage()
+    storage?.removeItem(CAPTIVE_CONTEXT_KEY)
+  }
+  catch {
+    // ignore storage failures
+  }
+}
+
 export function isCaptiveContextActive(): boolean {
   try {
     const storage = getSessionStorage()

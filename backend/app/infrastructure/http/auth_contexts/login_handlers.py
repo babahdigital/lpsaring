@@ -33,6 +33,29 @@ def auto_login_impl(
     build_status_error,
 ):
     try:
+        def _log_auto_login_decision(
+            *,
+            reason_code: str,
+            http_status: HTTPStatus,
+            client_ip_value: Any = None,
+            client_mac_value: Any = None,
+            resolved_mac_value: Any = None,
+            user_id_value: Any = None,
+            level: str = "info",
+            details: str | None = None,
+        ) -> None:
+            logger_fn = getattr(current_app.logger, level, current_app.logger.info)
+            logger_fn(
+                "AUTO_LOGIN_DECISION reason=%s status=%s client_ip=%s client_mac=%s resolved_mac=%s user_id=%s details=%s",
+                reason_code,
+                int(http_status),
+                client_ip_value,
+                client_mac_value,
+                resolved_mac_value,
+                user_id_value,
+                details or "",
+            )
+
         payload_dict: dict[str, Any] = cast(dict[str, Any], payload) if isinstance(payload, dict) else {}
         if payload_dict:
             if not payload_dict.get("client_ip"):
@@ -62,9 +85,33 @@ def auto_login_impl(
 
         client_ip = payload_dict.get("client_ip")
         client_mac = payload_dict.get("client_mac")
+
+        has_explicit_identity_hint = bool(client_ip or client_mac)
+        if not has_explicit_identity_hint:
+            _log_auto_login_decision(
+                reason_code="MISSING_EXPLICIT_IDENTITY_HINT",
+                http_status=HTTPStatus.UNAUTHORIZED,
+                client_ip_value=client_ip,
+                client_mac_value=client_mac,
+                level="warning",
+                details="auto-login requires client_ip/client_mac from captive context",
+            )
+            return jsonify(
+                AuthErrorResponseSchema(
+                    error="Konteks hotspot tidak lengkap untuk auto-login. Silakan lanjutkan login OTP."
+                ).model_dump()
+            ), HTTPStatus.UNAUTHORIZED
+
         if not client_ip:
             client_ip = get_client_ip()
         if not client_ip:
+            _log_auto_login_decision(
+                reason_code="CLIENT_IP_MISSING",
+                http_status=HTTPStatus.BAD_REQUEST,
+                client_ip_value=client_ip,
+                client_mac_value=client_mac,
+                level="warning",
+            )
             return jsonify(
                 AuthErrorResponseSchema(error="IP klien tidak ditemukan.").model_dump()
             ), HTTPStatus.BAD_REQUEST
@@ -72,6 +119,13 @@ def auto_login_impl(
         from app.services.device_management_service import _is_client_ip_allowed  # type: ignore
 
         if not _is_client_ip_allowed(client_ip):
+            _log_auto_login_decision(
+                reason_code="IP_OUT_OF_ALLOWED_RANGE",
+                http_status=HTTPStatus.FORBIDDEN,
+                client_ip_value=client_ip,
+                client_mac_value=client_mac,
+                level="warning",
+            )
             return jsonify(
                 AuthErrorResponseSchema(error="IP klien di luar jaringan hotspot yang diizinkan.").model_dump()
             ), HTTPStatus.FORBIDDEN
@@ -82,12 +136,28 @@ def auto_login_impl(
         ok_mac, router_mac, mac_msg = resolve_client_mac(client_ip)
         if not ok_mac:
             current_app.logger.warning("Auto-login: gagal verifikasi MAC dari router untuk ip=%s: %s", client_ip, mac_msg)
+            _log_auto_login_decision(
+                reason_code="ROUTER_MAC_RESOLUTION_FAILED",
+                http_status=HTTPStatus.SERVICE_UNAVAILABLE,
+                client_ip_value=client_ip,
+                client_mac_value=client_mac,
+                level="warning",
+                details=str(mac_msg),
+            )
             return jsonify(
                 AuthErrorResponseSchema(error="Tidak dapat memverifikasi perangkat dari router.").model_dump()
             ), HTTPStatus.SERVICE_UNAVAILABLE
 
         resolved_mac = normalize_mac(router_mac) if router_mac else None
         if not resolved_mac:
+            _log_auto_login_decision(
+                reason_code="ROUTER_MAC_NOT_FOUND",
+                http_status=HTTPStatus.UNAUTHORIZED,
+                client_ip_value=client_ip,
+                client_mac_value=client_mac,
+                resolved_mac_value=resolved_mac,
+                level="warning",
+            )
             return jsonify(
                 AuthErrorResponseSchema(error="Perangkat belum terdeteksi di router.").model_dump()
             ), HTTPStatus.UNAUTHORIZED
@@ -100,6 +170,14 @@ def auto_login_impl(
                     client_ip,
                     incoming_mac,
                     resolved_mac,
+                )
+                _log_auto_login_decision(
+                    reason_code="INCOMING_MAC_MISMATCH",
+                    http_status=HTTPStatus.FORBIDDEN,
+                    client_ip_value=client_ip,
+                    client_mac_value=incoming_mac,
+                    resolved_mac_value=resolved_mac,
+                    level="warning",
                 )
                 return jsonify(
                     AuthErrorResponseSchema(error="Identitas perangkat tidak valid.").model_dump()
@@ -124,10 +202,27 @@ def auto_login_impl(
         user = device.user if (device and getattr(device, "user", None)) else None
 
         if not user:
+            _log_auto_login_decision(
+                reason_code="DEVICE_NOT_AUTHORIZED_OR_USER_NOT_APPROVED",
+                http_status=HTTPStatus.UNAUTHORIZED,
+                client_ip_value=client_ip,
+                client_mac_value=client_mac,
+                resolved_mac_value=resolved_mac,
+                level="warning",
+            )
             return jsonify(
                 AuthErrorResponseSchema(error="Perangkat belum terdaftar atau belum diotorisasi.").model_dump()
             ), HTTPStatus.UNAUTHORIZED
         if getattr(user, "is_blocked", False):
+            _log_auto_login_decision(
+                reason_code="USER_BLOCKED",
+                http_status=HTTPStatus.FORBIDDEN,
+                client_ip_value=client_ip,
+                client_mac_value=client_mac,
+                resolved_mac_value=resolved_mac,
+                user_id_value=getattr(user, "id", None),
+                level="warning",
+            )
             return build_status_error("blocked", "Akun Anda diblokir oleh Admin."), HTTPStatus.FORBIDDEN
 
         if user.role in [UserRole.USER, UserRole.KOMANDAN, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
@@ -141,6 +236,16 @@ def auto_login_impl(
             )
             if not ok_binding:
                 if msg_binding in ["Limit perangkat tercapai", "Perangkat belum diotorisasi"]:
+                    _log_auto_login_decision(
+                        reason_code="DEVICE_BINDING_REJECTED",
+                        http_status=HTTPStatus.FORBIDDEN,
+                        client_ip_value=client_ip,
+                        client_mac_value=client_mac,
+                        resolved_mac_value=resolved_mac,
+                        user_id_value=getattr(user, "id", None),
+                        level="warning",
+                        details=str(msg_binding),
+                    )
                     return jsonify(AuthErrorResponseSchema(error=msg_binding).model_dump()), HTTPStatus.FORBIDDEN
                 current_app.logger.warning(f"Auto-login: IP binding di-skip untuk user {user.id}: {msg_binding}")
 
@@ -186,6 +291,14 @@ def auto_login_impl(
         )
         set_auth_cookie(response, access_token)
         set_refresh_cookie(response, refresh_token)
+        _log_auto_login_decision(
+            reason_code="AUTO_LOGIN_SUCCESS",
+            http_status=HTTPStatus.OK,
+            client_ip_value=client_ip,
+            client_mac_value=client_mac,
+            resolved_mac_value=resolved_mac,
+            user_id_value=getattr(user, "id", None),
+        )
         return response, HTTPStatus.OK
     except Exception as e:
         db.session.rollback()

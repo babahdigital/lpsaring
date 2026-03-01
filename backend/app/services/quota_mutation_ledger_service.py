@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 import sqlalchemy as sa
+from sqlalchemy.exc import IntegrityError
 from flask import has_app_context
 
 from app.extensions import db
@@ -63,6 +64,10 @@ def append_quota_mutation_event(
     item.after_state = after_state
     item.event_details = event_details or None
     try:
-        db.session.add(item)
+        with db.session.begin_nested():
+            db.session.add(item)
+            db.session.flush()
     except RuntimeError:
+        return
+    except IntegrityError:
         return
