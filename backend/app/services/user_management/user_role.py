@@ -14,17 +14,19 @@ from . import user_debt as debt_service
 
 
 def _resolve_default_server() -> str:
-    return settings_service.get_setting("MIKROTIK_DEFAULT_SERVER", None) or settings_service.get_setting(
-        "MIKROTIK_DEFAULT_SERVER_USER", "srv-user"
+    return (
+        settings_service.get_setting("MIKROTIK_DEFAULT_SERVER", None)
+        or settings_service.get_setting("MIKROTIK_DEFAULT_SERVER_USER", "srv-user")
+        or "srv-user"
     )
 
 
 def _resolve_komandan_server() -> str:
-    return settings_service.get_setting("MIKROTIK_DEFAULT_SERVER_KOMANDAN", "srv-komandan")
+    return settings_service.get_setting("MIKROTIK_DEFAULT_SERVER_KOMANDAN", "srv-komandan") or "srv-komandan"
 
 
 def _resolve_komandan_profile() -> str:
-    return settings_service.get_setting("MIKROTIK_KOMANDAN_PROFILE", "komandan")
+    return settings_service.get_setting("MIKROTIK_KOMANDAN_PROFILE", "komandan") or "komandan"
 
 
 def _resolve_active_profile() -> str:
@@ -32,11 +34,12 @@ def _resolve_active_profile() -> str:
         settings_service.get_setting("MIKROTIK_ACTIVE_PROFILE", None)
         or settings_service.get_setting("MIKROTIK_USER_PROFILE", "user")
         or settings_service.get_setting("MIKROTIK_DEFAULT_PROFILE", "default")
+        or "default"
     )
 
 
 def _resolve_unlimited_profile() -> str:
-    return settings_service.get_setting("MIKROTIK_UNLIMITED_PROFILE", "unlimited")
+    return settings_service.get_setting("MIKROTIK_UNLIMITED_PROFILE", "unlimited") or "unlimited"
 
 
 def change_user_role(
@@ -138,7 +141,7 @@ def change_user_role(
         user.mikrotik_profile_name = active_profile
 
         try:
-            initial_quota_mb_str = settings_service.get_setting("USER_INITIAL_QUOTA_MB", "1024")
+            initial_quota_mb_str = settings_service.get_setting("USER_INITIAL_QUOTA_MB", "1024") or "1024"
             user.total_quota_purchased_mb = int(initial_quota_mb_str)
         except (ValueError, TypeError):
             current_app.logger.warning(
@@ -176,7 +179,7 @@ def change_user_role(
                 pass
 
             try:
-                initial_quota_mb_str = settings_service.get_setting("KOMANDAN_INITIAL_QUOTA_MB", "5120")
+                initial_quota_mb_str = settings_service.get_setting("KOMANDAN_INITIAL_QUOTA_MB", "5120") or "5120"
                 initial_quota_mb = int(initial_quota_mb_str)
             except (ValueError, TypeError):
                 current_app.logger.warning(
@@ -185,7 +188,7 @@ def change_user_role(
                 initial_quota_mb = 5120
 
             try:
-                duration_days_str = settings_service.get_setting("KOMANDAN_INITIAL_DURATION_DAYS", "30")
+                duration_days_str = settings_service.get_setting("KOMANDAN_INITIAL_DURATION_DAYS", "30") or "30"
                 initial_duration_days = int(duration_days_str)
             except (ValueError, TypeError):
                 current_app.logger.warning(

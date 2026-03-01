@@ -27,17 +27,16 @@ def create_promo_event(current_admin: User):
         data = PromoEventCreateSchema.model_validate(json_data)
 
         # --- PERBAIKAN: Menambahkan bonus_duration_days saat membuat event ---
-        new_event = PromoEvent(
-            name=data.name,
-            description=data.description,
-            event_type=data.event_type,
-            status=data.status,
-            start_date=data.start_date,
-            end_date=data.end_date,
-            bonus_value_mb=data.bonus_value_mb,
-            bonus_duration_days=data.bonus_duration_days,  # <-- Tambahkan ini
-            created_by_id=current_admin.id,
-        )
+        new_event = PromoEvent()
+        new_event.name = data.name
+        new_event.description = data.description
+        new_event.event_type = data.event_type
+        new_event.status = data.status
+        new_event.start_date = data.start_date
+        new_event.end_date = data.end_date
+        new_event.bonus_value_mb = data.bonus_value_mb
+        new_event.bonus_duration_days = data.bonus_duration_days
+        new_event.created_by_id = current_admin.id
 
         db.session.add(new_event)
         db.session.commit()

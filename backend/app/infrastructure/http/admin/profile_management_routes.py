@@ -59,7 +59,9 @@ def create_profile(current_admin: User):
     try:
         profile_data = ProfileCreateUpdateSchema.model_validate(request.get_json())
 
-        new_profile = PackageProfile(profile_name=profile_data.profile_name, description=profile_data.description)
+        new_profile = PackageProfile()
+        new_profile.profile_name = profile_data.profile_name
+        new_profile.description = profile_data.description
         db.session.add(new_profile)
         db.session.commit()
 

@@ -130,7 +130,8 @@ def create_package(current_admin: User):
                 return jsonify({"message": error_message}), HTTPStatus.CONFLICT
 
             try:
-                target_profile = PackageProfile(profile_name=resolved_name)
+                target_profile = PackageProfile()
+                target_profile.profile_name = resolved_name
                 db.session.add(target_profile)
                 db.session.flush()
                 current_app.logger.info(
@@ -152,6 +153,9 @@ def create_package(current_admin: User):
         db.session.commit()
 
         created_package = db.session.get(Package, new_package.id)
+        if not created_package:
+            current_app.logger.error("Paket baru tidak ditemukan setelah commit. package_id=%s", new_package.id)
+            return jsonify({"message": "Paket berhasil disimpan tetapi gagal dimuat ulang."}), HTTPStatus.CREATED
         current_app.logger.info(
             f"Paket '{created_package.name}' (ID: {created_package.id}) berhasil dibuat dengan profile_id: {created_package.profile_id} (Profil: '{target_profile_name}')"
         )
