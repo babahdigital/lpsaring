@@ -144,6 +144,121 @@ def clear_total_if_no_update_submission_task(self):
         return {"success": True, "cleared_users": len(users), "stale_days": stale_days}
 
 
+@celery_app.task(
+    name="send_public_update_submission_whatsapp_batch_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 1},
+)
+def send_public_update_submission_whatsapp_batch_task(self):
+    """Kirim WA bertahap untuk data public update (maks 3 nomor unik per siklus secara default)."""
+
+    app = create_app()
+    with app.app_context():
+        if not bool(app.config.get("UPDATE_ENABLE_SYNC", False)):
+            logger.info("Update sync WA batch skipped: UPDATE_ENABLE_SYNC is disabled.")
+            return {"success": True, "skipped": True, "reason": "update_sync_disabled"}
+
+        if settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") != "True":
+            logger.info("Update sync WA batch skipped: WhatsApp notifications disabled.")
+            return {"success": True, "skipped": True, "reason": "whatsapp_disabled"}
+
+        from app.infrastructure.db.models import PublicDatabaseUpdateSubmission
+
+        try:
+            batch_size = int(app.config.get("UPDATE_WHATSAPP_BATCH_SIZE", 3))
+        except Exception:
+            batch_size = 3
+        batch_size = max(1, min(batch_size, 20))
+
+        message_template = (
+            app.config.get("UPDATE_WHATSAPP_IMPORT_MESSAGE_TEMPLATE")
+            or "Halo {full_name}, data pemutakhiran Anda sudah kami terima dan sedang diproses."
+        )
+
+        fetch_limit = max(batch_size * 10, 30)
+        all_rows = db.session.query(PublicDatabaseUpdateSubmission).all()
+        pending_rows = [
+            row
+            for row in all_rows
+            if getattr(row, "whatsapp_notified_at", None) is None and str(getattr(row, "phone_number", "") or "").strip()
+        ]
+        pending_rows.sort(key=lambda item: getattr(item, "created_at", datetime.min.replace(tzinfo=dt_timezone.utc)))
+        pending_rows = pending_rows[:fetch_limit]
+
+        def _normalize_phone_key(phone_number: str) -> str:
+            digits = "".join(ch for ch in str(phone_number or "") if ch.isdigit())
+            if not digits:
+                return ""
+            if digits.startswith("0"):
+                return f"62{digits[1:]}"
+            if digits.startswith("8"):
+                return f"62{digits}"
+            return digits
+
+        phone_groups = {}
+        for row in pending_rows:
+            key = _normalize_phone_key(getattr(row, "phone_number", ""))
+            if not key:
+                continue
+            phone_groups.setdefault(key, []).append(row)
+            if len(phone_groups) >= batch_size:
+                break
+
+        if not phone_groups:
+            logger.info("Update sync WA batch: no pending submissions with valid phone numbers.")
+            return {"success": True, "skipped": True, "reason": "no_pending_phone"}
+
+        sent_numbers = 0
+        failed_numbers = 0
+        now_utc = datetime.now(dt_timezone.utc)
+
+        for _phone_key, grouped_rows in phone_groups.items():
+            representative = grouped_rows[0]
+            context = {
+                "full_name": getattr(representative, "full_name", "Pengguna"),
+                "role": getattr(representative, "role", ""),
+                "blok": getattr(representative, "blok", ""),
+                "kamar": getattr(representative, "kamar", ""),
+            }
+
+            try:
+                message = str(message_template).format(**context)
+            except Exception:
+                message = f"Halo {context['full_name']}, data pemutakhiran Anda sudah kami terima dan sedang diproses."
+
+            sent_ok = bool(send_whatsapp_message(getattr(representative, "phone_number", ""), message))
+            for row in grouped_rows:
+                row.whatsapp_notify_attempts = int(getattr(row, "whatsapp_notify_attempts", 0) or 0) + 1
+                if sent_ok:
+                    row.whatsapp_notified_at = now_utc
+                    row.whatsapp_notify_last_error = None
+                else:
+                    row.whatsapp_notify_last_error = "send_failed"
+
+            if sent_ok:
+                sent_numbers += 1
+            else:
+                failed_numbers += 1
+
+        db.session.commit()
+
+        logger.info(
+            "Update sync WA batch processed: sent_numbers=%s failed_numbers=%s batch_size=%s",
+            sent_numbers,
+            failed_numbers,
+            batch_size,
+        )
+        return {
+            "success": True,
+            "sent_numbers": sent_numbers,
+            "failed_numbers": failed_numbers,
+            "batch_size": batch_size,
+        }
+
+
 def _parse_mikrotik_duration_seconds(value: str) -> int:
     text = str(value or "").strip().lower()
     if not text:

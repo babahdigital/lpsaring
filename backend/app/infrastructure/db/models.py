@@ -762,6 +762,9 @@ class PublicDatabaseUpdateSubmission(db.Model):
     kamar: Mapped[str] = mapped_column(String(20), nullable=False)
     phone_number: Mapped[Optional[str]] = mapped_column(String(25), nullable=True)
     source_ip: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    whatsapp_notify_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    whatsapp_notified_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    whatsapp_notify_last_error: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -315,6 +315,11 @@ class Config:
     PUBLIC_DB_UPDATE_FORM_ENABLED = get_env_bool("PUBLIC_DB_UPDATE_FORM_ENABLED", "False")
     UPDATE_ENABLE_SYNC = get_env_bool("UPDATE_ENABLE_SYNC", "False")
     UPDATE_CLEAR_TOTAL_AFTER_DAYS = get_env_int("UPDATE_CLEAR_TOTAL_AFTER_DAYS", 3)
+    UPDATE_WHATSAPP_BATCH_SIZE = get_env_int("UPDATE_WHATSAPP_BATCH_SIZE", 3)
+    UPDATE_WHATSAPP_IMPORT_MESSAGE_TEMPLATE = os.environ.get(
+        "UPDATE_WHATSAPP_IMPORT_MESSAGE_TEMPLATE",
+        "Halo {full_name}, data pemutakhiran Anda sudah kami terima dan sedang diproses.",
+    )
 
     # Signed token for public transaction status links (shareable via WhatsApp).
     TRANSACTION_STATUS_TOKEN_MAX_AGE_SECONDS = get_env_int(

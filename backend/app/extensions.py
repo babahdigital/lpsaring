@@ -242,6 +242,10 @@ def make_celery_app(app=None):
             "task": "clear_total_if_no_update_submission_task",
             "schedule": max(300, update_sync_interval),
         }
+        celery_instance.conf.beat_schedule["send-public-update-whatsapp-batch"] = {
+            "task": "send_public_update_submission_whatsapp_batch_task",
+            "schedule": max(60, update_sync_interval),
+        }
 
     if app:
         # Konfigurasi Celery dari konfigurasi Flask app
