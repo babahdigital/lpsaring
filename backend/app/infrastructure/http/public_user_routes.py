@@ -55,11 +55,15 @@ def create_public_database_update_submission():
 
         req_data = PublicDatabaseUpdateSubmissionRequestSchema.model_validate(json_data)
     except ValidationError as e:
+        try:
+            details = e.errors(include_context=False)
+        except TypeError:
+            details = e.errors()
         return jsonify(
             {
                 "success": False,
                 "message": "Data input tidak valid.",
-                "details": e.errors(),
+                "details": details,
             }
         ), HTTPStatus.UNPROCESSABLE_ENTITY
     except Exception as e:
@@ -78,6 +82,7 @@ def create_public_database_update_submission():
         submission.role = req_data.role
         submission.blok = req_data.blok
         submission.kamar = req_data.kamar
+        submission.tamping_type = req_data.tamping_type
         submission.phone_number = req_data.phone_number
         submission.source_ip = source_ip
 

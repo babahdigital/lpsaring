@@ -6,6 +6,7 @@ import secrets
 import subprocess
 import sys
 import re
+from urllib.parse import quote_plus
 from pathlib import Path
 from datetime import datetime, timedelta, timezone as dt_timezone
 from sqlalchemy import text
@@ -175,8 +176,9 @@ def send_public_update_submission_whatsapp_batch_task(self):
 
         message_template = (
             app.config.get("UPDATE_WHATSAPP_IMPORT_MESSAGE_TEMPLATE")
-            or "Halo {full_name}, data pemutakhiran Anda sudah kami terima dan sedang diproses."
+            or "Halo {full_name}, silakan lanjutkan pemutakhiran data melalui link ini: {update_link}"
         )
+        base_public_url = str(app.config.get("APP_PUBLIC_BASE_URL") or "").strip().rstrip("/")
 
         fetch_limit = max(batch_size * 10, 30)
         all_rows = db.session.query(PublicDatabaseUpdateSubmission).all()
@@ -222,12 +224,25 @@ def send_public_update_submission_whatsapp_batch_task(self):
                 "role": getattr(representative, "role", ""),
                 "blok": getattr(representative, "blok", ""),
                 "kamar": getattr(representative, "kamar", ""),
+                "tamping_type": getattr(representative, "tamping_type", "") or "",
             }
+
+            phone_for_link = str(getattr(representative, "phone_number", "") or "").strip()
+            encoded_phone = quote_plus(phone_for_link)
+            encoded_name = quote_plus(str(context.get("full_name") or ""))
+            if base_public_url:
+                update_link = f"{base_public_url}/update?phone={encoded_phone}&name={encoded_name}"
+            else:
+                update_link = f"/update?phone={encoded_phone}&name={encoded_name}"
+            context["update_link"] = update_link
 
             try:
                 message = str(message_template).format(**context)
             except Exception:
-                message = f"Halo {context['full_name']}, data pemutakhiran Anda sudah kami terima dan sedang diproses."
+                message = (
+                    f"Halo {context['full_name']}, silakan lanjutkan pemutakhiran data melalui link ini: "
+                    f"{update_link}"
+                )
 
             sent_ok = bool(send_whatsapp_message(getattr(representative, "phone_number", ""), message))
             for row in grouped_rows:

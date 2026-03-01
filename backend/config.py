@@ -318,7 +318,7 @@ class Config:
     UPDATE_WHATSAPP_BATCH_SIZE = get_env_int("UPDATE_WHATSAPP_BATCH_SIZE", 3)
     UPDATE_WHATSAPP_IMPORT_MESSAGE_TEMPLATE = os.environ.get(
         "UPDATE_WHATSAPP_IMPORT_MESSAGE_TEMPLATE",
-        "Halo {full_name}, data pemutakhiran Anda sudah kami terima dan sedang diproses.",
+        "Halo {full_name}, silakan lanjutkan pemutakhiran data melalui link ini: {update_link}",
     )
 
     # Signed token for public transaction status links (shareable via WhatsApp).

@@ -373,10 +373,11 @@ class WhatsappValidationRequest(BaseModel):
 
 class PublicDatabaseUpdateSubmissionRequestSchema(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=100)
-    role: Literal["KOMANDAN", "TAMPING"]
-    blok: str = Field(..., examples=["A"], min_length=1, max_length=10)
-    kamar: str = Field(..., examples=["Kamar_1", "1"], min_length=1, max_length=20)
-    phone_number: Optional[str] = Field(None, examples=["+6281234567890"])
+    role: Literal["USER", "KOMANDAN", "TAMPING"]
+    blok: Optional[str] = Field(None, examples=["A"], min_length=1, max_length=10)
+    kamar: Optional[str] = Field(None, examples=["Kamar_1", "1"], min_length=1, max_length=20)
+    tamping_type: Optional[str] = Field(None, examples=["Tamping AO"])
+    phone_number: str = Field(..., examples=["+6281234567890"])
 
     @field_validator("full_name", mode="before")
     @classmethod
@@ -401,41 +402,78 @@ class PublicDatabaseUpdateSubmissionRequestSchema(BaseModel):
 
     @field_validator("blok", mode="before")
     @classmethod
-    def validate_submission_blok(cls, v: Any) -> str:
+    def validate_submission_blok(cls, v: Any) -> Optional[str]:
         if v is None:
-            raise ValueError("Blok wajib diisi.")
+            return None
         if not isinstance(v, str):
             raise TypeError("Blok harus berupa string.")
         v_upper = v.strip().upper()
+        if v_upper == "":
+            return None
         if v_upper in [b.value for b in UserBlok]:
             return v_upper
         raise ValueError(f"Blok '{v}' tidak valid. Pilihan: {[b.value for b in UserBlok]}")
 
     @field_validator("kamar", mode="before")
     @classmethod
-    def validate_submission_kamar(cls, v: Any) -> str:
+    def validate_submission_kamar(cls, v: Any) -> Optional[str]:
         if v is None:
-            raise ValueError("Kamar wajib diisi.")
+            return None
         if not isinstance(v, str):
             raise TypeError("Kamar harus berupa string.")
         cleaned = v.strip()
+        if cleaned == "":
+            return None
         if cleaned.isdigit() and 1 <= int(cleaned) <= 6:
             return f"Kamar_{cleaned}"
         if cleaned in [k.value for k in UserKamar]:
             return cleaned
         raise ValueError(f"Kamar '{v}' tidak valid. Pilihan: {[k.value for k in UserKamar]} atau angka 1-6.")
 
-    @field_validator("phone_number", mode="before")
+    @field_validator("tamping_type", mode="before")
     @classmethod
-    def validate_optional_phone(cls, v: Any) -> Optional[str]:
+    def validate_submission_tamping_type(cls, v: Any) -> Optional[str]:
         if v is None:
             return None
+        if not isinstance(v, str):
+            raise TypeError("Jenis tamping harus berupa string.")
+        cleaned = v.strip()
+        if cleaned == "":
+            return None
+        if cleaned not in ALLOWED_TAMPING_TYPES:
+            raise ValueError(f"Jenis tamping '{cleaned}' tidak valid.")
+        return cleaned
+
+    @field_validator("phone_number", mode="before")
+    @classmethod
+    def validate_required_phone(cls, v: Any) -> str:
+        if v is None:
+            raise ValueError("Nomor telepon wajib tersedia dari link WhatsApp.")
         if not isinstance(v, str):
             raise TypeError("Nomor telepon harus berupa string.")
         stripped_v = v.strip()
         if stripped_v == "":
-            return None
+            raise ValueError("Nomor telepon wajib tersedia dari link WhatsApp.")
         return validate_indonesian_phone_number(stripped_v)
+
+    @model_validator(mode="after")
+    def validate_role_specific_fields(self):
+        role_upper = str(self.role or "").upper()
+        if role_upper == "USER":
+            if not self.blok:
+                raise ValueError("Blok wajib diisi untuk role USER.")
+            if not self.kamar:
+                raise ValueError("Kamar wajib diisi untuk role USER.")
+        elif role_upper == "TAMPING":
+            if not self.tamping_type:
+                raise ValueError("Jenis tamping wajib diisi untuk role TAMPING.")
+            self.blok = None
+            self.kamar = None
+        elif role_upper == "KOMANDAN":
+            self.blok = None
+            self.kamar = None
+            self.tamping_type = None
+        return self
 
 
 class UserQuotaResponse(BaseModel):

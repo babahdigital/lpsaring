@@ -73,10 +73,10 @@ def test_public_db_update_submission_accepts_blank_phone(monkeypatch):
         method="POST",
         json={
             "full_name": "Abdullah",
-            "role": "tamping",
+            "role": "user",
             "blok": "b",
             "kamar": "2",
-            "phone_number": "",
+            "phone_number": "081154006767",
         },
     ):
         response, status = impl()
@@ -88,10 +88,65 @@ def test_public_db_update_submission_accepts_blank_phone(monkeypatch):
 
     created = fake_session.added[0]
     assert created.full_name == "Abdullah"
-    assert created.role == "TAMPING"
+    assert created.role == "USER"
     assert created.blok == "B"
     assert created.kamar == "Kamar_2"
-    assert created.phone_number is None
+    assert created.phone_number == "+6281154006767"
+
+
+def test_public_db_update_submission_rejects_missing_phone(monkeypatch):
+    fake_session = _FakeSession()
+    monkeypatch.setattr(public_user_routes, "db", _FakeDb(fake_session))
+
+    impl = _unwrap_decorators(public_user_routes.create_public_database_update_submission)
+
+    app = _make_app(enabled=True)
+    with app.test_request_context(
+        "/api/users/database-update-submissions",
+        method="POST",
+        json={
+            "full_name": "Abdullah",
+            "role": "USER",
+            "blok": "A",
+            "kamar": "1",
+            "phone_number": "",
+        },
+    ):
+        response, status = impl()
+
+    assert status == 422
+    payload = response.get_json()
+    assert payload["success"] is False
+
+
+def test_public_db_update_submission_accepts_tamping_type_without_address(monkeypatch):
+    fake_session = _FakeSession()
+    monkeypatch.setattr(public_user_routes, "db", _FakeDb(fake_session))
+
+    impl = _unwrap_decorators(public_user_routes.create_public_database_update_submission)
+
+    app = _make_app(enabled=True)
+    with app.test_request_context(
+        "/api/users/database-update-submissions",
+        method="POST",
+        json={
+            "full_name": "Tamping Test",
+            "role": "TAMPING",
+            "tamping_type": "Tamping AO",
+            "phone_number": "081154006767",
+        },
+    ):
+        response, status = impl()
+
+    assert status == 201
+    payload = response.get_json()
+    assert payload["success"] is True
+
+    created = fake_session.added[0]
+    assert created.role == "TAMPING"
+    assert created.tamping_type == "Tamping AO"
+    assert created.blok is None
+    assert created.kamar is None
 
 
 def test_public_db_update_submission_rejects_invalid_role(monkeypatch):

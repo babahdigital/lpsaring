@@ -55,6 +55,7 @@ def _serialize_public_update_submission(item: PublicDatabaseUpdateSubmission) ->
         "role": item.role,
         "blok": item.blok,
         "kamar": item.kamar,
+        "tamping_type": item.tamping_type,
         "phone_number": item.phone_number,
         "source_ip": item.source_ip,
         "approval_status": item.approval_status,
@@ -181,12 +182,21 @@ def approve_public_update_submission(current_admin: User, submission_id):
     elif role_upper == "TAMPING":
         user.role = UserRole.USER
         user.is_tamping = True
-        user.tamping_type = "TAMPING"
+        user.tamping_type = submission.tamping_type
+        user.blok = None
+        user.kamar = None
+    elif role_upper == "USER":
+        user.role = UserRole.USER
+        user.is_tamping = False
+        user.tamping_type = None
+        user.blok = submission.blok
+        user.kamar = submission.kamar
     else:
         return jsonify({"message": "Role pengajuan tidak valid."}), HTTPStatus.BAD_REQUEST
 
-    user.blok = submission.blok
-    user.kamar = submission.kamar
+    if role_upper == "KOMANDAN":
+        user.blok = None
+        user.kamar = None
 
     submission.approval_status = "APPROVED"
     submission.rejection_reason = None

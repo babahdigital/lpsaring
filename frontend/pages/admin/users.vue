@@ -46,8 +46,9 @@ interface PublicUpdateSubmission {
   id: string
   full_name: string
   role: 'KOMANDAN' | 'TAMPING'
-  blok: string
-  kamar: string
+  blok: string | null
+  kamar: string | null
+  tamping_type?: string | null
   phone_number: string | null
   approval_status: 'PENDING' | 'APPROVED' | 'REJECTED'
   created_at: string
