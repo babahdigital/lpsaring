@@ -752,6 +752,24 @@ class QuotaMutationLedger(db.Model):
     actor: Mapped[Optional["User"]] = relationship("User", foreign_keys=[actor_user_id])
 
 
+class PublicDatabaseUpdateSubmission(db.Model):
+    __tablename__ = "public_database_update_submissions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    full_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    blok: Mapped[str] = mapped_column(String(10), nullable=False)
+    kamar: Mapped[str] = mapped_column(String(20), nullable=False)
+    phone_number: Mapped[Optional[str]] = mapped_column(String(25), nullable=True)
+    source_ip: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
 class QuotaRequest(db.Model):
     __tablename__ = "quota_requests"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

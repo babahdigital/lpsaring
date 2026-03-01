@@ -2,7 +2,7 @@
 import uuid
 import enum
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Literal
 from datetime import datetime, date
 
 # Impor Enum dari models.py
@@ -369,6 +369,73 @@ class WhatsappValidationRequest(BaseModel):
     def validate_phone(cls, v: Any) -> str:
         # Menggunakan kembali validator yang sudah ada untuk konsistensi
         return validate_indonesian_phone_number(v)
+
+
+class PublicDatabaseUpdateSubmissionRequestSchema(BaseModel):
+    full_name: str = Field(..., min_length=2, max_length=100)
+    role: Literal["KOMANDAN", "TAMPING"]
+    blok: str = Field(..., examples=["A"], min_length=1, max_length=10)
+    kamar: str = Field(..., examples=["Kamar_1", "1"], min_length=1, max_length=20)
+    phone_number: Optional[str] = Field(None, examples=["+6281234567890"])
+
+    @field_validator("full_name", mode="before")
+    @classmethod
+    def validate_submission_name(cls, v: Any) -> str:
+        if v is None:
+            raise ValueError("Nama wajib diisi.")
+        if not isinstance(v, str):
+            raise TypeError("Nama harus berupa string.")
+        stripped_v = v.strip()
+        if len(stripped_v) < 2:
+            raise ValueError("Nama minimal 2 karakter.")
+        return stripped_v
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def normalize_submission_role(cls, v: Any) -> str:
+        if v is None:
+            raise ValueError("Role wajib diisi.")
+        if not isinstance(v, str):
+            raise TypeError("Role harus berupa string.")
+        return v.strip().upper()
+
+    @field_validator("blok", mode="before")
+    @classmethod
+    def validate_submission_blok(cls, v: Any) -> str:
+        if v is None:
+            raise ValueError("Blok wajib diisi.")
+        if not isinstance(v, str):
+            raise TypeError("Blok harus berupa string.")
+        v_upper = v.strip().upper()
+        if v_upper in [b.value for b in UserBlok]:
+            return v_upper
+        raise ValueError(f"Blok '{v}' tidak valid. Pilihan: {[b.value for b in UserBlok]}")
+
+    @field_validator("kamar", mode="before")
+    @classmethod
+    def validate_submission_kamar(cls, v: Any) -> str:
+        if v is None:
+            raise ValueError("Kamar wajib diisi.")
+        if not isinstance(v, str):
+            raise TypeError("Kamar harus berupa string.")
+        cleaned = v.strip()
+        if cleaned.isdigit() and 1 <= int(cleaned) <= 6:
+            return f"Kamar_{cleaned}"
+        if cleaned in [k.value for k in UserKamar]:
+            return cleaned
+        raise ValueError(f"Kamar '{v}' tidak valid. Pilihan: {[k.value for k in UserKamar]} atau angka 1-6.")
+
+    @field_validator("phone_number", mode="before")
+    @classmethod
+    def validate_optional_phone(cls, v: Any) -> Optional[str]:
+        if v is None:
+            return None
+        if not isinstance(v, str):
+            raise TypeError("Nomor telepon harus berupa string.")
+        stripped_v = v.strip()
+        if stripped_v == "":
+            return None
+        return validate_indonesian_phone_number(stripped_v)
 
 
 class UserQuotaResponse(BaseModel):

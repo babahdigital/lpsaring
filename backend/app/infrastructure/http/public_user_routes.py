@@ -8,16 +8,113 @@ from sqlalchemy.exc import SQLAlchemyError
 from http import HTTPStatus
 
 from app.extensions import db
-from app.infrastructure.db.models import User
+from app.infrastructure.db.models import PublicDatabaseUpdateSubmission, User
 from app.utils.formatters import get_phone_number_variations
 
 # --- PERBAIKAN IMPORT PATH ---
 # Impor skema dari direktori yang sama (http), lalu ke subdirektori schemas
-from .schemas.user_schemas import PhoneCheckRequest, PhoneCheckResponse, WhatsappValidationRequest
+from .schemas.user_schemas import (
+    PhoneCheckRequest,
+    PhoneCheckResponse,
+    PublicDatabaseUpdateSubmissionRequestSchema,
+    WhatsappValidationRequest,
+)
 # -----------------------------
 
 # --- DEFINISI BLUEPRINT ---
 public_user_bp = Blueprint("public_user_api", __name__, url_prefix="/api/users")
+
+
+@public_user_bp.route("/database-update-submissions", methods=["POST"])
+def create_public_database_update_submission():
+    current_app.logger.info("POST /api/users/database-update-submissions endpoint requested.")
+
+    if not current_app.config.get("PUBLIC_DB_UPDATE_FORM_ENABLED", False):
+        return jsonify(
+            {
+                "success": False,
+                "message": "Fitur pemutakhiran database sedang dinonaktifkan.",
+            }
+        ), HTTPStatus.FORBIDDEN
+
+    try:
+        json_data = request.get_json(silent=True)
+        if not json_data:
+            return jsonify(
+                {
+                    "success": False,
+                    "message": "Request body tidak boleh kosong dan harus JSON.",
+                }
+            ), HTTPStatus.BAD_REQUEST
+
+        if isinstance(json_data, dict):
+            if "fullName" in json_data and "full_name" not in json_data:
+                json_data["full_name"] = json_data.get("fullName")
+            if "phoneNumber" in json_data and "phone_number" not in json_data:
+                json_data["phone_number"] = json_data.get("phoneNumber")
+
+        req_data = PublicDatabaseUpdateSubmissionRequestSchema.model_validate(json_data)
+    except ValidationError as e:
+        return jsonify(
+            {
+                "success": False,
+                "message": "Data input tidak valid.",
+                "details": e.errors(),
+            }
+        ), HTTPStatus.UNPROCESSABLE_ENTITY
+    except Exception as e:
+        current_app.logger.warning(
+            f"[Public DB Update] Failed to parse request JSON: {e}",
+            exc_info=True,
+        )
+        return jsonify({"success": False, "message": "Format request tidak valid."}), HTTPStatus.BAD_REQUEST
+
+    try:
+        forwarded_for = request.headers.get("X-Forwarded-For", "")
+        source_ip = (forwarded_for.split(",")[0].strip() if forwarded_for else "") or request.remote_addr
+
+        submission = PublicDatabaseUpdateSubmission()
+        submission.full_name = req_data.full_name
+        submission.role = req_data.role
+        submission.blok = req_data.blok
+        submission.kamar = req_data.kamar
+        submission.phone_number = req_data.phone_number
+        submission.source_ip = source_ip
+
+        db.session.add(submission)
+        db.session.commit()
+
+        return jsonify(
+            {
+                "success": True,
+                "message": "Data pemutakhiran berhasil dikirim.",
+            }
+        ), HTTPStatus.CREATED
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        current_app.logger.error(
+            f"[Public DB Update] Database error while creating submission: {e}",
+            exc_info=True,
+        )
+        return jsonify(
+            {
+                "success": False,
+                "message": "Gagal menyimpan data pemutakhiran.",
+            }
+        ), HTTPStatus.INTERNAL_SERVER_ERROR
+    except Exception as e:
+        if db.session.is_active:
+            db.session.rollback()
+        current_app.logger.error(
+            f"[Public DB Update] Unexpected error while creating submission: {e}",
+            exc_info=True,
+        )
+        return jsonify(
+            {
+                "success": False,
+                "message": "Kesalahan internal server.",
+            }
+        ), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
 # --- ENDPOINTS ---

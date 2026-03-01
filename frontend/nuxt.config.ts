@@ -31,6 +31,7 @@ const mikrotikLoginUrl = process.env.NUXT_PUBLIC_MIKROTIK_LOGIN_URL ?? ''
 const appLinkMikrotik = process.env.NUXT_PUBLIC_APP_LINK_MIKROTIK ?? process.env.APP_LINK_MIKROTIK ?? ''
 const devBypassToken = process.env.NUXT_PUBLIC_DEV_BYPASS_TOKEN ?? ''
 const statusPageGuardEnabled = process.env.NUXT_PUBLIC_STATUS_PAGE_GUARD_ENABLED ?? 'false'
+const publicDbUpdateFormEnabled = process.env.NUXT_PUBLIC_DB_UPDATE_FORM_ENABLED ?? 'false'
 const internalApiBaseUrl = ensureApiSuffix(process.env.NUXT_INTERNAL_API_BASE_URL ?? 'http://backend:5010')
 const internalApiOrigin = normalizeUrl(internalApiBaseUrl).replace(/\/api$/, '')
 const internalApiProxyTarget = `${internalApiOrigin}/api/**`
@@ -328,6 +329,7 @@ export default defineNuxtConfig({
       appLinkMikrotik,
       devBypassToken,
       statusPageGuardEnabled,
+      publicDbUpdateFormEnabled,
     },
     internalApiBaseUrl,
   },
