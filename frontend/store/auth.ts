@@ -513,6 +513,12 @@ export const useAuthStore = defineStore('auth', () => {
             target.searchParams.set('client_mac', clientMac)
 
           window.location.assign(target.toString())
+
+          // iOS Safari kadang tidak menjalankan redirect eksternal saat context tertentu.
+          // Fallback: pastikan user tetap keluar ke halaman login portal.
+          setTimeout(() => {
+            void navigateTo('/login', { replace: true })
+          }, 1200)
           return
         }
 
@@ -536,6 +542,10 @@ export const useAuthStore = defineStore('auth', () => {
       const { $api } = useNuxtApp()
       await $api('/auth/reset-login', { method: 'POST' })
 
+      // Sinkronkan state klien segera setelah reset sesi server berhasil.
+      clearSession(401)
+      lastKnownUser.value = null
+
       if (import.meta.client) {
         const runtimeConfig = useRuntimeConfig()
         const mikrotikLink = String(runtimeConfig.public.appLinkMikrotik ?? '').trim()
@@ -554,8 +564,16 @@ export const useAuthStore = defineStore('auth', () => {
             target.searchParams.set('client_mac', clientMac)
 
           window.location.assign(target.toString())
+
+          // Fallback khusus browser mobile (terutama iPhone) jika redirect eksternal tidak terjadi.
+          setTimeout(() => {
+            void navigateTo('/login', { replace: true })
+          }, 1200)
           return true
         }
+
+        await navigateTo('/login', { replace: true })
+        return true
       }
 
       setMessage('Reset login berhasil. Silakan login hotspot ulang jika diperlukan.')
