@@ -77,6 +77,18 @@ def _is_user_expired(user: User, now_utc: datetime) -> bool:
 @click.option(
     "--limit", type=int, default=0, show_default=True, help="Limit number of eligible users processed (0 = all)."
 )
+@click.option(
+    "--server-name",
+    type=str,
+    default=None,
+    help="Batasi ke User dengan mikrotik_server_name tertentu (contoh: srv-user).",
+)
+@click.option(
+    "--enforce-expired-profile/--skip-expired-profile",
+    default=True,
+    show_default=True,
+    help="Saat apply-mikrotik: paksa profile expired untuk user expired.",
+)
 @with_appcontext
 def bulk_reset_quota_command(
     quota_mb: int,
@@ -84,6 +96,8 @@ def bulk_reset_quota_command(
     apply_mikrotik: bool,
     dry_run: bool,
     limit: int,
+    server_name: Optional[str],
+    enforce_expired_profile: bool,
 ) -> None:
     """Bulk reset kuota untuk semua USER aktif+approved.
 
@@ -109,16 +123,15 @@ def bulk_reset_quota_command(
     if expiry.lower() == "end-of-month":
         expiry_target_utc = _end_of_month_utc(now_utc)
 
-    users_query = (
-        select(User)
-        .where(
-            User.is_active,
-            User.role == UserRole.USER,
-            User.approval_status == ApprovalStatus.APPROVED,
-        )
-        .options(selectinload(User.devices))
-        .order_by(User.created_at.asc())
-    )
+    filters: list[Any] = [
+        User.is_active,
+        User.role == UserRole.USER,
+        User.approval_status == ApprovalStatus.APPROVED,
+    ]
+    if server_name:
+        filters.append(User.mikrotik_server_name == server_name)
+
+    users_query = select(User).where(*filters).options(selectinload(User.devices)).order_by(User.created_at.asc())
     users = list(db.session.scalars(users_query).all())
 
     counters = ResetCounters(scope_users=len(users))
@@ -141,6 +154,9 @@ def bulk_reset_quota_command(
     )
     click.echo(
         f"PARAM quota_mb={quota_mb} expiry={expiry} expiry_target_utc={expiry_target_utc.isoformat() if expiry_target_utc else 'KEEP'} mikrotik={apply_mikrotik} mode={'DRY_RUN' if dry_run else 'APPLY'}"
+    )
+    click.echo(
+        f"FILTER server_name={server_name or 'ALL'} enforce_expired_profile={enforce_expired_profile}"
     )
 
     if dry_run:
@@ -263,8 +279,8 @@ def bulk_reset_quota_command(
             except Exception:
                 pass
 
-        # expired users: only Mikrotik profile enforcement
-        if apply_mikrotik and api:
+        # expired users: optional Mikrotik profile enforcement
+        if apply_mikrotik and api and enforce_expired_profile:
             for user in expired_users:
                 username_08 = format_to_local_phone(user.phone_number)
                 if not username_08:
