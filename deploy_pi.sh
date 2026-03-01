@@ -23,7 +23,7 @@ Optional:
   --skip-health                 Skip health check (curl /api/ping)
   --clean                       Backup remote state, copy bundle to local tmp/, then run docker compose down -v --remove-orphans
   --prune                       Run safe docker prune on remote (containers/images/networks/build cache; keeps volumes)
-  --strict-minimal              Keep remote dir strictly minimal: only infrastructure/, docker-compose.prod.yml, .env.prod, .env.public.prod, backend/backups (no .deploy_backups)
+  --strict-minimal              Backup remote state, copy bundle to local tmp/, then keep remote dir strictly minimal: only infrastructure/, docker-compose.prod.yml, .env.prod, .env.public.prod, backend/backups (no .deploy_backups)
   --sync-phones                 After deploy, run phone normalization report (dry-run) inside backend container
   --sync-phones-apply           After deploy, APPLY phone normalization to DB (aborts on duplicates)
   --allow-placeholders          Allow deploy even if .env.prod still contains CHANGE_ME_* values
@@ -449,10 +449,69 @@ echo "==> Sync phones   : $SYNC_PHONES (apply=$SYNC_PHONES_APPLY)"
 echo "==> Prune remote  : $DO_PRUNE (keeps volumes)"
 
 if [[ "$DO_CLEAN" == "true" ]]; then
-  echo "==> Clean mode    : enabled (auto backup before clean + copy to local tmp/)"
+  echo "==> Clean mode    : enabled (auto backup before destructive step + copy to local tmp/)"
+fi
+if [[ "$STRICT_MINIMAL" == "true" ]]; then
+  echo "==> Strict minimal: enabled (auto backup before destructive step + copy to local tmp/)"
 fi
 
 timestamp=$(date +%Y%m%d_%H%M%S)
+
+if [[ "$DO_CLEAN" == "true" || "$STRICT_MINIMAL" == "true" ]]; then
+  DESTRUCTIVE_BACKUP_MODE="clean"
+  if [[ "$STRICT_MINIMAL" == "true" ]]; then
+    DESTRUCTIVE_BACKUP_MODE="strict-minimal"
+  fi
+
+  DESTRUCTIVE_BACKUP_NAME="${DESTRUCTIVE_BACKUP_MODE//-/_}_predeploy_${timestamp}"
+  REMOTE_DESTRUCTIVE_BACKUP_DIR="$REMOTE_DIR/_safe_backups/$DESTRUCTIVE_BACKUP_NAME"
+  REMOTE_DESTRUCTIVE_BUNDLE="/tmp/${DESTRUCTIVE_BACKUP_NAME}.tar.gz"
+  LOCAL_DESTRUCTIVE_TMP_DIR="$LOCAL_DIR/tmp"
+  LOCAL_DESTRUCTIVE_BUNDLE="$LOCAL_DESTRUCTIVE_TMP_DIR/${PI_HOST}_${DESTRUCTIVE_BACKUP_NAME}.tar.gz"
+
+  remote_pre_destructive_backup_cmd=$(cat <<EOF
+set -e
+cd "$REMOTE_DIR"
+mkdir -p "$REMOTE_DESTRUCTIVE_BACKUP_DIR"
+
+echo "==> Pre-destructive backup: ensure db is running"
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d db >/dev/null 2>&1 || true
+
+echo "==> Pre-destructive backup: dump postgres"
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T db sh -lc 'pg_dump -U "\$POSTGRES_USER" "\$POSTGRES_DB"' > "$REMOTE_DESTRUCTIVE_BACKUP_DIR/postgres_dump.sql"
+
+echo "==> Pre-destructive backup: snapshot critical deploy files"
+for f in docker-compose.prod.yml .env.prod .env.public.prod infrastructure/nginx/conf.d/app.prod.conf; do
+  if [ -f "$REMOTE_DIR/\$f" ]; then
+    dst_dir="$REMOTE_DESTRUCTIVE_BACKUP_DIR/\$(dirname "\$f")"
+    mkdir -p "\$dst_dir"
+    cp -a "$REMOTE_DIR/\$f" "$dst_dir/"
+  fi
+done
+
+echo "created_at_utc=\$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$REMOTE_DESTRUCTIVE_BACKUP_DIR/backup_meta.txt"
+echo "host=$PI_HOST" >> "$REMOTE_DESTRUCTIVE_BACKUP_DIR/backup_meta.txt"
+echo "remote_dir=$REMOTE_DIR" >> "$REMOTE_DESTRUCTIVE_BACKUP_DIR/backup_meta.txt"
+echo "mode=$DESTRUCTIVE_BACKUP_MODE" >> "$REMOTE_DESTRUCTIVE_BACKUP_DIR/backup_meta.txt"
+
+tar -C "$REMOTE_DIR/_safe_backups" -czf "$REMOTE_DESTRUCTIVE_BUNDLE" "$DESTRUCTIVE_BACKUP_NAME"
+echo "$REMOTE_DESTRUCTIVE_BUNDLE"
+EOF
+)
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "[DRY-RUN] ssh ${SSH_OPTS[*]} $SSH_TARGET '<pre-destructive backup + bundle>'"
+    echo "[DRY-RUN] mkdir -p $LOCAL_DESTRUCTIVE_TMP_DIR"
+    echo "[DRY-RUN] scp ${SCP_OPTS[*]} $SSH_TARGET:$REMOTE_DESTRUCTIVE_BUNDLE $LOCAL_DESTRUCTIVE_BUNDLE"
+  else
+    mkdir -p "$LOCAL_DESTRUCTIVE_TMP_DIR"
+    ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "$remote_pre_destructive_backup_cmd"
+    scp "${SCP_OPTS[@]}" "$SSH_TARGET:$REMOTE_DESTRUCTIVE_BUNDLE" "$LOCAL_DESTRUCTIVE_BUNDLE"
+    ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "rm -f '$REMOTE_DESTRUCTIVE_BUNDLE'"
+    echo "==> Pre-destructive backup copied to local: $LOCAL_DESTRUCTIVE_BUNDLE"
+  fi
+fi
+
 remote_prepare_cmd=$(cat <<EOF
 set -e
 mkdir -p "$REMOTE_DIR/infrastructure/nginx/conf.d"
@@ -534,56 +593,6 @@ if [[ -n "$SSL_PRIVKEY" ]]; then
     echo "[DRY-RUN] upload SSL privkey -> $REMOTE_DIR/infrastructure/nginx/ssl/privkey.pem"
   else
     scp "${SCP_OPTS[@]}" "$SSL_PRIVKEY" "$SSH_TARGET:$REMOTE_DIR/infrastructure/nginx/ssl/privkey.pem"
-  fi
-fi
-
-if [[ "$DO_CLEAN" == "true" ]]; then
-  CLEAN_BACKUP_NAME="clean_predeploy_${timestamp}"
-  REMOTE_CLEAN_BACKUP_DIR="$REMOTE_DIR/_safe_backups/$CLEAN_BACKUP_NAME"
-  REMOTE_CLEAN_BUNDLE="/tmp/${CLEAN_BACKUP_NAME}.tar.gz"
-  LOCAL_CLEAN_TMP_DIR="$LOCAL_DIR/tmp"
-  LOCAL_CLEAN_BUNDLE="$LOCAL_CLEAN_TMP_DIR/${PI_HOST}_${CLEAN_BACKUP_NAME}.tar.gz"
-
-  remote_preclean_backup_cmd=$(cat <<EOF
-set -e
-cd "$REMOTE_DIR"
-mkdir -p "$REMOTE_CLEAN_BACKUP_DIR"
-
-echo "==> Pre-clean backup: ensure db is running"
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d db >/dev/null 2>&1 || true
-
-echo "==> Pre-clean backup: dump postgres"
-docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T db sh -lc 'pg_dump -U "\$POSTGRES_USER" "\$POSTGRES_DB"' > "$REMOTE_CLEAN_BACKUP_DIR/postgres_dump.sql"
-
-echo "==> Pre-clean backup: snapshot critical deploy files"
-for f in docker-compose.prod.yml .env.prod .env.public.prod infrastructure/nginx/conf.d/app.prod.conf; do
-  if [ -f "$REMOTE_DIR/\$f" ]; then
-    dst_dir="$REMOTE_CLEAN_BACKUP_DIR/\$(dirname "\$f")"
-    mkdir -p "\$dst_dir"
-    cp -a "$REMOTE_DIR/\$f" "$dst_dir/"
-  fi
-done
-
-echo "created_at_utc=\$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$REMOTE_CLEAN_BACKUP_DIR/backup_meta.txt"
-echo "host=$PI_HOST" >> "$REMOTE_CLEAN_BACKUP_DIR/backup_meta.txt"
-echo "remote_dir=$REMOTE_DIR" >> "$REMOTE_CLEAN_BACKUP_DIR/backup_meta.txt"
-echo "mode=clean_predeploy" >> "$REMOTE_CLEAN_BACKUP_DIR/backup_meta.txt"
-
-tar -C "$REMOTE_DIR/_safe_backups" -czf "$REMOTE_CLEAN_BUNDLE" "$CLEAN_BACKUP_NAME"
-echo "$REMOTE_CLEAN_BUNDLE"
-EOF
-)
-
-  if [[ "$DRY_RUN" == "true" ]]; then
-    echo "[DRY-RUN] ssh ${SSH_OPTS[*]} $SSH_TARGET '<pre-clean backup + bundle>'"
-    echo "[DRY-RUN] mkdir -p $LOCAL_CLEAN_TMP_DIR"
-    echo "[DRY-RUN] scp ${SCP_OPTS[*]} $SSH_TARGET:$REMOTE_CLEAN_BUNDLE $LOCAL_CLEAN_BUNDLE"
-  else
-    mkdir -p "$LOCAL_CLEAN_TMP_DIR"
-    ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "$remote_preclean_backup_cmd"
-    scp "${SCP_OPTS[@]}" "$SSH_TARGET:$REMOTE_CLEAN_BUNDLE" "$LOCAL_CLEAN_BUNDLE"
-    ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "rm -f '$REMOTE_CLEAN_BUNDLE'"
-    echo "==> Pre-clean backup copied to local: $LOCAL_CLEAN_BUNDLE"
   fi
 fi
 
