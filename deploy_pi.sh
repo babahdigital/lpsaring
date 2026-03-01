@@ -485,7 +485,7 @@ for f in docker-compose.prod.yml .env.prod .env.public.prod infrastructure/nginx
   if [ -f "$REMOTE_DIR/\$f" ]; then
     dst_dir="$REMOTE_DESTRUCTIVE_BACKUP_DIR/\$(dirname "\$f")"
     mkdir -p "\$dst_dir"
-    cp -a "$REMOTE_DIR/\$f" "$dst_dir/"
+    cp -a "$REMOTE_DIR/\$f" "\$dst_dir/"
   fi
 done
 
