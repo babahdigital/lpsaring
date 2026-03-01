@@ -1,8 +1,8 @@
- 
+/* eslint-disable */
 // AUTO-GENERATED FILE. DO NOT EDIT MANUALLY.
 // Source: contracts/openapi/openapi.v1.yaml
 
-export const OPENAPI_SOURCE_SHA256 = 'e0f91e6db413f26b55916ee162663af648f19822ddfd014a8fa2e5a8c9828765' as const
+export const OPENAPI_SOURCE_SHA256 = '4923e971e4f4bdc1ee1e016fa01e89c6c547df423e174160e33942c95cfd5beb' as const
 export const API_CONTRACT_REVISION = 'openapi-1.0.0' as const
 
 export type MessageResponse = { message: string }
