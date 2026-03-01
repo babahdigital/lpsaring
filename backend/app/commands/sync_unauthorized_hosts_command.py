@@ -43,6 +43,16 @@ def _ip_allowed(ip_text: str, networks: List[ipaddress._BaseNetwork]) -> bool:
     return any(ip_obj in net for net in networks)
 
 
+def _normalize_ip_for_compare(ip_text: str) -> str:
+    text = str(ip_text or "").strip()
+    if not text:
+        return ""
+    try:
+        return str(ipaddress.ip_address(text))
+    except Exception:
+        return text
+
+
 @click.command("sync-unauthorized-hosts")
 @click.option(
     "--list-name",
@@ -163,7 +173,7 @@ def sync_unauthorized_hosts_command(
         for host in hosts:
             processed += 1
 
-            ip_text = str(host.get("address") or "").strip()
+            ip_text = _normalize_ip_for_compare(host.get("address") or "")
             if not ip_text:
                 skipped_no_ip += 1
                 continue
@@ -191,13 +201,17 @@ def sync_unauthorized_hosts_command(
             mac = str(host.get("mac-address") or "").strip().upper()
             desired[ip_text] = f"{prefix} mac={mac} uptime={uptime_text}".strip()
 
+        if exempt_set:
+            for exempt_ip in list(exempt_set):
+                desired.pop(_normalize_ip_for_compare(exempt_ip), None)
+
         # Reconcile: remove managed entries no longer desired
         ok, existing, msg = get_firewall_address_list_entries(api, resolved_list)
         if not ok:
             raise click.ClickException(f"Gagal ambil address-list '{resolved_list}': {msg}")
 
         existing_managed = {
-            str(e.get("address") or "").strip(): str(e.get("comment") or "")
+            _normalize_ip_for_compare(e.get("address") or ""): str(e.get("comment") or "")
             for e in existing
             if str(e.get("comment") or "").startswith(prefix)
         }
