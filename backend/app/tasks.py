@@ -8,6 +8,7 @@ import sys
 import re
 from pathlib import Path
 from datetime import datetime, timedelta, timezone as dt_timezone
+from sqlalchemy import text
 from sqlalchemy.orm import selectinload
 
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_with_pdf, send_whatsapp_message
@@ -28,6 +29,7 @@ from app.infrastructure.db.models import (
 )
 from app.infrastructure.gateways.mikrotik_client import (
     activate_or_update_hotspot_user,
+    delete_hotspot_user,
     get_hotspot_host_usage_map,
     get_mikrotik_connection,
     remove_address_list_entry,
@@ -54,6 +56,92 @@ from app.extensions import celery_app
 logger = logging.getLogger(__name__)
 
 _MIKROTIK_DURATION_PART = re.compile(r"(\d+)([wdhms])", re.IGNORECASE)
+
+
+@celery_app.task(
+    name="clear_total_if_no_update_submission_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 1},
+)
+def clear_total_if_no_update_submission_task(self):
+    """Dangerous operation: clear all users from DB and MikroTik when update sync mode is enabled and stale."""
+
+    app = create_app()
+    with app.app_context():
+        if not bool(app.config.get("UPDATE_ENABLE_SYNC", False)):
+            logger.info("Update sync auto-clear skipped: UPDATE_ENABLE_SYNC is disabled.")
+            return {"success": True, "skipped": True, "reason": "update_sync_disabled"}
+
+        try:
+            stale_days = int(app.config.get("UPDATE_CLEAR_TOTAL_AFTER_DAYS", 3))
+        except Exception:
+            stale_days = 3
+        if stale_days < 1:
+            stale_days = 1
+
+        now_utc = datetime.now(dt_timezone.utc)
+        cutoff = now_utc - timedelta(days=stale_days)
+
+        from app.infrastructure.db.models import PublicDatabaseUpdateSubmission
+
+        latest_submission = (
+            db.session.query(PublicDatabaseUpdateSubmission)
+            .order_by(PublicDatabaseUpdateSubmission.created_at.desc())
+            .first()
+        )
+
+        if latest_submission and latest_submission.created_at and latest_submission.created_at >= cutoff:
+            logger.info(
+                "Update sync auto-clear skipped: latest submission is still within %s days.",
+                stale_days,
+            )
+            return {"success": True, "skipped": True, "reason": "fresh_submission"}
+
+        users = db.session.query(User).all()
+        mikrotik_failed = []
+
+        if app.config.get("ENABLE_MIKROTIK_OPERATIONS", True):
+            try:
+                with get_mikrotik_connection() as api_connection:
+                    if api_connection is not None:
+                        for user in users:
+                            username = format_to_local_phone(user.phone_number) or str(user.phone_number or "").strip()
+                            if not username:
+                                continue
+                            ok, msg = delete_hotspot_user(api_connection, username)
+                            if not ok and "tidak ditemukan" not in str(msg).lower():
+                                mikrotik_failed.append({"username": username, "error": str(msg)})
+            except Exception as mikrotik_error:
+                logger.error("Update sync auto-clear: gagal koneksi/hapus MikroTik: %s", mikrotik_error, exc_info=True)
+                mikrotik_failed.append({"error": str(mikrotik_error)})
+
+        if mikrotik_failed:
+            logger.warning("Update sync auto-clear dibatalkan karena kegagalan cleanup MikroTik.")
+            return {
+                "success": False,
+                "skipped": True,
+                "reason": "mikrotik_cleanup_failed",
+                "errors": mikrotik_failed,
+            }
+
+        # Clear total user-related data from DB.
+        if db.session.bind and db.session.bind.dialect.name == "postgresql":
+            db.session.execute(text("TRUNCATE TABLE users RESTART IDENTITY CASCADE"))
+        else:
+            # Fallback for non-postgres test/dev cases.
+            for user in users:
+                db.session.delete(user)
+        db.session.commit()
+
+        logger.warning(
+            "Update sync auto-clear executed: no submissions for %s days, total users cleared=%s",
+            stale_days,
+            len(users),
+        )
+        return {"success": True, "cleared_users": len(users), "stale_days": stale_days}
 
 
 def _parse_mikrotik_duration_seconds(value: str) -> int:

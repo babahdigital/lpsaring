@@ -313,7 +313,8 @@ class Config:
     REFRESH_TOKEN_RATE_LIMIT = os.environ.get("REFRESH_TOKEN_RATE_LIMIT", "60 per minute")
     STATUS_PAGE_TOKEN_MAX_AGE_SECONDS = get_env_int("STATUS_PAGE_TOKEN_MAX_AGE_SECONDS", 300)
     PUBLIC_DB_UPDATE_FORM_ENABLED = get_env_bool("PUBLIC_DB_UPDATE_FORM_ENABLED", "False")
-    DB_UPDATE_LINK_WHATSAPP_AFTER_OTP_ENABLED = get_env_bool("DB_UPDATE_LINK_WHATSAPP_AFTER_OTP_ENABLED", "False")
+    UPDATE_ENABLE_SYNC = get_env_bool("UPDATE_ENABLE_SYNC", "False")
+    UPDATE_CLEAR_TOTAL_AFTER_DAYS = get_env_int("UPDATE_CLEAR_TOTAL_AFTER_DAYS", 3)
 
     # Signed token for public transaction status links (shareable via WhatsApp).
     TRANSACTION_STATUS_TOKEN_MAX_AGE_SECONDS = get_env_int(

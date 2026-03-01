@@ -233,6 +233,16 @@ def make_celery_app(app=None):
                 "schedule": crontab(hour=max(0, min(audit_hour, 23)), minute=max(0, min(audit_minute, 59))),
             }
 
+    if os.environ.get("UPDATE_ENABLE_SYNC", "False").lower() == "true":
+        try:
+            update_sync_interval = int(os.environ.get("UPDATE_SYNC_CHECK_INTERVAL_SECONDS", "3600"))
+        except ValueError:
+            update_sync_interval = 3600
+        celery_instance.conf.beat_schedule["clear-total-if-no-update-submission"] = {
+            "task": "clear_total_if_no_update_submission_task",
+            "schedule": max(300, update_sync_interval),
+        }
+
     if app:
         # Konfigurasi Celery dari konfigurasi Flask app
         # Ini penting agar Celery memiliki akses ke konfigurasi Flask

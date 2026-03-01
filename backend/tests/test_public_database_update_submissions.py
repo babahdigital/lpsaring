@@ -1,5 +1,4 @@
 from flask import Flask
-import uuid
 
 from app.infrastructure.http import public_user_routes
 
@@ -9,7 +8,6 @@ class _FakeSession:
         self.added = []
         self.committed = False
         self.is_active = True
-        self.user = None
 
     def add(self, obj):
         self.added.append(obj)
@@ -19,11 +17,6 @@ class _FakeSession:
 
     def rollback(self):
         self.committed = False
-
-    def get(self, model, pk):
-        if model.__name__ == "User" and self.user is not None and str(getattr(self.user, "id", "")) == str(pk):
-            return self.user
-        return None
 
 
 class _FakeDb:
@@ -45,16 +38,8 @@ def _make_app(enabled: bool) -> Flask:
     return app
 
 
-class _FakeUser:
-    def __init__(self, user_id: str, phone_number: str):
-        self.id = user_id
-        self.phone_number = phone_number
-
-
 def test_public_db_update_submission_rejected_when_feature_disabled(monkeypatch):
     fake_session = _FakeSession()
-    fake_user = _FakeUser(str(uuid.uuid4()), "+6281154006767")
-    fake_session.user = fake_user
     monkeypatch.setattr(public_user_routes, "db", _FakeDb(fake_session))
 
     impl = _unwrap_decorators(public_user_routes.create_public_database_update_submission)
@@ -70,7 +55,7 @@ def test_public_db_update_submission_rejected_when_feature_disabled(monkeypatch)
             "kamar": "1",
         },
     ):
-        response, status = impl(current_user_id=fake_user.id)
+        response, status = impl()
 
     assert status == 403
     assert response.get_json()["success"] is False
@@ -78,8 +63,6 @@ def test_public_db_update_submission_rejected_when_feature_disabled(monkeypatch)
 
 def test_public_db_update_submission_accepts_blank_phone(monkeypatch):
     fake_session = _FakeSession()
-    fake_user = _FakeUser(str(uuid.uuid4()), "+6281154006767")
-    fake_session.user = fake_user
     monkeypatch.setattr(public_user_routes, "db", _FakeDb(fake_session))
 
     impl = _unwrap_decorators(public_user_routes.create_public_database_update_submission)
@@ -96,7 +79,7 @@ def test_public_db_update_submission_accepts_blank_phone(monkeypatch):
             "phone_number": "",
         },
     ):
-        response, status = impl(current_user_id=fake_user.id)
+        response, status = impl()
 
     assert status == 201
     assert response.get_json()["success"] is True
@@ -108,13 +91,11 @@ def test_public_db_update_submission_accepts_blank_phone(monkeypatch):
     assert created.role == "TAMPING"
     assert created.blok == "B"
     assert created.kamar == "Kamar_2"
-    assert created.phone_number == "+6281154006767"
+    assert created.phone_number is None
 
 
 def test_public_db_update_submission_rejects_invalid_role(monkeypatch):
     fake_session = _FakeSession()
-    fake_user = _FakeUser(str(uuid.uuid4()), "+6281154006767")
-    fake_session.user = fake_user
     monkeypatch.setattr(public_user_routes, "db", _FakeDb(fake_session))
 
     impl = _unwrap_decorators(public_user_routes.create_public_database_update_submission)
@@ -130,7 +111,7 @@ def test_public_db_update_submission_rejects_invalid_role(monkeypatch):
             "kamar": "1",
         },
     ):
-        response, status = impl(current_user_id=fake_user.id)
+        response, status = impl()
 
     assert status == 422
     payload = response.get_json()
