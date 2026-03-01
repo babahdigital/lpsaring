@@ -42,6 +42,18 @@ interface User {
   blocked_reason?: string | null
 }
 
+interface PublicUpdateSubmission {
+  id: string
+  full_name: string
+  role: 'KOMANDAN' | 'TAMPING'
+  blok: string
+  kamar: string
+  phone_number: string | null
+  approval_status: 'PENDING' | 'APPROVED' | 'REJECTED'
+  created_at: string
+  rejection_reason?: string | null
+}
+
 interface PackageItem {
   id: string
   name: string
@@ -160,6 +172,9 @@ const cleanupPreviewLoading = ref(false)
 const cleanupPreview = ref<InactiveCleanupPreviewResponse | null>(null)
 const selectedUserPreviewContext = ref<UserDetailPreviewContext | null>(null)
 const previewActionLoading = ref<Record<string, boolean>>({})
+const updateSubmissionLoading = ref(false)
+const updateSubmissionItems = ref<PublicUpdateSubmission[]>([])
+const updateSubmissionTotal = ref(0)
 
 const isCreateBillDialogOpen = ref(false)
 const billLoading = ref(false)
@@ -232,6 +247,7 @@ function formatPhoneNumberDisplay(phone: string | null): string | null {
   return phone.startsWith('+62') ? `0${phone.substring(3)}` : phone
 }
 const formatCreatedAt = (date: string) => new Date(date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+const formatDateTime = (date: string) => new Date(date).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 const formatCurrency = (value: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(value)
 function formatQuotaGb(value?: number | null): string {
   if (value === null || value === undefined)
@@ -375,10 +391,33 @@ useHead({ title: 'Manajemen Pengguna' })
 onMounted(() => {
   isHydrated.value = true
   fetchUsers()
+  fetchUpdateSubmissions()
   fetchAlamatOptions()
   fetchMikrotikOptions()
   fetchInactiveCleanupPreview()
 })
+
+async function fetchUpdateSubmissions() {
+  updateSubmissionLoading.value = true
+  try {
+    const params = new URLSearchParams()
+    params.append('status', 'PENDING')
+    params.append('page', '1')
+    params.append('itemsPerPage', '20')
+    const response = await $api<{ items: PublicUpdateSubmission[], totalItems: number }>(`/admin/update-submissions?${params.toString()}`)
+    updateSubmissionItems.value = Array.isArray(response.items) ? response.items : []
+    updateSubmissionTotal.value = Number(response.totalItems || 0)
+  }
+  catch (error: any) {
+    const errorMessage = (typeof error.data?.message === 'string' && error.data.message !== '')
+      ? error.data.message
+      : 'Gagal memuat pengajuan role update.'
+    showSnackbar({ type: 'warning', title: 'Approval Klaim Role', text: errorMessage })
+  }
+  finally {
+    updateSubmissionLoading.value = false
+  }
+}
 
 function resetToFirstPageAndFetchUsers() {
   if (options.value == null) {
@@ -786,12 +825,63 @@ function handleDelete(user: User) {
     action: async () => await performAction(`/admin/users/${user.id}`, 'DELETE', 'Aksi terhadap pengguna berhasil dilakukan.'),
   })
 }
+function handleApproveRoleClaim(item: PublicUpdateSubmission) {
+  openConfirmDialog({
+    title: 'Setujui Klaim Role',
+    message: `Setujui klaim <strong>${item.role}</strong> untuk <strong>${item.full_name}</strong>? Data user akan disesuaikan dengan blok/kamar pengajuan.`,
+    color: 'success',
+    action: async () => {
+      await performUpdateSubmissionAction(
+        `/admin/update-submissions/${item.id}/approve`,
+        'POST',
+        'Pengajuan klaim role berhasil disetujui.',
+      )
+    },
+  })
+}
+
+function handleRejectRoleClaim(item: PublicUpdateSubmission) {
+  openConfirmDialog({
+    title: 'Tolak Klaim Role',
+    message: `Tolak klaim role untuk <strong>${item.full_name}</strong>?`,
+    color: 'error',
+    action: async () => {
+      await performUpdateSubmissionAction(
+        `/admin/update-submissions/${item.id}/reject`,
+        'POST',
+        'Pengajuan klaim role berhasil ditolak.',
+      )
+    },
+  })
+}
+
+async function performUpdateSubmissionAction(endpoint: string, method: 'POST', successMessage: string) {
+  loading.value = true
+  try {
+    await $api(endpoint, { method })
+    showSnackbar({ type: 'success', title: 'Berhasil', text: successMessage })
+    closeAllDialogs()
+    await fetchUpdateSubmissions()
+    await fetchUsers()
+  }
+  catch (error: any) {
+    const errorMessage = (typeof error.data?.message === 'string' && error.data.message !== '')
+      ? error.data.message
+      : 'Operasi approval klaim role gagal.'
+    showSnackbar({ type: 'error', title: 'Terjadi Kesalahan', text: errorMessage })
+  }
+  finally {
+    loading.value = false
+  }
+}
+
 async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELETE' | 'PUT', successMessage: string, options: { body?: object } = {}, updatedItemId?: string) {
   loading.value = true
   try {
     const response = await $api<any>(endpoint, { method, ...options })
     showSnackbar({ type: 'success', title: 'Berhasil', text: successMessage })
     closeAllDialogs()
+    await fetchUpdateSubmissions()
     await fetchUsers()
     await fetchInactiveCleanupPreview()
     // Perbaikan baris 226: Menambahkan perbandingan eksplisit dan pengecekan untuk response
@@ -811,6 +901,59 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 
 <template>
   <div>
+    <VCard class="rounded-lg mb-6">
+      <VCardItem>
+        <VCardTitle class="admin-users__cleanup-title">
+          <div class="admin-users__cleanup-titleText">
+            <VIcon icon="tabler-shield-check" class="me-2" />
+            <span>Approval Klaim Komandan / Tamping</span>
+          </div>
+
+          <VBtn
+            class="admin-users__cleanup-refresh"
+            size="small"
+            variant="tonal"
+            color="info"
+            :block="isMobile"
+            :loading="updateSubmissionLoading"
+            @click="fetchUpdateSubmissions"
+          >
+            Refresh
+          </VBtn>
+        </VCardTitle>
+      </VCardItem>
+      <VCardText>
+        <VChip color="warning" variant="tonal" size="small" label class="mb-3">
+          Menunggu Approval: {{ updateSubmissionTotal }}
+        </VChip>
+
+        <VList density="compact" border rounded>
+          <VListItem
+            v-for="item in updateSubmissionItems"
+            :key="item.id"
+            :title="item.full_name"
+            :subtitle="`${formatPhoneNumberDisplay(item.phone_number) ?? '-'} • ${item.blok}/${item.kamar} • ${formatDateTime(item.created_at)}`"
+          >
+            <template #append>
+              <div class="d-flex align-center gap-1">
+                <VChip size="x-small" color="primary" label>{{ item.role }}</VChip>
+                <VBtn icon size="x-small" variant="text" color="success" @click="handleApproveRoleClaim(item)">
+                  <VIcon icon="tabler-check" size="16" />
+                  <VTooltip activator="parent">Setujui Klaim</VTooltip>
+                </VBtn>
+                <VBtn icon size="x-small" variant="text" color="error" @click="handleRejectRoleClaim(item)">
+                  <VIcon icon="tabler-x" size="16" />
+                  <VTooltip activator="parent">Tolak Klaim</VTooltip>
+                </VBtn>
+              </div>
+            </template>
+          </VListItem>
+
+          <VListItem v-if="updateSubmissionItems.length === 0 && updateSubmissionLoading === false" title="Belum ada pengajuan klaim role yang menunggu approval." />
+        </VList>
+      </VCardText>
+    </VCard>
+
     <VCard class="rounded-lg mb-6">
       <VCardItem>
         <VCardTitle class="admin-users__cleanup-title">
