@@ -9,6 +9,16 @@ Lampiran wajib:
 ## [Unreleased]
 
 ### Added (2026-03-02)
+- Public update submission workflow berbasis role `USER/TAMPING/KOMANDAN` dengan validasi field kondisional yang diselaraskan dengan form register `/login`.
+- Queue approval klaim role di admin users (`/api/admin/update-submissions`) dengan aksi approve/reject agar klaim `komandan/tamping` tidak langsung diterapkan otomatis.
+- Personalisasi link update per nomor pada pesan WhatsApp batch (`/update?phone=...&name=...`) sehingga nomor terisi otomatis dari link resmi.
+
+### Changed (2026-03-02)
+- Form publik `/update` sekarang membaca nomor dari query link WhatsApp, menampilkan input nomor dalam mode `disabled/readonly`, dan menolak submit jika nomor dari link tidak tersedia.
+- Skema `public_database_update_submissions` diperluas dengan tracking approval (`approval_status`, `processed_by_user_id`, `processed_at`, `rejection_reason`) serta atribut role (`tamping_type`, `blok/kamar` nullable by role).
+- Batch pengiriman WhatsApp tetap dibatasi per siklus (`UPDATE_WHATSAPP_BATCH_SIZE`, default 3 nomor unik) dan sekarang menggunakan template default berbasis `{update_link}`.
+
+### Added (2026-03-02)
 - Dokumentasi komprehensif sesi hardening + operasional ditambahkan pada `docs/DEVLOG_2026-03-02.md` (timeline deploy, root cause unauthorized, detail error/log, hasil verifikasi, dan rekomendasi lanjut).
 - Policy state-by-state untuk arsitektur layered gate ditetapkan di `docs/LAYERED_GATE_POLICY_MATRIX.md`.
 

@@ -38,6 +38,9 @@ Lampiran wajib:
 - POST /admin/users/{id}/reject
 - POST /admin/users/{id}/reset-hotspot-password
 - POST /admin/users/{id}/generate-admin-password
+- GET /admin/update-submissions
+- POST /admin/update-submissions/{id}/approve
+- POST /admin/update-submissions/{id}/reject
 
 ## 3) Quota Requests
 - GET /komandan/requests/history
@@ -68,10 +71,12 @@ Lampiran wajib:
 ## 5) Maintenance & Misc
 - GET /admin/dashboard/stats
 - GET /admin/form-options/alamat
+- POST /users/database-update-submissions
 
 ## Catatan
 - Field tamping: is_tamping (boolean), tamping_type (string, wajib jika is_tamping true).
 - Non‑tamping: blok + kamar wajib.
+- Public update form (`/update`) mengikuti role register: `USER` wajib `blok/kamar`, `TAMPING` wajib `tamping_type`, `KOMANDAN` tanpa field tambahan.
 - Dokumen ini bersifat high-level; kontrak prioritas yang menjadi sumber kebenaran ada di:
   - `contracts/openapi/openapi.v1.yaml`
   - `frontend/types/api/contracts.ts`

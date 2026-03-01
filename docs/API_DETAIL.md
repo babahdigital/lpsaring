@@ -50,6 +50,12 @@ Lampiran wajib:
 - `GET /api/admin/users`
 - `POST /api/admin/users`
 - `PUT /api/admin/users/{user_id}`
+- `GET /api/admin/update-submissions`
+- `POST /api/admin/update-submissions/{id}/approve`
+- `POST /api/admin/update-submissions/{id}/reject`
+
+### 5.1) Public Update Submission
+- `POST /api/users/database-update-submissions`
 
 ### 6) Admin Transactions
 - `GET /api/admin/transactions`
