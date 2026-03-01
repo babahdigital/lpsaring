@@ -1,31 +1,25 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useRoute } from 'vue-router'
-import { useAuthStore } from '~/store/auth'
 
 definePageMeta({
   layout: 'blank',
+  auth: false,
+  public: true,
 })
 
 useHead({ title: 'Pemutakhiran Database Pengguna' })
 
 const runtimeConfig = useRuntimeConfig()
-const route = useRoute()
-const authStore = useAuthStore()
 const isFeatureEnabled = computed(() => String(runtimeConfig.public.publicDbUpdateFormEnabled ?? 'false').toLowerCase() === 'true')
 
 const fullName = ref('')
 const role = ref<'KOMANDAN' | 'TAMPING' | ''>('')
 const blok = ref<string | null>(null)
 const kamar = ref<string | null>(null)
+const phoneNumber = ref('')
 const isSubmitting = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
-const linkedPhoneNumber = computed(() => {
-  const queryPhone = typeof route.query.phone === 'string' ? route.query.phone : ''
-  const authPhone = String((authStore.currentUser as any)?.phone_number ?? '').trim()
-  return (authPhone || queryPhone).trim()
-})
 
 const roleOptions = [
   { title: 'Komandan', value: 'KOMANDAN' },
@@ -71,7 +65,7 @@ async function submitForm() {
     role: role.value,
     blok: blok.value,
     kamar: kamar.value,
-    phone_number: linkedPhoneNumber.value,
+    phone_number: phoneNumber.value,
   }
 
   isSubmitting.value = true
@@ -89,6 +83,7 @@ async function submitForm() {
     role.value = ''
     blok.value = null
     kamar.value = null
+    phoneNumber.value = ''
   }
   catch (error: any) {
     const fallback = 'Gagal mengirim data pemutakhiran.'
@@ -122,7 +117,7 @@ async function submitForm() {
 
         <template v-else>
           <p class="text-body-2 mb-4">
-            Silakan isi data Anda untuk pemutakhiran database. Nomor telepon mengikuti akun login Anda.
+            Silakan isi data Anda untuk pemutakhiran database. Nomor telepon opsional dan boleh dikosongkan.
           </p>
 
           <VForm @submit.prevent="submitForm">
@@ -168,12 +163,11 @@ async function submitForm() {
             />
 
             <VTextField
-                :model-value="linkedPhoneNumber"
-                label="Nomor Telepon WhatsApp"
+              v-model="phoneNumber"
+              label="Nomor Telepon WhatsApp (Opsional)"
               variant="outlined"
-                hint="Mengikuti nomor akun yang sedang login"
+              hint="Boleh dikosongkan"
               persistent-hint
-                readonly
               class="mb-4"
             />
 

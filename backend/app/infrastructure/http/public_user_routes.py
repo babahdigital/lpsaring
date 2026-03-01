@@ -9,7 +9,6 @@ from http import HTTPStatus
 
 from app.extensions import db
 from app.infrastructure.db.models import PublicDatabaseUpdateSubmission, User
-from .decorators import token_required
 from app.utils.formatters import get_phone_number_variations
 
 # --- PERBAIKAN IMPORT PATH ---
@@ -27,8 +26,7 @@ public_user_bp = Blueprint("public_user_api", __name__, url_prefix="/api/users")
 
 
 @public_user_bp.route("/database-update-submissions", methods=["POST"])
-@token_required
-def create_public_database_update_submission(current_user_id=None):
+def create_public_database_update_submission():
     current_app.logger.info("POST /api/users/database-update-submissions endpoint requested.")
 
     if not current_app.config.get("PUBLIC_DB_UPDATE_FORM_ENABLED", False):
@@ -72,10 +70,6 @@ def create_public_database_update_submission(current_user_id=None):
         return jsonify({"success": False, "message": "Format request tidak valid."}), HTTPStatus.BAD_REQUEST
 
     try:
-        current_user = db.session.get(User, current_user_id) if current_user_id else None
-        if current_user is None:
-            return jsonify({"success": False, "message": "Unauthorized."}), HTTPStatus.UNAUTHORIZED
-
         forwarded_for = request.headers.get("X-Forwarded-For", "")
         source_ip = (forwarded_for.split(",")[0].strip() if forwarded_for else "") or request.remote_addr
 
@@ -84,7 +78,7 @@ def create_public_database_update_submission(current_user_id=None):
         submission.role = req_data.role
         submission.blok = req_data.blok
         submission.kamar = req_data.kamar
-        submission.phone_number = current_user.phone_number
+        submission.phone_number = req_data.phone_number
         submission.source_ip = source_ip
 
         db.session.add(submission)

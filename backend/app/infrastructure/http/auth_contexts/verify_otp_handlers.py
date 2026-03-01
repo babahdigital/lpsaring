@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime, timezone as dt_timezone
 from http import HTTPStatus
 from typing import Any, Optional, cast
-from urllib.parse import quote
 
 from flask import current_app, jsonify
 from pydantic import ValidationError
@@ -50,8 +49,6 @@ def verify_otp_impl(
     get_mikrotik_connection,
     has_hotspot_ip_binding_for_user,
     resolve_client_mac,
-    send_whatsapp_message,
-    whatsapp_available,
 ):
     try:
         if not payload:
@@ -381,7 +378,6 @@ def verify_otp_impl(
 
         session_token = store_session_token(user_to_login.id)
         session_url = None
-        update_session_url = None
         if session_token:
             base_url = (
                 current_app.config.get("APP_PUBLIC_BASE_URL")
@@ -393,39 +389,6 @@ def verify_otp_impl(
                 if data.hotspot_login_context is True:
                     next_path = "/captive/terhubung"
                 session_url = f"{base_url.rstrip('/')}/session/consume?token={session_token}&next={next_path}"
-
-                update_next_path = f"/update?phone={quote(user_to_login.phone_number or '', safe='')}"
-                update_session_url = (
-                    f"{base_url.rstrip('/')}/session/consume?token={session_token}&next={quote(update_next_path, safe='/?=&')}"
-                )
-
-        send_update_link_enabled = bool(current_app.config.get("DB_UPDATE_LINK_WHATSAPP_AFTER_OTP_ENABLED", False))
-        if (
-            send_update_link_enabled
-            and bool(current_app.config.get("PUBLIC_DB_UPDATE_FORM_ENABLED", False))
-            and whatsapp_available
-            and update_session_url
-            and user_to_login.phone_number
-            and (not is_demo_login)
-        ):
-            try:
-                message = (
-                    "Pemutakhiran data diperlukan. "
-                    "Silakan buka link berikut untuk update data Anda: "
-                    f"{update_session_url}"
-                )
-                sent = send_whatsapp_message(user_to_login.phone_number, message)
-                if not sent:
-                    current_app.logger.warning(
-                        "Verify-OTP: gagal kirim link update database via WhatsApp untuk user_id=%s",
-                        user_to_login.id,
-                    )
-            except Exception as wa_err:
-                current_app.logger.warning(
-                    "Verify-OTP: error kirim link update database via WhatsApp untuk user_id=%s err=%s",
-                    user_to_login.id,
-                    wa_err,
-                )
 
         hotspot_username: Optional[str] = None
         hotspot_password: Optional[str] = None
