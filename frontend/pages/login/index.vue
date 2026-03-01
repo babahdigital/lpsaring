@@ -282,7 +282,20 @@ async function handleVerifyOtp() {
       }
 
       if (import.meta.client && errorText.includes('Perangkat belum diotorisasi')) {
-        await navigateTo('/captive/otorisasi-perangkat', { replace: true })
+        const authorized = await authStore.authorizeDevice()
+        if (authorized) {
+          const statusRedirectAfterAuthorize = authStore.getStatusRedirectPath('captive')
+          if (statusRedirectAfterAuthorize) {
+            await navigateTo(statusRedirectAfterAuthorize, { replace: true })
+            return
+          }
+
+          await navigateTo('/captive/terhubung', { replace: true })
+          return
+        }
+
+        otpCode.value = ''
+        tryFocus(otpInputRef.value)
         return
       }
       if (import.meta.client && errorText.includes('Limit perangkat tercapai')) {

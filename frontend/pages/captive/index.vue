@@ -245,7 +245,20 @@ async function verifyOtp() {
 
     const errorText = result.errorMessage || authStore.error || ''
     if (errorText.includes('Perangkat belum diotorisasi')) {
-      await navigateTo('/captive/otorisasi-perangkat', { replace: true })
+      const authorized = await authStore.authorizeDevice()
+      if (authorized) {
+        const statusRedirectAfterAuthorize = authStore.getStatusRedirectPath('captive')
+        if (statusRedirectAfterAuthorize) {
+          await navigateTo(statusRedirectAfterAuthorize, { replace: true })
+          return
+        }
+
+        await navigateTo('/captive/terhubung', { replace: true })
+        return
+      }
+
+      localError.value = authStore.error || 'Gagal mengotorisasi perangkat.'
+      otpCode.value = ''
       return
     }
 

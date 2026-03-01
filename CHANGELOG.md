@@ -8,6 +8,17 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Added (2026-03-02)
+- Dokumentasi komprehensif sesi hardening + operasional ditambahkan pada `docs/DEVLOG_2026-03-02.md` (timeline deploy, root cause unauthorized, detail error/log, hasil verifikasi, dan rekomendasi lanjut).
+- Policy state-by-state untuk arsitektur layered gate ditetapkan di `docs/LAYERED_GATE_POLICY_MATRIX.md`.
+
+### Changed (2026-03-02)
+- Flow frontend OTP/captive disederhanakan dengan menghapus halaman perantara `captive/otorisasi-perangkat`; otorisasi perangkat kini inline pada flow login/captive.
+- Dokumentasi indeks aktif/historis diperbarui agar rujukan analisa, matrix kebijakan, dan jejak implementasi terbaru bisa ditelusuri dari satu pintu.
+
+### Fixed (2026-03-02)
+- Hardening unauthorized sync menutup false-positive untuk entitas trusted (DB authorized / ip-binding non-blocked / DHCP valid), menambahkan cleanup stale hotspot host, dan lock Redis untuk mencegah overlap scheduler.
+
 ### Fixed (2026-03-01)
 - Backend hotspot session status tetap berbasis `ip-binding` (tanpa `/ip/hotspot/active`) dan menutup false-positive status `terhubung` akibat fallback user-level yang terlalu longgar.
 - Fallback `HOTSPOT_SESSION_STATUS_ALLOW_USER_LEVEL_FALLBACK` kini default **False**; ketika diaktifkan pun fallback hanya dijalankan jika `client_ip` cocok dengan hasil `get_hotspot_user_ip` (sumber hotspot host/DHCP lease/ARP).

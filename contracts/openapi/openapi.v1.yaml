@@ -218,6 +218,21 @@ paths:
       security:
         - bearerAuth: []
         - cookieAuth: []
+      parameters:
+        - in: query
+          name: client_ip
+          required: false
+          schema:
+            type: string
+            nullable: true
+          description: IP client captive untuk validasi silang status binding.
+        - in: query
+          name: client_mac
+          required: false
+          schema:
+            type: string
+            nullable: true
+          description: MAC client captive untuk validasi silang status binding.
       responses:
         '200':
           description: Status hotspot saat ini

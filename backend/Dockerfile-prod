@@ -34,12 +34,12 @@ RUN apt-get update -y && \
     && rm -rf /var/lib/apt/lists/*
 
 # Salin file requirements
-COPY requirements.txt requirements.lock.txt ./
+COPY requirements.txt requirements.lock.txt requirements-prod.lock.txt ./
 
 # --- OPTIMASI #1: Membuat dan menggunakan virtual environment ---
 RUN python -m venv /opt/venv
 RUN pip install --upgrade pip && \
-    pip install -r requirements.lock.txt
+    pip install --no-cache-dir --no-compile -r requirements-prod.lock.txt
 
 # --- Runtime Stage ---
 # Tahap final untuk menjalankan aplikasi

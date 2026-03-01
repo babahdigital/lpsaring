@@ -399,7 +399,7 @@ class Config:
     IP_BINDING_TYPE_BLOCKED = os.environ.get("IP_BINDING_TYPE_BLOCKED", "blocked")
     HOTSPOT_BYPASS_STATUSES = get_env_list("HOTSPOT_BYPASS_STATUSES", "['active','fup','unlimited']")
     HOTSPOT_SESSION_STATUS_ALLOW_USER_LEVEL_FALLBACK = get_env_bool(
-        "HOTSPOT_SESSION_STATUS_ALLOW_USER_LEVEL_FALLBACK", "True"
+        "HOTSPOT_SESSION_STATUS_ALLOW_USER_LEVEL_FALLBACK", "False"
     )
     IP_BINDING_FAIL_OPEN = get_env_bool("IP_BINDING_FAIL_OPEN", "False")
     MAX_DEVICES_PER_USER = get_env_int("MAX_DEVICES_PER_USER", 3)
@@ -476,6 +476,12 @@ class Config:
     )
     # IP/range yang dikecualikan untuk maintenance. Contoh: ['172.16.2.3-7']
     MIKROTIK_UNAUTHORIZED_EXEMPT_IPS = get_env_list("MIKROTIK_UNAUTHORIZED_EXEMPT_IPS", "['172.16.2.3-7']")
+    # Alias bypass agar operasional mudah: jika diisi, diperlakukan sama seperti EXEMPT_IPS.
+    MIKROTIK_UNAUTHORIZED_BYPASS_IPS = get_env_list("MIKROTIK_UNAUTHORIZED_BYPASS_IPS", "[]")
+    # Jika True, host dengan non-blocked ip-binding + DHCP lease tidak akan masuk unauthorized.
+    MIKROTIK_UNAUTHORIZED_TRUST_IP_BINDING_DHCP = get_env_bool("MIKROTIK_UNAUTHORIZED_TRUST_IP_BINDING_DHCP", "True")
+    # TTL lock Redis untuk mencegah overlap task unauthorized sync dari scheduler Celery.
+    UNAUTHORIZED_SYNC_LOCK_TTL_SECONDS = get_env_int("UNAUTHORIZED_SYNC_LOCK_TTL_SECONDS", 180)
 
     OTP_ALLOW_BYPASS = get_env_bool("OTP_ALLOW_BYPASS", "False")
     OTP_BYPASS_CODE = os.environ.get("OTP_BYPASS_CODE", "000000")
@@ -483,6 +489,7 @@ class Config:
         "VERIFY_OTP_REQUIRE_TRUSTED_CAPTIVE_CONTEXT_PRODUCTION", "True"
     )
     VERIFY_OTP_ALLOW_RAW_CLIENT_MAC_FALLBACK = get_env_bool("VERIFY_OTP_ALLOW_RAW_CLIENT_MAC_FALLBACK", "False")
+    AUTO_LOGIN_SELF_HEAL_KNOWN_DEVICE = get_env_bool("AUTO_LOGIN_SELF_HEAL_KNOWN_DEVICE", "True")
     DEMO_MODE_ENABLED = get_env_bool("DEMO_MODE_ENABLED", "False")
     DEMO_ALLOWED_PHONES = get_env_list("DEMO_ALLOWED_PHONES", "[]")
     DEMO_BYPASS_OTP_CODE = os.environ.get("DEMO_BYPASS_OTP_CODE", "000000")

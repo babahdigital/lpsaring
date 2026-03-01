@@ -18,9 +18,52 @@ const { $api } = useNuxtApp()
 const authStore = useAuthStore()
 const rechecking = ref(false)
 const statusMessage = ref('')
+const LAST_MIKROTIK_LOGIN_HINT_KEY = 'lpsaring:last-mikrotik-login-link'
 
 const appBaseUrl = computed(() => String(runtimeConfig.public.appBaseUrl ?? '').trim())
+const queryMikrotikLink = computed(() => {
+  const direct = getQueryValueFromKeys(['link_login_only', 'link-login-only', 'link_login', 'link-login', 'linkloginonly'])
+  if (direct)
+    return direct
+
+  const redirectRaw = getQueryValueFromKeys(['redirect'])
+  if (!redirectRaw || !redirectRaw.includes('link_login_only='))
+    return null
+
+  try {
+    const parsed = new URL(redirectRaw, 'https://example.invalid')
+    const nested = String(parsed.searchParams.get('link_login_only') ?? '').trim()
+    return nested || null
+  }
+  catch {
+    const marker = 'link_login_only='
+    const markerIndex = redirectRaw.indexOf(marker)
+    if (markerIndex < 0)
+      return null
+    const after = redirectRaw.slice(markerIndex + marker.length)
+    const ampIndex = after.indexOf('&')
+    return (ampIndex >= 0 ? after.slice(0, ampIndex) : after).trim() || null
+  }
+})
+
+const storedMikrotikLink = computed(() => {
+  if (!import.meta.client)
+    return ''
+  try {
+    return String(window.sessionStorage.getItem(LAST_MIKROTIK_LOGIN_HINT_KEY) ?? '').trim()
+  }
+  catch {
+    return ''
+  }
+})
+
 const mikrotikLoginUrl = computed(() => {
+  if (queryMikrotikLink.value)
+    return queryMikrotikLink.value
+
+  if (storedMikrotikLink.value)
+    return storedMikrotikLink.value
+
   const appLink = String(runtimeConfig.public.appLinkMikrotik ?? '').trim()
   if (appLink)
     return appLink

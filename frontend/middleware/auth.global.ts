@@ -39,6 +39,19 @@ function pickHotspotIdentityQuery(query: Record<string, unknown>): Record<string
   }
 }
 
+function hasHotspotContextQuery(query: Record<string, unknown>): boolean {
+  const identity = pickHotspotIdentityQuery(query)
+  if (Object.keys(identity).length > 0)
+    return true
+
+  const directLink = getQueryValueFromKeys(query, ['link_login_only', 'link-login-only', 'link_login', 'link-login', 'linkloginonly'])
+  if (directLink)
+    return true
+
+  const redirectRaw = getQueryValueFromKeys(query, ['redirect'])
+  return Boolean(redirectRaw && redirectRaw.includes('link_login_only='))
+}
+
 /**
  * Middleware untuk otentikasi dan otorisasi.
  * Berjalan setelah middleware maintenance.
@@ -80,6 +93,15 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
     if (isPublicPage)
       return
 
+    if (!to.path.startsWith('/admin') && hasHotspotContextQuery((to.query as Record<string, unknown>) ?? {})) {
+      const identityQuery = pickHotspotIdentityQuery((to.query as Record<string, unknown>) ?? {})
+      const queryString = new URLSearchParams(identityQuery).toString()
+      const captivePath = queryString.length > 0
+        ? `/captive?${queryString}`
+        : '/captive'
+      return navigateTo(captivePath, { replace: true })
+    }
+
     // Jika tujuan rute BUKAN halaman untuk tamu, redirect ke halaman login yang sesuai.
     const guestRedirect = resolveGuestProtectedRedirect(to.path, to.fullPath)
     if (guestRedirect)
@@ -95,6 +117,13 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
     // Halaman public diizinkan untuk semua role (hindari auto-redirect ke dashboard).
     if (isPublicPage)
       return
+
+    if (!isAdmin) {
+      const accessStatus = authStore.getAccessStatusFromUser(authStore.currentUser ?? authStore.lastKnownUser)
+      const statusRoute = getStatusRouteForAccessStatus(accessStatus, 'login')
+      if ((accessStatus === 'blocked' || accessStatus === 'inactive') && statusRoute && to.path !== statusRoute)
+        return navigateTo(statusRoute, { replace: true })
+    }
 
     if (!isAdmin && HOTSPOT_PRECHECK_ROUTES.has(to.path)) {
       try {

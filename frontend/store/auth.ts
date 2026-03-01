@@ -121,6 +121,12 @@ export const useAuthStore = defineStore('auth', () => {
     return ''
   }
 
+  function pickHotspotIdentityFromQuery(query: Record<string, unknown>): { clientIp: string, clientMac: string } {
+    const clientIp = getFirstQueryValue(query, ['client_ip', 'ip', 'client-ip'])
+    const clientMac = getFirstQueryValue(query, ['client_mac', 'mac', 'mac-address', 'client-mac'])
+    return { clientIp, clientMac }
+  }
+
   function rememberMikrotikLoginHint(link: string) {
     if (!import.meta.client)
       return
@@ -664,15 +670,14 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       if (performRedirect && import.meta.client) {
         const runtimeConfig = useRuntimeConfig()
-          const route = useRoute()
-          const routeQuery = (route?.query ?? {}) as Record<string, unknown>
+        const route = useRoute()
+        const routeQuery = (route?.query ?? {}) as Record<string, unknown>
+        const routeLinkHint = readMikrotikLoginHintFromRoute(routeQuery)
+        if (routeLinkHint.length > 0)
+          rememberMikrotikLoginHint(routeLinkHint)
         const mikrotikLink = resolveMikrotikLinkFromContext(routeQuery, runtimeConfig)
+        const { clientIp, clientMac } = pickHotspotIdentityFromQuery(routeQuery)
         if (!shouldRedirectToAdminLogin && mikrotikLink.length > 0) {
-          const clientIpRaw = routeQuery.client_ip ?? routeQuery.ip ?? routeQuery['client-ip']
-          const clientMacRaw = routeQuery.client_mac ?? routeQuery.mac ?? routeQuery['mac-address'] ?? routeQuery['client-mac']
-          const clientIp = Array.isArray(clientIpRaw) ? String(clientIpRaw[0] ?? '').trim() : String(clientIpRaw ?? '').trim()
-          const clientMac = Array.isArray(clientMacRaw) ? String(clientMacRaw[0] ?? '').trim() : String(clientMacRaw ?? '').trim()
-
           const target = new URL(mikrotikLink, window.location.origin)
           if (clientIp)
             target.searchParams.set('client_ip', clientIp)
@@ -706,7 +711,20 @@ export const useAuthStore = defineStore('auth', () => {
         }
 
         setMessage('Anda telah berhasil logout.')
-        await navigateTo(shouldRedirectToAdminLogin ? '/admin' : '/login', { replace: true })
+        if (shouldRedirectToAdminLogin) {
+          await navigateTo('/admin', { replace: true })
+          return
+        }
+
+        const queryParams = new URLSearchParams()
+        if (clientIp)
+          queryParams.set('client_ip', clientIp)
+        if (clientMac)
+          queryParams.set('client_mac', clientMac)
+        const captivePath = queryParams.toString().length > 0
+          ? `/captive?${queryParams.toString()}`
+          : '/captive'
+        await navigateTo(captivePath, { replace: true })
       }
     }
     finally {
@@ -731,15 +749,14 @@ export const useAuthStore = defineStore('auth', () => {
 
       if (import.meta.client) {
         const runtimeConfig = useRuntimeConfig()
-          const route = useRoute()
-          const routeQuery = (route?.query ?? {}) as Record<string, unknown>
+        const route = useRoute()
+        const routeQuery = (route?.query ?? {}) as Record<string, unknown>
+        const routeLinkHint = readMikrotikLoginHintFromRoute(routeQuery)
+        if (routeLinkHint.length > 0)
+          rememberMikrotikLoginHint(routeLinkHint)
         const mikrotikLink = resolveMikrotikLinkFromContext(routeQuery, runtimeConfig)
+        const { clientIp, clientMac } = pickHotspotIdentityFromQuery(routeQuery)
         if (mikrotikLink.length > 0) {
-          const clientIpRaw = routeQuery.client_ip ?? routeQuery.ip ?? routeQuery['client-ip']
-          const clientMacRaw = routeQuery.client_mac ?? routeQuery.mac ?? routeQuery['mac-address'] ?? routeQuery['client-mac']
-          const clientIp = Array.isArray(clientIpRaw) ? String(clientIpRaw[0] ?? '').trim() : String(clientIpRaw ?? '').trim()
-          const clientMac = Array.isArray(clientMacRaw) ? String(clientMacRaw[0] ?? '').trim() : String(clientMacRaw ?? '').trim()
-
           const target = new URL(mikrotikLink, window.location.origin)
           if (clientIp)
             target.searchParams.set('client_ip', clientIp)
@@ -771,7 +788,15 @@ export const useAuthStore = defineStore('auth', () => {
           return true
         }
 
-        await navigateTo('/login', { replace: true })
+        const queryParams = new URLSearchParams()
+        if (clientIp)
+          queryParams.set('client_ip', clientIp)
+        if (clientMac)
+          queryParams.set('client_mac', clientMac)
+        const captivePath = queryParams.toString().length > 0
+          ? `/captive?${queryParams.toString()}`
+          : '/captive'
+        await navigateTo(captivePath, { replace: true })
         return true
       }
 

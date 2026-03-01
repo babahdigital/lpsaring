@@ -2,6 +2,9 @@
 
 Dokumen ini adalah sumber kebenaran tunggal status akses user lintas backend, frontend, docs, dan runbook.
 
+Companion document untuk keputusan autentikasi identitas vs akses jaringan hotspot:
+- `docs/LAYERED_GATE_POLICY_MATRIX.md`
+
 ## Status Enum
 - `ok`
 - `blocked`

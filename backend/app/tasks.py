@@ -625,6 +625,28 @@ def sync_unauthorized_hosts_task(self):
             logger.info("Celery Task: Skip sync unauthorized hosts (MikroTik operations disabled).")
             return
 
+        redis_client = getattr(app, "redis_client_otp", None)
+        lock_key = "sync_unauthorized_hosts:lock"
+        lock_acquired = False
+        lock_ttl_seconds = max(60, settings_service.get_setting_as_int("UNAUTHORIZED_SYNC_LOCK_TTL_SECONDS", 180))
+
+        if redis_client is not None:
+            try:
+                lock_acquired = bool(
+                    redis_client.set(
+                        lock_key,
+                        int(datetime.now(dt_timezone.utc).timestamp()),
+                        nx=True,
+                        ex=lock_ttl_seconds,
+                    )
+                )
+            except Exception:
+                lock_acquired = False
+
+            if not lock_acquired:
+                logger.info("Celery Task: Skip sync unauthorized hosts (lock aktif, run sebelumnya belum selesai).")
+                return
+
         logger.info("Celery Task: Memulai sinkronisasi unauthorized hosts.")
         try:
             sync_unauthorized_hosts_command.main(args=["--apply"], standalone_mode=False)
@@ -637,6 +659,12 @@ def sync_unauthorized_hosts_task(self):
             if self.request.retries >= 2:
                 _record_task_failure(app, "sync_unauthorized_hosts_task", {}, str(e))
             raise
+        finally:
+            if redis_client is not None and lock_acquired:
+                try:
+                    redis_client.delete(lock_key)
+                except Exception:
+                    pass
 
 
 @celery_app.task(
