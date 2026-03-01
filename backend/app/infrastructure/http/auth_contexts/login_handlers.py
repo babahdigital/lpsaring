@@ -3,8 +3,10 @@ from __future__ import annotations
 from datetime import datetime, timezone as dt_timezone
 from http import HTTPStatus
 from typing import Any, cast
+from urllib.parse import parse_qs, unquote, urlparse
 
 from flask import current_app, jsonify
+from jose import ExpiredSignatureError, JWTError, jwt
 
 
 def auto_login_impl(
@@ -57,6 +59,22 @@ def auto_login_impl(
             )
 
         payload_dict: dict[str, Any] = cast(dict[str, Any], payload) if isinstance(payload, dict) else {}
+
+        def _extract_hint_from_referer(*keys: str) -> Any:
+            referer = request.headers.get("Referer") or request.headers.get("Referrer")
+            if not referer:
+                return None
+            try:
+                parsed = urlparse(referer)
+                query_params = parse_qs(parsed.query or "")
+                for key in keys:
+                    values = query_params.get(key)
+                    if values and values[0]:
+                        return unquote(str(values[0]))
+            except Exception:
+                return None
+            return None
+
         if payload_dict:
             if not payload_dict.get("client_ip"):
                 candidate_ip = (
@@ -82,6 +100,29 @@ def auto_login_impl(
                 )
                 if candidate_mac is not None:
                     payload_dict["client_mac"] = candidate_mac
+        else:
+            payload_dict = {}
+
+        if not payload_dict.get("client_ip"):
+            candidate_ip = (
+                request.args.get("client_ip")
+                or request.args.get("ip")
+                or request.args.get("client-ip")
+                or _extract_hint_from_referer("client_ip", "ip", "client-ip")
+            )
+            if candidate_ip is not None:
+                payload_dict["client_ip"] = candidate_ip
+
+        if not payload_dict.get("client_mac"):
+            candidate_mac = (
+                request.args.get("client_mac")
+                or request.args.get("mac")
+                or request.args.get("mac-address")
+                or request.args.get("client-mac")
+                or _extract_hint_from_referer("client_mac", "mac", "mac-address", "client-mac")
+            )
+            if candidate_mac is not None:
+                payload_dict["client_mac"] = candidate_mac
 
         client_ip = payload_dict.get("client_ip")
         client_mac = payload_dict.get("client_mac")
@@ -201,6 +242,164 @@ def auto_login_impl(
 
         user = device.user if (device and getattr(device, "user", None)) else None
 
+        def _role_value(role_obj: Any) -> Any:
+            return getattr(role_obj, "value", role_obj)
+
+        allowed_role_values = {
+            _role_value(UserRole.USER),
+            _role_value(UserRole.KOMANDAN),
+            _role_value(UserRole.ADMIN),
+            _role_value(UserRole.SUPER_ADMIN),
+        }
+
+        def _resolve_user_from_trusted_token() -> tuple[Any, Any]:
+            auth_header = request.headers.get("Authorization")
+            token = None
+            token_source = None
+            if auth_header:
+                parts = auth_header.split()
+                if len(parts) == 2 and parts[0].lower() == "bearer":
+                    token = parts[1]
+                    token_source = "header"
+
+            if not token:
+                cookie_name = current_app.config.get("AUTH_COOKIE_NAME", "auth_token")
+                cookie_token = request.cookies.get(cookie_name) if hasattr(request, "cookies") else None
+                if cookie_token:
+                    token = cookie_token
+                    token_source = "cookie"
+
+            if not token:
+                return None, None
+
+            jwt_secret = current_app.config.get("JWT_SECRET_KEY")
+            jwt_algorithm = current_app.config.get("JWT_ALGORITHM", "HS256")
+            if not jwt_secret:
+                return None, None
+
+            try:
+                payload_jwt = jwt.decode(
+                    token,
+                    jwt_secret,
+                    algorithms=[jwt_algorithm],
+                )
+                user_id = payload_jwt.get("sub")
+                if not user_id:
+                    return None, None
+                user_from_token = db.session.get(User, user_id)
+                if not user_from_token:
+                    return None, None
+                if not getattr(user_from_token, "is_active", False):
+                    return None, None
+                if getattr(user_from_token, "approval_status", None) != ApprovalStatus.APPROVED:
+                    return None, None
+                if getattr(user_from_token, "is_blocked", False):
+                    return None, None
+                if _role_value(getattr(user_from_token, "role", None)) not in allowed_role_values:
+                    return None, None
+                return user_from_token, token_source
+            except (ExpiredSignatureError, JWTError, ValueError, TypeError):
+                return None, None
+
+        if not user and resolved_mac:
+            trusted_session_user, token_source = _resolve_user_from_trusted_token()
+            if trusted_session_user is not None:
+                owner_devices = (
+                    db.session.query(UserDevice)
+                    .join(User)
+                    .filter(
+                        UserDevice.mac_address == resolved_mac,
+                        User.is_active.is_(True),
+                        User.approval_status == ApprovalStatus.APPROVED,
+                    )
+                    .order_by(UserDevice.is_authorized.desc(), UserDevice.last_seen.desc(), UserDevice.id.desc())
+                    .limit(5)
+                    .all()
+                )
+
+                owner_ids = {
+                    str(getattr(getattr(owner_device, "user", None), "id", ""))
+                    for owner_device in owner_devices
+                    if getattr(owner_device, "user", None) is not None
+                }
+
+                trusted_user_id = str(getattr(trusted_session_user, "id", ""))
+                has_other_owner = bool(owner_ids and (trusted_user_id not in owner_ids))
+
+                if has_other_owner:
+                    _log_auto_login_decision(
+                        reason_code="TRUSTED_SESSION_USER_MISMATCH",
+                        http_status=HTTPStatus.UNAUTHORIZED,
+                        client_ip_value=client_ip,
+                        client_mac_value=client_mac,
+                        resolved_mac_value=resolved_mac,
+                        user_id_value=getattr(trusted_session_user, "id", None),
+                        level="warning",
+                        details="jwt user does not match existing device owner",
+                    )
+                    return jsonify(
+                        AuthErrorResponseSchema(error="Sesi login tidak cocok dengan perangkat. Silakan login OTP.").model_dump()
+                    ), HTTPStatus.UNAUTHORIZED
+                else:
+                    user = trusted_session_user
+                    _log_auto_login_decision(
+                        reason_code="TRUSTED_SESSION_RESUME",
+                        http_status=HTTPStatus.OK,
+                        client_ip_value=client_ip,
+                        client_mac_value=client_mac,
+                        resolved_mac_value=resolved_mac,
+                        user_id_value=getattr(user, "id", None),
+                        details=f"token_source={token_source}",
+                    )
+
+        auto_login_self_heal_enabled = bool(current_app.config.get("AUTO_LOGIN_SELF_HEAL_KNOWN_DEVICE", True))
+        if not user and resolved_mac and auto_login_self_heal_enabled:
+            known_devices = (
+                db.session.query(UserDevice)
+                .join(User)
+                .filter(
+                    UserDevice.mac_address == resolved_mac,
+                    User.is_active.is_(True),
+                    User.approval_status == ApprovalStatus.APPROVED,
+                )
+                .order_by(UserDevice.is_authorized.desc(), UserDevice.last_seen.desc(), UserDevice.id.desc())
+                .limit(5)
+                .all()
+            )
+
+            eligible_users: dict[str, Any] = {}
+            for known_device in known_devices:
+                known_user = getattr(known_device, "user", None)
+                if not known_user:
+                    continue
+                if getattr(known_user, "is_blocked", False):
+                    continue
+                if _role_value(getattr(known_user, "role", None)) not in allowed_role_values:
+                    continue
+                eligible_users[str(getattr(known_user, "id", ""))] = known_user
+
+            if len(eligible_users) == 1:
+                user = next(iter(eligible_users.values()))
+                current_app.logger.warning(
+                    "Auto-login self-heal: known device with missing authorization flag user_id=%s mac=%s ip=%s",
+                    getattr(user, "id", None),
+                    resolved_mac,
+                    client_ip,
+                )
+            elif len(eligible_users) > 1:
+                _log_auto_login_decision(
+                    reason_code="AMBIGUOUS_DEVICE_OWNERSHIP",
+                    http_status=HTTPStatus.UNAUTHORIZED,
+                    client_ip_value=client_ip,
+                    client_mac_value=client_mac,
+                    resolved_mac_value=resolved_mac,
+                    level="warning",
+                    details="multiple active approved users share same device identity",
+                )
+                return jsonify(
+                    AuthErrorResponseSchema(error="Perangkat terdeteksi ganda. Silakan login OTP.").model_dump()
+                ), HTTPStatus.UNAUTHORIZED
+
         if not user:
             _log_auto_login_decision(
                 reason_code="DEVICE_NOT_AUTHORIZED_OR_USER_NOT_APPROVED",
@@ -225,7 +424,7 @@ def auto_login_impl(
             )
             return build_status_error("blocked", "Akun Anda diblokir oleh Admin."), HTTPStatus.FORBIDDEN
 
-        if user.role in [UserRole.USER, UserRole.KOMANDAN, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
+        if _role_value(getattr(user, "role", None)) in allowed_role_values:
             trusted_auto_authorize = bool(resolved_mac)
             ok_binding, msg_binding, resolved_ip = apply_device_binding_for_login(
                 user,
