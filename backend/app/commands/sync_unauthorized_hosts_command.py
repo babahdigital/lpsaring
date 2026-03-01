@@ -8,6 +8,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import click
 from flask import current_app
 from flask.cli import with_appcontext
+from sqlalchemy import select
 
 from app.infrastructure.gateways.mikrotik_client import (
     get_firewall_address_list_entries,
@@ -16,6 +17,8 @@ from app.infrastructure.gateways.mikrotik_client import (
     remove_address_list_entry,
     upsert_address_list_entry,
 )
+from app.extensions import db
+from app.infrastructure.db.models import ApprovalStatus, User, UserDevice
 from app.services import settings_service
 from app.utils.ip_ranges import expand_ip_tokens
 from app.utils.mikrotik_duration import parse_routeros_duration_to_seconds
@@ -148,18 +151,36 @@ def sync_unauthorized_hosts_command(
     prefix = "lpsaring:unauthorized"
     desired: Dict[str, str] = {}
 
+    authorized_device_ips = {
+        _normalize_ip_for_compare(ip)
+        for ip in db.session.scalars(
+            select(UserDevice.ip_address)
+            .join(User, User.id == UserDevice.user_id)
+            .where(
+                UserDevice.ip_address.isnot(None),
+                UserDevice.is_authorized.is_(True),
+                User.is_active.is_(True),
+                User.approval_status == ApprovalStatus.APPROVED,
+            )
+        ).all()
+        if _normalize_ip_for_compare(ip)
+    }
+
     processed = 0
     skipped_no_ip = 0
     skipped_not_allowed = 0
     skipped_low_uptime = 0
     skipped_authorized = 0
+    skipped_authorized_device_ip = 0
     skipped_exempt = 0
     to_add = 0
     to_remove = 0
     forced_exempt_remove = 0
+    forced_authorized_remove = 0
     failed_add_or_refresh = 0
     failed_remove = 0
     failed_forced_exempt_remove = 0
+    failed_forced_authorized_remove = 0
 
     with get_mikrotik_connection() as api:
         if not api:
@@ -186,6 +207,10 @@ def sync_unauthorized_hosts_command(
 
             if ip_text in exempt_set:
                 skipped_exempt += 1
+                continue
+
+            if ip_text in authorized_device_ips:
+                skipped_authorized_device_ip += 1
                 continue
 
             authorized = str(host.get("authorized", "false")).lower() == "true"
@@ -252,20 +277,38 @@ def sync_unauthorized_hosts_command(
                 if not ok_remove:
                     failed_forced_exempt_remove += 1
 
+        # Final safety guard: IP device yang sudah authorized di DB tidak boleh bertahan di unauthorized list.
+        for authorized_ip in sorted(authorized_device_ips):
+            if not authorized_ip:
+                continue
+            forced_authorized_remove += 1
+            if apply:
+                ok_remove, _remove_msg = remove_address_list_entry(api, authorized_ip, resolved_list)
+                if not ok_remove:
+                    failed_forced_authorized_remove += 1
+
     click.echo(
         f"processed_hosts={processed} desired_block_ips={len(desired)} "
         f"would_add_or_refresh={to_add} would_remove={to_remove} apply={apply} "
-        f"forced_exempt_remove={forced_exempt_remove} "
+        f"forced_exempt_remove={forced_exempt_remove} forced_authorized_remove={forced_authorized_remove} "
         f"failed_add_or_refresh={failed_add_or_refresh} failed_remove={failed_remove} "
         f"failed_forced_exempt_remove={failed_forced_exempt_remove} "
+        f"failed_forced_authorized_remove={failed_forced_authorized_remove} "
         f"skipped_no_ip={skipped_no_ip} skipped_not_allowed={skipped_not_allowed} "
         f"skipped_exempt={skipped_exempt} "
+        f"skipped_authorized_device_ip={skipped_authorized_device_ip} "
         f"skipped_low_uptime={skipped_low_uptime} skipped_authorized_or_bypassed={skipped_authorized}"
     )
 
-    if apply and (failed_add_or_refresh > 0 or failed_remove > 0 or failed_forced_exempt_remove > 0):
+    if apply and (
+        failed_add_or_refresh > 0
+        or failed_remove > 0
+        or failed_forced_exempt_remove > 0
+        or failed_forced_authorized_remove > 0
+    ):
         raise click.ClickException(
             "Sinkronisasi unauthorized selesai dengan kegagalan operasi router: "
             f"failed_add_or_refresh={failed_add_or_refresh}, failed_remove={failed_remove}, "
-            f"failed_forced_exempt_remove={failed_forced_exempt_remove}"
+            f"failed_forced_exempt_remove={failed_forced_exempt_remove}, "
+            f"failed_forced_authorized_remove={failed_forced_authorized_remove}"
         )
