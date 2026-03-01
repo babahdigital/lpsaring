@@ -185,6 +185,10 @@ def setup_logging(app: Flask):
         if logger is not root_logger:
             logger.propagate = False
 
+    if not bool(app.config.get("SQLALCHEMY_ECHO", False)):
+        sqlalchemy_engine_logger.setLevel(logging.WARNING)
+        sqlalchemy_pool_logger.setLevel(logging.WARNING)
+
     if app.config.get("LOG_TO_FILE", False) and not app.testing:
         log_dir = app.config.get("LOG_DIR", "logs")
         # DIKEMBALIKAN: Logika path absolut yang fleksibel

@@ -633,16 +633,32 @@ def remove_address_list_entry(api_connection: Any, address: str, list_name: str)
         entries = resource.get(address=address, list=list_name)
         removed = 0
         for entry in entries:
-            entry_id = entry.get(".id") or entry.get("id")
-            if entry_id:
+            entry_id_dot = entry.get(".id")
+            entry_id_plain = entry.get("id")
+
+            if entry_id_dot:
                 try:
-                    resource.remove(**{".id": entry_id})
+                    resource.remove(**{".id": entry_id_dot})
+                    removed += 1
+                    continue
                 except Exception:
-                    resource.remove(id=entry_id)
-                removed += 1
+                    pass
+
+            if entry_id_plain:
+                try:
+                    resource.remove(id=entry_id_plain)
+                    removed += 1
+                    continue
+                except Exception:
+                    pass
 
         if entries and removed == 0:
             return False, "Entri ditemukan tetapi gagal dihapus (ID tidak valid)"
+
+        remaining = resource.get(address=address, list=list_name)
+        if remaining:
+            return False, "Entri ditemukan tetapi belum terhapus dari router"
+
         return True, "Sukses"
     except Exception as e:
         return False, str(e)

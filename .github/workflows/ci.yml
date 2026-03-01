@@ -56,6 +56,9 @@ jobs:
             contracts:
               - 'contracts/openapi/**'
               - 'frontend/types/api/contracts.ts'
+              - 'scripts/contract_gate.py'
+              - 'scripts/api_quality_gate.py'
+              - 'scripts/access_status_parity_gate.py'
             docs:
               - 'docs/API_DETAIL.md'
               - 'docs/OPENAPI_CONTRACT_WORKFLOW.md'
