@@ -18,6 +18,7 @@ from app.infrastructure.db.models import (
     RefreshToken,
     AdminActionType,
     Package,
+    PublicDatabaseUpdateSubmission,
 )
 from app.infrastructure.http.decorators import admin_required
 from app.infrastructure.http.schemas.user_schemas import (
@@ -45,6 +46,23 @@ from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package
 from app.services.user_management import user_approval, user_deletion, user_profile as user_profile_service
 
 user_management_bp = Blueprint("user_management_api", __name__)
+
+
+def _serialize_public_update_submission(item: PublicDatabaseUpdateSubmission) -> dict:
+    return {
+        "id": str(item.id),
+        "full_name": item.full_name,
+        "role": item.role,
+        "blok": item.blok,
+        "kamar": item.kamar,
+        "phone_number": item.phone_number,
+        "source_ip": item.source_ip,
+        "approval_status": item.approval_status,
+        "processed_by_user_id": str(item.processed_by_user_id) if item.processed_by_user_id else None,
+        "processed_at": item.processed_at.isoformat() if item.processed_at else None,
+        "rejection_reason": item.rejection_reason,
+        "created_at": item.created_at.isoformat() if item.created_at else None,
+    }
 
 
 def _collect_demo_phone_variations_from_env() -> set[str]:
@@ -87,6 +105,145 @@ def _deny_non_super_admin_target_access(current_admin: User, target_user: User):
     if target_user.role == UserRole.SUPER_ADMIN or _is_demo_user(target_user):
         return jsonify({"message": "Akses ditolak."}), HTTPStatus.FORBIDDEN
     return None
+
+
+@user_management_bp.route("/update-submissions", methods=["GET"])
+@admin_required
+def list_public_update_submissions(current_admin: User):
+    try:
+        page = max(1, request.args.get("page", 1, type=int) or 1)
+        items_per_page = min(max(request.args.get("itemsPerPage", 10, type=int) or 10, 1), 100)
+        search = str(request.args.get("search", "") or "").strip()
+        status = str(request.args.get("status", "PENDING") or "PENDING").strip().upper()
+
+        allowed_status = {"PENDING", "APPROVED", "REJECTED"}
+        if status not in allowed_status:
+            return jsonify({"message": "Status filter tidak valid."}), HTTPStatus.BAD_REQUEST
+
+        query = db.session.query(PublicDatabaseUpdateSubmission).filter(
+            PublicDatabaseUpdateSubmission.approval_status == status
+        )
+
+        if search:
+            phone_variations = get_phone_number_variations(search)
+            query = query.filter(
+                or_(
+                    PublicDatabaseUpdateSubmission.full_name.ilike(f"%{search}%"),
+                    PublicDatabaseUpdateSubmission.phone_number.in_(phone_variations),
+                )
+            )
+
+        query = query.order_by(PublicDatabaseUpdateSubmission.created_at.desc())
+        total_items = query.count()
+        items = query.offset((page - 1) * items_per_page).limit(items_per_page).all()
+
+        return (
+            jsonify(
+                {
+                    "items": [_serialize_public_update_submission(item) for item in items],
+                    "totalItems": total_items,
+                }
+            ),
+            HTTPStatus.OK,
+        )
+    except Exception as e:
+        current_app.logger.error("Gagal mengambil update submissions: %s", e, exc_info=True)
+        return jsonify({"message": "Gagal memuat data pengajuan pembaruan."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@user_management_bp.route("/update-submissions/<uuid:submission_id>/approve", methods=["POST"])
+@admin_required
+def approve_public_update_submission(current_admin: User, submission_id):
+    submission = db.session.get(PublicDatabaseUpdateSubmission, submission_id)
+    if not submission:
+        return jsonify({"message": "Pengajuan tidak ditemukan."}), HTTPStatus.NOT_FOUND
+
+    if str(submission.approval_status or "").upper() != "PENDING":
+        return jsonify({"message": "Pengajuan sudah diproses sebelumnya."}), HTTPStatus.BAD_REQUEST
+
+    if not submission.phone_number:
+        return jsonify({"message": "Pengajuan ini tidak memiliki nomor telepon untuk diverifikasi."}), HTTPStatus.BAD_REQUEST
+
+    variations = get_phone_number_variations(str(submission.phone_number))
+    user = db.session.execute(select(User).where(User.phone_number.in_(variations))).scalar_one_or_none()
+    if not user:
+        return jsonify({"message": "User dengan nomor telepon tersebut tidak ditemukan."}), HTTPStatus.BAD_REQUEST
+
+    denied_response = _deny_non_super_admin_target_access(current_admin, user)
+    if denied_response:
+        return denied_response
+
+    role_upper = str(submission.role or "").strip().upper()
+    if role_upper == "KOMANDAN":
+        user.role = UserRole.KOMANDAN
+        user.is_tamping = False
+        user.tamping_type = None
+    elif role_upper == "TAMPING":
+        user.role = UserRole.USER
+        user.is_tamping = True
+        user.tamping_type = "TAMPING"
+    else:
+        return jsonify({"message": "Role pengajuan tidak valid."}), HTTPStatus.BAD_REQUEST
+
+    user.blok = submission.blok
+    user.kamar = submission.kamar
+
+    submission.approval_status = "APPROVED"
+    submission.rejection_reason = None
+    submission.processed_by_user_id = current_admin.id
+    submission.processed_at = datetime.now(dt_timezone.utc)
+
+    try:
+        db.session.commit()
+        return (
+            jsonify(
+                {
+                    "message": "Pengajuan berhasil disetujui.",
+                    "submission": _serialize_public_update_submission(submission),
+                    "user": UserResponseSchema.from_orm(user).model_dump(),
+                }
+            ),
+            HTTPStatus.OK,
+        )
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error("Gagal approve pengajuan %s: %s", submission_id, e, exc_info=True)
+        return jsonify({"message": "Gagal menyetujui pengajuan."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@user_management_bp.route("/update-submissions/<uuid:submission_id>/reject", methods=["POST"])
+@admin_required
+def reject_public_update_submission(current_admin: User, submission_id):
+    submission = db.session.get(PublicDatabaseUpdateSubmission, submission_id)
+    if not submission:
+        return jsonify({"message": "Pengajuan tidak ditemukan."}), HTTPStatus.NOT_FOUND
+
+    if str(submission.approval_status or "").upper() != "PENDING":
+        return jsonify({"message": "Pengajuan sudah diproses sebelumnya."}), HTTPStatus.BAD_REQUEST
+
+    payload = request.get_json(silent=True) or {}
+    rejection_reason = str(payload.get("rejection_reason") or "").strip() or None
+
+    submission.approval_status = "REJECTED"
+    submission.rejection_reason = rejection_reason
+    submission.processed_by_user_id = current_admin.id
+    submission.processed_at = datetime.now(dt_timezone.utc)
+
+    try:
+        db.session.commit()
+        return (
+            jsonify(
+                {
+                    "message": "Pengajuan berhasil ditolak.",
+                    "submission": _serialize_public_update_submission(submission),
+                }
+            ),
+            HTTPStatus.OK,
+        )
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error("Gagal reject pengajuan %s: %s", submission_id, e, exc_info=True)
+        return jsonify({"message": "Gagal menolak pengajuan."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 # --- SEMUA ROUTE LAINNYA DI ATAS INI TIDAK BERUBAH ---
 # (create_user, update_user, approve_user, dll. tetap sama)
