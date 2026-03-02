@@ -175,17 +175,28 @@ def approve_public_update_submission(current_admin: User, submission_id):
         return denied_response
 
     role_upper = str(submission.role or "").strip().upper()
+    if role_upper in {"KLIEN", "CLIENT"}:
+        role_upper = "USER"
+
+    submitted_full_name = str(submission.full_name or "").strip()
+    if submitted_full_name:
+        user.full_name = submitted_full_name
+
     if role_upper == "KOMANDAN":
         user.role = UserRole.KOMANDAN
         user.is_tamping = False
         user.tamping_type = None
     elif role_upper == "TAMPING":
+        if not submission.tamping_type:
+            return jsonify({"message": "Jenis tamping wajib tersedia untuk role TAMPING."}), HTTPStatus.BAD_REQUEST
         user.role = UserRole.USER
         user.is_tamping = True
         user.tamping_type = submission.tamping_type
         user.blok = None
         user.kamar = None
     elif role_upper == "USER":
+        if not submission.blok or not submission.kamar:
+            return jsonify({"message": "Blok dan kamar wajib tersedia untuk role USER."}), HTTPStatus.BAD_REQUEST
         user.role = UserRole.USER
         user.is_tamping = False
         user.tamping_type = None
@@ -195,8 +206,8 @@ def approve_public_update_submission(current_admin: User, submission_id):
         return jsonify({"message": "Role pengajuan tidak valid."}), HTTPStatus.BAD_REQUEST
 
     if role_upper == "KOMANDAN":
-        user.blok = None
-        user.kamar = None
+        user.blok = submission.blok or user.blok
+        user.kamar = submission.kamar or user.kamar
 
     submission.approval_status = "APPROVED"
     submission.rejection_reason = None
