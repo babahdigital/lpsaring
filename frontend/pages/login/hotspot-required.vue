@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { resolvePostHotspotRecheckRoute } from '~/utils/hotspotRedirect'
 import { useAuthStore } from '~/store/auth'
 
@@ -79,6 +78,32 @@ const fallbackLoginPath = computed(() => {
 
 const loginHotspotUrl = computed(() => mikrotikLoginUrl.value || fallbackLoginPath.value)
 
+function isDemoUser(user: ReturnType<typeof useAuthStore>['currentUser']['value'] | null | undefined): boolean {
+  return user?.is_demo_user === true
+}
+
+async function redirectDemoUserToBuyPage(): Promise<boolean> {
+  const knownUser = authStore.currentUser ?? authStore.lastKnownUser
+  if (isDemoUser(knownUser)) {
+    await navigateTo('/beli', { replace: true })
+    return true
+  }
+
+  try {
+    await authStore.refreshSessionStatus('/login/hotspot-required')
+    const refreshedUser = authStore.currentUser ?? authStore.lastKnownUser
+    if (isDemoUser(refreshedUser)) {
+      await navigateTo('/beli', { replace: true })
+      return true
+    }
+  }
+  catch {
+    // noop; fallback ke alur hotspot-required biasa
+  }
+
+  return false
+}
+
 function getQueryValueFromKeys(keys: string[]): string | null {
   const query = route.query as Record<string, string | string[] | undefined>
   for (const key of keys) {
@@ -103,6 +128,9 @@ function openHotspotLogin() {
 }
 
 async function continueToPortal() {
+  if (await redirectDemoUserToBuyPage())
+    return
+
   rechecking.value = true
   statusMessage.value = ''
   try {
@@ -143,6 +171,10 @@ async function continueToPortal() {
     rechecking.value = false
   }
 }
+
+onMounted(async () => {
+  await redirectDemoUserToBuyPage()
+})
 </script>
 
 <template>
