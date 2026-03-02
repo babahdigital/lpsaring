@@ -8,6 +8,14 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Fixed (2026-03-02)
+- `deploy_pi.sh` kini menambahkan preflight deteksi Alembic drift untuk rantai migrasi `20260302_*` (public update submissions) dan auto-stamp terkontrol sebelum `flask db upgrade`, sehingga deploy tidak lagi macet pada kasus `DuplicateTable/DuplicateColumn`.
+- Healthcheck frontend produksi dipastikan memakai binary absolut `/nodejs/bin/node` agar status container `frontend` konsisten `healthy`.
+
+### Changed (2026-03-02)
+- Opsi `--clean` di `deploy_pi.sh` sekarang wajib disertai `--confirm-clean-data-loss` untuk mencegah eksekusi destruktif tanpa konfirmasi eksplisit.
+- Ditambahkan opsi `--no-auto-stamp-alembic-drift` untuk mematikan auto-remediation drift Alembic saat dibutuhkan investigasi manual.
+
 ### Changed (2026-03-02)
 - Dokumentasi public update workflow disempurnakan untuk mencakup: staging-vs-approval behavior, visibility panel approval admin saat pending kosong, matrix feature flag backend/frontend, dan checklist validasi minimal pasca perubahan.
 - Sinkronisasi ringkasan endpoint pada `docs/API_OVERVIEW.md` dan addendum kontrak pada `docs/API_DETAIL.md` agar konsisten dengan implementasi `/update` terbaru.

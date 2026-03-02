@@ -22,10 +22,12 @@ Optional:
   --skip-pull                   Skip docker compose pull
   --skip-health                 Skip health check (curl /api/ping)
   --clean                       Backup remote state, copy bundle to local tmp/, then run docker compose down -v --remove-orphans
+  --confirm-clean-data-loss     Required with --clean (acknowledge volume/data loss risk)
   --prune                       Run safe docker prune on remote (containers/images/networks/build cache; keeps volumes)
   --strict-minimal              Backup remote state, copy bundle to local tmp/, then keep remote dir strictly minimal: only infrastructure/, docker-compose.prod.yml, .env.prod, .env.public.prod, backend/backups (no .deploy_backups)
   --sync-phones                 After deploy, run phone normalization report (dry-run) inside backend container
   --sync-phones-apply           After deploy, APPLY phone normalization to DB (aborts on duplicates)
+  --no-auto-stamp-alembic-drift Disable auto-stamp for known Alembic drift on 20260302 public-update revisions
   --allow-placeholders          Allow deploy even if .env.prod still contains CHANGE_ME_* values
   --wait-ci                     Wait for GitHub Actions/Checks to be green for current commit before deploying
   --wait-ci-timeout <SECONDS>   Max seconds to wait for CI (default: 1800)
@@ -277,12 +279,14 @@ SSL_PRIVKEY=""
 SKIP_PULL="false"
 SKIP_HEALTH="false"
 DO_CLEAN="false"
+CONFIRM_CLEAN_DATA_LOSS="false"
 DO_PRUNE="false"
 ALLOW_PLACEHOLDERS="false"
 DRY_RUN="false"
 SYNC_PHONES="false"
 SYNC_PHONES_APPLY="false"
 STRICT_MINIMAL="false"
+AUTO_STAMP_ALEMBIC_DRIFT="true"
 
 WAIT_CI="false"
 WAIT_CI_TIMEOUT="1800"
@@ -304,10 +308,12 @@ while [[ $# -gt 0 ]]; do
     --skip-pull) SKIP_PULL="true"; shift ;;
     --skip-health) SKIP_HEALTH="true"; shift ;;
     --clean) DO_CLEAN="true"; shift ;;
+    --confirm-clean-data-loss) CONFIRM_CLEAN_DATA_LOSS="true"; shift ;;
     --prune) DO_PRUNE="true"; shift ;;
     --strict-minimal) STRICT_MINIMAL="true"; shift ;;
     --sync-phones) SYNC_PHONES="true"; shift ;;
     --sync-phones-apply) SYNC_PHONES_APPLY="true"; shift ;;
+    --no-auto-stamp-alembic-drift) AUTO_STAMP_ALEMBIC_DRIFT="false"; shift ;;
     --allow-placeholders) ALLOW_PLACEHOLDERS="true"; shift ;;
     --wait-ci) WAIT_CI="true"; shift ;;
     --wait-ci-timeout) WAIT_CI_TIMEOUT="${2:-}"; shift 2 ;;
@@ -333,6 +339,11 @@ fi
 if [[ -z "$PI_HOST" ]]; then
   echo "ERROR: --host is required" >&2
   usage
+  exit 1
+fi
+
+if [[ "$DO_CLEAN" == "true" ]] && [[ "$CONFIRM_CLEAN_DATA_LOSS" != "true" ]]; then
+  echo "ERROR: --clean memerlukan --confirm-clean-data-loss karena akan menjalankan 'docker compose down -v' (hapus volumes/data)." >&2
   exit 1
 fi
 
@@ -447,6 +458,7 @@ echo "==> Rsync         : $HAS_RSYNC"
 echo "==> Dry run       : $DRY_RUN"
 echo "==> Sync phones   : $SYNC_PHONES (apply=$SYNC_PHONES_APPLY)"
 echo "==> Prune remote  : $DO_PRUNE (keeps volumes)"
+echo "==> Auto-stamp drift: $AUTO_STAMP_ALEMBIC_DRIFT"
 
 if [[ "$DO_CLEAN" == "true" ]]; then
   echo "==> Clean mode    : enabled (auto backup before destructive step + copy to local tmp/)"
@@ -614,6 +626,76 @@ if [ "$SKIP_PULL" = "false" ]; then
 fi
 echo "==> Ensure db/redis running for migration..."
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d db redis
+
+echo "==> Preflight Alembic drift check..."
+drift_out=\$(docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm migrate python - <<'PY'
+from sqlalchemy import text
+from app import create_app
+from app.extensions import db
+
+CHAIN = [
+  "20260302_add_public_db_update_submissions",
+  "20260302_add_public_update_submission_whatsapp_tracking",
+  "20260302_add_public_update_submission_approval_fields",
+  "20260302_alter_public_update_submission_role_fields",
+]
+
+def get_current_rev(session):
+  try:
+    row = session.execute(text("select version_num from alembic_version")).fetchone()
+    if row and row[0]:
+      return str(row[0])
+  except Exception:
+    return None
+  return None
+
+app = create_app()
+with app.app_context():
+  session = db.session
+  current_rev = get_current_rev(session)
+  table_exists = bool(session.execute(text("select to_regclass('public.public_database_update_submissions') is not null")).scalar())
+
+  cols = set()
+  if table_exists:
+    rows = session.execute(text("""
+      select column_name
+      from information_schema.columns
+      where table_schema = 'public' and table_name = 'public_database_update_submissions'
+    """)).fetchall()
+    cols = {r[0] for r in rows}
+
+  target = None
+  if table_exists:
+    target = CHAIN[0]
+  if "whatsapp_notify_attempts" in cols:
+    target = CHAIN[1]
+  if "approval_status" in cols:
+    target = CHAIN[2]
+  if "tamping_type" in cols:
+    target = CHAIN[3]
+
+  drift = bool(target and current_rev != target and (current_rev not in CHAIN or CHAIN.index(current_rev) < CHAIN.index(target)))
+
+  print(f"CURRENT_REV={current_rev or 'NONE'}")
+  print(f"DRIFT_TARGET={target or 'NONE'}")
+  print(f"DRIFT_DETECTED={'1' if drift else '0'}")
+PY
+)
+
+echo "\$drift_out"
+drift_detected=\$(printf '%s\n' "\$drift_out" | awk -F= '/^DRIFT_DETECTED=/{print \$2}' | tail -n1)
+drift_target=\$(printf '%s\n' "\$drift_out" | awk -F= '/^DRIFT_TARGET=/{print \$2}' | tail -n1)
+
+if [ "\$drift_detected" = "1" ]; then
+  echo "WARN: Alembic drift terdeteksi (target=\$drift_target)."
+  if [ "$AUTO_STAMP_ALEMBIC_DRIFT" = "true" ] && [ -n "\$drift_target" ] && [ "\$drift_target" != "NONE" ]; then
+  echo "==> Auto-stamp drift ke revision \$drift_target"
+  docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm migrate flask db stamp "\$drift_target"
+  else
+  echo "ERROR: drift Alembic terdeteksi. Jalankan stamp manual atau deploy ulang tanpa --no-auto-stamp-alembic-drift." >&2
+  exit 1
+  fi
+fi
 
 echo "==> Run explicit migration (idempotent)..."
 docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm migrate
