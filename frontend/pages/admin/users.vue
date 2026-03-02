@@ -171,6 +171,11 @@ const mikrotikOptions = ref<MikrotikOptionsResponse>({
 })
 const cleanupPreviewLoading = ref(false)
 const cleanupPreview = ref<InactiveCleanupPreviewResponse | null>(null)
+const cleanupDeactivateCandidates = computed(() => cleanupPreview.value?.items?.deactivate_candidates ?? [])
+const cleanupDeleteCandidates = computed(() => cleanupPreview.value?.items?.delete_candidates ?? [])
+const showCleanupPreviewSection = computed(() => {
+  return cleanupDeactivateCandidates.value.length > 0 || cleanupDeleteCandidates.value.length > 0
+})
 const selectedUserPreviewContext = ref<UserDetailPreviewContext | null>(null)
 const previewActionLoading = ref<Record<string, boolean>>({})
 const updateSubmissionLoading = ref(false)
@@ -961,7 +966,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
       </VCardText>
     </VCard>
 
-    <VCard class="rounded-lg mb-6">
+    <VCard v-if="showCleanupPreviewSection" class="rounded-lg mb-6">
       <VCardItem>
         <VCardTitle class="admin-users__cleanup-title">
           <div class="admin-users__cleanup-titleText">
@@ -1003,7 +1008,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
             <div class="text-subtitle-2 mb-2">Top Kandidat Deactivate</div>
             <VList density="compact" border rounded>
               <VListItem
-                v-for="item in (cleanupPreview?.items?.deactivate_candidates ?? [])"
+                v-for="item in cleanupDeactivateCandidates"
                 :key="`deact-${item.id}`"
                 :title="item.full_name"
                 :subtitle="`${formatPhoneNumberDisplay(item.phone_number) ?? '-'} • ${item.days_inactive} hari`"
@@ -1040,7 +1045,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
                   </div>
                 </template>
               </VListItem>
-              <VListItem v-if="(cleanupPreview?.items?.deactivate_candidates?.length ?? 0) === 0" title="Tidak ada kandidat" />
+              <VListItem v-if="cleanupDeactivateCandidates.length === 0" title="Tidak ada kandidat" />
             </VList>
           </VCol>
 
@@ -1048,7 +1053,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
             <div class="text-subtitle-2 mb-2">Top Kandidat Delete</div>
             <VList density="compact" border rounded>
               <VListItem
-                v-for="item in (cleanupPreview?.items?.delete_candidates ?? [])"
+                v-for="item in cleanupDeleteCandidates"
                 :key="`del-${item.id}`"
                 :title="item.full_name"
                 :subtitle="`${formatPhoneNumberDisplay(item.phone_number) ?? '-'} • ${item.days_inactive} hari`"
@@ -1085,7 +1090,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
                   </div>
                 </template>
               </VListItem>
-              <VListItem v-if="(cleanupPreview?.items?.delete_candidates?.length ?? 0) === 0" title="Tidak ada kandidat" />
+              <VListItem v-if="cleanupDeleteCandidates.length === 0" title="Tidak ada kandidat" />
             </VList>
           </VCol>
         </VRow>
