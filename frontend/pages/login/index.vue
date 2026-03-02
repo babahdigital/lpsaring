@@ -29,7 +29,6 @@ const isWidePadding = computed(() => (isHydrated.value ? display.smAndUp.value :
 // --- State untuk UI dan Tab ---
 const currentTab = ref<'login' | 'register'>('login')
 const viewState = ref<'form' | 'success'>('form')
-const suppressNextSuccessMessage = ref(false)
 useHead({ title: 'Portal Hotspot' })
 onMounted(() => {
   isHydrated.value = true
@@ -399,15 +398,9 @@ async function handleRegister() {
     register_as_komandan: regRole.value === 'KOMANDAN',
   }
 
-  suppressNextSuccessMessage.value = true
   const registerSuccess = await authStore.register(registrationPayload)
-  if (registerSuccess === true) {
-    authStore.clearMessage()
+  if (registerSuccess === true)
     viewState.value = 'success'
-  }
-  else {
-    suppressNextSuccessMessage.value = false
-  }
 }
 
 // --- Fungsi Reset View ---
@@ -450,12 +443,6 @@ watch(() => authStore.error, (newError) => {
 })
 
 watch(() => authStore.message, (newMessage) => {
-  if (suppressNextSuccessMessage.value === true) {
-    suppressNextSuccessMessage.value = false
-    authStore.clearMessage()
-    return
-  }
-
   if (typeof newMessage === 'string' && newMessage.length > 0) {
     addSnackbar({
       title: 'Informasi',
@@ -732,16 +719,8 @@ watch(regRole, () => {
               Registrasi Diproses
             </h4>
             <p class="mb-6 text-medium-emphasis">
-              Terima kasih, data Anda sudah kami terima. Mohon bersabar, Admin akan memverifikasi terlebih dahulu.
+              Terima kasih! Akun Anda sedang menunggu persetujuan Admin. Notifikasi akan dikirim melalui WhatsApp jika akun Anda telah aktif.
             </p>
-            <VAlert
-              type="info"
-              variant="tonal"
-              density="comfortable"
-              class="mb-6 text-start"
-            >
-              Notifikasi hasil verifikasi akan dikirim melalui WhatsApp. Jika Anda sudah tidak menggunakan layanan LPSaringNet, silakan abaikan pesan WhatsApp tersebut.
-            </VAlert>
             <VBtn
               block
               @click="backToForms"
