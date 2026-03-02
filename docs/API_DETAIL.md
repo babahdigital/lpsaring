@@ -110,3 +110,10 @@ CI akan gagal jika syarat ini tidak terpenuhi.
   - MAC authoritative diambil dari router (bukan authority dari payload mentah),
   - mismatch `client_mac` request vs MAC router ditolak hard.
 - Flow verify OTP mempertahankan prinsip tidak memetakan user dari active-session by-IP; keputusan hotspot-required memakai state ip-binding ownership user.
+
+## Addendum 2026-03-02
+- Public update workflow (`POST /api/users/database-update-submissions` + admin update-submissions approve/reject) dipertegas sebagai alur staging→approval (bukan auto-mutate user role).
+- Dokumentasi env update form diselaraskan:
+  - backend gate: `PUBLIC_DB_UPDATE_FORM_ENABLED`
+  - frontend gate: `NUXT_PUBLIC_PUBLIC_DB_UPDATE_FORM_ENABLED` dengan fallback `NUXT_PUBLIC_DB_UPDATE_FORM_ENABLED`.
+- Frontend compatibility fix untuk halaman update diselesaikan agar template typecheck tetap valid pada tombol kembali login (handler internal dipakai, bukan pemanggilan langsung di template).

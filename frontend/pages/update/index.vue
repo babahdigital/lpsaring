@@ -23,6 +23,7 @@ const phoneNumber = ref('')
 const isSubmitting = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
+const isSubmissionSuccess = ref(false)
 
 const roleOptions = [
   { title: 'User', value: 'USER' },
@@ -118,6 +119,7 @@ async function submitForm() {
       throw new Error(response.message ?? 'Gagal mengirim data.')
 
     successMessage.value = response.message ?? 'Data berhasil dikirim.'
+    isSubmissionSuccess.value = true
     fullName.value = ''
     role.value = ''
     blok.value = null
@@ -134,6 +136,10 @@ async function submitForm() {
   finally {
     isSubmitting.value = false
   }
+}
+
+function goToLogin() {
+  void navigateTo('/login')
 }
 </script>
 
@@ -155,6 +161,30 @@ async function submitForm() {
         </VAlert>
 
         <template v-else>
+          <template v-if="isSubmissionSuccess">
+            <div class="text-center py-8">
+              <VAvatar color="success" variant="tonal" size="64" class="mb-4">
+                <VIcon icon="tabler-check" size="36" />
+              </VAvatar>
+
+              <h2 class="text-h6 mb-2">
+                Pemutakhiran Berhasil Dikirim
+              </h2>
+
+              <p class="text-body-2 text-medium-emphasis mb-6">
+                {{ successMessage || 'Data berhasil dikirim dan akan ditinjau oleh admin.' }}
+              </p>
+
+              <VBtn
+                color="primary"
+                @click="goToLogin"
+              >
+                Kembali ke Login
+              </VBtn>
+            </div>
+          </template>
+
+          <template v-else>
           <p class="text-body-2 mb-4">
             Silakan isi data pemutakhiran. Nomor WhatsApp diisi otomatis dari link resmi dan tidak bisa diubah.
           </p>
@@ -264,6 +294,7 @@ async function submitForm() {
               Kirim Data Pemutakhiran
             </VBtn>
           </VForm>
+          </template>
         </template>
       </VCardText>
     </VCard>

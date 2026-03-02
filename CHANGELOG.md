@@ -8,6 +8,13 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Changed (2026-03-02)
+- Dokumentasi public update workflow disempurnakan untuk mencakup: staging-vs-approval behavior, visibility panel approval admin saat pending kosong, matrix feature flag backend/frontend, dan checklist validasi minimal pasca perubahan.
+- Sinkronisasi ringkasan endpoint pada `docs/API_OVERVIEW.md` dan addendum kontrak pada `docs/API_DETAIL.md` agar konsisten dengan implementasi `/update` terbaru.
+
+### Fixed (2026-03-02)
+- Frontend typecheck error pada `pages/login/hotspot-required.vue` diperbaiki (typing helper `isDemoUser`), sehingga verifikasi lint/typecheck untuk file terkait update kembali bersih.
+
 ### Added (2026-03-02)
 - Public update submission workflow berbasis role `USER/TAMPING/KOMANDAN` dengan validasi field kondisional yang diselaraskan dengan form register `/login`.
 - Queue approval klaim role di admin users (`/api/admin/update-submissions`) dengan aksi approve/reject agar klaim `komandan/tamping` tidak langsung diterapkan otomatis.

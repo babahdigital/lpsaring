@@ -42,7 +42,7 @@ from app.services.quota_mutation_ledger_service import append_quota_mutation_eve
 from app.services.user_management.helpers import _handle_mikrotik_operation
 from app.commands.sync_unauthorized_hosts_command import sync_unauthorized_hosts_command
 from app.utils.block_reasons import build_manual_debt_eom_reason
-from app.utils.formatters import format_to_local_phone, get_app_local_datetime
+from app.utils.formatters import format_to_local_phone, get_app_local_datetime, get_phone_number_variations
 from app.utils.metrics_utils import increment_metric
 from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package, format_rupiah
 
@@ -57,6 +57,27 @@ from app.extensions import celery_app
 logger = logging.getLogger(__name__)
 
 _MIKROTIK_DURATION_PART = re.compile(r"(\d+)([wdhms])", re.IGNORECASE)
+
+
+def _should_skip_public_update_whatsapp_for_phone(phone_number: str) -> bool:
+    """Return True when the number is known but no longer an active LPSaringNet service user."""
+
+    normalized_phone = str(phone_number or "").strip()
+    if not normalized_phone:
+        return False
+
+    try:
+        variations = get_phone_number_variations(normalized_phone)
+        user = db.session.query(User).filter(User.phone_number.in_(variations)).order_by(User.created_at.desc()).first()
+        if user is None:
+            return False
+
+        is_approved = getattr(user, "approval_status", None) == ApprovalStatus.APPROVED
+        is_active = bool(getattr(user, "is_active", False))
+        return not (is_approved and is_active)
+    except Exception:
+        # Best effort guard; never block message processing on lookup errors.
+        return False
 
 
 @celery_app.task(
@@ -243,6 +264,18 @@ def send_public_update_submission_whatsapp_batch_task(self):
                     f"Halo {context['full_name']}, silakan lanjutkan pemutakhiran data melalui link ini: "
                     f"{update_link}"
                 )
+
+            skip_phone = _should_skip_public_update_whatsapp_for_phone(getattr(representative, "phone_number", ""))
+            if skip_phone:
+                sent_ok = False
+                for row in grouped_rows:
+                    row.whatsapp_notified_at = now_utc
+                    row.whatsapp_notify_last_error = "skip_inactive_service"
+                logger.info(
+                    "Update sync WA batch: skip phone because service inactive/non-approved (phone=%s)",
+                    getattr(representative, "phone_number", ""),
+                )
+                continue
 
             sent_ok = bool(send_whatsapp_message(getattr(representative, "phone_number", ""), message))
             for row in grouped_rows:

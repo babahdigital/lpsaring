@@ -78,7 +78,7 @@ const fallbackLoginPath = computed(() => {
 
 const loginHotspotUrl = computed(() => mikrotikLoginUrl.value || fallbackLoginPath.value)
 
-function isDemoUser(user: ReturnType<typeof useAuthStore>['currentUser']['value'] | null | undefined): boolean {
+function isDemoUser(user: ReturnType<typeof useAuthStore>['currentUser'] | null | undefined): boolean {
   return user?.is_demo_user === true
 }
 

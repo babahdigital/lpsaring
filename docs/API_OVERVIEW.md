@@ -77,6 +77,11 @@ Lampiran wajib:
 - Field tamping: is_tamping (boolean), tamping_type (string, wajib jika is_tamping true).
 - Non‑tamping: blok + kamar wajib.
 - Public update form (`/update`) mengikuti role register: `USER` wajib `blok/kamar`, `TAMPING` wajib `tamping_type`, `KOMANDAN` tanpa field tambahan.
+- Public update submission bersifat staging (`PENDING`) dan tidak langsung memutasi role user aktif; mutasi terjadi saat endpoint admin approve dipanggil.
+- Queue approval klaim role pada halaman admin users ditampilkan hanya saat ada pending request (atau saat loading).
+- Feature flag update form:
+  - Backend: `PUBLIC_DB_UPDATE_FORM_ENABLED`
+  - Frontend: `NUXT_PUBLIC_PUBLIC_DB_UPDATE_FORM_ENABLED` (utama), fallback `NUXT_PUBLIC_DB_UPDATE_FORM_ENABLED`
 - Dokumen ini bersifat high-level; kontrak prioritas yang menjadi sumber kebenaran ada di:
   - `contracts/openapi/openapi.v1.yaml`
   - `frontend/types/api/contracts.ts`

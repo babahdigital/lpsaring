@@ -176,6 +176,12 @@ const previewActionLoading = ref<Record<string, boolean>>({})
 const updateSubmissionLoading = ref(false)
 const updateSubmissionItems = ref<PublicUpdateSubmission[]>([])
 const updateSubmissionTotal = ref(0)
+const showUpdateSubmissionSection = computed(() => {
+  if (updateSubmissionLoading.value)
+    return true
+
+  return updateSubmissionTotal.value > 0 || updateSubmissionItems.value.length > 0
+})
 
 const isCreateBillDialogOpen = ref(false)
 const billLoading = ref(false)
@@ -902,7 +908,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 
 <template>
   <div>
-    <VCard class="rounded-lg mb-6">
+    <VCard v-if="showUpdateSubmissionSection" class="rounded-lg mb-6">
       <VCardItem>
         <VCardTitle class="admin-users__cleanup-title">
           <div class="admin-users__cleanup-titleText">
