@@ -188,7 +188,7 @@ services:
     healthcheck:
       test:
         - CMD
-        - node
+        - /nodejs/bin/node
         - -e
         - fetch('http://127.0.0.1:3010/login').then((res)=>process.exit(res.ok?0:1)).catch(()=>process.exit(1))
       interval: 15s
