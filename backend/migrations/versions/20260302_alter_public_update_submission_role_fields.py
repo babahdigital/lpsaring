@@ -16,13 +16,24 @@ branch_labels = None
 depends_on = None
 
 
+def _has_column(bind, table_name: str, column_name: str) -> bool:
+    inspector = sa.inspect(bind)
+    return any(col["name"] == column_name for col in inspector.get_columns(table_name))
+
+
 def upgrade():
-    op.alter_column("public_database_update_submissions", "blok", existing_type=sa.String(length=10), nullable=True)
-    op.alter_column("public_database_update_submissions", "kamar", existing_type=sa.String(length=20), nullable=True)
-    op.add_column(
-        "public_database_update_submissions",
-        sa.Column("tamping_type", sa.String(length=50), nullable=True),
-    )
+    bind = op.get_bind()
+    table_name = "public_database_update_submissions"
+
+    if _has_column(bind, table_name, "blok"):
+        op.alter_column(table_name, "blok", existing_type=sa.String(length=10), nullable=True)
+    if _has_column(bind, table_name, "kamar"):
+        op.alter_column(table_name, "kamar", existing_type=sa.String(length=20), nullable=True)
+    if not _has_column(bind, table_name, "tamping_type"):
+        op.add_column(
+            table_name,
+            sa.Column("tamping_type", sa.String(length=50), nullable=True),
+        )
 
 
 def downgrade():

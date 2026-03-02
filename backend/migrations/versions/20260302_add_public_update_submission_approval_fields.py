@@ -24,35 +24,52 @@ def _uuid_type(bind) -> TypeEngine:
     return sa.String(length=36)
 
 
+def _has_column(bind, table_name: str, column_name: str) -> bool:
+    inspector = sa.inspect(bind)
+    return any(col["name"] == column_name for col in inspector.get_columns(table_name))
+
+
+def _has_fk(bind, table_name: str, fk_name: str) -> bool:
+    inspector = sa.inspect(bind)
+    return any(fk.get("name") == fk_name for fk in inspector.get_foreign_keys(table_name))
+
+
 def upgrade():
     bind = op.get_bind()
     uuid_col = _uuid_type(bind)
+    table_name = "public_database_update_submissions"
+    fk_name = "fk_public_update_submissions_processed_by_user"
 
-    op.add_column(
-        "public_database_update_submissions",
-        sa.Column("approval_status", sa.String(length=20), nullable=False, server_default="PENDING"),
-    )
-    op.add_column(
-        "public_database_update_submissions",
-        sa.Column("processed_by_user_id", uuid_col, nullable=True),
-    )
-    op.add_column(
-        "public_database_update_submissions",
-        sa.Column("processed_at", sa.DateTime(timezone=True), nullable=True),
-    )
-    op.add_column(
-        "public_database_update_submissions",
-        sa.Column("rejection_reason", sa.String(length=255), nullable=True),
-    )
+    if not _has_column(bind, table_name, "approval_status"):
+        op.add_column(
+            table_name,
+            sa.Column("approval_status", sa.String(length=20), nullable=False, server_default="PENDING"),
+        )
+    if not _has_column(bind, table_name, "processed_by_user_id"):
+        op.add_column(
+            table_name,
+            sa.Column("processed_by_user_id", uuid_col, nullable=True),
+        )
+    if not _has_column(bind, table_name, "processed_at"):
+        op.add_column(
+            table_name,
+            sa.Column("processed_at", sa.DateTime(timezone=True), nullable=True),
+        )
+    if not _has_column(bind, table_name, "rejection_reason"):
+        op.add_column(
+            table_name,
+            sa.Column("rejection_reason", sa.String(length=255), nullable=True),
+        )
 
-    op.create_foreign_key(
-        "fk_public_update_submissions_processed_by_user",
-        "public_database_update_submissions",
-        "users",
-        ["processed_by_user_id"],
-        ["id"],
-        ondelete="SET NULL",
-    )
+    if _has_column(bind, table_name, "processed_by_user_id") and not _has_fk(bind, table_name, fk_name):
+        op.create_foreign_key(
+            fk_name,
+            table_name,
+            "users",
+            ["processed_by_user_id"],
+            ["id"],
+            ondelete="SET NULL",
+        )
 
 
 def downgrade():

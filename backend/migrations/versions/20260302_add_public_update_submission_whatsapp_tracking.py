@@ -16,19 +16,30 @@ branch_labels = None
 depends_on = None
 
 
+def _has_column(bind, table_name: str, column_name: str) -> bool:
+    inspector = sa.inspect(bind)
+    return any(col["name"] == column_name for col in inspector.get_columns(table_name))
+
+
 def upgrade():
-    op.add_column(
-        "public_database_update_submissions",
-        sa.Column("whatsapp_notify_attempts", sa.Integer(), nullable=False, server_default="0"),
-    )
-    op.add_column(
-        "public_database_update_submissions",
-        sa.Column("whatsapp_notified_at", sa.DateTime(timezone=True), nullable=True),
-    )
-    op.add_column(
-        "public_database_update_submissions",
-        sa.Column("whatsapp_notify_last_error", sa.String(length=255), nullable=True),
-    )
+    bind = op.get_bind()
+    table_name = "public_database_update_submissions"
+
+    if not _has_column(bind, table_name, "whatsapp_notify_attempts"):
+        op.add_column(
+            table_name,
+            sa.Column("whatsapp_notify_attempts", sa.Integer(), nullable=False, server_default="0"),
+        )
+    if not _has_column(bind, table_name, "whatsapp_notified_at"):
+        op.add_column(
+            table_name,
+            sa.Column("whatsapp_notified_at", sa.DateTime(timezone=True), nullable=True),
+        )
+    if not _has_column(bind, table_name, "whatsapp_notify_last_error"):
+        op.add_column(
+            table_name,
+            sa.Column("whatsapp_notify_last_error", sa.String(length=255), nullable=True),
+        )
 
 
 def downgrade():
