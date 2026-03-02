@@ -369,6 +369,9 @@ def get_dashboard_stats(current_admin: User):
             )
             or 0
         )
+        pending_approvals = (
+            db.session.scalar(select(func.count(User.id)).where(User.approval_status == ApprovalStatus.PENDING)) or 0
+        )
         expiring_soon_users = (
             db.session.scalar(
                 select(func.count(User.id)).where(User.quota_expiry_date.between(now_utc, seven_days_from_now))
@@ -497,6 +500,7 @@ def get_dashboard_stats(current_admin: User):
             "transaksiMingguLalu": transaksi_minggu_lalu,
             "pendaftarBaru": new_registrants,
             "penggunaAktif": active_users,
+            "menungguPersetujuan": pending_approvals,
             "akanKadaluwarsa": expiring_soon_users,
             "kuotaTerjualMb": kuota_terjual_mb,
             "kuotaTerjual7HariMb": kuota_terjual_7hari_mb,

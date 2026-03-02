@@ -41,6 +41,7 @@ interface DashboardStats {
   pendapatanBulanIni: number
   pendaftarBaru: number
   penggunaAktif: number
+  menungguPersetujuan?: number
   akanKadaluwarsa: number
   permintaanTertunda: number // <-- DITAMBAHKAN
   pendapatanKemarin?: number
@@ -109,6 +110,7 @@ const defaultStats: DashboardStats = {
   pendapatanBulanIni: 0,
   pendaftarBaru: 0,
   penggunaAktif: 0,
+  menungguPersetujuan: 0,
   akanKadaluwarsa: 0,
   permintaanTertunda: 0,
   pendapatanKemarin: 0,
@@ -193,8 +195,8 @@ watch(stats, (newStats) => {
     return
   }
   statistics.value[0].value = newStats.permintaanTertunda ?? 0
-  statistics.value[1].value = newStats.pendaftarBaru ?? 0
-  statistics.value[2].value = newStats.akanKadaluwarsa ?? 0
+  statistics.value[1].value = newStats.akanKadaluwarsa ?? 0
+  statistics.value[2].value = newStats.menungguPersetujuan ?? 0
   statistics.value[3].value = backupFileCount.value
 })
 
