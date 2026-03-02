@@ -20,6 +20,60 @@ const statusMessage = ref('')
 const LAST_MIKROTIK_LOGIN_HINT_KEY = 'lpsaring:last-mikrotik-login-link'
 
 const appBaseUrl = computed(() => String(runtimeConfig.public.appBaseUrl ?? '').trim())
+
+function shouldForceHttpForHost(hostname: string): boolean {
+  const host = String(hostname || '').trim().toLowerCase()
+  if (!host)
+    return false
+
+  if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.home.arpa'))
+    return true
+
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
+    const octets = host.split('.').map(n => Number.parseInt(n, 10))
+    if (octets.length === 4) {
+      const [a, b] = octets
+      if (a === 10)
+        return true
+      if (a === 172 && b >= 16 && b <= 31)
+        return true
+      if (a === 192 && b === 168)
+        return true
+      if (a === 169 && b === 254)
+        return true
+    }
+  }
+
+  return false
+}
+
+function normalizeHotspotLoginUrl(raw: string): string {
+  const input = String(raw || '').trim()
+  if (!input)
+    return ''
+
+  const candidate = input.startsWith('//') ? `http:${input}` : input
+
+  try {
+    const parsed = new URL(candidate)
+    if (parsed.protocol === 'https:' && shouldForceHttpForHost(parsed.hostname))
+      parsed.protocol = 'http:'
+    return parsed.toString()
+  }
+  catch {
+    const withScheme = /^https?:\/\//i.test(candidate) ? candidate : `http://${candidate.replace(/^\/+/, '')}`
+    try {
+      const parsed = new URL(withScheme)
+      if (parsed.protocol === 'https:' && shouldForceHttpForHost(parsed.hostname))
+        parsed.protocol = 'http:'
+      return parsed.toString()
+    }
+    catch {
+      return candidate
+    }
+  }
+}
+
 const queryMikrotikLink = computed(() => {
   const direct = getQueryValueFromKeys(['link_login_only', 'link-login-only', 'link_login', 'link-login', 'linkloginonly'])
   if (direct)
@@ -58,15 +112,15 @@ const storedMikrotikLink = computed(() => {
 
 const mikrotikLoginUrl = computed(() => {
   if (queryMikrotikLink.value)
-    return queryMikrotikLink.value
+    return normalizeHotspotLoginUrl(queryMikrotikLink.value)
 
   if (storedMikrotikLink.value)
-    return storedMikrotikLink.value
+    return normalizeHotspotLoginUrl(storedMikrotikLink.value)
 
   const appLink = String(runtimeConfig.public.appLinkMikrotik ?? '').trim()
   if (appLink)
-    return appLink
-  return String(runtimeConfig.public.mikrotikLoginUrl ?? '').trim()
+    return normalizeHotspotLoginUrl(appLink)
+  return normalizeHotspotLoginUrl(String(runtimeConfig.public.mikrotikLoginUrl ?? '').trim())
 })
 
 const fallbackLoginPath = computed(() => {
@@ -124,7 +178,21 @@ function getQueryValueFromKeys(keys: string[]): string | null {
 function openHotspotLogin() {
   if (!import.meta.client)
     return
-  window.location.href = loginHotspotUrl.value
+  const targetUrl = String(loginHotspotUrl.value || '').trim()
+  if (!targetUrl)
+    return
+
+  window.location.assign(targetUrl)
+
+  setTimeout(() => {
+    if (document.visibilityState !== 'visible')
+      return
+    const fallbackLink = document.createElement('a')
+    fallbackLink.href = targetUrl
+    fallbackLink.target = '_self'
+    fallbackLink.rel = 'noopener'
+    fallbackLink.click()
+  }, 600)
 }
 
 async function continueToPortal() {
