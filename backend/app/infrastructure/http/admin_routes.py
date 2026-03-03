@@ -370,7 +370,10 @@ def get_dashboard_stats(current_admin: User):
             or 0
         )
         pending_approvals = (
-            db.session.scalar(select(func.count(User.id)).where(User.approval_status == ApprovalStatus.PENDING)) or 0
+            db.session.scalar(
+                select(func.count(User.id)).where(User.approval_status == ApprovalStatus.PENDING_APPROVAL)
+            )
+            or 0
         )
         expiring_soon_users = (
             db.session.scalar(

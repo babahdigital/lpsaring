@@ -7,17 +7,20 @@ Dokumen ini berisi diagram (Mermaid) saja, khusus untuk memvisualisasikan flow d
 
 ---
 
-## 1) Production Topology (Docker Compose)
+## 1) Production Topology (DigitalOcean Split Stack)
 
 ```mermaid
 flowchart LR
   U[Client Device\nHP/Laptop] -->|HTTPS| CF[Cloudflare Zero Trust\nTunnel Public Hostname]
-  CF -->|tunnel ingress\nhttp://hotspot_nginx_proxy:80| FL[cloudflared\nservice: cloudflared]
+  CF -->|tunnel ingress\nhttp://global-nginx-proxy:80| FL[cloudflared\nstack global-nginx]
 
-  subgraph NET[Docker network: hotspot_prod_net]
-    NX[nginx\nservice: nginx\nalias: hotspot_nginx_proxy]
-    FE[nuxt\nservice: frontend\n:3010]
-    BE[flask\nservice: backend\n:5010]
+  subgraph GNET[Docker network: proxy-network]
+    NX[nginx\nservice: nginx-proxy\ncontainer: global-nginx-proxy]
+    FE[nuxt\nservice: frontend\nalias: lpsaring-frontend\n:3010]
+    BE[flask\nservice: backend\nalias: lpsaring-backend\n:5010]
+  end
+
+  subgraph ANET[Docker network: hotspot_prod_net]
     CW[celery worker\nservice: celery_worker]
     CB[celery beat\nservice: celery_beat]
     RD[redis\nservice: redis]
@@ -45,22 +48,22 @@ flowchart LR
   BE -->|HTTP| WA[(WhatsApp Gateway)]
   BE -->|HTTP webhook| MID[(Midtrans)]
 
-  NX -->|vhost wartelpas.sobigidul.com\nproxy_pass http://10.10.83.2:8081| WP[(Wartelpas :8081)]
+  NX -->|vhost wartelpas.sobigidul.com| WP[(Wartelpas upstream)]
 ```
 
 ---
 
-## 2) Nginx Routing (Prod)
+## 2) Nginx Routing (Prod, Global Stack)
 
 ```mermaid
 flowchart TB
-  R[Incoming request\n(port 80 inside Docker)] --> NX[Nginx\napp.prod.conf]
+  R[Incoming request\nCloudflare Tunnel ingress] --> NX[Nginx global\nnginx/conf.d/lpsaring.conf]
 
-  NX -->|Host: lpsaring.*\nPath: /api/*| BE[backend:5010]
-  NX -->|Host: lpsaring.*\nPath: /_nuxt/*| FE[frontend:3010]
+  NX -->|Host: lpsaring.*\nPath: /api/*| BE[lpsaring-backend:5010]
+  NX -->|Host: lpsaring.*\nPath: /_nuxt/*| FE[lpsaring-frontend:3010]
   NX -->|Host: lpsaring.*\nPath: /*| FE
 
-  NX -->|Host: wartelpas.sobigidul.com\nPath: /*| WP[10.10.83.2:8081]
+  NX -->|Host: wartelpas.sobigidul.com\nPath: /*| WP[wartelpas upstream]
 
   NX -.->|sets headers| H[Host, X-Real-IP,\nX-Forwarded-For,\nX-Forwarded-Proto,\nX-Request-ID]
 ```

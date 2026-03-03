@@ -8,6 +8,19 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Changed (2026-03-03)
+- Dokumentasi produksi diperbarui untuk arsitektur DigitalOcean split-stack (`nginx` + `cloudflared` global terpisah dari app compose), termasuk pembaruan diagram arsitektur, checklist Cloudflare Tunnel, dan standar command operasional.
+- Ditambahkan runbook baru `docs/DO_PRODUCTION_DEPLOYMENT.md` serta checklist rollback `docs/DO_ROLLBACK_CHECKLIST.md` sebagai acuan operasional deploy/restore/rollback terbaru.
+- `docker-compose.prod.yml` dokumentatif sekarang diposisikan sebagai app stack saja (tanpa service `nginx`/`cloudflared`) pada dokumentasi aktif.
+
+### Fixed (2026-03-02)
+- Dashboard admin users card mapping diperbaiki: kartu `Akan Kadaluwarsa` dan `Menunggu Persetujuan` kini terisi dari metrik yang benar.
+- Endpoint `/api/admin/dashboard/stats` kini menambahkan field `menungguPersetujuan` (count user `approval_status=PENDING`) agar selaras dengan UI dashboard.
+- Section `Preview Cleanup Nonaktif` di halaman admin users sekarang otomatis disembunyikan jika tidak ada kandidat pada `Top Kandidat Deactivate` maupun `Top Kandidat Delete`.
+
+### Changed (2026-03-02)
+- Verifikasi operasional dashboard admin di produksi ditambahkan ke alur release: cek log endpoint `dashboard/stats|metrics|metrics/access-parity|backups`, cek data transaksi `SUCCESS`, dan cek health stack pasca deploy prune.
+
 ### Fixed (2026-03-02)
 - `deploy_pi.sh` kini menambahkan preflight deteksi Alembic drift untuk rantai migrasi `20260302_*` (public update submissions) dan auto-stamp terkontrol sebelum `flask db upgrade`, sehingga deploy tidak lagi macet pada kasus `DuplicateTable/DuplicateColumn`.
 - Healthcheck frontend produksi dipastikan memakai binary absolut `/nodejs/bin/node` agar status container `frontend` konsisten `healthy`.

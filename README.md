@@ -27,6 +27,8 @@ Portal hotspot dengan backend Flask dan frontend Nuxt 3.
 - [docs/OPERATIONS_COMMAND_STANDARD.md](docs/OPERATIONS_COMMAND_STANDARD.md)
 - [docs/PUBLISH_FLOW_AND_ERROR_STATUS.md](docs/PUBLISH_FLOW_AND_ERROR_STATUS.md)
 - [docs/OPERATIONS_MIKROTIK_SYNC.md](docs/OPERATIONS_MIKROTIK_SYNC.md)
+- [docs/DO_PRODUCTION_DEPLOYMENT.md](docs/DO_PRODUCTION_DEPLOYMENT.md)
+- [docs/DO_ROLLBACK_CHECKLIST.md](docs/DO_ROLLBACK_CHECKLIST.md)
 - [docs/CI_INCIDENT_2026-02-14_FRONTEND_PUBLISH.md](docs/CI_INCIDENT_2026-02-14_FRONTEND_PUBLISH.md)
 - [docs/TROUBLESHOOTING_HYDRATION.md](docs/TROUBLESHOOTING_HYDRATION.md)
 - [docs/UPDATE_PUBLIC_WORKFLOW.md](docs/UPDATE_PUBLIC_WORKFLOW.md)
@@ -60,7 +62,7 @@ Portal hotspot dengan backend Flask dan frontend Nuxt 3.
 - 2) Buat PR ke `main` lalu merge setelah review.
 - 3) Push ke `main` akan memicu publish image backend/frontend via GitHub Actions (`docker-publish.yml`).
 - 4) Untuk deploy ke Raspberry Pi, jalankan workflow manual `workflow_dispatch` dengan input `deploy=true`.
-- 5) Cloudflare Tunnel dijalankan via Docker Compose; simpan `CLOUDFLARED_TUNNEL_TOKEN` di root `.env` pada mesin yang menjalankan compose.
+- 5) Untuk produksi DigitalOcean, jalankan `nginx` + `cloudflared` pada stack global terpisah (`/home/abdullah/nginx`) dan jalankan app stack di `/home/abdullah/lpsaring/app`.
 
 Kebutuhan GitHub Secrets:
 - `DOCKERHUB_USERNAME`
@@ -103,3 +105,22 @@ Lihat pemetaan lengkap file env per mode di [docs/ENV_FILE_MATRIX.md](docs/ENV_F
 ### Stop & cleanup
 - Dev stop: `docker compose -f docker-compose.yml -f docker-compose.dev.yml down`
 - E2E stop: `docker compose -f docker-compose.e2e.yml -p hotspot-portal-e2e down`
+
+## Remote SSH + DB Compose (VS Code)
+
+- Buka project lewat **Remote-SSH** terlebih dahulu (folder project harus di mesin remote).
+- Jalankan task via `Terminal: Run Task` untuk mengurangi error karena beda shell/OS.
+- Task yang tersedia di `.vscode/tasks.json`:
+	- `DB Dev: Up`
+	- `DB Dev: Status`
+	- `DB Dev: Logs`
+	- `DB Dev: PSQL`
+	- `DB Dev: Migrate`
+	- `DB Prod: Status`
+	- `DB Prod: Logs`
+	- `DB Prod: PSQL`
+	- `Stack Dev: Restart Backend`
+	- `Stack Dev: Healthcheck`
+	- `Stack Prod: Restart Backend`
+	- `Stack Prod: Healthcheck`
+- Untuk mode produksi, pastikan file `.env.prod` sudah ada di host remote.

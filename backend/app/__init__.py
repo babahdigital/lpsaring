@@ -6,13 +6,14 @@ import sys
 import logging
 import uuid
 import json
-from typing import Optional
+from typing import Optional, cast
 from datetime import datetime, timezone as dt_timezone
 from logging.handlers import RotatingFileHandler
 from werkzeug.exceptions import HTTPException
 
 import redis
 from flask import Flask, current_app, request, jsonify, g
+from flask.typing import ResponseReturnValue
 from http import HTTPStatus
 from jose import jwt, JWTError, ExpiredSignatureError
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -346,7 +347,7 @@ def register_error_handlers(app: Flask) -> None:
     @app.errorhandler(HTTPException)
     def handle_http_exception(error: HTTPException):
         if not _is_api_request():
-            return error.get_response()
+            return cast(ResponseReturnValue, error.get_response())
         return error_response_from_http_exception(error)
 
     @app.errorhandler(Exception)

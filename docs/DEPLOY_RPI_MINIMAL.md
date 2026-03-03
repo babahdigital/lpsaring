@@ -1,308 +1,186 @@
-# Deploy Minimal ke Raspberry Pi (Tanpa Clone Full Repo)
+# Deploy Minimal (App-Only) via deploy_pi.sh
 
-Dokumen ini untuk skenario production ringan: **tidak perlu clone seluruh repository**.
+Dokumen ini adalah panduan resmi penggunaan `deploy_pi.sh` yang sudah dikunci untuk deployment **app-only**.
 
-Referensi standar command: [OPERATIONS_COMMAND_STANDARD.md](./OPERATIONS_COMMAND_STANDARD.md).
+> Catatan penting:
+> - Arsitektur produksi memakai split-stack: `global-nginx-proxy` + `global-cloudflared` berjalan terpisah dari app.
+> - Script deploy **tidak** boleh menyentuh service global (WireGuard, Cloudflare Tunnel, nginx global, wartelpas stack lain).
+> - Jalankan mode detached (`--detach-local`) untuk menghindari kegagalan akibat terminal lokal ter-interrupt (`exit code 130`).
 
-## 1) Struktur Folder di Raspberry Pi
+Referensi:
+- [DO_PRODUCTION_DEPLOYMENT.md](./DO_PRODUCTION_DEPLOYMENT.md)
+- [OPERATIONS_COMMAND_STANDARD.md](./OPERATIONS_COMMAND_STANDARD.md)
 
-Buat struktur seperti ini:
+## 1) Scope dan Target Wajib
 
-```text
-/home/abdullah/sobigidul/
-├─ docker-compose.prod.yml
-├─ .env.prod
-├─ .env.public.prod
-├─ infrastructure/
-│  └─ nginx/
-│     ├─ conf.d/
-│     │  └─ app.prod.conf
-│     ├─ ssl/
-│     │  ├─ fullchain.pem        # opsional (jika terminate SSL di Nginx)
-│     │  └─ privkey.pem          # opsional
-│     └─ logs/
-└─ backend/
-   └─ backups/
-```
+`deploy_pi.sh` sudah dikunci ke target berikut:
 
-## 2) Persiapan Folder di Pi
+- SSH: `ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@159.89.192.31`
+- Remote app dir: `/home/abdullah/lpsaring/app`
 
-```bash
-sudo mkdir -p /home/abdullah/sobigidul/infrastructure/nginx/conf.d
-sudo mkdir -p /home/abdullah/sobigidul/infrastructure/nginx/ssl
-sudo mkdir -p /home/abdullah/sobigidul/infrastructure/nginx/logs
-sudo mkdir -p /home/abdullah/sobigidul/backend/backups
-sudo chown -R $USER:$USER /home/abdullah/sobigidul
-```
+Artinya:
+- `--host`, `--user`, `--port`, `--remote-dir` boleh ditulis, tetapi nilainya harus sama dengan target wajib di atas.
+- Jika berbeda, script akan **langsung gagal**.
+- Script juga memverifikasi arsitektur host harus `x86_64/amd64` dan image app (`backend`/`frontend`) harus `amd64`.
 
-## 3) Copy File dari Laptop ke Pi (SCP)
+## 2) Perilaku Backup (Wajib, Sebelum Deploy)
 
-Catatan: repository menyertakan template env:
+Sebelum deploy, script selalu membuat backup **database saja** (bukan tarball) lalu copy ke lokal:
 
-- `.env.prod.example` → salin menjadi `.env.prod` lalu isi nilai sebenarnya (jangan commit)
-- `.env.public.prod.example` → salin menjadi `.env.public.prod`
-
-Jalankan dari laptop (PowerShell/Git Bash), sesuaikan `PI_USER` dan `PI_HOST`:
-
-```bash
-PI_USER=abdullah
-PI_HOST=192.168.1.20
-PI_PORT=1983
-SSH_KEY=~/.ssh/id_raspi_ed25519
-LOCAL_ROOT=/d/Data/Projek/hotspot/lpsaring
-REMOTE_ROOT=/home/abdullah/sobigidul
-
-scp -P "$PI_PORT" -i "$SSH_KEY" "$LOCAL_ROOT/docker-compose.prod.yml" "$PI_USER@$PI_HOST:$REMOTE_ROOT/"
-scp -P "$PI_PORT" -i "$SSH_KEY" "$LOCAL_ROOT/.env.prod" "$PI_USER@$PI_HOST:$REMOTE_ROOT/"
-scp -P "$PI_PORT" -i "$SSH_KEY" "$LOCAL_ROOT/.env.public.prod" "$PI_USER@$PI_HOST:$REMOTE_ROOT/"
-scp -P "$PI_PORT" -i "$SSH_KEY" "$LOCAL_ROOT/infrastructure/nginx/conf.d/app.prod.conf" "$PI_USER@$PI_HOST:$REMOTE_ROOT/infrastructure/nginx/conf.d/"
-```
-
-### 3.1 Versi Langsung (Tanpa Variable)
-
-Ganti `<PI_USER>` dan `<PI_HOST>` lalu jalankan langsung:
-
-```bash
-scp -P 1983 -i ~/.ssh/id_raspi_ed25519 /d/Data/Projek/hotspot/lpsaring/docker-compose.prod.yml <PI_USER>@<PI_HOST>:/home/abdullah/sobigidul/
-scp -P 1983 -i ~/.ssh/id_raspi_ed25519 /d/Data/Projek/hotspot/lpsaring/.env.prod <PI_USER>@<PI_HOST>:/home/abdullah/sobigidul/
-scp -P 1983 -i ~/.ssh/id_raspi_ed25519 /d/Data/Projek/hotspot/lpsaring/.env.public.prod <PI_USER>@<PI_HOST>:/home/abdullah/sobigidul/
-scp -P 1983 -i ~/.ssh/id_raspi_ed25519 /d/Data/Projek/hotspot/lpsaring/infrastructure/nginx/conf.d/app.prod.conf <PI_USER>@<PI_HOST>:/home/abdullah/sobigidul/infrastructure/nginx/conf.d/
-```
-
-Jika pakai sertifikat lokal Nginx:
-
-```bash
-scp -P 1983 -i ~/.ssh/id_raspi_ed25519 /path/to/fullchain.pem <PI_USER>@<PI_HOST>:/home/abdullah/sobigidul/infrastructure/nginx/ssl/
-scp -P 1983 -i ~/.ssh/id_raspi_ed25519 /path/to/privkey.pem <PI_USER>@<PI_HOST>:/home/abdullah/sobigidul/infrastructure/nginx/ssl/
-```
-
-## 4) Alternatif Sinkronisasi (rsync)
-
-Lebih praktis untuk update berulang:
-
-```bash
-PI_USER=pi
-PI_HOST=192.168.1.20
-PI_PORT=1983
-SSH_KEY=~/.ssh/id_raspi_ed25519
-LOCAL_ROOT=/d/Data/Projek/hotspot/lpsaring
-REMOTE_ROOT=/home/abdullah/sobigidul
-
-rsync -avz --progress -e "ssh -p $PI_PORT -i $SSH_KEY" \
-  "$LOCAL_ROOT/docker-compose.prod.yml" \
-  "$LOCAL_ROOT/.env.prod" \
-  "$LOCAL_ROOT/.env.public.prod" \
-  "$LOCAL_ROOT/infrastructure/nginx/conf.d/app.prod.conf" \
-  "$PI_USER@$PI_HOST:$REMOTE_ROOT/"
-```
-
-### 4.1 rsync Langsung (Tanpa Variable)
-
-```bash
-rsync -avz --progress -e "ssh -p 1983 -i ~/.ssh/id_raspi_ed25519" \
-  /d/Data/Projek/hotspot/lpsaring/docker-compose.prod.yml \
-  /d/Data/Projek/hotspot/lpsaring/.env.prod \
-  /d/Data/Projek/hotspot/lpsaring/.env.public.prod \
-  /d/Data/Projek/hotspot/lpsaring/infrastructure/nginx/conf.d/app.prod.conf \
-  <PI_USER>@<PI_HOST>:/home/abdullah/sobigidul/
-```
-
-## 5) Jalankan Service di Pi
-
-SSH ke Pi lalu jalankan:
-
-```bash
-ssh -p 1983 -i ~/.ssh/id_raspi_ed25519 pi@192.168.1.20
-cd /home/abdullah/sobigidul
-COMPOSE_PROD="docker compose --env-file .env.prod -f docker-compose.prod.yml"
-$COMPOSE_PROD pull
-$COMPOSE_PROD up -d --remove-orphans
-$COMPOSE_PROD ps
-```
-
-Cek log:
-
-```bash
-$COMPOSE_PROD logs -f backend frontend nginx
-```
-
-Catatan: karena `docker-compose.prod.yml` memakai variable `${...}` untuk cloudflared, semua perintah compose (termasuk `ps`, `logs`, `exec`) sebaiknya selalu pakai `--env-file .env.prod`.
-
-### 5.1 One-shot SSH (Tanpa Masuk Shell Interaktif)
-
-```bash
-ssh -p 1983 -i ~/.ssh/id_raspi_ed25519 <PI_USER>@<PI_HOST> "cd /home/abdullah/sobigidul && docker compose --env-file .env.prod -f docker-compose.prod.yml pull && docker compose --env-file .env.prod -f docker-compose.prod.yml up -d && docker compose --env-file .env.prod -f docker-compose.prod.yml ps"
-```
-
-## 6) Update Versi Aplikasi (Tanpa Clone Repo)
-
-Jika image baru sudah dipublish ke Docker Hub:
-
-```bash
-cd /home/abdullah/sobigidul
-COMPOSE_PROD="docker compose --env-file .env.prod -f docker-compose.prod.yml"
-$COMPOSE_PROD pull
-$COMPOSE_PROD up -d --remove-orphans
-```
-
-### 6.0) Pastikan image `:latest` benar-benar baru
-
-Kadang perubahan sudah di-push ke Git, tapi workflow Docker publish belum selesai, sehingga `pull` masih mengambil digest lama.
-
-Cek timestamp/digest image yang ada di Pi:
-
-```bash
-docker image inspect babahdigital/sobigidul_frontend:latest --format 'id={{.Id}} created={{.Created}}'
-docker image inspect babahdigital/sobigidul_backend:latest --format 'id={{.Id}} created={{.Created}}'
-```
-
-Jika `created` belum berubah setelah push terbaru, tunggu workflow publish selesai lalu jalankan `pull` ulang.
-
-Jika ada perubahan skema DB, jalankan juga:
-
-```bash
-$COMPOSE_PROD exec -T backend flask db upgrade
-```
-
-## 6.1) Housekeeping: Rapikan transaksi EXPIRED
-
-Jika halaman transaksi admin penuh transaksi kadaluarsa (EXPIRED/FAILED/CANCELLED), bersihkan yang lama:
-
-Dry-run:
-
-```bash
-docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend flask cleanup-transactions --older-than-days 1
-```
-
-Apply:
-
-```bash
-docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend flask cleanup-transactions --older-than-days 1 --apply
-```
-
-## 7) Catatan Penting
-
-- Pastikan file `.env.prod` terisi lengkap untuk backend dan service produksi.
-- Cloudflare Tunnel dijalankan via `cloudflared` di `docker-compose.prod.yml`. Untuk stabilitas jaringan (menghindari error QUIC `timeout: no recent network activity`), protokol tunnel dipaksa menggunakan **HTTP/2**.
-- Jika memakai DHCP static lease (disarankan untuk mengurangi "putus-nyambung" akibat IP berubah), pastikan:
-  - `MIKROTIK_DHCP_STATIC_LEASE_ENABLED=True`
-  - `MIKROTIK_DHCP_LEASE_SERVER_NAME` menunjuk DHCP server hotspot utama (mis. `Klien`).
-  - Ingat: runtime settings dibaca via `settings_service.get_setting()` (prioritas DB `application_settings`, fallback ke ENV). Pastikan nilai DB tidak kosong/salah.
-- `.env.prod` dan `.env.public.prod` sebaiknya dianggap sebagai **sumber kebenaran di laptop** (lokal) lalu di-upload ke Pi saat deploy. Hindari edit manual di Pi agar konfigurasi tidak “drift”.
-- Pastikan file `.env.public.prod` ada karena service frontend membaca file ini secara langsung.
-- Jika ingin tombol “Hubungi Admin” mengarah ke WhatsApp, isi juga di `.env.public.prod`:
-  - `NUXT_PUBLIC_ADMIN_WHATSAPP=+62...`
-  - `NUXT_PUBLIC_WHATSAPP_BASE_URL=https://wa.me`
-- Folder `backend/backups` harus ada agar bind mount tidak gagal.
-- Jika tidak pakai SSL di Nginx (SSL terminate di Cloudflare/Tunnel), folder `ssl` boleh kosong.
-
-## 8) Verifikasi Cepat
-
-```bash
-curl -I http://localhost
-curl -s http://localhost/api/ping
-```
-
-Jika port 80 tidak dipublish ke host (deployment internal + cloudflared), lakukan healthcheck dari dalam container Nginx:
-
-```bash
-cd /home/abdullah/sobigidul
-docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T nginx wget -qO- http://127.0.0.1/api/ping
-```
-
-Dari laptop:
-
-```bash
-curl -I http://<IP_PI>
-```
-
-## 9) One-Command Deploy Script (Direkomendasikan)
-
-Script siap pakai ada di root project: [deploy_pi.sh](../deploy_pi.sh).
-
-Contoh pakai:
-
-```bash
-bash ./deploy_pi.sh --host 10.10.83.2 --user abdullah --port 1983 --remote-dir /home/abdullah/sobigidul --prune
-```
-
-Catatan opsi:
-- `--prune`: safe prune (container/image/network/builder) dan **tidak** menghapus volume.
-- Jangan gunakan `--clean` kecuali benar-benar ingin reset total (karena menjalankan `down -v`).
-
-### 9.1) Verifikasi migrate benar-benar sukses
-
-Walau service `migrate` otomatis jalan saat `docker compose up -d` (karena `backend` depends_on migrate), tetap disarankan verifikasi exit code:
-
-```bash
-ssh -p 1983 -i ~/.ssh/id_raspi_ed25519 abdullah@10.10.83.2 \
-  'cd /home/abdullah/sobigidul && \
-   echo MIGRATE_EXIT=$(docker inspect -f "{{.State.ExitCode}}" hotspot_prod_flask_migrate) && \
-   echo MIGRATE_STATUS=$(docker inspect -f "{{.State.Status}}" hotspot_prod_flask_migrate) && \
-   docker logs --tail 50 hotspot_prod_flask_migrate'
-```
-
-Expected:
-- `MIGRATE_EXIT=0`
-- `MIGRATE_STATUS=exited`
-
-```bash
-./deploy_pi.sh --host <IP_PI>
-```
-
-Untuk skenario kamu (folder produksi dibuat **strict minimal** di `/home/abdullah/sobigidul`):
-
-```bash
-./deploy_pi.sh --host 10.10.83.2 --user abdullah --port 1983 \
-  --key ~/.ssh/id_raspi_ed25519 \
-  --remote-dir /home/abdullah/sobigidul \
-  --strict-minimal \
-  --prune
-```
-
-### 9.1 (Opsional) Tunggu CI hijau dulu: `--wait-ci`
-
-Jika workflow Docker publish belum selesai, deploy terlalu cepat bisa membuat Pi menarik image `:latest` yang **masih digest lama**.
-
-Solusi: gunakan `--wait-ci` agar script menunggu GitHub checks/Actions hijau untuk commit saat ini.
-
-Syarat:
-- Set salah satu env berikut di terminal yang sama saat menjalankan deploy:
-  - `GH_TOKEN` atau `GITHUB_TOKEN`
+- Lokasi lokal: `../backups` (relatif dari folder `lpsaring`)
+- Format file: `<host>_<mode>_predeploy_<timestamp>.sql`
 
 Contoh:
+- `../backups/159.89.192.31_deploy_predeploy_YYYYMMDD_HHMMSS.sql`
+- `../backups/159.89.192.31_clean_predeploy_YYYYMMDD_HHMMSS.sql`
+- `../backups/159.89.192.31_strict_minimal_predeploy_YYYYMMDD_HHMMSS.sql`
 
+Safety guard backup:
+- Default minimum ukuran backup: `102400` bytes.
+- Untuk mode destruktif (`--clean`/`--strict-minimal`), jika backup lebih kecil dari ambang ini, deploy akan dibatalkan demi keamanan.
+- Override hanya jika sadar risikonya: `--allow-small-backup`.
+- Ambang bisa diubah: `--min-backup-bytes <BYTES>`.
+
+## 3) Opsi Deploy yang Dipakai
+
+### Mode detached (direkomendasikan)
 ```bash
-export GH_TOKEN="<TOKEN>"   # jangan commit / jangan tulis ke repo
-
-./deploy_pi.sh --host 10.10.83.2 --user abdullah --port 1983 \
-  --key ~/.ssh/id_raspi_ed25519 \
-  --remote-dir /home/abdullah/sobigidul \
-  --strict-minimal \
-  --wait-ci \
-  --prune
+./deploy_pi.sh --detach-local --recreate
 ```
 
-Catatan (Windows):
-- `export GH_TOKEN=...` hanya berlaku untuk sesi terminal itu saja.
-- Pastikan menjalankan `./deploy_pi.sh ... --wait-ci` pada terminal yang sama yang sudah men-set token.
+Perilaku:
+- Script dijalankan sebagai background lokal (`nohup`) dan tidak bergantung pada sesi terminal aktif.
+- Menampilkan PID dan lokasi log `../tmp/deploy_detached_<timestamp>.log`.
+- Pantau dengan `tail -f ../tmp/deploy_detached_*.log`.
 
-Dengan opsi SSL:
-
+### Mode normal (default)
 ```bash
-./deploy_pi.sh --host <IP_PI> \
-  --ssl-fullchain /path/to/fullchain.pem \
-  --ssl-privkey /path/to/privkey.pem
+./deploy_pi.sh
 ```
 
-Cek dulu tanpa eksekusi (dry-run):
-
+### Backup saja (tanpa deploy)
 ```bash
-./deploy_pi.sh --host <IP_PI> --dry-run
+./deploy_pi.sh --backup-only
 ```
 
-## 10) Wartelpas Runbook
+Perilaku:
+- Tetap membuat backup DB ke `../backups`.
+- Proses berhenti setelah backup selesai.
+- Tidak menjalankan prepare/deploy/healthcheck.
 
-Untuk operasional `wartelpas.sobigidul.com` (Cloudflare Tunnel, Nginx routing, recovery SQLite korup, whitelist), lihat:
+### Force recreate container tanpa hapus volume
+```bash
+./deploy_pi.sh --recreate
+```
 
-- [docs/WARTELPAS_OPERATIONS.md](WARTELPAS_OPERATIONS.md)
+Alias yang diterima:
+- `--recreated`
+- `--recretaed` (typo alias)
+
+### Clean deploy (tetap app-only)
+```bash
+./deploy_pi.sh --clean --confirm-clean-data-loss
+```
+
+Catatan:
+- Menjalankan `docker compose down -v --remove-orphans` untuk stack app di folder app.
+- Scope tetap dibatasi ke app dir yang dikunci.
+- **Default terbaru:** setelah clean berhasil, data akan dipulihkan lagi dari backup pre-clean (mode preserve-data).
+- Jika proses deploy gagal setelah backup, script otomatis mencoba restore DB dari backup lokal run tersebut.
+
+Jika memang ingin clean dengan data benar-benar kosong:
+```bash
+./deploy_pi.sh --clean --clean-reset-data --confirm-clean-data-loss
+```
+
+### Strict minimal deploy (app dir dirapikan)
+```bash
+./deploy_pi.sh --strict-minimal
+```
+
+Catatan:
+- Memakai `rm -rf` **hanya** di dalam `/home/abdullah/lpsaring/app`.
+- Menjaga `backend/backups` tetap ada.
+- Jika proses deploy gagal setelah backup, script otomatis mencoba restore DB dari backup lokal terbaru run tersebut.
+- Jika cleanup `backend/backups` gagal karena permission, script akan auto-heal (coba `chown/chmod`, termasuk via `sudo -n` bila tersedia), lalu retry hapus.
+- Jika setelah auto-heal masih gagal, script memberi warning non-fatal dan tetap lanjut deploy.
+
+### Jika nginx conf berubah, sinkronkan sekalian
+```bash
+./deploy_pi.sh --sync-nginx-conf
+```
+
+## 4) Opsi yang Diblokir
+
+`--prune` dinonaktifkan (ditolak) demi keamanan.
+
+Alasan:
+- `docker prune` bersifat host-wide dan berisiko menyentuh resource service lain di host.
+- Kebijakan deploy ini: **app-only, no host-wide destructive ops**.
+
+## 5) Quick Checklist Sebelum Deploy
+
+- Pastikan file lokal tersedia:
+  - `docker-compose.prod.yml`
+  - `.env.prod`
+  - `.env.public.prod` (opsional tapi direkomendasikan)
+- Pastikan `.env.prod` tidak berisi `CHANGE_ME_*` (kecuali memang pakai `--allow-placeholders`).
+- Pastikan key SSH tersedia: `~/.ssh/id_raspi_ed25519`.
+
+## 6) Health Check Sesudah Deploy
+
+Script melakukan health check otomatis (kecuali `--skip-health`):
+
+- via `global-nginx-proxy`
+- endpoint `GET /api/ping`
+- halaman `/login`
+- satu asset `/_nuxt/...`
+
+Contoh cek manual:
+
+```bash
+docker exec global-nginx-proxy wget -T 10 -qO- --header='Host: lpsaring.babahdigital.net' http://127.0.0.1/api/ping
+```
+
+## 7) Contoh Alur Aman Harian
+
+### 7.1 Backup cepat sebelum tindakan apa pun
+```bash
+./deploy_pi.sh --detach-local --backup-only
+```
+
+### 7.2 Deploy rutin
+```bash
+./deploy_pi.sh --detach-local --recreate
+```
+
+### 7.3 Deploy + update nginx conf
+```bash
+./deploy_pi.sh --detach-local --recreate --sync-nginx-conf
+```
+
+### 7.4 Kasus reset stack app (tetap preserve data)
+```bash
+./deploy_pi.sh --detach-local --clean --confirm-clean-data-loss --recreate
+```
+
+### 7.5 Kasus rapikan total app dir
+```bash
+./deploy_pi.sh --detach-local --strict-minimal --recreate
+```
+
+### 7.6 Kasus clean dengan reset data (opsional, destruktif)
+```bash
+./deploy_pi.sh --detach-local --clean --clean-reset-data --confirm-clean-data-loss --recreate
+```
+
+## 8) Ringkasan Safety
+
+- Backup DB lokal selalu dibuat sebelum deploy.
+- Scope operasi dibatasi ke app dir terkunci.
+- `--prune` diblokir untuk mencegah dampak lintas stack.
+- `--recreate` tersedia untuk recreate container tanpa hapus volume.
+- `--detach-local` direkomendasikan agar run tidak gagal karena interupsi terminal lokal.
+- Guard ukuran backup mencegah clean/strict jalan saat dump terindikasi terlalu kecil.
+- Untuk mode `--clean` dan `--strict-minimal`, rollback DB otomatis akan dicoba jika deploy gagal (sumber dari backup lokal run yang sama).
+- Untuk mode `--clean`, default sekarang preserve-data (auto-restore setelah clean sukses), kecuali `--clean-reset-data`.

@@ -113,7 +113,10 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - hotspot_prod_network
+      hotspot_prod_network:
+      proxy-network:
+        aliases:
+          - lpsaring-backend
     restart: always
 
   # ------------------------
@@ -196,56 +199,10 @@ services:
       retries: 8
       start_period: 20s
     networks:
-      - hotspot_prod_network
-    restart: always
-
-  # ------------------------
-  #  Nginx Reverse-Proxy
-  # ------------------------
-  nginx:
-    image: nginx:stable-alpine
-    container_name: hotspot_prod_nginx_proxy
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "10"
-    # Tidak mem-publish port ke host.
-    # Produksi WAJIB diakses melalui Cloudflare Tunnel.
-    volumes:
-      - ./infrastructure/nginx/conf.d/app.prod.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./infrastructure/nginx/logs:/var/log/nginx
-      - ./infrastructure/nginx/ssl:/etc/nginx/ssl:ro
-    depends_on:
-      backend:
-        condition: service_started
-      frontend:
-        condition: service_healthy
-    networks:
       hotspot_prod_network:
+      proxy-network:
         aliases:
-          - hotspot_nginx_proxy
-    restart: always
-
-  # ------------------------
-  #  Cloudflared Tunnel (HTTPS)
-  # ------------------------
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: hotspot_prod_cloudflared
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "10"
-    command: tunnel --no-autoupdate --protocol http2 run --token ${CLOUDFLARED_TUNNEL_TOKEN:?Set CLOUDFLARED_TUNNEL_TOKEN in .env.prod}
-    environment:
-      - TUNNEL_TOKEN=${CLOUDFLARED_TUNNEL_TOKEN:?Set CLOUDFLARED_TUNNEL_TOKEN in .env.prod}
-    depends_on:
-      nginx:
-        condition: service_started
-    networks:
-      - hotspot_prod_network
+          - lpsaring-frontend
     restart: always
 
 # ------------------------
@@ -261,3 +218,6 @@ networks:
   hotspot_prod_network:
     driver: bridge
     name: hotspot_prod_net
+  proxy-network:
+    external: true
+    name: proxy-network

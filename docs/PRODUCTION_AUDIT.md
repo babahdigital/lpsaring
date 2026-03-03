@@ -146,10 +146,10 @@ P2 (nice-to-have):
    - Mitigasi permanen: saat unblock, backend menghapus entry blocked berbasis token comment `uid=<uuid>` / `user=<08..>`.
 
 ## Verifikasi cepat produksi (tanpa asumsi port host)
-Catatan: pada beberapa deployment, port 80 Nginx **tidak dipublish** ke host (hanya internal + cloudflared).
+Catatan: pada arsitektur DO aktif, Nginx berjalan pada stack global terpisah.
 
-Gunakan healthcheck dari dalam container Nginx:
-- `docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T nginx wget -qO- http://127.0.0.1/api/ping`
+Gunakan healthcheck dari container `global-nginx-proxy`:
+- `docker exec global-nginx-proxy wget -T 10 -qO- --header='Host: lpsaring.babahdigital.net' http://127.0.0.1/api/ping`
 
 ## SOP Recovery Redis & Kuota
 Tujuan: memulihkan sinkronisasi kuota jika Redis restart, data AOF bermasalah, atau `last_bytes` tidak konsisten.
