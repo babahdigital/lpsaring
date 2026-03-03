@@ -873,7 +873,7 @@ if [ "$STRICT_MINIMAL" = "true" ]; then
   find "$REMOTE_DIR/backend" -mindepth 1 -maxdepth 1 \( ! -name backups \) -exec rm -rf {} +
 
   # Self-healing: jika ada file backup ber-owner root/permission ketat, coba auto-fix lalu retry.
-  if ! find "$REMOTE_DIR/backend/backups" -mindepth 1 -maxdepth 1 -exec rm -rf {} +; then
+  if ! find "$REMOTE_DIR/backend/backups" -mindepth 1 -maxdepth 1 -exec rm -rf {} + >/dev/null 2>&1; then
     echo "WARN: cleanup backend/backups gagal (permission). Mencoba auto-fix permission..." >&2
     if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
       sudo chown -R "$PI_USER:$PI_USER" "$REMOTE_DIR/backend/backups" >/dev/null 2>&1 || true
@@ -885,7 +885,7 @@ if [ "$STRICT_MINIMAL" = "true" ]; then
       find "$REMOTE_DIR/backend/backups" -type f -exec chmod 664 {} + >/dev/null 2>&1 || true
     fi
 
-    if ! find "$REMOTE_DIR/backend/backups" -mindepth 1 -maxdepth 1 -exec rm -rf {} +; then
+    if ! find "$REMOTE_DIR/backend/backups" -mindepth 1 -maxdepth 1 -exec rm -rf {} + >/dev/null 2>&1; then
       echo "WARN: tidak semua file backend/backups bisa dihapus setelah auto-fix. Lanjut deploy." >&2
     else
       echo "==> Strict cleanup: backend/backups auto-heal permission berhasil" >&2
