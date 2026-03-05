@@ -49,6 +49,7 @@ def get_hotspot_session_status_impl(
             incoming_mac = normalize_mac(client_mac_hint) if client_mac_hint else None
             binding_mac = incoming_mac
             allow_user_level_fallback = True
+            require_identity_hint = True
             try:
                 allow_user_level_fallback = (
                     str(current_app.config.get("HOTSPOT_SESSION_STATUS_ALLOW_USER_LEVEL_FALLBACK", "False")).strip().lower()
@@ -56,6 +57,14 @@ def get_hotspot_session_status_impl(
                 )
             except Exception:
                 allow_user_level_fallback = False
+
+            try:
+                require_identity_hint = (
+                    str(current_app.config.get("HOTSPOT_SESSION_STATUS_REQUIRE_IDENTITY_HINT", "True")).strip().lower()
+                    in {"1", "true", "yes", "on"}
+                )
+            except Exception:
+                require_identity_hint = True
 
             if client_ip_hint:
                 ok_router_mac, router_mac_raw, _router_msg = resolve_client_mac(client_ip_hint)
@@ -89,8 +98,52 @@ def get_hotspot_session_status_impl(
                                 ),
                                 HTTPStatus.OK,
                             )
+
+            if binding_lookup_mode == "none" and not binding_mac:
+                try:
+                    with get_mikrotik_connection() as api_connection:
+                        if api_connection:
+                            ok_user_ip, hotspot_user_ip, _ = get_hotspot_user_ip(api_connection, username_for_hotspot)
+                            if ok_user_ip and hotspot_user_ip:
+                                client_ip_hint = str(hotspot_user_ip).strip()
+                                ok_router_mac, router_mac_raw, _router_msg = resolve_client_mac(client_ip_hint)
+                                if ok_router_mac and router_mac_raw:
+                                    router_mac = normalize_mac(router_mac_raw)
+                                    if router_mac:
+                                        hotspot_hint_applied = True
+                                        binding_mac = router_mac
+                                        binding_lookup_mode = "router-mac-from-user-ip"
+                except Exception:
+                    pass
+
             if binding_lookup_mode == "none":
                 binding_lookup_mode = "hint-or-user"
+
+            if require_identity_hint and not binding_mac:
+                hotspot_binding_active = False
+                if binding_lookup_mode == "hint-or-user":
+                    binding_lookup_mode = "missing-hints"
+                current_app.logger.info(
+                    "hotspot_session_status_decision user_id=%s username=%s input_ip=%s input_mac=%s binding_active=%s lookup_mode=%s fallback_attempted=%s fallback_applied=%s reason=identity_hint_missing",
+                    user.id,
+                    username_for_hotspot,
+                    client_ip_hint,
+                    incoming_mac,
+                    hotspot_binding_active,
+                    binding_lookup_mode,
+                    fallback_attempted,
+                    fallback_applied,
+                )
+                return (
+                    jsonify(
+                        {
+                            "hotspot_login_required": hotspot_login_required,
+                            "hotspot_binding_active": hotspot_binding_active,
+                            "hotspot_hint_applied": hotspot_hint_applied,
+                        }
+                    ),
+                    HTTPStatus.OK,
+                )
 
             try:
                 with get_mikrotik_connection() as api_connection:
@@ -106,7 +159,7 @@ def get_hotspot_session_status_impl(
 
                         if allow_user_level_fallback and hotspot_binding_active is not True:
                             should_try_user_level_fallback = False
-                            if client_ip_hint:
+                            if client_ip_hint and binding_mac:
                                 ok_user_ip, hotspot_user_ip, _ = get_hotspot_user_ip(api_connection, username_for_hotspot)
                                 if ok_user_ip and hotspot_user_ip and str(hotspot_user_ip).strip() == str(client_ip_hint).strip():
                                     should_try_user_level_fallback = True

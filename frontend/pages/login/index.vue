@@ -14,6 +14,7 @@ import { useAuthStore } from '~/store/auth'
 import { normalize_to_e164 } from '~/utils/formatters'
 import { shouldRedirectToHotspotRequired } from '~/utils/hotspotRedirect'
 import { TAMPING_OPTION_ITEMS } from '~/utils/constants'
+import { rememberHotspotIdentity, resolveHotspotIdentity } from '~/utils/hotspotIdentity'
 
 definePageMeta({
   layout: 'blank',
@@ -108,6 +109,30 @@ function getQueryValueFromKeys(keys: string[]): string {
       return value
   }
   return ''
+}
+
+function readMikrotikLoginHintFromRoute(): string {
+  const direct = getQueryValueFromKeys(['link_login_only', 'link-login-only', 'link_login', 'link-login', 'linkloginonly'])
+  if (direct)
+    return direct
+
+  const redirectRaw = getQueryValue('redirect')
+  if (!redirectRaw || !redirectRaw.includes('link_login_only='))
+    return ''
+
+  try {
+    const parsed = new URL(redirectRaw, 'https://example.invalid')
+    return String(parsed.searchParams.get('link_login_only') ?? '').trim()
+  }
+  catch {
+    const marker = 'link_login_only='
+    const markerIndex = redirectRaw.indexOf(marker)
+    if (markerIndex < 0)
+      return ''
+    const after = redirectRaw.slice(markerIndex + marker.length)
+    const ampIndex = after.indexOf('&')
+    return (ampIndex >= 0 ? after.slice(0, ampIndex) : after).trim()
+  }
 }
 
 // --- Opsi untuk Select Input ---
@@ -267,8 +292,11 @@ async function handleVerifyOtp() {
     }
 
     const numberToVerify = normalize_to_e164(phoneNumber.value)
-    const clientIp = getQueryValueFromKeys(['client_ip', 'ip', 'client-ip'])
-    const clientMac = getQueryValueFromKeys(['client_mac', 'mac', 'mac-address', 'client-mac'])
+    const identity = resolveHotspotIdentity((route.query as Record<string, unknown>) ?? {})
+    rememberHotspotIdentity(identity)
+    const clientIp = identity.clientIp
+    const clientMac = identity.clientMac
+    const mikrotikLinkHint = readMikrotikLoginHintFromRoute()
     const loginResponse = await authStore.verifyOtp(numberToVerify, otpToSend, {
       clientIp: clientIp || null,
       clientMac: clientMac || null,
@@ -320,27 +348,51 @@ async function handleVerifyOtp() {
     }
 
     const status = authStore.getAccessStatusFromUser(authStore.currentUser)
+    if (authStore.currentUser?.is_demo_user === true && import.meta.client) {
+      await navigateTo('/beli', { replace: true })
+      return
+    }
+
     const redirectPath = authStore.getRedirectPathForStatus(status, 'login')
     if (redirectPath && import.meta.client) {
       await navigateTo(redirectPath, { replace: true })
       return
     }
     if (import.meta.client) {
-      const hasHotspotIdentity = Boolean(clientIp || clientMac)
-      const hasHotspotLoginLink = Boolean(
-        getQueryValueFromKeys(['link_login_only', 'link-login-only', 'link_login', 'link-login', 'linkloginonly'])
-        || (getQueryValue('redirect') || '').includes('link_login_only='),
-      )
-
-      if (shouldRedirectToHotspotRequired({
+      let requireHotspotStep = shouldRedirectToHotspotRequired({
         hotspotLoginRequired: loginResponse.hotspot_login_required,
         hotspotBindingActive: loginResponse.hotspot_binding_active,
-      }) && (hasHotspotIdentity || hasHotspotLoginLink)) {
+      })
+
+      if (!requireHotspotStep) {
+        try {
+          const { $api } = useNuxtApp()
+          const liveHotspotStatus = await $api<{ hotspot_login_required?: boolean | null, hotspot_binding_active?: boolean | null }>('/auth/hotspot-session-status', {
+            method: 'GET',
+            query: {
+              ...(clientIp ? { client_ip: clientIp } : {}),
+              ...(clientMac ? { client_mac: clientMac } : {}),
+            },
+          })
+
+          requireHotspotStep = shouldRedirectToHotspotRequired({
+            hotspotLoginRequired: liveHotspotStatus?.hotspot_login_required,
+            hotspotBindingActive: liveHotspotStatus?.hotspot_binding_active,
+          })
+        }
+        catch {
+          // best-effort: fallback ke hasil verify-otp
+        }
+      }
+
+      if (requireHotspotStep) {
         const hotspotQuery = new URLSearchParams()
         if (clientIp)
           hotspotQuery.set('client_ip', clientIp)
         if (clientMac)
           hotspotQuery.set('client_mac', clientMac)
+        if (mikrotikLinkHint)
+          hotspotQuery.set('link_login_only', mikrotikLinkHint)
         const hotspotRequiredPath = hotspotQuery.toString().length > 0
           ? `/login/hotspot-required?${hotspotQuery.toString()}`
           : '/login/hotspot-required'

@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { useAuthStore } from '~/store/auth'
 import { TAMPING_OPTION_ITEMS } from '~/utils/constants'
 import { normalize_to_e164 } from '~/utils/formatters'
+import { rememberHotspotIdentity, resolveHotspotIdentity } from '~/utils/hotspotIdentity'
 
 definePageMeta({
   layout: 'blank',
@@ -90,11 +91,13 @@ function getQueryValueFromKeys(keys: string[]): string {
 }
 
 function loadPortalParams() {
+  const resolvedIdentity = resolveHotspotIdentity((route.query as Record<string, unknown>) ?? {})
   portalParams.value = {
     linkLoginOnly: getQueryValueFromKeys(['link_login_only', 'link-login-only', 'link_login', 'link-login', 'linkloginonly']),
-    clientMac: getQueryValueFromKeys(['client_mac', 'client-mac', 'mac', 'mac-address']),
-    clientIp: getQueryValueFromKeys(['client_ip', 'client-ip', 'ip']),
+    clientMac: resolvedIdentity.clientMac,
+    clientIp: resolvedIdentity.clientIp,
   }
+  rememberHotspotIdentity(resolvedIdentity)
 }
 
 async function refreshApiHealth() {

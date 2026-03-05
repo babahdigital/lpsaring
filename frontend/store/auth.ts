@@ -10,6 +10,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { resolveAccessStatusFromUser } from '@/utils/authAccess'
 import { getStatusRouteForAccessStatus, isLegalPublicPath } from '~/utils/authRoutePolicy'
+import { getHotspotIdentityFromQuery, rememberHotspotIdentity, resolveHotspotIdentity } from '~/utils/hotspotIdentity'
 
 type RegisterResponse = AuthRegisterResponseContract
 type RegistrationPayload = AuthRegisterRequestContract
@@ -119,12 +120,6 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     return ''
-  }
-
-  function pickHotspotIdentityFromQuery(query: Record<string, unknown>): { clientIp: string, clientMac: string } {
-    const clientIp = getFirstQueryValue(query, ['client_ip', 'ip', 'client-ip'])
-    const clientMac = getFirstQueryValue(query, ['client_mac', 'mac', 'mac-address', 'client-mac'])
-    return { clientIp, clientMac }
   }
 
   function rememberMikrotikLoginHint(link: string) {
@@ -701,8 +696,10 @@ export const useAuthStore = defineStore('auth', () => {
         const routeLinkHint = readMikrotikLoginHintFromRoute(routeQuery)
         if (routeLinkHint.length > 0)
           rememberMikrotikLoginHint(routeLinkHint)
+        const rememberedIdentity = resolveHotspotIdentity(routeQuery)
+        rememberHotspotIdentity(rememberedIdentity)
         const mikrotikLink = resolveMikrotikLinkFromContext(routeQuery, runtimeConfig)
-        const { clientIp, clientMac } = pickHotspotIdentityFromQuery(routeQuery)
+        const { clientIp, clientMac } = rememberedIdentity
         if (!shouldRedirectToAdminLogin && mikrotikLink.length > 0) {
           const target = new URL(mikrotikLink, window.location.origin)
           if (clientIp)
@@ -780,8 +777,10 @@ export const useAuthStore = defineStore('auth', () => {
         const routeLinkHint = readMikrotikLoginHintFromRoute(routeQuery)
         if (routeLinkHint.length > 0)
           rememberMikrotikLoginHint(routeLinkHint)
+        const rememberedIdentity = resolveHotspotIdentity(routeQuery)
+        rememberHotspotIdentity(rememberedIdentity)
         const mikrotikLink = resolveMikrotikLinkFromContext(routeQuery, runtimeConfig)
-        const { clientIp, clientMac } = pickHotspotIdentityFromQuery(routeQuery)
+        const { clientIp, clientMac } = rememberedIdentity
         if (mikrotikLink.length > 0) {
           const target = new URL(mikrotikLink, window.location.origin)
           if (clientIp)
@@ -871,8 +870,13 @@ export const useAuthStore = defineStore('auth', () => {
       rememberMikrotikLoginHint(mikrotikHint)
 
     const queryRecord = query as Record<string, unknown>
-    const clientIp = getFirstQueryValue(queryRecord, ['client_ip', 'ip', 'client-ip'])
-    const clientMac = getFirstQueryValue(queryRecord, ['client_mac', 'mac', 'mac-address', 'client-mac'])
+    const routeIdentity = getHotspotIdentityFromQuery(queryRecord)
+    if (routeIdentity.clientIp || routeIdentity.clientMac)
+      rememberHotspotIdentity(routeIdentity)
+
+    const resolvedIdentity = resolveHotspotIdentity(queryRecord)
+    const clientIp = resolvedIdentity.clientIp
+    const clientMac = resolvedIdentity.clientMac
     const hasIdentityHints = Boolean(clientIp || clientMac)
     const shouldAttemptAutoLoginForRoute = hasIdentityHints
     const autoLoginSignature = getAutoLoginAttemptSignature(routePath, clientIp, clientMac)

@@ -334,6 +334,47 @@ describe('auth.global runtime', () => {
     expect(navigateToMock).toHaveBeenCalledWith('/dashboard', { replace: true })
   })
 
+  it('prechecks hotspot on dashboard route even without query hints', async () => {
+    const middleware = (await import('../middleware/auth.global')).default
+    authStoreState.isLoggedIn = true
+    apiMock.mockResolvedValue({
+      hotspot_login_required: true,
+      hotspot_binding_active: false,
+    })
+
+    await middleware({
+      path: '/dashboard',
+      fullPath: '/dashboard',
+      query: {},
+      meta: {},
+    } as any)
+
+    expect(apiMock).toHaveBeenCalledWith('/auth/hotspot-session-status', {
+      method: 'GET',
+      query: {},
+    })
+    expect(navigateToMock).toHaveBeenCalledWith('/login/hotspot-required', { replace: true })
+  })
+
+  it('prioritizes demo-user redirect to beli over hotspot precheck', async () => {
+    const middleware = (await import('../middleware/auth.global')).default
+    authStoreState.isLoggedIn = true
+    authStoreState.currentUser = { id: 'u-demo', role: 'USER', is_demo_user: true }
+
+    await middleware({
+      path: '/login',
+      fullPath: '/login?client_ip=172.16.2.50&client_mac=AA:BB:CC:DD:EE:50',
+      query: {
+        client_ip: '172.16.2.50',
+        client_mac: 'AA:BB:CC:DD:EE:50',
+      },
+      meta: {},
+    } as any)
+
+    expect(apiMock).not.toHaveBeenCalled()
+    expect(navigateToMock).toHaveBeenCalledWith('/beli', { replace: true })
+  })
+
   it('skips hotspot precheck for admin user', async () => {
     const middleware = (await import('../middleware/auth.global')).default
     authStoreState.isLoggedIn = true

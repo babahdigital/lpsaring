@@ -49,7 +49,7 @@ def test_hotspot_session_status_reports_active_binding():
             db=_FakeDb(user),
             User=SimpleNamespace,
             AuthErrorResponseSchema=_SchemaStub,
-            query_args={},
+            query_args={"client_mac": "aa:bb:cc:dd:ee:ff"},
             format_to_local_phone=lambda *_a, **_k: "08123456789",
             normalize_mac=lambda value: str(value or "").strip().upper() or None,
             resolve_client_mac=lambda *_a, **_k: (True, None, "no-ip"),
@@ -80,7 +80,7 @@ def test_hotspot_session_status_reports_inactive_when_binding_missing():
             db=_FakeDb(user),
             User=SimpleNamespace,
             AuthErrorResponseSchema=_SchemaStub,
-            query_args={},
+            query_args={"client_mac": "aa:bb:cc:dd:ee:01"},
             format_to_local_phone=lambda *_a, **_k: "08122000111",
             normalize_mac=lambda value: str(value or "").strip().upper() or None,
             resolve_client_mac=lambda *_a, **_k: (True, None, "no-ip"),
@@ -94,6 +94,72 @@ def test_hotspot_session_status_reports_inactive_when_binding_missing():
     payload = response.get_json()
     assert payload["hotspot_login_required"] is True
     assert payload["hotspot_binding_active"] is False
+
+
+def test_hotspot_session_status_marks_inactive_when_identity_hint_missing():
+    app = _make_app()
+    user = SimpleNamespace(id="u-2b", phone_number="+628122000112")
+
+    @contextmanager
+    def _conn(*_args, **_kwargs):
+        yield object()
+
+    with app.app_context():
+        response, status = get_hotspot_session_status_impl(
+            current_user_id="u-2b",
+            db=_FakeDb(user),
+            User=SimpleNamespace,
+            AuthErrorResponseSchema=_SchemaStub,
+            query_args={},
+            format_to_local_phone=lambda *_a, **_k: "08122000112",
+            normalize_mac=lambda value: str(value or "").strip().upper() or None,
+            resolve_client_mac=lambda *_a, **_k: (True, None, "no-ip"),
+            is_hotspot_login_required=lambda *_a, **_k: True,
+            get_mikrotik_connection=_conn,
+            has_hotspot_ip_binding_for_user=lambda *_a, **_k: (True, True, "stale-user-level"),
+            get_hotspot_user_ip=lambda *_a, **_k: (True, None, "no-ip"),
+        )
+
+    assert status == 200
+    payload = response.get_json()
+    assert payload["hotspot_login_required"] is True
+    assert payload["hotspot_binding_active"] is False
+
+
+def test_hotspot_session_status_derives_identity_from_hotspot_user_ip_when_query_missing():
+    app = _make_app()
+    user = SimpleNamespace(id="u-2c", phone_number="+628122000113")
+
+    @contextmanager
+    def _conn(*_args, **_kwargs):
+        yield object()
+
+    def _has_binding(_api, *, username, user_id, mac_address):
+        if mac_address == "AA:BB:CC:DD:EE:AB":
+            return True, True, "ok"
+        return True, False, "not-found"
+
+    with app.app_context():
+        response, status = get_hotspot_session_status_impl(
+            current_user_id="u-2c",
+            db=_FakeDb(user),
+            User=SimpleNamespace,
+            AuthErrorResponseSchema=_SchemaStub,
+            query_args={},
+            format_to_local_phone=lambda *_a, **_k: "08122000113",
+            normalize_mac=lambda value: str(value or "").strip().upper() or None,
+            resolve_client_mac=lambda ip, *_a, **_k: (True, "AA:BB:CC:DD:EE:AB", "ok") if ip == "172.16.2.88" else (True, None, "no-ip"),
+            is_hotspot_login_required=lambda *_a, **_k: True,
+            get_mikrotik_connection=_conn,
+            has_hotspot_ip_binding_for_user=_has_binding,
+            get_hotspot_user_ip=lambda *_a, **_k: (True, "172.16.2.88", "Sukses (hotspot host)"),
+        )
+
+    assert status == 200
+    payload = response.get_json()
+    assert payload["hotspot_login_required"] is True
+    assert payload["hotspot_binding_active"] is True
+    assert payload["hotspot_hint_applied"] is True
 
 
 def test_hotspot_session_status_checks_mac_hint_then_fallback_when_ip_matches_hotspot_user_ip():

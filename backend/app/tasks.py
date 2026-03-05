@@ -111,6 +111,13 @@ def clear_total_if_no_update_submission_task(self):
             logger.info("Update sync auto-clear skipped: UPDATE_ENABLE_SYNC is disabled.")
             return {"success": True, "skipped": True, "reason": "update_sync_disabled"}
 
+        if not bool(app.config.get("UPDATE_ALLOW_DESTRUCTIVE_AUTO_CLEAR", False)):
+            logger.warning(
+                "Update sync auto-clear skipped: UPDATE_ALLOW_DESTRUCTIVE_AUTO_CLEAR is disabled. "
+                "This guard prevents accidental full user wipe."
+            )
+            return {"success": True, "skipped": True, "reason": "destructive_guard_disabled"}
+
         try:
             stale_days = int(app.config.get("UPDATE_CLEAR_TOTAL_AFTER_DAYS", 3))
         except Exception:

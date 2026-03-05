@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { resolvePostHotspotRecheckRoute } from '~/utils/hotspotRedirect'
 import { useAuthStore } from '~/store/auth'
+import { rememberHotspotIdentity, resolveHotspotIdentity } from '~/utils/hotspotIdentity'
 
 definePageMeta({
   layout: 'blank',
@@ -9,7 +10,7 @@ definePageMeta({
   public: true,
 })
 
-useHead({ title: 'Login Hotspot Diperlukan' })
+useHead({ title: 'Aktifkan Internet' })
 
 const runtimeConfig = useRuntimeConfig()
 const route = useRoute()
@@ -132,6 +133,8 @@ const fallbackLoginPath = computed(() => {
   return `${base.replace(/\/+$/, '')}/captive`
 })
 
+const hotspotIdentity = computed(() => resolveHotspotIdentity((route.query as Record<string, unknown>) ?? {}))
+
 const loginHotspotUrl = computed(() => mikrotikLoginUrl.value || fallbackLoginPath.value)
 
 function isDemoUser(user: ReturnType<typeof useAuthStore>['currentUser'] | null | undefined): boolean {
@@ -198,11 +201,12 @@ function openHotspotLogin() {
 }
 
 function getHotspotIdentityQuery(): Record<string, string> {
-  const clientIp = getQueryValueFromKeys(['client_ip', 'ip', 'client-ip'])
-  const clientMac = getQueryValueFromKeys(['client_mac', 'mac', 'mac-address', 'client-mac'])
+  const identity = hotspotIdentity.value
+  if (identity.clientIp || identity.clientMac)
+    rememberHotspotIdentity(identity)
   return {
-    ...(clientIp ? { client_ip: clientIp } : {}),
-    ...(clientMac ? { client_mac: clientMac } : {}),
+    ...(identity.clientIp ? { client_ip: identity.clientIp } : {}),
+    ...(identity.clientMac ? { client_mac: identity.clientMac } : {}),
   }
 }
 
@@ -216,6 +220,11 @@ function triggerHotspotProbe() {
 
   try {
     const target = new URL(rawTarget, window.location.origin)
+    const identity = hotspotIdentity.value
+    if (identity.clientIp)
+      target.searchParams.set('client_ip', identity.clientIp)
+    if (identity.clientMac)
+      target.searchParams.set('client_mac', identity.clientMac)
     target.searchParams.set('_probe', String(Date.now()))
 
     // Best effort ping agar router memperbarui host/session state tanpa memaksa user login manual.
@@ -283,15 +292,19 @@ async function activateInternetOneClick() {
   activating.value = true
   showFallbackLogin.value = false
   statusMessage.value = ''
-  progressMessage.value = 'Mengotorisasi perangkat...'
+  progressMessage.value = 'Menyiapkan koneksi internet...'
 
-  const clientIp = getQueryValueFromKeys(['client_ip', 'ip', 'client-ip'])
-  const clientMac = getQueryValueFromKeys(['client_mac', 'mac', 'mac-address', 'client-mac'])
+  const identity = hotspotIdentity.value
+  rememberHotspotIdentity(identity)
 
   try {
+    triggerHotspotProbe()
+    await wait(600)
+
+    progressMessage.value = 'Mengaktifkan internet...'
     await authStore.authorizeDevice({
-      clientIp: clientIp || null,
-      clientMac: clientMac || null,
+      clientIp: identity.clientIp || null,
+      clientMac: identity.clientMac || null,
       bestEffort: true,
     })
 
@@ -313,12 +326,12 @@ async function activateInternetOneClick() {
 
     progressMessage.value = ''
     showFallbackLogin.value = true
-    statusMessage.value = authStore.error || 'Sinkronisasi belum aktif. Anda bisa gunakan fallback login MikroTik sekali, lalu klik tombol one-click lagi.'
+    statusMessage.value = authStore.error || 'Internet belum aktif. Coba buka Login Hotspot sekali, lalu tekan Aktifkan Internet lagi.'
   }
   catch {
     progressMessage.value = ''
     showFallbackLogin.value = true
-    statusMessage.value = 'Gagal melakukan sinkronisasi otomatis. Gunakan fallback login MikroTik lalu ulangi one-click.'
+    statusMessage.value = 'Internet belum bisa diaktifkan otomatis. Silakan buka Login Hotspot, lalu coba lagi.'
   }
   finally {
     activating.value = false
@@ -326,6 +339,8 @@ async function activateInternetOneClick() {
 }
 
 onMounted(async () => {
+  rememberHotspotIdentity(hotspotIdentity.value)
+
   if (await redirectDemoUserToBuyPage())
     return
 
@@ -347,15 +362,15 @@ onMounted(async () => {
         <VIcon icon="tabler-router" size="56" color="warning" class="mb-4" />
 
         <h4 class="text-h5 text-sm-h4 mb-2">
-          Aktivasi Akses Hotspot
+          Aktifkan Internet
         </h4>
 
         <p class="text-medium-emphasis mb-6 text-body-2 text-sm-body-1">
-          Anda sudah login portal. Tekan tombol one-click untuk otorisasi perangkat dan sinkronisasi akses secara otomatis.
+          Anda sudah berhasil login. Tekan tombol di bawah agar internet langsung aktif.
         </p>
 
         <VAlert type="info" variant="tonal" density="comfortable" class="mb-6 text-start">
-          One-click akan membentuk ulang <strong>ip-binding</strong>, <strong>DHCP lease</strong>, dan <strong>address-list</strong> sesuai status akun Anda.
+          Proses ini berjalan otomatis. Jika belum aktif, gunakan tombol Login Hotspot lalu coba lagi.
         </VAlert>
 
         <VAlert
@@ -380,11 +395,11 @@ onMounted(async () => {
 
         <div class="d-flex flex-column ga-3">
           <VBtn color="primary" size="large" block :loading="activating" :disabled="activating" @click="activateInternetOneClick">
-            Aktifkan Internet (One-Click)
+            Aktifkan Internet
           </VBtn>
 
           <VBtn v-if="showFallbackLogin" variant="tonal" color="warning" size="large" block :disabled="activating" @click="openHotspotLogin">
-            Fallback: Buka Login MikroTik
+            Buka Login Hotspot
           </VBtn>
 
           <VBtn variant="text" color="default" size="small" :disabled="activating" @click="continueToPortal">

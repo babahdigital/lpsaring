@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import Any
 from types import SimpleNamespace
 from http import HTTPStatus
@@ -285,6 +286,54 @@ def test_auto_login_extracts_identity_hint_from_referer(monkeypatch):
 
     assert status == HTTPStatus.OK
     assert response.get_json().get("access_token") == "access-token"
+
+
+def test_auto_login_recovers_stale_ip_from_mac_hint(monkeypatch):
+    app = _make_app()
+
+    from app.services import device_management_service as dms
+    from app.infrastructure.gateways import mikrotik_client as mk
+
+    monkeypatch.setattr(dms, "_is_client_ip_allowed", lambda ip, *_a, **_k: str(ip).startswith("172.16."))
+    monkeypatch.setattr(mk, "get_ip_by_mac", lambda *_a, **_k: (True, "172.16.2.222", "ok"))
+
+    user = SimpleNamespace(
+        id="user-stale-ip",
+        role=SimpleNamespace(value="USER"),
+        is_blocked=False,
+        last_login_at=None,
+    )
+    device = SimpleNamespace(user=user)
+    captured: dict[str, Any] = {}
+
+    @contextmanager
+    def _conn(*_args, **_kwargs):
+        yield object()
+
+    def _apply_binding(*args, **_kwargs):
+        captured["client_ip"] = args[1]
+        captured["client_mac"] = args[3]
+        return True, "ok", args[1]
+
+    deps = _deps(_FakeDb(device=device))
+    deps.update(
+        get_mikrotik_connection=_conn,
+        resolve_client_mac=lambda ip, *_a, **_k: (
+            True,
+            "AA:BB:CC:DD:EE:FA" if str(ip) == "172.16.2.222" else None,
+            "ok",
+        ),
+        apply_device_binding_for_login=_apply_binding,
+    )
+
+    payload = {"client_ip": "10.10.10.10", "client_mac": "aa:bb:cc:dd:ee:fa"}
+    with app.test_request_context("/api/auth/auto-login", method="POST", json=payload):
+        response, status = auto_login_impl(payload=payload, **deps)
+
+    assert status == HTTPStatus.OK
+    assert response.get_json().get("access_token") == "access-token"
+    assert captured["client_ip"] == "172.16.2.222"
+    assert captured["client_mac"] == "AA:BB:CC:DD:EE:FA"
 
 
 def test_auto_login_self_heals_known_device_when_authorized_flag_missing(monkeypatch):

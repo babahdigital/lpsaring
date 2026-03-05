@@ -81,6 +81,7 @@ def _make_app() -> Flask:
     app = Flask(__name__)
     app.config["SECRET_KEY"] = "unit-test-secret"
     app.config["UPDATE_ENABLE_SYNC"] = True
+    app.config["UPDATE_ALLOW_DESTRUCTIVE_AUTO_CLEAR"] = True
     app.config["UPDATE_CLEAR_TOTAL_AFTER_DAYS"] = 3
     app.config["ENABLE_MIKROTIK_OPERATIONS"] = False
     return app
@@ -129,3 +130,26 @@ def test_clear_total_auto_clear_fallback_uses_set_based_delete(monkeypatch):
     assert session.user_query.delete_calls == [False]
     assert all("TRUNCATE TABLE users" not in sql for sql in session.executed_sql)
     assert session.committed is True
+
+
+def test_clear_total_auto_clear_skips_when_destructive_guard_disabled(monkeypatch):
+    app = _make_app()
+    app.config["UPDATE_ALLOW_DESTRUCTIVE_AUTO_CLEAR"] = False
+    session = _FakeSession(
+        users=[_UserRow(phone_number="0811")],
+        latest_submission=None,
+        bind=_FakeBind("postgresql"),
+        get_bind_result=_FakeBind("postgresql"),
+    )
+
+    monkeypatch.setattr(tasks, "create_app", lambda: app)
+    monkeypatch.setattr(tasks, "db", _FakeDb(session))
+
+    result = tasks.clear_total_if_no_update_submission_task.run()
+
+    assert result["success"] is True
+    assert result["skipped"] is True
+    assert result["reason"] == "destructive_guard_disabled"
+    assert session.executed_sql == []
+    assert session.user_query.delete_calls == []
+    assert session.committed is False

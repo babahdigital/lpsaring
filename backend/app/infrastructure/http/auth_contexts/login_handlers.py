@@ -75,6 +75,25 @@ def auto_login_impl(
                 return None
             return None
 
+        def _recover_ip_from_client_mac_hint(mac_hint: Any) -> str | None:
+            hinted_mac = normalize_mac(mac_hint) if mac_hint else None
+            if not hinted_mac:
+                return None
+
+            try:
+                from app.infrastructure.gateways.mikrotik_client import get_ip_by_mac
+
+                with get_mikrotik_connection() as api_connection:
+                    if not api_connection:
+                        return None
+                    ok_lookup, ip_from_mac, _lookup_msg = get_ip_by_mac(api_connection, hinted_mac)
+                    if ok_lookup and ip_from_mac:
+                        return str(ip_from_mac).strip()
+            except Exception:
+                return None
+
+            return None
+
         if payload_dict:
             if not payload_dict.get("client_ip"):
                 candidate_ip = (
@@ -126,6 +145,7 @@ def auto_login_impl(
 
         client_ip = payload_dict.get("client_ip")
         client_mac = payload_dict.get("client_mac")
+        incoming_mac = normalize_mac(client_mac) if client_mac else None
 
         has_explicit_identity_hint = bool(client_ip or client_mac)
         if not has_explicit_identity_hint:
@@ -145,6 +165,8 @@ def auto_login_impl(
 
         if not client_ip:
             client_ip = get_client_ip()
+        if not client_ip and incoming_mac:
+            client_ip = _recover_ip_from_client_mac_hint(incoming_mac)
         if not client_ip:
             _log_auto_login_decision(
                 reason_code="CLIENT_IP_MISSING",
@@ -160,23 +182,49 @@ def auto_login_impl(
         from app.services.device_management_service import _is_client_ip_allowed  # type: ignore
 
         if not _is_client_ip_allowed(client_ip):
-            _log_auto_login_decision(
-                reason_code="IP_OUT_OF_ALLOWED_RANGE",
-                http_status=HTTPStatus.FORBIDDEN,
-                client_ip_value=client_ip,
-                client_mac_value=client_mac,
-                level="warning",
-            )
-            return jsonify(
-                AuthErrorResponseSchema(error="IP klien di luar jaringan hotspot yang diizinkan.").model_dump()
-            ), HTTPStatus.FORBIDDEN
+            recovered_ip = _recover_ip_from_client_mac_hint(incoming_mac) if incoming_mac else None
+            if recovered_ip and _is_client_ip_allowed(recovered_ip):
+                current_app.logger.info(
+                    "Auto-login recovered IP from MAC hint: stale_ip=%s recovered_ip=%s client_mac=%s",
+                    client_ip,
+                    recovered_ip,
+                    incoming_mac,
+                )
+                client_ip = recovered_ip
+            else:
+                _log_auto_login_decision(
+                    reason_code="IP_OUT_OF_ALLOWED_RANGE",
+                    http_status=HTTPStatus.FORBIDDEN,
+                    client_ip_value=client_ip,
+                    client_mac_value=client_mac,
+                    level="warning",
+                )
+                return jsonify(
+                    AuthErrorResponseSchema(error="IP klien di luar jaringan hotspot yang diizinkan.").model_dump()
+                ), HTTPStatus.FORBIDDEN
 
         login_ip_for_history = client_ip
         user_agent = request.headers.get("User-Agent")
 
         ok_mac, router_mac, mac_msg = resolve_client_mac(client_ip)
+        resolved_mac = normalize_mac(router_mac) if router_mac else None
+
+        if (not ok_mac or not resolved_mac) and incoming_mac:
+            recovered_ip = _recover_ip_from_client_mac_hint(incoming_mac)
+            if recovered_ip and _is_client_ip_allowed(recovered_ip):
+                client_ip = recovered_ip
+                login_ip_for_history = recovered_ip
+                resolved_mac = incoming_mac
+                current_app.logger.warning(
+                    "Auto-login fallback to router MAC hint mapping: ip=%s recovered_ip=%s mac=%s mac_status=%s",
+                    payload_dict.get("client_ip"),
+                    recovered_ip,
+                    incoming_mac,
+                    mac_msg,
+                )
+                ok_mac = True
+
         if not ok_mac:
-            current_app.logger.warning("Auto-login: gagal verifikasi MAC dari router untuk ip=%s: %s", client_ip, mac_msg)
             _log_auto_login_decision(
                 reason_code="ROUTER_MAC_RESOLUTION_FAILED",
                 http_status=HTTPStatus.SERVICE_UNAVAILABLE,
@@ -189,8 +237,8 @@ def auto_login_impl(
                 AuthErrorResponseSchema(error="Tidak dapat memverifikasi perangkat dari router.").model_dump()
             ), HTTPStatus.SERVICE_UNAVAILABLE
 
-        resolved_mac = normalize_mac(router_mac) if router_mac else None
         if not resolved_mac:
+            current_app.logger.warning("Auto-login: perangkat tidak ditemukan di router untuk ip=%s", client_ip)
             _log_auto_login_decision(
                 reason_code="ROUTER_MAC_NOT_FOUND",
                 http_status=HTTPStatus.UNAUTHORIZED,
@@ -203,9 +251,8 @@ def auto_login_impl(
                 AuthErrorResponseSchema(error="Perangkat belum terdeteksi di router.").model_dump()
             ), HTTPStatus.UNAUTHORIZED
 
-        if client_mac:
-            incoming_mac = normalize_mac(client_mac)
-            if incoming_mac and incoming_mac != resolved_mac:
+        if incoming_mac:
+            if incoming_mac != resolved_mac:
                 current_app.logger.warning(
                     "Auto-login rejected due MAC mismatch: ip=%s incoming_mac=%s router_mac=%s",
                     client_ip,

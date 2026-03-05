@@ -238,10 +238,12 @@ def make_celery_app(app=None):
             update_sync_interval = int(os.environ.get("UPDATE_SYNC_CHECK_INTERVAL_SECONDS", "3600"))
         except ValueError:
             update_sync_interval = 3600
-        celery_instance.conf.beat_schedule["clear-total-if-no-update-submission"] = {
-            "task": "clear_total_if_no_update_submission_task",
-            "schedule": max(300, update_sync_interval),
-        }
+
+        if os.environ.get("UPDATE_ALLOW_DESTRUCTIVE_AUTO_CLEAR", "False").lower() == "true":
+            celery_instance.conf.beat_schedule["clear-total-if-no-update-submission"] = {
+                "task": "clear_total_if_no_update_submission_task",
+                "schedule": max(300, update_sync_interval),
+            }
         celery_instance.conf.beat_schedule["send-public-update-whatsapp-batch"] = {
             "task": "send_public_update_submission_whatsapp_batch_task",
             "schedule": max(60, update_sync_interval),

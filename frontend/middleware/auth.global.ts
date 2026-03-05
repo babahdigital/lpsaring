@@ -125,7 +125,18 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
         return navigateTo(statusRoute, { replace: true })
     }
 
-    if (!isAdmin && HOTSPOT_PRECHECK_ROUTES.has(to.path) && hasHotspotContextQuery(routeQuery)) {
+    if (!isAdmin && isDemoUser) {
+      const demoAllowedPaths = ['/beli', '/payment/status', '/payment/finish']
+      const isAllowedDemoPath = demoAllowedPaths.some(path => to.path === path || to.path.startsWith(`${path}/`))
+      if (!isAllowedDemoPath)
+        return navigateTo('/beli', { replace: true })
+    }
+
+    const shouldRunHotspotPrecheck = (
+      HOTSPOT_PRECHECK_ROUTES.has(to.path) && hasHotspotContextQuery(routeQuery)
+    ) || to.path === '/dashboard'
+
+    if (!isAdmin && shouldRunHotspotPrecheck) {
       try {
         const { $api } = useNuxtApp()
         const identityQuery = pickHotspotIdentityQuery(routeQuery)
@@ -154,13 +165,6 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
     const roleRedirect = resolveLoggedInRoleRedirect(to.path, isAdmin, isKomandan)
     if (roleRedirect)
       return navigateTo(roleRedirect, { replace: true })
-
-    if (!isAdmin && isDemoUser) {
-      const demoAllowedPaths = ['/beli', '/payment/status', '/payment/finish']
-      const isAllowedDemoPath = demoAllowedPaths.some(path => to.path === path || to.path.startsWith(`${path}/`))
-      if (!isAllowedDemoPath)
-        return navigateTo('/beli', { replace: true })
-    }
 
     if (!isAdmin) {
       if (isCaptiveContextActive() && isRestrictedInCaptiveContext(to.path)) {

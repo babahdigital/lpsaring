@@ -314,6 +314,8 @@ class Config:
     STATUS_PAGE_TOKEN_MAX_AGE_SECONDS = get_env_int("STATUS_PAGE_TOKEN_MAX_AGE_SECONDS", 300)
     PUBLIC_DB_UPDATE_FORM_ENABLED = get_env_bool("PUBLIC_DB_UPDATE_FORM_ENABLED", "False")
     UPDATE_ENABLE_SYNC = get_env_bool("UPDATE_ENABLE_SYNC", "False")
+    # Hard safety guard: auto-clear task is destructive and must be explicitly enabled.
+    UPDATE_ALLOW_DESTRUCTIVE_AUTO_CLEAR = get_env_bool("UPDATE_ALLOW_DESTRUCTIVE_AUTO_CLEAR", "False")
     UPDATE_CLEAR_TOTAL_AFTER_DAYS = get_env_int("UPDATE_CLEAR_TOTAL_AFTER_DAYS", 3)
     UPDATE_WHATSAPP_BATCH_SIZE = get_env_int("UPDATE_WHATSAPP_BATCH_SIZE", 3)
     UPDATE_WHATSAPP_IMPORT_MESSAGE_TEMPLATE = os.environ.get(
