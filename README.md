@@ -60,9 +60,10 @@ Portal hotspot dengan backend Flask dan frontend Nuxt 3.
 ## Checklist Release Singkat
 - 1) Pastikan branch fitur sudah bersih dan CI hijau (lint, test, typecheck; build sesuai policy trigger).
 - 2) Buat PR ke `main` lalu merge setelah review.
-- 3) Push ke `main` akan memicu publish image backend/frontend via GitHub Actions (`docker-publish.yml`).
-- 4) Untuk deploy ke Raspberry Pi, jalankan workflow manual `workflow_dispatch` dengan input `deploy=true`.
-- 5) Untuk produksi DigitalOcean, jalankan `nginx` + `cloudflared` pada stack global terpisah (`/home/abdullah/nginx`) dan jalankan app stack di `/home/abdullah/lpsaring/app`.
+- 3) Push ke `main` akan memicu workflow CI (`.github/workflows/ci.yml`) sebagai quality gate utama.
+- 4) Publish image backend/frontend dilakukan lewat workflow `.github/workflows/docker-publish.yml` (tag `v*` atau `workflow_dispatch`).
+- 5) Deploy ke produksi dilakukan manual via `deploy_pi.sh` (mode aman disarankan: `--recreate`, bukan mode destruktif).
+- 6) Untuk produksi DigitalOcean, jalankan `nginx` + `cloudflared` pada stack global terpisah (`/home/abdullah/nginx`) dan jalankan app stack di `/home/abdullah/lpsaring/app`.
 
 Kebutuhan GitHub Secrets:
 - `DOCKERHUB_USERNAME`

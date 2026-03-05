@@ -635,6 +635,7 @@ def apply_device_binding_for_login(
     allow_cross_user_transfer: bool = False,
 ) -> Tuple[bool, str, Optional[str]]:
     settings = _get_settings()
+    username_08 = format_to_local_phone(user.phone_number) or ""
     now = datetime.now(dt_timezone.utc)
     date_str, time_str = get_app_date_time_strings(now)
 
@@ -682,7 +683,6 @@ def apply_device_binding_for_login(
         return False, "Device tidak valid", None
 
     if not device.is_authorized and settings["require_explicit"] and not bypass_explicit_auth:
-        username_08 = format_to_local_phone(user.phone_number) or ""
         if settings["ip_binding_enabled"]:
             _ensure_ip_binding(
                 mac_address=device.mac_address,
@@ -708,7 +708,6 @@ def apply_device_binding_for_login(
         )
 
     if settings["ip_binding_enabled"]:
-        username_08 = format_to_local_phone(user.phone_number) or ""
         allowed_binding_type = resolve_allowed_binding_type_for_user(user)
         _ensure_ip_binding(
             mac_address=device.mac_address,
@@ -728,7 +727,6 @@ def apply_device_binding_for_login(
     )
 
     if settings.get("dhcp_static_lease_enabled"):
-        username_08 = format_to_local_phone(user.phone_number) or ""
         dhcp_server_name = settings.get("dhcp_lease_server_name") or None
         _ensure_static_dhcp_lease(
             mac_address=device.mac_address,

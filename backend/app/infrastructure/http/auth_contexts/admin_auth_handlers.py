@@ -253,10 +253,16 @@ def logout_user_impl(
 def reset_login_user_impl(
     *,
     current_user_id,
+    request,
     current_app,
     db,
     User,
+    revoke_refresh_token,
+    clear_auth_cookie,
+    clear_refresh_cookie,
     cleanup_user_network_on_logout,
+    RefreshToken=None,
+    UserDevice=None,
 ):
     current_app.logger.info(f"User {current_user_id} initiated reset-login.")
 
@@ -285,12 +291,78 @@ def reset_login_user_impl(
             )
             return jsonify({"message": "Reset login gagal. Silakan coba lagi."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
-    return (
-        jsonify(
-            {
-                "message": "Reset login berhasil. Silakan login hotspot ulang jika diperlukan.",
+    tokens_deleted = 0
+    devices_deleted = 0
+    deleted_all_refresh_tokens = False
+
+    session = getattr(db, "session", None)
+    if session is not None and hasattr(session, "query"):
+        if RefreshToken is not None:
+            try:
+                tokens_deleted = int(
+                    session.query(RefreshToken)
+                    .filter(RefreshToken.user_id == user.id)
+                    .delete(synchronize_session=False)
+                    or 0
+                )
+                deleted_all_refresh_tokens = True
+            except Exception as e:
+                current_app.logger.warning(
+                    "Reset-login gagal hapus refresh token user=%s: %s",
+                    current_user_id,
+                    e,
+                )
+
+        if UserDevice is not None:
+            try:
+                devices_deleted = int(
+                    session.query(UserDevice)
+                    .filter(UserDevice.user_id == user.id)
+                    .delete(synchronize_session=False)
+                    or 0
+                )
+            except Exception as e:
+                current_app.logger.warning(
+                    "Reset-login gagal hapus user_devices user=%s: %s",
+                    current_user_id,
+                    e,
+                )
+
+        if hasattr(session, "commit"):
+            try:
+                session.commit()
+            except Exception as e:
+                if hasattr(session, "rollback"):
+                    try:
+                        session.rollback()
+                    except Exception:
+                        pass
+                current_app.logger.warning(
+                    "Reset-login commit cleanup gagal user=%s: %s",
+                    current_user_id,
+                    e,
+                )
+
+    refresh_cookie_name = current_app.config.get("REFRESH_COOKIE_NAME", "refresh_token")
+    raw_refresh = request.cookies.get(refresh_cookie_name)
+    if raw_refresh and not deleted_all_refresh_tokens:
+        try:
+            revoke_refresh_token(raw_refresh)
+        except Exception:
+            pass
+
+    response = jsonify(
+        {
+            "message": "Reset login berhasil. Semua sesi perangkat dibersihkan. Silakan login ulang jika diperlukan.",
+            "summary": {
+                "tokens_deleted": int(tokens_deleted or 0),
+                "devices_deleted": int(devices_deleted or 0),
                 "network_reset": cleanup_summary,
-            }
-        ),
-        HTTPStatus.OK,
+            },
+            "network_reset": cleanup_summary,
+        }
     )
+    clear_auth_cookie(response)
+    clear_refresh_cookie(response)
+
+    return response, HTTPStatus.OK

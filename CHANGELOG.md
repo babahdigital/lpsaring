@@ -8,6 +8,19 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Changed (2026-03-05)
+- Alur release diperjelas: `ci.yml` tetap quality gate utama pada push `main`, sedangkan `.github/workflows/docker-publish.yml` diposisikan untuk publish image saja (tag `v*` atau `workflow_dispatch`), tanpa auto deploy Raspberry Pi.
+- Dokumentasi publish/deploy diperbarui agar konsisten dengan policy manual deploy via `deploy_pi.sh --recreate` (`README.md`, `docs/PUBLISH_FLOW_AND_ERROR_STATUS.md`).
+- Ditambahkan devlog audit terbaru `docs/DEVLOG_2026-03-05.md` yang merangkum hasil test lokal, simulasi produksi non-destruktif, dan matrix status findings/roadmap.
+- Runbook monitoring diperluas dengan command terstandar deteksi noise cloudflared (`docs/OPERATIONS_COMMAND_STANDARD.md`, `docs/POST_DEPLOY_MONITORING_24H.md`).
+
+### Fixed (2026-03-05)
+- `apply_device_binding_for_login` tidak lagi berisiko `UnboundLocalError` saat `IP_BINDING_ENABLED=False`; regression test ditambahkan pada `backend/tests/test_device_management_service.py`.
+- Parity `POST /api/auth/reset-login` disempurnakan: kini juga menghapus refresh token + user devices serta clear auth/refresh cookie setara alur `logout`.
+
+### Added (2026-03-05)
+- Script ops baru `scripts/check_cloudflared_noise.py` untuk menghitung rasio `context canceled` cloudflared dan memberi exit code alert (`ok/warn/critical`).
+
 ### Changed (2026-03-03)
 - Dokumentasi produksi diperbarui untuk arsitektur DigitalOcean split-stack (`nginx` + `cloudflared` global terpisah dari app compose), termasuk pembaruan diagram arsitektur, checklist Cloudflare Tunnel, dan standar command operasional.
 - Ditambahkan runbook baru `docs/DO_PRODUCTION_DEPLOYMENT.md` serta checklist rollback `docs/DO_ROLLBACK_CHECKLIST.md` sebagai acuan operasional deploy/restore/rollback terbaru.

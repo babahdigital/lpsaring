@@ -2,6 +2,8 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 from typing import Any, cast
 
+from flask import Flask
+
 import app.services.device_management_service as dms
 from app.services.device_management_service import normalize_mac, reset_user_network_on_logout
 
@@ -121,3 +123,72 @@ def test_reset_user_network_on_logout_disabled_mikrotik(monkeypatch):
 
     assert summary["mikrotik_ops_enabled"] is False
     assert summary["devices_seen"] == 0
+
+
+def test_apply_device_binding_for_login_ip_binding_disabled_still_cleans_host(monkeypatch):
+    app = Flask(__name__)
+    user = SimpleNamespace(
+        id="u-2",
+        phone_number="+628123456789",
+        role=SimpleNamespace(value="USER"),
+        mikrotik_server_name="srv-user",
+    )
+    device = SimpleNamespace(
+        mac_address="AA:BB:CC:DD:EE:FF",
+        ip_address="172.16.2.10",
+        is_authorized=True,
+        authorized_at=None,
+    )
+
+    monkeypatch.setattr(
+        dms,
+        "_get_settings",
+        lambda: {
+            "ip_binding_enabled": False,
+            "ip_binding_type_allowed": "regular",
+            "ip_binding_type_blocked": "blocked",
+            "ip_binding_fail_open": False,
+            "dhcp_static_lease_enabled": False,
+            "dhcp_lease_server_name": "",
+            "device_auto_replace_enabled": False,
+            "max_devices": 3,
+            "require_explicit": False,
+            "device_stale_days": 30,
+            "mikrotik_server_default": "all",
+            "global_mac_claim_transfer_enabled": False,
+        },
+    )
+    monkeypatch.setattr(dms, "_resolve_binding_ip", lambda *_a, **_k: ("172.16.2.10", "client_ip", "ok"))
+    monkeypatch.setattr(dms, "register_or_update_device", lambda *_a, **_k: (True, "Device terdaftar", device))
+    monkeypatch.setattr(dms, "_remove_blocked_address_list", lambda *_a, **_k: None)
+    monkeypatch.setattr(dms, "_remove_unauthorized_address_list", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        dms,
+        "db",
+        SimpleNamespace(session=SimpleNamespace(flush=lambda: None)),
+    )
+
+    captured: dict[str, Any] = {}
+
+    def _capture_host_cleanup(*, mac_address=None, ip_address=None, username=None):
+        captured["mac_address"] = mac_address
+        captured["ip_address"] = ip_address
+        captured["username"] = username
+
+    monkeypatch.setattr(dms, "_remove_hotspot_host_for_authorized_device", _capture_host_cleanup)
+
+    with app.app_context():
+        ok, msg, resolved_ip = dms.apply_device_binding_for_login(
+            cast(Any, user),
+            "172.16.2.10",
+            "pytest-agent",
+            "AA:BB:CC:DD:EE:FF",
+            bypass_explicit_auth=True,
+        )
+
+    assert ok is True
+    assert msg == "Perangkat terotorisasi"
+    assert resolved_ip == "172.16.2.10"
+    assert captured["mac_address"] == "AA:BB:CC:DD:EE:FF"
+    assert captured["ip_address"] == "172.16.2.10"
+    assert captured["username"] == "08123456789"

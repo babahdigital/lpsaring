@@ -561,8 +561,14 @@ def logout_user(current_user_id: uuid.UUID):
 def reset_login_user(current_user_id: uuid.UUID):
     return reset_login_user_impl(
         current_user_id=current_user_id,
+        request=request,
         current_app=current_app,
         db=db,
         User=User,
+        revoke_refresh_token=revoke_refresh_token,
+        clear_auth_cookie=_clear_auth_cookie,
+        clear_refresh_cookie=_clear_refresh_cookie,
         cleanup_user_network_on_logout=reset_user_network_on_logout,
+        RefreshToken=RefreshToken,
+        UserDevice=UserDevice,
     )
