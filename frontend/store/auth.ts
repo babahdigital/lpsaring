@@ -564,6 +564,12 @@ export const useAuthStore = defineStore('auth', () => {
     hotspotLoginContext?: boolean | null
   }
 
+  interface AuthorizeDeviceOptions {
+    clientIp?: string | null
+    clientMac?: string | null
+    bestEffort?: boolean
+  }
+
   async function verifyOtpForCaptive(phoneNumber: string, otpCode: string, clientInfo?: CaptiveClientInfo): Promise<CaptiveVerifyResult> {
     loading.value = true
     clearError()
@@ -621,14 +627,34 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function authorizeDevice(): Promise<boolean> {
+  async function authorizeDevice(options: AuthorizeDeviceOptions = {}): Promise<boolean> {
     const { $api } = useNuxtApp()
     loading.value = true
     clearError()
     clearMessage()
     try {
-      await $api('/users/me/devices/bind-current', { method: 'POST' })
-      setMessage('Perangkat berhasil diotorisasi.')
+      const body: Record<string, string> = {}
+      if (options.clientIp)
+        body.client_ip = String(options.clientIp)
+      if (options.clientMac)
+        body.client_mac = String(options.clientMac)
+
+      const query = options.bestEffort === true
+        ? { best_effort: 'true' }
+        : undefined
+
+      const response = await $api<{ success?: boolean, bound?: boolean, message?: string }>('/users/me/devices/bind-current', {
+        method: 'POST',
+        ...(query ? { query } : {}),
+        ...(Object.keys(body).length > 0 ? { body } : {}),
+      })
+
+      if (response?.success === false || response?.bound === false) {
+        setError(response?.message || 'Perangkat belum bisa diotorisasi.')
+        return false
+      }
+
+      setMessage(response?.message || 'Perangkat berhasil diotorisasi.')
       await fetchUser('login')
       return true
     }

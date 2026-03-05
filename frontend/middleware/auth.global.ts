@@ -125,7 +125,7 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
         return navigateTo(statusRoute, { replace: true })
     }
 
-    if (!isAdmin && HOTSPOT_PRECHECK_ROUTES.has(to.path)) {
+    if (!isAdmin && HOTSPOT_PRECHECK_ROUTES.has(to.path) && hasHotspotContextQuery(routeQuery)) {
       try {
         const { $api } = useNuxtApp()
         const identityQuery = pickHotspotIdentityQuery(routeQuery)

@@ -252,6 +252,48 @@ def _remove_unauthorized_address_list(ip_address: Optional[str]) -> None:
         remove_address_list_entry(api_connection=api, address=ip_address, list_name=list_unauthorized)
 
 
+def _remove_hotspot_host_for_authorized_device(
+    *,
+    mac_address: Optional[str],
+    ip_address: Optional[str],
+    username: Optional[str],
+) -> None:
+    """Best-effort cleanup host unauthorized secara realtime setelah bind sukses."""
+    if not mac_address and not ip_address and not username:
+        return
+    if not _is_mikrotik_operations_enabled():
+        logger.info("MikroTik ops disabled: skip hotspot host cleanup")
+        return
+
+    with get_mikrotik_connection() as api:
+        if not api:
+            logger.warning("Tidak bisa konek MikroTik untuk cleanup hotspot host")
+            return
+
+        ok, msg, removed = remove_hotspot_host_entries(
+            api_connection=api,
+            mac_address=mac_address or None,
+            address=ip_address or None,
+            username=username or None,
+        )
+        if not ok:
+            logger.warning(
+                "Gagal cleanup hotspot host realtime: mac=%s ip=%s user=%s msg=%s",
+                mac_address,
+                ip_address,
+                username,
+                msg,
+            )
+        else:
+            logger.info(
+                "Cleanup hotspot host realtime: mac=%s ip=%s user=%s removed=%s",
+                mac_address,
+                ip_address,
+                username,
+                int(removed or 0),
+            )
+
+
 def _remove_ip_binding(mac_address: str, server: Optional[str]) -> None:
     if not mac_address:
         return
@@ -679,6 +721,11 @@ def apply_device_binding_for_login(
         )
     _remove_blocked_address_list(device.ip_address)
     _remove_unauthorized_address_list(device.ip_address)
+    _remove_hotspot_host_for_authorized_device(
+        mac_address=device.mac_address,
+        ip_address=device.ip_address,
+        username=username_08 or None,
+    )
 
     if settings.get("dhcp_static_lease_enabled"):
         username_08 = format_to_local_phone(user.phone_number) or ""

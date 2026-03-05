@@ -15,8 +15,10 @@ const runtimeConfig = useRuntimeConfig()
 const route = useRoute()
 const { $api } = useNuxtApp()
 const authStore = useAuthStore()
-const rechecking = ref(false)
+const activating = ref(false)
+const progressMessage = ref('')
 const statusMessage = ref('')
+const showFallbackLogin = ref(false)
 const LAST_MIKROTIK_LOGIN_HINT_KEY = 'lpsaring:last-mikrotik-login-link'
 
 const appBaseUrl = computed(() => String(runtimeConfig.public.appBaseUrl ?? '').trim())
@@ -195,53 +197,141 @@ function openHotspotLogin() {
   }, 600)
 }
 
+function getHotspotIdentityQuery(): Record<string, string> {
+  const clientIp = getQueryValueFromKeys(['client_ip', 'ip', 'client-ip'])
+  const clientMac = getQueryValueFromKeys(['client_mac', 'mac', 'mac-address', 'client-mac'])
+  return {
+    ...(clientIp ? { client_ip: clientIp } : {}),
+    ...(clientMac ? { client_mac: clientMac } : {}),
+  }
+}
+
+function triggerHotspotProbe() {
+  if (!import.meta.client)
+    return
+
+  const rawTarget = String(loginHotspotUrl.value || '').trim()
+  if (!rawTarget)
+    return
+
+  try {
+    const target = new URL(rawTarget, window.location.origin)
+    target.searchParams.set('_probe', String(Date.now()))
+
+    // Best effort ping agar router memperbarui host/session state tanpa memaksa user login manual.
+    void fetch(target.toString(), {
+      method: 'GET',
+      mode: 'no-cors',
+      credentials: 'include',
+      cache: 'no-store',
+    }).catch(() => {})
+
+    const img = new Image()
+    img.referrerPolicy = 'no-referrer'
+    img.src = target.toString()
+  }
+  catch {
+    // ignore malformed URL
+  }
+}
+
+async function fetchHotspotStatus() {
+  const response = await $api<{ hotspot_login_required?: boolean | null, hotspot_binding_active?: boolean | null }>('/auth/hotspot-session-status', {
+    method: 'GET',
+    query: getHotspotIdentityQuery(),
+  })
+
+  return {
+    hotspotRequired: response?.hotspot_login_required === true,
+    hotspotActive: response?.hotspot_binding_active === true,
+  }
+}
+
+function wait(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
 async function continueToPortal() {
   if (await redirectDemoUserToBuyPage())
     return
 
-  rechecking.value = true
   statusMessage.value = ''
-  try {
-    const clientIp = getQueryValueFromKeys(['client_ip', 'ip', 'client-ip'])
-    const clientMac = getQueryValueFromKeys(['client_mac', 'mac', 'mac-address', 'client-mac'])
+  await authStore.refreshSessionStatus('/login/hotspot-required')
+  const latestUser = authStore.currentUser ?? authStore.lastKnownUser
+  if (!latestUser) {
+    await navigateTo('/login', { replace: true })
+    return
+  }
 
-    const response = await $api<{ hotspot_login_required?: boolean | null, hotspot_binding_active?: boolean | null }>('/auth/hotspot-session-status', {
-      method: 'GET',
-      query: {
-        ...(clientIp ? { client_ip: clientIp } : {}),
-        ...(clientMac ? { client_mac: clientMac } : {}),
-      },
+  const latestStatus = authStore.getAccessStatusFromUser(latestUser)
+  const nextRoute = resolvePostHotspotRecheckRoute(latestStatus)
+  await navigateTo(nextRoute, { replace: true })
+}
+
+async function activateInternetOneClick() {
+  if (activating.value)
+    return
+
+  if (await redirectDemoUserToBuyPage())
+    return
+
+  activating.value = true
+  showFallbackLogin.value = false
+  statusMessage.value = ''
+  progressMessage.value = 'Mengotorisasi perangkat...'
+
+  const clientIp = getQueryValueFromKeys(['client_ip', 'ip', 'client-ip'])
+  const clientMac = getQueryValueFromKeys(['client_mac', 'mac', 'mac-address', 'client-mac'])
+
+  try {
+    await authStore.authorizeDevice({
+      clientIp: clientIp || null,
+      clientMac: clientMac || null,
+      bestEffort: true,
     })
 
-    const hotspotRequired = response?.hotspot_login_required === true
-    const hotspotActive = response?.hotspot_binding_active === true
+    triggerHotspotProbe()
 
-    if (!hotspotRequired || hotspotActive) {
-      await authStore.refreshSessionStatus('/login/hotspot-required')
-      const latestUser = authStore.currentUser ?? authStore.lastKnownUser
-      if (!latestUser) {
-        await navigateTo('/login', { replace: true })
+    const maxAttempts = 8
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      progressMessage.value = `Sinkronisasi akses hotspot... (${attempt}/${maxAttempts})`
+      const status = await fetchHotspotStatus()
+      if (!status.hotspotRequired || status.hotspotActive) {
+        progressMessage.value = ''
+        await continueToPortal()
         return
       }
 
-      const latestStatus = authStore.getAccessStatusFromUser(latestUser)
-      const nextRoute = resolvePostHotspotRecheckRoute(latestStatus)
-      await navigateTo(nextRoute, { replace: true })
-      return
+      if (attempt < maxAttempts)
+        await wait(1200)
     }
 
-    statusMessage.value = 'Sesi hotspot belum aktif. Silakan login MikroTik terlebih dahulu, lalu cek lagi.'
+    progressMessage.value = ''
+    showFallbackLogin.value = true
+    statusMessage.value = authStore.error || 'Sinkronisasi belum aktif. Anda bisa gunakan fallback login MikroTik sekali, lalu klik tombol one-click lagi.'
   }
   catch {
-    statusMessage.value = 'Gagal memeriksa status hotspot. Pastikan koneksi portal tersedia lalu coba lagi.'
+    progressMessage.value = ''
+    showFallbackLogin.value = true
+    statusMessage.value = 'Gagal melakukan sinkronisasi otomatis. Gunakan fallback login MikroTik lalu ulangi one-click.'
   }
   finally {
-    rechecking.value = false
+    activating.value = false
   }
 }
 
 onMounted(async () => {
-  await redirectDemoUserToBuyPage()
+  if (await redirectDemoUserToBuyPage())
+    return
+
+  try {
+    const status = await fetchHotspotStatus()
+    if (!status.hotspotRequired || status.hotspotActive)
+      await continueToPortal()
+  }
+  catch {
+    // best effort
+  }
 })
 </script>
 
@@ -252,15 +342,25 @@ onMounted(async () => {
         <VIcon icon="tabler-router" size="56" color="warning" class="mb-4" />
 
         <h4 class="text-h5 text-sm-h4 mb-2">
-          Login Hotspot MikroTik Diperlukan
+          Aktivasi Akses Hotspot
         </h4>
 
         <p class="text-medium-emphasis mb-6 text-body-2 text-sm-body-1">
-          Anda sudah berhasil login ke portal. Agar internet aktif, silakan login hotspot MikroTik terlebih dahulu.
+          Anda sudah login portal. Tekan tombol one-click untuk otorisasi perangkat dan sinkronisasi akses secara otomatis.
         </p>
 
         <VAlert type="info" variant="tonal" density="comfortable" class="mb-6 text-start">
-          Jika sudah login hotspot, klik <strong>Saya Sudah Login Hotspot</strong> untuk lanjut ke portal.
+          One-click akan membentuk ulang <strong>ip-binding</strong>, <strong>DHCP lease</strong>, dan <strong>address-list</strong> sesuai status akun Anda.
+        </VAlert>
+
+        <VAlert
+          v-if="progressMessage"
+          type="info"
+          variant="tonal"
+          density="comfortable"
+          class="mb-6 text-start"
+        >
+          {{ progressMessage }}
         </VAlert>
 
         <VAlert
@@ -274,12 +374,16 @@ onMounted(async () => {
         </VAlert>
 
         <div class="d-flex flex-column ga-3">
-          <VBtn color="primary" size="large" block @click="openHotspotLogin">
-            Buka Login MikroTik
+          <VBtn color="primary" size="large" block :loading="activating" :disabled="activating" @click="activateInternetOneClick">
+            Aktivkan Internet (One-Click)
           </VBtn>
 
-          <VBtn variant="tonal" color="success" size="large" block :loading="rechecking" :disabled="rechecking" @click="continueToPortal">
-            Saya Sudah Login Hotspot
+          <VBtn v-if="showFallbackLogin" variant="tonal" color="warning" size="large" block :disabled="activating" @click="openHotspotLogin">
+            Fallback: Buka Login MikroTik
+          </VBtn>
+
+          <VBtn variant="text" color="default" size="small" :disabled="activating" @click="continueToPortal">
+            Lanjut ke Portal (cek status terbaru)
           </VBtn>
         </div>
       </VCardText>

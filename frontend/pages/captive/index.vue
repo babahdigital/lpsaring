@@ -245,7 +245,11 @@ async function verifyOtp() {
 
     const errorText = result.errorMessage || authStore.error || ''
     if (errorText.includes('Perangkat belum diotorisasi')) {
-      const authorized = await authStore.authorizeDevice()
+      const authorized = await authStore.authorizeDevice({
+        clientIp: portalParams.value.clientIp || null,
+        clientMac: portalParams.value.clientMac || null,
+        bestEffort: true,
+      })
       if (authorized) {
         const statusRedirectAfterAuthorize = authStore.getStatusRedirectPath('captive')
         if (statusRedirectAfterAuthorize) {

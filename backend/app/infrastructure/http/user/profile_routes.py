@@ -23,6 +23,7 @@ from app.infrastructure.db.models import User, UserRole, ApprovalStatus, UserLog
 from ..schemas.user_schemas import UserProfileResponseSchema, UserProfileUpdateRequestSchema
 from ..decorators import token_required
 from app.services.device_management_service import apply_device_binding_for_login, revoke_device
+from app.services.hotspot_sync_service import sync_address_list_for_single_user
 
 
 profile_bp = Blueprint("user_profile_api", __name__, url_prefix="/api/users")
@@ -265,6 +266,17 @@ def bind_current_device(current_user_id):
         if best_effort:
             return jsonify({"success": False, "bound": False, "message": msg}), HTTPStatus.OK
         return jsonify({"message": msg}), HTTPStatus.FORBIDDEN
+
+    if settings_service.get_setting("SYNC_ADDRESS_LIST_ON_LOGIN", "True") == "True":
+        try:
+            sync_address_list_for_single_user(user, client_ip=_resolved_ip)
+        except Exception as e:
+            current_app.logger.warning(
+                "bind-current: gagal sync address-list user=%s ip=%s err=%s",
+                user.id,
+                _resolved_ip,
+                e,
+            )
 
     db.session.commit()
     return jsonify({"success": True, "bound": True, "message": "Perangkat berhasil diikat."}), HTTPStatus.OK

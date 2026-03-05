@@ -29,6 +29,7 @@ from app.infrastructure.db.models import (
     ApprovalStatus,
     UserLoginHistory,
     UserDevice,
+    RefreshToken,
     NotificationRecipient,
     NotificationType,
 )
@@ -550,6 +551,8 @@ def logout_user(current_user_id: uuid.UUID):
         clear_auth_cookie=_clear_auth_cookie,
         clear_refresh_cookie=_clear_refresh_cookie,
         cleanup_user_network_on_logout=reset_user_network_on_logout,
+        RefreshToken=RefreshToken,
+        UserDevice=UserDevice,
     )
 
 
