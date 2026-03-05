@@ -288,8 +288,11 @@ describe('auth.global runtime', () => {
 
     await middleware({
       path: '/login',
-      fullPath: '/login',
-      query: {},
+      fullPath: '/login?client_ip=172.16.2.10&client_mac=AA:BB:CC:DD:EE:FF',
+      query: {
+        client_ip: '172.16.2.10',
+        client_mac: 'AA:BB:CC:DD:EE:FF',
+      },
       meta: {},
     } as any)
 
@@ -304,12 +307,30 @@ describe('auth.global runtime', () => {
 
     await middleware({
       path: '/login',
+      fullPath: '/login?client_ip=172.16.2.11&client_mac=AA:BB:CC:DD:EE:11',
+      query: {
+        client_ip: '172.16.2.11',
+        client_mac: 'AA:BB:CC:DD:EE:11',
+      },
+      meta: {},
+    } as any)
+
+    expect(apiMock).toHaveBeenCalledTimes(1)
+    expect(navigateToMock).toHaveBeenCalledWith('/dashboard', { replace: true })
+  })
+
+  it('skips hotspot precheck on direct portal login without hotspot hints', async () => {
+    const middleware = (await import('../middleware/auth.global')).default
+    authStoreState.isLoggedIn = true
+
+    await middleware({
+      path: '/login',
       fullPath: '/login',
       query: {},
       meta: {},
     } as any)
 
-    expect(apiMock).toHaveBeenCalledTimes(1)
+    expect(apiMock).not.toHaveBeenCalled()
     expect(navigateToMock).toHaveBeenCalledWith('/dashboard', { replace: true })
   })
 
