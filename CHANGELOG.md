@@ -17,9 +17,11 @@ Lampiran wajib:
 ### Fixed (2026-03-05)
 - `apply_device_binding_for_login` tidak lagi berisiko `UnboundLocalError` saat `IP_BINDING_ENABLED=False`; regression test ditambahkan pada `backend/tests/test_device_management_service.py`.
 - Parity `POST /api/auth/reset-login` disempurnakan: kini juga menghapus refresh token + user devices serta clear auth/refresh cookie setara alur `logout`.
+- Sinkronisasi status address-list kini memfilter kandidat IP berdasarkan `MIKROTIK_UNAUTHORIZED_CIDRS`/`HOTSPOT_CLIENT_IP_CIDRS` sehingga IP di luar subnet hotspot (mis. `10.x`) tidak lagi ditulis ke list status managed.
 
 ### Added (2026-03-05)
 - Script ops baru `scripts/check_cloudflared_noise.py` untuk menghitung rasio `context canceled` cloudflared dan memberi exit code alert (`ok/warn/critical`).
+- Command CLI baru `flask heal-hotspot-status-address-list` untuk audit/cleanup entry status managed `lpsaring|status=` yang berada di luar CIDR hotspot, dengan mode `--dry-run` dan `--apply` serta opsi resync user terdampak.
 
 ### Changed (2026-03-03)
 - Dokumentasi produksi diperbarui untuk arsitektur DigitalOcean split-stack (`nginx` + `cloudflared` global terpisah dari app compose), termasuk pembaruan diagram arsitektur, checklist Cloudflare Tunnel, dan standar command operasional.

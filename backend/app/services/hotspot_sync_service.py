@@ -2,6 +2,7 @@
 import logging
 import threading
 import uuid
+import ipaddress
 from datetime import datetime, timezone as dt_timezone, date
 from typing import Any, Dict, List, Tuple, Optional
 from decimal import Decimal, ROUND_HALF_UP
@@ -123,6 +124,37 @@ def _is_valid_ip_candidate(value: Optional[str]) -> bool:
     return True
 
 
+def _resolve_hotspot_status_networks() -> List[ipaddress._BaseNetwork]:
+    cidrs = current_app.config.get("MIKROTIK_UNAUTHORIZED_CIDRS") or current_app.config.get("HOTSPOT_CLIENT_IP_CIDRS")
+    if not cidrs:
+        return []
+
+    networks: List[ipaddress._BaseNetwork] = []
+    for cidr in cidrs:
+        try:
+            networks.append(ipaddress.ip_network(str(cidr), strict=False))
+        except Exception:
+            continue
+    return networks
+
+
+def _is_ip_in_hotspot_status_networks(ip_text: Optional[str], networks: Optional[List[ipaddress._BaseNetwork]] = None) -> bool:
+    if not _is_valid_ip_candidate(ip_text):
+        return False
+
+    ip_str = str(ip_text).strip()
+    active_networks = networks if networks is not None else _resolve_hotspot_status_networks()
+    if not active_networks:
+        return True
+
+    try:
+        ip_obj = ipaddress.ip_address(ip_str)
+    except Exception:
+        return False
+
+    return any(ip_obj in net for net in active_networks)
+
+
 def _collect_candidate_ips_for_user(
     user: User,
     host_usage_map: Optional[Dict[str, Dict[str, Any]]] = None,
@@ -130,11 +162,14 @@ def _collect_candidate_ips_for_user(
 ) -> List[str]:
     ips: List[str] = []
     seen: set[str] = set()
+    hotspot_networks = _resolve_hotspot_status_networks()
 
     def _add_ip(ip_value: Optional[str]) -> None:
         if not _is_valid_ip_candidate(ip_value):
             return
         ip_str = str(ip_value).strip()
+        if not _is_ip_in_hotspot_status_networks(ip_str, hotspot_networks):
+            return
         if ip_str in seen:
             return
         seen.add(ip_str)
@@ -832,6 +867,11 @@ def _sync_address_list_status_for_ip(
     if not ip_address:
         return False
 
+    hotspot_networks = _resolve_hotspot_status_networks()
+    if not _is_ip_in_hotspot_status_networks(ip_address, hotspot_networks):
+        logger.info("Skip sync address-list untuk IP di luar hotspot CIDR: user=%s ip=%s", user.id, ip_address)
+        return False
+
     list_active = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active"
     list_fup = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup"
     list_inactive = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive"
@@ -1295,11 +1335,13 @@ def sync_address_list_for_single_user(user: User, client_ip: Optional[str] = Non
 
         ok_any_ip = False
         ips: List[str] = []
-        if client_ip and _is_valid_ip_candidate(client_ip):
+        hotspot_networks = _resolve_hotspot_status_networks()
+
+        if client_ip and _is_ip_in_hotspot_status_networks(client_ip, hotspot_networks):
             ips.append(str(client_ip).strip())
         for device in user.devices or []:
             ip_address = getattr(device, "ip_address", None)
-            if ip_address and _is_valid_ip_candidate(str(ip_address)):
+            if ip_address and _is_ip_in_hotspot_status_networks(str(ip_address), hotspot_networks):
                 ip_str = str(ip_address).strip()
                 if ip_str not in ips:
                     ips.append(ip_str)

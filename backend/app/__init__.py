@@ -379,6 +379,7 @@ def register_commands(app: Flask):
     from .commands.sync_unauthorized_hosts_command import sync_unauthorized_hosts_command
     from .commands.bulk_reset_quota_command import bulk_reset_quota_command
     from .commands.cleanup_transactions_command import cleanup_transactions_command
+    from .commands.heal_hotspot_status_address_list_command import heal_hotspot_status_address_list_command
 
     app.cli.add_command(user_commands.user_cli_bp)
     app.cli.add_command(seed_commands.seed_db_command)
@@ -390,6 +391,7 @@ def register_commands(app: Flask):
     app.cli.add_command(sync_unauthorized_hosts_command)
     app.cli.add_command(bulk_reset_quota_command)
     app.cli.add_command(cleanup_transactions_command)
+    app.cli.add_command(heal_hotspot_status_address_list_command)
     module_log.info("Pendaftaran perintah CLI selesai.")
 
 

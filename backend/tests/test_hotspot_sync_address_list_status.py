@@ -241,3 +241,76 @@ def test_self_heal_policy_binding_respects_disable_toggle(monkeypatch):
 
     assert healed == 0
     assert calls["count"] == 0
+
+
+def test_sync_address_list_for_ip_skips_out_of_hotspot_cidr(monkeypatch):
+    app = Flask(__name__)
+    app.config["MIKROTIK_UNAUTHORIZED_CIDRS"] = ["172.16.2.0/23"]
+
+    _patch_settings(monkeypatch)
+
+    calls = {"upsert": 0}
+
+    def _fake_upsert_address_list_entry(*, api_connection, address, list_name, comment=None, timeout=None):
+        calls["upsert"] += 1
+        return True, "ok"
+
+    monkeypatch.setattr(svc, "upsert_address_list_entry", _fake_upsert_address_list_entry)
+    monkeypatch.setattr(svc, "remove_address_list_entry", lambda **_k: (True, "ok"))
+
+    user = SimpleNamespace(
+        id=123,
+        is_unlimited_user=True,
+        is_blocked=False,
+        role=_Role("USER"),
+        phone_number="081234567890",
+        total_quota_purchased_mb=0,
+    )
+
+    with app.app_context():
+        ok = svc._sync_address_list_status_for_ip(
+            api=object(),
+            user=cast(Any, user),
+            ip_address="10.0.99.40",
+            remaining_mb=999.0,
+            remaining_percent=100.0,
+            is_expired=False,
+        )
+
+    assert ok is False
+    assert calls["upsert"] == 0
+
+
+def test_collect_candidate_ips_filters_out_of_hotspot_cidr():
+    app = Flask(__name__)
+    app.config["MIKROTIK_UNAUTHORIZED_CIDRS"] = ["172.16.2.0/23"]
+
+    user = SimpleNamespace(
+        devices=[
+            SimpleNamespace(mac_address="AA:BB:CC:DD:EE:01", ip_address="10.0.99.40"),
+            SimpleNamespace(mac_address="AA:BB:CC:DD:EE:02", ip_address="172.16.2.10"),
+            SimpleNamespace(mac_address="AA:BB:CC:DD:EE:03", ip_address=None),
+        ]
+    )
+    host_usage_map = {
+        "AA:BB:CC:DD:EE:01": {"address": "10.1.2.3"},
+        "AA:BB:CC:DD:EE:03": {"address": "172.16.2.11"},
+    }
+    ip_binding_map = {
+        "AA:BB:CC:DD:EE:01": {"address": "10.2.2.2"},
+        "AA:BB:CC:DD:EE:02": {"address": "172.16.2.12"},
+    }
+
+    with app.app_context():
+        ips = svc._collect_candidate_ips_for_user(
+            cast(Any, user),
+            host_usage_map=host_usage_map,
+            ip_binding_map=ip_binding_map,
+        )
+
+    assert "10.0.99.40" not in ips
+    assert "10.1.2.3" not in ips
+    assert "10.2.2.2" not in ips
+    assert "172.16.2.10" in ips
+    assert "172.16.2.11" in ips
+    assert "172.16.2.12" in ips
