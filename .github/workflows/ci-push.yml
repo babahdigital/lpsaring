@@ -1,9 +1,8 @@
 name: CI Push Gate
 
+# Manual fallback gate only.
+# Primary CI for push/PR runs in `.github/workflows/ci.yml`.
 on:
-  push:
-    branches: ["main"]
-  pull_request:
   workflow_dispatch:
 
 concurrency:
