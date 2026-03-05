@@ -326,10 +326,16 @@ async function handleVerifyOtp() {
       return
     }
     if (import.meta.client) {
+      const hasHotspotIdentity = Boolean(clientIp || clientMac)
+      const hasHotspotLoginLink = Boolean(
+        getQueryValueFromKeys(['link_login_only', 'link-login-only', 'link_login', 'link-login', 'linkloginonly'])
+        || (getQueryValue('redirect') || '').includes('link_login_only='),
+      )
+
       if (shouldRedirectToHotspotRequired({
         hotspotLoginRequired: loginResponse.hotspot_login_required,
         hotspotBindingActive: loginResponse.hotspot_binding_active,
-      })) {
+      }) && (hasHotspotIdentity || hasHotspotLoginLink)) {
         const hotspotQuery = new URLSearchParams()
         if (clientIp)
           hotspotQuery.set('client_ip', clientIp)

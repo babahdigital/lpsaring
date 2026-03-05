@@ -256,16 +256,21 @@ async function continueToPortal() {
     return
 
   statusMessage.value = ''
-  await authStore.refreshSessionStatus('/login/hotspot-required')
-  const latestUser = authStore.currentUser ?? authStore.lastKnownUser
-  if (!latestUser) {
-    await navigateTo('/login', { replace: true })
-    return
-  }
+  try {
+    await authStore.refreshSessionStatus('/login/hotspot-required')
+    const latestUser = authStore.currentUser ?? authStore.lastKnownUser
+    if (!latestUser) {
+      await navigateTo('/login', { replace: true })
+      return
+    }
 
-  const latestStatus = authStore.getAccessStatusFromUser(latestUser)
-  const nextRoute = resolvePostHotspotRecheckRoute(latestStatus)
-  await navigateTo(nextRoute, { replace: true })
+    const latestStatus = authStore.getAccessStatusFromUser(latestUser)
+    const nextRoute = resolvePostHotspotRecheckRoute(latestStatus)
+    await navigateTo(nextRoute, { replace: true })
+  }
+  catch {
+    statusMessage.value = 'Gagal memuat sesi terbaru. Silakan coba lagi.'
+  }
 }
 
 async function activateInternetOneClick() {
@@ -375,7 +380,7 @@ onMounted(async () => {
 
         <div class="d-flex flex-column ga-3">
           <VBtn color="primary" size="large" block :loading="activating" :disabled="activating" @click="activateInternetOneClick">
-            Aktivkan Internet (One-Click)
+            Aktifkan Internet (One-Click)
           </VBtn>
 
           <VBtn v-if="showFallbackLogin" variant="tonal" color="warning" size="large" block :disabled="activating" @click="openHotspotLogin">

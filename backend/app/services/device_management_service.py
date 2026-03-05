@@ -3,7 +3,7 @@ import logging
 import ipaddress
 from urllib.parse import unquote
 from datetime import datetime, timezone as dt_timezone, timedelta
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional, Tuple, Dict, Any, cast
 
 from flask import current_app
 from app.utils.formatters import get_app_date_time_strings, format_to_local_phone
@@ -762,6 +762,7 @@ def reset_user_network_on_logout(user: User) -> Dict[str, Any]:
         "arp_removed": 0,
         "host_removed": 0,
         "address_list_cleaned": 0,
+        "comment_tagged_removed": 0,
         "failures": 0,
         "mikrotik_ops_enabled": True,
     }
@@ -786,6 +787,35 @@ def reset_user_network_on_logout(user: User) -> Dict[str, Any]:
         if not api:
             summary["mikrotik_ops_enabled"] = False
             return summary
+
+        uid_marker = f"uid={user.id}".lower()
+        user_marker = f"user={username_08}".lower() if username_08 else ""
+
+        def _comment_matches_user(comment: object) -> bool:
+            if comment is None:
+                return False
+            haystack = str(comment).lower()
+            if uid_marker and uid_marker in haystack:
+                return True
+            if user_marker and user_marker in haystack:
+                return True
+            return False
+
+        def _row_id(row: Dict[str, Any]) -> Optional[str]:
+            return cast(Optional[str], row.get("id") or row.get(".id"))
+
+        def _remove_rows(resource: Any, rows: list[Dict[str, Any]]) -> int:
+            removed = 0
+            for row in rows:
+                rid = _row_id(row)
+                if not rid:
+                    continue
+                try:
+                    resource.remove(id=rid)
+                    removed += 1
+                except Exception:
+                    summary["failures"] += 1
+            return removed
 
         if username_08:
             ok_host_user, _msg_host_user, removed_host_user = remove_hotspot_host_entries(
@@ -852,5 +882,53 @@ def reset_user_network_on_logout(user: User) -> Dict[str, Any]:
                     summary["address_list_cleaned"] += 1
                 except Exception:
                     summary["failures"] += 1
+
+        # Fallback cleanup by comment markers untuk memastikan artefak stale ikut terhapus.
+        try:
+            ipb_res = api.get_resource("/ip/hotspot/ip-binding")
+            tagged_rows = [row for row in (ipb_res.get() or []) if _comment_matches_user(row.get("comment"))]
+            summary["comment_tagged_removed"] += _remove_rows(ipb_res, tagged_rows)
+        except Exception:
+            summary["failures"] += 1
+
+        try:
+            lease_res = api.get_resource("/ip/dhcp-server/lease")
+            tagged_rows = [row for row in (lease_res.get() or []) if _comment_matches_user(row.get("comment"))]
+            summary["comment_tagged_removed"] += _remove_rows(lease_res, tagged_rows)
+        except Exception:
+            summary["failures"] += 1
+
+        try:
+            arp_res = api.get_resource("/ip/arp")
+            tagged_rows = [row for row in (arp_res.get() or []) if _comment_matches_user(row.get("comment"))]
+            summary["comment_tagged_removed"] += _remove_rows(arp_res, tagged_rows)
+        except Exception:
+            summary["failures"] += 1
+
+        try:
+            alist_res = api.get_resource("/ip/firewall/address-list")
+            managed_keys = [
+                ("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked"),
+                ("MIKROTIK_ADDRESS_LIST_ACTIVE", "active"),
+                ("MIKROTIK_ADDRESS_LIST_FUP", "fup"),
+                ("MIKROTIK_ADDRESS_LIST_HABIS", "habis"),
+                ("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired"),
+                ("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive"),
+                ("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized"),
+            ]
+            managed_lists = {
+                str(settings_service.get_setting(setting_key, default_name) or default_name).strip()
+                for setting_key, default_name in managed_keys
+            }
+            managed_lists.discard("")
+
+            tagged_rows = [
+                row
+                for row in (alist_res.get() or [])
+                if str(row.get("list") or "").strip() in managed_lists and _comment_matches_user(row.get("comment"))
+            ]
+            summary["comment_tagged_removed"] += _remove_rows(alist_res, tagged_rows)
+        except Exception:
+            summary["failures"] += 1
 
     return summary

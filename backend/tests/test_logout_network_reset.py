@@ -186,3 +186,87 @@ def test_reset_login_admin_user_still_executes_cleanup() -> None:
     assert tracker["cleanup_called"] is True
     payload = response.get_json()
     assert "network_reset" in payload
+
+
+def test_logout_deletes_all_tokens_and_devices_when_models_available() -> None:
+    app = _make_app()
+    user_id = uuid.uuid4()
+    user = SimpleNamespace(id=user_id)
+
+    class _RefreshTokenModel:
+        user_id = "user_id"
+
+    class _UserDeviceModel:
+        user_id = "user_id"
+
+    class _DeleteQuery:
+        def __init__(self, deleted_count: int):
+            self._deleted_count = deleted_count
+
+        def filter(self, *_args, **_kwargs):
+            return self
+
+        def delete(self, synchronize_session: bool = False):
+            return self._deleted_count
+
+    class _DeleteSession:
+        def __init__(self):
+            self.committed = False
+
+        def get(self, _model, _id):
+            return user
+
+        def query(self, model):
+            if model is _RefreshTokenModel:
+                return _DeleteQuery(4)
+            if model is _UserDeviceModel:
+                return _DeleteQuery(2)
+            return _DeleteQuery(0)
+
+        def commit(self):
+            self.committed = True
+
+    session = _DeleteSession()
+    db = SimpleNamespace(session=session)
+
+    tracker = {
+        "revoke_called": False,
+        "clear_auth_called": False,
+        "clear_refresh_called": False,
+    }
+
+    def _cleanup(_user):
+        return {"ip_binding_removed": 1}
+
+    def _revoke(_token: str):
+        tracker["revoke_called"] = True
+
+    def _clear_auth(_response):
+        tracker["clear_auth_called"] = True
+
+    def _clear_refresh(_response):
+        tracker["clear_refresh_called"] = True
+
+    with app.test_request_context("/api/auth/logout", method="POST", headers={"Cookie": "refresh_token=rt-789"}):
+        response, status = logout_user_impl(
+            current_user_id=user_id,
+            request=SimpleNamespace(cookies={"refresh_token": "rt-789"}),
+            current_app=app,
+            db=db,
+            User=object,
+            revoke_refresh_token=_revoke,
+            clear_auth_cookie=_clear_auth,
+            clear_refresh_cookie=_clear_refresh,
+            cleanup_user_network_on_logout=_cleanup,
+            RefreshToken=_RefreshTokenModel,
+            UserDevice=_UserDeviceModel,
+        )
+
+    assert status == 200
+    payload = response.get_json()
+    assert payload["summary"]["tokens_deleted"] == 4
+    assert payload["summary"]["devices_deleted"] == 2
+    assert session.committed is True
+    assert tracker["revoke_called"] is False
+    assert tracker["clear_auth_called"] is True
+    assert tracker["clear_refresh_called"] is True
