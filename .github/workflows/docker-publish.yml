@@ -1,8 +1,9 @@
 # ===============================================================
-#  Build & Push multi-arch images  ➜  Deploy otomatis ke Pi
+#  Build & Push multi-arch images only
+#  Deploy dilakukan manual via script lokal: deploy_pi.sh
 # ===============================================================
 
-name: Docker Publish & Optional Deploy
+name: Docker Publish Images
 
 on:
   push:
@@ -10,13 +11,8 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
-      deploy:
-        description: "Deploy ke runner self-hosted setelah build selesai"
-        type: boolean
-        required: false
-        default: false
       clean_before_deploy:
-        description: "Bersihkan cache Docker di awal deploy (aman)"
+        description: "Bersihkan cache Docker di awal build (aman)"
         type: boolean
         required: false
         default: true
@@ -141,41 +137,3 @@ jobs:
             NUXT_PUBLIC_API_BASE_URL=/api
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
-
-# ---------------------------------------------------------------
-#  JOB 2 ▸ Deploy ke Raspberry Pi (self-hosted runner)
-# ---------------------------------------------------------------
-  deploy:
-    name: Deploy to Raspberry Pi
-    needs: build-and-push
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy == true }}
-    runs-on: [self-hosted, arm64, raspberrypi]      # label runner di Pi
-    env:
-      REMOTE_DIR: /home/abdullah/sobigidul
-
-    steps:
-      - name: Checkout repo (compose file)
-        uses: actions/checkout@v4
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets['DOCKER_USERNAME'] }}
-          password: ${{ secrets['DOCKER_PASSWORD'] }}
-
-      - name: Stop current stack
-        run: |
-          cd "${REMOTE_DIR}"
-          docker compose --env-file .env.prod -f docker-compose.prod.yml \
-            down --remove-orphans || true
-
-      - name: Pull new images
-        run: |
-          cd "${REMOTE_DIR}"
-          docker compose --env-file .env.prod -f docker-compose.prod.yml pull
-
-      - name: Start updated stack
-        run: |
-          cd "${REMOTE_DIR}"
-          docker compose --env-file .env.prod -f docker-compose.prod.yml \
-            up -d --remove-orphans
