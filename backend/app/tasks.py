@@ -150,12 +150,27 @@ def clear_total_if_no_update_submission_task(self):
             }
 
         # Clear total user-related data from DB.
-        if db.session.bind and db.session.bind.dialect.name == "postgresql":
+        # Use get_bind() first because scoped sessions may have bind=None even on PostgreSQL.
+        session_bind = None
+        try:
+            session_bind = db.session.get_bind()
+        except Exception:
+            session_bind = getattr(db.session, "bind", None)
+
+        dialect_name = str(getattr(getattr(session_bind, "dialect", None), "name", "") or "").lower()
+        if dialect_name.startswith("postgresql"):
             db.session.execute(text("TRUNCATE TABLE users RESTART IDENTITY CASCADE"))
         else:
-            # Fallback for non-postgres test/dev cases.
-            for user in users:
-                db.session.delete(user)
+            # Fallback for non-postgres test/dev cases. Use set-based statements to avoid
+            # row-by-row ORM delete ordering/autoflush issues on self-referenced FKs.
+            db.session.execute(
+                text(
+                    "UPDATE users "
+                    "SET approved_by_id = NULL, rejected_by_id = NULL, blocked_by_id = NULL "
+                    "WHERE approved_by_id IS NOT NULL OR rejected_by_id IS NOT NULL OR blocked_by_id IS NOT NULL"
+                )
+            )
+            db.session.query(User).delete(synchronize_session=False)
         db.session.commit()
 
         logger.warning(
