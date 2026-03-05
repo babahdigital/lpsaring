@@ -58,6 +58,15 @@ logger = logging.getLogger(__name__)
 
 _MIKROTIK_DURATION_PART = re.compile(r"(\d+)([wdhms])", re.IGNORECASE)
 
+_NON_RETRYABLE_UNAUTHORIZED_SYNC_ERROR_MARKERS = (
+    "gagal konek mikrotik",
+    "gagal ambil hotspot host",
+    "kegagalan operasi router",
+    "routerosapiconnectionerror",
+    "timed out",
+    "timeout",
+)
+
 
 def _should_skip_public_update_whatsapp_for_phone(phone_number: str) -> bool:
     """Return True when the number is known but no longer an active LPSaringNet service user."""
@@ -78,6 +87,11 @@ def _should_skip_public_update_whatsapp_for_phone(phone_number: str) -> bool:
     except Exception:
         # Best effort guard; never block message processing on lookup errors.
         return False
+
+
+def _is_non_retryable_unauthorized_sync_error(exc: Exception) -> bool:
+    message = str(exc or "").lower()
+    return any(marker in message for marker in _NON_RETRYABLE_UNAUTHORIZED_SYNC_ERROR_MARKERS)
 
 
 @celery_app.task(
@@ -922,6 +936,16 @@ def sync_unauthorized_hosts_task(self):
                 raise RuntimeError(f"sync-unauthorized-hosts exit code {e.code}")
         except Exception as e:
             logger.error(f"Celery Task: Sinkronisasi unauthorized hosts gagal: {e}", exc_info=True)
+            if _is_non_retryable_unauthorized_sync_error(e):
+                _record_task_failure(app, "sync_unauthorized_hosts_task", {}, str(e))
+                logger.warning(
+                    "Celery Task: Sinkronisasi unauthorized hosts tidak diretry karena error non-retryable."
+                )
+                return {
+                    "success": False,
+                    "reason": "non_retryable_mikrotik_sync_error",
+                    "error": str(e),
+                }
             if self.request.retries >= 2:
                 _record_task_failure(app, "sync_unauthorized_hosts_task", {}, str(e))
             raise
