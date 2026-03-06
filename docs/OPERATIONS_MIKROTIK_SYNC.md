@@ -161,6 +161,9 @@ Gunakan command resmi berikut untuk menghasilkan JSON audit terbaru:
 - `flask audit-hotspot-parity --output /tmp/lpsaring_addrlist_binding_parity_dryrun.json`
 - `flask audit-hotspot-parity --fail-on-drift`
 
+Dokumentasi detail command ini tersedia di:
+- `docs/OPERATIONS_HOTSPOT_PARITY_AUDIT.md`
+
 Indikator utama yang harus `0`:
 
 - `policy_focus.critical_without_binding_total`
