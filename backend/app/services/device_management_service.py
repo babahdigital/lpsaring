@@ -23,6 +23,7 @@ from app.infrastructure.gateways.mikrotik_client import (
     remove_dhcp_lease,
     remove_arp_entries,
     remove_hotspot_host_entries,
+    remove_hotspot_host_entries_best_effort,
     upsert_address_list_entry,
     remove_address_list_entry,
 )
@@ -276,6 +277,16 @@ def _remove_hotspot_host_for_authorized_device(
             address=ip_address or None,
             username=username or None,
         )
+        # Jika hint IP/username stale, fallback ke kombinasi filter yang lebih longgar
+        # (tetap aman karena prioritaskan MAC/IP sebelum username-only).
+        if ok and int(removed or 0) == 0:
+            ok, msg, removed = remove_hotspot_host_entries_best_effort(
+                api_connection=api,
+                mac_address=mac_address or None,
+                address=ip_address or None,
+                username=username or None,
+                allow_username_only_fallback=False,
+            )
         if not ok:
             logger.warning(
                 "Gagal cleanup hotspot host realtime: mac=%s ip=%s user=%s msg=%s",
@@ -286,7 +297,7 @@ def _remove_hotspot_host_for_authorized_device(
             )
         else:
             logger.info(
-                "Cleanup hotspot host realtime: mac=%s ip=%s user=%s removed=%s",
+                "Cleanup hotspot host realtime: mac=%s ip=%s user=%s removed=%s mode=best-effort",
                 mac_address,
                 ip_address,
                 username,

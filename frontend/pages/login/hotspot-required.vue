@@ -133,7 +133,9 @@ const fallbackLoginPath = computed(() => {
   return `${base.replace(/\/+$/, '')}/captive`
 })
 
-const hotspotIdentity = computed(() => resolveHotspotIdentity((route.query as Record<string, unknown>) ?? {}))
+function getHotspotIdentity() {
+  return resolveHotspotIdentity((route.query as Record<string, unknown>) ?? {})
+}
 
 const loginHotspotUrl = computed(() => mikrotikLoginUrl.value || fallbackLoginPath.value)
 
@@ -201,7 +203,7 @@ function openHotspotLogin() {
 }
 
 function getHotspotIdentityQuery(): Record<string, string> {
-  const identity = hotspotIdentity.value
+  const identity = getHotspotIdentity()
   if (identity.clientIp || identity.clientMac)
     rememberHotspotIdentity(identity)
   return {
@@ -220,7 +222,7 @@ function triggerHotspotProbe() {
 
   try {
     const target = new URL(rawTarget, window.location.origin)
-    const identity = hotspotIdentity.value
+    const identity = getHotspotIdentity()
     if (identity.clientIp)
       target.searchParams.set('client_ip', identity.clientIp)
     if (identity.clientMac)
@@ -294,7 +296,7 @@ async function activateInternetOneClick() {
   statusMessage.value = ''
   progressMessage.value = 'Menyiapkan koneksi internet...'
 
-  const identity = hotspotIdentity.value
+  const identity = getHotspotIdentity()
   rememberHotspotIdentity(identity)
 
   try {
@@ -339,12 +341,15 @@ async function activateInternetOneClick() {
 }
 
 onMounted(async () => {
-  rememberHotspotIdentity(hotspotIdentity.value)
+  rememberHotspotIdentity(getHotspotIdentity())
 
   if (await redirectDemoUserToBuyPage())
     return
 
   try {
+    triggerHotspotProbe()
+    await wait(250)
+
     const status = await fetchHotspotStatus()
     if (!status.hotspotRequired || status.hotspotActive)
       await continueToPortal()

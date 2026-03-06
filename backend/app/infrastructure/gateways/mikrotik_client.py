@@ -935,6 +935,81 @@ def remove_hotspot_host_entries(
         return False, str(e), 0
 
 
+def remove_hotspot_host_entries_best_effort(
+    api_connection: Any,
+    mac_address: Optional[str] = None,
+    address: Optional[str] = None,
+    username: Optional[str] = None,
+    allow_username_only_fallback: bool = False,
+) -> Tuple[bool, str, int]:
+    """Best-effort cleanup hotspot host dengan fallback query bertahap.
+
+    Strategi:
+    - Coba query paling ketat dulu (mac+ip+user).
+    - Jika tidak ada yang terhapus, longgarkan bertahap (mac+ip, mac+user, ip+user, mac, ip).
+    - Query `username`-only hanya dipakai jika explicit diizinkan.
+    """
+
+    mac_norm = str(mac_address or "").strip().upper()
+    address_norm = str(address or "").strip()
+    username_norm = str(username or "").strip()
+
+    if not mac_norm and not address_norm and not username_norm:
+        return False, "Filter hotspot host tidak valid", 0
+
+    attempts: List[Dict[str, str]] = []
+    seen_attempts: set[Tuple[Tuple[str, str], ...]] = set()
+
+    def _add_attempt(*, mac: Optional[str] = None, ip: Optional[str] = None, user: Optional[str] = None) -> None:
+        payload: Dict[str, str] = {}
+        if mac:
+            payload["mac_address"] = mac
+        if ip:
+            payload["address"] = ip
+        if user:
+            payload["username"] = user
+        if not payload:
+            return
+        key = tuple(sorted((k, v) for k, v in payload.items()))
+        if key in seen_attempts:
+            return
+        seen_attempts.add(key)
+        attempts.append(payload)
+
+    # Strict first.
+    _add_attempt(mac=mac_norm, ip=address_norm, user=username_norm)
+
+    # Gradually loosen filters when one of hints is stale.
+    _add_attempt(mac=mac_norm, ip=address_norm)
+    _add_attempt(mac=mac_norm, user=username_norm)
+    _add_attempt(ip=address_norm, user=username_norm)
+    _add_attempt(mac=mac_norm)
+    _add_attempt(ip=address_norm)
+    if allow_username_only_fallback:
+        _add_attempt(user=username_norm)
+
+    total_removed = 0
+    any_success = False
+    last_error = ""
+
+    for attempt in attempts:
+        ok, msg, removed = remove_hotspot_host_entries(
+            api_connection=api_connection,
+            mac_address=attempt.get("mac_address"),
+            address=attempt.get("address"),
+            username=attempt.get("username"),
+        )
+        if ok:
+            any_success = True
+            total_removed += int(removed or 0)
+        else:
+            last_error = msg
+
+    if any_success:
+        return True, "Sukses", total_removed
+    return False, last_error or "Gagal cleanup hotspot host", 0
+
+
 def remove_arp_entries(
     api_connection: Any,
     mac_address: Optional[str] = None,

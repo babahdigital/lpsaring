@@ -14,7 +14,7 @@ from app.infrastructure.gateways.mikrotik_client import (
     get_firewall_address_list_entries,
     get_hotspot_hosts,
     get_mikrotik_connection,
-    remove_hotspot_host_entries,
+    remove_hotspot_host_entries_best_effort,
     remove_address_list_entry,
     upsert_address_list_entry,
 )
@@ -292,10 +292,11 @@ def sync_unauthorized_hosts_command(
             nonlocal hotspot_host_cleanup_removed, failed_hotspot_host_cleanup
             if not apply:
                 return
-            ok_cleanup, _cleanup_msg, removed_count = remove_hotspot_host_entries(
+            ok_cleanup, _cleanup_msg, removed_count = remove_hotspot_host_entries_best_effort(
                 api,
                 mac_address=mac_text or None,
                 address=ip_text or None,
+                allow_username_only_fallback=False,
             )
             if ok_cleanup:
                 hotspot_host_cleanup_removed += int(removed_count or 0)
