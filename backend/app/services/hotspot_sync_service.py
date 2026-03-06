@@ -1386,10 +1386,17 @@ def resolve_target_profile_for_user(user: User) -> str:
 
 
 def cleanup_inactive_users() -> Dict[str, int]:
-    counters = {"deactivated": 0, "deleted": 0}
+    counters = {"deactivated": 0, "deleted": 0, "delete_skipped_guard": 0}
     now_utc = datetime.now(dt_timezone.utc)
     deactivate_days = settings_service.get_setting_as_int("INACTIVE_DEACTIVATE_DAYS", 45)
     delete_days = settings_service.get_setting_as_int("INACTIVE_DELETE_DAYS", 90)
+    delete_enabled = settings_service.get_setting_as_bool("INACTIVE_AUTO_DELETE_ENABLED", False)
+    delete_max_per_run = settings_service.get_setting_as_int("INACTIVE_DELETE_MAX_PER_RUN", 0)
+
+    if not delete_enabled:
+        current_app.logger.warning(
+            "cleanup_inactive_users: hard delete otomatis dinonaktifkan (INACTIVE_AUTO_DELETE_ENABLED=False)."
+        )
 
     users = db.session.scalars(
         select(User).where(
@@ -1408,18 +1415,24 @@ def cleanup_inactive_users() -> Dict[str, int]:
             username_08 = format_to_local_phone(user.phone_number)
 
             if days_inactive >= delete_days:
-                devices = db.session.scalars(select(UserDevice).where(UserDevice.user_id == user.id)).all()
-                for device in devices:
-                    if device.mac_address:
-                        _remove_ip_binding(device.mac_address, user.mikrotik_server_name or "all")
-                    if device.ip_address:
-                        _remove_blocked_address_list(device.ip_address)
-                    db.session.delete(device)
-                if api and username_08:
-                    delete_hotspot_user(api_connection=api, username=username_08)
-                db.session.delete(user)
-                counters["deleted"] += 1
-                continue
+                can_delete = delete_enabled and (
+                    delete_max_per_run <= 0 or counters["deleted"] < delete_max_per_run
+                )
+                if can_delete:
+                    devices = db.session.scalars(select(UserDevice).where(UserDevice.user_id == user.id)).all()
+                    for device in devices:
+                        if device.mac_address:
+                            _remove_ip_binding(device.mac_address, user.mikrotik_server_name or "all")
+                        if device.ip_address:
+                            _remove_blocked_address_list(device.ip_address)
+                        db.session.delete(device)
+                    if api and username_08:
+                        delete_hotspot_user(api_connection=api, username=username_08)
+                    db.session.delete(user)
+                    counters["deleted"] += 1
+                    continue
+
+                counters["delete_skipped_guard"] += 1
 
             if user.is_active and days_inactive >= deactivate_days:
                 devices = db.session.scalars(select(UserDevice).where(UserDevice.user_id == user.id)).all()

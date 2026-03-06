@@ -499,6 +499,9 @@ class Config:
         "VERIFY_OTP_REQUIRE_TRUSTED_CAPTIVE_CONTEXT_PRODUCTION", "True"
     )
     VERIFY_OTP_ALLOW_RAW_CLIENT_MAC_FALLBACK = get_env_bool("VERIFY_OTP_ALLOW_RAW_CLIENT_MAC_FALLBACK", "False")
+    # Default hardening: auto-login hanya untuk MAC yang sudah authorized.
+    # Device baru/perangkat yang belum authorized harus melewati OTP terlebih dahulu.
+    AUTO_LOGIN_REQUIRE_AUTHORIZED_DEVICE = get_env_bool("AUTO_LOGIN_REQUIRE_AUTHORIZED_DEVICE", "True")
     AUTO_LOGIN_SELF_HEAL_KNOWN_DEVICE = get_env_bool("AUTO_LOGIN_SELF_HEAL_KNOWN_DEVICE", "True")
     DEMO_MODE_ENABLED = get_env_bool("DEMO_MODE_ENABLED", "False")
     DEMO_ALLOWED_PHONES = get_env_list("DEMO_ALLOWED_PHONES", "[]")

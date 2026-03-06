@@ -338,6 +338,7 @@ def test_auto_login_recovers_stale_ip_from_mac_hint(monkeypatch):
 
 def test_auto_login_self_heals_known_device_when_authorized_flag_missing(monkeypatch):
     app = _make_app()
+    app.config.update(AUTO_LOGIN_REQUIRE_AUTHORIZED_DEVICE=False)
 
     from app.services import device_management_service as dms
 
@@ -377,6 +378,7 @@ def test_auto_login_self_heals_known_device_when_authorized_flag_missing(monkeyp
 
 def test_auto_login_resumes_with_valid_jwt_session_when_device_not_authorized(monkeypatch):
     app = _make_app()
+    app.config.update(AUTO_LOGIN_REQUIRE_AUTHORIZED_DEVICE=False)
 
     from app.services import device_management_service as dms
     from app.infrastructure.http.auth_contexts import login_handlers as lh
@@ -428,8 +430,63 @@ def test_auto_login_resumes_with_valid_jwt_session_when_device_not_authorized(mo
     assert captured["bypass"] is True
 
 
+def test_auto_login_strict_mode_rejects_unknown_device_before_jwt_resume(monkeypatch):
+    app = _make_app()
+
+    from app.services import device_management_service as dms
+    from app.infrastructure.http.auth_contexts import login_handlers as lh
+
+    monkeypatch.setattr(dms, "_is_client_ip_allowed", lambda *_a, **_k: True)
+
+    trusted_user = SimpleNamespace(
+        id="user-jwt-strict",
+        role=SimpleNamespace(value="USER"),
+        is_blocked=False,
+        is_active=True,
+        approval_status="APPROVED",
+        last_login_at=None,
+    )
+
+    deps = _deps(_SequencedDb(devices=[None]))
+    deps["request"] = SimpleNamespace(
+        args={},
+        cookies={"auth_token": "valid-token"},
+        headers={"User-Agent": "pytest"},
+    )
+
+    decode_calls = {"count": 0}
+
+    def _decode_jwt(*_args, **_kwargs):
+        decode_calls["count"] += 1
+        return {"sub": "user-jwt-strict"}
+
+    monkeypatch.setattr(lh.jwt, "decode", _decode_jwt)
+    deps["db"].session.get = lambda _model, user_id: trusted_user if str(user_id) == "user-jwt-strict" else None
+
+    binding_called = {"called": False}
+
+    def _apply_binding(*_args, **_kwargs):
+        binding_called["called"] = True
+        return True, "ok", "172.16.2.130"
+
+    deps.update(
+        resolve_client_mac=lambda *_a, **_k: (True, "AA:BB:CC:00:00:03", "ok"),
+        apply_device_binding_for_login=_apply_binding,
+    )
+
+    payload = {"client_ip": "172.16.2.130", "client_mac": "AA:BB:CC:00:00:03"}
+    with app.test_request_context("/api/auth/auto-login", method="POST", json=payload):
+        response, status = auto_login_impl(payload=payload, **deps)
+
+    assert status == HTTPStatus.UNAUTHORIZED
+    assert "otp" in str(response.get_json().get("error", "")).lower()
+    assert decode_calls["count"] == 0
+    assert binding_called["called"] is False
+
+
 def test_auto_login_jwt_resume_blocked_when_mac_owned_by_other_user(monkeypatch):
     app = _make_app()
+    app.config.update(AUTO_LOGIN_REQUIRE_AUTHORIZED_DEVICE=False)
 
     from app.services import device_management_service as dms
     from app.infrastructure.http.auth_contexts import login_handlers as lh

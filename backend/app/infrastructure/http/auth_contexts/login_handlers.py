@@ -288,6 +288,9 @@ def auto_login_impl(
         # IP can be reused by DHCP; trusted identity must remain MAC-based.
 
         user = device.user if (device and getattr(device, "user", None)) else None
+        auto_login_require_authorized_device = bool(
+            current_app.config.get("AUTO_LOGIN_REQUIRE_AUTHORIZED_DEVICE", True)
+        )
 
         def _role_value(role_obj: Any) -> Any:
             return getattr(role_obj, "value", role_obj)
@@ -298,6 +301,22 @@ def auto_login_impl(
             _role_value(UserRole.ADMIN),
             _role_value(UserRole.SUPER_ADMIN),
         }
+
+        if not user and resolved_mac and auto_login_require_authorized_device:
+            _log_auto_login_decision(
+                reason_code="UNAUTHORIZED_DEVICE_REQUIRES_OTP",
+                http_status=HTTPStatus.UNAUTHORIZED,
+                client_ip_value=client_ip,
+                client_mac_value=client_mac,
+                resolved_mac_value=resolved_mac,
+                level="warning",
+                details="resolved MAC has no authorized device ownership",
+            )
+            return jsonify(
+                AuthErrorResponseSchema(
+                    error="Perangkat ini belum diotorisasi. Silakan login OTP terlebih dahulu."
+                ).model_dump()
+            ), HTTPStatus.UNAUTHORIZED
 
         def _resolve_user_from_trusted_token() -> tuple[Any, Any]:
             auth_header = request.headers.get("Authorization")
@@ -472,7 +491,7 @@ def auto_login_impl(
             return build_status_error("blocked", "Akun Anda diblokir oleh Admin."), HTTPStatus.FORBIDDEN
 
         if _role_value(getattr(user, "role", None)) in allowed_role_values:
-            trusted_auto_authorize = bool(resolved_mac)
+            trusted_auto_authorize = bool(resolved_mac) and (not auto_login_require_authorized_device)
             ok_binding, msg_binding, resolved_ip = apply_device_binding_for_login(
                 user,
                 client_ip,
