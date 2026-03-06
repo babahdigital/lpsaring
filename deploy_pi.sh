@@ -24,8 +24,8 @@ Optional:
   --local-dir <LOCAL_DIR>       Local project dir (default: current directory)
   --ssl-fullchain <FILE>        Deprecated (ignored; nginx dikelola terpisah)
   --ssl-privkey <FILE>          Deprecated (ignored; nginx dikelola terpisah)
-  --skip-pull                   Skip docker compose pull
-  --recreate                    Force recreate container app tanpa hapus volume
+  --skip-pull                   Skip docker compose pull (tidak kompatibel dengan --recreate)
+  --recreate                    Force recreate container app tanpa hapus volume (wajib pull image terbaru)
   --recreated                   Alias untuk --recreate
   --recretaed                   Alias typo untuk --recreate
   --backup-only                 Hanya jalankan backup DB ke ../backups lalu selesai (tanpa deploy)
@@ -404,6 +404,12 @@ if [[ "$SYNC_PHONES_APPLY" == "true" ]]; then
   SYNC_PHONES="true"
 fi
 
+if [[ "$FORCE_RECREATE" == "true" && "$SKIP_PULL" == "true" ]]; then
+  echo "ERROR: --recreate tidak boleh dipakai bersama --skip-pull karena berisiko menjalankan image lama." >&2
+  echo "       Hapus --skip-pull agar deploy recreate selalu memakai image terbaru." >&2
+  exit 1
+fi
+
 if [[ "$PI_HOST" != "$LOCKED_PI_HOST" ]]; then
   echo "ERROR: host wajib $LOCKED_PI_HOST (nilai saat ini: $PI_HOST)" >&2
   exit 1
@@ -693,6 +699,7 @@ echo "==> SSH key       : $SSH_KEY_EXPANDED"
 echo "==> SSH port      : $PI_PORT"
 echo "==> Rsync         : $HAS_RSYNC"
 echo "==> Dry run       : $DRY_RUN"
+echo "==> Skip pull     : $SKIP_PULL"
 echo "==> Recreate      : $FORCE_RECREATE (tanpa hapus volume)"
 echo "==> Backup only   : $BACKUP_ONLY"
 echo "==> Sync phones   : $SYNC_PHONES (apply=$SYNC_PHONES_APPLY)"
@@ -966,7 +973,8 @@ if [ "$DO_CLEAN" = "true" ]; then
   docker compose --env-file .env.prod -f docker-compose.prod.yml down -v --remove-orphans || true
 fi
 if [ "$SKIP_PULL" = "false" ]; then
-  docker compose --env-file .env.prod -f docker-compose.prod.yml pull
+  echo "==> Pull app images (backend/frontend/celery/migrate/backups_init)..."
+  docker compose --env-file .env.prod -f docker-compose.prod.yml pull backend celery_worker celery_beat migrate backups_init frontend
 fi
 
 backend_arch=\$(docker image inspect babahdigital/sobigidul_backend:latest --format '{{.Architecture}}' 2>/dev/null || true)

@@ -154,6 +154,26 @@ Cara cepat (dari server Pi, via container backend):
 
 Jika ditemukan kasus invalid seperti `0.0.0.0`, hapus entry tersebut dari semua list status.
 
+### E) Audit parity holistik (status/ip-binding/unauthorized/DHCP)
+Gunakan command resmi berikut untuk menghasilkan JSON audit terbaru:
+
+- `flask audit-hotspot-parity`
+- `flask audit-hotspot-parity --output /tmp/lpsaring_addrlist_binding_parity_dryrun.json`
+- `flask audit-hotspot-parity --fail-on-drift`
+
+Indikator utama yang harus `0`:
+
+- `policy_focus.critical_without_binding_total`
+  - memastikan status `active/fup/habis/blocked` tidak punya row tanpa binding.
+- `policy_focus.unauthorized_must_not_duplicate_status_count`
+  - memastikan IP `unauthorized` tidak overlap dengan list status.
+- `unlimited_alignment.scoped_unlimited_users_with_authorized_device.without_binding`
+  - memastikan user unlimited yang sudah punya device authorized tetap punya binding valid.
+- `dhcp_alignment.authorized_without_dhcp_lease`
+  - memantau MAC authorized yang belum punya DHCP lease.
+- `dhcp_alignment.binding_dhcp_ip_mismatch`
+  - memantau mismatch IP antara DHCP lease dan ip-binding.
+
 ## 7) Healthcheck Produksi
 Untuk arsitektur DO split-stack (`nginx` global terpisah), cek dari container nginx global:
 - `docker exec global-nginx-proxy wget -T 10 -qO- --header='Host: lpsaring.babahdigital.net' http://127.0.0.1/api/ping`

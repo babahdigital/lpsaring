@@ -73,6 +73,10 @@ Perilaku:
 ./deploy_pi.sh --recreate
 ```
 
+Catatan penting:
+- Saat `--recreate`, script akan tetap melakukan `docker compose pull` untuk service app (`backend`, `frontend`, `celery_worker`, `celery_beat`, `migrate`, `backups_init`) sebelum `up --force-recreate`.
+- Kombinasi `--recreate --skip-pull` ditolak oleh script untuk mencegah deploy dengan image lama.
+
 Alias yang diterima:
 - `--recreated`
 - `--recretaed` (typo alias)
@@ -180,6 +184,7 @@ docker exec global-nginx-proxy wget -T 10 -qO- --header='Host: lpsaring.babahdig
 - Scope operasi dibatasi ke app dir terkunci.
 - `--prune` diblokir untuk mencegah dampak lintas stack.
 - `--recreate` tersedia untuk recreate container tanpa hapus volume.
+- Guard `--recreate` memastikan image app terbaru tetap dipull (kombinasi dengan `--skip-pull` diblokir).
 - `--detach-local` direkomendasikan agar run tidak gagal karena interupsi terminal lokal.
 - Guard ukuran backup mencegah clean/strict jalan saat dump terindikasi terlalu kecil.
 - Untuk mode `--clean` dan `--strict-minimal`, rollback DB otomatis akan dicoba jika deploy gagal (sumber dari backup lokal run yang sama).
