@@ -16,8 +16,12 @@ Lampiran wajib:
 - app/infrastructure/http/: route API dan schema request/response.
 - app/infrastructure/http/admin_contexts/: bounded-context handler admin (backups, notifications, transactions, billing, reports).
 - app/infrastructure/http/transactions/: modul lifecycle transaksi (initiation, webhook, public/authenticated routes, invoice, idempotency, events).
+- app/infrastructure/http/auth_contexts/: handler auth modular (auto-login, hotspot status, verify-otp, logout/reset-login).
+- app/infrastructure/http/user/profile_routes.py: endpoint device self-service (`bind-current`, `delete device`, update label).
 - app/infrastructure/db/: model SQLAlchemy.
-- app/services/: logika bisnis (approval, profile, transaksi, dsb).
+- app/services/: logika bisnis (approval, profile, transaksi, hotspot sync, policy, device management).
+- app/services/device_management_service.py: source utama binding lifecycle perangkat.
+- app/services/hotspot_sync_service.py: sync kuota/profile + self-heal policy binding periodik.
 - app/tasks.py: Celery tasks.
 - migrations/: Alembic revisions.
 - run.py: entrypoint aplikasi.
@@ -35,6 +39,9 @@ Lampiran wajib:
 - plugins/: setup Vuetify, icon adapter.
 - types/: kontrak data frontend.
 - utils/: helper utilitas.
+- pages/login/hotspot-required.vue: one-click aktivasi internet setelah login.
+- middleware/auth.global.ts: guard route + hotspot precheck.
+- store/auth.ts: inisialisasi sesi, auto-login best-effort, otorisasi device.
 - tests/: vitest unit tests (auth guards/access + payment composables/polling).
 
 ## 4) Alur penting
@@ -42,6 +49,8 @@ Lampiran wajib:
 - Tamping: validasi di backend + tampilan di login, admin user dialog, akun.
 - Approval admin: backend user approval + frontend admin/users.
 - Transaksi: backend transactions + frontend pages/payment, pages/riwayat.
+- Hotspot auth stabil terbaru:
+	- Auto-login best-effort (`/auth/auto-login`) -> hotspot precheck (`/auth/hotspot-session-status`) -> fallback `/login/hotspot-required` -> bind perangkat (`/users/me/devices/bind-current`).
 
 ## 5) Dokumen terkait
 - DEVELOPMENT.md: panduan dev lengkap.
@@ -49,4 +58,5 @@ Lampiran wajib:
 - docs/MIDTRANS_SNAP.md: integrasi Midtrans.
 - docs/OPENAPI_CONTRACT_WORKFLOW.md: workflow kontrak + CI gate.
 - docs/DOKUMENTASI_WHATSAPP_FONNTE.md: integrasi WhatsApp.
+- docs/OPERATIONS_HOTSPOT_DEVICE_LIFECYCLE.md: runbook lifecycle perangkat/session/hotspot (stabil 2026-03).
 - .github/copilot-instructions.md: pondasi aturan pengembangan.

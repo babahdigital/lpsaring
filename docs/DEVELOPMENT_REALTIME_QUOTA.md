@@ -216,3 +216,33 @@ Disediakan di backend/.env.example:
 7. Uji self-service hapus perangkat dan login kembali dari perangkat baru.
 8. Uji walled-garden sync saat `WALLED_GARDEN_ENABLED=True`.
 9. Jalankan inventory host eksternal: `python backend/scripts/scan_external_hosts.py` lalu review output `tmp/external_hosts_inventory.json`.
+
+## Lampiran Stabil 2026-03: Binding Lifecycle & Cleanup Scope
+
+### A) Transisi `bypassed -> regular/blocked`
+- Tipe ip-binding tidak ditentukan oleh 1 env saja. Nilai efektif mengikuti `resolve_allowed_binding_type_for_user(user)`.
+- Untuk status non-bypass (`habis`, `expired`, `inactive`) target binding menjadi `regular`.
+- Untuk status `blocked`, target bisa `blocked` atau `regular` sesuai rule hard-block policy.
+
+Trigger sinkronisasi binding multi-device:
+- `sync_hotspot_usage_task` (periodik, default throttle 300 detik).
+- Event transaksi sukses.
+- Event inject quota/set unlimited.
+- Event block/unblock admin.
+
+### B) Perubahan IP saat status berubah
+- Tidak wajib berubah.
+- Model saat ini mengutamakan MAC-binding (sering `address=None`), sehingga perubahan status biasanya hanya mengubah `type/comment`.
+- Jika DHCP berubah, perubahan IP terjadi karena lease/host update, bukan karena transisi status itu sendiri.
+
+### C) Hapus device vs reset-login
+- `DELETE /users/me/devices/<id>` (device-level):
+   - Hapus ip-binding MAC + managed address-list IP + row `user_devices`.
+   - Tidak menghapus DHCP lease/ARP/host secara eksplisit.
+   - Tidak revoke refresh token/session per-device.
+- `POST /auth/reset-login` (user-level):
+   - Hapus refresh tokens + seluruh user_devices.
+   - Jalankan cleanup router lebih lengkap (ip-binding, DHCP lease, ARP, host, managed list).
+
+Rujukan detail operasional:
+- `docs/OPERATIONS_HOTSPOT_DEVICE_LIFECYCLE.md`

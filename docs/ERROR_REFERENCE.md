@@ -390,3 +390,70 @@ Uncaught (in promise) TypeError: Cannot read properties of null (reading 'destro
 - User reguler: paket testing nonaktif tidak muncul.
 - User demo eligible: paket testing tampil dan paket non-testing terblokir sesuai kebijakan demo.
 - Jika UX tidak presisi di mobile, pertimbangkan fallback tabel (lebih stabil dan jelas).
+
+## 28) Audit user gagal ketemu karena format nomor telepon
+**Gejala**:
+- Query operasional untuk nomor lokal (format `08...`) tidak menemukan user di DB.
+
+**Penyebab**:
+- Data produksi disimpan dalam format E.164 (`+62...`), bukan format lokal.
+
+**Solusi**:
+- Saat audit/manual SQL, selalu cari dengan variasi normalisasi (`08...`, `62...`, `+62...`) atau gunakan suffix terkontrol.
+- Untuk script operasional, normalisasi nomor dulu sebelum query.
+
+## 29) Router menunjukkan `regular`, tetapi user tidak ada di DB
+**Gejala**:
+- Ditemukan ip-binding `type=None`/`regular` dengan comment `user=<nomor>|uid=<uuid>`, tetapi user/uid tidak ada lagi di DB.
+
+**Penyebab**:
+- Artefak stale/orphan di RouterOS dari cleanup lama yang tidak tuntas.
+
+**Contoh nyata (06-03-2026)**:
+- Nomor `082164599907` tidak ditemukan di DB, namun router masih punya ip-binding comment `user=082164599907|uid=d332b5fb-45f9-4ae0-9a40-0c4e174b7026` dengan `type=None` (efektif `regular`).
+
+**Solusi**:
+- Hapus ip-binding orphan berdasarkan marker comment (`uid=` / `user=`) atau MAC.
+- Jalankan parity audit berkala untuk mendeteksi marker router yang tidak punya pasangan DB.
+- Standarkan deprovisioning memakai cleanup user-level (`reset-login`/admin cleanup) bukan hanya delete row.
+
+## 30) Ekspektasi salah: delete device menghapus semua artefak jaringan + token
+**Gejala**:
+- Diasumsikan `DELETE /users/me/devices/<id>` juga menghapus DHCP lease, ARP, host, dan session token device.
+
+**Penyebab**:
+- Endpoint ini saat ini hanya device-level cleanup minimum.
+
+**Perilaku aktual**:
+- Ya: remove ip-binding + managed address-list + row `user_devices`.
+- Tidak: DHCP lease, ARP, hotspot host explicit cleanup, revoke refresh token per-device.
+
+**Solusi**:
+- Gunakan `reset-login` bila butuh cleanup menyeluruh user-level (network + sessions).
+- Dokumentasikan perbedaan scope agar tim support tidak salah ekspektasi.
+
+## 31) Blip deploy: `502` karena backend DNS/upstream belum siap
+**Gejala**:
+- Sesaat setelah recreate deploy, Nginx memberi `502` untuk endpoint API tertentu.
+
+**Penyebab**:
+- Transisi startup service, resolver/upstream belum siap pada menit deploy.
+
+**Solusi**:
+- Anggap sebagai transien jika cepat pulih dan healthcheck berikutnya hijau.
+- Verifikasi dengan:
+	- `lpsaring_error.log` (resolve/connect upstream)
+	- ringkasan status `2xx/4xx/5xx` pada jendela deploy.
+- Jika menetap, investigasi DNS upstream/container health.
+
+## 32) SSH heredoc/quoting membuat audit command tampak hang
+**Gejala**:
+- Command SSH multi-quote/heredoc kadang berhenti tanpa output jelas atau menghasilkan error shell aneh.
+
+**Penyebab**:
+- Quoting bertingkat rentan pecah antara shell lokal dan remote.
+
+**Solusi**:
+- Gunakan helper script terpisah lalu pipe ke `docker exec -i ... python -`.
+- Hindari wildcard/regex berat dalam satu command string panjang.
+- Untuk job panjang, tulis output ke file sementara remote lalu `tail`/`grep` terpisah.
