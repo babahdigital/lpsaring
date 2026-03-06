@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import uuid
-from contextlib import contextmanager
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import cast
 
 from flask import Flask
 
@@ -18,31 +17,9 @@ def _unwrap_decorators(func):
     return current
 
 
-class _ScalarResult:
-    def __init__(self, rows):
-        self._rows = rows
-
-    def all(self):
-        return list(self._rows)
-
-
-class _Query:
-    def __init__(self, deleted_count: int):
-        self._deleted_count = deleted_count
-
-    def filter(self, *args, **kwargs):
-        return self
-
-    def delete(self, synchronize_session: bool = False):
-        return self._deleted_count
-
-
 class _FakeSession:
-    def __init__(self, *, user: Any, devices: list[Any], tokens_deleted: int, devices_deleted: int):
+    def __init__(self, *, user):
         self._user = user
-        self._devices = devices
-        self._tokens_deleted = tokens_deleted
-        self._devices_deleted = devices_deleted
         self._commit_called = 0
         self._rollback_called = 0
 
@@ -51,54 +28,11 @@ class _FakeSession:
             return self._user
         return None
 
-    def scalars(self, *args, **kwargs):
-        return _ScalarResult(self._devices)
-
-    def query(self, model):
-        name = getattr(model, "__name__", str(model))
-        if name == "RefreshToken":
-            return _Query(self._tokens_deleted)
-        if name == "UserDevice":
-            return _Query(self._devices_deleted)
-        return _Query(0)
-
     def commit(self):
         self._commit_called += 1
 
     def rollback(self):
         self._rollback_called += 1
-
-
-class _Resource:
-    def __init__(self, rows: list[dict[str, Any]]):
-        self._rows = list(rows)
-        self.removed_ids: list[str] = []
-
-    def get(self, **query):
-        if not query:
-            return list(self._rows)
-        result = []
-        for row in self._rows:
-            ok = True
-            for key, value in query.items():
-                if str(row.get(key, "")) != str(value):
-                    ok = False
-                    break
-            if ok:
-                result.append(row)
-        return result
-
-    def remove(self, id: str):
-        self.removed_ids.append(str(id))
-        self._rows = [r for r in self._rows if str(r.get("id") or r.get(".id")) != str(id)]
-
-
-class _Api:
-    def __init__(self, resources: dict[str, _Resource]):
-        self._resources = resources
-
-    def get_resource(self, path: str):
-        return self._resources[path]
 
 
 def _make_app() -> Flask:
@@ -109,14 +43,32 @@ def test_reset_login_deletes_tokens_and_devices_even_when_mikrotik_unavailable(m
     user_id = uuid.uuid4()
     user = SimpleNamespace(id=user_id, phone_number="+628123456789", role=SimpleNamespace(value="USER"))
 
-    fake_session = _FakeSession(user=user, devices=[], tokens_deleted=3, devices_deleted=2)
+    fake_session = _FakeSession(user=user)
     monkeypatch.setattr(user_management_routes, "db", SimpleNamespace(session=fake_session))
 
-    @contextmanager
-    def _no_mikrotik(**kwargs):
-        yield None
-
-    monkeypatch.setattr(user_management_routes, "get_mikrotik_connection", _no_mikrotik)
+    monkeypatch.setattr(
+        user_management_routes.user_deletion,
+        "run_user_auth_cleanup",
+        lambda _user: {
+            "tokens_deleted": 3,
+            "devices_deleted": 2,
+            "device_count_before": 2,
+            "macs": ["AA:BB:CC:DD:EE:FF", "11:22:33:44:55:66"],
+            "ips": ["172.16.0.10", "172.16.0.11"],
+            "mac_count": 2,
+            "ip_count": 2,
+            "username_08": "08123456789",
+            "router": {
+                "mikrotik_connected": False,
+                "ip_bindings_removed": 0,
+                "dhcp_leases_removed": 0,
+                "arp_entries_removed": 0,
+                "address_list_entries_removed": 0,
+                "comment_tagged_entries_removed": 0,
+                "errors": [],
+            },
+        },
+    )
     monkeypatch.setattr(user_management_routes, "_log_admin_action", lambda **kwargs: None)
 
     app = _make_app()
@@ -131,64 +83,37 @@ def test_reset_login_deletes_tokens_and_devices_even_when_mikrotik_unavailable(m
     assert payload["summary"]["tokens_deleted"] == 3
     assert payload["summary"]["devices_deleted"] == 2
     assert payload["summary"]["router"]["mikrotik_connected"] is False
+    assert "MikroTik tidak terhubung" in payload["message"]
+    assert fake_session._commit_called == 1
 
 
 def test_reset_login_removes_comment_tagged_router_entries(monkeypatch):
     user_id = uuid.uuid4()
-    uid_marker = f"uid={user_id}"
-    user08 = "08123456789"
-
     user = SimpleNamespace(id=user_id, phone_number="+628123456789", role=SimpleNamespace(value="USER"))
-    devices = [SimpleNamespace(mac_address="AA:BB:CC:DD:EE:FF", ip_address="172.16.0.10")]
-
-    fake_session = _FakeSession(user=user, devices=devices, tokens_deleted=1, devices_deleted=1)
+    fake_session = _FakeSession(user=user)
     monkeypatch.setattr(user_management_routes, "db", SimpleNamespace(session=fake_session))
-    monkeypatch.setattr(user_management_routes, "_log_admin_action", lambda **kwargs: None)
-    monkeypatch.setattr(user_management_routes, "format_to_local_phone", lambda _: user08)
-    monkeypatch.setattr(user_management_routes.settings_service, "get_setting", lambda *args, **kwargs: args[1])
 
-    resources = {
-        "/ip/hotspot/ip-binding": _Resource(
-            [
-                {"id": "b1", "mac-address": "AA:BB:CC:DD:EE:FF", "comment": f"lpsaring | {uid_marker} | user={user08}"},
-                {"id": "b2", "mac-address": "11:22:33:44:55:66", "comment": "manual"},
-            ]
-        ),
-        "/ip/dhcp-server/lease": _Resource(
-            [
-                {"id": "l1", "mac-address": "AA:BB:CC:DD:EE:FF"},
-                {"id": "l2", "mac-address": "11:22:33:44:55:66"},
-                {"id": "l3", "mac-address": "66:55:44:33:22:11", "comment": f"legacy|{uid_marker}"},
-            ]
-        ),
-        "/ip/arp": _Resource(
-            [
-                {"id": "p1", "mac-address": "AA:BB:CC:DD:EE:FF", "address": "172.16.0.10"},
-                {"id": "p2", "mac-address": "11:22:33:44:55:66", "address": "172.16.0.20"},
-                {"id": "p3", "address": "172.16.0.77", "comment": f"lpsaring|user={user08}"},
-            ]
-        ),
-        "/ip/firewall/address-list": _Resource(
-            [
-                {
-                    "id": "f1",
-                    "list": "blocked",
-                    "address": "172.16.0.10",
-                    "comment": f"lpsaring|{uid_marker}|user={user08}",
-                },
-                {"id": "f2", "list": "active", "address": "172.16.0.99", "comment": f"lpsaring|{uid_marker}"},
-                {"id": "f3", "list": "blocked", "address": "172.16.0.20", "comment": "other"},
-            ]
-        ),
+    cleanup_summary = {
+        "tokens_deleted": 1,
+        "devices_deleted": 1,
+        "device_count_before": 1,
+        "macs": ["AA:BB:CC:DD:EE:FF"],
+        "ips": ["172.16.0.10"],
+        "mac_count": 1,
+        "ip_count": 1,
+        "username_08": "08123456789",
+        "router": {
+            "mikrotik_connected": True,
+            "ip_bindings_removed": 1,
+            "dhcp_leases_removed": 2,
+            "arp_entries_removed": 2,
+            "address_list_entries_removed": 2,
+            "comment_tagged_entries_removed": 3,
+            "errors": [],
+        },
     }
-
-    api = _Api(resources)
-
-    @contextmanager
-    def _mikrotik_ok(**kwargs):
-        yield api
-
-    monkeypatch.setattr(user_management_routes, "get_mikrotik_connection", _mikrotik_ok)
+    monkeypatch.setattr(user_management_routes.user_deletion, "run_user_auth_cleanup", lambda _user: cleanup_summary)
+    monkeypatch.setattr(user_management_routes, "_log_admin_action", lambda **kwargs: None)
 
     app = _make_app()
     impl = _unwrap_decorators(user_management_routes.admin_reset_user_login)
@@ -201,17 +126,9 @@ def test_reset_login_removes_comment_tagged_router_entries(monkeypatch):
     payload = response.get_json()["summary"]
     assert payload["router"]["mikrotik_connected"] is True
 
-    # Comment-tagged removals are tracked
     assert payload["router"]["comment_tagged_entries_removed"] >= 1
-
-    # Ensure at least the matching items are removed in resources
-    assert "b1" in resources["/ip/hotspot/ip-binding"].removed_ids
-    assert "l1" in resources["/ip/dhcp-server/lease"].removed_ids
-    assert "l3" in resources["/ip/dhcp-server/lease"].removed_ids
-    assert "p1" in resources["/ip/arp"].removed_ids
-    assert "p3" in resources["/ip/arp"].removed_ids
-    assert "f1" in resources["/ip/firewall/address-list"].removed_ids
-    assert "f2" in resources["/ip/firewall/address-list"].removed_ids
+    assert payload["mac_count"] == 1
+    assert payload["ip_count"] == 1
 
 
 def test_reset_login_denies_non_super_admin_for_demo_user(monkeypatch):
@@ -224,8 +141,16 @@ def test_reset_login_denies_non_super_admin_for_demo_user(monkeypatch):
         role=SimpleNamespace(value="USER"),
     )
 
-    fake_session = _FakeSession(user=user, devices=[], tokens_deleted=0, devices_deleted=0)
+    fake_session = _FakeSession(user=user)
     monkeypatch.setattr(user_management_routes, "db", SimpleNamespace(session=fake_session))
+
+    called = {"cleanup": False}
+
+    def _should_not_run(_user):
+        called["cleanup"] = True
+        return {}
+
+    monkeypatch.setattr(user_management_routes.user_deletion, "run_user_auth_cleanup", _should_not_run)
 
     app = _make_app()
     app.config["DEMO_ALLOWED_PHONES"] = [demo_phone]
@@ -237,3 +162,4 @@ def test_reset_login_denies_non_super_admin_for_demo_user(monkeypatch):
 
     assert status == 403
     assert response.get_json()["message"] == "Akses ditolak."
+    assert called["cleanup"] is False

@@ -832,9 +832,9 @@ function handleReject(user: User) {
 function handleDelete(user: User) {
   openConfirmDialog({
     title: 'Konfirmasi Penghapusan',
-    message: `Anda yakin ingin menghapus atau menonaktifkan pengguna <strong>${user.full_name}</strong>?`,
+    message: `Anda yakin ingin menghapus atau menonaktifkan pengguna <strong>${user.full_name}</strong>? Sistem akan membersihkan token, sesi perangkat, serta artefak jaringan MikroTik (DHCP/ARP/IP-Binding/host) untuk user ini.`,
     color: 'error',
-    action: async () => await performAction(`/admin/users/${user.id}`, 'DELETE', 'Aksi terhadap pengguna berhasil dilakukan.'),
+    action: async () => await performAction(`/admin/users/${user.id}`, 'DELETE', 'Cleanup pengguna berhasil dijalankan.'),
   })
 }
 function handleApproveRoleClaim(item: PublicUpdateSubmission) {
@@ -891,7 +891,10 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
   loading.value = true
   try {
     const response = await $api<any>(endpoint, { method, ...options })
-    showSnackbar({ type: 'success', title: 'Berhasil', text: successMessage })
+    const backendMessage = typeof response?.message === 'string' && response.message !== ''
+      ? response.message
+      : successMessage
+    showSnackbar({ type: 'success', title: 'Berhasil', text: backendMessage })
     closeAllDialogs()
     await fetchUpdateSubmissions()
     await fetchUsers()
