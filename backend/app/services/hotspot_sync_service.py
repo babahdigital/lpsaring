@@ -191,6 +191,125 @@ def _collect_candidate_ips_for_user(
     return ips
 
 
+def _normalize_binding_type(value: Any) -> str:
+    binding_type = str(value or "").strip().lower()
+    return binding_type or "regular"
+
+
+def _binding_type_matches_policy(actual_type: Any, expected_type: str) -> bool:
+    normalized_actual = _normalize_binding_type(actual_type)
+    normalized_expected = _normalize_binding_type(expected_type)
+
+    if normalized_expected == "blocked":
+        return normalized_actual == "blocked"
+
+    return normalized_actual != "blocked"
+
+
+def _snapshot_ip_binding_rows_by_mac(api: Any) -> Tuple[bool, Dict[str, List[Dict[str, Any]]]]:
+    if not api:
+        return False, {}
+
+    try:
+        rows = api.get_resource("/ip/hotspot/ip-binding").get() or []
+    except Exception as exc:
+        logger.warning("Gagal mengambil snapshot ip-binding raw: %s", exc)
+        return False, {}
+
+    by_mac: Dict[str, List[Dict[str, Any]]] = {}
+    for row in rows:
+        mac = str(row.get("mac-address") or "").strip().upper()
+        if not mac:
+            continue
+
+        normalized_row = {
+            "type": _normalize_binding_type(row.get("type")),
+            "address": str(row.get("address") or "").strip(),
+            "comment": row.get("comment"),
+        }
+        by_mac.setdefault(mac, []).append(normalized_row)
+
+    return True, by_mac
+
+
+def _resolve_managed_status_lists() -> List[str]:
+    list_active = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active"
+    list_fup = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup"
+    list_inactive = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive"
+    list_expired = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired"
+    list_habis = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis"
+    list_blocked = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked"
+    list_unauthorized = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized") or "unauthorized"
+
+    unique_lists: List[str] = []
+    for list_name in [list_active, list_fup, list_inactive, list_expired, list_habis, list_blocked]:
+        if not list_name:
+            continue
+        if list_name == list_unauthorized:
+            continue
+        if list_name in unique_lists:
+            continue
+        unique_lists.append(list_name)
+
+    return unique_lists
+
+
+def _remove_managed_status_entries_for_ip(api: object, ip_address: str) -> None:
+    if not api or not _is_valid_ip_candidate(ip_address):
+        return
+
+    for list_name in _resolve_managed_status_lists():
+        remove_address_list_entry(api_connection=api, address=str(ip_address).strip(), list_name=list_name)
+
+
+def _has_policy_binding_for_user(
+    user: User,
+    *,
+    ip_binding_map: Optional[Dict[str, Dict[str, Any]]],
+    ip_binding_rows_by_mac: Optional[Dict[str, List[Dict[str, Any]]]],
+) -> bool:
+    if not user:
+        return False
+
+    if not ip_binding_map and not ip_binding_rows_by_mac:
+        # Fail-open when snapshot tidak tersedia (mis. router sementara error)
+        # agar tidak memicu pembersihan agresif yang salah.
+        return True
+
+    expected_binding_type = str(resolve_allowed_binding_type_for_user(user) or "regular").strip().lower() or "regular"
+    username_08 = format_to_local_phone(getattr(user, "phone_number", None) or "")
+    user_tokens = {
+        str(getattr(user, "id", "") or "").strip(),
+        str(username_08 or "").strip(),
+    }
+    user_tokens = {token for token in user_tokens if token}
+
+    authorized_macs = {
+        str(getattr(device, "mac_address", "") or "").strip().upper()
+        for device in (user.devices or [])
+        if bool(getattr(device, "is_authorized", False)) and str(getattr(device, "mac_address", "") or "").strip()
+    }
+
+    if ip_binding_rows_by_mac:
+        for mac in authorized_macs:
+            for row in ip_binding_rows_by_mac.get(mac, []):
+                if _binding_type_matches_policy(row.get("type"), expected_binding_type):
+                    return True
+
+    if ip_binding_map:
+        for mac, entry in ip_binding_map.items():
+            if mac and str(mac).strip().upper() in authorized_macs:
+                if _binding_type_matches_policy(entry.get("type"), expected_binding_type):
+                    return True
+
+            token = str(entry.get("user_id") or "").strip()
+            if token and token in user_tokens:
+                if _binding_type_matches_policy(entry.get("type"), expected_binding_type):
+                    return True
+
+    return False
+
+
 def _get_thresholds_from_env(key: str, default: List[int]) -> List[int]:
     values = settings_service.get_setting(key, None)
     if values is None:
@@ -753,7 +872,24 @@ def _sync_address_list_status(
     remaining_percent: float,
     is_expired: bool,
     force_blocked: bool = False,
+    ip_binding_map: Optional[Dict[str, Dict[str, Any]]] = None,
+    ip_binding_rows_by_mac: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    enforce_binding_guard: bool = False,
 ) -> bool:
+    if enforce_binding_guard and not _has_policy_binding_for_user(
+        user,
+        ip_binding_map=ip_binding_map,
+        ip_binding_rows_by_mac=ip_binding_rows_by_mac,
+    ):
+        logger.info(
+            "Skip sync address-list by username tanpa ip-binding policy-compatible: user=%s phone=%s",
+            getattr(user, "id", None),
+            username_08,
+        )
+        for ip_address in _collect_candidate_ips_for_user(user, ip_binding_map=ip_binding_map):
+            _remove_managed_status_entries_for_ip(api, ip_address)
+        return False
+
     list_active = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active"
     list_fup = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup"
     list_inactive = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive"
@@ -850,6 +986,10 @@ def _sync_address_list_status(
                         remaining_mb,
                         remaining_percent,
                         is_expired,
+                        force_blocked=force_blocked,
+                        ip_binding_map=ip_binding_map,
+                        ip_binding_rows_by_mac=ip_binding_rows_by_mac,
+                        enforce_binding_guard=enforce_binding_guard,
                     )
         return False
     return ok
@@ -863,6 +1003,9 @@ def _sync_address_list_status_for_ip(
     remaining_percent: float,
     is_expired: bool,
     force_blocked: bool = False,
+    ip_binding_map: Optional[Dict[str, Dict[str, Any]]] = None,
+    ip_binding_rows_by_mac: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    enforce_binding_guard: bool = False,
 ) -> bool:
     if not ip_address:
         return False
@@ -870,6 +1013,19 @@ def _sync_address_list_status_for_ip(
     hotspot_networks = _resolve_hotspot_status_networks()
     if not _is_ip_in_hotspot_status_networks(ip_address, hotspot_networks):
         logger.info("Skip sync address-list untuk IP di luar hotspot CIDR: user=%s ip=%s", user.id, ip_address)
+        return False
+
+    if enforce_binding_guard and not _has_policy_binding_for_user(
+        user,
+        ip_binding_map=ip_binding_map,
+        ip_binding_rows_by_mac=ip_binding_rows_by_mac,
+    ):
+        _remove_managed_status_entries_for_ip(api, ip_address)
+        logger.info(
+            "Prune stale status-list (tanpa ip-binding policy-compatible): user=%s ip=%s",
+            getattr(user, "id", None),
+            ip_address,
+        )
         return False
 
     list_active = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active"
@@ -1117,12 +1273,20 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                 return counters
 
             ip_binding_map: Dict[str, Dict[str, Any]] = {}
+            ok_binding_map, binding_map, binding_msg = get_hotspot_ip_binding_user_map(api)
+            if ok_binding_map:
+                ip_binding_map = binding_map
+            else:
+                logger.warning(f"Gagal mengambil data ip-binding Mikrotik: {binding_msg}")
+
+            ok_binding_rows, ip_binding_rows_by_mac = _snapshot_ip_binding_rows_by_mac(api)
+            if not ok_binding_rows:
+                logger.warning("Binding guard dinonaktifkan sementara karena snapshot ip-binding raw gagal.")
+            binding_guard_enabled = bool(ok_binding_rows)
+
             if settings_service.get_setting("AUTO_ENROLL_DEVICES_FROM_IP_BINDING", "True") == "True":
-                ok_binding, binding_map, binding_msg = get_hotspot_ip_binding_user_map(api)
-                if ok_binding:
+                if not ip_binding_map and ok_binding_map:
                     ip_binding_map = binding_map
-                else:
-                    logger.warning(f"Gagal mengambil data ip-binding Mikrotik: {binding_msg}")
 
             for user in users_to_sync:
                 try:
@@ -1271,6 +1435,9 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                             remaining_percent,
                             is_expired,
                             force_blocked=force_blocked_status,
+                            ip_binding_map=ip_binding_map,
+                            ip_binding_rows_by_mac=ip_binding_rows_by_mac,
+                            enforce_binding_guard=binding_guard_enabled,
                         ):
                             ok_any_ip = True
 
@@ -1284,6 +1451,9 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                             remaining_percent,
                             is_expired,
                             force_blocked=force_blocked_status,
+                            ip_binding_map=ip_binding_map,
+                            ip_binding_rows_by_mac=ip_binding_rows_by_mac,
+                            enforce_binding_guard=binding_guard_enabled,
                         )
 
                     if settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") == "True":
@@ -1333,6 +1503,13 @@ def sync_address_list_for_single_user(user: User, client_ip: Optional[str] = Non
             logger.warning("Gagal konek MikroTik untuk sync address-list single user")
             return False
 
+        ok_binding_map, ip_binding_map, _binding_msg = get_hotspot_ip_binding_user_map(api)
+        if not ok_binding_map:
+            ip_binding_map = {}
+
+        ok_binding_rows, ip_binding_rows_by_mac = _snapshot_ip_binding_rows_by_mac(api)
+        binding_guard_enabled = bool(ok_binding_rows)
+
         ok_any_ip = False
         ips: List[str] = []
         hotspot_networks = _resolve_hotspot_status_networks()
@@ -1355,6 +1532,9 @@ def sync_address_list_for_single_user(user: User, client_ip: Optional[str] = Non
                 remaining_percent,
                 is_expired,
                 force_blocked=force_blocked_status,
+                ip_binding_map=ip_binding_map,
+                ip_binding_rows_by_mac=ip_binding_rows_by_mac,
+                enforce_binding_guard=binding_guard_enabled,
             ):
                 ok_any_ip = True
 
@@ -1366,6 +1546,9 @@ def sync_address_list_for_single_user(user: User, client_ip: Optional[str] = Non
             remaining_percent,
             is_expired,
             force_blocked=force_blocked_status,
+            ip_binding_map=ip_binding_map,
+            ip_binding_rows_by_mac=ip_binding_rows_by_mac,
+            enforce_binding_guard=binding_guard_enabled,
         )
         return bool(ok_any_ip or ok_user_ip)
 

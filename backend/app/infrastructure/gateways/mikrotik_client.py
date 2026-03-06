@@ -652,10 +652,13 @@ def remove_address_list_entry(api_connection: Any, address: str, list_name: str)
                 except Exception:
                     pass
 
+        remaining = resource.get(address=address, list=list_name)
+        if not remaining:
+            return True, "Sukses"
+
         if entries and removed == 0:
             return False, "Entri ditemukan tetapi gagal dihapus (ID tidak valid)"
 
-        remaining = resource.get(address=address, list=list_name)
         if remaining:
             return False, "Entri ditemukan tetapi belum terhapus dari router"
 

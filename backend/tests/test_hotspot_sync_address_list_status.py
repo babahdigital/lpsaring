@@ -314,3 +314,93 @@ def test_collect_candidate_ips_filters_out_of_hotspot_cidr():
     assert "172.16.2.10" in ips
     assert "172.16.2.11" in ips
     assert "172.16.2.12" in ips
+
+
+def test_sync_address_list_for_ip_prunes_when_binding_guard_enabled_and_no_binding(monkeypatch):
+    app = Flask(__name__)
+    app.config["MIKROTIK_UNAUTHORIZED_CIDRS"] = ["172.16.2.0/23"]
+
+    _patch_settings(monkeypatch)
+
+    calls = {"upsert": 0, "remove": 0}
+
+    def _fake_upsert_address_list_entry(*, api_connection, address, list_name, comment=None, timeout=None):
+        calls["upsert"] += 1
+        return True, "ok"
+
+    def _fake_remove_address_list_entry(*, api_connection, address, list_name):
+        calls["remove"] += 1
+        return True, "ok"
+
+    monkeypatch.setattr(svc, "upsert_address_list_entry", _fake_upsert_address_list_entry)
+    monkeypatch.setattr(svc, "remove_address_list_entry", _fake_remove_address_list_entry)
+
+    user = SimpleNamespace(
+        id=321,
+        is_unlimited_user=False,
+        is_blocked=False,
+        role=_Role("USER"),
+        phone_number="081234567890",
+        total_quota_purchased_mb=10240,
+        devices=[SimpleNamespace(is_authorized=True, mac_address="AA:BB:CC:DD:EE:11")],
+    )
+
+    with app.app_context():
+        ok = svc._sync_address_list_status_for_ip(
+            api=object(),
+            user=cast(Any, user),
+            ip_address="172.16.2.40",
+            remaining_mb=100.0,
+            remaining_percent=10.0,
+            is_expired=False,
+            ip_binding_map={"FF:EE:DD:CC:BB:AA": {"user_id": "999", "type": "regular"}},
+            ip_binding_rows_by_mac={"FF:EE:DD:CC:BB:AA": [{"type": "regular"}]},
+            enforce_binding_guard=True,
+        )
+
+    assert ok is False
+    assert calls["upsert"] == 0
+    # Guard melakukan prune di seluruh managed status list.
+    assert calls["remove"] >= 1
+
+
+def test_sync_address_list_for_ip_guard_allows_when_binding_exists(monkeypatch):
+    app = Flask(__name__)
+    app.config["MIKROTIK_UNAUTHORIZED_CIDRS"] = ["172.16.2.0/23"]
+
+    _patch_settings(monkeypatch)
+
+    calls = {"upsert": 0}
+
+    def _fake_upsert_address_list_entry(*, api_connection, address, list_name, comment=None, timeout=None):
+        calls["upsert"] += 1
+        return True, "ok"
+
+    monkeypatch.setattr(svc, "upsert_address_list_entry", _fake_upsert_address_list_entry)
+    monkeypatch.setattr(svc, "remove_address_list_entry", lambda **_k: (True, "ok"))
+
+    user = SimpleNamespace(
+        id=654,
+        is_unlimited_user=False,
+        is_blocked=False,
+        role=_Role("USER"),
+        phone_number="081234567890",
+        total_quota_purchased_mb=10240,
+        devices=[SimpleNamespace(is_authorized=True, mac_address="AA:BB:CC:DD:EE:33")],
+    )
+
+    with app.app_context():
+        ok = svc._sync_address_list_status_for_ip(
+            api=object(),
+            user=cast(Any, user),
+            ip_address="172.16.2.41",
+            remaining_mb=100.0,
+            remaining_percent=10.0,
+            is_expired=False,
+            ip_binding_map={"AA:BB:CC:DD:EE:33": {"user_id": "654", "type": "regular"}},
+            ip_binding_rows_by_mac={"AA:BB:CC:DD:EE:33": [{"type": "regular"}]},
+            enforce_binding_guard=True,
+        )
+
+    assert ok is True
+    assert calls["upsert"] == 1
