@@ -185,7 +185,8 @@ def verify_otp_impl(
             ), HTTPStatus.FORBIDDEN
 
         login_ip_for_history = client_ip
-        hotspot_login_required = is_hotspot_login_required(user_to_login)
+        base_hotspot_login_required = bool(is_hotspot_login_required(user_to_login))
+        hotspot_login_required = base_hotspot_login_required
         hotspot_binding_active: Optional[bool] = None
 
         binding_context = resolve_binding_context(user_to_login, client_ip, client_mac)
@@ -254,10 +255,13 @@ def verify_otp_impl(
                     AuthErrorResponseSchema(error="Identitas perangkat tidak valid.").model_dump()
                 ), HTTPStatus.FORBIDDEN
 
-        if hotspot_login_required:
-            username_for_hotspot = format_to_local_phone(user_to_login.phone_number)
-            binding_mac = str(authoritative_binding_mac or binding_context.get("resolved_mac") or "").strip() or None
-            if username_for_hotspot:
+        # Option A policy: bypass status tetap harus punya ip-binding aktif pada perangkat saat ini.
+        username_for_hotspot = format_to_local_phone(user_to_login.phone_number)
+        binding_mac = str(authoritative_binding_mac or binding_context.get("resolved_mac") or "").strip() or None
+        if username_for_hotspot:
+            if not binding_mac:
+                hotspot_binding_active = False
+            else:
                 try:
                     with get_mikrotik_connection() as api_connection:
                         if api_connection:
@@ -268,13 +272,22 @@ def verify_otp_impl(
                                 mac_address=binding_mac,
                             )
                             if ok_binding_check:
-                                hotspot_binding_active = has_binding
+                                hotspot_binding_active = bool(has_binding)
+                            else:
+                                hotspot_binding_active = False
+                        else:
+                            hotspot_binding_active = None
                 except Exception as check_err:
                     current_app.logger.warning(
                         "Verify-OTP hotspot ip-binding pre-check failed for user=%s: %s",
                         user_to_login.id,
                         check_err,
                     )
+
+        if hotspot_binding_active is False:
+            hotspot_login_required = True
+        else:
+            hotspot_login_required = base_hotspot_login_required
 
         if (not is_demo_login) and user_to_login.role in [UserRole.USER, UserRole.KOMANDAN, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
             # OTP valid dari user sendiri -> self-authorize default untuk mencegah deadlock

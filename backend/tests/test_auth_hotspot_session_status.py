@@ -269,3 +269,63 @@ def test_hotspot_session_status_rejects_mismatched_mac_hint():
     assert payload["hotspot_login_required"] is True
     assert payload["hotspot_binding_active"] is False
     assert payload["hotspot_hint_applied"] is True
+
+
+def test_hotspot_session_status_forces_hotspot_step_for_bypass_status_without_binding():
+    app = _make_app()
+    user = SimpleNamespace(id="u-5", phone_number="+628122333556")
+
+    @contextmanager
+    def _conn(*_args, **_kwargs):
+        yield object()
+
+    with app.app_context():
+        response, status = get_hotspot_session_status_impl(
+            current_user_id="u-5",
+            db=_FakeDb(user),
+            User=SimpleNamespace,
+            AuthErrorResponseSchema=_SchemaStub,
+            query_args={"client_mac": "AA:BB:CC:DD:EE:56"},
+            format_to_local_phone=lambda *_a, **_k: "08122333556",
+            normalize_mac=lambda value: str(value or "").strip().upper() or None,
+            resolve_client_mac=lambda *_a, **_k: (True, None, "no-ip"),
+            is_hotspot_login_required=lambda *_a, **_k: False,
+            get_mikrotik_connection=_conn,
+            has_hotspot_ip_binding_for_user=lambda *_a, **_k: (True, False, "not-found"),
+            get_hotspot_user_ip=lambda *_a, **_k: (True, None, "no-ip"),
+        )
+
+    assert status == 200
+    payload = response.get_json()
+    assert payload["hotspot_login_required"] is True
+    assert payload["hotspot_binding_active"] is False
+
+
+def test_hotspot_session_status_keeps_bypass_when_binding_exists():
+    app = _make_app()
+    user = SimpleNamespace(id="u-6", phone_number="+628122333557")
+
+    @contextmanager
+    def _conn(*_args, **_kwargs):
+        yield object()
+
+    with app.app_context():
+        response, status = get_hotspot_session_status_impl(
+            current_user_id="u-6",
+            db=_FakeDb(user),
+            User=SimpleNamespace,
+            AuthErrorResponseSchema=_SchemaStub,
+            query_args={"client_mac": "AA:BB:CC:DD:EE:57"},
+            format_to_local_phone=lambda *_a, **_k: "08122333557",
+            normalize_mac=lambda value: str(value or "").strip().upper() or None,
+            resolve_client_mac=lambda *_a, **_k: (True, None, "no-ip"),
+            is_hotspot_login_required=lambda *_a, **_k: False,
+            get_mikrotik_connection=_conn,
+            has_hotspot_ip_binding_for_user=lambda *_a, **_k: (True, True, "ok"),
+            get_hotspot_user_ip=lambda *_a, **_k: (True, None, "no-ip"),
+        )
+
+    assert status == 200
+    payload = response.get_json()
+    assert payload["hotspot_login_required"] is False
+    assert payload["hotspot_binding_active"] is True

@@ -24,7 +24,8 @@ def get_hotspot_session_status_impl(
     if not user:
         return jsonify(AuthErrorResponseSchema(error="User not found.").model_dump()), HTTPStatus.NOT_FOUND
 
-    hotspot_login_required = bool(is_hotspot_login_required(user))
+    base_hotspot_login_required = bool(is_hotspot_login_required(user))
+    hotspot_login_required = base_hotspot_login_required
     hotspot_binding_active = None
     hotspot_hint_applied = False
     binding_lookup_mode = "none"
@@ -41,7 +42,10 @@ def get_hotspot_session_status_impl(
                 return text
         return None
 
-    if hotspot_login_required:
+    # Option A policy: even bypass statuses must prove an active ip-binding.
+    # If binding is missing, frontend must still go through hotspot-required flow.
+    should_evaluate_binding = True
+    if should_evaluate_binding:
         username_for_hotspot = format_to_local_phone(getattr(user, "phone_number", None) or "")
         if username_for_hotspot:
             client_ip_hint = _first_non_empty("client_ip", "ip", "client-ip")
@@ -91,7 +95,9 @@ def get_hotspot_session_status_impl(
                             return (
                                 jsonify(
                                     {
-                                        "hotspot_login_required": hotspot_login_required,
+                                        "hotspot_login_required": bool(
+                                            base_hotspot_login_required or hotspot_binding_active is not True
+                                        ),
                                         "hotspot_binding_active": hotspot_binding_active,
                                         "hotspot_hint_applied": hotspot_hint_applied,
                                     }
@@ -137,7 +143,9 @@ def get_hotspot_session_status_impl(
                 return (
                     jsonify(
                         {
-                            "hotspot_login_required": hotspot_login_required,
+                            "hotspot_login_required": bool(
+                                base_hotspot_login_required or hotspot_binding_active is not True
+                            ),
                             "hotspot_binding_active": hotspot_binding_active,
                             "hotspot_hint_applied": hotspot_hint_applied,
                         }
@@ -178,6 +186,11 @@ def get_hotspot_session_status_impl(
                                     binding_lookup_mode = "user-fallback"
             except Exception:
                 hotspot_binding_active = None
+
+    if hotspot_binding_active is False:
+        hotspot_login_required = True
+    else:
+        hotspot_login_required = base_hotspot_login_required
 
     current_app.logger.info(
         "hotspot_session_status_decision user_id=%s username=%s input_ip=%s input_mac=%s binding_active=%s login_required=%s hint_applied=%s lookup_mode=%s fallback_attempted=%s fallback_applied=%s",
