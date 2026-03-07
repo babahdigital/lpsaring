@@ -91,6 +91,9 @@ interface AccessParityResponse {
   summary?: {
     users?: number
     mismatches?: number
+    mismatches_total?: number
+    non_parity_mismatches?: number
+    no_authorized_device_count?: number
   }
 }
 
@@ -233,7 +236,7 @@ const reliabilitySignalItems = computed(() => [
     key: 'policy-parity',
     label: 'Policy Parity',
     degraded: reliabilitySummary.value.policyParityDegraded,
-    detail: `Mismatch users: ${reliabilitySummary.value.policyParityMismatchCount} (devices: ${reliabilitySummary.value.policyParityMismatchDeviceCount})`,
+    detail: `Mismatch parity: ${reliabilitySummary.value.policyParityMismatchCount} (onboarding gap dikecualikan)`,
   },
 ])
 
@@ -254,6 +257,9 @@ const accessParityItems = computed(() => accessParity.value?.items ?? [])
 const accessParitySummary = computed(() => ({
   users: accessParity.value?.summary?.users ?? 0,
   mismatches: accessParity.value?.summary?.mismatches ?? 0,
+  mismatchesTotal: accessParity.value?.summary?.mismatches_total ?? 0,
+  nonParityMismatches: accessParity.value?.summary?.non_parity_mismatches ?? 0,
+  noAuthorizedDeviceCount: accessParity.value?.summary?.no_authorized_device_count ?? 0,
 }))
 const fixingParityByKey = ref<Record<string, boolean>>({})
 const parityFixMessage = ref('')
@@ -1117,7 +1123,7 @@ useHead({ title: 'Dashboard Admin' })
         <VCard>
           <VCardItem>
             <VCardTitle>Access Policy Parity (App vs MikroTik)</VCardTitle>
-            <VCardSubtitle>Deteksi mismatch status, binding, no-IP/no-device, dan DHCP lease per device</VCardSubtitle>
+            <VCardSubtitle>Deteksi mismatch status, binding, no-IP, dan DHCP lease yang actionable per device</VCardSubtitle>
             <div class="mt-2">
               <VChip
                 size="small"
@@ -1126,11 +1132,23 @@ useHead({ title: 'Dashboard Admin' })
               >
                 {{ accessParitySummary.mismatches }} mismatch / {{ accessParitySummary.users }} users
               </VChip>
+              <VChip
+                v-if="accessParitySummary.noAuthorizedDeviceCount > 0"
+                size="small"
+                label
+                color="warning"
+                class="ms-2"
+              >
+                Onboarding gap: {{ accessParitySummary.noAuthorizedDeviceCount }} user tanpa device authorized
+              </VChip>
             </div>
           </VCardItem>
           <VCardText>
             <div v-if="parityPending" class="text-caption text-disabled mb-2">
               memuat parity realtime...
+            </div>
+            <div v-if="!parityPending && accessParitySummary.noAuthorizedDeviceCount > 0" class="text-caption text-warning mb-2">
+              Catatan: user tanpa device authorized dipisahkan sebagai onboarding gap dan tidak dihitung mismatch parity router.
             </div>
             <div v-if="parityFixMessage" class="text-caption text-success mb-2">
               {{ parityFixMessage }}

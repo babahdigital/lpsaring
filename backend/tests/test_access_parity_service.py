@@ -143,3 +143,59 @@ def test_collect_access_parity_report_ignores_missing_dhcp_for_blocked_hard_bloc
     assert report["summary"]["mismatches"] == 0
     assert report["summary"]["mismatches_total"] == 0
     assert report["summary"]["mismatch_types"]["dhcp_lease_missing"] == 0
+
+
+def test_collect_access_parity_report_skips_dhcp_missing_when_live_host_signal_exists(monkeypatch):
+    mac = "74:D5:58:53:90:3F"
+    ip = "172.16.3.79"
+    device = SimpleNamespace(mac_address=mac, ip_address=ip, is_authorized=True)
+    user = SimpleNamespace(id="live-host-user", phone_number="+6282159997961", devices=[device])
+
+    _setup_common_mocks(
+        monkeypatch,
+        [user],
+        host_map={mac: {"address": ip}},
+        binding_map={mac: {"type": "bypassed", "address": ip}},
+        dhcp_rows=[],
+        firewall_entries_by_list={"active": [{"address": ip}]},
+    )
+    monkeypatch.setattr(access_parity_service, "get_user_access_status", lambda _user: "active")
+    monkeypatch.setattr(access_parity_service, "resolve_allowed_binding_type_for_user", lambda _user: "bypassed")
+
+    report = access_parity_service.collect_access_parity_report()
+
+    assert report["ok"] is True
+    assert report["items"] == []
+    assert report["summary"]["mismatches"] == 0
+    assert report["summary"]["mismatch_types"]["dhcp_lease_missing"] == 0
+
+
+def test_collect_access_parity_report_treats_dhcp_only_mismatch_as_non_parity(monkeypatch):
+    mac = "84:14:4D:8F:19:CA"
+    ip = "172.16.3.138"
+    device = SimpleNamespace(mac_address=mac, ip_address=ip, is_authorized=True)
+    user = SimpleNamespace(id="dhcp-only-user", phone_number="+6282113301370", devices=[device])
+
+    _setup_common_mocks(
+        monkeypatch,
+        [user],
+        host_map={},
+        binding_map={mac: {"type": "bypassed", "address": ip}},
+        dhcp_rows=[],
+        firewall_entries_by_list={"active": [{"address": ip}]},
+    )
+    monkeypatch.setattr(access_parity_service, "get_user_access_status", lambda _user: "active")
+    monkeypatch.setattr(access_parity_service, "resolve_allowed_binding_type_for_user", lambda _user: "bypassed")
+
+    report = access_parity_service.collect_access_parity_report()
+
+    assert report["ok"] is True
+    assert len(report["items"]) == 1
+    item = report["items"][0]
+    assert item["mismatches"] == ["dhcp_lease_missing"]
+    assert item["parity_relevant"] is False
+
+    assert report["summary"]["mismatches"] == 0
+    assert report["summary"]["mismatches_total"] == 1
+    assert report["summary"]["non_parity_mismatches"] == 1
+    assert report["summary"]["mismatch_types"]["dhcp_lease_missing"] == 1

@@ -106,6 +106,88 @@ def test_get_access_parity_returns_empty_summary_when_no_users(monkeypatch):
     assert payload["summary"]["mismatches"] == 0
 
 
+def test_get_access_parity_hides_non_parity_items_by_default(monkeypatch):
+    monkeypatch.setattr(
+        metrics_routes,
+        "collect_access_parity_report",
+        lambda **_kwargs: {
+            "ok": True,
+            "items": [
+                {
+                    "user_id": "u-1",
+                    "phone_number": "+6281000000001",
+                    "mismatches": ["no_authorized_device"],
+                    "parity_relevant": False,
+                },
+                {
+                    "user_id": "u-2",
+                    "phone_number": "+6281000000002",
+                    "mismatches": ["missing_ip_binding"],
+                    "parity_relevant": True,
+                },
+            ],
+            "summary": {
+                "users": 2,
+                "mismatches": 1,
+                "mismatches_total": 2,
+                "non_parity_mismatches": 1,
+            },
+        },
+    )
+
+    app = _make_app()
+    impl = _unwrap_decorators(metrics_routes.get_access_parity)
+
+    with app.app_context(), app.test_request_context("/admin/metrics/access-parity"):
+        resp, status = impl(current_admin=SimpleNamespace(id="admin-1"))
+
+    assert status == 200
+    payload = resp.get_json()
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["user_id"] == "u-2"
+    assert payload["summary"]["mismatches"] == 1
+
+
+def test_get_access_parity_can_include_non_parity_items(monkeypatch):
+    monkeypatch.setattr(
+        metrics_routes,
+        "collect_access_parity_report",
+        lambda **_kwargs: {
+            "ok": True,
+            "items": [
+                {
+                    "user_id": "u-1",
+                    "phone_number": "+6281000000001",
+                    "mismatches": ["no_authorized_device"],
+                    "parity_relevant": False,
+                },
+                {
+                    "user_id": "u-2",
+                    "phone_number": "+6281000000002",
+                    "mismatches": ["missing_ip_binding"],
+                    "parity_relevant": True,
+                },
+            ],
+            "summary": {
+                "users": 2,
+                "mismatches": 1,
+                "mismatches_total": 2,
+                "non_parity_mismatches": 1,
+            },
+        },
+    )
+
+    app = _make_app()
+    impl = _unwrap_decorators(metrics_routes.get_access_parity)
+
+    with app.app_context(), app.test_request_context("/admin/metrics/access-parity?include_non_parity=true"):
+        resp, status = impl(current_admin=SimpleNamespace(id="admin-1"))
+
+    assert status == 200
+    payload = resp.get_json()
+    assert len(payload["items"]) == 2
+
+
 def test_fix_access_parity_requires_user_id():
     app = _make_app()
     impl = _unwrap_decorators(metrics_routes.fix_access_parity)

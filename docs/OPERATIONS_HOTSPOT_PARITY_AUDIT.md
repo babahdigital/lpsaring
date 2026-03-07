@@ -134,6 +134,13 @@ Catatan operasional:
 - Untuk dashboard admin parity, `no_authorized_device` diperlakukan sebagai
   gap onboarding (non-parity). Fokus insiden parity tetap pada drift router
   (`binding_type`, `address_list`, `address_list_multi_status`, dst).
+- Untuk dashboard parity realtime, `dhcp_lease_missing` yang berdiri sendiri
+  (tanpa drift policy lain) diperlakukan sebagai advisory/non-parity agar
+  indikator reliability tetap fokus ke drift policy yang actionable.
+- Counter overlap berbasis IP bisa `0` walau masih ada stale row historis per-user
+  (mis. IP lama user masih tertinggal di list status lain). Drift tipe ini perlu
+  dibaca dari comment-token user (`user=`/`uid=`) dan dibersihkan lewat flow
+  sync status-list per-user.
 
 ## 7) Contoh Mode Gate
 
@@ -160,6 +167,10 @@ gagal.
   - jalankan `sync-unauthorized-hosts --apply`, lalu audit ulang.
   - Command ini kini memiliki guard tambahan untuk menormalkan overlap list
     kritikal `active/fup/blocked` dengan prioritas `blocked > fup > active`.
+- Ada row status lama per-user walau overlap IP = 0
+  - jalankan `sync-usage` atau trigger `sync_address_list_for_single_user`
+    (mis. melalui parity fix endpoint) untuk menjalankan prune stale status-list
+    berdasarkan token user pada comment.
 - `critical_without_binding_total > 0`
   - jalankan `prune-hotspot-status-without-binding` dalam mode dry-run, validasi,
     lalu apply sesuai SOP.

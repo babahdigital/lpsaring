@@ -104,9 +104,15 @@ def get_access_parity(current_admin):
     if not report.get("ok", False) and report.get("reason") == "mikrotik_unavailable":
         return jsonify({"message": "MikroTik connection unavailable."}), HTTPStatus.SERVICE_UNAVAILABLE
 
+    include_non_parity_raw = str(request.args.get("include_non_parity", "false") or "").strip().lower()
+    include_non_parity = include_non_parity_raw in {"1", "true", "yes", "on"}
+    items = list(report.get("items", []) or [])
+    if not include_non_parity:
+        items = [item for item in items if bool(item.get("parity_relevant", False))]
+
     return jsonify(
         {
-            "items": report.get("items", []),
+            "items": items,
             "summary": report.get("summary", {"users": 0, "mismatches": 0}),
         }
     ), HTTPStatus.OK

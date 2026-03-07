@@ -446,3 +446,68 @@ def test_sync_address_list_for_ip_also_removes_unauthorized_overlap(monkeypatch)
 
     assert ok is True
     assert "unauthorized_list" in removed_lists
+
+
+def test_prune_stale_status_entries_for_user_removes_old_ips_of_same_user(monkeypatch):
+    _patch_settings(monkeypatch)
+
+    removed_calls: list[tuple[str, str]] = []
+
+    class _FakeAddressListResource:
+        def __init__(self):
+            self.rows_by_list = {
+                "fup_list": [
+                    {
+                        "address": "172.16.2.192",
+                        "comment": "lpsaring|status=fup|user=083141617466|role=USER|ip=172.16.2.192",
+                    },
+                    {
+                        "address": "172.16.2.235",
+                        "comment": "lpsaring|status=fup|user=088808494715|role=USER|ip=172.16.2.235",
+                    },
+                ],
+                "active_list": [
+                    {
+                        "address": "172.16.2.27",
+                        "comment": "lpsaring|status=active|user=083141617466|uid=user-1|role=USER|ip=172.16.2.27",
+                    }
+                ],
+                "inactive_list": [],
+                "expired_list": [],
+                "habis_list": [],
+                "blocked_list": [],
+            }
+
+        def get(self, **kwargs):
+            list_name = str(kwargs.get("list") or "")
+            return [dict(row) for row in self.rows_by_list.get(list_name, [])]
+
+    class _FakeApi:
+        def __init__(self):
+            self.address_list_resource = _FakeAddressListResource()
+
+        def get_resource(self, path: str):
+            assert path == "/ip/firewall/address-list"
+            return self.address_list_resource
+
+    def _fake_remove_address_list_entry(*, api_connection, address, list_name):
+        removed_calls.append((str(list_name), str(address)))
+        return True, "ok"
+
+    monkeypatch.setattr(svc, "remove_address_list_entry", _fake_remove_address_list_entry)
+
+    user = SimpleNamespace(
+        id="user-1",
+        phone_number="083141617466",
+    )
+
+    removed = svc._prune_stale_status_entries_for_user(
+        api=cast(Any, _FakeApi()),
+        user=cast(Any, user),
+        keep_ips=["172.16.2.27"],
+    )
+
+    assert removed == 1
+    assert ("fup_list", "172.16.2.192") in removed_calls
+    assert ("active_list", "172.16.2.27") not in removed_calls
+    assert ("fup_list", "172.16.2.235") not in removed_calls

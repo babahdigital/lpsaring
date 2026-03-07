@@ -28,6 +28,7 @@ _MISMATCH_KEYS = (
 
 _NON_PARITY_MISMATCH_KEYS = {
     "no_authorized_device",
+    "dhcp_lease_missing",
 }
 
 
@@ -50,6 +51,23 @@ def _normalize_ip(value: Any) -> Optional[str]:
 def _should_skip_dhcp_mismatch(*, expected_binding_type: str) -> bool:
     # Hard-block policy intentionally does not require DHCP lease parity.
     return str(expected_binding_type or "").strip().lower() == "blocked"
+
+
+def _has_live_host_ip_signal(*, host_ip: Optional[str], resolved_ip: Optional[str]) -> bool:
+    """Return True when hotspot host table already confirms active IP signal for this MAC.
+
+    In that state, missing DHCP lease can be expected on some router profiles/networks
+    and should not be treated as parity drift.
+    """
+    normalized_host_ip = _normalize_ip(host_ip)
+    if not normalized_host_ip:
+        return False
+
+    normalized_resolved_ip = _normalize_ip(resolved_ip)
+    if not normalized_resolved_ip:
+        return True
+
+    return normalized_host_ip == normalized_resolved_ip
 
 
 def _is_auto_fixable(*, mismatches: list[str], mac: Optional[str], ip_address: Optional[str]) -> bool:
@@ -357,10 +375,12 @@ def collect_access_parity_report(*, max_items: int = 500) -> dict[str, Any]:
                         mismatch_list.append("address_list_multi_status")
 
                 if not _should_skip_dhcp_mismatch(expected_binding_type=expected_binding_type):
-                    if mac not in dhcp_macs:
-                        mismatch_list.append("dhcp_lease_missing")
-                    elif ip_addr and ip_addr not in dhcp_ips_by_mac.get(mac, set()):
-                        mismatch_list.append("dhcp_lease_missing")
+                    host_ip = _normalize_ip((host_map.get(mac) or {}).get("address"))
+                    if not _has_live_host_ip_signal(host_ip=host_ip, resolved_ip=ip_addr):
+                        if mac not in dhcp_macs:
+                            mismatch_list.append("dhcp_lease_missing")
+                        elif ip_addr and ip_addr not in dhcp_ips_by_mac.get(mac, set()):
+                            mismatch_list.append("dhcp_lease_missing")
 
                 mismatch_list = sorted(set(mismatch_list))
                 if not mismatch_list:

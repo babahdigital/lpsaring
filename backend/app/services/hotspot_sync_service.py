@@ -292,6 +292,108 @@ def _remove_managed_status_entries_for_ip(api: object, ip_address: str) -> None:
         remove_address_list_entry(api_connection=api, address=str(ip_address).strip(), list_name=list_name)
 
 
+def _comment_has_tag_value(comment_text: str, tag_name: str, expected_value: str) -> bool:
+    if not comment_text or not tag_name or not expected_value:
+        return False
+
+    token = f"|{tag_name}={expected_value}|"
+    if token in comment_text:
+        return True
+
+    trailing_token = f"|{tag_name}={expected_value}"
+    return comment_text.endswith(trailing_token)
+
+
+def _is_status_entry_owned_by_user(comment: Any, *, user_id: str, username_08: str) -> bool:
+    comment_text = str(comment or "").strip()
+    if "lpsaring|status=" not in comment_text:
+        return False
+
+    if user_id and _comment_has_tag_value(comment_text, "uid", user_id):
+        return True
+
+    if username_08 and _comment_has_tag_value(comment_text, "user", username_08):
+        return True
+
+    return False
+
+
+def _prune_stale_status_entries_for_user(api: object, user: User, keep_ips: Optional[List[str]] = None) -> int:
+    if not api or not user:
+        return 0
+
+    username_08 = format_to_local_phone(getattr(user, "phone_number", None) or "")
+    if not username_08:
+        return 0
+
+    user_id = str(getattr(user, "id", "") or "").strip()
+    keep_ip_set = {
+        str(ip).strip()
+        for ip in (keep_ips or [])
+        if _is_valid_ip_candidate(str(ip or "").strip())
+    }
+
+    resource_getter = getattr(api, "get_resource", None)
+    if not callable(resource_getter):
+        return 0
+
+    try:
+        resource = resource_getter("/ip/firewall/address-list")
+    except Exception as exc:
+        logger.debug("Skip prune stale status-list per-user karena gagal ambil resource: %s", exc)
+        return 0
+
+    rows_getter = getattr(resource, "get", None)
+    if not callable(rows_getter):
+        return 0
+
+    removed = 0
+    for list_name in _resolve_managed_status_lists():
+        try:
+            rows = rows_getter(list=list_name) or []
+        except Exception:
+            continue
+
+        if not isinstance(rows, list):
+            continue
+
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+
+            address = str(row.get("address") or "").strip()
+            if not _is_valid_ip_candidate(address):
+                continue
+            if address in keep_ip_set:
+                continue
+
+            if not _is_status_entry_owned_by_user(
+                row.get("comment"),
+                user_id=user_id,
+                username_08=username_08,
+            ):
+                continue
+
+            ok_remove, _remove_msg = remove_address_list_entry(
+                api_connection=api,
+                address=address,
+                list_name=list_name,
+            )
+            if ok_remove:
+                removed += 1
+
+    if removed > 0:
+        logger.info(
+            "Prune stale status-list per-user: user=%s phone=%s removed=%s keep_ips=%s",
+            user_id,
+            username_08,
+            removed,
+            sorted(keep_ip_set),
+        )
+
+    return removed
+
+
 def _has_policy_binding_for_user(
     user: User,
     *,
@@ -1058,7 +1160,7 @@ def _sync_address_list_status(
     now = datetime.now(dt_timezone.utc)
     date_str, time_str = get_app_date_time_strings(now)
     comment = (
-        f"lpsaring|status={status_value}|user={username_08}|role={user.role.value}|date={date_str}|time={time_str}"
+        f"lpsaring|status={status_value}|user={username_08}|uid={user.id}|role={user.role.value}|date={date_str}|time={time_str}"
     )
     other_lists = [
         name
@@ -1202,6 +1304,7 @@ def _sync_address_list_status_for_ip(
     comment = (
         f"lpsaring|status={status_value}"
         f"|user={username_08}"
+        f"|uid={user.id}"
         f"|role={user.role.value}"
         f"|ip={ip_address}"
         f"|date={date_str}"
@@ -1590,6 +1693,8 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                         ):
                             ok_any_ip = True
 
+                    _prune_stale_status_entries_for_user(api, user, keep_ips=candidate_ips)
+
                     # Fallback: gunakan resolusi IP by-username (active/host) bila belum ada IP yang valid.
                     if not ok_any_ip:
                         _sync_address_list_status(
@@ -1656,6 +1761,10 @@ def sync_address_list_for_single_user(user: User, client_ip: Optional[str] = Non
         if not ok_binding_map:
             ip_binding_map = {}
 
+        ok_host_map, host_usage_map, _host_msg = get_hotspot_host_usage_map(api)
+        if not ok_host_map:
+            host_usage_map = {}
+
         ok_binding_rows, ip_binding_rows_by_mac = _snapshot_ip_binding_rows_by_mac(api)
         binding_guard_enabled = bool(ok_binding_rows)
 
@@ -1665,12 +1774,14 @@ def sync_address_list_for_single_user(user: User, client_ip: Optional[str] = Non
 
         if client_ip and _is_ip_in_hotspot_status_networks(client_ip, hotspot_networks):
             ips.append(str(client_ip).strip())
-        for device in user.devices or []:
-            ip_address = getattr(device, "ip_address", None)
-            if ip_address and _is_ip_in_hotspot_status_networks(str(ip_address), hotspot_networks):
-                ip_str = str(ip_address).strip()
-                if ip_str not in ips:
-                    ips.append(ip_str)
+
+        for ip_address in _collect_candidate_ips_for_user(
+            user,
+            host_usage_map=host_usage_map,
+            ip_binding_map=ip_binding_map,
+        ):
+            if ip_address not in ips:
+                ips.append(ip_address)
 
         for ip_address in ips:
             if _sync_address_list_status_for_ip(
@@ -1686,6 +1797,8 @@ def sync_address_list_for_single_user(user: User, client_ip: Optional[str] = Non
                 enforce_binding_guard=binding_guard_enabled,
             ):
                 ok_any_ip = True
+
+        _prune_stale_status_entries_for_user(api, user, keep_ips=ips)
 
         ok_user_ip = _sync_address_list_status(
             api,
