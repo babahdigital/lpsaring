@@ -26,6 +26,7 @@ from app.infrastructure.gateways.mikrotik_client import (
     get_hotspot_host_usage_map,
     get_hotspot_ip_binding_user_map,
     get_ip_by_mac,
+    upsert_dhcp_static_lease,
     set_hotspot_user_profile,
     delete_hotspot_user,
     sync_address_list_for_user,
@@ -228,6 +229,35 @@ def _snapshot_ip_binding_rows_by_mac(api: Any) -> Tuple[bool, Dict[str, List[Dic
             "comment": row.get("comment"),
         }
         by_mac.setdefault(mac, []).append(normalized_row)
+
+    return True, by_mac
+
+
+def _snapshot_dhcp_ips_by_mac(api: Any) -> Tuple[bool, Dict[str, set[str]]]:
+    if not api:
+        return False, {}
+
+    try:
+        rows = api.get_resource("/ip/dhcp-server/lease").get() or []
+    except Exception as exc:
+        logger.warning("Gagal mengambil snapshot DHCP lease raw: %s", exc)
+        return False, {}
+
+    by_mac: Dict[str, set[str]] = {}
+    for row in rows:
+        mac = str(row.get("mac-address") or "").strip().upper()
+        if not mac:
+            continue
+
+        status = str(row.get("status") or "").strip().lower()
+        if status == "waiting":
+            continue
+
+        ip_text = str(row.get("address") or "").strip()
+        if not _is_valid_ip_candidate(ip_text):
+            continue
+
+        by_mac.setdefault(mac, set()).add(ip_text)
 
     return True, by_mac
 
@@ -462,6 +492,100 @@ def _self_heal_policy_binding_for_user(
                 user.id,
                 mac,
                 expected_binding_type,
+                msg,
+            )
+
+    return repaired
+
+
+def _self_heal_policy_dhcp_for_user(
+    api: object,
+    user: User,
+    *,
+    host_usage_map: Optional[Dict[str, Dict[str, Any]]],
+    ip_binding_map: Optional[Dict[str, Dict[str, Any]]],
+    dhcp_ips_by_mac: Optional[Dict[str, set[str]]],
+) -> int:
+    if not api or not user or dhcp_ips_by_mac is None:
+        return 0
+
+    enabled_cfg = settings_service.get_setting("MIKROTIK_DHCP_STATIC_LEASE_ENABLED", "False")
+    if str(enabled_cfg or "").strip().lower() not in {"1", "true", "yes", "on"}:
+        return 0
+
+    dhcp_server_name = (settings_service.get_setting("MIKROTIK_DHCP_LEASE_SERVER_NAME", "") or "").strip()
+    if not dhcp_server_name:
+        return 0
+
+    hotspot_networks = _resolve_hotspot_status_networks()
+    now_utc = datetime.now(dt_timezone.utc)
+    date_str, time_str = get_app_date_time_strings(now_utc)
+    username_08 = format_to_local_phone(getattr(user, "phone_number", None) or "") or str(
+        getattr(user, "phone_number", "") or ""
+    )
+
+    repaired = 0
+    for device in user.devices or []:
+        if not bool(getattr(device, "is_authorized", False)):
+            continue
+
+        mac = str(getattr(device, "mac_address", "") or "").strip().upper()
+        if not mac:
+            continue
+
+        candidate_ips: List[str] = []
+
+        device_ip = str(getattr(device, "ip_address", "") or "").strip()
+        if device_ip:
+            candidate_ips.append(device_ip)
+
+        if host_usage_map:
+            host_ip = str((host_usage_map.get(mac) or {}).get("address") or "").strip()
+            if host_ip:
+                candidate_ips.append(host_ip)
+
+        if ip_binding_map:
+            binding_ip = str((ip_binding_map.get(mac) or {}).get("address") or "").strip()
+            if binding_ip:
+                candidate_ips.append(binding_ip)
+
+        resolved_ip = None
+        for ip_text in candidate_ips:
+            if not _is_valid_ip_candidate(ip_text):
+                continue
+            if not _is_ip_in_hotspot_status_networks(ip_text, hotspot_networks):
+                continue
+            resolved_ip = ip_text
+            break
+
+        if not resolved_ip:
+            continue
+
+        existing_ips = dhcp_ips_by_mac.get(mac, set())
+        if resolved_ip in existing_ips:
+            continue
+
+        ok, msg = upsert_dhcp_static_lease(
+            api_connection=api,
+            mac_address=mac,
+            address=resolved_ip,
+            server=dhcp_server_name,
+            comment=(
+                f"lpsaring|static-dhcp|user={username_08}|uid={user.id}|role={user.role.value}"
+                f"|source=sync-dhcp-self-heal|date={date_str}|time={time_str}"
+            ),
+        )
+        if ok:
+            repaired += 1
+            increment_metric("policy.dhcp_self_heal.repaired")
+            dhcp_ips_by_mac.setdefault(mac, set()).add(resolved_ip)
+        else:
+            increment_metric("policy.dhcp_self_heal.failed")
+            logger.warning(
+                "Policy DHCP self-heal gagal upsert lease user=%s mac=%s ip=%s: %s",
+                user.id,
+                mac,
+                resolved_ip,
                 msg,
             )
 
@@ -1227,6 +1351,7 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
         "updated_usage": 0,
         "profile_updates": 0,
         "binding_self_healed": 0,
+        "dhcp_self_healed": 0,
         "failed": 0,
     }
     auto_enroll_users = 0
@@ -1283,6 +1408,11 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
             if not ok_binding_rows:
                 logger.warning("Binding guard dinonaktifkan sementara karena snapshot ip-binding raw gagal.")
             binding_guard_enabled = bool(ok_binding_rows)
+
+            ok_dhcp_snapshot, dhcp_ips_by_mac_snapshot = _snapshot_dhcp_ips_by_mac(api)
+            dhcp_ips_by_mac: Optional[Dict[str, set[str]]] = dhcp_ips_by_mac_snapshot if ok_dhcp_snapshot else None
+            if not ok_dhcp_snapshot:
+                logger.warning("Policy DHCP self-heal dinonaktifkan sementara karena snapshot DHCP lease raw gagal.")
 
             if settings_service.get_setting("AUTO_ENROLL_DEVICES_FROM_IP_BINDING", "True") == "True":
                 if not ip_binding_map and ok_binding_map:
@@ -1379,6 +1509,16 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                     )
                     if healed_count > 0:
                         counters["binding_self_healed"] += healed_count
+
+                    dhcp_healed_count = _self_heal_policy_dhcp_for_user(
+                        api,
+                        user,
+                        host_usage_map=host_usage_map,
+                        ip_binding_map=ip_binding_map,
+                        dhcp_ips_by_mac=dhcp_ips_by_mac,
+                    )
+                    if dhcp_healed_count > 0:
+                        counters["dhcp_self_healed"] += dhcp_healed_count
 
                     _emit_policy_binding_mismatch_metrics(user, ip_binding_map)
 

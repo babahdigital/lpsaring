@@ -42,6 +42,7 @@ def test_get_admin_metrics_exposes_reliability_signals(monkeypatch):
         }
 
     monkeypatch.setattr(metrics_routes, "get_metrics", _fake_get_metrics)
+    monkeypatch.setattr(metrics_routes, "_read_cached_policy_parity_mismatch_count", lambda: 7)
 
     app = _make_app()
     impl = _unwrap_decorators(metrics_routes.get_admin_metrics)
@@ -59,6 +60,7 @@ def test_get_admin_metrics_exposes_reliability_signals(monkeypatch):
 
     assert payload["metrics"]["payment.webhook.duplicate"] == 4
     assert payload["metrics"]["policy.mismatch.auto_debt_blocked_ip_binding"] == 2
+    assert payload["metrics"]["policy.parity.latest_mismatches"] == 7
     assert payload["reliability_signals"]["payment_idempotency_degraded"] is True
     assert payload["reliability_signals"]["hotspot_sync_lock_degraded"] is False
     assert payload["reliability_signals"]["policy_parity_degraded"] is True

@@ -75,13 +75,15 @@ interface AdminMetricsResponse {
 interface AccessParityItem {
   user_id: string
   phone_number: string
-  mac: string
+  mac?: string | null
   ip?: string | null
   app_status: string
+  expected_status?: string
   expected_binding_type: string
   actual_binding_type?: string | null
   address_list_statuses: string[]
   mismatches: string[]
+  auto_fixable?: boolean
 }
 
 interface AccessParityResponse {
@@ -99,7 +101,10 @@ interface AccessParityFixResponse {
   resolved_ip?: string | null
   expected_binding_type?: string
   binding_updated?: boolean
+  dhcp_synced?: boolean
   address_list_synced?: boolean
+  auto_selected_mac?: boolean
+  warnings?: string[]
 }
 
 // --- State & Fetching ---
@@ -255,10 +260,14 @@ const parityFixMessage = ref('')
 const parityFixError = ref('')
 
 function getParityKey(item: AccessParityItem): string {
-  return `${item.user_id}-${item.mac}`
+  const macPart = item.mac || 'no-mac'
+  return `${item.user_id}-${macPart}-${item.mismatches.join('_')}`
 }
 
 async function handleFixParityItem(item: AccessParityItem) {
+  if (item.auto_fixable === false)
+    return
+
   const key = getParityKey(item)
   if (fixingParityByKey.value[key])
     return
@@ -272,7 +281,7 @@ async function handleFixParityItem(item: AccessParityItem) {
       method: 'POST',
       body: {
         user_id: item.user_id,
-        mac: item.mac,
+        mac: item.mac ?? null,
         ip: item.ip ?? null,
       },
     })
@@ -1108,7 +1117,7 @@ useHead({ title: 'Dashboard Admin' })
         <VCard>
           <VCardItem>
             <VCardTitle>Access Policy Parity (App vs MikroTik)</VCardTitle>
-            <VCardSubtitle>Deteksi mismatch status app, ip-binding type, dan address-list per device</VCardSubtitle>
+            <VCardSubtitle>Deteksi mismatch status, binding, no-IP/no-device, dan DHCP lease per device</VCardSubtitle>
             <div class="mt-2">
               <VChip
                 size="small"
@@ -1135,7 +1144,7 @@ useHead({ title: 'Dashboard Admin' })
                   <th>Phone</th>
                   <th>MAC</th>
                   <th>IP</th>
-                  <th>App</th>
+                  <th>Status (app/target)</th>
                   <th>Binding (exp/act)</th>
                   <th>Address-list</th>
                   <th>Mismatch</th>
@@ -1143,24 +1152,24 @@ useHead({ title: 'Dashboard Admin' })
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="item in accessParityItems.slice(0, 20)" :key="`${item.user_id}-${item.mac}`">
+                <tr v-for="item in accessParityItems.slice(0, 20)" :key="getParityKey(item)">
                   <td>{{ item.phone_number }}</td>
-                  <td>{{ item.mac }}</td>
+                  <td>{{ item.mac || '-' }}</td>
                   <td>{{ item.ip || '-' }}</td>
-                  <td>{{ item.app_status }}</td>
+                  <td>{{ item.app_status }} / {{ item.expected_status || '-' }}</td>
                   <td>{{ item.expected_binding_type }} / {{ item.actual_binding_type || '-' }}</td>
                   <td>{{ item.address_list_statuses.join(', ') || '-' }}</td>
-                  <td>{{ item.mismatches.join(', ') }}</td>
+                  <td>{{ item.mismatches.join(', ') || '-' }}</td>
                   <td>
                     <VBtn
                       size="x-small"
                       color="primary"
                       variant="tonal"
                       :loading="Boolean(fixingParityByKey[getParityKey(item)])"
-                      :disabled="Boolean(fixingParityByKey[getParityKey(item)])"
+                      :disabled="Boolean(fixingParityByKey[getParityKey(item)]) || item.auto_fixable === false"
                       @click="handleFixParityItem(item)"
                     >
-                      Fix
+                      {{ item.auto_fixable === false ? 'Manual' : 'Fix' }}
                     </VBtn>
                   </td>
                 </tr>

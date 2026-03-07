@@ -16,12 +16,53 @@ from app.infrastructure.gateways.mikrotik_client import (
 from app.services import settings_service
 from app.services.access_policy_service import get_user_access_status, resolve_allowed_binding_type_for_user
 
+_MISMATCH_KEYS = (
+    "binding_type",
+    "missing_ip_binding",
+    "address_list",
+    "address_list_multi_status",
+    "no_authorized_device",
+    "no_resolvable_ip",
+    "dhcp_lease_missing",
+)
+
+
+def _empty_mismatch_types() -> dict[str, int]:
+    return {key: 0 for key in _MISMATCH_KEYS}
+
+
+def _normalize_ip(value: Any) -> Optional[str]:
+    ip_text = str(value or "").strip()
+    if not ip_text or ip_text in {"0.0.0.0", "0.0.0.0/0"}:
+        return None
+    return ip_text
+
+
+def _is_auto_fixable(*, mismatches: list[str], mac: Optional[str], ip_address: Optional[str]) -> bool:
+    mismatch_set = set(mismatches)
+
+    if "no_authorized_device" in mismatch_set:
+        return False
+
+    # Tanpa sinyal IP aktif, auto-fix biasanya tidak deterministik dan berisiko membuat state semu.
+    if "no_resolvable_ip" in mismatch_set:
+        return False
+
+    needs_mac = {"binding_type", "missing_ip_binding", "dhcp_lease_missing"}
+    if mismatch_set.intersection(needs_mac) and not mac:
+        return False
+
+    if "address_list" in mismatch_set and not ip_address and not mac:
+        return False
+
+    return True
+
 
 def _build_action_plan(
     *,
     user_id: str,
     phone_number: Optional[str],
-    mac: str,
+    mac: Optional[str],
     ip_address: Optional[str],
     expected_binding_type: str,
     expected_status: str,
@@ -29,11 +70,24 @@ def _build_action_plan(
     mismatches: list[str],
 ) -> list[dict[str, Any]]:
     actions: list[dict[str, Any]] = []
+    mismatch_set = set(mismatches)
 
-    if "binding_type" in mismatches:
+    if "no_authorized_device" in mismatch_set:
+        actions.append(
+            {
+                "action": "authorize_device_from_admin",
+                "mode": "manual",
+                "user_id": user_id,
+                "phone_number": phone_number,
+                "priority": "high",
+            }
+        )
+
+    if "missing_ip_binding" in mismatch_set and mac:
         actions.append(
             {
                 "action": "upsert_ip_binding_expected_type",
+                "mode": "auto",
                 "user_id": user_id,
                 "phone_number": phone_number,
                 "mac": mac,
@@ -42,10 +96,37 @@ def _build_action_plan(
             }
         )
 
-    if "address_list" in mismatches:
+    if "binding_type" in mismatch_set and mac:
+        actions.append(
+            {
+                "action": "upsert_ip_binding_expected_type",
+                "mode": "auto",
+                "user_id": user_id,
+                "phone_number": phone_number,
+                "mac": mac,
+                "expected_binding_type": expected_binding_type,
+                "priority": "high",
+            }
+        )
+
+    if "dhcp_lease_missing" in mismatch_set and mac:
+        actions.append(
+            {
+                "action": "upsert_dhcp_static_lease",
+                "mode": "auto",
+                "user_id": user_id,
+                "phone_number": phone_number,
+                "mac": mac,
+                "ip": ip_address,
+                "priority": "high" if ip_address else "medium",
+            }
+        )
+
+    if "address_list" in mismatch_set:
         actions.append(
             {
                 "action": "sync_address_list_for_single_user",
+                "mode": "auto",
                 "user_id": user_id,
                 "phone_number": phone_number,
                 "ip": ip_address,
@@ -54,11 +135,12 @@ def _build_action_plan(
             }
         )
 
-    if "address_list_multi_status" in mismatches:
+    if "address_list_multi_status" in mismatch_set:
         extra_statuses = [status for status in statuses_for_ip if status != expected_status]
         actions.append(
             {
                 "action": "cleanup_extra_address_lists_for_ip",
+                "mode": "auto",
                 "user_id": user_id,
                 "phone_number": phone_number,
                 "ip": ip_address,
@@ -68,10 +150,11 @@ def _build_action_plan(
             }
         )
 
-    if not ip_address:
+    if "no_resolvable_ip" in mismatch_set or (not ip_address and mac):
         actions.append(
             {
                 "action": "resolve_ip_from_host_or_binding",
+                "mode": "manual",
                 "user_id": user_id,
                 "phone_number": phone_number,
                 "mac": mac,
@@ -100,11 +183,8 @@ def collect_access_parity_report(*, max_items: int = 500) -> dict[str, Any]:
             "summary": {
                 "users": 0,
                 "mismatches": 0,
-                "mismatch_types": {
-                    "binding_type": 0,
-                    "address_list": 0,
-                    "address_list_multi_status": 0,
-                },
+                "auto_fixable_items": 0,
+                "mismatch_types": _empty_mismatch_types(),
             },
         }
 
@@ -126,11 +206,8 @@ def collect_access_parity_report(*, max_items: int = 500) -> dict[str, Any]:
                 "summary": {
                     "users": len(users),
                     "mismatches": 0,
-                    "mismatch_types": {
-                        "binding_type": 0,
-                        "address_list": 0,
-                        "address_list_multi_status": 0,
-                    },
+                    "auto_fixable_items": 0,
+                    "mismatch_types": _empty_mismatch_types(),
                 },
             }
 
@@ -142,81 +219,162 @@ def collect_access_parity_report(*, max_items: int = 500) -> dict[str, Any]:
         if not ok_ipb:
             ip_binding_map = {}
 
+        dhcp_macs: set[str] = set()
+        dhcp_ips_by_mac: dict[str, set[str]] = {}
+        try:
+            dhcp_rows = api.get_resource("/ip/dhcp-server/lease").get() or []
+        except Exception:
+            dhcp_rows = []
+
+        for row in dhcp_rows:
+            mac = str(row.get("mac-address") or "").strip().upper()
+            if not mac:
+                continue
+
+            status = str(row.get("status") or "").strip().lower()
+            if status == "waiting":
+                continue
+
+            dhcp_macs.add(mac)
+            ip_text = _normalize_ip(row.get("address"))
+            if ip_text:
+                dhcp_ips_by_mac.setdefault(mac, set()).add(ip_text)
+
         ip_to_statuses: dict[str, set[str]] = {}
         for status_key, list_name in list_names.items():
             ok_list, entries, _msg = get_firewall_address_list_entries(api, list_name)
             if not ok_list:
                 continue
             for entry in entries:
-                ip_addr = str(entry.get("address") or "").strip()
+                ip_addr = _normalize_ip(entry.get("address"))
                 if not ip_addr:
                     continue
                 bucket = ip_to_statuses.setdefault(ip_addr, set())
                 bucket.add(status_key)
 
         items: list[dict[str, Any]] = []
-        mismatch_types = {
-            "binding_type": 0,
-            "address_list": 0,
-            "address_list_multi_status": 0,
-        }
+        mismatch_types = _empty_mismatch_types()
+        auto_fixable_items = 0
 
         for user in users:
             app_status = str(get_user_access_status(user) or "inactive")
             expected_status = "active" if app_status == "unlimited" else app_status
-            expected_binding_type = str(resolve_allowed_binding_type_for_user(user) or "regular")
+            expected_binding_type = str(resolve_allowed_binding_type_for_user(user) or "regular").strip().lower()
+            expected_binding_type = expected_binding_type or "regular"
 
-            for device in user.devices or []:
+            authorized_devices = [
+                device
+                for device in (user.devices or [])
+                if bool(getattr(device, "is_authorized", False))
+                and str(getattr(device, "mac_address", "") or "").strip()
+            ]
+
+            if not authorized_devices:
+                mismatch_list = ["no_authorized_device"]
+                item = {
+                    "user_id": str(user.id),
+                    "phone_number": str(user.phone_number or ""),
+                    "mac": None,
+                    "ip": None,
+                    "app_status": app_status,
+                    "expected_status": expected_status,
+                    "expected_binding_type": expected_binding_type,
+                    "actual_binding_type": None,
+                    "address_list_statuses": [],
+                    "mismatches": mismatch_list,
+                }
+                item["auto_fixable"] = False
+                item["action_plan"] = _build_action_plan(
+                    user_id=item["user_id"],
+                    phone_number=item.get("phone_number"),
+                    mac=item.get("mac"),
+                    ip_address=item.get("ip"),
+                    expected_binding_type=expected_binding_type,
+                    expected_status=expected_status,
+                    statuses_for_ip=[],
+                    mismatches=mismatch_list,
+                )
+
+                mismatch_types["no_authorized_device"] += 1
+                items.append(item)
+                if len(items) >= max_items:
+                    break
+                continue
+
+            for device in authorized_devices:
                 mac = str(getattr(device, "mac_address", "") or "").strip().upper()
                 if not mac:
                     continue
 
-                ip_addr = str(getattr(device, "ip_address", "") or "").strip()
+                ip_addr = _normalize_ip(getattr(device, "ip_address", None))
                 if not ip_addr:
-                    ip_addr = str(host_map.get(mac, {}).get("address") or "").strip()
+                    ip_addr = _normalize_ip((host_map.get(mac) or {}).get("address"))
+                if not ip_addr:
+                    ip_addr = _normalize_ip((ip_binding_map.get(mac) or {}).get("address"))
 
                 binding_entry = ip_binding_map.get(mac) or {}
+                has_binding = bool(binding_entry)
                 actual_binding_type = str(binding_entry.get("type") or "").strip().lower() or None
                 statuses_for_ip = sorted(ip_to_statuses.get(ip_addr, set())) if ip_addr else []
 
-                mismatches: list[str] = []
-                if actual_binding_type and actual_binding_type != str(expected_binding_type).lower():
-                    mismatches.append("binding_type")
+                mismatch_list: list[str] = []
+                if not has_binding:
+                    mismatch_list.append("missing_ip_binding")
 
-                if ip_addr and statuses_for_ip and expected_status not in statuses_for_ip:
-                    mismatches.append("address_list")
+                if actual_binding_type and actual_binding_type != expected_binding_type:
+                    mismatch_list.append("binding_type")
 
-                if len(statuses_for_ip) > 1:
-                    mismatches.append("address_list_multi_status")
+                if not ip_addr:
+                    mismatch_list.append("no_resolvable_ip")
+                else:
+                    if not statuses_for_ip or expected_status not in statuses_for_ip:
+                        mismatch_list.append("address_list")
+                    if len(statuses_for_ip) > 1:
+                        mismatch_list.append("address_list_multi_status")
 
-                if not mismatches:
+                if mac not in dhcp_macs:
+                    mismatch_list.append("dhcp_lease_missing")
+                elif ip_addr and ip_addr not in dhcp_ips_by_mac.get(mac, set()):
+                    mismatch_list.append("dhcp_lease_missing")
+
+                mismatch_list = sorted(set(mismatch_list))
+                if not mismatch_list:
                     continue
 
-                for mismatch_key in set(mismatches):
+                for mismatch_key in mismatch_list:
                     mismatch_types[mismatch_key] = mismatch_types.get(mismatch_key, 0) + 1
 
                 item = {
                     "user_id": str(user.id),
-                    "phone_number": user.phone_number,
+                    "phone_number": str(user.phone_number or ""),
                     "mac": mac,
-                    "ip": ip_addr or None,
+                    "ip": ip_addr,
                     "app_status": app_status,
                     "expected_status": expected_status,
                     "expected_binding_type": expected_binding_type,
                     "actual_binding_type": actual_binding_type,
                     "address_list_statuses": statuses_for_ip,
-                    "mismatches": sorted(set(mismatches)),
+                    "mismatches": mismatch_list,
                 }
+                item["auto_fixable"] = _is_auto_fixable(
+                    mismatches=mismatch_list,
+                    mac=item.get("mac"),
+                    ip_address=item.get("ip"),
+                )
                 item["action_plan"] = _build_action_plan(
                     user_id=item["user_id"],
                     phone_number=item.get("phone_number"),
-                    mac=mac,
+                    mac=item.get("mac"),
                     ip_address=item.get("ip"),
-                    expected_binding_type=str(expected_binding_type).lower(),
+                    expected_binding_type=expected_binding_type,
                     expected_status=expected_status,
                     statuses_for_ip=statuses_for_ip,
-                    mismatches=item["mismatches"],
+                    mismatches=mismatch_list,
                 )
+
+                if item["auto_fixable"]:
+                    auto_fixable_items += 1
+
                 items.append(item)
 
                 if len(items) >= max_items:
@@ -231,6 +389,7 @@ def collect_access_parity_report(*, max_items: int = 500) -> dict[str, Any]:
             "summary": {
                 "users": len(users),
                 "mismatches": len(items),
+                "auto_fixable_items": auto_fixable_items,
                 "mismatch_types": mismatch_types,
             },
         }

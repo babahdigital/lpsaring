@@ -9,6 +9,7 @@ describe('buildReliabilitySummary', () => {
         'payment.webhook.duplicate': 4,
         'payment.idempotency.redis_unavailable': 2,
         'hotspot.sync.lock.degraded': 1,
+        'policy.parity.latest_mismatches': 2,
         'policy.mismatch.auto_debt_blocked_ip_binding': 3,
         'policy.mismatch.auto_debt_blocked_ip_binding.devices': 5,
       },
@@ -22,11 +23,26 @@ describe('buildReliabilitySummary', () => {
     expect(result.duplicateWebhookCount).toBe(4)
     expect(result.paymentIdempotencyRedisUnavailableCount).toBe(2)
     expect(result.hotspotSyncLockDegradedCount).toBe(1)
-    expect(result.policyParityMismatchCount).toBe(3)
+    expect(result.policyParityMismatchCount).toBe(2)
     expect(result.policyParityMismatchDeviceCount).toBe(5)
     expect(result.paymentIdempotencyDegraded).toBe(true)
     expect(result.hotspotSyncLockDegraded).toBe(true)
     expect(result.policyParityDegraded).toBe(true)
+  })
+
+  it('prefers latest parity metric when present even if legacy counter is non-zero', () => {
+    const result = buildReliabilitySummary({
+      metrics: {
+        'policy.parity.latest_mismatches': 0,
+        'policy.mismatch.auto_debt_blocked_ip_binding': 4,
+      },
+      reliability_signals: {
+        policy_parity_degraded: false,
+      },
+    })
+
+    expect(result.policyParityMismatchCount).toBe(0)
+    expect(result.policyParityDegraded).toBe(false)
   })
 
   it('returns safe defaults for missing payload', () => {

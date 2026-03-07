@@ -30,7 +30,10 @@ export function buildReliabilitySummary(payload: AdminMetricsPayload | null | un
   const duplicateWebhookCount = toSafeInt(metrics['payment.webhook.duplicate'])
   const paymentIdempotencyRedisUnavailableCount = toSafeInt(metrics['payment.idempotency.redis_unavailable'])
   const hotspotSyncLockDegradedCount = toSafeInt(metrics['hotspot.sync.lock.degraded'])
-  const policyParityMismatchCount = toSafeInt(metrics['policy.mismatch.auto_debt_blocked_ip_binding'])
+  const hasPolicyParityLatestMetric = Object.prototype.hasOwnProperty.call(metrics, 'policy.parity.latest_mismatches')
+  const policyParityMismatchCount = hasPolicyParityLatestMetric
+    ? toSafeInt(metrics['policy.parity.latest_mismatches'])
+    : toSafeInt(metrics['policy.mismatch.auto_debt_blocked_ip_binding'])
   const policyParityMismatchDeviceCount = toSafeInt(metrics['policy.mismatch.auto_debt_blocked_ip_binding.devices'])
 
   const paymentIdempotencyDegraded = Boolean(payload?.reliability_signals?.payment_idempotency_degraded)
