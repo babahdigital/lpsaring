@@ -495,9 +495,10 @@ FILES=(
   ".env.prod"
 )
 
-OPTIONAL_FILES=(
-  ".env.public.prod"
-)
+ENV_PUBLIC_FILE=".env.public.prod"
+if [[ "$FORCE_RECREATE" == "true" ]]; then
+  FILES+=("$ENV_PUBLIC_FILE")
+fi
 
 for rel in "${FILES[@]}"; do
   if [[ ! -f "$LOCAL_DIR/$rel" ]]; then
@@ -506,11 +507,9 @@ for rel in "${FILES[@]}"; do
   fi
 done
 
-for rel in "${OPTIONAL_FILES[@]}"; do
-  if [[ ! -f "$LOCAL_DIR/$rel" ]]; then
-    echo "WARN: optional file missing (will not overwrite remote): $LOCAL_DIR/$rel" >&2
-  fi
-done
+if [[ "$FORCE_RECREATE" != "true" && ! -f "$LOCAL_DIR/$ENV_PUBLIC_FILE" ]]; then
+  echo "WARN: optional file missing (will not overwrite remote): $LOCAL_DIR/$ENV_PUBLIC_FILE" >&2
+fi
 
 if [[ "$ALLOW_PLACEHOLDERS" == "false" ]] && grep -q 'CHANGE_ME_' "$LOCAL_DIR/.env.prod"; then
   echo "ERROR: .env.prod masih berisi placeholder CHANGE_ME_. Isi dulu atau jalankan dengan --allow-placeholders" >&2
@@ -926,24 +925,25 @@ if [[ "$HAS_RSYNC" == "true" ]]; then
     rsync_cmd+=(--dry-run)
   fi
 
-  "${rsync_cmd[@]}" \
-    "$LOCAL_DIR/docker-compose.prod.yml" \
-    "$LOCAL_DIR/.env.prod" \
-    "$SSH_TARGET:$REMOTE_DIR/"
-
-  if [[ -f "$LOCAL_DIR/.env.public.prod" ]]; then
-    "${rsync_cmd[@]}" \
-      "$LOCAL_DIR/.env.public.prod" \
-      "$SSH_TARGET:$REMOTE_DIR/"
+  files_to_sync=(
+    "$LOCAL_DIR/docker-compose.prod.yml"
+    "$LOCAL_DIR/.env.prod"
+  )
+  if [[ "$FORCE_RECREATE" == "true" || -f "$LOCAL_DIR/$ENV_PUBLIC_FILE" ]]; then
+    files_to_sync+=("$LOCAL_DIR/$ENV_PUBLIC_FILE")
   fi
+
+  "${rsync_cmd[@]}" \
+    "${files_to_sync[@]}" \
+    "$SSH_TARGET:$REMOTE_DIR/"
 else
   if [[ "$DRY_RUN" == "true" ]]; then
     echo "[DRY-RUN] scp compose+env(.public optional) ke remote app dir"
   else
     run_scp "$LOCAL_DIR/docker-compose.prod.yml" "$SSH_TARGET:$REMOTE_DIR/"
     run_scp "$LOCAL_DIR/.env.prod" "$SSH_TARGET:$REMOTE_DIR/"
-    if [[ -f "$LOCAL_DIR/.env.public.prod" ]]; then
-      run_scp "$LOCAL_DIR/.env.public.prod" "$SSH_TARGET:$REMOTE_DIR/"
+    if [[ "$FORCE_RECREATE" == "true" || -f "$LOCAL_DIR/$ENV_PUBLIC_FILE" ]]; then
+      run_scp "$LOCAL_DIR/$ENV_PUBLIC_FILE" "$SSH_TARGET:$REMOTE_DIR/"
     fi
   fi
 fi

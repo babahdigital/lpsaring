@@ -14,7 +14,6 @@ from app.infrastructure.gateways.mikrotik_client import (
     get_firewall_address_list_entries,
     get_hotspot_hosts,
     get_mikrotik_connection,
-    remove_hotspot_host_entries_best_effort,
     remove_address_list_entry,
     upsert_address_list_entry,
 )
@@ -350,21 +349,6 @@ def sync_unauthorized_hosts_command(
         ipb_non_blocked_macs, ipb_non_blocked_pairs, ipb_non_blocked_ips = _collect_non_blocked_ip_binding_snapshot(api)
         dhcp_macs, dhcp_pairs, dhcp_ips = _collect_dhcp_lease_snapshot(api)
 
-        def _cleanup_trusted_hotspot_host(ip_text: str, mac_text: str) -> None:
-            nonlocal hotspot_host_cleanup_removed, failed_hotspot_host_cleanup
-            if not apply:
-                return
-            ok_cleanup, _cleanup_msg, removed_count = remove_hotspot_host_entries_best_effort(
-                api,
-                mac_address=mac_text or None,
-                address=ip_text or None,
-                allow_username_only_fallback=False,
-            )
-            if ok_cleanup:
-                hotspot_host_cleanup_removed += int(removed_count or 0)
-            else:
-                failed_hotspot_host_cleanup += 1
-
         for host in hosts:
             processed += 1
 
@@ -385,12 +369,10 @@ def sync_unauthorized_hosts_command(
 
             if ip_text in authorized_device_ips:
                 skipped_authorized_device_ip += 1
-                _cleanup_trusted_hotspot_host(ip_text, mac)
                 continue
 
             if mac and mac in authorized_device_macs:
                 skipped_authorized_device_mac += 1
-                _cleanup_trusted_hotspot_host(ip_text, mac)
                 if ip_text:
                     trusted_binding_dhcp_ips.add(ip_text)
                 continue
@@ -412,7 +394,6 @@ def sync_unauthorized_hosts_command(
                     skipped_binding_dhcp_trusted += 1
                     if ip_text:
                         trusted_binding_dhcp_ips.add(ip_text)
-                    _cleanup_trusted_hotspot_host(ip_text, mac)
                     continue
 
             authorized = str(host.get("authorized", "false")).lower() == "true"

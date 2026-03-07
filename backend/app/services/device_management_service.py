@@ -13,6 +13,7 @@ from app.extensions import db
 from app.services import settings_service
 from app.infrastructure.db.models import User, UserDevice
 from app.infrastructure.gateways.mikrotik_client import (
+    get_firewall_address_list_entries,
     get_mikrotik_connection,
     get_mac_by_ip,
     get_hotspot_user_ip,
@@ -28,6 +29,7 @@ from app.infrastructure.gateways.mikrotik_client import (
     remove_address_list_entry,
 )
 from app.services.access_policy_service import resolve_allowed_binding_type_for_user
+from app.utils.ip_ranges import expand_ip_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -251,6 +253,79 @@ def _remove_unauthorized_address_list(ip_address: Optional[str]) -> None:
             logger.warning("Tidak bisa konek MikroTik untuk remove address-list unauthorized")
             return
         remove_address_list_entry(api_connection=api, address=ip_address, list_name=list_unauthorized)
+
+
+def _normalize_ip_for_compare(ip_text: Optional[str]) -> str:
+    text = str(ip_text or "").strip()
+    if not text:
+        return ""
+    try:
+        return str(ipaddress.ip_address(text))
+    except Exception:
+        return text
+
+
+def _resolve_unauthorized_exempt_ips() -> set[str]:
+    def _as_tokens(raw_value: Any) -> list[str]:
+        if raw_value is None:
+            return []
+        if isinstance(raw_value, str):
+            candidates = raw_value.split(",")
+        elif isinstance(raw_value, (list, tuple, set)):
+            candidates = list(raw_value)
+        else:
+            candidates = [raw_value]
+
+        tokens_local: list[str] = []
+        for candidate in candidates:
+            token = str(candidate or "").strip()
+            if token:
+                tokens_local.append(token)
+        return tokens_local
+
+    tokens = _as_tokens(current_app.config.get("MIKROTIK_UNAUTHORIZED_EXEMPT_IPS", []))
+    tokens.extend(_as_tokens(current_app.config.get("MIKROTIK_UNAUTHORIZED_BYPASS_IPS", [])))
+
+    normalized: set[str] = set()
+    for ip_text in expand_ip_tokens(tokens):
+        normalized_ip = _normalize_ip_for_compare(ip_text)
+        if normalized_ip:
+            normalized.add(normalized_ip)
+    return normalized
+
+
+def _should_cleanup_hotspot_host_after_login(ip_address: Optional[str]) -> bool:
+    """Cleanup hotspot host hanya untuk recovery path dari unauthorized list."""
+    normalized_ip = _normalize_ip_for_compare(ip_address)
+    if not normalized_ip:
+        return False
+
+    if normalized_ip in _resolve_unauthorized_exempt_ips():
+        logger.info("Skip hotspot host cleanup: IP exempt unauthorized ip=%s", normalized_ip)
+        return False
+
+    if not _is_mikrotik_operations_enabled():
+        return False
+
+    list_unauthorized = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized") or "unauthorized"
+    with get_mikrotik_connection() as api:
+        if not api:
+            logger.warning(
+                "Tidak bisa konek MikroTik untuk cek unauthorized list sebelum hotspot host cleanup"
+            )
+            return False
+
+        ok, entries, msg = get_firewall_address_list_entries(api_connection=api, list_name=list_unauthorized)
+        if not ok:
+            logger.warning("Gagal cek address-list unauthorized sebelum hotspot host cleanup: %s", msg)
+            return False
+
+        unauthorized_ips: set[str] = set()
+        for row in entries:
+            entry_ip = _normalize_ip_for_compare(row.get("address") or "")
+            if entry_ip:
+                unauthorized_ips.add(entry_ip)
+        return normalized_ip in unauthorized_ips
 
 
 def _remove_hotspot_host_for_authorized_device(
@@ -729,13 +804,21 @@ def apply_device_binding_for_login(
             ),
             server=user.mikrotik_server_name or settings["mikrotik_server_default"],
         )
+
+    should_cleanup_hotspot_host = _should_cleanup_hotspot_host_after_login(device.ip_address)
     _remove_blocked_address_list(device.ip_address)
     _remove_unauthorized_address_list(device.ip_address)
-    _remove_hotspot_host_for_authorized_device(
-        mac_address=device.mac_address,
-        ip_address=device.ip_address,
-        username=username_08 or None,
-    )
+    if should_cleanup_hotspot_host:
+        _remove_hotspot_host_for_authorized_device(
+            mac_address=device.mac_address,
+            ip_address=device.ip_address,
+            username=username_08 or None,
+        )
+    else:
+        logger.debug(
+            "Skip hotspot host cleanup after login: not an unauthorized recovery path (ip=%s)",
+            device.ip_address,
+        )
 
     if settings.get("dhcp_static_lease_enabled"):
         dhcp_server_name = settings.get("dhcp_lease_server_name") or None

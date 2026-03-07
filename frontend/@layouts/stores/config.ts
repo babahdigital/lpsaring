@@ -59,13 +59,13 @@ export const useLayoutConfigStore = defineStore('layoutConfig', () => {
   const footerType = ref(layoutConfig.footer.type)
 
   // 👉 Misc
-  const breakpointRef = ref(false)
+  const isOverlayBreakpointMatch = useMediaQuery(
+    `(max-width: ${layoutConfig.app.overlayNavFromBreakpoint}px)`,
+  )
+  const breakpointRef = ref(isOverlayBreakpointMatch.value)
 
-  // Sync with `useMediaQuery`
   watchEffect(() => {
-    breakpointRef.value = useMediaQuery(
-      `(max-width: ${layoutConfig.app.overlayNavFromBreakpoint}px)`,
-    ).value
+    breakpointRef.value = isOverlayBreakpointMatch.value
   })
 
   const isLessThanOverlayNavBreakpoint = computed({
@@ -77,19 +77,26 @@ export const useLayoutConfigStore = defineStore('layoutConfig', () => {
     },
   })
 
+  const effectiveAppContentLayoutNav = computed(() => {
+    if (isLessThanOverlayNavBreakpoint.value)
+      return AppContentLayoutNav.Vertical
+
+    return appContentLayoutNav.value
+  })
+
   // 👉 Layout Classes
   const _layoutClasses = computed(() => {
     return [
-      `layout-nav-type-${appContentLayoutNav.value}`,
+      `layout-nav-type-${effectiveAppContentLayoutNav.value}`,
       `layout-navbar-${navbarType.value}`,
       `layout-footer-${footerType.value}`,
       {
         'layout-vertical-nav-collapsed':
           isVerticalNavCollapsed.value
-          && appContentLayoutNav.value === 'vertical'
+          && effectiveAppContentLayoutNav.value === AppContentLayoutNav.Vertical
           && !isLessThanOverlayNavBreakpoint.value,
       },
-      { [`horizontal-nav-${horizontalNavType.value}`]: appContentLayoutNav.value === 'horizontal' },
+      { [`horizontal-nav-${horizontalNavType.value}`]: effectiveAppContentLayoutNav.value === AppContentLayoutNav.Horizontal },
       `layout-content-width-${appContentWidth.value}`,
       { 'layout-overlay-nav': isLessThanOverlayNavBreakpoint.value },
       { 'window-scrolled': unref(windowScrollY) },
