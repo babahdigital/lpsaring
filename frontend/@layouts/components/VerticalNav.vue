@@ -125,6 +125,7 @@ const hideTitleAndIcon = configStore.isVerticalNavMini(isHovered)
       :update-is-vertical-nav-scrolled="updateIsVerticalNavScrolled"
     >
       <PerfectScrollbar
+        v-if="!configStore.isLessThanOverlayNavBreakpoint"
         :key="String(configStore.isAppRTL)"
         tag="ul"
         class="nav-items"
@@ -138,6 +139,19 @@ const hideTitleAndIcon = configStore.isVerticalNavMini(isHovered)
           :item="item"
         />
       </PerfectScrollbar>
+
+      <ul
+        v-else
+        class="nav-items nav-items-native"
+        @scroll.passive="handleNavScroll"
+      >
+        <Component
+          :is="resolveNavItemComponent(item)"
+          v-for="(item, index) in navItems"
+          :key="index"
+          :item="item"
+        />
+      </ul>
     </slot>
     <slot name="after-nav-items" />
   </Component>
@@ -206,6 +220,11 @@ const hideTitleAndIcon = configStore.isVerticalNavMini(isHovered)
 
     // // ℹ️ We used `overflow-y` instead of `overflow` to mitigate overflow x. Revert back if any issue found.
     // overflow-y: auto;
+  }
+
+  .nav-items.nav-items-native {
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   .nav-item-title {

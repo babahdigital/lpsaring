@@ -41,7 +41,7 @@ export const { themeConfig, layoutConfig } = defineThemeConfig({
   },
   verticalNav: {
     isVerticalNavCollapsed: false,
-    defaultNavItemIconProps: { icon: 'tabler:circle' }, // DIUBAH
+    defaultNavItemIconProps: { icon: 'tabler-circle' },
     isVerticalNavSemiDark: false,
   },
   horizontalNav: {
@@ -50,11 +50,11 @@ export const { themeConfig, layoutConfig } = defineThemeConfig({
     popoverOffset: 4,
   },
   icons: {
-    chevronDown: { icon: 'tabler:chevron-down' }, // DIUBAH
-    chevronRight: { icon: 'tabler:chevron-right', size: 20 }, // DIUBAH
-    close: { icon: 'tabler:x', size: 20 }, // DIUBAH
-    verticalNavPinned: { icon: 'tabler:circle-dot', size: 20 }, // DIUBAH
-    verticalNavUnPinned: { icon: 'tabler:circle', size: 20 }, // DIUBAH
-    sectionTitlePlaceholder: { icon: 'tabler:minus' }, // DIUBAH
+    chevronDown: { icon: 'tabler-chevron-down' },
+    chevronRight: { icon: 'tabler-chevron-right', size: 20 },
+    close: { icon: 'tabler-x', size: 20 },
+    verticalNavPinned: { icon: 'tabler-circle-dot', size: 20 },
+    verticalNavUnPinned: { icon: 'tabler-circle', size: 20 },
+    sectionTitlePlaceholder: { icon: 'tabler-minus' },
   },
 })

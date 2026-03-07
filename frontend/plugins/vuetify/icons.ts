@@ -12,6 +12,29 @@ const customIcons: Record<string, unknown> = {
   'mdi-radiobox-blank': radioUnchecked,
 }
 
+function normalizeIconName(icon: string): string {
+  const trimmed = icon.trim()
+  if (!trimmed)
+    return ''
+
+  if (trimmed.startsWith('mdi:'))
+    return `mdi-${trimmed.slice(4)}`
+
+  if (trimmed.startsWith('icon--')) {
+    const match = /^icon--([^\s]+?)--(.+)$/.exec(trimmed)
+    if (match)
+      return `${match[1]}-${match[2]}`
+  }
+
+  if (trimmed.includes(':')) {
+    const [prefix, name] = trimmed.split(':', 2)
+    if (prefix && name)
+      return `${prefix}-${name}`
+  }
+
+  return trimmed
+}
+
 const aliases = {
   calendar: 'tabler-calendar',
   collapse: 'tabler-chevron-up',
@@ -61,23 +84,33 @@ export const iconify = {
   component: (props: any) => {
     // Load custom SVG directly instead of going through icon component
     if (typeof props.icon === 'string') {
-      const iconComponent = customIcons[props.icon]
+      const normalizedIconName = normalizeIconName(props.icon)
+      const iconComponent = customIcons[normalizedIconName]
 
       if (iconComponent)
         return h(iconComponent)
+
+      const iconClasses = normalizedIconName.startsWith('mdi-')
+        ? ['mdi', normalizedIconName]
+        : normalizedIconName
+
+      return h(
+        props.tag,
+        {
+          ...props,
+          class: [props.class, iconClasses],
+
+          // Remove used props from DOM rendering
+          tag: undefined,
+          icon: undefined,
+        },
+      )
     }
 
     return h(
       props.tag,
       {
         ...props,
-
-        // As we are using class based icons
-        // NOTE: @mdi/font requires the base class 'mdi' in addition to 'mdi-xxx'
-        // e.g. <i class="mdi mdi-cog-outline"></i>
-        class: typeof props.icon === 'string' && props.icon.startsWith('mdi-')
-          ? ['mdi', props.icon]
-          : [props.icon],
 
         // Remove used props from DOM rendering
         tag: undefined,

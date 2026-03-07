@@ -303,6 +303,11 @@ const tablerIcons = [
   'x',
 ]
 
+const requiredTablerIcons = [
+  'chevron-down',
+  'menu-2',
+]
+
 const sources: BundleScriptConfig = {
 
   svg: [
@@ -502,6 +507,18 @@ const target = join(__dirname, '..', '..', 'assets', 'iconify', 'icons.css')
       // Collect the SVG icon
       allIcons.push(iconSet.export())
     }
+  }
+
+  const tablerBundle = allIcons.find(iconSet => iconSet.prefix === 'tabler')
+  if (!tablerBundle?.icons)
+    throw new Error('Tabler icon bundle was not generated correctly.')
+
+  const missingRequiredTablerIcons = requiredTablerIcons.filter(name => !(name in tablerBundle.icons))
+  if (missingRequiredTablerIcons.length > 0) {
+    throw new Error(
+      `Missing required Tabler icons: ${missingRequiredTablerIcons.join(', ')}. `
+      + 'Update plugins/iconify/build-icons.ts before building.',
+    )
   }
 
   // Generate CSS from collected icons
