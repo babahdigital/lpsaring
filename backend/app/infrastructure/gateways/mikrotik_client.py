@@ -5,6 +5,7 @@ import os
 import time
 import logging
 import re
+import inspect
 from contextlib import contextmanager
 from typing import Optional, Tuple, List, Dict, Any, Iterator, cast, TypedDict
 import routeros_api
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 _connection_pool = None
 _pool_config_key = None
+_supports_socket_timeout: Optional[bool] = None
 
 
 class MikrotikConfig(TypedDict):
@@ -90,9 +92,27 @@ def _make_config_key(config: MikrotikConfig) -> str:
     )
 
 
+def _routeros_pool_supports_socket_timeout() -> bool:
+    """Detect whether installed routeros_api supports `socket_timeout` kwarg."""
+    global _supports_socket_timeout
+
+    if _supports_socket_timeout is not None:
+        return _supports_socket_timeout
+
+    try:
+        signature = inspect.signature(routeros_api.RouterOsApiPool)
+        _supports_socket_timeout = "socket_timeout" in signature.parameters
+    except Exception:
+        # Fall back to optimistic mode so runtime fallback can still handle TypeError safely.
+        _supports_socket_timeout = True
+
+    return _supports_socket_timeout
+
+
 def init_mikrotik_pool():
     global _connection_pool
     global _pool_config_key
+    global _supports_socket_timeout
     config = _get_mikrotik_config()
     config_key = _make_config_key(config)
     if _connection_pool is not None and _pool_config_key == config_key:
@@ -131,20 +151,25 @@ def init_mikrotik_pool():
             "use_ssl": use_ssl,
             "ssl_verify": ssl_verify,
             "plaintext_login": plaintext_login,
-            "socket_timeout": socket_timeout_seconds,
         }
+
+        supports_socket_timeout = _routeros_pool_supports_socket_timeout()
+        if supports_socket_timeout:
+            pool_kwargs["socket_timeout"] = socket_timeout_seconds
+        else:
+            logger.info("RouterOsApiPool tanpa dukungan socket_timeout; memakai timeout bawaan library.")
 
         try:
             _connection_pool = routeros_api.RouterOsApiPool(host, **pool_kwargs)
         except TypeError as timeout_type_error:
-            # Backward compatibility for routeros_api versions that do not support
-            # `socket_timeout` in RouterOsApiPool.
-            pool_kwargs.pop("socket_timeout", None)
-            logger.warning(
-                "RouterOsApiPool tidak mendukung socket_timeout, fallback tanpa timeout explicit: %s",
-                timeout_type_error,
-            )
-            _connection_pool = routeros_api.RouterOsApiPool(host, **pool_kwargs)
+            # Runtime fallback for libraries with dynamic signatures where inspect is inconclusive.
+            if supports_socket_timeout and "socket_timeout" in str(timeout_type_error):
+                pool_kwargs.pop("socket_timeout", None)
+                _supports_socket_timeout = False
+                logger.info("RouterOsApiPool tidak mendukung socket_timeout; fallback tanpa timeout explicit.")
+                _connection_pool = routeros_api.RouterOsApiPool(host, **pool_kwargs)
+            else:
+                raise
 
         _pool_config_key = config_key
         logger.info(f"Pool koneksi MikroTik berhasil diinisialisasi untuk {host}")

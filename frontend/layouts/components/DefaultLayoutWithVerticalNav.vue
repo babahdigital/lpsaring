@@ -90,7 +90,7 @@ const mobileBreadcrumbItems = computed(() => {
 
         <HeaderWeeklyRevenue
           v-if="isAdmin"
-          class="me-4"
+          class="me-4 d-none d-lg-flex"
         />
         <UserProfile />
       </div>

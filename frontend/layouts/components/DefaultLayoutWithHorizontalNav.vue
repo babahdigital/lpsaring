@@ -33,7 +33,7 @@ const isAdmin = computed(() => authStore.isAdmin || authStore.isSuperAdmin)
       <VSpacer />
       <HeaderWeeklyRevenue
         v-if="isAdmin"
-        class="me-4"
+        class="me-4 d-none d-lg-flex"
       />
       <UserProfile />
     </template>

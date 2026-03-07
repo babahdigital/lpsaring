@@ -991,6 +991,9 @@ fi
 echo "==> Ensure db/redis running for migration..."
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d db redis
 
+echo "==> Ensure backup dir permissions..."
+docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm backups_init
+
 echo "==> Preflight Alembic drift check..."
 drift_out=\$(docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm migrate python - <<'PY'
 from sqlalchemy import text
@@ -1092,12 +1095,48 @@ fi
 echo "==> Run explicit migration (idempotent)..."
 docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm migrate
 
-echo "==> Start updated stack..."
+echo "==> Start updated stack (staged)..."
 if [ "$FORCE_RECREATE" = "true" ]; then
-  docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --force-recreate --remove-orphans
+  echo "==> Recreate mode: force recreate runtime services only (db/redis dipertahankan)"
+  app_recreate_flag="--force-recreate"
 else
-  docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --remove-orphans
+  app_recreate_flag=""
 fi
+
+echo "==> Start backend + workers..."
+# shellcheck disable=SC2086
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --remove-orphans --no-deps \$app_recreate_flag backend celery_worker celery_beat
+
+for svc in backend celery_worker celery_beat; do
+  if ! docker compose --env-file .env.prod -f docker-compose.prod.yml ps --services --status running | grep -qx "\$svc"; then
+    echo "ERROR: service \$svc tidak running setelah deploy" >&2
+    docker compose --env-file .env.prod -f docker-compose.prod.yml logs --tail=120 "\$svc" || true
+    exit 1
+  fi
+done
+
+echo "==> Menunggu backend siap menerima koneksi internal..."
+backend_ready=0
+for i in \$(seq 1 60); do
+  if docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T backend sh -lc "python -c 'import socket; s = socket.create_connection((\"127.0.0.1\", 5010), 1); s.close()'" >/dev/null 2>&1; then
+    backend_ready=1
+    break
+  fi
+  sleep 2
+done
+
+if [ "\$backend_ready" -ne 1 ]; then
+  echo "ERROR: backend belum siap setelah 120 detik" >&2
+  docker compose --env-file .env.prod -f docker-compose.prod.yml logs --tail=120 backend || true
+  exit 1
+fi
+
+echo "==> Backend readiness OK"
+
+echo "==> Start frontend..."
+# shellcheck disable=SC2086
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --remove-orphans --no-deps \$app_recreate_flag frontend
+
 docker compose --env-file .env.prod -f docker-compose.prod.yml ps
 if ! docker compose --env-file .env.prod -f docker-compose.prod.yml ps --services --status running | grep -qx frontend; then
   echo "ERROR: frontend container is not running after deploy" >&2

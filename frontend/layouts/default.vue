@@ -3,12 +3,19 @@ import { useSkins } from '@core/composable/useSkins'
 import { useConfigStore } from '@core/stores/config'
 import { AppContentLayoutNav } from '@layouts/enums'
 import { switchToVerticalNavOnLtOverlayNavBreakpoint } from '@layouts/utils'
-import { defineAsyncComponent } from 'vue'
+import { computed, defineAsyncComponent } from 'vue'
 
 const DefaultLayoutWithHorizontalNav = defineAsyncComponent(() => import('./components/DefaultLayoutWithHorizontalNav.vue'))
 const DefaultLayoutWithVerticalNav = defineAsyncComponent(() => import('./components/DefaultLayoutWithVerticalNav.vue'))
 
 const configStore = useConfigStore()
+
+const effectiveLayoutNav = computed(() => {
+  if (configStore.isLessThanOverlayNavBreakpoint)
+    return AppContentLayoutNav.Vertical
+
+  return configStore.appContentLayoutNav
+})
 
 switchToVerticalNavOnLtOverlayNavBreakpoint()
 
@@ -35,7 +42,7 @@ watch([isFallbackStateActive, refLoadingIndicator], () => {
   <ClientOnly>
     <Component
       v-bind="layoutAttrs"
-      :is="configStore.appContentLayoutNav === AppContentLayoutNav.Vertical ? DefaultLayoutWithVerticalNav : DefaultLayoutWithHorizontalNav"
+      :is="effectiveLayoutNav === AppContentLayoutNav.Vertical ? DefaultLayoutWithVerticalNav : DefaultLayoutWithHorizontalNav"
     >
       <AppLoadingIndicator ref="refLoadingIndicator" />
 
