@@ -8,6 +8,20 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Added (2026-03-08)
+- MikroTik `DoH_Servers` address-list dengan 8 IP resolver publik (Google, Cloudflare, Quad9, OpenDNS) dan forward filter rule `drop` TCP/443 dari `LIST_LAN` ke list tersebut. Mencegah hotspot client bypass DNS enforcement via DNS-over-HTTPS.
+- Task Celery baru `purge_stale_quota_keys_task` (harian 03:30): hapus Redis key `quota:last_bytes:mac:*` untuk MAC yang tidak tercatat di `UserDevice.last_seen_at` dalam 30 hari. Cegah akumulasi key TTL=-1 akibat MAC randomization. Dikontrol env `QUOTA_STALE_KEY_PURGE_ENABLED` dan `QUOTA_STALE_KEY_STALE_DAYS`.
+- Task Celery baru `dlq_health_monitor_task` (setiap 15 menit): cek `celery:dlq`, kirim WA alert ke superadmin dengan preview 3 item terakhir DLQ jika non-empty. Throttle default 60 menit via Redis key. Dikontrol env `TASK_DLQ_ALERT_THROTTLE_MINUTES`.
+- Devlog hardening MikroTik sesi ini: `docs/DEVLOG_2026-03-08_MIKROTIK_HARDENING.md`.
+
+### Changed (2026-03-08)
+- `QUOTA_SYNC_INTERVAL_SECONDS` diubah dari `300` ke `60` di `.env.prod`: sinkronisasi quota tiap 1 menit. Potensi overage turun dari ~375 MB (5 menit × 10 Mbps) ke ~75 MB.
+- Celery Beat: tambah `"options": {"countdown": X}` pada tiga task MikroTik-dependent (`sync-unauthorized-hosts` +20s, `cleanup-waiting-dhcp-arp` +40s, `policy-parity-guard` +55s) untuk mencegah empat koneksi MikroTik API simultan yang menyebabkan `failed:89` timeout burst saat container restart.
+- MikroTik anti-tethering mangle rule scope dipersempit: `dst-address 172.16.0.0/20` → `172.16.2.0/23` (hanya VLAN Klien, bukan semua VLAN termasuk staf/IoT).
+- MikroTik simple queue `limit-at` diterapkan ke 7 VLAN child queue (IoT, Kamtib, Privated, Registrasi, Tamu, Aula, Wartelpas) sebagai guaranteed minimum bandwidth floor.
+- MikroTik `Limit-Dinamis-Per-User-20M` (PCQ paket-fup): tambah burst `30M/60M, threshold 5M/10M, 6s`. User FUP mendapat boost awal 60M download selama 6 detik.
+- MikroTik `Limit-Dinamis-Per-User-30M` (PCQ paket-aktif): tambah burst `60M/100M, threshold 10M/20M, 8s`. Queue idle saat ini karena `profile-aktif` sengaja tidak di-mark `paket-aktif` (bypass per-user PCQ — desain intentional). Burst siap aktif jika mangle mark ditambahkan di masa depan.
+
 ### Performance (2026-03-08)
 - `sync-unauthorized-hosts`: safety guard loops (`forced_exempt_remove`, `forced_authorized_remove`, `forced_binding_dhcp_remove`, `forced_status_overlap_remove`) kini hanya memanggil `remove_address_list_entry` jika IP memang ada di unauthorized list. Sebelumnya ~141 no-op API call per cycle (69 authorized + 72 status IPs) dikirim ke MikroTik tanpa efek — kini skip otomatis via `existing_unauthorized_ips` set dari data yang sudah di-fetch.
 - `_collect_dhcp_lease_snapshot` digabung dengan logika `lpsaring_macs` dalam satu pass DHCP lease (tidak ada API call tambahan).
