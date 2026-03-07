@@ -91,16 +91,26 @@ def _collect_non_blocked_ip_binding_snapshot(api) -> Tuple[set[str], set[Tuple[s
     return mac_set, mac_ip_pairs, ip_set
 
 
-def _collect_dhcp_lease_snapshot(api) -> Tuple[set[str], set[Tuple[str, str]], set[str]]:
-    """Kumpulkan snapshot DHCP lease yang usable (bukan waiting)."""
+def _collect_dhcp_lease_snapshot(api) -> Tuple[set[str], set[Tuple[str, str]], set[str], set[str]]:
+    """Kumpulkan snapshot DHCP lease yang usable (bukan waiting).
+
+    Returns:
+    - mac_set: semua MAC dari lease aktif
+    - mac_ip_pairs: pasangan (MAC, IP) dari lease aktif
+    - ip_set: semua IP dari lease aktif
+    - lpsaring_macs: MAC dari lease yang dikelola aplikasi (comment 'lpsaring|static-dhcp').
+      Ini adalah MAC yang sudah pernah di-login OTP — dilindungi dari unauthorized list
+      meskipun ip-binding sementara tidak ada (e.g. MAC randomization, ip-binding reset).
+    """
     mac_set: set[str] = set()
     mac_ip_pairs: set[Tuple[str, str]] = set()
     ip_set: set[str] = set()
+    lpsaring_macs: set[str] = set()
 
     try:
         rows = api.get_resource("/ip/dhcp-server/lease").get() or []
     except Exception:
-        return mac_set, mac_ip_pairs, ip_set
+        return mac_set, mac_ip_pairs, ip_set, lpsaring_macs
 
     for row in rows:
         status = str(row.get("status") or "").strip().lower()
@@ -109,15 +119,18 @@ def _collect_dhcp_lease_snapshot(api) -> Tuple[set[str], set[Tuple[str, str]], s
 
         mac = str(row.get("mac-address") or "").strip().upper()
         ip_text = _normalize_ip_for_compare(row.get("address") or "")
+        comment = str(row.get("comment") or "").strip()
 
         if mac:
             mac_set.add(mac)
+            if "lpsaring|static-dhcp" in comment:
+                lpsaring_macs.add(mac)
         if ip_text:
             ip_set.add(ip_text)
         if mac and ip_text:
             mac_ip_pairs.add((mac, ip_text))
 
-    return mac_set, mac_ip_pairs, ip_set
+    return mac_set, mac_ip_pairs, ip_set, lpsaring_macs
 
 
 def _resolve_critical_overlap_keep_list(
@@ -347,7 +360,9 @@ def sync_unauthorized_hosts_command(
 
         trust_binding_and_dhcp = bool(current_app.config.get("MIKROTIK_UNAUTHORIZED_TRUST_IP_BINDING_DHCP", True))
         ipb_non_blocked_macs, ipb_non_blocked_pairs, ipb_non_blocked_ips = _collect_non_blocked_ip_binding_snapshot(api)
-        dhcp_macs, dhcp_pairs, dhcp_ips = _collect_dhcp_lease_snapshot(api)
+        dhcp_macs, dhcp_pairs, dhcp_ips, dhcp_lpsaring_macs = _collect_dhcp_lease_snapshot(api)
+        if not trust_binding_and_dhcp:
+            dhcp_lpsaring_macs = set()
 
         for host in hosts:
             processed += 1
@@ -396,6 +411,14 @@ def sync_unauthorized_hosts_command(
                         trusted_binding_dhcp_ips.add(ip_text)
                     continue
 
+            # Guard MAC randomization: jika MAC tercatat di DHCP lease yang dikelola aplikasi
+            # (pernah login OTP sebelumnya), percayai host ini meskipun ip-binding belum/tidak ada.
+            if trust_binding_and_dhcp and mac and mac in dhcp_lpsaring_macs:
+                skipped_binding_dhcp_trusted += 1
+                if ip_text:
+                    trusted_binding_dhcp_ips.add(ip_text)
+                continue
+
             authorized = str(host.get("authorized", "false")).lower() == "true"
             bypassed = str(host.get("bypassed", "false")).lower() == "true"
             if authorized or bypassed:
@@ -423,6 +446,14 @@ def sync_unauthorized_hosts_command(
             _normalize_ip_for_compare(e.get("address") or ""): str(e.get("comment") or "")
             for e in existing
             if str(e.get("comment") or "").startswith(prefix)
+        }
+
+        # Set semua IP yang sekarang ada di unauthorized list (managed maupun tidak).
+        # Digunakan untuk menghindari API call no-op pada safety guard loops di bawah.
+        existing_unauthorized_ips: set[str] = {
+            _normalize_ip_for_compare(e.get("address") or "")
+            for e in existing
+            if _normalize_ip_for_compare(e.get("address") or "")
         }
 
         # Remove entries that are managed but no longer desired.
@@ -453,6 +484,8 @@ def sync_unauthorized_hosts_command(
             normalized_exempt_ip = _normalize_ip_for_compare(exempt_ip)
             if not normalized_exempt_ip:
                 continue
+            if normalized_exempt_ip not in existing_unauthorized_ips:
+                continue  # Tidak ada di unauthorized list, skip API call no-op.
             forced_exempt_remove += 1
             if apply:
                 ok_remove, _remove_msg = remove_address_list_entry(api, normalized_exempt_ip, resolved_list)
@@ -463,6 +496,8 @@ def sync_unauthorized_hosts_command(
         for authorized_ip in sorted(authorized_device_ips):
             if not authorized_ip:
                 continue
+            if authorized_ip not in existing_unauthorized_ips:
+                continue  # Tidak ada di unauthorized list, skip API call no-op.
             forced_authorized_remove += 1
             if apply:
                 ok_remove, _remove_msg = remove_address_list_entry(api, authorized_ip, resolved_list)
@@ -473,6 +508,8 @@ def sync_unauthorized_hosts_command(
         for trusted_ip in sorted(trusted_binding_dhcp_ips):
             if not trusted_ip:
                 continue
+            if trusted_ip not in existing_unauthorized_ips:
+                continue  # Tidak ada di unauthorized list, skip API call no-op.
             forced_binding_dhcp_remove += 1
             if apply:
                 ok_remove, _remove_msg = remove_address_list_entry(api, trusted_ip, resolved_list)
@@ -504,6 +541,8 @@ def sync_unauthorized_hosts_command(
         for status_ip in sorted(protected_status_ips):
             if not status_ip:
                 continue
+            if status_ip not in existing_unauthorized_ips:
+                continue  # Tidak ada di unauthorized list, skip API call no-op.
             forced_status_overlap_remove += 1
             if apply:
                 ok_remove, _remove_msg = remove_address_list_entry(api, status_ip, resolved_list)

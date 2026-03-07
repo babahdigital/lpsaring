@@ -641,7 +641,11 @@ def register_or_update_device(
             db.session.scalar(sa.select(sa.func.count(UserDevice.id)).where(UserDevice.user_id == user.id)) or 0
         )
     if total_devices >= settings["max_devices"]:
-        if allow_replace and settings.get("device_auto_replace_enabled"):
+        # Jika allow_replace=True (OTP login captive portal/explicit), izinkan auto-replace perangkat terlama
+        # tanpa memerlukan setting DEVICE_AUTO_REPLACE_ENABLED.
+        # Ini memastikan user yang MAC-nya berubah (randomisasi MAC per-SSID) tetap bisa login OTP
+        # dan perangkat lama otomatis diganti — tanpa syarat DEVICE_AUTO_REPLACE_ENABLED=True.
+        if allow_replace or settings.get("device_auto_replace_enabled"):
             devices = db.session.scalars(sa.select(UserDevice).where(UserDevice.user_id == user.id)).all()
             candidates = [d for d in devices if (d.mac_address or "").upper() != (mac_address or "").upper()]
             if candidates:

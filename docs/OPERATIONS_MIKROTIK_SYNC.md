@@ -205,10 +205,34 @@ Implikasi operasional:
 Saat user berhasil login/otorisasi perangkat:
 - backend melakukan best-effort cleanup list `blocked` dan `unauthorized` untuk IP terkait user,
 - ini mencegah kasus user tetap tertahan di list `unauthorized` walau otorisasi sudah valid.
+- cleanup hotspot host hanya dijalankan pada jalur recovery unauthorized yang valid (bukan pembersihan periodik broad).
 
 Jika masih ada residual entry, lakukan audit cepat berdasarkan marker comment (`uid=...` / `user=08...`) lalu hapus entry stale.
 
-## 10.1) Recovery Darurat: User Hotspot MikroTik Hilang
+## 10.1) Guard Policy 2026-03-08 (No Broad Host Cleanup on Unauthorized Sync)
+
+Perubahan policy:
+- Scheduler `sync-unauthorized-hosts` tidak lagi menghapus trusted hotspot host secara periodik.
+- Cleanup hotspot host difokuskan ke recovery unauthorized saat login sukses user terkait.
+
+Tujuan:
+- mencegah reset host trusted sebagai efek samping sinkronisasi unauthorized.
+
+Indikator log worker yang diharapkan:
+- `hotspot_host_cleanup_removed=0` pada siklus sinkronisasi normal.
+
+## 10.2) Jika Host Tetap Reset Massal
+
+Jika gejala tetap muncul walau policy aplikasi sudah aktif, audit jalur eksternal RouterOS:
+
+```routeros
+/system/scheduler print detail where on-event~"hotspot host remove"
+/system/script print detail where source~"hotspot host remove"
+```
+
+Temuan command global seperti `/ip hotspot host remove [find server="wartel"]` pada scheduler/script periodik harus dianggap root cause eksternal dan diperbaiki langsung di RouterOS admin.
+
+## 10.3) Recovery Darurat: User Hotspot MikroTik Hilang
 
 Gunakan prosedur ini jika entry `/ip/hotspot/user` hilang/berkurang, sementara data user di DB masih ada.
 

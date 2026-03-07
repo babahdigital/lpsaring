@@ -50,7 +50,7 @@ Frontend:
    - register/update device,
    - upsert ip-binding sesuai policy user,
    - cleanup list blocked/unauthorized,
-   - cleanup hotspot host untuk device authorized,
+    - cleanup hotspot host hanya pada jalur recovery unauthorized yang valid,
    - optional static DHCP lease (jika fitur aktif).
 
 ## 4) Matrix Binding Type (Efektif)
@@ -100,6 +100,10 @@ Dilakukan cleanup lebih luas:
 - Hapus user_devices user (all).
 - Cleanup router: ip-binding, DHCP lease, ARP, hotspot host, managed address-list (best effort).
 
+Catatan:
+- Cleanup di jalur ini bersifat user-scope berdasarkan device/IP user terkait.
+- Jalur ini bukan pembersihan host global untuk seluruh server hotspot.
+
 ### C) Admin reset-login user / delete user
 Dilakukan cleanup paling lengkap:
 - Hapus refresh tokens + user_devices.
@@ -137,3 +141,14 @@ Rekomendasi penyelesaian:
    - RouterOS ip-binding/host,
    - Nginx/backend/celery logs.
 5. Jika butuh cleanup jaringan total, gunakan reset-login/user-auth-cleanup, bukan delete-device tunggal.
+
+## 9) Guard Eksternal RouterOS (Wajib Saat Investigasi Host Reset Massal)
+
+Jika gejala di lapangan adalah host table drop massal (semua user ikut reset), audit scheduler/script RouterOS:
+
+```routeros
+/system/scheduler print detail where on-event~"hotspot host remove"
+/system/script print detail where source~"hotspot host remove"
+```
+
+Temuan command global seperti `/ip hotspot host remove [find server="wartel"]` pada scheduler/script periodik harus diprioritaskan sebagai root cause eksternal, karena dapat menimpa behavior aplikasi.

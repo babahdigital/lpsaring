@@ -8,6 +8,27 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Performance (2026-03-08)
+- `sync-unauthorized-hosts`: safety guard loops (`forced_exempt_remove`, `forced_authorized_remove`, `forced_binding_dhcp_remove`, `forced_status_overlap_remove`) kini hanya memanggil `remove_address_list_entry` jika IP memang ada di unauthorized list. Sebelumnya ~141 no-op API call per cycle (69 authorized + 72 status IPs) dikirim ke MikroTik tanpa efek — kini skip otomatis via `existing_unauthorized_ips` set dari data yang sudah di-fetch.
+- `_collect_dhcp_lease_snapshot` digabung dengan logika `lpsaring_macs` dalam satu pass DHCP lease (tidak ada API call tambahan).
+
+### Fixed (2026-03-08)
+- `sync-unauthorized-hosts`: MAC yang pernah login OTP dan memiliki DHCP static lease dengan comment `lpsaring|static-dhcp` kini dilindungi dari unauthorized list meskipun ip-binding sementara tidak ada (e.g. MAC randomization per-SSID yang menyebabkan ip-binding stale). Guard baru: `dhcp_lpsaring_macs` check sebelum host masuk `desired` block.
+- `register_or_update_device`: saat `allow_replace=True` (OTP login captive portal / explicit authorize), auto-replace perangkat terlama kini aktif tanpa memerlukan `DEVICE_AUTO_REPLACE_ENABLED=True` di env. Sebelumnya user yang MAC perangkatnya berubah (randomisasi) dan sudah penuh slot akan ditolak dengan error "Limit perangkat tercapai" meskipun OTP berhasil diverifikasi.
+
+### Changed (2026-03-08)
+- `apply_device_binding_for_login` kini hanya melakukan cleanup hotspot host pada jalur recovery unauthorized yang valid (IP memang berada di address-list `unauthorized` dan tidak termasuk exempt/bypass).
+- Command scheduler `sync-unauthorized-hosts` tidak lagi menghapus trusted hotspot host sebagai efek samping; sinkronisasi difokuskan pada parity address-list unauthorized.
+- `deploy_pi.sh --recreate` diperketat: `.env.public.prod` kini wajib tersedia dan selalu ikut tersinkron bersama `.env.prod`.
+- Layout mobile frontend distabilkan saat refresh melalui `effectiveAppContentLayoutNav` agar kelas layout tidak kembali ke state yang salah di breakpoint kecil.
+- Runbook operasional unauthorized/hotspot lifecycle diperbarui untuk menegaskan guard policy baru dan langkah audit scheduler/script RouterOS eksternal.
+
+### Fixed (2026-03-08)
+- Regression CI backend akibat ekspektasi test lama (cleanup host selalu dipanggil) telah diperbaiki dengan test yang selaras policy baru: cleanup hanya untuk recovery unauthorized.
+
+### Added (2026-03-08)
+- Devlog lengkap sesi hardening + investigasi insiden ditambahkan pada `docs/DEVLOG_2026-03-08.md`.
+
 ### Changed (2026-03-05)
 - Alur release diperjelas: `ci.yml` tetap quality gate utama pada push `main`, sedangkan `.github/workflows/docker-publish.yml` diposisikan untuk publish image saja (tag `v*` atau `workflow_dispatch`), tanpa auto deploy Raspberry Pi.
 - Dokumentasi publish/deploy diperbarui agar konsisten dengan policy manual deploy via `deploy_pi.sh --recreate` (`README.md`, `docs/PUBLISH_FLOW_AND_ERROR_STATUS.md`).
