@@ -197,6 +197,9 @@ def make_celery_app(app=None):
         celery_instance.conf.beat_schedule["sync-unauthorized-hosts"] = {
             "task": "sync_unauthorized_hosts_task",
             "schedule": max(30, unauthorized_interval),
+            # Stagger: mulai 20 detik setelah scheduled time agar tidak bentrok
+            # dengan sync-hotspot-usage yang jalan tepat di T=0 tiap interval.
+            "options": {"countdown": 20},
         }
 
         if os.environ.get("AUTO_CLEANUP_WAITING_DHCP_ARP_ENABLED", "False").lower() == "true":
@@ -207,6 +210,8 @@ def make_celery_app(app=None):
             celery_instance.conf.beat_schedule["cleanup-waiting-dhcp-arp"] = {
                 "task": "cleanup_waiting_dhcp_arp_task",
                 "schedule": max(60, cleanup_waiting_interval),
+                # Stagger: mulai 40 detik setelah scheduled time.
+                "options": {"countdown": 40},
             }
 
         try:
@@ -217,6 +222,8 @@ def make_celery_app(app=None):
             celery_instance.conf.beat_schedule["policy-parity-guard"] = {
                 "task": "policy_parity_guard_task",
                 "schedule": max(60, parity_guard_interval),
+                # Stagger: mulai 55 detik setelah scheduled time.
+                "options": {"countdown": 55},
             }
 
         if os.environ.get("ENABLE_MIKROTIK_AUDIT_RECONCILIATION", "True").lower() == "true":
@@ -247,6 +254,21 @@ def make_celery_app(app=None):
         celery_instance.conf.beat_schedule["send-public-update-whatsapp-batch"] = {
             "task": "send_public_update_submission_whatsapp_batch_task",
             "schedule": max(60, update_sync_interval),
+        }
+
+    # ---- Maintenance periodik (tidak tergantung MikroTik operations) ----
+    if os.environ.get("QUOTA_STALE_KEY_PURGE_ENABLED", "True").lower() == "true":
+        celery_instance.conf.beat_schedule["purge-stale-quota-keys"] = {
+            "task": "purge_stale_quota_keys_task",
+            # Harian jam 03:30 — setelah cleanup-inactive-users (jam 03:00)
+            "schedule": crontab(hour=3, minute=30),
+        }
+
+    if int(os.environ.get("TASK_DLQ_ALERT_THROTTLE_MINUTES", "60")) > 0:
+        celery_instance.conf.beat_schedule["dlq-health-monitor"] = {
+            "task": "dlq_health_monitor_task",
+            # Cek DLQ setiap 15 menit; throttle alert via Redis.
+            "schedule": 900,
         }
 
     if app:

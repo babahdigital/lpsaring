@@ -26,6 +26,7 @@ from app.infrastructure.db.models import (
     Transaction,
     TransactionStatus,
     User,
+    UserDevice,
     UserRole,
 )
 from app.infrastructure.gateways.mikrotik_client import (
@@ -1184,3 +1185,156 @@ def expire_stale_transactions_task(self):
             if self.request.retries >= 2:
                 _record_task_failure(app, "expire_stale_transactions_task", {}, str(e))
             raise
+
+
+@celery_app.task(
+    name="purge_stale_quota_keys_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 1},
+)
+def purge_stale_quota_keys_task(self):
+    """
+    Hapus Redis key quota:last_bytes:mac:<MAC> untuk perangkat yang sudah
+    tidak aktif (tidak ada di UserDevice atau last_seen_at > STALE_DAYS hari lalu).
+    Jalankan harian jam 03:30 via Celery Beat.
+    """
+    app = create_app()
+    with app.app_context():
+        if settings_service.get_setting("QUOTA_STALE_KEY_PURGE_ENABLED", "True") != "True":
+            logger.info("Celery Task: Skip purge stale quota keys (fitur disabled).")
+            return
+
+        stale_days = max(1, settings_service.get_setting_as_int("QUOTA_STALE_KEY_STALE_DAYS", 30))
+        redis_client = getattr(app, "redis_client_otp", None)
+        if redis_client is None:
+            logger.warning("Celery Task: Skip purge stale quota keys (redis_client tidak tersedia).")
+            return
+
+        try:
+            prefix = "quota:last_bytes:mac:"
+            # Kumpulkan semua MAC dari Redis
+            redis_macs: set[str] = set()
+            cursor = 0
+            while True:
+                cursor, keys = redis_client.scan(cursor, match=f"{prefix}*", count=200)
+                for key in keys:
+                    key_str = key.decode("utf-8") if isinstance(key, bytes) else key
+                    mac = key_str[len(prefix):]
+                    if mac:
+                        redis_macs.add(mac.upper())
+                if cursor == 0:
+                    break
+
+            if not redis_macs:
+                logger.info("Celery Task: Purge stale quota keys — tidak ada key ditemukan.")
+                return
+
+            # Cari MAC yang masih aktif di DB (last_seen dalam stale_days)
+            cutoff = datetime.now(dt_timezone.utc) - timedelta(days=stale_days)
+            active_macs: set[str] = set()
+            rows = (
+                db.session.query(UserDevice.mac_address)
+                .filter(UserDevice.last_seen_at >= cutoff)
+                .filter(UserDevice.mac_address.isnot(None))
+                .all()
+            )
+            for row in rows:
+                if row.mac_address:
+                    active_macs.add(row.mac_address.upper())
+
+            # Hapus key untuk MAC yang tidak aktif
+            stale_macs = redis_macs - active_macs
+            deleted = 0
+            for mac in stale_macs:
+                try:
+                    redis_client.delete(f"{prefix}{mac}")
+                    deleted += 1
+                except Exception:
+                    pass
+
+            logger.info(
+                "Celery Task: Purge stale quota keys selesai. "
+                "redis_total=%s active_db=%s stale_deleted=%s",
+                len(redis_macs),
+                len(active_macs),
+                deleted,
+            )
+        except Exception as e:
+            logger.error("Celery Task: Purge stale quota keys gagal: %s", e, exc_info=True)
+            if self.request.retries >= 1:
+                _record_task_failure(app, "purge_stale_quota_keys_task", {}, str(e))
+            raise
+
+
+@celery_app.task(
+    name="dlq_health_monitor_task",
+    bind=True,
+    retry_kwargs={"max_retries": 0},
+)
+def dlq_health_monitor_task(self):
+    """
+    Cek panjang Dead Letter Queue (DLQ) Celery setiap 15 menit.
+    Kirim notifikasi WhatsApp ke superadmin jika DLQ tidak kosong,
+    dengan throttle agar tidak spam (default: 1x per 60 menit).
+    """
+    app = create_app()
+    with app.app_context():
+        throttle_minutes = settings_service.get_setting_as_int("TASK_DLQ_ALERT_THROTTLE_MINUTES", 60)
+        if throttle_minutes <= 0:
+            return
+
+        redis_client = getattr(app, "redis_client_otp", None)
+        if redis_client is None:
+            return
+
+        try:
+            dlq_key = app.config.get("TASK_DLQ_REDIS_KEY", "celery:dlq")
+            dlq_length = redis_client.llen(dlq_key)
+            if dlq_length == 0:
+                return
+
+            throttle_key = "dlq:alert:last_sent"
+            if redis_client.exists(throttle_key):
+                logger.debug("Celery Task: DLQ monitor — alert throttled (DLQ=%s).", dlq_length)
+                return
+
+            # Ambil 3 item terakhir sebagai preview
+            items_raw = redis_client.lrange(dlq_key, -3, -1)
+            preview_lines = []
+            for raw in items_raw:
+                try:
+                    item = json.loads(raw)
+                    preview_lines.append(f"- [{item.get('task','?')}] {item.get('error','')[:80]}")
+                except Exception:
+                    pass
+            preview = "\n".join(preview_lines) if preview_lines else "(tidak bisa dibaca)"
+
+            # Kirim WA ke superadmin
+            admin_phone = app.config.get("SUPERADMIN_PHONE", "")
+            if admin_phone:
+                wa_number = re.sub(r"[^0-9]", "", str(admin_phone))
+                if wa_number.startswith("0"):
+                    wa_number = "62" + wa_number[1:]
+                msg = (
+                    f"⚠️ *ALERT: Celery DLQ tidak kosong*\n"
+                    f"Total task gagal: *{dlq_length}*\n\n"
+                    f"Preview 3 terakhir:\n{preview}\n\n"
+                    f"Cek log container celery_worker untuk detail.\n"
+                    f"Throttle: alert berikutnya dalam {throttle_minutes} menit."
+                )
+                try:
+                    send_whatsapp_message(wa_number, msg)
+                    logger.warning(
+                        "Celery Task: DLQ alert dikirim ke admin. DLQ length=%s.", dlq_length
+                    )
+                except Exception as wa_err:
+                    logger.error("Celery Task: Gagal kirim DLQ alert WA: %s", wa_err)
+
+            # Set throttle (berlaku throttle_minutes menit)
+            redis_client.setex(throttle_key, throttle_minutes * 60, 1)
+
+        except Exception as e:
+            logger.error("Celery Task: DLQ health monitor gagal: %s", e, exc_info=True)
