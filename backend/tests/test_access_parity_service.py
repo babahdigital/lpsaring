@@ -32,7 +32,15 @@ class _FakeApi:
         raise AssertionError(f"Unexpected API resource path: {path}")
 
 
-def _setup_common_mocks(monkeypatch, users, *, host_map=None, binding_map=None, dhcp_rows=None):
+def _setup_common_mocks(
+    monkeypatch,
+    users,
+    *,
+    host_map=None,
+    binding_map=None,
+    dhcp_rows=None,
+    firewall_entries_by_list=None,
+):
     fake_db = SimpleNamespace(session=SimpleNamespace(scalars=lambda *_args, **_kwargs: _ScalarResult(users)))
     monkeypatch.setattr(access_parity_service, "db", fake_db)
 
@@ -53,7 +61,7 @@ def _setup_common_mocks(monkeypatch, users, *, host_map=None, binding_map=None, 
     monkeypatch.setattr(
         access_parity_service,
         "get_firewall_address_list_entries",
-        lambda _api, _list_name: (True, [], "ok"),
+        lambda _api, _list_name: (True, (firewall_entries_by_list or {}).get(_list_name, []), "ok"),
     )
 
     fake_api = _FakeApi(dhcp_rows=dhcp_rows)
@@ -73,10 +81,15 @@ def test_collect_access_parity_report_flags_user_without_authorized_device(monke
 
     assert report["ok"] is True
     assert report["summary"]["mismatch_types"]["no_authorized_device"] == 1
+    assert report["summary"]["mismatches"] == 0
+    assert report["summary"]["mismatches_total"] == 1
+    assert report["summary"]["non_parity_mismatches"] == 1
+    assert report["summary"]["no_authorized_device_count"] == 1
     assert len(report["items"]) == 1
 
     item = report["items"][0]
     assert item["mismatches"] == ["no_authorized_device"]
+    assert item["parity_relevant"] is False
     assert item["auto_fixable"] is False
 
 
@@ -89,9 +102,14 @@ def test_collect_access_parity_report_flags_no_ip_binding_and_dhcp_gap(monkeypat
 
     assert report["ok"] is True
     assert len(report["items"]) == 1
+    assert report["summary"]["mismatches"] == 1
+    assert report["summary"]["mismatches_total"] == 1
+    assert report["summary"]["non_parity_mismatches"] == 0
+    assert report["summary"]["no_authorized_device_count"] == 0
 
     item = report["items"][0]
     assert set(item["mismatches"]) == {"dhcp_lease_missing", "missing_ip_binding", "no_resolvable_ip"}
+    assert item["parity_relevant"] is True
     assert item["auto_fixable"] is False
     assert any(action["action"] == "resolve_ip_from_host_or_binding" for action in item["action_plan"])
 
@@ -99,3 +117,29 @@ def test_collect_access_parity_report_flags_no_ip_binding_and_dhcp_gap(monkeypat
     assert mismatch_types["missing_ip_binding"] == 1
     assert mismatch_types["no_resolvable_ip"] == 1
     assert mismatch_types["dhcp_lease_missing"] == 1
+
+
+def test_collect_access_parity_report_ignores_missing_dhcp_for_blocked_hard_block(monkeypatch):
+    mac = "3E:8E:E6:63:D1:8C"
+    ip = "172.16.2.206"
+    device = SimpleNamespace(mac_address=mac, ip_address=ip, is_authorized=True)
+    user = SimpleNamespace(id="blocked-user", phone_number="+6283854110679", devices=[device])
+
+    _setup_common_mocks(
+        monkeypatch,
+        [user],
+        host_map={mac: {"address": ip}},
+        binding_map={mac: {"type": "blocked", "address": ip}},
+        dhcp_rows=[],
+        firewall_entries_by_list={"blocked": [{"address": ip}]},
+    )
+    monkeypatch.setattr(access_parity_service, "get_user_access_status", lambda _user: "blocked")
+    monkeypatch.setattr(access_parity_service, "resolve_allowed_binding_type_for_user", lambda _user: "blocked")
+
+    report = access_parity_service.collect_access_parity_report()
+
+    assert report["ok"] is True
+    assert report["items"] == []
+    assert report["summary"]["mismatches"] == 0
+    assert report["summary"]["mismatches_total"] == 0
+    assert report["summary"]["mismatch_types"]["dhcp_lease_missing"] == 0

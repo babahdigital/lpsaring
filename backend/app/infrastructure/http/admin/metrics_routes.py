@@ -46,7 +46,20 @@ def _read_cached_policy_parity_mismatch_count() -> int:
         if not isinstance(summary, dict):
             return 0
 
-        return int(summary.get("mismatches", 0) or 0)
+        mismatch_count = int(summary.get("mismatches", 0) or 0)
+
+        # Newer payloads already store actionable parity mismatches in `summary.mismatches`.
+        if "mismatches_total" in summary:
+            return max(0, mismatch_count)
+
+        # Backward compatibility for older cached payloads where `mismatches` included
+        # onboarding gaps (`no_authorized_device`) that should not degrade parity health.
+        mismatch_types = summary.get("mismatch_types") or {}
+        if isinstance(mismatch_types, dict):
+            no_authorized_device_count = int(mismatch_types.get("no_authorized_device", 0) or 0)
+            return max(0, mismatch_count - no_authorized_device_count)
+
+        return max(0, mismatch_count)
     except Exception:
         return 0
 

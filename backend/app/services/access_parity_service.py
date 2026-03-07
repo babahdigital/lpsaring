@@ -26,9 +26,18 @@ _MISMATCH_KEYS = (
     "dhcp_lease_missing",
 )
 
+_NON_PARITY_MISMATCH_KEYS = {
+    "no_authorized_device",
+}
+
 
 def _empty_mismatch_types() -> dict[str, int]:
     return {key: 0 for key in _MISMATCH_KEYS}
+
+
+def _is_parity_relevant_item(mismatches: list[str]) -> bool:
+    mismatch_set = {str(key or "").strip() for key in mismatches if str(key or "").strip()}
+    return any(key not in _NON_PARITY_MISMATCH_KEYS for key in mismatch_set)
 
 
 def _normalize_ip(value: Any) -> Optional[str]:
@@ -36,6 +45,11 @@ def _normalize_ip(value: Any) -> Optional[str]:
     if not ip_text or ip_text in {"0.0.0.0", "0.0.0.0/0"}:
         return None
     return ip_text
+
+
+def _should_skip_dhcp_mismatch(*, expected_binding_type: str) -> bool:
+    # Hard-block policy intentionally does not require DHCP lease parity.
+    return str(expected_binding_type or "").strip().lower() == "blocked"
 
 
 def _is_auto_fixable(*, mismatches: list[str], mac: Optional[str], ip_address: Optional[str]) -> bool:
@@ -183,6 +197,9 @@ def collect_access_parity_report(*, max_items: int = 500) -> dict[str, Any]:
             "summary": {
                 "users": 0,
                 "mismatches": 0,
+                "mismatches_total": 0,
+                "non_parity_mismatches": 0,
+                "no_authorized_device_count": 0,
                 "auto_fixable_items": 0,
                 "mismatch_types": _empty_mismatch_types(),
             },
@@ -206,6 +223,9 @@ def collect_access_parity_report(*, max_items: int = 500) -> dict[str, Any]:
                 "summary": {
                     "users": len(users),
                     "mismatches": 0,
+                    "mismatches_total": 0,
+                    "non_parity_mismatches": 0,
+                    "no_authorized_device_count": 0,
                     "auto_fixable_items": 0,
                     "mismatch_types": _empty_mismatch_types(),
                 },
@@ -255,6 +275,7 @@ def collect_access_parity_report(*, max_items: int = 500) -> dict[str, Any]:
         items: list[dict[str, Any]] = []
         mismatch_types = _empty_mismatch_types()
         auto_fixable_items = 0
+        parity_mismatch_items = 0
 
         for user in users:
             app_status = str(get_user_access_status(user) or "inactive")
@@ -284,6 +305,7 @@ def collect_access_parity_report(*, max_items: int = 500) -> dict[str, Any]:
                     "mismatches": mismatch_list,
                 }
                 item["auto_fixable"] = False
+                item["parity_relevant"] = _is_parity_relevant_item(mismatch_list)
                 item["action_plan"] = _build_action_plan(
                     user_id=item["user_id"],
                     phone_number=item.get("phone_number"),
@@ -296,6 +318,8 @@ def collect_access_parity_report(*, max_items: int = 500) -> dict[str, Any]:
                 )
 
                 mismatch_types["no_authorized_device"] += 1
+                if item["parity_relevant"]:
+                    parity_mismatch_items += 1
                 items.append(item)
                 if len(items) >= max_items:
                     break
@@ -332,10 +356,11 @@ def collect_access_parity_report(*, max_items: int = 500) -> dict[str, Any]:
                     if len(statuses_for_ip) > 1:
                         mismatch_list.append("address_list_multi_status")
 
-                if mac not in dhcp_macs:
-                    mismatch_list.append("dhcp_lease_missing")
-                elif ip_addr and ip_addr not in dhcp_ips_by_mac.get(mac, set()):
-                    mismatch_list.append("dhcp_lease_missing")
+                if not _should_skip_dhcp_mismatch(expected_binding_type=expected_binding_type):
+                    if mac not in dhcp_macs:
+                        mismatch_list.append("dhcp_lease_missing")
+                    elif ip_addr and ip_addr not in dhcp_ips_by_mac.get(mac, set()):
+                        mismatch_list.append("dhcp_lease_missing")
 
                 mismatch_list = sorted(set(mismatch_list))
                 if not mismatch_list:
@@ -356,6 +381,7 @@ def collect_access_parity_report(*, max_items: int = 500) -> dict[str, Any]:
                     "address_list_statuses": statuses_for_ip,
                     "mismatches": mismatch_list,
                 }
+                item["parity_relevant"] = _is_parity_relevant_item(mismatch_list)
                 item["auto_fixable"] = _is_auto_fixable(
                     mismatches=mismatch_list,
                     mac=item.get("mac"),
@@ -374,6 +400,8 @@ def collect_access_parity_report(*, max_items: int = 500) -> dict[str, Any]:
 
                 if item["auto_fixable"]:
                     auto_fixable_items += 1
+                if item["parity_relevant"]:
+                    parity_mismatch_items += 1
 
                 items.append(item)
 
@@ -383,12 +411,17 @@ def collect_access_parity_report(*, max_items: int = 500) -> dict[str, Any]:
             if len(items) >= max_items:
                 break
 
+        mismatches_total = len(items)
+        non_parity_mismatch_items = max(0, mismatches_total - parity_mismatch_items)
         return {
             "ok": True,
             "items": items,
             "summary": {
                 "users": len(users),
-                "mismatches": len(items),
+                "mismatches": parity_mismatch_items,
+                "mismatches_total": mismatches_total,
+                "non_parity_mismatches": non_parity_mismatch_items,
+                "no_authorized_device_count": int(mismatch_types.get("no_authorized_device", 0) or 0),
                 "auto_fixable_items": auto_fixable_items,
                 "mismatch_types": mismatch_types,
             },

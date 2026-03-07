@@ -1020,6 +1020,7 @@ def _sync_address_list_status(
     list_expired = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired"
     list_habis = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis"
     list_blocked = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked"
+    list_unauthorized = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized") or "unauthorized"
     fup_threshold_mb = float(settings_service.get_setting_as_int("QUOTA_FUP_THRESHOLD_MB", 3072) or 3072)
 
     target_list = None
@@ -1060,7 +1061,9 @@ def _sync_address_list_status(
         f"lpsaring|status={status_value}|user={username_08}|role={user.role.value}|date={date_str}|time={time_str}"
     )
     other_lists = [
-        name for name in (list_active, list_fup, list_inactive, list_expired, list_habis, list_blocked) if name
+        name
+        for name in (list_active, list_fup, list_inactive, list_expired, list_habis, list_blocked, list_unauthorized)
+        if name
     ]
     ok, msg = sync_address_list_for_user(
         api_connection=api,
@@ -1158,6 +1161,7 @@ def _sync_address_list_status_for_ip(
     list_expired = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired"
     list_habis = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis"
     list_blocked = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked"
+    list_unauthorized = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized") or "unauthorized"
     fup_threshold_mb = float(settings_service.get_setting_as_int("QUOTA_FUP_THRESHOLD_MB", 3072) or 3072)
 
     target_list = None
@@ -1215,6 +1219,11 @@ def _sync_address_list_status_for_ip(
     for list_name in [list_active, list_fup, list_inactive, list_expired, list_habis, list_blocked]:
         if list_name and list_name != target_list:
             remove_address_list_entry(api_connection=api, address=ip_address, list_name=list_name)
+
+    # Source-level guard: status-managed IP must never remain in unauthorized list.
+    if list_unauthorized and list_unauthorized != target_list:
+        remove_address_list_entry(api_connection=api, address=ip_address, list_name=list_unauthorized)
+
     return True
 
 

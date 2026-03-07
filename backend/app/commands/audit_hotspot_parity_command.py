@@ -318,6 +318,66 @@ def _has_any_binding_for_unauthorized_row(
     return False
 
 
+def _is_expected_missing_dhcp_for_blocked_row(
+    *,
+    list_name: str,
+    blocked_list_name: str,
+    has_binding: bool,
+) -> bool:
+    if not blocked_list_name:
+        return False
+    if str(list_name or "").strip() != str(blocked_list_name or "").strip():
+        return False
+    return bool(has_binding)
+
+
+def _calculate_status_overlap_metrics(
+    *,
+    status_lists_by_ip: Dict[str, Set[str]],
+    unauthorized_ips: Set[str],
+    list_names: Dict[str, str],
+    sample_size: int,
+) -> Dict[str, Any]:
+    fup_list_name = list_names.get("fup", "")
+    active_list_name = list_names.get("active", "")
+    blocked_list_name = list_names.get("blocked", "")
+
+    status_multi_overlap_ips = sorted(
+        ip for ip, lists in status_lists_by_ip.items() if _is_valid_ip_candidate(ip) and len(lists) > 1
+    )
+    status_multi_overlap_samples = [
+        {
+            "address": ip,
+            "lists": sorted(status_lists_by_ip.get(ip, set())),
+        }
+        for ip in status_multi_overlap_ips[:sample_size]
+    ]
+
+    fup_overlap_active_ips = sorted(
+        ip
+        for ip, lists in status_lists_by_ip.items()
+        if _is_valid_ip_candidate(ip) and fup_list_name in lists and active_list_name in lists
+    )
+    fup_overlap_blocked_ips = sorted(
+        ip
+        for ip, lists in status_lists_by_ip.items()
+        if _is_valid_ip_candidate(ip) and fup_list_name in lists and blocked_list_name in lists
+    )
+    fup_overlap_unauthorized_ips = sorted(
+        ip
+        for ip in unauthorized_ips
+        if _is_valid_ip_candidate(ip) and fup_list_name in status_lists_by_ip.get(ip, set())
+    )
+
+    return {
+        "status_multi_overlap_ips": status_multi_overlap_ips,
+        "status_multi_overlap_samples": status_multi_overlap_samples,
+        "fup_overlap_active_ips": fup_overlap_active_ips,
+        "fup_overlap_blocked_ips": fup_overlap_blocked_ips,
+        "fup_overlap_unauthorized_ips": fup_overlap_unauthorized_ips,
+    }
+
+
 @click.command("audit-hotspot-parity")
 @click.option(
     "--output",
@@ -363,6 +423,7 @@ def audit_hotspot_parity_command(
             "without_binding": 0,
             "with_dhcp_lease": 0,
             "without_dhcp_lease": 0,
+            "without_dhcp_expected_blocked": 0,
             "overlap_unauthorized": 0,
         }
         for list_name in sorted(managed_status_lists)
@@ -371,6 +432,8 @@ def audit_hotspot_parity_command(
     samples: Dict[str, List[Dict[str, Any]]] = {
         "status_without_binding": [],
         "status_without_dhcp": [],
+        "status_without_dhcp_expected_blocked": [],
+        "status_multi_overlap": [],
         "unauthorized_overlap": [],
         "unauthorized_with_binding": [],
         "authorized_mac_without_binding": [],
@@ -404,6 +467,7 @@ def audit_hotspot_parity_command(
     scanned_status_rows = 0
     managed_status_rows = 0
     status_ips: Set[str] = set()
+    status_lists_by_ip: Dict[str, Set[str]] = defaultdict(set)
     all_status_without_binding = 0
 
     for row in address_list_rows:
@@ -420,6 +484,7 @@ def audit_hotspot_parity_command(
         address = str(row.get("address") or "").strip()
         if _is_valid_ip_candidate(address):
             status_ips.add(address)
+            status_lists_by_ip[address].add(list_name)
 
         uid_token = _extract_uid(comment)
         user_token = _extract_user_token(comment)
@@ -464,18 +529,36 @@ def audit_hotspot_parity_command(
         if has_dhcp:
             row_summary["with_dhcp_lease"] += 1
         else:
-            row_summary["without_dhcp_lease"] += 1
-            _append_sample(
-                samples["status_without_dhcp"],
-                {
-                    "list": list_name,
-                    "address": address,
-                    "uid": uid_token,
-                    "user": user_token,
-                    "resolved_uid": resolved_uid,
-                },
-                sample_size,
-            )
+            if _is_expected_missing_dhcp_for_blocked_row(
+                list_name=list_name,
+                blocked_list_name=blocked_list,
+                has_binding=has_binding,
+            ):
+                row_summary["without_dhcp_expected_blocked"] += 1
+                _append_sample(
+                    samples["status_without_dhcp_expected_blocked"],
+                    {
+                        "list": list_name,
+                        "address": address,
+                        "uid": uid_token,
+                        "user": user_token,
+                        "resolved_uid": resolved_uid,
+                    },
+                    sample_size,
+                )
+            else:
+                row_summary["without_dhcp_lease"] += 1
+                _append_sample(
+                    samples["status_without_dhcp"],
+                    {
+                        "list": list_name,
+                        "address": address,
+                        "uid": uid_token,
+                        "user": user_token,
+                        "resolved_uid": resolved_uid,
+                    },
+                    sample_size,
+                )
 
         if is_overlap_unauthorized:
             row_summary["overlap_unauthorized"] += 1
@@ -528,6 +611,19 @@ def audit_hotspot_parity_command(
             )
 
     overlap_ips = sorted(ip for ip in unauthorized_ips if ip in status_ips)
+
+    status_overlap_metrics = _calculate_status_overlap_metrics(
+        status_lists_by_ip=status_lists_by_ip,
+        unauthorized_ips=unauthorized_ips,
+        list_names=list_names,
+        sample_size=sample_size,
+    )
+    status_multi_overlap_ips = status_overlap_metrics["status_multi_overlap_ips"]
+    fup_overlap_active_ips = status_overlap_metrics["fup_overlap_active_ips"]
+    fup_overlap_blocked_ips = status_overlap_metrics["fup_overlap_blocked_ips"]
+    fup_overlap_unauthorized_ips = status_overlap_metrics["fup_overlap_unauthorized_ips"]
+    for item in status_overlap_metrics["status_multi_overlap_samples"]:
+        _append_sample(samples["status_multi_overlap"], item, sample_size)
 
     authorized_macs: Set[str] = set()
     for macs in authorized_macs_by_uid.values():
@@ -620,6 +716,12 @@ def audit_hotspot_parity_command(
         if list_name in status_summary:
             critical_without_binding_total += int(status_summary[list_name]["without_binding"])
 
+    blocked_without_dhcp_expected_total = 0
+    if blocked_list in status_summary:
+        blocked_without_dhcp_expected_total = int(
+            status_summary.get(blocked_list, {}).get("without_dhcp_expected_blocked", 0)
+        )
+
     report: Dict[str, Any] = {
         "generated_at_utc": datetime.now(dt_timezone.utc).isoformat(),
         "options": {
@@ -642,6 +744,16 @@ def audit_hotspot_parity_command(
             "overlap_with_status_sample_ips": overlap_ips[:sample_size],
             "rows_with_binding_count": unauthorized_with_binding,
             "rows_with_known_user_count": unauthorized_with_known_user,
+        },
+        "status_overlap": {
+            "multi_status_ip_count": len(status_multi_overlap_ips),
+            "multi_status_sample_ips": status_multi_overlap_ips[:sample_size],
+            "fup_with_active_count": len(fup_overlap_active_ips),
+            "fup_with_active_sample_ips": fup_overlap_active_ips[:sample_size],
+            "fup_with_blocked_count": len(fup_overlap_blocked_ips),
+            "fup_with_blocked_sample_ips": fup_overlap_blocked_ips[:sample_size],
+            "fup_with_unauthorized_count": len(fup_overlap_unauthorized_ips),
+            "fup_with_unauthorized_sample_ips": fup_overlap_unauthorized_ips[:sample_size],
         },
         "dhcp_alignment": {
             "authorized_db_macs": len(authorized_macs),
@@ -669,7 +781,12 @@ def audit_hotspot_parity_command(
             "critical_lists": critical_lists,
             "critical_without_binding_total": critical_without_binding_total,
             "all_status_without_binding_total": all_status_without_binding,
+            "blocked_without_dhcp_expected_total": blocked_without_dhcp_expected_total,
             "unauthorized_must_not_duplicate_status_count": len(overlap_ips),
+            "status_multi_list_overlap_count": len(status_multi_overlap_ips),
+            "fup_overlap_active_count": len(fup_overlap_active_ips),
+            "fup_overlap_blocked_count": len(fup_overlap_blocked_ips),
+            "fup_overlap_unauthorized_count": len(fup_overlap_unauthorized_ips),
         },
         "samples": samples,
     }
@@ -688,6 +805,10 @@ def audit_hotspot_parity_command(
                 f"status_without_binding={all_status_without_binding}",
                 f"critical_without_binding={critical_without_binding_total}",
                 f"unauthorized_overlap={len(overlap_ips)}",
+                f"status_multi_overlap={len(status_multi_overlap_ips)}",
+                f"fup_overlap_active={len(fup_overlap_active_ips)}",
+                f"fup_overlap_blocked={len(fup_overlap_blocked_ips)}",
+                f"fup_overlap_unauthorized={len(fup_overlap_unauthorized_ips)}",
                 f"unauthorized_with_binding={unauthorized_with_binding}",
                 f"authorized_mac_without_binding={len(authorized_macs) - authorized_with_binding}",
                 f"authorized_mac_without_dhcp={len(authorized_macs) - authorized_with_dhcp}",
@@ -702,6 +823,10 @@ def audit_hotspot_parity_command(
             "critical_without_binding_total": critical_without_binding_total,
             "all_status_without_binding_total": all_status_without_binding,
             "unauthorized_overlap": len(overlap_ips),
+            "status_multi_overlap": len(status_multi_overlap_ips),
+            "fup_overlap_active": len(fup_overlap_active_ips),
+            "fup_overlap_blocked": len(fup_overlap_blocked_ips),
+            "fup_overlap_unauthorized": len(fup_overlap_unauthorized_ips),
             "unauthorized_with_binding": unauthorized_with_binding,
             "unlimited_without_binding_scoped": scoped_unlimited_without_binding,
             "authorized_mac_without_binding": len(authorized_macs) - authorized_with_binding,

@@ -23,6 +23,7 @@ def _patch_settings(monkeypatch, *, fup_threshold_mb: int = 3072):
         "MIKROTIK_ADDRESS_LIST_EXPIRED": "expired_list",
         "MIKROTIK_ADDRESS_LIST_HABIS": "habis_list",
         "MIKROTIK_ADDRESS_LIST_BLOCKED": "blocked_list",
+        "MIKROTIK_ADDRESS_LIST_UNAUTHORIZED": "unauthorized_list",
     }
 
     def fake_get_setting(key: str, default=None):
@@ -404,3 +405,44 @@ def test_sync_address_list_for_ip_guard_allows_when_binding_exists(monkeypatch):
 
     assert ok is True
     assert calls["upsert"] == 1
+
+
+def test_sync_address_list_for_ip_also_removes_unauthorized_overlap(monkeypatch):
+    app = Flask(__name__)
+    app.config["MIKROTIK_UNAUTHORIZED_CIDRS"] = ["172.16.2.0/23"]
+
+    _patch_settings(monkeypatch)
+
+    removed_lists: list[str] = []
+
+    def _fake_upsert_address_list_entry(*, api_connection, address, list_name, comment=None, timeout=None):
+        return True, "ok"
+
+    def _fake_remove_address_list_entry(*, api_connection, address, list_name):
+        removed_lists.append(str(list_name))
+        return True, "ok"
+
+    monkeypatch.setattr(svc, "upsert_address_list_entry", _fake_upsert_address_list_entry)
+    monkeypatch.setattr(svc, "remove_address_list_entry", _fake_remove_address_list_entry)
+
+    user = SimpleNamespace(
+        id=777,
+        is_unlimited_user=True,
+        is_blocked=False,
+        role=_Role("USER"),
+        phone_number="081234567890",
+        total_quota_purchased_mb=0,
+    )
+
+    with app.app_context():
+        ok = svc._sync_address_list_status_for_ip(
+            api=object(),
+            user=cast(Any, user),
+            ip_address="172.16.2.88",
+            remaining_mb=999.0,
+            remaining_percent=100.0,
+            is_expired=False,
+        )
+
+    assert ok is True
+    assert "unauthorized_list" in removed_lists

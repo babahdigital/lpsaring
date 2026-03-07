@@ -20,6 +20,14 @@ def _make_app() -> Flask:
     return app
 
 
+class _FakeRedis:
+    def __init__(self, payload: bytes | str | None):
+        self._payload = payload
+
+    def get(self, _key: str):
+        return self._payload
+
+
 def test_get_admin_metrics_exposes_reliability_signals(monkeypatch):
     captured = {"keys": []}
 
@@ -108,3 +116,33 @@ def test_fix_access_parity_requires_user_id():
     assert status == 400
     payload = resp.get_json()
     assert "user_id" in str(payload.get("message", "")).lower()
+
+
+def test_read_cached_policy_parity_mismatch_count_legacy_payload_excludes_no_authorized_device():
+    app = _make_app()
+    app.redis_client_otp = _FakeRedis(
+        (
+            '{"summary":{"mismatches":40,"mismatch_types":'
+            '{"no_authorized_device":40,"binding_type":0}}}'
+        ).encode("utf-8")
+    )
+
+    with app.app_context():
+        result = metrics_routes._read_cached_policy_parity_mismatch_count()
+
+    assert result == 0
+
+
+def test_read_cached_policy_parity_mismatch_count_new_payload_uses_actionable_value():
+    app = _make_app()
+    app.redis_client_otp = _FakeRedis(
+        (
+            '{"summary":{"mismatches":2,"mismatches_total":9,'
+            '"no_authorized_device_count":7}}'
+        ).encode("utf-8")
+    )
+
+    with app.app_context():
+        result = metrics_routes._read_cached_policy_parity_mismatch_count()
+
+    assert result == 2

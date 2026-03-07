@@ -89,6 +89,15 @@ def sync_dhcp_leases_command(limit: int, only_authorized: bool) -> None:
             return False
         return any(ip_obj in net for net in networks)
 
+    def _normalize_ip_text(ip_text: Optional[str]) -> Optional[str]:
+        text = str(ip_text or "").strip()
+        if not text:
+            return None
+        try:
+            return str(ipaddress.ip_address(text))
+        except Exception:
+            return None
+
     where_clause = [UserDevice.mac_address.isnot(None)]
     if only_authorized:
         where_clause.append(UserDevice.is_authorized.is_(True))
@@ -115,6 +124,21 @@ def sync_dhcp_leases_command(limit: int, only_authorized: bool) -> None:
         if not api:
             raise click.ClickException("Gagal konek MikroTik")
 
+        binding_ip_by_mac: dict[str, str] = {}
+        try:
+            binding_rows = api.get_resource("/ip/hotspot/ip-binding").get() or []
+        except Exception:
+            binding_rows = []
+
+        for row in binding_rows:
+            mac_text = str(row.get("mac-address") or "").strip().upper()
+            if not mac_text:
+                continue
+            binding_ip = _normalize_ip_text(row.get("address"))
+            if not binding_ip:
+                continue
+            binding_ip_by_mac.setdefault(mac_text, binding_ip)
+
         for device in devices:
             processed += 1
             mac = str(device.mac_address or "").strip().upper()
@@ -126,12 +150,24 @@ def sync_dhcp_leases_command(limit: int, only_authorized: bool) -> None:
                 skipped_no_user += 1
                 continue
 
-            ok, ip_from_mac, _msg = get_ip_by_mac(api, mac)
-            if not ok or not ip_from_mac:
-                skipped_no_ip += 1
-                continue
+            candidate_ips: list[str] = []
 
-            if not _is_allowed(ip_from_mac):
+            ok, ip_from_mac, _msg = get_ip_by_mac(api, mac)
+            if ok:
+                normalized_live_ip = _normalize_ip_text(ip_from_mac)
+                if normalized_live_ip:
+                    candidate_ips.append(normalized_live_ip)
+
+            normalized_db_ip = _normalize_ip_text(getattr(device, "ip_address", None))
+            if normalized_db_ip:
+                candidate_ips.append(normalized_db_ip)
+
+            binding_ip = binding_ip_by_mac.get(mac)
+            if binding_ip:
+                candidate_ips.append(binding_ip)
+
+            resolved_ip = next((ip_text for ip_text in candidate_ips if _is_allowed(ip_text)), None)
+            if not resolved_ip:
                 skipped_no_ip += 1
                 continue
 
@@ -141,7 +177,7 @@ def sync_dhcp_leases_command(limit: int, only_authorized: bool) -> None:
             ok_upsert, msg_upsert = upsert_dhcp_static_lease(
                 api_connection=api,
                 mac_address=mac,
-                address=ip_from_mac,
+                address=resolved_ip,
                 comment=comment,
                 server=dhcp_server_name,
             )
@@ -153,7 +189,7 @@ def sync_dhcp_leases_command(limit: int, only_authorized: bool) -> None:
                     "Gagal sync DHCP lease: user=%s mac=%s ip=%s msg=%s",
                     user.id,
                     mac,
-                    ip_from_mac,
+                    resolved_ip,
                     msg_upsert,
                 )
 

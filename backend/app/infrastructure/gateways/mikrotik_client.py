@@ -27,6 +27,7 @@ class MikrotikConfig(TypedDict):
     use_ssl: bool
     ssl_verify: bool
     plaintext_login: bool
+    socket_timeout_seconds: float
 
 
 def _get_mikrotik_config() -> MikrotikConfig:
@@ -42,6 +43,8 @@ def _get_mikrotik_config() -> MikrotikConfig:
         use_ssl = str(current_app.config.get("MIKROTIK_USE_SSL", "False")).lower() == "true"
         ssl_verify = str(current_app.config.get("MIKROTIK_SSL_VERIFY", "False")).lower() == "true"
         plaintext_login = str(current_app.config.get("MIKROTIK_PLAIN_TEXT_LOGIN", "True")).lower() == "true"
+        socket_timeout_raw = current_app.config.get("MIKROTIK_SOCKET_TIMEOUT_SECONDS", 10)
+        socket_timeout_seconds = float(socket_timeout_raw or 10)
     except Exception:
         host = os.environ.get("MIKROTIK_HOST")
         username = os.environ.get("MIKROTIK_USERNAME") or os.environ.get("MIKROTIK_USER")
@@ -50,6 +53,13 @@ def _get_mikrotik_config() -> MikrotikConfig:
         use_ssl = (os.environ.get("MIKROTIK_USE_SSL", "False")).lower() == "true"
         ssl_verify = (os.environ.get("MIKROTIK_SSL_VERIFY", "False")).lower() == "true"
         plaintext_login = (os.environ.get("MIKROTIK_PLAIN_TEXT_LOGIN", "True")).lower() == "true"
+        try:
+            socket_timeout_seconds = float(os.environ.get("MIKROTIK_SOCKET_TIMEOUT_SECONDS") or 10)
+        except Exception:
+            socket_timeout_seconds = 10.0
+
+    if socket_timeout_seconds <= 0:
+        socket_timeout_seconds = 10.0
 
     return cast(
         MikrotikConfig,
@@ -61,6 +71,7 @@ def _get_mikrotik_config() -> MikrotikConfig:
             "use_ssl": use_ssl,
             "ssl_verify": ssl_verify,
             "plaintext_login": plaintext_login,
+            "socket_timeout_seconds": float(socket_timeout_seconds),
         },
     )
 
@@ -74,6 +85,7 @@ def _make_config_key(config: MikrotikConfig) -> str:
             str(config.get("use_ssl")),
             str(config.get("ssl_verify")),
             str(config.get("plaintext_login")),
+            str(config.get("socket_timeout_seconds")),
         ]
     )
 
@@ -96,6 +108,7 @@ def init_mikrotik_pool():
     use_ssl = config.get("use_ssl")
     ssl_verify = config.get("ssl_verify")
     plaintext_login = config.get("plaintext_login")
+    socket_timeout_seconds = float(config.get("socket_timeout_seconds") or 10.0)
 
     if host is None or username is None or password is None:
         logger.error("Konfigurasi MikroTik tidak lengkap")
@@ -111,15 +124,28 @@ def init_mikrotik_pool():
             except Exception:
                 pass
 
-        _connection_pool = routeros_api.RouterOsApiPool(
-            host,
-            username=username,
-            password=password,
-            port=port,
-            use_ssl=use_ssl,
-            ssl_verify=ssl_verify,
-            plaintext_login=plaintext_login,
-        )
+        pool_kwargs: Dict[str, Any] = {
+            "username": username,
+            "password": password,
+            "port": port,
+            "use_ssl": use_ssl,
+            "ssl_verify": ssl_verify,
+            "plaintext_login": plaintext_login,
+            "socket_timeout": socket_timeout_seconds,
+        }
+
+        try:
+            _connection_pool = routeros_api.RouterOsApiPool(host, **pool_kwargs)
+        except TypeError as timeout_type_error:
+            # Backward compatibility for routeros_api versions that do not support
+            # `socket_timeout` in RouterOsApiPool.
+            pool_kwargs.pop("socket_timeout", None)
+            logger.warning(
+                "RouterOsApiPool tidak mendukung socket_timeout, fallback tanpa timeout explicit: %s",
+                timeout_type_error,
+            )
+            _connection_pool = routeros_api.RouterOsApiPool(host, **pool_kwargs)
+
         _pool_config_key = config_key
         logger.info(f"Pool koneksi MikroTik berhasil diinisialisasi untuk {host}")
         record_success("mikrotik")

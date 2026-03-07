@@ -121,6 +121,64 @@ def _collect_dhcp_lease_snapshot(api) -> Tuple[set[str], set[Tuple[str, str]], s
     return mac_set, mac_ip_pairs, ip_set
 
 
+def _resolve_critical_overlap_keep_list(
+    present_lists: set[str],
+    *,
+    list_active: str,
+    list_fup: str,
+    list_blocked: str,
+) -> Optional[str]:
+    normalized = {name for name in present_lists if name}
+    if not normalized:
+        return None
+
+    # Priority policy: blocked > fup > active.
+    if list_blocked and list_blocked in normalized:
+        return list_blocked
+    if list_fup and list_fup in normalized:
+        return list_fup
+    if list_active and list_active in normalized:
+        return list_active
+
+    return sorted(normalized)[0]
+
+
+def _plan_critical_status_overlap_removals(
+    *,
+    ip_to_lists: Dict[str, set[str]],
+    list_active: str,
+    list_fup: str,
+    list_blocked: str,
+) -> List[Tuple[str, str, str]]:
+    known_lists = {name for name in (list_active, list_fup, list_blocked) if name}
+    plans: List[Tuple[str, str, str]] = []
+
+    for ip_raw in sorted(ip_to_lists.keys()):
+        ip_text = _normalize_ip_for_compare(ip_raw)
+        if not ip_text:
+            continue
+
+        present_lists = {name for name in ip_to_lists.get(ip_raw, set()) if name in known_lists}
+        if len(present_lists) <= 1:
+            continue
+
+        keep_list = _resolve_critical_overlap_keep_list(
+            present_lists,
+            list_active=list_active,
+            list_fup=list_fup,
+            list_blocked=list_blocked,
+        )
+        if not keep_list:
+            continue
+
+        for list_name in sorted(present_lists):
+            if list_name == keep_list:
+                continue
+            plans.append((ip_text, list_name, keep_list))
+
+    return plans
+
+
 @click.command("sync-unauthorized-hosts")
 @click.option(
     "--list-name",
@@ -263,12 +321,16 @@ def sync_unauthorized_hosts_command(
     forced_exempt_remove = 0
     forced_authorized_remove = 0
     forced_binding_dhcp_remove = 0
+    forced_status_overlap_remove = 0
+    forced_critical_status_overlap_remove = 0
     hotspot_host_cleanup_removed = 0
     failed_add_or_refresh = 0
     failed_remove = 0
     failed_forced_exempt_remove = 0
     failed_forced_authorized_remove = 0
     failed_forced_binding_dhcp_remove = 0
+    failed_forced_status_overlap_remove = 0
+    failed_forced_critical_status_overlap_remove = 0
     failed_hotspot_host_cleanup = 0
 
     trusted_binding_dhcp_ips: set[str] = set()
@@ -436,16 +498,83 @@ def sync_unauthorized_hosts_command(
                 if not ok_remove:
                     failed_forced_binding_dhcp_remove += 1
 
+        # Final safety guard: IP yang sudah terdaftar di list status manapun
+        # (aktif/fup/inactive/expired/habis/blocked) tidak boleh overlap di unauthorized.
+        status_list_names = {
+            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active",
+            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup",
+            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive",
+            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired",
+            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis",
+            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked",
+        }
+        status_list_names = {name for name in status_list_names if name and name != resolved_list}
+
+        protected_status_ips: set[str] = set()
+        for status_list_name in sorted(status_list_names):
+            ok_status_list, status_entries, _status_msg = get_firewall_address_list_entries(api, status_list_name)
+            if not ok_status_list:
+                continue
+            for status_entry in status_entries:
+                status_ip = _normalize_ip_for_compare(status_entry.get("address") or "")
+                if status_ip:
+                    protected_status_ips.add(status_ip)
+
+        for status_ip in sorted(protected_status_ips):
+            if not status_ip:
+                continue
+            forced_status_overlap_remove += 1
+            if apply:
+                ok_remove, _remove_msg = remove_address_list_entry(api, status_ip, resolved_list)
+                if not ok_remove:
+                    failed_forced_status_overlap_remove += 1
+
+        # Final safety guard: list status kritikal tidak boleh overlap untuk IP yang sama.
+        # Prioritas yang dipertahankan: blocked > fup > active.
+        list_active = str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active").strip()
+        list_fup = str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup").strip()
+        list_blocked = str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked").strip()
+
+        critical_lists = sorted({name for name in (list_active, list_fup, list_blocked) if name})
+        critical_ip_to_lists: Dict[str, set[str]] = {}
+        for critical_list_name in critical_lists:
+            ok_status_list, status_entries, _status_msg = get_firewall_address_list_entries(api, critical_list_name)
+            if not ok_status_list:
+                continue
+            for status_entry in status_entries:
+                status_ip = _normalize_ip_for_compare(status_entry.get("address") or "")
+                if not status_ip:
+                    continue
+                critical_ip_to_lists.setdefault(status_ip, set()).add(critical_list_name)
+
+        critical_overlap_plans = _plan_critical_status_overlap_removals(
+            ip_to_lists=critical_ip_to_lists,
+            list_active=list_active,
+            list_fup=list_fup,
+            list_blocked=list_blocked,
+        )
+
+        for status_ip, remove_list_name, _keep_list_name in critical_overlap_plans:
+            forced_critical_status_overlap_remove += 1
+            if apply:
+                ok_remove, _remove_msg = remove_address_list_entry(api, status_ip, remove_list_name)
+                if not ok_remove:
+                    failed_forced_critical_status_overlap_remove += 1
+
     click.echo(
         f"processed_hosts={processed} desired_block_ips={len(desired)} "
         f"would_add_or_refresh={to_add} would_remove={to_remove} apply={apply} "
         f"forced_exempt_remove={forced_exempt_remove} forced_authorized_remove={forced_authorized_remove} "
         f"forced_binding_dhcp_remove={forced_binding_dhcp_remove} "
+        f"forced_status_overlap_remove={forced_status_overlap_remove} "
+        f"forced_critical_status_overlap_remove={forced_critical_status_overlap_remove} "
         f"hotspot_host_cleanup_removed={hotspot_host_cleanup_removed} "
         f"failed_add_or_refresh={failed_add_or_refresh} failed_remove={failed_remove} "
         f"failed_forced_exempt_remove={failed_forced_exempt_remove} "
         f"failed_forced_authorized_remove={failed_forced_authorized_remove} "
         f"failed_forced_binding_dhcp_remove={failed_forced_binding_dhcp_remove} "
+        f"failed_forced_status_overlap_remove={failed_forced_status_overlap_remove} "
+        f"failed_forced_critical_status_overlap_remove={failed_forced_critical_status_overlap_remove} "
         f"failed_hotspot_host_cleanup={failed_hotspot_host_cleanup} "
         f"skipped_no_ip={skipped_no_ip} skipped_not_allowed={skipped_not_allowed} "
         f"skipped_exempt={skipped_exempt} "
@@ -461,11 +590,15 @@ def sync_unauthorized_hosts_command(
         or failed_forced_exempt_remove > 0
         or failed_forced_authorized_remove > 0
         or failed_forced_binding_dhcp_remove > 0
+        or failed_forced_status_overlap_remove > 0
+        or failed_forced_critical_status_overlap_remove > 0
     ):
         raise click.ClickException(
             "Sinkronisasi unauthorized selesai dengan kegagalan operasi router: "
             f"failed_add_or_refresh={failed_add_or_refresh}, failed_remove={failed_remove}, "
             f"failed_forced_exempt_remove={failed_forced_exempt_remove}, "
             f"failed_forced_authorized_remove={failed_forced_authorized_remove}, "
-            f"failed_forced_binding_dhcp_remove={failed_forced_binding_dhcp_remove}"
+            f"failed_forced_binding_dhcp_remove={failed_forced_binding_dhcp_remove}, "
+            f"failed_forced_status_overlap_remove={failed_forced_status_overlap_remove}, "
+            f"failed_forced_critical_status_overlap_remove={failed_forced_critical_status_overlap_remove}"
         )
