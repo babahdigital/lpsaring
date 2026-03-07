@@ -1157,10 +1157,12 @@ def _sync_address_list_status(
         status_value = "fup"
     else:
         status_value = "active"
+    user_id_raw = getattr(user, "id", None)
+    user_uid = str(user_id_raw).strip() if user_id_raw is not None else ""
     now = datetime.now(dt_timezone.utc)
     date_str, time_str = get_app_date_time_strings(now)
     comment = (
-        f"lpsaring|status={status_value}|user={username_08}|uid={user.id}|role={user.role.value}|date={date_str}|time={time_str}"
+        f"lpsaring|status={status_value}|user={username_08}|uid={user_uid or 'unknown'}|role={user.role.value}|date={date_str}|time={time_str}"
     )
     other_lists = [
         name
@@ -1179,19 +1181,20 @@ def _sync_address_list_status(
         if msg in ("IP belum tersedia untuk user", "IP tidak ditemukan"):
             ok_binding, binding_map, _msg = get_hotspot_ip_binding_user_map(api)
             if ok_binding:
-                user_id_str = str(user.id)
+                user_id_str = user_uid
                 fallback_ip = None
-                for entry in binding_map.values():
-                    if str(entry.get("user_id")) == user_id_str:
-                        ip_address = entry.get("address")
-                        if ip_address:
-                            fallback_ip = str(ip_address)
-                            break
-                if not fallback_ip:
+                if user_id_str:
+                    for entry in binding_map.values():
+                        if str(entry.get("user_id")) == user_id_str:
+                            ip_address = entry.get("address")
+                            if ip_address:
+                                fallback_ip = str(ip_address)
+                                break
+                if not fallback_ip and user_id_raw is not None:
                     device_macs = db.session.scalars(
                         select(UserDevice.mac_address)
                         .where(
-                            UserDevice.user_id == user.id,
+                            UserDevice.user_id == user_id_raw,
                             UserDevice.is_authorized.is_(True),
                         )
                         .order_by(UserDevice.last_seen_at.desc())
@@ -1301,10 +1304,12 @@ def _sync_address_list_status_for_ip(
         status_value = "active"
     now = datetime.now(dt_timezone.utc)
     date_str, time_str = get_app_date_time_strings(now)
+    user_id_raw = getattr(user, "id", None)
+    user_uid = str(user_id_raw).strip() if user_id_raw is not None else ""
     comment = (
         f"lpsaring|status={status_value}"
         f"|user={username_08}"
-        f"|uid={user.id}"
+        f"|uid={user_uid or 'unknown'}"
         f"|role={user.role.value}"
         f"|ip={ip_address}"
         f"|date={date_str}"
