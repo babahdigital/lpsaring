@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timezone as dt_timezone
 from http import HTTPStatus
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, has_request_context, jsonify, request
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -104,7 +104,9 @@ def get_access_parity(current_admin):
     if not report.get("ok", False) and report.get("reason") == "mikrotik_unavailable":
         return jsonify({"message": "MikroTik connection unavailable."}), HTTPStatus.SERVICE_UNAVAILABLE
 
-    include_non_parity_raw = str(request.args.get("include_non_parity", "false") or "").strip().lower()
+    include_non_parity_raw = "false"
+    if has_request_context():
+        include_non_parity_raw = str(request.args.get("include_non_parity", "false") or "").strip().lower()
     include_non_parity = include_non_parity_raw in {"1", "true", "yes", "on"}
     items = list(report.get("items", []) or [])
     if not include_non_parity:
