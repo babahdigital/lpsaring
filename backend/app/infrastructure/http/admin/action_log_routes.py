@@ -74,7 +74,7 @@ def _build_log_query(apply_filters=True):
 
 @action_log_bp.route("/action-logs", methods=["GET"])
 @admin_required
-def get_action_logs(_current_admin: User):
+def get_action_logs(current_admin: User):  # noqa: ARG001
     """Endpoint untuk mengambil log aktivitas admin dengan paginasi dan filter lengkap."""
     try:
         # [PERBAIKAN UTAMA] Logika untuk menangani itemsPerPage = -1
@@ -121,7 +121,7 @@ def get_action_logs(_current_admin: User):
 
 @action_log_bp.route("/action-logs/export", methods=["GET"])
 @admin_required
-def export_action_logs(_current_admin: User):
+def export_action_logs(current_admin: User):  # noqa: ARG001
     """Endpoint untuk mengekspor log ke format CSV atau TXT."""
     file_format = request.args.get("format", "csv").lower()
 

@@ -8,7 +8,7 @@ from app.extensions import db
 from app.infrastructure.db.models import User, UserRole, AdminActionType, UserDevice, RefreshToken
 from app.services import settings_service
 from app.utils.formatters import format_to_local_phone
-from .helpers import _log_admin_action, _handle_mikrotik_operation
+from .helpers import _log_admin_action, _handle_mikrotik_operation, _send_whatsapp_notification
 from app.infrastructure.gateways.mikrotik_client import delete_hotspot_user, get_mikrotik_connection
 
 
@@ -81,7 +81,6 @@ def _cleanup_router_artifacts(user_to_remove: User, devices: Sequence[UserDevice
 
     summary: dict[str, Any] = {
         "mikrotik_connected": False,
-        "hotspot_active_removed": 0,
         "hotspot_hosts_removed": 0,
         "ip_bindings_removed": 0,
         "dhcp_leases_removed": 0,
@@ -98,42 +97,6 @@ def _cleanup_router_artifacts(user_to_remove: User, devices: Sequence[UserDevice
                 return summary
 
             summary["mikrotik_connected"] = True
-
-            try:
-                active_res = api.get_resource("/ip/hotspot/active")
-                active_removed_ids: set[str] = set()
-                for mac in macs:
-                    summary["hotspot_active_removed"] += _remove_rows(
-                        active_res,
-                        active_res.get(**{"mac-address": mac}) or [],
-                        errors,
-                        active_removed_ids,
-                    )
-                for ip in ips:
-                    summary["hotspot_active_removed"] += _remove_rows(
-                        active_res,
-                        active_res.get(address=ip) or [],
-                        errors,
-                        active_removed_ids,
-                    )
-                if username_08:
-                    summary["hotspot_active_removed"] += _remove_rows(
-                        active_res,
-                        active_res.get(user=username_08) or [],
-                        errors,
-                        active_removed_ids,
-                    )
-
-                for row in active_res.get() or []:
-                    if _comment_matches_user(row.get("comment")):
-                        summary["comment_tagged_entries_removed"] += _remove_rows(
-                            active_res,
-                            [row],
-                            errors,
-                            active_removed_ids,
-                        )
-            except Exception as e:
-                errors.append(f"hotspot_active_cleanup: {e}")
 
             try:
                 host_res = api.get_resource("/ip/hotspot/host")
@@ -357,6 +320,15 @@ def process_user_removal(user_to_remove: User, admin_actor: User) -> Tuple[bool,
         current_app.logger.warning(
             "SUPER ADMIN ACTION: Hard deleting user %s (ALLOW_USER_HARD_DELETE=True).",
             user_to_remove.full_name,
+        )
+        # Notifikasi WA ke user sebelum dihapus (best effort)
+        _send_whatsapp_notification(
+            user_to_remove.phone_number,
+            "user_account_deleted",
+            {
+                "full_name": user_to_remove.full_name or "Pengguna",
+                "phone_number": user_to_remove.phone_number or "",
+            },
         )
         if mikrotik_username:
             success, msg = _handle_mikrotik_operation(delete_hotspot_user, username=mikrotik_username)

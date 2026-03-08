@@ -1194,3 +1194,91 @@ def check_mikrotik_status(current_admin: User, user_id: uuid.UUID):
         return jsonify(
             {"message": "Terjadi kesalahan internal tak terduga pada server."}
         ), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@user_management_bp.route("/users/seed-imported-update-submissions", methods=["POST"])
+@admin_required
+def seed_imported_update_submissions(current_admin: User):
+    """Buat PublicDatabaseUpdateSubmission untuk semua user bermama 'Imported ...' yang belum dinotifikasi WA.
+
+    Body JSON opsional:
+    - test_phone: string  -> hanya seed untuk nomor ini (mode uji coba)
+    - dry_run: bool       -> hitung saja tanpa membuat record (default False)
+    """
+    body = request.get_json(silent=True) or {}
+    test_phone = str(body.get("test_phone") or "").strip()
+    dry_run = bool(body.get("dry_run", False))
+
+    try:
+        query = db.session.query(User).filter(
+            User.role.in_([UserRole.USER]),
+            User.approval_status == ApprovalStatus.APPROVED,
+            User.is_active == True,  # noqa: E712
+            User.full_name.ilike("Imported %"),
+        )
+        if test_phone:
+            phone_variations = get_phone_number_variations(test_phone)
+            query = query.filter(User.phone_number.in_(phone_variations))
+
+        imported_users = query.all()
+
+        seeded = []
+        skipped = []
+
+        for user in imported_users:
+            # Cek apakah sudah ada submission pending dan belum dinotifikasi
+            existing = (
+                db.session.query(PublicDatabaseUpdateSubmission)
+                .filter(
+                    PublicDatabaseUpdateSubmission.phone_number.in_(
+                        get_phone_number_variations(user.phone_number or "")
+                    ),
+                    PublicDatabaseUpdateSubmission.whatsapp_notified_at == None,  # noqa: E711
+                )
+                .first()
+            )
+
+            if existing:
+                skipped.append(user.phone_number)
+                continue
+
+            if not dry_run:
+                record = PublicDatabaseUpdateSubmission()
+                record.full_name = user.full_name or f"Imported {user.phone_number}"
+                record.role = user.role.value if hasattr(user.role, "value") else str(user.role)
+                record.blok = getattr(user, "blok", None)
+                record.kamar = getattr(user, "kamar", None)
+                record.phone_number = user.phone_number
+                record.approval_status = "PENDING"
+                record.source_ip = "admin_seed"
+                db.session.add(record)
+
+            seeded.append(user.phone_number)
+
+        if not dry_run and seeded:
+            db.session.commit()
+
+        current_app.logger.info(
+            "seed_imported_update_submissions: seeded=%d skipped=%d dry_run=%s by admin=%s",
+            len(seeded), len(skipped), dry_run, current_admin.phone_number,
+        )
+
+        return jsonify({
+            "success": True,
+            "dry_run": dry_run,
+            "seeded_count": len(seeded),
+            "skipped_count": len(skipped),
+            "seeded_phones": seeded,
+            "skipped_phones": skipped,
+            "message": (
+                f"{'[DRY RUN] ' if dry_run else ''}"
+                f"{len(seeded)} submission dibuat untuk user Imported"
+                f"{f' (test: {test_phone})' if test_phone else ''}."
+                f" {len(skipped)} sudah ada / sudah dinotifikasi."
+            ),
+        }), HTTPStatus.OK
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"seed_imported_update_submissions error: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Gagal seed submission."}), HTTPStatus.INTERNAL_SERVER_ERROR

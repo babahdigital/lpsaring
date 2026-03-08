@@ -3,7 +3,7 @@ import logging
 import threading
 import uuid
 import ipaddress
-from datetime import datetime, timezone as dt_timezone, date
+from datetime import datetime, timezone as dt_timezone, date, timedelta
 from typing import Any, Dict, List, Tuple, Optional
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -20,6 +20,8 @@ from app.infrastructure.db.models import (
     DailyUsageLog,
     Transaction,
     UserDevice,
+    AdminActionLog,
+    AdminActionType,
 )
 from app.infrastructure.gateways.mikrotik_client import (
     get_mikrotik_connection,
@@ -1835,19 +1837,68 @@ def resolve_target_profile_for_user(user: User) -> str:
     return _resolve_target_profile(user, remaining_mb, remaining_percent, is_expired)
 
 
+def _log_system_cleanup_action(user: "User", reason: str, action: str) -> None:
+    """Catat aksi cleanup sistem ke AdminActionLog (admin_id=None = system action)."""
+    try:
+        action_type_map = {
+            "hard_delete": AdminActionType.MANUAL_USER_DELETE,
+            "deactivate": AdminActionType.DEACTIVATE_USER,
+            "unapproved_delete": AdminActionType.REJECT_USER,
+        }
+        action_type = action_type_map.get(action, AdminActionType.DEACTIVATE_USER)
+        log_entry = AdminActionLog(
+            admin_id=None,
+            target_user_id=user.id,
+            action_type=action_type,
+            details=str({
+                "source": "cleanup_inactive_users (system)",
+                "action": action,
+                "reason": reason,
+                "user_phone": user.phone_number,
+                "user_name": user.full_name,
+            }),
+        )
+        db.session.add(log_entry)
+    except Exception as e:
+        current_app.logger.warning("cleanup: gagal catat audit log untuk user %s: %s", user.phone_number, e)
+
+
 def cleanup_inactive_users() -> Dict[str, int]:
-    counters = {"deactivated": 0, "deleted": 0, "delete_skipped_guard": 0}
+    """Bersihkan user tidak aktif berdasarkan criteria kuota + waktu login.
+
+    'Tidak aktif' = quota_expiry_date sudah habis (atau tidak pernah punya kuota)
+                    DAN last_login_at melebihi threshold.
+
+    User dengan quota_expiry_date di masa depan TIDAK akan disentuh,
+    meskipun tidak pernah login ke portal — mereka masih pelanggan aktif.
+    """
+    counters = {
+        "deleted": 0,
+        "deactivated": 0,
+        "delete_skipped_guard": 0,
+        "delete_skipped_active_quota": 0,
+        "unapproved_deleted": 0,
+    }
     now_utc = datetime.now(dt_timezone.utc)
+
+    deactivate_enabled = settings_service.get_setting_as_bool("INACTIVE_DEACTIVATE_ENABLED", False)
     deactivate_days = settings_service.get_setting_as_int("INACTIVE_DEACTIVATE_DAYS", 45)
-    delete_days = settings_service.get_setting_as_int("INACTIVE_DELETE_DAYS", 90)
     delete_enabled = settings_service.get_setting_as_bool("INACTIVE_AUTO_DELETE_ENABLED", False)
-    delete_max_per_run = settings_service.get_setting_as_int("INACTIVE_DELETE_MAX_PER_RUN", 0)
+    delete_days = settings_service.get_setting_as_int("INACTIVE_DELETE_DAYS", 90)
+    # Safety cap: default 5 agar tidak hapus massal sekaligus
+    delete_max_per_run = settings_service.get_setting_as_int("INACTIVE_DELETE_MAX_PER_RUN", 5)
+    unapproved_delete_days = settings_service.get_setting_as_int("UNAPPROVED_AUTO_DELETE_DAYS", 30)
 
     if not delete_enabled:
-        current_app.logger.warning(
-            "cleanup_inactive_users: hard delete otomatis dinonaktifkan (INACTIVE_AUTO_DELETE_ENABLED=False)."
+        current_app.logger.info(
+            "cleanup_inactive_users: hard delete dinonaktifkan (INACTIVE_AUTO_DELETE_ENABLED=False)."
+        )
+    if not deactivate_enabled:
+        current_app.logger.info(
+            "cleanup_inactive_users: deactivate dinonaktifkan (INACTIVE_DEACTIVATE_ENABLED=False)."
         )
 
+    # --- BAGIAN 1: User approved (USER/KOMANDAN) ---
     users = db.session.scalars(
         select(User).where(
             User.role.in_([UserRole.USER, UserRole.KOMANDAN]),
@@ -1864,12 +1915,29 @@ def cleanup_inactive_users() -> Dict[str, int]:
             days_inactive = (now_utc - last_activity).days
             username_08 = format_to_local_phone(user.phone_number)
 
+            # Guard utama: jangan sentuh user yang masih punya kuota aktif
+            has_active_quota = (
+                user.quota_expiry_date is not None
+                and user.quota_expiry_date > now_utc
+            )
+
+            # --- Path: HARD DELETE ---
             if days_inactive >= delete_days:
+                if has_active_quota:
+                    counters["delete_skipped_active_quota"] += 1
+                    current_app.logger.info(
+                        "cleanup_inactive: SKIP delete %s — kuota masih aktif hingga %s (inactive %d hari)",
+                        user.phone_number, user.quota_expiry_date, days_inactive,
+                    )
+                    continue
+
                 can_delete = delete_enabled and (
                     delete_max_per_run <= 0 or counters["deleted"] < delete_max_per_run
                 )
                 if can_delete:
-                    devices = db.session.scalars(select(UserDevice).where(UserDevice.user_id == user.id)).all()
+                    devices = db.session.scalars(
+                        select(UserDevice).where(UserDevice.user_id == user.id)
+                    ).all()
                     for device in devices:
                         if device.mac_address:
                             _remove_ip_binding(device.mac_address, user.mikrotik_server_name or "all")
@@ -1878,14 +1946,30 @@ def cleanup_inactive_users() -> Dict[str, int]:
                         db.session.delete(device)
                     if api and username_08:
                         delete_hotspot_user(api_connection=api, username=username_08)
+                    current_app.logger.warning(
+                        "cleanup_inactive: HARD DELETE %s (phone=%s, inactive=%d hari, quota_expiry=%s)",
+                        user.full_name, user.phone_number, days_inactive, user.quota_expiry_date,
+                    )
+                    _log_system_cleanup_action(
+                        user,
+                        reason=f"Tidak aktif {days_inactive} hari, kuota habis sejak {user.quota_expiry_date}",
+                        action="hard_delete",
+                    )
                     db.session.delete(user)
                     counters["deleted"] += 1
                     continue
 
                 counters["delete_skipped_guard"] += 1
+                continue
 
-            if user.is_active and days_inactive >= deactivate_days:
-                devices = db.session.scalars(select(UserDevice).where(UserDevice.user_id == user.id)).all()
+            # --- Path: DEACTIVATE (soft) ---
+            if deactivate_enabled and user.is_active and days_inactive >= deactivate_days:
+                if has_active_quota:
+                    continue
+
+                devices = db.session.scalars(
+                    select(UserDevice).where(UserDevice.user_id == user.id)
+                ).all()
                 for device in devices:
                     if device.mac_address:
                         _remove_ip_binding(device.mac_address, user.mikrotik_server_name or "all")
@@ -1893,11 +1977,59 @@ def cleanup_inactive_users() -> Dict[str, int]:
                         _remove_blocked_address_list(device.ip_address)
                 if api and username_08:
                     delete_hotspot_user(api_connection=api, username=username_08)
+                current_app.logger.info(
+                    "cleanup_inactive: DEACTIVATE %s (phone=%s, inactive=%d hari)",
+                    user.full_name, user.phone_number, days_inactive,
+                )
+                _log_system_cleanup_action(
+                    user,
+                    reason=f"Tidak aktif {days_inactive} hari, kuota habis/kosong",
+                    action="deactivate",
+                )
                 user.is_active = False
                 user.mikrotik_user_exists = False
                 counters["deactivated"] += 1
 
+    # --- BAGIAN 2: User belum di-approve terlalu lama ---
+    if unapproved_delete_days > 0:
+        cutoff = now_utc - timedelta(days=unapproved_delete_days)
+        unapproved_users = db.session.scalars(
+            select(User).where(
+                User.role.in_([UserRole.USER, UserRole.KOMANDAN]),
+                User.approval_status == ApprovalStatus.PENDING_APPROVAL,
+                User.created_at < cutoff,
+            )
+        ).all()
+
+        with get_mikrotik_connection() as api2:
+            for user in unapproved_users:
+                username_08 = format_to_local_phone(user.phone_number)
+                devices = db.session.scalars(
+                    select(UserDevice).where(UserDevice.user_id == user.id)
+                ).all()
+                for device in devices:
+                    if device.mac_address:
+                        _remove_ip_binding(device.mac_address, user.mikrotik_server_name or "all")
+                    if device.ip_address:
+                        _remove_blocked_address_list(device.ip_address)
+                    db.session.delete(device)
+                if api2 and username_08:
+                    delete_hotspot_user(api_connection=api2, username=username_08)
+                days_pending = (now_utc - user.created_at).days if user.created_at else 0
+                current_app.logger.warning(
+                    "cleanup_unapproved: DELETE %s (phone=%s, status=%s, %d hari sejak daftar)",
+                    user.full_name, user.phone_number, user.approval_status.value, days_pending,
+                )
+                _log_system_cleanup_action(
+                    user,
+                    reason=f"Tidak di-approve dalam {days_pending} hari (status: {user.approval_status.value})",
+                    action="unapproved_delete",
+                )
+                db.session.delete(user)
+                counters["unapproved_deleted"] += 1
+
     if db.session.dirty or db.session.new or db.session.deleted:
         db.session.commit()
 
+    current_app.logger.info("cleanup_inactive_users selesai: %s", counters)
     return counters

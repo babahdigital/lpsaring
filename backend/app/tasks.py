@@ -70,17 +70,30 @@ _NON_RETRYABLE_UNAUTHORIZED_SYNC_ERROR_MARKERS = (
 
 
 def _should_skip_public_update_whatsapp_for_phone(phone_number: str) -> bool:
-    """Return True when the number is known but no longer an active LPSaringNet service user."""
+    """Return True (skip) jika nomor tidak layak menerima WA update.
 
+    Kondisi skip:
+    - Nomor tidak ditemukan di DB users → tidak dikenal, jangan kirim
+    - User ditemukan tapi bukan user 'Imported' (nama tidak diawali 'Imported ') →
+      hanya kirim ke user yang datanya belum dilengkapi (hasil import massal)
+    - User tidak aktif / belum diapprove → tidak relevan
+    """
     normalized_phone = str(phone_number or "").strip()
     if not normalized_phone:
-        return False
+        return True  # skip: no phone
 
     try:
         variations = get_phone_number_variations(normalized_phone)
         user = db.session.query(User).filter(User.phone_number.in_(variations)).order_by(User.created_at.desc()).first()
+
+        # Nomor tidak ada di DB → jangan kirim WA ke nomor tidak dikenal
         if user is None:
-            return False
+            return True
+
+        # Hanya kirim ke user yang namanya diawali "Imported " (hasil import, belum update data)
+        user_name = str(getattr(user, "full_name", "") or "").strip()
+        if not user_name.startswith("Imported "):
+            return True  # skip: bukan user Imported
 
         is_approved = getattr(user, "approval_status", None) == ApprovalStatus.APPROVED
         is_active = bool(getattr(user, "is_active", False))
