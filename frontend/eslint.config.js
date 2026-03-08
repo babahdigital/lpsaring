@@ -24,6 +24,7 @@ export default [
       '**/*.json5',
       'node_modules',
       'server/routes/.well-known/**',
+      'types/api/contracts.generated.ts',
     ],
   },
   {
