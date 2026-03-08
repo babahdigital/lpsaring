@@ -256,6 +256,12 @@ def make_celery_app(app=None):
             "schedule": max(60, update_sync_interval),
         }
 
+        if os.environ.get("UPDATE_AUTO_DELETE_UNRESPONSIVE", "False").lower() == "true":
+            celery_instance.conf.beat_schedule["auto-delete-unresponsive-imported"] = {
+                "task": "auto_delete_unresponsive_imported_users_task",
+                "schedule": max(300, update_sync_interval),
+            }
+
     # ---- Maintenance periodik (tidak tergantung MikroTik operations) ----
     if os.environ.get("QUOTA_STALE_KEY_PURGE_ENABLED", "True").lower() == "true":
         celery_instance.conf.beat_schedule["purge-stale-quota-keys"] = {

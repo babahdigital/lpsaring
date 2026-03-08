@@ -19,10 +19,13 @@ from app.services.access_parity_service import collect_access_parity_report
 from app.services.walled_garden_service import sync_walled_garden
 from app.extensions import db
 from app.infrastructure.db.models import (
+    AdminActionLog,
+    AdminActionType,
     ApprovalStatus,
     NotificationRecipient,
     NotificationType,
     Package,
+    PublicDatabaseUpdateSubmission,
     Transaction,
     TransactionStatus,
     User,
@@ -35,6 +38,7 @@ from app.infrastructure.gateways.mikrotik_client import (
     get_hotspot_host_usage_map,
     get_mikrotik_connection,
     remove_address_list_entry,
+    remove_ip_binding,
     upsert_address_list_entry,
     upsert_ip_binding,
 )
@@ -142,8 +146,6 @@ def clear_total_if_no_update_submission_task(self):
         now_utc = datetime.now(dt_timezone.utc)
         cutoff = now_utc - timedelta(days=stale_days)
 
-        from app.infrastructure.db.models import PublicDatabaseUpdateSubmission
-
         latest_submission = (
             db.session.query(PublicDatabaseUpdateSubmission)
             .order_by(PublicDatabaseUpdateSubmission.created_at.desc())
@@ -237,17 +239,28 @@ def send_public_update_submission_whatsapp_batch_task(self):
             logger.info("Update sync WA batch skipped: WhatsApp notifications disabled.")
             return {"success": True, "skipped": True, "reason": "whatsapp_disabled"}
 
-        from app.infrastructure.db.models import PublicDatabaseUpdateSubmission
-
         try:
             batch_size = int(app.config.get("UPDATE_WHATSAPP_BATCH_SIZE", 3))
         except Exception:
             batch_size = 3
         batch_size = max(1, min(batch_size, 20))
 
+        try:
+            deadline_days = int(app.config.get("UPDATE_CLEAR_TOTAL_AFTER_DAYS", 3))
+        except Exception:
+            deadline_days = 3
+        deadline_days = max(1, deadline_days)
+
         message_template = (
             app.config.get("UPDATE_WHATSAPP_IMPORT_MESSAGE_TEMPLATE")
-            or "Halo {full_name}, silakan lanjutkan pemutakhiran data melalui link ini: {update_link}"
+            or (
+                "Halo *{full_name}*,\n\n"
+                "Kami mendeteksi data Anda di jaringan LPSaring perlu dilengkapi.\n\n"
+                "Silakan perbarui data melalui link berikut *dalam {deadline_days} hari*:\n"
+                "{update_link}\n\n"
+                "\u26a0\ufe0f *Peringatan:* Jika tidak diperbarui, akun Anda akan *dihapus otomatis* dari sistem.\n\n"
+                "Terima kasih,\nTim LPSaring"
+            )
         )
         base_public_url = str(app.config.get("APP_PUBLIC_BASE_URL") or "").strip().rstrip("/")
 
@@ -296,6 +309,7 @@ def send_public_update_submission_whatsapp_batch_task(self):
                 "blok": getattr(representative, "blok", ""),
                 "kamar": getattr(representative, "kamar", ""),
                 "tamping_type": getattr(representative, "tamping_type", "") or "",
+                "deadline_days": deadline_days,
             }
 
             phone_for_link = str(getattr(representative, "phone_number", "") or "").strip()
@@ -311,8 +325,9 @@ def send_public_update_submission_whatsapp_batch_task(self):
                 message = str(message_template).format(**context)
             except Exception:
                 message = (
-                    f"Halo {context['full_name']}, silakan lanjutkan pemutakhiran data melalui link ini: "
-                    f"{update_link}"
+                    f"Halo {context['full_name']}, silakan perbarui data melalui link ini "
+                    f"*dalam {deadline_days} hari*: {update_link}\n\n"
+                    f"\u26a0\ufe0f Jika tidak diperbarui, akun Anda akan dihapus otomatis dari sistem."
                 )
 
             skip_phone = _should_skip_public_update_whatsapp_for_phone(getattr(representative, "phone_number", ""))
@@ -354,6 +369,191 @@ def send_public_update_submission_whatsapp_batch_task(self):
             "sent_numbers": sent_numbers,
             "failed_numbers": failed_numbers,
             "batch_size": batch_size,
+        }
+
+
+@celery_app.task(
+    name="auto_delete_unresponsive_imported_users_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 1},
+)
+def auto_delete_unresponsive_imported_users_task(self):
+    """Hapus user Imported yang tidak mengisi form update setelah X hari."""
+
+    app = create_app()
+    with app.app_context():
+        if not bool(app.config.get("UPDATE_ENABLE_SYNC", False)):
+            logger.info("Auto-delete unresponsive skipped: UPDATE_ENABLE_SYNC is disabled.")
+            return {"success": True, "skipped": True, "reason": "update_sync_disabled"}
+
+        if not bool(app.config.get("UPDATE_AUTO_DELETE_UNRESPONSIVE", False)):
+            logger.info("Auto-delete unresponsive skipped: UPDATE_AUTO_DELETE_UNRESPONSIVE is disabled.")
+            return {"success": True, "skipped": True, "reason": "auto_delete_disabled"}
+
+        try:
+            deadline_days = int(app.config.get("UPDATE_CLEAR_TOTAL_AFTER_DAYS", 3))
+        except Exception:
+            deadline_days = 3
+        deadline_days = max(1, deadline_days)
+
+        try:
+            max_per_run = int(app.config.get("UPDATE_AUTO_DELETE_MAX_PER_RUN", 5))
+        except Exception:
+            max_per_run = 5
+        max_per_run = max(1, max_per_run)
+
+        now_utc = datetime.now(dt_timezone.utc)
+        cutoff = now_utc - timedelta(days=deadline_days)
+
+        all_overdue = (
+            db.session.query(PublicDatabaseUpdateSubmission)
+            .filter(
+                PublicDatabaseUpdateSubmission.whatsapp_notified_at.isnot(None),
+                PublicDatabaseUpdateSubmission.whatsapp_notified_at < cutoff,
+                PublicDatabaseUpdateSubmission.approval_status == "PENDING",
+            )
+            .order_by(PublicDatabaseUpdateSubmission.whatsapp_notified_at.asc())
+            .all()
+        )
+
+        def _normalize_phone_key(phone_number: str) -> str:
+            digits = "".join(ch for ch in str(phone_number or "") if ch.isdigit())
+            if not digits:
+                return ""
+            if digits.startswith("0"):
+                return f"62{digits[1:]}"
+            if digits.startswith("8"):
+                return f"62{digits}"
+            return digits
+
+        phone_groups: dict = {}
+        for row in all_overdue:
+            key = _normalize_phone_key(getattr(row, "phone_number", ""))
+            if not key:
+                continue
+            phone_groups.setdefault(key, []).append(row)
+            if len(phone_groups) >= max_per_run:
+                break
+
+        if not phone_groups:
+            logger.info("Auto-delete unresponsive: no overdue PENDING submissions.")
+            return {"success": True, "skipped": True, "reason": "no_overdue_pending"}
+
+        deleted_count = 0
+        skipped_count = 0
+
+        with get_mikrotik_connection() as api:
+            for _phone_key, submissions in phone_groups.items():
+                representative = submissions[0]
+                raw_phone = str(getattr(representative, "phone_number", "") or "").strip()
+                if not raw_phone:
+                    skipped_count += 1
+                    continue
+
+                variations = get_phone_number_variations(raw_phone)
+                user = (
+                    db.session.query(User)
+                    .filter(User.phone_number.in_(variations))
+                    .order_by(User.created_at.desc())
+                    .first()
+                )
+                if user is None:
+                    logger.info(
+                        "Auto-delete unresponsive: user not found for phone=%s, marking submissions.", raw_phone
+                    )
+                    for sub in submissions:
+                        sub.approval_status = "DELETED_AUTO"
+                        sub.rejection_reason = (
+                            f"Auto-deleted: tidak merespons {deadline_days} hari (user not found)"
+                        )
+                    skipped_count += 1
+                    continue
+
+                if user.role in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+                    logger.info("Auto-delete unresponsive: SKIP admin user %s.", user.phone_number)
+                    skipped_count += 1
+                    continue
+
+                user_name = str(getattr(user, "full_name", "") or "").strip()
+                if not user_name.startswith("Imported "):
+                    logger.info(
+                        "Auto-delete unresponsive: SKIP non-imported user %s.", user.phone_number
+                    )
+                    skipped_count += 1
+                    continue
+
+                if user.quota_expiry_date is not None and user.quota_expiry_date > now_utc:
+                    logger.info(
+                        "Auto-delete unresponsive: SKIP user %s — kuota aktif hingga %s.",
+                        user.phone_number,
+                        user.quota_expiry_date,
+                    )
+                    skipped_count += 1
+                    continue
+
+                username_08 = format_to_local_phone(user.phone_number)
+
+                if api and username_08:
+                    ok, msg = delete_hotspot_user(api_connection=api, username=username_08)
+                    if not ok and "tidak ditemukan" not in str(msg).lower():
+                        logger.warning(
+                            "Auto-delete unresponsive: failed to delete MikroTik user %s: %s",
+                            username_08, msg,
+                        )
+
+                devices = db.session.query(UserDevice).filter(UserDevice.user_id == user.id).all()
+
+                if api:
+                    for device in devices:
+                        if device.mac_address:
+                            remove_ip_binding(api, device.mac_address, user.mikrotik_server_name or "all")
+                        if device.ip_address:
+                            remove_address_list_entry(api, device.ip_address, "active")
+                            remove_address_list_entry(api, device.ip_address, "blocked")
+
+                for device in devices:
+                    db.session.delete(device)
+
+                for sub in submissions:
+                    sub.approval_status = "DELETED_AUTO"
+                    sub.rejection_reason = f"Auto-deleted: tidak merespons {deadline_days} hari"
+
+                log_entry = AdminActionLog(
+                    admin_id=None,
+                    target_user_id=None,
+                    action_type=AdminActionType.MANUAL_USER_DELETE,
+                    details=json.dumps({
+                        "auto_delete": True,
+                        "phone_number": raw_phone,
+                        "full_name": user_name,
+                        "deadline_days": deadline_days,
+                        "devices_cleaned": len(devices),
+                        "mikrotik_connected": api is not None,
+                    }),
+                )
+                db.session.add(log_entry)
+
+                db.session.delete(user)
+                deleted_count += 1
+                logger.warning(
+                    "Auto-delete unresponsive: DELETED %s (phone=%s, deadline=%d hari)",
+                    user_name, raw_phone, deadline_days,
+                )
+
+        db.session.commit()
+
+        logger.info(
+            "Auto-delete unresponsive imported users: deleted=%d skipped=%d deadline_days=%d",
+            deleted_count, skipped_count, deadline_days,
+        )
+        return {
+            "success": True,
+            "deleted": deleted_count,
+            "skipped": skipped_count,
+            "deadline_days": deadline_days,
         }
 
 

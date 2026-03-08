@@ -13,6 +13,7 @@ useHead({ title: 'Pemutakhiran Database Pengguna' })
 const runtimeConfig = useRuntimeConfig()
 const route = useRoute()
 const isFeatureEnabled = computed(() => String(runtimeConfig.public.publicDbUpdateFormEnabled ?? 'false').toLowerCase() === 'true')
+const deadlineDays = computed(() => Number(runtimeConfig.public.updateDeadlineDays ?? 3))
 
 const fullName = ref('')
 const role = ref<'USER' | 'KOMANDAN' | 'TAMPING' | ''>('')
@@ -172,7 +173,7 @@ function goToLogin() {
               </h2>
 
               <p class="text-body-2 text-medium-emphasis mb-6">
-                {{ successMessage || 'Data berhasil dikirim dan akan ditinjau oleh admin.' }}
+                {{ successMessage || 'Data Anda telah diterima dan sedang ditinjau admin. Akun Anda tidak akan dihapus otomatis.' }}
               </p>
 
               <VBtn
@@ -190,6 +191,15 @@ function goToLogin() {
           </p>
 
           <VAlert
+            type="warning"
+            variant="tonal"
+            class="mb-4"
+          >
+            <strong>Perhatian:</strong> Segera lengkapi data Anda dalam <strong>{{ deadlineDays }} hari</strong> sejak menerima pesan ini.
+            Jika tidak diperbarui, akun Anda akan <strong>dihapus otomatis</strong> dari sistem.
+          </VAlert>
+
+          <VAlert
             v-if="!hasPhoneFromLink"
             type="error"
             variant="tonal"
@@ -202,6 +212,9 @@ function goToLogin() {
             <VTextField
               v-model="fullName"
               label="Nama Lengkap"
+              placeholder="Contoh: Budi Santoso"
+              hint="Masukkan nama lengkap Anda, bukan nama sistem (mis. yang diawali 'Imported')"
+              persistent-hint
               variant="outlined"
               :rules="[requiredRule]"
               class="mb-3"

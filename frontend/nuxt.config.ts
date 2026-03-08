@@ -34,6 +34,7 @@ const statusPageGuardEnabled = process.env.NUXT_PUBLIC_STATUS_PAGE_GUARD_ENABLED
 const publicDbUpdateFormEnabled = process.env.NUXT_PUBLIC_PUBLIC_DB_UPDATE_FORM_ENABLED
   ?? process.env.NUXT_PUBLIC_DB_UPDATE_FORM_ENABLED
   ?? 'false'
+const updateDeadlineDays = Number(process.env.NUXT_PUBLIC_UPDATE_DEADLINE_DAYS ?? '3')
 const internalApiBaseUrl = ensureApiSuffix(process.env.NUXT_INTERNAL_API_BASE_URL ?? 'http://backend:5010')
 const internalApiOrigin = normalizeUrl(internalApiBaseUrl).replace(/\/api$/, '')
 const internalApiProxyTarget = `${internalApiOrigin}/api/**`
@@ -332,6 +333,7 @@ export default defineNuxtConfig({
       devBypassToken,
       statusPageGuardEnabled,
       publicDbUpdateFormEnabled,
+      updateDeadlineDays,
     },
     internalApiBaseUrl,
   },
