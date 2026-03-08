@@ -2,7 +2,7 @@
 // AUTO-GENERATED FILE. DO NOT EDIT MANUALLY.
 // Source: contracts/openapi/openapi.v1.yaml
 
-export const OPENAPI_SOURCE_SHA256 = 'dbe899e9a987fb763412d83d08c1d104197ebce0bab04078e6b022ace87dde10' as const
+export const OPENAPI_SOURCE_SHA256 = 'c999f49076231d5e41e7e775876140a31cbe1bfef26cbd894b80d70c427faa24' as const
 export const API_CONTRACT_REVISION = 'openapi-1.0.0' as const
 
 export type MessageResponse = { message: string }
@@ -119,14 +119,14 @@ export interface GeneratedApiContractMap {
     response: AdminUserMutationResponse
     error: ErrorResponse
   }
-  'PUT /admin/users/{user_id}': {
-    request: AdminUserUpdateRequest
-    response: AdminUserMutationResponse
-    error: ErrorResponse
-  }
   'POST /admin/users/seed-imported-update-submissions': {
     request: SeedImportedUpdateSubmissionsRequest
     response: SeedImportedUpdateSubmissionsResponse
+    error: ErrorResponse
+  }
+  'PUT /admin/users/{user_id}': {
+    request: AdminUserUpdateRequest
+    response: AdminUserMutationResponse
     error: ErrorResponse
   }
   'POST /auth/admin/login': {
