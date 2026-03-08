@@ -1104,8 +1104,14 @@ else
 fi
 
 echo "==> Start backend + workers..."
-# Hapus stopped containers terlebih dahulu untuk mencegah name conflict saat recreate
-docker container prune -f >/dev/null 2>&1 || true
+# Hapus HANYA stopped containers untuk service ini (bukan global prune) untuk cegah name conflict.
+# Global 'docker container prune' tidak dipakai karena bisa menghapus stopped container stack lain.
+for _svc_name in hotspot_prod_backend hotspot_prod_celery_worker hotspot_prod_celery_beat; do
+  _ctr_state=$(docker inspect "$_svc_name" --format='{{.State.Status}}' 2>/dev/null || true)
+  if [ "$_ctr_state" = "exited" ] || [ "$_ctr_state" = "created" ] || [ "$_ctr_state" = "dead" ]; then
+    docker rm "$_svc_name" >/dev/null 2>&1 || true
+  fi
+done
 # shellcheck disable=SC2086
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --remove-orphans --no-deps \$app_recreate_flag backend celery_worker celery_beat
 
@@ -1136,6 +1142,11 @@ fi
 echo "==> Backend readiness OK"
 
 echo "==> Start frontend..."
+# Hapus stopped frontend container jika ada untuk cegah name conflict
+_ctr_state=$(docker inspect "hotspot_prod_nuxt_frontend" --format='{{.State.Status}}' 2>/dev/null || true)
+if [ "$_ctr_state" = "exited" ] || [ "$_ctr_state" = "created" ] || [ "$_ctr_state" = "dead" ]; then
+  docker rm "hotspot_prod_nuxt_frontend" >/dev/null 2>&1 || true
+fi
 # shellcheck disable=SC2086
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --remove-orphans --no-deps \$app_recreate_flag frontend
 
