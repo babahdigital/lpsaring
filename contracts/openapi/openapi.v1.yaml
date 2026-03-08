@@ -451,6 +451,51 @@ paths:
         '401':
           $ref: '#/components/responses/ErrorUnauthorized'
 
+  /users/database-update-submissions:
+    post:
+      tags: [Profile]
+      summary: Submit pemutakhiran data pengguna (publik, tanpa autentikasi)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublicDatabaseUpdateSubmissionRequest'
+      responses:
+        '201':
+          description: Submission berhasil dibuat
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          $ref: '#/components/responses/ErrorBadRequest'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '422':
+          $ref: '#/components/responses/ErrorValidation'
+
+  /users/database-update-submissions/status:
+    get:
+      tags: [Profile]
+      summary: Cek status pemutakhiran data berdasarkan nomor HP (publik, tanpa autentikasi)
+      parameters:
+        - in: query
+          name: phone
+          required: true
+          schema:
+            type: string
+          description: Nomor HP yang digunakan saat import (format bebas, dinormalisasi server)
+      responses:
+        '200':
+          description: Status pemutakhiran data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicUpdateSubmissionStatusResponse'
+        '400':
+          $ref: '#/components/responses/ErrorBadRequest'
+
   /transactions/initiate:
     post:
       tags: [Transactions]
@@ -1755,6 +1800,37 @@ components:
           type: array
           items:
             type: string
+
+    PublicDatabaseUpdateSubmissionRequest:
+      type: object
+      required: [full_name, role, phone_number]
+      properties:
+        full_name:
+          type: string
+        role:
+          type: string
+          enum: [USER, KOMANDAN, TAMPING]
+        blok:
+          type: string
+          nullable: true
+        kamar:
+          type: string
+          nullable: true
+        tamping_type:
+          type: string
+          nullable: true
+        phone_number:
+          type: string
+
+    PublicUpdateSubmissionStatusResponse:
+      type: object
+      required: [success, status]
+      properties:
+        success:
+          type: boolean
+        status:
+          type: string
+          enum: [none, reviewing, approved]
 
     SettingItem:
       type: object

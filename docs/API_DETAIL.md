@@ -56,7 +56,8 @@ Lampiran wajib:
 - `POST /api/admin/update-submissions/{id}/reject`
 
 ### 5.1) Public Update Submission
-- `POST /api/users/database-update-submissions`
+- `POST /api/users/database-update-submissions` — Submit form pemutakhiran data. Memerlukan feature flag `PUBLIC_DB_UPDATE_FORM_ENABLED=true`.
+- `GET /api/users/database-update-submissions/status?phone=<string>` — Cek status submission berdasarkan nomor HP. Publik, tanpa autentikasi. Response: `{ success: boolean, status: "none" | "reviewing" | "approved" }`.
 
 ### 6) Admin Transactions
 - `GET /api/admin/transactions`

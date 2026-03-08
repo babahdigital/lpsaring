@@ -39,6 +39,8 @@ export type AdminUserUpdateRequest = { full_name?: string; role?: 'USER' | 'KOMA
 export type AdminUserMutationResponse = { message: string; user: UserMeResponse }
 export type SeedImportedUpdateSubmissionsRequest = { test_phone?: string | null; dry_run?: boolean | null }
 export type SeedImportedUpdateSubmissionsResponse = { seeded_count: number; skipped_count: number; seeded_phones?: Array<string>; skipped_phones?: Array<string> }
+export type PublicDatabaseUpdateSubmissionRequest = { full_name: string; role: 'USER' | 'KOMANDAN' | 'TAMPING'; blok?: string | null; kamar?: string | null; tamping_type?: string | null; phone_number: string }
+export type PublicUpdateSubmissionStatusResponse = { success: boolean; status: 'none' | 'reviewing' | 'approved' }
 export type SettingItem = { key: string; value: string | number | boolean | null; description?: string | null }
 export type AdminSettingsListResponse = { items: Array<SettingItem> }
 export type AdminSettingsUpdateRequest = { items: Array<{ key: string; value: string | number | boolean | null }> }
@@ -215,6 +217,16 @@ export interface GeneratedApiContractMap {
   'GET /transactions/{order_id}/qr': {
     request: never
     response: string
+    error: ErrorResponse
+  }
+  'POST /users/database-update-submissions': {
+    request: PublicDatabaseUpdateSubmissionRequest
+    response: MessageResponse
+    error: ErrorResponse
+  }
+  'GET /users/database-update-submissions/status': {
+    request: never
+    response: PublicUpdateSubmissionStatusResponse
     error: ErrorResponse
   }
   'GET /users/me/devices': {
