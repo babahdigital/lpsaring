@@ -5,7 +5,7 @@ import {
   resolveHotspotIdentity,
 } from '../utils/hotspotIdentity'
 
-function createSessionStorageMock(initial: Record<string, string> = {}) {
+function createStorageMock(initial: Record<string, string> = {}) {
   const storage = new Map<string, string>(Object.entries(initial))
   return {
     getItem: (key: string) => storage.get(key) ?? null,
@@ -28,7 +28,7 @@ describe('hotspotIdentity', () => {
         referrer: '',
       },
     })
-    vi.stubGlobal('sessionStorage', createSessionStorageMock())
+    vi.stubGlobal('localStorage', createStorageMock())
   })
 
   afterEach(() => {
@@ -80,10 +80,10 @@ describe('hotspotIdentity', () => {
       clientMac: 'aa:bb:cc:dd:ee:33',
     })
 
-    const raw = sessionStorage.getItem('lpsaring:last-hotspot-identity')
+    const raw = localStorage.getItem('lpsaring:last-hotspot-identity')
     const parsed = JSON.parse(String(raw ?? '{}')) as { clientIp?: string, clientMac?: string, at?: number }
     parsed.at = Date.now() - (11 * 60 * 1000)
-    sessionStorage.setItem('lpsaring:last-hotspot-identity', JSON.stringify(parsed))
+    localStorage.setItem('lpsaring:last-hotspot-identity', JSON.stringify(parsed))
 
     expect(getStoredHotspotIdentity()).toEqual({ clientIp: '', clientMac: '' })
   })
