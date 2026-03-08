@@ -11,7 +11,7 @@ const STORAGE_KEY = 'lpsaring:last-hotspot-identity'
 const MAX_AGE_MS = 10 * 60 * 1000
 
 function isBrowserRuntime(): boolean {
-  return typeof window !== 'undefined' && typeof sessionStorage !== 'undefined'
+  return typeof window !== 'undefined' && typeof localStorage !== 'undefined'
 }
 
 function decodeMaybeRepeated(raw: string): string {
@@ -93,7 +93,7 @@ export function rememberHotspotIdentity(identity: Partial<HotspotIdentity>): voi
       clientMac,
       at: Date.now(),
     }
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
   }
   catch {
     // ignore storage failures
@@ -105,7 +105,7 @@ export function getStoredHotspotIdentity(): HotspotIdentity {
     return { clientIp: '', clientMac: '' }
 
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw)
       return { clientIp: '', clientMac: '' }
 

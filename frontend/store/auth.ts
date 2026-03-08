@@ -129,7 +129,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (normalized.length === 0)
       return
     try {
-      sessionStorage.setItem(LAST_MIKROTIK_LOGIN_HINT_KEY, normalized)
+      localStorage.setItem(LAST_MIKROTIK_LOGIN_HINT_KEY, normalized)
     }
     catch {
       // ignore storage errors
@@ -140,7 +140,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (!import.meta.client)
       return ''
     try {
-      return String(sessionStorage.getItem(LAST_MIKROTIK_LOGIN_HINT_KEY) ?? '').trim()
+      return String(localStorage.getItem(LAST_MIKROTIK_LOGIN_HINT_KEY) ?? '').trim()
     }
     catch {
       return ''

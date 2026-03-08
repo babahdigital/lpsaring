@@ -98,7 +98,7 @@ def get_action_logs(current_admin: User):
         base_query = base_query.order_by(sort_column.desc() if sort_order.lower() == "desc" else sort_column.asc())
 
         # Hitung total item sebelum paginasi
-        count_query = select(func.count(AdminActionLog.id)).select_from(base_query.subquery())
+        count_query = select(func.count()).select_from(base_query.subquery())
         total_items = db.session.scalar(count_query) or 0
 
         # Terapkan paginasi hanya jika per_page positif

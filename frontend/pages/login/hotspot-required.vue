@@ -106,7 +106,7 @@ const storedMikrotikLink = computed(() => {
   if (!import.meta.client)
     return ''
   try {
-    return String(window.sessionStorage.getItem(LAST_MIKROTIK_LOGIN_HINT_KEY) ?? '').trim()
+    return String(window.localStorage.getItem(LAST_MIKROTIK_LOGIN_HINT_KEY) ?? '').trim()
   }
   catch {
     return ''
