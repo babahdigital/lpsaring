@@ -23,6 +23,16 @@ def _get_config(key: str, default: int) -> int:
     return default
 
 
+def _get_config_str(key: str, default: str = "") -> str:
+    if current_app:
+        try:
+            value = current_app.config.get(key, default)
+            return str(value) if value is not None else default
+        except Exception:
+            return default
+    return default
+
+
 def _get_storage():
     if current_app:
         redis_client = getattr(current_app, "redis_client_otp", None)
@@ -95,6 +105,28 @@ def record_success(name: str) -> None:
     _set_state(name, state)
 
 
+def _push_open_alert(name: str) -> None:
+    """Push circuit-open event ke Redis list 'cb:open_alerts' untuk diproses dlq_health_monitor_task.
+    Throttle per-circuit: tidak akan push ulang selama min(reset_seconds*5, 3600) detik."""
+    if not _get_config("CIRCUIT_BREAKER_ALERT_ENABLED", 1):
+        return
+    storage = _get_storage()
+    if storage is None:
+        return
+    try:
+        throttle_key = _get_key(name, "alert_throttle")
+        if storage.exists(throttle_key):
+            return
+        throttle_ttl = max(_get_config("CIRCUIT_BREAKER_RESET_SECONDS", 60) * 5, 300)
+        throttle_ttl = min(throttle_ttl, 3600)
+        storage.setex(throttle_key, throttle_ttl, 1)
+        alert_item = json.dumps({"name": name, "opened_at": _now()})
+        storage.rpush("cb:open_alerts", alert_item)
+        storage.expire("cb:open_alerts", 86400)
+    except Exception:
+        pass
+
+
 def record_failure(name: str) -> None:
     state = _get_state(name)
     threshold = _get_config("CIRCUIT_BREAKER_FAILURE_THRESHOLD", 5)
@@ -106,6 +138,7 @@ def record_failure(name: str) -> None:
         state["half_open"] = 0
         state["half_open_success"] = 0
         _set_state(name, state)
+        _push_open_alert(name)
         return
 
     state["fail"] = int(state.get("fail", 0)) + 1
@@ -114,5 +147,6 @@ def record_failure(name: str) -> None:
         state["fail"] = 0
         state["half_open"] = 0
         state["half_open_success"] = 0
+        _push_open_alert(name)
 
     _set_state(name, state)

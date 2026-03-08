@@ -1291,50 +1291,84 @@ def dlq_health_monitor_task(self):
             return
 
         try:
+            # --- Check 1: Dead Letter Queue ---
             dlq_key = app.config.get("TASK_DLQ_REDIS_KEY", "celery:dlq")
             dlq_length = redis_client.llen(dlq_key)
-            if dlq_length == 0:
-                return
+            if dlq_length > 0:
+                throttle_key = "dlq:alert:last_sent"
+                if redis_client.exists(throttle_key):
+                    logger.debug("Celery Task: DLQ monitor — alert throttled (DLQ=%s).", dlq_length)
+                else:
+                    items_raw = redis_client.lrange(dlq_key, -3, -1)
+                    preview_lines = []
+                    for raw in items_raw:
+                        try:
+                            item = json.loads(raw)
+                            preview_lines.append(f"- [{item.get('task','?')}] {item.get('error','')[:80]}")
+                        except Exception:
+                            pass
+                    preview = "\n".join(preview_lines) if preview_lines else "(tidak bisa dibaca)"
 
-            throttle_key = "dlq:alert:last_sent"
-            if redis_client.exists(throttle_key):
-                logger.debug("Celery Task: DLQ monitor — alert throttled (DLQ=%s).", dlq_length)
-                return
+                    admin_phone = app.config.get("SUPERADMIN_PHONE", "")
+                    if admin_phone:
+                        wa_number = re.sub(r"[^0-9]", "", str(admin_phone))
+                        if wa_number.startswith("0"):
+                            wa_number = "62" + wa_number[1:]
+                        msg = (
+                            f"⚠️ *ALERT: Celery DLQ tidak kosong*\n"
+                            f"Total task gagal: *{dlq_length}*\n\n"
+                            f"Preview 3 terakhir:\n{preview}\n\n"
+                            f"Cek log container celery_worker untuk detail.\n"
+                            f"Throttle: alert berikutnya dalam {throttle_minutes} menit."
+                        )
+                        try:
+                            send_whatsapp_message(wa_number, msg)
+                            logger.warning(
+                                "Celery Task: DLQ alert dikirim ke admin. DLQ length=%s.", dlq_length
+                            )
+                        except Exception as wa_err:
+                            logger.error("Celery Task: Gagal kirim DLQ alert WA: %s", wa_err)
+                    redis_client.setex(throttle_key, throttle_minutes * 60, 1)
 
-            # Ambil 3 item terakhir sebagai preview
-            items_raw = redis_client.lrange(dlq_key, -3, -1)
-            preview_lines = []
-            for raw in items_raw:
-                try:
-                    item = json.loads(raw)
-                    preview_lines.append(f"- [{item.get('task','?')}] {item.get('error','')[:80]}")
-                except Exception:
-                    pass
-            preview = "\n".join(preview_lines) if preview_lines else "(tidak bisa dibaca)"
-
-            # Kirim WA ke superadmin
-            admin_phone = app.config.get("SUPERADMIN_PHONE", "")
-            if admin_phone:
-                wa_number = re.sub(r"[^0-9]", "", str(admin_phone))
-                if wa_number.startswith("0"):
-                    wa_number = "62" + wa_number[1:]
-                msg = (
-                    f"⚠️ *ALERT: Celery DLQ tidak kosong*\n"
-                    f"Total task gagal: *{dlq_length}*\n\n"
-                    f"Preview 3 terakhir:\n{preview}\n\n"
-                    f"Cek log container celery_worker untuk detail.\n"
-                    f"Throttle: alert berikutnya dalam {throttle_minutes} menit."
-                )
-                try:
-                    send_whatsapp_message(wa_number, msg)
-                    logger.warning(
-                        "Celery Task: DLQ alert dikirim ke admin. DLQ length=%s.", dlq_length
+            # --- Check 2: Circuit breaker open alerts ---
+            cb_count = redis_client.llen("cb:open_alerts")
+            if cb_count > 0:
+                raw_alerts = redis_client.lrange("cb:open_alerts", 0, -1)
+                redis_client.delete("cb:open_alerts")
+                circuit_names = []
+                for raw in raw_alerts:
+                    try:
+                        item = json.loads(raw)
+                        circuit_names.append(item.get("name", "unknown"))
+                    except Exception:
+                        pass
+                if circuit_names:
+                    alert_phone = (
+                        app.config.get("CIRCUIT_BREAKER_ALERT_PHONE", "")
+                        or app.config.get("SUPERADMIN_PHONE", "")
                     )
-                except Exception as wa_err:
-                    logger.error("Celery Task: Gagal kirim DLQ alert WA: %s", wa_err)
-
-            # Set throttle (berlaku throttle_minutes menit)
-            redis_client.setex(throttle_key, throttle_minutes * 60, 1)
+                    if alert_phone:
+                        wa_number = re.sub(r"[^0-9]", "", str(alert_phone))
+                        if wa_number.startswith("0"):
+                            wa_number = "62" + wa_number[1:]
+                        threshold = app.config.get("CIRCUIT_BREAKER_FAILURE_THRESHOLD", 5)
+                        msg = (
+                            f"🔴 *ALERT: Circuit Breaker Terbuka*\n"
+                            f"Circuit: *{', '.join(sorted(set(circuit_names)))}*\n\n"
+                            f"Koneksi ke layanan tersebut bermasalah "
+                            f"(≥{threshold} failure berturut-turut).\n"
+                            f"Router/API tidak dapat dijangkau.\n"
+                            f"Cek log container backend / celery_worker untuk detail."
+                        )
+                        try:
+                            send_whatsapp_message(wa_number, msg)
+                            logger.warning(
+                                "Celery Task: Circuit breaker open alert dikirim: %s", circuit_names
+                            )
+                        except Exception as wa_err:
+                            logger.error(
+                                "Celery Task: Gagal kirim circuit breaker alert WA: %s", wa_err
+                            )
 
         except Exception as e:
             logger.error("Celery Task: DLQ health monitor gagal: %s", e, exc_info=True)
