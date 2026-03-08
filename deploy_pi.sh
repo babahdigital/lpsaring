@@ -1104,6 +1104,8 @@ else
 fi
 
 echo "==> Start backend + workers..."
+# Hapus stopped containers terlebih dahulu untuk mencegah name conflict saat recreate
+docker container prune -f >/dev/null 2>&1 || true
 # shellcheck disable=SC2086
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --remove-orphans --no-deps \$app_recreate_flag backend celery_worker celery_beat
 
