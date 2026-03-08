@@ -8,6 +8,27 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Added (2026-03-08 — Sesi 3: Stabilitas Infrastruktur)
+- Docker log retention `json-file, max-size=50m, max-file=5` pada seluruh 4 service runtime (`backend`, `celery_worker`, `celery_beat`, `frontend`). Service `frontend` sebelumnya **tidak memiliki logging config sama sekali** — log hilang setiap container di-recreate. Sekarang log tersimpan di host dan bisa diinspeksi untuk investigasi outage.
+- Devlog lengkap sesi infrastruktur ini tersedia di `docs/WORKLOG_2026-03-08_INFRA_STABILITY.md`.
+
+### Changed (2026-03-08 — Sesi 3: Stabilitas Infrastruktur)
+- `frontend/utils/hotspotIdentity.ts`: migrasi `sessionStorage` → `localStorage` (3 tempat: `isBrowserRuntime()`, `rememberHotspotIdentity()`, `getStoredHotspotIdentity()`). Identitas client (IP + MAC) kini persists lintas tab close/reopen. TTL 10 menit tetap dipertahankan.
+- `frontend/store/auth.ts`: migrasi `sessionStorage` → `localStorage` untuk hint key `lpsaring:last-mikrotik-login-link` (2 tempat: `rememberMikrotikLoginHint()`, `getStoredMikrotikLoginHint()`).
+- `frontend/pages/login/hotspot-required.vue`: migrasi `window.sessionStorage` → `window.localStorage` untuk baca `LAST_MIKROTIK_LOGIN_HINT_KEY`.
+- `deploy_pi.sh`: ganti `docker container prune -f` (global — berbahaya untuk stack lain) dengan targeted per-container `docker rm` yang hanya berjalan jika container dalam state `exited/created/dead`. Container `running` dan container dari stack lain tidak tersentuh.
+- `nginx/conf.d/lpsaring.conf`: hapus blok duplikat `set_real_ip_from` / `real_ip_header` / `real_ip_recursive` dari server context. Semua real_ip handling sudah ditangani global oleh `01-real-ip.conf` (Cloudflare IPs + RFC1918 + Docker bridge `192.168.0.0/20`).
+- WireGuard `peer_mikrotik.conf`: persempit `AllowedIPs = 0.0.0.0/0` → `10.19.83.0/24`. Mencegah seluruh traffic hotspot client routing melalui VPN secara tidak perlu.
+- WireGuard server config (live `wg0.conf`): tambah `PersistentKeepalive = 25` pada peer `peer_mikrotik` untuk stabilitas NAT traversal. MikroTik berada di balik NAT — tanpa keepalive, tunnel bisa drop saat idle.
+- `docker-compose.prod.yml`: update logging options dari `10m×10` ke `50m×5` untuk `backend`, `celery_worker`, dan `celery_beat` agar konsisten dengan standar baru.
+
+### Fixed (2026-03-08 — Sesi 3: Stabilitas Infrastruktur)
+- `action_log_routes.py`: `func.count(AdminActionLog.id)` dalam konteks `select_from(subquery())` menyebabkan SQLAlchemy SAWarning cartesian product. Diperbaiki ke `func.count()` (tanpa argumen kolom luar).
+- `action_log_routes.py`: `AdminActionLogResponseSchema.from_orm(log)` deprecated di Pydantic v2. Diperbaiki ke `model_validate(log)`. Schema sudah memiliki `from_attributes=True` di `ConfigDict`.
+- `action_log_routes.py`: rename parameter tak terpakai `current_admin` → `_current_admin` di `get_action_logs` dan `export_action_logs` untuk menyelesaikan ruff F841.
+- `eslint.config.js`: tambah `types/api/contracts.generated.ts` ke `ignores` agar `pnpm run lint --fix` tidak menghapus `/* eslint-disable */` dari file auto-generated.
+- CI failure run `22810572908` dan `22810720221`: `frontend/tests/hotspot-identity.test.ts` masih mock `sessionStorage` setelah code diubah ke `localStorage`. Diperbaiki: `createSessionStorageMock` → `createStorageMock`, `vi.stubGlobal('sessionStorage')` → `vi.stubGlobal('localStorage')`, referensi langsung di TTL test. Verifikasi lokal: 85 tests pass. CI run `22811056993` → success.
+
 ### Added (2026-03-08)
 - MikroTik `DoH_Servers` address-list dengan 8 IP resolver publik (Google, Cloudflare, Quad9, OpenDNS) dan forward filter rule `drop` TCP/443 dari `LIST_LAN` ke list tersebut. Mencegah hotspot client bypass DNS enforcement via DNS-over-HTTPS.
 - Task Celery baru `purge_stale_quota_keys_task` (harian 03:30): hapus Redis key `quota:last_bytes:mac:*` untuk MAC yang tidak tercatat di `UserDevice.last_seen_at` dalam 30 hari. Cegah akumulasi key TTL=-1 akibat MAC randomization. Dikontrol env `QUOTA_STALE_KEY_PURGE_ENABLED` dan `QUOTA_STALE_KEY_STALE_DAYS`.

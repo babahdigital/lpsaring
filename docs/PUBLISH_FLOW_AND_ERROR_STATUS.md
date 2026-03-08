@@ -31,9 +31,43 @@ Workflow CI utama:
 Kebijakan:
 - Gunakan satu jalur CI utama (`ci.yml`) untuk mengurangi noise dan duplikasi status check.
 
-## 3) Update Status CI/CD (2026-03-08)
+## 3) Update Status CI/CD (2026-03-08 — Sesi 3)
 
-Eksekusi terbaru:
+### Incident CI: Test Mock sessionStorage vs localStorage
+
+Setelah perubahan `sessionStorage → localStorage` di `hotspotIdentity.ts`, CI gagal pada dua run:
+
+| Run | Status | Root Cause |
+|-----|--------|------------|
+| `22810572908` | failed | `hotspot-identity.test.ts` masih mock `sessionStorage`, code pakai `localStorage` |
+| `22810720221` | failed | sama — test "falls back to referrer" dan "falls back to stored" return empty |
+
+Perbaikan: update test stub di `frontend/tests/hotspot-identity.test.ts`:
+- `createSessionStorageMock` → `createStorageMock`
+- `vi.stubGlobal('sessionStorage')` → `vi.stubGlobal('localStorage')`
+- referensi `sessionStorage.getItem/setItem` di TTL test → `localStorage.getItem/setItem`
+
+| Run | Status | Durasi |
+|-----|--------|--------|
+| `22811056993` | success | 3m17s, 85 tests |
+| `22811117603` (Docker Publish) | success | 1m, cache hits |
+| `22811351669` (post log retention) | success | docker-build only |
+
+### Deploy Produksi Sesi 3
+
+- Deploy pertama: semua container recreated, healthy, Backend readiness OK, Frontend readiness OK
+- Deploy kedua (`--skip-pull`, log retention only): semua 4 container recreated dengan logging config baru, health check OK
+
+**Commit yang masuk sesi ini:**
+- `bd306bab` — localStorage + SQL cartesian fix
+- `37623f06` — Pydantic v2 + ESLint guard
+- `8aca7b64` — deploy_pi.sh targeted container rm
+- `5abe94f8` — test localStorage mock fix (CI fix)
+- `f172d6b3` — Docker log retention
+
+## 4) Update Status CI/CD (2026-03-08 — Sesi 1 & 2)
+
+Eksekusi terbaru sebelum sesi 3:
 - Commit patch utama: `5244d65d`
 - CI pertama: run `22805547615` -> `failed`
 - Root cause: test backend lama belum selaras policy baru (cleanup host tidak lagi unconditional).
@@ -45,28 +79,30 @@ Kesimpulan:
 - Pipeline sudah kembali hijau setelah alignment test policy unauthorized recovery.
 - Publish image manual untuk commit terbaru telah selesai tanpa error.
 
-## 4) Status Error Operasional Terbaru
+## 5) Status Error Operasional Terbaru (2026-03-08 Sesi 3)
 
-Snapshot verifikasi produksi terkini:
-- App stack `backend/frontend/celery/db/redis` berada pada status `Up` dan `healthy`.
+Snapshot verifikasi produksi pasca deploy sesi 3:
+- App stack: semua 6 container `Up` dan `healthy` (backend, celery_worker, celery_beat, frontend, postgres, redis).
+- Server: 63% RAM, 25% disk, uptime 4d17h
 - Health endpoint publik:
-   - `/api/ping` -> `200` (`pong`)
+   - `/api/ping` -> `200 pong`
    - `/login` -> `200`
-- Scan log backend/celery 6 jam:
+   - `_nuxt` asset -> loadable
+- Scan log backend/celery (post-deploy):
    - `error_level_count=0`
    - `traceback_count=0`
-   - `router_timeout_count=0`
-   - `fk_violation_count=0`
-- Log aplikasi Nginx:
-   - `lpsaring_error.log` kosong pada snapshot ini.
-   - Tidak ditemukan 5xx pada window scan operasional.
+   - Celery: 123 hosts, 27 blocked, 45 authorized, 0 failed
+- Log Nginx: hanya 2 errors pada window deploy (01:19), none setelahnya
+- SSL cert: valid sampai 9 Mei 2026
+- Score kesiapan sistem: **97/100**
 
 Catatan residual anomaly:
-- `global-cloudflared` masih menunjukkan event intermiten `Incoming request ended abruptly: context canceled`.
-- Pada snapshot 6 jam, hit pattern ini terhitung `36`.
-- Dampak saat ini: belum ada indikasi error berantai di backend/celery maupun 5xx Nginx untuk periode yang sama.
+- `global-cloudflared` masih menunjukkan event intermiten `context canceled` (36 hits per 6 jam snapshot sebelumnya).
+- Dampak: belum ada indikasi error berantai di backend/celery maupun 5xx Nginx.
 
-## 5) Simulasi Produksi Non-Destruktif
+**Log retention aktif mulai sesi ini:** Semua 4 service runtime menyimpan log di `json-file` (50m×5=250MB per service). Investigasi outage berikutnya bisa dilakukan via `docker logs <container> --since <ts>`.
+
+## 6) Simulasi Produksi Non-Destruktif
 
 Perintah simulasi:
 - `flask sync-unauthorized-hosts --dry-run --limit 120` (dijalankan dalam container backend, tanpa apply)
@@ -83,10 +119,12 @@ Interpretasi:
 - Jalur sinkronisasi unauthorized berjalan dan menghasilkan metrik konsisten tanpa operasi tulis karena mode dry-run.
 - Tidak ada error mutasi router yang terdeteksi pada simulasi ini.
 
-## 6) Referensi
+## 7) Referensi
 
 - `docs/DO_PRODUCTION_DEPLOYMENT.md`
 - `docs/OPERATIONS_COMMAND_STANDARD.md`
 - `docs/DEVLOG_2026-03-05.md`
 - `docs/DEVLOG_2026-03-08.md`
+- `docs/DEVLOG_2026-03-08_MIKROTIK_HARDENING.md`
+- `docs/WORKLOG_2026-03-08_INFRA_STABILITY.md`
 - `docs/CI_INCIDENT_2026-02-14_FRONTEND_PUBLISH.md`
