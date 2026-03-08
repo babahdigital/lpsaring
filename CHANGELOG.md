@@ -8,6 +8,10 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Fixed (2026-03-08 — Sesi 4: Critical Deadlock Fix)
+- **CRITICAL:** `sync_hotspot_usage_task` tidak memiliki Redis mutex lock. Dengan `--concurrency=4`, keempat worker Celery bisa lolos throttle check secara bersamaan (race condition pada baca `quota_sync:last_run_ts`) dan menjalankan `sync_hotspot_usage_and_profiles()` secara concurrent → circular `UPDATE user_devices` → **243 PostgreSQL deadlock** sepanjang hari (25–30/jam), 200+ worker respawn/jam. Diperbaiki dengan menambahkan `redis.SET NX` atomic lock (`quota_sync:run_lock`, TTL=120s) sebelum task execution. Lock dilepas di `finally{}` setelah task selesai. Hanya satu worker yang bisa hold lock; worker lain skip langsung.
+- `QUOTA_SYNC_INTERVAL_SECONDS` diubah `60` → `120` di `.env.prod` sebagai lapisan kedua (belt-and-suspenders) untuk mengurangi frekuensi scheduling pressure.
+
 ### Added (2026-03-08 — Sesi 3: Stabilitas Infrastruktur)
 - Docker log retention `json-file, max-size=50m, max-file=5` pada seluruh 4 service runtime (`backend`, `celery_worker`, `celery_beat`, `frontend`). Service `frontend` sebelumnya **tidak memiliki logging config sama sekali** — log hilang setiap container di-recreate. Sekarang log tersimpan di host dan bisa diinspeksi untuk investigasi outage.
 - Devlog lengkap sesi infrastruktur ini tersedia di `docs/WORKLOG_2026-03-08_INFRA_STABILITY.md`.

@@ -1,8 +1,9 @@
 # Worklog 2026-03-08 — Stabilitas Infrastruktur, CI Fix, & Log Retention
 
-**Sesi:** 3 dari 3 pada tanggal 2026-03-08 (setelah sesi MikroTik Hardening dan Unauthorized Recovery)
-**Scope:** localStorage persistence, SQL SAWarning, Pydantic v2, Nginx, WireGuard, deploy_pi.sh, CI fix, log retention, analisa Reliability Analytics
-**Status:** Selesai — semua commit di-push, CI hijau, deploy produksi sukses
+**Sesi:** 3 & 4 dari 4 pada tanggal 2026-03-08
+**Scope Sesi 3:** localStorage persistence, SQL SAWarning, Pydantic v2, Nginx, WireGuard, deploy_pi.sh, CI fix, log retention, analisa Reliability Analytics
+**Scope Sesi 4:** Investigasi log → temukan 243 PostgreSQL deadlock → hotfix Redis → fix kode Redis NX lock → deploy
+**Status:** Selesai — semua commit di-push, CI hijau, deploy produksi sukses, 0 deadlock baru terverifikasi
 
 ---
 
@@ -386,3 +387,153 @@ Session continued (log retention):
 4. **PersistentKeepalive WireGuard:** Sudah diapply live ke tunnel. Harus dipastikan juga masuk ke config backup dan dokumentasi infrastruktur.
 
 5. **Mangle rule DoT TCP/853 + DoH QUIC UDP/443:** Sudah diapply ke MikroTik pada awal sesi (dari sesi MikroTik hardening). Konfirmasi `bytes > 0` pada rule menunjukkan rule aktif menangkap traffic.
+
+---
+
+## [SESI 4] Critical: 243 PostgreSQL Deadlock — Investigasi & Fix
+
+### Temuan
+
+Analisa log Docker dan Nginx mengungkap insiden aktif yang tidak terdeteksi sebelumnya:
+
+**Nginx (file `lpsaring_error.log`):**
+- `2026-03-07 16:32–17:50 UTC`: Outage backend terkonfirmasi — `lpsaring-backend could not be resolved` + `Connection refused`. Backend process died mid-request (`recv() failed: Connection reset by peer` pada 16:33:35). Durasi downtime: **~1 jam 18 menit**. Root cause masih belum diketahui (OOM suspect).
+- `2026-03-08 03:25`: `upstream prematurely closed connection` pada `hotspot-session-status` — kemungkinan DB sedang lambat akibat deadlock
+- `2026-03-08 06:35–06:37`: Frontend 504 timeout dari Android captive portal detection (`android-app://com.google.android.googlequicksearchbox/`) — isolated, bukan sistemik
+
+**Docker Celery Worker:**
+- **243 `deadlock detected`** pada tabel `user_devices` (distribusi: 25–30/jam dari jam 10:00–19:00 WIB)
+- **200+ worker respawn per jam** (`Setup logging selesai` muncul ~200x/jam = worker cycle setiap ~18 detik)
+- **222 `Sinkronisasi gagal`** akibat deadlock dalam satu hari
+- **Backend**: 0 ERROR, 0 Traceback pada service utama (Gunicorn) — deadlock hanya di Celery
+
+**401 pada akses captive (normal):**
+- Semua `POST /api/auth/auto-login HTTP/1.1" 401` adalah perangkat yang belum terdaftar mengakses captive portal — perilaku yang benar.
+
+---
+
+### Root Cause Analysis
+
+**Bug:** `sync_hotspot_usage_task` tidak memiliki Redis mutex lock.
+
+```python
+# KODE LAMA (bermasalah):
+def sync_hotspot_usage_task(self):
+    # ... throttle check baca last_run_ts ...
+    result = sync_hotspot_usage_and_profiles()  # ← tidak ada lock!
+    redis_client.set("quota_sync:last_run_ts", ...)  # ← ditulis SETELAH sync selesai
+```
+
+**Race condition:**
+1. Celery Beat mengirim task setiap 60 detik
+2. 4 worker process membaca `quota_sync:last_run_ts` secara bersamaan
+3. Semua membaca nilai lama (write dari run sebelumnya, atau null) → semua lolos throttle
+4. Semua worker memanggil `sync_hotspot_usage_and_profiles()` secara concurrent
+5. Semua mencoba `UPDATE user_devices SET last_bytes_updated_at = ...` pada baris yang sama
+6. Postgres mendeteksi circular lock wait → **deadlock**
+7. Task gagal → retry (max 2x) → mungkin deadlock lagi → gagal → worker restart
+
+**Faktor penyebab interval terlalu agresif:**
+- `QUOTA_SYNC_INTERVAL_SECONDS=60` (diubah dari 300 pada sesi MikroTik hardening)
+- Dengan interval 60 detik dan concurrency 4, frekuensi tumbukan sangat tinggi
+
+---
+
+### Penanganan
+
+**Step 1: Hotfix Redis (immediate, tanpa deploy)**
+```bash
+# Set interval ke 300s via Redis settings cache
+docker exec hotspot_prod_redis_cache redis-cli SET 'settings:QUOTA_SYNC_INTERVAL_SECONDS' '300'
+# Throttle manual untuk stop deadlock segera
+docker exec hotspot_prod_redis_cache redis-cli SET 'quota_sync:last_run_ts' $(date +%s)
+```
+Efek: task tidak akan berjalan selama 300 detik ke depan. Deadlock berhenti dalam hitungan menit.
+
+**Step 2: Fix kode permanent (commit `1da83634`)**
+
+Tambahkan Redis NX mutex lock SEBELUM eksekusi utama:
+
+```python
+# KODE BARU (benar):
+def sync_hotspot_usage_task(self):
+    # (1) Throttle: cek interval
+    if now_ts - last_ts < max(sync_interval, 30):
+        return  # skip
+
+    # (2) Mutex lock: atomic, satu worker saja
+    lock_key = "quota_sync:run_lock"
+    lock_ttl = 120  # 2 menit max runtime
+    lock_acquired = False
+    try:
+        if redis_client is not None:
+            lock_acquired = bool(redis_client.set(lock_key, "1", nx=True, ex=lock_ttl))
+            if not lock_acquired:
+                return  # worker lain sedang berjalan
+
+        result = sync_hotspot_usage_and_profiles()
+        redis_client.set("quota_sync:last_run_ts", ...)
+    except Exception as e:
+        ...raise
+    finally:
+        if lock_acquired:
+            redis_client.delete(lock_key)  # release setelah selesai
+```
+
+**Mengapa NX (atomic):**
+- `SET key value NX EX ttl` adalah **satu operasi atomic** di Redis
+- Tidak ada race condition antara "cek lock" dan "tulis lock"
+- Lock TTL=120s sebagai safety net jika task crash sebelum `finally`
+- `finally` memastikan lock selalu dilepas (success atau error)
+
+**Step 3: Update env.prod**
+- `QUOTA_SYNC_INTERVAL_SECONDS=60` → `120` (belt-and-suspenders)
+- Dengan lock NX, interval tidak lagi kritis untuk concurrency, tapi 120s lebih aman
+
+---
+
+### CI/CD — Sesi 4
+
+| Langkah | Run/Commit | Status |
+|---------|-----------|--------|
+| `git commit 1da83634` | fix(celery): Redis NX mutex lock | ✅ |
+| `ci.yml` run `22820021993` | backend+contract-gate+docker-build | ✅ success (36s backend) |
+| `docker-publish.yml` run `22820101748` | backend 7m5s, frontend 4m14s | ✅ success |
+| `deploy_pi.sh` | semua 4 container recreated | ✅ clean success |
+
+---
+
+### Verifikasi Post-Fix (3 menit setelah deploy)
+
+```
+19:35:10 — Celery Task: Sinkronisasi selesai. Result: {...}  ← task berjalan 1x
+19:36:05 — Celery Task: Skip sinkronisasi (menunggu interval dinamis.)  ← throttle aktif
+19:37:05 — Celery Task: Skip sinkronisasi (menunggu interval dinamis.)  ← throttle aktif
+Deadlock dalam 3 menit: 0  ← CONFIRMED FIX
+```
+
+Redis state post-fix:
+- `quota_sync:run_lock` = null (lock dilepas setelah task selesai) ✅
+- `settings:QUOTA_SYNC_INTERVAL_SECONDS` = 300 (dari hotfix Redis, masih aktif)
+
+---
+
+### Implikasi ke Outage 2026-03-07
+
+Outage backend 16:32–17:50 UTC kemarin (1h18m) **bukan disebabkan deadlock ini** karena:
+- Deadlock baru terjadi setelah `QUOTA_SYNC_INTERVAL_SECONDS` diubah ke 60 pada deploy 03-08
+- Outage 03-07 nilainya masih 300 detik, sangat kecil kemungkinan deadlock
+
+Root cause outage 03-07 **masih unknown** — kemungkinan:
+- OOM kill (memory spike saat sync besar)
+- External restart
+- Akan bisa diinvestigasi pada outage berikutnya berkat log retention yang sudah dipasang
+
+---
+
+### Ringkasan File Sesi 4
+
+| File | Perubahan |
+|------|-----------|
+| `backend/app/tasks.py` | Tambah Redis NX mutex lock pada `sync_hotspot_usage_task` + restructure kode |
+| `.env.prod` | `QUOTA_SYNC_INTERVAL_SECONDS=60` → `120` |
