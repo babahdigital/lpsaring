@@ -1107,9 +1107,9 @@ echo "==> Start backend + workers..."
 # Hapus HANYA stopped containers untuk service ini (bukan global prune) untuk cegah name conflict.
 # Global 'docker container prune' tidak dipakai karena bisa menghapus stopped container stack lain.
 for _svc_name in hotspot_prod_backend hotspot_prod_celery_worker hotspot_prod_celery_beat; do
-  _ctr_state=$(docker inspect "$_svc_name" --format='{{.State.Status}}' 2>/dev/null || true)
-  if [ "$_ctr_state" = "exited" ] || [ "$_ctr_state" = "created" ] || [ "$_ctr_state" = "dead" ]; then
-    docker rm "$_svc_name" >/dev/null 2>&1 || true
+  _ctr_state=\$(docker inspect "\$_svc_name" --format='{{.State.Status}}' 2>/dev/null || true)
+  if [ "\$_ctr_state" = "exited" ] || [ "\$_ctr_state" = "created" ] || [ "\$_ctr_state" = "dead" ]; then
+    docker rm "\$_svc_name" >/dev/null 2>&1 || true
   fi
 done
 # shellcheck disable=SC2086
@@ -1143,8 +1143,8 @@ echo "==> Backend readiness OK"
 
 echo "==> Start frontend..."
 # Hapus stopped frontend container jika ada untuk cegah name conflict
-_ctr_state=$(docker inspect "hotspot_prod_nuxt_frontend" --format='{{.State.Status}}' 2>/dev/null || true)
-if [ "$_ctr_state" = "exited" ] || [ "$_ctr_state" = "created" ] || [ "$_ctr_state" = "dead" ]; then
+_ctr_state=\$(docker inspect "hotspot_prod_nuxt_frontend" --format='{{.State.Status}}' 2>/dev/null || true)
+if [ "\$_ctr_state" = "exited" ] || [ "\$_ctr_state" = "created" ] || [ "\$_ctr_state" = "dead" ]; then
   docker rm "hotspot_prod_nuxt_frontend" >/dev/null 2>&1 || true
 fi
 # shellcheck disable=SC2086
