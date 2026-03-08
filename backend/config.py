@@ -318,6 +318,9 @@ class Config:
     UPDATE_ALLOW_DESTRUCTIVE_AUTO_CLEAR = get_env_bool("UPDATE_ALLOW_DESTRUCTIVE_AUTO_CLEAR", "False")
     UPDATE_CLEAR_TOTAL_AFTER_DAYS = get_env_int("UPDATE_CLEAR_TOTAL_AFTER_DAYS", 3)
     UPDATE_WHATSAPP_BATCH_SIZE = get_env_int("UPDATE_WHATSAPP_BATCH_SIZE", 3)
+    # Auto-delete imported users yang tidak mengisi form update setelah deadline.
+    UPDATE_AUTO_DELETE_UNRESPONSIVE = get_env_bool("UPDATE_AUTO_DELETE_UNRESPONSIVE", "False")
+    UPDATE_AUTO_DELETE_MAX_PER_RUN = get_env_int("UPDATE_AUTO_DELETE_MAX_PER_RUN", 5)
     UPDATE_WHATSAPP_IMPORT_MESSAGE_TEMPLATE = os.environ.get(
         "UPDATE_WHATSAPP_IMPORT_MESSAGE_TEMPLATE",
         "Halo {full_name}, silakan lanjutkan pemutakhiran data melalui link ini: {update_link}",
