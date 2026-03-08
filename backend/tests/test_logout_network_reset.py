@@ -107,14 +107,15 @@ def test_logout_stays_success_when_network_reset_fails() -> None:
     assert tracker["clear_refresh_called"] is True
 
 
-def test_reset_login_calls_network_reset_and_revokes_refresh_when_models_missing() -> None:
+def test_reset_login_calls_network_reset_only_no_token_or_cookie_clear() -> None:
+    """reset-login hanya bersihkan jaringan; token, UserDevice, dan cookie TIDAK dihapus."""
     app = _make_app()
     user_id = uuid.uuid4()
     user = SimpleNamespace(id=user_id)
 
     tracker = {
         "cleanup_called": False,
-        "revoke_token": None,
+        "revoke_called": False,
         "clear_auth_called": False,
         "clear_refresh_called": False,
     }
@@ -123,8 +124,8 @@ def test_reset_login_calls_network_reset_and_revokes_refresh_when_models_missing
         tracker["cleanup_called"] = True
         return {"ip_binding_removed": 2}
 
-    def _revoke(token: str):
-        tracker["revoke_token"] = token
+    def _revoke(_token: str):
+        tracker["revoke_called"] = True
 
     def _clear_auth(_response):
         tracker["clear_auth_called"] = True
@@ -151,12 +152,12 @@ def test_reset_login_calls_network_reset_and_revokes_refresh_when_models_missing
     payload = response.get_json()
     assert "Reset login berhasil" in payload["message"]
     assert payload["network_reset"]["ip_binding_removed"] == 2
-    assert payload["summary"]["tokens_deleted"] == 0
-    assert payload["summary"]["devices_deleted"] == 0
+    # Token, device, dan cookie TIDAK dihapus pada reset-login
+    assert "summary" not in payload
     assert tracker["cleanup_called"] is True
-    assert tracker["revoke_token"] == "rt-reset-1"
-    assert tracker["clear_auth_called"] is True
-    assert tracker["clear_refresh_called"] is True
+    assert tracker["revoke_called"] is False
+    assert tracker["clear_auth_called"] is False
+    assert tracker["clear_refresh_called"] is False
 
 
 def test_reset_login_returns_error_when_cleanup_raises() -> None:
@@ -301,7 +302,8 @@ def test_logout_deletes_all_tokens_and_devices_when_models_available() -> None:
     assert tracker["clear_refresh_called"] is True
 
 
-def test_reset_login_deletes_all_tokens_and_devices_when_models_available() -> None:
+def test_reset_login_does_not_delete_tokens_or_clear_cookies_even_when_models_passed() -> None:
+    """reset-login tidak menghapus token/device/cookie meskipun model diberikan."""
     app = _make_app()
     user_id = uuid.uuid4()
     user = SimpleNamespace(id=user_id)
@@ -315,12 +317,17 @@ def test_reset_login_deletes_all_tokens_and_devices_when_models_available() -> N
     class _DeleteQuery:
         def __init__(self, deleted_count: int):
             self._deleted_count = deleted_count
+            self.delete_called = False
 
         def filter(self, *_args, **_kwargs):
             return self
 
         def delete(self, synchronize_session: bool = False):
+            self.delete_called = True
             return self._deleted_count
+
+    rt_query = _DeleteQuery(5)
+    ud_query = _DeleteQuery(3)
 
     class _DeleteSession:
         def __init__(self):
@@ -331,9 +338,9 @@ def test_reset_login_deletes_all_tokens_and_devices_when_models_available() -> N
 
         def query(self, model):
             if model is _RefreshTokenModel:
-                return _DeleteQuery(5)
+                return rt_query
             if model is _UserDeviceModel:
-                return _DeleteQuery(3)
+                return ud_query
             return _DeleteQuery(0)
 
         def commit(self):
@@ -343,12 +350,14 @@ def test_reset_login_deletes_all_tokens_and_devices_when_models_available() -> N
     db = SimpleNamespace(session=session)
 
     tracker = {
+        "cleanup_called": False,
         "revoke_called": False,
         "clear_auth_called": False,
         "clear_refresh_called": False,
     }
 
     def _cleanup(_user):
+        tracker["cleanup_called"] = True
         return {"ip_binding_removed": 2}
 
     def _revoke(_token: str):
@@ -377,10 +386,14 @@ def test_reset_login_deletes_all_tokens_and_devices_when_models_available() -> N
 
     assert status == 200
     payload = response.get_json()
-    assert payload["summary"]["tokens_deleted"] == 5
-    assert payload["summary"]["devices_deleted"] == 3
-    assert payload["summary"]["network_reset"]["ip_binding_removed"] == 2
-    assert session.committed is True
+    assert "Reset login berhasil" in payload["message"]
+    assert payload["network_reset"]["ip_binding_removed"] == 2
+    # Token/device TIDAK dihapus pada reset-login
+    assert "summary" not in payload
+    assert rt_query.delete_called is False
+    assert ud_query.delete_called is False
+    assert session.committed is False
+    assert tracker["cleanup_called"] is True
     assert tracker["revoke_called"] is False
-    assert tracker["clear_auth_called"] is True
-    assert tracker["clear_refresh_called"] is True
+    assert tracker["clear_auth_called"] is False
+    assert tracker["clear_refresh_called"] is False

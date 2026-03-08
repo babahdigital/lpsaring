@@ -50,6 +50,7 @@ Lampiran wajib:
 - `GET /api/admin/users`
 - `POST /api/admin/users`
 - `PUT /api/admin/users/{user_id}`
+- `POST /api/admin/users/seed-imported-update-submissions` — Seed `PublicDatabaseUpdateSubmission` records for users with `full_name LIKE 'Imported %'` agar mereka mendapat notifikasi WA untuk update data. Body opsional: `test_phone` (string), `dry_run` (bool).
 - `GET /api/admin/update-submissions`
 - `POST /api/admin/update-submissions/{id}/approve`
 - `POST /api/admin/update-submissions/{id}/reject`

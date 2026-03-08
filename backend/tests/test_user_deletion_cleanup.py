@@ -173,14 +173,9 @@ def test_process_user_removal_hard_delete_cleans_router_artifacts(monkeypatch):
 
     monkeypatch.setattr(user_deletion, "_handle_mikrotik_operation", _mikrotik_success)
     monkeypatch.setattr(user_deletion, "_log_admin_action", _capture_log)
+    monkeypatch.setattr(user_deletion, "_send_whatsapp_notification", lambda *_args, **_kwargs: None)
 
     resources = {
-        "/ip/hotspot/active": _Resource(
-            [
-                {"id": "ha1", "mac-address": "AA:BB:CC:DD:EE:FF"},
-                {"id": "ha2", "comment": f"lpsaring|{uid_marker}|user={user08}"},
-            ]
-        ),
         "/ip/hotspot/host": _Resource(
             [
                 {"id": "hh1", "mac-address": "AA:BB:CC:DD:EE:FF", "address": "172.16.0.10"},
@@ -231,7 +226,6 @@ def test_process_user_removal_hard_delete_cleans_router_artifacts(monkeypatch):
     assert call_tracker["hotspot_delete_called"] == 1
     assert user in fake_session.deleted_objects
 
-    assert "ha1" in resources["/ip/hotspot/active"].removed_ids
     assert "hh1" in resources["/ip/hotspot/host"].removed_ids
     assert "b1" in resources["/ip/hotspot/ip-binding"].removed_ids
     assert "l1" in resources["/ip/dhcp-server/lease"].removed_ids

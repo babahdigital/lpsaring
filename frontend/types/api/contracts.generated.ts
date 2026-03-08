@@ -2,7 +2,7 @@
 // AUTO-GENERATED FILE. DO NOT EDIT MANUALLY.
 // Source: contracts/openapi/openapi.v1.yaml
 
-export const OPENAPI_SOURCE_SHA256 = '4923e971e4f4bdc1ee1e016fa01e89c6c547df423e174160e33942c95cfd5beb' as const
+export const OPENAPI_SOURCE_SHA256 = 'eee68eae17576fcc23351e4423bc25ac6988194fb9deb1d3d5bc66af5ada8ecb' as const
 export const API_CONTRACT_REVISION = 'openapi-1.0.0' as const
 
 export type MessageResponse = { message: string }
@@ -37,6 +37,8 @@ export type AdminUserListResponse = { items: Array<AdminUserListItem>; meta: Pag
 export type AdminUserCreateRequest = { phone_number: string; full_name: string; role?: 'USER' | 'KOMANDAN' | 'ADMIN' | 'SUPER_ADMIN'; blok?: string | null; kamar?: string | null; is_tamping?: boolean | null; tamping_type?: string | null }
 export type AdminUserUpdateRequest = { full_name?: string; role?: 'USER' | 'KOMANDAN' | 'ADMIN' | 'SUPER_ADMIN'; is_active?: boolean; approval_status?: 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED'; is_blocked?: boolean | null; blocked_reason?: string | null; blok?: string | null; kamar?: string | null }
 export type AdminUserMutationResponse = { message: string; user: UserMeResponse }
+export type SeedImportedUpdateSubmissionsRequest = { test_phone?: string | null; dry_run?: boolean | null }
+export type SeedImportedUpdateSubmissionsResponse = { seeded_count: number; skipped_count: number; seeded_phones?: Array<string>; skipped_phones?: Array<string> }
 export type SettingItem = { key: string; value: string | number | boolean | null; description?: string | null }
 export type AdminSettingsListResponse = { items: Array<SettingItem> }
 export type AdminSettingsUpdateRequest = { items: Array<{ key: string; value: string | number | boolean | null }> }
@@ -118,6 +120,11 @@ export interface GeneratedApiContractMap {
   'PUT /admin/users/{user_id}': {
     request: AdminUserUpdateRequest
     response: AdminUserMutationResponse
+    error: ErrorResponse
+  }
+  'POST /admin/users/seed-imported-update-submissions': {
+    request: SeedImportedUpdateSubmissionsRequest
+    response: SeedImportedUpdateSubmissionsResponse
     error: ErrorResponse
   }
   'POST /auth/admin/login': {

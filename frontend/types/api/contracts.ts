@@ -23,6 +23,8 @@ export {
   type AdminUserCreateRequest,
   type AdminUserUpdateRequest,
   type AdminUserMutationResponse,
+  type SeedImportedUpdateSubmissionsRequest,
+  type SeedImportedUpdateSubmissionsResponse,
   type AdminSettingsListResponse,
   type AdminSettingsUpdateRequest,
   type AdminQuotaRequestListResponse,

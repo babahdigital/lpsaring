@@ -763,6 +763,31 @@ paths:
         '404':
           $ref: '#/components/responses/ErrorNotFound'
 
+  /admin/users/seed-imported-update-submissions:
+    post:
+      tags: [AdminUsers]
+      summary: Seed update-submissions untuk user Imported (admin)
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SeedImportedUpdateSubmissionsRequest'
+      responses:
+        '200':
+          description: Seed result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SeedImportedUpdateSubmissionsResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+
   /admin/settings:
     get:
       tags: [AdminSettings]
@@ -1703,6 +1728,33 @@ components:
           type: string
         user:
           $ref: '#/components/schemas/UserMeResponse'
+
+    SeedImportedUpdateSubmissionsRequest:
+      type: object
+      properties:
+        test_phone:
+          type: string
+          nullable: true
+        dry_run:
+          type: boolean
+          nullable: true
+
+    SeedImportedUpdateSubmissionsResponse:
+      type: object
+      required: [seeded_count, skipped_count]
+      properties:
+        seeded_count:
+          type: integer
+        skipped_count:
+          type: integer
+        seeded_phones:
+          type: array
+          items:
+            type: string
+        skipped_phones:
+          type: array
+          items:
+            type: string
 
     SettingItem:
       type: object
