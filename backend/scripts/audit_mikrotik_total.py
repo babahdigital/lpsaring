@@ -34,7 +34,7 @@ if _project_root not in sys.path:
 
 from app import create_app
 from app.extensions import db
-from app.infrastructure.db.models import ApprovalStatus, User, UserRole
+from app.infrastructure.db.models import ApprovalStatus, User, UserDevice, UserRole
 from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection
 from app.services import settings_service
 from app.utils.formatters import format_to_local_phone, round_mb
@@ -91,6 +91,24 @@ def _safe_uuid(value: Optional[str]) -> Optional[uuid.UUID]:
 def _resolve_blocked_list_name() -> str:
     value = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked")
     return str(value or "blocked").strip() or "blocked"
+
+
+def _resolve_managed_list_names() -> list[str]:
+    """Kembalikan semua managed address-list (kecuali unauthorized) dari settings."""
+    entries = [
+        ("MIKROTIK_ADDRESS_LIST_ACTIVE", "klient_active"),
+        ("MIKROTIK_ADDRESS_LIST_FUP", "klient_fup"),
+        ("MIKROTIK_ADDRESS_LIST_INACTIVE", "klient_inactive"),
+        ("MIKROTIK_ADDRESS_LIST_HABIS", "klient_habis"),
+        ("MIKROTIK_ADDRESS_LIST_EXPIRED", "klient_expired"),
+        ("MIKROTIK_ADDRESS_LIST_BLOCKED", "klient_blocked"),
+    ]
+    seen: list[str] = []
+    for key, default in entries:
+        name = str(settings_service.get_setting(key, default) or default).strip() or default
+        if name not in seen:
+            seen.append(name)
+    return seen
 
 
 def _compute_expected_for_user(user: User, *, debt_limit_mb: int) -> _UserExpectation:
@@ -160,6 +178,11 @@ def main(argv: list[str]) -> int:
         help="Hapus address-list entry pada list blocked yang terdeteksi stale (user tidak expected_blocked).",
     )
     parser.add_argument(
+        "--cleanup-orphaned-lists",
+        action="store_true",
+        help="Hapus address-list entry di semua managed list (managed comment) yang IP-nya tidak ada di UserDevice DB (orphaned).",
+    )
+    parser.add_argument(
         "--print-json",
         action="store_true",
         help="Cetak ringkasan audit dalam format JSON (lebih mudah disimpan/log).",
@@ -183,8 +206,8 @@ def main(argv: list[str]) -> int:
             "users_loaded": len(by_uid),
             "mikrotik": {"available": False},
             "counts": {},
-            "anomalies": {"stale_blocked": []},
-            "cleanup": {"removed_blocked_rows": 0, "dry_run": (not args.apply)},
+            "anomalies": {"stale_blocked": [], "orphaned_lists": []},
+            "cleanup": {"removed_blocked_rows": 0, "removed_orphaned_rows": 0, "dry_run": (not args.apply)},
         }
 
         with get_mikrotik_connection() as api:
@@ -264,6 +287,49 @@ def main(argv: list[str]) -> int:
                         continue
                 report["cleanup"]["removed_blocked_rows"] = removed
 
+            # --- Orphan address-list cleanup ---
+            # Entry orphan = ada di managed list dengan comment sistem,
+            # tapi IP-nya tidak ada di tabel UserDevice → user sudah dihapus, entry perlu dibersihkan.
+            if args.cleanup_orphaned_lists:
+                known_ips: set[str] = {
+                    str(ip).strip()
+                    for ip in db.session.scalars(
+                        sa.select(UserDevice.ip_address).where(UserDevice.ip_address.isnot(None))
+                    ).all()
+                    if ip
+                }
+                orphan_candidates: list[dict[str, Any]] = []
+                for list_name in _resolve_managed_list_names():
+                    list_rows = fw_resource.get(list=list_name) or []
+                    for row in list_rows:
+                        comment = row.get("comment")
+                        if not _is_managed_comment(comment):
+                            continue
+                        address = str(row.get("address") or "").strip()
+                        if not address or address in known_ips:
+                            continue
+                        orphan_candidates.append({
+                            "id": row.get("id") or row.get(".id"),
+                            "address": address,
+                            "list": list_name,
+                            "comment": comment,
+                        })
+                report["counts"]["orphaned_lists_detected"] = len(orphan_candidates)
+                report["anomalies"]["orphaned_lists"] = orphan_candidates[: max(0, int(args.limit))]
+
+                if args.apply:
+                    removed_orphans = 0
+                    for item in orphan_candidates:
+                        row_id = item.get("id")
+                        if not row_id:
+                            continue
+                        try:
+                            fw_resource.remove(id=row_id)
+                            removed_orphans += 1
+                        except Exception:
+                            continue
+                    report["cleanup"]["removed_orphaned_rows"] = removed_orphans
+
         if args.print_json:
             print(json.dumps(report, indent=2, ensure_ascii=False))
             return 0
@@ -289,6 +355,20 @@ def main(argv: list[str]) -> int:
 
         if args.cleanup_stale_blocked and not args.apply:
             print("\nNOTE: cleanup diminta tapi masih dry-run. Tambahkan --apply untuk eksekusi remove.")
+
+        orphan_list = report["anomalies"].get("orphaned_lists", [])
+        if args.cleanup_orphaned_lists:
+            if orphan_list:
+                print("\n--- Orphaned address-list entries (IP tidak ada di DB) ---")
+                for item in orphan_list:
+                    print("- ip={address} list={list} comment={comment}".format(**item))
+                total_orphan = report["counts"].get("orphaned_lists_detected", len(orphan_list))
+                if total_orphan > len(orphan_list):
+                    print(f"... truncated, total={total_orphan}")
+            else:
+                print("\nTidak ada orphaned address-list terdeteksi.")
+            if not args.apply:
+                print("\nNOTE: orphan cleanup diminta tapi masih dry-run. Tambahkan --apply untuk eksekusi remove.")
 
         return 0
 

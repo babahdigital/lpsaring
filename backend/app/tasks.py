@@ -38,13 +38,13 @@ from app.infrastructure.gateways.mikrotik_client import (
     get_hotspot_host_usage_map,
     get_mikrotik_connection,
     remove_address_list_entry,
-    remove_ip_binding,
     upsert_address_list_entry,
     upsert_ip_binding,
 )
 from app.services.notification_service import get_notification_message
 from app.services.quota_mutation_ledger_service import append_quota_mutation_event, lock_user_quota_row, snapshot_user_quota_state
 from app.services.user_management.helpers import _handle_mikrotik_operation
+from app.services.user_management.user_deletion import run_user_auth_cleanup
 from app.commands.sync_unauthorized_hosts_command import sync_unauthorized_hosts_command
 from app.utils.block_reasons import build_manual_debt_eom_reason
 from app.utils.formatters import format_to_local_phone, get_app_local_datetime, get_phone_number_variations
@@ -504,18 +504,14 @@ def auto_delete_unresponsive_imported_users_task(self):
                             username_08, msg,
                         )
 
-                devices = db.session.query(UserDevice).filter(UserDevice.user_id == user.id).all()
-
-                if api:
-                    for device in devices:
-                        if device.mac_address:
-                            remove_ip_binding(api, device.mac_address, user.mikrotik_server_name or "all")
-                        if device.ip_address:
-                            remove_address_list_entry(api, device.ip_address, "active")
-                            remove_address_list_entry(api, device.ip_address, "blocked")
-
-                for device in devices:
-                    db.session.delete(device)
+                # Gunakan run_user_auth_cleanup untuk cleanup menyeluruh:
+                # - hapus UserDevice dari DB
+                # - _cleanup_router_artifacts: hotspot host, ip-binding, DHCP, ARP,
+                #   semua managed address-list (active, blocked, fup, habis, expired,
+                #   inactive, unauthorized) — by IP dan by uid-comment scan.
+                cleanup_summary = run_user_auth_cleanup(user)
+                devices_cleaned = cleanup_summary.get("device_count_before", 0)
+                mikrotik_connected = cleanup_summary.get("router", {}).get("mikrotik_connected", False)
 
                 for sub in submissions:
                     sub.approval_status = "DELETED_AUTO"
@@ -532,8 +528,8 @@ def auto_delete_unresponsive_imported_users_task(self):
                     "phone_number": raw_phone,
                     "full_name": user_name,
                     "deadline_days": deadline_days,
-                    "devices_cleaned": len(devices),
-                    "mikrotik_connected": api is not None,
+                    "devices_cleaned": devices_cleaned,
+                    "mikrotik_connected": mikrotik_connected,
                 }, default=str)
                 db.session.add(log_entry)
 
@@ -912,6 +908,8 @@ def audit_mikrotik_reconciliation_task(self):
         cmd = [sys.executable, str(script_path), "--limit", "30"]
         if settings_service.get_setting("MIKROTIK_AUDIT_AUTO_CLEANUP_STALE_BLOCKED", "False") == "True":
             cmd.extend(["--cleanup-stale-blocked", "--apply"])
+        if settings_service.get_setting("MIKROTIK_AUDIT_AUTO_CLEANUP_ORPHANED_LISTS", "False") == "True":
+            cmd.extend(["--cleanup-orphaned-lists", "--apply"])
 
         logger.info("Celery Task: Menjalankan audit MikroTik reconciliation harian.")
         try:

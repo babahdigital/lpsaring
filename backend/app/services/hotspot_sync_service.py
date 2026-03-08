@@ -41,7 +41,6 @@ from app.services import settings_service
 from app.services.notification_service import get_notification_message
 from app.services.device_management_service import (
     _remove_ip_binding,
-    _remove_blocked_address_list,
     _ensure_static_dhcp_lease,
     register_or_update_device,
 )
@@ -1942,7 +1941,7 @@ def cleanup_inactive_users() -> Dict[str, int]:
                         if device.mac_address:
                             _remove_ip_binding(device.mac_address, user.mikrotik_server_name or "all")
                         if device.ip_address:
-                            _remove_blocked_address_list(device.ip_address)
+                            _remove_managed_status_entries_for_ip(api, device.ip_address)
                         db.session.delete(device)
                     if api and username_08:
                         delete_hotspot_user(api_connection=api, username=username_08)
@@ -1974,7 +1973,7 @@ def cleanup_inactive_users() -> Dict[str, int]:
                     if device.mac_address:
                         _remove_ip_binding(device.mac_address, user.mikrotik_server_name or "all")
                     if device.ip_address:
-                        _remove_blocked_address_list(device.ip_address)
+                        _remove_managed_status_entries_for_ip(api, device.ip_address)
                 if api and username_08:
                     delete_hotspot_user(api_connection=api, username=username_08)
                 current_app.logger.info(
@@ -2011,7 +2010,7 @@ def cleanup_inactive_users() -> Dict[str, int]:
                     if device.mac_address:
                         _remove_ip_binding(device.mac_address, user.mikrotik_server_name or "all")
                     if device.ip_address:
-                        _remove_blocked_address_list(device.ip_address)
+                        _remove_managed_status_entries_for_ip(api2, device.ip_address)
                     db.session.delete(device)
                 if api2 and username_08:
                     delete_hotspot_user(api_connection=api2, username=username_08)
