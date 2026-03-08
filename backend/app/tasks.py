@@ -875,17 +875,30 @@ def sync_hotspot_usage_task(self):
     app = create_app()
     with app.app_context():
         logger.info("Celery Task: Memulai sinkronisasi kuota dan profil hotspot.")
+        sync_interval = settings_service.get_setting_as_int("QUOTA_SYNC_INTERVAL_SECONDS", 300)
+        redis_client = getattr(app, "redis_client_otp", None)
+
+        # Throttle check: skip jika belum melewati interval sejak run terakhir
+        if redis_client is not None:
+            now_ts = int(datetime.now(dt_timezone.utc).timestamp())
+            last_ts_str = redis_client.get("quota_sync:last_run_ts")
+            if last_ts_str:
+                last_ts = int(last_ts_str)
+                if now_ts - last_ts < max(sync_interval, 30):
+                    logger.info("Celery Task: Skip sinkronisasi (menunggu interval dinamis).")
+                    return
+
+        # Mutex lock: cegah eksekusi concurrent dari beberapa worker (root cause deadlock DB)
+        # SET NX (atomic) — hanya satu worker yang bisa acquire pada satu waktu
+        lock_key = "quota_sync:run_lock"
+        lock_ttl = 120  # Safety TTL: task tidak boleh berjalan lebih dari 2 menit
+        lock_acquired = False
         try:
-            sync_interval = settings_service.get_setting_as_int("QUOTA_SYNC_INTERVAL_SECONDS", 300)
-            redis_client = getattr(app, "redis_client_otp", None)
             if redis_client is not None:
-                now_ts = int(datetime.now(dt_timezone.utc).timestamp())
-                last_ts_str = redis_client.get("quota_sync:last_run_ts")
-                if last_ts_str:
-                    last_ts = int(last_ts_str)
-                    if now_ts - last_ts < max(sync_interval, 30):
-                        logger.info("Celery Task: Skip sinkronisasi (menunggu interval dinamis).")
-                        return
+                lock_acquired = bool(redis_client.set(lock_key, "1", nx=True, ex=lock_ttl))
+                if not lock_acquired:
+                    logger.info("Celery Task: Skip sinkronisasi (worker lain sedang berjalan).")
+                    return
 
             result = sync_hotspot_usage_and_profiles()
             logger.info(f"Celery Task: Sinkronisasi selesai. Result: {result}")
@@ -896,6 +909,9 @@ def sync_hotspot_usage_task(self):
             if self.request.retries >= 2:
                 _record_task_failure(app, "sync_hotspot_usage_task", {}, str(e))
             raise
+        finally:
+            if redis_client is not None and lock_acquired:
+                redis_client.delete(lock_key)
 
 
 @celery_app.task(
