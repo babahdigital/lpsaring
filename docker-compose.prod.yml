@@ -84,8 +84,8 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "10m"   # ganti sesuai kapasitas SD-card
-        max-file: "10"    # menyimpan 10 file rotasi → ±200 MB total
+        max-size: "50m"
+        max-file: "5"
     env_file:
       - .env.prod
     volumes:
@@ -128,8 +128,8 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "10m"
-        max-file: "10"
+        max-size: "50m"
+        max-file: "5"
     env_file:
       - .env.prod
     volumes:
@@ -159,8 +159,8 @@ services:
     logging:
       driver: "json-file"
       options:
-        max-size: "10m"
-        max-file: "10"
+        max-size: "50m"
+        max-file: "5"
     env_file:
       - .env.prod
     volumes:
@@ -183,6 +183,11 @@ services:
   frontend:
     image: babahdigital/sobigidul_frontend:latest
     container_name: hotspot_prod_nuxt_frontend
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
     env_file:
       - ./.env.public.prod
     # Pastikan Nuxt Nitro memakai port 3010
