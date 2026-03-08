@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { TAMPING_OPTION_ITEMS } from '~/utils/constants'
 
 definePageMeta({
@@ -15,6 +15,10 @@ const route = useRoute()
 const isFeatureEnabled = computed(() => String(runtimeConfig.public.publicDbUpdateFormEnabled ?? 'false').toLowerCase() === 'true')
 const deadlineDays = computed(() => Number(runtimeConfig.public.updateDeadlineDays ?? 3))
 
+// Status halaman: loading | form | reviewing | approved | success
+type PageStatus = 'loading' | 'form' | 'reviewing' | 'approved' | 'success'
+const pageStatus = ref<PageStatus>('loading')
+
 const fullName = ref('')
 const role = ref<'USER' | 'KOMANDAN' | 'TAMPING' | ''>('')
 const blok = ref<string | null>(null)
@@ -24,7 +28,6 @@ const phoneNumber = ref('')
 const isSubmitting = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
-const isSubmissionSuccess = ref(false)
 
 const roleOptions = [
   { title: 'User', value: 'USER' },
@@ -88,6 +91,36 @@ const nameFromQuery = String(route.query.name ?? '').trim()
 if (nameFromQuery !== '' && fullName.value.trim() === '')
   fullName.value = nameFromQuery
 
+// Cek status submission saat halaman dimuat
+onMounted(async () => {
+  if (!isFeatureEnabled.value) {
+    pageStatus.value = 'form'
+    return
+  }
+  if (!hasPhoneFromLink.value) {
+    pageStatus.value = 'form'
+    return
+  }
+  try {
+    const res = await $fetch<{ success: boolean, status?: string }>(
+      `/api/users/database-update-submissions/status?phone=${encodeURIComponent(phoneNumber.value)}`,
+    )
+    if (res.success && res.status === 'approved') {
+      pageStatus.value = 'approved'
+    }
+    else if (res.success && res.status === 'reviewing') {
+      pageStatus.value = 'reviewing'
+    }
+    else {
+      pageStatus.value = 'form'
+    }
+  }
+  catch {
+    // Jika gagal cek status, tampilkan form agar user tetap bisa submit
+    pageStatus.value = 'form'
+  }
+})
+
 async function submitForm() {
   if (!isFeatureEnabled.value)
     return
@@ -120,7 +153,7 @@ async function submitForm() {
       throw new Error(response.message ?? 'Gagal mengirim data.')
 
     successMessage.value = response.message ?? 'Data berhasil dikirim.'
-    isSubmissionSuccess.value = true
+    pageStatus.value = 'success'
     fullName.value = ''
     role.value = ''
     blok.value = null
@@ -152,6 +185,7 @@ function goToLogin() {
       </VCardTitle>
 
       <VCardText class="px-6 pb-6">
+        <!-- Feature disabled -->
         <VAlert
           v-if="!isFeatureEnabled"
           type="warning"
@@ -162,151 +196,178 @@ function goToLogin() {
         </VAlert>
 
         <template v-else>
-          <template v-if="isSubmissionSuccess">
-            <div class="text-center py-8">
-              <VAvatar color="success" variant="tonal" size="64" class="mb-4">
-                <VIcon icon="tabler-check" size="36" />
-              </VAvatar>
+          <!-- Loading status cek -->
+          <div v-if="pageStatus === 'loading'" class="text-center py-8">
+            <VProgressCircular indeterminate color="primary" size="48" class="mb-4" />
+            <p class="text-body-2 text-medium-emphasis">
+              Memeriksa status data Anda...
+            </p>
+          </div>
 
-              <h2 class="text-h6 mb-2">
-                Pemutakhiran Berhasil Dikirim
-              </h2>
+          <!-- Sudah approved -->
+          <div v-else-if="pageStatus === 'approved'" class="text-center py-8">
+            <VAvatar color="success" variant="tonal" size="64" class="mb-4">
+              <VIcon icon="tabler-circle-check" size="36" />
+            </VAvatar>
+            <h2 class="text-h6 mb-2">
+              Data Sudah Terupdate
+            </h2>
+            <p class="text-body-2 text-medium-emphasis mb-6">
+              Data Anda telah disetujui dan sudah terupdate di sistem LPSaring.
+              Tidak perlu melakukan tindakan apapun.
+            </p>
+            <VBtn color="primary" @click="goToLogin">
+              Kembali ke Login
+            </VBtn>
+          </div>
 
-              <p class="text-body-2 text-medium-emphasis mb-6">
-                {{ successMessage || 'Data Anda telah diterima dan sedang ditinjau admin. Akun Anda tidak akan dihapus otomatis.' }}
-              </p>
+          <!-- Sedang ditinjau admin -->
+          <div v-else-if="pageStatus === 'reviewing'" class="text-center py-8">
+            <VAvatar color="info" variant="tonal" size="64" class="mb-4">
+              <VIcon icon="tabler-clock" size="36" />
+            </VAvatar>
+            <h2 class="text-h6 mb-2">
+              Data Sedang Ditinjau
+            </h2>
+            <p class="text-body-2 text-medium-emphasis mb-6">
+              Pengajuan pemutakhiran data Anda sudah diterima dan sedang dalam proses peninjauan admin.
+              Akun Anda tidak akan dihapus otomatis. Tidak perlu mengirim ulang.
+            </p>
+            <VBtn color="primary" variant="tonal" @click="goToLogin">
+              Kembali ke Login
+            </VBtn>
+          </div>
 
-              <VBtn
-                color="primary"
-                @click="goToLogin"
-              >
-                Kembali ke Login
-              </VBtn>
-            </div>
-          </template>
+          <!-- Berhasil submit (baru saja) -->
+          <div v-else-if="pageStatus === 'success'" class="text-center py-8">
+            <VAvatar color="success" variant="tonal" size="64" class="mb-4">
+              <VIcon icon="tabler-check" size="36" />
+            </VAvatar>
+            <h2 class="text-h6 mb-2">
+              Pemutakhiran Berhasil Dikirim
+            </h2>
+            <p class="text-body-2 text-medium-emphasis mb-6">
+              {{ successMessage || 'Data Anda telah diterima dan sedang ditinjau admin. Akun Anda tidak akan dihapus otomatis.' }}
+            </p>
+            <VBtn color="primary" @click="goToLogin">
+              Kembali ke Login
+            </VBtn>
+          </div>
 
-          <template v-else>
-          <p class="text-body-2 mb-4">
-            Silakan isi data pemutakhiran. Nomor WhatsApp diisi otomatis dari link resmi dan tidak bisa diubah.
-          </p>
-
-          <VAlert
-            type="warning"
-            variant="tonal"
-            class="mb-4"
-          >
-            <strong>Perhatian:</strong> Segera lengkapi data Anda dalam <strong>{{ deadlineDays }} hari</strong> sejak menerima pesan ini.
-            Jika tidak diperbarui, akun Anda akan <strong>dihapus otomatis</strong> dari sistem.
-          </VAlert>
-
-          <VAlert
-            v-if="!hasPhoneFromLink"
-            type="error"
-            variant="tonal"
-            class="mb-4"
-          >
-            Nomor WhatsApp tidak ditemukan pada link. Buka link dari pesan WhatsApp yang Anda terima.
-          </VAlert>
-
-          <VForm @submit.prevent="submitForm">
-            <VTextField
-              v-model="fullName"
-              label="Nama Lengkap"
-              placeholder="Contoh: Budi Santoso"
-              hint="Masukkan nama lengkap Anda, bukan nama sistem (mis. yang diawali 'Imported')"
-              persistent-hint
-              variant="outlined"
-              :rules="[requiredRule]"
-              class="mb-3"
-            />
-
-            <VSelect
-              v-model="role"
-              label="Role"
-              variant="outlined"
-              :items="roleOptions"
-              item-title="title"
-              item-value="value"
-              :rules="[requiredRule]"
-              class="mb-3"
-            />
-
-            <template v-if="showAddressFields">
-              <VSelect
-                v-model="blok"
-                label="Blok Tempat Tinggal"
-                variant="outlined"
-                :items="blockOptions"
-                item-title="title"
-                item-value="value"
-                :rules="[requiredRule]"
-                class="mb-3"
-              />
-
-              <VSelect
-                v-model="kamar"
-                label="Nomor Kamar"
-                variant="outlined"
-                :items="kamarOptions"
-                item-title="title"
-                item-value="value"
-                :rules="[requiredRule]"
-                class="mb-3"
-              />
-            </template>
-
-            <template v-if="showTampingFields">
-              <VSelect
-                v-model="tampingType"
-                label="Jenis Tamping"
-                variant="outlined"
-                :items="tampingOptions"
-                item-title="title"
-                item-value="value"
-                :rules="[requiredRule]"
-                class="mb-3"
-              />
-            </template>
-
-            <VTextField
-              v-model="phoneNumber"
-              label="Nomor Telepon WhatsApp"
-              variant="outlined"
-              hint="Diisi otomatis dari link WhatsApp"
-              persistent-hint
-              disabled
-              readonly
-              class="mb-4"
-            />
+          <!-- Form -->
+          <template v-else-if="pageStatus === 'form'">
+            <p class="text-body-2 mb-4">
+              Silakan isi data pemutakhiran. Nomor WhatsApp diisi otomatis dari link resmi dan tidak bisa diubah.
+            </p>
 
             <VAlert
-              v-if="errorMessage"
+              type="warning"
+              variant="tonal"
+              class="mb-4"
+            >
+              <strong>Perhatian:</strong> Segera lengkapi data Anda dalam <strong>{{ deadlineDays }} hari</strong> sejak menerima pesan ini.
+              Jika tidak diperbarui, akun Anda akan <strong>dihapus otomatis</strong> dari sistem.
+            </VAlert>
+
+            <VAlert
+              v-if="!hasPhoneFromLink"
               type="error"
               variant="tonal"
-              class="mb-3"
+              class="mb-4"
             >
-              {{ errorMessage }}
+              Nomor WhatsApp tidak ditemukan pada link. Buka link dari pesan WhatsApp yang Anda terima.
             </VAlert>
 
-            <VAlert
-              v-if="successMessage"
-              type="success"
-              variant="tonal"
-              class="mb-3"
-            >
-              {{ successMessage }}
-            </VAlert>
+            <VForm @submit.prevent="submitForm">
+              <VTextField
+                v-model="fullName"
+                label="Nama Lengkap"
+                placeholder="Contoh: Budi Santoso"
+                hint="Masukkan nama lengkap Anda, bukan nama sistem (mis. yang diawali 'Imported')"
+                persistent-hint
+                variant="outlined"
+                :rules="[requiredRule]"
+                class="mb-3"
+              />
 
-            <VBtn
-              type="submit"
-              color="primary"
-              :loading="isSubmitting"
-              :disabled="isSubmitting || !hasPhoneFromLink"
-              block
-            >
-              Kirim Data Pemutakhiran
-            </VBtn>
-          </VForm>
+              <VSelect
+                v-model="role"
+                label="Role"
+                variant="outlined"
+                :items="roleOptions"
+                item-title="title"
+                item-value="value"
+                :rules="[requiredRule]"
+                class="mb-3"
+              />
+
+              <template v-if="showAddressFields">
+                <VSelect
+                  v-model="blok"
+                  label="Blok Tempat Tinggal"
+                  variant="outlined"
+                  :items="blockOptions"
+                  item-title="title"
+                  item-value="value"
+                  :rules="[requiredRule]"
+                  class="mb-3"
+                />
+
+                <VSelect
+                  v-model="kamar"
+                  label="Nomor Kamar"
+                  variant="outlined"
+                  :items="kamarOptions"
+                  item-title="title"
+                  item-value="value"
+                  :rules="[requiredRule]"
+                  class="mb-3"
+                />
+              </template>
+
+              <template v-if="showTampingFields">
+                <VSelect
+                  v-model="tampingType"
+                  label="Jenis Tamping"
+                  variant="outlined"
+                  :items="tampingOptions"
+                  item-title="title"
+                  item-value="value"
+                  :rules="[requiredRule]"
+                  class="mb-3"
+                />
+              </template>
+
+              <VTextField
+                v-model="phoneNumber"
+                label="Nomor Telepon WhatsApp"
+                variant="outlined"
+                hint="Diisi otomatis dari link WhatsApp"
+                persistent-hint
+                disabled
+                readonly
+                class="mb-4"
+              />
+
+              <VAlert
+                v-if="errorMessage"
+                type="error"
+                variant="tonal"
+                class="mb-3"
+              >
+                {{ errorMessage }}
+              </VAlert>
+
+              <VBtn
+                type="submit"
+                color="primary"
+                :loading="isSubmitting"
+                :disabled="isSubmitting || !hasPhoneFromLink"
+                block
+              >
+                Kirim Data Pemutakhiran
+              </VBtn>
+            </VForm>
           </template>
         </template>
       </VCardText>

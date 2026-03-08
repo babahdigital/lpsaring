@@ -73,38 +73,42 @@ _NON_RETRYABLE_UNAUTHORIZED_SYNC_ERROR_MARKERS = (
 )
 
 
-def _should_skip_public_update_whatsapp_for_phone(phone_number: str) -> bool:
-    """Return True (skip) jika nomor tidak layak menerima WA update.
+def _should_skip_public_update_whatsapp_for_phone(phone_number: str) -> str | None:
+    """Return skip-reason string jika nomor tidak layak menerima WA update, None jika harus dikirim.
 
-    Kondisi skip:
-    - Nomor tidak ditemukan di DB users → tidak dikenal, jangan kirim
-    - User ditemukan tapi bukan user 'Imported' (nama tidak diawali 'Imported ') →
-      hanya kirim ke user yang datanya belum dilengkapi (hasil import massal)
-    - User tidak aktif / belum diapprove → tidak relevan
+    Skip permanen (whatsapp_notified_at boleh di-set → stop retry):
+    - "no_phone"        : nomor kosong
+    - "already_updated" : user sudah update data (nama tidak lagi diawali 'Imported ')
+
+    Skip sementara (jangan set whatsapp_notified_at → coba lagi nanti):
+    - "inactive_or_unapproved" : user Imported tapi belum aktif/disetujui
     """
     normalized_phone = str(phone_number or "").strip()
     if not normalized_phone:
-        return True  # skip: no phone
+        return "no_phone"
 
     try:
         variations = get_phone_number_variations(normalized_phone)
         user = db.session.query(User).filter(User.phone_number.in_(variations)).order_by(User.created_at.desc()).first()
 
-        # Nomor tidak ada di DB → jangan kirim WA ke nomor tidak dikenal
+        # Nomor tidak ada di DB → bukan user kita, jangan kirim WA
         if user is None:
-            return True
+            return "already_updated"
 
         # Hanya kirim ke user yang namanya diawali "Imported " (hasil import, belum update data)
         user_name = str(getattr(user, "full_name", "") or "").strip()
         if not user_name.startswith("Imported "):
-            return True  # skip: bukan user Imported
+            return "already_updated"  # user sudah update nama lewat form, skip permanen
 
         is_approved = getattr(user, "approval_status", None) == ApprovalStatus.APPROVED
         is_active = bool(getattr(user, "is_active", False))
-        return not (is_approved and is_active)
+        if not (is_approved and is_active):
+            return "inactive_or_unapproved"  # skip sementara, jangan tandai sebagai terkirim
+
+        return None  # kirim WA
     except Exception:
         # Best effort guard; never block message processing on lookup errors.
-        return False
+        return None
 
 
 def _is_non_retryable_unauthorized_sync_error(exc: Exception) -> bool:
@@ -330,14 +334,22 @@ def send_public_update_submission_whatsapp_batch_task(self):
                     f"\u26a0\ufe0f Jika tidak diperbarui, akun Anda akan dihapus otomatis dari sistem."
                 )
 
-            skip_phone = _should_skip_public_update_whatsapp_for_phone(getattr(representative, "phone_number", ""))
-            if skip_phone:
-                sent_ok = False
-                for row in grouped_rows:
-                    row.whatsapp_notified_at = now_utc
-                    row.whatsapp_notify_last_error = "skip_inactive_service"
+            skip_reason = _should_skip_public_update_whatsapp_for_phone(getattr(representative, "phone_number", ""))
+            if skip_reason is not None:
+                # Skip permanen (already_updated / no_phone): tandai sebagai selesai agar tidak diproses ulang
+                # Skip sementara (inactive_or_unapproved): JANGAN set whatsapp_notified_at, coba lagi nanti
+                is_permanent_skip = skip_reason != "inactive_or_unapproved"
+                if is_permanent_skip:
+                    for row in grouped_rows:
+                        row.whatsapp_notified_at = now_utc
+                        row.whatsapp_notify_last_error = skip_reason
+                else:
+                    for row in grouped_rows:
+                        row.whatsapp_notify_last_error = skip_reason
                 logger.info(
-                    "Update sync WA batch: skip phone because service inactive/non-approved (phone=%s)",
+                    "Update sync WA batch: skip phone reason=%s permanent=%s (phone=%s)",
+                    skip_reason,
+                    is_permanent_skip,
                     getattr(representative, "phone_number", ""),
                 )
                 continue
@@ -553,6 +565,76 @@ def auto_delete_unresponsive_imported_users_task(self):
             "deadline_days": deadline_days,
         }
 
+
+@celery_app.task(
+    name="populate_update_submissions_from_imported_users_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 1},
+)
+def populate_update_submissions_from_imported_users_task(self):
+    """Scan user Imported di tabel users → buat PublicDatabaseUpdateSubmission jika belum ada.
+
+    Task ini memastikan setiap user yang diimport (nama diawali 'Imported ')
+    memiliki minimal satu baris di public_database_update_submissions sehingga
+    task send_public_update_submission_whatsapp_batch_task bisa mengirim WA notifikasi.
+    Satu submission per nomor HP — jika sudah ada, skip.
+    """
+    app = create_app()
+    with app.app_context():
+        if not bool(app.config.get("UPDATE_ENABLE_SYNC", False)):
+            logger.info("populate_imported_submissions skipped: UPDATE_ENABLE_SYNC disabled.")
+            return {"success": True, "skipped": True, "reason": "update_sync_disabled"}
+
+        imported_users = (
+            db.session.query(User)
+            .filter(User.full_name.like("Imported %"))
+            .order_by(User.created_at.asc())
+            .all()
+        )
+
+        created = 0
+        already_exists = 0
+
+        for user in imported_users:
+            phone = str(getattr(user, "phone_number", "") or "").strip()
+            if not phone:
+                continue
+
+            # Periksa variasi nomor agar tidak duplikat meskipun format beda
+            variations = get_phone_number_variations(phone)
+            existing = (
+                db.session.query(PublicDatabaseUpdateSubmission)
+                .filter(PublicDatabaseUpdateSubmission.phone_number.in_(variations))
+                .first()
+            )
+            if existing:
+                already_exists += 1
+                continue
+
+            # Buat submission stub — data aktual diisi oleh user via form
+            submission = PublicDatabaseUpdateSubmission()
+            submission.full_name = str(getattr(user, "full_name", "") or "").strip()
+            submission.role = "USER"
+            submission.phone_number = phone
+            submission.source_ip = "system:populate_task"
+            db.session.add(submission)
+            created += 1
+
+        db.session.commit()
+
+        logger.info(
+            "populate_imported_submissions: created=%d already_exists=%d total_imported_users=%d",
+            created, already_exists, len(imported_users),
+        )
+        return {
+            "success": True,
+            "created": created,
+            "already_exists": already_exists,
+            "total_imported_users": len(imported_users),
+        }
 
 def _parse_mikrotik_duration_seconds(value: str) -> int:
     text = str(value or "").strip().lower()

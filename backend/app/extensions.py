@@ -242,9 +242,16 @@ def make_celery_app(app=None):
 
     if os.environ.get("UPDATE_ENABLE_SYNC", "False").lower() == "true":
         try:
-            update_sync_interval = int(os.environ.get("UPDATE_SYNC_CHECK_INTERVAL_SECONDS", "3600"))
+            update_sync_interval = int(os.environ.get("UPDATE_SYNC_CHECK_INTERVAL_SECONDS", "1800"))
         except ValueError:
-            update_sync_interval = 3600
+            update_sync_interval = 1800
+
+        # Populate submission stubs dari user Imported — jalankan 2× lebih sering dari WA batch
+        # agar submission tersedia sebelum batch pertama jalan
+        celery_instance.conf.beat_schedule["populate-imported-users-to-submissions"] = {
+            "task": "populate_update_submissions_from_imported_users_task",
+            "schedule": max(60, update_sync_interval // 2),
+        }
 
         if os.environ.get("UPDATE_ALLOW_DESTRUCTIVE_AUTO_CLEAR", "False").lower() == "true":
             celery_instance.conf.beat_schedule["clear-total-if-no-update-submission"] = {

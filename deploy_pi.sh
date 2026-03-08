@@ -1112,6 +1112,16 @@ for _svc_name in hotspot_prod_backend hotspot_prod_celery_worker hotspot_prod_ce
     docker rm "\$_svc_name" >/dev/null 2>&1 || true
   fi
 done
+
+# Selalu hapus container celery_beat (running/stopped) agar PersistentScheduler
+# mulai dari state bersih (celerybeat-schedule dihapus bersama writable layer).
+# Ini mencegah stale schedule saat task baru ditambahkan ke beat_schedule.
+_beat_cur=\$(docker inspect hotspot_prod_celery_beat --format='{{.State.Status}}' 2>/dev/null || true)
+if [ -n "\$_beat_cur" ]; then
+  echo "    Stopping + removing celery_beat container untuk fresh schedule..."
+  docker stop hotspot_prod_celery_beat >/dev/null 2>&1 || true
+  docker rm   hotspot_prod_celery_beat >/dev/null 2>&1 || true
+fi
 # shellcheck disable=SC2086
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --remove-orphans --no-deps \$app_recreate_flag backend celery_worker celery_beat
 

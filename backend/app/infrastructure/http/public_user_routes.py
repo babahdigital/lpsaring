@@ -122,8 +122,58 @@ def create_public_database_update_submission():
         ), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
-# --- ENDPOINTS ---
-@public_user_bp.route("/check-or-register", methods=["POST"])
+@public_user_bp.route("/database-update-submissions/status", methods=["GET"])
+def get_public_update_submission_status():
+    """Cek status pemutakhiran data berdasarkan nomor HP.
+
+    Query param: ?phone=<nomor>
+
+    Response JSON:
+    - status: "none"      → belum ada submission, tampilkan form
+    - status: "reviewing" → sudah submit form, sedang ditinjau admin
+    - status: "approved"  → sudah diapprove, data terupdate di sistem
+    """
+    phone_raw = str(request.args.get("phone") or "").strip()
+    if not phone_raw:
+        return jsonify({"success": False, "message": "Parameter 'phone' wajib diisi."}), HTTPStatus.BAD_REQUEST
+
+    try:
+        variations = get_phone_number_variations(phone_raw)
+
+        # Cek apakah user sudah approved (nama tidak lagi diawali "Imported ")
+        user = db.session.execute(select(User).where(User.phone_number.in_(variations))).scalar_one_or_none()
+        if user is not None:
+            user_name = str(getattr(user, "full_name", "") or "").strip()
+            if not user_name.startswith("Imported "):
+                return jsonify({"success": True, "status": "approved"}), HTTPStatus.OK
+
+        # Cek apakah ada submission form (bukan stub dari populate task, punya data role/blok/kamar)
+        submissions = (
+            db.session.query(PublicDatabaseUpdateSubmission)
+            .filter(PublicDatabaseUpdateSubmission.phone_number.in_(variations))
+            .order_by(PublicDatabaseUpdateSubmission.created_at.desc())
+            .all()
+        )
+
+        # Submission dari form manusia memiliki source_ip bukan "system:populate_task"
+        human_submissions = [
+            s for s in submissions
+            if str(getattr(s, "source_ip", "") or "") != "system:populate_task"
+        ]
+
+        if human_submissions:
+            return jsonify({"success": True, "status": "reviewing"}), HTTPStatus.OK
+
+        return jsonify({"success": True, "status": "none"}), HTTPStatus.OK
+
+    except Exception as e:
+        if db.session.is_active:
+            db.session.rollback()
+        current_app.logger.error(f"[Update Status] Error: {e}", exc_info=True)
+        return jsonify({"success": False, "message": "Kesalahan internal server."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+
 def check_or_register_phone():
     current_app.logger.info("POST /api/users/check-or-register endpoint requested.")
     try:
