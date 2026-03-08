@@ -521,19 +521,20 @@ def auto_delete_unresponsive_imported_users_task(self):
                     sub.approval_status = "DELETED_AUTO"
                     sub.rejection_reason = f"Auto-deleted: tidak merespons {deadline_days} hari"
 
-                log_entry = AdminActionLog(
-                    admin_id=None,
-                    target_user_id=None,
-                    action_type=AdminActionType.MANUAL_USER_DELETE,
-                    details=json.dumps({
-                        "auto_delete": True,
-                        "phone_number": raw_phone,
-                        "full_name": user_name,
-                        "deadline_days": deadline_days,
-                        "devices_cleaned": len(devices),
-                        "mikrotik_connected": api is not None,
-                    }),
-                )
+                # NOTE: Hindari keyword-args pada declarative model agar Pylance tidak memunculkan
+                # `reportCallIssue` (model SQLAlchemy tidak selalu terinferensi memiliki __init__(**kwargs)).
+                log_entry = AdminActionLog()
+                log_entry.admin_id = None
+                log_entry.target_user_id = None
+                log_entry.action_type = AdminActionType.MANUAL_USER_DELETE
+                log_entry.details = json.dumps({
+                    "auto_delete": True,
+                    "phone_number": raw_phone,
+                    "full_name": user_name,
+                    "deadline_days": deadline_days,
+                    "devices_cleaned": len(devices),
+                    "mikrotik_connected": api is not None,
+                }, default=str)
                 db.session.add(log_entry)
 
                 db.session.delete(user)
