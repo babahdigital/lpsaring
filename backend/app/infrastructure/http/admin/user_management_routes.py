@@ -120,7 +120,8 @@ def list_public_update_submissions(current_admin: User):
             return jsonify({"message": "Status filter tidak valid."}), HTTPStatus.BAD_REQUEST
 
         query = db.session.query(PublicDatabaseUpdateSubmission).filter(
-            PublicDatabaseUpdateSubmission.approval_status == status
+            PublicDatabaseUpdateSubmission.approval_status == status,
+            PublicDatabaseUpdateSubmission.source_ip != "system:populate_task",
         )
 
         if search:
