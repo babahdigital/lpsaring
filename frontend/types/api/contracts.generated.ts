@@ -2,7 +2,7 @@
 // AUTO-GENERATED FILE. DO NOT EDIT MANUALLY.
 // Source: contracts/openapi/openapi.v1.yaml
 
-export const OPENAPI_SOURCE_SHA256 = 'eee68eae17576fcc23351e4423bc25ac6988194fb9deb1d3d5bc66af5ada8ecb' as const
+export const OPENAPI_SOURCE_SHA256 = 'dbe899e9a987fb763412d83d08c1d104197ebce0bab04078e6b022ace87dde10' as const
 export const API_CONTRACT_REVISION = 'openapi-1.0.0' as const
 
 export type MessageResponse = { message: string }
