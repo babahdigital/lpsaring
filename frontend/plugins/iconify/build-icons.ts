@@ -260,6 +260,7 @@ const tablerIcons = [
   'send',
   'server',
   'server-2',
+  'shield-bolt',
   'shield-exclamation',
   'settings',
   'settings-cog',

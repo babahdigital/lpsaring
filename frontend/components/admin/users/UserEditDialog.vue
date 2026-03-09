@@ -136,6 +136,31 @@ const saQuotaForm = reactive<{
   reason: '',
 })
 const isSaQuotaLoading = ref(false)
+const isSaQuotaAutoFilling = ref(false)
+
+async function autoFillSaQuotaFromDb() {
+  if (!props.user?.id)
+    return
+  isSaQuotaAutoFilling.value = true
+  try {
+    const res = await $api<{
+      db_quota_purchased_mb?: number | null
+      db_quota_used_mb?: number | null
+      db_quota_remaining_mb?: number | null
+    }>(`/admin/users/${props.user.id}/mikrotik-status`)
+    if (res.db_quota_purchased_mb != null)
+      saQuotaForm.set_purchased_mb = Math.round(res.db_quota_purchased_mb)
+    if (res.db_quota_used_mb != null)
+      saQuotaForm.set_used_mb = Math.round(res.db_quota_used_mb)
+    showSnackbar({ type: 'info', title: 'Auto-fill', text: 'Nilai kuota diisi dari database saat ini.' })
+  }
+  catch {
+    showSnackbar({ type: 'error', title: 'Gagal', text: 'Gagal mengambil nilai quota dari server.' })
+  }
+  finally {
+    isSaQuotaAutoFilling.value = false
+  }
+}
 
 async function applyDirectQuotaAdjust() {
   if (!props.user?.id)
@@ -893,6 +918,20 @@ function openDebtPdf() {
                           SuperAdmin
                         </VChip>
                       </div>
+                    </VCol>
+
+                    <VCol cols="12">
+                      <VBtn
+                        size="small"
+                        color="info"
+                        variant="tonal"
+                        prepend-icon="tabler-refresh"
+                        :loading="isSaQuotaAutoFilling"
+                        @click="autoFillSaQuotaFromDb"
+                      >
+                        Ambil Nilai Saat Ini
+                      </VBtn>
+                      <span class="text-caption text-medium-emphasis ml-2">Isi otomatis dari nilai DB sekarang</span>
                     </VCol>
 
                     <VCol cols="12" md="6">
