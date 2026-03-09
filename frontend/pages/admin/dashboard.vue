@@ -1024,95 +1024,150 @@ useHead({ title: 'Dashboard Admin' })
       <VCol cols="12">
         <VCard>
           <VCardItem>
-            <VCardTitle>Reliability Analytics</VCardTitle>
-            <VCardSubtitle>Ringkasan non-urgent (payment idempotency & captive guard)</VCardSubtitle>
+            <VCardTitle class="d-flex align-center gap-2 flex-wrap">
+              <VIcon icon="tabler-activity-heartbeat" size="20" />
+              Kesehatan Sistem
+            </VCardTitle>
+            <VCardSubtitle>Monitor keandalan pembayaran, sinkronisasi, dan routing akses</VCardSubtitle>
             <div class="mt-2">
               <VChip
                 size="small"
                 label
                 :color="overallReliabilityHealthy ? 'success' : 'error'"
               >
-                {{ overallReliabilityHealthy ? 'Overall Healthy' : 'Needs Attention' }}
+                <VIcon :icon="overallReliabilityHealthy ? 'tabler-circle-check' : 'tabler-alert-triangle'" size="14" class="me-1" />
+                {{ overallReliabilityHealthy ? 'Semua Normal' : 'Ada yang Perlu Perhatian' }}
+              </VChip>
+              <VChip
+                v-if="metricsPending"
+                size="small"
+                label
+                color="default"
+                class="ms-2"
+              >
+                <VIcon icon="tabler-refresh" size="13" class="me-1" />
+                Memperbarui...
               </VChip>
             </div>
           </VCardItem>
           <VCardText>
             <VRow>
-              <VCol
-                cols="12"
-                md="3"
-              >
-                <div class="d-flex align-center gap-2 mb-1">
-                  <VIcon
-                    icon="tabler-repeat"
-                    size="18"
-                    class="text-warning"
-                  />
-                  <span class="text-body-2">Webhook Duplikat</span>
-                </div>
-                <div class="text-h6">
-                  {{ reliabilitySummary.duplicateWebhookCount }}
-                </div>
-              </VCol>
-
-              <VCol
-                cols="12"
-                md="3"
-              >
-                <div class="d-flex align-center gap-2 mb-1">
-                  <VIcon
-                    icon="tabler-shield-exclamation"
-                    size="18"
-                    :class="reliabilitySummary.paymentIdempotencyDegraded ? 'text-error' : 'text-success'"
-                  />
-                  <span class="text-body-2">Payment Idempotency</span>
-                </div>
-                <div class="text-body-1">
-                  {{ reliabilitySummary.paymentIdempotencyDegraded ? 'Degraded' : 'Healthy' }}
-                  <span class="text-caption text-disabled ms-2">Redis unavailable: {{ reliabilitySummary.paymentIdempotencyRedisUnavailableCount }}</span>
-                </div>
-              </VCol>
-
-              <VCol
-                cols="12"
-                md="3"
-              >
-                <div class="d-flex align-center gap-2 mb-1">
-                  <VIcon
-                    icon="tabler-plug-connected-x"
-                    size="18"
-                    :class="reliabilitySummary.hotspotSyncLockDegraded ? 'text-error' : 'text-success'"
-                  />
-                  <span class="text-body-2">Hotspot Sync Lock</span>
-                </div>
-                <div class="text-body-1">
-                  {{ reliabilitySummary.hotspotSyncLockDegraded ? 'Degraded' : 'Healthy' }}
-                  <span class="text-caption text-disabled ms-2">Lock degraded: {{ reliabilitySummary.hotspotSyncLockDegradedCount }}</span>
+              <!-- Duplikat Webhook Pembayaran -->
+              <VCol cols="12" sm="6" md="3">
+                <div class="reliability-metric-box rounded pa-3">
+                  <div class="d-flex align-center gap-2 mb-2">
+                    <VIcon
+                      icon="tabler-repeat"
+                      size="18"
+                      :class="reliabilitySummary.duplicateWebhookCount > 0 ? 'text-info' : 'text-success'"
+                    />
+                    <span class="text-body-2 font-weight-medium">Duplikat Notifikasi Pembayaran</span>
+                  </div>
+                  <div class="d-flex align-center gap-2">
+                    <span class="text-h6">{{ reliabilitySummary.duplicateWebhookCount }}</span>
+                    <VChip
+                      v-if="reliabilitySummary.duplicateWebhookCount === 0"
+                      size="x-small"
+                      color="success"
+                      label
+                      variant="tonal"
+                    >
+                      Tidak ada
+                    </VChip>
+                    <VChip
+                      v-else
+                      size="x-small"
+                      color="info"
+                      label
+                      variant="tonal"
+                    >
+                      Ditangani
+                    </VChip>
+                  </div>
+                  <div class="text-caption text-disabled mt-1">
+                    Notifikasi ganda dari payment gateway — ditangani otomatis oleh sistem
+                  </div>
                 </div>
               </VCol>
 
-              <VCol
-                cols="12"
-                md="3"
-              >
-                <div class="d-flex align-center gap-2 mb-1">
-                  <VIcon
-                    icon="tabler-activity-heartbeat"
-                    size="18"
-                    :class="reliabilitySummary.policyParityDegraded ? 'text-error' : 'text-success'"
-                  />
-                  <span class="text-body-2">Policy Parity</span>
+              <!-- Proteksi Transaksi Ganda -->
+              <VCol cols="12" sm="6" md="3">
+                <div class="reliability-metric-box rounded pa-3">
+                  <div class="d-flex align-center gap-2 mb-2">
+                    <VIcon
+                      icon="tabler-shield-check"
+                      size="18"
+                      :class="reliabilitySummary.paymentIdempotencyDegraded ? 'text-error' : 'text-success'"
+                    />
+                    <span class="text-body-2 font-weight-medium">Proteksi Transaksi Ganda</span>
+                  </div>
+                  <div class="d-flex align-center gap-2">
+                    <VChip
+                      size="small"
+                      label
+                      :color="reliabilitySummary.paymentIdempotencyDegraded ? 'error' : 'success'"
+                    >
+                      {{ reliabilitySummary.paymentIdempotencyDegraded ? 'Degraded' : 'Normal' }}
+                    </VChip>
+                  </div>
+                  <div class="text-caption text-disabled mt-1">
+                    Redis {{ reliabilitySummary.paymentIdempotencyDegraded ? `tidak tersedia ${reliabilitySummary.paymentIdempotencyRedisUnavailableCount}x — idempotency melemah` : 'tersedia — transaksi duplikat dicegah' }}
+                  </div>
                 </div>
-                <div class="text-body-1">
-                  {{ reliabilitySummary.policyParityDegraded ? 'Degraded' : 'Healthy' }}
-                  <span class="text-caption text-disabled ms-2">Mismatch users: {{ reliabilitySummary.policyParityMismatchCount }}</span>
+              </VCol>
+
+              <!-- Sinkronisasi Hotspot -->
+              <VCol cols="12" sm="6" md="3">
+                <div class="reliability-metric-box rounded pa-3">
+                  <div class="d-flex align-center gap-2 mb-2">
+                    <VIcon
+                      icon="tabler-plug-connected"
+                      size="18"
+                      :class="reliabilitySummary.hotspotSyncLockDegraded ? 'text-error' : 'text-success'"
+                    />
+                    <span class="text-body-2 font-weight-medium">Sinkronisasi Hotspot</span>
+                  </div>
+                  <div class="d-flex align-center gap-2">
+                    <VChip
+                      size="small"
+                      label
+                      :color="reliabilitySummary.hotspotSyncLockDegraded ? 'error' : 'success'"
+                    >
+                      {{ reliabilitySummary.hotspotSyncLockDegraded ? 'Degraded' : 'Normal' }}
+                    </VChip>
+                  </div>
+                  <div class="text-caption text-disabled mt-1">
+                    {{ reliabilitySummary.hotspotSyncLockDegraded ? `Lock gagal ${reliabilitySummary.hotspotSyncLockDegradedCount}x — sync berjalan tanpa proteksi` : 'Lock aktif — tidak ada konflik sinkronisasi' }}
+                  </div>
+                </div>
+              </VCol>
+
+              <!-- Konsistensi Akses Router -->
+              <VCol cols="12" sm="6" md="3">
+                <div class="reliability-metric-box rounded pa-3">
+                  <div class="d-flex align-center gap-2 mb-2">
+                    <VIcon
+                      icon="tabler-router"
+                      size="18"
+                      :class="reliabilitySummary.policyParityDegraded ? 'text-error' : 'text-success'"
+                    />
+                    <span class="text-body-2 font-weight-medium">Konsistensi Akses Router</span>
+                  </div>
+                  <div class="d-flex align-center gap-2">
+                    <VChip
+                      size="small"
+                      label
+                      :color="reliabilitySummary.policyParityDegraded ? 'error' : 'success'"
+                    >
+                      {{ reliabilitySummary.policyParityDegraded ? `${reliabilitySummary.policyParityMismatchCount} Mismatch` : 'Normal' }}
+                    </VChip>
+                  </div>
+                  <div class="text-caption text-disabled mt-1">
+                    {{ reliabilitySummary.policyParityDegraded ? 'Status app dan MikroTik tidak sinkron — lihat tabel di bawah' : 'Status app dan MikroTik sinkron' }}
+                  </div>
                 </div>
               </VCol>
             </VRow>
-
-            <div class="d-flex align-center justify-end text-caption text-disabled mt-2">
-              <span>Sumber data: {{ metricsPending ? 'refreshing...' : '/admin/metrics' }}</span>
-            </div>
           </VCardText>
         </VCard>
       </VCol>
@@ -1122,82 +1177,140 @@ useHead({ title: 'Dashboard Admin' })
       <VCol cols="12">
         <VCard>
           <VCardItem>
-            <VCardTitle>Access Policy Parity (App vs MikroTik)</VCardTitle>
-            <VCardSubtitle>Deteksi mismatch status, binding, no-IP, dan DHCP lease yang actionable per device</VCardSubtitle>
-            <div class="mt-2">
+            <VCardTitle class="d-flex align-center gap-2 flex-wrap">
+              <VIcon icon="tabler-shield-half-filled" size="20" />
+              Konsistensi Akses (App vs MikroTik)
+            </VCardTitle>
+            <VCardSubtitle>Perbandingan status izin akses antara database aplikasi dan router MikroTik secara realtime</VCardSubtitle>
+            <div class="mt-2 d-flex flex-wrap gap-2">
               <VChip
                 size="small"
                 label
                 :color="accessParitySummary.mismatches > 0 ? 'error' : 'success'"
               >
-                {{ accessParitySummary.mismatches }} mismatch / {{ accessParitySummary.users }} users
+                <VIcon :icon="accessParitySummary.mismatches > 0 ? 'tabler-alert-circle' : 'tabler-circle-check'" size="14" class="me-1" />
+                {{ accessParitySummary.mismatches > 0 ? `${accessParitySummary.mismatches} tidak sinkron` : 'Semua sinkron' }}
+                <span class="ms-1 opacity-70">/ {{ accessParitySummary.users }} user</span>
               </VChip>
               <VChip
                 v-if="accessParitySummary.noAuthorizedDeviceCount > 0"
                 size="small"
                 label
                 color="warning"
-                class="ms-2"
               >
-                Onboarding gap: {{ accessParitySummary.noAuthorizedDeviceCount }} user tanpa device authorized
+                <VIcon icon="tabler-device-mobile-off" size="14" class="me-1" />
+                {{ accessParitySummary.noAuthorizedDeviceCount }} belum setup perangkat
+              </VChip>
+              <VChip
+                v-if="parityPending"
+                size="small"
+                label
+                color="default"
+              >
+                <VIcon icon="tabler-refresh" size="13" class="me-1" />
+                Memuat...
               </VChip>
             </div>
           </VCardItem>
           <VCardText>
-            <div v-if="parityPending" class="text-caption text-disabled mb-2">
-              memuat parity realtime...
-            </div>
-            <div v-if="!parityPending && accessParitySummary.noAuthorizedDeviceCount > 0" class="text-caption text-warning mb-2">
-              Catatan: user tanpa device authorized dipisahkan sebagai onboarding gap dan tidak dihitung mismatch parity router.
-            </div>
-            <div v-if="parityFixMessage" class="text-caption text-success mb-2">
+            <!-- Onboarding Gap Info Box -->
+            <VAlert
+              v-if="!parityPending && accessParitySummary.noAuthorizedDeviceCount > 0"
+              type="warning"
+              variant="tonal"
+              density="compact"
+              class="mb-3"
+              icon="tabler-device-mobile-off"
+            >
+              <strong>{{ accessParitySummary.noAuthorizedDeviceCount }} user belum setup perangkat</strong>
+              — User ini sudah terdaftar tapi belum pernah login dari perangkat manapun.
+              Mereka tidak bisa menggunakan hotspot sampai melakukan login pertama (OTP) dari perangkat mereka.
+              User ini tidak dihitung dalam mismatch parity di bawah.
+            </VAlert>
+
+            <!-- Fix result messages -->
+            <VAlert
+              v-if="parityFixMessage"
+              type="success"
+              variant="tonal"
+              density="compact"
+              class="mb-3"
+              closable
+              @click:close="parityFixMessage = ''"
+            >
               {{ parityFixMessage }}
-            </div>
-            <div v-if="parityFixError" class="text-caption text-error mb-2">
+            </VAlert>
+            <VAlert
+              v-if="parityFixError"
+              type="error"
+              variant="tonal"
+              density="compact"
+              class="mb-3"
+              closable
+              @click:close="parityFixError = ''"
+            >
               {{ parityFixError }}
+            </VAlert>
+
+            <!-- Mismatch Table — horizontally scrollable on mobile -->
+            <div style="overflow-x: auto;">
+              <VTable density="compact" style="min-width: 680px;">
+                <thead>
+                  <tr>
+                    <th>No. HP</th>
+                    <th>MAC</th>
+                    <th>IP</th>
+                    <th>Status App / Target</th>
+                    <th>Binding Exp / Aktual</th>
+                    <th>Address-list</th>
+                    <th>Masalah</th>
+                    <th>Aksi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="item in accessParityItems.slice(0, 20)" :key="getParityKey(item)">
+                    <td>{{ item.phone_number }}</td>
+                    <td class="text-caption">{{ item.mac || '-' }}</td>
+                    <td>{{ item.ip || '-' }}</td>
+                    <td>{{ item.app_status }} / {{ item.expected_status || '-' }}</td>
+                    <td>{{ item.expected_binding_type }} / {{ item.actual_binding_type || '-' }}</td>
+                    <td class="text-caption">{{ item.address_list_statuses.join(', ') || '-' }}</td>
+                    <td>
+                      <VChip
+                        v-for="m in item.mismatches"
+                        :key="m"
+                        size="x-small"
+                        color="error"
+                        label
+                        variant="tonal"
+                        class="me-1"
+                      >
+                        {{ m }}
+                      </VChip>
+                      <span v-if="item.mismatches.length === 0" class="text-disabled">-</span>
+                    </td>
+                    <td>
+                      <VBtn
+                        size="x-small"
+                        :color="item.auto_fixable === false ? 'default' : 'primary'"
+                        variant="tonal"
+                        :loading="Boolean(fixingParityByKey[getParityKey(item)])"
+                        :disabled="Boolean(fixingParityByKey[getParityKey(item)]) || item.auto_fixable === false"
+                        @click="handleFixParityItem(item)"
+                      >
+                        {{ item.auto_fixable === false ? 'Manual' : 'Perbaiki' }}
+                      </VBtn>
+                    </td>
+                  </tr>
+                  <tr v-if="accessParityItems.length === 0">
+                    <td colspan="8" class="text-center text-disabled py-4">
+                      <VIcon icon="tabler-circle-check" size="20" color="success" class="me-2" />
+                      Semua perangkat aktif sudah sinkron dengan router.
+                    </td>
+                  </tr>
+                </tbody>
+              </VTable>
             </div>
-            <VTable density="compact">
-              <thead>
-                <tr>
-                  <th>Phone</th>
-                  <th>MAC</th>
-                  <th>IP</th>
-                  <th>Status (app/target)</th>
-                  <th>Binding (exp/act)</th>
-                  <th>Address-list</th>
-                  <th>Mismatch</th>
-                  <th>Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="item in accessParityItems.slice(0, 20)" :key="getParityKey(item)">
-                  <td>{{ item.phone_number }}</td>
-                  <td>{{ item.mac || '-' }}</td>
-                  <td>{{ item.ip || '-' }}</td>
-                  <td>{{ item.app_status }} / {{ item.expected_status || '-' }}</td>
-                  <td>{{ item.expected_binding_type }} / {{ item.actual_binding_type || '-' }}</td>
-                  <td>{{ item.address_list_statuses.join(', ') || '-' }}</td>
-                  <td>{{ item.mismatches.join(', ') || '-' }}</td>
-                  <td>
-                    <VBtn
-                      size="x-small"
-                      color="primary"
-                      variant="tonal"
-                      :loading="Boolean(fixingParityByKey[getParityKey(item)])"
-                      :disabled="Boolean(fixingParityByKey[getParityKey(item)]) || item.auto_fixable === false"
-                      @click="handleFixParityItem(item)"
-                    >
-                      {{ item.auto_fixable === false ? 'Manual' : 'Fix' }}
-                    </VBtn>
-                  </td>
-                </tr>
-                <tr v-if="accessParityItems.length === 0">
-                  <td colspan="8" class="text-center text-disabled py-4">
-                    Tidak ada mismatch parity.
-                  </td>
-                </tr>
-              </tbody>
-            </VTable>
           </VCardText>
         </VCard>
       </VCol>
@@ -1250,6 +1363,16 @@ useHead({ title: 'Dashboard Admin' })
   margin-top: 0 !important;
   margin-bottom: 0 !important;
   align-self: center !important;
+}
+
+.reliability-metric-box {
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  height: 100%;
+  transition: border-color 0.2s;
+
+  &:hover {
+    border-color: rgba(var(--v-theme-primary), 0.4);
+  }
 }
 
 </style>
