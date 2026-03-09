@@ -1185,7 +1185,7 @@ def sync_hotspot_usage_task(self):
         # Mutex lock: cegah eksekusi concurrent dari beberapa worker (root cause deadlock DB)
         # SET NX (atomic) — hanya satu worker yang bisa acquire pada satu waktu
         lock_key = "quota_sync:run_lock"
-        lock_ttl = 120  # Safety TTL: task tidak boleh berjalan lebih dari 2 menit
+        lock_ttl = 3600  # Safety TTL: task bisa jalan hingga 52+ menit (observed); 120s terlalu pendek → menyebabkan multiple worker berjalan bersamaan → quota double-deducted
         lock_acquired = False
         try:
             if redis_client is not None:
