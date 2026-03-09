@@ -173,14 +173,8 @@ def test_stress_race_manual_debt_then_set_unlimited_invariants(monkeypatch):
     monkeypatch.setattr(user_quota, "lock_user_quota_row", lambda _user: None)
     monkeypatch.setattr(user_quota, "append_quota_mutation_event", lambda **_kwargs: None)
 
-    def _fake_clear_all_debts_to_zero(*, user, admin_actor, source):
-        paid_auto = int(max(0, int(getattr(user, "auto_debt_offset_mb", 0) or 0)))
-        paid_manual = int(max(0, int(getattr(user, "manual_debt_mb", 0) or 0)))
-        user.auto_debt_offset_mb = int(getattr(user, "auto_debt_offset_mb", 0) or 0)
-        user.manual_debt_mb = 0
-        return paid_auto, paid_manual
-
-    monkeypatch.setattr(user_debt, "clear_all_debts_to_zero", _fake_clear_all_debts_to_zero)
+    # Kebijakan baru: set_unlimited TIDAK memanggil clear_all_debts_to_zero lagi.
+    # Manual debt dipertahankan; hanya auto-debt yang di-offset. Tidak ada mock diperlukan.
 
     monkeypatch.setattr(user_quota, "_handle_mikrotik_operation", lambda *_args, **_kwargs: (True, "ok"))
     monkeypatch.setattr(
@@ -223,5 +217,6 @@ def test_stress_race_manual_debt_then_set_unlimited_invariants(monkeypatch):
     assert ok_final is True
 
     assert bool(user.is_unlimited_user) is True
-    assert int(user.manual_debt_mb or 0) == 0
+    # Kebijakan baru: manual_debt TIDAK dihapus saat set_unlimited (hanya auto-debt yang di-offset)
+    assert int(user.manual_debt_mb or 0) > 0
     assert bool(user.is_blocked) is False

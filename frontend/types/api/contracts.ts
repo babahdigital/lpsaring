@@ -35,6 +35,8 @@ export {
   type AccessParityItem,
   type AdminAccessParityFixRequest,
   type AdminAccessParityFixResponse,
+  type AdminQuotaAdjustRequest,
+  type AdminQuotaAdjustResponse,
   type PublicDatabaseUpdateSubmissionRequest,
   type PublicUpdateSubmissionStatusResponse,
 } from './contracts.generated'

@@ -50,6 +50,7 @@ Lampiran wajib:
 - `GET /api/admin/users`
 - `POST /api/admin/users`
 - `PUT /api/admin/users/{user_id}`
+- `POST /api/admin/users/{user_id}/quota-adjust` — Koreksi langsung `total_quota_purchased_mb` dan/atau `total_quota_used_mb`. **Khusus Super Admin.** Body: `{ set_purchased_mb?: int, set_used_mb?: int, reason: string }`. Minimal satu dari keduanya wajib ada. Dicatat di `quota_mutation_ledger` dengan source `quota.adjust_direct`.
 - `POST /api/admin/users/seed-imported-update-submissions` — Seed `PublicDatabaseUpdateSubmission` records for users with `full_name LIKE 'Imported %'` agar mereka mendapat notifikasi WA untuk update data. Body opsional: `test_phone` (string), `dry_run` (bool).
 - `GET /api/admin/update-submissions`
 - `POST /api/admin/update-submissions/{id}/approve`
@@ -119,3 +120,8 @@ CI akan gagal jika syarat ini tidak terpenuhi.
   - backend gate: `PUBLIC_DB_UPDATE_FORM_ENABLED`
   - frontend gate: `NUXT_PUBLIC_PUBLIC_DB_UPDATE_FORM_ENABLED` dengan fallback `NUXT_PUBLIC_DB_UPDATE_FORM_ENABLED`.
 - Frontend compatibility fix untuk halaman update diselesaikan agar template typecheck tetap valid pada tombol kembali login (handler internal dipakai, bukan pemanggilan langsung di template).
+
+## Addendum 2026-03-09
+- Tambah endpoint `POST /api/admin/users/{user_id}/quota-adjust` untuk koreksi kuota langsung oleh Super Admin. Endpoint menimpa nilai `total_quota_purchased_mb` dan/atau `total_quota_used_mb` secara langsung dengan audit trail penuh di `quota_mutation_ledger`. Ini adalah endpoint operasional (bukan consumer — tidak ada di v1 public contract sebelumnya).
+- Perbaikan kebijakan debt: `set_user_unlimited()` kini hanya menghapus auto-debt via offset, manual debt (`manual_debt_mb`) dipertahankan. Test `test_stress_race_manual_debt_then_set_unlimited_invariants` diperbarui untuk mencerminkan kebijakan baru ini.
+- Fix insiden quota drain (lock_ttl=120→3600 di `sync_hotspot_usage_task`) — lihat `docs/DEVLOG_2026-03-09_QUOTA_DRAIN_INCIDENT.md`.

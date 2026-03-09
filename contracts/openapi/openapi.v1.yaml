@@ -833,6 +833,42 @@ paths:
         '403':
           $ref: '#/components/responses/ErrorForbidden'
 
+  /admin/users/{user_id}/quota-adjust:
+    post:
+      tags: [AdminUsers]
+      summary: Koreksi kuota langsung — khusus Super Admin
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminQuotaAdjustRequest'
+      responses:
+        '200':
+          description: Kuota berhasil disesuaikan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminQuotaAdjustResponse'
+        '400':
+          $ref: '#/components/responses/ErrorBadRequest'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+
   /admin/settings:
     get:
       tags: [AdminSettings]
@@ -1977,6 +2013,37 @@ components:
         whatsapp_sent:
           type: boolean
           nullable: true
+
+    AdminQuotaAdjustRequest:
+      type: object
+      required: [reason]
+      properties:
+        set_purchased_mb:
+          type: integer
+          description: Set total_quota_purchased_mb ke nilai ini (opsional, min 0)
+          minimum: 0
+          nullable: true
+        set_used_mb:
+          type: integer
+          description: Set total_quota_used_mb ke nilai ini (opsional, min 0)
+          minimum: 0
+          nullable: true
+        reason:
+          type: string
+          description: Alasan koreksi kuota (wajib untuk audit trail)
+
+    AdminQuotaAdjustResponse:
+      type: object
+      required: [message, total_quota_purchased_mb, total_quota_used_mb, remaining_mb]
+      properties:
+        message:
+          type: string
+        total_quota_purchased_mb:
+          type: number
+        total_quota_used_mb:
+          type: number
+        remaining_mb:
+          type: number
 
     AdminMetricsReliabilitySignals:
       type: object

@@ -50,6 +50,8 @@ export type AdminQuotaRequestProcessRequest = { action: 'approve' | 'reject'; ap
 export type AdminTransactionListResponse = { items: Array<TransactionDetailResponse>; meta: PaginationMeta }
 export type AdminTransactionBillRequest = { user_id: string; package_id: string; payment_method?: 'qris' | 'gopay' | 'va' | 'shopeepay' | null; va_bank?: 'bca' | 'bni' | 'bri' | 'mandiri' | 'permata' | 'cimb' | null }
 export type AdminTransactionBillResponse = { message: string; order_id: string; status: string; status_url?: string | null; whatsapp_sent?: boolean | null }
+export type AdminQuotaAdjustRequest = { set_purchased_mb?: number | null; set_used_mb?: number | null; reason: string }
+export type AdminQuotaAdjustResponse = { message: string; total_quota_purchased_mb: number; total_quota_used_mb: number; remaining_mb: number }
 export type AdminMetricsReliabilitySignals = { payment_idempotency_degraded?: boolean; hotspot_sync_lock_degraded?: boolean; policy_parity_degraded?: boolean }
 export type AdminMetricsResponse = { metrics?: { [key: string]: number }; reliability_signals?: AdminMetricsReliabilitySignals }
 export type AccessParityItem = { user_id: string; phone_number: string; mac: string; ip?: string | null; app_status: string; expected_binding_type: string; actual_binding_type?: string | null; address_list_statuses: Array<string>; mismatches: Array<string> }
@@ -127,6 +129,11 @@ export interface GeneratedApiContractMap {
   'PUT /admin/users/{user_id}': {
     request: AdminUserUpdateRequest
     response: AdminUserMutationResponse
+    error: ErrorResponse
+  }
+  'POST /admin/users/{user_id}/quota-adjust': {
+    request: AdminQuotaAdjustRequest
+    response: AdminQuotaAdjustResponse
     error: ErrorResponse
   }
   'POST /auth/admin/login': {
