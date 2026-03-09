@@ -125,6 +125,58 @@ const liveData = ref<LiveData | null>(null)
 const isDebtLedgerOpen = ref(false)
 const isDebtQuotaEnabled = ref(false)
 
+// --- SuperAdmin: koreksi kuota langsung ---
+const saQuotaForm = reactive<{
+  set_purchased_mb: number | null
+  set_used_mb: number | null
+  reason: string
+}>({
+  set_purchased_mb: null,
+  set_used_mb: null,
+  reason: '',
+})
+const isSaQuotaLoading = ref(false)
+
+async function applyDirectQuotaAdjust() {
+  if (!props.user?.id)
+    return
+  if (!saQuotaForm.reason.trim()) {
+    showSnackbar({ type: 'error', title: 'Validasi', text: 'Alasan koreksi wajib diisi.' })
+    return
+  }
+  if (saQuotaForm.set_purchased_mb === null && saQuotaForm.set_used_mb === null) {
+    showSnackbar({ type: 'error', title: 'Validasi', text: 'Isi setidaknya satu nilai untuk dikoreksi.' })
+    return
+  }
+  const payload: Record<string, unknown> = { reason: saQuotaForm.reason }
+  if (saQuotaForm.set_purchased_mb !== null)
+    payload.set_purchased_mb = saQuotaForm.set_purchased_mb
+  if (saQuotaForm.set_used_mb !== null)
+    payload.set_used_mb = saQuotaForm.set_used_mb
+
+  isSaQuotaLoading.value = true
+  try {
+    const res = await $api<{ message: string; total_quota_purchased_mb: number; total_quota_used_mb: number; remaining_mb: number }>(
+      `/admin/users/${props.user.id}/quota-adjust`,
+      { method: 'POST', body: payload },
+    )
+    showSnackbar({ type: 'success', title: 'Berhasil', text: `Koreksi berhasil. Sisa: ${res.remaining_mb?.toFixed(0)} MB` })
+    if (res.total_quota_purchased_mb !== undefined)
+      formData.total_quota_purchased_mb = res.total_quota_purchased_mb
+    if (res.total_quota_used_mb !== undefined)
+      formData.total_quota_used_mb = res.total_quota_used_mb
+    saQuotaForm.set_purchased_mb = null
+    saQuotaForm.set_used_mb = null
+    saQuotaForm.reason = ''
+  }
+  catch (e: unknown) {
+    showSnackbar({ type: 'error', title: 'Gagal', text: (e as { data?: { message?: string } })?.data?.message ?? 'Gagal menyimpan koreksi.' })
+  }
+  finally {
+    isSaQuotaLoading.value = false
+  }
+}
+
 function getTodayYmd(): string {
   const now = new Date()
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -825,6 +877,69 @@ function openDebtPdf() {
                         />
                       </VCol>
                     </template>
+                  </template>
+
+                  <!-- === Koreksi Kuota Langsung — Super Admin Only === -->
+                  <template v-if="authStore.isSuperAdmin">
+                    <VCol cols="12">
+                      <VDivider class="my-2" />
+                    </VCol>
+
+                    <VCol cols="12">
+                      <div class="text-overline d-flex align-center gap-1">
+                        <VIcon icon="tabler-shield-bolt" size="18" color="warning" />
+                        Koreksi Kuota Langsung
+                        <VChip color="warning" size="x-small" label class="ml-1">
+                          SuperAdmin
+                        </VChip>
+                      </div>
+                    </VCol>
+
+                    <VCol cols="12" md="6">
+                      <AppTextField
+                        v-model.number="saQuotaForm.set_purchased_mb"
+                        label="Total Kuota Dibeli (MB)"
+                        type="number"
+                        :placeholder="`Saat ini: ${formData.total_quota_purchased_mb}`"
+                        prepend-inner-icon="tabler-database"
+                        hint="Kosongkan jika tidak ingin mengubah"
+                        persistent-hint
+                      />
+                    </VCol>
+
+                    <VCol cols="12" md="6">
+                      <AppTextField
+                        v-model.number="saQuotaForm.set_used_mb"
+                        label="Kuota Terpakai (MB)"
+                        type="number"
+                        :placeholder="`Saat ini: ${Number(formData.total_quota_used_mb).toFixed(0)}`"
+                        prepend-inner-icon="tabler-database-minus"
+                        hint="Kosongkan jika tidak ingin mengubah"
+                        persistent-hint
+                      />
+                    </VCol>
+
+                    <VCol cols="12">
+                      <AppTextField
+                        v-model="saQuotaForm.reason"
+                        label="Alasan / Catatan Koreksi"
+                        placeholder="Wajib diisi. Contoh: Koreksi inflasi bug lock_ttl 2026-03-09"
+                        prepend-inner-icon="tabler-notes"
+                      />
+                    </VCol>
+
+                    <VCol cols="12">
+                      <VBtn
+                        color="warning"
+                        variant="tonal"
+                        :loading="isSaQuotaLoading"
+                        :disabled="!saQuotaForm.reason || (saQuotaForm.set_purchased_mb === null && saQuotaForm.set_used_mb === null)"
+                        prepend-icon="tabler-adjustments"
+                        @click="applyDirectQuotaAdjust"
+                      >
+                        Simpan Koreksi Kuota
+                      </VBtn>
+                    </VCol>
                   </template>
 
                   <VCol cols="12">

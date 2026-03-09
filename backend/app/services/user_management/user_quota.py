@@ -1,5 +1,6 @@
 # backend/app/services/user_management/user_quota.py
 
+import math
 from typing import Any, Tuple
 from datetime import timedelta
 from flask import current_app
@@ -332,15 +333,33 @@ def set_user_unlimited(user: User, admin_actor: User, make_unlimited: bool) -> T
     user.mikrotik_user_exists = True
 
     if make_unlimited:
+        # Untuk unlimited user: clear HANYA auto-debt (via offset), manual debt tetap.
+        # Ini penting agar jika unlimited dicabut di masa depan, tidak ada instant debt dari
+        # usage yang sudah terjadi saat unlimited.
         try:
-            user_debt.clear_all_debts_to_zero(
-                user=user,
-                admin_actor=admin_actor,
-                source="set_unlimited",
+            lock_user_quota_row(user)
+            raw_auto_debt = max(
+                0.0,
+                float(getattr(user, "total_quota_used_mb", 0) or 0)
+                - float(getattr(user, "total_quota_purchased_mb", 0) or 0)
+                - float(getattr(user, "auto_debt_offset_mb", 0) or 0),
             )
+            if raw_auto_debt > 0:
+                offset_before = snapshot_user_quota_state(user)
+                user.auto_debt_offset_mb = int(getattr(user, "auto_debt_offset_mb", 0) or 0) + int(
+                    math.ceil(raw_auto_debt)
+                )
+                append_quota_mutation_event(
+                    user=user,
+                    source="debt.settle_auto_to_zero",
+                    before_state=offset_before,
+                    after_state=snapshot_user_quota_state(user),
+                    actor_user_id=getattr(admin_actor, "id", None),
+                    event_details={"paid_auto_mb": int(math.ceil(raw_auto_debt)), "reason": "set_unlimited"},
+                )
         except Exception as e:
             current_app.logger.warning(
-                "Gagal clear debt saat set unlimited untuk user %s: %s",
+                "Gagal clear auto-debt saat set unlimited untuk user %s: %s",
                 user.id,
                 e,
             )

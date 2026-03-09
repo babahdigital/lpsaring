@@ -1153,6 +1153,15 @@ def check_mikrotik_status(current_admin: User, user_id: uuid.UUID):
                 success = bool(operation_result[0])
                 mikrotik_message = "Hasil operasi Mikrotik tidak lengkap."
 
+        purchased_mb = float(user.total_quota_purchased_mb or 0)
+        used_mb = float(user.total_quota_used_mb or 0)
+        remaining_mb = max(0.0, purchased_mb - used_mb)
+        db_quota = {
+            "db_quota_purchased_mb": purchased_mb,
+            "db_quota_used_mb": used_mb,
+            "db_quota_remaining_mb": remaining_mb,
+        }
+
         if not success:
             current_app.logger.warning(
                 "Live check Mikrotik tidak tersedia untuk user %s: %s",
@@ -1167,6 +1176,7 @@ def check_mikrotik_status(current_admin: User, user_id: uuid.UUID):
                     "live_available": False,
                     "message": "Live check MikroTik tidak tersedia. Menampilkan data lokal database.",
                     "reason": mikrotik_message,
+                    **db_quota,
                 }
             ), HTTPStatus.OK
 
@@ -1185,6 +1195,7 @@ def check_mikrotik_status(current_admin: User, user_id: uuid.UUID):
                 "message": "Data live MikroTik berhasil dimuat."
                 if user_exists
                 else "Pengguna tidak ditemukan di MikroTik.",
+                **db_quota,
             }
         ), HTTPStatus.OK
 
@@ -1195,6 +1206,116 @@ def check_mikrotik_status(current_admin: User, user_id: uuid.UUID):
         return jsonify(
             {"message": "Terjadi kesalahan internal tak terduga pada server."}
         ), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+# ================================================================
+# === Koreksi Kuota Langsung — Khusus Super Admin ===
+# ================================================================
+@user_management_bp.route("/users/<uuid:user_id>/quota-adjust", methods=["POST"])
+@admin_required
+def adjust_user_quota_direct(current_admin: User, user_id: uuid.UUID):
+    """Koreksi langsung total_quota_purchased_mb dan/atau total_quota_used_mb.
+
+    Hanya bisa dipanggil oleh Super Admin. Direkam di quota_mutation_ledger
+    dengan source 'quota.adjust_direct' untuk audit trail.
+
+    Body JSON:
+    - set_purchased_mb: int (opsional) — nilai baru untuk total_quota_purchased_mb
+    - set_used_mb: int (opsional) — nilai baru untuk total_quota_used_mb
+    - reason: str (wajib) — alasan koreksi untuk audit trail
+    """
+    if not bool(getattr(current_admin, "is_super_admin_role", False)):
+        return jsonify({"message": "Akses ditolak. Fitur ini hanya untuk Super Admin."}), HTTPStatus.FORBIDDEN
+
+    try:
+        user = db.session.get(User, user_id)
+        if not user:
+            return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+
+        data = request.get_json(silent=True) or {}
+        raw_purchased = data.get("set_purchased_mb")
+        raw_used = data.get("set_used_mb")
+        reason = str(data.get("reason") or "").strip()
+
+        if raw_purchased is None and raw_used is None:
+            return jsonify(
+                {"message": "Setidaknya satu dari set_purchased_mb atau set_used_mb harus diisi."}
+            ), HTTPStatus.UNPROCESSABLE_ENTITY
+
+        if not reason:
+            return jsonify(
+                {"message": "Field 'reason' wajib diisi untuk audit trail."}
+            ), HTTPStatus.UNPROCESSABLE_ENTITY
+
+        set_purchased_mb: int | None = None
+        if raw_purchased is not None:
+            try:
+                set_purchased_mb = int(raw_purchased)
+                if set_purchased_mb < 0:
+                    raise ValueError
+            except (ValueError, TypeError):
+                return jsonify({"message": "set_purchased_mb harus bilangan bulat >= 0."}), HTTPStatus.UNPROCESSABLE_ENTITY
+
+        set_used_mb: int | None = None
+        if raw_used is not None:
+            try:
+                set_used_mb = int(raw_used)
+                if set_used_mb < 0:
+                    raise ValueError
+            except (ValueError, TypeError):
+                return jsonify({"message": "set_used_mb harus bilangan bulat >= 0."}), HTTPStatus.UNPROCESSABLE_ENTITY
+
+        from app.services.quota_mutation_ledger_service import (
+            append_quota_mutation_event,
+            lock_user_quota_row,
+            snapshot_user_quota_state,
+        )
+
+        lock_user_quota_row(user)
+        before_state = snapshot_user_quota_state(user)
+        changes: dict = {"reason": reason}
+
+        if set_purchased_mb is not None:
+            user.total_quota_purchased_mb = set_purchased_mb
+            changes["set_purchased_mb"] = set_purchased_mb
+
+        if set_used_mb is not None:
+            user.total_quota_used_mb = float(set_used_mb)
+            changes["set_used_mb"] = set_used_mb
+
+        append_quota_mutation_event(
+            user=user,
+            source="quota.adjust_direct",
+            before_state=before_state,
+            after_state=snapshot_user_quota_state(user),
+            actor_user_id=current_admin.id,
+            event_details=changes,
+        )
+
+        db.session.commit()
+
+        current_app.logger.info(
+            "SuperAdmin %s quota-adjust untuk user %s: %s",
+            current_admin.id,
+            user_id,
+            changes,
+        )
+
+        purchased = float(user.total_quota_purchased_mb or 0)
+        used = float(user.total_quota_used_mb or 0)
+        return jsonify(
+            {
+                "message": "Kuota berhasil disesuaikan.",
+                "total_quota_purchased_mb": purchased,
+                "total_quota_used_mb": used,
+                "remaining_mb": max(0.0, purchased - used),
+            }
+        ), HTTPStatus.OK
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Gagal quota-adjust untuk user {user_id}: {e}", exc_info=True)
+        return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
 @user_management_bp.route("/users/seed-imported-update-submissions", methods=["POST"])

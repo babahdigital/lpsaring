@@ -2605,3 +2605,190 @@ def add_mikrotik_profile(name, rate_limit, shared_users, description):
                 fg="yellow",
             )
         )
+
+
+# --- Perintah fix-quota-bug-20260309 ---
+@user_cli_bp.command(
+    "fix-quota-bug-20260309",
+    help=(
+        "Koreksi total_quota_used_mb untuk user yang terdampak bug lock_ttl=120s (2026-03-08/09). "
+        "Hitung net_inflation dari quota_mutation_ledger dan kurangi dari used. "
+        "Gunakan --dry-run untuk preview tanpa commit."
+    ),
+)
+@click.option("--dry-run", is_flag=True, default=False, help="Preview saja, tanpa commit ke DB.")
+@click.option("--min-inflation-mb", default=500, help="Threshold inflasi minimum (MB) untuk dikoreksi. Default: 500.")
+@with_appcontext
+def fix_quota_bug_20260309(dry_run: bool, min_inflation_mb: int):
+    """Identifikasi dan koreksi quota_used_mb yang inflate akibat concurrent sync workers."""
+    from sqlalchemy import text as sql_text
+    from app.infrastructure.db.models import QuotaMutationLedger
+    from app.services.quota_mutation_ledger_service import (
+        append_quota_mutation_event,
+        lock_user_quota_row,
+        snapshot_user_quota_state,
+    )
+    from app.utils.block_reasons import is_auto_debt_limit_reason
+
+    BUG_START = "2026-03-08 19:00:00+00"
+    BUG_END = "2026-03-09 20:00:00+00"
+    BUG_FIX_SOURCE = "quota.bug_fix:sync_lock_20260309"
+    LARGE_DELTA_THRESHOLD = 5000
+
+    click.echo(click.style("=== Koreksi Quota Bug lock_ttl=120s (2026-03-08/09) ===", bold=True))
+    click.echo(f"Mode: {'DRY-RUN (tidak ada perubahan)' if dry_run else 'LIVE (akan commit ke DB)'}")
+    click.echo(f"Min inflasi untuk koreksi: {min_inflation_mb} MB\n")
+
+    query = sql_text("""
+        WITH first_inflated AS (
+            SELECT DISTINCT ON (qml.user_id)
+                qml.user_id,
+                (qml.before_state->>'total_quota_used_mb')::numeric AS pre_bug_used_mb,
+                qml.created_at AS first_inflated_at
+            FROM quota_mutation_ledger qml
+            WHERE qml.created_at >= :bug_start
+              AND qml.created_at <= :bug_end
+              AND qml.source = 'hotspot.sync_usage'
+              AND ((qml.after_state->>'total_quota_used_mb')::numeric
+                   - (qml.before_state->>'total_quota_used_mb')::numeric) > :threshold
+            ORDER BY qml.user_id, qml.created_at ASC
+        ),
+        post_bug_legit AS (
+            SELECT
+                qml.user_id,
+                COALESCE(SUM(
+                    (qml.after_state->>'total_quota_used_mb')::numeric
+                    - (qml.before_state->>'total_quota_used_mb')::numeric
+                ), 0) AS legit_post_bug_mb
+            FROM quota_mutation_ledger qml
+            JOIN first_inflated fi ON fi.user_id = qml.user_id
+            WHERE qml.source = 'hotspot.sync_usage'
+              AND qml.created_at > fi.first_inflated_at
+              AND ((qml.after_state->>'total_quota_used_mb')::numeric
+                   - (qml.before_state->>'total_quota_used_mb')::numeric) <= :threshold
+              AND ((qml.after_state->>'total_quota_used_mb')::numeric
+                   - (qml.before_state->>'total_quota_used_mb')::numeric) > 0
+            GROUP BY qml.user_id
+        )
+        SELECT
+            u.id AS user_id,
+            u.full_name,
+            u.phone_number,
+            u.is_unlimited_user,
+            u.is_blocked,
+            u.blocked_reason,
+            ROUND(fi.pre_bug_used_mb, 2) AS pre_bug_used_mb,
+            ROUND(pb.legit_post_bug_mb, 2) AS legit_post_bug_mb,
+            ROUND(fi.pre_bug_used_mb + pb.legit_post_bug_mb, 2) AS corrected_used_mb,
+            ROUND(u.total_quota_used_mb, 2) AS current_used_mb,
+            ROUND(u.total_quota_used_mb - fi.pre_bug_used_mb - pb.legit_post_bug_mb, 2) AS net_inflation_mb
+        FROM first_inflated fi
+        JOIN post_bug_legit pb ON pb.user_id = fi.user_id
+        JOIN users u ON u.id = fi.user_id
+        ORDER BY net_inflation_mb DESC
+    """)
+
+    rows = db.session.execute(
+        query,
+        {"bug_start": BUG_START, "bug_end": BUG_END, "threshold": LARGE_DELTA_THRESHOLD},
+    ).fetchall()
+
+    if not rows:
+        click.echo(click.style("Tidak ada user terdampak ditemukan di mutation_ledger.", fg="yellow"))
+        return
+
+    corrected_count = 0
+    skipped_count = 0
+    total_mb_returned = 0.0
+
+    for row in rows:
+        net_inflation = float(row.net_inflation_mb or 0)
+        corrected_used = float(row.corrected_used_mb or 0)
+        current_used = float(row.current_used_mb or 0)
+        label = f"{row.full_name} ({row.phone_number})"
+
+        if net_inflation < min_inflation_mb:
+            click.echo(
+                click.style(f"[SKIP] {label}: inflasi {net_inflation:.0f} MB < threshold", fg="cyan")
+            )
+            skipped_count += 1
+            continue
+
+        if corrected_used < 0:
+            click.echo(
+                click.style(f"[SKIP] {label}: corrected_used negatif ({corrected_used:.0f} MB) — skip", fg="yellow")
+            )
+            skipped_count += 1
+            continue
+
+        unlimited_tag = " [UNLIMITED]" if row.is_unlimited_user else ""
+        click.echo(
+            f"[{'DRY' if dry_run else 'FIX'}] {label}{unlimited_tag}: "
+            f"current={current_used:.0f} → corrected={corrected_used:.0f} MB "
+            f"(koreksi -{net_inflation:.0f} MB)"
+        )
+
+        if not dry_run:
+            user = db.session.get(User, row.user_id)
+            if not user:
+                click.echo(click.style("  → User tidak ditemukan, skip.", fg="red"))
+                skipped_count += 1
+                continue
+
+            existing_fix = db.session.execute(
+                db.select(QuotaMutationLedger).filter_by(user_id=user.id, source=BUG_FIX_SOURCE)
+            ).scalar_one_or_none()
+            if existing_fix:
+                click.echo(click.style("  → Sudah pernah dikoreksi, skip.", fg="yellow"))
+                skipped_count += 1
+                continue
+
+            lock_user_quota_row(user)
+            before_state = snapshot_user_quota_state(user)
+            user.total_quota_used_mb = round(corrected_used, 2)
+            after_state = snapshot_user_quota_state(user)
+            append_quota_mutation_event(
+                user=user,
+                source=BUG_FIX_SOURCE,
+                before_state=before_state,
+                after_state=after_state,
+                event_details={
+                    "net_inflation_mb": round(net_inflation, 2),
+                    "pre_bug_used_mb": float(row.pre_bug_used_mb),
+                    "legit_post_bug_mb": float(row.legit_post_bug_mb),
+                    "reason": "concurrent_sync_workers_lock_ttl_120s",
+                },
+            )
+
+            blocked_reason_str = str(getattr(user, "blocked_reason", "") or "")
+            if bool(getattr(user, "is_blocked", False)) and is_auto_debt_limit_reason(blocked_reason_str):
+                user.is_blocked = False
+                user.blocked_reason = None
+                user.blocked_at = None
+                user.blocked_by_id = None
+                click.echo(click.style("  → Auto-debt block dihapus.", fg="green"))
+
+            try:
+                db.session.flush()
+                click.echo(click.style(f"  → OK: -{net_inflation:.0f} MB", fg="green"))
+            except Exception as e:
+                db.session.rollback()
+                click.echo(click.style(f"  → ERROR flush: {e}", fg="red"))
+                skipped_count += 1
+                continue
+
+        corrected_count += 1
+        total_mb_returned += net_inflation
+
+    click.echo(f"\n{'--- DRY RUN ---' if dry_run else '--- SELESAI ---'}")
+    click.echo(f"Dikoreksi : {corrected_count} user")
+    click.echo(f"Di-skip   : {skipped_count} user")
+    click.echo(f"Total MB dikembalikan : {total_mb_returned:.0f} MB ({total_mb_returned / 1024:.1f} GB)")
+
+    if not dry_run and corrected_count > 0:
+        try:
+            db.session.commit()
+            click.echo(click.style("\nCommit berhasil.", fg="green", bold=True))
+        except Exception as e:
+            db.session.rollback()
+            click.echo(click.style(f"\nCommit GAGAL: {e}", fg="red", bold=True))

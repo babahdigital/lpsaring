@@ -124,25 +124,47 @@ function formatBytes(bytes: number | string, decimals = 2) {
           />
           <VListItem
             prepend-icon="tabler-arrow-down-circle"
-            title="Total Kuota Masuk"
+            title="Data Diunduh (Sesi MikroTik)"
             :subtitle="formatBytes(statusData.details['bytes-in'])"
           />
           <VListItem
             prepend-icon="tabler-arrow-up-circle"
-            title="Total Kuota Keluar"
+            title="Data Diunggah (Sesi MikroTik)"
             :subtitle="formatBytes(statusData.details['bytes-out'])"
           />
           <VListItem
             prepend-icon="tabler-clock"
-            title="Limit Uptime"
+            title="Limit Uptime (MikroTik)"
             :subtitle="statusData.details['limit-uptime'] || 'Tidak diatur'"
           />
           <VListItem
             prepend-icon="tabler-database"
-            title="Limit Kuota"
+            title="Limit Kuota (MikroTik)"
             :subtitle="statusData.details['limit-bytes-total'] ? formatBytes(statusData.details['limit-bytes-total']) : 'Tidak diatur'"
           />
+          <VDivider class="my-2" />
+          <VListItem
+            prepend-icon="tabler-wallet"
+            title="Sisa Kuota (Sistem DB)"
+            :subtitle="statusData.db_quota_remaining_mb != null ? formatBytes(statusData.db_quota_remaining_mb * 1024 * 1024) : '-'"
+          />
+          <VListItem
+            prepend-icon="tabler-chart-pie"
+            title="Terpakai / Dibeli (Sistem DB)"
+            :subtitle="statusData.db_quota_used_mb != null ? `${formatBytes(statusData.db_quota_used_mb * 1024 * 1024)} / ${formatBytes(statusData.db_quota_purchased_mb * 1024 * 1024)}` : '-'"
+          />
         </VList>
+        <VAlert
+          v-if="!loading && statusData && statusData.exists_on_mikrotik"
+          type="info"
+          variant="tonal"
+          density="compact"
+          class="mt-3"
+          icon="tabler-info-circle"
+        >
+          <strong>Data Diunduh/Diunggah</strong> adalah counter sesi dari MikroTik (bukan sisa kuota).
+          <strong>Sisa Kuota</strong> dihitung oleh sistem berdasarkan DB — itulah nilai yang dikirim via WA.
+        </VAlert>
 
         <div
           v-if="!loading && !statusData && !errorMsg"

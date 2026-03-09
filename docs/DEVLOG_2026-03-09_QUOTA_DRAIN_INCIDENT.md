@@ -274,19 +274,108 @@ Error log setelah deploy nginx optimization (`valid=5s`, `proxy_next_upstream`) 
 
 ## 10. Kompensasi untuk Klien
 
-Klien yang kehilangan quota akibat bug ini perlu diidentifikasi dan quota-nya dipulihkan secara manual.
+### 10.1 Identifikasi User Terdampak (Audit Lengkap)
 
-**Cara estimasi dampak per klien:**
-- Lihat log `updated_usage` dari `sync_result` antara jam yang terindikasi
-- Bandingkan dengan penggunaan real MikroTik (`/ip hotspot active print detail`)
-- Bila ada klien yang quota-nya 0 padahal baru beli, tambah manual dari admin panel
+Query forensik `quota_mutation_ledger` selama bug window (2026-03-08 19:00 — 2026-03-09 20:00) menemukan **17 user** yang mengalami event deduction > 5 GB per sync (indikator duplikasi concurrent worker):
 
-**Periode dampak:** Bug ada sejak kode dengan `lock_ttl=120` pertama kali di-deploy. Berdasarkan git log, perlu dicek tanggal commit pertama yang memasukkan nilai 120 ini.
+| Nama | Telp | Remaining saat ini | Approx Inflasi (MB) | Events | Perlu perhatian? |
+|---|---|---|---|---|---|
+| Orochimaru | +6281356002170 | 38,791 MB | 167,680 | 16 | ✅ Sudah dikompensasi (+25 GB) |
+| Barata | +628984440915 | 166,127 MB | 110,978 | 15 | Aman |
+| Rio Martino Putra | +6283125710842 | **-61,664 MB** | 102,112 | 15 | ⚠️ Pre-existing debt, bukan dari bug |
+| Budi Dapur | +6281350419071 | **-47,822 MB** | 98,102 | 14 | ⚠️ Pre-existing debt (purchased=1 GB, used=48 GB sebelum bug) |
+| PuguhRahmansyah | +6289527796925 | 12,784 MB | 94,255 | 16 | ⚠️ Kuota tersisa rendah, monitor |
+| Agus Widodo | +6282152764565 | 43,533 MB | 91,868 | 15 | Aman |
+| Syaifudin Zuhri | +6282152787390 | 58,665 MB | 70,846 | 10 | Aman |
+| Mr.kspl | +6285166001405 | 15,011 MB | 69,111 | 10 | ⚠️ Kuota tersisa rendah, monitor |
+| Naru | +6285951333663 | 21,202 MB | 63,830 | 10 | Monitor |
+| Ajiz | +6282191985053 | 72,306 MB | 61,192 | 8 | Aman |
+| Bandit | +6281255962309 | 20,389 MB | 53,020 | 8 | Monitor |
+| Dewa | +6283179074596 | **6,630 MB** | 48,168 | 8 | ⚠️ Kuota sangat rendah, pertimbangkan kompensasi |
+| Imported 087821848928 | +6287821848928 | 16,271 MB | 40,143 | 7 | Monitor |
+| Bayu | +6283843730350 | **11,438 MB** | 37,746 | 7 | ⚠️ Kuota rendah, monitor |
+| Aulia Rahman | +6283141617466 | **13,663 MB** | 26,958 | 5 | ⚠️ Kuota rendah, monitor |
+| Dadang hadi | +6285821240141 | 18,000 MB | 26,870 | 5 | Monitor |
+| Syamsuri | +6283869831957 | 16,707 MB | 5,020 | 1 | Monitor |
+
+**Catatan kolom "Approx Inflasi":** Ini adalah SUM dari semua event sync > 5000 MB selama bug window. Karena setiap event concurrent menyumbang delta terpisah, angka ini mencerminkan berapa MB yang "seharusnya tidak terpotong" jika hanya 1 worker yang berjalan. Angka aktual bisa lebih rendah (satu event bisa saja legitimate).
+
+### 10.2 Action Rekomendasi
+
+**Immediate (hari ini):**
+- **Dewa** (+6283179074596): Remaining hanya 6.6 GB. Pertimbangkan tambah bonus quota 10–20 GB dari admin panel.
+- **Budi Dapur** & **Rio Martino Putra**: Ini masalah pre-existing, bukan akibat bug lock_ttl. Perlu review terpisah apakah mereka berhak aktif dengan balance negatif.
+
+**Dalam 1 minggu (monitoring):**
+- Monitor PuguhRahmansyah (12.7 GB), Bayu (11.4 GB), Aulia Rahman (13.6 GB), Mr.kspl (15 GB)
+- Jika mereka komplain quota habis lebih cepat dari biasanya, tambah kompensasi
+
+**Cara tambah kompensasi dari admin panel:**
+1. Buka `Admin → Users → [nama user]`
+2. Tab "Kuota" → Adjust Quota
+3. +10000 (10 GB) atau sesuai kebijakan
 
 ---
 
-## 11. Files yang Diubah
+## 11. Koreksi Data Pasca-Audit
+
+### 11.1 daily_usage_logs — Cleanup 80 Baris Inflated
+
+`daily_usage_logs` mencatat akumulasi pemakaian per hari (untuk grafik/chart). Akibat bug, kolom `usage_mb` mengambil semua delta concurrent → menjadi tidak realistis.
+
+**Data sebelum cleanup:**
+- 2026-03-08: 39 user dengan usage > 5 GB/hari, total 596 GB tercatat
+- 2026-03-09: 41 user dengan usage > 5 GB/hari, total **2,980 GB** tercatat (tidak masuk akal)
+- Baseline normal: avg 189–551 MB/user/hari
+
+**SQL yang dijalankan (manual, produksi):**
+```sql
+DELETE FROM daily_usage_logs
+WHERE log_date IN ('2026-03-08', '2026-03-09')
+  AND usage_mb > 5000;
+-- DELETE 80
+```
+
+**Data setelah cleanup:**
+- 2026-03-08: 15 entri tersisa (max 4.2 GB, avg 904 MB) — normal untuk heavy user
+- 2026-03-09: 15 entri tersisa (max 4.8 GB, avg 2.1 GB) — agak tinggi tapi dalam batas
+- 80 baris terhapus = 3,662,110 MB data palsu dihapus
+
+**Dampak:** Chart penggunaan historis untuk 2 tanggal ini akan menampilkan data partial (hanya 15 user dari ~55 aktif). Ini lebih baik daripada menampilkan 190 GB/hari yang tidak pernah terjadi.
+
+### 11.2 Perbaikan UserMikrotikStatus.vue — Label Menyesatkan
+
+**Sebelum fix:**
+- "Total Kuota Masuk" → `bytes-in` dari MikroTik (= jumlah byte diunduh dalam sesi)
+- "Total Kuota Keluar" → `bytes-out` dari MikroTik (= jumlah byte diunggah)
+
+Admin membaca "Total Kuota Masuk: 13 GB" → salah kira "sisa kuota = 13 GB".
+Padahal `bytes-in` adalah counter sesi download, **bukan sisa quota sistem**.
+
+**Setelah fix:**
+- "Data Diunduh (Sesi MikroTik)" → jelas ini byte dari MikroTik, bukan quota
+- "Data Diunggah (Sesi MikroTik)" → sama
+- Ditambah dua baris baru: **Sisa Kuota (Sistem DB)** + **Terpakai / Dibeli (Sistem DB)**
+- Alert info di bawah tabel menjelaskan perbedaan kedua sumber data
+
+**Backend** endpoint `GET /admin/users/:id/mikrotik-status` diupdate untuk juga mengembalikan:
+```json
+{
+  "db_quota_remaining_mb": 38791.0,
+  "db_quota_used_mb": 73849.0,
+  "db_quota_purchased_mb": 112640.0
+}
+```
+
+Sekarang admin bisa melihat data MikroTik live dan data DB quota dalam satu popup. Tidak ada lagi kebingungan antara "13 GB bytes-in" vs "0 MB remaining".
+
+---
+
+## 12. Files yang Diubah (Lengkap)
 
 | File | Perubahan | Commit |
 |---|---|---|
 | `backend/app/tasks.py` | `lock_ttl = 120 → 3600` di `sync_hotspot_usage_task` | `4c89ae00` |
+| `frontend/components/admin/users/UserMikrotikStatus.vue` | Fix label menyesatkan + tambah DB quota section | sesi ini |
+| `backend/app/infrastructure/http/admin/user_management_routes.py` | Tambah `db_quota_*` fields ke response `/mikrotik-status` | sesi ini |
+| `public.daily_usage_logs` (DB) | DELETE 80 baris inflated (>5 GB) pada 2026-03-08 dan 2026-03-09 | SQL manual |
