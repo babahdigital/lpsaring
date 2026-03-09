@@ -1283,6 +1283,14 @@ def adjust_user_quota_direct(current_admin: User, user_id: uuid.UUID):
         if set_used_mb is not None:
             user.total_quota_used_mb = float(set_used_mb)
             changes["set_used_mb"] = set_used_mb
+            # Untuk unlimited user: sync auto_debt_offset_mb agar raw_debt tidak stale.
+            # Misal: admin set used=0 → offset harus juga 0, bukan sisa nilai lama.
+            if bool(getattr(user, "is_unlimited_user", False)):
+                _new_purchased = int(user.total_quota_purchased_mb or 0)
+                _new_offset = max(0, set_used_mb - _new_purchased)
+                if _new_offset != int(user.auto_debt_offset_mb or 0):
+                    user.auto_debt_offset_mb = _new_offset
+                    changes["auto_debt_offset_mb"] = _new_offset
 
         append_quota_mutation_event(
             user=user,

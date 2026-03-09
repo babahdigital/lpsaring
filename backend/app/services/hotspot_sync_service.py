@@ -1582,22 +1582,15 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                     if usage_update:
                         delta_mb, new_total_usage_mb = usage_update
                         _update_daily_usage_log(user, delta_mb, today)
-                        if abs(new_total_usage_mb - old_usage_mb) >= 0.01:
+                        # Jangan update total_quota_used_mb untuk unlimited users.
+                        # Daily log tetap dicatat di atas untuk keperluan grafik pemakaian.
+                        if (
+                            not bool(getattr(user, "is_unlimited_user", False))
+                            and abs(new_total_usage_mb - old_usage_mb) >= 0.01
+                        ):
                             lock_user_quota_row(user)
                             before_state = snapshot_user_quota_state(user)
                             user.total_quota_used_mb = new_total_usage_mb
-                            # Untuk unlimited users: segera bump auto_debt_offset agar
-                            # raw_debt tidak terakumulasi (mitigasi saat pencabutan status unlimited).
-                            if bool(getattr(user, "is_unlimited_user", False)):
-                                _raw_debt = max(0.0,
-                                    float(user.total_quota_used_mb or 0)
-                                    - float(user.total_quota_purchased_mb or 0)
-                                    - float(user.auto_debt_offset_mb or 0))
-                                if _raw_debt >= 1.0:
-                                    user.auto_debt_offset_mb = (
-                                        int(user.auto_debt_offset_mb or 0)
-                                        + math.ceil(_raw_debt)
-                                    )
                             counters["updated_usage"] += 1
                             append_quota_mutation_event(
                                 user=user,

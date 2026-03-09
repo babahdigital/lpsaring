@@ -476,7 +476,7 @@ async function checkAndApplyMikrotikStatus() {
       const usage_bytes = Number.parseInt(response.details['bytes-in'] || '0') + Number.parseInt(response.details['bytes-out'] || '0')
       liveData.value = {
         isAvailable: true,
-        db_sisa_kuota_mb: (props.user.total_quota_purchased_mb ?? 0) - (props.user.total_quota_used_mb ?? 0),
+        db_sisa_kuota_mb: Math.max(0, (props.user.total_quota_purchased_mb ?? 0) - (props.user.total_quota_used_mb ?? 0)),
         db_expiry_date: props.user.quota_expiry_date,
         mt_usage_mb: usage_bytes / (1024 * 1024),
         mt_profile: response.details.profile,
@@ -750,7 +750,8 @@ function openDebtPdf() {
                           <div class="text-caption text-disabled">
                             Sisa Kuota (DB)
                           </div><div class="font-weight-medium">
-                            {{ liveData.db_sisa_kuota_mb.toFixed(2) }} MB
+                            <span v-if="props.user?.is_unlimited_user">Tidak Terbatas</span>
+                            <span v-else>{{ liveData.db_sisa_kuota_mb.toFixed(2) }} MB</span>
                           </div>
                         </VCol>
                         <VCol cols="12" sm="6">

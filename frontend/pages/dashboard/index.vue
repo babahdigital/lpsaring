@@ -660,7 +660,7 @@ useHead({ title: authStore.isKomandan ? 'Dashboard Komandan' : 'Dashboard User' 
                       </VAvatar>
                       <div class="d-flex flex-column">
                         <h5 class="text-h5">
-                          {{ quotaData?.is_unlimited_user ? 'Unlimited' : formatQuota(weeklyUsedMb) }}
+                          {{ formatQuota(weeklyUsedMb) }}
                         </h5>
                         <div class="text-sm">Terpakai (7 hari)</div>
                       </div>
@@ -674,7 +674,7 @@ useHead({ title: authStore.isKomandan ? 'Dashboard Komandan' : 'Dashboard User' 
                       </VAvatar>
                       <div class="d-flex flex-column">
                         <h5 class="text-h5">
-                          {{ quotaData?.is_unlimited_user ? 'Unlimited' : formatQuota(avgDailyUsedMb) }}
+                          {{ formatQuota(avgDailyUsedMb) }}
                         </h5>
                         <div class="text-sm">Rata-rata / hari</div>
                       </div>
@@ -695,16 +695,29 @@ useHead({ title: authStore.isKomandan ? 'Dashboard Komandan' : 'Dashboard User' 
                     </div>
                   </VCol>
 
-                  <VCol cols="12" sm="6" md="3">
+                  <VCol v-if="!quotaData?.is_unlimited_user" cols="12" sm="6" md="3">
                     <div class="d-flex align-center gap-4 mt-md-9 mt-0">
                       <VAvatar color="warning" variant="tonal" rounded size="40">
                         <VIcon icon="tabler-battery" />
                       </VAvatar>
                       <div class="d-flex flex-column">
                         <h5 class="text-h5">
-                          {{ quotaData?.is_unlimited_user ? 'Unlimited' : formatQuota(quotaData?.remaining_mb) }}
+                          {{ formatQuota(quotaData?.remaining_mb) }}
                         </h5>
                         <div class="text-sm">Kuota tersisa</div>
+                      </div>
+                    </div>
+                  </VCol>
+                  <VCol v-else cols="12" sm="6" md="3">
+                    <div class="d-flex align-center gap-4 mt-md-9 mt-0">
+                      <VAvatar color="success" variant="tonal" rounded size="40">
+                        <VIcon icon="tabler-infinity" />
+                      </VAvatar>
+                      <div class="d-flex flex-column">
+                        <h5 class="text-h5 text-success">
+                          Unlimited
+                        </h5>
+                        <div class="text-sm">Status Kuota</div>
                       </div>
                     </div>
                   </VCol>
@@ -730,6 +743,24 @@ useHead({ title: authStore.isKomandan ? 'Dashboard Komandan' : 'Dashboard User' 
                           {{ formatUsername(quotaData?.hotspot_username) }}
                         </span>
                       </VCardText>
+                      <template v-if="quotaData?.quota_expiry_date">
+                        <VDivider />
+                        <VCardText class="d-flex align-center py-3 px-4">
+                          <VIcon icon="tabler-calendar-due" size="20" class="me-3" />
+                          <span class="text-body-2 flex-grow-1">Masa Aktif</span>
+                          <span class="text-body-2 font-weight-medium text-truncate">
+                            {{ formatDateTime(quotaData.quota_expiry_date) }}
+                          </span>
+                        </VCardText>
+                      </template>
+                      <template v-else-if="quotaData?.is_unlimited_user">
+                        <VDivider />
+                        <VCardText class="d-flex align-center py-3 px-4">
+                          <VIcon icon="tabler-infinity" size="20" class="me-3 text-success" />
+                          <span class="text-body-2 flex-grow-1">Masa Aktif</span>
+                          <VChip size="x-small" color="success" label variant="tonal">Unlimited</VChip>
+                        </VCardText>
+                      </template>
                     </VCard>
                   </VCol>
                   <VCol cols="12" sm="6">

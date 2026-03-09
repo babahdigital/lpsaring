@@ -88,6 +88,12 @@ services:
         max-file: "5"
     env_file:
       - .env.prod
+    environment:
+      # Timeout (detik) untuk fase TCP connect + auth MikroTik (threading wrapper).
+      # routeros-api 0.21 tidak punya socket_timeout; nilai ini di-enforce via thread deadline.
+      MIKROTIK_CONNECT_TIMEOUT_SECONDS: "10"
+      # Timeout (detik) untuk I/O socket setelah koneksi — diterapkan bila library support.
+      MIKROTIK_SOCKET_TIMEOUT_SECONDS: "10"
     volumes:
       - ./.env.prod:/app/.env:ro
       - ./backend/backups:/app/backups
@@ -97,7 +103,8 @@ services:
       - "0.0.0.0:5010"
       - "run:app"
       - "--workers=4"
-      - "--timeout=60"
+      - "--timeout=120"
+      - "--graceful-timeout=120"
       - "--log-level=info"
       - "--access-logfile=-"
       - "--error-logfile=-"
@@ -132,6 +139,9 @@ services:
         max-file: "5"
     env_file:
       - .env.prod
+    environment:
+      MIKROTIK_CONNECT_TIMEOUT_SECONDS: "10"
+      MIKROTIK_SOCKET_TIMEOUT_SECONDS: "10"
     volumes:
       - ./.env.prod:/app/.env:ro
     command: >

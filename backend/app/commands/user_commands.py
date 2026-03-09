@@ -2801,3 +2801,112 @@ def fix_quota_bug_20260309(dry_run: bool, min_inflation_mb: int, unlimited_only:
         except Exception as e:
             db.session.rollback()
             click.echo(click.style(f"\nCommit GAGAL: {e}", fg="red", bold=True))
+
+
+# --- Perintah reset-unlimited-quota-counters ---
+
+@user_cli_bp.command(
+    "reset-unlimited-quota-counters",
+    help=(
+        "Reset total_quota_used_mb dan auto_debt_offset_mb menjadi 0 untuk semua user unlimited "
+        "yang memiliki raw_remaining negatif (used > purchased). "
+        "User dengan manual_debt_mb > 0 dilewati kecuali pakai --include-manual-debt. "
+        "Gunakan --dry-run untuk preview."
+    ),
+)
+@click.option("--dry-run", is_flag=True, default=False, help="Preview saja, tanpa commit ke DB.")
+@click.option(
+    "--include-manual-debt",
+    is_flag=True,
+    default=False,
+    help="Sertakan juga user unlimited yang punya manual_debt_mb > 0.",
+)
+@with_appcontext
+def reset_unlimited_quota_counters(dry_run: bool, include_manual_debt: bool):
+    """Reset quota counters untuk unlimited user dengan raw_remaining negatif."""
+    from app.services.quota_mutation_ledger_service import (
+        append_quota_mutation_event,
+        lock_user_quota_row,
+        snapshot_user_quota_state,
+    )
+
+    click.echo(click.style("=== Reset Quota Counters User Unlimited ===", bold=True))
+    click.echo(f"Mode: {'DRY-RUN' if dry_run else 'LIVE'}")
+    click.echo(f"Include manual-debt: {include_manual_debt}\n")
+
+    unlimited_users = db.session.execute(
+        db.select(User).filter(
+            User.is_unlimited_user.is_(True),
+            User.total_quota_used_mb > User.total_quota_purchased_mb,
+        ).order_by(User.total_quota_used_mb.desc())
+    ).scalars().all()
+
+    if not unlimited_users:
+        click.echo(click.style("Tidak ada user unlimited dengan raw_remaining negatif.", fg="yellow"))
+        return
+
+    done_count = 0
+    skip_count = 0
+
+    for user in unlimited_users:
+        label = f"{user.full_name} ({user.phone_number})"
+        purchased = int(user.total_quota_purchased_mb or 0)
+        used = float(user.total_quota_used_mb or 0)
+        offset = int(user.auto_debt_offset_mb or 0)
+        manual = int(user.manual_debt_mb or 0)
+        raw_remaining = purchased - used
+
+        if manual > 0 and not include_manual_debt:
+            click.echo(click.style(
+                f"[SKIP] {label}: manual_debt={manual} MB — lewati (pakai --include-manual-debt untuk sertakan)",
+                fg="yellow",
+            ))
+            skip_count += 1
+            continue
+
+        click.echo(
+            f"[{'DRY' if dry_run else 'RST'}] {label}: "
+            f"used={used:.0f} purchased={purchased} offset={offset} manual={manual} "
+            f"→ raw_remaining={raw_remaining:.0f} MB (akan direset ke 0)"
+        )
+
+        if not dry_run:
+            try:
+                lock_user_quota_row(user)
+                before_state = snapshot_user_quota_state(user)
+                user.total_quota_used_mb = 0.0
+                user.auto_debt_offset_mb = 0
+                append_quota_mutation_event(
+                    user=user,
+                    source="quota.reset_unlimited_counters",
+                    before_state=before_state,
+                    after_state=snapshot_user_quota_state(user),
+                    event_details={
+                        "reason": "manual_admin_reset_unlimited_counters",
+                        "prev_used_mb": round(used, 2),
+                        "prev_offset_mb": offset,
+                        "prev_raw_remaining_mb": round(raw_remaining, 2),
+                    },
+                )
+                db.session.flush()
+                click.echo(click.style("  → OK", fg="green"))
+                done_count += 1
+            except Exception as e:
+                db.session.rollback()
+                click.echo(click.style(f"  → ERROR: {e}", fg="red"))
+                skip_count += 1
+                continue
+        else:
+            done_count += 1
+
+    click.echo(f"\n{'--- DRY RUN ---' if dry_run else '--- SELESAI ---'}")
+    click.echo(f"Direset : {done_count} user")
+    click.echo(f"Di-skip : {skip_count} user")
+
+    if not dry_run and done_count > 0:
+        try:
+            db.session.commit()
+            click.echo(click.style("\nCommit berhasil.", fg="green", bold=True))
+        except Exception as e:
+            db.session.rollback()
+            click.echo(click.style(f"\nCommit GAGAL: {e}", fg="red", bold=True))

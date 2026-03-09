@@ -6,6 +6,7 @@ import time
 import logging
 import re
 import inspect
+import threading
 from contextlib import contextmanager
 from typing import Optional, Tuple, List, Dict, Any, Iterator, cast, TypedDict
 import routeros_api
@@ -30,6 +31,7 @@ class MikrotikConfig(TypedDict):
     ssl_verify: bool
     plaintext_login: bool
     socket_timeout_seconds: float
+    connect_timeout_seconds: float
 
 
 def _get_mikrotik_config() -> MikrotikConfig:
@@ -47,6 +49,8 @@ def _get_mikrotik_config() -> MikrotikConfig:
         plaintext_login = str(current_app.config.get("MIKROTIK_PLAIN_TEXT_LOGIN", "True")).lower() == "true"
         socket_timeout_raw = current_app.config.get("MIKROTIK_SOCKET_TIMEOUT_SECONDS", 10)
         socket_timeout_seconds = float(socket_timeout_raw or 10)
+        connect_timeout_raw = current_app.config.get("MIKROTIK_CONNECT_TIMEOUT_SECONDS", 10)
+        connect_timeout_seconds = float(connect_timeout_raw or 10)
     except Exception:
         host = os.environ.get("MIKROTIK_HOST")
         username = os.environ.get("MIKROTIK_USERNAME") or os.environ.get("MIKROTIK_USER")
@@ -59,9 +63,15 @@ def _get_mikrotik_config() -> MikrotikConfig:
             socket_timeout_seconds = float(os.environ.get("MIKROTIK_SOCKET_TIMEOUT_SECONDS") or 10)
         except Exception:
             socket_timeout_seconds = 10.0
+        try:
+            connect_timeout_seconds = float(os.environ.get("MIKROTIK_CONNECT_TIMEOUT_SECONDS") or 10)
+        except Exception:
+            connect_timeout_seconds = 10.0
 
     if socket_timeout_seconds <= 0:
         socket_timeout_seconds = 10.0
+    if connect_timeout_seconds <= 0:
+        connect_timeout_seconds = 10.0
 
     return cast(
         MikrotikConfig,
@@ -74,6 +84,7 @@ def _get_mikrotik_config() -> MikrotikConfig:
             "ssl_verify": ssl_verify,
             "plaintext_login": plaintext_login,
             "socket_timeout_seconds": float(socket_timeout_seconds),
+            "connect_timeout_seconds": float(connect_timeout_seconds),
         },
     )
 
@@ -181,6 +192,41 @@ def init_mikrotik_pool():
         return False
 
 
+def _get_api_with_timeout(pool: Any, timeout_seconds: float) -> Optional[Any]:
+    """Jalankan pool.get_api() dalam daemon thread dengan batas waktu.
+
+    Mengatasi masalah routeros_api 0.21 yang tidak mendukung socket_timeout:
+    TCP connect/auth bisa hang hingga OS default (~75s) jika router tidak merespons.
+    Dengan wrapper ini, jika koneksi tidak selesai dalam `timeout_seconds`,
+    fungsi langsung return None (thread daemon akan mati sendiri saat koneksi akhirnya timeout di OS).
+    """
+    result: List[Optional[Any]] = [None]
+    exc: List[Optional[Exception]] = [None]
+
+    def _do_connect() -> None:
+        try:
+            result[0] = pool.get_api()
+        except Exception as e:
+            exc[0] = e
+
+    t = threading.Thread(target=_do_connect, daemon=True)
+    t.start()
+    t.join(timeout=timeout_seconds)
+
+    if t.is_alive():
+        # Koneksi masih berjalan melewati batas waktu
+        logger.warning(
+            "MikroTik pool.get_api() tidak selesai dalam %.1fs — kemungkinan router tidak merespons.",
+            timeout_seconds,
+        )
+        return None  # thread daemon akan cleanup sendiri
+
+    if exc[0] is not None:
+        raise exc[0]
+
+    return result[0]
+
+
 @contextmanager
 def get_mikrotik_connection(raise_on_error: bool = False) -> Iterator[Optional[Any]]:
     api_instance = None
@@ -194,8 +240,20 @@ def get_mikrotik_connection(raise_on_error: bool = False) -> Iterator[Optional[A
         yield None
         return
 
+    # Baca connect_timeout dari config (fallback 10 s jika tidak di-set)
     try:
-        api_instance = _connection_pool.get_api()
+        connect_timeout = float(current_app.config.get("MIKROTIK_CONNECT_TIMEOUT_SECONDS", 10) or 10)
+    except Exception:
+        connect_timeout = float(os.environ.get("MIKROTIK_CONNECT_TIMEOUT_SECONDS") or 10)
+    if connect_timeout <= 0:
+        connect_timeout = 10.0
+
+    try:
+        api_instance = _get_api_with_timeout(_connection_pool, connect_timeout)
+        if api_instance is None:
+            record_failure("mikrotik")
+            yield None
+            return
         record_success("mikrotik")
     except Exception as e:
         logger.error(f"Error mendapatkan koneksi: {e}", exc_info=True)
