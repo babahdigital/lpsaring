@@ -669,6 +669,18 @@ def _self_heal_policy_dhcp_for_user(
         if resolved_ip in existing_ips:
             continue
 
+        # Jangan coba upsert jika IP sudah dipakai MAC lain — ADD akan gagal dengan
+        # "already have static lease with this IP address" karena MikroTik tidak mengizinkan
+        # dua lease berbeda memiliki IP yang sama.
+        if any(resolved_ip in ips for other_mac, ips in dhcp_ips_by_mac.items() if other_mac != mac):
+            logger.debug(
+                "Policy DHCP self-heal: IP %s sudah dipakai MAC lain di snapshot DHCP — skip user=%s mac=%s",
+                resolved_ip,
+                user.id,
+                mac,
+            )
+            continue
+
         ok, msg = upsert_dhcp_static_lease(
             api_connection=api,
             mac_address=mac,
@@ -685,13 +697,23 @@ def _self_heal_policy_dhcp_for_user(
             dhcp_ips_by_mac.setdefault(mac, set()).add(resolved_ip)
         else:
             increment_metric("policy.dhcp_self_heal.failed")
-            logger.warning(
-                "Policy DHCP self-heal gagal upsert lease user=%s mac=%s ip=%s: %s",
-                user.id,
-                mac,
-                resolved_ip,
-                msg,
-            )
+            # IP_CONFLICT: IP sudah dipakai lease lain (snapshot stale) — bukan error kritis.
+            if msg.startswith("IP_CONFLICT:"):
+                logger.debug(
+                    "Policy DHCP self-heal: IP conflict (snapshot stale) user=%s mac=%s ip=%s: %s",
+                    user.id,
+                    mac,
+                    resolved_ip,
+                    msg,
+                )
+            else:
+                logger.warning(
+                    "Policy DHCP self-heal gagal upsert lease user=%s mac=%s ip=%s: %s",
+                    user.id,
+                    mac,
+                    resolved_ip,
+                    msg,
+                )
 
     return repaired
 

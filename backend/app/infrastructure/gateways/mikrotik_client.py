@@ -980,7 +980,12 @@ def upsert_dhcp_static_lease(
         resource.add(**add_data)
         return True, "Sukses"
     except Exception as e:
-        return False, str(e)
+        err_str = str(e)
+        # Kembalikan pesan yang lebih deskriptif untuk conflict IP agar caller bisa bedakan
+        # situasi ini (IP dipakai MAC lain) vs. kegagalan jaringan umum.
+        if "already have static lease with this ip" in err_str.lower():
+            return False, f"IP_CONFLICT: IP {address} sudah dipakai lease lain di MikroTik ({err_str})"
+        return False, err_str
 
 
 def remove_dhcp_lease(
