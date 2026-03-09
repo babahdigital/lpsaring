@@ -159,6 +159,7 @@ const tablerIcons = [
   'database-export',
   'database-import',
   'database-off',
+  'database-minus',
   'database-plus',
   'device-desktop',
   'device-desktop-analytics',

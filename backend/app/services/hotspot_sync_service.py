@@ -1869,18 +1869,17 @@ def _log_system_cleanup_action(user: "User", reason: str, action: str) -> None:
             "unapproved_delete": AdminActionType.REJECT_USER,
         }
         action_type = action_type_map.get(action, AdminActionType.DEACTIVATE_USER)
-        log_entry = AdminActionLog(
-            admin_id=None,
-            target_user_id=user.id,
-            action_type=action_type,
-            details=str({
+        log_entry = AdminActionLog()
+        log_entry.admin_id = None
+        log_entry.target_user_id = user.id
+        log_entry.action_type = action_type
+        log_entry.details = str({
                 "source": "cleanup_inactive_users (system)",
                 "action": action,
                 "reason": reason,
                 "user_phone": user.phone_number,
                 "user_name": user.full_name,
-            }),
-        )
+            })
         db.session.add(log_entry)
     except Exception as e:
         current_app.logger.warning("cleanup: gagal catat audit log untuk user %s: %s", user.phone_number, e)

@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime, timezone as dt_timezone
 from flask import Blueprint, jsonify, request, current_app, make_response, render_template
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import OperationalError as SAOperationalError
 from http import HTTPStatus
 from pydantic import ValidationError
 import sqlalchemy as sa
@@ -1271,7 +1272,7 @@ def adjust_user_quota_direct(current_admin: User, user_id: uuid.UUID):
             snapshot_user_quota_state,
         )
 
-        lock_user_quota_row(user)
+        lock_user_quota_row(user, nowait=True)
         before_state = snapshot_user_quota_state(user)
         changes: dict = {"reason": reason}
 
@@ -1311,6 +1312,12 @@ def adjust_user_quota_direct(current_admin: User, user_id: uuid.UUID):
                 "remaining_mb": max(0.0, purchased - used),
             }
         ), HTTPStatus.OK
+
+    except SAOperationalError:
+        db.session.rollback()
+        return jsonify(
+            {"message": "Sistem sedang memproses data pengguna ini (sinkronisasi aktif). Coba lagi dalam beberapa detik."}
+        ), HTTPStatus.CONFLICT
 
     except Exception as e:
         db.session.rollback()
