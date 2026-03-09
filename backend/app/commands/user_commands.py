@@ -2618,8 +2618,9 @@ def add_mikrotik_profile(name, rate_limit, shared_users, description):
 )
 @click.option("--dry-run", is_flag=True, default=False, help="Preview saja, tanpa commit ke DB.")
 @click.option("--min-inflation-mb", default=500, help="Threshold inflasi minimum (MB) untuk dikoreksi. Default: 500.")
+@click.option("--unlimited-only", is_flag=True, default=False, help="Hanya koreksi user dengan is_unlimited_user=True.")
 @with_appcontext
-def fix_quota_bug_20260309(dry_run: bool, min_inflation_mb: int):
+def fix_quota_bug_20260309(dry_run: bool, min_inflation_mb: int, unlimited_only: bool):
     """Identifikasi dan koreksi quota_used_mb yang inflate akibat concurrent sync workers."""
     from sqlalchemy import text as sql_text
     from app.infrastructure.db.models import QuotaMutationLedger
@@ -2637,7 +2638,8 @@ def fix_quota_bug_20260309(dry_run: bool, min_inflation_mb: int):
 
     click.echo(click.style("=== Koreksi Quota Bug lock_ttl=120s (2026-03-08/09) ===", bold=True))
     click.echo(f"Mode: {'DRY-RUN (tidak ada perubahan)' if dry_run else 'LIVE (akan commit ke DB)'}")
-    click.echo(f"Min inflasi untuk koreksi: {min_inflation_mb} MB\n")
+    click.echo(f"Min inflasi untuk koreksi: {min_inflation_mb} MB")
+    click.echo(f"Filter: {'hanya unlimited user' if unlimited_only else 'semua user'}\n")
 
     query = sql_text("""
         WITH first_inflated AS (
@@ -2710,6 +2712,13 @@ def fix_quota_bug_20260309(dry_run: bool, min_inflation_mb: int):
         if net_inflation < min_inflation_mb:
             click.echo(
                 click.style(f"[SKIP] {label}: inflasi {net_inflation:.0f} MB < threshold", fg="cyan")
+            )
+            skipped_count += 1
+            continue
+
+        if unlimited_only and not bool(row.is_unlimited_user):
+            click.echo(
+                click.style(f"[SKIP] {label}: bukan unlimited user (--unlimited-only aktif)", fg="cyan")
             )
             skipped_count += 1
             continue
