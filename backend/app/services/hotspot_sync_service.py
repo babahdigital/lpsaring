@@ -162,6 +162,7 @@ def _collect_candidate_ips_for_user(
     user: User,
     host_usage_map: Optional[Dict[str, Dict[str, Any]]] = None,
     ip_binding_map: Optional[Dict[str, Dict[str, Any]]] = None,
+    ip_binding_rows_by_mac: Optional[Dict[str, List[Dict[str, Any]]]] = None,
 ) -> List[str]:
     ips: List[str] = []
     seen: set[str] = set()
@@ -190,6 +191,11 @@ def _collect_candidate_ips_for_user(
             _add_ip(host_usage_map.get(mac, {}).get("address"))
         if ip_binding_map:
             _add_ip(ip_binding_map.get(mac, {}).get("address"))
+        # Fallback: raw ip-binding rows (tidak memerlukan komentar UID).
+        # Berguna saat device sedang offline dan device.ip_address belum diset.
+        if ip_binding_rows_by_mac:
+            for row in ip_binding_rows_by_mac.get(mac, []):
+                _add_ip(row.get("address"))
 
     return ips
 
@@ -1147,7 +1153,7 @@ def _sync_address_list_status(
             getattr(user, "id", None),
             username_08,
         )
-        for ip_address in _collect_candidate_ips_for_user(user, ip_binding_map=ip_binding_map):
+        for ip_address in _collect_candidate_ips_for_user(user, ip_binding_map=ip_binding_map, ip_binding_rows_by_mac=ip_binding_rows_by_mac):
             _remove_managed_status_entries_for_ip(api, ip_address)
         return False
 
@@ -1721,6 +1727,7 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                         user,
                         host_usage_map=host_usage_map,
                         ip_binding_map=ip_binding_map,
+                        ip_binding_rows_by_mac=ip_binding_rows_by_mac,
                     )
                     ok_any_ip = False
                     for ip_address in candidate_ips:
@@ -1824,6 +1831,7 @@ def sync_address_list_for_single_user(user: User, client_ip: Optional[str] = Non
             user,
             host_usage_map=host_usage_map,
             ip_binding_map=ip_binding_map,
+            ip_binding_rows_by_mac=ip_binding_rows_by_mac,
         ):
             if ip_address not in ips:
                 ips.append(ip_address)
