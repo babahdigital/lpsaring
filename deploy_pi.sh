@@ -41,6 +41,7 @@ Optional:
   --allow-placeholders          Allow deploy even if .env.prod still contains CHANGE_ME_* values
   --allow-small-backup          Izinkan lanjut clean/strict meski ukuran backup DB kecil (override safety guard)
   --min-backup-bytes <BYTES>    Ambang minimum ukuran backup DB (default: 102400 bytes)
+  --trigger-build               Trigger docker-publish.yml di GitHub Actions, tunggu build selesai, lalu deploy --recreate (butuh gh CLI + GH_TOKEN)
   --wait-ci                     Wait for GitHub Actions/Checks to be green for current commit before deploying
   --wait-ci-timeout <SECONDS>   Max seconds to wait for CI (default: 1800)
   --wait-ci-interval <SECONDS>  Poll interval seconds for CI status (default: 15)
@@ -111,9 +112,100 @@ detect_github_owner_repo_from_origin() {
   echo "$cleaned"
 }
 
+wait_for_docker_build() {
+  # Trigger docker-publish.yml dan tunggu hingga selesai memakai gh CLI.
+  local owner="${GITHUB_OWNER:-}"
+  local repo="${GITHUB_REPO:-}"
+  local timeout_s="${WAIT_CI_TIMEOUT:-1800}"
+  local interval_s="${WAIT_CI_INTERVAL:-15}"
+
+  if [[ -z "$owner" || -z "$repo" ]]; then
+    local origin_url
+    origin_url=$(git -C "$LOCAL_DIR" remote get-url origin 2>/dev/null || true)
+    if [[ -n "$origin_url" ]]; then
+      local owner_repo
+      owner_repo=$(detect_github_owner_repo_from_origin "$origin_url" 2>/dev/null || true)
+      if [[ -n "$owner_repo" ]]; then
+        [[ -z "$owner" ]] && owner="${owner_repo%%/*}"
+        [[ -z "$repo" ]]  && repo="${owner_repo##*/}"
+      fi
+    fi
+  fi
+
+  if [[ -z "$owner" || -z "$repo" ]]; then
+    echo "ERROR: tidak bisa auto-detect GitHub owner/repo. Isi dengan --github-owner dan --github-repo" >&2
+    return 1
+  fi
+
+  if ! has_cmd gh; then
+    echo "ERROR: 'gh' CLI tidak ditemukan. Install GitHub CLI untuk --trigger-build." >&2
+    return 1
+  fi
+
+  echo "==> Trigger Build : $owner/$repo → docker-publish.yml"
+  gh workflow run docker-publish.yml \
+    --repo "$owner/$repo" \
+    --field clean_before_deploy=true >/dev/null 2>&1 \
+    || { echo "ERROR: gagal men-trigger workflow docker-publish.yml via gh CLI." >&2; return 1; }
+
+  echo "==> Build triggered. Menunggu run terbaru muncul di queue (8 detik)..."
+  sleep 8
+
+  local run_id
+  run_id=$(gh run list \
+    --repo "$owner/$repo" \
+    --workflow docker-publish.yml \
+    --limit 1 \
+    --json databaseId \
+    -q '.[0].databaseId' 2>/dev/null || true)
+
+  if [[ -z "$run_id" ]]; then
+    echo "ERROR: tidak bisa mendapatkan run ID dari workflow yang baru ditrigger." >&2
+    return 1
+  fi
+
+  echo "==> Build Run ID  : $run_id"
+  echo "==> Build URL     : https://github.com/$owner/$repo/actions/runs/$run_id"
+  echo "==> Build Timeout : ${timeout_s}s (poll=${interval_s}s)"
+
+  local start elapsed
+  start=$(date +%s)
+
+  while true; do
+    local status conclusion
+    status=$(gh run view "$run_id"     --repo "$owner/$repo" --json status     -q '.status'     2>/dev/null || echo "unknown")
+    conclusion=$(gh run view "$run_id" --repo "$owner/$repo" --json conclusion -q '.conclusion' 2>/dev/null || echo "")
+
+    case "$status" in
+      completed)
+        if [[ "$conclusion" == "success" ]]; then
+          echo "==> Build         : selesai (success) — image siap di pull"
+          return 0
+        else
+          echo "ERROR: Docker build gagal (conclusion=$conclusion). Abort deploy." >&2
+          echo "       Cek log: https://github.com/$owner/$repo/actions/runs/$run_id" >&2
+          return 1
+        fi
+        ;;
+      in_progress|queued|waiting|requested|pending)
+        echo "==> Build         : $status..."
+        ;;
+      *)
+        echo "WARN: status build tidak dikenal (status='$status'). Coba lagi..." >&2
+        ;;
+    esac
+
+    elapsed=$(( $(date +%s) - start ))
+    if (( elapsed >= timeout_s )); then
+      echo "ERROR: timeout menunggu Docker build selesai (${timeout_s}s). Abort deploy." >&2
+      return 1
+    fi
+
+    sleep "$interval_s"
+  done
+}
+
 github_api_get() {
-  # Args: <url>
-  # Uses GH_TOKEN or GITHUB_TOKEN
   local url="$1"
   local token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 
@@ -322,6 +414,7 @@ ROLLBACK_ARMED="false"
 LOCAL_DESTRUCTIVE_DUMP=""
 REMOTE_ROLLBACK_DUMP=""
 
+TRIGGER_BUILD="false"
 WAIT_CI="false"
 WAIT_CI_TIMEOUT="1800"
 WAIT_CI_INTERVAL="15"
@@ -359,6 +452,7 @@ while [[ $# -gt 0 ]]; do
     --allow-placeholders) ALLOW_PLACEHOLDERS="true"; shift ;;
     --allow-small-backup) ALLOW_SMALL_BACKUP="true"; shift ;;
     --min-backup-bytes) MIN_BACKUP_BYTES="${2:-}"; shift 2 ;;
+    --trigger-build) TRIGGER_BUILD="true"; FORCE_RECREATE="true"; shift ;;
     --wait-ci) WAIT_CI="true"; shift ;;
     --wait-ci-timeout) WAIT_CI_TIMEOUT="${2:-}"; shift 2 ;;
     --wait-ci-interval) WAIT_CI_INTERVAL="${2:-}"; shift 2 ;;
@@ -473,6 +567,15 @@ if [[ "$WAIT_CI" == "true" ]]; then
   fi
 
   wait_for_ci_green "$GITHUB_OWNER" "$GITHUB_REPO" "$ci_sha" "$WAIT_CI_TIMEOUT" "$WAIT_CI_INTERVAL"
+fi
+
+if [[ "$TRIGGER_BUILD" == "true" ]]; then
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "[DRY-RUN] gh workflow run docker-publish.yml --field clean_before_deploy=true"
+    echo "[DRY-RUN] gh run watch <run_id> (timeout ${WAIT_CI_TIMEOUT}s, poll ${WAIT_CI_INTERVAL}s)"
+  else
+    wait_for_docker_build || exit 1
+  fi
 fi
 
 require_cmd ssh
@@ -909,6 +1012,11 @@ else
   if [ -f "$REMOTE_DIR/.env.public.prod" ]; then
     cp -a "$REMOTE_DIR/.env.public.prod" "$REMOTE_DIR/.deploy_backups/$timestamp/" || true
   fi
+
+  # Retention: hapus .deploy_backups lama, simpan hanya $BACKUP_RETENTION_COUNT terbaru
+  ls -1dt "$REMOTE_DIR/.deploy_backups"/[0-9]*_[0-9]* 2>/dev/null \
+    | tail -n +$((BACKUP_RETENTION_COUNT + 1)) \
+    | xargs -r rm -rf -- || true
 fi
 EOF
 )
@@ -1106,7 +1214,7 @@ fi
 echo "==> Start backend + workers..."
 # Hapus HANYA stopped containers untuk service ini (bukan global prune) untuk cegah name conflict.
 # Global 'docker container prune' tidak dipakai karena bisa menghapus stopped container stack lain.
-for _svc_name in hotspot_prod_backend hotspot_prod_celery_worker hotspot_prod_celery_beat; do
+for _svc_name in hotspot_prod_flask_backend hotspot_prod_celery_worker hotspot_prod_celery_beat; do
   _ctr_state=\$(docker inspect "\$_svc_name" --format='{{.State.Status}}' 2>/dev/null || true)
   if [ "\$_ctr_state" = "exited" ] || [ "\$_ctr_state" = "created" ] || [ "\$_ctr_state" = "dead" ]; then
     docker rm "\$_svc_name" >/dev/null 2>&1 || true
