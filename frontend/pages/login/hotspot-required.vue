@@ -304,7 +304,7 @@ async function activateInternetOneClick() {
     await wait(600)
 
     progressMessage.value = 'Mengaktifkan internet...'
-    await authStore.authorizeDevice({
+    const bindSuccess = await authStore.authorizeDevice({
       clientIp: identity.clientIp || null,
       clientMac: identity.clientMac || null,
       bestEffort: true,
@@ -312,7 +312,28 @@ async function activateInternetOneClick() {
 
     triggerHotspotProbe()
 
-    const maxAttempts = 8
+    if (bindSuccess) {
+      // Binding berhasil dibuat di MikroTik — poll singkat untuk konfirmasi, lalu langsung portal
+      const quickAttempts = 3
+      for (let attempt = 1; attempt <= quickAttempts; attempt++) {
+        progressMessage.value = `Memverifikasi koneksi... (${attempt}/${quickAttempts})`
+        const status = await fetchHotspotStatus()
+        if (!status.hotspotRequired || status.hotspotActive) {
+          progressMessage.value = ''
+          await continueToPortal()
+          return
+        }
+        if (attempt < quickAttempts)
+          await wait(900)
+      }
+      // ip-binding sudah aktif di MikroTik — langsung portal meski status belum terkonfirmasi
+      progressMessage.value = ''
+      await continueToPortal()
+      return
+    }
+
+    // bind-current gagal — coba polling konfirmasi
+    const maxAttempts = 6
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       progressMessage.value = `Sinkronisasi akses hotspot... (${attempt}/${maxAttempts})`
       const status = await fetchHotspotStatus()
