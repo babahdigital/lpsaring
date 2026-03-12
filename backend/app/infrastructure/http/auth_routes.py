@@ -384,6 +384,17 @@ def get_current_user(current_user_id: uuid.UUID):
 @token_required
 def get_hotspot_session_status(current_user_id: uuid.UUID):
     query_args = request.args
+
+    def _get_latest_authorized_device_mac(user_id):
+        from sqlalchemy import select
+        device = db.session.scalars(
+            select(UserDevice)
+            .where(UserDevice.user_id == user_id, UserDevice.is_authorized == True)  # noqa: E712
+            .order_by(UserDevice.last_seen_at.desc())
+            .limit(1)
+        ).first()
+        return device.mac_address if device else None
+
     return get_hotspot_session_status_impl(
         current_user_id=current_user_id,
         db=db,
@@ -397,6 +408,7 @@ def get_hotspot_session_status(current_user_id: uuid.UUID):
         get_mikrotik_connection=get_mikrotik_connection,
         has_hotspot_ip_binding_for_user=has_hotspot_ip_binding_for_user,
         get_hotspot_user_ip=get_hotspot_user_ip,
+        get_latest_authorized_device_mac=_get_latest_authorized_device_mac,
     )
 
 

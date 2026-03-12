@@ -19,6 +19,7 @@ def get_hotspot_session_status_impl(
     get_mikrotik_connection,
     has_hotspot_ip_binding_for_user,
     get_hotspot_user_ip,
+    get_latest_authorized_device_mac=None,
 ):
     user = db.session.get(User, current_user_id)
     if not user:
@@ -119,6 +120,18 @@ def get_hotspot_session_status_impl(
                                         hotspot_hint_applied = True
                                         binding_mac = router_mac
                                         binding_lookup_mode = "router-mac-from-user-ip"
+                except Exception:
+                    pass
+
+            # Fallback: jika hotspot host tidak ditemukan, ambil MAC dari DB device user
+            if binding_lookup_mode == "none" and not binding_mac and get_latest_authorized_device_mac is not None:
+                try:
+                    db_mac = get_latest_authorized_device_mac(user.id)
+                    if db_mac:
+                        normalized_db_mac = normalize_mac(str(db_mac))
+                        if normalized_db_mac:
+                            binding_mac = normalized_db_mac
+                            binding_lookup_mode = "db-device-mac"
                 except Exception:
                     pass
 
