@@ -125,7 +125,9 @@ def test_reset_user_network_on_logout_disabled_mikrotik(monkeypatch):
     assert summary["devices_seen"] == 0
 
 
-def test_apply_device_binding_for_login_ip_binding_disabled_skips_host_cleanup_outside_recovery(monkeypatch):
+def test_apply_device_binding_for_login_ip_binding_disabled_calls_post_auth_ops(monkeypatch):
+    """Ketika ip_binding_enabled=False, _apply_post_auth_mikrotik_ops tetap harus dipanggil
+    (unconditional) untuk membersihkan address-list & hotspot host tanpa perlu cek unauthorized list dulu."""
     app = Flask(__name__)
     user = SimpleNamespace(
         id="u-2",
@@ -160,23 +162,18 @@ def test_apply_device_binding_for_login_ip_binding_disabled_skips_host_cleanup_o
     )
     monkeypatch.setattr(dms, "_resolve_binding_ip", lambda *_a, **_k: ("172.16.2.10", "client_ip", "ok"))
     monkeypatch.setattr(dms, "register_or_update_device", lambda *_a, **_k: (True, "Device terdaftar", device))
-    monkeypatch.setattr(dms, "_remove_blocked_address_list", lambda *_a, **_k: None)
-    monkeypatch.setattr(dms, "_remove_unauthorized_address_list", lambda *_a, **_k: None)
     monkeypatch.setattr(
         dms,
         "db",
         SimpleNamespace(session=SimpleNamespace(flush=lambda: None)),
     )
-    monkeypatch.setattr(dms, "_should_cleanup_hotspot_host_after_login", lambda *_a, **_k: False)
 
     captured: dict[str, Any] = {}
 
-    def _capture_host_cleanup(*, mac_address=None, ip_address=None, username=None):
-        captured["mac_address"] = mac_address
-        captured["ip_address"] = ip_address
-        captured["username"] = username
+    def _capture_post_auth(**kwargs):
+        captured.update(kwargs)
 
-    monkeypatch.setattr(dms, "_remove_hotspot_host_for_authorized_device", _capture_host_cleanup)
+    monkeypatch.setattr(dms, "_apply_post_auth_mikrotik_ops", _capture_post_auth)
 
     with app.app_context():
         ok, msg, resolved_ip = dms.apply_device_binding_for_login(
@@ -190,10 +187,18 @@ def test_apply_device_binding_for_login_ip_binding_disabled_skips_host_cleanup_o
     assert ok is True
     assert msg == "Perangkat terotorisasi"
     assert resolved_ip == "172.16.2.10"
-    assert captured == {}
+    # _apply_post_auth_mikrotik_ops wajib dipanggil meski ip_binding_enabled=False
+    assert captured["mac_address"] == "AA:BB:CC:DD:EE:FF"
+    assert captured["ip_address"] == "172.16.2.10"
+    assert captured["server"] == "srv-user"
+    assert captured["username"] == "08123456789"
+    assert captured["binding_type"] == "bypassed"
+    assert captured["binding_comment"] == ""
 
 
-def test_apply_device_binding_for_login_calls_host_cleanup_on_unauthorized_recovery(monkeypatch):
+def test_apply_device_binding_for_login_calls_post_auth_ops_with_correct_binding(monkeypatch):
+    """Ketika ip_binding_enabled=True, _apply_post_auth_mikrotik_ops dipanggil dengan
+    binding_type dari resolve_allowed_binding_type_for_user dan comment yang memuat uid."""
     app = Flask(__name__)
     user = SimpleNamespace(
         id="u-3",
@@ -212,7 +217,7 @@ def test_apply_device_binding_for_login_calls_host_cleanup_on_unauthorized_recov
         dms,
         "_get_settings",
         lambda: {
-            "ip_binding_enabled": False,
+            "ip_binding_enabled": True,
             "ip_binding_type_allowed": "regular",
             "ip_binding_type_blocked": "blocked",
             "ip_binding_fail_open": False,
@@ -228,23 +233,19 @@ def test_apply_device_binding_for_login_calls_host_cleanup_on_unauthorized_recov
     )
     monkeypatch.setattr(dms, "_resolve_binding_ip", lambda *_a, **_k: ("172.16.2.10", "client_ip", "ok"))
     monkeypatch.setattr(dms, "register_or_update_device", lambda *_a, **_k: (True, "Device terdaftar", device))
-    monkeypatch.setattr(dms, "_remove_blocked_address_list", lambda *_a, **_k: None)
-    monkeypatch.setattr(dms, "_remove_unauthorized_address_list", lambda *_a, **_k: None)
     monkeypatch.setattr(
         dms,
         "db",
         SimpleNamespace(session=SimpleNamespace(flush=lambda: None)),
     )
-    monkeypatch.setattr(dms, "_should_cleanup_hotspot_host_after_login", lambda *_a, **_k: True)
+    monkeypatch.setattr(dms, "resolve_allowed_binding_type_for_user", lambda _u: "bypassed")
 
     captured: dict[str, Any] = {}
 
-    def _capture_host_cleanup(*, mac_address=None, ip_address=None, username=None):
-        captured["mac_address"] = mac_address
-        captured["ip_address"] = ip_address
-        captured["username"] = username
+    def _capture_post_auth(**kwargs):
+        captured.update(kwargs)
 
-    monkeypatch.setattr(dms, "_remove_hotspot_host_for_authorized_device", _capture_host_cleanup)
+    monkeypatch.setattr(dms, "_apply_post_auth_mikrotik_ops", _capture_post_auth)
 
     with app.app_context():
         ok, msg, resolved_ip = dms.apply_device_binding_for_login(
@@ -260,4 +261,7 @@ def test_apply_device_binding_for_login_calls_host_cleanup_on_unauthorized_recov
     assert resolved_ip == "172.16.2.10"
     assert captured["mac_address"] == "AA:BB:CC:DD:EE:FF"
     assert captured["ip_address"] == "172.16.2.10"
+    assert captured["server"] == "srv-user"
     assert captured["username"] == "08123456789"
+    assert captured["binding_type"] == "bypassed"
+    assert "uid=u-3" in captured["binding_comment"]
