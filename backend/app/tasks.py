@@ -9,7 +9,7 @@ import re
 from urllib.parse import quote_plus
 from pathlib import Path
 from datetime import datetime, timedelta, timezone as dt_timezone
-from sqlalchemy import text, select
+from sqlalchemy import text
 from sqlalchemy.orm import selectinload
 
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_with_pdf, send_whatsapp_message
