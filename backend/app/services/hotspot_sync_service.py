@@ -1985,7 +1985,7 @@ def cleanup_inactive_users() -> Dict[str, int]:
                     ).all()
                     for device in devices:
                         if device.mac_address:
-                            _remove_ip_binding(device.mac_address, user.mikrotik_server_name or "all")
+                            _remove_ip_binding(device.mac_address, user.mikrotik_server_name or "all", api_connection=api)
                         if device.ip_address:
                             _remove_managed_status_entries_for_ip(api, device.ip_address)
                         db.session.delete(device)
@@ -2017,7 +2017,7 @@ def cleanup_inactive_users() -> Dict[str, int]:
                 ).all()
                 for device in devices:
                     if device.mac_address:
-                        _remove_ip_binding(device.mac_address, user.mikrotik_server_name or "all")
+                        _remove_ip_binding(device.mac_address, user.mikrotik_server_name or "all", api_connection=api)
                     if device.ip_address:
                         _remove_managed_status_entries_for_ip(api, device.ip_address)
                 if api and username_08:
@@ -2054,7 +2054,7 @@ def cleanup_inactive_users() -> Dict[str, int]:
                 ).all()
                 for device in devices:
                     if device.mac_address:
-                        _remove_ip_binding(device.mac_address, user.mikrotik_server_name or "all")
+                        _remove_ip_binding(device.mac_address, user.mikrotik_server_name or "all", api_connection=api2)
                     if device.ip_address:
                         _remove_managed_status_entries_for_ip(api2, device.ip_address)
                     db.session.delete(device)

@@ -270,11 +270,17 @@ def get_mikrotik_connection(raise_on_error: bool = False) -> Iterator[Optional[A
             raise
         return
     finally:
-        if api_instance and _connection_pool:
+        if api_instance:
             try:
-                return_api_fn = getattr(_connection_pool, "return_api", None)
+                return_api_fn = getattr(_connection_pool, "return_api", None) if _connection_pool else None
                 if callable(return_api_fn):
                     return_api_fn(api_instance)
+                else:
+                    # Pool tidak mendukung return_api — tutup TCP connection secara eksplisit
+                    # agar socket tidak tertahan sampai GC berjalan.
+                    disconnect_fn = getattr(api_instance, "disconnect", None)
+                    if callable(disconnect_fn):
+                        disconnect_fn()
             except Exception:
                 pass
 

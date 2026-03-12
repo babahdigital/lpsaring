@@ -45,6 +45,13 @@ services:
   redis:
     image: redis:7-alpine
     container_name: hotspot_prod_redis_cache
+    # Batasi memori Redis agar tidak OOM seluruh server.
+    # allkeys-lru: evict key lama saat penuh (safe untuk cache/session).
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save ""
     volumes:
       - redis_prod_data:/data
     networks:
@@ -103,6 +110,9 @@ services:
       - "0.0.0.0:5010"
       - "run:app"
       - "--workers=9"
+      # Worker class sync (default). Untuk upgrade ke gthread (I/O-bound benefit),
+      # tambahkan: --worker-class=gthread --threads=2
+      # Pastikan mikrotik_client._connection_pool diproteksi threading.Lock() sebelum ganti.
       - "--timeout=120"
       - "--graceful-timeout=120"
       - "--keep-alive=2"
@@ -206,11 +216,13 @@ services:
     environment:
       - PORT=${NUXT_PORT:-3010}
     healthcheck:
+      # Gunakan /_health (Nuxt server route ringan) agar tidak trigger SSR rendering
+      # dan API call ke backend, yang menyebabkan log noise 401 setiap 15 detik.
       test:
         - CMD
         - /nodejs/bin/node
         - -e
-        - fetch('http://127.0.0.1:3010/login').then((res)=>process.exit(res.ok?0:1)).catch(()=>process.exit(1))
+        - fetch('http://127.0.0.1:3010/_health').then((res)=>process.exit(res.ok?0:1)).catch(()=>process.exit(1))
       interval: 15s
       timeout: 5s
       retries: 8

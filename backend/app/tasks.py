@@ -9,7 +9,7 @@ import re
 from urllib.parse import quote_plus
 from pathlib import Path
 from datetime import datetime, timedelta, timezone as dt_timezone
-from sqlalchemy import text
+from sqlalchemy import text, select
 from sqlalchemy.orm import selectinload
 
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_with_pdf, send_whatsapp_message
@@ -26,6 +26,8 @@ from app.infrastructure.db.models import (
     NotificationType,
     Package,
     PublicDatabaseUpdateSubmission,
+    QuotaMutationLedger,
+    RefreshToken,
     Transaction,
     TransactionStatus,
     User,
@@ -1682,3 +1684,109 @@ def dlq_health_monitor_task(self):
 
         except Exception as e:
             logger.error("Celery Task: DLQ health monitor gagal: %s", e, exc_info=True)
+
+
+@celery_app.task(
+    name="purge_quota_mutation_ledger_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 1},
+)
+def purge_quota_mutation_ledger_task(self):
+    """
+    Hapus entri quota_mutation_ledger yang lebih tua dari QUOTA_MUTATION_LEDGER_RETENTION_DAYS
+    (default 90 hari). Mencegah tabel tumbuh tak terbatas dan menjaga performa query analytics.
+    Jalan harian jam 04:00 via Celery Beat.
+    """
+    app = create_app()
+    with app.app_context():
+        try:
+            try:
+                retention_days = int(app.config.get("QUOTA_MUTATION_LEDGER_RETENTION_DAYS", 90))
+            except Exception:
+                retention_days = 90
+            retention_days = max(30, retention_days)
+
+            cutoff = datetime.now(dt_timezone.utc) - timedelta(days=retention_days)
+            deleted = (
+                db.session.query(QuotaMutationLedger)
+                .filter(QuotaMutationLedger.created_at < cutoff)
+                .delete(synchronize_session=False)
+            )
+            if deleted:
+                db.session.commit()
+                logger.info(
+                    "Celery Task: Purged %s quota_mutation_ledger entri (retention=%d hari, cutoff=%s).",
+                    deleted, retention_days, cutoff.date(),
+                )
+            else:
+                logger.info(
+                    "Celery Task: quota_mutation_ledger purge — tidak ada entri > %d hari.", retention_days
+                )
+        except Exception as e:
+            db.session.rollback()
+            logger.error("Celery Task: purge_quota_mutation_ledger gagal: %s", e, exc_info=True)
+            if self.request.retries >= 1:
+                _record_task_failure(app, "purge_quota_mutation_ledger_task", {}, str(e))
+            raise
+
+
+@celery_app.task(
+    name="revoke_expired_refresh_tokens_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 1},
+)
+def revoke_expired_refresh_tokens_task(self):
+    """
+    Hapus refresh token yang sudah expired atau sudah di-revoke lebih dari
+    REFRESH_TOKEN_CLEANUP_KEEP_DAYS (default 7) hari lalu.
+    Mencegah tabel refresh_tokens akumulasi tak terbatas.
+    Jalan harian jam 04:30 via Celery Beat.
+    """
+    app = create_app()
+    with app.app_context():
+        try:
+            try:
+                keep_days = int(app.config.get("REFRESH_TOKEN_CLEANUP_KEEP_DAYS", 7))
+            except Exception:
+                keep_days = 7
+            keep_days = max(1, keep_days)
+
+            now_utc = datetime.now(dt_timezone.utc)
+            revoked_cutoff = now_utc - timedelta(days=keep_days)
+
+            # Hapus token yang sudah expired (tanpa perlu is_revoked)
+            deleted_expired = (
+                db.session.query(RefreshToken)
+                .filter(RefreshToken.expires_at < now_utc)
+                .delete(synchronize_session=False)
+            )
+            # Hapus token is_revoked=True yang lebih tua dari keep_days
+            deleted_revoked = (
+                db.session.query(RefreshToken)
+                .filter(
+                    RefreshToken.is_revoked == True,  # noqa: E712
+                    RefreshToken.created_at < revoked_cutoff,
+                )
+                .delete(synchronize_session=False)
+            )
+            total = deleted_expired + deleted_revoked
+            if total:
+                db.session.commit()
+                logger.info(
+                    "Celery Task: Cleanup refresh tokens — expired=%s, revoked_old=%s (total=%s).",
+                    deleted_expired, deleted_revoked, total,
+                )
+            else:
+                logger.info("Celery Task: Refresh token cleanup — tidak ada token usang.")
+        except Exception as e:
+            db.session.rollback()
+            logger.error("Celery Task: revoke_expired_refresh_tokens gagal: %s", e, exc_info=True)
+            if self.request.retries >= 1:
+                _record_task_failure(app, "revoke_expired_refresh_tokens_task", {}, str(e))
+            raise

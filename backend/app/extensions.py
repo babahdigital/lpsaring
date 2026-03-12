@@ -277,6 +277,18 @@ def make_celery_app(app=None):
             "schedule": crontab(hour=3, minute=30),
         }
 
+    # ---- Maintenance DB periodik ----
+    celery_instance.conf.beat_schedule["purge-quota-mutation-ledger"] = {
+        "task": "purge_quota_mutation_ledger_task",
+        # Harian jam 04:00 — setelah cleanup-inactive-users & purge-stale-quota-keys
+        "schedule": crontab(hour=4, minute=0),
+    }
+    celery_instance.conf.beat_schedule["revoke-expired-refresh-tokens"] = {
+        "task": "revoke_expired_refresh_tokens_task",
+        # Harian jam 04:30
+        "schedule": crontab(hour=4, minute=30),
+    }
+
     if int(os.environ.get("TASK_DLQ_ALERT_THROTTLE_MINUTES", "60")) > 0:
         celery_instance.conf.beat_schedule["dlq-health-monitor"] = {
             "task": "dlq_health_monitor_task",

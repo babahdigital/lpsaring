@@ -467,11 +467,15 @@ def _remove_hotspot_host_for_authorized_device(
             )
 
 
-def _remove_ip_binding(mac_address: str, server: Optional[str]) -> None:
+def _remove_ip_binding(mac_address: str, server: Optional[str], api_connection: Optional[Any] = None) -> None:
     if not mac_address:
         return
     if not _is_mikrotik_operations_enabled():
         logger.info("MikroTik ops disabled: skip ip-binding remove")
+        return
+    if api_connection is not None:
+        # Gunakan koneksi yang sudah ada — hindari membuka TCP connection baru
+        remove_ip_binding(api_connection=api_connection, mac_address=mac_address, server=server)
         return
     with get_mikrotik_connection() as api:
         if not api:

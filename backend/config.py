@@ -189,6 +189,18 @@ class Config:
                 )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ECHO = get_env_bool("SQLALCHEMY_ECHO", "False")
+    # Connection pool: pre_ping deteksi koneksi stale sebelum dipakai,
+    # recycle tutup dan buka ulang koneksi setiap 1 jam agar tidak stale
+    # akibat PostgreSQL server-side idle timeout.
+    # pool_size=3 + max_overflow=5: tiap process dapat max 8 koneksi.
+    # 9 gunicorn + 6 celery workers = 15 proses × 8 = 120 max connections
+    # (di bawah PostgreSQL default max_connections=100 dengan headroom).
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "pool_pre_ping": True,
+        "pool_recycle": 3600,
+        "pool_size": 3,
+        "max_overflow": 5,
+    }
 
     # --- Konfigurasi Backup ---
     BACKUP_DIR = os.environ.get("BACKUP_DIR", "/app/backups")
