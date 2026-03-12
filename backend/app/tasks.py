@@ -1760,18 +1760,18 @@ def revoke_expired_refresh_tokens_task(self):
             now_utc = datetime.now(dt_timezone.utc)
             revoked_cutoff = now_utc - timedelta(days=keep_days)
 
-            # Hapus token yang sudah expired (tanpa perlu is_revoked)
+            # Hapus token yang sudah expired
             deleted_expired = (
                 db.session.query(RefreshToken)
                 .filter(RefreshToken.expires_at < now_utc)
                 .delete(synchronize_session=False)
             )
-            # Hapus token is_revoked=True yang lebih tua dari keep_days
+            # Hapus token yang sudah di-revoke (revoked_at IS NOT NULL) dan issued > keep_days lalu
             deleted_revoked = (
                 db.session.query(RefreshToken)
                 .filter(
-                    RefreshToken.is_revoked == True,  # noqa: E712
-                    RefreshToken.created_at < revoked_cutoff,
+                    RefreshToken.revoked_at.isnot(None),
+                    RefreshToken.issued_at < revoked_cutoff,
                 )
                 .delete(synchronize_session=False)
             )

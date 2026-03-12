@@ -189,17 +189,12 @@ class Config:
                 )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ECHO = get_env_bool("SQLALCHEMY_ECHO", "False")
-    # Connection pool: pre_ping deteksi koneksi stale sebelum dipakai,
-    # recycle tutup dan buka ulang koneksi setiap 1 jam agar tidak stale
-    # akibat PostgreSQL server-side idle timeout.
-    # pool_size=3 + max_overflow=5: tiap process dapat max 8 koneksi.
-    # 9 gunicorn + 6 celery workers = 15 proses × 8 = 120 max connections
-    # (di bawah PostgreSQL default max_connections=100 dengan headroom).
-    SQLALCHEMY_ENGINE_OPTIONS = {
+    # pool_pre_ping dan pool_recycle aman untuk semua pool type (termasuk tests).
+    # pool_size/max_overflow ditambahkan di ProductionConfig karena SQLite StaticPool
+    # (dipakai di tests) tidak mendukung kedua parameter tersebut.
+    SQLALCHEMY_ENGINE_OPTIONS: dict = {
         "pool_pre_ping": True,
         "pool_recycle": 3600,
-        "pool_size": 3,
-        "max_overflow": 5,
     }
 
     # --- Konfigurasi Backup ---
@@ -630,6 +625,14 @@ class ProductionConfig(Config):
     MIDTRANS_IS_PRODUCTION = get_env_bool("MIDTRANS_IS_PRODUCTION", "True")
     ENABLE_WHATSAPP_NOTIFICATIONS = get_env_bool("ENABLE_WHATSAPP_NOTIFICATIONS", "True")
     RATELIMIT_ENABLED = get_env_bool("RATELIMIT_ENABLED", "True")
+    # PostgreSQL production pool: pool_size=3 + max_overflow=5 → max 8 koneksi per process.
+    # 9 gunicorn + 6 celery workers = 15 proses × 8 = 120 max connections.
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "pool_pre_ping": True,
+        "pool_recycle": 3600,
+        "pool_size": 3,
+        "max_overflow": 5,
+    }
 
     MIKROTIK_SEND_LIMIT_BYTES_TOTAL = get_env_bool("MIKROTIK_SEND_LIMIT_BYTES_TOTAL", "True")
     MIKROTIK_SEND_SESSION_TIMEOUT = get_env_bool("MIKROTIK_SEND_SESSION_TIMEOUT", "True")
@@ -650,7 +653,9 @@ class TestingConfig(Config):
     RATELIMIT_ENABLED = False
     LOG_LEVEL = "DEBUG"
     LOG_TO_FILE = False
-    APP_PUBLIC_BASE_URL = os.environ.get("APP_PUBLIC_BASE_URL", "http://testserver")  # Tambahkan untuk testing
+    APP_PUBLIC_BASE_URL = os.environ.get("APP_PUBLIC_BASE_URL", "http://testserver")
+    # SQLite StaticPool (in-memory) tidak mendukung pool_pre_ping/pool_recycle/pool_size
+    SQLALCHEMY_ENGINE_OPTIONS: dict = {}
 
 
 config_options = {
