@@ -216,13 +216,13 @@ services:
     environment:
       - PORT=${NUXT_PORT:-3010}
     healthcheck:
-      # Gunakan /_health (Nuxt server route ringan) agar tidak trigger SSR rendering
+      # Gunakan /health (Nuxt server route ringan) agar tidak trigger SSR rendering
       # dan API call ke backend, yang menyebabkan log noise 401 setiap 15 detik.
       test:
         - CMD
         - /nodejs/bin/node
         - -e
-        - fetch('http://127.0.0.1:3010/_health').then((res)=>process.exit(res.ok?0:1)).catch(()=>process.exit(1))
+        - fetch('http://127.0.0.1:3010/health').then((res)=>process.exit(res.ok?0:1)).catch(()=>process.exit(1))
       interval: 15s
       timeout: 5s
       retries: 8
