@@ -329,3 +329,72 @@ def test_hotspot_session_status_keeps_bypass_when_binding_exists():
     payload = response.get_json()
     assert payload["hotspot_login_required"] is False
     assert payload["hotspot_binding_active"] is True
+
+
+def test_hotspot_session_status_uses_db_device_mac_when_no_hints_and_no_hotspot_host():
+    """Ketika tidak ada IP/MAC hint dan user tidak ada di hotspot host, fallback ke MAC dari DB
+    device user. Jika ip-binding ditemukan untuk MAC tersebut, binding_active=True."""
+    app = _make_app()
+    user = SimpleNamespace(id="u-7", phone_number="+628122333558")
+
+    @contextmanager
+    def _conn(*_args, **_kwargs):
+        yield object()
+
+    def _has_binding(_api, *, username, user_id, mac_address):
+        if mac_address == "AA:BB:CC:DD:EE:58":
+            return True, True, "ok"
+        return True, False, "not-found"
+
+    with app.app_context():
+        response, status = get_hotspot_session_status_impl(
+            current_user_id="u-7",
+            db=_FakeDb(user),
+            User=SimpleNamespace,
+            AuthErrorResponseSchema=_SchemaStub,
+            query_args={},
+            format_to_local_phone=lambda *_a, **_k: "08122333558",
+            normalize_mac=lambda value: str(value or "").strip().upper() or None,
+            resolve_client_mac=lambda *_a, **_k: (True, None, "no-ip"),
+            is_hotspot_login_required=lambda *_a, **_k: True,
+            get_mikrotik_connection=_conn,
+            has_hotspot_ip_binding_for_user=_has_binding,
+            get_hotspot_user_ip=lambda *_a, **_k: (False, None, "not-in-host"),
+            get_latest_authorized_device_mac=lambda _uid: "AA:BB:CC:DD:EE:58",
+        )
+
+    assert status == 200
+    payload = response.get_json()
+    assert payload["hotspot_binding_active"] is True
+
+
+def test_hotspot_session_status_missing_hints_when_db_device_mac_also_empty():
+    """Ketika tidak ada IP/MAC hint, tidak ada hotspot host, dan tidak ada DB device,
+    harus tetap return binding_active=False (missing-hints)."""
+    app = _make_app()
+    user = SimpleNamespace(id="u-8", phone_number="+628122333559")
+
+    @contextmanager
+    def _conn(*_args, **_kwargs):
+        yield object()
+
+    with app.app_context():
+        response, status = get_hotspot_session_status_impl(
+            current_user_id="u-8",
+            db=_FakeDb(user),
+            User=SimpleNamespace,
+            AuthErrorResponseSchema=_SchemaStub,
+            query_args={},
+            format_to_local_phone=lambda *_a, **_k: "08122333559",
+            normalize_mac=lambda value: str(value or "").strip().upper() or None,
+            resolve_client_mac=lambda *_a, **_k: (True, None, "no-ip"),
+            is_hotspot_login_required=lambda *_a, **_k: True,
+            get_mikrotik_connection=_conn,
+            has_hotspot_ip_binding_for_user=lambda *_a, **_k: (True, True, "ok"),
+            get_hotspot_user_ip=lambda *_a, **_k: (False, None, "not-in-host"),
+            get_latest_authorized_device_mac=lambda _uid: None,
+        )
+
+    assert status == 200
+    payload = response.get_json()
+    assert payload["hotspot_binding_active"] is False
