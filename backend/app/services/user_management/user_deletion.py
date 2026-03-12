@@ -65,7 +65,12 @@ def _build_managed_list_names() -> list[str]:
     return names
 
 
-def _cleanup_router_artifacts(user_to_remove: User, devices: Sequence[UserDevice]) -> dict[str, Any]:
+def _cleanup_router_artifacts(
+    user_to_remove: User,
+    devices: Sequence[UserDevice],
+    *,
+    include_comment_scan: bool = True,
+) -> dict[str, Any]:
     macs = sorted({str(d.mac_address).strip().upper() for d in devices if getattr(d, "mac_address", None)})
     ips = sorted({str(d.ip_address).strip() for d in devices if getattr(d, "ip_address", None)})
 
@@ -87,6 +92,7 @@ def _cleanup_router_artifacts(user_to_remove: User, devices: Sequence[UserDevice
         "arp_entries_removed": 0,
         "address_list_entries_removed": 0,
         "comment_tagged_entries_removed": 0,
+        "comment_scan_skipped": not include_comment_scan,
         "errors": [],
     }
     errors = summary["errors"]
@@ -123,14 +129,15 @@ def _cleanup_router_artifacts(user_to_remove: User, devices: Sequence[UserDevice
                         host_removed_ids,
                     )
 
-                for row in host_res.get() or []:
-                    if _comment_matches_user(row.get("comment")):
-                        summary["comment_tagged_entries_removed"] += _remove_rows(
-                            host_res,
-                            [row],
-                            errors,
-                            host_removed_ids,
-                        )
+                if include_comment_scan:
+                    for row in host_res.get() or []:
+                        if _comment_matches_user(row.get("comment")):
+                            summary["comment_tagged_entries_removed"] += _remove_rows(
+                                host_res,
+                                [row],
+                                errors,
+                                host_removed_ids,
+                            )
             except Exception as e:
                 errors.append(f"hotspot_host_cleanup: {e}")
 
@@ -144,14 +151,15 @@ def _cleanup_router_artifacts(user_to_remove: User, devices: Sequence[UserDevice
                         errors,
                         ipb_removed_ids,
                     )
-                for row in ipb_res.get() or []:
-                    if _comment_matches_user(row.get("comment")):
-                        summary["comment_tagged_entries_removed"] += _remove_rows(
-                            ipb_res,
-                            [row],
-                            errors,
-                            ipb_removed_ids,
-                        )
+                if include_comment_scan:
+                    for row in ipb_res.get() or []:
+                        if _comment_matches_user(row.get("comment")):
+                            summary["comment_tagged_entries_removed"] += _remove_rows(
+                                ipb_res,
+                                [row],
+                                errors,
+                                ipb_removed_ids,
+                            )
             except Exception as e:
                 errors.append(f"ip_binding_cleanup: {e}")
 
@@ -172,14 +180,15 @@ def _cleanup_router_artifacts(user_to_remove: User, devices: Sequence[UserDevice
                         errors,
                         lease_removed_ids,
                     )
-                for row in lease_res.get() or []:
-                    if _comment_matches_user(row.get("comment")):
-                        summary["comment_tagged_entries_removed"] += _remove_rows(
-                            lease_res,
-                            [row],
-                            errors,
-                            lease_removed_ids,
-                        )
+                if include_comment_scan:
+                    for row in lease_res.get() or []:
+                        if _comment_matches_user(row.get("comment")):
+                            summary["comment_tagged_entries_removed"] += _remove_rows(
+                                lease_res,
+                                [row],
+                                errors,
+                                lease_removed_ids,
+                            )
             except Exception as e:
                 errors.append(f"dhcp_lease_cleanup: {e}")
 
@@ -200,14 +209,15 @@ def _cleanup_router_artifacts(user_to_remove: User, devices: Sequence[UserDevice
                         errors,
                         arp_removed_ids,
                     )
-                for row in arp_res.get() or []:
-                    if _comment_matches_user(row.get("comment")):
-                        summary["comment_tagged_entries_removed"] += _remove_rows(
-                            arp_res,
-                            [row],
-                            errors,
-                            arp_removed_ids,
-                        )
+                if include_comment_scan:
+                    for row in arp_res.get() or []:
+                        if _comment_matches_user(row.get("comment")):
+                            summary["comment_tagged_entries_removed"] += _remove_rows(
+                                arp_res,
+                                [row],
+                                errors,
+                                arp_removed_ids,
+                            )
             except Exception as e:
                 errors.append(f"arp_cleanup: {e}")
 
@@ -224,18 +234,19 @@ def _cleanup_router_artifacts(user_to_remove: User, devices: Sequence[UserDevice
                             address_removed_ids,
                         )
 
-                managed_set = set(managed_lists)
-                for row in address_list_res.get() or []:
-                    row_list = str(row.get("list") or "").strip()
-                    if row_list not in managed_set:
-                        continue
-                    if _comment_matches_user(row.get("comment")):
-                        summary["comment_tagged_entries_removed"] += _remove_rows(
-                            address_list_res,
-                            [row],
-                            errors,
-                            address_removed_ids,
-                        )
+                if include_comment_scan:
+                    managed_set = set(managed_lists)
+                    for row in address_list_res.get() or []:
+                        row_list = str(row.get("list") or "").strip()
+                        if row_list not in managed_set:
+                            continue
+                        if _comment_matches_user(row.get("comment")):
+                            summary["comment_tagged_entries_removed"] += _remove_rows(
+                                address_list_res,
+                                [row],
+                                errors,
+                                address_removed_ids,
+                            )
             except Exception as e:
                 errors.append(f"address_list_cleanup: {e}")
     except Exception as e:
@@ -244,18 +255,27 @@ def _cleanup_router_artifacts(user_to_remove: User, devices: Sequence[UserDevice
     return summary
 
 
-def _run_auth_cleanup(user_to_remove: User, devices: Sequence[UserDevice]) -> tuple[int, int, dict[str, Any]]:
+def _run_auth_cleanup(
+    user_to_remove: User,
+    devices: Sequence[UserDevice],
+    *,
+    include_comment_scan: bool = True,
+) -> tuple[int, int, dict[str, Any]]:
     tokens_deleted = (
         db.session.query(RefreshToken).filter(RefreshToken.user_id == user_to_remove.id).delete(synchronize_session=False)
     )
     devices_deleted = (
         db.session.query(UserDevice).filter(UserDevice.user_id == user_to_remove.id).delete(synchronize_session=False)
     )
-    router_summary = _cleanup_router_artifacts(user_to_remove, devices)
+    router_summary = _cleanup_router_artifacts(
+        user_to_remove,
+        devices,
+        include_comment_scan=include_comment_scan,
+    )
     return int(tokens_deleted or 0), int(devices_deleted or 0), router_summary
 
 
-def run_user_auth_cleanup(user_to_remove: User) -> dict[str, Any]:
+def run_user_auth_cleanup(user_to_remove: User, *, include_comment_scan: bool = True) -> dict[str, Any]:
     """Bersihkan token/device DB dan artefak router untuk satu user.
 
     Dipakai oleh endpoint delete user dan reset-login agar perilaku cleanup konsisten.
@@ -265,7 +285,11 @@ def run_user_auth_cleanup(user_to_remove: User) -> dict[str, Any]:
     ips = sorted({str(d.ip_address).strip() for d in devices if getattr(d, "ip_address", None)})
     username_08 = str(format_to_local_phone(getattr(user_to_remove, "phone_number", None)) or "").strip()
 
-    tokens_deleted, devices_deleted, router_summary = _run_auth_cleanup(user_to_remove, devices)
+    tokens_deleted, devices_deleted, router_summary = _run_auth_cleanup(
+        user_to_remove,
+        devices,
+        include_comment_scan=include_comment_scan,
+    )
 
     return {
         "tokens_deleted": tokens_deleted,

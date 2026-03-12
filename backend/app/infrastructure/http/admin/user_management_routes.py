@@ -436,7 +436,7 @@ def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
     if denied_response:
         return denied_response
 
-    cleanup_summary = user_deletion.run_user_auth_cleanup(user)
+    cleanup_summary = user_deletion.run_user_auth_cleanup(user, include_comment_scan=False)
     router_summary = cleanup_summary["router"]
 
     try:

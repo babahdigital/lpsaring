@@ -46,10 +46,9 @@ def test_reset_login_deletes_tokens_and_devices_even_when_mikrotik_unavailable(m
     fake_session = _FakeSession(user=user)
     monkeypatch.setattr(user_management_routes, "db", SimpleNamespace(session=fake_session))
 
-    monkeypatch.setattr(
-        user_management_routes.user_deletion,
-        "run_user_auth_cleanup",
-        lambda _user: {
+    def _run_cleanup(_user, **kwargs):
+        assert kwargs == {"include_comment_scan": False}
+        return {
             "tokens_deleted": 3,
             "devices_deleted": 2,
             "device_count_before": 2,
@@ -65,10 +64,12 @@ def test_reset_login_deletes_tokens_and_devices_even_when_mikrotik_unavailable(m
                 "arp_entries_removed": 0,
                 "address_list_entries_removed": 0,
                 "comment_tagged_entries_removed": 0,
+                "comment_scan_skipped": True,
                 "errors": [],
             },
-        },
-    )
+        }
+
+    monkeypatch.setattr(user_management_routes.user_deletion, "run_user_auth_cleanup", _run_cleanup)
     monkeypatch.setattr(user_management_routes, "_log_admin_action", lambda **kwargs: None)
 
     app = _make_app()
@@ -112,7 +113,11 @@ def test_reset_login_removes_comment_tagged_router_entries(monkeypatch):
             "errors": [],
         },
     }
-    monkeypatch.setattr(user_management_routes.user_deletion, "run_user_auth_cleanup", lambda _user: cleanup_summary)
+    monkeypatch.setattr(
+        user_management_routes.user_deletion,
+        "run_user_auth_cleanup",
+        lambda _user, **kwargs: cleanup_summary,
+    )
     monkeypatch.setattr(user_management_routes, "_log_admin_action", lambda **kwargs: None)
 
     app = _make_app()

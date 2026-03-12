@@ -75,6 +75,38 @@ def _resolve_unblock_notification_template(user: User) -> str:
     return "user_debt_cleared"
 
 
+def _apply_manual_debt_advance_credit(
+    *,
+    user: User,
+    admin_actor: User,
+    credit_mb: int,
+    source: str,
+) -> Tuple[int, int]:
+    before_state = snapshot_user_quota_state(user)
+    paid_auto_mb, remaining_credit_mb = debt_service.consume_injected_mb_for_auto_debt_only(
+        user=user,
+        admin_actor=admin_actor,
+        injected_mb=int(credit_mb),
+        source=source,
+    )
+    if remaining_credit_mb > 0:
+        user.total_quota_purchased_mb = int(user.total_quota_purchased_mb or 0) + int(remaining_credit_mb)
+
+    append_quota_mutation_event(
+        user=user,
+        source=f"quota.debt_advance:{str(source or 'unknown')[:40]}",
+        before_state=before_state,
+        after_state=snapshot_user_quota_state(user),
+        actor_user_id=getattr(admin_actor, "id", None),
+        event_details={
+            "credit_mb": int(credit_mb),
+            "paid_auto_debt_mb": int(paid_auto_mb),
+            "net_added_mb": int(remaining_credit_mb),
+        },
+    )
+    return int(paid_auto_mb), int(remaining_credit_mb)
+
+
 def _get_active_registration_bonus() -> Optional[PromoEvent]:
     """
     Helper function untuk mencari promo bonus registrasi yang aktif.
@@ -506,21 +538,23 @@ def update_user_by_admin_comprehensive(
             # agar user bisa akses. Rule: kuota advance dipakai untuk melunasi AUTO debt dulu (jika ada),
             # sisa menjadi kuota bersih. Manual debt (termasuk yang baru dibuat) tetap tercatat.
             try:
-                paid_auto_mb, remaining_credit_mb = debt_service.consume_injected_mb_for_auto_debt_only(
+                paid_auto_mb, remaining_credit_mb = _apply_manual_debt_advance_credit(
                     user=target_user,
                     admin_actor=admin_actor,
-                    injected_mb=int(debt_add_mb_pkg),
+                    credit_mb=int(debt_add_mb_pkg),
                     source="admin_debt_advance_pkg",
                 )
-                if remaining_credit_mb > 0:
-                    target_user.total_quota_purchased_mb = int(target_user.total_quota_purchased_mb or 0) + int(
-                        remaining_credit_mb
-                    )
                 changes["debt_credit_quota_mb"] = int(debt_add_mb_pkg)
                 changes["debt_paid_auto_before_credit_mb"] = int(paid_auto_mb)
                 changes["debt_net_quota_mb"] = int(remaining_credit_mb)
-            except Exception:
-                pass
+            except Exception as e:
+                current_app.logger.error(
+                    "Gagal mengkredit kuota advance untuk debt package user %s: %s",
+                    target_user.id,
+                    e,
+                    exc_info=True,
+                )
+                return False, "Gagal menambahkan kuota advance untuk debt manual.", None
 
             try:
                 # Best-effort: refresh Mikrotik lists/profile sesuai sisa kuota terbaru.
@@ -581,21 +615,23 @@ def update_user_by_admin_comprehensive(
             # CREDIT QUOTA (advance): saat debt manual dibuat, juga beri kuota agar user bisa akses.
             # Rule: kuota advance dipakai untuk melunasi AUTO debt dulu (jika ada), sisa menjadi kuota bersih.
             try:
-                paid_auto_mb, remaining_credit_mb = debt_service.consume_injected_mb_for_auto_debt_only(
+                paid_auto_mb, remaining_credit_mb = _apply_manual_debt_advance_credit(
                     user=target_user,
                     admin_actor=admin_actor,
-                    injected_mb=int(debt_add_mb),
+                    credit_mb=int(debt_add_mb),
                     source="admin_debt_advance",
                 )
-                if remaining_credit_mb > 0:
-                    target_user.total_quota_purchased_mb = int(target_user.total_quota_purchased_mb or 0) + int(
-                        remaining_credit_mb
-                    )
                 changes["debt_credit_quota_mb"] = int(debt_add_mb)
                 changes["debt_paid_auto_before_credit_mb"] = int(paid_auto_mb)
                 changes["debt_net_quota_mb"] = int(remaining_credit_mb)
-            except Exception:
-                pass
+            except Exception as e:
+                current_app.logger.error(
+                    "Gagal mengkredit kuota advance untuk debt manual user %s: %s",
+                    target_user.id,
+                    e,
+                    exc_info=True,
+                )
+                return False, "Gagal menambahkan kuota advance untuk debt manual.", None
 
             try:
                 sync_address_list_for_single_user(target_user)

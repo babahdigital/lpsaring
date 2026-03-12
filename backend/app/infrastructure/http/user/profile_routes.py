@@ -252,6 +252,9 @@ def bind_current_device(current_user_id):
     if not client_ip:
         client_ip = None
 
+    best_effort_raw = request.args.get("best_effort") or request.args.get("best-effort")
+    best_effort = str(best_effort_raw).lower() in {"1", "true", "yes", "y", "on"}
+
     ok, msg, _resolved_ip = apply_device_binding_for_login(
         user,
         client_ip,
@@ -259,8 +262,6 @@ def bind_current_device(current_user_id):
         client_mac,
         bypass_explicit_auth=True,
     )
-    best_effort_raw = request.args.get("best_effort") or request.args.get("best-effort")
-    best_effort = str(best_effort_raw).lower() in {"1", "true", "yes", "y", "on"}
 
     if not ok:
         if best_effort:
@@ -268,15 +269,22 @@ def bind_current_device(current_user_id):
         return jsonify({"message": msg}), HTTPStatus.FORBIDDEN
 
     if settings_service.get_setting("SYNC_ADDRESS_LIST_ON_LOGIN", "True") == "True":
-        try:
-            sync_address_list_for_single_user(user, client_ip=_resolved_ip)
-        except Exception as e:
-            current_app.logger.warning(
-                "bind-current: gagal sync address-list user=%s ip=%s err=%s",
+        if best_effort:
+            current_app.logger.info(
+                "bind-current: skip sync address-list in best-effort mode user=%s ip=%s",
                 user.id,
                 _resolved_ip,
-                e,
             )
+        else:
+            try:
+                sync_address_list_for_single_user(user, client_ip=_resolved_ip)
+            except Exception as e:
+                current_app.logger.warning(
+                    "bind-current: gagal sync address-list user=%s ip=%s err=%s",
+                    user.id,
+                    _resolved_ip,
+                    e,
+                )
 
     db.session.commit()
     return jsonify({"success": True, "bound": True, "message": "Perangkat berhasil diikat."}), HTTPStatus.OK
