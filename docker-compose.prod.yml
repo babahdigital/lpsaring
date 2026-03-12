@@ -102,9 +102,10 @@ services:
       - "--bind"
       - "0.0.0.0:5010"
       - "run:app"
-      - "--workers=4"
+      - "--workers=9"
       - "--timeout=120"
       - "--graceful-timeout=120"
+      - "--keep-alive=2"
       - "--log-level=info"
       - "--access-logfile=-"
       - "--error-logfile=-"
@@ -148,7 +149,8 @@ services:
       /opt/venv/bin/celery -A app.extensions worker
       --loglevel=info
       --logfile=/dev/stdout
-      --concurrency=4
+      --concurrency=6
+      --max-memory-per-child=500000
     depends_on:
       migrate:
         condition: service_completed_successfully

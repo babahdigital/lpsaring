@@ -192,12 +192,23 @@ def normalize_mac(mac: Optional[str]) -> Optional[str]:
 
 
 def _ensure_ip_binding(
-    mac_address: str, ip_address: Optional[str], binding_type: str, comment: str, server: Optional[str]
+    mac_address: str, ip_address: Optional[str], binding_type: str, comment: str, server: Optional[str],
+    api_connection: Any = None,
 ) -> None:
     if not mac_address:
         return
     if not _is_mikrotik_operations_enabled():
         logger.info("MikroTik ops disabled: skip ip-binding upsert")
+        return
+    if api_connection is not None:
+        upsert_ip_binding(
+            api_connection=api_connection,
+            mac_address=mac_address,
+            address=ip_address,
+            server=server,
+            binding_type=binding_type,
+            comment=comment,
+        )
         return
     with get_mikrotik_connection() as api:
         if not api:
@@ -253,6 +264,82 @@ def _remove_unauthorized_address_list(ip_address: Optional[str]) -> None:
             logger.warning("Tidak bisa konek MikroTik untuk remove address-list unauthorized")
             return
         remove_address_list_entry(api_connection=api, address=ip_address, list_name=list_unauthorized)
+
+
+def _apply_post_auth_mikrotik_ops(
+    *,
+    mac_address: Optional[str],
+    ip_address: Optional[str],
+    binding_type: str,
+    binding_comment: str,
+    server: Optional[str],
+    username: Optional[str],
+) -> None:
+    """Gabungkan semua operasi MikroTik pasca-autentikasi dalam SATU koneksi untuk
+    mengurangi latensi dan mencegah gunicorn worker timeout.
+
+    Menggantikan 4–5 panggilan get_mikrotik_connection() terpisah di apply_device_binding_for_login().
+    Operasi: upsert ip-binding + hapus address-list blocked/unauthorized + cleanup hotspot host.
+    """
+    if not mac_address and not ip_address:
+        return
+    if not _is_mikrotik_operations_enabled():
+        logger.info("MikroTik ops disabled: skip post-auth ops")
+        return
+
+    list_blocked = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked"
+    list_unauthorized = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized") or "unauthorized"
+    ip_binding_enabled = settings_service.get_setting("IP_BINDING_ENABLED", "True") == "True"
+
+    with get_mikrotik_connection() as api:
+        if not api:
+            logger.warning("_apply_post_auth_mikrotik_ops: gagal koneksi MikroTik")
+            return
+
+        # 1. Upsert ip-binding (jika diaktifkan dan ada MAC)
+        if ip_binding_enabled and mac_address:
+            try:
+                upsert_ip_binding(
+                    api_connection=api,
+                    mac_address=mac_address,
+                    address=ip_address,
+                    server=server,
+                    binding_type=binding_type,
+                    comment=binding_comment,
+                )
+            except Exception as e:
+                logger.warning("post-auth: gagal upsert ip-binding mac=%s err=%s", mac_address, e)
+
+        # 2. Hapus IP dari address-list blocked + unauthorized
+        if ip_address:
+            try:
+                remove_address_list_entry(api_connection=api, address=ip_address, list_name=list_blocked)
+            except Exception:
+                pass
+            try:
+                remove_address_list_entry(api_connection=api, address=ip_address, list_name=list_unauthorized)
+            except Exception:
+                pass
+
+        # 3. Best-effort cleanup hotspot host (tidak perlu cek dulu — remove_hotspot_host_entries sudah aman)
+        if mac_address or ip_address or username:
+            try:
+                ok, msg, removed = remove_hotspot_host_entries(
+                    api_connection=api,
+                    mac_address=mac_address or None,
+                    address=ip_address or None,
+                    username=username or None,
+                )
+                if ok and int(removed or 0) == 0 and (mac_address or ip_address):
+                    remove_hotspot_host_entries_best_effort(
+                        api_connection=api,
+                        mac_address=mac_address or None,
+                        address=ip_address or None,
+                        username=username or None,
+                        allow_username_only_fallback=False,
+                    )
+            except Exception as e:
+                logger.debug("post-auth: skip hotspot host cleanup err=%s", e)
 
 
 def _normalize_ip_for_compare(ip_text: Optional[str]) -> str:
@@ -799,29 +886,25 @@ def apply_device_binding_for_login(
 
     if settings["ip_binding_enabled"]:
         allowed_binding_type = resolve_allowed_binding_type_for_user(user)
-        _ensure_ip_binding(
+        _apply_post_auth_mikrotik_ops(
             mac_address=device.mac_address,
             ip_address=device.ip_address,
             binding_type=allowed_binding_type,
-            comment=(
+            binding_comment=(
                 f"authorized|user={username_08}|uid={user.id}|role={user.role.value}|date={date_str}|time={time_str}"
             ),
             server=user.mikrotik_server_name or settings["mikrotik_server_default"],
-        )
-
-    should_cleanup_hotspot_host = _should_cleanup_hotspot_host_after_login(device.ip_address)
-    _remove_blocked_address_list(device.ip_address)
-    _remove_unauthorized_address_list(device.ip_address)
-    if should_cleanup_hotspot_host:
-        _remove_hotspot_host_for_authorized_device(
-            mac_address=device.mac_address,
-            ip_address=device.ip_address,
             username=username_08 or None,
         )
     else:
-        logger.debug(
-            "Skip hotspot host cleanup after login: not an unauthorized recovery path (ip=%s)",
-            device.ip_address,
+        # ip-binding tidak aktif: tetap bersihkan address-list + hotspot host via satu koneksi
+        _apply_post_auth_mikrotik_ops(
+            mac_address=device.mac_address,
+            ip_address=device.ip_address,
+            binding_type="bypassed",
+            binding_comment="",
+            server=user.mikrotik_server_name or settings["mikrotik_server_default"],
+            username=username_08 or None,
         )
 
     if settings.get("dhcp_static_lease_enabled"):
