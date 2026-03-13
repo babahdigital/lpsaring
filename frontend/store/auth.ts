@@ -624,15 +624,22 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function authorizeDevice(options: AuthorizeDeviceOptions = {}): Promise<boolean> {
     const { $api } = useNuxtApp()
+    const route = useRoute()
     loading.value = true
     clearError()
     clearMessage()
     try {
+      const routeQuery = (route?.query ?? {}) as Record<string, unknown>
+      const resolvedIdentity = resolveHotspotIdentity(routeQuery)
+      rememberHotspotIdentity(resolvedIdentity)
+
+      const clientIp = String(options.clientIp ?? resolvedIdentity.clientIp ?? '').trim()
+      const clientMac = String(options.clientMac ?? resolvedIdentity.clientMac ?? '').trim()
       const body: Record<string, string> = {}
-      if (options.clientIp)
-        body.client_ip = String(options.clientIp)
-      if (options.clientMac)
-        body.client_mac = String(options.clientMac)
+      if (clientIp)
+        body.client_ip = clientIp
+      if (clientMac)
+        body.client_mac = clientMac
 
       const query = options.bestEffort === true
         ? { best_effort: 'true' }

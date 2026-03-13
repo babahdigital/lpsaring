@@ -55,6 +55,7 @@ def get_hotspot_session_status_impl(
             binding_mac = incoming_mac
             allow_user_level_fallback = True
             require_identity_hint = True
+            has_explicit_identity_hint = bool(client_ip_hint or incoming_mac)
             try:
                 allow_user_level_fallback = (
                     str(current_app.config.get("HOTSPOT_SESSION_STATUS_ALLOW_USER_LEVEL_FALLBACK", "False")).strip().lower()
@@ -106,7 +107,7 @@ def get_hotspot_session_status_impl(
                                 HTTPStatus.OK,
                             )
 
-            if binding_lookup_mode == "none" and not binding_mac:
+            if binding_lookup_mode == "none" and not binding_mac and (has_explicit_identity_hint or not require_identity_hint):
                 try:
                     with get_mikrotik_connection() as api_connection:
                         if api_connection:
@@ -124,7 +125,12 @@ def get_hotspot_session_status_impl(
                     pass
 
             # Fallback: jika hotspot host tidak ditemukan, ambil MAC dari DB device user
-            if binding_lookup_mode == "none" and not binding_mac and get_latest_authorized_device_mac is not None:
+            if (
+                binding_lookup_mode == "none"
+                and not binding_mac
+                and (has_explicit_identity_hint or not require_identity_hint)
+                and get_latest_authorized_device_mac is not None
+            ):
                 try:
                     db_mac = get_latest_authorized_device_mac(user.id)
                     if db_mac:

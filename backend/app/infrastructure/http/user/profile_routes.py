@@ -255,6 +255,21 @@ def bind_current_device(current_user_id):
     best_effort_raw = request.args.get("best_effort") or request.args.get("best-effort")
     best_effort = str(best_effort_raw).lower() in {"1", "true", "yes", "y", "on"}
 
+    if not (client_ip or client_mac):
+        current_app.logger.info(
+            "bind-current: skip bind without explicit hotspot identity user=%s best_effort=%s",
+            user.id,
+            best_effort,
+        )
+        payload = {
+            "success": False,
+            "bound": False,
+            "message": "Konteks hotspot belum lengkap untuk bind perangkat.",
+        }
+        if best_effort:
+            return jsonify(payload), HTTPStatus.OK
+        return jsonify(payload), HTTPStatus.BAD_REQUEST
+
     ok, msg, _resolved_ip = apply_device_binding_for_login(
         user,
         client_ip,

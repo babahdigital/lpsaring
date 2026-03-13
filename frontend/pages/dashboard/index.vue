@@ -308,8 +308,7 @@ async function tryBindCurrentDevice() {
     return
   deviceBindAttempted.value = true
   try {
-    const { $api } = useNuxtApp()
-    await $api('/users/me/devices/bind-current?best_effort=1', { method: 'POST' })
+    await authStore.authorizeDevice({ bestEffort: true })
   }
   catch {
     // Best-effort: bila gagal (mis. IP publik/proxy), jangan mengganggu UI.

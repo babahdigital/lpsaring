@@ -8,6 +8,18 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Fixed (2026-03-14 — Audit Host Hotspot + Saturasi DB Worker)
+
+- **Quota/IP selection hardening:** `get_hotspot_host_usage_map()` tidak lagi last-row-wins untuk MAC duplikat di `/ip/hotspot/host`. Selector kini memprioritaskan row hotspot lokal yang masih segar (`idle-time` kecil), baru memakai bytes sebagai tie-breaker. Ini mencegah quota sync, parity, dan candidate IP memakai ghost row `10.8.0.x` / IP publik saat row `172.16.2.0/23` yang benar juga ada.
+- **Translated hotspot IP handling:** bila `address` original berada di luar CIDR hotspot tetapi `to-address` sudah berada di `HOTSPOT_CLIENT_IP_CIDRS`, helper map kini mengekspor `address` ter-resolve ke IP lokal yang benar dan menyimpan original IP sebagai `source_address`. Consumer lama otomatis membaca IP hotspot yang benar tanpa perlu query raw host table.
+- **Ghost-host cleanup safety:** cleanup host di luar CIDR kini mensyaratkan adanya current in-subnet hotspot host row untuk MAC yang sama sebelum removal. DHCP/ARP saja tidak lagi cukup untuk menghapus row ghost, sehingga cleanup tidak mendorong device sehat ke state unauthorized.
+- **Celery worker DB saturation:** task Celery sebelumnya membuat Flask app baru untuk hampir setiap task execution (`create_app()` per task) sehingga worker dapat menumpuk banyak SQLAlchemy engine/pool dan memenuhi PostgreSQL dengan koneksi idle. `backend/app/tasks.py` kini me-cache Flask app per worker process agar engine/pool dipakai ulang dan teardown session berjalan pada app instance yang stabil.
+
+### Added (2026-03-14)
+
+- Test regresi baru untuk pemilihan hotspot host per-MAC, fallback `to-address` lokal, dan cache Flask app pada task worker (`backend/tests/test_mikrotik_get_hotspot_host_usage_map.py`, `backend/tests/test_tasks_create_app_cache.py`).
+- Devlog audit operasional + log forensik baru: `docs/DEVLOG_2026-03-14.md`.
+
 ### Fixed (2026-03-13 — Sesi Stabilitas Infra + Payment Loss + SIGKILL)
 
 #### bind-current SIGKILL (commit `76e66bca`)

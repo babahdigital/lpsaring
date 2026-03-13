@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -265,3 +266,152 @@ def test_apply_device_binding_for_login_calls_post_auth_ops_with_correct_binding
     assert captured["username"] == "08123456789"
     assert captured["binding_type"] == "bypassed"
     assert "uid=u-3" in captured["binding_comment"]
+
+
+def test_register_or_update_device_auto_replaces_oldest_when_otp_adds_fourth_mac(monkeypatch):
+    app = Flask(__name__)
+    user = SimpleNamespace(
+        id="u-otp",
+        phone_number="+628123456789",
+        role=SimpleNamespace(value="USER"),
+        mikrotik_server_name="srv-user",
+    )
+    now = datetime.now(timezone.utc)
+    devices = [
+        SimpleNamespace(
+            id="d-oldest",
+            user_id=user.id,
+            mac_address="AA:AA:AA:AA:AA:01",
+            ip_address="172.16.2.11",
+            user_agent="ua-1",
+            is_authorized=True,
+            first_seen_at=now - timedelta(days=4),
+            last_seen_at=now - timedelta(days=3),
+            authorized_at=now - timedelta(days=4),
+        ),
+        SimpleNamespace(
+            id="d-middle",
+            user_id=user.id,
+            mac_address="AA:AA:AA:AA:AA:02",
+            ip_address="172.16.2.12",
+            user_agent="ua-2",
+            is_authorized=True,
+            first_seen_at=now - timedelta(days=3),
+            last_seen_at=now - timedelta(days=2),
+            authorized_at=now - timedelta(days=3),
+        ),
+        SimpleNamespace(
+            id="d-latest",
+            user_id=user.id,
+            mac_address="AA:AA:AA:AA:AA:03",
+            ip_address="172.16.2.13",
+            user_agent="ua-3",
+            is_authorized=True,
+            first_seen_at=now - timedelta(days=2),
+            last_seen_at=now - timedelta(days=1),
+            authorized_at=now - timedelta(days=2),
+        ),
+    ]
+
+    class _FakeSession:
+        def __init__(self):
+            self.devices = list(devices)
+            self.added = []
+            self.deleted = []
+            self.flush_calls = 0
+            self.scalar_calls = 0
+
+        def scalar(self, _query):
+            self.scalar_calls += 1
+            if self.scalar_calls == 1:
+                return None
+            if self.scalar_calls == 2:
+                return None
+            if self.scalar_calls in {3, 4}:
+                return len(self.devices)
+            return None
+
+        def scalars(self, _query):
+            return SimpleNamespace(all=lambda: list(self.devices))
+
+        def add(self, device):
+            self.added.append(device)
+            self.devices.append(device)
+
+        def delete(self, device):
+            self.deleted.append(device)
+            self.devices.remove(device)
+
+        def flush(self):
+            self.flush_calls += 1
+
+        def get(self, *_args, **_kwargs):
+            return None
+
+    fake_session = _FakeSession()
+    monkeypatch.setattr(dms, "db", SimpleNamespace(session=fake_session))
+    monkeypatch.setattr(
+        dms,
+        "_get_settings",
+        lambda: {
+            "ip_binding_enabled": True,
+            "ip_binding_type_allowed": "regular",
+            "ip_binding_type_blocked": "blocked",
+            "ip_binding_fail_open": False,
+            "dhcp_static_lease_enabled": True,
+            "dhcp_lease_server_name": "Klien",
+            "device_auto_replace_enabled": False,
+            "max_devices": 3,
+            "require_explicit": False,
+            "device_stale_days": 0,
+            "mikrotik_server_default": "all",
+            "global_mac_claim_transfer_enabled": False,
+        },
+    )
+    monkeypatch.setattr(dms, "_is_client_ip_allowed", lambda *_args, **_kwargs: True)
+
+    removed_bindings = []
+    removed_address_lists = []
+    removed_leases = []
+
+    monkeypatch.setattr(
+        dms,
+        "_remove_ip_binding",
+        lambda mac_address, server: removed_bindings.append((mac_address, server)),
+    )
+    monkeypatch.setattr(
+        dms,
+        "_remove_managed_address_lists",
+        lambda ip_address: removed_address_lists.append(ip_address),
+    )
+    monkeypatch.setattr(
+        dms,
+        "_remove_dhcp_lease",
+        lambda mac_address, server=None: removed_leases.append((mac_address, server)),
+    )
+
+    with app.app_context():
+        ok, msg, device = dms.register_or_update_device(
+            cast(Any, user),
+            "172.16.2.99",
+            "otp-agent",
+            "AA:AA:AA:AA:AA:99",
+            allow_replace=True,
+        )
+
+    assert ok is True
+    assert msg == "Device terdaftar"
+    assert device is not None
+    assert device.mac_address == "AA:AA:AA:AA:AA:99"
+    assert device.ip_address == "172.16.2.99"
+    assert len(fake_session.deleted) == 1
+    assert fake_session.deleted[0].mac_address == "AA:AA:AA:AA:AA:01"
+    assert removed_bindings == [("AA:AA:AA:AA:AA:01", "srv-user")]
+    assert removed_address_lists == ["172.16.2.11"]
+    assert removed_leases == [("AA:AA:AA:AA:AA:01", None)]
+    assert len(fake_session.devices) == 3
+    assert sorted(getattr(d, "mac_address", "") for d in fake_session.devices) == [
+        "AA:AA:AA:AA:AA:02",
+        "AA:AA:AA:AA:AA:03",
+        "AA:AA:AA:AA:AA:99",
+    ]

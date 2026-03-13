@@ -4,6 +4,7 @@
 import os
 import time
 import logging
+import ipaddress
 import re
 import inspect
 import threading
@@ -14,6 +15,7 @@ import routeros_api.exceptions
 from flask import current_app
 
 from app.utils.circuit_breaker import record_failure, record_success, should_allow_call
+from app.utils.mikrotik_duration import parse_routeros_duration_to_seconds
 
 logger = logging.getLogger(__name__)
 
@@ -559,15 +561,75 @@ def get_hotspot_host_usage_map(api_connection: Any) -> Tuple[bool, Dict[str, Dic
     """Mengambil pemakaian hotspot host berdasarkan MAC address."""
     try:
         hosts = api_connection.get_resource("/ip/hotspot/host").get()
+        hotspot_networks: List[ipaddress._BaseNetwork] = []
+        try:
+            cidr_values = current_app.config.get("HOTSPOT_CLIENT_IP_CIDRS") or current_app.config.get(
+                "MIKROTIK_UNAUTHORIZED_CIDRS"
+            ) or []
+        except Exception:
+            cidr_values = []
+
+        for cidr in list(cidr_values or []):
+            try:
+                hotspot_networks.append(ipaddress.ip_network(str(cidr), strict=False))
+            except Exception:
+                continue
+
+        def _ip_in_networks(ip_value: Any) -> bool:
+            ip_text = str(ip_value or "").strip()
+            if not ip_text or not hotspot_networks:
+                return False
+            try:
+                ip_obj = ipaddress.ip_address(ip_text)
+            except Exception:
+                return False
+            return any(ip_obj in network for network in hotspot_networks)
+
+        def _entry_score(entry: Dict[str, Any]) -> tuple[int, int, int, int, int, int]:
+            bytes_total = 0
+            try:
+                bytes_total = int(entry.get("bytes-in", "0")) + int(entry.get("bytes-out", "0"))
+            except Exception:
+                bytes_total = 0
+
+            idle_seconds = parse_routeros_duration_to_seconds(entry.get("idle-time"))
+            uptime_seconds = parse_routeros_duration_to_seconds(entry.get("uptime"))
+            address_in_subnet = 1 if _ip_in_networks(entry.get("address")) else 0
+            translated_in_subnet = 1 if _ip_in_networks(entry.get("to-address")) else 0
+            trusted_state = 1 if str(entry.get("bypassed", "false")).lower() == "true" or str(
+                entry.get("authorized", "false")
+            ).lower() == "true" else 0
+            return (
+                address_in_subnet,
+                translated_in_subnet,
+                trusted_state,
+                -idle_seconds,
+                uptime_seconds,
+                bytes_total,
+            )
+
         usage_map: Dict[str, Dict[str, Any]] = {}
+        raw_choice_map: Dict[str, Dict[str, Any]] = {}
         for host in hosts:
             mac = host.get("mac-address")
             if not mac:
                 continue
-            usage_map[str(mac).upper()] = {
+            mac_key = str(mac).upper()
+            current_best = raw_choice_map.get(mac_key)
+            if current_best is None or _entry_score(host) > _entry_score(current_best):
+                raw_choice_map[mac_key] = dict(host)
+
+        for mac_key, host in raw_choice_map.items():
+            resolved_address = host.get("address")
+            if not _ip_in_networks(resolved_address) and _ip_in_networks(host.get("to-address")):
+                resolved_address = host.get("to-address")
+
+            usage_map[mac_key] = {
                 "bytes_in": int(host.get("bytes-in", "0")),
                 "bytes_out": int(host.get("bytes-out", "0")),
-                "address": host.get("address"),
+                "address": resolved_address,
+                "source_address": host.get("address"),
+                "to_address": host.get("to-address"),
                 "server": host.get("server"),
                 "bypassed": str(host.get("bypassed", "false")).lower() == "true",
                 "authorized": str(host.get("authorized", "false")).lower() == "true",

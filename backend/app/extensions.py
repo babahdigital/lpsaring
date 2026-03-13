@@ -214,6 +214,34 @@ def make_celery_app(app=None):
                 "options": {"countdown": 40},
             }
 
+        if os.environ.get("AUTO_CLEANUP_STALE_USER_DEVICES_ENABLED", "True").lower() == "true":
+            try:
+                stale_device_cleanup_interval = int(
+                    os.environ.get("AUTO_CLEANUP_STALE_USER_DEVICES_INTERVAL_SECONDS", "3600")
+                )
+            except ValueError:
+                stale_device_cleanup_interval = 3600
+            celery_instance.conf.beat_schedule["cleanup-stale-user-devices"] = {
+                "task": "cleanup_stale_user_devices_task",
+                "schedule": max(300, stale_device_cleanup_interval),
+                # Stagger: mulai 75 detik setelah scheduled time agar host usage sync sempat refresh.
+                "options": {"countdown": 75},
+            }
+
+        if os.environ.get("AUTO_CLEANUP_STALE_HOTSPOT_HOSTS_ENABLED", "True").lower() == "true":
+            try:
+                stale_host_cleanup_interval = int(
+                    os.environ.get("AUTO_CLEANUP_STALE_HOTSPOT_HOSTS_INTERVAL_SECONDS", "1800")
+                )
+            except ValueError:
+                stale_host_cleanup_interval = 1800
+            celery_instance.conf.beat_schedule["cleanup-stale-hotspot-hosts"] = {
+                "task": "cleanup_stale_hotspot_hosts_task",
+                "schedule": max(300, stale_host_cleanup_interval),
+                # Stagger: mulai 95 detik setelah scheduled time agar tidak bentrok dengan cleanup device.
+                "options": {"countdown": 95},
+            }
+
         try:
             parity_guard_interval = int(os.environ.get("POLICY_PARITY_GUARD_INTERVAL_SECONDS", "600"))
         except ValueError:

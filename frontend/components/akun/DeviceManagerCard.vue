@@ -2,6 +2,7 @@
 import { useNuxtApp } from '#app'
 import { computed, onMounted, ref } from 'vue'
 import { useSnackbar } from '~/composables/useSnackbar'
+import { useAuthStore } from '~/store/auth'
 
 interface DeviceItem {
   id: string
@@ -18,6 +19,7 @@ interface DeviceItem {
 
 const { $api } = useNuxtApp()
 const snackbar = useSnackbar()
+const authStore = useAuthStore()
 
 const devices = ref<DeviceItem[]>([])
 const loading = ref(false)
@@ -156,12 +158,19 @@ async function saveLabel() {
 async function bindCurrentDevice() {
   binding.value = true
   try {
-    await $api('/users/me/devices/bind-current', { method: 'POST' })
+    const ok = await authStore.authorizeDevice()
+    if (!ok)
+      throw new Error(authStore.error || 'Gagal mengikat perangkat.')
+
     snackbar.add({ type: 'success', title: 'Berhasil', text: 'Perangkat berhasil diikat.' })
     await loadDevices()
   }
   catch (err: any) {
-    const msg = typeof err.data?.message === 'string' ? err.data.message : 'Gagal mengikat perangkat.'
+    const msg = typeof err.data?.message === 'string'
+      ? err.data.message
+      : typeof err.message === 'string'
+        ? err.message
+        : 'Gagal mengikat perangkat.'
     if (msg.includes('Perangkat belum diotorisasi') || msg.includes('Limit perangkat tercapai')) {
       bindingInfoMessage.value = msg
       bindingInfoDialog.value = true

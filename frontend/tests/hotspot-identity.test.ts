@@ -74,6 +74,22 @@ describe('hotspotIdentity', () => {
     })
   })
 
+  it('merges partial query with stored identity for bind flows', () => {
+    rememberHotspotIdentity({
+      clientIp: '172.16.2.31',
+      clientMac: 'aa:bb:cc:dd:ee:31',
+    })
+
+    const identity = resolveHotspotIdentity({
+      client_mac: 'aa-bb-cc-dd-ee-99',
+    })
+
+    expect(identity).toEqual({
+      clientIp: '172.16.2.31',
+      clientMac: 'AA:BB:CC:DD:EE:99',
+    })
+  })
+
   it('drops stale stored identity after ttl', () => {
     rememberHotspotIdentity({
       clientIp: '172.16.2.40',

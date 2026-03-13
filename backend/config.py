@@ -424,7 +424,18 @@ class Config:
     IP_BINDING_FAIL_OPEN = get_env_bool("IP_BINDING_FAIL_OPEN", "False")
     MAX_DEVICES_PER_USER = get_env_int("MAX_DEVICES_PER_USER", 3)
     REQUIRE_EXPLICIT_DEVICE_AUTH = get_env_bool("REQUIRE_EXPLICIT_DEVICE_AUTH", "False")
-    DEVICE_STALE_DAYS = get_env_int("DEVICE_STALE_DAYS", 30)
+    DEVICE_STALE_DAYS = get_env_int("DEVICE_STALE_DAYS", 7)
+    AUTO_CLEANUP_STALE_USER_DEVICES_ENABLED = get_env_bool("AUTO_CLEANUP_STALE_USER_DEVICES_ENABLED", "True")
+    AUTO_CLEANUP_STALE_USER_DEVICES_INTERVAL_SECONDS = get_env_int(
+        "AUTO_CLEANUP_STALE_USER_DEVICES_INTERVAL_SECONDS", 3600
+    )
+    AUTO_CLEANUP_STALE_HOTSPOT_HOSTS_ENABLED = get_env_bool("AUTO_CLEANUP_STALE_HOTSPOT_HOSTS_ENABLED", "True")
+    AUTO_CLEANUP_STALE_HOTSPOT_HOSTS_INTERVAL_SECONDS = get_env_int(
+        "AUTO_CLEANUP_STALE_HOTSPOT_HOSTS_INTERVAL_SECONDS", 1800
+    )
+    AUTO_CLEANUP_STALE_HOTSPOT_HOSTS_MIN_IDLE_SECONDS = get_env_int(
+        "AUTO_CLEANUP_STALE_HOTSPOT_HOSTS_MIN_IDLE_SECONDS", 3600
+    )
     WALLED_GARDEN_ENABLED = get_env_bool("WALLED_GARDEN_ENABLED", "False")
     WALLED_GARDEN_ALLOWED_HOSTS = get_env_list("WALLED_GARDEN_ALLOWED_HOSTS", "[]")
     WALLED_GARDEN_ALLOWED_IPS = get_env_list("WALLED_GARDEN_ALLOWED_IPS", "[]")
@@ -625,13 +636,15 @@ class ProductionConfig(Config):
     MIDTRANS_IS_PRODUCTION = get_env_bool("MIDTRANS_IS_PRODUCTION", "True")
     ENABLE_WHATSAPP_NOTIFICATIONS = get_env_bool("ENABLE_WHATSAPP_NOTIFICATIONS", "True")
     RATELIMIT_ENABLED = get_env_bool("RATELIMIT_ENABLED", "True")
-    # PostgreSQL production pool: pool_size=3 + max_overflow=5 → max 8 koneksi per process.
-    # 9 gunicorn + 6 celery workers = 15 proses × 8 = 120 max connections.
+    # PostgreSQL production pool: pool_size=3 + max_overflow=2 → max 5 koneksi per process.
+    # 9 gunicorn + 6 celery workers = 15 proses × 5 = 75 max connections.
+    # Ini memberi headroom terhadap default max_connections PostgreSQL (~100) untuk
+    # health checks, migrasi, shell ops, dan koneksi admin tanpa mudah memicu "too many clients already".
     SQLALCHEMY_ENGINE_OPTIONS = {
         "pool_pre_ping": True,
         "pool_recycle": 3600,
         "pool_size": 3,
-        "max_overflow": 5,
+        "max_overflow": 2,
     }
 
     MIKROTIK_SEND_LIMIT_BYTES_TOTAL = get_env_bool("MIKROTIK_SEND_LIMIT_BYTES_TOTAL", "True")

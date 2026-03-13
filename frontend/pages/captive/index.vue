@@ -17,6 +17,8 @@ useHead({ title: 'Login Hotspot Captive' })
 const authStore = useAuthStore()
 const route = useRoute()
 const runtimeConfig = useRuntimeConfig()
+const HOTSPOT_BRIDGE_WINDOW_NAME = 'lpsaring-hotspot-bridge'
+const HOTSPOT_BRIDGE_MESSAGE_TYPE = 'lpsaring:hotspot-identity-bridge'
 
 const mode = ref<'login' | 'register'>('login')
 const phoneNumber = ref('')
@@ -60,6 +62,53 @@ const mikrotikLoginUrl = computed(() => {
     return appLink
   return String(runtimeConfig.public.mikrotikLoginUrl ?? '').trim()
 })
+
+function postHotspotBridgeMessage(status: 'ready' | 'missing') {
+  if (!import.meta.client)
+    return
+
+  try {
+    if (!window.opener)
+      return
+
+    window.opener.postMessage({
+      type: HOTSPOT_BRIDGE_MESSAGE_TYPE,
+      status,
+      payload: {
+        linkLoginOnly: portalParams.value.linkLoginOnly,
+        clientIp: portalParams.value.clientIp,
+        clientMac: portalParams.value.clientMac,
+      },
+    }, window.location.origin)
+  }
+  catch {
+    // ignore cross-window messaging failures
+  }
+}
+
+function handleHotspotIdentityBridge(): boolean {
+  if (!import.meta.client || window.name !== HOTSPOT_BRIDGE_WINDOW_NAME)
+    return false
+
+  if (portalParams.value.clientIp || portalParams.value.clientMac) {
+    rememberHotspotIdentity({
+      clientIp: portalParams.value.clientIp,
+      clientMac: portalParams.value.clientMac,
+    })
+    localInfo.value = 'Konteks hotspot berhasil dibaca. Kembali ke jendela utama...'
+    postHotspotBridgeMessage('ready')
+  }
+  else {
+    localError.value = 'IP/MAC belum terbaca dari router. Coba lagi dari halaman utama.'
+    postHotspotBridgeMessage('missing')
+  }
+
+  window.setTimeout(() => {
+    window.close()
+  }, 300)
+
+  return true
+}
 
 watch(regRole, (nextRole) => {
   if (nextRole === 'USER') {
@@ -306,6 +355,8 @@ async function verifyOtp() {
 
 onMounted(async () => {
   loadPortalParams()
+  if (handleHotspotIdentityBridge())
+    return
   await refreshApiHealth()
 })
 </script>

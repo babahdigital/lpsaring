@@ -1,4 +1,5 @@
 # backend/app/tasks.py
+import ipaddress
 import logging
 import json
 import calendar
@@ -6,6 +7,7 @@ import secrets
 import subprocess
 import sys
 import re
+from typing import Any
 from urllib.parse import quote_plus
 from pathlib import Path
 from datetime import datetime, timedelta, timezone as dt_timezone
@@ -40,6 +42,10 @@ from app.infrastructure.gateways.mikrotik_client import (
     get_hotspot_host_usage_map,
     get_mikrotik_connection,
     remove_address_list_entry,
+    remove_dhcp_lease,
+    remove_hotspot_host_entries,
+    remove_hotspot_host_entries_best_effort,
+    remove_ip_binding,
     upsert_address_list_entry,
     upsert_ip_binding,
 )
@@ -54,7 +60,7 @@ from app.utils.metrics_utils import increment_metric
 from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package, format_rupiah
 
 # Import create_app dari app/__init__.py
-from app import create_app
+from app import create_app as _flask_create_app
 
 # Kita akan menggunakan celery_app dari extensions.py sebagai decorator
 # Pastikan ini sesuai dengan cara Anda mengimpor celery_app di docker-compose.yml
@@ -62,6 +68,8 @@ from app import create_app
 from app.extensions import celery_app
 
 logger = logging.getLogger(__name__)
+
+_TASK_APP_CACHE: dict[str | None, Any] = {}
 
 _MIKROTIK_DURATION_PART = re.compile(r"(\d+)([wdhms])", re.IGNORECASE)
 
@@ -73,6 +81,16 @@ _NON_RETRYABLE_UNAUTHORIZED_SYNC_ERROR_MARKERS = (
     "timed out",
     "timeout",
 )
+
+
+def create_app(config_name: str | None = None) -> Any:
+    """Cache Flask app per worker process to avoid rebuilding SQLAlchemy engines every task run."""
+    cache_key = str(config_name) if config_name is not None else None
+    app = _TASK_APP_CACHE.get(cache_key)
+    if app is None:
+        app = _flask_create_app(config_name)
+        _TASK_APP_CACHE[cache_key] = app
+    return app
 
 
 def _should_skip_public_update_whatsapp_for_phone(phone_number: str) -> str | None:
@@ -116,6 +134,178 @@ def _should_skip_public_update_whatsapp_for_phone(phone_number: str) -> str | No
 def _is_non_retryable_unauthorized_sync_error(exc: Exception) -> bool:
     message = str(exc or "").lower()
     return any(marker in message for marker in _NON_RETRYABLE_UNAUTHORIZED_SYNC_ERROR_MARKERS)
+
+
+def _coerce_utc_datetime(value):
+    if value is None:
+        return None
+    if getattr(value, "tzinfo", None) is None:
+        return value.replace(tzinfo=dt_timezone.utc)
+    return value.astimezone(dt_timezone.utc)
+
+
+def _get_user_device_last_activity(device: UserDevice):
+    candidates = []
+    for field_name in ("last_bytes_updated_at", "last_seen_at", "authorized_at", "first_seen_at"):
+        field_value = _coerce_utc_datetime(getattr(device, field_name, None))
+        if field_value is not None:
+            candidates.append((field_value, field_name))
+
+    if not candidates:
+        return None, "none"
+
+    activity_at, activity_source = max(candidates, key=lambda item: item[0])
+    return activity_at, activity_source
+
+
+def _remove_managed_address_lists_for_device(api_connection, ip_address: str | None) -> None:
+    if not ip_address:
+        return
+
+    keys = [
+        ("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked"),
+        ("MIKROTIK_ADDRESS_LIST_ACTIVE", "active"),
+        ("MIKROTIK_ADDRESS_LIST_FUP", "fup"),
+        ("MIKROTIK_ADDRESS_LIST_HABIS", "habis"),
+        ("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired"),
+        ("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive"),
+    ]
+    seen_list_names: set[str] = set()
+
+    for setting_key, default_name in keys:
+        list_name = str(settings_service.get_setting(setting_key, default_name) or default_name).strip()
+        if not list_name or list_name in seen_list_names:
+            continue
+        seen_list_names.add(list_name)
+        ok, msg = remove_address_list_entry(api_connection=api_connection, address=ip_address, list_name=list_name)
+        if not ok:
+            logger.info(
+                "Celery Task: Gagal cleanup address-list stale device ip=%s list=%s msg=%s",
+                ip_address,
+                list_name,
+                msg,
+            )
+
+
+def _cleanup_stale_user_device_router_state(api_connection, device: UserDevice) -> None:
+    user = getattr(device, "user", None)
+    mac_address = str(getattr(device, "mac_address", "") or "").strip().upper()
+    ip_address = str(getattr(device, "ip_address", "") or "").strip()
+    server_name = str(
+        getattr(user, "mikrotik_server_name", None)
+        or settings_service.get_setting("MIKROTIK_DEFAULT_SERVER_USER", "all")
+        or "all"
+    ).strip() or "all"
+    dhcp_server_name = str(settings_service.get_setting("MIKROTIK_DHCP_LEASE_SERVER_NAME", "") or "").strip() or None
+    username_08 = format_to_local_phone(getattr(user, "phone_number", None)) if user is not None else None
+
+    if mac_address:
+        ok_binding, binding_msg = remove_ip_binding(
+            api_connection=api_connection,
+            mac_address=mac_address,
+            server=server_name,
+        )
+        if not ok_binding:
+            logger.info(
+                "Celery Task: Gagal cleanup ip-binding stale device mac=%s server=%s msg=%s",
+                mac_address,
+                server_name,
+                binding_msg,
+            )
+
+    _remove_managed_address_lists_for_device(api_connection, ip_address or None)
+
+    if settings_service.get_setting("MIKROTIK_DHCP_STATIC_LEASE_ENABLED", "False") == "True" and mac_address:
+        ok_dhcp, dhcp_msg = remove_dhcp_lease(
+            api_connection=api_connection,
+            mac_address=mac_address,
+            server=dhcp_server_name,
+        )
+        if not ok_dhcp:
+            logger.info(
+                "Celery Task: Gagal cleanup DHCP stale device mac=%s server=%s msg=%s",
+                mac_address,
+                dhcp_server_name,
+                dhcp_msg,
+            )
+
+    if mac_address or ip_address or username_08:
+        ok_host, host_msg, removed_hosts = remove_hotspot_host_entries_best_effort(
+            api_connection=api_connection,
+            mac_address=mac_address or None,
+            address=ip_address or None,
+            username=username_08 or None,
+            allow_username_only_fallback=False,
+        )
+        if not ok_host:
+            logger.info(
+                "Celery Task: Gagal cleanup hotspot host stale device mac=%s ip=%s user=%s msg=%s",
+                mac_address,
+                ip_address,
+                username_08,
+                host_msg,
+            )
+        elif int(removed_hosts or 0) > 0:
+            logger.info(
+                "Celery Task: Cleanup hotspot host stale device mac=%s ip=%s user=%s removed=%s",
+                mac_address,
+                ip_address,
+                username_08,
+                int(removed_hosts or 0),
+            )
+
+
+def _parse_ip_networks(cidr_values):
+    networks = []
+    for cidr in list(cidr_values or []):
+        try:
+            networks.append(ipaddress.ip_network(str(cidr), strict=False))
+        except Exception:
+            continue
+    return networks
+
+
+def _ip_in_networks(ip_value: str | None, networks) -> bool:
+    ip_text = str(ip_value or "").strip()
+    if not ip_text:
+        return False
+    try:
+        ip_obj = ipaddress.ip_address(ip_text)
+    except Exception:
+        return False
+    return any(ip_obj in network for network in networks)
+
+
+def _collect_local_hotspot_ips_by_mac(api_connection, networks):
+    ips_by_mac: dict[str, set[str]] = {}
+
+    def _remember(mac_value, ip_value):
+        mac_text = str(mac_value or "").strip().upper()
+        ip_text = str(ip_value or "").strip()
+        if not mac_text or not _ip_in_networks(ip_text, networks):
+            return
+        ips_by_mac.setdefault(mac_text, set()).add(ip_text)
+
+    arp_rows = api_connection.get_resource("/ip/arp").get() or []
+    for row in arp_rows:
+        _remember(row.get("mac-address"), row.get("address"))
+
+    lease_rows = api_connection.get_resource("/ip/dhcp-server/lease").get() or []
+    for row in lease_rows:
+        _remember(row.get("mac-address"), row.get("address"))
+
+    return ips_by_mac
+
+
+def _collect_local_hotspot_host_ips_by_mac(host_rows, networks):
+    ips_by_mac: dict[str, set[str]] = {}
+    for row in host_rows or []:
+        mac_text = str(row.get("mac-address") or "").strip().upper()
+        address_text = str(row.get("address") or "").strip()
+        if not mac_text or not _ip_in_networks(address_text, networks):
+            continue
+        ips_by_mac.setdefault(mac_text, set()).add(address_text)
+    return ips_by_mac
 
 
 @celery_app.task(
@@ -1268,6 +1458,266 @@ def sync_unauthorized_hosts_task(self):
                 }
             if self.request.retries >= 2:
                 _record_task_failure(app, "sync_unauthorized_hosts_task", {}, str(e))
+            raise
+        finally:
+            if redis_client is not None and lock_acquired:
+                try:
+                    redis_client.delete(lock_key)
+                except Exception:
+                    pass
+
+
+@celery_app.task(
+    name="cleanup_stale_user_devices_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 2},
+)
+def cleanup_stale_user_devices_task(self):
+    app = create_app()
+    with app.app_context():
+        if str(app.config.get("ENABLE_MIKROTIK_OPERATIONS", "True")).strip().lower() != "true":
+            logger.info("Celery Task: Skip cleanup stale user devices (MikroTik operations disabled).")
+            return
+
+        if str(app.config.get("AUTO_CLEANUP_STALE_USER_DEVICES_ENABLED", "True")).strip().lower() != "true":
+            logger.info("Celery Task: Skip cleanup stale user devices (feature disabled).")
+            return
+
+        stale_days = int(app.config.get("DEVICE_STALE_DAYS", 30) or 0)
+        if stale_days <= 0:
+            logger.info("Celery Task: Skip cleanup stale user devices (DEVICE_STALE_DAYS <= 0).")
+            return
+
+        redis_client = getattr(app, "redis_client_otp", None)
+        lock_key = "cleanup_stale_user_devices:lock"
+        lock_acquired = False
+        lock_ttl_seconds = max(
+            300,
+            int(app.config.get("AUTO_CLEANUP_STALE_USER_DEVICES_INTERVAL_SECONDS", 3600) or 3600),
+        )
+
+        if redis_client is not None:
+            try:
+                lock_acquired = bool(redis_client.set(lock_key, "1", nx=True, ex=lock_ttl_seconds))
+            except Exception:
+                lock_acquired = False
+            if not lock_acquired:
+                logger.info("Celery Task: Skip cleanup stale user devices (worker lain sedang berjalan).")
+                return
+
+        stale_cutoff = datetime.now(dt_timezone.utc) - timedelta(days=stale_days)
+        summary = {
+            "inspected": 0,
+            "stale_candidates": 0,
+            "skipped_active_host": 0,
+            "deleted": 0,
+            "deleted_from_last_bytes_updated_at": 0,
+            "deleted_from_last_seen_at": 0,
+            "deleted_from_authorized_at": 0,
+            "deleted_from_first_seen_at": 0,
+            "cleanup_failed": 0,
+        }
+
+        logger.info(
+            "Celery Task: Memulai cleanup stale user devices (stale_days=%s, cutoff=%s).",
+            stale_days,
+            stale_cutoff.isoformat(),
+        )
+
+        try:
+            with get_mikrotik_connection() as api:
+                if not api:
+                    raise RuntimeError("Gagal konek MikroTik")
+
+                ok_host, host_usage_map, host_msg = get_hotspot_host_usage_map(api)
+                if not ok_host:
+                    raise RuntimeError(f"Gagal ambil hotspot host: {host_msg}")
+
+                active_host_macs = {
+                    str(mac_address or "").strip().upper()
+                    for mac_address in (host_usage_map or {}).keys()
+                    if str(mac_address or "").strip()
+                }
+                devices = db.session.scalars(db.select(UserDevice).options(selectinload(UserDevice.user))).all()
+                summary["inspected"] = len(devices)
+
+                for device in devices:
+                    activity_at, activity_source = _get_user_device_last_activity(device)
+                    if activity_at is None or activity_at >= stale_cutoff:
+                        continue
+
+                    summary["stale_candidates"] += 1
+                    mac_address = str(getattr(device, "mac_address", "") or "").strip().upper()
+                    if mac_address and mac_address in active_host_macs:
+                        summary["skipped_active_host"] += 1
+                        continue
+
+                    try:
+                        _cleanup_stale_user_device_router_state(api, device)
+                        db.session.delete(device)
+                        summary["deleted"] += 1
+                        bucket_name = f"deleted_from_{activity_source}"
+                        if bucket_name in summary:
+                            summary[bucket_name] += 1
+                    except Exception:
+                        summary["cleanup_failed"] += 1
+                        logger.exception(
+                            "Celery Task: Gagal prune stale device id=%s mac=%s user=%s",
+                            getattr(device, "id", None),
+                            mac_address,
+                            getattr(device, "user_id", None),
+                        )
+
+                if summary["deleted"] > 0:
+                    db.session.commit()
+
+                logger.info(
+                    "Celery Task: Cleanup stale user devices selesai. %s",
+                    json.dumps(summary, ensure_ascii=False),
+                )
+                return summary
+        except Exception as e:
+            logger.error("Celery Task: Cleanup stale user devices gagal: %s", e, exc_info=True)
+            if self.request.retries >= 2:
+                _record_task_failure(app, "cleanup_stale_user_devices_task", {}, str(e))
+            raise
+        finally:
+            if redis_client is not None and lock_acquired:
+                try:
+                    redis_client.delete(lock_key)
+                except Exception:
+                    pass
+
+
+@celery_app.task(
+    name="cleanup_stale_hotspot_hosts_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 2},
+)
+def cleanup_stale_hotspot_hosts_task(self):
+    app = create_app()
+    with app.app_context():
+        if str(app.config.get("ENABLE_MIKROTIK_OPERATIONS", "True")).strip().lower() != "true":
+            logger.info("Celery Task: Skip cleanup stale hotspot hosts (MikroTik operations disabled).")
+            return
+
+        if str(app.config.get("AUTO_CLEANUP_STALE_HOTSPOT_HOSTS_ENABLED", "True")).strip().lower() != "true":
+            logger.info("Celery Task: Skip cleanup stale hotspot hosts (feature disabled).")
+            return
+
+        cidr_values = app.config.get("HOTSPOT_CLIENT_IP_CIDRS") or app.config.get("MIKROTIK_UNAUTHORIZED_CIDRS") or []
+        networks = _parse_ip_networks(cidr_values)
+        if not networks:
+            logger.info("Celery Task: Skip cleanup stale hotspot hosts (no hotspot client CIDRs configured).")
+            return
+
+        min_idle_seconds = max(
+            300,
+            int(app.config.get("AUTO_CLEANUP_STALE_HOTSPOT_HOSTS_MIN_IDLE_SECONDS", 3600) or 3600),
+        )
+        redis_client = getattr(app, "redis_client_otp", None)
+        lock_key = "cleanup_stale_hotspot_hosts:lock"
+        lock_acquired = False
+        lock_ttl_seconds = max(
+            300,
+            int(app.config.get("AUTO_CLEANUP_STALE_HOTSPOT_HOSTS_INTERVAL_SECONDS", 1800) or 1800),
+        )
+
+        if redis_client is not None:
+            try:
+                lock_acquired = bool(redis_client.set(lock_key, "1", nx=True, ex=lock_ttl_seconds))
+            except Exception:
+                lock_acquired = False
+            if not lock_acquired:
+                logger.info("Celery Task: Skip cleanup stale hotspot hosts (worker lain sedang berjalan).")
+                return
+
+        summary = {
+            "inspected": 0,
+            "removed": 0,
+            "skipped_in_subnet": 0,
+            "skipped_translated": 0,
+            "skipped_not_bypassed": 0,
+            "skipped_no_current_host": 0,
+            "skipped_no_local_ip": 0,
+            "skipped_recent": 0,
+            "failed": 0,
+        }
+
+        try:
+            with get_mikrotik_connection() as api:
+                if not api:
+                    raise RuntimeError("Gagal konek MikroTik")
+
+                host_rows = api.get_resource("/ip/hotspot/host").get() or []
+                local_ips_by_mac = _collect_local_hotspot_ips_by_mac(api, networks)
+                local_host_ips_by_mac = _collect_local_hotspot_host_ips_by_mac(host_rows, networks)
+                summary["inspected"] = len(host_rows)
+
+                for row in host_rows:
+                    address = str(row.get("address") or "").strip()
+                    to_address = str(row.get("to-address") or "").strip()
+                    mac_address = str(row.get("mac-address") or "").strip().upper()
+                    bypassed = str(row.get("bypassed") or "").strip().lower() == "true"
+
+                    if _ip_in_networks(address, networks):
+                        summary["skipped_in_subnet"] += 1
+                        continue
+
+                    if to_address and _ip_in_networks(to_address, networks):
+                        summary["skipped_translated"] += 1
+                        continue
+
+                    if not mac_address or not bypassed:
+                        summary["skipped_not_bypassed"] += 1
+                        continue
+
+                    local_host_ips = local_host_ips_by_mac.get(mac_address) or set()
+                    if not local_host_ips:
+                        summary["skipped_no_current_host"] += 1
+                        continue
+
+                    local_ips = local_ips_by_mac.get(mac_address) or set()
+                    if not local_ips:
+                        summary["skipped_no_local_ip"] += 1
+                        continue
+
+                    idle_seconds = _parse_mikrotik_duration_seconds(str(row.get("idle-time") or ""))
+                    if idle_seconds < min_idle_seconds:
+                        summary["skipped_recent"] += 1
+                        continue
+
+                    ok_remove, remove_msg, removed = remove_hotspot_host_entries(
+                        api_connection=api,
+                        mac_address=mac_address,
+                        address=address or None,
+                    )
+                    if ok_remove:
+                        summary["removed"] += int(removed or 0)
+                    else:
+                        summary["failed"] += 1
+                        logger.info(
+                            "Celery Task: Gagal cleanup stale hotspot host mac=%s address=%s msg=%s",
+                            mac_address,
+                            address,
+                            remove_msg,
+                        )
+
+                logger.info(
+                    "Celery Task: Cleanup stale hotspot hosts selesai. %s",
+                    json.dumps(summary, ensure_ascii=False),
+                )
+                return summary
+        except Exception as e:
+            logger.error("Celery Task: Cleanup stale hotspot hosts gagal: %s", e, exc_info=True)
+            if self.request.retries >= 2:
+                _record_task_failure(app, "cleanup_stale_hotspot_hosts_task", {}, str(e))
             raise
         finally:
             if redis_client is not None and lock_acquired:

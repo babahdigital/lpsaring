@@ -20,9 +20,16 @@ const activating = ref(false)
 const progressMessage = ref('')
 const statusMessage = ref('')
 const showFallbackLogin = ref(false)
+const HOTSPOT_BRIDGE_WINDOW_NAME = 'lpsaring-hotspot-bridge'
+const HOTSPOT_BRIDGE_MESSAGE_TYPE = 'lpsaring:hotspot-identity-bridge'
+const HOTSPOT_BRIDGE_TIMEOUT_MS = 8000
 const LAST_MIKROTIK_LOGIN_HINT_KEY = 'lpsaring:last-mikrotik-login-link'
 
 const appBaseUrl = computed(() => String(runtimeConfig.public.appBaseUrl ?? '').trim())
+const hotspotContextProbeUrl = computed(() => {
+  const configured = normalizeHotspotLoginUrl(String(runtimeConfig.public.hotspotContextProbeUrl ?? '').trim())
+  return configured || 'http://neverssl.com/'
+})
 
 function shouldForceHttpForHost(hostname: string): boolean {
   const host = String(hostname || '').trim().toLowerCase()
@@ -139,6 +146,22 @@ function getHotspotIdentity() {
 
 const loginHotspotUrl = computed(() => mikrotikLoginUrl.value || fallbackLoginPath.value)
 
+function rememberMikrotikLoginLink(raw: string | null | undefined) {
+  if (!import.meta.client)
+    return
+
+  const normalized = normalizeHotspotLoginUrl(String(raw ?? '').trim())
+  if (!normalized)
+    return
+
+  try {
+    window.localStorage.setItem(LAST_MIKROTIK_LOGIN_HINT_KEY, normalized)
+  }
+  catch {
+    // ignore storage failures
+  }
+}
+
 function isDemoUser(user: ReturnType<typeof useAuthStore>['currentUser'] | null | undefined): boolean {
   return user?.is_demo_user === true
 }
@@ -189,6 +212,8 @@ function openHotspotLogin() {
   if (!targetUrl)
     return
 
+  rememberMikrotikLoginLink(targetUrl)
+
   window.location.assign(targetUrl)
 
   setTimeout(() => {
@@ -210,6 +235,113 @@ function getHotspotIdentityQuery(): Record<string, string> {
     ...(identity.clientIp ? { client_ip: identity.clientIp } : {}),
     ...(identity.clientMac ? { client_mac: identity.clientMac } : {}),
   }
+}
+
+function hasExplicitHotspotIdentity(identity = getHotspotIdentity()): boolean {
+  return Boolean(identity.clientIp || identity.clientMac)
+}
+
+function getMissingIdentityMessage(): string {
+  return 'IP/MAC perangkat belum terbaca dari router. Tekan Aktifkan Internet agar sistem mencoba mengambil konteks hotspot otomatis. Jika tetap gagal, buka Login Hotspot sekali lalu coba lagi.'
+}
+
+function parseHotspotBridgePayload(data: unknown): { clientIp: string, clientMac: string, linkLoginOnly: string } | null {
+  if (!data || typeof data !== 'object')
+    return null
+
+  const message = data as Record<string, unknown>
+  if (String(message.type ?? '').trim() !== HOTSPOT_BRIDGE_MESSAGE_TYPE)
+    return null
+
+  const payload = message.payload && typeof message.payload === 'object'
+    ? message.payload as Record<string, unknown>
+    : {}
+
+  return {
+    clientIp: String(payload.clientIp ?? '').trim(),
+    clientMac: String(payload.clientMac ?? '').trim(),
+    linkLoginOnly: String(payload.linkLoginOnly ?? '').trim(),
+  }
+}
+
+async function captureHotspotIdentityViaBridge() {
+  const currentIdentity = getHotspotIdentity()
+  if (hasExplicitHotspotIdentity(currentIdentity) || !import.meta.client)
+    return currentIdentity
+
+  return await new Promise<ReturnType<typeof getHotspotIdentity>>((resolve) => {
+    let settled = false
+    let popupClosedWatcher: number | null = null
+    let timeoutHandle: number | null = null
+
+    const cleanup = () => {
+      window.removeEventListener('message', handleMessage)
+      if (popupClosedWatcher != null)
+        window.clearInterval(popupClosedWatcher)
+      if (timeoutHandle != null)
+        window.clearTimeout(timeoutHandle)
+    }
+
+    const finish = () => {
+      if (settled)
+        return
+      settled = true
+      cleanup()
+      resolve(getHotspotIdentity())
+    }
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin)
+        return
+
+      const payload = parseHotspotBridgePayload(event.data)
+      if (!payload)
+        return
+
+      rememberHotspotIdentity({
+        clientIp: payload.clientIp,
+        clientMac: payload.clientMac,
+      })
+      rememberMikrotikLoginLink(payload.linkLoginOnly)
+      finish()
+    }
+
+    window.addEventListener('message', handleMessage)
+
+    const popup = window.open(
+      hotspotContextProbeUrl.value,
+      HOTSPOT_BRIDGE_WINDOW_NAME,
+      'popup=yes,width=460,height=720,resizable=yes,scrollbars=yes',
+    )
+
+    if (!popup) {
+      cleanup()
+      resolve(currentIdentity)
+      return
+    }
+
+    try {
+      popup.focus()
+    }
+    catch {
+      // ignore focus failures
+    }
+
+    popupClosedWatcher = window.setInterval(() => {
+      if (popup.closed)
+        finish()
+    }, 400)
+
+    timeoutHandle = window.setTimeout(() => {
+      try {
+        popup.close()
+      }
+      catch {
+        // ignore close failures
+      }
+      finish()
+    }, HOTSPOT_BRIDGE_TIMEOUT_MS)
+  })
 }
 
 function triggerHotspotProbe() {
@@ -247,7 +379,7 @@ function triggerHotspotProbe() {
 }
 
 async function fetchHotspotStatus() {
-  const response = await $api<{ hotspot_login_required?: boolean | null, hotspot_binding_active?: boolean | null }>('/auth/hotspot-session-status', {
+  const response = await $api<{ hotspot_login_required?: boolean | null, hotspot_binding_active?: boolean | null, hotspot_hint_applied?: boolean | null }>('/auth/hotspot-session-status', {
     method: 'GET',
     query: getHotspotIdentityQuery(),
   })
@@ -255,6 +387,7 @@ async function fetchHotspotStatus() {
   return {
     hotspotRequired: response?.hotspot_login_required === true,
     hotspotActive: response?.hotspot_binding_active === true,
+    hotspotHintApplied: response?.hotspot_hint_applied === true,
   }
 }
 
@@ -296,12 +429,33 @@ async function activateInternetOneClick() {
   statusMessage.value = ''
   progressMessage.value = 'Menyiapkan koneksi internet...'
 
-  const identity = getHotspotIdentity()
+  let identity = getHotspotIdentity()
   rememberHotspotIdentity(identity)
 
   try {
+    if (!hasExplicitHotspotIdentity(identity)) {
+      progressMessage.value = 'Mengambil konteks perangkat dari hotspot...'
+      identity = await captureHotspotIdentityViaBridge()
+      rememberHotspotIdentity(identity)
+    }
+
     triggerHotspotProbe()
     await wait(600)
+
+    progressMessage.value = 'Memeriksa perangkat...'
+    const initialStatus = await fetchHotspotStatus()
+    if (!initialStatus.hotspotRequired || initialStatus.hotspotActive) {
+      progressMessage.value = ''
+      await continueToPortal()
+      return
+    }
+
+    if (!hasExplicitHotspotIdentity(identity) && !initialStatus.hotspotHintApplied) {
+      progressMessage.value = ''
+      showFallbackLogin.value = true
+      statusMessage.value = getMissingIdentityMessage()
+      return
+    }
 
     progressMessage.value = 'Mengaktifkan internet...'
     const bindSuccess = await authStore.authorizeDevice({
@@ -362,6 +516,7 @@ async function activateInternetOneClick() {
 }
 
 onMounted(async () => {
+  rememberMikrotikLoginLink(queryMikrotikLink.value)
   rememberHotspotIdentity(getHotspotIdentity())
 
   if (await redirectDemoUserToBuyPage())
@@ -372,8 +527,15 @@ onMounted(async () => {
     await wait(250)
 
     const status = await fetchHotspotStatus()
-    if (!status.hotspotRequired || status.hotspotActive)
+    if (!status.hotspotRequired || status.hotspotActive) {
       await continueToPortal()
+      return
+    }
+
+    if (!hasExplicitHotspotIdentity() && !status.hotspotHintApplied) {
+      showFallbackLogin.value = true
+      statusMessage.value = getMissingIdentityMessage()
+    }
   }
   catch {
     // best effort
