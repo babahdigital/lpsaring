@@ -1,6 +1,7 @@
 # backend/app/services/device_management_service.py
 import logging
 import ipaddress
+from contextlib import nullcontext
 from urllib.parse import unquote
 from datetime import datetime, timezone as dt_timezone, timedelta
 from typing import Optional, Tuple, Dict, Any, cast
@@ -274,12 +275,14 @@ def _apply_post_auth_mikrotik_ops(
     binding_comment: str,
     server: Optional[str],
     username: Optional[str],
+    api_connection: Optional[Any] = None,
 ) -> None:
     """Gabungkan semua operasi MikroTik pasca-autentikasi dalam SATU koneksi untuk
     mengurangi latensi dan mencegah gunicorn worker timeout.
 
     Menggantikan 4–5 panggilan get_mikrotik_connection() terpisah di apply_device_binding_for_login().
     Operasi: upsert ip-binding + hapus address-list blocked/unauthorized + cleanup hotspot host.
+    Terima api_connection opsional agar caller bisa memakai koneksi yang sudah terbuka.
     """
     if not mac_address and not ip_address:
         return
@@ -291,11 +294,7 @@ def _apply_post_auth_mikrotik_ops(
     list_unauthorized = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized") or "unauthorized"
     ip_binding_enabled = settings_service.get_setting("IP_BINDING_ENABLED", "True") == "True"
 
-    with get_mikrotik_connection() as api:
-        if not api:
-            logger.warning("_apply_post_auth_mikrotik_ops: gagal koneksi MikroTik")
-            return
-
+    def _do_ops(api: Any) -> None:
         # 1. Upsert ip-binding (jika diaktifkan dan ada MAC)
         if ip_binding_enabled and mac_address:
             try:
@@ -340,6 +339,15 @@ def _apply_post_auth_mikrotik_ops(
                     )
             except Exception as e:
                 logger.debug("post-auth: skip hotspot host cleanup err=%s", e)
+
+    if api_connection is not None:
+        _do_ops(api_connection)
+        return
+    with get_mikrotik_connection() as api:
+        if not api:
+            logger.warning("_apply_post_auth_mikrotik_ops: gagal koneksi MikroTik")
+            return
+        _do_ops(api)
 
 
 def _normalize_ip_for_compare(ip_text: Optional[str]) -> str:
@@ -484,20 +492,26 @@ def _remove_ip_binding(mac_address: str, server: Optional[str], api_connection: 
         remove_ip_binding(api_connection=api, mac_address=mac_address, server=server)
 
 
-def resolve_client_mac(client_ip: Optional[str]) -> Tuple[bool, Optional[str], str]:
+def resolve_client_mac(client_ip: Optional[str], api_connection: Optional[Any] = None) -> Tuple[bool, Optional[str], str]:
     if not client_ip:
         return False, None, "IP klien tidak ditemukan"
     if not _is_mikrotik_operations_enabled():
         return False, None, "MikroTik operations disabled"
-    with get_mikrotik_connection() as api:
-        if not api:
-            return False, None, "Koneksi MikroTik gagal"
+
+    def _do_mac_lookup(api: Any) -> Tuple[bool, Optional[str], str]:
         ok, mac, msg = get_mac_by_ip(api_connection=api, ip_address=client_ip)
         if not ok:
             return False, None, msg
         if mac:
             return True, _normalize_mac(mac), "Sukses"
         return True, None, msg
+
+    if api_connection is not None:
+        return _do_mac_lookup(api_connection)
+    with get_mikrotik_connection() as api:
+        if not api:
+            return False, None, "Koneksi MikroTik gagal"
+        return _do_mac_lookup(api)
 
 
 def _is_client_ip_allowed(client_ip: Optional[str]) -> bool:
@@ -521,18 +535,15 @@ def _is_client_ip_allowed(client_ip: Optional[str]) -> bool:
     return False
 
 
-def _resolve_binding_ip(user: User, client_ip: Optional[str]) -> Tuple[Optional[str], str, str]:
+def _resolve_binding_ip(user: User, client_ip: Optional[str], api_connection: Optional[Any] = None) -> Tuple[Optional[str], str, str]:
     if client_ip and _is_client_ip_allowed(client_ip):
         return client_ip, "client_ip", "IP klien valid"
 
     if not _is_mikrotik_operations_enabled():
         return None, "none", "MikroTik operations disabled"
 
-    username_08 = format_to_local_phone(user.phone_number)
-    with get_mikrotik_connection() as api:
-        if not api:
-            return None, "none", "Koneksi MikroTik gagal"
-
+    def _do_ip_lookup(api: Any) -> Tuple[Optional[str], str, str]:
+        username_08 = format_to_local_phone(user.phone_number)
         if username_08:
             ok, hotspot_ip, msg = get_hotspot_user_ip(api, username_08)
             if ok and hotspot_ip:
@@ -556,7 +567,14 @@ def _resolve_binding_ip(user: User, client_ip: Optional[str]) -> Tuple[Optional[
                     return ip_from_mac, "device_mac", "IP dari MAC device"
                 return None, "none", "IP device berada di luar CIDR klien"
 
-    return None, "none", "IP klien tidak valid dan tidak ditemukan di MikroTik"
+        return None, "none", "IP klien tidak valid dan tidak ditemukan di MikroTik"
+
+    if api_connection is not None:
+        return _do_ip_lookup(api_connection)
+    with get_mikrotik_connection() as api:
+        if not api:
+            return None, "none", "Koneksi MikroTik gagal"
+        return _do_ip_lookup(api)
 
 
 def resolve_binding_context(
@@ -603,6 +621,7 @@ def register_or_update_device(
     client_mac: Optional[str] = None,
     allow_replace: bool = False,
     allow_cross_user_transfer: bool = False,
+    api_connection: Optional[Any] = None,
 ) -> Tuple[bool, str, Optional[UserDevice]]:
     settings = _get_settings()
     now = datetime.now(dt_timezone.utc)
@@ -611,7 +630,7 @@ def register_or_update_device(
     if client_mac:
         mac_address = _normalize_mac(client_mac)
     else:
-        ok, resolved_mac, msg = resolve_client_mac(client_ip)
+        ok, resolved_mac, msg = resolve_client_mac(client_ip, api_connection=api_connection)
         if not ok:
             if settings["ip_binding_fail_open"]:
                 logger.warning(f"Skip IP binding karena MikroTik tidak tersedia: {msg}")
@@ -626,18 +645,24 @@ def register_or_update_device(
             return False, "MAC tidak ditemukan", None
 
     if (not client_ip or not _is_client_ip_allowed(client_ip)) and mac_address:
-        with get_mikrotik_connection() as api:
-            if api:
-                ok, ip_from_mac, msg = get_ip_by_mac(api, mac_address)
-                if ok and ip_from_mac and _is_client_ip_allowed(ip_from_mac):
-                    client_ip = ip_from_mac
-                    if current_app and current_app.config.get("LOG_BINDING_DEBUG", False):
-                        logger.info(
-                            "Fallback IP from MAC: user=%s mac=%s ip=%s",
-                            user.id,
-                            mac_address,
-                            client_ip,
-                        )
+        def _do_ip_from_mac(api: Any) -> None:
+            nonlocal client_ip
+            ok, ip_from_mac, msg = get_ip_by_mac(api, mac_address)
+            if ok and ip_from_mac and _is_client_ip_allowed(ip_from_mac):
+                client_ip = ip_from_mac
+                if current_app and current_app.config.get("LOG_BINDING_DEBUG", False):
+                    logger.info(
+                        "Fallback IP from MAC: user=%s mac=%s ip=%s",
+                        user.id,
+                        mac_address,
+                        client_ip,
+                    )
+        if api_connection is not None:
+            _do_ip_from_mac(api_connection)
+        else:
+            with get_mikrotik_connection() as api:
+                if api:
+                    _do_ip_from_mac(api)
 
     device = db.session.scalar(
         sa.select(UserDevice).where(UserDevice.user_id == user.id, UserDevice.mac_address == mac_address)
@@ -821,110 +846,119 @@ def apply_device_binding_for_login(
     date_str, time_str = get_app_date_time_strings(now)
 
     original_ip = client_ip
-    resolved_ip, ip_source, ip_msg = _resolve_binding_ip(user, client_ip)
-    if not resolved_ip:
-        if client_mac:
-            logger.warning(f"Binding tanpa IP karena IP klien tidak valid: {ip_msg}")
-            client_ip = None
-        elif settings["ip_binding_fail_open"]:
-            logger.warning(f"Skip IP binding karena IP klien tidak valid: {ip_msg}")
-            return True, "Skip IP binding", None
+    # Slow path (client_ip tidak valid): gunakan SATU koneksi MikroTik bersama untuk
+    # resolve IP + resolve MAC + post-auth ops agar tidak melebihi gunicorn timeout 120s.
+    # Fast path (client_ip valid): shared_api=None, tiap fungsi pakai koneksinya sendiri.
+    need_shared_conn = not (client_ip and _is_client_ip_allowed(client_ip)) and _is_mikrotik_operations_enabled()
+    conn_ctx = get_mikrotik_connection() if need_shared_conn else nullcontext(None)
+    with conn_ctx as shared_api:
+        resolved_ip, ip_source, ip_msg = _resolve_binding_ip(user, client_ip, api_connection=shared_api)
+        if not resolved_ip:
+            if client_mac:
+                logger.warning(f"Binding tanpa IP karena IP klien tidak valid: {ip_msg}")
+                client_ip = None
+            elif settings["ip_binding_fail_open"]:
+                logger.warning(f"Skip IP binding karena IP klien tidak valid: {ip_msg}")
+                return True, "Skip IP binding", None
+            else:
+                return False, ip_msg, None
         else:
-            return False, ip_msg, None
-    else:
-        client_ip = resolved_ip
+            client_ip = resolved_ip
 
-    if current_app and current_app.config.get("LOG_BINDING_DEBUG", False):
-        mac_only = (not original_ip) and bool(client_mac) and ip_source == "device_mac"
-        logger.info(
-            "Binding debug: user=%s input_ip=%s input_mac=%s resolved_ip=%s ip_source=%s mac_only=%s msg=%s",
-            user.id,
-            original_ip,
+        if current_app and current_app.config.get("LOG_BINDING_DEBUG", False):
+            mac_only = (not original_ip) and bool(client_mac) and ip_source == "device_mac"
+            logger.info(
+                "Binding debug: user=%s input_ip=%s input_mac=%s resolved_ip=%s ip_source=%s mac_only=%s msg=%s",
+                user.id,
+                original_ip,
+                client_mac,
+                resolved_ip,
+                ip_source,
+                mac_only,
+                ip_msg,
+            )
+        ok, msg, device = register_or_update_device(
+            user,
+            client_ip,
+            user_agent,
             client_mac,
-            resolved_ip,
-            ip_source,
-            mac_only,
-            ip_msg,
+            allow_replace=bypass_explicit_auth,
+            allow_cross_user_transfer=allow_cross_user_transfer,
+            api_connection=shared_api,
         )
-    ok, msg, device = register_or_update_device(
-        user,
-        client_ip,
-        user_agent,
-        client_mac,
-        allow_replace=bypass_explicit_auth,
-        allow_cross_user_transfer=allow_cross_user_transfer,
-    )
-    if not ok:
-        return False, msg, None
+        if not ok:
+            return False, msg, None
 
-    if device is None and msg == "Skip IP binding":
-        return True, msg, None
+        if device is None and msg == "Skip IP binding":
+            return True, msg, None
 
-    if not device:
-        return False, "Device tidak valid", None
+        if not device:
+            return False, "Device tidak valid", None
 
-    if not device.is_authorized and settings["require_explicit"] and not bypass_explicit_auth:
+        if not device.is_authorized and settings["require_explicit"] and not bypass_explicit_auth:
+            if settings["ip_binding_enabled"]:
+                _ensure_ip_binding(
+                    mac_address=device.mac_address,
+                    ip_address=device.ip_address,
+                    binding_type=settings["ip_binding_type_blocked"],
+                    comment=(
+                        f"pending-auth|user={username_08}|uid={user.id}|role={user.role.value}"
+                        f"|date={date_str}|time={time_str}"
+                    ),
+                    server=user.mikrotik_server_name or settings["mikrotik_server_default"],
+                )
+            _ensure_blocked_address_list(
+                device.ip_address, f"pending-auth|user={username_08}|date={date_str}|time={time_str}"
+            )
+            return False, "Perangkat belum diotorisasi", client_ip
+
+        if not device.is_authorized and settings["require_explicit"] and bypass_explicit_auth:
+            logger.info(
+                "Bypass explicit device auth setelah OTP berhasil: user=%s mac=%s ip=%s",
+                user.id,
+                device.mac_address,
+                device.ip_address,
+            )
+
         if settings["ip_binding_enabled"]:
-            _ensure_ip_binding(
+            allowed_binding_type = resolve_allowed_binding_type_for_user(user)
+            _apply_post_auth_mikrotik_ops(
                 mac_address=device.mac_address,
                 ip_address=device.ip_address,
-                binding_type=settings["ip_binding_type_blocked"],
-                comment=(
-                    f"pending-auth|user={username_08}|uid={user.id}|role={user.role.value}"
-                    f"|date={date_str}|time={time_str}"
+                binding_type=allowed_binding_type,
+                binding_comment=(
+                    f"authorized|user={username_08}|uid={user.id}|role={user.role.value}|date={date_str}|time={time_str}"
                 ),
                 server=user.mikrotik_server_name or settings["mikrotik_server_default"],
+                username=username_08 or None,
+                api_connection=shared_api,
             )
-        _ensure_blocked_address_list(
-            device.ip_address, f"pending-auth|user={username_08}|date={date_str}|time={time_str}"
-        )
-        return False, "Perangkat belum diotorisasi", client_ip
+        else:
+            # ip-binding tidak aktif: tetap bersihkan address-list + hotspot host via satu koneksi
+            _apply_post_auth_mikrotik_ops(
+                mac_address=device.mac_address,
+                ip_address=device.ip_address,
+                binding_type="bypassed",
+                binding_comment="",
+                server=user.mikrotik_server_name or settings["mikrotik_server_default"],
+                username=username_08 or None,
+                api_connection=shared_api,
+            )
 
-    if not device.is_authorized and settings["require_explicit"] and bypass_explicit_auth:
-        logger.info(
-            "Bypass explicit device auth setelah OTP berhasil: user=%s mac=%s ip=%s",
-            user.id,
-            device.mac_address,
-            device.ip_address,
-        )
+        if settings.get("dhcp_static_lease_enabled"):
+            dhcp_server_name = settings.get("dhcp_lease_server_name") or None
+            _ensure_static_dhcp_lease(
+                mac_address=device.mac_address,
+                ip_address=device.ip_address,
+                comment=(f"lpsaring|static-dhcp|user={username_08}|uid={user.id}|date={date_str}|time={time_str}"),
+                server=dhcp_server_name,
+            )
 
-    if settings["ip_binding_enabled"]:
-        allowed_binding_type = resolve_allowed_binding_type_for_user(user)
-        _apply_post_auth_mikrotik_ops(
-            mac_address=device.mac_address,
-            ip_address=device.ip_address,
-            binding_type=allowed_binding_type,
-            binding_comment=(
-                f"authorized|user={username_08}|uid={user.id}|role={user.role.value}|date={date_str}|time={time_str}"
-            ),
-            server=user.mikrotik_server_name or settings["mikrotik_server_default"],
-            username=username_08 or None,
-        )
-    else:
-        # ip-binding tidak aktif: tetap bersihkan address-list + hotspot host via satu koneksi
-        _apply_post_auth_mikrotik_ops(
-            mac_address=device.mac_address,
-            ip_address=device.ip_address,
-            binding_type="bypassed",
-            binding_comment="",
-            server=user.mikrotik_server_name or settings["mikrotik_server_default"],
-            username=username_08 or None,
-        )
-
-    if settings.get("dhcp_static_lease_enabled"):
-        dhcp_server_name = settings.get("dhcp_lease_server_name") or None
-        _ensure_static_dhcp_lease(
-            mac_address=device.mac_address,
-            ip_address=device.ip_address,
-            comment=(f"lpsaring|static-dhcp|user={username_08}|uid={user.id}|date={date_str}|time={time_str}"),
-            server=dhcp_server_name,
-        )
-
-    device.is_authorized = True
-    if not device.authorized_at:
-        device.authorized_at = datetime.now(dt_timezone.utc)
-    db.session.flush()
-    return True, "Perangkat terotorisasi", client_ip
+        device.is_authorized = True
+        if not device.authorized_at:
+            device.authorized_at = datetime.now(dt_timezone.utc)
+        db.session.flush()
+        return True, "Perangkat terotorisasi", client_ip
 
 
 def revoke_device(user: User, device: UserDevice) -> None:
