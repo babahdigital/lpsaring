@@ -172,6 +172,10 @@ def init_mikrotik_pool():
 
         try:
             _connection_pool = routeros_api.RouterOsApiPool(host, **pool_kwargs)
+            if not supports_socket_timeout:
+                # socket_timeout adalah class attribute (bukan constructor param) default 15.0.
+                # Override dengan nilai konfigurasi kita agar get_api() pakai timeout yang benar.
+                _connection_pool.socket_timeout = socket_timeout_seconds
         except TypeError as timeout_type_error:
             # Runtime fallback for libraries with dynamic signatures where inspect is inconclusive.
             if supports_socket_timeout and "socket_timeout" in str(timeout_type_error):
@@ -192,35 +196,30 @@ def init_mikrotik_pool():
         return False
 
 
-def _try_set_socket_timeout(api_instance: Any, timeout_seconds: float) -> bool:
-    """Set recv/send timeout pada raw socket routeros_api setelah berhasil connect.
+def _apply_pool_socket_timeout(socket_timeout_seconds: float) -> None:
+    """Set socket timeout pada pool yang sudah dibuat.
 
-    routeros_api 0.21 tidak support socket_timeout di Pool constructor, sehingga
-    socket.recv() bisa hang selamanya pada operasi API (bukan hanya saat connect).
-    Fungsi ini mencoba beberapa attribute path yang diketahui dari library tersebut
-    untuk menemukan raw socket dan memanggil settimeout().
+    routeros_api 0.21: socket_timeout adalah class attribute (bukan constructor param).
+    pool.set_timeout(t) = pool.socket_timeout = t + pool.socket.settimeout(t)
+    sehingga mencakup BOTH future connections DAN live socket yang sedang terhubung.
 
-    Gagal silently jika path tidak ditemukan (misalnya versi library berubah).
+    Ini memastikan resource.get() / resource.add() tidak hang selamanya ketika
+    MikroTik lambat merespons — akan raise socket.timeout setelah `timeout` detik.
     """
-    # Attribute paths yang diketahui di routeros_api:
-    # routeros_api.RouterOsApi → .base_api (RouterOsApiBase) → .socket (ApiSocket) → .socket (raw)
-    _attr_paths: List[tuple] = [
-        ("base_api", "socket", "socket"),
-        ("socket", "socket"),
-        ("base_api", "_socket", "socket"),
-        ("_socket", "socket"),
-    ]
-    for path in _attr_paths:
-        try:
-            obj: Any = api_instance
-            for attr in path:
-                obj = getattr(obj, attr)
-            if callable(getattr(obj, "settimeout", None)):
-                obj.settimeout(timeout_seconds)
-                return True
-        except Exception:
-            pass
-    return False
+    if _connection_pool is None:
+        return
+    try:
+        set_timeout_fn = getattr(_connection_pool, "set_timeout", None)
+        if callable(set_timeout_fn):
+            set_timeout_fn(socket_timeout_seconds)
+            return
+        # Fallback: set attribute + socket langsung
+        _connection_pool.socket_timeout = socket_timeout_seconds
+        pool_sock = getattr(_connection_pool, "socket", None)
+        if pool_sock is not None and callable(getattr(pool_sock, "settimeout", None)):
+            pool_sock.settimeout(socket_timeout_seconds)
+    except Exception:
+        pass
 
 
 def _get_api_with_timeout(pool: Any, timeout_seconds: float) -> Optional[Any]:
@@ -293,9 +292,9 @@ def get_mikrotik_connection(raise_on_error: bool = False) -> Iterator[Optional[A
         if api_instance is None:
             record_failure("mikrotik")
         elif not _supports_socket_timeout:
-            # Pool tidak support socket_timeout di constructor: set langsung pada raw socket
+            # Pool tidak support socket_timeout di constructor: set via pool.set_timeout()
             # agar resource.get() / resource.add() tidak hang selamanya saat MikroTik lambat.
-            _try_set_socket_timeout(api_instance, socket_timeout)
+            _apply_pool_socket_timeout(socket_timeout)
     except Exception as e:
         logger.error(f"Error mendapatkan koneksi: {e}", exc_info=True)
         record_failure("mikrotik")
