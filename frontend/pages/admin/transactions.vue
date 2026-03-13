@@ -225,7 +225,6 @@ function printAdminReport(orderId: string) {
 async function reconcileTransaction(orderId: string) {
   if (!orderId)
     return
-  // eslint-disable-next-line no-alert
   const confirmed = window.confirm(`Perbaiki transaksi ${orderId}?\n\nSistem akan memverifikasi ke Midtrans. Kuota diinjek dan WhatsApp dikirim hanya jika pembayaran benar-benar lunas.`)
   if (!confirmed)
     return
