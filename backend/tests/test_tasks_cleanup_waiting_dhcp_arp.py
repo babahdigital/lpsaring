@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from types import SimpleNamespace
 
 from flask import Flask
 
@@ -139,3 +140,27 @@ def test_cleanup_waiting_dhcp_arp_task_skips_when_feature_disabled(monkeypatch):
     tasks.cleanup_waiting_dhcp_arp_task.run()
 
     assert called["value"] is False
+
+
+def test_load_cleanup_waiting_dhcp_arp_config_releases_session(monkeypatch):
+    removed = []
+
+    def _get_setting(key, default=None):
+        values = {
+            "ENABLE_MIKROTIK_OPERATIONS": "True",
+            "AUTO_CLEANUP_WAITING_DHCP_ARP_ENABLED": "True",
+            "AUTO_CLEANUP_WAITING_DHCP_ARP_COMMENT_KEYWORD": "lpsaring|static-dhcp",
+        }
+        return values.get(key, default)
+
+    monkeypatch.setattr(tasks.settings_service, "get_setting", _get_setting)
+    monkeypatch.setattr(tasks.settings_service, "get_setting_as_int", lambda _key, default=0: 123)
+    monkeypatch.setattr(tasks, "db", SimpleNamespace(session=SimpleNamespace(remove=lambda: removed.append(True))))
+
+    config = tasks._load_cleanup_waiting_dhcp_arp_config()
+
+    assert config.mikrotik_operations_enabled is True
+    assert config.feature_enabled is True
+    assert config.keyword == "lpsaring|static-dhcp"
+    assert config.min_last_seen_seconds == 123
+    assert removed == [True]

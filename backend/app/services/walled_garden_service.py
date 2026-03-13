@@ -1,4 +1,5 @@
 # backend/app/services/walled_garden_service.py
+from dataclasses import dataclass
 import json
 import logging
 import socket
@@ -8,6 +9,7 @@ from urllib.parse import urlparse
 
 from flask import current_app
 
+from app.extensions import db
 from app.services import settings_service
 from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection, sync_walled_garden_rules
 
@@ -15,6 +17,15 @@ logger = logging.getLogger(__name__)
 
 MIDTRANS_PRODUCTION_HOSTS = {"app.midtrans.com", "api.midtrans.com"}
 MIDTRANS_SANDBOX_HOSTS = {"app.sandbox.midtrans.com", "api.sandbox.midtrans.com"}
+
+
+@dataclass(frozen=True)
+class WalledGardenSyncConfig:
+    enabled: bool
+    allowed_hosts: List[str]
+    allowed_ips: List[str]
+    allowed_ip_list_names: List[str]
+    comment_prefix: str
 
 
 def _get_list_setting(key: str) -> List[str]:
@@ -172,22 +183,39 @@ def _derive_ips_from_address_lists(api_connection: Any, list_names: List[str]) -
     return _normalize_ip_targets(collected)
 
 
+def _load_walled_garden_sync_config() -> WalledGardenSyncConfig:
+    try:
+        enabled = settings_service.get_setting("WALLED_GARDEN_ENABLED", "False") == "True"
+        allowed_hosts = _get_list_setting("WALLED_GARDEN_ALLOWED_HOSTS")
+        allowed_ips = _normalize_ip_targets(_get_list_setting("WALLED_GARDEN_ALLOWED_IPS"))
+        allowed_ip_list_names = _get_list_setting("WALLED_GARDEN_ALLOWED_IP_LIST_NAMES")
+        comment_prefix = str(settings_service.get_setting("WALLED_GARDEN_MANAGED_COMMENT_PREFIX", "lpsaring") or "")
+
+        if _get_bool_setting("WALLED_GARDEN_AUTO_INCLUDE_EXTERNAL_HOSTS", True):
+            allowed_hosts = sorted({*allowed_hosts, *_derive_external_hosts()})
+        elif not allowed_hosts:
+            allowed_hosts = _derive_portal_hosts()
+
+        return WalledGardenSyncConfig(
+            enabled=enabled,
+            allowed_hosts=allowed_hosts,
+            allowed_ips=allowed_ips,
+            allowed_ip_list_names=allowed_ip_list_names,
+            comment_prefix=comment_prefix,
+        )
+    finally:
+        db.session.remove()
+
+
 def sync_walled_garden() -> Dict[str, str]:
-    enabled = settings_service.get_setting("WALLED_GARDEN_ENABLED", "False") == "True"
-    if not enabled:
+    config = _load_walled_garden_sync_config()
+
+    if not config.enabled:
         return {"status": "disabled"}
 
-    allowed_hosts = _get_list_setting("WALLED_GARDEN_ALLOWED_HOSTS")
-    allowed_ips = _normalize_ip_targets(_get_list_setting("WALLED_GARDEN_ALLOWED_IPS"))
-    allowed_ip_list_names = _get_list_setting("WALLED_GARDEN_ALLOWED_IP_LIST_NAMES")
-    comment_prefix = settings_service.get_setting("WALLED_GARDEN_MANAGED_COMMENT_PREFIX", "lpsaring")
-
-    # Tambahkan host eksternal penting secara otomatis agar portal/payment tetap bisa diakses
-    # saat user belum login atau kuota sedang habis.
-    if _get_bool_setting("WALLED_GARDEN_AUTO_INCLUDE_EXTERNAL_HOSTS", True):
-        allowed_hosts = sorted({*allowed_hosts, *_derive_external_hosts()})
-    elif not allowed_hosts:
-        allowed_hosts = _derive_portal_hosts()
+    allowed_hosts = list(config.allowed_hosts)
+    allowed_ips = list(config.allowed_ips)
+    allowed_ip_list_names = list(config.allowed_ip_list_names)
 
     with get_mikrotik_connection() as api:
         if not api:
@@ -208,7 +236,7 @@ def sync_walled_garden() -> Dict[str, str]:
             except Exception:
                 pass
 
-        comment_prefix = comment_prefix or ""
+        comment_prefix = config.comment_prefix or ""
         ok, msg = sync_walled_garden_rules(
             api_connection=api,
             allowed_hosts=allowed_hosts,

@@ -7,6 +7,7 @@ import secrets
 import subprocess
 import sys
 import re
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote_plus
 from pathlib import Path
@@ -63,6 +64,41 @@ from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package, format_
 def _load_quota_sync_interval_seconds() -> int:
     try:
         return settings_service.get_setting_as_int("QUOTA_SYNC_INTERVAL_SECONDS", 300)
+    finally:
+        db.session.remove()
+
+
+@dataclass(frozen=True)
+class CleanupWaitingDhcpArpConfig:
+    mikrotik_operations_enabled: bool
+    feature_enabled: bool
+    keyword: str
+    min_last_seen_seconds: int
+
+
+def _load_cleanup_waiting_dhcp_arp_config() -> CleanupWaitingDhcpArpConfig:
+    try:
+        return CleanupWaitingDhcpArpConfig(
+            mikrotik_operations_enabled=(
+                settings_service.get_setting("ENABLE_MIKROTIK_OPERATIONS", "True") == "True"
+            ),
+            feature_enabled=(
+                settings_service.get_setting("AUTO_CLEANUP_WAITING_DHCP_ARP_ENABLED", "False") == "True"
+            ),
+            keyword=(
+                settings_service.get_setting("AUTO_CLEANUP_WAITING_DHCP_ARP_COMMENT_KEYWORD", "lpsaring|static-dhcp")
+                or "lpsaring|static-dhcp"
+            )
+            .strip()
+            .lower(),
+            min_last_seen_seconds=max(
+                0,
+                settings_service.get_setting_as_int(
+                    "AUTO_CLEANUP_WAITING_DHCP_ARP_MIN_LAST_SEEN_SECONDS",
+                    6 * 60 * 60,
+                ),
+            ),
+        )
     finally:
         db.session.remove()
 
@@ -1745,22 +1781,18 @@ def cleanup_stale_hotspot_hosts_task(self):
 def cleanup_waiting_dhcp_arp_task(self):
     app = create_app()
     with app.app_context():
-        if settings_service.get_setting("ENABLE_MIKROTIK_OPERATIONS", "True") != "True":
+        config = _load_cleanup_waiting_dhcp_arp_config()
+
+        if not config.mikrotik_operations_enabled:
             logger.info("Celery Task: Skip cleanup waiting DHCP/ARP (MikroTik operations disabled).")
             return
 
-        if settings_service.get_setting("AUTO_CLEANUP_WAITING_DHCP_ARP_ENABLED", "False") != "True":
+        if not config.feature_enabled:
             logger.info("Celery Task: Skip cleanup waiting DHCP/ARP (feature disabled).")
             return
 
-        keyword = (
-            settings_service.get_setting("AUTO_CLEANUP_WAITING_DHCP_ARP_COMMENT_KEYWORD", "lpsaring|static-dhcp")
-            or "lpsaring|static-dhcp"
-        ).strip().lower()
-        min_last_seen_seconds = max(
-            0,
-            settings_service.get_setting_as_int("AUTO_CLEANUP_WAITING_DHCP_ARP_MIN_LAST_SEEN_SECONDS", 6 * 60 * 60),
-        )
+        keyword = config.keyword
+        min_last_seen_seconds = config.min_last_seen_seconds
 
         logger.info(
             "Celery Task: Memulai cleanup waiting DHCP/ARP (keyword=%s, min_last_seen_seconds=%s).",

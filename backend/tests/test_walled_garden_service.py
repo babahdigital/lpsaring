@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from flask import Flask
 
 from app.services import walled_garden_service as service
@@ -153,3 +155,30 @@ def test_sync_walled_garden_resolves_ips_from_address_list_names(monkeypatch):
 
     assert result["status"] == "success"
     assert sorted(captured["allowed_ips"]) == ["172.16.2.0/24", "172.16.2.10"]
+
+
+def test_load_walled_garden_sync_config_releases_session(monkeypatch):
+    app = _make_app()
+    removed = []
+
+    setting_map = {
+        "WALLED_GARDEN_ENABLED": "True",
+        "WALLED_GARDEN_ALLOWED_HOSTS": '["portal.example.com"]',
+        "WALLED_GARDEN_ALLOWED_IPS": '["172.16.2.10"]',
+        "WALLED_GARDEN_ALLOWED_IP_LIST_NAMES": '["walled-garden-midtrans-prod"]',
+        "WALLED_GARDEN_MANAGED_COMMENT_PREFIX": "lpsaring",
+        "WALLED_GARDEN_AUTO_INCLUDE_EXTERNAL_HOSTS": "False",
+    }
+
+    monkeypatch.setattr(service.settings_service, "get_setting", lambda key, default=None: setting_map.get(key, default))
+    monkeypatch.setattr(service, "db", SimpleNamespace(session=SimpleNamespace(remove=lambda: removed.append(True))))
+
+    with app.app_context():
+        config = service._load_walled_garden_sync_config()
+
+    assert config.enabled is True
+    assert config.allowed_hosts == ["portal.example.com"]
+    assert config.allowed_ips == ["172.16.2.10"]
+    assert config.allowed_ip_list_names == ["walled-garden-midtrans-prod"]
+    assert config.comment_prefix == "lpsaring"
+    assert removed == [True]
