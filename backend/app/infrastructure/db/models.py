@@ -141,6 +141,8 @@ class AdminActionType(enum.Enum):
 
     CREATE_QRIS_BILL = "CREATE_QRIS_BILL"
 
+    TRANSACTION_RECONCILE = "TRANSACTION_RECONCILE"
+
 
 # --- Definisi Model ---
 

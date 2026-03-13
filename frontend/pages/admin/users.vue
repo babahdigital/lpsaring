@@ -40,6 +40,8 @@ interface User {
 
   is_blocked?: boolean
   blocked_reason?: string | null
+  last_login_at?: string | null
+  device_count?: number
 }
 
 interface PublicUpdateSubmission {
@@ -1282,11 +1284,23 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
           </VChip>
         </template>
         <template #item.is_active="{ item }">
-          <VTooltip :text="item.is_active ? 'Aktif' : 'Tidak Aktif'">
-            <template #activator="{ props: tooltipProps }">
-              <VIcon v-bind="tooltipProps" :color="item.is_active ? 'success' : 'error'" :icon="item.is_active ? 'tabler-plug-connected' : 'tabler-plug-connected-x'" size="22" />
-            </template>
-          </VTooltip>
+          <div class="d-flex flex-column align-center ga-1">
+            <VTooltip :text="item.is_active ? 'Aktif' : 'Tidak Aktif'">
+              <template #activator="{ props: tooltipProps }">
+                <VIcon v-bind="tooltipProps" :color="item.is_active ? 'success' : 'error'" :icon="item.is_active ? 'tabler-plug-connected' : 'tabler-plug-connected-x'" size="22" />
+              </template>
+            </VTooltip>
+            <VChip
+              v-if="(item.device_count ?? 0) > 0"
+              size="x-small"
+              color="info"
+              variant="tonal"
+              :title="`${item.device_count} perangkat terdaftar`"
+            >
+              {{ item.device_count }} dev
+            </VChip>
+            <span v-else class="text-caption text-medium-emphasis" style="font-size:10px">Belum login</span>
+          </div>
         </template>
         <template #item.created_at="{ item }">
           {{ formatCreatedAt(item.created_at) }}

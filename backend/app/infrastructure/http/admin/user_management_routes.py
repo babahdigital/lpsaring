@@ -18,6 +18,7 @@ from app.infrastructure.db.models import (
     AdminActionType,
     Package,
     PublicDatabaseUpdateSubmission,
+    UserDevice,
 )
 from app.infrastructure.http.decorators import admin_required
 from app.infrastructure.http.schemas.user_schemas import (
@@ -649,8 +650,25 @@ def get_users_list(current_admin: User):
         else:
             users = db.session.scalars(query.limit(per_page).offset((page - 1) * per_page)).all()
 
+        user_ids = [u.id for u in users]
+        device_counts: dict = {}
+        if user_ids:
+            rows = db.session.execute(
+                select(UserDevice.user_id, func.count(UserDevice.id).label("cnt"))
+                .where(UserDevice.user_id.in_(user_ids))
+                .where(UserDevice.is_authorized.is_(True))
+                .group_by(UserDevice.user_id)
+            ).all()
+            device_counts = {row.user_id: row.cnt for row in rows}
+
         return jsonify(
-            {"items": [UserResponseSchema.from_orm(u).model_dump() for u in users], "totalItems": total}
+            {
+                "items": [
+                    {**UserResponseSchema.from_orm(u).model_dump(), "device_count": device_counts.get(u.id, 0)}
+                    for u in users
+                ],
+                "totalItems": total,
+            }
         ), HTTPStatus.OK
     except Exception as e:
         current_app.logger.error(f"Error getting user list: {e}", exc_info=True)

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json as _json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone as dt_timezone
 from http import HTTPStatus
 
 import sqlalchemy as sa
@@ -455,3 +456,257 @@ def export_transactions_impl(
     except Exception as e:
         current_app.logger.error(f'Error export transaksi: {e}', exc_info=True)
         return jsonify({'message': 'Terjadi kesalahan internal.'}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+def admin_reconcile_transaction_impl(
+    *,
+    db,
+    order_id: str,
+    current_actor_id: str,
+    Transaction,
+    TransactionStatus,
+    TransactionEventSource,
+    AdminActionLog,
+    AdminActionType,
+    selectinload,
+    select,
+    get_midtrans_core_api_client,
+    apply_package_and_sync_to_mikrotik,
+    get_mikrotik_connection,
+    begin_order_effect,
+    finish_order_effect,
+    log_transaction_event,
+    send_whatsapp_invoice_task,
+    generate_temp_invoice_token,
+    get_notification_message,
+    generate_transaction_status_token,
+    format_currency_fn,
+    settings_service,
+    safe_parse_midtrans_datetime,
+    should_allow_call,
+    record_success,
+    record_failure,
+):
+    """Perbaiki transaksi yang EXPIRED/FAILED dengan verifikasi ke Midtrans terlebih dahulu.
+    Jika Midtrans mengkonfirmasi pembayaran sukses: injek kuota, kirim WhatsApp, update status DB.
+    Hanya admin yang bisa memanggil endpoint ini.
+    """
+    import midtransclient
+    from flask import request as flask_request
+
+    order_id = (order_id or '').strip()
+    if not order_id:
+        return jsonify({'message': 'order_id tidak boleh kosong.'}), HTTPStatus.BAD_REQUEST
+
+    try:
+        tx = db.session.scalar(
+            select(Transaction)
+            .where(Transaction.midtrans_order_id == order_id)
+            .options(selectinload(Transaction.user), selectinload(Transaction.package))
+            .with_for_update()
+        )
+    except Exception as e:
+        current_app.logger.error(f'ADMIN_RECONCILE: DB error {order_id}: {e}', exc_info=True)
+        return jsonify({'message': 'Gagal mengambil data transaksi.'}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+    if tx is None:
+        return jsonify({'message': 'Transaksi tidak ditemukan.'}), HTTPStatus.NOT_FOUND
+
+    if tx.status == TransactionStatus.SUCCESS:
+        return jsonify({
+            'message': 'Transaksi sudah berstatus SUCCESS. Tidak perlu diperbaiki.',
+            'transaction_status': tx.status.value,
+            'quota_applied': False,
+            'whatsapp_sent': False,
+        }), HTTPStatus.OK
+
+    fixable_statuses = {
+        TransactionStatus.EXPIRED,
+        TransactionStatus.FAILED,
+        TransactionStatus.CANCELLED,
+        TransactionStatus.PENDING,
+        TransactionStatus.UNKNOWN,
+    }
+    if tx.status not in fixable_statuses:
+        return jsonify({
+            'message': f'Status {tx.status.value} tidak dapat diperbaiki.',
+        }), HTTPStatus.UNPROCESSABLE_ENTITY
+
+    if not should_allow_call('midtrans'):
+        return jsonify({'message': 'Midtrans sementara tidak tersedia (circuit breaker).'}), HTTPStatus.SERVICE_UNAVAILABLE
+
+    # --- Verifikasi ke Midtrans ---
+    try:
+        core_api = get_midtrans_core_api_client()
+        midtrans_resp = core_api.transactions.status(order_id)
+        record_success('midtrans')
+    except midtransclient.error_midtrans.MidtransAPIError as e:
+        record_failure('midtrans')
+        db.session.rollback()
+        return jsonify({'message': f'Midtrans API error: {e.message}', 'quota_applied': False}), HTTPStatus.BAD_GATEWAY
+    except Exception as e:
+        record_failure('midtrans')
+        db.session.rollback()
+        return jsonify({'message': f'Gagal menghubungi Midtrans: {str(e)}', 'quota_applied': False}), HTTPStatus.BAD_GATEWAY
+
+    mt_status = str(midtrans_resp.get('transaction_status', '') or '').strip().lower()
+    fraud_status_raw = midtrans_resp.get('fraud_status')
+    fraud_status = str(fraud_status_raw).strip().lower() if fraud_status_raw else None
+    payment_success = (mt_status == 'settlement') or (mt_status == 'capture' and fraud_status in (None, 'accept'))
+
+    if not payment_success:
+        db.session.rollback()
+        return jsonify({
+            'message': f'Pembayaran BELUM lunas di Midtrans (status: {mt_status}). Tidak dapat diperbaiki.',
+            'transaction_status': tx.status.value,
+            'midtrans_status': mt_status,
+            'quota_applied': False,
+            'whatsapp_sent': False,
+        }), HTTPStatus.UNPROCESSABLE_ENTITY
+
+    # --- Konfirmasi bayar: update transaksi dan injek kuota ---
+    try:
+        status_before = tx.status.value
+        tx.status = TransactionStatus.SUCCESS
+
+        if midtrans_resp.get('transaction_id'):
+            tx.midtrans_transaction_id = midtrans_resp.get('transaction_id')
+        if not tx.payment_time:
+            tx.payment_time = (
+                safe_parse_midtrans_datetime(midtrans_resp.get('settlement_time'))
+                or datetime.now(dt_timezone.utc)
+            )
+        if midtrans_resp.get('payment_type') and not tx.payment_method:
+            tx.payment_method = midtrans_resp.get('payment_type')
+        try:
+            tx.midtrans_notification_payload = _json.dumps(midtrans_resp, ensure_ascii=False)
+        except Exception:
+            pass
+
+        log_transaction_event(
+            session=db.session,
+            transaction=tx,
+            source=TransactionEventSource.APP,
+            event_type='ADMIN_RECONCILE',
+            status=tx.status,
+            payload={
+                'reconciled_by': current_actor_id,
+                'midtrans_status': mt_status,
+                'status_before': status_before,
+            },
+        )
+
+        # Apply quota via MikroTik
+        quota_applied = False
+        should_apply, effect_lock_key = begin_order_effect(
+            order_id=order_id,
+            effect_name='hotspot_apply',
+            session=db.session,
+        )
+
+        if not should_apply:
+            # Effect was already done (done_key set) — just fix DB status
+            db.session.commit()
+            quota_applied = True
+            current_app.logger.info(f'ADMIN_RECONCILE: {order_id} effect already done, status fixed to SUCCESS.')
+        else:
+            with get_mikrotik_connection() as mikrotik_api:
+                if not mikrotik_api:
+                    finish_order_effect(order_id=order_id, lock_key=effect_lock_key, success=False, effect_name='hotspot_apply')
+                    db.session.rollback()
+                    return jsonify({
+                        'message': 'Gagal konek ke MikroTik. Kuota belum diinjek.',
+                        'quota_applied': False,
+                        'midtrans_status': mt_status,
+                    }), HTTPStatus.SERVICE_UNAVAILABLE
+
+                is_success, message = apply_package_and_sync_to_mikrotik(tx, mikrotik_api)
+                if is_success:
+                    log_transaction_event(
+                        session=db.session,
+                        transaction=tx,
+                        source=TransactionEventSource.APP,
+                        event_type='MIKROTIK_APPLY_SUCCESS',
+                        status=tx.status,
+                        payload={'message': message},
+                    )
+                    db.session.commit()
+                    finish_order_effect(order_id=order_id, lock_key=effect_lock_key, success=True, effect_name='hotspot_apply')
+                    quota_applied = True
+                    current_app.logger.info(f'ADMIN_RECONCILE: {order_id} quota applied: {message}')
+                else:
+                    finish_order_effect(order_id=order_id, lock_key=effect_lock_key, success=False, effect_name='hotspot_apply')
+                    db.session.rollback()
+                    return jsonify({
+                        'message': f'Midtrans OK. Tapi gagal apply ke MikroTik: {message}',
+                        'midtrans_status': mt_status,
+                        'quota_applied': False,
+                        'whatsapp_sent': False,
+                    }), HTTPStatus.INTERNAL_SERVER_ERROR
+
+        # --- Log admin action ---
+        try:
+            action_log = AdminActionLog(
+                admin_user_id=current_actor_id,
+                action_type=AdminActionType.TRANSACTION_RECONCILE,
+                target_user_id=tx.user_id,
+                details=_json.dumps({
+                    'order_id': order_id,
+                    'status_before': status_before,
+                    'midtrans_status': mt_status,
+                    'quota_applied': quota_applied,
+                }),
+            )
+            db.session.add(action_log)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+        # --- Kirim WhatsApp invoice ---
+        whatsapp_sent = False
+        if quota_applied and tx.user and tx.package:
+            try:
+                temp_token = generate_temp_invoice_token(str(tx.id))
+                base_url = (
+                    settings_service.get_setting('APP_PUBLIC_BASE_URL')
+                    or settings_service.get_setting('FRONTEND_URL')
+                    or settings_service.get_setting('APP_LINK_USER')
+                )
+                if base_url:
+                    temp_invoice_url = f"{base_url.rstrip('/')}/api/transactions/invoice/temp/{temp_token}.pdf"
+                    status_token = generate_transaction_status_token(tx.midtrans_order_id)
+                    status_url = f"{base_url.rstrip('/')}/payment/status?order_id={tx.midtrans_order_id}&t={status_token}"
+                    msg_context = {
+                        'full_name': tx.user.full_name,
+                        'order_id': tx.midtrans_order_id,
+                        'package_name': tx.package.name,
+                        'package_price': format_currency_fn(tx.package.price),
+                        'status_url': status_url,
+                    }
+                    caption_message = get_notification_message('purchase_success_with_invoice', msg_context)
+                    filename = f"invoice-{tx.midtrans_order_id}.pdf"
+                    request_id = flask_request.environ.get('FLASK_REQUEST_ID', '') if flask_request else ''
+                    send_whatsapp_invoice_task.delay(
+                        str(tx.user.phone_number),
+                        caption_message,
+                        temp_invoice_url,
+                        filename,
+                        request_id,
+                    )
+                    whatsapp_sent = True
+                    current_app.logger.info(f'ADMIN_RECONCILE: WA invoice queued for {tx.user.phone_number} / {order_id}')
+            except Exception as e_notif:
+                current_app.logger.error(f'ADMIN_RECONCILE: Gagal antri WA {order_id}: {e_notif}', exc_info=True)
+
+        return jsonify({
+            'message': f'Transaksi berhasil diperbaiki. Kuota {"diinjek" if quota_applied else "sudah tersambung sebelumnya"}. WhatsApp {"dikirim" if whatsapp_sent else "tidak terkirim (cek log)"}.',
+            'transaction_status': 'SUCCESS',
+            'midtrans_status': mt_status,
+            'quota_applied': quota_applied,
+            'whatsapp_sent': whatsapp_sent,
+        }), HTTPStatus.OK
+
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f'ADMIN_RECONCILE: Fatal error {order_id}: {e}', exc_info=True)
+        return jsonify({'message': 'Terjadi kesalahan internal saat memperbaiki transaksi.'}), HTTPStatus.INTERNAL_SERVER_ERROR

@@ -222,9 +222,35 @@ function printAdminReport(orderId: string) {
   }, 500)
 }
 
+async function reconcileTransaction(orderId: string) {
+  if (!orderId)
+    return
+  // eslint-disable-next-line no-alert
+  const confirmed = window.confirm(`Perbaiki transaksi ${orderId}?\n\nSistem akan memverifikasi ke Midtrans. Kuota diinjek dan WhatsApp dikirim hanya jika pembayaran benar-benar lunas.`)
+  if (!confirmed)
+    return
+
+  reconcileLoading.value = { ...reconcileLoading.value, [orderId]: true }
+  try {
+    const result = await $api<{ message: string; quota_applied: boolean; whatsapp_sent: boolean; midtrans_status: string }>(
+      `/admin/transactions/${encodeURIComponent(orderId)}/reconcile`,
+      { method: 'POST' },
+    )
+    showSnackbar(result.message || 'Transaksi berhasil diperbaiki', 'success')
+    await refresh()
+  }
+  catch (err) {
+    showSnackbar(extractErrorMessage(err, 'Gagal memperbaiki transaksi'), 'error')
+  }
+  finally {
+    reconcileLoading.value = { ...reconcileLoading.value, [orderId]: false }
+  }
+}
+
 const expandedOrderIds = ref<string[]>([])
 const detailCache = ref<Record<string, Transaction>>({})
 const detailLoading = ref<Record<string, boolean>>({})
+const reconcileLoading = ref<Record<string, boolean>>({})
 
 async function fetchTransactionDetail(orderId: string) {
   if (!orderId)
@@ -704,6 +730,19 @@ useHead({ title: 'Laporan Penjualan' })
                 @click="printAdminReport(item.order_id)"
               >
                 <VIcon icon="tabler-printer" />
+              </VBtn>
+
+              <VBtn
+                v-if="['FAILED', 'EXPIRED', 'CANCELLED', 'UNKNOWN'].includes(item.status)"
+                icon
+                variant="text"
+                size="small"
+                color="warning"
+                :loading="reconcileLoading[item.order_id] || false"
+                :title="`Perbaiki ${item.order_id}`"
+                @click="reconcileTransaction(item.order_id)"
+              >
+                <VIcon icon="tabler-tool" />
               </VBtn>
             </div>
           </template>

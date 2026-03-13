@@ -35,6 +35,7 @@ from .transactions_routes import (
     extract_action_url,
     extract_qr_code_url,
     extract_va_number,
+    format_currency,
     get_midtrans_core_api_client,
     get_midtrans_snap_client,
     safe_parse_midtrans_datetime,
@@ -57,7 +58,17 @@ from .admin_contexts.transactions import (
     get_transactions_list_impl,
     get_transaction_detail_impl,
     export_transactions_impl,
+    admin_reconcile_transaction_impl,
 )
+from .transactions.idempotency import begin_order_effect as _begin_order_effect
+from .transactions.idempotency import finish_order_effect as _finish_order_effect
+from .transactions.events import log_transaction_event as _log_transaction_event
+from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection
+from app.services.transaction_service import apply_package_and_sync_to_mikrotik
+from app.services.notification_service import generate_temp_invoice_token, get_notification_message
+from app.services.transaction_status_link_service import generate_transaction_status_token
+from app.tasks import send_whatsapp_invoice_task
+from app.utils.circuit_breaker import record_failure, record_success, should_allow_call
 from .admin_contexts.billing import create_bill_impl, midtrans_selftest_impl
 from .admin_contexts.reports import get_transaction_admin_report_pdf_impl
 from app.services import settings_service
@@ -721,6 +732,39 @@ def get_transaction_admin_report_pdf(current_admin: User, order_id: str):
         TransactionEvent=TransactionEvent,
         select=select,
         selectinload=selectinload,
+    )
+
+@admin_bp.route("/transactions/<order_id>/reconcile", methods=["POST"])
+@admin_required
+def admin_reconcile_transaction(current_admin: User, order_id: str):
+    """Perbaiki transaksi EXPIRED/FAILED setelah verifikasi ke Midtrans."""
+    return admin_reconcile_transaction_impl(
+        db=db,
+        order_id=order_id,
+        current_actor_id=str(current_admin.id),
+        Transaction=Transaction,
+        TransactionStatus=TransactionStatus,
+        TransactionEventSource=TransactionEventSource,
+        AdminActionLog=AdminActionLog,
+        AdminActionType=AdminActionType,
+        selectinload=selectinload,
+        select=select,
+        get_midtrans_core_api_client=get_midtrans_core_api_client,
+        apply_package_and_sync_to_mikrotik=apply_package_and_sync_to_mikrotik,
+        get_mikrotik_connection=get_mikrotik_connection,
+        begin_order_effect=_begin_order_effect,
+        finish_order_effect=_finish_order_effect,
+        log_transaction_event=_log_transaction_event,
+        send_whatsapp_invoice_task=send_whatsapp_invoice_task,
+        generate_temp_invoice_token=generate_temp_invoice_token,
+        get_notification_message=get_notification_message,
+        generate_transaction_status_token=generate_transaction_status_token,
+        format_currency_fn=format_currency,
+        settings_service=settings_service,
+        safe_parse_midtrans_datetime=safe_parse_midtrans_datetime,
+        should_allow_call=should_allow_call,
+        record_success=record_success,
+        record_failure=record_failure,
     )
 
 
