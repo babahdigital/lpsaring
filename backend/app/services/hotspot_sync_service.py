@@ -4,6 +4,7 @@ import math
 import threading
 import uuid
 import ipaddress
+from contextlib import nullcontext
 from datetime import datetime, timezone as dt_timezone, date, timedelta
 from typing import Any, Dict, List, Tuple, Optional
 from decimal import Decimal, ROUND_HALF_UP
@@ -1787,8 +1788,13 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
         _release_global_sync_lock(redis_client, global_lock_token)
 
 
-def sync_address_list_for_single_user(user: User, client_ip: Optional[str] = None) -> bool:
-    """Sync address-list status for a single user based on DB counters."""
+def sync_address_list_for_single_user(user: User, client_ip: Optional[str] = None, api_connection: Optional[Any] = None) -> bool:
+    """Sync address-list status for a single user based on DB counters.
+
+    Pass ``api_connection`` to reuse an already-open MikroTik connection
+    instead of opening a new one (avoids nested connections during webhook
+    processing, which contributes to >120 s operation times).
+    """
     if not user or not user.is_active or user.approval_status != ApprovalStatus.APPROVED:
         return False
     if _is_demo_user(user):
@@ -1804,7 +1810,8 @@ def sync_address_list_for_single_user(user: User, client_ip: Optional[str] = Non
     is_expired = bool(expiry_local and expiry_local < now_local)
     force_blocked_status = _apply_auto_debt_limit_block_state(user, source="sync_single")
 
-    with get_mikrotik_connection() as api:
+    _ctx = nullcontext(api_connection) if api_connection is not None else get_mikrotik_connection()
+    with _ctx as api:
         if not api:
             logger.warning("Gagal konek MikroTik untuk sync address-list single user")
             return False

@@ -275,7 +275,7 @@ def apply_package_and_sync_to_mikrotik(transaction: Transaction, mikrotik_api: A
 
     address_synced = False
     try:
-        address_synced = sync_address_list_for_single_user(user)
+        address_synced = sync_address_list_for_single_user(user, api_connection=mikrotik_api)
     except Exception as sync_error:
         logger.warning(
             "Gagal sync address-list setelah transaksi sukses untuk user %s: %s",
@@ -286,7 +286,7 @@ def apply_package_and_sync_to_mikrotik(transaction: Transaction, mikrotik_api: A
     if not address_synced:
         for candidate_ip in _resolve_candidate_ips(user, mikrotik_api):
             try:
-                if sync_address_list_for_single_user(user, client_ip=candidate_ip):
+                if sync_address_list_for_single_user(user, client_ip=candidate_ip, api_connection=mikrotik_api):
                     address_synced = True
                     break
             except Exception as sync_error:

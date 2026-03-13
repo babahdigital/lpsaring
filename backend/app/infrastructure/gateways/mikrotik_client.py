@@ -248,19 +248,27 @@ def get_mikrotik_connection(raise_on_error: bool = False) -> Iterator[Optional[A
     if connect_timeout <= 0:
         connect_timeout = 10.0
 
+    # Acquire the connection BEFORE any yield. This prevents the
+    # "generator didn't stop after throw()" RuntimeError that occurs when
+    # contextlib throws a caller-raised exception back into a generator that
+    # has a yield inside a try/except block — the except would catch the throw
+    # and then yield again, violating the contextmanager protocol.
     try:
         api_instance = _get_api_with_timeout(_connection_pool, connect_timeout)
         if api_instance is None:
             record_failure("mikrotik")
-            yield None
-            return
-        record_success("mikrotik")
     except Exception as e:
         logger.error(f"Error mendapatkan koneksi: {e}", exc_info=True)
         record_failure("mikrotik")
+        api_instance = None
+
+    # Yield None for all failure cases OUTSIDE any try/except so that
+    # exceptions thrown by the caller propagate correctly out of the generator.
+    if api_instance is None:
         yield None
         return
 
+    record_success("mikrotik")
     try:
         yield api_instance
     except Exception as e:

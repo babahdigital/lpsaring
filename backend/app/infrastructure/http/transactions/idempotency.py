@@ -24,10 +24,14 @@ def is_duplicate_webhook(payload: dict[str, Any]) -> bool:
     key = build_webhook_idempotency_key(payload)
     if not key:
         return False
+    # Short TTL: only deduplicate burst retries within the same minute.
+    # Midtrans retries at 2 min, 10 min, 30 min, etc. — those should not
+    # be suppressed here; the begin_order_effect lock provides longer-term
+    # idempotency for successful processing.
     try:
-        ttl_seconds = int(current_app.config.get("MIDTRANS_WEBHOOK_IDEMPOTENCY_TTL_SECONDS", 86400))
+        ttl_seconds = int(current_app.config.get("MIDTRANS_WEBHOOK_IDEMPOTENCY_TTL_SECONDS", 30))
     except Exception:
-        ttl_seconds = 86400
+        ttl_seconds = 30
     try:
         inserted = redis_client.set(key, "1", ex=ttl_seconds, nx=True)
         return inserted is None
@@ -89,10 +93,13 @@ def begin_order_effect(
             return False, None
         return True, None
 
+    # Lock TTL must be slightly longer than gunicorn's worker timeout (120 s) so
+    # the lock expires shortly after the worker is SIGKILL'd, allowing the next
+    # Midtrans retry (typically at 2 min) to acquire it and re-process.
     try:
-        lock_ttl = int(current_app.config.get("MIDTRANS_ORDER_EFFECT_LOCK_TTL_SECONDS", 300))
+        lock_ttl = int(current_app.config.get("MIDTRANS_ORDER_EFFECT_LOCK_TTL_SECONDS", 130))
     except Exception:
-        lock_ttl = 300
+        lock_ttl = 130
     lock_ttl = max(30, min(lock_ttl, 3600))
 
     try:
