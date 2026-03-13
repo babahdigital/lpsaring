@@ -292,7 +292,17 @@ def _apply_post_auth_mikrotik_ops(
 
     list_blocked = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked"
     list_unauthorized = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized") or "unauthorized"
+    list_fup = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup"
+    list_habis = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis"
+    list_expired = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired"
+    list_inactive = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive"
     ip_binding_enabled = settings_service.get_setting("IP_BINDING_ENABLED", "True") == "True"
+
+    # Address-list yang harus dibersihkan saat login agar IP recycle antar user
+    # tidak meninggalkan stale entry (misal: IP lama user FUP dipakai user baru → klient_fup persists).
+    # Catatan: list_active TIDAK dibersihkan agar user aktif tetap mendapat akses.
+    # Jika user sedang FUP, periodic sync (maks ~2 menit) akan re-add ke klient_fup.
+    _STALE_LISTS_TO_CLEAR = {list_blocked, list_unauthorized, list_fup, list_habis, list_expired, list_inactive}
 
     def _do_ops(api: Any) -> None:
         # 1. Upsert ip-binding (jika diaktifkan dan ada MAC)
@@ -309,16 +319,14 @@ def _apply_post_auth_mikrotik_ops(
             except Exception as e:
                 logger.warning("post-auth: gagal upsert ip-binding mac=%s err=%s", mac_address, e)
 
-        # 2. Hapus IP dari address-list blocked + unauthorized
+        # 2. Hapus IP dari semua address-list status yang bisa menjadi stale setelah login.
+        # Ini mencegah IP recycling antar user meninggalkan klient_fup/blocked/habis/expired/inactive.
         if ip_address:
-            try:
-                remove_address_list_entry(api_connection=api, address=ip_address, list_name=list_blocked)
-            except Exception:
-                pass
-            try:
-                remove_address_list_entry(api_connection=api, address=ip_address, list_name=list_unauthorized)
-            except Exception:
-                pass
+            for _list_name in _STALE_LISTS_TO_CLEAR:
+                try:
+                    remove_address_list_entry(api_connection=api, address=ip_address, list_name=_list_name)
+                except Exception:
+                    pass
 
         # 3. Best-effort cleanup hotspot host (tidak perlu cek dulu — remove_hotspot_host_entries sudah aman)
         if mac_address or ip_address or username:
