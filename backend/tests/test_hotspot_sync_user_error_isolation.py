@@ -1,0 +1,161 @@
+from __future__ import annotations
+
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from types import SimpleNamespace
+from uuid import uuid4
+
+from flask import Flask
+
+import app.services.hotspot_sync_service as svc
+
+
+@contextmanager
+def _api_context(api):
+    yield api
+
+
+class _FakeQuery:
+    def where(self, *_args, **_kwargs):
+        return self
+
+    def options(self, *_args, **_kwargs):
+        return self
+
+
+class _FakeLoader:
+    def selectinload(self, *_args, **_kwargs):
+        return self
+
+
+class _FakeNestedTransaction:
+    def __init__(self, session):
+        self.session = session
+
+    def __enter__(self):
+        self.session.begin_nested_calls += 1
+        return self
+
+    def __exit__(self, exc_type, _exc, _tb):
+        if exc_type is not None:
+            self.session.poisoned = False
+        return False
+
+
+class _FakeSession:
+    def __init__(self, users):
+        self.users = list(users)
+        self.begin_nested_calls = 0
+        self.commit_calls = 0
+        self.poisoned = False
+
+    def scalars(self, _query):
+        return SimpleNamespace(all=lambda: list(self.users))
+
+    def begin_nested(self):
+        return _FakeNestedTransaction(self)
+
+    def commit(self):
+        self.commit_calls += 1
+        if self.poisoned:
+            raise RuntimeError("session still poisoned")
+
+
+class _FakeUser:
+    def __init__(self, phone_number: str, used_mb: float):
+        self._id = uuid4()
+        self.raise_on_id = False
+        self.phone_number = phone_number
+        self.total_quota_used_mb = used_mb
+        self.total_quota_purchased_mb = 1000.0
+        self.is_unlimited_user = False
+        self.role = svc.UserRole.USER
+        self.quota_expiry_date = None
+        self.mikrotik_profile_name = "default"
+        self.is_blocked = False
+        self.devices = []
+
+    @property
+    def id(self):
+        if self.raise_on_id:
+            raise RuntimeError("user id unavailable after rollback")
+        return self._id
+
+
+def _make_app() -> Flask:
+    app = Flask(__name__)
+    app.config["SECRET_KEY"] = "unit-test-secret"
+    app.config["QUOTA_SYNC_GLOBAL_LOCK_SECONDS"] = 180
+    return app
+
+
+def test_sync_hotspot_usage_and_profiles_isolates_user_failures(monkeypatch):
+    app = _make_app()
+    first_user = _FakeUser("+628111111111", 10.0)
+    second_user = _FakeUser("+628222222222", 20.0)
+    fake_session = _FakeSession([first_user, second_user])
+    fake_redis = object()
+    released_user_ids = []
+
+    monkeypatch.setattr(svc, "db", SimpleNamespace(session=fake_session))
+    monkeypatch.setattr(svc, "select", lambda *_args, **_kwargs: _FakeQuery())
+    monkeypatch.setattr(svc, "selectinload", lambda *_args, **_kwargs: _FakeLoader())
+    monkeypatch.setattr(svc, "settings_service", SimpleNamespace(
+        get_setting=lambda _key, default=None: default,
+        get_setting_as_int=lambda _key, default=0: default,
+    ))
+    monkeypatch.setattr(svc, "_get_redis_client", lambda: fake_redis)
+    monkeypatch.setattr(svc, "_acquire_global_sync_lock", lambda *_args, **_kwargs: (True, "token"))
+    monkeypatch.setattr(svc, "_release_global_sync_lock", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(svc, "_acquire_sync_lock", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(svc, "_release_sync_lock", lambda _redis, user_id: released_user_ids.append(user_id))
+    monkeypatch.setattr(svc, "_is_demo_user", lambda _user: False)
+    monkeypatch.setattr(svc, "get_mikrotik_connection", lambda: _api_context(object()))
+    monkeypatch.setattr(svc, "get_hotspot_host_usage_map", lambda _api: (True, {}, "ok"))
+    monkeypatch.setattr(svc, "get_hotspot_ip_binding_user_map", lambda _api: (True, {}, "ok"))
+    monkeypatch.setattr(svc, "_snapshot_ip_binding_rows_by_mac", lambda _api: (True, {}))
+    monkeypatch.setattr(
+        svc,
+        "_calculate_usage_update",
+        lambda user, *_args, **_kwargs: (1.25, float(user.total_quota_used_mb or 0.0) + 1.25),
+    )
+
+    def _update_daily_usage_log(user, _delta_mb, _today):
+        if user is first_user:
+            fake_session.poisoned = True
+            user.raise_on_id = True
+            raise RuntimeError("simulated stale user_devices flush")
+        return True
+
+    monkeypatch.setattr(svc, "_update_daily_usage_log", _update_daily_usage_log)
+    monkeypatch.setattr(svc, "lock_user_quota_row", lambda _user: None)
+    monkeypatch.setattr(
+        svc,
+        "snapshot_user_quota_state",
+        lambda user: {"total_quota_used_mb": float(user.total_quota_used_mb or 0.0)},
+    )
+    monkeypatch.setattr(svc, "append_quota_mutation_event", lambda **_kwargs: None)
+    monkeypatch.setattr(svc, "_calculate_remaining", lambda _user: (500.0, 50.0))
+    monkeypatch.setattr(svc, "_apply_auto_debt_limit_block_state", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(svc, "_resolve_target_profile", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(svc, "_self_heal_policy_binding_for_user", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(svc, "_self_heal_policy_dhcp_for_user", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(svc, "_emit_policy_binding_mismatch_metrics", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(svc, "_collect_candidate_ips_for_user", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(svc, "_sync_address_list_status_for_ip", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(svc, "_prune_stale_status_entries_for_user", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(svc, "_sync_address_list_status", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(svc, "_send_quota_notifications", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(svc, "_send_expiry_notifications", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(svc, "get_app_local_datetime", lambda *_args, **_kwargs: datetime(2026, 3, 14, tzinfo=timezone.utc))
+
+    with app.app_context():
+        result = svc.sync_hotspot_usage_and_profiles()
+
+    assert result["processed"] == 1
+    assert result["updated_usage"] == 1
+    assert result["failed"] == 1
+    assert fake_session.begin_nested_calls == 2
+    assert fake_session.commit_calls == 1
+    assert second_user.total_quota_used_mb == 21.25
+    assert released_user_ids == [first_user._id, second_user._id]
