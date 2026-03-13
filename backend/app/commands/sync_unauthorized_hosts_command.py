@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple
 
 import click
@@ -191,6 +192,104 @@ def _plan_critical_status_overlap_removals(
     return plans
 
 
+@dataclass
+class UnauthorizedSyncDbState:
+    resolved_list: str
+    resolved_timeout: str
+    resolved_min_uptime: int
+    status_list_names: set[str]
+    list_active: str
+    list_fup: str
+    list_blocked: str
+    authorized_device_ips: set[str]
+    authorized_device_macs: set[str]
+
+
+def _load_unauthorized_sync_db_state(
+    *,
+    list_name: Optional[str],
+    timeout: Optional[str],
+    min_uptime_minutes: Optional[int],
+) -> UnauthorizedSyncDbState:
+    try:
+        resolved_list = (
+            list_name
+            or settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized")
+            or "unauthorized"
+        )
+        resolved_timeout = (
+            timeout or settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED_TIMEOUT", "1h") or "1h"
+        )
+        resolved_min_uptime = int(
+            min_uptime_minutes
+            if min_uptime_minutes is not None
+            else settings_service.get_setting_as_int("MIKROTIK_UNAUTHORIZED_MIN_UPTIME_MINUTES", 10)
+        )
+
+        list_active = str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active").strip()
+        list_fup = str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup").strip()
+        list_inactive = str(
+            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive"
+        ).strip()
+        list_expired = str(
+            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired"
+        ).strip()
+        list_habis = str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis").strip()
+        list_blocked = str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked").strip()
+
+        status_list_names = {
+            name
+            for name in {list_active, list_fup, list_inactive, list_expired, list_habis, list_blocked}
+            if name and name != resolved_list
+        }
+
+        authorized_device_ips = {
+            _normalize_ip_for_compare(str(ip or ""))
+            for ip in db.session.scalars(
+                select(UserDevice.ip_address)
+                .join(User, User.id == UserDevice.user_id)
+                .where(
+                    UserDevice.ip_address.isnot(None),
+                    UserDevice.is_authorized.is_(True),
+                    User.is_active.is_(True),
+                    User.approval_status == ApprovalStatus.APPROVED,
+                )
+            ).all()
+            if _normalize_ip_for_compare(str(ip or ""))
+        }
+
+        authorized_device_macs = {
+            str(mac).strip().upper()
+            for mac in db.session.scalars(
+                select(UserDevice.mac_address)
+                .join(User, User.id == UserDevice.user_id)
+                .where(
+                    UserDevice.mac_address.isnot(None),
+                    UserDevice.is_authorized.is_(True),
+                    User.is_active.is_(True),
+                    User.approval_status == ApprovalStatus.APPROVED,
+                )
+            ).all()
+            if str(mac or "").strip()
+        }
+
+        return UnauthorizedSyncDbState(
+            resolved_list=resolved_list,
+            resolved_timeout=resolved_timeout,
+            resolved_min_uptime=resolved_min_uptime,
+            status_list_names=status_list_names,
+            list_active=list_active,
+            list_fup=list_fup,
+            list_blocked=list_blocked,
+            authorized_device_ips=authorized_device_ips,
+            authorized_device_macs=authorized_device_macs,
+        )
+    finally:
+        # Lepas sesi lebih awal agar task Celery tidak menahan transaksi idle
+        # selama operasi RouterOS yang bisa berlangsung puluhan detik.
+        db.session.remove()
+
+
 @click.command("sync-unauthorized-hosts")
 @click.option(
     "--list-name",
@@ -250,19 +349,14 @@ def sync_unauthorized_hosts_command(
     - Hanya menghapus entri yang dikelola aplikasi (comment prefix: 'lpsaring:unauthorized').
     """
 
-    resolved_list = (
-        list_name
-        or settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized")
-        or "unauthorized"
+    db_state = _load_unauthorized_sync_db_state(
+        list_name=list_name,
+        timeout=timeout,
+        min_uptime_minutes=min_uptime_minutes,
     )
-    resolved_timeout = (
-        timeout or settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED_TIMEOUT", "1h") or "1h"
-    )
-    resolved_min_uptime = int(
-        min_uptime_minutes
-        if min_uptime_minutes is not None
-        else settings_service.get_setting_as_int("MIKROTIK_UNAUTHORIZED_MIN_UPTIME_MINUTES", 10)
-    )
+    resolved_list = db_state.resolved_list
+    resolved_timeout = db_state.resolved_timeout
+    resolved_min_uptime = db_state.resolved_min_uptime
     min_uptime_seconds = max(0, resolved_min_uptime) * 60
 
     if cidrs:
@@ -289,35 +383,8 @@ def sync_unauthorized_hosts_command(
     prefix = "lpsaring:unauthorized"
     desired: Dict[str, str] = {}
 
-    authorized_device_ips = {
-        _normalize_ip_for_compare(str(ip or ""))
-        for ip in db.session.scalars(
-            select(UserDevice.ip_address)
-            .join(User, User.id == UserDevice.user_id)
-            .where(
-                UserDevice.ip_address.isnot(None),
-                UserDevice.is_authorized.is_(True),
-                User.is_active.is_(True),
-                User.approval_status == ApprovalStatus.APPROVED,
-            )
-        ).all()
-        if _normalize_ip_for_compare(str(ip or ""))
-    }
-
-    authorized_device_macs = {
-        str(mac).strip().upper()
-        for mac in db.session.scalars(
-            select(UserDevice.mac_address)
-            .join(User, User.id == UserDevice.user_id)
-            .where(
-                UserDevice.mac_address.isnot(None),
-                UserDevice.is_authorized.is_(True),
-                User.is_active.is_(True),
-                User.approval_status == ApprovalStatus.APPROVED,
-            )
-        ).all()
-        if str(mac or "").strip()
-    }
+    authorized_device_ips = db_state.authorized_device_ips
+    authorized_device_macs = db_state.authorized_device_macs
 
     processed = 0
     skipped_no_ip = 0
@@ -518,15 +585,7 @@ def sync_unauthorized_hosts_command(
 
         # Final safety guard: IP yang sudah terdaftar di list status manapun
         # (aktif/fup/inactive/expired/habis/blocked) tidak boleh overlap di unauthorized.
-        status_list_names = {
-            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active",
-            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup",
-            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive",
-            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired",
-            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis",
-            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked",
-        }
-        status_list_names = {name for name in status_list_names if name and name != resolved_list}
+        status_list_names = db_state.status_list_names
 
         protected_status_ips: set[str] = set()
         for status_list_name in sorted(status_list_names):
@@ -551,9 +610,9 @@ def sync_unauthorized_hosts_command(
 
         # Final safety guard: list status kritikal tidak boleh overlap untuk IP yang sama.
         # Prioritas yang dipertahankan: blocked > fup > active.
-        list_active = str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active").strip()
-        list_fup = str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup").strip()
-        list_blocked = str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked").strip()
+        list_active = db_state.list_active
+        list_fup = db_state.list_fup
+        list_blocked = db_state.list_blocked
 
         critical_lists = sorted({name for name in (list_active, list_fup, list_blocked) if name})
         critical_ip_to_lists: Dict[str, set[str]] = {}
