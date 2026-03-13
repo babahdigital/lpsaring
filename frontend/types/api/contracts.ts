@@ -30,6 +30,7 @@ export {
   type AdminQuotaRequestListResponse,
   type AdminQuotaRequestProcessRequest,
   type AdminTransactionListResponse,
+  type AdminTransactionReconcileResponse,
   type AdminMetricsResponse,
   type AdminAccessParityResponse,
   type AccessParityItem,

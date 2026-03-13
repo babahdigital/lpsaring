@@ -63,6 +63,7 @@ Lampiran wajib:
 ### 6) Admin Transactions
 - `GET /api/admin/transactions`
 - `GET /api/admin/transactions/{order_id}/detail`
+- `POST /api/admin/transactions/{order_id}/reconcile` — Verifikasi ke Midtrans & perbaiki transaksi EXPIRED/FAILED jika sudah lunas. Membutuhkan role admin. Response: `{ message, transaction_status, midtrans_status, quota_applied, whatsapp_sent }`.
 
 ### 7) Admin Settings
 - `GET /api/admin/settings`

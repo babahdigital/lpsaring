@@ -2,7 +2,7 @@
 // AUTO-GENERATED FILE. DO NOT EDIT MANUALLY.
 // Source: contracts/openapi/openapi.v1.yaml
 
-export const OPENAPI_SOURCE_SHA256 = 'e5746d78bf1cbf5415d226570cc7276bf9cb97e675f03f040cf242f3ecedb129' as const
+export const OPENAPI_SOURCE_SHA256 = 'c6854bd6ff018244e4ad43ee93387b524ade5ca403fff9a091653a0019bebc77' as const
 export const API_CONTRACT_REVISION = 'openapi-1.0.0' as const
 
 export type MessageResponse = { message: string }
@@ -50,6 +50,7 @@ export type AdminQuotaRequestProcessRequest = { action: 'approve' | 'reject'; ap
 export type AdminTransactionListResponse = { items: Array<TransactionDetailResponse>; meta: PaginationMeta }
 export type AdminTransactionBillRequest = { user_id: string; package_id: string; payment_method?: 'qris' | 'gopay' | 'va' | 'shopeepay' | null; va_bank?: 'bca' | 'bni' | 'bri' | 'mandiri' | 'permata' | 'cimb' | null }
 export type AdminTransactionBillResponse = { message: string; order_id: string; status: string; status_url?: string | null; whatsapp_sent?: boolean | null }
+export type AdminTransactionReconcileResponse = { message: string; transaction_status: string; midtrans_status: string; quota_applied: boolean; whatsapp_sent: boolean }
 export type AdminQuotaAdjustRequest = { set_purchased_mb?: number | null; set_used_mb?: number | null; reason: string }
 export type AdminQuotaAdjustResponse = { message: string; total_quota_purchased_mb: number; total_quota_used_mb: number; remaining_mb: number }
 export type AdminMetricsReliabilitySignals = { payment_idempotency_degraded?: boolean; hotspot_sync_lock_degraded?: boolean; policy_parity_degraded?: boolean }
@@ -109,6 +110,11 @@ export interface GeneratedApiContractMap {
   'GET /admin/transactions/{order_id}/detail': {
     request: never
     response: TransactionDetailResponse
+    error: ErrorResponse
+  }
+  'POST /admin/transactions/{order_id}/reconcile': {
+    request: never
+    response: AdminTransactionReconcileResponse
     error: ErrorResponse
   }
   'GET /admin/users': {

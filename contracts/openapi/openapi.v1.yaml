@@ -1061,7 +1061,44 @@ paths:
         '404':
           $ref: '#/components/responses/ErrorNotFound'
 
-  /admin/metrics:
+  /admin/transactions/{order_id}/reconcile:
+    post:
+      tags: [AdminTransactions]
+      summary: Perbaiki transaksi EXPIRED/FAILED dengan verifikasi ke Midtrans
+      description: >
+        Verifikasi status pembayaran ke Midtrans. Jika terkonfirmasi lunas (settlement/capture),
+        update status ke SUCCESS, injek kuota MikroTik, dan kirim WhatsApp invoice ke pengguna.
+        Tidak dapat memperbaiki transaksi yang memang belum dibayar.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: order_id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Transaksi berhasil diperbaiki atau sudah SUCCESS
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminTransactionReconcileResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+        '422':
+          $ref: '#/components/responses/ErrorBadRequest'
+        '502':
+          $ref: '#/components/responses/ErrorBadRequest'
+        '503':
+          $ref: '#/components/responses/ErrorBadRequest'
+
+
     get:
       tags: [AdminMetrics]
       summary: Ambil metrik reliabilitas admin
@@ -2013,6 +2050,21 @@ components:
         whatsapp_sent:
           type: boolean
           nullable: true
+
+    AdminTransactionReconcileResponse:
+      type: object
+      required: [message, transaction_status, midtrans_status, quota_applied, whatsapp_sent]
+      properties:
+        message:
+          type: string
+        transaction_status:
+          type: string
+        midtrans_status:
+          type: string
+        quota_applied:
+          type: boolean
+        whatsapp_sent:
+          type: boolean
 
     AdminQuotaAdjustRequest:
       type: object
