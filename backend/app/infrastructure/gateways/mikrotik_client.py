@@ -192,6 +192,37 @@ def init_mikrotik_pool():
         return False
 
 
+def _try_set_socket_timeout(api_instance: Any, timeout_seconds: float) -> bool:
+    """Set recv/send timeout pada raw socket routeros_api setelah berhasil connect.
+
+    routeros_api 0.21 tidak support socket_timeout di Pool constructor, sehingga
+    socket.recv() bisa hang selamanya pada operasi API (bukan hanya saat connect).
+    Fungsi ini mencoba beberapa attribute path yang diketahui dari library tersebut
+    untuk menemukan raw socket dan memanggil settimeout().
+
+    Gagal silently jika path tidak ditemukan (misalnya versi library berubah).
+    """
+    # Attribute paths yang diketahui di routeros_api:
+    # routeros_api.RouterOsApi → .base_api (RouterOsApiBase) → .socket (ApiSocket) → .socket (raw)
+    _attr_paths: List[tuple] = [
+        ("base_api", "socket", "socket"),
+        ("socket", "socket"),
+        ("base_api", "_socket", "socket"),
+        ("_socket", "socket"),
+    ]
+    for path in _attr_paths:
+        try:
+            obj: Any = api_instance
+            for attr in path:
+                obj = getattr(obj, attr)
+            if callable(getattr(obj, "settimeout", None)):
+                obj.settimeout(timeout_seconds)
+                return True
+        except Exception:
+            pass
+    return False
+
+
 def _get_api_with_timeout(pool: Any, timeout_seconds: float) -> Optional[Any]:
     """Jalankan pool.get_api() dalam daemon thread dengan batas waktu.
 
@@ -240,13 +271,17 @@ def get_mikrotik_connection(raise_on_error: bool = False) -> Iterator[Optional[A
         yield None
         return
 
-    # Baca connect_timeout dari config (fallback 10 s jika tidak di-set)
+    # Baca connect_timeout dan socket_timeout dari config
     try:
         connect_timeout = float(current_app.config.get("MIKROTIK_CONNECT_TIMEOUT_SECONDS", 10) or 10)
+        socket_timeout = float(current_app.config.get("MIKROTIK_SOCKET_TIMEOUT_SECONDS", 10) or 10)
     except Exception:
         connect_timeout = float(os.environ.get("MIKROTIK_CONNECT_TIMEOUT_SECONDS") or 10)
+        socket_timeout = float(os.environ.get("MIKROTIK_SOCKET_TIMEOUT_SECONDS") or 10)
     if connect_timeout <= 0:
         connect_timeout = 10.0
+    if socket_timeout <= 0:
+        socket_timeout = 10.0
 
     # Acquire the connection BEFORE any yield. This prevents the
     # "generator didn't stop after throw()" RuntimeError that occurs when
@@ -257,6 +292,10 @@ def get_mikrotik_connection(raise_on_error: bool = False) -> Iterator[Optional[A
         api_instance = _get_api_with_timeout(_connection_pool, connect_timeout)
         if api_instance is None:
             record_failure("mikrotik")
+        elif not _supports_socket_timeout:
+            # Pool tidak support socket_timeout di constructor: set langsung pada raw socket
+            # agar resource.get() / resource.add() tidak hang selamanya saat MikroTik lambat.
+            _try_set_socket_timeout(api_instance, socket_timeout)
     except Exception as e:
         logger.error(f"Error mendapatkan koneksi: {e}", exc_info=True)
         record_failure("mikrotik")
