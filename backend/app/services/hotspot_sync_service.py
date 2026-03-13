@@ -1,4 +1,5 @@
 # backend/app/services/hotspot_sync_service.py
+from dataclasses import dataclass
 import logging
 import math
 import threading
@@ -78,6 +79,11 @@ _local_global_sync_lock = threading.Lock()
 _thread_local_state = threading.local()
 
 
+@dataclass(frozen=True)
+class HotspotUsageSyncDbState:
+    user_ids: List[uuid.UUID]
+
+
 def _is_demo_phone_whitelisted(phone_number: Optional[str]) -> bool:
     if not phone_number:
         return False
@@ -115,6 +121,36 @@ def _is_demo_phone_whitelisted(phone_number: Optional[str]) -> bool:
 
 def _is_demo_user(user: User) -> bool:
     return _is_demo_phone_whitelisted(getattr(user, "phone_number", None))
+
+
+def _load_hotspot_usage_sync_db_state() -> HotspotUsageSyncDbState:
+    try:
+        raw_user_ids = db.session.scalars(
+            select(User.id).where(
+                User.is_active,
+                User.role.in_([UserRole.USER, UserRole.KOMANDAN]),
+                User.approval_status == ApprovalStatus.APPROVED,
+            )
+        ).all()
+
+        return HotspotUsageSyncDbState(
+            user_ids=[getattr(user_id, "id", user_id) for user_id in raw_user_ids if getattr(user_id, "id", user_id)]
+        )
+    finally:
+        # Lepas sesi awal agar sinkronisasi tidak menahan transaksi idle
+        # sepanjang operasi RouterOS dan loop per-user.
+        db.session.remove()
+
+
+def _load_hotspot_sync_user(user_id: uuid.UUID) -> Optional[User]:
+    return db.session.scalars(
+        select(User)
+        .where(User.id == user_id)
+        .options(
+            selectinload(User.transactions).selectinload(Transaction.package),
+            selectinload(User.devices),
+        )
+    ).first()
 
 
 def _is_valid_ip_candidate(value: Optional[str]) -> bool:
@@ -1516,20 +1552,10 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
     auto_enroll_users = 0
     auto_enroll_devices = 0
 
-    users_to_sync = db.session.scalars(
-        select(User)
-        .where(
-            User.is_active,
-            User.role.in_([UserRole.USER, UserRole.KOMANDAN]),
-            User.approval_status == ApprovalStatus.APPROVED,
-        )
-        .options(
-            selectinload(User.transactions).selectinload(Transaction.package),
-            selectinload(User.devices),
-        )
-    ).all()
+    db_state = _load_hotspot_usage_sync_db_state()
+    user_ids = db_state.user_ids
 
-    if not users_to_sync:
+    if not user_ids:
         return counters
 
     today = get_app_local_datetime().date()
@@ -1547,13 +1573,13 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
         with get_mikrotik_connection() as api:
             if not api:
                 logger.error("Gagal mendapatkan koneksi MikroTik untuk sinkronisasi kuota.")
-                counters["failed"] = len(users_to_sync)
+                counters["failed"] = len(user_ids)
                 return counters
 
             ok_host, host_usage_map, host_msg = get_hotspot_host_usage_map(api)
             if not ok_host:
                 logger.error(f"Gagal mengambil data host Mikrotik: {host_msg}")
-                counters["failed"] = len(users_to_sync)
+                counters["failed"] = len(user_ids)
                 return counters
 
             ip_binding_map: Dict[str, Dict[str, Any]] = {}
@@ -1577,11 +1603,14 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                 if not ip_binding_map and ok_binding_map:
                     ip_binding_map = binding_map
 
-            for user in users_to_sync:
-                user_id: uuid.UUID = user.id
+            for user_id in user_ids:
                 lock_acquired = False
                 try:
-                    with db.session.begin_nested():
+                    with db.session.begin():
+                        user = _load_hotspot_sync_user(user_id)
+                        if user is None:
+                            continue
+
                         if _is_demo_user(user):
                             continue
 
@@ -1776,6 +1805,7 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                     logger.error("Error sinkronisasi user %s: %s", user_id, e, exc_info=True)
                     counters["failed"] += 1
                 finally:
+                    db.session.remove()
                     if lock_acquired:
                         _release_sync_lock(redis_client, user_id)
 
@@ -1785,8 +1815,6 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                 auto_enroll_users,
                 auto_enroll_devices,
             )
-
-        db.session.commit()
 
         return counters
     finally:

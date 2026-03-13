@@ -33,7 +33,7 @@ class _FakeNestedTransaction:
         self.session = session
 
     def __enter__(self):
-        self.session.begin_nested_calls += 1
+        self.session.begin_calls += 1
         return self
 
     def __exit__(self, exc_type, _exc, _tb):
@@ -45,20 +45,21 @@ class _FakeNestedTransaction:
 class _FakeSession:
     def __init__(self, users):
         self.users = list(users)
-        self.begin_nested_calls = 0
-        self.commit_calls = 0
+        self.begin_calls = 0
+        self.remove_calls = 0
         self.poisoned = False
 
     def scalars(self, _query):
-        return SimpleNamespace(all=lambda: list(self.users))
+        return SimpleNamespace(
+            all=lambda: list(self.users),
+            first=lambda: self.users[0] if self.users else None,
+        )
 
-    def begin_nested(self):
+    def begin(self):
         return _FakeNestedTransaction(self)
 
-    def commit(self):
-        self.commit_calls += 1
-        if self.poisoned:
-            raise RuntimeError("session still poisoned")
+    def remove(self):
+        self.remove_calls += 1
 
 
 class _FakeUser:
@@ -96,14 +97,22 @@ def test_sync_hotspot_usage_and_profiles_isolates_user_failures(monkeypatch):
     fake_session = _FakeSession([first_user, second_user])
     fake_redis = object()
     released_user_ids = []
+    user_by_id = {
+        first_user._id: first_user,
+        second_user._id: second_user,
+    }
 
     monkeypatch.setattr(svc, "db", SimpleNamespace(session=fake_session))
-    monkeypatch.setattr(svc, "select", lambda *_args, **_kwargs: _FakeQuery())
-    monkeypatch.setattr(svc, "selectinload", lambda *_args, **_kwargs: _FakeLoader())
     monkeypatch.setattr(svc, "settings_service", SimpleNamespace(
         get_setting=lambda _key, default=None: default,
         get_setting_as_int=lambda _key, default=0: default,
     ))
+    monkeypatch.setattr(
+        svc,
+        "_load_hotspot_usage_sync_db_state",
+        lambda: svc.HotspotUsageSyncDbState(user_ids=[first_user._id, second_user._id]),
+    )
+    monkeypatch.setattr(svc, "_load_hotspot_sync_user", lambda user_id: user_by_id[user_id])
     monkeypatch.setattr(svc, "_get_redis_client", lambda: fake_redis)
     monkeypatch.setattr(svc, "_acquire_global_sync_lock", lambda *_args, **_kwargs: (True, "token"))
     monkeypatch.setattr(svc, "_release_global_sync_lock", lambda *_args, **_kwargs: None)
@@ -155,7 +164,21 @@ def test_sync_hotspot_usage_and_profiles_isolates_user_failures(monkeypatch):
     assert result["processed"] == 1
     assert result["updated_usage"] == 1
     assert result["failed"] == 1
-    assert fake_session.begin_nested_calls == 2
-    assert fake_session.commit_calls == 1
+    assert fake_session.begin_calls == 2
+    assert fake_session.remove_calls == 2
     assert second_user.total_quota_used_mb == 21.25
     assert released_user_ids == [first_user._id, second_user._id]
+
+
+def test_load_hotspot_usage_sync_db_state_releases_session(monkeypatch):
+    first_user_id = uuid4()
+    second_user_id = uuid4()
+    fake_session = _FakeSession([first_user_id, second_user_id])
+
+    monkeypatch.setattr(svc, "db", SimpleNamespace(session=fake_session))
+    monkeypatch.setattr(svc, "select", lambda *_args, **_kwargs: _FakeQuery())
+
+    state = svc._load_hotspot_usage_sync_db_state()
+
+    assert state.user_ids == [first_user_id, second_user_id]
+    assert fake_session.remove_calls == 1

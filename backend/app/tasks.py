@@ -59,6 +59,13 @@ from app.utils.formatters import format_to_local_phone, get_app_local_datetime, 
 from app.utils.metrics_utils import increment_metric
 from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package, format_rupiah
 
+
+def _load_quota_sync_interval_seconds() -> int:
+    try:
+        return settings_service.get_setting_as_int("QUOTA_SYNC_INTERVAL_SECONDS", 300)
+    finally:
+        db.session.remove()
+
 # Import create_app dari app/__init__.py
 from app import create_app as _flask_create_app
 
@@ -1361,7 +1368,7 @@ def sync_hotspot_usage_task(self):
     app = create_app()
     with app.app_context():
         logger.info("Celery Task: Memulai sinkronisasi kuota dan profil hotspot.")
-        sync_interval = settings_service.get_setting_as_int("QUOTA_SYNC_INTERVAL_SECONDS", 300)
+        sync_interval = _load_quota_sync_interval_seconds()
         redis_client = getattr(app, "redis_client_otp", None)
 
         # Throttle check: skip jika belum melewati interval sejak run terakhir
