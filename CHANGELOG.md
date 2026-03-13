@@ -8,7 +8,51 @@ Lampiran wajib:
 
 ## [Unreleased]
 
-### Fixed (2026-03-08 — Sesi 4: Critical Deadlock Fix)
+### Fixed (2026-03-13 — Sesi Stabilitas Infra + Payment Loss + SIGKILL)
+
+#### bind-current SIGKILL (commit `76e66bca`)
+- **CRITICAL:** `apply_device_binding_for_login()` membuka 3 koneksi MikroTik TCP secara berurutan saat `client_ip=None` (panggilan dari dashboard tanpa captive portal): `_resolve_binding_ip` + `resolve_client_mac` + `_apply_post_auth_mikrotik_ops` → total bisa ~180s → gunicorn worker SIGKILL (timeout 120s) → 502 → user tidak dapat internet dari dashboard.
+- Fix: gunakan **satu koneksi bersama** (`nullcontext(None)` / `get_mikrotik_connection()`) di `apply_device_binding_for_login` saat slow path (client_ip tidak valid). Koneksi shared diteruskan ke semua fungsi downstream via parameter `api_connection=None` baru. Fungsi yang dimodifikasi: `_resolve_binding_ip`, `resolve_client_mac`, `register_or_update_device`, `_apply_post_auth_mikrotik_ops`. Total koneksi: 3 → 1 (slow path, dashboard). Fast path (captive portal dengan client_ip valid) tetap 1 koneksi.
+
+#### Webhook payment loss — 3 bug (commit `e550141e`)
+- **generator double-yield** (`mikrotik_client.py`): `yield None` inside `try:` block menyebabkan `RuntimeError: generator didn't stop after throw()` saat caller raise exception dalam `with get_mikrotik_connection()` dengan api=None. Fix: acquire connection BEFORE any yield; semua kasus gagal dipindah ke luar blok try/except.
+- **idempotency TTL terlalu panjang** (`idempotency.py`): Redis dedup key di-set saat webhook START; jika worker SIGKILL di ~120s, key bertahan 24 jam → retry diblokir → pembayaran hilang. Fix: TTL 86400s → 30s (burst dedup saja). Effect lock TTL 300s → 130s.
+- **Nested MikroTik connections di webhook** (`transaction_service.py` + `hotspot_sync_service.py`): `sync_address_list_for_single_user` membuka koneksi EKSTRA di dalam konteks MikroTik webhook yang sudah ada → nested TCP → total >120s → SIGKILL → rollback DB. Fix: `api_connection=None` param via `nullcontext`; `transaction_service.py` meneruskan `mikrotik_api` yang sudah ada.
+
+#### hotspot-required.vue "Aktifkan Internet" selalu gagal (commit `c39dcd0b`)
+- Root cause: user dengan ip-binding `bypassed` TIDAK masuk ke `/ip/hotspot/host` MikroTik. `hotspot-session-status` mencari user di hotspot host → tidak ketemu → `missing-hints` → `binding_active=False` → semua 8 poll gagal → tampil fallback login.
+- Fix A (backend): tambah `db-device-mac` fallback di `hotspot_status_handlers.py` — jika hotspot host kosong, ambil MAC dari DB `UserDevice` terbaru user (`is_authorized=True`) → cek ip-binding MikroTik by MAC.
+- Fix B (frontend): jika `authorizeDevice()` return `true` → poll hanya 3× (bukan 8×) dengan interval 900ms → setelah itu langsung `continueToPortal()` (ip-binding sudah aktif, tidak perlu tunggu hotspot host entry).
+
+#### Infrastruktur hardening (commit `e4129451`)
+- **MikroTik TCP connection leak** (`mikrotik_client.py`): `finally` block tidak memanggil `api_instance.disconnect()` jika pool tidak support `return_api` → socket tertahan sampai GC → socket table MikroTik penuh → 502.
+- **Redis tanpa memory limit**: `maxmemory=0` → OOM risk. Fix: `--maxmemory 256mb --maxmemory-policy allkeys-lru`.
+- **SQLAlchemy stale connection**: `pool_pre_ping=False, pool_recycle=-1` → koneksi stale setelah PostgreSQL timeout 8 jam. Fix: `pool_pre_ping=True, pool_recycle=3600`; `pool_size=3, max_overflow=5` di ProductionConfig saja.
+- **Nested MikroTik connections** (`hotspot_sync_service.py`): `_remove_ip_binding()` membuka koneksi baru padahal sudah berada di dalam `with get_mikrotik_connection()`. Fix: tambah `api_connection=None` param.
+- **Gunicorn worker timeout lama**: `--timeout 30` → `--timeout 120`, tambah `--graceful-timeout 120` dan `--keep-alive 2`.
+- **OS security patches**: curl CVE + libfreetype6 + nftables diperbarui via `apt-get upgrade`.
+
+#### Config & tasks (commit `c8db533c`)
+- `RefreshToken` field names salah: `is_revoked` → `revoked_at`, `created_at` → `issued_at` (sesuai model).
+- SQLAlchemy `pool_size`/`max_overflow` di `TestingConfig` menyebabkan error pada SQLite StaticPool. Fix: `TestingConfig.SQLALCHEMY_ENGINE_OPTIONS = {}`.
+- Task Celery baru: `purge_quota_mutation_ledger_task` (hapus entri >90 hari, jalan 04:00 daily) dan `revoke_expired_refresh_tokens_task` (hapus expired/revoked tokens, jalan 04:30 daily).
+
+#### Nuxt healthcheck SSR noise (commit `74ad19bb`)
+- Healthcheck pakai `/login` → trigger SSR → backend poll 401 setiap 15 detik. Fix: tambah `frontend/server/routes/health.get.ts` (lightweight, no SSR), update healthcheck ke `/health`.
+
+### Added (2026-03-13 — Sesi Admin Features, commit `ccec1df6`)
+
+- **Admin "Perbaiki Transaksi"** (`POST /api/admin/transactions/<order_id>/reconcile`): tombol "Perbaiki" di halaman admin transaksi untuk status `FAILED`/`EXPIRED`/`CANCELLED`/`UNKNOWN`. Verifikasi ke Midtrans, inject quota jika sudah lunas, kirim WA invoice, log `AdminActionLog`. Lihat `docs/ADMIN_TRANSACTIONS_UI.md` section 6.
+- **Admin user list device count**: kolom "KONEKSI" di `/admin/users` tampilkan badge jumlah device aktif ("X dev" atau "Belum login") berdasarkan `device_count` (`is_authorized=True`) dari subquery di `user_management_routes.py`.
+
+### Changed (2026-03-13)
+
+- `contracts/openapi/openapi.v1.yaml`: tambah path `POST /admin/transactions/{order_id}/reconcile` + schema `AdminTransactionReconcileResponse` (commit `dbc30493`).
+- `frontend/types/api/contracts.generated.ts`: export type baru, update `GeneratedApiContractMap`, recompute `OPENAPI_SOURCE_SHA256`.
+- `frontend/types/api/contracts.ts`: export `AdminTransactionReconcileResponse`.
+- `docs/API_DETAIL.md`: tambah dokumentasi endpoint reconcile di section 6 Admin Transactions.
+
+
 - **CRITICAL:** `sync_hotspot_usage_task` tidak memiliki Redis mutex lock. Dengan `--concurrency=4`, keempat worker Celery bisa lolos throttle check secara bersamaan (race condition pada baca `quota_sync:last_run_ts`) dan menjalankan `sync_hotspot_usage_and_profiles()` secara concurrent → circular `UPDATE user_devices` → **243 PostgreSQL deadlock** sepanjang hari (25–30/jam), 200+ worker respawn/jam. Diperbaiki dengan menambahkan `redis.SET NX` atomic lock (`quota_sync:run_lock`, TTL=120s) sebelum task execution. Lock dilepas di `finally{}` setelah task selesai. Hanya satu worker yang bisa hold lock; worker lain skip langsung.
 - `QUOTA_SYNC_INTERVAL_SECONDS` diubah `60` → `120` di `.env.prod` sebagai lapisan kedua (belt-and-suspenders) untuk mengurangi frekuensi scheduling pressure.
 

@@ -76,3 +76,41 @@ Field transaksi yang biasanya terisi untuk membantu user membayar:
 - `snap_redirect_url` (dipakai ulang sebagai deeplink Core API)
 - `va_number` (bank transfer)
 - `payment_code` + `biller_code` (Mandiri e-channel)
+
+## 6) Admin → Transaksi → Perbaiki Transaksi
+
+Fitur ini digunakan admin untuk memperbaiki transaksi yang gagal / kadaluarsa padahal user sebenarnya sudah membayar (berhasil di Midtrans tapi webhook gagal diproses).
+
+Endpoint:
+- `POST /api/admin/transactions/{order_id}/reconcile`
+
+Syarat penggunaan:
+- Transaksi harus bertatus `FAILED`, `EXPIRED`, `CANCELLED`, atau `UNKNOWN` di database
+- Status di Midtrans harus `settlement` atau `capture` dengan `fraud_status=accept`
+
+Efek saat berhasil:
+- Status transaksi di DB diubah ke `SUCCESS`
+- Quota paket di-inject ke akun user
+- User dan MikroTik address-list di-sync
+- Notifikasi WhatsApp invoice dikirimkan ke user
+- Event `TRANSACTION_RECONCILE` dicatat di `AdminActionLog`
+
+Response (`200 OK`):
+```json
+{
+  "message": "string",
+  "transaction_status": "SUCCESS",
+  "midtrans_status": "settlement",
+  "quota_applied": true,
+  "whatsapp_sent": true
+}
+```
+
+Error response:
+- `400` — transaksi sudah `SUCCESS` atau Midtrans belum lunas
+- `404` — order_id tidak ditemukan
+
+Catatan UI:
+- Tombol "Perbaiki" (icon `tabler-tool`, warna `warning`) hanya muncul untuk status `FAILED`, `EXPIRED`, `CANCELLED`, `UNKNOWN`
+- Implementasi di `frontend/pages/admin/transactions.vue`
+- Backend di `backend/app/infrastructure/http/admin_contexts/transactions.py` → `admin_reconcile_transaction_impl`
