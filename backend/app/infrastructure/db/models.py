@@ -480,6 +480,8 @@ class UserDevice(db.Model):
     ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
     last_bytes_total: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     last_bytes_updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_hotspot_host_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    last_hotspot_uptime_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     user_agent: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     label: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     is_authorized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=expression.true())

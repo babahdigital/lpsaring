@@ -625,12 +625,15 @@ def get_hotspot_host_usage_map(api_connection: Any) -> Tuple[bool, Dict[str, Dic
                 resolved_address = host.get("to-address")
 
             usage_map[mac_key] = {
+                "host_id": host.get(".id") or host.get("id"),
                 "bytes_in": int(host.get("bytes-in", "0")),
                 "bytes_out": int(host.get("bytes-out", "0")),
                 "address": resolved_address,
                 "source_address": host.get("address"),
                 "to_address": host.get("to-address"),
                 "server": host.get("server"),
+                "uptime_seconds": parse_routeros_duration_to_seconds(host.get("uptime")),
+                "idle_seconds": parse_routeros_duration_to_seconds(host.get("idle-time")),
                 "bypassed": str(host.get("bypassed", "false")).lower() == "true",
                 "authorized": str(host.get("authorized", "false")).lower() == "true",
             }

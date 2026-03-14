@@ -2,7 +2,7 @@
 import logging
 import secrets
 import string
-from datetime import datetime, timedelta, timezone as dt_timezone
+from datetime import datetime, timezone as dt_timezone
 from decimal import Decimal
 from typing import Any
 
@@ -20,6 +20,8 @@ from app.infrastructure.gateways.mikrotik_client import (
 )
 from app.services.hotspot_sync_service import sync_address_list_for_single_user
 from app.services.access_policy_service import resolve_allowed_binding_type_for_user
+from app.services.quota_expiry_policy import calculate_quota_expiry_date
+from app.services.quota_mutation_ledger_service import append_quota_mutation_event, snapshot_user_quota_state
 from app.utils.formatters import format_to_local_phone, get_app_date_time_strings
 
 logger = logging.getLogger(__name__)
@@ -150,6 +152,7 @@ def apply_package_and_sync_to_mikrotik(transaction: Transaction, mikrotik_api: A
 
     user = transaction.user
     package = transaction.package
+    before_state = snapshot_user_quota_state(user) if user else None
 
     if not user or not package or not package.profile:
         msg = f"Transaksi {transaction.id} tidak memiliki user, paket, atau profil paket yang valid."
@@ -202,14 +205,14 @@ def apply_package_and_sync_to_mikrotik(transaction: Transaction, mikrotik_api: A
             remaining_injected_mb,
         )
 
-    duration_to_add = timedelta(days=package.duration_days)
     now_utc = datetime.now(dt_timezone.utc)
     date_str, time_str = get_app_date_time_strings(now_utc)
-
-    if user.quota_expiry_date and user.quota_expiry_date > now_utc:
-        user.quota_expiry_date += duration_to_add
-    else:
-        user.quota_expiry_date = now_utc + duration_to_add
+    user.quota_expiry_date = calculate_quota_expiry_date(
+        current_expiry=user.quota_expiry_date,
+        now=now_utc,
+        days_to_add=int(package.duration_days or 0),
+        strategy="extend_active",
+    )
 
     if not user.mikrotik_password or not (len(user.mikrotik_password) == 6 and user.mikrotik_password.isdigit()):
         user.mikrotik_password = generate_random_password()
@@ -301,6 +304,21 @@ def apply_package_and_sync_to_mikrotik(transaction: Transaction, mikrotik_api: A
         logger.info(
             "Sync address-list tertunda untuk user %s: belum menemukan IP valid.",
             user.id,
+        )
+
+    if before_state is not None:
+        append_quota_mutation_event(
+            user=user,
+            source="quota.purchase_package",
+            before_state=before_state,
+            after_state=snapshot_user_quota_state(user),
+            event_details={
+                "order_id": str(getattr(transaction, "midtrans_order_id", "") or ""),
+                "package_name": str(getattr(package, "name", "") or ""),
+                "package_quota_gb": float(getattr(package, "data_quota_gb", 0) or 0),
+                "package_duration_days": int(getattr(package, "duration_days", 0) or 0),
+                "is_unlimited_package": bool(user.is_unlimited_user),
+            },
         )
 
     try:
