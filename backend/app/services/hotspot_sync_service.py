@@ -84,6 +84,18 @@ class HotspotUsageSyncDbState:
     user_ids: List[uuid.UUID]
 
 
+@dataclass(frozen=True)
+class HotspotUsageSyncRuntimeSettings:
+    auto_enroll_devices_from_ip_binding: bool
+    max_devices_per_user: int
+    auto_enroll_debug_log: bool
+    blocked_profile: str
+    expired_profile: str
+    habis_profile: str
+    fup_profile: str
+    whatsapp_notifications_enabled: bool
+
+
 def _is_demo_phone_whitelisted(phone_number: Optional[str]) -> bool:
     if not phone_number:
         return False
@@ -139,6 +151,27 @@ def _load_hotspot_usage_sync_db_state() -> HotspotUsageSyncDbState:
     finally:
         # Lepas sesi awal agar sinkronisasi tidak menahan transaksi idle
         # sepanjang operasi RouterOS dan loop per-user.
+        db.session.remove()
+
+
+def _load_hotspot_usage_sync_runtime_settings() -> HotspotUsageSyncRuntimeSettings:
+    try:
+        return HotspotUsageSyncRuntimeSettings(
+            auto_enroll_devices_from_ip_binding=(
+                settings_service.get_setting("AUTO_ENROLL_DEVICES_FROM_IP_BINDING", "True") == "True"
+            ),
+            max_devices_per_user=settings_service.get_setting_as_int("MAX_DEVICES_PER_USER", 3),
+            auto_enroll_debug_log=(settings_service.get_setting("AUTO_ENROLL_DEBUG_LOG", "False") == "True"),
+            blocked_profile=(settings_service.get_setting("MIKROTIK_BLOCKED_PROFILE", "inactive") or "inactive"),
+            expired_profile=(settings_service.get_setting("MIKROTIK_EXPIRED_PROFILE", "expired") or "expired"),
+            habis_profile=(settings_service.get_setting("MIKROTIK_HABIS_PROFILE", "habis") or "habis"),
+            fup_profile=(settings_service.get_setting("MIKROTIK_FUP_PROFILE", "fup") or "fup"),
+            whatsapp_notifications_enabled=(
+                settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") == "True"
+            ),
+        )
+    finally:
+        # Lepas sesi settings sebelum loop per-user memulai transaksi eksplisit.
         db.session.remove()
 
 
@@ -1558,6 +1591,8 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
     if not user_ids:
         return counters
 
+    runtime_settings = _load_hotspot_usage_sync_runtime_settings()
+
     today = get_app_local_datetime().date()
     redis_client = _get_redis_client()
 
@@ -1599,7 +1634,7 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
             if not ok_dhcp_snapshot:
                 logger.warning("Policy DHCP self-heal dinonaktifkan sementara karena snapshot DHCP lease raw gagal.")
 
-            if settings_service.get_setting("AUTO_ENROLL_DEVICES_FROM_IP_BINDING", "True") == "True":
+            if runtime_settings.auto_enroll_devices_from_ip_binding:
                 if not ip_binding_map and ok_binding_map:
                     ip_binding_map = binding_map
 
@@ -1623,17 +1658,16 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                             continue
 
                         if ip_binding_map:
-                            max_devices = settings_service.get_setting_as_int("MAX_DEVICES_PER_USER", 3)
+                            max_devices = runtime_settings.max_devices_per_user
                             existing_devices = len(user.devices or [])
                             available_slots = max(0, max_devices - existing_devices)
                             if available_slots > 0:
-                                debug_log = settings_service.get_setting("AUTO_ENROLL_DEBUG_LOG", "False") == "True"
                                 added_devices = _auto_enroll_devices_from_ip_binding(
                                     user,
                                     ip_binding_map,
                                     host_usage_map,
                                     available_slots,
-                                    debug_log,
+                                    runtime_settings.auto_enroll_debug_log,
                                 )
                                 if added_devices > 0:
                                     auto_enroll_users += 1
@@ -1669,7 +1703,7 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                         remaining_mb, remaining_percent = _calculate_remaining(user)
 
                         force_blocked_status = _apply_auto_debt_limit_block_state(user, source="sync_usage")
-                        blocked_profile = settings_service.get_setting("MIKROTIK_BLOCKED_PROFILE", "inactive") or "inactive"
+                        blocked_profile = runtime_settings.blocked_profile
 
                         # Quota-debt hard block is NOT applied to:
                         # - unlimited users
@@ -1726,17 +1760,12 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                             if success_profile:
                                 user.mikrotik_profile_name = target_profile
                                 counters["profile_updates"] += 1
-                                expired_profile = (
-                                    settings_service.get_setting("MIKROTIK_EXPIRED_PROFILE", "expired") or "expired"
-                                )
-                                habis_profile = settings_service.get_setting("MIKROTIK_HABIS_PROFILE", "habis") or "habis"
-                                fup_profile = settings_service.get_setting("MIKROTIK_FUP_PROFILE", "fup") or "fup"
                                 status_key = None
-                                if target_profile == expired_profile:
+                                if target_profile == runtime_settings.expired_profile:
                                     status_key = "expired"
-                                elif target_profile == habis_profile:
+                                elif target_profile == runtime_settings.habis_profile:
                                     status_key = "habis"
-                                elif target_profile == fup_profile:
+                                elif target_profile == runtime_settings.fup_profile:
                                     status_key = "fup"
 
                                 if status_key:
@@ -1796,7 +1825,7 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                                 enforce_binding_guard=binding_guard_enabled,
                             )
 
-                        if settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") == "True":
+                        if runtime_settings.whatsapp_notifications_enabled:
                             _send_quota_notifications(user, remaining_percent, remaining_mb)
                             _send_expiry_notifications(user)
 
