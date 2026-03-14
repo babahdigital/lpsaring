@@ -328,7 +328,35 @@ describe('auth.global runtime', () => {
         client_mac: 'AA:BB:CC:DD:EE:FF',
       },
     })
-    expect(navigateToMock).toHaveBeenCalledWith('/login/hotspot-required?client_ip=172.16.2.10&client_mac=AA%3ABB%3ACC%3ADD%3AEE%3AFF&link_login_only=http%3A%2F%2Flogin.home.arpa%2Flogin', { replace: true })
+    expect(navigateToMock).toHaveBeenCalledWith('/login/hotspot-required?client_ip=172.16.2.10&client_mac=AA%3ABB%3ACC%3ADD%3AEE%3AFF&link_login_only=http%3A%2F%2Flogin.home.arpa%2Flogin&auto_start=1', { replace: true })
+  })
+
+  it('routes logged-in login visits with only remembered mikrotik hint into auto-start hotspot recovery', async () => {
+    const middleware = (await import('../middleware/auth.global')).default
+    authStoreState.isLoggedIn = true
+
+    const localStorageMock = createLocalStorageMock({
+      'lpsaring:last-mikrotik-login-link': 'http://login.home.arpa/login',
+    })
+
+    vi.stubGlobal('window', {
+      document: {
+        referrer: '',
+      },
+      localStorage: localStorageMock,
+      sessionStorage: createSessionStorageMock(),
+    } as any)
+    vi.stubGlobal('localStorage', localStorageMock)
+
+    await middleware({
+      path: '/login',
+      fullPath: '/login',
+      query: {},
+      meta: {},
+    } as any)
+
+    expect(apiMock).not.toHaveBeenCalled()
+    expect(navigateToMock).toHaveBeenCalledWith('/login/hotspot-required?link_login_only=http%3A%2F%2Flogin.home.arpa%2Flogin&auto_start=1', { replace: true })
   })
 
   it('does not redirect to hotspot-required when hotspot session already active', async () => {
@@ -406,7 +434,7 @@ describe('auth.global runtime', () => {
       method: 'GET',
       query: {},
     })
-    expect(navigateToMock).toHaveBeenCalledWith('/login/hotspot-required', { replace: true })
+    expect(navigateToMock).toHaveBeenCalledWith('/login/hotspot-required?auto_start=1', { replace: true })
   })
 
   it('uses stored hotspot identity for dashboard precheck after hotspot-required succeeds', async () => {
@@ -483,7 +511,7 @@ describe('auth.global runtime', () => {
       meta: {},
     } as any)
 
-    expect(navigateToMock).toHaveBeenCalledWith('/login/hotspot-required?client_ip=172.16.3.131&client_mac=08%3AFA%3A79%3AB6%3A29%3AF5', { replace: true })
+    expect(navigateToMock).toHaveBeenCalledWith('/login/hotspot-required?client_ip=172.16.3.131&client_mac=08%3AFA%3A79%3AB6%3A29%3AF5&auto_start=1', { replace: true })
   })
 
   it('prioritizes demo-user redirect to beli over hotspot precheck', async () => {
