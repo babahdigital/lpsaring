@@ -12,7 +12,10 @@ import { useDisplay } from 'vuetify'
 import { useSnackbar } from '~/composables/useSnackbar'
 import { useAuthStore } from '~/store/auth'
 import { normalize_to_e164 } from '~/utils/formatters'
+import { resolveHotspotBridgeTarget, normalizeHotspotLoginUrl } from '~/utils/hotspotLoginTargets'
+import { rememberPendingHotspotBridge } from '~/utils/hotspotBridgeState'
 import { shouldRedirectToHotspotRequired } from '~/utils/hotspotRedirect'
+import { sanitizePostLoginHotspotBridgeReturnPath, shouldAttemptPostLoginHotspotBridge } from '~/utils/hotspotPostLoginBridge'
 import { TAMPING_OPTION_ITEMS } from '~/utils/constants'
 import { rememberHotspotIdentity, resolveHotspotIdentity } from '~/utils/hotspotIdentity'
 
@@ -24,6 +27,7 @@ const authStore = useAuthStore()
 const { add: addSnackbar } = useSnackbar()
 const display = useDisplay()
 const route = useRoute()
+const runtimeConfig = useRuntimeConfig()
 const isHydrated = ref(false)
 const isWidePadding = computed(() => (isHydrated.value ? display.smAndUp.value : false))
 
@@ -133,6 +137,42 @@ function readMikrotikLoginHintFromRoute(): string {
     const ampIndex = after.indexOf('&')
     return (ampIndex >= 0 ? after.slice(0, ampIndex) : after).trim()
   }
+}
+
+const hotspotLoginUrl = computed(() => {
+  const routeHint = readMikrotikLoginHintFromRoute()
+  if (routeHint)
+    return normalizeHotspotLoginUrl(routeHint)
+
+  const appLink = String(runtimeConfig.public.appLinkMikrotik ?? '').trim()
+  if (appLink)
+    return normalizeHotspotLoginUrl(appLink)
+
+  return normalizeHotspotLoginUrl(String(runtimeConfig.public.mikrotikLoginUrl ?? '').trim())
+})
+
+const hotspotBridgeTargetUrl = computed(() => {
+  return resolveHotspotBridgeTarget(
+    hotspotLoginUrl.value,
+    String(runtimeConfig.public.hotspotContextProbeUrl ?? '').trim(),
+  )
+})
+
+function beginSilentHotspotBridge(): boolean {
+  if (!import.meta.client)
+    return false
+
+  const targetUrl = String(hotspotBridgeTargetUrl.value || '').trim()
+  if (!targetUrl)
+    return false
+
+  rememberPendingHotspotBridge({
+    returnPath: sanitizePostLoginHotspotBridgeReturnPath(route.fullPath, window.location.origin),
+    autoResume: true,
+  })
+
+  window.location.replace(targetUrl)
+  return true
 }
 
 // --- Opsi untuk Select Input ---
@@ -358,7 +398,11 @@ async function handleVerifyOtp() {
       await navigateTo(redirectPath, { replace: true })
       return
     }
+
     if (import.meta.client) {
+      if (shouldAttemptPostLoginHotspotBridge(identity, hotspotBridgeTargetUrl.value) && beginSilentHotspotBridge())
+        return
+
       let requireHotspotStep = shouldRedirectToHotspotRequired({
         hotspotLoginRequired: loginResponse.hotspot_login_required,
         hotspotBindingActive: loginResponse.hotspot_binding_active,
