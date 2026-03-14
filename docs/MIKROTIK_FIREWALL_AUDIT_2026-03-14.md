@@ -449,3 +449,39 @@ Masalah utamanya bukan ketiadaan desain, tetapi konsistensi antar-layer enforcem
 - beberapa rule disabled lama yang membuat intent arsitektur tidak lagi bersih
 
 Jika dirapikan di empat titik itu, firewall ini bisa menjadi jauh lebih stabil, lebih aman, dan lebih mudah dipelihara tanpa mengubah filosofi jaringan yang sudah ada.
+
+## Follow-Up Live Hardening Setelah Audit
+
+Sesudah audit ini, hardening live benar-benar diterapkan di router agar desain final tidak berhenti di rekomendasi.
+
+### Perubahan live yang diterapkan
+
+- `vlanMaster` dinonaktifkan sebagai member aktif `MGT`
+- broad rule `FORWARD: Allow Inter-LAN/VLAN (UniFi etc)` dinonaktifkan
+- rule allow inter-LAN diganti menjadi whitelist interface tepercaya saja:
+  - `zerotier1 -> LOCAL_NETWORKS`
+  - `ether13-MGT -> LOCAL_NETWORKS` dan `-> zerotier1`
+  - `vlanSupport -> LOCAL_NETWORKS` dan `-> zerotier1`
+  - `wireguard-do -> LOCAL_NETWORKS` dan `-> zerotier1`
+  - `ether6-Pi -> LOCAL_NETWORKS` dan `-> zerotier1`
+- untuk status restricted (`klient_habis`, `klient_expired`, `klient_inactive`, `klient_blocked`) ditambahkan pola rule konsisten:
+  - allow ke `Bypass_Server`
+  - drop ke `LOCAL_NETWORKS`
+
+### Dampak operasional
+
+- boundary management menjadi lebih sempit: perangkat di `vlanMaster` tidak lagi otomatis dianggap sumber management hanya karena berada di subnet infrastruktur WiFi
+- jalur admin yang benar-benar dipakai tetap utuh melalui `wireguard-do`, `zerotier1`, `ether13-MGT`, `vlanSupport`, dan `ether6-Pi`
+- broad lateral movement antar VLAN/LAN berhasil ditutup tanpa memutus health aplikasi atau koneksi backend ke RouterOS
+- snapshot counter observasi setelah hardening juga tenang:
+  - `klient_habis/expired/inactive/blocked drop-local-networks = 0`
+  - `FW-Fwd Final Drop = 0`
+  - hit yang terlihat hanya `allow zerotier1 to LOCAL_NETWORKS`, konsisten dengan akses management remote
+
+### Interpretasi final
+
+Kesimpulan desain akhirnya adalah:
+
+- arah rule `MGT -> vlanMaster` pada screenshot awal tidak terbalik, tetapi trust boundary lamanya terlalu lebar karena `vlanMaster` sendiri berada di dalam `MGT`
+- model yang lebih tepat untuk lingkungan ini bukan `LIST_LAN -> LIST_LAN`, melainkan explicit allow dari sumber admin yang memang tepercaya
+- tidak ada bukti live bahwa `klient_habis`/`expired` sedang bocor ke subnet lokal saat audit, tetapi gap desain laten itu sekarang sudah ditutup sebelum list tersebut terisi lagi di masa depan
