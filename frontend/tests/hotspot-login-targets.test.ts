@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { normalizeHotspotLoginUrl, resolveHotspotBridgeTarget } from '../utils/hotspotLoginTargets'
+import { normalizeHotspotBridgeUrl, normalizeHotspotLoginUrl, resolveHotspotBridgeTarget } from '../utils/hotspotLoginTargets'
 
 describe('hotspot login targets', () => {
-  it('prefers the router login URL over the generic probe target', () => {
-    expect(resolveHotspotBridgeTarget('http://login.home.arpa/login', 'http://neverssl.com/')).toBe('http://login.home.arpa/login')
+  it('prefers the router portal root over the login-only path for bridge flows', () => {
+    expect(resolveHotspotBridgeTarget('http://login.home.arpa/login', 'http://neverssl.com/')).toBe('http://login.home.arpa/')
+    expect(resolveHotspotBridgeTarget('http://login.home.arpa', 'http://neverssl.com/')).toBe('http://login.home.arpa/')
   })
 
   it('falls back to the configured probe target and then to neverssl', () => {
@@ -21,5 +22,11 @@ describe('hotspot login targets', () => {
     expect(normalizeHotspotLoginUrl('http://login.home.arpa')).toBe('http://login.home.arpa/login')
     expect(normalizeHotspotLoginUrl('login.home.arpa')).toBe('http://login.home.arpa/login')
     expect(normalizeHotspotLoginUrl('http://192.168.88.1')).toBe('http://192.168.88.1/login')
+  })
+
+  it('keeps bridge flows on the router portal root', () => {
+    expect(normalizeHotspotBridgeUrl('http://login.home.arpa/login')).toBe('http://login.home.arpa/')
+    expect(normalizeHotspotBridgeUrl('https://192.168.88.1/login')).toBe('http://192.168.88.1/')
+    expect(normalizeHotspotBridgeUrl('http://example.test/probe')).toBe('http://example.test/probe')
   })
 })

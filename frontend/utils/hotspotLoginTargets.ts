@@ -32,30 +32,38 @@ function shouldAppendLoginPath(hostname: string, pathname: string): boolean {
   return normalizedPath === '' || normalizedPath === '/'
 }
 
-export function normalizeHotspotLoginUrl(raw: string): string {
+function normalizeHotspotUrl(
+  raw: string,
+  options: { appendLoginPathForRoot: boolean, preferPortalRoot: boolean },
+): string {
   const input = String(raw || '').trim()
   if (!input)
     return ''
 
   const candidate = input.startsWith('//') ? `http:${input}` : input
 
-  try {
-    const parsed = new URL(candidate)
+  const normalizeParsedTarget = (parsed: URL): string => {
     if (parsed.protocol === 'https:' && shouldForceHttpForHost(parsed.hostname))
       parsed.protocol = 'http:'
-    if (shouldAppendLoginPath(parsed.hostname, parsed.pathname))
+
+    if (options.preferPortalRoot && shouldForceHttpForHost(parsed.hostname) && parsed.pathname === '/login')
+      parsed.pathname = '/'
+
+    if (options.appendLoginPathForRoot && shouldAppendLoginPath(parsed.hostname, parsed.pathname))
       parsed.pathname = '/login'
+
     return parsed.toString()
+  }
+
+  try {
+    const parsed = new URL(candidate)
+    return normalizeParsedTarget(parsed)
   }
   catch {
     const withScheme = /^https?:\/\//i.test(candidate) ? candidate : `http://${candidate.replace(/^\/+/, '')}`
     try {
       const parsed = new URL(withScheme)
-      if (parsed.protocol === 'https:' && shouldForceHttpForHost(parsed.hostname))
-        parsed.protocol = 'http:'
-      if (shouldAppendLoginPath(parsed.hostname, parsed.pathname))
-        parsed.pathname = '/login'
-      return parsed.toString()
+      return normalizeParsedTarget(parsed)
     }
     catch {
       return candidate
@@ -63,12 +71,26 @@ export function normalizeHotspotLoginUrl(raw: string): string {
   }
 }
 
+export function normalizeHotspotLoginUrl(raw: string): string {
+  return normalizeHotspotUrl(raw, {
+    appendLoginPathForRoot: true,
+    preferPortalRoot: false,
+  })
+}
+
+export function normalizeHotspotBridgeUrl(raw: string): string {
+  return normalizeHotspotUrl(raw, {
+    appendLoginPathForRoot: false,
+    preferPortalRoot: true,
+  })
+}
+
 export function resolveHotspotBridgeTarget(mikrotikLoginUrl: string, configuredProbeUrl: string): string {
-  const preferredLoginUrl = normalizeHotspotLoginUrl(mikrotikLoginUrl)
+  const preferredLoginUrl = normalizeHotspotBridgeUrl(mikrotikLoginUrl)
   if (preferredLoginUrl)
     return preferredLoginUrl
 
-  const configuredProbe = normalizeHotspotLoginUrl(configuredProbeUrl)
+  const configuredProbe = normalizeHotspotBridgeUrl(configuredProbeUrl)
   if (configuredProbe)
     return configuredProbe
 
