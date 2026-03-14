@@ -31,7 +31,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Cleanup old workflow runs
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           KEEP_RUNS: ${{ inputs.keep_runs || '2' }}
         with:
@@ -76,7 +76,7 @@ jobs:
             )
 
       - name: Cleanup old Actions caches
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           KEEP_CACHES: ${{ inputs.keep_caches || '0' }}
         with:
