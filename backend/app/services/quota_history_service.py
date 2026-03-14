@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from datetime import datetime
 from typing import Any, Optional
 
 from sqlalchemy import func, select
@@ -72,18 +73,47 @@ def _format_event_datetime(value: Any) -> Optional[str]:
         return None
 
 
+def _coerce_datetime(value: Any) -> Optional[datetime]:
+    if isinstance(value, datetime):
+        return value
+    if value is None:
+        return None
+
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+
+    try:
+        return datetime.fromisoformat(text)
+    except Exception:
+        return None
+
+
+def _format_event_detail_datetime(value: Any) -> Optional[str]:
+    coerced = _coerce_datetime(value)
+    if coerced is None:
+        return None
+    return _format_event_datetime(coerced)
+
+
 def _format_source_label(source: str) -> str:
     normalized = str(source or "").strip()
     if normalized == "hotspot.sync_usage":
         return "Pemakaian hotspot tersinkron"
     if normalized == "hotspot.sync_rebaseline":
         return "Baseline hotspot direfresh"
-    if normalized == "quota.purchase_package":
+    if normalized.startswith("quota.purchase_package"):
         return "Paket berhasil diaktifkan"
     if normalized == "quota.inject":
         return "Inject kuota oleh admin"
     if normalized == "quota.set_unlimited":
         return "Status unlimited diperbarui"
+    if normalized == "quota.hotspot_spike_refund":
+        return "Refund lonjakan kuota hotspot"
+    if normalized == "quota.normalize_unlimited_expiry":
+        return "Masa aktif unlimited dinormalisasi"
     if normalized == "debt.add_manual":
         return "Tunggakan manual ditambahkan"
     if normalized.startswith("debt.apply_manual_payment:"):
@@ -111,9 +141,9 @@ def _format_category(source: str) -> str:
         return "sync"
     if normalized.startswith("quota.purchase_package"):
         return "purchase"
-    if normalized.startswith("quota.inject") or normalized == "quota.adjust_direct":
+    if normalized.startswith("quota.inject") or normalized in {"quota.adjust_direct", "quota.hotspot_spike_refund"}:
         return "adjustment"
-    if normalized.startswith("quota.set_unlimited") or normalized.startswith("policy.block_transition:"):
+    if normalized.startswith("quota.set_unlimited") or normalized == "quota.normalize_unlimited_expiry" or normalized.startswith("policy.block_transition:"):
         return "policy"
     if normalized.startswith("debt.") or "debt_settlement" in normalized or normalized.startswith("admin_settle"):
         return "debt"
@@ -198,11 +228,13 @@ def _build_highlights(
     highlights: list[str] = []
     normalized = str(source or "").strip()
 
-    if normalized == "quota.purchase_package":
+    if normalized.startswith("quota.purchase_package"):
         package_name = str(event_details.get("package_name") or "").strip()
         package_quota_gb = event_details.get("package_quota_gb")
         package_duration_days = event_details.get("package_duration_days")
         order_id = str(event_details.get("order_id") or "").strip()
+        if event_details.get("imported_from_transaction") is True:
+            highlights.append("Riwayat pembelian lama diimpor dari transaksi sukses")
         if package_name:
             highlights.append(f"Paket: {package_name}")
         if package_quota_gb not in (None, "") or package_duration_days not in (None, ""):
@@ -213,6 +245,37 @@ def _build_highlights(
                 parts.append(f"Masa aktif {package_duration_days} hari")
             if parts:
                 highlights.append(" • ".join(parts))
+        if order_id:
+            highlights.append(f"Order ID: {order_id}")
+
+    if normalized == "quota.hotspot_spike_refund":
+        refunded_mb = _as_float(event_details.get("refunded_mb_applied"))
+        confidence = str(event_details.get("confidence") or "").strip()
+        original_event_at = _format_event_detail_datetime(event_details.get("original_event_created_at"))
+        detection_reason = str(event_details.get("detection_reason") or "").strip()
+        if refunded_mb and refunded_mb > 0:
+            highlights.append(f"Kuota dikembalikan: {_format_quota_text(refunded_mb, signed=True)}")
+        if original_event_at:
+            highlights.append(f"Event asal: {original_event_at}")
+        if confidence:
+            highlights.append(f"Confidence audit: {confidence}")
+        if detection_reason:
+            highlights.append(f"Deteksi: {detection_reason}")
+
+    if normalized == "quota.normalize_unlimited_expiry":
+        previous_expiry = _format_event_detail_datetime(event_details.get("previous_expiry_at"))
+        normalized_expiry = _format_event_detail_datetime(event_details.get("normalized_expiry_at"))
+        purchase_at = _format_event_detail_datetime(event_details.get("purchase_at"))
+        order_id = str(event_details.get("order_id") or "").strip()
+        duration_days = event_details.get("duration_days")
+        if purchase_at:
+            highlights.append(f"Tanggal beli acuan: {purchase_at}")
+        if previous_expiry:
+            highlights.append(f"Expiry lama: {previous_expiry}")
+        if normalized_expiry:
+            highlights.append(f"Expiry baru: {normalized_expiry}")
+        if duration_days not in (None, ""):
+            highlights.append(f"Durasi paket: {duration_days} hari")
         if order_id:
             highlights.append(f"Order ID: {order_id}")
 
@@ -321,7 +384,10 @@ def _build_description(
             else "Counter hotspot direfresh agar baseline kembali akurat."
         )
 
-    if normalized == "quota.purchase_package":
+    if normalized.startswith("quota.purchase_package"):
+        if event_details.get("imported_from_transaction") is True:
+            package_name = str(event_details.get("package_name") or "paket").strip()
+            return f"Riwayat pembelian {package_name} diimpor dari transaksi sukses lama agar tampil di histori kuota."
         package_name = str(event_details.get("package_name") or "paket").strip()
         return f"Pembelian {package_name} berhasil diaktifkan dan kuota pengguna diperbarui."
 
@@ -351,6 +417,12 @@ def _build_description(
 
     if normalized == "quota.reset_unlimited_counters":
         return "Counter pengguna unlimited direset agar baseline penggunaan kembali bersih."
+
+    if normalized == "quota.hotspot_spike_refund":
+        return "Sistem mengembalikan kuota yang sebelumnya tersedot oleh lonjakan sinkronisasi hotspot yang mencurigakan."
+
+    if normalized == "quota.normalize_unlimited_expiry":
+        return "Masa aktif user unlimited diselaraskan ulang ke tanggal pembelian paket terakhir agar tidak akumulatif."
 
     return _format_source_label(normalized)
 
