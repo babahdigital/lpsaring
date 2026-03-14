@@ -221,7 +221,11 @@ usePaymentStatusPolling({
   intervalMs: 8000,
 })
 
-definePageMeta({ layout: 'blank' })
+definePageMeta({
+  layout: 'blank',
+  auth: false,
+  public: true,
+})
 useHead({
   title: computed(() => `Status: ${alertTitle.value}`),
   bodyAttrs: {

@@ -39,17 +39,43 @@ function pickHotspotIdentityQuery(query: Record<string, unknown>): Record<string
   }
 }
 
-function hasHotspotContextQuery(query: Record<string, unknown>): boolean {
-  const identity = pickHotspotIdentityQuery(query)
-  if (Object.keys(identity).length > 0)
-    return true
-
+function extractHotspotLoginHint(query: Record<string, unknown>): string | null {
   const directLink = getQueryValueFromKeys(query, ['link_login_only', 'link-login-only', 'link_login', 'link-login', 'linkloginonly'])
   if (directLink)
-    return true
+    return directLink
 
   const redirectRaw = getQueryValueFromKeys(query, ['redirect'])
-  return Boolean(redirectRaw && redirectRaw.includes('link_login_only='))
+  if (!redirectRaw || !redirectRaw.includes('link_login_only='))
+    return null
+
+  try {
+    const parsed = new URL(redirectRaw, 'https://example.invalid')
+    const nested = String(parsed.searchParams.get('link_login_only') ?? '').trim()
+    return nested || null
+  }
+  catch {
+    const marker = 'link_login_only='
+    const markerIndex = redirectRaw.indexOf(marker)
+    if (markerIndex < 0)
+      return null
+    const after = redirectRaw.slice(markerIndex + marker.length)
+    const ampIndex = after.indexOf('&')
+    return (ampIndex >= 0 ? after.slice(0, ampIndex) : after).trim() || null
+  }
+}
+
+function pickHotspotRouteQuery(query: Record<string, unknown>): Record<string, string> {
+  const identity = pickHotspotIdentityQuery(query)
+  const linkLoginOnly = extractHotspotLoginHint(query)
+
+  return {
+    ...identity,
+    ...(linkLoginOnly ? { link_login_only: linkLoginOnly } : {}),
+  }
+}
+
+function hasHotspotContextQuery(query: Record<string, unknown>): boolean {
+  return Object.keys(pickHotspotRouteQuery(query)).length > 0
 }
 
 /**
@@ -94,8 +120,8 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
       return
 
     if (!to.path.startsWith('/admin') && hasHotspotContextQuery((to.query as Record<string, unknown>) ?? {})) {
-      const identityQuery = pickHotspotIdentityQuery((to.query as Record<string, unknown>) ?? {})
-      const queryString = new URLSearchParams(identityQuery).toString()
+      const hotspotRouteQuery = pickHotspotRouteQuery((to.query as Record<string, unknown>) ?? {})
+      const queryString = new URLSearchParams(hotspotRouteQuery).toString()
       const captivePath = queryString.length > 0
         ? `/captive?${queryString}`
         : '/captive'
@@ -149,7 +175,7 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
           hotspotLoginRequired: hotspotStatus?.hotspot_login_required,
           hotspotBindingActive: hotspotStatus?.hotspot_binding_active,
         })) {
-          const hotspotQuery = pickHotspotIdentityQuery(routeQuery)
+          const hotspotQuery = pickHotspotRouteQuery(routeQuery)
           const queryString = new URLSearchParams(hotspotQuery).toString()
           const hotspotRequiredPath = queryString.length > 0
             ? `/login/hotspot-required?${queryString}`

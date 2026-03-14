@@ -69,6 +69,42 @@ describe('auth.global runtime', () => {
     expect(navigateToMock).toHaveBeenCalledWith('/login?redirect=%2Fdashboard%3Ftab%3Dusage', { replace: true })
   })
 
+  it('allows guest to open public payment status route without redirect', async () => {
+    const middleware = (await import('../middleware/auth.global')).default
+
+    await middleware({
+      path: '/payment/status',
+      fullPath: '/payment/status?order_id=ORDER-1&t=token-1',
+      query: {
+        order_id: 'ORDER-1',
+        t: 'token-1',
+      },
+      meta: {
+        auth: false,
+        public: true,
+      },
+    } as any)
+
+    expect(navigateToMock).not.toHaveBeenCalled()
+  })
+
+  it('redirects guest hotspot context to captive while preserving login hint', async () => {
+    const middleware = (await import('../middleware/auth.global')).default
+
+    await middleware({
+      path: '/login',
+      fullPath: '/login?client_ip=172.16.2.10&client_mac=AA:BB:CC:DD:EE:FF&link_login_only=http%3A%2F%2Flogin.home.arpa%2Flogin',
+      query: {
+        client_ip: '172.16.2.10',
+        client_mac: 'AA:BB:CC:DD:EE:FF',
+        link_login_only: 'http://login.home.arpa/login',
+      },
+      meta: {},
+    } as any)
+
+    expect(navigateToMock).toHaveBeenCalledWith('/captive?client_ip=172.16.2.10&client_mac=AA%3ABB%3ACC%3ADD%3AEE%3AFF&link_login_only=http%3A%2F%2Flogin.home.arpa%2Flogin', { replace: true })
+  })
+
   it('allows expired user to open payment finish without redirect', async () => {
     const middleware = (await import('../middleware/auth.global')).default
     authStoreState.isLoggedIn = true
@@ -260,10 +296,11 @@ describe('auth.global runtime', () => {
 
     await middleware({
       path: '/login',
-      fullPath: '/login?client_ip=172.16.2.10&client_mac=AA:BB:CC:DD:EE:FF',
+      fullPath: '/login?client_ip=172.16.2.10&client_mac=AA:BB:CC:DD:EE:FF&link_login_only=http%3A%2F%2Flogin.home.arpa%2Flogin',
       query: {
         client_ip: '172.16.2.10',
         client_mac: 'AA:BB:CC:DD:EE:FF',
+        link_login_only: 'http://login.home.arpa/login',
       },
       meta: {},
     } as any)
@@ -275,7 +312,7 @@ describe('auth.global runtime', () => {
         client_mac: 'AA:BB:CC:DD:EE:FF',
       },
     })
-    expect(navigateToMock).toHaveBeenCalledWith('/login/hotspot-required?client_ip=172.16.2.10&client_mac=AA%3ABB%3ACC%3ADD%3AEE%3AFF', { replace: true })
+    expect(navigateToMock).toHaveBeenCalledWith('/login/hotspot-required?client_ip=172.16.2.10&client_mac=AA%3ABB%3ACC%3ADD%3AEE%3AFF&link_login_only=http%3A%2F%2Flogin.home.arpa%2Flogin', { replace: true })
   })
 
   it('does not redirect to hotspot-required when hotspot session already active', async () => {
