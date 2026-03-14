@@ -207,16 +207,11 @@ def apply_package_and_sync_to_mikrotik(transaction: Transaction, mikrotik_api: A
 
     now_utc = datetime.now(dt_timezone.utc)
     date_str, time_str = get_app_date_time_strings(now_utc)
-    expiry_strategy = (
-        str(settings_service.get_setting("UNLIMITED_EXPIRY_STRATEGY", "reset_from_now") or "reset_from_now")
-        if is_unlimited_package
-        else str(settings_service.get_setting("QUOTA_EXPIRY_STRATEGY", "reset_from_now") or "reset_from_now")
-    )
     user.quota_expiry_date = calculate_quota_expiry_date(
         current_expiry=user.quota_expiry_date,
         now=now_utc,
         days_to_add=int(package.duration_days or 0),
-        strategy=expiry_strategy,
+        strategy="reset_from_now",
     )
 
     if not user.mikrotik_password or not (len(user.mikrotik_password) == 6 and user.mikrotik_password.isdigit()):

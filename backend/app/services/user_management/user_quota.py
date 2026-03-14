@@ -104,7 +104,7 @@ def inject_user_quota(user: User, admin_actor: User, mb_to_add: int, days_to_add
             current_expiry=user.quota_expiry_date,
             now=now,
             days_to_add=int(days_to_add),
-            strategy=str(settings_service.get_setting("UNLIMITED_EXPIRY_STRATEGY", "reset_from_now") or "reset_from_now"),
+            strategy="reset_from_now",
         )
         normalized_expiry = user.quota_expiry_date or now
 
@@ -151,7 +151,7 @@ def inject_user_quota(user: User, admin_actor: User, mb_to_add: int, days_to_add
                 current_expiry=user.quota_expiry_date,
                 now=now,
                 days_to_add=int(days_to_add),
-                strategy="extend_active",
+                strategy="reset_from_now",
             )
 
         purchased_mb = user.total_quota_purchased_mb or 0

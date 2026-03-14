@@ -196,7 +196,7 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
                 current_expiry=target_user.quota_expiry_date,
                 now=now_local,
                 days_to_add=int(days_to_add),
-                strategy=str(settings_service.get_setting("UNLIMITED_EXPIRY_STRATEGY", "reset_from_now") or "reset_from_now"),
+                strategy="reset_from_now",
             )
 
             req_to_process.status = RequestStatus.APPROVED
@@ -249,7 +249,7 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
                 current_expiry=current_expiry,
                 now=now_local,
                 days_to_add=days_to_add,
-                strategy="extend_active",
+                strategy="reset_from_now",
             )
             target_user.quota_expiry_date = new_expiry_date
 
@@ -314,7 +314,7 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
             current_expiry=current_expiry,
             now=now_local,
             days_to_add=days_to_add,
-            strategy="extend_active",
+            strategy="reset_from_now",
         )
         target_user.quota_expiry_date = new_expiry_date
 
