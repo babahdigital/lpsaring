@@ -15,6 +15,8 @@ import { resolveHotspotIdentity } from '../utils/hotspotIdentity'
 import { shouldRedirectToHotspotRequired } from '../utils/hotspotRedirect'
 
 const HOTSPOT_PRECHECK_ROUTES = new Set<string>(['/', '/login', '/register', '/daftar'])
+const HOTSPOT_AUTO_START_QUERY_KEY = 'auto_start'
+const LAST_MIKROTIK_LOGIN_HINT_KEY = 'lpsaring:last-mikrotik-login-link'
 
 function getQueryValueFromKeys(query: Record<string, unknown>, keys: string[]): string | null {
   for (const key of keys) {
@@ -98,6 +100,45 @@ function resolveHotspotRouteQuery(query: Record<string, unknown>): Record<string
   }
 }
 
+function getStoredHotspotLoginHint(): string | null {
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined')
+    return null
+
+  try {
+    const value = String(window.localStorage.getItem(LAST_MIKROTIK_LOGIN_HINT_KEY) ?? '').trim()
+    return value || null
+  }
+  catch {
+    return null
+  }
+}
+
+function resolveHotspotRecoveryRouteQuery(query: Record<string, unknown>): Record<string, string> {
+  const routeQuery = resolveHotspotRouteQuery(query)
+  if (routeQuery.link_login_only)
+    return routeQuery
+
+  const storedHint = getStoredHotspotLoginHint()
+  if (!storedHint)
+    return routeQuery
+
+  return {
+    ...routeQuery,
+    link_login_only: storedHint,
+  }
+}
+
+function buildHotspotRequiredPath(query: Record<string, string>, options: { autoStart?: boolean } = {}): string {
+  const params = new URLSearchParams(query)
+  if (options.autoStart)
+    params.set(HOTSPOT_AUTO_START_QUERY_KEY, '1')
+
+  const queryString = params.toString()
+  return queryString.length > 0
+    ? `/login/hotspot-required?${queryString}`
+    : '/login/hotspot-required'
+}
+
 function hasHotspotContextQuery(query: Record<string, unknown>): boolean {
   return Object.keys(pickHotspotRouteQuery(query)).length > 0
 }
@@ -163,6 +204,13 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
     const adminDashboard = '/admin/dashboard'
     const isDemoUser = authStore.currentUser?.is_demo_user === true
     const routeQuery = (to.query as Record<string, unknown>) ?? {}
+    const resolvedHotspotRecoveryQuery = resolveHotspotRecoveryRouteQuery(routeQuery)
+    const hasResolvedHotspotRecoveryContext = Object.keys(resolvedHotspotRecoveryQuery).length > 0
+    const hotspotIdentityQuery = buildHotspotIdentityQuery({
+      clientIp: resolvedHotspotRecoveryQuery.client_ip,
+      clientMac: resolvedHotspotRecoveryQuery.client_mac,
+    })
+    const hasResolvedHotspotIdentity = Object.keys(hotspotIdentityQuery).length > 0
 
     // Halaman public diizinkan untuk semua role (hindari auto-redirect ke dashboard).
     if (isPublicPage)
@@ -183,28 +231,26 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
     }
 
     const shouldRunHotspotPrecheck = (
-      HOTSPOT_PRECHECK_ROUTES.has(to.path) && hasHotspotContextQuery(routeQuery)
+      HOTSPOT_PRECHECK_ROUTES.has(to.path) && hasResolvedHotspotRecoveryContext
     ) || to.path === '/dashboard'
+
+    if (!isAdmin && HOTSPOT_PRECHECK_ROUTES.has(to.path) && hasResolvedHotspotRecoveryContext && !hasResolvedHotspotIdentity) {
+      return navigateTo(buildHotspotRequiredPath(resolvedHotspotRecoveryQuery, { autoStart: true }), { replace: true })
+    }
 
     if (!isAdmin && shouldRunHotspotPrecheck) {
       try {
         const { $api } = useNuxtApp()
-        const identityQuery = resolveHotspotIdentityQuery(routeQuery)
         const hotspotStatus = await $api<{ hotspot_login_required?: boolean | null, hotspot_binding_active?: boolean | null }>('/auth/hotspot-session-status', {
           method: 'GET',
-          query: identityQuery,
+          query: hotspotIdentityQuery,
         })
 
         if (shouldRedirectToHotspotRequired({
           hotspotLoginRequired: hotspotStatus?.hotspot_login_required,
           hotspotBindingActive: hotspotStatus?.hotspot_binding_active,
         })) {
-          const hotspotQuery = resolveHotspotRouteQuery(routeQuery)
-          const queryString = new URLSearchParams(hotspotQuery).toString()
-          const hotspotRequiredPath = queryString.length > 0
-            ? `/login/hotspot-required?${queryString}`
-            : '/login/hotspot-required'
-          return navigateTo(hotspotRequiredPath, { replace: true })
+          return navigateTo(buildHotspotRequiredPath(resolvedHotspotRecoveryQuery, { autoStart: true }), { replace: true })
         }
       }
       catch {

@@ -437,6 +437,7 @@ async function handleVerifyOtp() {
           hotspotQuery.set('client_mac', clientMac)
         if (mikrotikLinkHint)
           hotspotQuery.set('link_login_only', mikrotikLinkHint)
+        hotspotQuery.set('auto_start', '1')
         const hotspotRequiredPath = hotspotQuery.toString().length > 0
           ? `/login/hotspot-required?${hotspotQuery.toString()}`
           : '/login/hotspot-required'

@@ -30,6 +30,7 @@ const successCtaLabel = ref('')
 const successNextRoute = ref('')
 const successCountdown = ref(0)
 const BRIDGE_RESUME_QUERY_KEY = 'bridge_resume'
+const AUTO_START_QUERY_KEY = 'auto_start'
 const LAST_MIKROTIK_LOGIN_HINT_KEY = 'lpsaring:last-mikrotik-login-link'
 const SUCCESS_REDIRECT_DELAY_MS = 2200
 
@@ -360,7 +361,7 @@ function triggerHotspotProbe() {
   if (!import.meta.client)
     return
 
-  const rawTarget = String(loginHotspotUrl.value || hotspotBridgeTargetUrl.value || '').trim()
+  const rawTarget = String(hotspotBridgeTargetUrl.value || loginHotspotUrl.value || '').trim()
   if (!rawTarget)
     return
 
@@ -539,6 +540,7 @@ onMounted(async () => {
   const initialIdentity = getHotspotIdentity()
   rememberHotspotIdentity(initialIdentity)
   syncHotspotRouteContext(initialIdentity)
+  const shouldAutoStart = getQueryValueFromKeys([AUTO_START_QUERY_KEY]) === '1'
 
   if (getQueryValueFromKeys([BRIDGE_RESUME_QUERY_KEY]) === '1') {
     clearPendingHotspotBridge()
@@ -553,6 +555,13 @@ onMounted(async () => {
 
   if (await redirectDemoUserToBuyPage())
     return
+
+  if (shouldAutoStart) {
+    statusMessage.value = ''
+    await wait(150)
+    void activateInternetOneClick()
+    return
+  }
 
   try {
     triggerHotspotProbe()
