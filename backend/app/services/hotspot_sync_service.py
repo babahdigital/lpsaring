@@ -21,6 +21,7 @@ from app.infrastructure.db.models import (
     UserRole,
     ApprovalStatus,
     DailyUsageLog,
+    Package,
     Transaction,
     UserDevice,
     AdminActionLog,
@@ -63,6 +64,8 @@ from app.utils.formatters import (
 )
 from app.utils.quota_debt import (
     compute_debt_mb,
+    estimate_debt_rp_from_cheapest_package,
+    format_rupiah,
 )
 from app.utils.block_reasons import is_auto_debt_limit_reason, build_auto_debt_limit_reason
 from app.utils.metrics_utils import increment_metric
@@ -865,6 +868,7 @@ def _apply_auto_debt_limit_block_state(user: User, source: str = "sync_usage") -
                     "limit_mb": float(limit_mb),
                 },
             )
+            _send_auto_debt_limit_block_notification(user, debt_mb=float(auto_debt_mb), limit_mb=float(limit_mb))
         return True
 
     if is_auto_blocked:
@@ -923,6 +927,90 @@ def _update_daily_usage_log(user: User, delta_mb: float, today: date) -> bool:
         daily_log.usage_mb = float(delta_mb)
         db.session.add(daily_log)
     return True
+
+
+def _select_reference_package_for_debt_mb(debt_mb: float) -> Package | None:
+    try:
+        normalized_debt_mb = float(debt_mb or 0)
+    except Exception:
+        normalized_debt_mb = 0.0
+
+    if normalized_debt_mb <= 0:
+        return None
+
+    reference_packages = (
+        db.session.query(Package)
+        .filter(Package.is_active.is_(True))
+        .filter(Package.data_quota_gb.isnot(None))
+        .filter(Package.data_quota_gb > 0)
+        .filter(Package.price.isnot(None))
+        .filter(Package.price > 0)
+        .order_by(Package.data_quota_gb.asc(), Package.price.asc())
+        .all()
+    )
+
+    if not reference_packages:
+        return None
+
+    debt_gb = normalized_debt_mb / 1024.0
+    for package in reference_packages:
+        try:
+            if float(package.data_quota_gb or 0) >= debt_gb:
+                return package
+        except Exception:
+            continue
+
+    return reference_packages[-1]
+
+
+def _send_auto_debt_limit_block_notification(user: User, *, debt_mb: float, limit_mb: float) -> None:
+    if settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") != "True":
+        return
+
+    phone_number = str(getattr(user, "phone_number", "") or "").strip()
+    if not phone_number:
+        return
+
+    reference_package = _select_reference_package_for_debt_mb(debt_mb)
+    base_package_name = str(getattr(reference_package, "name", "") or "") or "-"
+    estimated_debt = estimate_debt_rp_from_cheapest_package(
+        debt_mb=float(debt_mb or 0),
+        cheapest_package_price_rp=int(getattr(reference_package, "price", 0) or 0) if reference_package else 0,
+        cheapest_package_quota_gb=float(getattr(reference_package, "data_quota_gb", 0) or 0) if reference_package else 0,
+        cheapest_package_name=base_package_name,
+    )
+    estimate_rp = estimated_debt.estimated_rp_rounded
+    estimate_rp_text = format_rupiah(int(estimate_rp)) if isinstance(estimate_rp, int) else "-"
+    debt_mb_text = str(int(round(float(debt_mb or 0))))
+    limit_mb_text = str(int(round(float(limit_mb or 0))))
+
+    try:
+        message = get_notification_message(
+            "user_quota_debt_blocked",
+            {
+                "full_name": str(getattr(user, "full_name", "") or "Pengguna"),
+                "debt_mb": debt_mb_text,
+                "estimated_rp": estimate_rp_text,
+                "base_package_name": base_package_name,
+                "limit_mb": limit_mb_text,
+            },
+        )
+        sent = bool(send_whatsapp_message(phone_number, message))
+        if not sent:
+            logger.warning(
+                "Gagal mengirim WA auto debt-limit block untuk user=%s phone=%s debt_mb=%s limit_mb=%s",
+                getattr(user, "id", None),
+                phone_number,
+                debt_mb_text,
+                limit_mb_text,
+            )
+    except Exception:
+        logger.warning(
+            "Exception saat mengirim WA auto debt-limit block untuk user=%s phone=%s",
+            getattr(user, "id", None),
+            phone_number,
+            exc_info=True,
+        )
 
 
 def _get_redis_client():

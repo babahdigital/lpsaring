@@ -105,6 +105,14 @@ def test_apply_auto_debt_limit_block_state_sets_block_when_limit_reached(monkeyp
         lambda key, default=0: 500 if key == "QUOTA_DEBT_LIMIT_MB" else default,
     )
 
+    notifications = []
+
+    monkeypatch.setattr(
+        svc,
+        "_send_auto_debt_limit_block_notification",
+        lambda user, *, debt_mb, limit_mb: notifications.append((user, debt_mb, limit_mb)),
+    )
+
     user = SimpleNamespace(
         is_unlimited_user=False,
         role=None,
@@ -120,6 +128,7 @@ def test_apply_auto_debt_limit_block_state_sets_block_when_limit_reached(monkeyp
     assert forced is True
     assert user.is_blocked is True
     assert str(user.blocked_reason).startswith(AUTO_DEBT_LIMIT_PREFIX)
+    assert notifications == [(user, 650.0, 500.0)]
 
 
 def test_apply_auto_debt_limit_block_state_unblocks_previous_auto_block_below_limit(monkeypatch):
@@ -145,6 +154,37 @@ def test_apply_auto_debt_limit_block_state_unblocks_previous_auto_block_below_li
     assert user.is_blocked is False
     assert user.blocked_reason is None
     assert user.blocked_at is None
+
+
+def test_apply_auto_debt_limit_block_state_skips_duplicate_notification_for_existing_block(monkeypatch):
+    monkeypatch.setattr(
+        svc.settings_service,
+        "get_setting_as_int",
+        lambda key, default=0: 500 if key == "QUOTA_DEBT_LIMIT_MB" else default,
+    )
+
+    notifications = []
+
+    monkeypatch.setattr(
+        svc,
+        "_send_auto_debt_limit_block_notification",
+        lambda user, *, debt_mb, limit_mb: notifications.append((user, debt_mb, limit_mb)),
+    )
+
+    user = SimpleNamespace(
+        is_unlimited_user=False,
+        role=None,
+        is_blocked=True,
+        blocked_reason="manual_admin_block|reason=test",
+        blocked_at=datetime.now(timezone.utc),
+        blocked_by_id=None,
+        quota_debt_auto_mb=900.0,
+    )
+
+    forced = svc._apply_auto_debt_limit_block_state(user, source="test")
+
+    assert forced is True
+    assert notifications == []
 
 
 def test_self_heal_policy_binding_also_enforces_static_dhcp_lease(monkeypatch):
