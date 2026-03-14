@@ -40,6 +40,7 @@ from app.infrastructure.gateways.mikrotik_client import get_hotspot_user_details
 from app.services.user_management.helpers import _log_admin_action
 
 from app.services import settings_service
+from app.services.quota_history_service import get_user_quota_history_payload
 from app.utils.block_reasons import is_debt_block_reason
 
 from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package
@@ -975,6 +976,85 @@ def export_user_manual_debts_pdf(current_admin: User, user_id: uuid.UUID):
         return resp
     except Exception as e:
         current_app.logger.error(f"Error export debt PDF for user {user_id}: {e}", exc_info=True)
+        return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@user_management_bp.route("/users/<uuid:user_id>/quota-history", methods=["GET"])
+@admin_required
+def get_user_quota_history(current_admin: User, user_id: uuid.UUID):
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+    denied_response = _deny_non_super_admin_target_access(current_admin, user)
+    if denied_response:
+        return denied_response
+
+    try:
+        page = max(1, request.args.get("page", 1, type=int) or 1)
+        items_per_page = min(max(request.args.get("itemsPerPage", 25, type=int) or 25, 1), 100)
+        payload = get_user_quota_history_payload(user=user, page=page, items_per_page=items_per_page)
+        return (
+            jsonify(
+                {
+                    "items": payload["items"],
+                    "summary": payload["summary"],
+                    "totalItems": payload["total_items"],
+                    "page": payload["page"],
+                    "itemsPerPage": payload["items_per_page"],
+                }
+            ),
+            HTTPStatus.OK,
+        )
+    except Exception as e:
+        current_app.logger.error(f"Error getting quota history for user {user_id}: {e}", exc_info=True)
+        return jsonify({"message": "Gagal mengambil riwayat mutasi kuota."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@user_management_bp.route("/users/<uuid:user_id>/quota-history/export", methods=["GET"])
+@admin_required
+def export_user_quota_history_pdf(current_admin: User, user_id: uuid.UUID):
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+    denied_response = _deny_non_super_admin_target_access(current_admin, user)
+    if denied_response:
+        return denied_response
+
+    fmt = (request.args.get("format") or "pdf").strip().lower()
+    if fmt != "pdf":
+        return jsonify({"message": "Format tidak didukung."}), HTTPStatus.BAD_REQUEST
+
+    try:
+        from weasyprint import HTML  # type: ignore
+    except Exception:
+        return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
+
+    try:
+        payload = get_user_quota_history_payload(user=user, include_all=True, items_per_page=200)
+        generated_local = get_app_local_datetime(datetime.now(dt_timezone.utc)).strftime("%d-%m-%Y %H:%M")
+        context = {
+            "user": user,
+            "user_phone_display": format_to_local_phone(getattr(user, "phone_number", "") or "")
+            or (getattr(user, "phone_number", "") or ""),
+            "generated_at": generated_local,
+            "items": payload["items"],
+            "summary": payload["summary"],
+        }
+
+        public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
+        html_string = render_template("quota_history_report.html", **context)
+        pdf_bytes = HTML(string=html_string, base_url=public_base_url).write_pdf()
+        if not pdf_bytes:
+            return jsonify({"message": "Gagal menghasilkan file PDF."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+        safe_phone = (getattr(user, "phone_number", "") or "").replace("+", "")
+        filename = f"quota-history-{safe_phone or user.id}.pdf"
+        resp = make_response(pdf_bytes)
+        resp.headers["Content-Type"] = "application/pdf"
+        resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return resp
+    except Exception as e:
+        current_app.logger.error(f"Error export quota history PDF for user {user_id}: {e}", exc_info=True)
         return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 

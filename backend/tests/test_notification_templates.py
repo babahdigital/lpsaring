@@ -116,3 +116,36 @@ def test_user_access_blocked_humanizes_legacy_reason(monkeypatch, app):
 
     assert "quota_debt_limit|" not in message
     assert "batas pengaman" in message
+
+
+def test_quota_debt_warning_templates_accept_new_placeholders(monkeypatch, app):
+    from app.services import notification_service
+
+    monkeypatch.setattr(
+        notification_service,
+        "_load_templates",
+        lambda: {
+            "user_quota_debt_warning": "User {full_name} debt={debt_mb} warn={warning_threshold_mb} limit={limit_mb} est={estimated_rp} paket={base_package_name}",
+            "admin_quota_debt_warning": "Admin {full_name} phone={phone_number} debt={debt_mb} warn={warning_threshold_mb} limit={limit_mb}",
+        },
+    )
+    monkeypatch.setattr(notification_service, "get_app_links", lambda: {})
+
+    payload = {
+        "full_name": "Bobby",
+        "phone_number": "+628123456789",
+        "debt_mb": "420",
+        "warning_threshold_mb": "400",
+        "limit_mb": "500",
+        "estimated_rp": "12.000",
+        "base_package_name": "Paket 10 GB",
+    }
+
+    with app.app_context():
+        user_message = notification_service.get_notification_message("user_quota_debt_warning", payload)
+        admin_message = notification_service.get_notification_message("admin_quota_debt_warning", payload)
+
+    assert "Peringatan:" not in user_message
+    assert "Peringatan:" not in admin_message
+    assert "420" in user_message
+    assert "+628123456789" in admin_message

@@ -4,7 +4,7 @@ import { useNuxtApp, useRuntimeConfig } from '#app'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useApiFetch } from '~/composables/useApiFetch'
-import type { UserQuotaResponse } from '~/types/user'
+import type { QuotaHistoryResponse, UserQuotaResponse } from '~/types/user'
 import { useDebtSettlementPayment } from '~/composables/useDebtSettlementPayment'
 import { useSnackbar } from '@/composables/useSnackbar'
 import { useSettingsStore } from '~/store/settings'
@@ -342,6 +342,70 @@ function formatDebtDate(dateStr: string | null | undefined): string {
   }
 }
 
+const quotaHistoryApiUrl = computed(() => '/users/me/quota-history?page=1&itemsPerPage=25')
+const { data: quotaHistoryData, pending: quotaHistoryPending, error: quotaHistoryError } = useApiFetch<QuotaHistoryResponse>(
+  quotaHistoryApiUrl,
+  {
+    server: false,
+    key: 'userQuotaHistoryRiwayat',
+    default: () => ({
+      success: false,
+      items: [],
+      summary: null,
+      totalItems: 0,
+      page: 1,
+      itemsPerPage: 25,
+    }),
+    immediate: true,
+    watch: false,
+  },
+)
+
+const quotaHistoryItems = computed(() => {
+  const items = quotaHistoryData.value?.items
+  return Array.isArray(items) ? items : []
+})
+
+const quotaHistorySummary = computed(() => quotaHistoryData.value?.summary ?? null)
+
+function getHistoryCategoryColor(category: string | null | undefined): string {
+  switch (category) {
+    case 'usage':
+      return 'info'
+    case 'purchase':
+      return 'success'
+    case 'debt':
+      return 'warning'
+    case 'policy':
+      return 'secondary'
+    case 'adjustment':
+      return 'primary'
+    default:
+      return 'default'
+  }
+}
+
+function getHistoryCategoryLabel(category: string | null | undefined): string {
+  switch (category) {
+    case 'usage':
+      return 'Usage'
+    case 'purchase':
+      return 'Purchase'
+    case 'debt':
+      return 'Debt'
+    case 'policy':
+      return 'Policy'
+    case 'adjustment':
+      return 'Adjust'
+    default:
+      return 'System'
+  }
+}
+
+function openQuotaHistoryPdf() {
+  window.open('/api/users/me/quota-history/export?format=pdf', '_blank', 'noopener')
+}
+
 // --- Header Tabel (Responsif) ---
 const headers = computed(() => {
   const baseHeaders = [
@@ -540,7 +604,7 @@ onMounted(() => {
   isHydrated.value = true
   // Pemanggilan data awal sudah ditangani oleh `watch` pada `useApiFetch`
 })
-useHead({ title: 'Riwayat Transaksi' })
+useHead({ title: 'Riwayat Transaksi & Kuota' })
 </script>
 
 <template>
@@ -549,7 +613,7 @@ useHead({ title: 'Riwayat Transaksi' })
       <VCol cols="12">
         <div class="d-flex align-center justify-space-between flex-wrap gap-2 mb-4">
           <h1 class="text-h5 mb-0">
-            Riwayat Transaksi
+            Riwayat Transaksi & Kuota
           </h1>
 
           <VBtn
@@ -675,6 +739,117 @@ useHead({ title: 'Riwayat Transaksi' })
                 </VTable>
               </div>
             </div>
+          </VCardText>
+        </VCard>
+
+        <VCard class="mb-4">
+          <VCardTitle class="d-flex align-center justify-space-between flex-wrap gap-2 py-3 px-4 bg-grey-lighten-4 border-b">
+            <div class="d-flex align-center ga-2">
+              <VIcon icon="tabler-history-toggle" color="primary" />
+              <div>
+                <div class="text-subtitle-1 font-weight-medium">
+                  Riwayat Mutasi Kuota
+                </div>
+                <div class="text-caption text-medium-emphasis">
+                  25 event terbaru dari pembelian, pemakaian, debt, dan kebijakan sistem.
+                </div>
+              </div>
+            </div>
+
+            <VBtn
+              size="small"
+              color="primary"
+              variant="tonal"
+              prepend-icon="tabler-printer"
+              @click="openQuotaHistoryPdf"
+            >
+              PDF
+            </VBtn>
+          </VCardTitle>
+
+          <VCardText class="px-4 pt-4">
+            <VAlert v-if="quotaHistoryError" type="error" variant="tonal" density="compact" class="mb-4">
+              Gagal memuat riwayat mutasi kuota.
+            </VAlert>
+
+            <div v-if="quotaHistoryPending" class="d-flex justify-center py-6">
+              <VProgressCircular indeterminate color="primary" />
+            </div>
+
+            <template v-else>
+              <div class="d-flex flex-wrap gap-2 mb-4">
+                <VChip v-if="quotaHistorySummary" size="small" label color="primary" variant="tonal">
+                  Event: {{ quotaHistorySummary.page_items }}
+                </VChip>
+                <VChip v-if="quotaHistorySummary" size="small" label color="success" variant="tonal">
+                  Net beli: {{ quotaHistorySummary.total_net_purchased_mb }} MB
+                </VChip>
+                <VChip v-if="quotaHistorySummary" size="small" label color="warning" variant="tonal">
+                  Net pakai: {{ quotaHistorySummary.total_net_used_mb }} MB
+                </VChip>
+                <VChip v-if="quotaHistorySummary" size="small" label color="default" variant="tonal">
+                  Rentang: {{ quotaHistorySummary.first_event_at_display || '-' }} - {{ quotaHistorySummary.last_event_at_display || '-' }}
+                </VChip>
+              </div>
+
+              <VExpansionPanels v-if="quotaHistoryItems.length > 0" variant="accordion" class="quota-history-panels">
+                <VExpansionPanel v-for="item in quotaHistoryItems" :key="item.id">
+                  <VExpansionPanelTitle>
+                    <div class="d-flex flex-column text-start">
+                      <div class="d-flex align-center flex-wrap gap-2">
+                        <VChip size="x-small" :color="getHistoryCategoryColor(item.category)" label>
+                          {{ getHistoryCategoryLabel(item.category) }}
+                        </VChip>
+                        <span class="font-weight-medium">{{ item.title }}</span>
+                      </div>
+                      <div class="text-caption text-medium-emphasis mt-1">
+                        {{ item.created_at_display || '-' }}
+                      </div>
+                    </div>
+                  </VExpansionPanelTitle>
+
+                  <VExpansionPanelText>
+                    <div class="text-body-2">
+                      {{ item.description }}
+                    </div>
+
+                    <div v-if="item.actor_name" class="text-caption text-medium-emphasis mt-2">
+                      Aktor: {{ item.actor_name }}
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-2 mt-3">
+                      <VChip v-if="item.deltas_display.purchased" size="small" color="success" variant="tonal" label>
+                        Beli {{ item.deltas_display.purchased }}
+                      </VChip>
+                      <VChip v-if="item.deltas_display.used" size="small" color="info" variant="tonal" label>
+                        Pakai {{ item.deltas_display.used }}
+                      </VChip>
+                      <VChip v-if="item.deltas_display.debt_total" size="small" color="warning" variant="tonal" label>
+                        Debt {{ item.deltas_display.debt_total }}
+                      </VChip>
+                      <VChip v-if="item.deltas_display.remaining_after" size="small" color="default" variant="tonal" label>
+                        Sisa {{ item.deltas_display.remaining_after }}
+                      </VChip>
+                    </div>
+
+                    <VList v-if="item.highlights?.length" density="compact" class="quota-history-list mt-3">
+                      <VListItem v-for="highlight in item.highlights.slice(0, 6)" :key="`${item.id}-${highlight}`" class="px-0">
+                        <template #prepend>
+                          <VIcon icon="tabler-chevron-right" size="16" />
+                        </template>
+                        <VListItemTitle class="text-body-2">
+                          {{ highlight }}
+                        </VListItemTitle>
+                      </VListItem>
+                    </VList>
+                  </VExpansionPanelText>
+                </VExpansionPanel>
+              </VExpansionPanels>
+
+              <div v-else class="text-center text-medium-emphasis py-6">
+                Belum ada riwayat mutasi kuota.
+              </div>
+            </template>
           </VCardText>
         </VCard>
 
@@ -989,6 +1164,15 @@ useHead({ title: 'Riwayat Transaksi' })
 .payment-method-text {
   display: flex;
   flex-direction: column;
+}
+
+.quota-history-panels {
+  background: transparent;
+}
+
+.quota-history-list :deep(.v-list-item__prepend) {
+  align-self: flex-start;
+  margin-top: 2px;
 }
 
 :deep(.payment-method-radio .v-selection-control) {

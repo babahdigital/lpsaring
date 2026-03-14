@@ -21,6 +21,8 @@ from app.infrastructure.db.models import (
     UserRole,
     ApprovalStatus,
     DailyUsageLog,
+    NotificationRecipient,
+    NotificationType,
     Package,
     Transaction,
     UserDevice,
@@ -77,6 +79,7 @@ REDIS_LAST_BYTES_PREFIX = "quota:last_bytes:mac:"
 REDIS_SYNC_LOCK_PREFIX = "quota:sync_lock:user:"
 REDIS_GLOBAL_SYNC_LOCK_KEY = "quota:sync_lock:global"
 REDIS_ACCESS_STATUS_DEDUPE_PREFIX = "wa:dedupe:access_status:"
+REDIS_AUTO_DEBT_WARNING_DEDUPE_PREFIX = "wa:dedupe:auto_debt_warning:"
 LOCAL_GLOBAL_SYNC_LOCK_TOKEN = "__local_global_sync_lock__"
 _local_global_sync_lock = threading.Lock()
 _thread_local_state = threading.local()
@@ -97,6 +100,44 @@ class HotspotUsageSyncRuntimeSettings:
     habis_profile: str
     fup_profile: str
     whatsapp_notifications_enabled: bool
+
+
+@dataclass(frozen=True)
+class HotspotUsageDeviceDelta:
+    mac_address: str
+    ip_address: Optional[str]
+    label: Optional[str]
+    delta_mb: float
+    previous_bytes_total: int
+    bytes_total: int
+    host_id: Optional[str]
+    uptime_seconds: Optional[int]
+    source_address: Optional[str]
+    to_address: Optional[str]
+
+
+@dataclass(frozen=True)
+class HotspotUsageRebaselineEvent:
+    mac_address: str
+    ip_address: Optional[str]
+    label: Optional[str]
+    reason: str
+    previous_bytes_total: Optional[int]
+    bytes_total: int
+    previous_host_id: Optional[str]
+    host_id: Optional[str]
+    previous_uptime_seconds: Optional[int]
+    uptime_seconds: Optional[int]
+    source_address: Optional[str]
+    to_address: Optional[str]
+
+
+@dataclass(frozen=True)
+class HotspotUsageUpdateResult:
+    delta_mb: float
+    new_total_usage_mb: float
+    device_deltas: List[HotspotUsageDeviceDelta]
+    rebaseline_events: List[HotspotUsageRebaselineEvent]
 
 
 def _is_demo_phone_whitelisted(phone_number: Optional[str]) -> bool:
@@ -850,6 +891,9 @@ def _apply_auto_debt_limit_block_state(user: User, source: str = "sync_usage") -
     auto_debt_mb = float(_resolve_auto_quota_debt_for_limit(user) or 0.0)
     reached_limit = auto_debt_mb >= limit_mb
 
+    if not reached_limit:
+        _send_auto_debt_limit_warning_notification(user, debt_mb=float(auto_debt_mb), limit_mb=float(limit_mb))
+
     if reached_limit:
         if not bool(getattr(user, "is_blocked", False)):
             user.is_blocked = True
@@ -963,14 +1007,7 @@ def _select_reference_package_for_debt_mb(debt_mb: float) -> Package | None:
     return reference_packages[-1]
 
 
-def _send_auto_debt_limit_block_notification(user: User, *, debt_mb: float, limit_mb: float) -> None:
-    if settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") != "True":
-        return
-
-    phone_number = str(getattr(user, "phone_number", "") or "").strip()
-    if not phone_number:
-        return
-
+def _build_auto_debt_limit_notification_payload(user: User, *, debt_mb: float, limit_mb: float) -> Dict[str, str]:
     reference_package = _select_reference_package_for_debt_mb(debt_mb)
     base_package_name = str(getattr(reference_package, "name", "") or "") or "-"
     estimated_debt = estimate_debt_rp_from_cheapest_package(
@@ -984,25 +1021,76 @@ def _send_auto_debt_limit_block_notification(user: User, *, debt_mb: float, limi
     debt_mb_text = str(int(round(float(debt_mb or 0))))
     limit_mb_text = str(int(round(float(limit_mb or 0))))
 
-    try:
-        message = get_notification_message(
-            "user_quota_debt_blocked",
-            {
-                "full_name": str(getattr(user, "full_name", "") or "Pengguna"),
-                "debt_mb": debt_mb_text,
-                "estimated_rp": estimate_rp_text,
-                "base_package_name": base_package_name,
-                "limit_mb": limit_mb_text,
-            },
+    return {
+        "full_name": str(getattr(user, "full_name", "") or "Pengguna"),
+        "phone_number": str(getattr(user, "phone_number", "") or "").strip(),
+        "debt_mb": debt_mb_text,
+        "estimated_rp": estimate_rp_text,
+        "base_package_name": base_package_name,
+        "limit_mb": limit_mb_text,
+    }
+
+
+def _get_quota_debt_limit_subscribed_admins() -> List[User]:
+    recipients_query = (
+        select(User)
+        .join(NotificationRecipient, User.id == NotificationRecipient.admin_user_id)
+        .where(
+            NotificationRecipient.notification_type == NotificationType.QUOTA_DEBT_LIMIT_EXCEEDED,
+            User.is_active.is_(True),
         )
+    )
+    return list(db.session.scalars(recipients_query).all())
+
+
+def _send_auto_debt_limit_admin_notifications(*, user: User, template_key: str, payload: Dict[str, str]) -> None:
+    if settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") != "True":
+        return
+
+    for admin in _get_quota_debt_limit_subscribed_admins():
+        admin_phone = str(getattr(admin, "phone_number", "") or "").strip()
+        if not admin_phone:
+            continue
+
+        try:
+            message = get_notification_message(template_key, payload)
+            sent = bool(send_whatsapp_message(admin_phone, message))
+            if not sent:
+                logger.warning(
+                    "Gagal mengirim WA %s ke admin=%s utk user=%s",
+                    template_key,
+                    getattr(admin, "id", None),
+                    getattr(user, "id", None),
+                )
+        except Exception:
+            logger.warning(
+                "Exception saat mengirim WA %s ke admin=%s utk user=%s",
+                template_key,
+                getattr(admin, "id", None),
+                getattr(user, "id", None),
+                exc_info=True,
+            )
+
+
+def _send_auto_debt_limit_block_notification(user: User, *, debt_mb: float, limit_mb: float) -> None:
+    if settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") != "True":
+        return
+
+    payload = _build_auto_debt_limit_notification_payload(user, debt_mb=debt_mb, limit_mb=limit_mb)
+    phone_number = payload.get("phone_number", "")
+    if not phone_number:
+        return
+
+    try:
+        message = get_notification_message("user_quota_debt_blocked", payload)
         sent = bool(send_whatsapp_message(phone_number, message))
         if not sent:
             logger.warning(
                 "Gagal mengirim WA auto debt-limit block untuk user=%s phone=%s debt_mb=%s limit_mb=%s",
                 getattr(user, "id", None),
                 phone_number,
-                debt_mb_text,
-                limit_mb_text,
+                payload.get("debt_mb", "0"),
+                payload.get("limit_mb", "0"),
             )
     except Exception:
         logger.warning(
@@ -1012,12 +1100,69 @@ def _send_auto_debt_limit_block_notification(user: User, *, debt_mb: float, limi
             exc_info=True,
         )
 
+    _send_auto_debt_limit_admin_notifications(user=user, template_key="admin_quota_debt_blocked", payload=payload)
+
 
 def _get_redis_client():
     try:
         return getattr(current_app, "redis_client_otp", None)
     except Exception:
         return None
+
+
+def _resolve_auto_debt_warning_threshold(limit_mb: float) -> float:
+    try:
+        configured_warning_mb = float(settings_service.get_setting_as_int("QUOTA_DEBT_WARNING_MB", 0) or 0)
+    except Exception:
+        configured_warning_mb = 0.0
+
+    candidate = configured_warning_mb if configured_warning_mb > 0 else math.floor(float(limit_mb or 0) * 0.8)
+    upper_bound = max(0.0, float(limit_mb or 0) - 1.0)
+    if upper_bound <= 0:
+        return 0.0
+    return float(min(max(1.0, float(candidate or 0)), upper_bound))
+
+
+def _send_auto_debt_limit_warning_notification(user: User, *, debt_mb: float, limit_mb: float) -> None:
+    if settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") != "True":
+        return
+
+    payload = _build_auto_debt_limit_notification_payload(user, debt_mb=debt_mb, limit_mb=limit_mb)
+    phone_number = payload.get("phone_number", "")
+    if not phone_number:
+        return
+
+    warning_threshold = _resolve_auto_debt_warning_threshold(limit_mb)
+    if warning_threshold <= 0 or debt_mb < warning_threshold or debt_mb >= limit_mb:
+        return
+
+    redis_client = _get_redis_client()
+    warning_key = f"limit={int(round(limit_mb))}:warn={int(round(warning_threshold))}"
+    if not _should_send_auto_debt_warning_notification(redis_client, user_id=user.id, warning_key=warning_key):
+        return
+
+    payload["warning_threshold_mb"] = str(int(round(warning_threshold)))
+
+    try:
+        message = get_notification_message("user_quota_debt_warning", payload)
+        sent = bool(send_whatsapp_message(phone_number, message))
+        if not sent:
+            logger.warning(
+                "Gagal mengirim WA auto debt-limit warning untuk user=%s phone=%s debt_mb=%s threshold_mb=%s",
+                getattr(user, "id", None),
+                phone_number,
+                payload.get("debt_mb", "0"),
+                payload.get("warning_threshold_mb", "0"),
+            )
+    except Exception:
+        logger.warning(
+            "Exception saat mengirim WA auto debt-limit warning untuk user=%s phone=%s",
+            getattr(user, "id", None),
+            phone_number,
+            exc_info=True,
+        )
+
+    _send_auto_debt_limit_admin_notifications(user=user, template_key="admin_quota_debt_warning", payload=payload)
 
 
 def _acquire_global_sync_lock(redis_client, ttl_seconds: int = 180) -> tuple[bool, str]:
@@ -1088,6 +1233,28 @@ def _should_send_access_status_notification(redis_client, *, user_id: uuid.UUID,
         return True
 
     key = f"{REDIS_ACCESS_STATUS_DEDUPE_PREFIX}{status}:{user_id}"
+    try:
+        return bool(redis_client.set(key, "1", ex=ttl_seconds, nx=True))
+    except Exception:
+        return True
+
+
+def _should_send_auto_debt_warning_notification(redis_client, *, user_id: uuid.UUID, warning_key: str) -> bool:
+    if redis_client is None:
+        return True
+
+    suffix = str(warning_key or "").strip().lower()
+    if not suffix:
+        return True
+
+    try:
+        ttl_seconds = int(current_app.config.get("WHATSAPP_AUTO_DEBT_WARNING_DEDUPE_SECONDS", 6 * 3600))
+    except Exception:
+        ttl_seconds = 6 * 3600
+    if ttl_seconds <= 0:
+        return True
+
+    key = f"{REDIS_AUTO_DEBT_WARNING_DEDUPE_PREFIX}{suffix}:{user_id}"
     try:
         return bool(redis_client.set(key, "1", ex=ttl_seconds, nx=True))
     except Exception:
@@ -1534,6 +1701,69 @@ def _sync_address_list_status_for_ip(
     return True
 
 
+def _safe_int(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
+def _update_device_usage_baseline(
+    *,
+    device: UserDevice,
+    now: datetime,
+    bytes_total: int,
+    host_id: Optional[str],
+    uptime_seconds: Optional[int],
+    redis_client,
+    redis_key: str,
+) -> None:
+    device.last_bytes_total = int(bytes_total)
+    device.last_bytes_updated_at = now
+    device.last_hotspot_host_id = host_id
+    device.last_hotspot_uptime_seconds = uptime_seconds
+
+    if redis_client is not None:
+        try:
+            redis_client.set(redis_key, bytes_total)
+        except Exception:
+            pass
+
+
+def _serialize_usage_device_delta(item: HotspotUsageDeviceDelta) -> Dict[str, Any]:
+    return {
+        "mac_address": item.mac_address,
+        "ip_address": item.ip_address,
+        "label": item.label,
+        "delta_mb": _round_mb_value(item.delta_mb),
+        "previous_bytes_total": int(item.previous_bytes_total),
+        "bytes_total": int(item.bytes_total),
+        "host_id": item.host_id,
+        "uptime_seconds": item.uptime_seconds,
+        "source_address": item.source_address,
+        "to_address": item.to_address,
+    }
+
+
+def _serialize_usage_rebaseline_event(item: HotspotUsageRebaselineEvent) -> Dict[str, Any]:
+    return {
+        "mac_address": item.mac_address,
+        "ip_address": item.ip_address,
+        "label": item.label,
+        "reason": item.reason,
+        "previous_bytes_total": item.previous_bytes_total,
+        "bytes_total": int(item.bytes_total),
+        "previous_host_id": item.previous_host_id,
+        "host_id": item.host_id,
+        "previous_uptime_seconds": item.previous_uptime_seconds,
+        "uptime_seconds": item.uptime_seconds,
+        "source_address": item.source_address,
+        "to_address": item.to_address,
+    }
+
+
 def _sum_host_usage_for_user(user: User, host_usage_map: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, int]]:
     if not user.devices:
         return None
@@ -1559,7 +1789,7 @@ def _calculate_usage_update(
     user: User,
     host_usage_map: Dict[str, Dict[str, Any]],
     redis_client,
-) -> Optional[Tuple[float, float]]:
+) -> Optional[HotspotUsageUpdateResult]:
     if not user.devices:
         return None
 
@@ -1568,18 +1798,25 @@ def _calculate_usage_update(
     delta_bytes = 0
     found = False
     now = datetime.now(dt_timezone.utc)
+    device_deltas: List[HotspotUsageDeviceDelta] = []
+    rebaseline_events: List[HotspotUsageRebaselineEvent] = []
+
     for device in user.devices:
         mac = (device.mac_address or "").upper()
         if not mac:
             continue
+
         host_usage = host_usage_map.get(mac)
         if not host_usage:
             continue
+
         bytes_total = int(host_usage.get("bytes_in", 0)) + int(host_usage.get("bytes_out", 0))
+        host_id = str(host_usage.get("host_id") or "").strip() or None
+        uptime_seconds = _safe_int(host_usage.get("uptime_seconds"))
         found = True
 
         key = f"{REDIS_LAST_BYTES_PREFIX}{mac}"
-        last_bytes = None
+        redis_last_bytes = None
         has_key = False
         if redis_client is not None:
             try:
@@ -1588,42 +1825,112 @@ def _calculate_usage_update(
                 has_key = True
             if has_key:
                 try:
-                    last_bytes = int(redis_client.get(key) or 0)
+                    redis_last_bytes = int(redis_client.get(key) or 0)
                 except Exception:
-                    last_bytes = 0
+                    redis_last_bytes = 0
+
+        db_last_bytes = int(device.last_bytes_total) if device.last_bytes_total is not None else None
+        if redis_last_bytes is not None and db_last_bytes is not None:
+            last_bytes = max(redis_last_bytes, db_last_bytes)
+        elif redis_last_bytes is not None:
+            last_bytes = redis_last_bytes
+        else:
+            last_bytes = db_last_bytes
 
         if last_bytes is None:
-            if device.last_bytes_total is not None:
-                last_bytes = int(device.last_bytes_total)
-            else:
-                device.last_bytes_total = bytes_total
-                device.last_bytes_updated_at = now
-                if redis_client is not None:
-                    try:
-                        redis_client.set(key, bytes_total)
-                    except Exception:
-                        pass
-                continue
+            _update_device_usage_baseline(
+                device=device,
+                now=now,
+                bytes_total=bytes_total,
+                host_id=host_id,
+                uptime_seconds=uptime_seconds,
+                redis_client=redis_client,
+                redis_key=key,
+            )
+            continue
 
-        if bytes_total >= last_bytes:
-            delta_bytes += bytes_total - last_bytes
-        else:
-            delta_bytes += bytes_total
+        previous_host_id = str(getattr(device, "last_hotspot_host_id", "") or "").strip() or None
+        previous_uptime_seconds = _safe_int(getattr(device, "last_hotspot_uptime_seconds", None))
 
-        device.last_bytes_total = bytes_total
-        device.last_bytes_updated_at = now
-        if redis_client is not None:
-            try:
-                redis_client.set(key, bytes_total)
-            except Exception:
-                pass
+        rebaseline_reasons: List[str] = []
+        if host_id and previous_host_id and host_id != previous_host_id:
+            rebaseline_reasons.append("host_row_changed")
+        if (
+            previous_uptime_seconds is not None
+            and uptime_seconds is not None
+            and uptime_seconds + 5 < previous_uptime_seconds
+        ):
+            rebaseline_reasons.append("uptime_regressed")
+        if bytes_total < last_bytes:
+            rebaseline_reasons.append("counter_regressed")
+
+        if rebaseline_reasons:
+            rebaseline_events.append(
+                HotspotUsageRebaselineEvent(
+                    mac_address=mac,
+                    ip_address=str(getattr(device, "ip_address", "") or "").strip() or None,
+                    label=str(getattr(device, "label", "") or "").strip() or None,
+                    reason="+".join(rebaseline_reasons),
+                    previous_bytes_total=int(last_bytes),
+                    bytes_total=int(bytes_total),
+                    previous_host_id=previous_host_id,
+                    host_id=host_id,
+                    previous_uptime_seconds=previous_uptime_seconds,
+                    uptime_seconds=uptime_seconds,
+                    source_address=str(host_usage.get("source_address") or "").strip() or None,
+                    to_address=str(host_usage.get("to_address") or "").strip() or None,
+                )
+            )
+            _update_device_usage_baseline(
+                device=device,
+                now=now,
+                bytes_total=bytes_total,
+                host_id=host_id,
+                uptime_seconds=uptime_seconds,
+                redis_client=redis_client,
+                redis_key=key,
+            )
+            continue
+
+        current_delta_bytes = max(0, int(bytes_total - last_bytes))
+        delta_bytes += current_delta_bytes
+        if current_delta_bytes > 0:
+            device_deltas.append(
+                HotspotUsageDeviceDelta(
+                    mac_address=mac,
+                    ip_address=str(getattr(device, "ip_address", "") or "").strip() or None,
+                    label=str(getattr(device, "label", "") or "").strip() or None,
+                    delta_mb=current_delta_bytes / BYTES_PER_MB,
+                    previous_bytes_total=int(last_bytes),
+                    bytes_total=int(bytes_total),
+                    host_id=host_id,
+                    uptime_seconds=uptime_seconds,
+                    source_address=str(host_usage.get("source_address") or "").strip() or None,
+                    to_address=str(host_usage.get("to_address") or "").strip() or None,
+                )
+            )
+
+        _update_device_usage_baseline(
+            device=device,
+            now=now,
+            bytes_total=bytes_total,
+            host_id=host_id,
+            uptime_seconds=uptime_seconds,
+            redis_client=redis_client,
+            redis_key=key,
+        )
 
     if not found:
         return None
 
     delta_mb = delta_bytes / BYTES_PER_MB
     new_total_mb = old_usage_mb + delta_mb
-    return _round_mb_value(delta_mb), _round_mb_value(new_total_mb)
+    return HotspotUsageUpdateResult(
+        delta_mb=_round_mb_value(delta_mb),
+        new_total_usage_mb=_round_mb_value(new_total_mb),
+        device_deltas=device_deltas,
+        rebaseline_events=rebaseline_events,
+    )
 
 
 def _auto_enroll_devices_from_ip_binding(
@@ -1764,8 +2071,25 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                         usage_update = _calculate_usage_update(user, host_usage_map, redis_client)
                         old_usage_mb = float(user.total_quota_used_mb or 0.0)
                         if usage_update:
-                            delta_mb, new_total_usage_mb = usage_update
+                            delta_mb = float(usage_update.delta_mb or 0.0)
+                            new_total_usage_mb = float(usage_update.new_total_usage_mb or old_usage_mb)
                             _update_daily_usage_log(user, delta_mb, today)
+
+                            if usage_update.rebaseline_events:
+                                rebaseline_state = snapshot_user_quota_state(user)
+                                append_quota_mutation_event(
+                                    user=user,
+                                    source="hotspot.sync_rebaseline",
+                                    before_state=rebaseline_state,
+                                    after_state=rebaseline_state,
+                                    event_details={
+                                        "rebaseline_events": [
+                                            _serialize_usage_rebaseline_event(item)
+                                            for item in usage_update.rebaseline_events
+                                        ],
+                                    },
+                                )
+
                             # Jangan update total_quota_used_mb untuk unlimited users.
                             # Daily log tetap dicatat di atas untuk keperluan grafik pemakaian.
                             if (
@@ -1785,6 +2109,10 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                                     event_details={
                                         "delta_mb": float(round(delta_mb, 2)),
                                         "new_total_usage_mb": float(round(new_total_usage_mb, 2)),
+                                        "device_deltas": [
+                                            _serialize_usage_device_delta(item)
+                                            for item in usage_update.device_deltas
+                                        ],
                                     },
                                 )
 

@@ -137,6 +137,7 @@ def test_apply_auto_debt_limit_block_state_unblocks_previous_auto_block_below_li
         "get_setting_as_int",
         lambda key, default=0: 500 if key == "QUOTA_DEBT_LIMIT_MB" else default,
     )
+    monkeypatch.setattr(svc, "_send_auto_debt_limit_warning_notification", lambda *args, **kwargs: None)
 
     user = SimpleNamespace(
         is_unlimited_user=False,
@@ -185,6 +186,45 @@ def test_apply_auto_debt_limit_block_state_skips_duplicate_notification_for_exis
 
     assert forced is True
     assert notifications == []
+
+
+def test_apply_auto_debt_limit_block_state_sends_warning_before_block(monkeypatch):
+    monkeypatch.setattr(
+        svc.settings_service,
+        "get_setting_as_int",
+        lambda key, default=0: 500 if key == "QUOTA_DEBT_LIMIT_MB" else (400 if key == "QUOTA_DEBT_WARNING_MB" else default),
+    )
+
+    warnings = []
+    blocks = []
+
+    monkeypatch.setattr(
+        svc,
+        "_send_auto_debt_limit_warning_notification",
+        lambda user, *, debt_mb, limit_mb: warnings.append((user, debt_mb, limit_mb)),
+    )
+    monkeypatch.setattr(
+        svc,
+        "_send_auto_debt_limit_block_notification",
+        lambda user, *, debt_mb, limit_mb: blocks.append((user, debt_mb, limit_mb)),
+    )
+
+    user = SimpleNamespace(
+        is_unlimited_user=False,
+        role=None,
+        is_blocked=False,
+        blocked_reason=None,
+        blocked_at=None,
+        blocked_by_id=None,
+        quota_debt_auto_mb=420.0,
+    )
+
+    forced = svc._apply_auto_debt_limit_block_state(user, source="test")
+
+    assert forced is False
+    assert user.is_blocked is False
+    assert warnings == [(user, 420.0, 500.0)]
+    assert blocks == []
 
 
 def test_self_heal_policy_binding_also_enforces_static_dhcp_lease(monkeypatch):

@@ -2,7 +2,6 @@
 
 import math
 from typing import Any, Tuple
-from datetime import timedelta
 from flask import current_app
 
 from datetime import datetime, timezone as dt_timezone
@@ -19,6 +18,7 @@ from app.infrastructure.gateways.mikrotik_client import activate_or_update_hotsp
 from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection, get_ip_by_mac, upsert_ip_binding
 from app.services.access_policy_service import resolve_allowed_binding_type_for_user
 from app.services.hotspot_sync_service import resolve_target_profile_for_user, sync_address_list_for_single_user
+from app.services.quota_expiry_policy import calculate_quota_expiry_date
 from app.services.quota_mutation_ledger_service import (
     append_quota_mutation_event,
     lock_user_quota_row,
@@ -100,9 +100,11 @@ def inject_user_quota(user: User, admin_actor: User, mb_to_add: int, days_to_add
         if days_to_add <= 0:
             return False, "Anda hanya bisa menambah masa aktif untuk pengguna unlimited."
 
-        current_expiry = user.quota_expiry_date
-        user.quota_expiry_date = (current_expiry if current_expiry and current_expiry > now else now) + timedelta(
-            days=days_to_add
+        user.quota_expiry_date = calculate_quota_expiry_date(
+            current_expiry=user.quota_expiry_date,
+            now=now,
+            days_to_add=int(days_to_add),
+            strategy=str(settings_service.get_setting("UNLIMITED_EXPIRY_STRATEGY", "reset_from_now") or "reset_from_now"),
         )
         normalized_expiry = user.quota_expiry_date or now
 
@@ -144,10 +146,12 @@ def inject_user_quota(user: User, admin_actor: User, mb_to_add: int, days_to_add
         if remaining_injected_mb > 0:
             user.total_quota_purchased_mb = int(user.total_quota_purchased_mb or 0) + int(remaining_injected_mb)
 
-        current_expiry = user.quota_expiry_date
         if days_to_add > 0:
-            user.quota_expiry_date = (current_expiry if current_expiry and current_expiry > now else now) + timedelta(
-                days=days_to_add
+            user.quota_expiry_date = calculate_quota_expiry_date(
+                current_expiry=user.quota_expiry_date,
+                now=now,
+                days_to_add=int(days_to_add),
+                strategy="extend_active",
             )
 
         purchased_mb = user.total_quota_purchased_mb or 0

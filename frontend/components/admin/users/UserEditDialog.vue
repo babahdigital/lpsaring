@@ -10,6 +10,7 @@ import { useSnackbar } from '@/composables/useSnackbar'
 import { useAuthStore } from '@/store/auth'
 import { TAMPING_OPTION_ITEMS } from '~/utils/constants'
 import UserDebtLedgerDialog from '@/components/admin/users/UserDebtLedgerDialog.vue'
+import UserQuotaHistoryDialog from '@/components/admin/users/UserQuotaHistoryDialog.vue'
 
 const props = defineProps<{
   modelValue: boolean
@@ -123,6 +124,7 @@ const formData = reactive(getInitialFormData())
 const isCheckingMikrotik = ref(false)
 const liveData = ref<LiveData | null>(null)
 const isDebtLedgerOpen = ref(false)
+const isQuotaHistoryOpen = ref(false)
 const isDebtQuotaEnabled = ref(false)
 
 // --- SuperAdmin: koreksi kuota langsung ---
@@ -596,6 +598,18 @@ function openDebtPdf() {
     return
   window.open(`/api/admin/users/${props.user.id}/debts/export?format=pdf`, '_blank', 'noopener')
 }
+
+function openQuotaHistory() {
+  if (!props.user)
+    return
+  isQuotaHistoryOpen.value = true
+}
+
+function openQuotaHistoryPdf() {
+  if (!props.user)
+    return
+  window.open(`/api/admin/users/${props.user.id}/quota-history/export?format=pdf`, '_blank', 'noopener')
+}
 </script>
 
 <template>
@@ -800,6 +814,39 @@ function openDebtPdf() {
                       Gunakan <strong>Tunggakan Kuota → Tambah Tunggakan (Pilih Paket)</strong> untuk memberi akses (advance),
                       atau lunasi/clear tunggakan terlebih dahulu.
                     </VAlert>
+                  </VCol>
+
+                  <VCol cols="12">
+                    <VSheet rounded="lg" border class="pa-3">
+                      <div class="d-flex justify-space-between align-center flex-wrap gap-2">
+                        <div>
+                          <div class="text-caption text-disabled">
+                            Riwayat Mutasi Kuota
+                          </div>
+                          <div class="font-weight-medium">
+                            Lihat pemakaian, pembelian, koreksi, dan reset baseline perangkat.
+                          </div>
+                        </div>
+                        <div class="d-flex align-center gap-2 flex-wrap justify-end">
+                          <VBtn
+                            size="small"
+                            variant="tonal"
+                            prepend-icon="tabler-list-details"
+                            @click="openQuotaHistory"
+                          >
+                            Lihat Riwayat
+                          </VBtn>
+                          <VBtn
+                            size="small"
+                            variant="text"
+                            prepend-icon="tabler-printer"
+                            @click="openQuotaHistoryPdf"
+                          >
+                            PDF
+                          </VBtn>
+                        </div>
+                      </div>
+                    </VSheet>
                   </VCol>
 
                   <template v-if="shouldShowDebtSection">
@@ -1018,6 +1065,7 @@ function openDebtPdf() {
   </VDialog>
 
   <UserDebtLedgerDialog v-model="isDebtLedgerOpen" :user="props.user" />
+  <UserQuotaHistoryDialog v-model="isQuotaHistoryOpen" :user="props.user" />
 </template>
 
 <style scoped>

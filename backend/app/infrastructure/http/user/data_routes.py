@@ -1,7 +1,7 @@
 # backend/app/infrastructure/http/user/data_routes.py
 # Berisi endpoint yang menyajikan data dan statistik penggunaan untuk pengguna.
 
-from flask import Blueprint, request, jsonify, abort, current_app
+from flask import Blueprint, request, jsonify, abort, current_app, make_response, render_template
 from functools import wraps
 from sqlalchemy import select, desc, func
 from sqlalchemy.orm import selectinload
@@ -30,6 +30,7 @@ from app.utils.formatters import (
 )
 
 from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package
+from app.services.quota_history_service import get_user_quota_history_payload
 
 data_bp = Blueprint("user_data_api", __name__, url_prefix="/api/users")
 
@@ -379,3 +380,71 @@ def get_my_quota_debts(current_user_id):
     except Exception as e:
         current_app.logger.error(f"Error pada get_my_quota_debts: {e}", exc_info=True)
         abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Gagal mengambil data tunggakan per tanggal.")
+
+
+@data_bp.route("/me/quota-history", methods=["GET"])
+@token_required_or_dev_user
+def get_my_quota_history(current_user_id):
+    user = _get_authenticated_user(current_user_id)
+    try:
+        page = max(1, request.args.get("page", 1, type=int) or 1)
+        items_per_page = min(max(request.args.get("itemsPerPage", 25, type=int) or 25, 1), 100)
+        payload = get_user_quota_history_payload(user=user, page=page, items_per_page=items_per_page)
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "items": payload["items"],
+                    "summary": payload["summary"],
+                    "totalItems": payload["total_items"],
+                    "page": payload["page"],
+                    "itemsPerPage": payload["items_per_page"],
+                }
+            ),
+            HTTPStatus.OK,
+        )
+    except Exception as e:
+        current_app.logger.error(f"Error pada get_my_quota_history: {e}", exc_info=True)
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Gagal mengambil riwayat mutasi kuota.")
+
+
+@data_bp.route("/me/quota-history/export", methods=["GET"])
+@token_required_or_dev_user
+def export_my_quota_history_pdf(current_user_id):
+    user = _get_authenticated_user(current_user_id)
+    fmt = (request.args.get("format") or "pdf").strip().lower()
+    if fmt != "pdf":
+        abort(HTTPStatus.BAD_REQUEST, description="Format tidak didukung.")
+
+    try:
+        from weasyprint import HTML  # type: ignore
+    except Exception:
+        abort(HTTPStatus.NOT_IMPLEMENTED, description="Komponen PDF server tidak tersedia.")
+
+    try:
+        payload = get_user_quota_history_payload(user=user, include_all=True, items_per_page=200)
+        generated_local = get_app_local_datetime().strftime("%d-%m-%Y %H:%M")
+        context = {
+            "user": user,
+            "user_phone_display": format_to_local_phone(getattr(user, "phone_number", "") or "")
+            or (getattr(user, "phone_number", "") or ""),
+            "generated_at": generated_local,
+            "items": payload["items"],
+            "summary": payload["summary"],
+        }
+
+        public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
+        html_string = render_template("quota_history_report.html", **context)
+        pdf_bytes = HTML(string=html_string, base_url=public_base_url).write_pdf()
+        if not pdf_bytes:
+            abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Gagal menghasilkan file PDF.")
+
+        safe_phone = (getattr(user, "phone_number", "") or "").replace("+", "")
+        filename = f"quota-history-{safe_phone or user.id}.pdf"
+        response = make_response(pdf_bytes)
+        response.headers["Content-Type"] = "application/pdf"
+        response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+    except Exception as e:
+        current_app.logger.error(f"Error pada export_my_quota_history_pdf: {e}", exc_info=True)
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Gagal menyiapkan PDF riwayat mutasi kuota.")

@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Riwayat Mutasi Kuota</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { font-family: sans-serif; font-size: 12px; color: #111; }
+      h1 { font-size: 18px; margin: 0 0 4px 0; }
+      .muted { color: #666; }
+      .row { display: flex; gap: 12px; flex-wrap: wrap; }
+      .card { border: 1px solid #ddd; border-radius: 8px; padding: 10px; }
+      .card-title { font-weight: 700; margin-bottom: 6px; }
+      .card-flex { flex: 1 1 280px; }
+      .metric { flex: 1 1 140px; }
+      .mt-8 { margin-top: 8px; }
+      .mt-6 { margin-top: 6px; }
+      .mt-4 { margin-top: 4px; }
+      .nowrap { white-space: nowrap; }
+      .right { text-align: right; }
+      .badge {
+        display: inline-block;
+        padding: 2px 6px;
+        border-radius: 999px;
+        border: 1px solid #ddd;
+        font-size: 11px;
+      }
+      .badge-usage { background: #e3f2fd; border-color: #90caf9; }
+      .badge-purchase { background: #e8f5e9; border-color: #a5d6a7; }
+      .badge-debt { background: #fff8e1; border-color: #ffe082; }
+      .badge-policy { background: #f3e5f5; border-color: #ce93d8; }
+      .badge-system { background: #f5f5f5; border-color: #ddd; }
+      table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+      th, td { border: 1px solid #ddd; padding: 6px 8px; vertical-align: top; }
+      th { background: #f5f5f5; text-align: left; }
+      ul.compact { margin: 6px 0 0 18px; padding: 0; }
+      ul.compact li { margin: 0 0 2px 0; }
+    </style>
+  </head>
+  <body>
+    {%- from '_formatters.html' import fmt_quota -%}
+
+    <h1>Riwayat Mutasi Kuota</h1>
+    <div class="muted">Dicetak: {{ generated_at }}</div>
+
+    <div class="row mt-8">
+      <div class="card card-flex">
+        <div class="card-title">Pengguna</div>
+        <div><strong>{{ user.full_name }}</strong></div>
+        <div class="muted nowrap">{{ user_phone_display }}</div>
+      </div>
+
+      <div class="card card-flex">
+        <div class="card-title">Ringkasan</div>
+        <div class="row">
+          <div class="metric">
+            <div class="muted">Total Event</div>
+            <div><strong>{{ summary.page_items or (items|length) }}</strong></div>
+          </div>
+          <div class="metric">
+            <div class="muted">Net Kuota Beli</div>
+            <div><strong>{{ fmt_quota(summary.total_net_purchased_mb) }}</strong></div>
+          </div>
+          <div class="metric">
+            <div class="muted">Net Kuota Pakai</div>
+            <div><strong>{{ fmt_quota(summary.total_net_used_mb) }}</strong></div>
+          </div>
+        </div>
+        <div class="muted mt-6">Rentang data: {{ summary.first_event_at_display or '-' }} s.d. {{ summary.last_event_at_display or '-' }}</div>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th class="nowrap">Waktu</th>
+          <th>Event</th>
+          <th class="right nowrap">Delta Beli</th>
+          <th class="right nowrap">Delta Pakai</th>
+          <th class="right nowrap">Sisa Setelah</th>
+          <th>Detail</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if items and items|length > 0 %}
+          {% for item in items %}
+            <tr>
+              <td class="nowrap">{{ item.created_at_display or '-' }}</td>
+              <td>
+                <div><strong>{{ item.title }}</strong></div>
+                <div class="muted mt-4">{{ item.source }}</div>
+                {% if item.category == 'usage' %}
+                  <div class="mt-4"><span class="badge badge-usage">usage</span></div>
+                {% elif item.category == 'purchase' %}
+                  <div class="mt-4"><span class="badge badge-purchase">purchase</span></div>
+                {% elif item.category == 'debt' %}
+                  <div class="mt-4"><span class="badge badge-debt">debt</span></div>
+                {% elif item.category == 'policy' %}
+                  <div class="mt-4"><span class="badge badge-policy">policy</span></div>
+                {% else %}
+                  <div class="mt-4"><span class="badge badge-system">{{ item.category }}</span></div>
+                {% endif %}
+              </td>
+              <td class="right nowrap">{{ item.deltas_display.purchased or '-' }}</td>
+              <td class="right nowrap">{{ item.deltas_display.used or '-' }}</td>
+              <td class="right nowrap">{{ item.deltas_display.remaining_after or '-' }}</td>
+              <td>
+                <div>{{ item.description }}</div>
+                {% if item.actor_name %}
+                  <div class="muted mt-4">Aktor: {{ item.actor_name }}</div>
+                {% endif %}
+                {% if item.highlights %}
+                  <ul class="compact">
+                    {% for highlight in item.highlights[:6] %}
+                      <li>{{ highlight }}</li>
+                    {% endfor %}
+                  </ul>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="6" class="muted">Belum ada riwayat mutasi kuota.</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </body>
+</html>

@@ -8,7 +8,7 @@ from http import HTTPStatus
 from pydantic import ValidationError
 from sqlalchemy import select, desc, asc
 from sqlalchemy.orm import joinedload, selectinload
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Optional
 
 from app.extensions import db
@@ -19,6 +19,7 @@ from app.infrastructure.http.decorators import admin_required
 from .schemas import RequestApprovalSchema, QuotaRequestListItemSchema, RequestApprovalAction
 from app.services.notification_service import get_notification_message
 from app.services import settings_service
+from app.services.quota_expiry_policy import calculate_quota_expiry_date
 from app.utils.formatters import format_to_local_phone, get_app_local_datetime
 
 try:
@@ -191,7 +192,12 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
                 return jsonify({"message": "Durasi unlimited melebihi batas maksimum."}), HTTPStatus.BAD_REQUEST
 
             days_to_add = data_input.unlimited_duration_days
-            new_expiry_date = now_local + timedelta(days=days_to_add)
+            new_expiry_date = calculate_quota_expiry_date(
+                current_expiry=target_user.quota_expiry_date,
+                now=now_local,
+                days_to_add=int(days_to_add),
+                strategy=str(settings_service.get_setting("UNLIMITED_EXPIRY_STRATEGY", "reset_from_now") or "reset_from_now"),
+            )
 
             req_to_process.status = RequestStatus.APPROVED
             target_user.is_unlimited_user = True
@@ -239,9 +245,12 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
             target_user.is_unlimited_user = False
             target_user.total_quota_purchased_mb = (target_user.total_quota_purchased_mb or 0) + mb_to_add
             current_expiry = target_user.quota_expiry_date
-            new_expiry_date = (
-                current_expiry if current_expiry and current_expiry > now_local else now_local
-            ) + timedelta(days=days_to_add)
+            new_expiry_date = calculate_quota_expiry_date(
+                current_expiry=current_expiry,
+                now=now_local,
+                days_to_add=days_to_add,
+                strategy="extend_active",
+            )
             target_user.quota_expiry_date = new_expiry_date
 
             gb_added = round(mb_to_add / 1024, 2)
@@ -301,8 +310,11 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
         target_user.is_unlimited_user = False
         target_user.total_quota_purchased_mb = (target_user.total_quota_purchased_mb or 0) + mb_to_add
         current_expiry = target_user.quota_expiry_date
-        new_expiry_date = (current_expiry if current_expiry and current_expiry > now_local else now_local) + timedelta(
-            days=days_to_add
+        new_expiry_date = calculate_quota_expiry_date(
+            current_expiry=current_expiry,
+            now=now_local,
+            days_to_add=days_to_add,
+            strategy="extend_active",
         )
         target_user.quota_expiry_date = new_expiry_date
 
