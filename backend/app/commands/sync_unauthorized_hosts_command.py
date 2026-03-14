@@ -57,6 +57,13 @@ def _normalize_ip_for_compare(ip_text: str) -> str:
         return text
 
 
+def _append_failure_sample(samples: List[str], address: str, message: str, limit: int = 5) -> None:
+    if len(samples) >= limit:
+        return
+    text = str(message or "unknown_error").strip() or "unknown_error"
+    samples.append(f"{address} => {text}")
+
+
 def _collect_non_blocked_ip_binding_snapshot(api) -> Tuple[set[str], set[Tuple[str, str]], set[str]]:
     """Kumpulkan snapshot ip-binding non-blocked:
 
@@ -411,6 +418,13 @@ def sync_unauthorized_hosts_command(
     failed_forced_status_overlap_remove = 0
     failed_forced_critical_status_overlap_remove = 0
     failed_hotspot_host_cleanup = 0
+    failed_add_or_refresh_samples: List[str] = []
+    failed_remove_samples: List[str] = []
+    failed_forced_exempt_remove_samples: List[str] = []
+    failed_forced_authorized_remove_samples: List[str] = []
+    failed_forced_binding_dhcp_remove_samples: List[str] = []
+    failed_forced_status_overlap_remove_samples: List[str] = []
+    failed_forced_critical_status_overlap_remove_samples: List[str] = []
 
     trusted_binding_dhcp_ips: set[str] = set()
 
@@ -528,15 +542,22 @@ def sync_unauthorized_hosts_command(
             if addr and addr not in desired:
                 to_remove += 1
                 if apply:
-                    ok_remove, _remove_msg = remove_address_list_entry(api, addr, resolved_list)
+                    ok_remove, remove_msg = remove_address_list_entry(api, addr, resolved_list)
                     if not ok_remove:
                         failed_remove += 1
+                        _append_failure_sample(failed_remove_samples, addr, remove_msg)
+                        current_app.logger.warning(
+                            "sync-unauthorized-hosts remove gagal: list=%s address=%s msg=%s",
+                            resolved_list,
+                            addr,
+                            remove_msg,
+                        )
 
         # Upsert desired entries.
         for addr, comment in desired.items():
             to_add += 1
             if apply:
-                ok_upsert, _upsert_msg = upsert_address_list_entry(
+                ok_upsert, upsert_msg = upsert_address_list_entry(
                     api,
                     addr,
                     resolved_list,
@@ -545,6 +566,13 @@ def sync_unauthorized_hosts_command(
                 )
                 if not ok_upsert:
                     failed_add_or_refresh += 1
+                    _append_failure_sample(failed_add_or_refresh_samples, addr, upsert_msg)
+                    current_app.logger.warning(
+                        "sync-unauthorized-hosts upsert gagal: list=%s address=%s msg=%s",
+                        resolved_list,
+                        addr,
+                        upsert_msg,
+                    )
 
         # Final safety guard: exempt IP must never stay in unauthorized list.
         for exempt_ip in list(exempt_set):
@@ -555,9 +583,16 @@ def sync_unauthorized_hosts_command(
                 continue  # Tidak ada di unauthorized list, skip API call no-op.
             forced_exempt_remove += 1
             if apply:
-                ok_remove, _remove_msg = remove_address_list_entry(api, normalized_exempt_ip, resolved_list)
+                ok_remove, remove_msg = remove_address_list_entry(api, normalized_exempt_ip, resolved_list)
                 if not ok_remove:
                     failed_forced_exempt_remove += 1
+                    _append_failure_sample(failed_forced_exempt_remove_samples, normalized_exempt_ip, remove_msg)
+                    current_app.logger.warning(
+                        "sync-unauthorized-hosts forced exempt remove gagal: list=%s address=%s msg=%s",
+                        resolved_list,
+                        normalized_exempt_ip,
+                        remove_msg,
+                    )
 
         # Final safety guard: IP device yang sudah authorized di DB tidak boleh bertahan di unauthorized list.
         for authorized_ip in sorted(authorized_device_ips):
@@ -567,9 +602,16 @@ def sync_unauthorized_hosts_command(
                 continue  # Tidak ada di unauthorized list, skip API call no-op.
             forced_authorized_remove += 1
             if apply:
-                ok_remove, _remove_msg = remove_address_list_entry(api, authorized_ip, resolved_list)
+                ok_remove, remove_msg = remove_address_list_entry(api, authorized_ip, resolved_list)
                 if not ok_remove:
                     failed_forced_authorized_remove += 1
+                    _append_failure_sample(failed_forced_authorized_remove_samples, authorized_ip, remove_msg)
+                    current_app.logger.warning(
+                        "sync-unauthorized-hosts forced authorized remove gagal: list=%s address=%s msg=%s",
+                        resolved_list,
+                        authorized_ip,
+                        remove_msg,
+                    )
 
         # Final safety guard: trusted ip-binding + dhcp lease juga tidak boleh bertahan di unauthorized list.
         for trusted_ip in sorted(trusted_binding_dhcp_ips):
@@ -579,9 +621,16 @@ def sync_unauthorized_hosts_command(
                 continue  # Tidak ada di unauthorized list, skip API call no-op.
             forced_binding_dhcp_remove += 1
             if apply:
-                ok_remove, _remove_msg = remove_address_list_entry(api, trusted_ip, resolved_list)
+                ok_remove, remove_msg = remove_address_list_entry(api, trusted_ip, resolved_list)
                 if not ok_remove:
                     failed_forced_binding_dhcp_remove += 1
+                    _append_failure_sample(failed_forced_binding_dhcp_remove_samples, trusted_ip, remove_msg)
+                    current_app.logger.warning(
+                        "sync-unauthorized-hosts forced trusted-binding remove gagal: list=%s address=%s msg=%s",
+                        resolved_list,
+                        trusted_ip,
+                        remove_msg,
+                    )
 
         # Final safety guard: IP yang sudah terdaftar di list status manapun
         # (aktif/fup/inactive/expired/habis/blocked) tidak boleh overlap di unauthorized.
@@ -604,9 +653,16 @@ def sync_unauthorized_hosts_command(
                 continue  # Tidak ada di unauthorized list, skip API call no-op.
             forced_status_overlap_remove += 1
             if apply:
-                ok_remove, _remove_msg = remove_address_list_entry(api, status_ip, resolved_list)
+                ok_remove, remove_msg = remove_address_list_entry(api, status_ip, resolved_list)
                 if not ok_remove:
                     failed_forced_status_overlap_remove += 1
+                    _append_failure_sample(failed_forced_status_overlap_remove_samples, status_ip, remove_msg)
+                    current_app.logger.warning(
+                        "sync-unauthorized-hosts forced status-overlap remove gagal: list=%s address=%s msg=%s",
+                        resolved_list,
+                        status_ip,
+                        remove_msg,
+                    )
 
         # Final safety guard: list status kritikal tidak boleh overlap untuk IP yang sama.
         # Prioritas yang dipertahankan: blocked > fup > active.
@@ -636,9 +692,20 @@ def sync_unauthorized_hosts_command(
         for status_ip, remove_list_name, _keep_list_name in critical_overlap_plans:
             forced_critical_status_overlap_remove += 1
             if apply:
-                ok_remove, _remove_msg = remove_address_list_entry(api, status_ip, remove_list_name)
+                ok_remove, remove_msg = remove_address_list_entry(api, status_ip, remove_list_name)
                 if not ok_remove:
                     failed_forced_critical_status_overlap_remove += 1
+                    _append_failure_sample(
+                        failed_forced_critical_status_overlap_remove_samples,
+                        status_ip,
+                        f"{remove_list_name}: {remove_msg}",
+                    )
+                    current_app.logger.warning(
+                        "sync-unauthorized-hosts forced critical-overlap remove gagal: list=%s address=%s msg=%s",
+                        remove_list_name,
+                        status_ip,
+                        remove_msg,
+                    )
 
     click.echo(
         f"processed_hosts={processed} desired_block_ips={len(desired)} "
@@ -672,6 +739,32 @@ def sync_unauthorized_hosts_command(
         or failed_forced_status_overlap_remove > 0
         or failed_forced_critical_status_overlap_remove > 0
     ):
+        failure_details: List[str] = []
+        if failed_add_or_refresh_samples:
+            failure_details.append(f"failed_add_or_refresh_sample={failed_add_or_refresh_samples[0]}")
+        if failed_remove_samples:
+            failure_details.append(f"failed_remove_sample={failed_remove_samples[0]}")
+        if failed_forced_exempt_remove_samples:
+            failure_details.append(f"failed_forced_exempt_remove_sample={failed_forced_exempt_remove_samples[0]}")
+        if failed_forced_authorized_remove_samples:
+            failure_details.append(
+                f"failed_forced_authorized_remove_sample={failed_forced_authorized_remove_samples[0]}"
+            )
+        if failed_forced_binding_dhcp_remove_samples:
+            failure_details.append(
+                "failed_forced_binding_dhcp_remove_sample="
+                f"{failed_forced_binding_dhcp_remove_samples[0]}"
+            )
+        if failed_forced_status_overlap_remove_samples:
+            failure_details.append(
+                f"failed_forced_status_overlap_remove_sample={failed_forced_status_overlap_remove_samples[0]}"
+            )
+        if failed_forced_critical_status_overlap_remove_samples:
+            failure_details.append(
+                "failed_forced_critical_status_overlap_remove_sample="
+                f"{failed_forced_critical_status_overlap_remove_samples[0]}"
+            )
+        detail_suffix = f"; {'; '.join(failure_details)}" if failure_details else ""
         raise click.ClickException(
             "Sinkronisasi unauthorized selesai dengan kegagalan operasi router: "
             f"failed_add_or_refresh={failed_add_or_refresh}, failed_remove={failed_remove}, "
@@ -680,4 +773,5 @@ def sync_unauthorized_hosts_command(
             f"failed_forced_binding_dhcp_remove={failed_forced_binding_dhcp_remove}, "
             f"failed_forced_status_overlap_remove={failed_forced_status_overlap_remove}, "
             f"failed_forced_critical_status_overlap_remove={failed_forced_critical_status_overlap_remove}"
+            f"{detail_suffix}"
         )

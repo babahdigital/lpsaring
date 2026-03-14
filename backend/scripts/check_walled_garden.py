@@ -1,46 +1,34 @@
-import json
-from typing import List
-
 from app import create_app
 from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection, get_walled_garden_rules
-from app.services import settings_service
-
-
-def _get_list_setting(key: str) -> List[str]:
-    value = settings_service.get_setting(key, "[]")
-    if not value:
-        return []
-    if isinstance(value, str):
-        val = value.strip()
-        if val.startswith("[") and val.endswith("]"):
-            try:
-                parsed = json.loads(val)
-                if isinstance(parsed, list):
-                    return [str(item).strip() for item in parsed if str(item).strip()]
-            except json.JSONDecodeError:
-                val = val.strip("[]")
-        if not val:
-            return []
-        return [item.strip().strip('"').strip("'") for item in val.split(",") if item.strip()]
-    return []
+from app.services import walled_garden_service as service
 
 
 def main() -> int:
     app = create_app()
     with app.app_context():
-        enabled = settings_service.get_setting("WALLED_GARDEN_ENABLED", "False") == "True"
-        if not enabled:
+        config = service._load_walled_garden_sync_config()
+        if not config.enabled:
             print("Walled garden disabled.")
             return 0
 
-        desired_hosts = sorted(set(_get_list_setting("WALLED_GARDEN_ALLOWED_HOSTS")))
-        desired_ips = sorted(set(_get_list_setting("WALLED_GARDEN_ALLOWED_IPS")))
-        comment_prefix = settings_service.get_setting("WALLED_GARDEN_MANAGED_COMMENT_PREFIX", "lpsaring") or "lpsaring"
+        desired_hosts = list(config.allowed_hosts)
+        desired_ips = list(config.allowed_ips)
+        comment_prefix = config.comment_prefix or "lpsaring"
 
         with get_mikrotik_connection() as api:
             if api is None:
                 print("Failed to connect to Mikrotik.")
                 return 1
+
+            if config.allowed_ip_list_names:
+                derived_list_ips = service._derive_ips_from_address_lists(api, list(config.allowed_ip_list_names))
+                if derived_list_ips:
+                    desired_ips = sorted({*desired_ips, *derived_list_ips})
+
+            if not desired_ips and desired_hosts:
+                derived_private_ips = service._derive_private_ips_from_hosts(desired_hosts)
+                if derived_private_ips:
+                    desired_ips = derived_private_ips
 
             ok, current, message = get_walled_garden_rules(api, comment_prefix=comment_prefix)
             if not ok:
@@ -56,6 +44,8 @@ def main() -> int:
         extra_ips = sorted(set(current_ips) - set(desired_ips))
 
         print("Walled garden check:")
+        print(f"- Desired hosts total: {len(desired_hosts)}")
+        print(f"- Desired IPs total: {len(desired_ips)}")
         print(f"- Missing hosts: {missing_hosts}")
         print(f"- Extra hosts: {extra_hosts}")
         print(f"- Missing IPs: {missing_ips}")
