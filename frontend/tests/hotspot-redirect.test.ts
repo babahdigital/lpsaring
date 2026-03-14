@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolvePostHotspotRecheckRoute, shouldRedirectToHotspotRequired } from '../utils/hotspotRedirect'
+import { resolveHotspotSuccessPresentation, resolvePostHotspotRecheckRoute, shouldRedirectToHotspotRequired } from '../utils/hotspotRedirect'
 
 describe('shouldRedirectToHotspotRequired', () => {
   it('returns true when hotspot login required and binding explicitly inactive', () => {
@@ -40,5 +40,21 @@ describe('shouldRedirectToHotspotRequired', () => {
 
   it('routes ok status to dashboard after realtime refresh', () => {
     expect(resolvePostHotspotRecheckRoute('ok')).toBe('/dashboard')
+  })
+
+  it('returns dashboard-focused success copy for connected users', () => {
+    expect(resolveHotspotSuccessPresentation('/dashboard')).toEqual({
+      title: 'Internet Sudah Aktif',
+      description: 'Perangkat Anda sudah berhasil dikenali. Anda akan diarahkan ke dashboard dalam beberapa detik.',
+      ctaLabel: 'Buka Dashboard',
+    })
+  })
+
+  it('returns generic success copy for non-dashboard follow-up routes', () => {
+    expect(resolveHotspotSuccessPresentation('/policy/fup')).toEqual({
+      title: 'Akses Berhasil Diperbarui',
+      description: 'Koneksi perangkat sudah diproses. Anda akan diarahkan ke halaman berikutnya secara otomatis.',
+      ctaLabel: 'Lanjut Sekarang',
+    })
   })
 })

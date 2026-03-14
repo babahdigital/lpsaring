@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { normalizeHotspotLoginUrl, resolveHotspotBridgeTarget } from '~/utils/hotspotLoginTargets'
-import { resolvePostHotspotRecheckRoute } from '~/utils/hotspotRedirect'
+import { resolveHotspotSuccessPresentation, resolvePostHotspotRecheckRoute } from '~/utils/hotspotRedirect'
 import { useAuthStore } from '~/store/auth'
 import { rememberHotspotIdentity, resolveHotspotIdentity } from '~/utils/hotspotIdentity'
 
@@ -21,10 +21,19 @@ const activating = ref(false)
 const progressMessage = ref('')
 const statusMessage = ref('')
 const showFallbackLogin = ref(false)
+const successTitle = ref('')
+const successDescription = ref('')
+const successCtaLabel = ref('')
+const successNextRoute = ref('')
+const successCountdown = ref(0)
 const HOTSPOT_BRIDGE_WINDOW_NAME = 'lpsaring-hotspot-bridge'
 const HOTSPOT_BRIDGE_MESSAGE_TYPE = 'lpsaring:hotspot-identity-bridge'
 const HOTSPOT_BRIDGE_TIMEOUT_MS = 8000
 const LAST_MIKROTIK_LOGIN_HINT_KEY = 'lpsaring:last-mikrotik-login-link'
+const SUCCESS_REDIRECT_DELAY_MS = 2200
+
+let successRedirectTimeout: number | null = null
+let successCountdownInterval: number | null = null
 
 const queryMikrotikLink = computed(() => {
   const direct = getQueryValueFromKeys(['link_login_only', 'link-login-only', 'link_login', 'link-login', 'linkloginonly'])
@@ -87,6 +96,7 @@ function getHotspotIdentity() {
 }
 
 const loginHotspotUrl = computed(() => mikrotikLoginUrl.value)
+const showSuccessState = computed(() => Boolean(successNextRoute.value))
 
 function rememberMikrotikLoginLink(raw: string | null | undefined) {
   if (!import.meta.client)
@@ -102,6 +112,70 @@ function rememberMikrotikLoginLink(raw: string | null | undefined) {
   catch {
     // ignore storage failures
   }
+}
+
+function stopSuccessRedirectTimers() {
+  if (!import.meta.client)
+    return
+
+  if (successRedirectTimeout != null) {
+    window.clearTimeout(successRedirectTimeout)
+    successRedirectTimeout = null
+  }
+
+  if (successCountdownInterval != null) {
+    window.clearInterval(successCountdownInterval)
+    successCountdownInterval = null
+  }
+}
+
+function resetSuccessState() {
+  stopSuccessRedirectTimers()
+  successTitle.value = ''
+  successDescription.value = ''
+  successCtaLabel.value = ''
+  successNextRoute.value = ''
+  successCountdown.value = 0
+}
+
+async function finishSuccessRedirect() {
+  const nextRoute = String(successNextRoute.value || '').trim()
+  if (!nextRoute)
+    return
+
+  resetSuccessState()
+  await navigateTo(nextRoute, { replace: true })
+}
+
+function startSuccessRedirect(nextRoute: string) {
+  const targetRoute = String(nextRoute || '').trim()
+  if (!targetRoute)
+    return
+
+  const presentation = resolveHotspotSuccessPresentation(targetRoute)
+  stopSuccessRedirectTimers()
+  progressMessage.value = ''
+  statusMessage.value = ''
+  showFallbackLogin.value = false
+  successTitle.value = presentation.title
+  successDescription.value = presentation.description
+  successCtaLabel.value = presentation.ctaLabel
+  successNextRoute.value = targetRoute
+  successCountdown.value = Math.max(1, Math.ceil(SUCCESS_REDIRECT_DELAY_MS / 1000))
+
+  if (!import.meta.client) {
+    void navigateTo(targetRoute, { replace: true })
+    return
+  }
+
+  successCountdownInterval = window.setInterval(() => {
+    if (successCountdown.value > 1)
+      successCountdown.value -= 1
+  }, 1000)
+
+  successRedirectTimeout = window.setTimeout(() => {
+    void finishSuccessRedirect()
+  }, SUCCESS_REDIRECT_DELAY_MS)
 }
 
 function isDemoUser(user: ReturnType<typeof useAuthStore>['currentUser'] | null | undefined): boolean {
@@ -157,18 +231,7 @@ function openHotspotLogin() {
   }
 
   rememberMikrotikLoginLink(targetUrl)
-
-  window.location.assign(targetUrl)
-
-  setTimeout(() => {
-    if (document.visibilityState !== 'visible')
-      return
-    const fallbackLink = document.createElement('a')
-    fallbackLink.href = targetUrl
-    fallbackLink.target = '_self'
-    fallbackLink.rel = 'noopener'
-    fallbackLink.click()
-  }, 600)
+  window.location.href = targetUrl
 }
 
 function getHotspotIdentityQuery(): Record<string, string> {
@@ -347,6 +410,7 @@ async function continueToPortal() {
   if (await redirectDemoUserToBuyPage())
     return
 
+  resetSuccessState()
   statusMessage.value = ''
   try {
     await authStore.refreshSessionStatus('/login/hotspot-required')
@@ -358,7 +422,7 @@ async function continueToPortal() {
 
     const latestStatus = authStore.getAccessStatusFromUser(latestUser)
     const nextRoute = resolvePostHotspotRecheckRoute(latestStatus)
-    await navigateTo(nextRoute, { replace: true })
+    startSuccessRedirect(nextRoute)
   }
   catch {
     statusMessage.value = 'Gagal memuat sesi terbaru. Silakan coba lagi.'
@@ -489,12 +553,51 @@ onMounted(async () => {
     // best effort
   }
 })
+
+onBeforeUnmount(() => {
+  stopSuccessRedirectTimers()
+})
 </script>
 
 <template>
   <div class="auth-wrapper d-flex align-center justify-center pa-4 pa-sm-6">
     <VCard class="auth-card" max-width="460" width="100%">
-      <VCardText class="text-center pa-6 pa-sm-8">
+      <VCardText v-if="showSuccessState" class="text-center pa-6 pa-sm-8">
+        <VIcon icon="tabler-circle-check" size="56" color="success" class="mb-4" />
+
+        <h4 class="text-h5 text-sm-h4 mb-2">
+          {{ successTitle }}
+        </h4>
+
+        <p class="text-medium-emphasis mb-6 text-body-2 text-sm-body-1">
+          {{ successDescription }}
+        </p>
+
+        <VCard variant="tonal" color="success" class="mb-6 text-start">
+          <VCardText class="py-3 px-4">
+            <div class="d-flex justify-space-between align-center mb-2">
+              <span class="text-body-2">Status</span>
+              <span class="font-weight-semibold text-body-2">Berhasil</span>
+            </div>
+            <div class="d-flex justify-space-between align-center">
+              <span class="text-body-2">Redirect</span>
+              <span class="font-weight-semibold text-body-2">{{ successCountdown }} detik</span>
+            </div>
+          </VCardText>
+        </VCard>
+
+        <p class="text-caption text-medium-emphasis mb-4">
+          Anda akan diarahkan otomatis. Jika belum berpindah, gunakan tombol di bawah.
+        </p>
+
+        <div class="d-flex flex-column ga-3">
+          <VBtn color="success" size="large" block @click="finishSuccessRedirect">
+            {{ successCtaLabel }}
+          </VBtn>
+        </div>
+      </VCardText>
+
+      <VCardText v-else class="text-center pa-6 pa-sm-8">
         <VIcon icon="tabler-router" size="56" color="warning" class="mb-4" />
 
         <h4 class="text-h5 text-sm-h4 mb-2">

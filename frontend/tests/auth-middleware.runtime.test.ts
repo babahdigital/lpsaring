@@ -20,6 +20,22 @@ function createSessionStorageMock(initial: Record<string, string> = {}) {
   }
 }
 
+function createLocalStorageMock(initial: Record<string, string> = {}) {
+  const store = new Map<string, string>(Object.entries(initial))
+  return {
+    getItem: (key: string) => (store.has(key) ? store.get(key)! : null),
+    setItem: (key: string, value: string) => {
+      store.set(key, String(value))
+    },
+    removeItem: (key: string) => {
+      store.delete(key)
+    },
+    clear: () => {
+      store.clear()
+    },
+  }
+}
+
 vi.mock('#app', () => ({
   defineNuxtRouteMiddleware: (handler: any) => handler,
   navigateTo: (...args: any[]) => navigateToMock(...args),
@@ -391,6 +407,83 @@ describe('auth.global runtime', () => {
       query: {},
     })
     expect(navigateToMock).toHaveBeenCalledWith('/login/hotspot-required', { replace: true })
+  })
+
+  it('uses stored hotspot identity for dashboard precheck after hotspot-required succeeds', async () => {
+    const middleware = (await import('../middleware/auth.global')).default
+    authStoreState.isLoggedIn = true
+    apiMock.mockResolvedValue({
+      hotspot_login_required: true,
+      hotspot_binding_active: true,
+    })
+
+    const localStorageMock = createLocalStorageMock({
+      'lpsaring:last-hotspot-identity': JSON.stringify({
+        clientIp: '172.16.3.131',
+        clientMac: '08:FA:79:B6:29:F5',
+        at: Date.now(),
+      }),
+    })
+
+    vi.stubGlobal('window', {
+      document: {
+        referrer: '',
+      },
+      localStorage: localStorageMock,
+      sessionStorage: createSessionStorageMock(),
+    } as any)
+    vi.stubGlobal('localStorage', localStorageMock)
+
+    await middleware({
+      path: '/dashboard',
+      fullPath: '/dashboard',
+      query: {},
+      meta: {},
+    } as any)
+
+    expect(apiMock).toHaveBeenCalledWith('/auth/hotspot-session-status', {
+      method: 'GET',
+      query: {
+        client_ip: '172.16.3.131',
+        client_mac: '08:FA:79:B6:29:F5',
+      },
+    })
+    expect(navigateToMock).not.toHaveBeenCalled()
+  })
+
+  it('preserves stored hotspot identity when dashboard still must redirect back to hotspot-required', async () => {
+    const middleware = (await import('../middleware/auth.global')).default
+    authStoreState.isLoggedIn = true
+    apiMock.mockResolvedValue({
+      hotspot_login_required: true,
+      hotspot_binding_active: false,
+    })
+
+    const localStorageMock = createLocalStorageMock({
+      'lpsaring:last-hotspot-identity': JSON.stringify({
+        clientIp: '172.16.3.131',
+        clientMac: '08:FA:79:B6:29:F5',
+        at: Date.now(),
+      }),
+    })
+
+    vi.stubGlobal('window', {
+      document: {
+        referrer: '',
+      },
+      localStorage: localStorageMock,
+      sessionStorage: createSessionStorageMock(),
+    } as any)
+    vi.stubGlobal('localStorage', localStorageMock)
+
+    await middleware({
+      path: '/dashboard',
+      fullPath: '/dashboard',
+      query: {},
+      meta: {},
+    } as any)
+
+    expect(navigateToMock).toHaveBeenCalledWith('/login/hotspot-required?client_ip=172.16.3.131&client_mac=08%3AFA%3A79%3AB6%3A29%3AF5', { replace: true })
   })
 
   it('prioritizes demo-user redirect to beli over hotspot precheck', async () => {

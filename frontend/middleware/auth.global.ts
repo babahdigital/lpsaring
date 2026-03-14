@@ -11,6 +11,7 @@ import {
   resolveGuestProtectedRedirect,
   resolveLoggedInRoleRedirect,
 } from '../utils/authGuardDecisions'
+import { resolveHotspotIdentity } from '../utils/hotspotIdentity'
 import { shouldRedirectToHotspotRequired } from '../utils/hotspotRedirect'
 
 const HOTSPOT_PRECHECK_ROUTES = new Set<string>(['/', '/login', '/register', '/daftar'])
@@ -31,13 +32,25 @@ function getQueryValueFromKeys(query: Record<string, unknown>, keys: string[]): 
   return null
 }
 
-function pickHotspotIdentityQuery(query: Record<string, unknown>): Record<string, string> {
-  const clientIp = getQueryValueFromKeys(query, ['client_ip', 'ip', 'client-ip'])
-  const clientMac = getQueryValueFromKeys(query, ['client_mac', 'mac', 'mac-address', 'client-mac'])
+function buildHotspotIdentityQuery(identity: { clientIp?: string | null, clientMac?: string | null }): Record<string, string> {
+  const clientIp = String(identity.clientIp ?? '').trim()
+  const clientMac = String(identity.clientMac ?? '').trim()
+
   return {
     ...(clientIp ? { client_ip: clientIp } : {}),
     ...(clientMac ? { client_mac: clientMac } : {}),
   }
+}
+
+function pickHotspotIdentityQuery(query: Record<string, unknown>): Record<string, string> {
+  return buildHotspotIdentityQuery({
+    clientIp: getQueryValueFromKeys(query, ['client_ip', 'ip', 'client-ip']),
+    clientMac: getQueryValueFromKeys(query, ['client_mac', 'mac', 'mac-address', 'client-mac']),
+  })
+}
+
+function resolveHotspotIdentityQuery(query: Record<string, unknown>): Record<string, string> {
+  return buildHotspotIdentityQuery(resolveHotspotIdentity(query))
 }
 
 function extractHotspotLoginHint(query: Record<string, unknown>): string | null {
@@ -67,6 +80,16 @@ function extractHotspotLoginHint(query: Record<string, unknown>): string | null 
 
 function pickHotspotRouteQuery(query: Record<string, unknown>): Record<string, string> {
   const identity = pickHotspotIdentityQuery(query)
+  const linkLoginOnly = extractHotspotLoginHint(query)
+
+  return {
+    ...identity,
+    ...(linkLoginOnly ? { link_login_only: linkLoginOnly } : {}),
+  }
+}
+
+function resolveHotspotRouteQuery(query: Record<string, unknown>): Record<string, string> {
+  const identity = resolveHotspotIdentityQuery(query)
   const linkLoginOnly = extractHotspotLoginHint(query)
 
   return {
@@ -166,7 +189,7 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
     if (!isAdmin && shouldRunHotspotPrecheck) {
       try {
         const { $api } = useNuxtApp()
-        const identityQuery = pickHotspotIdentityQuery(routeQuery)
+        const identityQuery = resolveHotspotIdentityQuery(routeQuery)
         const hotspotStatus = await $api<{ hotspot_login_required?: boolean | null, hotspot_binding_active?: boolean | null }>('/auth/hotspot-session-status', {
           method: 'GET',
           query: identityQuery,
@@ -176,7 +199,7 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
           hotspotLoginRequired: hotspotStatus?.hotspot_login_required,
           hotspotBindingActive: hotspotStatus?.hotspot_binding_active,
         })) {
-          const hotspotQuery = pickHotspotRouteQuery(routeQuery)
+          const hotspotQuery = resolveHotspotRouteQuery(routeQuery)
           const queryString = new URLSearchParams(hotspotQuery).toString()
           const hotspotRequiredPath = queryString.length > 0
             ? `/login/hotspot-required?${queryString}`

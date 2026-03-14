@@ -16,4 +16,10 @@ describe('hotspot login targets', () => {
     expect(normalizeHotspotLoginUrl('https://login.home.arpa/login')).toBe('http://login.home.arpa/login')
     expect(normalizeHotspotLoginUrl('https://192.168.88.1/login')).toBe('http://192.168.88.1/login')
   })
+
+  it('normalizes bare local router hosts to the login path', () => {
+    expect(normalizeHotspotLoginUrl('http://login.home.arpa')).toBe('http://login.home.arpa/login')
+    expect(normalizeHotspotLoginUrl('login.home.arpa')).toBe('http://login.home.arpa/login')
+    expect(normalizeHotspotLoginUrl('http://192.168.88.1')).toBe('http://192.168.88.1/login')
+  })
 })

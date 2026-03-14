@@ -24,6 +24,14 @@ function shouldForceHttpForHost(hostname: string): boolean {
   return false
 }
 
+function shouldAppendLoginPath(hostname: string, pathname: string): boolean {
+  if (!shouldForceHttpForHost(hostname))
+    return false
+
+  const normalizedPath = String(pathname || '').trim()
+  return normalizedPath === '' || normalizedPath === '/'
+}
+
 export function normalizeHotspotLoginUrl(raw: string): string {
   const input = String(raw || '').trim()
   if (!input)
@@ -35,6 +43,8 @@ export function normalizeHotspotLoginUrl(raw: string): string {
     const parsed = new URL(candidate)
     if (parsed.protocol === 'https:' && shouldForceHttpForHost(parsed.hostname))
       parsed.protocol = 'http:'
+    if (shouldAppendLoginPath(parsed.hostname, parsed.pathname))
+      parsed.pathname = '/login'
     return parsed.toString()
   }
   catch {
@@ -43,6 +53,8 @@ export function normalizeHotspotLoginUrl(raw: string): string {
       const parsed = new URL(withScheme)
       if (parsed.protocol === 'https:' && shouldForceHttpForHost(parsed.hostname))
         parsed.protocol = 'http:'
+      if (shouldAppendLoginPath(parsed.hostname, parsed.pathname))
+        parsed.pathname = '/login'
       return parsed.toString()
     }
     catch {
