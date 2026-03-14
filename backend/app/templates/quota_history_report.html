@@ -111,11 +111,7 @@
                   <div class="muted mt-4">Aktor: {{ item.actor_name }}</div>
                 {% endif %}
                 {% if item.highlights %}
-                  <ul class="compact">
-                    {% for highlight in item.highlights[:6] %}
-                      <li>{{ highlight }}</li>
-                    {% endfor %}
-                  </ul>
+                  <ul class="compact">{%- for highlight in item.highlights[:6] -%}<li>{{ highlight }}</li>{%- endfor -%}</ul>
                 {% endif %}
               </td>
             </tr>
