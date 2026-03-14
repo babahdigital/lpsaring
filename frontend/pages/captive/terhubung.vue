@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useAuthStore } from '~/store/auth'
 import { clearCaptiveContext } from '~/utils/captiveContext'
+import { resolveCaptiveSuccessRedirectTarget } from '~/utils/hotspotRedirect'
 definePageMeta({
   layout: 'blank',
   auth: false,
@@ -27,7 +28,7 @@ function startAutoClose() {
   const interval = window.setInterval(() => {
     if (countdown.value <= 1) {
       window.clearInterval(interval)
-      handleDone()
+      void handleDone()
       return
     }
     countdown.value -= 1
@@ -68,7 +69,20 @@ function startStatusRecheck() {
   }, 4000)
 }
 
-function handleDone() {
+async function redirectAfterSuccess() {
+  if (!import.meta.client)
+    return
+
+  const target = resolveCaptiveSuccessRedirectTarget(captiveSuccessRedirectUrl, window.location.origin)
+  if (target.startsWith('http://') || target.startsWith('https://')) {
+    window.location.href = target
+    return
+  }
+
+  await navigateTo(target, { replace: true })
+}
+
+async function handleDone() {
   if (isClosing.value)
     return
 
@@ -77,7 +91,7 @@ function handleDone() {
   if (import.meta.client) {
     window.close()
     setTimeout(() => {
-      window.location.href = captiveSuccessRedirectUrl || '/'
+      void redirectAfterSuccess()
     }, 500)
   }
 }

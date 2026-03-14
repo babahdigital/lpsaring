@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { resolveHotspotSuccessPresentation, resolvePostHotspotRecheckRoute, shouldRedirectToHotspotRequired } from '../utils/hotspotRedirect'
+import {
+  resolveCaptiveSuccessRedirectTarget,
+  resolveHotspotSuccessPresentation,
+  resolvePostHotspotRecheckRoute,
+  shouldRedirectToHotspotRequired,
+} from '../utils/hotspotRedirect'
 
 describe('shouldRedirectToHotspotRequired', () => {
   it('returns true when hotspot login required and binding explicitly inactive', () => {
@@ -44,8 +49,8 @@ describe('shouldRedirectToHotspotRequired', () => {
 
   it('returns dashboard-focused success copy for connected users', () => {
     expect(resolveHotspotSuccessPresentation('/dashboard')).toEqual({
-      title: 'Internet Sudah Aktif',
-      description: 'Perangkat Anda sudah berhasil dikenali. Anda akan diarahkan ke dashboard dalam beberapa detik.',
+      title: 'Anda Terhubung!',
+      description: 'Perangkat Anda sudah berhasil terhubung ke internet. Anda akan diarahkan ke dashboard dalam beberapa detik.',
       ctaLabel: 'Buka Dashboard',
     })
   })
@@ -56,5 +61,21 @@ describe('shouldRedirectToHotspotRequired', () => {
       description: 'Koneksi perangkat sudah diproses. Anda akan diarahkan ke halaman berikutnya secara otomatis.',
       ctaLabel: 'Lanjut Sekarang',
     })
+  })
+
+  it('falls back to dashboard for same-origin root success redirects', () => {
+    expect(resolveCaptiveSuccessRedirectTarget('https://lpsaring.babahdigital.net', 'https://lpsaring.babahdigital.net')).toBe('/dashboard')
+  })
+
+  it('falls back to dashboard for same-origin hotspot flow routes', () => {
+    expect(resolveCaptiveSuccessRedirectTarget('/login/hotspot-required', 'https://lpsaring.babahdigital.net')).toBe('/dashboard')
+  })
+
+  it('keeps safe same-origin portal targets relative for client navigation', () => {
+    expect(resolveCaptiveSuccessRedirectTarget('/dashboard?from=captive', 'https://lpsaring.babahdigital.net')).toBe('/dashboard?from=captive')
+  })
+
+  it('keeps external success targets unchanged', () => {
+    expect(resolveCaptiveSuccessRedirectTarget('https://google.com', 'https://lpsaring.babahdigital.net')).toBe('https://google.com/')
   })
 })

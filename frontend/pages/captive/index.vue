@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '~/store/auth'
+import { clearPendingHotspotBridge, getPendingHotspotBridge } from '~/utils/hotspotBridgeState'
 import { TAMPING_OPTION_ITEMS } from '~/utils/constants'
 import { normalize_to_e164 } from '~/utils/formatters'
 import { rememberHotspotIdentity, resolveHotspotIdentity } from '~/utils/hotspotIdentity'
@@ -63,6 +64,23 @@ const mikrotikLoginUrl = computed(() => {
   return String(runtimeConfig.public.mikrotikLoginUrl ?? '').trim()
 })
 
+function resolvePendingBridgeReturnPath(rawReturnPath: string): string {
+  const fallbackPath = '/login/hotspot-required'
+  const normalized = String(rawReturnPath || '').trim()
+  if (!normalized || !import.meta.client)
+    return fallbackPath
+
+  try {
+    const target = new URL(normalized, window.location.origin)
+    if (target.origin !== window.location.origin)
+      return fallbackPath
+    return `${target.pathname}${target.search}${target.hash}` || fallbackPath
+  }
+  catch {
+    return fallbackPath
+  }
+}
+
 function postHotspotBridgeMessage(status: 'ready' | 'missing') {
   if (!import.meta.client)
     return
@@ -107,6 +125,37 @@ function handleHotspotIdentityBridge(): boolean {
     window.close()
   }, 300)
 
+  return true
+}
+
+async function resumePendingHotspotBridge(): Promise<boolean> {
+  const pending = getPendingHotspotBridge()
+  if (!pending)
+    return false
+
+  clearPendingHotspotBridge()
+
+  if (!portalParams.value.clientIp && !portalParams.value.clientMac)
+    return false
+
+  rememberHotspotIdentity({
+    clientIp: portalParams.value.clientIp,
+    clientMac: portalParams.value.clientMac,
+  })
+
+  localInfo.value = 'Konteks hotspot berhasil dibaca. Melanjutkan aktivasi internet...'
+
+  const target = new URL(resolvePendingBridgeReturnPath(pending.returnPath), window.location.origin)
+  if (portalParams.value.clientIp)
+    target.searchParams.set('client_ip', portalParams.value.clientIp)
+  if (portalParams.value.clientMac)
+    target.searchParams.set('client_mac', portalParams.value.clientMac)
+  if (portalParams.value.linkLoginOnly)
+    target.searchParams.set('link_login_only', portalParams.value.linkLoginOnly)
+  if (pending.autoResume)
+    target.searchParams.set('bridge_resume', '1')
+
+  await navigateTo(`${target.pathname}${target.search}${target.hash}`, { replace: true })
   return true
 }
 
@@ -356,6 +405,8 @@ async function verifyOtp() {
 onMounted(async () => {
   loadPortalParams()
   if (handleHotspotIdentityBridge())
+    return
+  if (await resumePendingHotspotBridge())
     return
   await refreshApiHealth()
 })

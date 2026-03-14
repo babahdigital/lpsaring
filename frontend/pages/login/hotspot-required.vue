@@ -2,6 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { normalizeHotspotLoginUrl, resolveHotspotBridgeTarget } from '~/utils/hotspotLoginTargets'
 import { resolveHotspotSuccessPresentation, resolvePostHotspotRecheckRoute } from '~/utils/hotspotRedirect'
+import { type HotspotActivationStepState, type HotspotActivationStage, resolveHotspotActivationProgress } from '~/utils/hotspotActivationProgress'
+import { clearPendingHotspotBridge, rememberPendingHotspotBridge } from '~/utils/hotspotBridgeState'
 import { useAuthStore } from '~/store/auth'
 import { rememberHotspotIdentity, resolveHotspotIdentity } from '~/utils/hotspotIdentity'
 
@@ -21,14 +23,13 @@ const activating = ref(false)
 const progressMessage = ref('')
 const statusMessage = ref('')
 const showFallbackLogin = ref(false)
+const activationStage = ref<HotspotActivationStage>('idle')
 const successTitle = ref('')
 const successDescription = ref('')
 const successCtaLabel = ref('')
 const successNextRoute = ref('')
 const successCountdown = ref(0)
-const HOTSPOT_BRIDGE_WINDOW_NAME = 'lpsaring-hotspot-bridge'
-const HOTSPOT_BRIDGE_MESSAGE_TYPE = 'lpsaring:hotspot-identity-bridge'
-const HOTSPOT_BRIDGE_TIMEOUT_MS = 8000
+const BRIDGE_RESUME_QUERY_KEY = 'bridge_resume'
 const LAST_MIKROTIK_LOGIN_HINT_KEY = 'lpsaring:last-mikrotik-login-link'
 const SUCCESS_REDIRECT_DELAY_MS = 2200
 
@@ -60,7 +61,7 @@ const queryMikrotikLink = computed(() => {
   }
 })
 
-const storedMikrotikLink = computed(() => {
+function getStoredMikrotikLink(): string {
   if (!import.meta.client)
     return ''
   try {
@@ -69,14 +70,15 @@ const storedMikrotikLink = computed(() => {
   catch {
     return ''
   }
-})
+}
 
 const mikrotikLoginUrl = computed(() => {
   if (queryMikrotikLink.value)
     return normalizeHotspotLoginUrl(queryMikrotikLink.value)
 
-  if (storedMikrotikLink.value)
-    return normalizeHotspotLoginUrl(storedMikrotikLink.value)
+  const storedMikrotikLink = getStoredMikrotikLink()
+  if (storedMikrotikLink)
+    return normalizeHotspotLoginUrl(storedMikrotikLink)
 
   const appLink = String(runtimeConfig.public.appLinkMikrotik ?? '').trim()
   if (appLink)
@@ -97,6 +99,7 @@ function getHotspotIdentity() {
 
 const loginHotspotUrl = computed(() => mikrotikLoginUrl.value)
 const showSuccessState = computed(() => Boolean(successNextRoute.value))
+const activationProgress = computed(() => resolveHotspotActivationProgress(activationStage.value))
 
 function rememberMikrotikLoginLink(raw: string | null | undefined) {
   if (!import.meta.client)
@@ -112,6 +115,102 @@ function rememberMikrotikLoginLink(raw: string | null | undefined) {
   catch {
     // ignore storage failures
   }
+}
+
+function syncHotspotRouteContext(identity = getHotspotIdentity()) {
+  if (!import.meta.client)
+    return
+
+  const clientIp = String(identity.clientIp ?? '').trim()
+  const clientMac = String(identity.clientMac ?? '').trim()
+  const linkLoginOnly = String(queryMikrotikLink.value || getStoredMikrotikLink() || '').trim()
+  if (!clientIp && !clientMac && !linkLoginOnly)
+    return
+
+  try {
+    const currentUrl = new URL(window.location.href)
+    let changed = false
+
+    if (clientIp && currentUrl.searchParams.get('client_ip') !== clientIp) {
+      currentUrl.searchParams.set('client_ip', clientIp)
+      changed = true
+    }
+
+    if (clientMac && currentUrl.searchParams.get('client_mac') !== clientMac) {
+      currentUrl.searchParams.set('client_mac', clientMac)
+      changed = true
+    }
+
+    if (linkLoginOnly && currentUrl.searchParams.get('link_login_only') !== linkLoginOnly) {
+      currentUrl.searchParams.set('link_login_only', linkLoginOnly)
+      changed = true
+    }
+
+    if (changed)
+      window.history.replaceState(window.history.state, '', currentUrl.toString())
+  }
+  catch {
+    // ignore malformed URL/state issues
+  }
+}
+
+function resetActivationState() {
+  activationStage.value = 'idle'
+  progressMessage.value = ''
+}
+
+function setActivationStage(stage: Exclude<HotspotActivationStage, 'idle'>, message: string) {
+  activationStage.value = stage
+  progressMessage.value = message
+}
+
+function getActivationStepIcon(state: HotspotActivationStepState): string {
+  if (state === 'completed')
+    return 'tabler-circle-check'
+  if (state === 'active')
+    return 'tabler-loader-2'
+  return 'tabler-circle'
+}
+
+function getActivationStepColor(state: HotspotActivationStepState): string {
+  if (state === 'completed')
+    return 'success'
+  if (state === 'active')
+    return 'primary'
+  return 'medium-emphasis'
+}
+
+function stripBridgeResumeQueryFlag() {
+  if (!import.meta.client)
+    return
+
+  try {
+    const currentUrl = new URL(window.location.href)
+    if (!currentUrl.searchParams.has(BRIDGE_RESUME_QUERY_KEY))
+      return
+    currentUrl.searchParams.delete(BRIDGE_RESUME_QUERY_KEY)
+    window.history.replaceState(window.history.state, '', currentUrl.toString())
+  }
+  catch {
+    // ignore malformed URL/state issues
+  }
+}
+
+function beginSilentHotspotBridge(): boolean {
+  if (!import.meta.client)
+    return false
+
+  const targetUrl = String(hotspotBridgeTargetUrl.value || '').trim()
+  if (!targetUrl)
+    return false
+
+  rememberPendingHotspotBridge({
+    returnPath: '/login/hotspot-required',
+    autoResume: true,
+  })
+  rememberMikrotikLoginLink(targetUrl)
+  window.location.assign(targetUrl)
+  return true
 }
 
 function stopSuccessRedirectTimers() {
@@ -154,7 +253,7 @@ function startSuccessRedirect(nextRoute: string) {
 
   const presentation = resolveHotspotSuccessPresentation(targetRoute)
   stopSuccessRedirectTimers()
-  progressMessage.value = ''
+  resetActivationState()
   statusMessage.value = ''
   showFallbackLogin.value = false
   successTitle.value = presentation.title
@@ -238,6 +337,7 @@ function getHotspotIdentityQuery(): Record<string, string> {
   const identity = getHotspotIdentity()
   if (identity.clientIp || identity.clientMac)
     rememberHotspotIdentity(identity)
+  syncHotspotRouteContext(identity)
   return {
     ...(identity.clientIp ? { client_ip: identity.clientIp } : {}),
     ...(identity.clientMac ? { client_mac: identity.clientMac } : {}),
@@ -254,105 +354,6 @@ function getMissingIdentityMessage(): string {
   }
 
   return 'IP/MAC perangkat belum terbaca dari router. Tekan Aktifkan Internet agar sistem mencoba mengambil konteks hotspot otomatis. Jika tetap gagal, buka satu halaman HTTP biasa agar router mengarahkan ke Login Hotspot, lalu coba lagi.'
-}
-
-function parseHotspotBridgePayload(data: unknown): { clientIp: string, clientMac: string, linkLoginOnly: string } | null {
-  if (!data || typeof data !== 'object')
-    return null
-
-  const message = data as Record<string, unknown>
-  if (String(message.type ?? '').trim() !== HOTSPOT_BRIDGE_MESSAGE_TYPE)
-    return null
-
-  const payload = message.payload && typeof message.payload === 'object'
-    ? message.payload as Record<string, unknown>
-    : {}
-
-  return {
-    clientIp: String(payload.clientIp ?? '').trim(),
-    clientMac: String(payload.clientMac ?? '').trim(),
-    linkLoginOnly: String(payload.linkLoginOnly ?? '').trim(),
-  }
-}
-
-async function captureHotspotIdentityViaBridge() {
-  const currentIdentity = getHotspotIdentity()
-  if (hasExplicitHotspotIdentity(currentIdentity) || !import.meta.client)
-    return currentIdentity
-
-  return await new Promise<ReturnType<typeof getHotspotIdentity>>((resolve) => {
-    let settled = false
-    let popupClosedWatcher: number | null = null
-    let timeoutHandle: number | null = null
-
-    const cleanup = () => {
-      window.removeEventListener('message', handleMessage)
-      if (popupClosedWatcher != null)
-        window.clearInterval(popupClosedWatcher)
-      if (timeoutHandle != null)
-        window.clearTimeout(timeoutHandle)
-    }
-
-    const finish = () => {
-      if (settled)
-        return
-      settled = true
-      cleanup()
-      resolve(getHotspotIdentity())
-    }
-
-    const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin)
-        return
-
-      const payload = parseHotspotBridgePayload(event.data)
-      if (!payload)
-        return
-
-      rememberHotspotIdentity({
-        clientIp: payload.clientIp,
-        clientMac: payload.clientMac,
-      })
-      rememberMikrotikLoginLink(payload.linkLoginOnly)
-      finish()
-    }
-
-    window.addEventListener('message', handleMessage)
-
-    const popup = window.open(
-      hotspotBridgeTargetUrl.value,
-      HOTSPOT_BRIDGE_WINDOW_NAME,
-      'popup=yes,width=460,height=720,resizable=yes,scrollbars=yes',
-    )
-
-    if (!popup) {
-      cleanup()
-      resolve(currentIdentity)
-      return
-    }
-
-    try {
-      popup.focus()
-    }
-    catch {
-      // ignore focus failures
-    }
-
-    popupClosedWatcher = window.setInterval(() => {
-      if (popup.closed)
-        finish()
-    }, 400)
-
-    timeoutHandle = window.setTimeout(() => {
-      try {
-        popup.close()
-      }
-      catch {
-        // ignore close failures
-      }
-      finish()
-    }, HOTSPOT_BRIDGE_TIMEOUT_MS)
-  })
 }
 
 function triggerHotspotProbe() {
@@ -411,6 +412,7 @@ async function continueToPortal() {
     return
 
   resetSuccessState()
+  resetActivationState()
   statusMessage.value = ''
   try {
     await authStore.refreshSessionStatus('/login/hotspot-required')
@@ -429,47 +431,55 @@ async function continueToPortal() {
   }
 }
 
-async function activateInternetOneClick() {
+async function activateInternetOneClick(options: { allowBridgeRoundtrip?: boolean } = {}) {
   if (activating.value)
     return
 
   if (await redirectDemoUserToBuyPage())
     return
 
+  const allowBridgeRoundtrip = options.allowBridgeRoundtrip !== false
+
   activating.value = true
   showFallbackLogin.value = false
   statusMessage.value = ''
-  progressMessage.value = 'Menyiapkan koneksi internet...'
+  resetSuccessState()
+  setActivationStage('context', 'Menyiapkan proses aktivasi internet...')
 
   let identity = getHotspotIdentity()
   rememberHotspotIdentity(identity)
+  syncHotspotRouteContext(identity)
 
   try {
     if (!hasExplicitHotspotIdentity(identity)) {
-      progressMessage.value = 'Mengambil konteks perangkat dari hotspot...'
-      identity = await captureHotspotIdentityViaBridge()
-      rememberHotspotIdentity(identity)
+      if (allowBridgeRoundtrip) {
+        setActivationStage('context', 'Mengambil konteks hotspot di tab ini tanpa popup tambahan...')
+        if (beginSilentHotspotBridge())
+          return
+      }
+
+      progressMessage.value = 'IP/MAC perangkat belum terbaca. Melanjutkan pengecekan lokal terlebih dahulu...'
     }
 
+    setActivationStage('sync', 'Menyinkronkan sesi hotspot dengan router...')
     triggerHotspotProbe()
     await wait(600)
 
-    progressMessage.value = 'Memeriksa perangkat...'
+    progressMessage.value = 'Memeriksa status perangkat di hotspot...'
     const initialStatus = await fetchHotspotStatus()
     if (!initialStatus.hotspotRequired || initialStatus.hotspotActive) {
-      progressMessage.value = ''
       await continueToPortal()
       return
     }
 
     if (!hasExplicitHotspotIdentity(identity) && !initialStatus.hotspotHintApplied) {
-      progressMessage.value = ''
+      resetActivationState()
       showFallbackLogin.value = Boolean(loginHotspotUrl.value)
       statusMessage.value = getMissingIdentityMessage()
       return
     }
 
-    progressMessage.value = 'Mengaktifkan internet...'
+    setActivationStage('verify', 'Mengaktifkan binding perangkat dan memverifikasi internet...')
     const bindSuccess = await authStore.authorizeDevice({
       clientIp: identity.clientIp || null,
       clientMac: identity.clientMac || null,
@@ -482,10 +492,9 @@ async function activateInternetOneClick() {
       // Binding berhasil dibuat di MikroTik — poll singkat untuk konfirmasi, lalu langsung portal
       const quickAttempts = 3
       for (let attempt = 1; attempt <= quickAttempts; attempt++) {
-        progressMessage.value = `Memverifikasi koneksi... (${attempt}/${quickAttempts})`
+        progressMessage.value = `Memverifikasi koneksi internet... (${attempt}/${quickAttempts})`
         const status = await fetchHotspotStatus()
         if (!status.hotspotRequired || status.hotspotActive) {
-          progressMessage.value = ''
           await continueToPortal()
           return
         }
@@ -493,7 +502,6 @@ async function activateInternetOneClick() {
           await wait(900)
       }
       // ip-binding sudah aktif di MikroTik — langsung portal meski status belum terkonfirmasi
-      progressMessage.value = ''
       await continueToPortal()
       return
     }
@@ -504,7 +512,6 @@ async function activateInternetOneClick() {
       progressMessage.value = `Sinkronisasi akses hotspot... (${attempt}/${maxAttempts})`
       const status = await fetchHotspotStatus()
       if (!status.hotspotRequired || status.hotspotActive) {
-        progressMessage.value = ''
         await continueToPortal()
         return
       }
@@ -513,12 +520,12 @@ async function activateInternetOneClick() {
         await wait(1200)
     }
 
-    progressMessage.value = ''
+    resetActivationState()
     showFallbackLogin.value = Boolean(loginHotspotUrl.value)
     statusMessage.value = authStore.error || 'Internet belum aktif. Coba buka Login Hotspot sekali, lalu tekan Aktifkan Internet lagi.'
   }
   catch {
-    progressMessage.value = ''
+    resetActivationState()
     showFallbackLogin.value = Boolean(loginHotspotUrl.value)
     statusMessage.value = 'Internet belum bisa diaktifkan otomatis. Silakan buka Login Hotspot, lalu coba lagi.'
   }
@@ -529,7 +536,20 @@ async function activateInternetOneClick() {
 
 onMounted(async () => {
   rememberMikrotikLoginLink(queryMikrotikLink.value)
-  rememberHotspotIdentity(getHotspotIdentity())
+  const initialIdentity = getHotspotIdentity()
+  rememberHotspotIdentity(initialIdentity)
+  syncHotspotRouteContext(initialIdentity)
+
+  if (getQueryValueFromKeys([BRIDGE_RESUME_QUERY_KEY]) === '1') {
+    clearPendingHotspotBridge()
+    stripBridgeResumeQueryFlag()
+    if (hasExplicitHotspotIdentity(initialIdentity)) {
+      statusMessage.value = ''
+      await wait(150)
+      void activateInternetOneClick({ allowBridgeRoundtrip: false })
+      return
+    }
+  }
 
   if (await redirectDemoUserToBuyPage())
     return
@@ -612,15 +632,40 @@ onBeforeUnmount(() => {
           Proses ini berjalan otomatis. Jika belum aktif, gunakan tombol Login Hotspot lalu coba lagi.
         </VAlert>
 
-        <VAlert
-          v-if="progressMessage"
-          type="info"
-          variant="tonal"
-          density="comfortable"
-          class="mb-6 text-start"
-        >
-          {{ progressMessage }}
-        </VAlert>
+        <VCard v-if="activating && activationProgress.currentStep > 0" variant="tonal" color="info" class="mb-6 text-start">
+          <VCardText class="py-4 px-4">
+            <div class="d-flex justify-space-between align-center mb-3">
+              <span class="text-body-2 font-weight-medium">Proses Aktivasi</span>
+              <span class="text-caption text-medium-emphasis">Langkah {{ activationProgress.currentStep }}/{{ activationProgress.totalSteps }}</span>
+            </div>
+
+            <VProgressLinear :model-value="activationProgress.progressValue" color="primary" height="8" rounded class="mb-4" />
+
+            <div class="d-flex flex-column ga-3">
+              <div v-for="step in activationProgress.steps" :key="step.key" class="d-flex align-start ga-3">
+                <VIcon
+                  :icon="getActivationStepIcon(step.state)"
+                  :color="getActivationStepColor(step.state)"
+                  size="20"
+                  :class="{ 'activation-step-icon--active': step.state === 'active' }"
+                />
+
+                <div class="flex-grow-1">
+                  <div class="text-body-2 font-weight-medium">
+                    {{ step.title }}
+                  </div>
+                  <div class="text-caption text-medium-emphasis">
+                    {{ step.description }}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <p v-if="progressMessage" class="text-caption text-medium-emphasis mt-4 mb-0">
+              {{ progressMessage }}
+            </p>
+          </VCardText>
+        </VCard>
 
         <VAlert
           v-if="statusMessage"
@@ -653,5 +698,19 @@ onBeforeUnmount(() => {
 <style scoped>
 .auth-wrapper {
   min-block-size: 100dvh;
+}
+
+.activation-step-icon--active {
+  animation: activation-spin 1s linear infinite;
+}
+
+@keyframes activation-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>
