@@ -78,9 +78,9 @@ Perilaku saat `debt_mb >= QUOTA_DEBT_LIMIT_MB`:
    - firewall address-list `MIKROTIK_ADDRESS_LIST_BLOCKED` untuk IP perangkat (jika diketahui).
    - ip-binding tetap non-blocked (`regular`).
 2) Sistem menandai DB `is_blocked=True` + `blocked_reason=quota_debt_limit|...` (sekali).
-3) Sistem mengirim WhatsApp:
-   - ke user,
-   - dan ke admin yang subscribe `NotificationType.QUOTA_DEBT_LIMIT_EXCEEDED`.
+3) Pada transisi block baru di jalur sync-time (`policy.block_transition:sync_usage`), sistem mencoba mengirim WhatsApp khusus ke user dengan template `user_quota_debt_blocked`.
+4) Sync berikutnya tidak mengirim duplikat jika user memang sudah berada pada state blocked auto debt yang sama.
+5) Notifikasi admin `NotificationType.QUOTA_DEBT_LIMIT_EXCEEDED` tetap berasal dari jalur task/admin terpisah yang memang mendukung fan-out admin.
 
 Pengecualian hard block:
 - `is_unlimited_user=True`

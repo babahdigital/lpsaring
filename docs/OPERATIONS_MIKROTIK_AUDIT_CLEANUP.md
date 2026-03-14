@@ -68,8 +68,10 @@ Checklist cepat:
 - Ketika `debt_mb >= limit`:
   - DB user menjadi `is_blocked=True` + `blocked_reason=quota_debt_limit|...`
   - MikroTik:
-    - ip-binding type `blocked` untuk MAC device yang authorized
+    - ip-binding tetap non-blocked (`regular`)
     - firewall address-list `blocked` untuk IP kandidat
+    - profile user dipaksa ke profile blocked
+  - jika ini transisi block baru pada jalur sync-time, user menerima WA debt-limit secara best-effort
 
 Jika Anda bypass manual di MikroTik namun DB masih `is_blocked=True` (atau debt masih di atas limit), maka saat sync berikutnya sistem akan mem-block lagi.
 

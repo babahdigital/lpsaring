@@ -5,6 +5,12 @@ Dokumen ini merangkum **perubahan yang sudah diterapkan** dan **struktur aplikas
 Lampiran wajib:
 - [.github/copilot-instructions.md](../.github/copilot-instructions.md)
 
+## Update Terbaru (2026-03-15)
+
+- **Hotspot direct-browser bridge:** `frontend/utils/hotspotLoginTargets.ts` sekarang membedakan target manual login vs target silent bridge. Manual login lokal/home.arpa tetap boleh dinormalisasi ke `/login`, tetapi silent bridge harus menjaga root router (`http://login.home.arpa/`) agar `login.html` router bisa me-return context ke `/captive`.
+- **Auto debt-limit WhatsApp:** `backend/app/services/hotspot_sync_service.py` sekarang memanggil `_send_auto_debt_limit_block_notification(...)` dari `_apply_auto_debt_limit_block_state(...)` saat `policy.block_transition:sync_usage` pertama kali mem-block user karena `quota_debt_limit`.
+- **Validasi rollout:** focused frontend tests untuk hotspot bridge lulus, focused backend tests untuk debt-limit notification lulus, lalu perubahan sudah dipush ke `main`, CI dan docker publish hijau, serta deploy `deploy_pi.sh --recreate` terverifikasi sehat di produksi.
+
 ## 1) Ringkasan Perubahan (Sync + Penyelarasan UI)
 
 ### A. Sinkronisasi ke starter-kit (tetap pada versi starter-kit)

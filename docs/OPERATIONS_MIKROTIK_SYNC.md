@@ -110,7 +110,9 @@ Jika `QUOTA_DEBT_LIMIT_MB > 0` dan `debt_mb >= limit` maka sistem:
   - profile user ke `MIKROTIK_BLOCKED_PROFILE`,
   - firewall address-list `klient_blocked` untuk IP device (jika diketahui),
   - ip-binding tetap non-blocked (`regular`),
-- mengirim WhatsApp ke user + admin recipients yang subscribe tipe notifikasi `QUOTA_DEBT_LIMIT_EXCEEDED`.
+- pada transisi block baru di jalur sync-time, mencoba mengirim WhatsApp khusus ke user,
+- tidak mengirim duplikat untuk user yang memang sudah blocked sebelumnya pada jalur sync-time yang sama,
+- notifikasi admin `QUOTA_DEBT_LIMIT_EXCEEDED` tetap berasal dari jalur task/admin terpisah yang memang mendukung fan-out admin.
 
 Pengecualian:
 - `is_unlimited_user=True`

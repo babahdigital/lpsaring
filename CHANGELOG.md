@@ -8,6 +8,17 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Fixed (2026-03-15 - Hotspot Bridge Root dan WA Debt-Limit)
+
+- **Direct-browser hotspot bridge recovery:** target silent bridge/probe sekarang menjaga root router (`http://login.home.arpa/` atau private-IP root) lewat `normalizeHotspotBridgeUrl()` dan `resolveHotspotBridgeTarget()`. Manual hotspot login lokal masih boleh berakhir di `/login`, tetapi silent bridge harus menghantam root router agar `login.html` MikroTik bisa me-return context ke `/captive` dengan placeholder yang authoritative.
+- **Dedicated WhatsApp on fresh auto debt block:** jalur sync-time `policy.block_transition:sync_usage` yang memicu `quota_debt_limit` kini langsung mencoba mengirim template `user_quota_debt_blocked` ke user pada transisi block baru. Jalur ini best-effort dan tidak mengirim duplikat untuk user yang memang sudah blocked sebelumnya.
+- **Regression coverage:** ditambahkan test frontend untuk target bridge router root dan test backend untuk memastikan notifikasi debt-limit hanya dikirim pada transisi block baru.
+
+### Documentation (2026-03-15)
+
+- Ditambahkan devlog rilis dan verifikasi produksi terbaru pada `docs/DEVLOG_2026-03-15.md`.
+- Dokumen aktif `docs/REFERENCE_PENGEMBANGAN.md`, `docs/DEVELOPMENT_REALTIME_QUOTA.md`, `docs/OPERATIONS_MIKROTIK_SYNC.md`, `docs/OPERATIONS_MIKROTIK_AUDIT_CLEANUP.md`, `docs/RULES_QUOTA_DEBT_ACCESS_FLOW.md`, dan `docs/RUNBOOK_ACTIVE_INDEX.md` diselaraskan dengan perilaku runtime produksi yang sudah diverifikasi.
+
 ### Fixed (2026-03-14 — Payment Status Access, Captive Recovery, dan CI Node 24 Opt-In)
 
 - **Public payment status guest access:** halaman publik pembayaran tidak lagi jatuh ke flow auth biasa saat dibuka memakai token `t`, sehingga `/payment/status` dan `/payment/finish` bisa diakses langsung dari link Midtrans/WhatsApp tanpa login lebih dulu. Middleware auth juga kini menjaga captive hints (`link_login_only`, `appLinkMikrotik`) tetap terbawa saat redirect login/captive.

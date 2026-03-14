@@ -28,4 +28,4 @@ Daftar runbook operasional aktif untuk insiden, deployment, monitoring, dan audi
 
 ## Catatan
 - Jika ada konflik instruksi antara runbook aktif dan dokumen historis, gunakan runbook aktif ini.
-- Ringkasan investigasi terbaru (unauthorized recovery hardening + root cause reset host massal) tersedia di `docs/DEVLOG_2026-03-08.md`.
+- Ringkasan investigasi dan rollout terbaru (bridge router root + WA debt-limit auto-block + verifikasi produksi) tersedia di `docs/DEVLOG_2026-03-15.md`.
