@@ -8,6 +8,18 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Fixed (2026-03-14 — Payment Status Access, Captive Recovery, dan CI Node 24 Opt-In)
+
+- **Public payment status guest access:** halaman publik pembayaran tidak lagi jatuh ke flow auth biasa saat dibuka memakai token `t`, sehingga `/payment/status` dan `/payment/finish` bisa diakses langsung dari link Midtrans/WhatsApp tanpa login lebih dulu. Middleware auth juga kini menjaga captive hints (`link_login_only`, `appLinkMikrotik`) tetap terbawa saat redirect login/captive.
+- **Quota self-service routing parity:** aturan path self-service untuk status `fup`, `expired`, dan `habis` dipusatkan di helper yang sama dan dipakai konsisten oleh `frontend/store/auth.ts`, `frontend/middleware/auth.global.ts`, dan `frontend/components/policy/PolicyStatusView.vue`. Ini menutup loop di mana user `fup` yang ingin beli quota atau kembali ke dashboard dipaksa balik terus ke halaman policy.
+- **Hotspot activation target selection:** `frontend/pages/login/hotspot-required.vue` tidak lagi memakai `/captive` sebagai fallback login hotspot manual. Flow "Aktifkan Internet" sekarang memprioritaskan URL router yang authoritative (`link_login_only` / `appLinkMikrotik`) dan memakai helper baru `frontend/utils/hotspotLoginTargets.ts` untuk normalisasi target lokal/home.arpa/private IP.
+- **Regression coverage:** ditambahkan test untuk allowlist self-service auth guard dan pemilihan target login hotspot, sehingga regression pada payment-status public access dan captive recovery bisa tertangkap lebih awal.
+- **CI deprecation warning:** seluruh workflow GitHub Actions kini opt-in ke runtime JavaScript Node 24 melalui `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true`, sehingga warning deprecation Node 20 hilang tanpa mengubah policy release image atau men-trigger publish Docker pada push biasa.
+
+### Documentation (2026-03-14)
+
+- `docs/DEVLOG_2026-03-14.md` diperbarui dengan ringkasan fix payment/captive 14 Maret, hasil verifikasi live untuk `+628134071280` dan `+6283179074596`, serta audit log `nginx` dan `docker compose` pasca-deploy.
+
 ### Fixed (2026-03-14 — Audit Host Hotspot + Saturasi DB Worker)
 
 - **Quota/IP selection hardening:** `get_hotspot_host_usage_map()` tidak lagi last-row-wins untuk MAC duplikat di `/ip/hotspot/host`. Selector kini memprioritaskan row hotspot lokal yang masih segar (`idle-time` kecil), baru memakai bytes sebagai tie-breaker. Ini mencegah quota sync, parity, dan candidate IP memakai ghost row `10.8.0.x` / IP publik saat row `172.16.2.0/23` yang benar juga ada.
