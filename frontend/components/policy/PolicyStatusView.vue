@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useAuthStore } from '~/store/auth'
+import { isStatusSelfServicePath } from '~/utils/authGuardDecisions'
 import { isCaptiveContextActive, isRestrictedInCaptiveContext } from '~/utils/captiveContext'
 import { format_for_whatsapp_link, format_to_local_phone } from '~/utils/formatters'
 
@@ -228,7 +229,11 @@ const viewModel = computed(() => {
 
 const effectiveActions = computed(() => {
   return viewModel.value.actions.map((action) => {
-    if (isCaptiveContextActive() && isRestrictedInCaptiveContext(action.path)) {
+    if (
+      isCaptiveContextActive()
+      && isRestrictedInCaptiveContext(action.path)
+      && !isStatusSelfServicePath(action.path, props.status, isKomandan.value)
+    ) {
       return {
         ...action,
         label: action.kind === 'primary' ? 'Kembali ke Portal Captive' : action.label,

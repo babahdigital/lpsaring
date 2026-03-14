@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  getQuotaRecoveryDestination,
   getSafeRedirectTarget,
+  isStatusSelfServicePath,
   resolveExpiredOrHabisRedirect,
   resolveGuestProtectedRedirect,
   resolveLoggedInRoleRedirect,
@@ -68,6 +70,27 @@ describe('auth guard decisions', () => {
     it('does nothing for non expired/habis status', () => {
       expect(resolveExpiredOrHabisRedirect('/dashboard', 'ok', false)).toBeNull()
       expect(resolveExpiredOrHabisRedirect('/dashboard', 'blocked', false)).toBeNull()
+    })
+  })
+
+  describe('status self-service paths', () => {
+    it('resolves quota recovery destination by role', () => {
+      expect(getQuotaRecoveryDestination(false)).toBe('/beli')
+      expect(getQuotaRecoveryDestination(true)).toBe('/requests')
+    })
+
+    it('allows FUP users to buy quota, open payment flow, and return to dashboard', () => {
+      expect(isStatusSelfServicePath('/beli', 'fup', false)).toBe(true)
+      expect(isStatusSelfServicePath('/payment/status', 'fup', false)).toBe(true)
+      expect(isStatusSelfServicePath('/dashboard', 'fup', false)).toBe(true)
+      expect(isStatusSelfServicePath('/requests', 'fup', true)).toBe(true)
+    })
+
+    it('keeps expired and habis users on recovery flows but not dashboard', () => {
+      expect(isStatusSelfServicePath('/beli', 'expired', false)).toBe(true)
+      expect(isStatusSelfServicePath('/payment/finish', 'habis', false)).toBe(true)
+      expect(isStatusSelfServicePath('/dashboard', 'expired', false)).toBe(false)
+      expect(isStatusSelfServicePath('/dashboard', 'habis', false)).toBe(false)
     })
   })
 })

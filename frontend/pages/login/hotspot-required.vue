@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { normalizeHotspotLoginUrl, resolveHotspotBridgeTarget } from '~/utils/hotspotLoginTargets'
 import { resolvePostHotspotRecheckRoute } from '~/utils/hotspotRedirect'
 import { useAuthStore } from '~/store/auth'
 import { rememberHotspotIdentity, resolveHotspotIdentity } from '~/utils/hotspotIdentity'
@@ -24,65 +25,6 @@ const HOTSPOT_BRIDGE_WINDOW_NAME = 'lpsaring-hotspot-bridge'
 const HOTSPOT_BRIDGE_MESSAGE_TYPE = 'lpsaring:hotspot-identity-bridge'
 const HOTSPOT_BRIDGE_TIMEOUT_MS = 8000
 const LAST_MIKROTIK_LOGIN_HINT_KEY = 'lpsaring:last-mikrotik-login-link'
-
-const appBaseUrl = computed(() => String(runtimeConfig.public.appBaseUrl ?? '').trim())
-const hotspotContextProbeUrl = computed(() => {
-  const configured = normalizeHotspotLoginUrl(String(runtimeConfig.public.hotspotContextProbeUrl ?? '').trim())
-  return configured || 'http://neverssl.com/'
-})
-
-function shouldForceHttpForHost(hostname: string): boolean {
-  const host = String(hostname || '').trim().toLowerCase()
-  if (!host)
-    return false
-
-  if (host === 'localhost' || host.endsWith('.local') || host.endsWith('.home.arpa'))
-    return true
-
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
-    const octets = host.split('.').map(n => Number.parseInt(n, 10))
-    if (octets.length === 4) {
-      const [a, b] = octets
-      if (a === 10)
-        return true
-      if (a === 172 && b >= 16 && b <= 31)
-        return true
-      if (a === 192 && b === 168)
-        return true
-      if (a === 169 && b === 254)
-        return true
-    }
-  }
-
-  return false
-}
-
-function normalizeHotspotLoginUrl(raw: string): string {
-  const input = String(raw || '').trim()
-  if (!input)
-    return ''
-
-  const candidate = input.startsWith('//') ? `http:${input}` : input
-
-  try {
-    const parsed = new URL(candidate)
-    if (parsed.protocol === 'https:' && shouldForceHttpForHost(parsed.hostname))
-      parsed.protocol = 'http:'
-    return parsed.toString()
-  }
-  catch {
-    const withScheme = /^https?:\/\//i.test(candidate) ? candidate : `http://${candidate.replace(/^\/+/, '')}`
-    try {
-      const parsed = new URL(withScheme)
-      if (parsed.protocol === 'https:' && shouldForceHttpForHost(parsed.hostname))
-        parsed.protocol = 'http:'
-      return parsed.toString()
-    }
-    catch {
-      return candidate
-    }
-  }
-}
 
 const queryMikrotikLink = computed(() => {
   const direct = getQueryValueFromKeys(['link_login_only', 'link-login-only', 'link_login', 'link-login', 'linkloginonly'])
@@ -133,18 +75,18 @@ const mikrotikLoginUrl = computed(() => {
   return normalizeHotspotLoginUrl(String(runtimeConfig.public.mikrotikLoginUrl ?? '').trim())
 })
 
-const fallbackLoginPath = computed(() => {
-  const base = appBaseUrl.value
-  if (!base)
-    return '/captive'
-  return `${base.replace(/\/+$/, '')}/captive`
+const hotspotBridgeTargetUrl = computed(() => {
+  return resolveHotspotBridgeTarget(
+    mikrotikLoginUrl.value,
+    String(runtimeConfig.public.hotspotContextProbeUrl ?? '').trim(),
+  )
 })
 
 function getHotspotIdentity() {
   return resolveHotspotIdentity((route.query as Record<string, unknown>) ?? {})
 }
 
-const loginHotspotUrl = computed(() => mikrotikLoginUrl.value || fallbackLoginPath.value)
+const loginHotspotUrl = computed(() => mikrotikLoginUrl.value)
 
 function rememberMikrotikLoginLink(raw: string | null | undefined) {
   if (!import.meta.client)
@@ -209,8 +151,10 @@ function openHotspotLogin() {
   if (!import.meta.client)
     return
   const targetUrl = String(loginHotspotUrl.value || '').trim()
-  if (!targetUrl)
+  if (!targetUrl) {
+    statusMessage.value = getMissingIdentityMessage()
     return
+  }
 
   rememberMikrotikLoginLink(targetUrl)
 
@@ -242,7 +186,11 @@ function hasExplicitHotspotIdentity(identity = getHotspotIdentity()): boolean {
 }
 
 function getMissingIdentityMessage(): string {
-  return 'IP/MAC perangkat belum terbaca dari router. Tekan Aktifkan Internet agar sistem mencoba mengambil konteks hotspot otomatis. Jika tetap gagal, buka Login Hotspot sekali lalu coba lagi.'
+  if (loginHotspotUrl.value) {
+    return 'IP/MAC perangkat belum terbaca dari router. Tekan Aktifkan Internet agar sistem mencoba mengambil konteks hotspot otomatis. Jika tetap gagal, buka Login Hotspot sekali lalu coba lagi.'
+  }
+
+  return 'IP/MAC perangkat belum terbaca dari router. Tekan Aktifkan Internet agar sistem mencoba mengambil konteks hotspot otomatis. Jika tetap gagal, buka satu halaman HTTP biasa agar router mengarahkan ke Login Hotspot, lalu coba lagi.'
 }
 
 function parseHotspotBridgePayload(data: unknown): { clientIp: string, clientMac: string, linkLoginOnly: string } | null {
@@ -309,7 +257,7 @@ async function captureHotspotIdentityViaBridge() {
     window.addEventListener('message', handleMessage)
 
     const popup = window.open(
-      hotspotContextProbeUrl.value,
+      hotspotBridgeTargetUrl.value,
       HOTSPOT_BRIDGE_WINDOW_NAME,
       'popup=yes,width=460,height=720,resizable=yes,scrollbars=yes',
     )
@@ -348,7 +296,7 @@ function triggerHotspotProbe() {
   if (!import.meta.client)
     return
 
-  const rawTarget = String(loginHotspotUrl.value || '').trim()
+  const rawTarget = String(loginHotspotUrl.value || hotspotBridgeTargetUrl.value || '').trim()
   if (!rawTarget)
     return
 
@@ -452,7 +400,7 @@ async function activateInternetOneClick() {
 
     if (!hasExplicitHotspotIdentity(identity) && !initialStatus.hotspotHintApplied) {
       progressMessage.value = ''
-      showFallbackLogin.value = true
+      showFallbackLogin.value = Boolean(loginHotspotUrl.value)
       statusMessage.value = getMissingIdentityMessage()
       return
     }
@@ -502,12 +450,12 @@ async function activateInternetOneClick() {
     }
 
     progressMessage.value = ''
-    showFallbackLogin.value = true
+    showFallbackLogin.value = Boolean(loginHotspotUrl.value)
     statusMessage.value = authStore.error || 'Internet belum aktif. Coba buka Login Hotspot sekali, lalu tekan Aktifkan Internet lagi.'
   }
   catch {
     progressMessage.value = ''
-    showFallbackLogin.value = true
+    showFallbackLogin.value = Boolean(loginHotspotUrl.value)
     statusMessage.value = 'Internet belum bisa diaktifkan otomatis. Silakan buka Login Hotspot, lalu coba lagi.'
   }
   finally {
@@ -533,7 +481,7 @@ onMounted(async () => {
     }
 
     if (!hasExplicitHotspotIdentity() && !status.hotspotHintApplied) {
-      showFallbackLogin.value = true
+      showFallbackLogin.value = Boolean(loginHotspotUrl.value)
       statusMessage.value = getMissingIdentityMessage()
     }
   }
@@ -586,7 +534,7 @@ onMounted(async () => {
             Aktifkan Internet
           </VBtn>
 
-          <VBtn v-if="showFallbackLogin" variant="tonal" color="warning" size="large" block :disabled="activating" @click="openHotspotLogin">
+          <VBtn v-if="showFallbackLogin && loginHotspotUrl" variant="tonal" color="warning" size="large" block :disabled="activating" @click="openHotspotLogin">
             Buka Login Hotspot
           </VBtn>
 

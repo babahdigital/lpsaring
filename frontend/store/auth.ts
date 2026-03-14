@@ -9,6 +9,7 @@ import { navigateTo, useNuxtApp, useRoute } from '#app'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { resolveAccessStatusFromUser } from '@/utils/authAccess'
+import { isStatusSelfServicePath } from '~/utils/authGuardDecisions'
 import { getStatusRouteForAccessStatus, isLegalPublicPath } from '~/utils/authRoutePolicy'
 import { getHotspotIdentityFromQuery, rememberHotspotIdentity, resolveHotspotIdentity } from '~/utils/hotspotIdentity'
 
@@ -337,11 +338,7 @@ export const useAuthStore = defineStore('auth', () => {
         return
 
       const redirectPath = getRedirectPathForStatus(status, context)
-      const allowPurchasePaths = status === 'habis' || status === 'expired'
-        ? ['/beli', '/payment/status', '/payment/finish', redirectPath]
-        : [redirectPath]
-
-      if (allowPurchasePaths.includes(path))
+      if (isStatusSelfServicePath(path, status, isKomandan.value))
         return
 
       if (redirectPath)

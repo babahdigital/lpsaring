@@ -1,5 +1,33 @@
 import { normalizeRedirectTarget } from './authGuards'
+import type { AccessStatus } from '../types/accessStatus'
 import { GUEST_ROUTES, getStatusRouteForAccessStatus } from './authRoutePolicy'
+
+function matchesPath(path: string, candidate: string): boolean {
+  return path === candidate || path.startsWith(`${candidate}/`)
+}
+
+export function getQuotaRecoveryDestination(isKomandan: boolean): string {
+  return isKomandan ? '/requests' : '/beli'
+}
+
+export function isStatusSelfServicePath(path: string, accessStatus: AccessStatus, isKomandan: boolean): boolean {
+  const statusRoute = getStatusRouteForAccessStatus(accessStatus, 'login')
+  const allowedPaths = new Set<string>()
+
+  if (statusRoute)
+    allowedPaths.add(statusRoute)
+
+  if (accessStatus === 'expired' || accessStatus === 'habis' || accessStatus === 'fup') {
+    allowedPaths.add(getQuotaRecoveryDestination(isKomandan))
+    allowedPaths.add('/payment/status')
+    allowedPaths.add('/payment/finish')
+  }
+
+  if (accessStatus === 'fup')
+    allowedPaths.add('/dashboard')
+
+  return Array.from(allowedPaths).some(candidate => matchesPath(path, candidate))
+}
 
 export function getSafeRedirectTarget(redirectValue: unknown, isAdmin: boolean): string | null {
   const normalized = normalizeRedirectTarget(redirectValue, '')
@@ -60,15 +88,8 @@ export function resolveExpiredOrHabisRedirect(path: string, accessStatus: string
   if (accessStatus !== 'expired' && accessStatus !== 'habis')
     return null
 
-  const destination = isKomandan ? '/requests' : '/beli'
-  const expiredRoute = getStatusRouteForAccessStatus('expired', 'login')
-  const habisRoute = getStatusRouteForAccessStatus('habis', 'login')
-  const allowedPaths = [destination, '/payment/status', '/payment/finish', expiredRoute, habisRoute].filter(
-    (item): item is string => typeof item === 'string' && item.length > 0,
-  )
-
-  if (allowedPaths.includes(path))
+  if (isStatusSelfServicePath(path, accessStatus, isKomandan))
     return null
 
-  return destination
+  return getQuotaRecoveryDestination(isKomandan)
 }

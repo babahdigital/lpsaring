@@ -6,6 +6,7 @@ import { getStatusRouteForAccessStatus, GUEST_ROUTES, isLegalPublicPath } from '
 import { isCaptiveContextActive, isCaptiveRoutePath, isRestrictedInCaptiveContext, markCaptiveContextActive } from '../utils/captiveContext'
 import {
   getSafeRedirectTarget,
+  isStatusSelfServicePath,
   resolveExpiredOrHabisRedirect,
   resolveGuestProtectedRedirect,
   resolveLoggedInRoleRedirect,
@@ -195,13 +196,7 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
     if (!isAdmin) {
       if (isCaptiveContextActive() && isRestrictedInCaptiveContext(to.path)) {
         const accessStatus = authStore.getAccessStatusFromUser(authStore.currentUser ?? authStore.lastKnownUser)
-        const quotaRecoveryBasePath = isKomandan ? '/requests' : '/beli'
-        const isQuotaRecoveryPath = [quotaRecoveryBasePath, '/payment/status', '/payment/finish'].some(
-          path => to.path === path || to.path.startsWith(`${path}/`),
-        )
-        if ((accessStatus === 'fup' || accessStatus === 'expired' || accessStatus === 'habis') && isQuotaRecoveryPath)
-          return
-        if (accessStatus === 'fup' && (to.path === '/dashboard' || to.path.startsWith('/dashboard/')))
+        if (isStatusSelfServicePath(to.path, accessStatus, isKomandan))
           return
         const captiveStatusRoute = getStatusRouteForAccessStatus(accessStatus, 'captive')
         if (captiveStatusRoute && captiveStatusRoute !== to.path)
