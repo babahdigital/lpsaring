@@ -357,6 +357,14 @@ function getMissingIdentityMessage(): string {
   return 'IP/MAC perangkat belum terbaca dari router. Tekan Aktifkan Internet agar sistem mencoba mengambil konteks hotspot otomatis. Jika tetap gagal, buka satu halaman HTTP biasa agar router mengarahkan ke Login Hotspot, lalu coba lagi.'
 }
 
+function getHotspotNotReadyMessage(): string {
+  if (loginHotspotUrl.value) {
+    return 'Internet perangkat belum aktif sepenuhnya. Buka Login Hotspot sekali, lalu tekan Aktifkan Internet lagi.'
+  }
+
+  return 'Internet perangkat belum aktif sepenuhnya. Buka satu halaman HTTP biasa agar router menampilkan Login Hotspot, lalu tekan Aktifkan Internet lagi.'
+}
+
 function triggerHotspotProbe() {
   if (!import.meta.client)
     return
@@ -408,9 +416,42 @@ function wait(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-async function continueToPortal() {
+async function waitForHotspotConfirmation(options: { attempts: number, delayMs: number, progressPrefix: string }): Promise<boolean> {
+  for (let attempt = 1; attempt <= options.attempts; attempt++) {
+    progressMessage.value = `${options.progressPrefix} (${attempt}/${options.attempts})`
+    const status = await fetchHotspotStatus()
+    if (!status.hotspotRequired || status.hotspotActive)
+      return true
+
+    if (attempt < options.attempts)
+      await wait(options.delayMs)
+  }
+
+  return false
+}
+
+async function ensureHotspotReadyForPortal(): Promise<boolean> {
+  try {
+    const status = await fetchHotspotStatus()
+    if (!status.hotspotRequired || status.hotspotActive)
+      return true
+  }
+  catch {
+    // treat as not-ready so the user stays in the recovery flow
+  }
+
+  resetSuccessState()
+  resetActivationState()
+  showFallbackLogin.value = Boolean(loginHotspotUrl.value)
+  statusMessage.value = getHotspotNotReadyMessage()
+  return false
+}
+
+async function continueToPortal(options: { requireHotspotReady?: boolean } = {}) {
   if (await redirectDemoUserToBuyPage())
     return
+
+  const requireHotspotReady = options.requireHotspotReady !== false
 
   resetSuccessState()
   resetActivationState()
@@ -421,6 +462,12 @@ async function continueToPortal() {
     if (!latestUser) {
       await navigateTo('/login', { replace: true })
       return
+    }
+
+    if (requireHotspotReady) {
+      const hotspotReady = await ensureHotspotReadyForPortal()
+      if (!hotspotReady)
+        return
     }
 
     const latestStatus = authStore.getAccessStatusFromUser(latestUser)
@@ -469,7 +516,7 @@ async function activateInternetOneClick(options: { allowBridgeRoundtrip?: boolea
     progressMessage.value = 'Memeriksa status perangkat di hotspot...'
     const initialStatus = await fetchHotspotStatus()
     if (!initialStatus.hotspotRequired || initialStatus.hotspotActive) {
-      await continueToPortal()
+      await continueToPortal({ requireHotspotReady: false })
       return
     }
 
@@ -490,40 +537,35 @@ async function activateInternetOneClick(options: { allowBridgeRoundtrip?: boolea
     triggerHotspotProbe()
 
     if (bindSuccess) {
-      // Binding berhasil dibuat di MikroTik — poll singkat untuk konfirmasi, lalu langsung portal
-      const quickAttempts = 3
-      for (let attempt = 1; attempt <= quickAttempts; attempt++) {
-        progressMessage.value = `Memverifikasi koneksi internet... (${attempt}/${quickAttempts})`
-        const status = await fetchHotspotStatus()
-        if (!status.hotspotRequired || status.hotspotActive) {
-          await continueToPortal()
-          return
-        }
-        if (attempt < quickAttempts)
-          await wait(900)
-      }
-      // ip-binding sudah aktif di MikroTik — langsung portal meski status belum terkonfirmasi
-      await continueToPortal()
-      return
-    }
-
-    // bind-current gagal — coba polling konfirmasi
-    const maxAttempts = 6
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      progressMessage.value = `Sinkronisasi akses hotspot... (${attempt}/${maxAttempts})`
-      const status = await fetchHotspotStatus()
-      if (!status.hotspotRequired || status.hotspotActive) {
-        await continueToPortal()
+      const confirmed = await waitForHotspotConfirmation({
+        attempts: 6,
+        delayMs: 1000,
+        progressPrefix: 'Memverifikasi koneksi internet...',
+      })
+      if (confirmed) {
+        await continueToPortal({ requireHotspotReady: false })
         return
       }
 
-      if (attempt < maxAttempts)
-        await wait(1200)
+      resetActivationState()
+      showFallbackLogin.value = Boolean(loginHotspotUrl.value)
+      statusMessage.value = getHotspotNotReadyMessage()
+      return
+    }
+
+    const confirmed = await waitForHotspotConfirmation({
+      attempts: 6,
+      delayMs: 1200,
+      progressPrefix: 'Sinkronisasi akses hotspot...',
+    })
+    if (confirmed) {
+      await continueToPortal({ requireHotspotReady: false })
+      return
     }
 
     resetActivationState()
     showFallbackLogin.value = Boolean(loginHotspotUrl.value)
-    statusMessage.value = authStore.error || 'Internet belum aktif. Coba buka Login Hotspot sekali, lalu tekan Aktifkan Internet lagi.'
+    statusMessage.value = authStore.error || getHotspotNotReadyMessage()
   }
   catch {
     resetActivationState()
@@ -569,7 +611,7 @@ onMounted(async () => {
 
     const status = await fetchHotspotStatus()
     if (!status.hotspotRequired || status.hotspotActive) {
-      await continueToPortal()
+      await continueToPortal({ requireHotspotReady: false })
       return
     }
 

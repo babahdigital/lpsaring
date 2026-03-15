@@ -230,15 +230,12 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
         return navigateTo('/beli', { replace: true })
     }
 
-    const shouldRunHotspotPrecheck = (
-      HOTSPOT_PRECHECK_ROUTES.has(to.path) && hasResolvedHotspotRecoveryContext
-    ) || to.path === '/dashboard'
+    const shouldRunHotspotPrecheck = !isAdmin && (
+      (HOTSPOT_PRECHECK_ROUTES.has(to.path) && hasResolvedHotspotRecoveryContext && hasResolvedHotspotIdentity)
+      || (to.path === '/dashboard' && hasResolvedHotspotIdentity)
+    )
 
-    if (!isAdmin && HOTSPOT_PRECHECK_ROUTES.has(to.path) && hasResolvedHotspotRecoveryContext && !hasResolvedHotspotIdentity) {
-      return navigateTo(buildHotspotRequiredPath(resolvedHotspotRecoveryQuery, { autoStart: true }), { replace: true })
-    }
-
-    if (!isAdmin && shouldRunHotspotPrecheck) {
+    if (shouldRunHotspotPrecheck) {
       try {
         const { $api } = useNuxtApp()
         const hotspotStatus = await $api<{ hotspot_login_required?: boolean | null, hotspot_binding_active?: boolean | null }>('/auth/hotspot-session-status', {

@@ -331,7 +331,7 @@ describe('auth.global runtime', () => {
     expect(navigateToMock).toHaveBeenCalledWith('/login/hotspot-required?client_ip=172.16.2.10&client_mac=AA%3ABB%3ACC%3ADD%3AEE%3AFF&link_login_only=http%3A%2F%2Flogin.home.arpa%2Flogin&auto_start=1', { replace: true })
   })
 
-  it('routes logged-in login visits with only remembered mikrotik hint into auto-start hotspot recovery', async () => {
+  it('does not force hotspot recovery from login route when only remembered mikrotik hint exists', async () => {
     const middleware = (await import('../middleware/auth.global')).default
     authStoreState.isLoggedIn = true
 
@@ -356,7 +356,7 @@ describe('auth.global runtime', () => {
     } as any)
 
     expect(apiMock).not.toHaveBeenCalled()
-    expect(navigateToMock).toHaveBeenCalledWith('/login/hotspot-required?link_login_only=http%3A%2F%2Flogin.home.arpa%2Flogin&auto_start=1', { replace: true })
+    expect(navigateToMock).toHaveBeenCalledWith('/dashboard', { replace: true })
   })
 
   it('does not redirect to hotspot-required when hotspot session already active', async () => {
@@ -415,13 +415,9 @@ describe('auth.global runtime', () => {
     expect(navigateToMock).toHaveBeenCalledWith('/dashboard', { replace: true })
   })
 
-  it('prechecks hotspot on dashboard route even without query hints', async () => {
+  it('skips dashboard hotspot precheck without any resolved hotspot identity', async () => {
     const middleware = (await import('../middleware/auth.global')).default
     authStoreState.isLoggedIn = true
-    apiMock.mockResolvedValue({
-      hotspot_login_required: true,
-      hotspot_binding_active: false,
-    })
 
     await middleware({
       path: '/dashboard',
@@ -430,11 +426,36 @@ describe('auth.global runtime', () => {
       meta: {},
     } as any)
 
-    expect(apiMock).toHaveBeenCalledWith('/auth/hotspot-session-status', {
-      method: 'GET',
-      query: {},
+    expect(apiMock).not.toHaveBeenCalled()
+    expect(navigateToMock).not.toHaveBeenCalled()
+  })
+
+  it('skips dashboard hotspot precheck when only remembered mikrotik hint exists', async () => {
+    const middleware = (await import('../middleware/auth.global')).default
+    authStoreState.isLoggedIn = true
+
+    const localStorageMock = createLocalStorageMock({
+      'lpsaring:last-mikrotik-login-link': 'http://login.home.arpa/login',
     })
-    expect(navigateToMock).toHaveBeenCalledWith('/login/hotspot-required?auto_start=1', { replace: true })
+
+    vi.stubGlobal('window', {
+      document: {
+        referrer: '',
+      },
+      localStorage: localStorageMock,
+      sessionStorage: createSessionStorageMock(),
+    } as any)
+    vi.stubGlobal('localStorage', localStorageMock)
+
+    await middleware({
+      path: '/dashboard',
+      fullPath: '/dashboard',
+      query: {},
+      meta: {},
+    } as any)
+
+    expect(apiMock).not.toHaveBeenCalled()
+    expect(navigateToMock).not.toHaveBeenCalled()
   })
 
   it('uses stored hotspot identity for dashboard precheck after hotspot-required succeeds', async () => {
