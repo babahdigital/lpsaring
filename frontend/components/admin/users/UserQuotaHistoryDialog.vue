@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import type { QuotaHistoryItem, QuotaHistoryResponse, QuotaHistorySummary } from '~/types/user'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useDisplay } from 'vuetify'
 import { useSnackbar } from '@/composables/useSnackbar'
 
 interface UserLite {
@@ -14,10 +15,12 @@ const emit = defineEmits(['update:modelValue'])
 
 const { $api } = useNuxtApp()
 const { add: showSnackbar } = useSnackbar()
+const { smAndDown } = useDisplay()
 
 const loading = ref(false)
 const items = ref<QuotaHistoryItem[]>([])
 const summary = ref<QuotaHistorySummary | null>(null)
+const isMobile = computed(() => smAndDown.value)
 
 function close() {
   emit('update:modelValue', false)
@@ -101,7 +104,13 @@ watch(
 </script>
 
 <template>
-  <VDialog :model-value="props.modelValue" max-width="1100" persistent @update:model-value="close">
+  <VDialog
+    :model-value="props.modelValue"
+    :fullscreen="isMobile"
+    :max-width="isMobile ? undefined : 1100"
+    persistent
+    @update:model-value="close"
+  >
     <VCard v-if="props.user">
       <VCardTitle class="pa-4 bg-primary rounded-t-lg">
         <div class="dialog-titlebar">
@@ -117,8 +126,8 @@ watch(
       </VCardTitle>
       <VDivider />
 
-      <AppPerfectScrollbar class="pa-5" style="max-height: 72vh;">
-        <div class="d-flex flex-wrap gap-2 mb-4">
+      <AppPerfectScrollbar class="history-dialog__scroll pa-5">
+        <div class="history-summary-chips d-flex flex-wrap gap-2 mb-4">
           <VChip size="small" label color="info" variant="tonal">
             {{ props.user.full_name }}
           </VChip>
@@ -155,6 +164,53 @@ watch(
           <VProgressCircular indeterminate color="primary" />
         </div>
 
+        <div v-else-if="isMobile" class="history-mobile-list">
+          <VCard v-for="item in items" :key="item.id" variant="outlined" class="history-mobile-card">
+            <VCardText class="history-mobile-card__body">
+              <div class="history-mobile-card__header">
+                <div>
+                  <div class="font-weight-medium">{{ item.title }}</div>
+                  <div class="text-caption text-medium-emphasis mt-1">{{ item.created_at_display || '-' }}</div>
+                </div>
+                <VChip size="x-small" :color="categoryColor(item.category)" label>
+                  {{ categoryLabel(item.category) }}
+                </VChip>
+              </div>
+
+              <div class="text-body-2 mt-3">{{ item.description }}</div>
+
+              <div v-if="item.actor_name" class="text-caption text-medium-emphasis mt-2">
+                Aktor: {{ item.actor_name }}
+              </div>
+
+              <div class="d-flex flex-wrap gap-2 mt-3">
+                <VChip v-if="item.deltas_display.purchased" size="small" color="success" variant="tonal" label>
+                  Beli {{ item.deltas_display.purchased }}
+                </VChip>
+                <VChip v-if="item.deltas_display.used" size="small" color="info" variant="tonal" label>
+                  Pakai {{ item.deltas_display.used }}
+                </VChip>
+                <VChip v-if="item.deltas_display.debt_total" size="small" color="warning" variant="tonal" label>
+                  Debt {{ item.deltas_display.debt_total }}
+                </VChip>
+                <VChip v-if="item.deltas_display.remaining_after" size="small" color="default" variant="tonal" label>
+                  Sisa {{ item.deltas_display.remaining_after }}
+                </VChip>
+              </div>
+
+              <ul v-if="item.highlights?.length" class="history-highlights mt-3">
+                <li v-for="highlight in item.highlights.slice(0, 6)" :key="`${item.id}-${highlight}`">
+                  {{ highlight }}
+                </li>
+              </ul>
+            </VCardText>
+          </VCard>
+
+          <VAlert v-if="items.length === 0" variant="tonal" color="default" class="mt-2">
+            Belum ada riwayat mutasi kuota.
+          </VAlert>
+        </div>
+
         <div v-else class="history-table-scroll">
           <VTable density="compact" class="history-table">
             <thead>
@@ -169,21 +225,21 @@ watch(
             <tbody>
               <tr v-for="item in items" :key="item.id">
                 <td class="text-no-wrap align-top">{{ item.created_at_display || '-' }}</td>
-                <td class="align-top" style="min-width: 220px;">
+                <td class="history-table__event align-top">
                   <div class="font-weight-medium">{{ item.title }}</div>
                   <div class="text-caption text-medium-emphasis mt-1">{{ item.source }}</div>
                   <VChip size="x-small" :color="categoryColor(item.category)" label class="mt-2">
                     {{ categoryLabel(item.category) }}
                   </VChip>
                 </td>
-                <td class="text-end align-top" style="min-width: 160px;">
+                <td class="history-table__delta text-end align-top">
                   <div v-if="item.deltas_display.purchased" class="text-no-wrap">Beli {{ item.deltas_display.purchased }}</div>
                   <div v-if="item.deltas_display.used" class="text-no-wrap">Pakai {{ item.deltas_display.used }}</div>
                   <div v-if="item.deltas_display.debt_total" class="text-no-wrap">Debt {{ item.deltas_display.debt_total }}</div>
                   <div v-if="!item.deltas_display.purchased && !item.deltas_display.used && !item.deltas_display.debt_total">-</div>
                 </td>
                 <td class="text-end align-top text-no-wrap">{{ item.deltas_display.remaining_after || '-' }}</td>
-                <td class="align-top" style="min-width: 340px;">
+                <td class="history-table__detail align-top">
                   <div>{{ item.description }}</div>
                   <div v-if="item.actor_name" class="text-caption text-medium-emphasis mt-1">
                     Aktor: {{ item.actor_name }}
@@ -243,8 +299,49 @@ watch(
   gap: 8px;
 }
 
+.history-dialog__scroll {
+  max-height: 72vh;
+}
+
+.history-summary-chips {
+  align-items: flex-start;
+}
+
 .history-table-scroll {
   overflow-x: auto;
+}
+
+.history-table__event {
+  min-width: 220px;
+}
+
+.history-table__delta {
+  min-width: 160px;
+}
+
+.history-table__detail {
+  min-width: 340px;
+}
+
+.history-mobile-list {
+  display: grid;
+  gap: 12px;
+}
+
+.history-mobile-card {
+  border-radius: 16px;
+}
+
+.history-mobile-card__body {
+  display: flex;
+  flex-direction: column;
+}
+
+.history-mobile-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .history-highlights {
@@ -265,6 +362,14 @@ watch(
   .dialog-titlebar__actions {
     width: 100%;
     justify-content: flex-end;
+  }
+
+  .history-dialog__scroll {
+    max-height: none;
+  }
+
+  .history-mobile-card__header {
+    flex-direction: column;
   }
 }
 </style>
