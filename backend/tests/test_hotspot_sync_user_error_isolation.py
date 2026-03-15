@@ -134,7 +134,12 @@ def test_sync_hotspot_usage_and_profiles_isolates_user_failures(monkeypatch):
     monkeypatch.setattr(
         svc,
         "_calculate_usage_update",
-        lambda user, *_args, **_kwargs: (1.25, float(user.total_quota_used_mb or 0.0) + 1.25),
+        lambda user, *_args, **_kwargs: svc.HotspotUsageUpdateResult(
+            delta_mb=1.25,
+            new_total_usage_mb=float(user.total_quota_used_mb or 0.0) + 1.25,
+            device_deltas=[],
+            rebaseline_events=[],
+        ),
     )
 
     def _update_daily_usage_log(user, _delta_mb, _today):
