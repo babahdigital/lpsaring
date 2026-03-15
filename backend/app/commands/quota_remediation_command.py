@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import datetime, timezone as dt_timezone
 from decimal import Decimal
@@ -7,20 +8,30 @@ from typing import Any, Optional
 
 import click
 from flask.cli import with_appcontext
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
 from app.extensions import db
-from app.infrastructure.db.models import Package, QuotaMutationLedger, Transaction, TransactionStatus, User
+from app.infrastructure.db.models import AdminActionLog, AdminActionType, Package, QuotaMutationLedger, Transaction, TransactionStatus, User
 from app.services.quota_expiry_policy import calculate_quota_expiry_date
 from app.services.quota_mutation_ledger_service import append_quota_mutation_event, lock_user_quota_row, snapshot_user_quota_state
+from app.services.user_management.helpers import _send_whatsapp_notification
 from app.utils.block_reasons import is_auto_debt_limit_reason
-from app.utils.formatters import get_phone_number_variations
+from app.utils.formatters import get_app_local_datetime, get_phone_number_variations
 
 
 IMPORT_SOURCE = "quota.purchase_package.imported"
 SPIKE_REFUND_SOURCE = "quota.hotspot_spike_refund"
+NORMALIZE_EXPIRY_SOURCE = "quota.normalize_expiry"
 NORMALIZE_UNLIMITED_EXPIRY_SOURCE = "quota.normalize_unlimited_expiry"
+DEFAULT_MANUAL_DEBT_ADVANCE_DAYS = 30
+
+EXPIRY_CANDIDATE_PRIORITY = {
+    "quota.inject": 40,
+    "quota.debt_advance": 30,
+    "admin.debt_action": 20,
+    "quota.purchase_package": 10,
+}
 
 
 @click.group(
@@ -41,6 +52,18 @@ def _safe_float(value: Any) -> Optional[float]:
         return float(value)
     except Exception:
         return None
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    if value is None:
+        return int(default)
+    try:
+        return int(value)
+    except Exception:
+        try:
+            return int(float(value))
+        except Exception:
+            return int(default)
 
 
 def _coerce_datetime(value: Any) -> Optional[datetime]:
@@ -141,8 +164,44 @@ def _format_datetime(value: Any) -> str:
     return parsed.astimezone(dt_timezone.utc).isoformat()
 
 
+def _format_local_datetime(value: Any) -> str:
+    parsed = _coerce_datetime(value)
+    if parsed is None:
+        return "-"
+    return get_app_local_datetime(parsed).strftime("%d-%m-%Y %H:%M")
+
+
+def _format_quota_display(value_mb: Any) -> str:
+    parsed = _safe_float(value_mb)
+    if parsed is None:
+        return str(value_mb or "-")
+    if parsed >= 1024:
+        value_gb = parsed / 1024.0
+        return f"{value_gb:.2f}".rstrip("0").rstrip(".") + " GB"
+    if float(parsed).is_integer():
+        return f"{int(parsed)} MB"
+    return f"{parsed:.2f} MB"
+
+
 def _normalize_event_details(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _normalize_json_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if value is None:
+        return {}
+
+    text = str(value or "").strip()
+    if not text:
+        return {}
+
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _extract_order_id_from_event_details(value: Any) -> str:
@@ -214,6 +273,230 @@ def _build_purchase_import_details(transaction: Transaction) -> dict[str, Any]:
         "imported_transaction_id": str(getattr(transaction, "id", "") or "").strip() or None,
         "payment_time": event_time.isoformat(),
     }
+
+
+def _build_expiry_candidate(
+    *,
+    user_id: Optional[uuid.UUID],
+    grant_at: Any,
+    duration_days: Any,
+    source_kind: str,
+    grant_kind: str,
+    is_unlimited: bool,
+    grant_reference: Optional[str] = None,
+    grant_label: Optional[str] = None,
+) -> Optional[dict[str, Any]]:
+    normalized_grant_at = _coerce_datetime(grant_at)
+    safe_duration_days = max(0, _safe_int(duration_days, 0))
+    if user_id is None or normalized_grant_at is None or safe_duration_days <= 0:
+        return None
+
+    return {
+        "user_id": user_id,
+        "grant_at": normalized_grant_at,
+        "duration_days": safe_duration_days,
+        "source_kind": str(source_kind or "").strip(),
+        "grant_kind": str(grant_kind or "").strip(),
+        "is_unlimited": bool(is_unlimited),
+        "grant_reference": str(grant_reference or "").strip() or None,
+        "grant_label": str(grant_label or "").strip() or None,
+        "priority": int(EXPIRY_CANDIDATE_PRIORITY.get(str(source_kind or "").strip(), 0)),
+    }
+
+
+def _register_latest_expiry_candidate(
+    candidate_map: dict[tuple[uuid.UUID, bool], dict[str, Any]],
+    candidate: Optional[dict[str, Any]],
+) -> None:
+    if not candidate:
+        return
+
+    key = (candidate["user_id"], bool(candidate["is_unlimited"]))
+    existing = candidate_map.get(key)
+    if existing is None:
+        candidate_map[key] = candidate
+        return
+
+    candidate_at = candidate["grant_at"]
+    existing_at = existing["grant_at"]
+    if candidate_at > existing_at:
+        candidate_map[key] = candidate
+        return
+    if candidate_at == existing_at and int(candidate.get("priority", 0) or 0) >= int(existing.get("priority", 0) or 0):
+        candidate_map[key] = candidate
+
+
+def _build_transaction_expiry_candidate(transaction: Transaction) -> Optional[dict[str, Any]]:
+    package = getattr(transaction, "package", None)
+    return _build_expiry_candidate(
+        user_id=getattr(transaction, "user_id", None),
+        grant_at=_resolve_transaction_event_time(transaction),
+        duration_days=getattr(package, "duration_days", 0) if package is not None else 0,
+        source_kind="quota.purchase_package",
+        grant_kind="purchase",
+        is_unlimited=_is_unlimited_package(package),
+        grant_reference=str(getattr(transaction, "midtrans_order_id", "") or "").strip() or str(getattr(transaction, "id", "") or "").strip(),
+        grant_label=str(getattr(package, "name", "") or "").strip() or "Paket pembelian",
+    )
+
+
+def _build_inject_expiry_candidate(entry: QuotaMutationLedger) -> Optional[dict[str, Any]]:
+    event_details = _normalize_event_details(getattr(entry, "event_details", None))
+    after_state = _normalize_event_details(getattr(entry, "after_state", None))
+    requested_days = _safe_int(event_details.get("requested_inject_days"), 0)
+    if requested_days <= 0:
+        requested_days = _safe_int(event_details.get("added_days_for_unlimited"), 0)
+
+    is_unlimited = bool(after_state.get("is_unlimited_user"))
+    return _build_expiry_candidate(
+        user_id=getattr(entry, "user_id", None),
+        grant_at=getattr(entry, "created_at", None),
+        duration_days=requested_days,
+        source_kind="quota.inject",
+        grant_kind="admin_inject",
+        is_unlimited=is_unlimited,
+        grant_reference=str(getattr(entry, "id", "") or "").strip(),
+        grant_label="Inject masa aktif unlimited" if is_unlimited else "Inject kuota admin",
+    )
+
+
+def _build_debt_advance_ledger_candidate(entry: QuotaMutationLedger) -> Optional[dict[str, Any]]:
+    event_details = _normalize_event_details(getattr(entry, "event_details", None))
+    return _build_expiry_candidate(
+        user_id=getattr(entry, "user_id", None),
+        grant_at=getattr(entry, "created_at", None),
+        duration_days=event_details.get("added_days"),
+        source_kind="quota.debt_advance",
+        grant_kind="manual_debt_advance",
+        is_unlimited=False,
+        grant_reference=str(event_details.get("grant_reference") or "").strip() or str(getattr(entry, "id", "") or "").strip(),
+        grant_label=str(event_details.get("grant_label") or "").strip() or "Manual debt advance",
+    )
+
+
+def _build_admin_debt_action_candidate(
+    action_log: AdminActionLog,
+    packages_by_id: dict[uuid.UUID, Package],
+) -> Optional[dict[str, Any]]:
+    details = _normalize_json_dict(getattr(action_log, "details", None))
+    if not details:
+        return None
+
+    package_id_text = str(details.get("debt_package_id") or "").strip()
+    debt_add_mb = _safe_int(details.get("debt_add_mb"), 0)
+    if not package_id_text and debt_add_mb <= 0:
+        return None
+
+    package: Optional[Package] = None
+    if package_id_text:
+        try:
+            package = packages_by_id.get(uuid.UUID(package_id_text))
+        except (ValueError, TypeError):
+            package = None
+
+    duration_days = _safe_int(getattr(package, "duration_days", 0) if package is not None else 0, 0)
+    if duration_days <= 0:
+        duration_days = DEFAULT_MANUAL_DEBT_ADVANCE_DAYS
+
+    grant_label = str(getattr(package, "name", "") or "").strip() if package is not None else ""
+    if not grant_label:
+        if debt_add_mb > 0:
+            grant_label = f"Manual debt advance {_format_quota_display(debt_add_mb)}"
+        else:
+            grant_label = "Manual debt advance"
+
+    grant_reference = package_id_text or str(getattr(action_log, "id", "") or "").strip()
+    return _build_expiry_candidate(
+        user_id=getattr(action_log, "target_user_id", None),
+        grant_at=getattr(action_log, "created_at", None),
+        duration_days=duration_days,
+        source_kind="admin.debt_action",
+        grant_kind="manual_debt_advance",
+        is_unlimited=False,
+        grant_reference=grant_reference,
+        grant_label=grant_label,
+    )
+
+
+def _load_latest_expiry_candidates(
+    target_user_ids: Optional[set[uuid.UUID]] = None,
+) -> dict[tuple[uuid.UUID, bool], dict[str, Any]]:
+    candidate_map: dict[tuple[uuid.UUID, bool], dict[str, Any]] = {}
+
+    tx_stmt = (
+        select(Transaction)
+        .join(Transaction.package)
+        .options(selectinload(Transaction.package))
+        .where(
+            Transaction.status == TransactionStatus.SUCCESS,
+            Transaction.user_id.is_not(None),
+            Transaction.package_id.is_not(None),
+        )
+    )
+    if target_user_ids:
+        tx_stmt = tx_stmt.where(Transaction.user_id.in_(list(target_user_ids)))
+    for transaction in db.session.scalars(tx_stmt).all():
+        _register_latest_expiry_candidate(candidate_map, _build_transaction_expiry_candidate(transaction))
+
+    inject_stmt = select(QuotaMutationLedger).where(QuotaMutationLedger.source == "quota.inject")
+    if target_user_ids:
+        inject_stmt = inject_stmt.where(QuotaMutationLedger.user_id.in_(list(target_user_ids)))
+    for entry in db.session.scalars(inject_stmt).all():
+        _register_latest_expiry_candidate(candidate_map, _build_inject_expiry_candidate(entry))
+
+    debt_advance_stmt = select(QuotaMutationLedger).where(QuotaMutationLedger.source.startswith("quota.debt_advance:"))
+    if target_user_ids:
+        debt_advance_stmt = debt_advance_stmt.where(QuotaMutationLedger.user_id.in_(list(target_user_ids)))
+    for entry in db.session.scalars(debt_advance_stmt).all():
+        _register_latest_expiry_candidate(candidate_map, _build_debt_advance_ledger_candidate(entry))
+
+    action_stmt = select(AdminActionLog).where(
+        AdminActionLog.action_type == AdminActionType.UPDATE_USER_PROFILE,
+        AdminActionLog.target_user_id.is_not(None),
+        AdminActionLog.details.is_not(None),
+        or_(
+            AdminActionLog.details.like("%debt_package_id%"),
+            AdminActionLog.details.like("%debt_add_mb%"),
+        ),
+    )
+    if target_user_ids:
+        action_stmt = action_stmt.where(AdminActionLog.target_user_id.in_(list(target_user_ids)))
+    action_logs = db.session.scalars(action_stmt).all()
+
+    package_ids: set[uuid.UUID] = set()
+    for action_log in action_logs:
+        details = _normalize_json_dict(getattr(action_log, "details", None))
+        package_id_text = str(details.get("debt_package_id") or "").strip()
+        if not package_id_text:
+            continue
+        try:
+            package_ids.add(uuid.UUID(package_id_text))
+        except (ValueError, TypeError):
+            continue
+
+    packages_by_id: dict[uuid.UUID, Package] = {}
+    if package_ids:
+        package_stmt = select(Package).where(Package.id.in_(list(package_ids)))
+        packages_by_id = {package.id: package for package in db.session.scalars(package_stmt).all()}
+
+    for action_log in action_logs:
+        _register_latest_expiry_candidate(candidate_map, _build_admin_debt_action_candidate(action_log, packages_by_id))
+
+    return candidate_map
+
+
+def _dispatch_whatsapp_notifications(notifications: list[dict[str, Any]]) -> int:
+    sent_count = 0
+    for item in notifications:
+        template_key = str(item.get("template_key") or "").strip()
+        phone_number = str(item.get("phone_number") or "").strip()
+        raw_context = item.get("context")
+        context: dict[str, Any] = raw_context if isinstance(raw_context, dict) else {}
+        if not template_key or not phone_number:
+            continue
+        if _send_whatsapp_notification(phone_number, template_key, context):
+            sent_count += 1
+    return sent_count
 
 
 def _build_spike_candidate(
@@ -401,75 +684,71 @@ def backfill_purchase_history(apply: bool, phone: Optional[str], user_id: Option
             raise click.ClickException(f"Commit backfill purchase history gagal: {exc}") from exc
 
 
-@quota_remediation_command.command(
-    "normalize-unlimited-expiry",
-    help=(
-        "Selaraskan expiry user unlimited ke tanggal pembelian unlimited terakhir, "
-        "bukan menumpuk sisa masa aktif lama."
-    ),
-)
-@click.option("--apply", is_flag=True, help="Simpan perubahan ke database. Default hanya preview.")
-@click.option("--phone", default=None, help="Filter nomor telepon user tertentu.")
-@click.option("--user-id", default=None, help="Filter UUID user tertentu.")
-@click.option("--limit", type=int, default=300, show_default=True, help="Batas maksimum user unlimited yang diproses.")
-@with_appcontext
-def normalize_unlimited_expiry(apply: bool, phone: Optional[str], user_id: Optional[str], limit: int):
+def _run_normalize_expiry(
+    *,
+    apply: bool,
+    phone: Optional[str],
+    user_id: Optional[str],
+    limit: int,
+    unlimited_only: bool,
+    notify_unlimited_whatsapp: bool,
+) -> None:
     safe_limit = max(1, int(limit or 300))
-    target_user_ids = _resolve_target_user_ids(phone=phone, user_id=user_id, unlimited_only=True)
+    target_user_ids = _resolve_target_user_ids(phone=phone, user_id=user_id, unlimited_only=unlimited_only)
     if target_user_ids == set():
-        click.echo(click.style("Tidak ada user unlimited yang cocok dengan filter.", fg="yellow"))
+        click.echo(
+            click.style(
+                "Tidak ada user unlimited yang cocok dengan filter." if unlimited_only else "Tidak ada user yang cocok dengan filter.",
+                fg="yellow",
+            )
+        )
         return
 
-    user_stmt = select(User).where(User.is_unlimited_user.is_(True)).order_by(User.created_at.asc()).limit(safe_limit)
+    candidate_map = _load_latest_expiry_candidates(target_user_ids)
+    if not candidate_map:
+        click.echo(click.style("Tidak ada grant kuota yang bisa dijadikan acuan normalisasi.", fg="yellow"))
+        return
+
+    candidate_user_ids = {candidate_key[0] for candidate_key in candidate_map.keys()}
+    user_stmt = select(User).where(User.id.in_(list(candidate_user_ids))).order_by(User.created_at.asc()).limit(safe_limit)
     if target_user_ids:
         user_stmt = user_stmt.where(User.id.in_(list(target_user_ids)))
+    if unlimited_only:
+        user_stmt = user_stmt.where(User.is_unlimited_user.is_(True))
 
     users = db.session.scalars(user_stmt).all()
     if not users:
-        click.echo(click.style("Tidak ada user unlimited untuk dinormalisasi.", fg="yellow"))
+        click.echo(
+            click.style(
+                "Tidak ada user unlimited untuk dinormalisasi." if unlimited_only else "Tidak ada user untuk dinormalisasi.",
+                fg="yellow",
+            )
+        )
         return
 
-    user_ids = [user.id for user in users]
-    tx_stmt = (
-        select(Transaction)
-        .join(Transaction.package)
-        .options(selectinload(Transaction.package))
-        .where(
-            Transaction.user_id.in_(user_ids),
-            Transaction.status == TransactionStatus.SUCCESS,
-            Package.data_quota_gb == 0,
+    normalized_count = 0
+    skipped_missing_grant = 0
+    skipped_already_normalized = 0
+    pending_notifications: list[dict[str, Any]] = []
+
+    click.echo(
+        click.style(
+            "=== Normalisasi Expiry User Unlimited ===" if unlimited_only else "=== Normalisasi Expiry User ===",
+            bold=True,
         )
     )
-    transactions = db.session.scalars(tx_stmt).all()
-
-    latest_unlimited_tx_by_user: dict[uuid.UUID, Transaction] = {}
-    for transaction in transactions:
-        tx_user_id = getattr(transaction, "user_id", None)
-        if tx_user_id is None:
-            continue
-        latest_existing = latest_unlimited_tx_by_user.get(tx_user_id)
-        if latest_existing is None or _resolve_transaction_event_time(transaction) > _resolve_transaction_event_time(latest_existing):
-            latest_unlimited_tx_by_user[tx_user_id] = transaction
-
-    updated_count = 0
-    skipped_missing_purchase = 0
-    skipped_already_normalized = 0
-
-    click.echo(click.style("=== Normalisasi Expiry User Unlimited ===", bold=True))
     click.echo(f"Mode: {'APPLY' if apply else 'DRY-RUN'}")
 
     for user in users:
-        latest_transaction = latest_unlimited_tx_by_user.get(user.id)
-        if latest_transaction is None or latest_transaction.package is None:
-            skipped_missing_purchase += 1
+        candidate = candidate_map.get((user.id, bool(getattr(user, "is_unlimited_user", False))))
+        if candidate is None:
+            skipped_missing_grant += 1
             continue
 
-        purchase_at = _resolve_transaction_event_time(latest_transaction)
-        package = latest_transaction.package
         normalized_expiry = calculate_quota_expiry_date(
             current_expiry=None,
-            now=purchase_at,
-            days_to_add=int(getattr(package, "duration_days", 0) or 0),
+            now=candidate["grant_at"],
+            days_to_add=int(candidate["duration_days"]),
             strategy="reset_from_now",
         )
 
@@ -478,10 +757,13 @@ def normalize_unlimited_expiry(apply: bool, phone: Optional[str], user_id: Optio
             skipped_already_normalized += 1
             continue
 
+        grant_label = str(candidate.get("grant_label") or candidate.get("grant_kind") or "grant").strip()
+        grant_reference = str(candidate.get("grant_reference") or "-").strip()
         click.echo(
             f"[{'NORMALIZE' if apply else 'PREVIEW'}] {user.full_name} ({user.phone_number}) "
-            f"expiry_lama={_format_datetime(current_expiry)} expiry_baru={normalized_expiry.isoformat()} "
-            f"order={latest_transaction.midtrans_order_id}"
+            f"grant={grant_label} ref={grant_reference} "
+            f"waktu={candidate['grant_at'].isoformat()} expiry_lama={_format_datetime(current_expiry)} "
+            f"expiry_baru={normalized_expiry.isoformat()}"
         )
 
         if apply:
@@ -489,20 +771,25 @@ def normalize_unlimited_expiry(apply: bool, phone: Optional[str], user_id: Optio
             before_state = snapshot_user_quota_state(user)
             previous_expiry = _coerce_datetime(getattr(user, "quota_expiry_date", None))
             user.quota_expiry_date = normalized_expiry
+            source = NORMALIZE_UNLIMITED_EXPIRY_SOURCE if bool(getattr(user, "is_unlimited_user", False)) else NORMALIZE_EXPIRY_SOURCE
             append_quota_mutation_event(
                 user=user,
-                source=NORMALIZE_UNLIMITED_EXPIRY_SOURCE,
+                source=source,
                 before_state=before_state,
                 after_state=snapshot_user_quota_state(user),
                 idempotency_key=(
-                    f"normalize_unlimited_expiry:{getattr(latest_transaction, 'midtrans_order_id', '')}:"
-                    f"{normalized_expiry.isoformat()}"
+                    f"normalize_expiry:{candidate['source_kind']}:{grant_reference}:{normalized_expiry.isoformat()}"
                 )[:128],
                 event_details={
-                    "order_id": str(getattr(latest_transaction, "midtrans_order_id", "") or "").strip(),
-                    "package_name": str(getattr(package, "name", "") or "").strip(),
-                    "duration_days": int(getattr(package, "duration_days", 0) or 0),
-                    "purchase_at": purchase_at.isoformat(),
+                    "order_id": grant_reference if candidate["source_kind"] == "quota.purchase_package" else None,
+                    "package_name": grant_label if candidate["source_kind"] == "quota.purchase_package" else None,
+                    "grant_kind": str(candidate.get("grant_kind") or "").strip() or None,
+                    "grant_source": str(candidate.get("source_kind") or "").strip() or None,
+                    "grant_label": grant_label,
+                    "grant_reference": grant_reference,
+                    "duration_days": int(candidate["duration_days"]),
+                    "purchase_at": candidate["grant_at"].isoformat() if candidate["source_kind"] == "quota.purchase_package" else None,
+                    "grant_at": candidate["grant_at"].isoformat(),
                     "previous_expiry_at": previous_expiry.isoformat() if previous_expiry else None,
                     "normalized_expiry_at": normalized_expiry.isoformat(),
                 },
@@ -510,19 +797,109 @@ def normalize_unlimited_expiry(apply: bool, phone: Optional[str], user_id: Optio
             db.session.add(user)
             db.session.flush()
 
-        updated_count += 1
+            if notify_unlimited_whatsapp and bool(getattr(user, "is_unlimited_user", False)):
+                pending_notifications.append(
+                    {
+                        "phone_number": str(getattr(user, "phone_number", "") or "").strip(),
+                        "template_key": "user_unlimited_expiry_corrected",
+                        "context": {
+                            "full_name": str(getattr(user, "full_name", "") or "").strip() or "Pelanggan",
+                            "grant_label": grant_label,
+                            "grant_at": _format_local_datetime(candidate["grant_at"]),
+                            "previous_expiry": _format_local_datetime(previous_expiry) if previous_expiry else "-",
+                            "normalized_expiry": _format_local_datetime(normalized_expiry),
+                        },
+                    }
+                )
 
-    click.echo(f"\nDinormalisasi: {updated_count}")
-    click.echo(f"Tanpa transaksi unlimited sukses: {skipped_missing_purchase}")
+        normalized_count += 1
+
+    click.echo(f"\nDinormalisasi: {normalized_count}")
+    click.echo(f"Tanpa grant acuan: {skipped_missing_grant}")
     click.echo(f"Sudah sesuai: {skipped_already_normalized}")
 
-    if apply and updated_count > 0:
+    if apply and normalized_count > 0:
         try:
             db.session.commit()
+            sent_count = _dispatch_whatsapp_notifications(pending_notifications)
             click.echo(click.style("Commit berhasil.", fg="green", bold=True))
+            if pending_notifications:
+                click.echo(f"WhatsApp unlimited terkirim: {sent_count}/{len(pending_notifications)}")
         except Exception as exc:
             db.session.rollback()
-            raise click.ClickException(f"Commit normalisasi expiry unlimited gagal: {exc}") from exc
+            raise click.ClickException(
+                f"Commit normalisasi expiry {'unlimited' if unlimited_only else 'user'} gagal: {exc}"
+            ) from exc
+
+
+@quota_remediation_command.command(
+    "normalize-user-expiry",
+    help=(
+        "Selaraskan expiry semua user ke grant kuota terakhir agar pembelian, inject, dan debt advance "
+        "tidak lagi mengakumulasi sisa masa aktif lama."
+    ),
+)
+@click.option("--apply", is_flag=True, help="Simpan perubahan ke database. Default hanya preview.")
+@click.option("--phone", default=None, help="Filter nomor telepon user tertentu.")
+@click.option("--user-id", default=None, help="Filter UUID user tertentu.")
+@click.option("--limit", type=int, default=1000, show_default=True, help="Batas maksimum user yang diproses.")
+@click.option(
+    "--notify-unlimited-whatsapp/--no-notify-unlimited-whatsapp",
+    default=True,
+    show_default=True,
+    help="Kirim WhatsApp hanya untuk user unlimited yang expiry-nya dikoreksi.",
+)
+@with_appcontext
+def normalize_user_expiry(
+    apply: bool,
+    phone: Optional[str],
+    user_id: Optional[str],
+    limit: int,
+    notify_unlimited_whatsapp: bool,
+):
+    _run_normalize_expiry(
+        apply=apply,
+        phone=phone,
+        user_id=user_id,
+        limit=limit,
+        unlimited_only=False,
+        notify_unlimited_whatsapp=notify_unlimited_whatsapp,
+    )
+
+
+@quota_remediation_command.command(
+    "normalize-unlimited-expiry",
+    help=(
+        "Selaraskan expiry user unlimited ke grant unlimited terakhir, "
+        "bukan menumpuk sisa masa aktif lama."
+    ),
+)
+@click.option("--apply", is_flag=True, help="Simpan perubahan ke database. Default hanya preview.")
+@click.option("--phone", default=None, help="Filter nomor telepon user tertentu.")
+@click.option("--user-id", default=None, help="Filter UUID user tertentu.")
+@click.option("--limit", type=int, default=300, show_default=True, help="Batas maksimum user unlimited yang diproses.")
+@click.option(
+    "--notify-unlimited-whatsapp/--no-notify-unlimited-whatsapp",
+    default=True,
+    show_default=True,
+    help="Kirim WhatsApp koreksi expiry unlimited setelah commit berhasil.",
+)
+@with_appcontext
+def normalize_unlimited_expiry(
+    apply: bool,
+    phone: Optional[str],
+    user_id: Optional[str],
+    limit: int,
+    notify_unlimited_whatsapp: bool,
+):
+    _run_normalize_expiry(
+        apply=apply,
+        phone=phone,
+        user_id=user_id,
+        limit=limit,
+        unlimited_only=True,
+        notify_unlimited_whatsapp=notify_unlimited_whatsapp,
+    )
 
 
 @quota_remediation_command.command(
@@ -562,6 +939,12 @@ def normalize_unlimited_expiry(apply: bool, phone: Optional[str], user_id: Optio
     help="Jumlah maksimal device detail agar kandidat dianggap cukup fokus.",
 )
 @click.option("--allow-low-confidence-apply", is_flag=True, help="Izinkan apply untuk kandidat confidence rendah.")
+@click.option(
+    "--notify-whatsapp/--no-notify-whatsapp",
+    default=True,
+    show_default=True,
+    help="Kirim WhatsApp ke user yang kuotanya dikembalikan setelah commit berhasil.",
+)
 @click.option("--limit", type=int, default=200, show_default=True, help="Batas maksimum event yang diperiksa.")
 @with_appcontext
 def audit_hotspot_spikes(
@@ -575,6 +958,7 @@ def audit_hotspot_spikes(
     min_device_delta_mb: float,
     max_device_count: int,
     allow_low_confidence_apply: bool,
+    notify_whatsapp: bool,
     limit: int,
 ):
     safe_limit = max(1, int(limit or 200))
@@ -632,6 +1016,7 @@ def audit_hotspot_spikes(
     refunded_count = 0
     skipped_low_confidence = 0
     total_refunded_mb = 0.0
+    pending_notifications: list[dict[str, Any]] = []
 
     click.echo(click.style("=== Audit Lonjakan Hotspot Sync Usage ===", bold=True))
     click.echo(f"Mode: {'APPLY' if apply else 'DRY-RUN'}")
@@ -664,6 +1049,7 @@ def audit_hotspot_spikes(
 
         lock_user_quota_row(user)
         before_state = snapshot_user_quota_state(user)
+        was_blocked = bool(getattr(user, "is_blocked", False))
         current_used_mb = float(getattr(user, "total_quota_used_mb", 0) or 0.0)
         requested_refund_mb = float(candidate["refundable_mb"] or 0.0)
         applied_refund_mb = round(min(current_used_mb, requested_refund_mb), 2)
@@ -706,6 +1092,26 @@ def audit_hotspot_spikes(
         db.session.add(user)
         db.session.flush()
 
+        if notify_whatsapp:
+            remaining_quota_mb = max(
+                0.0,
+                float(getattr(user, "total_quota_purchased_mb", 0) or 0.0)
+                - float(getattr(user, "total_quota_used_mb", 0) or 0.0),
+            )
+            access_status_note = "Akses aktif kembali" if was_blocked and not bool(getattr(user, "is_blocked", False)) else "Status akses tidak berubah"
+            pending_notifications.append(
+                {
+                    "phone_number": str(getattr(user, "phone_number", "") or "").strip(),
+                    "template_key": "user_quota_refund_corrected",
+                    "context": {
+                        "full_name": str(getattr(user, "full_name", "") or "").strip() or "Pelanggan",
+                        "refunded_quota": _format_quota_display(applied_refund_mb),
+                        "remaining_quota": _format_quota_display(remaining_quota_mb),
+                        "access_status_note": access_status_note,
+                    },
+                }
+            )
+
         refunded_count += 1
         total_refunded_mb += applied_refund_mb
 
@@ -717,7 +1123,10 @@ def audit_hotspot_spikes(
     if apply and refunded_count > 0:
         try:
             db.session.commit()
+            sent_count = _dispatch_whatsapp_notifications(pending_notifications)
             click.echo(click.style("Commit berhasil.", fg="green", bold=True))
+            if pending_notifications:
+                click.echo(f"WhatsApp refund terkirim: {sent_count}/{len(pending_notifications)}")
         except Exception as exc:
             db.session.rollback()
             raise click.ClickException(f"Commit refund lonjakan hotspot gagal: {exc}") from exc

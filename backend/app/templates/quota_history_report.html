@@ -34,8 +34,9 @@
       table { width: 100%; border-collapse: collapse; margin-top: 10px; }
       th, td { border: 1px solid #ddd; padding: 6px 8px; vertical-align: top; }
       th { background: #f5f5f5; text-align: left; }
-      ul.compact { margin: 6px 0 0 18px; padding: 0; }
-      ul.compact li { margin: 0 0 2px 0; }
+      .compact-list { margin: 6px 0 0 0; }
+      .compact-list__item { margin: 0 0 2px 0; padding-left: 12px; position: relative; }
+      .compact-list__item::before { content: '\2022'; position: absolute; left: 0; top: 0; color: #666; }
     </style>
   </head>
   <body>
@@ -111,7 +112,7 @@
                   <div class="muted mt-4">Aktor: {{ item.actor_name }}</div>
                 {% endif %}
                 {% if item.highlights %}
-                  <ul class="compact">{%- for highlight in item.highlights[:6] -%}<li>{{ highlight }}</li>{%- endfor -%}</ul>
+                  <div class="compact-list">{%- for highlight in item.highlights[:6] -%}<div class="compact-list__item">{{ highlight }}</div>{%- endfor -%}</div>
                 {% endif %}
               </td>
             </tr>

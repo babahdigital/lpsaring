@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
-from app.services.access_policy_service import is_network_hard_block_required, resolve_allowed_binding_type_for_user
+from app.services.access_policy_service import (
+    get_user_access_status,
+    is_network_hard_block_required,
+    resolve_allowed_binding_type_for_user,
+)
 from app.utils.block_reasons import build_auto_debt_limit_reason, build_manual_debt_eom_reason
 
 
@@ -65,3 +70,18 @@ def test_binding_type_blocked_only_for_hard_blocked_user(monkeypatch):
 
     assert resolve_allowed_binding_type_for_user(auto_blocked) == "regular"
     assert resolve_allowed_binding_type_for_user(manual_blocked) == "blocked"
+
+
+def test_access_status_stays_blocked_for_manual_eom_even_with_future_expiry():
+    user = SimpleNamespace(
+        is_blocked=True,
+        blocked_reason=build_manual_debt_eom_reason(debt_mb_text="10240", manual_debt_mb=10240),
+        is_active=True,
+        approval_status="APPROVED",
+        is_unlimited_user=False,
+        total_quota_purchased_mb=10240,
+        total_quota_used_mb=512,
+        quota_expiry_date=datetime.now(timezone.utc) + timedelta(days=15),
+    )
+
+    assert get_user_access_status(user) == "blocked"

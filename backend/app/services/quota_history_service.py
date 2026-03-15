@@ -108,10 +108,14 @@ def _format_source_label(source: str) -> str:
         return "Paket berhasil diaktifkan"
     if normalized == "quota.inject":
         return "Inject kuota oleh admin"
+    if normalized.startswith("quota.debt_advance:"):
+        return "Kuota advance dari debt"
     if normalized == "quota.set_unlimited":
         return "Status unlimited diperbarui"
     if normalized == "quota.hotspot_spike_refund":
         return "Refund lonjakan kuota hotspot"
+    if normalized == "quota.normalize_expiry":
+        return "Masa aktif dinormalisasi"
     if normalized == "quota.normalize_unlimited_expiry":
         return "Masa aktif unlimited dinormalisasi"
     if normalized == "debt.add_manual":
@@ -143,8 +147,10 @@ def _format_category(source: str) -> str:
         return "purchase"
     if normalized.startswith("quota.inject") or normalized in {"quota.adjust_direct", "quota.hotspot_spike_refund"}:
         return "adjustment"
-    if normalized.startswith("quota.set_unlimited") or normalized == "quota.normalize_unlimited_expiry" or normalized.startswith("policy.block_transition:"):
+    if normalized.startswith("quota.set_unlimited") or normalized in {"quota.normalize_expiry", "quota.normalize_unlimited_expiry"} or normalized.startswith("policy.block_transition:"):
         return "policy"
+    if normalized.startswith("quota.debt_advance:"):
+        return "debt"
     if normalized.startswith("debt.") or "debt_settlement" in normalized or normalized.startswith("admin_settle"):
         return "debt"
     return "system"
@@ -262,23 +268,6 @@ def _build_highlights(
         if detection_reason:
             highlights.append(f"Deteksi: {detection_reason}")
 
-    if normalized == "quota.normalize_unlimited_expiry":
-        previous_expiry = _format_event_detail_datetime(event_details.get("previous_expiry_at"))
-        normalized_expiry = _format_event_detail_datetime(event_details.get("normalized_expiry_at"))
-        purchase_at = _format_event_detail_datetime(event_details.get("purchase_at"))
-        order_id = str(event_details.get("order_id") or "").strip()
-        duration_days = event_details.get("duration_days")
-        if purchase_at:
-            highlights.append(f"Tanggal beli acuan: {purchase_at}")
-        if previous_expiry:
-            highlights.append(f"Expiry lama: {previous_expiry}")
-        if normalized_expiry:
-            highlights.append(f"Expiry baru: {normalized_expiry}")
-        if duration_days not in (None, ""):
-            highlights.append(f"Durasi paket: {duration_days} hari")
-        if order_id:
-            highlights.append(f"Order ID: {order_id}")
-
     if normalized == "quota.inject":
         requested_inject_mb = _as_float(event_details.get("requested_inject_mb"))
         requested_inject_days = event_details.get("requested_inject_days")
@@ -289,6 +278,49 @@ def _build_highlights(
             highlights.append(f"Kuota efektif: {_format_quota_text(net_added_mb, signed=True)}")
         if requested_inject_days not in (None, "", 0):
             highlights.append(f"Tambah masa aktif: {requested_inject_days} hari")
+
+    if normalized.startswith("quota.debt_advance:"):
+        credit_mb = _as_float(event_details.get("credit_mb"))
+        paid_auto_mb = _as_float(event_details.get("paid_auto_debt_mb"))
+        net_added_mb = _as_float(event_details.get("net_added_mb"))
+        added_days = event_details.get("added_days")
+        grant_label = str(event_details.get("grant_label") or "").strip()
+        normalized_expiry = _format_event_detail_datetime(event_details.get("normalized_expiry_at"))
+        if grant_label:
+            highlights.append(f"Grant: {grant_label}")
+        if credit_mb and credit_mb > 0:
+            highlights.append(f"Kuota advance: {_format_quota_text(credit_mb, signed=True)}")
+        if paid_auto_mb and paid_auto_mb > 0:
+            highlights.append(f"Auto debt dibayar: {_format_quota_text(paid_auto_mb)}")
+        if net_added_mb and net_added_mb > 0:
+            highlights.append(f"Kuota efektif: {_format_quota_text(net_added_mb, signed=True)}")
+        if added_days not in (None, "", 0):
+            highlights.append(f"Tambah masa aktif: {added_days} hari")
+        if normalized_expiry:
+            highlights.append(f"Expiry baru: {normalized_expiry}")
+
+    if normalized in {"quota.normalize_expiry", "quota.normalize_unlimited_expiry"}:
+        previous_expiry = _format_event_detail_datetime(event_details.get("previous_expiry_at"))
+        normalized_expiry = _format_event_detail_datetime(event_details.get("normalized_expiry_at"))
+        grant_at = _format_event_detail_datetime(event_details.get("purchase_at") or event_details.get("grant_at"))
+        grant_reference = str(event_details.get("order_id") or event_details.get("grant_reference") or "").strip()
+        duration_days = event_details.get("duration_days")
+        grant_label = str(event_details.get("package_name") or event_details.get("grant_label") or "").strip()
+        grant_kind = str(event_details.get("grant_kind") or "").strip()
+        if grant_label:
+            highlights.append(f"Grant acuan: {grant_label}")
+        if grant_kind:
+            highlights.append(f"Jenis grant: {grant_kind}")
+        if grant_at:
+            highlights.append(f"Tanggal grant acuan: {grant_at}")
+        if previous_expiry:
+            highlights.append(f"Expiry lama: {previous_expiry}")
+        if normalized_expiry:
+            highlights.append(f"Expiry baru: {normalized_expiry}")
+        if duration_days not in (None, ""):
+            highlights.append(f"Durasi grant: {duration_days} hari")
+        if grant_reference:
+            highlights.append(f"Referensi: {grant_reference}")
 
     if normalized == "debt.add_manual":
         amount_mb = _as_float(event_details.get("amount_mb"))
@@ -394,6 +426,9 @@ def _build_description(
     if normalized == "quota.inject":
         return "Admin menambahkan kuota dan/atau masa aktif ke akun pengguna."
 
+    if normalized.startswith("quota.debt_advance:"):
+        return "Admin mencatat tunggakan manual, memberi kuota advance, dan menetapkan masa aktif baru dari transaksi tersebut."
+
     if normalized == "quota.set_unlimited":
         return "Status unlimited pengguna diperbarui dan profil hotspot disinkronkan."
 
@@ -420,6 +455,9 @@ def _build_description(
 
     if normalized == "quota.hotspot_spike_refund":
         return "Sistem mengembalikan kuota yang sebelumnya tersedot oleh lonjakan sinkronisasi hotspot yang mencurigakan."
+
+    if normalized == "quota.normalize_expiry":
+        return "Masa aktif akun pengguna diselaraskan ulang ke grant kuota terakhir agar tidak akumulatif."
 
     if normalized == "quota.normalize_unlimited_expiry":
         return "Masa aktif user unlimited diselaraskan ulang ke tanggal pembelian paket terakhir agar tidak akumulatif."

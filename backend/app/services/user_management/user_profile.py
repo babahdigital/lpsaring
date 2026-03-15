@@ -26,6 +26,7 @@ from app.utils.formatters import (
 )
 from app.services import settings_service
 from app.services.access_policy_service import get_user_access_status, resolve_allowed_binding_type_for_user
+from app.services.quota_expiry_policy import calculate_quota_expiry_date
 from app.services.quota_mutation_ledger_service import append_quota_mutation_event, snapshot_user_quota_state
 from app.utils.quota_debt import compute_debt_mb
 
@@ -45,6 +46,9 @@ from app.infrastructure.gateways.mikrotik_client import (
     upsert_ip_binding,
 )
 from app.services.hotspot_sync_service import sync_address_list_for_single_user
+
+
+DEFAULT_MANUAL_DEBT_ADVANCE_DAYS = 30
 
 
 def _resolve_default_server() -> str:
@@ -81,8 +85,13 @@ def _apply_manual_debt_advance_credit(
     admin_actor: User,
     credit_mb: int,
     source: str,
+    days_to_add: int = DEFAULT_MANUAL_DEBT_ADVANCE_DAYS,
+    grant_label: Optional[str] = None,
+    grant_reference: Optional[str] = None,
 ) -> Tuple[int, int]:
     before_state = snapshot_user_quota_state(user)
+    previous_expiry = getattr(user, "quota_expiry_date", None)
+    safe_days_to_add = max(0, int(days_to_add or 0))
     paid_auto_mb, remaining_credit_mb = debt_service.consume_injected_mb_for_auto_debt_only(
         user=user,
         admin_actor=admin_actor,
@@ -91,6 +100,16 @@ def _apply_manual_debt_advance_credit(
     )
     if remaining_credit_mb > 0:
         user.total_quota_purchased_mb = int(user.total_quota_purchased_mb or 0) + int(remaining_credit_mb)
+
+    if safe_days_to_add > 0:
+        user.quota_expiry_date = calculate_quota_expiry_date(
+            current_expiry=user.quota_expiry_date,
+            now=get_app_local_datetime(),
+            days_to_add=safe_days_to_add,
+            strategy="reset_from_now",
+        )
+
+    normalized_expiry = getattr(user, "quota_expiry_date", None)
 
     append_quota_mutation_event(
         user=user,
@@ -102,6 +121,11 @@ def _apply_manual_debt_advance_credit(
             "credit_mb": int(credit_mb),
             "paid_auto_debt_mb": int(paid_auto_mb),
             "net_added_mb": int(remaining_credit_mb),
+            "added_days": int(safe_days_to_add),
+            "grant_label": str(grant_label or "").strip() or None,
+            "grant_reference": str(grant_reference or "").strip() or None,
+            "previous_expiry_at": previous_expiry.isoformat() if isinstance(previous_expiry, datetime) else None,
+            "normalized_expiry_at": normalized_expiry.isoformat() if isinstance(normalized_expiry, datetime) else None,
         },
     )
     return int(paid_auto_mb), int(remaining_credit_mb)
@@ -543,10 +567,14 @@ def update_user_by_admin_comprehensive(
                     admin_actor=admin_actor,
                     credit_mb=int(debt_add_mb_pkg),
                     source="admin_debt_advance_pkg",
+                    days_to_add=int(getattr(pkg, "duration_days", 0) or DEFAULT_MANUAL_DEBT_ADVANCE_DAYS),
+                    grant_label=str(getattr(pkg, "name", "") or "").strip() or None,
+                    grant_reference=str(getattr(pkg, "id", debt_package_id) or debt_package_id),
                 )
                 changes["debt_credit_quota_mb"] = int(debt_add_mb_pkg)
                 changes["debt_paid_auto_before_credit_mb"] = int(paid_auto_mb)
                 changes["debt_net_quota_mb"] = int(remaining_credit_mb)
+                changes["debt_added_days"] = int(getattr(pkg, "duration_days", 0) or DEFAULT_MANUAL_DEBT_ADVANCE_DAYS)
             except Exception as e:
                 current_app.logger.error(
                     "Gagal mengkredit kuota advance untuk debt package user %s: %s",
@@ -559,6 +587,11 @@ def update_user_by_admin_comprehensive(
             try:
                 # Best-effort: refresh Mikrotik lists/profile sesuai sisa kuota terbaru.
                 sync_address_list_for_single_user(target_user)
+            except Exception:
+                pass
+
+            try:
+                _sync_user_to_mikrotik(target_user, f"Manual debt advance by {admin_actor.full_name}")
             except Exception:
                 pass
 
@@ -620,10 +653,14 @@ def update_user_by_admin_comprehensive(
                     admin_actor=admin_actor,
                     credit_mb=int(debt_add_mb),
                     source="admin_debt_advance",
+                    days_to_add=DEFAULT_MANUAL_DEBT_ADVANCE_DAYS,
+                    grant_label="Manual debt advance",
+                    grant_reference=str(getattr(_entry, "id", "") or "") or None,
                 )
                 changes["debt_credit_quota_mb"] = int(debt_add_mb)
                 changes["debt_paid_auto_before_credit_mb"] = int(paid_auto_mb)
                 changes["debt_net_quota_mb"] = int(remaining_credit_mb)
+                changes["debt_added_days"] = DEFAULT_MANUAL_DEBT_ADVANCE_DAYS
             except Exception as e:
                 current_app.logger.error(
                     "Gagal mengkredit kuota advance untuk debt manual user %s: %s",
@@ -635,6 +672,11 @@ def update_user_by_admin_comprehensive(
 
             try:
                 sync_address_list_for_single_user(target_user)
+            except Exception:
+                pass
+
+            try:
+                _sync_user_to_mikrotik(target_user, f"Manual debt advance by {admin_actor.full_name}")
             except Exception:
                 pass
 

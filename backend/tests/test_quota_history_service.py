@@ -103,3 +103,39 @@ def test_serialize_quota_history_entry_imported_purchase_event_mentions_backfill
     assert item["category"] == "purchase"
     assert any("Riwayat pembelian lama diimpor" in highlight for highlight in item["highlights"])
     assert item["description"].startswith("Riwayat pembelian Paket Unlimited 30 Hari diimpor")
+
+
+def test_serialize_quota_history_entry_normalize_expiry_mentions_grant_reference():
+    entry = SimpleNamespace(
+        id="history-4",
+        source="quota.normalize_expiry",
+        created_at=datetime(2026, 3, 15, 10, 0, tzinfo=timezone.utc),
+        before_state={
+            "total_quota_purchased_mb": 10240,
+            "total_quota_used_mb": 512,
+            "quota_debt_total_mb": 0,
+        },
+        after_state={
+            "total_quota_purchased_mb": 10240,
+            "total_quota_used_mb": 512,
+            "quota_debt_total_mb": 0,
+        },
+        event_details={
+            "grant_kind": "manual_debt_advance",
+            "grant_label": "Manual debt advance 10 GB",
+            "grant_reference": "log-123",
+            "grant_at": "2026-03-15T10:00:00+00:00",
+            "duration_days": 30,
+            "previous_expiry_at": "2026-04-30T10:00:00+00:00",
+            "normalized_expiry_at": "2026-04-14T10:00:00+00:00",
+        },
+        actor=None,
+    )
+
+    item = svc.serialize_quota_history_entry(entry)
+
+    assert item["title"] == "Masa aktif dinormalisasi"
+    assert item["category"] == "policy"
+    assert any("Grant acuan: Manual debt advance 10 GB" in highlight for highlight in item["highlights"])
+    assert any("Referensi: log-123" in highlight for highlight in item["highlights"])
+    assert item["description"].startswith("Masa aktif akun pengguna diselaraskan ulang")

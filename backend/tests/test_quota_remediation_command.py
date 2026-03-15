@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
+import uuid
 
 import app.commands.quota_remediation_command as cmd
 
@@ -51,3 +53,54 @@ def test_build_purchase_import_details_marks_imported_transaction_context():
     assert details["package_quota_gb"] == 10.0
     assert details["package_duration_days"] == 30
     assert details["payment_time"] == payment_time.isoformat()
+
+
+def test_register_latest_expiry_candidate_prefers_newer_grant():
+    user_id = uuid.uuid4()
+    candidates: dict[tuple[uuid.UUID, bool], dict[str, object]] = {}
+
+    older = cmd._build_expiry_candidate(
+        user_id=user_id,
+        grant_at=datetime(2026, 3, 10, 10, 0, tzinfo=timezone.utc),
+        duration_days=30,
+        source_kind="quota.purchase_package",
+        grant_kind="purchase",
+        is_unlimited=False,
+        grant_reference="ORD-OLD",
+        grant_label="Paket Lama",
+    )
+    newer = cmd._build_expiry_candidate(
+        user_id=user_id,
+        grant_at=datetime(2026, 3, 15, 9, 0, tzinfo=timezone.utc),
+        duration_days=15,
+        source_kind="quota.inject",
+        grant_kind="admin_inject",
+        is_unlimited=False,
+        grant_reference="LEDGER-NEW",
+        grant_label="Inject Admin",
+    )
+
+    cmd._register_latest_expiry_candidate(candidates, older)
+    cmd._register_latest_expiry_candidate(candidates, newer)
+
+    assert candidates[(user_id, False)]["grant_reference"] == "LEDGER-NEW"
+    assert candidates[(user_id, False)]["duration_days"] == 15
+
+
+def test_build_admin_debt_action_candidate_defaults_direct_manual_debt_to_30_days():
+    user_id = uuid.uuid4()
+    action_log = SimpleNamespace(
+        id=uuid.uuid4(),
+        target_user_id=user_id,
+        created_at=datetime(2026, 3, 15, 7, 0, tzinfo=timezone.utc),
+        details=json.dumps({"debt_add_mb": 10240}),
+    )
+
+    candidate = cmd._build_admin_debt_action_candidate(action_log, {})
+
+    assert candidate is not None
+    assert candidate["user_id"] == user_id
+    assert candidate["duration_days"] == cmd.DEFAULT_MANUAL_DEBT_ADVANCE_DAYS
+    assert candidate["grant_kind"] == "manual_debt_advance"
+    assert candidate["is_unlimited"] is False
+    assert "Manual debt advance" in str(candidate["grant_label"])
