@@ -35,7 +35,7 @@ Terima kasih sudah ingin berkontribusi.
 ## 5) Dokumentasi
 Jika ada perubahan API / request / response:
 - Update [docs/API_DETAIL.md](docs/API_DETAIL.md)
-- Update [docs/API_OVERVIEW.md](docs/API_OVERVIEW.md) bila diperlukan
+- Update [docs/REFERENCE_PENGEMBANGAN.md](docs/REFERENCE_PENGEMBANGAN.md) atau [docs/ACCESS_STATUS_MATRIX.md](docs/ACCESS_STATUS_MATRIX.md) bila policy ikut berubah
 - Tambahkan entri di [CHANGELOG.md](CHANGELOG.md)
 - Lampirkan tautan [.github/copilot-instructions.md](.github/copilot-instructions.md) di dokumen terkait.
 

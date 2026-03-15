@@ -1,201 +1,86 @@
-# Byte-compiled / optimized / DLL files
+# Python cache and tooling
 __pycache__/
 *.py[cod]
-*$py.class
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# PyInstaller
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
 .tox/
 .nox/
 .coverage
 .coverage.*
-.cache
-nosetests.xml
 coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
+htmlcov/
 
-# Translations
-*.mo
-*.pot
+# Node and frontend build output
+node_modules/
+.pnpm-store/
+.nuxt/
+.nitro/
+.output/
+.vite/
+.eslintcache
+coverage/
+dist/
+build/
 
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# Virtualenv
-.env
-.env.prod
-.env.public
-.env.public.prod
-.venv
+# Virtual environments
+.venv/
 .venv*/
 env/
 venv/
 ENV/
-env.bak/
-venv.bak/
 .direnv/
 .python-version
 
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# Node.js
-node_modules/
-.nuxt/
-.nitro/
-.output/
-.pnpm-store/
-.vite/
-.eslintcache
-dist/ # Nuxt build output
-coverage/ # Test coverage
-logs/
-tmp/
-temp/
-*.tmp
-*.dump
-*.bak
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-*.log
-
-# Docker
-docker-compose.override.yml
-
-# Celery beat schedule
-backend/celerybeat-schedule
-backend/celerybeat-schedule.*
-backend/backups/
-backend/gunicorn.ctl
-
-# IDE / Editor specific
-.idea/
-.vscode/
-*.swp
-*~
-.DS_Store
-
-# Secrets files - IMPORTANT!
-*.env
+# Local env and secrets
+.env
+.env.prod
+.env.public
+.env.public.prod
 backend/.env.local
 backend/.env.public
 backend/.env.e2e
 frontend/.env.e2e
-dev/
 secrets/
 credentials/
 *.pem
 *.key
 
-# OS generated files
-Thumbs.db
-ehthumbs.db
-Desktop.ini
+# Runtime and operational artifacts
+logs/
+tmp/
+temp/
+*.log
+*.tmp
+*.dump
+*.bak
+/tmp_verify*.json
+docker-compose.override.yml
+backend/celerybeat-schedule
+backend/celerybeat-schedule.*
+backend/backups/
+backend/gunicorn.ctl
+dev/
+
+# Packaging and archives
+.eggs/
+*.egg
+*.egg-info/
+MANIFEST
 
 # Local databases
 *.sqlite
 *.sqlite3
 *.db
+db.sqlite3
+db.sqlite3-journal
 
-docker-compose.yml.bak
-*.bak.env.prod
-.ruff_cache/
-copilot-instructions.md
-docs/
-*.md
-*.local
-*.public
-*logs.zip
-*.log
-tmp*
-
-# Keep key tracked docs for ops incident history
-!README.md
-!DEVELOPMENT.md
-!docs/
-!docs/ERROR_REFERENCE.md
-!docs/ACCESS_STATUS_MATRIX.md
-!docs/CI_INCIDENT_2026-02-14_FRONTEND_PUBLISH.md
-!docs/PUBLISH_FLOW_AND_ERROR_STATUS.md
-!docs/WORKLOG_*.md
-!docs/DEVLOG_*.md
-!docs/PR_DRAFT_*.md
-!docs/ARCHITECTURE_DIAGRAMS.md
-!docs/TRANSACTIONS_MIDTRANS_LIFECYCLE.md
-!docs/ADMIN_TRANSACTIONS_UI.md
-!docs/LITE_TEST_CHECKLIST_PAYMENT.md
-!docs/DEPLOY_RPI_MINIMAL.md
-!docs/OPERATIONS_MIKROTIK_AUDIT_CLEANUP.md
-!docs/UI_STYLING_STANDARDS.md
-!docs/PAYMENTS.md
-!docs/OPENAPI_CONTRACT_WORKFLOW.md
-!docs/OPERATIONS_GITHUB_ACTIONS_CLEANUP.md
-!docs/DOCUMENTATION_COVERAGE_2026-02-28.md
-!docs/OPERATIONS_HOTSPOT_DEVICE_LIFECYCLE.md
-!docs/OPERATIONS_MIKROTIK_SYNC.md
-!docs/OPERATIONS_HOTSPOT_PARITY_AUDIT.md
-!docs/MIKROTIK_FIREWALL_AUDIT_2026-03-14.md
-!docs/RUNBOOK_ACTIVE_INDEX.md
+# IDE and OS files
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini

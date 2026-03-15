@@ -65,7 +65,8 @@ jobs:
               - 'scripts/access_status_parity_gate.py'
             docs:
               - 'docs/API_DETAIL.md'
-              - 'docs/OPENAPI_CONTRACT_WORKFLOW.md'
+              - 'docs/ACCESS_STATUS_MATRIX.md'
+              - 'docs/workflows/OPENAPI_CONTRACT.md'
       - name: Show change summary
         run: |
           echo "backend=${{ steps.filter.outputs.backend }}"

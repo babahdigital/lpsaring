@@ -2,45 +2,22 @@
 
 Portal hotspot dengan backend Flask dan frontend Nuxt 3.
 
-## Dokumentasi Utama
+## Dokumentasi Inti
 - [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)
 - [DEVELOPMENT.md](DEVELOPMENT.md)
 - [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)
 - [docs/REFERENCE_PENGEMBANGAN.md](docs/REFERENCE_PENGEMBANGAN.md)
-- [docs/DEVELOPMENT_REALTIME_QUOTA.md](docs/DEVELOPMENT_REALTIME_QUOTA.md)
-- [docs/PRODUCTION_AUDIT.md](docs/PRODUCTION_AUDIT.md)
-- [docs/DEVELOPMENT_CHECKLIST.md](docs/DEVELOPMENT_CHECKLIST.md)
-- [docs/BACKUP_RESTORE_OPERATIONS.md](docs/BACKUP_RESTORE_OPERATIONS.md)
-- [docs/API_OVERVIEW.md](docs/API_OVERVIEW.md)
 - [docs/API_DETAIL.md](docs/API_DETAIL.md)
 - [contracts/openapi/openapi.v1.yaml](contracts/openapi/openapi.v1.yaml)
-- [docs/OPENAPI_CONTRACT_WORKFLOW.md](docs/OPENAPI_CONTRACT_WORKFLOW.md)
 - [docs/ACCESS_STATUS_MATRIX.md](docs/ACCESS_STATUS_MATRIX.md)
-- [docs/operations/CANONICAL_SPEC.md](docs/operations/CANONICAL_SPEC.md)
-- [docs/operations/RUNBOOK_ACTIVE_INDEX.md](docs/operations/RUNBOOK_ACTIVE_INDEX.md)
-- [docs/operations/ARCHIVE_HISTORICAL_INDEX.md](docs/operations/ARCHIVE_HISTORICAL_INDEX.md)
 - [docs/VUEXY_BASELINE_STRATEGY.md](docs/VUEXY_BASELINE_STRATEGY.md)
-- [docs/ERROR_REFERENCE.md](docs/ERROR_REFERENCE.md)
-- [docs/TRANSACTIONS_STATE_INVARIANTS.md](docs/TRANSACTIONS_STATE_INVARIANTS.md)
-- [docs/OPERATIONAL_API_MATRIX.md](docs/OPERATIONAL_API_MATRIX.md)
-- [docs/ENV_FILE_MATRIX.md](docs/ENV_FILE_MATRIX.md)
-- [docs/OPERATIONS_COMMAND_STANDARD.md](docs/OPERATIONS_COMMAND_STANDARD.md)
-- [docs/OPERATIONS_HOTSPOT_PARITY_AUDIT.md](docs/OPERATIONS_HOTSPOT_PARITY_AUDIT.md)
-- [docs/PUBLISH_FLOW_AND_ERROR_STATUS.md](docs/PUBLISH_FLOW_AND_ERROR_STATUS.md)
-- [docs/OPERATIONS_MIKROTIK_SYNC.md](docs/OPERATIONS_MIKROTIK_SYNC.md)
-- [docs/DO_PRODUCTION_DEPLOYMENT.md](docs/DO_PRODUCTION_DEPLOYMENT.md)
-- [docs/DO_ROLLBACK_CHECKLIST.md](docs/DO_ROLLBACK_CHECKLIST.md)
-- [docs/CI_INCIDENT_2026-02-14_FRONTEND_PUBLISH.md](docs/CI_INCIDENT_2026-02-14_FRONTEND_PUBLISH.md)
-- [docs/TROUBLESHOOTING_HYDRATION.md](docs/TROUBLESHOOTING_HYDRATION.md)
-- [docs/UPDATE_PUBLIC_WORKFLOW.md](docs/UPDATE_PUBLIC_WORKFLOW.md)
+- [docs/workflows/OPENAPI_CONTRACT.md](docs/workflows/OPENAPI_CONTRACT.md)
+- [docs/workflows/CI_CD.md](docs/workflows/CI_CD.md)
+- [docs/workflows/PRODUCTION_OPERATIONS.md](docs/workflows/PRODUCTION_OPERATIONS.md)
 - [CONTRIBUTING.md](CONTRIBUTING.md)
 - [CHANGELOG.md](CHANGELOG.md)
 
-## Dokumentasi Integrasi
-- [docs/PAYMENTS.md](docs/PAYMENTS.md)
-- [docs/MIDTRANS_SNAP.md](docs/MIDTRANS_SNAP.md)
-- [docs/TRANSACTIONS_MIDTRANS_LIFECYCLE.md](docs/TRANSACTIONS_MIDTRANS_LIFECYCLE.md)
-- [docs/DOKUMENTASI_WHATSAPP_FONNTE.md](docs/DOKUMENTASI_WHATSAPP_FONNTE.md)
+Integrasi Midtrans, Fonnte, dan MikroTik kini diringkas di [docs/REFERENCE_PENGEMBANGAN.md](docs/REFERENCE_PENGEMBANGAN.md).
 
 ## Catatan Singkat
 - Registrasi mendukung tamping vs non‑tamping.
@@ -56,7 +33,7 @@ Portal hotspot dengan backend Flask dan frontend Nuxt 3.
 - Jalur cepat wajib: lint + typecheck + focused tests + E2E isolated.
 - CI Pull Request: build frontend hanya saat ada perubahan runtime-critical frontend.
 - CI push ke `main`: build frontend selalu jalan sebagai final safety gate.
-- Detail checklist eksekusi: [docs/DEVELOPMENT_CHECKLIST.md](docs/DEVELOPMENT_CHECKLIST.md).
+- Detail checklist eksekusi: [docs/REFERENCE_PENGEMBANGAN.md](docs/REFERENCE_PENGEMBANGAN.md).
 
 ## Checklist Release Singkat
 - 1) Pastikan branch fitur sudah bersih dan CI hijau (lint, test, typecheck; build sesuai policy trigger).
@@ -67,8 +44,8 @@ Portal hotspot dengan backend Flask dan frontend Nuxt 3.
 - 6) Untuk produksi DigitalOcean, jalankan `nginx` + `cloudflared` pada stack global terpisah (`/home/abdullah/nginx`) dan jalankan app stack di `/home/abdullah/lpsaring/app`.
 
 Kebutuhan GitHub Secrets:
-- `DOCKERHUB_USERNAME`
-- `DOCKERHUB_TOKEN`
+- `DOCKER_USERNAME`
+- `DOCKER_PASSWORD`
 
 ## Template Env
 - `.env.example` (root Compose interpolation only)
@@ -80,7 +57,7 @@ Kebutuhan GitHub Secrets:
 - `frontend/.env.public.example` (frontend dev profile untuk docker dev)
 - `frontend/.env.local.example` (frontend local profile untuk e2e/host-local)
 
-Lihat pemetaan lengkap file env per mode di [docs/ENV_FILE_MATRIX.md](docs/ENV_FILE_MATRIX.md).
+Ringkasan ownership file env dan aturan runtime ada di [docs/REFERENCE_PENGEMBANGAN.md](docs/REFERENCE_PENGEMBANGAN.md).
 
 ## Quick Commands (Dev vs E2E)
 

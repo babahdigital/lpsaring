@@ -68,5 +68,5 @@ Catatan:
 
 ## Referensi Teknis
 - [DEVELOPMENT.md](DEVELOPMENT.md)
-- [docs/PAYMENTS.md](docs/PAYMENTS.md)
-- [docs/MIDTRANS_SNAP.md](docs/MIDTRANS_SNAP.md)
+- [docs/REFERENCE_PENGEMBANGAN.md](docs/REFERENCE_PENGEMBANGAN.md)
+- [docs/workflows/PRODUCTION_OPERATIONS.md](docs/workflows/PRODUCTION_OPERATIONS.md)

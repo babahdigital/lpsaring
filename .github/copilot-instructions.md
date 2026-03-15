@@ -58,9 +58,9 @@ Catatan workflow publish:
 - `.github/workflows/docker-publish.yml` jalan saat push tag `v*` atau manual `workflow_dispatch`.
 
 Referensi:
-- `docs/DEPLOY_RPI_MINIMAL.md`
+- `docs/workflows/PRODUCTION_OPERATIONS.md`
 - `deploy_pi.sh`
-- `docs/OPERATIONS_MIKROTIK_SYNC.md`
+- `docs/workflows/CI_CD.md`
 
 ## Kebijakan Device/MAC (OTP, Random MAC)
 Tujuan: user tidak “ke-block” setelah OTP sukses walau MAC berubah (privacy/random MAC).
@@ -123,4 +123,4 @@ Aturan deploy:
 
 ## Referensi Teknis
 - Docs umum: README.md, DEVELOPMENT.md, PROJECT_OVERVIEW.md.
-- Integrasi: docs/MIDTRANS_SNAP.md, docs/DOKUMENTASI_WHATSAPP_FONNTE.md.
+- Integrasi: docs/REFERENCE_PENGEMBANGAN.md, docs/workflows/PRODUCTION_OPERATIONS.md.

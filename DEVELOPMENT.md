@@ -64,8 +64,8 @@ Env terkait prefix invoice:
 - `ADMIN_BILL_ORDER_ID_PREFIX` → prefix order_id untuk tagihan yang dibuat admin.
 
 Dokumen rujukan:
-- `docs/TRANSACTIONS_MIDTRANS_LIFECYCLE.md`
-- `docs/MIDTRANS_SNAP.md`
+- `docs/API_DETAIL.md`
+- `docs/REFERENCE_PENGEMBANGAN.md`
 
 ## 4) File Environment
 Siapkan file environment berikut:
@@ -323,8 +323,8 @@ Catatan operasional:
   - `docker compose ... up -d --remove-orphans`
 
 Referensi rinci:
-- `docs/PUBLISH_FLOW_AND_ERROR_STATUS.md`
-- `docs/CI_INCIDENT_2026-02-14_FRONTEND_PUBLISH.md`
+- `docs/workflows/CI_CD.md`
+- `docs/workflows/PRODUCTION_OPERATIONS.md`
 
 ### 5.3.2) Status Error Terkini (2026-02-15)
 

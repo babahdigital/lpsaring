@@ -53,16 +53,16 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $ScriptDir "e2e/lib/StatusPolicy.ps1")
 . (Join-Path $ScriptDir "e2e/lib/BackendStateOps.ps1")
 
-$FreshStart = Normalize-Bool $FreshStart $true
-$CleanupAddressList = Normalize-Bool $CleanupAddressList $true
-$RunKomandanFlow = Normalize-Bool $RunKomandanFlow $true
-$Build = Normalize-Bool $Build $false
-$EnableMikrotikOps = Normalize-Bool $EnableMikrotikOps $true
-$ApplyMikrotikOnQuotaSimulation = Normalize-Bool $ApplyMikrotikOnQuotaSimulation $true
-$UseOtpBypassOnly = Normalize-Bool $UseOtpBypassOnly $true
-$UseIsolatedTestUsers = Normalize-Bool $UseIsolatedTestUsers $true
-$CleanupTestArtifacts = Normalize-Bool $CleanupTestArtifacts $true
-$UseIsolatedCompose = Normalize-Bool $UseIsolatedCompose $true
+$FreshStart = ConvertTo-BooleanValue $FreshStart $true
+$CleanupAddressList = ConvertTo-BooleanValue $CleanupAddressList $true
+$RunKomandanFlow = ConvertTo-BooleanValue $RunKomandanFlow $true
+$Build = ConvertTo-BooleanValue $Build $false
+$EnableMikrotikOps = ConvertTo-BooleanValue $EnableMikrotikOps $true
+$ApplyMikrotikOnQuotaSimulation = ConvertTo-BooleanValue $ApplyMikrotikOnQuotaSimulation $true
+$UseOtpBypassOnly = ConvertTo-BooleanValue $UseOtpBypassOnly $true
+$UseIsolatedTestUsers = ConvertTo-BooleanValue $UseIsolatedTestUsers $true
+$CleanupTestArtifacts = ConvertTo-BooleanValue $CleanupTestArtifacts $true
+$UseIsolatedCompose = ConvertTo-BooleanValue $UseIsolatedCompose $true
 
 if (-not $OtpBypassCode) {
   if ($env:OTP_BYPASS_CODE) {
@@ -107,8 +107,7 @@ if ($UseIsolatedTestUsers) {
 }
 
 # Normalisasi nomor agar konsisten dengan backend (OTP Redis key menggunakan nomor yang sudah dinormalisasi).
-$UserPhoneE164 = Normalize-PhoneToE164 $UserPhone
-$KomandanPhoneE164 = Normalize-PhoneToE164 $KomandanPhone
+$UserPhoneE164 = ConvertTo-E164PhoneNumber $UserPhone
 $userCreatedForE2E = $false
 $komandanCreatedForE2E = $false
 $cleanupKomandanPhoneE164 = $null
@@ -810,7 +809,7 @@ $blockedVerifyBody = @{ phone_number = $UserPhoneE164; otp = $blockedOtp; hotspo
 try {
   Invoke-RestMethod -Method Post -Uri "$ApiBaseUrl/api/auth/verify-otp" -ContentType "application/json" -Body $blockedVerifyBody | Out-Null
 } catch {
-  $payload = Parse-ErrorJson $_
+  $payload = ConvertFrom-ErrorJson $_
   if ($payload) {
     Test-SignedStatusPage $FrontendBaseUrl $payload.status $payload.status_token
   }
@@ -820,7 +819,6 @@ Set-UserStatus "inactive" 1024 0 0 $effectiveTestingProfileName
 $inactiveOtpRequested = $false
 if ($UseOtpBypassOnly) {
   $inactiveOtpRequested = $true
-  $inactiveOtp = $OtpBypassCode
 } else {
   $inactiveOtpBody = @{ phone_number = $UserPhoneE164 } | ConvertTo-Json
   for ($attempt = 1; $attempt -le 2 -and -not $inactiveOtpRequested; $attempt++) {
@@ -839,7 +837,7 @@ if ($UseOtpBypassOnly) {
         Start-Sleep -Seconds 65
         continue
       }
-      $payload = Parse-ErrorJson $_
+      $payload = ConvertFrom-ErrorJson $_
       if ($payload) {
         Test-SignedStatusPage $FrontendBaseUrl $payload.status $payload.status_token
         $inactiveOtpRequested = $true
@@ -865,7 +863,7 @@ if ($RunKomandanFlow) {
       Write-Host "Retry Komandan dengan nomor baru: $komandanAttemptPhone"
     }
 
-    $komandanAttemptPhoneE164 = Normalize-PhoneToE164 $komandanAttemptPhone
+    $komandanAttemptPhoneE164 = ConvertTo-E164PhoneNumber $komandanAttemptPhone
 
     $komandanRegisterBody = @{
       phone_number = $komandanAttemptPhone
@@ -1145,7 +1143,6 @@ if ($meRejected) {
   Write-Host ("Logout OK: message='{0}', refresh token invalid. /auth/me masih valid sampai access token expired (expected untuk JWT stateless)." -f $logoutJson.message)
 }
 
-$postLogoutSession = $null
 $postLogoutResp = $null
 if ($useContextForResetReauth) {
   try {

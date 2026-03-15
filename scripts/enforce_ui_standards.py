@@ -57,7 +57,7 @@ def main() -> int:
         print('[ui-standards] FAILED: forbidden template references found')
         for item in violations:
             print(f' - {item}')
-        print('Use docs/UI_STYLING_STANDARDS.md as reference; do not import/copy runtime from Vuexy full-version.')
+        print('Use docs/VUEXY_BASELINE_STRATEGY.md as reference; do not import/copy runtime from Vuexy full-version.')
         return 1
 
     print('[ui-standards] OK: no forbidden full-version/starter-kit runtime references detected')

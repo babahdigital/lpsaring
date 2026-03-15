@@ -1,29 +1,61 @@
-# Vuexy Baseline Strategy (Upgrade-Safe)
+# Vuexy Baseline Strategy
 
-Dokumen ini mendefinisikan batas aman antara baseline Vuexy dan custom Nuxt di proyek ini.
+Dokumen ini menjelaskan batas aman antara baseline Vuexy yang diadopsi dan layer domain custom di repo ini.
+
+Lampiran wajib:
+- [.github/copilot-instructions.md](../.github/copilot-instructions.md)
 
 ## Baseline vs Custom
-- Baseline referensi: `typescript-version/full-version` (Vite SPA) hanya sebagai _design/layer reference_.
-- Runtime aktif: `lpsaring/frontend` (Nuxt 3 SSR) adalah implementasi produksi.
 
-## Boundary
-- **Core template area (adopted & maintained):**
-  - `frontend/@core/**`
-  - `frontend/@layouts/**`
-  - `frontend/assets/styles/**`
-- **Custom domain area (produk):**
-  - `frontend/pages/**`
-  - `frontend/components/**`
-  - `frontend/composables/**`
-  - `frontend/store/**`
-  - `frontend/plugins/api.ts`
+- Baseline referensi: `typescript-version/full-version` hanya dipakai sebagai acuan desain dan struktur.
+- Runtime produksi tetap berada di `frontend/`.
+- Tidak boleh ada import runtime langsung dari baseline atau starter-kit ke aplikasi aktif.
 
-## Upgrade Rule
-1. Jangan import runtime langsung dari `typescript-version/full-version` atau `starter-kit`.
-2. Adaptasi template harus melalui copy terkontrol ke `frontend/@core` atau `frontend/@layouts`.
-3. Setiap perubahan major pada `@core/@layouts` wajib diuji lint+typecheck+focused tests.
-4. Jika sinkronisasi dengan baseline dibutuhkan, dokumentasikan delta di PR.
+## Boundary Folder
+
+### Baseline yang dipelihara
+
+- `frontend/@core/**`
+- `frontend/@layouts/**`
+- `frontend/assets/styles/**`
+
+### Area produk
+
+- `frontend/pages/**`
+- `frontend/components/**`
+- `frontend/composables/**`
+- `frontend/store/**`
+- `frontend/plugins/**`
+
+## Aturan UI Aktif
+
+### Wrapper komponen wajib
+
+- Gunakan `AppPerfectScrollbar` untuk panel scroll dan body dialog panjang.
+- Gunakan `DataTableToolbar` untuk selector entries dan search di tabel.
+- Gunakan `TablePagination` sebagai pagination tunggal, bukan footer bawaan datatable.
+- Gunakan `AppSelect` untuk filter/select standar.
+
+### Styling
+
+- Hindari rule global yang menyerang seluruh list atau table tanpa class pembeda.
+- Gunakan theme token dan utilitas Vuetify, bukan warna hard-coded baru.
+- Styling khusus halaman diletakkan di scope lokal atau class lokal yang jelas.
+
+### Sinkronisasi baseline
+
+- Adaptasi dari Vuexy harus berupa copy terkontrol ke `@core` atau `@layouts`.
+- Perubahan mayor pada area baseline wajib divalidasi dengan lint, typecheck, dan test yang relevan.
+- PR yang menyentuh area baseline harus menjelaskan delta terhadap baseline yang diadopsi.
 
 ## Enforcement
-- Script: `scripts/enforce_ui_standards.py`
-- Rule saat ini memblok referensi lintas-folder ke baseline runtime.
+
+- Script penjaga: `scripts/enforce_ui_standards.py`
+- Script tersebut memblok referensi runtime ke `typescript-version/full-version` atau `starter-kit/src`.
+
+## Checklist Singkat PR Frontend
+
+- Tidak mengimpor runtime dari baseline eksternal.
+- Tabel baru mengikuti pola toolbar plus pagination standar.
+- Perubahan theme tidak membuat token warna atau font baru tanpa alasan jelas.
+- Halaman admin dan user tetap responsif tanpa styling override massal.

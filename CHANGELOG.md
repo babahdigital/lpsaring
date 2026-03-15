@@ -18,10 +18,10 @@ Lampiran wajib:
 
 ### Documentation (2026-03-15)
 
-- `docs/DEVLOG_2026-03-15.md` diperluas dengan addendum detail untuk quota history admin/user/PDF, root cause sticky header transparan, insiden deploy recreate akibat Alembic drift rewind, langkah recovery produksi, dan status verifikasi akhir.
+- Ringkasan historis sesi 2026-03-15 dikonsolidasikan ke `docs/REFERENCE_PENGEMBANGAN.md` dan `docs/workflows/PRODUCTION_OPERATIONS.md`, mencakup quota history admin/user/PDF, insiden deploy recreate, recovery produksi, dan verifikasi akhir.
 - `docs/API_DETAIL.md` diperbarui untuk mendokumentasikan query filter `startDate`, `endDate`, `search`, metadata response `filters`, dan perilaku export PDF yang mengikuti filter aktif untuk endpoint quota history user/admin.
-- `docs/DEPLOY_RPI_MINIMAL.md` diperbarui dengan guardrail Alembic drift terbaru dan pola recovery jika revision DB pernah sempat tertarik mundur oleh deploy lama.
-- `.github/copilot-instructions.md` dan `docs/RUNBOOK_ACTIVE_INDEX.md` diselaraskan dengan jalur deploy aman terkini (`deploy_pi.sh --recreate`) serta devlog sesi quota history + deploy recovery.
+- `docs/workflows/PRODUCTION_OPERATIONS.md` memuat guardrail Alembic drift terbaru dan pola recovery jika revision DB pernah sempat tertarik mundur oleh deploy lama.
+- `.github/copilot-instructions.md`, `docs/workflows/CI_CD.md`, dan `docs/workflows/PRODUCTION_OPERATIONS.md` diselaraskan dengan jalur deploy aman terkini (`deploy_pi.sh --recreate`).
 
 ### Fixed (2026-03-15 - Quota History, Expiry Non-Akumulatif, dan Remediation Tools)
 
@@ -54,8 +54,8 @@ Lampiran wajib:
 
 ### Documentation (2026-03-15)
 
-- Ditambahkan devlog rilis dan verifikasi produksi terbaru pada `docs/DEVLOG_2026-03-15.md`.
-- Dokumen aktif `docs/REFERENCE_PENGEMBANGAN.md`, `docs/DEVELOPMENT_REALTIME_QUOTA.md`, `docs/OPERATIONS_MIKROTIK_SYNC.md`, `docs/OPERATIONS_MIKROTIK_AUDIT_CLEANUP.md`, `docs/RULES_QUOTA_DEBT_ACCESS_FLOW.md`, dan `docs/RUNBOOK_ACTIVE_INDEX.md` diselaraskan dengan perilaku runtime produksi yang sudah diverifikasi.
+- Ringkasan rilis dan verifikasi produksi terbaru dikonsolidasikan ke `docs/REFERENCE_PENGEMBANGAN.md` dan `docs/workflows/PRODUCTION_OPERATIONS.md`.
+- Dokumen aktif `docs/REFERENCE_PENGEMBANGAN.md`, `docs/API_DETAIL.md`, `docs/ACCESS_STATUS_MATRIX.md`, dan `docs/workflows/PRODUCTION_OPERATIONS.md` diselaraskan dengan perilaku runtime produksi yang sudah diverifikasi.
 
 ### Fixed (2026-03-14 — Payment Status Access, Captive Recovery, dan CI Node 24 Opt-In)
 
@@ -67,7 +67,7 @@ Lampiran wajib:
 
 ### Documentation (2026-03-14)
 
-- `docs/DEVLOG_2026-03-14.md` diperbarui dengan ringkasan fix payment/captive 14 Maret, hasil verifikasi live untuk `+628134071280` dan `+6283179074596`, serta audit log `nginx` dan `docker compose` pasca-deploy.
+- Ringkasan fix payment/captive 14 Maret, hasil verifikasi live, dan audit log pasca-deploy dikonsolidasikan ke `docs/REFERENCE_PENGEMBANGAN.md` dan `docs/workflows/PRODUCTION_OPERATIONS.md`.
 
 ### Fixed (2026-03-14 — Audit Host Hotspot + Saturasi DB Worker)
 
@@ -80,7 +80,7 @@ Lampiran wajib:
 ### Added (2026-03-14)
 
 - Test regresi baru untuk pemilihan hotspot host per-MAC, fallback `to-address` lokal, dan cache Flask app pada task worker (`backend/tests/test_mikrotik_get_hotspot_host_usage_map.py`, `backend/tests/test_tasks_create_app_cache.py`).
-- Devlog audit operasional + log forensik baru: `docs/DEVLOG_2026-03-14.md`.
+- Audit operasional dan log forensik sesi ini diringkas pada dokumentasi aktif `docs/REFERENCE_PENGEMBANGAN.md` dan `docs/workflows/PRODUCTION_OPERATIONS.md`.
 - Test regresi baru untuk memastikan pembacaan runtime settings pra-loop tidak lagi meninggalkan sesi SQLAlchemy aktif sebelum transaksi per-user dimulai (`backend/tests/test_hotspot_sync_user_error_isolation.py`).
 
 ### Fixed (2026-03-13 — Sesi Stabilitas Infra + Payment Loss + SIGKILL)
@@ -185,13 +185,13 @@ Lampiran wajib:
 - Regression CI backend akibat ekspektasi test lama (cleanup host selalu dipanggil) telah diperbaiki dengan test yang selaras policy baru: cleanup hanya untuk recovery unauthorized.
 
 ### Added (2026-03-08)
-- Devlog lengkap sesi hardening + investigasi insiden ditambahkan pada `docs/DEVLOG_2026-03-08.md`.
+- Catatan aktif sesi hardening dan investigasi insiden kemudian dikonsolidasikan ke `docs/REFERENCE_PENGEMBANGAN.md` dan `docs/workflows/PRODUCTION_OPERATIONS.md`.
 
 ### Changed (2026-03-05)
 - Alur release diperjelas: `ci.yml` tetap quality gate utama pada push `main`, sedangkan `.github/workflows/docker-publish.yml` diposisikan untuk publish image saja (tag `v*` atau `workflow_dispatch`), tanpa auto deploy Raspberry Pi.
-- Dokumentasi publish/deploy diperbarui agar konsisten dengan policy manual deploy via `deploy_pi.sh --recreate` (`README.md`, `docs/PUBLISH_FLOW_AND_ERROR_STATUS.md`).
-- Ditambahkan devlog audit terbaru `docs/DEVLOG_2026-03-05.md` yang merangkum hasil test lokal, simulasi produksi non-destruktif, dan matrix status findings/roadmap.
-- Runbook monitoring diperluas dengan command terstandar deteksi noise cloudflared (`docs/OPERATIONS_COMMAND_STANDARD.md`, `docs/POST_DEPLOY_MONITORING_24H.md`).
+- Dokumentasi publish/deploy diperbarui agar konsisten dengan policy manual deploy via `deploy_pi.sh --recreate` (`README.md`, `docs/workflows/CI_CD.md`, `docs/workflows/PRODUCTION_OPERATIONS.md`).
+- Ringkasan audit 2026-03-05 dikonsolidasikan ke `docs/workflows/PRODUCTION_OPERATIONS.md`.
+- Runbook monitoring dan deteksi noise cloudflared kini diringkas pada `docs/workflows/PRODUCTION_OPERATIONS.md`.
 
 ### Fixed (2026-03-05)
 - `apply_device_binding_for_login` tidak lagi berisiko `UnboundLocalError` saat `IP_BINDING_ENABLED=False`; regression test ditambahkan pada `backend/tests/test_device_management_service.py`.
@@ -204,7 +204,7 @@ Lampiran wajib:
 
 ### Changed (2026-03-03)
 - Dokumentasi produksi diperbarui untuk arsitektur DigitalOcean split-stack (`nginx` + `cloudflared` global terpisah dari app compose), termasuk pembaruan diagram arsitektur, checklist Cloudflare Tunnel, dan standar command operasional.
-- Ditambahkan runbook baru `docs/DO_PRODUCTION_DEPLOYMENT.md` serta checklist rollback `docs/DO_ROLLBACK_CHECKLIST.md` sebagai acuan operasional deploy/restore/rollback terbaru.
+- Runbook deploy, restore, dan rollback terbaru kini dipusatkan pada `docs/workflows/PRODUCTION_OPERATIONS.md`.
 - `docker-compose.prod.yml` dokumentatif sekarang diposisikan sebagai app stack saja (tanpa service `nginx`/`cloudflared`) pada dokumentasi aktif.
 
 ### Fixed (2026-03-02)
@@ -225,7 +225,7 @@ Lampiran wajib:
 
 ### Changed (2026-03-02)
 - Dokumentasi public update workflow disempurnakan untuk mencakup: staging-vs-approval behavior, visibility panel approval admin saat pending kosong, matrix feature flag backend/frontend, dan checklist validasi minimal pasca perubahan.
-- Sinkronisasi ringkasan endpoint pada `docs/API_OVERVIEW.md` dan addendum kontrak pada `docs/API_DETAIL.md` agar konsisten dengan implementasi `/update` terbaru.
+- Sinkronisasi ringkasan endpoint dipusatkan pada `docs/API_DETAIL.md` dan `docs/workflows/OPENAPI_CONTRACT.md` agar konsisten dengan implementasi `/update` terbaru.
 
 ### Fixed (2026-03-02)
 - Frontend typecheck error pada `pages/login/hotspot-required.vue` diperbaiki (typing helper `isDemoUser`), sehingga verifikasi lint/typecheck untuk file terkait update kembali bersih.
@@ -241,8 +241,8 @@ Lampiran wajib:
 - Batch pengiriman WhatsApp tetap dibatasi per siklus (`UPDATE_WHATSAPP_BATCH_SIZE`, default 3 nomor unik) dan sekarang menggunakan template default berbasis `{update_link}`.
 
 ### Added (2026-03-02)
-- Dokumentasi komprehensif sesi hardening + operasional ditambahkan pada `docs/DEVLOG_2026-03-02.md` (timeline deploy, root cause unauthorized, detail error/log, hasil verifikasi, dan rekomendasi lanjut).
-- Policy state-by-state untuk arsitektur layered gate ditetapkan di `docs/LAYERED_GATE_POLICY_MATRIX.md`.
+- Ringkasan hardening dan operasional sesi 2026-03-02 dikonsolidasikan ke `docs/REFERENCE_PENGEMBANGAN.md` dan `docs/workflows/PRODUCTION_OPERATIONS.md`.
+- Policy state-by-state untuk arsitektur layered gate kini dirujuk melalui `docs/ACCESS_STATUS_MATRIX.md`.
 
 ### Changed (2026-03-02)
 - Flow frontend OTP/captive disederhanakan dengan menghapus halaman perantara `captive/otorisasi-perangkat`; otorisasi perangkat kini inline pada flow login/captive.
