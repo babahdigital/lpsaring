@@ -133,6 +133,22 @@ Rekomendasi gabungan:
    - `KOMANDAN_MAX_UNLIMITED_DAYS` untuk UNLIMITED.
 - Admin tetap memegang approval, termasuk reject/partial grant.
 
+   ## Rule Expiry Non-Akumulatif + Riwayat Mutasi Kuota
+
+   - Semua jalur yang menambah masa aktif kuota sekarang wajib memakai strategi `reset_from_now`:
+      - pembelian paket sukses,
+      - inject quota oleh admin,
+      - approve / partial approve request quota,
+      - grant unlimited dengan durasi.
+   - Artinya sisa masa aktif lama **tidak** boleh diakumulasi. Jika user membeli paket 30 hari hari ini, expiry baru dihitung 30 hari dari pembelian hari ini, walaupun masih punya sisa hari aktif sebelumnya.
+   - User unlimited yang dibeli lewat paket tetap memakai `duration_days` paket sebagai batas waktu akses, kecuali admin memang sengaja mengosongkan `quota_expiry_date` untuk memberi unlimited time.
+   - Riwayat mutasi kuota sekarang tersedia untuk user dan admin, serta bisa diexport PDF. Timeline ini memakai `quota_mutation_ledger` dan memuat kategori utama: `purchase`, `usage`, `debt`, `policy`, `adjustment`, dan `sync`.
+   - Backfill pembelian lama dilakukan via command operasional agar transaksi sukses lama tetap muncul di timeline baru tanpa mengubah kontrak runtime pembacaan API.
+   - Remediasi operasional baru tersedia lewat CLI:
+      - `flask quota-remediation backfill-purchase-history`
+      - `flask quota-remediation normalize-unlimited-expiry`
+      - `flask quota-remediation audit-hotspot-spikes`
+
 ## Konfigurasi ENV Baru
 Disediakan di backend/.env.example:
 - `MIKROTIK_ACTIVE_PROFILE`
@@ -216,6 +232,9 @@ Disediakan di backend/.env.example:
 7. Uji self-service hapus perangkat dan login kembali dari perangkat baru.
 8. Uji walled-garden sync saat `WALLED_GARDEN_ENABLED=True`.
 9. Jalankan inventory host eksternal: `python backend/scripts/scan_external_hosts.py` lalu review output `tmp/external_hosts_inventory.json`.
+10. Uji pembelian paket saat user masih punya masa aktif dan pastikan expiry baru dihitung dari waktu pembelian terbaru, bukan sisa expiry lama.
+11. Uji history kuota user/admin + export PDF untuk memastikan event purchase/usage/debt tampil konsisten.
+12. Jalankan dry-run command remediation sebelum apply ke produksi.
 
 ## Lampiran Stabil 2026-03: Binding Lifecycle & Cleanup Scope
 

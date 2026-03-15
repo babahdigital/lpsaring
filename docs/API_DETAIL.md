@@ -30,6 +30,10 @@ Lampiran wajib:
 - `GET /api/users/me/profile`
 - `PUT /api/users/me/profile`
 
+### 2.1) User Quota & History
+- `GET /api/users/me/quota-history` — Ambil riwayat mutasi kuota user login (usage sync, pembelian paket, debt, policy, dan koreksi operasional).
+- `GET /api/users/me/quota-history/export` — Export PDF riwayat mutasi kuota user login.
+
 ### 3) Devices
 - `GET /api/users/me/devices`
 - `POST /api/users/me/devices/bind-current`
@@ -51,6 +55,8 @@ Lampiran wajib:
 - `POST /api/admin/users`
 - `PUT /api/admin/users/{user_id}`
 - `POST /api/admin/users/{user_id}/quota-adjust` — Koreksi langsung `total_quota_purchased_mb` dan/atau `total_quota_used_mb`. **Khusus Super Admin.** Body: `{ set_purchased_mb?: int, set_used_mb?: int, reason: string }`. Minimal satu dari keduanya wajib ada. Dicatat di `quota_mutation_ledger` dengan source `quota.adjust_direct`.
+- `GET /api/admin/users/{user_id}/quota-history` — Ambil riwayat mutasi kuota user target untuk audit admin.
+- `GET /api/admin/users/{user_id}/quota-history/export` — Export PDF riwayat mutasi kuota user target.
 - `POST /api/admin/users/seed-imported-update-submissions` — Seed `PublicDatabaseUpdateSubmission` records for users with `full_name LIKE 'Imported %'` agar mereka mendapat notifikasi WA untuk update data. Body opsional: `test_phone` (string), `dry_run` (bool).
 - `GET /api/admin/update-submissions`
 - `POST /api/admin/update-submissions/{id}/approve`
@@ -126,3 +132,8 @@ CI akan gagal jika syarat ini tidak terpenuhi.
 - Tambah endpoint `POST /api/admin/users/{user_id}/quota-adjust` untuk koreksi kuota langsung oleh Super Admin. Endpoint menimpa nilai `total_quota_purchased_mb` dan/atau `total_quota_used_mb` secara langsung dengan audit trail penuh di `quota_mutation_ledger`. Ini adalah endpoint operasional (bukan consumer — tidak ada di v1 public contract sebelumnya).
 - Perbaikan kebijakan debt: `set_user_unlimited()` kini hanya menghapus auto-debt via offset, manual debt (`manual_debt_mb`) dipertahankan. Test `test_stress_race_manual_debt_then_set_unlimited_invariants` diperbarui untuk mencerminkan kebijakan baru ini.
 - Fix insiden quota drain (lock_ttl=120→3600 di `sync_hotspot_usage_task`) — lihat `docs/DEVLOG_2026-03-09_QUOTA_DRAIN_INCIDENT.md`.
+
+## Addendum 2026-03-15
+- Tambah endpoint history kuota untuk user dan admin, plus export PDF, berbasis `quota_mutation_ledger` agar pembelian, usage sync, debt, dan koreksi operasional bisa diaudit dalam satu timeline.
+- Riwayat kini juga mendukung event historis impor pembelian lama (`quota.purchase_package.imported`), refund lonjakan hotspot (`quota.hotspot_spike_refund`), dan normalisasi expiry unlimited (`quota.normalize_unlimited_expiry`).
+- Aturan expiry paket/approval/inject kini non-akumulatif: masa aktif baru selalu dihitung ulang dari waktu transaksi/grant terbaru (`reset_from_now`), bukan menambah sisa waktu aktif sebelumnya.

@@ -8,6 +8,24 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Fixed (2026-03-15 - Quota History, Expiry Non-Akumulatif, dan Remediation Tools)
+
+- **Quota expiry no longer accumulates remaining days:** semua jalur utama penambahan masa aktif (`purchase`, `inject`, approval quota/unlimited) sekarang selalu menghitung expiry dari waktu transaksi/grant terbaru (`reset_from_now`). Sisa masa aktif lama tidak lagi ditambahkan di atas grant baru.
+- **Quota history remediation visibility:** serializer riwayat kuota kini mengenali event impor pembelian lama, refund lonjakan hotspot, dan normalisasi expiry unlimited sehingga hasil remediation langsung terlihat di timeline admin/user dan export PDF.
+- **Responsive admin history dialog:** dialog admin `Riwayat Mutasi Kuota` sekarang fullscreen di mobile, tidak lagi memaksa tabel horizontal pada layar kecil, dan styling inline dipindahkan ke scoped classes.
+
+### Added (2026-03-15)
+
+- **CLI group baru `flask quota-remediation`:**
+	- `backfill-purchase-history` untuk mengimpor transaksi sukses lama ke `quota_mutation_ledger`.
+	- `normalize-unlimited-expiry` untuk menyelaraskan user unlimited ke tanggal pembelian paket terakhir.
+	- `audit-hotspot-spikes` untuk mendeteksi lonjakan `hotspot.sync_usage` yang mencurigakan dan, jika diminta, mengembalikan kuota yang tersedot.
+- **Regression coverage:** ditambahkan test baru untuk serializer imported purchase event dan helper audit/remediation quota.
+
+### Documentation (2026-03-15)
+
+- Dokumentasi API, rule expiry, dan standar operasi diperbarui untuk memasukkan endpoint history kuota, rule expiry non-akumulatif, dan command remediation baru.
+
 ### Fixed (2026-03-15 - Hotspot Bridge Root dan WA Debt-Limit)
 
 - **Direct-browser hotspot bridge recovery:** target silent bridge/probe sekarang menjaga root router (`http://login.home.arpa/` atau private-IP root) lewat `normalizeHotspotBridgeUrl()` dan `resolveHotspotBridgeTarget()`. Manual hotspot login lokal masih boleh berakhir di `/login`, tetapi silent bridge harus menghantam root router agar `login.html` MikroTik bisa me-return context ke `/captive` dengan placeholder yang authoritative.
