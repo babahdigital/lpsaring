@@ -368,12 +368,9 @@ def set_user_unlimited(user: User, admin_actor: User, make_unlimited: bool) -> T
                 e,
             )
 
-        blocked_reason = str(getattr(user, "blocked_reason", "") or "")
-        if bool(getattr(user, "is_blocked", False)) and is_debt_block_reason(blocked_reason):
-            user.is_blocked = False
-            user.blocked_reason = None
-            user.blocked_at = None
-            user.blocked_by_id = None
+        # Grant unlimited tidak boleh menghapus blok debt yang masih aktif.
+        # Expiry boleh maju dari sekarang, tetapi debt auto/manual tetap harus
+        # diselesaikan oleh alur settlement debt masing-masing.
 
     # Sinkronisasi akses (address-list + ip-binding type) agar perubahan unlimited langsung terasa.
     # Catatan: kalau user masih diblokir manual, address-list akan tetap mengikuti status blocked.
