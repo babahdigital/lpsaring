@@ -382,6 +382,7 @@ def register_commands(app: Flask):
     from .commands.heal_hotspot_status_address_list_command import heal_hotspot_status_address_list_command
     from .commands.prune_hotspot_status_without_binding_command import prune_hotspot_status_without_binding_command
     from .commands.audit_hotspot_parity_command import audit_hotspot_parity_command
+    from .commands.quota_remediation_command import quota_remediation_command
 
     app.cli.add_command(user_commands.user_cli_bp)
     app.cli.add_command(seed_commands.seed_db_command)
@@ -396,6 +397,7 @@ def register_commands(app: Flask):
     app.cli.add_command(heal_hotspot_status_address_list_command)
     app.cli.add_command(prune_hotspot_status_without_binding_command)
     app.cli.add_command(audit_hotspot_parity_command)
+    app.cli.add_command(quota_remediation_command)
     module_log.info("Pendaftaran perintah CLI selesai.")
 
 

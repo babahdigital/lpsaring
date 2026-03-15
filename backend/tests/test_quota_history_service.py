@@ -78,3 +78,28 @@ def test_serialize_quota_history_entry_rebaseline_event_humanizes_reason():
     assert len(item["rebaseline_events"]) == 1
     assert item["rebaseline_events"][0]["reason_label"] == "baris host berganti, counter mundur"
     assert any("HP Syaifudin" in highlight for highlight in item["highlights"])
+
+
+def test_serialize_quota_history_entry_imported_purchase_event_mentions_backfill():
+    entry = SimpleNamespace(
+        id="history-3",
+        source="quota.purchase_package.imported",
+        created_at=datetime(2026, 2, 10, 9, 15, tzinfo=timezone.utc),
+        before_state=None,
+        after_state=None,
+        event_details={
+            "imported_from_transaction": True,
+            "order_id": "ORD-LEGACY-1",
+            "package_name": "Paket Unlimited 30 Hari",
+            "package_quota_gb": 0,
+            "package_duration_days": 30,
+        },
+        actor=None,
+    )
+
+    item = svc.serialize_quota_history_entry(entry)
+
+    assert item["title"] == "Paket berhasil diaktifkan"
+    assert item["category"] == "purchase"
+    assert any("Riwayat pembelian lama diimpor" in highlight for highlight in item["highlights"])
+    assert item["description"].startswith("Riwayat pembelian Paket Unlimited 30 Hari diimpor")
