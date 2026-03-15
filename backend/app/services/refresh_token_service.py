@@ -20,7 +20,90 @@ def _hash_token(raw_token: str) -> str:
 @dataclass
 class RefreshResult:
     user_id: str
-    new_refresh_token: str
+    new_refresh_token: Optional[str]
+
+
+def _normalize_user_agent(user_agent: Optional[str]) -> Optional[str]:
+    if not user_agent:
+        return None
+    normalized = user_agent[:255].strip()
+    return normalized or None
+
+
+def _get_refresh_expiry_days() -> int:
+    days = int(current_app.config.get("REFRESH_TOKEN_EXPIRES_DAYS", 30) or 30)
+    if days <= 0:
+        return 30
+    return days
+
+
+def _get_refresh_reuse_grace_seconds() -> int:
+    raw_value = current_app.config.get("REFRESH_TOKEN_REUSE_GRACE_SECONDS", 5)
+    try:
+        grace_seconds = int(raw_value)
+    except (TypeError, ValueError):
+        return 5
+    return max(0, grace_seconds)
+
+
+def _get_client_ip_safely() -> Optional[str]:
+    try:
+        return get_client_ip()
+    except Exception:
+        return None
+
+
+def _ensure_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=dt_timezone.utc)
+    return value.astimezone(dt_timezone.utc)
+
+
+def _reuse_recently_rotated_refresh_token(
+    *, token_hash: str, now: datetime, user_agent: Optional[str], client_ip: Optional[str]
+) -> Optional[RefreshResult]:
+    grace_seconds = _get_refresh_reuse_grace_seconds()
+    if grace_seconds <= 0:
+        return None
+
+    existing = (
+        db.session.query(RefreshToken)
+        .filter(
+            RefreshToken.token_hash == token_hash,
+            RefreshToken.revoked_at.isnot(None),
+            RefreshToken.replaced_by_id.isnot(None),
+        )
+        .first()
+    )
+
+    if not existing or not existing.revoked_at or not existing.replaced_by_id:
+        return None
+
+    revoked_at = _ensure_utc(existing.revoked_at)
+    if now - revoked_at > timedelta(seconds=grace_seconds):
+        return None
+
+    replacement = db.session.get(RefreshToken, existing.replaced_by_id)
+    if not replacement or replacement.revoked_at is not None:
+        return None
+
+    if _ensure_utc(replacement.expires_at) <= now:
+        return None
+
+    normalized_user_agent = _normalize_user_agent(user_agent)
+    replacement_user_agent = _normalize_user_agent(replacement.user_agent)
+    if normalized_user_agent and replacement_user_agent and replacement_user_agent != normalized_user_agent:
+        return None
+
+    if client_ip and replacement.ip_address and replacement.ip_address != client_ip:
+        return None
+
+    current_app.logger.info(
+        "Accepted recent refresh-token reuse within grace window: user_id=%s replacement_id=%s",
+        existing.user_id,
+        replacement.id,
+    )
+    return RefreshResult(user_id=str(replacement.user_id), new_refresh_token=None)
 
 
 def issue_refresh_token_for_user(user_id, user_agent: Optional[str] = None) -> str:
@@ -29,16 +112,10 @@ def issue_refresh_token_for_user(user_id, user_agent: Optional[str] = None) -> s
     token_hash = _hash_token(raw)
 
     now = datetime.now(dt_timezone.utc)
-    days = int(current_app.config.get("REFRESH_TOKEN_EXPIRES_DAYS", 30) or 30)
-    if days <= 0:
-        days = 30
+    days = _get_refresh_expiry_days()
     expires_at = now + timedelta(days=days)
 
-    ip_address = None
-    try:
-        ip_address = get_client_ip()
-    except Exception:
-        ip_address = None
+    ip_address = _get_client_ip_safely()
 
     rt = RefreshToken()
     rt.user_id = user_id
@@ -46,7 +123,7 @@ def issue_refresh_token_for_user(user_id, user_agent: Optional[str] = None) -> s
     rt.issued_at = now
     rt.expires_at = expires_at
     rt.ip_address = ip_address
-    rt.user_agent = user_agent[:255] if user_agent else None
+    rt.user_agent = _normalize_user_agent(user_agent)
 
     db.session.add(rt)
     db.session.flush()
@@ -61,6 +138,8 @@ def rotate_refresh_token(raw_token: str, user_agent: Optional[str] = None) -> Op
 
     now = datetime.now(dt_timezone.utc)
     token_hash = _hash_token(raw_token)
+    normalized_user_agent = _normalize_user_agent(user_agent)
+    client_ip = _get_client_ip_safely()
 
     existing = (
         db.session.query(RefreshToken)
@@ -73,30 +152,27 @@ def rotate_refresh_token(raw_token: str, user_agent: Optional[str] = None) -> Op
     )
 
     if not existing:
-        return None
+        return _reuse_recently_rotated_refresh_token(
+            token_hash=token_hash,
+            now=now,
+            user_agent=normalized_user_agent,
+            client_ip=client_ip,
+        )
 
     # Revoke old token and mint a new one.
     new_raw = secrets.token_urlsafe(48)
     new_hash = _hash_token(new_raw)
 
-    days = int(current_app.config.get("REFRESH_TOKEN_EXPIRES_DAYS", 30) or 30)
-    if days <= 0:
-        days = 30
+    days = _get_refresh_expiry_days()
     expires_at = now + timedelta(days=days)
-
-    ip_address = None
-    try:
-        ip_address = get_client_ip()
-    except Exception:
-        ip_address = None
 
     replacement = RefreshToken()
     replacement.user_id = existing.user_id
     replacement.token_hash = new_hash
     replacement.issued_at = now
     replacement.expires_at = expires_at
-    replacement.ip_address = ip_address
-    replacement.user_agent = user_agent[:255] if user_agent else None
+    replacement.ip_address = client_ip
+    replacement.user_agent = normalized_user_agent
 
     db.session.add(replacement)
     db.session.flush()

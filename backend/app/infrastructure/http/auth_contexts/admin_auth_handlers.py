@@ -134,7 +134,8 @@ def refresh_access_token_impl(
     access_token = create_access_token(data=jwt_payload)
     response = jsonify({"access_token": access_token, "token_type": "bearer"})
     set_auth_cookie(response, access_token)
-    set_refresh_cookie(response, rotated.new_refresh_token)
+    if rotated.new_refresh_token:
+        set_refresh_cookie(response, rotated.new_refresh_token)
     return response, HTTPStatus.OK
 
 

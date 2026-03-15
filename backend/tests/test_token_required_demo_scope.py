@@ -250,6 +250,34 @@ def test_token_required_reset_login_refresh_fallback_does_not_set_new_tokens(mon
         assert not hasattr(g, "new_refresh_token")
 
 
+def test_token_required_refresh_fallback_without_new_refresh_cookie_keeps_request_authorized(monkeypatch):
+    app = _make_app()
+    non_demo_user = _make_user("+628112223334")
+
+    monkeypatch.setattr(decorators, "db", SimpleNamespace(session=_FakeSession(non_demo_user)))
+    monkeypatch.setattr(
+        decorators,
+        "rotate_refresh_token",
+        lambda *_a, **_k: SimpleNamespace(user_id=str(non_demo_user.id), new_refresh_token=None),
+    )
+    monkeypatch.setattr(decorators, "create_access_token", lambda *_a, **_k: "new-access")
+
+    protected = _protected_endpoint()
+
+    with app.test_request_context(
+        "/api/users/me/quota",
+        method="GET",
+        headers={"Cookie": "refresh_token=dummy-refresh-token"},
+    ):
+        response, status = protected()
+        payload = response.get_json()
+        assert status == 200
+        assert payload["ok"] is True
+        assert payload["current_user_id"] == str(non_demo_user.id)
+        assert getattr(g, "new_access_token", None) == "new-access"
+        assert not hasattr(g, "new_refresh_token")
+
+
 def test_token_required_allows_inactive_user_for_reset_login_path(monkeypatch):
     app = _make_app()
     inactive_user = _make_user("+628112223334", is_active=False, is_approved=False)

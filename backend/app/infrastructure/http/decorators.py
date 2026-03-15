@@ -214,7 +214,8 @@ def token_required(f):
                         jwt_payload = {"sub": str(user_from_token.id), "rl": user_from_token.role.value}
                         new_access = create_access_token(data=jwt_payload)
                         g.new_access_token = new_access
-                        g.new_refresh_token = rotated.new_refresh_token
+                        if rotated.new_refresh_token:
+                            g.new_refresh_token = rotated.new_refresh_token
 
                     return f(current_user_id=user_uuid_from_token, *args, **kwargs)
 
@@ -290,7 +291,8 @@ def token_required(f):
                 jwt_payload = {"sub": str(user_from_token.id), "rl": user_from_token.role.value}
                 new_access = create_access_token(data=jwt_payload)
                 g.new_access_token = new_access
-                g.new_refresh_token = rotated.new_refresh_token
+                if rotated.new_refresh_token:
+                    g.new_refresh_token = rotated.new_refresh_token
 
             return f(current_user_id=user_uuid_from_token, *args, **kwargs)
         except (JWTError, ValueError, TypeError) as e:

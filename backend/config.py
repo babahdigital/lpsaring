@@ -222,6 +222,7 @@ class Config:
     # --- Konfigurasi Refresh Token (Rotating Refresh Token via Cookie HttpOnly) ---
     # Access token tetap pendek; refresh token yang panjang untuk UX "ingat saya".
     REFRESH_TOKEN_EXPIRES_DAYS = get_env_int("REFRESH_TOKEN_EXPIRES_DAYS", 30)
+    REFRESH_TOKEN_REUSE_GRACE_SECONDS = get_env_int("REFRESH_TOKEN_REUSE_GRACE_SECONDS", 5)
 
     # --- Konfigurasi OTP / Device Authorization ---
     # Default: OTP sukses dianggap self-authorization, jadi device/MAC yang dipakai boleh langsung authorized.
