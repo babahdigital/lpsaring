@@ -2196,7 +2196,7 @@ def purge_quota_mutation_ledger_task(self):
                 retention_days = int(app.config.get("QUOTA_MUTATION_LEDGER_RETENTION_DAYS", 90))
             except Exception:
                 retention_days = 90
-            retention_days = max(30, retention_days)
+            retention_days = min(90, max(30, retention_days))
 
             cutoff = datetime.now(dt_timezone.utc) - timedelta(days=retention_days)
             deleted = (

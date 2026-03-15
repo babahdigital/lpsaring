@@ -992,12 +992,20 @@ def get_user_quota_history(current_admin: User, user_id: uuid.UUID):
     try:
         page = max(1, request.args.get("page", 1, type=int) or 1)
         items_per_page = min(max(request.args.get("itemsPerPage", 25, type=int) or 25, 1), 100)
-        payload = get_user_quota_history_payload(user=user, page=page, items_per_page=items_per_page)
+        payload = get_user_quota_history_payload(
+            user=user,
+            page=page,
+            items_per_page=items_per_page,
+            start_date=request.args.get("startDate"),
+            end_date=request.args.get("endDate"),
+            search=request.args.get("search"),
+        )
         return (
             jsonify(
                 {
                     "items": payload["items"],
                     "summary": payload["summary"],
+                    "filters": payload["filters"],
                     "totalItems": payload["total_items"],
                     "page": payload["page"],
                     "itemsPerPage": payload["items_per_page"],
@@ -1005,6 +1013,8 @@ def get_user_quota_history(current_admin: User, user_id: uuid.UUID):
             ),
             HTTPStatus.OK,
         )
+    except ValueError as e:
+        return jsonify({"message": str(e)}), HTTPStatus.BAD_REQUEST
     except Exception as e:
         current_app.logger.error(f"Error getting quota history for user {user_id}: {e}", exc_info=True)
         return jsonify({"message": "Gagal mengambil riwayat mutasi kuota."}), HTTPStatus.INTERNAL_SERVER_ERROR
@@ -1030,7 +1040,14 @@ def export_user_quota_history_pdf(current_admin: User, user_id: uuid.UUID):
         return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
 
     try:
-        payload = get_user_quota_history_payload(user=user, include_all=True, items_per_page=200)
+        payload = get_user_quota_history_payload(
+            user=user,
+            include_all=True,
+            items_per_page=200,
+            start_date=request.args.get("startDate"),
+            end_date=request.args.get("endDate"),
+            search=request.args.get("search"),
+        )
         generated_local = get_app_local_datetime(datetime.now(dt_timezone.utc)).strftime("%d-%m-%Y %H:%M")
         context = {
             "user": user,
@@ -1039,6 +1056,7 @@ def export_user_quota_history_pdf(current_admin: User, user_id: uuid.UUID):
             "generated_at": generated_local,
             "items": payload["items"],
             "summary": payload["summary"],
+            "filters": payload["filters"],
         }
 
         public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
@@ -1053,6 +1071,8 @@ def export_user_quota_history_pdf(current_admin: User, user_id: uuid.UUID):
         resp.headers["Content-Type"] = "application/pdf"
         resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
         return resp
+    except ValueError as e:
+        return jsonify({"message": str(e)}), HTTPStatus.BAD_REQUEST
     except Exception as e:
         current_app.logger.error(f"Error export quota history PDF for user {user_id}: {e}", exc_info=True)
         return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR

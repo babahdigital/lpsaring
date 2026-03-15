@@ -605,10 +605,29 @@ function openQuotaHistory() {
   isQuotaHistoryOpen.value = true
 }
 
+function buildDefaultQuotaHistoryPdfQuery(): string {
+  const today = new Date()
+  const startDate = new Date(today)
+  startDate.setDate(today.getDate() - 29)
+
+  const toYmd = (value: Date) => {
+    const year = value.getFullYear()
+    const month = String(value.getMonth() + 1).padStart(2, '0')
+    const day = String(value.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  return new URLSearchParams({
+    format: 'pdf',
+    startDate: toYmd(startDate),
+    endDate: toYmd(today),
+  }).toString()
+}
+
 function openQuotaHistoryPdf() {
   if (!props.user)
     return
-  window.open(`/api/admin/users/${props.user.id}/quota-history/export?format=pdf`, '_blank', 'noopener')
+  window.open(`/api/admin/users/${props.user.id}/quota-history/export?${buildDefaultQuotaHistoryPdfQuery()}`, '_blank', 'noopener')
 }
 </script>
 
@@ -842,7 +861,7 @@ function openQuotaHistoryPdf() {
                             prepend-icon="tabler-printer"
                             @click="openQuotaHistoryPdf"
                           >
-                            PDF
+                            PDF 30 Hari
                           </VBtn>
                         </div>
                       </div>

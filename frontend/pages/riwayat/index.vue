@@ -4,7 +4,7 @@ import { useNuxtApp, useRuntimeConfig } from '#app'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useApiFetch } from '~/composables/useApiFetch'
-import type { QuotaHistoryResponse, UserQuotaResponse } from '~/types/user'
+import type { QuotaHistoryFilters, QuotaHistoryItem, QuotaHistoryResponse, QuotaHistorySummary, UserQuotaResponse } from '~/types/user'
 import { useDebtSettlementPayment } from '~/composables/useDebtSettlementPayment'
 import { useSnackbar } from '@/composables/useSnackbar'
 import { useSettingsStore } from '~/store/settings'
@@ -311,6 +311,15 @@ interface QuotaDebtApiResponse {
   message?: string
 }
 
+type HistoryRangePreset = 'today' | '3d' | '7d' | '30d' | 'custom'
+type FixedHistoryRangePreset = Exclude<HistoryRangePreset, 'custom'>
+
+interface HistoryPresetOption {
+  value: HistoryRangePreset
+  label: string
+  icon: string
+}
+
 const quotaDebtsApiUrl = computed(() => '/users/me/quota-debts?status=open')
 const { data: quotaDebtsData, pending: quotaDebtsPending, error: quotaDebtsError, refresh: refreshQuotaDebts } = useApiFetch<QuotaDebtApiResponse>(
   quotaDebtsApiUrl,
@@ -342,36 +351,339 @@ function formatDebtDate(dateStr: string | null | undefined): string {
   }
 }
 
-const quotaHistoryApiUrl = computed(() => '/users/me/quota-history?page=1&itemsPerPage=25')
-const { data: quotaHistoryData, pending: quotaHistoryPending, error: quotaHistoryError } = useApiFetch<QuotaHistoryResponse>(
-  quotaHistoryApiUrl,
-  {
-    server: false,
-    key: 'userQuotaHistoryRiwayat',
-    default: () => ({
-      success: false,
-      items: [],
-      summary: null,
-      totalItems: 0,
-      page: 1,
-      itemsPerPage: 25,
-    }),
-    immediate: true,
-    watch: false,
-  },
-)
+const DEFAULT_QUOTA_HISTORY_ITEMS_PER_PAGE = 25
+const MAX_QUOTA_HISTORY_FILTER_DAYS = 90
+const DEFAULT_QUOTA_HISTORY_RANGE_PRESET: FixedHistoryRangePreset = '30d'
+const quotaHistoryPresetOptions: HistoryPresetOption[] = [
+  { value: 'today', label: 'Hari Ini', icon: 'tabler-calendar' },
+  { value: '3d', label: '3 Hari', icon: 'tabler-calendar' },
+  { value: '7d', label: '1 Minggu', icon: 'tabler-calendar' },
+  { value: '30d', label: '1 Bulan', icon: 'tabler-calendar' },
+  { value: 'custom', label: 'Kustom', icon: 'tabler-filter' },
+]
 
-const quotaHistoryItems = computed(() => {
-  const items = quotaHistoryData.value?.items
-  return Array.isArray(items) ? items : []
+const quotaHistoryItems = ref<QuotaHistoryItem[]>([])
+const quotaHistorySummary = ref<QuotaHistorySummary | null>(null)
+const quotaHistoryFilters = ref<QuotaHistoryFilters | null>(null)
+const quotaHistoryPending = ref(false)
+const quotaHistoryError = ref<string | null>(null)
+const quotaHistoryTotalItems = ref(0)
+const quotaHistoryRangePreset = ref<HistoryRangePreset>(DEFAULT_QUOTA_HISTORY_RANGE_PRESET)
+const quotaHistorySearchQuery = ref('')
+const quotaHistoryDraftSearchQuery = ref('')
+const quotaHistoryStartDate = ref<Date | null>(null)
+const quotaHistoryEndDate = ref<Date | null>(null)
+const quotaHistoryStartDateMenuOpen = ref(false)
+const quotaHistoryEndDateMenuOpen = ref(false)
+const quotaHistoryActiveFilterLabel = computed(() => quotaHistoryFilters.value?.label || formatQuotaHistoryDateRangeLabel(quotaHistoryStartDate.value, quotaHistoryEndDate.value))
+const quotaHistoryActiveSearchText = computed(() => {
+  const serverSearch = String(quotaHistoryFilters.value?.search ?? '').trim()
+  return serverSearch !== '' ? serverSearch : quotaHistorySearchQuery.value
 })
+const quotaHistoryRetentionDays = computed(() => Number(quotaHistoryFilters.value?.retention_days ?? MAX_QUOTA_HISTORY_FILTER_DAYS))
 
-const quotaHistorySummary = computed(() => quotaHistoryData.value?.summary ?? null)
+function toStartOfDay(value: Date): Date {
+  const next = new Date(value)
+  next.setHours(0, 0, 0, 0)
+  return next
+}
+
+function cloneDate(value: Date): Date {
+  return toStartOfDay(value)
+}
+
+function addDays(value: Date, days: number): Date {
+  const next = cloneDate(value)
+  next.setDate(next.getDate() + days)
+  return next
+}
+
+function toYmd(value: Date): string {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function parseYmd(value?: string | null): Date | null {
+  const text = String(value ?? '').trim()
+  if (text === '')
+    return null
+
+  const normalized = text.includes('T') ? text.split('T', 1)[0] : text
+  const parts = normalized.split('-').map(Number)
+  if (parts.length !== 3 || parts.some(part => Number.isNaN(part)))
+    return null
+
+  return new Date(parts[0], parts[1] - 1, parts[2])
+}
+
+function normalizePickerDate(value: unknown): Date | null {
+  if (value instanceof Date)
+    return cloneDate(value)
+  if (typeof value === 'string' && value.trim() !== '')
+    return parseYmd(value)
+
+  return null
+}
+
+function formatQuotaHistoryDate(value: Date | null): string {
+  return value !== null
+    ? value.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
+    : ''
+}
+
+function formatQuotaHistoryDateRangeLabel(start: Date | null, end: Date | null): string {
+  const effectiveStart = start ?? end
+  const effectiveEnd = end ?? start
+  if (effectiveStart === null || effectiveEnd === null)
+    return '30 hari terakhir'
+
+  const today = toStartOfDay(new Date())
+  const rangeDays = Math.floor((effectiveEnd.getTime() - effectiveStart.getTime()) / 86_400_000) + 1
+
+  if (effectiveStart.getTime() === today.getTime() && effectiveEnd.getTime() === today.getTime())
+    return 'Hari ini'
+  if (effectiveEnd.getTime() === today.getTime() && rangeDays === 3)
+    return '3 hari terakhir'
+  if (effectiveEnd.getTime() === today.getTime() && rangeDays === 7)
+    return '7 hari terakhir'
+  if (effectiveEnd.getTime() === today.getTime() && rangeDays === 30)
+    return '30 hari terakhir'
+  if (effectiveStart.getTime() === effectiveEnd.getTime())
+    return formatQuotaHistoryDate(effectiveStart)
+
+  return `${formatQuotaHistoryDate(effectiveStart)} - ${formatQuotaHistoryDate(effectiveEnd)}`
+}
+
+function inferQuotaHistoryPresetFromDates(start: Date | null, end: Date | null): HistoryRangePreset {
+  const effectiveStart = start ?? end
+  const effectiveEnd = end ?? start
+  if (effectiveStart === null || effectiveEnd === null)
+    return DEFAULT_QUOTA_HISTORY_RANGE_PRESET
+
+  const today = toStartOfDay(new Date())
+  const rangeDays = Math.floor((effectiveEnd.getTime() - effectiveStart.getTime()) / 86_400_000) + 1
+  if (effectiveEnd.getTime() !== today.getTime())
+    return 'custom'
+  if (rangeDays === 1 && effectiveStart.getTime() === today.getTime())
+    return 'today'
+  if (rangeDays === 3)
+    return '3d'
+  if (rangeDays === 7)
+    return '7d'
+  if (rangeDays === 30)
+    return '30d'
+
+  return 'custom'
+}
+
+function createQuotaHistoryPresetRange(preset: FixedHistoryRangePreset): { start: Date, end: Date } {
+  const today = toStartOfDay(new Date())
+
+  switch (preset) {
+    case 'today':
+      return { start: today, end: today }
+    case '3d':
+      return { start: addDays(today, -2), end: today }
+    case '7d':
+      return { start: addDays(today, -6), end: today }
+    case '30d':
+    default:
+      return { start: addDays(today, -29), end: today }
+  }
+}
+
+function setQuotaHistoryPresetRange(preset: FixedHistoryRangePreset) {
+  const range = createQuotaHistoryPresetRange(preset)
+  quotaHistoryStartDate.value = range.start
+  quotaHistoryEndDate.value = range.end
+  quotaHistoryRangePreset.value = preset
+}
+
+function syncQuotaHistoryFiltersFromResponse(nextFilters?: QuotaHistoryFilters | null) {
+  quotaHistoryFilters.value = nextFilters ?? null
+  if (!nextFilters)
+    return
+
+  const nextStart = parseYmd(nextFilters.start_date)
+  const nextEnd = parseYmd(nextFilters.end_date)
+  if (nextStart !== null)
+    quotaHistoryStartDate.value = nextStart
+  if (nextEnd !== null)
+    quotaHistoryEndDate.value = nextEnd
+
+  quotaHistorySearchQuery.value = String(nextFilters.search ?? '').trim()
+  quotaHistoryDraftSearchQuery.value = quotaHistorySearchQuery.value
+  quotaHistoryRangePreset.value = inferQuotaHistoryPresetFromDates(quotaHistoryStartDate.value, quotaHistoryEndDate.value)
+}
+
+function buildQuotaHistoryParams(): Record<string, string | number | undefined> {
+  return {
+    page: 1,
+    itemsPerPage: DEFAULT_QUOTA_HISTORY_ITEMS_PER_PAGE,
+    startDate: quotaHistoryStartDate.value ? toYmd(quotaHistoryStartDate.value) : undefined,
+    endDate: quotaHistoryEndDate.value ? toYmd(quotaHistoryEndDate.value) : undefined,
+    search: quotaHistorySearchQuery.value || undefined,
+  }
+}
+
+function buildQuotaHistoryPdfQueryString(): string {
+  const query = new URLSearchParams({ format: 'pdf' })
+
+  for (const [key, value] of Object.entries(buildQuotaHistoryParams())) {
+    if (value !== undefined && value !== '')
+      query.set(key, String(value))
+  }
+
+  return query.toString()
+}
+
+function normalizeQuotaHistorySelectedRange(): boolean {
+  let normalizedStart = quotaHistoryStartDate.value ? cloneDate(quotaHistoryStartDate.value) : null
+  let normalizedEnd = quotaHistoryEndDate.value ? cloneDate(quotaHistoryEndDate.value) : null
+
+  if (normalizedStart === null && normalizedEnd === null) {
+    setQuotaHistoryPresetRange(DEFAULT_QUOTA_HISTORY_RANGE_PRESET)
+    normalizedStart = quotaHistoryStartDate.value ? cloneDate(quotaHistoryStartDate.value) : null
+    normalizedEnd = quotaHistoryEndDate.value ? cloneDate(quotaHistoryEndDate.value) : null
+  }
+
+  if (normalizedStart === null && normalizedEnd !== null)
+    normalizedStart = cloneDate(normalizedEnd)
+  if (normalizedEnd === null && normalizedStart !== null)
+    normalizedEnd = cloneDate(normalizedStart)
+
+  if (normalizedStart === null || normalizedEnd === null)
+    return false
+
+  if (normalizedStart.getTime() > normalizedEnd.getTime()) {
+    toast('warning', 'Tanggal akhir tidak boleh sebelum tanggal mulai.', 'Filter Tanggal')
+    return false
+  }
+
+  const totalDays = Math.floor((normalizedEnd.getTime() - normalizedStart.getTime()) / 86_400_000) + 1
+  if (totalDays > MAX_QUOTA_HISTORY_FILTER_DAYS) {
+    toast('warning', `Rentang maksimal ${MAX_QUOTA_HISTORY_FILTER_DAYS} hari.`, 'Filter Tanggal')
+    return false
+  }
+
+  quotaHistoryStartDate.value = normalizedStart
+  quotaHistoryEndDate.value = normalizedEnd
+  return true
+}
+
+async function fetchQuotaHistory() {
+  if (!normalizeQuotaHistorySelectedRange())
+    return
+
+  quotaHistoryPending.value = true
+  quotaHistoryError.value = null
+
+  try {
+    const resp = await $api<QuotaHistoryResponse>('/users/me/quota-history', {
+      method: 'GET',
+      params: buildQuotaHistoryParams(),
+    })
+
+    quotaHistoryItems.value = Array.isArray(resp.items) ? resp.items : []
+    quotaHistorySummary.value = resp.summary ?? null
+    quotaHistoryTotalItems.value = Number(resp.totalItems ?? quotaHistoryItems.value.length)
+    syncQuotaHistoryFiltersFromResponse(resp.filters ?? null)
+  }
+  catch (error: any) {
+    quotaHistoryItems.value = []
+    quotaHistorySummary.value = null
+    quotaHistoryTotalItems.value = 0
+    quotaHistoryError.value = error?.data?.message ?? error?.message ?? 'Gagal memuat riwayat mutasi kuota.'
+  }
+  finally {
+    quotaHistoryPending.value = false
+  }
+}
+
+async function applyQuotaHistoryFilters() {
+  if (quotaHistoryPending.value)
+    return
+
+  if (!normalizeQuotaHistorySelectedRange())
+    return
+
+  quotaHistorySearchQuery.value = quotaHistoryDraftSearchQuery.value.trim()
+  await fetchQuotaHistory()
+}
+
+async function resetQuotaHistoryFilters(shouldFetch = true) {
+  quotaHistoryFilters.value = null
+  quotaHistorySearchQuery.value = ''
+  quotaHistoryDraftSearchQuery.value = ''
+  quotaHistoryError.value = null
+  quotaHistoryTotalItems.value = 0
+  setQuotaHistoryPresetRange(DEFAULT_QUOTA_HISTORY_RANGE_PRESET)
+
+  if (shouldFetch)
+    await fetchQuotaHistory()
+}
+
+async function applyQuotaHistoryPreset(preset: FixedHistoryRangePreset) {
+  if (quotaHistoryPending.value)
+    return
+
+  setQuotaHistoryPresetRange(preset)
+  quotaHistorySearchQuery.value = quotaHistoryDraftSearchQuery.value.trim()
+  await fetchQuotaHistory()
+}
+
+function enableQuotaHistoryCustomRange() {
+  quotaHistoryRangePreset.value = 'custom'
+  if (quotaHistoryStartDate.value === null && quotaHistoryEndDate.value === null)
+    setQuotaHistoryPresetRange(DEFAULT_QUOTA_HISTORY_RANGE_PRESET)
+}
+
+function handleQuotaHistoryStartDatePicked(value: unknown) {
+  quotaHistoryStartDate.value = normalizePickerDate(value)
+  quotaHistoryRangePreset.value = 'custom'
+  if (quotaHistoryStartDate.value && quotaHistoryEndDate.value && quotaHistoryStartDate.value.getTime() > quotaHistoryEndDate.value.getTime())
+    quotaHistoryEndDate.value = cloneDate(quotaHistoryStartDate.value)
+  quotaHistoryStartDateMenuOpen.value = false
+}
+
+function handleQuotaHistoryEndDatePicked(value: unknown) {
+  quotaHistoryEndDate.value = normalizePickerDate(value)
+  quotaHistoryRangePreset.value = 'custom'
+  if (quotaHistoryStartDate.value && quotaHistoryEndDate.value && quotaHistoryEndDate.value.getTime() < quotaHistoryStartDate.value.getTime())
+    quotaHistoryStartDate.value = cloneDate(quotaHistoryEndDate.value)
+  quotaHistoryEndDateMenuOpen.value = false
+}
+
+async function clearQuotaHistoryStartDate() {
+  quotaHistoryStartDate.value = null
+  quotaHistoryRangePreset.value = 'custom'
+  if (quotaHistorySearchQuery.value === '' && quotaHistoryEndDate.value === null)
+    await resetQuotaHistoryFilters()
+}
+
+async function clearQuotaHistoryEndDate() {
+  quotaHistoryEndDate.value = null
+  quotaHistoryRangePreset.value = 'custom'
+  if (quotaHistorySearchQuery.value === '' && quotaHistoryStartDate.value === null)
+    await resetQuotaHistoryFilters()
+}
+
+async function clearQuotaHistorySearch() {
+  quotaHistoryDraftSearchQuery.value = ''
+  if (quotaHistorySearchQuery.value !== '') {
+    quotaHistorySearchQuery.value = ''
+    await fetchQuotaHistory()
+  }
+}
 
 function getHistoryCategoryColor(category: string | null | undefined): string {
   switch (category) {
     case 'usage':
       return 'info'
+    case 'sync':
+      return 'secondary'
     case 'purchase':
       return 'success'
     case 'debt':
@@ -388,22 +700,24 @@ function getHistoryCategoryColor(category: string | null | undefined): string {
 function getHistoryCategoryLabel(category: string | null | undefined): string {
   switch (category) {
     case 'usage':
-      return 'Usage'
+      return 'Pemakaian'
+    case 'sync':
+      return 'Sinkronisasi'
     case 'purchase':
-      return 'Purchase'
+      return 'Pembelian'
     case 'debt':
-      return 'Debt'
+      return 'Tunggakan'
     case 'policy':
-      return 'Policy'
+      return 'Kebijakan'
     case 'adjustment':
-      return 'Adjust'
+      return 'Koreksi'
     default:
-      return 'System'
+      return 'Sistem'
   }
 }
 
 function openQuotaHistoryPdf() {
-  window.open('/api/users/me/quota-history/export?format=pdf', '_blank', 'noopener')
+  window.open(`/api/users/me/quota-history/export?${buildQuotaHistoryPdfQueryString()}`, '_blank', 'noopener')
 }
 
 // --- Header Tabel (Responsif) ---
@@ -602,7 +916,7 @@ async function downloadInvoice(midtransOrderId: string) {
 
 onMounted(() => {
   isHydrated.value = true
-  // Pemanggilan data awal sudah ditangani oleh `watch` pada `useApiFetch`
+  void resetQuotaHistoryFilters()
 })
 useHead({ title: 'Riwayat Transaksi & Kuota' })
 </script>
@@ -751,7 +1065,7 @@ useHead({ title: 'Riwayat Transaksi & Kuota' })
                   Riwayat Mutasi Kuota
                 </div>
                 <div class="text-caption text-medium-emphasis">
-                  25 event terbaru dari pembelian, pemakaian, debt, dan kebijakan sistem.
+                  25 event terbaru dari pembelian, pemakaian, tunggakan, dan kebijakan sistem.
                 </div>
               </div>
             </div>
@@ -768,8 +1082,138 @@ useHead({ title: 'Riwayat Transaksi & Kuota' })
           </VCardTitle>
 
           <VCardText class="px-4 pt-4">
+            <div class="history-summary-chips d-flex flex-wrap gap-2 mb-4">
+              <VChip size="small" label color="primary" variant="tonal">
+                Event: {{ quotaHistoryItems.length }} / {{ quotaHistoryTotalItems || quotaHistoryItems.length }}
+              </VChip>
+              <VChip v-if="quotaHistorySummary" size="small" label color="success" variant="tonal">
+                Beli bersih: {{ formatQuota(quotaHistorySummary.total_net_purchased_mb) }}
+              </VChip>
+              <VChip v-if="quotaHistorySummary" size="small" label color="warning" variant="tonal">
+                Pakai bersih: {{ formatQuota(quotaHistorySummary.total_net_used_mb) }}
+              </VChip>
+              <VChip size="small" label color="secondary" variant="tonal">
+                Periode: {{ quotaHistoryActiveFilterLabel }}
+              </VChip>
+              <VChip v-if="quotaHistoryActiveSearchText" size="small" label color="secondary" variant="tonal">
+                Cari: {{ quotaHistoryActiveSearchText }}
+              </VChip>
+              <VChip size="small" label color="default" variant="tonal">
+                Retensi: {{ quotaHistoryRetentionDays }} hari
+              </VChip>
+            </div>
+
+            <VCard variant="outlined" class="history-filter-card mb-4">
+              <VCardText class="pa-4">
+                <div class="history-filter-card__header">
+                  <div>
+                    <div class="text-subtitle-2 font-weight-medium">
+                      Filter Riwayat
+                    </div>
+                    <div class="text-caption text-medium-emphasis mt-1">
+                      Pilih periode harian, 3 hari, mingguan, atau bulanan. Data tersimpan maksimal {{ quotaHistoryRetentionDays }} hari.
+                    </div>
+                  </div>
+                  <VBtn size="small" variant="text" color="secondary" prepend-icon="tabler-filter-off" @click="resetQuotaHistoryFilters()">
+                    Reset
+                  </VBtn>
+                </div>
+
+                <div class="history-filter-presets mt-4">
+                  <VBtn
+                    v-for="preset in quotaHistoryPresetOptions"
+                    :key="preset.value"
+                    size="small"
+                    :color="quotaHistoryRangePreset === preset.value ? 'primary' : 'default'"
+                    :variant="quotaHistoryRangePreset === preset.value ? 'flat' : 'tonal'"
+                    :prepend-icon="preset.icon"
+                    @click="preset.value === 'custom' ? enableQuotaHistoryCustomRange() : applyQuotaHistoryPreset(preset.value)"
+                  >
+                    {{ preset.label }}
+                  </VBtn>
+                </div>
+
+                <VRow class="mt-1">
+                  <VCol cols="12" md="4">
+                    <VTextField
+                      v-model="quotaHistoryDraftSearchQuery"
+                      label="Cari event / aktor / catatan"
+                      placeholder="Contoh: pembelian, Abdullah, tunggakan"
+                      prepend-inner-icon="tabler-search"
+                      clearable
+                      hide-details="auto"
+                      @keyup.enter="applyQuotaHistoryFilters"
+                      @click:clear="clearQuotaHistorySearch"
+                    />
+                  </VCol>
+                  <VCol cols="12" sm="6" md="3">
+                    <VTextField
+                      id="quota-history-page-start-date"
+                      :model-value="formatQuotaHistoryDate(quotaHistoryStartDate)"
+                      label="Tanggal Mulai"
+                      readonly
+                      clearable
+                      prepend-inner-icon="tabler-calendar"
+                      @click:clear="clearQuotaHistoryStartDate"
+                    />
+                    <VMenu v-model="quotaHistoryStartDateMenuOpen" activator="#quota-history-page-start-date" :close-on-content-click="false">
+                      <VDatePicker v-model="quotaHistoryStartDate" no-title color="primary" :max="new Date()" @update:model-value="handleQuotaHistoryStartDatePicked" />
+                    </VMenu>
+                  </VCol>
+                  <VCol cols="12" sm="6" md="3">
+                    <VTextField
+                      id="quota-history-page-end-date"
+                      :model-value="formatQuotaHistoryDate(quotaHistoryEndDate)"
+                      label="Tanggal Akhir"
+                      readonly
+                      clearable
+                      :disabled="!quotaHistoryStartDate"
+                      prepend-inner-icon="tabler-calendar"
+                      @click:clear="clearQuotaHistoryEndDate"
+                    />
+                    <VMenu v-model="quotaHistoryEndDateMenuOpen" activator="#quota-history-page-end-date" :close-on-content-click="false">
+                      <VDatePicker v-model="quotaHistoryEndDate" no-title color="primary" :min="quotaHistoryStartDate || undefined" :max="new Date()" @update:model-value="handleQuotaHistoryEndDatePicked" />
+                    </VMenu>
+                  </VCol>
+                  <VCol cols="12" md="2" class="d-flex align-end">
+                    <VBtn block color="primary" prepend-icon="tabler-filter" :loading="quotaHistoryPending" @click="applyQuotaHistoryFilters">
+                      Terapkan
+                    </VBtn>
+                  </VCol>
+                </VRow>
+
+                <div class="history-filter-meta mt-3">
+                  <VChip size="small" color="primary" variant="tonal" prepend-icon="tabler-calendar">
+                    {{ quotaHistoryActiveFilterLabel }}
+                  </VChip>
+                  <VChip v-if="quotaHistoryActiveSearchText" size="small" color="secondary" variant="tonal" prepend-icon="tabler-search">
+                    Cari: {{ quotaHistoryActiveSearchText }}
+                  </VChip>
+                  <VChip size="small" color="default" variant="tonal" prepend-icon="tabler-database">
+                    Maks {{ quotaHistoryRetentionDays }} hari tersimpan
+                  </VChip>
+                </div>
+              </VCardText>
+            </VCard>
+
             <VAlert v-if="quotaHistoryError" type="error" variant="tonal" density="compact" class="mb-4">
-              Gagal memuat riwayat mutasi kuota.
+              {{ quotaHistoryError }}
+            </VAlert>
+
+            <VAlert
+              v-else-if="quotaHistorySummary"
+              type="info"
+              variant="tonal"
+              density="compact"
+              icon="tabler-info-circle"
+              class="mb-4"
+            >
+              Filter aktif: <strong>{{ quotaHistoryActiveFilterLabel }}</strong>
+              • Rentang event hasil: <strong>{{ quotaHistorySummary.first_event_at_display || '-' }}</strong> sampai <strong>{{ quotaHistorySummary.last_event_at_display || '-' }}</strong>
+              • Pemakaian: <strong>{{ quotaHistorySummary.usage_events }}</strong>
+              • Pembelian: <strong>{{ quotaHistorySummary.purchase_events }}</strong>
+              • Tunggakan: <strong>{{ quotaHistorySummary.debt_events }}</strong>
+              • Kebijakan: <strong>{{ quotaHistorySummary.policy_events }}</strong>
             </VAlert>
 
             <div v-if="quotaHistoryPending" class="d-flex justify-center py-6">
@@ -777,21 +1221,6 @@ useHead({ title: 'Riwayat Transaksi & Kuota' })
             </div>
 
             <template v-else>
-              <div class="d-flex flex-wrap gap-2 mb-4">
-                <VChip v-if="quotaHistorySummary" size="small" label color="primary" variant="tonal">
-                  Event: {{ quotaHistorySummary.page_items }}
-                </VChip>
-                <VChip v-if="quotaHistorySummary" size="small" label color="success" variant="tonal">
-                  Net beli: {{ quotaHistorySummary.total_net_purchased_mb }} MB
-                </VChip>
-                <VChip v-if="quotaHistorySummary" size="small" label color="warning" variant="tonal">
-                  Net pakai: {{ quotaHistorySummary.total_net_used_mb }} MB
-                </VChip>
-                <VChip v-if="quotaHistorySummary" size="small" label color="default" variant="tonal">
-                  Rentang: {{ quotaHistorySummary.first_event_at_display || '-' }} - {{ quotaHistorySummary.last_event_at_display || '-' }}
-                </VChip>
-              </div>
-
               <VExpansionPanels v-if="quotaHistoryItems.length > 0" variant="accordion" class="quota-history-panels">
                 <VExpansionPanel v-for="item in quotaHistoryItems" :key="item.id">
                   <VExpansionPanelTitle>
@@ -825,10 +1254,10 @@ useHead({ title: 'Riwayat Transaksi & Kuota' })
                         Pakai {{ item.deltas_display.used }}
                       </VChip>
                       <VChip v-if="item.deltas_display.debt_total" size="small" color="warning" variant="tonal" label>
-                        Debt {{ item.deltas_display.debt_total }}
+                        Tunggakan {{ item.deltas_display.debt_total }}
                       </VChip>
                       <VChip v-if="item.deltas_display.remaining_after" size="small" color="default" variant="tonal" label>
-                        Sisa {{ item.deltas_display.remaining_after }}
+                        Quota {{ item.deltas_display.remaining_after }}
                       </VChip>
                     </div>
 
@@ -1166,6 +1595,33 @@ useHead({ title: 'Riwayat Transaksi & Kuota' })
   flex-direction: column;
 }
 
+.history-summary-chips {
+  align-items: flex-start;
+}
+
+.history-filter-card {
+  border-radius: 18px;
+}
+
+.history-filter-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.history-filter-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.history-filter-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .quota-history-panels {
   background: transparent;
 }
@@ -1177,5 +1633,11 @@ useHead({ title: 'Riwayat Transaksi & Kuota' })
 
 :deep(.payment-method-radio .v-selection-control) {
   min-height: 56px;
+}
+
+@media (max-width: 600px) {
+  .history-filter-card__header {
+    flex-direction: column;
+  }
 }
 </style>

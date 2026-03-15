@@ -5,45 +5,192 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Riwayat Mutasi Kuota</title>
     <style>
+      @page {
+        size: A4 landscape;
+        margin: 10mm 12mm;
+      }
+
       * { box-sizing: border-box; }
-      body { font-family: sans-serif; font-size: 12px; color: #111; }
-      h1 { font-size: 18px; margin: 0 0 4px 0; }
-      .muted { color: #666; }
-      .row { display: flex; gap: 12px; flex-wrap: wrap; }
-      .card { border: 1px solid #ddd; border-radius: 8px; padding: 10px; }
-      .card-title { font-weight: 700; margin-bottom: 6px; }
-      .card-flex { flex: 1 1 280px; }
-      .metric { flex: 1 1 140px; }
+
+      body {
+        margin: 0;
+        font-family: "DejaVu Sans", sans-serif;
+        font-size: 10px;
+        line-height: 1.4;
+        color: #172033;
+      }
+
+      h1 {
+        margin: 0 0 4px;
+        font-size: 17px;
+      }
+
+      .muted { color: #667085; }
       .mt-8 { margin-top: 8px; }
       .mt-6 { margin-top: 6px; }
       .mt-4 { margin-top: 4px; }
       .nowrap { white-space: nowrap; }
       .right { text-align: right; }
+      .wrap { overflow-wrap: anywhere; word-break: break-word; }
+
+      .header-meta {
+        margin-bottom: 10px;
+      }
+
+      .row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .card {
+        border: 1px solid #d8dee9;
+        border-radius: 10px;
+        padding: 10px 12px;
+        background: #f8fafc;
+      }
+
+      .card-flex { flex: 1 1 280px; }
+
+      .card-title {
+        margin-bottom: 6px;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #475467;
+      }
+
+      .metric-grid {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .metric {
+        flex: 1 1 140px;
+        min-width: 120px;
+      }
+
+      .metric strong {
+        display: block;
+        margin-top: 2px;
+        font-size: 11px;
+        color: #0f172a;
+      }
+
       .badge {
         display: inline-block;
-        padding: 2px 6px;
+        padding: 2px 7px;
         border-radius: 999px;
-        border: 1px solid #ddd;
-        font-size: 11px;
+        border: 1px solid #d8dee9;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
       }
-      .badge-usage { background: #e3f2fd; border-color: #90caf9; }
-      .badge-purchase { background: #e8f5e9; border-color: #a5d6a7; }
-      .badge-debt { background: #fff8e1; border-color: #ffe082; }
-      .badge-policy { background: #f3e5f5; border-color: #ce93d8; }
-      .badge-system { background: #f5f5f5; border-color: #ddd; }
-      table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-      th, td { border: 1px solid #ddd; padding: 6px 8px; vertical-align: top; }
-      th { background: #f5f5f5; text-align: left; }
-      .compact-list { margin: 6px 0 0 0; }
-      .compact-list__item { margin: 0 0 2px 0; padding-left: 12px; position: relative; }
-      .compact-list__item::before { content: '\2022'; position: absolute; left: 0; top: 0; color: #666; }
+
+      .badge-usage { background: #e0f2fe; border-color: #7dd3fc; color: #075985; }
+      .badge-sync { background: #ede9fe; border-color: #c4b5fd; color: #5b21b6; }
+      .badge-purchase { background: #dcfce7; border-color: #86efac; color: #166534; }
+      .badge-debt { background: #fef3c7; border-color: #fcd34d; color: #92400e; }
+      .badge-policy { background: #fce7f3; border-color: #f9a8d4; color: #9d174d; }
+      .badge-adjustment { background: #dbeafe; border-color: #93c5fd; color: #1d4ed8; }
+      .badge-system { background: #f3f4f6; border-color: #d1d5db; color: #374151; }
+
+      table {
+        width: 100%;
+        margin-top: 10px;
+        border-collapse: separate;
+        border-spacing: 0;
+        table-layout: fixed;
+      }
+
+      col.time { width: 14%; }
+      col.event { width: 22%; }
+      col.change { width: 16%; }
+      col.quota { width: 10%; }
+      col.detail { width: 38%; }
+
+      thead { display: table-header-group; }
+
+      th,
+      td {
+        border: 1px solid #d8dee9;
+        padding: 7px 8px;
+        vertical-align: top;
+      }
+
+      th {
+        background: #e9eef6;
+        font-size: 9px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        text-align: left;
+        color: #334155;
+      }
+
+      tr {
+        page-break-inside: avoid;
+      }
+
+      .event-title {
+        font-weight: 700;
+        color: #0f172a;
+      }
+
+      .change-list {
+        display: block;
+      }
+
+      .change-list__item {
+        margin: 0 0 4px;
+      }
+
+      .change-list__label {
+        display: block;
+        font-size: 9px;
+        color: #667085;
+      }
+
+      .change-list__value {
+        display: block;
+        font-weight: 700;
+        color: #0f172a;
+      }
+
+      .quota-value {
+        font-weight: 700;
+        color: #0f172a;
+      }
+
+      .compact-list {
+        margin: 6px 0 0;
+      }
+
+      .compact-list__item {
+        margin: 0 0 3px;
+        padding-left: 11px;
+        position: relative;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+
+      .compact-list__item::before {
+        content: '-';
+        position: absolute;
+        left: 0;
+        top: 0;
+        color: #667085;
+      }
     </style>
   </head>
   <body>
     {%- from '_formatters.html' import fmt_quota -%}
 
     <h1>Riwayat Mutasi Kuota</h1>
-    <div class="muted">Dicetak: {{ generated_at }}</div>
+    <div class="header-meta muted">Dicetak: {{ generated_at }}</div>
 
     <div class="row mt-8">
       <div class="card card-flex">
@@ -54,32 +201,46 @@
 
       <div class="card card-flex">
         <div class="card-title">Ringkasan</div>
-        <div class="row">
+        <div class="metric-grid">
           <div class="metric">
             <div class="muted">Total Event</div>
             <div><strong>{{ summary.page_items or (items|length) }}</strong></div>
           </div>
           <div class="metric">
-            <div class="muted">Net Kuota Beli</div>
+            <div class="muted">Periode</div>
+            <div><strong>{{ filters.label or '-' }}</strong></div>
+          </div>
+          <div class="metric">
+            <div class="muted">Beli Bersih</div>
             <div><strong>{{ fmt_quota(summary.total_net_purchased_mb) }}</strong></div>
           </div>
           <div class="metric">
-            <div class="muted">Net Kuota Pakai</div>
+            <div class="muted">Pakai Bersih</div>
             <div><strong>{{ fmt_quota(summary.total_net_used_mb) }}</strong></div>
           </div>
         </div>
-        <div class="muted mt-6">Rentang data: {{ summary.first_event_at_display or '-' }} s.d. {{ summary.last_event_at_display or '-' }}</div>
+        <div class="muted mt-6">Filter tanggal: {{ filters.start_date_display or '-' }} s.d. {{ filters.end_date_display or '-' }}</div>
+        <div class="muted mt-4">Rentang event hasil: {{ summary.first_event_at_display or '-' }} s.d. {{ summary.last_event_at_display or '-' }}</div>
+        {% if filters.search %}
+          <div class="muted mt-4">Pencarian: "{{ filters.search }}"</div>
+        {% endif %}
       </div>
     </div>
 
     <table>
+      <colgroup>
+        <col class="time">
+        <col class="event">
+        <col class="change">
+        <col class="quota">
+        <col class="detail">
+      </colgroup>
       <thead>
         <tr>
           <th class="nowrap">Waktu</th>
           <th>Event</th>
-          <th class="right nowrap">Delta Beli</th>
-          <th class="right nowrap">Delta Pakai</th>
-          <th class="right nowrap">Sisa Setelah</th>
+          <th>Perubahan</th>
+          <th class="nowrap">Quota</th>
           <th>Detail</th>
         </tr>
       </thead>
@@ -89,27 +250,54 @@
             <tr>
               <td class="nowrap">{{ item.created_at_display or '-' }}</td>
               <td>
-                <div><strong>{{ item.title }}</strong></div>
-                <div class="muted mt-4">{{ item.source }}</div>
+                <div class="event-title wrap">{{ item.title }}</div>
                 {% if item.category == 'usage' %}
-                  <div class="mt-4"><span class="badge badge-usage">usage</span></div>
+                  <div class="mt-4"><span class="badge badge-usage">Pemakaian</span></div>
+                {% elif item.category == 'sync' %}
+                  <div class="mt-4"><span class="badge badge-sync">Sinkronisasi</span></div>
                 {% elif item.category == 'purchase' %}
-                  <div class="mt-4"><span class="badge badge-purchase">purchase</span></div>
+                  <div class="mt-4"><span class="badge badge-purchase">Pembelian</span></div>
                 {% elif item.category == 'debt' %}
-                  <div class="mt-4"><span class="badge badge-debt">debt</span></div>
+                  <div class="mt-4"><span class="badge badge-debt">Tunggakan</span></div>
                 {% elif item.category == 'policy' %}
-                  <div class="mt-4"><span class="badge badge-policy">policy</span></div>
+                  <div class="mt-4"><span class="badge badge-policy">Kebijakan</span></div>
+                {% elif item.category == 'adjustment' %}
+                  <div class="mt-4"><span class="badge badge-adjustment">Koreksi</span></div>
                 {% else %}
-                  <div class="mt-4"><span class="badge badge-system">{{ item.category }}</span></div>
+                  <div class="mt-4"><span class="badge badge-system">Sistem</span></div>
                 {% endif %}
               </td>
-              <td class="right nowrap">{{ item.deltas_display.purchased or '-' }}</td>
-              <td class="right nowrap">{{ item.deltas_display.used or '-' }}</td>
-              <td class="right nowrap">{{ item.deltas_display.remaining_after or '-' }}</td>
               <td>
-                <div>{{ item.description }}</div>
+                {% if item.deltas_display.purchased or item.deltas_display.used or item.deltas_display.debt_total %}
+                  <div class="change-list">
+                    {% if item.deltas_display.purchased %}
+                      <div class="change-list__item">
+                        <span class="change-list__label">Beli</span>
+                        <span class="change-list__value">{{ item.deltas_display.purchased }}</span>
+                      </div>
+                    {% endif %}
+                    {% if item.deltas_display.used %}
+                      <div class="change-list__item">
+                        <span class="change-list__label">Pakai</span>
+                        <span class="change-list__value">{{ item.deltas_display.used }}</span>
+                      </div>
+                    {% endif %}
+                    {% if item.deltas_display.debt_total %}
+                      <div class="change-list__item">
+                        <span class="change-list__label">Tunggakan</span>
+                        <span class="change-list__value">{{ item.deltas_display.debt_total }}</span>
+                      </div>
+                    {% endif %}
+                  </div>
+                {% else %}
+                  <span class="muted">-</span>
+                {% endif %}
+              </td>
+              <td class="nowrap"><span class="quota-value">{{ item.deltas_display.remaining_after or '-' }}</span></td>
+              <td>
+                <div class="wrap">{{ item.description }}</div>
                 {% if item.actor_name %}
-                  <div class="muted mt-4">Aktor: {{ item.actor_name }}</div>
+                  <div class="muted mt-4 wrap">Aktor: {{ item.actor_name }}</div>
                 {% endif %}
                 {% if item.highlights %}
                   <div class="compact-list">{%- for highlight in item.highlights[:6] -%}<div class="compact-list__item">{{ highlight }}</div>{%- endfor -%}</div>
@@ -119,7 +307,7 @@
           {% endfor %}
         {% else %}
           <tr>
-            <td colspan="6" class="muted">Belum ada riwayat mutasi kuota.</td>
+            <td colspan="5" class="muted">Belum ada riwayat mutasi kuota.</td>
           </tr>
         {% endif %}
       </tbody>

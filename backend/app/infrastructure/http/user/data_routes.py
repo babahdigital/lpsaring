@@ -389,13 +389,21 @@ def get_my_quota_history(current_user_id):
     try:
         page = max(1, request.args.get("page", 1, type=int) or 1)
         items_per_page = min(max(request.args.get("itemsPerPage", 25, type=int) or 25, 1), 100)
-        payload = get_user_quota_history_payload(user=user, page=page, items_per_page=items_per_page)
+        payload = get_user_quota_history_payload(
+            user=user,
+            page=page,
+            items_per_page=items_per_page,
+            start_date=request.args.get("startDate"),
+            end_date=request.args.get("endDate"),
+            search=request.args.get("search"),
+        )
         return (
             jsonify(
                 {
                     "success": True,
                     "items": payload["items"],
                     "summary": payload["summary"],
+                    "filters": payload["filters"],
                     "totalItems": payload["total_items"],
                     "page": payload["page"],
                     "itemsPerPage": payload["items_per_page"],
@@ -403,6 +411,8 @@ def get_my_quota_history(current_user_id):
             ),
             HTTPStatus.OK,
         )
+    except ValueError as e:
+        abort(HTTPStatus.BAD_REQUEST, description=str(e))
     except Exception as e:
         current_app.logger.error(f"Error pada get_my_quota_history: {e}", exc_info=True)
         abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Gagal mengambil riwayat mutasi kuota.")
@@ -422,7 +432,14 @@ def export_my_quota_history_pdf(current_user_id):
         abort(HTTPStatus.NOT_IMPLEMENTED, description="Komponen PDF server tidak tersedia.")
 
     try:
-        payload = get_user_quota_history_payload(user=user, include_all=True, items_per_page=200)
+        payload = get_user_quota_history_payload(
+            user=user,
+            include_all=True,
+            items_per_page=200,
+            start_date=request.args.get("startDate"),
+            end_date=request.args.get("endDate"),
+            search=request.args.get("search"),
+        )
         generated_local = get_app_local_datetime().strftime("%d-%m-%Y %H:%M")
         context = {
             "user": user,
@@ -431,6 +448,7 @@ def export_my_quota_history_pdf(current_user_id):
             "generated_at": generated_local,
             "items": payload["items"],
             "summary": payload["summary"],
+            "filters": payload["filters"],
         }
 
         public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
@@ -445,6 +463,8 @@ def export_my_quota_history_pdf(current_user_id):
         response.headers["Content-Type"] = "application/pdf"
         response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
+    except ValueError as e:
+        abort(HTTPStatus.BAD_REQUEST, description=str(e))
     except Exception as e:
         current_app.logger.error(f"Error pada export_my_quota_history_pdf: {e}", exc_info=True)
         abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Gagal menyiapkan PDF riwayat mutasi kuota.")

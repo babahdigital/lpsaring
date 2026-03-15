@@ -7,6 +7,7 @@ import UserAddDialog from '@/components/admin/users/UserAddDialog.vue'
 
 import UserDetailDialog from '@/components/admin/users/UserDetailDialog.vue'
 import UserEditDialog from '@/components/admin/users/UserEditDialog.vue'
+import UserQuotaHistoryDialog from '@/components/admin/users/UserQuotaHistoryDialog.vue'
 import { useSnackbar } from '@/composables/useSnackbar'
 import { useAuthStore } from '@/store/auth'
 import { useSettingsStore } from '@/store/settings'
@@ -145,9 +146,10 @@ const options = ref<Options>({ page: 1, itemsPerPage: 10, sortBy: [{ key: 'creat
 const roleFilter = ref<string | null>(null)
 const statusFilter = ref<string | null>(null)
 const tampingFilter = ref<'all' | 'tamping' | 'non_tamping'>('all')
-const dialogState = reactive({ view: false, add: false, edit: false, confirm: false })
+const dialogState = reactive({ view: false, add: false, edit: false, quotaHistory: false, confirm: false })
 const selectedUser = ref<User | null>(null)
 const editedUser = ref<User | null>(null)
+const quotaHistoryUser = ref<User | null>(null)
 const confirmProps = reactive({ title: '', message: '', color: 'primary', action: async () => {} })
 const availableBloks = ref<string[]>([])
 const availableKamars = ref<string[]>([])
@@ -392,7 +394,7 @@ const headers = computed(() => {
     { title: 'PERAN', key: 'role', sortable: true },
     { title: 'KONEKSI', key: 'is_active', sortable: true, align: 'center' },
     { title: 'TGL DAFTAR', key: 'created_at', sortable: true },
-    { title: 'AKSI', key: 'actions', sortable: false, align: 'center', width: '150px' },
+    { title: 'AKSI', key: 'actions', sortable: false, align: 'center', width: '210px' },
   ]
   // Perbaikan baris 81: Perbandingan eksplisit untuk isMobile.value dan pengecekan h.key
   // Menghapus h !== null karena h selalu objek dan truthy.
@@ -789,6 +791,10 @@ function openEditDialog(user: User) {
   editedUser.value = { ...user }
   dialogState.edit = true
 }
+function openQuotaHistoryDialog(user: User) {
+  quotaHistoryUser.value = { ...user }
+  dialogState.quotaHistory = true
+}
 function openViewDialog(user: User, previewContext: UserDetailPreviewContext | null = null) {
   selectedUserPreviewContext.value = previewContext
   selectedUser.value = user
@@ -805,6 +811,7 @@ function closeAllDialogs() {
   dialogState.view = false
   dialogState.add = false
   dialogState.edit = false
+  dialogState.quotaHistory = false
   dialogState.confirm = false
   selectedUserPreviewContext.value = null
 }
@@ -1325,6 +1332,11 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
               </VBtn>
             </template>
             <template v-else>
+              <VBtn icon variant="text" color="secondary" size="small" @click="openQuotaHistoryDialog(item)">
+                <VIcon icon="tabler-history-toggle" /><VTooltip activator="parent">
+                  Riwayat Quota
+                </VTooltip>
+              </VBtn>
               <VBtn icon variant="text" color="primary" size="small" @click="openCreateBillDialogForUser(item)">
                 <VIcon icon="tabler-qrcode" /><VTooltip activator="parent">
                   Buat Tagihan
@@ -1415,6 +1427,11 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
                 </VBtn>
               </template>
               <template v-else>
+                <VBtn icon variant="text" color="secondary" size="small" @click="openQuotaHistoryDialog(user)">
+                  <VIcon icon="tabler-history-toggle" /><VTooltip activator="parent">
+                    Riwayat Quota
+                  </VTooltip>
+                </VBtn>
                 <VBtn icon variant="text" color="primary" size="small" @click="openCreateBillDialogForUser(user)">
                   <VIcon icon="tabler-qrcode" /><VTooltip activator="parent">
                   Buat Tagihan
@@ -1545,6 +1562,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
     <UserDetailDialog v-model="dialogState.view" :user="selectedUser" :preview-context="selectedUserPreviewContext" />
     <UserAddDialog v-model="dialogState.add" :loading="loading" :available-bloks="availableBloks" :available-kamars="availableKamars" :is-alamat-loading="isAlamatLoading" @save="handleSaveUser" />
     <UserEditDialog v-if="dialogState.edit === true && editedUser !== null" v-model="dialogState.edit" :user="editedUser" :loading="loading" :available-bloks="availableBloks" :available-kamars="availableKamars" :is-alamat-loading="isAlamatLoading" :mikrotik-options="mikrotikOptions" @save="handleSaveUser" />
+    <UserQuotaHistoryDialog v-model="dialogState.quotaHistory" :user="quotaHistoryUser" />
     <UserActionConfirmDialog v-model="dialogState.confirm" :title="confirmProps.title" :message="confirmProps.message" :color="confirmProps.color" :loading="loading" @confirm="confirmProps.action" />
   </div>
 </template>

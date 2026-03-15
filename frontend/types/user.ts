@@ -121,9 +121,20 @@ export interface QuotaHistorySummary {
   last_event_at_display?: string | null
 }
 
+export interface QuotaHistoryFilters {
+  search: string
+  start_date?: string | null
+  end_date?: string | null
+  start_date_display?: string | null
+  end_date_display?: string | null
+  label?: string | null
+  retention_days?: number
+}
+
 export interface QuotaHistoryResponse extends BaseResponse {
   items: QuotaHistoryItem[]
   summary: QuotaHistorySummary | null
+  filters?: QuotaHistoryFilters | null
   totalItems: number
   page: number
   itemsPerPage: number

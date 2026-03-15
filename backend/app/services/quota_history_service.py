@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import json
 from collections import Counter
-from datetime import datetime
+from datetime import date, datetime, time, timedelta, timezone as dt_timezone
 from typing import Any, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import func, select
+from flask import current_app, has_app_context
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.extensions import db
 from app.infrastructure.db.models import QuotaMutationLedger, User
-from app.utils.formatters import get_app_local_datetime, round_mb
+from app.utils.formatters import get_app_local_datetime, get_app_timezone_name, round_mb
 
 
 def _as_float(value: Any) -> Optional[float]:
@@ -98,6 +101,177 @@ def _format_event_detail_datetime(value: Any) -> Optional[str]:
     return _format_event_datetime(coerced)
 
 
+def _get_quota_history_retention_days() -> int:
+    default_retention_days = 90
+    try:
+        raw_value = current_app.config.get("QUOTA_MUTATION_LEDGER_RETENTION_DAYS", default_retention_days) if has_app_context() else default_retention_days
+        retention_days = int(raw_value)
+    except Exception:
+        retention_days = default_retention_days
+    return min(90, max(30, retention_days))
+
+
+def _get_app_tzinfo() -> dt_timezone | ZoneInfo:
+    try:
+        return ZoneInfo(get_app_timezone_name())
+    except ZoneInfoNotFoundError:
+        return dt_timezone.utc
+
+
+def _parse_local_date(value: Any, *, field_name: str) -> Optional[date]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return get_app_local_datetime(value).date()
+    if isinstance(value, date):
+        return value
+
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if "T" in text:
+        text = text.split("T", 1)[0]
+
+    try:
+        return date.fromisoformat(text)
+    except Exception as exc:
+        raise ValueError(f"{field_name} tidak valid. Gunakan format YYYY-MM-DD.") from exc
+
+
+def _format_local_date_display(value: Optional[date]) -> Optional[str]:
+    if value is None:
+        return None
+    return value.strftime("%d-%m-%Y")
+
+
+def _build_range_label(start_date: date, end_date: date) -> str:
+    today_local = get_app_local_datetime(datetime.now(dt_timezone.utc)).date()
+    range_days = (end_date - start_date).days + 1
+
+    if start_date == end_date == today_local:
+        return "Hari ini"
+    if end_date == today_local and range_days == 3:
+        return "3 hari terakhir"
+    if end_date == today_local and range_days == 7:
+        return "7 hari terakhir"
+    if end_date == today_local and range_days == 30:
+        return "30 hari terakhir"
+    if end_date == today_local and range_days == 90:
+        return "90 hari terakhir"
+    if start_date == end_date:
+        return _format_local_date_display(start_date) or "Periode terpilih"
+
+    start_text = _format_local_date_display(start_date) or "-"
+    end_text = _format_local_date_display(end_date) or "-"
+    return f"{start_text} s.d. {end_text}"
+
+
+def _resolve_history_filters(
+    *,
+    start_date: Any = None,
+    end_date: Any = None,
+    search: Any = None,
+) -> dict[str, Any]:
+    retention_days = _get_quota_history_retention_days()
+    today_local = get_app_local_datetime(datetime.now(dt_timezone.utc)).date()
+    earliest_local = today_local - timedelta(days=retention_days - 1)
+
+    parsed_start = _parse_local_date(start_date, field_name="Tanggal mulai")
+    parsed_end = _parse_local_date(end_date, field_name="Tanggal akhir")
+
+    effective_start = parsed_start or earliest_local
+    effective_end = parsed_end or today_local
+
+    effective_start = min(max(effective_start, earliest_local), today_local)
+    effective_end = min(max(effective_end, earliest_local), today_local)
+
+    if effective_start > effective_end:
+        raise ValueError("Tanggal akhir tidak boleh sebelum tanggal mulai.")
+
+    tzinfo = _get_app_tzinfo()
+    start_at_local = datetime.combine(effective_start, time.min, tzinfo=tzinfo)
+    end_at_local = datetime.combine(effective_end, time.max, tzinfo=tzinfo)
+
+    safe_search = str(search or "").strip()
+
+    return {
+        "search": safe_search,
+        "start_at_utc": start_at_local.astimezone(dt_timezone.utc),
+        "end_at_utc": end_at_local.astimezone(dt_timezone.utc),
+        "meta": {
+            "search": safe_search,
+            "start_date": effective_start.isoformat(),
+            "end_date": effective_end.isoformat(),
+            "start_date_display": _format_local_date_display(effective_start),
+            "end_date_display": _format_local_date_display(effective_end),
+            "label": _build_range_label(effective_start, effective_end),
+            "retention_days": retention_days,
+        },
+    }
+
+
+def _build_searchable_quota_history_text(item: dict[str, Any]) -> str:
+    parts: list[str] = []
+
+    for key in ("title", "description", "source", "actor_name", "created_at_display"):
+        value = item.get(key)
+        if value:
+            parts.append(str(value))
+
+    for highlight in item.get("highlights") or []:
+        if highlight:
+            parts.append(str(highlight))
+
+    for key in ("deltas_display", "event_details", "device_deltas", "rebaseline_events"):
+        value = item.get(key)
+        if not value:
+            continue
+        try:
+            parts.append(json.dumps(value, ensure_ascii=False, default=str))
+        except Exception:
+            parts.append(str(value))
+
+    return " ".join(parts).casefold()
+
+
+def _apply_search_filter(items: list[dict[str, Any]], search: str) -> list[dict[str, Any]]:
+    normalized_search = str(search or "").strip().casefold()
+    if not normalized_search:
+        return items
+
+    return [item for item in items if normalized_search in _build_searchable_quota_history_text(item)]
+
+
+def _build_history_summary(items: list[dict[str, Any]], *, page_items: int) -> dict[str, Any]:
+    category_counts = Counter(item.get("category") for item in items)
+    total_net_purchased_mb = round_mb(
+        sum(float(item.get("deltas", {}).get("purchased_mb") or 0.0) for item in items)
+    )
+    total_net_used_mb = round_mb(sum(float(item.get("deltas", {}).get("used_mb") or 0.0) for item in items))
+
+    created_at_values = [
+        created_at
+        for created_at in (_coerce_datetime(item.get("created_at")) for item in items)
+        if created_at is not None
+    ]
+    first_event_at = min(created_at_values) if created_at_values else None
+    last_event_at = max(created_at_values) if created_at_values else None
+
+    return {
+        "page_items": page_items,
+        "usage_events": int(category_counts.get("usage", 0)),
+        "purchase_events": int(category_counts.get("purchase", 0)),
+        "debt_events": int(category_counts.get("debt", 0)),
+        "policy_events": int(category_counts.get("policy", 0)),
+        "total_net_purchased_mb": total_net_purchased_mb,
+        "total_net_used_mb": total_net_used_mb,
+        "first_event_at": first_event_at.isoformat() if first_event_at else None,
+        "last_event_at": last_event_at.isoformat() if last_event_at else None,
+        "first_event_at_display": _format_event_datetime(first_event_at),
+        "last_event_at_display": _format_event_datetime(last_event_at),
+    }
+
+
 def _format_source_label(source: str) -> str:
     normalized = str(source or "").strip()
     if normalized == "hotspot.sync_usage":
@@ -120,6 +294,10 @@ def _format_source_label(source: str) -> str:
         return "Masa aktif unlimited dinormalisasi"
     if normalized == "debt.add_manual":
         return "Tunggakan manual ditambahkan"
+    if normalized.startswith("debt.consume_injected_auto_only:"):
+        return "Tunggakan otomatis dikurangi"
+    if normalized.startswith("debt.consume_injected:"):
+        return "Tunggakan dikurangi"
     if normalized.startswith("debt.apply_manual_payment:"):
         return "Pembayaran tunggakan manual"
     if normalized == "debt.settle_auto_to_zero":
@@ -330,6 +508,25 @@ def _build_highlights(
         if note:
             highlights.append(f"Catatan: {note}")
 
+    if normalized.startswith("debt.consume_injected_auto_only:"):
+        paid_auto_mb = _as_float(event_details.get("paid_auto_mb"))
+        remaining_injected_mb = _as_float(event_details.get("remaining_injected_mb"))
+        if paid_auto_mb and paid_auto_mb > 0:
+            highlights.append(f"Tunggakan otomatis dibayar: {_format_quota_text(paid_auto_mb)}")
+        if remaining_injected_mb is not None:
+            highlights.append(f"Sisa kuota advance: {_format_quota_text(remaining_injected_mb)}")
+
+    if normalized.startswith("debt.consume_injected:"):
+        paid_auto_mb = _as_float(event_details.get("paid_auto_mb"))
+        paid_manual_mb = _as_float(event_details.get("paid_manual_mb"))
+        remaining_injected_mb = _as_float(event_details.get("remaining_injected_mb"))
+        if paid_auto_mb and paid_auto_mb > 0:
+            highlights.append(f"Tunggakan otomatis dibayar: {_format_quota_text(paid_auto_mb)}")
+        if paid_manual_mb and paid_manual_mb > 0:
+            highlights.append(f"Tunggakan manual dibayar: {_format_quota_text(paid_manual_mb)}")
+        if remaining_injected_mb is not None:
+            highlights.append(f"Sisa kuota inject: {_format_quota_text(remaining_injected_mb)}")
+
     if normalized.startswith("debt.apply_manual_payment:") or normalized == "transactions.debt_settlement_success":
         paid_auto_mb = _as_float(event_details.get("paid_auto_mb"))
         paid_manual_mb = _as_float(event_details.get("paid_manual_mb"))
@@ -434,6 +631,15 @@ def _build_description(
 
     if normalized == "debt.add_manual":
         return "Admin mencatat tunggakan manual dan memberi kuota advance sesuai kebutuhan."
+
+    if normalized.startswith("debt.consume_injected_auto_only:"):
+        source_suffix = normalized.split(":", 1)[1].strip() if ":" in normalized else ""
+        if source_suffix == "admin_debt_advance_pkg":
+            return "Kuota paket advance admin dipakai untuk mengurangi tunggakan otomatis sebelum sisa kuota diberikan ke pengguna."
+        return "Kuota yang diinjeksikan dipakai untuk mengurangi tunggakan otomatis sebelum sisa kuota diberikan ke pengguna."
+
+    if normalized.startswith("debt.consume_injected:"):
+        return "Kuota yang diinjeksikan dipakai untuk melunasi tunggakan otomatis dan manual sebelum sisa kuota diberikan ke pengguna."
 
     if normalized.startswith("debt.apply_manual_payment:"):
         return "Pembayaran tunggakan manual tercatat ke item debt yang terbuka."
@@ -557,55 +763,43 @@ def get_user_quota_history_payload(
     page: int = 1,
     items_per_page: int = 50,
     include_all: bool = False,
+    start_date: Any = None,
+    end_date: Any = None,
+    search: Any = None,
 ) -> dict[str, Any]:
     safe_page = max(1, int(page or 1))
     safe_items_per_page = min(max(int(items_per_page or 50), 1), 200)
-
-    total_items = int(
-        db.session.scalar(select(func.count()).select_from(QuotaMutationLedger).where(QuotaMutationLedger.user_id == user.id))
-        or 0
-    )
-
-    range_row = db.session.execute(
-        select(func.min(QuotaMutationLedger.created_at), func.max(QuotaMutationLedger.created_at)).where(
-            QuotaMutationLedger.user_id == user.id
-        )
-    ).one()
+    resolved_filters = _resolve_history_filters(start_date=start_date, end_date=end_date, search=search)
 
     query = (
         select(QuotaMutationLedger)
-        .where(QuotaMutationLedger.user_id == user.id)
+        .where(
+            QuotaMutationLedger.user_id == user.id,
+            QuotaMutationLedger.created_at >= resolved_filters["start_at_utc"],
+            QuotaMutationLedger.created_at <= resolved_filters["end_at_utc"],
+        )
         .options(selectinload(QuotaMutationLedger.actor))
         .order_by(QuotaMutationLedger.created_at.desc())
     )
-    if not include_all:
-        query = query.limit(safe_items_per_page).offset((safe_page - 1) * safe_items_per_page)
 
     rows = db.session.scalars(query).all()
-    items = [serialize_quota_history_entry(item) for item in rows]
+    all_items = [serialize_quota_history_entry(item) for item in rows]
+    filtered_items = _apply_search_filter(all_items, resolved_filters["search"])
+    total_items = len(filtered_items)
 
-    category_counts = Counter(item.get("category") for item in items)
-    total_net_purchased_mb = round_mb(
-        sum(float(item.get("deltas", {}).get("purchased_mb") or 0.0) for item in items)
-    )
-    total_net_used_mb = round_mb(sum(float(item.get("deltas", {}).get("used_mb") or 0.0) for item in items))
+    if include_all:
+        items = filtered_items
+    else:
+        offset = (safe_page - 1) * safe_items_per_page
+        items = filtered_items[offset:offset + safe_items_per_page]
+
+    summary = _build_history_summary(filtered_items, page_items=len(items))
 
     return {
         "items": items,
         "total_items": total_items,
         "page": safe_page,
         "items_per_page": safe_items_per_page,
-        "summary": {
-            "page_items": len(items),
-            "usage_events": int(category_counts.get("usage", 0)),
-            "purchase_events": int(category_counts.get("purchase", 0)),
-            "debt_events": int(category_counts.get("debt", 0)),
-            "policy_events": int(category_counts.get("policy", 0)),
-            "total_net_purchased_mb": total_net_purchased_mb,
-            "total_net_used_mb": total_net_used_mb,
-            "first_event_at": range_row[0].isoformat() if range_row[0] else None,
-            "last_event_at": range_row[1].isoformat() if range_row[1] else None,
-            "first_event_at_display": _format_event_datetime(range_row[0]),
-            "last_event_at_display": _format_event_datetime(range_row[1]),
-        },
+        "summary": summary,
+        "filters": resolved_filters["meta"],
     }
