@@ -138,16 +138,26 @@ Rekomendasi gabungan:
    - Semua jalur yang menambah masa aktif kuota sekarang wajib memakai strategi `reset_from_now`:
       - pembelian paket sukses,
       - inject quota oleh admin,
+      - manual debt + advance quota (paket debt maupun nominal manual),
       - approve / partial approve request quota,
       - grant unlimited dengan durasi.
    - Artinya sisa masa aktif lama **tidak** boleh diakumulasi. Jika user membeli paket 30 hari hari ini, expiry baru dihitung 30 hari dari pembelian hari ini, walaupun masih punya sisa hari aktif sebelumnya.
+   - Untuk flow manual debt + advance quota:
+      - jika admin memilih paket debt, expiry mengikuti `duration_days` paket debt tersebut,
+      - jika admin memasukkan nominal manual debt langsung, expiry default 30 hari dari timestamp grant.
+   - Policy block debt akhir bulan **tetap** independen dari expiry. Jadi manual debt/auto debt yang mencapai rule block akhir bulan tetap harus terblokir walaupun `quota_expiry_date` hasil grant masih berada di bulan berikutnya.
    - User unlimited yang dibeli lewat paket tetap memakai `duration_days` paket sebagai batas waktu akses, kecuali admin memang sengaja mengosongkan `quota_expiry_date` untuk memberi unlimited time.
    - Riwayat mutasi kuota sekarang tersedia untuk user dan admin, serta bisa diexport PDF. Timeline ini memakai `quota_mutation_ledger` dan memuat kategori utama: `purchase`, `usage`, `debt`, `policy`, `adjustment`, dan `sync`.
    - Backfill pembelian lama dilakukan via command operasional agar transaksi sukses lama tetap muncul di timeline baru tanpa mengubah kontrak runtime pembacaan API.
    - Remediasi operasional baru tersedia lewat CLI:
       - `flask quota-remediation backfill-purchase-history`
+      - `flask quota-remediation normalize-user-expiry`
       - `flask quota-remediation normalize-unlimited-expiry`
       - `flask quota-remediation audit-hotspot-spikes`
+   - Notifikasi remediation sekarang selektif:
+      - refund lonjakan hotspot mengirim WhatsApp ke user yang kuotanya dikembalikan,
+      - koreksi expiry unlimited mengirim WhatsApp ke user unlimited yang berubah,
+      - koreksi expiry user kuota biasa tidak mengirim WhatsApp massal.
 
 ## Konfigurasi ENV Baru
 Disediakan di backend/.env.example:

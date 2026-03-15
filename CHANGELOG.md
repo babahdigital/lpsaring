@@ -11,15 +11,20 @@ Lampiran wajib:
 ### Fixed (2026-03-15 - Quota History, Expiry Non-Akumulatif, dan Remediation Tools)
 
 - **Quota expiry no longer accumulates remaining days:** semua jalur utama penambahan masa aktif (`purchase`, `inject`, approval quota/unlimited) sekarang selalu menghitung expiry dari waktu transaksi/grant terbaru (`reset_from_now`). Sisa masa aktif lama tidak lagi ditambahkan di atas grant baru.
+- **Manual debt advance now follows the same expiry rule:** flow `Tambah Tunggakan` yang sekaligus memberi kuota advance kini juga menetapkan expiry non-akumulatif dari grant terbaru. Input manual debt langsung default 30 hari, sedangkan paket debt mengikuti `duration_days` paket.
+- **Manual debt end-of-month block remains authoritative:** hard-block akhir bulan untuk debt manual tetap berlaku walaupun user masih memiliki expiry hasil grant yang jatuh di bulan berikutnya.
 - **Quota history remediation visibility:** serializer riwayat kuota kini mengenali event impor pembelian lama, refund lonjakan hotspot, dan normalisasi expiry unlimited sehingga hasil remediation langsung terlihat di timeline admin/user dan export PDF.
+- **Quota history PDF accessibility cleanup:** highlight list pada template export PDF tidak lagi memakai struktur `<ul>` yang memicu diagnostic `axe/structure` di editor.
 - **Responsive admin history dialog:** dialog admin `Riwayat Mutasi Kuota` sekarang fullscreen di mobile, tidak lagi memaksa tabel horizontal pada layar kecil, dan styling inline dipindahkan ke scoped classes.
 
 ### Added (2026-03-15)
 
 - **CLI group baru `flask quota-remediation`:**
 	- `backfill-purchase-history` untuk mengimpor transaksi sukses lama ke `quota_mutation_ledger`.
+	- `normalize-user-expiry` untuk menyelaraskan expiry user biasa ke grant kuota terakhir (purchase, inject, debt advance).
 	- `normalize-unlimited-expiry` untuk menyelaraskan user unlimited ke tanggal pembelian paket terakhir.
 	- `audit-hotspot-spikes` untuk mendeteksi lonjakan `hotspot.sync_usage` yang mencurigakan dan, jika diminta, mengembalikan kuota yang tersedot.
+- **Selective remediation WhatsApp:** refund lonjakan hotspot sekarang bisa menginformasikan user yang kuotanya dikembalikan, dan koreksi expiry unlimited bisa menginformasikan user unlimited tanpa membanjiri user kuota biasa.
 - **Regression coverage:** ditambahkan test baru untuk serializer imported purchase event dan helper audit/remediation quota.
 
 ### Documentation (2026-03-15)
