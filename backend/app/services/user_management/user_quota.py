@@ -25,7 +25,6 @@ from app.services.quota_mutation_ledger_service import (
     snapshot_user_quota_state,
 )
 from app.utils.formatters import get_app_date_time_strings
-from app.utils.block_reasons import is_debt_block_reason
 
 
 def _sync_ip_binding_for_authorized_devices(user: User, api_conn: Any, source: str) -> None:
