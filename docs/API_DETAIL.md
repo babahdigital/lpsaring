@@ -31,8 +31,8 @@ Lampiran wajib:
 - `PUT /api/users/me/profile`
 
 ### 2.1) User Quota & History
-- `GET /api/users/me/quota-history` — Ambil riwayat mutasi kuota user login (usage sync, pembelian paket, debt, policy, dan koreksi operasional).
-- `GET /api/users/me/quota-history/export` — Export PDF riwayat mutasi kuota user login.
+- `GET /api/users/me/quota-history` — Ambil riwayat mutasi kuota user login (usage sync, pembelian paket, debt, policy, dan koreksi operasional). Mendukung query opsional `page`, `itemsPerPage`, `startDate`, `endDate`, dan `search`. Response menyertakan metadata `filters` (`start_date`, `end_date`, `start_date_display`, `end_date_display`, `label`, `retention_days`) agar UI bisa menampilkan periode aktif dan retensi efektif.
+- `GET /api/users/me/quota-history/export` — Export PDF riwayat mutasi kuota user login. Mendukung filter `startDate`, `endDate`, dan `search`; PDF yang dihasilkan mengikuti filter aktif yang sama dengan tampilan UI.
 
 ### 3) Devices
 - `GET /api/users/me/devices`
@@ -55,8 +55,8 @@ Lampiran wajib:
 - `POST /api/admin/users`
 - `PUT /api/admin/users/{user_id}`
 - `POST /api/admin/users/{user_id}/quota-adjust` — Koreksi langsung `total_quota_purchased_mb` dan/atau `total_quota_used_mb`. **Khusus Super Admin.** Body: `{ set_purchased_mb?: int, set_used_mb?: int, reason: string }`. Minimal satu dari keduanya wajib ada. Dicatat di `quota_mutation_ledger` dengan source `quota.adjust_direct`.
-- `GET /api/admin/users/{user_id}/quota-history` — Ambil riwayat mutasi kuota user target untuk audit admin.
-- `GET /api/admin/users/{user_id}/quota-history/export` — Export PDF riwayat mutasi kuota user target.
+- `GET /api/admin/users/{user_id}/quota-history` — Ambil riwayat mutasi kuota user target untuk audit admin. Mendukung query opsional `page`, `itemsPerPage`, `startDate`, `endDate`, dan `search`, serta mengembalikan metadata `filters` untuk label periode/pencarian aktif.
+- `GET /api/admin/users/{user_id}/quota-history/export` — Export PDF riwayat mutasi kuota user target. Mendukung filter `startDate`, `endDate`, dan `search`; hasil PDF mengikuti filter audit yang sedang aktif di dialog admin.
 - `POST /api/admin/users/seed-imported-update-submissions` — Seed `PublicDatabaseUpdateSubmission` records for users with `full_name LIKE 'Imported %'` agar mereka mendapat notifikasi WA untuk update data. Body opsional: `test_phone` (string), `dry_run` (bool).
 - `GET /api/admin/update-submissions`
 - `POST /api/admin/update-submissions/{id}/approve`

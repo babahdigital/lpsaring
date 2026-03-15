@@ -1177,7 +1177,14 @@ with app.app_context():
   if "tamping_type" in cols:
     target = CHAIN[3]
 
-  drift = bool(target and current_rev != target and (current_rev not in CHAIN or CHAIN.index(current_rev) < CHAIN.index(target)))
+  # Only auto-stamp while the recorded revision is missing or still inside the
+  # known public-update chain. Never rewind a newer descendant revision.
+  drift = False
+  if target:
+    if current_rev is None:
+      drift = True
+    elif current_rev in CHAIN:
+      drift = CHAIN.index(current_rev) < CHAIN.index(target)
 
   print(f"CURRENT_REV={current_rev or 'NONE'}")
   print(f"DRIFT_TARGET={target or 'NONE'}")

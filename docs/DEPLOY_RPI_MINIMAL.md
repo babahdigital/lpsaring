@@ -146,7 +146,30 @@ Contoh cek manual:
 docker exec global-nginx-proxy wget -T 10 -qO- --header='Host: lpsaring.babahdigital.net' http://127.0.0.1/api/ping
 ```
 
-## 7) Contoh Alur Aman Harian
+## 7) Catatan Drift Alembic
+
+`deploy_pi.sh` memiliki preflight drift check untuk rantai migrasi `20260302_*` (public update submissions) sebelum menjalankan migrate eksplisit.
+
+Guard terbaru:
+
+- auto-stamp hanya berjalan jika revision DB kosong, atau
+- revision DB masih berada di dalam rantai `20260302_*` tetapi tertinggal dari target yang terdeteksi dari schema.
+
+Artinya script **tidak lagi boleh me-rewind revision turunan yang lebih baru**. Contoh kasus yang sekarang dicegah:
+
+- DB sudah berada di `20260315_add_user_device_host_tracking`,
+- schema kolom `user_devices.last_hotspot_host_id` dan `last_hotspot_uptime_seconds` sudah ada,
+- script lama sempat salah men-stamp mundur ke `20260302_alter_public_update_submission_role_fields`,
+- migrate berikutnya lalu gagal `DuplicateColumn`.
+
+Jika menemukan jejak deploy lama dengan pola gagal seperti itu, recovery aman adalah:
+
+1. verifikasi `alembic_version` dan schema live,
+2. pastikan objek schema yang dipermasalahkan memang sudah ada,
+3. `flask db stamp <revision_aktual_yang_sudah_terpasang>`,
+4. jalankan ulang `./deploy_pi.sh --recreate`.
+
+## 8) Contoh Alur Aman Harian
 
 ### 7.1 Backup cepat sebelum tindakan apa pun
 ```bash
@@ -178,13 +201,14 @@ docker exec global-nginx-proxy wget -T 10 -qO- --header='Host: lpsaring.babahdig
 ./deploy_pi.sh --detach-local --clean --clean-reset-data --confirm-clean-data-loss --recreate
 ```
 
-## 8) Ringkasan Safety
+## 9) Ringkasan Safety
 
 - Backup DB lokal selalu dibuat sebelum deploy.
 - Scope operasi dibatasi ke app dir terkunci.
 - `--prune` diblokir untuk mencegah dampak lintas stack.
 - `--recreate` tersedia untuk recreate container tanpa hapus volume.
 - Guard `--recreate` memastikan image app terbaru tetap dipull (kombinasi dengan `--skip-pull` diblokir).
+- Guard drift Alembic tidak lagi boleh menarik revision DB yang lebih baru mundur ke chain migrasi lama.
 - `--detach-local` direkomendasikan agar run tidak gagal karena interupsi terminal lokal.
 - Guard ukuran backup mencegah clean/strict jalan saat dump terindikasi terlalu kecil.
 - Untuk mode `--clean` dan `--strict-minimal`, rollback DB otomatis akan dicoba jika deploy gagal (sumber dari backup lokal run yang sama).

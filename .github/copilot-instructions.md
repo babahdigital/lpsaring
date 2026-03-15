@@ -48,7 +48,7 @@ Prinsip: **lokal adalah source-of-truth**, Pi hanya target.
 	2) `git commit` → `git push`
 	3) Tunggu CI hijau
 	4) Publish image (tag `v*` atau `workflow_dispatch`) → tunggu hijau
-	5) Deploy Pi via `deploy_pi.sh --prune` (upload env lokal + pull + up -d + healthcheck)
+	5) Deploy Pi via `deploy_pi.sh --recreate` (upload env lokal + pull image app terbaru + staged restart + healthcheck)
 
 ## Aturan Keamanan (WAJIB)
 - Jangan pernah menampilkan/menyalin secret ke chat/log (contoh: token tunnel, API key, password).

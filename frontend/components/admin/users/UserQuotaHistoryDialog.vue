@@ -841,27 +841,52 @@ watch(
 
 .history-table-shell {
   margin-top: 4px;
+  position: relative;
+  isolation: isolate;
+  border-radius: 16px;
+  background: rgb(var(--v-theme-surface));
+  box-shadow: inset 0 0 0 1px rgba(var(--v-theme-on-surface), 0.08);
 }
 
 .history-table :deep(.v-table__wrapper) {
   overflow: visible;
+  background: transparent;
 }
 
 .history-table :deep(table) {
   min-width: 1040px;
   width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: transparent;
 }
 
 .history-table {
   min-width: 1040px;
 }
 
+.history-table :deep(thead),
+.history-table :deep(thead tr) {
+  background: rgb(var(--v-theme-surface));
+}
+
 .history-table :deep(thead th) {
   position: sticky;
   top: 0;
-  z-index: 2;
-  background: rgb(var(--v-theme-surface));
-  box-shadow: inset 0 -1px rgba(var(--v-theme-on-surface), 0.08);
+  z-index: 4;
+  background-color: rgb(var(--v-theme-surface));
+  background-image: linear-gradient(rgb(var(--v-theme-surface)), rgb(var(--v-theme-surface)));
+  background-clip: padding-box;
+  box-shadow: inset 0 -1px rgba(var(--v-theme-on-surface), 0.08), 0 10px 18px rgba(var(--v-theme-on-surface), 0.04);
+  transform: translateZ(0);
+}
+
+.history-table :deep(thead th:first-child) {
+  border-top-left-radius: 16px;
+}
+
+.history-table :deep(thead th:last-child) {
+  border-top-right-radius: 16px;
 }
 
 .history-table :deep(tbody tr:nth-child(even)) {

@@ -8,6 +8,21 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Fixed (2026-03-15 - Quota History UX, Sticky Header, dan Deploy Recreate Guard)
+
+- **Admin quota history sticky header no longer looks transparent while scrolling:** tabel `Riwayat Mutasi Kuota` admin sekarang memakai sticky header dengan background opaque dan stacking context terisolasi, sehingga teks row pertama tidak lagi tampak tembus saat user scroll jauh ke bawah.
+- **Quota history wording and filters are now consistent across admin/user/PDF:** event auto debt/injected debt yang sebelumnya masih teknis/Inggris kini ditampilkan sebagai wording bisnis berbahasa Indonesia, endpoint admin/user menerima `startDate`, `endDate`, dan `search`, dan export PDF mengikuti filter aktif yang sama.
+- **Quota history PDF no longer leaks raw technical source labels:** string seperti `debt.consume_injected_auto_only:admin_debt_advance_pkg` sudah disembunyikan dari dialog admin dan PDF, diganti title/deskripsi bisnis yang lebih singkat dan jelas.
+- **Quota history PDF WeasyPrint warnings cleaned up:** template PDF quota history dan laporan debt manual tidak lagi memakai `word-break: break-word`, sehingga warning parser WeasyPrint tidak muncul lagi pada export terbaru.
+- **`deploy_pi.sh` no longer rewinds newer Alembic descendants during public-update drift auto-stamp:** guard drift untuk rantai migrasi `20260302_*` sekarang hanya melakukan auto-stamp saat revision DB memang kosong atau masih berada di dalam chain yang sama namun tertinggal. Revision turunan yang lebih baru, seperti `20260315_add_user_device_host_tracking`, tidak lagi bisa ditarik mundur ke `20260302_*` dan memicu `DuplicateColumn` pada migrate berikutnya.
+
+### Documentation (2026-03-15)
+
+- `docs/DEVLOG_2026-03-15.md` diperluas dengan addendum detail untuk quota history admin/user/PDF, root cause sticky header transparan, insiden deploy recreate akibat Alembic drift rewind, langkah recovery produksi, dan status verifikasi akhir.
+- `docs/API_DETAIL.md` diperbarui untuk mendokumentasikan query filter `startDate`, `endDate`, `search`, metadata response `filters`, dan perilaku export PDF yang mengikuti filter aktif untuk endpoint quota history user/admin.
+- `docs/DEPLOY_RPI_MINIMAL.md` diperbarui dengan guardrail Alembic drift terbaru dan pola recovery jika revision DB pernah sempat tertarik mundur oleh deploy lama.
+- `.github/copilot-instructions.md` dan `docs/RUNBOOK_ACTIVE_INDEX.md` diselaraskan dengan jalur deploy aman terkini (`deploy_pi.sh --recreate`) serta devlog sesi quota history + deploy recovery.
+
 ### Fixed (2026-03-15 - Quota History, Expiry Non-Akumulatif, dan Remediation Tools)
 
 - **Quota expiry no longer accumulates remaining days:** semua jalur utama penambahan masa aktif (`purchase`, `inject`, approval quota/unlimited) sekarang selalu menghitung expiry dari waktu transaksi/grant terbaru (`reset_from_now`). Sisa masa aktif lama tidak lagi ditambahkan di atas grant baru.
