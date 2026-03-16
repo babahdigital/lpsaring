@@ -338,16 +338,17 @@ def _collect_candidate_ips_for_user(
     host_usage_map: Optional[Dict[str, Dict[str, Any]]] = None,
     ip_binding_map: Optional[Dict[str, Dict[str, Any]]] = None,
     ip_binding_rows_by_mac: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    hotspot_networks: Optional[List[ipaddress._BaseNetwork]] = None,
 ) -> List[str]:
     ips: List[str] = []
     seen: set[str] = set()
-    hotspot_networks = _resolve_hotspot_status_networks()
+    active_hotspot_networks = hotspot_networks if hotspot_networks is not None else _resolve_hotspot_status_networks()
 
     def _add_ip(ip_value: Optional[str]) -> None:
         if not _is_valid_ip_candidate(ip_value):
             return
         ip_str = str(ip_value).strip()
-        if not _is_ip_in_hotspot_status_networks(ip_str, hotspot_networks):
+        if not _is_ip_in_hotspot_status_networks(ip_str, active_hotspot_networks):
             return
         if ip_str in seen:
             return
@@ -359,7 +360,7 @@ def _collect_candidate_ips_for_user(
             return False
 
         ip_str = str(ip_value).strip()
-        if not _is_ip_in_hotspot_status_networks(ip_str, hotspot_networks):
+        if not _is_ip_in_hotspot_status_networks(ip_str, active_hotspot_networks):
             return False
 
         if ip_str not in seen:
@@ -537,12 +538,32 @@ def _resolve_managed_status_lists() -> List[str]:
     )
 
 
-def _remove_managed_status_entries_for_ip(api: object, ip_address: str) -> None:
+def _remove_managed_status_entries_for_ip(
+    api: object,
+    ip_address: str,
+    *,
+    managed_status_lists: Optional[List[str]] = None,
+    owned_status_entries_snapshot: Optional[Dict[str, Any]] = None,
+) -> None:
     if not api or not _is_valid_ip_candidate(ip_address):
         return
 
-    for list_name in _resolve_managed_status_lists():
-        remove_address_list_entry(api_connection=api, address=str(ip_address).strip(), list_name=list_name)
+    candidate_lists = sorted(_get_snapshot_status_entries_for_ip(owned_status_entries_snapshot, ip_address).keys())
+    if not candidate_lists:
+        candidate_lists = managed_status_lists if managed_status_lists is not None else _resolve_managed_status_lists()
+
+    for list_name in candidate_lists:
+        ok_remove, _remove_msg = remove_address_list_entry(
+            api_connection=api,
+            address=str(ip_address).strip(),
+            list_name=list_name,
+        )
+        if ok_remove:
+            _remove_snapshot_status_entry(
+                owned_status_entries_snapshot,
+                ip_address=str(ip_address).strip(),
+                list_name=list_name,
+            )
 
 
 def _comment_has_tag_value(comment_text: str, tag_name: str, expected_value: str) -> bool:
@@ -591,10 +612,11 @@ def _extract_status_entry_owner_tokens(comment: Any) -> tuple[str, str]:
     return user_id, username_08
 
 
-def _build_owned_status_entries_snapshot() -> Dict[str, Dict[str, set[tuple[str, str]]]]:
+def _build_owned_status_entries_snapshot() -> Dict[str, Any]:
     return {
         "by_user_id": {},
         "by_username": {},
+        "by_address": {},
     }
 
 
@@ -602,7 +624,7 @@ def _snapshot_owned_status_entries_for_prune(
     api: object,
     *,
     managed_status_lists: Optional[List[str]] = None,
-) -> tuple[bool, Dict[str, Dict[str, set[tuple[str, str]]]]]:
+) -> tuple[bool, Dict[str, Any]]:
     snapshot = _build_owned_status_entries_snapshot()
     if not api:
         return False, snapshot
@@ -641,6 +663,8 @@ def _snapshot_owned_status_entries_for_prune(
             if not _is_valid_ip_candidate(address):
                 continue
 
+            snapshot["by_address"].setdefault(address, {})[str(list_name)] = str(row.get("comment") or "").strip()
+
             user_id, username_08 = _extract_status_entry_owner_tokens(row.get("comment"))
             if not user_id and not username_08:
                 continue
@@ -655,7 +679,7 @@ def _snapshot_owned_status_entries_for_prune(
 
 
 def _collect_snapshot_status_entries_for_user(
-    snapshot: Dict[str, Dict[str, set[tuple[str, str]]]],
+    snapshot: Dict[str, Any],
     *,
     user_id: str,
     username_08: str,
@@ -668,12 +692,119 @@ def _collect_snapshot_status_entries_for_user(
     return sorted(entries)
 
 
+def _get_snapshot_status_entries_for_ip(
+    snapshot: Optional[Dict[str, Any]],
+    ip_address: str,
+) -> Dict[str, str]:
+    if snapshot is None:
+        return {}
+
+    by_address = snapshot.get("by_address", {})
+    if not isinstance(by_address, dict):
+        return {}
+
+    entries = by_address.get(str(ip_address).strip(), {})
+    if not isinstance(entries, dict):
+        return {}
+
+    return {str(list_name): str(comment or "") for list_name, comment in entries.items()}
+
+
+def _set_snapshot_status_entry(
+    snapshot: Optional[Dict[str, Any]],
+    *,
+    ip_address: str,
+    list_name: str,
+    comment: str,
+) -> None:
+    if snapshot is None:
+        return
+
+    by_address = snapshot.setdefault("by_address", {})
+    if not isinstance(by_address, dict):
+        return
+
+    by_address.setdefault(str(ip_address).strip(), {})[str(list_name)] = str(comment or "")
+
+
+def _remove_snapshot_status_entry(
+    snapshot: Optional[Dict[str, Any]],
+    *,
+    ip_address: str,
+    list_name: str,
+) -> None:
+    if snapshot is None:
+        return
+
+    by_address = snapshot.get("by_address", {})
+    if not isinstance(by_address, dict):
+        return
+
+    ip_key = str(ip_address).strip()
+    entries = by_address.get(ip_key)
+    if not isinstance(entries, dict):
+        return
+
+    entries.pop(str(list_name), None)
+    if not entries:
+        by_address.pop(ip_key, None)
+
+
+def _extract_comment_tags(comment: Any) -> Dict[str, str]:
+    comment_text = str(comment or "").strip()
+    if not comment_text:
+        return {}
+
+    tags: Dict[str, str] = {}
+    for token in comment_text.split("|"):
+        token_text = str(token or "").strip()
+        if "=" not in token_text:
+            continue
+        key, value = token_text.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key or key in tags:
+            continue
+        tags[key] = value
+
+    return tags
+
+
+def _status_comment_matches_expected_tags(
+    comment: Any,
+    *,
+    status_value: str,
+    username_08: str,
+    user_uid: str,
+    role_value: str,
+    ip_address: Optional[str] = None,
+) -> bool:
+    tags = _extract_comment_tags(comment)
+    if not tags:
+        return False
+
+    if tags.get("status") != str(status_value):
+        return False
+    if tags.get("user") != str(username_08):
+        return False
+    if tags.get("uid") != str(user_uid):
+        return False
+    if tags.get("role") != str(role_value):
+        return False
+
+    expected_ip = str(ip_address or "").strip()
+    if expected_ip and tags.get("ip") != expected_ip:
+        return False
+
+    return True
+
+
 def _prune_stale_status_entries_for_user(
     api: object,
     user: User,
     keep_ips: Optional[List[str]] = None,
     *,
-    owned_status_entries_snapshot: Optional[Dict[str, Dict[str, set[tuple[str, str]]]]] = None,
+    owned_status_entries_snapshot: Optional[Dict[str, Any]] = None,
     managed_status_lists: Optional[List[str]] = None,
 ) -> int:
     if not api or not user:
@@ -707,6 +838,11 @@ def _prune_stale_status_entries_for_user(
             )
             if ok_remove:
                 removed += 1
+                _remove_snapshot_status_entry(
+                    owned_status_entries_snapshot,
+                    ip_address=address,
+                    list_name=list_name,
+                )
 
         if removed > 0:
             logger.info(
@@ -907,6 +1043,7 @@ def _self_heal_policy_binding_for_user(
     ip_binding_map: Optional[Dict[str, Dict[str, Any]]],
     host_usage_map: Optional[Dict[str, Dict[str, Any]]],
     *,
+    dhcp_ips_by_mac: Optional[Dict[str, set[str]]] = None,
     runtime_settings: Optional[HotspotUsageSyncRuntimeSettings] = None,
 ) -> int:
     if not api or not user or not ip_binding_map:
@@ -970,7 +1107,11 @@ def _self_heal_policy_binding_for_user(
                 entry["address"] = ip_addr
 
             if ip_addr:
-                _ensure_static_dhcp_lease(
+                existing_dhcp_ips = dhcp_ips_by_mac.get(mac, set()) if dhcp_ips_by_mac is not None else set()
+                if ip_addr in existing_dhcp_ips:
+                    continue
+
+                ensured = _ensure_static_dhcp_lease(
                     mac_address=mac,
                     ip_address=ip_addr,
                     comment=(
@@ -978,7 +1119,10 @@ def _self_heal_policy_binding_for_user(
                         f"|source=sync-self-heal|date={date_str}|time={time_str}"
                     ),
                     server=dhcp_server_name,
+                    api_connection=api,
                 )
+                if ensured and dhcp_ips_by_mac is not None:
+                    dhcp_ips_by_mac.setdefault(mac, set()).add(ip_addr)
         else:
             increment_metric("policy.binding_self_heal.failed")
             logger.warning(
@@ -1785,9 +1929,11 @@ def _sync_address_list_status(
     is_expired: bool,
     force_blocked: bool = False,
     ip_binding_map: Optional[Dict[str, Dict[str, Any]]] = None,
+    host_usage_map: Optional[Dict[str, Dict[str, Any]]] = None,
     ip_binding_rows_by_mac: Optional[Dict[str, List[Dict[str, Any]]]] = None,
     enforce_binding_guard: bool = False,
     runtime_settings: Optional[HotspotUsageSyncRuntimeSettings] = None,
+    owned_status_entries_snapshot: Optional[Dict[str, Any]] = None,
 ) -> bool:
     if enforce_binding_guard and not _has_policy_binding_for_user(
         user,
@@ -1799,8 +1945,18 @@ def _sync_address_list_status(
             getattr(user, "id", None),
             username_08,
         )
-        for ip_address in _collect_candidate_ips_for_user(user, ip_binding_map=ip_binding_map, ip_binding_rows_by_mac=ip_binding_rows_by_mac):
-            _remove_managed_status_entries_for_ip(api, ip_address)
+        for ip_address in _collect_candidate_ips_for_user(
+            user,
+            ip_binding_map=ip_binding_map,
+            ip_binding_rows_by_mac=ip_binding_rows_by_mac,
+            hotspot_networks=(list(runtime_settings.hotspot_status_networks or []) if runtime_settings is not None else None),
+        ):
+            _remove_managed_status_entries_for_ip(
+                api,
+                ip_address,
+                managed_status_lists=(runtime_settings.managed_status_lists if runtime_settings is not None else None),
+                owned_status_entries_snapshot=owned_status_entries_snapshot,
+            )
         return False
 
     list_active, list_fup, list_inactive, list_expired, list_habis, list_blocked, list_unauthorized, fup_threshold_mb = (
@@ -1867,7 +2023,10 @@ def _sync_address_list_status(
     if not ok:
         logger.debug(f"Gagal sync address-list untuk {username_08}: {msg}")
         if msg in ("IP belum tersedia untuk user", "IP tidak ditemukan"):
-            ok_binding, binding_map, _msg = get_hotspot_ip_binding_user_map(api)
+            binding_map = ip_binding_map
+            ok_binding = binding_map is not None
+            if binding_map is None:
+                ok_binding, binding_map, _msg = get_hotspot_ip_binding_user_map(api)
             if ok_binding:
                 user_id_str = user_uid
                 fallback_ip = None
@@ -1878,23 +2037,35 @@ def _sync_address_list_status(
                             if ip_address:
                                 fallback_ip = str(ip_address)
                                 break
-                if not fallback_ip and user_id_raw is not None:
-                    device_macs = db.session.scalars(
-                        select(UserDevice.mac_address)
-                        .where(
-                            UserDevice.user_id == user_id_raw,
-                            UserDevice.is_authorized.is_(True),
-                        )
-                        .order_by(UserDevice.last_seen_at.desc())
-                    ).all()
-                    for mac in device_macs:
+                if not fallback_ip:
+                    for device in user.devices or []:
+                        if not bool(getattr(device, "is_authorized", False)):
+                            continue
+                        mac = str(getattr(device, "mac_address", "") or "").strip().upper()
                         if not mac:
                             continue
-                        entry = binding_map.get(str(mac).upper())
+                        if host_usage_map:
+                            host_ip = str((host_usage_map.get(mac) or {}).get("address") or "").strip()
+                            if _is_valid_ip_candidate(host_ip):
+                                fallback_ip = host_ip
+                                break
+                        entry = binding_map.get(mac)
                         if entry and entry.get("address"):
                             fallback_ip = str(entry.get("address"))
                             break
-                        ok_ip, ip_from_mac, _ip_msg = get_ip_by_mac(api, str(mac).upper())
+                        if ip_binding_rows_by_mac:
+                            for row in ip_binding_rows_by_mac.get(mac, []):
+                                row_ip = str(row.get("address") or "").strip()
+                                if _is_valid_ip_candidate(row_ip):
+                                    fallback_ip = row_ip
+                                    break
+                        if fallback_ip:
+                            break
+                        device_ip = str(getattr(device, "ip_address", "") or "").strip()
+                        if _is_valid_ip_candidate(device_ip):
+                            fallback_ip = device_ip
+                            break
+                        ok_ip, ip_from_mac, _ip_msg = get_ip_by_mac(api, mac)
                         if ok_ip and ip_from_mac:
                             fallback_ip = str(ip_from_mac)
                             break
@@ -1911,6 +2082,7 @@ def _sync_address_list_status(
                         ip_binding_rows_by_mac=ip_binding_rows_by_mac,
                         enforce_binding_guard=enforce_binding_guard,
                         runtime_settings=runtime_settings,
+                        owned_status_entries_snapshot=owned_status_entries_snapshot,
                     )
         return False
     return ok
@@ -1928,6 +2100,7 @@ def _sync_address_list_status_for_ip(
     ip_binding_rows_by_mac: Optional[Dict[str, List[Dict[str, Any]]]] = None,
     enforce_binding_guard: bool = False,
     runtime_settings: Optional[HotspotUsageSyncRuntimeSettings] = None,
+    owned_status_entries_snapshot: Optional[Dict[str, Any]] = None,
 ) -> bool:
     if not ip_address:
         return False
@@ -1946,7 +2119,12 @@ def _sync_address_list_status_for_ip(
         ip_binding_map=ip_binding_map,
         ip_binding_rows_by_mac=ip_binding_rows_by_mac,
     ):
-        _remove_managed_status_entries_for_ip(api, ip_address)
+        _remove_managed_status_entries_for_ip(
+            api,
+            ip_address,
+            managed_status_lists=(runtime_settings.managed_status_lists if runtime_settings is not None else None),
+            owned_status_entries_snapshot=owned_status_entries_snapshot,
+        )
         logger.info(
             "Prune stale status-list (tanpa ip-binding policy-compatible): user=%s ip=%s",
             getattr(user, "id", None),
@@ -1991,14 +2169,15 @@ def _sync_address_list_status_for_ip(
         status_value = "fup"
     else:
         status_value = "active"
-    now = datetime.now(dt_timezone.utc)
-    date_str, time_str = get_app_date_time_strings(now)
     user_id_raw = getattr(user, "id", None)
     user_uid = str(user_id_raw).strip() if user_id_raw is not None else ""
+    stable_user_uid = user_uid or "unknown"
+    now = datetime.now(dt_timezone.utc)
+    date_str, time_str = get_app_date_time_strings(now)
     comment = (
         f"lpsaring|status={status_value}"
         f"|user={username_08}"
-        f"|uid={user_uid or 'unknown'}"
+        f"|uid={stable_user_uid}"
         f"|role={user.role.value}"
         f"|ip={ip_address}"
         f"|date={date_str}"
@@ -2008,12 +2187,7 @@ def _sync_address_list_status_for_ip(
     if not target_list:
         return False
 
-    ok, msg = upsert_address_list_entry(api_connection=api, address=ip_address, list_name=target_list, comment=comment)
-    if not ok:
-        logger.debug(f"Gagal upsert address-list untuk IP {ip_address}: {msg}")
-        return False
-
-    for list_name in _build_managed_status_lists(
+    managed_status_lists = _build_managed_status_lists(
         list_active=list_active,
         list_fup=list_fup,
         list_inactive=list_inactive,
@@ -2021,9 +2195,41 @@ def _sync_address_list_status_for_ip(
         list_habis=list_habis,
         list_blocked=list_blocked,
         list_unauthorized=list_unauthorized,
-    ):
-        if list_name and list_name != target_list:
-            remove_address_list_entry(api_connection=api, address=ip_address, list_name=list_name)
+    )
+    snapshot_lists_for_ip = _get_snapshot_status_entries_for_ip(owned_status_entries_snapshot, ip_address)
+    target_is_already_synced = _status_comment_matches_expected_tags(
+        snapshot_lists_for_ip.get(target_list),
+        status_value=status_value,
+        username_08=str(username_08 or ""),
+        user_uid=stable_user_uid,
+        role_value=str(user.role.value),
+        ip_address=ip_address,
+    )
+
+    if not target_is_already_synced:
+        ok, msg = upsert_address_list_entry(api_connection=api, address=ip_address, list_name=target_list, comment=comment)
+        if not ok:
+            logger.debug(f"Gagal upsert address-list untuk IP {ip_address}: {msg}")
+            return False
+        _set_snapshot_status_entry(
+            owned_status_entries_snapshot,
+            ip_address=ip_address,
+            list_name=target_list,
+            comment=comment,
+        )
+
+    for list_name in managed_status_lists:
+        if not list_name or list_name == target_list:
+            continue
+        if snapshot_lists_for_ip and list_name not in snapshot_lists_for_ip:
+            continue
+        ok_remove, _remove_msg = remove_address_list_entry(api_connection=api, address=ip_address, list_name=list_name)
+        if ok_remove:
+            _remove_snapshot_status_entry(
+                owned_status_entries_snapshot,
+                ip_address=ip_address,
+                list_name=list_name,
+            )
 
     # Source-level guard: status-managed IP must never remain in unauthorized list.
     if list_unauthorized and list_unauthorized != target_list:
@@ -2345,7 +2551,7 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                 )
                 host_usage_map = {}
 
-            ip_binding_map: Dict[str, Dict[str, Any]] = {}
+            ip_binding_map: Optional[Dict[str, Dict[str, Any]]] = None
             ok_binding_map, binding_map, binding_msg = get_hotspot_ip_binding_user_map(api)
             if ok_binding_map:
                 ip_binding_map = binding_map
@@ -2511,6 +2717,7 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                             user,
                             ip_binding_map=ip_binding_map,
                             host_usage_map=host_usage_map,
+                            dhcp_ips_by_mac=dhcp_ips_by_mac,
                             runtime_settings=runtime_settings,
                         )
                         if healed_count > 0:
@@ -2567,6 +2774,7 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                             host_usage_map=host_usage_map,
                             ip_binding_map=ip_binding_map,
                             ip_binding_rows_by_mac=ip_binding_rows_by_mac,
+                            hotspot_networks=runtime_settings.hotspot_status_networks,
                         )
                         ok_any_ip = False
                         for ip_address in candidate_ips:
@@ -2582,6 +2790,7 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                                 ip_binding_rows_by_mac=ip_binding_rows_by_mac,
                                 enforce_binding_guard=binding_guard_enabled,
                                 runtime_settings=runtime_settings,
+                                owned_status_entries_snapshot=owned_status_entries_snapshot,
                             ):
                                 ok_any_ip = True
 
@@ -2604,9 +2813,11 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                                 is_expired,
                                 force_blocked=force_blocked_status,
                                 ip_binding_map=ip_binding_map,
+                                host_usage_map=host_usage_map,
                                 ip_binding_rows_by_mac=ip_binding_rows_by_mac,
                                 enforce_binding_guard=binding_guard_enabled,
                                 runtime_settings=runtime_settings,
+                                owned_status_entries_snapshot=owned_status_entries_snapshot,
                             )
 
                         if runtime_settings.whatsapp_notifications_enabled:
@@ -2668,6 +2879,7 @@ def sync_address_list_for_single_user(
     expiry_local = get_app_local_datetime(user.quota_expiry_date) if user.quota_expiry_date else None
     is_expired = bool(expiry_local and expiry_local < now_local)
     force_blocked_status = _apply_auto_debt_limit_block_state(user, source="sync_single")
+    runtime_settings = _load_hotspot_usage_sync_runtime_settings()
 
     _ctx = nullcontext(api_connection) if api_connection is not None else get_mikrotik_connection()
     with _ctx as api:
@@ -2677,7 +2889,7 @@ def sync_address_list_for_single_user(
 
         ok_binding_map, ip_binding_map, _binding_msg = get_hotspot_ip_binding_user_map(api)
         if not ok_binding_map:
-            ip_binding_map = {}
+            ip_binding_map = None
 
         ok_host_map, host_usage_map, _host_msg = get_hotspot_host_usage_map(api)
         if not ok_host_map:
@@ -2685,6 +2897,12 @@ def sync_address_list_for_single_user(
 
         ok_binding_rows, ip_binding_rows_by_mac = _snapshot_ip_binding_rows_by_mac(api)
         binding_guard_enabled = bool(ok_binding_rows)
+        ok_status_snapshot, owned_status_entries_snapshot = _snapshot_owned_status_entries_for_prune(
+            api,
+            managed_status_lists=runtime_settings.managed_status_lists,
+        )
+        if not ok_status_snapshot:
+            owned_status_entries_snapshot = None
         if enable_policy_self_heal:
             ok_dhcp_snapshot, dhcp_ips_by_mac = _snapshot_dhcp_ips_by_mac(api)
             if not ok_dhcp_snapshot:
@@ -2695,6 +2913,7 @@ def sync_address_list_for_single_user(
                 user,
                 ip_binding_map=ip_binding_map,
                 host_usage_map=host_usage_map,
+                dhcp_ips_by_mac=dhcp_ips_by_mac,
             )
             _self_heal_policy_dhcp_for_user(
                 api,
@@ -2707,6 +2926,7 @@ def sync_address_list_for_single_user(
         ok_any_ip = False
         ips: List[str] = []
         hotspot_networks = _resolve_hotspot_status_networks()
+        hotspot_networks = list(runtime_settings.hotspot_status_networks or hotspot_networks)
 
         if client_ip and _is_ip_in_hotspot_status_networks(client_ip, hotspot_networks):
             ips.append(str(client_ip).strip())
@@ -2716,6 +2936,7 @@ def sync_address_list_for_single_user(
             host_usage_map=host_usage_map,
             ip_binding_map=ip_binding_map,
             ip_binding_rows_by_mac=ip_binding_rows_by_mac,
+            hotspot_networks=hotspot_networks,
         ):
             if ip_address not in ips:
                 ips.append(ip_address)
@@ -2732,10 +2953,18 @@ def sync_address_list_for_single_user(
                 ip_binding_map=ip_binding_map,
                 ip_binding_rows_by_mac=ip_binding_rows_by_mac,
                 enforce_binding_guard=binding_guard_enabled,
+                runtime_settings=runtime_settings,
+                owned_status_entries_snapshot=owned_status_entries_snapshot,
             ):
                 ok_any_ip = True
 
-        _prune_stale_status_entries_for_user(api, user, keep_ips=ips)
+        _prune_stale_status_entries_for_user(
+            api,
+            user,
+            keep_ips=ips,
+            owned_status_entries_snapshot=owned_status_entries_snapshot,
+            managed_status_lists=runtime_settings.managed_status_lists,
+        )
 
         ok_user_ip = _sync_address_list_status(
             api,
@@ -2746,8 +2975,11 @@ def sync_address_list_for_single_user(
             is_expired,
             force_blocked=force_blocked_status,
             ip_binding_map=ip_binding_map,
+            host_usage_map=host_usage_map,
             ip_binding_rows_by_mac=ip_binding_rows_by_mac,
             enforce_binding_guard=binding_guard_enabled,
+            runtime_settings=runtime_settings,
+            owned_status_entries_snapshot=owned_status_entries_snapshot,
         )
         return bool(ok_any_ip or ok_user_ip)
 

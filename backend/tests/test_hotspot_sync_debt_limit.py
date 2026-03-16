@@ -341,6 +341,7 @@ def test_self_heal_policy_binding_also_enforces_static_dhcp_lease(monkeypatch):
     app.config["ENABLE_POLICY_BINDING_SELF_HEAL"] = "True"
 
     calls = []
+    api = object()
 
     monkeypatch.setattr(svc, "resolve_allowed_binding_type_for_user", lambda _u: "regular")
     monkeypatch.setattr(svc, "upsert_ip_binding", lambda **_k: (True, "ok"))
@@ -349,6 +350,7 @@ def test_self_heal_policy_binding_also_enforces_static_dhcp_lease(monkeypatch):
 
     def _capture_lease(**kwargs):
         calls.append(kwargs)
+        return True
 
     monkeypatch.setattr(svc, "_ensure_static_dhcp_lease", _capture_lease)
 
@@ -363,13 +365,20 @@ def test_self_heal_policy_binding_also_enforces_static_dhcp_lease(monkeypatch):
     ip_binding_map = {"AA:BB:CC:DD:EE:FF": {"type": "blocked", "address": "172.16.2.10"}}
 
     with app.app_context():
-        repaired = svc._self_heal_policy_binding_for_user(api=object(), user=user, ip_binding_map=ip_binding_map, host_usage_map={})
+        repaired = svc._self_heal_policy_binding_for_user(
+            api=api,
+            user=user,
+            ip_binding_map=ip_binding_map,
+            host_usage_map={},
+            dhcp_ips_by_mac={},
+        )
 
     assert repaired == 1
     assert len(calls) == 1
     assert calls[0]["mac_address"] == "AA:BB:CC:DD:EE:FF"
     assert calls[0]["ip_address"] == "172.16.2.10"
     assert calls[0]["server"] == "Klien"
+    assert calls[0]["api_connection"] is api
     assert "uid=user-1" in calls[0]["comment"]
 
 
@@ -383,7 +392,7 @@ def test_self_heal_policy_binding_skips_static_dhcp_when_ip_missing(monkeypatch)
     monkeypatch.setattr(svc, "upsert_ip_binding", lambda **_k: (True, "ok"))
     monkeypatch.setattr(svc, "increment_metric", lambda *_a, **_k: None)
     monkeypatch.setattr(svc.settings_service, "get_setting", lambda *_a, **_k: "Klien")
-    monkeypatch.setattr(svc, "_ensure_static_dhcp_lease", lambda **kwargs: calls.append(kwargs))
+    monkeypatch.setattr(svc, "_ensure_static_dhcp_lease", lambda **kwargs: calls.append(kwargs) or True)
 
     user = SimpleNamespace(
         id="user-2",

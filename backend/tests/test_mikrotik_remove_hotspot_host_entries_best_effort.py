@@ -68,6 +68,36 @@ def test_remove_hotspot_host_entries_best_effort_falls_back_to_mac_only():
     assert {"mac-address": "AA:BB:CC:DD:EE:FF"} in resource.queries
 
 
+def test_remove_hotspot_host_entries_best_effort_stops_after_first_success():
+    resource = _HostResource(
+        [
+            {
+                "id": "*1",
+                "mac-address": "AA:BB:CC:DD:EE:FF",
+                "address": "172.16.2.10",
+                "user": "08123456789",
+            }
+        ]
+    )
+    api = _Api(resource)
+
+    ok, msg, removed = remove_hotspot_host_entries_best_effort(
+        api_connection=api,
+        mac_address="AA:BB:CC:DD:EE:FF",
+        address="172.16.2.10",
+        username="08123456789",
+        allow_username_only_fallback=False,
+    )
+
+    assert ok is True
+    assert msg == "Sukses"
+    assert removed == 1
+    assert resource.entries == []
+    assert resource.queries == [
+        {"mac-address": "AA:BB:CC:DD:EE:FF", "address": "172.16.2.10", "user": "08123456789"}
+    ]
+
+
 def test_remove_hotspot_host_entries_best_effort_returns_error_when_query_fails():
     api = _Api(_FailingHostResource())
 

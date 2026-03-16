@@ -104,12 +104,13 @@ def _ensure_static_dhcp_lease(
     ip_address: Optional[str],
     comment: str,
     server: Optional[str],
-) -> None:
+    api_connection: Any = None,
+) -> bool:
     if not mac_address or not ip_address:
-        return
+        return False
     if not _is_mikrotik_operations_enabled():
         logger.info("MikroTik ops disabled: skip DHCP static lease")
-        return
+        return False
 
     # Safety: never pin a static DHCP lease outside the intended client subnets.
     # This prevents accidental cross-VLAN/subnet leases (e.g., 172.16.8.x) being written
@@ -123,7 +124,7 @@ def _ensure_static_dhcp_lease(
         ip_obj = ipaddress.ip_address(str(ip_address).strip())
     except Exception:
         logger.warning("Skip DHCP static lease: invalid ip=%s", ip_address)
-        return
+        return False
 
     networks = []
     for cidr in list(allowed_cidrs or []):
@@ -139,18 +140,19 @@ def _ensure_static_dhcp_lease(
             ip_address,
             [str(n) for n in networks],
         )
-        return
+        return False
 
     # Safety: if server pin is missing, don't attempt to manage static DHCP leases.
     # Without a DHCP server name, MikroTik may have multiple leases across servers and we might touch the wrong one.
     if not (server and str(server).strip()):
         logger.warning("Skip DHCP static lease: MIKROTIK_DHCP_LEASE_SERVER_NAME kosong (butuh pin server).")
-        return
+        return False
 
-    with get_mikrotik_connection() as api:
+    api_ctx = nullcontext(api_connection) if api_connection is not None else get_mikrotik_connection()
+    with api_ctx as api:
         if not api:
             logger.warning("Tidak bisa konek MikroTik untuk DHCP static lease")
-            return
+            return False
         ok, msg = upsert_dhcp_static_lease(
             api_connection=api,
             mac_address=mac_address,
@@ -160,6 +162,8 @@ def _ensure_static_dhcp_lease(
         )
         if not ok:
             logger.warning("Gagal upsert DHCP static lease: mac=%s ip=%s msg=%s", mac_address, ip_address, msg)
+            return False
+    return True
 
 
 def _remove_dhcp_lease(mac_address: Optional[str], server: Optional[str]) -> None:

@@ -1236,6 +1236,8 @@ def remove_hotspot_host_entries_best_effort(
         if ok:
             any_success = True
             total_removed += int(removed or 0)
+            if int(removed or 0) > 0:
+                return True, "Sukses", total_removed
         else:
             last_error = msg
 

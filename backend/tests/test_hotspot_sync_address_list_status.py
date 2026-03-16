@@ -216,6 +216,66 @@ def test_sync_address_list_status_uses_runtime_settings_without_settings_lookup(
     assert "status=fup" in capture["comment"]
 
 
+def test_sync_address_list_status_fallback_reuses_passed_binding_map_without_requery(monkeypatch):
+    _patch_settings(monkeypatch)
+
+    forwarded = {}
+
+    monkeypatch.setattr(svc, "sync_address_list_for_user", lambda **_kwargs: (False, "IP belum tersedia untuk user"))
+    monkeypatch.setattr(
+        svc,
+        "get_hotspot_ip_binding_user_map",
+        lambda _api: (_ for _ in ()).throw(AssertionError("binding map should not be requeried")),
+    )
+    monkeypatch.setattr(
+        svc,
+        "get_ip_by_mac",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("get_ip_by_mac should not be called")),
+    )
+    monkeypatch.setattr(
+        svc,
+        "db",
+        SimpleNamespace(
+            session=SimpleNamespace(
+                scalars=lambda _query: (_ for _ in ()).throw(AssertionError("DB fallback query should not run"))
+            )
+        ),
+    )
+
+    def _fake_sync_address_list_status_for_ip(api, user, ip_address, *args, **kwargs):
+        forwarded["ip_address"] = ip_address
+        forwarded["kwargs"] = kwargs
+        return True
+
+    monkeypatch.setattr(svc, "_sync_address_list_status_for_ip", _fake_sync_address_list_status_for_ip)
+
+    user = SimpleNamespace(
+        id="user-1",
+        is_unlimited_user=False,
+        is_blocked=False,
+        role=_Role("USER"),
+        phone_number="081234567890",
+        total_quota_purchased_mb=10240,
+        devices=[SimpleNamespace(is_authorized=True, mac_address="AA:BB:CC:DD:EE:33", ip_address=None)],
+    )
+
+    ok = svc._sync_address_list_status(
+        api=object(),
+        user=cast(Any, user),
+        username_08="081234567890",
+        remaining_mb=100.0,
+        remaining_percent=10.0,
+        is_expired=False,
+        ip_binding_map={"AA:BB:CC:DD:EE:33": {"address": "172.16.2.41", "user_id": "user-1", "type": "regular"}},
+        host_usage_map={},
+        ip_binding_rows_by_mac={},
+        owned_status_entries_snapshot={"by_user_id": {}, "by_username": {}, "by_address": {}},
+    )
+
+    assert ok is True
+    assert forwarded["ip_address"] == "172.16.2.41"
+
+
 def test_sync_address_list_auto_debt_blocked_user_uses_blocked_list(monkeypatch):
     _patch_settings(monkeypatch, fup_threshold_mb=3072)
 
@@ -307,6 +367,7 @@ def test_self_heal_policy_binding_uses_runtime_settings_without_settings_lookup(
     app.config["ENABLE_POLICY_BINDING_SELF_HEAL"] = True
 
     calls = []
+    api = object()
 
     monkeypatch.setattr(svc, "resolve_allowed_binding_type_for_user", lambda _u: "regular")
     monkeypatch.setattr(svc, "upsert_ip_binding", lambda **_k: (True, "ok"))
@@ -319,6 +380,7 @@ def test_self_heal_policy_binding_uses_runtime_settings_without_settings_lookup(
 
     def _capture_lease(**kwargs):
         calls.append(kwargs)
+        return True
 
     monkeypatch.setattr(svc, "_ensure_static_dhcp_lease", _capture_lease)
 
@@ -334,16 +396,59 @@ def test_self_heal_policy_binding_uses_runtime_settings_without_settings_lookup(
 
     with app.app_context():
         repaired = svc._self_heal_policy_binding_for_user(
-            api=object(),
+            api=api,
             user=cast(Any, user),
             ip_binding_map=ip_binding_map,
             host_usage_map={},
+            dhcp_ips_by_mac={},
             runtime_settings=_make_runtime_settings(dhcp_server_name="cached-dhcp"),
         )
 
     assert repaired == 1
     assert len(calls) == 1
     assert calls[0]["server"] == "cached-dhcp"
+    assert calls[0]["api_connection"] is api
+
+
+def test_self_heal_policy_binding_skips_static_dhcp_when_snapshot_already_has_ip(monkeypatch):
+    app = Flask(__name__)
+    app.config["ENABLE_POLICY_BINDING_SELF_HEAL"] = True
+
+    calls = []
+
+    monkeypatch.setattr(svc, "resolve_allowed_binding_type_for_user", lambda _u: "regular")
+    monkeypatch.setattr(svc, "upsert_ip_binding", lambda **_k: (True, "ok"))
+    monkeypatch.setattr(svc, "increment_metric", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        svc.settings_service,
+        "get_setting",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("settings lookup should be skipped")),
+    )
+    monkeypatch.setattr(svc, "_ensure_static_dhcp_lease", lambda **kwargs: calls.append(kwargs) or True)
+
+    user = SimpleNamespace(
+        id="user-1",
+        role=SimpleNamespace(value="USER"),
+        phone_number="+628123456789",
+        mikrotik_server_name="srv-user",
+        devices=[SimpleNamespace(is_authorized=True, mac_address="AA:BB:CC:DD:EE:FF", ip_address="172.16.2.10")],
+    )
+
+    ip_binding_map = {"AA:BB:CC:DD:EE:FF": {"type": "blocked", "address": "172.16.2.10"}}
+    dhcp_ips_by_mac = {"AA:BB:CC:DD:EE:FF": {"172.16.2.10"}}
+
+    with app.app_context():
+        repaired = svc._self_heal_policy_binding_for_user(
+            api=object(),
+            user=cast(Any, user),
+            ip_binding_map=ip_binding_map,
+            host_usage_map={},
+            dhcp_ips_by_mac=dhcp_ips_by_mac,
+            runtime_settings=_make_runtime_settings(dhcp_server_name="cached-dhcp"),
+        )
+
+    assert repaired == 1
+    assert calls == []
 
 
 def test_self_heal_policy_binding_respects_disable_toggle(monkeypatch):
@@ -591,6 +696,64 @@ def test_sync_address_list_for_ip_guard_allows_when_binding_exists(monkeypatch):
     assert calls["upsert"] == 1
 
 
+def test_sync_address_list_for_ip_skips_noop_router_writes_when_snapshot_matches(monkeypatch):
+    app = Flask(__name__)
+    app.config["MIKROTIK_UNAUTHORIZED_CIDRS"] = ["172.16.2.0/23"]
+
+    _patch_settings(monkeypatch)
+
+    calls = {"upsert": 0}
+    removed_lists: list[str] = []
+
+    def _fake_upsert_address_list_entry(*, api_connection, address, list_name, comment=None, timeout=None):
+        calls["upsert"] += 1
+        return True, "ok"
+
+    def _fake_remove_address_list_entry(*, api_connection, address, list_name):
+        removed_lists.append(str(list_name))
+        return True, "ok"
+
+    monkeypatch.setattr(svc, "upsert_address_list_entry", _fake_upsert_address_list_entry)
+    monkeypatch.setattr(svc, "remove_address_list_entry", _fake_remove_address_list_entry)
+
+    user = SimpleNamespace(
+        id="user-1",
+        is_unlimited_user=True,
+        is_blocked=False,
+        role=_Role("USER"),
+        phone_number="081234567890",
+        total_quota_purchased_mb=0,
+    )
+
+    snapshot = {
+        "by_user_id": {},
+        "by_username": {},
+        "by_address": {
+            "172.16.2.88": {
+                "active_list": (
+                    "lpsaring|status=unlimited|user=081234567890|uid=user-1|role=USER|ip=172.16.2.88"
+                    "|date=2026-03-15|time=23:59:59"
+                )
+            }
+        },
+    }
+
+    with app.app_context():
+        ok = svc._sync_address_list_status_for_ip(
+            api=object(),
+            user=cast(Any, user),
+            ip_address="172.16.2.88",
+            remaining_mb=999.0,
+            remaining_percent=100.0,
+            is_expired=False,
+            owned_status_entries_snapshot=cast(Any, snapshot),
+        )
+
+    assert ok is True
+    assert calls["upsert"] == 0
+    assert removed_lists == ["unauthorized_list"]
+
+
 def test_sync_address_list_for_ip_also_removes_unauthorized_overlap(monkeypatch):
     app = Flask(__name__)
     app.config["MIKROTIK_UNAUTHORIZED_CIDRS"] = ["172.16.2.0/23"]
@@ -748,6 +911,14 @@ def test_snapshot_owned_status_entries_for_prune_indexes_uid_and_username(monkey
             ("fup_list", "172.16.2.192"),
         }
     }
+    assert snapshot["by_address"] == {
+        "172.16.2.27": {
+            "active_list": "lpsaring|status=active|user=083141617466|uid=user-1|role=USER|ip=172.16.2.27",
+        },
+        "172.16.2.192": {
+            "fup_list": "lpsaring|status=fup|user=083141617466|role=USER|ip=172.16.2.192",
+        },
+    }
 
 
 def test_prune_stale_status_entries_for_user_uses_snapshot_without_requery(monkeypatch):
@@ -854,7 +1025,7 @@ def test_sync_address_list_for_single_user_runs_binding_and_dhcp_self_heal(monke
     monkeypatch.setattr(svc, "_snapshot_ip_binding_rows_by_mac", lambda _api: (True, {}))
     monkeypatch.setattr(svc, "_snapshot_dhcp_ips_by_mac", lambda _api: (True, {}))
 
-    def _fake_binding_self_heal(api, user, ip_binding_map, host_usage_map):
+    def _fake_binding_self_heal(api, user, ip_binding_map, host_usage_map, **kwargs):
         calls["binding"] += 1
         return 1
 
@@ -906,7 +1077,7 @@ def test_sync_address_list_for_single_user_skips_policy_self_heal_when_disabled(
         calls["dhcp_snapshot"] += 1
         return True, {}
 
-    def _fake_binding_self_heal(api, user, ip_binding_map, host_usage_map):
+    def _fake_binding_self_heal(api, user, ip_binding_map, host_usage_map, **kwargs):
         calls["binding"] += 1
         return 1
 
