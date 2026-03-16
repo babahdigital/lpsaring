@@ -169,6 +169,57 @@ Follow-up code hardening setelah audit residual:
 - Implementasi tetap memakai jalur `sync_address_list_for_single_user()`, sehingga self-heal binding dan DHCP yang sudah ada tidak diduplikasi ke code path baru.
 - Regression test ditambah di `backend/tests/test_tasks_policy_parity_guard.py` untuk menutup skenario non-parity DHCP drift ini.
 
+### Verifikasi deploy `6101141d`
+
+Deploy fix `dhcp_lease_missing` dipromosikan setelah CI manual `23157359761` dan Docker publish manual `23157363189` sama-sama hijau pada SHA `6101141d2455826b245dd0ba7c6a4f406761c8ca`.
+
+Urutan operasi produksi yang dipakai:
+
+- Stack produksi sengaja diturunkan dulu dengan `docker compose --env-file .env.prod -f docker-compose.prod.yml down --remove-orphans`.
+- Redeploy dilakukan lewat `./deploy_pi.sh --detach-local --recreate`.
+- Health publik dan seluruh service Compose kembali sehat setelah deploy selesai.
+
+Verifikasi live path sesudah deploy menunjukkan dua fase penting:
+
+- Audit segera setelah recreate masih melihat residual sementara `authorized_mac_without_dhcp=12`, tetapi semua counter parity kritis tetap `0`.
+- Eksekusi manual `policy_parity_guard_task.run()` di backend container menghasilkan auto-remediation yang benar-benar menyentuh drift DHCP live:
+  - `candidate_users=8`
+  - `attempted_users=8`
+  - `remediated_users=8`
+  - `failed_users=0`
+  - `unauthorized_sync_triggered=true`
+- Parity audit tepat sesudah guard manual kembali bersih:
+  - `authorized_mac_without_dhcp=0`
+  - `critical_without_binding=0`
+  - `unauthorized_overlap=0`
+  - `binding_dhcp_ip_mismatch=0`
+
+Kesimpulan verifikasi deploy:
+
+- Perubahan di `6101141d` bukan hanya terpasang di runtime, tetapi juga terbukti meremediasi drift `dhcp_lease_missing` pada data produksi yang nyata.
+- Residual DHCP sesaat setelah recreate lebih tepat dibaca sebagai drift transien yang akan dibersihkan oleh policy parity guard, bukan sebagai regresi parity kritis.
+
+### Verifikasi quota pascadeploy `6101141d`
+
+Cek lanjutan pada worker dan beat sesudah deploy menunjukkan loop quota tetap sehat dan tidak kembali ke pola stale lock lama.
+
+Temuan utama:
+
+- Semua service utama Compose tetap `up`; `celery_worker`, `celery_beat`, `backend`, `frontend`, `db`, dan `redis` sehat saat inspeksi.
+- `celery_beat` terus mendispatch `sync_hotspot_usage_task` tiap menit pada `01:43:43` sampai `01:53:43`.
+- Worker memperlihatkan pola yang sesuai desain:
+  - full run `7b6f32ba-fe99-4d8b-be3e-8cfd9da89a01` selesai dalam `66.42684787197504s`
+  - full run `700afad5-7021-4225-89a1-07a1cf65f97c` selesai dalam `62.02632046898361s`
+  - full run `b0c20431-0b71-481c-a947-b856fc85c13f` selesai dalam `59.620200852979906s`
+  - tick di tengah full run hanya `Skip sinkronisasi (worker lain sedang berjalan)`
+  - tick setelah full run selesai kembali `Skip sinkronisasi (menunggu interval dinamis)`
+- Redis key `quota_sync:run_lock` kosong saat inspeksi, sehingga tidak ada indikasi lock yatim yang tertinggal setelah run selesai.
+
+Interpretasi operasional:
+
+- Quota sync pascadeploy tetap stabil di kisaran `~60-66s`, konsisten dengan baseline sehat setelah hardening sebelumnya.
+- Skip yang terlihat sekarang sesuai ekspektasi scheduler dan dynamic interval, bukan gejala lock stale atau stuck worker.
+
 Artefak audit follow-up:
 
 - `tmp/parity_authorized_without_dhcp_latest.log`
@@ -180,6 +231,10 @@ Artefak audit follow-up:
   - `tmp/deploy_detached_20260317_001805.log`
   - `tmp/prod_down_before_recreate_20260317_004412.log`
   - `tmp/deploy_detached_20260317_004429.log`
+  - `tmp/prod_down_before_6101141d_20260317_014123.log`
+  - `tmp/deploy_detached_20260317_014136.log`
+  - `tmp/postdeploy_ps_6101141d.log`
+  - `tmp/postdeploy_health_6101141d.log`
 - Parity:
   - `tmp/parity_audit_20260317_002046.log`
   - `tmp/parity_audit_postfix_20260317_004828.log`
@@ -195,6 +250,7 @@ Artefak audit follow-up:
 - Untuk command SSH yang panjang, output wrapper terminal tidak boleh dijadikan source of truth; capture ke file lokal `tmp/` lebih andal.
 - Redis lock tanpa validasi task aktif tidak cukup aman untuk worker yang bisa direcreate sewaktu-waktu.
 - `authorized_mac_without_dhcp` harus dibaca sebagai sinyal audit lanjutan, bukan blocker deploy, selama counter parity kritis tetap nol.
+- Setelah recreate, residual `authorized_mac_without_dhcp` bisa muncul sementara; eksekusi manual `policy_parity_guard_task.run()` lalu `audit-hotspot-parity` adalah verifikasi paling langsung untuk membedakan drift transien dari regresi deploy.
 
 ## Tindak lanjut yang masih opsional
 

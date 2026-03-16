@@ -72,6 +72,15 @@ interface AdminMetricsResponse {
   }
 }
 
+type AccessParityMismatchKey =
+  | 'binding_type'
+  | 'missing_ip_binding'
+  | 'address_list'
+  | 'address_list_multi_status'
+  | 'no_authorized_device'
+  | 'no_resolvable_ip'
+  | 'dhcp_lease_missing'
+
 interface AccessParityItem {
   user_id: string
   phone_number: string
@@ -82,8 +91,9 @@ interface AccessParityItem {
   expected_binding_type: string
   actual_binding_type?: string | null
   address_list_statuses: string[]
-  mismatches: string[]
+  mismatches: AccessParityMismatchKey[]
   auto_fixable?: boolean
+  parity_relevant?: boolean
 }
 
 interface AccessParityResponse {
@@ -94,6 +104,8 @@ interface AccessParityResponse {
     mismatches_total?: number
     non_parity_mismatches?: number
     no_authorized_device_count?: number
+    auto_fixable_items?: number
+    mismatch_types?: Partial<Record<AccessParityMismatchKey, number>>
   }
 }
 
@@ -219,6 +231,24 @@ onMounted(async () => {
 
 const reliabilitySummary = computed(() => buildReliabilitySummary(adminMetrics.value))
 
+const ACCESS_PARITY_MISMATCH_META: Record<AccessParityMismatchKey, { label: string, color: string }> = {
+  binding_type: { label: 'binding_type', color: 'error' },
+  missing_ip_binding: { label: 'missing_ip_binding', color: 'error' },
+  address_list: { label: 'address_list', color: 'error' },
+  address_list_multi_status: { label: 'address_list_multi_status', color: 'warning' },
+  no_authorized_device: { label: 'belum_setup_perangkat', color: 'default' },
+  no_resolvable_ip: { label: 'ip_belum_terbaca', color: 'warning' },
+  dhcp_lease_missing: { label: 'dhcp_lease_missing', color: 'info' },
+}
+
+const ACTIONABLE_PARITY_MISMATCHES = new Set<AccessParityMismatchKey>([
+  'binding_type',
+  'missing_ip_binding',
+  'address_list',
+  'address_list_multi_status',
+  'no_resolvable_ip',
+])
+
 const reliabilitySignalItems = computed(() => [
   {
     key: 'payment-idempotency',
@@ -260,7 +290,30 @@ const accessParitySummary = computed(() => ({
   mismatchesTotal: accessParity.value?.summary?.mismatches_total ?? 0,
   nonParityMismatches: accessParity.value?.summary?.non_parity_mismatches ?? 0,
   noAuthorizedDeviceCount: accessParity.value?.summary?.no_authorized_device_count ?? 0,
+  autoFixableItems: accessParity.value?.summary?.auto_fixable_items ?? 0,
+  mismatchTypes: accessParity.value?.summary?.mismatch_types ?? {},
 }))
+const accessParityDhcpDriftCount = computed(() => accessParitySummary.value.mismatchTypes.dhcp_lease_missing ?? 0)
+const accessParityContextMessage = computed(() => {
+  const fragments: string[] = []
+
+  if (accessParitySummary.value.noAuthorizedDeviceCount > 0) {
+    fragments.push(`${accessParitySummary.value.noAuthorizedDeviceCount} user belum login dari perangkat pertama. Ini bukan mismatch akses dan tidak perlu tombol perbaiki.`)
+  }
+
+  if (accessParityDhcpDriftCount.value > 0) {
+    fragments.push(`${accessParityDhcpDriftCount.value} drift DHCP terdeteksi. Ini bisa muncul sementara setelah recreate atau saat device sedang offline.`)
+  }
+
+  if (fragments.length === 0) {
+    if (accessParitySummary.value.mismatches > 0)
+      return 'Tabel di bawah fokus ke mismatch akses yang masih mempengaruhi sinkronisasi policy di router.'
+
+    return 'Yang dihitung merah hanya mismatch akses yang benar-benar mempengaruhi policy router.'
+  }
+
+  return `Tabel di bawah fokus ke mismatch akses. ${fragments.join(' ')}`
+})
 const fixingParityByKey = ref<Record<string, boolean>>({})
 const parityFixMessage = ref('')
 const parityFixError = ref('')
@@ -268,6 +321,50 @@ const parityFixError = ref('')
 function getParityKey(item: AccessParityItem): string {
   const macPart = item.mac || 'no-mac'
   return `${item.user_id}-${macPart}-${item.mismatches.join('_')}`
+}
+
+function getParityMismatchMeta(mismatch: AccessParityMismatchKey): { label: string, color: string } {
+  return ACCESS_PARITY_MISMATCH_META[mismatch] ?? { label: mismatch, color: 'default' }
+}
+
+function hasActionableParityMismatch(item: AccessParityItem): boolean {
+  return item.mismatches.some(mismatch => ACTIONABLE_PARITY_MISMATCHES.has(mismatch))
+}
+
+function getParityActionLabel(item: AccessParityItem): string {
+  if (item.auto_fixable === false)
+    return 'Manual'
+
+  if (item.mismatches.includes('address_list') || item.mismatches.includes('address_list_multi_status'))
+    return 'Sinkronkan'
+
+  if (item.mismatches.includes('binding_type') || item.mismatches.includes('missing_ip_binding'))
+    return 'Perbaiki akses'
+
+  if (item.mismatches.includes('dhcp_lease_missing'))
+    return hasActionableParityMismatch(item) ? 'Sinkronkan' : 'Pantau'
+
+  return 'Periksa'
+}
+
+function buildParityFixMessage(item: AccessParityItem, result: AccessParityFixResponse): string {
+  const appliedSteps: string[] = []
+  const warnings = (result.warnings ?? []).filter(Boolean)
+
+  if (result.binding_updated)
+    appliedSteps.push('ip-binding')
+
+  if (result.address_list_synced)
+    appliedSteps.push('address-list')
+
+  if (result.dhcp_synced)
+    appliedSteps.push('DHCP static lease')
+
+  const headline = result.message || `Sinkronisasi dijalankan untuk ${item.phone_number}`
+  const stepsText = appliedSteps.length > 0 ? ` Langkah: ${appliedSteps.join(', ')}.` : ''
+  const warningText = warnings.length > 0 ? ` Catatan: ${warnings.join(' ')}` : ''
+
+  return `${headline}${stepsText}${warningText}`.trim()
 }
 
 async function handleFixParityItem(item: AccessParityItem) {
@@ -291,7 +388,7 @@ async function handleFixParityItem(item: AccessParityItem) {
         ip: item.ip ?? null,
       },
     })
-    parityFixMessage.value = result?.message || `Fix parity berhasil untuk ${item.phone_number}`
+    parityFixMessage.value = buildParityFixMessage(item, result ?? {})
     await Promise.all([refreshParity(), refreshMetrics()])
   }
   catch (error) {
@@ -1189,17 +1286,26 @@ useHead({ title: 'Dashboard Admin' })
                 :color="accessParitySummary.mismatches > 0 ? 'error' : 'success'"
               >
                 <VIcon :icon="accessParitySummary.mismatches > 0 ? 'tabler-alert-circle' : 'tabler-circle-check'" size="14" class="me-1" />
-                {{ accessParitySummary.mismatches > 0 ? `${accessParitySummary.mismatches} tidak sinkron` : 'Semua sinkron' }}
+                {{ accessParitySummary.mismatches > 0 ? `${accessParitySummary.mismatches} mismatch akses` : 'Akses inti sinkron' }}
                 <span class="ms-1 opacity-70">/ {{ accessParitySummary.users }} user</span>
+              </VChip>
+              <VChip
+                v-if="accessParityDhcpDriftCount > 0"
+                size="small"
+                label
+                color="info"
+              >
+                <VIcon icon="tabler-route-2" size="14" class="me-1" />
+                {{ accessParityDhcpDriftCount }} drift DHCP
               </VChip>
               <VChip
                 v-if="accessParitySummary.noAuthorizedDeviceCount > 0"
                 size="small"
                 label
-                color="warning"
+                color="default"
               >
                 <VIcon icon="tabler-device-mobile-off" size="14" class="me-1" />
-                {{ accessParitySummary.noAuthorizedDeviceCount }} belum setup perangkat
+                {{ accessParitySummary.noAuthorizedDeviceCount }} belum login perangkat
               </VChip>
               <VChip
                 v-if="parityPending"
@@ -1213,19 +1319,15 @@ useHead({ title: 'Dashboard Admin' })
             </div>
           </VCardItem>
           <VCardText>
-            <!-- Onboarding Gap Info Box -->
             <VAlert
-              v-if="!parityPending && accessParitySummary.noAuthorizedDeviceCount > 0"
-              type="warning"
+              v-if="!parityPending && accessParityContextMessage"
+              type="info"
               variant="tonal"
               density="compact"
               class="mb-3"
-              icon="tabler-device-mobile-off"
+              icon="tabler-info-circle"
             >
-              <strong>{{ accessParitySummary.noAuthorizedDeviceCount }} user belum setup perangkat</strong>
-              — User ini sudah terdaftar tapi belum pernah login dari perangkat manapun.
-              Mereka tidak bisa menggunakan hotspot sampai melakukan login pertama (OTP) dari perangkat mereka.
-              User ini tidak dihitung dalam mismatch parity di bawah.
+              {{ accessParityContextMessage }}
             </VAlert>
 
             <!-- Fix result messages -->
@@ -1280,12 +1382,12 @@ useHead({ title: 'Dashboard Admin' })
                         v-for="m in item.mismatches"
                         :key="m"
                         size="x-small"
-                        color="error"
+                        :color="getParityMismatchMeta(m).color"
                         label
                         variant="tonal"
                         class="me-1"
                       >
-                        {{ m }}
+                        {{ getParityMismatchMeta(m).label }}
                       </VChip>
                       <span v-if="item.mismatches.length === 0" class="text-disabled">-</span>
                     </td>
@@ -1298,7 +1400,7 @@ useHead({ title: 'Dashboard Admin' })
                         :disabled="Boolean(fixingParityByKey[getParityKey(item)]) || item.auto_fixable === false"
                         @click="handleFixParityItem(item)"
                       >
-                        {{ item.auto_fixable === false ? 'Manual' : 'Perbaiki' }}
+                        {{ getParityActionLabel(item) }}
                       </VBtn>
                     </td>
                   </tr>
