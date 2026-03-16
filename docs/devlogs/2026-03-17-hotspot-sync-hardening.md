@@ -163,6 +163,12 @@ Interpretasi operasional saat ini:
 - Residual ini tetap tergolong non-kritis karena `critical_without_binding=0`, `unauthorized_overlap=0`, dan `binding_dhcp_ip_mismatch=0`.
 - Device tersebut lebih tepat diperlakukan sebagai kandidat drift DHCP yang perlu audit targetted, bukan blocker deploy atau parity failure.
 
+Follow-up code hardening setelah audit residual:
+
+- `backend/app/tasks.py` diperbarui agar policy parity guard juga boleh meremediasi `dhcp_lease_missing` yang `auto_fixable`, walau item tersebut bukan parity-critical.
+- Implementasi tetap memakai jalur `sync_address_list_for_single_user()`, sehingga self-heal binding dan DHCP yang sudah ada tidak diduplikasi ke code path baru.
+- Regression test ditambah di `backend/tests/test_tasks_policy_parity_guard.py` untuk menutup skenario non-parity DHCP drift ini.
+
 Artefak audit follow-up:
 
 - `tmp/parity_authorized_without_dhcp_latest.log`

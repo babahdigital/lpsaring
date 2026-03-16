@@ -13,7 +13,9 @@ Lampiran wajib:
 - **Full quota sync produksi turun dari sekitar `450-484s` menjadi kisaran `60-66s`:** rangkaian commit `bcfa8524`, `a6edfd9a`, dan `4f7a1110` menghapus pembangunan snapshot status berulang, membekukan runtime settings sekali per run, dan memangkas round-trip RouterOS/DHCP self-heal yang tidak perlu.
 - **Self-heal hotspot tidak lagi memboroskan call RouterOS:** `backend/app/services/hotspot_sync_service.py`, `backend/app/services/device_management_service.py`, dan `backend/app/infrastructure/gateways/mikrotik_client.py` kini memanfaatkan ulang koneksi aktif, menekan no-op update, dan menghentikan best-effort cleanup setelah removal pertama yang sukses.
 - **Post-recreate quota sync tidak lagi false skip karena stale Redis lock:** `backend/app/tasks.py` sekarang memverifikasi keberadaan `sync_hotspot_usage_task` aktif lewat Celery inspect sebelum mempercayai `quota_sync:run_lock`, lalu mereclaim lock bila lock tersebut tertinggal dari worker lama.
+- **Policy parity guard kini ikut menutup gap DHCP non-kritis yang auto-fixable:** mismatch `dhcp_lease_missing` yang sebelumnya hanya muncul sebagai residual audit sekarang juga bisa ikut diremediasi otomatis lewat jalur single-user sync, selama item tersebut punya kandidat IP terpercaya dan memang auto-fixable.
 - **Regression coverage untuk stale lock recovery ditambahkan:** `backend/tests/test_tasks_hotspot_usage_sync.py` memastikan path reclaim dan path skip sama-sama tetap benar.
+- **Regression coverage untuk DHCP drift remediation ditambahkan:** `backend/tests/test_tasks_policy_parity_guard.py` sekarang memastikan `dhcp_lease_missing` yang non-parity tapi auto-fixable tetap masuk ke auto-remediation guard.
 
 ### Documentation (2026-03-17)
 

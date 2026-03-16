@@ -217,6 +217,11 @@ _POLICY_PARITY_AUTO_REMEDIATION_MISMATCH_KEYS = {
     "binding_type",
     "address_list",
     "address_list_multi_status",
+    "dhcp_lease_missing",
+}
+
+_POLICY_PARITY_AUTO_REMEDIATION_NON_PARITY_KEYS = {
+    "dhcp_lease_missing",
 }
 
 
@@ -278,7 +283,7 @@ def _collect_policy_parity_auto_remediation_candidates(
         user_id = str(item.get("user_id") or "").strip()
         if not user_id:
             continue
-        if not bool(item.get("parity_relevant")) or not bool(item.get("auto_fixable")):
+        if not bool(item.get("auto_fixable")):
             continue
 
         mismatch_set = {
@@ -286,7 +291,12 @@ def _collect_policy_parity_auto_remediation_candidates(
             for mismatch in (item.get("mismatches") or [])
             if str(mismatch or "").strip()
         }
-        if not mismatch_set.intersection(_POLICY_PARITY_AUTO_REMEDIATION_MISMATCH_KEYS):
+        remediable_mismatches = mismatch_set.intersection(_POLICY_PARITY_AUTO_REMEDIATION_MISMATCH_KEYS)
+        if not remediable_mismatches:
+            continue
+        if not bool(item.get("parity_relevant")) and not remediable_mismatches.issubset(
+            _POLICY_PARITY_AUTO_REMEDIATION_NON_PARITY_KEYS
+        ):
             continue
 
         candidate = candidates_by_user_id.get(user_id)

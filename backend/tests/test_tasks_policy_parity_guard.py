@@ -189,8 +189,109 @@ def test_policy_parity_guard_auto_remediates_unique_users(monkeypatch):
     cached = app.redis_client_otp.values["policy_parity:last_report"]["value"]
     payload = json.loads(cached)
     assert payload["summary"]["mismatches"] == 0
-    assert payload["auto_remediation"]["candidate_users"] == 2
+    assert payload["auto_remediation"]["candidate_users"] == 3
     assert payload["auto_remediation"]["remediated_users"] == 2
+    assert payload["auto_remediation"]["skipped_missing_user"] == 1
+    assert payload["auto_remediation"]["unauthorized_sync_triggered"] is True
+
+
+def test_policy_parity_guard_auto_remediates_non_parity_dhcp_gap(monkeypatch):
+    app = _make_app()
+
+    monkeypatch.setattr(tasks, "create_app", lambda: app)
+    monkeypatch.setattr(tasks.settings_service, "get_setting", lambda key, default=None: "True")
+    monkeypatch.setattr(tasks, "increment_metric", lambda *_args, **_kwargs: None)
+
+    reports = [
+        {
+            "ok": True,
+            "summary": {
+                "mismatches": 0,
+                "mismatch_types": {
+                    "binding_type": 0,
+                    "address_list": 0,
+                    "address_list_multi_status": 0,
+                    "dhcp_lease_missing": 1,
+                },
+            },
+            "items": [
+                {
+                    "user_id": "user-3",
+                    "phone_number": "+628133333333",
+                    "ip": "172.16.3.120",
+                    "mismatches": ["dhcp_lease_missing"],
+                    "auto_fixable": True,
+                    "parity_relevant": False,
+                }
+            ],
+        },
+        {
+            "ok": True,
+            "summary": {
+                "mismatches": 0,
+                "mismatch_types": {
+                    "binding_type": 0,
+                    "address_list": 0,
+                    "address_list_multi_status": 0,
+                    "dhcp_lease_missing": 0,
+                },
+            },
+            "items": [],
+        },
+    ]
+
+    monkeypatch.setattr(tasks, "collect_access_parity_report", lambda *, max_items=500: reports.pop(0))
+    monkeypatch.setattr(
+        tasks,
+        "db",
+        SimpleNamespace(
+            session=SimpleNamespace(
+                query=lambda *_args, **_kwargs: _FakeQuery(
+                    [SimpleNamespace(id="user-3", devices=[SimpleNamespace(is_authorized=True, mac_address="AA:BB:CC:DD:EE:03")])]
+                ),
+                remove=lambda: None,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        tasks,
+        "get_hotspot_host_usage_map",
+        lambda _api: (True, {"AA:BB:CC:DD:EE:03": {"address": "172.16.3.120"}}, "ok"),
+    )
+    monkeypatch.setattr(
+        tasks,
+        "get_hotspot_ip_binding_user_map",
+        lambda _api: (True, {"AA:BB:CC:DD:EE:03": {}}, "ok"),
+    )
+
+    sync_calls = []
+
+    def _fake_sync_address_list_for_single_user(user, client_ip=None, api_connection=None):
+        sync_calls.append((str(user.id), client_ip, api_connection))
+        return True
+
+    monkeypatch.setattr(tasks, "sync_address_list_for_single_user", _fake_sync_address_list_for_single_user)
+    monkeypatch.setattr(tasks.sync_unauthorized_hosts_command, "main", lambda *args, **kwargs: None)
+
+    @contextmanager
+    def _fake_mikrotik_connection():
+        yield object()
+
+    monkeypatch.setattr(tasks, "get_mikrotik_connection", _fake_mikrotik_connection)
+
+    tasks.policy_parity_guard_task.run()
+
+    assert len(sync_calls) == 1
+    assert sync_calls[0][0] == "user-3"
+    assert sync_calls[0][1] == "172.16.3.120"
+    assert sync_calls[0][2] is not None
+
+    cached = app.redis_client_otp.values["policy_parity:last_report"]["value"]
+    payload = json.loads(cached)
+    assert payload["summary"]["mismatches"] == 0
+    assert payload["auto_remediation"]["candidate_users"] == 1
+    assert payload["auto_remediation"]["remediated_users"] == 1
+    assert payload["auto_remediation"]["skipped_missing_user"] == 0
     assert payload["auto_remediation"]["unauthorized_sync_triggered"] is True
 
 
