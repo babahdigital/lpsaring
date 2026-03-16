@@ -7,9 +7,13 @@ function hasIdentityValue(value: string | null | undefined): boolean {
 export function shouldAttemptPostLoginHotspotBridge(
   identity: Partial<HotspotIdentity>,
   bridgeTargetUrl: string | null | undefined,
+  trustedLoginHint: string | null | undefined,
 ): boolean {
   const hasExplicitIdentity = hasIdentityValue(identity.clientIp) || hasIdentityValue(identity.clientMac)
   if (hasExplicitIdentity)
+    return false
+
+  if (!hasIdentityValue(trustedLoginHint))
     return false
 
   return hasIdentityValue(bridgeTargetUrl)

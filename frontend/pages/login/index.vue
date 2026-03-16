@@ -18,7 +18,7 @@ import { shouldRedirectToHotspotRequired } from '~/utils/hotspotRedirect'
 import { sanitizePostLoginHotspotBridgeReturnPath, shouldAttemptPostLoginHotspotBridge } from '~/utils/hotspotPostLoginBridge'
 import { TAMPING_OPTION_ITEMS } from '~/utils/constants'
 import { rememberHotspotIdentity, resolveHotspotIdentity } from '~/utils/hotspotIdentity'
-import { extractTrustedHotspotLoginHintFromQuery, resolveHotspotTrustConfig } from '~/utils/hotspotTrust'
+import { extractTrustedHotspotLoginHintFromQuery, resolveHotspotTrustConfig, sanitizeHotspotLoginHint } from '~/utils/hotspotTrust'
 
 definePageMeta({
   layout: 'blank',
@@ -34,6 +34,7 @@ const hotspotTrustConfig = resolveHotspotTrustConfig({
   hotspotTrustedLoginHosts: runtimeConfig.public.hotspotTrustedLoginHosts,
   trustedLoginUrls: [runtimeConfig.public.appLinkMikrotik, runtimeConfig.public.mikrotikLoginUrl],
 })
+const LAST_MIKROTIK_LOGIN_HINT_KEY = 'lpsaring:last-mikrotik-login-link'
 const isHydrated = ref(false)
 const isWidePadding = computed(() => (isHydrated.value ? display.smAndUp.value : false))
 
@@ -125,10 +126,40 @@ function readMikrotikLoginHintFromRoute(): string {
   return extractTrustedHotspotLoginHintFromQuery((route.query as Record<string, unknown>) ?? {}, hotspotTrustConfig)
 }
 
-const hotspotLoginUrl = computed(() => {
+function getStoredTrustedMikrotikLoginHint(): string {
+  if (!import.meta.client)
+    return ''
+
+  try {
+    const raw = String(window.localStorage.getItem(LAST_MIKROTIK_LOGIN_HINT_KEY) ?? '').trim()
+    if (!raw)
+      return ''
+
+    const sanitized = sanitizeHotspotLoginHint(raw, hotspotTrustConfig)
+    if (!sanitized) {
+      window.localStorage.removeItem(LAST_MIKROTIK_LOGIN_HINT_KEY)
+      return ''
+    }
+
+    return sanitized
+  }
+  catch {
+    return ''
+  }
+}
+
+const trustedHotspotLoginHint = computed(() => {
   const routeHint = readMikrotikLoginHintFromRoute()
   if (routeHint)
-    return normalizeHotspotLoginUrl(routeHint)
+    return routeHint
+
+  return getStoredTrustedMikrotikLoginHint()
+})
+
+const hotspotLoginUrl = computed(() => {
+  const trustedHint = String(trustedHotspotLoginHint.value || '').trim()
+  if (trustedHint)
+    return normalizeHotspotLoginUrl(trustedHint)
 
   const appLink = String(runtimeConfig.public.appLinkMikrotik ?? '').trim()
   if (appLink)
@@ -322,7 +353,7 @@ async function handleVerifyOtp() {
     rememberHotspotIdentity(identity, hotspotTrustConfig)
     const clientIp = identity.clientIp
     const clientMac = identity.clientMac
-    const mikrotikLinkHint = readMikrotikLoginHintFromRoute()
+    const mikrotikLinkHint = String(trustedHotspotLoginHint.value || '').trim()
     const loginResponse = await authStore.verifyOtp(numberToVerify, otpToSend, {
       clientIp: clientIp || null,
       clientMac: clientMac || null,
@@ -386,7 +417,7 @@ async function handleVerifyOtp() {
     }
 
     if (import.meta.client) {
-      if (shouldAttemptPostLoginHotspotBridge(identity, hotspotBridgeTargetUrl.value) && beginSilentHotspotBridge())
+      if (shouldAttemptPostLoginHotspotBridge(identity, hotspotBridgeTargetUrl.value, trustedHotspotLoginHint.value) && beginSilentHotspotBridge())
         return
 
       let requireHotspotStep = shouldRedirectToHotspotRequired({

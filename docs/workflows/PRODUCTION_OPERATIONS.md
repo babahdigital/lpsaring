@@ -90,6 +90,38 @@ Cek tambahan yang umum dipakai:
 - satu asset `/_nuxt/...`
 - log backend dan worker 10-20 menit terakhir
 
+## Validasi Trust Boundary Captive Portal
+
+Gunakan langkah ini bila deploy menyentuh flow `/captive`, `/login`, atau `/login/hotspot-required`.
+
+### Cek cepat publik
+
+```bash
+ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@159.89.192.31 \
+  'tail -n 400 /home/abdullah/nginx/logs/access.log \
+    | grep -E "link_login_only|/captive|/login|/hotspot-required|wartelpas|172\.16\.12\.1| 500 | 401 " || true'
+```
+
+### Cek cepat runtime app
+
+```bash
+$COMPOSE_PROD logs --since 20m --no-color backend frontend \
+  | grep -Ei 'link_login_only|hotspot-required|wartelpas|172\.16\.12\.1|Traceback|Exception' || true
+```
+
+### Interpretasi hasil
+
+- `link_login_only` dengan host trusted seperti `login.home.arpa` masih normal.
+- `client_ip` hotspot yang sah harus tetap berada di CIDR allowlist produksi, saat ini `172.16.2.0/23`.
+- Hit yang membawa `wartelpas`, `172.16.12.1`, atau subnet asing harus diperlakukan sebagai foreign context dan tidak boleh diizinkan masuk ke flow activation.
+- Jika tidak ada hit hari ini, itu hanya berarti belum ada traffic captive/login pada window audit tersebut; verifikasi end-to-end perlu memakai satu sesi hotspot nyata.
+
+### Aturan perubahan allowlist
+
+- Jika ada router login atau subnet hotspot resmi baru, update `NUXT_PUBLIC_HOTSPOT_ALLOWED_CLIENT_CIDRS` dan `NUXT_PUBLIC_HOTSPOT_TRUSTED_LOGIN_HOSTS`.
+- Jangan menonaktifkan guard untuk mengakomodasi portal asing atau device liar.
+- Setelah allowlist berubah, ulangi focused frontend tests untuk hotspot trust sebelum deploy.
+
 ## Validasi Hotspot Sync Pascadeploy
 
 ### Urutan aman yang sudah tervalidasi
@@ -148,6 +180,7 @@ Aturan operasional:
   - `binding_dhcp_ip_mismatch`
 - `authorized_mac_without_dhcp` dipantau terpisah karena bisa naik akibat device authorized yang sedang offline; jangan jadikan blocker deploy tanpa audit per-device.
 - Devlog detail dan RCA insiden terkait ada di `docs/devlogs/2026-03-17-hotspot-sync-hardening.md` dan `docs/incidents/2026-03-17-stale-quota-sync-lock.md`.
+- RCA dan devlog untuk foreign captive context ada di `docs/incidents/2026-03-17-foreign-hotspot-context.md` dan `docs/devlogs/2026-03-17-hotspot-portal-trust-hardening.md`.
 
 ## Error Scan Singkat
 

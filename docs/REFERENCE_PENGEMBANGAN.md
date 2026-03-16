@@ -29,6 +29,14 @@ Lampiran wajib:
 - Focused lint hotspot sync:
   `docker compose exec -T backend ruff check backend/app/tasks.py backend/app/services/hotspot_sync_service.py backend/app/services/device_management_service.py backend/app/infrastructure/gateways/mikrotik_client.py backend/tests/test_tasks_hotspot_usage_sync.py backend/tests/test_hotspot_sync_address_list_status.py backend/tests/test_hotspot_sync_debt_limit.py backend/tests/test_mikrotik_remove_hotspot_host_entries_best_effort.py`
 
+### Validasi fokus hotspot portal trust
+
+- Focused frontend tests hotspot trust:
+  `docker compose exec frontend pnpm run test -- tests/hotspot-trust.test.ts tests/hotspot-identity.test.ts tests/auth-middleware.runtime.test.ts tests/hotspot-login-targets.test.ts tests/hotspot-post-login-bridge.test.ts`
+- Focused frontend lint hotspot trust:
+  `docker compose exec frontend pnpm exec eslint middleware/auth.global.ts pages/captive/index.vue pages/login/index.vue pages/login/hotspot-required.vue store/auth.ts utils/hotspotIdentity.ts utils/hotspotTrust.ts tests/hotspot-trust.test.ts tests/hotspot-identity.test.ts tests/auth-middleware.runtime.test.ts`
+- Jika perubahan menyentuh `runtimeConfig.public`, frontend typecheck tetap wajib dijalankan penuh.
+
 ## Kepemilikan File Env
 
 - Root `.env`: interpolation Compose dan secret lintas service yang tidak dipublikasi.
@@ -84,6 +92,14 @@ Variabel yang paling sensitif terhadap perilaku runtime:
 - Detail implementasi, hasil ukur, dan artefak operasi disimpan di [docs/devlogs/2026-03-17-hotspot-sync-hardening.md](devlogs/2026-03-17-hotspot-sync-hardening.md).
 - RCA khusus stale Redis lock pascarecreate disimpan di [docs/incidents/2026-03-17-stale-quota-sync-lock.md](incidents/2026-03-17-stale-quota-sync-lock.md).
 
+## Fokus Aktif Hotspot Portal Trust
+
+- Baseline produksi untuk trust boundary captive portal saat ini adalah commit `ab53b3ff`.
+- Default trust policy produksi saat ini mengizinkan hotspot client CIDR `172.16.2.0/23` dan trusted login host `login.home.arpa`.
+- Semua hint hotspot dari query, nested redirect, referrer, dan storage harus dianggap tidak trusted sampai lolos sanitasi frontend.
+- Detail implementasi disimpan di [docs/devlogs/2026-03-17-hotspot-portal-trust-hardening.md](devlogs/2026-03-17-hotspot-portal-trust-hardening.md).
+- RCA insiden foreign captive context disimpan di [docs/incidents/2026-03-17-foreign-hotspot-context.md](incidents/2026-03-17-foreign-hotspot-context.md).
+
 ### Midtrans
 
 - Backend memakai `MIDTRANS_SERVER_KEY`, `MIDTRANS_CLIENT_KEY`, dan `MIDTRANS_IS_PRODUCTION`.
@@ -110,8 +126,10 @@ Variabel yang paling sensitif terhadap perilaku runtime:
 - [docs/API_DETAIL.md](API_DETAIL.md)
 - [docs/VUEXY_BASELINE_STRATEGY.md](VUEXY_BASELINE_STRATEGY.md)
 - [docs/devlogs/README.md](devlogs/README.md)
+- [docs/devlogs/2026-03-17-hotspot-portal-trust-hardening.md](devlogs/2026-03-17-hotspot-portal-trust-hardening.md)
 - [docs/devlogs/2026-03-17-hotspot-sync-hardening.md](devlogs/2026-03-17-hotspot-sync-hardening.md)
 - [docs/incidents/README.md](incidents/README.md)
+- [docs/incidents/2026-03-17-foreign-hotspot-context.md](incidents/2026-03-17-foreign-hotspot-context.md)
 - [docs/incidents/2026-03-17-stale-quota-sync-lock.md](incidents/2026-03-17-stale-quota-sync-lock.md)
 - [docs/workflows/OPENAPI_CONTRACT.md](workflows/OPENAPI_CONTRACT.md)
 - [docs/workflows/CI_CD.md](workflows/CI_CD.md)

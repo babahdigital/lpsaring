@@ -259,6 +259,7 @@ const tablerIcons = [
   'reload',
   'robot',
   'router',
+  'route-2',
   'scan',
   'search',
   'send',
