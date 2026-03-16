@@ -100,6 +100,7 @@ class HotspotUsageSyncRuntimeSettings:
     habis_profile: str
     fup_profile: str
     whatsapp_notifications_enabled: bool
+    managed_status_lists: List[str]
 
 
 @dataclass(frozen=True)
@@ -213,6 +214,7 @@ def _load_hotspot_usage_sync_runtime_settings() -> HotspotUsageSyncRuntimeSettin
             whatsapp_notifications_enabled=(
                 settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") == "True"
             ),
+            managed_status_lists=_resolve_managed_status_lists(),
         )
     finally:
         # Lepas sesi settings sebelum loop per-user memulai transaksi eksplisit.
@@ -459,7 +461,111 @@ def _is_status_entry_owned_by_user(comment: Any, *, user_id: str, username_08: s
     return False
 
 
-def _prune_stale_status_entries_for_user(api: object, user: User, keep_ips: Optional[List[str]] = None) -> int:
+def _extract_status_entry_owner_tokens(comment: Any) -> tuple[str, str]:
+    comment_text = str(comment or "").strip()
+    if "lpsaring|status=" not in comment_text:
+        return "", ""
+
+    user_id = ""
+    username_08 = ""
+    for token in comment_text.split("|"):
+        token_text = str(token or "").strip()
+        if not token_text:
+            continue
+        if token_text.startswith("uid=") and not user_id:
+            user_id = token_text[4:].strip()
+            continue
+        if token_text.startswith("user=") and not username_08:
+            username_08 = token_text[5:].strip()
+
+    return user_id, username_08
+
+
+def _build_owned_status_entries_snapshot() -> Dict[str, Dict[str, set[tuple[str, str]]]]:
+    return {
+        "by_user_id": {},
+        "by_username": {},
+    }
+
+
+def _snapshot_owned_status_entries_for_prune(
+    api: object,
+    *,
+    managed_status_lists: Optional[List[str]] = None,
+) -> tuple[bool, Dict[str, Dict[str, set[tuple[str, str]]]]]:
+    snapshot = _build_owned_status_entries_snapshot()
+    if not api:
+        return False, snapshot
+
+    resource_getter = getattr(api, "get_resource", None)
+    if not callable(resource_getter):
+        return False, snapshot
+
+    try:
+        resource = resource_getter("/ip/firewall/address-list")
+    except Exception as exc:
+        logger.debug("Skip snapshot managed status-list karena gagal ambil resource: %s", exc)
+        return False, snapshot
+
+    rows_getter = getattr(resource, "get", None)
+    if not callable(rows_getter):
+        return False, snapshot
+
+    managed_lists = managed_status_lists if managed_status_lists is not None else _resolve_managed_status_lists()
+
+    for list_name in managed_lists:
+        try:
+            rows = rows_getter(list=list_name) or []
+        except Exception as exc:
+            logger.warning("Gagal mengambil snapshot managed status-list '%s': %s", list_name, exc)
+            return False, _build_owned_status_entries_snapshot()
+
+        if not isinstance(rows, list):
+            continue
+
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+
+            address = str(row.get("address") or "").strip()
+            if not _is_valid_ip_candidate(address):
+                continue
+
+            user_id, username_08 = _extract_status_entry_owner_tokens(row.get("comment"))
+            if not user_id and not username_08:
+                continue
+
+            entry_key = (str(list_name), address)
+            if user_id:
+                snapshot["by_user_id"].setdefault(user_id, set()).add(entry_key)
+            if username_08:
+                snapshot["by_username"].setdefault(username_08, set()).add(entry_key)
+
+    return True, snapshot
+
+
+def _collect_snapshot_status_entries_for_user(
+    snapshot: Dict[str, Dict[str, set[tuple[str, str]]]],
+    *,
+    user_id: str,
+    username_08: str,
+) -> List[tuple[str, str]]:
+    entries: set[tuple[str, str]] = set()
+    if user_id:
+        entries.update(snapshot.get("by_user_id", {}).get(user_id, set()))
+    if username_08:
+        entries.update(snapshot.get("by_username", {}).get(username_08, set()))
+    return sorted(entries)
+
+
+def _prune_stale_status_entries_for_user(
+    api: object,
+    user: User,
+    keep_ips: Optional[List[str]] = None,
+    *,
+    owned_status_entries_snapshot: Optional[Dict[str, Dict[str, set[tuple[str, str]]]]] = None,
+    managed_status_lists: Optional[List[str]] = None,
+) -> int:
     if not api or not user:
         return 0
 
@@ -473,6 +579,35 @@ def _prune_stale_status_entries_for_user(api: object, user: User, keep_ips: Opti
         for ip in (keep_ips or [])
         if _is_valid_ip_candidate(str(ip or "").strip())
     }
+
+    if owned_status_entries_snapshot is not None:
+        removed = 0
+        for list_name, address in _collect_snapshot_status_entries_for_user(
+            owned_status_entries_snapshot,
+            user_id=user_id,
+            username_08=username_08,
+        ):
+            if address in keep_ip_set:
+                continue
+
+            ok_remove, _remove_msg = remove_address_list_entry(
+                api_connection=api,
+                address=address,
+                list_name=list_name,
+            )
+            if ok_remove:
+                removed += 1
+
+        if removed > 0:
+            logger.info(
+                "Prune stale status-list per-user: user=%s phone=%s removed=%s keep_ips=%s",
+                user_id,
+                username_08,
+                removed,
+                sorted(keep_ip_set),
+            )
+
+        return removed
 
     resource_getter = getattr(api, "get_resource", None)
     if not callable(resource_getter):
@@ -488,8 +623,10 @@ def _prune_stale_status_entries_for_user(api: object, user: User, keep_ips: Opti
     if not callable(rows_getter):
         return 0
 
+    managed_lists = managed_status_lists if managed_status_lists is not None else _resolve_managed_status_lists()
+
     removed = 0
-    for list_name in _resolve_managed_status_lists():
+    for list_name in managed_lists:
         try:
             rows = rows_getter(list=list_name) or []
         except Exception:
@@ -2050,6 +2187,15 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
             if not ok_dhcp_snapshot:
                 logger.warning("Policy DHCP self-heal dinonaktifkan sementara karena snapshot DHCP lease raw gagal.")
 
+            managed_status_lists = runtime_settings.managed_status_lists
+            ok_status_snapshot, owned_status_entries_snapshot = _snapshot_owned_status_entries_for_prune(
+                api,
+                managed_status_lists=managed_status_lists,
+            )
+            if not ok_status_snapshot:
+                logger.warning("Prune status-list akan fallback ke scan per-user karena snapshot awal gagal.")
+                owned_status_entries_snapshot = None
+
             if runtime_settings.auto_enroll_devices_from_ip_binding:
                 if not ip_binding_map and ok_binding_map:
                     ip_binding_map = binding_map
@@ -2245,7 +2391,13 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                             ):
                                 ok_any_ip = True
 
-                        _prune_stale_status_entries_for_user(api, user, keep_ips=candidate_ips)
+                        _prune_stale_status_entries_for_user(
+                            api,
+                            user,
+                            keep_ips=candidate_ips,
+                            owned_status_entries_snapshot=owned_status_entries_snapshot,
+                            managed_status_lists=managed_status_lists,
+                        )
 
                         # Fallback: gunakan resolusi IP by-username (active/host) bila belum ada IP yang valid.
                         if not ok_any_ip:

@@ -513,6 +513,102 @@ def test_prune_stale_status_entries_for_user_removes_old_ips_of_same_user(monkey
     assert ("fup_list", "172.16.2.235") not in removed_calls
 
 
+def test_snapshot_owned_status_entries_for_prune_indexes_uid_and_username(monkeypatch):
+    _patch_settings(monkeypatch)
+
+    class _FakeAddressListResource:
+        def __init__(self):
+            self.rows_by_list = {
+                "fup_list": [
+                    {
+                        "address": "172.16.2.192",
+                        "comment": "lpsaring|status=fup|user=083141617466|role=USER|ip=172.16.2.192",
+                    },
+                ],
+                "active_list": [
+                    {
+                        "address": "172.16.2.27",
+                        "comment": "lpsaring|status=active|user=083141617466|uid=user-1|role=USER|ip=172.16.2.27",
+                    }
+                ],
+                "inactive_list": [],
+                "expired_list": [],
+                "habis_list": [],
+                "blocked_list": [],
+            }
+
+        def get(self, **kwargs):
+            list_name = str(kwargs.get("list") or "")
+            return [dict(row) for row in self.rows_by_list.get(list_name, [])]
+
+    class _FakeApi:
+        def __init__(self):
+            self.address_list_resource = _FakeAddressListResource()
+
+        def get_resource(self, path: str):
+            assert path == "/ip/firewall/address-list"
+            return self.address_list_resource
+
+    ok, snapshot = svc._snapshot_owned_status_entries_for_prune(
+        cast(Any, _FakeApi()),
+        managed_status_lists=["active_list", "fup_list"],
+    )
+
+    assert ok is True
+    assert snapshot["by_user_id"] == {
+        "user-1": {("active_list", "172.16.2.27")},
+    }
+    assert snapshot["by_username"] == {
+        "083141617466": {
+            ("active_list", "172.16.2.27"),
+            ("fup_list", "172.16.2.192"),
+        }
+    }
+
+
+def test_prune_stale_status_entries_for_user_uses_snapshot_without_requery(monkeypatch):
+    removed_calls: list[tuple[str, str]] = []
+
+    class _ExplodingApi:
+        def get_resource(self, _path: str):
+            raise AssertionError("status-list resource should not be requeried when snapshot is provided")
+
+    def _fake_remove_address_list_entry(*, api_connection, address, list_name):
+        removed_calls.append((str(list_name), str(address)))
+        return True, "ok"
+
+    monkeypatch.setattr(svc, "remove_address_list_entry", _fake_remove_address_list_entry)
+
+    user = SimpleNamespace(
+        id="user-1",
+        phone_number="083141617466",
+    )
+    snapshot = {
+        "by_user_id": {
+            "user-1": {
+                ("active_list", "172.16.2.27"),
+                ("fup_list", "172.16.2.192"),
+            }
+        },
+        "by_username": {
+            "083141617466": {
+                ("active_list", "172.16.2.27"),
+                ("fup_list", "172.16.2.192"),
+            }
+        },
+    }
+
+    removed = svc._prune_stale_status_entries_for_user(
+        api=cast(Any, _ExplodingApi()),
+        user=cast(Any, user),
+        keep_ips=["172.16.2.27"],
+        owned_status_entries_snapshot=cast(Any, snapshot),
+    )
+
+    assert removed == 1
+    assert removed_calls == [("fup_list", "172.16.2.192")]
+
+
 def test_collect_candidate_ips_for_user_ignores_unauthorized_devices_and_stale_db_ip(monkeypatch):
     _patch_settings(monkeypatch)
 
