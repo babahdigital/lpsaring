@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 from types import SimpleNamespace
 from datetime import datetime, timezone, timedelta
 
@@ -18,6 +19,45 @@ class _ExplosiveDebt:
 class _DebtUser(_ExplosiveDebt):
     total_quota_purchased_mb = 1024
     total_quota_used_mb = 2048
+
+
+def _make_runtime_settings(**overrides):
+    values = {
+        "auto_enroll_devices_from_ip_binding": False,
+        "max_devices_per_user": 3,
+        "auto_enroll_debug_log": False,
+        "active_profile": "profile-active",
+        "blocked_profile": "profile-blocked",
+        "expired_profile": "profile-expired",
+        "habis_profile": "profile-habis",
+        "fup_profile": "profile-fup",
+        "unlimited_profile": "profile-unlimited",
+        "whatsapp_notifications_enabled": True,
+        "managed_status_lists": [
+            "active_list",
+            "fup_list",
+            "inactive_list",
+            "expired_list",
+            "habis_list",
+            "blocked_list",
+        ],
+        "list_active": "active_list",
+        "list_fup": "fup_list",
+        "list_inactive": "inactive_list",
+        "list_expired": "expired_list",
+        "list_habis": "habis_list",
+        "list_blocked": "blocked_list",
+        "list_unauthorized": "unauthorized_list",
+        "fup_threshold_mb": 3072.0,
+        "hotspot_status_networks": [ipaddress.ip_network("172.16.2.0/23")],
+        "dhcp_static_lease_enabled": False,
+        "dhcp_server_name": None,
+        "quota_debt_limit_mb": 500.0,
+        "quota_notify_remaining_mb_thresholds": [500],
+        "quota_expiry_notify_days_thresholds": [7, 3, 1],
+    }
+    values.update(overrides)
+    return svc.HotspotUsageSyncRuntimeSettings(**values)
 
 
 def test_resolve_auto_quota_debt_for_limit_prefers_auto_debt_property():
@@ -98,6 +138,39 @@ def test_resolve_target_profile_uses_habis_when_purchased_zero(monkeypatch):
     assert result == "profile-habis"
 
 
+def test_resolve_target_profile_uses_runtime_settings_without_settings_lookup(monkeypatch):
+    monkeypatch.setattr(
+        svc.settings_service,
+        "get_setting",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("settings lookup should be skipped")),
+    )
+    monkeypatch.setattr(
+        svc.settings_service,
+        "get_setting_as_int",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("settings lookup should be skipped")),
+    )
+
+    user = SimpleNamespace(
+        is_unlimited_user=False,
+        total_quota_purchased_mb=4096,
+        total_quota_used_mb=0,
+    )
+
+    result = svc._resolve_target_profile(
+        user=user,
+        remaining_mb=256.0,
+        remaining_percent=6.25,
+        is_expired=False,
+        runtime_settings=_make_runtime_settings(
+            active_profile="cached-active",
+            fup_profile="cached-fup",
+            fup_threshold_mb=1024.0,
+        ),
+    )
+
+    assert result == "cached-fup"
+
+
 def test_apply_auto_debt_limit_block_state_sets_block_when_limit_reached(monkeypatch):
     monkeypatch.setattr(
         svc.settings_service,
@@ -129,6 +202,42 @@ def test_apply_auto_debt_limit_block_state_sets_block_when_limit_reached(monkeyp
     assert user.is_blocked is True
     assert str(user.blocked_reason).startswith(AUTO_DEBT_LIMIT_PREFIX)
     assert notifications == [(user, 650.0, 500.0)]
+
+
+def test_apply_auto_debt_limit_block_state_uses_runtime_settings_without_settings_lookup(monkeypatch):
+    monkeypatch.setattr(
+        svc.settings_service,
+        "get_setting_as_int",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("settings lookup should be skipped")),
+    )
+
+    warnings = []
+
+    monkeypatch.setattr(
+        svc,
+        "_send_auto_debt_limit_warning_notification",
+        lambda user, *, debt_mb, limit_mb: warnings.append((user, debt_mb, limit_mb)),
+    )
+
+    user = SimpleNamespace(
+        is_unlimited_user=False,
+        role=None,
+        is_blocked=False,
+        blocked_reason=None,
+        blocked_at=None,
+        blocked_by_id=None,
+        quota_debt_auto_mb=420.0,
+    )
+
+    forced = svc._apply_auto_debt_limit_block_state(
+        user,
+        source="test",
+        runtime_settings=_make_runtime_settings(quota_debt_limit_mb=500.0),
+    )
+
+    assert forced is False
+    assert user.is_blocked is False
+    assert warnings == [(user, 420.0, 500.0)]
 
 
 def test_apply_auto_debt_limit_block_state_unblocks_previous_auto_block_below_limit(monkeypatch):

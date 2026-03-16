@@ -95,12 +95,28 @@ class HotspotUsageSyncRuntimeSettings:
     auto_enroll_devices_from_ip_binding: bool
     max_devices_per_user: int
     auto_enroll_debug_log: bool
+    active_profile: str
     blocked_profile: str
     expired_profile: str
     habis_profile: str
     fup_profile: str
+    unlimited_profile: str
     whatsapp_notifications_enabled: bool
     managed_status_lists: List[str]
+    list_active: str
+    list_fup: str
+    list_inactive: str
+    list_expired: str
+    list_habis: str
+    list_blocked: str
+    list_unauthorized: str
+    fup_threshold_mb: float
+    hotspot_status_networks: List[ipaddress._BaseNetwork]
+    dhcp_static_lease_enabled: bool
+    dhcp_server_name: Optional[str]
+    quota_debt_limit_mb: float
+    quota_notify_remaining_mb_thresholds: List[int]
+    quota_expiry_notify_days_thresholds: List[int]
 
 
 @dataclass(frozen=True)
@@ -201,20 +217,63 @@ def _load_hotspot_usage_sync_db_state() -> HotspotUsageSyncDbState:
 
 def _load_hotspot_usage_sync_runtime_settings() -> HotspotUsageSyncRuntimeSettings:
     try:
+        list_active, list_fup, list_inactive, list_expired, list_habis, list_blocked, list_unauthorized, fup_threshold_mb = (
+            _resolve_status_list_runtime_values()
+        )
+        active_profile = (
+            settings_service.get_setting("MIKROTIK_ACTIVE_PROFILE", None)
+            or settings_service.get_setting("MIKROTIK_DEFAULT_PROFILE", "default")
+            or "default"
+        )
+        blocked_profile = settings_service.get_setting("MIKROTIK_BLOCKED_PROFILE", "inactive") or "inactive"
+        expired_profile = settings_service.get_setting("MIKROTIK_EXPIRED_PROFILE", "expired") or "expired"
+        habis_profile = settings_service.get_setting("MIKROTIK_HABIS_PROFILE", "habis") or "habis"
+        fup_profile = settings_service.get_setting("MIKROTIK_FUP_PROFILE", "fup") or "fup"
+        unlimited_profile = settings_service.get_setting("MIKROTIK_UNLIMITED_PROFILE", "unlimited") or "unlimited"
+        dhcp_server_name = (settings_service.get_setting("MIKROTIK_DHCP_LEASE_SERVER_NAME", "") or "").strip() or None
+        quota_debt_limit_mb = float(settings_service.get_setting_as_int("QUOTA_DEBT_LIMIT_MB", 0) or 0)
+
         return HotspotUsageSyncRuntimeSettings(
             auto_enroll_devices_from_ip_binding=(
                 settings_service.get_setting("AUTO_ENROLL_DEVICES_FROM_IP_BINDING", "True") == "True"
             ),
             max_devices_per_user=settings_service.get_setting_as_int("MAX_DEVICES_PER_USER", 3),
             auto_enroll_debug_log=(settings_service.get_setting("AUTO_ENROLL_DEBUG_LOG", "False") == "True"),
-            blocked_profile=(settings_service.get_setting("MIKROTIK_BLOCKED_PROFILE", "inactive") or "inactive"),
-            expired_profile=(settings_service.get_setting("MIKROTIK_EXPIRED_PROFILE", "expired") or "expired"),
-            habis_profile=(settings_service.get_setting("MIKROTIK_HABIS_PROFILE", "habis") or "habis"),
-            fup_profile=(settings_service.get_setting("MIKROTIK_FUP_PROFILE", "fup") or "fup"),
+            active_profile=active_profile,
+            blocked_profile=blocked_profile,
+            expired_profile=expired_profile,
+            habis_profile=habis_profile,
+            fup_profile=fup_profile,
+            unlimited_profile=unlimited_profile,
             whatsapp_notifications_enabled=(
                 settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") == "True"
             ),
-            managed_status_lists=_resolve_managed_status_lists(),
+            managed_status_lists=_build_managed_status_lists(
+                list_active=list_active,
+                list_fup=list_fup,
+                list_inactive=list_inactive,
+                list_expired=list_expired,
+                list_habis=list_habis,
+                list_blocked=list_blocked,
+                list_unauthorized=list_unauthorized,
+            ),
+            list_active=list_active,
+            list_fup=list_fup,
+            list_inactive=list_inactive,
+            list_expired=list_expired,
+            list_habis=list_habis,
+            list_blocked=list_blocked,
+            list_unauthorized=list_unauthorized,
+            fup_threshold_mb=float(fup_threshold_mb),
+            hotspot_status_networks=_resolve_hotspot_status_networks(),
+            dhcp_static_lease_enabled=(
+                str(settings_service.get_setting("MIKROTIK_DHCP_STATIC_LEASE_ENABLED", "False") or "").strip().lower()
+                in {"1", "true", "yes", "on"}
+            ),
+            dhcp_server_name=dhcp_server_name,
+            quota_debt_limit_mb=quota_debt_limit_mb,
+            quota_notify_remaining_mb_thresholds=_get_thresholds_from_env("QUOTA_NOTIFY_REMAINING_MB", [500]),
+            quota_expiry_notify_days_thresholds=_get_thresholds_from_env("QUOTA_EXPIRY_NOTIFY_DAYS", [7, 3, 1]),
         )
     finally:
         # Lepas sesi settings sebelum loop per-user memulai transaksi eksplisit.
@@ -405,15 +464,16 @@ def _snapshot_dhcp_ips_by_mac(api: Any) -> Tuple[bool, Dict[str, set[str]]]:
     return True, by_mac
 
 
-def _resolve_managed_status_lists() -> List[str]:
-    list_active = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active"
-    list_fup = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup"
-    list_inactive = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive"
-    list_expired = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired"
-    list_habis = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis"
-    list_blocked = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked"
-    list_unauthorized = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized") or "unauthorized"
-
+def _build_managed_status_lists(
+    *,
+    list_active: str,
+    list_fup: str,
+    list_inactive: str,
+    list_expired: str,
+    list_habis: str,
+    list_blocked: str,
+    list_unauthorized: str,
+) -> List[str]:
     unique_lists: List[str] = []
     for list_name in [list_active, list_fup, list_inactive, list_expired, list_habis, list_blocked]:
         if not list_name:
@@ -423,8 +483,58 @@ def _resolve_managed_status_lists() -> List[str]:
         if list_name in unique_lists:
             continue
         unique_lists.append(list_name)
-
     return unique_lists
+
+
+def _resolve_status_list_runtime_values(
+    runtime_settings: Optional[HotspotUsageSyncRuntimeSettings] = None,
+) -> tuple[str, str, str, str, str, str, str, float]:
+    if runtime_settings is not None:
+        return (
+            runtime_settings.list_active,
+            runtime_settings.list_fup,
+            runtime_settings.list_inactive,
+            runtime_settings.list_expired,
+            runtime_settings.list_habis,
+            runtime_settings.list_blocked,
+            runtime_settings.list_unauthorized,
+            float(runtime_settings.fup_threshold_mb),
+        )
+
+    list_active = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active"
+    list_fup = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup"
+    list_inactive = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive"
+    list_expired = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired"
+    list_habis = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis"
+    list_blocked = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked"
+    list_unauthorized = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized") or "unauthorized"
+    fup_threshold_mb = float(settings_service.get_setting_as_int("QUOTA_FUP_THRESHOLD_MB", 3072) or 3072)
+
+    return (
+        list_active,
+        list_fup,
+        list_inactive,
+        list_expired,
+        list_habis,
+        list_blocked,
+        list_unauthorized,
+        fup_threshold_mb,
+    )
+
+
+def _resolve_managed_status_lists() -> List[str]:
+    list_active, list_fup, list_inactive, list_expired, list_habis, list_blocked, list_unauthorized, _threshold_mb = (
+        _resolve_status_list_runtime_values()
+    )
+    return _build_managed_status_lists(
+        list_active=list_active,
+        list_fup=list_fup,
+        list_inactive=list_inactive,
+        list_expired=list_expired,
+        list_habis=list_habis,
+        list_blocked=list_blocked,
+        list_unauthorized=list_unauthorized,
+    )
 
 
 def _remove_managed_status_entries_for_ip(api: object, ip_address: str) -> None:
@@ -796,6 +906,8 @@ def _self_heal_policy_binding_for_user(
     user: User,
     ip_binding_map: Optional[Dict[str, Dict[str, Any]]],
     host_usage_map: Optional[Dict[str, Dict[str, Any]]],
+    *,
+    runtime_settings: Optional[HotspotUsageSyncRuntimeSettings] = None,
 ) -> int:
     if not api or not user or not ip_binding_map:
         return 0
@@ -813,6 +925,11 @@ def _self_heal_policy_binding_for_user(
     date_str, time_str = get_app_date_time_strings(now_utc)
     username_08 = format_to_local_phone(getattr(user, "phone_number", None) or "") or str(
         getattr(user, "phone_number", "") or ""
+    )
+    dhcp_server_name = (
+        runtime_settings.dhcp_server_name
+        if runtime_settings is not None
+        else (settings_service.get_setting("MIKROTIK_DHCP_LEASE_SERVER_NAME", "") or "").strip() or None
     )
 
     repaired = 0
@@ -853,9 +970,6 @@ def _self_heal_policy_binding_for_user(
                 entry["address"] = ip_addr
 
             if ip_addr:
-                dhcp_server_name = (
-                    settings_service.get_setting("MIKROTIK_DHCP_LEASE_SERVER_NAME", "") or ""
-                ).strip() or None
                 _ensure_static_dhcp_lease(
                     mac_address=mac,
                     ip_address=ip_addr,
@@ -885,19 +999,27 @@ def _self_heal_policy_dhcp_for_user(
     host_usage_map: Optional[Dict[str, Dict[str, Any]]],
     ip_binding_map: Optional[Dict[str, Dict[str, Any]]],
     dhcp_ips_by_mac: Optional[Dict[str, set[str]]],
+    runtime_settings: Optional[HotspotUsageSyncRuntimeSettings] = None,
 ) -> int:
     if not api or not user or dhcp_ips_by_mac is None:
         return 0
 
-    enabled_cfg = settings_service.get_setting("MIKROTIK_DHCP_STATIC_LEASE_ENABLED", "False")
-    if str(enabled_cfg or "").strip().lower() not in {"1", "true", "yes", "on"}:
+    if runtime_settings is not None:
+        dhcp_enabled = bool(runtime_settings.dhcp_static_lease_enabled)
+        dhcp_server_name = str(runtime_settings.dhcp_server_name or "").strip()
+        hotspot_networks = list(runtime_settings.hotspot_status_networks or [])
+    else:
+        enabled_cfg = settings_service.get_setting("MIKROTIK_DHCP_STATIC_LEASE_ENABLED", "False")
+        dhcp_enabled = str(enabled_cfg or "").strip().lower() in {"1", "true", "yes", "on"}
+        dhcp_server_name = (settings_service.get_setting("MIKROTIK_DHCP_LEASE_SERVER_NAME", "") or "").strip()
+        hotspot_networks = _resolve_hotspot_status_networks()
+
+    if not dhcp_enabled:
         return 0
 
-    dhcp_server_name = (settings_service.get_setting("MIKROTIK_DHCP_LEASE_SERVER_NAME", "") or "").strip()
     if not dhcp_server_name:
         return 0
 
-    hotspot_networks = _resolve_hotspot_status_networks()
     now_utc = datetime.now(dt_timezone.utc)
     date_str, time_str = get_app_date_time_strings(now_utc)
     username_08 = format_to_local_phone(getattr(user, "phone_number", None) or "") or str(
@@ -994,7 +1116,12 @@ def _self_heal_policy_dhcp_for_user(
     return repaired
 
 
-def _apply_auto_debt_limit_block_state(user: User, source: str = "sync_usage") -> bool:
+def _apply_auto_debt_limit_block_state(
+    user: User,
+    source: str = "sync_usage",
+    *,
+    runtime_settings: Optional[HotspotUsageSyncRuntimeSettings] = None,
+) -> bool:
     """Apply auto debt threshold policy and return whether blocked list/profile should be forced.
 
     Policy:
@@ -1034,7 +1161,10 @@ def _apply_auto_debt_limit_block_state(user: User, source: str = "sync_usage") -
             )
         return False
 
-    limit_mb = float(settings_service.get_setting_as_int("QUOTA_DEBT_LIMIT_MB", 0) or 0)
+    if runtime_settings is not None:
+        limit_mb = float(runtime_settings.quota_debt_limit_mb or 0)
+    else:
+        limit_mb = float(settings_service.get_setting_as_int("QUOTA_DEBT_LIMIT_MB", 0) or 0)
     if limit_mb <= 0:
         if is_auto_blocked:
             user.is_blocked = False
@@ -1086,17 +1216,32 @@ def _apply_auto_debt_limit_block_state(user: User, source: str = "sync_usage") -
     return False
 
 
-def _resolve_target_profile(user: User, remaining_mb: float, remaining_percent: float, is_expired: bool) -> str:
-    active_profile = (
-        settings_service.get_setting("MIKROTIK_ACTIVE_PROFILE", None)
-        or settings_service.get_setting("MIKROTIK_DEFAULT_PROFILE", "default")
-        or "default"
-    )
-    fup_profile = settings_service.get_setting("MIKROTIK_FUP_PROFILE", "fup") or "fup"
-    habis_profile = settings_service.get_setting("MIKROTIK_HABIS_PROFILE", "habis") or "habis"
-    unlimited_profile = settings_service.get_setting("MIKROTIK_UNLIMITED_PROFILE", "unlimited") or "unlimited"
-    expired_profile = settings_service.get_setting("MIKROTIK_EXPIRED_PROFILE", "expired") or "expired"
-    fup_threshold_mb = float(settings_service.get_setting_as_int("QUOTA_FUP_THRESHOLD_MB", 3072) or 3072)
+def _resolve_target_profile(
+    user: User,
+    remaining_mb: float,
+    remaining_percent: float,
+    is_expired: bool,
+    *,
+    runtime_settings: Optional[HotspotUsageSyncRuntimeSettings] = None,
+) -> str:
+    if runtime_settings is not None:
+        active_profile = runtime_settings.active_profile
+        fup_profile = runtime_settings.fup_profile
+        habis_profile = runtime_settings.habis_profile
+        unlimited_profile = runtime_settings.unlimited_profile
+        expired_profile = runtime_settings.expired_profile
+        fup_threshold_mb = float(runtime_settings.fup_threshold_mb)
+    else:
+        active_profile = (
+            settings_service.get_setting("MIKROTIK_ACTIVE_PROFILE", None)
+            or settings_service.get_setting("MIKROTIK_DEFAULT_PROFILE", "default")
+            or "default"
+        )
+        fup_profile = settings_service.get_setting("MIKROTIK_FUP_PROFILE", "fup") or "fup"
+        habis_profile = settings_service.get_setting("MIKROTIK_HABIS_PROFILE", "habis") or "habis"
+        unlimited_profile = settings_service.get_setting("MIKROTIK_UNLIMITED_PROFILE", "unlimited") or "unlimited"
+        expired_profile = settings_service.get_setting("MIKROTIK_EXPIRED_PROFILE", "expired") or "expired"
+        fup_threshold_mb = float(settings_service.get_setting_as_int("QUOTA_FUP_THRESHOLD_MB", 3072) or 3072)
 
     if is_expired:
         return expired_profile
@@ -1508,7 +1653,13 @@ def _round_mb_value(value: float) -> float:
         return float(value)
 
 
-def _send_quota_notifications(user: User, remaining_percent: float, remaining_mb: float) -> None:
+def _send_quota_notifications(
+    user: User,
+    remaining_percent: float,
+    remaining_mb: float,
+    *,
+    runtime_settings: Optional[HotspotUsageSyncRuntimeSettings] = None,
+) -> None:
     if user.is_unlimited_user:
         return
     if not user.total_quota_purchased_mb or user.total_quota_purchased_mb <= 0:
@@ -1516,8 +1667,12 @@ def _send_quota_notifications(user: User, remaining_percent: float, remaining_mb
 
     template_key = "komandan_quota_low" if user.role == UserRole.KOMANDAN else "user_quota_low"
 
-    # Notifikasi low-quota berbasis sisa kuota (MB). Default: 500MB.
-    thresholds = sorted(_get_thresholds_from_env("QUOTA_NOTIFY_REMAINING_MB", [500]), reverse=True)
+    threshold_source = (
+        runtime_settings.quota_notify_remaining_mb_thresholds
+        if runtime_settings is not None
+        else _get_thresholds_from_env("QUOTA_NOTIFY_REMAINING_MB", [500])
+    )
+    thresholds = sorted(threshold_source, reverse=True)
     thresholds = [t for t in thresholds if isinstance(t, int) and t > 0]
     if not thresholds:
         return
@@ -1544,7 +1699,11 @@ def _send_quota_notifications(user: User, remaining_percent: float, remaining_mb
             break
 
 
-def _send_expiry_notifications(user: User) -> None:
+def _send_expiry_notifications(
+    user: User,
+    *,
+    runtime_settings: Optional[HotspotUsageSyncRuntimeSettings] = None,
+) -> None:
     if user.is_unlimited_user:
         return
     if not user.quota_expiry_date:
@@ -1560,7 +1719,12 @@ def _send_expiry_notifications(user: User) -> None:
     if remaining_days < 0:
         return
 
-    thresholds = sorted(_get_thresholds_from_env("QUOTA_EXPIRY_NOTIFY_DAYS", [7, 3, 1]), reverse=True)
+    threshold_source = (
+        runtime_settings.quota_expiry_notify_days_thresholds
+        if runtime_settings is not None
+        else _get_thresholds_from_env("QUOTA_EXPIRY_NOTIFY_DAYS", [7, 3, 1])
+    )
+    thresholds = sorted(threshold_source, reverse=True)
     last_level = user.last_expiry_notification_level
 
     for threshold in thresholds:
@@ -1623,6 +1787,7 @@ def _sync_address_list_status(
     ip_binding_map: Optional[Dict[str, Dict[str, Any]]] = None,
     ip_binding_rows_by_mac: Optional[Dict[str, List[Dict[str, Any]]]] = None,
     enforce_binding_guard: bool = False,
+    runtime_settings: Optional[HotspotUsageSyncRuntimeSettings] = None,
 ) -> bool:
     if enforce_binding_guard and not _has_policy_binding_for_user(
         user,
@@ -1638,14 +1803,9 @@ def _sync_address_list_status(
             _remove_managed_status_entries_for_ip(api, ip_address)
         return False
 
-    list_active = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active"
-    list_fup = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup"
-    list_inactive = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive"
-    list_expired = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired"
-    list_habis = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis"
-    list_blocked = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked"
-    list_unauthorized = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized") or "unauthorized"
-    fup_threshold_mb = float(settings_service.get_setting_as_int("QUOTA_FUP_THRESHOLD_MB", 3072) or 3072)
+    list_active, list_fup, list_inactive, list_expired, list_habis, list_blocked, list_unauthorized, fup_threshold_mb = (
+        _resolve_status_list_runtime_values(runtime_settings)
+    )
 
     target_list = None
     blocked_for_list = bool(force_blocked or bool(getattr(user, "is_blocked", False)))
@@ -1686,11 +1846,17 @@ def _sync_address_list_status(
     comment = (
         f"lpsaring|status={status_value}|user={username_08}|uid={user_uid or 'unknown'}|role={user.role.value}|date={date_str}|time={time_str}"
     )
-    other_lists = [
-        name
-        for name in (list_active, list_fup, list_inactive, list_expired, list_habis, list_blocked, list_unauthorized)
-        if name
-    ]
+    other_lists = _build_managed_status_lists(
+        list_active=list_active,
+        list_fup=list_fup,
+        list_inactive=list_inactive,
+        list_expired=list_expired,
+        list_habis=list_habis,
+        list_blocked=list_blocked,
+        list_unauthorized=list_unauthorized,
+    )
+    if list_unauthorized and list_unauthorized not in other_lists:
+        other_lists.append(list_unauthorized)
     ok, msg = sync_address_list_for_user(
         api_connection=api,
         username=username_08,
@@ -1744,6 +1910,7 @@ def _sync_address_list_status(
                         ip_binding_map=ip_binding_map,
                         ip_binding_rows_by_mac=ip_binding_rows_by_mac,
                         enforce_binding_guard=enforce_binding_guard,
+                        runtime_settings=runtime_settings,
                     )
         return False
     return ok
@@ -1760,11 +1927,16 @@ def _sync_address_list_status_for_ip(
     ip_binding_map: Optional[Dict[str, Dict[str, Any]]] = None,
     ip_binding_rows_by_mac: Optional[Dict[str, List[Dict[str, Any]]]] = None,
     enforce_binding_guard: bool = False,
+    runtime_settings: Optional[HotspotUsageSyncRuntimeSettings] = None,
 ) -> bool:
     if not ip_address:
         return False
 
-    hotspot_networks = _resolve_hotspot_status_networks()
+    hotspot_networks = (
+        list(runtime_settings.hotspot_status_networks or [])
+        if runtime_settings is not None
+        else _resolve_hotspot_status_networks()
+    )
     if not _is_ip_in_hotspot_status_networks(ip_address, hotspot_networks):
         logger.info("Skip sync address-list untuk IP di luar hotspot CIDR: user=%s ip=%s", user.id, ip_address)
         return False
@@ -1782,14 +1954,9 @@ def _sync_address_list_status_for_ip(
         )
         return False
 
-    list_active = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active"
-    list_fup = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup"
-    list_inactive = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive"
-    list_expired = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired"
-    list_habis = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis"
-    list_blocked = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked"
-    list_unauthorized = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized") or "unauthorized"
-    fup_threshold_mb = float(settings_service.get_setting_as_int("QUOTA_FUP_THRESHOLD_MB", 3072) or 3072)
+    list_active, list_fup, list_inactive, list_expired, list_habis, list_blocked, list_unauthorized, fup_threshold_mb = (
+        _resolve_status_list_runtime_values(runtime_settings)
+    )
 
     target_list = None
     blocked_for_list = bool(force_blocked or bool(getattr(user, "is_blocked", False)))
@@ -1846,7 +2013,15 @@ def _sync_address_list_status_for_ip(
         logger.debug(f"Gagal upsert address-list untuk IP {ip_address}: {msg}")
         return False
 
-    for list_name in [list_active, list_fup, list_inactive, list_expired, list_habis, list_blocked]:
+    for list_name in _build_managed_status_lists(
+        list_active=list_active,
+        list_fup=list_fup,
+        list_inactive=list_inactive,
+        list_expired=list_expired,
+        list_habis=list_habis,
+        list_blocked=list_blocked,
+        list_unauthorized=list_unauthorized,
+    ):
         if list_name and list_name != target_list:
             remove_address_list_entry(api_connection=api, address=ip_address, list_name=list_name)
 
@@ -2285,7 +2460,11 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
 
                         remaining_mb, remaining_percent = _calculate_remaining(user)
 
-                        force_blocked_status = _apply_auto_debt_limit_block_state(user, source="sync_usage")
+                        force_blocked_status = _apply_auto_debt_limit_block_state(
+                            user,
+                            source="sync_usage",
+                            runtime_settings=runtime_settings,
+                        )
                         blocked_profile = runtime_settings.blocked_profile
 
                         # Quota-debt hard block is NOT applied to:
@@ -2300,7 +2479,13 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                                 get_app_local_datetime(user.quota_expiry_date) if user.quota_expiry_date else None
                             )
                             is_expired = bool(expiry_local and expiry_local < now_local)
-                            target_profile = _resolve_target_profile(user, remaining_mb, remaining_percent, is_expired)
+                            target_profile = _resolve_target_profile(
+                                user,
+                                remaining_mb,
+                                remaining_percent,
+                                is_expired,
+                                runtime_settings=runtime_settings,
+                            )
 
                         else:
                             now_local = get_app_local_datetime()
@@ -2308,7 +2493,13 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                                 get_app_local_datetime(user.quota_expiry_date) if user.quota_expiry_date else None
                             )
                             is_expired = bool(expiry_local and expiry_local < now_local)
-                            target_profile = _resolve_target_profile(user, remaining_mb, remaining_percent, is_expired)
+                            target_profile = _resolve_target_profile(
+                                user,
+                                remaining_mb,
+                                remaining_percent,
+                                is_expired,
+                                runtime_settings=runtime_settings,
+                            )
 
                         if bool(getattr(user, "is_blocked", False)):
                             target_profile = blocked_profile
@@ -2320,6 +2511,7 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                             user,
                             ip_binding_map=ip_binding_map,
                             host_usage_map=host_usage_map,
+                            runtime_settings=runtime_settings,
                         )
                         if healed_count > 0:
                             counters["binding_self_healed"] += healed_count
@@ -2330,6 +2522,7 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                             host_usage_map=host_usage_map,
                             ip_binding_map=ip_binding_map,
                             dhcp_ips_by_mac=dhcp_ips_by_mac,
+                            runtime_settings=runtime_settings,
                         )
                         if dhcp_healed_count > 0:
                             counters["dhcp_self_healed"] += dhcp_healed_count
@@ -2388,6 +2581,7 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                                 ip_binding_map=ip_binding_map,
                                 ip_binding_rows_by_mac=ip_binding_rows_by_mac,
                                 enforce_binding_guard=binding_guard_enabled,
+                                runtime_settings=runtime_settings,
                             ):
                                 ok_any_ip = True
 
@@ -2412,11 +2606,17 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                                 ip_binding_map=ip_binding_map,
                                 ip_binding_rows_by_mac=ip_binding_rows_by_mac,
                                 enforce_binding_guard=binding_guard_enabled,
+                                runtime_settings=runtime_settings,
                             )
 
                         if runtime_settings.whatsapp_notifications_enabled:
-                            _send_quota_notifications(user, remaining_percent, remaining_mb)
-                            _send_expiry_notifications(user)
+                            _send_quota_notifications(
+                                user,
+                                remaining_percent,
+                                remaining_mb,
+                                runtime_settings=runtime_settings,
+                            )
+                            _send_expiry_notifications(user, runtime_settings=runtime_settings)
 
                         counters["processed"] += 1
                 except Exception as e:

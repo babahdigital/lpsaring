@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 from types import SimpleNamespace
 from typing import Any, cast
 import uuid
@@ -36,6 +37,45 @@ def _patch_settings(monkeypatch, *, fup_threshold_mb: int = 3072):
 
     monkeypatch.setattr(svc.settings_service, "get_setting", fake_get_setting)
     monkeypatch.setattr(svc.settings_service, "get_setting_as_int", fake_get_setting_as_int)
+
+
+def _make_runtime_settings(**overrides):
+    values = {
+        "auto_enroll_devices_from_ip_binding": False,
+        "max_devices_per_user": 3,
+        "auto_enroll_debug_log": False,
+        "active_profile": "profile-active",
+        "blocked_profile": "profile-blocked",
+        "expired_profile": "profile-expired",
+        "habis_profile": "profile-habis",
+        "fup_profile": "profile-fup",
+        "unlimited_profile": "profile-unlimited",
+        "whatsapp_notifications_enabled": True,
+        "managed_status_lists": [
+            "active_list",
+            "fup_list",
+            "inactive_list",
+            "expired_list",
+            "habis_list",
+            "blocked_list",
+        ],
+        "list_active": "active_list",
+        "list_fup": "fup_list",
+        "list_inactive": "inactive_list",
+        "list_expired": "expired_list",
+        "list_habis": "habis_list",
+        "list_blocked": "blocked_list",
+        "list_unauthorized": "unauthorized_list",
+        "fup_threshold_mb": 3072.0,
+        "hotspot_status_networks": [ipaddress.ip_network("172.16.2.0/23")],
+        "dhcp_static_lease_enabled": False,
+        "dhcp_server_name": None,
+        "quota_debt_limit_mb": 500.0,
+        "quota_notify_remaining_mb_thresholds": [500],
+        "quota_expiry_notify_days_thresholds": [7, 3, 1],
+    }
+    values.update(overrides)
+    return svc.HotspotUsageSyncRuntimeSettings(**values)
 
 
 def test_sync_address_list_blocked_has_priority_and_cleans_other_lists(monkeypatch):
@@ -121,6 +161,58 @@ def test_sync_address_list_non_blocked_removes_blocked_if_present(monkeypatch):
 
     # Critical: blocked list is part of other_lists so it gets removed when user isn't blocked.
     assert "blocked_list" in capture["other_lists"]
+    assert "status=fup" in capture["comment"]
+
+
+def test_sync_address_list_status_uses_runtime_settings_without_settings_lookup(monkeypatch):
+    capture = {}
+
+    monkeypatch.setattr(
+        svc.settings_service,
+        "get_setting",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("settings lookup should be skipped")),
+    )
+    monkeypatch.setattr(
+        svc.settings_service,
+        "get_setting_as_int",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("settings lookup should be skipped")),
+    )
+
+    def fake_sync_address_list_for_user(
+        *, api_connection, username, target_list, other_lists=None, comment=None, timeout=None
+    ):
+        capture["target_list"] = target_list
+        capture["other_lists"] = list(other_lists or [])
+        capture["comment"] = comment or ""
+        return True, "Sukses"
+
+    monkeypatch.setattr(svc, "sync_address_list_for_user", fake_sync_address_list_for_user)
+
+    user = SimpleNamespace(
+        is_unlimited_user=False,
+        is_blocked=False,
+        role=_Role("USER"),
+        phone_number="081234567890",
+        total_quota_purchased_mb=4096,
+    )
+
+    ok = svc._sync_address_list_status(
+        api=object(),
+        user=cast(Any, user),
+        username_08="081234567890",
+        remaining_mb=256.0,
+        remaining_percent=6.25,
+        is_expired=False,
+        runtime_settings=_make_runtime_settings(
+            list_fup="cached_fup_list",
+            list_active="cached_active_list",
+            fup_threshold_mb=1024.0,
+        ),
+    )
+
+    assert ok is True
+    assert capture["target_list"] == "cached_fup_list"
+    assert "cached_active_list" in capture["other_lists"]
     assert "status=fup" in capture["comment"]
 
 
@@ -210,6 +302,50 @@ def test_self_heal_policy_binding_repairs_mismatch(monkeypatch):
     assert ip_binding_map["DA:B2:F3:B8:94:D2"]["type"] == "regular"
 
 
+def test_self_heal_policy_binding_uses_runtime_settings_without_settings_lookup(monkeypatch):
+    app = Flask(__name__)
+    app.config["ENABLE_POLICY_BINDING_SELF_HEAL"] = True
+
+    calls = []
+
+    monkeypatch.setattr(svc, "resolve_allowed_binding_type_for_user", lambda _u: "regular")
+    monkeypatch.setattr(svc, "upsert_ip_binding", lambda **_k: (True, "ok"))
+    monkeypatch.setattr(svc, "increment_metric", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        svc.settings_service,
+        "get_setting",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("settings lookup should be skipped")),
+    )
+
+    def _capture_lease(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(svc, "_ensure_static_dhcp_lease", _capture_lease)
+
+    user = SimpleNamespace(
+        id="user-1",
+        role=SimpleNamespace(value="USER"),
+        phone_number="+628123456789",
+        mikrotik_server_name="srv-user",
+        devices=[SimpleNamespace(is_authorized=True, mac_address="AA:BB:CC:DD:EE:FF", ip_address="172.16.2.10")],
+    )
+
+    ip_binding_map = {"AA:BB:CC:DD:EE:FF": {"type": "blocked", "address": "172.16.2.10"}}
+
+    with app.app_context():
+        repaired = svc._self_heal_policy_binding_for_user(
+            api=object(),
+            user=cast(Any, user),
+            ip_binding_map=ip_binding_map,
+            host_usage_map={},
+            runtime_settings=_make_runtime_settings(dhcp_server_name="cached-dhcp"),
+        )
+
+    assert repaired == 1
+    assert len(calls) == 1
+    assert calls[0]["server"] == "cached-dhcp"
+
+
 def test_self_heal_policy_binding_respects_disable_toggle(monkeypatch):
     app = Flask(__name__)
     app.config["ENABLE_POLICY_BINDING_SELF_HEAL"] = False
@@ -242,6 +378,54 @@ def test_self_heal_policy_binding_respects_disable_toggle(monkeypatch):
 
     assert healed == 0
     assert calls["count"] == 0
+
+
+def test_self_heal_policy_dhcp_uses_runtime_settings_without_settings_lookup(monkeypatch):
+    repaired_calls = []
+
+    monkeypatch.setattr(svc, "increment_metric", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        svc.settings_service,
+        "get_setting",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("settings lookup should be skipped")),
+    )
+
+    def _capture_upsert(**kwargs):
+        repaired_calls.append(kwargs)
+        return True, "ok"
+
+    monkeypatch.setattr(svc, "upsert_dhcp_static_lease", _capture_upsert)
+
+    user = SimpleNamespace(
+        id=uuid.uuid4(),
+        role=_Role("USER"),
+        phone_number="081234567890",
+        devices=[
+            SimpleNamespace(
+                is_authorized=True,
+                mac_address="DA:B2:F3:B8:94:D2",
+                ip_address=None,
+            )
+        ],
+    )
+
+    repaired = svc._self_heal_policy_dhcp_for_user(
+        api=object(),
+        user=cast(Any, user),
+        host_usage_map={"DA:B2:F3:B8:94:D2": {"address": "172.16.2.50"}},
+        ip_binding_map={},
+        dhcp_ips_by_mac={},
+        runtime_settings=_make_runtime_settings(
+            dhcp_static_lease_enabled=True,
+            dhcp_server_name="cached-dhcp",
+            hotspot_status_networks=[ipaddress.ip_network("172.16.2.0/23")],
+        ),
+    )
+
+    assert repaired == 1
+    assert len(repaired_calls) == 1
+    assert repaired_calls[0]["server"] == "cached-dhcp"
+    assert repaired_calls[0]["address"] == "172.16.2.50"
 
 
 def test_sync_address_list_for_ip_skips_out_of_hotspot_cidr(monkeypatch):
