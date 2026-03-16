@@ -298,11 +298,11 @@ const accessParityContextMessage = computed(() => {
   const fragments: string[] = []
 
   if (accessParitySummary.value.noAuthorizedDeviceCount > 0) {
-    fragments.push(`${accessParitySummary.value.noAuthorizedDeviceCount} user belum login dari perangkat pertama. Ini bukan mismatch akses dan tidak perlu tombol perbaiki.`)
+    fragments.push(`${accessParitySummary.value.noAuthorizedDeviceCount} user belum login dari perangkat pertama.`)
   }
 
   if (accessParityDhcpDriftCount.value > 0) {
-    fragments.push(`${accessParityDhcpDriftCount.value} drift DHCP terdeteksi. Ini bisa muncul sementara setelah recreate atau saat device sedang offline.`)
+    fragments.push(`${accessParityDhcpDriftCount.value} drift DHCP terdeteksi.`)
   }
 
   if (fragments.length === 0) {
