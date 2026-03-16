@@ -11,6 +11,7 @@ from sqlalchemy import select
 from app.extensions import db
 from app.infrastructure.db.models import ApprovalStatus, User, UserDevice
 from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection, remove_address_list_entry
+from app.services.access_policy_service import resolve_allowed_binding_type_for_user
 from app.services import settings_service
 from app.services.hotspot_sync_service import sync_address_list_for_single_user
 from app.utils.formatters import format_to_local_phone, get_phone_number_variations
@@ -180,9 +181,18 @@ def _has_binding_for_row(
     mac_hint: str,
     binding_indexes: Dict[str, Set[str]],
     authorized_macs_by_uid: Dict[str, Set[str]],
+    users_by_uid: Dict[str, User],
     blocked_list_name: str,
 ) -> bool:
-    require_blocked = bool(blocked_list_name and list_name == blocked_list_name)
+    require_blocked = False
+    if blocked_list_name and list_name == blocked_list_name:
+        require_blocked = True
+        user = users_by_uid.get(resolved_uid) if resolved_uid else None
+        if user is not None:
+            try:
+                require_blocked = str(resolve_allowed_binding_type_for_user(user) or "").strip().lower() == "blocked"
+            except Exception:
+                require_blocked = True
 
     if require_blocked:
         token_set = binding_indexes["token_blocked"]
@@ -298,6 +308,7 @@ def prune_hotspot_status_without_binding_command(
                 mac_hint=mac_hint,
                 binding_indexes=binding_indexes,
                 authorized_macs_by_uid=authorized_macs_by_uid,
+                users_by_uid=users_by_uid,
                 blocked_list_name=blocked_list,
             )
 

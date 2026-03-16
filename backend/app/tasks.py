@@ -16,7 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import selectinload
 
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_with_pdf, send_whatsapp_message
-from app.services.hotspot_sync_service import sync_hotspot_usage_and_profiles, cleanup_inactive_users
+from app.services.hotspot_sync_service import sync_hotspot_usage_and_profiles, cleanup_inactive_users, sync_address_list_for_single_user
 from app.services import settings_service
 from app.services.access_parity_service import collect_access_parity_report
 from app.services.walled_garden_service import sync_walled_garden
@@ -76,6 +76,13 @@ class CleanupWaitingDhcpArpConfig:
     min_last_seen_seconds: int
 
 
+@dataclass(frozen=True)
+class PolicyParityAutoRemediationConfig:
+    enabled: bool
+    max_users: int
+    run_unauthorized_sync: bool
+
+
 def _load_cleanup_waiting_dhcp_arp_config() -> CleanupWaitingDhcpArpConfig:
     try:
         return CleanupWaitingDhcpArpConfig(
@@ -102,6 +109,19 @@ def _load_cleanup_waiting_dhcp_arp_config() -> CleanupWaitingDhcpArpConfig:
     finally:
         db.session.remove()
 
+
+def _load_policy_parity_auto_remediation_config(app: Any) -> PolicyParityAutoRemediationConfig:
+    try:
+        max_users_raw = int(app.config.get("POLICY_PARITY_AUTO_REMEDIATION_MAX_USERS", 10) or 10)
+    except Exception:
+        max_users_raw = 10
+
+    return PolicyParityAutoRemediationConfig(
+        enabled=bool(app.config.get("ENABLE_POLICY_PARITY_AUTO_REMEDIATION", True)),
+        max_users=max(1, max_users_raw),
+        run_unauthorized_sync=bool(app.config.get("POLICY_PARITY_AUTO_REMEDIATION_RUN_UNAUTHORIZED_SYNC", True)),
+    )
+
 # Import create_app dari app/__init__.py
 from app import create_app as _flask_create_app
 
@@ -124,6 +144,13 @@ _NON_RETRYABLE_UNAUTHORIZED_SYNC_ERROR_MARKERS = (
     "timed out",
     "timeout",
 )
+
+_POLICY_PARITY_AUTO_REMEDIATION_MISMATCH_KEYS = {
+    "missing_ip_binding",
+    "binding_type",
+    "address_list",
+    "address_list_multi_status",
+}
 
 
 def create_app(config_name: str | None = None) -> Any:
@@ -172,6 +199,143 @@ def _should_skip_public_update_whatsapp_for_phone(phone_number: str) -> str | No
     except Exception:
         # Best effort guard; never block message processing on lookup errors.
         return None
+
+
+def _collect_policy_parity_auto_remediation_candidates(
+    report: dict[str, Any], *, max_users: int
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    seen_user_ids: set[str] = set()
+
+    for item in report.get("items", []) or []:
+        user_id = str(item.get("user_id") or "").strip()
+        if not user_id or user_id in seen_user_ids:
+            continue
+        if not bool(item.get("parity_relevant")) or not bool(item.get("auto_fixable")):
+            continue
+
+        mismatch_set = {
+            str(mismatch or "").strip()
+            for mismatch in (item.get("mismatches") or [])
+            if str(mismatch or "").strip()
+        }
+        if not mismatch_set.intersection(_POLICY_PARITY_AUTO_REMEDIATION_MISMATCH_KEYS):
+            continue
+
+        seen_user_ids.add(user_id)
+        candidates.append(
+            {
+                "user_id": user_id,
+                "phone_number": str(item.get("phone_number") or "").strip(),
+                "ip": str(item.get("ip") or "").strip() or None,
+                "mismatches": sorted(mismatch_set),
+            }
+        )
+        if len(candidates) >= max_users:
+            break
+
+    return candidates
+
+
+def _run_policy_parity_auto_remediation(app: Any, report: dict[str, Any]) -> dict[str, Any]:
+    config = _load_policy_parity_auto_remediation_config(app)
+    result: dict[str, Any] = {
+        "enabled": config.enabled,
+        "max_users": config.max_users,
+        "run_unauthorized_sync": config.run_unauthorized_sync,
+        "candidate_users": 0,
+        "attempted_users": 0,
+        "remediated_users": 0,
+        "failed_users": 0,
+        "skipped_missing_user": 0,
+        "failure_samples": [],
+        "unauthorized_sync_triggered": False,
+        "unauthorized_sync_failed": False,
+    }
+    if not config.enabled:
+        return result
+
+    candidates = _collect_policy_parity_auto_remediation_candidates(report, max_users=config.max_users)
+    result["candidate_users"] = len(candidates)
+    if not candidates:
+        return result
+
+    def _append_failure_sample(text: str) -> None:
+        samples = result["failure_samples"]
+        if len(samples) < 5:
+            samples.append(text)
+
+    try:
+        users = (
+            db.session.query(User)
+            .options(selectinload(User.devices))
+            .filter(
+                User.id.in_([candidate["user_id"] for candidate in candidates]),
+                User.is_active.is_(True),
+                User.approval_status == ApprovalStatus.APPROVED,
+            )
+            .all()
+        )
+        users_by_id = {str(user.id): user for user in users}
+
+        with get_mikrotik_connection() as api:
+            if not api:
+                result["reason"] = "mikrotik_unavailable"
+                return result
+
+            for candidate in candidates:
+                result["attempted_users"] += 1
+
+                user = users_by_id.get(candidate["user_id"])
+                if user is None:
+                    result["skipped_missing_user"] += 1
+                    continue
+
+                try:
+                    ok = sync_address_list_for_single_user(
+                        user,
+                        client_ip=candidate.get("ip"),
+                        api_connection=api,
+                    )
+                except Exception as exc:
+                    result["failed_users"] += 1
+                    _append_failure_sample(f"{candidate['user_id']} => {exc}")
+                    logger.warning(
+                        "Policy parity auto-remediation gagal: user=%s ip=%s mismatches=%s error=%s",
+                        candidate["user_id"],
+                        candidate.get("ip"),
+                        candidate["mismatches"],
+                        exc,
+                    )
+                    continue
+
+                if ok:
+                    result["remediated_users"] += 1
+                else:
+                    result["failed_users"] += 1
+                    _append_failure_sample(f"{candidate['user_id']} => sync_returned_false")
+
+            if config.run_unauthorized_sync and result["remediated_users"] > 0:
+                result["unauthorized_sync_triggered"] = True
+                try:
+                    sync_unauthorized_hosts_command.main(args=["--apply"], standalone_mode=False)
+                except SystemExit as exc:
+                    exit_code = int(getattr(exc, "code", 0) or 0)
+                    if exit_code != 0:
+                        raise RuntimeError(f"sync-unauthorized-hosts exit code {exit_code}")
+                except Exception as exc:
+                    result["unauthorized_sync_failed"] = True
+                    _append_failure_sample(f"sync_unauthorized_hosts => {exc}")
+                    logger.warning("Policy parity auto-remediation unauthorized sync gagal: %s", exc)
+    finally:
+        db.session.remove()
+
+    if result["remediated_users"] > 0:
+        increment_metric("policy.parity.guard.auto_remediation.remediated_users", result["remediated_users"])
+    if result["failed_users"] > 0:
+        increment_metric("policy.parity.guard.auto_remediation.failed_users", result["failed_users"])
+
+    return result
 
 
 def _is_non_retryable_unauthorized_sync_error(exc: Exception) -> bool:
@@ -1284,6 +1448,21 @@ def policy_parity_guard_task(self):
             mismatches = int(summary.get("mismatches", 0) or 0)
             mismatch_types = summary.get("mismatch_types", {}) or {}
 
+            remediation_summary = _run_policy_parity_auto_remediation(app, report)
+            if remediation_summary.get("candidate_users", 0) > 0:
+                logger.info(
+                    "Policy parity auto-remediation summary: %s",
+                    json.dumps(remediation_summary, ensure_ascii=False),
+                )
+
+            if remediation_summary.get("remediated_users", 0) > 0:
+                refreshed_report = collect_access_parity_report(max_items=300)
+                if refreshed_report.get("ok", False):
+                    report = refreshed_report
+                    summary = report.get("summary", {}) or {}
+                    mismatches = int(summary.get("mismatches", 0) or 0)
+                    mismatch_types = summary.get("mismatch_types", {}) or {}
+
             if mismatches > 0:
                 increment_metric("policy.parity.guard.mismatches", mismatches)
                 increment_metric("policy.parity.guard.binding_type", int(mismatch_types.get("binding_type", 0) or 0))
@@ -1303,6 +1482,7 @@ def policy_parity_guard_task(self):
                                 "generated_at": datetime.now(dt_timezone.utc).isoformat(),
                                 "summary": summary,
                                 "items": report.get("items", [])[:100],
+                                "auto_remediation": remediation_summary,
                             }
                         ),
                         ex=24 * 3600,

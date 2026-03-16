@@ -288,9 +288,9 @@ def test_collect_candidate_ips_filters_out_of_hotspot_cidr():
 
     user = SimpleNamespace(
         devices=[
-            SimpleNamespace(mac_address="AA:BB:CC:DD:EE:01", ip_address="10.0.99.40"),
-            SimpleNamespace(mac_address="AA:BB:CC:DD:EE:02", ip_address="172.16.2.10"),
-            SimpleNamespace(mac_address="AA:BB:CC:DD:EE:03", ip_address=None),
+            SimpleNamespace(mac_address="AA:BB:CC:DD:EE:01", ip_address="10.0.99.40", is_authorized=True),
+            SimpleNamespace(mac_address="AA:BB:CC:DD:EE:02", ip_address="172.16.2.10", is_authorized=True),
+            SimpleNamespace(mac_address="AA:BB:CC:DD:EE:03", ip_address=None, is_authorized=True),
         ]
     )
     host_usage_map = {
@@ -312,7 +312,7 @@ def test_collect_candidate_ips_filters_out_of_hotspot_cidr():
     assert "10.0.99.40" not in ips
     assert "10.1.2.3" not in ips
     assert "10.2.2.2" not in ips
-    assert "172.16.2.10" in ips
+    assert "172.16.2.10" not in ips
     assert "172.16.2.11" in ips
     assert "172.16.2.12" in ips
 
@@ -511,3 +511,97 @@ def test_prune_stale_status_entries_for_user_removes_old_ips_of_same_user(monkey
     assert ("fup_list", "172.16.2.192") in removed_calls
     assert ("active_list", "172.16.2.27") not in removed_calls
     assert ("fup_list", "172.16.2.235") not in removed_calls
+
+
+def test_collect_candidate_ips_for_user_ignores_unauthorized_devices_and_stale_db_ip(monkeypatch):
+    _patch_settings(monkeypatch)
+
+    app = Flask(__name__)
+    app.config["MIKROTIK_UNAUTHORIZED_CIDRS"] = ["172.16.2.0/23"]
+
+    user = SimpleNamespace(
+        devices=[
+            SimpleNamespace(
+                is_authorized=True,
+                mac_address="AA:BB:CC:DD:EE:01",
+                ip_address="172.16.2.10",
+            ),
+            SimpleNamespace(
+                is_authorized=False,
+                mac_address="AA:BB:CC:DD:EE:02",
+                ip_address="172.16.2.20",
+            ),
+            SimpleNamespace(
+                is_authorized=True,
+                mac_address="AA:BB:CC:DD:EE:03",
+                ip_address="172.16.2.30",
+            ),
+        ]
+    )
+
+    with app.app_context():
+        ips = svc._collect_candidate_ips_for_user(
+            cast(Any, user),
+            host_usage_map={
+                "AA:BB:CC:DD:EE:01": {"address": "172.16.2.11"},
+                "AA:BB:CC:DD:EE:02": {"address": "172.16.2.21"},
+            },
+            ip_binding_map={
+                "AA:BB:CC:DD:EE:03": {"address": "172.16.2.31"},
+            },
+            ip_binding_rows_by_mac={
+                "AA:BB:CC:DD:EE:01": [{"address": "172.16.2.12"}],
+                "AA:BB:CC:DD:EE:02": [{"address": "172.16.2.22"}],
+            },
+        )
+
+    assert ips == ["172.16.2.11", "172.16.2.31"]
+
+
+def test_sync_address_list_for_single_user_runs_binding_and_dhcp_self_heal(monkeypatch):
+    _patch_settings(monkeypatch)
+
+    app = Flask(__name__)
+    app.config["MIKROTIK_UNAUTHORIZED_CIDRS"] = ["172.16.2.0/23"]
+
+    calls = {"binding": 0, "dhcp": 0}
+
+    monkeypatch.setattr(svc, "_is_demo_user", lambda _user: False)
+    monkeypatch.setattr(svc, "_calculate_remaining", lambda _user: (100.0, 100.0))
+    monkeypatch.setattr(svc, "_apply_auto_debt_limit_block_state", lambda _user, source=None: False)
+    monkeypatch.setattr(svc, "get_hotspot_ip_binding_user_map", lambda _api: (True, {}, "ok"))
+    monkeypatch.setattr(svc, "get_hotspot_host_usage_map", lambda _api: (True, {}, "ok"))
+    monkeypatch.setattr(svc, "_snapshot_ip_binding_rows_by_mac", lambda _api: (True, {}))
+    monkeypatch.setattr(svc, "_snapshot_dhcp_ips_by_mac", lambda _api: (True, {}))
+
+    def _fake_binding_self_heal(api, user, ip_binding_map, host_usage_map):
+        calls["binding"] += 1
+        return 1
+
+    def _fake_dhcp_self_heal(api, user, *, host_usage_map, ip_binding_map, dhcp_ips_by_mac):
+        calls["dhcp"] += 1
+        return 1
+
+    monkeypatch.setattr(svc, "_self_heal_policy_binding_for_user", _fake_binding_self_heal)
+    monkeypatch.setattr(svc, "_self_heal_policy_dhcp_for_user", _fake_dhcp_self_heal)
+    monkeypatch.setattr(svc, "_collect_candidate_ips_for_user", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(svc, "_prune_stale_status_entries_for_user", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(svc, "_sync_address_list_status", lambda *_args, **_kwargs: True)
+
+    user = SimpleNamespace(
+        id=str(uuid.uuid4()),
+        is_active=True,
+        approval_status=svc.ApprovalStatus.APPROVED,
+        phone_number="081234567890",
+        quota_expiry_date=None,
+        is_unlimited_user=True,
+        is_blocked=False,
+        role=_Role("USER"),
+        devices=[],
+    )
+
+    with app.app_context():
+        ok = svc.sync_address_list_for_single_user(cast(Any, user), api_connection=object())
+
+    assert ok is True
+    assert calls == {"binding": 1, "dhcp": 1}

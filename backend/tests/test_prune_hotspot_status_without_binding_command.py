@@ -204,3 +204,50 @@ def test_prune_hotspot_status_without_binding_apply_all_candidates(monkeypatch):
     assert "removed=2" in result.output
     assert "remove_failed=0" in result.output
     assert remove_calls["count"] == 2
+
+
+def test_prune_hotspot_status_without_binding_keeps_auto_debt_block_with_regular_binding(monkeypatch):
+    _patch_settings(monkeypatch)
+    monkeypatch.setattr(cmd, "resolve_allowed_binding_type_for_user", lambda _user: "regular")
+
+    address_rows = [
+        {
+            "list": "blocked",
+            "address": "172.16.2.98",
+            "comment": "lpsaring|status=blocked|user=082213615601|uid=uid-111",
+        },
+    ]
+    binding_rows = [
+        {
+            "mac-address": "66:4B:0F:4C:35:37",
+            "type": "regular",
+            "address": None,
+            "comment": "authorized|user=082213615601|uid=uid-111",
+        }
+    ]
+
+    monkeypatch.setattr(cmd, "get_mikrotik_connection", lambda: _ConnCtx(_Api(address_rows, binding_rows)))
+    monkeypatch.setattr(
+        cmd,
+        "_build_user_indexes",
+        lambda: (
+            {"uid-111": SimpleNamespace(id="uid-111")},
+            {"082213615601": "uid-111"},
+            {"uid-111": {"66:4B:0F:4C:35:37"}},
+        ),
+    )
+
+    app = _make_app()
+    runner = app.test_cli_runner()
+    result = runner.invoke(
+        args=[
+            "prune-hotspot-status-without-binding",
+            "--dry-run",
+            "--all-candidates",
+            "--no-resync-users",
+        ]
+    )
+
+    assert result.exit_code == 0
+    assert "without_binding=0" in result.output
+    assert "candidates=0" in result.output

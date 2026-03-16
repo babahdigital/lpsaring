@@ -293,23 +293,42 @@ def _collect_candidate_ips_for_user(
         seen.add(ip_str)
         ips.append(ip_str)
 
+    def _add_live_ip(ip_value: Optional[str]) -> bool:
+        if not _is_valid_ip_candidate(ip_value):
+            return False
+
+        ip_str = str(ip_value).strip()
+        if not _is_ip_in_hotspot_status_networks(ip_str, hotspot_networks):
+            return False
+
+        if ip_str not in seen:
+            seen.add(ip_str)
+            ips.append(ip_str)
+        return True
+
     for device in user.devices or []:
-        if getattr(device, "ip_address", None):
-            _add_ip(str(device.ip_address))
+        if not bool(getattr(device, "is_authorized", False)):
+            continue
 
         mac = (getattr(device, "mac_address", None) or "").upper().strip()
+        has_live_signal = False
         if not mac:
+            if getattr(device, "ip_address", None):
+                _add_ip(str(device.ip_address))
             continue
 
         if host_usage_map:
-            _add_ip(host_usage_map.get(mac, {}).get("address"))
+            has_live_signal = _add_live_ip(host_usage_map.get(mac, {}).get("address")) or has_live_signal
         if ip_binding_map:
-            _add_ip(ip_binding_map.get(mac, {}).get("address"))
-        # Fallback: raw ip-binding rows (tidak memerlukan komentar UID).
-        # Berguna saat device sedang offline dan device.ip_address belum diset.
-        if ip_binding_rows_by_mac:
+            has_live_signal = _add_live_ip(ip_binding_map.get(mac, {}).get("address")) or has_live_signal
+        # Fallback: raw ip-binding rows (tidak memerlukan komentar UID) hanya dipakai
+        # jika host/binding map belum memberi sinyal IP aktif untuk device ini.
+        if not has_live_signal and ip_binding_rows_by_mac:
             for row in ip_binding_rows_by_mac.get(mac, []):
-                _add_ip(row.get("address"))
+                has_live_signal = _add_live_ip(row.get("address")) or has_live_signal
+
+        if not has_live_signal and getattr(device, "ip_address", None):
+            _add_ip(str(device.ip_address))
 
     return ips
 
@@ -2304,6 +2323,23 @@ def sync_address_list_for_single_user(user: User, client_ip: Optional[str] = Non
 
         ok_binding_rows, ip_binding_rows_by_mac = _snapshot_ip_binding_rows_by_mac(api)
         binding_guard_enabled = bool(ok_binding_rows)
+        ok_dhcp_snapshot, dhcp_ips_by_mac = _snapshot_dhcp_ips_by_mac(api)
+        if not ok_dhcp_snapshot:
+            dhcp_ips_by_mac = {}
+
+        _self_heal_policy_binding_for_user(
+            api,
+            user,
+            ip_binding_map=ip_binding_map,
+            host_usage_map=host_usage_map,
+        )
+        _self_heal_policy_dhcp_for_user(
+            api,
+            user,
+            host_usage_map=host_usage_map,
+            ip_binding_map=ip_binding_map,
+            dhcp_ips_by_mac=dhcp_ips_by_mac,
+        )
 
         ok_any_ip = False
         ips: List[str] = []

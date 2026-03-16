@@ -14,6 +14,7 @@ from sqlalchemy import select
 from app.extensions import db
 from app.infrastructure.db.models import ApprovalStatus, User, UserDevice
 from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection
+from app.services.access_policy_service import resolve_allowed_binding_type_for_user
 from app.services import settings_service
 from app.utils.formatters import format_to_local_phone, get_phone_number_variations
 
@@ -260,9 +261,18 @@ def _has_binding_for_row(
     mac_hint: str,
     binding_indexes: Dict[str, Any],
     authorized_macs_by_uid: Dict[str, Set[str]],
+    users_by_uid: Dict[str, User],
     blocked_list_name: str,
 ) -> bool:
-    require_blocked = bool(blocked_list_name and list_name == blocked_list_name)
+    require_blocked = False
+    if blocked_list_name and list_name == blocked_list_name:
+        require_blocked = True
+        user = users_by_uid.get(resolved_uid) if resolved_uid else None
+        if user is not None:
+            try:
+                require_blocked = str(resolve_allowed_binding_type_for_user(user) or "").strip().lower() == "blocked"
+            except Exception:
+                require_blocked = True
 
     if require_blocked:
         token_set = binding_indexes["token_blocked"]
@@ -323,12 +333,24 @@ def _is_expected_missing_dhcp_for_blocked_row(
     list_name: str,
     blocked_list_name: str,
     has_binding: bool,
+    resolved_uid: str,
+    users_by_uid: Dict[str, User],
 ) -> bool:
     if not blocked_list_name:
         return False
     if str(list_name or "").strip() != str(blocked_list_name or "").strip():
         return False
-    return bool(has_binding)
+    if not has_binding:
+        return False
+
+    user = users_by_uid.get(resolved_uid) if resolved_uid else None
+    if user is None:
+        return True
+
+    try:
+        return str(resolve_allowed_binding_type_for_user(user) or "").strip().lower() == "blocked"
+    except Exception:
+        return True
 
 
 def _calculate_status_overlap_metrics(
@@ -500,6 +522,7 @@ def audit_hotspot_parity_command(
             mac_hint=mac_hint,
             binding_indexes=binding_indexes,
             authorized_macs_by_uid=authorized_macs_by_uid,
+            users_by_uid=users_by_uid,
             blocked_list_name=blocked_list,
         )
 
@@ -533,6 +556,8 @@ def audit_hotspot_parity_command(
                 list_name=list_name,
                 blocked_list_name=blocked_list,
                 has_binding=has_binding,
+                resolved_uid=resolved_uid,
+                users_by_uid=users_by_uid,
             ):
                 row_summary["without_dhcp_expected_blocked"] += 1
                 _append_sample(
