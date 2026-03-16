@@ -292,7 +292,11 @@ def bind_current_device(current_user_id):
             )
         else:
             try:
-                sync_address_list_for_single_user(user, client_ip=_resolved_ip)
+                sync_address_list_for_single_user(
+                    user,
+                    client_ip=_resolved_ip,
+                    enable_policy_self_heal=False,
+                )
             except Exception as e:
                 current_app.logger.warning(
                     "bind-current: gagal sync address-list user=%s ip=%s err=%s",

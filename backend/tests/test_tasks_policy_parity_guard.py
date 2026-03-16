@@ -119,14 +119,44 @@ def test_policy_parity_guard_auto_remediates_unique_users(monkeypatch):
         session=SimpleNamespace(
             query=lambda *_args, **_kwargs: _FakeQuery(
                 [
-                    SimpleNamespace(id="user-1", devices=[]),
-                    SimpleNamespace(id="user-2", devices=[]),
+                    SimpleNamespace(
+                        id="user-1",
+                        devices=[SimpleNamespace(is_authorized=True, mac_address="AA:BB:CC:DD:EE:01")],
+                    ),
+                    SimpleNamespace(
+                        id="user-2",
+                        devices=[SimpleNamespace(is_authorized=True, mac_address="AA:BB:CC:DD:EE:02")],
+                    ),
                 ]
             ),
             remove=lambda: None,
         )
     )
     monkeypatch.setattr(tasks, "db", fake_db)
+    monkeypatch.setattr(
+        tasks,
+        "get_hotspot_host_usage_map",
+        lambda _api: (
+            True,
+            {
+                "AA:BB:CC:DD:EE:01": {"address": "172.16.2.99"},
+                "AA:BB:CC:DD:EE:02": {"address": "172.16.3.112"},
+            },
+            "ok",
+        ),
+    )
+    monkeypatch.setattr(
+        tasks,
+        "get_hotspot_ip_binding_user_map",
+        lambda _api: (
+            True,
+            {
+                "AA:BB:CC:DD:EE:01": {"address": "172.16.2.99"},
+                "AA:BB:CC:DD:EE:02": {"address": "172.16.3.112"},
+            },
+            "ok",
+        ),
+    )
 
     sync_calls = []
 
@@ -153,7 +183,7 @@ def test_policy_parity_guard_auto_remediates_unique_users(monkeypatch):
 
     assert len(sync_calls) == 2
     assert [call[0] for call in sync_calls] == ["user-1", "user-2"]
-    assert [call[1] for call in sync_calls] == ["172.16.2.98", "172.16.3.112"]
+    assert [call[1] for call in sync_calls] == ["172.16.2.99", "172.16.3.112"]
     assert unauthorized_calls == [(["--apply"], False)]
 
     cached = app.redis_client_otp.values["policy_parity:last_report"]["value"]
@@ -162,6 +192,92 @@ def test_policy_parity_guard_auto_remediates_unique_users(monkeypatch):
     assert payload["auto_remediation"]["candidate_users"] == 2
     assert payload["auto_remediation"]["remediated_users"] == 2
     assert payload["auto_remediation"]["unauthorized_sync_triggered"] is True
+
+
+def test_policy_parity_guard_unauthorized_sync_failure_is_soft(monkeypatch):
+    app = _make_app()
+
+    monkeypatch.setattr(tasks, "create_app", lambda: app)
+    monkeypatch.setattr(tasks.settings_service, "get_setting", lambda key, default=None: "True")
+    monkeypatch.setattr(tasks, "increment_metric", lambda *_args, **_kwargs: None)
+
+    reports = [
+        {
+            "ok": True,
+            "summary": {
+                "mismatches": 1,
+                "mismatch_types": {
+                    "binding_type": 1,
+                    "address_list": 0,
+                    "address_list_multi_status": 0,
+                },
+            },
+            "items": [
+                {
+                    "user_id": "user-1",
+                    "phone_number": "+628111111111",
+                    "ip": "172.16.2.98",
+                    "mismatches": ["binding_type"],
+                    "auto_fixable": True,
+                    "parity_relevant": True,
+                }
+            ],
+        },
+        {
+            "ok": True,
+            "summary": {
+                "mismatches": 0,
+                "mismatch_types": {
+                    "binding_type": 0,
+                    "address_list": 0,
+                    "address_list_multi_status": 0,
+                },
+            },
+            "items": [],
+        },
+    ]
+
+    monkeypatch.setattr(tasks, "collect_access_parity_report", lambda *, max_items=500: reports.pop(0))
+    monkeypatch.setattr(
+        tasks,
+        "db",
+        SimpleNamespace(
+            session=SimpleNamespace(
+                query=lambda *_args, **_kwargs: _FakeQuery(
+                    [SimpleNamespace(id="user-1", devices=[SimpleNamespace(is_authorized=True, mac_address="AA:BB:CC:DD:EE:01")])]
+                ),
+                remove=lambda: None,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        tasks,
+        "get_hotspot_host_usage_map",
+        lambda _api: (True, {"AA:BB:CC:DD:EE:01": {"address": "172.16.2.98"}}, "ok"),
+    )
+    monkeypatch.setattr(
+        tasks,
+        "get_hotspot_ip_binding_user_map",
+        lambda _api: (True, {"AA:BB:CC:DD:EE:01": {"address": "172.16.2.98"}}, "ok"),
+    )
+    monkeypatch.setattr(tasks, "sync_address_list_for_single_user", lambda user, client_ip=None, api_connection=None: True)
+    monkeypatch.setattr(tasks.sync_unauthorized_hosts_command, "main", lambda *args, **kwargs: (_ for _ in ()).throw(SystemExit(2)))
+
+    @contextmanager
+    def _fake_mikrotik_connection():
+        yield object()
+
+    monkeypatch.setattr(tasks, "get_mikrotik_connection", _fake_mikrotik_connection)
+
+    tasks.policy_parity_guard_task.run()
+
+    cached = app.redis_client_otp.values["policy_parity:last_report"]["value"]
+    payload = json.loads(cached)
+    assert payload["summary"]["mismatches"] == 0
+    assert payload["auto_remediation"]["remediated_users"] == 1
+    assert payload["auto_remediation"]["unauthorized_sync_triggered"] is True
+    assert payload["auto_remediation"]["unauthorized_sync_failed"] is True
+    assert payload["auto_remediation"]["failure_samples"] == ["sync_unauthorized_hosts => exit_code_2"]
 
 
 def test_policy_parity_guard_skips_auto_remediation_when_disabled(monkeypatch):

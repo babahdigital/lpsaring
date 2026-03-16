@@ -605,3 +605,60 @@ def test_sync_address_list_for_single_user_runs_binding_and_dhcp_self_heal(monke
 
     assert ok is True
     assert calls == {"binding": 1, "dhcp": 1}
+
+
+def test_sync_address_list_for_single_user_skips_policy_self_heal_when_disabled(monkeypatch):
+    _patch_settings(monkeypatch)
+
+    app = Flask(__name__)
+    app.config["MIKROTIK_UNAUTHORIZED_CIDRS"] = ["172.16.2.0/23"]
+
+    calls = {"binding": 0, "dhcp": 0, "dhcp_snapshot": 0}
+
+    monkeypatch.setattr(svc, "_is_demo_user", lambda _user: False)
+    monkeypatch.setattr(svc, "_calculate_remaining", lambda _user: (100.0, 100.0))
+    monkeypatch.setattr(svc, "_apply_auto_debt_limit_block_state", lambda _user, source=None: False)
+    monkeypatch.setattr(svc, "get_hotspot_ip_binding_user_map", lambda _api: (True, {}, "ok"))
+    monkeypatch.setattr(svc, "get_hotspot_host_usage_map", lambda _api: (True, {}, "ok"))
+    monkeypatch.setattr(svc, "_snapshot_ip_binding_rows_by_mac", lambda _api: (True, {}))
+
+    def _fake_dhcp_snapshot(_api):
+        calls["dhcp_snapshot"] += 1
+        return True, {}
+
+    def _fake_binding_self_heal(api, user, ip_binding_map, host_usage_map):
+        calls["binding"] += 1
+        return 1
+
+    def _fake_dhcp_self_heal(api, user, *, host_usage_map, ip_binding_map, dhcp_ips_by_mac):
+        calls["dhcp"] += 1
+        return 1
+
+    monkeypatch.setattr(svc, "_snapshot_dhcp_ips_by_mac", _fake_dhcp_snapshot)
+    monkeypatch.setattr(svc, "_self_heal_policy_binding_for_user", _fake_binding_self_heal)
+    monkeypatch.setattr(svc, "_self_heal_policy_dhcp_for_user", _fake_dhcp_self_heal)
+    monkeypatch.setattr(svc, "_collect_candidate_ips_for_user", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(svc, "_prune_stale_status_entries_for_user", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(svc, "_sync_address_list_status", lambda *_args, **_kwargs: True)
+
+    user = SimpleNamespace(
+        id=str(uuid.uuid4()),
+        is_active=True,
+        approval_status=svc.ApprovalStatus.APPROVED,
+        phone_number="081234567890",
+        quota_expiry_date=None,
+        is_unlimited_user=True,
+        is_blocked=False,
+        role=_Role("USER"),
+        devices=[],
+    )
+
+    with app.app_context():
+        ok = svc.sync_address_list_for_single_user(
+            cast(Any, user),
+            api_connection=object(),
+            enable_policy_self_heal=False,
+        )
+
+    assert ok is True
+    assert calls == {"binding": 0, "dhcp": 0, "dhcp_snapshot": 0}

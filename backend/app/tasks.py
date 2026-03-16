@@ -41,6 +41,7 @@ from app.infrastructure.gateways.mikrotik_client import (
     activate_or_update_hotspot_user,
     delete_hotspot_user,
     get_hotspot_host_usage_map,
+    get_hotspot_ip_binding_user_map,
     get_mikrotik_connection,
     remove_address_list_entry,
     remove_dhcp_lease,
@@ -204,12 +205,12 @@ def _should_skip_public_update_whatsapp_for_phone(phone_number: str) -> str | No
 def _collect_policy_parity_auto_remediation_candidates(
     report: dict[str, Any], *, max_users: int
 ) -> list[dict[str, Any]]:
-    candidates: list[dict[str, Any]] = []
-    seen_user_ids: set[str] = set()
+    candidates_by_user_id: dict[str, dict[str, Any]] = {}
+    ordered_user_ids: list[str] = []
 
     for item in report.get("items", []) or []:
         user_id = str(item.get("user_id") or "").strip()
-        if not user_id or user_id in seen_user_ids:
+        if not user_id:
             continue
         if not bool(item.get("parity_relevant")) or not bool(item.get("auto_fixable")):
             continue
@@ -222,19 +223,89 @@ def _collect_policy_parity_auto_remediation_candidates(
         if not mismatch_set.intersection(_POLICY_PARITY_AUTO_REMEDIATION_MISMATCH_KEYS):
             continue
 
-        seen_user_ids.add(user_id)
-        candidates.append(
-            {
+        candidate = candidates_by_user_id.get(user_id)
+        if candidate is None:
+            if len(ordered_user_ids) >= max_users:
+                continue
+            candidate = {
                 "user_id": user_id,
                 "phone_number": str(item.get("phone_number") or "").strip(),
-                "ip": str(item.get("ip") or "").strip() or None,
-                "mismatches": sorted(mismatch_set),
+                "ips": [],
+                "mismatches": set(),
             }
-        )
-        if len(candidates) >= max_users:
-            break
+            candidates_by_user_id[user_id] = candidate
+            ordered_user_ids.append(user_id)
 
-    return candidates
+        phone_number = str(item.get("phone_number") or "").strip()
+        if phone_number and not candidate["phone_number"]:
+            candidate["phone_number"] = phone_number
+
+        ip_address = str(item.get("ip") or "").strip()
+        if ip_address and ip_address not in candidate["ips"]:
+            candidate["ips"].append(ip_address)
+
+        candidate["mismatches"].update(mismatch_set)
+
+    return [
+        {
+            "user_id": user_id,
+            "phone_number": str(candidates_by_user_id[user_id].get("phone_number") or "").strip(),
+            "ips": list(candidates_by_user_id[user_id].get("ips") or []),
+            "mismatches": sorted(candidates_by_user_id[user_id].get("mismatches") or set()),
+        }
+        for user_id in ordered_user_ids
+    ]
+
+
+def _normalize_policy_parity_ip(value: Any) -> str | None:
+    ip_text = str(value or "").strip()
+    if not ip_text or ip_text in {"0.0.0.0", "0.0.0.0/0"}:
+        return None
+    try:
+        ipaddress.ip_address(ip_text)
+    except ValueError:
+        return None
+    return ip_text
+
+
+def _resolve_policy_parity_auto_remediation_client_ip(
+    user: User,
+    *,
+    candidate_ips: list[str],
+    host_usage_map: dict[str, dict[str, Any]],
+    ip_binding_map: dict[str, dict[str, Any]],
+) -> str | None:
+    normalized_candidates = []
+    for ip_value in candidate_ips:
+        normalized_ip = _normalize_policy_parity_ip(ip_value)
+        if normalized_ip and normalized_ip not in normalized_candidates:
+            normalized_candidates.append(normalized_ip)
+
+    if not normalized_candidates:
+        return None
+
+    trusted_live_ips: set[str] = set()
+    for device in user.devices or []:
+        if not bool(getattr(device, "is_authorized", False)):
+            continue
+
+        mac_address = str(getattr(device, "mac_address", "") or "").strip().upper()
+        if not mac_address:
+            continue
+
+        host_ip = _normalize_policy_parity_ip((host_usage_map.get(mac_address) or {}).get("address"))
+        if host_ip:
+            trusted_live_ips.add(host_ip)
+
+        binding_ip = _normalize_policy_parity_ip((ip_binding_map.get(mac_address) or {}).get("address"))
+        if binding_ip:
+            trusted_live_ips.add(binding_ip)
+
+    for candidate_ip in normalized_candidates:
+        if candidate_ip in trusted_live_ips:
+            return candidate_ip
+
+    return None
 
 
 def _run_policy_parity_auto_remediation(app: Any, report: dict[str, Any]) -> dict[str, Any]:
@@ -283,6 +354,14 @@ def _run_policy_parity_auto_remediation(app: Any, report: dict[str, Any]) -> dic
                 result["reason"] = "mikrotik_unavailable"
                 return result
 
+            ok_host_map, host_usage_map, _host_msg = get_hotspot_host_usage_map(api)
+            if not ok_host_map:
+                host_usage_map = {}
+
+            ok_binding_map, ip_binding_map, _binding_msg = get_hotspot_ip_binding_user_map(api)
+            if not ok_binding_map:
+                ip_binding_map = {}
+
             for candidate in candidates:
                 result["attempted_users"] += 1
 
@@ -291,19 +370,27 @@ def _run_policy_parity_auto_remediation(app: Any, report: dict[str, Any]) -> dic
                     result["skipped_missing_user"] += 1
                     continue
 
+                trusted_client_ip = _resolve_policy_parity_auto_remediation_client_ip(
+                    user,
+                    candidate_ips=list(candidate.get("ips") or []),
+                    host_usage_map=host_usage_map,
+                    ip_binding_map=ip_binding_map,
+                )
+
                 try:
                     ok = sync_address_list_for_single_user(
                         user,
-                        client_ip=candidate.get("ip"),
+                        client_ip=trusted_client_ip,
                         api_connection=api,
                     )
                 except Exception as exc:
                     result["failed_users"] += 1
                     _append_failure_sample(f"{candidate['user_id']} => {exc}")
                     logger.warning(
-                        "Policy parity auto-remediation gagal: user=%s ip=%s mismatches=%s error=%s",
+                        "Policy parity auto-remediation gagal: user=%s trusted_ip=%s candidate_ips=%s mismatches=%s error=%s",
                         candidate["user_id"],
-                        candidate.get("ip"),
+                        trusted_client_ip,
+                        candidate.get("ips"),
                         candidate["mismatches"],
                         exc,
                     )
@@ -322,7 +409,12 @@ def _run_policy_parity_auto_remediation(app: Any, report: dict[str, Any]) -> dic
                 except SystemExit as exc:
                     exit_code = int(getattr(exc, "code", 0) or 0)
                     if exit_code != 0:
-                        raise RuntimeError(f"sync-unauthorized-hosts exit code {exit_code}")
+                        result["unauthorized_sync_failed"] = True
+                        _append_failure_sample(f"sync_unauthorized_hosts => exit_code_{exit_code}")
+                        logger.warning(
+                            "Policy parity auto-remediation unauthorized sync keluar dengan exit code %s",
+                            exit_code,
+                        )
                 except Exception as exc:
                     result["unauthorized_sync_failed"] = True
                     _append_failure_sample(f"sync_unauthorized_hosts => {exc}")

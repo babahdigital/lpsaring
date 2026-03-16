@@ -2285,12 +2285,20 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
         _release_global_sync_lock(redis_client, global_lock_token)
 
 
-def sync_address_list_for_single_user(user: User, client_ip: Optional[str] = None, api_connection: Optional[Any] = None) -> bool:
+def sync_address_list_for_single_user(
+    user: User,
+    client_ip: Optional[str] = None,
+    api_connection: Optional[Any] = None,
+    enable_policy_self_heal: bool = True,
+) -> bool:
     """Sync address-list status for a single user based on DB counters.
 
     Pass ``api_connection`` to reuse an already-open MikroTik connection
     instead of opening a new one (avoids nested connections during webhook
     processing, which contributes to >120 s operation times).
+
+    Set ``enable_policy_self_heal`` to ``False`` for latency-sensitive request
+    paths that only need status sync, not proactive binding/DHCP repair.
     """
     if not user or not user.is_active or user.approval_status != ApprovalStatus.APPROVED:
         return False
@@ -2323,23 +2331,24 @@ def sync_address_list_for_single_user(user: User, client_ip: Optional[str] = Non
 
         ok_binding_rows, ip_binding_rows_by_mac = _snapshot_ip_binding_rows_by_mac(api)
         binding_guard_enabled = bool(ok_binding_rows)
-        ok_dhcp_snapshot, dhcp_ips_by_mac = _snapshot_dhcp_ips_by_mac(api)
-        if not ok_dhcp_snapshot:
-            dhcp_ips_by_mac = {}
+        if enable_policy_self_heal:
+            ok_dhcp_snapshot, dhcp_ips_by_mac = _snapshot_dhcp_ips_by_mac(api)
+            if not ok_dhcp_snapshot:
+                dhcp_ips_by_mac = {}
 
-        _self_heal_policy_binding_for_user(
-            api,
-            user,
-            ip_binding_map=ip_binding_map,
-            host_usage_map=host_usage_map,
-        )
-        _self_heal_policy_dhcp_for_user(
-            api,
-            user,
-            host_usage_map=host_usage_map,
-            ip_binding_map=ip_binding_map,
-            dhcp_ips_by_mac=dhcp_ips_by_mac,
-        )
+            _self_heal_policy_binding_for_user(
+                api,
+                user,
+                ip_binding_map=ip_binding_map,
+                host_usage_map=host_usage_map,
+            )
+            _self_heal_policy_dhcp_for_user(
+                api,
+                user,
+                host_usage_map=host_usage_map,
+                ip_binding_map=ip_binding_map,
+                dhcp_ips_by_mac=dhcp_ips_by_mac,
+            )
 
         ok_any_ip = False
         ips: List[str] = []

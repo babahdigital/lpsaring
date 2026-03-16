@@ -356,7 +356,11 @@ def verify_otp_impl(
 
             if current_app.config.get("SYNC_ADDRESS_LIST_ON_LOGIN", True):
                 try:
-                    sync_address_list_for_single_user(user_to_login, client_ip=resolved_ip)
+                    sync_address_list_for_single_user(
+                        user_to_login,
+                        client_ip=resolved_ip,
+                        enable_policy_self_heal=False,
+                    )
                 except Exception as e_sync:
                     current_app.logger.warning(f"Gagal sync address-list saat login: {e_sync}")
 
