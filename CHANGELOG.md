@@ -8,6 +8,18 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Fixed (2026-03-17 - Hotspot Sync Runtime dan Quota Lock Recovery)
+
+- **Full quota sync produksi turun dari sekitar `450-484s` menjadi kisaran `60-66s`:** rangkaian commit `bcfa8524`, `a6edfd9a`, dan `4f7a1110` menghapus pembangunan snapshot status berulang, membekukan runtime settings sekali per run, dan memangkas round-trip RouterOS/DHCP self-heal yang tidak perlu.
+- **Self-heal hotspot tidak lagi memboroskan call RouterOS:** `backend/app/services/hotspot_sync_service.py`, `backend/app/services/device_management_service.py`, dan `backend/app/infrastructure/gateways/mikrotik_client.py` kini memanfaatkan ulang koneksi aktif, menekan no-op update, dan menghentikan best-effort cleanup setelah removal pertama yang sukses.
+- **Post-recreate quota sync tidak lagi false skip karena stale Redis lock:** `backend/app/tasks.py` sekarang memverifikasi keberadaan `sync_hotspot_usage_task` aktif lewat Celery inspect sebelum mempercayai `quota_sync:run_lock`, lalu mereclaim lock bila lock tersebut tertinggal dari worker lama.
+- **Regression coverage untuk stale lock recovery ditambahkan:** `backend/tests/test_tasks_hotspot_usage_sync.py` memastikan path reclaim dan path skip sama-sama tetap benar.
+
+### Documentation (2026-03-17)
+
+- Arsip detail sesi hotspot sync 16-17 Maret 2026 ditambahkan ke `docs/devlogs/2026-03-17-hotspot-sync-hardening.md` dan `docs/incidents/2026-03-17-stale-quota-sync-lock.md`, lengkap dengan timeline commit, masalah, solusi, hasil deploy, dan artefak operasi.
+- `docs/REFERENCE_PENGEMBANGAN.md`, `docs/workflows/PRODUCTION_OPERATIONS.md`, dan `docs/PROJECT_STRUCTURE.md` diperbarui agar jalur validasi, runbook produksi, dan struktur dokumentasi baru bisa ditrace langsung dari repo.
+
 ### Fixed (2026-03-15 - Quota History UX, Sticky Header, dan Deploy Recreate Guard)
 
 - **Admin quota history sticky header no longer looks transparent while scrolling:** tabel `Riwayat Mutasi Kuota` admin sekarang memakai sticky header dengan background opaque dan stacking context terisolasi, sehingga teks row pertama tidak lagi tampak tembus saat user scroll jauh ke bawah.

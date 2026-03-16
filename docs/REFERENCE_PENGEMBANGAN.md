@@ -22,6 +22,13 @@ Lampiran wajib:
 - Focused frontend tests auth/payment:
   `docker compose exec frontend pnpm run test -- tests/auth-access.test.ts tests/auth-guards.test.ts tests/access-status-parity.contract.test.ts tests/payment-composables.test.ts tests/payment-status-polling.test.ts`
 
+### Validasi fokus hotspot sync
+
+- Focused backend tests hotspot sync:
+  `docker compose exec -T backend python -m pytest backend/tests/test_tasks_hotspot_usage_sync.py backend/tests/test_hotspot_sync_address_list_status.py backend/tests/test_hotspot_sync_debt_limit.py backend/tests/test_mikrotik_remove_hotspot_host_entries_best_effort.py`
+- Focused lint hotspot sync:
+  `docker compose exec -T backend ruff check backend/app/tasks.py backend/app/services/hotspot_sync_service.py backend/app/services/device_management_service.py backend/app/infrastructure/gateways/mikrotik_client.py backend/tests/test_tasks_hotspot_usage_sync.py backend/tests/test_hotspot_sync_address_list_status.py backend/tests/test_hotspot_sync_debt_limit.py backend/tests/test_mikrotik_remove_hotspot_host_entries_best_effort.py`
+
 ## Kepemilikan File Env
 
 - Root `.env`: interpolation Compose dan secret lintas service yang tidak dipublikasi.
@@ -70,6 +77,13 @@ Variabel yang paling sensitif terhadap perilaku runtime:
 - Static DHCP lease dipakai hanya jika server pin jelas dan benar.
 - Audit atau perbaikan massal produksi mengikuti [docs/workflows/PRODUCTION_OPERATIONS.md](workflows/PRODUCTION_OPERATIONS.md).
 
+## Fokus Aktif Hotspot Sync
+
+- Seri commit yang saat ini menjadi baseline produksi untuk hotspot sync adalah `bcfa8524` -> `a6edfd9a` -> `4f7a1110` -> `359c8adb`.
+- Baseline produksi terakhir untuk full run `sync_hotspot_usage_task` berada di kisaran `60-66s` dengan counter parity kritis tetap nol.
+- Detail implementasi, hasil ukur, dan artefak operasi disimpan di [docs/devlogs/2026-03-17-hotspot-sync-hardening.md](devlogs/2026-03-17-hotspot-sync-hardening.md).
+- RCA khusus stale Redis lock pascarecreate disimpan di [docs/incidents/2026-03-17-stale-quota-sync-lock.md](incidents/2026-03-17-stale-quota-sync-lock.md).
+
 ### Midtrans
 
 - Backend memakai `MIDTRANS_SERVER_KEY`, `MIDTRANS_CLIENT_KEY`, dan `MIDTRANS_IS_PRODUCTION`.
@@ -95,6 +109,10 @@ Variabel yang paling sensitif terhadap perilaku runtime:
 - [docs/PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)
 - [docs/API_DETAIL.md](API_DETAIL.md)
 - [docs/VUEXY_BASELINE_STRATEGY.md](VUEXY_BASELINE_STRATEGY.md)
+- [docs/devlogs/README.md](devlogs/README.md)
+- [docs/devlogs/2026-03-17-hotspot-sync-hardening.md](devlogs/2026-03-17-hotspot-sync-hardening.md)
+- [docs/incidents/README.md](incidents/README.md)
+- [docs/incidents/2026-03-17-stale-quota-sync-lock.md](incidents/2026-03-17-stale-quota-sync-lock.md)
 - [docs/workflows/OPENAPI_CONTRACT.md](workflows/OPENAPI_CONTRACT.md)
 - [docs/workflows/CI_CD.md](workflows/CI_CD.md)
 - [docs/workflows/PRODUCTION_OPERATIONS.md](workflows/PRODUCTION_OPERATIONS.md)

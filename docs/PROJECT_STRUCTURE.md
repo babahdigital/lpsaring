@@ -18,7 +18,9 @@ Lampiran wajib:
 - `contracts/`: kontrak OpenAPI dan artefak sinkronisasi kontrak lintas FE/BE.
 - `infrastructure/`: konfigurasi Nginx dan aset infra pendukung.
 - `scripts/`: gate CI, generator kontrak, dan utilitas operasional lokal.
-- `docs/`: dokumentasi aktif yang sudah diringkas.
+- `docs/`: dokumentasi aktif, runbook, devlog, dan incident report.
+- `docs/devlogs/`: catatan implementasi kronologis, benchmark, dan ringkasan sesi teknis yang lebih detail daripada changelog.
+- `docs/incidents/`: RCA insiden produksi atau near-miss beserta langkah pemulihannya.
 
 ## Backend
 
@@ -75,4 +77,6 @@ Lampiran wajib:
 - [DEVELOPMENT.md](../DEVELOPMENT.md)
 - [docs/REFERENCE_PENGEMBANGAN.md](REFERENCE_PENGEMBANGAN.md)
 - [docs/API_DETAIL.md](API_DETAIL.md)
+- [docs/devlogs/README.md](devlogs/README.md)
+- [docs/incidents/README.md](incidents/README.md)
 - [docs/workflows/CI_CD.md](workflows/CI_CD.md)

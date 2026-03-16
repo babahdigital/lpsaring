@@ -90,6 +90,65 @@ Cek tambahan yang umum dipakai:
 - satu asset `/_nuxt/...`
 - log backend dan worker 10-20 menit terakhir
 
+## Validasi Hotspot Sync Pascadeploy
+
+### Urutan aman yang sudah tervalidasi
+
+1. Pastikan CI dan image publish untuk commit target sudah sukses.
+2. Jika butuh hard refresh worker/container sebelum recreate, turunkan app stack lebih dulu:
+
+```bash
+ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@159.89.192.31 \
+  'cd /home/abdullah/lpsaring/app && docker compose --env-file .env.prod -f docker-compose.prod.yml down --remove-orphans'
+```
+
+3. Jalankan deploy recreate:
+
+```bash
+./deploy_pi.sh --detach-local --recreate
+```
+
+4. Simpan stdout/stderr command panjang ke file lokal `tmp/` bila perlu forensik; jangan jadikan wrapper terminal sebagai source of truth tunggal.
+5. Lakukan health check publik dan container.
+6. Jalankan parity audit dari backend dan tunggu minimal satu full run `sync_hotspot_usage_task` berikutnya.
+
+### Ekspektasi runtime yang sehat
+
+- First natural run setelah recreate harus benar-benar masuk ke log `Memulai sinkronisasi kuota dan profil hotspot.` lalu selesai dengan `Sinkronisasi selesai`.
+- Beat berikutnya boleh mengeluarkan `Skip sinkronisasi (menunggu interval dinamis)` jika interval belum lewat.
+- `Skip sinkronisasi (worker lain sedang berjalan)` hanya boleh dianggap normal bila `celery inspect active` memang menunjukkan task quota sync lain yang sedang aktif.
+- Baseline produksi tervalidasi per 17 Maret 2026 untuk full run berada di kisaran `60-66s`.
+
+### Diagnosis stale quota lock
+
+Gunakan langkah ini bila gejala pascarecreate menunjukkan skip palsu:
+
+```bash
+$COMPOSE_PROD exec -T celery_worker celery -A celery_worker.celery_app inspect active
+$COMPOSE_PROD exec -T redis redis-cli GET quota_sync:run_lock
+$COMPOSE_PROD exec -T redis redis-cli TTL quota_sync:run_lock
+$COMPOSE_PROD logs --since 15m --no-color celery_worker celery_beat \
+  | grep -E 'sync_hotspot_usage_task|Sinkronisasi|Skip sinkronisasi'
+```
+
+Aturan operasional:
+
+- Jika `inspect active` menunjukkan task sync aktif lain, biarkan lock apa adanya.
+- Jika `inspect active` kosong tetapi key lock masih hidup, perlakukan sebagai kandidat stale lock.
+- Penghapusan manual `quota_sync:run_lock` hanya boleh dilakukan saat tidak ada task sync aktif lain yang valid.
+- Setelah recovery, ulangi parity audit dan tunggu satu full run quota sync lagi.
+
+### Interpretasi parity pascadeploy
+
+- Counter ini harus tetap `0` sebelum deploy dianggap stabil:
+  - `status_without_binding`
+  - `critical_without_binding`
+  - `unauthorized_overlap`
+  - `status_multi_overlap`
+  - `binding_dhcp_ip_mismatch`
+- `authorized_mac_without_dhcp` dipantau terpisah karena bisa naik akibat device authorized yang sedang offline; jangan jadikan blocker deploy tanpa audit per-device.
+- Devlog detail dan RCA insiden terkait ada di `docs/devlogs/2026-03-17-hotspot-sync-hardening.md` dan `docs/incidents/2026-03-17-stale-quota-sync-lock.md`.
+
 ## Error Scan Singkat
 
 ```bash
