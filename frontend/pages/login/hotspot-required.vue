@@ -5,7 +5,8 @@ import { resolveHotspotSuccessPresentation, resolvePostHotspotRecheckRoute } fro
 import { type HotspotActivationStepState, type HotspotActivationStage, resolveHotspotActivationProgress } from '~/utils/hotspotActivationProgress'
 import { clearPendingHotspotBridge, rememberPendingHotspotBridge } from '~/utils/hotspotBridgeState'
 import { useAuthStore } from '~/store/auth'
-import { rememberHotspotIdentity, resolveHotspotIdentity } from '~/utils/hotspotIdentity'
+import { getHotspotIdentityFromQuery, rememberHotspotIdentity, resolveHotspotIdentity } from '~/utils/hotspotIdentity'
+import { extractHotspotLoginHintFromQuery, resolveHotspotTrustConfig, sanitizeHotspotLoginHint, sanitizeResolvedHotspotIdentity } from '~/utils/hotspotTrust'
 
 definePageMeta({
   layout: 'blank',
@@ -19,6 +20,11 @@ const runtimeConfig = useRuntimeConfig()
 const route = useRoute()
 const { $api } = useNuxtApp()
 const authStore = useAuthStore()
+const hotspotTrustConfig = resolveHotspotTrustConfig({
+  hotspotAllowedClientCidrs: runtimeConfig.public.hotspotAllowedClientCidrs,
+  hotspotTrustedLoginHosts: runtimeConfig.public.hotspotTrustedLoginHosts,
+  trustedLoginUrls: [runtimeConfig.public.appLinkMikrotik, runtimeConfig.public.mikrotikLoginUrl],
+})
 const activating = ref(false)
 const progressMessage = ref('')
 const statusMessage = ref('')
@@ -38,35 +44,33 @@ let successRedirectTimeout: number | null = null
 let successCountdownInterval: number | null = null
 
 const queryMikrotikLink = computed(() => {
-  const direct = getQueryValueFromKeys(['link_login_only', 'link-login-only', 'link_login', 'link-login', 'linkloginonly'])
-  if (direct)
-    return direct
+  return sanitizeHotspotLoginHint(extractHotspotLoginHintFromQuery((route.query as Record<string, unknown>) ?? {}), hotspotTrustConfig) || null
+})
 
-  const redirectRaw = getQueryValueFromKeys(['redirect'])
-  if (!redirectRaw || !redirectRaw.includes('link_login_only='))
-    return null
+const foreignHotspotContextMessage = computed(() => {
+  const rawIdentity = getHotspotIdentityFromQuery((route.query as Record<string, unknown>) ?? {})
+  const sanitizedIdentity = sanitizeResolvedHotspotIdentity(rawIdentity, hotspotTrustConfig)
+  if (rawIdentity.clientIp && !sanitizedIdentity.clientIp)
+    return 'Konteks hotspot dari jaringan lain terdeteksi dan diblokir. Gunakan portal hotspot jaringan asal, bukan LPSaring.'
 
-  try {
-    const parsed = new URL(redirectRaw, 'https://example.invalid')
-    const nested = String(parsed.searchParams.get('link_login_only') ?? '').trim()
-    return nested || null
-  }
-  catch {
-    const marker = 'link_login_only='
-    const markerIndex = redirectRaw.indexOf(marker)
-    if (markerIndex < 0)
-      return null
-    const after = redirectRaw.slice(markerIndex + marker.length)
-    const ampIndex = after.indexOf('&')
-    return (ampIndex >= 0 ? after.slice(0, ampIndex) : after).trim() || null
-  }
+  return ''
 })
 
 function getStoredMikrotikLink(): string {
   if (!import.meta.client)
     return ''
   try {
-    return String(window.localStorage.getItem(LAST_MIKROTIK_LOGIN_HINT_KEY) ?? '').trim()
+    const raw = String(window.localStorage.getItem(LAST_MIKROTIK_LOGIN_HINT_KEY) ?? '').trim()
+    if (!raw)
+      return ''
+
+    const sanitized = sanitizeHotspotLoginHint(raw, hotspotTrustConfig)
+    if (!sanitized) {
+      window.localStorage.removeItem(LAST_MIKROTIK_LOGIN_HINT_KEY)
+      return ''
+    }
+
+    return sanitized
   }
   catch {
     return ''
@@ -95,7 +99,7 @@ const hotspotBridgeTargetUrl = computed(() => {
 })
 
 function getHotspotIdentity() {
-  return resolveHotspotIdentity((route.query as Record<string, unknown>) ?? {})
+  return resolveHotspotIdentity((route.query as Record<string, unknown>) ?? {}, hotspotTrustConfig)
 }
 
 const loginHotspotUrl = computed(() => mikrotikLoginUrl.value)
@@ -106,7 +110,18 @@ function rememberMikrotikLoginLink(raw: string | null | undefined) {
   if (!import.meta.client)
     return
 
-  const normalized = normalizeHotspotLoginUrl(String(raw ?? '').trim())
+  const trustedHint = sanitizeHotspotLoginHint(String(raw ?? '').trim(), hotspotTrustConfig)
+  if (!trustedHint) {
+    try {
+      window.localStorage.removeItem(LAST_MIKROTIK_LOGIN_HINT_KEY)
+    }
+    catch {
+      // ignore storage failures
+    }
+    return
+  }
+
+  const normalized = normalizeHotspotLoginUrl(trustedHint)
   if (!normalized)
     return
 
@@ -324,6 +339,11 @@ function getQueryValueFromKeys(keys: string[]): string | null {
 function openHotspotLogin() {
   if (!import.meta.client)
     return
+  if (foreignHotspotContextMessage.value) {
+    statusMessage.value = foreignHotspotContextMessage.value
+    showFallbackLogin.value = false
+    return
+  }
   const targetUrl = String(loginHotspotUrl.value || '').trim()
   if (!targetUrl) {
     statusMessage.value = getMissingIdentityMessage()
@@ -337,7 +357,7 @@ function openHotspotLogin() {
 function getHotspotIdentityQuery(): Record<string, string> {
   const identity = getHotspotIdentity()
   if (identity.clientIp || identity.clientMac)
-    rememberHotspotIdentity(identity)
+    rememberHotspotIdentity(identity, hotspotTrustConfig)
   syncHotspotRouteContext(identity)
   return {
     ...(identity.clientIp ? { client_ip: identity.clientIp } : {}),
@@ -483,6 +503,12 @@ async function activateInternetOneClick(options: { allowBridgeRoundtrip?: boolea
   if (activating.value)
     return
 
+  if (foreignHotspotContextMessage.value) {
+    showFallbackLogin.value = false
+    statusMessage.value = foreignHotspotContextMessage.value
+    return
+  }
+
   if (await redirectDemoUserToBuyPage())
     return
 
@@ -495,7 +521,7 @@ async function activateInternetOneClick(options: { allowBridgeRoundtrip?: boolea
   setActivationStage('context', 'Menyiapkan proses aktivasi internet...')
 
   let identity = getHotspotIdentity()
-  rememberHotspotIdentity(identity)
+  rememberHotspotIdentity(identity, hotspotTrustConfig)
   syncHotspotRouteContext(identity)
 
   try {
@@ -580,9 +606,15 @@ async function activateInternetOneClick(options: { allowBridgeRoundtrip?: boolea
 onMounted(async () => {
   rememberMikrotikLoginLink(queryMikrotikLink.value)
   const initialIdentity = getHotspotIdentity()
-  rememberHotspotIdentity(initialIdentity)
+  rememberHotspotIdentity(initialIdentity, hotspotTrustConfig)
   syncHotspotRouteContext(initialIdentity)
   const shouldAutoStart = getQueryValueFromKeys([AUTO_START_QUERY_KEY]) === '1'
+
+  if (foreignHotspotContextMessage.value) {
+    showFallbackLogin.value = false
+    statusMessage.value = foreignHotspotContextMessage.value
+    return
+  }
 
   if (getQueryValueFromKeys([BRIDGE_RESUME_QUERY_KEY]) === '1') {
     clearPendingHotspotBridge()

@@ -39,6 +39,14 @@ function createLocalStorageMock(initial: Record<string, string> = {}) {
 vi.mock('#app', () => ({
   defineNuxtRouteMiddleware: (handler: any) => handler,
   navigateTo: (...args: any[]) => navigateToMock(...args),
+  useRuntimeConfig: () => ({
+    public: {
+      appLinkMikrotik: 'http://login.home.arpa',
+      mikrotikLoginUrl: 'http://login.home.arpa/login',
+      hotspotAllowedClientCidrs: '172.16.2.0/23',
+      hotspotTrustedLoginHosts: 'login.home.arpa',
+    },
+  }),
   useNuxtApp: () => ({
     $api: (...args: any[]) => apiMock(...args),
   }),
@@ -119,6 +127,23 @@ describe('auth.global runtime', () => {
     } as any)
 
     expect(navigateToMock).toHaveBeenCalledWith('/captive?client_ip=172.16.2.10&client_mac=AA%3ABB%3ACC%3ADD%3AEE%3AFF&link_login_only=http%3A%2F%2Flogin.home.arpa%2Flogin', { replace: true })
+  })
+
+  it('ignores foreign hotspot context from a different subnet', async () => {
+    const middleware = (await import('../middleware/auth.global')).default
+
+    await middleware({
+      path: '/login',
+      fullPath: '/login?client_ip=172.16.12.10&client_mac=AA:BB:CC:DD:EE:99&link_login_only=http%3A%2F%2Fwartelpas.net%2Flogin',
+      query: {
+        client_ip: '172.16.12.10',
+        client_mac: 'AA:BB:CC:DD:EE:99',
+        link_login_only: 'http://wartelpas.net/login',
+      },
+      meta: {},
+    } as any)
+
+    expect(navigateToMock).not.toHaveBeenCalled()
   })
 
   it('allows expired user to open payment finish without redirect', async () => {
@@ -329,6 +354,25 @@ describe('auth.global runtime', () => {
       },
     })
     expect(navigateToMock).toHaveBeenCalledWith('/login/hotspot-required?client_ip=172.16.2.10&client_mac=AA%3ABB%3ACC%3ADD%3AEE%3AFF&link_login_only=http%3A%2F%2Flogin.home.arpa%2Flogin&auto_start=1', { replace: true })
+  })
+
+  it('skips hotspot precheck for logged-in user when route carries foreign hotspot identity', async () => {
+    const middleware = (await import('../middleware/auth.global')).default
+    authStoreState.isLoggedIn = true
+
+    await middleware({
+      path: '/login',
+      fullPath: '/login?client_ip=172.16.12.11&client_mac=AA:BB:CC:DD:EE:11&link_login_only=http%3A%2F%2Fwartelpas.net%2Flogin',
+      query: {
+        client_ip: '172.16.12.11',
+        client_mac: 'AA:BB:CC:DD:EE:11',
+        link_login_only: 'http://wartelpas.net/login',
+      },
+      meta: {},
+    } as any)
+
+    expect(apiMock).not.toHaveBeenCalled()
+    expect(navigateToMock).toHaveBeenCalledWith('/dashboard', { replace: true })
   })
 
   it('does not force hotspot recovery from login route when only remembered mikrotik hint exists', async () => {

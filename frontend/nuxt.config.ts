@@ -30,6 +30,8 @@ const buyNowUrl = process.env.NUXT_PUBLIC_BUY_NOW_URL ?? ''
 const mikrotikLoginUrl = process.env.NUXT_PUBLIC_MIKROTIK_LOGIN_URL ?? ''
 const appLinkMikrotik = process.env.NUXT_PUBLIC_APP_LINK_MIKROTIK ?? process.env.APP_LINK_MIKROTIK ?? ''
 const hotspotContextProbeUrl = process.env.NUXT_PUBLIC_HOTSPOT_CONTEXT_PROBE_URL ?? 'http://neverssl.com/'
+const hotspotAllowedClientCidrs = process.env.NUXT_PUBLIC_HOTSPOT_ALLOWED_CLIENT_CIDRS ?? '172.16.2.0/23'
+const hotspotTrustedLoginHosts = process.env.NUXT_PUBLIC_HOTSPOT_TRUSTED_LOGIN_HOSTS ?? ''
 const devBypassToken = process.env.NUXT_PUBLIC_DEV_BYPASS_TOKEN ?? ''
 const statusPageGuardEnabled = process.env.NUXT_PUBLIC_STATUS_PAGE_GUARD_ENABLED ?? 'false'
 const publicDbUpdateFormEnabled = process.env.NUXT_PUBLIC_PUBLIC_DB_UPDATE_FORM_ENABLED
@@ -332,6 +334,8 @@ export default defineNuxtConfig({
       mikrotikLoginUrl,
       appLinkMikrotik,
       hotspotContextProbeUrl,
+      hotspotAllowedClientCidrs,
+      hotspotTrustedLoginHosts,
       devBypassToken,
       statusPageGuardEnabled,
       publicDbUpdateFormEnabled,

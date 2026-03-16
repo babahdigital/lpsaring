@@ -5,7 +5,8 @@ import { useAuthStore } from '~/store/auth'
 import { clearPendingHotspotBridge, getPendingHotspotBridge } from '~/utils/hotspotBridgeState'
 import { TAMPING_OPTION_ITEMS } from '~/utils/constants'
 import { normalize_to_e164 } from '~/utils/formatters'
-import { rememberHotspotIdentity, resolveHotspotIdentity } from '~/utils/hotspotIdentity'
+import { getHotspotIdentityFromQuery, rememberHotspotIdentity, resolveHotspotIdentity } from '~/utils/hotspotIdentity'
+import { extractHotspotLoginHintFromQuery, resolveHotspotTrustConfig, sanitizeHotspotLoginHint, sanitizeResolvedHotspotIdentity } from '~/utils/hotspotTrust'
 
 definePageMeta({
   layout: 'blank',
@@ -18,6 +19,11 @@ useHead({ title: 'Login Hotspot Captive' })
 const authStore = useAuthStore()
 const route = useRoute()
 const runtimeConfig = useRuntimeConfig()
+const hotspotTrustConfig = resolveHotspotTrustConfig({
+  hotspotAllowedClientCidrs: runtimeConfig.public.hotspotAllowedClientCidrs,
+  hotspotTrustedLoginHosts: runtimeConfig.public.hotspotTrustedLoginHosts,
+  trustedLoginUrls: [runtimeConfig.public.appLinkMikrotik, runtimeConfig.public.mikrotikLoginUrl],
+})
 const HOTSPOT_BRIDGE_WINDOW_NAME = 'lpsaring-hotspot-bridge'
 const HOTSPOT_BRIDGE_MESSAGE_TYPE = 'lpsaring:hotspot-identity-bridge'
 
@@ -62,6 +68,16 @@ const mikrotikLoginUrl = computed(() => {
   if (appLink)
     return appLink
   return String(runtimeConfig.public.mikrotikLoginUrl ?? '').trim()
+})
+
+const foreignHotspotContextMessage = computed(() => {
+  const routeQuery = (route.query as Record<string, unknown>) ?? {}
+  const rawIdentity = getHotspotIdentityFromQuery(routeQuery)
+  const sanitizedIdentity = sanitizeResolvedHotspotIdentity(rawIdentity, hotspotTrustConfig)
+  if (rawIdentity.clientIp && !sanitizedIdentity.clientIp)
+    return 'Konteks hotspot dari jaringan lain terdeteksi dan diabaikan. Gunakan portal hotspot jaringan asal, bukan LPSaring.'
+
+  return null
 })
 
 function resolvePendingBridgeReturnPath(rawReturnPath: string): string {
@@ -112,7 +128,7 @@ function handleHotspotIdentityBridge(): boolean {
     rememberHotspotIdentity({
       clientIp: portalParams.value.clientIp,
       clientMac: portalParams.value.clientMac,
-    })
+    }, hotspotTrustConfig)
     localInfo.value = 'Konteks hotspot berhasil dibaca. Kembali ke jendela utama...'
     postHotspotBridgeMessage('ready')
   }
@@ -141,7 +157,7 @@ async function resumePendingHotspotBridge(): Promise<boolean> {
   rememberHotspotIdentity({
     clientIp: portalParams.value.clientIp,
     clientMac: portalParams.value.clientMac,
-  })
+  }, hotspotTrustConfig)
 
   localInfo.value = 'Konteks hotspot berhasil dibaca. Melanjutkan aktivasi internet...'
 
@@ -189,13 +205,18 @@ function getQueryValueFromKeys(keys: string[]): string {
 }
 
 function loadPortalParams() {
-  const resolvedIdentity = resolveHotspotIdentity((route.query as Record<string, unknown>) ?? {})
+  const routeQuery = (route.query as Record<string, unknown>) ?? {}
+  const resolvedIdentity = resolveHotspotIdentity(routeQuery, hotspotTrustConfig)
+  const trustedLoginHint = sanitizeHotspotLoginHint(extractHotspotLoginHintFromQuery(routeQuery), hotspotTrustConfig)
   portalParams.value = {
-    linkLoginOnly: getQueryValueFromKeys(['link_login_only', 'link-login-only', 'link_login', 'link-login', 'linkloginonly']),
+    linkLoginOnly: trustedLoginHint,
     clientMac: resolvedIdentity.clientMac,
     clientIp: resolvedIdentity.clientIp,
   }
-  rememberHotspotIdentity(resolvedIdentity)
+  rememberHotspotIdentity(resolvedIdentity, hotspotTrustConfig)
+
+  if (foreignHotspotContextMessage.value)
+    localError.value = foreignHotspotContextMessage.value
 }
 
 async function refreshApiHealth() {

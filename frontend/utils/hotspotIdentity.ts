@@ -3,6 +3,15 @@ export interface HotspotIdentity {
   clientMac: string
 }
 
+import {
+  decodeHotspotValue,
+  isTrustedHotspotReferrer,
+  normalizeHotspotClientMac,
+  resolveHotspotTrustConfig,
+  sanitizeResolvedHotspotIdentity,
+  type HotspotTrustConfig,
+} from './hotspotTrust'
+
 interface HotspotIdentityRecord extends HotspotIdentity {
   at: number
 }
@@ -14,52 +23,46 @@ function isBrowserRuntime(): boolean {
   return typeof window !== 'undefined' && typeof localStorage !== 'undefined'
 }
 
-function decodeMaybeRepeated(raw: string): string {
-  let next = String(raw ?? '').trim()
-  for (let i = 0; i < 3; i++) {
-    try {
-      const decoded = decodeURIComponent(next)
-      if (decoded === next)
-        break
-      next = decoded
-    }
-    catch {
-      break
-    }
-  }
-  return next.trim()
-}
+const DEFAULT_HOTSPOT_TRUST_CONFIG = resolveHotspotTrustConfig()
 
 function getFirstQueryValue(query: Record<string, unknown>, keys: string[]): string {
   for (const key of keys) {
     const raw = query[key]
     const value = Array.isArray(raw) ? String(raw[0] ?? '').trim() : String(raw ?? '').trim()
     if (value.length > 0)
-      return decodeMaybeRepeated(value)
+      return decodeHotspotValue(value)
   }
   return ''
-}
-
-function normalizeClientMac(raw: string): string {
-  const normalized = decodeMaybeRepeated(raw)
-  if (!normalized)
-    return ''
-  return normalized.replace(/-/g, ':').toUpperCase()
 }
 
 function pickIdentityFromQuery(query: Record<string, unknown>): HotspotIdentity {
   return {
     clientIp: getFirstQueryValue(query, ['client_ip', 'ip', 'client-ip']),
-    clientMac: normalizeClientMac(getFirstQueryValue(query, ['client_mac', 'mac', 'mac-address', 'client-mac'])),
+    clientMac: normalizeHotspotClientMac(getFirstQueryValue(query, ['client_mac', 'mac', 'mac-address', 'client-mac'])),
   }
 }
 
-function pickIdentityFromReferrer(): HotspotIdentity {
+function clearStoredHotspotIdentity(): void {
+  if (!isBrowserRuntime())
+    return
+
+  try {
+    localStorage.removeItem(STORAGE_KEY)
+  }
+  catch {
+    // ignore storage failures
+  }
+}
+
+function pickIdentityFromReferrer(trustConfig: HotspotTrustConfig): HotspotIdentity {
   if (!isBrowserRuntime())
     return { clientIp: '', clientMac: '' }
 
   const referrer = String(window.document.referrer ?? '').trim()
   if (!referrer)
+    return { clientIp: '', clientMac: '' }
+
+  if (!isTrustedHotspotReferrer(referrer, trustConfig))
     return { clientIp: '', clientMac: '' }
 
   try {
@@ -78,19 +81,30 @@ export function getHotspotIdentityFromQuery(query: Record<string, unknown>): Hot
   return pickIdentityFromQuery(query)
 }
 
-export function rememberHotspotIdentity(identity: Partial<HotspotIdentity>): void {
+export function rememberHotspotIdentity(identity: Partial<HotspotIdentity>, trustConfig: HotspotTrustConfig = DEFAULT_HOTSPOT_TRUST_CONFIG): void {
   if (!isBrowserRuntime())
     return
 
-  const clientIp = String(identity.clientIp ?? '').trim()
-  const clientMac = normalizeClientMac(String(identity.clientMac ?? ''))
-  if (!clientIp && !clientMac)
+  const rawClientIp = String(identity.clientIp ?? '').trim()
+  const rawClientMac = String(identity.clientMac ?? '').trim()
+  if (!rawClientIp && !rawClientMac)
     return
+
+  const sanitized = sanitizeResolvedHotspotIdentity({
+    clientIp: rawClientIp,
+    clientMac: rawClientMac,
+  }, trustConfig)
+
+  if (!sanitized.clientIp && !sanitized.clientMac) {
+    if (rawClientIp)
+      clearStoredHotspotIdentity()
+    return
+  }
 
   try {
     const payload: HotspotIdentityRecord = {
-      clientIp,
-      clientMac,
+      clientIp: sanitized.clientIp,
+      clientMac: sanitized.clientMac,
       at: Date.now(),
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
@@ -100,7 +114,7 @@ export function rememberHotspotIdentity(identity: Partial<HotspotIdentity>): voi
   }
 }
 
-export function getStoredHotspotIdentity(): HotspotIdentity {
+export function getStoredHotspotIdentity(trustConfig: HotspotTrustConfig = DEFAULT_HOTSPOT_TRUST_CONFIG): HotspotIdentity {
   if (!isBrowserRuntime())
     return { clientIp: '', clientMac: '' }
 
@@ -111,29 +125,35 @@ export function getStoredHotspotIdentity(): HotspotIdentity {
 
     const parsed = JSON.parse(raw) as Partial<HotspotIdentityRecord>
     const at = Number(parsed?.at ?? 0)
-    if (!Number.isFinite(at) || at <= 0 || (Date.now() - at) > MAX_AGE_MS)
+    if (!Number.isFinite(at) || at <= 0 || (Date.now() - at) > MAX_AGE_MS) {
+      clearStoredHotspotIdentity()
       return { clientIp: '', clientMac: '' }
-
-    return {
-      clientIp: String(parsed?.clientIp ?? '').trim(),
-      clientMac: normalizeClientMac(String(parsed?.clientMac ?? '')),
     }
+
+    const sanitized = sanitizeResolvedHotspotIdentity({
+      clientIp: String(parsed?.clientIp ?? '').trim(),
+      clientMac: String(parsed?.clientMac ?? '').trim(),
+    }, trustConfig)
+
+    if (!sanitized.clientIp && !sanitized.clientMac) {
+      clearStoredHotspotIdentity()
+      return { clientIp: '', clientMac: '' }
+    }
+
+    return sanitized
   }
   catch {
     return { clientIp: '', clientMac: '' }
   }
 }
 
-export function resolveHotspotIdentity(query: Record<string, unknown>): HotspotIdentity {
+export function resolveHotspotIdentity(query: Record<string, unknown>, trustConfig: HotspotTrustConfig = DEFAULT_HOTSPOT_TRUST_CONFIG): HotspotIdentity {
   const fromQuery = pickIdentityFromQuery(query)
-  if (fromQuery.clientIp && fromQuery.clientMac)
-    return fromQuery
+  const fromReferrer = pickIdentityFromReferrer(trustConfig)
+  const fromStorage = getStoredHotspotIdentity(trustConfig)
 
-  const fromReferrer = pickIdentityFromReferrer()
-  const fromStorage = getStoredHotspotIdentity()
-
-  return {
+  return sanitizeResolvedHotspotIdentity({
     clientIp: fromQuery.clientIp || fromReferrer.clientIp || fromStorage.clientIp,
     clientMac: fromQuery.clientMac || fromReferrer.clientMac || fromStorage.clientMac,
-  }
+  }, trustConfig)
 }

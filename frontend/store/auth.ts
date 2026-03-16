@@ -12,6 +12,7 @@ import { resolveAccessStatusFromUser } from '@/utils/authAccess'
 import { isStatusSelfServicePath } from '~/utils/authGuardDecisions'
 import { getStatusRouteForAccessStatus, isLegalPublicPath } from '~/utils/authRoutePolicy'
 import { getHotspotIdentityFromQuery, rememberHotspotIdentity, resolveHotspotIdentity } from '~/utils/hotspotIdentity'
+import { extractTrustedHotspotLoginHintFromQuery, resolveHotspotTrustConfig, sanitizeHotspotLoginHint } from '~/utils/hotspotTrust'
 
 type RegisterResponse = AuthRegisterResponseContract
 type RegistrationPayload = AuthRegisterRequestContract
@@ -94,42 +95,36 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  function buildHotspotTrustConfigFromRuntime(runtimeConfig: ReturnType<typeof useRuntimeConfig>) {
+    return resolveHotspotTrustConfig({
+      hotspotAllowedClientCidrs: runtimeConfig.public.hotspotAllowedClientCidrs,
+      hotspotTrustedLoginHosts: runtimeConfig.public.hotspotTrustedLoginHosts,
+      trustedLoginUrls: [runtimeConfig.public.appLinkMikrotik, runtimeConfig.public.mikrotikLoginUrl],
+    })
+  }
+
+  function getHotspotTrustConfig() {
+    return buildHotspotTrustConfigFromRuntime(useRuntimeConfig())
+  }
+
   function readMikrotikLoginHintFromRoute(query: Record<string, unknown>): string {
-    const direct = getFirstQueryValue(query, ['link_login_only', 'link-login-only', 'link_login', 'link-login', 'linkloginonly'])
-    if (direct.length > 0)
-      return direct
-
-    const redirectRaw = getFirstQueryValue(query, ['redirect'])
-    if (!redirectRaw || !redirectRaw.includes('link_login_only='))
-      return ''
-
-    try {
-      const parsed = new URL(redirectRaw, 'https://example.invalid')
-      const nested = String(parsed.searchParams.get('link_login_only') ?? '').trim()
-      if (nested.length > 0)
-        return decodeOnceSafe(nested)
-    }
-    catch {
-      const decoded = decodeOnceSafe(redirectRaw)
-      const marker = 'link_login_only='
-      const markerIndex = decoded.indexOf(marker)
-      if (markerIndex >= 0) {
-        const afterMarker = decoded.slice(markerIndex + marker.length)
-        const endIndex = afterMarker.indexOf('&')
-        return decodeOnceSafe((endIndex >= 0 ? afterMarker.slice(0, endIndex) : afterMarker).trim())
-      }
-    }
-
-    return ''
+    return extractTrustedHotspotLoginHintFromQuery(query, getHotspotTrustConfig())
   }
 
   function rememberMikrotikLoginHint(link: string) {
     if (!import.meta.client)
       return
-    const normalized = String(link ?? '').trim()
-    if (normalized.length === 0)
+    const rawValue = String(link ?? '').trim()
+    if (rawValue.length === 0)
       return
+
+    const normalized = sanitizeHotspotLoginHint(rawValue, getHotspotTrustConfig())
     try {
+      if (normalized.length === 0) {
+        localStorage.removeItem(LAST_MIKROTIK_LOGIN_HINT_KEY)
+        return
+      }
+
       localStorage.setItem(LAST_MIKROTIK_LOGIN_HINT_KEY, normalized)
     }
     catch {
@@ -141,7 +136,17 @@ export const useAuthStore = defineStore('auth', () => {
     if (!import.meta.client)
       return ''
     try {
-      return String(localStorage.getItem(LAST_MIKROTIK_LOGIN_HINT_KEY) ?? '').trim()
+      const raw = String(localStorage.getItem(LAST_MIKROTIK_LOGIN_HINT_KEY) ?? '').trim()
+      if (!raw)
+        return ''
+
+      const sanitized = sanitizeHotspotLoginHint(raw, getHotspotTrustConfig())
+      if (!sanitized) {
+        localStorage.removeItem(LAST_MIKROTIK_LOGIN_HINT_KEY)
+        return ''
+      }
+
+      return sanitized
     }
     catch {
       return ''
@@ -165,6 +170,7 @@ export const useAuthStore = defineStore('auth', () => {
     query: Record<string, unknown>,
     runtimeConfig: ReturnType<typeof useRuntimeConfig>,
   ): string {
+    const hotspotTrustConfig = buildHotspotTrustConfigFromRuntime(runtimeConfig)
     const fromRoute = readMikrotikLoginHintFromRoute(query)
     if (fromRoute.length > 0)
       return fromRoute
@@ -175,9 +181,9 @@ export const useAuthStore = defineStore('auth', () => {
 
     const appLink = String(runtimeConfig.public.appLinkMikrotik ?? '').trim()
     if (appLink.length > 0)
-      return appLink
+      return sanitizeHotspotLoginHint(appLink, hotspotTrustConfig)
 
-    return String(runtimeConfig.public.mikrotikLoginUrl ?? '').trim()
+    return sanitizeHotspotLoginHint(String(runtimeConfig.public.mikrotikLoginUrl ?? '').trim(), hotspotTrustConfig)
   }
 
   function getAutoLoginAttemptSignature(routePath: string, clientIp: string, clientMac: string): string {
@@ -627,8 +633,9 @@ export const useAuthStore = defineStore('auth', () => {
     clearMessage()
     try {
       const routeQuery = (route?.query ?? {}) as Record<string, unknown>
-      const resolvedIdentity = resolveHotspotIdentity(routeQuery)
-      rememberHotspotIdentity(resolvedIdentity)
+      const hotspotTrustConfig = getHotspotTrustConfig()
+      const resolvedIdentity = resolveHotspotIdentity(routeQuery, hotspotTrustConfig)
+      rememberHotspotIdentity(resolvedIdentity, hotspotTrustConfig)
 
       const clientIp = String(options.clientIp ?? resolvedIdentity.clientIp ?? '').trim()
       const clientMac = String(options.clientMac ?? resolvedIdentity.clientMac ?? '').trim()
@@ -700,8 +707,9 @@ export const useAuthStore = defineStore('auth', () => {
         const routeLinkHint = readMikrotikLoginHintFromRoute(routeQuery)
         if (routeLinkHint.length > 0)
           rememberMikrotikLoginHint(routeLinkHint)
-        const rememberedIdentity = resolveHotspotIdentity(routeQuery)
-        rememberHotspotIdentity(rememberedIdentity)
+        const hotspotTrustConfig = getHotspotTrustConfig()
+        const rememberedIdentity = resolveHotspotIdentity(routeQuery, hotspotTrustConfig)
+        rememberHotspotIdentity(rememberedIdentity, hotspotTrustConfig)
         const mikrotikLink = resolveMikrotikLinkFromContext(routeQuery, runtimeConfig)
         const { clientIp, clientMac } = rememberedIdentity
         if (!shouldRedirectToAdminLogin && mikrotikLink.length > 0) {
@@ -781,8 +789,9 @@ export const useAuthStore = defineStore('auth', () => {
         const routeLinkHint = readMikrotikLoginHintFromRoute(routeQuery)
         if (routeLinkHint.length > 0)
           rememberMikrotikLoginHint(routeLinkHint)
-        const rememberedIdentity = resolveHotspotIdentity(routeQuery)
-        rememberHotspotIdentity(rememberedIdentity)
+        const hotspotTrustConfig = getHotspotTrustConfig()
+        const rememberedIdentity = resolveHotspotIdentity(routeQuery, hotspotTrustConfig)
+        rememberHotspotIdentity(rememberedIdentity, hotspotTrustConfig)
         const mikrotikLink = resolveMikrotikLinkFromContext(routeQuery, runtimeConfig)
         const { clientIp, clientMac } = rememberedIdentity
         if (mikrotikLink.length > 0) {
@@ -869,6 +878,7 @@ export const useAuthStore = defineStore('auth', () => {
     const routePath = route?.path ?? ''
     const context: 'login' | 'captive' = routePath.startsWith('/captive') ? 'captive' : 'login'
     const query = (route as any)?.query ?? {}
+    const hotspotTrustConfig = getHotspotTrustConfig()
     const mikrotikHint = readMikrotikLoginHintFromRoute(query as Record<string, unknown>)
     if (mikrotikHint.length > 0)
       rememberMikrotikLoginHint(mikrotikHint)
@@ -876,9 +886,9 @@ export const useAuthStore = defineStore('auth', () => {
     const queryRecord = query as Record<string, unknown>
     const routeIdentity = getHotspotIdentityFromQuery(queryRecord)
     if (routeIdentity.clientIp || routeIdentity.clientMac)
-      rememberHotspotIdentity(routeIdentity)
+      rememberHotspotIdentity(routeIdentity, hotspotTrustConfig)
 
-    const resolvedIdentity = resolveHotspotIdentity(queryRecord)
+    const resolvedIdentity = resolveHotspotIdentity(queryRecord, hotspotTrustConfig)
     const clientIp = resolvedIdentity.clientIp
     const clientMac = resolvedIdentity.clientMac
     const hasIdentityHints = Boolean(clientIp || clientMac)

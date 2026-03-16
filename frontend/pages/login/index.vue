@@ -18,6 +18,7 @@ import { shouldRedirectToHotspotRequired } from '~/utils/hotspotRedirect'
 import { sanitizePostLoginHotspotBridgeReturnPath, shouldAttemptPostLoginHotspotBridge } from '~/utils/hotspotPostLoginBridge'
 import { TAMPING_OPTION_ITEMS } from '~/utils/constants'
 import { rememberHotspotIdentity, resolveHotspotIdentity } from '~/utils/hotspotIdentity'
+import { extractTrustedHotspotLoginHintFromQuery, resolveHotspotTrustConfig } from '~/utils/hotspotTrust'
 
 definePageMeta({
   layout: 'blank',
@@ -28,6 +29,11 @@ const { add: addSnackbar } = useSnackbar()
 const display = useDisplay()
 const route = useRoute()
 const runtimeConfig = useRuntimeConfig()
+const hotspotTrustConfig = resolveHotspotTrustConfig({
+  hotspotAllowedClientCidrs: runtimeConfig.public.hotspotAllowedClientCidrs,
+  hotspotTrustedLoginHosts: runtimeConfig.public.hotspotTrustedLoginHosts,
+  trustedLoginUrls: [runtimeConfig.public.appLinkMikrotik, runtimeConfig.public.mikrotikLoginUrl],
+})
 const isHydrated = ref(false)
 const isWidePadding = computed(() => (isHydrated.value ? display.smAndUp.value : false))
 
@@ -116,27 +122,7 @@ function getQueryValueFromKeys(keys: string[]): string {
 }
 
 function readMikrotikLoginHintFromRoute(): string {
-  const direct = getQueryValueFromKeys(['link_login_only', 'link-login-only', 'link_login', 'link-login', 'linkloginonly'])
-  if (direct)
-    return direct
-
-  const redirectRaw = getQueryValue('redirect')
-  if (!redirectRaw || !redirectRaw.includes('link_login_only='))
-    return ''
-
-  try {
-    const parsed = new URL(redirectRaw, 'https://example.invalid')
-    return String(parsed.searchParams.get('link_login_only') ?? '').trim()
-  }
-  catch {
-    const marker = 'link_login_only='
-    const markerIndex = redirectRaw.indexOf(marker)
-    if (markerIndex < 0)
-      return ''
-    const after = redirectRaw.slice(markerIndex + marker.length)
-    const ampIndex = after.indexOf('&')
-    return (ampIndex >= 0 ? after.slice(0, ampIndex) : after).trim()
-  }
+  return extractTrustedHotspotLoginHintFromQuery((route.query as Record<string, unknown>) ?? {}, hotspotTrustConfig)
 }
 
 const hotspotLoginUrl = computed(() => {
@@ -332,8 +318,8 @@ async function handleVerifyOtp() {
     }
 
     const numberToVerify = normalize_to_e164(phoneNumber.value)
-    const identity = resolveHotspotIdentity((route.query as Record<string, unknown>) ?? {})
-    rememberHotspotIdentity(identity)
+    const identity = resolveHotspotIdentity((route.query as Record<string, unknown>) ?? {}, hotspotTrustConfig)
+    rememberHotspotIdentity(identity, hotspotTrustConfig)
     const clientIp = identity.clientIp
     const clientMac = identity.clientMac
     const mikrotikLinkHint = readMikrotikLoginHintFromRoute()

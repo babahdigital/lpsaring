@@ -1,6 +1,6 @@
 // frontend/middleware/auth.global.ts
 import type { RouteLocationNormalized } from 'vue-router'
-import { defineNuxtRouteMiddleware, navigateTo, useNuxtApp } from '#app'
+import { defineNuxtRouteMiddleware, navigateTo, useNuxtApp, useRuntimeConfig } from '#app'
 import { useAuthStore } from '../store/auth'
 import { getStatusRouteForAccessStatus, GUEST_ROUTES, isLegalPublicPath } from '../utils/authRoutePolicy'
 import { isCaptiveContextActive, isCaptiveRoutePath, isRestrictedInCaptiveContext, markCaptiveContextActive } from '../utils/captiveContext'
@@ -12,6 +12,13 @@ import {
   resolveLoggedInRoleRedirect,
 } from '../utils/authGuardDecisions'
 import { resolveHotspotIdentity } from '../utils/hotspotIdentity'
+import {
+  extractTrustedHotspotLoginHintFromQuery,
+  resolveHotspotTrustConfig,
+  sanitizeHotspotLoginHint,
+  sanitizeResolvedHotspotIdentity,
+  type HotspotTrustConfig,
+} from '../utils/hotspotTrust'
 import { shouldRedirectToHotspotRequired } from '../utils/hotspotRedirect'
 
 const HOTSPOT_PRECHECK_ROUTES = new Set<string>(['/', '/login', '/register', '/daftar'])
@@ -44,45 +51,20 @@ function buildHotspotIdentityQuery(identity: { clientIp?: string | null, clientM
   }
 }
 
-function pickHotspotIdentityQuery(query: Record<string, unknown>): Record<string, string> {
-  return buildHotspotIdentityQuery({
+function pickHotspotIdentityQuery(query: Record<string, unknown>, trustConfig: HotspotTrustConfig): Record<string, string> {
+  return buildHotspotIdentityQuery(sanitizeResolvedHotspotIdentity({
     clientIp: getQueryValueFromKeys(query, ['client_ip', 'ip', 'client-ip']),
     clientMac: getQueryValueFromKeys(query, ['client_mac', 'mac', 'mac-address', 'client-mac']),
-  })
+  }, trustConfig))
 }
 
-function resolveHotspotIdentityQuery(query: Record<string, unknown>): Record<string, string> {
-  return buildHotspotIdentityQuery(resolveHotspotIdentity(query))
+function resolveHotspotIdentityQuery(query: Record<string, unknown>, trustConfig: HotspotTrustConfig): Record<string, string> {
+  return buildHotspotIdentityQuery(resolveHotspotIdentity(query, trustConfig))
 }
 
-function extractHotspotLoginHint(query: Record<string, unknown>): string | null {
-  const directLink = getQueryValueFromKeys(query, ['link_login_only', 'link-login-only', 'link_login', 'link-login', 'linkloginonly'])
-  if (directLink)
-    return directLink
-
-  const redirectRaw = getQueryValueFromKeys(query, ['redirect'])
-  if (!redirectRaw || !redirectRaw.includes('link_login_only='))
-    return null
-
-  try {
-    const parsed = new URL(redirectRaw, 'https://example.invalid')
-    const nested = String(parsed.searchParams.get('link_login_only') ?? '').trim()
-    return nested || null
-  }
-  catch {
-    const marker = 'link_login_only='
-    const markerIndex = redirectRaw.indexOf(marker)
-    if (markerIndex < 0)
-      return null
-    const after = redirectRaw.slice(markerIndex + marker.length)
-    const ampIndex = after.indexOf('&')
-    return (ampIndex >= 0 ? after.slice(0, ampIndex) : after).trim() || null
-  }
-}
-
-function pickHotspotRouteQuery(query: Record<string, unknown>): Record<string, string> {
-  const identity = pickHotspotIdentityQuery(query)
-  const linkLoginOnly = extractHotspotLoginHint(query)
+function pickHotspotRouteQuery(query: Record<string, unknown>, trustConfig: HotspotTrustConfig): Record<string, string> {
+  const identity = pickHotspotIdentityQuery(query, trustConfig)
+  const linkLoginOnly = extractTrustedHotspotLoginHintFromQuery(query, trustConfig)
 
   return {
     ...identity,
@@ -90,9 +72,9 @@ function pickHotspotRouteQuery(query: Record<string, unknown>): Record<string, s
   }
 }
 
-function resolveHotspotRouteQuery(query: Record<string, unknown>): Record<string, string> {
-  const identity = resolveHotspotIdentityQuery(query)
-  const linkLoginOnly = extractHotspotLoginHint(query)
+function resolveHotspotRouteQuery(query: Record<string, unknown>, trustConfig: HotspotTrustConfig): Record<string, string> {
+  const identity = resolveHotspotIdentityQuery(query, trustConfig)
+  const linkLoginOnly = extractTrustedHotspotLoginHintFromQuery(query, trustConfig)
 
   return {
     ...identity,
@@ -100,25 +82,34 @@ function resolveHotspotRouteQuery(query: Record<string, unknown>): Record<string
   }
 }
 
-function getStoredHotspotLoginHint(): string | null {
+function getStoredHotspotLoginHint(trustConfig: HotspotTrustConfig): string | null {
   if (typeof window === 'undefined' || typeof window.localStorage === 'undefined')
     return null
 
   try {
     const value = String(window.localStorage.getItem(LAST_MIKROTIK_LOGIN_HINT_KEY) ?? '').trim()
-    return value || null
+    if (!value)
+      return null
+
+    const sanitized = sanitizeHotspotLoginHint(value, trustConfig)
+    if (!sanitized) {
+      window.localStorage.removeItem(LAST_MIKROTIK_LOGIN_HINT_KEY)
+      return null
+    }
+
+    return sanitized
   }
   catch {
     return null
   }
 }
 
-function resolveHotspotRecoveryRouteQuery(query: Record<string, unknown>): Record<string, string> {
-  const routeQuery = resolveHotspotRouteQuery(query)
+function resolveHotspotRecoveryRouteQuery(query: Record<string, unknown>, trustConfig: HotspotTrustConfig): Record<string, string> {
+  const routeQuery = resolveHotspotRouteQuery(query, trustConfig)
   if (routeQuery.link_login_only)
     return routeQuery
 
-  const storedHint = getStoredHotspotLoginHint()
+  const storedHint = getStoredHotspotLoginHint(trustConfig)
   if (!storedHint)
     return routeQuery
 
@@ -139,8 +130,8 @@ function buildHotspotRequiredPath(query: Record<string, string>, options: { auto
     : '/login/hotspot-required'
 }
 
-function hasHotspotContextQuery(query: Record<string, unknown>): boolean {
-  return Object.keys(pickHotspotRouteQuery(query)).length > 0
+function hasHotspotContextQuery(query: Record<string, unknown>, trustConfig: HotspotTrustConfig): boolean {
+  return Object.keys(pickHotspotRouteQuery(query, trustConfig)).length > 0
 }
 
 /**
@@ -155,6 +146,12 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
     markCaptiveContextActive()
 
   const authStore = useAuthStore()
+  const runtimeConfig = useRuntimeConfig()
+  const hotspotTrustConfig = resolveHotspotTrustConfig({
+    hotspotAllowedClientCidrs: runtimeConfig.public.hotspotAllowedClientCidrs,
+    hotspotTrustedLoginHosts: runtimeConfig.public.hotspotTrustedLoginHosts,
+    trustedLoginUrls: [runtimeConfig.public.appLinkMikrotik, runtimeConfig.public.mikrotikLoginUrl],
+  })
 
   // Penting: Tunggu hingga pengecekan otentikasi awal selesai.
   // Ini mencegah race condition di mana middleware berjalan sebelum user/token dimuat.
@@ -184,8 +181,8 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
     if (isPublicPage)
       return
 
-    if (!to.path.startsWith('/admin') && hasHotspotContextQuery((to.query as Record<string, unknown>) ?? {})) {
-      const hotspotRouteQuery = pickHotspotRouteQuery((to.query as Record<string, unknown>) ?? {})
+    if (!to.path.startsWith('/admin') && hasHotspotContextQuery((to.query as Record<string, unknown>) ?? {}, hotspotTrustConfig)) {
+      const hotspotRouteQuery = pickHotspotRouteQuery((to.query as Record<string, unknown>) ?? {}, hotspotTrustConfig)
       const queryString = new URLSearchParams(hotspotRouteQuery).toString()
       const captivePath = queryString.length > 0
         ? `/captive?${queryString}`
@@ -204,7 +201,7 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
     const adminDashboard = '/admin/dashboard'
     const isDemoUser = authStore.currentUser?.is_demo_user === true
     const routeQuery = (to.query as Record<string, unknown>) ?? {}
-    const resolvedHotspotRecoveryQuery = resolveHotspotRecoveryRouteQuery(routeQuery)
+    const resolvedHotspotRecoveryQuery = resolveHotspotRecoveryRouteQuery(routeQuery, hotspotTrustConfig)
     const hasResolvedHotspotRecoveryContext = Object.keys(resolvedHotspotRecoveryQuery).length > 0
     const hotspotIdentityQuery = buildHotspotIdentityQuery({
       clientIp: resolvedHotspotRecoveryQuery.client_ip,
