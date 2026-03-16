@@ -142,8 +142,14 @@ _NON_RETRYABLE_UNAUTHORIZED_SYNC_ERROR_MARKERS = (
     "gagal ambil hotspot host",
     "kegagalan operasi router",
     "routerosapiconnectionerror",
+)
+
+_RETRYABLE_UNAUTHORIZED_SYNC_ERROR_MARKERS = (
     "timed out",
     "timeout",
+    "bad file descriptor",
+    "connection reset",
+    "broken pipe",
 )
 
 _POLICY_PARITY_AUTO_REMEDIATION_MISMATCH_KEYS = {
@@ -432,6 +438,8 @@ def _run_policy_parity_auto_remediation(app: Any, report: dict[str, Any]) -> dic
 
 def _is_non_retryable_unauthorized_sync_error(exc: Exception) -> bool:
     message = str(exc or "").lower()
+    if any(marker in message for marker in _RETRYABLE_UNAUTHORIZED_SYNC_ERROR_MARKERS):
+        return False
     return any(marker in message for marker in _NON_RETRYABLE_UNAUTHORIZED_SYNC_ERROR_MARKERS)
 
 

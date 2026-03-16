@@ -2027,9 +2027,11 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
 
             ok_host, host_usage_map, host_msg = get_hotspot_host_usage_map(api)
             if not ok_host:
-                logger.error(f"Gagal mengambil data host Mikrotik: {host_msg}")
-                counters["failed"] = len(user_ids)
-                return counters
+                logger.warning(
+                    "Gagal mengambil data host Mikrotik: %s. Melanjutkan sinkronisasi tanpa snapshot host.",
+                    host_msg,
+                )
+                host_usage_map = {}
 
             ip_binding_map: Dict[str, Dict[str, Any]] = {}
             ok_binding_map, binding_map, binding_msg = get_hotspot_ip_binding_user_map(api)

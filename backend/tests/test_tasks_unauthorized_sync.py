@@ -80,3 +80,21 @@ def test_sync_unauthorized_hosts_task_unknown_error_still_raises(monkeypatch):
 
     with pytest.raises(RuntimeError, match="unexpected failure"):
         tasks.sync_unauthorized_hosts_task.run()
+
+
+def test_sync_unauthorized_hosts_task_timeout_error_remains_retryable(monkeypatch):
+    app = _make_app()
+
+    monkeypatch.setattr(tasks, "create_app", lambda: app)
+    monkeypatch.setattr(tasks.settings_service, "get_setting", lambda key, default=None: "True")
+
+    def _fake_main(*, args=None, standalone_mode=True):
+        raise RuntimeError(
+            "Sinkronisasi unauthorized selesai dengan kegagalan operasi router: "
+            "failed_add_or_refresh_sample=172.16.2.10 => timed out"
+        )
+
+    monkeypatch.setattr(tasks.sync_unauthorized_hosts_command, "main", _fake_main)
+
+    with pytest.raises(RuntimeError, match="timed out"):
+        tasks.sync_unauthorized_hosts_task.run()

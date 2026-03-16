@@ -266,3 +266,77 @@ def test_load_hotspot_usage_sync_db_state_releases_session(monkeypatch):
 
     assert state.user_ids == [first_user_id, second_user_id]
     assert fake_session.remove_calls == 1
+
+
+def test_sync_hotspot_usage_and_profiles_continues_without_host_snapshot(monkeypatch):
+    app = _make_app()
+    first_user = _FakeUser("+628111111111", 10.0)
+    second_user = _FakeUser("+628222222222", 20.0)
+    fake_session = _FakeSession([first_user, second_user])
+    fake_redis = object()
+    released_user_ids = []
+    user_by_id = {
+        first_user._id: first_user,
+        second_user._id: second_user,
+    }
+    observed_host_maps = []
+
+    monkeypatch.setattr(svc, "db", SimpleNamespace(session=fake_session))
+    monkeypatch.setattr(
+        svc,
+        "settings_service",
+        SimpleNamespace(
+            get_setting=lambda _key, default=None: default,
+            get_setting_as_int=lambda _key, default=0: default,
+        ),
+    )
+    monkeypatch.setattr(
+        svc,
+        "_load_hotspot_usage_sync_db_state",
+        lambda: svc.HotspotUsageSyncDbState(user_ids=[first_user._id, second_user._id]),
+    )
+    monkeypatch.setattr(svc, "_load_hotspot_sync_user", lambda user_id: user_by_id[user_id])
+    monkeypatch.setattr(svc, "_get_redis_client", lambda: fake_redis)
+    monkeypatch.setattr(svc, "_acquire_global_sync_lock", lambda *_args, **_kwargs: (True, "token"))
+    monkeypatch.setattr(svc, "_release_global_sync_lock", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(svc, "_acquire_sync_lock", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(svc, "_release_sync_lock", lambda _redis, user_id: released_user_ids.append(user_id))
+    monkeypatch.setattr(svc, "_is_demo_user", lambda _user: False)
+    monkeypatch.setattr(svc, "get_mikrotik_connection", lambda: _api_context(object()))
+    monkeypatch.setattr(
+        svc,
+        "get_hotspot_host_usage_map",
+        lambda _api: (False, {}, "[Errno 110] Connection timed out"),
+    )
+    monkeypatch.setattr(svc, "get_hotspot_ip_binding_user_map", lambda _api: (True, {}, "ok"))
+    monkeypatch.setattr(svc, "_snapshot_ip_binding_rows_by_mac", lambda _api: (True, {}))
+    monkeypatch.setattr(svc, "_snapshot_dhcp_ips_by_mac", lambda _api: (True, {}))
+
+    def _calculate_usage_update(user, host_usage_map, _redis_client):
+        observed_host_maps.append(dict(host_usage_map))
+        return None
+
+    monkeypatch.setattr(svc, "_calculate_usage_update", _calculate_usage_update)
+    monkeypatch.setattr(svc, "_calculate_remaining", lambda _user: (500.0, 50.0))
+    monkeypatch.setattr(svc, "_apply_auto_debt_limit_block_state", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(svc, "_resolve_target_profile", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(svc, "_self_heal_policy_binding_for_user", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(svc, "_self_heal_policy_dhcp_for_user", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(svc, "_emit_policy_binding_mismatch_metrics", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(svc, "_collect_candidate_ips_for_user", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(svc, "_sync_address_list_status_for_ip", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(svc, "_prune_stale_status_entries_for_user", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(svc, "_sync_address_list_status", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(svc, "_send_quota_notifications", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(svc, "_send_expiry_notifications", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(svc, "get_app_local_datetime", lambda *_args, **_kwargs: datetime(2026, 3, 14, tzinfo=timezone.utc))
+
+    with app.app_context():
+        result = svc.sync_hotspot_usage_and_profiles()
+
+    assert result["processed"] == 2
+    assert result["failed"] == 0
+    assert fake_session.begin_calls == 2
+    assert fake_session.remove_calls == 3
+    assert released_user_ids == [first_user._id, second_user._id]
+    assert observed_host_maps == [{}, {}]
