@@ -69,6 +69,63 @@ def _load_quota_sync_interval_seconds() -> int:
         db.session.remove()
 
 
+def _has_other_active_celery_task(task_name: str, current_task_id: str | None = None) -> bool | None:
+    try:
+        inspector = celery_app.control.inspect(timeout=1.0)
+        active_tasks = inspector.active() or {}
+    except Exception:
+        logger.warning(
+            "Celery Task: Gagal inspeksi active task untuk validasi stale lock %s.",
+            task_name,
+            exc_info=True,
+        )
+        return None
+
+    for worker_tasks in active_tasks.values():
+        for task_info in worker_tasks or []:
+            if str(task_info.get("name") or "") != task_name:
+                continue
+            active_task_id = str(task_info.get("id") or "")
+            if current_task_id and active_task_id == current_task_id:
+                continue
+            return True
+    return False
+
+
+def _acquire_quota_sync_run_lock(redis_client: Any, current_task_id: str | None = None) -> bool:
+    lock_value = str(current_task_id or "sync_hotspot_usage_task")
+    lock_acquired = bool(
+        redis_client.set(
+            _QUOTA_SYNC_LOCK_KEY,
+            lock_value,
+            nx=True,
+            ex=_QUOTA_SYNC_LOCK_TTL_SECONDS,
+        )
+    )
+    if lock_acquired:
+        return True
+
+    other_task_active = _has_other_active_celery_task(
+        "sync_hotspot_usage_task",
+        current_task_id=current_task_id,
+    )
+    if other_task_active is not False:
+        return False
+
+    logger.warning(
+        "Celery Task: Stale quota sync lock terdeteksi tanpa task aktif lain; mencoba reclaim lock."
+    )
+    redis_client.delete(_QUOTA_SYNC_LOCK_KEY)
+    return bool(
+        redis_client.set(
+            _QUOTA_SYNC_LOCK_KEY,
+            lock_value,
+            nx=True,
+            ex=_QUOTA_SYNC_LOCK_TTL_SECONDS,
+        )
+    )
+
+
 @dataclass(frozen=True)
 class CleanupWaitingDhcpArpConfig:
     mikrotik_operations_enabled: bool
@@ -136,6 +193,9 @@ logger = logging.getLogger(__name__)
 _TASK_APP_CACHE: dict[str | None, Any] = {}
 
 _MIKROTIK_DURATION_PART = re.compile(r"(\d+)([wdhms])", re.IGNORECASE)
+_QUOTA_SYNC_LOCK_KEY = "quota_sync:run_lock"
+_QUOTA_SYNC_LAST_RUN_KEY = "quota_sync:last_run_ts"
+_QUOTA_SYNC_LOCK_TTL_SECONDS = 3600
 
 _NON_RETRYABLE_UNAUTHORIZED_SYNC_ERROR_MARKERS = (
     "gagal konek mikrotik",
@@ -1686,11 +1746,12 @@ def sync_hotspot_usage_task(self):
         logger.info("Celery Task: Memulai sinkronisasi kuota dan profil hotspot.")
         sync_interval = _load_quota_sync_interval_seconds()
         redis_client = getattr(app, "redis_client_otp", None)
+        current_task_id = str(getattr(self.request, "id", "") or "")
 
         # Throttle check: skip jika belum melewati interval sejak run terakhir
         if redis_client is not None:
             now_ts = int(datetime.now(dt_timezone.utc).timestamp())
-            last_ts_str = redis_client.get("quota_sync:last_run_ts")
+            last_ts_str = redis_client.get(_QUOTA_SYNC_LAST_RUN_KEY)
             if last_ts_str:
                 last_ts = int(last_ts_str)
                 if now_ts - last_ts < max(sync_interval, 30):
@@ -1698,13 +1759,13 @@ def sync_hotspot_usage_task(self):
                     return
 
         # Mutex lock: cegah eksekusi concurrent dari beberapa worker (root cause deadlock DB)
-        # SET NX (atomic) — hanya satu worker yang bisa acquire pada satu waktu
-        lock_key = "quota_sync:run_lock"
-        lock_ttl = 3600  # Safety TTL: task bisa jalan hingga 52+ menit (observed); 120s terlalu pendek → menyebabkan multiple worker berjalan bersamaan → quota double-deducted
+        # Redis lock bisa tertinggal setelah worker crash/recreate; jika itu terjadi,
+        # task baru boleh reclaim lock hanya saat inspector Celery memastikan tidak
+        # ada sync_hotspot_usage_task aktif lain selain task saat ini.
         lock_acquired = False
         try:
             if redis_client is not None:
-                lock_acquired = bool(redis_client.set(lock_key, "1", nx=True, ex=lock_ttl))
+                lock_acquired = _acquire_quota_sync_run_lock(redis_client, current_task_id=current_task_id)
                 if not lock_acquired:
                     logger.info("Celery Task: Skip sinkronisasi (worker lain sedang berjalan).")
                     return
@@ -1712,7 +1773,7 @@ def sync_hotspot_usage_task(self):
             result = sync_hotspot_usage_and_profiles()
             logger.info(f"Celery Task: Sinkronisasi selesai. Result: {result}")
             if redis_client is not None:
-                redis_client.set("quota_sync:last_run_ts", int(datetime.now(dt_timezone.utc).timestamp()))
+                redis_client.set(_QUOTA_SYNC_LAST_RUN_KEY, int(datetime.now(dt_timezone.utc).timestamp()))
         except Exception as e:
             logger.error(f"Celery Task: Sinkronisasi gagal: {e}", exc_info=True)
             if self.request.retries >= 2:
@@ -1720,7 +1781,7 @@ def sync_hotspot_usage_task(self):
             raise
         finally:
             if redis_client is not None and lock_acquired:
-                redis_client.delete(lock_key)
+                redis_client.delete(_QUOTA_SYNC_LOCK_KEY)
 
 
 @celery_app.task(
