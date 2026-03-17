@@ -66,6 +66,7 @@ export const useAuthStore = defineStore('auth', () => {
   const lastStatusRedirect = ref<{ status: AccessStatus; sig?: string | null } | null>(null)
   const logoutInProgress = ref(false)
   const resetLoginInProgress = ref(false)
+  let inflightUserFetch: { key: string; promise: Promise<boolean> } | null = null
 
   const isLoggedIn = computed(() => user.value != null)
   const currentUser = computed(() => user.value)
@@ -292,6 +293,7 @@ export const useAuthStore = defineStore('auth', () => {
   function clearSession(reasonCode?: number | null) {
     setUser(null)
     lastUserFetchAt.value = 0
+    inflightUserFetch = null
     if (reasonCode != null)
       lastAuthErrorCode.value = reasonCode
     else
@@ -299,33 +301,61 @@ export const useAuthStore = defineStore('auth', () => {
     initialAuthCheckDone.value = true
   }
 
+  function resolveFetchUserPath(currentPath?: string): string {
+    if (typeof currentPath === 'string' && currentPath.length > 0)
+      return currentPath
+
+    try {
+      return useRoute().path || ''
+    }
+    catch {
+      return ''
+    }
+  }
+
   async function fetchUser(context: 'login' | 'captive' = 'login', currentPath?: string): Promise<boolean> {
     const { $api } = useNuxtApp()
-    loadingUser.value = true
-    try {
-      const fetchedUser = await $api<User>('/auth/me', { method: 'GET' })
+    const fetchPath = resolveFetchUserPath(currentPath)
+    const fetchKey = `${context}:${fetchPath}`
+    if (inflightUserFetch?.key === fetchKey)
+      return inflightUserFetch.promise
 
-      // PERBAIKAN: Pengecekan eksplisit
-      if (fetchedUser != null && fetchedUser.id != null) {
-        setUser(fetchedUser)
-        lastUserFetchAt.value = Date.now()
-        clearError()
-        await enforceAccessStatus(context, currentPath)
-        return true
+    const requestPromise = (async () => {
+      loadingUser.value = true
+      try {
+        const fetchedUser = await $api<User>('/auth/me', { method: 'GET' })
+
+        // PERBAIKAN: Pengecekan eksplisit
+        if (fetchedUser != null && fetchedUser.id != null) {
+          setUser(fetchedUser)
+          lastUserFetchAt.value = Date.now()
+          clearError()
+          await enforceAccessStatus(context, fetchPath)
+          return true
+        }
+        throw new Error('Format data pengguna dari server tidak valid.')
       }
-      throw new Error('Format data pengguna dari server tidak valid.')
-    }
-    catch (err: any) {
-      const statusCode = err.response?.status ?? err.statusCode ?? null
-      if (statusCode === 401 || statusCode === 403) {
-        clearSession(statusCode)
+      catch (err: any) {
+        const statusCode = err.response?.status ?? err.statusCode ?? null
+        if (statusCode === 401 || statusCode === 403) {
+          clearSession(statusCode)
+          return false
+        }
+        setError(extractErrorMessage(err.data, 'Gagal memuat data pengguna.'))
         return false
       }
-      setError(extractErrorMessage(err.data, 'Gagal memuat data pengguna.'))
-      return false
+      finally {
+        loadingUser.value = false
+      }
+    })()
+
+    inflightUserFetch = { key: fetchKey, promise: requestPromise }
+    try {
+      return await requestPromise
     }
     finally {
-      loadingUser.value = false
+      if (inflightUserFetch?.promise === requestPromise)
+        inflightUserFetch = null
     }
   }
 

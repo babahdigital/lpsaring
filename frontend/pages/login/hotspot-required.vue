@@ -38,7 +38,14 @@ const successCountdown = ref(0)
 const BRIDGE_RESUME_QUERY_KEY = 'bridge_resume'
 const AUTO_START_QUERY_KEY = 'auto_start'
 const LAST_MIKROTIK_LOGIN_HINT_KEY = 'lpsaring:last-mikrotik-login-link'
-const SUCCESS_REDIRECT_DELAY_MS = 2200
+const SUCCESS_REDIRECT_DELAY_MS = 900
+const HOTSPOT_AUTO_START_DELAY_MS = 50
+const HOTSPOT_BRIDGE_RESUME_DELAY_MS = 50
+const HOTSPOT_INITIAL_PROBE_DELAY_MS = 100
+const HOTSPOT_PROBE_SETTLE_MS = 200
+const HOTSPOT_CONFIRM_ATTEMPTS = 6
+const HOTSPOT_CONFIRM_DELAY_FAST_MS = 500
+const HOTSPOT_CONFIRM_DELAY_RECOVERY_MS = 700
 
 let successRedirectTimeout: number | null = null
 let successCountdownInterval: number | null = null
@@ -537,7 +544,7 @@ async function activateInternetOneClick(options: { allowBridgeRoundtrip?: boolea
 
     setActivationStage('sync', 'Menyinkronkan sesi hotspot dengan router...')
     triggerHotspotProbe()
-    await wait(600)
+    await wait(HOTSPOT_PROBE_SETTLE_MS)
 
     progressMessage.value = 'Memeriksa status perangkat di hotspot...'
     const initialStatus = await fetchHotspotStatus()
@@ -564,8 +571,8 @@ async function activateInternetOneClick(options: { allowBridgeRoundtrip?: boolea
 
     if (bindSuccess) {
       const confirmed = await waitForHotspotConfirmation({
-        attempts: 6,
-        delayMs: 1000,
+        attempts: HOTSPOT_CONFIRM_ATTEMPTS,
+        delayMs: HOTSPOT_CONFIRM_DELAY_FAST_MS,
         progressPrefix: 'Memverifikasi koneksi internet...',
       })
       if (confirmed) {
@@ -580,8 +587,8 @@ async function activateInternetOneClick(options: { allowBridgeRoundtrip?: boolea
     }
 
     const confirmed = await waitForHotspotConfirmation({
-      attempts: 6,
-      delayMs: 1200,
+      attempts: HOTSPOT_CONFIRM_ATTEMPTS,
+      delayMs: HOTSPOT_CONFIRM_DELAY_RECOVERY_MS,
       progressPrefix: 'Sinkronisasi akses hotspot...',
     })
     if (confirmed) {
@@ -621,7 +628,7 @@ onMounted(async () => {
     stripBridgeResumeQueryFlag()
     if (hasExplicitHotspotIdentity(initialIdentity)) {
       statusMessage.value = ''
-      await wait(150)
+      await wait(HOTSPOT_BRIDGE_RESUME_DELAY_MS)
       void activateInternetOneClick({ allowBridgeRoundtrip: false })
       return
     }
@@ -632,14 +639,14 @@ onMounted(async () => {
 
   if (shouldAutoStart) {
     statusMessage.value = ''
-    await wait(150)
+    await wait(HOTSPOT_AUTO_START_DELAY_MS)
     void activateInternetOneClick()
     return
   }
 
   try {
     triggerHotspotProbe()
-    await wait(250)
+    await wait(HOTSPOT_INITIAL_PROBE_DELAY_MS)
 
     const status = await fetchHotspotStatus()
     if (!status.hotspotRequired || status.hotspotActive) {

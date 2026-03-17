@@ -73,7 +73,10 @@ def _check_whatsapp_rate_limit(target_number: str) -> bool:
         return True
 
 
-def _apply_send_delay() -> None:
+def _apply_send_delay(*, enabled: bool = True) -> None:
+    if not enabled:
+        return
+
     min_ms = int(current_app.config.get("WHATSAPP_SEND_DELAY_MIN_MS", 400))
     max_ms = int(current_app.config.get("WHATSAPP_SEND_DELAY_MAX_MS", 1200))
 
@@ -124,7 +127,13 @@ def validate_whatsapp_provider() -> tuple[bool, str | None]:
     return False, "Provider WhatsApp belum siap (device/token belum valid)."
 
 
-def send_whatsapp_message(recipient_number: str, message_body: str) -> bool:
+def send_whatsapp_message(
+    recipient_number: str,
+    message_body: str,
+    *,
+    apply_send_delay: bool = True,
+    timeout_seconds: Optional[int] = None,
+) -> bool:
     """
     Mengirim pesan WhatsApp ke nomor tujuan menggunakan API Fonnte.
     (Fungsi ini tetap sama, tidak ada perubahan)
@@ -165,14 +174,19 @@ def send_whatsapp_message(recipient_number: str, message_body: str) -> bool:
         current_app.logger.warning("WhatsApp circuit breaker open. Skipping send.")
         return False
 
-    _apply_send_delay()
+    _apply_send_delay(enabled=apply_send_delay)
 
     current_app.logger.info(f"Attempting to send WhatsApp to {target_number} via Fonnte (URL: {api_url})")
     current_app.logger.debug(f"Fonnte Payload: {payload}, Headers: {{'Authorization': '***'}}")
 
     try:
-        timeout_seconds = int(current_app.config.get("WHATSAPP_HTTP_TIMEOUT_SECONDS", 15))
-        response = requests.post(api_url, headers=headers, data=payload, timeout=timeout_seconds)
+        resolved_timeout_seconds = timeout_seconds
+        if resolved_timeout_seconds is None:
+            resolved_timeout_seconds = int(current_app.config.get("WHATSAPP_HTTP_TIMEOUT_SECONDS", 15))
+        if resolved_timeout_seconds <= 0:
+            resolved_timeout_seconds = 15
+
+        response = requests.post(api_url, headers=headers, data=payload, timeout=resolved_timeout_seconds)
         if not (200 <= response.status_code < 300):
             current_app.logger.warning(
                 f"Fonnte API returned non-2xx status: {response.status_code} - {response.text[:200]}"
@@ -424,4 +438,13 @@ def send_otp_whatsapp(target_number: str, otp: str) -> bool:
     from app.services.notification_service import get_notification_message
 
     message_body = get_notification_message("auth_send_otp", {"otp_code": otp, "otp_expiry_minutes": expire_minutes})
-    return send_whatsapp_message(target_number, message_body)
+    otp_timeout_seconds = int(current_app.config.get("WHATSAPP_HTTP_TIMEOUT_SECONDS", 15))
+    if otp_timeout_seconds <= 0:
+        otp_timeout_seconds = 15
+
+    return send_whatsapp_message(
+        target_number,
+        message_body,
+        apply_send_delay=False,
+        timeout_seconds=min(otp_timeout_seconds, 8),
+    )
