@@ -103,6 +103,25 @@ def verify_otp_impl(
 
         data = VerifyOtpRequestSchema.model_validate(payload_dict)
 
+        def _recover_ip_from_client_mac_hint(mac_hint: Any) -> Optional[str]:
+            hinted_mac = normalize_mac(mac_hint) if mac_hint else None
+            if not hinted_mac:
+                return None
+
+            try:
+                from app.infrastructure.gateways.mikrotik_client import get_ip_by_mac
+
+                with get_mikrotik_connection() as api_connection:
+                    if not api_connection:
+                        return None
+                    ok_lookup, ip_from_mac, _lookup_msg = get_ip_by_mac(api_connection, hinted_mac)
+                    if ok_lookup and ip_from_mac:
+                        return str(ip_from_mac).strip()
+            except Exception:
+                return None
+
+            return None
+
         try:
             phone_e164 = normalize_to_e164(data.phone_number)
         except ValueError as e:
@@ -207,9 +226,30 @@ def verify_otp_impl(
 
         authoritative_binding_mac: Optional[str] = None
         resolved_ip = str(binding_context.get("resolved_ip") or "").strip() or None
+        resolved_ip_source = str(binding_context.get("ip_source") or "").strip() or None
         incoming_mac = normalize_mac(client_mac) if client_mac else None
         if resolved_ip:
             ok_router_mac, router_mac_raw, router_mac_msg = resolve_client_mac(resolved_ip)
+            authoritative_binding_mac = normalize_mac(router_mac_raw) if router_mac_raw else None
+
+            should_try_mac_hint_fallback = bool(incoming_mac) and resolved_ip_source == "client_ip" and (
+                not ok_router_mac or not authoritative_binding_mac
+            )
+            if should_try_mac_hint_fallback:
+                recovered_ip = _recover_ip_from_client_mac_hint(incoming_mac)
+                if recovered_ip and recovered_ip == resolved_ip:
+                    authoritative_binding_mac = incoming_mac
+                    binding_context["resolved_mac"] = authoritative_binding_mac
+                    binding_context["mac_source"] = "mikrotik_mac_hint"
+                    binding_context["mac_message"] = "MAC dipulihkan dari router lewat verifikasi MAC->IP yang cocok"
+                    current_app.logger.warning(
+                        "Verify-OTP fallback to matching router MAC hint: ip=%s mac=%s router_msg=%s",
+                        resolved_ip,
+                        incoming_mac,
+                        router_mac_msg,
+                    )
+                    ok_router_mac = True
+
             if not ok_router_mac:
                 current_app.logger.warning(
                     "Verify-OTP rejected: gagal verifikasi MAC router ip=%s user=%s msg=%s",
@@ -221,7 +261,6 @@ def verify_otp_impl(
                     AuthErrorResponseSchema(error="Tidak dapat memverifikasi perangkat dari router.").model_dump()
                 ), HTTPStatus.SERVICE_UNAVAILABLE
 
-            authoritative_binding_mac = normalize_mac(router_mac_raw) if router_mac_raw else None
             if not authoritative_binding_mac:
                 return jsonify(
                     AuthErrorResponseSchema(error="Perangkat belum terdeteksi di router.").model_dump()

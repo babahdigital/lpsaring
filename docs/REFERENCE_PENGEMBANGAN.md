@@ -61,6 +61,7 @@ Variabel yang paling sensitif terhadap perilaku runtime:
 - OTP sukses secara default mengotorisasi device aktif ketika `OTP_AUTO_AUTHORIZE_DEVICE=True`.
 - Bypass code tidak boleh mengotorisasi device otomatis.
 - Jalur self-service bind device tetap melalui `POST /api/users/me/devices/bind-current`.
+- `POST /api/auth/verify-otp` tidak boleh fail-hard hanya karena lookup router `IP -> MAC` transien jika router masih bisa membuktikan pasangan `client_mac -> client_ip` yang sama. Fallback seperti ini harus tetap konservatif: jangan memperlakukan raw MAC sebagai authoritative tanpa kecocokan IP dari router.
 
 ### Quota dan expiry
 
@@ -111,6 +112,9 @@ Variabel yang paling sensitif terhadap perilaku runtime:
 - Pengiriman server-side memakai token API di backend.
 - Deep link frontend ke WhatsApp admin hanya bergantung pada `NUXT_PUBLIC_ADMIN_WHATSAPP` dan `NUXT_PUBLIC_WHATSAPP_BASE_URL`.
 - Jangan pernah menaruh token provider di env publik atau frontend.
+- Knob runtime yang paling relevan untuk kecepatan kirim OTP saat ini adalah `WHATSAPP_HTTP_TIMEOUT_SECONDS`, `WHATSAPP_SEND_DELAY_MIN_MS`, dan `WHATSAPP_SEND_DELAY_MAX_MS`.
+- Saat ini aplikasi belum menulis metrik durasi kirim OTP/provider latency secara eksplisit. `POST /auth/request-otp` berhasil hanya membuktikan request auth diterima backend, bukan membuktikan OTP sudah terkirim cepat ke handset.
+- Jika perlu audit performa OTP, gunakan kombinasi access log, backend log, dan dashboard/log provider WhatsApp; jangan menyimpulkan latency delivery hanya dari selisih waktu `request-otp` ke `verify-otp` karena itu juga mencakup waktu user menerima dan mengetik kode.
 
 ## Aturan Saat Mengubah Kode
 

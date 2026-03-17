@@ -439,3 +439,139 @@ def test_verify_otp_rejects_hotspot_context_without_identity_in_production(monke
 
     assert status == 403
     assert "konteks hotspot" in cast(str, response.get_json().get("error", "")).lower()
+
+
+def test_verify_otp_falls_back_to_matching_client_mac_hint_when_router_lookup_fails(monkeypatch):
+    user = SimpleNamespace(
+        id="user-5",
+        phone_number="+628123444555",
+        role=UserRole.USER,
+        is_active=True,
+        approval_status=ApprovalStatus.APPROVED,
+        is_blocked=False,
+        mikrotik_password="pw",
+        last_login_at=None,
+    )
+
+    fake_session = _FakeSession(user, scalar_value=None)
+    monkeypatch.setattr(auth_routes, "db", _FakeDb(fake_session))
+    monkeypatch.setattr(auth_routes, "verify_otp_from_redis", lambda *_a, **_k: True)
+    monkeypatch.setattr(auth_routes, "normalize_to_e164", lambda p: p)
+    monkeypatch.setattr(auth_routes, "get_phone_number_variations", lambda p: [p])
+    monkeypatch.setattr(auth_routes.settings_service, "get_setting", lambda *_a, **_k: "True")
+    monkeypatch.setattr(auth_routes, "resolve_client_mac", lambda *_a, **_k: (False, None, "router-timeout"))
+
+    captured: dict[str, Any] = {}
+
+    def _fake_apply_binding(*args, **_kwargs):
+        captured["client_ip"] = args[1]
+        captured["client_mac"] = args[3]
+        return True, "ok", args[1]
+
+    monkeypatch.setattr(auth_routes, "apply_device_binding_for_login", _fake_apply_binding)
+    monkeypatch.setattr(auth_routes, "sync_address_list_for_single_user", lambda *_a, **_k: None)
+    monkeypatch.setattr(auth_routes, "create_access_token", lambda *_a, **_k: "access")
+    monkeypatch.setattr(auth_routes, "issue_refresh_token_for_user", lambda *_a, **_k: "refresh")
+    monkeypatch.setattr(auth_routes, "is_hotspot_login_required", lambda *_a, **_k: False)
+    monkeypatch.setattr(auth_routes, "_store_session_token", lambda *_a, **_k: None)
+    monkeypatch.setattr(auth_routes, "UserLoginHistory", lambda **kw: SimpleNamespace(**kw))
+    monkeypatch.setattr(auth_routes, "has_hotspot_ip_binding_for_user", lambda *_a, **_k: (True, True, "ok"))
+
+    @contextmanager
+    def _fake_conn(*_args, **_kwargs):
+        yield object()
+
+    monkeypatch.setattr(auth_routes, "get_mikrotik_connection", _fake_conn)
+
+    from app.infrastructure.gateways import mikrotik_client as mk
+
+    monkeypatch.setattr(mk, "get_ip_by_mac", lambda *_a, **_k: (True, "172.16.0.55", "ok"))
+
+    app = _make_app()
+    verify_impl = _unwrap_decorators(auth_routes.verify_otp)
+
+    with app.test_request_context(
+        "/api/auth/verify-otp",
+        method="POST",
+        json={
+            "phone_number": "+628123444555",
+            "otp": "123456",
+            "client_ip": "172.16.0.55",
+            "client_mac": "aa:bb:cc:11:22:33",
+            "hotspot_login_context": True,
+        },
+        headers={"User-Agent": "pytest"},
+    ):
+        response, status = verify_impl()
+
+    assert status == 200
+    assert cast(dict, response.get_json())["access_token"] == "access"
+    assert captured["client_ip"] == "172.16.0.55"
+    assert captured["client_mac"] == "AA:BB:CC:11:22:33"
+
+
+def test_verify_otp_keeps_rejecting_when_mac_hint_recovers_different_ip(monkeypatch):
+    user = SimpleNamespace(
+        id="user-6",
+        phone_number="+628123444556",
+        role=UserRole.USER,
+        is_active=True,
+        approval_status=ApprovalStatus.APPROVED,
+        is_blocked=False,
+        mikrotik_password="pw",
+        last_login_at=None,
+    )
+
+    fake_session = _FakeSession(user, scalar_value=None)
+    monkeypatch.setattr(auth_routes, "db", _FakeDb(fake_session))
+    monkeypatch.setattr(auth_routes, "verify_otp_from_redis", lambda *_a, **_k: True)
+    monkeypatch.setattr(auth_routes, "normalize_to_e164", lambda p: p)
+    monkeypatch.setattr(auth_routes, "get_phone_number_variations", lambda p: [p])
+    monkeypatch.setattr(auth_routes.settings_service, "get_setting", lambda *_a, **_k: "True")
+    monkeypatch.setattr(auth_routes, "resolve_client_mac", lambda *_a, **_k: (False, None, "router-timeout"))
+    monkeypatch.setattr(auth_routes, "sync_address_list_for_single_user", lambda *_a, **_k: None)
+    monkeypatch.setattr(auth_routes, "create_access_token", lambda *_a, **_k: "access")
+    monkeypatch.setattr(auth_routes, "issue_refresh_token_for_user", lambda *_a, **_k: "refresh")
+    monkeypatch.setattr(auth_routes, "is_hotspot_login_required", lambda *_a, **_k: False)
+    monkeypatch.setattr(auth_routes, "_store_session_token", lambda *_a, **_k: None)
+    monkeypatch.setattr(auth_routes, "UserLoginHistory", lambda **kw: SimpleNamespace(**kw))
+    monkeypatch.setattr(auth_routes, "has_hotspot_ip_binding_for_user", lambda *_a, **_k: (True, True, "ok"))
+
+    captured = {"apply_called": False}
+
+    def _fake_apply_binding(*_args, **_kwargs):
+        captured["apply_called"] = True
+        return True, "ok", "172.16.0.56"
+
+    monkeypatch.setattr(auth_routes, "apply_device_binding_for_login", _fake_apply_binding)
+
+    @contextmanager
+    def _fake_conn(*_args, **_kwargs):
+        yield object()
+
+    monkeypatch.setattr(auth_routes, "get_mikrotik_connection", _fake_conn)
+
+    from app.infrastructure.gateways import mikrotik_client as mk
+
+    monkeypatch.setattr(mk, "get_ip_by_mac", lambda *_a, **_k: (True, "172.16.0.99", "ok"))
+
+    app = _make_app()
+    verify_impl = _unwrap_decorators(auth_routes.verify_otp)
+
+    with app.test_request_context(
+        "/api/auth/verify-otp",
+        method="POST",
+        json={
+            "phone_number": "+628123444556",
+            "otp": "123456",
+            "client_ip": "172.16.0.56",
+            "client_mac": "AA:BB:CC:11:22:34",
+            "hotspot_login_context": True,
+        },
+        headers={"User-Agent": "pytest"},
+    ):
+        response, status = verify_impl()
+
+    assert status == 503
+    assert "router" in cast(str, response.get_json().get("error", "")).lower()
+    assert captured["apply_called"] is False
