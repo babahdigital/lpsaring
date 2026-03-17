@@ -215,7 +215,10 @@ def _load_hotspot_usage_sync_db_state() -> HotspotUsageSyncDbState:
         db.session.remove()
 
 
-def _load_hotspot_usage_sync_runtime_settings() -> HotspotUsageSyncRuntimeSettings:
+def _load_hotspot_usage_sync_runtime_settings(
+    *,
+    release_session: bool = True,
+) -> HotspotUsageSyncRuntimeSettings:
     try:
         list_active, list_fup, list_inactive, list_expired, list_habis, list_blocked, list_unauthorized, fup_threshold_mb = (
             _resolve_status_list_runtime_values()
@@ -276,8 +279,11 @@ def _load_hotspot_usage_sync_runtime_settings() -> HotspotUsageSyncRuntimeSettin
             quota_expiry_notify_days_thresholds=_get_thresholds_from_env("QUOTA_EXPIRY_NOTIFY_DAYS", [7, 3, 1]),
         )
     finally:
-        # Lepas sesi settings sebelum loop per-user memulai transaksi eksplisit.
-        db.session.remove()
+        # Batch sync panjang tidak boleh menahan sesi settings terlalu lama,
+        # tetapi jalur request/admin yang memanggil helper ini masih butuh
+        # instance ORM tetap attached.
+        if release_session:
+            db.session.remove()
 
 
 def _load_hotspot_sync_user(user_id: uuid.UUID) -> Optional[User]:
@@ -2879,7 +2885,7 @@ def sync_address_list_for_single_user(
     expiry_local = get_app_local_datetime(user.quota_expiry_date) if user.quota_expiry_date else None
     is_expired = bool(expiry_local and expiry_local < now_local)
     force_blocked_status = _apply_auto_debt_limit_block_state(user, source="sync_single")
-    runtime_settings = _load_hotspot_usage_sync_runtime_settings()
+    runtime_settings = _load_hotspot_usage_sync_runtime_settings(release_session=False)
 
     _ctx = nullcontext(api_connection) if api_connection is not None else get_mikrotik_connection()
     with _ctx as api:

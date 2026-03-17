@@ -312,8 +312,12 @@ def update_user_by_admin(current_admin: User, user_id):
             db.session.rollback()
             return jsonify({"message": message}), HTTPStatus.BAD_REQUEST
         db.session.commit()
-        db.session.refresh(updated_user)
-        return jsonify(UserResponseSchema.from_orm(updated_user).model_dump()), HTTPStatus.OK
+        response_user_id = getattr(updated_user, "id", None) or user_id
+        response_user = db.session.get(User, response_user_id)
+        if response_user is None:
+            current_app.logger.error("Updated user %s tidak ditemukan setelah commit.", response_user_id)
+            return jsonify({"message": "Kesalahan internal server."}), HTTPStatus.INTERNAL_SERVER_ERROR
+        return jsonify(UserResponseSchema.from_orm(response_user).model_dump()), HTTPStatus.OK
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error updating user {user_id}: {e}", exc_info=True)

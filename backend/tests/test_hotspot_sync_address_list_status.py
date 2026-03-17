@@ -1113,3 +1113,50 @@ def test_sync_address_list_for_single_user_skips_policy_self_heal_when_disabled(
 
     assert ok is True
     assert calls == {"binding": 0, "dhcp": 0, "dhcp_snapshot": 0}
+
+
+def test_sync_address_list_for_single_user_keeps_request_session_attached(monkeypatch):
+    _patch_settings(monkeypatch)
+
+    app = Flask(__name__)
+    app.config["MIKROTIK_UNAUTHORIZED_CIDRS"] = ["172.16.2.0/23"]
+
+    captured: dict[str, Any] = {"release_session": None}
+
+    monkeypatch.setattr(svc, "_is_demo_user", lambda _user: False)
+    monkeypatch.setattr(svc, "_calculate_remaining", lambda _user: (100.0, 100.0))
+    monkeypatch.setattr(svc, "_apply_auto_debt_limit_block_state", lambda _user, source=None: False)
+    monkeypatch.setattr(svc, "get_hotspot_ip_binding_user_map", lambda _api: (True, {}, "ok"))
+    monkeypatch.setattr(svc, "get_hotspot_host_usage_map", lambda _api: (True, {}, "ok"))
+    monkeypatch.setattr(svc, "_snapshot_ip_binding_rows_by_mac", lambda _api: (True, {}))
+    monkeypatch.setattr(svc, "_snapshot_owned_status_entries_for_prune", lambda *_args, **_kwargs: (True, None))
+    monkeypatch.setattr(svc, "_snapshot_dhcp_ips_by_mac", lambda _api: (True, {}))
+    monkeypatch.setattr(svc, "_self_heal_policy_binding_for_user", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(svc, "_self_heal_policy_dhcp_for_user", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(svc, "_collect_candidate_ips_for_user", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(svc, "_prune_stale_status_entries_for_user", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(svc, "_sync_address_list_status", lambda *_args, **_kwargs: True)
+
+    def _fake_load_runtime_settings(*, release_session: bool = True):
+        captured["release_session"] = release_session
+        return _make_runtime_settings()
+
+    monkeypatch.setattr(svc, "_load_hotspot_usage_sync_runtime_settings", _fake_load_runtime_settings)
+
+    user = SimpleNamespace(
+        id=str(uuid.uuid4()),
+        is_active=True,
+        approval_status=svc.ApprovalStatus.APPROVED,
+        phone_number="081234567890",
+        quota_expiry_date=None,
+        is_unlimited_user=True,
+        is_blocked=False,
+        role=_Role("USER"),
+        devices=[],
+    )
+
+    with app.app_context():
+        ok = svc.sync_address_list_for_single_user(cast(Any, user), api_connection=object())
+
+    assert ok is True
+    assert captured["release_session"] is False
