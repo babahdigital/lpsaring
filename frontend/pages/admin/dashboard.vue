@@ -317,6 +317,7 @@ const accessParityContextMessage = computed(() => {
 const fixingParityByKey = ref<Record<string, boolean>>({})
 const parityFixMessage = ref('')
 const parityFixError = ref('')
+const isBulkFixing = ref(false)
 
 function getParityKey(item: AccessParityItem): string {
   const macPart = item.mac || 'no-mac'
@@ -398,6 +399,48 @@ async function handleFixParityItem(item: AccessParityItem) {
   finally {
     delete fixingParityByKey.value[key]
   }
+}
+
+async function handleFixAllParity() {
+  const fixable = accessParityItems.value.filter(i => i.auto_fixable !== false)
+  if (!fixable.length || isBulkFixing.value)
+    return
+
+  isBulkFixing.value = true
+  parityFixMessage.value = ''
+  parityFixError.value = ''
+
+  let successCount = 0
+  let failCount = 0
+
+  for (const item of fixable) {
+    const key = getParityKey(item)
+    fixingParityByKey.value[key] = true
+    try {
+      await $api<AccessParityFixResponse>('/admin/metrics/access-parity/fix', {
+        method: 'POST',
+        body: { user_id: item.user_id, mac: item.mac ?? null, ip: item.ip ?? null },
+      })
+      successCount++
+    }
+    catch {
+      failCount++
+    }
+    finally {
+      delete fixingParityByKey.value[key]
+    }
+  }
+
+  await Promise.all([refreshParity(), refreshMetrics()])
+
+  if (failCount === 0)
+    parityFixMessage.value = `Semua ${successCount} item berhasil diperbaiki.`
+  else if (successCount > 0)
+    parityFixMessage.value = `${successCount} item diperbaiki. ${failCount} gagal — refresh untuk detail.`
+  else
+    parityFixError.value = `Semua ${failCount} item gagal diperbaiki. Periksa koneksi MikroTik.`
+
+  isBulkFixing.value = false
 }
 
 // --- Logika Perbandingan ---
@@ -1317,6 +1360,19 @@ useHead({ title: 'Dashboard Admin' })
                 Memuat...
               </VChip>
             </div>
+            <div v-if="accessParitySummary.autoFixableItems > 0" class="mt-2">
+              <VBtn
+                size="small"
+                color="warning"
+                variant="tonal"
+                :loading="isBulkFixing"
+                :disabled="isBulkFixing || parityPending"
+                prepend-icon="tabler-refresh-alert"
+                @click="handleFixAllParity"
+              >
+                Perbaiki Semua ({{ accessParitySummary.autoFixableItems }})
+              </VBtn>
+            </div>
           </VCardItem>
           <VCardText>
             <VAlert
@@ -1370,7 +1426,7 @@ useHead({ title: 'Dashboard Admin' })
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="item in accessParityItems.slice(0, 20)" :key="getParityKey(item)">
+                  <tr v-for="item in accessParityItems" :key="getParityKey(item)">
                     <td>{{ item.phone_number }}</td>
                     <td class="text-caption">{{ item.mac || '-' }}</td>
                     <td>{{ item.ip || '-' }}</td>

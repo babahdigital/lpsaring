@@ -49,9 +49,11 @@ from app.infrastructure.gateways.mikrotik_client import (
     remove_hotspot_host_entries_best_effort,
     remove_ip_binding,
     upsert_address_list_entry,
+    upsert_dhcp_static_lease,
     upsert_ip_binding,
 )
 from app.services.notification_service import get_notification_message
+from app.services.access_policy_service import resolve_allowed_binding_type_for_user
 from app.services.quota_mutation_ledger_service import append_quota_mutation_event, lock_user_quota_row, snapshot_user_quota_state
 from app.services.user_management.helpers import _handle_mikrotik_operation
 from app.services.user_management.user_deletion import run_user_auth_cleanup
@@ -307,6 +309,7 @@ def _collect_policy_parity_auto_remediation_candidates(
                 "user_id": user_id,
                 "phone_number": str(item.get("phone_number") or "").strip(),
                 "ips": [],
+                "macs": [],
                 "mismatches": set(),
             }
             candidates_by_user_id[user_id] = candidate
@@ -320,6 +323,10 @@ def _collect_policy_parity_auto_remediation_candidates(
         if ip_address and ip_address not in candidate["ips"]:
             candidate["ips"].append(ip_address)
 
+        mac_address = str(item.get("mac") or "").strip().upper()
+        if mac_address and mac_address not in candidate["macs"]:
+            candidate["macs"].append(mac_address)
+
         candidate["mismatches"].update(mismatch_set)
 
     return [
@@ -327,6 +334,7 @@ def _collect_policy_parity_auto_remediation_candidates(
             "user_id": user_id,
             "phone_number": str(candidates_by_user_id[user_id].get("phone_number") or "").strip(),
             "ips": list(candidates_by_user_id[user_id].get("ips") or []),
+            "macs": list(candidates_by_user_id[user_id].get("macs") or []),
             "mismatches": sorted(candidates_by_user_id[user_id].get("mismatches") or set()),
         }
         for user_id in ordered_user_ids
@@ -454,11 +462,64 @@ def _run_policy_parity_auto_remediation(app: Any, report: dict[str, Any]) -> dic
                 )
 
                 try:
+                    candidate_mismatches = set(candidate.get("mismatches") or [])
+                    needs_binding_fix = bool(candidate_mismatches.intersection({"binding_type", "missing_ip_binding"}))
+                    needs_dhcp_fix = "dhcp_lease_missing" in candidate_mismatches
+
+                    # --- Step 1: Fix ip-binding per MAC (binding_type / missing_ip_binding) ---
+                    if needs_binding_fix and candidate.get("macs"):
+                        expected_binding_type = str(resolve_allowed_binding_type_for_user(user) or "regular").lower()
+                        for mac_to_fix in candidate.get("macs") or []:
+                            mac_ip = _normalize_policy_parity_ip(
+                                (ip_binding_map.get(mac_to_fix) or {}).get("address")
+                                or (host_usage_map.get(mac_to_fix) or {}).get("address")
+                            )
+                            ok_bind, bind_msg = upsert_ip_binding(
+                                api_connection=api,
+                                mac_address=mac_to_fix,
+                                address=mac_ip,
+                                server=getattr(user, "mikrotik_server_name", None),
+                                binding_type=expected_binding_type,
+                                comment=f"lpsaring|source=parity-guard|uid={user.id}",
+                            )
+                            if not ok_bind:
+                                logger.warning(
+                                    "Policy parity auto-remediation: gagal upsert ip-binding user=%s mac=%s: %s",
+                                    candidate["user_id"], mac_to_fix, bind_msg,
+                                )
+
+                    # --- Step 2: Sync address-list ---
                     ok = sync_address_list_for_single_user(
                         user,
                         client_ip=trusted_client_ip,
                         api_connection=api,
                     )
+
+                    # --- Step 3: Fix DHCP static lease per MAC (dhcp_lease_missing, best-effort) ---
+                    if needs_dhcp_fix and candidate.get("macs"):
+                        dhcp_enabled = settings_service.get_setting("MIKROTIK_DHCP_STATIC_LEASE_ENABLED", "False") == "True"
+                        dhcp_server_name = (settings_service.get_setting("MIKROTIK_DHCP_LEASE_SERVER_NAME", "") or "").strip() or None
+                        if dhcp_enabled and dhcp_server_name:
+                            for mac_to_fix in candidate.get("macs") or []:
+                                mac_ip = _normalize_policy_parity_ip(
+                                    (ip_binding_map.get(mac_to_fix) or {}).get("address")
+                                    or (host_usage_map.get(mac_to_fix) or {}).get("address")
+                                )
+                                if not mac_ip:
+                                    continue
+                                ok_dhcp, dhcp_msg = upsert_dhcp_static_lease(
+                                    api_connection=api,
+                                    mac_address=mac_to_fix,
+                                    address=mac_ip,
+                                    server=dhcp_server_name,
+                                    comment=f"lpsaring|static-dhcp|source=parity-guard|uid={user.id}",
+                                )
+                                if not ok_dhcp:
+                                    logger.warning(
+                                        "Policy parity auto-remediation: gagal upsert DHCP lease user=%s mac=%s ip=%s: %s",
+                                        candidate["user_id"], mac_to_fix, mac_ip, dhcp_msg,
+                                    )
+
                 except Exception as exc:
                     result["failed_users"] += 1
                     _append_failure_sample(f"{candidate['user_id']} => {exc}")
