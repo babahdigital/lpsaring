@@ -255,6 +255,7 @@ const tablerIcons = [
   'receipt-2',
   'refresh',
   'refresh-dot',
+  'refresh-alert',
   'repeat',
   'reload',
   'robot',

@@ -85,6 +85,17 @@ Variabel yang paling sensitif terhadap perilaku runtime:
 - Enforcement status akses IP menggunakan `/ip/firewall/address-list`.
 - Static DHCP lease dipakai hanya jika server pin jelas dan benar.
 - Audit atau perbaikan massal produksi mengikuti [docs/workflows/PRODUCTION_OPERATIONS.md](workflows/PRODUCTION_OPERATIONS.md).
+- **Bypass_Server** address-list: IP portal + infrastruktur yang boleh diakses user `klient_inactive`. Perlu di-populate manual atau via scheduler untuk banking sites (7.3 pending).
+- **klient_inactive** firewall: `accept src=klient_inactive dst=Bypass_Server` + `drop src=klient_inactive dst=LOCAL_NETWORKS`. User inactive/expired hanya bisa akses portal dan Bypass_Server.
+- **Bypassed ip-binding**: MAC-only binding tanpa field `address` → `ip_binding_map[mac]["address"]` = "" → butuh fallback ke candidate IPs dari parity report untuk address-list sync yang benar.
+
+## Fokus Aktif Parity Guard
+
+- `policy_parity_guard_task` berjalan setiap 10 menit, auto-remediation 3-step: (1) upsert ip-binding, (2) sync address-list, (3) upsert DHCP lease.
+- **Bypassed users**: tidak ada di `/ip/hotspot/host`. IP harus diambil dari `ip_binding_map[mac]["address"]` atau fallback ke candidate IPs dari parity report.
+- **persistent address_list mismatch**: biasanya karena ip_binding `address` field kosong (MAC-only binding) → fix via IP fallback dari report IPs (commit terbaru Mar 18).
+- Dashboard "Konsistensi Akses": tombol "Perbaiki Semua (N)" untuk bulk-fix, tanpa hard-cap 20 baris.
+- Detail: [docs/devlogs/2026-03-18-holistic-audit-penyempurnaan.md](devlogs/2026-03-18-holistic-audit-penyempurnaan.md)
 
 ## Fokus Aktif Hotspot Sync
 
@@ -130,6 +141,7 @@ Variabel yang paling sensitif terhadap perilaku runtime:
 - [docs/API_DETAIL.md](API_DETAIL.md)
 - [docs/VUEXY_BASELINE_STRATEGY.md](VUEXY_BASELINE_STRATEGY.md)
 - [docs/devlogs/README.md](devlogs/README.md)
+- [docs/devlogs/2026-03-18-holistic-audit-penyempurnaan.md](devlogs/2026-03-18-holistic-audit-penyempurnaan.md)
 - [docs/devlogs/2026-03-17-hotspot-portal-trust-hardening.md](devlogs/2026-03-17-hotspot-portal-trust-hardening.md)
 - [docs/devlogs/2026-03-17-hotspot-sync-hardening.md](devlogs/2026-03-17-hotspot-sync-hardening.md)
 - [docs/incidents/README.md](incidents/README.md)

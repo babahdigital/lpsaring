@@ -43,10 +43,6 @@ const internalApiOrigin = normalizeUrl(internalApiBaseUrl).replace(/\/api$/, '')
 const internalApiProxyTarget = `${internalApiOrigin}/api/**`
 const internalApiDevProxyTarget = internalApiOrigin
 
-// Log environment variables untuk debugging
-console.log('Proxy Target:', internalApiBaseUrl)
-console.log('Public API URL:', publicApiBaseUrl)
-
 const host = process.env.NUXT_HOST ?? process.env.HOST ?? '0.0.0.0'
 const port = Number.parseInt(process.env.NUXT_PORT ?? '3010', 10)
 

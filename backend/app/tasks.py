@@ -461,6 +461,18 @@ def _run_policy_parity_auto_remediation(app: Any, report: dict[str, Any]) -> dic
                     ip_binding_map=ip_binding_map,
                 )
 
+                # Fallback: untuk bypassed ip-binding tanpa address field, ip_binding_map["address"]
+                # kosong → trusted_live_ips kosong → resolve_client_ip returns None → sync
+                # dipanggil tanpa client_ip → prune dengan keep_ips=[] → klient_aktif dibersihkan.
+                # Candidate ips dari report berasal dari live MikroTik scan (via parity service),
+                # sehingga aman dipakai langsung untuk address-list sync jika trusted_client_ip None.
+                if not trusted_client_ip:
+                    for _report_ip in candidate.get("ips") or []:
+                        _normalized_report_ip = _normalize_policy_parity_ip(_report_ip)
+                        if _normalized_report_ip:
+                            trusted_client_ip = _normalized_report_ip
+                            break
+
                 try:
                     candidate_mismatches = set(candidate.get("mismatches") or [])
                     needs_binding_fix = bool(candidate_mismatches.intersection({"binding_type", "missing_ip_binding"}))

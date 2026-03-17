@@ -28,12 +28,7 @@ function _formatUsername(_username: string | null | undefined): string { // Beri
 
 // Refresh all relevant data fetches based on role
 function _refreshAllData() { // Beri prefix _
-  if (!isAdmin.value) {
-    console.warn('Memperbarui data pengguna...') // Ganti console.log dengan console.warn
-  }
-  else {
-    console.warn('Memperbarui data admin...') // Ganti console.log dengan console.warn
-  }
+  // placeholder — data refresh dikelola di parent (dashboard.vue)
 }
 </script>
 
