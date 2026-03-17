@@ -834,7 +834,9 @@ def register_or_update_device(
 
     is_authorized = not settings["require_explicit"]
     begin_nested = getattr(db.session, "begin_nested", None)
-    insert_ctx: AbstractContextManager = begin_nested() if callable(begin_nested) else nullcontext()
+    insert_ctx: AbstractContextManager[Any] = (
+        cast(AbstractContextManager[Any], begin_nested()) if callable(begin_nested) else nullcontext()
+    )
     try:
         with insert_ctx:
             device = UserDevice()

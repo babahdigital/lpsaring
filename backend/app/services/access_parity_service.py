@@ -353,6 +353,10 @@ def collect_access_parity_report(*, max_items: int = 500) -> dict[str, Any]:
                     ip_addr = _normalize_ip((host_map.get(mac) or {}).get("address"))
                 if not ip_addr:
                     ip_addr = _normalize_ip((ip_binding_map.get(mac) or {}).get("address"))
+                if not ip_addr:
+                    _dhcp_candidates = sorted(dhcp_ips_by_mac.get(mac, set()))
+                    if _dhcp_candidates:
+                        ip_addr = _normalize_ip(_dhcp_candidates[0])
 
                 binding_entry = ip_binding_map.get(mac) or {}
                 has_binding = bool(binding_entry)

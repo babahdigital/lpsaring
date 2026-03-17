@@ -345,6 +345,7 @@ def _collect_candidate_ips_for_user(
     ip_binding_map: Optional[Dict[str, Dict[str, Any]]] = None,
     ip_binding_rows_by_mac: Optional[Dict[str, List[Dict[str, Any]]]] = None,
     hotspot_networks: Optional[List[ipaddress._BaseNetwork]] = None,
+    dhcp_ips_by_mac: Optional[Dict[str, set[str]]] = None,
 ) -> List[str]:
     ips: List[str] = []
     seen: set[str] = set()
@@ -394,6 +395,14 @@ def _collect_candidate_ips_for_user(
         if not has_live_signal and ip_binding_rows_by_mac:
             for row in ip_binding_rows_by_mac.get(mac, []):
                 has_live_signal = _add_live_ip(row.get("address")) or has_live_signal
+
+        # Fallback DHCP: untuk user bypassed (ip-binding tanpa field address), cari IP dari
+        # DHCP lease sehingga address-list tetap bisa disinkronkan dan tidak dihapus oleh prune.
+        if not has_live_signal and dhcp_ips_by_mac:
+            for dhcp_ip in sorted(dhcp_ips_by_mac.get(mac, set())):
+                _add_ip(dhcp_ip)
+                has_live_signal = True
+                break
 
         if not has_live_signal and getattr(device, "ip_address", None):
             _add_ip(str(device.ip_address))
@@ -2781,6 +2790,7 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                             ip_binding_map=ip_binding_map,
                             ip_binding_rows_by_mac=ip_binding_rows_by_mac,
                             hotspot_networks=runtime_settings.hotspot_status_networks,
+                            dhcp_ips_by_mac=dhcp_ips_by_mac,
                         )
                         ok_any_ip = False
                         for ip_address in candidate_ips:
@@ -2909,6 +2919,7 @@ def sync_address_list_for_single_user(
         )
         if not ok_status_snapshot:
             owned_status_entries_snapshot = None
+        dhcp_ips_by_mac: Optional[Dict[str, set[str]]] = None
         if enable_policy_self_heal:
             ok_dhcp_snapshot, dhcp_ips_by_mac = _snapshot_dhcp_ips_by_mac(api)
             if not ok_dhcp_snapshot:
@@ -2943,6 +2954,7 @@ def sync_address_list_for_single_user(
             ip_binding_map=ip_binding_map,
             ip_binding_rows_by_mac=ip_binding_rows_by_mac,
             hotspot_networks=hotspot_networks,
+            dhcp_ips_by_mac=dhcp_ips_by_mac,
         ):
             if ip_address not in ips:
                 ips.append(ip_address)
