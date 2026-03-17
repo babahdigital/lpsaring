@@ -308,11 +308,116 @@ chain=forward action=drop src-list=klient_inactive dst-list=LOCAL_NETWORKS
 | 11.3 MAC randomization / cross-user | ✅ ANALYZED | Documented. Frontend detection planned (separate session) |
 | 12.3 Celery worker memory | ✅ monitored | 608MB OK, dalam limit 500MB/child (auto-restart saat melebihi) |
 | nginx 502 DNS | ✅ DONE | resolver_timeout 2s + deployed |
+| Parity DHCP fallback bypassed user | ✅ DONE `10aa05f0` | dhcp_ips_by_mac fallback ke-4 di hotspot_sync + parity service |
+
+---
+
+## 12. DHCP Fallback IP untuk Bypassed User (Sesi 3, commit `10aa05f0`)
+
+**Files**:
+- `backend/app/services/hotspot_sync_service.py`
+- `backend/app/services/access_parity_service.py`
+- `backend/app/services/device_management_service.py`
+
+**Root cause 2 mismatch persistent (+6281253578275, +6289527796925)**:
+- User `unlimited` → ip-binding type=`bypassed` di MikroTik.
+- `bypassed` ip-binding **tidak masuk** ke `/ip/hotspot/host` (bypass portal, sehingga tidak ada hotspot session).
+- Field `address` pada ip-binding type=bypassed **kosong/NULL** (MikroTik tidak mengisi `address` untuk bypass tanpa IP eksplisit).
+- `_collect_candidate_ips_for_user`: (1) host_map→kosong, (2) ip_binding_map["address"]→kosong, (3) ip_binding_rows_by_mac→rows ada tapi address NULL → `candidate_ips=[]`.
+- Siklus sync: `sync_address_list` dipanggil tanpa client_ip → prune `keep_ips=[]` → klient_aktif dibersihkan → mismatch kembali setiap 10 menit.
+- `collect_access_parity_report` juga tidak bisa resolve IP → salah tampilkan status.
+
+**Fix**:
+1. `_collect_candidate_ips_for_user`: tambah param `dhcp_ips_by_mac: Optional[Dict[str, set[str]]] = None` sebagai fallback ke-4. Jika semua lookup lain gagal dan DHCP lease user ada → ambil IP pertama sebagai candidate.
+2. `sync_hotspot_usage_and_profiles`: inisialisasi + pass `dhcp_ips_by_mac` ke `_collect_candidate_ips_for_user`.
+3. `sync_address_list_for_single_user`: inisialisasi `dhcp_ips_by_mac: Optional[...] = None` + query DHCP jika `enable_policy_self_heal` + pass ke fungsi.
+4. `collect_access_parity_report`: tambah DHCP fallback ke chain IP resolution untuk tampilan report yang akurat.
+5. `device_management_service.py` (L834): `cast(AbstractContextManager[Any], begin_nested())` — pure Pylance strict-mode fix.
+
+**Verifikasi**: ruff ✅, ESLint ✅, TypeCheck ✅, CI ci.yml ✅, docker-publish.yml ✅, deploy ✅.
+
+---
+
+## Verifikasi Post-Deploy (Mar 18 2026, ~07:49 WIB)
+
+**Parity report setelah deploy `10aa05f0`**:
+```
+Users: 91
+Mismatches (parity): 0      ← WAS 2, NOW CLEAN ✅
+Mismatches total: 31
+Non-parity: 31
+no_authorized_device: 25    ← expected, belum login perangkat
+auto_fixable: 6             ← semua dhcp_lease_missing
+mismatch_types:
+  binding_type: 0 ✅
+  missing_ip_binding: 0 ✅
+  address_list: 0 ✅
+  no_resolvable_ip: 0 ✅
+  no_authorized_device: 25
+  dhcp_lease_missing: 6     ← auto-fixable, DHCP_ENABLED=True, SERVER=Klien
+```
+
+- +6281253578275: **tidak muncul di mismatch** → FULLY RESOLVED ✅
+- +6289527796925: hanya `dhcp_lease_missing` (bukan `address_list`) → IP sudah resolved, klient_aktif sudah benar, hanya DHCP static lease pending (auto-fix oleh parity guard).
+
+**Nginx log post-deploy**: **BERSIH** — tidak ada 502 atau 500 seit deploy 07:42.
+
+**Backend WARNING/ERROR log** post-deploy: **BERSIH** — tidak ada exception apapun.
+
+**Celery warning**: 1x stale quota sync lock reclaim (expected behavior fresh restart, tidak berulang).
+
+**Settings produksi**:
+- `MIKROTIK_DHCP_STATIC_LEASE_ENABLED: True`
+- `MIKROTIK_DHCP_LEASE_SERVER_NAME: Klien`
+- `QUOTA_FUP_THRESHOLD_MB: 3072`
+
+→ 6 `dhcp_lease_missing` akan auto-fix dalam siklus parity guard berikutnya (≤10 menit).
+
+**Resource usage** (post-deploy):
+- nuxt frontend: 59.55 MB (0.75%)
+- flask backend: 982.8 MB (12.38%)
+- celery worker: 550.8 MB (6.94%)
+- celery beat: 84.13 MB (1.06%)
+- redis: 4.01 MB (0.05%)
+- postgres: 57.9 MB (0.73%)
+- Total lpsaring stack: ~1.74 GB / 7.755 GB (22.4%) ←  HEALTHY
+
+---
+
+## Analisa Arsitektur Auth Flow vs simulasi-auth-otp.html (Mar 18 Sesi 3)
+
+### Skenario 1 (Popup Captive + Session Aktif) ✅
+- Router membuka login.home.arpa → redirect ke `/captive` dengan `client_ip`, `client_mac`, `link_login_only`
+- Frontend `auth/me 200` → skip OTP → check hotspot-session-status → direct ke portal
+- **Status**: Implemented correctly. Login.html di MikroTik redirect ke `/captive`.
+
+### Skenario 2 (/login Manual + Identity Stored) ✅
+- User buka /login, cookie masih valid, `resolveHotspotIdentity` temukan identity di query/localStorage
+- `fetchHotspotStatus()` → jika aktif → `continueToPortal` tanpa OTP
+- **Status**: Implemented correctly. `rememberHotspotIdentity` menyimpan ke localStorage.
+
+### Skenario 3 (/login Manual + Identity Kosong) ✅ (fix commit `c39dcd0b` + sesi ini)
+- User buka `/login/hotspot-required` tanpa `client_ip`/`client_mac`
+- `fetchHotspotStatus()` → `hotspotRequired=true`, `hotspotHintApplied=false`
+- `hasExplicitHotspotIdentity()=false` → auto-trigger `beginSilentHotspotBridge()` ke `hotspotBridgeTargetUrl`
+- Router mengembalikan identity, redirect kembali dengan `bridge_resume=1`
+- `onMounted()` deteksi `bridge_resume=1` → `activateInternetOneClick()` dengan identity baru
+- **Status**: Implemented. Auto-bridge di `onMounted()` baris 658-669.
+
+### Skenario 4 (Background-Only Tidak Cukup) ✅
+- `fetch(no-cors)` / `img beacon` ke login.home.arpa: best-effort ping, bukan authoritative source
+- Sistem sudah benar: `triggerHotspotProbe()` hanya dipakai sebagai warmup, bukan decision source
+- Decision dibuat dari `fetchHotspotStatus()` (backend API) yang authoritative
+- **Status**: Design correct. Simulasi sudah terdokumentasi batas background bridge.
+
+### Gap yang Masih Relevan dari Simulasi:
+- **bridge target fallback**: `hotspotBridgeTargetUrl` = `resolveHotspotBridgeTarget(mikrotikLoginUrl, probeUrl)`. Jika `NUXT_PUBLIC_HOTSPOT_CONTEXT_PROBE_URL` tidak diset, bridge target = mikrotikLoginUrl biasa. Ini sudah benar untuk sistem dengan login.home.arpa.
+- **Skenario 4 — manual fallback**: Tombol "Buka Login Hotspot" tampil saat `showFallbackLogin=true && loginHotspotUrl` tersedia. User masih bisa manual buka router login. OK.
 
 ---
 
 ## Pending (Perlu Session Terpisah)
 
-- **7.3 Akses-Banking scheduler**: Celery task populate `Bypass_Server` dengan banking domain IPs
-- **11.3 MAC randomization**: Frontend detection + warning + user guidance
-- **parity address_list 172.16.2.194**: Akan auto-fix dalam siklus guard berikutnya setelah IP fallback fix deploy
+- **7.3 Akses-Banking scheduler**: Celery task populate `Bypass_Server` dengan banking domain IPs (DNS resolve periodik)
+- **11.3 MAC randomization**: Frontend detection bit LAA + tampilkan warning + panduan user nonaktifkan random MAC
+- **6 dhcp_lease_missing**: Auto-fix oleh parity guard dalam ≤10 menit dari deploy (DHCP_ENABLED=True, SERVER=Klien)
