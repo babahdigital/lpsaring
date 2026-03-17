@@ -224,6 +224,7 @@ function beginSilentHotspotBridge(): boolean {
     return false
 
   const targetUrl = String(hotspotBridgeTargetUrl.value || '').trim()
+  const manualLoginUrl = String(loginHotspotUrl.value || '').trim()
   if (!targetUrl)
     return false
 
@@ -231,7 +232,7 @@ function beginSilentHotspotBridge(): boolean {
     returnPath: '/login/hotspot-required',
     autoResume: true,
   })
-  rememberMikrotikLoginLink(targetUrl)
+  rememberMikrotikLoginLink(manualLoginUrl || targetUrl)
   window.location.assign(targetUrl)
   return true
 }

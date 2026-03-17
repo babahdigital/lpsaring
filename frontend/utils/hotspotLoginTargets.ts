@@ -32,6 +32,19 @@ function shouldAppendLoginPath(hostname: string, pathname: string): boolean {
   return normalizedPath === '' || normalizedPath === '/'
 }
 
+function isLocalHotspotTarget(raw: string): boolean {
+  const normalized = normalizeHotspotBridgeUrl(raw)
+  if (!normalized)
+    return false
+
+  try {
+    return shouldForceHttpForHost(new URL(normalized).hostname)
+  }
+  catch {
+    return false
+  }
+}
+
 function normalizeHotspotUrl(
   raw: string,
   options: { appendLoginPathForRoot: boolean, preferPortalRoot: boolean },
@@ -87,10 +100,14 @@ export function normalizeHotspotBridgeUrl(raw: string): string {
 
 export function resolveHotspotBridgeTarget(mikrotikLoginUrl: string, configuredProbeUrl: string): string {
   const preferredLoginUrl = normalizeHotspotBridgeUrl(mikrotikLoginUrl)
+  const configuredProbe = normalizeHotspotBridgeUrl(configuredProbeUrl)
+
+  if (configuredProbe && isLocalHotspotTarget(mikrotikLoginUrl))
+    return configuredProbe
+
   if (preferredLoginUrl)
     return preferredLoginUrl
 
-  const configuredProbe = normalizeHotspotBridgeUrl(configuredProbeUrl)
   if (configuredProbe)
     return configuredProbe
 
