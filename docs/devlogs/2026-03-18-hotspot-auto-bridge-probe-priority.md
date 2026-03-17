@@ -144,6 +144,70 @@ Patch backend follow-up yang ditambahkan pada sesi ini:
 
 Tujuan patch ini adalah menurunkan kemungkinan user terkena `503 -> 401 -> 429` hanya karena lookup `IP -> MAC` router sedang transien, tanpa melonggarkan trust boundary menjadi sekadar menerima MAC mentah.
 
+## Deploy backend verify-otp fallback
+
+Patch backend follow-up tersebut kemudian dipromosikan dengan commit `cd5c38da` (`fix: harden verify otp router fallback`).
+
+Artefak promosi yang tervalidasi:
+
+- CI manual sukses pada run `23208958760`
+- Docker publish manual sukses pada run `23208961882`
+- deploy dilakukan dengan urutan `down --remove-orphans` lebih dulu, lalu `./deploy_pi.sh --recreate`
+- backup predeploy baru tersimpan di `/home/abdullah/lpsaring/app/_safe_backups/deploy_predeploy_20260318_020624/postgres_dump.sql`
+- salinan lokal backup tersimpan di `backups/159.89.192.31_deploy_predeploy_20260318_020624.sql`
+
+## Audit runtime pascadeploy backend patch
+
+Status runtime setelah recreate:
+
+- `hotspot_prod_flask_backend` up
+- `hotspot_prod_nuxt_frontend` up dan `healthy`
+- `hotspot_prod_celery_worker` up
+- `hotspot_prod_celery_beat` up
+- `hotspot_prod_postgres_db` up dan `healthy`
+- `hotspot_prod_redis_cache` up dan `healthy`
+
+Metadata runtime yang teramati saat audit:
+
+- backend / worker / beat berjalan dengan image digest `sha256:b6663966402d8f4ee9cdea410355dbec9d83ad34265a758cb824b7ee06d72b1d`
+- frontend berjalan dengan image digest `sha256:5bd67abfa8db7a8bb801d376b63b8dca6655b6eac49e9dc5b74cf0f8891d899c`
+- waktu start container app berada di sekitar `2026-03-17T18:07:19Z` sampai `18:07:24Z`
+
+Validasi health publik:
+
+- probe awal sesaat setelah restart sempat mendapat `502`
+- beberapa detik kemudian `GET /api/ping` publik kembali `200`
+- probe manual terakhir mengembalikan `{"message": "pong from backend!" ...}`
+
+Evidence access-log di window deploy:
+
+- `17/Mar/2026 18:06:37 +0000` `GET /api/auth/me` → `502`
+- `17/Mar/2026 18:06:53 +0000` `GET /api/ping` → `502`
+- `17/Mar/2026 18:07:49 +0000` `GET /api/ping` → `499`
+- `17/Mar/2026 18:07:53 +0000` `GET /api/ping` → `200`
+- `17/Mar/2026 18:07:55 +0000` `GET /login` → `200`
+- `17/Mar/2026 18:08:37 +0000` `GET /api/auth/me` → `200`
+
+Interpretasi:
+
+- ada jendela restart singkat yang memang memunculkan `502` saat upstream backend belum siap
+- setelah startup selesai, frontend, backend, dan health probe kembali normal tanpa error residual yang baru
+
+Validasi patch di runtime container:
+
+- source file dalam `hotspot_prod_flask_backend` mengandung marker `should_try_mac_hint_fallback`
+- source file dalam container juga mengandung marker `mikrotik_mac_hint`
+- log message `Verify-OTP fallback to matching router MAC hint` juga ada di source runtime, menandakan image yang aktif memang memuat patch ini
+
+Sweep log aplikasi `15m` setelah deploy tidak menemukan exception/error baru yang terkait `verify-otp`; hanya ada log inisialisasi normal dan inisialisasi pool MikroTik di worker.
+
+## Kesimpulan audit deploy ini
+
+- deploy backend patch berhasil dan image baru sudah aktif di produksi
+- aplikasi kembali sehat setelah jendela restart singkat yang terukur
+- patch verify-otp fallback sudah pasti ikut terdeploy karena marker source-nya ada di container runtime
+- sampai audit ini ditulis, belum ada evidence user login baru yang benar-benar mengeksekusi cabang fallback `MAC -> IP` sesudah deploy, jadi efektivitas branch fallback di trafik nyata masih perlu divalidasi oleh login hotspot berikutnya
+
 ## Pelajaran penting
 
 - Untuk login yang terjadi sebelum patch aktif, `verify-otp 200` + `auth/me 200` tanpa lanjutan `/dashboard` di public nginx **tidak otomatis berarti gagal**.
