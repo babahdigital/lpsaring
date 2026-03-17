@@ -1,7 +1,7 @@
 # backend/app/services/device_management_service.py
 import logging
 import ipaddress
-from contextlib import nullcontext
+from contextlib import AbstractContextManager, nullcontext
 from urllib.parse import unquote
 from datetime import datetime, timezone as dt_timezone, timedelta
 from typing import Optional, Tuple, Dict, Any, cast
@@ -834,7 +834,7 @@ def register_or_update_device(
 
     is_authorized = not settings["require_explicit"]
     begin_nested = getattr(db.session, "begin_nested", None)
-    insert_ctx = begin_nested() if callable(begin_nested) else nullcontext()
+    insert_ctx: AbstractContextManager = begin_nested() if callable(begin_nested) else nullcontext()
     try:
         with insert_ctx:
             device = UserDevice()
