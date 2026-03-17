@@ -9,6 +9,7 @@ from typing import Optional, Tuple, Dict, Any, cast
 from flask import current_app
 from app.utils.formatters import get_app_date_time_strings, format_to_local_phone
 import sqlalchemy as sa
+from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
 from app.services import settings_service
@@ -832,16 +833,42 @@ def register_or_update_device(
             return False, "Limit perangkat tercapai", None
 
     is_authorized = not settings["require_explicit"]
-    device = UserDevice()
-    device.user_id = user.id
-    device.mac_address = mac_address
-    device.ip_address = client_ip
-    device.user_agent = user_agent[:255] if user_agent else None
-    device.is_authorized = is_authorized
-    device.authorized_at = now if is_authorized else None
-    db.session.add(device)
-    db.session.flush()
-    return True, "Device terdaftar", device
+    begin_nested = getattr(db.session, "begin_nested", None)
+    insert_ctx = begin_nested() if callable(begin_nested) else nullcontext()
+    try:
+        with insert_ctx:
+            device = UserDevice()
+            device.user_id = user.id
+            device.mac_address = mac_address
+            device.ip_address = client_ip
+            device.user_agent = user_agent[:255] if user_agent else None
+            device.is_authorized = is_authorized
+            device.authorized_at = now if is_authorized else None
+            db.session.add(device)
+            db.session.flush()
+        return True, "Device terdaftar", device
+    except IntegrityError:
+        if not callable(begin_nested):
+            rollback = getattr(db.session, "rollback", None)
+            if callable(rollback):
+                rollback()
+        logger.info("Device insert raced with concurrent request: user=%s mac=%s", user.id, mac_address)
+        device = db.session.scalar(
+            sa.select(UserDevice).where(UserDevice.user_id == user.id, UserDevice.mac_address == mac_address)
+        )
+        if not device:
+            raise
+
+        old_ip = device.ip_address
+        device.last_seen_at = now
+        device.ip_address = client_ip
+        device.user_agent = user_agent or device.user_agent
+        db.session.flush()
+
+        if old_ip and client_ip and str(old_ip).strip() != str(client_ip).strip():
+            _remove_managed_address_lists(str(old_ip))
+
+        return True, "Device ditemukan", device
 
 
 def apply_device_binding_for_login(

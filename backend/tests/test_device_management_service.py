@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from flask import Flask
+from sqlalchemy.exc import IntegrityError
 
 import app.services.device_management_service as dms
 from app.services.device_management_service import normalize_mac, reset_user_network_on_logout
@@ -415,3 +416,99 @@ def test_register_or_update_device_auto_replaces_oldest_when_otp_adds_fourth_mac
         "AA:AA:AA:AA:AA:03",
         "AA:AA:AA:AA:AA:99",
     ]
+
+
+def test_register_or_update_device_reuses_existing_device_after_insert_race(monkeypatch):
+    app = Flask(__name__)
+    user = SimpleNamespace(
+        id="u-race",
+        phone_number="+628123456789",
+        role=SimpleNamespace(value="USER"),
+        mikrotik_server_name="srv-user",
+    )
+    existing_device = SimpleNamespace(
+        id="d-existing",
+        user_id=user.id,
+        mac_address="AA:BB:CC:DD:EE:FF",
+        ip_address="172.16.2.10",
+        user_agent="ua-old",
+        is_authorized=True,
+        last_seen_at=None,
+    )
+
+    class _Nested:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, _exc, _tb):
+            return False
+
+    class _FakeSession:
+        def __init__(self):
+            self.scalar_calls = 0
+            self.flush_calls = 0
+            self.add_calls = 0
+
+        def begin_nested(self):
+            return _Nested()
+
+        def scalar(self, _query):
+            self.scalar_calls += 1
+            if self.scalar_calls == 1:
+                return None
+            if self.scalar_calls == 2:
+                return None
+            if self.scalar_calls == 3:
+                return 0
+            if self.scalar_calls == 4:
+                return existing_device
+            return None
+
+        def add(self, _device):
+            self.add_calls += 1
+
+        def flush(self):
+            self.flush_calls += 1
+            if self.flush_calls == 1:
+                raise IntegrityError("insert", {}, Exception("duplicate user/mac"))
+
+    fake_session = _FakeSession()
+    monkeypatch.setattr(dms, "db", SimpleNamespace(session=fake_session))
+    monkeypatch.setattr(
+        dms,
+        "_get_settings",
+        lambda: {
+            "ip_binding_enabled": True,
+            "ip_binding_type_allowed": "regular",
+            "ip_binding_type_blocked": "blocked",
+            "ip_binding_fail_open": False,
+            "dhcp_static_lease_enabled": False,
+            "dhcp_lease_server_name": "",
+            "device_auto_replace_enabled": False,
+            "max_devices": 3,
+            "require_explicit": False,
+            "device_stale_days": 0,
+            "mikrotik_server_default": "all",
+            "global_mac_claim_transfer_enabled": False,
+        },
+    )
+    monkeypatch.setattr(dms, "_is_client_ip_allowed", lambda *_args, **_kwargs: True)
+
+    cleaned_ips: list[str] = []
+    monkeypatch.setattr(dms, "_remove_managed_address_lists", lambda ip_address: cleaned_ips.append(ip_address))
+
+    with app.app_context():
+        ok, msg, device = dms.register_or_update_device(
+            cast(Any, user),
+            "172.16.2.99",
+            "ua-new",
+            "AA:BB:CC:DD:EE:FF",
+            allow_replace=True,
+        )
+
+    assert ok is True
+    assert msg == "Device ditemukan"
+    assert device is existing_device
+    assert existing_device.ip_address == "172.16.2.99"
+    assert existing_device.user_agent == "ua-new"
+    assert cleaned_ips == ["172.16.2.10"]

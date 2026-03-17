@@ -67,6 +67,7 @@ export const useAuthStore = defineStore('auth', () => {
   const logoutInProgress = ref(false)
   const resetLoginInProgress = ref(false)
   let inflightUserFetch: { key: string; promise: Promise<boolean> } | null = null
+  let inflightAuthorizeDevice: { key: string; promise: Promise<boolean> } | null = null
 
   const isLoggedIn = computed(() => user.value != null)
   const currentUser = computed(() => user.value)
@@ -658,48 +659,68 @@ export const useAuthStore = defineStore('auth', () => {
   async function authorizeDevice(options: AuthorizeDeviceOptions = {}): Promise<boolean> {
     const { $api } = useNuxtApp()
     const route = useRoute()
-    loading.value = true
-    clearError()
-    clearMessage()
-    try {
-      const routeQuery = (route?.query ?? {}) as Record<string, unknown>
-      const hotspotTrustConfig = getHotspotTrustConfig()
-      const resolvedIdentity = resolveHotspotIdentity(routeQuery, hotspotTrustConfig)
-      rememberHotspotIdentity(resolvedIdentity, hotspotTrustConfig)
+    const routeQuery = (route?.query ?? {}) as Record<string, unknown>
+    const hotspotTrustConfig = getHotspotTrustConfig()
+    const resolvedIdentity = resolveHotspotIdentity(routeQuery, hotspotTrustConfig)
+    rememberHotspotIdentity(resolvedIdentity, hotspotTrustConfig)
 
-      const clientIp = String(options.clientIp ?? resolvedIdentity.clientIp ?? '').trim()
-      const clientMac = String(options.clientMac ?? resolvedIdentity.clientMac ?? '').trim()
-      const body: Record<string, string> = {}
-      if (clientIp)
-        body.client_ip = clientIp
-      if (clientMac)
-        body.client_mac = clientMac
+    const clientIp = String(options.clientIp ?? resolvedIdentity.clientIp ?? '').trim()
+    const clientMac = String(options.clientMac ?? resolvedIdentity.clientMac ?? '').trim()
+    const requestKey = JSON.stringify({
+      bestEffort: options.bestEffort === true,
+      clientIp,
+      clientMac,
+    })
 
-      const query = options.bestEffort === true
-        ? { best_effort: 'true' }
-        : undefined
+    if (inflightAuthorizeDevice?.key === requestKey)
+      return inflightAuthorizeDevice.promise
 
-      const response = await $api<{ success?: boolean, bound?: boolean, message?: string }>('/users/me/devices/bind-current', {
-        method: 'POST',
-        ...(query ? { query } : {}),
-        ...(Object.keys(body).length > 0 ? { body } : {}),
-      })
+    const requestPromise = (async () => {
+      loading.value = true
+      clearError()
+      clearMessage()
+      try {
+        const body: Record<string, string> = {}
+        if (clientIp)
+          body.client_ip = clientIp
+        if (clientMac)
+          body.client_mac = clientMac
 
-      if (response?.success === false || response?.bound === false) {
-        setError(response?.message || 'Perangkat belum bisa diotorisasi.')
+        const query = options.bestEffort === true
+          ? { best_effort: 'true' }
+          : undefined
+
+        const response = await $api<{ success?: boolean, bound?: boolean, message?: string }>('/users/me/devices/bind-current', {
+          method: 'POST',
+          ...(query ? { query } : {}),
+          ...(Object.keys(body).length > 0 ? { body } : {}),
+        })
+
+        if (response?.success === false || response?.bound === false) {
+          setError(response?.message || 'Perangkat belum bisa diotorisasi.')
+          return false
+        }
+
+        setMessage(response?.message || 'Perangkat berhasil diotorisasi.')
+        await fetchUser('login')
+        return true
+      }
+      catch (err: any) {
+        setError(extractErrorMessage(err.data, 'Gagal mengotorisasi perangkat.'))
         return false
       }
+      finally {
+        loading.value = false
+      }
+    })()
 
-      setMessage(response?.message || 'Perangkat berhasil diotorisasi.')
-      await fetchUser('login')
-      return true
-    }
-    catch (err: any) {
-      setError(extractErrorMessage(err.data, 'Gagal mengotorisasi perangkat.'))
-      return false
+    inflightAuthorizeDevice = { key: requestKey, promise: requestPromise }
+    try {
+      return await requestPromise
     }
     finally {
-      loading.value = false
+      if (inflightAuthorizeDevice?.promise === requestPromise)
+        inflightAuthorizeDevice = null
     }
   }
 
