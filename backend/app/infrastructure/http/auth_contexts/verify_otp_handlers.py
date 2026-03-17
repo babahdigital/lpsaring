@@ -49,6 +49,7 @@ def verify_otp_impl(
     get_mikrotik_connection,
     has_hotspot_ip_binding_for_user,
     resolve_client_mac,
+    store_otp_in_redis,
 ):
     try:
         if not payload:
@@ -180,8 +181,25 @@ def verify_otp_impl(
             ), HTTPStatus.INTERNAL_SERVER_ERROR
         if not user_to_login.is_active or user_to_login.approval_status != ApprovalStatus.APPROVED:
             return build_status_error("inactive", "Account is not active or approved."), HTTPStatus.FORBIDDEN
+
+        _is_auto_debt_block_login = False
         if getattr(user_to_login, "is_blocked", False):
-            return build_status_error("blocked", "Akun Anda diblokir oleh Admin."), HTTPStatus.FORBIDDEN
+            from app.utils.block_reasons import is_auto_debt_limit_reason
+
+            _blocked_reason = getattr(user_to_login, "blocked_reason", None)
+            if is_auto_debt_limit_reason(_blocked_reason):
+                # Blokir karena over-quota auto-debt: izinkan login terbatas agar user
+                # bisa mengakses halaman pembayaran hutang. MikroTik binding dilewati.
+                _is_auto_debt_block_login = True
+                current_app.logger.info(
+                    "Verify-OTP: auto-debt-limit block — limited login allowed for debt settlement. "
+                    "user=%s reason=%s",
+                    user_to_login.id,
+                    _blocked_reason,
+                )
+            else:
+                # Blokir manual oleh admin atau EOM debt: tolak login sepenuhnya.
+                return build_status_error("blocked", "Akun Anda diblokir."), HTTPStatus.FORBIDDEN
 
         is_demo_login = bool(is_demo_phone_allowed(phone_e164))
 
@@ -257,6 +275,13 @@ def verify_otp_impl(
                     user_to_login.id,
                     router_mac_msg,
                 )
+                # Router tidak tersedia (bukan salah user): re-store OTP agar user bisa
+                # retry tanpa harus minta OTP baru. Bypass code tidak di-restore.
+                if not used_bypass_code:
+                    try:
+                        store_otp_in_redis(phone_e164, data.otp)
+                    except Exception:
+                        pass
                 return jsonify(
                     AuthErrorResponseSchema(error="Tidak dapat memverifikasi perangkat dari router.").model_dump()
                 ), HTTPStatus.SERVICE_UNAVAILABLE
@@ -328,7 +353,7 @@ def verify_otp_impl(
         else:
             hotspot_login_required = base_hotspot_login_required
 
-        if (not is_demo_login) and user_to_login.role in [UserRole.USER, UserRole.KOMANDAN, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
+        if (not is_demo_login) and (not _is_auto_debt_block_login) and user_to_login.role in [UserRole.USER, UserRole.KOMANDAN, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
             # OTP valid dari user sendiri -> self-authorize default untuk mencegah deadlock
             # "device belum authorize" pada user baru/perangkat baru.
             # Pengecualian: saat OTP bypass code dipakai, tetap konservatif.
@@ -418,6 +443,12 @@ def verify_otp_impl(
                 "Verify-OTP demo payment-only: skip device binding/address-list sync for user_id=%s",
                 user_to_login.id,
             )
+        elif _is_auto_debt_block_login:
+            current_app.logger.info(
+                "Verify-OTP auto-debt-block: skip MikroTik binding/sync for user_id=%s "
+                "(user directed to debt settlement page)",
+                user_to_login.id,
+            )
 
         user_to_login.last_login_at = datetime.now(dt_timezone.utc)
         new_login_entry = cast(Any, UserLoginHistory)(
@@ -442,12 +473,19 @@ def verify_otp_impl(
             )
             if base_url:
                 next_path = "/dashboard"
-                if data.hotspot_login_context is True:
+                if _is_auto_debt_block_login:
+                    next_path = "/policy/blocked"
+                elif data.hotspot_login_context is True:
                     next_path = "/captive/terhubung"
                 session_url = f"{base_url.rstrip('/')}/session/consume?token={session_token}&next={next_path}"
 
         hotspot_username: Optional[str] = None
         hotspot_password: Optional[str] = None
+
+        # Auto-debt-limit block: arahkan ke debt settlement, jangan kirim hotspot credentials.
+        if _is_auto_debt_block_login:
+            hotspot_login_required = False
+            hotspot_binding_active = None
 
         allow_hotspot_credentials = bool(data.client_ip or data.client_mac)
         if not allow_hotspot_credentials and data.hotspot_login_context is True:
@@ -456,7 +494,7 @@ def verify_otp_impl(
                 "Hotspot credentials allowed via captive context without client_ip/client_mac for user=%s",
                 user_to_login.id,
             )
-        if hotspot_login_required and allow_hotspot_credentials:
+        if hotspot_login_required and allow_hotspot_credentials and not _is_auto_debt_block_login:
             hotspot_username = format_to_local_phone(user_to_login.phone_number)
             hotspot_password = user_to_login.mikrotik_password
 

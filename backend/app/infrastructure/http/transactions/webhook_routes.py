@@ -379,6 +379,43 @@ def handle_notification_impl(
                             f"WEBHOOK: Gagal apply paket ke Mikrotik untuk {order_id}. Rollback transaksi."
                         )
                         increment_metric("payment.failed")
+
+                        # Alert superadmin via WA agar bisa segera reconcile
+                        try:
+                            from sqlalchemy import select as _sa_select
+                            from app.infrastructure.db.models import User, UserRole
+                            from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
+                            from app.utils.formatters import format_to_local_phone
+
+                            user_phone_for_alert = ""
+                            if transaction and transaction.user_id:
+                                _alert_user = session.get(User, transaction.user_id)
+                                if _alert_user:
+                                    user_phone_for_alert = _alert_user.phone_number or ""
+
+                            admin_phones = session.scalars(
+                                _sa_select(User.phone_number).where(
+                                    User.role == UserRole.SUPER_ADMIN,
+                                    User.is_active.is_(True),
+                                    User.phone_number.isnot(None),
+                                )
+                            ).all()
+
+                            alert_text = (
+                                f"\u26a0\ufe0f *GAGAL INJECT QUOTA*\n\n"
+                                f"Order: `{order_id}`\n"
+                                f"User: {format_to_local_phone(user_phone_for_alert) or '-'}\n"
+                                f"Error: {str(message)[:200]}\n\n"
+                                f"Gunakan tombol *Perbaiki Transaksi* di panel admin."
+                            )
+                            for _admin_phone in admin_phones:
+                                _local = format_to_local_phone(_admin_phone)
+                                if _local:
+                                    send_whatsapp_message(_local, alert_text)
+                        except Exception as e_alert:
+                            current_app.logger.error(
+                                f"WEBHOOK: Gagal kirim WA alert superadmin untuk {order_id}: {e_alert}"
+                            )
         else:
             session.commit()
             status_value = transaction.status.value if transaction.status is not None else "UNKNOWN"

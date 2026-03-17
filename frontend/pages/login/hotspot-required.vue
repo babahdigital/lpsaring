@@ -656,6 +656,17 @@ onMounted(async () => {
     }
 
     if (!hasExplicitHotspotIdentity() && !status.hotspotHintApplied) {
+      // Skenario 3 (simulasi-auth-otp.html): tidak ada identitas MAC/IP dari query/storage.
+      // Auto-bridge ke login.home.arpa untuk mendapatkan MAC/IP dari MikroTik
+      // SEBELUM menampilkan tombol fallback manual kepada user.
+      if (status.hotspotRequired && (hotspotBridgeTargetUrl.value || loginHotspotUrl.value)) {
+        statusMessage.value = 'Membaca informasi perangkat dari router...'
+        if (beginSilentHotspotBridge()) {
+          // Navigasi ke router sedang berlangsung (login.home.arpa → redirect kembali dengan params).
+          // Halaman akan kembali dengan bridge_resume=1 dan activateInternetOneClick dipanggil.
+          return
+        }
+      }
       showFallbackLogin.value = Boolean(loginHotspotUrl.value)
       statusMessage.value = getMissingIdentityMessage()
     }

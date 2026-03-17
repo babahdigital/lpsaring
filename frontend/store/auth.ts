@@ -13,6 +13,7 @@ import { isStatusSelfServicePath } from '~/utils/authGuardDecisions'
 import { getStatusRouteForAccessStatus, isLegalPublicPath } from '~/utils/authRoutePolicy'
 import { getHotspotIdentityFromQuery, rememberHotspotIdentity, resolveHotspotIdentity } from '~/utils/hotspotIdentity'
 import { extractTrustedHotspotLoginHintFromQuery, resolveHotspotTrustConfig, sanitizeHotspotLoginHint } from '~/utils/hotspotTrust'
+import { useSettingsStore } from '~/store/settings'
 
 type RegisterResponse = AuthRegisterResponseContract
 type RegistrationPayload = AuthRegisterRequestContract
@@ -904,7 +905,8 @@ export const useAuthStore = defineStore('auth', () => {
   function getAccessStatusFromUser(inputUser: User | null): AccessStatus {
     if (inputUser == null)
       return 'ok'
-    return resolveAccessStatusFromUser(inputUser)
+    const fupThresholdMb = useSettingsStore().getSettingAsInt('QUOTA_FUP_THRESHOLD_MB', 3072)
+    return resolveAccessStatusFromUser(inputUser, Date.now(), fupThresholdMb)
   }
 
   function getAccessStatusFromError(errorText: string | null): AccessStatus | null {

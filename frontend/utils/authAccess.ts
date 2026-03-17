@@ -11,9 +11,13 @@ interface UserLike {
   quota_expiry_date?: string | null
 }
 
-const QUOTA_FUP_THRESHOLD_MB = 3072
+const QUOTA_FUP_THRESHOLD_MB_DEFAULT = 3072
 
-export function resolveAccessStatusFromUser(inputUser: UserLike | null, nowMs = Date.now()): AccessStatus {
+export function resolveAccessStatusFromUser(
+  inputUser: UserLike | null,
+  nowMs = Date.now(),
+  fupThresholdMb = QUOTA_FUP_THRESHOLD_MB_DEFAULT,
+): AccessStatus {
   if (inputUser == null)
     return 'inactive'
 
@@ -40,7 +44,7 @@ export function resolveAccessStatusFromUser(inputUser: UserLike | null, nowMs = 
     return 'habis'
   if (total > 0 && remaining <= 0)
     return 'habis'
-  if (total > QUOTA_FUP_THRESHOLD_MB && remaining <= QUOTA_FUP_THRESHOLD_MB)
+  if (total > fupThresholdMb && remaining <= fupThresholdMb)
     return 'fup'
 
   return 'ok'

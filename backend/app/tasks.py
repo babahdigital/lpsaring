@@ -2302,7 +2302,17 @@ def expire_stale_transactions_task(self):
             except Exception:
                 expiry_minutes = 15
             expiry_minutes = max(5, min(expiry_minutes, 24 * 60))
-            # Grace window to avoid expiring transactions too aggressively.
+            # Grace window untuk baris dengan expiry_time: beri waktu webhook Midtrans yang
+            # terlambat agar sempat diproses sebelum transaksi di-expire.
+            # Configurable via TRANSACTION_EXPIRY_GRACE_MINUTES (default 5 menit).
+            try:
+                grace_expiry_minutes = int(app.config.get("TRANSACTION_EXPIRY_GRACE_MINUTES", 5))
+            except Exception:
+                grace_expiry_minutes = 5
+            grace_expiry_minutes = max(0, min(grace_expiry_minutes, 60))
+            expiry_cutoff = now_utc - timedelta(minutes=grace_expiry_minutes)
+
+            # Grace window untuk baris legacy (tanpa expiry_time).
             grace_minutes = 5
             legacy_cutoff = now_utc - timedelta(minutes=(expiry_minutes + grace_minutes))
 
@@ -2311,7 +2321,7 @@ def expire_stale_transactions_task(self):
                 db.session.query(Transaction)
                 .filter(Transaction.status.in_([TransactionStatus.UNKNOWN, TransactionStatus.PENDING]))
                 .filter(Transaction.expiry_time.isnot(None))
-                .filter(Transaction.expiry_time < now_utc)
+                .filter(Transaction.expiry_time < expiry_cutoff)
             )
             to_expire = q.all()
 

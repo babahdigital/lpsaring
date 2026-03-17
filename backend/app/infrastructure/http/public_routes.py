@@ -44,6 +44,15 @@ def get_public_settings():
         # yaitu: [{setting_key: 'KEY_A', setting_value: 'VALUE_A'}, {setting_key: 'KEY_B', setting_value: 'VALUE_B'}]
         public_settings = [SettingSchema.model_validate(s).model_dump() for s in settings_db]
 
+        # Inject config-only keys yang tidak disimpan di DB agar frontend dapat nilai runtime
+        _CONFIG_KEYS_TO_EXPOSE = ["QUOTA_FUP_THRESHOLD_MB"]
+        existing_keys = {s["setting_key"] for s in public_settings}
+        for config_key in _CONFIG_KEYS_TO_EXPOSE:
+            if config_key not in existing_keys:
+                config_val = current_app.config.get(config_key)
+                if config_val is not None:
+                    public_settings.append({"setting_key": config_key, "setting_value": str(config_val)})
+
         # Kembalikan sebagai array JSON
         if redis_client is not None:
             try:

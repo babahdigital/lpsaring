@@ -266,6 +266,7 @@ def verify_otp():
         get_mikrotik_connection=get_mikrotik_connection,
         has_hotspot_ip_binding_for_user=has_hotspot_ip_binding_for_user,
         resolve_client_mac=resolve_client_mac,
+        store_otp_in_redis=store_otp_in_redis,
     )
 
 
