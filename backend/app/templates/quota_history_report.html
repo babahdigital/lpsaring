@@ -202,20 +202,20 @@
         <div class="card-title">Ringkasan</div>
         <div class="metric-grid">
           <div class="metric">
-            <div class="muted">Total Event</div>
-            <div><strong>{{ summary.page_items or (items|length) }}</strong></div>
+            <div class="muted">Saldo Awal</div>
+            <div><strong>{{ fmt_quota(summary.balance_before_mb) }}</strong></div>
           </div>
           <div class="metric">
-            <div class="muted">Periode</div>
-            <div><strong>{{ filters.label or '-' }}</strong></div>
-          </div>
-          <div class="metric">
-            <div class="muted">Beli Bersih</div>
+            <div class="muted">+ Beli/Inject</div>
             <div><strong>{{ fmt_quota(summary.total_net_purchased_mb) }}</strong></div>
           </div>
           <div class="metric">
-            <div class="muted">Pakai Bersih</div>
+            <div class="muted">- Pemakaian</div>
             <div><strong>{{ fmt_quota(summary.total_net_used_mb) }}</strong></div>
+          </div>
+          <div class="metric">
+            <div class="muted">Saldo Akhir</div>
+            <div><strong>{{ fmt_quota(summary.balance_after_mb) }}</strong></div>
           </div>
         </div>
         <div class="muted mt-6">Filter tanggal: {{ filters.start_date_display or '-' }} s.d. {{ filters.end_date_display or '-' }}</div>

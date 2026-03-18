@@ -257,6 +257,25 @@ def _build_history_summary(items: list[dict[str, Any]], *, page_items: int) -> d
     first_event_at = min(created_at_values) if created_at_values else None
     last_event_at = max(created_at_values) if created_at_values else None
 
+    # Hitung saldo awal & akhir dari state
+    balance_before_mb = None
+    balance_after_mb = None
+
+    if items:
+        # Saldo awal = first item's before_state
+        first_item = items[-1]  # Items sorted DESC, jadi last index adalah oldest
+        before_state = _normalize_state(first_item.get("before_state"))
+        purchased_before = _state_float(before_state, "total_quota_purchased_mb") or 0
+        used_before = _state_float(before_state, "total_quota_used_mb") or 0
+        balance_before_mb = round_mb(max(0, purchased_before - used_before))
+
+        # Saldo akhir = last item's after_state (first index karena DESC)
+        last_item = items[0]
+        after_state = _normalize_state(last_item.get("after_state"))
+        purchased_after = _state_float(after_state, "total_quota_purchased_mb") or 0
+        used_after = _state_float(after_state, "total_quota_used_mb") or 0
+        balance_after_mb = round_mb(max(0, purchased_after - used_after))
+
     return {
         "page_items": page_items,
         "usage_events": int(category_counts.get("usage", 0)),
@@ -265,6 +284,8 @@ def _build_history_summary(items: list[dict[str, Any]], *, page_items: int) -> d
         "policy_events": int(category_counts.get("policy", 0)),
         "total_net_purchased_mb": total_net_purchased_mb,
         "total_net_used_mb": total_net_used_mb,
+        "balance_before_mb": balance_before_mb,
+        "balance_after_mb": balance_after_mb,
         "first_event_at": first_event_at.isoformat() if first_event_at else None,
         "last_event_at": last_event_at.isoformat() if last_event_at else None,
         "first_event_at_display": _format_event_datetime(first_event_at),
