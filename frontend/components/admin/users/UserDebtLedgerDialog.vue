@@ -353,7 +353,7 @@ watch(
                     variant="tonal"
                     color="success"
                     prepend-icon="tabler-check"
-                    class="px-3"
+                    class="px-3 debt-settle-btn"
                     :loading="settlingId === item.id"
                     @click="settleItem(item)"
                   >
@@ -452,6 +452,12 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.debt-settle-btn {
+  min-width: 70px;
+  min-height: 28px;
+  margin: 10px 0;
 }
 
 @media (max-width: 600px) {
