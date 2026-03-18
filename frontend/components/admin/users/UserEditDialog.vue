@@ -366,6 +366,18 @@ function formatMb(value: number) {
   return value.toLocaleString('id-ID', { maximumFractionDigits: 2 })
 }
 
+function formatDataSize(sizeInMB: number): string {
+  if (!Number.isFinite(sizeInMB) || Number.isNaN(sizeInMB))
+    return '0 MB'
+  const options = { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+  if (sizeInMB < 1)
+    return `${(sizeInMB * 1024).toLocaleString('id-ID', options)} KB`
+  else if (sizeInMB < 1024)
+    return `${sizeInMB.toLocaleString('id-ID', options)} MB`
+  else
+    return `${(sizeInMB / 1024).toLocaleString('id-ID', options)} GB`
+}
+
 watch(() => props.modelValue, (isOpen) => {
   if (isOpen) {
     liveData.value = null
@@ -784,14 +796,14 @@ function openQuotaHistoryPdf() {
                             Sisa Kuota (DB)
                           </div><div class="font-weight-medium">
                             <span v-if="props.user?.is_unlimited_user">Tidak Terbatas</span>
-                            <span v-else>{{ liveData.db_sisa_kuota_mb.toFixed(2) }} MB</span>
+                            <span v-else>{{ formatDataSize(liveData.db_sisa_kuota_mb) }}</span>
                           </div>
                         </VCol>
                         <VCol cols="12" sm="6">
                           <div class="text-caption text-disabled">
                             Pemakaian (MikroTik)
                           </div><div class="font-weight-medium">
-                            {{ liveData.mt_usage_mb.toFixed(2) }} MB
+                            {{ formatDataSize(liveData.mt_usage_mb) }}
                           </div>
                         </VCol>
                         <VCol cols="12">
@@ -910,7 +922,7 @@ function openQuotaHistoryPdf() {
                               Total Tunggakan
                             </div>
                             <div class="font-weight-medium">
-                              {{ formatMb(debtTotalMb) }} MB
+                              {{ formatDataSize(debtTotalMb) }}
                             </div>
                           </VCol>
                           <VCol cols="12" sm="4">
@@ -918,7 +930,7 @@ function openQuotaHistoryPdf() {
                               Tunggakan Otomatis
                             </div>
                             <div class="font-weight-medium">
-                              {{ formatMb(debtAutoMb) }} MB
+                              {{ formatDataSize(debtAutoMb) }}
                             </div>
                           </VCol>
                           <VCol cols="12" sm="4">
@@ -926,7 +938,7 @@ function openQuotaHistoryPdf() {
                               Tunggakan Manual
                             </div>
                             <div class="font-weight-medium">
-                              {{ formatMb(debtManualMb) }} MB
+                              {{ formatDataSize(debtManualMb) }}
                             </div>
                           </VCol>
                         </VRow>

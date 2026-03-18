@@ -186,6 +186,16 @@ watch(() => promoStore.activePromo, (newPromo) => {
 }, { immediate: true }) // Jalankan segera saat komponen dimuat
 // --- AKHIR TAMBAHAN BARU ---
 
+// Notifikasi profil tidak lengkap (blok/kamar) — hanya untuk role USER biasa (bukan tamping)
+const showIncompleteProfileAlert = computed(() => {
+  const u = authStore.user
+  if (!u || authStore.isAdmin || authStore.isKomandan)
+    return false
+  if (u.is_tamping === true)
+    return false
+  return !u.blok || !u.kamar
+})
+
 // Fetch data kuota
 const quotaApiUrl = computed(() => (authStore.isLoggedIn ? '/users/me/quota' : ''))
 const { data: quotaData, pending: quotaPending, error: quotaError, refresh: refreshQuotaRaw } = useApiFetch<UserQuotaResponse>(
@@ -567,6 +577,21 @@ useHead({ title: authStore.isKomandan ? 'Dashboard Komandan' : 'Dashboard User' 
         @update:model-value="showPromoWarning = false"
       >
         {{ promoWarningMessage }}
+      </VAlert>
+
+      <VAlert
+        v-if="showIncompleteProfileAlert"
+        type="info"
+        variant="tonal"
+        icon="tabler-user-question"
+        class="mb-6"
+      >
+        <div class="d-flex align-center justify-space-between flex-wrap gap-2">
+          <span>Data profil belum lengkap. Silakan isi <strong>Blok</strong> dan <strong>Kamar</strong> agar sistem dapat mengenali lokasi Anda.</span>
+          <VBtn size="small" variant="tonal" color="info" to="/akun">
+            Lengkapi Profil
+          </VBtn>
+        </div>
       </VAlert>
 
       <ClientOnly>

@@ -362,8 +362,8 @@ function onClose() {
             class="mt-4"
             density="compact"
           >
-            Tunggakan kuota terdeteksi: <strong>{{ formatMb(debtTotalMb) }} MB</strong>
-            (otomatis {{ formatMb(debtAutoMb) }} MB, manual {{ formatMb(debtManualMb) }} MB)
+            Tunggakan kuota terdeteksi: <strong>{{ formatDataSize(debtTotalMb) }}</strong>
+            (otomatis {{ formatDataSize(debtAutoMb) }}, manual {{ formatDataSize(debtManualMb) }})
           </VAlert>
 
           <VSheet v-if="shouldShowManualDebtSection" rounded="lg" border class="pa-3 mt-4">
@@ -410,13 +410,13 @@ function onClose() {
                     </div>
                   </td>
                   <td class="text-right">
-                    {{ formatMb(item.amount_mb) }}
+                    {{ formatDataSize(item.amount_mb) }}
                   </td>
                   <td class="text-right">
-                    {{ formatMb(item.paid_mb) }}
+                    {{ formatDataSize(item.paid_mb) }}
                   </td>
                   <td class="text-right">
-                    {{ formatMb(item.remaining_mb) }}
+                    {{ formatDataSize(item.remaining_mb) }}
                   </td>
                   <td>
                     <VChip :color="item.is_paid ? 'success' : 'warning'" size="x-small" label>

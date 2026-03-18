@@ -41,6 +41,18 @@ const debtAutoMb = computed(() => Number(props.user?.quota_debt_auto_mb ?? 0))
 const debtManualMb = computed(() => Number(props.user?.quota_debt_manual_mb ?? props.user?.manual_debt_mb ?? 0))
 const debtTotalMb = computed(() => Number(props.user?.quota_debt_total_mb ?? (debtAutoMb.value + debtManualMb.value)))
 
+function formatDataSize(sizeInMB: number): string {
+  if (!Number.isFinite(sizeInMB) || Number.isNaN(sizeInMB))
+    return '0 MB'
+  const options = { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+  if (sizeInMB < 1)
+    return `${(sizeInMB * 1024).toLocaleString('id-ID', options)} KB`
+  else if (sizeInMB < 1024)
+    return `${sizeInMB.toLocaleString('id-ID', options)} MB`
+  else
+    return `${(sizeInMB / 1024).toLocaleString('id-ID', options)} GB`
+}
+
 function close() {
   emit('update:modelValue', false)
 }
@@ -152,13 +164,13 @@ watch(
             {{ props.user.phone_number }}
           </VChip>
           <VChip size="small" label color="warning" variant="tonal">
-            Total Tunggakan: {{ debtTotalMb.toLocaleString('id-ID', { maximumFractionDigits: 2 }) }} MB
+            Total Tunggakan: {{ formatDataSize(debtTotalMb) }}
           </VChip>
           <VChip size="small" label color="default" variant="tonal">
-            Otomatis: {{ debtAutoMb.toLocaleString('id-ID', { maximumFractionDigits: 2 }) }} MB
+            Otomatis: {{ formatDataSize(debtAutoMb) }}
           </VChip>
           <VChip size="small" label color="default" variant="tonal">
-            Manual: {{ debtManualMb.toLocaleString('id-ID', { maximumFractionDigits: 2 }) }} MB
+            Manual: {{ formatDataSize(debtManualMb) }}
           </VChip>
         </div>
 
@@ -177,9 +189,9 @@ watch(
           <template #headers>
             <tr>
               <th>Tanggal</th>
-              <th class="text-end">Jumlah (MB)</th>
-              <th class="text-end">Dibayar (MB)</th>
-              <th class="text-end">Sisa (MB)</th>
+              <th class="text-end">Jumlah</th>
+              <th class="text-end">Dibayar</th>
+              <th class="text-end">Sisa</th>
               <th>Status</th>
               <th>Catatan</th>
               <th class="text-end">Aksi</th>
@@ -189,9 +201,9 @@ watch(
           <template #item="{ item }">
             <tr>
               <td>{{ item.debt_date || '-' }}</td>
-              <td class="text-end">{{ Number(item.amount_mb || 0).toLocaleString('id-ID') }}</td>
-              <td class="text-end">{{ Number(item.paid_mb || 0).toLocaleString('id-ID') }}</td>
-              <td class="text-end">{{ Number(item.remaining_mb || 0).toLocaleString('id-ID') }}</td>
+              <td class="text-end">{{ formatDataSize(Number(item.amount_mb || 0)) }}</td>
+              <td class="text-end">{{ formatDataSize(Number(item.paid_mb || 0)) }}</td>
+              <td class="text-end">{{ formatDataSize(Number(item.remaining_mb || 0)) }}</td>
               <td>
                 <VChip :color="item.is_paid ? 'success' : 'warning'" size="x-small" label>
                   {{ item.is_paid ? 'LUNAS' : 'BELUM LUNAS' }}
