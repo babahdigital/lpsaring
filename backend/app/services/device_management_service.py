@@ -999,6 +999,15 @@ def apply_device_binding_for_login(
         if not device.authorized_at:
             device.authorized_at = datetime.now(dt_timezone.utc)
         db.session.flush()
+
+        # Trigger instant DHCP upsert async task (fire-and-forget)
+        if device.mac_address and device.ip_address:
+            trigger_instant_dhcp_upsert_async(
+                user_id=user.id,
+                mac_address=device.mac_address,
+                ip_address=device.ip_address,
+            )
+
         return True, "Perangkat terotorisasi", client_ip
 
 
@@ -1190,3 +1199,53 @@ def reset_user_network_on_logout(user: User) -> Dict[str, Any]:
             summary["failures"] += 1
 
     return summary
+
+
+def trigger_instant_dhcp_upsert_async(
+    user_id: int,
+    mac_address: Optional[str],
+    ip_address: Optional[str],
+) -> None:
+    """
+    Trigger async DHCP static lease upsert callback.
+    Dispatches high-priority Celery task without blocking main flow.
+    Best-effort: silently fails if Celery unavailable, MAC/IP invalid, or DHCP disabled.
+    """
+    if not mac_address or not ip_address:
+        return
+
+    if not _is_mikrotik_operations_enabled():
+        logger.debug("Skip instant DHCP upsert: MikroTik operations disabled")
+        return
+
+    settings = _get_settings()
+    if not settings.get("dhcp_static_lease_enabled"):
+        logger.debug("Skip instant DHCP upsert: DHCP static lease disabled")
+        return
+
+    try:
+        # Import Celery here to avoid circular imports
+        from app.extensions import celery_app
+
+        dhcp_server_name = settings.get("dhcp_lease_server_name") or None
+        username_08 = format_to_local_phone(user_id) or str(user_id)
+        date_str, time_str = get_app_date_time_strings(datetime.now(dt_timezone.utc))
+        comment = f"lpsaring|instant-dhcp|user={username_08}|uid={user_id}|date={date_str}|time={time_str}"
+
+        # Dispatch high-priority task (fire-and-forget, don't block)
+        celery_app.send_task(
+            "upsert_dhcp_static_lease_instant_task",
+            args=[mac_address, ip_address, comment, dhcp_server_name],
+            priority=10,  # High priority
+            expires=300,  # Expire after 5 minutes if not processed
+        )
+        logger.debug(
+            "Dispatched instant DHCP upsert task: user_id=%s mac=%s ip=%s",
+            user_id, mac_address, ip_address
+        )
+    except Exception as e:
+        logger.warning(
+            "Failed to dispatch instant DHCP upsert task: user_id=%s mac=%s ip=%s error=%s",
+            user_id, mac_address, ip_address, str(e)
+        )
+

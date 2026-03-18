@@ -2708,6 +2708,71 @@ def revoke_expired_refresh_tokens_task(self):
             else:
                 logger.info("Celery Task: Refresh token cleanup — tidak ada token usang.")
         except Exception as e:
+            logger.error("Celery Task: Error cleanup refresh tokens: %s", str(e))
+            raise
+
+
+@celery_app.task(
+    name="upsert_dhcp_static_lease_instant_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 2},
+)
+def upsert_dhcp_static_lease_instant_task(self, mac_address: str, ip_address: str, comment: str, server: str | None):
+    """
+    Instant DHCP static lease upsert callback triggered after successful device binding.
+    Runs as high-priority Celery task with automatic retry on MikroTik failures.
+
+    Args:
+        mac_address: MAC address of device (e.g., "AA:BB:CC:DD:EE:FF")
+        ip_address: IP address to bind (e.g., "172.16.2.123")
+        comment: Comment for DHCP lease (contains user info and timestamp)
+        server: DHCP server name in MikroTik (e.g., "Klien")
+    """
+    app = create_app()
+    with app.app_context():
+        if not bool(app.config.get("ENABLE_MIKROTIK_OPERATIONS", True)):
+            logger.info("Celery Task: Skip instant DHCP upsert (MikroTik operations disabled).")
+            return {"success": True, "skipped": True}
+
+        if not server or not str(server).strip():
+            logger.warning("Skip instant DHCP upsert: DHCP server name not specified.")
+            return {"success": False, "error": "dhcp_server_not_configured"}
+
+        try:
+            from app.infrastructure.gateways.mikrotik_client import upsert_dhcp_static_lease as gateway_upsert_dhcp
+
+            ok = gateway_upsert_dhcp(
+                mac_address=mac_address,
+                ip_address=ip_address,
+                comment=comment,
+                server=server,
+                api_connection=None,  # Create new connection for this task
+            )
+
+            if ok:
+                logger.info(
+                    "Celery Task: Instant DHCP lease upserted successfully — mac=%s ip=%s server=%s",
+                    mac_address, ip_address, server
+                )
+                return {"success": True}
+            else:
+                logger.warning(
+                    "Celery Task: Instant DHCP lease upsert failed — mac=%s ip=%s server=%s (will retry)",
+                    mac_address, ip_address, server
+                )
+                raise Exception(f"DHCP upsert returned False for mac={mac_address} ip={ip_address}")
+
+        except Exception as e:
+            logger.error(
+                "Celery Task: Error during instant DHCP upsert — mac=%s ip=%s error=%s (will retry)",
+                mac_address, ip_address, str(e)
+            )
+            raise
+
+        except Exception as e:
             db.session.rollback()
             logger.error("Celery Task: revoke_expired_refresh_tokens gagal: %s", e, exc_info=True)
             if self.request.retries >= 1:

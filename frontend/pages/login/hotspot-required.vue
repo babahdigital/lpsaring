@@ -53,6 +53,8 @@ let successCountdownInterval: number | null = null
 
 const macRandomizationWarning = ref('')
 const showMacRandomizationAlert = ref(false)
+const showMacConfirmDialog = ref(false)
+const macConfirmationUserChoice = ref<boolean | null>(null)
 
 const queryMikrotikLink = computed(() => {
   return sanitizeHotspotLoginHint(extractHotspotLoginHintFromQuery((route.query as Record<string, unknown>) ?? {}), hotspotTrustConfig) || null
@@ -389,6 +391,14 @@ function getMissingIdentityMessage(): string {
   return 'IP/MAC perangkat belum terbaca dari router. Tekan Aktifkan Internet agar sistem mencoba mengambil konteks hotspot otomatis. Jika tetap gagal, buka satu halaman HTTP biasa agar router mengarahkan ke Login Hotspot, lalu coba lagi.'
 }
 
+function handleMacConfirmation(proceed: boolean) {
+  macConfirmationUserChoice.value = proceed
+  showMacConfirmDialog.value = false
+  if (proceed) {
+    void activateInternetOneClick()
+  }
+}
+
 function getHotspotNotReadyMessage(): string {
   if (loginHotspotUrl.value) {
     return 'Internet perangkat belum aktif sepenuhnya. Buka Login Hotspot sekali, lalu tekan Aktifkan Internet lagi.'
@@ -523,6 +533,12 @@ async function activateInternetOneClick(options: { allowBridgeRoundtrip?: boolea
 
   if (await redirectDemoUserToBuyPage())
     return
+
+  // Check MAC randomization: if randomized and not yet confirmed, show dialog
+  if (showMacRandomizationAlert.value && macConfirmationUserChoice.value !== true) {
+    showMacConfirmDialog.value = true
+    return
+  }
 
   const allowBridgeRoundtrip = options.allowBridgeRoundtrip !== false
 
@@ -697,6 +713,40 @@ onBeforeUnmount(() => {
 <template>
   <div class="auth-wrapper d-flex align-center justify-center pa-4 pa-sm-6">
     <VCard class="auth-card" max-width="460" width="100%">
+      <!-- MAC Randomization Confirmation Dialog -->
+      <VDialog v-model="showMacConfirmDialog" max-width="420">
+        <VCard>
+          <VCardText class="pa-6">
+            <div class="text-center">
+              <VIcon icon="tabler-alert-circle" size="48" color="warning" class="mb-4" />
+              <h4 class="text-h6 mb-3">Alamat MAC Ter-Randomisasi</h4>
+              <p class="text-body-2 text-medium-emphasis mb-4">
+                Device Anda menggunakan "Private Address" (MAC randomization). Ini dapat menyebabkan masalah koneksi:
+              </p>
+              <ul class="text-caption text-start text-medium-emphasis mb-4" style="line-height: 1.6">
+                <li>Portal login diminta berulang kali</li>
+                <li>Koneksi terputus dan masuk kembali</li>
+                <li>Device tidak terdeteksi dengan baik</li>
+              </ul>
+              <p class="text-body-2 font-weight-semibold mb-4 text-warning">
+                Sebaiknya matikan "Private Address" terlebih dahulu.
+              </p>
+            </div>
+          </VCardText>
+
+          <VDivider />
+
+          <VCardActions class="pa-4 d-flex flex-column ga-3">
+            <VBtn color="warning" size="large" variant="elevated" block @click="handleMacConfirmation(false)">
+              Oke, Matikan Dulu
+            </VBtn>
+            <VBtn color="secondary" size="large" variant="tonal" block @click="handleMacConfirmation(true)">
+              Lanjut dengan Resiko
+            </VBtn>
+          </VCardActions>
+        </VCard>
+      </VDialog>
+
       <VCardText v-if="showSuccessState" class="text-center pa-6 pa-sm-8">
         <VIcon icon="tabler-circle-check" size="56" color="success" class="mb-4" />
 
