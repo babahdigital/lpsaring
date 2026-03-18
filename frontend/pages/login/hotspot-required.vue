@@ -8,7 +8,7 @@ import { useAuthStore } from '~/store/auth'
 import { getHotspotIdentityFromQuery, rememberHotspotIdentity, resolveHotspotIdentity } from '~/utils/hotspotIdentity'
 import { extractHotspotLoginHintFromQuery, resolveHotspotTrustConfig, sanitizeHotspotLoginHint, sanitizeResolvedHotspotIdentity } from '~/utils/hotspotTrust'
 import { analyzeMacRandomization } from '~/utils/macRandomizationDetect'
-import { storeSessionMacBinding, getSessionMacBinding, clearSessionMacBinding, generateSessionMacToken, getFallbackMacForSession } from '~/utils/sessionMacBinding'
+import { storeSessionMacBinding, getSessionMacBinding, generateSessionMacToken, getFallbackMacForSession } from '~/utils/sessionMacBinding'
 
 definePageMeta({
   layout: 'blank',
@@ -605,7 +605,7 @@ async function activateInternetOneClick(options: { allowBridgeRoundtrip?: boolea
       const binding = storeSessionMacBinding(identity.clientMac)
       sessionMacToken.value = generateSessionMacToken(binding)
       if (process.env.NODE_ENV === 'development') {
-        console.debug('Session MAC binding stored:', {
+        console.log('Session MAC binding stored:', {
           mac: binding.mac,
           expiryTime: new Date(binding.expiryTime).toISOString(),
         })
@@ -677,7 +677,7 @@ onMounted(async () => {
     const fallbackMac = getFallbackMacForSession(initialIdentity.clientMac)
     if (fallbackMac && fallbackMac !== initialIdentity.clientMac) {
       if (process.env.NODE_ENV === 'development') {
-        console.debug('Using fallback session MAC binding:', {
+        console.log('Using fallback session MAC binding:', {
           current: initialIdentity.clientMac,
           fallback: fallbackMac,
         })

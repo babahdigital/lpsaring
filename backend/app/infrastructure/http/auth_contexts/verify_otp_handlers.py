@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 
 
-def verify_otp_impl(
+def verify_otp_impl(  # pyright: ignore[reportGeneralTypeIssues]
     *,
     payload,
     request,
