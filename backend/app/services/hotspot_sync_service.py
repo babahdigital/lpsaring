@@ -470,7 +470,14 @@ def _snapshot_dhcp_ips_by_mac(api: Any) -> Tuple[bool, Dict[str, set[str]]]:
 
         status = str(row.get("status") or "").strip().lower()
         if status == "waiting":
-            continue
+            # Lpsaring-managed static leases masuk ke by_mac meski "waiting" (device offline).
+            # Ini mencegah _self_heal_policy_dhcp_for_user merekrasi lease setiap siklus sync
+            # untuk device yang offline tapi masih terotorisasi di DB.
+            # Lease non-lpsaring yang waiting (transient DHCP lease) tetap dikecualikan.
+            comment = str(row.get("comment") or "").lower()
+            if "lpsaring|static-dhcp" not in comment:
+                continue
+            # Fall-through: include lpsaring waiting lease (hanya MAC+IP, tidak skip)
 
         ip_text = str(row.get("address") or "").strip()
         if not _is_valid_ip_candidate(ip_text):
@@ -1954,7 +1961,7 @@ def _sync_address_list_status(
         ip_binding_map=ip_binding_map,
         ip_binding_rows_by_mac=ip_binding_rows_by_mac,
     ):
-        logger.info(
+        logger.debug(
             "Skip sync address-list by username tanpa ip-binding policy-compatible: user=%s phone=%s",
             getattr(user, "id", None),
             username_08,

@@ -41,6 +41,7 @@ from app.infrastructure.db.models import (
 from app.infrastructure.gateways.mikrotik_client import (
     activate_or_update_hotspot_user,
     delete_hotspot_user,
+    get_firewall_address_list_entries,
     get_hotspot_host_usage_map,
     get_hotspot_ip_binding_user_map,
     get_mikrotik_connection,
@@ -2907,3 +2908,396 @@ def upsert_dhcp_static_lease_instant_task(self, mac_address: str, address: str, 
                 mac_address, address, str(e)
             )
             raise
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TASK: sync_access_banking_task  (7.3 Akses-Banking Scheduler)
+# Populate address-list Bypass_Server di MikroTik dengan IP banking domains.
+# Hanya mengelola entri dengan comment 'source=banking-sync' — entri manual aman.
+# ─────────────────────────────────────────────────────────────────────────────
+@celery_app.task(
+    name="sync_access_banking_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 2},
+)
+def sync_access_banking_task(self):
+    """Populate Bypass_Server address-list di MikroTik dengan banking domain IPs.
+
+    - Hanya mengelola entri dengan comment 'source=banking-sync'.
+    - Entri manual (comment berbeda) tidak disentuh sama sekali.
+    - Resolve domain → IP via socket. Skip jika AKSES_BANKING_ENABLED=False.
+    - List name configurable via setting AKSES_BANKING_LIST_NAME (default Bypass_Server).
+    """
+    import socket as _socket
+
+    app = create_app()
+    with app.app_context():
+        enabled = settings_service.get_setting("AKSES_BANKING_ENABLED", "True") == "True"
+        if not enabled:
+            logger.info("Celery Task: sync_access_banking_task dinonaktifkan (AKSES_BANKING_ENABLED=False).")
+            return {"skipped": "feature_disabled"}
+
+        mikrotik_ops = settings_service.get_setting("ENABLE_MIKROTIK_OPERATIONS", "True") == "True"
+        if not mikrotik_ops:
+            logger.info("Celery Task: sync_access_banking_task skip (ENABLE_MIKROTIK_OPERATIONS=False).")
+            return {"skipped": "mikrotik_ops_disabled"}
+
+        # Daftar domain banking — configurable via settings DB.
+        # Default mencakup bank-bank umum di Indonesia.
+        domains_raw = settings_service.get_setting(
+            "AKSES_BANKING_DOMAINS",
+            "klikbca.com,bri.co.id,bankmandiri.co.id,bni.co.id,cimbniaga.co.id,"
+            "permatabank.co.id,ocbcnisp.com,bca.co.id,danamon.co.id,btn.co.id",
+        ) or ""
+        banking_domains = [d.strip() for d in domains_raw.split(",") if d.strip()]
+
+        list_name = settings_service.get_setting("AKSES_BANKING_LIST_NAME", "Bypass_Server") or "Bypass_Server"
+        comment_marker = "source=banking-sync"
+        comment_prefix = "AUTO-BANKING-BYPASS"
+
+        db.session.remove()
+
+        logger.info(
+            "Celery Task: Memulai sync banking bypass. domains=%d list=%s",
+            len(banking_domains),
+            list_name,
+        )
+
+        try:
+            # Resolve IP untuk setiap domain (ipv4 saja, CDN banking umumnya publik)
+            resolved_ips: dict[str, str] = {}  # ip → domain
+            for domain in banking_domains:
+                try:
+                    for addr_info in _socket.getaddrinfo(domain, None, _socket.AF_INET):
+                        ip = str(addr_info[4][0])
+                        try:
+                            ipaddress.ip_address(ip)
+                            resolved_ips[ip] = domain
+                        except ValueError:
+                            pass
+                except Exception as exc:
+                    logger.warning("Banking sync: gagal resolve domain=%s: %s", domain, exc)
+
+            if not resolved_ips:
+                logger.warning(
+                    "Banking sync: tidak ada IP berhasil di-resolve dari %d domain — cek koneksi DNS.",
+                    len(banking_domains),
+                )
+                return {"ok": False, "reason": "no_ips_resolved", "domains_checked": len(banking_domains)}
+
+            with get_mikrotik_connection() as api:
+                if not api:
+                    raise RuntimeError("Gagal konek MikroTik untuk banking sync")
+
+                ok_get, current_entries, get_msg = get_firewall_address_list_entries(api, list_name)
+                if not ok_get:
+                    raise RuntimeError(f"Gagal ambil entri {list_name}: {get_msg}")
+
+                # Hanya pertimbangkan entri yang dikelola oleh task ini
+                banking_entries: dict[str, dict] = {}
+                for entry in current_entries:
+                    entry_comment = str(entry.get("comment") or "")
+                    if comment_marker in entry_comment:
+                        entry_ip = str(entry.get("address") or "").strip()
+                        if entry_ip:
+                            banking_entries[entry_ip] = entry
+
+                summary = {
+                    "domains_processed": len(banking_domains),
+                    "ips_resolved": len(resolved_ips),
+                    "added": 0,
+                    "updated": 0,
+                    "removed_stale": 0,
+                    "errors": 0,
+                }
+
+                # Upsert IP yang berhasil di-resolve
+                for ip, domain in resolved_ips.items():
+                    entry_comment = (
+                        f"{comment_prefix}|{comment_marker}|domain={domain}|managed-by=lpsaring"
+                    )
+                    ok_upsert, upsert_msg = upsert_address_list_entry(
+                        api_connection=api,
+                        address=ip,
+                        list_name=list_name,
+                        comment=entry_comment,
+                    )
+                    if ok_upsert:
+                        if ip in banking_entries:
+                            summary["updated"] += 1
+                        else:
+                            summary["added"] += 1
+                    else:
+                        summary["errors"] += 1
+                        logger.warning(
+                            "Banking sync: gagal upsert ip=%s domain=%s list=%s: %s",
+                            ip, domain, list_name, upsert_msg,
+                        )
+
+                # Hapus entri banking-sync yang sudah stale (IP tidak lagi di-resolve)
+                for stale_ip in banking_entries:
+                    if stale_ip not in resolved_ips:
+                        ok_rm, rm_msg = remove_address_list_entry(
+                            api_connection=api,
+                            address=stale_ip,
+                            list_name=list_name,
+                        )
+                        if ok_rm:
+                            summary["removed_stale"] += 1
+                        else:
+                            logger.warning(
+                                "Banking sync: gagal remove stale ip=%s list=%s: %s",
+                                stale_ip, list_name, rm_msg,
+                            )
+
+                logger.info("Celery Task: Banking bypass sync selesai. %s", json.dumps(summary))
+                return summary
+
+        except Exception as e:
+            logger.error("Celery Task: Banking sync gagal: %s", e, exc_info=True)
+            if self.request.retries >= 2:
+                _record_task_failure(app, "sync_access_banking_task", {}, str(e))
+            raise
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TASK: enforce_overdue_debt_block_task  (P1 — Auto-block post-due-date)
+# Blokir user dengan tunggakan yang sudah melewati due_date (bukan hanya EOM).
+# Berbeda dari enforce_end_of_month_debt_block_task yang hanya jalan di akhir bulan.
+# ─────────────────────────────────────────────────────────────────────────────
+@celery_app.task(
+    name="enforce_overdue_debt_block_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 2},
+)
+def enforce_overdue_debt_block_task(self):
+    """Blokir user yang tunggakan manualnya sudah melewati due_date.
+
+    - Berjalan harian (default jam 08:00 lokal via beat schedule).
+    - Hanya menangani debt dari bulan SEBELUMNYA (bukan bulan berjalan,
+      yang ditangani oleh enforce_end_of_month_debt_block_task di hari terakhir).
+    - Skip user yang sudah diblokir, unlimited, atau tidak aktif.
+    - Kirim WA warning sebelum block.
+    - Configurable via setting ENABLE_OVERDUE_DEBT_BLOCK (default True).
+    """
+    app = create_app()
+    with app.app_context():
+        if settings_service.get_setting("ENABLE_OVERDUE_DEBT_BLOCK", "True") != "True":
+            logger.info("Overdue debt block: Dinonaktifkan via setting ENABLE_OVERDUE_DEBT_BLOCK.")
+            return {"skipped": "feature_disabled"}
+
+        now_local = get_app_local_datetime()
+        today = now_local.date()
+
+        try:
+            app_tz_offset = int(app.config.get("APP_TIMEZONE_OFFSET", 8))
+        except Exception:
+            app_tz_offset = 8
+        app_tz = dt_timezone(timedelta(hours=app_tz_offset))
+
+        # Impor lokal agar tidak mempengaruhi loading modul global
+        from sqlalchemy.orm import joinedload as _joinedload
+        from app.infrastructure.db.models import UserQuotaDebt
+
+        try:
+            overdue_debts = (
+                db.session.query(UserQuotaDebt)
+                .options(_joinedload(UserQuotaDebt.user))
+                .filter(UserQuotaDebt.paid_at.is_(None))
+                .filter(UserQuotaDebt.is_paid.is_(False))
+                .filter(UserQuotaDebt.due_date.isnot(None))
+                # Hanya debt dari bulan sebelumnya (due_date < hari ini)
+                .filter(UserQuotaDebt.due_date < today)
+                .all()
+            )
+        finally:
+            pass
+
+        if not overdue_debts:
+            logger.info("Overdue debt block: Tidak ada debt melewati due_date.")
+            return {"checked": 0, "blocked": 0}
+
+        # Group debt by user_id
+        user_debts: dict = {}
+        for debt in overdue_debts:
+            user = debt.user
+            if not user:
+                continue
+            uid = str(user.id)
+            if uid not in user_debts:
+                user_debts[uid] = {"user": user, "debts": []}
+            user_debts[uid]["debts"].append(debt)
+
+        blocked_profile = settings_service.get_setting("MIKROTIK_BLOCKED_PROFILE", "inactive") or "inactive"
+        list_blocked = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked"
+        enable_wa = settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") == "True"
+        other_status_lists = [
+            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active",
+            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup",
+            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive",
+            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired",
+            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis",
+        ]
+        blocked_binding_type = settings_service.get_ip_binding_type_setting("IP_BINDING_TYPE_BLOCKED", "blocked")
+
+        summary = {
+            "checked": len(user_debts),
+            "skipped_already_blocked": 0,
+            "skipped_unlimited": 0,
+            "skipped_inactive": 0,
+            "warn_sent": 0,
+            "warn_failed": 0,
+            "blocked": 0,
+            "block_failed": 0,
+        }
+
+        for uid, data in user_debts.items():
+            user = data["user"]
+            debts = data["debts"]
+
+            # Guard: hanya blokir USER aktif yang disetujui, bukan admin/unlimited
+            if not getattr(user, "is_active", False):
+                summary["skipped_inactive"] += 1
+                continue
+            if getattr(user, "approval_status", None) != ApprovalStatus.APPROVED:
+                summary["skipped_inactive"] += 1
+                continue
+            if getattr(user, "role", None) != UserRole.USER:
+                summary["skipped_inactive"] += 1
+                continue
+            if getattr(user, "is_unlimited_user", False):
+                summary["skipped_unlimited"] += 1
+                continue
+            if getattr(user, "is_blocked", False):
+                summary["skipped_already_blocked"] += 1
+                continue
+
+            username_08 = format_to_local_phone(user.phone_number) or str(user.phone_number or "")
+            total_debt_mb = sum(int(d.amount_mb or 0) for d in debts)
+            oldest_due_date = min(d.due_date for d in debts if d.due_date)
+            days_overdue = (today - oldest_due_date).days
+
+            # --- Step 1: WA warning sebelum block ---
+            if enable_wa:
+                try:
+                    wa_msg = (
+                        f"\u26a0\ufe0f *TAGIHAN JATUH TEMPO — AKSES AKAN DIBLOKIR*\n\n"
+                        f"Halo {username_08},\n\n"
+                        f"Tunggakan kuota Anda sebesar *{total_debt_mb // 1024} GB* "
+                        f"telah melewati jatuh tempo *{oldest_due_date.strftime('%d-%m-%Y')}* "
+                        f"({days_overdue} hari yang lalu).\n\n"
+                        f"Akses internet Anda *diblokir* sekarang.\n\n"
+                        f"Lunasi tagihan di: lpsaring.babahdigital.net\n\n"
+                        f"Hubungi admin jika ada pertanyaan."
+                    )
+                    ok_wa = bool(
+                        send_whatsapp_message(
+                            recipient_number=user.phone_number,
+                            message_body=wa_msg,
+                        )
+                    )
+                    if ok_wa:
+                        summary["warn_sent"] += 1
+                    else:
+                        summary["warn_failed"] += 1
+                except Exception:
+                    logger.exception("Overdue debt block: gagal kirim WA ke user=%s", uid)
+                    summary["warn_failed"] += 1
+
+            # --- Step 2: Block di DB + MikroTik ---
+            try:
+                lock_user_quota_row(user)
+                before_state = snapshot_user_quota_state(user)
+
+                if not user.mikrotik_password:
+                    user.mikrotik_password = "".join(secrets.choice("0123456789") for _ in range(6))
+
+                _handle_mikrotik_operation(
+                    activate_or_update_hotspot_user,
+                    user_mikrotik_username=username_08,
+                    hotspot_password=user.mikrotik_password,
+                    mikrotik_profile_name=blocked_profile,
+                    limit_bytes_total=1,
+                    session_timeout="1s",
+                    comment=f"blocked|quota-debt-overdue|user={username_08}",
+                    server=user.mikrotik_server_name,
+                    force_update_profile=True,
+                )
+
+                user.is_blocked = True
+                user.blocked_reason = (
+                    f"tunggakan_overdue|debt_mb={total_debt_mb}|due={oldest_due_date}|days_overdue={days_overdue}"
+                )
+                user.blocked_at = datetime.now(dt_timezone.utc)
+                user.blocked_by_id = None
+
+                with get_mikrotik_connection() as api:
+                    if api:
+                        ok_host, host_map, _ = get_hotspot_host_usage_map(api)
+                        host_map = host_map if ok_host else {}
+
+                        for device in user.devices or []:
+                            mac = str(getattr(device, "mac_address", "") or "").upper().strip()
+                            if not mac:
+                                continue
+                            upsert_ip_binding(
+                                api_connection=api,
+                                mac_address=mac,
+                                binding_type=blocked_binding_type,
+                                comment=f"blocked|debt-overdue|user={username_08}|uid={user.id}",
+                            )
+                            ip_addr = str(getattr(device, "ip_address", "") or "").strip()
+                            if not ip_addr:
+                                ip_addr = str(host_map.get(mac, {}).get("address") or "").strip()
+                            if not ip_addr:
+                                continue
+                            upsert_address_list_entry(
+                                api_connection=api,
+                                address=ip_addr,
+                                list_name=list_blocked,
+                                comment=f"lpsaring|status=blocked|reason=debt-overdue|user={username_08}|uid={user.id}",
+                            )
+                            for other_list in other_status_lists:
+                                if other_list and other_list != list_blocked:
+                                    remove_address_list_entry(
+                                        api_connection=api,
+                                        address=ip_addr,
+                                        list_name=other_list,
+                                    )
+
+                db.session.add(user)
+                append_quota_mutation_event(
+                    user=user,
+                    source="policy.block_transition:debt_overdue",
+                    before_state=before_state,
+                    after_state=snapshot_user_quota_state(user),
+                    event_details={
+                        "action": "block",
+                        "reason": "debt_overdue",
+                        "total_debt_mb": total_debt_mb,
+                        "oldest_due_date": str(oldest_due_date),
+                        "days_overdue": days_overdue,
+                        "debt_count": len(debts),
+                    },
+                )
+                db.session.commit()
+                summary["blocked"] += 1
+                increment_metric("overdue.debt_block.blocked")
+                logger.info(
+                    "Overdue debt block: user=%s diblokir (debt=%dMB, due=%s, %d hari lewat).",
+                    uid, total_debt_mb, oldest_due_date, days_overdue,
+                )
+            except Exception:
+                logger.exception("Overdue debt block: gagal block user=%s", uid)
+                db.session.rollback()
+                summary["block_failed"] += 1
+
+        increment_metric("overdue.debt_block.checked", summary["checked"])
+        logger.info("Overdue debt block summary: %s", json.dumps(summary))
+        return summary

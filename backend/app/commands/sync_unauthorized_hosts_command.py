@@ -122,12 +122,18 @@ def _collect_dhcp_lease_snapshot(api) -> Tuple[set[str], set[Tuple[str, str]], s
 
     for row in rows:
         status = str(row.get("status") or "").strip().lower()
+        mac = str(row.get("mac-address") or "").strip().upper()
+        comment = str(row.get("comment") or "").strip()
+
         if status == "waiting":
+            # Lpsaring-managed static leases yang "waiting" (device offline) tetap
+            # dilindungi dari klient_unauthorized — tambah ke lpsaring_macs saja,
+            # tanpa memasukkan MAC/IP ke snapshot aktif (device sedang offline).
+            if mac and "lpsaring|static-dhcp" in comment:
+                lpsaring_macs.add(mac)
             continue
 
-        mac = str(row.get("mac-address") or "").strip().upper()
         ip_text = _normalize_ip_for_compare(row.get("address") or "")
-        comment = str(row.get("comment") or "").strip()
 
         if mac:
             mac_set.add(mac)

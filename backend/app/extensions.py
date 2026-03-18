@@ -158,7 +158,11 @@ def make_celery_app(app=None):
         sync_interval = int(os.environ.get("QUOTA_SYNC_INTERVAL_SECONDS", "300"))
     except ValueError:
         sync_interval = 300
-    schedule_seconds = min(sync_interval, 60)
+    # Beat interval sama dengan sync_interval (capped minimum 60s) agar Celery tidak
+    # membuang task yang langsung discarded oleh Redis lock internal.
+    # Sebelumnya min(sync_interval, 60) menyebabkan beat kirim task setiap menit padahal
+    # task internal hanya berjalan setiap 300 detik → 80% task langsung di-skip.
+    schedule_seconds = max(60, sync_interval)
 
     celery_instance.conf.beat_schedule = {
         "sync-hotspot-usage": {
@@ -180,6 +184,17 @@ def make_celery_app(app=None):
         "cleanup-inactive-users": {
             "task": "cleanup_inactive_users_task",
             "schedule": crontab(hour=3, minute=0),
+        },
+        # P1: Auto-block user dengan tunggakan melewati due_date (bukan hanya EOM).
+        # Berjalan harian jam 08:00 — setelah jam kerja staff mulai aktif.
+        # Configurable via ENABLE_OVERDUE_DEBT_BLOCK (default True) dan
+        # OVERDUE_DEBT_BLOCK_CRON_HOUR / OVERDUE_DEBT_BLOCK_CRON_MINUTE.
+        "enforce-overdue-debt-block": {
+            "task": "enforce_overdue_debt_block_task",
+            "schedule": crontab(
+                hour=int(os.environ.get("OVERDUE_DEBT_BLOCK_CRON_HOUR", "8")),
+                minute=int(os.environ.get("OVERDUE_DEBT_BLOCK_CRON_MINUTE", "0")),
+            ),
         },
     }
 
@@ -271,6 +286,23 @@ def make_celery_app(app=None):
                 "task": "audit_mikrotik_reconciliation_task",
                 "schedule": crontab(hour=max(0, min(audit_hour, 23)), minute=max(0, min(audit_minute, 59))),
             }
+
+        # 7.3 Akses-Banking Scheduler: populate Bypass_Server dengan banking domain IPs.
+        # Dinonaktifkan via AKSES_BANKING_ENABLED=False. Tidak perlu env flag karena
+        # task itu sendiri mengecek setting di DB via settings_service.
+        # Default: harian jam 02:00 (setelah walled-garden sync, sebelum audit di jam 04:15).
+        try:
+            banking_hour = int(os.environ.get("AKSES_BANKING_CRON_HOUR", "2"))
+        except ValueError:
+            banking_hour = 2
+        try:
+            banking_minute = int(os.environ.get("AKSES_BANKING_CRON_MINUTE", "0"))
+        except ValueError:
+            banking_minute = 0
+        celery_instance.conf.beat_schedule["sync-access-banking"] = {
+            "task": "sync_access_banking_task",
+            "schedule": crontab(hour=max(0, min(banking_hour, 23)), minute=max(0, min(banking_minute, 59))),
+        }
 
     if os.environ.get("UPDATE_ENABLE_SYNC", "False").lower() == "true":
         try:

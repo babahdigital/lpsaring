@@ -33,7 +33,7 @@ from app.infrastructure.db.models import UserQuotaDebt
 
 
 # [FIX] Menambahkan kembali impor yang hilang untuk endpoint /mikrotik-status
-from app.utils.formatters import format_to_local_phone, get_app_local_datetime
+from app.utils.formatters import format_to_local_phone, get_app_local_datetime, format_app_datetime
 from app.services.user_management.helpers import _handle_mikrotik_operation, _send_whatsapp_notification
 from app.infrastructure.gateways.mikrotik_client import get_hotspot_user_details
 
@@ -796,7 +796,7 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
                 purchased_now = float(getattr(user, "total_quota_purchased_mb", 0) or 0)
                 used_now = float(getattr(user, "total_quota_used_mb", 0) or 0)
                 remaining_quota_mb = max(0.0, purchased_now - used_now)
-                quota_expiry = getattr(user, "total_quota_until", None)
+                quota_expiry = getattr(user, "quota_expiry_date", None)
 
                 # Format expiry_date dengan fallback untuk NULL value
                 if quota_expiry:
@@ -807,11 +807,21 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
                 else:
                     expiry_date_str = "Belum ditentukan"
 
+                # Format debt_date dan paid_at dengan WITA
+                debt_date_str = (
+                    debt.debt_date.strftime("%d-%m-%Y") if debt.debt_date else "–"
+                )
+                paid_at_str = (
+                    format_app_datetime(debt.paid_at) if debt.paid_at else format_app_datetime()
+                )
+
                 _send_whatsapp_notification(
                     user.phone_number,
                     "user_debt_partial_payment",
                     {
                         "full_name": user.full_name,
+                        "debt_date": debt_date_str,
+                        "paid_at": paid_at_str,
                         "paid_manual_debt_gb": format_mb_to_gb(paid_mb),
                         "remaining_manual_debt_gb": format_mb_to_gb(remaining_manual_debt),
                         "remaining_quota_gb": format_mb_to_gb(remaining_quota_mb),
