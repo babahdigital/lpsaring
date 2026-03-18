@@ -604,10 +604,12 @@ async function activateInternetOneClick(options: { allowBridgeRoundtrip?: boolea
     if (bindSuccess && identity.clientMac) {
       const binding = storeSessionMacBinding(identity.clientMac)
       sessionMacToken.value = generateSessionMacToken(binding)
-      logger.debug('Session MAC binding stored:', {
-        mac: binding.mac,
-        expiryTime: new Date(binding.expiryTime).toISOString(),
-      })
+      if (process.env.NODE_ENV === 'development') {
+        console.debug('Session MAC binding stored:', {
+          mac: binding.mac,
+          expiryTime: new Date(binding.expiryTime).toISOString(),
+        })
+      }
     }
 
     if (bindSuccess) {
@@ -674,10 +676,12 @@ onMounted(async () => {
     // Check if current MAC differs from session MAC (window resize/reconnect)
     const fallbackMac = getFallbackMacForSession(initialIdentity.clientMac)
     if (fallbackMac && fallbackMac !== initialIdentity.clientMac) {
-      logger.debug('Using fallback session MAC binding:', {
-        current: initialIdentity.clientMac,
-        fallback: fallbackMac,
-      })
+      if (process.env.NODE_ENV === 'development') {
+        console.debug('Using fallback session MAC binding:', {
+          current: initialIdentity.clientMac,
+          fallback: fallbackMac,
+        })
+      }
     }
   }
 
