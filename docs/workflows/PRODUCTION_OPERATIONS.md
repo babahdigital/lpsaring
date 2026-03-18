@@ -41,6 +41,26 @@ Semua command operasional app stack harus memakai prefix ini.
 ./deploy_pi.sh --detach-local --recreate --sync-nginx-conf
 ```
 
+### Deploy dengan build image baru (trigger GitHub Actions)
+
+> **⚠ WAJIB:** Lakukan `git push origin main` DULU sebelum `--trigger-build`.
+> GitHub Actions build image dari `origin/main` di GitHub — commit yang belum di-push **tidak akan** masuk ke image.
+> Health check tetap hijau meski build menggunakan image lama. Lihat: `docs/incidents/2026-03-19-deploy-unpushed-commits.md`.
+
+```bash
+# 1. Pastikan commit sudah di-push ke remote
+git push origin main
+
+# 2. Trigger build + tunggu selesai + auto recreate
+cd lpsaring && bash deploy_pi.sh --trigger-build
+
+# Atau: trigger build tanpa recreate otomatis
+gh workflow run docker-publish.yml --field clean_before_deploy=true
+```
+
+Indikator bangunan menggunakan kode yang salah: Alembic output menunjukkan `CURRENT_REV` dari commit
+sebelumnya (bukan commit terbaru), meski health check dan container status berwarna hijau.
+
 ## Mode Destruktif Yang Masih Diizinkan
 
 ### Clean preserve-data

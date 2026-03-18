@@ -38,6 +38,61 @@
 - Walled-garden host/IP diatur via `WALLED_GARDEN_ALLOWED_HOSTS`/`WALLED_GARDEN_ALLOWED_IPS` dan disinkronkan ke MikroTik.
 - Midtrans & WA bergantung pada URL publik; gunakan Cloudflare Tunnel (lihat DEVELOPMENT.md bagian HTTPS).
 
+## Sistem Tunggakan Manual (Debt Manual)
+
+### Model `UserQuotaDebt` (tabel `user_quota_debts`)
+- `amount_mb`: kuota dalam MB. **Sentinel = 1** untuk paket Unlimited (bukan 0).
+- `due_date`: selalu akhir bulan; **auto-compute backend** (`calendar.monthrange`) — tidak boleh diisi manual dari form.
+- `price_rp`: harga aktual paket saat debt dibuat (BIGINT NULLABLE). Record lama: null → fallback ke `estimated_rp`.
+- `paid_mb`, `is_paid`, `paid_at`: status pelunasan.
+- `note`: format `"Paket: {nama} ({kuota}, Rp {harga})"`. Frontend: `parsePackageName(note)` ekstrak nama sebelum ` (`.
+
+### Invariant Kunci
+1. **`due_date` selalu akhir bulan** — backend auto-compute; bukan input form admin.
+2. **Paket Unlimited → `amount_mb = 1` (sentinel)** — agar `manual_debt_mb > 0` dan EOM block task mendeteksinya.
+3. **EOM block tidak bergantung `due_date` per-item** — hanya cek `manual_debt_mb > 0` + tanggal kalender.
+4. **WA reminder bergantung `due_date IS NOT NULL`** — record lama diisi via migration `20260319_c_populate_null_due_dates`.
+5. **`price_rp` dari paket aktual** — bukan estimasi; jika null, frontend fallback ke `estimated_rp`.
+
+### Alur Tambah Debt (Admin)
+```
+Admin → UserEditDialog.vue → PUT /api/admin/users/{id}
+  → user_profile_service.py:
+      is_unlimited = pkg.data_quota_gb <= 0
+      amount_mb = 1 if is_unlimited else round(pkg_quota_gb * 1024)
+      due_date = last day of debt_month (auto)
+      add_manual_debt(amount_mb, due_date, price_rp=int(pkg.price), note=...)
+      user.manual_debt_mb += amount_mb
+```
+
+### EOM Block Task (`enforce_end_of_month_debt_block_task`)
+```
+if today == last_day_of_month AND hour >= DEBT_EOM_BLOCK_MIN_HOUR:
+  for user where manual_debt_mb > 0 AND quota_debt_total_mb > 0:
+    → hard block (ip-binding blocked) + WA notifikasi
+```
+
+### WA Reminder Task (`send_manual_debt_reminders_task`)
+```
+query: is_paid=False AND due_date IS NOT NULL
+kirim template 3 hari, 1 hari, 3 jam sebelum due_date
+```
+
+### Frontend Key Files (Debt)
+- `components/admin/users/UserDebtLedgerDialog.vue` — ledger per-user + `getEffectiveDueDate()` fallback
+- `components/admin/users/UserEditDialog.vue` — form tambah tunggakan; dropdown paket termasuk Unlimited
+- `pages/riwayat/index.vue` — tampilan riwayat user + `getEffectiveDueDate()` fallback
+
+### Migrations Terkait (urutan)
+| Revision | Isi |
+|----------|-----|
+| `20260315_add_manual_debt_tables` | Buat tabel `user_quota_debts` |
+| `20260318_add_due_date_to_manual_quota_debt` | Kolom `due_date DATE` |
+| `20260319_add_price_rp_to_user_quota_debts` | Kolom `price_rp BIGINT NULLABLE` |
+| `20260319_c_populate_null_due_dates` | Fill `due_date NULL` → last day of debt month |
+
+---
+
 ## Operasional & Deploy Produksi (WAJIB Sistematis)
 Prinsip: **lokal adalah source-of-truth**, Pi hanya target.
 
@@ -45,10 +100,15 @@ Prinsip: **lokal adalah source-of-truth**, Pi hanya target.
 - Jangan deploy ke Pi sebelum user meminta.
 - Alur rapi (default):
 	1) Perubahan code → lint/test lokal
-	2) `git commit` → `git push`
+	2) `git commit` → **`git push origin main`** (WAJIB sebelum trigger-build!)
 	3) Tunggu CI hijau
 	4) Publish image (tag `v*` atau `workflow_dispatch`) → tunggu hijau
 	5) Deploy Pi via `deploy_pi.sh --recreate` (upload env lokal + pull image app terbaru + staged restart + healthcheck)
+
+> **⚠ PERINGATAN DEPLOY:** Selalu `git push origin main` DULU sebelum `--trigger-build`.
+> GitHub Actions build image dari `origin/main` di GitHub, **bukan** dari commit lokal yang belum di-push.
+> Commit yang tidak di-push → build menggunakan image lama → health check tetap hijau tapi kode salah.
+> Lihat: `docs/incidents/2026-03-19-deploy-unpushed-commits.md`
 
 ## Aturan Keamanan (WAJIB)
 - Jangan pernah menampilkan/menyalin secret ke chat/log (contoh: token tunnel, API key, password).

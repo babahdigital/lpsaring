@@ -8,6 +8,29 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Fixed (2026-03-19 — Debt Manual UX Overhaul + Unlimited Package Support)
+
+- **Kolom tunggakan manual admin kini menampilkan harga aktual paket:** field `price_rp` ditambahkan ke tabel `user_quota_debts` (migration `20260319_add_price_rp_to_user_quota_debts`) dan disimpan saat debt dibuat via `add_manual_debt`. `UserDebtLedgerDialog.vue` menampilkan `price_rp` (aktual) dengan fallback ke `estimated_rp` jika record lama.
+- **Jatuh tempo tunggakan manual selalu akhir bulan secara otomatis:** `user_profile_service.py` tidak lagi membaca `debt_due_date` dari form; backend kini selalu menghitung `due_date = hari terakhir bulan debt_date` menggunakan `calendar.monthrange`. Field `debt_due_date` dihapus dari `UserUpdateByAdminSchema`. Form admin yang sebelumnya menampilkan date-picker diganti alert info "akhir bulan (otomatis)".
+- **Record tunggakan lama dengan `due_date = NULL` kini terisi otomatis:** migration `20260319_c_populate_null_due_dates` menjalankan `UPDATE user_quota_debts SET due_date = last_day_of_month(debt_date or created_at) WHERE due_date IS NULL`. WA reminder task (`send_manual_debt_reminders_task`) yang memfilter `due_date IS NOT NULL` kini menjangkau semua record lama.
+- **Paket Unlimited kini dapat dipilih sebagai tunggakan manual:** guard backend `if pkg_quota_gb <= 0: return False` dihapus dari `user_profile_service.py`. Paket unlimited menggunakan `amount_mb = 1` sebagai sentinel agar `enforce_end_of_month_debt_block_task` tetap mendeteksi tunggakan. Frontend `debtPackageOptions` tidak lagi memfilter `data_quota_gb > 0`; paket unlimited tampil dengan label "Unlimited" di dropdown.
+- **Nama paket di kolom Paket/Info dipotong dari note:** `parsePackageName()` di `UserDebtLedgerDialog.vue` mengekstrak nama paket sebelum " (" dari format `"Paket: Nama (N GB, Rp ...)"`, sehingga kolom hanya menampilkan "Nama Paket" bukan full string.
+- **Frontend fallback `getEffectiveDueDate`:** `UserDebtLedgerDialog.vue` dan `riwayat/index.vue` kini menghitung hari terakhir bulan dari `debt_date` jika `due_date` masih null, sebagai lapisan pengaman display di atas migration.
+- **Tombol Lunasi diberi padding:** `class="px-3 debt-settle-btn"` + `min-width: 70px` memastikan warna button tidak mepet ke teks.
+
+### Fixed (2026-03-19 — Frontend Display UX & MAC Randomization Cascade)
+
+- **Konversi ukuran data MB/GB dinamis:** `formatDataSize(sizeInMB)` di `UserDetailDialog.vue`, `UserEditDialog.vue`, dan `UserDebtLedgerDialog.vue` kini menampilkan KB jika < 1 MB, MB jika 1–1023 MB, GB jika ≥ 1024 MB dengan presisi 2 desimal dan locale `id-ID`.
+- **MAC randomization cascade Bug 2 & 3:** `session_mac_token` kini dikirim ke endpoint `bind-current` (`auth.ts` + `hotspot-required.vue` + `profile_routes.py`). `login_handlers.py` mencoba `session_mac_fallback` sebelum return 401 jika lookup MAC gagal.
+- **Tabel tunggakan admin & user disempurnakan:** kolom Dibayar dan Tanggal Utang dihapus; ditambahkan Dicatat Pada, Jatuh Tempo (chip merah jika lewat), Status (LUNAS/BELUM LUNAS dengan `paid_at`). `riwayat/index.vue` min-width 615px untuk responsif.
+- **Alert profil tidak lengkap di dashboard:** `showIncompleteProfileAlert` tampil jika user role `USER`, bukan tamping, dan belum mengisi blok atau kamar.
+
+### Documentation (2026-03-19 — Debt Manual)
+
+- `docs/devlogs/2026-03-19-debt-manual-ux-overhaul.md` — devlog lengkap seri debt overhaul (4 commit, 3 migration, root cause due_date null, unlimited package, WA reminder fix).
+- `docs/incidents/2026-03-19-deploy-unpushed-commits.md` — insiden deploy dari image stale karena commit belum di-push sebelum `--trigger-build`.
+- `memory/DEBT_MANUAL_IMPROVEMENTS.md` — ringkasan arsitektur debt manual dan keputusan desain kunci.
+
 ### Fixed (2026-03-17 - Hotspot Sync Runtime dan Quota Lock Recovery)
 
 - **Full quota sync produksi turun dari sekitar `450-484s` menjadi kisaran `60-66s`:** rangkaian commit `bcfa8524`, `a6edfd9a`, dan `4f7a1110` menghapus pembangunan snapshot status berulang, membekukan runtime settings sekali per run, dan memangkas round-trip RouterOS/DHCP self-heal yang tidak perlu.
