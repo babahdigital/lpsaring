@@ -7,6 +7,7 @@ import { clearPendingHotspotBridge, rememberPendingHotspotBridge } from '~/utils
 import { useAuthStore } from '~/store/auth'
 import { getHotspotIdentityFromQuery, rememberHotspotIdentity, resolveHotspotIdentity } from '~/utils/hotspotIdentity'
 import { extractHotspotLoginHintFromQuery, resolveHotspotTrustConfig, sanitizeHotspotLoginHint, sanitizeResolvedHotspotIdentity } from '~/utils/hotspotTrust'
+import { analyzeMacRandomization } from '~/utils/macRandomizationDetect'
 
 definePageMeta({
   layout: 'blank',
@@ -49,6 +50,9 @@ const HOTSPOT_CONFIRM_DELAY_RECOVERY_MS = 700
 
 let successRedirectTimeout: number | null = null
 let successCountdownInterval: number | null = null
+
+const macRandomizationWarning = ref('')
+const showMacRandomizationAlert = ref(false)
 
 const queryMikrotikLink = computed(() => {
   return sanitizeHotspotLoginHint(extractHotspotLoginHintFromQuery((route.query as Record<string, unknown>) ?? {}), hotspotTrustConfig) || null
@@ -618,6 +622,15 @@ onMounted(async () => {
   syncHotspotRouteContext(initialIdentity)
   const shouldAutoStart = getQueryValueFromKeys([AUTO_START_QUERY_KEY]) === '1'
 
+  // Deteksi MAC randomization (LAA bit)
+  if (initialIdentity.clientMac) {
+    const macAnalysis = analyzeMacRandomization(initialIdentity.clientMac)
+    if (macAnalysis.isRandomized) {
+      macRandomizationWarning.value = macAnalysis.recommendation
+      showMacRandomizationAlert.value = true
+    }
+  }
+
   if (foreignHotspotContextMessage.value) {
     showFallbackLogin.value = false
     statusMessage.value = foreignHotspotContextMessage.value
@@ -729,6 +742,18 @@ onBeforeUnmount(() => {
         <p class="text-medium-emphasis mb-6 text-body-2 text-sm-body-1">
           Anda sudah berhasil login. Tekan tombol di bawah agar internet langsung aktif.
         </p>
+
+        <VAlert v-if="showMacRandomizationAlert" type="warning" variant="tonal" density="comfortable" class="mb-6 text-start">
+          <template #prepend>
+            <VIcon icon="tabler-alert-triangle" />
+          </template>
+          <div class="text-body-2">
+            <strong>⚠ Alamat MAC Ter-Randomisasi</strong>
+            <p class="mt-2 mb-0 text-caption">
+              {{ macRandomizationWarning }}
+            </p>
+          </div>
+        </VAlert>
 
         <VAlert type="info" variant="tonal" density="comfortable" class="mb-6 text-start">
           Proses ini berjalan otomatis. Jika belum aktif, gunakan tombol Login Hotspot lalu coba lagi.

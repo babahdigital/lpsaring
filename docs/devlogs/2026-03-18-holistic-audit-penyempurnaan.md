@@ -416,8 +416,90 @@ mismatch_types:
 
 ---
 
-## Pending (Perlu Session Terpisah)
+## 13. MAC Randomization Detection (Sesi 3+, commit pending)
 
-- **7.3 Akses-Banking scheduler**: Celery task populate `Bypass_Server` dengan banking domain IPs (DNS resolve periodik)
-- **11.3 MAC randomization**: Frontend detection bit LAA + tampilkan warning + panduan user nonaktifkan random MAC
-- **6 dhcp_lease_missing**: Auto-fix oleh parity guard dalam ≤10 menit dari deploy (DHCP_ENABLED=True, SERVER=Klien)
+**File baru**:
+- `frontend/utils/macRandomizationDetect.ts` — Detection utility dengan bit LAA check
+- Updated: `frontend/pages/login/hotspot-required.vue` — Warning alert UI
+
+**Konteks**: iOS 14+, Android 10+ support MAC randomization per-SSID. User dengan random MAC mengalami:
+- Portal login diminta berulang kali
+- Device tidak terdeteksi stabil
+- Koneksi terputus-sambung
+
+**Implementation**:
+1. **Utility** (`macRandomizationDetect.ts`):
+   - `isMacAddressRandomized(mac)`: Deteksi LAA bit (bit 1 dari first octet). Jika `(firstOctet & 0x02) != 0` → randomized
+   - `describeMacStatus(mac)`: Human-readable description
+   - `analyzeMacRandomization(mac)`: Full analysis dengan recommendation
+
+2. **Frontend** (`hotspot-required.vue`):
+   - `onMounted()`: Check MAC dari `getHotspotIdentity()`
+   - Jika randomized: set `showMacRandomizationAlert=true`
+   - UI: `VAlert` dengan warning icon, recommendation text (matikan Private Address di WiFi settings)
+
+**User Guidance**:
+```
+Device Anda menggunakan "Private Address" (MAC randomization).
+Ini dapat menyebabkan portal login berulang.
+
+Solusi:
+1. Buka WiFi Settings
+2. Pilih jaringan "lpsaring"
+3. Matikan "Private Address" atau "Random MAC"
+4. Login kembali
+```
+
+**Status**: IMPLEMENTED ✅
+
+---
+
+## 14. Akses-Banking Scheduler — Implementation Plan (Sesi 4, TBD)
+
+**Scope**: Celery task untuk auto-populate `Bypass_Server` address-list di MikroTik dengan banking domain IPs.
+
+**Context**:
+- Walled-garden `Bypass_Server` saat ini: 9 entries (portal + wartelpas)
+- Kebutuhan: Banking domains (BCA, BRI, Mandiri, dll) harus accessible untuk user dengan status `habis`/inactive yang melihat portal bayar
+- Current: `klient_inactive` firewall rule ✓, tapi `Bypass_Server` perlu banking IPs
+
+**Proposed Implementation** (Next Sprint):
+1. **New setting** (`settings` table):
+   - `AKSES_BANKING_SYNC_ENABLED` (default True)
+   - `AKSES_BANKING_DOMAINS` (JSON list: `["klikbca.com", "bri.co.id", ...]`)
+   - `AKSES_BANKING_SYNC_SCHEDULE` (default "daily 02:00")
+
+2. **New Celery task** (`backend/app/tasks.py`):
+   ```python
+   @celery_app.task(name='sync_access_banking_task')
+   def sync_access_banking_task():
+       # Load AKSES_BANKING_DOMAINS from settings
+       # Resolve each domain → IPs (IPv4 only, RFC1918 check like walled-garden)
+       # Diff dengan Bypass_Server MikroTik (filter by comment source=banking-sync)
+       # Add missing IPs → upsert_address_list_entry()
+       # Remove stale entries → remove_address_list_entry()
+   ```
+
+3. **MikroTik operation** (in `mikrotik_client.py`):
+   - Function: `sync_banking_bypass_addresses(api, banking_domains: List[str]) → (ok, msg)`
+   - Resolve DNS per domain
+   - For each IP: `upsert_address_list_entry(list_name="Bypass_Server", address=ip, comment="source=banking-sync|domain=...")`
+   - Skip non-RFC1918 IPs (public banking CDNs unreliable)
+
+4. **Error handling**:
+   - DNS timeout: retry logic, log warning
+   - MikroTik unreachable: defer task, no impact on parity guard
+   - Stale cleanup: only remove entries with `source=banking-sync` tag (preserve manual entries)
+
+**Benefits**:
+- ✅ User habis dapat akses portal bayar + bank transfer
+- ✅ Automatic update saat bank IP berubah
+- ✅ Isolated comment tag = no conflict dengan manual rules
+
+**Blockers** (for next session):
+- Need to coordinate with infrastructure ke IP bank actual (or use public list + validate RFC1918)
+- Testing di prod environment dengan actual MikroTik Bypass_Server
+
+**Status**: ANALYZED, AWAITING IMPLEMENTATION ⏳
+
+---
