@@ -206,6 +206,21 @@ def verify_otp_impl(
         client_ip = data.client_ip
         client_mac = data.client_mac
         user_agent = request.headers.get("User-Agent")
+        session_mac_token = str(getattr(data, "session_mac_token", "") or "").strip() or None
+        session_mac_fallback = None
+
+        # Parse session MAC token if available (for MAC randomization fallback binding)
+        if session_mac_token:
+            try:
+                import json
+                import base64
+
+                decoded = base64.b64decode(session_mac_token)
+                payload = json.loads(decoded)
+                session_mac_fallback = payload.get("mac")
+            except Exception:
+                session_mac_token = None
+                session_mac_fallback = None
         is_production_like = str(current_app.config.get("FLASK_ENV", "")).strip().lower() == "production"
         require_trusted_captive_context = bool(
             current_app.config.get("VERIFY_OTP_REQUIRE_TRUSTED_CAPTIVE_CONTEXT_PRODUCTION", True)
@@ -399,6 +414,8 @@ def verify_otp_impl(
                 authoritative_binding_mac,
                 bypass_explicit_auth=bypass_explicit,
                 allow_cross_user_transfer=allow_cross_user_transfer,
+                session_mac_token=session_mac_token,
+                session_mac_fallback=session_mac_fallback,
             )
             if not ok_binding:
                 if msg_binding in [

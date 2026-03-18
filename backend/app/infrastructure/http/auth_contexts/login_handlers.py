@@ -145,6 +145,22 @@ def auto_login_impl(
 
         client_ip = payload_dict.get("client_ip")
         client_mac = payload_dict.get("client_mac")
+        session_mac_token = str(payload_dict.get("session_mac_token") or "").strip() or None
+        session_mac_fallback = None
+
+        # Parse session MAC token if available (for MAC randomization fallback binding)
+        if session_mac_token:
+            try:
+                import json
+                import base64
+
+                decoded = base64.b64decode(session_mac_token)
+                payload = json.loads(decoded)
+                session_mac_fallback = payload.get("mac")
+            except Exception:
+                session_mac_token = None
+                session_mac_fallback = None
+
         incoming_mac = normalize_mac(client_mac) if client_mac else None
 
         has_explicit_identity_hint = bool(client_ip or client_mac)
@@ -498,6 +514,8 @@ def auto_login_impl(
                 user_agent,
                 resolved_mac,
                 bypass_explicit_auth=trusted_auto_authorize,
+                session_mac_token=session_mac_token,
+                session_mac_fallback=session_mac_fallback,
             )
             if not ok_binding:
                 if msg_binding in ["Limit perangkat tercapai", "Perangkat belum diotorisasi"]:

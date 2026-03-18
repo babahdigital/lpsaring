@@ -8,6 +8,7 @@ import { useAuthStore } from '~/store/auth'
 import { getHotspotIdentityFromQuery, rememberHotspotIdentity, resolveHotspotIdentity } from '~/utils/hotspotIdentity'
 import { extractHotspotLoginHintFromQuery, resolveHotspotTrustConfig, sanitizeHotspotLoginHint, sanitizeResolvedHotspotIdentity } from '~/utils/hotspotTrust'
 import { analyzeMacRandomization } from '~/utils/macRandomizationDetect'
+import { storeSessionMacBinding, getSessionMacBinding, clearSessionMacBinding, generateSessionMacToken, getFallbackMacForSession } from '~/utils/sessionMacBinding'
 
 definePageMeta({
   layout: 'blank',
@@ -55,6 +56,7 @@ const macRandomizationWarning = ref('')
 const showMacRandomizationAlert = ref(false)
 const showMacConfirmDialog = ref(false)
 const macConfirmationUserChoice = ref<boolean | null>(null)
+const sessionMacToken = ref('')
 
 const queryMikrotikLink = computed(() => {
   return sanitizeHotspotLoginHint(extractHotspotLoginHintFromQuery((route.query as Record<string, unknown>) ?? {}), hotspotTrustConfig) || null
@@ -373,10 +375,18 @@ function getHotspotIdentityQuery(): Record<string, string> {
   if (identity.clientIp || identity.clientMac)
     rememberHotspotIdentity(identity, hotspotTrustConfig)
   syncHotspotRouteContext(identity)
-  return {
+
+  const query: Record<string, string> = {
     ...(identity.clientIp ? { client_ip: identity.clientIp } : {}),
     ...(identity.clientMac ? { client_mac: identity.clientMac } : {}),
   }
+
+  // Include session MAC token if available (for fallback binding)
+  if (sessionMacToken.value) {
+    query.session_mac_token = sessionMacToken.value
+  }
+
+  return query
 }
 
 function hasExplicitHotspotIdentity(identity = getHotspotIdentity()): boolean {
@@ -590,6 +600,16 @@ async function activateInternetOneClick(options: { allowBridgeRoundtrip?: boolea
 
     triggerHotspotProbe()
 
+    // Store session MAC binding on successful bind (for MAC randomization handling)
+    if (bindSuccess && identity.clientMac) {
+      const binding = storeSessionMacBinding(identity.clientMac)
+      sessionMacToken.value = generateSessionMacToken(binding)
+      logger.debug('Session MAC binding stored:', {
+        mac: binding.mac,
+        expiryTime: new Date(binding.expiryTime).toISOString(),
+      })
+    }
+
     if (bindSuccess) {
       const confirmed = await waitForHotspotConfirmation({
         attempts: HOTSPOT_CONFIRM_ATTEMPTS,
@@ -646,6 +666,21 @@ onMounted(async () => {
       showMacRandomizationAlert.value = true
     }
   }
+
+  // Restore session MAC binding from sessionStorage (if available)
+  const sessionBinding = getSessionMacBinding()
+  if (sessionBinding) {
+    sessionMacToken.value = generateSessionMacToken(sessionBinding)
+    // Check if current MAC differs from session MAC (window resize/reconnect)
+    const fallbackMac = getFallbackMacForSession(initialIdentity.clientMac)
+    if (fallbackMac && fallbackMac !== initialIdentity.clientMac) {
+      logger.debug('Using fallback session MAC binding:', {
+        current: initialIdentity.clientMac,
+        fallback: fallbackMac,
+      })
+    }
+  }
+
 
   if (foreignHotspotContextMessage.value) {
     showFallbackLogin.value = false

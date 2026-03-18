@@ -880,6 +880,8 @@ def apply_device_binding_for_login(
     client_mac: Optional[str] = None,
     bypass_explicit_auth: bool = False,
     allow_cross_user_transfer: bool = False,
+    session_mac_token: Optional[str] = None,
+    session_mac_fallback: Optional[str] = None,
 ) -> Tuple[bool, str, Optional[str]]:
     settings = _get_settings()
     username_08 = format_to_local_phone(user.phone_number) or ""
@@ -928,7 +930,34 @@ def apply_device_binding_for_login(
             api_connection=shared_api,
         )
         if not ok:
-            return False, msg, None
+            # If device binding failed and we have session MAC fallback, try with fallback MAC
+            if (
+                not ok
+                and session_mac_fallback
+                and session_mac_fallback != client_mac
+            ):
+                logger.info(
+                    "Device binding failed with current MAC, trying session MAC fallback: "
+                    "user=%s current_mac=%s fallback_mac=%s",
+                    user.id, client_mac, session_mac_fallback,
+                )
+                ok, msg, device = register_or_update_device(
+                    user,
+                    client_ip,
+                    user_agent,
+                    session_mac_fallback,
+                    allow_replace=bypass_explicit_auth,
+                    allow_cross_user_transfer=allow_cross_user_transfer,
+                    api_connection=shared_api,
+                )
+                if ok and device:
+                    logger.info(
+                        "Device binding succeeded with session MAC fallback: "
+                        "user=%s mac=%s", user.id, session_mac_fallback
+                    )
+
+            if not ok:
+                return False, msg, None
 
         if device is None and msg == "Skip IP binding":
             return True, msg, None
