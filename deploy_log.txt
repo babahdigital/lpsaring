@@ -1,0 +1,101 @@
+==> Target        : abdullah@159.89.192.31:/home/abdullah/lpsaring/app
+==> Quick SSH     : ssh -i /c/Users/Lenovo/.ssh/id_raspi_ed25519 -p 1983 abdullah@159.89.192.31
+==> Local dir     : /d/Data/Projek/hotspot/lpsaring
+==> SSH key       : /c/Users/Lenovo/.ssh/id_raspi_ed25519
+==> SSH port      : 1983
+==> Rsync         : false
+==> Dry run       : false
+==> Skip pull     : false
+==> Recreate      : true (tanpa hapus volume)
+==> Backup only   : false
+==> Sync phones   : false (apply=false)
+==> Prune remote  : false (DISABLED for app-only safety)
+==> Auto-stamp drift: true
+==> Retention     : keep last 14 backups (remote+local)
+==> Min backup    : 102400 bytes (allow-small=false)
+==> Nginx sync    : false
+==> Backup mode   : deploy
+==> Remote backup : /home/abdullah/lpsaring/app/_safe_backups/deploy_predeploy_20260318_182416/postgres_dump.sql
+==> Local backup  : /d/Data/Projek/hotspot/lpsaring/../backups/159.89.192.31_deploy_predeploy_20260318_182416.sql
+==> Pre-destructive backup: ensure db is running
+==> Pre-destructive backup: wait db ready
+==> Pre-destructive backup: dump postgres only
+==> Pre-destructive backup: apply remote retention (keep 14)
+/home/abdullah/lpsaring/app/_safe_backups/deploy_predeploy_20260318_182416/postgres_dump.sql
+==> Backup size   : 57711798 bytes
+==> Pre-destructive DB backup (remote kept): /home/abdullah/lpsaring/app/_safe_backups/deploy_predeploy_20260318_182416/postgres_dump.sql
+==> Pre-destructive DB backup copied to local: /d/Data/Projek/hotspot/lpsaring/../backups/159.89.192.31_deploy_predeploy_20260318_182416.sql
+==> Pull app images (backend/frontend/celery/migrate/backups_init)...
+ Image babahdigital/sobigidul_frontend:latest Pulling 
+ Image babahdigital/sobigidul_backend:latest Pulling 
+ Image babahdigital/sobigidul_backend:latest Pulled 
+ Image babahdigital/sobigidul_frontend:latest Pulled 
+==> Ensure db/redis running for migration...
+ Container hotspot_prod_postgres_db Running 
+ Container hotspot_prod_redis_cache Running 
+==> Ensure backup dir permissions...
+ Container hotspot-portal-prod-backups_init-run-8746ee5def84 Creating 
+ Container hotspot-portal-prod-backups_init-run-8746ee5def84 Created 
+==> Preflight Alembic drift check...
+ Container hotspot_prod_postgres_db Running 
+ Container hotspot_prod_postgres_db Waiting 
+ Container hotspot_prod_postgres_db Healthy 
+ Container hotspot-portal-prod-migrate-run-1f915a340cf0 Creating 
+ Container hotspot-portal-prod-migrate-run-1f915a340cf0 Created 
+INFO: Memuat env chain:
+ - /app/.env
+INFO: Berhasil memuat variabel lingkungan untuk Celery dari: /app/.env
+{"timestamp": "18-03-2026 18:24:43", "level": "INFO", "logger": "app", "message": "Setup logging selesai. Log Level: INFO", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:43", "level": "INFO", "logger": "app", "message": "Menginisialisasi ekstensi...", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:43", "level": "INFO", "logger": "app", "message": "CORS diinisialisasi untuk origins: ['https://lpsaring.babahdigital.net']", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:43", "level": "INFO", "logger": "app", "message": "Rate limiter diinisialisasi.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:43", "level": "INFO", "logger": "app", "message": "Koneksi Redis untuk OTP berhasil (Host: redis).", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:43", "level": "INFO", "logger": "app", "message": "Celery diinisialisasi dan dikaitkan dengan aplikasi Flask.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:43", "level": "INFO", "logger": "app", "message": "Pendaftaran ekstensi selesai.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:43", "level": "INFO", "logger": "app", "message": "Mendaftarkan blueprints...", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Blueprint 'auth' berhasil didaftarkan.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Blueprint 'packages_api' berhasil didaftarkan.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Blueprint 'transactions_api' berhasil didaftarkan.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Blueprint 'public_api' berhasil didaftarkan.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Blueprint 'user_profile_api' berhasil didaftarkan.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Blueprint 'user_data_api' berhasil didaftarkan.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Blueprint 'public_user_api' berhasil didaftarkan.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Blueprint 'public_promo_api' berhasil didaftarkan.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Blueprint 'komandan_api' berhasil didaftarkan.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Blueprint 'health' berhasil didaftarkan.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Blueprint 'telegram_api' berhasil didaftarkan.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Admin blueprint 'user_management_api' didaftarkan di '/api/admin'.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Admin blueprint 'package_management_api' didaftarkan di '/api/admin'.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Admin blueprint 'settings_management_api' didaftarkan di '/api/admin'.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Admin blueprint 'profile_management_api' didaftarkan di '/api/admin'.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Admin blueprint 'promo_management_api' didaftarkan di '/api/admin'.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Admin blueprint 'admin_api' didaftarkan di '/api/admin'.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Admin blueprint 'request_management_api' didaftarkan di '/api/admin'.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Admin blueprint 'action_log_api' didaftarkan di '/api/admin'.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Admin blueprint 'admin_metrics' didaftarkan di '/api/admin'.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Pendaftaran blueprints selesai.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Rute tes '/api/ping' telah didaftarkan.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Pendaftaran perintah CLI selesai.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:47", "level": "INFO", "logger": "app", "message": "Inisialisasi aplikasi 'hotspot_app' selesai untuk environment 'None'.", "request_id": "N/A_NoRequestCtx"}
+CURRENT_REV=20260315_add_user_device_host_tracking
+DRIFT_TARGET=20260302_alter_public_update_submission_role_fields
+DRIFT_DETECTED=0
+==> Run explicit migration (idempotent)...
+ Container hotspot_prod_postgres_db Running 
+ Container hotspot_prod_postgres_db Waiting 
+ Container hotspot_prod_postgres_db Healthy 
+ Container hotspot-portal-prod-migrate-run-b90f6960db84 Creating 
+ Container hotspot-portal-prod-migrate-run-b90f6960db84 Created 
+INFO: Memuat env chain:
+ - /app/.env
+INFO: Berhasil memuat variabel lingkungan untuk Celery dari: /app/.env
+{"timestamp": "18-03-2026 18:24:57", "level": "INFO", "logger": "app", "message": "Setup logging selesai. Log Level: INFO", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:57", "level": "INFO", "logger": "app", "message": "Menginisialisasi ekstensi...", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:57", "level": "INFO", "logger": "app", "message": "CORS diinisialisasi untuk origins: ['https://lpsaring.babahdigital.net']", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:57", "level": "INFO", "logger": "app", "message": "Rate limiter diinisialisasi.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:57", "level": "INFO", "logger": "app", "message": "Koneksi Redis untuk OTP berhasil (Host: redis).", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:57", "level": "INFO", "logger": "app", "message": "Celery diinisialisasi dan dikaitkan dengan aplikasi Flask.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:57", "level": "INFO", "logger": "app", "message": "Pendaftaran ekstensi selesai.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:24:57", "level": "INFO", "logger": "app", "message": "Mendaftarkan blueprints...", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:25:02", "level": "INFO", "logger": "app", "message": "Blueprint 'auth' berhasil didaftarkan.", "request_id": "N/A_NoRequestCtx"}
+{"timestamp": "18-03-2026 18:25:02", "level": "INFO", "logger": "app", "message": "Blueprint 'packages_api' berhasil didaftarkan.", "request_id": "N/A_NoRequestCtx"}

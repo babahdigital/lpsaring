@@ -1003,7 +1003,7 @@ def apply_device_binding_for_login(
         # Trigger instant DHCP upsert async task (fire-and-forget)
         if device.mac_address and device.ip_address:
             trigger_instant_dhcp_upsert_async(
-                user_id=user.id,
+                user=user,
                 mac_address=device.mac_address,
                 ip_address=device.ip_address,
             )
@@ -1202,7 +1202,7 @@ def reset_user_network_on_logout(user: User) -> Dict[str, Any]:
 
 
 def trigger_instant_dhcp_upsert_async(
-    user_id: int,
+    user: User,
     mac_address: Optional[str],
     ip_address: Optional[str],
 ) -> None:
@@ -1228,9 +1228,10 @@ def trigger_instant_dhcp_upsert_async(
         from app.extensions import celery_app
 
         dhcp_server_name = settings.get("dhcp_lease_server_name") or None
-        username_08 = format_to_local_phone(user_id) or str(user_id)
+        username_08 = format_to_local_phone(user.phone_number) or ""
+        user_id_str = str(user.id)
         date_str, time_str = get_app_date_time_strings(datetime.now(dt_timezone.utc))
-        comment = f"lpsaring|instant-dhcp|user={username_08}|uid={user_id}|date={date_str}|time={time_str}"
+        comment = f"lpsaring|instant-dhcp|user={username_08}|uid={user_id_str}|date={date_str}|time={time_str}"
 
         # Dispatch high-priority task (fire-and-forget, don't block)
         celery_app.send_task(
@@ -1241,11 +1242,11 @@ def trigger_instant_dhcp_upsert_async(
         )
         logger.debug(
             "Dispatched instant DHCP upsert task: user_id=%s mac=%s ip=%s",
-            user_id, mac_address, ip_address
+            user_id_str, mac_address, ip_address
         )
     except Exception as e:
         logger.warning(
             "Failed to dispatch instant DHCP upsert task: user_id=%s mac=%s ip=%s error=%s",
-            user_id, mac_address, ip_address, str(e)
+            str(user.id), mac_address, ip_address, str(e)
         )
 
