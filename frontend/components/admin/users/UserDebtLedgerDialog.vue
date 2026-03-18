@@ -15,6 +15,7 @@ interface User {
 interface ManualDebtItem {
   id: string
   debt_date: string | null
+  due_date: string | null
   amount_mb: number
   paid_mb: number
   remaining_mb: number
@@ -53,6 +54,48 @@ function formatDataSize(sizeInMB: number): string {
     return `${(sizeInMB / 1024).toLocaleString('id-ID', options)} GB`
 }
 
+/** Format ISO datetime → tanggal + waktu WIB/WITA lokal (UTC+8 Makassar) */
+function formatDatetimeLocal(isoStr: string | null | undefined): string {
+  if (!isoStr)
+    return '-'
+  try {
+    const d = new Date(isoStr)
+    if (Number.isNaN(d.getTime()))
+      return '-'
+    return d.toLocaleString('id-ID', {
+      timeZone: 'Asia/Makassar',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  }
+  catch {
+    return '-'
+  }
+}
+
+/** Format date string (YYYY-MM-DD) → tanggal saja */
+function formatDate(dateStr: string | null | undefined): string {
+  if (!dateStr)
+    return '-'
+  try {
+    const d = new Date(`${dateStr}T00:00:00+08:00`)
+    if (Number.isNaN(d.getTime()))
+      return '-'
+    return d.toLocaleDateString('id-ID', {
+      timeZone: 'Asia/Makassar',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    })
+  }
+  catch {
+    return '-'
+  }
+}
+
 function close() {
   emit('update:modelValue', false)
 }
@@ -60,7 +103,6 @@ function close() {
 function openPdf() {
   if (!props.user)
     return
-  // Open in new tab so admin can print or save as PDF.
   window.open(`/api/admin/users/${props.user.id}/debts/export?format=pdf`, '_blank', 'noopener')
 }
 
@@ -139,7 +181,7 @@ watch(
 </script>
 
 <template>
-  <VDialog :model-value="props.modelValue" max-width="900" persistent @update:model-value="close">
+  <VDialog :model-value="props.modelValue" max-width="1100" persistent @update:model-value="close">
     <VCard v-if="props.user">
       <VCardTitle class="pa-4 bg-primary rounded-t-lg">
         <div class="dialog-titlebar">
@@ -155,7 +197,7 @@ watch(
       </VCardTitle>
       <VDivider />
 
-      <AppPerfectScrollbar class="pa-5" style="max-height: 70vh;">
+      <AppPerfectScrollbar class="pa-5" style="max-height: 72vh;">
         <div class="d-flex flex-wrap gap-2 mb-4">
           <VChip size="small" label color="info" variant="tonal">
             {{ props.user.full_name }}
@@ -178,57 +220,97 @@ watch(
           Total item: <strong>{{ summary.total_items }}</strong> • Belum lunas: <strong>{{ summary.open_items }}</strong> • Lunas: <strong>{{ summary.paid_items }}</strong>
         </VAlert>
 
-        <VDataTable
-          :items="items"
-          :loading="loading"
-          density="compact"
-          item-key="id"
-          class="elevation-0"
-          hide-default-footer
-        >
-          <template #headers>
-            <tr>
-              <th>Tanggal</th>
-              <th class="text-end">Jumlah</th>
-              <th class="text-end">Dibayar</th>
-              <th class="text-end">Sisa</th>
-              <th>Status</th>
-              <th>Catatan</th>
-              <th class="text-end">Aksi</th>
-            </tr>
-          </template>
+        <!-- Tabel debt — horizontal scroll di layar kecil -->
+        <div class="debt-table-scroll">
+          <VDataTable
+            :items="items"
+            :loading="loading"
+            density="compact"
+            item-key="id"
+            class="debt-ledger-table elevation-0"
+            hide-default-footer
+          >
+            <template #headers>
+              <tr>
+                <th class="col-tanggal">Tanggal Utang</th>
+                <th class="col-dicatat">Dicatat Pada</th>
+                <th class="col-tempo">Jatuh Tempo</th>
+                <th class="text-end col-jumlah">Jumlah</th>
+                <th class="text-end col-dibayar">Dibayar</th>
+                <th class="col-status">Status</th>
+                <th class="col-catatan">Catatan</th>
+                <th class="text-end col-aksi">Aksi</th>
+              </tr>
+            </template>
 
-          <template #item="{ item }">
-            <tr>
-              <td>{{ item.debt_date || '-' }}</td>
-              <td class="text-end">{{ formatDataSize(Number(item.amount_mb || 0)) }}</td>
-              <td class="text-end">{{ formatDataSize(Number(item.paid_mb || 0)) }}</td>
-              <td class="text-end">{{ formatDataSize(Number(item.remaining_mb || 0)) }}</td>
-              <td>
-                <VChip :color="item.is_paid ? 'success' : 'warning'" size="x-small" label>
-                  {{ item.is_paid ? 'LUNAS' : 'BELUM LUNAS' }}
-                </VChip>
-              </td>
-              <td style="min-width: 220px;">{{ item.note || '' }}</td>
-              <td class="text-end" style="min-width: 90px;">
-                <VBtn
-                  v-if="item.is_paid !== true"
-                  size="x-small"
-                  variant="tonal"
-                  color="success"
-                  :loading="settlingId === item.id"
-                  @click="settleItem(item)"
-                >
-                  Lunasi
-                </VBtn>
-              </td>
-            </tr>
-          </template>
+            <template #item="{ item }">
+              <tr>
+                <!-- Tanggal utang (debt_date — tanggal billing) -->
+                <td class="col-tanggal text-no-wrap">
+                  {{ formatDate(item.debt_date) }}
+                </td>
+                <!-- Waktu pencatatan (created_at — datetime) -->
+                <td class="col-dicatat text-no-wrap text-caption text-medium-emphasis">
+                  {{ formatDatetimeLocal(item.created_at) }}
+                </td>
+                <!-- Jatuh tempo (due_date — opsional) -->
+                <td class="col-tempo text-no-wrap">
+                  <span v-if="item.due_date">
+                    <VChip
+                      size="x-small"
+                      :color="item.is_paid ? 'default' : 'error'"
+                      variant="tonal"
+                      label
+                    >
+                      {{ formatDate(item.due_date) }}
+                    </VChip>
+                  </span>
+                  <span v-else class="text-disabled text-caption">—</span>
+                </td>
+                <!-- Jumlah -->
+                <td class="text-end col-jumlah text-no-wrap">
+                  {{ formatDataSize(Number(item.amount_mb || 0)) }}
+                </td>
+                <!-- Dibayar -->
+                <td class="text-end col-dibayar text-no-wrap">
+                  {{ formatDataSize(Number(item.paid_mb || 0)) }}
+                </td>
+                <!-- Status + waktu dibayar -->
+                <td class="col-status">
+                  <div class="d-flex flex-column gap-1">
+                    <VChip :color="item.is_paid ? 'success' : 'warning'" size="x-small" label>
+                      {{ item.is_paid ? 'LUNAS' : 'BELUM LUNAS' }}
+                    </VChip>
+                    <span v-if="item.is_paid && item.paid_at" class="text-caption text-medium-emphasis text-no-wrap">
+                      {{ formatDatetimeLocal(item.paid_at) }}
+                    </span>
+                  </div>
+                </td>
+                <!-- Catatan -->
+                <td class="col-catatan">
+                  <span :title="item.note || ''" class="debt-note-cell">{{ item.note || '' }}</span>
+                </td>
+                <!-- Aksi -->
+                <td class="text-end col-aksi text-no-wrap">
+                  <VBtn
+                    v-if="item.is_paid !== true"
+                    size="x-small"
+                    variant="tonal"
+                    color="success"
+                    :loading="settlingId === item.id"
+                    @click="settleItem(item)"
+                  >
+                    Lunasi
+                  </VBtn>
+                </td>
+              </tr>
+            </template>
 
-          <template #no-data>
-            <div class="text-caption text-disabled pa-4">Tidak ada data.</div>
-          </template>
-        </VDataTable>
+            <template #no-data>
+              <div class="text-caption text-disabled pa-4">Tidak ada data.</div>
+            </template>
+          </VDataTable>
+        </div>
       </AppPerfectScrollbar>
 
       <VDivider />
@@ -274,6 +356,38 @@ watch(
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* Horizontal scroll container untuk tabel di layar kecil */
+.debt-table-scroll {
+  overflow-x: auto;
+  padding-block-end: 6px;
+}
+
+/* Lebar minimum agar tabel tidak terlalu sempit di desktop */
+.debt-ledger-table :deep(.v-table__wrapper > table),
+.debt-ledger-table :deep(table) {
+  min-width: 920px;
+  width: 100%;
+  table-layout: fixed;
+}
+
+/* Lebar kolom yang terdefinisi */
+.col-tanggal   { width: 110px; min-width: 100px; white-space: nowrap; }
+.col-dicatat   { width: 160px; min-width: 140px; white-space: nowrap; }
+.col-tempo     { width: 120px; min-width: 110px; white-space: nowrap; }
+.col-jumlah    { width: 100px; min-width:  90px; }
+.col-dibayar   { width: 100px; min-width:  90px; }
+.col-status    { width: 140px; min-width: 120px; }
+.col-catatan   { min-width: 160px; }
+.col-aksi      { width:  80px; min-width:  80px; }
+
+.debt-note-cell {
+  display: block;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (max-width: 600px) {

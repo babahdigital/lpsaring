@@ -1005,19 +1005,19 @@ useHead({ title: 'Riwayat Transaksi & Kuota' })
               <div v-else class="debt-ledger-scroll">
                 <VTable density="compact" class="debt-ledger-table">
                   <colgroup>
-                    <col style="width: 124px;">
+                    <col style="width: 130px;">
+                    <col style="width: 120px;">
+                    <col style="width: 120px;">
                     <col style="width: 110px;">
-                    <col style="width: 110px;">
-                    <col style="width: 110px;">
-                    <col style="width: 260px;">
-                    <col style="width: 110px;">
+                    <col style="width: 250px;">
+                    <col style="width: 120px;">
                   </colgroup>
                   <thead>
                     <tr>
                       <th class="text-no-wrap">Tanggal</th>
                       <th class="text-end text-no-wrap">Jumlah</th>
                       <th class="text-end text-no-wrap">Dibayar</th>
-                      <th class="text-end text-no-wrap">Sisa</th>
+                      <th class="text-no-wrap">Status</th>
                       <th class="text-no-wrap">Catatan</th>
                       <th class="text-end text-no-wrap">Aksi</th>
                     </tr>
@@ -1027,11 +1027,15 @@ useHead({ title: 'Riwayat Transaksi & Kuota' })
                       <td class="text-no-wrap">{{ formatDebtDate(it.debt_date) }}</td>
                       <td class="text-end text-no-wrap">{{ formatQuota(it.amount_mb) }}</td>
                       <td class="text-end text-no-wrap">{{ formatQuota(it.paid_mb) }}</td>
-                      <td class="text-end font-weight-medium text-no-wrap">{{ formatQuota(it.remaining_mb) }}</td>
+                      <td class="text-no-wrap">
+                        <VChip :color="it.is_paid ? 'success' : 'warning'" size="x-small" label>
+                          {{ it.is_paid ? 'LUNAS' : 'BELUM LUNAS' }}
+                        </VChip>
+                      </td>
                       <td class="debt-ledger-note">{{ it.note || '-' }}</td>
                       <td class="text-end text-no-wrap">
                         <VBtn
-                          v-if="it.remaining_mb > 0"
+                          v-if="!it.is_paid"
                           size="x-small"
                           color="warning"
                           variant="tonal"
@@ -1574,7 +1578,7 @@ useHead({ title: 'Riwayat Transaksi & Kuota' })
 
 /* VTable merender <div class="v-table__wrapper"><table>... */
 .debt-ledger-table :deep(.v-table__wrapper > table) {
-  min-width: 740px;
+  min-width: 820px;
   width: 100%;
   table-layout: fixed;
 }

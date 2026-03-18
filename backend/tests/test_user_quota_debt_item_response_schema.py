@@ -11,6 +11,7 @@ def test_user_quota_debt_item_response_schema_from_orm_allows_computed_fields_de
     debt = SimpleNamespace(
         id=uuid.uuid4(),
         debt_date=None,
+        due_date=None,
         amount_mb=123,
         paid_mb=0,
         # NOTE: remaining_mb is computed in routes; schema must not require it from ORM.
@@ -26,3 +27,4 @@ def test_user_quota_debt_item_response_schema_from_orm_allows_computed_fields_de
     assert payload["amount_mb"] == 123
     assert payload["paid_mb"] == 0
     assert payload["remaining_mb"] == 0
+    assert payload["due_date"] is None
