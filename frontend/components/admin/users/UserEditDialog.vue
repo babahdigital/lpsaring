@@ -93,7 +93,7 @@ interface AdminPackage {
 const adminPackages = ref<AdminPackage[]>([])
 const isPackagesLoading = ref(false)
 
-function getInitialFormData(): Partial<User & { add_gb: number | null, add_days: number | null, unlimited_time: boolean, debt_package_id: string | null, debt_date: string | null, debt_due_date: string | null, debt_note: string | null }> {
+function getInitialFormData(): Partial<User & { add_gb: number | null, add_days: number | null, unlimited_time: boolean, debt_package_id: string | null, debt_date: string | null, debt_note: string | null }> {
   return {
     full_name: '',
     phone_number: '',
@@ -116,7 +116,6 @@ function getInitialFormData(): Partial<User & { add_gb: number | null, add_days:
     unlimited_time: false,
     debt_package_id: null,
     debt_date: null,
-    debt_due_date: null,
     debt_note: null,
   }
 }
@@ -266,7 +265,6 @@ watch(() => props.user, (newUser) => {
       unlimited_time: Boolean((isEditingAdminOrSuper || newUser.is_unlimited_user) && !newUser.quota_expiry_date),
       debt_package_id: null,
       debt_date: null,
-      debt_due_date: null,
       debt_note: null,
       is_unlimited_user: isEditingAdminOrSuper || newUser.is_unlimited_user,
     })
@@ -277,12 +275,6 @@ watch(() => isDebtQuotaEnabled.value, (enabled) => {
   if (enabled === true) {
     if (formData.debt_date == null || String(formData.debt_date).trim() === '')
       formData.debt_date = getTodayYmd()
-    if (formData.debt_due_date == null || String(formData.debt_due_date).trim() === '') {
-      const base = formData.debt_date as string
-      const d = new Date(`${base}T00:00:00`)
-      d.setDate(d.getDate() + 30)
-      formData.debt_due_date = d.toISOString().slice(0, 10)
-    }
     fetchAdminPackages().catch(() => {})
   }
 })
@@ -336,9 +328,11 @@ const isInjectBlockedByDebt = computed(() => {
 
 const debtPackageOptions = computed(() => {
   return adminPackages.value
-    .filter(pkg => pkg.is_active === true && Number(pkg.data_quota_gb ?? 0) > 0)
+    .filter(pkg => pkg.is_active === true)
     .map(pkg => ({
-      title: `${pkg.name} — ${Number(pkg.data_quota_gb).toLocaleString('id-ID')} GB — Rp ${Number(pkg.price ?? 0).toLocaleString('id-ID')}`,
+      title: Number(pkg.data_quota_gb) === 0
+        ? `${pkg.name} — Unlimited — Rp ${Number(pkg.price ?? 0).toLocaleString('id-ID')}`
+        : `${pkg.name} — ${Number(pkg.data_quota_gb).toLocaleString('id-ID')} GB — Rp ${Number(pkg.price ?? 0).toLocaleString('id-ID')}`,
       value: pkg.id,
     }))
 })
@@ -557,7 +551,6 @@ async function onSave() {
     if (isDebtQuotaEnabled.value !== true) {
       payload.debt_package_id = null
       payload.debt_date = null
-      payload.debt_due_date = null
       payload.debt_note = null
     }
 
@@ -585,7 +578,6 @@ async function onSave() {
       // Debt tidak berlaku untuk komandan
       payload.debt_package_id = null
       payload.debt_date = null
-      payload.debt_due_date = null
       payload.debt_note = null
     }
     else {
@@ -981,15 +973,9 @@ function openQuotaHistoryPdf() {
                       </VCol>
 
                       <VCol cols="12" md="6">
-                        <AppDateTimePicker
-                          v-model="formData.debt_due_date"
-                          label="Jatuh Tempo (opsional, default +30 hari)"
-                          placeholder="Pilih tanggal jatuh tempo"
-                          prepend-inner-icon="tabler-calendar-due"
-                          density="comfortable"
-                          hide-details
-                          :config="{ dateFormat: 'Y-m-d', enableTime: false, static: false, position: 'below' }"
-                        />
+                        <VAlert type="info" variant="tonal" density="compact" icon="tabler-calendar-due" class="text-caption">
+                          Jatuh tempo: <strong>akhir bulan</strong> (otomatis)
+                        </VAlert>
                       </VCol>
 
                       <VCol cols="12">

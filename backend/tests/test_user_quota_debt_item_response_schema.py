@@ -15,6 +15,7 @@ def test_user_quota_debt_item_response_schema_from_orm_allows_computed_fields_de
         amount_mb=123,
         paid_mb=0,
         # NOTE: remaining_mb is computed in routes; schema must not require it from ORM.
+        price_rp=None,
         is_paid=False,
         paid_at=None,
         note=None,
@@ -28,4 +29,5 @@ def test_user_quota_debt_item_response_schema_from_orm_allows_computed_fields_de
     assert payload["paid_mb"] == 0
     assert payload["remaining_mb"] == 0
     assert payload["due_date"] is None
+    assert payload["price_rp"] is None
     assert payload["estimated_rp"] == 0

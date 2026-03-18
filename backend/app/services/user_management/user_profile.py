@@ -1,7 +1,8 @@
 # backend/app/services/user_management/user_profile.py
 
+import calendar
 from typing import Tuple, Dict, Any, Optional
-from datetime import datetime, timezone as dt_timezone, timedelta
+from datetime import datetime, date, timezone as dt_timezone, timedelta
 from flask import current_app
 from werkzeug.security import generate_password_hash
 from sqlalchemy import select, or_
@@ -535,26 +536,33 @@ def update_user_by_admin_comprehensive(
                 pkg_quota_gb = float(getattr(pkg, "data_quota_gb", 0) or 0.0)
             except (TypeError, ValueError):
                 pkg_quota_gb = 0.0
-            if pkg_quota_gb <= 0:
-                return False, "Paket debt harus memiliki kuota (GB) > 0.", None
 
-            debt_add_mb_pkg = int(round(pkg_quota_gb * 1024))
+            is_unlimited_pkg = pkg_quota_gb <= 0
+            debt_add_mb_pkg = 1 if is_unlimited_pkg else int(round(pkg_quota_gb * 1024))
+            pkg_quota_str = "Unlimited" if is_unlimited_pkg else f"{pkg_quota_gb:g} GB"
             note = data.get("debt_note")
             pkg_note = (
                 f"Paket: {getattr(pkg, 'name', '') or ''} "
-                f"({pkg_quota_gb:g} GB, Rp {int(getattr(pkg, 'price', 0) or 0):,})"
+                f"({pkg_quota_str}, Rp {int(getattr(pkg, 'price', 0) or 0):,})"
             )
             merged_note = pkg_note
             if isinstance(note, str) and note.strip():
                 merged_note = f"{pkg_note} | {note.strip()}"
+
+            # Auto-compute due_date as last day of the debt month
+            _debt_date_raw = data.get("debt_date")
+            _debt_date = _debt_date_raw if isinstance(_debt_date_raw, date) else date.today()
+            _last_day = calendar.monthrange(_debt_date.year, _debt_date.month)[1]
+            _auto_due_date = _debt_date.replace(day=_last_day)
 
             ok_debt, msg_debt, _entry = debt_service.add_manual_debt(
                 user=target_user,
                 admin_actor=admin_actor,
                 amount_mb=debt_add_mb_pkg,
                 debt_date=data.get("debt_date"),
-                due_date=data.get("debt_due_date"),
+                due_date=_auto_due_date,
                 note=merged_note,
+                price_rp=int(getattr(pkg, "price", 0) or 0) or None,
             )
             if not ok_debt:
                 return False, msg_debt, None

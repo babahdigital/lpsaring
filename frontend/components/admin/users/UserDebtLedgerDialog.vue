@@ -19,6 +19,7 @@ interface ManualDebtItem {
   is_paid: boolean
   paid_at: string | null
   note: string | null
+  price_rp: number | null
   estimated_rp: number
   created_at: string
   last_paid_source?: string | null
@@ -117,6 +118,18 @@ function isDueDateOverdue(dateStr: string | null | undefined): boolean {
   catch {
     return false
   }
+}
+
+/** Tampilkan hanya nama paket dari note format "Paket: Nama Paket (... GB, Rp ...)" */
+function parsePackageName(note: string | null | undefined): string | null {
+  if (!note)
+    return null
+  const prefix = 'Paket: '
+  if (!note.startsWith(prefix))
+    return note
+  const rest = note.slice(prefix.length)
+  const parenIdx = rest.indexOf(' (')
+  return parenIdx > 0 ? rest.slice(0, parenIdx) : rest
 }
 
 function close() {
@@ -255,7 +268,7 @@ watch(
                 <th class="col-tempo">Jatuh Tempo</th>
                 <th class="text-end col-kuota">Kuota</th>
                 <th class="col-paket">Paket / Info</th>
-                <th class="text-end col-harga">Harga (est.)</th>
+                <th class="text-end col-harga">Harga</th>
                 <th class="col-status">Status</th>
                 <th class="text-center col-aksi">Aksi</th>
               </tr>
@@ -292,16 +305,16 @@ watch(
                 <!-- Paket / Info (note) -->
                 <td class="col-paket">
                   <span
-                    v-if="item.note"
-                    :title="item.note"
+                    v-if="parsePackageName(item.note)"
+                    :title="item.note ?? undefined"
                     class="debt-note-cell text-caption"
-                  >{{ item.note }}</span>
+                  >{{ parsePackageName(item.note) }}</span>
                   <span v-else class="text-disabled text-caption">—</span>
                 </td>
 
                 <!-- Harga estimasi -->
                 <td class="text-end col-harga text-no-wrap">
-                  <span class="text-caption">{{ formatRupiah(item.estimated_rp) }}</span>
+                  <span class="text-caption">{{ formatRupiah(item.price_rp ?? item.estimated_rp) }}</span>
                 </td>
 
                 <!-- Status + waktu dibayar -->
@@ -324,6 +337,7 @@ watch(
                     variant="tonal"
                     color="success"
                     prepend-icon="tabler-check"
+                    class="px-3"
                     :loading="settlingId === item.id"
                     @click="settleItem(item)"
                   >

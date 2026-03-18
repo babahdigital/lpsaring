@@ -69,6 +69,7 @@ def add_manual_debt(
     debt_date: Optional[date] = None,
     due_date: Optional[date] = None,
     note: Optional[str] = None,
+    price_rp: Optional[int] = None,
 ) -> Tuple[bool, str, Optional[UserQuotaDebt]]:
     lock_user_quota_row(user)
     before_state = snapshot_user_quota_state(user)
@@ -90,6 +91,7 @@ def add_manual_debt(
     entry.due_date = due_date
     entry.amount_mb = amount_int
     entry.paid_mb = 0
+    entry.price_rp = int(price_rp) if price_rp is not None and price_rp > 0 else None
     entry.is_paid = False
     entry.note = note.strip() if isinstance(note, str) and note.strip() else None
     db.session.add(entry)
