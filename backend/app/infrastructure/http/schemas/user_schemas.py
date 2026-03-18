@@ -160,6 +160,7 @@ class UserUpdateByAdminSchema(BaseModel):
     )
     debt_add_mb: Optional[int] = Field(None, ge=0, description="Tambah hutang kuota manual dalam MB")
     debt_date: Optional[date] = Field(None, description="Tanggal hutang (opsional)")
+    debt_due_date: Optional[date] = Field(None, description="Jatuh tempo tunggakan (opsional, default 30 hari dari debt_date)")
     debt_note: Optional[str] = Field(None, max_length=500)
     debt_clear: Optional[bool] = Field(None, description="Lunasi/clear semua debt (otomatis + manual) menjadi 0")
 
@@ -514,6 +515,7 @@ class UserQuotaDebtItemResponseSchema(BaseModel):
     is_paid: bool
     paid_at: Optional[datetime] = None
     note: Optional[str] = None
+    estimated_rp: int = 0
     created_at: datetime
     updated_at: datetime
     last_paid_source: Optional[str] = None

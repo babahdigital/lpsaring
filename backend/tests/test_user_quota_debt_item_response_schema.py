@@ -28,3 +28,4 @@ def test_user_quota_debt_item_response_schema_from_orm_allows_computed_fields_de
     assert payload["paid_mb"] == 0
     assert payload["remaining_mb"] == 0
     assert payload["due_date"] is None
+    assert payload["estimated_rp"] == 0

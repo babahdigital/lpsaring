@@ -296,6 +296,7 @@ function formatQuota(mbValue: number | null | undefined): string {
 interface QuotaDebtItem {
   id: string
   debt_date: string | null
+  due_date: string | null
   amount_mb: number
   paid_mb: number
   remaining_mb: number
@@ -348,6 +349,39 @@ function formatDebtDate(dateStr: string | null | undefined): string {
   }
   catch {
     return '-'
+  }
+}
+
+/** Format due_date (YYYY-MM-DD) sebagai "18 Apr 2026, 23:59" (akhir hari WITA) */
+function formatDueDate(dateStr: string | null | undefined): string {
+  if (!dateStr)
+    return ''
+  try {
+    const d = new Date(`${dateStr}T23:59:00+08:00`)
+    if (Number.isNaN(d.getTime()))
+      return dateStr
+    return d.toLocaleString('id-ID', {
+      timeZone: 'Asia/Makassar',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  }
+  catch {
+    return dateStr
+  }
+}
+
+function isDueDateOverdue(dateStr: string | null | undefined): boolean {
+  if (!dateStr)
+    return false
+  try {
+    return new Date(`${dateStr}T23:59:00+08:00`) < new Date()
+  }
+  catch {
+    return false
   }
 }
 
@@ -1006,33 +1040,46 @@ useHead({ title: 'Riwayat Transaksi & Kuota' })
                 <VTable density="compact" class="debt-ledger-table">
                   <colgroup>
                     <col style="width: 130px;">
-                    <col style="width: 120px;">
-                    <col style="width: 120px;">
+                    <col style="width: 155px;">
                     <col style="width: 110px;">
-                    <col style="width: 250px;">
-                    <col style="width: 120px;">
+                    <col style="width: 110px;">
+                    <col style="width: 110px;">
                   </colgroup>
                   <thead>
                     <tr>
-                      <th class="text-no-wrap">Tanggal</th>
-                      <th class="text-end text-no-wrap">Jumlah</th>
-                      <th class="text-end text-no-wrap">Dibayar</th>
+                      <th class="text-no-wrap">Dicatat Pada</th>
+                      <th class="text-no-wrap">Jatuh Tempo</th>
+                      <th class="text-end text-no-wrap">Kuota</th>
                       <th class="text-no-wrap">Status</th>
-                      <th class="text-no-wrap">Catatan</th>
                       <th class="text-end text-no-wrap">Aksi</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr v-for="it in quotaDebtItems" :key="it.id">
-                      <td class="text-no-wrap">{{ formatDebtDate(it.debt_date) }}</td>
-                      <td class="text-end text-no-wrap">{{ formatQuota(it.amount_mb) }}</td>
-                      <td class="text-end text-no-wrap">{{ formatQuota(it.paid_mb) }}</td>
+                      <td class="text-no-wrap text-caption text-medium-emphasis">
+                        {{ formatDebtDate(it.created_at) }}
+                      </td>
+                      <td class="text-no-wrap">
+                        <span v-if="it.due_date">
+                          <VChip
+                            size="x-small"
+                            :color="it.is_paid ? 'default' : (isDueDateOverdue(it.due_date) ? 'error' : 'warning')"
+                            variant="tonal"
+                            label
+                          >
+                            {{ formatDueDate(it.due_date) }}
+                          </VChip>
+                        </span>
+                        <span v-else class="text-disabled text-caption">Belum ditetapkan</span>
+                      </td>
+                      <td class="text-end text-no-wrap font-weight-medium">
+                        {{ formatQuota(it.amount_mb) }}
+                      </td>
                       <td class="text-no-wrap">
                         <VChip :color="it.is_paid ? 'success' : 'warning'" size="x-small" label>
                           {{ it.is_paid ? 'LUNAS' : 'BELUM LUNAS' }}
                         </VChip>
                       </td>
-                      <td class="debt-ledger-note">{{ it.note || '-' }}</td>
                       <td class="text-end text-no-wrap">
                         <VBtn
                           v-if="!it.is_paid"
@@ -1049,7 +1096,7 @@ useHead({ title: 'Riwayat Transaksi & Kuota' })
                       </td>
                     </tr>
                     <tr v-if="quotaDebtItems.length === 0">
-                      <td colspan="6" class="text-center text-medium-emphasis py-3">
+                      <td colspan="5" class="text-center text-medium-emphasis py-3">
                         Tidak ada hutang manual yang belum lunas.
                       </td>
                     </tr>
@@ -1578,15 +1625,9 @@ useHead({ title: 'Riwayat Transaksi & Kuota' })
 
 /* VTable merender <div class="v-table__wrapper"><table>... */
 .debt-ledger-table :deep(.v-table__wrapper > table) {
-  min-width: 820px;
+  min-width: 615px;
   width: 100%;
   table-layout: fixed;
-}
-
-.debt-ledger-note {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .payment-method-label {

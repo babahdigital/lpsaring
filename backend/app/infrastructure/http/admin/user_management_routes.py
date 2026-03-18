@@ -704,6 +704,19 @@ def get_user_manual_debts(current_admin: User, user_id: uuid.UUID):
             )
         ).all()
 
+        # Fetch all active packages once for price estimation (sorted cheapest first)
+        ref_packages = db.session.scalars(
+            select(Package)
+            .where(Package.is_active == True, Package.data_quota_gb > 0)
+            .order_by(Package.price.asc())
+        ).all()
+
+        def _pick_ref_pkg(amount_mb: int):
+            for p in ref_packages:
+                if float(p.data_quota_gb or 0) * 1024 >= amount_mb:
+                    return p
+            return ref_packages[0] if ref_packages else None
+
         items = []
         open_count = 0
         paid_count = 0
@@ -717,11 +730,20 @@ def get_user_manual_debts(current_admin: User, user_id: uuid.UUID):
             else:
                 open_count += 1
 
+            ref_pkg = _pick_ref_pkg(amount)
+            est = estimate_debt_rp_from_cheapest_package(
+                debt_mb=float(amount),
+                cheapest_package_price_rp=int(ref_pkg.price) if ref_pkg else None,
+                cheapest_package_quota_gb=float(ref_pkg.data_quota_gb) if ref_pkg else None,
+                cheapest_package_name=str(ref_pkg.name) if ref_pkg else None,
+            )
+
             payload = UserQuotaDebtItemResponseSchema.from_orm(d).model_dump()
             payload["remaining_mb"] = int(remaining)
             payload["is_paid"] = bool(is_paid)
             payload["paid_mb"] = int(paid_mb)
             payload["amount_mb"] = int(amount)
+            payload["estimated_rp"] = int(est.estimated_rp_rounded or 0)
             items.append(payload)
 
         return jsonify(

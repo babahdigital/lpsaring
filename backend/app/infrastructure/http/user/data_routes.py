@@ -366,6 +366,7 @@ def get_my_quota_debts(current_user_id):
                 {
                     "id": str(it.id),
                     "debt_date": it.debt_date.isoformat() if it.debt_date else None,
+                    "due_date": it.due_date.isoformat() if it.due_date else None,
                     "amount_mb": amount_mb,
                     "paid_mb": paid_mb,
                     "remaining_mb": remaining_mb,

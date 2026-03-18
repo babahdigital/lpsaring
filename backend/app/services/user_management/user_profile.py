@@ -553,7 +553,7 @@ def update_user_by_admin_comprehensive(
                 admin_actor=admin_actor,
                 amount_mb=debt_add_mb_pkg,
                 debt_date=data.get("debt_date"),
-                due_date=data.get("due_date"),
+                due_date=data.get("debt_due_date"),
                 note=merged_note,
             )
             if not ok_debt:
@@ -642,7 +642,7 @@ def update_user_by_admin_comprehensive(
                 admin_actor=admin_actor,
                 amount_mb=debt_add_mb,
                 debt_date=data.get("debt_date"),
-                due_date=data.get("due_date"),
+                due_date=data.get("debt_due_date"),
                 note=data.get("debt_note"),
             )
             if not ok_debt:
