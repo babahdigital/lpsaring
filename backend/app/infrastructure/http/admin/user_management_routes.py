@@ -756,6 +756,9 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
         return jsonify({"message": "Item debt tidak ditemukan."}), HTTPStatus.NOT_FOUND
 
     try:
+        # Snapshot for notifikasi
+        debt_manual_before = int(getattr(user, "quota_debt_manual_mb", 0) or 0)
+
         paid_mb = user_debt_service.settle_manual_debt_item_to_zero(
             user=user,
             admin_actor=current_admin,
@@ -763,6 +766,32 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
             source="admin_settle_item",
         )
         db.session.commit()
+
+        # Notify user via WhatsApp (best-effort) - untuk pembayaran sebagian
+        try:
+            if paid_mb > 0:
+                remaining_manual_debt = max(0, debt_manual_before - int(paid_mb))
+                purchased_now = float(getattr(user, "total_quota_purchased_mb", 0) or 0)
+                used_now = float(getattr(user, "total_quota_used_mb", 0) or 0)
+                remaining_quota_mb = max(0.0, purchased_now - used_now)
+                quota_expiry = getattr(user, "total_quota_until", None)
+
+                _send_whatsapp_notification(
+                    user.phone_number,
+                    "user_debt_partial_payment",
+                    {
+                        "full_name": user.full_name,
+                        "paid_manual_debt_mb": int(paid_mb),
+                        "remaining_manual_debt_mb": remaining_manual_debt,
+                        "remaining_quota_mb": float(remaining_quota_mb),
+                        "expiry_date": quota_expiry.strftime("%d-%m-%Y") if quota_expiry else "—",
+                    },
+                )
+        except Exception as e:
+            current_app.logger.warning(
+                "Gagal mengirim notifikasi pembayaran partial debt user %s: %s", user.id, e
+            )
+
         return jsonify({"message": "Debt berhasil dilunasi.", "paid_mb": int(paid_mb)}), HTTPStatus.OK
     except Exception as e:
         db.session.rollback()
