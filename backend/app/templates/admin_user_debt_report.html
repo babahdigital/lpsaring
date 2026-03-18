@@ -46,12 +46,13 @@
         margin-top: 10px;
       }
 
-      col.date { width: 18%; }
-      col.amount { width: 14%; }
-      col.paid { width: 14%; }
-      col.remaining { width: 14%; }
-      col.status { width: 14%; }
-      col.note { width: 26%; }
+      col.date { width: 15%; }
+      col.duedate { width: 15%; }
+      col.amount { width: 12%; }
+      col.paid { width: 12%; }
+      col.remaining { width: 12%; }
+      col.status { width: 11%; }
+      col.note { width: 23%; }
 
       th, td {
         border: 1px solid #d8dee9;
@@ -121,7 +122,7 @@
             <div class="muted">Rp {{ fmt_rp(debt_total_estimated_rp) }}</div>
           </div>
         </div>
-        <div class="muted mt-6">Satuan otomatis KB/MB/GB (1 GB = 1024 MB)</div>
+        <div class="muted mt-6">Kuota ditampilkan KB/MB/GB (1 GB = 1024 MB); nilai GB selalu 2 desimal.</div>
         <div class="muted">Estimasi Rupiah dihitung pro-rata berdasarkan paket termurah aktif: {{ estimate_base_package_name or '-' }}.</div>
       </div>
     </div>
@@ -129,6 +130,7 @@
     <table>
       <colgroup>
         <col class="date">
+        <col class="duedate">
         <col class="amount">
         <col class="paid">
         <col class="remaining">
@@ -138,6 +140,7 @@
       <thead>
         <tr>
           <th class="nowrap">Tanggal Debt</th>
+          <th class="nowrap">Jatuh Tempo</th>
           <th class="right nowrap">Jumlah</th>
           <th class="right nowrap">Dibayar</th>
           <th class="right nowrap">Sisa</th>
@@ -150,6 +153,7 @@
           {% for it in items %}
             <tr>
               <td class="nowrap">{{ it.debt_date_display or it.debt_date or '-' }}</td>
+              <td class="nowrap">{{ it.due_date_display or it.due_date or '-' }}</td>
               <td class="right nowrap">{{ fmt_quota(it.amount_mb) }}</td>
               <td class="right nowrap">{{ fmt_quota(it.paid_mb) }}</td>
               <td class="right nowrap">{{ fmt_quota(it.remaining_mb) }}</td>
@@ -165,7 +169,7 @@
           {% endfor %}
         {% else %}
           <tr>
-            <td colspan="6" class="muted">Tidak ada riwayat debt manual.</td>
+            <td colspan="7" class="muted">Tidak ada riwayat debt manual.</td>
           </tr>
         {% endif %}
       </tbody>

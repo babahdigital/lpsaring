@@ -72,6 +72,18 @@ def round_mb(value: float, precision: str = "0.01") -> float:
         return float(value)
 
 
+def format_mb_to_gb(value_mb: float, decimals: int = 2) -> str:
+    """Convert MB to GB format dengan 2 decimal places (e.g., '10.50 GB')."""
+    try:
+        value_mb = float(value_mb)
+        gb_value = value_mb / 1024.0
+        # Round to specified decimals
+        format_str = f"{{:.{decimals}f}}"
+        return f"{format_str.format(gb_value)} GB"
+    except Exception:
+        return "0.00 GB"
+
+
 def normalize_to_e164(phone_number: str) -> str:
     """
     Menormalisasi nomor telepon menjadi format E.164.

@@ -63,6 +63,7 @@ from app.utils.formatters import (
     get_phone_number_variations,
     normalize_to_e164,
     round_mb,
+    format_mb_to_gb,
 )
 from app.utils.quota_debt import (
     compute_debt_mb,
@@ -1478,16 +1479,14 @@ def _build_auto_debt_limit_notification_payload(user: User, *, debt_mb: float, l
     )
     estimate_rp = estimated_debt.estimated_rp_rounded
     estimate_rp_text = format_rupiah(int(estimate_rp)) if isinstance(estimate_rp, int) else "-"
-    debt_mb_text = str(int(round(float(debt_mb or 0))))
-    limit_mb_text = str(int(round(float(limit_mb or 0))))
 
     return {
         "full_name": str(getattr(user, "full_name", "") or "Pengguna"),
         "phone_number": str(getattr(user, "phone_number", "") or "").strip(),
-        "debt_mb": debt_mb_text,
+        "debt_gb": format_mb_to_gb(debt_mb),
         "estimated_rp": estimate_rp_text,
         "base_package_name": base_package_name,
-        "limit_mb": limit_mb_text,
+        "limit_gb": format_mb_to_gb(limit_mb),
     }
 
 
@@ -1601,7 +1600,7 @@ def _send_auto_debt_limit_warning_notification(user: User, *, debt_mb: float, li
     if not _should_send_auto_debt_warning_notification(redis_client, user_id=user.id, warning_key=warning_key):
         return
 
-    payload["warning_threshold_mb"] = str(int(round(warning_threshold)))
+    payload["warning_threshold_gb"] = f"{(warning_threshold / 1024.0):.2f} GB"
 
     try:
         message = get_notification_message("user_quota_debt_warning", payload)

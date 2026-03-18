@@ -67,6 +67,7 @@ def add_manual_debt(
     admin_actor: Optional[User],
     amount_mb: int,
     debt_date: Optional[date] = None,
+    due_date: Optional[date] = None,
     note: Optional[str] = None,
 ) -> Tuple[bool, str, Optional[UserQuotaDebt]]:
     lock_user_quota_row(user)
@@ -86,6 +87,7 @@ def add_manual_debt(
     entry.user_id = user.id
     entry.created_by_id = getattr(admin_actor, "id", None)
     entry.debt_date = debt_date
+    entry.due_date = due_date
     entry.amount_mb = amount_int
     entry.paid_mb = 0
     entry.is_paid = False

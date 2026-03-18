@@ -61,9 +61,8 @@ def _format_quota_text(value_mb: Optional[float], *, signed: bool = False) -> Op
     if value < 1:
         return f"{sign}{int(round(value * 1024))} KB"
     if value >= 1024:
-        gb_value = round(value / 1024, 2)
-        text = f"{gb_value:.2f}".rstrip("0").rstrip(".")
-        return f"{sign}{text} GB"
+        gb_value = value / 1024.0
+        return f"{sign}{gb_value:.2f} GB"
     return f"{sign}{int(round(value))} MB"
 
 

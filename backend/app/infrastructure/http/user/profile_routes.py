@@ -252,6 +252,19 @@ def bind_current_device(current_user_id):
     if not client_ip:
         client_ip = None
 
+    # session_mac_token: base64-JSON token dari sessionStorage browser (MAC randomization fallback).
+    # Jika tersedia dan dapat di-decode, ekstrak session_mac_fallback (MAC asli user).
+    session_mac_token = str(payload.get("session_mac_token") or "").strip() or None
+    session_mac_fallback = None
+    if session_mac_token:
+        try:
+            import json as _json
+            import base64 as _base64
+            _tok_data = _json.loads(_base64.b64decode(session_mac_token))
+            session_mac_fallback = str(_tok_data.get("mac") or "").strip() or None
+        except Exception:
+            session_mac_token = None
+
     best_effort_raw = request.args.get("best_effort") or request.args.get("best-effort")
     best_effort = str(best_effort_raw).lower() in {"1", "true", "yes", "y", "on"}
 
@@ -276,6 +289,8 @@ def bind_current_device(current_user_id):
         user_agent,
         client_mac,
         bypass_explicit_auth=True,
+        session_mac_token=session_mac_token,
+        session_mac_fallback=session_mac_fallback,
     )
 
     if not ok:

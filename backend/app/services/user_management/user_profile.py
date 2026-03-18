@@ -553,6 +553,7 @@ def update_user_by_admin_comprehensive(
                 admin_actor=admin_actor,
                 amount_mb=debt_add_mb_pkg,
                 debt_date=data.get("debt_date"),
+                due_date=data.get("due_date"),
                 note=merged_note,
             )
             if not ok_debt:
@@ -616,6 +617,7 @@ def update_user_by_admin_comprehensive(
                         "total_manual_debt_mb": int(total_manual_debt_mb),
                         "total_manual_debt_gb": f"{(float(total_manual_debt_mb) / 1024.0):.2f}",
                         "auto_debt_deducted_mb": int(auto_deducted_mb),
+                        "auto_debt_deducted_gb": f"{(float(auto_deducted_mb) / 1024.0):.2f} GB",
                         "effective_quota_mb": int(effective_quota_mb),
                         "effective_quota_gb": f"{(float(effective_quota_mb) / 1024.0):.2f} GB",
                     },
@@ -640,6 +642,7 @@ def update_user_by_admin_comprehensive(
                 admin_actor=admin_actor,
                 amount_mb=debt_add_mb,
                 debt_date=data.get("debt_date"),
+                due_date=data.get("due_date"),
                 note=data.get("debt_note"),
             )
             if not ok_debt:
@@ -701,6 +704,7 @@ def update_user_by_admin_comprehensive(
                         "total_manual_debt_mb": int(total_manual_debt_mb),
                         "total_manual_debt_gb": f"{(float(total_manual_debt_mb) / 1024.0):.2f}",
                         "auto_debt_deducted_mb": int(auto_deducted_mb),
+                        "auto_debt_deducted_gb": f"{(float(auto_deducted_mb) / 1024.0):.2f} GB",
                         "effective_quota_mb": int(effective_quota_mb),
                         "effective_quota_gb": f"{(float(effective_quota_mb) / 1024.0):.2f} GB",
                     },

@@ -177,7 +177,7 @@ def _format_quota_display(value_mb: Any) -> str:
         return str(value_mb or "-")
     if parsed >= 1024:
         value_gb = parsed / 1024.0
-        return f"{value_gb:.2f}".rstrip("0").rstrip(".") + " GB"
+        return f"{value_gb:.2f} GB"
     if float(parsed).is_integer():
         return f"{int(parsed)} MB"
     return f"{parsed:.2f} MB"

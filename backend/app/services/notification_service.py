@@ -51,8 +51,6 @@ def _format_quota_human_readable(remaining_mb: Any) -> str:
         return f"{value_mb:.2f} MB"
 
     value_gb = value_mb / 1024.0
-    if value_gb.is_integer():
-        return f"{int(value_gb)} GB"
     return f"{value_gb:.2f} GB"
 
 

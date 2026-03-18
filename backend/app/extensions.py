@@ -169,6 +169,10 @@ def make_celery_app(app=None):
             "task": "enforce_end_of_month_debt_block_task",
             "schedule": 3600,
         },
+        "send-manual-debt-reminders": {
+            "task": "send_manual_debt_reminders_task",
+            "schedule": 1800,  # setiap 30 menit — cukup presisi untuk window 3 jam
+        },
         "expire-stale-transactions": {
             "task": "expire_stale_transactions_task",
             "schedule": 60,

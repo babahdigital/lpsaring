@@ -598,6 +598,7 @@ export const useAuthStore = defineStore('auth', () => {
     clientIp?: string | null
     clientMac?: string | null
     bestEffort?: boolean
+    sessionMacToken?: string | null
   }
 
   async function verifyOtpForCaptive(phoneNumber: string, otpCode: string, clientInfo?: CaptiveClientInfo): Promise<CaptiveVerifyResult> {
@@ -667,6 +668,7 @@ export const useAuthStore = defineStore('auth', () => {
 
     const clientIp = String(options.clientIp ?? resolvedIdentity.clientIp ?? '').trim()
     const clientMac = String(options.clientMac ?? resolvedIdentity.clientMac ?? '').trim()
+    const sessionMacToken = String(options.sessionMacToken ?? '').trim()
     const requestKey = JSON.stringify({
       bestEffort: options.bestEffort === true,
       clientIp,
@@ -686,6 +688,8 @@ export const useAuthStore = defineStore('auth', () => {
           body.client_ip = clientIp
         if (clientMac)
           body.client_mac = clientMac
+        if (sessionMacToken)
+          body.session_mac_token = sessionMacToken
 
         const query = options.bestEffort === true
           ? { best_effort: 'true' }

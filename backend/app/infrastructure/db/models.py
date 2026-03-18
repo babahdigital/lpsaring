@@ -444,6 +444,7 @@ class UserQuotaDebt(db.Model):
     )
 
     debt_date: Mapped[Optional[datetime.date]] = mapped_column(Date, nullable=True)
+    due_date: Mapped[Optional[datetime.date]] = mapped_column(Date, nullable=True)
     amount_mb: Mapped[int] = mapped_column(BigInteger(), nullable=False)
     paid_mb: Mapped[int] = mapped_column(BigInteger(), nullable=False, default=0, server_default="0")
     is_paid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=expression.false())

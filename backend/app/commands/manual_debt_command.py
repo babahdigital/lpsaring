@@ -39,6 +39,7 @@ def _parse_date(value: Optional[str]) -> Optional[date]:
 @click.option("--package-id", default=None, help="UUID paket untuk menentukan besaran debt (ambil data_quota_gb).")
 @click.option("--amount-mb", type=int, default=0, help="Besaran debt manual (MB). Contoh: 10240=10GB.")
 @click.option("--debt-date", default=None, help="Tanggal debt (YYYY-MM-DD). Default: kosong.")
+@click.option("--due-date", default=None, help="Tanggal jatuh tempo (YYYY-MM-DD). Digunakan untuk reminder notifikasi.")
 @click.option("--note", default=None, help="Catatan (opsional).")
 @click.option("--admin-id", default=None, help="UUID admin actor (opsional; untuk created_by_id).")
 @click.option("--apply/--dry-run", default=False, show_default=True, help="Apply perubahan ke DB atau hanya simulasi.")
@@ -48,6 +49,7 @@ def add_manual_debt_command(
     package_id: Optional[str],
     amount_mb: int,
     debt_date: Optional[str],
+    due_date: Optional[str],
     note: Optional[str],
     admin_id: Optional[str],
     apply: bool,
@@ -73,6 +75,7 @@ def add_manual_debt_command(
     pkg_uuid = _parse_uuid(package_id, label="package-id")
     admin_uuid = _parse_uuid(admin_id, label="admin-id")
     debt_date_val = _parse_date(debt_date)
+    due_date_val = _parse_date(due_date)
 
     if pkg_uuid and amount_mb and amount_mb > 0:
         raise click.ClickException("Gunakan salah satu: --package-id atau --amount-mb (jangan keduanya).")
@@ -114,6 +117,7 @@ def add_manual_debt_command(
         admin_actor=admin_actor,
         amount_mb=resolved_amount_mb,
         debt_date=debt_date_val,
+        due_date=due_date_val,
         note=resolved_note,
     )
     if not ok or not entry:

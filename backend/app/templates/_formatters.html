@@ -10,7 +10,7 @@
     Output is dynamic KB/MB/GB with base 1024:
       - < 1 MB => KB (rounded)
       - 1..1023 MB => MB (rounded)
-      - >= 1024 MB => GB (up to 2 decimals, trimmed if .00)
+      - >= 1024 MB => GB (selalu 2 desimal, mis. 2.00 GB / 1.50 GB)
   #}
   {%- if a < (1 / 1024) -%}
     {{- sign -}}0 KB
@@ -18,13 +18,8 @@
     {%- set kb = a * 1024 -%}
     {{- sign -}}{{ kb | round(0, 'common') | int }} KB
   {%- elif a >= 1024 -%}
-    {%- set gb = a / 1024 -%}
-    {%- set gb2 = gb | round(2, 'common') -%}
-    {%- if gb2 == (gb2 | round(0, 'common')) -%}
-      {{- sign -}}{{ gb2 | round(0, 'common') | int }} GB
-    {%- else -%}
-      {{- sign -}}{{ gb2 }} GB
-    {%- endif -%}
+    {%- set gb_str = "%.2f" % (a / 1024) -%}
+    {{- sign -}}{{ gb_str }} GB
   {%- else -%}
     {{- sign -}}{{ a | round(0, 'common') | int }} MB
   {%- endif -%}

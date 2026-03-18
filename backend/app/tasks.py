@@ -35,6 +35,7 @@ from app.infrastructure.db.models import (
     TransactionStatus,
     User,
     UserDevice,
+    UserQuotaDebt,
     UserRole,
 )
 from app.infrastructure.gateways.mikrotik_client import (
@@ -1302,6 +1303,141 @@ def _parse_mikrotik_duration_seconds(value: str) -> int:
 
 
 @celery_app.task(
+    name="send_manual_debt_reminders_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 2},
+)
+def send_manual_debt_reminders_task(self):
+    """Kirim pengingat tunggakan manual 3 tahap: 3 hari, 1 hari, dan 3 jam sebelum due_date.
+
+    Setiap tahap hanya dikirim sekali per debt (dedup via Redis).
+    Task berjalan setiap 30 menit via Celery beat.
+    """
+    app = create_app()
+    with app.app_context():
+        enable_wa = settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") == "True"
+        if not enable_wa:
+            return {"skipped": "whatsapp_disabled"}
+
+        try:
+            app_tz_offset = int(app.config.get("APP_TIMEZONE_OFFSET", 8))
+        except Exception:
+            app_tz_offset = 8
+        app_tz = dt_timezone(timedelta(hours=app_tz_offset))
+        now_local = datetime.now(app_tz)
+        redis_client = getattr(app, "redis_client_otp", None)
+
+        try:
+            from sqlalchemy.orm import joinedload as _joinedload
+
+            debts = (
+                db.session.query(UserQuotaDebt)
+                .options(_joinedload(UserQuotaDebt.user))
+                .filter(
+                    UserQuotaDebt.is_paid == False,  # noqa: E712
+                    UserQuotaDebt.due_date.isnot(None),
+                )
+                .all()
+            )
+        except Exception:
+            logger.exception("send_manual_debt_reminders: gagal query debts")
+            return {"error": "query_failed"}
+
+        summary = {"checked": 0, "sent": 0, "skipped_dedup": 0, "skipped_past": 0, "failed": 0}
+
+        # (stage_key, min_hours_inclusive, max_hours_exclusive, template_key)
+        _STAGES = [
+            ("3h", 0.0, 6.0, "user_manual_debt_reminder_3hours"),
+            ("1d", 18.0, 30.0, "user_manual_debt_reminder_1day"),
+            ("3d", 60.0, 84.0, "user_manual_debt_reminder_3days"),
+        ]
+
+        for debt in debts:
+            user = debt.user
+            if not user:
+                continue
+            if not (getattr(user, "is_approved", False) and getattr(user, "is_active", False)):
+                continue
+            summary["checked"] += 1
+
+            due_date = debt.due_date
+            if due_date is None:
+                continue  # sudah difilter di query, guard untuk type checker
+            # Jatuh tempo = akhir hari (23:59:59) waktu lokal
+            due_dt = datetime(due_date.year, due_date.month, due_date.day, 23, 59, 59, tzinfo=app_tz)
+            diff = due_dt - now_local
+            diff_hours = diff.total_seconds() / 3600.0
+
+            if diff_hours < 0:
+                summary["skipped_past"] += 1
+                continue
+
+            debt_gb_text = f"{float(debt.amount_mb) / 1024.0:.2f} GB"
+            due_date_str = due_date.strftime("%d-%m-%Y")
+
+            for stage_key, min_h, max_h, template_key in _STAGES:
+                if not (min_h <= diff_hours < max_h):
+                    continue
+
+                redis_key = f"debt_reminder:{debt.id}:{stage_key}"
+                if redis_client:
+                    try:
+                        if redis_client.exists(redis_key):
+                            summary["skipped_dedup"] += 1
+                            continue
+                    except Exception:
+                        pass  # Redis error: lanjut kirim (better over-send than miss)
+
+                try:
+                    msg = get_notification_message(
+                        template_key,
+                        {
+                            "full_name": getattr(user, "full_name", ""),
+                            "debt_gb": debt_gb_text,
+                            "due_date": due_date_str,
+                        },
+                    )
+                    phone = getattr(user, "phone_number", "")
+                    sent = bool(send_whatsapp_message(phone, msg))
+                    if sent:
+                        summary["sent"] += 1
+                        if redis_client:
+                            try:
+                                ttl = max(3600, int(diff.total_seconds()) + 86400)
+                                redis_client.setex(redis_key, ttl, "1")
+                            except Exception:
+                                pass
+                    else:
+                        summary["failed"] += 1
+                        logger.warning(
+                            "send_manual_debt_reminders: gagal kirim WA %s ke user=%s debt=%s",
+                            stage_key,
+                            getattr(user, "id", "?"),
+                            debt.id,
+                        )
+                except Exception:
+                    summary["failed"] += 1
+                    logger.exception(
+                        "send_manual_debt_reminders: exception saat kirim %s untuk debt %s",
+                        stage_key,
+                        debt.id,
+                    )
+
+        logger.info(
+            "send_manual_debt_reminders summary: checked=%s sent=%s skipped_dedup=%s skipped_past=%s failed=%s",
+            summary["checked"],
+            summary["sent"],
+            summary["skipped_dedup"],
+            summary["skipped_past"],
+            summary["failed"],
+        )
+        return summary
+
+
+@celery_app.task(
     name="enforce_end_of_month_debt_block_task",
     bind=True,
     autoretry_for=(Exception,),
@@ -1429,6 +1565,7 @@ def enforce_end_of_month_debt_block_task(self):
             estimate_rp_text = format_rupiah(int(estimate_rp)) if isinstance(estimate_rp, int) else "-"
 
             debt_mb_text = str(int(round(debt_mb)))
+            debt_gb_text = f"{float(debt_mb) / 1024.0:.2f} GB"
 
             warned_ok = True
             if enable_wa:
@@ -1438,7 +1575,7 @@ def enforce_end_of_month_debt_block_task(self):
                         {
                             "full_name": user.full_name,
                             "phone_number": user.phone_number,
-                            "debt_mb": debt_mb_text,
+                            "debt_gb": debt_gb_text,
                             "estimated_rp": estimate_rp_text,
                             "base_package_name": base_pkg_name,
                         },
@@ -1544,7 +1681,7 @@ def enforce_end_of_month_debt_block_task(self):
                         {
                             "full_name": user.full_name,
                             "phone_number": user.phone_number,
-                            "debt_mb": debt_mb_text,
+                            "debt_gb": debt_gb_text,
                             "estimated_rp": estimate_rp_text,
                             "base_package_name": base_pkg_name,
                         },

@@ -319,20 +319,35 @@ def auto_login_impl(
         }
 
         if not user and resolved_mac and auto_login_require_authorized_device:
-            _log_auto_login_decision(
-                reason_code="UNAUTHORIZED_DEVICE_REQUIRES_OTP",
-                http_status=HTTPStatus.UNAUTHORIZED,
-                client_ip_value=client_ip,
-                client_mac_value=client_mac,
-                resolved_mac_value=resolved_mac,
-                level="warning",
-                details="resolved MAC has no authorized device ownership",
-            )
-            return jsonify(
-                AuthErrorResponseSchema(
-                    error="Perangkat ini belum diotorisasi. Silakan login OTP terlebih dahulu."
-                ).model_dump()
-            ), HTTPStatus.UNAUTHORIZED
+            # MAC randomization fallback: router mungkin melihat MAC acak baru,
+            # coba cari user via session_mac_fallback (MAC asli tersimpan di sessionStorage browser).
+            if session_mac_fallback and session_mac_fallback != resolved_mac:
+                fallback_device = device_query.filter(
+                    UserDevice.mac_address == session_mac_fallback
+                ).first()
+                if fallback_device and getattr(fallback_device, "user", None):
+                    user = fallback_device.user
+                    current_app.logger.info(
+                        "Auto-login MAC fallback resolved: router_mac=%s session_mac=%s user_id=%s",
+                        resolved_mac,
+                        session_mac_fallback,
+                        getattr(user, "id", None),
+                    )
+            if not user:
+                _log_auto_login_decision(
+                    reason_code="UNAUTHORIZED_DEVICE_REQUIRES_OTP",
+                    http_status=HTTPStatus.UNAUTHORIZED,
+                    client_ip_value=client_ip,
+                    client_mac_value=client_mac,
+                    resolved_mac_value=resolved_mac,
+                    level="warning",
+                    details="resolved MAC has no authorized device ownership",
+                )
+                return jsonify(
+                    AuthErrorResponseSchema(
+                        error="Perangkat ini belum diotorisasi. Silakan login OTP terlebih dahulu."
+                    ).model_dump()
+                ), HTTPStatus.UNAUTHORIZED
 
         def _resolve_user_from_trusted_token() -> tuple[Any, Any]:
             auth_header = request.headers.get("Authorization")

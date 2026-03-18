@@ -507,6 +507,7 @@ class MonthlyUsageResponse(BaseModel):
 class UserQuotaDebtItemResponseSchema(BaseModel):
     id: uuid.UUID
     debt_date: Optional[date] = None
+    due_date: Optional[date] = None
     amount_mb: int
     paid_mb: int
     remaining_mb: int = 0

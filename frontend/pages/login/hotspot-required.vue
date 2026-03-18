@@ -596,6 +596,7 @@ async function activateInternetOneClick(options: { allowBridgeRoundtrip?: boolea
       clientIp: identity.clientIp || null,
       clientMac: identity.clientMac || null,
       bestEffort: true,
+      sessionMacToken: sessionMacToken.value || null,
     })
 
     triggerHotspotProbe()

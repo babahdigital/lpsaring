@@ -27,7 +27,7 @@ from app.infrastructure.http.schemas.user_schemas import (
     UserQuotaDebtItemResponseSchema,
 )
 from app.services.user_management import user_debt as user_debt_service
-from app.utils.formatters import get_phone_number_variations, round_mb
+from app.utils.formatters import get_phone_number_variations, format_mb_to_gb
 
 from app.infrastructure.db.models import UserQuotaDebt
 
@@ -790,9 +790,9 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
                     "user_debt_partial_payment",
                     {
                         "full_name": user.full_name,
-                        "paid_manual_debt_mb": int(paid_mb),
-                        "remaining_manual_debt_mb": remaining_manual_debt,
-                        "remaining_quota_mb": int(round_mb(remaining_quota_mb)),
+                        "paid_manual_debt_gb": format_mb_to_gb(paid_mb),
+                        "remaining_manual_debt_gb": format_mb_to_gb(remaining_manual_debt),
+                        "remaining_quota_gb": format_mb_to_gb(remaining_quota_mb),
                         "expiry_date": expiry_date_str,
                     },
                 )
@@ -865,10 +865,10 @@ def settle_all_debts(current_admin: User, user_id: uuid.UUID):
                     template_key,
                     {
                         "full_name": user.full_name,
-                        "paid_auto_debt_mb": int(paid_auto_mb),
-                        "paid_manual_debt_mb": int(paid_manual_mb),
-                        "paid_total_debt_mb": int(paid_total_mb),
-                        "remaining_quota": f"{int(round_mb(remaining_mb))} MB",
+                        "paid_auto_debt_gb": format_mb_to_gb(paid_auto_mb),
+                        "paid_manual_debt_gb": format_mb_to_gb(paid_manual_mb),
+                        "paid_total_debt_gb": format_mb_to_gb(paid_total_mb),
+                        "remaining_quota": format_mb_to_gb(remaining_mb),
                     },
                 )
         except Exception as e:
@@ -933,6 +933,13 @@ def export_user_manual_debts_pdf(current_admin: User, user_id: uuid.UUID):
                     raw = str(payload.get("debt_date"))
                     if len(raw) >= 10 and raw[4] == "-" and raw[7] == "-":
                         payload["debt_date_display"] = f"{raw[8:10]}-{raw[5:7]}-{raw[0:4]}"
+            except Exception:
+                pass
+            try:
+                due_date_val = getattr(d, "due_date", None)
+                if due_date_val:
+                    payload["due_date_display"] = due_date_val.strftime("%d-%m-%Y")
+                    payload["due_date"] = str(due_date_val)
             except Exception:
                 pass
             payload["remaining_mb"] = int(remaining)
