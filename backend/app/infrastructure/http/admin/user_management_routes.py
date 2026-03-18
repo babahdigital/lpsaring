@@ -27,7 +27,7 @@ from app.infrastructure.http.schemas.user_schemas import (
     UserQuotaDebtItemResponseSchema,
 )
 from app.services.user_management import user_debt as user_debt_service
-from app.utils.formatters import get_phone_number_variations
+from app.utils.formatters import get_phone_number_variations, round_mb
 
 from app.infrastructure.db.models import UserQuotaDebt
 
@@ -776,6 +776,15 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
                 remaining_quota_mb = max(0.0, purchased_now - used_now)
                 quota_expiry = getattr(user, "total_quota_until", None)
 
+                # Format expiry_date dengan fallback untuk NULL value
+                if quota_expiry:
+                    try:
+                        expiry_date_str = quota_expiry.strftime("%d-%m-%Y")
+                    except Exception:
+                        expiry_date_str = "Belum ditentukan"
+                else:
+                    expiry_date_str = "Belum ditentukan"
+
                 _send_whatsapp_notification(
                     user.phone_number,
                     "user_debt_partial_payment",
@@ -783,8 +792,8 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
                         "full_name": user.full_name,
                         "paid_manual_debt_mb": int(paid_mb),
                         "remaining_manual_debt_mb": remaining_manual_debt,
-                        "remaining_quota_mb": float(remaining_quota_mb),
-                        "expiry_date": quota_expiry.strftime("%d-%m-%Y") if quota_expiry else "—",
+                        "remaining_quota_mb": int(round_mb(remaining_quota_mb)),
+                        "expiry_date": expiry_date_str,
                     },
                 )
         except Exception as e:
@@ -859,7 +868,7 @@ def settle_all_debts(current_admin: User, user_id: uuid.UUID):
                         "paid_auto_debt_mb": int(paid_auto_mb),
                         "paid_manual_debt_mb": int(paid_manual_mb),
                         "paid_total_debt_mb": int(paid_total_mb),
-                        "remaining_mb": float(remaining_mb),
+                        "remaining_quota": f"{int(round_mb(remaining_mb))} MB",
                     },
                 )
         except Exception as e:
