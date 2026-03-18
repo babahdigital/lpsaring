@@ -14,6 +14,7 @@ interface User {
 
 interface ManualDebtItem {
   id: string
+  debt_date: string | null
   due_date: string | null
   amount_mb: number
   is_paid: boolean
@@ -130,6 +131,21 @@ function parsePackageName(note: string | null | undefined): string | null {
   const rest = note.slice(prefix.length)
   const parenIdx = rest.indexOf(' (')
   return parenIdx > 0 ? rest.slice(0, parenIdx) : rest
+}
+
+/**
+ * Kembalikan due_date yang efektif.
+ * Jika due_date sudah ada gunakan itu; jika null, hitung hari terakhir bulan dari debt_date.
+ * Ini sebagai fallback untuk record lama sebelum auto-compute due_date diterapkan.
+ */
+function getEffectiveDueDate(debtDate: string | null | undefined, dueDate: string | null | undefined): string | null {
+  if (dueDate)
+    return dueDate
+  if (!debtDate)
+    return null
+  const d = new Date(`${debtDate}T00:00:00`)
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0)
+  return lastDay.toISOString().slice(0, 10)
 }
 
 function close() {
@@ -283,15 +299,15 @@ watch(
 
                 <!-- Jatuh Tempo (due_date) dengan jam 23:59 WITA -->
                 <td class="col-tempo text-no-wrap">
-                  <span v-if="item.due_date">
+                  <span v-if="getEffectiveDueDate(item.debt_date, item.due_date)">
                     <VChip
                       size="x-small"
-                      :color="item.is_paid ? 'default' : (isDueDateOverdue(item.due_date) ? 'error' : 'warning')"
+                      :color="item.is_paid ? 'default' : (isDueDateOverdue(getEffectiveDueDate(item.debt_date, item.due_date)) ? 'error' : 'warning')"
                       variant="tonal"
                       label
                     >
-                      <VIcon start size="10" :icon="isDueDateOverdue(item.due_date) && !item.is_paid ? 'tabler-alert-triangle' : 'tabler-calendar-due'" />
-                      {{ formatDueDate(item.due_date) }}
+                      <VIcon start size="10" :icon="isDueDateOverdue(getEffectiveDueDate(item.debt_date, item.due_date)) && !item.is_paid ? 'tabler-alert-triangle' : 'tabler-calendar-due'" />
+                      {{ formatDueDate(getEffectiveDueDate(item.debt_date, item.due_date)) }}
                     </VChip>
                   </span>
                   <span v-else class="text-disabled text-caption">Belum ditetapkan</span>

@@ -385,6 +385,17 @@ function isDueDateOverdue(dateStr: string | null | undefined): boolean {
   }
 }
 
+/** Fallback: jika due_date null, hitung hari terakhir bulan dari debt_date */
+function getEffectiveDueDate(debtDate: string | null | undefined, dueDate: string | null | undefined): string | null {
+  if (dueDate)
+    return dueDate
+  if (!debtDate)
+    return null
+  const d = new Date(`${debtDate}T00:00:00`)
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0)
+  return lastDay.toISOString().slice(0, 10)
+}
+
 const DEFAULT_QUOTA_HISTORY_ITEMS_PER_PAGE = 25
 const MAX_QUOTA_HISTORY_FILTER_DAYS = 90
 const DEFAULT_QUOTA_HISTORY_RANGE_PRESET: FixedHistoryRangePreset = '30d'
@@ -1060,14 +1071,14 @@ useHead({ title: 'Riwayat Transaksi & Kuota' })
                         {{ formatDebtDate(it.created_at) }}
                       </td>
                       <td class="text-no-wrap">
-                        <span v-if="it.due_date">
+                        <span v-if="getEffectiveDueDate(it.debt_date, it.due_date)">
                           <VChip
                             size="x-small"
-                            :color="it.is_paid ? 'default' : (isDueDateOverdue(it.due_date) ? 'error' : 'warning')"
+                            :color="it.is_paid ? 'default' : (isDueDateOverdue(getEffectiveDueDate(it.debt_date, it.due_date)) ? 'error' : 'warning')"
                             variant="tonal"
                             label
                           >
-                            {{ formatDueDate(it.due_date) }}
+                            {{ formatDueDate(getEffectiveDueDate(it.debt_date, it.due_date)) }}
                           </VChip>
                         </span>
                         <span v-else class="text-disabled text-caption">Belum ditetapkan</span>
