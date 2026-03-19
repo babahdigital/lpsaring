@@ -51,4 +51,9 @@ export default [
     to: { path: '/admin/backup' },
     icon: { icon: 'tabler-database-export' },
   },
+  {
+    title: 'MikroTik',
+    to: { path: '/admin/mikrotik' },
+    icon: { icon: 'tabler-router' },
+  },
 ]

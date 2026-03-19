@@ -73,6 +73,7 @@ def _has_live_host_ip_signal(*, host_ip: Optional[str], resolved_ip: Optional[st
 def _is_auto_fixable(*, mismatches: list[str], mac: Optional[str], ip_address: Optional[str]) -> bool:
     mismatch_set = set(mismatches)
 
+    # no_authorized_device: self-heals saat user konek ulang ke hotspot. MAC baru tidak diketahui admin.
     if "no_authorized_device" in mismatch_set:
         return False
 
@@ -107,11 +108,11 @@ def _build_action_plan(
     if "no_authorized_device" in mismatch_set:
         actions.append(
             {
-                "action": "authorize_device_from_admin",
-                "mode": "manual",
+                "action": "wait_for_user_reconnect",
+                "mode": "informational",
                 "user_id": user_id,
                 "phone_number": phone_number,
-                "priority": "high",
+                "priority": "low",
             }
         )
 

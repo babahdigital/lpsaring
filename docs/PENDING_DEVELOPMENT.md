@@ -117,26 +117,29 @@ tapi **belum selesai penuh** atau **perlu tindakan lanjutan**. Update setiap kal
 
 ---
 
-### ⏳ Downgrade `no_authorized_device` Priority di Parity Guard
-**Status**: Belum diimplementasi.
-**Background**: Parity guard mark `no_authorized_device` sebagai `priority: "high"` / action `authorize_device_from_admin`.
-Ini misleading — sistem self-heals saat user konek ulang ke hotspot; admin tidak tahu MAC user sekarang.
-**Tindakan**: `access_parity_service.py` `_build_action_plan()` → ubah priority ke `low`, action ke `wait_for_user_reconnect`.
-**Impact**: Log parity guard lebih bersih; tidak ada false alarm "high priority" setiap 10 menit.
+### ✅ Downgrade `no_authorized_device` Priority di Parity Guard
+**Status**: SELESAI (20 Mar 2026, sesi ini)
+**File**: `backend/app/services/access_parity_service.py`
+**Perubahan**: `_build_action_plan()` — `priority: "high"` → `"low"`, `action: "authorize_device_from_admin"` → `"wait_for_user_reconnect"`, `mode: "manual"` → `"informational"`.
+Tambah komentar inline di `_is_auto_fixable()` untuk klarifikasi self-heal behavior.
 
 ---
 
-### ⏳ Admin UI Panel untuk `/api/admin/mikrotik/verify-rules`
-**Status**: Belum diimplementasi — endpoint backend sudah ada.
-**Tindakan**: Buat halaman/card di admin dashboard untuk menampilkan hasil verify-rules.
+### ✅ Admin UI Panel untuk `/api/admin/mikrotik/verify-rules`
+**Status**: SELESAI (20 Mar 2026, sesi ini)
+**File**: `frontend/pages/admin/mikrotik.vue` (baru), `frontend/navigation/horizontal/admin.ts`
+**Fitur**: Halaman `/admin/mikrotik` — verifikasi 4 forward chain firewall rules MikroTik.
+Responsive (2-col di md+, stacked di mobile). Chip status, VTable rules, panduan membaca hasil.
+Fix type: `MikrotikRuleCheck.rule/index` → `label/position` di `contracts.generated.ts`.
 
 ---
 
-### ⏳ Investigasi `skipped_not_allowed: 27-31`
-**Status**: Belum diinvestigasi.
-**Ditemukan**: Audit log dari `sync_unauthorized_hosts_task`.
-**Pertanyaan**: Apakah ada subnet host yang seharusnya masuk `MIKROTIK_UNAUTHORIZED_CIDRS` tapi tidak?
-**Tindakan**: Cek `/ip/hotspot/activity print` di MikroTik → lihat IP yang masuk `skipped_not_allowed`.
+### ❌ Investigasi `skipped_not_allowed: 27-31` — BY DESIGN
+**Status**: DIBATALKAN — perilaku ini disengaja.
+Host hotspot di luar `MIKROTIK_UNAUTHORIZED_CIDRS=['172.16.2.0/23']` memang di-skip oleh
+`sync_unauthorized_hosts_task`. Subnet manajemen atau VLAN lain tidak dimonitor karena tidak
+dalam scope guard. Bukan bug.
+Penjelasan sudah tersedia di Admin UI → halaman MikroTik (card "Panduan Membaca Hasil").
 
 ---
 
@@ -145,12 +148,15 @@ Ini misleading — sistem self-heals saat user konek ulang ke hotspot; admin tid
 
 ---
 
-### ⏳ MAC Randomization: Session-Storage Fallback Binding
-**Status**: Belum diimplementasi.
+### 🔍 MAC Randomization: Proactive Session Token (20 Mar 2026)
+**Status**: Deployed (sesi ini), **dalam pemantauan**.
 **Background**: Insiden `2026-03-07-mac-randomization-analisa-6282213631573.md`.
 **Yang sudah ada**: Deteksi LAA bit + warning dialog di `hotspot-required.vue`.
-**Yang belum**: Auto-binding via `session_mac_token` untuk device MAC randomization first-time.
-**Dampak aktual**: User `+6281255962309` (MAC `16:5B:A4:E2:9C:1F` = LAA) → `dhcp_lease_missing` loop aktif.
+**Fix diterapkan**: Proactive `session_mac_token` di `onMounted` — token di-set segera jika MAC
+terdeteksi randomized & belum ada session binding (sebelum bind pertama berhasil).
+File: `frontend/pages/login/hotspot-required.vue` (4 baris setelah `if (sessionBinding)` block).
+**Yang masih perlu dipantau**: User `+6281255962309` (MAC `16:5B:A4:E2:9C:1F` = LAA) — apakah
+`dhcp_lease_missing` loop berhenti setelah deploy.
 
 ---
 

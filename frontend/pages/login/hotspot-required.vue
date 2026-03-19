@@ -686,6 +686,12 @@ onMounted(async () => {
     }
   }
 
+  // Proactive session token untuk first-time randomized MAC (sebelum bind berhasil).
+  // Pastikan session_mac_token tersedia di query status probe pertama.
+  if (showMacRandomizationAlert.value && initialIdentity.clientMac && !sessionMacToken.value) {
+    const proactiveBinding = storeSessionMacBinding(initialIdentity.clientMac)
+    sessionMacToken.value = generateSessionMacToken(proactiveBinding)
+  }
 
   if (foreignHotspotContextMessage.value) {
     showFallbackLogin.value = false
