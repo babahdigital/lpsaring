@@ -21,31 +21,38 @@ tapi **belum selesai penuh** atau **perlu tindakan lanjutan**. Update setiap kal
 
 ## P0 — SEGERA (Ops Blocker)
 
-### ⚠️ Register Device untuk 5 User "no_authorized_device"
-**Ditemukan**: Audit 19 Mar 2026 via policy_parity_guard_task
-**Dikonfirmasi**: Live log 20 Mar 2026 — mismatch muncul setiap 10 menit
-**Akibat**: 5 user unlimited/active TIDAK BISA akses internet meski status aktif
-**Tindakan**: Admin login ke `/admin/users` → cari user berikut → tambah device MAC/IP
-
-User yang terdampak (dari log parity guard):
-- `+6285752083738` — status active, expected binding: bypassed, tidak punya device
-- `+6285751420446` — status unlimited, expected binding: bypassed, tidak punya device
-- `+6281528670170` — status unlimited, expected binding: bypassed, tidak punya device
-- `+6282294570374` — status unlimited, expected binding: bypassed, tidak punya device
-- `+6281348822424` — status unlimited, expected binding: bypassed, tidak punya device
-
-**Catatan**: `auto_fixable: false` — tidak bisa di-fix otomatis oleh parity guard.
+### ✅ Setup Settings Untuk Task Baru
+**Status**: SELESAI — ditambahkan ke `.env.prod` (20 Mar 2026, Session 5)
+- `AKSES_BANKING_ENABLED=True` → di `.env.prod` server
+- `ENABLE_OVERDUE_DEBT_BLOCK=True` → di `.env.prod` server
+- `AKSES_BANKING_DOMAINS` dikomen (tersedia, default 10 bank umum sudah cukup)
+- Trigger manual `sync_access_banking_task` akan berjalan besok jam 02:00 otomatis
+- **Tidak perlu settings DB** — `settings_service.get_setting(key, default)` fallback ke `os.environ` jika tidak ada di DB
 
 ---
 
-### ⚠️ Setup Settings DB Untuk Task Baru (Post-Deploy)
-**Aksi**: Setelah deploy sesi ini, buat settings di admin panel:
-- `AKSES_BANKING_ENABLED=True`
-- `AKSES_BANKING_DOMAINS` (opsional — default sudah include 10 bank umum)
-- `ENABLE_OVERDUE_DEBT_BLOCK=True`
-- Trigger manual `sync_access_banking_task` sekali untuk populate `Bypass_Server`
+### ℹ️ 5 User Tanpa Device Terdaftar — SELF-RESOLVE, Bukan Urgent
+**Ditemukan**: Audit 19 Mar 2026 via policy_parity_guard_task
+**Dikonfirmasi**: Live log 20 Mar 2026 — muncul setiap 10 menit di parity guard log
 
-**Catatan**: Beat schedule untuk kedua task sudah aktif; tapi task hanya eksekusi jika setting enabled.
+**Analisa root cause** (20 Mar 2026):
+- Parity guard flag `no_authorized_device` = user tidak punya device dengan `is_authorized=True` di DB
+- Ini kemungkinan besar user lama yang ganti HP/MAC (device lama tidak ter-authorized atau sudah dihapus)
+- `auto_fixable: false` — admin tidak bisa add device karena MAC baru tidak diketahui
+- **Tindakan admin "tambah MAC manual" TIDAK TEPAT** — admin tidak tahu MAC HP user saat ini
+
+**Perilaku sistem yang benar**:
+- User TETAP BISA login ke portal (`/login`) — tidak ada block di autentikasi
+- Saat user konek ke hotspot dengan HP barunya → MikroTik redirect → user login → device baru auto-register → parity guard otomatis fix binding di siklus berikutnya
+- **Sistem self-heal tanpa intervensi admin**
+
+User yang terdampak (hanya informatif):
+- `+6285752083738`, `+6285751420446`, `+6281528670170`, `+6282294570374`, `+6281348822424`
+
+**Tindakan yang perlu**: Informasikan ke user untuk konek via hotspot dan login ulang.
+
+**Future improvement**: Downgrade `no_authorized_device` priority dari `high` ke `low` di
+`access_parity_service.py` `_build_action_plan()` — agar tidak muncul sebagai alert prioritas tinggi.
 
 ---
 
@@ -140,6 +147,16 @@ User yang terdampak (dari log parity guard):
 
 ---
 
+### ⏳ Downgrade `no_authorized_device` Priority di Parity Guard
+**Status**: Belum diimplementasi
+**Background**: Parity guard saat ini mark `no_authorized_device` sebagai `priority: "high"` dengan
+action `authorize_device_from_admin`. Ini misleading — admin tidak tahu MAC user, dan sistem self-heals saat user konek ulang.
+**Tindakan**: Di `access_parity_service.py` `_build_action_plan()`, ubah priority ke `low` dan action ke
+`wait_for_user_reconnect` untuk kasus `no_authorized_device`.
+**Impact**: Parity guard log jadi lebih bersih; tidak ada false alarm "high priority" setiap 10 menit.
+
+---
+
 ### ⏳ Admin UI Panel untuk `/api/admin/mikrotik/verify-rules`
 **Status**: Belum diimplementasi — endpoint backend sudah ada
 **Tindakan**: Buat halaman/card di admin dashboard untuk menampilkan hasil verify-rules
@@ -177,7 +194,7 @@ User yang terdampak (dari log parity guard):
 
 ### Policy Parity Guard
 - Berjalan setiap 10 menit, duration ~156-174s untuk 89 user
-- 5 mismatch `no_authorized_device` perlu tindakan manual (lihat P0)
+- 5 user `no_authorized_device`: **self-resolve** — tidak butuh admin action, akan fix sendiri saat user konek ulang ke hotspot
 - `+6281255962309` (MAC randomization) → `dhcp_lease_missing` auto-fixable, akan normal setelah DHCP fix #39 deploy
 
 ### WA Debt Reminders
