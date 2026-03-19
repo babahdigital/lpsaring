@@ -2,7 +2,7 @@
 // AUTO-GENERATED FILE. DO NOT EDIT MANUALLY.
 // Source: contracts/openapi/openapi.v1.yaml
 
-export const OPENAPI_SOURCE_SHA256 = 'c6854bd6ff018244e4ad43ee93387b524ade5ca403fff9a091653a0019bebc77' as const
+export const OPENAPI_SOURCE_SHA256 = '8ad8f5a3fbae36d48f1745ff6387e435fded96a0931d7150935d70efca505233' as const
 export const API_CONTRACT_REVISION = 'openapi-1.0.0' as const
 
 export type MessageResponse = { message: string }
@@ -64,11 +64,6 @@ export type MikrotikRuleCheck = { rule: string; found: boolean; index?: number |
 export type MikrotikVerifyRulesResponse = { status: 'ok' | 'error'; all_found: boolean; order_ok: boolean; total_forward_rules: number; checks: Array<MikrotikRuleCheck> }
 
 export interface GeneratedApiContractMap {
-  'GET /admin/metrics': {
-    request: never
-    response: AdminMetricsResponse
-    error: ErrorResponse
-  }
   'GET /admin/metrics/access-parity': {
     request: never
     response: AdminAccessParityResponse
@@ -117,6 +112,11 @@ export interface GeneratedApiContractMap {
   'GET /admin/transactions/{order_id}/detail': {
     request: never
     response: TransactionDetailResponse
+    error: ErrorResponse
+  }
+  'GET /admin/transactions/{order_id}/reconcile': {
+    request: never
+    response: AdminMetricsResponse
     error: ErrorResponse
   }
   'POST /admin/transactions/{order_id}/reconcile': {
