@@ -60,6 +60,8 @@ export type AccessParitySummary = { users: number; mismatches: number }
 export type AdminAccessParityResponse = { items: Array<AccessParityItem>; summary: AccessParitySummary }
 export type AdminAccessParityFixRequest = { user_id: string; mac?: string | null; ip?: string | null }
 export type AdminAccessParityFixResponse = { message: string; user_id: string; mac?: string | null; resolved_ip?: string | null; expected_binding_type: string; binding_updated: boolean; address_list_synced: boolean }
+export type MikrotikRuleCheck = { rule: string; found: boolean; index?: number | null }
+export type MikrotikVerifyRulesResponse = { status: 'ok' | 'error'; all_found: boolean; order_ok: boolean; total_forward_rules: number; checks: Array<MikrotikRuleCheck> }
 
 export interface GeneratedApiContractMap {
   'GET /admin/metrics': {
@@ -75,6 +77,11 @@ export interface GeneratedApiContractMap {
   'POST /admin/metrics/access-parity/fix': {
     request: AdminAccessParityFixRequest
     response: AdminAccessParityFixResponse
+    error: ErrorResponse
+  }
+  'GET /admin/mikrotik/verify-rules': {
+    request: never
+    response: MikrotikVerifyRulesResponse
     error: ErrorResponse
   }
   'GET /admin/quota-requests': {

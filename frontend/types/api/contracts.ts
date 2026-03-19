@@ -70,3 +70,5 @@ export interface DeviceListResponseContract {
 export type TransactionDetailResponsePublicContract = import('./contracts.generated').TransactionDetailResponsePublic
 
 export type TransactionDebtInitiateRequestLegacyContract = TransactionDebtInitiateRequest
+
+export type MikrotikVerifyRulesResponseContract = import('./contracts.generated').MikrotikVerifyRulesResponse

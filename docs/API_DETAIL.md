@@ -69,6 +69,7 @@ Perubahan endpoint prioritas dianggap lengkap hanya jika keempat artefak berikut
 - `GET /admin/transactions`
 - `POST /admin/transactions/bill`
 - `GET /admin/transactions/{order_id}/detail`
+- `GET /admin/mikrotik/verify-rules`
 
 ## Pola Sinkronisasi
 

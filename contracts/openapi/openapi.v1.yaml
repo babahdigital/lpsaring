@@ -1171,6 +1171,29 @@ paths:
         '503':
           $ref: '#/components/responses/ErrorBadRequest'
 
+  /admin/mikrotik/verify-rules:
+    get:
+      tags: [AdminMikrotik]
+      summary: Verifikasi keberadaan dan urutan firewall filter rule kritis di MikroTik
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Hasil verifikasi rule MikroTik
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MikrotikVerifyRulesResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '502':
+          $ref: '#/components/responses/ErrorBadRequest'
+        '503':
+          $ref: '#/components/responses/ErrorBadRequest'
+
 components:
   securitySchemes:
     bearerAuth:
@@ -2202,3 +2225,33 @@ components:
           type: boolean
         address_list_synced:
           type: boolean
+
+    MikrotikRuleCheck:
+      type: object
+      required: [rule, found]
+      properties:
+        rule:
+          type: string
+        found:
+          type: boolean
+        index:
+          type: integer
+          nullable: true
+
+    MikrotikVerifyRulesResponse:
+      type: object
+      required: [status, all_found, order_ok, total_forward_rules, checks]
+      properties:
+        status:
+          type: string
+          enum: [ok, error]
+        all_found:
+          type: boolean
+        order_ok:
+          type: boolean
+        total_forward_rules:
+          type: integer
+        checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/MikrotikRuleCheck'
