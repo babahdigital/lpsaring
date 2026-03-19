@@ -429,6 +429,24 @@ onMounted(async () => {
     return
   if (await resumePendingHotspotBridge())
     return
+
+  // Jika user sudah login dan captive redirect membawa identity hotspot (client_ip / mac
+  // yang sudah lulus sanitize CIDR), langsung bind device tanpa perlu OTP ulang.
+  // Ini menyelesaikan kasus no_authorized_device untuk user yang sebelumnya login via OTP
+  // di luar hotspot, lalu kembali ke jaringan hotspot dan di-intercept MikroTik.
+  if (authStore.isLoggedIn && (portalParams.value.clientIp || portalParams.value.clientMac)) {
+    const ok = await authStore.authorizeDevice({
+      clientIp: portalParams.value.clientIp || undefined,
+      clientMac: portalParams.value.clientMac || undefined,
+      bestEffort: true,
+    })
+    if (ok) {
+      await navigateTo('/captive/terhubung', { replace: true })
+      return
+    }
+    // Jika gagal (mis. limit perangkat tercapai), lanjut ke form normal
+  }
+
   await refreshApiHealth()
 })
 </script>
