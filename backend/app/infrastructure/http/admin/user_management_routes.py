@@ -943,56 +943,65 @@ def settle_all_debts(current_admin: User, user_id: uuid.UUID):
 @user_management_bp.route("/mikrotik/verify-rules", methods=["GET"])
 @admin_required
 def verify_mikrotik_rules(current_admin: User):
-    """Verifikasi firewall filter rule kritis di MikroTik: keberadaan dan urutan yang benar."""
-    EXPECTED_RULES = [
-        {"chain": "forward", "action": "accept", "src-address-list": "klient_inactive", "dst-address-list": "Bypass_Server"},
-        {"chain": "forward", "action": "drop",   "src-address-list": "klient_inactive", "dst-address-list": "LOCAL_NETWORKS"},
-        {"chain": "forward", "action": "accept", "src-address-list": "klient_aktif"},
-        {"chain": "forward", "action": "accept", "src-address-list": "klient_fup"},
+    """Verifikasi rule firewall kritis di MikroTik.
+
+    Memeriksa rule pada tabel yang sesuai dengan arsitektur hotspot aktual:
+    - /ip/firewall/raw  → prerouting drop klient_inactive (src & dst)
+    - /ip/firewall/filter → hs-unauth return klient_aktif, klient_fup (src)
+    """
+    # _table: tabel RouterOS yang akan diquery ("raw" atau "filter")
+    # Sisa key adalah field yang harus cocok pada rule (semua harus ada & sama).
+    EXPECTED_RULES: list[dict] = [
+        {"_table": "raw",    "chain": "prerouting", "action": "drop",   "src-address-list": "klient_inactive"},
+        {"_table": "raw",    "chain": "prerouting", "action": "drop",   "dst-address-list": "klient_inactive"},
+        {"_table": "filter", "chain": "hs-unauth",  "action": "return", "src-address-list": "klient_aktif"},
+        {"_table": "filter", "chain": "hs-unauth",  "action": "return", "src-address-list": "klient_fup"},
     ]
 
-    all_rules = None
+    filter_rules: list[dict] | None = None
+    raw_rules: list[dict] | None = None
     try:
         with get_mikrotik_connection(raise_on_error=True) as api_conn:
             if not api_conn:
                 return jsonify({"status": "error", "message": "Koneksi MikroTik tidak tersedia."}), HTTPStatus.SERVICE_UNAVAILABLE
-            all_rules = api_conn.get_resource("/ip/firewall/filter").get()
+            filter_rules = api_conn.get_resource("/ip/firewall/filter").get()
+            raw_rules = api_conn.get_resource("/ip/firewall/raw").get()
     except Exception as e:
-        current_app.logger.error("Gagal mengambil firewall filter rules dari MikroTik: %s", e, exc_info=True)
+        current_app.logger.error("Gagal mengambil firewall rules dari MikroTik: %s", e, exc_info=True)
         return jsonify({"status": "error", "message": f"Gagal koneksi MikroTik: {str(e)}"}), HTTPStatus.SERVICE_UNAVAILABLE
 
-    if all_rules is None:
+    if filter_rules is None or raw_rules is None:
         return jsonify({"status": "error", "message": "Gagal membaca firewall rules dari MikroTik."}), HTTPStatus.SERVICE_UNAVAILABLE
 
-    def _matches(actual: dict, expected: dict) -> bool:
-        return all(actual.get(k, "") == v for k, v in expected.items())
+    rules_by_table: dict[str, list[dict]] = {
+        "filter": [r for r in filter_rules if r.get("disabled", "false") != "true"],
+        "raw":    [r for r in raw_rules    if r.get("disabled", "false") != "true"],
+    }
 
-    active_forward = [
-        r for r in (all_rules or [])
-        if r.get("chain") == "forward" and r.get("disabled", "false") != "true"
-    ]
+    def _matches(actual: dict, expected: dict) -> bool:
+        return all(actual.get(k, "") == v for k, v in expected.items() if not k.startswith("_"))
 
     checks = []
     for expected in EXPECTED_RULES:
-        pos = next((i for i, r in enumerate(active_forward) if _matches(r, expected)), -1)
-        label = (
-            f"forward {expected['action']} "
-            f"src={expected.get('src-address-list', '')} "
-            f"dst={expected.get('dst-address-list', '')}"
-        ).strip()
-        checks.append({"label": label, "found": pos >= 0, "position": pos})
+        table = expected["_table"]
+        pool = rules_by_table.get(table, [])
+        chain = expected.get("chain", "")
+        action = expected.get("action", "")
+        src = expected.get("src-address-list", "")
+        dst = expected.get("dst-address-list", "")
+        label = f"{table}/{chain} {action} src={src} dst={dst}".strip()
+        found = any(_matches(r, expected) for r in pool)
+        checks.append({"label": label, "found": found})
 
     all_found = all(c["found"] for c in checks)
-    order_ok = all_found and all(
-        checks[i]["position"] < checks[i + 1]["position"]
-        for i in range(len(checks) - 1)
-    )
+    active_filter_count = len(rules_by_table["filter"])
+    active_raw_count = len(rules_by_table["raw"])
 
     return jsonify({
-        "status": "ok" if (all_found and order_ok) else "error",
+        "status": "ok" if all_found else "error",
         "all_found": all_found,
-        "order_ok": order_ok,
-        "total_forward_rules": len(active_forward),
+        "total_filter_rules": active_filter_count,
+        "total_raw_rules": active_raw_count,
         "checks": checks,
     }), HTTPStatus.OK
 

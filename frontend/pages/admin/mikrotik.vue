@@ -33,16 +33,12 @@ watch(error, (e) => {
 
 function overallColor(d: MikrotikVerifyRulesResponseContract | null): string {
   if (!d) return 'default'
-  if (d.all_found && d.order_ok) return 'success'
-  if (!d.all_found) return 'error'
-  return 'warning'
+  return d.all_found ? 'success' : 'error'
 }
 
 function overallLabel(d: MikrotikVerifyRulesResponseContract | null): string {
   if (!d) return 'Belum diverifikasi'
-  if (d.all_found && d.order_ok) return 'Semua Rule OK & Urutan Benar'
-  if (!d.all_found) return 'Ada Rule yang Tidak Ditemukan'
-  return 'Rule Ada, Urutan Perlu Dicek'
+  return d.all_found ? 'Semua Rule Kritis Ditemukan' : 'Ada Rule Kritis yang Tidak Ditemukan'
 }
 </script>
 
@@ -107,7 +103,7 @@ function overallLabel(d: MikrotikVerifyRulesResponseContract | null): string {
               Verifikasi Firewall Rules
             </VCardTitle>
             <VCardSubtitle class="text-caption">
-              Keberadaan & urutan forward chain rule aktif di MikroTik
+              Keberadaan rule kritis di tabel raw & filter (hs-unauth) MikroTik
             </VCardSubtitle>
           </VCardItem>
 
@@ -141,12 +137,12 @@ function overallLabel(d: MikrotikVerifyRulesResponseContract | null): string {
                   all_found: {{ data.all_found ? 'Ya' : 'Tidak' }}
                 </VChip>
                 <VChip
-                  :color="data.order_ok ? 'success' : 'warning'"
+                  color="default"
                   variant="outlined"
                   label
                   size="x-small"
                 >
-                  order_ok: {{ data.order_ok ? 'Ya' : 'Tidak' }}
+                  Filter rules aktif: {{ data.total_filter_rules }}
                 </VChip>
                 <VChip
                   color="default"
@@ -154,7 +150,7 @@ function overallLabel(d: MikrotikVerifyRulesResponseContract | null): string {
                   label
                   size="x-small"
                 >
-                  Total forward rules: {{ data.total_forward_rules }}
+                  Raw rules aktif: {{ data.total_raw_rules }}
                 </VChip>
               </div>
 
@@ -178,12 +174,6 @@ function overallLabel(d: MikrotikVerifyRulesResponseContract | null): string {
                       >
                         Ditemukan
                       </th>
-                      <th
-                        class="text-center"
-                        style="width: 70px"
-                      >
-                        Posisi
-                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -203,9 +193,6 @@ function overallLabel(d: MikrotikVerifyRulesResponseContract | null): string {
                         >
                           {{ check.found ? 'Ya' : 'Tidak' }}
                         </VChip>
-                      </td>
-                      <td class="text-center text-caption py-2">
-                        {{ check.position >= 0 ? check.position : '—' }}
                       </td>
                     </tr>
                   </tbody>
@@ -280,9 +267,11 @@ function overallLabel(d: MikrotikVerifyRulesResponseContract | null): string {
                 Apa yang diverifikasi?
               </div>
               <p class="text-caption mb-0">
-                Endpoint ini memeriksa 4 <em>forward chain firewall rule</em> kritis:
-                keberadaannya di router MikroTik dan apakah urutannya sudah benar
-                sesuai kebijakan akses (klient_inactive → klient_aktif → klient_fup).
+                Memeriksa 4 rule kritis di dua tabel firewall MikroTik:
+                <strong>raw/prerouting</strong> — drop <code>klient_inactive</code> (src &amp; dst)
+                agar klien tidak aktif tidak bisa kirim atau terima traffic;
+                <strong>filter/hs-unauth</strong> — return <code>klient_aktif</code> dan <code>klient_fup</code>
+                agar klien yang sudah login dapat melewati portal hotspot.
               </p>
             </VAlert>
 
@@ -314,12 +303,8 @@ function overallLabel(d: MikrotikVerifyRulesResponseContract | null): string {
               </div>
               <p class="text-caption mb-0">
                 Jika <strong>all_found = Tidak</strong>: salah satu rule kritis hilang dari
-                firewall MikroTik. Tambahkan rule yang hilang via Winbox / SSH sesuai
-                panduan instalasi.
-              </p>
-              <p class="text-caption mt-1 mb-0">
-                Jika <strong>order_ok = Tidak</strong> tapi all_found = Ya: reorder rules
-                di MikroTik agar urutan prioritas akses sesuai.
+                firewall MikroTik. Tambahkan kembali rule yang dimaksud via Winbox / SSH
+                sesuai panduan instalasi (raw prerouting drop inactive, hs-unauth return aktif/fup).
               </p>
             </VAlert>
 
