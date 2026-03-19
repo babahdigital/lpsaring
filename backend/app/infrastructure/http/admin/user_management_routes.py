@@ -951,14 +951,18 @@ def verify_mikrotik_rules(current_admin: User):
         {"chain": "forward", "action": "accept", "src-address-list": "klient_fup"},
     ]
 
+    all_rules = None
     try:
-        with get_mikrotik_connection() as api_conn:
+        with get_mikrotik_connection(raise_on_error=True) as api_conn:
             if not api_conn:
                 return jsonify({"status": "error", "message": "Koneksi MikroTik tidak tersedia."}), HTTPStatus.SERVICE_UNAVAILABLE
             all_rules = api_conn.get_resource("/ip/firewall/filter").get()
     except Exception as e:
         current_app.logger.error("Gagal mengambil firewall filter rules dari MikroTik: %s", e, exc_info=True)
         return jsonify({"status": "error", "message": f"Gagal koneksi MikroTik: {str(e)}"}), HTTPStatus.SERVICE_UNAVAILABLE
+
+    if all_rules is None:
+        return jsonify({"status": "error", "message": "Gagal membaca firewall rules dari MikroTik."}), HTTPStatus.SERVICE_UNAVAILABLE
 
     def _matches(actual: dict, expected: dict) -> bool:
         return all(actual.get(k, "") == v for k, v in expected.items())

@@ -21,7 +21,6 @@ const {
   lazy: true,
   server: false,
   $fetch: $api,
-  immediate: false,
 })
 
 watch(error, (e) => {
@@ -70,7 +69,7 @@ function overallLabel(d: MikrotikVerifyRulesResponseContract | null): string {
           :loading="pending"
           @click="refresh()"
         >
-          Verifikasi Sekarang
+          Verifikasi Ulang
         </VBtn>
       </VCol>
     </VRow>
@@ -214,19 +213,28 @@ function overallLabel(d: MikrotikVerifyRulesResponseContract | null): string {
               </div>
             </template>
 
-            <!-- Placeholder sebelum verifikasi -->
+            <!-- Placeholder jika tidak ada data setelah load -->
             <div
               v-else-if="!pending"
-              class="text-center text-disabled py-8"
+              class="text-center py-8"
             >
               <VIcon
                 icon="tabler-shield-off"
                 size="40"
-                class="mb-3 opacity-50"
+                class="mb-3 text-error"
               />
-              <p class="text-body-2 mb-0">
-                Klik <strong>Verifikasi Sekarang</strong> untuk mengambil data dari MikroTik.
+              <p class="text-body-2 text-medium-emphasis mb-2">
+                Gagal mengambil data dari MikroTik.
               </p>
+              <VBtn
+                size="small"
+                color="primary"
+                variant="tonal"
+                prepend-icon="tabler-refresh"
+                @click="refresh()"
+              >
+                Coba Lagi
+              </VBtn>
             </div>
           </VCardText>
         </VCard>
