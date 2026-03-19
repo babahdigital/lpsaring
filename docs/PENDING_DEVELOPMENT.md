@@ -3,7 +3,7 @@
 Dokumen ini mencatat semua pengembangan yang sudah dianalisis, didesain, atau sebagian diimplementasi
 tapi **belum selesai penuh** atau **perlu tindakan lanjutan**. Update setiap kali item selesai atau di-skip.
 
-> **Update terakhir**: 2026-03-20 (Session 5 — Total Audit Fix: code bugs + docker healthcheck + docs)
+> **Update terakhir**: 2026-03-20 (Session 5 — Post-Deploy: celery healthcheck fix, settings env.prod, analisa no_authorized_device)
 
 ---
 
@@ -66,8 +66,8 @@ User yang terdampak (hanya informatif):
 
 ## P1 — PENTING (Fungsional Gap)
 
-### ⚙️ 7.3 Akses-Banking Scheduler — `sync_access_banking_task`
-**Status**: SELESAI diimplementasi + code fixes applied (20 Mar 2026), siap deploy
+### ✅ 7.3 Akses-Banking Scheduler — `sync_access_banking_task`
+**Status**: SELESAI & DEPLOYED (20 Mar 2026, Session 5). `AKSES_BANKING_ENABLED=True` di `.env.prod`.
 **File**: `backend/app/tasks.py`, `backend/app/extensions.py`
 **Fungsi**: Populate `Bypass_Server` address-list MikroTik dengan banking domain IPs setiap hari jam 02:00
 **Code fixes (20 Mar 2026)**:
@@ -84,8 +84,8 @@ User yang terdampak (hanya informatif):
 
 ---
 
-### ⚙️ Auto-Block Overdue Debt — `enforce_overdue_debt_block_task`
-**Status**: SELESAI diimplementasi + code fixes applied (20 Mar 2026), siap deploy
+### ✅ Auto-Block Overdue Debt — `enforce_overdue_debt_block_task`
+**Status**: SELESAI & DEPLOYED (20 Mar 2026, Session 5). `ENABLE_OVERDUE_DEBT_BLOCK=True` di `.env.prod`.
 **File**: `backend/app/tasks.py`, `backend/app/extensions.py`
 **Fungsi**: Blokir user yang debt-nya melewati `due_date`. Berjalan harian jam 08:00 lokal.
 **Code fixes (20 Mar 2026)**:
@@ -114,13 +114,13 @@ User yang terdampak (hanya informatif):
 
 ## P2 — NICE TO HAVE (Improvement)
 
-### ⚙️ Docker Compose Celery Healthcheck + Redis activedefrag
-**Status**: SELESAI diimplementasi (20 Mar 2026), siap deploy
+### ✅ Docker Compose Celery Healthcheck + Redis activedefrag
+**Status**: SELESAI & DEPLOYED (20 Mar 2026, Session 5)
 **File**: `docker-compose.prod.yml`
 **Perubahan**:
-- `celery_worker`: healthcheck via `celery inspect ping` setiap 60s
-- `celery_beat`: healthcheck via `pgrep -f 'celery.*beat'` setiap 30s
-- `redis`: tambah `--activedefrag yes` untuk reduce fragmentation ratio (measured 3.13, target < 1.5)
+- `celery_worker`: healthcheck via `celery inspect ping` setiap 60s — ✅ healthy
+- `celery_beat`: healthcheck via `/proc/1/cmdline` (pgrep tidak tersedia di image) — ✅ healthy setelah fix
+- `redis`: tambah `--activedefrag yes` (measured 3.13, defrag aktif sejak deploy)
 
 ---
 
@@ -134,10 +134,11 @@ User yang terdampak (hanya informatif):
 
 ---
 
-### ✅ Fix Bug DHCP Loop: 28 Static Lease Dibuat Ulang Terus
-**Status**: SELESAI — 2 file diubah (belum di-deploy; loop masih aktif di produksi)
+### ⚙️ Fix Bug DHCP Loop: 28 Static Lease Dibuat Ulang Terus
+**Status**: Diimplementasi & deployed (Session 5). PARTIALLY FIXED — sedang settle.
 **Root Cause**: `_snapshot_dhcp_ips_by_mac` dan `_collect_dhcp_lease_snapshot` skip semua waiting lease.
-**Dikonfirmasi dari live log 20 Mar**: `dhcp_self_healed: 31-34` per siklus
+**Dikonfirmasi dari live log 20 Mar**: dhcp_self_healed: 31-34 sebelum deploy → 26 → 16 post-deploy (53% turun).
+**Investigasi lanjutan perlu** jika tidak turun ke ~0 dalam beberapa siklus.
 
 ---
 
@@ -204,7 +205,8 @@ action `authorize_device_from_admin`. Ini misleading — admin tidak tahu MAC us
 
 ### Redis Fragmentation
 - `mem_fragmentation_ratio: 3.13` (20 Mar 2026) — tinggi, target < 1.5
-- Fix: `--activedefrag yes` ditambahkan ke docker-compose.prod.yml (deploy sesi ini)
+- Fix: `--activedefrag yes` deployed (20 Mar 2026 Session 5), defrag berjalan di background
+- Monitor: cek `redis-cli info memory | grep mem_fragmentation_ratio` dalam 1-2 hari
 
 ---
 
