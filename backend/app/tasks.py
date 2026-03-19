@@ -2968,18 +2968,24 @@ def sync_access_banking_task(self):
 
         try:
             # Resolve IP untuk setiap domain (ipv4 saja, CDN banking umumnya publik)
+            # setdefaulttimeout(5): cegah getaddrinfo block lama jika DNS lambat/down.
+            # Restore ke None setelah loop agar tidak pengaruhi operasi socket lain.
             resolved_ips: dict[str, str] = {}  # ip → domain
-            for domain in banking_domains:
-                try:
-                    for addr_info in _socket.getaddrinfo(domain, None, _socket.AF_INET):
-                        ip = str(addr_info[4][0])
-                        try:
-                            ipaddress.ip_address(ip)
-                            resolved_ips[ip] = domain
-                        except ValueError:
-                            pass
-                except Exception as exc:
-                    logger.warning("Banking sync: gagal resolve domain=%s: %s", domain, exc)
+            _socket.setdefaulttimeout(5)
+            try:
+                for domain in banking_domains:
+                    try:
+                        for addr_info in _socket.getaddrinfo(domain, None, _socket.AF_INET):
+                            ip = str(addr_info[4][0])
+                            try:
+                                ipaddress.ip_address(ip)
+                                resolved_ips[ip] = domain
+                            except ValueError:
+                                pass
+                    except Exception as exc:
+                        logger.warning("Banking sync: gagal resolve domain=%s: %s", domain, exc)
+            finally:
+                _socket.setdefaulttimeout(None)
 
             if not resolved_ips:
                 logger.warning(
@@ -3110,8 +3116,12 @@ def enforce_overdue_debt_block_task(self):
                 .filter(UserQuotaDebt.due_date < today)
                 .all()
             )
+        except Exception:
+            logger.exception("Overdue debt block: gagal query overdue debts dari DB.")
+            db.session.remove()
+            return {"checked": 0, "blocked": 0, "error": "db_query_failed"}
         finally:
-            pass
+            db.session.remove()
 
         if not overdue_debts:
             logger.info("Overdue debt block: Tidak ada debt melewati due_date.")
@@ -3180,14 +3190,17 @@ def enforce_overdue_debt_block_task(self):
             # --- Step 1: WA warning sebelum block ---
             if enable_wa:
                 try:
+                    _debt_gb = total_debt_mb / 1024
+                    _debt_display = f"{_debt_gb:.1f} GB" if _debt_gb >= 1 else f"{total_debt_mb} MB"
+                    _portal_url = str(app.config.get("APP_PUBLIC_BASE_URL") or "").strip().rstrip("/")
                     wa_msg = (
                         f"\u26a0\ufe0f *TAGIHAN JATUH TEMPO — AKSES AKAN DIBLOKIR*\n\n"
                         f"Halo {username_08},\n\n"
-                        f"Tunggakan kuota Anda sebesar *{total_debt_mb // 1024} GB* "
+                        f"Tunggakan kuota Anda sebesar *{_debt_display}* "
                         f"telah melewati jatuh tempo *{oldest_due_date.strftime('%d-%m-%Y')}* "
                         f"({days_overdue} hari yang lalu).\n\n"
                         f"Akses internet Anda *diblokir* sekarang.\n\n"
-                        f"Lunasi tagihan di: lpsaring.babahdigital.net\n\n"
+                        f"Lunasi tagihan di: {_portal_url}\n\n"
                         f"Hubungi admin jika ada pertanyaan."
                     )
                     ok_wa = bool(

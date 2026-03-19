@@ -316,39 +316,30 @@ Catatan operasional:
   - backend (`babahdigital/sobigidul_backend`) untuk `linux/amd64,linux/arm64`
   - frontend (`babahdigital/sobigidul_frontend`) untuk `linux/amd64,linux/arm64`
 3. Jika semua build-and-push sukses, image terbaru tersedia di Docker Hub.
-4. Deploy ke Raspberry Pi berjalan **hanya** saat `workflow_dispatch` dengan `deploy=true`.
-5. Job deploy di runner Pi menjalankan:
-  - `docker compose ... down --remove-orphans`
-  - `docker compose ... pull`
-  - `docker compose ... up -d --remove-orphans`
+4. Deploy ke server berjalan via `deploy_pi.sh` dari lokal (manual atau `--trigger-build`).
+
+> **PERINGATAN KRITIS**: JANGAN jalankan `docker compose down` sebelum `--recreate`.
+> `down` menghapus container dari `proxy-network` → Docker DNS NXDOMAIN ~21 menit → 502 burst.
+> Gunakan HANYA `--recreate` (`deploy_pi.sh --recreate` atau `docker compose up -d --force-recreate`).
+
+> **PERINGATAN**: Selalu `git push origin main` DULU sebelum `deploy_pi.sh --trigger-build`.
+> GitHub Actions build image dari `origin/main` di GitHub — bukan commit lokal yang belum di-push.
 
 Referensi rinci:
 - `docs/workflows/CI_CD.md`
 - `docs/workflows/PRODUCTION_OPERATIONS.md`
 
-### 5.3.2) Status Error Terkini (2026-02-15)
+### 5.3.2) Status CI (diperbarui 20 Mar 2026)
 
-Error CI yang masih berulang pada job frontend:
+CI pipeline saat ini **stabil dan hijau**. Error frontend build yang sempat terjadi pada
+2026-02-15 sudah terselesaikan seiring perbaikan bertahap di Dockerfile, multi-arch build
+strategy, dan eliminasi custom `manualChunks`. CI push ke `main` selalu membangun frontend.
 
-```text
-buildx failed with: ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm run build:icons --if-present && pnpm run build" did not complete successfully: exit code: 1
-```
-
-Error runtime browser yang sempat muncul:
-
-```text
-Uncaught ReferenceError: Cannot access 'ee' before initialization
-```
-
-Yang sudah dilakukan:
-- Hardening Dockerfile/frontend publish arm64.
-- Perbaikan deploy path + env-file pada runner Raspberry Pi.
-- Pembersihan pre-deploy yang bisa dikonfigurasi.
-- Mitigasi bundling frontend dengan menghapus custom `manualChunks` agar kembali ke strategi default.
-
-Kesimpulan sementara:
-- Mitigasi runtime sudah diterapkan di kode.
-- Kegagalan CI frontend build masih perlu observasi log rinci per run karena pesan akhir masih generik (`exit code: 1`).
+Jika CI merah, hal pertama yang perlu dicek:
+- Ruff lint errors: `ruff check backend/app/`
+- Frontend typecheck: `pnpm run typecheck`
+- Contract gate: `python scripts/contract_gate.py`
+- Test suite: `pytest backend/tests/`
 
 Catatan Cloudflare cache (dev):
 - Jika `icons.css` atau aset `/\_nuxt/` salah MIME, purge cache Cloudflare untuk path `/\_nuxt/*`.
