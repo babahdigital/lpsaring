@@ -218,8 +218,8 @@ services:
     networks:
       - hotspot_prod_network
     healthcheck:
-      # Beat tidak support inspect ping; cek proses beat masih hidup via pgrep.
-      test: ["CMD-SHELL", "pgrep -f 'celery.*beat' > /dev/null || exit 1"]
+      # Beat tidak support inspect ping; cek PID 1 = celery beat via /proc (image tidak punya pgrep/ps).
+      test: ["CMD-SHELL", "cat /proc/1/cmdline | tr '\\0' ' ' | grep -q celery || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
