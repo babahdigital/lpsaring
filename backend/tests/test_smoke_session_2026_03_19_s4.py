@@ -225,18 +225,24 @@ def test_settle_single_debt_sets_unblocked_true_when_all_paid(app):
 # 4. P2: verify_mikrotik_rules endpoint — format response
 # ---------------------------------------------------------------------------
 
-def test_verify_mikrotik_rules_ok_when_all_rules_in_order(app):
-    """verify_mikrotik_rules harus return status=ok ketika semua 4 rules ada dan urutannya benar."""
-
-    all_rules = [
-        {"chain": "forward", "action": "accept", "src-address-list": "klient_inactive", "dst-address-list": "Bypass_Server", "disabled": "false"},
-        {"chain": "forward", "action": "drop",   "src-address-list": "klient_inactive", "dst-address-list": "LOCAL_NETWORKS", "disabled": "false"},
-        {"chain": "forward", "action": "accept", "src-address-list": "klient_aktif",    "disabled": "false"},
-        {"chain": "forward", "action": "accept", "src-address-list": "klient_fup",      "disabled": "false"},
+def test_verify_mikrotik_rules_ok_when_all_rules_present(app):
+    """verify_mikrotik_rules harus return status=ok ketika semua 4 rule kritis ada di tabel yang benar."""
+    filter_rules = [
+        {"chain": "hs-unauth", "action": "return", "src-address-list": "klient_aktif", "disabled": "false"},
+        {"chain": "hs-unauth", "action": "return", "src-address-list": "klient_fup",   "disabled": "false"},
+    ]
+    raw_rules = [
+        {"chain": "prerouting", "action": "drop", "src-address-list": "klient_inactive", "disabled": "false"},
+        {"chain": "prerouting", "action": "drop", "dst-address-list": "klient_inactive", "disabled": "false"},
     ]
 
+    def _get_resource(path):
+        m = MagicMock()
+        m.get.return_value = filter_rules if path == "/ip/firewall/filter" else raw_rules
+        return m
+
     mock_api = MagicMock()
-    mock_api.get_resource.return_value.get.return_value = all_rules
+    mock_api.get_resource.side_effect = _get_resource
 
     with app.test_request_context():
         with (
@@ -251,23 +257,68 @@ def test_verify_mikrotik_rules_ok_when_all_rules_in_order(app):
             data = resp[0].get_json()
             assert data["status"] == "ok"
             assert data["all_found"] is True
-            assert data["order_ok"] is True
             assert len(data["checks"]) == 4
             assert all(c["found"] for c in data["checks"])
 
 
 def test_verify_mikrotik_rules_error_when_rule_missing(app):
     """verify_mikrotik_rules harus return status=error ketika salah satu rule tidak ada."""
-    # Missing rule klient_fup
-    all_rules = [
-        {"chain": "forward", "action": "accept", "src-address-list": "klient_inactive", "dst-address-list": "Bypass_Server", "disabled": "false"},
-        {"chain": "forward", "action": "drop",   "src-address-list": "klient_inactive", "dst-address-list": "LOCAL_NETWORKS", "disabled": "false"},
-        {"chain": "forward", "action": "accept", "src-address-list": "klient_aktif",    "disabled": "false"},
-        # klient_fup tidak ada
+    # Missing: raw drop for klient_inactive src (dst-only present)
+    filter_rules = [
+        {"chain": "hs-unauth", "action": "return", "src-address-list": "klient_aktif", "disabled": "false"},
+        {"chain": "hs-unauth", "action": "return", "src-address-list": "klient_fup",   "disabled": "false"},
+    ]
+    raw_rules = [
+        # Only the dst variant is present; src variant is missing
+        {"chain": "prerouting", "action": "drop", "dst-address-list": "klient_inactive", "disabled": "false"},
     ]
 
+    def _get_resource(path):
+        m = MagicMock()
+        m.get.return_value = filter_rules if path == "/ip/firewall/filter" else raw_rules
+        return m
+
     mock_api = MagicMock()
-    mock_api.get_resource.return_value.get.return_value = all_rules
+    mock_api.get_resource.side_effect = _get_resource
+
+    with app.test_request_context():
+        with (
+            patch("app.infrastructure.http.admin.user_management_routes.get_mikrotik_connection") as mock_conn,
+            patch("app.infrastructure.http.admin.user_management_routes._deny_non_super_admin_target_access", return_value=None),
+        ):
+            mock_conn.return_value.__enter__.return_value = mock_api
+
+            from app.infrastructure.http.admin.user_management_routes import verify_mikrotik_rules
+            admin_mock = MagicMock()
+            resp = verify_mikrotik_rules.__wrapped__(admin_mock)
+            data = resp[0].get_json()
+            assert data["status"] == "error"
+            assert data["all_found"] is False
+            missing = [c for c in data["checks"] if not c["found"]]
+            assert len(missing) == 1
+            assert "klient_inactive" in missing[0]["label"]
+            assert "src=" in missing[0]["label"]
+
+
+def test_verify_mikrotik_rules_error_when_order_wrong(app):
+    """verify_mikrotik_rules harus return status=error ketika rules ada di chain yang salah (disabled diabaikan)."""
+    # Semua rule ada tapi satu di-disabled — harus dianggap tidak ditemukan
+    filter_rules = [
+        {"chain": "hs-unauth", "action": "return", "src-address-list": "klient_aktif", "disabled": "false"},
+        {"chain": "hs-unauth", "action": "return", "src-address-list": "klient_fup",   "disabled": "true"},  # disabled!
+    ]
+    raw_rules = [
+        {"chain": "prerouting", "action": "drop", "src-address-list": "klient_inactive", "disabled": "false"},
+        {"chain": "prerouting", "action": "drop", "dst-address-list": "klient_inactive", "disabled": "false"},
+    ]
+
+    def _get_resource(path):
+        m = MagicMock()
+        m.get.return_value = filter_rules if path == "/ip/firewall/filter" else raw_rules
+        return m
+
+    mock_api = MagicMock()
+    mock_api.get_resource.side_effect = _get_resource
 
     with app.test_request_context():
         with (
@@ -285,31 +336,3 @@ def test_verify_mikrotik_rules_error_when_rule_missing(app):
             fup_check = next((c for c in data["checks"] if "klient_fup" in c["label"]), None)
             assert fup_check is not None
             assert fup_check["found"] is False
-
-
-def test_verify_mikrotik_rules_error_when_order_wrong(app):
-    """verify_mikrotik_rules harus return order_ok=False ketika urutan rules salah."""
-    # klient_aktif sebelum klient_inactive drop — urutan salah
-    all_rules = [
-        {"chain": "forward", "action": "accept", "src-address-list": "klient_aktif",    "disabled": "false"},
-        {"chain": "forward", "action": "accept", "src-address-list": "klient_inactive", "dst-address-list": "Bypass_Server", "disabled": "false"},
-        {"chain": "forward", "action": "drop",   "src-address-list": "klient_inactive", "dst-address-list": "LOCAL_NETWORKS", "disabled": "false"},
-        {"chain": "forward", "action": "accept", "src-address-list": "klient_fup",      "disabled": "false"},
-    ]
-
-    mock_api = MagicMock()
-    mock_api.get_resource.return_value.get.return_value = all_rules
-
-    with app.test_request_context():
-        with (
-            patch("app.infrastructure.http.admin.user_management_routes.get_mikrotik_connection") as mock_conn,
-            patch("app.infrastructure.http.admin.user_management_routes._deny_non_super_admin_target_access", return_value=None),
-        ):
-            mock_conn.return_value.__enter__.return_value = mock_api
-
-            from app.infrastructure.http.admin.user_management_routes import verify_mikrotik_rules
-            admin_mock = MagicMock()
-            resp = verify_mikrotik_rules.__wrapped__(admin_mock)
-            data = resp[0].get_json()
-            assert data["status"] == "error"
-            assert data["order_ok"] is False

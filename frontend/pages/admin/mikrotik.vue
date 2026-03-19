@@ -119,7 +119,7 @@ function overallLabel(d: MikrotikVerifyRulesResponseContract | null): string {
                 size="small"
               >
                 <VIcon
-                  :icon="data.all_found && data.order_ok ? 'tabler-circle-check' : 'tabler-alert-triangle'"
+                  :icon="data.all_found ? 'tabler-circle-check' : 'tabler-alert-triangle'"
                   start
                   size="16"
                 />
