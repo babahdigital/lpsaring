@@ -14,7 +14,6 @@ Create Date: 2026-03-19
 """
 
 from alembic import op
-import sqlalchemy as sa
 
 
 revision = "20260319_d_backfill_price_rp_from_note"
