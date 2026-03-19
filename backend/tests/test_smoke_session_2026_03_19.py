@@ -12,15 +12,11 @@ Covers all changes made in the 2026-03-19 penyempurnaan session:
 from __future__ import annotations
 
 import json
-import datetime
-import importlib
 import os
 import sys
 from contextlib import contextmanager
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-import pytest
 from flask import Flask
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -224,8 +220,6 @@ def test_enforce_overdue_debt_block_sends_wa_before_block(monkeypatch):
     # No overdue users → task returns without errors but calls nothing
     # We verify only that the function signature is correct by inspecting the call
     wa_calls: list[dict] = []
-
-    original_send = tasks.send_whatsapp_message
 
     def _fake_send(*args, **kwargs):
         wa_calls.append({"args": args, "kwargs": kwargs})

@@ -3,7 +3,7 @@
 Dokumen ini mencatat semua pengembangan yang sudah dianalisis, didesain, atau sebagian diimplementasi
 tapi **belum selesai penuh** atau **perlu tindakan lanjutan**. Update setiap kali item selesai atau di-skip.
 
-> **Update terakhir**: 2026-03-19 (Session 2 — WA Debt Fixes + Pylance + Smoke Tests)
+> **Update terakhir**: 2026-03-19 (Session 3 — CI Fix + price_rp Auto-Backfill Migration)
 
 ---
 
@@ -37,21 +37,14 @@ User yang terdampak (dari log parity guard):
 
 ---
 
-### ⚠️ Isi `price_rp` untuk 11 Debt Aktif Sebelum 31 Maret
-**Ditemukan**: Audit 19 Mar 2026 — `price_rp` column semua NULL
-**Akibat**: Laporan dan WA reminder tampilkan harga "estimasi" bukan "pasti"
-**Tindakan**: Admin buka `/admin/users` → edit debt per user → isi harga pasti
-
-User dengan debt aktif (semua jatuh tempo 31 Mar 2026):
-- `+6283179074596` — 2 debt: 20GB + 10GB
-- `+6285259962901` — 35GB
-- `+6285652329620` — 10GB
-- `+6283141617466` — 10GB
-- `+6283167629438` — 10GB
-- `+6283844097553` — 20GB
-- `+6282213631573` — 2 debt: 20GB + 20GB (total 40GB)
-- `+6289527796925` — 20GB
-- `+6285246014017` — 20GB
+### ✅ `price_rp` — Otomatis dari Harga Paket (RESOLVED via Migration)
+**Ditemukan**: Audit 19 Mar 2026 — `price_rp` semua NULL di record lama
+**Root cause**: Column `price_rp` baru ditambahkan migration `20260319_add_price_rp_to_user_quota_debts`;
+  record lama belum punya nilai. Record BARU sudah auto-filled dari `pkg.price` saat debt dibuat.
+**Solusi**: Migration `20260319_d_backfill_price_rp_from_note` — backfill otomatis regex dari
+  note field format `"Paket: ... (... , Rp 50.000)"` untuk semua record lama.
+**Tindakan manual**: TIDAK DIPERLUKAN — seluruhnya otomatis via alembic upgrade.
+**Catatan**: Record tanpa note yang cocok tetap NULL → frontend fallback ke `estimated_rp` (by design).
 
 ---
 
@@ -94,11 +87,12 @@ Berjalan harian jam 08:00 lokal. Kirim WA warning sebelum block.
 
 ---
 
-### ⏳ Validasi `price_rp` Wajib Diisi di Form Debt
-**Status**: Belum diimplementasi
-**File**: `frontend/components/UserEditDialog.vue`
-**Kebutuhan**: Tambah warning/required validator untuk `price_rp` agar admin tidak lupa mengisi
-**Scope**: Frontend saja — backend `price_rp` sudah optional (NULL diizinkan)
+### ✅ `price_rp` Auto-Fill dari Paket (RESOLVED — tindakan manual dihapus)
+**Status**: SELESAI — tidak ada validasi manual yang diperlukan
+**Analisis**: `price_rp` SELALU di-auto-fill oleh backend dari `pkg.price` saat debt dibuat
+  via `debt_package_id`. Admin tidak pernah mengisi manual. Validator form tidak diperlukan.
+**Record lama (NULL)**: Di-handle via migration backfill `20260319_d_backfill_price_rp_from_note`.
+**Frontend**: Sudah handle fallback `price_rp ?? estimated_rp` dengan benar.
 
 ---
 

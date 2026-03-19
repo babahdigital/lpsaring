@@ -3095,12 +3095,6 @@ def enforce_overdue_debt_block_task(self):
         now_local = get_app_local_datetime()
         today = now_local.date()
 
-        try:
-            app_tz_offset = int(app.config.get("APP_TIMEZONE_OFFSET", 8))
-        except Exception:
-            app_tz_offset = 8
-        app_tz = dt_timezone(timedelta(hours=app_tz_offset))
-
         # Impor lokal agar tidak mempengaruhi loading modul global
         from sqlalchemy.orm import joinedload as _joinedload
         from app.infrastructure.db.models import UserQuotaDebt
