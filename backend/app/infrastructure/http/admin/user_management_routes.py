@@ -35,7 +35,7 @@ from app.infrastructure.db.models import UserQuotaDebt
 # [FIX] Menambahkan kembali impor yang hilang untuk endpoint /mikrotik-status
 from app.utils.formatters import format_to_local_phone, get_app_local_datetime, format_app_datetime
 from app.services.user_management.helpers import _handle_mikrotik_operation, _send_whatsapp_notification
-from app.infrastructure.gateways.mikrotik_client import get_hotspot_user_details
+from app.infrastructure.gateways.mikrotik_client import get_hotspot_user_details, get_mikrotik_connection
 
 from app.services.user_management.helpers import _log_admin_action
 
@@ -778,8 +778,10 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
         return jsonify({"message": "Item debt tidak ditemukan."}), HTTPStatus.NOT_FOUND
 
     try:
-        # Snapshot for notifikasi
+        # Snapshot untuk notifikasi dan auto-unblock
         debt_manual_before = int(getattr(user, "quota_debt_manual_mb", 0) or 0)
+        was_blocked = bool(getattr(user, "is_blocked", False))
+        blocked_reason = str(getattr(user, "blocked_reason", "") or "")
 
         paid_mb = user_debt_service.settle_manual_debt_item_to_zero(
             user=user,
@@ -787,9 +789,20 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
             debt=debt,
             source="admin_settle_item",
         )
+
+        # Auto-unblock jika semua tunggakan (auto + manual) sudah nol dan user diblokir karena debt.
+        unblocked = False
+        if paid_mb > 0 and was_blocked and is_debt_block_reason(blocked_reason):
+            if float(getattr(user, "quota_debt_total_mb", 0) or 0) <= 0:
+                user.is_blocked = False
+                user.blocked_reason = None
+                user.blocked_at = None
+                user.blocked_by_id = None
+                unblocked = True
+
         db.session.commit()
 
-        # Notify user via WhatsApp (best-effort) - untuk pembayaran sebagian
+        # Notify user via WhatsApp (best-effort)
         try:
             if paid_mb > 0:
                 remaining_manual_debt = max(0, debt_manual_before - int(paid_mb))
@@ -815,9 +828,10 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
                     format_app_datetime(debt.paid_at) if debt.paid_at else format_app_datetime()
                 )
 
+                wa_template = "user_debt_partial_payment_unblock" if unblocked else "user_debt_partial_payment"
                 _send_whatsapp_notification(
                     user.phone_number,
-                    "user_debt_partial_payment",
+                    wa_template,
                     {
                         "full_name": user.full_name,
                         "debt_date": debt_date_str,
@@ -833,7 +847,11 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
                 "Gagal mengirim notifikasi pembayaran partial debt user %s: %s", user.id, e
             )
 
-        return jsonify({"message": "Debt berhasil dilunasi.", "paid_mb": int(paid_mb)}), HTTPStatus.OK
+        return jsonify({
+            "message": "Debt berhasil dilunasi.",
+            "paid_mb": int(paid_mb),
+            "unblocked": bool(unblocked),
+        }), HTTPStatus.OK
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error settling debt {debt_id} for user {user_id}: {e}", exc_info=True)
@@ -920,6 +938,59 @@ def settle_all_debts(current_admin: User, user_id: uuid.UUID):
         db.session.rollback()
         current_app.logger.error(f"Error settling all debts for user {user_id}: {e}", exc_info=True)
         return jsonify({"message": "Gagal melunasi tunggakan."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@user_management_bp.route("/mikrotik/verify-rules", methods=["GET"])
+@admin_required
+def verify_mikrotik_rules(current_admin: User):
+    """Verifikasi firewall filter rule kritis di MikroTik: keberadaan dan urutan yang benar."""
+    EXPECTED_RULES = [
+        {"chain": "forward", "action": "accept", "src-address-list": "klient_inactive", "dst-address-list": "Bypass_Server"},
+        {"chain": "forward", "action": "drop",   "src-address-list": "klient_inactive", "dst-address-list": "LOCAL_NETWORKS"},
+        {"chain": "forward", "action": "accept", "src-address-list": "klient_aktif"},
+        {"chain": "forward", "action": "accept", "src-address-list": "klient_fup"},
+    ]
+
+    try:
+        with get_mikrotik_connection() as api_conn:
+            if not api_conn:
+                return jsonify({"status": "error", "message": "Koneksi MikroTik tidak tersedia."}), HTTPStatus.SERVICE_UNAVAILABLE
+            all_rules = api_conn.get_resource("/ip/firewall/filter").get()
+    except Exception as e:
+        current_app.logger.error("Gagal mengambil firewall filter rules dari MikroTik: %s", e, exc_info=True)
+        return jsonify({"status": "error", "message": f"Gagal koneksi MikroTik: {str(e)}"}), HTTPStatus.SERVICE_UNAVAILABLE
+
+    def _matches(actual: dict, expected: dict) -> bool:
+        return all(actual.get(k, "") == v for k, v in expected.items())
+
+    active_forward = [
+        r for r in (all_rules or [])
+        if r.get("chain") == "forward" and r.get("disabled", "false") != "true"
+    ]
+
+    checks = []
+    for expected in EXPECTED_RULES:
+        pos = next((i for i, r in enumerate(active_forward) if _matches(r, expected)), -1)
+        label = (
+            f"forward {expected['action']} "
+            f"src={expected.get('src-address-list', '')} "
+            f"dst={expected.get('dst-address-list', '')}"
+        ).strip()
+        checks.append({"label": label, "found": pos >= 0, "position": pos})
+
+    all_found = all(c["found"] for c in checks)
+    order_ok = all_found and all(
+        checks[i]["position"] < checks[i + 1]["position"]
+        for i in range(len(checks) - 1)
+    )
+
+    return jsonify({
+        "status": "ok" if (all_found and order_ok) else "error",
+        "all_found": all_found,
+        "order_ok": order_ok,
+        "total_forward_rules": len(active_forward),
+        "checks": checks,
+    }), HTTPStatus.OK
 
 
 @user_management_bp.route("/users/<uuid:user_id>/debts/export", methods=["GET"])

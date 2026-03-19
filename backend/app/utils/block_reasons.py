@@ -9,6 +9,8 @@ AUTO_DEBT_LIMIT_LEGACY_PREFIX = "quota_auto_debt_limit|"
 MANUAL_DEBT_EOM_PREFIX = "quota_manual_debt_end_of_month|"
 MANUAL_DEBT_EOM_LEGACY_PREFIX = "quota_debt_end_of_month|"
 
+OVERDUE_DEBT_PREFIX = "tunggakan_overdue|"
+
 
 def _normalize_reason(reason: object) -> str:
     return str(reason or "").strip().lower()
@@ -24,8 +26,12 @@ def is_manual_debt_eom_reason(reason: object) -> bool:
     return normalized.startswith(MANUAL_DEBT_EOM_PREFIX) or normalized.startswith(MANUAL_DEBT_EOM_LEGACY_PREFIX)
 
 
+def is_overdue_debt_reason(reason: object) -> bool:
+    return _normalize_reason(reason).startswith(OVERDUE_DEBT_PREFIX)
+
+
 def is_debt_block_reason(reason: object) -> bool:
-    return is_auto_debt_limit_reason(reason) or is_manual_debt_eom_reason(reason)
+    return is_auto_debt_limit_reason(reason) or is_manual_debt_eom_reason(reason) or is_overdue_debt_reason(reason)
 
 
 def build_auto_debt_limit_reason(*, debt_mb: float, limit_mb: int, source: str) -> str:

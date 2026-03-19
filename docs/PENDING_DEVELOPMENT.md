@@ -3,7 +3,7 @@
 Dokumen ini mencatat semua pengembangan yang sudah dianalisis, didesain, atau sebagian diimplementasi
 tapi **belum selesai penuh** atau **perlu tindakan lanjutan**. Update setiap kali item selesai atau di-skip.
 
-> **Update terakhir**: 2026-03-19 (Session 3 — CI Fix + price_rp Auto-Backfill Migration)
+> **Update terakhir**: 2026-03-19 (Session 4 — WA Debt Template Fix + P1 Auto-Unblock + P2 Verify-Rules + block_reasons bugfix)
 
 ---
 
@@ -78,12 +78,13 @@ Berjalan harian jam 08:00 lokal. Kirim WA warning sebelum block.
 
 ---
 
-### ⏳ Auto-Unblock Setelah Debt Lunas
-**Status**: Belum dianalisis / belum diimplementasi
-**Kebutuhan**: Jika user membayar debt (set `paid_at`), is_blocked harus otomatis di-unblock
-**Kompleksitas**: Harus handle case multiple debts — cek apakah SEMUA debt lunas atau cukup satu
-**Referensi**: `apply_manual_debt_payment()` di `user_debt.py`
-**Catatan**: Saat ini admin harus manual unblock via admin panel setelah konfirmasi bayar.
+### ✅ Auto-Unblock Setelah Debt Lunas (19 Mar 2026 — Session 4)
+**Status**: SELESAI diimplementasi
+**File**: `backend/app/infrastructure/http/admin/user_management_routes.py`, `backend/app/utils/block_reasons.py`
+**Fungsi**: `settle_single_manual_debt` sekarang auto-unblock user jika semua debt lunas dan block reason adalah debt (quota_debt_limit|, quota_manual_debt_end_of_month|, tunggakan_overdue|)
+**Bonus Fix**: Bug kritis di `is_debt_block_reason` — prefix `tunggakan_overdue|` (dipakai `enforce_overdue_debt_block_task`) tidak di-cover → auto-unblock di `settle_all_debts` pun tidak pernah work untuk user diblokir task overdue. Fixed dengan tambah `OVERDUE_DEBT_PREFIX` + `is_overdue_debt_reason()`.
+**WA**: Kirim `user_debt_partial_payment_unblock` (template baru) saat user di-unblock, atau `user_debt_partial_payment` jika partial payment saja.
+**Catatan**: Response `settle_single_manual_debt` sekarang include field `unblocked: bool`.
 
 ---
 
@@ -120,15 +121,13 @@ Akibatnya self-heal menganggap device yang offline tidak punya static lease → 
 
 ---
 
-### ⏳ Endpoint `/api/admin/mikrotik/verify-rules`
-**Status**: Belum diimplementasi
-**Fungsi**: Verifikasi bahwa firewall filter rule kritis di MikroTik masih ada dan urutannya benar
-**Rules yang perlu diverifikasi**:
-- `forward accept src-list=klient_inactive dst-list=Bypass_Server`
-- `forward drop src-list=klient_inactive dst-list=LOCAL_NETWORKS`
-- `forward accept src-list=klient_aktif`
-- `forward accept src-list=klient_fup`
-**Scope**: Backend route baru + admin UI panel
+### ✅ Endpoint `/api/admin/mikrotik/verify-rules` (19 Mar 2026 — Session 4)
+**Status**: SELESAI diimplementasi (backend route)
+**File**: `backend/app/infrastructure/http/admin/user_management_routes.py`
+**URL**: `GET /api/admin/mikrotik/verify-rules`
+**Fungsi**: Verifikasi bahwa 4 firewall filter rule kritis ada dan urutannya benar
+**Response**: `{status, all_found, order_ok, total_forward_rules, checks: [{rule, found, index}]}`
+**Catatan**: Admin UI panel belum dibuat (backend only).
 
 ---
 
@@ -169,6 +168,13 @@ Akibatnya self-heal menganggap device yang offline tidak punya static lease → 
 
 ## ARSIP ITEM YANG SUDAH SELESAI
 
+### ✅ WA Template + Block-Reasons Bugfix (19 Mar 2026 — Session 4)
+- `user_debt_added` template diperbaiki: tambah `{package_name}`, `{price_rp_display}`, suffix ` GB` di semua nilai kuota
+- Template baru `user_debt_partial_payment_unblock` untuk notif saat user di-unblock setelah bayar debt
+- `user_profile.py` — 2 payload call diperbaiki (path debt_package_id dan path debt_add_mb)
+- `block_reasons.py` — bug kritis: `is_debt_block_reason` tidak cover `tunggakan_overdue|` → diperbaiki
+- Smoke test `test_smoke_session_2026_03_19_s4.py` — 13 tests, semua PASS
+
 ### ✅ Bug #28 — Nginx Resolver Race Condition (8.8.8.8)
 - Fix: hapus `8.8.8.8` dari resolver, hanya `127.0.0.11 ipv6=off valid=2s`
 - Incident doc: `docs/incidents/2026-03-19-nginx-resolver-race-condition-8.8.8.8.md`
@@ -203,3 +209,11 @@ Akibatnya self-heal menganggap device yang offline tidak punya static lease → 
 - File: `backend/tests/test_smoke_session_2026_03_19.py` (13 tests)
 - Coverage: DHCP loop fix, banking task, overdue block task, WA template, route source checks
 - Semua 13 tests PASS, full suite tidak regresi
+
+### ✅ CI Lint Fix + price_rp Backfill Migration Deploy (19 Mar 2026 — Session 3)
+- **CI**: 7 ruff F401/F841 errors fixed — unused imports di smoke test, unused `app_tz` di `tasks.py`, unused `sqlalchemy` import di migration baru
+- **Migration**: `20260319_d_backfill_price_rp_from_note` — SQL regex backfill `price_rp` dari note field `"Rp 200,000"` untuk semua record lama (NULL)
+- **Produksi**: Migration applied via `deploy_pi.sh --recreate` → `total_unpaid=11, with_price_rp=11, still_null=0`
+- **Docker**: Multi-arch images pushed ke Docker Hub (`babahdigital/sobigidul_backend`, `babahdigital/sobigidul_frontend`)
+- **CI runs**: `23287511682` (ci=success), `23287299801` (docker-publish=success)
+- **Post-deploy**: Semua 6 container healthy, no errors in production logs

@@ -612,18 +612,23 @@ def update_user_by_admin_comprehensive(
                 total_manual_debt_mb = int(getattr(target_user, "manual_debt_mb", 0) or 0)
                 auto_deducted_mb = int(changes.get("debt_paid_auto_before_credit_mb") or 0)
                 effective_quota_mb = int(changes.get("debt_net_quota_mb") or 0)
+                _pkg_name = str(getattr(pkg, "name", "") or "").strip() or "–"
+                _pkg_price_int = int(getattr(pkg, "price", 0) or 0)
+                _price_rp_display = ("Rp " + f"{_pkg_price_int:,}".replace(",", ".")) if _pkg_price_int > 0 else "–"
                 _send_whatsapp_notification(
                     target_user.phone_number,
                     "user_debt_added",
                     {
                         "full_name": target_user.full_name,
                         "debt_date": debt_date_text,
+                        "package_name": _pkg_name,
+                        "price_rp_display": _price_rp_display,
                         "debt_mb": int(debt_add_mb_pkg),
-                        "debt_gb": f"{(float(debt_add_mb_pkg) / 1024.0):.2f}",
+                        "debt_gb": f"{(float(debt_add_mb_pkg) / 1024.0):.2f} GB",
                         "total_debt_mb": int(total_debt_mb),
-                        "total_debt_gb": f"{(total_debt_mb / 1024.0):.2f}",
+                        "total_debt_gb": f"{(total_debt_mb / 1024.0):.2f} GB",
                         "total_manual_debt_mb": int(total_manual_debt_mb),
-                        "total_manual_debt_gb": f"{(float(total_manual_debt_mb) / 1024.0):.2f}",
+                        "total_manual_debt_gb": f"{(float(total_manual_debt_mb) / 1024.0):.2f} GB",
                         "auto_debt_deducted_mb": int(auto_deducted_mb),
                         "auto_debt_deducted_gb": f"{(float(auto_deducted_mb) / 1024.0):.2f} GB",
                         "effective_quota_mb": int(effective_quota_mb),
@@ -705,12 +710,14 @@ def update_user_by_admin_comprehensive(
                     {
                         "full_name": target_user.full_name,
                         "debt_date": debt_date_text,
+                        "package_name": "Tunggakan Manual",
+                        "price_rp_display": "–",
                         "debt_mb": int(debt_add_mb),
-                        "debt_gb": f"{(float(debt_add_mb) / 1024.0):.2f}",
+                        "debt_gb": f"{(float(debt_add_mb) / 1024.0):.2f} GB",
                         "total_debt_mb": int(total_debt_mb),
-                        "total_debt_gb": f"{(total_debt_mb / 1024.0):.2f}",
+                        "total_debt_gb": f"{(total_debt_mb / 1024.0):.2f} GB",
                         "total_manual_debt_mb": int(total_manual_debt_mb),
-                        "total_manual_debt_gb": f"{(float(total_manual_debt_mb) / 1024.0):.2f}",
+                        "total_manual_debt_gb": f"{(float(total_manual_debt_mb) / 1024.0):.2f} GB",
                         "auto_debt_deducted_mb": int(auto_deducted_mb),
                         "auto_debt_deducted_gb": f"{(float(auto_deducted_mb) / 1024.0):.2f} GB",
                         "effective_quota_mb": int(effective_quota_mb),
