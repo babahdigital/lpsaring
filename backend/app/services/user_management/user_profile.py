@@ -54,8 +54,14 @@ DEFAULT_MANUAL_DEBT_ADVANCE_DAYS = 30
 
 
 def _build_debt_detail_lines(user: User) -> str:
-    """Buat teks rincian tunggakan manual yang belum lunas, diurutkan dari yang terlama."""
+    """Buat teks rincian tunggakan manual yang belum lunas, diurutkan dari yang terlama.
+
+    Format tiap baris:
+      {no}. {tgl} {jam} — {sisa_gb} GB | Rp {harga} | {nama_paket}
+    Waktu diambil dari created_at dan dikonversi ke WIB (UTC+7).
+    """
     try:
+        WIB = dt_timezone(timedelta(hours=7))
         debts = (
             db.session.query(UserQuotaDebt)
             .filter(
@@ -71,14 +77,38 @@ def _build_debt_detail_lines(user: User) -> str:
         for i, d in enumerate(debts, 1):
             remaining_mb = max(0, int(d.amount_mb or 0) - int(d.paid_mb or 0))
             remaining_gb = remaining_mb / 1024.0
+
+            # Tanggal dari debt_date; jam dari created_at (WIB)
             date_str = d.debt_date.strftime("%d-%m-%Y") if d.debt_date else "–"
+            time_str = ""
+            if d.created_at:
+                try:
+                    time_str = " " + d.created_at.astimezone(WIB).strftime("%H:%M")
+                except Exception:
+                    pass
+
+            # Harga
             price_part = ""
             if d.price_rp and d.price_rp > 0:
                 price_part = " | Rp " + f"{int(d.price_rp):,}".replace(",", ".")
+
+            # Nama paket — extrak dari note "Paket: {nama} (...)" atau tampilkan apa adanya
             note_part = ""
             if d.note:
-                note_part = f" | {d.note[:40]}"
-            lines.append(f"{i}. {date_str} — {remaining_gb:.2f} GB{price_part}{note_part}")
+                clean = d.note.strip()
+                if clean.startswith("Paket: "):
+                    name_raw = clean[7:]
+                    end = len(name_raw)
+                    for sep in ["(", " |", "|"]:
+                        idx = name_raw.find(sep)
+                        if 0 <= idx < end:
+                            end = idx
+                    pkg_name = name_raw[:end].strip()
+                    note_part = f" | {pkg_name}" if pkg_name else ""
+                else:
+                    note_part = f" | {clean[:60]}"
+
+            lines.append(f"{i}. {date_str}{time_str} \u2014 {remaining_gb:.2f} GB{price_part}{note_part}")
         return "\n".join(lines)
     except Exception:
         current_app.logger.exception(
@@ -602,9 +632,10 @@ def update_user_by_admin_comprehensive(
             if not ok_debt:
                 return False, msg_debt, None
 
-            # Capture debt detail NOW while session is clean (flushed by append_quota_mutation_event
-            # inside add_manual_debt). Calling this later — after advance credit modifies session
-            # state — triggers SQLAlchemy autoflush on a dirty session which silently fails.
+            # Flush eksplisit agar entry UserQuotaDebt yang baru (dari add_manual_debt) pasti
+            # terlihat oleh query di bawah. append_quota_mutation_event bisa skip flush jika
+            # before_state == after_state, sehingga entry masih pending di session.
+            db.session.flush()
             _debt_detail_lines_pkg = _build_debt_detail_lines(target_user)
 
             # CREDIT QUOTA (advance): untuk kasus "hutang kuota", saat debt manual dibuat kita juga memberi kuota
@@ -702,7 +733,8 @@ def update_user_by_admin_comprehensive(
             if not ok_debt:
                 return False, msg_debt, None
 
-            # Capture debt detail NOW while session is clean (same reason as package flow above).
+            # Flush eksplisit — sama dengan pkg flow di atas.
+            db.session.flush()
             _debt_detail_lines_mb = _build_debt_detail_lines(target_user)
 
             # CREDIT QUOTA (advance): saat debt manual dibuat, juga beri kuota agar user bisa akses.
