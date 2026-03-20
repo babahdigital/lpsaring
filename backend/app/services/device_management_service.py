@@ -1040,14 +1040,87 @@ def apply_device_binding_for_login(
         return True, "Perangkat terotorisasi", client_ip
 
 
-def revoke_device(user: User, device: UserDevice) -> None:
+def revoke_device(user: User, device: UserDevice) -> Dict[str, Any]:
+    """Cabut otorisasi device dan bersihkan semua artefak Mikrotik terkait.
+
+    Membuka satu koneksi Mikrotik (jika tersedia) untuk:
+    - Hapus ip-binding (agar device tidak auto-allow kembali)
+    - Hapus DHCP static lease (jika fitur aktif)
+    - Kick sesi hotspot aktif milik device ini (by MAC + IP + username)
+    - Hapus ARP entry
+    - Hapus IP dari semua managed address-list
+
+    Kuota pengguna TIDAK tersentuh — hotspot user (berdasarkan nomor telepon)
+    tetap terdaftar di Mikrotik sehingga quota sync tetap berjalan normal.
+    """
     settings = _get_settings()
     device.is_authorized = False
     device.deauthorized_at = datetime.now(dt_timezone.utc)
-    if settings["ip_binding_enabled"]:
-        _remove_ip_binding(device.mac_address, user.mikrotik_server_name or settings["mikrotik_server_default"])
-    _remove_managed_address_lists(device.ip_address)
+
+    mac = str(device.mac_address or "").strip().upper()
+    ip = str(device.ip_address or "").strip()
+    server_name = user.mikrotik_server_name or settings["mikrotik_server_default"]
+    dhcp_server = settings.get("dhcp_lease_server_name") or None
+    username_08 = format_to_local_phone(user.phone_number) or ""
+
+    summary: Dict[str, Any] = {
+        "ip_binding_removed": False,
+        "dhcp_removed": False,
+        "host_kicked": 0,
+        "arp_removed": 0,
+        "address_list_cleaned": False,
+        "mikrotik_connected": False,
+    }
+
+    if _is_mikrotik_operations_enabled():
+        with get_mikrotik_connection() as api:
+            if api:
+                summary["mikrotik_connected"] = True
+
+                # 1. IP Binding — cabut otorisasi agar device tidak auto-allow kembali
+                if mac and settings["ip_binding_enabled"]:
+                    ok, _ = remove_ip_binding(api_connection=api, mac_address=mac, server=server_name)
+                    summary["ip_binding_removed"] = ok
+
+                # 2. DHCP static lease — hapus agar IP kembali ke pool dinamis
+                if mac and settings.get("dhcp_static_lease_enabled"):
+                    ok, _ = remove_dhcp_lease(api_connection=api, mac_address=mac, server=dhcp_server)
+                    summary["dhcp_removed"] = ok
+
+                # 3. Resolve IP jika belum tersedia (untuk ARP + host kick)
+                if mac and not ip:
+                    ok_ip, resolved_ip, _ = get_ip_by_mac(api_connection=api, mac_address=mac)
+                    if ok_ip and resolved_ip:
+                        ip = str(resolved_ip).strip()
+
+                # 4. Kick sesi hotspot aktif — putus koneksi device sekarang juga
+                #    username_08 dipakai sebagai fallback jika MAC/IP tidak cukup;
+                #    ini TIDAK menghapus hotspot user, hanya host session-nya saja.
+                if mac or ip or username_08:
+                    ok, _, removed = remove_hotspot_host_entries(
+                        api_connection=api,
+                        mac_address=mac or None,
+                        address=ip or None,
+                        username=username_08 or None,
+                    )
+                    summary["host_kicked"] = int(removed or 0) if ok else 0
+
+                # 5. ARP entry — hapus agar tidak ada stale ARP table
+                if mac or ip:
+                    ok, _, removed = remove_arp_entries(
+                        api_connection=api,
+                        mac_address=mac or None,
+                        address=ip or None,
+                    )
+                    summary["arp_removed"] = int(removed or 0) if ok else 0
+
+    # 6. Address-list cleanup (blocked/active/fup/habis/expired/inactive)
+    if ip:
+        _remove_managed_address_lists(ip)
+        summary["address_list_cleaned"] = True
+
     db.session.flush()
+    return summary
 
 
 def reset_user_network_on_logout(user: User) -> Dict[str, Any]:

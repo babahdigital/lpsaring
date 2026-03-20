@@ -337,10 +337,13 @@ def delete_my_device(current_user_id, device_id):
     if not device:
         abort(HTTPStatus.NOT_FOUND, description="Perangkat tidak ditemukan.")
 
-    revoke_device(user, device)
+    cleanup = revoke_device(user, device)
     db.session.delete(device)
     db.session.commit()
-    return jsonify({"message": "Perangkat berhasil dihapus."}), HTTPStatus.OK
+    return jsonify({
+        "message": "Perangkat berhasil dihapus.",
+        "cleanup": cleanup,
+    }), HTTPStatus.OK
 
 
 @profile_bp.route("/me/devices/<uuid:device_id>/label", methods=["PUT"])
