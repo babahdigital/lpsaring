@@ -1,9 +1,12 @@
+import json
 import math
 import uuid
 from datetime import datetime, timedelta, timezone as dt_timezone
 from http import HTTPStatus
 from typing import Optional
 
+import midtransclient
+import requests
 import sqlalchemy as sa
 from flask import abort, current_app, jsonify, request
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -392,6 +395,45 @@ def initiate_transaction_impl(
 
     except HTTPException:
         raise
+    except midtransclient.error_midtrans.MidtransAPIError as e_mdt:
+        record_failure("midtrans")
+        db.session.rollback()
+        raw_msg = getattr(e_mdt, "message", "") or str(e_mdt)
+        current_app.logger.error(
+            "Midtrans API error di initiate_transaction: %s", raw_msg, exc_info=False
+        )
+        user_msg = "Layanan pembayaran sedang mengalami gangguan. Silakan coba beberapa saat lagi atau hubungi admin."
+        try:
+            marker = "API response: `"
+            if marker in raw_msg:
+                json_part = raw_msg.split(marker, 1)[1].split("`", 1)[0]
+                parsed = json.loads(json_part)
+                if isinstance(parsed, dict):
+                    midtrans_status_code = str(parsed.get("status_code") or "").strip()
+                    midtrans_msg = str(parsed.get("status_message") or "").strip()
+                    # Midtrans 5xx or no status_code = upstream service issue
+                    if midtrans_status_code.startswith("5") or not midtrans_status_code:
+                        user_msg = "Layanan pembayaran sedang mengalami gangguan sementara. Silakan coba beberapa saat lagi."
+                    elif midtrans_msg:
+                        user_msg = f"Pembayaran gagal: {midtrans_msg}. Silakan coba lagi atau hubungi admin."
+        except Exception:
+            pass
+        return error_response(
+            user_msg,
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+            code="MIDTRANS_API_ERROR",
+        )
+    except requests.exceptions.RequestException as e_req:
+        record_failure("midtrans")
+        db.session.rollback()
+        current_app.logger.error(
+            "Midtrans network error di initiate_transaction: %s", e_req, exc_info=False
+        )
+        return error_response(
+            "Layanan pembayaran tidak dapat dijangkau saat ini. Silakan coba beberapa saat lagi.",
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+            code="PAYMENT_GATEWAY_UNAVAILABLE",
+        )
     except Exception as e:
         record_failure("midtrans")
         db.session.rollback()
@@ -724,6 +766,44 @@ def initiate_debt_settlement_transaction_impl(
         return jsonify(payload), HTTPStatus.OK
     except HTTPException:
         raise
+    except midtransclient.error_midtrans.MidtransAPIError as e_mdt:
+        record_failure("midtrans")
+        session.rollback()
+        raw_msg = getattr(e_mdt, "message", "") or str(e_mdt)
+        current_app.logger.error(
+            "Midtrans API error di initiate_debt_settlement_transaction: %s", raw_msg, exc_info=False
+        )
+        user_msg = "Layanan pembayaran sedang mengalami gangguan. Silakan coba beberapa saat lagi atau hubungi admin."
+        try:
+            marker = "API response: `"
+            if marker in raw_msg:
+                json_part = raw_msg.split(marker, 1)[1].split("`", 1)[0]
+                parsed = json.loads(json_part)
+                if isinstance(parsed, dict):
+                    midtrans_status_code = str(parsed.get("status_code") or "").strip()
+                    midtrans_msg = str(parsed.get("status_message") or "").strip()
+                    if midtrans_status_code.startswith("5") or not midtrans_status_code:
+                        user_msg = "Layanan pembayaran sedang mengalami gangguan sementara. Silakan coba beberapa saat lagi."
+                    elif midtrans_msg:
+                        user_msg = f"Pembayaran gagal: {midtrans_msg}. Silakan coba lagi atau hubungi admin."
+        except Exception:
+            pass
+        return error_response(
+            user_msg,
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+            code="MIDTRANS_API_ERROR",
+        )
+    except requests.exceptions.RequestException as e_req:
+        record_failure("midtrans")
+        session.rollback()
+        current_app.logger.error(
+            "Midtrans network error di initiate_debt_settlement_transaction: %s", e_req, exc_info=False
+        )
+        return error_response(
+            "Layanan pembayaran tidak dapat dijangkau saat ini. Silakan coba beberapa saat lagi.",
+            status_code=HTTPStatus.SERVICE_UNAVAILABLE,
+            code="PAYMENT_GATEWAY_UNAVAILABLE",
+        )
     except Exception as e:
         record_failure("midtrans")
         session.rollback()
