@@ -439,9 +439,9 @@ watch(
 
 /* Lebar kolom */
 .col-dicatat  { width: 148px; min-width: 130px; white-space: nowrap; }
-.col-tempo    { width: 160px; min-width: 140px; white-space: nowrap; }
+.col-tempo    { width: 175px; min-width: 175px; white-space: nowrap; }
 .col-kuota    { width:  90px; min-width:  80px; }
-.col-paket    { min-width: 160px; }
+.col-paket    { width: 150px; min-width: 150px; }
 .col-harga    { width: 110px; min-width:  90px; }
 .col-status   { width: 140px; min-width: 120px; }
 .col-aksi     { width:  90px; min-width:  80px; }
