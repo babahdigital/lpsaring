@@ -16,6 +16,116 @@ from app.infrastructure.db.models import ApprovalStatus, Package, Transaction, T
 from app.infrastructure.http.error_envelope import error_response
 
 
+def _parse_midtrans_api_error(raw_message: str) -> tuple[str | None, str | None]:
+    """Parse Midtrans API error message and return (midtrans_status_code, midtrans_status_message)."""
+    try:
+        marker = "API response: `"
+        if marker in raw_message:
+            json_part = raw_message.split(marker, 1)[1].split("`", 1)[0]
+            parsed = json.loads(json_part)
+            if isinstance(parsed, dict):
+                return (
+                    str(parsed.get("status_code") or "").strip() or None,
+                    str(parsed.get("status_message") or "").strip() or None,
+                )
+    except Exception:
+        pass
+    return None, None
+
+
+def _build_midtrans_user_message(raw_message: str) -> str:
+    """Convert a MidtransAPIError into a friendly Indonesian user-facing message."""
+    status_code, status_msg = _parse_midtrans_api_error(raw_message)
+    if status_code and status_code.startswith("5") or not status_code:
+        return "Layanan pembayaran sedang mengalami gangguan sementara. Silakan coba beberapa saat lagi."
+    if status_msg:
+        return f"Pembayaran gagal: {status_msg}. Silakan coba lagi atau hubungi admin."
+    return "Layanan pembayaran sedang mengalami gangguan. Silakan coba beberapa saat lagi atau hubungi admin."
+
+
+def _do_snap_charge(
+    snap,
+    snap_params: dict,
+    new_transaction: Transaction,
+    record_success,
+) -> tuple[str | None, str | None]:
+    """Execute a Midtrans SNAP charge and update new_transaction fields. Returns (snap_token, redirect_url)."""
+    snap_response = snap.create_transaction(snap_params)
+    record_success("midtrans")
+    snap_token = snap_response.get("token")
+    redirect_url = snap_response.get("redirect_url")
+    if not snap_token and not redirect_url:
+        raise ValueError("Respons Midtrans tidak valid.")
+    new_transaction.snap_token = snap_token
+    new_transaction.snap_redirect_url = redirect_url
+    new_transaction.status = TransactionStatus.UNKNOWN
+    return snap_token, redirect_url
+
+
+def _resolve_core_api_method_and_bank(
+    requested_method: str | None,
+    requested_va_bank: str | None,
+    enabled_core_methods: list[str],
+    enabled_core_va_banks: list[str],
+    is_core_api_method_enabled,
+    is_core_api_va_bank_enabled,
+) -> tuple[str, str | None]:
+    """Determine the Core API payment method and VA bank to use, aborting if invalid."""
+    method: str = requested_method or (enabled_core_methods[0] if enabled_core_methods else "qris")
+    if enabled_core_methods and not is_core_api_method_enabled(method, enabled_core_methods):
+        abort(HTTPStatus.UNPROCESSABLE_ENTITY, description="Metode pembayaran tidak tersedia.")
+    va_bank: str | None = requested_va_bank
+    if method == "va" and enabled_core_va_banks:
+        if va_bank is None:
+            va_bank = "bni" if "bni" in enabled_core_va_banks else enabled_core_va_banks[0]
+        elif not is_core_api_va_bank_enabled(va_bank, enabled_core_va_banks):
+            abort(HTTPStatus.UNPROCESSABLE_ENTITY, description="Bank VA tidak tersedia.")
+    return method, va_bank
+
+
+def _apply_core_api_response_to_tx(
+    new_transaction: Transaction,
+    charge_response: dict,
+    method: str,
+    va_bank: str | None,
+    extract_va_number,
+    extract_action_url,
+    is_qr_payment_type,
+    extract_qr_code_url,
+) -> None:
+    """Apply Core API charge response data to new_transaction fields."""
+    payment_type = str(charge_response.get("payment_type") or "").strip().lower() or None
+    midtrans_trx_id = charge_response.get("transaction_id")
+    new_transaction.midtrans_transaction_id = str(midtrans_trx_id).strip() if midtrans_trx_id else None
+    new_transaction.snap_token = None
+    new_transaction.snap_redirect_url = None
+    new_transaction.status = TransactionStatus.PENDING
+
+    if method == "va":
+        bank = va_bank or "bni"
+        if bank == "mandiri" or payment_type == "echannel":
+            new_transaction.payment_method = "echannel"
+            bill_key = charge_response.get("bill_key") or charge_response.get("mandiri_bill_key")
+            biller_code = charge_response.get("biller_code")
+            new_transaction.payment_code = str(bill_key).strip() if bill_key else None
+            new_transaction.biller_code = str(biller_code).strip() if biller_code else None
+        else:
+            new_transaction.payment_method = f"{bank}_va"
+            new_transaction.va_number = extract_va_number(charge_response)
+    else:
+        new_transaction.payment_method = payment_type or method
+
+    if method in {"gopay", "shopeepay"}:
+        deeplink = extract_action_url(charge_response, action_name_contains="deeplink-redirect")
+        if deeplink:
+            new_transaction.snap_redirect_url = deeplink
+
+    if is_qr_payment_type(payment_type or method):
+        new_transaction.qr_code_url = extract_qr_code_url(charge_response)
+    else:
+        new_transaction.qr_code_url = None
+
+
 class InitiateTransactionRequestSchema(BaseModel):
     package_id: uuid.UUID
     payment_method: Optional[str] = None
@@ -52,6 +162,150 @@ class InitiateDebtSettlementResponseSchema(BaseModel):
     qr_code_url: Optional[str] = Field(None, alias="qr_code_url")
 
     model_config = ConfigDict(from_attributes=True)
+
+
+def _enforce_debt_guard_for_package(user: User, package: Package) -> None:
+    """Abort with 400 if the user's total debt would exceed or equal the package quota."""
+    try:
+        debt_total_mb = float(getattr(user, "quota_debt_total_mb", 0) or 0)
+    except Exception:
+        debt_total_mb = 0.0
+    try:
+        package_quota_gb = float(getattr(package, "data_quota_gb", 0) or 0)
+    except Exception:
+        package_quota_gb = 0.0
+    package_quota_mb = int(package_quota_gb * 1024) if package_quota_gb and package_quota_gb > 0 else 0
+    if (
+        bool(getattr(user, "is_unlimited_user", False)) is False
+        and getattr(user, "role", None) == UserRole.USER
+        and debt_total_mb > 0
+        and package_quota_mb > 0
+    ):
+        required_mb = int(math.ceil(debt_total_mb))
+        if package_quota_mb <= required_mb:
+            required_gb = round(required_mb / 1024.0, 2)
+            abort(
+                HTTPStatus.BAD_REQUEST,
+                description=(
+                    "Paket terlalu kecil karena Anda memiliki tunggakan kuota. "
+                    f"Total tunggakan: {required_mb} MB (~{required_gb} GB). "
+                    "Silakan pilih paket yang lebih besar agar sisa kuota menjadi positif."
+                ),
+            )
+
+
+def _try_reuse_package_tx(
+    session,
+    user: User,
+    package: Package,
+    provider_mode: str,
+    requested_method,
+    requested_va_bank,
+    now_utc,
+    tx_has_snap_initiation_data,
+    tx_has_core_initiation_data,
+    tx_matches_requested_core_payment,
+    log_transaction_event,
+    generate_transaction_status_token,
+):
+    """Return an HTTP response reusing an existing pending package transaction, or None."""
+    existing_tx = (
+        session.query(Transaction)
+        .filter(Transaction.user_id == user.id)
+        .filter(Transaction.package_id == package.id)
+        .filter(Transaction.status.in_([TransactionStatus.UNKNOWN, TransactionStatus.PENDING]))
+        .filter(sa.or_(Transaction.expiry_time.is_(None), Transaction.expiry_time > now_utc))
+        .order_by(Transaction.created_at.desc())
+        .first()
+    )
+    if not existing_tx:
+        return None
+    can_reuse = tx_has_snap_initiation_data(existing_tx) if provider_mode == "snap" else tx_has_core_initiation_data(existing_tx)
+    if can_reuse and provider_mode == "core_api":
+        if not tx_matches_requested_core_payment(
+            existing_tx,
+            requested_method=requested_method,
+            requested_va_bank=requested_va_bank,
+        ):
+            existing_tx.status = TransactionStatus.CANCELLED
+            log_transaction_event(
+                session=session,
+                transaction=existing_tx,
+                source=TransactionEventSource.APP,
+                event_type="CANCELLED_BY_NEW_INITIATE",
+                status=existing_tx.status,
+                payload={
+                    "order_id": existing_tx.midtrans_order_id,
+                    "requested_method": requested_method,
+                    "requested_va_bank": requested_va_bank,
+                    "reason": "requested_payment_mismatch",
+                },
+            )
+            session.commit()
+            can_reuse = False
+    if not can_reuse:
+        return None
+    log_transaction_event(
+        session=session,
+        transaction=existing_tx,
+        source=TransactionEventSource.APP,
+        event_type="INITIATE_REUSED_EXISTING",
+        status=existing_tx.status,
+        payload={
+            "order_id": existing_tx.midtrans_order_id,
+            "package_id": str(existing_tx.package_id),
+            "amount": int(existing_tx.amount or 0),
+            "expiry_time": existing_tx.expiry_time.isoformat() if existing_tx.expiry_time else None,
+            "provider_mode": provider_mode,
+            "snap_token_present": bool(existing_tx.snap_token),
+            "redirect_url": existing_tx.snap_redirect_url,
+            "qr_code_url_present": bool(getattr(existing_tx, "qr_code_url", None)),
+            "va_number_present": bool(getattr(existing_tx, "va_number", None)),
+            "reason": "existing_active_transaction",
+        },
+    )
+    session.commit()
+    response_data = InitiateTransactionResponseSchema.model_validate(existing_tx, from_attributes=True)
+    payload = response_data.model_dump(by_alias=False, exclude_none=True)
+    payload["provider_mode"] = provider_mode
+    try:
+        base_callback_url = (
+            current_app.config.get("APP_PUBLIC_BASE_URL")
+            or current_app.config.get("FRONTEND_URL")
+            or current_app.config.get("APP_LINK_USER")
+        )
+        if base_callback_url:
+            status_token = generate_transaction_status_token(existing_tx.midtrans_order_id)
+            payload["status_token"] = status_token
+            payload["status_url"] = (
+                f"{str(base_callback_url).rstrip('/')}/payment/status?order_id={existing_tx.midtrans_order_id}&t={status_token}"
+            )
+    except Exception:
+        pass
+    return jsonify(payload), HTTPStatus.OK
+
+
+def _build_manual_debt_like_filters(
+    debt_prefixes: list[str],
+    manual_debt_id: uuid.UUID,
+    encode_uuid_base64url,
+    encode_uuid_base32,
+) -> list[sa.ColumnElement[bool]]:
+    """Build order_id LIKE filters to match existing transactions for a specific manual debt UUID."""
+    manual_uuid = str(manual_debt_id)
+    manual_hex = str(getattr(manual_debt_id, "hex", "") or "").upper()
+    manual_b64 = encode_uuid_base64url(manual_debt_id)
+    manual_b32 = encode_uuid_base32(manual_debt_id)
+    filters: list[sa.ColumnElement[bool]] = []
+    for p in debt_prefixes:
+        filters.append(Transaction.midtrans_order_id.like(f"{p}-{manual_uuid}%"))
+        if manual_hex:
+            filters.append(Transaction.midtrans_order_id.like(f"{p}-{manual_hex}%"))
+        if manual_b64:
+            filters.append(Transaction.midtrans_order_id.like(f"{p}-{manual_b64}%"))
+        if manual_b32:
+            filters.append(Transaction.midtrans_order_id.like(f"{p}-{manual_b32}%"))
+    return filters
 
 
 def initiate_transaction_impl(
@@ -109,32 +363,7 @@ def initiate_transaction_impl(
         if not package or (not package.is_active and not can_use_demo_package):
             abort(HTTPStatus.BAD_REQUEST, description="Paket tidak valid atau tidak aktif.")
 
-        try:
-            debt_total_mb = float(getattr(user, "quota_debt_total_mb", 0) or 0)
-        except Exception:
-            debt_total_mb = 0.0
-        try:
-            package_quota_gb = float(getattr(package, "data_quota_gb", 0) or 0)
-        except Exception:
-            package_quota_gb = 0.0
-        package_quota_mb = int(package_quota_gb * 1024) if package_quota_gb and package_quota_gb > 0 else 0
-        if (
-            bool(getattr(user, "is_unlimited_user", False)) is False
-            and getattr(user, "role", None) == UserRole.USER
-            and debt_total_mb > 0
-            and package_quota_mb > 0
-        ):
-            required_mb = int(math.ceil(debt_total_mb))
-            if package_quota_mb <= required_mb:
-                required_gb = round(required_mb / 1024.0, 2)
-                abort(
-                    HTTPStatus.BAD_REQUEST,
-                    description=(
-                        "Paket terlalu kecil karena Anda memiliki tunggakan kuota. "
-                        f"Total tunggakan: {required_mb} MB (~{required_gb} GB). "
-                        "Silakan pilih paket yang lebih besar agar sisa kuota menjadi positif."
-                    ),
-                )
+        _enforce_debt_guard_for_package(user, package)
 
         gross_amount = int(package.price or 0)
 
@@ -157,79 +386,22 @@ def initiate_transaction_impl(
 
         now_utc = datetime.now(dt_timezone.utc)
 
-        existing_tx = (
-            session.query(Transaction)
-            .filter(Transaction.user_id == user.id)
-            .filter(Transaction.package_id == package.id)
-            .filter(Transaction.status.in_([TransactionStatus.UNKNOWN, TransactionStatus.PENDING]))
-            .filter(sa.or_(Transaction.expiry_time.is_(None), Transaction.expiry_time > now_utc))
-            .order_by(Transaction.created_at.desc())
-            .first()
+        reuse_resp = _try_reuse_package_tx(
+            session=session,
+            user=user,
+            package=package,
+            provider_mode=provider_mode,
+            requested_method=requested_method,
+            requested_va_bank=requested_va_bank,
+            now_utc=now_utc,
+            tx_has_snap_initiation_data=tx_has_snap_initiation_data,
+            tx_has_core_initiation_data=tx_has_core_initiation_data,
+            tx_matches_requested_core_payment=tx_matches_requested_core_payment,
+            log_transaction_event=log_transaction_event,
+            generate_transaction_status_token=generate_transaction_status_token,
         )
-        if existing_tx:
-            can_reuse = tx_has_snap_initiation_data(existing_tx) if provider_mode == "snap" else tx_has_core_initiation_data(existing_tx)
-            if can_reuse and provider_mode == "core_api":
-                if not tx_matches_requested_core_payment(
-                    existing_tx,
-                    requested_method=requested_method,
-                    requested_va_bank=requested_va_bank,
-                ):
-                    existing_tx.status = TransactionStatus.CANCELLED
-                    log_transaction_event(
-                        session=session,
-                        transaction=existing_tx,
-                        source=TransactionEventSource.APP,
-                        event_type="CANCELLED_BY_NEW_INITIATE",
-                        status=existing_tx.status,
-                        payload={
-                            "order_id": existing_tx.midtrans_order_id,
-                            "requested_method": requested_method,
-                            "requested_va_bank": requested_va_bank,
-                            "reason": "requested_payment_mismatch",
-                        },
-                    )
-                    session.commit()
-                    can_reuse = False
-
-            if can_reuse:
-                log_transaction_event(
-                    session=session,
-                    transaction=existing_tx,
-                    source=TransactionEventSource.APP,
-                    event_type="INITIATE_REUSED_EXISTING",
-                    status=existing_tx.status,
-                    payload={
-                        "order_id": existing_tx.midtrans_order_id,
-                        "package_id": str(existing_tx.package_id),
-                        "amount": int(existing_tx.amount or 0),
-                        "expiry_time": existing_tx.expiry_time.isoformat() if existing_tx.expiry_time else None,
-                        "provider_mode": provider_mode,
-                        "snap_token_present": bool(existing_tx.snap_token),
-                        "redirect_url": existing_tx.snap_redirect_url,
-                        "qr_code_url_present": bool(getattr(existing_tx, "qr_code_url", None)),
-                        "va_number_present": bool(getattr(existing_tx, "va_number", None)),
-                        "reason": "existing_active_transaction",
-                    },
-                )
-                session.commit()
-                response_data = InitiateTransactionResponseSchema.model_validate(existing_tx, from_attributes=True)
-                payload = response_data.model_dump(by_alias=False, exclude_none=True)
-                payload["provider_mode"] = provider_mode
-                try:
-                    base_callback_url = (
-                        current_app.config.get("APP_PUBLIC_BASE_URL")
-                        or current_app.config.get("FRONTEND_URL")
-                        or current_app.config.get("APP_LINK_USER")
-                    )
-                    if base_callback_url:
-                        status_token = generate_transaction_status_token(existing_tx.midtrans_order_id)
-                        payload["status_token"] = status_token
-                        payload["status_url"] = (
-                            f"{str(base_callback_url).rstrip('/')}/payment/status?order_id={existing_tx.midtrans_order_id}&t={status_token}"
-                        )
-                except Exception:
-                    pass
-                return jsonify(payload), HTTPStatus.OK
+        if reuse_resp is not None:
+            return reuse_resp
 
         order_prefix = str(current_app.config.get("MIDTRANS_ORDER_ID_PREFIX", "BD-LPSR")).strip()
         order_prefix = order_prefix.strip("-")
@@ -284,32 +456,13 @@ def initiate_transaction_impl(
                 },
                 "callbacks": {"finish": finish_url_base_with_token},
             }
-
-            snap = get_midtrans_snap_client()
-            snap_response = snap.create_transaction(snap_params)
-            record_success("midtrans")
-
-            snap_token = snap_response.get("token")
-            redirect_url = snap_response.get("redirect_url")
-            if not snap_token and not redirect_url:
-                raise ValueError("Respons Midtrans tidak valid.")
-
-            new_transaction.snap_token = snap_token
-            new_transaction.snap_redirect_url = redirect_url
-            new_transaction.status = TransactionStatus.UNKNOWN
+            snap_token, redirect_url = _do_snap_charge(get_midtrans_snap_client(), snap_params, new_transaction, record_success)
         else:
-            method = requested_method or (enabled_core_methods[0] if enabled_core_methods else "qris")
-            if enabled_core_methods and not is_core_api_method_enabled(method, enabled_core_methods):
-                abort(HTTPStatus.UNPROCESSABLE_ENTITY, description="Metode pembayaran tidak tersedia.")
-
-            va_bank = requested_va_bank
-            if method == "va":
-                if enabled_core_va_banks:
-                    if va_bank is None:
-                        va_bank = "bni" if "bni" in enabled_core_va_banks else enabled_core_va_banks[0]
-                    elif not is_core_api_va_bank_enabled(va_bank, enabled_core_va_banks):
-                        abort(HTTPStatus.UNPROCESSABLE_ENTITY, description="Bank VA tidak tersedia.")
-
+            method, va_bank = _resolve_core_api_method_and_bank(
+                requested_method, requested_va_bank,
+                enabled_core_methods, enabled_core_va_banks,
+                is_core_api_method_enabled, is_core_api_va_bank_enabled,
+            )
             core_api = get_midtrans_core_api_client()
             charge_payload = build_core_api_charge_payload(
                 order_id=order_id,
@@ -323,41 +476,12 @@ def initiate_transaction_impl(
                 method=method,
                 va_bank=va_bank,
             )
-
             charge_response = core_api.charge(charge_payload)
             record_success("midtrans")
-
-            payment_type = str(charge_response.get("payment_type") or "").strip().lower() or None
-            midtrans_trx_id = charge_response.get("transaction_id")
-
-            new_transaction.midtrans_transaction_id = str(midtrans_trx_id).strip() if midtrans_trx_id else None
-            new_transaction.snap_token = None
-            new_transaction.snap_redirect_url = None
-            new_transaction.status = TransactionStatus.PENDING
-
-            if method == "va":
-                bank = va_bank or "bni"
-                if bank == "mandiri" or payment_type == "echannel":
-                    new_transaction.payment_method = "echannel"
-                    bill_key = charge_response.get("bill_key") or charge_response.get("mandiri_bill_key")
-                    biller_code = charge_response.get("biller_code")
-                    new_transaction.payment_code = str(bill_key).strip() if bill_key else None
-                    new_transaction.biller_code = str(biller_code).strip() if biller_code else None
-                else:
-                    new_transaction.payment_method = f"{bank}_va"
-                    new_transaction.va_number = extract_va_number(charge_response)
-            else:
-                new_transaction.payment_method = payment_type or method
-
-            if method in {"gopay", "shopeepay"}:
-                deeplink = extract_action_url(charge_response, action_name_contains="deeplink-redirect")
-                if deeplink:
-                    new_transaction.snap_redirect_url = deeplink
-
-            if is_qr_payment_type(payment_type or method):
-                new_transaction.qr_code_url = extract_qr_code_url(charge_response)
-            else:
-                new_transaction.qr_code_url = None
+            _apply_core_api_response_to_tx(
+                new_transaction, charge_response, method, va_bank,
+                extract_va_number, extract_action_url, is_qr_payment_type, extract_qr_code_url,
+            )
 
         expiry_time = new_transaction.expiry_time
 
@@ -399,36 +523,16 @@ def initiate_transaction_impl(
         record_failure("midtrans")
         db.session.rollback()
         raw_msg = getattr(e_mdt, "message", "") or str(e_mdt)
-        current_app.logger.error(
-            "Midtrans API error di initiate_transaction: %s", raw_msg, exc_info=False
-        )
-        user_msg = "Layanan pembayaran sedang mengalami gangguan. Silakan coba beberapa saat lagi atau hubungi admin."
-        try:
-            marker = "API response: `"
-            if marker in raw_msg:
-                json_part = raw_msg.split(marker, 1)[1].split("`", 1)[0]
-                parsed = json.loads(json_part)
-                if isinstance(parsed, dict):
-                    midtrans_status_code = str(parsed.get("status_code") or "").strip()
-                    midtrans_msg = str(parsed.get("status_message") or "").strip()
-                    # Midtrans 5xx or no status_code = upstream service issue
-                    if midtrans_status_code.startswith("5") or not midtrans_status_code:
-                        user_msg = "Layanan pembayaran sedang mengalami gangguan sementara. Silakan coba beberapa saat lagi."
-                    elif midtrans_msg:
-                        user_msg = f"Pembayaran gagal: {midtrans_msg}. Silakan coba lagi atau hubungi admin."
-        except Exception:
-            pass
+        current_app.logger.error("Midtrans API error di initiate_transaction: %s", raw_msg, exc_info=False)
         return error_response(
-            user_msg,
+            _build_midtrans_user_message(raw_msg),
             status_code=HTTPStatus.SERVICE_UNAVAILABLE,
             code="MIDTRANS_API_ERROR",
         )
     except requests.exceptions.RequestException as e_req:
         record_failure("midtrans")
         db.session.rollback()
-        current_app.logger.error(
-            "Midtrans network error di initiate_transaction: %s", e_req, exc_info=False
-        )
+        current_app.logger.error("Midtrans network error di initiate_transaction: %s", e_req, exc_info=False)
         return error_response(
             "Layanan pembayaran tidak dapat dijangkau saat ini. Silakan coba beberapa saat lagi.",
             status_code=HTTPStatus.SERVICE_UNAVAILABLE,
@@ -564,19 +668,9 @@ def initiate_debt_settlement_transaction_impl(
         )
 
         if manual_debt_id is not None:
-            manual_uuid = str(manual_debt_id)
-            manual_hex = str(getattr(manual_debt_id, "hex", "") or "").upper()
-            manual_b64 = encode_uuid_base64url(manual_debt_id)
-            manual_b32 = encode_uuid_base32(manual_debt_id)
-            manual_like_filters: list[sa.ColumnElement[bool]] = []
-            for p in debt_prefixes:
-                manual_like_filters.append(Transaction.midtrans_order_id.like(f"{p}-{manual_uuid}%"))
-                if manual_hex:
-                    manual_like_filters.append(Transaction.midtrans_order_id.like(f"{p}-{manual_hex}%"))
-                if manual_b64:
-                    manual_like_filters.append(Transaction.midtrans_order_id.like(f"{p}-{manual_b64}%"))
-                if manual_b32:
-                    manual_like_filters.append(Transaction.midtrans_order_id.like(f"{p}-{manual_b32}%"))
+            manual_like_filters = _build_manual_debt_like_filters(
+                debt_prefixes, manual_debt_id, encode_uuid_base64url, encode_uuid_base32
+            )
             existing_tx_query = existing_tx_query.filter(sa.or_(*manual_like_filters))
 
         existing_tx = existing_tx_query.first()
@@ -658,32 +752,13 @@ def initiate_debt_settlement_transaction_impl(
                 },
                 "callbacks": {"finish": finish_url_base_with_token},
             }
-
-            snap = get_midtrans_snap_client()
-            snap_response = snap.create_transaction(snap_params)
-            record_success("midtrans")
-
-            snap_token = snap_response.get("token")
-            redirect_url = snap_response.get("redirect_url")
-            if not snap_token and not redirect_url:
-                raise ValueError("Respons Midtrans tidak valid.")
-
-            new_transaction.snap_token = snap_token
-            new_transaction.snap_redirect_url = redirect_url
-            new_transaction.status = TransactionStatus.UNKNOWN
+            snap_token, redirect_url = _do_snap_charge(get_midtrans_snap_client(), snap_params, new_transaction, record_success)
         else:
-            method = requested_method or (enabled_core_methods[0] if enabled_core_methods else "qris")
-            if enabled_core_methods and not is_core_api_method_enabled(method, enabled_core_methods):
-                abort(HTTPStatus.UNPROCESSABLE_ENTITY, description="Metode pembayaran tidak tersedia.")
-
-            va_bank = requested_va_bank
-            if method == "va":
-                if enabled_core_va_banks:
-                    if va_bank is None:
-                        va_bank = "bni" if "bni" in enabled_core_va_banks else enabled_core_va_banks[0]
-                    elif not is_core_api_va_bank_enabled(va_bank, enabled_core_va_banks):
-                        abort(HTTPStatus.UNPROCESSABLE_ENTITY, description="Bank VA tidak tersedia.")
-
+            method, va_bank = _resolve_core_api_method_and_bank(
+                requested_method, requested_va_bank,
+                enabled_core_methods, enabled_core_va_banks,
+                is_core_api_method_enabled, is_core_api_va_bank_enabled,
+            )
             core_api = get_midtrans_core_api_client()
             charge_payload = build_core_api_charge_payload(
                 order_id=order_id,
@@ -699,37 +774,10 @@ def initiate_debt_settlement_transaction_impl(
             )
             charge_response = core_api.charge(charge_payload)
             record_success("midtrans")
-
-            payment_type = str(charge_response.get("payment_type") or "").strip().lower() or None
-            midtrans_trx_id = charge_response.get("transaction_id")
-            new_transaction.midtrans_transaction_id = str(midtrans_trx_id).strip() if midtrans_trx_id else None
-            new_transaction.snap_token = None
-            new_transaction.snap_redirect_url = None
-            new_transaction.status = TransactionStatus.PENDING
-
-            if method == "va":
-                bank = va_bank or "bni"
-                if bank == "mandiri" or payment_type == "echannel":
-                    new_transaction.payment_method = "echannel"
-                    bill_key = charge_response.get("bill_key") or charge_response.get("mandiri_bill_key")
-                    biller_code = charge_response.get("biller_code")
-                    new_transaction.payment_code = str(bill_key).strip() if bill_key else None
-                    new_transaction.biller_code = str(biller_code).strip() if biller_code else None
-                else:
-                    new_transaction.payment_method = f"{bank}_va"
-                    new_transaction.va_number = extract_va_number(charge_response)
-            else:
-                new_transaction.payment_method = payment_type or method
-
-            if method in {"gopay", "shopeepay"}:
-                deeplink = extract_action_url(charge_response, action_name_contains="deeplink-redirect")
-                if deeplink:
-                    new_transaction.snap_redirect_url = deeplink
-
-            if is_qr_payment_type(payment_type or method):
-                new_transaction.qr_code_url = extract_qr_code_url(charge_response)
-            else:
-                new_transaction.qr_code_url = None
+            _apply_core_api_response_to_tx(
+                new_transaction, charge_response, method, va_bank,
+                extract_va_number, extract_action_url, is_qr_payment_type, extract_qr_code_url,
+            )
 
         expiry_time = new_transaction.expiry_time
 
@@ -770,35 +818,16 @@ def initiate_debt_settlement_transaction_impl(
         record_failure("midtrans")
         session.rollback()
         raw_msg = getattr(e_mdt, "message", "") or str(e_mdt)
-        current_app.logger.error(
-            "Midtrans API error di initiate_debt_settlement_transaction: %s", raw_msg, exc_info=False
-        )
-        user_msg = "Layanan pembayaran sedang mengalami gangguan. Silakan coba beberapa saat lagi atau hubungi admin."
-        try:
-            marker = "API response: `"
-            if marker in raw_msg:
-                json_part = raw_msg.split(marker, 1)[1].split("`", 1)[0]
-                parsed = json.loads(json_part)
-                if isinstance(parsed, dict):
-                    midtrans_status_code = str(parsed.get("status_code") or "").strip()
-                    midtrans_msg = str(parsed.get("status_message") or "").strip()
-                    if midtrans_status_code.startswith("5") or not midtrans_status_code:
-                        user_msg = "Layanan pembayaran sedang mengalami gangguan sementara. Silakan coba beberapa saat lagi."
-                    elif midtrans_msg:
-                        user_msg = f"Pembayaran gagal: {midtrans_msg}. Silakan coba lagi atau hubungi admin."
-        except Exception:
-            pass
+        current_app.logger.error("Midtrans API error di initiate_debt_settlement_transaction: %s", raw_msg, exc_info=False)
         return error_response(
-            user_msg,
+            _build_midtrans_user_message(raw_msg),
             status_code=HTTPStatus.SERVICE_UNAVAILABLE,
             code="MIDTRANS_API_ERROR",
         )
     except requests.exceptions.RequestException as e_req:
         record_failure("midtrans")
         session.rollback()
-        current_app.logger.error(
-            "Midtrans network error di initiate_debt_settlement_transaction: %s", e_req, exc_info=False
-        )
+        current_app.logger.error("Midtrans network error di initiate_debt_settlement_transaction: %s", e_req, exc_info=False)
         return error_response(
             "Layanan pembayaran tidak dapat dijangkau saat ini. Silakan coba beberapa saat lagi.",
             status_code=HTTPStatus.SERVICE_UNAVAILABLE,

@@ -75,6 +75,13 @@ def test_user_debt_added_template_total_manual_debt_gb_present():
     assert "{total_manual_debt_gb}" in tpl
 
 
+def test_user_debt_added_template_has_debt_detail_lines():
+    """Template user_debt_added harus punya placeholder {debt_detail_lines} untuk rincian tunggakan."""
+    templates = _load_templates()
+    tpl = templates["user_debt_added"]
+    assert "{debt_detail_lines}" in tpl, "Template harus mengandung {debt_detail_lines}"
+
+
 def test_user_debt_added_template_renders_correctly_with_package():
     """Template user_debt_added bisa dirender dengan semua placeholder terisi."""
     templates = _load_templates()
@@ -88,6 +95,7 @@ def test_user_debt_added_template_renders_correctly_with_package():
         "auto_debt_deducted_gb": "0.00 GB",
         "effective_quota_gb": "20.00 GB",
         "total_manual_debt_gb": "30.00 GB",
+        "debt_detail_lines": "1. 19-03-2026 — 20.00 GB | Rp 200.000\n2. 15-03-2026 — 10.00 GB | –",
         "link_user_app": "https://lpsaring.babahdigital.net/login",
     }
     result = tpl.format(**ctx)
@@ -114,6 +122,7 @@ def test_user_debt_added_template_renders_correctly_manual_only():
         "auto_debt_deducted_gb": "0.00 GB",
         "effective_quota_gb": "10.00 GB",
         "total_manual_debt_gb": "10.00 GB",
+        "debt_detail_lines": "1. 19-03-2026 — 10.00 GB | –",
         "link_user_app": "https://lpsaring.babahdigital.net/login",
     }
     result = tpl.format(**ctx)

@@ -11,6 +11,7 @@ from app.extensions import db
 from app.infrastructure.db.models import (
     Package,
     User,
+    UserQuotaDebt,
     UserRole,
     AdminActionType,
     ApprovalStatus,
@@ -50,6 +51,37 @@ from app.services.hotspot_sync_service import sync_address_list_for_single_user
 
 
 DEFAULT_MANUAL_DEBT_ADVANCE_DAYS = 30
+
+
+def _build_debt_detail_lines(user: User) -> str:
+    """Buat teks rincian tunggakan manual yang belum lunas, diurutkan dari yang terlama."""
+    try:
+        debts = (
+            db.session.query(UserQuotaDebt)
+            .filter(
+                UserQuotaDebt.user_id == user.id,
+                UserQuotaDebt.is_paid == False,  # noqa: E712
+            )
+            .order_by(UserQuotaDebt.debt_date.asc().nullsfirst(), UserQuotaDebt.created_at.asc())
+            .all()
+        )
+        if not debts:
+            return "(Tidak ada rincian)"
+        lines = []
+        for i, d in enumerate(debts, 1):
+            remaining_mb = max(0, int(d.amount_mb or 0) - int(d.paid_mb or 0))
+            remaining_gb = remaining_mb / 1024.0
+            date_str = d.debt_date.strftime("%d-%m-%Y") if d.debt_date else "–"
+            price_part = ""
+            if d.price_rp and d.price_rp > 0:
+                price_part = " | Rp " + f"{int(d.price_rp):,}".replace(",", ".")
+            note_part = ""
+            if d.note:
+                note_part = f" | {d.note[:40]}"
+            lines.append(f"{i}. {date_str} — {remaining_gb:.2f} GB{price_part}{note_part}")
+        return "\n".join(lines)
+    except Exception:
+        return "(Rincian tidak tersedia)"
 
 
 def _resolve_default_server() -> str:
@@ -633,6 +665,7 @@ def update_user_by_admin_comprehensive(
                         "auto_debt_deducted_gb": f"{(float(auto_deducted_mb) / 1024.0):.2f} GB",
                         "effective_quota_mb": int(effective_quota_mb),
                         "effective_quota_gb": f"{(float(effective_quota_mb) / 1024.0):.2f} GB",
+                        "debt_detail_lines": _build_debt_detail_lines(target_user),
                     },
                 )
             except Exception:
@@ -722,6 +755,7 @@ def update_user_by_admin_comprehensive(
                         "auto_debt_deducted_gb": f"{(float(auto_deducted_mb) / 1024.0):.2f} GB",
                         "effective_quota_mb": int(effective_quota_mb),
                         "effective_quota_gb": f"{(float(effective_quota_mb) / 1024.0):.2f} GB",
+                        "debt_detail_lines": _build_debt_detail_lines(target_user),
                     },
                 )
             except Exception:
