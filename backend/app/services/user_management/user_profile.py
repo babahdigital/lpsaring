@@ -81,6 +81,9 @@ def _build_debt_detail_lines(user: User) -> str:
             lines.append(f"{i}. {date_str} — {remaining_gb:.2f} GB{price_part}{note_part}")
         return "\n".join(lines)
     except Exception:
+        current_app.logger.exception(
+            "_build_debt_detail_lines gagal untuk user %s", getattr(user, "id", "?")
+        )
         return "(Rincian tidak tersedia)"
 
 
@@ -599,6 +602,11 @@ def update_user_by_admin_comprehensive(
             if not ok_debt:
                 return False, msg_debt, None
 
+            # Capture debt detail NOW while session is clean (flushed by append_quota_mutation_event
+            # inside add_manual_debt). Calling this later — after advance credit modifies session
+            # state — triggers SQLAlchemy autoflush on a dirty session which silently fails.
+            _debt_detail_lines_pkg = _build_debt_detail_lines(target_user)
+
             # CREDIT QUOTA (advance): untuk kasus "hutang kuota", saat debt manual dibuat kita juga memberi kuota
             # agar user bisa akses. Rule: kuota advance dipakai untuk melunasi AUTO debt dulu (jika ada),
             # sisa menjadi kuota bersih. Manual debt (termasuk yang baru dibuat) tetap tercatat.
@@ -665,7 +673,7 @@ def update_user_by_admin_comprehensive(
                         "auto_debt_deducted_gb": f"{(float(auto_deducted_mb) / 1024.0):.2f} GB",
                         "effective_quota_mb": int(effective_quota_mb),
                         "effective_quota_gb": f"{(float(effective_quota_mb) / 1024.0):.2f} GB",
-                        "debt_detail_lines": _build_debt_detail_lines(target_user),
+                        "debt_detail_lines": _debt_detail_lines_pkg,
                     },
                 )
             except Exception:
@@ -693,6 +701,9 @@ def update_user_by_admin_comprehensive(
             )
             if not ok_debt:
                 return False, msg_debt, None
+
+            # Capture debt detail NOW while session is clean (same reason as package flow above).
+            _debt_detail_lines_mb = _build_debt_detail_lines(target_user)
 
             # CREDIT QUOTA (advance): saat debt manual dibuat, juga beri kuota agar user bisa akses.
             # Rule: kuota advance dipakai untuk melunasi AUTO debt dulu (jika ada), sisa menjadi kuota bersih.
@@ -755,7 +766,7 @@ def update_user_by_admin_comprehensive(
                         "auto_debt_deducted_gb": f"{(float(auto_deducted_mb) / 1024.0):.2f} GB",
                         "effective_quota_mb": int(effective_quota_mb),
                         "effective_quota_gb": f"{(float(effective_quota_mb) / 1024.0):.2f} GB",
-                        "debt_detail_lines": _build_debt_detail_lines(target_user),
+                        "debt_detail_lines": _debt_detail_lines_mb,
                     },
                 )
             except Exception:
