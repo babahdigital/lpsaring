@@ -145,6 +145,23 @@ def verify_temp_debt_settlement_receipt_token(token: str, max_age_seconds: int =
         return None
 
 
+def generate_temp_user_detail_report_token(user_id: str) -> str:
+    """Menghasilkan token aman berbatas waktu untuk akses PDF detail pengguna."""
+    s = _get_serializer("temp-user-detail-report-access")
+    return s.dumps(str(user_id))
+
+
+def verify_temp_user_detail_report_token(token: str, max_age_seconds: int = 3600) -> Optional[str]:
+    """Memverifikasi token PDF detail pengguna dan mengembalikan ID user jika valid."""
+    s = _get_serializer("temp-user-detail-report-access")
+    try:
+        user_id = s.loads(token, max_age=max_age_seconds)
+        return str(user_id)
+    except (itsdangerous.SignatureExpired, itsdangerous.BadTimeSignature, itsdangerous.BadSignature):
+        current_app.logger.warning(f"Percobaan akses detail report dengan token tidak valid atau kedaluwarsa: {token}")
+        return None
+
+
 # --- [AKHIR BLOK BARU] ---
 
 

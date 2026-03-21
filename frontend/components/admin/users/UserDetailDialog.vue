@@ -3,6 +3,7 @@ import { differenceInDays, format, isPast, isValid } from 'date-fns'
 import { id } from 'date-fns/locale'
 import { computed, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
+import AppTextField from '@core/components/app-form-elements/AppTextField.vue'
 import { useSnackbar } from '@/composables/useSnackbar'
 
 // Definisikan interface User
@@ -74,9 +75,40 @@ interface ManualDebtItem {
   last_paid_source?: string | null
 }
 
+interface UserDetailSummaryPurchase {
+  order_id: string
+  package_name: string
+  amount_display: string
+  paid_at_display: string
+  payment_method: string
+}
+
+interface UserDetailSummary {
+  profile_display_name: string
+  profile_source: string
+  mikrotik_account_label: string
+  mikrotik_account_hint: string
+  access_status_label: string
+  access_status_hint: string
+  access_status_tone: string
+  device_count: number
+  device_count_label: string
+  last_login_label: string
+  recent_purchases: UserDetailSummaryPurchase[]
+  purchase_count_30d: number
+  purchase_total_amount_30d_display: string
+  admin_whatsapp_default?: string
+}
+
 const manualDebtItems = ref<ManualDebtItem[]>([])
 const manualDebtSummary = ref<{ manual_debt_mb: number, open_items: number, paid_items: number, total_items: number } | null>(null)
 const manualDebtLoading = ref(false)
+const detailSummary = ref<UserDetailSummary | null>(null)
+const detailSummaryLoading = ref(false)
+const detailReportRecipient = ref('')
+const sendingDetailWhatsapp = ref(false)
+const sendingDebtWhatsapp = ref(false)
+const isDebtLedgerOpen = ref(false)
 
 const roleMap = { USER: { text: 'User', color: 'info' }, KOMANDAN: { text: 'Komandan', color: 'success' }, ADMIN: { text: 'Admin', color: 'primary' }, SUPER_ADMIN: { text: 'Support', color: 'secondary' } }
 const statusMap = { APPROVED: { text: 'Disetujui', color: 'success' }, PENDING_APPROVAL: { text: 'Menunggu', color: 'warning' }, REJECTED: { text: 'Ditolak', color: 'error' } }
@@ -206,8 +238,9 @@ const debtStatusMeta = computed(() => {
 
 const detailConnectionCards = computed(() => {
   const user = props.user
-  const deviceCount = Number(user?.device_count ?? 0)
-  const profileName = String(user?.mikrotik_profile_name ?? '').trim()
+  const summary = detailSummary.value
+  const deviceCount = Number(summary?.device_count ?? user?.device_count ?? 0)
+  const profileName = String(summary?.profile_display_name ?? user?.mikrotik_profile_name ?? '').trim()
 
   return [
     {
@@ -222,7 +255,7 @@ const detailConnectionCards = computed(() => {
       key: 'login',
       icon: 'tabler-clock-play',
       title: 'Login Terakhir',
-      value: formatCompactDateTime(user?.last_login_at ?? null),
+      value: summary?.last_login_label || formatCompactDateTime(user?.last_login_at ?? null),
       caption: user?.last_login_at ? 'Waktu login terakhir yang tercatat' : 'Belum ada riwayat login tersimpan',
       color: user?.last_login_at ? 'success' : 'secondary',
     },
@@ -230,12 +263,33 @@ const detailConnectionCards = computed(() => {
       key: 'profile',
       icon: 'tabler-shield-check',
       title: 'Profile MikroTik',
-      value: profileName !== '' ? profileName : 'Belum terset',
-      caption: user?.mikrotik_user_exists ? 'Akun sinkron dengan MikroTik' : 'Belum ada akun MikroTik aktif',
+      value: profileName !== '' ? profileName : 'Belum tersedia',
+      caption: summary?.mikrotik_account_label || (user?.mikrotik_user_exists ? 'Sinkron terakhir tersimpan' : 'Perlu verifikasi live MikroTik'),
       color: user?.mikrotik_user_exists ? 'primary' : 'warning',
     },
   ]
 })
+
+const hasRecentPurchases = computed(() => (detailSummary.value?.recent_purchases?.length ?? 0) > 0)
+
+async function fetchUserDetailSummary() {
+  if (!props.user?.id)
+    return
+  detailSummaryLoading.value = true
+  try {
+    const response = await $api<UserDetailSummary>(`/admin/users/${props.user.id}/detail-summary`)
+    detailSummary.value = response
+    if (!detailReportRecipient.value)
+      detailReportRecipient.value = props.user.phone_number || response.admin_whatsapp_default || ''
+  }
+  catch (error: any) {
+    detailSummary.value = null
+    showSnackbar({ type: 'warning', title: 'Detail Pengguna', text: error?.data?.message || 'Ringkasan pengguna belum bisa dimuat.' })
+  }
+  finally {
+    detailSummaryLoading.value = false
+  }
+}
 
 function formatMb(value: number) {
   if (!Number.isFinite(value))
@@ -274,18 +328,72 @@ watch(
   (isOpen) => {
     if (!isOpen)
       return
-    if (props.user)
+    if (props.user) {
       fetchManualDebtLedger()
+      detailReportRecipient.value = props.user.phone_number || ''
+      fetchUserDetailSummary()
+    }
   },
 )
 
 watch(
   () => props.user?.id,
   () => {
-    if (props.modelValue && props.user)
+    if (props.modelValue && props.user) {
       fetchManualDebtLedger()
+      fetchUserDetailSummary()
+    }
   },
 )
+
+function openUserDetailPdf() {
+  if (!props.user)
+    return
+  window.open(`/api/admin/users/${props.user.id}/detail-report/export?format=pdf`, '_blank', 'noopener')
+}
+
+async function sendUserDetailWhatsapp() {
+  if (!props.user)
+    return
+
+  sendingDetailWhatsapp.value = true
+  try {
+    const resp = await $api<{ message?: string }>(`/admin/users/${props.user.id}/detail-report/send-whatsapp`, {
+      method: 'POST',
+      body: { recipient_phone: detailReportRecipient.value || props.user.phone_number },
+    })
+    showSnackbar({ type: 'success', title: 'Detail Pengguna', text: resp?.message || 'PDF detail pengguna berhasil diantrikan ke WhatsApp.' })
+  }
+  catch (error: any) {
+    showSnackbar({ type: 'warning', title: 'Detail Pengguna', text: error?.data?.message || 'Gagal mengirim PDF detail pengguna ke WhatsApp.' })
+  }
+  finally {
+    sendingDetailWhatsapp.value = false
+  }
+}
+
+function openDebtPdf() {
+  if (!props.user)
+    return
+  window.open(`/api/admin/users/${props.user.id}/debts/export?format=pdf`, '_blank', 'noopener')
+}
+
+async function sendDebtWhatsapp() {
+  if (!props.user)
+    return
+
+  sendingDebtWhatsapp.value = true
+  try {
+    const resp = await $api<{ message?: string }>(`/admin/users/${props.user.id}/debts/send-whatsapp`, { method: 'POST' })
+    showSnackbar({ type: 'success', title: 'Tunggakan', text: resp?.message || 'Ringkasan tunggakan berhasil diantrikan ke WhatsApp.' })
+  }
+  catch (error: any) {
+    showSnackbar({ type: 'warning', title: 'Tunggakan', text: error?.data?.message || 'Gagal mengirim ringkasan tunggakan ke WhatsApp.' })
+  }
+  finally {
+    sendingDebtWhatsapp.value = false
+  }
+}
 
 function onClose() {
   emit('update:modelValue', false)
@@ -354,6 +462,36 @@ function onClose() {
             </div>
           </div>
         </div>
+
+        <VSheet rounded="lg" border class="pa-3 mb-4 admin-user-detail__actionCard">
+          <div class="admin-user-detail__actionHead">
+            <div>
+              <div class="text-overline">
+                Tindak Lanjut Cepat
+              </div>
+              <div class="text-body-2 text-medium-emphasis">
+                Kirim PDF detail pengguna ke nomor user atau admin lain tanpa keluar dari dialog ini.
+              </div>
+            </div>
+            <div class="admin-user-detail__actionButtons">
+              <VBtn size="small" color="error" variant="tonal" prepend-icon="tabler-file-type-pdf" @click="openUserDetailPdf">
+                PDF Detail
+              </VBtn>
+              <VBtn size="small" color="success" variant="tonal" prepend-icon="tabler-brand-whatsapp" :loading="sendingDetailWhatsapp" @click="sendUserDetailWhatsapp">
+                Kirim WhatsApp
+              </VBtn>
+            </div>
+          </div>
+          <AppTextField
+            v-model="detailReportRecipient"
+            class="mt-3"
+            label="Nomor WhatsApp Tujuan"
+            prepend-inner-icon="tabler-brand-whatsapp"
+            placeholder="Nomor pengguna atau admin lain"
+            hint="PDF hanya menampilkan tunggakan bila ada, dan riwayat pembelian hanya 30 hari terakhir bila tersedia."
+            persistent-hint
+          />
+        </VSheet>
 
         <VList lines="two" density="compact">
           <VListItem prepend-icon="tabler-user" title="Nama Lengkap" :subtitle="props.user.full_name" />
@@ -440,13 +578,29 @@ function onClose() {
           </VAlert>
 
           <VSheet v-if="shouldShowManualDebtSection" rounded="lg" border class="pa-3 mt-4">
-            <div class="d-flex justify-space-between align-center">
-              <div class="text-overline">
-                Riwayat Tunggakan Manual
+            <div class="admin-user-detail__debtHead">
+              <div>
+                <div class="text-overline">
+                  Riwayat Tunggakan Manual
+                </div>
+                <div class="text-caption text-medium-emphasis">
+                  Jalankan tindak lanjut debt tanpa berpindah ke dialog edit pengguna.
+                </div>
               </div>
-              <VChip v-if="manualDebtSummary" size="x-small" label>
-                Belum lunas {{ manualDebtSummary.open_items }} / Total {{ manualDebtSummary.total_items }}
-              </VChip>
+              <div class="admin-user-detail__debtActions">
+                <VChip v-if="manualDebtSummary" size="x-small" label>
+                  Belum lunas {{ manualDebtSummary.open_items }} / Total {{ manualDebtSummary.total_items }}
+                </VChip>
+                <VBtn size="x-small" variant="tonal" prepend-icon="tabler-list-details" @click="isDebtLedgerOpen = true">
+                  Detail
+                </VBtn>
+                <VBtn v-if="hasDebt" size="x-small" color="error" variant="tonal" prepend-icon="tabler-file-type-pdf" @click="openDebtPdf">
+                  PDF
+                </VBtn>
+                <VBtn v-if="hasDebt" size="x-small" color="success" variant="tonal" prepend-icon="tabler-brand-whatsapp" :loading="sendingDebtWhatsapp" @click="sendDebtWhatsapp">
+                  WA Debt
+                </VBtn>
+              </div>
             </div>
 
             <VAlert v-if="manualDebtLoading" variant="tonal" density="compact" type="info" class="mt-2">
@@ -511,6 +665,44 @@ function onClose() {
           </VAlert>
         </div>
 
+        <template v-if="hasRecentPurchases">
+          <VDivider class="my-4" />
+          <div class="text-overline mb-2">
+            Riwayat Pembelian 30 Hari
+          </div>
+          <VAlert v-if="detailSummaryLoading" type="info" variant="tonal" density="compact" class="mb-3">
+            Memuat riwayat pembelian terbaru...
+          </VAlert>
+          <VSheet v-else rounded="lg" border class="pa-3">
+            <div class="d-flex justify-space-between align-center flex-wrap gap-2 mb-3">
+              <div class="text-body-2 text-medium-emphasis">
+                {{ detailSummary?.purchase_count_30d }} transaksi sukses • {{ detailSummary?.purchase_total_amount_30d_display }}
+              </div>
+            </div>
+            <VTable density="compact">
+              <thead>
+                <tr>
+                  <th>Waktu</th>
+                  <th>Paket</th>
+                  <th>Metode</th>
+                  <th class="text-right">Nominal</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in detailSummary?.recent_purchases || []" :key="`${item.order_id}-${item.paid_at_display}`">
+                  <td>{{ item.paid_at_display }}</td>
+                  <td>
+                    <div>{{ item.package_name }}</div>
+                    <div class="text-caption text-disabled">{{ item.order_id }}</div>
+                  </td>
+                  <td>{{ item.payment_method }}</td>
+                  <td class="text-right">{{ item.amount_display }}</td>
+                </tr>
+              </tbody>
+            </VTable>
+          </VSheet>
+        </template>
+
         <VDivider class="my-4" />
         <div class="text-overline mb-2">
           Informasi Waktu
@@ -539,6 +731,8 @@ function onClose() {
       </VCardActions>
     </VCard>
   </VDialog>
+
+  <UserDebtLedgerDialog v-model="isDebtLedgerOpen" :user="props.user" />
 </template>
 
 <style scoped>
@@ -611,6 +805,39 @@ function onClose() {
   box-shadow: 0 18px 38px rgba(15, 23, 42, 0.05);
 }
 
+.admin-user-detail__actionCard {
+  background: rgba(var(--v-theme-surface), 0.9);
+}
+
+.admin-user-detail__actionHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-user-detail__actionButtons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.admin-user-detail__debtHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-user-detail__debtActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .admin-user-detail__meta-cardHead {
   display: flex;
   align-items: center;
@@ -661,6 +888,33 @@ function onClose() {
 @media (max-width: 600px) {
   .admin-user-detail__hero {
     padding: 14px;
+  }
+
+  .admin-user-detail__actionHead {
+    flex-direction: column;
+  }
+
+  .admin-user-detail__actionButtons {
+    width: 100%;
+  }
+
+  .admin-user-detail__actionButtons :deep(.v-btn) {
+    flex: 1 1 0;
+  }
+
+  .admin-user-detail__debtHead {
+    flex-direction: column;
+  }
+
+  .admin-user-detail__debtActions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .admin-user-detail__debtActions :deep(.v-btn),
+  .admin-user-detail__debtActions :deep(.v-chip) {
+    width: 100%;
+    justify-content: center;
   }
 
   .admin-user-detail__hero-main {

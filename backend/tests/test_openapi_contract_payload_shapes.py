@@ -45,6 +45,9 @@ def test_openapi_priority_paths_reference_expected_payload_schemas():
         "/users/me/devices/bind-current": "#/components/schemas/DeviceBindResponse",
         "/transactions/by-order-id/{order_id}": "#/components/schemas/TransactionDetailResponse",
         "/transactions/public/by-order-id/{order_id}": "#/components/schemas/TransactionDetailResponsePublic",
+        "/admin/users/{user_id}/mikrotik-status": "#/components/schemas/AdminUserMikrotikStatusResponse",
+        "/admin/users/{user_id}/detail-summary": "#/components/schemas/AdminUserDetailSummaryResponse",
+        "/admin/users/{user_id}/detail-report/send-whatsapp": "#/components/schemas/AdminDebtWhatsappQueueResponse",
     }
 
     missing: list[str] = []

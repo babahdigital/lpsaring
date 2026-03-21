@@ -68,6 +68,11 @@ Perubahan endpoint prioritas dianggap lengkap hanya jika keempat artefak berikut
 
 - `GET /admin/users`
 - `GET /admin/users/{user_id}`
+- `GET /admin/users/{user_id}/mikrotik-status`
+- `GET /admin/users/{user_id}/detail-summary`
+- `GET /admin/users/{user_id}/detail-report/export?format=pdf`
+- `POST /admin/users/{user_id}/detail-report/send-whatsapp`
+- `GET /admin/users/detail-report/temp/{token}.pdf`
 - `GET /admin/users/{user_id}/debts`
 - `POST /admin/users/{user_id}/debts/{debt_id}/settle`
 - `POST /admin/users/{user_id}/debts/settle-all`
@@ -97,5 +102,13 @@ Jika signature endpoint berubah, lakukan urutan ini:
 - `python scripts/api_quality_gate.py`
 - `python scripts/contract_gate.py --base HEAD~1 --head HEAD`
 - `docker compose exec -T backend python -m pytest backend/tests/test_openapi_contract_smoke.py -q`
+
+## Catatan Fitur Detail Pengguna Admin
+
+- `GET /admin/users/{user_id}/mikrotik-status` mengembalikan hasil live check/sinkron terakhir MikroTik plus ringkasan kuota database yang dipakai dialog admin.
+- `GET /admin/users/{user_id}/detail-summary` adalah source of truth untuk pill status/profile/dialog detail admin. Frontend tidak boleh menebak fallback profile sendiri bila response ini tersedia.
+- `GET /admin/users/{user_id}/detail-report/export?format=pdf` menghasilkan PDF detail operasional user.
+- `POST /admin/users/{user_id}/detail-report/send-whatsapp` menerima payload opsional `recipient_phone` bila admin ingin mengarahkan PDF detail ke nomor admin lain.
+- `GET /admin/users/detail-report/temp/{token}.pdf` adalah URL publik sementara untuk attachment PDF detail pengguna yang dikirim ke WhatsApp.
 
 Workflow lengkap kontrak ada di [docs/workflows/OPENAPI_CONTRACT.md](workflows/OPENAPI_CONTRACT.md).

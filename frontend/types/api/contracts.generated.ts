@@ -2,7 +2,7 @@
 // AUTO-GENERATED FILE. DO NOT EDIT MANUALLY.
 // Source: contracts/openapi/openapi.v1.yaml
 
-export const OPENAPI_SOURCE_SHA256 = '7e25923656a5184927e1abb07d37fbbcaf3f256da17bcce3754b17506a95aee3' as const
+export const OPENAPI_SOURCE_SHA256 = '31cc1c933bdf3a88005c38df66f1f42649272e364a2458ecb2be76dd0f4b8b35' as const
 export const API_CONTRACT_REVISION = 'openapi-1.0.0' as const
 
 export type MessageResponse = { message: string }
@@ -60,6 +60,12 @@ export type AdminUserDebtListResponse = { items: Array<AdminUserDebtItem>; summa
 export type AdminDebtSettleItemResponse = { message: string; paid_mb: number; unblocked: boolean; receipt_url?: string | null }
 export type AdminDebtSettleAllResponse = { message: string; paid_auto_mb: number; paid_manual_mb: number; debt_auto_before_mb: number; debt_manual_before_mb: number; unblocked: boolean; receipt_url?: string | null }
 export type AdminDebtWhatsappQueueResponse = { message: string; queued: boolean }
+export type AdminUserMikrotikStatusResponse = { user_id: string; exists_on_mikrotik: boolean; live_available: boolean; message: string; reason?: string | null; details?: { [key: string]: unknown } | null; resolved_profile_name: string; database_profile_name?: string | null; derived_profile_name: string; db_quota_purchased_mb: number; db_quota_used_mb: number; db_quota_remaining_mb: number }
+export type AdminUserDetailSummaryMikrotik = { live_available: boolean; exists_on_mikrotik: boolean; message: string; reason?: string | null }
+export type AdminUserDetailSummaryDebt = { auto_mb: number; manual_mb: number; total_mb: number; open_items: number }
+export type AdminUserDetailSummaryPurchase = { order_id: string; package_name: string; amount?: number; amount_display: string; paid_at?: string | null; paid_at_display: string; payment_method: string }
+export type AdminUserDetailSummaryResponse = { mikrotik: AdminUserDetailSummaryMikrotik; profile_display_name: string; profile_source: string; mikrotik_account_label: string; mikrotik_account_hint: string; access_status_label: string; access_status_hint: string; access_status_tone: string; device_count: number; device_count_label: string; last_login_label: string; debt: AdminUserDetailSummaryDebt; recent_purchases: Array<AdminUserDetailSummaryPurchase>; purchase_count_30d: number; purchase_total_amount_30d: number; purchase_total_amount_30d_display: string; admin_whatsapp_default: string }
+export type AdminUserDetailReportWhatsappRequest = { recipient_phone?: string | null }
 export type AdminMetricsReliabilitySignals = { payment_idempotency_degraded?: boolean; hotspot_sync_lock_degraded?: boolean; policy_parity_degraded?: boolean }
 export type AdminMetricsResponse = { metrics?: { [key: string]: number }; reliability_signals?: AdminMetricsReliabilitySignals }
 export type AccessParityItem = { user_id: string; phone_number: string; mac: string; ip?: string | null; app_status: string; expected_binding_type: string; actual_binding_type?: string | null; address_list_statuses: Array<string>; mismatches: Array<string> }
@@ -151,6 +157,11 @@ export interface GeneratedApiContractMap {
     response: unknown
     error: ErrorResponse
   }
+  'GET /admin/users/detail-report/temp/{token}.pdf': {
+    request: never
+    response: unknown
+    error: ErrorResponse
+  }
   'POST /admin/users/seed-imported-update-submissions': {
     request: SeedImportedUpdateSubmissionsRequest
     response: SeedImportedUpdateSubmissionsResponse
@@ -179,6 +190,26 @@ export interface GeneratedApiContractMap {
   'POST /admin/users/{user_id}/debts/{debt_id}/settle': {
     request: never
     response: AdminDebtSettleItemResponse
+    error: ErrorResponse
+  }
+  'GET /admin/users/{user_id}/detail-report/export': {
+    request: never
+    response: unknown
+    error: ErrorResponse
+  }
+  'POST /admin/users/{user_id}/detail-report/send-whatsapp': {
+    request: AdminUserDetailReportWhatsappRequest
+    response: AdminDebtWhatsappQueueResponse
+    error: ErrorResponse
+  }
+  'GET /admin/users/{user_id}/detail-summary': {
+    request: never
+    response: AdminUserDetailSummaryResponse
+    error: ErrorResponse
+  }
+  'GET /admin/users/{user_id}/mikrotik-status': {
+    request: never
+    response: AdminUserMikrotikStatusResponse
     error: ErrorResponse
   }
   'POST /admin/users/{user_id}/quota-adjust': {

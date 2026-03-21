@@ -1002,6 +1002,158 @@ paths:
         '404':
           $ref: '#/components/responses/ErrorNotFound'
 
+  /admin/users/{user_id}/mikrotik-status:
+    get:
+      tags: [AdminUsers]
+      summary: Ambil status sinkronisasi user terhadap MikroTik
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Status sinkronisasi MikroTik user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserMikrotikStatusResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+
+  /admin/users/{user_id}/detail-summary:
+    get:
+      tags: [AdminUsers]
+      summary: Ambil ringkasan operasional detail user untuk dialog admin
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Ringkasan operasional detail user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserDetailSummaryResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+
+  /admin/users/{user_id}/detail-report/export:
+    get:
+      tags: [AdminUsers]
+      summary: Export PDF detail operasional user
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: format
+          required: false
+          schema:
+            type: string
+            enum: [pdf]
+      responses:
+        '200':
+          description: PDF detail operasional user
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/ErrorBadRequest'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+
+  /admin/users/{user_id}/detail-report/send-whatsapp:
+    post:
+      tags: [AdminUsers]
+      summary: Antrikan PDF detail operasional user ke WhatsApp
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUserDetailReportWhatsappRequest'
+      responses:
+        '200':
+          description: PDF detail user berhasil diantrikan ke WhatsApp
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDebtWhatsappQueueResponse'
+        '400':
+          $ref: '#/components/responses/ErrorBadRequest'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+
+  /admin/users/detail-report/temp/{token}.pdf:
+    get:
+      tags: [AdminUsers]
+      summary: Akses publik sementara untuk PDF detail operasional user
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: PDF detail operasional user
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+
   /admin/users/debts/temp/{token}.pdf:
     get:
       tags: [AdminUsers]
@@ -2445,6 +2597,136 @@ components:
           type: string
         queued:
           type: boolean
+
+    AdminUserMikrotikStatusResponse:
+      type: object
+      required: [user_id, exists_on_mikrotik, live_available, message, resolved_profile_name, db_quota_purchased_mb, db_quota_used_mb, db_quota_remaining_mb, derived_profile_name]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        exists_on_mikrotik:
+          type: boolean
+        live_available:
+          type: boolean
+        message:
+          type: string
+        reason:
+          type: string
+          nullable: true
+        details:
+          type: object
+          nullable: true
+          additionalProperties: true
+        resolved_profile_name:
+          type: string
+        database_profile_name:
+          type: string
+          nullable: true
+        derived_profile_name:
+          type: string
+        db_quota_purchased_mb:
+          type: number
+        db_quota_used_mb:
+          type: number
+        db_quota_remaining_mb:
+          type: number
+
+    AdminUserDetailSummaryMikrotik:
+      type: object
+      required: [live_available, exists_on_mikrotik, message]
+      properties:
+        live_available:
+          type: boolean
+        exists_on_mikrotik:
+          type: boolean
+        message:
+          type: string
+        reason:
+          type: string
+          nullable: true
+
+    AdminUserDetailSummaryDebt:
+      type: object
+      required: [auto_mb, manual_mb, total_mb, open_items]
+      properties:
+        auto_mb:
+          type: number
+        manual_mb:
+          type: number
+        total_mb:
+          type: number
+        open_items:
+          type: integer
+
+    AdminUserDetailSummaryPurchase:
+      type: object
+      required: [order_id, package_name, amount_display, paid_at_display, payment_method]
+      properties:
+        order_id:
+          type: string
+        package_name:
+          type: string
+        amount:
+          type: integer
+        amount_display:
+          type: string
+        paid_at:
+          type: string
+          format: date-time
+          nullable: true
+        paid_at_display:
+          type: string
+        payment_method:
+          type: string
+
+    AdminUserDetailSummaryResponse:
+      type: object
+      required: [mikrotik, profile_display_name, profile_source, mikrotik_account_label, mikrotik_account_hint, access_status_label, access_status_hint, access_status_tone, device_count, device_count_label, last_login_label, debt, recent_purchases, purchase_count_30d, purchase_total_amount_30d, purchase_total_amount_30d_display, admin_whatsapp_default]
+      properties:
+        mikrotik:
+          $ref: '#/components/schemas/AdminUserDetailSummaryMikrotik'
+        profile_display_name:
+          type: string
+        profile_source:
+          type: string
+        mikrotik_account_label:
+          type: string
+        mikrotik_account_hint:
+          type: string
+        access_status_label:
+          type: string
+        access_status_hint:
+          type: string
+        access_status_tone:
+          type: string
+        device_count:
+          type: integer
+        device_count_label:
+          type: string
+        last_login_label:
+          type: string
+        debt:
+          $ref: '#/components/schemas/AdminUserDetailSummaryDebt'
+        recent_purchases:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminUserDetailSummaryPurchase'
+        purchase_count_30d:
+          type: integer
+        purchase_total_amount_30d:
+          type: integer
+        purchase_total_amount_30d_display:
+          type: string
+        admin_whatsapp_default:
+          type: string
+
+    AdminUserDetailReportWhatsappRequest:
+      type: object
+      properties:
+        recipient_phone:
+          type: string
+          nullable: true
 
     AdminMetricsReliabilitySignals:
       type: object

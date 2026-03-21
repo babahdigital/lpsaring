@@ -349,6 +349,21 @@ function getUserDebtTotalMb(user: User): number {
   return (Number.isFinite(autoMb) ? autoMb : 0) + (Number.isFinite(manualMb) ? manualMb : 0)
 }
 
+function resolveUserProfileName(user: User): string {
+  const current = String(user.mikrotik_profile_name ?? '').trim()
+  if (current !== '')
+    return current
+
+  const defaults = mikrotikOptions.value?.defaults
+  if (user.is_active !== true)
+    return defaults?.profile_inactive || 'inactive'
+  if (user.is_unlimited_user === true)
+    return defaults?.profile_unlimited || 'unlimited'
+  if (user.role === 'KOMANDAN')
+    return defaults?.profile_komandan || defaults?.profile_active || defaults?.profile_user || 'komandan'
+  return defaults?.profile_active || defaults?.profile_user || 'default'
+}
+
 type UserProfileLabel = 'Aktif' | 'Blocked' | 'FUP' | 'Habis' | 'Expired' | 'Unlimited' | 'Nonaktif'
 function getUserProfileMeta(user: User): { text: UserProfileLabel, color: string, icon: string, tooltip?: string } {
   if (user.is_blocked === true)
@@ -1273,7 +1288,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
             </VChip>
 
             <div class="admin-users__profileHint text-caption text-medium-emphasis">
-              {{ item.mikrotik_profile_name || 'Profile belum terset' }}
+              {{ resolveUserProfileName(item) }}
             </div>
 
             <VTooltip v-if="getUserDebtTotalMb(item) > 0" :text="`Debt: ${getUserDebtTotalMb(item)} MB`" location="top">
@@ -1413,7 +1428,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
                   {{ getUserProfileMeta(user).text }}
                 </VChip>
                 <div class="admin-users__mobile-insightValue text-caption text-medium-emphasis">
-                  {{ user.mikrotik_profile_name || 'Belum terset' }}
+                  {{ resolveUserProfileName(user) }}
                 </div>
               </div>
 

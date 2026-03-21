@@ -79,6 +79,37 @@ interface LiveData {
   mt_profile: string
 }
 
+interface UserDetailSummaryPurchase {
+  order_id: string
+  package_name: string
+  amount_display: string
+  paid_at_display: string
+  payment_method: string
+}
+
+interface UserDetailSummary {
+  profile_display_name: string
+  profile_source: string
+  mikrotik_account_label: string
+  mikrotik_account_hint: string
+  access_status_label: string
+  access_status_hint: string
+  access_status_tone: string
+  device_count: number
+  device_count_label: string
+  last_login_label: string
+  debt: {
+    auto_mb: number
+    manual_mb: number
+    total_mb: number
+    open_items: number
+  }
+  recent_purchases: UserDetailSummaryPurchase[]
+  purchase_count_30d: number
+  purchase_total_amount_30d_display: string
+  admin_whatsapp_default?: string
+}
+
 const authStore = useAuthStore()
 const display = useDisplay()
 const isMobile = computed(() => display.smAndDown.value)
@@ -128,6 +159,10 @@ const liveData = ref<LiveData | null>(null)
 const isDebtLedgerOpen = ref(false)
 const isQuotaHistoryOpen = ref(false)
 const isDebtWhatsappSending = ref(false)
+const detailSummary = ref<UserDetailSummary | null>(null)
+const isDetailSummaryLoading = ref(false)
+const isDetailReportWhatsappSending = ref(false)
+const detailReportRecipient = ref('')
 const isDebtQuotaEnabled = ref(false)
 const SA_QUOTA_MB_PER_GB = 1024
 
@@ -200,20 +235,65 @@ const saQuotaRemainingMb = computed(() => Math.max(0, Number(formData.total_quot
 const saQuotaPurchasedCurrentText = computed(() => `Saat ini ${formatQuotaValueByUnit(formData.total_quota_purchased_mb, saQuotaInputUnit.value)}`)
 const saQuotaUsedCurrentText = computed(() => `Saat ini ${formatQuotaValueByUnit(Number(formData.total_quota_used_mb), saQuotaInputUnit.value)}`)
 
+function resolveFallbackProfileName(user: User | null | undefined): string {
+  if (!user)
+    return '-'
+  const current = String(user.mikrotik_profile_name ?? '').trim()
+  if (current !== '')
+    return current
+  if (user.is_active !== true)
+    return mikrotikDefaults.value.profile_inactive
+  if (user.is_unlimited_user === true)
+    return mikrotikDefaults.value.profile_unlimited
+  if (user.role === 'KOMANDAN')
+    return mikrotikDefaults.value.profile_komandan || mikrotikDefaults.value.profile_active || mikrotikDefaults.value.profile_user
+  return mikrotikDefaults.value.profile_active || mikrotikDefaults.value.profile_user
+}
+
 const editDialogConnectionMeta = computed(() => {
   const user = props.user
   const deviceCount = Number(user?.device_count ?? 0)
   const lastLoginAt = user?.last_login_at ?? null
-  const mikrotikProfile = String(user?.mikrotik_profile_name ?? '').trim()
+  const summary = detailSummary.value
 
   return {
-    deviceCount,
-    hasDevices: deviceCount > 0,
-    loginLabel: lastLoginAt ? new Date(lastLoginAt).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Belum pernah login',
-    mikrotikProfile: mikrotikProfile !== '' ? mikrotikProfile : 'Belum terset',
-    mikrotikStatusLabel: user?.mikrotik_user_exists === true ? 'Sinkron ke MikroTik' : 'Belum ada akun MikroTik',
+    deviceCount: Number(summary?.device_count ?? deviceCount),
+    hasDevices: Number(summary?.device_count ?? deviceCount) > 0,
+    loginLabel: summary?.last_login_label || (lastLoginAt ? new Date(lastLoginAt).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Belum pernah login'),
+    mikrotikProfile: summary?.profile_display_name || resolveFallbackProfileName(user),
+    mikrotikProfileHint: summary?.profile_source || 'Standar sistem',
+    mikrotikStatusLabel: summary?.mikrotik_account_label || (user?.mikrotik_user_exists === true ? 'Sinkron terakhir tersimpan' : 'Perlu verifikasi live'),
+    mikrotikStatusHint: summary?.mikrotik_account_hint || 'Gunakan cek live untuk memastikan akun hotspot dan profile aktif.',
+    accessStatusLabel: summary?.access_status_label || 'Status layanan belum diperiksa',
+    accessStatusHint: summary?.access_status_hint || 'Panel akan menampilkan ringkasan akses setelah data dimuat.',
   }
 })
+
+const recentPurchasesSummaryText = computed(() => {
+  const summary = detailSummary.value
+  if (!summary || summary.purchase_count_30d <= 0)
+    return 'Belum ada pembelian sukses dalam 30 hari terakhir.'
+  return `${summary.purchase_count_30d} transaksi • ${summary.purchase_total_amount_30d_display}`
+})
+
+async function fetchUserDetailSummary() {
+  if (!props.user?.id)
+    return
+  isDetailSummaryLoading.value = true
+  try {
+    const response = await $api<UserDetailSummary>(`/admin/users/${props.user.id}/detail-summary`)
+    detailSummary.value = response
+    if (!detailReportRecipient.value)
+      detailReportRecipient.value = props.user.phone_number || response.admin_whatsapp_default || ''
+  }
+  catch (error: any) {
+    detailSummary.value = null
+    showSnackbar({ type: 'warning', title: 'Ringkasan Pengguna', text: error?.data?.message || 'Ringkasan pengguna belum bisa dimuat.' })
+  }
+  finally {
+    isDetailSummaryLoading.value = false
+  }
+}
 
 async function autoFillSaQuotaFromDb() {
   if (!props.user?.id)
@@ -486,14 +566,22 @@ function formatDataSize(sizeInMB: number): string {
 watch(() => props.modelValue, (isOpen) => {
   if (isOpen) {
     liveData.value = null
+    detailSummary.value = null
+    detailReportRecipient.value = props.user?.phone_number || ''
     isDebtQuotaEnabled.value = false
     // Best-effort load package list for debt selection.
     fetchAdminPackages().catch(() => {})
+    fetchUserDetailSummary().catch(() => {})
     // PERBAIKAN: Memindahkan isi arrow function ke baris baru
     nextTick(() => {
       formRef.value?.resetValidation()
     })
   }
+})
+
+watch(() => props.user?.id, () => {
+  if (props.modelValue && props.user?.id)
+    fetchUserDetailSummary().catch(() => {})
 })
 
 function setDefaultMikrotikConfig(role: User['role'] | undefined) {
@@ -587,6 +675,7 @@ async function checkAndApplyMikrotikStatus() {
 
     if (response.live_available === false) {
       showSnackbar({ type: 'info', title: 'Mode Lokal', text: response.message || 'Live check MikroTik tidak tersedia. Menampilkan data dari database.' })
+      fetchUserDetailSummary().catch(() => {})
       return
     }
 
@@ -602,9 +691,11 @@ async function checkAndApplyMikrotikStatus() {
         mt_profile: response.details.profile,
       }
       showSnackbar({ type: 'success', title: 'Sukses', text: 'Data live dari MikroTik berhasil dimuat.' })
+      fetchUserDetailSummary().catch(() => {})
     }
     else {
       showSnackbar({ type: 'warning', title: 'Informasi', text: response.message || 'Pengguna tidak ditemukan di MikroTik.' })
+      fetchUserDetailSummary().catch(() => {})
     }
   }
   catch (error: any) {
@@ -734,6 +825,32 @@ async function sendDebtWhatsapp() {
   }
 }
 
+function openUserDetailPdf() {
+  if (!props.user)
+    return
+  window.open(`/api/admin/users/${props.user.id}/detail-report/export?format=pdf`, '_blank', 'noopener')
+}
+
+async function sendUserDetailWhatsapp() {
+  if (!props.user)
+    return
+
+  isDetailReportWhatsappSending.value = true
+  try {
+    const resp = await $api<{ message?: string }>(`/admin/users/${props.user.id}/detail-report/send-whatsapp`, {
+      method: 'POST',
+      body: { recipient_phone: detailReportRecipient.value || props.user.phone_number },
+    })
+    showSnackbar({ type: 'success', title: 'Laporan Pengguna', text: resp?.message || 'PDF detail pengguna berhasil diantrikan ke WhatsApp.' })
+  }
+  catch (error: any) {
+    showSnackbar({ type: 'warning', title: 'Laporan Pengguna', text: error?.data?.message || 'Gagal mengirim PDF detail pengguna ke WhatsApp.' })
+  }
+  finally {
+    isDetailReportWhatsappSending.value = false
+  }
+}
+
 function openQuotaHistory() {
   if (!props.user)
     return
@@ -783,6 +900,11 @@ function openQuotaHistoryPdf() {
                 <div class="admin-user-edit__topbar-subtitle text-white">
                   Rapikan profil, akses, kuota, dan tindak lanjut pengguna dari satu layar.
                 </div>
+                <div class="admin-user-edit__topbar-badges">
+                  <VChip size="small" label class="admin-user-edit__topbar-chip">
+                    {{ editDialogConnectionMeta.accessStatusLabel }}
+                  </VChip>
+                </div>
               </div>
             </div>
             <VBtn icon="tabler-x" variant="text" class="text-white admin-user-edit__topbar-close" @click="onClose" />
@@ -800,6 +922,7 @@ function openQuotaHistoryPdf() {
               <div class="admin-user-edit__meta-pillCopy">
                 <span class="admin-user-edit__meta-pillLabel">Sinkronisasi</span>
                 <span>{{ editDialogConnectionMeta.mikrotikStatusLabel }}</span>
+                <small>{{ editDialogConnectionMeta.mikrotikStatusHint }}</small>
               </div>
             </div>
             <div class="admin-user-edit__meta-pill">
@@ -807,6 +930,7 @@ function openQuotaHistoryPdf() {
               <div class="admin-user-edit__meta-pillCopy">
                 <span class="admin-user-edit__meta-pillLabel">Profile</span>
                 <span>{{ editDialogConnectionMeta.mikrotikProfile }}</span>
+                <small>{{ editDialogConnectionMeta.mikrotikProfileHint }}</small>
               </div>
             </div>
             <div class="admin-user-edit__meta-pill admin-user-edit__meta-pill--muted">
@@ -814,6 +938,14 @@ function openQuotaHistoryPdf() {
               <div class="admin-user-edit__meta-pillCopy">
                 <span class="admin-user-edit__meta-pillLabel">Login Terakhir</span>
                 <span>{{ editDialogConnectionMeta.loginLabel }}</span>
+              </div>
+            </div>
+            <div class="admin-user-edit__meta-pill admin-user-edit__meta-pill--wide admin-user-edit__meta-pill--status">
+              <VIcon icon="tabler-bolt" size="16" />
+              <div class="admin-user-edit__meta-pillCopy">
+                <span class="admin-user-edit__meta-pillLabel">Status Layanan</span>
+                <span>{{ editDialogConnectionMeta.accessStatusLabel }}</span>
+                <small>{{ editDialogConnectionMeta.accessStatusHint }}</small>
               </div>
             </div>
           </div>
@@ -880,6 +1012,70 @@ function openQuotaHistoryPdf() {
 
             <VWindowItem value="akses">
               <VRow>
+                <VCol cols="12">
+                  <VSheet rounded="lg" border class="pa-3 admin-user-edit__action-card">
+                    <div class="admin-user-edit__card-header">
+                      <div class="admin-user-edit__card-copy">
+                        <div class="text-caption text-disabled">
+                          Laporan Detail Pengguna
+                        </div>
+                        <div class="font-weight-medium">
+                          Kirim ringkasan profil, status akses, tunggakan aktif, dan pembelian 30 hari terakhir dalam satu PDF.
+                        </div>
+                        <div class="text-caption text-medium-emphasis mt-1">
+                          {{ isDetailSummaryLoading ? 'Memuat ringkasan terbaru...' : recentPurchasesSummaryText }}
+                        </div>
+                      </div>
+                      <div class="admin-user-edit__card-actions">
+                        <VBtn
+                          size="small"
+                          color="error"
+                          variant="tonal"
+                          class="admin-user-edit__inline-action"
+                          prepend-icon="tabler-file-type-pdf"
+                          @click="openUserDetailPdf"
+                        >
+                          PDF Detail
+                        </VBtn>
+                        <VBtn
+                          size="small"
+                          color="success"
+                          variant="tonal"
+                          class="admin-user-edit__inline-action"
+                          prepend-icon="tabler-brand-whatsapp"
+                          :loading="isDetailReportWhatsappSending"
+                          @click="sendUserDetailWhatsapp"
+                        >
+                          Kirim WhatsApp
+                        </VBtn>
+                      </div>
+                    </div>
+                    <VRow dense class="mt-2">
+                      <VCol cols="12" md="8">
+                        <AppTextField
+                          v-model="detailReportRecipient"
+                          label="Nomor WhatsApp Tujuan"
+                          prepend-inner-icon="tabler-brand-whatsapp"
+                          placeholder="Kosongkan untuk nomor pengguna, atau isi nomor admin lain"
+                          hint="Bisa diarahkan ke nomor pengguna atau admin lain untuk tindak lanjut cepat."
+                          persistent-hint
+                        />
+                      </VCol>
+                      <VCol cols="12" md="4">
+                        <VAlert
+                          variant="tonal"
+                          density="compact"
+                          type="info"
+                          icon="tabler-info-circle"
+                          class="admin-user-edit__recipient-help"
+                        >
+                          PDF hanya menampilkan tunggakan bila memang ada, dan riwayat pembelian hanya 30 hari terakhir bila tersedia.
+                        </VAlert>
+                      </VCol>
+                    </VRow>
+                  </VSheet>
+                </VCol>
+
                 <VCol cols="12">
                   <VRow>
                     <VCol cols="12" md="6">
@@ -1445,6 +1641,19 @@ function openQuotaHistoryPdf() {
   opacity: 0.86;
 }
 
+.admin-user-edit__topbar-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.admin-user-edit__topbar-chip {
+  background: rgba(255, 255, 255, 0.16);
+  color: rgb(255, 255, 255);
+  font-weight: 600;
+}
+
 .admin-user-edit__topbar-close {
   flex: 0 0 auto;
   margin-top: -4px;
@@ -1461,26 +1670,26 @@ function openQuotaHistoryPdf() {
   display: inline-flex;
   align-items: flex-start;
   gap: 8px;
-  min-height: 42px;
+  min-height: 52px;
   max-width: 100%;
-  padding: 9px 12px;
+  padding: 10px 13px;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.12);
-  font-size: 0.83rem;
-  line-height: 1.2;
+  font-size: 0.88rem;
+  line-height: 1.25;
 }
 
 .admin-user-edit__meta-pillCopy {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .admin-user-edit__meta-pillLabel {
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
   opacity: 0.7;
 }
@@ -1489,11 +1698,24 @@ function openQuotaHistoryPdf() {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  font-weight: 600;
+}
+
+.admin-user-edit__meta-pillCopy small {
+  display: block;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.72rem;
+  line-height: 1.35;
 }
 
 .admin-user-edit__meta-pill--muted {
   background: rgba(255, 255, 255, 0.08);
+}
+
+.admin-user-edit__meta-pill--wide {
+  min-width: 260px;
+  flex: 1 1 260px;
 }
 
 .admin-user-edit__scroll {
@@ -1532,6 +1754,10 @@ function openQuotaHistoryPdf() {
 
 .admin-user-edit__inline-action {
   min-width: 104px;
+}
+
+.admin-user-edit__recipient-help {
+  height: 100%;
 }
 
 .admin-user-edit__stat-grid {
@@ -1685,18 +1911,38 @@ function openQuotaHistoryPdf() {
 
   .admin-user-edit__topbar-meta {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
   }
 
   .admin-user-edit__meta-pill {
     width: 100%;
-    min-height: 40px;
-    border-radius: 14px;
+    min-height: 0;
+    padding: 8px 10px;
+    gap: 6px;
+    border-radius: 12px;
+    font-size: 0.78rem;
   }
 
   .admin-user-edit__meta-pillCopy span:last-child {
+    display: -webkit-box;
+    overflow: hidden;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
     white-space: normal;
+  }
+
+  .admin-user-edit__meta-pillCopy small {
+    display: none;
+  }
+
+  .admin-user-edit__meta-pillLabel {
+    font-size: 0.62rem;
+  }
+
+  .admin-user-edit__meta-pill--status {
+    display: none;
   }
 
   .admin-user-edit__section-grid {

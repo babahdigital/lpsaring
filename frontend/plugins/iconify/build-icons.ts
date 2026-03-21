@@ -311,6 +311,7 @@ const tablerIcons = [
   'wifi',
   'stack-2',
   'pencil-dollar',
+  'clock-play',
   'x',
 ]
 

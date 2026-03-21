@@ -53,3 +53,28 @@ def test_openapi_priority_paths_and_methods_present():
             method_mismatches.append(f'{path} expected {sorted(expected_methods)} got {sorted(declared)}')
 
     assert not method_mismatches, f'Contract method mismatch: {method_mismatches}'
+
+
+def test_openapi_admin_user_operational_paths_present():
+    repo_root = Path(__file__).resolve().parents[2]
+    spec_path = repo_root / 'contracts' / 'openapi' / 'openapi.v1.yaml'
+    spec_text = spec_path.read_text(encoding='utf-8')
+
+    expected = {
+        '/admin/users/{user_id}/mikrotik-status': {'get'},
+        '/admin/users/{user_id}/detail-summary': {'get'},
+        '/admin/users/{user_id}/detail-report/export': {'get'},
+        '/admin/users/{user_id}/detail-report/send-whatsapp': {'post'},
+        '/admin/users/detail-report/temp/{token}.pdf': {'get'},
+    }
+
+    missing_paths = [path for path in expected if f'  {path}:' not in spec_text]
+    assert not missing_paths, f'Missing admin user operational paths: {missing_paths}'
+
+    method_mismatches: list[str] = []
+    for path, expected_methods in expected.items():
+        declared = _extract_declared_methods_for_path(spec_text, path)
+        if not expected_methods.issubset(declared):
+            method_mismatches.append(f'{path} expected {sorted(expected_methods)} got {sorted(declared)}')
+
+    assert not method_mismatches, f'Admin user operational method mismatch: {method_mismatches}'

@@ -203,3 +203,126 @@ def test_serialize_public_update_submission_adds_display_dates():
     assert payload["created_at"] == created_at.isoformat()
     assert payload["processed_at_display"] == "21-03-2026 12:05:06"
     assert payload["created_at_display"] == "21-03-2026 09:02:03"
+
+
+def test_get_user_detail_summary_returns_operational_payload(monkeypatch):
+    user_id = uuid.uuid4()
+    fake_user = SimpleNamespace(id=user_id, role=SimpleNamespace(value="USER"), is_admin_role=False)
+    fake_session = _FakeSession(users_by_id={user_id: fake_user})
+
+    monkeypatch.setattr(user_management_routes, "db", SimpleNamespace(session=fake_session))
+    monkeypatch.setattr(user_management_routes, "_deny_non_super_admin_target_access", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        user_management_routes,
+        "_get_user_mikrotik_status_payload",
+        lambda _user: {
+            "live_available": True,
+            "exists_on_mikrotik": True,
+            "message": "Data live MikroTik berhasil dimuat.",
+            "reason": None,
+        },
+    )
+    monkeypatch.setattr(
+        user_management_routes,
+        "_build_user_detail_report_context",
+        lambda _user, mikrotik_status=None: {
+            "profile_display_name": "default",
+            "profile_source": "Live MikroTik",
+            "mikrotik_account_label": "Terverifikasi live di MikroTik",
+            "mikrotik_account_hint": "Akun hotspot ditemukan dan statusnya dibaca langsung dari MikroTik.",
+            "access_status_label": "Layanan aktif",
+            "access_status_hint": "Akun aktif dan masih memiliki kuota.",
+            "access_status_tone": "success",
+            "device_count": 2,
+            "device_count_label": "2 perangkat",
+            "last_login_label": "22-03-2026 08:10:00",
+            "debt_auto_mb": 0.0,
+            "debt_manual_mb": 0,
+            "debt_total_mb": 0.0,
+            "open_debt_items": 0,
+            "recent_purchases": [{
+                "order_id": "ORD-1",
+                "package_name": "Paket Hemat",
+                "amount_display": "Rp 20.000",
+                "paid_at_display": "22-03-2026 07:00:00",
+                "payment_method": "qris",
+            }],
+            "purchase_count_30d": 1,
+            "purchase_total_amount_30d": 20000,
+            "purchase_total_amount_30d_display": "Rp 20.000",
+            "admin_whatsapp_default": "+6282211111111",
+        },
+    )
+
+    app = _make_app()
+    impl = _unwrap_decorators(user_management_routes.get_user_detail_summary)
+
+    with app.test_request_context(f"/api/admin/users/{user_id}/detail-summary", method="GET"):
+        current_admin = cast(User, SimpleNamespace(is_super_admin_role=True))
+        response, status = impl(current_admin=current_admin, user_id=user_id)
+
+    assert status == 200
+    payload = response.get_json()
+    assert payload["profile_display_name"] == "default"
+    assert payload["mikrotik"]["live_available"] is True
+    assert payload["debt"]["total_mb"] == 0.0
+    assert payload["recent_purchases"][0]["package_name"] == "Paket Hemat"
+    assert payload["admin_whatsapp_default"] == "+6282211111111"
+
+
+def test_send_user_detail_report_whatsapp_queues_pdf(monkeypatch):
+    user_id = uuid.uuid4()
+    fake_user = SimpleNamespace(
+        id=user_id,
+        role=SimpleNamespace(value="USER"),
+        is_admin_role=False,
+        phone_number="082213631573",
+        full_name="Bobby Dermawan",
+    )
+    fake_session = _FakeSession(users_by_id={user_id: fake_user})
+    queued = {}
+
+    class _FakeTask:
+        def delay(self, *args):
+            queued["args"] = args
+
+    monkeypatch.setattr(user_management_routes, "db", SimpleNamespace(session=fake_session))
+    monkeypatch.setattr(user_management_routes, "_deny_non_super_admin_target_access", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(user_management_routes, "_get_user_mikrotik_status_payload", lambda _user: {"live_available": True, "exists_on_mikrotik": True, "message": "ok"})
+    monkeypatch.setattr(
+        user_management_routes,
+        "_build_user_detail_report_context",
+        lambda _user, mikrotik_status=None: {
+            "access_status_label": "Layanan aktif",
+            "mikrotik_account_label": "Terverifikasi live di MikroTik",
+            "profile_display_name": "default",
+            "device_count_label": "1 perangkat",
+            "last_login_label": "22-03-2026 08:00:00",
+            "debt_summary_line": "",
+            "recent_purchase_summary_line": "",
+        },
+    )
+    monkeypatch.setattr(user_management_routes, "_resolve_public_base_url", lambda: "https://example.test")
+    monkeypatch.setattr(user_management_routes, "generate_temp_user_detail_report_token", lambda _user_id: "temp-detail-token")
+    monkeypatch.setattr(user_management_routes, "get_notification_message", lambda _name, context: f"CAPTION {context['detail_pdf_url']}")
+    monkeypatch.setattr(user_management_routes, "normalize_to_e164", lambda raw: "+6282213631573")
+    monkeypatch.setattr(user_management_routes, "send_whatsapp_invoice_task", _FakeTask())
+
+    app = _make_app()
+    impl = _unwrap_decorators(user_management_routes.send_user_detail_report_whatsapp)
+
+    with app.test_request_context(
+        f"/api/admin/users/{user_id}/detail-report/send-whatsapp",
+        method="POST",
+        json={"recipient_phone": "082213631573"},
+    ):
+        current_admin = cast(User, SimpleNamespace(id=uuid.uuid4(), is_super_admin_role=True))
+        response, status = impl(current_admin=current_admin, user_id=user_id)
+
+    assert status == 200
+    payload = response.get_json()
+    assert payload == {"message": "Laporan detail pengguna berhasil diantrikan ke WhatsApp.", "queued": True}
+    assert queued["args"][0] == "+6282213631573"
+    assert queued["args"][2] == "https://example.test/api/admin/users/detail-report/temp/temp-detail-token.pdf"
+    assert queued["args"][5] is None
+    assert queued["args"][6] == "detail_report"

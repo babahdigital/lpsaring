@@ -8,6 +8,17 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Added (2026-03-22 — User Detail Report Trust, Mobile Density, dan Admin Operational Actions)
+
+- **Ringkasan detail pengguna admin kini punya jalur backend dan PDF/WhatsApp sendiri:** backend menambahkan endpoint `GET /api/admin/users/{id}/detail-summary`, `GET /api/admin/users/{id}/detail-report/export?format=pdf`, route token publik `GET /api/admin/users/detail-report/temp/{token}.pdf`, dan `POST /api/admin/users/{id}/detail-report/send-whatsapp`. Jalur ini dipakai untuk menampilkan status akses yang lebih jujur, profile hasil sinkron/live-check, dan tindak lanjut operasional tanpa fallback dummy di UI.
+- **Dialog detail pengguna kini bisa mengirim debt-only langsung dari layar detail:** area `Riwayat Tunggakan Manual` sekarang memiliki aksi kecil `Detail`, `PDF`, dan `WA Debt`, sehingga operator tidak harus pindah ke dialog edit hanya untuk mengirim ringkasan tunggakan.
+- **Header mobile dialog edit pengguna diringkas agar tidak memakan viewport:** pill operasional di topbar kini menjadi grid dua kolom yang lebih padat di mobile, helper text panjang disembunyikan pada layar kecil, dan status layanan dipindah ke chip ringkas di header agar informasi inti tetap terlihat tanpa menutup area form utama.
+
+### Documentation (2026-03-22 — User Detail Report Trust & Contract Sync)
+
+- `docs/API_DETAIL.md` diperbarui untuk mendokumentasikan endpoint detail-summary/detail-report baru, payload `recipient_phone`, dan URL publik bertoken untuk PDF detail pengguna.
+- `docs/devlogs/2026-03-22-user-detail-report-trust-mobile-density.md` ditambahkan sebagai catatan implementasi batch ini, termasuk alasan UI mobile diringkas, kontrak OpenAPI yang berubah, dan cakupan test/smoke yang ditambahkan.
+
 ### Fixed (2026-03-22 — Manual Debt Nominal Accuracy & Admin Edit UX)
 
 - **Total nominal debt manual kini dihitung dari item terbuka yang aktual, bukan estimasi aggregate MB:** jalur report/reminder/admin debt sekarang menjumlah `remaining_rp` per item terbuka dan mem-prorata item parsial dari `price_rp` bila tersedia. Ini menutup bug produksi di mana dua item debt manual `20 GB + 20 GB` masing-masing `Rp 200.000` sempat tampil sebagai `Rp 270.000` karena ikut jatuh ke estimator paket termurah.

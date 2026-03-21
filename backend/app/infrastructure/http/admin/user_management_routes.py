@@ -1,6 +1,6 @@
 # backend/app/infrastructure/http/admin/user_management_routes.py
 import uuid
-from datetime import datetime, timezone as dt_timezone
+from datetime import datetime, timedelta, timezone as dt_timezone
 from flask import Blueprint, jsonify, request, current_app, make_response, render_template
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import OperationalError as SAOperationalError
@@ -20,6 +20,7 @@ from app.infrastructure.db.models import (
     PublicDatabaseUpdateSubmission,
     QuotaMutationLedger,
     Transaction,
+    TransactionStatus,
     UserDevice,
 )
 from app.infrastructure.http.decorators import admin_required
@@ -35,6 +36,7 @@ from app.utils.formatters import (
     format_mb_to_gb,
     format_app_date_display,
     format_app_datetime_display,
+    normalize_to_e164,
 )
 
 from app.infrastructure.db.models import UserQuotaDebt
@@ -51,9 +53,11 @@ from app.services import settings_service
 from app.services.notification_service import (
     generate_temp_debt_report_token,
     generate_temp_debt_settlement_receipt_token,
+    generate_temp_user_detail_report_token,
     get_notification_message,
     verify_temp_debt_report_token,
     verify_temp_debt_settlement_receipt_token,
+    verify_temp_user_detail_report_token,
 )
 from app.services.debt_settlement_receipt_service import (
     ADMIN_SETTLE_ALL_SOURCE,
@@ -222,6 +226,284 @@ def _render_debt_settlement_receipt_pdf_bytes(context: dict, public_base_url: st
 def _build_debt_settlement_receipt_url(entry_id: uuid.UUID, base_url: str) -> str:
     token = generate_temp_debt_settlement_receipt_token(str(entry_id))
     return f"{base_url.rstrip('/')}/api/admin/users/debt-settlements/temp/{token}.pdf"
+
+
+def _resolve_admin_whatsapp_default() -> str:
+    candidates = [
+        settings_service.get_setting("NUXT_PUBLIC_ADMIN_WHATSAPP"),
+        current_app.config.get("NUXT_PUBLIC_ADMIN_WHATSAPP"),
+        current_app.config.get("BUSINESS_PHONE"),
+    ]
+    for candidate in candidates:
+        raw = str(candidate or "").strip()
+        if not raw:
+            continue
+        try:
+            return normalize_to_e164(raw)
+        except Exception:
+            continue
+    return ""
+
+
+def _default_profile_for_user(user: User) -> str:
+    active_profile = str(settings_service.get_setting("MIKROTIK_PROFILE_ACTIVE", "default") or "default").strip()
+    user_profile = str(settings_service.get_setting("MIKROTIK_PROFILE_USER", "user") or "user").strip()
+    komandan_profile = str(settings_service.get_setting("MIKROTIK_PROFILE_KOMANDAN", "komandan") or "komandan").strip()
+    inactive_profile = str(settings_service.get_setting("MIKROTIK_PROFILE_INACTIVE", "inactive") or "inactive").strip()
+    unlimited_profile = str(settings_service.get_setting("MIKROTIK_PROFILE_UNLIMITED", "unlimited") or "unlimited").strip()
+
+    if getattr(user, "is_active", False) is not True:
+        return inactive_profile
+    if getattr(user, "is_unlimited_user", False) is True:
+        return unlimited_profile
+    if getattr(user, "role", None) == UserRole.KOMANDAN:
+        return komandan_profile or active_profile or user_profile
+    return active_profile or user_profile
+
+
+def _persist_mikrotik_snapshot(user: User, *, exists_on_mikrotik: bool, details: dict | None) -> None:
+    changed = False
+    if bool(getattr(user, "mikrotik_user_exists", False)) != bool(exists_on_mikrotik):
+        user.mikrotik_user_exists = bool(exists_on_mikrotik)
+        changed = True
+
+    if exists_on_mikrotik and isinstance(details, dict):
+        profile_name = str(details.get("profile") or "").strip()
+        server_name = str(details.get("server") or "").strip()
+        if profile_name and profile_name != str(getattr(user, "mikrotik_profile_name", "") or "").strip():
+            user.mikrotik_profile_name = profile_name
+            changed = True
+        if server_name and server_name != str(getattr(user, "mikrotik_server_name", "") or "").strip():
+            user.mikrotik_server_name = server_name
+            changed = True
+
+    if changed:
+        db.session.commit()
+
+
+def _get_user_mikrotik_status_payload(user: User) -> dict:
+    mikrotik_username = format_to_local_phone(user.phone_number)
+    purchased_mb = float(user.total_quota_purchased_mb or 0)
+    used_mb = float(user.total_quota_used_mb or 0)
+    remaining_mb = max(0.0, purchased_mb - used_mb)
+    database_profile_name = str(getattr(user, "mikrotik_profile_name", "") or "").strip()
+    derived_profile_name = _default_profile_for_user(user)
+
+    db_quota = {
+        "db_quota_purchased_mb": purchased_mb,
+        "db_quota_used_mb": used_mb,
+        "db_quota_remaining_mb": remaining_mb,
+        "database_profile_name": database_profile_name or None,
+        "derived_profile_name": derived_profile_name,
+    }
+
+    if not mikrotik_username:
+        return {
+            "user_id": str(user.id),
+            "exists_on_mikrotik": bool(user.mikrotik_user_exists),
+            "details": None,
+            "live_available": False,
+            "message": "Format nomor telepon pengguna belum valid untuk pengecekan live.",
+            "reason": "invalid_phone_format",
+            "resolved_profile_name": database_profile_name or derived_profile_name,
+            **db_quota,
+        }
+
+    operation_result = _handle_mikrotik_operation(
+        get_hotspot_user_details,
+        username=mikrotik_username,
+    )
+
+    success = False
+    details = None
+    mikrotik_message = ""
+
+    if isinstance(operation_result, tuple):
+        if len(operation_result) >= 3:
+            success, details, mikrotik_message = operation_result[0], operation_result[1], operation_result[2]
+        elif len(operation_result) == 2:
+            success, details = operation_result
+            mikrotik_message = str(details) if success is False else "Sukses"
+        elif len(operation_result) == 1:
+            success = bool(operation_result[0])
+            mikrotik_message = "Hasil operasi Mikrotik tidak lengkap."
+
+    if not success:
+        current_app.logger.warning(
+            "Live check Mikrotik tidak tersedia untuk user %s: %s",
+            user.id,
+            mikrotik_message,
+        )
+        return {
+            "user_id": str(user.id),
+            "exists_on_mikrotik": bool(user.mikrotik_user_exists),
+            "details": None,
+            "live_available": False,
+            "message": "Live check MikroTik tidak tersedia. Menampilkan data sinkron terakhir dari database.",
+            "reason": mikrotik_message,
+            "resolved_profile_name": database_profile_name or derived_profile_name,
+            **db_quota,
+        }
+
+    user_exists = isinstance(details, dict) and bool(details)
+    _persist_mikrotik_snapshot(user, exists_on_mikrotik=user_exists, details=details if isinstance(details, dict) else None)
+
+    resolved_profile_name = str((details or {}).get("profile") or "").strip() or database_profile_name or derived_profile_name
+    return {
+        "user_id": str(user.id),
+        "exists_on_mikrotik": user_exists,
+        "details": details if isinstance(details, dict) else None,
+        "live_available": True,
+        "message": "Data live MikroTik berhasil dimuat." if user_exists else "Pengguna tidak ditemukan di MikroTik.",
+        "resolved_profile_name": resolved_profile_name,
+        **db_quota,
+    }
+
+
+def _build_user_detail_report_context(user: User, *, mikrotik_status: dict | None = None) -> dict:
+    status_payload = mikrotik_status or _get_user_mikrotik_status_payload(user)
+    live_available = bool(status_payload.get("live_available"))
+    exists_on_mikrotik = bool(status_payload.get("exists_on_mikrotik"))
+    profile_display_name = str(status_payload.get("resolved_profile_name") or _default_profile_for_user(user)).strip() or "Belum tersedia"
+    profile_source = "Live MikroTik" if live_available and exists_on_mikrotik else ("Database sinkron terakhir" if getattr(user, "mikrotik_profile_name", None) else "Standar sistem")
+
+    if live_available and exists_on_mikrotik:
+        mikrotik_account_label = "Terverifikasi live di MikroTik"
+        mikrotik_account_hint = "Akun hotspot ditemukan dan statusnya dibaca langsung dari MikroTik."
+    elif live_available and not exists_on_mikrotik:
+        mikrotik_account_label = "Tidak ditemukan di MikroTik"
+        mikrotik_account_hint = "Perlu audit sinkronisasi akun hotspot karena live check tidak menemukan user ini."
+    elif bool(getattr(user, "mikrotik_user_exists", False)):
+        mikrotik_account_label = "Sinkron terakhir tersimpan"
+        mikrotik_account_hint = "Live check sedang tidak tersedia, sehingga panel memakai data sinkron terakhir dari database."
+    else:
+        mikrotik_account_label = "Perlu verifikasi live"
+        mikrotik_account_hint = "Status live MikroTik belum tersedia. Jalankan cek live untuk memastikan akun hotspot."
+
+    remaining_mb = max(0.0, float(getattr(user, "total_quota_purchased_mb", 0) or 0) - float(getattr(user, "total_quota_used_mb", 0) or 0))
+    debt_auto_mb = float(getattr(user, "quota_debt_auto_mb", 0) or 0)
+    debt_manual_mb = int(getattr(user, "quota_debt_manual_mb", getattr(user, "manual_debt_mb", 0)) or 0)
+    debt_total_mb = float(getattr(user, "quota_debt_total_mb", debt_auto_mb + debt_manual_mb) or 0)
+    open_debt_items = db.session.scalar(
+        select(func.count()).select_from(UserQuotaDebt).where(UserQuotaDebt.user_id == user.id, UserQuotaDebt.is_paid.is_(False))
+    ) or 0
+
+    cutoff = datetime.now(dt_timezone.utc) - timedelta(days=30)
+    purchase_rows = db.session.scalars(
+        select(Transaction)
+        .where(Transaction.user_id == user.id, Transaction.status == TransactionStatus.SUCCESS)
+        .where(sa.func.coalesce(Transaction.payment_time, Transaction.created_at) >= cutoff)
+        .order_by(sa.func.coalesce(Transaction.payment_time, Transaction.created_at).desc())
+        .limit(12)
+    ).all()
+
+    recent_purchases: list[dict] = []
+    recent_purchase_total_amount = 0
+    for tx in purchase_rows:
+        paid_at = getattr(tx, "payment_time", None) or getattr(tx, "created_at", None)
+        recent_purchase_total_amount += int(getattr(tx, "amount", 0) or 0)
+        recent_purchases.append(
+            {
+                "order_id": str(getattr(tx, "midtrans_order_id", "") or "-").strip() or "-",
+                "package_name": str(getattr(getattr(tx, "package", None), "name", "") or "Paket tidak diketahui").strip() or "Paket tidak diketahui",
+                "amount": int(getattr(tx, "amount", 0) or 0),
+                "amount_display": _format_currency_idr(getattr(tx, "amount", 0) or 0),
+                "payment_method": str(getattr(tx, "payment_method", "") or "-").strip() or "-",
+                "paid_at": paid_at.isoformat() if paid_at else None,
+                "paid_at_display": format_app_datetime_display(paid_at, fallback="-"),
+            }
+        )
+
+    if getattr(user, "is_blocked", False):
+        access_status_label = "Akses diblokir"
+        access_status_hint = str(getattr(user, "blocked_reason", "") or "Periksa alasan blokir pada catatan akun.").strip()
+        access_status_tone = "error"
+    elif getattr(user, "is_active", False) is not True:
+        access_status_label = "Akun nonaktif"
+        access_status_hint = "Akses hotspot dihentikan sampai akun diaktifkan kembali."
+        access_status_tone = "secondary"
+    elif getattr(user, "is_unlimited_user", False) is True:
+        access_status_label = "Unlimited aktif"
+        access_status_hint = "Pengguna memakai akses tanpa batas kuota selama masa aktif berlaku."
+        access_status_tone = "success"
+    elif debt_total_mb > 0:
+        access_status_label = "Perlu tindak lanjut tunggakan"
+        access_status_hint = "Terdapat tunggakan kuota yang perlu dipantau agar layanan tetap konsisten."
+        access_status_tone = "warning"
+    elif float(getattr(user, "total_quota_purchased_mb", 0) or 0) <= 0:
+        access_status_label = "Belum ada paket aktif"
+        access_status_hint = "Panel belum menemukan kuota aktif pada akun ini."
+        access_status_tone = "warning"
+    elif remaining_mb <= 0:
+        access_status_label = "Kuota habis"
+        access_status_hint = "Pemakaian sudah mencapai batas kuota yang tercatat pada sistem."
+        access_status_tone = "warning"
+    else:
+        access_status_label = "Layanan aktif"
+        access_status_hint = "Akun aktif dan masih memiliki kuota/masa akses yang bisa digunakan."
+        access_status_tone = "success"
+
+    last_login_label = format_app_datetime_display(getattr(user, "last_login_at", None), fallback="Belum pernah login")
+    device_count = int(getattr(user, "device_count", 0) or 0)
+    debt_summary_line = (
+        f"- Tunggakan terbuka: *{format_mb_to_gb(debt_total_mb)}* ({int(open_debt_items)} item)"
+        if debt_total_mb > 0
+        else ""
+    )
+    recent_purchase_summary_line = (
+        f"- Pembelian 30 hari terakhir: *{len(recent_purchases)} transaksi* dengan total *{_format_currency_idr(recent_purchase_total_amount)}*"
+        if recent_purchases
+        else ""
+    )
+
+    business_context = build_receipt_business_identity_context()
+    return {
+        "user": user,
+        "generated_at": format_app_datetime_display(datetime.now(dt_timezone.utc), fallback="-"),
+        "printed_at": format_app_datetime_display(datetime.now(dt_timezone.utc), fallback="-"),
+        "user_phone_display": format_to_local_phone(getattr(user, "phone_number", None)) or str(getattr(user, "phone_number", "") or "-"),
+        "profile_display_name": profile_display_name,
+        "profile_source": profile_source,
+        "mikrotik_account_label": mikrotik_account_label,
+        "mikrotik_account_hint": mikrotik_account_hint,
+        "live_available": live_available,
+        "exists_on_mikrotik": exists_on_mikrotik,
+        "access_status_label": access_status_label,
+        "access_status_hint": access_status_hint,
+        "access_status_tone": access_status_tone,
+        "device_count": device_count,
+        "device_count_label": f"{device_count} perangkat" if device_count > 0 else "Belum ada perangkat aktif",
+        "last_login_label": last_login_label,
+        "quota_total_mb": float(getattr(user, "total_quota_purchased_mb", 0) or 0),
+        "quota_used_mb": float(getattr(user, "total_quota_used_mb", 0) or 0),
+        "quota_remaining_mb": remaining_mb,
+        "quota_expiry_label": format_app_datetime_display(getattr(user, "quota_expiry_date", None), fallback="Belum diatur"),
+        "is_unlimited_user": bool(getattr(user, "is_unlimited_user", False)),
+        "debt_auto_mb": debt_auto_mb,
+        "debt_manual_mb": debt_manual_mb,
+        "debt_total_mb": debt_total_mb,
+        "open_debt_items": int(open_debt_items),
+        "show_debt_section": debt_total_mb > 0,
+        "recent_purchases": recent_purchases,
+        "purchase_count_30d": len(recent_purchases),
+        "purchase_total_amount_30d": recent_purchase_total_amount,
+        "purchase_total_amount_30d_display": _format_currency_idr(recent_purchase_total_amount),
+        "show_purchase_section": len(recent_purchases) > 0,
+        "debt_summary_line": debt_summary_line,
+        "recent_purchase_summary_line": recent_purchase_summary_line,
+        "admin_whatsapp_default": _resolve_admin_whatsapp_default(),
+        **business_context,
+    }
+
+
+def _render_user_detail_report_pdf_bytes(context: dict, public_base_url: str) -> bytes:
+    from weasyprint import HTML  # type: ignore
+
+    html_string = render_template("admin_user_detail_report.html", **context)
+    pdf_bytes = HTML(string=html_string, base_url=public_base_url).write_pdf()
+    if pdf_bytes is None:
+        raise RuntimeError("Gagal menghasilkan PDF detail pengguna.")
+    return pdf_bytes
 
 
 @user_management_bp.route("/update-submissions", methods=["GET"])
@@ -1610,77 +1892,7 @@ def check_mikrotik_status(current_admin: User, user_id: uuid.UUID):
         denied_response = _deny_non_super_admin_target_access(current_admin, user)
         if denied_response:
             return denied_response
-
-        mikrotik_username = format_to_local_phone(user.phone_number)
-        if not mikrotik_username:
-            return jsonify(
-                {"exists_on_mikrotik": False, "message": "Format nomor telepon pengguna tidak valid."}
-            ), HTTPStatus.OK
-
-        operation_result = _handle_mikrotik_operation(
-            get_hotspot_user_details,
-            username=mikrotik_username,
-        )
-
-        success = False
-        details = None
-        mikrotik_message = ""
-
-        if isinstance(operation_result, tuple):
-            if len(operation_result) >= 3:
-                success, details, mikrotik_message = operation_result[0], operation_result[1], operation_result[2]
-            elif len(operation_result) == 2:
-                success, details = operation_result
-                mikrotik_message = str(details) if success is False else "Sukses"
-            elif len(operation_result) == 1:
-                success = bool(operation_result[0])
-                mikrotik_message = "Hasil operasi Mikrotik tidak lengkap."
-
-        purchased_mb = float(user.total_quota_purchased_mb or 0)
-        used_mb = float(user.total_quota_used_mb or 0)
-        remaining_mb = max(0.0, purchased_mb - used_mb)
-        db_quota = {
-            "db_quota_purchased_mb": purchased_mb,
-            "db_quota_used_mb": used_mb,
-            "db_quota_remaining_mb": remaining_mb,
-        }
-
-        if not success:
-            current_app.logger.warning(
-                "Live check Mikrotik tidak tersedia untuk user %s: %s",
-                user_id,
-                mikrotik_message,
-            )
-            return jsonify(
-                {
-                    "user_id": str(user.id),
-                    "exists_on_mikrotik": bool(user.mikrotik_user_exists),
-                    "details": None,
-                    "live_available": False,
-                    "message": "Live check MikroTik tidak tersedia. Menampilkan data lokal database.",
-                    "reason": mikrotik_message,
-                    **db_quota,
-                }
-            ), HTTPStatus.OK
-
-        user_exists = details is not None
-
-        if user.mikrotik_user_exists != user_exists:
-            user.mikrotik_user_exists = user_exists
-            db.session.commit()
-
-        return jsonify(
-            {
-                "user_id": str(user.id),
-                "exists_on_mikrotik": user_exists,
-                "details": details,
-                "live_available": True,
-                "message": "Data live MikroTik berhasil dimuat."
-                if user_exists
-                else "Pengguna tidak ditemukan di MikroTik.",
-                **db_quota,
-            }
-        ), HTTPStatus.OK
+        return jsonify(_get_user_mikrotik_status_payload(user)), HTTPStatus.OK
 
     except Exception as e:
         current_app.logger.error(
@@ -1689,6 +1901,192 @@ def check_mikrotik_status(current_admin: User, user_id: uuid.UUID):
         return jsonify(
             {"message": "Terjadi kesalahan internal tak terduga pada server."}
         ), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@user_management_bp.route("/users/<uuid:user_id>/detail-summary", methods=["GET"])
+@admin_required
+def get_user_detail_summary(current_admin: User, user_id: uuid.UUID):
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+    denied_response = _deny_non_super_admin_target_access(current_admin, user)
+    if denied_response:
+        return denied_response
+
+    try:
+        status_payload = _get_user_mikrotik_status_payload(user)
+        report_context = _build_user_detail_report_context(user, mikrotik_status=status_payload)
+        return jsonify(
+            {
+                "mikrotik": {
+                    "live_available": bool(status_payload.get("live_available")),
+                    "exists_on_mikrotik": bool(status_payload.get("exists_on_mikrotik")),
+                    "message": status_payload.get("message"),
+                    "reason": status_payload.get("reason"),
+                },
+                "profile_display_name": report_context["profile_display_name"],
+                "profile_source": report_context["profile_source"],
+                "mikrotik_account_label": report_context["mikrotik_account_label"],
+                "mikrotik_account_hint": report_context["mikrotik_account_hint"],
+                "access_status_label": report_context["access_status_label"],
+                "access_status_hint": report_context["access_status_hint"],
+                "access_status_tone": report_context["access_status_tone"],
+                "device_count": report_context["device_count"],
+                "device_count_label": report_context["device_count_label"],
+                "last_login_label": report_context["last_login_label"],
+                "debt": {
+                    "auto_mb": report_context["debt_auto_mb"],
+                    "manual_mb": report_context["debt_manual_mb"],
+                    "total_mb": report_context["debt_total_mb"],
+                    "open_items": report_context["open_debt_items"],
+                },
+                "recent_purchases": report_context["recent_purchases"],
+                "purchase_count_30d": report_context["purchase_count_30d"],
+                "purchase_total_amount_30d": report_context["purchase_total_amount_30d"],
+                "purchase_total_amount_30d_display": report_context["purchase_total_amount_30d_display"],
+                "admin_whatsapp_default": report_context["admin_whatsapp_default"],
+            }
+        ), HTTPStatus.OK
+    except Exception as e:
+        current_app.logger.error("Error getting detail summary for user %s: %s", user_id, e, exc_info=True)
+        return jsonify({"message": "Gagal memuat ringkasan pengguna."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@user_management_bp.route("/users/<uuid:user_id>/detail-report/export", methods=["GET"])
+@admin_required
+def export_user_detail_report_pdf(current_admin: User, user_id: uuid.UUID):
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+    denied_response = _deny_non_super_admin_target_access(current_admin, user)
+    if denied_response:
+        return denied_response
+
+    fmt = (request.args.get("format") or "pdf").strip().lower()
+    if fmt != "pdf":
+        return jsonify({"message": "Format tidak didukung."}), HTTPStatus.BAD_REQUEST
+
+    try:
+        __import__("weasyprint")
+    except Exception:
+        return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
+
+    try:
+        status_payload = _get_user_mikrotik_status_payload(user)
+        context = _build_user_detail_report_context(user, mikrotik_status=status_payload)
+        public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
+        pdf_bytes = _render_user_detail_report_pdf_bytes(context, public_base_url)
+        safe_phone = (getattr(user, "phone_number", "") or "").replace("+", "")
+        filename = f"user-detail-{safe_phone or user.id}.pdf"
+        resp = make_response(pdf_bytes)
+        resp.headers["Content-Type"] = "application/pdf"
+        resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return resp
+    except Exception as e:
+        current_app.logger.error("Error export detail PDF for user %s: %s", user_id, e, exc_info=True)
+        return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@user_management_bp.route("/users/detail-report/temp/<string:token>", methods=["GET"])
+@user_management_bp.route("/users/detail-report/temp/<string:token>.pdf", methods=["GET"])
+def export_user_detail_report_pdf_temp(token: str):
+    try:
+        __import__("weasyprint")
+    except Exception:
+        return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
+
+    user_id = verify_temp_user_detail_report_token(token, max_age_seconds=3600)
+    if not user_id:
+        return jsonify({"message": "Akses tidak valid atau link telah kedaluwarsa."}), HTTPStatus.FORBIDDEN
+
+    try:
+        user_uuid = uuid.UUID(user_id)
+    except (TypeError, ValueError):
+        return jsonify({"message": "Token tidak valid."}), HTTPStatus.FORBIDDEN
+
+    user = db.session.get(User, user_uuid)
+    if not user:
+        return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+
+    try:
+        status_payload = _get_user_mikrotik_status_payload(user)
+        context = _build_user_detail_report_context(user, mikrotik_status=status_payload)
+        public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
+        pdf_bytes = _render_user_detail_report_pdf_bytes(context, public_base_url)
+        safe_phone = (getattr(user, "phone_number", "") or "").replace("+", "")
+        filename = f"user-detail-{safe_phone or user.id}.pdf"
+        resp = make_response(pdf_bytes)
+        resp.headers["Content-Type"] = "application/pdf"
+        resp.headers["Content-Disposition"] = f'inline; filename="{filename}"'
+        return resp
+    except Exception as e:
+        current_app.logger.error("Error export temp detail PDF for user %s: %s", user_id, e, exc_info=True)
+        return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@user_management_bp.route("/users/<uuid:user_id>/detail-report/send-whatsapp", methods=["POST"])
+@admin_required
+def send_user_detail_report_whatsapp(current_admin: User, user_id: uuid.UUID):
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+    denied_response = _deny_non_super_admin_target_access(current_admin, user)
+    if denied_response:
+        return denied_response
+
+    payload = request.get_json(silent=True) or {}
+    raw_recipient = str(payload.get("recipient_phone") or getattr(user, "phone_number", "") or "").strip()
+    if not raw_recipient:
+        return jsonify({"message": "Nomor WhatsApp tujuan belum diisi."}), HTTPStatus.BAD_REQUEST
+
+    try:
+        recipient_phone = normalize_to_e164(raw_recipient)
+    except Exception:
+        return jsonify({"message": "Nomor WhatsApp tujuan tidak valid."}), HTTPStatus.BAD_REQUEST
+
+    try:
+        status_payload = _get_user_mikrotik_status_payload(user)
+        report_context = _build_user_detail_report_context(user, mikrotik_status=status_payload)
+
+        base_url = _resolve_public_base_url()
+        if not base_url:
+            return jsonify({"message": "Konfigurasi alamat publik aplikasi tidak ditemukan."}), HTTPStatus.SERVICE_UNAVAILABLE
+
+        temp_token = generate_temp_user_detail_report_token(str(user.id))
+        pdf_url = f"{base_url.rstrip('/')}/api/admin/users/detail-report/temp/{temp_token}.pdf"
+        wa_context = {
+            "full_name": user.full_name,
+            "access_status_label": report_context["access_status_label"],
+            "mikrotik_account_label": report_context["mikrotik_account_label"],
+            "profile_display_name": report_context["profile_display_name"],
+            "device_count_label": report_context["device_count_label"],
+            "last_login_label": report_context["last_login_label"],
+            "debt_summary_line": report_context["debt_summary_line"] or "",
+            "recent_purchase_summary_line": report_context["recent_purchase_summary_line"] or "",
+            "detail_pdf_url": pdf_url,
+        }
+        caption_message = get_notification_message("user_detail_report_with_pdf", wa_context)
+        filename = f"user-detail-{(getattr(user, 'phone_number', '') or str(user.id)).replace('+', '')}.pdf"
+        request_id = request.environ.get("FLASK_REQUEST_ID", "")
+        send_whatsapp_invoice_task.delay(
+            recipient_phone,
+            caption_message,
+            pdf_url,
+            filename,
+            request_id,
+            None,
+            "detail_report",
+        )
+        current_app.logger.info(
+            "ADMIN_USER_DETAIL_WA: detail report queued for user=%s recipient=%s admin=%s",
+            user.id,
+            recipient_phone,
+            current_admin.id,
+        )
+        return jsonify({"message": "Laporan detail pengguna berhasil diantrikan ke WhatsApp.", "queued": True}), HTTPStatus.OK
+    except Exception as e:
+        current_app.logger.error("Error queue detail WhatsApp report for user %s: %s", user_id, e, exc_info=True)
+        return jsonify({"message": "Gagal mengantrekan laporan detail ke WhatsApp."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
 # ================================================================

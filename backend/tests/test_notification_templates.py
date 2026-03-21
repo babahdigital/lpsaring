@@ -143,6 +143,49 @@ def test_temp_debt_settlement_receipt_token_roundtrip(monkeypatch, app):
     assert resolved == "entry-123"
 
 
+def test_user_detail_report_with_pdf_accepts_operational_summary_fields(monkeypatch, app):
+    from app.services import notification_service
+
+    monkeypatch.setattr(
+        notification_service,
+        "_load_templates",
+        lambda: {
+            "user_detail_report_with_pdf": "Detail {full_name} {access_status_label} {mikrotik_account_label} {profile_display_name} {device_count_label} {last_login_label} {debt_summary_line} {recent_purchase_summary_line} {detail_pdf_url}",
+        },
+    )
+    monkeypatch.setattr(notification_service, "get_app_links", lambda: {})
+
+    with app.app_context():
+        message = notification_service.get_notification_message(
+            "user_detail_report_with_pdf",
+            {
+                "full_name": "User",
+                "access_status_label": "Layanan aktif",
+                "mikrotik_account_label": "Terverifikasi live di MikroTik",
+                "profile_display_name": "default",
+                "device_count_label": "2 perangkat",
+                "last_login_label": "22-03-2026 08:10:00",
+                "debt_summary_line": "- Tunggakan terbuka: *5.00 GB*",
+                "recent_purchase_summary_line": "- Pembelian 30 hari terakhir: *2 transaksi*",
+                "detail_pdf_url": "https://example.test/api/admin/users/detail-report/temp/token.pdf",
+            },
+        )
+
+    assert "Peringatan:" not in message
+    assert "Terverifikasi live di MikroTik" in message
+    assert "detail-report/temp/token.pdf" in message
+
+
+def test_temp_user_detail_report_token_roundtrip(monkeypatch, app):
+    from app.services import notification_service
+
+    with app.app_context():
+        token = notification_service.generate_temp_user_detail_report_token("user-456")
+        resolved = notification_service.verify_temp_user_detail_report_token(token, max_age_seconds=3600)
+
+    assert resolved == "user-456"
+
+
 def test_user_debt_partial_payment_accepts_receipt_fields(monkeypatch, app):
     from app.services import notification_service
 

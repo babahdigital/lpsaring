@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Laporan Detail Pengguna</title>
+    <style>
+      @page {
+        size: A4 portrait;
+        margin: 12mm;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: "DejaVu Sans", sans-serif;
+        font-size: 10px;
+        line-height: 1.45;
+        color: #172033;
+        background: #fff;
+      }
+
+      h1, h2, h3, p { margin: 0; }
+
+      .header {
+        padding: 14px 16px;
+        border: 1px solid #cdd6e1;
+        border-radius: 14px;
+        background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
+      }
+
+      .eyebrow {
+        display: inline-block;
+        margin-bottom: 6px;
+        color: #496286;
+        font-size: 9px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-weight: 700;
+      }
+
+      .header-title {
+        font-size: 18px;
+        font-weight: 700;
+        color: #10213d;
+      }
+
+      .header-subtitle {
+        margin-top: 4px;
+        color: #50627e;
+      }
+
+      .meta {
+        margin-top: 10px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .meta-chip {
+        min-width: 150px;
+        flex: 1 1 150px;
+        padding: 9px 10px;
+        border-radius: 12px;
+        border: 1px solid #d5deea;
+        background: #fff;
+      }
+
+      .meta-label {
+        display: block;
+        color: #5f7089;
+        font-size: 8px;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        font-weight: 700;
+      }
+
+      .meta-value {
+        display: block;
+        margin-top: 4px;
+        font-size: 11px;
+        font-weight: 700;
+        color: #15253f;
+      }
+
+      .section {
+        margin-top: 16px;
+        page-break-inside: avoid;
+      }
+
+      .section-title {
+        margin-bottom: 8px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #42536e;
+      }
+
+      .grid {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .card {
+        flex: 1 1 180px;
+        min-width: 180px;
+        padding: 12px 13px;
+        border: 1px solid #d8dee9;
+        border-radius: 12px;
+        background: #fafcff;
+      }
+
+      .card-title {
+        color: #66758b;
+        font-size: 9px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        font-weight: 700;
+      }
+
+      .card-value {
+        margin-top: 6px;
+        font-size: 14px;
+        font-weight: 700;
+        color: #10213d;
+      }
+
+      .card-caption {
+        margin-top: 5px;
+        color: #5d6d83;
+      }
+
+      .tone-success { color: #166534; }
+      .tone-warning { color: #9a3412; }
+      .tone-error { color: #b42318; }
+      .tone-secondary { color: #475467; }
+
+      table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        table-layout: fixed;
+      }
+
+      th, td {
+        border: 1px solid #d8dee9;
+        padding: 8px 9px;
+        vertical-align: top;
+      }
+
+      th {
+        background: #edf2f8;
+        text-align: left;
+        color: #324055;
+        font-size: 9px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      td {
+        background: #fff;
+      }
+
+      .right { text-align: right; }
+      .small { font-size: 9px; }
+
+      .footer {
+        margin-top: 18px;
+        padding-top: 8px;
+        border-top: 1px solid #d8dee9;
+        color: #667085;
+        font-size: 9px;
+      }
+
+      .label-col { width: 28%; }
+      .purchase-summary { margin-bottom: 10px; }
+      .purchase-col-time { width: 20%; }
+      .purchase-col-package { width: 26%; }
+      .purchase-col-order { width: 18%; }
+      .purchase-col-method { width: 16%; }
+      .purchase-col-amount { width: 20%; }
+    </style>
+  </head>
+  <body>
+    {%- from '_formatters.html' import fmt_quota -%}
+
+    <div class="header">
+      <div class="eyebrow">Laporan Detail Pengguna</div>
+      <div class="header-title">{{ user.full_name }}</div>
+      <div class="header-subtitle">Ringkasan profil, akses, kuota, dan tindak lanjut pengguna dari satu dokumen.</div>
+
+      <div class="meta">
+        <div class="meta-chip">
+          <span class="meta-label">Nomor WhatsApp</span>
+          <span class="meta-value">{{ user_phone_display }}</span>
+        </div>
+        <div class="meta-chip">
+          <span class="meta-label">Dicetak</span>
+          <span class="meta-value">{{ printed_at }}</span>
+        </div>
+        <div class="meta-chip">
+          <span class="meta-label">Status Akses</span>
+          <span class="meta-value tone-{{ access_status_tone }}">{{ access_status_label }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Ringkasan Operasional</div>
+      <div class="grid">
+        <div class="card">
+          <div class="card-title">Sinkronisasi MikroTik</div>
+          <div class="card-value">{{ mikrotik_account_label }}</div>
+          <div class="card-caption">{{ mikrotik_account_hint }}</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Profil Layanan</div>
+          <div class="card-value">{{ profile_display_name }}</div>
+          <div class="card-caption">Sumber data: {{ profile_source }}</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Perangkat & Login</div>
+          <div class="card-value">{{ device_count_label }}</div>
+          <div class="card-caption">Login terakhir: {{ last_login_label }}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Profil & Kuota</div>
+      <table>
+        <tbody>
+          <tr>
+            <th class="label-col">Peran</th>
+            <td>{{ user.role.value if user.role else '-' }}</td>
+          </tr>
+          <tr>
+            <th>Status Akun</th>
+            <td>{{ 'Aktif' if user.is_active else 'Nonaktif' }}{% if user.is_blocked %} • Diblokir{% endif %}</td>
+          </tr>
+          <tr>
+            <th>Alamat</th>
+            <td>
+              {% if user.is_tamping %}
+                Tamping{% if user.tamping_type %} • {{ user.tamping_type }}{% endif %}
+              {% elif user.blok and user.kamar %}
+                Blok {{ user.blok }} • Kamar {{ user.kamar }}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <th>Kuota Dibeli</th>
+            <td>{{ 'Unlimited' if is_unlimited_user else fmt_quota(quota_total_mb) }}</td>
+          </tr>
+          <tr>
+            <th>Kuota Terpakai</th>
+            <td>{{ 'Unlimited' if is_unlimited_user else fmt_quota(quota_used_mb) }}</td>
+          </tr>
+          <tr>
+            <th>Sisa Kuota</th>
+            <td>{{ 'Unlimited' if is_unlimited_user else fmt_quota(quota_remaining_mb) }}</td>
+          </tr>
+          <tr>
+            <th>Masa Aktif</th>
+            <td>{{ quota_expiry_label }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    {% if show_debt_section %}
+      <div class="section">
+        <div class="section-title">Tunggakan Aktif</div>
+        <div class="grid">
+          <div class="card">
+            <div class="card-title">Total Tunggakan</div>
+            <div class="card-value tone-warning">{{ fmt_quota(debt_total_mb) }}</div>
+            <div class="card-caption">{{ open_debt_items }} item masih terbuka.</div>
+          </div>
+          <div class="card">
+            <div class="card-title">Tunggakan Otomatis</div>
+            <div class="card-value">{{ fmt_quota(debt_auto_mb) }}</div>
+            <div class="card-caption">Selisih pemakaian terhadap kuota tercatat.</div>
+          </div>
+          <div class="card">
+            <div class="card-title">Tunggakan Manual</div>
+            <div class="card-value">{{ fmt_quota(debt_manual_mb) }}</div>
+            <div class="card-caption">Pencatatan tindak lanjut manual oleh admin.</div>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+
+    {% if show_purchase_section %}
+      <div class="section">
+        <div class="section-title">Riwayat Pembelian 30 Hari Terakhir</div>
+        <div class="grid purchase-summary">
+          <div class="card">
+            <div class="card-title">Total Transaksi</div>
+            <div class="card-value">{{ purchase_count_30d }}</div>
+            <div class="card-caption">Hanya transaksi sukses 30 hari terakhir.</div>
+          </div>
+          <div class="card">
+            <div class="card-title">Total Nilai Pembelian</div>
+            <div class="card-value">{{ purchase_total_amount_30d_display }}</div>
+            <div class="card-caption">Akumulasi transaksi yang berhasil dibayar.</div>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th class="purchase-col-time">Waktu</th>
+              <th class="purchase-col-package">Paket</th>
+              <th class="purchase-col-order">Order ID</th>
+              <th class="purchase-col-method">Metode</th>
+              <th class="purchase-col-amount right">Nominal</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in recent_purchases %}
+              <tr>
+                <td>{{ item.paid_at_display }}</td>
+                <td>{{ item.package_name }}</td>
+                <td class="small">{{ item.order_id }}</td>
+                <td>{{ item.payment_method }}</td>
+                <td class="right">{{ item.amount_display }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+
+    <div class="footer">
+      Dokumen ini dibuat oleh {{ business_name }}. Kontak layanan: {{ business_phone }}.
+      {% if business_address %}<br>{{ business_address }}{% endif %}
+    </div>
+  </body>
+</html>
