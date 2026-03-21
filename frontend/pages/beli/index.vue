@@ -9,7 +9,7 @@ import type {
 } from '~/types/api/contracts'
 import { useFetch, useNuxtApp } from '#app'
 import { storeToRefs } from 'pinia'
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '~/store/auth'
 import { useSettingsStore } from '~/store/settings'
@@ -44,6 +44,19 @@ interface FocusableField { focus: () => void }
 
 interface SnapPayResult {
   order_id: string
+}
+
+interface PaymentAvailabilityResponse {
+  available: boolean
+  message: string | null
+  reason: string | null
+  circuit_name: string
+  circuit_state: string
+  retry_after_seconds: number
+  checked_at: string | null
+  checked_at_display: string | null
+  open_until: string | null
+  open_until_display: string | null
 }
 
 type PaymentMethod = PaymentMethodContract
@@ -103,6 +116,8 @@ function isPackageSelectable(pkg: Package): boolean {
 }
 
 function getPackageDisabledTooltip(pkg: Package): string | null {
+  if (isPaymentTemporarilyUnavailable.value)
+    return paymentUnavailableMessage.value
   if (isDemoDisabledPackage(pkg))
     return 'Mode demo aktif: hanya paket Testing yang tersedia.'
   if (!canPurchasePackage(pkg))
@@ -111,6 +126,8 @@ function getPackageDisabledTooltip(pkg: Package): string | null {
 }
 
 function getPackageButtonLabel(pkg: Package): string {
+  if (isPaymentTemporarilyUnavailable.value)
+    return 'Sementara Ditutup'
   if (isDemoDisabledPackage(pkg))
     return 'Disable'
   if (!canPurchasePackage(pkg))
@@ -259,6 +276,29 @@ const snackbarVisible = ref(false)
 const snackbarText = ref('')
 const snackbarColor = ref<'error' | 'success' | 'info' | 'warning'>('info')
 const snackbarTimeout = ref(5000)
+const paymentAvailability = ref<PaymentAvailabilityResponse | null>(null)
+const isRefreshingPaymentAvailability = ref(false)
+let paymentAvailabilityPollHandle: ReturnType<typeof setInterval> | null = null
+
+const paymentUnavailableMessage = computed(() => {
+  const rawMessage = paymentAvailability.value?.message
+  if (typeof rawMessage === 'string' && rawMessage.trim() !== '')
+    return rawMessage.trim()
+  return 'Pembelian sementara ditutup. Layanan pembayaran sedang mengalami gangguan.'
+})
+
+const isPaymentTemporarilyUnavailable = computed(() => paymentAvailability.value?.available === false)
+
+const paymentAvailabilityMeta = computed(() => {
+  const state = paymentAvailability.value
+  if (state == null || isPaymentTemporarilyUnavailable.value !== true)
+    return null
+  if (typeof state.open_until_display === 'string' && state.open_until_display.trim() !== '')
+    return `Pemeriksaan ulang otomatis setelah ${state.open_until_display}.`
+  if (typeof state.retry_after_seconds === 'number' && state.retry_after_seconds > 0)
+    return `Pemeriksaan ulang otomatis dalam sekitar ${state.retry_after_seconds} detik.`
+  return 'Halaman ini akan memeriksa ulang status pembayaran secara otomatis.'
+})
 
 // DIPERBAIKI: Menyederhanakan `watch` untuk penanganan galat yang lebih bersih dan standar.
 watch(fetchPackagesError, (newError) => {
@@ -279,6 +319,47 @@ function showSnackbar(text: string, color: 'error' | 'success' | 'info' | 'warni
   snackbarTimeout.value = timeout
   snackbarVisible.value = true
 }
+
+async function refreshPaymentAvailability(options?: { silent?: boolean }) {
+  if (isRefreshingPaymentAvailability.value)
+    return
+
+  isRefreshingPaymentAvailability.value = true
+  try {
+    const response = await $api<PaymentAvailabilityResponse>('/settings/payment-availability', {
+      method: 'GET',
+    })
+    paymentAvailability.value = response
+  }
+  catch {
+    if (options?.silent !== true)
+      showSnackbar('Gagal memuat status layanan pembayaran.', 'warning', 5000)
+  }
+  finally {
+    isRefreshingPaymentAvailability.value = false
+  }
+}
+
+function stopPaymentAvailabilityPolling() {
+  if (paymentAvailabilityPollHandle != null) {
+    clearInterval(paymentAvailabilityPollHandle)
+    paymentAvailabilityPollHandle = null
+  }
+}
+
+function ensurePaymentAvailableOrWarn() {
+  if (isPaymentTemporarilyUnavailable.value !== true)
+    return true
+
+  closePaymentMethodDialog()
+  showSnackbar(paymentUnavailableMessage.value, 'warning', 8000)
+  return false
+}
+
+watch(isPaymentTemporarilyUnavailable, (isUnavailable) => {
+  if (isUnavailable === true && showPaymentMethodDialog.value === true)
+    closePaymentMethodDialog()
+})
 
 const nameRules = [
   (v: string) => (v != null && v.trim() !== '') || 'Nama Lengkap wajib diisi.',
@@ -372,6 +453,8 @@ function goToDashboard() {
 }
 
 function openPaymentMethodDialog(packageId: string) {
+  if (!ensurePaymentAvailableOrWarn())
+    return
   // Snap mode: langsung buka Midtrans Snap (tanpa popup pilih metode)
   if (providerMode.value === 'snap') {
     void initiatePayment(packageId)
@@ -390,6 +473,8 @@ function closePaymentMethodDialog() {
 async function confirmPaymentMethod() {
   if (pendingPaymentPackageId.value == null)
     return
+  if (!ensurePaymentAvailableOrWarn())
+    return
   const packageId = pendingPaymentPackageId.value
   closePaymentMethodDialog()
   await initiatePayment(packageId)
@@ -398,6 +483,9 @@ async function confirmPaymentMethod() {
 // Logika penanganan event (tidak ada perubahan)
 function handlePackageSelection(pkg: Package) {
   if (pkg?.id == null || isInitiatingPayment.value != null)
+    return
+
+  if (!ensurePaymentAvailableOrWarn())
     return
 
   if (isDemoDisabledPackage(pkg)) {
@@ -472,6 +560,12 @@ async function handleContactSubmit() {
 async function initiatePayment(packageId: string) {
   isInitiatingPayment.value = packageId
   try {
+    await refreshPaymentAvailability({ silent: true })
+    if (!ensurePaymentAvailableOrWarn()) {
+      isInitiatingPayment.value = null
+      return
+    }
+
     const responseData = await $api<InitiateResponse>('/transactions/initiate', {
       method: 'POST',
       body: {
@@ -543,6 +637,9 @@ async function initiatePayment(packageId: string) {
         errorMessage = message
       }
     }
+    const errorCode = typeof err?.data?.code === 'string' ? err.data.code : null
+    if (errorCode === 'MIDTRANS_API_ERROR' || errorCode === 'PAYMENT_GATEWAY_UNAVAILABLE' || err?.statusCode === 503)
+      await refreshPaymentAvailability({ silent: true })
     showSnackbar(errorMessage, 'error')
     isInitiatingPayment.value = null
   }
@@ -553,6 +650,12 @@ async function initiateDebtSettlementPayment() {
     return
   isInitiatingPayment.value = 'debt'
   try {
+    await refreshPaymentAvailability({ silent: true })
+    if (!ensurePaymentAvailableOrWarn()) {
+      isInitiatingPayment.value = null
+      return
+    }
+
     const responseData = await $api<InitiateResponse>('/transactions/debt/initiate', {
       method: 'POST',
       body: {
@@ -621,6 +724,9 @@ async function initiateDebtSettlementPayment() {
       if (typeof message === 'string' && message.length > 0)
         errorMessage = message
     }
+    const errorCode = typeof err?.data?.code === 'string' ? err.data.code : null
+    if (errorCode === 'MIDTRANS_API_ERROR' || errorCode === 'PAYMENT_GATEWAY_UNAVAILABLE' || err?.statusCode === 503)
+      await refreshPaymentAvailability({ silent: true })
     showSnackbar(errorMessage, 'error', 8000)
     isInitiatingPayment.value = null
   }
@@ -637,6 +743,11 @@ onMounted(async () => {
     await authStore.initializeAuth()
   }
 
+  await refreshPaymentAvailability({ silent: true })
+  paymentAvailabilityPollHandle = setInterval(() => {
+    void refreshPaymentAvailability({ silent: true })
+  }, 30000)
+
   // Jika pengguna datang dari tombol "Lunasi" di dashboard, otomatis buka pembayaran
   // untuk paket termurah (backend sudah order_by price).
   if (route.query?.intent === 'debt' && hasAutoInitiatedDebt.value !== true) {
@@ -647,6 +758,9 @@ onMounted(async () => {
     }
     else if (!isUserApprovedAndActive.value) {
       showSnackbar('Akun Anda belum aktif atau belum disetujui Admin untuk melakukan pembayaran.', 'warning', 7000)
+    }
+    else if (isPaymentTemporarilyUnavailable.value === true) {
+      showSnackbar(paymentUnavailableMessage.value, 'warning', 8000)
     }
     else {
       try {
@@ -674,6 +788,10 @@ onMounted(async () => {
     showSnackbar(`Pembayaran Order ID ${query.order_id} gagal: ${errorMsg}`, 'error', 8000)
     router.replace({ query: {} })
   }
+})
+
+onBeforeUnmount(() => {
+  stopPaymentAvailabilityPolling()
 })
 
 definePageMeta({ layout: 'blank' })
@@ -732,6 +850,20 @@ useHead({ title: 'Beli Paket Hotspot' })
         <p class="text-body-1 text-sm-h6 text-medium-emphasis package-hero-subtitle">
           Dapatkan akses internet super cepat. Pilih paket yang sesuai dengan kebutuhan aktivitas digital Anda hari ini.
         </p>
+        <v-alert
+          v-if="isPaymentTemporarilyUnavailable"
+          type="warning"
+          variant="tonal"
+          prominent
+          class="mt-6 text-left"
+        >
+          <div class="font-weight-bold mb-1">
+            {{ paymentUnavailableMessage }}
+          </div>
+          <div v-if="paymentAvailabilityMeta" class="text-body-2">
+            {{ paymentAvailabilityMeta }}
+          </div>
+        </v-alert>
       </div>
 
       <v-row v-if="isLoadingPackages" dense>
@@ -751,18 +883,18 @@ useHead({ title: 'Beli Paket Hotspot' })
 
       <v-row v-else-if="visiblePackages.length > 0" class="package-grid">
         <v-col v-for="pkg in visiblePackages" :key="pkg.id" cols="12" sm="6" md="4" lg="3" class="package-grid-col d-flex">
-          <v-tooltip :disabled="isDemoDisabledPackage(pkg) !== true" location="top" max-width="280">
+          <v-tooltip :disabled="getPackageDisabledTooltip(pkg) == null" location="top" max-width="280">
             <template #activator="{ props }">
               <div v-bind="props" class="w-100 d-flex">
                 <v-card
                   class="package-card d-flex flex-column flex-grow-1"
                   :class="{
                     'package-card--featured': pkg.id === featuredPackageId,
-                    'package-card--available': isPackageSelectable(pkg),
-                    'package-card--disabled': !isPackageSelectable(pkg),
+                    'package-card--available': isPackageSelectable(pkg) && !isPaymentTemporarilyUnavailable,
+                    'package-card--disabled': !isPackageSelectable(pkg) || isPaymentTemporarilyUnavailable,
                   }"
                   rounded="lg"
-                  :disabled="!canPurchasePackage(pkg) || isInitiatingPayment != null || isDemoDisabledPackage(pkg)"
+                  :disabled="!canPurchasePackage(pkg) || isInitiatingPayment != null || isDemoDisabledPackage(pkg) || isPaymentTemporarilyUnavailable"
                   @click="handlePackageSelection(pkg)"
                 >
                   <v-card-item class="package-card-head pb-1">
@@ -828,7 +960,7 @@ useHead({ title: 'Beli Paket Hotspot' })
                       variant="flat"
                       size="large"
                       class="package-action-btn"
-                      :disabled="!canPurchasePackage(pkg) || isInitiatingPayment != null || isDemoDisabledPackage(pkg)"
+                      :disabled="!canPurchasePackage(pkg) || isInitiatingPayment != null || isDemoDisabledPackage(pkg) || isPaymentTemporarilyUnavailable"
                       :loading="isInitiatingPayment === pkg.id"
                       @click.stop="handlePackageSelection(pkg)"
                     >
@@ -930,7 +1062,7 @@ useHead({ title: 'Beli Paket Hotspot' })
             <v-btn
               color="primary"
               variant="flat"
-              :disabled="pendingPaymentPackageId == null || isInitiatingPayment != null"
+              :disabled="pendingPaymentPackageId == null || isInitiatingPayment != null || isPaymentTemporarilyUnavailable"
               @click="confirmPaymentMethod"
             >
               Lanjutkan Pembayaran

@@ -355,6 +355,10 @@ class Config:
     )
     MIDTRANS_HTTP_TIMEOUT_SECONDS = get_env_int("MIDTRANS_HTTP_TIMEOUT_SECONDS", 15)
     MIDTRANS_WEBHOOK_IDEMPOTENCY_TTL_SECONDS = get_env_int("MIDTRANS_WEBHOOK_IDEMPOTENCY_TTL_SECONDS", 86400)
+    PAYMENT_GATEWAY_UNAVAILABLE_MESSAGE = os.environ.get(
+        "PAYMENT_GATEWAY_UNAVAILABLE_MESSAGE",
+        "Pembelian sementara ditutup. Layanan pembayaran sedang mengalami gangguan.",
+    )
 
     # Prefix untuk order_id transaksi user (endpoint /api/transactions/initiate).
     # Contoh: BD-LPSR -> hasil: BD-LPSR-1A2B3C4D5E6F

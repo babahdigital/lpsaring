@@ -117,6 +117,8 @@ Variabel yang paling sensitif terhadap perilaku runtime:
 - Backend memakai `MIDTRANS_SERVER_KEY`, `MIDTRANS_CLIENT_KEY`, dan `MIDTRANS_IS_PRODUCTION`.
 - Frontend memakai `NUXT_PUBLIC_MIDTRANS_CLIENT_KEY`.
 - Webhook dan redirect harus berjalan melalui URL publik HTTPS yang valid.
+- Status ketersediaan pembayaran publik kini dibaca dari `GET /api/settings/payment-availability` dan harus menjadi source of truth UI untuk halaman beli. Endpoint ini `no-store`, dihitung dari state circuit breaker `midtrans`, dan memakai pesan tunggal `PAYMENT_GATEWAY_UNAVAILABLE_MESSAGE` agar banner frontend dan error backend tetap sinkron.
+- Untuk outage gateway pembayaran, jangan menambah toggle manual baru di frontend. Pola yang dijaga adalah event-driven: backend membuka breaker saat Midtrans gagal, halaman beli mem-poll status ini berkala, dan semua aksi beli/lunasi wajib disabled selama `available=false`.
 
 ### WhatsApp/Fonnte
 
@@ -128,6 +130,7 @@ Variabel yang paling sensitif terhadap perilaku runtime:
 - Jika perlu audit performa OTP, gunakan kombinasi access log, backend log, dan dashboard/log provider WhatsApp; jangan menyimpulkan latency delivery hanya dari selisih waktu `request-otp` ke `verify-otp` karena itu juga mencakup waktu user menerima dan mengetik kode.
 - Khusus notifikasi debt manual, aplikasi kini mengekspos metrik degradasi `notification.render.degraded`, `notification.whatsapp.send_failed`, `notification.whatsapp.user_debt_added.detail_degraded`, dan `notification.whatsapp.user_debt_added.detail_degraded.items` melalui admin metrics. Gunakan metrik ini bersama log backend bila pesan debt sukses terkirim tetapi rincian item terlihat tidak lengkap.
 - Jalur admin `PUT /api/admin/users/{id}` adalah boundary resmi untuk debt manual. Payload `debt_date` wajib lolos validasi schema dan akan dinormalisasi ke `date`; due date debt manual dihitung otomatis ke akhir bulan untuk flow paket maupun `debt_add_mb`.
+- Schema admin user create/update dapat mengembalikan `blok` dan `kamar` sebagai enum Pydantic. Sebelum menyentuh model SQLAlchemy `User`, nilai itu wajib dinormalisasi kembali ke string storage (`A`, `Kamar_1`, dst.) agar flush Postgres tidak gagal dengan `can't adapt type 'UserBlok'` atau `UserKamar`.
 - Normalisasi tampilan tanggal wajib memakai helper terpusat di `backend/app/utils/formatters.py`: `format_app_date_display()` untuk tanggal dan `format_app_datetime_display()` untuk datetime. Untuk JSON/API, pertahankan field raw ISO/`yyyy-mm-dd` bila masih dipakai sorting/parsing, lalu tambahkan field `*_display` berformat `dd-mm-yyyy` atau `dd-mm-yyyy HH:MM:SS` untuk konsumsi UI/report/WA context.
 
 ## Aturan Saat Mengubah Kode

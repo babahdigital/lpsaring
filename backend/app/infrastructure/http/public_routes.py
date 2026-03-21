@@ -11,9 +11,36 @@ from sqlalchemy import select
 
 from app.extensions import db
 from app.infrastructure.db.models import ApplicationSetting
+from app.utils.payment_availability import get_payment_gateway_public_status
 from .schemas.settings_schemas import SettingSchema
 
 public_bp = Blueprint("public_api", __name__, url_prefix="/api/settings")
+
+
+@public_bp.route("/payment-availability", methods=["GET"])
+def get_public_payment_availability():
+    try:
+        response = jsonify(get_payment_gateway_public_status())
+        response.headers["Cache-Control"] = "no-store"
+        return response, HTTPStatus.OK
+    except Exception as e:
+        current_app.logger.error(f"Error fetching payment availability: {e}", exc_info=True)
+        response = jsonify(
+            {
+                "available": True,
+                "message": None,
+                "reason": None,
+                "circuit_name": "midtrans",
+                "circuit_state": "unknown",
+                "retry_after_seconds": 0,
+                "checked_at": None,
+                "checked_at_display": "-",
+                "open_until": None,
+                "open_until_display": None,
+            }
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response, HTTPStatus.OK
 
 
 @public_bp.route("/public", methods=["GET"])

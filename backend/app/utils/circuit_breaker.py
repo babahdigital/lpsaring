@@ -72,6 +72,31 @@ def _set_state(name: str, state: dict) -> None:
         _in_memory_state[name] = state
 
 
+def get_circuit_status(name: str) -> dict:
+    state = _get_state(name)
+    now = _now()
+    open_until = int(state.get("open_until", 0) or 0)
+    is_open = open_until > now
+    half_open = int(state.get("half_open", 0) or 0) == 1
+
+    if is_open:
+        state_name = "open"
+    elif half_open:
+        state_name = "half_open"
+    else:
+        state_name = "closed"
+
+    return {
+        "name": name,
+        "state": state_name,
+        "is_open": is_open,
+        "open_until_timestamp": open_until if open_until > 0 else None,
+        "retry_after_seconds": max(0, open_until - now) if is_open else 0,
+        "failure_count": int(state.get("fail", 0) or 0),
+        "half_open_success": int(state.get("half_open_success", 0) or 0),
+    }
+
+
 def should_allow_call(name: str) -> bool:
     state = _get_state(name)
     now = _now()

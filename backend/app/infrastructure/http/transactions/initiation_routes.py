@@ -15,6 +15,7 @@ from werkzeug.exceptions import HTTPException
 from app.infrastructure.db.models import ApprovalStatus, Package, Transaction, TransactionEventSource, TransactionStatus, User, UserQuotaDebt, UserRole
 from app.infrastructure.http.error_envelope import error_response
 from app.utils.formatters import format_app_datetime_display
+from app.utils.payment_availability import get_payment_gateway_unavailable_message
 
 
 def _parse_midtrans_api_error(raw_message: str) -> tuple[str | None, str | None]:
@@ -38,10 +39,10 @@ def _build_midtrans_user_message(raw_message: str) -> str:
     """Convert a MidtransAPIError into a friendly Indonesian user-facing message."""
     status_code, status_msg = _parse_midtrans_api_error(raw_message)
     if status_code and status_code.startswith("5") or not status_code:
-        return "Layanan pembayaran sedang mengalami gangguan sementara. Silakan coba beberapa saat lagi."
+        return get_payment_gateway_unavailable_message()
     if status_msg:
         return f"Pembayaran gagal: {status_msg}. Silakan coba lagi atau hubungi admin."
-    return "Layanan pembayaran sedang mengalami gangguan. Silakan coba beberapa saat lagi atau hubungi admin."
+    return get_payment_gateway_unavailable_message()
 
 
 def _do_snap_charge(
@@ -443,7 +444,7 @@ def initiate_transaction_impl(
         finish_url = status_url
 
         if not should_allow_call("midtrans"):
-            abort(HTTPStatus.SERVICE_UNAVAILABLE, description="Midtrans sementara tidak tersedia.")
+            abort(HTTPStatus.SERVICE_UNAVAILABLE, description=get_payment_gateway_unavailable_message())
 
         snap_token: str | None = None
         redirect_url: str | None = None
@@ -537,7 +538,7 @@ def initiate_transaction_impl(
         db.session.rollback()
         current_app.logger.error("Midtrans network error di initiate_transaction: %s", e_req, exc_info=False)
         return error_response(
-            "Layanan pembayaran tidak dapat dijangkau saat ini. Silakan coba beberapa saat lagi.",
+            get_payment_gateway_unavailable_message(),
             status_code=HTTPStatus.SERVICE_UNAVAILABLE,
             code="PAYMENT_GATEWAY_UNAVAILABLE",
         )
@@ -732,7 +733,7 @@ def initiate_debt_settlement_transaction_impl(
         finish_url = status_url
 
         if not should_allow_call("midtrans"):
-            abort(HTTPStatus.SERVICE_UNAVAILABLE, description="Midtrans sementara tidak tersedia.")
+            abort(HTTPStatus.SERVICE_UNAVAILABLE, description=get_payment_gateway_unavailable_message())
 
         item_name = "Pelunasan Tunggakan Kuota" if manual_debt_id is None else "Pelunasan Hutang Manual"
 
@@ -834,7 +835,7 @@ def initiate_debt_settlement_transaction_impl(
         session.rollback()
         current_app.logger.error("Midtrans network error di initiate_debt_settlement_transaction: %s", e_req, exc_info=False)
         return error_response(
-            "Layanan pembayaran tidak dapat dijangkau saat ini. Silakan coba beberapa saat lagi.",
+            get_payment_gateway_unavailable_message(),
             status_code=HTTPStatus.SERVICE_UNAVAILABLE,
             code="PAYMENT_GATEWAY_UNAVAILABLE",
         )

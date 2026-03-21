@@ -110,6 +110,28 @@ def _coerce_datetime_value(value: Any) -> Optional[datetime]:
     return None
 
 
+def _normalize_user_blok_value(value: Any) -> Optional[str]:
+    raw_value = getattr(value, "value", value)
+    if raw_value is None:
+        return None
+    cleaned = str(raw_value).strip().upper()
+    return cleaned or None
+
+
+def _normalize_user_kamar_value(value: Any) -> Optional[str]:
+    raw_value = getattr(value, "value", value)
+    if raw_value is None:
+        return None
+    cleaned = str(raw_value).strip()
+    if not cleaned:
+        return None
+    if cleaned.isdigit():
+        return f"Kamar_{cleaned}"
+    if cleaned.startswith("Kamar_"):
+        return cleaned
+    return f"Kamar_{cleaned}"
+
+
 def _extract_debt_note_part(note: Any) -> str:
     if not isinstance(note, str):
         return ""
@@ -348,9 +370,11 @@ def create_user_by_admin(admin_actor: User, data: Dict[str, Any]) -> Tuple[bool,
         new_user.full_name = data["full_name"]
         new_user.phone_number = phone_number
         new_user.role = new_role
-        new_user.blok = data.get("blok") if new_role == UserRole.USER and not is_tamping else None
+        new_user.blok = _normalize_user_blok_value(data.get("blok")) if new_role == UserRole.USER and not is_tamping else None
         new_user.kamar = (
-            f"Kamar_{data['kamar']}" if new_role == UserRole.USER and data.get("kamar") and not is_tamping else None
+            _normalize_user_kamar_value(data.get("kamar"))
+            if new_role == UserRole.USER and data.get("kamar") and not is_tamping
+            else None
         )
         new_user.is_tamping = is_tamping if new_role == UserRole.USER else False
         new_user.tamping_type = tamping_type if new_role == UserRole.USER and is_tamping else None
@@ -619,10 +643,16 @@ def update_user_by_admin_comprehensive(
                 target_user.kamar = None
                 changes["kamar"] = None
         else:
-            if "blok" in data and data.get("blok") != target_user.blok:
-                target_user.blok = data.get("blok")
-            if "kamar" in data and data.get("kamar") != target_user.kamar:
-                target_user.kamar = f"Kamar_{data['kamar']}"
+            if "blok" in data:
+                normalized_blok = _normalize_user_blok_value(data.get("blok"))
+                if normalized_blok != target_user.blok:
+                    target_user.blok = normalized_blok
+                    changes["blok"] = normalized_blok
+            if "kamar" in data:
+                normalized_kamar = _normalize_user_kamar_value(data.get("kamar"))
+                if normalized_kamar != target_user.kamar:
+                    target_user.kamar = normalized_kamar
+                    changes["kamar"] = normalized_kamar
             if target_user.tamping_type is not None:
                 target_user.tamping_type = None
                 changes["tamping_type"] = None
