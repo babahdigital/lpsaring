@@ -2276,28 +2276,25 @@ components:
 
     MikrotikRuleCheck:
       type: object
-      required: [rule, found]
+      required: [label, found]
       properties:
-        rule:
+        label:
           type: string
         found:
           type: boolean
-        index:
-          type: integer
-          nullable: true
 
     MikrotikVerifyRulesResponse:
       type: object
-      required: [status, all_found, order_ok, total_forward_rules, checks]
+      required: [status, all_found, total_filter_rules, total_raw_rules, checks]
       properties:
         status:
           type: string
           enum: [ok, error]
         all_found:
           type: boolean
-        order_ok:
-          type: boolean
-        total_forward_rules:
+        total_filter_rules:
+          type: integer
+        total_raw_rules:
           type: integer
         checks:
           type: array

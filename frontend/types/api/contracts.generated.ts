@@ -2,7 +2,7 @@
 // AUTO-GENERATED FILE. DO NOT EDIT MANUALLY.
 // Source: contracts/openapi/openapi.v1.yaml
 
-export const OPENAPI_SOURCE_SHA256 = '088f229cba658b78c596fc0083d90dc3fa3a85ec9eb0c36a96de290f1204bb4f' as const
+export const OPENAPI_SOURCE_SHA256 = 'd99f3c960384d7d3619d5ef62bb6874928bef44f21101f4cb6bdee5def1979cc' as const
 export const API_CONTRACT_REVISION = 'openapi-1.0.0' as const
 
 export type MessageResponse = { message: string }
@@ -61,8 +61,8 @@ export type AccessParitySummary = { users: number; mismatches: number }
 export type AdminAccessParityResponse = { items: Array<AccessParityItem>; summary: AccessParitySummary }
 export type AdminAccessParityFixRequest = { user_id: string; mac?: string | null; ip?: string | null }
 export type AdminAccessParityFixResponse = { message: string; user_id: string; mac?: string | null; resolved_ip?: string | null; expected_binding_type: string; binding_updated: boolean; address_list_synced: boolean }
-export type MikrotikRuleCheck = { rule: string; found: boolean; index?: number | null }
-export type MikrotikVerifyRulesResponse = { status: 'ok' | 'error'; all_found: boolean; order_ok: boolean; total_forward_rules: number; checks: Array<MikrotikRuleCheck> }
+export type MikrotikRuleCheck = { label: string; found: boolean }
+export type MikrotikVerifyRulesResponse = { status: 'ok' | 'error'; all_found: boolean; total_filter_rules: number; total_raw_rules: number; checks: Array<MikrotikRuleCheck> }
 
 export interface GeneratedApiContractMap {
   'GET /admin/metrics/access-parity': {
