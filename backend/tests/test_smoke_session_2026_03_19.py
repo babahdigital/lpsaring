@@ -301,6 +301,26 @@ def test_user_debt_partial_payment_template_renders_with_context():
     assert "Peringatan:" not in msg, "No missing placeholders allowed"
 
 
+def test_user_manual_debt_reminder_template_has_detail_fields():
+    template_path = os.path.join(PROJECT_ROOT, "app", "notifications", "templates.json")
+    with open(template_path, "r", encoding="utf-8") as f:
+        templates = json.load(f)
+
+    template = templates.get("user_manual_debt_reminder_1day", "")
+    assert template, "user_manual_debt_reminder_1day template must exist"
+    for field in [
+        "{debt_gb}",
+        "{debt_amount_display}",
+        "{due_date}",
+        "{total_manual_debt_gb}",
+        "{total_manual_debt_amount_display}",
+        "{open_items}",
+        "{debt_detail_lines}",
+        "{debt_invoice_url}",
+    ]:
+        assert field in template, f"Template reminder harus punya {field}"
+
+
 # ---------------------------------------------------------------------------
 # 6. user_management_routes — settle endpoint payload uses quota_expiry_date
 # ---------------------------------------------------------------------------

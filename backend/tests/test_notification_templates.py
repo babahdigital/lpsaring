@@ -172,6 +172,39 @@ def test_user_debt_partial_payment_accepts_receipt_fields(monkeypatch, app):
     assert "debt-settlements/temp/token.pdf" in message
 
 
+def test_user_manual_debt_reminder_accepts_detail_and_invoice_fields(monkeypatch, app):
+    from app.services import notification_service
+
+    monkeypatch.setattr(
+        notification_service,
+        "_load_templates",
+        lambda: {
+            "user_manual_debt_reminder_1day": "Reminder {full_name} {debt_gb} {debt_amount_display} {due_date} {total_manual_debt_gb} {total_manual_debt_amount_display} {open_items} {debt_detail_lines} {debt_invoice_url}",
+        },
+    )
+    monkeypatch.setattr(notification_service, "get_app_links", lambda: {})
+
+    with app.app_context():
+        message = notification_service.get_notification_message(
+            "user_manual_debt_reminder_1day",
+            {
+                "full_name": "User",
+                "debt_gb": "10.00 GB",
+                "debt_amount_display": "Rp 100.000",
+                "due_date": "31-03-2026",
+                "total_manual_debt_gb": "30.00 GB",
+                "total_manual_debt_amount_display": "Rp 300.000",
+                "open_items": 2,
+                "debt_detail_lines": "1. 31 Mar 2026 — 10.00 GB | Rp 100.000 | Tunggakan manual",
+                "debt_invoice_url": "https://example.test/api/admin/users/debts/temp/token.pdf",
+            },
+        )
+
+    assert "Peringatan:" not in message
+    assert "Rp 300.000" in message
+    assert "debts/temp/token.pdf" in message
+
+
 def test_user_access_blocked_humanizes_legacy_reason(monkeypatch, app):
     from app.services import notification_service
 

@@ -57,7 +57,13 @@ from app.infrastructure.gateways.mikrotik_client import (
     upsert_dhcp_static_lease,
     upsert_ip_binding,
 )
-from app.services.notification_service import get_notification_message
+from app.services.notification_service import generate_temp_debt_report_token, get_notification_message
+from app.services.manual_debt_report_service import (
+    build_due_debt_reminder_context,
+    build_user_manual_debt_pdf_filename,
+    build_user_manual_debt_report_context,
+    resolve_public_base_url,
+)
 from app.services.access_policy_service import resolve_allowed_binding_type_for_user
 from app.services.quota_mutation_ledger_service import append_quota_mutation_event, lock_user_quota_row, snapshot_user_quota_state
 from app.services.user_management.helpers import _handle_mikrotik_operation
@@ -1346,7 +1352,10 @@ def send_manual_debt_reminders_task(self):
             logger.exception("send_manual_debt_reminders: gagal query debts")
             return {"error": "query_failed"}
 
-        summary = {"checked": 0, "sent": 0, "skipped_dedup": 0, "skipped_past": 0, "failed": 0}
+        summary = {"checked": 0, "sent": 0, "queued_pdf": 0, "skipped_dedup": 0, "skipped_past": 0, "failed": 0}
+        report_context_cache: dict[str, dict[str, Any]] = {}
+        pdf_url_cache: dict[str, str] = {}
+        public_base_url = resolve_public_base_url().strip()
 
         # (stage_key, min_hours_inclusive, max_hours_exclusive, template_key)
         _STAGES = [
@@ -1375,9 +1384,6 @@ def send_manual_debt_reminders_task(self):
                 summary["skipped_past"] += 1
                 continue
 
-            debt_gb_text = format_mb_to_gb(debt.amount_mb)
-            due_date_str = due_date.strftime("%d-%m-%Y")
-
             for stage_key, min_h, max_h, template_key in _STAGES:
                 if not (min_h <= diff_hours < max_h):
                     continue
@@ -1392,16 +1398,51 @@ def send_manual_debt_reminders_task(self):
                         pass  # Redis error: lanjut kirim (better over-send than miss)
 
                 try:
+                    user_key = str(user.id)
+                    report_context = report_context_cache.get(user_key)
+                    if report_context is None:
+                        report_context = build_user_manual_debt_report_context(user)
+                        report_context_cache[user_key] = report_context
+
+                    pdf_url = pdf_url_cache.get(user_key, "")
+                    if not pdf_url and public_base_url:
+                        temp_token = generate_temp_debt_report_token(str(user.id))
+                        pdf_url = f"{public_base_url.rstrip('/')}/api/admin/users/debts/temp/{temp_token}.pdf"
+                        pdf_url_cache[user_key] = pdf_url
+
+                    reminder_context = build_due_debt_reminder_context(user, report_context, debt, pdf_url or "-")
                     msg = get_notification_message(
                         template_key,
-                        {
-                            "full_name": getattr(user, "full_name", ""),
-                            "debt_gb": debt_gb_text,
-                            "due_date": due_date_str,
-                        },
+                        reminder_context,
                     )
+
+                    if str(msg).startswith("Peringatan:"):
+                        summary["failed"] += 1
+                        logger.error(
+                            "send_manual_debt_reminders: render template gagal debt=%s stage=%s msg=%s",
+                            debt.id,
+                            stage_key,
+                            msg,
+                        )
+                        continue
+
                     phone = getattr(user, "phone_number", "")
-                    sent = bool(send_whatsapp_message(phone, msg))
+                    sent = False
+                    if pdf_url:
+                        send_whatsapp_invoice_task.delay(
+                            str(phone),
+                            msg,
+                            pdf_url,
+                            build_user_manual_debt_pdf_filename(user),
+                            "",
+                            None,
+                            "debt_report",
+                        )
+                        summary["queued_pdf"] += 1
+                        sent = True
+                    else:
+                        sent = bool(send_whatsapp_message(phone, msg))
+
                     if sent:
                         summary["sent"] += 1
                         if redis_client:
@@ -1427,9 +1468,10 @@ def send_manual_debt_reminders_task(self):
                     )
 
         logger.info(
-            "send_manual_debt_reminders summary: checked=%s sent=%s skipped_dedup=%s skipped_past=%s failed=%s",
+            "send_manual_debt_reminders summary: checked=%s sent=%s queued_pdf=%s skipped_dedup=%s skipped_past=%s failed=%s",
             summary["checked"],
             summary["sent"],
+            summary["queued_pdf"],
             summary["skipped_dedup"],
             summary["skipped_past"],
             summary["failed"],
