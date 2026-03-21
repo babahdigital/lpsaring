@@ -64,6 +64,10 @@ from app.services.debt_settlement_receipt_service import (
     format_currency_idr,
     get_latest_admin_debt_settlement_mutation,
 )
+from app.services.manual_debt_report_service import (
+    build_user_debt_whatsapp_context as build_user_debt_whatsapp_context_shared,
+    build_user_manual_debt_report_context as build_user_manual_debt_report_context_shared,
+)
 from app.services.quota_history_service import get_user_quota_history_payload
 from app.tasks import send_whatsapp_invoice_task
 from app.utils.block_reasons import is_debt_block_reason
@@ -179,68 +183,7 @@ def _estimate_for_debt_mb(value_mb: float):
 
 
 def _build_user_manual_debt_report_context(user: User) -> dict:
-    debts = db.session.scalars(
-        select(UserQuotaDebt)
-        .where(UserQuotaDebt.user_id == user.id)
-        .order_by(
-            UserQuotaDebt.debt_date.desc().nulls_last(),
-            UserQuotaDebt.created_at.desc(),
-        )
-    ).all()
-
-    items = []
-    for d in debts:
-        amount = int(getattr(d, "amount_mb", 0) or 0)
-        paid_mb = int(getattr(d, "paid_mb", 0) or 0)
-        remaining = max(0, amount - paid_mb)
-        is_paid = bool(getattr(d, "is_paid", False)) or remaining <= 0
-        payload = UserQuotaDebtItemResponseSchema.from_orm(d).model_dump()
-        try:
-            if payload.get("debt_date"):
-                payload["debt_date_display"] = format_app_date_display(payload.get("debt_date"), fallback="-")
-        except Exception:
-            pass
-        try:
-            due_date_val = getattr(d, "due_date", None)
-            if due_date_val:
-                payload["due_date_display"] = format_app_date_display(due_date_val, fallback="-")
-                payload["due_date"] = str(due_date_val)
-        except Exception:
-            pass
-        payload["created_at_display"] = format_app_datetime_display(payload.get("created_at"), fallback="-")
-        payload["updated_at_display"] = format_app_datetime_display(payload.get("updated_at"), fallback="-")
-        payload["paid_at_display"] = format_app_datetime_display(payload.get("paid_at"), fallback="-")
-        payload["remaining_mb"] = int(remaining)
-        payload["is_paid"] = bool(is_paid)
-        payload["paid_mb"] = int(paid_mb)
-        payload["amount_mb"] = int(amount)
-        items.append(payload)
-
-    debt_auto_mb = float(getattr(user, "quota_debt_auto_mb", 0) or 0)
-    debt_manual_mb = float(getattr(user, "quota_debt_manual_mb", 0) or 0)
-    debt_total_mb = float(getattr(user, "quota_debt_total_mb", debt_auto_mb + debt_manual_mb) or 0)
-
-    est_auto = _estimate_for_debt_mb(debt_auto_mb)
-    est_manual = _estimate_for_debt_mb(debt_manual_mb)
-    est_total = _estimate_for_debt_mb(debt_total_mb)
-
-    now_utc = datetime.now(dt_timezone.utc)
-    generated_local = format_app_datetime_display(now_utc, include_seconds=False)
-
-    return {
-        "user": user,
-        "user_phone_display": format_to_local_phone(getattr(user, "phone_number", "") or "")
-        or (getattr(user, "phone_number", "") or ""),
-        "generated_at": generated_local,
-        "items": items,
-        "debt_auto_mb": debt_auto_mb,
-        "debt_manual_mb": debt_manual_mb,
-        "debt_total_mb": debt_total_mb,
-        "debt_auto_estimated_rp": est_auto.estimated_rp_rounded or 0,
-        "debt_manual_estimated_rp": est_manual.estimated_rp_rounded or 0,
-        "debt_total_estimated_rp": est_total.estimated_rp_rounded or 0,
-        "estimate_base_package_name": est_total.package_name,
-    }
+    return build_user_manual_debt_report_context_shared(user)
 
 
 def _render_user_manual_debts_pdf_bytes(context: dict, public_base_url: str) -> bytes:
@@ -254,28 +197,7 @@ def _render_user_manual_debts_pdf_bytes(context: dict, public_base_url: str) -> 
 
 
 def _build_user_debt_whatsapp_context(user: User, report_context: dict, pdf_url: str) -> dict:
-    open_items = [item for item in report_context.get("items", []) if not bool(item.get("is_paid"))]
-    detail_lines: list[str] = []
-    for index, item in enumerate(open_items[:8], start=1):
-        due_text = item.get("due_date_display") or item.get("debt_date_display") or "-"
-        amount_text = format_mb_to_gb(item.get("remaining_mb") or item.get("amount_mb") or 0)
-        price_text = _format_currency_idr(item.get("price_rp") or item.get("estimated_rp") or 0)
-        package_text = str(item.get("note") or "Tunggakan manual").strip()
-        detail_lines.append(f"{index}. {due_text} — {amount_text} | {price_text} | {package_text}")
-
-    if len(open_items) > 8:
-        detail_lines.append(f"... dan {len(open_items) - 8} item lainnya. Lihat PDF terlampir untuk rincian lengkap.")
-    if not detail_lines:
-        detail_lines.append("Tidak ada item tunggakan manual yang masih terbuka.")
-
-    return {
-        "full_name": user.full_name,
-        "total_manual_debt_gb": format_mb_to_gb(report_context.get("debt_manual_mb") or 0),
-        "total_manual_debt_amount_display": _format_currency_idr(report_context.get("debt_manual_estimated_rp") or 0),
-        "open_items": len(open_items),
-        "debt_detail_lines": "\n".join(detail_lines),
-        "debt_pdf_url": pdf_url,
-    }
+    return build_user_debt_whatsapp_context_shared(user, report_context, pdf_url)
 
 
 def _resolve_public_base_url() -> str:

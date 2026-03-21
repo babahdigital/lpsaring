@@ -109,21 +109,21 @@
           <div class="metric">
             <div class="muted">Debt Otomatis</div>
             <div><strong>{{ fmt_quota(debt_auto_mb) }}</strong></div>
-            <div class="muted">Rp {{ fmt_rp(debt_auto_estimated_rp) }}</div>
+            <div class="muted">Nilai referensi Rp {{ fmt_rp(debt_auto_estimated_rp) }}</div>
           </div>
           <div class="metric">
             <div class="muted">Debt Manual</div>
             <div><strong>{{ fmt_quota(debt_manual_mb) }}</strong></div>
-            <div class="muted">Rp {{ fmt_rp(debt_manual_estimated_rp) }}</div>
+            <div class="muted">Nominal aktif Rp {{ fmt_rp(debt_manual_estimated_rp) }}</div>
           </div>
           <div class="metric">
             <div class="muted">Debt Total</div>
             <div><strong>{{ fmt_quota(debt_total_mb) }}</strong></div>
-            <div class="muted">Rp {{ fmt_rp(debt_total_estimated_rp) }}</div>
+            <div class="muted">Total referensi Rp {{ fmt_rp(debt_total_estimated_rp) }}</div>
           </div>
         </div>
         <div class="muted mt-6">Kuota ditampilkan KB/MB/GB (1 GB = 1024 MB); nilai GB selalu 2 desimal.</div>
-        <div class="muted">Estimasi Rupiah dihitung pro-rata berdasarkan paket termurah aktif: {{ estimate_base_package_name or '-' }}.</div>
+        <div class="muted">Debt otomatis memakai nilai referensi pro-rata dari paket aktif termurah: {{ estimate_base_package_name or '-' }}. Debt manual mengikuti nominal item terbuka yang tercatat bila tersedia.</div>
       </div>
     </div>
 

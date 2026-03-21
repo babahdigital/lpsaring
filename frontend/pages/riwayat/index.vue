@@ -274,6 +274,7 @@ const debtAutoMb = computed(() => Number(quotaData.value?.quota_debt_auto_mb ?? 
 const debtManualMb = computed(() => Number(quotaData.value?.quota_debt_manual_mb ?? 0))
 const debtTotalMb = computed(() => Number(quotaData.value?.quota_debt_total_mb ?? (debtAutoMb.value + debtManualMb.value)))
 const debtEstimatedRp = computed(() => Number(quotaData.value?.quota_debt_total_estimated_rp ?? 0))
+const debtEstimateHelperText = 'Nilai referensi otomatis memakai paket aktif termurah; item manual mengikuti nominal yang tercatat.'
 
 const showDebtCard = computed(() => {
   if (quotaData.value?.is_unlimited_user === true)
@@ -997,13 +998,17 @@ useHead({ title: 'Riwayat Transaksi & Kuota' })
                   Tunggakan Kuota
                 </div>
                 <div class="text-caption text-medium-emphasis">
-                  Estimasi
+                  Nilai referensi
                 </div>
               </div>
 
               <div class="text-body-1 font-weight-medium">
                 {{ formatCurrency(debtEstimatedRp) }}
               </div>
+            </div>
+
+            <div class="text-caption text-medium-emphasis mt-2">
+              {{ debtEstimateHelperText }}
             </div>
 
             <VList class="debt-card-list mt-3" density="compact">
@@ -1360,7 +1365,7 @@ useHead({ title: 'Riwayat Transaksi & Kuota' })
                 <span class="font-weight-medium">{{ formatQuota(selectedManualDebtItem.remaining_mb) }}</span>
               </p>
               <p v-else class="text-caption text-medium-emphasis mb-3">
-                Tunggakan: <span class="font-weight-medium">{{ formatCurrency(debtEstimatedRp) }}</span>
+                Nilai referensi tunggakan: <span class="font-weight-medium">{{ formatCurrency(debtEstimatedRp) }}</span>
               </p>
 
               <VRadioGroup v-model="selectedDebtMethod" class="mt-1 payment-method-group">

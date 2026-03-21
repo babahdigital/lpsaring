@@ -80,6 +80,13 @@ def _estimate_remaining_item_rp(item: UserQuotaDebt, remaining_mb: int, amount_m
     return estimate_amount_rp_for_mb(remaining_mb)
 
 
+def _sum_open_item_totals(items: list[dict[str, Any]]) -> tuple[int, int]:
+    open_items = [item for item in items if not bool(item.get("is_paid"))]
+    total_mb = sum(int(item.get("remaining_mb") or 0) for item in open_items)
+    total_rp = sum(int(item.get("remaining_rp") or 0) for item in open_items)
+    return total_mb, total_rp
+
+
 def build_user_manual_debt_report_context(user: User) -> dict[str, Any]:
     debts = db.session.scalars(
         select(UserQuotaDebt)
@@ -111,13 +118,19 @@ def build_user_manual_debt_report_context(user: User) -> dict[str, Any]:
         payload["amount_mb"] = amount_mb
         items.append(payload)
 
+    open_items = [item for item in items if not bool(item.get("is_paid"))]
+    open_manual_mb, open_manual_rp = _sum_open_item_totals(items)
+
     debt_auto_mb = float(getattr(user, "quota_debt_auto_mb", 0) or 0)
-    debt_manual_mb = float(getattr(user, "quota_debt_manual_mb", 0) or 0)
-    debt_total_mb = float(getattr(user, "quota_debt_total_mb", debt_auto_mb + debt_manual_mb) or 0)
+    cached_manual_mb = float(getattr(user, "quota_debt_manual_mb", 0) or 0)
+    debt_manual_mb = float(open_manual_mb if open_items else cached_manual_mb)
+    debt_total_mb = float(debt_auto_mb + debt_manual_mb)
 
     est_auto = estimate_debt_rp_for_mb(debt_auto_mb)
     est_manual = estimate_debt_rp_for_mb(debt_manual_mb)
-    est_total = estimate_debt_rp_for_mb(debt_total_mb)
+
+    debt_manual_estimated_rp = int(open_manual_rp) if open_items else int(est_manual.estimated_rp_rounded or 0)
+    debt_total_estimated_rp = int(est_auto.estimated_rp_rounded or 0) + debt_manual_estimated_rp
 
     return {
         "user": user,
@@ -125,14 +138,14 @@ def build_user_manual_debt_report_context(user: User) -> dict[str, Any]:
         or (getattr(user, "phone_number", "") or ""),
         "generated_at": format_app_datetime_display(datetime.now(dt_timezone.utc), include_seconds=False),
         "items": items,
-        "open_items": [item for item in items if not bool(item.get("is_paid"))],
+        "open_items": open_items,
         "debt_auto_mb": debt_auto_mb,
         "debt_manual_mb": debt_manual_mb,
         "debt_total_mb": debt_total_mb,
         "debt_auto_estimated_rp": est_auto.estimated_rp_rounded or 0,
-        "debt_manual_estimated_rp": est_manual.estimated_rp_rounded or 0,
-        "debt_total_estimated_rp": est_total.estimated_rp_rounded or 0,
-        "estimate_base_package_name": est_total.package_name,
+        "debt_manual_estimated_rp": debt_manual_estimated_rp,
+        "debt_total_estimated_rp": debt_total_estimated_rp,
+        "estimate_base_package_name": est_manual.package_name or est_auto.package_name,
     }
 
 

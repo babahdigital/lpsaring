@@ -445,6 +445,7 @@ const shouldShowDebtCard = computed(() => {
 })
 
 const debtEstimatedRp = computed(() => Number(quotaData.value?.quota_debt_total_estimated_rp ?? 0))
+const debtEstimateHelperText = 'Nilai referensi otomatis memakai paket aktif termurah; item manual mengikuti nominal yang tercatat.'
 
 function formatRp(amount: number | null | undefined): string {
   const v = Number(amount ?? 0)
@@ -820,6 +821,7 @@ useHead({ title: authStore.isKomandan ? 'Dashboard Komandan' : 'Dashboard User' 
                             label
                             variant="tonal"
                             color="primary"
+                            :title="debtEstimateHelperText"
                           >
                             {{ quotaData?.is_unlimited_user ? 'Rp 0' : formatRp(debtEstimatedRp) }}
                           </VChip>
@@ -854,12 +856,18 @@ useHead({ title: authStore.isKomandan ? 'Dashboard Komandan' : 'Dashboard User' 
                               <VIcon icon="tabler-cash" size="22" />
                             </VAvatar>
                           </template>
-                          <VListItemTitle class="me-2">Estimasi</VListItemTitle>
+                          <VListItemTitle class="me-2">Nilai referensi</VListItemTitle>
                           <template #append>
                             <span class="text-body-1 font-weight-medium">
                               {{ quotaData?.is_unlimited_user ? 'Rp 0' : formatRp(debtEstimatedRp) }}
                             </span>
                           </template>
+                        </VListItem>
+
+                        <VListItem class="py-1 px-0" base-color="transparent">
+                          <VListItemSubtitle class="text-wrap text-caption text-medium-emphasis">
+                            {{ debtEstimateHelperText }}
+                          </VListItemSubtitle>
                         </VListItem>
 
                         <VDivider class="my-0" />
@@ -967,7 +975,7 @@ useHead({ title: authStore.isKomandan ? 'Dashboard Komandan' : 'Dashboard User' 
 
         <VCardText class="px-4 pt-4">
           <p class="text-caption text-medium-emphasis mb-3">
-            Tunggakan: <span class="font-weight-medium">{{ formatRp(debtEstimatedRp) }}</span>
+            Nilai referensi tunggakan: <span class="font-weight-medium">{{ formatRp(debtEstimatedRp) }}</span>
           </p>
 
           <VRadioGroup v-model="selectedDebtMethod" class="mt-1 payment-method-group">

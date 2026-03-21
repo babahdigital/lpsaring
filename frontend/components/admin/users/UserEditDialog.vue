@@ -127,6 +127,7 @@ const isDebtLedgerOpen = ref(false)
 const isQuotaHistoryOpen = ref(false)
 const isDebtWhatsappSending = ref(false)
 const isDebtQuotaEnabled = ref(false)
+const SA_QUOTA_MB_PER_GB = 1024
 
 // --- SuperAdmin: koreksi kuota langsung ---
 const saQuotaForm = reactive<{
@@ -138,8 +139,63 @@ const saQuotaForm = reactive<{
   set_used_mb: null,
   reason: '',
 })
+const saQuotaInputUnit = ref<'gb' | 'mb'>('gb')
 const isSaQuotaLoading = ref(false)
 const isSaQuotaAutoFilling = ref(false)
+
+function normalizeNullableNumber(value: unknown): number | null {
+  if (value === '' || value == null)
+    return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function inputValueToMb(value: unknown, unit: 'gb' | 'mb'): number | null {
+  const parsed = normalizeNullableNumber(value)
+  if (parsed === null)
+    return null
+  if (unit === 'gb')
+    return Math.max(0, Math.round(parsed * SA_QUOTA_MB_PER_GB))
+  return Math.max(0, Math.round(parsed))
+}
+
+function mbToInputValue(valueMb: number | null, unit: 'gb' | 'mb'): number | null {
+  if (valueMb === null || !Number.isFinite(valueMb))
+    return null
+  if (unit === 'gb')
+    return Number((valueMb / SA_QUOTA_MB_PER_GB).toFixed(2))
+  return Math.round(valueMb)
+}
+
+function formatQuotaValueByUnit(valueMb: number | null | undefined, unit: 'gb' | 'mb'): string {
+  const parsed = Number(valueMb ?? 0)
+  if (!Number.isFinite(parsed))
+    return unit === 'gb' ? '0 GB' : '0 MB'
+  if (unit === 'gb')
+    return `${(parsed / SA_QUOTA_MB_PER_GB).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} GB`
+  return `${Math.round(parsed).toLocaleString('id-ID')} MB`
+}
+
+const saQuotaPurchasedInput = computed({
+  get: () => mbToInputValue(saQuotaForm.set_purchased_mb, saQuotaInputUnit.value),
+  set: value => {
+    saQuotaForm.set_purchased_mb = inputValueToMb(value, saQuotaInputUnit.value)
+  },
+})
+
+const saQuotaUsedInput = computed({
+  get: () => mbToInputValue(saQuotaForm.set_used_mb, saQuotaInputUnit.value),
+  set: value => {
+    saQuotaForm.set_used_mb = inputValueToMb(value, saQuotaInputUnit.value)
+  },
+})
+
+const saQuotaPurchasedPlaceholder = computed(() => `Saat ini: ${formatQuotaValueByUnit(formData.total_quota_purchased_mb, saQuotaInputUnit.value)}`)
+const saQuotaUsedPlaceholder = computed(() => `Saat ini: ${formatQuotaValueByUnit(Number(formData.total_quota_used_mb), saQuotaInputUnit.value)}`)
+const saQuotaUnitLabel = computed(() => saQuotaInputUnit.value.toUpperCase())
+const saQuotaUnitHint = computed(() => (saQuotaInputUnit.value === 'gb'
+  ? 'Mode default untuk input operasional. Sistem tetap menyimpan nilai dalam MB.'
+  : 'Mode lanjutan untuk koreksi presisi langsung dalam MB.'))
 
 async function autoFillSaQuotaFromDb() {
   if (!props.user?.id)
@@ -188,7 +244,7 @@ async function applyDirectQuotaAdjust() {
       `/admin/users/${props.user.id}/quota-adjust`,
       { method: 'POST', body: payload },
     )
-    showSnackbar({ type: 'success', title: 'Berhasil', text: `Koreksi berhasil. Sisa: ${res.remaining_mb?.toFixed(0)} MB` })
+    showSnackbar({ type: 'success', title: 'Berhasil', text: `Koreksi berhasil. Sisa: ${formatDataSize(Number(res.remaining_mb ?? 0))}` })
     if (res.total_quota_purchased_mb !== undefined)
       formData.total_quota_purchased_mb = res.total_quota_purchased_mb
     if (res.total_quota_used_mb !== undefined)
@@ -1049,25 +1105,59 @@ function openQuotaHistoryPdf() {
                     </VCol>
 
                     <VCol cols="12" md="6">
+                      <div class="d-flex align-center flex-wrap gap-2 mb-1">
+                        <span class="text-caption text-medium-emphasis">Satuan input:</span>
+                        <VBtnToggle
+                          v-model="saQuotaInputUnit"
+                          color="warning"
+                          density="comfortable"
+                          divided
+                          mandatory
+                          variant="outlined"
+                        >
+                          <VBtn value="gb">
+                            GB disarankan
+                          </VBtn>
+                          <VBtn value="mb">
+                            MB lanjutan
+                          </VBtn>
+                        </VBtnToggle>
+                      </div>
+                      <div class="text-caption text-medium-emphasis">
+                        {{ saQuotaUnitHint }}
+                      </div>
+                    </VCol>
+
+                    <VCol cols="12" md="6" class="d-flex align-center">
+                      <div class="text-caption text-medium-emphasis">
+                        Tampilan default memakai GB agar konsisten dengan operasi harian. Gunakan MB hanya bila perlu koreksi presisi rendah-level.
+                      </div>
+                    </VCol>
+
+                    <VCol cols="12" md="6">
                       <AppTextField
-                        v-model.number="saQuotaForm.set_purchased_mb"
-                        label="Total Kuota Dibeli (MB)"
+                        v-model.number="saQuotaPurchasedInput"
+                        :label="`Total Kuota Dibeli (${saQuotaUnitLabel})`"
                         type="number"
-                        :placeholder="`Saat ini: ${formData.total_quota_purchased_mb}`"
+                        :placeholder="saQuotaPurchasedPlaceholder"
                         prepend-inner-icon="tabler-database"
-                        hint="Kosongkan jika tidak ingin mengubah"
+                        :step="saQuotaInputUnit === 'gb' ? 0.01 : 1"
+                        min="0"
+                        :hint="`Kosongkan jika tidak ingin mengubah. ${saQuotaUnitHint}`"
                         persistent-hint
                       />
                     </VCol>
 
                     <VCol cols="12" md="6">
                       <AppTextField
-                        v-model.number="saQuotaForm.set_used_mb"
-                        label="Kuota Terpakai (MB)"
+                        v-model.number="saQuotaUsedInput"
+                        :label="`Kuota Terpakai (${saQuotaUnitLabel})`"
                         type="number"
-                        :placeholder="`Saat ini: ${Number(formData.total_quota_used_mb).toFixed(0)}`"
+                        :placeholder="saQuotaUsedPlaceholder"
                         prepend-inner-icon="tabler-database-minus"
-                        hint="Kosongkan jika tidak ingin mengubah"
+                        :step="saQuotaInputUnit === 'gb' ? 0.01 : 1"
+                        min="0"
+                        :hint="`Kosongkan jika tidak ingin mengubah. ${saQuotaUnitHint}`"
                         persistent-hint
                       />
                     </VCol>

@@ -87,7 +87,7 @@
     <div class="summary">
       <div class="kv"><div class="k">Total transaksi sukses</div><div class="v">{{ total_success | format_number }}</div></div>
       <div class="kv"><div class="k">Total pendapatan (IDR)</div><div class="v">{{ total_amount | format_currency }}</div></div>
-      <div class="kv"><div class="k">Estimasi total tunggakan (IDR)</div><div class="v">Rp {{ fmt_rp(estimated_debt_total_rp) }}</div></div>
+      <div class="kv"><div class="k">Total referensi tunggakan (IDR)</div><div class="v">Rp {{ fmt_rp(estimated_debt_total_rp) }}</div></div>
       <div class="kv"><div class="k">Potensi revenue (pendapatan + tunggakan)</div><div class="v">{{ estimated_revenue_plus_debt_rp | format_currency }}</div></div>
     </div>
 
@@ -175,7 +175,7 @@
             <th class="num">Debt Total</th>
             <th class="num">Debt Auto</th>
             <th class="num">Debt Manual</th>
-            <th class="num">Estimasi (IDR)</th>
+            <th class="num">Nilai referensi (IDR)</th>
           </tr>
         </thead>
         <tbody>
@@ -191,7 +191,7 @@
           <!--{% endfor %}-->
         </tbody>
       </table>
-      <div class="note">Satuan debt otomatis KB/MB/GB (1 GB = 1024 MB). Estimasi Rupiah pro-rata berdasarkan paket termurah aktif: {{ estimate_base_package_name or '-' }}.</div>
+      <div class="note">Satuan debt otomatis KB/MB/GB (1 GB = 1024 MB). Debt otomatis memakai nilai referensi pro-rata dari paket aktif termurah: {{ estimate_base_package_name or '-' }}. Debt manual mengikuti nominal item yang masih tercatat bila tersedia.</div>
     {% endif %}
 
     <div class="footer">
