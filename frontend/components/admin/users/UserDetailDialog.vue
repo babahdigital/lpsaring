@@ -6,6 +6,7 @@ import { useDisplay } from 'vuetify'
 import type { AdminUserDetailReportWhatsappResponse } from '@/types/api/contracts'
 import DetailReportRecipientDialog from '@/components/admin/users/DetailReportRecipientDialog.vue'
 import { useSnackbar } from '@/composables/useSnackbar'
+import { resolveAccessStatusFromUser } from '@/utils/authAccess'
 
 // Definisikan interface User
 interface User {
@@ -246,6 +247,30 @@ const debtStatusMeta = computed(() => {
     icon: hasDebt ? 'tabler-alert-triangle' : 'tabler-circle-check',
   }
 })
+
+type UserServiceStatusLabel = 'Aktif' | 'FUP' | 'Habis' | 'Blokir' | 'Inactive'
+function getUserServiceStatusMeta(user: User | null | undefined): { text: UserServiceStatusLabel, color: string, icon: string, tooltip?: string } {
+  if (!user)
+    return { text: 'Inactive', color: 'secondary', icon: 'tabler-user-off' }
+
+  const status = resolveAccessStatusFromUser(user)
+
+  switch (status) {
+    case 'blocked':
+      return { text: 'Blokir', color: 'error', icon: 'tabler-lock', tooltip: user.blocked_reason ?? 'Akses login ditolak sampai blokir dibuka.' }
+    case 'inactive':
+      return { text: 'Inactive', color: 'secondary', icon: 'tabler-user-off' }
+    case 'fup':
+      return { text: 'FUP', color: 'info', icon: 'tabler-chart-arrows-vertical' }
+    case 'habis':
+      return { text: 'Habis', color: 'warning', icon: 'tabler-battery-off' }
+    case 'expired':
+      return { text: 'Habis', color: 'warning', icon: 'tabler-calendar-x', tooltip: 'Masa aktif kuota sudah berakhir.' }
+    case 'ok':
+    default:
+      return { text: 'Aktif', color: 'success', icon: 'tabler-circle-check' }
+  }
+}
 
 const detailConnectionCards = computed(() => {
   const user = props.user
@@ -543,11 +568,17 @@ function onClose() {
                 <VChip :color="statusMap[props.user.approval_status]?.color" size="small" label>
                   {{ statusMap[props.user.approval_status]?.text }}
                 </VChip>
-                <VChip :color="props.user.is_active ? 'success' : 'error'" size="small" label>
-                  {{ props.user.is_active ? 'Aktif' : 'Nonaktif' }}
-                </VChip>
-                <VChip v-if="props.user.is_blocked" color="error" size="small" label>
-                  Diblokir
+                <VTooltip v-if="getUserServiceStatusMeta(props.user).tooltip" location="top" :text="getUserServiceStatusMeta(props.user).tooltip">
+                  <template #activator="{ props: tooltipProps }">
+                    <VChip v-bind="tooltipProps" :color="getUserServiceStatusMeta(props.user).color" size="small" label>
+                      <VIcon :icon="getUserServiceStatusMeta(props.user).icon" start size="16" />
+                      {{ getUserServiceStatusMeta(props.user).text }}
+                    </VChip>
+                  </template>
+                </VTooltip>
+                <VChip v-else :color="getUserServiceStatusMeta(props.user).color" size="small" label>
+                  <VIcon :icon="getUserServiceStatusMeta(props.user).icon" start size="16" />
+                  {{ getUserServiceStatusMeta(props.user).text }}
                 </VChip>
                 <VChip v-if="hasDebt" :color="debtStatusMeta.color" size="small" label>
                   <VIcon :icon="debtStatusMeta.icon" start size="16" />

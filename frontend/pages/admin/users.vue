@@ -11,6 +11,7 @@ import UserQuotaHistoryDialog from '@/components/admin/users/UserQuotaHistoryDia
 import { useSnackbar } from '@/composables/useSnackbar'
 import { useAuthStore } from '@/store/auth'
 import { useSettingsStore } from '@/store/settings'
+import { resolveAccessStatusFromUser } from '@/utils/authAccess'
 
 interface User {
   id: string
@@ -349,59 +350,25 @@ function getUserDebtTotalMb(user: User): number {
   return (Number.isFinite(autoMb) ? autoMb : 0) + (Number.isFinite(manualMb) ? manualMb : 0)
 }
 
-function resolveUserProfileName(user: User): string {
-  const current = String(user.mikrotik_profile_name ?? '').trim()
-  if (current !== '')
-    return current
+type UserAccessLabel = 'Aktif' | 'FUP' | 'Habis' | 'Blokir' | 'Inactive'
+function getUserAccessMeta(user: User): { text: UserAccessLabel, color: string, icon: string, tooltip?: string } {
+  const status = resolveAccessStatusFromUser(user)
 
-  const defaults = mikrotikOptions.value?.defaults
-  if (user.is_active !== true)
-    return defaults?.profile_inactive || 'inactive'
-  if (user.is_unlimited_user === true)
-    return defaults?.profile_unlimited || 'unlimited'
-  if (user.role === 'KOMANDAN')
-    return defaults?.profile_komandan || defaults?.profile_active || defaults?.profile_user || 'komandan'
-  return defaults?.profile_active || defaults?.profile_user || 'default'
-}
-
-type UserProfileLabel = 'Aktif' | 'Blocked' | 'FUP' | 'Habis' | 'Expired' | 'Unlimited' | 'Nonaktif'
-function getUserProfileMeta(user: User): { text: UserProfileLabel, color: string, icon: string, tooltip?: string } {
-  if (user.is_blocked === true)
-    return { text: 'Blocked', color: 'error', icon: 'tabler-lock', tooltip: user.blocked_reason ?? undefined }
-
-  if (user.is_unlimited_user === true)
-    return { text: 'Unlimited', color: 'success', icon: 'tabler-infinity' }
-
-  if (user.is_active === false)
-    return { text: 'Nonaktif', color: 'secondary', icon: 'tabler-user-off' }
-
-  const profile = String(user.mikrotik_profile_name ?? '').trim()
-  const d = mikrotikOptions.value?.defaults
-  const profileLower = profile.toLowerCase()
-  const match = (v?: string | null) => String(v ?? '').trim().toLowerCase() !== '' && profileLower === String(v ?? '').trim().toLowerCase()
-
-  if (match(d?.profile_fup))
-    return { text: 'FUP', color: 'info', icon: 'tabler-chart-arrows-vertical' }
-  if (match(d?.profile_habis))
-    return { text: 'Habis', color: 'warning', icon: 'tabler-battery-off' }
-
-  const now = new Date()
-  if (match(d?.profile_expired))
-    return { text: 'Expired', color: 'error', icon: 'tabler-calendar-x' }
-  if (typeof user.quota_expiry_date === 'string' && user.quota_expiry_date !== '') {
-    const expiry = new Date(user.quota_expiry_date)
-    if (!Number.isNaN(expiry.getTime()) && expiry.getTime() < now.getTime())
-      return { text: 'Expired', color: 'error', icon: 'tabler-calendar-x' }
+  switch (status) {
+    case 'blocked':
+      return { text: 'Blokir', color: 'error', icon: 'tabler-lock', tooltip: user.blocked_reason ?? undefined }
+    case 'inactive':
+      return { text: 'Inactive', color: 'secondary', icon: 'tabler-user-off' }
+    case 'fup':
+      return { text: 'FUP', color: 'info', icon: 'tabler-chart-arrows-vertical' }
+    case 'habis':
+      return { text: 'Habis', color: 'warning', icon: 'tabler-battery-off' }
+    case 'expired':
+      return { text: 'Habis', color: 'warning', icon: 'tabler-calendar-x', tooltip: 'Masa aktif kuota sudah berakhir.' }
+    case 'ok':
+    default:
+      return { text: 'Aktif', color: 'success', icon: 'tabler-circle-check' }
   }
-
-  if (match(d?.profile_unlimited))
-    return { text: 'Unlimited', color: 'success', icon: 'tabler-infinity' }
-  if (match(d?.profile_inactive))
-    return { text: 'Nonaktif', color: 'secondary', icon: 'tabler-user-off' }
-  if (match(d?.profile_active) || match(d?.profile_default))
-    return { text: 'Aktif', color: 'success', icon: 'tabler-circle-check' }
-
-  return { text: 'Aktif', color: 'success', icon: 'tabler-circle-check', tooltip: profile !== '' ? `Profile: ${profile}` : undefined }
 }
 const roleMap: Record<User['role'], { text: string, color: string }> = { USER: { text: 'User', color: 'info' }, KOMANDAN: { text: 'Komandan', color: 'success' }, ADMIN: { text: 'Admin', color: 'primary' }, SUPER_ADMIN: { text: 'Support', color: 'secondary' } }
 const statusMap: Record<User['approval_status'], { text: string, color: string }> = { APPROVED: { text: 'Disetujui', color: 'success' }, PENDING_APPROVAL: { text: 'Menunggu', color: 'warning' }, REJECTED: { text: 'Ditolak', color: 'error' } }
@@ -425,14 +392,14 @@ const roleFilterOptions = computed(() => {
 })
 
 const statusFilterOptions = [
-  { text: 'Blocked', value: 'blocked' },
+  { text: 'Blokir', value: 'blocked' },
   { text: 'Aktif', value: 'aktif' },
-  { text: 'Nonaktif (Akun)', value: 'inactive' },
+  { text: 'Inactive (Akun)', value: 'inactive' },
   { text: 'Unlimited', value: 'unlimited' },
   { text: 'Debt', value: 'debt' },
   { text: 'Habis (Kuota Habis)', value: 'habis' },
   { text: 'FUP', value: 'fup' },
-  { text: 'Expired', value: 'expired' },
+  { text: 'Habis (Expired)', value: 'expired' },
   { text: 'Inactive (Kuota / Tanpa Kuota)', value: 'inactive_quota' },
 ]
 
@@ -456,9 +423,9 @@ const headers = computed(() => {
   const base = [
     { title: 'PENGGUNA', key: 'full_name', sortable: true, minWidth: '250px' },
     { title: 'STATUS', key: 'approval_status', sortable: true },
-    { title: 'PROFILE', key: 'profile', sortable: false, minWidth: '160px' },
+    { title: 'LAYANAN', key: 'profile', sortable: false, minWidth: '160px' },
     { title: 'PERAN', key: 'role', sortable: true },
-    { title: 'AKSES', key: 'is_active', sortable: true, align: 'center' },
+    { title: 'KONEKSI', key: 'is_active', sortable: true, align: 'center' },
     { title: 'PERANGKAT', key: 'device_count', sortable: false, align: 'center' },
     { title: 'LOGIN TERAKHIR', key: 'last_login_at', sortable: false },
     { title: 'TGL DAFTAR', key: 'created_at', sortable: true },
@@ -1276,22 +1243,18 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 
         <template #item.profile="{ item }">
           <div class="admin-users__profileCell py-2">
-            <VTooltip v-if="getUserProfileMeta(item).tooltip" :text="getUserProfileMeta(item).tooltip" location="top">
+            <VTooltip v-if="getUserAccessMeta(item).tooltip" :text="getUserAccessMeta(item).tooltip" location="top">
               <template #activator="{ props: tooltipProps }">
-                <VChip v-bind="tooltipProps" :color="getUserProfileMeta(item).color" size="x-small" label>
-                  <VIcon :icon="getUserProfileMeta(item).icon" start size="16" />
-                  {{ getUserProfileMeta(item).text }}
+                <VChip v-bind="tooltipProps" :color="getUserAccessMeta(item).color" size="x-small" label>
+                  <VIcon :icon="getUserAccessMeta(item).icon" start size="16" />
+                  {{ getUserAccessMeta(item).text }}
                 </VChip>
               </template>
             </VTooltip>
-            <VChip v-else :color="getUserProfileMeta(item).color" size="x-small" label>
-              <VIcon :icon="getUserProfileMeta(item).icon" start size="16" />
-              {{ getUserProfileMeta(item).text }}
+            <VChip v-else :color="getUserAccessMeta(item).color" size="x-small" label>
+              <VIcon :icon="getUserAccessMeta(item).icon" start size="16" />
+              {{ getUserAccessMeta(item).text }}
             </VChip>
-
-            <div class="admin-users__profileHint text-caption text-medium-emphasis">
-              {{ resolveUserProfileName(item) }}
-            </div>
 
             <VTooltip v-if="getUserDebtTotalMb(item) > 0" :text="`Debt: ${getUserDebtTotalMb(item)} MB`" location="top">
               <template #activator="{ props: tooltipProps }">
@@ -1312,7 +1275,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
           <div class="admin-users__connectionCell">
             <div class="admin-users__connectionStatus">
               <VIcon :color="item.is_active ? 'success' : 'error'" :icon="item.is_active ? 'tabler-plug-connected' : 'tabler-plug-connected-x'" size="20" />
-              <span class="font-weight-medium">{{ item.is_active ? 'Aktif' : 'Nonaktif' }}</span>
+              <span class="font-weight-medium">{{ item.is_active ? 'Aktif' : 'Inactive' }}</span>
             </div>
           </div>
         </template>
@@ -1429,15 +1392,12 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
             <div class="admin-users__mobile-insightGrid mt-4">
               <div class="admin-users__mobile-insightCard">
                 <div class="admin-users__mobile-insightLabel">
-                  Profile
+                  Layanan
                 </div>
-                <VChip :color="getUserProfileMeta(user).color" size="x-small" label>
-                  <VIcon :icon="getUserProfileMeta(user).icon" start size="14" />
-                  {{ getUserProfileMeta(user).text }}
+                <VChip :color="getUserAccessMeta(user).color" size="x-small" label>
+                  <VIcon :icon="getUserAccessMeta(user).icon" start size="14" />
+                  {{ getUserAccessMeta(user).text }}
                 </VChip>
-                <div class="admin-users__mobile-insightValue text-caption text-medium-emphasis">
-                  {{ resolveUserProfileName(user) }}
-                </div>
               </div>
 
               <div class="admin-users__mobile-insightCard">
@@ -1446,7 +1406,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
                 </div>
                 <VChip :color="user.is_active ? 'success' : 'error'" size="x-small" label>
                   <VIcon :icon="user.is_active ? 'tabler-plug-connected' : 'tabler-plug-connected-x'" start size="14" />
-                  {{ user.is_active ? 'Aktif' : 'Nonaktif' }}
+                    {{ user.is_active ? 'Aktif' : 'Inactive' }}
                 </VChip>
                 <div class="admin-users__mobile-insightValue text-caption text-medium-emphasis">
                   {{ getDeviceStatusMeta(user).helper }}

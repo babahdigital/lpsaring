@@ -7,6 +7,7 @@ import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useSnackbar } from '@/composables/useSnackbar'
 import { useAuthStore } from '@/store/auth'
+import { resolveAccessStatusFromUser } from '@/utils/authAccess'
 import { TAMPING_OPTION_ITEMS } from '~/utils/constants'
 import UserDebtLedgerDialog from '@/components/admin/users/UserDebtLedgerDialog.vue'
 import UserQuotaHistoryDialog from '@/components/admin/users/UserQuotaHistoryDialog.vue'
@@ -247,11 +248,36 @@ function resolveFallbackProfileName(user: User | null | undefined): string {
   return mikrotikDefaults.value.profile_active || mikrotikDefaults.value.profile_user
 }
 
+type UserServiceStatusLabel = 'Aktif' | 'FUP' | 'Habis' | 'Blokir' | 'Inactive'
+function getUserServiceStatusMeta(user: User | null | undefined): { text: UserServiceStatusLabel, hint: string } {
+  if (!user)
+    return { text: 'Inactive', hint: 'Status layanan belum tersedia.' }
+
+  const status = resolveAccessStatusFromUser(user)
+
+  switch (status) {
+    case 'blocked':
+      return { text: 'Blokir', hint: user.blocked_reason ?? 'Akses login ditolak sampai blokir dibuka.' }
+    case 'inactive':
+      return { text: 'Inactive', hint: 'Akun tidak aktif atau belum disetujui.' }
+    case 'fup':
+      return { text: 'FUP', hint: 'Pengguna sudah masuk batas fair usage policy.' }
+    case 'habis':
+      return { text: 'Habis', hint: 'Kuota aktif sudah habis.' }
+    case 'expired':
+      return { text: 'Habis', hint: 'Masa aktif kuota sudah berakhir.' }
+    case 'ok':
+    default:
+      return { text: 'Aktif', hint: 'Layanan internet aktif dan dapat digunakan.' }
+  }
+}
+
 const editDialogConnectionMeta = computed(() => {
   const user = props.user
   const deviceCount = Number(user?.device_count ?? 0)
   const lastLoginAt = user?.last_login_at ?? null
   const summary = detailSummary.value
+  const serviceStatusMeta = getUserServiceStatusMeta(user)
 
   return {
     deviceCount: Number(summary?.device_count ?? deviceCount),
@@ -261,8 +287,8 @@ const editDialogConnectionMeta = computed(() => {
     mikrotikProfileHint: summary?.profile_source || 'Standar sistem',
     mikrotikStatusLabel: summary?.mikrotik_account_label || (user?.mikrotik_user_exists === true ? 'Sinkron terakhir tersimpan' : 'Perlu verifikasi live'),
     mikrotikStatusHint: summary?.mikrotik_account_hint || 'Gunakan cek live untuk memastikan akun hotspot dan profile aktif.',
-    accessStatusLabel: summary?.access_status_label || 'Status layanan belum diperiksa',
-    accessStatusHint: summary?.access_status_hint || 'Panel akan menampilkan ringkasan akses setelah data dimuat.',
+    accessStatusLabel: serviceStatusMeta.text,
+    accessStatusHint: serviceStatusMeta.hint,
   }
 })
 
@@ -946,7 +972,7 @@ function openQuotaHistory() {
                     color="primary"
                     inset
                     :disabled="!canToggleUnlimited"
-                    :hint="!canToggleUnlimited && formData.role === 'USER' && debtTotalMb > 0 ? 'Nonaktif saat tunggakan masih ada.' : (!canToggleUnlimited && isDebtQuotaEnabled ? 'Nonaktif saat mode tunggakan aktif.' : undefined)"
+                    :hint="!canToggleUnlimited && formData.role === 'USER' && debtTotalMb > 0 ? 'Inactive saat tunggakan masih ada.' : (!canToggleUnlimited && isDebtQuotaEnabled ? 'Inactive saat mode tunggakan aktif.' : undefined)"
                     persistent-hint
                   />
                   <VAlert v-else type="info" variant="tonal" density="compact" icon="tabler-shield-check">
@@ -972,7 +998,7 @@ function openQuotaHistory() {
                     label="Tunggakan Kuota"
                     color="primary"
                     inset
-                    :hint="!canToggleDebt ? 'Nonaktif saat mode unlimited aktif.' : 'Aktifkan untuk menambah/mengelola tunggakan.'"
+                    :hint="!canToggleDebt ? 'Inactive saat mode unlimited aktif.' : 'Aktifkan untuk menambah/mengelola tunggakan.'"
                     persistent-hint
                     :disabled="!canToggleDebt"
                     v-if="formData.role === 'USER'"
@@ -981,13 +1007,13 @@ function openQuotaHistory() {
 
                 <VCol v-if="formData.is_active !== true" cols="12">
                   <VAlert type="warning" variant="tonal" density="compact" icon="tabler-plug-connected-x">
-                    Opsi kuota dan akses tidak tersedia karena akun ini sedang <strong>NONAKTIF</strong>.
+                    Opsi kuota dan akses tidak tersedia karena akun ini sedang <strong>INACTIVE</strong>.
                   </VAlert>
                 </VCol>
 
                 <VCol v-if="isBlocked" cols="12">
                   <VAlert type="error" variant="tonal" density="compact" icon="tabler-ban">
-                    Akun ini sedang <strong>DIBLOKIR</strong>. Akses login akan ditolak sampai dibuka kembali.
+                    Akun ini sedang <strong>BLOKIR</strong>. Akses login akan ditolak sampai dibuka kembali.
                   </VAlert>
                 </VCol>
 
