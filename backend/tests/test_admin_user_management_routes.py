@@ -421,6 +421,74 @@ def test_send_user_detail_report_whatsapp_queues_selected_internal_recipients(mo
     assert queued_calls[1][0] == "+6282222222222"
 
 
+def test_build_user_detail_report_context_formats_clean_address(monkeypatch):
+    fake_user = SimpleNamespace(
+        id=uuid.uuid4(),
+        phone_number="082213631573",
+        full_name="Bobby Dermawan",
+        role=SimpleNamespace(value="USER"),
+        is_tamping=False,
+        tamping_type=None,
+        blok="A",
+        kamar="Kamr_2",
+        is_active=True,
+        is_blocked=False,
+        is_unlimited_user=False,
+        mikrotik_profile_name="default",
+        mikrotik_user_exists=True,
+        total_quota_purchased_mb=13660,
+        total_quota_used_mb=2090,
+        quota_debt_auto_mb=0,
+        quota_debt_manual_mb=0,
+        quota_debt_total_mb=0,
+        manual_debt_mb=0,
+        quota_expiry_date=None,
+        last_login_at=None,
+        device_count=1,
+    )
+
+    monkeypatch.setattr(
+        user_management_routes,
+        "db",
+        SimpleNamespace(
+            session=SimpleNamespace(
+                scalar=lambda *_args, **_kwargs: 0,
+                scalars=lambda *_args, **_kwargs: SimpleNamespace(all=lambda: []),
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        user_management_routes,
+        "build_receipt_business_identity_context",
+        lambda: {
+            "business_name": "LPSaring",
+            "business_phone": "+6282211111111",
+            "business_address": "Jl. Contoh",
+        },
+    )
+    monkeypatch.setattr(
+        user_management_routes,
+        "_get_user_mikrotik_status_payload",
+        lambda _user: {
+            "live_available": True,
+            "exists_on_mikrotik": True,
+            "resolved_profile_name": "default",
+        },
+    )
+    monkeypatch.setattr(
+        user_management_routes,
+        "settings_service",
+        SimpleNamespace(get_setting=lambda _key, default=None: default),
+    )
+    monkeypatch.setattr(user_management_routes, "_resolve_admin_whatsapp_default", lambda: "+6282211111111")
+
+    context = user_management_routes._build_user_detail_report_context(fake_user)
+
+    assert context["address_display"] == "Blok A • Kamar 2"
+    assert context["show_purchase_section"] is False
+    assert context["show_debt_section"] is False
+
+
 def test_export_user_detail_report_pdf_temp_invalid_token_renders_html_page(monkeypatch):
     monkeypatch.setattr(user_management_routes, "verify_temp_user_detail_report_token", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(user_management_routes, "settings_service", SimpleNamespace(get_setting=lambda _key, default=None: "https://portal.example.test"))

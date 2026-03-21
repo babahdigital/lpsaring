@@ -299,31 +299,11 @@ watch(
             <div class="debt-ledger__hero-copy">
               <span class="headline text-white">Riwayat Tunggakan</span>
               <div class="debt-ledger__hero-subtitle text-white">
-                Ringkasan utang kuota, status pelunasan, dan tindakan cepat dalam satu alur yang lebih rapi.
+                Ringkasan utang kuota & status pelunasan.
               </div>
             </div>
           </div>
           <div class="dialog-titlebar__actions">
-            <VBtn
-              color="error"
-              variant="tonal"
-              prepend-icon="tabler-file-type-pdf"
-              class="debt-ledger__hero-action"
-              @click="openPdf"
-            >
-              PDF
-            </VBtn>
-            <VBtn
-              v-if="debtTotalMb > 0"
-              color="success"
-              variant="tonal"
-              prepend-icon="tabler-brand-whatsapp"
-              class="debt-ledger__hero-action"
-              :loading="sendingWhatsapp"
-              @click="sendWhatsAppReport"
-            >
-              WhatsApp
-            </VBtn>
             <VBtn icon="tabler-x" variant="text" size="small" class="text-white" @click="close" />
           </div>
         </div>
@@ -484,19 +464,6 @@ watch(
         </VBtn>
         <VBtn variant="tonal" color="secondary" prepend-icon="tabler-x" @click="close">
           Tutup
-        </VBtn>
-        <VBtn color="primary" prepend-icon="tabler-file-type-pdf" @click="openPdf">
-          PDF
-        </VBtn>
-        <VBtn
-          v-if="debtTotalMb > 0"
-          color="success"
-          variant="tonal"
-          prepend-icon="tabler-brand-whatsapp"
-          :loading="sendingWhatsapp"
-          @click="sendWhatsAppReport"
-        >
-          WhatsApp
         </VBtn>
       </VCardActions>
     </VCard>

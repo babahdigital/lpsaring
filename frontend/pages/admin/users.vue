@@ -458,7 +458,9 @@ const headers = computed(() => {
     { title: 'STATUS', key: 'approval_status', sortable: true },
     { title: 'PROFILE', key: 'profile', sortable: false, minWidth: '160px' },
     { title: 'PERAN', key: 'role', sortable: true },
-    { title: 'KONEKSI', key: 'is_active', sortable: true, align: 'center' },
+    { title: 'AKSES', key: 'is_active', sortable: true, align: 'center' },
+    { title: 'PERANGKAT', key: 'device_count', sortable: false, align: 'center' },
+    { title: 'LOGIN TERAKHIR', key: 'last_login_at', sortable: false },
     { title: 'TGL DAFTAR', key: 'created_at', sortable: true },
     { title: 'AKSI', key: 'actions', sortable: false, align: 'center', width: '210px' },
   ]
@@ -1312,13 +1314,19 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
               <VIcon :color="item.is_active ? 'success' : 'error'" :icon="item.is_active ? 'tabler-plug-connected' : 'tabler-plug-connected-x'" size="20" />
               <span class="font-weight-medium">{{ item.is_active ? 'Aktif' : 'Nonaktif' }}</span>
             </div>
+          </div>
+        </template>
+        <template #item.device_count="{ item }">
+          <div class="admin-users__connectionCell">
             <VChip size="x-small" :color="getDeviceStatusMeta(item).color" variant="tonal" label>
               <VIcon :icon="getDeviceStatusMeta(item).icon" start size="14" />
               {{ getDeviceStatusMeta(item).text }}
             </VChip>
-            <div class="admin-users__connectionHint text-caption text-medium-emphasis">
-              {{ getDeviceStatusMeta(item).helper }}
-            </div>
+          </div>
+        </template>
+        <template #item.last_login_at="{ item }">
+          <div class="admin-users__lastLoginCell text-caption text-medium-emphasis">
+            {{ formatLastLogin(item.last_login_at) }}
           </div>
         </template>
         <template #item.created_at="{ item }">

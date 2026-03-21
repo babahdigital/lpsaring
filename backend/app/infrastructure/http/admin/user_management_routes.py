@@ -361,6 +361,40 @@ def _format_detail_role_label(role: UserRole | None) -> str:
     return mapping.get(role, "-")
 
 
+def _format_detail_kamar_label(kamar: str | None) -> str:
+    raw_value = str(getattr(kamar, "value", kamar) or "").strip()
+    if not raw_value:
+        return ""
+
+    normalized = raw_value.replace(" ", "")
+    lowered = normalized.lower()
+    for prefix in ("kamar_", "kamr_"):
+        if lowered.startswith(prefix) and normalized[len(prefix):].isdigit():
+            return normalized[len(prefix):]
+
+    match = re.search(r"(\d+)$", normalized)
+    if match:
+        return match.group(1)
+
+    return raw_value.replace("_", " ").strip()
+
+
+def _format_detail_address_label(user: User) -> str:
+    if getattr(user, "is_tamping", False):
+        tamping_type = str(getattr(user, "tamping_type", "") or "").strip()
+        return f"Tamping • {tamping_type}" if tamping_type else "Tamping"
+
+    blok_value = str(getattr(user, "blok", "") or "").strip()
+    kamar_value = _format_detail_kamar_label(getattr(user, "kamar", None))
+    if blok_value and kamar_value:
+        return f"Blok {blok_value} • Kamar {kamar_value}"
+    if blok_value:
+        return f"Blok {blok_value}"
+    if kamar_value:
+        return f"Kamar {kamar_value}"
+    return "-"
+
+
 def _serialize_detail_whatsapp_recipient(
     *,
     phone_number: str,
@@ -663,6 +697,7 @@ def _build_user_detail_report_context(user: User, *, mikrotik_status: dict | Non
         if recent_purchases
         else ""
     )
+    address_display = _format_detail_address_label(user)
 
     business_context = build_receipt_business_identity_context()
     return {
@@ -671,6 +706,7 @@ def _build_user_detail_report_context(user: User, *, mikrotik_status: dict | Non
         "printed_at": format_app_datetime_display(datetime.now(dt_timezone.utc), fallback="-"),
         "user_phone_display": format_to_local_phone(getattr(user, "phone_number", None)) or str(getattr(user, "phone_number", "") or "-"),
         "user_role_label": _format_detail_role_label(getattr(user, "role", None)),
+        "address_display": address_display,
         "profile_display_name": profile_display_name,
         "profile_source": profile_source,
         "mikrotik_account_label": mikrotik_account_label,

@@ -194,16 +194,13 @@
     <div class="header">
       <div class="eyebrow">Laporan Detail Pengguna</div>
       <div class="header-title">{{ user.full_name }}</div>
-      <div class="header-subtitle">Ringkasan profil, akses, kuota, dan tindak lanjut pengguna.</div>
+      <div class="header-subtitle">Ringkasan akses, perangkat, tunggakan, dan pembelian terbaru.</div>
+      <div class="header-subtitle">{{ user_role_label }}{% if address_display and address_display != '-' %} • {{ address_display }}{% endif %}</div>
 
       <div class="meta">
         <div class="meta-chip">
           <span class="meta-label">Nomor WhatsApp</span>
           <span class="meta-value">{{ user_phone_display }}</span>
-        </div>
-        <div class="meta-chip">
-          <span class="meta-label">Dicetak</span>
-          <span class="meta-value">{{ printed_at }}</span>
         </div>
         <div class="meta-chip">
           <span class="meta-label">Status Akses</span>
@@ -231,50 +228,6 @@
           <div class="card-caption">Login terakhir: {{ last_login_label }}</div>
         </div>
       </div>
-    </div>
-
-    <div class="section">
-      <div class="section-title">Profil & Kuota</div>
-      <table>
-        <tbody>
-          <tr>
-            <th class="label-col">Peran</th>
-            <td>{{ user_role_label }}</td>
-          </tr>
-          <tr>
-            <th>Status Akun</th>
-            <td>{{ 'Aktif' if user.is_active else 'Nonaktif' }}{% if user.is_blocked %} • Diblokir{% endif %}</td>
-          </tr>
-          <tr>
-            <th>Alamat</th>
-            <td>
-              {% if user.is_tamping %}
-                Tamping{% if user.tamping_type %} • {{ user.tamping_type }}{% endif %}
-              {% elif user.blok and user.kamar %}
-                Blok {{ user.blok }} • Kamar {{ user.kamar }}
-              {% else %}
-                -
-              {% endif %}
-            </td>
-          </tr>
-          <tr>
-            <th>Kuota Dibeli</th>
-            <td>{{ 'Unlimited' if is_unlimited_user else fmt_quota(quota_total_mb) }}</td>
-          </tr>
-          <tr>
-            <th>Kuota Terpakai</th>
-            <td>{{ 'Unlimited' if is_unlimited_user else fmt_quota(quota_used_mb) }}</td>
-          </tr>
-          <tr>
-            <th>Sisa Kuota</th>
-            <td>{{ 'Unlimited' if is_unlimited_user else fmt_quota(quota_remaining_mb) }}</td>
-          </tr>
-          <tr>
-            <th>Masa Aktif</th>
-            <td>{{ quota_expiry_label }}</td>
-          </tr>
-        </tbody>
-      </table>
     </div>
 
     {% if show_debt_section %}
@@ -341,6 +294,7 @@
     {% endif %}
 
     <div class="footer">
+      Dicetak: {{ printed_at }}.<br>
       Dokumen ini dibuat oleh {{ business_name }}. Kontak layanan: {{ business_phone }}.
       {% if business_address %}<br>{{ business_address }}{% endif %}
     </div>

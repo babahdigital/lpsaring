@@ -1,6 +1,5 @@
 <script lang="ts" setup>
 import type { VForm } from 'vuetify/components'
-import type { AdminUserDetailReportWhatsappResponse } from '@/types/api/contracts'
 import AppSelect from '@core/components/app-form-elements/AppSelect.vue'
 import AppTextField from '@core/components/app-form-elements/AppTextField.vue'
 import AppDateTimePicker from '@core/components/app-form-elements/AppDateTimePicker.vue'
@@ -9,7 +8,6 @@ import { useDisplay } from 'vuetify'
 import { useSnackbar } from '@/composables/useSnackbar'
 import { useAuthStore } from '@/store/auth'
 import { TAMPING_OPTION_ITEMS } from '~/utils/constants'
-import DetailReportRecipientDialog from '@/components/admin/users/DetailReportRecipientDialog.vue'
 import UserDebtLedgerDialog from '@/components/admin/users/UserDebtLedgerDialog.vue'
 import UserQuotaHistoryDialog from '@/components/admin/users/UserQuotaHistoryDialog.vue'
 
@@ -112,16 +110,6 @@ interface UserDetailSummary {
   admin_whatsapp_default?: string
 }
 
-interface InternalRecipientSelection {
-  recipientIds: string[]
-  recipients: Array<{
-    id: string
-    full_name: string
-    role: 'ADMIN' | 'SUPER_ADMIN'
-    phone_number: string
-  }>
-}
-
 const authStore = useAuthStore()
 const display = useDisplay()
 const isMobile = computed(() => display.smAndDown.value)
@@ -172,9 +160,6 @@ const isDebtLedgerOpen = ref(false)
 const isQuotaHistoryOpen = ref(false)
 const isDebtWhatsappSending = ref(false)
 const detailSummary = ref<UserDetailSummary | null>(null)
-const isDetailSummaryLoading = ref(false)
-const detailWhatsappQueueMode = ref<'user' | 'internal' | null>(null)
-const isDetailRecipientDialogOpen = ref(false)
 const isDebtQuotaEnabled = ref(false)
 const SA_QUOTA_MB_PER_GB = 1024
 
@@ -281,17 +266,9 @@ const editDialogConnectionMeta = computed(() => {
   }
 })
 
-const recentPurchasesSummaryText = computed(() => {
-  const summary = detailSummary.value
-  if (!summary || summary.purchase_count_30d <= 0)
-    return 'Belum ada pembelian sukses dalam 30 hari terakhir.'
-  return `${summary.purchase_count_30d} transaksi • ${summary.purchase_total_amount_30d_display}`
-})
-
 async function fetchUserDetailSummary() {
   if (!props.user?.id)
     return
-  isDetailSummaryLoading.value = true
   try {
     const response = await $api<UserDetailSummary>(`/admin/users/${props.user.id}/detail-summary`)
     detailSummary.value = response
@@ -299,9 +276,6 @@ async function fetchUserDetailSummary() {
   catch (error: any) {
     detailSummary.value = null
     showSnackbar({ type: 'warning', title: 'Ringkasan Pengguna', text: error?.data?.message || 'Ringkasan pengguna belum bisa dimuat.' })
-  }
-  finally {
-    isDetailSummaryLoading.value = false
   }
 }
 
@@ -834,83 +808,10 @@ async function sendDebtWhatsapp() {
   }
 }
 
-function openUserDetailPdf() {
-  if (!props.user)
-    return
-  window.open(`/api/admin/users/${props.user.id}/detail-report/export?format=pdf`, '_blank', 'noopener')
-}
-
-function formatQueuedRecipientSummary(response: AdminUserDetailReportWhatsappResponse) {
-  if (response.recipients.length === 0)
-    return response.message
-  const names = response.recipients.map(recipient => recipient.full_name).join(', ')
-  return `${response.message} Penerima: ${names}.`
-}
-
-async function queueUserDetailWhatsapp(body: { recipient_mode: 'user' | 'internal', recipient_user_ids?: string[] }) {
-  if (!props.user)
-    return
-
-  detailWhatsappQueueMode.value = body.recipient_mode
-  try {
-    const resp = await $api<AdminUserDetailReportWhatsappResponse>(`/admin/users/${props.user.id}/detail-report/send-whatsapp`, {
-      method: 'POST',
-      body,
-    })
-    showSnackbar({ type: 'success', title: 'Laporan Pengguna', text: formatQueuedRecipientSummary(resp) })
-  }
-  catch (error: any) {
-    showSnackbar({ type: 'warning', title: 'Laporan Pengguna', text: error?.data?.message || 'Gagal mengirim PDF detail pengguna ke WhatsApp.' })
-  }
-  finally {
-    detailWhatsappQueueMode.value = null
-  }
-}
-
-async function sendUserDetailWhatsappToUser() {
-  await queueUserDetailWhatsapp({ recipient_mode: 'user' })
-}
-
-function openDetailRecipientDialog() {
-  isDetailRecipientDialogOpen.value = true
-}
-
-async function sendUserDetailWhatsappToInternal(selection: InternalRecipientSelection) {
-  await queueUserDetailWhatsapp({
-    recipient_mode: 'internal',
-    recipient_user_ids: selection.recipientIds,
-  })
-}
-
 function openQuotaHistory() {
   if (!props.user)
     return
   isQuotaHistoryOpen.value = true
-}
-
-function buildDefaultQuotaHistoryPdfQuery(): string {
-  const today = new Date()
-  const startDate = new Date(today)
-  startDate.setDate(today.getDate() - 29)
-
-  const toYmd = (value: Date) => {
-    const year = value.getFullYear()
-    const month = String(value.getMonth() + 1).padStart(2, '0')
-    const day = String(value.getDate()).padStart(2, '0')
-    return `${year}-${month}-${day}`
-  }
-
-  return new URLSearchParams({
-    format: 'pdf',
-    startDate: toYmd(startDate),
-    endDate: toYmd(today),
-  }).toString()
-}
-
-function openQuotaHistoryPdf() {
-  if (!props.user)
-    return
-  window.open(`/api/admin/users/${props.user.id}/quota-history/export?${buildDefaultQuotaHistoryPdfQuery()}`, '_blank', 'noopener')
 }
 </script>
 
@@ -928,14 +829,6 @@ function openQuotaHistoryPdf() {
                 <div class="admin-user-edit__topbar-title">
                   Edit Pengguna
                 </div>
-                <div class="admin-user-edit__topbar-subtitle text-white">
-                  Profil, akses, kuota, dan tindak lanjut pengguna dari satu layar.
-                </div>
-                <div class="admin-user-edit__topbar-badges">
-                  <VChip size="small" label class="admin-user-edit__topbar-chip">
-                    {{ editDialogConnectionMeta.accessStatusLabel }}
-                  </VChip>
-                </div>
               </div>
             </div>
             <VBtn icon="tabler-x" variant="text" class="text-white admin-user-edit__topbar-close" @click="onClose" />
@@ -946,6 +839,7 @@ function openQuotaHistoryPdf() {
               <div class="admin-user-edit__meta-pillCopy">
                 <span class="admin-user-edit__meta-pillLabel">Perangkat</span>
                 <span>{{ editDialogConnectionMeta.hasDevices ? `${editDialogConnectionMeta.deviceCount} perangkat aktif` : 'Belum ada perangkat' }}</span>
+                <small>Login terakhir: {{ editDialogConnectionMeta.loginLabel }}</small>
               </div>
             </div>
             <div class="admin-user-edit__meta-pill">
@@ -953,22 +847,7 @@ function openQuotaHistoryPdf() {
               <div class="admin-user-edit__meta-pillCopy">
                 <span class="admin-user-edit__meta-pillLabel">Sinkronisasi</span>
                 <span>{{ editDialogConnectionMeta.mikrotikStatusLabel }}</span>
-                <small>{{ editDialogConnectionMeta.mikrotikStatusHint }}</small>
-              </div>
-            </div>
-            <div class="admin-user-edit__meta-pill">
-              <VIcon icon="tabler-shield-check" size="16" />
-              <div class="admin-user-edit__meta-pillCopy">
-                <span class="admin-user-edit__meta-pillLabel">Profil</span>
-                <span>{{ editDialogConnectionMeta.mikrotikProfile }}</span>
-                <small>{{ editDialogConnectionMeta.mikrotikProfileHint }}</small>
-              </div>
-            </div>
-            <div class="admin-user-edit__meta-pill admin-user-edit__meta-pill--muted">
-              <VIcon icon="tabler-clock" size="16" />
-              <div class="admin-user-edit__meta-pillCopy">
-                <span class="admin-user-edit__meta-pillLabel">Login Terakhir</span>
-                <span>{{ editDialogConnectionMeta.loginLabel }}</span>
+                <small>{{ editDialogConnectionMeta.mikrotikProfile }}</small>
               </div>
             </div>
             <div class="admin-user-edit__meta-pill admin-user-edit__meta-pill--wide admin-user-edit__meta-pill--status">
@@ -1043,67 +922,6 @@ function openQuotaHistoryPdf() {
 
             <VWindowItem value="akses">
               <VRow>
-                <VCol cols="12">
-                  <VSheet rounded="lg" border class="pa-3 admin-user-edit__action-card">
-                    <div class="admin-user-edit__card-header">
-                      <div class="admin-user-edit__card-copy">
-                        <div class="text-caption text-disabled">
-                          Laporan Detail Pengguna
-                        </div>
-                        <div class="font-weight-medium">
-                          Kirim ringkasan profil, status akses, tunggakan aktif, dan pembelian 30 hari terakhir dalam satu PDF.
-                        </div>
-                        <div class="text-caption text-medium-emphasis mt-1">
-                          {{ isDetailSummaryLoading ? 'Memuat ringkasan terbaru...' : recentPurchasesSummaryText }}
-                        </div>
-                      </div>
-                      <div class="admin-user-edit__card-actions">
-                        <VBtn
-                          size="small"
-                          color="error"
-                          variant="tonal"
-                          class="admin-user-edit__inline-action"
-                          prepend-icon="tabler-file-type-pdf"
-                          @click="openUserDetailPdf"
-                        >
-                          PDF Detail
-                        </VBtn>
-                        <VBtn
-                          size="small"
-                          color="success"
-                          variant="tonal"
-                          class="admin-user-edit__inline-action"
-                          prepend-icon="tabler-user-share"
-                          :loading="detailWhatsappQueueMode === 'user'"
-                          @click="sendUserDetailWhatsappToUser"
-                        >
-                          Kirim ke User
-                        </VBtn>
-                        <VBtn
-                          size="small"
-                          color="primary"
-                          variant="tonal"
-                          class="admin-user-edit__inline-action"
-                          prepend-icon="tabler-users-group"
-                          :loading="detailWhatsappQueueMode === 'internal'"
-                          @click="openDetailRecipientDialog"
-                        >
-                          Kirim ke Admin
-                        </VBtn>
-                      </div>
-                    </div>
-                    <VAlert
-                      variant="tonal"
-                      density="compact"
-                      type="info"
-                      icon="tabler-info-circle"
-                      class="admin-user-edit__recipient-help mt-3"
-                    >
-                      Pengiriman internal memakai popup pemilih penerima agar laporan tidak terkirim ke semua admin secara otomatis.
-                    </VAlert>
-                  </VSheet>
-                </VCol>
-
                 <VCol cols="12">
                   <VRow>
                     <VCol cols="12" md="6">
@@ -1280,16 +1098,6 @@ function openQuotaHistoryPdf() {
                               @click="openQuotaHistory"
                             >
                               Lihat Riwayat
-                            </VBtn>
-                            <VBtn
-                              size="small"
-                              color="error"
-                              variant="tonal"
-                              class="admin-user-edit__inline-action"
-                              prepend-icon="tabler-file-type-pdf"
-                              @click="openQuotaHistoryPdf"
-                            >
-                              PDF 30 Hari
                             </VBtn>
                           </div>
                         </div>
@@ -1607,13 +1415,6 @@ function openQuotaHistoryPdf() {
     </VCard>
   </VDialog>
 
-  <DetailReportRecipientDialog
-    :model-value="isDetailRecipientDialogOpen"
-    :user-name="props.user?.full_name"
-    @update:model-value="isDetailRecipientDialogOpen = $event"
-    @submit="sendUserDetailWhatsappToInternal"
-  />
-
   <UserDebtLedgerDialog v-model="isDebtLedgerOpen" :user="props.user" />
   <UserQuotaHistoryDialog v-model="isQuotaHistoryOpen" :user="props.user" />
 </template>
@@ -1676,19 +1477,6 @@ function openQuotaHistoryPdf() {
   opacity: 0.86;
 }
 
-.admin-user-edit__topbar-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.admin-user-edit__topbar-chip {
-  background: rgba(255, 255, 255, 0.16);
-  color: rgb(255, 255, 255);
-  font-weight: 600;
-}
-
 .admin-user-edit__topbar-close {
   flex: 0 0 auto;
   margin-top: -4px;
@@ -1744,10 +1532,6 @@ function openQuotaHistoryPdf() {
   line-height: 1.35;
 }
 
-.admin-user-edit__meta-pill--muted {
-  background: rgba(255, 255, 255, 0.08);
-}
-
 .admin-user-edit__meta-pill--wide {
   min-width: 260px;
   flex: 1 1 260px;
@@ -1789,10 +1573,6 @@ function openQuotaHistoryPdf() {
 
 .admin-user-edit__inline-action {
   min-width: 104px;
-}
-
-.admin-user-edit__recipient-help {
-  height: 100%;
 }
 
 .admin-user-edit__stat-grid {

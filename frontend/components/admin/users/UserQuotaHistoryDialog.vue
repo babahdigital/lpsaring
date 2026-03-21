@@ -369,13 +369,6 @@ function normalizeSelectedRange(): boolean {
   return true
 }
 
-function openPdf() {
-  if (!props.user)
-    return
-
-  window.open(`/api/admin/users/${props.user.id}/quota-history/export?${buildPdfQueryString()}`, '_blank', 'noopener')
-}
-
 async function fetchHistory() {
   if (!props.user || !normalizeSelectedRange())
     return
@@ -526,15 +519,9 @@ watch(
             </div>
             <div class="history-dialog__hero-copy">
               <span class="headline text-white">Riwayat Mutasi Kuota</span>
-              <div class="history-dialog__hero-subtitle text-white">
-                Fokus ke event penting, filter cepat, dan ringkasan yang lebih tenang untuk semua device.
-              </div>
             </div>
           </div>
           <div class="dialog-titlebar__actions">
-            <VBtn color="error" variant="tonal" prepend-icon="tabler-file-type-pdf" class="history-dialog__hero-pdf" @click="openPdf">
-              PDF
-            </VBtn>
             <VBtn icon="tabler-x" variant="text" size="small" class="text-white" @click="close" />
           </div>
         </div>
@@ -799,9 +786,6 @@ watch(
         <VBtn variant="tonal" color="secondary" @click="close">
           Tutup
         </VBtn>
-        <VBtn color="primary" prepend-icon="tabler-file-type-pdf" @click="openPdf">
-          PDF (Cetak / Simpan)
-        </VBtn>
       </VCardActions>
     </VCard>
   </VDialog>
@@ -867,10 +851,6 @@ watch(
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 14px;
-}
-
-.history-dialog__hero-pdf {
-  min-width: 88px;
 }
 
 .history-dialog-card {
@@ -1146,10 +1126,6 @@ watch(
 
   .history-dialog__hero-subtitle {
     font-size: 0.8rem;
-  }
-
-  .history-dialog__hero-pdf {
-    width: 100%;
   }
 
   .history-overview-grid {
