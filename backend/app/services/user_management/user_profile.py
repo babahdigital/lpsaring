@@ -155,6 +155,8 @@ def _build_debt_detail_snapshot(user: User) -> Dict[str, Any]:
         "lines": "(Tidak ada rincian)",
         "degraded": False,
         "invalid_items": 0,
+        "total_price_rp": 0,
+        "total_price_rp_display": "–",
     }
     try:
         WIB = dt_timezone(timedelta(hours=7))
@@ -171,6 +173,7 @@ def _build_debt_detail_snapshot(user: User) -> Dict[str, Any]:
             return snapshot
 
         lines = []
+        total_price_rp = 0
         for i, d in enumerate(debts, 1):
             try:
                 remaining_mb = max(0, int(d.amount_mb or 0) - int(d.paid_mb or 0))
@@ -195,7 +198,9 @@ def _build_debt_detail_snapshot(user: User) -> Dict[str, Any]:
 
                 price_part = ""
                 if d.price_rp and d.price_rp > 0:
-                    price_part = " | Rp " + f"{int(d.price_rp):,}".replace(",", ".")
+                    item_price_rp = int(d.price_rp)
+                    total_price_rp += item_price_rp
+                    price_part = " | Rp " + f"{item_price_rp:,}".replace(",", ".")
 
                 note_part = _extract_debt_note_part(getattr(d, "note", None))
                 lines.append(f"{i}. {date_str}{time_str} \u2014 {remaining_gb:.2f} GB{price_part}{note_part}")
@@ -210,6 +215,10 @@ def _build_debt_detail_snapshot(user: User) -> Dict[str, Any]:
                 lines.append(f"{i}. Detail item sedang direkonsiliasi sistem")
 
         snapshot["lines"] = "\n".join(lines)
+        snapshot["total_price_rp"] = int(total_price_rp)
+        snapshot["total_price_rp_display"] = (
+            "Rp " + f"{total_price_rp:,}".replace(",", ".") if total_price_rp > 0 else "–"
+        )
     except Exception:
         snapshot["degraded"] = True
         snapshot["invalid_items"] = max(1, int(snapshot["invalid_items"] or 0))
@@ -826,6 +835,10 @@ def update_user_by_admin_comprehensive(
                 _pkg_name = str(getattr(pkg, "name", "") or "").strip() or "–"
                 _pkg_price_int = int(getattr(pkg, "price", 0) or 0)
                 _price_rp_display = ("Rp " + f"{_pkg_price_int:,}".replace(",", ".")) if _pkg_price_int > 0 else "–"
+                _total_manual_debt_amount_rp = int(_debt_detail_snapshot_pkg.get("total_price_rp") or 0)
+                _total_manual_debt_amount_display = str(
+                    _debt_detail_snapshot_pkg.get("total_price_rp_display") or "–"
+                )
                 _send_whatsapp_notification(
                     target_user.phone_number,
                     "user_debt_added",
@@ -840,6 +853,8 @@ def update_user_by_admin_comprehensive(
                         "total_debt_gb": f"{(total_debt_mb / 1024.0):.2f} GB",
                         "total_manual_debt_mb": int(total_manual_debt_mb),
                         "total_manual_debt_gb": f"{(float(total_manual_debt_mb) / 1024.0):.2f} GB",
+                        "total_manual_debt_amount_rp": _total_manual_debt_amount_rp,
+                        "total_manual_debt_amount_display": _total_manual_debt_amount_display,
                         "auto_debt_deducted_mb": int(auto_deducted_mb),
                         "auto_debt_deducted_gb": f"{(float(auto_deducted_mb) / 1024.0):.2f} GB",
                         "effective_quota_mb": int(effective_quota_mb),
@@ -930,6 +945,10 @@ def update_user_by_admin_comprehensive(
                 total_manual_debt_mb = int(getattr(target_user, "manual_debt_mb", 0) or 0)
                 auto_deducted_mb = int(changes.get("debt_paid_auto_before_credit_mb") or 0)
                 effective_quota_mb = int(changes.get("debt_net_quota_mb") or 0)
+                _total_manual_debt_amount_rp = int(_debt_detail_snapshot_mb.get("total_price_rp") or 0)
+                _total_manual_debt_amount_display = str(
+                    _debt_detail_snapshot_mb.get("total_price_rp_display") or "–"
+                )
                 _send_whatsapp_notification(
                     target_user.phone_number,
                     "user_debt_added",
@@ -944,6 +963,8 @@ def update_user_by_admin_comprehensive(
                         "total_debt_gb": f"{(total_debt_mb / 1024.0):.2f} GB",
                         "total_manual_debt_mb": int(total_manual_debt_mb),
                         "total_manual_debt_gb": f"{(float(total_manual_debt_mb) / 1024.0):.2f} GB",
+                        "total_manual_debt_amount_rp": _total_manual_debt_amount_rp,
+                        "total_manual_debt_amount_display": _total_manual_debt_amount_display,
                         "auto_debt_deducted_mb": int(auto_deducted_mb),
                         "auto_debt_deducted_gb": f"{(float(auto_deducted_mb) / 1024.0):.2f} GB",
                         "effective_quota_mb": int(effective_quota_mb),

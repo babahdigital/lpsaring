@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from flask import Flask
 
-from app.services.user_management.user_profile import _build_debt_detail_lines
+from app.services.user_management.user_profile import _build_debt_detail_lines, _build_debt_detail_snapshot
 from app.services.user_management import helpers as user_management_helpers
 
 
@@ -75,6 +75,53 @@ def test_build_debt_detail_lines_keeps_other_rows_when_one_row_is_invalid():
     assert "2. 19-03-2026 17:00" in result
     assert "19.00 GB" in result
     assert "Paket Pintar" in result
+
+
+def test_build_debt_detail_snapshot_accumulates_total_nominal_rupiah():
+    app = Flask(__name__)
+
+    fake_debts = [
+        SimpleNamespace(
+            id="debt-1",
+            amount_mb=10240,
+            paid_mb=0,
+            debt_date="2026-03-21",
+            created_at="2026-03-21 00:30:34.749357+00:00",
+            price_rp=100000,
+            note="Paket: Paket Hemat (10 GB, Rp 100,000)",
+        ),
+        SimpleNamespace(
+            id="debt-2",
+            amount_mb=20480,
+            paid_mb=0,
+            debt_date="2026-03-22",
+            created_at="2026-03-22 01:00:00+00:00",
+            price_rp=200000,
+            note="Paket: Paket Pintar (20 GB, Rp 200,000)",
+        ),
+        SimpleNamespace(
+            id="debt-3",
+            amount_mb=5120,
+            paid_mb=0,
+            debt_date="2026-03-23",
+            created_at="2026-03-23 02:00:00+00:00",
+            price_rp=None,
+            note="Penyesuaian admin",
+        ),
+    ]
+
+    query_mock = MagicMock()
+    query_mock.filter.return_value.order_by.return_value.all.return_value = fake_debts
+    fake_user = SimpleNamespace(id="user-3")
+
+    with app.app_context():
+        with patch("app.services.user_management.user_profile.db.session.query", return_value=query_mock):
+            snapshot = _build_debt_detail_snapshot(fake_user)
+
+    assert snapshot["total_price_rp"] == 300000
+    assert snapshot["total_price_rp_display"] == "Rp 300.000"
+    assert "Rp 100.000" in snapshot["lines"]
+    assert "Rp 200.000" in snapshot["lines"]
 
 
 def test_send_whatsapp_notification_blocks_degraded_render(monkeypatch):
