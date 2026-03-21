@@ -7,6 +7,7 @@ from werkzeug.exceptions import HTTPException
 from app.infrastructure.db.models import Transaction, TransactionEventSource, TransactionStatus, User, UserQuotaDebt
 from app.infrastructure.http.error_envelope import error_response
 from app.infrastructure.http.transactions.reconcile_service import reconcile_pending_transaction
+from app.utils.formatters import format_app_datetime_display
 
 
 def get_transaction_by_order_id_impl(
@@ -117,7 +118,9 @@ def get_transaction_by_order_id_impl(
                 transaction.snap_redirect_url if (transaction.snap_token is None and transaction.snap_redirect_url) else None
             ),
             "payment_time": transaction.payment_time.isoformat() if transaction.payment_time else None,
+            "payment_time_display": format_app_datetime_display(transaction.payment_time, fallback="-"),
             "expiry_time": transaction.expiry_time.isoformat() if transaction.expiry_time else None,
+            "expiry_time_display": format_app_datetime_display(transaction.expiry_time, fallback="-"),
             "va_number": transaction.va_number,
             "payment_code": transaction.payment_code,
             "biller_code": getattr(transaction, "biller_code", None),
@@ -138,6 +141,7 @@ def get_transaction_by_order_id_impl(
                 "phone_number": u.phone_number,
                 "full_name": u.full_name,
                 "quota_expiry_date": u.quota_expiry_date.isoformat() if u.quota_expiry_date else None,
+                "quota_expiry_date_display": format_app_datetime_display(u.quota_expiry_date, fallback="-"),
                 "is_unlimited_user": u.is_unlimited_user,
             }
             if u

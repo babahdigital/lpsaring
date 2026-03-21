@@ -53,6 +53,8 @@
 3. **EOM block tidak bergantung `due_date` per-item** — hanya cek `manual_debt_mb > 0` + tanggal kalender.
 4. **WA reminder bergantung `due_date IS NOT NULL`** — record lama diisi via migration `20260319_c_populate_null_due_dates`.
 5. **`price_rp` dari paket aktual** — bukan estimasi; jika null, frontend fallback ke `estimated_rp`.
+6. **Display tanggal wajib terpusat** — gunakan `format_app_date_display()` / `format_app_datetime_display()` di `backend/app/utils/formatters.py`. Jangan membangun `dd-mm-yyyy` manual dengan slicing string di route/service baru.
+7. **JSON aman untuk script** — field raw ISO/`yyyy-mm-dd` boleh tetap ada untuk parse/sort/backward compatibility, tetapi semua payload yang ditampilkan ke user/admin wajib menambahkan field `*_display` dengan format lokal `dd-mm-yyyy` atau `dd-mm-yyyy HH:MM:SS`.
 
 ### Alur Tambah Debt (Admin)
 ```

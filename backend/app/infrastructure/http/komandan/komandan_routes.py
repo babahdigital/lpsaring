@@ -26,7 +26,7 @@ from app.infrastructure.http.decorators import token_required
 from .schemas import QuotaRequestCreateSchema, QuotaRequestResponseSchema
 from app.services import settings_service
 from app.services.notification_service import get_notification_message
-from app.utils.formatters import get_app_local_datetime
+from app.utils.formatters import get_app_local_datetime, format_app_datetime_display
 
 try:
     from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
@@ -240,12 +240,14 @@ def get_my_requests_history(current_user_id: uuid.UUID):
                 {
                     "id": str(req.id),
                     "created_at": req.created_at.isoformat(),
+                    "created_at_display": format_app_datetime_display(req.created_at, fallback="-"),
                     "request_type": req.request_type.value,
                     "status": req.status.value,
                     "requested_mb": details.get("requested_mb"),
                     "requested_duration_days": details.get("requested_duration_days"),
                     "granted_details": granted_details,
                     "processed_at": req.processed_at.isoformat() if req.processed_at else None,
+                    "processed_at_display": format_app_datetime_display(req.processed_at, fallback="-"),
                     "rejection_reason": req.rejection_reason,
                     "processed_by_admin": req.processed_by.full_name if req.processed_by else None,
                 }

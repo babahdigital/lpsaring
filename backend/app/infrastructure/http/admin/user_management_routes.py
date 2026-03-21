@@ -28,13 +28,18 @@ from app.infrastructure.http.schemas.user_schemas import (
     UserUpdateByAdminSchema,
 )
 from app.services.user_management import user_debt as user_debt_service
-from app.utils.formatters import get_phone_number_variations, format_mb_to_gb
+from app.utils.formatters import (
+    get_phone_number_variations,
+    format_mb_to_gb,
+    format_app_date_display,
+    format_app_datetime_display,
+)
 
 from app.infrastructure.db.models import UserQuotaDebt
 
 
 # [FIX] Menambahkan kembali impor yang hilang untuk endpoint /mikrotik-status
-from app.utils.formatters import format_to_local_phone, get_app_local_datetime, format_app_datetime
+from app.utils.formatters import format_to_local_phone, format_app_datetime
 from app.services.user_management.helpers import _handle_mikrotik_operation, _send_whatsapp_notification
 from app.infrastructure.gateways.mikrotik_client import get_hotspot_user_details, get_mikrotik_connection
 
@@ -63,8 +68,10 @@ def _serialize_public_update_submission(item: PublicDatabaseUpdateSubmission) ->
         "approval_status": item.approval_status,
         "processed_by_user_id": str(item.processed_by_user_id) if item.processed_by_user_id else None,
         "processed_at": item.processed_at.isoformat() if item.processed_at else None,
+        "processed_at_display": format_app_datetime_display(item.processed_at, fallback="-"),
         "rejection_reason": item.rejection_reason,
         "created_at": item.created_at.isoformat() if item.created_at else None,
+        "created_at_display": format_app_datetime_display(item.created_at, fallback="-"),
     }
 
 
@@ -820,18 +827,16 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
                 # Format expiry_date dengan fallback untuk NULL value
                 if quota_expiry:
                     try:
-                        expiry_date_str = quota_expiry.strftime("%d-%m-%Y")
+                        expiry_date_str = format_app_date_display(quota_expiry, fallback="Belum ditentukan")
                     except Exception:
                         expiry_date_str = "Belum ditentukan"
                 else:
                     expiry_date_str = "Belum ditentukan"
 
                 # Format debt_date dan paid_at dengan WITA
-                debt_date_str = (
-                    debt.debt_date.strftime("%d-%m-%Y") if debt.debt_date else "–"
-                )
+                debt_date_str = format_app_date_display(debt.debt_date, fallback="–")
                 paid_at_str = (
-                    format_app_datetime(debt.paid_at) if debt.paid_at else format_app_datetime()
+                    format_app_datetime_display(debt.paid_at, fallback=format_app_datetime()) if debt.paid_at else format_app_datetime()
                 )
 
                 wa_template = "user_debt_partial_payment_unblock" if unblocked else "user_debt_partial_payment"
@@ -1051,19 +1056,19 @@ def export_user_manual_debts_pdf(current_admin: User, user_id: uuid.UUID):
             payload = UserQuotaDebtItemResponseSchema.from_orm(d).model_dump()
             try:
                 if payload.get("debt_date"):
-                    # debt_date from schema is typically YYYY-MM-DD
-                    raw = str(payload.get("debt_date"))
-                    if len(raw) >= 10 and raw[4] == "-" and raw[7] == "-":
-                        payload["debt_date_display"] = f"{raw[8:10]}-{raw[5:7]}-{raw[0:4]}"
+                    payload["debt_date_display"] = format_app_date_display(payload.get("debt_date"), fallback="-")
             except Exception:
                 pass
             try:
                 due_date_val = getattr(d, "due_date", None)
                 if due_date_val:
-                    payload["due_date_display"] = due_date_val.strftime("%d-%m-%Y")
+                    payload["due_date_display"] = format_app_date_display(due_date_val, fallback="-")
                     payload["due_date"] = str(due_date_val)
             except Exception:
                 pass
+            payload["created_at_display"] = format_app_datetime_display(payload.get("created_at"), fallback="-")
+            payload["updated_at_display"] = format_app_datetime_display(payload.get("updated_at"), fallback="-")
+            payload["paid_at_display"] = format_app_datetime_display(payload.get("paid_at"), fallback="-")
             payload["remaining_mb"] = int(remaining)
             payload["is_paid"] = bool(is_paid)
             payload["paid_mb"] = int(paid_mb)
@@ -1116,7 +1121,7 @@ def export_user_manual_debts_pdf(current_admin: User, user_id: uuid.UUID):
         est_total = _estimate_for_mb(debt_total_mb)
 
         now_utc = datetime.now(dt_timezone.utc)
-        generated_local = get_app_local_datetime(now_utc).strftime("%d-%m-%Y %H:%M")
+        generated_local = format_app_datetime_display(now_utc, include_seconds=False)
 
         context = {
             "user": user,
@@ -1219,7 +1224,7 @@ def export_user_quota_history_pdf(current_admin: User, user_id: uuid.UUID):
             end_date=request.args.get("endDate"),
             search=request.args.get("search"),
         )
-        generated_local = get_app_local_datetime(datetime.now(dt_timezone.utc)).strftime("%d-%m-%Y %H:%M")
+        generated_local = format_app_datetime_display(datetime.now(dt_timezone.utc), include_seconds=False)
         context = {
             "user": user,
             "user_phone_display": format_to_local_phone(getattr(user, "phone_number", "") or "")

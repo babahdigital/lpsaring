@@ -128,6 +128,7 @@ Variabel yang paling sensitif terhadap perilaku runtime:
 - Jika perlu audit performa OTP, gunakan kombinasi access log, backend log, dan dashboard/log provider WhatsApp; jangan menyimpulkan latency delivery hanya dari selisih waktu `request-otp` ke `verify-otp` karena itu juga mencakup waktu user menerima dan mengetik kode.
 - Khusus notifikasi debt manual, aplikasi kini mengekspos metrik degradasi `notification.render.degraded`, `notification.whatsapp.send_failed`, `notification.whatsapp.user_debt_added.detail_degraded`, dan `notification.whatsapp.user_debt_added.detail_degraded.items` melalui admin metrics. Gunakan metrik ini bersama log backend bila pesan debt sukses terkirim tetapi rincian item terlihat tidak lengkap.
 - Jalur admin `PUT /api/admin/users/{id}` adalah boundary resmi untuk debt manual. Payload `debt_date` wajib lolos validasi schema dan akan dinormalisasi ke `date`; due date debt manual dihitung otomatis ke akhir bulan untuk flow paket maupun `debt_add_mb`.
+- Normalisasi tampilan tanggal wajib memakai helper terpusat di `backend/app/utils/formatters.py`: `format_app_date_display()` untuk tanggal dan `format_app_datetime_display()` untuk datetime. Untuk JSON/API, pertahankan field raw ISO/`yyyy-mm-dd` bila masih dipakai sorting/parsing, lalu tambahkan field `*_display` berformat `dd-mm-yyyy` atau `dd-mm-yyyy HH:MM:SS` untuk konsumsi UI/report/WA context.
 
 ## Aturan Saat Mengubah Kode
 

@@ -8,6 +8,8 @@ from http import HTTPStatus
 import sqlalchemy as sa
 from flask import abort, current_app, jsonify, make_response, render_template, request
 
+from app.utils.formatters import format_app_datetime_display
+
 
 def get_transactions_list_impl(
     *,
@@ -85,10 +87,13 @@ def get_transactions_list_impl(
                 'amount': float(tx.amount),
                 'status': tx.status.value,
                 'created_at': tx.created_at.isoformat(),
+                'created_at_display': format_app_datetime_display(tx.created_at, fallback='-'),
                 'midtrans_transaction_id': tx.midtrans_transaction_id,
                 'payment_method': tx.payment_method,
                 'payment_time': tx.payment_time.isoformat() if tx.payment_time else None,
+                'payment_time_display': format_app_datetime_display(tx.payment_time, fallback='-'),
                 'expiry_time': tx.expiry_time.isoformat() if tx.expiry_time else None,
+                'expiry_time_display': format_app_datetime_display(tx.expiry_time, fallback='-'),
                 'user': {
                     'full_name': tx.user.full_name if tx.user else 'N/A',
                     'phone_number': tx.user.phone_number if tx.user else 'N/A',
@@ -144,6 +149,7 @@ def get_transaction_detail_impl(*, db, order_id: str, Transaction, TransactionEv
                 {
                     'id': str(ev.id),
                     'created_at': ev.created_at.isoformat() if ev.created_at else None,
+                    'created_at_display': format_app_datetime_display(ev.created_at, fallback='-'),
                     'source': ev.source.value,
                     'event_type': ev.event_type,
                     'status': ev.status.value if ev.status else None,
@@ -159,11 +165,15 @@ def get_transaction_detail_impl(*, db, order_id: str, Transaction, TransactionEv
                     'amount': float(tx.amount),
                     'status': tx.status.value,
                     'created_at': tx.created_at.isoformat(),
+                    'created_at_display': format_app_datetime_display(tx.created_at, fallback='-'),
                     'updated_at': tx.updated_at.isoformat() if tx.updated_at else None,
+                    'updated_at_display': format_app_datetime_display(tx.updated_at, fallback='-'),
                     'midtrans_transaction_id': tx.midtrans_transaction_id,
                     'payment_method': tx.payment_method,
                     'payment_time': tx.payment_time.isoformat() if tx.payment_time else None,
+                    'payment_time_display': format_app_datetime_display(tx.payment_time, fallback='-'),
                     'expiry_time': tx.expiry_time.isoformat() if tx.expiry_time else None,
+                    'expiry_time_display': format_app_datetime_display(tx.expiry_time, fallback='-'),
                     'va_number': tx.va_number,
                     'payment_code': tx.payment_code,
                     'biller_code': tx.biller_code,

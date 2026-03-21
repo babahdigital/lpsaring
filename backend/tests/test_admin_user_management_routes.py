@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from typing import cast
 
@@ -176,3 +176,30 @@ def test_update_user_by_admin_rejects_invalid_debt_date(monkeypatch):
     body = response.get_json()
     assert body["message"] == "Data tidak valid."
     assert fake_session.rollback_calls == 1
+
+
+def test_serialize_public_update_submission_adds_display_dates():
+    created_at = datetime(2026, 3, 21, 1, 2, 3, tzinfo=timezone.utc)
+    processed_at = datetime(2026, 3, 21, 4, 5, 6, tzinfo=timezone.utc)
+    item = SimpleNamespace(
+        id=uuid.uuid4(),
+        full_name="Naru",
+        role="USER",
+        blok="A",
+        kamar="1",
+        tamping_type=None,
+        phone_number="081234567890",
+        source_ip="10.0.0.1",
+        approval_status="PENDING",
+        processed_by_user_id=None,
+        processed_at=processed_at,
+        rejection_reason=None,
+        created_at=created_at,
+    )
+
+    payload = user_management_routes._serialize_public_update_submission(item)
+
+    assert payload["processed_at"] == processed_at.isoformat()
+    assert payload["created_at"] == created_at.isoformat()
+    assert payload["processed_at_display"] == "21-03-2026 12:05:06"
+    assert payload["created_at_display"] == "21-03-2026 09:02:03"

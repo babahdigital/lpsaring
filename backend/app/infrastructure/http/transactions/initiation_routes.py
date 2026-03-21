@@ -14,6 +14,7 @@ from werkzeug.exceptions import HTTPException
 
 from app.infrastructure.db.models import ApprovalStatus, Package, Transaction, TransactionEventSource, TransactionStatus, User, UserQuotaDebt, UserRole
 from app.infrastructure.http.error_envelope import error_response
+from app.utils.formatters import format_app_datetime_display
 
 
 def _parse_midtrans_api_error(raw_message: str) -> tuple[str | None, str | None]:
@@ -268,6 +269,7 @@ def _try_reuse_package_tx(
     response_data = InitiateTransactionResponseSchema.model_validate(existing_tx, from_attributes=True)
     payload = response_data.model_dump(by_alias=False, exclude_none=True)
     payload["provider_mode"] = provider_mode
+    payload["expiry_time_display"] = format_app_datetime_display(payload.get("expiry_time"), fallback="-")
     try:
         base_callback_url = (
             current_app.config.get("APP_PUBLIC_BASE_URL")
@@ -513,6 +515,7 @@ def initiate_transaction_impl(
         response_data = InitiateTransactionResponseSchema.model_validate(new_transaction, from_attributes=True)
         payload = response_data.model_dump(by_alias=False, exclude_none=True)
         payload["provider_mode"] = provider_mode
+        payload["expiry_time_display"] = format_app_datetime_display(payload.get("expiry_time"), fallback="-")
         payload["status_token"] = status_token
         payload["status_url"] = status_url
         return jsonify(payload), HTTPStatus.OK
@@ -680,6 +683,7 @@ def initiate_debt_settlement_transaction_impl(
                 response_data = InitiateDebtSettlementResponseSchema.model_validate(existing_tx, from_attributes=True)
                 payload = response_data.model_dump(by_alias=False, exclude_none=True)
                 payload["provider_mode"] = provider_mode
+                payload["expiry_time_display"] = format_app_datetime_display(payload.get("expiry_time"), fallback="-")
                 try:
                     status_token = generate_transaction_status_token(existing_tx.midtrans_order_id)
                     base_callback_url = (
@@ -809,6 +813,7 @@ def initiate_debt_settlement_transaction_impl(
         response_data = InitiateDebtSettlementResponseSchema.model_validate(new_transaction, from_attributes=True)
         payload = response_data.model_dump(by_alias=False, exclude_none=True)
         payload["provider_mode"] = provider_mode
+        payload["expiry_time_display"] = format_app_datetime_display(payload.get("expiry_time"), fallback="-")
         payload["status_token"] = status_token
         payload["status_url"] = status_url
         return jsonify(payload), HTTPStatus.OK

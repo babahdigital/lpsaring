@@ -3,8 +3,8 @@
 
 import os
 import re
-from typing import Optional, List
-from datetime import datetime, timezone as dt_timezone
+from typing import Optional, List, Any
+from datetime import datetime, date, timezone as dt_timezone
 from decimal import Decimal, ROUND_HALF_UP
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -30,6 +30,90 @@ def format_app_datetime(dt_utc: Optional[datetime] = None, include_tz: bool = Fa
         tz_name = local_dt.tzname() or ""
         return f"{date_str} {time_str} {tz_name}".strip()
     return f"{date_str} {time_str}".strip()
+
+
+def _coerce_dateish_value(value: Any) -> Optional[date]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return get_app_local_datetime(value).date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return None
+        if re.match(r"^\d{2}-\d{2}-\d{4}$", raw):
+            try:
+                return datetime.strptime(raw, "%d-%m-%Y").date()
+            except ValueError:
+                return None
+        normalized = raw.replace("Z", "+00:00")
+        try:
+            return get_app_local_datetime(datetime.fromisoformat(normalized)).date()
+        except ValueError:
+            pass
+        for candidate in (raw, raw.split("T", 1)[0], raw.split(" ", 1)[0]):
+            try:
+                return date.fromisoformat(candidate)
+            except ValueError:
+                continue
+    return None
+
+
+def _coerce_datetimeish_value(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return get_app_local_datetime(value)
+    if isinstance(value, date):
+        return get_app_local_datetime(datetime(value.year, value.month, value.day, tzinfo=dt_timezone.utc))
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return None
+        if re.match(r"^\d{2}-\d{2}-\d{4}( \d{2}:\d{2}(:\d{2})?)?$", raw):
+            try:
+                local_tz = ZoneInfo(get_app_timezone_name())
+            except ZoneInfoNotFoundError:
+                local_tz = dt_timezone.utc
+            for fmt in ("%d-%m-%Y %H:%M:%S", "%d-%m-%Y %H:%M", "%d-%m-%Y"):
+                try:
+                    parsed = datetime.strptime(raw, fmt)
+                    return parsed.replace(tzinfo=local_tz)
+                except ValueError:
+                    continue
+        normalized = raw.replace("Z", "+00:00")
+        try:
+            return get_app_local_datetime(datetime.fromisoformat(normalized))
+        except ValueError:
+            pass
+        for fmt in (
+            "%Y-%m-%d %H:%M:%S.%f",
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d",
+        ):
+            try:
+                parsed = datetime.strptime(raw, fmt)
+                return get_app_local_datetime(parsed.replace(tzinfo=dt_timezone.utc))
+            except ValueError:
+                continue
+    return None
+
+
+def format_app_date_display(value: Any, fallback: str = "") -> str:
+    coerced = _coerce_dateish_value(value)
+    if coerced is None:
+        return fallback
+    return coerced.strftime("%d-%m-%Y")
+
+
+def format_app_datetime_display(value: Any, fallback: str = "", include_seconds: bool = True) -> str:
+    coerced = _coerce_datetimeish_value(value)
+    if coerced is None:
+        return fallback
+    time_fmt = "%H:%M:%S" if include_seconds else "%H:%M"
+    return coerced.strftime(f"%d-%m-%Y {time_fmt}")
 
 
 def format_datetime_to_wita(dt_utc: Optional[datetime]) -> str:

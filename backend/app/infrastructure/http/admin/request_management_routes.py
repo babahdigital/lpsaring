@@ -20,7 +20,7 @@ from .schemas import RequestApprovalSchema, QuotaRequestListItemSchema, RequestA
 from app.services.notification_service import get_notification_message
 from app.services import settings_service
 from app.services.quota_expiry_policy import calculate_quota_expiry_date
-from app.utils.formatters import format_to_local_phone, get_app_local_datetime
+from app.utils.formatters import format_to_local_phone, get_app_local_datetime, format_app_datetime_display
 
 try:
     from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection, activate_or_update_hotspot_user
@@ -128,6 +128,8 @@ def get_all_requests(current_admin: User):
         results = []
         for req in pagination.items:
             req_data = QuotaRequestListItemSchema.model_validate(req, from_attributes=True).model_dump(mode="json")
+            req_data["created_at_display"] = format_app_datetime_display(req_data.get("created_at"), fallback="-")
+            req_data["processed_at_display"] = format_app_datetime_display(req_data.get("processed_at"), fallback="-")
             req_data["processed_by"] = {"full_name": req.processed_by.full_name} if req.processed_by else None
             req_data["granted_details"] = json.loads(req.granted_details) if req.granted_details else None
             results.append(req_data)

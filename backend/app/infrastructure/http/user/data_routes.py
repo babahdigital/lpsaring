@@ -27,6 +27,8 @@ from app.utils.formatters import (
     get_phone_number_variations,
     get_app_local_datetime,
     round_mb,
+    format_app_date_display,
+    format_app_datetime_display,
 )
 
 from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package
@@ -310,7 +312,9 @@ def get_my_transactions(current_user_id):
                     "status": tx.status.value if tx.status else "UNKNOWN",
                     "payment_method": tx.payment_method,
                     "created_at": tx.created_at.isoformat() if tx.created_at else None,
+                    "created_at_display": format_app_datetime_display(tx.created_at, fallback="-"),
                     "updated_at": tx.updated_at.isoformat() if tx.updated_at else None,
+                    "updated_at_display": format_app_datetime_display(tx.updated_at, fallback="-"),
                 }
             )
 
@@ -366,14 +370,18 @@ def get_my_quota_debts(current_user_id):
                 {
                     "id": str(it.id),
                     "debt_date": it.debt_date.isoformat() if it.debt_date else None,
+                    "debt_date_display": format_app_date_display(it.debt_date, fallback="-"),
                     "due_date": it.due_date.isoformat() if it.due_date else None,
+                    "due_date_display": format_app_date_display(it.due_date, fallback="-"),
                     "amount_mb": amount_mb,
                     "paid_mb": paid_mb,
                     "remaining_mb": remaining_mb,
                     "is_paid": bool(it.is_paid),
                     "paid_at": it.paid_at.isoformat() if it.paid_at else None,
+                    "paid_at_display": format_app_datetime_display(it.paid_at, fallback="-"),
                     "note": it.note,
                     "created_at": it.created_at.isoformat() if it.created_at else None,
+                    "created_at_display": format_app_datetime_display(it.created_at, fallback="-"),
                 }
             )
 
