@@ -16,7 +16,13 @@ from sqlalchemy.engine import make_url
 from app.extensions import db
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
 from app.infrastructure.gateways.telegram_client import send_telegram_message
-from app.utils.formatters import format_app_datetime_display
+from app.utils.formatters import (
+    format_app_datetime_display,
+    get_app_local_datetime,
+    get_app_timezone,
+    get_app_timezone_label,
+    get_app_timezone_offset_hours,
+)
 from app.infrastructure.db.models import (
     User,
     UserRole,
@@ -87,13 +93,8 @@ except Exception:
     WEASYPRINT_AVAILABLE = False
 
 
-def _get_local_tz() -> dt_timezone:
-    try:
-        offset_hours = int(current_app.config.get("APP_TIMEZONE_OFFSET", 8))
-    except Exception:
-        offset_hours = 8
-    offset_hours = max(-12, min(offset_hours, 14))
-    return dt_timezone(timedelta(hours=offset_hours))
+def _get_local_tz() -> ZoneInfo | dt_timezone:
+    return get_app_timezone()
 
 
 def _parse_local_date_range_to_utc(start_date_str: str, end_date_str: str) -> tuple[datetime, datetime]:
@@ -118,9 +119,9 @@ def _format_dt_local(value: datetime | None, *, with_seconds: bool = False) -> s
         local_tz = _get_local_tz()
         local_dt = value.astimezone(local_tz)
         fmt = "%d %b %Y %H:%M:%S" if with_seconds else "%d %b %Y %H:%M"
-        offset_hours = int(current_app.config.get("APP_TIMEZONE_OFFSET", 8) or 8)
+        offset_hours = get_app_timezone_offset_hours(value)
         sign = "+" if offset_hours >= 0 else "-"
-        tz_label = current_app.config.get("APP_TIMEZONE_LABEL") or "WITA"
+        tz_label = get_app_timezone_label(value)
         return f"{local_dt.strftime(fmt)} {tz_label} (UTC{sign}{abs(offset_hours)})"
     except Exception:
         try:
@@ -283,15 +284,14 @@ def _sanitize_sql_dump_for_restore(file_path: pathlib.Path) -> tuple[pathlib.Pat
 def get_dashboard_stats(current_admin: User):
     """Menyediakan statistik komprehensif untuk dasbor admin."""
     try:
-        tz_local = ZoneInfo("Asia/Makassar")
-        now_local = datetime.now(tz_local)
+        now_local = get_app_local_datetime()
         now_utc = now_local.astimezone(dt_timezone.utc)
 
         start_of_today_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
         start_of_yesterday_local = start_of_today_local - timedelta(days=1)
         start_of_month_local = start_of_today_local.replace(day=1)
 
-        # Minggu kalender: Senin 00:00 WIB s.d. saat ini
+        # Minggu kalender: Senin 00:00 waktu lokal aplikasi s.d. saat ini
         start_of_week_local = start_of_today_local - timedelta(days=start_of_today_local.weekday())
         start_of_prev_week_local = start_of_week_local - timedelta(days=7)
 

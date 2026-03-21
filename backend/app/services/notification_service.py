@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional
 
 from app.services.config_service import get_app_links
 from app.utils.block_reasons import is_auto_debt_limit_reason, is_manual_debt_eom_reason
+from app.utils.formatters import format_mb_to_gb
 
 TEMPLATE_FILE_PATH = "app/notifications/templates.json"
 _templates_cache = None
@@ -50,8 +51,7 @@ def _format_quota_human_readable(remaining_mb: Any) -> str:
             return f"{int(value_mb)} MB"
         return f"{value_mb:.2f} MB"
 
-    value_gb = value_mb / 1024.0
-    return f"{value_gb:.2f} GB"
+    return format_mb_to_gb(value_mb)
 
 
 def _normalize_link_value(value: Any, fallback: str = "") -> str:

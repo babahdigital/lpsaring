@@ -833,7 +833,7 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
                 else:
                     expiry_date_str = "Belum ditentukan"
 
-                # Format debt_date dan paid_at dengan WITA
+                # Format debt_date dan paid_at dengan zona waktu aplikasi
                 debt_date_str = format_app_date_display(debt.debt_date, fallback="–")
                 paid_at_str = (
                     format_app_datetime_display(debt.paid_at, fallback=format_app_datetime()) if debt.paid_at else format_app_datetime()

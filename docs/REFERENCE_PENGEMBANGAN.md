@@ -70,6 +70,14 @@ Variabel yang paling sensitif terhadap perilaku runtime:
 - User unlimited tidak boleh membawa debt quota.
 - Status akses lintas aplikasi wajib tetap sinkron dengan [docs/ACCESS_STATUS_MATRIX.md](ACCESS_STATUS_MATRIX.md).
 
+### Timezone dan display kuota
+
+- `APP_TIMEZONE` adalah source of truth tunggal untuk waktu lokal aplikasi. Offset dan label runtime harus diturunkan dari konfigurasi ini, bukan dari hardcode `UTC+7` atau `UTC+8` yang tersebar.
+- Semua render tanggal/jam untuk UI, PDF, invoice, admin context, task reminder, dan payload WhatsApp wajib memakai helper terpusat di `backend/app/utils/formatters.py`, terutama `get_app_local_datetime()`, `format_app_datetime_display()`, `get_app_timezone_label()`, dan helper terkait.
+- Helper kompatibilitas lama seperti `format_datetime_to_wita()` boleh tetap dipakai oleh call-site lama, tetapi implementasinya harus tetap mengikuti timezone aplikasi aktif.
+- Tampilan kuota user-facing dalam GB harus memakai helper bersama `format_mb_to_gb()` agar output `xx.xx GB` konsisten di semua kanal.
+- Jangan mengubah arithmetic domain kuota seperti `bytes_total`, `limit_bytes_total`, perhitungan MB/bytes enforcement, atau logika sinkronisasi counter menjadi helper display. Display formatting dan arithmetic runtime harus tetap dipisahkan.
+
 ### Payment dan transaksi
 
 - Midtrans mendukung mode `snap` dan `core_api`; frontend hanya memuat Snap.js saat benar-benar dibutuhkan.
@@ -132,6 +140,7 @@ Variabel yang paling sensitif terhadap perilaku runtime:
 - Jalur admin `PUT /api/admin/users/{id}` adalah boundary resmi untuk debt manual. Payload `debt_date` wajib lolos validasi schema dan akan dinormalisasi ke `date`; due date debt manual dihitung otomatis ke akhir bulan untuk flow paket maupun `debt_add_mb`.
 - Schema admin user create/update dapat mengembalikan `blok` dan `kamar` sebagai enum Pydantic. Sebelum menyentuh model SQLAlchemy `User`, nilai itu wajib dinormalisasi kembali ke string storage (`A`, `Kamar_1`, dst.) agar flush Postgres tidak gagal dengan `can't adapt type 'UserBlok'` atau `UserKamar`.
 - Normalisasi tampilan tanggal wajib memakai helper terpusat di `backend/app/utils/formatters.py`: `format_app_date_display()` untuk tanggal dan `format_app_datetime_display()` untuk datetime. Untuk JSON/API, pertahankan field raw ISO/`yyyy-mm-dd` bila masih dipakai sorting/parsing, lalu tambahkan field `*_display` berformat `dd-mm-yyyy` atau `dd-mm-yyyy HH:MM:SS` untuk konsumsi UI/report/WA context.
+- Untuk payload `user_debt_added`, timestamp header dan detail item harus melalui helper timezone yang sama. Jangan lagi mengonversi detail item dengan WIB/WITA hardcoded karena itu mudah menciptakan selisih jam antarbagian pesan.
 
 ## Aturan Saat Mengubah Kode
 
@@ -140,6 +149,7 @@ Variabel yang paling sensitif terhadap perilaku runtime:
 - Perubahan auth, captive, quota, device, atau payment flow wajib menjalankan focused tests yang relevan.
 - Perubahan endpoint prioritas wajib sinkron dengan OpenAPI, typed contract, dan [docs/API_DETAIL.md](API_DETAIL.md).
 - Perubahan deploy, backup, atau operasi produksi wajib memperbarui [docs/workflows/PRODUCTION_OPERATIONS.md](workflows/PRODUCTION_OPERATIONS.md).
+- Perubahan terkait timezone, format tanggal, atau representasi kuota user-facing wajib memperjelas di dokumentasi apakah perubahan tersebut hanya display atau juga menyentuh arithmetic/runtime semantics.
 
 ## Dokumen Pendamping
 
@@ -147,10 +157,12 @@ Variabel yang paling sensitif terhadap perilaku runtime:
 - [docs/API_DETAIL.md](API_DETAIL.md)
 - [docs/VUEXY_BASELINE_STRATEGY.md](VUEXY_BASELINE_STRATEGY.md)
 - [docs/devlogs/README.md](devlogs/README.md)
+- [docs/devlogs/2026-03-21-timezone-centralization-and-release-ops.md](devlogs/2026-03-21-timezone-centralization-and-release-ops.md)
 - [docs/devlogs/2026-03-18-holistic-audit-penyempurnaan.md](devlogs/2026-03-18-holistic-audit-penyempurnaan.md)
 - [docs/devlogs/2026-03-17-hotspot-portal-trust-hardening.md](devlogs/2026-03-17-hotspot-portal-trust-hardening.md)
 - [docs/devlogs/2026-03-17-hotspot-sync-hardening.md](devlogs/2026-03-17-hotspot-sync-hardening.md)
 - [docs/incidents/README.md](incidents/README.md)
+- [docs/incidents/2026-03-21-recreate-healthcheck-false-negative.md](incidents/2026-03-21-recreate-healthcheck-false-negative.md)
 - [docs/incidents/2026-03-17-foreign-hotspot-context.md](incidents/2026-03-17-foreign-hotspot-context.md)
 - [docs/incidents/2026-03-17-stale-quota-sync-lock.md](incidents/2026-03-17-stale-quota-sync-lock.md)
 - [docs/workflows/OPENAPI_CONTRACT.md](workflows/OPENAPI_CONTRACT.md)

@@ -6,6 +6,8 @@ from http import HTTPStatus
 
 from flask import abort, current_app, make_response, render_template, request
 
+from app.utils.formatters import get_app_timezone_label, get_app_timezone_offset_hours
+
 
 def _format_dt_local(value: datetime | None, *, get_local_tz, with_seconds: bool = False) -> str:
     if not value:
@@ -16,9 +18,9 @@ def _format_dt_local(value: datetime | None, *, get_local_tz, with_seconds: bool
         local_tz = get_local_tz()
         local_dt = value.astimezone(local_tz)
         fmt = '%d %b %Y %H:%M:%S' if with_seconds else '%d %b %Y %H:%M'
-        offset_hours = int(current_app.config.get('APP_TIMEZONE_OFFSET', 8) or 8)
+        offset_hours = get_app_timezone_offset_hours(value)
         sign = '+' if offset_hours >= 0 else '-'
-        tz_label = current_app.config.get('APP_TIMEZONE_LABEL') or 'WITA'
+        tz_label = get_app_timezone_label(value)
         return f"{local_dt.strftime(fmt)} {tz_label} (UTC{sign}{abs(offset_hours)})"
     except Exception:
         try:

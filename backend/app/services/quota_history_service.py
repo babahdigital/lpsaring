@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from app.extensions import db
 from app.infrastructure.db.models import QuotaMutationLedger, User
-from app.utils.formatters import get_app_local_datetime, get_app_timezone_name, round_mb
+from app.utils.formatters import format_mb_to_gb, get_app_local_datetime, get_app_timezone_name, round_mb
 
 
 def _as_float(value: Any) -> Optional[float]:
@@ -61,8 +61,7 @@ def _format_quota_text(value_mb: Optional[float], *, signed: bool = False) -> Op
     if value < 1:
         return f"{sign}{int(round(value * 1024))} KB"
     if value >= 1024:
-        gb_value = value / 1024.0
-        return f"{sign}{gb_value:.2f} GB"
+        return f"{sign}{format_mb_to_gb(value)}"
     return f"{sign}{int(round(value))} MB"
 
 

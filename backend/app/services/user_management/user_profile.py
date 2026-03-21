@@ -19,6 +19,7 @@ from app.infrastructure.db.models import (
     PromoEventStatus,
 )
 from app.utils.formatters import (
+    format_mb_to_gb,
     format_to_local_phone,
     get_app_local_datetime,
     get_app_date_time_strings,
@@ -159,7 +160,6 @@ def _build_debt_detail_snapshot(user: User) -> Dict[str, Any]:
         "total_price_rp_display": "–",
     }
     try:
-        WIB = dt_timezone(timedelta(hours=7))
         debts = (
             db.session.query(UserQuotaDebt)
             .filter(
@@ -177,7 +177,7 @@ def _build_debt_detail_snapshot(user: User) -> Dict[str, Any]:
         for i, d in enumerate(debts, 1):
             try:
                 remaining_mb = max(0, int(d.amount_mb or 0) - int(d.paid_mb or 0))
-                remaining_gb = remaining_mb / 1024.0
+                remaining_gb_text = format_mb_to_gb(remaining_mb)
 
                 created_at_value = _coerce_datetime_value(getattr(d, "created_at", None))
                 debt_date_value = _coerce_date_value(getattr(d, "debt_date", None))
@@ -189,10 +189,7 @@ def _build_debt_detail_snapshot(user: User) -> Dict[str, Any]:
                 time_str = ""
                 if created_at_value:
                     try:
-                        localized_created_at = created_at_value
-                        if localized_created_at.tzinfo is None:
-                            localized_created_at = localized_created_at.replace(tzinfo=dt_timezone.utc)
-                        time_str = " " + localized_created_at.astimezone(WIB).strftime("%H:%M")
+                        time_str = " " + get_app_local_datetime(created_at_value).strftime("%H:%M")
                     except Exception:
                         pass
 
@@ -203,7 +200,7 @@ def _build_debt_detail_snapshot(user: User) -> Dict[str, Any]:
                     price_part = " | Rp " + f"{item_price_rp:,}".replace(",", ".")
 
                 note_part = _extract_debt_note_part(getattr(d, "note", None))
-                lines.append(f"{i}. {date_str}{time_str} \u2014 {remaining_gb:.2f} GB{price_part}{note_part}")
+                lines.append(f"{i}. {date_str}{time_str} \u2014 {remaining_gb_text}{price_part}{note_part}")
             except Exception:
                 snapshot["degraded"] = True
                 snapshot["invalid_items"] = int(snapshot["invalid_items"] or 0) + 1
@@ -244,7 +241,7 @@ def _build_debt_detail_lines(user: User) -> str:
 
     Format tiap baris:
       {no}. {tgl} {jam} — {sisa_gb} GB | Rp {harga} | {nama_paket}
-    Waktu diambil dari created_at dan dikonversi ke WIB (UTC+7).
+        Waktu diambil dari created_at dan dikonversi ke zona waktu aplikasi.
     """
     return str(_build_debt_detail_snapshot(user).get("lines") or "(Tidak ada rincian)")
 
@@ -848,17 +845,17 @@ def update_user_by_admin_comprehensive(
                         "package_name": _pkg_name,
                         "price_rp_display": _price_rp_display,
                         "debt_mb": int(debt_add_mb_pkg),
-                        "debt_gb": f"{(float(debt_add_mb_pkg) / 1024.0):.2f} GB",
+                        "debt_gb": format_mb_to_gb(debt_add_mb_pkg),
                         "total_debt_mb": int(total_debt_mb),
-                        "total_debt_gb": f"{(total_debt_mb / 1024.0):.2f} GB",
+                        "total_debt_gb": format_mb_to_gb(total_debt_mb),
                         "total_manual_debt_mb": int(total_manual_debt_mb),
-                        "total_manual_debt_gb": f"{(float(total_manual_debt_mb) / 1024.0):.2f} GB",
+                        "total_manual_debt_gb": format_mb_to_gb(total_manual_debt_mb),
                         "total_manual_debt_amount_rp": _total_manual_debt_amount_rp,
                         "total_manual_debt_amount_display": _total_manual_debt_amount_display,
                         "auto_debt_deducted_mb": int(auto_deducted_mb),
-                        "auto_debt_deducted_gb": f"{(float(auto_deducted_mb) / 1024.0):.2f} GB",
+                        "auto_debt_deducted_gb": format_mb_to_gb(auto_deducted_mb),
                         "effective_quota_mb": int(effective_quota_mb),
-                        "effective_quota_gb": f"{(float(effective_quota_mb) / 1024.0):.2f} GB",
+                        "effective_quota_gb": format_mb_to_gb(effective_quota_mb),
                         "debt_detail_lines": _debt_detail_lines_pkg,
                         "_debt_detail_degraded": bool(_debt_detail_snapshot_pkg.get("degraded")),
                         "_debt_detail_invalid_items": int(_debt_detail_snapshot_pkg.get("invalid_items") or 0),
@@ -958,17 +955,17 @@ def update_user_by_admin_comprehensive(
                         "package_name": "Tunggakan Manual",
                         "price_rp_display": "–",
                         "debt_mb": int(debt_add_mb),
-                        "debt_gb": f"{(float(debt_add_mb) / 1024.0):.2f} GB",
+                        "debt_gb": format_mb_to_gb(debt_add_mb),
                         "total_debt_mb": int(total_debt_mb),
-                        "total_debt_gb": f"{(total_debt_mb / 1024.0):.2f} GB",
+                        "total_debt_gb": format_mb_to_gb(total_debt_mb),
                         "total_manual_debt_mb": int(total_manual_debt_mb),
-                        "total_manual_debt_gb": f"{(float(total_manual_debt_mb) / 1024.0):.2f} GB",
+                        "total_manual_debt_gb": format_mb_to_gb(total_manual_debt_mb),
                         "total_manual_debt_amount_rp": _total_manual_debt_amount_rp,
                         "total_manual_debt_amount_display": _total_manual_debt_amount_display,
                         "auto_debt_deducted_mb": int(auto_deducted_mb),
-                        "auto_debt_deducted_gb": f"{(float(auto_deducted_mb) / 1024.0):.2f} GB",
+                        "auto_debt_deducted_gb": format_mb_to_gb(auto_deducted_mb),
                         "effective_quota_mb": int(effective_quota_mb),
-                        "effective_quota_gb": f"{(float(effective_quota_mb) / 1024.0):.2f} GB",
+                        "effective_quota_gb": format_mb_to_gb(effective_quota_mb),
                         "debt_detail_lines": _debt_detail_lines_mb,
                         "_debt_detail_degraded": bool(_debt_detail_snapshot_mb.get("degraded")),
                         "_debt_detail_invalid_items": int(_debt_detail_snapshot_mb.get("invalid_items") or 0),

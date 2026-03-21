@@ -1607,7 +1607,7 @@ def _send_auto_debt_limit_warning_notification(user: User, *, debt_mb: float, li
     if not _should_send_auto_debt_warning_notification(redis_client, user_id=user.id, warning_key=warning_key):
         return
 
-    payload["warning_threshold_gb"] = f"{(warning_threshold / 1024.0):.2f} GB"
+    payload["warning_threshold_gb"] = format_mb_to_gb(warning_threshold)
 
     try:
         message = get_notification_message("user_quota_debt_warning", payload)

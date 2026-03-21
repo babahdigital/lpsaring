@@ -2,6 +2,7 @@
 
 Folder ini menyimpan ringkasan RCA insiden produksi atau near-miss yang perlu bisa ditelusuri ulang.
 
+- [2026-03-21 Recreate False Negative — Health Check Internal Gagal Padahal Stack Sudah Naik](2026-03-21-recreate-healthcheck-false-negative.md)
 - [2026-03-19 DHCP Static Lease Self-Heal Loop (28 lease konstan)](2026-03-19-dhcp-loop-self-heal.md)
 - [2026-03-19 Banking Deadlock — User Inactive Tidak Bisa Akses Mobile Banking](2026-03-19-banking-deadlock-inactive-users.md)
 - [2026-03-19 Deploy dari Image Stale — Commit Belum Di-push](2026-03-19-deploy-unpushed-commits.md)

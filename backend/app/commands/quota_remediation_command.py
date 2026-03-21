@@ -17,7 +17,7 @@ from app.services.quota_expiry_policy import calculate_quota_expiry_date
 from app.services.quota_mutation_ledger_service import append_quota_mutation_event, lock_user_quota_row, snapshot_user_quota_state
 from app.services.user_management.helpers import _send_whatsapp_notification
 from app.utils.block_reasons import is_auto_debt_limit_reason
-from app.utils.formatters import get_app_local_datetime, get_phone_number_variations
+from app.utils.formatters import format_mb_to_gb, get_app_local_datetime, get_phone_number_variations
 
 
 IMPORT_SOURCE = "quota.purchase_package.imported"
@@ -176,8 +176,7 @@ def _format_quota_display(value_mb: Any) -> str:
     if parsed is None:
         return str(value_mb or "-")
     if parsed >= 1024:
-        value_gb = parsed / 1024.0
-        return f"{value_gb:.2f} GB"
+        return format_mb_to_gb(parsed)
     if float(parsed).is_integer():
         return f"{int(parsed)} MB"
     return f"{parsed:.2f} MB"

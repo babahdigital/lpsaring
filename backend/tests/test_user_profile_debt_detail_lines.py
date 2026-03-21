@@ -32,7 +32,7 @@ def test_build_debt_detail_lines_accepts_string_dates_and_extracts_package_name(
         with patch("app.services.user_management.user_profile.db.session.query", return_value=query_mock):
             result = _build_debt_detail_lines(fake_user)
 
-    assert "21-03-2026 07:30" in result
+    assert "21-03-2026 08:30" in result
     assert "10.00 GB" in result
     assert "Rp 100.000" in result
     assert "Paket Hemat" in result
@@ -72,7 +72,7 @@ def test_build_debt_detail_lines_keeps_other_rows_when_one_row_is_invalid():
             result = _build_debt_detail_lines(fake_user)
 
     assert "1. Detail item sedang direkonsiliasi sistem" in result
-    assert "2. 19-03-2026 17:00" in result
+    assert "2. 19-03-2026 18:00" in result
     assert "19.00 GB" in result
     assert "Paket Pintar" in result
 

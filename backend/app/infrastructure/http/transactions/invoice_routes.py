@@ -1,5 +1,4 @@
 import uuid
-from datetime import datetime, timedelta, timezone as dt_timezone
 from http import HTTPStatus
 
 from flask import abort, current_app
@@ -7,6 +6,7 @@ from sqlalchemy.orm import selectinload
 from werkzeug.exceptions import HTTPException
 
 from app.infrastructure.db.models import Transaction, TransactionStatus, User
+from app.utils.formatters import get_app_local_datetime
 
 
 def get_transaction_invoice_impl(
@@ -44,7 +44,6 @@ def get_transaction_invoice_impl(
         if transaction.user is None:
             abort(HTTPStatus.INTERNAL_SERVER_ERROR, "Data pengguna transaksi tidak tersedia.")
 
-        app_tz = dt_timezone(timedelta(hours=int(current_app.config.get("APP_TIMEZONE_OFFSET", 8))))
         user_kamar_display = getattr(transaction.user, "kamar", None)
         if user_kamar_display and user_kamar_display.startswith("Kamar_"):
             user_kamar_display = user_kamar_display.replace("Kamar_", "")
@@ -57,7 +56,7 @@ def get_transaction_invoice_impl(
             "business_address": current_app.config.get("BUSINESS_ADDRESS", "Alamat Bisnis Anda"),
             "business_phone": current_app.config.get("BUSINESS_PHONE", "Telepon Bisnis Anda"),
             "business_email": current_app.config.get("BUSINESS_EMAIL", "Email Bisnis Anda"),
-            "invoice_date_local": datetime.now(app_tz),
+            "invoice_date_local": get_app_local_datetime(),
         }
 
         public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
@@ -116,7 +115,6 @@ def get_temp_transaction_invoice_impl(
         if transaction.user is None:
             abort(HTTPStatus.INTERNAL_SERVER_ERROR, "Data pengguna transaksi tidak tersedia.")
 
-        app_tz = dt_timezone(timedelta(hours=int(current_app.config.get("APP_TIMEZONE_OFFSET", 8))))
         kamar_value = getattr(transaction.user, "kamar", None)
         user_kamar_display = kamar_value.replace("Kamar_", "") if isinstance(kamar_value, str) and kamar_value else ""
         context = {
@@ -128,7 +126,7 @@ def get_temp_transaction_invoice_impl(
             "business_address": current_app.config.get("BUSINESS_ADDRESS", "Alamat Bisnis Anda"),
             "business_phone": current_app.config.get("BUSINESS_PHONE", "Telepon Bisnis Anda"),
             "business_email": current_app.config.get("BUSINESS_EMAIL", "Email Bisnis Anda"),
-            "invoice_date_local": datetime.now(app_tz),
+            "invoice_date_local": get_app_local_datetime(),
         }
 
         public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)

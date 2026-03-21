@@ -61,7 +61,7 @@ from app.services.user_management.helpers import _handle_mikrotik_operation
 from app.services.user_management.user_deletion import run_user_auth_cleanup
 from app.commands.sync_unauthorized_hosts_command import sync_unauthorized_hosts_command
 from app.utils.block_reasons import build_manual_debt_eom_reason
-from app.utils.formatters import format_to_local_phone, get_app_local_datetime, get_phone_number_variations
+from app.utils.formatters import format_mb_to_gb, format_to_local_phone, get_app_local_datetime, get_phone_number_variations
 from app.utils.metrics_utils import increment_metric
 from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package, format_rupiah
 
@@ -1323,12 +1323,8 @@ def send_manual_debt_reminders_task(self):
         if not enable_wa:
             return {"skipped": "whatsapp_disabled"}
 
-        try:
-            app_tz_offset = int(app.config.get("APP_TIMEZONE_OFFSET", 8))
-        except Exception:
-            app_tz_offset = 8
-        app_tz = dt_timezone(timedelta(hours=app_tz_offset))
-        now_local = datetime.now(app_tz)
+        now_local = get_app_local_datetime()
+        app_tz = now_local.tzinfo or dt_timezone.utc
         redis_client = getattr(app, "redis_client_otp", None)
 
         try:
@@ -1376,7 +1372,7 @@ def send_manual_debt_reminders_task(self):
                 summary["skipped_past"] += 1
                 continue
 
-            debt_gb_text = f"{float(debt.amount_mb) / 1024.0:.2f} GB"
+            debt_gb_text = format_mb_to_gb(debt.amount_mb)
             due_date_str = due_date.strftime("%d-%m-%Y")
 
             for stage_key, min_h, max_h, template_key in _STAGES:
@@ -1566,7 +1562,7 @@ def enforce_end_of_month_debt_block_task(self):
             estimate_rp_text = format_rupiah(int(estimate_rp)) if isinstance(estimate_rp, int) else "-"
 
             debt_mb_text = str(int(round(debt_mb)))
-            debt_gb_text = f"{float(debt_mb) / 1024.0:.2f} GB"
+            debt_gb_text = format_mb_to_gb(debt_mb)
 
             warned_ok = True
             if enable_wa:

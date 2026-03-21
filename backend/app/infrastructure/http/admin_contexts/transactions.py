@@ -288,9 +288,9 @@ def export_transactions_impl(
         period_rows = []
         if group_by != 'none':
             try:
-                offset_hours = int(current_app.config.get('APP_TIMEZONE_OFFSET', 8) or 8)
+                offset_hours = int(current_app.config.get('APP_TIMEZONE_OFFSET') or 0)
             except Exception:
-                offset_hours = 8
+                offset_hours = 0
             offset_hours = max(-12, min(offset_hours, 14))
             local_created = Transaction.created_at + sa.text(f"INTERVAL '{offset_hours} hours'")
 

@@ -117,18 +117,57 @@ def format_app_datetime_display(value: Any, fallback: str = "", include_seconds:
 
 
 def format_datetime_to_wita(dt_utc: Optional[datetime]) -> str:
-    """Mengonversi datetime UTC menjadi string WITA dengan format dd-mm-yyyy."""
+    """Alias kompatibilitas untuk format datetime di zona waktu aplikasi."""
     if not isinstance(dt_utc, datetime):
         return ""
     if dt_utc.tzinfo is None:
         dt_utc = dt_utc.replace(tzinfo=dt_timezone.utc)
-    wita_tz = ZoneInfo("Asia/Makassar")
-    dt_wita = dt_utc.astimezone(wita_tz)
-    return format_app_datetime(dt_wita, include_tz=True)
+    return format_app_datetime(get_app_local_datetime(dt_utc), include_tz=True)
 
 
 def get_app_timezone_name() -> str:
     return os.environ.get("APP_TIMEZONE", "Asia/Makassar")
+
+
+def get_app_timezone() -> ZoneInfo | dt_timezone:
+    tz_name = get_app_timezone_name()
+    try:
+        return ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        return dt_timezone.utc
+
+
+def get_app_timezone_offset_hours(dt_utc: Optional[datetime] = None) -> int:
+    if dt_utc is None:
+        dt_utc = datetime.now(dt_timezone.utc)
+    if dt_utc.tzinfo is None:
+        dt_utc = dt_utc.replace(tzinfo=dt_timezone.utc)
+    offset = dt_utc.astimezone(get_app_timezone()).utcoffset()
+    if offset is None:
+        return 0
+    return int(offset.total_seconds() // 3600)
+
+
+def get_app_timezone_label(dt_utc: Optional[datetime] = None) -> str:
+    explicit_label = (os.environ.get("APP_TIMEZONE_LABEL") or "").strip()
+    if explicit_label:
+        return explicit_label
+
+    tz_name = get_app_timezone_name()
+    common_labels = {
+        "Asia/Jakarta": "WIB",
+        "Asia/Makassar": "WITA",
+        "Asia/Jayapura": "WIT",
+    }
+    if tz_name in common_labels:
+        return common_labels[tz_name]
+
+    if dt_utc is None:
+        dt_utc = datetime.now(dt_timezone.utc)
+    if dt_utc.tzinfo is None:
+        dt_utc = dt_utc.replace(tzinfo=dt_timezone.utc)
+    label = dt_utc.astimezone(get_app_timezone()).tzname()
+    return str(label or tz_name)
 
 
 def get_app_local_datetime(dt_utc: Optional[datetime] = None) -> datetime:
@@ -136,12 +175,7 @@ def get_app_local_datetime(dt_utc: Optional[datetime] = None) -> datetime:
         dt_utc = datetime.now(dt_timezone.utc)
     if dt_utc.tzinfo is None:
         dt_utc = dt_utc.replace(tzinfo=dt_timezone.utc)
-    tz_name = get_app_timezone_name()
-    try:
-        tz = ZoneInfo(tz_name)
-    except ZoneInfoNotFoundError:
-        tz = dt_timezone.utc
-    return dt_utc.astimezone(tz)
+    return dt_utc.astimezone(get_app_timezone())
 
 
 def get_app_date_time_strings(dt_utc: Optional[datetime] = None) -> tuple[str, str]:

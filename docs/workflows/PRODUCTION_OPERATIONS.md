@@ -35,6 +35,8 @@ Semua command operasional app stack harus memakai prefix ini.
 ./deploy_pi.sh --detach-local --recreate
 ```
 
+Jika `--recreate` pertama berakhir dengan RC non-zero tetapi stack app tampak sudah naik, jangan langsung rollback. Verifikasi dulu apakah kegagalannya hanya berasal dari health check internal lama terhadap `global-nginx-proxy`, lalu cek image runtime, `/login`, dan asset `_nuxt` sebelum memutuskan rerun. RCA detail: `docs/incidents/2026-03-21-recreate-healthcheck-false-negative.md`.
+
 ### Deploy dengan sync nginx config
 
 ```bash
@@ -104,6 +106,11 @@ docker exec global-nginx-proxy wget -T 10 -qO- \
   http://127.0.0.1/api/ping
 ```
 
+Catatan interpretasi:
+
+- `GET /api/ping` dari host/proxy lokal bisa mengembalikan `200` atau `429` karena rate limit. Keduanya cukup untuk membuktikan nginx + backend hidup.
+- Jangan jadikan satu probe `api/ping` sebagai satu-satunya penentu deploy sukses. Selalu kombinasikan dengan pengecekan `/login`, satu asset `/_nuxt/...`, dan status container sehat.
+
 Cek tambahan yang umum dipakai:
 
 - halaman `/login`
@@ -163,6 +170,7 @@ ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@159.89.192.31 \
 4. Simpan stdout/stderr command panjang ke file lokal `tmp/` bila perlu forensik; jangan jadikan wrapper terminal sebagai source of truth tunggal.
 5. Lakukan health check publik dan container.
 6. Jalankan parity audit dari backend dan tunggu minimal satu full run `sync_hotspot_usage_task` berikutnya.
+7. Jika recreate pertama gagal di health check tetapi kontainer backend/frontend sebenarnya sudah hidup, bandingkan image container yang berjalan dengan image `latest` di host sebelum rerun. Rerun `./deploy_pi.sh --detach-local --recreate` hanya setelah gap image/healthcheck itu jelas.
 
 ### Ekspektasi runtime yang sehat
 

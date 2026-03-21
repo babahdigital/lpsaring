@@ -3,7 +3,7 @@
 
 import os
 import uuid
-from datetime import datetime, timedelta, timezone as dt_timezone
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
@@ -21,7 +21,7 @@ from app.services.transaction_status_link_service import generate_transaction_st
 from app.services import settings_service as _settings_service
 
 # from app.infrastructure.gateways.whatsapp_client import send_whatsapp_with_pdf # Tidak lagi dipanggil langsung
-from app.utils.formatters import format_to_local_phone
+from app.utils.formatters import format_to_local_phone, get_app_local_datetime, get_app_timezone_label
 from .decorators import token_required
 from .transactions.helpers import (
     _encode_uuid_base32,
@@ -113,10 +113,8 @@ def format_datetime_short(value: datetime) -> str:
     if not isinstance(value, datetime):
         return ""
     try:
-        app_tz_offset = int(current_app.config.get("APP_TIMEZONE_OFFSET", 8))
-        app_tz = dt_timezone(timedelta(hours=app_tz_offset))
-        local_dt = value.astimezone(app_tz)
-        return local_dt.strftime("%d %b %Y, %H:%M WITA")
+        local_dt = get_app_local_datetime(value)
+        return local_dt.strftime(f"%d %b %Y, %H:%M {get_app_timezone_label(value)}")
     except Exception:
         return "Invalid Date"
 

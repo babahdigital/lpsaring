@@ -4,6 +4,8 @@ import sys
 from dotenv import dotenv_values
 import warnings
 import ast
+from datetime import datetime, timezone as dt_timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 # --- Pemuatan File .env (multi-file overlay) ---
 # Tujuan:
@@ -148,6 +150,38 @@ def get_env_list(var_name, default="[]"):
         f"PERINGATAN: Tidak dapat mem-parse {var_name} ('{val_str}') sebagai list. Menggunakan default: {default}"
     )
     return [] if default == "[]" else default
+
+
+def _resolve_app_timezone_offset_hours(tz_name: str, default: int = 8) -> int:
+    try:
+        now_local = datetime.now(ZoneInfo(tz_name))
+        offset = now_local.utcoffset()
+        if offset is None:
+            return default
+        return int(offset.total_seconds() // 3600)
+    except (ZoneInfoNotFoundError, ValueError, OSError):
+        return default
+
+
+def _resolve_app_timezone_label(tz_name: str) -> str:
+    explicit_label = (os.environ.get("APP_TIMEZONE_LABEL") or "").strip()
+    if explicit_label:
+        return explicit_label
+
+    common_labels = {
+        "Asia/Jakarta": "WIB",
+        "Asia/Makassar": "WITA",
+        "Asia/Jayapura": "WIT",
+    }
+    if tz_name in common_labels:
+        return common_labels[tz_name]
+
+    try:
+        tz = ZoneInfo(tz_name)
+        label = datetime.now(dt_timezone.utc).astimezone(tz).tzname()
+        return str(label or tz_name)
+    except (ZoneInfoNotFoundError, ValueError, OSError):
+        return "UTC"
 
 
 class Config:
@@ -556,6 +590,8 @@ class Config:
     CORS_ADDITIONAL_ORIGINS = get_env_list("CORS_ADDITIONAL_ORIGINS", "[]")
     APP_LOCALE = os.environ.get("APP_LOCALE", "id_ID.UTF-8")
     APP_TIMEZONE = os.environ.get("APP_TIMEZONE", "Asia/Makassar")
+    APP_TIMEZONE_OFFSET = _resolve_app_timezone_offset_hours(APP_TIMEZONE)
+    APP_TIMEZONE_LABEL = _resolve_app_timezone_label(APP_TIMEZONE)
     CURRENCY_SYMBOL = os.environ.get("CURRENCY_SYMBOL", "Rp ")
     JINJA_DATETIME_FORMAT = os.environ.get("JINJA_DATETIME_FORMAT", "%d/%m/%y %H:%M")
     JINJA_DATETIME_SHORT_FORMAT = os.environ.get("JINJA_DATETIME_SHORT_FORMAT", "%b %d, %Y")

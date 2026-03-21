@@ -8,6 +8,21 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Fixed (2026-03-21 — Timezone Centralization, Debt WA Accuracy, dan Release Ops)
+
+- **Timestamp rincian tunggakan WhatsApp kini konsisten dengan zona waktu aplikasi:** jalur `user_debt_added` sebelumnya masih mengonversi `created_at` detail item ke WIB hardcoded `UTC+7`, sementara header notifikasi sudah mengikuti `APP_TIMEZONE`. Rincian debt sekarang ikut memakai helper terpusat `get_app_local_datetime()`, sehingga produksi `Asia/Makassar` tidak lagi menampilkan selisih satu jam antara header dan baris detail.
+- **Sumber kebenaran timezone kini dipusatkan di konfigurasi aplikasi:** `backend/config.py` sekarang menurunkan `APP_TIMEZONE_OFFSET` dan `APP_TIMEZONE_LABEL` langsung dari `APP_TIMEZONE`, dan `backend/app/utils/formatters.py` menyediakan helper `get_app_timezone()`, `get_app_timezone_offset_hours()`, `get_app_timezone_label()`, serta alias kompatibilitas `format_datetime_to_wita()` yang kini mengikuti timezone aplikasi, bukan WITA hardcoded.
+- **Display admin, transaksi, invoice, dan reminder debt tidak lagi bergantung pada offset manual yang tersebar:** beberapa jalur HTTP/admin/task kini memakai helper timezone yang sama untuk format tanggal dan label zona waktu. Ini menutup drift antar halaman, invoice, dan notifikasi ketika timezone aplikasi berubah atau saat runtime memakai timezone selain default historis.
+- **Normalisasi tampilan GB dipusatkan untuk jalur user-facing tanpa mengubah quota math mentah:** string seperti `xx.xx GB` di WhatsApp, reminder debt, notifikasi kuota, riwayat mutasi kuota, dan command remediation kini memakai helper `format_mb_to_gb()`. Aritmetika enforcement seperti `bytes_total`, `limit_bytes_total`, dan kalkulasi MB/bytes tetap dipertahankan apa adanya agar logika kuota tidak bergeser.
+- **Tambahan total nominal tunggakan di template WA admin debt tetap dipertahankan dan diuji bersama batch ini:** payload `user_debt_added` sekarang membawa total kuota debt, total debt manual, auto debt deducted, effective quota, dan total nominal rupiah dengan format waktu/GB yang konsisten.
+- **Deploy recreate produksi sudah diverifikasi memakai image terbaru setelah publish Docker selesai:** recreate pertama sempat berakhir RC=1 karena health check internal lama terhadap `global-nginx-proxy` timeout, meski stack sebenarnya sudah hidup. Rerun recreate berikutnya sukses penuh (`RC=0`) dan verifikasi image menunjukkan container backend/frontend yang berjalan sudah cocok dengan tag `latest` hasil publish.
+
+### Documentation (2026-03-21)
+
+- `docs/devlogs/2026-03-21-timezone-centralization-and-release-ops.md` — kronologi detail perubahan debt WA, sentralisasi timezone, normalisasi GB display, validasi backend/frontend, commit/publish/deploy, dan hasil verifikasi produksi.
+- `docs/incidents/2026-03-21-recreate-healthcheck-false-negative.md` — RCA near-miss saat `deploy_pi.sh --recreate` pertama mengembalikan RC=1 walaupun stack app sudah sehat karena probe internal `global-nginx-proxy` menghasilkan false negative.
+- `docs/REFERENCE_PENGEMBANGAN.md` dan `docs/workflows/PRODUCTION_OPERATIONS.md` diperbarui agar policy timezone, policy normalisasi GB display, dan langkah verifikasi pascadeploy mengikuti baseline terbaru.
+
 ### Fixed (2026-03-21 — Manual Debt WA Detail Robustness)
 
 - **Rincian tunggakan WA tidak lagi jatuh ke fallback saat nilai tanggal masih berupa string di session ORM:** helper `_build_debt_detail_lines()` kini meng-coerce `debt_date`/`created_at` dari `date`, `datetime`, atau `str`, fallback ke tanggal `created_at` bila perlu, dan memproses item per-row agar satu record rusak tidak menghilangkan seluruh daftar rincian. Ditambahkan regression test untuk kasus string date dan row invalid campuran.
