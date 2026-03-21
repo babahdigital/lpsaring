@@ -304,6 +304,7 @@ const tablerIcons = [
   'users-group',
   'user-shield',
   'user-x',
+  'user-share',
   'volume',
   'volume-2',
   'volume-off',
