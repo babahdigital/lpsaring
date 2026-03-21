@@ -398,9 +398,12 @@ def _format_detail_address_label(user: User) -> str:
     return "-"
 
 
-def _build_user_manual_debt_payload(user: User) -> dict[str, object]:
-    cutoff_datetime = datetime.now(dt_timezone.utc) - timedelta(days=30)
-    cutoff_date = cutoff_datetime.date()
+def _build_user_manual_debt_payload(user: User, *, max_age_days: int | None = None) -> dict[str, object]:
+    cutoff_datetime = None
+    cutoff_date = None
+    if max_age_days is not None and max_age_days > 0:
+        cutoff_datetime = datetime.now(dt_timezone.utc) - timedelta(days=max_age_days)
+        cutoff_date = cutoff_datetime.date()
 
     debts = db.session.scalars(
         select(UserQuotaDebt)
@@ -428,18 +431,19 @@ def _build_user_manual_debt_payload(user: User) -> dict[str, object]:
     paid_count = 0
 
     for debt in debts:
-        debt_date_value = getattr(debt, "debt_date", None)
-        created_at_value = getattr(debt, "created_at", None)
-        include_item = False
+        if cutoff_datetime is not None and cutoff_date is not None:
+            debt_date_value = getattr(debt, "debt_date", None)
+            created_at_value = getattr(debt, "created_at", None)
+            include_item = False
 
-        if isinstance(debt_date_value, date):
-            include_item = debt_date_value >= cutoff_date
-        elif isinstance(created_at_value, datetime):
-            normalized_created_at = created_at_value if created_at_value.tzinfo else created_at_value.replace(tzinfo=dt_timezone.utc)
-            include_item = normalized_created_at >= cutoff_datetime
+            if isinstance(debt_date_value, date):
+                include_item = debt_date_value >= cutoff_date
+            elif isinstance(created_at_value, datetime):
+                normalized_created_at = created_at_value if created_at_value.tzinfo else created_at_value.replace(tzinfo=dt_timezone.utc)
+                include_item = normalized_created_at >= cutoff_datetime
 
-        if not include_item:
-            continue
+            if not include_item:
+                continue
 
         amount = int(getattr(debt, "amount_mb", 0) or 0)
         paid_mb = int(getattr(debt, "paid_mb", 0) or 0)
@@ -728,7 +732,13 @@ def _get_user_mikrotik_status_payload(user: User) -> dict:
     }
 
 
-def _build_user_detail_report_context(user: User, *, mikrotik_status: dict | None = None) -> dict:
+def _build_user_detail_report_context(
+    user: User,
+    *,
+    mikrotik_status: dict | None = None,
+    debt_max_age_days: int | None = None,
+    purchase_window_days: int | None = 365,
+) -> dict:
     status_payload = mikrotik_status or _get_user_mikrotik_status_payload(user)
     live_available = bool(status_payload.get("live_available"))
     exists_on_mikrotik = bool(status_payload.get("exists_on_mikrotik"))
@@ -755,7 +765,7 @@ def _build_user_detail_report_context(user: User, *, mikrotik_status: dict | Non
     debt_auto_mb = float(getattr(user, "quota_debt_auto_mb", 0) or 0)
     debt_manual_mb = int(getattr(user, "quota_debt_manual_mb", getattr(user, "manual_debt_mb", 0)) or 0)
     debt_total_mb = float(getattr(user, "quota_debt_total_mb", debt_auto_mb + debt_manual_mb) or 0)
-    manual_debt_payload = _build_user_manual_debt_payload(user)
+    manual_debt_payload = _build_user_manual_debt_payload(user, max_age_days=debt_max_age_days)
     manual_debt_items_value = manual_debt_payload.get("items")
     manual_debt_summary_value = manual_debt_payload.get("summary")
     manual_debt_items = manual_debt_items_value if isinstance(manual_debt_items_value, list) else []
@@ -764,14 +774,16 @@ def _build_user_detail_report_context(user: User, *, mikrotik_status: dict | Non
     paid_debt_items = int(manual_debt_summary.get("paid_items") or 0)
     total_manual_debt_items = int(manual_debt_summary.get("total_items") or 0)
 
-    cutoff = datetime.now(dt_timezone.utc) - timedelta(days=30)
-    purchase_rows = db.session.scalars(
+    purchase_stmt = (
         select(Transaction)
         .where(Transaction.user_id == user.id, Transaction.status == TransactionStatus.SUCCESS)
-        .where(sa.func.coalesce(Transaction.payment_time, Transaction.created_at) >= cutoff)
         .order_by(sa.func.coalesce(Transaction.payment_time, Transaction.created_at).desc())
-        .limit(12)
-    ).all()
+        .limit(24)
+    )
+    if purchase_window_days is not None and purchase_window_days > 0:
+        cutoff = datetime.now(dt_timezone.utc) - timedelta(days=purchase_window_days)
+        purchase_stmt = purchase_stmt.where(sa.func.coalesce(Transaction.payment_time, Transaction.created_at) >= cutoff)
+    purchase_rows = db.session.scalars(purchase_stmt).all()
 
     recent_purchases: list[dict] = []
     recent_purchase_total_amount = 0
@@ -2283,7 +2295,12 @@ def get_user_detail_summary(current_admin: User, user_id: uuid.UUID):
 
     try:
         status_payload = _get_user_mikrotik_status_payload(user)
-        report_context = _build_user_detail_report_context(user, mikrotik_status=status_payload)
+        report_context = _build_user_detail_report_context(
+            user,
+            mikrotik_status=status_payload,
+            debt_max_age_days=None,
+            purchase_window_days=365,
+        )
         return jsonify(
             {
                 "mikrotik": {
@@ -2341,7 +2358,12 @@ def export_user_detail_report_pdf(current_admin: User, user_id: uuid.UUID):
 
     try:
         status_payload = _get_user_mikrotik_status_payload(user)
-        context = _build_user_detail_report_context(user, mikrotik_status=status_payload)
+        context = _build_user_detail_report_context(
+            user,
+            mikrotik_status=status_payload,
+            debt_max_age_days=30,
+            purchase_window_days=30,
+        )
         public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
         pdf_bytes = _render_user_detail_report_pdf_bytes(context, public_base_url)
         safe_phone = (getattr(user, "phone_number", "") or "").replace("+", "")
@@ -2396,7 +2418,12 @@ def export_user_detail_report_pdf_temp(token: str):
 
     try:
         status_payload = _get_user_mikrotik_status_payload(user)
-        context = _build_user_detail_report_context(user, mikrotik_status=status_payload)
+        context = _build_user_detail_report_context(
+            user,
+            mikrotik_status=status_payload,
+            debt_max_age_days=30,
+            purchase_window_days=30,
+        )
         public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
         pdf_bytes = _render_user_detail_report_pdf_bytes(context, public_base_url)
         safe_phone = (getattr(user, "phone_number", "") or "").replace("+", "")
@@ -2428,7 +2455,12 @@ def send_user_detail_report_whatsapp(current_admin: User, user_id: uuid.UUID):
 
     try:
         status_payload = _get_user_mikrotik_status_payload(user)
-        report_context = _build_user_detail_report_context(user, mikrotik_status=status_payload)
+        report_context = _build_user_detail_report_context(
+            user,
+            mikrotik_status=status_payload,
+            debt_max_age_days=30,
+            purchase_window_days=30,
+        )
 
         base_url = _resolve_public_base_url()
         if not base_url:

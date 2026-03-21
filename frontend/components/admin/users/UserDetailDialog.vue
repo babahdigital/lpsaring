@@ -729,7 +729,7 @@ function onClose() {
 
           <VSheet v-if="debtBreakdownRows.length > 0" rounded="lg" border class="pa-3 mt-4">
             <div class="text-overline mb-2">
-              Rincian Tunggakan Sistem 30 Hari Terakhir
+              Rincian Tunggakan Sistem
             </div>
             <VTable density="compact" class="admin-user-detail__debtBreakdownTable">
               <thead>
@@ -759,10 +759,10 @@ function onClose() {
             <div class="admin-user-detail__debtHead">
               <div>
                 <div class="text-overline">
-                  Riwayat Tunggakan Manual 30 Hari Terakhir
+                  Riwayat Tunggakan Manual
                 </div>
                 <div class="text-caption text-medium-emphasis">
-                  Jalankan tindak lanjut debt 30 hari terakhir tanpa berpindah ke dialog edit pengguna.
+                  Jalankan tindak lanjut debt tanpa berpindah ke dialog edit pengguna.
                 </div>
               </div>
               <div class="admin-user-detail__debtActions">
@@ -851,7 +851,7 @@ function onClose() {
         <template v-if="hasRecentPurchases">
           <VDivider class="my-4" />
           <div class="text-overline mb-2">
-            Riwayat Pembelian 30 Hari Terakhir
+            Riwayat Pembelian 1 Tahun Terakhir
           </div>
           <VAlert v-if="detailSummaryLoading" type="info" variant="tonal" density="compact" class="mb-3">
             Memuat riwayat pembelian terbaru...

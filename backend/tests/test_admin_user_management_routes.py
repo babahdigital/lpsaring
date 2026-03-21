@@ -225,7 +225,7 @@ def test_get_user_detail_summary_returns_operational_payload(monkeypatch):
     monkeypatch.setattr(
         user_management_routes,
         "_build_user_detail_report_context",
-        lambda _user, mikrotik_status=None: {
+        lambda _user, mikrotik_status=None, **_kwargs: {
             "profile_display_name": "default",
             "profile_source": "Live MikroTik",
             "mikrotik_account_label": "Terverifikasi live di MikroTik",
@@ -292,7 +292,7 @@ def test_send_user_detail_report_whatsapp_queues_pdf(monkeypatch):
     monkeypatch.setattr(
         user_management_routes,
         "_build_user_detail_report_context",
-        lambda _user, mikrotik_status=None: {
+        lambda _user, mikrotik_status=None, **_kwargs: {
             "access_status_label": "Layanan aktif",
             "mikrotik_account_label": "Terverifikasi live di MikroTik",
             "profile_display_name": "default",
@@ -363,7 +363,7 @@ def test_send_user_detail_report_whatsapp_queues_selected_internal_recipients(mo
     monkeypatch.setattr(
         user_management_routes,
         "_build_user_detail_report_context",
-        lambda _user, mikrotik_status=None: {
+        lambda _user, mikrotik_status=None, **_kwargs: {
             "access_status_label": "Layanan aktif",
             "mikrotik_account_label": "Sinkron live",
             "profile_display_name": "Aktif",
@@ -644,7 +644,7 @@ def test_build_user_manual_debt_payload_excludes_entries_older_than_30_days(monk
 
     monkeypatch.setattr(user_management_routes, 'datetime', _FrozenDateTime)
 
-    payload = user_management_routes._build_user_manual_debt_payload(fake_user)
+    payload = user_management_routes._build_user_manual_debt_payload(fake_user, max_age_days=30)
 
     assert len(payload['items']) == 1
     assert payload['items'][0]['note'] == 'Debt terbaru'
