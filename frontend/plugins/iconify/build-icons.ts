@@ -172,6 +172,7 @@ const tablerIcons = [
   'device-mobile',
   'device-mobile-off',
   'devices',
+  'device-mobile-question',
   'discount',
   'discount-check',
   'door',

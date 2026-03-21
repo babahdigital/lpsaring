@@ -1,7 +1,7 @@
 # backend/app/infrastructure/http/admin/user_management_routes.py
 import uuid
 import re
-from datetime import datetime, timedelta, timezone as dt_timezone
+from datetime import date, datetime, timedelta, timezone as dt_timezone
 from flask import Blueprint, jsonify, request, current_app, make_response, render_template
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import OperationalError as SAOperationalError
@@ -79,6 +79,7 @@ from app.utils.block_reasons import is_debt_block_reason
 
 from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package
 from app.services.user_management import user_approval, user_deletion, user_profile as user_profile_service
+from app.services.access_policy_service import get_user_access_status
 
 user_management_bp = Blueprint("user_management_api", __name__)
 
@@ -291,21 +292,23 @@ def _humanize_detail_profile_name(user: User, raw_profile_name: str | None) -> s
         (settings_service.get_setting("MIKROTIK_PROFILE_USER", "user"), "Aktif"),
         (settings_service.get_setting("MIKROTIK_PROFILE_KOMANDAN", "komandan"), "Komandan"),
         (settings_service.get_setting("MIKROTIK_PROFILE_FUP", "fup"), "FUP"),
-        (settings_service.get_setting("MIKROTIK_PROFILE_HABIS", "habis"), "Kuota habis"),
-        (settings_service.get_setting("MIKROTIK_PROFILE_EXPIRED", "expired"), "Masa aktif habis"),
+        (settings_service.get_setting("MIKROTIK_PROFILE_HABIS", "habis"), "Habis"),
+        (settings_service.get_setting("MIKROTIK_PROFILE_EXPIRED", "expired"), "Habis"),
+        (settings_service.get_setting("MIKROTIK_BLOCKED_PROFILE", "blocked"), "Blokir"),
         (settings_service.get_setting("MIKROTIK_PROFILE_UNLIMITED", "unlimited"), "Unlimited"),
-        (settings_service.get_setting("MIKROTIK_PROFILE_INACTIVE", "inactive"), "Nonaktif"),
+        (settings_service.get_setting("MIKROTIK_PROFILE_INACTIVE", "inactive"), "Inactive"),
     ]:
         normalized = str(value or "").strip().lower()
         if normalized:
             alias_map[normalized] = label
 
     for needle, label in [
-        ("blocked", "Blocked"),
+        ("blocked", "Blokir"),
+        ("blokir", "Blokir"),
         ("fup", "FUP"),
-        ("habis", "Kuota habis"),
-        ("expired", "Masa aktif habis"),
-        ("inactive", "Nonaktif"),
+        ("habis", "Habis"),
+        ("expired", "Habis"),
+        ("inactive", "Inactive"),
         ("unlimited", "Unlimited"),
         ("komandan", "Komandan"),
         ("aktif", "Aktif"),
@@ -321,11 +324,11 @@ def _humanize_detail_profile_name(user: User, raw_profile_name: str | None) -> s
 
     if not lowered:
         if getattr(user, "is_blocked", False):
-            return "Blocked"
+            return "Blokir"
         if getattr(user, "is_unlimited_user", False):
             return "Unlimited"
         if getattr(user, "is_active", False) is not True:
-            return "Nonaktif"
+            return "Inactive"
         if getattr(user, "role", None) == UserRole.KOMANDAN:
             return "Komandan"
         return "Aktif"
@@ -393,6 +396,132 @@ def _format_detail_address_label(user: User) -> str:
     if kamar_value:
         return f"Kamar {kamar_value}"
     return "-"
+
+
+def _build_user_manual_debt_payload(user: User) -> dict[str, object]:
+    cutoff_datetime = datetime.now(dt_timezone.utc) - timedelta(days=30)
+    cutoff_date = cutoff_datetime.date()
+
+    debts = db.session.scalars(
+        select(UserQuotaDebt)
+        .where(UserQuotaDebt.user_id == user.id)
+        .order_by(
+            UserQuotaDebt.debt_date.desc().nulls_last(),
+            UserQuotaDebt.created_at.desc(),
+        )
+    ).all()
+
+    ref_packages = db.session.scalars(
+        select(Package)
+        .where(Package.is_active == True, Package.data_quota_gb > 0)
+        .order_by(Package.price.asc())
+    ).all()
+
+    def _pick_ref_pkg(amount_mb: int):
+        for package in ref_packages:
+            if float(package.data_quota_gb or 0) * 1024 >= amount_mb:
+                return package
+        return ref_packages[0] if ref_packages else None
+
+    items: list[dict] = []
+    open_count = 0
+    paid_count = 0
+
+    for debt in debts:
+        debt_date_value = getattr(debt, "debt_date", None)
+        created_at_value = getattr(debt, "created_at", None)
+        include_item = False
+
+        if isinstance(debt_date_value, date):
+            include_item = debt_date_value >= cutoff_date
+        elif isinstance(created_at_value, datetime):
+            normalized_created_at = created_at_value if created_at_value.tzinfo else created_at_value.replace(tzinfo=dt_timezone.utc)
+            include_item = normalized_created_at >= cutoff_datetime
+
+        if not include_item:
+            continue
+
+        amount = int(getattr(debt, "amount_mb", 0) or 0)
+        paid_mb = int(getattr(debt, "paid_mb", 0) or 0)
+        remaining = max(0, amount - paid_mb)
+        is_paid = bool(getattr(debt, "is_paid", False)) or remaining <= 0
+        if is_paid:
+            paid_count += 1
+        else:
+            open_count += 1
+
+        ref_pkg = _pick_ref_pkg(amount)
+        estimate = estimate_debt_rp_from_cheapest_package(
+            debt_mb=float(amount),
+            cheapest_package_price_rp=int(ref_pkg.price) if ref_pkg else None,
+            cheapest_package_quota_gb=float(ref_pkg.data_quota_gb) if ref_pkg else None,
+            cheapest_package_name=str(ref_pkg.name) if ref_pkg else None,
+        )
+
+        payload = UserQuotaDebtItemResponseSchema.from_orm(debt).model_dump()
+        payload["remaining_mb"] = int(remaining)
+        payload["is_paid"] = bool(is_paid)
+        payload["paid_mb"] = int(paid_mb)
+        payload["amount_mb"] = int(amount)
+        payload["estimated_rp"] = int(estimate.estimated_rp_rounded or 0)
+        items.append(payload)
+
+    return {
+        "items": items,
+        "summary": {
+            "manual_debt_mb": int(getattr(user, "quota_debt_manual_mb", getattr(user, "manual_debt_mb", 0)) or 0),
+            "open_items": int(open_count),
+            "paid_items": int(paid_count),
+            "total_items": int(len(items)),
+        },
+    }
+
+
+def _build_detail_access_status_meta(user: User) -> dict[str, str]:
+    status_key = str(get_user_access_status(user) or "inactive").strip().lower()
+
+    if status_key == "blocked":
+        return {
+            "access_status_key": "blocked",
+            "access_status_label": "Blokir",
+            "access_status_hint": str(getattr(user, "blocked_reason", "") or "Akses login ditolak sampai blokir dibuka.").strip(),
+            "access_status_tone": "error",
+        }
+    if status_key == "inactive":
+        return {
+            "access_status_key": "inactive",
+            "access_status_label": "Inactive",
+            "access_status_hint": "Akun tidak aktif atau belum disetujui.",
+            "access_status_tone": "secondary",
+        }
+    if status_key == "unlimited":
+        return {
+            "access_status_key": "unlimited",
+            "access_status_label": "Unlimited",
+            "access_status_hint": "Pengguna memakai akses tanpa batas kuota selama masa aktif berlaku.",
+            "access_status_tone": "success",
+        }
+    if status_key == "fup":
+        return {
+            "access_status_key": "fup",
+            "access_status_label": "FUP",
+            "access_status_hint": "Pengguna sudah masuk batas fair usage policy.",
+            "access_status_tone": "info",
+        }
+    if status_key in {"expired", "habis"}:
+        return {
+            "access_status_key": status_key,
+            "access_status_label": "Habis",
+            "access_status_hint": "Masa aktif atau kuota aktif pengguna sudah habis.",
+            "access_status_tone": "warning",
+        }
+
+    return {
+        "access_status_key": "active",
+        "access_status_label": "Aktif",
+        "access_status_hint": "Layanan internet aktif dan masih dapat digunakan.",
+        "access_status_tone": "success",
+    }
 
 
 def _serialize_detail_whatsapp_recipient(
@@ -626,9 +755,14 @@ def _build_user_detail_report_context(user: User, *, mikrotik_status: dict | Non
     debt_auto_mb = float(getattr(user, "quota_debt_auto_mb", 0) or 0)
     debt_manual_mb = int(getattr(user, "quota_debt_manual_mb", getattr(user, "manual_debt_mb", 0)) or 0)
     debt_total_mb = float(getattr(user, "quota_debt_total_mb", debt_auto_mb + debt_manual_mb) or 0)
-    open_debt_items = db.session.scalar(
-        select(func.count()).select_from(UserQuotaDebt).where(UserQuotaDebt.user_id == user.id, UserQuotaDebt.is_paid.is_(False))
-    ) or 0
+    manual_debt_payload = _build_user_manual_debt_payload(user)
+    manual_debt_items_value = manual_debt_payload.get("items")
+    manual_debt_summary_value = manual_debt_payload.get("summary")
+    manual_debt_items = manual_debt_items_value if isinstance(manual_debt_items_value, list) else []
+    manual_debt_summary = manual_debt_summary_value if isinstance(manual_debt_summary_value, dict) else {}
+    open_debt_items = int(manual_debt_summary.get("open_items") or 0)
+    paid_debt_items = int(manual_debt_summary.get("paid_items") or 0)
+    total_manual_debt_items = int(manual_debt_summary.get("total_items") or 0)
 
     cutoff = datetime.now(dt_timezone.utc) - timedelta(days=30)
     purchase_rows = db.session.scalars(
@@ -656,34 +790,35 @@ def _build_user_detail_report_context(user: User, *, mikrotik_status: dict | Non
             }
         )
 
-    if getattr(user, "is_blocked", False):
-        access_status_label = "Akses diblokir"
-        access_status_hint = str(getattr(user, "blocked_reason", "") or "Periksa alasan blokir pada catatan akun.").strip()
-        access_status_tone = "error"
-    elif getattr(user, "is_active", False) is not True:
-        access_status_label = "Akun nonaktif"
-        access_status_hint = "Akses hotspot dihentikan sampai akun diaktifkan kembali."
-        access_status_tone = "secondary"
-    elif getattr(user, "is_unlimited_user", False) is True:
-        access_status_label = "Unlimited aktif"
-        access_status_hint = "Pengguna memakai akses tanpa batas kuota selama masa aktif berlaku."
-        access_status_tone = "success"
-    elif debt_total_mb > 0:
-        access_status_label = "Perlu tindak lanjut tunggakan"
-        access_status_hint = "Terdapat tunggakan kuota yang perlu dipantau agar layanan tetap konsisten."
-        access_status_tone = "warning"
-    elif float(getattr(user, "total_quota_purchased_mb", 0) or 0) <= 0:
-        access_status_label = "Belum ada paket aktif"
-        access_status_hint = "Panel belum menemukan kuota aktif pada akun ini."
-        access_status_tone = "warning"
-    elif remaining_mb <= 0:
-        access_status_label = "Kuota habis"
-        access_status_hint = "Pemakaian sudah mencapai batas kuota yang tercatat pada sistem."
-        access_status_tone = "warning"
-    else:
-        access_status_label = "Layanan aktif"
-        access_status_hint = "Akun aktif dan masih memiliki kuota/masa akses yang bisa digunakan."
-        access_status_tone = "success"
+    access_status_meta = _build_detail_access_status_meta(user)
+
+    debt_breakdown_rows: list[dict[str, object]] = []
+    if debt_auto_mb > 0:
+        debt_breakdown_rows.append(
+            {
+                "kind": "Otomatis",
+                "amount_mb": debt_auto_mb,
+                "amount_display": format_mb_to_gb(debt_auto_mb),
+                "status_label": "Belum lunas",
+                "status_tone": "warning",
+                "detail": "Selisih pemakaian terhadap kuota tercatat pada sistem.",
+            }
+        )
+    if total_manual_debt_items > 0 or debt_manual_mb > 0:
+        debt_breakdown_rows.append(
+            {
+                "kind": "Manual",
+                "amount_mb": debt_manual_mb,
+                "amount_display": format_mb_to_gb(debt_manual_mb),
+                "status_label": (
+                    f"{open_debt_items} belum lunas / {paid_debt_items} lunas"
+                    if total_manual_debt_items > 0
+                    else ("Belum lunas" if debt_manual_mb > 0 else "Lunas")
+                ),
+                "status_tone": "warning" if open_debt_items > 0 or debt_manual_mb > 0 else "success",
+                "detail": "Catatan admin per item, termasuk entri yang sudah lunas.",
+            }
+        )
 
     last_login_label = format_app_datetime_display(getattr(user, "last_login_at", None), fallback="Belum ada login")
     device_count = int(getattr(user, "device_count", 0) or 0)
@@ -713,9 +848,10 @@ def _build_user_detail_report_context(user: User, *, mikrotik_status: dict | Non
         "mikrotik_account_hint": mikrotik_account_hint,
         "live_available": live_available,
         "exists_on_mikrotik": exists_on_mikrotik,
-        "access_status_label": access_status_label,
-        "access_status_hint": access_status_hint,
-        "access_status_tone": access_status_tone,
+        "access_status_key": access_status_meta["access_status_key"],
+        "access_status_label": access_status_meta["access_status_label"],
+        "access_status_hint": access_status_meta["access_status_hint"],
+        "access_status_tone": access_status_meta["access_status_tone"],
         "device_count": device_count,
         "device_count_label": f"{device_count} perangkat aktif" if device_count > 0 else "Belum ada perangkat",
         "last_login_label": last_login_label,
@@ -728,7 +864,12 @@ def _build_user_detail_report_context(user: User, *, mikrotik_status: dict | Non
         "debt_manual_mb": debt_manual_mb,
         "debt_total_mb": debt_total_mb,
         "open_debt_items": int(open_debt_items),
-        "show_debt_section": debt_total_mb > 0,
+        "paid_debt_items": int(paid_debt_items),
+        "manual_debt_items": manual_debt_items,
+        "manual_debt_summary": manual_debt_summary,
+        "debt_breakdown_rows": debt_breakdown_rows,
+        "show_debt_section": debt_total_mb > 0 or total_manual_debt_items > 0,
+        "show_manual_debt_table": total_manual_debt_items > 0,
         "recent_purchases": recent_purchases,
         "purchase_count_30d": len(recent_purchases),
         "purchase_total_amount_30d": recent_purchase_total_amount,
@@ -1342,68 +1483,8 @@ def get_user_manual_debts(current_admin: User, user_id: uuid.UUID):
         return denied_response
 
     try:
-        debts = db.session.scalars(
-            select(UserQuotaDebt)
-            .where(UserQuotaDebt.user_id == user.id)
-            .order_by(
-                UserQuotaDebt.debt_date.desc().nulls_last(),
-                UserQuotaDebt.created_at.desc(),
-            )
-        ).all()
-
-        # Fetch all active packages once for price estimation (sorted cheapest first)
-        ref_packages = db.session.scalars(
-            select(Package)
-            .where(Package.is_active == True, Package.data_quota_gb > 0)
-            .order_by(Package.price.asc())
-        ).all()
-
-        def _pick_ref_pkg(amount_mb: int):
-            for p in ref_packages:
-                if float(p.data_quota_gb or 0) * 1024 >= amount_mb:
-                    return p
-            return ref_packages[0] if ref_packages else None
-
-        items = []
-        open_count = 0
-        paid_count = 0
-        for d in debts:
-            amount = int(getattr(d, "amount_mb", 0) or 0)
-            paid_mb = int(getattr(d, "paid_mb", 0) or 0)
-            remaining = max(0, amount - paid_mb)
-            is_paid = bool(getattr(d, "is_paid", False)) or remaining <= 0
-            if is_paid:
-                paid_count += 1
-            else:
-                open_count += 1
-
-            ref_pkg = _pick_ref_pkg(amount)
-            est = estimate_debt_rp_from_cheapest_package(
-                debt_mb=float(amount),
-                cheapest_package_price_rp=int(ref_pkg.price) if ref_pkg else None,
-                cheapest_package_quota_gb=float(ref_pkg.data_quota_gb) if ref_pkg else None,
-                cheapest_package_name=str(ref_pkg.name) if ref_pkg else None,
-            )
-
-            payload = UserQuotaDebtItemResponseSchema.from_orm(d).model_dump()
-            payload["remaining_mb"] = int(remaining)
-            payload["is_paid"] = bool(is_paid)
-            payload["paid_mb"] = int(paid_mb)
-            payload["amount_mb"] = int(amount)
-            payload["estimated_rp"] = int(est.estimated_rp_rounded or 0)
-            items.append(payload)
-
-        return jsonify(
-            {
-                "items": items,
-                "summary": {
-                    "manual_debt_mb": int(getattr(user, "quota_debt_manual_mb", 0) or 0),
-                    "open_items": int(open_count),
-                    "paid_items": int(paid_count),
-                    "total_items": int(len(items)),
-                },
-            }
-        ), HTTPStatus.OK
+        payload = _build_user_manual_debt_payload(user)
+        return jsonify(payload), HTTPStatus.OK
     except Exception as e:
         current_app.logger.error(f"Error getting user debts {user_id}: {e}", exc_info=True)
         return jsonify({"message": "Gagal mengambil data debt pengguna."}), HTTPStatus.INTERNAL_SERVER_ERROR

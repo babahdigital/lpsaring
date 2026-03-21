@@ -186,6 +186,18 @@
       .purchase-col-order { width: 18%; }
       .purchase-col-method { width: 16%; }
       .purchase-col-amount { width: 20%; }
+      .debt-col-kind { width: 18%; }
+      .debt-col-amount { width: 18%; }
+      .debt-col-status { width: 20%; }
+      .debt-col-detail { width: 44%; }
+      .manual-debt-col-date { width: 20%; }
+      .manual-debt-col-amount { width: 16%; }
+      .manual-debt-col-paid { width: 16%; }
+      .manual-debt-col-remaining { width: 16%; }
+      .manual-debt-col-status { width: 12%; }
+      .manual-debt-col-note { width: 20%; }
+      .table-spaced { margin-top: 10px; }
+      .section-title-spaced { margin-top: 12px; }
     </style>
   </head>
   <body>
@@ -232,12 +244,12 @@
 
     {% if show_debt_section %}
       <div class="section">
-        <div class="section-title">Tunggakan Aktif</div>
+        <div class="section-title">Tunggakan</div>
         <div class="grid">
           <div class="card">
             <div class="card-title">Total Tunggakan</div>
             <div class="card-value tone-warning">{{ fmt_quota(debt_total_mb) }}</div>
-            <div class="card-caption">{{ open_debt_items }} item masih terbuka.</div>
+            <div class="card-caption">{{ open_debt_items }} item terbuka{% if paid_debt_items %} • {{ paid_debt_items }} item lunas{% endif %}.</div>
           </div>
           <div class="card">
             <div class="card-title">Tunggakan Otomatis</div>
@@ -250,6 +262,57 @@
             <div class="card-caption">Pencatatan tindak lanjut manual oleh admin.</div>
           </div>
         </div>
+
+        {% if debt_breakdown_rows %}
+          <table class="table-spaced">
+            <thead>
+              <tr>
+                <th class="debt-col-kind">Jenis</th>
+                <th class="debt-col-amount right">Nilai</th>
+                <th class="debt-col-status">Status</th>
+                <th class="debt-col-detail">Keterangan</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in debt_breakdown_rows %}
+                <tr>
+                  <td>{{ item.kind }}</td>
+                  <td class="right">{{ item.amount_display }}</td>
+                  <td class="tone-{{ item.status_tone }}">{{ item.status_label }}</td>
+                  <td>{{ item.detail }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% endif %}
+
+        {% if show_manual_debt_table %}
+          <div class="section-title section-title-spaced">Riwayat Tunggakan Manual 30 Hari Terakhir</div>
+          <table>
+            <thead>
+              <tr>
+                <th class="manual-debt-col-date">Tanggal</th>
+                <th class="manual-debt-col-amount right">Jumlah</th>
+                <th class="manual-debt-col-paid right">Dibayar</th>
+                <th class="manual-debt-col-remaining right">Sisa</th>
+                <th class="manual-debt-col-status">Status</th>
+                <th class="manual-debt-col-note">Catatan</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in manual_debt_items %}
+                <tr>
+                  <td>{{ item.debt_date or item.created_at }}</td>
+                  <td class="right">{{ fmt_quota(item.amount_mb) }}</td>
+                  <td class="right">{{ fmt_quota(item.paid_mb) }}</td>
+                  <td class="right">{{ fmt_quota(item.remaining_mb) }}</td>
+                  <td class="tone-{{ 'success' if item.is_paid else 'warning' }}">{{ 'Lunas' if item.is_paid else 'Belum lunas' }}</td>
+                  <td class="small">{{ item.note or '-' }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% endif %}
       </div>
     {% endif %}
 

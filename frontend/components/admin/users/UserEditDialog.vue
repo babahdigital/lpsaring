@@ -7,7 +7,6 @@ import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useSnackbar } from '@/composables/useSnackbar'
 import { useAuthStore } from '@/store/auth'
-import { resolveAccessStatusFromUser } from '@/utils/authAccess'
 import { TAMPING_OPTION_ITEMS } from '~/utils/constants'
 import UserDebtLedgerDialog from '@/components/admin/users/UserDebtLedgerDialog.vue'
 import UserQuotaHistoryDialog from '@/components/admin/users/UserQuotaHistoryDialog.vue'
@@ -80,37 +79,6 @@ interface LiveData {
   mt_profile: string
 }
 
-interface UserDetailSummaryPurchase {
-  order_id: string
-  package_name: string
-  amount_display: string
-  paid_at_display: string
-  payment_method: string
-}
-
-interface UserDetailSummary {
-  profile_display_name: string
-  profile_source: string
-  mikrotik_account_label: string
-  mikrotik_account_hint: string
-  access_status_label: string
-  access_status_hint: string
-  access_status_tone: string
-  device_count: number
-  device_count_label: string
-  last_login_label: string
-  debt: {
-    auto_mb: number
-    manual_mb: number
-    total_mb: number
-    open_items: number
-  }
-  recent_purchases: UserDetailSummaryPurchase[]
-  purchase_count_30d: number
-  purchase_total_amount_30d_display: string
-  admin_whatsapp_default?: string
-}
-
 const authStore = useAuthStore()
 const display = useDisplay()
 const isMobile = computed(() => display.smAndDown.value)
@@ -160,7 +128,6 @@ const liveData = ref<LiveData | null>(null)
 const isDebtLedgerOpen = ref(false)
 const isQuotaHistoryOpen = ref(false)
 const isDebtWhatsappSending = ref(false)
-const detailSummary = ref<UserDetailSummary | null>(null)
 const isDebtQuotaEnabled = ref(false)
 const SA_QUOTA_MB_PER_GB = 1024
 
@@ -232,78 +199,6 @@ const saQuotaUnitHint = computed(() => (saQuotaInputUnit.value === 'gb'
 const saQuotaRemainingMb = computed(() => Math.max(0, Number(formData.total_quota_purchased_mb ?? 0) - Number(formData.total_quota_used_mb ?? 0)))
 const saQuotaPurchasedCurrentText = computed(() => `Saat ini ${formatQuotaValueByUnit(formData.total_quota_purchased_mb, saQuotaInputUnit.value)}`)
 const saQuotaUsedCurrentText = computed(() => `Saat ini ${formatQuotaValueByUnit(Number(formData.total_quota_used_mb), saQuotaInputUnit.value)}`)
-
-function resolveFallbackProfileName(user: User | null | undefined): string {
-  if (!user)
-    return '-'
-  const current = String(user.mikrotik_profile_name ?? '').trim()
-  if (current !== '')
-    return current
-  if (user.is_active !== true)
-    return mikrotikDefaults.value.profile_inactive
-  if (user.is_unlimited_user === true)
-    return mikrotikDefaults.value.profile_unlimited
-  if (user.role === 'KOMANDAN')
-    return mikrotikDefaults.value.profile_komandan || mikrotikDefaults.value.profile_active || mikrotikDefaults.value.profile_user
-  return mikrotikDefaults.value.profile_active || mikrotikDefaults.value.profile_user
-}
-
-type UserServiceStatusLabel = 'Aktif' | 'FUP' | 'Habis' | 'Blokir' | 'Inactive'
-function getUserServiceStatusMeta(user: User | null | undefined): { text: UserServiceStatusLabel, hint: string } {
-  if (!user)
-    return { text: 'Inactive', hint: 'Status layanan belum tersedia.' }
-
-  const status = resolveAccessStatusFromUser(user)
-
-  switch (status) {
-    case 'blocked':
-      return { text: 'Blokir', hint: user.blocked_reason ?? 'Akses login ditolak sampai blokir dibuka.' }
-    case 'inactive':
-      return { text: 'Inactive', hint: 'Akun tidak aktif atau belum disetujui.' }
-    case 'fup':
-      return { text: 'FUP', hint: 'Pengguna sudah masuk batas fair usage policy.' }
-    case 'habis':
-      return { text: 'Habis', hint: 'Kuota aktif sudah habis.' }
-    case 'expired':
-      return { text: 'Habis', hint: 'Masa aktif kuota sudah berakhir.' }
-    case 'ok':
-    default:
-      return { text: 'Aktif', hint: 'Layanan internet aktif dan dapat digunakan.' }
-  }
-}
-
-const editDialogConnectionMeta = computed(() => {
-  const user = props.user
-  const deviceCount = Number(user?.device_count ?? 0)
-  const lastLoginAt = user?.last_login_at ?? null
-  const summary = detailSummary.value
-  const serviceStatusMeta = getUserServiceStatusMeta(user)
-
-  return {
-    deviceCount: Number(summary?.device_count ?? deviceCount),
-    hasDevices: Number(summary?.device_count ?? deviceCount) > 0,
-    loginLabel: summary?.last_login_label || (lastLoginAt ? new Date(lastLoginAt).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Belum pernah login'),
-    mikrotikProfile: summary?.profile_display_name || resolveFallbackProfileName(user),
-    mikrotikProfileHint: summary?.profile_source || 'Standar sistem',
-    mikrotikStatusLabel: summary?.mikrotik_account_label || (user?.mikrotik_user_exists === true ? 'Sinkron terakhir tersimpan' : 'Perlu verifikasi live'),
-    mikrotikStatusHint: summary?.mikrotik_account_hint || 'Gunakan cek live untuk memastikan akun hotspot dan profile aktif.',
-    accessStatusLabel: serviceStatusMeta.text,
-    accessStatusHint: serviceStatusMeta.hint,
-  }
-})
-
-async function fetchUserDetailSummary() {
-  if (!props.user?.id)
-    return
-  try {
-    const response = await $api<UserDetailSummary>(`/admin/users/${props.user.id}/detail-summary`)
-    detailSummary.value = response
-  }
-  catch (error: any) {
-    detailSummary.value = null
-    showSnackbar({ type: 'warning', title: 'Ringkasan Pengguna', text: error?.data?.message || 'Ringkasan pengguna belum bisa dimuat.' })
-  }
-}
 
 async function autoFillSaQuotaFromDb() {
   if (!props.user?.id)
@@ -576,11 +471,9 @@ function formatDataSize(sizeInMB: number): string {
 watch(() => props.modelValue, (isOpen) => {
   if (isOpen) {
     liveData.value = null
-    detailSummary.value = null
     isDebtQuotaEnabled.value = false
     // Best-effort load package list for debt selection.
     fetchAdminPackages().catch(() => {})
-    fetchUserDetailSummary().catch(() => {})
     // PERBAIKAN: Memindahkan isi arrow function ke baris baru
     nextTick(() => {
       formRef.value?.resetValidation()
@@ -590,7 +483,7 @@ watch(() => props.modelValue, (isOpen) => {
 
 watch(() => props.user?.id, () => {
   if (props.modelValue && props.user?.id)
-    fetchUserDetailSummary().catch(() => {})
+    void 0
 })
 
 function setDefaultMikrotikConfig(role: User['role'] | undefined) {
@@ -684,7 +577,6 @@ async function checkAndApplyMikrotikStatus() {
 
     if (response.live_available === false) {
       showSnackbar({ type: 'info', title: 'Mode Lokal', text: response.message || 'Live check MikroTik tidak tersedia. Menampilkan data dari database.' })
-      fetchUserDetailSummary().catch(() => {})
       return
     }
 
@@ -700,11 +592,9 @@ async function checkAndApplyMikrotikStatus() {
         mt_profile: response.details.profile,
       }
       showSnackbar({ type: 'success', title: 'Sukses', text: 'Data live dari MikroTik berhasil dimuat.' })
-      fetchUserDetailSummary().catch(() => {})
     }
     else {
       showSnackbar({ type: 'warning', title: 'Informasi', text: response.message || 'Pengguna tidak ditemukan di MikroTik.' })
-      fetchUserDetailSummary().catch(() => {})
     }
   }
   catch (error: any) {
@@ -858,32 +748,6 @@ function openQuotaHistory() {
               </div>
             </div>
             <VBtn icon="tabler-x" variant="text" class="text-white admin-user-edit__topbar-close" @click="onClose" />
-          </div>
-          <div class="admin-user-edit__topbar-meta">
-            <div class="admin-user-edit__meta-pill">
-              <VIcon icon="tabler-devices" size="16" />
-              <div class="admin-user-edit__meta-pillCopy">
-                <span class="admin-user-edit__meta-pillLabel">Perangkat</span>
-                <span>{{ editDialogConnectionMeta.hasDevices ? `${editDialogConnectionMeta.deviceCount} perangkat aktif` : 'Belum ada perangkat' }}</span>
-                <small>Login terakhir: {{ editDialogConnectionMeta.loginLabel }}</small>
-              </div>
-            </div>
-            <div class="admin-user-edit__meta-pill">
-              <VIcon icon="tabler-router" size="16" />
-              <div class="admin-user-edit__meta-pillCopy">
-                <span class="admin-user-edit__meta-pillLabel">Sinkronisasi</span>
-                <span>{{ editDialogConnectionMeta.mikrotikStatusLabel }}</span>
-                <small>{{ editDialogConnectionMeta.mikrotikProfile }}</small>
-              </div>
-            </div>
-            <div class="admin-user-edit__meta-pill admin-user-edit__meta-pill--wide admin-user-edit__meta-pill--status">
-              <VIcon icon="tabler-bolt" size="16" />
-              <div class="admin-user-edit__meta-pillCopy">
-                <span class="admin-user-edit__meta-pillLabel">Status Layanan</span>
-                <span>{{ editDialogConnectionMeta.accessStatusLabel }}</span>
-                <small>{{ editDialogConnectionMeta.accessStatusHint }}</small>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -1467,7 +1331,7 @@ function openQuotaHistory() {
 
 .admin-user-edit__topbar-titleWrap {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 14px;
   min-width: 0;
   flex: 1 1 auto;
@@ -1506,61 +1370,6 @@ function openQuotaHistory() {
 .admin-user-edit__topbar-close {
   flex: 0 0 auto;
   margin-top: -4px;
-}
-
-.admin-user-edit__topbar-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.admin-user-edit__meta-pill {
-  display: inline-flex;
-  align-items: flex-start;
-  gap: 8px;
-  min-height: 52px;
-  max-width: 100%;
-  padding: 10px 13px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.12);
-  font-size: 0.88rem;
-  line-height: 1.25;
-}
-
-.admin-user-edit__meta-pillCopy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.admin-user-edit__meta-pillLabel {
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  opacity: 0.7;
-}
-
-.admin-user-edit__meta-pillCopy span:last-child {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: normal;
-  font-weight: 600;
-}
-
-.admin-user-edit__meta-pillCopy small {
-  display: block;
-  color: rgba(255, 255, 255, 0.78);
-  font-size: 0.72rem;
-  line-height: 1.35;
-}
-
-.admin-user-edit__meta-pill--wide {
-  min-width: 260px;
-  flex: 1 1 260px;
 }
 
 .admin-user-edit__scroll {
@@ -1616,44 +1425,6 @@ function openQuotaHistory() {
 
 .admin-user-edit__detail-card {
   border-style: dashed;
-}
-
-.admin-user-edit__quota-adjust-card {
-  background: rgba(var(--v-theme-warning), 0.04);
-}
-
-.admin-user-edit__section-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.admin-user-edit__section-btn {
-  display: flex;
-  min-height: 138px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.16);
-  border-radius: 14px;
-  padding: 20px 18px;
-  background: rgba(var(--v-theme-surface), 0.32);
-  color: rgba(var(--v-theme-on-surface), 0.78);
-  touch-action: manipulation;
-  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.admin-user-edit__section-btn:hover {
-  border-color: rgba(var(--v-theme-primary), 0.5);
-  background: rgba(var(--v-theme-primary), 0.05);
-  color: rgba(var(--v-theme-on-surface), 0.94);
-}
-
-.admin-user-edit__section-btn--active {
-  border-color: rgba(var(--v-theme-primary), 0.85);
-  background: rgba(var(--v-theme-primary), 0.09);
-  color: rgb(var(--v-theme-on-surface));
   box-shadow: 0 0 0 1px rgba(var(--v-theme-primary), 0.18) inset;
 }
 

@@ -102,6 +102,15 @@ interface UserDetailSummary {
   admin_whatsapp_default?: string
 }
 
+interface DebtBreakdownRow {
+  key: 'auto' | 'manual'
+  label: string
+  amountMb: number
+  statusText: string
+  statusColor: string
+  detail: string
+}
+
 interface InternalRecipientSelection {
   recipientIds: string[]
   recipients: Array<{
@@ -156,6 +165,24 @@ function formatPhoneNumberDisplay(phoneNumber: string | null) {
   if (!phoneNumber)
     return 'N/A'
   return phoneNumber.startsWith('+62') ? `0${phoneNumber.substring(3)}` : phoneNumber
+}
+
+function formatKamarLabel(kamar: string | null | undefined) {
+  const rawValue = String(kamar ?? '').trim()
+  if (rawValue === '')
+    return ''
+
+  const compactValue = rawValue.replace(/\s+/g, '')
+  const lowered = compactValue.toLowerCase()
+
+  if ((lowered.startsWith('kamar_') || lowered.startsWith('kamr_')) && /^\d+$/.test(compactValue.split('_').pop() || ''))
+    return compactValue.split('_').pop() || ''
+
+  const matchedDigits = compactValue.match(/(\d+)$/)
+  if (matchedDigits)
+    return matchedDigits[1]
+
+  return rawValue.replace(/_/g, ' ')
 }
 
 function formatDataSize(sizeInMB: number) {
@@ -246,6 +273,58 @@ const debtStatusMeta = computed(() => {
     color: hasDebt ? 'warning' : 'success',
     icon: hasDebt ? 'tabler-alert-triangle' : 'tabler-circle-check',
   }
+})
+
+const formattedAddress = computed(() => {
+  if (!props.user)
+    return null
+  if (props.user.is_tamping)
+    return props.user.tamping_type ? `Tamping ${props.user.tamping_type}` : 'Tamping'
+
+  const blok = String(props.user.blok ?? '').trim()
+  const kamar = formatKamarLabel(props.user.kamar)
+
+  if (blok && kamar)
+    return `Blok ${blok}, Kamar ${kamar}`
+  if (blok)
+    return `Blok ${blok}`
+  if (kamar)
+    return `Kamar ${kamar}`
+
+  return null
+})
+
+const debtBreakdownRows = computed<DebtBreakdownRow[]>(() => {
+  const rows: DebtBreakdownRow[] = []
+  const manualSummary = manualDebtSummary.value
+
+  if (debtAutoMb.value > 0) {
+    rows.push({
+      key: 'auto',
+      label: 'Debt Otomatis',
+      amountMb: debtAutoMb.value,
+      statusText: 'Belum lunas',
+      statusColor: 'warning',
+      detail: 'Selisih pemakaian terhadap kuota yang tercatat sistem.',
+    })
+  }
+
+  if (Number(manualSummary?.total_items ?? 0) > 0 || debtManualMb.value > 0) {
+    const openItems = Number(manualSummary?.open_items ?? 0)
+    const paidItems = Number(manualSummary?.paid_items ?? 0)
+    rows.push({
+      key: 'manual',
+      label: 'Debt Manual',
+      amountMb: debtManualMb.value,
+      statusText: Number(manualSummary?.total_items ?? 0) > 0
+        ? `${openItems} belum lunas / ${paidItems} lunas`
+        : (debtManualMb.value > 0 ? 'Belum lunas' : 'Lunas'),
+      statusColor: openItems > 0 || debtManualMb.value > 0 ? 'warning' : 'success',
+      detail: 'Riwayat manual admin per item, termasuk yang sudah lunas.',
+    })
+  }
+
+  return rows
 })
 
 type UserServiceStatusLabel = 'Aktif' | 'FUP' | 'Habis' | 'Blokir' | 'Inactive'
@@ -474,8 +553,18 @@ function onClose() {
               <div class="admin-user-detail__hero-title">
                 Detail Pengguna
               </div>
-              <div class="admin-user-detail__hero-subtitle text-white">
-                Ringkasan identitas dan histori akses pengguna.
+              <div class="admin-user-detail__hero-subtitle">
+                {{ props.user.full_name }}
+              </div>
+              <div class="admin-user-detail__hero-pills">
+                <span class="admin-user-detail__hero-pill">
+                  <VIcon icon="tabler-phone" size="14" class="me-1" />
+                  {{ formatPhoneNumberDisplay(props.user.phone_number) }}
+                </span>
+                <span class="admin-user-detail__hero-pill">
+                  <VIcon icon="tabler-shield-check" size="14" class="me-1" />
+                  {{ roleMap[props.user.role]?.text }}
+                </span>
               </div>
             </div>
           </div>
@@ -522,27 +611,30 @@ function onClose() {
           <div class="admin-user-detail__actionHead">
             <div>
               <div class="text-overline">
-                Tindak Lanjut Cepat
+                Aksi Laporan
               </div>
               <div class="text-body-2 text-medium-emphasis">
-                Kirim PDF detail ke pengguna, atau pilih admin internal yang memang harus menerima laporan ini.
+                Semua aksi laporan diringkas dalam satu grup agar tidak memenuhi area detail.
               </div>
             </div>
             <div class="admin-user-detail__actionButtons">
-              <VBtn size="small" color="error" variant="tonal" prepend-icon="tabler-file-type-pdf" @click="openUserDetailPdf">
-                PDF Detail
+              <VBtn icon size="small" color="error" variant="tonal" class="admin-user-detail__actionBtn" @click="openUserDetailPdf">
+                <VIcon icon="tabler-file-type-pdf" size="18" />
+                <VTooltip activator="parent">PDF Detail</VTooltip>
               </VBtn>
-              <VBtn size="small" color="success" variant="tonal" prepend-icon="tabler-user-share" :loading="detailWhatsappQueueMode === 'user'" @click="sendUserDetailWhatsappToUser">
-                Kirim ke User
+              <VBtn icon size="small" color="success" variant="tonal" class="admin-user-detail__actionBtn" :loading="detailWhatsappQueueMode === 'user'" @click="sendUserDetailWhatsappToUser">
+                <VIcon icon="tabler-user-share" size="18" />
+                <VTooltip activator="parent">Kirim ke User</VTooltip>
               </VBtn>
-              <VBtn size="small" color="primary" variant="tonal" prepend-icon="tabler-users-group" :loading="detailWhatsappQueueMode === 'internal'" @click="openDetailRecipientDialog">
-                Kirim ke Admin
+              <VBtn icon size="small" color="primary" variant="tonal" class="admin-user-detail__actionBtn" :loading="detailWhatsappQueueMode === 'internal'" @click="openDetailRecipientDialog">
+                <VIcon icon="tabler-users-group" size="18" />
+                <VTooltip activator="parent">Kirim ke Admin</VTooltip>
               </VBtn>
             </div>
           </div>
-          <VAlert variant="tonal" color="info" icon="tabler-info-circle" class="mt-3">
+          <div class="text-caption text-medium-emphasis mt-3">
             Pengiriman internal memakai popup pemilih penerima agar laporan tidak terkirim ke semua admin secara otomatis.
-          </VAlert>
+          </div>
         </VSheet>
 
         <VList lines="two" density="compact">
@@ -588,7 +680,7 @@ function onClose() {
             </template>
           </VListItem>
           <VListItem v-if="props.user.is_tamping" prepend-icon="tabler-building-bank" title="Tamping" :subtitle="props.user.tamping_type || 'N/A'" />
-          <VListItem v-else-if="props.user.blok && props.user.kamar" prepend-icon="tabler-building-community" title="Alamat" :subtitle="`Blok ${props.user.blok}, Kamar ${props.user.kamar.replace('Kamar_', '')}`" />
+          <VListItem v-else-if="formattedAddress" prepend-icon="tabler-building-community" title="Alamat" :subtitle="formattedAddress" />
         </VList>
 
         <template v-if="quotaDetails">
@@ -635,29 +727,62 @@ function onClose() {
             (otomatis {{ formatDataSize(debtAutoMb) }}, manual {{ formatDataSize(debtManualMb) }})
           </VAlert>
 
+          <VSheet v-if="debtBreakdownRows.length > 0" rounded="lg" border class="pa-3 mt-4">
+            <div class="text-overline mb-2">
+              Rincian Tunggakan Sistem 30 Hari Terakhir
+            </div>
+            <VTable density="compact" class="admin-user-detail__debtBreakdownTable">
+              <thead>
+                <tr>
+                  <th>Jenis</th>
+                  <th class="text-right">Nilai</th>
+                  <th>Status</th>
+                  <th>Keterangan</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in debtBreakdownRows" :key="row.key">
+                  <td>{{ row.label }}</td>
+                  <td class="text-right">{{ formatDataSize(row.amountMb) }}</td>
+                  <td>
+                    <VChip :color="row.statusColor" size="x-small" label>
+                      {{ row.statusText }}
+                    </VChip>
+                  </td>
+                  <td>{{ row.detail }}</td>
+                </tr>
+              </tbody>
+            </VTable>
+          </VSheet>
+
           <VSheet v-if="shouldShowManualDebtSection" rounded="lg" border class="pa-3 mt-4">
             <div class="admin-user-detail__debtHead">
               <div>
                 <div class="text-overline">
-                  Riwayat Tunggakan Manual
+                  Riwayat Tunggakan Manual 30 Hari Terakhir
                 </div>
                 <div class="text-caption text-medium-emphasis">
-                  Jalankan tindak lanjut debt tanpa berpindah ke dialog edit pengguna.
+                  Jalankan tindak lanjut debt 30 hari terakhir tanpa berpindah ke dialog edit pengguna.
                 </div>
               </div>
               <div class="admin-user-detail__debtActions">
                 <VChip v-if="manualDebtSummary" size="x-small" label>
                   Belum lunas {{ manualDebtSummary.open_items }} / Total {{ manualDebtSummary.total_items }}
                 </VChip>
-                <VBtn size="x-small" variant="tonal" prepend-icon="tabler-list-details" @click="isDebtLedgerOpen = true">
-                  Detail
-                </VBtn>
-                <VBtn v-if="hasDebt" size="x-small" color="error" variant="tonal" prepend-icon="tabler-file-type-pdf" @click="openDebtPdf">
-                  PDF
-                </VBtn>
-                <VBtn v-if="hasDebt" size="x-small" color="success" variant="tonal" prepend-icon="tabler-brand-whatsapp" :loading="sendingDebtWhatsapp" @click="sendDebtWhatsapp">
-                  WA Debt
-                </VBtn>
+                <div class="admin-user-detail__actionButtons admin-user-detail__actionButtons--compact">
+                  <VBtn icon size="x-small" variant="tonal" class="admin-user-detail__actionBtn" @click="isDebtLedgerOpen = true">
+                    <VIcon icon="tabler-list-details" size="16" />
+                    <VTooltip activator="parent">Detail Tunggakan</VTooltip>
+                  </VBtn>
+                  <VBtn v-if="hasDebt" icon size="x-small" color="error" variant="tonal" class="admin-user-detail__actionBtn" @click="openDebtPdf">
+                    <VIcon icon="tabler-file-type-pdf" size="16" />
+                    <VTooltip activator="parent">PDF Tunggakan</VTooltip>
+                  </VBtn>
+                  <VBtn v-if="hasDebt" icon size="x-small" color="success" variant="tonal" class="admin-user-detail__actionBtn" :loading="sendingDebtWhatsapp" @click="sendDebtWhatsapp">
+                    <VIcon icon="tabler-brand-whatsapp" size="16" />
+                    <VTooltip activator="parent">WhatsApp Tunggakan</VTooltip>
+                  </VBtn>
+                </div>
               </div>
             </div>
 
@@ -726,7 +851,7 @@ function onClose() {
         <template v-if="hasRecentPurchases">
           <VDivider class="my-4" />
           <div class="text-overline mb-2">
-            Riwayat Pembelian 30 Hari
+            Riwayat Pembelian 30 Hari Terakhir
           </div>
           <VAlert v-if="detailSummaryLoading" type="info" variant="tonal" density="compact" class="mb-3">
             Memuat riwayat pembelian terbaru...
@@ -781,12 +906,6 @@ function onClose() {
           <VListItem v-if="props.user.is_blocked" prepend-icon="tabler-ban" title="Alasan Blokir" :subtitle="props.user.blocked_reason || 'Tidak disebutkan'" />
           </VList>
         </AppPerfectScrollbar>
-      <VDivider />
-      <VCardActions class="pa-4 d-flex justify-end">
-        <VBtn variant="tonal" color="secondary" @click="onClose">
-          Tutup
-        </VBtn>
-      </VCardActions>
     </VCard>
   </VDialog>
 
@@ -817,7 +936,7 @@ function onClose() {
 
 .admin-user-detail__hero-copy {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 14px;
   min-width: 0;
   flex: 1 1 auto;
@@ -844,10 +963,31 @@ function onClose() {
 }
 
 .admin-user-detail__hero-subtitle {
-  margin-top: 4px;
-  font-size: 0.9rem;
-  line-height: 1.45;
-  opacity: 0.86;
+  margin-top: 6px;
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: rgb(var(--v-theme-on-primary));
+}
+
+.admin-user-detail__hero-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.admin-user-detail__hero-pill {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(var(--v-theme-surface), 0.18);
+  color: rgb(var(--v-theme-on-primary));
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .admin-user-detail__hero-close {
@@ -886,6 +1026,19 @@ function onClose() {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  padding: 6px;
+  border-radius: 16px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+  box-shadow: inset 0 0 0 1px rgba(var(--v-theme-on-surface), 0.08);
+}
+
+.admin-user-detail__actionButtons--compact {
+  padding: 4px;
+  border-radius: 14px;
+}
+
+.admin-user-detail__actionBtn {
+  border-radius: 12px;
 }
 
 .admin-user-detail__debtHead {
@@ -938,6 +1091,11 @@ function onClose() {
 
 .manual-debt-table :deep(th),
 .manual-debt-table :deep(td) {
+  padding-block: 10px;
+}
+
+.admin-user-detail__debtBreakdownTable :deep(th),
+.admin-user-detail__debtBreakdownTable :deep(td) {
   padding-block: 10px;
 }
 
@@ -1001,7 +1159,11 @@ function onClose() {
   }
 
   .admin-user-detail__hero-subtitle {
-    font-size: 0.78rem;
+    font-size: 0.86rem;
+  }
+
+  .admin-user-detail__hero-pill {
+    font-size: 0.74rem;
   }
 
   .admin-user-detail__meta-grid {
@@ -1010,6 +1172,15 @@ function onClose() {
 
   .admin-user-detail__status-chips {
     gap: 6px;
+  }
+
+  .admin-user-detail__actionButtons {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .admin-user-detail__actionButtons :deep(.v-btn) {
+    flex: 0 0 auto;
   }
 }
 </style>

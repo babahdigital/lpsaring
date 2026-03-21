@@ -518,7 +518,8 @@ watch(
               <VIcon icon="tabler-history-toggle" size="22" />
             </div>
             <div class="history-dialog__hero-copy">
-              <span class="headline text-white">Riwayat Mutasi Kuota</span>
+              <span class="history-dialog__hero-title">Riwayat Mutasi Kuota</span>
+              <span class="history-dialog__hero-subtitle">Mutasi beli, pakai, dan tunggakan pengguna.</span>
             </div>
           </div>
           <div class="dialog-titlebar__actions">
@@ -526,15 +527,12 @@ watch(
           </div>
         </div>
         <div class="history-dialog__hero-meta">
-          <VChip size="small" label color="info" variant="tonal">
+          <div class="history-dialog__hero-pill history-dialog__hero-pill--name">
             {{ props.user.full_name }}
-          </VChip>
-          <VChip size="small" label color="default" variant="tonal">
+          </div>
+          <div class="history-dialog__hero-pill">
             {{ props.user.phone_number }}
-          </VChip>
-          <VChip v-if="activeSearchText" size="small" label color="secondary" variant="tonal">
-            Cari: {{ activeSearchText }}
-          </VChip>
+          </div>
         </div>
       </VCardTitle>
       <VDivider />
@@ -780,13 +778,6 @@ watch(
         </div>
       </AppPerfectScrollbar>
 
-      <VDivider />
-      <VCardActions class="pa-4">
-        <VSpacer />
-        <VBtn variant="tonal" color="secondary" @click="close">
-          Tutup
-        </VBtn>
-      </VCardActions>
     </VCard>
   </VDialog>
 </template>
@@ -818,10 +809,6 @@ watch(
   background: linear-gradient(135deg, rgb(var(--v-theme-primary)) 0%, rgba(var(--v-theme-primary), 0.82) 100%);
 }
 
-.history-dialog__hero-titleWrap {
-  align-items: flex-start;
-}
-
 .history-dialog__hero-icon {
   display: inline-flex;
   align-items: center;
@@ -840,10 +827,17 @@ watch(
   gap: 4px;
 }
 
+.history-dialog__hero-title {
+  font-size: 1.18rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: rgb(var(--v-theme-on-primary));
+}
+
 .history-dialog__hero-subtitle {
   font-size: 0.9rem;
   line-height: 1.45;
-  opacity: 0.86;
+  color: rgba(var(--v-theme-on-primary), 0.88);
 }
 
 .history-dialog__hero-meta {
@@ -853,12 +847,33 @@ watch(
   margin-top: 14px;
 }
 
+.history-dialog__hero-pill {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(var(--v-theme-surface), 0.18);
+  color: rgb(var(--v-theme-on-primary));
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.history-dialog__hero-pill--name {
+  max-width: min(100%, 320px);
+}
+
 .history-dialog-card {
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: min(92vh, 980px);
 }
 
 .history-dialog__scroll {
-  max-height: 72vh;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .history-dialog__content {
@@ -1126,6 +1141,10 @@ watch(
 
   .history-dialog__hero-subtitle {
     font-size: 0.8rem;
+  }
+
+  .history-dialog__hero-pill {
+    font-size: 0.74rem;
   }
 
   .history-overview-grid {

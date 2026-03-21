@@ -429,7 +429,7 @@ const headers = computed(() => {
     { title: 'PERANGKAT', key: 'device_count', sortable: false, align: 'center' },
     { title: 'LOGIN TERAKHIR', key: 'last_login_at', sortable: false },
     { title: 'TGL DAFTAR', key: 'created_at', sortable: true },
-    { title: 'AKSI', key: 'actions', sortable: false, align: 'center', width: '210px' },
+    { title: 'AKSI', key: 'actions', sortable: false, align: 'center', width: '182px' },
   ]
   // Perbaikan baris 81: Perbandingan eksplisit untuk isMobile.value dan pengecekan h.key
   // Menghapus h !== null karena h selalu objek dan truthy.
@@ -1296,41 +1296,41 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
           {{ formatCreatedAt(item.created_at) }}
         </template>
         <template #item.actions="{ item }">
-          <div class="d-flex gap-1 justify-center">
-            <VBtn icon variant="text" color="secondary" size="small" @click="openViewDialog(item)">
+          <div class="admin-users__actionGroup">
+            <VBtn icon variant="text" color="secondary" size="small" class="admin-users__actionBtn" @click="openViewDialog(item)">
               <VIcon icon="tabler-eye" /><VTooltip activator="parent">
                 Lihat Detail
               </VTooltip>
             </VBtn>
             <template v-if="item.approval_status === 'PENDING_APPROVAL'">
-              <VBtn icon variant="text" color="success" size="small" @click="handleApprove(item)">
+              <VBtn icon variant="text" color="success" size="small" class="admin-users__actionBtn" @click="handleApprove(item)">
                 <VIcon icon="tabler-check" /><VTooltip activator="parent">
                   Setujui
                 </VTooltip>
               </VBtn>
-              <VBtn icon variant="text" color="error" size="small" @click="handleReject(item)">
+              <VBtn icon variant="text" color="error" size="small" class="admin-users__actionBtn" @click="handleReject(item)">
                 <VIcon icon="tabler-x" /><VTooltip activator="parent">
                   Tolak & Hapus
                 </VTooltip>
               </VBtn>
             </template>
             <template v-else>
-              <VBtn icon variant="text" color="secondary" size="small" @click="openQuotaHistoryDialog(item)">
+              <VBtn icon variant="text" color="secondary" size="small" class="admin-users__actionBtn" @click="openQuotaHistoryDialog(item)">
                 <VIcon icon="tabler-history-toggle" /><VTooltip activator="parent">
                   Riwayat Quota
                 </VTooltip>
               </VBtn>
-              <VBtn icon variant="text" color="primary" size="small" @click="openCreateBillDialogForUser(item)">
+              <VBtn icon variant="text" color="primary" size="small" class="admin-users__actionBtn" @click="openCreateBillDialogForUser(item)">
                 <VIcon icon="tabler-qrcode" /><VTooltip activator="parent">
                   Buat Tagihan
                 </VTooltip>
               </VBtn>
-              <VBtn v-if="(authStore.isSuperAdmin === true || authStore.isAdmin === true)" icon variant="text" color="primary" size="small" @click="openEditDialog(item)">
+              <VBtn v-if="(authStore.isSuperAdmin === true || authStore.isAdmin === true)" icon variant="text" color="primary" size="small" class="admin-users__actionBtn" @click="openEditDialog(item)">
                 <VIcon icon="tabler-pencil" /><VTooltip activator="parent">
                   Edit
                 </VTooltip>
               </VBtn>
-              <VBtn v-if="item.id !== authStore.currentUser?.id && (authStore.isSuperAdmin === true || (authStore.isAdmin === true && item.role !== 'ADMIN' && item.role !== 'SUPER_ADMIN'))" icon variant="text" color="error" size="small" @click="handleDelete(item)">
+              <VBtn v-if="item.id !== authStore.currentUser?.id && (authStore.isSuperAdmin === true || (authStore.isAdmin === true && item.role !== 'ADMIN' && item.role !== 'SUPER_ADMIN'))" icon variant="text" color="error" size="small" class="admin-users__actionBtn" @click="handleDelete(item)">
                 <VIcon icon="tabler-trash" /><VTooltip activator="parent">
                   Hapus
                 </VTooltip>
@@ -1431,41 +1431,41 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
           </VCardText>
           <VDivider />
           <VCardActions class="justify-center admin-users__mobile-actionsWrap">
-            <div class="admin-users__mobile-actions">
-              <VBtn icon variant="tonal" color="secondary" size="small" @click="openViewDialog(user)">
+            <div class="admin-users__mobile-actions admin-users__actionGroup admin-users__actionGroup--mobile">
+              <VBtn icon variant="tonal" color="secondary" size="small" class="admin-users__actionBtn" @click="openViewDialog(user)">
                 <VIcon icon="tabler-eye" /><VTooltip activator="parent">
                   Lihat Detail
                 </VTooltip>
               </VBtn>
               <template v-if="user.approval_status === 'PENDING_APPROVAL'">
-                <VBtn icon variant="tonal" color="success" size="small" @click="handleApprove(user)">
+                <VBtn icon variant="tonal" color="success" size="small" class="admin-users__actionBtn" @click="handleApprove(user)">
                   <VIcon icon="tabler-check" /><VTooltip activator="parent">
                     Setujui
                   </VTooltip>
                 </VBtn>
-                <VBtn icon variant="tonal" color="error" size="small" @click="handleReject(user)">
+                <VBtn icon variant="tonal" color="error" size="small" class="admin-users__actionBtn" @click="handleReject(user)">
                   <VIcon icon="tabler-x" /><VTooltip activator="parent">
                     Tolak & Hapus
                   </VTooltip>
                 </VBtn>
               </template>
               <template v-else>
-                <VBtn icon variant="tonal" color="secondary" size="small" @click="openQuotaHistoryDialog(user)">
+                <VBtn icon variant="tonal" color="secondary" size="small" class="admin-users__actionBtn" @click="openQuotaHistoryDialog(user)">
                   <VIcon icon="tabler-history-toggle" /><VTooltip activator="parent">
                     Riwayat Quota
                   </VTooltip>
                 </VBtn>
-                <VBtn icon variant="tonal" color="primary" size="small" @click="openCreateBillDialogForUser(user)">
+                <VBtn icon variant="tonal" color="primary" size="small" class="admin-users__actionBtn" @click="openCreateBillDialogForUser(user)">
                   <VIcon icon="tabler-qrcode" /><VTooltip activator="parent">
                   Buat Tagihan
                   </VTooltip>
                 </VBtn>
-                <VBtn v-if="(authStore.isSuperAdmin === true || authStore.isAdmin === true)" icon variant="tonal" color="primary" size="small" @click="openEditDialog(user)">
+                <VBtn v-if="(authStore.isSuperAdmin === true || authStore.isAdmin === true)" icon variant="tonal" color="primary" size="small" class="admin-users__actionBtn" @click="openEditDialog(user)">
                   <VIcon icon="tabler-pencil" /><VTooltip activator="parent">
                     Edit
                   </VTooltip>
                 </VBtn>
-                <VBtn v-if="user.id !== authStore.currentUser?.id && (authStore.isSuperAdmin === true || (authStore.isAdmin === true && user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN'))" icon variant="tonal" color="error" size="small" @click="handleDelete(user)">
+                <VBtn v-if="user.id !== authStore.currentUser?.id && (authStore.isSuperAdmin === true || (authStore.isAdmin === true && user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN'))" icon variant="tonal" color="error" size="small" class="admin-users__actionBtn" @click="handleDelete(user)">
                   <VIcon icon="tabler-trash" /><VTooltip activator="parent">
                     Hapus
                   </VTooltip>
@@ -1812,6 +1812,26 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 .admin-users__connectionHint {
   max-width: 132px;
   line-height: 1.3;
+}
+
+.admin-users__actionGroup {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 14px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+  box-shadow: inset 0 0 0 1px rgba(var(--v-theme-on-surface), 0.08);
+}
+
+.admin-users__actionGroup--mobile {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(40px, 1fr));
+}
+
+.admin-users__actionBtn {
+  border-radius: 10px;
 }
 
 .admin-users__subtitle {

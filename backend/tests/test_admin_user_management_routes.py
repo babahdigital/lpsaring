@@ -489,6 +489,170 @@ def test_build_user_detail_report_context_formats_clean_address(monkeypatch):
     assert context["show_debt_section"] is False
 
 
+def test_build_user_detail_report_context_uses_canonical_fup_status_label(monkeypatch):
+    fake_user = SimpleNamespace(
+        id=uuid.uuid4(),
+        phone_number="082213631573",
+        full_name="Bobby Dermawan",
+        role=SimpleNamespace(value="USER"),
+        approval_status="APPROVED",
+        is_tamping=False,
+        tamping_type=None,
+        blok="A",
+        kamar="Kamar_2",
+        is_active=True,
+        is_blocked=False,
+        is_unlimited_user=False,
+        mikrotik_profile_name="profile-fup",
+        mikrotik_user_exists=True,
+        total_quota_purchased_mb=8192,
+        total_quota_used_mb=6144,
+        quota_debt_auto_mb=0,
+        quota_debt_manual_mb=0,
+        quota_debt_total_mb=0,
+        manual_debt_mb=0,
+        quota_expiry_date=None,
+        last_login_at=None,
+        device_count=1,
+    )
+
+    monkeypatch.setattr(
+        user_management_routes,
+        "db",
+        SimpleNamespace(
+            session=SimpleNamespace(
+                scalars=lambda *_args, **_kwargs: SimpleNamespace(all=lambda: []),
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        user_management_routes,
+        "build_receipt_business_identity_context",
+        lambda: {
+            "business_name": "LPSaring",
+            "business_phone": "+6282211111111",
+            "business_address": "Jl. Contoh",
+        },
+    )
+    monkeypatch.setattr(
+        user_management_routes,
+        "_get_user_mikrotik_status_payload",
+        lambda _user: {
+            "live_available": True,
+            "exists_on_mikrotik": True,
+            "resolved_profile_name": "profile-fup",
+        },
+    )
+    monkeypatch.setattr(
+        user_management_routes,
+        "settings_service",
+        SimpleNamespace(
+            get_setting=lambda _key, default=None: default,
+            get_setting_as_int=lambda _key, default=3072: default,
+        ),
+    )
+    monkeypatch.setattr(user_management_routes, "get_user_access_status", lambda _user: "fup")
+    monkeypatch.setattr(user_management_routes, "_resolve_admin_whatsapp_default", lambda: "+6282211111111")
+
+    context = user_management_routes._build_user_detail_report_context(fake_user)
+
+    assert context["profile_display_name"] == "FUP"
+    assert context["access_status_label"] == "FUP"
+    assert context["access_status_tone"] == "info"
+
+
+def test_build_user_manual_debt_payload_excludes_entries_older_than_30_days(monkeypatch):
+    now = datetime(2026, 3, 22, 12, 0, tzinfo=timezone.utc)
+    recent_debt = SimpleNamespace(
+        id=uuid.uuid4(),
+        debt_date=date(2026, 3, 10),
+        due_date=None,
+        amount_mb=1024,
+        paid_mb=0,
+        is_paid=False,
+        paid_at=None,
+        note='Debt terbaru',
+        price_rp=None,
+        created_at=now,
+        updated_at=now,
+        last_paid_source=None,
+    )
+    old_debt = SimpleNamespace(
+        id=uuid.uuid4(),
+        debt_date=date(2026, 1, 10),
+        due_date=None,
+        amount_mb=2048,
+        paid_mb=2048,
+        is_paid=True,
+        paid_at=now,
+        note='Debt lama',
+        price_rp=None,
+        created_at=datetime(2026, 1, 10, 8, 0, tzinfo=timezone.utc),
+        updated_at=now,
+        last_paid_source='admin',
+    )
+    fake_user = SimpleNamespace(
+        id=uuid.uuid4(),
+        quota_debt_manual_mb=1024,
+        manual_debt_mb=1024,
+    )
+
+    class _FakeScalars:
+        def __init__(self, values):
+            self._values = values
+
+        def all(self):
+            return self._values
+
+    call_count = {"value": 0}
+
+    def _fake_scalars(*_args, **_kwargs):
+        call_count["value"] += 1
+        if call_count["value"] == 1:
+            return _FakeScalars([recent_debt, old_debt])
+        return _FakeScalars([])
+
+    monkeypatch.setattr(user_management_routes, 'db', SimpleNamespace(session=SimpleNamespace(scalars=_fake_scalars)))
+    monkeypatch.setattr(
+        user_management_routes,
+        'UserQuotaDebtItemResponseSchema',
+        SimpleNamespace(
+            from_orm=lambda debt: SimpleNamespace(
+                model_dump=lambda: {
+                    'id': debt.id,
+                    'debt_date': debt.debt_date,
+                    'due_date': debt.due_date,
+                    'amount_mb': debt.amount_mb,
+                    'paid_mb': debt.paid_mb,
+                    'is_paid': debt.is_paid,
+                    'paid_at': debt.paid_at,
+                    'note': debt.note,
+                    'price_rp': debt.price_rp,
+                    'created_at': debt.created_at,
+                    'updated_at': debt.updated_at,
+                    'last_paid_source': debt.last_paid_source,
+                },
+            ),
+        ),
+    )
+    monkeypatch.setattr(user_management_routes, 'estimate_debt_rp_from_cheapest_package', lambda **_kwargs: SimpleNamespace(estimated_rp_rounded=0))
+
+    class _FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now if tz else now.replace(tzinfo=None)
+
+    monkeypatch.setattr(user_management_routes, 'datetime', _FrozenDateTime)
+
+    payload = user_management_routes._build_user_manual_debt_payload(fake_user)
+
+    assert len(payload['items']) == 1
+    assert payload['items'][0]['note'] == 'Debt terbaru'
+    assert payload['summary']['total_items'] == 1
+    assert payload['summary']['open_items'] == 1
+    assert payload['summary']['paid_items'] == 0
+
+
 def test_export_user_detail_report_pdf_temp_invalid_token_renders_html_page(monkeypatch):
     monkeypatch.setattr(user_management_routes, "verify_temp_user_detail_report_token", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(user_management_routes, "settings_service", SimpleNamespace(get_setting=lambda _key, default=None: "https://portal.example.test"))
