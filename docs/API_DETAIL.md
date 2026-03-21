@@ -24,6 +24,7 @@ Perubahan endpoint prioritas dianggap lengkap hanya jika keempat artefak berikut
 - Error envelope tetap memakai `ErrorResponse` dengan field wajib `code` dan `message`.
 - Endpoint publik tidak boleh memaksa frontend mengirim secret server-side.
 - Endpoint admin tetap berada di bawah namespace `/admin/**` dan harus divalidasi dengan guard role terkait.
+- `GET /settings/payment-availability` harus tetap `no-store`, tidak butuh autentikasi, dan menjadi source of truth UI untuk disable banner/tombol beli saat circuit breaker Midtrans terbuka.
 
 ## Endpoint Prioritas
 
@@ -58,6 +59,10 @@ Perubahan endpoint prioritas dianggap lengkap hanya jika keempat artefak berikut
 - `POST /transactions/public/{order_id}/cancel`
 - `GET /transactions/{order_id}/qr`
 - `GET /transactions/public/{order_id}/qr`
+
+### Public settings
+
+- `GET /settings/payment-availability`
 
 ### Admin
 

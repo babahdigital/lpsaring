@@ -40,6 +40,7 @@ export {
   type AdminQuotaAdjustResponse,
   type PublicDatabaseUpdateSubmissionRequest,
   type PublicUpdateSubmissionStatusResponse,
+  type PaymentAvailabilityResponse,
 } from './contracts.generated'
 
 import type {
@@ -72,3 +73,4 @@ export type TransactionDetailResponsePublicContract = import('./contracts.genera
 export type TransactionDebtInitiateRequestLegacyContract = TransactionDebtInitiateRequest
 
 export type MikrotikVerifyRulesResponseContract = import('./contracts.generated').MikrotikVerifyRulesResponse
+export type PaymentAvailabilityResponseContract = PaymentAvailabilityResponse

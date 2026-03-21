@@ -15,6 +15,7 @@ tags:
   - name: Profile
   - name: Devices
   - name: Transactions
+  - name: PublicSettings
   - name: AdminUsers
   - name: AdminTransactions
   - name: AdminSettings
@@ -22,6 +23,18 @@ tags:
   - name: AdminMetrics
 
 paths:
+  /settings/payment-availability:
+    get:
+      tags: [PublicSettings]
+      summary: Status ketersediaan gateway pembayaran untuk UI publik
+      responses:
+        '200':
+          description: Status gateway pembayaran saat ini
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentAvailabilityResponse'
+
   /auth/register:
     post:
       tags: [Auth]
@@ -1294,6 +1307,41 @@ components:
           type: string
         type:
           type: string
+
+    PaymentAvailabilityResponse:
+      type: object
+      required: [available, message, reason, circuit_name, circuit_state, retry_after_seconds, checked_at, checked_at_display, open_until, open_until_display]
+      properties:
+        available:
+          type: boolean
+        message:
+          type: string
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+        circuit_name:
+          type: string
+        circuit_state:
+          type: string
+          enum: [closed, open, half_open, unknown]
+        retry_after_seconds:
+          type: integer
+          minimum: 0
+        checked_at:
+          type: string
+          format: date-time
+          nullable: true
+        checked_at_display:
+          type: string
+          nullable: true
+        open_until:
+          type: string
+          format: date-time
+          nullable: true
+        open_until_display:
+          type: string
+          nullable: true
 
     AuthRegisterRequest:
       type: object

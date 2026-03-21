@@ -3,6 +3,7 @@ import type { VForm } from 'vuetify/components'
 // Mengimpor tipe data `PackagePublic` yang sudah benar dari backend
 import type { PackagePublic as Package } from '~/types/package'
 import type {
+  PaymentAvailabilityResponseContract,
   PaymentMethodContract,
   TransactionInitiateResponseContract,
   VaBankContract,
@@ -46,22 +47,10 @@ interface SnapPayResult {
   order_id: string
 }
 
-interface PaymentAvailabilityResponse {
-  available: boolean
-  message: string | null
-  reason: string | null
-  circuit_name: string
-  circuit_state: string
-  retry_after_seconds: number
-  checked_at: string | null
-  checked_at_display: string | null
-  open_until: string | null
-  open_until_display: string | null
-}
-
 type PaymentMethod = PaymentMethodContract
 type VaBank = VaBankContract
 type InitiateResponse = TransactionInitiateResponseContract
+type PaymentAvailabilityResponse = PaymentAvailabilityResponseContract
 
 interface SnapInstance {
   pay: (token: string, options: {

@@ -2,12 +2,13 @@
 // AUTO-GENERATED FILE. DO NOT EDIT MANUALLY.
 // Source: contracts/openapi/openapi.v1.yaml
 
-export const OPENAPI_SOURCE_SHA256 = '8ad8f5a3fbae36d48f1745ff6387e435fded96a0931d7150935d70efca505233' as const
+export const OPENAPI_SOURCE_SHA256 = '088f229cba658b78c596fc0083d90dc3fa3a85ec9eb0c36a96de290f1204bb4f' as const
 export const API_CONTRACT_REVISION = 'openapi-1.0.0' as const
 
 export type MessageResponse = { message: string }
 export type ErrorResponse = { code: string; message: string; details?: Array<ValidationErrorDetail>; request_id?: string }
 export type ValidationErrorDetail = { loc?: Array<string | number>; msg?: string; type?: string }
+export type PaymentAvailabilityResponse = { available: boolean; message: string | null; reason: string | null; circuit_name: string; circuit_state: 'closed' | 'open' | 'half_open' | 'unknown'; retry_after_seconds: number; checked_at: string | null; checked_at_display: string | null; open_until: string | null; open_until_display: string | null }
 export type AuthRegisterRequest = { phone_number: string; full_name: string; blok?: string | null; kamar?: string | null; is_tamping?: boolean; tamping_type?: string | null; register_as_komandan?: boolean }
 export type AuthRegisterResponse = { message: string; user_id: string; phone_number: string }
 export type AuthRequestOtpRequest = { phone_number: string }
@@ -60,8 +61,8 @@ export type AccessParitySummary = { users: number; mismatches: number }
 export type AdminAccessParityResponse = { items: Array<AccessParityItem>; summary: AccessParitySummary }
 export type AdminAccessParityFixRequest = { user_id: string; mac?: string | null; ip?: string | null }
 export type AdminAccessParityFixResponse = { message: string; user_id: string; mac?: string | null; resolved_ip?: string | null; expected_binding_type: string; binding_updated: boolean; address_list_synced: boolean }
-export type MikrotikRuleCheck = { label: string; found: boolean }
-export type MikrotikVerifyRulesResponse = { status: 'ok' | 'error'; all_found: boolean; total_filter_rules: number; total_raw_rules: number; checks: Array<MikrotikRuleCheck> }
+export type MikrotikRuleCheck = { rule: string; found: boolean; index?: number | null }
+export type MikrotikVerifyRulesResponse = { status: 'ok' | 'error'; all_found: boolean; order_ok: boolean; total_forward_rules: number; checks: Array<MikrotikRuleCheck> }
 
 export interface GeneratedApiContractMap {
   'GET /admin/metrics/access-parity': {
@@ -197,6 +198,11 @@ export interface GeneratedApiContractMap {
   'POST /auth/verify-otp': {
     request: AuthVerifyOtpRequest
     response: AuthVerifyOtpResponse
+    error: ErrorResponse
+  }
+  'GET /settings/payment-availability': {
+    request: never
+    response: PaymentAvailabilityResponse
     error: ErrorResponse
   }
   'GET /transactions/by-order-id/{order_id}': {
