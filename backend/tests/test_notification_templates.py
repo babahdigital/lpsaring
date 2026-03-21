@@ -93,6 +93,85 @@ def test_purchase_success_with_invoice_accepts_status_url(monkeypatch, app):
     assert "payment/status" in message
 
 
+def test_user_debt_report_with_pdf_accepts_summary_and_pdf_url(monkeypatch, app):
+    from app.services import notification_service
+
+    monkeypatch.setattr(
+        notification_service,
+        "_load_templates",
+        lambda: {
+            "user_debt_report_with_pdf": "Debt {full_name} {total_manual_debt_gb} {total_manual_debt_amount_display} {open_items} {debt_detail_lines} {debt_pdf_url}",
+        },
+    )
+    monkeypatch.setattr(notification_service, "get_app_links", lambda: {})
+
+    with app.app_context():
+        message = notification_service.get_notification_message(
+            "user_debt_report_with_pdf",
+            {
+                "full_name": "User",
+                "total_manual_debt_gb": "40.00 GB",
+                "total_manual_debt_amount_display": "Rp 400.000",
+                "open_items": 2,
+                "debt_detail_lines": "1. 31 Mar 2026 — 20.00 GB | Rp 200.000",
+                "debt_pdf_url": "https://example.test/api/admin/users/debts/temp/token.pdf",
+            },
+        )
+
+    assert "Peringatan:" not in message
+    assert "40.00 GB" in message
+    assert "debts/temp/token.pdf" in message
+
+
+def test_temp_debt_report_token_roundtrip(monkeypatch, app):
+    from app.services import notification_service
+
+    with app.app_context():
+        token = notification_service.generate_temp_debt_report_token("user-123")
+        resolved = notification_service.verify_temp_debt_report_token(token, max_age_seconds=3600)
+
+    assert resolved == "user-123"
+
+
+def test_temp_debt_settlement_receipt_token_roundtrip(monkeypatch, app):
+    from app.services import notification_service
+
+    with app.app_context():
+        token = notification_service.generate_temp_debt_settlement_receipt_token("entry-123")
+        resolved = notification_service.verify_temp_debt_settlement_receipt_token(token, max_age_seconds=3600)
+
+    assert resolved == "entry-123"
+
+
+def test_user_debt_partial_payment_accepts_receipt_fields(monkeypatch, app):
+    from app.services import notification_service
+
+    monkeypatch.setattr(
+        notification_service,
+        "_load_templates",
+        lambda: {
+            "user_debt_partial_payment": "Debt {full_name} {payment_channel_label} {paid_manual_debt_amount_display} {paid_total_debt_gb} {paid_total_debt_amount_display} {receipt_url}",
+        },
+    )
+    monkeypatch.setattr(notification_service, "get_app_links", lambda: {})
+
+    with app.app_context():
+        message = notification_service.get_notification_message(
+            "user_debt_partial_payment",
+            {
+                "full_name": "User",
+                "payment_channel_label": "Pelunasan manual oleh Admin",
+                "paid_manual_debt_amount_display": "Rp 25.000",
+                "paid_total_debt_gb": "2.00 GB",
+                "paid_total_debt_amount_display": "Rp 25.000",
+                "receipt_url": "https://example.test/api/admin/users/debt-settlements/temp/token.pdf",
+            },
+        )
+
+    assert "Peringatan:" not in message
+    assert "debt-settlements/temp/token.pdf" in message
+
+
 def test_user_access_blocked_humanizes_legacy_reason(monkeypatch, app):
     from app.services import notification_service
 

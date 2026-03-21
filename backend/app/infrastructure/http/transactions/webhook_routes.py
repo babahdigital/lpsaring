@@ -245,12 +245,27 @@ def handle_notification_impl(
                         filename = f"invoice-{transaction.midtrans_order_id}.pdf"
 
                         request_id = request.environ.get("FLASK_REQUEST_ID", "")
+                        log_transaction_event(
+                            session=session,
+                            transaction=transaction,
+                            source=TransactionEventSource.APP,
+                            event_type="WHATSAPP_INVOICE_QUEUED",
+                            status=transaction.status,
+                            payload={
+                                "recipient_number": str(user.phone_number),
+                                "pdf_url": temp_invoice_url,
+                                "filename": filename,
+                                "request_id": request_id,
+                            },
+                        )
+                        session.commit()
                         send_whatsapp_invoice_task.delay(
                             str(user.phone_number),
                             caption_message,
                             temp_invoice_url,
                             filename,
                             request_id,
+                            str(transaction.id),
                         )
                     except Exception as e_notif:
                         current_app.logger.error(
@@ -326,12 +341,27 @@ def handle_notification_impl(
                             current_app.logger.info(f"Mencoba mengirim WA dengan PDF dari URL: {temp_invoice_url}")
 
                             request_id = request.environ.get("FLASK_REQUEST_ID", "")
+                            log_transaction_event(
+                                session=session,
+                                transaction=transaction,
+                                source=TransactionEventSource.APP,
+                                event_type="WHATSAPP_INVOICE_QUEUED",
+                                status=transaction.status,
+                                payload={
+                                    "recipient_number": str(user.phone_number),
+                                    "pdf_url": temp_invoice_url,
+                                    "filename": filename,
+                                    "request_id": request_id,
+                                },
+                            )
+                            session.commit()
                             send_whatsapp_invoice_task.delay(
                                 str(user.phone_number),
                                 caption_message,
                                 temp_invoice_url,
                                 filename,
                                 request_id,
+                                str(transaction.id),
                             )
                             current_app.logger.info(
                                 f"Task pengiriman WhatsApp invoice untuk {order_id} dikirim ke Celery."

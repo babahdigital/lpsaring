@@ -6,6 +6,11 @@ from sqlalchemy.orm import selectinload
 from werkzeug.exceptions import HTTPException
 
 from app.infrastructure.db.models import Transaction, TransactionStatus, User
+from app.services.debt_settlement_receipt_service import (
+    build_debt_settlement_receipt_context,
+    get_debt_settlement_mutation_for_transaction,
+    is_debt_settlement_order_id,
+)
 from app.utils.formatters import get_app_local_datetime
 
 
@@ -47,20 +52,41 @@ def get_transaction_invoice_impl(
         user_kamar_display = getattr(transaction.user, "kamar", None)
         if user_kamar_display and user_kamar_display.startswith("Kamar_"):
             user_kamar_display = user_kamar_display.replace("Kamar_", "")
-        context = {
-            "transaction": transaction,
-            "user": transaction.user,
-            "package": transaction.package,
-            "user_kamar_value": user_kamar_display,
-            "business_name": current_app.config.get("BUSINESS_NAME", "Nama Bisnis Anda"),
-            "business_address": current_app.config.get("BUSINESS_ADDRESS", "Alamat Bisnis Anda"),
-            "business_phone": current_app.config.get("BUSINESS_PHONE", "Telepon Bisnis Anda"),
-            "business_email": current_app.config.get("BUSINESS_EMAIL", "Email Bisnis Anda"),
-            "invoice_date_local": get_app_local_datetime(),
-        }
+        is_debt_receipt = is_debt_settlement_order_id(transaction.midtrans_order_id)
+        if is_debt_receipt:
+            settlement_entry = get_debt_settlement_mutation_for_transaction(transaction)
+            if settlement_entry is None:
+                abort(HTTPStatus.NOT_FOUND, "Receipt pelunasan tunggakan tidak ditemukan.")
+            context = build_debt_settlement_receipt_context(
+                user=transaction.user,
+                settlement_entry=settlement_entry,
+                transaction=transaction,
+            )
+            context.update(
+                {
+                    "business_name": current_app.config.get("BUSINESS_NAME", "Nama Bisnis Anda"),
+                    "business_address": current_app.config.get("BUSINESS_ADDRESS", "Alamat Bisnis Anda"),
+                    "business_phone": current_app.config.get("BUSINESS_PHONE", "Telepon Bisnis Anda"),
+                    "business_email": current_app.config.get("BUSINESS_EMAIL", "Email Bisnis Anda"),
+                }
+            )
+            template_name = "debt_settlement_receipt.html"
+        else:
+            context = {
+                "transaction": transaction,
+                "user": transaction.user,
+                "package": transaction.package,
+                "user_kamar_value": user_kamar_display,
+                "business_name": current_app.config.get("BUSINESS_NAME", "Nama Bisnis Anda"),
+                "business_address": current_app.config.get("BUSINESS_ADDRESS", "Alamat Bisnis Anda"),
+                "business_phone": current_app.config.get("BUSINESS_PHONE", "Telepon Bisnis Anda"),
+                "business_email": current_app.config.get("BUSINESS_EMAIL", "Email Bisnis Anda"),
+                "invoice_date_local": get_app_local_datetime(),
+            }
+            template_name = "invoice_template.html"
 
         public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
-        html_string = render_template("invoice_template.html", **context)
+        html_string = render_template(template_name, **context)
         pdf_bytes = html_class(string=html_string, base_url=public_base_url).write_pdf()
 
         if not pdf_bytes:
@@ -117,20 +143,41 @@ def get_temp_transaction_invoice_impl(
 
         kamar_value = getattr(transaction.user, "kamar", None)
         user_kamar_display = kamar_value.replace("Kamar_", "") if isinstance(kamar_value, str) and kamar_value else ""
-        context = {
-            "transaction": transaction,
-            "user": transaction.user,
-            "package": transaction.package,
-            "user_kamar_value": user_kamar_display,
-            "business_name": current_app.config.get("BUSINESS_NAME", "Nama Bisnis Anda"),
-            "business_address": current_app.config.get("BUSINESS_ADDRESS", "Alamat Bisnis Anda"),
-            "business_phone": current_app.config.get("BUSINESS_PHONE", "Telepon Bisnis Anda"),
-            "business_email": current_app.config.get("BUSINESS_EMAIL", "Email Bisnis Anda"),
-            "invoice_date_local": get_app_local_datetime(),
-        }
+        is_debt_receipt = is_debt_settlement_order_id(transaction.midtrans_order_id)
+        if is_debt_receipt:
+            settlement_entry = get_debt_settlement_mutation_for_transaction(transaction)
+            if settlement_entry is None:
+                abort(HTTPStatus.NOT_FOUND, "Receipt pelunasan tunggakan tidak ditemukan.")
+            context = build_debt_settlement_receipt_context(
+                user=transaction.user,
+                settlement_entry=settlement_entry,
+                transaction=transaction,
+            )
+            context.update(
+                {
+                    "business_name": current_app.config.get("BUSINESS_NAME", "Nama Bisnis Anda"),
+                    "business_address": current_app.config.get("BUSINESS_ADDRESS", "Alamat Bisnis Anda"),
+                    "business_phone": current_app.config.get("BUSINESS_PHONE", "Telepon Bisnis Anda"),
+                    "business_email": current_app.config.get("BUSINESS_EMAIL", "Email Bisnis Anda"),
+                }
+            )
+            template_name = "debt_settlement_receipt.html"
+        else:
+            context = {
+                "transaction": transaction,
+                "user": transaction.user,
+                "package": transaction.package,
+                "user_kamar_value": user_kamar_display,
+                "business_name": current_app.config.get("BUSINESS_NAME", "Nama Bisnis Anda"),
+                "business_address": current_app.config.get("BUSINESS_ADDRESS", "Alamat Bisnis Anda"),
+                "business_phone": current_app.config.get("BUSINESS_PHONE", "Telepon Bisnis Anda"),
+                "business_email": current_app.config.get("BUSINESS_EMAIL", "Email Bisnis Anda"),
+                "invoice_date_local": get_app_local_datetime(),
+            }
+            template_name = "invoice_template.html"
 
         public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
-        html_string = render_template("invoice_template.html", **context)
+        html_string = render_template(template_name, **context)
         pdf_bytes = html_class(string=html_string, base_url=public_base_url).write_pdf()
 
         response = make_response(pdf_bytes)

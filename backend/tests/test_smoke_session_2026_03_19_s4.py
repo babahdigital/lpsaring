@@ -158,7 +158,8 @@ def test_user_debt_partial_payment_unblock_has_required_fields():
     templates = _load_templates()
     tpl = templates["user_debt_partial_payment_unblock"]
     for field in ["{full_name}", "{debt_date}", "{paid_at}", "{paid_manual_debt_gb}",
-                  "{remaining_manual_debt_gb}", "{remaining_quota_gb}", "{expiry_date}"]:
+                  "{paid_manual_debt_amount_display}", "{paid_total_debt_gb}", "{paid_total_debt_amount_display}",
+                  "{payment_channel_label}", "{remaining_manual_debt_gb}", "{remaining_quota_gb}", "{expiry_date}", "{receipt_url}"]:
         assert field in tpl, f"Template unblock harus punya {field}"
 
 
@@ -171,9 +172,14 @@ def test_user_debt_partial_payment_unblock_renders_correctly():
         "debt_date": "19-03-2026",
         "paid_at": "19-03-2026 18:00",
         "paid_manual_debt_gb": "20.00 GB",
+        "paid_manual_debt_amount_display": "Rp 200.000",
+        "paid_total_debt_gb": "20.00 GB",
+        "paid_total_debt_amount_display": "Rp 200.000",
+        "payment_channel_label": "Pelunasan manual oleh Admin",
         "remaining_manual_debt_gb": "0.00 GB",
         "remaining_quota_gb": "15.00 GB",
         "expiry_date": "31-03-2026",
+        "receipt_url": "https://example.test/receipt.pdf",
         "link_user_app": "https://lpsaring.babahdigital.net/login",
     }
     result = tpl.format(**ctx)

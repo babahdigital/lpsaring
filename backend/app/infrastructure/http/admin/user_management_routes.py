@@ -18,6 +18,8 @@ from app.infrastructure.db.models import (
     AdminActionType,
     Package,
     PublicDatabaseUpdateSubmission,
+    QuotaMutationLedger,
+    Transaction,
     UserDevice,
 )
 from app.infrastructure.http.decorators import admin_required
@@ -46,7 +48,23 @@ from app.infrastructure.gateways.mikrotik_client import get_hotspot_user_details
 from app.services.user_management.helpers import _log_admin_action
 
 from app.services import settings_service
+from app.services.notification_service import (
+    generate_temp_debt_report_token,
+    generate_temp_debt_settlement_receipt_token,
+    get_notification_message,
+    verify_temp_debt_report_token,
+    verify_temp_debt_settlement_receipt_token,
+)
+from app.services.debt_settlement_receipt_service import (
+    ADMIN_SETTLE_ALL_SOURCE,
+    ADMIN_SETTLE_SINGLE_SOURCE,
+    build_debt_settlement_receipt_context,
+    estimate_amount_rp_for_mb,
+    format_currency_idr,
+    get_latest_admin_debt_settlement_mutation,
+)
 from app.services.quota_history_service import get_user_quota_history_payload
+from app.tasks import send_whatsapp_invoice_task
 from app.utils.block_reasons import is_debt_block_reason
 
 from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package
@@ -115,6 +133,166 @@ def _deny_non_super_admin_target_access(current_admin: User, target_user: User):
     if target_user.role == UserRole.SUPER_ADMIN or _is_demo_user(target_user):
         return jsonify({"message": "Akses ditolak."}), HTTPStatus.FORBIDDEN
     return None
+
+
+def _format_currency_idr(value: int | float | None) -> str:
+    amount = int(float(value or 0))
+    return f"Rp {amount:,}".replace(",", ".")
+
+
+def _pick_ref_pkg_for_debt_mb(value_mb: float) -> Package | None:
+    try:
+        mb = float(value_mb or 0)
+    except Exception:
+        mb = 0.0
+    if mb <= 0:
+        return None
+    debt_gb = mb / 1024.0
+
+    base_q = (
+        select(Package)
+        .where(Package.is_active.is_(True))
+        .where(Package.data_quota_gb.is_not(None))
+        .where(Package.data_quota_gb > 0)
+        .where(Package.price.is_not(None))
+        .where(Package.price > 0)
+    )
+    ref = db.session.execute(
+        base_q.where(Package.data_quota_gb >= debt_gb)
+        .order_by(Package.data_quota_gb.asc(), Package.price.asc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if ref is None:
+        ref = db.session.execute(base_q.order_by(Package.data_quota_gb.desc(), Package.price.asc()).limit(1)).scalar_one_or_none()
+    return ref
+
+
+def _estimate_for_debt_mb(value_mb: float):
+    pkg = _pick_ref_pkg_for_debt_mb(value_mb)
+    return estimate_debt_rp_from_cheapest_package(
+        debt_mb=float(value_mb or 0),
+        cheapest_package_price_rp=int(pkg.price) if pkg and pkg.price is not None else None,
+        cheapest_package_quota_gb=float(pkg.data_quota_gb) if pkg and pkg.data_quota_gb is not None else None,
+        cheapest_package_name=str(pkg.name) if pkg and pkg.name else None,
+    )
+
+
+def _build_user_manual_debt_report_context(user: User) -> dict:
+    debts = db.session.scalars(
+        select(UserQuotaDebt)
+        .where(UserQuotaDebt.user_id == user.id)
+        .order_by(
+            UserQuotaDebt.debt_date.desc().nulls_last(),
+            UserQuotaDebt.created_at.desc(),
+        )
+    ).all()
+
+    items = []
+    for d in debts:
+        amount = int(getattr(d, "amount_mb", 0) or 0)
+        paid_mb = int(getattr(d, "paid_mb", 0) or 0)
+        remaining = max(0, amount - paid_mb)
+        is_paid = bool(getattr(d, "is_paid", False)) or remaining <= 0
+        payload = UserQuotaDebtItemResponseSchema.from_orm(d).model_dump()
+        try:
+            if payload.get("debt_date"):
+                payload["debt_date_display"] = format_app_date_display(payload.get("debt_date"), fallback="-")
+        except Exception:
+            pass
+        try:
+            due_date_val = getattr(d, "due_date", None)
+            if due_date_val:
+                payload["due_date_display"] = format_app_date_display(due_date_val, fallback="-")
+                payload["due_date"] = str(due_date_val)
+        except Exception:
+            pass
+        payload["created_at_display"] = format_app_datetime_display(payload.get("created_at"), fallback="-")
+        payload["updated_at_display"] = format_app_datetime_display(payload.get("updated_at"), fallback="-")
+        payload["paid_at_display"] = format_app_datetime_display(payload.get("paid_at"), fallback="-")
+        payload["remaining_mb"] = int(remaining)
+        payload["is_paid"] = bool(is_paid)
+        payload["paid_mb"] = int(paid_mb)
+        payload["amount_mb"] = int(amount)
+        items.append(payload)
+
+    debt_auto_mb = float(getattr(user, "quota_debt_auto_mb", 0) or 0)
+    debt_manual_mb = float(getattr(user, "quota_debt_manual_mb", 0) or 0)
+    debt_total_mb = float(getattr(user, "quota_debt_total_mb", debt_auto_mb + debt_manual_mb) or 0)
+
+    est_auto = _estimate_for_debt_mb(debt_auto_mb)
+    est_manual = _estimate_for_debt_mb(debt_manual_mb)
+    est_total = _estimate_for_debt_mb(debt_total_mb)
+
+    now_utc = datetime.now(dt_timezone.utc)
+    generated_local = format_app_datetime_display(now_utc, include_seconds=False)
+
+    return {
+        "user": user,
+        "user_phone_display": format_to_local_phone(getattr(user, "phone_number", "") or "")
+        or (getattr(user, "phone_number", "") or ""),
+        "generated_at": generated_local,
+        "items": items,
+        "debt_auto_mb": debt_auto_mb,
+        "debt_manual_mb": debt_manual_mb,
+        "debt_total_mb": debt_total_mb,
+        "debt_auto_estimated_rp": est_auto.estimated_rp_rounded or 0,
+        "debt_manual_estimated_rp": est_manual.estimated_rp_rounded or 0,
+        "debt_total_estimated_rp": est_total.estimated_rp_rounded or 0,
+        "estimate_base_package_name": est_total.package_name,
+    }
+
+
+def _render_user_manual_debts_pdf_bytes(context: dict, public_base_url: str) -> bytes:
+    from weasyprint import HTML  # type: ignore
+
+    html_string = render_template("admin_user_debt_report.html", **context)
+    return HTML(string=html_string, base_url=public_base_url).write_pdf()
+
+
+def _build_user_debt_whatsapp_context(user: User, report_context: dict, pdf_url: str) -> dict:
+    open_items = [item for item in report_context.get("items", []) if not bool(item.get("is_paid"))]
+    detail_lines: list[str] = []
+    for index, item in enumerate(open_items[:8], start=1):
+        due_text = item.get("due_date_display") or item.get("debt_date_display") or "-"
+        amount_text = format_mb_to_gb(item.get("remaining_mb") or item.get("amount_mb") or 0)
+        price_text = _format_currency_idr(item.get("price_rp") or item.get("estimated_rp") or 0)
+        package_text = str(item.get("note") or "Tunggakan manual").strip()
+        detail_lines.append(f"{index}. {due_text} — {amount_text} | {price_text} | {package_text}")
+
+    if len(open_items) > 8:
+        detail_lines.append(f"... dan {len(open_items) - 8} item lainnya. Lihat PDF terlampir untuk rincian lengkap.")
+    if not detail_lines:
+        detail_lines.append("Tidak ada item tunggakan manual yang masih terbuka.")
+
+    return {
+        "full_name": user.full_name,
+        "total_manual_debt_gb": format_mb_to_gb(report_context.get("debt_manual_mb") or 0),
+        "total_manual_debt_amount_display": _format_currency_idr(report_context.get("debt_manual_estimated_rp") or 0),
+        "open_items": len(open_items),
+        "debt_detail_lines": "\n".join(detail_lines),
+        "debt_pdf_url": pdf_url,
+    }
+
+
+def _resolve_public_base_url() -> str:
+    return (
+        settings_service.get_setting("APP_PUBLIC_BASE_URL")
+        or settings_service.get_setting("FRONTEND_URL")
+        or settings_service.get_setting("APP_LINK_USER")
+        or request.url_root
+    )
+
+
+def _render_debt_settlement_receipt_pdf_bytes(context: dict, public_base_url: str) -> bytes:
+    from weasyprint import HTML  # type: ignore
+
+    html_string = render_template("debt_settlement_receipt.html", **context)
+    return HTML(string=html_string, base_url=public_base_url).write_pdf()
+
+
+def _build_debt_settlement_receipt_url(entry_id: uuid.UUID, base_url: str) -> str:
+    token = generate_temp_debt_settlement_receipt_token(str(entry_id))
+    return f"{base_url.rstrip('/')}/api/admin/users/debt-settlements/temp/{token}.pdf"
 
 
 @user_management_bp.route("/update-submissions", methods=["GET"])
@@ -815,6 +993,22 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
 
         db.session.commit()
 
+        receipt_url = None
+        receipt_context = None
+        try:
+            receipt_entry = get_latest_admin_debt_settlement_mutation(user.id, ADMIN_SETTLE_SINGLE_SOURCE)
+            if receipt_entry is not None:
+                base_url = _resolve_public_base_url()
+                if base_url:
+                    receipt_url = _build_debt_settlement_receipt_url(receipt_entry.id, base_url)
+                receipt_context = build_debt_settlement_receipt_context(user=user, settlement_entry=receipt_entry)
+        except Exception as receipt_err:
+            current_app.logger.warning(
+                "Gagal menyiapkan receipt pelunasan partial debt user %s: %s",
+                user.id,
+                receipt_err,
+            )
+
         # Notify user via WhatsApp (best-effort)
         try:
             if paid_mb > 0:
@@ -848,9 +1042,18 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
                         "debt_date": debt_date_str,
                         "paid_at": paid_at_str,
                         "paid_manual_debt_gb": format_mb_to_gb(paid_mb),
+                        "paid_manual_debt_amount_display": (
+                            receipt_context.get("paid_manual_amount_display") if receipt_context else format_currency_idr(estimate_amount_rp_for_mb(paid_mb))
+                        ),
+                        "paid_total_debt_gb": receipt_context.get("paid_total_gb") if receipt_context else format_mb_to_gb(paid_mb),
+                        "paid_total_debt_amount_display": (
+                            receipt_context.get("paid_total_amount_display") if receipt_context else format_currency_idr(estimate_amount_rp_for_mb(paid_mb))
+                        ),
+                        "payment_channel_label": "Pelunasan manual oleh Admin",
                         "remaining_manual_debt_gb": format_mb_to_gb(remaining_manual_debt),
                         "remaining_quota_gb": format_mb_to_gb(remaining_quota_mb),
                         "expiry_date": expiry_date_str,
+                        "receipt_url": receipt_url or "-",
                     },
                 )
         except Exception as e:
@@ -862,6 +1065,7 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
             "message": "Debt berhasil dilunasi.",
             "paid_mb": int(paid_mb),
             "unblocked": bool(unblocked),
+            "receipt_url": receipt_url,
         }), HTTPStatus.OK
     except Exception as e:
         db.session.rollback()
@@ -911,6 +1115,22 @@ def settle_all_debts(current_admin: User, user_id: uuid.UUID):
 
         db.session.commit()
 
+        receipt_url = None
+        receipt_context = None
+        try:
+            receipt_entry = get_latest_admin_debt_settlement_mutation(user.id, ADMIN_SETTLE_ALL_SOURCE)
+            if receipt_entry is not None:
+                base_url = _resolve_public_base_url()
+                if base_url:
+                    receipt_url = _build_debt_settlement_receipt_url(receipt_entry.id, base_url)
+                receipt_context = build_debt_settlement_receipt_context(user=user, settlement_entry=receipt_entry)
+        except Exception as receipt_err:
+            current_app.logger.warning(
+                "Gagal menyiapkan receipt pelunasan semua debt user %s: %s",
+                user.id,
+                receipt_err,
+            )
+
         # Notify user via WhatsApp (best-effort).
         try:
             purchased_now = float(getattr(user, "total_quota_purchased_mb", 0) or 0)
@@ -929,7 +1149,12 @@ def settle_all_debts(current_admin: User, user_id: uuid.UUID):
                         "paid_auto_debt_gb": format_mb_to_gb(paid_auto_mb),
                         "paid_manual_debt_gb": format_mb_to_gb(paid_manual_mb),
                         "paid_total_debt_gb": format_mb_to_gb(paid_total_mb),
+                        "paid_total_debt_amount_display": (
+                            receipt_context.get("paid_total_amount_display") if receipt_context else format_currency_idr(estimate_amount_rp_for_mb(paid_total_mb))
+                        ),
+                        "payment_channel_label": "Pelunasan manual oleh Admin",
                         "remaining_quota": format_mb_to_gb(remaining_mb),
+                        "receipt_url": receipt_url or "-",
                     },
                 )
         except Exception as e:
@@ -943,6 +1168,7 @@ def settle_all_debts(current_admin: User, user_id: uuid.UUID):
                 "debt_auto_before_mb": float(debt_auto_before),
                 "debt_manual_before_mb": int(debt_manual_before),
                 "unblocked": bool(unblocked),
+                "receipt_url": receipt_url,
             }
         ), HTTPStatus.OK
     except Exception as e:
@@ -1038,109 +1264,9 @@ def export_user_manual_debts_pdf(current_admin: User, user_id: uuid.UUID):
         return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
 
     try:
-        debts = db.session.scalars(
-            select(UserQuotaDebt)
-            .where(UserQuotaDebt.user_id == user.id)
-            .order_by(
-                UserQuotaDebt.debt_date.desc().nulls_last(),
-                UserQuotaDebt.created_at.desc(),
-            )
-        ).all()
-
-        items = []
-        for d in debts:
-            amount = int(getattr(d, "amount_mb", 0) or 0)
-            paid_mb = int(getattr(d, "paid_mb", 0) or 0)
-            remaining = max(0, amount - paid_mb)
-            is_paid = bool(getattr(d, "is_paid", False)) or remaining <= 0
-            payload = UserQuotaDebtItemResponseSchema.from_orm(d).model_dump()
-            try:
-                if payload.get("debt_date"):
-                    payload["debt_date_display"] = format_app_date_display(payload.get("debt_date"), fallback="-")
-            except Exception:
-                pass
-            try:
-                due_date_val = getattr(d, "due_date", None)
-                if due_date_val:
-                    payload["due_date_display"] = format_app_date_display(due_date_val, fallback="-")
-                    payload["due_date"] = str(due_date_val)
-            except Exception:
-                pass
-            payload["created_at_display"] = format_app_datetime_display(payload.get("created_at"), fallback="-")
-            payload["updated_at_display"] = format_app_datetime_display(payload.get("updated_at"), fallback="-")
-            payload["paid_at_display"] = format_app_datetime_display(payload.get("paid_at"), fallback="-")
-            payload["remaining_mb"] = int(remaining)
-            payload["is_paid"] = bool(is_paid)
-            payload["paid_mb"] = int(paid_mb)
-            payload["amount_mb"] = int(amount)
-            items.append(payload)
-
-        debt_auto_mb = float(getattr(user, "quota_debt_auto_mb", 0) or 0)
-        debt_manual_mb = float(getattr(user, "quota_debt_manual_mb", 0) or 0)
-        debt_total_mb = float(getattr(user, "quota_debt_total_mb", debt_auto_mb + debt_manual_mb) or 0)
-
-        def _pick_ref_pkg_for_debt_mb(value_mb: float) -> Package | None:
-            try:
-                mb = float(value_mb or 0)
-            except Exception:
-                mb = 0.0
-            if mb <= 0:
-                return None
-            debt_gb = mb / 1024.0
-
-            base_q = (
-                select(Package)
-                .where(Package.is_active.is_(True))
-                .where(Package.data_quota_gb.is_not(None))
-                .where(Package.data_quota_gb > 0)
-                .where(Package.price.is_not(None))
-                .where(Package.price > 0)
-            )
-            ref = db.session.execute(
-                base_q.where(Package.data_quota_gb >= debt_gb)
-                .order_by(Package.data_quota_gb.asc(), Package.price.asc())
-                .limit(1)
-            ).scalar_one_or_none()
-            if ref is None:
-                ref = db.session.execute(
-                    base_q.order_by(Package.data_quota_gb.desc(), Package.price.asc()).limit(1)
-                ).scalar_one_or_none()
-            return ref
-
-        def _estimate_for_mb(value_mb: float):
-            pkg = _pick_ref_pkg_for_debt_mb(value_mb)
-            return estimate_debt_rp_from_cheapest_package(
-                debt_mb=float(value_mb or 0),
-                cheapest_package_price_rp=int(pkg.price) if pkg and pkg.price is not None else None,
-                cheapest_package_quota_gb=float(pkg.data_quota_gb) if pkg and pkg.data_quota_gb is not None else None,
-                cheapest_package_name=str(pkg.name) if pkg and pkg.name else None,
-            )
-
-        est_auto = _estimate_for_mb(debt_auto_mb)
-        est_manual = _estimate_for_mb(debt_manual_mb)
-        est_total = _estimate_for_mb(debt_total_mb)
-
-        now_utc = datetime.now(dt_timezone.utc)
-        generated_local = format_app_datetime_display(now_utc, include_seconds=False)
-
-        context = {
-            "user": user,
-            "user_phone_display": format_to_local_phone(getattr(user, "phone_number", "") or "")
-            or (getattr(user, "phone_number", "") or ""),
-            "generated_at": generated_local,
-            "items": items,
-            "debt_auto_mb": debt_auto_mb,
-            "debt_manual_mb": debt_manual_mb,
-            "debt_total_mb": debt_total_mb,
-            "debt_auto_estimated_rp": est_auto.estimated_rp_rounded or 0,
-            "debt_manual_estimated_rp": est_manual.estimated_rp_rounded or 0,
-            "debt_total_estimated_rp": est_total.estimated_rp_rounded or 0,
-            "estimate_base_package_name": est_total.package_name,
-        }
-
+        context = _build_user_manual_debt_report_context(user)
         public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
-        html_string = render_template("admin_user_debt_report.html", **context)
-        pdf_bytes = HTML(string=html_string, base_url=public_base_url).write_pdf()
+        pdf_bytes = _render_user_manual_debts_pdf_bytes(context, public_base_url)
         if not pdf_bytes:
             return jsonify({"message": "Gagal menghasilkan file PDF."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
@@ -1153,6 +1279,146 @@ def export_user_manual_debts_pdf(current_admin: User, user_id: uuid.UUID):
     except Exception as e:
         current_app.logger.error(f"Error export debt PDF for user {user_id}: {e}", exc_info=True)
         return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@user_management_bp.route("/users/debts/temp/<string:token>", methods=["GET"])
+@user_management_bp.route("/users/debts/temp/<string:token>.pdf", methods=["GET"])
+def export_user_manual_debts_pdf_temp(token: str):
+    try:
+        from weasyprint import HTML  # type: ignore  # noqa: F401
+    except Exception:
+        return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
+
+    user_id = verify_temp_debt_report_token(token, max_age_seconds=3600)
+    if not user_id:
+        return jsonify({"message": "Akses tidak valid atau link telah kedaluwarsa."}), HTTPStatus.FORBIDDEN
+
+    try:
+        user_uuid = uuid.UUID(user_id)
+    except (TypeError, ValueError):
+        return jsonify({"message": "Token tidak valid."}), HTTPStatus.FORBIDDEN
+
+    user = db.session.get(User, user_uuid)
+    if not user:
+        return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+
+    try:
+        context = _build_user_manual_debt_report_context(user)
+        public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
+        pdf_bytes = _render_user_manual_debts_pdf_bytes(context, public_base_url)
+        if not pdf_bytes:
+            return jsonify({"message": "Gagal menghasilkan file PDF."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+        safe_phone = (getattr(user, "phone_number", "") or "").replace("+", "")
+        filename = f"debt-{safe_phone or user.id}-ledger.pdf"
+        resp = make_response(pdf_bytes)
+        resp.headers["Content-Type"] = "application/pdf"
+        resp.headers["Content-Disposition"] = f'inline; filename="{filename}"'
+        return resp
+    except Exception as e:
+        current_app.logger.error(f"Error export temp debt PDF for user {user_id}: {e}", exc_info=True)
+        return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@user_management_bp.route("/users/debt-settlements/temp/<string:token>", methods=["GET"])
+@user_management_bp.route("/users/debt-settlements/temp/<string:token>.pdf", methods=["GET"])
+def export_debt_settlement_receipt_temp(token: str):
+    try:
+        from weasyprint import HTML  # type: ignore  # noqa: F401
+    except Exception:
+        return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
+
+    entry_id = verify_temp_debt_settlement_receipt_token(token, max_age_seconds=3600)
+    if not entry_id:
+        return jsonify({"message": "Akses tidak valid atau link telah kedaluwarsa."}), HTTPStatus.FORBIDDEN
+
+    try:
+        entry_uuid = uuid.UUID(entry_id)
+    except (TypeError, ValueError):
+        return jsonify({"message": "Token tidak valid."}), HTTPStatus.FORBIDDEN
+
+    entry = db.session.get(QuotaMutationLedger, entry_uuid)
+    if not entry:
+        return jsonify({"message": "Receipt tidak ditemukan."}), HTTPStatus.NOT_FOUND
+
+    user = db.session.get(User, getattr(entry, "user_id", None))
+    if not user:
+        return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+
+    transaction = None
+    order_id = str((getattr(entry, "event_details", None) or {}).get("order_id") or "").strip()
+    if order_id:
+        transaction = db.session.execute(select(Transaction).where(Transaction.midtrans_order_id == order_id)).scalar_one_or_none()
+
+    try:
+        context = build_debt_settlement_receipt_context(user=user, settlement_entry=entry, transaction=transaction)
+        context.update(
+            {
+                "business_name": current_app.config.get("BUSINESS_NAME", "Nama Bisnis Anda"),
+                "business_address": current_app.config.get("BUSINESS_ADDRESS", "Alamat Bisnis Anda"),
+                "business_phone": current_app.config.get("BUSINESS_PHONE", "Telepon Bisnis Anda"),
+                "business_email": current_app.config.get("BUSINESS_EMAIL", "Email Bisnis Anda"),
+            }
+        )
+        public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
+        pdf_bytes = _render_debt_settlement_receipt_pdf_bytes(context, public_base_url)
+        filename = f"receipt-{context.get('receipt_number') or entry.id}.pdf"
+        resp = make_response(pdf_bytes)
+        resp.headers["Content-Type"] = "application/pdf"
+        resp.headers["Content-Disposition"] = f'inline; filename="{filename}"'
+        return resp
+    except Exception as e:
+        current_app.logger.error(f"Error export debt settlement receipt {entry_id}: {e}", exc_info=True)
+        return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@user_management_bp.route("/users/<uuid:user_id>/debts/send-whatsapp", methods=["POST"])
+@admin_required
+def send_user_manual_debts_whatsapp(current_admin: User, user_id: uuid.UUID):
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+    denied_response = _deny_non_super_admin_target_access(current_admin, user)
+    if denied_response:
+        return denied_response
+    if not getattr(user, "phone_number", None):
+        return jsonify({"message": "Nomor WhatsApp pengguna tidak tersedia."}), HTTPStatus.BAD_REQUEST
+
+    try:
+        report_context = _build_user_manual_debt_report_context(user)
+        open_items = [item for item in report_context.get("items", []) if not bool(item.get("is_paid"))]
+        if not open_items:
+            return jsonify({"message": "Tidak ada tunggakan manual yang masih terbuka untuk dikirimkan."}), HTTPStatus.BAD_REQUEST
+
+        base_url = _resolve_public_base_url()
+        if not base_url:
+            return jsonify({"message": "Konfigurasi alamat publik aplikasi tidak ditemukan."}), HTTPStatus.SERVICE_UNAVAILABLE
+
+        temp_token = generate_temp_debt_report_token(str(user.id))
+        pdf_url = f"{base_url.rstrip('/')}/api/admin/users/debts/temp/{temp_token}.pdf"
+        wa_context = _build_user_debt_whatsapp_context(user, report_context, pdf_url)
+        caption_message = get_notification_message("user_debt_report_with_pdf", wa_context)
+        filename = f"debt-{(getattr(user, 'phone_number', '') or str(user.id)).replace('+', '')}-ledger.pdf"
+        request_id = request.environ.get("FLASK_REQUEST_ID", "")
+        send_whatsapp_invoice_task.delay(
+            str(user.phone_number),
+            caption_message,
+            pdf_url,
+            filename,
+            request_id,
+            None,
+            "debt_report",
+        )
+        current_app.logger.info(
+            "ADMIN_DEBT_WA: WA debt report queued for user=%s phone=%s admin=%s",
+            user.id,
+            user.phone_number,
+            current_admin.id,
+        )
+        return jsonify({"message": "Ringkasan tunggakan berhasil diantrikan ke WhatsApp.", "queued": True}), HTTPStatus.OK
+    except Exception as e:
+        current_app.logger.error(f"Error queue debt WhatsApp report for user {user_id}: {e}", exc_info=True)
+        return jsonify({"message": "Gagal mengantrekan WhatsApp tunggakan."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
 @user_management_bp.route("/users/<uuid:user_id>/quota-history", methods=["GET"])

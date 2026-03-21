@@ -7,6 +7,7 @@ import secrets
 import subprocess
 import sys
 import re
+import uuid
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote_plus
@@ -16,6 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import selectinload
 
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_with_pdf, send_whatsapp_message
+from app.infrastructure.http.transactions.events import log_transaction_event
 from app.services.hotspot_sync_service import sync_hotspot_usage_and_profiles, cleanup_inactive_users, sync_address_list_for_single_user
 from app.services import settings_service
 from app.services.access_parity_service import collect_access_parity_report
@@ -32,6 +34,7 @@ from app.infrastructure.db.models import (
     QuotaMutationLedger,
     RefreshToken,
     Transaction,
+    TransactionEventSource,
     TransactionStatus,
     User,
     UserDevice,
@@ -1892,7 +1895,14 @@ def policy_parity_guard_task(self):
     retry_kwargs={"max_retries": 3},
 )
 def send_whatsapp_invoice_task(
-    self, recipient_number: str, caption: str, pdf_url: str, filename: str, request_id: str = ""
+    self,
+    recipient_number: str,
+    caption: str,
+    pdf_url: str,
+    filename: str,
+    request_id: str = "",
+    transaction_id: str | None = None,
+    notification_kind: str = "invoice",
 ):
     """
     Celery task untuk mengirim pesan WhatsApp dengan lampiran PDF.
@@ -1909,9 +1919,61 @@ def send_whatsapp_invoice_task(
     # environ.get sekarang akan berfungsi karena 'environ' telah diimpor secara langsung.
     app = create_app()
 
+    event_prefix = "WHATSAPP_INVOICE" if notification_kind == "invoice" else "WHATSAPP_DEBT_REPORT"
+
+    def _log_notification_event(event_type: str, payload: dict[str, Any]) -> None:
+        if not transaction_id:
+            return
+        try:
+            tx_uuid = uuid.UUID(str(transaction_id))
+        except (TypeError, ValueError):
+            logger.warning(
+                "Celery Task: transaction_id tidak valid untuk log event notif %s: %s",
+                notification_kind,
+                transaction_id,
+            )
+            return
+
+        try:
+            transaction = db.session.get(Transaction, tx_uuid)
+            if transaction is None:
+                logger.warning(
+                    "Celery Task: transaksi %s tidak ditemukan saat mencatat event notif %s.",
+                    transaction_id,
+                    notification_kind,
+                )
+                return
+            log_transaction_event(
+                session=db.session,
+                transaction=transaction,
+                source=TransactionEventSource.APP,
+                event_type=event_type,
+                status=transaction.status,
+                payload=payload,
+            )
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            logger.warning(
+                "Celery Task: gagal mencatat event notif %s untuk transaksi %s.",
+                notification_kind,
+                transaction_id,
+                exc_info=True,
+            )
+
     with app.app_context():
         logger.info(
             f"Celery Task: Memulai pengiriman WhatsApp dengan PDF ke {recipient_number} untuk URL: {pdf_url}. Request ID: {request_id}"
+        )
+        _log_notification_event(
+            f"{event_prefix}_SEND_ATTEMPT",
+            {
+                "recipient_number": recipient_number,
+                "pdf_url": pdf_url,
+                "filename": filename,
+                "request_id": request_id,
+                "notification_kind": notification_kind,
+            },
         )
         try:
             # send_whatsapp_with_pdf sekarang akan memiliki akses ke current_app
@@ -1920,18 +1982,65 @@ def send_whatsapp_invoice_task(
                 logger.error(
                     f"Celery Task: Gagal mengirim WhatsApp invoice ke {recipient_number} (Fonnte reported failure)."
                 )
+                _log_notification_event(
+                    f"{event_prefix}_PDF_FAILED",
+                    {
+                        "recipient_number": recipient_number,
+                        "pdf_url": pdf_url,
+                        "filename": filename,
+                        "request_id": request_id,
+                        "notification_kind": notification_kind,
+                    },
+                )
                 # Fallback: kirim pesan teks tanpa PDF
                 text_success = send_whatsapp_message(recipient_number, caption)
                 if text_success:
                     logger.info(f"Celery Task: Pesan teks berhasil dikirim ke {recipient_number} setelah gagal PDF.")
+                    _log_notification_event(
+                        f"{event_prefix}_TEXT_FALLBACK_SUCCESS",
+                        {
+                            "recipient_number": recipient_number,
+                            "request_id": request_id,
+                            "notification_kind": notification_kind,
+                        },
+                    )
                 else:
                     logger.error(f"Celery Task: Pesan teks juga gagal dikirim ke {recipient_number}.")
+                    _log_notification_event(
+                        f"{event_prefix}_TEXT_FALLBACK_FAILED",
+                        {
+                            "recipient_number": recipient_number,
+                            "request_id": request_id,
+                            "notification_kind": notification_kind,
+                        },
+                    )
                     raise RuntimeError("Fonnte gagal mengirim pesan PDF dan teks.")
             else:
                 logger.info(f"Celery Task: Berhasil mengirim WhatsApp invoice ke {recipient_number}.")
+                _log_notification_event(
+                    f"{event_prefix}_SEND_SUCCESS",
+                    {
+                        "recipient_number": recipient_number,
+                        "pdf_url": pdf_url,
+                        "filename": filename,
+                        "request_id": request_id,
+                        "notification_kind": notification_kind,
+                    },
+                )
         except Exception as e:
             logger.error(
                 f"Celery Task: Exception saat mengirim WhatsApp invoice ke {recipient_number}: {e}", exc_info=True
+            )
+            _log_notification_event(
+                f"{event_prefix}_SEND_EXCEPTION",
+                {
+                    "recipient_number": recipient_number,
+                    "pdf_url": pdf_url,
+                    "filename": filename,
+                    "request_id": request_id,
+                    "notification_kind": notification_kind,
+                    "error": str(e),
+                },
             )
             if self.request.retries >= 3:
                 _record_task_failure(

@@ -8,6 +8,16 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Added (2026-03-21 — Invoice WA Observability dan Debt Report Share)
+
+- **Invoice WhatsApp kini punya jejak event di database:** saat webhook/admin reconcile mengantrekan pengiriman invoice, sistem kini menulis `WHATSAPP_INVOICE_QUEUED` ke `transaction_events`. Worker Celery juga bisa menulis event hasil kirim seperti `WHATSAPP_INVOICE_SEND_ATTEMPT`, `WHATSAPP_INVOICE_SEND_SUCCESS`, `WHATSAPP_INVOICE_PDF_FAILED`, `WHATSAPP_INVOICE_TEXT_FALLBACK_SUCCESS`, `WHATSAPP_INVOICE_TEXT_FALLBACK_FAILED`, dan `WHATSAPP_INVOICE_SEND_EXCEPTION` ketika `transaction_id` tersedia. Ini menutup blind spot verifikasi yang sebelumnya hanya bisa dilihat dari log Docker/Celery.
+- **Admin kini bisa mengirim ringkasan tunggakan manual ke WhatsApp user dengan lampiran PDF:** backend menambahkan token sementara khusus debt report, route public bertoken untuk PDF debt, endpoint admin `POST /api/admin/users/{id}/debts/send-whatsapp`, dan template baru `user_debt_report_with_pdf`. Frontend admin menambahkan tombol/ikon WhatsApp pada dialog edit user dan dialog `Riwayat Tunggakan`.
+- **Debt report PDF kini reusable untuk export admin dan attachment WA:** PDF yang dikirim ke WhatsApp memakai generator/context yang sama dengan export debt admin, sehingga admin dan user melihat dokumen yang konsisten, bukan dua format yang bisa drift.
+
+### Documentation (2026-03-21 — Invoice WA & Debt Share)
+
+- `docs/devlogs/2026-03-21-invoice-notification-audit-and-debt-wa-share.md` — catatan detail implementasi event invoice WA, token debt report, tombol admin WhatsApp debt, serta audit produksi untuk dua nomor transaksi yang diminta.
+
 ### Fixed (2026-03-21 — Timezone Centralization, Debt WA Accuracy, dan Release Ops)
 
 - **Timestamp rincian tunggakan WhatsApp kini konsisten dengan zona waktu aplikasi:** jalur `user_debt_added` sebelumnya masih mengonversi `created_at` detail item ke WIB hardcoded `UTC+7`, sementara header notifikasi sudah mengikuti `APP_TIMEZONE`. Rincian debt sekarang ikut memakai helper terpusat `get_app_local_datetime()`, sehingga produksi `Asia/Makassar` tidak lagi menampilkan selisih satu jam antara header dan baris detail.

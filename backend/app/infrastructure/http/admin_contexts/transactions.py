@@ -696,12 +696,27 @@ def admin_reconcile_transaction_impl(
                     caption_message = get_notification_message('purchase_success_with_invoice', msg_context)
                     filename = f"invoice-{tx.midtrans_order_id}.pdf"
                     request_id = flask_request.environ.get('FLASK_REQUEST_ID', '') if flask_request else ''
+                    log_transaction_event(
+                        session=db.session,
+                        transaction=tx,
+                        source=TransactionEventSource.APP,
+                        event_type='WHATSAPP_INVOICE_QUEUED',
+                        status=tx.status,
+                        payload={
+                            'recipient_number': str(tx.user.phone_number),
+                            'pdf_url': temp_invoice_url,
+                            'filename': filename,
+                            'request_id': request_id,
+                        },
+                    )
+                    db.session.commit()
                     send_whatsapp_invoice_task.delay(
                         str(tx.user.phone_number),
                         caption_message,
                         temp_invoice_url,
                         filename,
                         request_id,
+                        str(tx.id),
                     )
                     whatsapp_sent = True
                     current_app.logger.info(f'ADMIN_RECONCILE: WA invoice queued for {tx.user.phone_number} / {order_id}')

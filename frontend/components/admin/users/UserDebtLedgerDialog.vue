@@ -37,6 +37,7 @@ const items = ref<ManualDebtItem[]>([])
 const summary = ref<{ manual_debt_mb: number, open_items: number, paid_items: number, total_items: number } | null>(null)
 const settlingId = ref<string | null>(null)
 const settlingAll = ref(false)
+const sendingWhatsapp = ref(false)
 
 const debtAutoMb = computed(() => Number(props.user?.quota_debt_auto_mb ?? 0))
 const debtManualMb = computed(() => Number(props.user?.quota_debt_manual_mb ?? props.user?.manual_debt_mb ?? 0))
@@ -158,6 +159,23 @@ function openPdf() {
   window.open(`/api/admin/users/${props.user.id}/debts/export?format=pdf`, '_blank', 'noopener')
 }
 
+async function sendWhatsAppReport() {
+  if (!props.user)
+    return
+
+  sendingWhatsapp.value = true
+  try {
+    const resp = await $api<{ message?: string }>(`/admin/users/${props.user.id}/debts/send-whatsapp`, { method: 'POST' })
+    showSnackbar({ type: 'success', title: 'Tunggakan', text: resp?.message || 'Ringkasan tunggakan berhasil diantrikan ke WhatsApp.' })
+  }
+  catch (error: any) {
+    showSnackbar({ type: 'warning', title: 'Tunggakan', text: error?.data?.message || 'Gagal mengirim ringkasan tunggakan ke WhatsApp.' })
+  }
+  finally {
+    sendingWhatsapp.value = false
+  }
+}
+
 async function fetchLedger() {
   if (!props.user)
     return
@@ -183,8 +201,10 @@ async function settleItem(item: ManualDebtItem) {
 
   settlingId.value = item.id
   try {
-    await $api(`/admin/users/${props.user.id}/debts/${item.id}/settle`, { method: 'POST' })
+    const resp = await $api<{ receipt_url?: string }>(`/admin/users/${props.user.id}/debts/${item.id}/settle`, { method: 'POST' })
     showSnackbar({ type: 'success', title: 'Tunggakan', text: 'Item tunggakan berhasil ditandai lunas.' })
+    if (resp?.receipt_url)
+      window.open(resp.receipt_url, '_blank', 'noopener')
     await fetchLedger()
   }
   catch (error: any) {
@@ -201,8 +221,10 @@ async function settleAll() {
 
   settlingAll.value = true
   try {
-    await $api(`/admin/users/${props.user.id}/debts/settle-all`, { method: 'POST' })
+    const resp = await $api<{ receipt_url?: string }>(`/admin/users/${props.user.id}/debts/settle-all`, { method: 'POST' })
     showSnackbar({ type: 'success', title: 'Tunggakan', text: 'Semua tunggakan berhasil dilunasi.' })
+    if (resp?.receipt_url)
+      window.open(resp.receipt_url, '_blank', 'noopener')
     await fetchLedger()
   }
   catch (error: any) {
@@ -235,6 +257,15 @@ watch(
             <span class="headline text-white">Riwayat Tunggakan</span>
           </div>
           <div class="dialog-titlebar__actions">
+            <VBtn
+              v-if="debtTotalMb > 0"
+              icon="tabler-brand-whatsapp"
+              variant="text"
+              class="text-white"
+              title="Kirim ringkasan ke WhatsApp"
+              :loading="sendingWhatsapp"
+              @click="sendWhatsAppReport"
+            />
             <VBtn icon="tabler-printer" variant="text" class="text-white" title="Cetak PDF" @click="openPdf" />
             <VBtn icon="tabler-x" variant="text" size="small" class="text-white" @click="close" />
           </div>
@@ -394,6 +425,16 @@ watch(
         </VBtn>
         <VBtn color="primary" prepend-icon="tabler-file-type-pdf" @click="openPdf">
           PDF
+        </VBtn>
+        <VBtn
+          v-if="debtTotalMb > 0"
+          color="success"
+          variant="tonal"
+          prepend-icon="tabler-brand-whatsapp"
+          :loading="sendingWhatsapp"
+          @click="sendWhatsAppReport"
+        >
+          WhatsApp
         </VBtn>
       </VCardActions>
     </VCard>

@@ -260,6 +260,7 @@ def test_user_debt_partial_payment_template_has_new_fields():
     assert "{paid_at}" in template, "Template must include {paid_at} for payment timestamp"
     assert "{expiry_date}" in template, "Template must include {expiry_date} (masa berlaku)"
     assert "{paid_manual_debt_gb}" in template, "Template must include {paid_manual_debt_gb}"
+    assert "{receipt_url}" in template, "Template must include {receipt_url} for receipt fallback"
 
 
 def test_user_debt_partial_payment_template_renders_with_context():
@@ -282,9 +283,14 @@ def test_user_debt_partial_payment_template_renders_with_context():
                         "debt_date": "16-03-2026",
                         "paid_at": "19-03-2026 18:03:00",
                         "paid_manual_debt_gb": "10 GB",
+                        "paid_manual_debt_amount_display": "Rp 100.000",
+                        "paid_total_debt_gb": "10 GB",
+                        "paid_total_debt_amount_display": "Rp 100.000",
+                        "payment_channel_label": "Pelunasan manual oleh Admin",
                         "remaining_manual_debt_gb": "0 GB",
                         "remaining_quota_gb": "5 GB",
                         "expiry_date": "31-03-2026",
+                        "receipt_url": "https://example.test/receipt.pdf",
                     },
                 )
 

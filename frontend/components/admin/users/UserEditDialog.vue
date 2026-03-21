@@ -125,6 +125,7 @@ const isCheckingMikrotik = ref(false)
 const liveData = ref<LiveData | null>(null)
 const isDebtLedgerOpen = ref(false)
 const isQuotaHistoryOpen = ref(false)
+const isDebtWhatsappSending = ref(false)
 const isDebtQuotaEnabled = ref(false)
 
 // --- SuperAdmin: koreksi kuota langsung ---
@@ -613,6 +614,23 @@ function openDebtPdf() {
   window.open(`/api/admin/users/${props.user.id}/debts/export?format=pdf`, '_blank', 'noopener')
 }
 
+async function sendDebtWhatsapp() {
+  if (!props.user)
+    return
+
+  isDebtWhatsappSending.value = true
+  try {
+    const resp = await $api<{ message?: string }>(`/admin/users/${props.user.id}/debts/send-whatsapp`, { method: 'POST' })
+    showSnackbar({ type: 'success', title: 'Tunggakan', text: resp?.message || 'Ringkasan tunggakan berhasil diantrikan ke WhatsApp.' })
+  }
+  catch (error: any) {
+    showSnackbar({ type: 'warning', title: 'Tunggakan', text: error?.data?.message || 'Gagal mengirim ringkasan tunggakan ke WhatsApp.' })
+  }
+  finally {
+    isDebtWhatsappSending.value = false
+  }
+}
+
 function openQuotaHistory() {
   if (!props.user)
     return
@@ -896,6 +914,15 @@ function openQuotaHistoryPdf() {
                             Status Tunggakan
                           </div>
                           <div class="d-flex align-center gap-2">
+                            <VBtn
+                              v-if="debtTotalMb > 0"
+                              icon="tabler-brand-whatsapp"
+                              size="x-small"
+                              variant="text"
+                              :title="'Kirim ringkasan ke WhatsApp'"
+                              :loading="isDebtWhatsappSending"
+                              @click="sendDebtWhatsapp"
+                            />
                             <VBtn
                               v-if="debtTotalMb > 0"
                               icon="tabler-list-details"

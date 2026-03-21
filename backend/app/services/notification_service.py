@@ -83,30 +83,65 @@ def _humanize_access_reason(reason: Any) -> str:
 
 
 # --- [PENAMBAHAN BLOK BARU] ---
-def _get_serializer() -> itsdangerous.URLSafeTimedSerializer:
+def _get_serializer(salt: str = "temp-invoice-access") -> itsdangerous.URLSafeTimedSerializer:
     """Membuat instance serializer dengan secret key dari konfigurasi aplikasi."""
     secret_key = current_app.config.get("SECRET_KEY")
     if not secret_key:
         raise ValueError("SECRET_KEY tidak diatur di konfigurasi aplikasi.")
-    # Salt digunakan untuk memastikan token ini hanya untuk invoice
-    return itsdangerous.URLSafeTimedSerializer(secret_key, salt="temp-invoice-access")
+    return itsdangerous.URLSafeTimedSerializer(secret_key, salt=salt)
 
 
 def generate_temp_invoice_token(transaction_id: str) -> str:
     """Menghasilkan token aman berbatas waktu untuk akses invoice sementara."""
-    s = _get_serializer()
+    s = _get_serializer("temp-invoice-access")
     return s.dumps(str(transaction_id))
 
 
 def verify_temp_invoice_token(token: str, max_age_seconds: int = 3600) -> Optional[str]:
     """Memverifikasi token invoice sementara dan mengembalikan ID transaksi jika valid."""
-    s = _get_serializer()
+    s = _get_serializer("temp-invoice-access")
     try:
         # Verifikasi token dengan masa berlaku (contoh: 1 jam)
         transaction_id = s.loads(token, max_age=max_age_seconds)
         return str(transaction_id)
     except (itsdangerous.SignatureExpired, itsdangerous.BadTimeSignature, itsdangerous.BadSignature):
         current_app.logger.warning(f"Percobaan akses invoice dengan token tidak valid atau kedaluwarsa: {token}")
+        return None
+
+
+def generate_temp_debt_report_token(user_id: str) -> str:
+    """Menghasilkan token aman berbatas waktu untuk akses PDF laporan tunggakan sementara."""
+    s = _get_serializer("temp-debt-report-access")
+    return s.dumps(str(user_id))
+
+
+def verify_temp_debt_report_token(token: str, max_age_seconds: int = 3600) -> Optional[str]:
+    """Memverifikasi token laporan tunggakan sementara dan mengembalikan ID user jika valid."""
+    s = _get_serializer("temp-debt-report-access")
+    try:
+        user_id = s.loads(token, max_age=max_age_seconds)
+        return str(user_id)
+    except (itsdangerous.SignatureExpired, itsdangerous.BadTimeSignature, itsdangerous.BadSignature):
+        current_app.logger.warning(f"Percobaan akses debt report dengan token tidak valid atau kedaluwarsa: {token}")
+        return None
+
+
+def generate_temp_debt_settlement_receipt_token(entry_id: str) -> str:
+    """Menghasilkan token aman berbatas waktu untuk akses receipt pelunasan tunggakan."""
+    s = _get_serializer("temp-debt-settlement-receipt-access")
+    return s.dumps(str(entry_id))
+
+
+def verify_temp_debt_settlement_receipt_token(token: str, max_age_seconds: int = 3600) -> Optional[str]:
+    """Memverifikasi token receipt pelunasan tunggakan dan mengembalikan ID quota mutation entry jika valid."""
+    s = _get_serializer("temp-debt-settlement-receipt-access")
+    try:
+        entry_id = s.loads(token, max_age=max_age_seconds)
+        return str(entry_id)
+    except (itsdangerous.SignatureExpired, itsdangerous.BadTimeSignature, itsdangerous.BadSignature):
+        current_app.logger.warning(
+            f"Percobaan akses debt settlement receipt dengan token tidak valid atau kedaluwarsa: {token}"
+        )
         return None
 
 
