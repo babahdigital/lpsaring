@@ -79,6 +79,12 @@ def get_admin_metrics(current_admin):
         "hotspot.sync.lock.degraded",
         "policy.mismatch.auto_debt_blocked_ip_binding",
         "policy.mismatch.auto_debt_blocked_ip_binding.devices",
+        "notification.render.degraded",
+        "notification.render.user_debt_added.degraded",
+        "notification.whatsapp.send_failed",
+        "notification.whatsapp.user_debt_added.send_failed",
+        "notification.whatsapp.user_debt_added.detail_degraded",
+        "notification.whatsapp.user_debt_added.detail_degraded.items",
         "admin.login.success",
         "admin.login.failed",
     ]
@@ -89,6 +95,11 @@ def get_admin_metrics(current_admin):
     reliability_signals = {
         "payment_idempotency_degraded": int(metrics.get("payment.idempotency.redis_unavailable", 0)) > 0,
         "hotspot_sync_lock_degraded": int(metrics.get("hotspot.sync.lock.degraded", 0)) > 0,
+        "notification_whatsapp_degraded": (
+            int(metrics.get("notification.render.degraded", 0)) > 0
+            or int(metrics.get("notification.whatsapp.send_failed", 0)) > 0
+            or int(metrics.get("notification.whatsapp.user_debt_added.detail_degraded", 0)) > 0
+        ),
         "policy_parity_degraded": (
             policy_parity_latest_mismatches > 0
             or int(metrics.get("policy.mismatch.auto_debt_blocked_ip_binding", 0)) > 0

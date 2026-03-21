@@ -26,6 +26,33 @@ def _ceil_mb(value_mb: float) -> int:
     return int(math.ceil(value))
 
 
+def _coerce_optional_date(value: object) -> Optional[date]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return None
+        candidates = [raw]
+        if "T" in raw or " " in raw:
+            candidates.extend([raw.split("T", 1)[0], raw.split(" ", 1)[0]])
+        for candidate in candidates:
+            try:
+                return date.fromisoformat(candidate)
+            except ValueError:
+                continue
+        for fmt in ("%d-%m-%Y", "%Y/%m/%d", "%d/%m/%Y"):
+            try:
+                return datetime.strptime(raw, fmt).date()
+            except ValueError:
+                continue
+    return None
+
+
 def get_auto_debt_mb(user: User) -> float:
     if getattr(user, "role", None) == UserRole.KOMANDAN or bool(getattr(user, "is_unlimited_user", False)):
         return 0.0
@@ -84,11 +111,19 @@ def add_manual_debt(
     if amount_int <= 0:
         return False, "Jumlah debt (MB) harus > 0.", None
 
+    normalized_debt_date = _coerce_optional_date(debt_date)
+    if debt_date not in {None, ""} and normalized_debt_date is None:
+        return False, "Tanggal debt tidak valid. Gunakan format YYYY-MM-DD.", None
+
+    normalized_due_date = _coerce_optional_date(due_date)
+    if due_date not in {None, ""} and normalized_due_date is None:
+        return False, "Tanggal jatuh tempo debt tidak valid. Gunakan format YYYY-MM-DD.", None
+
     entry = UserQuotaDebt()
     entry.user_id = user.id
     entry.created_by_id = getattr(admin_actor, "id", None)
-    entry.debt_date = debt_date
-    entry.due_date = due_date
+    entry.debt_date = normalized_debt_date
+    entry.due_date = normalized_due_date
     entry.amount_mb = amount_int
     entry.paid_mb = 0
     entry.price_rp = int(price_rp) if price_rp is not None and price_rp > 0 else None

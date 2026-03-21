@@ -8,6 +8,12 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Fixed (2026-03-21 — Manual Debt WA Detail Robustness)
+
+- **Rincian tunggakan WA tidak lagi jatuh ke fallback saat nilai tanggal masih berupa string di session ORM:** helper `_build_debt_detail_lines()` kini meng-coerce `debt_date`/`created_at` dari `date`, `datetime`, atau `str`, fallback ke tanggal `created_at` bila perlu, dan memproses item per-row agar satu record rusak tidak menghilangkan seluruh daftar rincian. Ditambahkan regression test untuk kasus string date dan row invalid campuran.
+- **Boundary admin update manual debt kini tervalidasi dan konsisten:** endpoint `PUT /api/admin/users/{id}` sekarang memvalidasi payload via `UserUpdateByAdminSchema` sebelum masuk service, `debt_date` selalu dinormalisasi ke `date`, dan jalur `debt_add_mb` juga mengikuti rule due date otomatis akhir bulan alih-alih membaca `debt_due_date` mentah.
+- **Observability degradasi notifikasi debt ditambahkan:** render notifikasi yang menghasilkan string peringatan internal tidak lagi terkirim ke user, dan metric `notification.render.degraded`, `notification.whatsapp.send_failed`, serta `notification.whatsapp.user_debt_added.detail_degraded*` kini bisa dipantau dari admin metrics untuk mendeteksi debt notification yang terdegradasi.
+
 ### Fixed (2026-03-19 — Debt Manual UX Overhaul + Unlimited Package Support)
 
 - **Kolom tunggakan manual admin kini menampilkan harga aktual paket:** field `price_rp` ditambahkan ke tabel `user_quota_debts` (migration `20260319_add_price_rp_to_user_quota_debts`) dan disimpan saat debt dibuat via `add_manual_debt`. `UserDebtLedgerDialog.vue` menampilkan `price_rp` (aktual) dengan fallback ke `estimated_rp` jika record lama.

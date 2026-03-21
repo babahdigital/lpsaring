@@ -31,6 +31,7 @@ from app.services.access_policy_service import get_user_access_status, resolve_a
 from app.services.quota_expiry_policy import calculate_quota_expiry_date
 from app.services.quota_mutation_ledger_service import append_quota_mutation_event, snapshot_user_quota_state
 from app.utils.quota_debt import compute_debt_mb
+from app.utils.metrics_utils import increment_metric
 
 # Impor service lain dari paket yang sama
 from . import user_role as role_service
@@ -53,13 +54,86 @@ from app.services.hotspot_sync_service import sync_address_list_for_single_user
 DEFAULT_MANUAL_DEBT_ADVANCE_DAYS = 30
 
 
-def _build_debt_detail_lines(user: User) -> str:
-    """Buat teks rincian tunggakan manual yang belum lunas, diurutkan dari yang terlama.
+def _coerce_date_value(value: Any) -> Optional[date]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return None
+        candidates = [raw]
+        if "T" in raw or " " in raw:
+            candidates.extend([raw.split("T", 1)[0], raw.split(" ", 1)[0]])
+        for candidate in candidates:
+            try:
+                return date.fromisoformat(candidate)
+            except ValueError:
+                continue
+        for fmt in ("%d-%m-%Y", "%Y/%m/%d", "%d/%m/%Y"):
+            try:
+                return datetime.strptime(raw, fmt).date()
+            except ValueError:
+                continue
+    return None
 
-    Format tiap baris:
-      {no}. {tgl} {jam} — {sisa_gb} GB | Rp {harga} | {nama_paket}
-    Waktu diambil dari created_at dan dikonversi ke WIB (UTC+7).
-    """
+
+def _coerce_datetime_value(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return None
+        normalized = raw.replace("Z", "+00:00")
+        try:
+            return datetime.fromisoformat(normalized)
+        except ValueError:
+            pass
+        for fmt in (
+            "%Y-%m-%d %H:%M:%S.%f%z",
+            "%Y-%m-%d %H:%M:%S%z",
+            "%Y-%m-%d %H:%M:%S.%f",
+            "%Y-%m-%d %H:%M:%S",
+            "%d-%m-%Y %H:%M:%S",
+            "%d-%m-%Y %H:%M",
+        ):
+            try:
+                return datetime.strptime(raw, fmt)
+            except ValueError:
+                continue
+    return None
+
+
+def _extract_debt_note_part(note: Any) -> str:
+    if not isinstance(note, str):
+        return ""
+    clean = note.strip()
+    if not clean:
+        return ""
+    if clean.startswith("Paket: "):
+        name_raw = clean[7:]
+        end = len(name_raw)
+        for sep in ["(", " |", "|"]:
+            idx = name_raw.find(sep)
+            if 0 <= idx < end:
+                end = idx
+        pkg_name = name_raw[:end].strip()
+        return f" | {pkg_name}" if pkg_name else ""
+    return f" | {clean[:60]}"
+
+
+def _build_debt_detail_snapshot(user: User) -> Dict[str, Any]:
+    snapshot: Dict[str, Any] = {
+        "lines": "(Tidak ada rincian)",
+        "degraded": False,
+        "invalid_items": 0,
+    }
     try:
         WIB = dt_timezone(timedelta(hours=7))
         debts = (
@@ -72,49 +146,76 @@ def _build_debt_detail_lines(user: User) -> str:
             .all()
         )
         if not debts:
-            return "(Tidak ada rincian)"
+            return snapshot
+
         lines = []
         for i, d in enumerate(debts, 1):
-            remaining_mb = max(0, int(d.amount_mb or 0) - int(d.paid_mb or 0))
-            remaining_gb = remaining_mb / 1024.0
+            try:
+                remaining_mb = max(0, int(d.amount_mb or 0) - int(d.paid_mb or 0))
+                remaining_gb = remaining_mb / 1024.0
 
-            # Tanggal dari debt_date; jam dari created_at (WIB)
-            date_str = d.debt_date.strftime("%d-%m-%Y") if d.debt_date else "–"
-            time_str = ""
-            if d.created_at:
-                try:
-                    time_str = " " + d.created_at.astimezone(WIB).strftime("%H:%M")
-                except Exception:
-                    pass
+                created_at_value = _coerce_datetime_value(getattr(d, "created_at", None))
+                debt_date_value = _coerce_date_value(getattr(d, "debt_date", None))
 
-            # Harga
-            price_part = ""
-            if d.price_rp and d.price_rp > 0:
-                price_part = " | Rp " + f"{int(d.price_rp):,}".replace(",", ".")
+                if debt_date_value is None and created_at_value is not None:
+                    debt_date_value = created_at_value.date()
 
-            # Nama paket — extrak dari note "Paket: {nama} (...)" atau tampilkan apa adanya
-            note_part = ""
-            if d.note:
-                clean = d.note.strip()
-                if clean.startswith("Paket: "):
-                    name_raw = clean[7:]
-                    end = len(name_raw)
-                    for sep in ["(", " |", "|"]:
-                        idx = name_raw.find(sep)
-                        if 0 <= idx < end:
-                            end = idx
-                    pkg_name = name_raw[:end].strip()
-                    note_part = f" | {pkg_name}" if pkg_name else ""
-                else:
-                    note_part = f" | {clean[:60]}"
+                date_str = debt_date_value.strftime("%d-%m-%Y") if debt_date_value else "–"
+                time_str = ""
+                if created_at_value:
+                    try:
+                        localized_created_at = created_at_value
+                        if localized_created_at.tzinfo is None:
+                            localized_created_at = localized_created_at.replace(tzinfo=dt_timezone.utc)
+                        time_str = " " + localized_created_at.astimezone(WIB).strftime("%H:%M")
+                    except Exception:
+                        pass
 
-            lines.append(f"{i}. {date_str}{time_str} \u2014 {remaining_gb:.2f} GB{price_part}{note_part}")
-        return "\n".join(lines)
+                price_part = ""
+                if d.price_rp and d.price_rp > 0:
+                    price_part = " | Rp " + f"{int(d.price_rp):,}".replace(",", ".")
+
+                note_part = _extract_debt_note_part(getattr(d, "note", None))
+                lines.append(f"{i}. {date_str}{time_str} \u2014 {remaining_gb:.2f} GB{price_part}{note_part}")
+            except Exception:
+                snapshot["degraded"] = True
+                snapshot["invalid_items"] = int(snapshot["invalid_items"] or 0) + 1
+                current_app.logger.exception(
+                    "Gagal memformat item debt detail untuk user %s debt_id=%s",
+                    getattr(user, "id", "?"),
+                    getattr(d, "id", "?"),
+                )
+                lines.append(f"{i}. Detail item sedang direkonsiliasi sistem")
+
+        snapshot["lines"] = "\n".join(lines)
     except Exception:
+        snapshot["degraded"] = True
+        snapshot["invalid_items"] = max(1, int(snapshot["invalid_items"] or 0))
         current_app.logger.exception(
             "_build_debt_detail_lines gagal untuk user %s", getattr(user, "id", "?")
         )
-        return "(Rincian tidak tersedia)"
+        snapshot["lines"] = (
+            "(Detail item tunggakan sedang direkonsiliasi sistem. Total tunggakan tetap tercatat; "
+            "silakan cek portal atau hubungi Admin.)"
+        )
+
+    if bool(snapshot.get("degraded")):
+        increment_metric("notification.whatsapp.user_debt_added.detail_degraded")
+        increment_metric(
+            "notification.whatsapp.user_debt_added.detail_degraded.items",
+            max(1, int(snapshot.get("invalid_items") or 0)),
+        )
+    return snapshot
+
+
+def _build_debt_detail_lines(user: User) -> str:
+    """Buat teks rincian tunggakan manual yang belum lunas, diurutkan dari yang terlama.
+
+    Format tiap baris:
+      {no}. {tgl} {jam} — {sisa_gb} GB | Rp {harga} | {nama_paket}
+    Waktu diambil dari created_at dan dikonversi ke WIB (UTC+7).
+    """
+    return str(_build_debt_detail_snapshot(user).get("lines") or "(Tidak ada rincian)")
 
 
 def _resolve_default_server() -> str:
@@ -432,6 +533,15 @@ def update_user_by_admin_comprehensive(
 ) -> Tuple[bool, str, Optional[User]]:
     """Memperbarui profil pengguna dengan mendelegasikan logika kompleks ke service lain."""
 
+    data = dict(data or {})
+    data.pop("debt_due_date", None)
+
+    normalized_debt_date = _coerce_date_value(data.get("debt_date"))
+    if data.get("debt_date") not in {None, ""} and normalized_debt_date is None:
+        return False, "Tanggal tunggakan tidak valid. Gunakan format YYYY-MM-DD.", None
+    if "debt_date" in data:
+        data["debt_date"] = normalized_debt_date
+
     if not admin_actor.is_super_admin_role and target_user.is_admin_role:
         return False, "Akses ditolak: Admin tidak dapat mengubah data admin lain.", None
 
@@ -615,8 +725,7 @@ def update_user_by_admin_comprehensive(
                 merged_note = f"{pkg_note} | {note.strip()}"
 
             # Auto-compute due_date as last day of the debt month
-            _debt_date_raw = data.get("debt_date")
-            _debt_date = _debt_date_raw if isinstance(_debt_date_raw, date) else date.today()
+            _debt_date = normalized_debt_date or date.today()
             _last_day = calendar.monthrange(_debt_date.year, _debt_date.month)[1]
             _auto_due_date = _debt_date.replace(day=_last_day)
 
@@ -624,7 +733,7 @@ def update_user_by_admin_comprehensive(
                 user=target_user,
                 admin_actor=admin_actor,
                 amount_mb=debt_add_mb_pkg,
-                debt_date=data.get("debt_date"),
+                debt_date=_debt_date,
                 due_date=_auto_due_date,
                 note=merged_note,
                 price_rp=int(getattr(pkg, "price", 0) or 0) or None,
@@ -636,7 +745,8 @@ def update_user_by_admin_comprehensive(
             # terlihat oleh query di bawah. append_quota_mutation_event bisa skip flush jika
             # before_state == after_state, sehingga entry masih pending di session.
             db.session.flush()
-            _debt_detail_lines_pkg = _build_debt_detail_lines(target_user)
+            _debt_detail_snapshot_pkg = _build_debt_detail_snapshot(target_user)
+            _debt_detail_lines_pkg = str(_debt_detail_snapshot_pkg.get("lines") or "(Tidak ada rincian)")
 
             # CREDIT QUOTA (advance): untuk kasus "hutang kuota", saat debt manual dibuat kita juga memberi kuota
             # agar user bisa akses. Rule: kuota advance dipakai untuk melunasi AUTO debt dulu (jika ada),
@@ -705,15 +815,20 @@ def update_user_by_admin_comprehensive(
                         "effective_quota_mb": int(effective_quota_mb),
                         "effective_quota_gb": f"{(float(effective_quota_mb) / 1024.0):.2f} GB",
                         "debt_detail_lines": _debt_detail_lines_pkg,
+                        "_debt_detail_degraded": bool(_debt_detail_snapshot_pkg.get("degraded")),
+                        "_debt_detail_invalid_items": int(_debt_detail_snapshot_pkg.get("invalid_items") or 0),
                     },
                 )
             except Exception:
-                pass
+                current_app.logger.exception(
+                    "Gagal mengirim notifikasi debt package untuk user %s",
+                    target_user.id,
+                )
 
             changes["debt_package_id"] = str(getattr(pkg, "id", debt_package_id))
             changes["debt_add_mb"] = int(debt_add_mb_pkg)
-            if data.get("debt_date"):
-                changes["debt_date"] = data.get("debt_date")
+            if normalized_debt_date is not None:
+                changes["debt_date"] = normalized_debt_date.isoformat()
 
         debt_add_mb = 0
         try:
@@ -722,12 +837,16 @@ def update_user_by_admin_comprehensive(
             debt_add_mb = 0
 
         if debt_add_mb and debt_add_mb > 0:
+            _debt_date = normalized_debt_date or date.today()
+            _last_day = calendar.monthrange(_debt_date.year, _debt_date.month)[1]
+            _auto_due_date = _debt_date.replace(day=_last_day)
+
             ok_debt, msg_debt, _entry = debt_service.add_manual_debt(
                 user=target_user,
                 admin_actor=admin_actor,
                 amount_mb=debt_add_mb,
-                debt_date=data.get("debt_date"),
-                due_date=data.get("debt_due_date"),
+                debt_date=_debt_date,
+                due_date=_auto_due_date,
                 note=data.get("debt_note"),
             )
             if not ok_debt:
@@ -735,7 +854,8 @@ def update_user_by_admin_comprehensive(
 
             # Flush eksplisit — sama dengan pkg flow di atas.
             db.session.flush()
-            _debt_detail_lines_mb = _build_debt_detail_lines(target_user)
+            _debt_detail_snapshot_mb = _build_debt_detail_snapshot(target_user)
+            _debt_detail_lines_mb = str(_debt_detail_snapshot_mb.get("lines") or "(Tidak ada rincian)")
 
             # CREDIT QUOTA (advance): saat debt manual dibuat, juga beri kuota agar user bisa akses.
             # Rule: kuota advance dipakai untuk melunasi AUTO debt dulu (jika ada), sisa menjadi kuota bersih.
@@ -799,13 +919,18 @@ def update_user_by_admin_comprehensive(
                         "effective_quota_mb": int(effective_quota_mb),
                         "effective_quota_gb": f"{(float(effective_quota_mb) / 1024.0):.2f} GB",
                         "debt_detail_lines": _debt_detail_lines_mb,
+                        "_debt_detail_degraded": bool(_debt_detail_snapshot_mb.get("degraded")),
+                        "_debt_detail_invalid_items": int(_debt_detail_snapshot_mb.get("invalid_items") or 0),
                     },
                 )
             except Exception:
-                pass
+                current_app.logger.exception(
+                    "Gagal mengirim notifikasi debt manual untuk user %s",
+                    target_user.id,
+                )
             changes["debt_add_mb"] = debt_add_mb
-            if data.get("debt_date"):
-                changes["debt_date"] = data.get("debt_date")
+            if normalized_debt_date is not None:
+                changes["debt_date"] = normalized_debt_date.isoformat()
 
         if data.get("debt_clear") is True:
             paid_auto_mb, paid_manual_mb = debt_service.clear_all_debts_to_zero(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date
 from types import SimpleNamespace
 from typing import cast
 
@@ -106,3 +107,72 @@ def test_update_user_by_admin_serializes_reloaded_user_after_commit(monkeypatch)
     assert fake_session.commit_calls == 1
     assert fake_session.rollback_calls == 0
     assert fake_session.refresh_calls == 0
+
+
+def test_update_user_by_admin_validates_and_normalizes_debt_date(monkeypatch):
+    user_id = uuid.uuid4()
+    fake_user = SimpleNamespace(id=user_id, role=SimpleNamespace(value="USER"), is_admin_role=False)
+    fake_session = _FakeSession(users_by_id={user_id: fake_user})
+
+    monkeypatch.setattr(user_management_routes, "db", SimpleNamespace(session=fake_session))
+    monkeypatch.setattr(user_management_routes, "_deny_non_super_admin_target_access", lambda *_args, **_kwargs: None)
+
+    captured_payload = {}
+
+    def _fake_update_user(_user, _current_admin, payload):
+        captured_payload.update(payload)
+        return True, "ok", SimpleNamespace(id=user_id)
+
+    monkeypatch.setattr(
+        user_management_routes.user_profile_service,
+        "update_user_by_admin_comprehensive",
+        _fake_update_user,
+    )
+
+    class _FakeUserResponseSchema:
+        @staticmethod
+        def from_orm(user):
+            return SimpleNamespace(model_dump=lambda: {"id": str(user.id)})
+
+    monkeypatch.setattr(user_management_routes, "UserResponseSchema", _FakeUserResponseSchema)
+
+    app = _make_app()
+    impl = _unwrap_decorators(user_management_routes.update_user_by_admin)
+
+    with app.test_request_context(
+        f"/api/admin/users/{user_id}",
+        method="PUT",
+        json={"debt_add_mb": 1024, "debt_date": "2026-03-21"},
+    ):
+        current_admin = cast(User, SimpleNamespace(is_super_admin_role=True))
+        _response, status = impl(current_admin=current_admin, user_id=user_id)
+
+    assert status == 200
+    assert captured_payload["debt_add_mb"] == 1024
+    assert captured_payload["debt_date"] == date(2026, 3, 21)
+    assert "debt_due_date" not in captured_payload
+
+
+def test_update_user_by_admin_rejects_invalid_debt_date(monkeypatch):
+    user_id = uuid.uuid4()
+    fake_user = SimpleNamespace(id=user_id, role=SimpleNamespace(value="USER"), is_admin_role=False)
+    fake_session = _FakeSession(users_by_id={user_id: fake_user})
+
+    monkeypatch.setattr(user_management_routes, "db", SimpleNamespace(session=fake_session))
+    monkeypatch.setattr(user_management_routes, "_deny_non_super_admin_target_access", lambda *_args, **_kwargs: None)
+
+    app = _make_app()
+    impl = _unwrap_decorators(user_management_routes.update_user_by_admin)
+
+    with app.test_request_context(
+        f"/api/admin/users/{user_id}",
+        method="PUT",
+        json={"debt_add_mb": 1024, "debt_date": "21/03/2026"},
+    ):
+        current_admin = cast(User, SimpleNamespace(is_super_admin_role=True))
+        response, status = impl(current_admin=current_admin, user_id=user_id)
+
+    assert status == 400
+    body = response.get_json()
+    assert body["message"] == "Data tidak valid."
+    assert fake_session.rollback_calls == 1

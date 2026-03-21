@@ -17,7 +17,7 @@ Lampiran wajib:
 
 - Backend lint: `docker compose exec -T backend ruff check .`
 - Frontend lint: `docker compose exec frontend pnpm run lint`
-- Frontend typecheck: `docker compose exec frontend pnpm run typecheck`
+- Frontend typecheck: `docker compose exec frontend pnpm run typecheck` (script memuat `frontend/.env.local` agar guard `NUXT_PUBLIC_*` tetap terpenuhi saat validasi lokal)
 - Backend tests: `docker compose exec -T backend python -m pytest backend/tests`
 - Focused frontend tests auth/payment:
   `docker compose exec frontend pnpm run test -- tests/auth-access.test.ts tests/auth-guards.test.ts tests/access-status-parity.contract.test.ts tests/payment-composables.test.ts tests/payment-status-polling.test.ts`
@@ -126,6 +126,8 @@ Variabel yang paling sensitif terhadap perilaku runtime:
 - Knob runtime yang paling relevan untuk kecepatan kirim OTP saat ini adalah `WHATSAPP_HTTP_TIMEOUT_SECONDS`, `WHATSAPP_SEND_DELAY_MIN_MS`, dan `WHATSAPP_SEND_DELAY_MAX_MS`.
 - Saat ini aplikasi belum menulis metrik durasi kirim OTP/provider latency secara eksplisit. `POST /auth/request-otp` berhasil hanya membuktikan request auth diterima backend, bukan membuktikan OTP sudah terkirim cepat ke handset.
 - Jika perlu audit performa OTP, gunakan kombinasi access log, backend log, dan dashboard/log provider WhatsApp; jangan menyimpulkan latency delivery hanya dari selisih waktu `request-otp` ke `verify-otp` karena itu juga mencakup waktu user menerima dan mengetik kode.
+- Khusus notifikasi debt manual, aplikasi kini mengekspos metrik degradasi `notification.render.degraded`, `notification.whatsapp.send_failed`, `notification.whatsapp.user_debt_added.detail_degraded`, dan `notification.whatsapp.user_debt_added.detail_degraded.items` melalui admin metrics. Gunakan metrik ini bersama log backend bila pesan debt sukses terkirim tetapi rincian item terlihat tidak lengkap.
+- Jalur admin `PUT /api/admin/users/{id}` adalah boundary resmi untuk debt manual. Payload `debt_date` wajib lolos validasi schema dan akan dinormalisasi ke `date`; due date debt manual dihitung otomatis ke akhir bulan untuk flow paket maupun `debt_add_mb`.
 
 ## Aturan Saat Mengubah Kode
 

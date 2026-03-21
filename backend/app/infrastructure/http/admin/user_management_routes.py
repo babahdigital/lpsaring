@@ -25,6 +25,7 @@ from app.infrastructure.http.schemas.user_schemas import (
     UserResponseSchema,
     AdminSelfProfileUpdateRequestSchema,
     UserQuotaDebtItemResponseSchema,
+    UserUpdateByAdminSchema,
 )
 from app.services.user_management import user_debt as user_debt_service
 from app.utils.formatters import get_phone_number_variations, format_mb_to_gb
@@ -301,10 +302,12 @@ def update_user_by_admin(current_admin: User, user_id):
     denied_response = _deny_non_super_admin_target_access(current_admin, user)
     if denied_response:
         return denied_response
-    data = request.get_json()
-    if not data:
+    raw_data = request.get_json(silent=True)
+    if not raw_data:
         return jsonify({"message": "Request data kosong."}), HTTPStatus.BAD_REQUEST
     try:
+        validated_data = UserUpdateByAdminSchema.model_validate(raw_data)
+        data = validated_data.model_dump(exclude_unset=True)
         success, message, updated_user = user_profile_service.update_user_by_admin_comprehensive(
             user, current_admin, data
         )
@@ -318,6 +321,9 @@ def update_user_by_admin(current_admin: User, user_id):
             current_app.logger.error("Updated user %s tidak ditemukan setelah commit.", response_user_id)
             return jsonify({"message": "Kesalahan internal server."}), HTTPStatus.INTERNAL_SERVER_ERROR
         return jsonify(UserResponseSchema.from_orm(response_user).model_dump()), HTTPStatus.OK
+    except ValidationError as e:
+        db.session.rollback()
+        return jsonify({"message": "Data tidak valid.", "errors": e.errors()}), HTTPStatus.BAD_REQUEST
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error updating user {user_id}: {e}", exc_info=True)

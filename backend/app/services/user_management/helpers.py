@@ -20,6 +20,10 @@ from app.infrastructure.db.models import (
 )
 from app.services import settings_service
 from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection
+from app.utils.metrics_utils import increment_metric
+
+
+_DEGRADED_NOTIFICATION_PREFIX = "Peringatan:"
 
 
 def _send_whatsapp_notification(user_phone: str, template_key: str, context: dict) -> bool:
@@ -30,9 +34,45 @@ def _send_whatsapp_notification(user_phone: str, template_key: str, context: dic
 
         if settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "False") == "True":
             message_body = get_notification_message(template_key, context)
-            if message_body:
-                return send_whatsapp_message(user_phone, message_body)
+            if not message_body:
+                return False
+
+            if str(message_body).startswith(_DEGRADED_NOTIFICATION_PREFIX):
+                increment_metric("notification.render.degraded")
+                increment_metric(f"notification.render.{template_key}.degraded")
+                current_app.logger.error(
+                    "Notifikasi WhatsApp template=%s dibatalkan karena render degradasi: %s",
+                    template_key,
+                    message_body,
+                )
+                return False
+
+            if bool(context.get("_debt_detail_degraded")):
+                increment_metric("notification.whatsapp.user_debt_added.detail_degraded")
+                increment_metric(
+                    "notification.whatsapp.user_debt_added.detail_degraded.items",
+                    max(1, int(context.get("_debt_detail_invalid_items") or 0)),
+                )
+                current_app.logger.warning(
+                    "Mengirim notifikasi debt dengan detail terdegradasi untuk phone=%s template=%s invalid_items=%s",
+                    user_phone,
+                    template_key,
+                    int(context.get("_debt_detail_invalid_items") or 0),
+                )
+
+            sent = bool(send_whatsapp_message(user_phone, message_body))
+            if not sent:
+                increment_metric("notification.whatsapp.send_failed")
+                increment_metric(f"notification.whatsapp.{template_key}.send_failed")
+                current_app.logger.warning(
+                    "Pengiriman notifikasi WhatsApp gagal untuk phone=%s template=%s",
+                    user_phone,
+                    template_key,
+                )
+            return sent
     except Exception as e:
+        increment_metric("notification.whatsapp.exception")
+        increment_metric(f"notification.whatsapp.{template_key}.exception")
         current_app.logger.error(
             f"Gagal mengirim notifikasi WhatsApp untuk template {template_key}: {e}", exc_info=True
         )

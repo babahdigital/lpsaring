@@ -212,6 +212,13 @@ docker logs --since 20m global-nginx-proxy \
   | grep -Ec ' 5[0-9][0-9] ' || true
 ```
 
+Untuk kasus notifikasi debt manual yang terasa aneh tetapi request admin sukses, cek juga admin metrics dan backend log:
+
+- metric `notification.render.degraded`
+- metric `notification.whatsapp.send_failed`
+- metric `notification.whatsapp.user_debt_added.detail_degraded`
+- log backend dengan pesan `_build_debt_detail_lines gagal`, `Gagal memformat item debt detail`, atau `Notifikasi WhatsApp template=user_debt_added dibatalkan karena render degradasi`
+
 ## Docker Cleanup Yang Aman
 
 Jika host perlu dibersihkan tanpa menjatuhkan container aktif, batasi ke resource yang tidak dipakai:

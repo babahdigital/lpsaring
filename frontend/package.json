@@ -9,7 +9,7 @@
     "dev:public": "nuxt dev --dotenv .env.public --host 0.0.0.0 --port 3010",
     "build": "pnpm run build:icons && node node_modules/nuxt/bin/nuxt.mjs build",
     "lint": "eslint . --fix --ignore-pattern .output --ignore-pattern .nuxt --ignore-pattern .nitro",
-    "typecheck": "nuxt typecheck",
+    "typecheck": "nuxt typecheck --dotenv .env.local",
     "test": "vitest run",
     "test:watch": "vitest",
     "build:icons": "tsx plugins/iconify/build-icons.ts",
