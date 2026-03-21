@@ -113,6 +113,7 @@ const tablerIcons = [
   'building',
   'building-bank',
   'building-community',
+  'battery-off',
   'calendar',
   'calendar-check',
   'calendar-due',
