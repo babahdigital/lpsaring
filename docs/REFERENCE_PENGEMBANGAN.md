@@ -144,6 +144,9 @@ Variabel yang paling sensitif terhadap perilaku runtime:
 - Schema admin user create/update dapat mengembalikan `blok` dan `kamar` sebagai enum Pydantic. Sebelum menyentuh model SQLAlchemy `User`, nilai itu wajib dinormalisasi kembali ke string storage (`A`, `Kamar_1`, dst.) agar flush Postgres tidak gagal dengan `can't adapt type 'UserBlok'` atau `UserKamar`.
 - Normalisasi tampilan tanggal wajib memakai helper terpusat di `backend/app/utils/formatters.py`: `format_app_date_display()` untuk tanggal dan `format_app_datetime_display()` untuk datetime. Untuk JSON/API, pertahankan field raw ISO/`yyyy-mm-dd` bila masih dipakai sorting/parsing, lalu tambahkan field `*_display` berformat `dd-mm-yyyy` atau `dd-mm-yyyy HH:MM:SS` untuk konsumsi UI/report/WA context.
 - Untuk payload `user_debt_added`, timestamp header dan detail item harus melalui helper timezone yang sama. Jangan lagi mengonversi detail item dengan WIB/WITA hardcoded karena itu mudah menciptakan selisih jam antarbagian pesan.
+- Untuk report/reminder debt manual, total nominal aktif harus dijumlah dari item debt terbuka yang tercatat (`price_rp` / `remaining_rp`) bila tersedia. Jangan menurunkan nominal manual dari aggregate MB melalui estimator paket termurah, karena itu bisa meng-understate tagihan user.
+- Label `debt otomatis` di UI, PDF, dan notifikasi harus diperlakukan sebagai `nilai referensi`, bukan nominal exact. Sebaliknya, debt manual boleh menampilkan nominal exact bila item debt memang menyimpan harga paketnya.
+- Di dialog admin edit user, mode `Unlimited` dan `Tunggakan Kuota` harus tetap saling eksklusif agar operator tidak memberi kombinasi state yang membingungkan atau bertentangan dengan policy debt.
 
 ## Aturan Saat Mengubah Kode
 
@@ -161,10 +164,12 @@ Variabel yang paling sensitif terhadap perilaku runtime:
 - [docs/VUEXY_BASELINE_STRATEGY.md](VUEXY_BASELINE_STRATEGY.md)
 - [docs/devlogs/README.md](devlogs/README.md)
 - [docs/devlogs/2026-03-21-timezone-centralization-and-release-ops.md](devlogs/2026-03-21-timezone-centralization-and-release-ops.md)
+- [docs/devlogs/2026-03-22-manual-debt-accuracy-and-admin-edit-ux.md](devlogs/2026-03-22-manual-debt-accuracy-and-admin-edit-ux.md)
 - [docs/devlogs/2026-03-18-holistic-audit-penyempurnaan.md](devlogs/2026-03-18-holistic-audit-penyempurnaan.md)
 - [docs/devlogs/2026-03-17-hotspot-portal-trust-hardening.md](devlogs/2026-03-17-hotspot-portal-trust-hardening.md)
 - [docs/devlogs/2026-03-17-hotspot-sync-hardening.md](devlogs/2026-03-17-hotspot-sync-hardening.md)
 - [docs/incidents/README.md](incidents/README.md)
+- [docs/incidents/2026-03-22-manual-debt-report-undercount.md](incidents/2026-03-22-manual-debt-report-undercount.md)
 - [docs/incidents/2026-03-21-recreate-healthcheck-false-negative.md](incidents/2026-03-21-recreate-healthcheck-false-negative.md)
 - [docs/incidents/2026-03-17-foreign-hotspot-context.md](incidents/2026-03-17-foreign-hotspot-context.md)
 - [docs/incidents/2026-03-17-stale-quota-sync-lock.md](incidents/2026-03-17-stale-quota-sync-lock.md)

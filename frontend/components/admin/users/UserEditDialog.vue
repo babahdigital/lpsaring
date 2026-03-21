@@ -3,7 +3,6 @@ import type { VForm } from 'vuetify/components'
 import AppSelect from '@core/components/app-form-elements/AppSelect.vue'
 import AppTextField from '@core/components/app-form-elements/AppTextField.vue'
 import AppDateTimePicker from '@core/components/app-form-elements/AppDateTimePicker.vue'
-import CustomRadiosWithIcon from '@core/components/app-form-elements/CustomRadiosWithIcon.vue'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
 import { useSnackbar } from '@/composables/useSnackbar'
@@ -330,9 +329,17 @@ watch(() => props.user, (newUser) => {
 
 watch(() => isDebtQuotaEnabled.value, (enabled) => {
   if (enabled === true) {
+    if (formData.is_unlimited_user === true)
+      formData.is_unlimited_user = false
+    formData.unlimited_time = false
     if (formData.debt_date == null || String(formData.debt_date).trim() === '')
       formData.debt_date = getTodayYmd()
     fetchAdminPackages().catch(() => {})
+  }
+  else {
+    formData.debt_package_id = null
+    formData.debt_date = null
+    formData.debt_note = null
   }
 })
 
@@ -347,15 +354,35 @@ const sectionOptions = computed(() => {
       title: 'Info Pengguna',
       desc: 'Data dasar, peran, dan alamat.',
       value: 'info',
-      icon: { icon: 'tabler-user', size: '28' },
+      icon: 'tabler-user',
     },
     {
       title: 'Akses & Kuota',
       desc: 'Akses, inject, dan tunggakan kuota.',
       value: 'akses',
-      icon: { icon: 'tabler-shield-check', size: '28' },
+      icon: 'tabler-shield-check',
     },
   ]
+})
+
+const canToggleUnlimited = computed(() => {
+  if (isTargetAdminOrSuper.value)
+    return false
+  if (formData.role !== 'USER' && formData.role !== 'KOMANDAN')
+    return false
+  if (isDebtQuotaEnabled.value === true)
+    return false
+  if (formData.role === 'USER' && debtTotalMb.value > 0)
+    return false
+  return true
+})
+
+const canToggleDebt = computed(() => {
+  if (formData.role !== 'USER')
+    return false
+  if (formData.is_unlimited_user === true)
+    return false
+  return true
 })
 
 const shouldShowDebtSection = computed(() => {
@@ -505,6 +532,7 @@ watch(() => formData.is_unlimited_user, (isUnlimited, wasUnlimited) => {
     return
 
   if (isUnlimited) {
+    isDebtQuotaEnabled.value = false
     formData.mikrotik_profile_name = mikrotikDefaults.value.profile_unlimited
     formData.add_gb = 0
   }
@@ -733,11 +761,26 @@ function openQuotaHistoryPdf() {
         </VToolbar>
 
         <div class="admin-user-edit__container pa-4 pa-md-6 pb-0">
-          <CustomRadiosWithIcon
-            v-model:selected-radio="tab"
-            :radio-content="sectionOptions"
-            :grid-column="{ cols: '12', sm: '6' }"
-          />
+          <div class="admin-user-edit__section-grid" role="tablist" aria-label="Navigasi edit pengguna">
+            <button
+              v-for="section in sectionOptions"
+              :key="section.value"
+              type="button"
+              class="admin-user-edit__section-btn"
+              :class="{ 'admin-user-edit__section-btn--active': tab === section.value }"
+              :aria-selected="tab === section.value"
+              @click="tab = section.value"
+            >
+              <VIcon :icon="section.icon" class="admin-user-edit__section-icon" />
+              <div class="admin-user-edit__section-title">
+                {{ section.title }}
+              </div>
+              <div class="admin-user-edit__section-desc">
+                {{ section.desc }}
+              </div>
+              <span class="admin-user-edit__section-indicator" />
+            </button>
+          </div>
         </div>
         <VDivider class="mt-2" />
 
@@ -794,7 +837,17 @@ function openQuotaHistoryPdf() {
                 </VCol>
 
                 <VCol v-if="canAdminInject && formData.is_active === true" cols="12" md="6">
-                  <VSwitch v-if="isTargetAdminOrSuper !== true" v-model="formData.is_unlimited_user" class="admin-switch" label="Akses Internet Unlimited" color="primary" inset />
+                  <VSwitch
+                    v-if="isTargetAdminOrSuper !== true"
+                    v-model="formData.is_unlimited_user"
+                    class="admin-switch"
+                    label="Akses Internet Unlimited"
+                    color="primary"
+                    inset
+                    :disabled="!canToggleUnlimited"
+                    :hint="!canToggleUnlimited && formData.role === 'USER' && debtTotalMb > 0 ? 'Nonaktif saat tunggakan masih ada.' : (!canToggleUnlimited && isDebtQuotaEnabled ? 'Nonaktif saat mode tunggakan aktif.' : undefined)"
+                    persistent-hint
+                  />
                   <VAlert v-else type="info" variant="tonal" density="compact" icon="tabler-shield-check">
                     Peran <strong>{{ formData.role }}</strong> secara otomatis mendapatkan akses <strong>Unlimited</strong>.
                   </VAlert>
@@ -818,7 +871,9 @@ function openQuotaHistoryPdf() {
                     label="Tunggakan Kuota"
                     color="primary"
                     inset
-                    hint="Aktifkan untuk menambah/mengelola tunggakan."
+                    :hint="!canToggleDebt ? 'Nonaktif saat mode unlimited aktif.' : 'Aktifkan untuk menambah/mengelola tunggakan.'"
+                    persistent-hint
+                    :disabled="!canToggleDebt"
                     v-if="formData.role === 'USER'"
                   />
                 </VCol>
@@ -1036,6 +1091,7 @@ function openQuotaHistoryPdf() {
                           v-model="formData.debt_package_id"
                           :items="debtPackageOptions"
                           label="Tambah Tunggakan (Pilih Paket)"
+                          placeholder="Silakan pilih paket"
                           prepend-inner-icon="tabler-alert-circle"
                           :loading="isPackagesLoading"
                           density="comfortable"
@@ -1107,21 +1163,24 @@ function openQuotaHistoryPdf() {
                     <VCol cols="12" md="6">
                       <div class="d-flex align-center flex-wrap gap-2 mb-1">
                         <span class="text-caption text-medium-emphasis">Satuan input:</span>
-                        <VBtnToggle
-                          v-model="saQuotaInputUnit"
-                          color="warning"
-                          density="comfortable"
-                          divided
-                          mandatory
-                          variant="outlined"
-                        >
-                          <VBtn value="gb">
+                        <div class="sa-unit-selector">
+                          <VBtn
+                            size="small"
+                            :color="saQuotaInputUnit === 'gb' ? 'warning' : 'secondary'"
+                            :variant="saQuotaInputUnit === 'gb' ? 'flat' : 'outlined'"
+                            @click="saQuotaInputUnit = 'gb'"
+                          >
                             GB disarankan
                           </VBtn>
-                          <VBtn value="mb">
+                          <VBtn
+                            size="small"
+                            :color="saQuotaInputUnit === 'mb' ? 'warning' : 'secondary'"
+                            :variant="saQuotaInputUnit === 'mb' ? 'flat' : 'outlined'"
+                            @click="saQuotaInputUnit = 'mb'"
+                          >
                             MB lanjutan
                           </VBtn>
-                        </VBtnToggle>
+                        </div>
                       </div>
                       <div class="text-caption text-medium-emphasis">
                         {{ saQuotaUnitHint }}
@@ -1231,6 +1290,77 @@ function openQuotaHistoryPdf() {
   margin-inline: auto;
 }
 
+.admin-user-edit__section-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.admin-user-edit__section-btn {
+  display: flex;
+  min-height: 138px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.16);
+  border-radius: 14px;
+  padding: 20px 18px;
+  background: rgba(var(--v-theme-surface), 0.32);
+  color: rgba(var(--v-theme-on-surface), 0.78);
+  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.admin-user-edit__section-btn:hover {
+  border-color: rgba(var(--v-theme-primary), 0.5);
+  background: rgba(var(--v-theme-primary), 0.05);
+  color: rgba(var(--v-theme-on-surface), 0.94);
+}
+
+.admin-user-edit__section-btn--active {
+  border-color: rgba(var(--v-theme-primary), 0.85);
+  background: rgba(var(--v-theme-primary), 0.09);
+  color: rgb(var(--v-theme-on-surface));
+  box-shadow: 0 0 0 1px rgba(var(--v-theme-primary), 0.18) inset;
+}
+
+.admin-user-edit__section-icon {
+  font-size: 28px;
+}
+
+.admin-user-edit__section-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.admin-user-edit__section-desc {
+  font-size: 0.88rem;
+  line-height: 1.45;
+  text-align: center;
+  color: rgba(var(--v-theme-on-surface), 0.64);
+}
+
+.admin-user-edit__section-btn--active .admin-user-edit__section-desc {
+  color: rgba(var(--v-theme-on-surface), 0.78);
+}
+
+.admin-user-edit__section-indicator {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid rgba(var(--v-theme-on-surface), 0.24);
+  background: transparent;
+  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.admin-user-edit__section-btn--active .admin-user-edit__section-indicator {
+  border-color: rgba(var(--v-theme-primary), 0.92);
+  background: rgb(var(--v-theme-primary));
+  box-shadow: 0 0 0 4px rgba(var(--v-theme-primary), 0.18);
+}
+
 .dialog-titlebar {
   display: flex;
   align-items: center;
@@ -1266,11 +1396,44 @@ function openQuotaHistoryPdf() {
   flex-wrap: wrap;
 }
 
+.sa-unit-selector {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .admin-switch :deep(.v-messages__message) {
   line-height: 1.25rem;
 }
 
 @media (max-width: 600px) {
+  .admin-user-edit__section-grid {
+    gap: 12px;
+  }
+
+  .admin-user-edit__section-btn {
+    min-height: 94px;
+    gap: 6px;
+    padding: 14px 10px;
+  }
+
+  .admin-user-edit__section-icon {
+    font-size: 22px;
+  }
+
+  .admin-user-edit__section-title {
+    font-size: 0.95rem;
+  }
+
+  .admin-user-edit__section-desc {
+    display: none;
+  }
+
+  .admin-user-edit__section-indicator {
+    width: 12px;
+    height: 12px;
+  }
+
   .dialog-titlebar {
     flex-direction: column;
     align-items: flex-start;
@@ -1294,6 +1457,14 @@ function openQuotaHistoryPdf() {
 
   .inject-actions__buttons :deep(.v-btn) {
     width: 100%;
+  }
+
+  .sa-unit-selector {
+    width: 100%;
+  }
+
+  .sa-unit-selector :deep(.v-btn) {
+    flex: 1 1 0;
   }
 }
 </style>

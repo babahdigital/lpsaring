@@ -8,6 +8,18 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Fixed (2026-03-22 — Manual Debt Nominal Accuracy & Admin Edit UX)
+
+- **Total nominal debt manual kini dihitung dari item terbuka yang aktual, bukan estimasi aggregate MB:** jalur report/reminder/admin debt sekarang menjumlah `remaining_rp` per item terbuka dan mem-prorata item parsial dari `price_rp` bila tersedia. Ini menutup bug produksi di mana dua item debt manual `20 GB + 20 GB` masing-masing `Rp 200.000` sempat tampil sebagai `Rp 270.000` karena ikut jatuh ke estimator paket termurah.
+- **Label auto debt kini dibedakan tegas dari nominal manual:** template WA, PDF admin, dashboard, dan riwayat kini memakai wording `Nilai referensi` untuk debt otomatis, sementara debt manual tetap menonjolkan nominal aktif yang tercatat. Ini mengurangi risiko admin/user menyangka estimasi auto debt sebagai angka tagihan exact.
+- **Dialog Edit Pengguna admin kini lebih aman secara operasional:** toggle `Unlimited` dan `Tunggakan Kuota` sekarang saling eksklusif, dropdown paket debt punya placeholder eksplisit, selector satuan koreksi kuota SuperAdmin diganti dari `VBtnToggle` yang rusak menjadi tombol premium yang stabil, dan header tab dialog dibuat ulang agar tetap proporsional di mobile kecil tanpa memakan terlalu banyak tinggi layar.
+
+### Documentation (2026-03-22)
+
+- `docs/devlogs/2026-03-22-manual-debt-accuracy-and-admin-edit-ux.md` — kronologi lengkap root cause nominal debt manual, penyelarasan label estimasi auto debt, UX dialog admin, validasi lint/typecheck, dan release notes batch ini.
+- `docs/incidents/2026-03-22-manual-debt-report-undercount.md` — RCA bug produksi saat nominal debt manual undercount karena manual debt aggregate ikut dihitung lewat estimator paket termurah.
+- `docs/REFERENCE_PENGEMBANGAN.md` dan indeks devlog/incident diperbarui agar policy nominal manual-vs-auto debt dan guardrail UX admin bisa ditelusuri dari repo.
+
 ### Added (2026-03-21 — Invoice WA Observability dan Debt Report Share)
 
 - **Invoice WhatsApp kini punya jejak event di database:** saat webhook/admin reconcile mengantrekan pengiriman invoice, sistem kini menulis `WHATSAPP_INVOICE_QUEUED` ke `transaction_events`. Worker Celery juga bisa menulis event hasil kirim seperti `WHATSAPP_INVOICE_SEND_ATTEMPT`, `WHATSAPP_INVOICE_SEND_SUCCESS`, `WHATSAPP_INVOICE_PDF_FAILED`, `WHATSAPP_INVOICE_TEXT_FALLBACK_SUCCESS`, `WHATSAPP_INVOICE_TEXT_FALLBACK_FAILED`, dan `WHATSAPP_INVOICE_SEND_EXCEPTION` ketika `transaction_id` tersedia. Ini menutup blind spot verifikasi yang sebelumnya hanya bisa dilihat dari log Docker/Celery.
