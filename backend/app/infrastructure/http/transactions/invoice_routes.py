@@ -7,6 +7,7 @@ from werkzeug.exceptions import HTTPException
 
 from app.infrastructure.db.models import Transaction, TransactionStatus, User
 from app.services.debt_settlement_receipt_service import (
+    build_receipt_business_identity_context,
     build_debt_settlement_receipt_context,
     get_debt_settlement_mutation_for_transaction,
     is_debt_settlement_order_id,
@@ -62,14 +63,7 @@ def get_transaction_invoice_impl(
                 settlement_entry=settlement_entry,
                 transaction=transaction,
             )
-            context.update(
-                {
-                    "business_name": current_app.config.get("BUSINESS_NAME", "Nama Bisnis Anda"),
-                    "business_address": current_app.config.get("BUSINESS_ADDRESS", "Alamat Bisnis Anda"),
-                    "business_phone": current_app.config.get("BUSINESS_PHONE", "Telepon Bisnis Anda"),
-                    "business_email": current_app.config.get("BUSINESS_EMAIL", "Email Bisnis Anda"),
-                }
-            )
+            context.update(build_receipt_business_identity_context())
             template_name = "debt_settlement_receipt.html"
         else:
             context = {
@@ -153,14 +147,7 @@ def get_temp_transaction_invoice_impl(
                 settlement_entry=settlement_entry,
                 transaction=transaction,
             )
-            context.update(
-                {
-                    "business_name": current_app.config.get("BUSINESS_NAME", "Nama Bisnis Anda"),
-                    "business_address": current_app.config.get("BUSINESS_ADDRESS", "Alamat Bisnis Anda"),
-                    "business_phone": current_app.config.get("BUSINESS_PHONE", "Telepon Bisnis Anda"),
-                    "business_email": current_app.config.get("BUSINESS_EMAIL", "Email Bisnis Anda"),
-                }
-            )
+            context.update(build_receipt_business_identity_context())
             template_name = "debt_settlement_receipt.html"
         else:
             context = {

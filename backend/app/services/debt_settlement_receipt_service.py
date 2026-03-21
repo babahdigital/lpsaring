@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 import uuid
 from typing import Any
 
+from flask import current_app
 from sqlalchemy import select
 
 from app.extensions import db
@@ -15,10 +17,42 @@ ONLINE_DEBT_SETTLEMENT_SOURCE = "transactions.debt_settlement_success"
 ADMIN_SETTLE_SINGLE_SOURCE = "debt.settle_manual_item:admin_settle_item"
 ADMIN_SETTLE_ALL_SOURCE = "debt.clear_all:admin_settle_all"
 
+DEFAULT_RECEIPT_BUSINESS_NAME = "LPSaringNET"
+DEFAULT_RECEIPT_BUSINESS_ADDRESS = (
+    "Saring Sei Bubu, Kec. Kusan Hilir, Kabupaten Tanah Bumbu, Kalimantan Selatan 72273, Indonesia"
+)
+DEFAULT_RECEIPT_BUSINESS_PHONE = "+6281346607751"
+
 
 def format_currency_idr(value: int | float | None) -> str:
     amount = int(float(value or 0))
     return f"Rp {amount:,}".replace(",", ".")
+
+
+def build_receipt_business_identity_context() -> dict[str, str]:
+    business_name = str(
+        current_app.config.get("BUSINESS_NAME")
+        or os.environ.get("BUSINESS_NAME")
+        or DEFAULT_RECEIPT_BUSINESS_NAME
+    ).strip() or DEFAULT_RECEIPT_BUSINESS_NAME
+    business_address = str(
+        current_app.config.get("BUSINESS_ADDRESS")
+        or os.environ.get("BUSINESS_ADDRESS")
+        or DEFAULT_RECEIPT_BUSINESS_ADDRESS
+    ).strip() or DEFAULT_RECEIPT_BUSINESS_ADDRESS
+    raw_business_phone = str(
+        current_app.config.get("BUSINESS_PHONE")
+        or os.environ.get("BUSINESS_PHONE")
+        or current_app.config.get("NUXT_PUBLIC_ADMIN_WHATSAPP")
+        or os.environ.get("NUXT_PUBLIC_ADMIN_WHATSAPP")
+        or DEFAULT_RECEIPT_BUSINESS_PHONE
+    ).strip() or DEFAULT_RECEIPT_BUSINESS_PHONE
+    business_phone = format_to_local_phone(raw_business_phone) or raw_business_phone or DEFAULT_RECEIPT_BUSINESS_PHONE
+    return {
+        "business_name": business_name,
+        "business_address": business_address,
+        "business_phone": business_phone,
+    }
 
 
 def is_debt_settlement_order_id(order_id: str | None) -> bool:

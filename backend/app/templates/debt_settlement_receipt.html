@@ -19,12 +19,12 @@
       box-sizing: border-box;
     }
     .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
       border-bottom: 2px solid #0f766e;
       padding-bottom: 18px;
       margin-bottom: 24px;
+    }
+    .header-main {
+      display: block;
     }
     .title {
       margin: 0;
@@ -35,6 +35,26 @@
       margin: 6px 0 0;
       color: #4b5563;
       font-size: 13px;
+    }
+    .meta-stack {
+      margin-top: 8px;
+    }
+    .business-block {
+      margin-top: 14px;
+      max-width: 540px;
+      color: #374151;
+    }
+    .business-name {
+      font-size: 16px;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 4px;
+    }
+    .business-address,
+    .business-phone {
+      font-size: 13px;
+      line-height: 1.5;
+      color: #4b5563;
     }
     .summary {
       display: grid;
@@ -107,9 +127,6 @@
       font-size: 12px;
       line-height: 1.5;
     }
-    .header-meta {
-      text-align: right;
-    }
     .detail-card {
       margin-bottom: 20px;
     }
@@ -122,15 +139,17 @@
 <body>
   <div class="page">
     <div class="header">
-      <div>
+      <div class="header-main">
         <h1 class="title">{{ receipt_title }}</h1>
-        <p class="subtitle">Nomor Referensi: {{ receipt_number }}</p>
-        <p class="subtitle">Disusun: {{ created_at_display }}</p>
-      </div>
-      <div class="header-meta">
-        <div class="subtitle">{{ business_name if business_name else 'Babah Digital' }}</div>
-        <div class="subtitle">{{ business_address if business_address else '-' }}</div>
-        <div class="subtitle">{{ business_phone if business_phone else '-' }}</div>
+        <div class="meta-stack">
+          <p class="subtitle">Nomor Referensi: {{ receipt_number }}</p>
+          <p class="subtitle">Disusun: {{ created_at_display }}</p>
+        </div>
+        <div class="business-block">
+          <div class="business-name">{{ business_name }}</div>
+          <div class="business-address">{{ business_address }}</div>
+          <div class="business-phone">WhatsApp Admin: {{ business_phone }}</div>
+        </div>
       </div>
     </div>
 
@@ -139,14 +158,12 @@
         <h3>Pelanggan</h3>
         <div class="row"><span>Nama</span><strong>{{ user.full_name }}</strong></div>
         <div class="row"><span>WhatsApp</span><strong>{{ user_phone_display }}</strong></div>
-        <div class="row"><span>Kanal</span><strong>{{ payment_channel_label }}</strong></div>
-        <div class="row"><span>Metode</span><strong>{{ payment_method_label }}</strong></div>
+        <div class="row"><span>Metode bayar</span><strong>{{ payment_method_label }}</strong></div>
       </div>
       <div class="card">
         <h3>Status Pelunasan</h3>
         <div class="row"><span>Waktu bayar</span><strong>{{ payment_at_display }}</strong></div>
         <div class="row"><span>Total kuota lunas</span><strong>{{ paid_total_gb }}</strong></div>
-        <div class="row"><span>Akses dibuka</span><strong>{{ 'Ya' if was_unblocked else 'Tidak' }}</strong></div>
         {% if order_id %}
         <div class="row"><span>Order ID</span><strong>{{ order_id }}</strong></div>
         {% endif %}

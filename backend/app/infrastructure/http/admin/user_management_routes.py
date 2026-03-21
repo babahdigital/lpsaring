@@ -58,6 +58,7 @@ from app.services.notification_service import (
 from app.services.debt_settlement_receipt_service import (
     ADMIN_SETTLE_ALL_SOURCE,
     ADMIN_SETTLE_SINGLE_SOURCE,
+    build_receipt_business_identity_context,
     build_debt_settlement_receipt_context,
     estimate_amount_rp_for_mb,
     format_currency_idr,
@@ -1358,14 +1359,7 @@ def export_debt_settlement_receipt_temp(token: str):
 
     try:
         context = build_debt_settlement_receipt_context(user=user, settlement_entry=entry, transaction=transaction)
-        context.update(
-            {
-                "business_name": current_app.config.get("BUSINESS_NAME", "Nama Bisnis Anda"),
-                "business_address": current_app.config.get("BUSINESS_ADDRESS", "Alamat Bisnis Anda"),
-                "business_phone": current_app.config.get("BUSINESS_PHONE", "Telepon Bisnis Anda"),
-                "business_email": current_app.config.get("BUSINESS_EMAIL", "Email Bisnis Anda"),
-            }
-        )
+        context.update(build_receipt_business_identity_context())
         public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
         pdf_bytes = _render_debt_settlement_receipt_pdf_bytes(context, public_base_url)
         filename = f"receipt-{context.get('receipt_number') or entry.id}.pdf"
