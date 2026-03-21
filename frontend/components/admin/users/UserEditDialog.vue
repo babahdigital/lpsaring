@@ -57,6 +57,7 @@ interface User {
   is_unlimited_user: boolean
   mikrotik_server_name: string | null
   mikrotik_profile_name: string | null
+  mikrotik_user_exists?: boolean
   total_quota_purchased_mb: number
   total_quota_used_mb: number
   manual_debt_mb?: number
@@ -66,6 +67,8 @@ interface User {
   quota_expiry_date: string | null
   is_blocked?: boolean
   blocked_reason?: string | null
+  last_login_at?: string | null
+  device_count?: number
 }
 
 interface LiveData {
@@ -196,6 +199,21 @@ const saQuotaUnitHint = computed(() => (saQuotaInputUnit.value === 'gb'
 const saQuotaRemainingMb = computed(() => Math.max(0, Number(formData.total_quota_purchased_mb ?? 0) - Number(formData.total_quota_used_mb ?? 0)))
 const saQuotaPurchasedCurrentText = computed(() => `Saat ini ${formatQuotaValueByUnit(formData.total_quota_purchased_mb, saQuotaInputUnit.value)}`)
 const saQuotaUsedCurrentText = computed(() => `Saat ini ${formatQuotaValueByUnit(Number(formData.total_quota_used_mb), saQuotaInputUnit.value)}`)
+
+const editDialogConnectionMeta = computed(() => {
+  const user = props.user
+  const deviceCount = Number(user?.device_count ?? 0)
+  const lastLoginAt = user?.last_login_at ?? null
+  const mikrotikProfile = String(user?.mikrotik_profile_name ?? '').trim()
+
+  return {
+    deviceCount,
+    hasDevices: deviceCount > 0,
+    loginLabel: lastLoginAt ? new Date(lastLoginAt).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Belum pernah login',
+    mikrotikProfile: mikrotikProfile !== '' ? mikrotikProfile : 'Belum terset',
+    mikrotikStatusLabel: user?.mikrotik_user_exists === true ? 'Sinkron ke MikroTik' : 'Belum ada akun MikroTik',
+  }
+})
 
 async function autoFillSaQuotaFromDb() {
   if (!props.user?.id)
@@ -752,14 +770,38 @@ function openQuotaHistoryPdf() {
   <VDialog :model-value="props.modelValue" fullscreen persistent @update:model-value="onClose">
     <VCard class="d-flex flex-column fill-height rounded-0">
       <VForm ref="formRef" class="d-flex flex-column fill-height" @submit.prevent="onSave">
-        <VToolbar color="primary" density="comfortable">
-          <VToolbarTitle class="text-white d-flex align-center ga-2">
-            <VIcon icon="tabler-user-edit" />
-            <span class="headline text-white pl-4">Edit Pengguna</span>
-          </VToolbarTitle>
-          <VSpacer />
-          <VBtn icon="tabler-x" variant="text" class="text-white" @click="onClose" />
-        </VToolbar>
+        <div class="admin-user-edit__topbar bg-primary text-white">
+          <div class="admin-user-edit__topbar-main">
+            <div class="admin-user-edit__topbar-titleWrap">
+              <div class="admin-user-edit__topbar-icon">
+                <VIcon icon="tabler-user-edit" size="22" />
+              </div>
+              <div class="admin-user-edit__topbar-copy">
+                <div class="admin-user-edit__topbar-title">
+                  Edit Pengguna
+                </div>
+                <div class="admin-user-edit__topbar-subtitle text-white">
+                  Rapikan profil, akses, kuota, dan tindak lanjut pengguna dari satu layar.
+                </div>
+              </div>
+            </div>
+            <VBtn icon="tabler-x" variant="text" class="text-white admin-user-edit__topbar-close" @click="onClose" />
+          </div>
+          <div class="admin-user-edit__topbar-meta">
+            <div class="admin-user-edit__meta-pill">
+              <VIcon icon="tabler-devices" size="16" />
+              <span>{{ editDialogConnectionMeta.hasDevices ? `${editDialogConnectionMeta.deviceCount} perangkat` : 'Belum login' }}</span>
+            </div>
+            <div class="admin-user-edit__meta-pill">
+              <VIcon icon="tabler-shield-check" size="16" />
+              <span>{{ editDialogConnectionMeta.mikrotikProfile }}</span>
+            </div>
+            <div class="admin-user-edit__meta-pill admin-user-edit__meta-pill--muted">
+              <VIcon icon="tabler-clock" size="16" />
+              <span>{{ editDialogConnectionMeta.loginLabel }}</span>
+            </div>
+          </div>
+        </div>
 
         <div class="admin-user-edit__container pa-4 pa-md-6 pb-0">
           <div class="admin-user-edit__section-grid" role="tablist" aria-label="Navigasi edit pengguna">
@@ -1040,8 +1082,10 @@ function openQuotaHistoryPdf() {
                             <VBtn
                               v-if="debtTotalMb > 0"
                               size="small"
-                              variant="text"
-                              prepend-icon="tabler-printer"
+                              color="error"
+                              variant="tonal"
+                              class="admin-user-edit__inline-action"
+                              prepend-icon="tabler-file-type-pdf"
                               @click="openDebtPdf"
                             >
                               PDF
@@ -1049,7 +1093,9 @@ function openQuotaHistoryPdf() {
                             <VBtn
                               v-if="debtTotalMb > 0"
                               size="small"
-                              variant="text"
+                              color="success"
+                              variant="tonal"
+                              class="admin-user-edit__inline-action"
                               prepend-icon="tabler-brand-whatsapp"
                               :loading="isDebtWhatsappSending"
                               @click="sendDebtWhatsapp"
@@ -1330,6 +1376,92 @@ function openQuotaHistoryPdf() {
   margin-inline: auto;
 }
 
+.admin-user-edit__topbar {
+  padding: 16px 20px 14px;
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.admin-user-edit__topbar-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-user-edit__topbar-titleWrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.admin-user-edit__topbar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.14);
+  flex: 0 0 auto;
+}
+
+.admin-user-edit__topbar-copy {
+  min-width: 0;
+}
+
+.admin-user-edit__topbar-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+}
+
+.admin-user-edit__topbar-subtitle {
+  margin-top: 4px;
+  max-width: 760px;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  opacity: 0.86;
+}
+
+.admin-user-edit__topbar-close {
+  flex: 0 0 auto;
+  margin-top: -4px;
+}
+
+.admin-user-edit__topbar-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.admin-user-edit__meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  max-width: 100%;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 0.83rem;
+  line-height: 1.2;
+}
+
+.admin-user-edit__meta-pill span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-user-edit__meta-pill--muted {
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .admin-user-edit__scroll {
   min-height: 0;
 }
@@ -1355,6 +1487,10 @@ function openQuotaHistoryPdf() {
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.admin-user-edit__inline-action {
+  min-width: 104px;
 }
 
 .admin-user-edit__stat-grid {
@@ -1500,6 +1636,49 @@ function openQuotaHistoryPdf() {
 }
 
 @media (max-width: 600px) {
+  .admin-user-edit__topbar {
+    padding: 14px 14px 12px;
+  }
+
+  .admin-user-edit__topbar-main {
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .admin-user-edit__topbar-titleWrap {
+    gap: 10px;
+  }
+
+  .admin-user-edit__topbar-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+  }
+
+  .admin-user-edit__topbar-title {
+    font-size: 1.02rem;
+  }
+
+  .admin-user-edit__topbar-subtitle {
+    font-size: 0.8rem;
+  }
+
+  .admin-user-edit__topbar-meta {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .admin-user-edit__meta-pill {
+    width: 100%;
+    min-height: 40px;
+    border-radius: 14px;
+  }
+
+  .admin-user-edit__meta-pill span {
+    white-space: normal;
+  }
+
   .admin-user-edit__section-grid {
     gap: 12px;
   }
@@ -1555,6 +1734,10 @@ function openQuotaHistoryPdf() {
   .admin-user-edit__card-actions :deep(.v-chip) {
     width: 100%;
     justify-content: center;
+  }
+
+  .admin-user-edit__inline-action {
+    min-width: 0;
   }
 
   .admin-user-edit__stat-grid {

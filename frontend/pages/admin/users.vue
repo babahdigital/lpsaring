@@ -287,6 +287,34 @@ function formatQuotaFromMb(mb: number): string {
   return `${formatted.replace(/\.0$/, '')} GB`
 }
 
+function formatLastLogin(value?: string | null): string {
+  if (!value)
+    return 'Belum login'
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime()))
+    return 'Belum login'
+  return parsed.toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+function getDeviceStatusMeta(user: User): { text: string, color: string, icon: string, helper: string } {
+  const deviceCount = Number(user.device_count ?? 0)
+  if (deviceCount > 0) {
+    return {
+      text: `${deviceCount} perangkat`,
+      color: 'info',
+      icon: 'tabler-devices',
+      helper: formatLastLogin(user.last_login_at),
+    }
+  }
+
+  return {
+    text: 'Belum login',
+    color: 'secondary',
+    icon: 'tabler-device-mobile-question',
+    helper: 'Belum ada perangkat aktif',
+  }
+}
+
 function getUserDebtTotalMb(user: User): number {
   if (user.is_unlimited_user === true)
     return 0
@@ -1261,7 +1289,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
         </template>
 
         <template #item.profile="{ item }">
-          <div class="d-flex flex-column ga-1 py-2">
+          <div class="admin-users__profileCell py-2">
             <VTooltip v-if="getUserProfileMeta(item).tooltip" :text="getUserProfileMeta(item).tooltip" location="top">
               <template #activator="{ props: tooltipProps }">
                 <VChip v-bind="tooltipProps" :color="getUserProfileMeta(item).color" size="x-small" label>
@@ -1274,6 +1302,10 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
               <VIcon :icon="getUserProfileMeta(item).icon" start size="16" />
               {{ getUserProfileMeta(item).text }}
             </VChip>
+
+            <div class="admin-users__profileHint text-caption text-medium-emphasis">
+              {{ item.mikrotik_profile_name || 'Profile belum terset' }}
+            </div>
 
             <VTooltip v-if="getUserDebtTotalMb(item) > 0" :text="`Debt: ${getUserDebtTotalMb(item)} MB`" location="top">
               <template #activator="{ props: tooltipProps }">
@@ -1291,22 +1323,18 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
           </VChip>
         </template>
         <template #item.is_active="{ item }">
-          <div class="d-flex flex-column align-center ga-1">
-            <VTooltip :text="item.is_active ? 'Aktif' : 'Tidak Aktif'">
-              <template #activator="{ props: tooltipProps }">
-                <VIcon v-bind="tooltipProps" :color="item.is_active ? 'success' : 'error'" :icon="item.is_active ? 'tabler-plug-connected' : 'tabler-plug-connected-x'" size="22" />
-              </template>
-            </VTooltip>
-            <VChip
-              v-if="(item.device_count ?? 0) > 0"
-              size="x-small"
-              color="info"
-              variant="tonal"
-              :title="`${item.device_count} perangkat terdaftar`"
-            >
-              {{ item.device_count }} dev
+          <div class="admin-users__connectionCell">
+            <div class="admin-users__connectionStatus">
+              <VIcon :color="item.is_active ? 'success' : 'error'" :icon="item.is_active ? 'tabler-plug-connected' : 'tabler-plug-connected-x'" size="20" />
+              <span class="font-weight-medium">{{ item.is_active ? 'Aktif' : 'Nonaktif' }}</span>
+            </div>
+            <VChip size="x-small" :color="getDeviceStatusMeta(item).color" variant="tonal" label>
+              <VIcon :icon="getDeviceStatusMeta(item).icon" start size="14" />
+              {{ getDeviceStatusMeta(item).text }}
             </VChip>
-            <span v-else class="text-caption text-medium-emphasis" style="font-size:10px">Belum login</span>
+            <div class="admin-users__connectionHint text-caption text-medium-emphasis">
+              {{ getDeviceStatusMeta(item).helper }}
+            </div>
           </div>
         </template>
         <template #item.created_at="{ item }">
@@ -1381,8 +1409,8 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
           <VIcon icon="tabler-database-off" size="32" class="mb-2" />
           <p>{{ userNoDataMessage }}</p>
         </div>
-        <VCard v-for="user in users" v-else :key="user.id" class="mb-3">
-          <VCardText>
+        <VCard v-for="user in users" v-else :key="user.id" class="mb-3 admin-users__mobile-card">
+          <VCardText class="pb-3">
             <div class="admin-users__mobile-cardHeader">
               <div class="admin-users__mobile-user">
                 <VAvatar size="32" class="me-3" :color="getRoleMeta(user.role).color" variant="tonal">
@@ -1405,10 +1433,53 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
                 {{ getStatusMeta(user.approval_status).text }}
               </VChip>
             </div>
+
+            <div class="admin-users__mobile-insightGrid mt-4">
+              <div class="admin-users__mobile-insightCard">
+                <div class="admin-users__mobile-insightLabel">
+                  Profile
+                </div>
+                <VChip :color="getUserProfileMeta(user).color" size="x-small" label>
+                  <VIcon :icon="getUserProfileMeta(user).icon" start size="14" />
+                  {{ getUserProfileMeta(user).text }}
+                </VChip>
+                <div class="admin-users__mobile-insightValue text-caption text-medium-emphasis">
+                  {{ user.mikrotik_profile_name || 'Belum terset' }}
+                </div>
+              </div>
+
+              <div class="admin-users__mobile-insightCard">
+                <div class="admin-users__mobile-insightLabel">
+                  Koneksi
+                </div>
+                <VChip :color="user.is_active ? 'success' : 'error'" size="x-small" label>
+                  <VIcon :icon="user.is_active ? 'tabler-plug-connected' : 'tabler-plug-connected-x'" start size="14" />
+                  {{ user.is_active ? 'Aktif' : 'Nonaktif' }}
+                </VChip>
+                <div class="admin-users__mobile-insightValue text-caption text-medium-emphasis">
+                  {{ getDeviceStatusMeta(user).helper }}
+                </div>
+              </div>
+
+              <div class="admin-users__mobile-insightCard">
+                <div class="admin-users__mobile-insightLabel">
+                  Device
+                </div>
+                <VChip :color="getDeviceStatusMeta(user).color" size="x-small" variant="tonal" label>
+                  <VIcon :icon="getDeviceStatusMeta(user).icon" start size="14" />
+                  {{ getDeviceStatusMeta(user).text }}
+                </VChip>
+                <div v-if="getUserDebtTotalMb(user) > 0" class="admin-users__mobile-debt mt-2">
+                  <VChip color="warning" size="x-small" label prepend-icon="tabler-alert-triangle">
+                    Debt {{ formatQuotaFromMb(getUserDebtTotalMb(user)) }}
+                  </VChip>
+                </div>
+              </div>
+            </div>
           </VCardText>
           <VDivider />
-          <VCardActions class="justify-center">
-            <div class="d-flex gap-1">
+          <VCardActions class="justify-center admin-users__mobile-actionsWrap">
+            <div class="admin-users__mobile-actions">
               <VBtn icon variant="text" color="secondary" size="small" @click="openViewDialog(user)">
                 <VIcon icon="tabler-eye" /><VTooltip activator="parent">
                   Lihat Detail
@@ -1599,6 +1670,35 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
   gap: 12px;
 }
 
+.admin-users__profileCell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-users__profileHint {
+  line-height: 1.3;
+}
+
+.admin-users__connectionCell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.admin-users__connectionStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-users__connectionHint {
+  max-width: 132px;
+  line-height: 1.3;
+}
+
 .admin-users__subtitle {
   overflow: visible;
   text-overflow: clip;
@@ -1662,6 +1762,53 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
   white-space: nowrap;
 }
 
+.admin-users__mobile-card {
+  overflow: hidden;
+}
+
+.admin-users__mobile-insightGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.admin-users__mobile-insightCard {
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  background: rgba(var(--v-theme-surface), 0.72);
+}
+
+.admin-users__mobile-insightLabel {
+  margin-bottom: 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(var(--v-theme-on-surface), 0.56);
+}
+
+.admin-users__mobile-insightValue {
+  margin-top: 8px;
+  line-height: 1.35;
+}
+
+.admin-users__mobile-actionsWrap {
+  padding-inline: 12px  !important;
+}
+
+.admin-users__mobile-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(40px, 1fr));
+  gap: 8px;
+  width: 100%;
+}
+
+.admin-users__mobile-actions :deep(.v-btn) {
+  border-radius: 12px;
+  background: rgba(var(--v-theme-primary), 0.08);
+}
+
 /* Make mobile icon buttons easier to tap */
 @media (max-width: 600px) {
   :deep(.v-card-actions) {
@@ -1671,6 +1818,22 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
   :deep(.v-card-actions .v-btn) {
     min-height: 40px;
     min-width: 40px;
+  }
+
+  .admin-users__mobile-cardHeader {
+    flex-direction: column;
+  }
+
+  .admin-users__mobile-status {
+    align-self: flex-start;
+  }
+
+  .admin-users__mobile-insightGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-users__mobile-insightCard {
+    padding: 12px 14px;
   }
 }
 </style>

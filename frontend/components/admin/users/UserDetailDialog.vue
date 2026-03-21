@@ -29,6 +29,10 @@ interface User {
   quota_debt_total_mb?: number
   quota_expiry_date: string | null
   is_unlimited_user: boolean
+  mikrotik_user_exists?: boolean
+  mikrotik_profile_name?: string | null
+  last_login_at?: string | null
+  device_count?: number
 }
 
 // Definisikan interface QuotaInfo
@@ -95,6 +99,13 @@ function formatSimpleDateTime(dateString: string | null) {
     return 'N/A'
   const date = new Date(dateString)
   return isValid(date) ? format(date, 'dd MMMM yyyy, HH:mm', { locale: id }) : 'Tanggal tidak valid'
+}
+
+function formatCompactDateTime(dateString: string | null) {
+  if (!dateString)
+    return 'Belum pernah login'
+  const date = new Date(dateString)
+  return isValid(date) ? format(date, 'dd MMM yyyy, HH:mm', { locale: id }) : 'Tanggal tidak valid'
 }
 
 function formatPhoneNumberDisplay(phoneNumber: string | null) {
@@ -193,6 +204,39 @@ const debtStatusMeta = computed(() => {
   }
 })
 
+const detailConnectionCards = computed(() => {
+  const user = props.user
+  const deviceCount = Number(user?.device_count ?? 0)
+  const profileName = String(user?.mikrotik_profile_name ?? '').trim()
+
+  return [
+    {
+      key: 'devices',
+      icon: 'tabler-devices',
+      title: 'Perangkat',
+      value: deviceCount > 0 ? `${deviceCount} perangkat` : 'Belum ada perangkat aktif',
+      caption: deviceCount > 0 ? 'Perangkat pernah login / terdaftar' : 'Belum ada perangkat yang tercatat login',
+      color: deviceCount > 0 ? 'info' : 'secondary',
+    },
+    {
+      key: 'login',
+      icon: 'tabler-clock-play',
+      title: 'Login Terakhir',
+      value: formatCompactDateTime(user?.last_login_at ?? null),
+      caption: user?.last_login_at ? 'Waktu login terakhir yang tercatat' : 'Belum ada riwayat login tersimpan',
+      color: user?.last_login_at ? 'success' : 'secondary',
+    },
+    {
+      key: 'profile',
+      icon: 'tabler-shield-check',
+      title: 'Profile MikroTik',
+      value: profileName !== '' ? profileName : 'Belum terset',
+      caption: user?.mikrotik_user_exists ? 'Akun sinkron dengan MikroTik' : 'Belum ada akun MikroTik aktif',
+      color: user?.mikrotik_user_exists ? 'primary' : 'warning',
+    },
+  ]
+})
+
 function formatMb(value: number) {
   if (!Number.isFinite(value))
     return '0'
@@ -257,15 +301,22 @@ function onClose() {
     @update:model-value="onClose"
   >
     <VCard v-if="props.user" :class="isMobile ? 'rounded-0' : 'rounded-lg'">
-      <VCardTitle class="text-h6 pa-4 bg-primary text-white" :class="isMobile ? '' : 'rounded-t-lg'">
-        <div class="dialog-titlebar">
-          <div class="dialog-titlebar__title">
-            <VIcon start icon="tabler-user-circle" />
-            <span>Detail Pengguna</span>
+      <VCardTitle class="admin-user-detail__hero text-white" :class="isMobile ? '' : 'rounded-t-lg'">
+        <div class="admin-user-detail__hero-main">
+          <div class="admin-user-detail__hero-copy">
+            <div class="admin-user-detail__hero-icon">
+              <VIcon icon="tabler-user-circle" size="24" />
+            </div>
+            <div class="admin-user-detail__hero-text">
+              <div class="admin-user-detail__hero-title">
+                Detail Pengguna
+              </div>
+              <div class="admin-user-detail__hero-subtitle text-white">
+                Ringkasan identitas, koneksi, kuota, dan histori akses pengguna.
+              </div>
+            </div>
           </div>
-          <div class="dialog-titlebar__actions">
-            <VBtn icon="tabler-x" variant="text" size="small" class="text-white" @click="onClose" />
-          </div>
+          <VBtn icon="tabler-x" variant="text" size="small" class="text-white admin-user-detail__hero-close" @click="onClose" />
         </div>
       </VCardTitle>
       <VDivider />
@@ -284,6 +335,26 @@ function onClose() {
         <div class="text-overline mb-2">
           Informasi Dasar
         </div>
+
+        <div class="admin-user-detail__meta-grid mb-4">
+          <div v-for="item in detailConnectionCards" :key="item.key" class="admin-user-detail__meta-card">
+            <div class="admin-user-detail__meta-cardHead">
+              <VAvatar size="34" :color="item.color" variant="tonal">
+                <VIcon :icon="item.icon" size="18" />
+              </VAvatar>
+              <div class="admin-user-detail__meta-cardTitle">
+                {{ item.title }}
+              </div>
+            </div>
+            <div class="admin-user-detail__meta-cardValue">
+              {{ item.value }}
+            </div>
+            <div class="admin-user-detail__meta-cardCaption">
+              {{ item.caption }}
+            </div>
+          </div>
+        </div>
+
         <VList lines="two" density="compact">
           <VListItem prepend-icon="tabler-user" title="Nama Lengkap" :subtitle="props.user.full_name" />
           <VListItem prepend-icon="tabler-phone" title="Nomor Telepon" :subtitle="formatPhoneNumberDisplay(props.user.phone_number)" />
@@ -471,6 +542,96 @@ function onClose() {
 <style scoped>
  .v-list-item { padding-inline: 4px !important; }
 
+.admin-user-detail__hero {
+  padding: 16px 18px;
+  background: linear-gradient(135deg, rgb(var(--v-theme-primary)) 0%, rgba(var(--v-theme-primary), 0.82) 100%);
+}
+
+.admin-user-detail__hero-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-user-detail__hero-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.admin-user-detail__hero-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.admin-user-detail__hero-text {
+  min-width: 0;
+}
+
+.admin-user-detail__hero-title {
+  font-size: 1.18rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.admin-user-detail__hero-subtitle {
+  margin-top: 4px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  opacity: 0.86;
+}
+
+.admin-user-detail__hero-close {
+  margin-top: -2px;
+}
+
+.admin-user-detail__meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.admin-user-detail__meta-card {
+  padding: 14px 16px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 16px;
+  background: rgba(var(--v-theme-surface), 0.88);
+}
+
+.admin-user-detail__meta-cardHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-user-detail__meta-cardTitle {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: rgba(var(--v-theme-on-surface), 0.68);
+}
+
+.admin-user-detail__meta-cardValue {
+  margin-top: 12px;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.admin-user-detail__meta-cardCaption {
+  margin-top: 4px;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+}
+
 .dialog-titlebar {
   display: flex;
   align-items: center;
@@ -507,14 +668,34 @@ function onClose() {
 }
 
 @media (max-width: 600px) {
-  .dialog-titlebar {
-    flex-direction: column;
-    align-items: flex-start;
+  .admin-user-detail__hero {
+    padding: 14px;
   }
 
-  .dialog-titlebar__actions {
-    width: 100%;
-    justify-content: flex-end;
+  .admin-user-detail__hero-main {
+    gap: 10px;
+  }
+
+  .admin-user-detail__hero-copy {
+    gap: 10px;
+  }
+
+  .admin-user-detail__hero-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+  }
+
+  .admin-user-detail__hero-title {
+    font-size: 1rem;
+  }
+
+  .admin-user-detail__hero-subtitle {
+    font-size: 0.78rem;
+  }
+
+  .admin-user-detail__meta-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>
