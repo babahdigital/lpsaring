@@ -882,6 +882,172 @@ paths:
         '404':
           $ref: '#/components/responses/ErrorNotFound'
 
+  /admin/users/{user_id}/debts:
+    get:
+      tags: [AdminUsers]
+      summary: Ambil ledger debt manual user
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Ledger debt manual user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserDebtListResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+
+  /admin/users/{user_id}/debts/{debt_id}/settle:
+    post:
+      tags: [AdminUsers]
+      summary: Lunasi satu item debt manual user
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: path
+          name: debt_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Item debt berhasil dilunasi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDebtSettleItemResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+
+  /admin/users/{user_id}/debts/settle-all:
+    post:
+      tags: [AdminUsers]
+      summary: Lunasi seluruh debt user
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Seluruh debt berhasil dilunasi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDebtSettleAllResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+
+  /admin/users/{user_id}/debts/send-whatsapp:
+    post:
+      tags: [AdminUsers]
+      summary: Antrikan ringkasan debt manual ke WhatsApp user
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Ringkasan debt berhasil diantrikan ke WhatsApp
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminDebtWhatsappQueueResponse'
+        '400':
+          $ref: '#/components/responses/ErrorBadRequest'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+
+  /admin/users/debts/temp/{token}.pdf:
+    get:
+      tags: [AdminUsers]
+      summary: Akses publik sementara untuk PDF debt report
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: PDF debt report
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+
+  /admin/users/debt-settlements/temp/{token}.pdf:
+    get:
+      tags: [AdminUsers]
+      summary: Akses publik sementara untuk PDF receipt pelunasan debt
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: PDF receipt pelunasan debt
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+
   /admin/settings:
     get:
       tags: [AdminSettings]
@@ -2167,6 +2333,118 @@ components:
           type: number
         remaining_mb:
           type: number
+
+    AdminUserDebtItem:
+      type: object
+      required: [id, amount_mb, paid_mb, remaining_mb, is_paid, estimated_rp, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        debt_date:
+          type: string
+          format: date
+          nullable: true
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        amount_mb:
+          type: integer
+        paid_mb:
+          type: integer
+        remaining_mb:
+          type: integer
+        is_paid:
+          type: boolean
+        paid_at:
+          type: string
+          format: date-time
+          nullable: true
+        note:
+          type: string
+          nullable: true
+        price_rp:
+          type: integer
+          nullable: true
+        estimated_rp:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        last_paid_source:
+          type: string
+          nullable: true
+
+    AdminUserDebtSummary:
+      type: object
+      required: [manual_debt_mb, open_items, paid_items, total_items]
+      properties:
+        manual_debt_mb:
+          type: integer
+        open_items:
+          type: integer
+        paid_items:
+          type: integer
+        total_items:
+          type: integer
+
+    AdminUserDebtListResponse:
+      type: object
+      required: [items, summary]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminUserDebtItem'
+        summary:
+          $ref: '#/components/schemas/AdminUserDebtSummary'
+
+    AdminDebtSettleItemResponse:
+      type: object
+      required: [message, paid_mb, unblocked]
+      properties:
+        message:
+          type: string
+        paid_mb:
+          type: integer
+        unblocked:
+          type: boolean
+        receipt_url:
+          type: string
+          nullable: true
+
+    AdminDebtSettleAllResponse:
+      type: object
+      required: [message, paid_auto_mb, paid_manual_mb, debt_auto_before_mb, debt_manual_before_mb, unblocked]
+      properties:
+        message:
+          type: string
+        paid_auto_mb:
+          type: integer
+        paid_manual_mb:
+          type: integer
+        debt_auto_before_mb:
+          type: number
+        debt_manual_before_mb:
+          type: integer
+        unblocked:
+          type: boolean
+        receipt_url:
+          type: string
+          nullable: true
+
+    AdminDebtWhatsappQueueResponse:
+      type: object
+      required: [message, queued]
+      properties:
+        message:
+          type: string
+        queued:
+          type: boolean
 
     AdminMetricsReliabilitySignals:
       type: object

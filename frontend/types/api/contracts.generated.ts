@@ -2,7 +2,7 @@
 // AUTO-GENERATED FILE. DO NOT EDIT MANUALLY.
 // Source: contracts/openapi/openapi.v1.yaml
 
-export const OPENAPI_SOURCE_SHA256 = 'd99f3c960384d7d3619d5ef62bb6874928bef44f21101f4cb6bdee5def1979cc' as const
+export const OPENAPI_SOURCE_SHA256 = '7e25923656a5184927e1abb07d37fbbcaf3f256da17bcce3754b17506a95aee3' as const
 export const API_CONTRACT_REVISION = 'openapi-1.0.0' as const
 
 export type MessageResponse = { message: string }
@@ -54,6 +54,12 @@ export type AdminTransactionBillResponse = { message: string; order_id: string; 
 export type AdminTransactionReconcileResponse = { message: string; transaction_status: string; midtrans_status: string; quota_applied: boolean; whatsapp_sent: boolean }
 export type AdminQuotaAdjustRequest = { set_purchased_mb?: number | null; set_used_mb?: number | null; reason: string }
 export type AdminQuotaAdjustResponse = { message: string; total_quota_purchased_mb: number; total_quota_used_mb: number; remaining_mb: number }
+export type AdminUserDebtItem = { id: string; debt_date?: string | null; due_date?: string | null; amount_mb: number; paid_mb: number; remaining_mb: number; is_paid: boolean; paid_at?: string | null; note?: string | null; price_rp?: number | null; estimated_rp: number; created_at: string; updated_at: string; last_paid_source?: string | null }
+export type AdminUserDebtSummary = { manual_debt_mb: number; open_items: number; paid_items: number; total_items: number }
+export type AdminUserDebtListResponse = { items: Array<AdminUserDebtItem>; summary: AdminUserDebtSummary }
+export type AdminDebtSettleItemResponse = { message: string; paid_mb: number; unblocked: boolean; receipt_url?: string | null }
+export type AdminDebtSettleAllResponse = { message: string; paid_auto_mb: number; paid_manual_mb: number; debt_auto_before_mb: number; debt_manual_before_mb: number; unblocked: boolean; receipt_url?: string | null }
+export type AdminDebtWhatsappQueueResponse = { message: string; queued: boolean }
 export type AdminMetricsReliabilitySignals = { payment_idempotency_degraded?: boolean; hotspot_sync_lock_degraded?: boolean; policy_parity_degraded?: boolean }
 export type AdminMetricsResponse = { metrics?: { [key: string]: number }; reliability_signals?: AdminMetricsReliabilitySignals }
 export type AccessParityItem = { user_id: string; phone_number: string; mac: string; ip?: string | null; app_status: string; expected_binding_type: string; actual_binding_type?: string | null; address_list_statuses: Array<string>; mismatches: Array<string> }
@@ -135,6 +141,16 @@ export interface GeneratedApiContractMap {
     response: AdminUserMutationResponse
     error: ErrorResponse
   }
+  'GET /admin/users/debt-settlements/temp/{token}.pdf': {
+    request: never
+    response: unknown
+    error: ErrorResponse
+  }
+  'GET /admin/users/debts/temp/{token}.pdf': {
+    request: never
+    response: unknown
+    error: ErrorResponse
+  }
   'POST /admin/users/seed-imported-update-submissions': {
     request: SeedImportedUpdateSubmissionsRequest
     response: SeedImportedUpdateSubmissionsResponse
@@ -143,6 +159,26 @@ export interface GeneratedApiContractMap {
   'PUT /admin/users/{user_id}': {
     request: AdminUserUpdateRequest
     response: AdminUserMutationResponse
+    error: ErrorResponse
+  }
+  'GET /admin/users/{user_id}/debts': {
+    request: never
+    response: AdminUserDebtListResponse
+    error: ErrorResponse
+  }
+  'POST /admin/users/{user_id}/debts/send-whatsapp': {
+    request: never
+    response: AdminDebtWhatsappQueueResponse
+    error: ErrorResponse
+  }
+  'POST /admin/users/{user_id}/debts/settle-all': {
+    request: never
+    response: AdminDebtSettleAllResponse
+    error: ErrorResponse
+  }
+  'POST /admin/users/{user_id}/debts/{debt_id}/settle': {
+    request: never
+    response: AdminDebtSettleItemResponse
     error: ErrorResponse
   }
   'POST /admin/users/{user_id}/quota-adjust': {

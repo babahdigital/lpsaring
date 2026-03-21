@@ -246,7 +246,10 @@ def _render_user_manual_debts_pdf_bytes(context: dict, public_base_url: str) -> 
     from weasyprint import HTML  # type: ignore
 
     html_string = render_template("admin_user_debt_report.html", **context)
-    return HTML(string=html_string, base_url=public_base_url).write_pdf()
+    pdf_bytes = HTML(string=html_string, base_url=public_base_url).write_pdf()
+    if pdf_bytes is None:
+        raise RuntimeError("Gagal menghasilkan PDF debt report.")
+    return pdf_bytes
 
 
 def _build_user_debt_whatsapp_context(user: User, report_context: dict, pdf_url: str) -> dict:
@@ -287,7 +290,10 @@ def _render_debt_settlement_receipt_pdf_bytes(context: dict, public_base_url: st
     from weasyprint import HTML  # type: ignore
 
     html_string = render_template("debt_settlement_receipt.html", **context)
-    return HTML(string=html_string, base_url=public_base_url).write_pdf()
+    pdf_bytes = HTML(string=html_string, base_url=public_base_url).write_pdf()
+    if pdf_bytes is None:
+        raise RuntimeError("Gagal menghasilkan PDF receipt pelunasan debt.")
+    return pdf_bytes
 
 
 def _build_debt_settlement_receipt_url(entry_id: uuid.UUID, base_url: str) -> str:
@@ -1259,7 +1265,7 @@ def export_user_manual_debts_pdf(current_admin: User, user_id: uuid.UUID):
         return jsonify({"message": "Format tidak didukung."}), HTTPStatus.BAD_REQUEST
 
     try:
-        from weasyprint import HTML  # type: ignore
+        __import__("weasyprint")
     except Exception:
         return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
 
@@ -1285,7 +1291,7 @@ def export_user_manual_debts_pdf(current_admin: User, user_id: uuid.UUID):
 @user_management_bp.route("/users/debts/temp/<string:token>.pdf", methods=["GET"])
 def export_user_manual_debts_pdf_temp(token: str):
     try:
-        from weasyprint import HTML  # type: ignore  # noqa: F401
+        __import__("weasyprint")
     except Exception:
         return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
 
@@ -1324,7 +1330,7 @@ def export_user_manual_debts_pdf_temp(token: str):
 @user_management_bp.route("/users/debt-settlements/temp/<string:token>.pdf", methods=["GET"])
 def export_debt_settlement_receipt_temp(token: str):
     try:
-        from weasyprint import HTML  # type: ignore  # noqa: F401
+        __import__("weasyprint")
     except Exception:
         return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
 

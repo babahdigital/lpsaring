@@ -68,6 +68,12 @@ Perubahan endpoint prioritas dianggap lengkap hanya jika keempat artefak berikut
 
 - `GET /admin/users`
 - `GET /admin/users/{user_id}`
+- `GET /admin/users/{user_id}/debts`
+- `POST /admin/users/{user_id}/debts/{debt_id}/settle`
+- `POST /admin/users/{user_id}/debts/settle-all`
+- `POST /admin/users/{user_id}/debts/send-whatsapp`
+- `GET /admin/users/debts/temp/{token}.pdf`
+- `GET /admin/users/debt-settlements/temp/{token}.pdf`
 - `GET /admin/settings`
 - `GET /admin/quota-requests`
 - `POST /admin/quota-requests/{request_id}/process`
