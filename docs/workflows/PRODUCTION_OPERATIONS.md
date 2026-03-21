@@ -60,8 +60,17 @@ cd lpsaring && bash deploy_pi.sh --trigger-build
 gh workflow run docker-publish.yml --field clean_before_deploy=true
 ```
 
+Jika manual dispatch dari workspace lokal gagal dengan `wsarecv`, `WinError 10054`, `connection reset`, atau error GraphQL serupa padahal `gh auth status -h github.com` masih sehat, jangan langsung ubah workflow. Pada workspace Windows ini, gejala itu pernah terbukti berasal dari jalur IPv6/NAT64 `api.github.com` yang reset koneksi, sementara IPv4 tetap sehat. Gunakan jalur forcing IPv4 untuk dispatch/view lalu lanjutkan proses build/deploy. RCA lengkap: `docs/incidents/2026-03-22-github-actions-dispatch-ipv6-reset.md`.
+
 Indikator bangunan menggunakan kode yang salah: Alembic output menunjukkan `CURRENT_REV` dari commit
 sebelumnya (bukan commit terbaru), meski health check dan container status berwarna hijau.
+
+Checklist tambahan sebelum deploy setelah manual build:
+
+- run `workflow_dispatch` harus benar-benar terbentuk di GitHub Actions,
+- `head_sha` run build harus cocok dengan commit target,
+- baru setelah itu jalankan `./deploy_pi.sh --detach-local --recreate`,
+- setelah recreate, verifikasi image revision runtime backend/frontend dan health check pascadeploy.
 
 ## Mode Destruktif Yang Masih Diizinkan
 

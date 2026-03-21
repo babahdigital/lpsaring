@@ -19,7 +19,8 @@ Lampiran wajib:
 
 - `docs/devlogs/2026-03-22-manual-debt-accuracy-and-admin-edit-ux.md` — kronologi lengkap root cause nominal debt manual, penyelarasan label estimasi auto debt, UX dialog admin, validasi lint/typecheck, dan release notes batch ini.
 - `docs/incidents/2026-03-22-manual-debt-report-undercount.md` — RCA bug produksi saat nominal debt manual undercount karena manual debt aggregate ikut dihitung lewat estimator paket termurah.
-- `docs/REFERENCE_PENGEMBANGAN.md` dan indeks devlog/incident diperbarui agar policy nominal manual-vs-auto debt dan guardrail UX admin bisa ditelusuri dari repo.
+- `docs/incidents/2026-03-22-github-actions-dispatch-ipv6-reset.md` — RCA kegagalan manual dispatch GitHub Actions dari mesin lokal saat jalur IPv6/NAT64 ke `api.github.com` melakukan connection reset, walaupun `gh auth` dan workflow tetap valid.
+- `docs/REFERENCE_PENGEMBANGAN.md`, `docs/workflows/CI_CD.md`, `docs/workflows/PRODUCTION_OPERATIONS.md`, dan indeks incident diperbarui agar gejala `wsarecv/connection reset` saat manual dispatch bisa langsung dipetakan ke workaround forcing IPv4 yang tervalidasi.
 
 ### Added (2026-03-21 — Invoice WA Observability dan Debt Report Share)
 
