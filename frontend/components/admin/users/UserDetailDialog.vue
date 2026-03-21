@@ -269,7 +269,7 @@ function onClose() {
         </div>
       </VCardTitle>
       <VDivider />
-      <AppPerfectScrollbar class="pa-4 pa-md-6" :style="isMobile ? 'max-height: calc(100vh - 128px);' : 'max-height: 70vh;'">
+      <AppPerfectScrollbar class="pa-4 pa-md-6" :native-scroll="isMobile" :style="isMobile ? 'max-height: calc(100vh - 128px);' : 'max-height: 70vh;'">
         <VAlert
           v-if="previewAlertMeta"
           :color="previewAlertMeta.color"

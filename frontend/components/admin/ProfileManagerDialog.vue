@@ -1,10 +1,12 @@
 <script lang="ts" setup>
 import type { VDataTableServer } from 'vuetify/labs/VDataTable'
 import { computed, reactive, ref, watch } from 'vue'
+import { useDisplay } from 'vuetify'
 import { useSnackbar } from '@/composables/useSnackbar'
 
 const props = defineProps({ modelValue: { type: Boolean, required: true } })
 const emit = defineEmits(['update:modelValue', 'profilesUpdated'])
+const { smAndDown } = useDisplay()
 
 interface Profile {
   id: string
@@ -25,6 +27,7 @@ const selectedProfile = ref<Profile | null>(null)
 const editedProfile = ref<Partial<Profile>>({})
 const defaultProfile = { profile_name: '', description: '', duration_days: 30, data_quota_gb: 1 }
 const isUnlimitedSwitch = ref(false)
+const isMobile = computed(() => smAndDown.value)
 
 const { add: addSnackbar } = useSnackbar()
 
@@ -155,7 +158,7 @@ async function handleAction(type: 'create' | 'update' | 'delete') {
         </VToolbarItems>
       </VToolbar>
 
-      <AppPerfectScrollbar class="flex-grow-1 pa-4">
+      <AppPerfectScrollbar class="flex-grow-1 pa-4" :native-scroll="isMobile">
         <VCard class="h-100">
           <VCardText class="d-flex justify-end pa-2">
             <VBtn

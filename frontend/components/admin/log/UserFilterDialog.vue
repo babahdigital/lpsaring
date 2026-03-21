@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { computed, ref, watch } from 'vue'
+import { useDisplay } from 'vuetify'
 
 // --- Tipe Data & Props ---
 interface UserSelectItem {
@@ -17,6 +18,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits(['update:modelValue', 'select'])
+const { smAndDown } = useDisplay()
 
 // --- State Management ---
 const { $api } = useNuxtApp()
@@ -33,6 +35,7 @@ const dialogVisible = computed({
 const dialogTitle = computed(() => {
   return props.mode === 'admin' ? 'Filter Admin Pelaku' : 'Filter Target Pengguna'
 })
+const isMobile = computed(() => smAndDown.value)
 
 // --- Logika Fetch & Filter ---
 async function fetchUsers() {
@@ -159,7 +162,7 @@ watch(dialogVisible, (isOpening) => {
               color="primary"
             />
           </div>
-          <AppPerfectScrollbar v-else class="user-list-scroll">
+          <AppPerfectScrollbar v-else class="user-list-scroll" :native-scroll="isMobile">
             <VList
               lines="two"
               density="comfortable"

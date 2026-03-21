@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import { computed, ref, watch } from 'vue'
+import { useDisplay } from 'vuetify'
 import { useSnackbar } from '@/composables/useSnackbar'
 
 interface User {
@@ -31,6 +32,7 @@ const emit = defineEmits(['update:modelValue'])
 
 const { $api } = useNuxtApp()
 const { add: showSnackbar } = useSnackbar()
+const { smAndDown } = useDisplay()
 
 const loading = ref(false)
 const items = ref<ManualDebtItem[]>([])
@@ -42,6 +44,7 @@ const sendingWhatsapp = ref(false)
 const debtAutoMb = computed(() => Number(props.user?.quota_debt_auto_mb ?? 0))
 const debtManualMb = computed(() => Number(props.user?.quota_debt_manual_mb ?? props.user?.manual_debt_mb ?? 0))
 const debtTotalMb = computed(() => Number(props.user?.quota_debt_total_mb ?? (debtAutoMb.value + debtManualMb.value)))
+const isMobile = computed(() => smAndDown.value)
 
 function formatDataSize(sizeInMB: number): string {
   if (!Number.isFinite(sizeInMB) || Number.isNaN(sizeInMB))
@@ -247,10 +250,10 @@ watch(
 </script>
 
 <template>
-  <VDialog :model-value="props.modelValue" max-width="1000" persistent @update:model-value="close">
-    <VCard v-if="props.user">
+  <VDialog :model-value="props.modelValue" :fullscreen="isMobile" :max-width="isMobile ? undefined : 1000" persistent @update:model-value="close">
+    <VCard v-if="props.user" :class="isMobile ? 'rounded-0' : 'rounded-lg'">
       <!-- ── Title bar ── -->
-      <VCardTitle class="pa-4 bg-primary rounded-t-lg">
+      <VCardTitle class="pa-4 bg-primary" :class="isMobile ? '' : 'rounded-t-lg'">
         <div class="dialog-titlebar">
           <div class="dialog-titlebar__title">
             <VIcon icon="tabler-notes" start />
@@ -273,7 +276,7 @@ watch(
       </VCardTitle>
       <VDivider />
 
-      <AppPerfectScrollbar class="pa-5" style="max-height: 74vh;">
+      <AppPerfectScrollbar class="pa-4 pa-md-5 debt-ledger__scroll" :native-scroll="isMobile" :style="isMobile ? 'max-height: calc(100vh - 132px);' : 'max-height: 74vh;'">
         <!-- Info chips -->
         <div class="d-flex flex-wrap gap-2 mb-4">
           <VChip size="small" label color="info" variant="tonal">
@@ -408,7 +411,7 @@ watch(
       <VDivider />
 
       <!-- ── Footer actions ── -->
-      <VCardActions class="pa-4 flex-wrap gap-2">
+      <VCardActions class="pa-4 flex-wrap gap-2" :class="isMobile ? 'flex-column align-stretch' : ''">
         <VSpacer />
         <VBtn
           v-if="debtTotalMb > 0"
@@ -463,6 +466,10 @@ watch(
   gap: 8px;
 }
 
+.debt-ledger__scroll:deep(.app-perfect-scrollbar--native) {
+  min-height: 0;
+}
+
 /* ── Horizontal scroll untuk tabel di mobile ── */
 .debt-table-scroll {
   overflow-x: auto;
@@ -510,6 +517,10 @@ watch(
   .dialog-titlebar__actions {
     width: 100%;
     justify-content: flex-end;
+  }
+
+  .debt-table-scroll {
+    margin-inline: -4px;
   }
 }
 </style>

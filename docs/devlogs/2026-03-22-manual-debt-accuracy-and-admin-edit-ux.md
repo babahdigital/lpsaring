@@ -2,7 +2,7 @@
 
 **Tanggal**: 22 Maret 2026  
 **Author**: Abdullah (via GitHub Copilot)  
-**Scope**: debt manual nominal accuracy, debt auto wording, admin edit dialog UX, docs, lint, typecheck, release
+**Scope**: debt manual nominal accuracy, debt auto wording, admin edit dialog UX, mobile touch responsiveness, docs, lint, typecheck, release
 
 ---
 
@@ -23,6 +23,9 @@ Setelah root cause backend beres, batch dilanjutkan ke penyempurnaan UX admin ag
 - Toggle `Unlimited` dan `Tunggakan Kuota` kini saling eksklusif.
 - Selector satuan koreksi kuota SuperAdmin diganti ke tombol biasa yang stabil secara visual.
 - Placeholder dropdown paket debt ditambahkan.
+- Area `Koreksi Kuota Langsung` dirapikan menjadi kartu operasional yang lebih ringkas dan mudah dibaca.
+- Ringkasan `Tunggakan Kuota` sekarang mengikuti pola kartu aksi seperti `Riwayat Mutasi Kuota`, sementara detail lengkap tetap muncul lewat popup khusus.
+- Dialog admin yang masih memakai `perfect-scrollbar` kini fallback ke native scroll pada mobile untuk menghilangkan lag sentuhan fullscreen.
 
 ---
 
@@ -115,6 +118,43 @@ Secara operasional, admin tidak boleh mudah mengaktifkan `Unlimited` sambil teta
 
 Dropdown `Tambah Tunggakan (Pilih Paket)` sekarang menampilkan placeholder `Silakan pilih paket` agar form tidak terasa kosong/ambigu saat pertama dibuka.
 
+### 4.5. Area koreksi kuota terlalu ramai dan repetitif
+
+Setelah batch UX awal, area `Koreksi Kuota Langsung` masih terasa padat karena label, helper, placeholder, dan penjelasan satuan saling mengulang. Ini membuat tombol unit terlihat sempit dan operator harus membaca blok teks yang sebenarnya menjelaskan hal yang sama.
+
+Perbaikannya:
+
+- label `Satuan input:` dihapus,
+- penjelasan mode satuan dipusatkan ke satu deskripsi singkat di header kartu,
+- nilai kuota saat ini dipindahkan ke kartu statistik `dibeli / terpakai / sisa`,
+- field input kini cukup menampilkan contoh input dan satu baris `Saat ini ...`, bukan placeholder plus helper panjang yang duplikatif.
+
+Hasilnya, tombol `GB` dan `MB` punya ruang sentuh yang lebih lega dan alur koreksi lebih cepat dipahami.
+
+### 4.6. Tunggakan kuota dipindah ke pola kartu aksi
+
+Bagian `Tunggakan Kuota` sebelumnya terasa seperti blok status teknis terpisah dari pola dialog lain. Sementara `Riwayat Mutasi Kuota` sudah memakai kartu aksi yang lebih mudah dipindai, area debt masih bergantung pada ikon kecil di header dan detail yang terasa terlalu padat di layar utama.
+
+Perbaikannya:
+
+- ringkasan debt disusun menjadi kartu aksi seragam dengan tombol `Detail Tunggakan`, `PDF`, dan `WhatsApp`,
+- tiga angka utama (`total`, `otomatis`, `manual`) dipisah ke stat cards,
+- form `Tambah Tunggakan Baru` diberi pengantar sendiri agar operator paham ini adalah langkah lanjutan, bukan bagian dari ringkasan.
+
+Detail ledger tetap memakai popup khusus agar layar utama `Edit Pengguna` tidak berubah menjadi panel analisis yang terlalu panjang.
+
+### 4.7. Mobile lag tidak bisa diselesaikan dengan CSS saja
+
+Audit terhadap warning browser menunjukkan sumber utama lag berasal dari listener `touchstart` dan `wheel` non-passive yang dipasang `perfect-scrollbar`. Karena listener itu dibuat oleh JavaScript library, CSS murni tidak cukup untuk menghilangkan bottleneck interaksi.
+
+Solusi yang dipilih:
+
+- `AppPerfectScrollbar` ditambah jalur `nativeScroll`,
+- pada mobile, dialog admin yang relevan menggunakan native scroll container dengan `overflow-y: auto`, `touch-action: pan-y`, dan `-webkit-overflow-scrolling: touch`,
+- desktop tetap bisa memakai `perfect-scrollbar` agar perilaku visual tidak berubah di layout besar.
+
+Pola ini diterapkan ke `UserEditDialog`, `UserDetailDialog`, `UserDebtLedgerDialog`, `UserQuotaHistoryDialog`, `ProfileManagerDialog`, dan `UserFilterDialog`.
+
 ---
 
 ## 5. Responsive Target yang Dijaga
@@ -160,3 +200,4 @@ Batch dokumentasi ini juga disertai lint backend/frontend dan typecheck ulang se
 2. UI admin untuk operasi quota/debt harus meminimalkan kombinasi state yang bisa membuat operator salah langkah.
 3. Komponen generic dari template premium tidak selalu cocok untuk semua density/theme; kadang button custom yang sederhana lebih stabil.
 4. Responsive mobile pada dialog fullscreen perlu diaudit dengan tinggi nyata, bukan hanya lebar viewport.
+5. Jika warning performa berasal dari listener JS pihak ketiga, CSS saja biasanya hanya merapikan gejala, bukan menghapus penyebab utama.

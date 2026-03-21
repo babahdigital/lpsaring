@@ -147,6 +147,7 @@ Variabel yang paling sensitif terhadap perilaku runtime:
 - Untuk report/reminder debt manual, total nominal aktif harus dijumlah dari item debt terbuka yang tercatat (`price_rp` / `remaining_rp`) bila tersedia. Jangan menurunkan nominal manual dari aggregate MB melalui estimator paket termurah, karena itu bisa meng-understate tagihan user.
 - Label `debt otomatis` di UI, PDF, dan notifikasi harus diperlakukan sebagai `nilai referensi`, bukan nominal exact. Sebaliknya, debt manual boleh menampilkan nominal exact bila item debt memang menyimpan harga paketnya.
 - Di dialog admin edit user, mode `Unlimited` dan `Tunggakan Kuota` harus tetap saling eksklusif agar operator tidak memberi kombinasi state yang membingungkan atau bertentangan dengan policy debt.
+- Dialog admin fullscreen/scrollable pada mobile sebaiknya memakai native scroll container alih-alih `perfect-scrollbar` bila ada indikasi lag sentuhan atau warning non-passive listener. CSS boleh dipakai untuk polishing, tetapi bypass library tetap menjadi jalur utama untuk menghapus bottleneck interaksi.
 
 ## Aturan Saat Mengubah Kode
 

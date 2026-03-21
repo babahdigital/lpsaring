@@ -7,11 +7,13 @@ import 'perfect-scrollbar/css/perfect-scrollbar.css'
 interface Props {
   tag?: string
   options?: Record<string, unknown>
+  nativeScroll?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   tag: 'div',
   options: () => ({}),
+  nativeScroll: false,
 })
 
 const mergedOptions = computed(() => ({
@@ -21,7 +23,21 @@ const mergedOptions = computed(() => ({
 </script>
 
 <template>
-  <PerfectScrollbar :tag="props.tag" :options="mergedOptions">
+  <component :is="props.tag" v-if="props.nativeScroll" class="app-perfect-scrollbar--native">
+    <slot />
+  </component>
+
+  <PerfectScrollbar v-else :tag="props.tag" :options="mergedOptions">
     <slot />
   </PerfectScrollbar>
 </template>
+
+<style scoped>
+.app-perfect-scrollbar--native {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+</style>

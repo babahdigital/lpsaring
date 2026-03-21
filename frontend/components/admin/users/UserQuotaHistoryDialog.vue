@@ -494,7 +494,7 @@ watch(
       </VCardTitle>
       <VDivider />
 
-      <AppPerfectScrollbar class="history-dialog__scroll">
+      <AppPerfectScrollbar class="history-dialog__scroll" :native-scroll="isMobile">
         <div class="history-dialog__content">
         <div class="history-summary-chips d-flex flex-wrap gap-2 mb-4">
           <VChip size="small" label color="info" variant="tonal">

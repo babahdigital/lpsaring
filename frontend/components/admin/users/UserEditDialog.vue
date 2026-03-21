@@ -189,12 +189,13 @@ const saQuotaUsedInput = computed({
   },
 })
 
-const saQuotaPurchasedPlaceholder = computed(() => `Saat ini: ${formatQuotaValueByUnit(formData.total_quota_purchased_mb, saQuotaInputUnit.value)}`)
-const saQuotaUsedPlaceholder = computed(() => `Saat ini: ${formatQuotaValueByUnit(Number(formData.total_quota_used_mb), saQuotaInputUnit.value)}`)
 const saQuotaUnitLabel = computed(() => saQuotaInputUnit.value.toUpperCase())
 const saQuotaUnitHint = computed(() => (saQuotaInputUnit.value === 'gb'
   ? 'Mode default untuk input operasional. Sistem tetap menyimpan nilai dalam MB.'
   : 'Mode lanjutan untuk koreksi presisi langsung dalam MB.'))
+const saQuotaRemainingMb = computed(() => Math.max(0, Number(formData.total_quota_purchased_mb ?? 0) - Number(formData.total_quota_used_mb ?? 0)))
+const saQuotaPurchasedCurrentText = computed(() => `Saat ini ${formatQuotaValueByUnit(formData.total_quota_purchased_mb, saQuotaInputUnit.value)}`)
+const saQuotaUsedCurrentText = computed(() => `Saat ini ${formatQuotaValueByUnit(Number(formData.total_quota_used_mb), saQuotaInputUnit.value)}`)
 
 async function autoFillSaQuotaFromDb() {
   if (!props.user?.id)
@@ -754,7 +755,7 @@ function openQuotaHistoryPdf() {
         <VToolbar color="primary" density="comfortable">
           <VToolbarTitle class="text-white d-flex align-center ga-2">
             <VIcon icon="tabler-user-edit" />
-            <span class="headline text-white">Edit Pengguna</span>
+            <span class="headline text-white pl-4">Edit Pengguna</span>
           </VToolbarTitle>
           <VSpacer />
           <VBtn icon="tabler-x" variant="text" class="text-white" @click="onClose" />
@@ -784,7 +785,7 @@ function openQuotaHistoryPdf() {
         </div>
         <VDivider class="mt-2" />
 
-        <AppPerfectScrollbar class="flex-grow-1 pa-4 pa-md-6">
+        <AppPerfectScrollbar class="admin-user-edit__scroll flex-grow-1 pa-4 pa-md-6" :native-scroll="isMobile">
           <div class="admin-user-edit__container">
             <VWindow v-model="tab" class="mt-2">
             <VWindowItem value="info">
@@ -978,114 +979,128 @@ function openQuotaHistoryPdf() {
                     </VAlert>
                   </VCol>
 
-                  <VCol cols="12">
-                    <VSheet rounded="lg" border class="pa-3">
-                      <div class="d-flex justify-space-between align-center flex-wrap gap-2">
-                        <div>
-                          <div class="text-caption text-disabled">
-                            Riwayat Mutasi Kuota
+                    <VCol cols="12">
+                      <VSheet rounded="lg" border class="pa-3 admin-user-edit__action-card">
+                        <div class="admin-user-edit__card-header">
+                          <div>
+                            <div class="text-caption text-disabled">
+                              Riwayat Mutasi Kuota
+                            </div>
+                            <div class="font-weight-medium">
+                              Lihat pemakaian, pembelian, koreksi, dan reset baseline perangkat.
+                            </div>
                           </div>
-                          <div class="font-weight-medium">
-                            Lihat pemakaian, pembelian, koreksi, dan reset baseline perangkat.
+                          <div class="admin-user-edit__card-actions">
+                            <VBtn
+                              size="small"
+                              variant="tonal"
+                              prepend-icon="tabler-list-details"
+                              @click="openQuotaHistory"
+                            >
+                              Lihat Riwayat
+                            </VBtn>
+                            <VBtn
+                              size="small"
+                              variant="text"
+                              prepend-icon="tabler-printer"
+                              @click="openQuotaHistoryPdf"
+                            >
+                              PDF 30 Hari
+                            </VBtn>
                           </div>
                         </div>
-                        <div class="d-flex align-center gap-2 flex-wrap justify-end">
-                          <VBtn
-                            size="small"
-                            variant="tonal"
-                            prepend-icon="tabler-list-details"
-                            @click="openQuotaHistory"
-                          >
-                            Lihat Riwayat
-                          </VBtn>
-                          <VBtn
-                            size="small"
-                            variant="text"
-                            prepend-icon="tabler-printer"
-                            @click="openQuotaHistoryPdf"
-                          >
-                            PDF 30 Hari
-                          </VBtn>
-                        </div>
-                      </div>
-                    </VSheet>
-                  </VCol>
+                      </VSheet>
+                    </VCol>
 
                   <template v-if="shouldShowDebtSection">
                     <VCol cols="12">
-                      <div class="text-overline">
-                        Tunggakan Kuota
-                      </div>
-                    </VCol>
-
-                    <VCol cols="12">
-                      <VSheet rounded="lg" border class="pa-3">
-                        <div class="d-flex justify-space-between align-center mb-2">
-                          <div class="text-caption text-disabled">
-                            Status Tunggakan
+                      <VSheet rounded="lg" border class="pa-3 admin-user-edit__action-card">
+                        <div class="admin-user-edit__card-header">
+                          <div>
+                            <div class="text-caption text-disabled">
+                              Tunggakan Kuota
+                            </div>
+                            <div class="font-weight-medium">
+                              Ringkasan tunggakan, tindak lanjut, dan akses detail riwayat pembayaran.
+                            </div>
                           </div>
-                          <div class="d-flex align-center gap-2">
-                            <VBtn
-                              v-if="debtTotalMb > 0"
-                              icon="tabler-brand-whatsapp"
-                              size="x-small"
-                              variant="text"
-                              :title="'Kirim ringkasan ke WhatsApp'"
-                              :loading="isDebtWhatsappSending"
-                              @click="sendDebtWhatsapp"
-                            />
-                            <VBtn
-                              v-if="debtTotalMb > 0"
-                              icon="tabler-list-details"
-                              size="x-small"
-                              variant="text"
-                              :title="'Lihat riwayat tunggakan'"
-                              @click="openDebtLedger"
-                            />
-                            <VBtn
-                              v-if="debtTotalMb > 0"
-                              icon="tabler-printer"
-                              size="x-small"
-                              variant="text"
-                              :title="'PDF (cetak / simpan)'"
-                              @click="openDebtPdf"
-                            />
-                            <VChip :color="debtStatusMeta.color" size="x-small" label>
+                          <div class="admin-user-edit__card-actions">
+                            <VChip :color="debtStatusMeta.color" size="small" label>
                               <VIcon :icon="debtStatusMeta.icon" start size="16" />
                               {{ debtStatusMeta.text }}
                             </VChip>
+                            <VBtn
+                              size="small"
+                              variant="tonal"
+                              prepend-icon="tabler-list-details"
+                              @click="openDebtLedger"
+                            >
+                              Detail Tunggakan
+                            </VBtn>
+                            <VBtn
+                              v-if="debtTotalMb > 0"
+                              size="small"
+                              variant="text"
+                              prepend-icon="tabler-printer"
+                              @click="openDebtPdf"
+                            >
+                              PDF
+                            </VBtn>
+                            <VBtn
+                              v-if="debtTotalMb > 0"
+                              size="small"
+                              variant="text"
+                              prepend-icon="tabler-brand-whatsapp"
+                              :loading="isDebtWhatsappSending"
+                              @click="sendDebtWhatsapp"
+                            >
+                              WhatsApp
+                            </VBtn>
                           </div>
                         </div>
-                        <VRow dense>
-                          <VCol cols="12" sm="4">
+                        <div class="admin-user-edit__stat-grid mt-3">
+                          <div class="admin-user-edit__stat-card">
                             <div class="text-caption text-disabled">
                               Total Tunggakan
                             </div>
                             <div class="font-weight-medium">
                               {{ formatDataSize(debtTotalMb) }}
                             </div>
-                          </VCol>
-                          <VCol cols="12" sm="4">
+                          </div>
+                          <div class="admin-user-edit__stat-card">
                             <div class="text-caption text-disabled">
                               Tunggakan Otomatis
                             </div>
                             <div class="font-weight-medium">
                               {{ formatDataSize(debtAutoMb) }}
                             </div>
-                          </VCol>
-                          <VCol cols="12" sm="4">
+                          </div>
+                          <div class="admin-user-edit__stat-card">
                             <div class="text-caption text-disabled">
                               Tunggakan Manual
                             </div>
                             <div class="font-weight-medium">
                               {{ formatDataSize(debtManualMb) }}
                             </div>
-                          </VCol>
-                        </VRow>
+                          </div>
+                        </div>
                       </VSheet>
                     </VCol>
 
                     <template v-if="isDebtQuotaEnabled">
+                      <VCol cols="12">
+                        <VCard variant="outlined" rounded="lg" class="admin-user-edit__detail-card">
+                          <VCardText class="pa-4">
+                            <div class="text-subtitle-2 font-weight-medium">
+                              Tambah Tunggakan Baru
+                            </div>
+                            <div class="text-caption text-medium-emphasis mt-1">
+                              Pilih paket, tetapkan tanggal pencatatan, lalu simpan perubahan untuk menambah advance/tunggakan baru.
+                            </div>
+                          </VCardText>
+                        </VCard>
+                      </VCol>
+
                       <VCol cols="12" md="6">
                         <AppSelect
                           v-model="formData.debt_package_id"
@@ -1137,60 +1152,85 @@ function openQuotaHistoryPdf() {
                     </VCol>
 
                     <VCol cols="12">
-                      <div class="text-overline d-flex align-center gap-1">
-                        <VIcon icon="tabler-shield-bolt" size="18" color="warning" />
-                        Koreksi Kuota Langsung
-                        <VChip color="warning" size="x-small" label class="ml-1">
-                          SuperAdmin
-                        </VChip>
-                      </div>
-                    </VCol>
+                      <VSheet rounded="lg" border class="pa-4 admin-user-edit__action-card admin-user-edit__quota-adjust-card">
+                        <div class="admin-user-edit__card-header">
+                          <div>
+                            <div class="text-overline d-flex align-center gap-1">
+                              <VIcon icon="tabler-shield-bolt" size="18" color="warning" />
+                              Koreksi Kuota Langsung
+                              <VChip color="warning" size="x-small" label class="ml-1">
+                                SuperAdmin
+                              </VChip>
+                            </div>
+                            <div class="text-body-2 mt-2 text-medium-emphasis">
+                              Ubah nilai kuota beli dan kuota terpakai secara langsung. Input default memakai GB, lalu sistem tetap menyimpan hasil koreksi dalam MB.
+                            </div>
+                          </div>
+                          <div class="admin-user-edit__card-actions">
+                            <VBtn
+                              size="small"
+                              color="info"
+                              variant="tonal"
+                              prepend-icon="tabler-refresh"
+                              :loading="isSaQuotaAutoFilling"
+                              @click="autoFillSaQuotaFromDb"
+                            >
+                              Ambil dari DB
+                            </VBtn>
+                          </div>
+                        </div>
 
-                    <VCol cols="12">
-                      <VBtn
-                        size="small"
-                        color="info"
-                        variant="tonal"
-                        prepend-icon="tabler-refresh"
-                        :loading="isSaQuotaAutoFilling"
-                        @click="autoFillSaQuotaFromDb"
-                      >
-                        Ambil Nilai Saat Ini
-                      </VBtn>
-                      <span class="text-caption text-medium-emphasis ml-2">Isi otomatis dari nilai DB sekarang</span>
-                    </VCol>
+                        <div class="admin-user-edit__stat-grid mt-4">
+                          <div class="admin-user-edit__stat-card">
+                            <div class="text-caption text-disabled">
+                              Kuota Dibeli
+                            </div>
+                            <div class="font-weight-medium">
+                              {{ formatQuotaValueByUnit(formData.total_quota_purchased_mb, saQuotaInputUnit) }}
+                            </div>
+                          </div>
+                          <div class="admin-user-edit__stat-card">
+                            <div class="text-caption text-disabled">
+                              Kuota Terpakai
+                            </div>
+                            <div class="font-weight-medium">
+                              {{ formatQuotaValueByUnit(Number(formData.total_quota_used_mb), saQuotaInputUnit) }}
+                            </div>
+                          </div>
+                          <div class="admin-user-edit__stat-card">
+                            <div class="text-caption text-disabled">
+                              Sisa Kuota
+                            </div>
+                            <div class="font-weight-medium">
+                              {{ formatQuotaValueByUnit(saQuotaRemainingMb, saQuotaInputUnit) }}
+                            </div>
+                          </div>
+                        </div>
 
-                    <VCol cols="12" md="6">
-                      <div class="d-flex align-center flex-wrap gap-2 mb-1">
-                        <span class="text-caption text-medium-emphasis">Satuan input:</span>
-                        <div class="sa-unit-selector">
+                        <div class="sa-unit-selector mt-4">
                           <VBtn
                             size="small"
+                            class="sa-unit-selector__btn"
                             :color="saQuotaInputUnit === 'gb' ? 'warning' : 'secondary'"
                             :variant="saQuotaInputUnit === 'gb' ? 'flat' : 'outlined'"
                             @click="saQuotaInputUnit = 'gb'"
                           >
-                            GB disarankan
+                            GB untuk operasional
                           </VBtn>
                           <VBtn
                             size="small"
+                            class="sa-unit-selector__btn"
                             :color="saQuotaInputUnit === 'mb' ? 'warning' : 'secondary'"
                             :variant="saQuotaInputUnit === 'mb' ? 'flat' : 'outlined'"
                             @click="saQuotaInputUnit = 'mb'"
                           >
-                            MB lanjutan
+                            MB untuk presisi
                           </VBtn>
                         </div>
-                      </div>
-                      <div class="text-caption text-medium-emphasis">
-                        {{ saQuotaUnitHint }}
-                      </div>
-                    </VCol>
-
-                    <VCol cols="12" md="6" class="d-flex align-center">
-                      <div class="text-caption text-medium-emphasis">
-                        Tampilan default memakai GB agar konsisten dengan operasi harian. Gunakan MB hanya bila perlu koreksi presisi rendah-level.
-                      </div>
+                        <div class="text-caption text-medium-emphasis mt-2">
+                          {{ saQuotaUnitHint }}
+                        </div>
+                      </VSheet>
                     </VCol>
 
                     <VCol cols="12" md="6">
@@ -1198,11 +1238,11 @@ function openQuotaHistoryPdf() {
                         v-model.number="saQuotaPurchasedInput"
                         :label="`Total Kuota Dibeli (${saQuotaUnitLabel})`"
                         type="number"
-                        :placeholder="saQuotaPurchasedPlaceholder"
+                        :placeholder="saQuotaInputUnit === 'gb' ? 'Contoh: 13.5' : 'Contoh: 13824'"
                         prepend-inner-icon="tabler-database"
                         :step="saQuotaInputUnit === 'gb' ? 0.01 : 1"
                         min="0"
-                        :hint="`Kosongkan jika tidak ingin mengubah. ${saQuotaUnitHint}`"
+                        :hint="saQuotaPurchasedCurrentText"
                         persistent-hint
                       />
                     </VCol>
@@ -1212,11 +1252,11 @@ function openQuotaHistoryPdf() {
                         v-model.number="saQuotaUsedInput"
                         :label="`Kuota Terpakai (${saQuotaUnitLabel})`"
                         type="number"
-                        :placeholder="saQuotaUsedPlaceholder"
+                        :placeholder="saQuotaInputUnit === 'gb' ? 'Contoh: 2.1' : 'Contoh: 2150'"
                         prepend-inner-icon="tabler-database-minus"
                         :step="saQuotaInputUnit === 'gb' ? 0.01 : 1"
                         min="0"
-                        :hint="`Kosongkan jika tidak ingin mengubah. ${saQuotaUnitHint}`"
+                        :hint="saQuotaUsedCurrentText"
                         persistent-hint
                       />
                     </VCol>
@@ -1290,6 +1330,54 @@ function openQuotaHistoryPdf() {
   margin-inline: auto;
 }
 
+.admin-user-edit__scroll {
+  min-height: 0;
+}
+
+.admin-user-edit__scroll:deep(.app-perfect-scrollbar--native) {
+  min-height: 0;
+}
+
+.admin-user-edit__action-card {
+  background: rgba(var(--v-theme-surface), 0.72);
+}
+
+.admin-user-edit__card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.admin-user-edit__card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.admin-user-edit__stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.admin-user-edit__stat-card {
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: rgba(var(--v-theme-surface), 0.96);
+}
+
+.admin-user-edit__detail-card {
+  border-style: dashed;
+}
+
+.admin-user-edit__quota-adjust-card {
+  background: rgba(var(--v-theme-warning), 0.04);
+}
+
 .admin-user-edit__section-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1308,6 +1396,7 @@ function openQuotaHistoryPdf() {
   padding: 20px 18px;
   background: rgba(var(--v-theme-surface), 0.32);
   color: rgba(var(--v-theme-on-surface), 0.78);
+  touch-action: manipulation;
   transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -1402,6 +1491,10 @@ function openQuotaHistoryPdf() {
   gap: 8px;
 }
 
+.sa-unit-selector__btn {
+  min-width: 184px;
+}
+
 .admin-switch :deep(.v-messages__message) {
   line-height: 1.25rem;
 }
@@ -1449,6 +1542,25 @@ function openQuotaHistoryPdf() {
     align-items: stretch;
   }
 
+  .admin-user-edit__card-header {
+    flex-direction: column;
+  }
+
+  .admin-user-edit__card-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .admin-user-edit__card-actions :deep(.v-btn),
+  .admin-user-edit__card-actions :deep(.v-chip) {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .admin-user-edit__stat-grid {
+    grid-template-columns: 1fr;
+  }
+
   .inject-actions__buttons {
     width: 100%;
     flex-direction: column;
@@ -1465,6 +1577,10 @@ function openQuotaHistoryPdf() {
 
   .sa-unit-selector :deep(.v-btn) {
     flex: 1 1 0;
+  }
+
+  .sa-unit-selector__btn {
+    min-width: 0;
   }
 }
 </style>
