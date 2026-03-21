@@ -2,6 +2,7 @@
 import { useFetch, useNuxtApp } from '#app'
 import { hexToRgb } from '@layouts/utils'
 import { computed, defineAsyncComponent, h, onMounted, ref, watch } from 'vue'
+import { useDisplay } from 'vuetify'
 import { useTheme } from 'vuetify'
 import { buildReliabilitySummary } from '~/utils/adminMetrics'
 
@@ -188,6 +189,8 @@ if (stats.value == null)
   stats.value = defaultStats
 
 const vuetifyTheme = useTheme()
+const display = useDisplay()
+const isMobile = computed(() => display.smAndDown.value)
 
 // --- Data untuk Kartu Statistik Atas (Diperbarui) ---
 const statistics = ref([
@@ -232,13 +235,13 @@ onMounted(async () => {
 const reliabilitySummary = computed(() => buildReliabilitySummary(adminMetrics.value))
 
 const ACCESS_PARITY_MISMATCH_META: Record<AccessParityMismatchKey, { label: string, color: string }> = {
-  binding_type: { label: 'binding_type', color: 'error' },
-  missing_ip_binding: { label: 'missing_ip_binding', color: 'error' },
-  address_list: { label: 'address_list', color: 'error' },
-  address_list_multi_status: { label: 'address_list_multi_status', color: 'warning' },
-  no_authorized_device: { label: 'belum_setup_perangkat', color: 'default' },
-  no_resolvable_ip: { label: 'ip_belum_terbaca', color: 'warning' },
-  dhcp_lease_missing: { label: 'dhcp_lease_missing', color: 'info' },
+  binding_type: { label: 'Binding tidak sesuai', color: 'error' },
+  missing_ip_binding: { label: 'IP binding belum tersedia', color: 'error' },
+  address_list: { label: 'Address-list belum sinkron', color: 'error' },
+  address_list_multi_status: { label: 'Address-list multi-status', color: 'warning' },
+  no_authorized_device: { label: 'Perangkat belum terdaftar', color: 'default' },
+  no_resolvable_ip: { label: 'IP belum terbaca', color: 'warning' },
+  dhcp_lease_missing: { label: 'Lease DHCP belum tersedia', color: 'info' },
 }
 
 const ACTIONABLE_PARITY_MISMATCHES = new Set<AccessParityMismatchKey>([
@@ -274,6 +277,53 @@ const overallReliabilityHealthy = computed(() => {
   return reliabilitySignalItems.value.every(item => item.degraded === false)
 })
 
+const reliabilityCards = computed(() => [
+  {
+    key: 'duplicate-webhook',
+    title: 'Duplikat Notifikasi Pembayaran',
+    value: `${reliabilitySummary.value.duplicateWebhookCount}`,
+    status: reliabilitySummary.value.duplicateWebhookCount > 0 ? 'Terkendali' : 'Stabil',
+    color: reliabilitySummary.value.duplicateWebhookCount > 0 ? 'info' : 'success',
+    icon: 'tabler-repeat',
+    caption: reliabilitySummary.value.duplicateWebhookCount > 0
+      ? 'Notifikasi ganda dari payment gateway terdeteksi dan sudah ditangani otomatis oleh sistem.'
+      : 'Tidak ada notifikasi ganda yang memerlukan penanganan tambahan.',
+  },
+  {
+    key: 'payment-idempotency',
+    title: 'Proteksi Transaksi Ganda',
+    value: reliabilitySummary.value.paymentIdempotencyDegraded ? `${reliabilitySummary.value.paymentIdempotencyRedisUnavailableCount} gangguan` : 'Redis aktif',
+    status: reliabilitySummary.value.paymentIdempotencyDegraded ? 'Perlu perhatian' : 'Stabil',
+    color: reliabilitySummary.value.paymentIdempotencyDegraded ? 'error' : 'success',
+    icon: 'tabler-shield-check',
+    caption: reliabilitySummary.value.paymentIdempotencyDegraded
+      ? `Redis tidak tersedia ${reliabilitySummary.value.paymentIdempotencyRedisUnavailableCount} kali sehingga proteksi idempotensi melemah.`
+      : 'Redis tersedia sehingga potensi transaksi duplikat tetap dapat diblokir secara konsisten.',
+  },
+  {
+    key: 'hotspot-sync-lock',
+    title: 'Sinkronisasi Hotspot',
+    value: reliabilitySummary.value.hotspotSyncLockDegraded ? `${reliabilitySummary.value.hotspotSyncLockDegradedCount} lock miss` : 'Lock aktif',
+    status: reliabilitySummary.value.hotspotSyncLockDegraded ? 'Perlu perhatian' : 'Stabil',
+    color: reliabilitySummary.value.hotspotSyncLockDegraded ? 'error' : 'success',
+    icon: 'tabler-plug-connected',
+    caption: reliabilitySummary.value.hotspotSyncLockDegraded
+      ? `Lock sinkronisasi gagal ${reliabilitySummary.value.hotspotSyncLockDegradedCount} kali sehingga sebagian proses berjalan tanpa proteksi eksklusif.`
+      : 'Lock sinkronisasi aktif dan konflik proses tidak terdeteksi pada periode pemantauan.',
+  },
+  {
+    key: 'policy-parity',
+    title: 'Konsistensi Akses Router',
+    value: reliabilitySummary.value.policyParityDegraded ? `${reliabilitySummary.value.policyParityMismatchCount} mismatch` : 'Sinkron',
+    status: reliabilitySummary.value.policyParityDegraded ? 'Perlu perhatian' : 'Stabil',
+    color: reliabilitySummary.value.policyParityDegraded ? 'error' : 'success',
+    icon: 'tabler-router',
+    caption: reliabilitySummary.value.policyParityDegraded
+      ? 'Status aplikasi dan MikroTik belum sepenuhnya selaras. Detail mismatch tersedia pada panel pemeriksaan.'
+      : 'Status aplikasi dan MikroTik sinkron untuk kebijakan akses utama.',
+  },
+])
+
 async function handleRefreshDashboard() {
   await Promise.all([
     refresh(),
@@ -294,6 +344,68 @@ const accessParitySummary = computed(() => ({
   mismatchTypes: accessParity.value?.summary?.mismatch_types ?? {},
 }))
 const accessParityDhcpDriftCount = computed(() => accessParitySummary.value.mismatchTypes.dhcp_lease_missing ?? 0)
+const accessParitySyncRate = computed(() => {
+  const users = accessParitySummary.value.users
+  if (users <= 0)
+    return 100
+
+  const syncedUsers = Math.max(0, users - accessParitySummary.value.mismatches)
+  return Math.round((syncedUsers / users) * 100)
+})
+const accessParityDialogOpen = ref(false)
+const accessParityOverviewCards = computed(() => [
+  {
+    key: 'mismatch',
+    title: 'Mismatch Akses',
+    value: `${accessParitySummary.value.mismatches}`,
+    subtitle: `/ ${accessParitySummary.value.users} user`,
+    color: accessParitySummary.value.mismatches > 0 ? 'error' : 'success',
+    icon: accessParitySummary.value.mismatches > 0 ? 'tabler-alert-circle' : 'tabler-circle-check',
+    caption: accessParitySummary.value.mismatches > 0 ? 'Mismatch yang berdampak langsung pada kebijakan akses router.' : 'Seluruh akses inti sudah sinkron.',
+  },
+  {
+    key: 'dhcp',
+    title: 'Drift DHCP',
+    value: `${accessParityDhcpDriftCount.value}`,
+    subtitle: 'lease terpantau',
+    color: accessParityDhcpDriftCount.value > 0 ? 'info' : 'success',
+    icon: 'tabler-route-2',
+    caption: accessParityDhcpDriftCount.value > 0 ? 'Ada lease DHCP yang belum sepenuhnya sesuai dengan state akses router.' : 'Lease DHCP konsisten dengan status akses saat ini.',
+  },
+  {
+    key: 'onboarding',
+    title: 'Belum Login Perangkat',
+    value: `${accessParitySummary.value.noAuthorizedDeviceCount}`,
+    subtitle: 'user onboarding',
+    color: accessParitySummary.value.noAuthorizedDeviceCount > 0 ? 'warning' : 'success',
+    icon: 'tabler-device-mobile-off',
+    caption: accessParitySummary.value.noAuthorizedDeviceCount > 0 ? 'Pengguna sudah terdaftar namun belum pernah login dari perangkat pertama.' : 'Seluruh pengguna aktif telah memiliki perangkat awal yang terdaftar.',
+  },
+  {
+    key: 'autofix',
+    title: 'Bisa Diperbaiki Otomatis',
+    value: `${accessParitySummary.value.autoFixableItems}`,
+    subtitle: 'item siap fix',
+    color: accessParitySummary.value.autoFixableItems > 0 ? 'primary' : 'secondary',
+    icon: 'tabler-refresh-alert',
+    caption: accessParitySummary.value.autoFixableItems > 0 ? 'Tindakan koreksi dapat dijalankan langsung dari dashboard.' : 'Tidak ada tindakan koreksi otomatis yang menunggu dijalankan.',
+  },
+])
+const accessParityMismatchTypeCards = computed(() => {
+  return Object.entries(accessParitySummary.value.mismatchTypes)
+    .filter(([, count]) => Number(count ?? 0) > 0)
+    .sort(([, left], [, right]) => Number(right ?? 0) - Number(left ?? 0))
+    .slice(0, 4)
+    .map(([key, count]) => {
+      const meta = getParityMismatchMeta(key as AccessParityMismatchKey)
+      return {
+        key,
+        label: meta.label,
+        color: meta.color,
+        count: Number(count ?? 0),
+      }
+    })
+})
 const accessParityContextMessage = computed(() => {
   const fragments: string[] = []
 
@@ -307,12 +419,12 @@ const accessParityContextMessage = computed(() => {
 
   if (fragments.length === 0) {
     if (accessParitySummary.value.mismatches > 0)
-      return 'Tabel di bawah fokus ke mismatch akses yang masih mempengaruhi sinkronisasi policy di router.'
+      return 'Panel detail difokuskan pada mismatch akses yang masih mempengaruhi sinkronisasi kebijakan di router.'
 
-    return 'Yang dihitung merah hanya mismatch akses yang benar-benar mempengaruhi policy router.'
+    return 'Yang ditandai sebagai mismatch hanya kondisi yang benar-benar mempengaruhi kebijakan akses router.'
   }
 
-  return `Tabel di bawah fokus ke mismatch akses. ${fragments.join(' ')}`
+  return `Panel detail difokuskan pada mismatch akses. ${fragments.join(' ')}`
 })
 const fixingParityByKey = ref<Record<string, boolean>>({})
 const parityFixMessage = ref('')
@@ -334,7 +446,7 @@ function hasActionableParityMismatch(item: AccessParityItem): boolean {
 
 function getParityActionLabel(item: AccessParityItem): string {
   if (item.auto_fixable === false)
-    return 'Manual'
+    return 'Tinjau Manual'
 
   if (item.mismatches.includes('address_list') || item.mismatches.includes('address_list_multi_status'))
     return 'Sinkronkan'
@@ -346,6 +458,10 @@ function getParityActionLabel(item: AccessParityItem): string {
     return hasActionableParityMismatch(item) ? 'Sinkronkan' : 'Pantau'
 
   return 'Periksa'
+}
+
+function openAccessParityDialog() {
+  accessParityDialogOpen.value = true
 }
 
 function buildParityFixMessage(item: AccessParityItem, result: AccessParityFixResponse): string {
@@ -1191,123 +1307,53 @@ useHead({ title: 'Dashboard Admin' })
             </div>
           </VCardItem>
           <VCardText>
-            <VRow>
-              <!-- Duplikat Webhook Pembayaran -->
-              <VCol cols="12" sm="6" md="3">
-                <div class="reliability-metric-box rounded pa-3">
-                  <div class="d-flex align-center gap-2 mb-2">
-                    <VIcon
-                      icon="tabler-repeat"
-                      size="18"
-                      :class="reliabilitySummary.duplicateWebhookCount > 0 ? 'text-info' : 'text-success'"
-                    />
-                    <span class="text-body-2 font-weight-medium">Duplikat Notifikasi Pembayaran</span>
+            <div class="reliability-section">
+              <div class="reliability-section__hero">
+                <div>
+                  <div class="text-h6 font-weight-bold">
+                    {{ overallReliabilityHealthy ? 'Semua jalur proteksi berjalan stabil' : 'Ada sinyal yang perlu perhatian operasional' }}
                   </div>
-                  <div class="d-flex align-center gap-2">
-                    <span class="text-h6">{{ reliabilitySummary.duplicateWebhookCount }}</span>
-                    <VChip
-                      v-if="reliabilitySummary.duplicateWebhookCount === 0"
-                      size="x-small"
-                      color="success"
-                      label
-                      variant="tonal"
-                    >
-                      Tidak ada
-                    </VChip>
-                    <VChip
-                      v-else
-                      size="x-small"
-                      color="info"
-                      label
-                      variant="tonal"
-                    >
-                      Ditangani
-                    </VChip>
-                  </div>
-                  <div class="text-caption text-disabled mt-1">
-                    Notifikasi ganda dari payment gateway — ditangani otomatis oleh sistem
+                  <div class="text-body-2 text-medium-emphasis mt-1">
+                    Ringkasan ini menjaga fokus pada reliabilitas transaksi, lock sinkronisasi, dan konsistensi kebijakan akses router.
                   </div>
                 </div>
-              </VCol>
+                <div class="reliability-section__summary">
+                  <div class="reliability-section__summaryLabel">
+                    Status utama
+                  </div>
+                  <div class="reliability-section__summaryValue">
+                    {{ reliabilityCards.filter(item => item.color === 'error').length }}
+                  </div>
+                  <div class="text-caption text-medium-emphasis">
+                    sinyal membutuhkan perhatian
+                  </div>
+                </div>
+              </div>
 
-              <!-- Proteksi Transaksi Ganda -->
-              <VCol cols="12" sm="6" md="3">
-                <div class="reliability-metric-box rounded pa-3">
-                  <div class="d-flex align-center gap-2 mb-2">
-                    <VIcon
-                      icon="tabler-shield-check"
-                      size="18"
-                      :class="reliabilitySummary.paymentIdempotencyDegraded ? 'text-error' : 'text-success'"
-                    />
-                    <span class="text-body-2 font-weight-medium">Proteksi Transaksi Ganda</span>
+              <div class="reliability-grid mt-4">
+                <div v-for="item in reliabilityCards" :key="item.key" class="reliability-card">
+                  <div class="reliability-card__head">
+                    <div class="d-flex align-center gap-3 min-w-0">
+                      <VAvatar size="40" :color="item.color" variant="tonal">
+                        <VIcon :icon="item.icon" size="20" />
+                      </VAvatar>
+                      <div class="min-w-0">
+                        <div class="reliability-card__title">{{ item.title }}</div>
+                        <div class="reliability-card__status">
+                          <VChip size="x-small" :color="item.color" label variant="tonal">
+                            {{ item.status }}
+                          </VChip>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="reliability-card__value">{{ item.value }}</div>
                   </div>
-                  <div class="d-flex align-center gap-2">
-                    <VChip
-                      size="small"
-                      label
-                      :color="reliabilitySummary.paymentIdempotencyDegraded ? 'error' : 'success'"
-                    >
-                      {{ reliabilitySummary.paymentIdempotencyDegraded ? 'Degraded' : 'Normal' }}
-                    </VChip>
-                  </div>
-                  <div class="text-caption text-disabled mt-1">
-                    Redis {{ reliabilitySummary.paymentIdempotencyDegraded ? `tidak tersedia ${reliabilitySummary.paymentIdempotencyRedisUnavailableCount}x — idempotency melemah` : 'tersedia — transaksi duplikat dicegah' }}
+                  <div class="reliability-card__caption mt-3">
+                    {{ item.caption }}
                   </div>
                 </div>
-              </VCol>
-
-              <!-- Sinkronisasi Hotspot -->
-              <VCol cols="12" sm="6" md="3">
-                <div class="reliability-metric-box rounded pa-3">
-                  <div class="d-flex align-center gap-2 mb-2">
-                    <VIcon
-                      icon="tabler-plug-connected"
-                      size="18"
-                      :class="reliabilitySummary.hotspotSyncLockDegraded ? 'text-error' : 'text-success'"
-                    />
-                    <span class="text-body-2 font-weight-medium">Sinkronisasi Hotspot</span>
-                  </div>
-                  <div class="d-flex align-center gap-2">
-                    <VChip
-                      size="small"
-                      label
-                      :color="reliabilitySummary.hotspotSyncLockDegraded ? 'error' : 'success'"
-                    >
-                      {{ reliabilitySummary.hotspotSyncLockDegraded ? 'Degraded' : 'Normal' }}
-                    </VChip>
-                  </div>
-                  <div class="text-caption text-disabled mt-1">
-                    {{ reliabilitySummary.hotspotSyncLockDegraded ? `Lock gagal ${reliabilitySummary.hotspotSyncLockDegradedCount}x — sync berjalan tanpa proteksi` : 'Lock aktif — tidak ada konflik sinkronisasi' }}
-                  </div>
-                </div>
-              </VCol>
-
-              <!-- Konsistensi Akses Router -->
-              <VCol cols="12" sm="6" md="3">
-                <div class="reliability-metric-box rounded pa-3">
-                  <div class="d-flex align-center gap-2 mb-2">
-                    <VIcon
-                      icon="tabler-router"
-                      size="18"
-                      :class="reliabilitySummary.policyParityDegraded ? 'text-error' : 'text-success'"
-                    />
-                    <span class="text-body-2 font-weight-medium">Konsistensi Akses Router</span>
-                  </div>
-                  <div class="d-flex align-center gap-2">
-                    <VChip
-                      size="small"
-                      label
-                      :color="reliabilitySummary.policyParityDegraded ? 'error' : 'success'"
-                    >
-                      {{ reliabilitySummary.policyParityDegraded ? `${reliabilitySummary.policyParityMismatchCount} Mismatch` : 'Normal' }}
-                    </VChip>
-                  </div>
-                  <div class="text-caption text-disabled mt-1">
-                    {{ reliabilitySummary.policyParityDegraded ? 'Status app dan MikroTik tidak sinkron — lihat tabel di bawah' : 'Status app dan MikroTik sinkron' }}
-                  </div>
-                </div>
-              </VCol>
-            </VRow>
+              </div>
+            </div>
           </VCardText>
         </VCard>
       </VCol>
@@ -1322,57 +1368,6 @@ useHead({ title: 'Dashboard Admin' })
               Konsistensi Akses (App vs MikroTik)
             </VCardTitle>
             <VCardSubtitle>Perbandingan status izin akses antara database aplikasi dan router MikroTik secara realtime</VCardSubtitle>
-            <div class="mt-2 d-flex flex-wrap gap-2">
-              <VChip
-                size="small"
-                label
-                :color="accessParitySummary.mismatches > 0 ? 'error' : 'success'"
-              >
-                <VIcon :icon="accessParitySummary.mismatches > 0 ? 'tabler-alert-circle' : 'tabler-circle-check'" size="14" class="me-1" />
-                {{ accessParitySummary.mismatches > 0 ? `${accessParitySummary.mismatches} mismatch akses` : 'Akses inti sinkron' }}
-                <span class="ms-1 opacity-70">/ {{ accessParitySummary.users }} user</span>
-              </VChip>
-              <VChip
-                v-if="accessParityDhcpDriftCount > 0"
-                size="small"
-                label
-                color="info"
-              >
-                <VIcon icon="tabler-route-2" size="14" class="me-1" />
-                {{ accessParityDhcpDriftCount }} drift DHCP
-              </VChip>
-              <VChip
-                v-if="accessParitySummary.noAuthorizedDeviceCount > 0"
-                size="small"
-                label
-                color="default"
-              >
-                <VIcon icon="tabler-device-mobile-off" size="14" class="me-1" />
-                {{ accessParitySummary.noAuthorizedDeviceCount }} belum login perangkat
-              </VChip>
-              <VChip
-                v-if="parityPending"
-                size="small"
-                label
-                color="default"
-              >
-                <VIcon icon="tabler-refresh" size="13" class="me-1" />
-                Memuat...
-              </VChip>
-            </div>
-            <div v-if="accessParitySummary.autoFixableItems > 0" class="mt-2">
-              <VBtn
-                size="small"
-                color="warning"
-                variant="tonal"
-                :loading="isBulkFixing"
-                :disabled="isBulkFixing || parityPending"
-                prepend-icon="tabler-refresh-alert"
-                @click="handleFixAllParity"
-              >
-                Perbaiki Semua ({{ accessParitySummary.autoFixableItems }})
-              </VBtn>
-            </div>
           </VCardItem>
           <VCardText>
             <VAlert
@@ -1410,69 +1405,193 @@ useHead({ title: 'Dashboard Admin' })
               {{ parityFixError }}
             </VAlert>
 
-            <!-- Mismatch Table — horizontally scrollable on mobile -->
-            <div style="overflow-x: auto;">
-              <VTable density="compact" style="min-width: 680px;">
-                <thead>
-                  <tr>
-                    <th>No. HP</th>
-                    <th>MAC</th>
-                    <th>IP</th>
-                    <th>Status App / Target</th>
-                    <th>Binding Exp / Aktual</th>
-                    <th>Address-list</th>
-                    <th>Masalah</th>
-                    <th>Aksi</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="item in accessParityItems" :key="getParityKey(item)">
-                    <td>{{ item.phone_number }}</td>
-                    <td class="text-caption">{{ item.mac || '-' }}</td>
-                    <td>{{ item.ip || '-' }}</td>
-                    <td>{{ item.app_status }} / {{ item.expected_status || '-' }}</td>
-                    <td>{{ item.expected_binding_type }} / {{ item.actual_binding_type || '-' }}</td>
-                    <td class="text-caption">{{ item.address_list_statuses.join(', ') || '-' }}</td>
-                    <td>
-                      <VChip
-                        v-for="m in item.mismatches"
-                        :key="m"
-                        size="x-small"
-                        :color="getParityMismatchMeta(m).color"
-                        label
-                        variant="tonal"
-                        class="me-1"
-                      >
-                        {{ getParityMismatchMeta(m).label }}
-                      </VChip>
-                      <span v-if="item.mismatches.length === 0" class="text-disabled">-</span>
-                    </td>
-                    <td>
-                      <VBtn
-                        size="x-small"
-                        :color="item.auto_fixable === false ? 'default' : 'primary'"
-                        variant="tonal"
-                        :loading="Boolean(fixingParityByKey[getParityKey(item)])"
-                        :disabled="Boolean(fixingParityByKey[getParityKey(item)]) || item.auto_fixable === false"
-                        @click="handleFixParityItem(item)"
-                      >
-                        {{ getParityActionLabel(item) }}
-                      </VBtn>
-                    </td>
-                  </tr>
-                  <tr v-if="accessParityItems.length === 0">
-                    <td colspan="8" class="text-center text-disabled py-4">
-                      <VIcon icon="tabler-circle-check" size="20" color="success" class="me-2" />
-                      Semua perangkat aktif sudah sinkron dengan router.
-                    </td>
-                  </tr>
-                </tbody>
-              </VTable>
+            <div class="access-parity">
+              <div class="access-parity__hero">
+                <div class="access-parity__heroCopy">
+                  <div class="access-parity__eyebrow">
+                    Audit akses realtime
+                  </div>
+                  <div class="access-parity__heroTitle">
+                    {{ accessParitySyncRate }}% akses inti sudah sinkron
+                  </div>
+                  <div class="text-body-2 text-medium-emphasis mt-1">
+                    Ringkasan utama tetap tampil bersih di dashboard. Detail mismatch, MAC, binding, dan tindakan koreksi tersedia pada popup pemeriksaan.
+                  </div>
+                </div>
+                <div class="access-parity__heroActions">
+                  <VBtn
+                    size="small"
+                    color="primary"
+                    variant="tonal"
+                    prepend-icon="tabler-list-details"
+                    @click="openAccessParityDialog"
+                  >
+                    Lihat Detail
+                  </VBtn>
+                  <VBtn
+                    v-if="accessParitySummary.autoFixableItems > 0"
+                    size="small"
+                    color="warning"
+                    variant="tonal"
+                    :loading="isBulkFixing"
+                    :disabled="isBulkFixing || parityPending"
+                    prepend-icon="tabler-refresh-alert"
+                    @click="handleFixAllParity"
+                  >
+                    Perbaiki Semua ({{ accessParitySummary.autoFixableItems }})
+                  </VBtn>
+                </div>
+              </div>
+
+              <VProgressLinear
+                class="mt-4"
+                color="success"
+                bg-color="error"
+                rounded
+                height="10"
+                :model-value="accessParitySyncRate"
+              />
+
+              <div class="access-parity__overviewGrid mt-4">
+                <div v-for="item in accessParityOverviewCards" :key="item.key" class="access-parity__overviewCard">
+                  <div class="access-parity__overviewHead">
+                    <VAvatar size="38" :color="item.color" variant="tonal">
+                      <VIcon :icon="item.icon" size="18" />
+                    </VAvatar>
+                    <div class="access-parity__overviewMeta">
+                      <div class="access-parity__overviewTitle">{{ item.title }}</div>
+                      <div class="access-parity__overviewSubtitle">{{ item.subtitle }}</div>
+                    </div>
+                  </div>
+                  <div class="access-parity__overviewValue">{{ item.value }}</div>
+                  <div class="access-parity__overviewCaption">{{ item.caption }}</div>
+                </div>
+              </div>
+
+              <div v-if="accessParityMismatchTypeCards.length > 0" class="access-parity__mismatchTypes mt-4">
+                <div class="text-caption text-uppercase text-medium-emphasis font-weight-bold mb-2">
+                  Fokus mismatch yang paling sering muncul
+                </div>
+                <div class="access-parity__mismatchTypeGrid">
+                  <div v-for="item in accessParityMismatchTypeCards" :key="item.key" class="access-parity__mismatchTypeCard">
+                    <VChip size="x-small" :color="item.color" label variant="tonal">
+                      {{ item.label }}
+                    </VChip>
+                    <div class="access-parity__mismatchTypeValue">{{ item.count }}</div>
+                  </div>
+                </div>
+              </div>
             </div>
           </VCardText>
         </VCard>
       </VCol>
     </VRow>
+
+    <VDialog v-model="accessParityDialogOpen" :fullscreen="isMobile" :max-width="isMobile ? undefined : 1180">
+      <VCard :class="isMobile ? 'rounded-0' : 'rounded-lg'">
+        <VCardTitle class="access-parity-dialog__hero text-white">
+          <div class="access-parity-dialog__heroTop">
+            <div class="access-parity-dialog__heroCopy">
+              <div class="access-parity-dialog__heroIcon">
+                <VIcon icon="tabler-shield-half-filled" size="22" />
+              </div>
+              <div>
+                <div class="text-h6 font-weight-bold">Detail Konsistensi Akses</div>
+                <div class="access-parity-dialog__heroSubtitle text-white">
+                  Audit mismatch akses, binding router, address-list, dan drift DHCP dengan tindakan per item bila diperlukan.
+                </div>
+              </div>
+            </div>
+            <div class="access-parity-dialog__heroActions">
+              <VBtn icon="tabler-x" variant="text" class="text-white" @click="accessParityDialogOpen = false" />
+            </div>
+          </div>
+          <div class="access-parity-dialog__heroChips">
+            <VChip size="small" label :color="accessParitySummary.mismatches > 0 ? 'error' : 'success'" variant="tonal">
+              {{ accessParitySummary.mismatches > 0 ? `${accessParitySummary.mismatches} mismatch akses` : 'Akses inti sinkron' }}
+            </VChip>
+            <VChip size="small" label color="info" variant="tonal">
+              {{ accessParityDhcpDriftCount }} drift DHCP
+            </VChip>
+            <VChip size="small" label color="default" variant="tonal">
+              {{ accessParitySummary.noAuthorizedDeviceCount }} belum login perangkat
+            </VChip>
+          </div>
+        </VCardTitle>
+        <VDivider />
+        <VCardText class="pa-4 pa-md-5">
+          <VAlert
+            v-if="!parityPending && accessParityContextMessage"
+            type="info"
+            variant="tonal"
+            density="compact"
+            class="mb-3"
+            icon="tabler-info-circle"
+          >
+            {{ accessParityContextMessage }}
+          </VAlert>
+
+          <div style="overflow-x: auto;">
+            <VTable density="compact" class="access-parity-dialog__table" style="min-width: 860px;">
+              <thead>
+                <tr>
+                  <th>No. HP</th>
+                  <th>MAC</th>
+                  <th>IP</th>
+                  <th>Status App / Target</th>
+                  <th>Binding Exp / Aktual</th>
+                  <th>Address-list</th>
+                  <th>Masalah</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in accessParityItems" :key="getParityKey(item)">
+                  <td>{{ item.phone_number }}</td>
+                  <td class="text-caption">{{ item.mac || '-' }}</td>
+                  <td>{{ item.ip || '-' }}</td>
+                  <td>{{ item.app_status }} / {{ item.expected_status || '-' }}</td>
+                  <td>{{ item.expected_binding_type }} / {{ item.actual_binding_type || '-' }}</td>
+                  <td class="text-caption">{{ item.address_list_statuses.join(', ') || '-' }}</td>
+                  <td>
+                    <VChip
+                      v-for="m in item.mismatches"
+                      :key="m"
+                      size="x-small"
+                      :color="getParityMismatchMeta(m).color"
+                      label
+                      variant="tonal"
+                      class="me-1 mb-1"
+                    >
+                      {{ getParityMismatchMeta(m).label }}
+                    </VChip>
+                    <span v-if="item.mismatches.length === 0" class="text-disabled">-</span>
+                  </td>
+                  <td>
+                    <VBtn
+                      size="x-small"
+                      :color="item.auto_fixable === false ? 'default' : 'primary'"
+                      variant="tonal"
+                      :loading="Boolean(fixingParityByKey[getParityKey(item)])"
+                      :disabled="Boolean(fixingParityByKey[getParityKey(item)]) || item.auto_fixable === false"
+                      @click="handleFixParityItem(item)"
+                    >
+                      {{ getParityActionLabel(item) }}
+                    </VBtn>
+                  </td>
+                </tr>
+                <tr v-if="accessParityItems.length === 0">
+                  <td colspan="8" class="text-center text-disabled py-4">
+                    <VIcon icon="tabler-circle-check" size="20" color="success" class="me-2" />
+                    Semua perangkat aktif sudah sinkron dengan router.
+                  </td>
+                </tr>
+              </tbody>
+            </VTable>
+          </div>
+        </VCardText>
+      </VCard>
+    </VDialog>
   </div>
 </template>
 
@@ -1530,6 +1649,320 @@ useHead({ title: 'Dashboard Admin' })
 
   &:hover {
     border-color: rgba(var(--v-theme-primary), 0.4);
+  }
+}
+
+.reliability-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.reliability-section__hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(var(--v-theme-primary), 0.08) 0%, rgba(var(--v-theme-surface), 0.92) 100%);
+}
+
+.reliability-section__summary {
+  min-inline-size: 120px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(var(--v-theme-surface), 0.92);
+  text-align: right;
+  box-shadow: inset 0 0 0 1px rgba(var(--v-theme-on-surface), 0.06);
+}
+
+.reliability-section__summaryLabel {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(var(--v-theme-on-surface), 0.56);
+}
+
+.reliability-section__summaryValue {
+  font-size: 1.8rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.reliability-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.reliability-card {
+  padding: 16px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 18px;
+  background: rgba(var(--v-theme-surface), 0.9);
+  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.04);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.reliability-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(var(--v-theme-primary), 0.18);
+  box-shadow: 0 22px 40px rgba(15, 23, 42, 0.06);
+}
+
+.reliability-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.reliability-card__title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.35;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+}
+
+.reliability-card__status {
+  margin-top: 6px;
+}
+
+.reliability-card__value {
+  font-size: 1.08rem;
+  font-weight: 800;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.reliability-card__caption {
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: rgba(var(--v-theme-on-surface), 0.68);
+}
+
+.access-parity {
+  display: flex;
+  flex-direction: column;
+}
+
+.access-parity__hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.access-parity__heroCopy {
+  min-width: 0;
+}
+
+.access-parity__eyebrow {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(var(--v-theme-primary), 0.92);
+}
+
+.access-parity__heroTitle {
+  font-size: 1.24rem;
+  font-weight: 800;
+  line-height: 1.2;
+  margin-top: 6px;
+}
+
+.access-parity__heroActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.access-parity__overviewGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.access-parity__overviewCard {
+  padding: 16px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 18px;
+  background: rgba(var(--v-theme-surface), 0.9);
+  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.04);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.access-parity__overviewCard:hover {
+  transform: translateY(-2px);
+  border-color: rgba(var(--v-theme-primary), 0.18);
+  box-shadow: 0 22px 40px rgba(15, 23, 42, 0.06);
+}
+
+.access-parity__overviewHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.access-parity__overviewMeta {
+  min-width: 0;
+}
+
+.access-parity__overviewTitle {
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(var(--v-theme-on-surface), 0.58);
+}
+
+.access-parity__overviewSubtitle {
+  margin-top: 4px;
+  font-size: 0.78rem;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+}
+
+.access-parity__overviewValue {
+  margin-top: 14px;
+  font-size: 1.42rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.access-parity__overviewCaption {
+  margin-top: 8px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: rgba(var(--v-theme-on-surface), 0.68);
+}
+
+.access-parity__mismatchTypes {
+  padding: 16px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 18px;
+  background: rgba(var(--v-theme-on-surface), 0.02);
+}
+
+.access-parity__mismatchTypeGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.access-parity__mismatchTypeCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(var(--v-theme-surface), 0.92);
+  box-shadow: inset 0 0 0 1px rgba(var(--v-theme-on-surface), 0.05);
+}
+
+.access-parity__mismatchTypeValue {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.access-parity-dialog__hero {
+  padding: 18px 20px 16px;
+  background: linear-gradient(135deg, rgb(var(--v-theme-primary)) 0%, rgba(var(--v-theme-primary), 0.82) 100%);
+}
+
+.access-parity-dialog__heroTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.access-parity-dialog__heroCopy {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  min-width: 0;
+}
+
+.access-parity-dialog__heroIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.access-parity-dialog__heroSubtitle {
+  margin-top: 4px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  opacity: 0.86;
+}
+
+.access-parity-dialog__heroChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.access-parity-dialog__table :deep(thead th) {
+  background: rgba(var(--v-theme-on-surface), 0.02);
+}
+
+.access-parity-dialog__table :deep(tbody tr:nth-child(even)) {
+  background: rgba(var(--v-theme-on-surface), 0.012);
+}
+
+@media (max-width: 959px) {
+  .reliability-grid,
+  .access-parity__overviewGrid,
+  .access-parity__mismatchTypeGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .reliability-section__hero,
+  .access-parity__hero,
+  .access-parity-dialog__heroTop {
+    flex-direction: column;
+  }
+
+  .reliability-section__summary,
+  .access-parity__heroActions,
+  .access-parity-dialog__heroActions {
+    width: 100%;
+  }
+
+  .access-parity__heroActions :deep(.v-btn) {
+    width: 100%;
+  }
+
+  .reliability-grid,
+  .access-parity__overviewGrid,
+  .access-parity__mismatchTypeGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .access-parity-dialog__hero {
+    padding: 16px 16px 14px;
+  }
+
+  .access-parity-dialog__heroIcon {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
   }
 }
 
