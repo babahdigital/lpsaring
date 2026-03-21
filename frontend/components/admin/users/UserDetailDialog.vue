@@ -374,19 +374,21 @@ function onClose() {
           </VListItem>
           <VListItem prepend-icon="tabler-checkup-list" title="Status Akun">
             <template #subtitle>
-              <VChip :color="statusMap[props.user.approval_status]?.color" size="small" label>
-                {{ statusMap[props.user.approval_status]?.text }}
-              </VChip>
-              <VChip :color="props.user.is_active ? 'success' : 'error'" size="small" class="ms-2" label>
-                {{ props.user.is_active ? 'Aktif' : 'Nonaktif' }}
-              </VChip>
-              <VChip v-if="props.user.is_blocked" color="error" size="small" class="ms-2" label>
-                Diblokir
-              </VChip>
-              <VChip v-if="hasDebt" :color="debtStatusMeta.color" size="small" class="ms-2" label>
-                <VIcon :icon="debtStatusMeta.icon" start size="16" />
-                {{ debtStatusMeta.text }}
-              </VChip>
+              <div class="admin-user-detail__status-chips">
+                <VChip :color="statusMap[props.user.approval_status]?.color" size="small" label>
+                  {{ statusMap[props.user.approval_status]?.text }}
+                </VChip>
+                <VChip :color="props.user.is_active ? 'success' : 'error'" size="small" label>
+                  {{ props.user.is_active ? 'Aktif' : 'Nonaktif' }}
+                </VChip>
+                <VChip v-if="props.user.is_blocked" color="error" size="small" label>
+                  Diblokir
+                </VChip>
+                <VChip v-if="hasDebt" :color="debtStatusMeta.color" size="small" label>
+                  <VIcon :icon="debtStatusMeta.icon" start size="16" />
+                  {{ debtStatusMeta.text }}
+                </VChip>
+              </div>
             </template>
           </VListItem>
           <VListItem v-if="props.user.is_tamping" prepend-icon="tabler-building-bank" title="Tamping" :subtitle="props.user.tamping_type || 'N/A'" />
@@ -590,6 +592,8 @@ function onClose() {
 }
 
 .admin-user-detail__hero-close {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
   margin-top: -2px;
 }
 
@@ -604,6 +608,7 @@ function onClose() {
   border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
   border-radius: 16px;
   background: rgba(var(--v-theme-surface), 0.88);
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.05);
 }
 
 .admin-user-detail__meta-cardHead {
@@ -632,25 +637,11 @@ function onClose() {
   color: rgba(var(--v-theme-on-surface), 0.62);
 }
 
-.dialog-titlebar {
+.admin-user-detail__status-chips {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-}
-
-.dialog-titlebar__title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
-.dialog-titlebar__actions {
-  display: flex;
-  align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
+  margin-top: 4px;
 }
 
 .manual-debt-table :deep(th),
@@ -696,6 +687,10 @@ function onClose() {
 
   .admin-user-detail__meta-grid {
     grid-template-columns: 1fr;
+  }
+
+  .admin-user-detail__status-chips {
+    gap: 6px;
   }
 }
 </style>

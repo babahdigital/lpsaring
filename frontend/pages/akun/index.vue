@@ -67,6 +67,73 @@ const displayRole = computed(() => {
   return roles[currentUser.value.role] ?? currentUser.value.role
 })
 
+const displayPhoneNumber = computed(() => formatPhoneNumberForDisplay(currentUser.value?.phone_number))
+const accountStatusMeta = computed(() => {
+  if (!currentUser.value) {
+    return { text: '-', color: 'secondary', icon: 'tabler-help' }
+  }
+
+  if (currentUser.value.is_active === true)
+    return { text: 'Aktif', color: 'success', icon: 'tabler-circle-check' }
+
+  return { text: 'Tidak Aktif', color: 'warning', icon: 'tabler-alert-circle' }
+})
+
+function formatQuotaValue(mb?: number | null): string {
+  const safe = Number(mb ?? 0)
+  if (!Number.isFinite(safe) || safe <= 0)
+    return '0 MB'
+  if (safe < 1024)
+    return `${safe.toLocaleString('id-ID', { maximumFractionDigits: 0 })} MB`
+  return `${(safe / 1024).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} GB`
+}
+
+const accountOverviewCards = computed(() => {
+  const user = currentUser.value
+  if (!user)
+    return []
+
+  const purchased = Number(user.total_quota_purchased_mb ?? 0)
+  const used = Number(user.total_quota_used_mb ?? 0)
+  const remaining = Math.max(0, purchased - used)
+  const quotaText = user.is_unlimited_user === true ? 'Unlimited' : formatQuotaValue(remaining)
+
+  return [
+    {
+      key: 'role',
+      label: 'Peran',
+      value: displayRole.value,
+      caption: user.mikrotik_profile_name || 'Profile belum terset',
+      color: 'info',
+      icon: 'tabler-shield-check',
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      value: accountStatusMeta.value.text,
+      caption: user.is_blocked ? `Blokir: ${user.blocked_reason || 'Ya'}` : 'Akun dapat digunakan',
+      color: accountStatusMeta.value.color,
+      icon: accountStatusMeta.value.icon,
+    },
+    {
+      key: 'quota',
+      label: 'Sisa Kuota',
+      value: quotaText,
+      caption: user.is_unlimited_user === true ? 'Akses tanpa batas kuota' : `Terpakai ${formatQuotaValue(used)}`,
+      color: user.is_unlimited_user === true ? 'success' : 'primary',
+      icon: user.is_unlimited_user === true ? 'tabler-infinity' : 'tabler-database',
+    },
+    {
+      key: 'joined',
+      label: 'Terdaftar',
+      value: formatDate(user.created_at),
+      caption: displayPhoneNumber.value || 'Nomor belum tersedia',
+      color: 'secondary',
+      icon: 'tabler-calendar-plus',
+    },
+  ]
+})
+
 // --- Fungsi-Fungsi ---
 const formatCurrency = (amount: number) => formatCurrencyIdr(amount)
 
@@ -325,7 +392,7 @@ useHead({ title: 'Pengaturan Akun' })
       <VCol cols="12" lg="8">
         <VRow class="ga-0">
           <VCol cols="12">
-            <VCard>
+            <VCard class="account-profile-card">
               <VCardItem>
                 <VCardTitle class="text-h5">
                   Profil Akun
@@ -439,55 +506,46 @@ useHead({ title: 'Pengaturan Akun' })
       <VCol cols="12" lg="4">
         <VRow class="ga-0">
           <VCol cols="12">
-            <VCard>
-              <VCardText>
-                <div class="d-flex align-center mb-4">
-                  <VAvatar color="primary" rounded size="50" class="me-4">
-                    <VIcon size="30" icon="tabler-user-circle" />
-                  </VAvatar>
-                  <div>
-                    <h5 class="text-h5 font-weight-bold">
-                      {{ currentUser.full_name }}
-                    </h5>
-                    <div class="text-caption">
-                      {{ currentUser.phone_number }}
+            <VCard class="account-overview-card">
+              <VCardText class="pa-5">
+                <div class="account-overview-hero">
+                  <div class="account-overview-hero__identity">
+                    <VAvatar color="primary" rounded size="54" class="account-overview-hero__avatar">
+                      <VIcon size="30" icon="tabler-user-circle" />
+                    </VAvatar>
+                    <div class="account-overview-hero__copy">
+                      <h5 class="text-h5 font-weight-bold mb-1">
+                        {{ currentUser.full_name }}
+                      </h5>
+                      <div class="text-body-2 text-medium-emphasis">
+                        {{ displayPhoneNumber || 'Nomor belum tersedia' }}
+                      </div>
+                    </div>
+                  </div>
+                  <VChip :color="accountStatusMeta.color" size="small" label>
+                    <VIcon :icon="accountStatusMeta.icon" start size="16" />
+                    {{ accountStatusMeta.text }}
+                  </VChip>
+                </div>
+
+                <div class="account-overview-grid mt-5">
+                  <div v-for="item in accountOverviewCards" :key="item.key" class="account-overview-stat">
+                    <div class="account-overview-stat__head">
+                      <VAvatar size="34" :color="item.color" variant="tonal">
+                        <VIcon :icon="item.icon" size="18" />
+                      </VAvatar>
+                      <div class="account-overview-stat__label">
+                        {{ item.label }}
+                      </div>
+                    </div>
+                    <div class="account-overview-stat__value">
+                      {{ item.value }}
+                    </div>
+                    <div class="account-overview-stat__caption">
+                      {{ item.caption }}
                     </div>
                   </div>
                 </div>
-                <VDivider />
-                <VList lines="two" density="compact" class="mt-2">
-                  <VListItem>
-                    <template #prepend>
-                      <VIcon icon="tabler-shield-check" class="me-3" color="info" />
-                    </template>
-                    <VListItemTitle>Peran</VListItemTitle>
-                    <template #append>
-                      <VChip size="small" label color="info">
-                        {{ displayRole }}
-                      </VChip>
-                    </template>
-                  </VListItem>
-                  <VListItem>
-                    <template #prepend>
-                      <VIcon icon="tabler-id-badge-2" class="me-3" :color="currentUser.is_active ? 'success' : 'warning'" />
-                    </template>
-                    <VListItemTitle>Status</VListItemTitle>
-                    <template #append>
-                      <VChip :color="currentUser.is_active ? 'success' : 'warning'" size="small" label>
-                        {{ currentUser.is_active ? 'Aktif' : 'Tidak Aktif' }}
-                      </VChip>
-                    </template>
-                  </VListItem>
-                  <VListItem>
-                    <template #prepend>
-                      <VIcon icon="tabler-calendar-plus" class="me-3" color="secondary" />
-                    </template>
-                    <VListItemTitle>Terdaftar</VListItemTitle>
-                    <template #append>
-                      <span class="text-body-2">{{ formatDate(currentUser.created_at) }}</span>
-                    </template>
-                  </VListItem>
-                </VList>
               </VCardText>
             </VCard>
           </VCol>
@@ -623,6 +681,74 @@ useHead({ title: 'Pengaturan Akun' })
 </template>
 
 <style scoped>
+.account-profile-card,
+.account-overview-card {
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+}
+
+.account-overview-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.account-overview-hero__identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.account-overview-hero__avatar {
+  flex: 0 0 auto;
+}
+
+.account-overview-hero__copy {
+  min-width: 0;
+}
+
+.account-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.account-overview-stat {
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  background: rgba(var(--v-theme-surface), 0.72);
+}
+
+.account-overview-stat__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.account-overview-stat__label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(var(--v-theme-on-surface), 0.56);
+}
+
+.account-overview-stat__value {
+  margin-top: 12px;
+  font-size: 1.02rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.account-overview-stat__caption {
+  margin-top: 4px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+}
+
 .ringkasan-header {
   display: flex;
   align-items: flex-start;
@@ -640,6 +766,14 @@ useHead({ title: 'Pengaturan Akun' })
 }
 
 @media (max-width: 599.98px) {
+  .account-overview-hero {
+    flex-direction: column;
+  }
+
+  .account-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
   .ringkasan-header {
     flex-direction: column;
   }
@@ -654,6 +788,11 @@ useHead({ title: 'Pengaturan Akun' })
     width: 100%;
   }
 
+  .ringkasan-summary {
+    width: 100%;
+    text-align: left !important;
+  }
+}
 
 .dialog-titlebar {
   display: flex;
@@ -674,10 +813,5 @@ useHead({ title: 'Pengaturan Akun' })
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
-}
-  .ringkasan-summary {
-    width: 100%;
-    text-align: left !important;
-  }
 }
 </style>

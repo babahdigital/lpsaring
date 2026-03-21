@@ -790,15 +790,31 @@ function openQuotaHistoryPdf() {
           <div class="admin-user-edit__topbar-meta">
             <div class="admin-user-edit__meta-pill">
               <VIcon icon="tabler-devices" size="16" />
-              <span>{{ editDialogConnectionMeta.hasDevices ? `${editDialogConnectionMeta.deviceCount} perangkat` : 'Belum login' }}</span>
+              <div class="admin-user-edit__meta-pillCopy">
+                <span class="admin-user-edit__meta-pillLabel">Perangkat</span>
+                <span>{{ editDialogConnectionMeta.hasDevices ? `${editDialogConnectionMeta.deviceCount} perangkat` : 'Belum login' }}</span>
+              </div>
+            </div>
+            <div class="admin-user-edit__meta-pill">
+              <VIcon icon="tabler-router" size="16" />
+              <div class="admin-user-edit__meta-pillCopy">
+                <span class="admin-user-edit__meta-pillLabel">Sinkronisasi</span>
+                <span>{{ editDialogConnectionMeta.mikrotikStatusLabel }}</span>
+              </div>
             </div>
             <div class="admin-user-edit__meta-pill">
               <VIcon icon="tabler-shield-check" size="16" />
-              <span>{{ editDialogConnectionMeta.mikrotikProfile }}</span>
+              <div class="admin-user-edit__meta-pillCopy">
+                <span class="admin-user-edit__meta-pillLabel">Profile</span>
+                <span>{{ editDialogConnectionMeta.mikrotikProfile }}</span>
+              </div>
             </div>
             <div class="admin-user-edit__meta-pill admin-user-edit__meta-pill--muted">
               <VIcon icon="tabler-clock" size="16" />
-              <span>{{ editDialogConnectionMeta.loginLabel }}</span>
+              <div class="admin-user-edit__meta-pillCopy">
+                <span class="admin-user-edit__meta-pillLabel">Login Terakhir</span>
+                <span>{{ editDialogConnectionMeta.loginLabel }}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -1024,7 +1040,7 @@ function openQuotaHistoryPdf() {
                     <VCol cols="12">
                       <VSheet rounded="lg" border class="pa-3 admin-user-edit__action-card">
                         <div class="admin-user-edit__card-header">
-                          <div>
+                          <div class="admin-user-edit__card-copy">
                             <div class="text-caption text-disabled">
                               Riwayat Mutasi Kuota
                             </div>
@@ -1043,8 +1059,10 @@ function openQuotaHistoryPdf() {
                             </VBtn>
                             <VBtn
                               size="small"
-                              variant="text"
-                              prepend-icon="tabler-printer"
+                              color="error"
+                              variant="tonal"
+                              class="admin-user-edit__inline-action"
+                              prepend-icon="tabler-file-type-pdf"
                               @click="openQuotaHistoryPdf"
                             >
                               PDF 30 Hari
@@ -1378,6 +1396,7 @@ function openQuotaHistoryPdf() {
 
 .admin-user-edit__topbar {
   padding: 16px 20px 14px;
+  background: linear-gradient(135deg, rgb(var(--v-theme-primary)) 0%, rgba(var(--v-theme-primary), 0.82) 100%);
   box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.08);
 }
 
@@ -1440,18 +1459,33 @@ function openQuotaHistoryPdf() {
 
 .admin-user-edit__meta-pill {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
-  min-height: 34px;
+  min-height: 42px;
   max-width: 100%;
-  padding: 8px 12px;
-  border-radius: 999px;
+  padding: 9px 12px;
+  border-radius: 16px;
   background: rgba(255, 255, 255, 0.12);
   font-size: 0.83rem;
   line-height: 1.2;
 }
 
-.admin-user-edit__meta-pill span {
+.admin-user-edit__meta-pillCopy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-user-edit__meta-pillLabel {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.admin-user-edit__meta-pillCopy span:last-child {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1472,6 +1506,8 @@ function openQuotaHistoryPdf() {
 
 .admin-user-edit__action-card {
   background: rgba(var(--v-theme-surface), 0.72);
+  border-color: rgba(var(--v-theme-on-surface), 0.08) !important;
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.06);
 }
 
 .admin-user-edit__card-header {
@@ -1479,6 +1515,11 @@ function openQuotaHistoryPdf() {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+}
+
+.admin-user-edit__card-copy {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .admin-user-edit__card-actions {
@@ -1586,27 +1627,6 @@ function openQuotaHistoryPdf() {
   box-shadow: 0 0 0 4px rgba(var(--v-theme-primary), 0.18);
 }
 
-.dialog-titlebar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-}
-
-.dialog-titlebar__title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
-.dialog-titlebar__actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .inject-actions {
   display: flex;
   align-items: center;
@@ -1675,7 +1695,7 @@ function openQuotaHistoryPdf() {
     border-radius: 14px;
   }
 
-  .admin-user-edit__meta-pill span {
+  .admin-user-edit__meta-pillCopy span:last-child {
     white-space: normal;
   }
 
@@ -1704,16 +1724,6 @@ function openQuotaHistoryPdf() {
   .admin-user-edit__section-indicator {
     width: 12px;
     height: 12px;
-  }
-
-  .dialog-titlebar {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .dialog-titlebar__actions {
-    width: 100%;
-    justify-content: flex-end;
   }
 
   .inject-actions {

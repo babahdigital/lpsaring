@@ -131,6 +131,7 @@ const tablerIcons = [
   'chart-infographic',
   'chart-pie',
   'chart-pie-off',
+  'chart-arrows-vertical',
   'check',
   'checkbox',
   'checks',
@@ -308,6 +309,8 @@ const tablerIcons = [
   'volume-off',
   'wallet',
   'wifi',
+  'stack-2',
+  'pencil-dollar',
   'x',
 ]
 

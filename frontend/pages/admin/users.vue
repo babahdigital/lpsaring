@@ -177,8 +177,31 @@ const cleanupPreviewLoading = ref(false)
 const cleanupPreview = ref<InactiveCleanupPreviewResponse | null>(null)
 const cleanupDeactivateCandidates = computed(() => cleanupPreview.value?.items?.deactivate_candidates ?? [])
 const cleanupDeleteCandidates = computed(() => cleanupPreview.value?.items?.delete_candidates ?? [])
+const cleanupPreviewDialogOpen = ref(false)
+const cleanupPreviewDialogAction = ref<CleanupActionType>('deactivate')
 const showCleanupPreviewSection = computed(() => {
   return cleanupDeactivateCandidates.value.length > 0 || cleanupDeleteCandidates.value.length > 0
+})
+const cleanupPreviewDialogCandidates = computed(() => {
+  return cleanupPreviewDialogAction.value === 'delete'
+    ? cleanupDeleteCandidates.value
+    : cleanupDeactivateCandidates.value
+})
+const cleanupPreviewDialogMeta = computed(() => {
+  const isDelete = cleanupPreviewDialogAction.value === 'delete'
+
+  return {
+    title: isDelete ? 'Kandidat Cleanup Delete' : 'Kandidat Cleanup Deactivate',
+    color: isDelete ? 'error' : 'warning',
+    icon: isDelete ? 'tabler-trash' : 'tabler-user-off',
+    threshold: isDelete
+      ? (cleanupPreview.value?.thresholds?.delete_days ?? 0)
+      : (cleanupPreview.value?.thresholds?.deactivate_days ?? 0),
+    summary: isDelete
+      ? (cleanupPreview.value?.summary?.delete_candidates ?? 0)
+      : (cleanupPreview.value?.summary?.deactivate_candidates ?? 0),
+    emptyText: isDelete ? 'Tidak ada kandidat delete.' : 'Tidak ada kandidat deactivate.',
+  }
 })
 const selectedUserPreviewContext = ref<UserDetailPreviewContext | null>(null)
 const previewActionLoading = ref<Record<string, boolean>>({})
@@ -828,6 +851,11 @@ function openViewDialog(user: User, previewContext: UserDetailPreviewContext | n
   selectedUser.value = user
   dialogState.view = true
 }
+
+function openCleanupPreviewDialog(action: CleanupActionType) {
+  cleanupPreviewDialogAction.value = action
+  cleanupPreviewDialogOpen.value = true
+}
 function openConfirmDialog(props: { title: string, message: string, color?: string, action: () => Promise<void> }) {
   confirmProps.title = props.title
   confirmProps.message = props.message
@@ -1006,7 +1034,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
       </VCardText>
     </VCard>
 
-    <VCard v-if="showCleanupPreviewSection" class="rounded-lg mb-6">
+    <VCard v-if="showCleanupPreviewSection" class="rounded-lg mb-6 admin-users__cleanupCard">
       <VCardItem>
         <VCardTitle class="admin-users__cleanup-title">
           <div class="admin-users__cleanup-titleText">
@@ -1028,112 +1056,53 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
         </VCardTitle>
       </VCardItem>
       <VCardText>
-        <div class="d-flex flex-wrap gap-2 mb-3">
-          <VChip color="warning" size="small" label>
-            Deactivate ≥ {{ cleanupPreview?.thresholds?.deactivate_days ?? '-' }} hari
-          </VChip>
-          <VChip color="error" size="small" label>
-            Delete ≥ {{ cleanupPreview?.thresholds?.delete_days ?? '-' }} hari
-          </VChip>
-          <VChip color="warning" variant="tonal" size="small" label>
-            Kandidat Deactivate: {{ cleanupPreview?.summary?.deactivate_candidates ?? 0 }}
-          </VChip>
-          <VChip color="error" variant="tonal" size="small" label>
-            Kandidat Delete: {{ cleanupPreview?.summary?.delete_candidates ?? 0 }}
-          </VChip>
+        <div class="admin-users__cleanupOverview">
+          <div class="admin-users__cleanupCopy">
+            <div class="text-body-2 text-medium-emphasis">
+              Ringkasan cleanup dibuat singkat agar dashboard tetap bersih. Buka daftar kandidat hanya saat perlu review atau tindakan.
+            </div>
+            <div class="admin-users__cleanupChips mt-4">
+              <VChip color="warning" size="small" label>
+                Deactivate ≥ {{ cleanupPreview?.thresholds?.deactivate_days ?? '-' }} hari
+              </VChip>
+              <VChip color="error" size="small" label>
+                Delete ≥ {{ cleanupPreview?.thresholds?.delete_days ?? '-' }} hari
+              </VChip>
+            </div>
+          </div>
+
+          <div class="admin-users__cleanupStats">
+            <div class="admin-users__cleanupStat admin-users__cleanupStat--warning">
+              <div class="admin-users__cleanupStatLabel">Kandidat Deactivate</div>
+              <div class="admin-users__cleanupStatValue">{{ cleanupPreview?.summary?.deactivate_candidates ?? 0 }}</div>
+              <VBtn
+                size="small"
+                color="warning"
+                variant="tonal"
+                :disabled="cleanupDeactivateCandidates.length === 0"
+                prepend-icon="tabler-list-details"
+                @click="openCleanupPreviewDialog('deactivate')"
+              >
+                Lihat Kandidat
+              </VBtn>
+            </div>
+
+            <div class="admin-users__cleanupStat admin-users__cleanupStat--error">
+              <div class="admin-users__cleanupStatLabel">Kandidat Delete</div>
+              <div class="admin-users__cleanupStatValue">{{ cleanupPreview?.summary?.delete_candidates ?? 0 }}</div>
+              <VBtn
+                size="small"
+                color="error"
+                variant="tonal"
+                :disabled="cleanupDeleteCandidates.length === 0"
+                prepend-icon="tabler-list-details"
+                @click="openCleanupPreviewDialog('delete')"
+              >
+                Lihat Kandidat
+              </VBtn>
+            </div>
+          </div>
         </div>
-
-        <VRow>
-          <VCol cols="12" md="6">
-            <div class="text-subtitle-2 mb-2">Top Kandidat Deactivate</div>
-            <VList density="compact" border rounded>
-              <VListItem
-                v-for="item in cleanupDeactivateCandidates"
-                :key="`deact-${item.id}`"
-                :title="item.full_name"
-                :subtitle="`${formatPhoneNumberDisplay(item.phone_number) ?? '-'} • ${item.days_inactive} hari`"
-                link
-                @click="openPreviewCandidate(item, 'deactivate')"
-              >
-                <template #append>
-                  <div class="d-flex align-center gap-1">
-                    <VChip size="x-small" color="warning" label>{{ item.role }}</VChip>
-                    <VBtn
-                      v-if="canManageCandidate(item.role)"
-                      icon
-                      size="x-small"
-                      variant="text"
-                      color="primary"
-                      @click.stop="handlePreviewEditCandidate(item)"
-                    >
-                      <VIcon icon="tabler-edit" size="16" />
-                      <VTooltip activator="parent">Edit User</VTooltip>
-                    </VBtn>
-                    <VBtn
-                      v-if="canManageCandidate(item.role)"
-                      icon
-                      size="x-small"
-                      variant="text"
-                      color="warning"
-                      :loading="isPreviewActionLoading(item.id, 'deactivate')"
-                      :disabled="isPreviewActionLoading(item.id, 'deactivate')"
-                      @click.stop="handlePreviewCleanupAction(item, 'deactivate')"
-                    >
-                      <VIcon icon="tabler-user-off" size="16" />
-                      <VTooltip activator="parent">Proses Deactivate</VTooltip>
-                    </VBtn>
-                  </div>
-                </template>
-              </VListItem>
-              <VListItem v-if="cleanupDeactivateCandidates.length === 0" title="Tidak ada kandidat" />
-            </VList>
-          </VCol>
-
-          <VCol cols="12" md="6">
-            <div class="text-subtitle-2 mb-2">Top Kandidat Delete</div>
-            <VList density="compact" border rounded>
-              <VListItem
-                v-for="item in cleanupDeleteCandidates"
-                :key="`del-${item.id}`"
-                :title="item.full_name"
-                :subtitle="`${formatPhoneNumberDisplay(item.phone_number) ?? '-'} • ${item.days_inactive} hari`"
-                link
-                @click="openPreviewCandidate(item, 'delete')"
-              >
-                <template #append>
-                  <div class="d-flex align-center gap-1">
-                    <VChip size="x-small" color="error" label>{{ item.role }}</VChip>
-                    <VBtn
-                      v-if="canManageCandidate(item.role)"
-                      icon
-                      size="x-small"
-                      variant="text"
-                      color="primary"
-                      @click.stop="handlePreviewEditCandidate(item)"
-                    >
-                      <VIcon icon="tabler-edit" size="16" />
-                      <VTooltip activator="parent">Edit User</VTooltip>
-                    </VBtn>
-                    <VBtn
-                      v-if="canManageCandidate(item.role)"
-                      icon
-                      size="x-small"
-                      variant="text"
-                      color="error"
-                      :loading="isPreviewActionLoading(item.id, 'delete')"
-                      :disabled="isPreviewActionLoading(item.id, 'delete')"
-                      @click.stop="handlePreviewCleanupAction(item, 'delete')"
-                    >
-                      <VIcon icon="tabler-trash" size="16" />
-                      <VTooltip activator="parent">Proses Delete</VTooltip>
-                    </VBtn>
-                  </div>
-                </template>
-              </VListItem>
-              <VListItem v-if="cleanupDeleteCandidates.length === 0" title="Tidak ada kandidat" />
-            </VList>
-          </VCol>
-        </VRow>
       </VCardText>
     </VCard>
 
@@ -1480,40 +1449,40 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
           <VDivider />
           <VCardActions class="justify-center admin-users__mobile-actionsWrap">
             <div class="admin-users__mobile-actions">
-              <VBtn icon variant="text" color="secondary" size="small" @click="openViewDialog(user)">
+              <VBtn icon variant="tonal" color="secondary" size="small" @click="openViewDialog(user)">
                 <VIcon icon="tabler-eye" /><VTooltip activator="parent">
                   Lihat Detail
                 </VTooltip>
               </VBtn>
               <template v-if="user.approval_status === 'PENDING_APPROVAL'">
-                <VBtn icon variant="text" color="success" size="small" @click="handleApprove(user)">
+                <VBtn icon variant="tonal" color="success" size="small" @click="handleApprove(user)">
                   <VIcon icon="tabler-check" /><VTooltip activator="parent">
                     Setujui
                   </VTooltip>
                 </VBtn>
-                <VBtn icon variant="text" color="error" size="small" @click="handleReject(user)">
+                <VBtn icon variant="tonal" color="error" size="small" @click="handleReject(user)">
                   <VIcon icon="tabler-x" /><VTooltip activator="parent">
                     Tolak & Hapus
                   </VTooltip>
                 </VBtn>
               </template>
               <template v-else>
-                <VBtn icon variant="text" color="secondary" size="small" @click="openQuotaHistoryDialog(user)">
+                <VBtn icon variant="tonal" color="secondary" size="small" @click="openQuotaHistoryDialog(user)">
                   <VIcon icon="tabler-history-toggle" /><VTooltip activator="parent">
                     Riwayat Quota
                   </VTooltip>
                 </VBtn>
-                <VBtn icon variant="text" color="primary" size="small" @click="openCreateBillDialogForUser(user)">
+                <VBtn icon variant="tonal" color="primary" size="small" @click="openCreateBillDialogForUser(user)">
                   <VIcon icon="tabler-qrcode" /><VTooltip activator="parent">
                   Buat Tagihan
                   </VTooltip>
                 </VBtn>
-                <VBtn v-if="(authStore.isSuperAdmin === true || authStore.isAdmin === true)" icon variant="text" color="primary" size="small" @click="openEditDialog(user)">
+                <VBtn v-if="(authStore.isSuperAdmin === true || authStore.isAdmin === true)" icon variant="tonal" color="primary" size="small" @click="openEditDialog(user)">
                   <VIcon icon="tabler-pencil" /><VTooltip activator="parent">
                     Edit
                   </VTooltip>
                 </VBtn>
-                <VBtn v-if="user.id !== authStore.currentUser?.id && (authStore.isSuperAdmin === true || (authStore.isAdmin === true && user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN'))" icon variant="text" color="error" size="small" @click="handleDelete(user)">
+                <VBtn v-if="user.id !== authStore.currentUser?.id && (authStore.isSuperAdmin === true || (authStore.isAdmin === true && user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN'))" icon variant="tonal" color="error" size="small" @click="handleDelete(user)">
                   <VIcon icon="tabler-trash" /><VTooltip activator="parent">
                     Hapus
                   </VTooltip>
@@ -1630,6 +1599,81 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
       </VCard>
     </VDialog>
 
+    <VDialog v-model="cleanupPreviewDialogOpen" :max-width="isMobile ? undefined : 760" :fullscreen="isMobile">
+      <VCard :class="isMobile ? 'rounded-0' : 'rounded-lg'">
+        <VCardTitle class="pa-4 bg-primary text-white">
+          <div class="dialog-titlebar">
+            <div class="dialog-titlebar__title">
+              <VIcon :icon="cleanupPreviewDialogMeta.icon" />
+              <div class="admin-users__cleanupDialogTitle">
+                <div>{{ cleanupPreviewDialogMeta.title }}</div>
+                <div class="text-caption text-white admin-users__cleanupDialogSubtitle">
+                  Threshold {{ cleanupPreviewDialogMeta.threshold }} hari • {{ cleanupPreviewDialogMeta.summary }} kandidat
+                </div>
+              </div>
+            </div>
+            <div class="dialog-titlebar__actions">
+              <VBtn icon="tabler-x" variant="text" class="text-white" @click="cleanupPreviewDialogOpen = false" />
+            </div>
+          </div>
+        </VCardTitle>
+        <VDivider />
+        <VCardText class="pa-4 pa-md-5">
+          <VList v-if="cleanupPreviewDialogCandidates.length > 0" density="comfortable" class="admin-users__cleanupDialogList">
+            <VListItem
+              v-for="item in cleanupPreviewDialogCandidates"
+              :key="`${cleanupPreviewDialogAction}-${item.id}`"
+              class="admin-users__cleanupDialogItem"
+              :title="item.full_name"
+              :subtitle="`${formatPhoneNumberDisplay(item.phone_number) ?? '-'} • ${item.days_inactive} hari tidak aktif`"
+              link
+              @click="openPreviewCandidate(item, cleanupPreviewDialogAction)"
+            >
+              <template #prepend>
+                <VAvatar size="36" :color="cleanupPreviewDialogMeta.color" variant="tonal">
+                  <VIcon :icon="cleanupPreviewDialogAction === 'delete' ? 'tabler-trash' : 'tabler-user-off'" size="18" />
+                </VAvatar>
+              </template>
+              <template #append>
+                <div class="admin-users__cleanupDialogActions">
+                  <VChip size="x-small" :color="cleanupPreviewDialogMeta.color" label>
+                    {{ item.role }}
+                  </VChip>
+                  <VBtn
+                    v-if="canManageCandidate(item.role)"
+                    icon
+                    size="small"
+                    variant="tonal"
+                    color="primary"
+                    @click.stop="handlePreviewEditCandidate(item)"
+                  >
+                    <VIcon icon="tabler-edit" size="16" />
+                    <VTooltip activator="parent">Edit User</VTooltip>
+                  </VBtn>
+                  <VBtn
+                    v-if="canManageCandidate(item.role)"
+                    icon
+                    size="small"
+                    variant="tonal"
+                    :color="cleanupPreviewDialogMeta.color"
+                    :loading="isPreviewActionLoading(item.id, cleanupPreviewDialogAction)"
+                    :disabled="isPreviewActionLoading(item.id, cleanupPreviewDialogAction)"
+                    @click.stop="handlePreviewCleanupAction(item, cleanupPreviewDialogAction)"
+                  >
+                    <VIcon :icon="cleanupPreviewDialogAction === 'delete' ? 'tabler-trash' : 'tabler-user-off'" size="16" />
+                    <VTooltip activator="parent">Jalankan Cleanup</VTooltip>
+                  </VBtn>
+                </div>
+              </template>
+            </VListItem>
+          </VList>
+          <VAlert v-else variant="tonal" :color="cleanupPreviewDialogMeta.color" class="mt-2">
+            {{ cleanupPreviewDialogMeta.emptyText }}
+          </VAlert>
+        </VCardText>
+      </VCard>
+    </VDialog>
+
     <UserDetailDialog v-model="dialogState.view" :user="selectedUser" :preview-context="selectedUserPreviewContext" />
     <UserAddDialog v-model="dialogState.add" :loading="loading" :available-bloks="availableBloks" :available-kamars="availableKamars" :is-alamat-loading="isAlamatLoading" @save="handleSaveUser" />
     <UserEditDialog v-if="dialogState.edit === true && editedUser !== null" v-model="dialogState.edit" :user="editedUser" :loading="loading" :available-bloks="availableBloks" :available-kamars="availableKamars" :is-alamat-loading="isAlamatLoading" :mikrotik-options="mikrotikOptions" @save="handleSaveUser" />
@@ -1662,6 +1706,94 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 
 .admin-users__cleanup-refresh {
   flex-shrink: 0;
+}
+
+.admin-users__cleanupCard {
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+}
+
+.admin-users__cleanupOverview {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.admin-users__cleanupCopy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.admin-users__cleanupChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-users__cleanupStats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 220px));
+  gap: 12px;
+}
+
+.admin-users__cleanupStat {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  background: rgba(var(--v-theme-surface), 0.72);
+}
+
+.admin-users__cleanupStat--warning {
+  box-shadow: inset 0 0 0 1px rgba(var(--v-theme-warning), 0.06);
+}
+
+.admin-users__cleanupStat--error {
+  box-shadow: inset 0 0 0 1px rgba(var(--v-theme-error), 0.06);
+}
+
+.admin-users__cleanupStatLabel {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(var(--v-theme-on-surface), 0.56);
+}
+
+.admin-users__cleanupStatValue {
+  font-size: 1.8rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.admin-users__cleanupDialogTitle {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-users__cleanupDialogSubtitle {
+  opacity: 0.84;
+}
+
+.admin-users__cleanupDialogList {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-users__cleanupDialogItem {
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 16px;
+  background: rgba(var(--v-theme-surface), 0.88);
+}
+
+.admin-users__cleanupDialogActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-inline-start: 12px;
 }
 
 .admin-users__toolbarMobile {
@@ -1764,6 +1896,8 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 
 .admin-users__mobile-card {
   overflow: hidden;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.04);
 }
 
 .admin-users__mobile-insightGrid {
@@ -1806,7 +1940,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 
 .admin-users__mobile-actions :deep(.v-btn) {
   border-radius: 12px;
-  background: rgba(var(--v-theme-primary), 0.08);
+  min-height: 42px;
 }
 
 /* Make mobile icon buttons easier to tap */
@@ -1818,6 +1952,19 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
   :deep(.v-card-actions .v-btn) {
     min-height: 40px;
     min-width: 40px;
+  }
+
+  .admin-users__cleanupOverview {
+    flex-direction: column;
+  }
+
+  .admin-users__cleanupStats {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-users__cleanupDialogActions {
+    gap: 6px;
+    margin-inline-start: 8px;
   }
 
   .admin-users__mobile-cardHeader {

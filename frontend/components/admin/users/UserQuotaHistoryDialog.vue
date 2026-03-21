@@ -78,6 +78,44 @@ const activeSearchText = computed(() => {
   return serverSearch !== '' ? serverSearch : searchQuery.value
 })
 const retentionDays = computed(() => Number(filters.value?.retention_days ?? MAX_FILTER_DAYS))
+const historyOverviewCards = computed(() => {
+  const currentSummary = summary.value
+
+  return [
+    {
+      key: 'events',
+      label: 'Total Event',
+      value: currentSummary ? `${totalItems.value}` : '-',
+      caption: paginationLabel.value,
+      color: 'primary',
+      icon: 'tabler-history-toggle',
+    },
+    {
+      key: 'purchase',
+      label: 'Beli Bersih',
+      value: currentSummary ? formatQuotaSummary(currentSummary.total_net_purchased_mb) : '-',
+      caption: `Pembelian: ${currentSummary?.purchase_events ?? 0} event`,
+      color: 'success',
+      icon: 'tabler-database-plus',
+    },
+    {
+      key: 'usage',
+      label: 'Pakai Bersih',
+      value: currentSummary ? formatQuotaSummary(currentSummary.total_net_used_mb) : '-',
+      caption: `Pemakaian: ${currentSummary?.usage_events ?? 0} event`,
+      color: 'info',
+      icon: 'tabler-chart-arrows-vertical',
+    },
+    {
+      key: 'period',
+      label: 'Periode Aktif',
+      value: activeFilterLabel.value,
+      caption: `Retensi data ${retentionDays.value} hari`,
+      color: 'secondary',
+      icon: 'tabler-calendar',
+    },
+  ]
+})
 
 function close() {
   emit('update:modelValue', false)
@@ -480,47 +518,53 @@ watch(
     @update:model-value="close"
   >
     <VCard v-if="props.user" class="history-dialog-card">
-      <VCardTitle class="pa-4 bg-primary rounded-t-lg">
+      <VCardTitle class="history-dialog__hero">
         <div class="dialog-titlebar">
-          <div class="dialog-titlebar__title">
-            <VIcon icon="tabler-history-toggle" start />
-            <span class="headline text-white">Riwayat Mutasi Kuota</span>
+          <div class="dialog-titlebar__title history-dialog__hero-titleWrap">
+            <div class="history-dialog__hero-icon">
+              <VIcon icon="tabler-history-toggle" size="22" />
+            </div>
+            <div class="history-dialog__hero-copy">
+              <span class="headline text-white">Riwayat Mutasi Kuota</span>
+              <div class="history-dialog__hero-subtitle text-white">
+                Fokus ke event penting, filter cepat, dan ringkasan yang lebih tenang untuk semua device.
+              </div>
+            </div>
           </div>
           <div class="dialog-titlebar__actions">
-            <VBtn icon="tabler-printer" variant="text" class="text-white" @click="openPdf" />
+            <VBtn color="error" variant="tonal" prepend-icon="tabler-file-type-pdf" class="history-dialog__hero-pdf" @click="openPdf">
+              PDF
+            </VBtn>
             <VBtn icon="tabler-x" variant="text" size="small" class="text-white" @click="close" />
           </div>
         </div>
-      </VCardTitle>
-      <VDivider />
-
-      <AppPerfectScrollbar class="history-dialog__scroll" :native-scroll="isMobile">
-        <div class="history-dialog__content">
-        <div class="history-summary-chips d-flex flex-wrap gap-2 mb-4">
+        <div class="history-dialog__hero-meta">
           <VChip size="small" label color="info" variant="tonal">
             {{ props.user.full_name }}
           </VChip>
           <VChip size="small" label color="default" variant="tonal">
             {{ props.user.phone_number }}
           </VChip>
-          <VChip v-if="summary" size="small" label color="primary" variant="tonal">
-            Event: {{ visibleStart }}-{{ visibleEnd }} / {{ totalItems }}
-          </VChip>
-          <VChip v-if="summary" size="small" label color="success" variant="tonal">
-            Beli bersih: {{ formatQuotaSummary(summary.total_net_purchased_mb) }}
-          </VChip>
-          <VChip v-if="summary" size="small" label color="warning" variant="tonal">
-            Pakai bersih: {{ formatQuotaSummary(summary.total_net_used_mb) }}
-          </VChip>
-          <VChip size="small" label color="secondary" variant="tonal">
-            Periode: {{ activeFilterLabel }}
-          </VChip>
           <VChip v-if="activeSearchText" size="small" label color="secondary" variant="tonal">
             Cari: {{ activeSearchText }}
           </VChip>
-          <VChip size="small" label color="default" variant="tonal">
-            Retensi: {{ retentionDays }} hari
-          </VChip>
+        </div>
+      </VCardTitle>
+      <VDivider />
+
+      <AppPerfectScrollbar class="history-dialog__scroll" :native-scroll="isMobile">
+        <div class="history-dialog__content">
+        <div class="history-overview-grid mb-4">
+          <div v-for="card in historyOverviewCards" :key="card.key" class="history-overview-card">
+            <div class="history-overview-card__head">
+              <VAvatar size="34" :color="card.color" variant="tonal">
+                <VIcon :icon="card.icon" size="18" />
+              </VAvatar>
+              <div class="history-overview-card__label">{{ card.label }}</div>
+            </div>
+            <div class="history-overview-card__value">{{ card.value }}</div>
+            <div class="history-overview-card__caption">{{ card.caption }}</div>
+          </div>
         </div>
 
         <VCard variant="outlined" class="history-filter-card mb-4">
@@ -616,22 +660,6 @@ watch(
           </VCardText>
         </VCard>
 
-        <VAlert
-          v-if="summary"
-          type="info"
-          variant="tonal"
-          density="compact"
-          icon="tabler-info-circle"
-          class="mb-4"
-        >
-          Filter aktif: <strong>{{ activeFilterLabel }}</strong>
-          • Rentang event hasil: <strong>{{ summary.first_event_at_display || '-' }}</strong> sampai <strong>{{ summary.last_event_at_display || '-' }}</strong>
-          • Periode ini pemakaian: <strong>{{ summary.usage_events }}</strong>
-          • Pembelian: <strong>{{ summary.purchase_events }}</strong>
-          • Tunggakan: <strong>{{ summary.debt_events }}</strong>
-          • Kebijakan: <strong>{{ summary.policy_events }}</strong>
-        </VAlert>
-
         <div v-if="loading" class="d-flex justify-center py-8">
           <VProgressCircular indeterminate color="primary" />
         </div>
@@ -651,11 +679,10 @@ watch(
 
               <div class="text-body-2 mt-3">{{ item.description }}</div>
 
-              <div v-if="item.actor_name" class="text-caption text-medium-emphasis mt-2">
-                Aktor: {{ item.actor_name }}
-              </div>
-
               <div class="d-flex flex-wrap gap-2 mt-3">
+                <VChip v-if="item.actor_name" size="small" color="secondary" variant="tonal" label>
+                  Aktor {{ item.actor_name }}
+                </VChip>
                 <VChip v-if="item.deltas_display.purchased" size="small" color="success" variant="tonal" label>
                   Beli {{ item.deltas_display.purchased }}
                 </VChip>
@@ -704,16 +731,19 @@ watch(
                   <VChip size="x-small" :color="categoryColor(item.category)" label class="mt-2">
                     {{ categoryLabel(item.category) }}
                   </VChip>
+                  <div v-if="item.actor_name" class="text-caption text-medium-emphasis mt-2">
+                    Aktor: {{ item.actor_name }}
+                  </div>
                 </td>
                 <td class="history-table__change align-top">
                   <div v-if="item.deltas_display.purchased || item.deltas_display.used || item.deltas_display.debt_total" class="history-change-list">
-                    <div v-if="item.deltas_display.purchased" class="history-change-list__item text-no-wrap">
+                    <div v-if="item.deltas_display.purchased" class="history-change-list__item text-no-wrap history-change-list__item--chip">
                       Beli {{ item.deltas_display.purchased }}
                     </div>
-                    <div v-if="item.deltas_display.used" class="history-change-list__item text-no-wrap">
+                    <div v-if="item.deltas_display.used" class="history-change-list__item text-no-wrap history-change-list__item--chip">
                       Pakai {{ item.deltas_display.used }}
                     </div>
-                    <div v-if="item.deltas_display.debt_total" class="history-change-list__item text-no-wrap">
+                    <div v-if="item.deltas_display.debt_total" class="history-change-list__item text-no-wrap history-change-list__item--chip">
                       Tunggakan {{ item.deltas_display.debt_total }}
                     </div>
                   </div>
@@ -799,6 +829,50 @@ watch(
   gap: 8px;
 }
 
+.history-dialog__hero {
+  padding: 18px 20px 16px;
+  background: linear-gradient(135deg, rgb(var(--v-theme-primary)) 0%, rgba(var(--v-theme-primary), 0.82) 100%);
+}
+
+.history-dialog__hero-titleWrap {
+  align-items: flex-start;
+}
+
+.history-dialog__hero-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.14);
+  flex: 0 0 auto;
+}
+
+.history-dialog__hero-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.history-dialog__hero-subtitle {
+  font-size: 0.9rem;
+  line-height: 1.45;
+  opacity: 0.86;
+}
+
+.history-dialog__hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.history-dialog__hero-pdf {
+  min-width: 88px;
+}
+
 .history-dialog-card {
   overflow: hidden;
 }
@@ -812,12 +886,50 @@ watch(
   padding-bottom: 28px;
 }
 
-.history-summary-chips {
-  align-items: flex-start;
+.history-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.history-overview-card {
+  padding: 16px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 18px;
+  background: rgba(var(--v-theme-surface), 0.88);
+}
+
+.history-overview-card__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.history-overview-card__label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(var(--v-theme-on-surface), 0.58);
+}
+
+.history-overview-card__value {
+  margin-top: 12px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.history-overview-card__caption {
+  margin-top: 4px;
+  font-size: 0.79rem;
+  line-height: 1.4;
+  color: rgba(var(--v-theme-on-surface), 0.62);
 }
 
 .history-filter-card {
   border-radius: 18px;
+  border-color: rgba(var(--v-theme-on-surface), 0.08) !important;
 }
 
 .history-filter-card__header {
@@ -928,6 +1040,15 @@ watch(
   line-height: 1.35;
 }
 
+.history-change-list__item--chip {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(var(--v-theme-primary), 0.08);
+}
+
 .history-mobile-list {
   display: grid;
   gap: 12px;
@@ -1011,6 +1132,28 @@ watch(
     min-width: 0;
     padding: 16px;
     padding-bottom: 24px;
+  }
+
+  .history-dialog__hero {
+    padding: 16px 16px 14px;
+  }
+
+  .history-dialog__hero-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+  }
+
+  .history-dialog__hero-subtitle {
+    font-size: 0.8rem;
+  }
+
+  .history-dialog__hero-pdf {
+    width: 100%;
+  }
+
+  .history-overview-grid {
+    grid-template-columns: 1fr;
   }
 
   .history-filter-card__header {

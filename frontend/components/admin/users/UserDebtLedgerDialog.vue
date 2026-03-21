@@ -45,6 +45,44 @@ const debtAutoMb = computed(() => Number(props.user?.quota_debt_auto_mb ?? 0))
 const debtManualMb = computed(() => Number(props.user?.quota_debt_manual_mb ?? props.user?.manual_debt_mb ?? 0))
 const debtTotalMb = computed(() => Number(props.user?.quota_debt_total_mb ?? (debtAutoMb.value + debtManualMb.value)))
 const isMobile = computed(() => smAndDown.value)
+const debtOverviewCards = computed(() => {
+  const currentSummary = summary.value
+
+  return [
+    {
+      key: 'total',
+      label: 'Total Tunggakan',
+      value: formatDataSize(debtTotalMb.value),
+      caption: currentSummary ? `${currentSummary.total_items} item tercatat` : 'Menunggu data ringkasan',
+      color: debtTotalMb.value > 0 ? 'warning' : 'secondary',
+      icon: 'tabler-stack-2',
+    },
+    {
+      key: 'open',
+      label: 'Belum Lunas',
+      value: currentSummary ? `${currentSummary.open_items}` : '-',
+      caption: currentSummary ? 'Item yang masih perlu follow up' : 'Ringkasan status belum tersedia',
+      color: (currentSummary?.open_items ?? 0) > 0 ? 'error' : 'secondary',
+      icon: 'tabler-alert-triangle',
+    },
+    {
+      key: 'manual',
+      label: 'Manual',
+      value: formatDataSize(debtManualMb.value),
+      caption: 'Akumulasi dari pencatatan manual',
+      color: debtManualMb.value > 0 ? 'primary' : 'secondary',
+      icon: 'tabler-pencil-dollar',
+    },
+    {
+      key: 'auto',
+      label: 'Otomatis',
+      value: formatDataSize(debtAutoMb.value),
+      caption: currentSummary ? `${currentSummary.paid_items} item sudah lunas` : 'Akumulasi otomatis dari sistem',
+      color: debtAutoMb.value > 0 ? 'info' : 'secondary',
+      icon: 'tabler-bolt',
+    },
+  ]
+})
 
 function formatDataSize(sizeInMB: number): string {
   if (!Number.isFinite(sizeInMB) || Number.isNaN(sizeInMB))
@@ -252,57 +290,77 @@ watch(
 <template>
   <VDialog :model-value="props.modelValue" :fullscreen="isMobile" :max-width="isMobile ? undefined : 1000" persistent @update:model-value="close">
     <VCard v-if="props.user" :class="isMobile ? 'rounded-0' : 'rounded-lg'">
-      <!-- ── Title bar ── -->
-      <VCardTitle class="pa-4 bg-primary" :class="isMobile ? '' : 'rounded-t-lg'">
+      <VCardTitle class="debt-ledger__hero" :class="isMobile ? '' : 'rounded-t-lg'">
         <div class="dialog-titlebar">
-          <div class="dialog-titlebar__title">
-            <VIcon icon="tabler-notes" start />
-            <span class="headline text-white">Riwayat Tunggakan</span>
+          <div class="dialog-titlebar__title debt-ledger__hero-titleWrap">
+            <div class="debt-ledger__hero-icon">
+              <VIcon icon="tabler-notes" size="22" />
+            </div>
+            <div class="debt-ledger__hero-copy">
+              <span class="headline text-white">Riwayat Tunggakan</span>
+              <div class="debt-ledger__hero-subtitle text-white">
+                Ringkasan utang kuota, status pelunasan, dan tindakan cepat dalam satu alur yang lebih rapi.
+              </div>
+            </div>
           </div>
           <div class="dialog-titlebar__actions">
             <VBtn
+              color="error"
+              variant="tonal"
+              prepend-icon="tabler-file-type-pdf"
+              class="debt-ledger__hero-action"
+              @click="openPdf"
+            >
+              PDF
+            </VBtn>
+            <VBtn
               v-if="debtTotalMb > 0"
-              icon="tabler-brand-whatsapp"
-              variant="text"
-              class="text-white"
-              title="Kirim ringkasan ke WhatsApp"
+              color="success"
+              variant="tonal"
+              prepend-icon="tabler-brand-whatsapp"
+              class="debt-ledger__hero-action"
               :loading="sendingWhatsapp"
               @click="sendWhatsAppReport"
-            />
-            <VBtn icon="tabler-printer" variant="text" class="text-white" title="Cetak PDF" @click="openPdf" />
+            >
+              WhatsApp
+            </VBtn>
             <VBtn icon="tabler-x" variant="text" size="small" class="text-white" @click="close" />
           </div>
         </div>
-      </VCardTitle>
-      <VDivider />
 
-      <AppPerfectScrollbar class="pa-4 pa-md-5 debt-ledger__scroll" :native-scroll="isMobile" :style="isMobile ? 'max-height: calc(100vh - 132px);' : 'max-height: 74vh;'">
-        <!-- Info chips -->
-        <div class="d-flex flex-wrap gap-2 mb-4">
+        <div class="debt-ledger__hero-meta">
           <VChip size="small" label color="info" variant="tonal">
             {{ props.user.full_name }}
           </VChip>
           <VChip size="small" label color="default" variant="tonal">
             {{ props.user.phone_number }}
           </VChip>
-          <VChip size="small" label color="warning" variant="tonal">
-            Total: {{ formatDataSize(debtTotalMb) }}
-          </VChip>
-          <VChip size="small" label color="default" variant="tonal">
-            Otomatis: {{ formatDataSize(debtAutoMb) }}
-          </VChip>
-          <VChip size="small" label color="default" variant="tonal">
-            Manual: {{ formatDataSize(debtManualMb) }}
+          <VChip v-if="summary" size="small" label :color="summary.open_items > 0 ? 'warning' : 'success'" variant="tonal">
+            {{ summary.open_items }} belum lunas
           </VChip>
         </div>
+      </VCardTitle>
+      <VDivider />
 
-        <VAlert v-if="summary" type="info" variant="tonal" density="compact" icon="tabler-info-circle" class="mb-4">
-          Total item: <strong>{{ summary.total_items }}</strong>
-          • Belum lunas: <strong>{{ summary.open_items }}</strong>
-          • Lunas: <strong>{{ summary.paid_items }}</strong>
+      <AppPerfectScrollbar class="pa-4 pa-md-5 debt-ledger__scroll" :native-scroll="isMobile" :style="isMobile ? 'max-height: calc(100vh - 132px);' : 'max-height: 74vh;'">
+        <div class="debt-overview-grid mb-4">
+          <div v-for="card in debtOverviewCards" :key="card.key" class="debt-overview-card">
+            <div class="debt-overview-card__head">
+              <VAvatar size="34" :color="card.color" variant="tonal">
+                <VIcon :icon="card.icon" size="18" />
+              </VAvatar>
+              <div class="debt-overview-card__label">{{ card.label }}</div>
+            </div>
+            <div class="debt-overview-card__value">{{ card.value }}</div>
+            <div class="debt-overview-card__caption">{{ card.caption }}</div>
+          </div>
+        </div>
+
+        <VAlert v-if="summary && summary.open_items > 0" type="warning" variant="tonal" density="comfortable" icon="tabler-alert-triangle" class="mb-4">
+          Ada <strong>{{ summary.open_items }}</strong> item yang masih belum lunas. Tinjau per baris untuk follow up atau gunakan aksi <strong>Lunasi Semua</strong> bila sudah selesai.
         </VAlert>
 
-        <!-- ── Tabel — horizontal scroll di layar kecil ── -->
+        <div class="debt-table-shell">
         <div class="debt-table-scroll">
           <VDataTable
             :items="items"
@@ -406,6 +464,7 @@ watch(
             </template>
           </VDataTable>
         </div>
+        </div>
       </AppPerfectScrollbar>
 
       <VDivider />
@@ -466,8 +525,101 @@ watch(
   gap: 8px;
 }
 
+.debt-ledger__hero {
+  padding: 18px 20px 16px;
+  background: linear-gradient(135deg, rgb(var(--v-theme-primary)) 0%, rgba(var(--v-theme-primary), 0.82) 100%);
+}
+
+.debt-ledger__hero-titleWrap {
+  align-items: flex-start;
+}
+
+.debt-ledger__hero-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.14);
+  flex: 0 0 auto;
+}
+
+.debt-ledger__hero-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.debt-ledger__hero-subtitle {
+  font-size: 0.9rem;
+  line-height: 1.45;
+  opacity: 0.86;
+}
+
+.debt-ledger__hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.debt-ledger__hero-action {
+  min-width: 98px;
+}
+
+.debt-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.debt-overview-card {
+  padding: 16px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 18px;
+  background: rgba(var(--v-theme-surface), 0.88);
+}
+
+.debt-overview-card__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.debt-overview-card__label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(var(--v-theme-on-surface), 0.58);
+}
+
+.debt-overview-card__value {
+  margin-top: 12px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.debt-overview-card__caption {
+  margin-top: 4px;
+  font-size: 0.79rem;
+  line-height: 1.4;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+}
+
 .debt-ledger__scroll:deep(.app-perfect-scrollbar--native) {
   min-height: 0;
+}
+
+.debt-table-shell {
+  position: relative;
+  isolation: isolate;
+  border-radius: 16px;
+  background: rgb(var(--v-theme-surface));
+  box-shadow: inset 0 0 0 1px rgba(var(--v-theme-on-surface), 0.08);
 }
 
 /* ── Horizontal scroll untuk tabel di mobile ── */
@@ -483,6 +635,15 @@ watch(
   min-width: 820px;
   width: 100%;
   table-layout: fixed;
+}
+
+.debt-ledger-table :deep(thead th) {
+  background: rgb(var(--v-theme-surface));
+  box-shadow: inset 0 -1px rgba(var(--v-theme-on-surface), 0.08);
+}
+
+.debt-ledger-table :deep(tbody tr:nth-child(even)) {
+  background: rgba(var(--v-theme-on-surface), 0.015);
 }
 
 /* Lebar kolom */
@@ -517,6 +678,28 @@ watch(
   .dialog-titlebar__actions {
     width: 100%;
     justify-content: flex-end;
+  }
+
+  .debt-ledger__hero {
+    padding: 16px 16px 14px;
+  }
+
+  .debt-ledger__hero-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+  }
+
+  .debt-ledger__hero-subtitle {
+    font-size: 0.8rem;
+  }
+
+  .debt-ledger__hero-action {
+    width: 100%;
+  }
+
+  .debt-overview-grid {
+    grid-template-columns: 1fr;
   }
 
   .debt-table-scroll {
