@@ -2,7 +2,7 @@
 // AUTO-GENERATED FILE. DO NOT EDIT MANUALLY.
 // Source: contracts/openapi/openapi.v1.yaml
 
-export const OPENAPI_SOURCE_SHA256 = '31cc1c933bdf3a88005c38df66f1f42649272e364a2458ecb2be76dd0f4b8b35' as const
+export const OPENAPI_SOURCE_SHA256 = '92591849e12231eb18a39f0cfecf09fea481a73c5027a52749d297db296edb8e' as const
 export const API_CONTRACT_REVISION = 'openapi-1.0.0' as const
 
 export type MessageResponse = { message: string }
@@ -65,7 +65,9 @@ export type AdminUserDetailSummaryMikrotik = { live_available: boolean; exists_o
 export type AdminUserDetailSummaryDebt = { auto_mb: number; manual_mb: number; total_mb: number; open_items: number }
 export type AdminUserDetailSummaryPurchase = { order_id: string; package_name: string; amount?: number; amount_display: string; paid_at?: string | null; paid_at_display: string; payment_method: string }
 export type AdminUserDetailSummaryResponse = { mikrotik: AdminUserDetailSummaryMikrotik; profile_display_name: string; profile_source: string; mikrotik_account_label: string; mikrotik_account_hint: string; access_status_label: string; access_status_hint: string; access_status_tone: string; device_count: number; device_count_label: string; last_login_label: string; debt: AdminUserDetailSummaryDebt; recent_purchases: Array<AdminUserDetailSummaryPurchase>; purchase_count_30d: number; purchase_total_amount_30d: number; purchase_total_amount_30d_display: string; admin_whatsapp_default: string }
-export type AdminUserDetailReportWhatsappRequest = { recipient_phone?: string | null }
+export type AdminUserDetailReportWhatsappRequest = { recipient_mode?: 'user' | 'internal' | null; recipient_phone?: string | null; recipient_user_ids?: Array<string> | null }
+export type AdminUserDetailReportWhatsappRecipient = { user_id?: string | null; full_name: string; role: string | null; phone_number: string }
+export type AdminUserDetailReportWhatsappResponse = { message: string; queued: boolean; queued_count: number; recipient_mode: 'user' | 'internal'; recipients: Array<AdminUserDetailReportWhatsappRecipient> }
 export type AdminMetricsReliabilitySignals = { payment_idempotency_degraded?: boolean; hotspot_sync_lock_degraded?: boolean; policy_parity_degraded?: boolean }
 export type AdminMetricsResponse = { metrics?: { [key: string]: number }; reliability_signals?: AdminMetricsReliabilitySignals }
 export type AccessParityItem = { user_id: string; phone_number: string; mac: string; ip?: string | null; app_status: string; expected_binding_type: string; actual_binding_type?: string | null; address_list_statuses: Array<string>; mismatches: Array<string> }
@@ -199,7 +201,7 @@ export interface GeneratedApiContractMap {
   }
   'POST /admin/users/{user_id}/detail-report/send-whatsapp': {
     request: AdminUserDetailReportWhatsappRequest
-    response: AdminDebtWhatsappQueueResponse
+    response: AdminUserDetailReportWhatsappResponse
     error: ErrorResponse
   }
   'GET /admin/users/{user_id}/detail-summary': {

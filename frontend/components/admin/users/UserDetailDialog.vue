@@ -3,7 +3,8 @@ import { differenceInDays, format, isPast, isValid } from 'date-fns'
 import { id } from 'date-fns/locale'
 import { computed, ref, watch } from 'vue'
 import { useDisplay } from 'vuetify'
-import AppTextField from '@core/components/app-form-elements/AppTextField.vue'
+import type { AdminUserDetailReportWhatsappResponse } from '@/types/api/contracts'
+import DetailReportRecipientDialog from '@/components/admin/users/DetailReportRecipientDialog.vue'
 import { useSnackbar } from '@/composables/useSnackbar'
 
 // Definisikan interface User
@@ -100,13 +101,23 @@ interface UserDetailSummary {
   admin_whatsapp_default?: string
 }
 
+interface InternalRecipientSelection {
+  recipientIds: string[]
+  recipients: Array<{
+    id: string
+    full_name: string
+    role: 'ADMIN' | 'SUPER_ADMIN'
+    phone_number: string
+  }>
+}
+
 const manualDebtItems = ref<ManualDebtItem[]>([])
 const manualDebtSummary = ref<{ manual_debt_mb: number, open_items: number, paid_items: number, total_items: number } | null>(null)
 const manualDebtLoading = ref(false)
 const detailSummary = ref<UserDetailSummary | null>(null)
 const detailSummaryLoading = ref(false)
-const detailReportRecipient = ref('')
-const sendingDetailWhatsapp = ref(false)
+const isDetailRecipientDialogOpen = ref(false)
+const detailWhatsappQueueMode = ref<'user' | 'internal' | null>(null)
 const sendingDebtWhatsapp = ref(false)
 const isDebtLedgerOpen = ref(false)
 
@@ -247,8 +258,8 @@ const detailConnectionCards = computed(() => {
       key: 'devices',
       icon: 'tabler-devices',
       title: 'Perangkat',
-      value: deviceCount > 0 ? `${deviceCount} perangkat` : 'Belum ada perangkat aktif',
-      caption: deviceCount > 0 ? 'Perangkat pernah login / terdaftar' : 'Belum ada perangkat yang tercatat login',
+      value: deviceCount > 0 ? `${deviceCount} perangkat aktif` : 'Belum ada perangkat',
+      caption: deviceCount > 0 ? 'Perangkat terotorisasi yang pernah login' : 'Belum ada perangkat yang tercatat',
       color: deviceCount > 0 ? 'info' : 'secondary',
     },
     {
@@ -262,7 +273,7 @@ const detailConnectionCards = computed(() => {
     {
       key: 'profile',
       icon: 'tabler-shield-check',
-      title: 'Profile MikroTik',
+      title: 'Profil MikroTik',
       value: profileName !== '' ? profileName : 'Belum tersedia',
       caption: summary?.mikrotik_account_label || (user?.mikrotik_user_exists ? 'Sinkron terakhir tersimpan' : 'Perlu verifikasi live MikroTik'),
       color: user?.mikrotik_user_exists ? 'primary' : 'warning',
@@ -279,8 +290,6 @@ async function fetchUserDetailSummary() {
   try {
     const response = await $api<UserDetailSummary>(`/admin/users/${props.user.id}/detail-summary`)
     detailSummary.value = response
-    if (!detailReportRecipient.value)
-      detailReportRecipient.value = props.user.phone_number || response.admin_whatsapp_default || ''
   }
   catch (error: any) {
     detailSummary.value = null
@@ -330,7 +339,6 @@ watch(
       return
     if (props.user) {
       fetchManualDebtLedger()
-      detailReportRecipient.value = props.user.phone_number || ''
       fetchUserDetailSummary()
     }
   },
@@ -352,24 +360,46 @@ function openUserDetailPdf() {
   window.open(`/api/admin/users/${props.user.id}/detail-report/export?format=pdf`, '_blank', 'noopener')
 }
 
-async function sendUserDetailWhatsapp() {
+function formatQueuedRecipientSummary(response: AdminUserDetailReportWhatsappResponse) {
+  if (response.recipients.length === 0)
+    return response.message
+  const names = response.recipients.map(recipient => recipient.full_name).join(', ')
+  return `${response.message} Penerima: ${names}.`
+}
+
+async function queueUserDetailWhatsapp(body: { recipient_mode: 'user' | 'internal', recipient_user_ids?: string[] }) {
   if (!props.user)
     return
 
-  sendingDetailWhatsapp.value = true
+  detailWhatsappQueueMode.value = body.recipient_mode
   try {
-    const resp = await $api<{ message?: string }>(`/admin/users/${props.user.id}/detail-report/send-whatsapp`, {
+    const resp = await $api<AdminUserDetailReportWhatsappResponse>(`/admin/users/${props.user.id}/detail-report/send-whatsapp`, {
       method: 'POST',
-      body: { recipient_phone: detailReportRecipient.value || props.user.phone_number },
+      body,
     })
-    showSnackbar({ type: 'success', title: 'Detail Pengguna', text: resp?.message || 'PDF detail pengguna berhasil diantrikan ke WhatsApp.' })
+    showSnackbar({ type: 'success', title: 'Detail Pengguna', text: formatQueuedRecipientSummary(resp) })
   }
   catch (error: any) {
     showSnackbar({ type: 'warning', title: 'Detail Pengguna', text: error?.data?.message || 'Gagal mengirim PDF detail pengguna ke WhatsApp.' })
   }
   finally {
-    sendingDetailWhatsapp.value = false
+    detailWhatsappQueueMode.value = null
   }
+}
+
+async function sendUserDetailWhatsappToUser() {
+  await queueUserDetailWhatsapp({ recipient_mode: 'user' })
+}
+
+function openDetailRecipientDialog() {
+  isDetailRecipientDialogOpen.value = true
+}
+
+async function sendUserDetailWhatsappToInternal(selection: InternalRecipientSelection) {
+  await queueUserDetailWhatsapp({
+    recipient_mode: 'internal',
+    recipient_user_ids: selection.recipientIds,
+  })
 }
 
 function openDebtPdf() {
@@ -420,7 +450,7 @@ function onClose() {
                 Detail Pengguna
               </div>
               <div class="admin-user-detail__hero-subtitle text-white">
-                Ringkasan identitas, koneksi, kuota, dan histori akses pengguna.
+                Ringkasan identitas dan histori akses pengguna.
               </div>
             </div>
           </div>
@@ -470,27 +500,24 @@ function onClose() {
                 Tindak Lanjut Cepat
               </div>
               <div class="text-body-2 text-medium-emphasis">
-                Kirim PDF detail pengguna ke nomor user atau admin lain tanpa keluar dari dialog ini.
+                Kirim PDF detail ke pengguna, atau pilih admin internal yang memang harus menerima laporan ini.
               </div>
             </div>
             <div class="admin-user-detail__actionButtons">
               <VBtn size="small" color="error" variant="tonal" prepend-icon="tabler-file-type-pdf" @click="openUserDetailPdf">
                 PDF Detail
               </VBtn>
-              <VBtn size="small" color="success" variant="tonal" prepend-icon="tabler-brand-whatsapp" :loading="sendingDetailWhatsapp" @click="sendUserDetailWhatsapp">
-                Kirim WhatsApp
+              <VBtn size="small" color="success" variant="tonal" prepend-icon="tabler-user-share" :loading="detailWhatsappQueueMode === 'user'" @click="sendUserDetailWhatsappToUser">
+                Kirim ke User
+              </VBtn>
+              <VBtn size="small" color="primary" variant="tonal" prepend-icon="tabler-users-group" :loading="detailWhatsappQueueMode === 'internal'" @click="openDetailRecipientDialog">
+                Kirim ke Admin
               </VBtn>
             </div>
           </div>
-          <AppTextField
-            v-model="detailReportRecipient"
-            class="mt-3"
-            label="Nomor WhatsApp Tujuan"
-            prepend-inner-icon="tabler-brand-whatsapp"
-            placeholder="Nomor pengguna atau admin lain"
-            hint="PDF hanya menampilkan tunggakan bila ada, dan riwayat pembelian hanya 30 hari terakhir bila tersedia."
-            persistent-hint
-          />
+          <VAlert variant="tonal" color="info" icon="tabler-info-circle" class="mt-3">
+            Pengiriman internal memakai popup pemilih penerima agar laporan tidak terkirim ke semua admin secara otomatis.
+          </VAlert>
         </VSheet>
 
         <VList lines="two" density="compact">
@@ -731,6 +758,13 @@ function onClose() {
       </VCardActions>
     </VCard>
   </VDialog>
+
+  <DetailReportRecipientDialog
+    :model-value="isDetailRecipientDialogOpen"
+    :user-name="props.user?.full_name"
+    @update:model-value="isDetailRecipientDialogOpen = $event"
+    @submit="sendUserDetailWhatsappToInternal"
+  />
 
   <UserDebtLedgerDialog v-model="isDebtLedgerOpen" :user="props.user" />
 </template>

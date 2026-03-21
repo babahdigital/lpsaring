@@ -1,5 +1,6 @@
 # backend/app/infrastructure/http/admin/user_management_routes.py
 import uuid
+import re
 from datetime import datetime, timedelta, timezone as dt_timezone
 from flask import Blueprint, jsonify, request, current_app, make_response, render_template
 from sqlalchemy import func, or_, select
@@ -245,6 +246,210 @@ def _resolve_admin_whatsapp_default() -> str:
     return ""
 
 
+def _resolve_public_portal_url() -> str:
+    return (
+        settings_service.get_setting("APP_LINK_USER")
+        or settings_service.get_setting("FRONTEND_URL")
+        or settings_service.get_setting("APP_PUBLIC_BASE_URL")
+        or request.url_root
+    )
+
+
+def _render_temp_document_error_page(
+    *,
+    status_code: int,
+    title: str,
+    message: str,
+    document_label: str,
+    badge: str,
+):
+    action_url = _resolve_public_portal_url()
+    response = make_response(
+        render_template(
+            "public_temp_document_error.html",
+            status_code=status_code,
+            title=title,
+            message=message,
+            document_label=document_label,
+            badge=badge,
+            action_url=action_url,
+        ),
+        status_code,
+    )
+    response.headers["Content-Type"] = "text/html; charset=utf-8"
+    return response
+
+
+def _humanize_detail_profile_name(user: User, raw_profile_name: str | None) -> str:
+    raw_value = str(raw_profile_name or "").strip()
+    lowered = raw_value.lower()
+
+    alias_map: dict[str, str] = {}
+    for value, label in [
+        (settings_service.get_setting("MIKROTIK_PROFILE_ACTIVE", "default"), "Aktif"),
+        (settings_service.get_setting("MIKROTIK_PROFILE_DEFAULT", "default"), "Aktif"),
+        (settings_service.get_setting("MIKROTIK_PROFILE_USER", "user"), "Aktif"),
+        (settings_service.get_setting("MIKROTIK_PROFILE_KOMANDAN", "komandan"), "Komandan"),
+        (settings_service.get_setting("MIKROTIK_PROFILE_FUP", "fup"), "FUP"),
+        (settings_service.get_setting("MIKROTIK_PROFILE_HABIS", "habis"), "Kuota habis"),
+        (settings_service.get_setting("MIKROTIK_PROFILE_EXPIRED", "expired"), "Masa aktif habis"),
+        (settings_service.get_setting("MIKROTIK_PROFILE_UNLIMITED", "unlimited"), "Unlimited"),
+        (settings_service.get_setting("MIKROTIK_PROFILE_INACTIVE", "inactive"), "Nonaktif"),
+    ]:
+        normalized = str(value or "").strip().lower()
+        if normalized:
+            alias_map[normalized] = label
+
+    for needle, label in [
+        ("blocked", "Blocked"),
+        ("fup", "FUP"),
+        ("habis", "Kuota habis"),
+        ("expired", "Masa aktif habis"),
+        ("inactive", "Nonaktif"),
+        ("unlimited", "Unlimited"),
+        ("komandan", "Komandan"),
+        ("aktif", "Aktif"),
+        ("active", "Aktif"),
+        ("default", "Aktif"),
+        ("user", "Aktif"),
+    ]:
+        if needle not in alias_map:
+            alias_map[needle] = label
+
+    if lowered in alias_map:
+        return alias_map[lowered]
+
+    if not lowered:
+        if getattr(user, "is_blocked", False):
+            return "Blocked"
+        if getattr(user, "is_unlimited_user", False):
+            return "Unlimited"
+        if getattr(user, "is_active", False) is not True:
+            return "Nonaktif"
+        if getattr(user, "role", None) == UserRole.KOMANDAN:
+            return "Komandan"
+        return "Aktif"
+
+    for needle, label in alias_map.items():
+        if needle and needle in lowered:
+            return label
+
+    cleaned = re.sub(r"^(profile|paket|pkg)[-_\s]+", "", raw_value, flags=re.IGNORECASE)
+    cleaned = re.sub(r"[_-]+", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if not cleaned:
+        return "Aktif"
+    if cleaned.upper() == "FUP":
+        return "FUP"
+    return " ".join(part.upper() if len(part) <= 3 else part.capitalize() for part in cleaned.split(" "))
+
+
+def _format_detail_role_label(role: UserRole | None) -> str:
+    mapping = {
+        UserRole.USER: "User",
+        UserRole.KOMANDAN: "Komandan",
+        UserRole.ADMIN: "Admin",
+        UserRole.SUPER_ADMIN: "Super Admin",
+    }
+    if role is None:
+        return "-"
+    if not isinstance(role, UserRole):
+        raw_value = str(getattr(role, "value", role) or "").strip().upper()
+        role = UserRole.__members__.get(raw_value)
+        if role is None:
+            return str(getattr(role, "value", raw_value) or "-")
+    return mapping.get(role, "-")
+
+
+def _serialize_detail_whatsapp_recipient(
+    *,
+    phone_number: str,
+    user: User | None = None,
+    full_name: str | None = None,
+    role_label: str | None = None,
+) -> dict:
+    resolved_name = str(full_name or getattr(user, "full_name", "") or "Penerima").strip() or "Penerima"
+    resolved_role = role_label or _format_detail_role_label(getattr(user, "role", None))
+    return {
+        "user_id": str(getattr(user, "id", "") or "") or None,
+        "full_name": resolved_name,
+        "role": resolved_role,
+        "phone_number": phone_number,
+    }
+
+
+def _resolve_internal_detail_report_recipients(current_admin: User, recipient_user_ids: list) -> list[dict]:
+    if not isinstance(recipient_user_ids, list) or len(recipient_user_ids) == 0:
+        raise ValueError("Pilih minimal satu admin atau super admin penerima.")
+
+    normalized_ids: list[uuid.UUID] = []
+    seen_ids: set[uuid.UUID] = set()
+    for raw_id in recipient_user_ids:
+        try:
+            user_id = uuid.UUID(str(raw_id))
+        except (TypeError, ValueError):
+            raise ValueError("Daftar admin penerima tidak valid.") from None
+        if user_id in seen_ids:
+            continue
+        seen_ids.add(user_id)
+        normalized_ids.append(user_id)
+
+    query = select(User).where(User.id.in_(normalized_ids)).where(User.role.in_([UserRole.ADMIN, UserRole.SUPER_ADMIN]))
+    if not current_admin.is_super_admin_role:
+        query = query.where(User.role != UserRole.SUPER_ADMIN)
+
+    internal_users = db.session.scalars(query).all()
+    internal_user_map = {internal_user.id: internal_user for internal_user in internal_users}
+    if len(internal_user_map) != len(normalized_ids):
+        raise ValueError("Sebagian admin penerima tidak ditemukan atau tidak bisa dipilih.")
+
+    recipients: list[dict] = []
+    for recipient_id in normalized_ids:
+        internal_user = internal_user_map[recipient_id]
+        raw_phone = str(getattr(internal_user, "phone_number", "") or "").strip()
+        if not raw_phone:
+            raise ValueError(f"Nomor WhatsApp untuk {internal_user.full_name} belum tersedia.")
+        try:
+            normalized_phone = normalize_to_e164(raw_phone)
+        except Exception:
+            raise ValueError(f"Nomor WhatsApp untuk {internal_user.full_name} tidak valid.") from None
+        recipients.append(_serialize_detail_whatsapp_recipient(phone_number=normalized_phone, user=internal_user))
+    return recipients
+
+
+def _resolve_detail_report_whatsapp_targets(current_admin: User, user: User, payload: dict) -> tuple[str, list[dict]]:
+    recipient_mode = str(payload.get("recipient_mode") or "").strip().lower()
+    recipient_user_ids = payload.get("recipient_user_ids") or []
+    raw_recipient_phone = str(payload.get("recipient_phone") or "").strip()
+
+    if recipient_mode not in {"", "user", "internal"}:
+        raise ValueError("Mode penerima WhatsApp tidak valid.")
+
+    if recipient_mode == "internal" or (not recipient_mode and recipient_user_ids):
+        return "internal", _resolve_internal_detail_report_recipients(current_admin, recipient_user_ids)
+
+    raw_user_phone = str(getattr(user, "phone_number", "") or "").strip()
+    resolved_phone_source = raw_recipient_phone or raw_user_phone
+    if not resolved_phone_source:
+        raise ValueError("Nomor WhatsApp pengguna belum tersedia.")
+
+    try:
+        normalized_phone = normalize_to_e164(resolved_phone_source)
+    except Exception:
+        raise ValueError("Nomor WhatsApp tujuan tidak valid.") from None
+
+    if raw_recipient_phone and raw_user_phone and raw_recipient_phone != raw_user_phone:
+        return "user", [
+            _serialize_detail_whatsapp_recipient(
+                phone_number=normalized_phone,
+                full_name="Tujuan manual",
+                role_label="Manual",
+            )
+        ]
+
+    return "user", [_serialize_detail_whatsapp_recipient(phone_number=normalized_phone, user=user)]
+
+
 def _default_profile_for_user(user: User) -> str:
     active_profile = str(settings_service.get_setting("MIKROTIK_PROFILE_ACTIVE", "default") or "default").strip()
     user_profile = str(settings_service.get_setting("MIKROTIK_PROFILE_USER", "user") or "user").strip()
@@ -364,21 +569,24 @@ def _build_user_detail_report_context(user: User, *, mikrotik_status: dict | Non
     status_payload = mikrotik_status or _get_user_mikrotik_status_payload(user)
     live_available = bool(status_payload.get("live_available"))
     exists_on_mikrotik = bool(status_payload.get("exists_on_mikrotik"))
-    profile_display_name = str(status_payload.get("resolved_profile_name") or _default_profile_for_user(user)).strip() or "Belum tersedia"
-    profile_source = "Live MikroTik" if live_available and exists_on_mikrotik else ("Database sinkron terakhir" if getattr(user, "mikrotik_profile_name", None) else "Standar sistem")
+    profile_display_name = _humanize_detail_profile_name(
+        user,
+        str(status_payload.get("resolved_profile_name") or _default_profile_for_user(user)).strip(),
+    )
+    profile_source = "Live MikroTik" if live_available and exists_on_mikrotik else ("Sinkron terakhir" if getattr(user, "mikrotik_profile_name", None) else "Standar sistem")
 
     if live_available and exists_on_mikrotik:
-        mikrotik_account_label = "Terverifikasi live di MikroTik"
-        mikrotik_account_hint = "Akun hotspot ditemukan dan statusnya dibaca langsung dari MikroTik."
+        mikrotik_account_label = "Sinkron live"
+        mikrotik_account_hint = "Akun hotspot terbaca langsung dari MikroTik."
     elif live_available and not exists_on_mikrotik:
-        mikrotik_account_label = "Tidak ditemukan di MikroTik"
-        mikrotik_account_hint = "Perlu audit sinkronisasi akun hotspot karena live check tidak menemukan user ini."
+        mikrotik_account_label = "Tidak ada di MikroTik"
+        mikrotik_account_hint = "Live check tidak menemukan akun hotspot pengguna ini."
     elif bool(getattr(user, "mikrotik_user_exists", False)):
-        mikrotik_account_label = "Sinkron terakhir tersimpan"
-        mikrotik_account_hint = "Live check sedang tidak tersedia, sehingga panel memakai data sinkron terakhir dari database."
+        mikrotik_account_label = "Sinkron tersimpan"
+        mikrotik_account_hint = "Panel memakai data sinkron terakhir dari database."
     else:
-        mikrotik_account_label = "Perlu verifikasi live"
-        mikrotik_account_hint = "Status live MikroTik belum tersedia. Jalankan cek live untuk memastikan akun hotspot."
+        mikrotik_account_label = "Perlu cek live"
+        mikrotik_account_hint = "Jalankan cek live untuk memastikan akun hotspot."
 
     remaining_mb = max(0.0, float(getattr(user, "total_quota_purchased_mb", 0) or 0) - float(getattr(user, "total_quota_used_mb", 0) or 0))
     debt_auto_mb = float(getattr(user, "quota_debt_auto_mb", 0) or 0)
@@ -443,15 +651,15 @@ def _build_user_detail_report_context(user: User, *, mikrotik_status: dict | Non
         access_status_hint = "Akun aktif dan masih memiliki kuota/masa akses yang bisa digunakan."
         access_status_tone = "success"
 
-    last_login_label = format_app_datetime_display(getattr(user, "last_login_at", None), fallback="Belum pernah login")
+    last_login_label = format_app_datetime_display(getattr(user, "last_login_at", None), fallback="Belum ada login")
     device_count = int(getattr(user, "device_count", 0) or 0)
     debt_summary_line = (
-        f"- Tunggakan terbuka: *{format_mb_to_gb(debt_total_mb)}* ({int(open_debt_items)} item)"
+        f"- Tunggakan aktif: *{format_mb_to_gb(debt_total_mb)}* ({int(open_debt_items)} item)"
         if debt_total_mb > 0
         else ""
     )
     recent_purchase_summary_line = (
-        f"- Pembelian 30 hari terakhir: *{len(recent_purchases)} transaksi* dengan total *{_format_currency_idr(recent_purchase_total_amount)}*"
+        f"- Pembelian 30 hari: *{len(recent_purchases)} transaksi* • *{_format_currency_idr(recent_purchase_total_amount)}*"
         if recent_purchases
         else ""
     )
@@ -462,6 +670,7 @@ def _build_user_detail_report_context(user: User, *, mikrotik_status: dict | Non
         "generated_at": format_app_datetime_display(datetime.now(dt_timezone.utc), fallback="-"),
         "printed_at": format_app_datetime_display(datetime.now(dt_timezone.utc), fallback="-"),
         "user_phone_display": format_to_local_phone(getattr(user, "phone_number", None)) or str(getattr(user, "phone_number", "") or "-"),
+        "user_role_label": _format_detail_role_label(getattr(user, "role", None)),
         "profile_display_name": profile_display_name,
         "profile_source": profile_source,
         "mikrotik_account_label": mikrotik_account_label,
@@ -472,7 +681,7 @@ def _build_user_detail_report_context(user: User, *, mikrotik_status: dict | Non
         "access_status_hint": access_status_hint,
         "access_status_tone": access_status_tone,
         "device_count": device_count,
-        "device_count_label": f"{device_count} perangkat" if device_count > 0 else "Belum ada perangkat aktif",
+        "device_count_label": f"{device_count} perangkat aktif" if device_count > 0 else "Belum ada perangkat",
         "last_login_label": last_login_label,
         "quota_total_mb": float(getattr(user, "total_quota_purchased_mb", 0) or 0),
         "quota_used_mb": float(getattr(user, "total_quota_used_mb", 0) or 0),
@@ -1495,23 +1704,41 @@ def export_user_manual_debts_pdf(current_admin: User, user_id: uuid.UUID):
 @user_management_bp.route("/users/debts/temp/<string:token>", methods=["GET"])
 @user_management_bp.route("/users/debts/temp/<string:token>.pdf", methods=["GET"])
 def export_user_manual_debts_pdf_temp(token: str):
-    try:
-        __import__("weasyprint")
-    except Exception:
-        return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
-
     user_id = verify_temp_debt_report_token(token, max_age_seconds=3600)
     if not user_id:
-        return jsonify({"message": "Akses tidak valid atau link telah kedaluwarsa."}), HTTPStatus.FORBIDDEN
+        return _render_temp_document_error_page(
+            status_code=HTTPStatus.FORBIDDEN,
+            title="Tautan Laporan Sudah Kedaluwarsa",
+            message="Minta admin mengirim ulang tautan laporan tunggakan ini agar Anda bisa membuka versi terbaru.",
+            document_label="Laporan tunggakan",
+            badge="Tautan sementara berakhir",
+        )
 
     try:
         user_uuid = uuid.UUID(user_id)
     except (TypeError, ValueError):
-        return jsonify({"message": "Token tidak valid."}), HTTPStatus.FORBIDDEN
+        return _render_temp_document_error_page(
+            status_code=HTTPStatus.FORBIDDEN,
+            title="Tautan Laporan Tidak Valid",
+            message="Periksa kembali tautan yang dibuka atau minta admin mengirim ulang dokumen ini.",
+            document_label="Laporan tunggakan",
+            badge="Token tidak valid",
+        )
 
     user = db.session.get(User, user_uuid)
     if not user:
-        return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+        return _render_temp_document_error_page(
+            status_code=HTTPStatus.NOT_FOUND,
+            title="Dokumen Tidak Ditemukan",
+            message="Data pengguna untuk laporan ini sudah tidak tersedia di sistem.",
+            document_label="Laporan tunggakan",
+            badge="Data tidak ditemukan",
+        )
+
+    try:
+        __import__("weasyprint")
+    except Exception:
+        return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
 
     try:
         context = _build_user_manual_debt_report_context(user)
@@ -1534,27 +1761,51 @@ def export_user_manual_debts_pdf_temp(token: str):
 @user_management_bp.route("/users/debt-settlements/temp/<string:token>", methods=["GET"])
 @user_management_bp.route("/users/debt-settlements/temp/<string:token>.pdf", methods=["GET"])
 def export_debt_settlement_receipt_temp(token: str):
-    try:
-        __import__("weasyprint")
-    except Exception:
-        return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
-
     entry_id = verify_temp_debt_settlement_receipt_token(token, max_age_seconds=3600)
     if not entry_id:
-        return jsonify({"message": "Akses tidak valid atau link telah kedaluwarsa."}), HTTPStatus.FORBIDDEN
+        return _render_temp_document_error_page(
+            status_code=HTTPStatus.FORBIDDEN,
+            title="Tautan Receipt Sudah Kedaluwarsa",
+            message="Minta admin mengirim ulang receipt pelunasan ini agar Anda mendapat tautan yang masih aktif.",
+            document_label="Receipt pelunasan",
+            badge="Tautan sementara berakhir",
+        )
 
     try:
         entry_uuid = uuid.UUID(entry_id)
     except (TypeError, ValueError):
-        return jsonify({"message": "Token tidak valid."}), HTTPStatus.FORBIDDEN
+        return _render_temp_document_error_page(
+            status_code=HTTPStatus.FORBIDDEN,
+            title="Tautan Receipt Tidak Valid",
+            message="Tautan receipt ini tidak bisa diverifikasi. Minta admin mengirim ulang dokumen baru.",
+            document_label="Receipt pelunasan",
+            badge="Token tidak valid",
+        )
 
     entry = db.session.get(QuotaMutationLedger, entry_uuid)
     if not entry:
-        return jsonify({"message": "Receipt tidak ditemukan."}), HTTPStatus.NOT_FOUND
+        return _render_temp_document_error_page(
+            status_code=HTTPStatus.NOT_FOUND,
+            title="Receipt Tidak Ditemukan",
+            message="Receipt pelunasan yang Anda buka sudah tidak tersedia di sistem.",
+            document_label="Receipt pelunasan",
+            badge="Data tidak ditemukan",
+        )
 
     user = db.session.get(User, getattr(entry, "user_id", None))
     if not user:
-        return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+        return _render_temp_document_error_page(
+            status_code=HTTPStatus.NOT_FOUND,
+            title="Dokumen Tidak Ditemukan",
+            message="Data pengguna untuk receipt ini sudah tidak tersedia di sistem.",
+            document_label="Receipt pelunasan",
+            badge="Data tidak ditemukan",
+        )
+
+    try:
+        __import__("weasyprint")
+    except Exception:
+        return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
 
     transaction = None
     order_id = str((getattr(entry, "event_details", None) or {}).get("order_id") or "").strip()
@@ -1990,23 +2241,41 @@ def export_user_detail_report_pdf(current_admin: User, user_id: uuid.UUID):
 @user_management_bp.route("/users/detail-report/temp/<string:token>", methods=["GET"])
 @user_management_bp.route("/users/detail-report/temp/<string:token>.pdf", methods=["GET"])
 def export_user_detail_report_pdf_temp(token: str):
-    try:
-        __import__("weasyprint")
-    except Exception:
-        return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
-
     user_id = verify_temp_user_detail_report_token(token, max_age_seconds=3600)
     if not user_id:
-        return jsonify({"message": "Akses tidak valid atau link telah kedaluwarsa."}), HTTPStatus.FORBIDDEN
+        return _render_temp_document_error_page(
+            status_code=HTTPStatus.FORBIDDEN,
+            title="Tautan Laporan Sudah Kedaluwarsa",
+            message="Link laporan detail ini bersifat sementara. Minta admin mengirim ulang tautan baru agar Anda bisa membuka PDF terbaru.",
+            document_label="Laporan detail pengguna",
+            badge="Tautan sementara berakhir",
+        )
 
     try:
         user_uuid = uuid.UUID(user_id)
     except (TypeError, ValueError):
-        return jsonify({"message": "Token tidak valid."}), HTTPStatus.FORBIDDEN
+        return _render_temp_document_error_page(
+            status_code=HTTPStatus.FORBIDDEN,
+            title="Tautan Laporan Tidak Valid",
+            message="Tautan yang dibuka tidak bisa diverifikasi. Periksa kembali atau minta admin mengirim ulang dokumen ini.",
+            document_label="Laporan detail pengguna",
+            badge="Token tidak valid",
+        )
 
     user = db.session.get(User, user_uuid)
     if not user:
-        return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+        return _render_temp_document_error_page(
+            status_code=HTTPStatus.NOT_FOUND,
+            title="Dokumen Tidak Ditemukan",
+            message="Data pengguna untuk laporan ini sudah tidak tersedia di sistem.",
+            document_label="Laporan detail pengguna",
+            badge="Data tidak ditemukan",
+        )
+
+    try:
+        __import__("weasyprint")
+    except Exception:
+        return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
 
     try:
         status_payload = _get_user_mikrotik_status_payload(user)
@@ -2035,14 +2304,10 @@ def send_user_detail_report_whatsapp(current_admin: User, user_id: uuid.UUID):
         return denied_response
 
     payload = request.get_json(silent=True) or {}
-    raw_recipient = str(payload.get("recipient_phone") or getattr(user, "phone_number", "") or "").strip()
-    if not raw_recipient:
-        return jsonify({"message": "Nomor WhatsApp tujuan belum diisi."}), HTTPStatus.BAD_REQUEST
-
     try:
-        recipient_phone = normalize_to_e164(raw_recipient)
-    except Exception:
-        return jsonify({"message": "Nomor WhatsApp tujuan tidak valid."}), HTTPStatus.BAD_REQUEST
+        recipient_mode, recipients = _resolve_detail_report_whatsapp_targets(current_admin, user, payload)
+    except ValueError as exc:
+        return jsonify({"message": str(exc)}), HTTPStatus.BAD_REQUEST
 
     try:
         status_payload = _get_user_mikrotik_status_payload(user)
@@ -2068,22 +2333,37 @@ def send_user_detail_report_whatsapp(current_admin: User, user_id: uuid.UUID):
         caption_message = get_notification_message("user_detail_report_with_pdf", wa_context)
         filename = f"user-detail-{(getattr(user, 'phone_number', '') or str(user.id)).replace('+', '')}.pdf"
         request_id = request.environ.get("FLASK_REQUEST_ID", "")
-        send_whatsapp_invoice_task.delay(
-            recipient_phone,
-            caption_message,
-            pdf_url,
-            filename,
-            request_id,
-            None,
-            "detail_report",
-        )
+        for recipient in recipients:
+            send_whatsapp_invoice_task.delay(
+                recipient["phone_number"],
+                caption_message,
+                pdf_url,
+                filename,
+                request_id,
+                None,
+                "detail_report",
+            )
         current_app.logger.info(
-            "ADMIN_USER_DETAIL_WA: detail report queued for user=%s recipient=%s admin=%s",
+            "ADMIN_USER_DETAIL_WA: detail report queued for user=%s recipients=%s mode=%s admin=%s",
             user.id,
-            recipient_phone,
+            [recipient["phone_number"] for recipient in recipients],
+            recipient_mode,
             current_admin.id,
         )
-        return jsonify({"message": "Laporan detail pengguna berhasil diantrikan ke WhatsApp.", "queued": True}), HTTPStatus.OK
+        recipient_total = len(recipients)
+        if recipient_mode == "internal":
+            message = f"Laporan detail pengguna berhasil diantrikan ke {recipient_total} admin penerima."
+        else:
+            message = "Laporan detail pengguna berhasil diantrikan ke WhatsApp pengguna."
+        return jsonify(
+            {
+                "message": message,
+                "queued": True,
+                "queued_count": recipient_total,
+                "recipient_mode": recipient_mode,
+                "recipients": recipients,
+            }
+        ), HTTPStatus.OK
     except Exception as e:
         current_app.logger.error("Error queue detail WhatsApp report for user %s: %s", user_id, e, exc_info=True)
         return jsonify({"message": "Gagal mengantrekan laporan detail ke WhatsApp."}), HTTPStatus.INTERNAL_SERVER_ERROR

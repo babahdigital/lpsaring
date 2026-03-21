@@ -321,8 +321,123 @@ def test_send_user_detail_report_whatsapp_queues_pdf(monkeypatch):
 
     assert status == 200
     payload = response.get_json()
-    assert payload == {"message": "Laporan detail pengguna berhasil diantrikan ke WhatsApp.", "queued": True}
+    assert payload == {
+        "message": "Laporan detail pengguna berhasil diantrikan ke WhatsApp pengguna.",
+        "queued": True,
+        "queued_count": 1,
+        "recipient_mode": "user",
+        "recipients": [
+            {
+                "user_id": str(user_id),
+                "full_name": "Bobby Dermawan",
+                "role": "User",
+                "phone_number": "+6282213631573",
+            }
+        ],
+    }
     assert queued["args"][0] == "+6282213631573"
     assert queued["args"][2] == "https://example.test/api/admin/users/detail-report/temp/temp-detail-token.pdf"
     assert queued["args"][5] is None
     assert queued["args"][6] == "detail_report"
+
+
+def test_send_user_detail_report_whatsapp_queues_selected_internal_recipients(monkeypatch):
+    user_id = uuid.uuid4()
+    fake_user = SimpleNamespace(
+        id=user_id,
+        role=SimpleNamespace(value="USER"),
+        is_admin_role=False,
+        phone_number="082213631573",
+        full_name="Bobby Dermawan",
+    )
+    fake_session = _FakeSession(users_by_id={user_id: fake_user})
+    queued_calls = []
+
+    class _FakeTask:
+        def delay(self, *args):
+            queued_calls.append(args)
+
+    monkeypatch.setattr(user_management_routes, "db", SimpleNamespace(session=fake_session))
+    monkeypatch.setattr(user_management_routes, "_deny_non_super_admin_target_access", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(user_management_routes, "_get_user_mikrotik_status_payload", lambda _user: {"live_available": True, "exists_on_mikrotik": True, "message": "ok"})
+    monkeypatch.setattr(
+        user_management_routes,
+        "_build_user_detail_report_context",
+        lambda _user, mikrotik_status=None: {
+            "access_status_label": "Layanan aktif",
+            "mikrotik_account_label": "Sinkron live",
+            "profile_display_name": "Aktif",
+            "device_count_label": "1 perangkat aktif",
+            "last_login_label": "22-03-2026 08:00:00",
+            "debt_summary_line": "",
+            "recent_purchase_summary_line": "",
+        },
+    )
+    monkeypatch.setattr(
+        user_management_routes,
+        "_resolve_detail_report_whatsapp_targets",
+        lambda _current_admin, _user, _payload: (
+            "internal",
+            [
+                {
+                    "user_id": str(uuid.uuid4()),
+                    "full_name": "Admin Satu",
+                    "role": "ADMIN",
+                    "phone_number": "+6282211111111",
+                },
+                {
+                    "user_id": str(uuid.uuid4()),
+                    "full_name": "Super Admin Dua",
+                    "role": "SUPER_ADMIN",
+                    "phone_number": "+6282222222222",
+                },
+            ],
+        ),
+    )
+    monkeypatch.setattr(user_management_routes, "_resolve_public_base_url", lambda: "https://example.test")
+    monkeypatch.setattr(user_management_routes, "generate_temp_user_detail_report_token", lambda _user_id: "temp-detail-token")
+    monkeypatch.setattr(user_management_routes, "get_notification_message", lambda _name, context: f"CAPTION {context['detail_pdf_url']}")
+    monkeypatch.setattr(user_management_routes, "send_whatsapp_invoice_task", _FakeTask())
+
+    app = _make_app()
+    impl = _unwrap_decorators(user_management_routes.send_user_detail_report_whatsapp)
+
+    with app.test_request_context(
+        f"/api/admin/users/{user_id}/detail-report/send-whatsapp",
+        method="POST",
+        json={"recipient_mode": "internal", "recipient_user_ids": [str(uuid.uuid4())]},
+    ):
+        current_admin = cast(User, SimpleNamespace(id=uuid.uuid4(), is_super_admin_role=True))
+        response, status = impl(current_admin=current_admin, user_id=user_id)
+
+    assert status == 200
+    payload = response.get_json()
+    assert payload["message"] == "Laporan detail pengguna berhasil diantrikan ke 2 admin penerima."
+    assert payload["queued_count"] == 2
+    assert payload["recipient_mode"] == "internal"
+    assert [recipient["full_name"] for recipient in payload["recipients"]] == ["Admin Satu", "Super Admin Dua"]
+    assert len(queued_calls) == 2
+    assert queued_calls[0][2] == "https://example.test/api/admin/users/detail-report/temp/temp-detail-token.pdf"
+    assert queued_calls[1][0] == "+6282222222222"
+
+
+def test_export_user_detail_report_pdf_temp_invalid_token_renders_html_page(monkeypatch):
+    monkeypatch.setattr(user_management_routes, "verify_temp_user_detail_report_token", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(user_management_routes, "settings_service", SimpleNamespace(get_setting=lambda _key, default=None: "https://portal.example.test"))
+    monkeypatch.setattr(
+        user_management_routes,
+        "render_template",
+        lambda _template, **context: f"<html><body><h1>{context['title']}</h1><a href='{context['action_url']}'>Portal</a></body></html>",
+    )
+
+    app = _make_app()
+    impl = _unwrap_decorators(user_management_routes.export_user_detail_report_pdf_temp)
+
+    with app.test_request_context("/api/admin/users/detail-report/temp/bad-token.pdf", method="GET"):
+        response = impl(token="bad-token")
+
+    assert response.status_code == 403
+    assert response.headers["Content-Type"].startswith("text/html")
+    html = response.get_data(as_text=True)
+    assert "Tautan Laporan Sudah Kedaluwarsa" in html
+    assert "https://portal.example.test" in html

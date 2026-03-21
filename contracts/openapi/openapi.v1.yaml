@@ -1121,7 +1121,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AdminDebtWhatsappQueueResponse'
+                $ref: '#/components/schemas/AdminUserDetailReportWhatsappResponse'
         '400':
           $ref: '#/components/responses/ErrorBadRequest'
         '401':
@@ -2724,9 +2724,53 @@ components:
     AdminUserDetailReportWhatsappRequest:
       type: object
       properties:
+        recipient_mode:
+          type: string
+          enum: [user, internal]
+          nullable: true
         recipient_phone:
           type: string
           nullable: true
+        recipient_user_ids:
+          type: array
+          nullable: true
+          items:
+            type: string
+            format: uuid
+
+    AdminUserDetailReportWhatsappRecipient:
+      type: object
+      required: [full_name, role, phone_number]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+          nullable: true
+        full_name:
+          type: string
+        role:
+          type: string
+          nullable: true
+        phone_number:
+          type: string
+
+    AdminUserDetailReportWhatsappResponse:
+      type: object
+      required: [message, queued, queued_count, recipient_mode, recipients]
+      properties:
+        message:
+          type: string
+        queued:
+          type: boolean
+        queued_count:
+          type: integer
+        recipient_mode:
+          type: string
+          enum: [user, internal]
+        recipients:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminUserDetailReportWhatsappRecipient'
 
     AdminMetricsReliabilitySignals:
       type: object

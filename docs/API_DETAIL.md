@@ -108,7 +108,8 @@ Jika signature endpoint berubah, lakukan urutan ini:
 - `GET /admin/users/{user_id}/mikrotik-status` mengembalikan hasil live check/sinkron terakhir MikroTik plus ringkasan kuota database yang dipakai dialog admin.
 - `GET /admin/users/{user_id}/detail-summary` adalah source of truth untuk pill status/profile/dialog detail admin. Frontend tidak boleh menebak fallback profile sendiri bila response ini tersedia.
 - `GET /admin/users/{user_id}/detail-report/export?format=pdf` menghasilkan PDF detail operasional user.
-- `POST /admin/users/{user_id}/detail-report/send-whatsapp` menerima payload opsional `recipient_phone` bila admin ingin mengarahkan PDF detail ke nomor admin lain.
-- `GET /admin/users/detail-report/temp/{token}.pdf` adalah URL publik sementara untuk attachment PDF detail pengguna yang dikirim ke WhatsApp.
+- `POST /admin/users/{user_id}/detail-report/send-whatsapp` menerima `recipient_mode=user|internal`. Mode `user` akan mengirim ke nomor pengguna, sedangkan mode `internal` wajib menyertakan `recipient_user_ids` agar PDF hanya dikirim ke admin/super admin yang dipilih.
+- `POST /admin/users/{user_id}/detail-report/send-whatsapp` mengembalikan `queued_count`, `recipient_mode`, dan daftar `recipients` agar frontend bisa menampilkan siapa yang benar-benar menerima kiriman.
+- `GET /admin/users/detail-report/temp/{token}.pdf` adalah URL publik sementara untuk attachment PDF detail pengguna yang dikirim ke WhatsApp. Jika token invalid/kedaluwarsa, endpoint akan menampilkan halaman HTML yang mudah dipahami pengguna, bukan raw JSON.
 
 Workflow lengkap kontrak ada di [docs/workflows/OPENAPI_CONTRACT.md](workflows/OPENAPI_CONTRACT.md).

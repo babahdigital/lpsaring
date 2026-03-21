@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }}</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4f6fb;
+        --panel: rgba(255, 255, 255, 0.92);
+        --panel-border: rgba(146, 163, 184, 0.28);
+        --ink: #132238;
+        --muted: #5b6b82;
+        --accent: #0f766e;
+        --accent-soft: rgba(15, 118, 110, 0.14);
+        --warn: #b42318;
+        --shadow: 0 24px 80px rgba(19, 34, 56, 0.16);
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(15, 118, 110, 0.18), transparent 34%),
+          radial-gradient(circle at bottom right, rgba(30, 64, 175, 0.16), transparent 28%),
+          linear-gradient(180deg, #f8fbff 0%, var(--bg) 100%);
+      }
+
+      .shell {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 32px 18px;
+      }
+
+      .card {
+        width: min(880px, 100%);
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(260px, 0.9fr);
+        overflow: hidden;
+        border: 1px solid var(--panel-border);
+        border-radius: 28px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        -webkit-backdrop-filter: blur(16px);
+        backdrop-filter: blur(16px);
+      }
+
+      .copy,
+      .aside {
+        padding: 34px 30px;
+      }
+
+      .copy {
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(250, 252, 255, 0.96)),
+          linear-gradient(135deg, rgba(15, 118, 110, 0.05), rgba(30, 64, 175, 0.05));
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 12px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .status {
+        margin-top: 18px;
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--warn);
+      }
+
+      h1 {
+        margin: 12px 0 10px;
+        font-size: clamp(30px, 5vw, 44px);
+        line-height: 1.08;
+        letter-spacing: -0.03em;
+      }
+
+      .lead {
+        margin: 0;
+        max-width: 46ch;
+        font-size: 16px;
+        line-height: 1.7;
+        color: var(--muted);
+      }
+
+      .actions {
+        margin-top: 26px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 46px;
+        padding: 0 18px;
+        border-radius: 14px;
+        text-decoration: none;
+        font-weight: 700;
+      }
+
+      .button-primary {
+        background: linear-gradient(135deg, #0f766e, #155e75);
+        color: #fff;
+      }
+
+      .button-secondary {
+        border: 1px solid rgba(91, 107, 130, 0.24);
+        color: var(--ink);
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .hint-grid {
+        margin-top: 22px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .hint {
+        padding: 14px 15px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.72);
+        border: 1px solid rgba(146, 163, 184, 0.2);
+      }
+
+      .hint-label {
+        display: block;
+        margin-bottom: 5px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #49627a;
+      }
+
+      .hint-value {
+        font-size: 14px;
+        line-height: 1.6;
+        color: var(--muted);
+      }
+
+      .aside {
+        position: relative;
+        background: linear-gradient(180deg, #132238 0%, #1e3354 100%);
+        color: #edf3fb;
+      }
+
+      .aside::before,
+      .aside::after {
+        content: "";
+        position: absolute;
+        border-radius: 999px;
+        opacity: 0.7;
+      }
+
+      .aside::before {
+        inset: 22px auto auto 28px;
+        width: 168px;
+        height: 168px;
+        background: radial-gradient(circle, rgba(68, 211, 190, 0.26), transparent 70%);
+      }
+
+      .aside::after {
+        inset: auto 16px 16px auto;
+        width: 150px;
+        height: 150px;
+        background: radial-gradient(circle, rgba(96, 165, 250, 0.22), transparent 70%);
+      }
+
+      .aside-inner {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        gap: 18px;
+      }
+
+      .aside-label {
+        font-size: 12px;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: rgba(237, 243, 251, 0.7);
+      }
+
+      .aside-code {
+        font-size: clamp(52px, 10vw, 86px);
+        font-weight: 800;
+        line-height: 0.95;
+        letter-spacing: -0.06em;
+      }
+
+      .aside-title {
+        font-size: 22px;
+        line-height: 1.25;
+        font-weight: 700;
+      }
+
+      .aside-copy {
+        color: rgba(237, 243, 251, 0.78);
+        line-height: 1.7;
+      }
+
+      @media (max-width: 760px) {
+        .card {
+          grid-template-columns: 1fr;
+        }
+
+        .copy,
+        .aside {
+          padding: 26px 22px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="card">
+        <div class="copy">
+          <div class="badge">{{ badge }}</div>
+          <div class="status">Status {{ status_code }}</div>
+          <h1>{{ title }}</h1>
+          <p class="lead">{{ message }}</p>
+
+          <div class="actions">
+            <a class="button button-primary" href="{{ action_url }}">Buka portal</a>
+            <a class="button button-secondary" href="javascript:window.location.reload()">Coba muat ulang</a>
+          </div>
+
+          <div class="hint-grid">
+            <div class="hint">
+              <span class="hint-label">Dokumen</span>
+              <div class="hint-value">{{ document_label }}</div>
+            </div>
+            <div class="hint">
+              <span class="hint-label">Saran</span>
+              <div class="hint-value">Jika dokumen ini dikirim lewat WhatsApp, minta admin mengirim ulang tautan terbaru.</div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="aside">
+          <div class="aside-inner">
+            <div class="aside-label">Akses Dokumen Sementara</div>
+            <div class="aside-code">{{ status_code }}</div>
+            <div class="aside-title">Tautan publik ini memakai masa berlaku terbatas untuk menjaga keamanan dokumen.</div>
+            <div class="aside-copy">
+              Setelah masa aktif habis atau token tidak cocok, sistem akan menolak akses dan meminta permintaan ulang dari admin.
+            </div>
+          </div>
+        </aside>
+      </section>
+    </main>
+  </body>
+</html>
