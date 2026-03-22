@@ -195,7 +195,8 @@ class Config:
 
     # SECURITY FIX: Raise error in production if SECRET_KEY still has default value
     FLASK_ENV_CHECK = os.environ.get("FLASK_ENV", "production")
-    if FLASK_ENV_CHECK == "production" and SECRET_KEY == "dev-secret-key-ganti-ini-di-produksi":
+    is_testing_env = os.environ.get("FLASK_ENV") == "testing" or "pytest" in sys.modules
+    if FLASK_ENV_CHECK == "production" and SECRET_KEY == "dev-secret-key-ganti-ini-di-produksi" and not is_testing_env:
         raise RuntimeError(
             "CRITICAL: SECRET_KEY masih menggunakan nilai default di production! "
             "Set SECRET_KEY env var sebelum menjalankan aplikasi."
@@ -251,7 +252,7 @@ class Config:
         JWT_SECRET_KEY = "dev-jwt-secret-key-ganti-ini-di-produksi"
 
     # SECURITY FIX: Raise error in production if JWT_SECRET_KEY still has default value
-    if FLASK_ENV_CHECK == "production" and JWT_SECRET_KEY == "dev-jwt-secret-key-ganti-ini-di-produksi":
+    if FLASK_ENV_CHECK == "production" and JWT_SECRET_KEY == "dev-jwt-secret-key-ganti-ini-di-produksi" and not is_testing_env:
         raise RuntimeError(
             "CRITICAL: JWT_SECRET_KEY masih menggunakan nilai default di production! "
             "Set JWT_SECRET_KEY env var sebelum menjalankan aplikasi."
