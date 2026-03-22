@@ -1,267 +1,192 @@
-"""
-Test suite untuk enforce_overdue_debt_block_task fixes (BUG-1, BUG-3, counter labels, ENABLE_MIKROTIK check).
+"""Regression tests for overdue debt block task fixes."""
 
-Coverage:
-- DetachedInstanceError fix: devices selectinload
-- Session management: proper cleanup at end
-- Counter labels: skipped_non_approved vs skipped_non_user_role
-- ENABLE_MIKROTIK_OPERATIONS guard
-- MikroTik operation failure handling
-- WA notification sending
-"""
+from __future__ import annotations
+
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone as dt_timezone
+from types import SimpleNamespace
 
 import pytest
-from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch
-from app.infrastructure.db.models import (
-    User, UserQuotaDebt, UserDevice, ApprovalStatus, UserRole,
-)
+from flask import Flask
+
+from app.infrastructure.db.models import ApprovalStatus, UserRole
 from app.tasks import enforce_overdue_debt_block_task
 
 
-class TestEnforceOverdueDebtBlockCriticalFixes:
-    """Test critical fixes in enforce_overdue_debt_block_task."""
+class _FakeQuery:
+    def __init__(self, debts):
+        self._debts = debts
+        self.options_calls = []
 
-    @pytest.fixture
-    def app_with_db(self, app, db_session):
-        """Flask app with database context."""
-        with app.app_context():
-            yield app
+    def options(self, *args):
+        self.options_calls.append(args)
+        return self
 
-    @pytest.fixture
-    def sample_users(self, db_session):
-        """Create sample users for testing."""
-        # User 1: Active, approved, regular user with overdue debt
-        user1 = User(
-            id="user-1",
-            phone_number="+6285123456789",
-            approval_status=ApprovalStatus.APPROVED,
-            role=UserRole.USER,
-            is_active=True,
-            is_unlimited_user=False,
-            is_blocked=False,
-        )
-        db_session.add(user1)
+    def filter(self, *_args, **_kwargs):
+        return self
 
-        # User 2: Komandan (should skip with skipped_non_user_role)
-        user2 = User(
-            id="user-2",
-            phone_number="+6285987654321",
-            approval_status=ApprovalStatus.APPROVED,
-            role=UserRole.KOMANDAN,  # Not USER role
-            is_active=True,
-            is_unlimited_user=False,
-            is_blocked=False,
-        )
-        db_session.add(user2)
+    def all(self):
+        return self._debts
 
-        # User 3: Inactive (should skip with skipped_non_approved)
-        user3 = User(
-            id="user-3",
-            phone_number="+6289876543210",
-            approval_status=ApprovalStatus.PENDING,  # Not approved
-            role=UserRole.USER,
-            is_active=True,
-            is_unlimited_user=False,
-            is_blocked=False,
-        )
-        db_session.add(user3)
 
-        db_session.flush()
-        return user1, user2, user3
+class _FakeSession:
+    def __init__(self, debts):
+        self.query_obj = _FakeQuery(debts)
+        self.remove_calls = 0
+        self.commit_calls = 0
+        self.rollback_calls = 0
+        self.added = []
 
-    @pytest.fixture
-    def overdue_debts(self, db_session, sample_users):
-        """Create overdue debt entries."""
-        user1, user2, user3 = sample_users
-        today = datetime.now().date()
-        old_date = today - timedelta(days=10)  # 10 days overdue
+    def query(self, *_args, **_kwargs):
+        return self.query_obj
 
-        debt1 = UserQuotaDebt(
-            id="debt-1",
-            user_id=user1.id,
-            amount_mb=1000,
-            debt_date=old_date,
-            due_date=old_date,
-            paid_at=None,
-            is_paid=False,
-        )
-        debt2 = UserQuotaDebt(
-            id="debt-2",
-            user_id=user2.id,
-            amount_mb=500,
-            debt_date=old_date,
-            due_date=old_date,
-            paid_at=None,
-            is_paid=False,
-        )
-        debt3 = UserQuotaDebt(
-            id="debt-3",
-            user_id=user3.id,
-            amount_mb=2000,
-            debt_date=old_date,
-            due_date=old_date,
-            paid_at=None,
-            is_paid=False,
-        )
+    def add(self, value):
+        self.added.append(value)
 
-        db_session.add_all([debt1, debt2, debt3])
-        db_session.commit()
-        return [debt1, debt2, debt3]
+    def commit(self):
+        self.commit_calls += 1
 
-    def test_selectinload_devices_no_detached_instance_error(
-        self, app_with_db, db_session, sample_users, overdue_debts
-    ):
-        """
-        Test BUG-1 fix: devices are properly loaded and accessible after session.remove().
-        This would fail before the fix with DetachedInstanceError.
-        """
-        user1 = sample_users[0]
+    def rollback(self):
+        self.rollback_calls += 1
 
-        # Create device for user1
-        device = UserDevice(
-            id="device-1",
-            user_id=user1.id,
-            mac_address="aa:bb:cc:dd:ee:ff",
-            ip_address="172.16.2.10",
-            device_type="mobile",
-        )
-        db_session.add(device)
-        db_session.commit()
+    def remove(self):
+        self.remove_calls += 1
 
-        with patch(
-            "app.tasks.settings_service.get_setting"
-        ) as mock_settings, patch(
-            "app.tasks._handle_mikrotik_operation"
-        ) as mock_mikrotik, patch(
-            "app.tasks.get_mikrotik_connection"
-        ) as mock_conn:
 
-            # Mock all settings to allow task to proceed
-            def settings_get(key, default=None):
-                settings = {
-                    "ENABLE_OVERDUE_DEBT_BLOCK": "True",
-                    "ENABLE_MIKROTIK_OPERATIONS": "True",
-                    "MIKROTIK_BLOCKED_PROFILE": "inactive",
-                    "MIKROTIK_ADDRESS_LIST_BLOCKED": "blocked",
-                    "ENABLE_WHATSAPP_NOTIFICATIONS": "True",
-                    "MIKROTIK_ADDRESS_LIST_ACTIVE": "active",
-                    "MIKROTIK_ADDRESS_LIST_FUP": "fup",
-                    "MIKROTIK_ADDRESS_LIST_INACTIVE": "inactive",
-                    "MIKROTIK_ADDRESS_LIST_EXPIRED": "expired",
-                    "MIKROTIK_ADDRESS_LIST_HABIS": "habis",
-                    "IP_BINDING_TYPE_BLOCKED": "blocked",
-                }
-                return settings.get(key, default)
+def _make_user(*, user_id: str, role=UserRole.USER, approval_status=ApprovalStatus.APPROVED, devices=None):
+    return SimpleNamespace(
+        id=user_id,
+        phone_number=f"+62812{user_id[-4:]}",
+        approval_status=approval_status,
+        role=role,
+        is_active=True,
+        is_unlimited_user=False,
+        is_blocked=False,
+        mikrotik_password="123456",
+        mikrotik_server_name="router-a",
+        devices=list(devices or []),
+        blocked_reason=None,
+        blocked_at=None,
+        blocked_by_id=None,
+    )
 
-            mock_settings.side_effect = settings_get
-            mock_mikrotik.return_value = (True, None)
-            mock_conn.return_value.__enter__.return_value = MagicMock()
 
-            # Run task - should not raise DetachedInstanceError
-            result = enforce_overdue_debt_block_task.apply_async().get()
+def _make_debt(user, amount_mb: int, due_date):
+    return SimpleNamespace(user=user, amount_mb=amount_mb, due_date=due_date)
 
-            # Device should have been accessed without error
-            assert result["checked"] >= 1
-            assert "block_failed" in result
 
-    def test_counter_labels_non_user_role(
-        self, app_with_db, db_session, sample_users, overdue_debts
-    ):
-        """
-        Test INFO-4 fix: counter labels differentiate between non_approved and non_user_role.
-        User2 (Komandan) should increment skipped_non_user_role, not skipped_non_approved.
-        """
-        with patch(
-            "app.tasks.settings_service.get_setting"
-        ) as mock_settings, patch(
-            "app.tasks._handle_mikrotik_operation"
-        ), patch(
-            "app.tasks.get_mikrotik_connection"
-        ) as mock_conn:
+@pytest.fixture
+def app():
+    flask_app = Flask(__name__)
+    flask_app.config.update(APP_PUBLIC_BASE_URL="https://lpsaring.babahdigital.net")
+    return flask_app
 
-            def settings_get(key, default=None):
-                settings = {
-                    "ENABLE_OVERDUE_DEBT_BLOCK": "True",
-                    "ENABLE_MIKROTIK_OPERATIONS": "True",
-                    "MIKROTIK_BLOCKED_PROFILE": "inactive",
-                    "MIKROTIK_ADDRESS_LIST_BLOCKED": "blocked",
-                    "ENABLE_WHATSAPP_NOTIFICATIONS": "False",  # Disable WA
-                    "MIKROTIK_ADDRESS_LIST_ACTIVE": "active",
-                    "MIKROTIK_ADDRESS_LIST_FUP": "fup",
-                    "MIKROTIK_ADDRESS_LIST_INACTIVE": "inactive",
-                    "MIKROTIK_ADDRESS_LIST_EXPIRED": "expired",
-                    "MIKROTIK_ADDRESS_LIST_HABIS": "habis",
-                    "IP_BINDING_TYPE_BLOCKED": "blocked",
-                }
-                return settings.get(key, default)
 
-            mock_settings.side_effect = settings_get
-            mock_conn.return_value.__enter__.return_value = MagicMock()
+@pytest.fixture
+def overdue_context():
+    today = datetime(2026, 3, 22, tzinfo=dt_timezone.utc)
+    old_date = (today - timedelta(days=10)).date()
 
-            result = enforce_overdue_debt_block_task.apply_async().get()
+    regular_user = _make_user(
+        user_id="user-0001",
+        devices=[SimpleNamespace(mac_address="AA:BB:CC:DD:EE:FF", ip_address="172.16.2.10")],
+    )
+    komandan_user = _make_user(user_id="user-0002", role=UserRole.KOMANDAN)
+    pending_user = _make_user(user_id="user-0003", approval_status=ApprovalStatus.PENDING_APPROVAL)
 
-            # User2 (Komandan) should be in skipped_non_user_role
-            assert result.get("skipped_non_user_role", 0) >= 1
-            # And NOT in skipped_non_approved
-            assert result.get("skipped_non_approved", 0) == 0  # Only user3 should be here
+    debts = [
+        _make_debt(regular_user, 1000, old_date),
+        _make_debt(komandan_user, 500, old_date),
+        _make_debt(pending_user, 2000, old_date),
+    ]
+    return today, debts, regular_user
 
-    def test_enable_mikrotik_operations_guard(
-        self, app_with_db, db_session, sample_users, overdue_debts
-    ):
-        """Test INFO-3 fix: Task skips if ENABLE_MIKROTIK_OPERATIONS is False."""
-        with patch(
-            "app.tasks.settings_service.get_setting"
-        ) as mock_settings:
 
-            def settings_get(key, default=None):
-                if key == "ENABLE_OVERDUE_DEBT_BLOCK":
-                    return "True"
-                if key == "ENABLE_MIKROTIK_OPERATIONS":
-                    return "False"  # Disabled!
-                return default
+def _settings_getter(overrides=None):
+    values = {
+        "ENABLE_OVERDUE_DEBT_BLOCK": "True",
+        "ENABLE_MIKROTIK_OPERATIONS": "True",
+        "MIKROTIK_BLOCKED_PROFILE": "inactive",
+        "MIKROTIK_ADDRESS_LIST_BLOCKED": "blocked",
+        "ENABLE_WHATSAPP_NOTIFICATIONS": "False",
+        "MIKROTIK_ADDRESS_LIST_ACTIVE": "active",
+        "MIKROTIK_ADDRESS_LIST_FUP": "fup",
+        "MIKROTIK_ADDRESS_LIST_INACTIVE": "inactive",
+        "MIKROTIK_ADDRESS_LIST_EXPIRED": "expired",
+        "MIKROTIK_ADDRESS_LIST_HABIS": "habis",
+    }
+    values.update(overrides or {})
+    return lambda key, default=None: values.get(key, default)
 
-            mock_settings.side_effect = settings_get
 
-            result = enforce_overdue_debt_block_task.apply_async().get()
+def _run_task(monkeypatch, app, fake_session, now_local, settings_overrides=None):
+    @contextmanager
+    def _fake_connection():
+        yield SimpleNamespace()
 
-            # Should return early with mikrotik_disabled reason
-            assert result.get("skipped") == "mikrotik_disabled"
+    monkeypatch.setattr("app.tasks.create_app", lambda config_name=None: app)
+    monkeypatch.setattr("app.tasks.db", SimpleNamespace(session=fake_session))
+    monkeypatch.setattr("app.tasks.get_app_local_datetime", lambda: now_local)
+    monkeypatch.setattr("app.tasks.settings_service.get_setting", _settings_getter(settings_overrides))
+    monkeypatch.setattr("app.tasks.settings_service.get_ip_binding_type_setting", lambda *_args, **_kwargs: "blocked")
+    monkeypatch.setattr("app.tasks.format_to_local_phone", lambda value: value)
+    monkeypatch.setattr("app.tasks.lock_user_quota_row", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("app.tasks.snapshot_user_quota_state", lambda user: {"blocked": getattr(user, "is_blocked", False)})
+    monkeypatch.setattr("app.tasks.append_quota_mutation_event", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("app.tasks.increment_metric", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("app.tasks.send_whatsapp_message", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr("app.tasks._handle_mikrotik_operation", lambda *_args, **_kwargs: (True, None))
+    monkeypatch.setattr("app.tasks.get_mikrotik_connection", _fake_connection)
+    monkeypatch.setattr("app.tasks.get_hotspot_host_usage_map", lambda *_args, **_kwargs: (True, {}, None))
+    monkeypatch.setattr("app.tasks.upsert_ip_binding", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("app.tasks.upsert_address_list_entry", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("app.tasks.remove_address_list_entry", lambda *_args, **_kwargs: None)
+    return enforce_overdue_debt_block_task.apply().get()
 
-    def test_session_cleanup_at_end(
-        self, app_with_db, db_session, sample_users, overdue_debts
-    ):
-        """Test session management: db.session.remove() called at end, not in finally."""
-        with patch(
-            "app.tasks.db.session.remove"
-        ) as mock_remove, patch(
-            "app.tasks.settings_service.get_setting"
-        ) as mock_settings, patch(
-            "app.tasks._handle_mikrotik_operation"
-        ), patch(
-            "app.tasks.get_mikrotik_connection"
-        ) as mock_conn:
 
-            def settings_get(key, default=None):
-                settings = {
-                    "ENABLE_OVERDUE_DEBT_BLOCK": "True",
-                    "ENABLE_MIKROTIK_OPERATIONS": "True",
-                    "MIKROTIK_BLOCKED_PROFILE": "inactive",
-                    "MIKROTIK_ADDRESS_LIST_BLOCKED": "blocked",
-                    "ENABLE_WHATSAPP_NOTIFICATIONS": "False",
-                    "MIKROTIK_ADDRESS_LIST_ACTIVE": "active",
-                    "MIKROTIK_ADDRESS_LIST_FUP": "fup",
-                    "MIKROTIK_ADDRESS_LIST_INACTIVE": "inactive",
-                    "MIKROTIK_ADDRESS_LIST_EXPIRED": "expired",
-                    "MIKROTIK_ADDRESS_LIST_HABIS": "habis",
-                    "IP_BINDING_TYPE_BLOCKED": "blocked",
-                }
-                return settings.get(key, default)
+def test_selectinload_devices_no_detached_instance_error(app, monkeypatch, overdue_context):
+    now_local, debts, regular_user = overdue_context
+    fake_session = _FakeSession(debts)
 
-            mock_settings.side_effect = settings_get
-            mock_conn.return_value.__enter__.return_value = MagicMock()
+    result = _run_task(monkeypatch, app, fake_session, now_local)
 
-            enforce_overdue_debt_block_task.apply_async().get()
+    assert result["checked"] == 3
+    assert result["blocked"] == 1
+    assert result["block_failed"] == 0
+    assert regular_user.is_blocked is True
+    assert fake_session.query_obj.options_calls
 
-            # session.remove() should be called at least once (at the end)
-            assert mock_remove.call_count >= 1
+
+def test_counter_labels_non_user_role(app, monkeypatch, overdue_context):
+    now_local, debts, _regular_user = overdue_context
+    fake_session = _FakeSession(debts)
+
+    result = _run_task(monkeypatch, app, fake_session, now_local)
+
+    assert result["skipped_non_user_role"] == 1
+    assert result["skipped_non_approved"] == 1
+
+
+def test_enable_mikrotik_operations_guard(app, monkeypatch, overdue_context):
+    now_local, debts, _regular_user = overdue_context
+    fake_session = _FakeSession(debts)
+
+    result = _run_task(
+        monkeypatch,
+        app,
+        fake_session,
+        now_local,
+        settings_overrides={"ENABLE_MIKROTIK_OPERATIONS": "False"},
+    )
+
+    assert result == {"skipped": "mikrotik_disabled"}
+    assert fake_session.commit_calls == 0
+
+
+def test_session_cleanup_at_end(app, monkeypatch, overdue_context):
+    now_local, debts, _regular_user = overdue_context
+    fake_session = _FakeSession(debts)
+
+    _run_task(monkeypatch, app, fake_session, now_local)
+
+    assert fake_session.remove_calls == 1

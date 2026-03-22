@@ -1,6 +1,5 @@
 # backend/config.py
 import os
-import sys
 from dotenv import dotenv_values
 import warnings
 import ast
@@ -14,6 +13,15 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 # - Jangan menimpa env yang sudah diset oleh Docker/OS (Docker env wins)
 
 basedir = os.path.abspath(os.path.dirname(__file__))
+
+
+def _should_skip_dotenv_autoload() -> bool:
+    return (os.environ.get("SKIP_DOTENV_AUTOLOAD") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def _iter_parent_dirs(start_dir: str, max_levels: int = 4):
@@ -36,6 +44,9 @@ def _is_production_like() -> bool:
 
 
 def _discover_dotenv_paths() -> list[str]:
+    if _should_skip_dotenv_autoload():
+        return []
+
     app_env = os.environ.get("APP_ENV") or os.environ.get("FLASK_ENV")
     app_env = (app_env or "").strip()
 
@@ -195,7 +206,7 @@ class Config:
 
     # SECURITY FIX: Raise error in production if SECRET_KEY still has default value
     FLASK_ENV_CHECK = os.environ.get("FLASK_ENV", "production")
-    is_testing_env = os.environ.get("FLASK_ENV") == "testing" or "pytest" in sys.modules
+    is_testing_env = os.environ.get("FLASK_ENV") == "testing"
     if FLASK_ENV_CHECK == "production" and SECRET_KEY == "dev-secret-key-ganti-ini-di-produksi" and not is_testing_env:
         raise RuntimeError(
             "CRITICAL: SECRET_KEY masih menggunakan nilai default di production! "
@@ -220,7 +231,7 @@ class Config:
                 "PERINGATAN: Menggunakan fallback konstruksi DATABASE_URL. Lebih baik set DATABASE_URL langsung."
             )
         else:
-            is_testing = os.environ.get("FLASK_ENV") == "testing" or "pytest" in sys.modules
+            is_testing = os.environ.get("FLASK_ENV") == "testing"
             if is_testing:
                 SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
                 warnings.warn(

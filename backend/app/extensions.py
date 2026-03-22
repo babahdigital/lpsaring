@@ -60,7 +60,14 @@ for _ in range(4):
         break
     current_dir = parent_dir
 
-if dotenv_path:
+skip_dotenv_autoload = (os.environ.get("SKIP_DOTENV_AUTOLOAD") or "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+
+if dotenv_path and not skip_dotenv_autoload:
     load_dotenv(dotenv_path=dotenv_path)
     print(f"INFO: Berhasil memuat variabel lingkungan untuk Celery dari: {dotenv_path}")
 else:

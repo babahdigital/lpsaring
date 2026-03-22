@@ -10,6 +10,13 @@ Coverage:
 import pytest
 import os
 from unittest.mock import patch
+import importlib
+import sys
+
+
+def _reload_config_module():
+    sys.modules.pop("config", None)
+    return importlib.import_module("config")
 
 
 class TestSecretKeyProductionGuard:
@@ -24,22 +31,18 @@ class TestSecretKeyProductionGuard:
             {
                 "FLASK_ENV": "production",
                 "SECRET_KEY": "",  # Empty to trigger default
+                "JWT_SECRET_KEY": "valid-jwt-secret-key-xxxxxxxx",
+                "DATABASE_URL": "sqlite:///:memory:",
+                "SKIP_DOTENV_AUTOLOAD": "1",
             },
             clear=False,
         ):
-            # Re-import to pick up new env
-            import importlib
-            import config as config_module
-
-            importlib.reload(config_module)
-
-            # Should raise RuntimeError
             with pytest.raises(RuntimeError) as exc_info:
-                _ = config_module.Config.SECRET_KEY
+                _reload_config_module()
 
             assert "CRITICAL" in str(exc_info.value)
             assert "SECRET_KEY" in str(exc_info.value)
-            assert "production" in str(exc_info.value)
+            assert "production" in str(exc_info.value).lower()
 
     def test_jwt_secret_key_hardcoded_in_production_raises_runtime_error(self):
         """Test that RuntimeError is raised if JWT_SECRET_KEY is hardcoded in production."""
@@ -48,23 +51,19 @@ class TestSecretKeyProductionGuard:
             os.environ,
             {
                 "FLASK_ENV": "production",
+                "SECRET_KEY": "valid-secret-key-xxxxxxxxxxxx",
                 "JWT_SECRET_KEY": "",  # Empty to trigger default
+                "DATABASE_URL": "sqlite:///:memory:",
+                "SKIP_DOTENV_AUTOLOAD": "1",
             },
             clear=False,
         ):
-            # Re-import to pick up new env
-            import importlib
-            import config as config_module
-
-            importlib.reload(config_module)
-
-            # Should raise RuntimeError
             with pytest.raises(RuntimeError) as exc_info:
-                _ = config_module.Config.JWT_SECRET_KEY
+                _reload_config_module()
 
             assert "CRITICAL" in str(exc_info.value)
             assert "JWT_SECRET_KEY" in str(exc_info.value)
-            assert "production" in str(exc_info.value)
+            assert "production" in str(exc_info.value).lower()
 
     def test_secret_key_valid_in_production_with_env_var(self):
         """Test that valid env vars work in production."""
@@ -74,13 +73,12 @@ class TestSecretKeyProductionGuard:
                 "FLASK_ENV": "production",
                 "SECRET_KEY": "valid-secret-key-xxxxxxxxxxxx",
                 "JWT_SECRET_KEY": "valid-jwt-secret-key-xxxxxxxx",
+                "DATABASE_URL": "sqlite:///:memory:",
+                "SKIP_DOTENV_AUTOLOAD": "1",
             },
             clear=False,
         ):
-            import importlib
-            import config as config_module
-
-            importlib.reload(config_module)
+            config_module = _reload_config_module()
 
             # Should NOT raise error
             assert config_module.Config.SECRET_KEY == "valid-secret-key-xxxxxxxxxxxx"
@@ -97,13 +95,12 @@ class TestSecretKeyProductionGuard:
                 "FLASK_ENV": "development",
                 "SECRET_KEY": "",  # Will use default
                 "JWT_SECRET_KEY": "",  # Will use default
+                "DATABASE_URL": "sqlite:///:memory:",
+                "SKIP_DOTENV_AUTOLOAD": "1",
             },
             clear=False,
         ):
-            import importlib
-            import config as config_module
-
-            importlib.reload(config_module)
+            config_module = _reload_config_module()
 
             # Should use defaults without error
             assert config_module.Config.SECRET_KEY == "dev-secret-key-ganti-ini-di-produksi"

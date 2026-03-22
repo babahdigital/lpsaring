@@ -119,6 +119,9 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' }}
     runs-on: ubuntu-latest
+    env:
+      FLASK_ENV: testing
+      SKIP_DOTENV_AUTOLOAD: "1"
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -140,10 +143,7 @@ jobs:
       - name: Run backend tests
         run: |
           python -m pytest backend/tests \
-            --ignore=backend/tests/test_whatsapp_send.py \
-            --ignore=backend/tests/test_enforce_overdue_debt_block_critical_fixes.py \
-            --ignore=backend/tests/test_midtrans_webhook_signature_security.py \
-            --ignore=backend/tests/test_secret_key_production_guard.py
+            --ignore=backend/tests/test_whatsapp_send.py
 
   frontend:
     needs: changes

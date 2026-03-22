@@ -1,180 +1,139 @@
-"""
-Test suite untuk Midtrans webhook signature security fix (BUG-2).
+"""Regression tests for Midtrans webhook signature hardening."""
 
-Coverage:
-- Constant-time comparison using hmac.compare_digest()
-- Prevention of timing attacks
-- Proper error responses for invalid signatures
-"""
+from __future__ import annotations
+
+import hashlib
+import hmac
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
-import hmac
-import hashlib
-from unittest.mock import patch, MagicMock
+from flask import Flask
+
+from app.infrastructure.http.transactions.webhook_routes import handle_notification_impl
 
 
-class TestMidtransWebhookSignatureSecurity:
-    """Test Midtrans webhook signature validation fixes."""
+class _FakeQuery:
+    def options(self, *_args, **_kwargs):
+        return self
 
-    @pytest.fixture
-    def webhook_endpoint(self, client):
-        """Get webhook endpoint."""
-        return "/api/transactions/webhook/midtrans/notification"
+    def filter(self, *_args, **_kwargs):
+        return self
 
-    @pytest.fixture
-    def signature_payload(self):
-        """Create a valid signature payload."""
-        order_id = "ORDER-123"
-        status_code = "200"
-        gross_amount = "100000.00"
-        server_key = "test-server-key"
+    def with_for_update(self):
+        return self
 
-        string_to_hash = f"{order_id}{status_code}{gross_amount}{server_key}"
-        signature_key = hashlib.sha512(
-            string_to_hash.encode("utf-8")
-        ).hexdigest()
+    def first(self):
+        return None
 
-        return {
-            "order_id": order_id,
-            "status_code": status_code,
-            "gross_amount": gross_amount,
-            "signature_key": signature_key,
-            "transaction_status": "capture",
-            "fraud_status": "accept",
-        }
 
-    def test_uses_constant_time_comparison(self):
-        """
-        Test that webhook handler uses hmac.compare_digest for signature comparison.
-        This prevents timing attacks where attacker can brute-force signature byte-by-byte.
-        """
-        # Correct signature
-        sig_correct = "abcdef1234567890"
-        # Attacker signature (first char correct, rest wrong)
-        sig_attack_1 = "abcdef0000000000"
-        # Attacker signature (first char wrong)
-        sig_attack_2 = "0bcdef1234567890"
+class _FakeSession:
+    def query(self, *_args, **_kwargs):
+        return _FakeQuery()
 
-        # hmac.compare_digest should take same time for both
-        # (In contrast, == would be faster for sig_attack_2 due to first char mismatch)
-        with patch("hmac.compare_digest") as mock_compare:
-            mock_compare.return_value = False
 
-            # Both should call compare_digest (constant time)
-            result1 = mock_compare(sig_correct, sig_attack_1)
-            result2 = mock_compare(sig_correct, sig_attack_2)
+@pytest.fixture
+def app():
+    flask_app = Flask(__name__)
+    flask_app.config.update(
+        SECRET_KEY="test",
+        MIDTRANS_SERVER_KEY="test-server-key",
+        MIDTRANS_REQUIRE_SIGNATURE_VALIDATION=True,
+        FLASK_ENV="production",
+        MIDTRANS_IS_PRODUCTION=False,
+    )
+    return flask_app
 
-            assert result1 == False
-            assert result2 == False
-            # Both calls went through constant-time function
-            assert mock_compare.call_count == 2
 
-    def test_signature_validation_invalid_signature_returns_403(
-        self, client, webhook_endpoint, signature_payload
+@pytest.fixture
+def signature_payload():
+    order_id = "ORDER-123"
+    status_code = "200"
+    gross_amount = "100000.00"
+    server_key = "test-server-key"
+
+    string_to_hash = f"{order_id}{status_code}{gross_amount}{server_key}"
+    signature_key = hashlib.sha512(string_to_hash.encode("utf-8")).hexdigest()
+
+    return {
+        "order_id": order_id,
+        "status_code": status_code,
+        "gross_amount": gross_amount,
+        "signature_key": signature_key,
+        "transaction_status": "capture",
+        "fraud_status": "accept",
+    }
+
+
+def _call_handler(app, payload, *, is_duplicate=False):
+    with app.test_request_context(
+        "/api/transactions/webhook/midtrans/notification",
+        method="POST",
+        json=payload,
     ):
-        """Test that invalid signature returns 403 Forbidden."""
-        # Tamper with signature key
-        signature_payload["signature_key"] = "invalid_signature_key"
-
-        with patch(
-            "app.infrastructure.http.transactions.webhook_routes.current_app"
-        ) as mock_app:
-            mock_app.config.get.side_effect = lambda key, default=None: {
-                "MIDTRANS_SERVER_KEY": "test-server-key",
-                "MIDTRANS_REQUIRE_SIGNATURE_VALIDATION": True,
-                "FLASK_ENV": "production",
-            }.get(key, default)
-
-            response = client.post(
-                webhook_endpoint,
-                json=signature_payload,
-                content_type="application/json",
-            )
-
-            assert response.status_code == 403
-            assert "Signature tidak valid" in response.json.get("message", "")
-
-    def test_signature_validation_valid_signature(
-        self, client, webhook_endpoint, signature_payload
-    ):
-        """Test that valid signature passes through."""
-        with patch(
-            "app.infrastructure.http.transactions.webhook_routes.current_app"
-        ) as mock_app, patch(
-            "app.infrastructure.http.transactions.webhook_routes.Transaction"
-        ) as mock_tx_model:
-
-            mock_app.config.get.side_effect = lambda key, default=None: {
-                "MIDTRANS_SERVER_KEY": "test-server-key",
-                "MIDTRANS_REQUIRE_SIGNATURE_VALIDATION": True,
-                "FLASK_ENV": "production",
-                "MIDTRANS_IS_PRODUCTION": False,
-            }.get(key, default)
-
-            # Mock transaction query
-            mock_query = MagicMock()
-            mock_tx_model.query.return_value = mock_query
-            mock_query.options.return_value = mock_query
-            mock_query.filter.return_value = mock_query
-            mock_query.with_for_update.return_value = mock_query
-            mock_query.first.return_value = None  # No transaction found
-
-            response = client.post(
-                webhook_endpoint,
-                json=signature_payload,
-                content_type="application/json",
-            )
-
-            # Should get OK response (even if transaction not found)
-            assert response.status_code in [200, 400]  # 200 OK or 400 Bad Request
-
-    def test_missing_signature_key_returns_403(
-        self, client, webhook_endpoint, signature_payload
-    ):
-        """Test that missing signature key returns 403."""
-        del signature_payload["signature_key"]
-
-        with patch(
-            "app.infrastructure.http.transactions.webhook_routes.current_app"
-        ) as mock_app:
-            mock_app.config.get.side_effect = lambda key, default=None: {
-                "MIDTRANS_SERVER_KEY": "test-server-key",
-                "MIDTRANS_REQUIRE_SIGNATURE_VALIDATION": True,
-                "FLASK_ENV": "production",
-            }.get(key, default)
-
-            response = client.post(
-                webhook_endpoint,
-                json=signature_payload,
-                content_type="application/json",
-            )
-
-            assert response.status_code == 403
+        return handle_notification_impl(
+            db=SimpleNamespace(session=_FakeSession()),
+            is_duplicate_webhook=lambda *_args, **_kwargs: is_duplicate,
+            increment_metric=lambda *_args, **_kwargs: None,
+            log_transaction_event=lambda *_args, **_kwargs: None,
+            safe_parse_midtrans_datetime=lambda *_args, **_kwargs: None,
+            extract_va_number=lambda *_args, **_kwargs: None,
+            extract_qr_code_url=lambda *_args, **_kwargs: None,
+            is_qr_payment_type=lambda *_args, **_kwargs: False,
+            is_debt_settlement_order_id=lambda *_args, **_kwargs: False,
+            apply_debt_settlement_on_success=lambda *_args, **_kwargs: None,
+            send_whatsapp_invoice_task=None,
+            format_currency_fn=lambda value: value,
+            begin_order_effect=lambda *_args, **_kwargs: None,
+            finish_order_effect=lambda *_args, **_kwargs: None,
+        )
 
 
-class TestSignatureTimingAttackResistance:
-    """
-    Test that signature comparison is resistant to timing attacks.
-    """
+def test_uses_constant_time_comparison():
+    sig_correct = "abcdef1234567890"
+    sig_attack_1 = "abcdef0000000000"
+    sig_attack_2 = "0bcdef1234567890"
 
-    def test_hmac_compare_digest_is_constant_time(self):
-        """Verify hmac.compare_digest is time-constant."""
-        # This is more of a documentation test — hmac.compare_digest
-        # is guaranteed by Python stdlib to be constant-time
-        sig1 = "a" * 128  # 128-char hex (SHA512)
-        sig_correct = sig1
+    with patch("hmac.compare_digest") as mock_compare:
+        mock_compare.return_value = False
 
-        # Different in 1st position
-        sig_early = ("b") + sig1[1:]
-        # Different in last position
-        sig_late = sig1[:-1] + ("b")
+        result1 = mock_compare(sig_correct, sig_attack_1)
+        result2 = mock_compare(sig_correct, sig_attack_2)
 
-        # All should execute in roughly same time
-        # (With regular == operator, sig_early would be faster)
-        result_early = hmac.compare_digest(sig_correct, sig_early)
-        result_late = hmac.compare_digest(sig_correct, sig_late)
-        result_correct = hmac.compare_digest(sig_correct, sig_correct)
+    assert result1 is False
+    assert result2 is False
+    assert mock_compare.call_count == 2
 
-        assert result_early == False
-        assert result_late == False
-        assert result_correct == True
+
+def test_signature_validation_invalid_signature_returns_403(app, signature_payload):
+    signature_payload["signature_key"] = "invalid_signature_key"
+
+    response, status = _call_handler(app, signature_payload)
+
+    assert status == 403
+    assert "Signature tidak valid" in response.get_json()["message"]
+
+
+def test_signature_validation_valid_signature_returns_ok(app, signature_payload):
+    response, status = _call_handler(app, signature_payload, is_duplicate=True)
+
+    assert status == 200
+    assert response.get_json()["status"] == "ok"
+
+
+def test_missing_signature_key_returns_403(app, signature_payload):
+    del signature_payload["signature_key"]
+
+    response, status = _call_handler(app, signature_payload)
+
+    assert status == 403
+
+
+def test_hmac_compare_digest_is_constant_time():
+    sig1 = "a" * 128
+    sig_early = "b" + sig1[1:]
+    sig_late = sig1[:-1] + "b"
+
+    assert hmac.compare_digest(sig1, sig_early) is False
+    assert hmac.compare_digest(sig1, sig_late) is False
+    assert hmac.compare_digest(sig1, sig1) is True
