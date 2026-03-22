@@ -190,6 +190,15 @@ def setup_logging(app: Flask):
         sqlalchemy_engine_logger.setLevel(logging.WARNING)
         sqlalchemy_pool_logger.setLevel(logging.WARNING)
 
+    # PERFORMANCE FIX: Filter fontTools logging noise (PDF generation)
+    # fontTools generates hundreds of DEBUG/INFO messages during PDF subset operations
+    fonttools_logger = logging.getLogger("fontTools")
+    fonttools_subset_logger = logging.getLogger("fontTools.subset")
+    fonttools_ttlib_logger = logging.getLogger("fontTools.ttLib")
+    fonttools_logger.setLevel(logging.WARNING)
+    fonttools_subset_logger.setLevel(logging.WARNING)
+    fonttools_ttlib_logger.setLevel(logging.WARNING)
+
     if app.config.get("LOG_TO_FILE", False) and not app.testing:
         log_dir = app.config.get("LOG_DIR", "logs")
         # DIKEMBALIKAN: Logika path absolut yang fleksibel

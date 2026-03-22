@@ -1850,6 +1850,8 @@ def audit_mikrotik_reconciliation_task(self):
     retry_backoff=True,
     retry_jitter=True,
     retry_kwargs={"max_retries": 2},
+    soft_time_limit=300,  # 5 minutes soft limit
+    time_limit=360,  # 6 minutes hard limit
 )
 def policy_parity_guard_task(self):
     app = create_app()
@@ -2107,6 +2109,8 @@ def send_whatsapp_invoice_task(
     retry_backoff=True,
     retry_jitter=True,
     retry_kwargs={"max_retries": 2},
+    soft_time_limit=300,  # 5 minutes soft limit — task receives SoftTimeLimitExceeded
+    time_limit=360,  # 6 minutes hard limit — kill task if still running
 )
 def sync_hotspot_usage_task(self):
     app = create_app()
@@ -2159,6 +2163,8 @@ def sync_hotspot_usage_task(self):
     retry_backoff=True,
     retry_jitter=True,
     retry_kwargs={"max_retries": 2},
+    soft_time_limit=240,  # 4 minutes soft limit
+    time_limit=300,  # 5 minutes hard limit
 )
 def sync_unauthorized_hosts_task(self):
     app = create_app()
@@ -3245,17 +3251,24 @@ def enforce_overdue_debt_block_task(self):
             logger.info("Overdue debt block: Dinonaktifkan via setting ENABLE_OVERDUE_DEBT_BLOCK.")
             return {"skipped": "feature_disabled"}
 
+        if settings_service.get_setting("ENABLE_MIKROTIK_OPERATIONS", "True") != "True":
+            logger.info("Overdue debt block: MikroTik operations disabled via ENABLE_MIKROTIK_OPERATIONS.")
+            return {"skipped": "mikrotik_disabled"}
+
         now_local = get_app_local_datetime()
         today = now_local.date()
 
         # Impor lokal agar tidak mempengaruhi loading modul global
-        from sqlalchemy.orm import joinedload as _joinedload
-        from app.infrastructure.db.models import UserQuotaDebt
+        from sqlalchemy.orm import joinedload as _joinedload, selectinload as _selectinload
+        from app.infrastructure.db.models import UserQuotaDebt, User
 
         try:
             overdue_debts = (
                 db.session.query(UserQuotaDebt)
-                .options(_joinedload(UserQuotaDebt.user))
+                .options(
+                    _joinedload(UserQuotaDebt.user)
+                    .selectinload(User.devices)  # CRITICAL: Load devices relationship to avoid DetachedInstanceError
+                )
                 .filter(UserQuotaDebt.paid_at.is_(None))
                 .filter(UserQuotaDebt.is_paid.is_(False))
                 .filter(UserQuotaDebt.due_date.isnot(None))
@@ -3267,8 +3280,6 @@ def enforce_overdue_debt_block_task(self):
             logger.exception("Overdue debt block: gagal query overdue debts dari DB.")
             db.session.remove()
             return {"checked": 0, "blocked": 0, "error": "db_query_failed"}
-        finally:
-            db.session.remove()
 
         if not overdue_debts:
             logger.info("Overdue debt block: Tidak ada debt melewati due_date.")
@@ -3301,7 +3312,8 @@ def enforce_overdue_debt_block_task(self):
             "checked": len(user_debts),
             "skipped_already_blocked": 0,
             "skipped_unlimited": 0,
-            "skipped_inactive": 0,
+            "skipped_non_approved": 0,  # Renamed from skipped_inactive
+            "skipped_non_user_role": 0,  # New: explicit counter for admin/komandan
             "warn_sent": 0,
             "warn_failed": 0,
             "blocked": 0,
@@ -3314,13 +3326,13 @@ def enforce_overdue_debt_block_task(self):
 
             # Guard: hanya blokir USER aktif yang disetujui, bukan admin/unlimited
             if not getattr(user, "is_active", False):
-                summary["skipped_inactive"] += 1
+                summary["skipped_non_approved"] += 1  # Actually: not active
                 continue
             if getattr(user, "approval_status", None) != ApprovalStatus.APPROVED:
-                summary["skipped_inactive"] += 1
+                summary["skipped_non_approved"] += 1
                 continue
             if getattr(user, "role", None) != UserRole.USER:
-                summary["skipped_inactive"] += 1
+                summary["skipped_non_user_role"] += 1  # Explicit: komandan/admin
                 continue
             if getattr(user, "is_unlimited_user", False):
                 summary["skipped_unlimited"] += 1
@@ -3454,4 +3466,5 @@ def enforce_overdue_debt_block_task(self):
 
         increment_metric("overdue.debt_block.checked", summary["checked"])
         logger.info("Overdue debt block summary: %s", json.dumps(summary))
+        db.session.remove()  # Cleanup session after all operations complete
         return summary

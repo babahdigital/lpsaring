@@ -17,6 +17,23 @@ from celery.signals import after_setup_logger, after_setup_task_logger
 import os
 from dotenv import load_dotenv
 
+# --- Helper Functions ---
+def _safe_get_int(value: str, default: int, max_val: int) -> int:
+    """
+    Safely parse cron configuration values with bounds validation.
+    Raises RuntimeError if value is invalid (non-integer or out of bounds).
+    """
+    try:
+        parsed = int(value)
+        if parsed < 0 or parsed > max_val:
+            raise ValueError(f"Value {parsed} out of range [0, {max_val}]")
+        return parsed
+    except (ValueError, TypeError) as e:
+        raise RuntimeError(
+            f"Invalid cron configuration: {value} is not an integer or out of range [0, {max_val}]. "
+            f"Error: {e}"
+        )
+
 # Hanya buat instance di sini untuk ekstensi Flask yang ada
 db = SQLAlchemy()
 migrate = Migrate()
@@ -192,8 +209,8 @@ def make_celery_app(app=None):
         "enforce-overdue-debt-block": {
             "task": "enforce_overdue_debt_block_task",
             "schedule": crontab(
-                hour=int(os.environ.get("OVERDUE_DEBT_BLOCK_CRON_HOUR", "8")),
-                minute=int(os.environ.get("OVERDUE_DEBT_BLOCK_CRON_MINUTE", "0")),
+                hour=_safe_get_int(os.environ.get("OVERDUE_DEBT_BLOCK_CRON_HOUR", "8"), 8, 23),
+                minute=_safe_get_int(os.environ.get("OVERDUE_DEBT_BLOCK_CRON_MINUTE", "0"), 0, 59),
             ),
         },
     }

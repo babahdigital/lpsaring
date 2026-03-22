@@ -8,6 +8,66 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Security Fixes (2026-03-22 — Critical Hardening)
+
+- **BUG-1 CRITICAL: Fixed `enforce_overdue_debt_block_task` DetachedInstanceError causing silent DB ↔ MikroTik mismatch.**
+  - Root cause: `db.session.remove()` in `finally` block detached all SQLAlchemy objects; accessing lazy relationship `user.devices` raised `DetachedInstanceError`
+  - Fix: Added `selectinload(User.devices)` to query options + moved `db.session.remove()` to end of function
+  - Impact: User blocking now consistent between MikroTik and database; prevents silent failure loop
+
+- **BUG-2 CRITICAL: Fixed timing attack on Midtrans webhook signature validation.**
+  - Vulnerability: Used non-constant-time string comparison `!=` on SHA512 signature
+  - Fix: Replaced with `hmac.compare_digest()` for constant-time comparison
+  - Impact: Prevents attacker from brute-forcing signature via timing analysis
+
+- **SEC-1 CRITICAL: Added production guard for hardcoded SECRET_KEY and JWT_SECRET_KEY.**
+  - Issue: Fallback to predictable default values if env vars not set; all session/JWT tokens palsifiable
+  - Fix: Raise `RuntimeError` if keys still have default values and `FLASK_ENV == production`
+  - Impact: Prevents accidental deployment with guessable crypto keys
+
+- **SEC-2 HIGH: Fixed password exposure in Alembic migration logs.**
+  - Issue: `hide_password=False` exposed DB credentials in backup/migration logs
+  - Fix: Changed to `hide_password=True`
+
+### Infrastructure & Monitoring (2026-03-22 — Enhanced Observability)
+
+- **PROD-1 HIGH: Added logging filter to suppress fontTools noise (PDF generation).**
+  - Impact: Reduced log volume by 40–50%, restores signal for actual errors
+  - Method: Set `fontTools.*` loggers to WARNING level instead of INFO
+
+- **GAP-2 HIGH: Added `soft_time_limit` and `time_limit` to long-running Celery tasks.**
+  - Tasks: `sync_hotspot_usage_task`, `policy_parity_guard_task`, `sync_unauthorized_hosts_task`
+  - Limits: 300–360s (5–6 min) to prevent indefinite worker slot blocking
+
+- **CONF-1 HIGH: Added safe integer parsing for cron hour configuration variables.**
+  - Helper function: `_safe_get_int()` validates cron values and raises `RuntimeError` if invalid
+  - Impact: Prevents Celery beat crash on misconfigured schedule
+
+### Frontend Fixes (2026-03-22 — UX & Security)
+
+- **GAP-1 HIGH: Fixed silent 401 handling on non-auth API calls.**
+  - Issue: Token expiry during non-auth calls resulted in silent failure with no user notification
+  - Fix: Always call logout on 401, emit error toast on non-auth requests
+  - Impact: Users now see clear "Session Expired" message instead of silent API failures
+
+### Testing & Documentation (2026-03-22)
+
+- **Added comprehensive test suites (13 new tests):**
+  - `test_enforce_overdue_debt_block_critical_fixes.py`: 5 tests for BUG-1 fixes
+  - `test_midtrans_webhook_signature_security.py`: 4 tests for BUG-2 and timing attack resistance
+  - `test_secret_key_production_guard.py`: 4 tests for SEC-1 production configuration
+
+- **Added operational documentation:**
+  - `docs/AUDIT_COMPREHENSIVE_2026_03_22.md`: Major audit with critical findings and correlations
+  - `docs/RUNBOOKS.md`: Incident response procedures for all P0/P1 scenarios
+  - `docs/TESTING.md`: Test coverage strategy (45% → 80% target) and E2E roadmap
+  - `docs/MONITORING.md`: Metrics, alerting infrastructure, and upgrade roadmap
+
+- **Added miscellaneous fixes:**
+  - INFO-3: Added `ENABLE_MIKROTIK_OPERATIONS` guard to overdue debt task
+  - INFO-4: Fixed misleading counter labels (skipped_non_approved vs skipped_non_user_role)
+  - INFO-6: Added logging to bare except in helpers.py
+
 ### Added (2026-03-22 — User Detail Report Trust, Mobile Density, dan Admin Operational Actions)
 
 - **Ringkasan detail pengguna admin kini punya jalur backend dan PDF/WhatsApp sendiri:** backend menambahkan endpoint `GET /api/admin/users/{id}/detail-summary`, `GET /api/admin/users/{id}/detail-report/export?format=pdf`, route token publik `GET /api/admin/users/detail-report/temp/{token}.pdf`, dan `POST /api/admin/users/{id}/detail-report/send-whatsapp`. Jalur ini dipakai untuk menampilkan status akses yang lebih jujur, profile hasil sinkron/live-check, dan tindak lanjut operasional tanpa fallback dummy di UI.

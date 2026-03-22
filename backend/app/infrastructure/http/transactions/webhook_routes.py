@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import json
 from http import HTTPStatus
 
@@ -66,7 +67,8 @@ def handle_notification_impl(
     if require_signature_validation:
         if not server_key or not signature_key:
             return jsonify({"status": "error", "message": "Signature tidak valid"}), HTTPStatus.FORBIDDEN
-        if calculated_signature != signature_key:
+        # SECURITY FIX: Use constant-time comparison to prevent timing attack
+        if not hmac.compare_digest(calculated_signature, signature_key):
             return jsonify({"status": "error", "message": "Signature tidak valid"}), HTTPStatus.FORBIDDEN
 
     if is_duplicate_webhook(notification_payload):

@@ -1,4 +1,4 @@
-.tabler-adjustments-horizontal, .tabler-activity-heartbeat, .tabler-alarm, .tabler-alert-circle, .tabler-alert-circle-filled, .tabler-alert-octagon, .tabler-alert-triangle, .tabler-align-center, .tabler-align-justified, .tabler-align-left, .tabler-align-right, .tabler-archive, .tabler-arrow-bar-to-down, .tabler-arrow-down, .tabler-arrow-down-circle, .tabler-arrow-down-right, .tabler-arrow-left, .tabler-arrow-right, .tabler-arrows-move-vertical, .tabler-arrow-up, .tabler-arrow-up-circle, .tabler-ban, .tabler-battery, .tabler-bell, .tabler-bell-ringing, .tabler-bold, .tabler-bolt, .tabler-box, .tabler-brand-amazon, .tabler-brand-android, .tabler-brand-angular, .tabler-brand-apple, .tabler-brand-facebook, .tabler-brand-facebook-filled, .tabler-brand-firebase, .tabler-brand-github-filled, .tabler-brand-google-filled, .tabler-brand-html5, .tabler-brand-linkedin, .tabler-brand-react-native, .tabler-brand-telegram, .tabler-brand-twitter, .tabler-brand-twitter-filled, .tabler-brand-vue, .tabler-brand-whatsapp, .tabler-brand-windows, .tabler-broadcast, .tabler-building, .tabler-building-bank, .tabler-building-community, .tabler-calendar, .tabler-calendar-check, .tabler-calendar-due, .tabler-calendar-exclamation, .tabler-calendar-off, .tabler-calendar-plus, .tabler-calendar-stats, .tabler-calendar-time, .tabler-calendar-x, .tabler-caret-down, .tabler-cash, .tabler-chart-bar, .tabler-chart-bar-off, .tabler-chart-donut-3, .tabler-chart-infographic, .tabler-chart-pie, .tabler-chart-pie-off, .tabler-check, .tabler-checkbox, .tabler-checks, .tabler-checkup-list, .tabler-chevron-down, .tabler-chevron-left, .tabler-chevron-right, .tabler-chevrons-left, .tabler-chevrons-right, .tabler-chevron-up, .tabler-circle, .tabler-circle-check, .tabler-circle-dot, .tabler-circle-filled, .tabler-circle-x, .tabler-circle-x-filled, .tabler-clock, .tabler-clock-check, .tabler-clock-off, .tabler-code, .tabler-color-picker, .tabler-copy, .tabler-corner-down-left, .tabler-corner-left-down, .tabler-credit-card, .tabler-database, .tabler-database-export, .tabler-database-import, .tabler-database-off, .tabler-database-minus, .tabler-database-plus, .tabler-device-desktop, .tabler-device-desktop-analytics, .tabler-device-desktop-question, .tabler-device-floppy, .tabler-device-laptop, .tabler-device-mobile, .tabler-device-mobile-off, .tabler-devices, .tabler-discount, .tabler-rosette-discount-check, .tabler-door, .tabler-dots-vertical, .tabler-download, .tabler-edit, .tabler-edit-circle, .tabler-error-404, .tabler-external-link, .tabler-eye, .tabler-eye-off, .tabler-file-alert, .tabler-file-dollar, .tabler-file-download, .tabler-file-invoice, .tabler-file-off, .tabler-file-text, .tabler-file-type-csv, .tabler-file-type-pdf, .tabler-filter, .tabler-filter-off, .tabler-gauge, .tabler-gift, .tabler-hash, .tabler-hand-stop, .tabler-help-circle, .tabler-history, .tabler-hourglass, .tabler-hourglass-high, .tabler-id, .tabler-id-badge-2, .tabler-infinity, .tabler-infinity-off, .tabler-info-circle, .tabler-info-triangle, .tabler-italic, .tabler-key, .tabler-key-off, .tabler-language, .tabler-layout-dashboard, .tabler-layout-grid-add, .tabler-link, .tabler-list-details, .tabler-loader-2, .tabler-lock, .tabler-lock-access, .tabler-login, .tabler-logout, .tabler-mail, .tabler-mail-check, .tabler-mail-fast, .tabler-mail-forward, .tabler-mail-off, .tabler-mail-opened, .tabler-mail-plus, .tabler-map-pin, .tabler-math-function, .tabler-maximize, .tabler-menu-2, .tabler-message, .tabler-minimize, .tabler-minus, .tabler-moon-stars, .tabler-network, .tabler-notes, .tabler-package, .tabler-package-off, .tabler-paperclip, .tabler-pencil, .tabler-phone, .tabler-player-pause, .tabler-player-play, .tabler-player-skip-back, .tabler-player-skip-forward, .tabler-plug-connected, .tabler-plug-connected-x, .tabler-plus, .tabler-printer, .tabler-question-mark, .tabler-qrcode, .tabler-receipt, .tabler-receipt-2, .tabler-refresh, .tabler-refresh-dot, .tabler-repeat, .tabler-reload, .tabler-robot, .tabler-router, .tabler-scan, .tabler-search, .tabler-send, .tabler-server, .tabler-server-2, .tabler-shield-bolt, .tabler-shield-exclamation, .tabler-settings, .tabler-settings-cog, .tabler-shield-check, .tabler-shield-half-filled, .tabler-shield-lock, .tabler-shopping-cart, .tabler-shopping-cart-plus, .tabler-smart-home, .tabler-star, .tabler-star-filled, .tabler-star-half-filled, .tabler-strikethrough, .tabler-sun, .tabler-sun-high, .tabler-table, .tabler-tool, .tabler-trash, .tabler-truck, .tabler-typography, .tabler-underline, .tabler-upload, .tabler-user, .tabler-user-check, .tabler-user-circle, .tabler-user-cog, .tabler-user-edit, .tabler-user-exclamation, .tabler-user-off, .tabler-user-plus, .tabler-user-question, .tabler-users, .tabler-user-search, .tabler-users-group, .tabler-user-shield, .tabler-user-x, .tabler-volume, .tabler-volume-2, .tabler-volume-off, .tabler-wallet, .tabler-wifi, .tabler-x {
+.tabler-adjustments-horizontal, .tabler-adjustments, .tabler-activity-heartbeat, .tabler-alarm, .tabler-alert-circle, .tabler-alert-circle-filled, .tabler-alert-octagon, .tabler-alert-triangle, .tabler-align-center, .tabler-align-justified, .tabler-align-left, .tabler-align-right, .tabler-archive, .tabler-arrow-bar-to-down, .tabler-arrow-down, .tabler-arrow-down-circle, .tabler-arrow-down-right, .tabler-arrow-left, .tabler-arrow-right, .tabler-arrows-move-vertical, .tabler-arrow-up, .tabler-arrow-up-circle, .tabler-ban, .tabler-battery, .tabler-bell, .tabler-bell-ringing, .tabler-bold, .tabler-bolt, .tabler-box, .tabler-brand-amazon, .tabler-brand-android, .tabler-brand-angular, .tabler-brand-apple, .tabler-brand-facebook, .tabler-brand-facebook-filled, .tabler-brand-firebase, .tabler-brand-github-filled, .tabler-brand-google-filled, .tabler-brand-html5, .tabler-brand-linkedin, .tabler-brand-react-native, .tabler-brand-telegram, .tabler-brand-twitter, .tabler-brand-twitter-filled, .tabler-brand-vue, .tabler-brand-whatsapp, .tabler-brand-windows, .tabler-broadcast, .tabler-building, .tabler-building-bank, .tabler-building-community, .tabler-battery-off, .tabler-calendar, .tabler-calendar-check, .tabler-calendar-due, .tabler-calendar-exclamation, .tabler-calendar-off, .tabler-calendar-plus, .tabler-calendar-stats, .tabler-calendar-time, .tabler-calendar-x, .tabler-caret-down, .tabler-cash, .tabler-chart-bar, .tabler-chart-bar-off, .tabler-chart-donut-3, .tabler-chart-infographic, .tabler-chart-pie, .tabler-chart-pie-off, .tabler-chart-arrows-vertical, .tabler-check, .tabler-checkbox, .tabler-checks, .tabler-checkup-list, .tabler-chevron-down, .tabler-chevron-left, .tabler-chevron-right, .tabler-chevrons-left, .tabler-chevrons-right, .tabler-chevron-up, .tabler-circle, .tabler-circle-check, .tabler-circle-dot, .tabler-circle-filled, .tabler-circle-x, .tabler-circle-x-filled, .tabler-clock, .tabler-clock-check, .tabler-clock-off, .tabler-code, .tabler-color-picker, .tabler-copy, .tabler-corner-down-left, .tabler-corner-left-down, .tabler-credit-card, .tabler-database, .tabler-database-export, .tabler-database-import, .tabler-database-off, .tabler-database-minus, .tabler-database-plus, .tabler-device-desktop, .tabler-device-desktop-analytics, .tabler-device-desktop-question, .tabler-device-floppy, .tabler-device-laptop, .tabler-device-mobile, .tabler-device-mobile-off, .tabler-devices, .tabler-device-mobile-question, .tabler-discount, .tabler-rosette-discount-check, .tabler-door, .tabler-dots-vertical, .tabler-download, .tabler-edit, .tabler-edit-circle, .tabler-error-404, .tabler-external-link, .tabler-eye, .tabler-eye-off, .tabler-file-alert, .tabler-file-dollar, .tabler-file-download, .tabler-file-invoice, .tabler-file-off, .tabler-file-text, .tabler-file-type-csv, .tabler-file-type-pdf, .tabler-filter, .tabler-filter-off, .tabler-gauge, .tabler-gift, .tabler-hash, .tabler-hand-stop, .tabler-help-circle, .tabler-history, .tabler-history-toggle, .tabler-hourglass, .tabler-hourglass-high, .tabler-id, .tabler-id-badge-2, .tabler-infinity, .tabler-infinity-off, .tabler-info-circle, .tabler-info-triangle, .tabler-italic, .tabler-key, .tabler-key-off, .tabler-language, .tabler-layout-dashboard, .tabler-layout-grid-add, .tabler-link, .tabler-list-details, .tabler-loader-2, .tabler-lock, .tabler-lock-access, .tabler-login, .tabler-logout, .tabler-mail, .tabler-mail-check, .tabler-mail-fast, .tabler-mail-forward, .tabler-mail-off, .tabler-mail-opened, .tabler-mail-plus, .tabler-map-pin, .tabler-math-function, .tabler-maximize, .tabler-menu-2, .tabler-message, .tabler-minimize, .tabler-minus, .tabler-moon-stars, .tabler-network, .tabler-notes, .tabler-package, .tabler-package-off, .tabler-paperclip, .tabler-pencil, .tabler-phone, .tabler-player-pause, .tabler-player-play, .tabler-player-skip-back, .tabler-player-skip-forward, .tabler-plug-connected, .tabler-plug-connected-x, .tabler-plus, .tabler-printer, .tabler-question-mark, .tabler-qrcode, .tabler-receipt, .tabler-receipt-2, .tabler-refresh, .tabler-refresh-dot, .tabler-refresh-alert, .tabler-repeat, .tabler-reload, .tabler-robot, .tabler-router, .tabler-route-2, .tabler-scan, .tabler-search, .tabler-send, .tabler-server, .tabler-server-2, .tabler-shield-bolt, .tabler-shield-exclamation, .tabler-settings, .tabler-settings-cog, .tabler-shield-check, .tabler-shield-half-filled, .tabler-shield-lock, .tabler-shopping-cart, .tabler-shopping-cart-plus, .tabler-smart-home, .tabler-star, .tabler-star-filled, .tabler-star-half-filled, .tabler-strikethrough, .tabler-sun, .tabler-sun-high, .tabler-table, .tabler-tool, .tabler-trash, .tabler-truck, .tabler-typography, .tabler-underline, .tabler-upload, .tabler-user, .tabler-user-check, .tabler-user-circle, .tabler-user-cog, .tabler-user-edit, .tabler-user-exclamation, .tabler-user-off, .tabler-user-plus, .tabler-user-question, .tabler-users, .tabler-user-search, .tabler-users-group, .tabler-user-shield, .tabler-user-x, .tabler-user-share, .tabler-volume, .tabler-volume-2, .tabler-volume-off, .tabler-wallet, .tabler-wifi, .tabler-stack-2, .tabler-pencil-dollar, .tabler-clock-play, .tabler-x {
   display: inline-block;
   width: 1em;
   height: 1em;
@@ -13,6 +13,10 @@
 
 .tabler-adjustments-horizontal {
   --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M12 6a2 2 0 1 0 4 0a2 2 0 1 0-4 0M4 6h8m4 0h4M6 12a2 2 0 1 0 4 0a2 2 0 1 0-4 0m-2 0h2m4 0h10m-5 6a2 2 0 1 0 4 0a2 2 0 1 0-4 0M4 18h11m4 0h1'/%3E%3C/svg%3E");
+}
+
+.tabler-adjustments {
+  --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M4 10a2 2 0 1 0 4 0a2 2 0 0 0-4 0m2-6v4m0 4v8m4-4a2 2 0 1 0 4 0a2 2 0 0 0-4 0m2-12v10m0 4v2m4-13a2 2 0 1 0 4 0a2 2 0 0 0-4 0m2-3v1m0 4v11'/%3E%3C/svg%3E");
 }
 
 .tabler-activity-heartbeat {
@@ -211,6 +215,10 @@
   --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m8 9l5 5v7H8v-4m0 4H3v-7l5-5m1 1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17h-8m0-14v.01M17 7v.01M17 11v.01M17 15v.01'/%3E%3C/svg%3E");
 }
 
+.tabler-battery-off {
+  --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m3 3l18 18M11 7h6a2 2 0 0 1 2 2v.5a.5.5 0 0 0 .5.5a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-.5.5a.5.5 0 0 0-.5.5v.5m-2 2H6a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1'/%3E%3C/svg%3E");
+}
+
 .tabler-calendar {
   --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zm12-4v4M8 3v4m-4 4h16m-9 4h1m0 0v3'/%3E%3C/svg%3E");
 }
@@ -277,6 +285,10 @@
 
 .tabler-chart-pie-off {
   --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M5.63 5.643a9 9 0 0 0 12.742 12.715m1.674-2.29A9 9 0 0 0 20.8 14a1 1 0 0 0-1-1H17m-4 0a2 2 0 0 1-2-2m0-4V4a.9.9 0 0 0-1-.8a9 9 0 0 0-2.057.749M15 3.5A9 9 0 0 1 20.5 9H16a1 1 0 0 1-1-1zM3 3l18 18'/%3E%3C/svg%3E");
+}
+
+.tabler-chart-arrows-vertical {
+  --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M18 21V7m-9 8l3-3l3 3m0-5l3-3l3 3M3 21h18m-9 0v-9M3 6l3-3l3 3M6 21V3'/%3E%3C/svg%3E");
 }
 
 .tabler-check {
@@ -435,6 +447,10 @@
   --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cg fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5'%3E%3Cpath d='M13 9a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1z'/%3E%3Cpath d='M18 8V5a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h9m3-9h2'/%3E%3C/g%3E%3C/svg%3E");
 }
 
+.tabler-device-mobile-question {
+  --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M15 21H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v6m1 11v.01M19 19a2.003 2.003 0 0 0 .914-3.782a1.98 1.98 0 0 0-2.414.483M11 4h2m-1 13v.01'/%3E%3C/svg%3E");
+}
+
 .tabler-discount {
   --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cg fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5'%3E%3Cpath d='m9 15l6-6'/%3E%3Ccircle cx='9.5' cy='9.5' r='.5' fill='black'/%3E%3Ccircle cx='14.5' cy='14.5' r='.5' fill='black'/%3E%3Cpath d='M3 12a9 9 0 1 0 18 0a9 9 0 1 0-18 0'/%3E%3C/g%3E%3C/svg%3E");
 }
@@ -541,6 +557,10 @@
 
 .tabler-history {
   --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cg fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5'%3E%3Cpath d='M12 8v4l2 2'/%3E%3Cpath d='M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+.tabler-history-toggle {
+  --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cg fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5'%3E%3Cpath d='M10 20.777a9 9 0 0 1-2.48-.969M14 3.223a9.003 9.003 0 0 1 0 17.554m-9.421-3.684a9 9 0 0 1-1.227-2.592M3.124 10.5c.16-.95.468-1.85.9-2.675l.169-.305m2.714-2.941A9 9 0 0 1 10 3.223'/%3E%3Cpath d='M12 8v4l3 3'/%3E%3C/g%3E%3C/svg%3E");
 }
 
 .tabler-hourglass {
@@ -771,6 +791,10 @@
   --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M20 11A8.1 8.1 0 0 0 4.5 9M4 5v4h4m-4 4a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4m-5-3a1 1 0 1 0 2 0a1 1 0 1 0-2 0'/%3E%3C/svg%3E");
 }
 
+.tabler-refresh-alert {
+  --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M20 11A8.1 8.1 0 0 0 4.5 9M4 5v4h4m-4 4a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4m-4-6v3m0 3h.01'/%3E%3C/svg%3E");
+}
+
 .tabler-repeat {
   --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M4 12V9a3 3 0 0 1 3-3h13m-3-3l3 3l-3 3m3 3v3a3 3 0 0 1-3 3H4m3 3l-3-3l3-3'/%3E%3C/svg%3E");
 }
@@ -785,6 +809,10 @@
 
 .tabler-router {
   --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M3 15a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zm14 2v.01M13 17v.01M15 13v-2m-3.25-2.25a4 4 0 0 1 6.5 0M8.5 6.5a8 8 0 0 1 13 0'/%3E%3C/svg%3E");
+}
+
+.tabler-route-2 {
+  --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M3 19a2 2 0 1 0 4 0a2 2 0 0 0-4 0M19 7a2 2 0 1 0 0-4a2 2 0 0 0 0 4m-5-2a2 2 0 0 0-2 2v10a2 2 0 0 1-2 2'/%3E%3C/svg%3E");
 }
 
 .tabler-scan {
@@ -955,6 +983,10 @@
   --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M8 7a4 4 0 1 0 8 0a4 4 0 0 0-8 0M6 21v-2a4 4 0 0 1 4-4h3.5m8.5 7l-5-5m0 5l5-5'/%3E%3C/svg%3E");
 }
 
+.tabler-user-share {
+  --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M8 7a4 4 0 1 0 8 0a4 4 0 0 0-8 0M6 21v-2a4 4 0 0 1 4-4h3m3 7l5-5m0 4.5V17h-4.5'/%3E%3C/svg%3E");
+}
+
 .tabler-volume {
   --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M15 8a5 5 0 0 1 0 8m2.7-11a9 9 0 0 1 0 14M6 15H4a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h2l3.5-4.5A.8.8 0 0 1 11 5v14a.8.8 0 0 1-1.5.5z'/%3E%3C/svg%3E");
 }
@@ -973,6 +1005,18 @@
 
 .tabler-wifi {
   --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cg fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5'%3E%3Cpath d='M12 18h.01m-2.838-2.828a4 4 0 0 1 5.656 0m-8.485-2.829a8 8 0 0 1 11.314 0'/%3E%3Cpath d='M3.515 9.515c4.686-4.687 12.284-4.687 17 0'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+.tabler-stack-2 {
+  --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M12 4L4 8l8 4l8-4zm-8 8l8 4l8-4M4 16l8 4l8-4'/%3E%3C/svg%3E");
+}
+
+.tabler-pencil-dollar {
+  --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cpath fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M4 20h4L18.5 9.5a2.828 2.828 0 1 0-4-4L4 16zm9.5-13.5l4 4M21 15h-2.5a1.5 1.5 0 0 0 0 3h1a1.5 1.5 0 0 1 0 3H17m2 0v1m0-8v1'/%3E%3C/svg%3E");
+}
+
+.tabler-clock-play {
+  --svg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='24' height='24'%3E%3Cg fill='none' stroke='black' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5'%3E%3Cpath d='M12 7v5l2 2m3 8l5-3l-5-3z'/%3E%3Cpath d='M13.017 20.943a9 9 0 1 1 7.831-7.292'/%3E%3C/g%3E%3C/svg%3E");
 }
 
 .tabler-x {

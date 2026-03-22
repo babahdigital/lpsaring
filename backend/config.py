@@ -193,6 +193,14 @@ class Config:
         warnings.warn("PERINGATAN: SECRET_KEY tidak disetel! Gunakan nilai default yang TIDAK AMAN untuk development.")
         SECRET_KEY = "dev-secret-key-ganti-ini-di-produksi"
 
+    # SECURITY FIX: Raise error in production if SECRET_KEY still has default value
+    FLASK_ENV_CHECK = os.environ.get("FLASK_ENV", "production")
+    if FLASK_ENV_CHECK == "production" and SECRET_KEY == "dev-secret-key-ganti-ini-di-produksi":
+        raise RuntimeError(
+            "CRITICAL: SECRET_KEY masih menggunakan nilai default di production! "
+            "Set SECRET_KEY env var sebelum menjalankan aplikasi."
+        )
+
     FLASK_DEBUG = get_env_bool("FLASK_DEBUG", "False")
     FLASK_ENV = os.environ.get("FLASK_ENV", "production" if not FLASK_DEBUG else "development")
     FLASK_APP = os.environ.get("FLASK_APP", "run:app")
@@ -241,6 +249,13 @@ class Config:
             "PERINGATAN: JWT_SECRET_KEY tidak disetel! Gunakan nilai default yang TIDAK AMAN untuk development."
         )
         JWT_SECRET_KEY = "dev-jwt-secret-key-ganti-ini-di-produksi"
+
+    # SECURITY FIX: Raise error in production if JWT_SECRET_KEY still has default value
+    if FLASK_ENV_CHECK == "production" and JWT_SECRET_KEY == "dev-jwt-secret-key-ganti-ini-di-produksi":
+        raise RuntimeError(
+            "CRITICAL: JWT_SECRET_KEY masih menggunakan nilai default di production! "
+            "Set JWT_SECRET_KEY env var sebelum menjalankan aplikasi."
+        )
     JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
     JWT_ACCESS_TOKEN_EXPIRES_MINUTES = get_env_int("JWT_ACCESS_TOKEN_EXPIRES_MINUTES", 30)
 

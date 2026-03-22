@@ -129,8 +129,10 @@ def _handle_mikrotik_operation(operation_func: Callable, **kwargs: Any) -> Tuple
         if not mikrotik_enabled:
             current_app.logger.info("Mikrotik operations disabled by setting. Skipping Mikrotik operation.")
             return True, "Mikrotik operations disabled."
-    except Exception:
+    except Exception as e:
         # fail-open: jika settings service bermasalah, jangan diam-diam mematikan MikroTik.
+        # Log warning untuk debugging
+        current_app.logger.warning(f"Failed to check ENABLE_MIKROTIK_OPERATIONS setting: {e}", exc_info=False)
         pass
 
     try:

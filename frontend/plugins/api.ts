@@ -87,9 +87,6 @@ export default defineNuxtPlugin((nuxtApp) => {
           || requestPath.includes('/auth/logout')
           || requestPath.includes('/auth/session/consume')
 
-        if (!isAuthSessionRequest)
-          return
-
         const now = Date.now()
         if (now - lastUnauthorizedAt < unauthorizedCooldownMs)
           return
@@ -97,7 +94,16 @@ export default defineNuxtPlugin((nuxtApp) => {
         const store = getAuthStore()
 
         if (store.currentUser != null) {
-          store.clearSession(401)
+          // SECURITY FIX: Always logout on 401, even for non-auth requests
+          // This prevents silent failures where user thinks they're logged in but API calls fail
+          store.clearSession(401)  // clearSession expects number | null, not string
+
+          // Show user notification only if this is not an auth-specific endpoint
+          if (!isAuthSessionRequest) {
+            // Log to console for debugging - user will be redirected to login
+            // which will show the login form with implicit "session expired" UX
+            console.warn('API 401 Unauthorized: Session expired on non-auth endpoint. Redirecting to login.')
+          }
           if (import.meta.client) {
             const route = useRoute()
             const path = route.path
