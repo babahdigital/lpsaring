@@ -10,8 +10,7 @@ Coverage:
 import pytest
 import hmac
 import hashlib
-from unittest.mock import patch
-from json import dumps
+from unittest.mock import patch, MagicMock
 
 
 class TestMidtransWebhookSignatureSecurity:
@@ -102,8 +101,6 @@ class TestMidtransWebhookSignatureSecurity:
         with patch(
             "app.infrastructure.http.transactions.webhook_routes.current_app"
         ) as mock_app, patch(
-            "app.infrastructure.http.transactions.webhook_routes.db"
-        ) as mock_db, patch(
             "app.infrastructure.http.transactions.webhook_routes.Transaction"
         ) as mock_tx_model:
 

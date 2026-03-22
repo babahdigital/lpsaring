@@ -12,7 +12,7 @@ Coverage:
 
 import pytest
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 from app.infrastructure.db.models import (
     User, UserQuotaDebt, UserDevice, ApprovalStatus, UserRole,
 )
@@ -261,7 +261,7 @@ class TestEnforceOverdueDebtBlockCriticalFixes:
             mock_settings.side_effect = settings_get
             mock_conn.return_value.__enter__.return_value = MagicMock()
 
-            result = enforce_overdue_debt_block_task.apply_async().get()
+            enforce_overdue_debt_block_task.apply_async().get()
 
             # session.remove() should be called at least once (at the end)
             assert mock_remove.call_count >= 1

@@ -9,7 +9,6 @@ Coverage:
 
 import pytest
 import os
-from flask import Flask
 from unittest.mock import patch
 
 
@@ -19,7 +18,6 @@ class TestSecretKeyProductionGuard:
     def test_secret_key_hardcoded_in_production_raises_runtime_error(self):
         """Test that RuntimeError is raised if SECRET_KEY is hardcoded in production."""
         # This test verifies SEC-1 fix
-        from config import Config
 
         with patch.dict(
             os.environ,

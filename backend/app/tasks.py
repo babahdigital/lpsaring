@@ -3259,7 +3259,7 @@ def enforce_overdue_debt_block_task(self):
         today = now_local.date()
 
         # Impor lokal agar tidak mempengaruhi loading modul global
-        from sqlalchemy.orm import joinedload as _joinedload, selectinload as _selectinload
+        from sqlalchemy.orm import joinedload as _joinedload
         from app.infrastructure.db.models import UserQuotaDebt, User
 
         try:
