@@ -428,7 +428,6 @@ const headers = computed(() => {
     { title: 'KONEKSI', key: 'is_active', sortable: true, align: 'center' },
     { title: 'PERANGKAT', key: 'device_count', sortable: false, align: 'center' },
     { title: 'LOGIN TERAKHIR', key: 'last_login_at', sortable: false },
-    { title: 'TGL DAFTAR', key: 'created_at', sortable: true },
     { title: 'AKSI', key: 'actions', sortable: false, align: 'center', width: '236px' },
   ]
   // Perbaikan baris 81: Perbandingan eksplisit untuk isMobile.value dan pengecekan h.key
@@ -1291,9 +1290,6 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
           <div class="admin-users__lastLoginCell text-caption text-medium-emphasis">
             {{ formatLastLogin(item.last_login_at) }}
           </div>
-        </template>
-        <template #item.created_at="{ item }">
-          {{ formatCreatedAt(item.created_at) }}
         </template>
         <template #item.actions="{ item }">
           <div class="admin-users__actionGroup">

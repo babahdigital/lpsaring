@@ -58,6 +58,12 @@ def test_user_debt_added_template_has_price_rp_display():
     assert "{price_rp_display}" in tpl, "Template harus mengandung {price_rp_display}"
 
 
+def test_user_debt_added_template_has_due_date_summary():
+    templates = _load_templates()
+    tpl = templates["user_debt_added"]
+    assert "{due_date_summary}" in tpl
+
+
 def test_user_debt_added_template_debt_gb_not_ambiguous():
     """Template user_debt_added tidak boleh punya placeholder {debt_gb} tanpa konteks GB yang jelas.
     Payload sekarang dikirim dengan sufiks ' GB', sehingga template tidak perlu tambahkan sendiri.
@@ -96,6 +102,7 @@ def test_user_debt_added_template_renders_correctly_with_package():
     ctx = {
         "full_name": "Ikhsan Fajar",
         "debt_date": "19-03-2026 17:52",
+        "due_date_summary": "akhir bulan (otomatis)",
         "package_name": "Paket Pintar 20 GB",
         "price_rp_display": "Rp 200.000",
         "debt_gb": "20.00 GB",
@@ -109,6 +116,7 @@ def test_user_debt_added_template_renders_correctly_with_package():
     }
     result = tpl.format(**ctx)
     assert "Ikhsan Fajar" in result
+    assert "akhir bulan (otomatis)" in result
     assert "Paket Pintar 20 GB" in result
     assert "Rp 200.000" in result
     assert "20.00 GB" in result
@@ -126,6 +134,7 @@ def test_user_debt_added_template_renders_correctly_manual_only():
     ctx = {
         "full_name": "Budi Santoso",
         "debt_date": "19-03-2026 10:00",
+        "due_date_summary": "akhir bulan (otomatis)",
         "package_name": "Tunggakan Manual",
         "price_rp_display": "–",
         "debt_gb": "10.00 GB",
@@ -141,6 +150,21 @@ def test_user_debt_added_template_renders_correctly_manual_only():
     assert "Tunggakan Manual" in result
     assert "–" in result
     assert "10.00 GB" in result
+
+
+def test_user_unlimited_activated_template_does_not_expose_expiry():
+    templates = _load_templates()
+    tpl = templates["user_unlimited_activated_by_admin"]
+    assert "{profile_name}" in tpl
+    assert "{expiry_date}" not in tpl
+
+
+def test_user_unlimited_activated_template_renders_simple_unlimited_message():
+    templates = _load_templates()
+    tpl = templates["user_unlimited_activated_by_admin"]
+    result = tpl.format(full_name="Abdullah", profile_name="Unlimited")
+    assert "Profil akses: *Unlimited*" in result
+    assert "Masa aktif unlimited" not in result
 
 
 # ---------------------------------------------------------------------------

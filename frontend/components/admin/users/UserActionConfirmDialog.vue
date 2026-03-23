@@ -233,17 +233,16 @@ function onClose() {
 
 @media (max-width: 600px) {
   .dialog-titlebar {
-    flex-direction: column;
     align-items: flex-start;
   }
 
   .dialog-titlebar__actions {
-    width: 100%;
-    justify-content: flex-end;
+    margin-inline-start: auto;
+    width: auto;
   }
 
   .dialog-titlebar__title {
-    width: 100%;
+    width: calc(100% - 52px);
   }
 
   .confirm-dialog__hero {

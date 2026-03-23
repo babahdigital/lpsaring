@@ -277,10 +277,35 @@ const debtEstimatedRp = computed(() => Number(quotaData.value?.quota_debt_total_
 const debtEstimateHelperText = 'Nilai referensi otomatis memakai paket aktif termurah; item manual mengikuti nominal yang tercatat.'
 
 const showDebtCard = computed(() => {
-  if (quotaData.value?.is_unlimited_user === true)
-    return false
-  return debtTotalMb.value > 0 && debtEstimatedRp.value > 0
+  return debtTotalMb.value > 0 || debtManualMb.value > 0 || quotaDebtItems.value.length > 0
 })
+
+function isUnlimitedDebtItem(note: string | null | undefined, amountMb: number | null | undefined): boolean {
+  const normalizedNote = String(note ?? '').toLowerCase()
+  return normalizedNote.startsWith('paket:') && normalizedNote.includes('unlimited') && Number(amountMb ?? 0) <= 1
+}
+
+const debtCardValueText = computed(() => {
+  if (quotaDebtItems.value.some(item => isUnlimitedDebtItem(item.note, item.amount_mb)))
+    return 'Unlimited'
+  if (debtEstimatedRp.value > 0)
+    return formatCurrency(debtEstimatedRp.value)
+  if (debtManualMb.value > 0)
+    return formatQuota(debtManualMb.value)
+  return formatQuota(debtTotalMb.value)
+})
+
+const debtCardHelperText = computed(() => {
+  if (quotaData.value?.is_unlimited_user === true && quotaDebtItems.value.length > 0)
+    return 'Akses Anda saat ini unlimited, tetapi catatan tunggakan manual tetap tercatat dan bisa ditinjau di bawah.'
+  return debtEstimateHelperText
+})
+
+function formatDebtItemQuota(amountMb: number | null | undefined, note: string | null | undefined): string {
+  if (isUnlimitedDebtItem(note, amountMb))
+    return 'Unlimited'
+  return formatQuota(amountMb)
+}
 
 function formatQuota(mbValue: number | null | undefined): string {
   const mb = Number(mbValue ?? 0)
@@ -1003,12 +1028,12 @@ useHead({ title: 'Riwayat Transaksi & Kuota' })
               </div>
 
               <div class="text-body-1 font-weight-medium">
-                {{ formatCurrency(debtEstimatedRp) }}
+                {{ debtCardValueText }}
               </div>
             </div>
 
             <div class="text-caption text-medium-emphasis mt-2">
-              {{ debtEstimateHelperText }}
+              {{ debtCardHelperText }}
             </div>
 
             <VList class="debt-card-list mt-3" density="compact">
@@ -1089,7 +1114,7 @@ useHead({ title: 'Riwayat Transaksi & Kuota' })
                         <span v-else class="text-disabled text-caption">Belum ditetapkan</span>
                       </td>
                       <td class="text-end text-no-wrap font-weight-medium">
-                        {{ formatQuota(it.amount_mb) }}
+                        {{ formatDebtItemQuota(it.amount_mb, it.note) }}
                       </td>
                       <td class="text-no-wrap">
                         <VChip :color="it.is_paid ? 'success' : 'warning'" size="x-small" label>

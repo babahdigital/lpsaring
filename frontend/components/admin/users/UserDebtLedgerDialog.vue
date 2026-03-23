@@ -45,14 +45,17 @@ const debtAutoMb = computed(() => Number(props.user?.quota_debt_auto_mb ?? 0))
 const debtManualMb = computed(() => Number(props.user?.quota_debt_manual_mb ?? props.user?.manual_debt_mb ?? 0))
 const debtTotalMb = computed(() => Number(props.user?.quota_debt_total_mb ?? (debtAutoMb.value + debtManualMb.value)))
 const isMobile = computed(() => smAndDown.value)
+const hasUnlimitedDebtItem = computed(() => items.value.some(item => isUnlimitedDebtItem(item)))
 const debtOverviewCards = computed(() => {
   const currentSummary = summary.value
+  const totalValue = hasUnlimitedDebtItem.value ? 'Unlimited' : formatDataSize(debtTotalMb.value)
+  const manualValue = hasUnlimitedDebtItem.value ? 'Unlimited' : formatDataSize(debtManualMb.value)
 
   return [
     {
       key: 'total',
       label: 'Total Tunggakan',
-      value: formatDataSize(debtTotalMb.value),
+      value: totalValue,
       caption: currentSummary ? `${currentSummary.total_items} item tercatat` : 'Menunggu data ringkasan',
       color: debtTotalMb.value > 0 ? 'warning' : 'secondary',
       icon: 'tabler-stack-2',
@@ -68,7 +71,7 @@ const debtOverviewCards = computed(() => {
     {
       key: 'manual',
       label: 'Manual',
-      value: formatDataSize(debtManualMb.value),
+      value: manualValue,
       caption: 'Akumulasi dari pencatatan manual',
       color: debtManualMb.value > 0 ? 'primary' : 'secondary',
       icon: 'tabler-pencil-dollar',
@@ -100,6 +103,19 @@ function formatRupiah(rp: number | null | undefined): string {
   if (!rp || rp <= 0)
     return '—'
   return `Rp ${rp.toLocaleString('id-ID')}`
+}
+
+function isUnlimitedDebtItem(item: Pick<ManualDebtItem, 'note' | 'amount_mb'> | null | undefined): boolean {
+  if (!item)
+    return false
+  const note = String(item.note ?? '').toLowerCase()
+  return note.startsWith('paket:') && note.includes('unlimited') && Number(item.amount_mb ?? 0) <= 1
+}
+
+function formatDebtAmountLabel(item: Pick<ManualDebtItem, 'note' | 'amount_mb'>): string {
+  if (isUnlimitedDebtItem(item))
+    return 'Unlimited'
+  return formatDataSize(Number(item.amount_mb || 0))
 }
 
 /** Format ISO datetime → tanggal + waktu WITA (UTC+8) */
@@ -424,7 +440,7 @@ watch(
 
                 <!-- Kuota -->
                 <td class="text-end col-kuota text-no-wrap font-weight-medium">
-                  {{ formatDataSize(Number(item.amount_mb || 0)) }}
+                  {{ formatDebtAmountLabel(item) }}
                 </td>
 
                 <!-- Paket / Info (note) -->

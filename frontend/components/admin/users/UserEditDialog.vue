@@ -392,7 +392,7 @@ const canToggleDebt = computed(() => {
 const shouldShowDebtSection = computed(() => {
   if (formData.role !== 'USER')
     return false
-  return debtTotalMb.value > 0 || isDebtQuotaEnabled.value === true
+  return debtManualMb.value > 0 || debtTotalMb.value > 0 || isDebtQuotaEnabled.value === true
 })
 
 function toNumberOrZero(value: unknown): number {
@@ -403,8 +403,16 @@ function toNumberOrZero(value: unknown): number {
 }
 
 const debtAutoMb = computed(() => (props.user?.is_unlimited_user === true ? 0 : Number(props.user?.quota_debt_auto_mb ?? 0)))
-const debtManualMb = computed(() => (props.user?.is_unlimited_user === true ? 0 : Number(props.user?.quota_debt_manual_mb ?? props.user?.manual_debt_mb ?? 0)))
-const debtTotalMb = computed(() => (props.user?.is_unlimited_user === true ? 0 : Number(props.user?.quota_debt_total_mb ?? (debtAutoMb.value + debtManualMb.value))))
+const debtManualMb = computed(() => Number(props.user?.quota_debt_manual_mb ?? props.user?.manual_debt_mb ?? 0))
+const debtTotalMb = computed(() => {
+  if (props.user?.is_unlimited_user === true)
+    return debtManualMb.value
+  return Number(props.user?.quota_debt_total_mb ?? (debtAutoMb.value + debtManualMb.value))
+})
+const hasUnlimitedManualDebt = computed(() => props.user?.is_unlimited_user === true && debtManualMb.value > 0)
+const debtTotalDisplay = computed(() => (hasUnlimitedManualDebt.value ? 'Unlimited' : formatDataSize(debtTotalMb.value)))
+const debtManualDisplay = computed(() => (hasUnlimitedManualDebt.value ? 'Unlimited' : formatDataSize(debtManualMb.value)))
+const debtAutoDisplay = computed(() => formatDataSize(debtAutoMb.value))
 
 const isInjectBlockedByDebt = computed(() => {
   if (formData.is_unlimited_user === true)
@@ -444,7 +452,7 @@ async function fetchAdminPackages() {
 const debtStatusMeta = computed(() => {
   const hasDebt = debtTotalMb.value > 0
   return {
-    text: hasDebt ? 'ADA TUNGGAKAN' : 'TIDAK ADA TUNGGAKAN',
+    text: hasDebt ? (hasUnlimitedManualDebt.value ? 'ADA TUNGGAKAN MANUAL' : 'ADA TUNGGAKAN') : 'TIDAK ADA TUNGGAKAN',
     color: hasDebt ? 'warning' : 'success',
     icon: hasDebt ? 'tabler-alert-triangle' : 'tabler-circle-check',
   }
@@ -1050,7 +1058,7 @@ function openQuotaHistory() {
                               Total Tunggakan
                             </div>
                             <div class="font-weight-medium">
-                              {{ formatDataSize(debtTotalMb) }}
+                              {{ debtTotalDisplay }}
                             </div>
                           </div>
                           <div class="admin-user-edit__stat-card">
@@ -1058,7 +1066,7 @@ function openQuotaHistory() {
                               Tunggakan Otomatis
                             </div>
                             <div class="font-weight-medium">
-                              {{ formatDataSize(debtAutoMb) }}
+                              {{ debtAutoDisplay }}
                             </div>
                           </div>
                           <div class="admin-user-edit__stat-card">
@@ -1066,7 +1074,7 @@ function openQuotaHistory() {
                               Tunggakan Manual
                             </div>
                             <div class="font-weight-medium">
-                              {{ formatDataSize(debtManualMb) }}
+                              {{ debtManualDisplay }}
                             </div>
                           </div>
                         </div>

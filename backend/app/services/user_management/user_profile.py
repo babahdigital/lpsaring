@@ -152,6 +152,19 @@ def _extract_debt_note_part(note: Any) -> str:
     return f" | {clean[:60]}"
 
 
+def _is_unlimited_debt_note(note: Any) -> bool:
+    if not isinstance(note, str):
+        return False
+    normalized = note.strip().lower()
+    return normalized.startswith("paket: ") and "unlimited" in normalized
+
+
+def _format_manual_debt_display(amount_mb: int, note: Any = None) -> str:
+    if _is_unlimited_debt_note(note) and int(amount_mb or 0) <= 1:
+        return "Unlimited"
+    return format_mb_to_gb(amount_mb)
+
+
 def _build_debt_detail_snapshot(user: User) -> Dict[str, Any]:
     snapshot: Dict[str, Any] = {
         "lines": "(Tidak ada rincian)",
@@ -178,7 +191,7 @@ def _build_debt_detail_snapshot(user: User) -> Dict[str, Any]:
         for i, d in enumerate(debts, 1):
             try:
                 remaining_mb = max(0, int(d.amount_mb or 0) - int(d.paid_mb or 0))
-                remaining_gb_text = format_mb_to_gb(remaining_mb)
+                remaining_gb_text = _format_manual_debt_display(remaining_mb, getattr(d, "note", None))
 
                 created_at_value = _coerce_datetime_value(getattr(d, "created_at", None))
                 debt_date_value = _coerce_date_value(getattr(d, "debt_date", None))
@@ -856,32 +869,34 @@ def update_user_by_admin_comprehensive(
                 _total_manual_debt_amount_display = str(
                     _debt_detail_snapshot_pkg.get("total_price_rp_display") or "–"
                 )
-                _send_whatsapp_notification(
-                    target_user.phone_number,
-                    "user_debt_added",
-                    {
-                        "full_name": target_user.full_name,
-                        "debt_date": debt_date_text,
-                        "package_name": _pkg_name,
-                        "price_rp_display": _price_rp_display,
-                        "debt_mb": int(debt_add_mb_pkg),
-                        "debt_gb": format_mb_to_gb(debt_add_mb_pkg),
-                        "total_debt_mb": int(total_debt_mb),
-                        "total_debt_gb": format_mb_to_gb(total_debt_mb),
-                        "total_manual_debt_mb": int(total_manual_debt_mb),
-                        "total_manual_debt_gb": format_mb_to_gb(total_manual_debt_mb),
-                        "total_manual_debt_amount_rp": _total_manual_debt_amount_rp,
-                        "total_manual_debt_amount_display": _total_manual_debt_amount_display,
-                        "auto_debt_deducted_mb": int(auto_deducted_mb),
-                        "auto_debt_deducted_gb": format_mb_to_gb(auto_deducted_mb),
-                        "effective_quota_mb": int(effective_quota_mb),
-                        "effective_quota_gb": format_mb_to_gb(effective_quota_mb),
-                        "access_grant_summary": access_grant_summary,
-                        "debt_detail_lines": _debt_detail_lines_pkg,
-                        "_debt_detail_degraded": bool(_debt_detail_snapshot_pkg.get("degraded")),
-                        "_debt_detail_invalid_items": int(_debt_detail_snapshot_pkg.get("invalid_items") or 0),
-                    },
-                )
+                if not is_unlimited_pkg:
+                    _send_whatsapp_notification(
+                        target_user.phone_number,
+                        "user_debt_added",
+                        {
+                            "full_name": target_user.full_name,
+                            "debt_date": debt_date_text,
+                            "due_date_summary": "akhir bulan (otomatis)",
+                            "package_name": _pkg_name,
+                            "price_rp_display": _price_rp_display,
+                            "debt_mb": int(debt_add_mb_pkg),
+                            "debt_gb": format_mb_to_gb(debt_add_mb_pkg),
+                            "total_debt_mb": int(total_debt_mb),
+                            "total_debt_gb": format_mb_to_gb(total_debt_mb),
+                            "total_manual_debt_mb": int(total_manual_debt_mb),
+                            "total_manual_debt_gb": format_mb_to_gb(total_manual_debt_mb),
+                            "total_manual_debt_amount_rp": _total_manual_debt_amount_rp,
+                            "total_manual_debt_amount_display": _total_manual_debt_amount_display,
+                            "auto_debt_deducted_mb": int(auto_deducted_mb),
+                            "auto_debt_deducted_gb": format_mb_to_gb(auto_deducted_mb),
+                            "effective_quota_mb": int(effective_quota_mb),
+                            "effective_quota_gb": format_mb_to_gb(effective_quota_mb),
+                            "access_grant_summary": access_grant_summary,
+                            "debt_detail_lines": _debt_detail_lines_pkg,
+                            "_debt_detail_degraded": bool(_debt_detail_snapshot_pkg.get("degraded")),
+                            "_debt_detail_invalid_items": int(_debt_detail_snapshot_pkg.get("invalid_items") or 0),
+                        },
+                    )
             except Exception:
                 current_app.logger.exception(
                     "Gagal mengirim notifikasi debt package untuk user %s",
@@ -974,6 +989,7 @@ def update_user_by_admin_comprehensive(
                     {
                         "full_name": target_user.full_name,
                         "debt_date": debt_date_text,
+                        "due_date_summary": "akhir bulan (otomatis)",
                         "package_name": "Tunggakan Manual",
                         "price_rp_display": "–",
                         "debt_mb": int(debt_add_mb),
@@ -1068,18 +1084,12 @@ def update_user_by_admin_comprehensive(
 
     if unlimited_activated:
         try:
-            expiry_text = (
-                "Tanpa batas waktu"
-                if getattr(target_user, "quota_expiry_date", None) is None
-                else format_app_datetime_display(getattr(target_user, "quota_expiry_date", None), fallback="Tanpa batas waktu")
-            )
             _send_whatsapp_notification(
                 target_user.phone_number,
                 "user_unlimited_activated_by_admin",
                 {
                     "full_name": target_user.full_name,
-                    "profile_name": str(getattr(target_user, "mikrotik_profile_name", "") or _resolve_unlimited_profile()),
-                    "expiry_date": expiry_text,
+                    "profile_name": "Unlimited",
                 },
             )
         except Exception:
