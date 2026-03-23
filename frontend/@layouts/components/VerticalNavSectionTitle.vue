@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import type { NavSectionTitle } from '@layouts/types'
 import { layoutConfig } from '@layouts'
-import { can } from '@layouts/plugins/casl'
+import { canAccessNavItem } from '@layouts/plugins/casl'
 import { useLayoutConfigStore } from '@layouts/stores/config'
 import { getDynamicI18nProps } from '@layouts/utils'
 
@@ -15,7 +15,7 @@ const shallRenderIcon = configStore.isVerticalNavMini()
 
 <template>
   <li
-    v-if="can(item.action, item.subject)"
+    v-if="canAccessNavItem(item)"
     class="nav-section-title"
   >
     <div class="title-wrapper">

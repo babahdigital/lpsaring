@@ -4,7 +4,7 @@ import { useSnackbar } from '@/composables/useSnackbar'
 import type { MikrotikVerifyRulesResponseContract } from '@/types/api/contracts'
 
 definePageMeta({
-  requiredRole: ['ADMIN', 'SUPER_ADMIN'],
+  requiredRole: ['SUPER_ADMIN'],
 })
 
 useHead({ title: 'Verifikasi MikroTik — Admin' })

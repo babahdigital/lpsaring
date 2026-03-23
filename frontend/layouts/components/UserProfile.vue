@@ -173,11 +173,11 @@ const isLoadingAuth = computed(() => !authStore.initialAuthCheckDone && !authSto
               <VListItemTitle>Profil Saya</VListItemTitle>
             </VListItem>
 
-            <!-- Pengaturan (hanya untuk Admin/Super Admin) -->
+            <!-- Pengaturan (hanya untuk Super Admin) -->
             <VListItem
-              v-if="isAdmin"
+              v-if="isSuperAdmin"
               link
-              :to="isSuperAdmin ? '/admin/settings/general' : '/admin/settings'"
+              to="/admin/settings/general"
               density="compact"
             >
               <template #prepend>

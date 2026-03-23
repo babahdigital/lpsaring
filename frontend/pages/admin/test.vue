@@ -1,6 +1,10 @@
 <script lang="ts" setup>
 import { useSnackbar } from '@/composables/useSnackbar'
 
+definePageMeta({
+  requiredRole: ['SUPER_ADMIN'],
+})
+
 // Ambil fungsi 'add' dari composable snackbar kita
 const { add: addSnackbar } = useSnackbar()
 

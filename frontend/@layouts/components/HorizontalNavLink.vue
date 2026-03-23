@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import type { NavLink } from '@layouts/types'
 import { layoutConfig } from '@layouts'
-import { can } from '@layouts/plugins/casl'
+import { canAccessNavItem } from '@layouts/plugins/casl'
 import {
   getComputedNavLinkToProp,
   getDynamicI18nProps,
@@ -24,7 +24,7 @@ const router = useRouter()
 
 <template>
   <li
-    v-if="can(item.action, item.subject)"
+    v-if="canAccessNavItem(item)"
     class="nav-link"
     :class="[
       {

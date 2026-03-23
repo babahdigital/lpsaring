@@ -433,7 +433,7 @@ const headers = computed(() => {
   return isMobile.value ? base.filter(h => ['admin', 'action_type'].includes(h.key)) : base
 })
 
-definePageMeta({ requiredRole: ['ADMIN', 'SUPER_ADMIN'] })
+definePageMeta({ requiredRole: ['SUPER_ADMIN'] })
 useHead({ title: 'Log Aktivitas Admin' })
 </script>
 

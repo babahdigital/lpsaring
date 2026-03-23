@@ -178,34 +178,10 @@ const cleanupPreviewLoading = ref(false)
 const cleanupPreview = ref<InactiveCleanupPreviewResponse | null>(null)
 const cleanupDeactivateCandidates = computed(() => cleanupPreview.value?.items?.deactivate_candidates ?? [])
 const cleanupDeleteCandidates = computed(() => cleanupPreview.value?.items?.delete_candidates ?? [])
-const cleanupPreviewDialogOpen = ref(false)
-const cleanupPreviewDialogAction = ref<CleanupActionType>('deactivate')
 const showCleanupPreviewSection = computed(() => {
   return cleanupDeactivateCandidates.value.length > 0 || cleanupDeleteCandidates.value.length > 0
 })
-const cleanupPreviewDialogCandidates = computed(() => {
-  return cleanupPreviewDialogAction.value === 'delete'
-    ? cleanupDeleteCandidates.value
-    : cleanupDeactivateCandidates.value
-})
-const cleanupPreviewDialogMeta = computed(() => {
-  const isDelete = cleanupPreviewDialogAction.value === 'delete'
-
-  return {
-    title: isDelete ? 'Kandidat Cleanup Delete' : 'Kandidat Cleanup Deactivate',
-    color: isDelete ? 'error' : 'warning',
-    icon: isDelete ? 'tabler-trash' : 'tabler-user-off',
-    threshold: isDelete
-      ? (cleanupPreview.value?.thresholds?.delete_days ?? 0)
-      : (cleanupPreview.value?.thresholds?.deactivate_days ?? 0),
-    summary: isDelete
-      ? (cleanupPreview.value?.summary?.delete_candidates ?? 0)
-      : (cleanupPreview.value?.summary?.deactivate_candidates ?? 0),
-    emptyText: isDelete ? 'Tidak ada kandidat delete.' : 'Tidak ada kandidat deactivate.',
-  }
-})
 const selectedUserPreviewContext = ref<UserDetailPreviewContext | null>(null)
-const previewActionLoading = ref<Record<string, boolean>>({})
 const updateSubmissionLoading = ref(false)
 const updateSubmissionItems = ref<PublicUpdateSubmission[]>([])
 const updateSubmissionTotal = ref(0)
@@ -685,139 +661,6 @@ async function fetchInactiveCleanupPreview() {
     cleanupPreviewLoading.value = false
   }
 }
-function buildPreviewContext(action: CleanupActionType, daysInactive: number): UserDetailPreviewContext {
-  const thresholdDays = action === 'delete'
-    ? (cleanupPreview.value?.thresholds?.delete_days ?? 0)
-    : (cleanupPreview.value?.thresholds?.deactivate_days ?? 0)
-
-  return {
-    action,
-    days_inactive: daysInactive,
-    threshold_days: thresholdDays,
-  }
-}
-function getPreviewActionKey(candidateId: string, action: CleanupActionType): string {
-  return `${action}:${candidateId}`
-}
-function isPreviewActionLoading(candidateId: string, action: CleanupActionType): boolean {
-  return previewActionLoading.value[getPreviewActionKey(candidateId, action)] === true
-}
-function setPreviewActionLoading(candidateId: string, action: CleanupActionType, isLoading: boolean) {
-  const key = getPreviewActionKey(candidateId, action)
-  previewActionLoading.value = {
-    ...previewActionLoading.value,
-    [key]: isLoading,
-  }
-}
-function canManageCandidate(role: User['role']): boolean {
-  if (authStore.isSuperAdmin === true)
-    return true
-
-  return authStore.isAdmin === true && role !== 'ADMIN' && role !== 'SUPER_ADMIN'
-}
-async function resolvePreviewCandidateUser(candidate: InactiveCleanupCandidate): Promise<User | null> {
-  const localUser = users.value.find(user => user.id === candidate.id)
-  if (localUser)
-    return localUser
-
-  const params = new URLSearchParams()
-  params.append('search', candidate.phone_number)
-  params.append('itemsPerPage', '20')
-  params.append('page', '1')
-  params.append('role', candidate.role)
-
-  const response = await $api<{ items: User[] }>(`/admin/users?${params.toString()}`)
-  return response.items.find(user => user.id === candidate.id)
-    || response.items.find(user => user.phone_number === candidate.phone_number)
-    || null
-}
-function openLayeredCleanupConfirm(user: User, action: CleanupActionType, daysInactive: number) {
-  const actionLabel = action === 'delete' ? 'Delete' : 'Deactivate'
-  const color = action === 'delete' ? 'error' : 'warning'
-
-  openConfirmDialog({
-    title: `Konfirmasi ${actionLabel}`,
-    message: `Proses cleanup untuk <strong>${user.full_name}</strong> akan dijalankan (tidak aktif ${daysInactive} hari). Lanjut ke verifikasi akhir?`,
-    color,
-    action: async () => {
-      dialogState.confirm = false
-      await Promise.resolve()
-
-      openConfirmDialog({
-        title: 'Konfirmasi Terakhir',
-        message: `Aksi ini akan memproses nonaktifkan/hapus sesuai kebijakan sistem untuk <strong>${user.full_name}</strong>. Lanjutkan?`,
-        color,
-        action: async () => await performAction(`/admin/users/${user.id}`, 'DELETE', 'Proses cleanup pengguna berhasil dijalankan.'),
-      })
-    },
-  })
-}
-async function openPreviewCandidate(candidate: InactiveCleanupCandidate, action: CleanupActionType) {
-  const previewContext = buildPreviewContext(action, candidate.days_inactive)
-
-  try {
-    const matchedUser = await resolvePreviewCandidateUser(candidate)
-
-    if (matchedUser) {
-      openViewDialog(matchedUser, previewContext)
-      return
-    }
-
-    showSnackbar({ type: 'warning', title: 'Data Tidak Ditemukan', text: 'User tidak ada di halaman saat ini. Coba refresh data pengguna.' })
-  }
-  catch (error: any) {
-    const errorMessage = (typeof error.data?.message === 'string' && error.data.message !== '')
-      ? error.data.message
-      : 'Gagal membuka detail user dari preview cleanup.'
-    showSnackbar({ type: 'error', title: 'Terjadi Kesalahan', text: errorMessage })
-  }
-}
-
-async function handlePreviewEditCandidate(candidate: InactiveCleanupCandidate) {
-  try {
-    const matchedUser = await resolvePreviewCandidateUser(candidate)
-    if (!matchedUser) {
-      showSnackbar({ type: 'warning', title: 'Data Tidak Ditemukan', text: 'User tidak ditemukan. Coba refresh data pengguna.' })
-      return
-    }
-    openEditDialog(matchedUser)
-  }
-  catch (error: any) {
-    const errorMessage = (typeof error.data?.message === 'string' && error.data.message !== '')
-      ? error.data.message
-      : 'Gagal membuka edit user dari preview cleanup.'
-    showSnackbar({ type: 'error', title: 'Terjadi Kesalahan', text: errorMessage })
-  }
-}
-async function handlePreviewCleanupAction(candidate: InactiveCleanupCandidate, action: CleanupActionType) {
-  if (isPreviewActionLoading(candidate.id, action))
-    return
-
-  if (!canManageCandidate(candidate.role)) {
-    showSnackbar({ type: 'warning', title: 'Akses Ditolak', text: 'Anda tidak memiliki izin untuk memproses kandidat ini.' })
-    return
-  }
-
-  try {
-    setPreviewActionLoading(candidate.id, action, true)
-    const matchedUser = await resolvePreviewCandidateUser(candidate)
-    if (!matchedUser) {
-      showSnackbar({ type: 'warning', title: 'Data Tidak Ditemukan', text: 'User tidak ditemukan. Coba refresh data pengguna.' })
-      return
-    }
-
-    openLayeredCleanupConfirm(matchedUser, action, candidate.days_inactive)
-  }
-  catch (error: any) {
-    const errorMessage = (typeof error.data?.message === 'string' && error.data.message !== '')
-      ? error.data.message
-      : 'Gagal memproses aksi cleanup dari preview.'
-    showSnackbar({ type: 'error', title: 'Terjadi Kesalahan', text: errorMessage })
-  }
-  finally {
-    setPreviewActionLoading(candidate.id, action, false)
-  }
-}
 function openAddUserDialog() {
   dialogState.add = true
 }
@@ -833,11 +676,6 @@ function openViewDialog(user: User, previewContext: UserDetailPreviewContext | n
   selectedUserPreviewContext.value = previewContext
   selectedUser.value = user
   dialogState.view = true
-}
-
-function openCleanupPreviewDialog(action: CleanupActionType) {
-  cleanupPreviewDialogAction.value = action
-  cleanupPreviewDialogOpen.value = true
 }
 function openConfirmDialog(props: { title: string, message: string, color?: string, action: () => Promise<void> }) {
   confirmProps.title = props.title
@@ -1018,31 +856,43 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
     </VCard>
 
     <VCard v-if="showCleanupPreviewSection" class="rounded-lg mb-6 admin-users__cleanupCard">
-      <VCardItem>
-        <VCardTitle class="admin-users__cleanup-title">
-          <div class="admin-users__cleanup-titleText">
-            <VIcon icon="tabler-user-x" class="me-2" />
-            <span>Preview Cleanup Nonaktif</span>
+      <VCardItem class="pb-2">
+        <template #prepend>
+          <VAvatar color="warning" variant="tonal" rounded="lg" size="40">
+            <VIcon icon="tabler-user-x" size="20" />
+          </VAvatar>
+        </template>
+        <VCardTitle>Preview Cleanup Nonaktif</VCardTitle>
+        <VCardSubtitle>Ringkasan kandidat dipertahankan singkat agar halaman tetap bersih. Detail kandidat dan tindakan cleanup tidak lagi ditampilkan langsung di kartu ini.</VCardSubtitle>
+        <template #append>
+          <div class="d-flex align-center gap-2 flex-wrap justify-end">
+            <VBtn
+              v-if="authStore.isSuperAdmin === true"
+              size="small"
+              variant="tonal"
+              color="secondary"
+              to="/admin/operations"
+            >
+              Halaman Operasional
+            </VBtn>
+            <VBtn
+              class="admin-users__cleanup-refresh"
+              size="small"
+              variant="tonal"
+              color="info"
+              :loading="cleanupPreviewLoading"
+              @click="fetchInactiveCleanupPreview"
+            >
+              Refresh
+            </VBtn>
           </div>
-
-          <VBtn
-            class="admin-users__cleanup-refresh"
-            size="small"
-            variant="tonal"
-            color="info"
-            :block="isMobile"
-            :loading="cleanupPreviewLoading"
-            @click="fetchInactiveCleanupPreview"
-          >
-            Refresh
-          </VBtn>
-        </VCardTitle>
+        </template>
       </VCardItem>
       <VCardText>
         <div class="admin-users__cleanupOverview">
           <div class="admin-users__cleanupCopy">
             <div class="text-body-2 text-medium-emphasis">
-              Ringkasan cleanup dibuat singkat agar dashboard tetap bersih. Buka daftar kandidat hanya saat perlu review atau tindakan.
+              Kandidat nonaktif tetap dipantau sebagai sinyal operasional. Jika angkanya naik, review dilakukan lewat alur operasi terpisah, bukan dari halaman ringkasan pengguna.
             </div>
             <div class="admin-users__cleanupChips mt-4">
               <VChip color="warning" size="small" label>
@@ -1058,31 +908,13 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
             <div class="admin-users__cleanupStat admin-users__cleanupStat--warning">
               <div class="admin-users__cleanupStatLabel">Kandidat Deactivate</div>
               <div class="admin-users__cleanupStatValue">{{ cleanupPreview?.summary?.deactivate_candidates ?? 0 }}</div>
-              <VBtn
-                size="small"
-                color="warning"
-                variant="tonal"
-                :disabled="cleanupDeactivateCandidates.length === 0"
-                prepend-icon="tabler-list-details"
-                @click="openCleanupPreviewDialog('deactivate')"
-              >
-                Lihat Kandidat
-              </VBtn>
+              <div class="admin-users__cleanupStatHint">Ringkasan read-only untuk monitoring periodik.</div>
             </div>
 
             <div class="admin-users__cleanupStat admin-users__cleanupStat--error">
               <div class="admin-users__cleanupStatLabel">Kandidat Delete</div>
               <div class="admin-users__cleanupStatValue">{{ cleanupPreview?.summary?.delete_candidates ?? 0 }}</div>
-              <VBtn
-                size="small"
-                color="error"
-                variant="tonal"
-                :disabled="cleanupDeleteCandidates.length === 0"
-                prepend-icon="tabler-list-details"
-                @click="openCleanupPreviewDialog('delete')"
-              >
-                Lihat Kandidat
-              </VBtn>
+              <div class="admin-users__cleanupStatHint">Jika meningkat, evaluasi dilakukan dari log atau halaman operasi khusus.</div>
             </div>
           </div>
         </div>
@@ -1092,11 +924,11 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
     <VCard class="mb-6 rounded-lg">
       <VCardItem>
         <template #prepend>
-          <VIcon icon="tabler-users-group" color="primary" size="32" class="me-2" />
+          <VAvatar color="primary" variant="tonal" rounded="lg" size="42">
+            <VIcon icon="tabler-users-group" size="22" />
+          </VAvatar>
         </template>
-        <VCardTitle class="text-h4">
-          Manajemen Pengguna
-        </VCardTitle>
+        <VCardTitle>Manajemen Pengguna</VCardTitle>
         <VCardSubtitle class="admin-users__subtitle">Kelola semua akun yang terdaftar di sistem.</VCardSubtitle>
         <template v-if="!isMobile" #append>
           <div class="admin-users__toolbar">
@@ -1578,81 +1410,6 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
       </VCard>
     </VDialog>
 
-    <VDialog v-model="cleanupPreviewDialogOpen" :max-width="isMobile ? undefined : 760" :fullscreen="isMobile">
-      <VCard :class="isMobile ? 'rounded-0' : 'rounded-lg'">
-        <VCardTitle class="pa-4 bg-primary text-white">
-          <div class="dialog-titlebar">
-            <div class="dialog-titlebar__title">
-              <VIcon :icon="cleanupPreviewDialogMeta.icon" />
-              <div class="admin-users__cleanupDialogTitle">
-                <div>{{ cleanupPreviewDialogMeta.title }}</div>
-                <div class="text-caption text-white admin-users__cleanupDialogSubtitle">
-                  Threshold {{ cleanupPreviewDialogMeta.threshold }} hari • {{ cleanupPreviewDialogMeta.summary }} kandidat
-                </div>
-              </div>
-            </div>
-            <div class="dialog-titlebar__actions">
-              <VBtn icon="tabler-x" variant="text" class="text-white" @click="cleanupPreviewDialogOpen = false" />
-            </div>
-          </div>
-        </VCardTitle>
-        <VDivider />
-        <VCardText class="pa-4 pa-md-5">
-          <VList v-if="cleanupPreviewDialogCandidates.length > 0" density="comfortable" class="admin-users__cleanupDialogList">
-            <VListItem
-              v-for="item in cleanupPreviewDialogCandidates"
-              :key="`${cleanupPreviewDialogAction}-${item.id}`"
-              class="admin-users__cleanupDialogItem"
-              :title="item.full_name"
-              :subtitle="`${formatPhoneNumberDisplay(item.phone_number) ?? '-'} • ${item.days_inactive} hari tidak aktif`"
-              link
-              @click="openPreviewCandidate(item, cleanupPreviewDialogAction)"
-            >
-              <template #prepend>
-                <VAvatar size="36" :color="cleanupPreviewDialogMeta.color" variant="tonal">
-                  <VIcon :icon="cleanupPreviewDialogAction === 'delete' ? 'tabler-trash' : 'tabler-user-off'" size="18" />
-                </VAvatar>
-              </template>
-              <template #append>
-                <div class="admin-users__cleanupDialogActions">
-                  <VChip size="x-small" :color="cleanupPreviewDialogMeta.color" label>
-                    {{ item.role }}
-                  </VChip>
-                  <VBtn
-                    v-if="canManageCandidate(item.role)"
-                    icon
-                    size="small"
-                    variant="tonal"
-                    color="primary"
-                    @click.stop="handlePreviewEditCandidate(item)"
-                  >
-                    <VIcon icon="tabler-edit" size="16" />
-                    <VTooltip activator="parent">Edit User</VTooltip>
-                  </VBtn>
-                  <VBtn
-                    v-if="canManageCandidate(item.role)"
-                    icon
-                    size="small"
-                    variant="tonal"
-                    :color="cleanupPreviewDialogMeta.color"
-                    :loading="isPreviewActionLoading(item.id, cleanupPreviewDialogAction)"
-                    :disabled="isPreviewActionLoading(item.id, cleanupPreviewDialogAction)"
-                    @click.stop="handlePreviewCleanupAction(item, cleanupPreviewDialogAction)"
-                  >
-                    <VIcon :icon="cleanupPreviewDialogAction === 'delete' ? 'tabler-trash' : 'tabler-user-off'" size="16" />
-                    <VTooltip activator="parent">Jalankan Cleanup</VTooltip>
-                  </VBtn>
-                </div>
-              </template>
-            </VListItem>
-          </VList>
-          <VAlert v-else variant="tonal" :color="cleanupPreviewDialogMeta.color" class="mt-2">
-            {{ cleanupPreviewDialogMeta.emptyText }}
-          </VAlert>
-        </VCardText>
-      </VCard>
-    </VDialog>
-
     <UserDetailDialog v-model="dialogState.view" :user="selectedUser" :preview-context="selectedUserPreviewContext" />
     <UserAddDialog v-model="dialogState.add" :loading="loading" :available-bloks="availableBloks" :available-kamars="availableKamars" :is-alamat-loading="isAlamatLoading" @save="handleSaveUser" />
     <UserEditDialog v-if="dialogState.edit === true && editedUser !== null" v-model="dialogState.edit" :user="editedUser" :loading="loading" :available-bloks="availableBloks" :available-kamars="availableKamars" :is-alamat-loading="isAlamatLoading" :mikrotik-options="mikrotikOptions" @save="handleSaveUser" />
@@ -1747,19 +1504,6 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
   line-height: 1;
 }
 
-.admin-users__cleanupDialogTitle {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.admin-users__cleanupDialogSubtitle {
-  overflow-wrap: anywhere;
-  opacity: 0.84;
-  white-space: normal;
-}
-
 .dialog-titlebar {
   display: flex;
   align-items: flex-start;
@@ -1788,24 +1532,6 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
   gap: 8px;
 }
 
-.admin-users__cleanupDialogList {
-  display: grid;
-  gap: 10px;
-}
-
-.admin-users__cleanupDialogItem {
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-  border-radius: 16px;
-  background: rgba(var(--v-theme-surface), 0.88);
-}
-
-.admin-users__cleanupDialogActions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-inline-start: 12px;
-}
-
 .admin-users__toolbarMobile {
   display: flex;
   flex-direction: column;
@@ -1830,10 +1556,14 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
   text-align: center;
 }
 
-.admin-users__connectionStatus {
+.admin-users__toolbar {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 14px;
+}
+
+.admin-users__search {
+  width: 340px;
 }
 
 .admin-users__connectionHint {
@@ -1992,11 +1722,6 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 
   .admin-users__cleanupStats {
     grid-template-columns: 1fr;
-  }
-
-  .admin-users__cleanupDialogActions {
-    gap: 6px;
-    margin-inline-start: 8px;
   }
 
   .dialog-titlebar {

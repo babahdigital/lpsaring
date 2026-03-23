@@ -7,7 +7,9 @@ import { useSettingsStore } from '@/store/settings'
 // Impor semua enum yang Anda gunakan di template atau script
 import { useMaintenanceStore } from '~/store/maintenance'
 
-definePageMeta({})
+definePageMeta({
+  requiredRole: ['SUPER_ADMIN'],
+})
 
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()

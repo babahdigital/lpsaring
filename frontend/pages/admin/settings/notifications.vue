@@ -5,6 +5,10 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useAuthStore } from '@/store/auth'
 import { useSnackbar } from '@/composables/useSnackbar'
 
+definePageMeta({
+  requiredRole: ['SUPER_ADMIN'],
+})
+
 // --- Tipe Data ---
 interface AdminRecipient {
   id: string

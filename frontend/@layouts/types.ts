@@ -47,8 +47,12 @@ export interface AclProperties {
   subject: string
 }
 
+export interface RoleRestrictedProperties {
+  requiredRole?: string[]
+}
+
 // 👉 Vertical nav section title
-export interface NavSectionTitle extends Partial<AclProperties> {
+export interface NavSectionTitle extends Partial<AclProperties>, RoleRestrictedProperties {
   heading: string
 }
 
@@ -76,7 +80,7 @@ export interface NavLinkProps {
   rel?: ATagRelAttrValues
 }
 
-export interface NavLink extends NavLinkProps, Partial<AclProperties> {
+export interface NavLink extends NavLinkProps, Partial<AclProperties>, RoleRestrictedProperties {
   title: string
   icon?: unknown
   badgeContent?: string
@@ -85,7 +89,7 @@ export interface NavLink extends NavLinkProps, Partial<AclProperties> {
 }
 
 // 👉 Vertical nav group
-export interface NavGroup extends Partial<AclProperties> {
+export interface NavGroup extends Partial<AclProperties>, RoleRestrictedProperties {
   title: string
   icon?: unknown
   badgeContent?: string

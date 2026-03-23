@@ -14,7 +14,7 @@ const { add: showSnackbar } = useSnackbar()
 const authStore = useAuthStore()
 
 definePageMeta({
-  requiredRole: ['ADMIN', 'SUPER_ADMIN'],
+  requiredRole: ['SUPER_ADMIN'],
 })
 
 useHead({ title: 'Backup & Restore Database' })

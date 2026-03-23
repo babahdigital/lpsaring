@@ -286,7 +286,6 @@ export default defineNuxtConfig({
 
   routeRules: {
     '/admin/login': { redirect: '/admin' },
-    '/admin/dasboard': { redirect: '/admin/dashboard' },
     '/login/blocked': { redirect: '/policy/blocked' },
     '/login/inactive': { redirect: '/policy/inactive' },
     '/login/expired': { redirect: '/policy/expired' },

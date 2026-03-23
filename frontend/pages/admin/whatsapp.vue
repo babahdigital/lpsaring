@@ -19,7 +19,7 @@ const authStore = useAuthStore()
 const { add: showSnackbar } = useSnackbar()
 
 definePageMeta({
-  requiredRole: ['ADMIN', 'SUPER_ADMIN'],
+  requiredRole: ['SUPER_ADMIN'],
 })
 
 useHead({ title: 'WhatsApp Pengguna' })

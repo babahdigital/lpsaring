@@ -1,6 +1,7 @@
-import type { NavGroup } from '@layouts/types'
+import type { AclProperties, NavGroup, RoleRestrictedProperties } from '@layouts/types'
 import type { RouteLocationNormalized } from 'vue-router'
 import { useAbility } from '@casl/vue'
+import { useAuthStore } from '~/store/auth'
 
 /**
  * Returns ability result if ACL is configured or else just return true
@@ -24,20 +25,39 @@ export function can(action: string | undefined, subject: string | undefined) {
   return localCan ? vm.proxy?.$can(action, subject) : true
 }
 
+function hasRequiredRole(requiredRoles: string[] | undefined) {
+  if (!requiredRoles || requiredRoles.length === 0)
+    return true
+
+  const authStore = useAuthStore()
+  const currentRole = authStore.currentUser?.role
+
+  return currentRole ? requiredRoles.includes(currentRole) : false
+}
+
+export function canAccessNavItem(item: Partial<AclProperties> & RoleRestrictedProperties) {
+  return hasRequiredRole(item.requiredRole) && can(item.action, item.subject)
+}
+
 /**
  * Check if user can view item based on it's ability
  * Based on item's action and subject & Hide group if all of it's children are hidden
  * @param {object} item navigation object item
  */
 export function canViewNavMenuGroup(item: NavGroup) {
-  const hasAnyVisibleChild = item.children.some(i => can(i.action, i.subject))
+  const hasAnyVisibleChild = item.children.some((child) => {
+    if ('children' in child)
+      return canViewNavMenuGroup(child)
+
+    return canAccessNavItem(child)
+  })
 
   // If subject and action is defined in item => Return based on children visibility (Hide group if no child is visible)
   // Else check for ability using provided subject and action along with checking if has any visible child
   if (!(item.action && item.subject))
-    return hasAnyVisibleChild
+    return hasRequiredRole(item.requiredRole) && hasAnyVisibleChild
 
-  return can(item.action, item.subject) && hasAnyVisibleChild
+  return canAccessNavItem(item) && hasAnyVisibleChild
 }
 
 export function canNavigate(to: RouteLocationNormalized) {
