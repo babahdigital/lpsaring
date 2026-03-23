@@ -19,6 +19,7 @@ from app.infrastructure.db.models import (
     PromoEventStatus,
 )
 from app.utils.formatters import (
+    format_app_datetime_display,
     format_mb_to_gb,
     format_to_local_phone,
     get_app_local_datetime,
@@ -674,6 +675,7 @@ def update_user_by_admin_comprehensive(
     # then perform unblock so the debt calculation uses the new values.
     pending_unblock = False
     pending_unblock_reason = data.get("blocked_reason") or None
+    unlimited_activated = False
 
     if "is_blocked" in data and data["is_blocked"] != target_user.is_blocked:
         should_block = bool(data["is_blocked"])
@@ -705,6 +707,7 @@ def update_user_by_admin_comprehensive(
         success, msg = quota_service.set_user_unlimited(target_user, admin_actor, data["is_unlimited_user"])
         if not success:
             return False, msg, None
+        unlimited_activated = bool(data["is_unlimited_user"])
         # NOTE: set_user_unlimited writes SET_UNLIMITED_STATUS / REVOKE_UNLIMITED_STATUS.
         # Avoid duplicating the same action as UPDATE_USER_PROFILE.
 
@@ -784,23 +787,35 @@ def update_user_by_admin_comprehensive(
             _debt_detail_snapshot_pkg = _build_debt_detail_snapshot(target_user)
             _debt_detail_lines_pkg = str(_debt_detail_snapshot_pkg.get("lines") or "(Tidak ada rincian)")
 
-            # CREDIT QUOTA (advance): untuk kasus "hutang kuota", saat debt manual dibuat kita juga memberi kuota
-            # agar user bisa akses. Rule: kuota advance dipakai untuk melunasi AUTO debt dulu (jika ada),
-            # sisa menjadi kuota bersih. Manual debt (termasuk yang baru dibuat) tetap tercatat.
             try:
-                paid_auto_mb, remaining_credit_mb = _apply_manual_debt_advance_credit(
-                    user=target_user,
-                    admin_actor=admin_actor,
-                    credit_mb=int(debt_add_mb_pkg),
-                    source="admin_debt_advance_pkg",
-                    days_to_add=int(getattr(pkg, "duration_days", 0) or DEFAULT_MANUAL_DEBT_ADVANCE_DAYS),
-                    grant_label=str(getattr(pkg, "name", "") or "").strip() or None,
-                    grant_reference=str(getattr(pkg, "id", debt_package_id) or debt_package_id),
-                )
-                changes["debt_credit_quota_mb"] = int(debt_add_mb_pkg)
-                changes["debt_paid_auto_before_credit_mb"] = int(paid_auto_mb)
-                changes["debt_net_quota_mb"] = int(remaining_credit_mb)
-                changes["debt_added_days"] = int(getattr(pkg, "duration_days", 0) or DEFAULT_MANUAL_DEBT_ADVANCE_DAYS)
+                if is_unlimited_pkg:
+                    success_unlimited, msg_unlimited = quota_service.set_user_unlimited(target_user, admin_actor, True)
+                    if not success_unlimited:
+                        return False, msg_unlimited, None
+                    unlimited_activated = True
+                    pkg_days = int(getattr(pkg, "duration_days", 0) or 0)
+                    if pkg_days > 0:
+                        success_extend, msg_extend = quota_service.inject_user_quota(target_user, admin_actor, 0, pkg_days)
+                        if not success_extend:
+                            return False, msg_extend, None
+                    changes["debt_credit_quota_mb"] = 0
+                    changes["debt_paid_auto_before_credit_mb"] = 0
+                    changes["debt_net_quota_mb"] = 0
+                    changes["debt_added_days"] = pkg_days
+                else:
+                    paid_auto_mb, remaining_credit_mb = _apply_manual_debt_advance_credit(
+                        user=target_user,
+                        admin_actor=admin_actor,
+                        credit_mb=int(debt_add_mb_pkg),
+                        source="admin_debt_advance_pkg",
+                        days_to_add=int(getattr(pkg, "duration_days", 0) or DEFAULT_MANUAL_DEBT_ADVANCE_DAYS),
+                        grant_label=str(getattr(pkg, "name", "") or "").strip() or None,
+                        grant_reference=str(getattr(pkg, "id", debt_package_id) or debt_package_id),
+                    )
+                    changes["debt_credit_quota_mb"] = int(debt_add_mb_pkg)
+                    changes["debt_paid_auto_before_credit_mb"] = int(paid_auto_mb)
+                    changes["debt_net_quota_mb"] = int(remaining_credit_mb)
+                    changes["debt_added_days"] = int(getattr(pkg, "duration_days", 0) or DEFAULT_MANUAL_DEBT_ADVANCE_DAYS)
             except Exception as e:
                 current_app.logger.error(
                     "Gagal mengkredit kuota advance untuk debt package user %s: %s",
@@ -829,6 +844,11 @@ def update_user_by_admin_comprehensive(
                 total_manual_debt_mb = int(getattr(target_user, "manual_debt_mb", 0) or 0)
                 auto_deducted_mb = int(changes.get("debt_paid_auto_before_credit_mb") or 0)
                 effective_quota_mb = int(changes.get("debt_net_quota_mb") or 0)
+                access_grant_summary = (
+                    "Internet Anda sekarang *unlimited* sesuai paket yang dicatat admin."
+                    if is_unlimited_pkg
+                    else f"Kuota efektif yang bisa dipakai: *{format_mb_to_gb(effective_quota_mb)}*."
+                )
                 _pkg_name = str(getattr(pkg, "name", "") or "").strip() or "–"
                 _pkg_price_int = int(getattr(pkg, "price", 0) or 0)
                 _price_rp_display = ("Rp " + f"{_pkg_price_int:,}".replace(",", ".")) if _pkg_price_int > 0 else "–"
@@ -856,6 +876,7 @@ def update_user_by_admin_comprehensive(
                         "auto_debt_deducted_gb": format_mb_to_gb(auto_deducted_mb),
                         "effective_quota_mb": int(effective_quota_mb),
                         "effective_quota_gb": format_mb_to_gb(effective_quota_mb),
+                        "access_grant_summary": access_grant_summary,
                         "debt_detail_lines": _debt_detail_lines_pkg,
                         "_debt_detail_degraded": bool(_debt_detail_snapshot_pkg.get("degraded")),
                         "_debt_detail_invalid_items": int(_debt_detail_snapshot_pkg.get("invalid_items") or 0),
@@ -942,6 +963,7 @@ def update_user_by_admin_comprehensive(
                 total_manual_debt_mb = int(getattr(target_user, "manual_debt_mb", 0) or 0)
                 auto_deducted_mb = int(changes.get("debt_paid_auto_before_credit_mb") or 0)
                 effective_quota_mb = int(changes.get("debt_net_quota_mb") or 0)
+                access_grant_summary = f"Kuota efektif yang bisa dipakai: *{format_mb_to_gb(effective_quota_mb)}*."
                 _total_manual_debt_amount_rp = int(_debt_detail_snapshot_mb.get("total_price_rp") or 0)
                 _total_manual_debt_amount_display = str(
                     _debt_detail_snapshot_mb.get("total_price_rp_display") or "–"
@@ -966,6 +988,7 @@ def update_user_by_admin_comprehensive(
                         "auto_debt_deducted_gb": format_mb_to_gb(auto_deducted_mb),
                         "effective_quota_mb": int(effective_quota_mb),
                         "effective_quota_gb": format_mb_to_gb(effective_quota_mb),
+                        "access_grant_summary": access_grant_summary,
                         "debt_detail_lines": _debt_detail_lines_mb,
                         "_debt_detail_degraded": bool(_debt_detail_snapshot_mb.get("degraded")),
                         "_debt_detail_invalid_items": int(_debt_detail_snapshot_mb.get("invalid_items") or 0),
@@ -1042,6 +1065,28 @@ def update_user_by_admin_comprehensive(
 
     if changes:
         _log_admin_action(admin_actor, target_user, AdminActionType.UPDATE_USER_PROFILE, changes)
+
+    if unlimited_activated:
+        try:
+            expiry_text = (
+                "Tanpa batas waktu"
+                if getattr(target_user, "quota_expiry_date", None) is None
+                else format_app_datetime_display(getattr(target_user, "quota_expiry_date", None), fallback="Tanpa batas waktu")
+            )
+            _send_whatsapp_notification(
+                target_user.phone_number,
+                "user_unlimited_activated_by_admin",
+                {
+                    "full_name": target_user.full_name,
+                    "profile_name": str(getattr(target_user, "mikrotik_profile_name", "") or _resolve_unlimited_profile()),
+                    "expiry_date": expiry_text,
+                },
+            )
+        except Exception:
+            current_app.logger.exception(
+                "Gagal mengirim notifikasi aktivasi unlimited untuk user %s",
+                target_user.id,
+            )
 
     return True, "Data pengguna berhasil diperbarui.", target_user
 

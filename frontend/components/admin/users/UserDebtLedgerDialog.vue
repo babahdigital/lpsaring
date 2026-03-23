@@ -197,7 +197,10 @@ function close() {
 function openPdf() {
   if (!props.user)
     return
-  window.open(`/api/admin/users/${props.user.id}/debts/export?format=pdf`, '_blank', 'noopener')
+  const previewWindow = typeof window !== 'undefined' ? window.open('', '_blank', 'noopener') : null
+  openPdfDocument(`/api/admin/users/${props.user.id}/debts/export?format=pdf`, previewWindow).catch((error: any) => {
+    showSnackbar({ type: 'warning', title: 'Tunggakan', text: error?.data?.message || error?.message || 'Gagal membuka PDF tunggakan.' })
+  })
 }
 
 async function sendWhatsAppReport() {
@@ -240,15 +243,19 @@ async function settleItem(item: ManualDebtItem) {
   if (!props.user || item.is_paid === true)
     return
 
+  const previewWindow = typeof window !== 'undefined' ? window.open('', '_blank', 'noopener') : null
   settlingId.value = item.id
   try {
     const resp = await $api<{ receipt_url?: string }>(`/admin/users/${props.user.id}/debts/${item.id}/settle`, { method: 'POST' })
     showSnackbar({ type: 'success', title: 'Tunggakan', text: 'Item tunggakan berhasil ditandai lunas.' })
     if (resp?.receipt_url)
-      window.open(resp.receipt_url, '_blank', 'noopener')
+      await openPdfDocument(resp.receipt_url, previewWindow)
+    else
+      previewWindow?.close()
     await fetchLedger()
   }
   catch (error: any) {
+    previewWindow?.close()
     showSnackbar({ type: 'warning', title: 'Tunggakan', text: error?.data?.message || 'Gagal menandai item tunggakan sebagai lunas.' })
   }
   finally {
@@ -260,19 +267,49 @@ async function settleAll() {
   if (!props.user)
     return
 
+  const previewWindow = typeof window !== 'undefined' ? window.open('', '_blank', 'noopener') : null
   settlingAll.value = true
   try {
     const resp = await $api<{ receipt_url?: string }>(`/admin/users/${props.user.id}/debts/settle-all`, { method: 'POST' })
     showSnackbar({ type: 'success', title: 'Tunggakan', text: 'Semua tunggakan berhasil dilunasi.' })
     if (resp?.receipt_url)
-      window.open(resp.receipt_url, '_blank', 'noopener')
+      await openPdfDocument(resp.receipt_url, previewWindow)
+    else
+      previewWindow?.close()
     await fetchLedger()
   }
   catch (error: any) {
+    previewWindow?.close()
     showSnackbar({ type: 'warning', title: 'Tunggakan', text: error?.data?.message || 'Gagal melunasi semua tunggakan.' })
   }
   finally {
     settlingAll.value = false
+  }
+}
+
+async function openPdfDocument(url: string, targetWindow?: Window | null) {
+  try {
+    const data = await $api<Blob>(url, {
+      method: 'GET',
+      responseType: 'blob' as const,
+    })
+    const blob = data instanceof Blob ? data : new Blob([data as BlobPart], { type: 'application/pdf' })
+    const objectUrl = window.URL.createObjectURL(blob)
+
+    if (targetWindow && !targetWindow.closed) {
+      targetWindow.location.href = objectUrl
+      window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 60_000)
+      return
+    }
+
+    const fallbackWindow = window.open(objectUrl, '_blank', 'noopener')
+    if (!fallbackWindow)
+      throw new Error('Popup diblokir browser')
+    window.setTimeout(() => window.URL.revokeObjectURL(objectUrl), 60_000)
+  }
+  catch (error: any) {
+    targetWindow?.close()
+    throw error
   }
 }
 

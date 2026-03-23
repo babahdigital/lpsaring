@@ -1,4 +1,5 @@
 # backend/app/services/device_management_service.py
+import json
 import logging
 import ipaddress
 from contextlib import AbstractContextManager, nullcontext
@@ -13,11 +14,12 @@ from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
 from app.services import settings_service
-from app.infrastructure.db.models import User, UserDevice
+from app.infrastructure.db.models import AdminActionLog, AdminActionType, User, UserDevice
 from app.infrastructure.gateways.mikrotik_client import (
     get_firewall_address_list_entries,
     get_mikrotik_connection,
     get_mac_by_ip,
+    get_hotspot_host_usage_map,
     get_hotspot_user_ip,
     get_ip_by_mac,
     upsert_ip_binding,
@@ -590,6 +592,231 @@ def _resolve_binding_ip(user: User, client_ip: Optional[str], api_connection: Op
         return _do_ip_lookup(api)
 
 
+def _get_active_hotspot_hosts(api_connection: Optional[Any] = None) -> Dict[str, Dict[str, Any]]:
+    if not _is_mikrotik_operations_enabled():
+        return {}
+
+    def _do_lookup(api: Any) -> Dict[str, Dict[str, Any]]:
+        ok, usage_map, msg = get_hotspot_host_usage_map(api_connection=api)
+        if not ok:
+            logger.warning("Gagal mengambil hotspot host usage map untuk recovery device: %s", msg)
+            return {}
+
+        normalized: Dict[str, Dict[str, Any]] = {}
+        for raw_mac, details in (usage_map or {}).items():
+            normalized_mac = _normalize_mac(raw_mac)
+            if normalized_mac:
+                normalized[normalized_mac] = details or {}
+        return normalized
+
+    if api_connection is not None:
+        return _do_lookup(api_connection)
+
+    with get_mikrotik_connection() as api:
+        if not api:
+            logger.warning("Tidak bisa konek MikroTik untuk mengambil hotspot host usage map")
+            return {}
+        return _do_lookup(api)
+
+
+def _cleanup_device_network_artifacts(
+    *,
+    user: User,
+    device: UserDevice,
+    settings: Optional[Dict[str, Any]] = None,
+    api_connection: Optional[Any] = None,
+) -> Dict[str, Any]:
+    active_settings = settings or _get_settings()
+    mac = str(device.mac_address or "").strip().upper()
+    ip = str(device.ip_address or "").strip()
+    username_08 = format_to_local_phone(user.phone_number) or ""
+    server_name = user.mikrotik_server_name or active_settings["mikrotik_server_default"]
+    dhcp_server = active_settings.get("dhcp_lease_server_name") or None
+
+    summary: Dict[str, Any] = {
+        "ip_binding_removed": False,
+        "dhcp_removed": False,
+        "host_kicked": 0,
+        "arp_removed": 0,
+        "address_list_cleaned": False,
+        "mikrotik_connected": False,
+    }
+
+    if api_connection is None:
+        if mac and active_settings["ip_binding_enabled"]:
+            _remove_ip_binding(mac, server_name)
+            summary["ip_binding_removed"] = True
+
+        if mac and active_settings.get("dhcp_static_lease_enabled"):
+            _remove_dhcp_lease(mac, server=dhcp_server)
+            summary["dhcp_removed"] = True
+
+    if _is_mikrotik_operations_enabled():
+        def _do_cleanup(api: Any) -> None:
+            summary["mikrotik_connected"] = True
+
+            if mac and active_settings["ip_binding_enabled"] and api_connection is not None:
+                ok, _ = remove_ip_binding(api_connection=api, mac_address=mac, server=server_name)
+                summary["ip_binding_removed"] = ok
+
+            if mac and active_settings.get("dhcp_static_lease_enabled") and api_connection is not None:
+                ok, _ = remove_dhcp_lease(api_connection=api, mac_address=mac, server=dhcp_server)
+                summary["dhcp_removed"] = ok
+
+            resolved_ip = ip
+            if mac and not resolved_ip:
+                ok_ip, resolved_ip_value, _ = get_ip_by_mac(api_connection=api, mac_address=mac)
+                if ok_ip and resolved_ip_value:
+                    resolved_ip = str(resolved_ip_value).strip()
+
+            if mac or resolved_ip or username_08:
+                ok_host, _msg_host, removed_host = remove_hotspot_host_entries(
+                    api_connection=api,
+                    mac_address=mac or None,
+                    address=resolved_ip or None,
+                    username=username_08 or None,
+                )
+                if ok_host:
+                    summary["host_kicked"] = int(removed_host or 0)
+                    if summary["host_kicked"] == 0 and (mac or resolved_ip):
+                        ok_best, _msg_best, removed_best = remove_hotspot_host_entries_best_effort(
+                            api_connection=api,
+                            mac_address=mac or None,
+                            address=resolved_ip or None,
+                            username=username_08 or None,
+                            allow_username_only_fallback=False,
+                        )
+                        if ok_best:
+                            summary["host_kicked"] = int(removed_best or 0)
+
+            if mac or resolved_ip:
+                ok_arp, _msg_arp, removed_arp = remove_arp_entries(
+                    api_connection=api,
+                    mac_address=mac or None,
+                    address=resolved_ip or None,
+                )
+                if ok_arp:
+                    summary["arp_removed"] = int(removed_arp or 0)
+
+        if api_connection is not None:
+            _do_cleanup(api_connection)
+        else:
+            with get_mikrotik_connection() as api:
+                if api:
+                    _do_cleanup(api)
+
+    if ip:
+        _remove_managed_address_lists(ip)
+        summary["address_list_cleaned"] = True
+
+    return summary
+
+
+def _log_device_binding_self_heal_action(
+    *,
+    user: User,
+    failure_message: str,
+    current_mac: Optional[str],
+    pruned_device: UserDevice,
+    cleanup_summary: Dict[str, Any],
+    active_host_count: int,
+) -> None:
+    try:
+        log_entry = AdminActionLog()
+        log_entry.admin_id = None
+        log_entry.target_user_id = user.id
+        log_entry.action_type = AdminActionType.ADMIN_API_MUTATION
+        log_entry.details = json.dumps(
+            {
+                "source": "auth.device_binding_self_heal",
+                "reason": "trusted_login_binding_retry",
+                "failure_message": failure_message,
+                "user_phone": getattr(user, "phone_number", None),
+                "current_mac": _normalize_mac(str(current_mac or "")) or None,
+                "pruned_device": {
+                    "id": str(getattr(pruned_device, "id", "") or "") or None,
+                    "mac_address": getattr(pruned_device, "mac_address", None),
+                    "ip_address": getattr(pruned_device, "ip_address", None),
+                    "authorized": bool(getattr(pruned_device, "is_authorized", False)),
+                },
+                "active_host_count": int(active_host_count),
+                "cleanup_summary": cleanup_summary,
+            },
+            default=str,
+        )
+        db.session.add(log_entry)
+    except Exception as exc:
+        logger.warning("Gagal mencatat audit self-heal binding device user=%s err=%s", user.id, exc)
+
+
+def _recover_inactive_user_devices_for_retry(
+    user: User,
+    *,
+    current_mac: Optional[str],
+    failure_message: str,
+    api_connection: Optional[Any] = None,
+) -> int:
+    devices = db.session.scalars(sa.select(UserDevice).where(UserDevice.user_id == user.id)).all()
+    if not devices:
+        return 0
+
+    current_mac_normalized = _normalize_mac(str(current_mac or ""))
+    active_hosts = _get_active_hotspot_hosts(api_connection=api_connection)
+    candidates = []
+    oldest_fallback = datetime.min.replace(tzinfo=dt_timezone.utc)
+
+    for device in devices:
+        device_mac = _normalize_mac(str(getattr(device, "mac_address", "") or ""))
+        if not device_mac or device_mac == current_mac_normalized:
+            continue
+        if device_mac in active_hosts:
+            continue
+        candidates.append(device)
+
+    if not candidates:
+        return 0
+
+    candidates.sort(
+        key=lambda device: (
+            bool(getattr(device, "is_authorized", False)),
+            getattr(device, "last_seen_at", None) or getattr(device, "first_seen_at", None) or oldest_fallback,
+        )
+    )
+
+    recovered = 0
+    settings = _get_settings()
+    for candidate in candidates[:1]:
+        cleanup_summary = _cleanup_device_network_artifacts(
+            user=user,
+            device=candidate,
+            settings=settings,
+            api_connection=api_connection,
+        )
+        db.session.delete(candidate)
+        recovered += 1
+        logger.warning(
+            "Device binding self-heal pruned inactive device: user=%s failure=%s device=%s mac=%s ip=%s cleanup=%s",
+            user.id,
+            failure_message,
+            getattr(candidate, "id", None),
+            getattr(candidate, "mac_address", None),
+            getattr(candidate, "ip_address", None),
+            cleanup_summary,
+        )
+        _log_device_binding_self_heal_action(
+            user=user,
+            failure_message=failure_message,
+            current_mac=current_mac,
+            pruned_device=candidate,
+            cleanup_summary=cleanup_summary,
+            active_host_count=len(active_hosts),
+        )
+
+    if recovered:
+        db.session.flush()
+    return recovered
+
+
 def resolve_binding_context(
     user: User,
     client_ip: Optional[str],
@@ -778,8 +1005,10 @@ def register_or_update_device(
             devices = db.session.scalars(sa.select(UserDevice).where(UserDevice.user_id == user.id)).all()
             candidates = [d for d in devices if (d.mac_address or "").upper() != (mac_address or "").upper()]
             if candidates:
+                active_hosts = _get_active_hotspot_hosts(api_connection=api_connection)
                 candidates.sort(
                     key=lambda d: (
+                        _normalize_mac(str(getattr(d, "mac_address", "") or "")) in active_hosts,
                         bool(d.is_authorized),
                         d.last_seen_at or d.first_seen_at or datetime.min.replace(tzinfo=dt_timezone.utc),
                     )
@@ -787,15 +1016,22 @@ def register_or_update_device(
                 evicted = candidates[0]
 
                 try:
-                    if settings["ip_binding_enabled"] and evicted.mac_address:
-                        _remove_ip_binding(
-                            evicted.mac_address, user.mikrotik_server_name or settings["mikrotik_server_default"]
-                        )
-                    _remove_managed_address_lists(evicted.ip_address)
-                    if settings.get("dhcp_static_lease_enabled") and evicted.mac_address:
-                        _remove_dhcp_lease(evicted.mac_address, server=None)
+                    cleanup_summary = _cleanup_device_network_artifacts(
+                        user=user,
+                        device=evicted,
+                        settings=settings,
+                        api_connection=api_connection,
+                    )
                 except Exception:
                     logger.warning("Gagal cleanup device yang di-evict: user=%s device=%s", user.id, evicted.id)
+                else:
+                    logger.info(
+                        "Evict inactive-or-oldest device during auto-replace: user=%s device=%s mac=%s cleanup=%s",
+                        user.id,
+                        evicted.id,
+                        evicted.mac_address,
+                        cleanup_summary,
+                    )
 
                 db.session.delete(evicted)
                 db.session.flush()
@@ -931,6 +1167,7 @@ def apply_device_binding_for_login(
         )
         if not ok:
             # If device binding failed and we have session MAC fallback, try with fallback MAC
+            retry_mac = client_mac
             if (
                 not ok
                 and session_mac_fallback
@@ -951,9 +1188,36 @@ def apply_device_binding_for_login(
                     api_connection=shared_api,
                 )
                 if ok and device:
+                    retry_mac = session_mac_fallback
                     logger.info(
                         "Device binding succeeded with session MAC fallback: "
                         "user=%s mac=%s", user.id, session_mac_fallback
+                    )
+
+            if not ok and bypass_explicit_auth:
+                recovered = _recover_inactive_user_devices_for_retry(
+                    user,
+                    current_mac=retry_mac,
+                    failure_message=msg,
+                    api_connection=shared_api,
+                )
+                if recovered:
+                    logger.warning(
+                        "Retry device binding after self-heal: user=%s recovered=%s mac=%s ip=%s failure=%s",
+                        user.id,
+                        recovered,
+                        retry_mac,
+                        client_ip,
+                        msg,
+                    )
+                    ok, msg, device = register_or_update_device(
+                        user,
+                        client_ip,
+                        user_agent,
+                        retry_mac,
+                        allow_replace=bypass_explicit_auth,
+                        allow_cross_user_transfer=allow_cross_user_transfer,
+                        api_connection=shared_api,
                     )
 
             if not ok:
@@ -1072,52 +1336,13 @@ def revoke_device(user: User, device: UserDevice) -> Dict[str, Any]:
         "mikrotik_connected": False,
     }
 
-    if _is_mikrotik_operations_enabled():
-        with get_mikrotik_connection() as api:
-            if api:
-                summary["mikrotik_connected"] = True
-
-                # 1. IP Binding — cabut otorisasi agar device tidak auto-allow kembali
-                if mac and settings["ip_binding_enabled"]:
-                    ok, _ = remove_ip_binding(api_connection=api, mac_address=mac, server=server_name)
-                    summary["ip_binding_removed"] = ok
-
-                # 2. DHCP static lease — hapus agar IP kembali ke pool dinamis
-                if mac and settings.get("dhcp_static_lease_enabled"):
-                    ok, _ = remove_dhcp_lease(api_connection=api, mac_address=mac, server=dhcp_server)
-                    summary["dhcp_removed"] = ok
-
-                # 3. Resolve IP jika belum tersedia (untuk ARP + host kick)
-                if mac and not ip:
-                    ok_ip, resolved_ip, _ = get_ip_by_mac(api_connection=api, mac_address=mac)
-                    if ok_ip and resolved_ip:
-                        ip = str(resolved_ip).strip()
-
-                # 4. Kick sesi hotspot aktif — putus koneksi device sekarang juga
-                #    username_08 dipakai sebagai fallback jika MAC/IP tidak cukup;
-                #    ini TIDAK menghapus hotspot user, hanya host session-nya saja.
-                if mac or ip or username_08:
-                    ok, _, removed = remove_hotspot_host_entries(
-                        api_connection=api,
-                        mac_address=mac or None,
-                        address=ip or None,
-                        username=username_08 or None,
-                    )
-                    summary["host_kicked"] = int(removed or 0) if ok else 0
-
-                # 5. ARP entry — hapus agar tidak ada stale ARP table
-                if mac or ip:
-                    ok, _, removed = remove_arp_entries(
-                        api_connection=api,
-                        mac_address=mac or None,
-                        address=ip or None,
-                    )
-                    summary["arp_removed"] = int(removed or 0) if ok else 0
-
-    # 6. Address-list cleanup (blocked/active/fup/habis/expired/inactive)
-    if ip:
-        _remove_managed_address_lists(ip)
-        summary["address_list_cleaned"] = True
+    summary.update(
+        _cleanup_device_network_artifacts(
+            user=user,
+            device=device,
+            settings=settings,
+        )
+    )
 
     db.session.flush()
     return summary

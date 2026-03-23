@@ -1428,21 +1428,56 @@ function openQuotaHistory() {
   box-shadow: 0 0 0 1px rgba(var(--v-theme-primary), 0.18) inset;
 }
 
+.admin-user-edit__section-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.admin-user-edit__section-btn {
+  position: relative;
+  display: flex;
+  min-height: 128px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 18px 18px 16px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(var(--v-theme-surface), 0.98) 0%, rgba(var(--v-theme-surface), 0.88) 100%),
+    linear-gradient(135deg, rgba(var(--v-theme-primary), 0.08) 0%, rgba(var(--v-theme-on-surface), 0.02) 100%);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
+  text-align: left;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.admin-user-edit__section-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 20px 44px rgba(15, 23, 42, 0.08);
+}
+
+.admin-user-edit__section-btn--active {
+  border-color: rgba(var(--v-theme-primary), 0.28);
+  box-shadow: 0 22px 52px rgba(var(--v-theme-primary), 0.14);
+}
+
 .admin-user-edit__section-icon {
   font-size: 28px;
+  color: rgb(var(--v-theme-primary));
 }
 
 .admin-user-edit__section-title {
   font-size: 1.05rem;
   font-weight: 600;
   line-height: 1.25;
-  text-align: center;
+  text-align: left;
 }
 
 .admin-user-edit__section-desc {
   font-size: 0.88rem;
   line-height: 1.45;
-  text-align: center;
+  text-align: left;
   color: rgba(var(--v-theme-on-surface), 0.64);
 }
 

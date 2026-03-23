@@ -369,6 +369,11 @@ def set_user_unlimited(user: User, admin_actor: User, make_unlimited: bool) -> T
                 e,
             )
 
+        # Saat status berubah menjadi unlimited, baseline kuota numerik harus direset.
+        user.total_quota_purchased_mb = 0
+        user.total_quota_used_mb = 0
+        user.auto_debt_offset_mb = 0
+
         # Grant unlimited tidak boleh menghapus blok debt yang masih aktif.
         # Expiry boleh maju dari sekarang, tetapi debt auto/manual tetap harus
         # diselesaikan oleh alur settlement debt masing-masing.

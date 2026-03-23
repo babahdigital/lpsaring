@@ -429,7 +429,7 @@ const headers = computed(() => {
     { title: 'PERANGKAT', key: 'device_count', sortable: false, align: 'center' },
     { title: 'LOGIN TERAKHIR', key: 'last_login_at', sortable: false },
     { title: 'TGL DAFTAR', key: 'created_at', sortable: true },
-    { title: 'AKSI', key: 'actions', sortable: false, align: 'center', width: '182px' },
+    { title: 'AKSI', key: 'actions', sortable: false, align: 'center', width: '236px' },
   ]
   // Perbaikan baris 81: Perbandingan eksplisit untuk isMobile.value dan pengecekan h.key
   // Menghapus h !== null karena h selalu objek dan truthy.
@@ -1753,12 +1753,43 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 
 .admin-users__cleanupDialogTitle {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 2px;
 }
 
 .admin-users__cleanupDialogSubtitle {
+  overflow-wrap: anywhere;
   opacity: 0.84;
+  white-space: normal;
+}
+
+.dialog-titlebar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.dialog-titlebar__title {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dialog-titlebar__title > * {
+  min-width: 0;
+}
+
+.dialog-titlebar__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
 }
 
 .admin-users__cleanupDialogList {
@@ -1817,9 +1848,10 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 .admin-users__actionGroup {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 4px;
   padding: 4px;
+  min-width: 214px;
   border-radius: 14px;
   background: rgba(var(--v-theme-on-surface), 0.04);
   box-shadow: inset 0 0 0 1px rgba(var(--v-theme-on-surface), 0.08);
@@ -1828,6 +1860,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 .admin-users__actionGroup--mobile {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(40px, 1fr));
+  min-width: 0;
 }
 
 .admin-users__actionBtn {
@@ -1968,6 +2001,19 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
   .admin-users__cleanupDialogActions {
     gap: 6px;
     margin-inline-start: 8px;
+  }
+
+  .dialog-titlebar {
+    flex-direction: column;
+  }
+
+  .dialog-titlebar__title {
+    width: 100%;
+  }
+
+  .dialog-titlebar__actions {
+    width: 100%;
+    justify-content: flex-end;
   }
 
   .admin-users__mobile-cardHeader {

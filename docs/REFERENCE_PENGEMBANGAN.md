@@ -68,6 +68,7 @@ Variabel yang paling sensitif terhadap perilaku runtime:
 - Quota source of truth tetap berada di database.
 - Sinkronisasi hotspot usage bersifat monotonic: penurunan counter host dianggap reset router, bukan pengurangan total usage.
 - User unlimited tidak boleh membawa debt quota.
+- Saat admin mengaktifkan akses unlimited, counter numerik quota user (`total_quota_purchased_mb`, `total_quota_used_mb`, `auto_debt_offset_mb`) harus di-reset agar state database tetap konsisten dengan mode unlimited yang aktif.
 - Status akses lintas aplikasi wajib tetap sinkron dengan [docs/ACCESS_STATUS_MATRIX.md](ACCESS_STATUS_MATRIX.md).
 
 ### Timezone dan display kuota
@@ -146,9 +147,16 @@ Variabel yang paling sensitif terhadap perilaku runtime:
 - Untuk payload `user_debt_added`, timestamp header dan detail item harus melalui helper timezone yang sama. Jangan lagi mengonversi detail item dengan WIB/WITA hardcoded karena itu mudah menciptakan selisih jam antarbagian pesan.
 - Untuk report/reminder debt manual, total nominal aktif harus dijumlah dari item debt terbuka yang tercatat (`price_rp` / `remaining_rp`) bila tersedia. Jangan menurunkan nominal manual dari aggregate MB melalui estimator paket termurah, karena itu bisa meng-understate tagihan user.
 - Label `debt otomatis` di UI, PDF, dan notifikasi harus diperlakukan sebagai `nilai referensi`, bukan nominal exact. Sebaliknya, debt manual boleh menampilkan nominal exact bila item debt memang menyimpan harga paketnya.
+- Aktivasi unlimited dari jalur admin harus mengirim notifikasi khusus `user_unlimited_activated_by_admin` dan menyuplai context yang cukup jelas untuk menjelaskan profil akses dan masa aktif unlimited yang baru.
 - Di dialog admin edit user, mode `Unlimited` dan `Tunggakan Kuota` harus tetap saling eksklusif agar operator tidak memberi kombinasi state yang membingungkan atau bertentangan dengan policy debt.
 - Dialog admin fullscreen/scrollable pada mobile sebaiknya memakai native scroll container alih-alih `perfect-scrollbar` bila ada indikasi lag sentuhan atau warning non-passive listener. CSS boleh dipakai untuk polishing, tetapi bypass library tetap menjadi jalur utama untuk menghapus bottleneck interaksi.
 - Manual dispatch GitHub Actions dari workspace Windows ini bisa gagal walaupun `gh auth status` sehat bila resolver sistem memprioritaskan jalur IPv6/NAT64 `api.github.com` yang sedang rusak. Jika error mengarah ke `wsarecv`, `WinError 10054`, atau `connection reset`, audit address family `api.github.com` dan pakai workaround forcing IPv4 sebelum menyimpulkan workflow/token bermasalah.
+
+## Guardrail Audit Release
+
+- Jika user melaporkan perilaku lama masih terlihat setelah publish dan recreate, jangan langsung mengasumsikan deploy gagal. Audit tiga lapisan secara berurutan: revision image yang berjalan, isi source `main` yang menjadi bahan image, lalu source file aktual yang memegang perilaku tersebut.
+- Untuk regresi yang menyentuh admin log, debt/unlimited, atau device self-heal, pastikan verifikasi tidak berhenti di container status. Selalu cek juga route/backend service, template notifikasi, dan file Vue yang menjadi sumber UI terakhir.
+- Catatan release wajib membedakan antara perubahan yang memang sudah pernah dibahas di chat dan perubahan yang sudah benar-benar masuk ke repo. Drift di antara keduanya harus dicatat eksplisit di devlog agar tidak terulang.
 
 ## Aturan Saat Mengubah Kode
 

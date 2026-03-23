@@ -369,6 +369,7 @@ def test_register_or_update_device_auto_replaces_oldest_when_otp_adds_fourth_mac
             "global_mac_claim_transfer_enabled": False,
         },
     )
+    monkeypatch.setattr(dms, "_is_mikrotik_operations_enabled", lambda: True)
     monkeypatch.setattr(dms, "_is_client_ip_allowed", lambda *_args, **_kwargs: True)
 
     removed_bindings = []
@@ -409,7 +410,7 @@ def test_register_or_update_device_auto_replaces_oldest_when_otp_adds_fourth_mac
     assert fake_session.deleted[0].mac_address == "AA:AA:AA:AA:AA:01"
     assert removed_bindings == [("AA:AA:AA:AA:AA:01", "srv-user")]
     assert removed_address_lists == ["172.16.2.11"]
-    assert removed_leases == [("AA:AA:AA:AA:AA:01", None)]
+    assert removed_leases == [("AA:AA:AA:AA:AA:01", "Klien")]
     assert len(fake_session.devices) == 3
     assert sorted(getattr(d, "mac_address", "") for d in fake_session.devices) == [
         "AA:AA:AA:AA:AA:02",

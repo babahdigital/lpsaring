@@ -34,6 +34,7 @@ const { add: showSnackbar } = useSnackbar()
 
 const exportLoading = ref(false)
 const options = ref<DatatableOptions>({ page: 1, itemsPerPage: 15, sortBy: [{ key: 'created_at', order: 'desc' }] })
+const quickFilter = ref<'all' | 'device-binding-self-heal'>('all')
 
 // --- State untuk Filter ---
 const search = ref('')
@@ -51,6 +52,8 @@ const confirmDialog = reactive({
   visible: false,
   title: '',
   message: '',
+  color: 'error',
+  loading: false,
   action: async () => {},
 })
 
@@ -61,6 +64,7 @@ const queryParams = computed(() => ({
   sortBy: options.value.sortBy[0]?.key ?? 'created_at',
   sortOrder: options.value.sortBy[0]?.order ?? 'desc',
   search: search.value,
+  source: quickFilter.value === 'device-binding-self-heal' ? 'auth.device_binding_self_heal' : undefined,
   admin_id: adminFilter.value?.id,
   target_user_id: targetUserFilter.value?.id,
   start_date: startDate.value ? startDate.value.toISOString() : undefined,
@@ -162,10 +166,42 @@ watch(error, (newError) => {
 })
 
 // --- Helper, Kamus, dan Fungsi Format ---
-const hasActiveFilters = computed(() => adminFilter.value !== null || targetUserFilter.value !== null || startDate.value !== null)
+const hasActiveFilters = computed(() => (
+  adminFilter.value !== null
+  || targetUserFilter.value !== null
+  || startDate.value !== null
+  || endDate.value !== null
+  || search.value.trim().length > 0
+  || quickFilter.value !== 'all'
+))
 const formatPhoneNumber = (phone?: string) => phone != null ? phone.replace('+62', '0') : ''
 const formatDateTime = (date: string) => new Date(date).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 const formatDate = (date: Date | null) => date !== null ? new Date(date).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) : ''
+
+function parseLogDetails(details: string | null): Record<string, any> | null {
+  if (!details)
+    return null
+  try {
+    const parsed = JSON.parse(details)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null
+  }
+  catch {
+    return null
+  }
+}
+
+function getLogSource(log: AdminActionLog): string | null {
+  const details = parseLogDetails(log.details)
+  const source = details?.source
+  return typeof source === 'string' && source.trim().length > 0 ? source.trim() : null
+}
+
+function getActionLabel(log: AdminActionLog): string {
+  const source = getLogSource(log)
+  if (source === 'auth.device_binding_self_heal')
+    return 'DEVICE BINDING SELF HEAL'
+  return log.action_type.replace(/_/g, ' ')
+}
 
 const actionDisplayMap = computed(() => ({
   CREATE_USER: { color: 'success', icon: 'tabler-user-plus' },
@@ -185,6 +221,7 @@ const actionDisplayMap = computed(() => ({
   PROCESS_QUOTA_REQUEST_APPROVE: { color: 'success', icon: 'tabler-checks' },
   PROCESS_QUOTA_REQUEST_REJECT: { color: 'error', icon: 'tabler-x' },
   PROCESS_QUOTA_REQUEST_PARTIALLY_APPROVED: { color: 'info', icon: 'tabler-check' },
+  ADMIN_API_MUTATION: { color: 'secondary', icon: 'tabler-settings-bolt' },
   DEFAULT: { color: 'secondary', icon: 'tabler-question-mark' },
 }))
 const getActionChip = (action: string) => actionDisplayMap.value[action as keyof typeof actionDisplayMap.value] ?? actionDisplayMap.value.DEFAULT
@@ -236,6 +273,24 @@ function formatLogDetails(log: AdminActionLog): string {
   try {
     const details = JSON.parse(log.details)
     const parts: string[] = []
+    if (details?.source === 'auth.device_binding_self_heal') {
+      const prunedDevice = details.pruned_device ?? {}
+      const cleanupSummary = details.cleanup_summary ?? {}
+      const cleanedParts = [
+        cleanupSummary.ip_binding_removed ? 'ip-binding' : null,
+        cleanupSummary.dhcp_removed ? 'dhcp lease' : null,
+        Number(cleanupSummary.host_kicked ?? 0) > 0 ? `host ${cleanupSummary.host_kicked}x` : null,
+        Number(cleanupSummary.arp_removed ?? 0) > 0 ? `arp ${cleanupSummary.arp_removed}x` : null,
+        cleanupSummary.address_list_cleaned ? 'address-list' : null,
+      ].filter(Boolean)
+      return [
+        'Sistem memangkas device stale sebelum retry login.',
+        prunedDevice.mac_address ? `MAC lama: ${prunedDevice.mac_address}.` : null,
+        prunedDevice.ip_address ? `IP lama: ${prunedDevice.ip_address}.` : null,
+        details.failure_message ? `Pemicu: ${details.failure_message}.` : null,
+        cleanedParts.length > 0 ? `Cleanup: ${cleanedParts.join(', ')}.` : null,
+      ].filter(Boolean).join(' ')
+    }
     switch (log.action_type) {
       case 'CREATE_USER': return `Membuat pengguna baru dengan peran '${details.role}'.`
       case 'DEACTIVATE_USER': return `Alasan: ${details.reason ?? 'Tidak ada'}.`
@@ -294,6 +349,37 @@ function clearAllFilters() {
   adminFilter.value = null
   targetUserFilter.value = null
   search.value = ''
+  quickFilter.value = 'all'
+}
+
+function closeConfirmDialog() {
+  confirmDialog.visible = false
+  confirmDialog.loading = false
+}
+
+function openConfirmDialog(props: { title: string, message: string, color?: string, action: () => Promise<void> }) {
+  confirmDialog.title = props.title
+  confirmDialog.message = props.message
+  confirmDialog.color = props.color ?? 'error'
+  confirmDialog.loading = false
+  confirmDialog.action = async () => {
+    if (confirmDialog.loading)
+      return
+
+    confirmDialog.loading = true
+    try {
+      await props.action()
+    }
+    finally {
+      confirmDialog.loading = false
+    }
+  }
+  confirmDialog.visible = true
+}
+
+function setQuickFilter(filter: 'all' | 'device-binding-self-heal') {
+  quickFilter.value = filter
+  options.value.page = 1
 }
 async function exportLogs(format: 'csv' | 'txt') {
   exportLoading.value = true
@@ -317,19 +403,22 @@ async function exportLogs(format: 'csv' | 'txt') {
   }
 }
 function openClearLogDialog() {
-  confirmDialog.title = 'Hapus Semua Log Aktivitas'
-  confirmDialog.message = 'Anda yakin ingin menghapus **semua** catatan log secara permanen? Aksi ini tidak dapat dibatalkan.'
-  confirmDialog.action = async () => {
-    try {
-      const response = await $api<any>('/admin/action-logs', { method: 'DELETE' })
-      showSnackbar({ type: 'success', title: 'Berhasil', text: response.message })
-      refresh()
-    }
-    catch (err: any) {
-      showSnackbar({ type: 'error', title: 'Gagal', text: err.data?.message ?? 'Gagal menghapus log.' })
-    }
-  }
-  confirmDialog.visible = true
+  openConfirmDialog({
+    title: 'Hapus Semua Log Aktivitas',
+    message: 'Anda yakin ingin menghapus **semua** catatan log secara permanen? Aksi ini tidak dapat dibatalkan.',
+    color: 'error',
+    action: async () => {
+      try {
+        const response = await $api<any>('/admin/action-logs', { method: 'DELETE' })
+        showSnackbar({ type: 'success', title: 'Berhasil', text: response.message })
+        closeConfirmDialog()
+        await refresh()
+      }
+      catch (err: any) {
+        showSnackbar({ type: 'error', title: 'Gagal', text: err.data?.message ?? 'Gagal menghapus log.' })
+      }
+    },
+  })
 }
 
 // --- Headers & Metadata ---
@@ -384,11 +473,17 @@ useHead({ title: 'Log Aktivitas Admin' })
         </VRow>
         <VRow v-if="hasActiveFilters" class="mt-4">
           <VCol cols="12" class="d-flex flex-wrap gap-2 align-center">
+            <VChip v-if="quickFilter === 'device-binding-self-heal'" color="warning" closable prepend-icon="tabler-shield-bolt" @click:close="setQuickFilter('all')">
+              Self-heal Login
+            </VChip>
             <VChip v-if="adminFilter" color="primary" closable prepend-icon="tabler-user-shield" @click:close="adminFilter = null">
               Admin: {{ adminFilter.full_name }}
             </VChip>
             <VChip v-if="targetUserFilter" color="primary" closable prepend-icon="tabler-user" @click:close="targetUserFilter = null">
               Target: {{ targetUserFilter.full_name }}
+            </VChip>
+            <VChip v-if="search.trim().length > 0" color="primary" closable prepend-icon="tabler-search" @click:close="search = ''">
+              Cari: {{ search }}
             </VChip>
             <VChip v-if="startDate" color="primary" closable prepend-icon="tabler-calendar" @click:close="() => { startDate = null; endDate = null; }">
               Periode Aktif
@@ -429,6 +524,25 @@ useHead({ title: 'Log Aktivitas Admin' })
       </VCardTitle>
 
       <VCardText class="py-3 px-6 logs-toolbar">
+        <div class="logs-quick-filters mb-4">
+          <VChip
+            label
+            :variant="quickFilter === 'all' ? 'flat' : 'outlined'"
+            :color="quickFilter === 'all' ? 'primary' : 'default'"
+            @click="setQuickFilter('all')"
+          >
+            Semua Log
+          </VChip>
+          <VChip
+            label
+            prepend-icon="tabler-shield-bolt"
+            :variant="quickFilter === 'device-binding-self-heal' ? 'flat' : 'outlined'"
+            :color="quickFilter === 'device-binding-self-heal' ? 'warning' : 'default'"
+            @click="setQuickFilter('device-binding-self-heal')"
+          >
+            Self-heal Login
+          </VChip>
+        </div>
         <DataTableToolbar
           v-model:items-per-page="options.itemsPerPage"
           v-model:search="search"
@@ -466,7 +580,7 @@ useHead({ title: 'Log Aktivitas Admin' })
           </template>
           <template #item.action_type="{ item }">
             <VChip :color="getActionChip(item.action_type).color" size="small" label>
-              <VIcon :icon="getActionChip(item.action_type).icon" start size="16" />{{ item.action_type.replace(/_/g, ' ') }}
+              <VIcon :icon="getActionChip(item.action_type).icon" start size="16" />{{ getActionLabel(item) }}
             </VChip>
           </template>
           <template #item.details="{ item }">
@@ -522,7 +636,7 @@ useHead({ title: 'Log Aktivitas Admin' })
                   <VIcon :icon="getActionChip(log.action_type).icon" :color="getActionChip(log.action_type).color" />
                 </template>
                 <VListItemTitle class="font-weight-bold">
-                  {{ log.action_type.replace(/_/g, ' ') }}
+                  {{ getActionLabel(log) }}
                 </VListItemTitle>
                 <VListItemSubtitle>{{ formatDateTime(log.created_at) }}</VListItemSubtitle>
               </VListItem>
@@ -530,7 +644,7 @@ useHead({ title: 'Log Aktivitas Admin' })
             <VDivider />
             <VCardText>
               <div class="mb-2">
-                <strong>Admin:</strong> {{ log.admin.full_name }}
+                <strong>Admin:</strong> {{ log.admin?.full_name ?? 'Sistem' }}
               </div>
               <div v-if="log.target_user !== null" class="mb-2">
                 <strong>Target:</strong> {{ log.target_user.full_name }}
@@ -557,12 +671,18 @@ useHead({ title: 'Log Aktivitas Admin' })
     </VCard>
 
     <UserFilterDialog v-model="isUserFilterDialogOpen" :mode="userFilterMode" :role-filter="userFilterMode === 'admin' ? ['ADMIN', 'SUPER_ADMIN'] : []" @select="handleUserSelected" />
-    <UserActionConfirmDialog v-model="confirmDialog.visible" :title="confirmDialog.title" :message="confirmDialog.message" color="error" :loading="loading" @confirm="confirmDialog.action" />
+    <UserActionConfirmDialog v-model="confirmDialog.visible" :title="confirmDialog.title" :message="confirmDialog.message" :color="confirmDialog.color" :loading="confirmDialog.loading" @confirm="confirmDialog.action" />
   </div>
 </template>
 
 <style scoped>
 .logs-toolbar :deep(.datatable-toolbar__search) {
   min-width: 320px;
+}
+
+.logs-quick-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 </style>

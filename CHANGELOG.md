@@ -8,6 +8,16 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Fixed (2026-03-24 - Source Audit and Restored Admin, Unlimited, WA, and Self-Heal Fixes)
+
+- **Audit source vs image produksi membuktikan image terbaru saat itu memang berasal dari `main`, tetapi `main` sendiri belum memuat sebagian patch yang sebelumnya diasumsikan sudah masuk.** Temuan ini menutup false lead bahwa `deploy_pi.sh --recreate` atau `docker pull` adalah akar masalah utama untuk regresi yang masih terlihat user.
+- **Halaman log admin dipulihkan agar kembali mengenali event self-heal dan aman saat hapus log.** `frontend/pages/admin/logs.vue` dan `backend/app/infrastructure/http/admin/action_log_routes.py` kembali mendukung filter `source`, label untuk `auth.device_binding_self_heal`, parsing details yang lebih aman, serta state `confirmDialog.loading` agar popup hapus tidak double-submit dan tertutup bersih setelah sukses.
+- **Dialog konfirmasi dan tabel admin user dipulihkan untuk menghilangkan truncation/regresi layout.** `frontend/components/admin/users/UserActionConfirmDialog.vue` kini kembali wrap-safe dan mobile-safe, sedangkan `frontend/pages/admin/users.vue` memulihkan lebar kolom `AKSI` ke `236px` dan menstabilkan grup tombol agar tidak collapse saat render awal.
+- **Dialog `Edit Pengguna` dan `Riwayat Tunggakan` dipulihkan ke baseline yang lebih sesuai dengan intent batch sebelumnya.** `frontend/components/admin/users/UserEditDialog.vue` memulihkan section-card selector yang lebih rapi, dan `frontend/components/admin/users/UserDebtLedgerDialog.vue` kembali memakai alur blob/objectURL untuk membuka PDF export dan receipt tanpa melempar admin ke blank tab.
+- **Template WhatsApp debt/unlimited dan jalur aktivasi unlimited dipulihkan di backend.** `backend/app/notifications/templates.json`, `backend/app/services/user_management/user_profile.py`, dan `backend/app/services/user_management/user_quota.py` kembali membawa wording terbaru, `access_grant_summary`, trigger `user_unlimited_activated_by_admin`, serta reset counter quota saat user diubah menjadi unlimited.
+- **Self-heal device binding saat login dipulihkan lengkap dengan audit log sistem.** `backend/app/services/device_management_service.py` kembali memiliki helper cleanup/recovery host-device, retry once untuk binding login setelah self-heal, dan penulisan log bersumber `auth.device_binding_self_heal` sehingga operator bisa menelusuri kejadian ini dari admin log.
+- **Regression test yang terdampak diselaraskan ulang dan focused validation kembali hijau.** `backend/tests/test_device_management_service.py` dan `backend/tests/test_smoke_session_2026_03_19_s4.py` diperbarui mengikuti kontrak terbaru; hasil focused backend pytest setelah penyelarasan adalah `28 passed`.
+
 ### Security Fixes (2026-03-22 — Critical Hardening)
 
 - **BUG-1 CRITICAL: Fixed `enforce_overdue_debt_block_task` DetachedInstanceError causing silent DB ↔ MikroTik mismatch.**

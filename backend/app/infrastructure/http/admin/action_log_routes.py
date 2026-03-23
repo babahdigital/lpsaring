@@ -35,6 +35,7 @@ def _build_log_query(apply_filters=True):
 
     if apply_filters:
         search_query = request.args.get("search", "").strip()
+        source_filter = request.args.get("source", "").strip()
         admin_id = request.args.get("admin_id")
         target_user_id = request.args.get("target_user_id")
         start_date_str = request.args.get("start_date")
@@ -51,6 +52,9 @@ def _build_log_query(apply_filters=True):
                     TargetUser.full_name.ilike(search_term),
                 )
             )
+
+        if source_filter:
+            query = query.where(AdminActionLog.details.ilike(f"%{source_filter}%"))
 
         if admin_id:
             query = query.where(AdminActionLog.admin_id == admin_id)

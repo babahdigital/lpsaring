@@ -43,10 +43,16 @@ const dialogToneMeta = computed(() => {
 })
 
 function onConfirm() {
+  if (props.loading)
+    return
+
   emit('confirm')
 }
 
 function onClose() {
+  if (props.loading)
+    return
+
   emit('update:modelValue', false)
 }
 </script>
@@ -55,6 +61,7 @@ function onClose() {
   <VDialog
     :model-value="props.modelValue"
     max-width="450"
+    class="confirm-dialog"
     persistent
     @update:model-value="onClose"
   >
@@ -66,14 +73,16 @@ function onClose() {
               <VIcon :icon="dialogToneMeta.icon" size="22" />
             </div>
             <div class="confirm-dialog__hero-copy">
-              <span class="headline">{{ props.title }}</span>
+              <div class="confirm-dialog__hero-heading">
+                {{ props.title }}
+              </div>
               <div class="confirm-dialog__hero-subtitle text-white">
                 {{ dialogToneMeta.subtitle }}
               </div>
             </div>
           </div>
           <div class="dialog-titlebar__actions">
-            <VBtn icon="tabler-x" variant="text" class="text-white" @click="onClose" />
+            <VBtn :disabled="props.loading" icon="tabler-x" variant="text" class="text-white" @click="onClose" />
           </div>
         </div>
       </VCardTitle>
@@ -87,9 +96,11 @@ function onClose() {
           Aksi ini tidak dapat dibatalkan.
         </p>
       </VCardText>
-      <VCardActions class="pa-4 pt-0">
+      <VCardActions class="confirm-dialog__actions pa-4 pt-0">
         <VSpacer />
         <VBtn
+          class="confirm-dialog__actionBtn"
+          :disabled="props.loading"
           variant="tonal"
           color="secondary"
           @click="onClose"
@@ -97,8 +108,10 @@ function onClose() {
           {{ props.cancelText }}
         </VBtn>
         <VBtn
+          class="confirm-dialog__actionBtn"
           :color="props.color"
           :loading="props.loading"
+          :disabled="props.loading"
           @click="onConfirm"
         >
           {{ props.confirmText }}
@@ -109,20 +122,36 @@ function onClose() {
 </template>
 
 <style scoped>
+.confirm-dialog :deep(.v-overlay__content) {
+  width: min(450px, calc(100vw - 24px));
+  max-width: min(450px, calc(100vw - 24px));
+  margin: 12px;
+}
+
+.confirm-dialog :deep(.v-card-title) {
+  white-space: normal;
+}
+
 .dialog-titlebar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   width: 100%;
+  min-width: 0;
 }
 
 .dialog-titlebar__title {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
 .dialog-titlebar__actions {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 8px;
 }
@@ -149,27 +178,57 @@ function onClose() {
 
 .confirm-dialog__hero-copy {
   display: flex;
+  flex: 1 1 auto;
   min-width: 0;
   flex-direction: column;
   gap: 4px;
 }
 
+.confirm-dialog__hero-heading {
+  overflow-wrap: anywhere;
+  color: inherit;
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: normal;
+}
+
 .confirm-dialog__hero-subtitle {
+  overflow-wrap: anywhere;
   font-size: 0.88rem;
   line-height: 1.45;
   opacity: 0.86;
+  white-space: normal;
 }
 
 .confirm-dialog__message {
+  overflow-wrap: anywhere;
   font-size: 0.96rem;
   line-height: 1.6;
   color: rgba(var(--v-theme-on-surface), 0.82);
+  white-space: normal;
+}
+
+.confirm-dialog__message :deep(strong) {
+  font-weight: 700;
 }
 
 .confirm-dialog__warning {
+  overflow-wrap: anywhere;
   padding: 10px 12px;
   border-radius: 12px;
   background: rgba(var(--v-theme-error), 0.08);
+  white-space: normal;
+}
+
+.confirm-dialog__actions {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.confirm-dialog__actionBtn {
+  min-width: 124px;
 }
 
 @media (max-width: 600px) {
@@ -183,6 +242,10 @@ function onClose() {
     justify-content: flex-end;
   }
 
+  .dialog-titlebar__title {
+    width: 100%;
+  }
+
   .confirm-dialog__hero {
     padding: 16px 16px 14px;
   }
@@ -193,8 +256,26 @@ function onClose() {
     border-radius: 12px;
   }
 
+  .confirm-dialog__hero-heading {
+    font-size: 1.05rem;
+  }
+
   .confirm-dialog__hero-subtitle {
     font-size: 0.8rem;
+  }
+
+  .confirm-dialog__actions {
+    justify-content: stretch;
+  }
+
+  .confirm-dialog__actions :deep(.v-spacer) {
+    display: none;
+  }
+
+  .confirm-dialog__actionBtn {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
   }
 }
 </style>
