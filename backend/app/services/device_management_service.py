@@ -1321,12 +1321,6 @@ def revoke_device(user: User, device: UserDevice) -> Dict[str, Any]:
     device.is_authorized = False
     device.deauthorized_at = datetime.now(dt_timezone.utc)
 
-    mac = str(device.mac_address or "").strip().upper()
-    ip = str(device.ip_address or "").strip()
-    server_name = user.mikrotik_server_name or settings["mikrotik_server_default"]
-    dhcp_server = settings.get("dhcp_lease_server_name") or None
-    username_08 = format_to_local_phone(user.phone_number) or ""
-
     summary: Dict[str, Any] = {
         "ip_binding_removed": False,
         "dhcp_removed": False,
