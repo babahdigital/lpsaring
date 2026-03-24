@@ -863,7 +863,6 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
           </VAvatar>
         </template>
         <VCardTitle>Preview Cleanup Nonaktif</VCardTitle>
-        <VCardSubtitle>Ringkasan kandidat dipertahankan singkat agar halaman tetap bersih. Detail kandidat dan tindakan cleanup tidak lagi ditampilkan langsung di kartu ini.</VCardSubtitle>
         <template #append>
           <div class="d-flex align-center gap-2 flex-wrap justify-end">
             <VBtn
@@ -890,31 +889,26 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
       </VCardItem>
       <VCardText>
         <div class="admin-users__cleanupOverview">
-          <div class="admin-users__cleanupCopy">
-            <div class="text-body-2 text-medium-emphasis">
-              Kandidat nonaktif tetap dipantau sebagai sinyal operasional. Jika angkanya naik, review dilakukan lewat alur operasi terpisah, bukan dari halaman ringkasan pengguna.
-            </div>
-            <div class="admin-users__cleanupChips mt-4">
-              <VChip color="warning" size="small" label>
-                Deactivate ≥ {{ cleanupPreview?.thresholds?.deactivate_days ?? '-' }} hari
-              </VChip>
-              <VChip color="error" size="small" label>
-                Delete ≥ {{ cleanupPreview?.thresholds?.delete_days ?? '-' }} hari
-              </VChip>
-            </div>
+          <div class="admin-users__cleanupChips">
+            <VChip color="warning" size="small" label>
+              Deactivate ≥ {{ cleanupPreview?.thresholds?.deactivate_days ?? '-' }} hari
+            </VChip>
+            <VChip color="error" size="small" label>
+              Delete ≥ {{ cleanupPreview?.thresholds?.delete_days ?? '-' }} hari
+            </VChip>
           </div>
 
           <div class="admin-users__cleanupStats">
             <div class="admin-users__cleanupStat admin-users__cleanupStat--warning">
               <div class="admin-users__cleanupStatLabel">Kandidat Deactivate</div>
               <div class="admin-users__cleanupStatValue">{{ cleanupPreview?.summary?.deactivate_candidates ?? 0 }}</div>
-              <div class="admin-users__cleanupStatHint">Ringkasan read-only untuk monitoring periodik.</div>
+              <div class="admin-users__cleanupStatHint">Pantauan singkat.</div>
             </div>
 
             <div class="admin-users__cleanupStat admin-users__cleanupStat--error">
               <div class="admin-users__cleanupStatLabel">Kandidat Delete</div>
               <div class="admin-users__cleanupStatValue">{{ cleanupPreview?.summary?.delete_candidates ?? 0 }}</div>
-              <div class="admin-users__cleanupStatHint">Jika meningkat, evaluasi dilakukan dari log atau halaman operasi khusus.</div>
+              <div class="admin-users__cleanupStatHint">Tinjau di Operasional.</div>
             </div>
           </div>
         </div>
@@ -1449,15 +1443,9 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 }
 
 .admin-users__cleanupOverview {
-  display: flex;
-  align-items: stretch;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 20px;
-}
-
-.admin-users__cleanupCopy {
-  flex: 1 1 auto;
-  min-width: 0;
 }
 
 .admin-users__cleanupChips {
@@ -1468,7 +1456,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 
 .admin-users__cleanupStats {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 220px));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -1496,6 +1484,12 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: rgba(var(--v-theme-on-surface), 0.56);
+}
+
+.admin-users__cleanupStatHint {
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: rgba(var(--v-theme-on-surface), 0.62);
 }
 
 .admin-users__cleanupStatValue {
@@ -1557,13 +1551,10 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 }
 
 .admin-users__toolbar {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 14px;
-}
-
-.admin-users__search {
-  width: 340px;
+  gap: 16px;
+  width: min(100%, 520px);
 }
 
 .admin-users__connectionHint {
@@ -1603,12 +1594,6 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
   align-self: stretch;
 }
 
-.admin-users__toolbar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
 .admin-users__toolbar--mobile {
   flex-direction: column;
   align-items: stretch;
@@ -1617,7 +1602,8 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 }
 
 .admin-users__search {
-  width: 300px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .admin-users__toolbar--mobile .admin-users__search {
@@ -1717,7 +1703,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
   }
 
   .admin-users__cleanupOverview {
-    flex-direction: column;
+    grid-template-columns: 1fr;
   }
 
   .admin-users__cleanupStats {

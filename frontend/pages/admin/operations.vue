@@ -230,7 +230,7 @@ const reliabilityCards = computed(() => [
     status: reliabilitySummary.value.paymentIdempotencyDegraded ? 'Perlu perhatian' : 'Stabil',
     detail: reliabilitySummary.value.paymentIdempotencyDegraded
       ? `Redis unavailable ${reliabilitySummary.value.paymentIdempotencyRedisUnavailableCount} kali.`
-      : 'Redis aktif, proteksi transaksi ganda tetap konsisten.',
+      : 'Redis aktif.',
     color: reliabilitySummary.value.paymentIdempotencyDegraded ? 'error' : 'success',
     icon: 'tabler-shield-check',
   },
@@ -240,7 +240,7 @@ const reliabilityCards = computed(() => [
     status: reliabilitySummary.value.hotspotSyncLockDegraded ? 'Perlu perhatian' : 'Stabil',
     detail: reliabilitySummary.value.hotspotSyncLockDegraded
       ? `Lock miss ${reliabilitySummary.value.hotspotSyncLockDegradedCount} kali.`
-      : 'Lock sinkronisasi aktif untuk proses eksklusif.',
+      : 'Lock aktif.',
     color: reliabilitySummary.value.hotspotSyncLockDegraded ? 'error' : 'success',
     icon: 'tabler-plug-connected',
   },
@@ -250,7 +250,7 @@ const reliabilityCards = computed(() => [
     status: reliabilitySummary.value.policyParityDegraded ? 'Perlu perhatian' : 'Stabil',
     detail: reliabilitySummary.value.policyParityDegraded
       ? `${reliabilitySummary.value.policyParityMismatchCount} mismatch parity terdeteksi.`
-      : 'Akses utama aplikasi dan router saat ini sinkron.',
+      : 'Akses sinkron.',
     color: reliabilitySummary.value.policyParityDegraded ? 'error' : 'success',
     icon: 'tabler-router',
   },
@@ -314,7 +314,7 @@ function getActionModeMeta(mode: string): { label: string, color: string } {
   if (mode === 'auto')
     return { label: 'Auto-heal', color: 'primary' }
 
-  return { label: 'Observasi', color: 'secondary' }
+  return { label: 'Manual', color: 'secondary' }
 }
 
 function formatPhoneNumberForDisplay(phoneNumber?: string | null) {
@@ -368,7 +368,7 @@ async function handleRefreshOperations() {
               </VAvatar>
             </template>
             <VCardTitle>Pusat Operasional</VCardTitle>
-            <VCardSubtitle>Detail parity access, cleanup watchlist, dan sinyal reliabilitas dipisah dari dashboard utama agar monitoring tetap ringkas tetapi observabilitas tetap lengkap.</VCardSubtitle>
+            <VCardSubtitle>Detail akses, watchlist cleanup, dan health check sistem.</VCardSubtitle>
             <template #append>
               <div class="d-flex align-center gap-2 flex-wrap justify-end">
                 <VBtn size="small" variant="tonal" color="secondary" to="/admin/dashboard">
@@ -392,13 +392,10 @@ async function handleRefreshOperations() {
             <div class="operations-page__heroBody">
               <div class="operations-page__heroCopy">
                 <div class="operations-page__eyebrow">
-                  Operational pulse
+                  Ringkasan
                 </div>
                 <div class="operations-page__heroTitle">
-                  {{ operationsAttentionCount === 0 ? 'Semua sinyal operasional berada dalam batas aman.' : `${operationsAttentionCount} sinyal operasional perlu dipantau lebih dekat.` }}
-                </div>
-                <div class="text-body-2 text-medium-emphasis mt-2">
-                  Halaman ini dipakai untuk membaca drift teknis dan watchlist otomatis. Dashboard utama tetap diposisikan sebagai ringkasan manajerial, bukan panel tindakan manual harian.
+                  {{ operationsAttentionCount === 0 ? 'Semua indikator utama normal.' : `${operationsAttentionCount} indikator perlu perhatian.` }}
                 </div>
               </div>
 
@@ -411,7 +408,7 @@ async function handleRefreshOperations() {
                 <div class="operations-page__heroStat">
                   <div class="operations-page__heroStatLabel">Non-parity drift</div>
                   <div class="operations-page__heroStatValue">{{ accessParitySummary.nonParityMismatches }}</div>
-                  <div class="operations-page__heroStatHint">perlu observasi periodik</div>
+                  <div class="operations-page__heroStatHint">audit berkala</div>
                 </div>
               </div>
             </div>
@@ -434,7 +431,7 @@ async function handleRefreshOperations() {
               </VAvatar>
             </template>
             <VCardTitle>Detail Konsistensi Akses</VCardTitle>
-            <VCardSubtitle>Daftar mismatch disusun dari yang paling relevan untuk kebijakan akses inti hingga drift operasional non-kritis.</VCardSubtitle>
+            <VCardSubtitle>Daftar mismatch terbaru aplikasi dan router.</VCardSubtitle>
           </VCardItem>
           <VCardText>
             <VAlert v-if="parityError" type="warning" variant="tonal" class="mb-4" icon="tabler-alert-triangle">
@@ -515,8 +512,8 @@ async function handleRefreshOperations() {
 
             <div v-else-if="!parityPending" class="operations-page__emptyState">
               <VIcon icon="tabler-shield-check" size="42" class="text-success mb-2" />
-              <div class="text-body-1 font-weight-medium">Tidak ada mismatch yang perlu ditampilkan.</div>
-              <div class="text-body-2 text-medium-emphasis">Parity guard saat ini melaporkan kondisi sinkron atau drift teknis sudah nihil.</div>
+              <div class="text-body-1 font-weight-medium">Tidak ada mismatch.</div>
+              <div class="text-body-2 text-medium-emphasis">Kondisi aplikasi dan router sinkron.</div>
             </div>
 
             <div v-else class="operations-page__emptyState">
@@ -535,7 +532,7 @@ async function handleRefreshOperations() {
               </VAvatar>
             </template>
             <VCardTitle>Sinyal Parity Dominan</VCardTitle>
-            <VCardSubtitle>Tipe mismatch yang paling banyak muncul pada audit terakhir.</VCardSubtitle>
+            <VCardSubtitle>Tipe mismatch terbanyak pada audit terakhir.</VCardSubtitle>
           </VCardItem>
           <VCardText>
             <div v-if="mismatchTypeCards.length > 0" class="operations-page__stackList">
@@ -549,7 +546,7 @@ async function handleRefreshOperations() {
               </div>
             </div>
             <div v-else class="text-body-2 text-medium-emphasis">
-              Belum ada mismatch yang menonjol pada audit terakhir.
+              Tidak ada mismatch dominan.
             </div>
           </VCardText>
         </VCard>
@@ -562,7 +559,7 @@ async function handleRefreshOperations() {
               </VAvatar>
             </template>
             <VCardTitle>Reliability Signals</VCardTitle>
-            <VCardSubtitle>Ringkasan sinyal backend yang berpengaruh ke operasi harian.</VCardSubtitle>
+            <VCardSubtitle>Ringkasan status backend utama.</VCardSubtitle>
           </VCardItem>
           <VCardText>
             <VAlert v-if="metricsError" type="warning" variant="tonal" class="mb-4" icon="tabler-alert-triangle">
@@ -600,7 +597,7 @@ async function handleRefreshOperations() {
               </VAvatar>
             </template>
             <VCardTitle>Cleanup Watchlist</VCardTitle>
-            <VCardSubtitle>Preview kandidat nonaktif tetap tersedia untuk review operasional, tetapi tidak lagi mengganggu halaman manajemen pengguna.</VCardSubtitle>
+            <VCardSubtitle>Ringkasan kandidat nonaktif untuk tindak lanjut operasional.</VCardSubtitle>
             <template #append>
               <div class="d-flex align-center gap-2 flex-wrap justify-end">
                 <VChip size="small" color="warning" variant="tonal" label>
@@ -618,8 +615,7 @@ async function handleRefreshOperations() {
             </VAlert>
 
             <div class="text-body-2 text-medium-emphasis mb-4">
-              Auto-delete saat ini <strong>{{ cleanupSummary.deleteEnabled ? 'aktif' : 'nonaktif' }}</strong>
-              dengan batas maksimum {{ cleanupSummary.deleteMaxPerRun }} user per siklus.
+              Auto-delete {{ cleanupSummary.deleteEnabled ? 'aktif' : 'nonaktif' }} · maksimal {{ cleanupSummary.deleteMaxPerRun }} user per siklus.
             </div>
 
             <VRow>

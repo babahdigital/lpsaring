@@ -208,7 +208,7 @@ function formatPhoneNumber(phone: string | null | undefined): string { // Perbai
         <VCardTitle class="text-h4">
           Manajemen Permintaan
         </VCardTitle>
-        <VCardSubtitle>Proses permintaan kuota dan akses dari para Komandan.</VCardSubtitle>
+        <VCardSubtitle>Permintaan kuota dan akses dari komandan.</VCardSubtitle>
         <template #append>
           <div :style="{ width: isMobile ? '100%' : '250px' }">
             <AppSelect v-model="statusFilter" :items="filterItems" label="Filter Status" density="comfortable" hide-details />

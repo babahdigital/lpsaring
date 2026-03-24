@@ -317,6 +317,12 @@ const tablerIcons = [
   'clock-play',
   'settings-bolt',
   'radar-2',
+  'chart-line',
+  'chart-histogram',
+  'cash-banknote',
+  'layers-subtract',
+  'user-minus',
+  'chart-donut',
   'x',
 ]
 

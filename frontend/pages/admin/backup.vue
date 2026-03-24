@@ -172,7 +172,7 @@ watch(loading, (val) => {
       <VCol cols="12" md="6">
         <h3 class="text-h4">Backup Database</h3>
         <p class="text-body-2 text-disabled">
-          Buat backup, unduh file, unggah backup `.sql/.dump`, dan restore oleh Super Admin.
+          Buat, unggah, unduh, dan restore backup database.
         </p>
       </VCol>
       <VCol cols="12" md="6" class="d-flex justify-end">

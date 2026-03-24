@@ -51,7 +51,7 @@ function overallLabel(d: MikrotikVerifyRulesResponseContract | null): string {
           Verifikasi MikroTik
         </h3>
         <p class="text-body-2 text-disabled mt-1 mb-0">
-          Periksa firewall rules kritis dan status konfigurasi router MikroTik.
+          Periksa rule penting dan status router.
         </p>
       </VCol>
       <VCol
@@ -103,7 +103,7 @@ function overallLabel(d: MikrotikVerifyRulesResponseContract | null): string {
               Verifikasi Firewall Rules
             </VCardTitle>
             <VCardSubtitle class="text-caption">
-              Keberadaan rule kritis di tabel raw & filter (hs-unauth) MikroTik
+              Rule penting pada tabel raw dan filter.
             </VCardSubtitle>
           </VCardItem>
 
@@ -252,7 +252,7 @@ function overallLabel(d: MikrotikVerifyRulesResponseContract | null): string {
               Panduan Membaca Hasil
             </VCardTitle>
             <VCardSubtitle class="text-caption">
-              Penjelasan status dan tindakan yang perlu dilakukan
+              Status hasil verifikasi.
             </VCardSubtitle>
           </VCardItem>
 

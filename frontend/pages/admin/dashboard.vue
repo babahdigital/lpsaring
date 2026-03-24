@@ -214,88 +214,6 @@ onMounted(async () => {
 
 const reliabilitySummary = computed(() => buildReliabilitySummary(adminMetrics.value))
 
-const ACCESS_PARITY_MISMATCH_META: Record<AccessParityMismatchKey, { label: string, color: string }> = {
-  binding_type: { label: 'Binding tidak sesuai', color: 'error' },
-  missing_ip_binding: { label: 'IP binding belum tersedia', color: 'error' },
-  address_list: { label: 'Address-list belum sinkron', color: 'error' },
-  address_list_multi_status: { label: 'Address-list multi-status', color: 'warning' },
-  no_authorized_device: { label: 'Perangkat belum terdaftar', color: 'default' },
-  no_resolvable_ip: { label: 'IP belum terbaca', color: 'warning' },
-  dhcp_lease_missing: { label: 'Lease DHCP belum tersedia', color: 'info' },
-}
-
-const reliabilitySignalItems = computed(() => [
-  {
-    key: 'payment-idempotency',
-    label: 'Payment Idempotency',
-    degraded: reliabilitySummary.value.paymentIdempotencyDegraded,
-    detail: `Redis unavailable: ${reliabilitySummary.value.paymentIdempotencyRedisUnavailableCount}`,
-  },
-  {
-    key: 'hotspot-sync-lock',
-    label: 'Hotspot Sync Lock',
-    degraded: reliabilitySummary.value.hotspotSyncLockDegraded,
-    detail: `Lock degraded: ${reliabilitySummary.value.hotspotSyncLockDegradedCount}`,
-  },
-  {
-    key: 'policy-parity',
-    label: 'Policy Parity',
-    degraded: reliabilitySummary.value.policyParityDegraded,
-    detail: `Mismatch parity: ${reliabilitySummary.value.policyParityMismatchCount} (onboarding gap dikecualikan)`,
-  },
-])
-
-const overallReliabilityHealthy = computed(() => {
-  return reliabilitySignalItems.value.every(item => item.degraded === false)
-})
-
-const reliabilityCards = computed(() => [
-  {
-    key: 'duplicate-webhook',
-    title: 'Duplikat Notifikasi Pembayaran',
-    value: `${reliabilitySummary.value.duplicateWebhookCount}`,
-    status: reliabilitySummary.value.duplicateWebhookCount > 0 ? 'Terkendali' : 'Stabil',
-    color: reliabilitySummary.value.duplicateWebhookCount > 0 ? 'info' : 'success',
-    icon: 'tabler-repeat',
-    caption: reliabilitySummary.value.duplicateWebhookCount > 0
-      ? 'Notifikasi ganda dari payment gateway terdeteksi dan sudah ditangani otomatis oleh sistem.'
-      : 'Tidak ada notifikasi ganda yang memerlukan penanganan tambahan.',
-  },
-  {
-    key: 'payment-idempotency',
-    title: 'Proteksi Transaksi Ganda',
-    value: reliabilitySummary.value.paymentIdempotencyDegraded ? `${reliabilitySummary.value.paymentIdempotencyRedisUnavailableCount} gangguan` : 'Redis aktif',
-    status: reliabilitySummary.value.paymentIdempotencyDegraded ? 'Perlu perhatian' : 'Stabil',
-    color: reliabilitySummary.value.paymentIdempotencyDegraded ? 'error' : 'success',
-    icon: 'tabler-shield-check',
-    caption: reliabilitySummary.value.paymentIdempotencyDegraded
-      ? `Redis tidak tersedia ${reliabilitySummary.value.paymentIdempotencyRedisUnavailableCount} kali sehingga proteksi idempotensi melemah.`
-      : 'Redis tersedia sehingga potensi transaksi duplikat tetap dapat diblokir secara konsisten.',
-  },
-  {
-    key: 'hotspot-sync-lock',
-    title: 'Sinkronisasi Hotspot',
-    value: reliabilitySummary.value.hotspotSyncLockDegraded ? `${reliabilitySummary.value.hotspotSyncLockDegradedCount} lock miss` : 'Lock aktif',
-    status: reliabilitySummary.value.hotspotSyncLockDegraded ? 'Perlu perhatian' : 'Stabil',
-    color: reliabilitySummary.value.hotspotSyncLockDegraded ? 'error' : 'success',
-    icon: 'tabler-plug-connected',
-    caption: reliabilitySummary.value.hotspotSyncLockDegraded
-      ? `Lock sinkronisasi gagal ${reliabilitySummary.value.hotspotSyncLockDegradedCount} kali sehingga sebagian proses berjalan tanpa proteksi eksklusif.`
-      : 'Lock sinkronisasi aktif dan konflik proses tidak terdeteksi pada periode pemantauan.',
-  },
-  {
-    key: 'policy-parity',
-    title: 'Konsistensi Akses Router',
-    value: reliabilitySummary.value.policyParityDegraded ? `${reliabilitySummary.value.policyParityMismatchCount} mismatch` : 'Sinkron',
-    status: reliabilitySummary.value.policyParityDegraded ? 'Perlu perhatian' : 'Stabil',
-    color: reliabilitySummary.value.policyParityDegraded ? 'error' : 'success',
-    icon: 'tabler-router',
-    caption: reliabilitySummary.value.policyParityDegraded
-      ? 'Status aplikasi dan MikroTik belum sepenuhnya selaras. Detail mismatch tersedia pada panel pemeriksaan.'
-      : 'Status aplikasi dan MikroTik sinkron untuk kebijakan akses utama.',
-  },
-])
-
 async function handleRefreshDashboard() {
   await Promise.all([
     refresh(),
@@ -314,7 +232,6 @@ const accessParitySummary = computed(() => ({
   autoFixableItems: accessParity.value?.summary?.auto_fixable_items ?? 0,
   mismatchTypes: accessParity.value?.summary?.mismatch_types ?? {},
 }))
-const accessParityDhcpDriftCount = computed(() => accessParitySummary.value.mismatchTypes.dhcp_lease_missing ?? 0)
 const accessParitySyncRate = computed(() => {
   const users = accessParitySummary.value.users
   if (users <= 0)
@@ -323,100 +240,46 @@ const accessParitySyncRate = computed(() => {
   const syncedUsers = Math.max(0, users - accessParitySummary.value.mismatches)
   return Math.round((syncedUsers / users) * 100)
 })
-const accessParityOverviewCards = computed(() => [
+const operationalSummaryCards = computed(() => [
   {
-    key: 'mismatch',
-    title: 'Mismatch Akses',
-    value: `${accessParitySummary.value.mismatches}`,
-    subtitle: `/ ${accessParitySummary.value.users} user`,
+    key: 'duplicate-webhook',
+    title: 'Duplikat Pembayaran',
+    stats: `${reliabilitySummary.value.duplicateWebhookCount}`,
+    color: reliabilitySummary.value.duplicateWebhookCount > 0 ? 'warning' : 'success',
+    icon: 'tabler-repeat',
+  },
+  {
+    key: 'payment-idempotency',
+    title: 'Idempotency Guard',
+    stats: reliabilitySummary.value.paymentIdempotencyDegraded ? `${reliabilitySummary.value.paymentIdempotencyRedisUnavailableCount} Gangguan` : 'Stabil',
+    color: reliabilitySummary.value.paymentIdempotencyDegraded ? 'error' : 'success',
+    icon: 'tabler-shield-check',
+  },
+  {
+    key: 'hotspot-sync-lock',
+    title: 'Hotspot Sync Lock',
+    stats: reliabilitySummary.value.hotspotSyncLockDegraded ? `${reliabilitySummary.value.hotspotSyncLockDegradedCount} Lock Miss` : 'Aktif',
+    color: reliabilitySummary.value.hotspotSyncLockDegraded ? 'error' : 'success',
+    icon: 'tabler-plug-connected',
+  },
+  {
+    key: 'access-parity',
+    title: 'Parity Akses',
+    stats: accessParitySummary.value.mismatches > 0 ? `${accessParitySummary.value.mismatches} Mismatch` : `${accessParitySyncRate.value}% Sinkron`,
     color: accessParitySummary.value.mismatches > 0 ? 'error' : 'success',
-    icon: accessParitySummary.value.mismatches > 0 ? 'tabler-alert-circle' : 'tabler-circle-check',
-    caption: accessParitySummary.value.mismatches > 0 ? 'Mismatch yang berdampak langsung pada kebijakan akses router.' : 'Seluruh akses inti sudah sinkron.',
-  },
-  {
-    key: 'dhcp',
-    title: 'Drift DHCP',
-    value: `${accessParityDhcpDriftCount.value}`,
-    subtitle: 'lease terpantau',
-    color: accessParityDhcpDriftCount.value > 0 ? 'info' : 'success',
-    icon: 'tabler-route-2',
-    caption: accessParityDhcpDriftCount.value > 0 ? 'Ada lease DHCP yang belum sepenuhnya sesuai dengan state akses router.' : 'Lease DHCP konsisten dengan status akses saat ini.',
-  },
-  {
-    key: 'onboarding',
-    title: 'Belum Login Perangkat',
-    value: `${accessParitySummary.value.noAuthorizedDeviceCount}`,
-    subtitle: 'user onboarding',
-    color: accessParitySummary.value.noAuthorizedDeviceCount > 0 ? 'warning' : 'success',
-    icon: 'tabler-device-mobile-off',
-    caption: accessParitySummary.value.noAuthorizedDeviceCount > 0 ? 'Pengguna sudah terdaftar namun belum pernah login dari perangkat pertama.' : 'Seluruh pengguna aktif telah memiliki perangkat awal yang terdaftar.',
-  },
-  {
-    key: 'autofix',
-    title: 'Auto-Heal Terdeteksi',
-    value: `${accessParitySummary.value.autoFixableItems}`,
-    subtitle: 'item non-kritis',
-    color: accessParitySummary.value.autoFixableItems > 0 ? 'primary' : 'secondary',
-    icon: 'tabler-refresh-alert',
-    caption: accessParitySummary.value.autoFixableItems > 0 ? 'Drift yang aman ditangani akan dibersihkan otomatis oleh parity guard berkala.' : 'Tidak ada drift auto-heal yang menunggu dibersihkan.',
+    icon: 'tabler-router',
   },
 ])
-const accessParityMismatchTypeCards = computed(() => {
-  return Object.entries(accessParitySummary.value.mismatchTypes)
-    .filter(([, count]) => Number(count ?? 0) > 0)
-    .sort(([, left], [, right]) => Number(right ?? 0) - Number(left ?? 0))
-    .slice(0, 4)
-    .map(([key, count]) => {
-      const meta = getParityMismatchMeta(key as AccessParityMismatchKey)
-      return {
-        key,
-        label: meta.label,
-        color: meta.color,
-        count: Number(count ?? 0),
-      }
-    })
-})
-const accessParityContextMessage = computed(() => {
-  const fragments: string[] = []
-  const hasParityItems = accessParitySummary.value.mismatches > 0
-  const hasNonParityItems = accessParityDhcpDriftCount.value > 0 || accessParitySummary.value.noAuthorizedDeviceCount > 0
 
-  if (accessParitySummary.value.noAuthorizedDeviceCount > 0) {
-    fragments.push(`${accessParitySummary.value.noAuthorizedDeviceCount} user belum login dari perangkat pertama.`)
-  }
-
-  if (accessParityDhcpDriftCount.value > 0) {
-    fragments.push(`${accessParityDhcpDriftCount.value} drift DHCP terdeteksi.`)
-  }
-
-  if (fragments.length === 0) {
-    if (hasParityItems)
-      return 'Konsistensi akses inti dipantau otomatis dan masih ada mismatch yang mempengaruhi kebijakan router.'
-
-    return 'Panel ringkasan hanya menonjolkan kondisi yang mempengaruhi akses inti. Detail teknis dipantau lewat worker dan log operasi.'
-  }
-
-  if (hasParityItems && hasNonParityItems)
-    return `Mismatch akses inti dan drift non-kritis sama-sama terdeteksi. ${fragments.join(' ')} Auto-remediation tetap berjalan di background.`
-
-  if (hasNonParityItems)
-    return `Akses inti tetap sinkron. ${fragments.join(' ')} Item ini dipantau sebagai sinyal operasional, bukan tindakan manual harian.`
-
-  return `Mismatch akses terdeteksi. ${fragments.join(' ')}`
-})
-
-function getParityMismatchMeta(mismatch: AccessParityMismatchKey): { label: string, color: string } {
-  return ACCESS_PARITY_MISMATCH_META[mismatch] ?? { label: mismatch, color: 'default' }
-}
-
-// --- Logika Perbandingan ---
 const perbandinganPendapatanMingguan = computed(() => {
   const mingguIni = stats.value?.pendapatanMingguIni ?? 0
   const mingguLalu = stats.value?.pendapatanMingguLalu ?? 0
   if (mingguLalu === 0)
     return { persentase: mingguIni > 0 ? 100 : 0 }
+
   const selisih = mingguIni - mingguLalu
   const persentase = (selisih / mingguLalu) * 100
+
   return { persentase: Number.isFinite(persentase) ? persentase : 0 }
 })
 
@@ -425,8 +288,10 @@ const perbandinganKuota = computed(() => {
   const totalMingguLalu = stats.value?.kuotaTerjualMingguLaluMb ?? 0
   if (totalMingguLalu === 0)
     return { persentase: totalMingguIni > 0 ? 100 : 0 }
+
   const selisih = totalMingguIni - totalMingguLalu
   const persentase = (selisih / totalMingguLalu) * 100
+
   return { persentase: Number.isFinite(persentase) ? persentase : 0 }
 })
 
@@ -775,7 +640,7 @@ useHead({ title: 'Dashboard Admin' })
       class="mb-4"
     />
 
-    <VRow class="mb-4">
+    <VRow class="mb-6">
       <VCol
         v-for="(data, index) in displayedStatistics"
         :key="index"
@@ -802,8 +667,35 @@ useHead({ title: 'Dashboard Admin' })
       </VCol>
     </VRow>
 
+    <VRow class="mb-4">
+      <VCol
+        v-for="item in operationalSummaryCards"
+        :key="item.key"
+        cols="12"
+        md="3"
+        sm="6"
+      >
+        <div
+          class="dashboard-clickable-stat-card"
+          :class="{ 'dashboard-clickable-stat-card--disabled': authStore.isSuperAdmin !== true }"
+          :role="authStore.isSuperAdmin === true ? 'button' : undefined"
+          :tabindex="authStore.isSuperAdmin === true ? 0 : undefined"
+          @click="authStore.isSuperAdmin === true ? navigateTo('/admin/operations') : undefined"
+          @keydown.enter.prevent="authStore.isSuperAdmin === true ? navigateTo('/admin/operations') : undefined"
+          @keydown.space.prevent="authStore.isSuperAdmin === true ? navigateTo('/admin/operations') : undefined"
+        >
+          <CardStatisticsHorizontal
+            :title="item.title"
+            :icon="item.icon"
+            :color="item.color"
+            :stats="item.stats"
+          />
+        </div>
+      </VCol>
+    </VRow>
+
     <VRow
-      class="mb-4"
+      class="mb-6"
       match-height
     >
       <VCol
@@ -818,7 +710,7 @@ useHead({ title: 'Dashboard Admin' })
               </VAvatar>
             </template>
             <VCardTitle>Pendapatan Mingguan</VCardTitle>
-            <VCardSubtitle>Performa 7 hari dibanding minggu sebelumnya</VCardSubtitle>
+            <VCardSubtitle>7 hari vs minggu lalu</VCardSubtitle>
             <template #append>
               <VChip
                 size="small"
@@ -836,18 +728,13 @@ useHead({ title: 'Dashboard Admin' })
                 {{ formatCurrency(stats?.pendapatanMingguIni) }}
               </div>
               <div class="dashboard-analytics-card__caption">
-                Total pendapatan minggu aktif.
+                Total minggu berjalan.
               </div>
             </div>
 
-            <div class="dashboard-analytics-card__comparison mt-5">
-              <div class="dashboard-analytics-card__comparisonItem">
-                <div class="dashboard-analytics-card__comparisonLabel">
-                  <VAvatar color="info" variant="tonal" :size="24" rounded class="me-2">
-                    <VIcon size="16" icon="tabler-calendar-check" />
-                  </VAvatar>
-                  Minggu Ini
-                </div>
+            <div class="dashboard-analytics-card__salesOverview mt-5">
+              <div class="dashboard-analytics-card__salesMetric">
+                <div class="dashboard-analytics-card__salesLabel">Minggu Ini</div>
                 <div class="dashboard-analytics-card__comparisonValue">
                   {{ formatCurrency(stats?.pendapatanMingguIni) }}
                 </div>
@@ -856,13 +743,12 @@ useHead({ title: 'Dashboard Admin' })
                 </div>
               </div>
 
-              <div class="dashboard-analytics-card__comparisonItem dashboard-analytics-card__comparisonItem--end">
-                <div class="dashboard-analytics-card__comparisonLabel dashboard-analytics-card__comparisonLabel--end">
-                  Minggu Lalu
-                  <VAvatar color="secondary" variant="tonal" :size="24" rounded class="ms-2">
-                    <VIcon size="16" icon="tabler-calendar-stats" />
-                  </VAvatar>
-                </div>
+              <div class="dashboard-analytics-card__salesVersus">
+                VS
+              </div>
+
+              <div class="dashboard-analytics-card__salesMetric dashboard-analytics-card__salesMetric--end">
+                <div class="dashboard-analytics-card__salesLabel">Minggu Lalu</div>
                 <div class="dashboard-analytics-card__comparisonValue">
                   {{ formatCurrency(stats?.pendapatanMingguLalu) }}
                 </div>
@@ -872,15 +758,20 @@ useHead({ title: 'Dashboard Admin' })
               </div>
             </div>
 
-            <VProgressLinear
-              class="mt-5"
-              :model-value="weeklyRevenueSplit"
-              color="info"
-              height="10"
-              bg-color="secondary"
-              :rounded-bar="false"
-              rounded
-            />
+            <div class="dashboard-analytics-card__salesProgress mt-5">
+              <div class="d-flex align-center justify-space-between mb-2 text-caption text-medium-emphasis">
+                <span>Kontribusi minggu ini</span>
+                <span>{{ weeklyRevenueSplit }}%</span>
+              </div>
+              <VProgressLinear
+                :model-value="weeklyRevenueSplit"
+                color="info"
+                height="8"
+                bg-color="secondary"
+                :rounded-bar="false"
+                rounded
+              />
+            </div>
           </VCardText>
         </VCard>
       </VCol>
@@ -897,7 +788,7 @@ useHead({ title: 'Dashboard Admin' })
               </VAvatar>
             </template>
             <VCardTitle>Kuota Terjual</VCardTitle>
-            <VCardSubtitle>Akumulasi distribusi kuota dalam 7 hari terakhir</VCardSubtitle>
+            <VCardSubtitle>Distribusi 7 hari terakhir</VCardSubtitle>
             <template #append>
               <VChip
                 label
@@ -909,58 +800,46 @@ useHead({ title: 'Dashboard Admin' })
             </template>
           </VCardItem>
           <VCardText class="pt-sm-2">
-            <VRow>
-              <VCol
-                cols="12"
-                sm="5"
-                class="d-flex flex-column align-self-end"
-              >
-                <div class="dashboard-analytics-card__headline dashboard-analytics-card__headline--compact">
-                  <div class="dashboard-analytics-card__value dashboard-analytics-card__value--xl">
-                    {{ formatBytes(stats?.kuotaTerjualMb) }}
-                  </div>
-                  <div class="dashboard-analytics-card__caption">
-                    Total kuota yang terjual pada jendela mingguan.
-                  </div>
-                </div>
+            <div class="dashboard-analytics-card__headline dashboard-analytics-card__headline--compact">
+              <div class="dashboard-analytics-card__value dashboard-analytics-card__value--xl">
+                {{ formatBytes(stats?.kuotaTerjualMb) }}
+              </div>
+              <div class="dashboard-analytics-card__caption">
+                Distribusi kuota 7 hari terakhir.
+              </div>
+            </div>
 
-                <div class="dashboard-analytics-card__statList mt-4">
-                  <div class="dashboard-analytics-card__statRow">
-                    <span>Minggu ini</span>
-                    <strong>{{ formatBytes(stats?.kuotaTerjual7HariMb ?? stats?.kuotaTerjualMb) }}</strong>
+            <div class="dashboard-analytics-card__reportChart mt-6">
+              <ClientOnly>
+                <VueApexCharts
+                  :options="kuotaChartOptions"
+                  :series="kuotaChartSeries"
+                  :height="178"
+                />
+                <template #fallback>
+                  <div
+                    class="d-flex align-center justify-center"
+                    style="height: 178px;"
+                  >
+                    <VProgressCircular
+                      indeterminate
+                      color="primary"
+                    />
                   </div>
-                  <div class="dashboard-analytics-card__statRow">
-                    <span>Minggu lalu</span>
-                    <strong>{{ formatBytes(stats?.kuotaTerjualMingguLaluMb) }}</strong>
-                  </div>
-                </div>
-              </VCol>
+                </template>
+              </ClientOnly>
+            </div>
 
-              <VCol
-                cols="12"
-                sm="7"
-                class="mt-auto"
-              >
-                <ClientOnly>
-                  <VueApexCharts
-                    :options="kuotaChartOptions"
-                    :series="kuotaChartSeries"
-                    :height="150"
-                  />
-                  <template #fallback>
-                    <div
-                      class="d-flex align-center justify-center"
-                      style="height: 150px;"
-                    >
-                      <VProgressCircular
-                        indeterminate
-                        color="primary"
-                      />
-                    </div>
-                  </template>
-                </ClientOnly>
-              </VCol>
-            </VRow>
+            <div class="dashboard-analytics-card__reportFooter mt-5">
+              <div class="dashboard-analytics-card__reportStat">
+                <span>Minggu ini</span>
+                <strong>{{ formatBytes(stats?.kuotaTerjual7HariMb ?? stats?.kuotaTerjualMb) }}</strong>
+              </div>
+              <div class="dashboard-analytics-card__reportStat">
+                <span>Minggu lalu</span>
+                <strong>{{ formatBytes(stats?.kuotaTerjualMingguLaluMb) }}</strong>
+              </div>
+            </div>
           </VCardText>
         </VCard>
       </VCol>
@@ -977,7 +856,7 @@ useHead({ title: 'Dashboard Admin' })
               </VAvatar>
             </template>
             <VCardTitle>Pendapatan Bulan Ini</VCardTitle>
-            <VCardSubtitle>Total penjualan bulan {{ currentMonthLabel }}</VCardSubtitle>
+            <VCardSubtitle>Penjualan bulan {{ currentMonthLabel }}</VCardSubtitle>
             <template #append>
               <VChip size="small" color="primary" label variant="tonal">
                 30 Hari
@@ -990,7 +869,7 @@ useHead({ title: 'Dashboard Admin' })
                 {{ formatCurrency(stats?.pendapatanBulanIni) }}
               </div>
               <div class="dashboard-analytics-card__caption">
-                Tren ini menjadi baseline untuk evaluasi performa paket dan akuisisi.
+                Baseline performa bulan berjalan.
               </div>
             </div>
 
@@ -1005,25 +884,28 @@ useHead({ title: 'Dashboard Admin' })
                 <div class="dashboard-analytics-card__miniValue">{{ item.value }}</div>
               </div>
             </div>
-          </VCardText>
-          <ClientOnly>
-            <VueApexCharts
-              :options="pendapatanBulanIniChartOptions"
-              :series="pendapatanBulanIniChartSeries"
-              :height="122"
-            />
-            <template #fallback>
-              <div
-                class="d-flex align-center justify-center"
-                style="height: 122px;"
-              >
-                <VProgressCircular
-                  indeterminate
-                  color="primary"
+
+            <div class="dashboard-analytics-card__chartBlock mt-5">
+              <ClientOnly>
+                <VueApexCharts
+                  :options="pendapatanBulanIniChartOptions"
+                  :series="pendapatanBulanIniChartSeries"
+                  :height="136"
                 />
-              </div>
-            </template>
-          </ClientOnly>
+                <template #fallback>
+                  <div
+                    class="d-flex align-center justify-center"
+                    style="height: 136px;"
+                  >
+                    <VProgressCircular
+                      indeterminate
+                      color="primary"
+                    />
+                  </div>
+                </template>
+              </ClientOnly>
+            </div>
+          </VCardText>
         </VCard>
       </VCol>
     </VRow>
@@ -1041,21 +923,16 @@ useHead({ title: 'Dashboard Admin' })
               </VAvatar>
             </template>
             <VCardTitle>Paket Terlaris</VCardTitle>
-            <VCardSubtitle>Berdasarkan jumlah penjualan bulan ini</VCardSubtitle>
+            <VCardSubtitle>Berdasarkan transaksi bulan ini</VCardSubtitle>
             <template #append>
               <VChip size="small" color="secondary" label variant="tonal">
                 {{ topSellingPackage.count > 0 ? `${topSellingPackage.count} transaksi` : 'Menunggu data' }}
               </VChip>
             </template>
           </VCardItem>
-          <VCardText style="padding-bottom: 30px; padding-top: 25px;">
-            <div class="dashboard-analytics-card__packageHighlight mb-4">
-              <div class="dashboard-analytics-card__packageLabel">
-                Paket dominan saat ini
-              </div>
-              <div class="dashboard-analytics-card__packageValue">
-                {{ topSellingPackage.name }}
-              </div>
+          <VCardText class="pt-5 pb-6">
+            <div class="dashboard-analytics-card__caption mb-4">
+              Komposisi penjualan paket bulan ini ditampilkan berdasarkan jumlah transaksi.
             </div>
             <ClientOnly>
               <VueApexCharts
@@ -1210,188 +1087,6 @@ useHead({ title: 'Dashboard Admin' })
       </VCol>
     </VRow>
 
-    <VRow>
-      <VCol cols="12">
-        <VCard>
-          <VCardItem>
-            <VCardTitle class="d-flex align-center gap-2 flex-wrap">
-              <VIcon icon="tabler-activity-heartbeat" size="20" />
-              Kesehatan Sistem
-            </VCardTitle>
-            <VCardSubtitle>Monitor keandalan pembayaran, sinkronisasi, dan routing akses</VCardSubtitle>
-            <div class="mt-2">
-              <VChip
-                size="small"
-                label
-                :color="overallReliabilityHealthy ? 'success' : 'error'"
-              >
-                <VIcon :icon="overallReliabilityHealthy ? 'tabler-circle-check' : 'tabler-alert-triangle'" size="14" class="me-1" />
-                {{ overallReliabilityHealthy ? 'Semua Normal' : 'Ada yang Perlu Perhatian' }}
-              </VChip>
-              <VChip
-                v-if="metricsPending"
-                size="small"
-                label
-                color="default"
-                class="ms-2"
-              >
-                <VIcon icon="tabler-refresh" size="13" class="me-1" />
-                Memperbarui...
-              </VChip>
-            </div>
-          </VCardItem>
-          <VCardText>
-            <div class="reliability-section">
-              <div class="reliability-section__hero">
-                <div>
-                  <div class="text-h6 font-weight-bold">
-                    {{ overallReliabilityHealthy ? 'Semua jalur proteksi berjalan stabil' : 'Ada sinyal yang perlu perhatian operasional' }}
-                  </div>
-                  <div class="text-body-2 text-medium-emphasis mt-1">
-                    Ringkasan ini menjaga fokus pada reliabilitas transaksi, lock sinkronisasi, dan konsistensi kebijakan akses router.
-                  </div>
-                </div>
-                <div class="reliability-section__summary">
-                  <div class="reliability-section__summaryLabel">
-                    Status utama
-                  </div>
-                  <div class="reliability-section__summaryValue">
-                    {{ reliabilityCards.filter(item => item.color === 'error').length }}
-                  </div>
-                  <div class="text-caption text-medium-emphasis">
-                    sinyal membutuhkan perhatian
-                  </div>
-                </div>
-              </div>
-
-              <div class="reliability-grid mt-4">
-                <div v-for="item in reliabilityCards" :key="item.key" class="reliability-card">
-                  <div class="reliability-card__head">
-                    <div class="d-flex align-center gap-3 min-w-0">
-                      <VAvatar size="40" :color="item.color" variant="tonal">
-                        <VIcon :icon="item.icon" size="20" />
-                      </VAvatar>
-                      <div class="min-w-0">
-                        <div class="reliability-card__title">{{ item.title }}</div>
-                        <div class="reliability-card__status">
-                          <VChip size="x-small" :color="item.color" label variant="tonal">
-                            {{ item.status }}
-                          </VChip>
-                        </div>
-                      </div>
-                    </div>
-                    <div class="reliability-card__value">{{ item.value }}</div>
-                  </div>
-                  <div class="reliability-card__caption mt-3">
-                    {{ item.caption }}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </VCardText>
-        </VCard>
-      </VCol>
-    </VRow>
-
-    <VRow class="mt-4">
-      <VCol cols="12">
-        <VCard>
-          <VCardItem>
-            <VCardTitle class="d-flex align-center gap-2 flex-wrap">
-              <VIcon icon="tabler-shield-half-filled" size="20" />
-              Konsistensi Akses (App vs MikroTik)
-            </VCardTitle>
-            <VCardSubtitle>Perbandingan status izin akses antara database aplikasi dan router MikroTik secara realtime</VCardSubtitle>
-          </VCardItem>
-          <VCardText>
-            <VAlert
-              v-if="!parityPending && accessParityContextMessage"
-              type="info"
-              variant="tonal"
-              density="compact"
-              class="mb-3"
-              icon="tabler-info-circle"
-            >
-              {{ accessParityContextMessage }}
-            </VAlert>
-
-            <div class="access-parity">
-              <div class="access-parity__hero">
-                <div class="access-parity__heroCopy">
-                  <div class="access-parity__eyebrow">
-                    Monitor otomatis
-                  </div>
-                  <div class="access-parity__heroTitle">
-                    {{ accessParitySyncRate }}% akses inti sinkron
-                  </div>
-                  <div class="text-body-2 text-medium-emphasis mt-1">
-                    Parity guard menjaga sinkronisasi akses router secara berkala. Dashboard hanya menampilkan ringkasan yang relevan untuk pemantauan harian.
-                  </div>
-                </div>
-                <div class="d-flex align-center gap-2 flex-wrap justify-end">
-                  <VChip
-                    size="small"
-                    :color="accessParitySummary.mismatches > 0 ? 'error' : 'success'"
-                    label
-                    variant="tonal"
-                  >
-                    {{ accessParitySummary.mismatches > 0 ? `${accessParitySummary.mismatches} mismatch inti` : 'Auto-heal aktif' }}
-                  </VChip>
-                  <VBtn
-                    v-if="authStore.isSuperAdmin === true"
-                    size="small"
-                    color="info"
-                    variant="tonal"
-                    @click="navigateTo('/admin/operations')"
-                  >
-                    Buka Operasional
-                  </VBtn>
-                </div>
-              </div>
-
-              <VProgressLinear
-                class="mt-4"
-                color="success"
-                bg-color="error"
-                rounded
-                height="10"
-                :model-value="accessParitySyncRate"
-              />
-
-              <div class="access-parity__overviewGrid mt-4">
-                <div v-for="item in accessParityOverviewCards" :key="item.key" class="access-parity__overviewCard">
-                  <div class="access-parity__overviewHead">
-                    <VAvatar size="38" :color="item.color" variant="tonal">
-                      <VIcon :icon="item.icon" size="18" />
-                    </VAvatar>
-                    <div class="access-parity__overviewMeta">
-                      <div class="access-parity__overviewTitle">{{ item.title }}</div>
-                      <div class="access-parity__overviewSubtitle">{{ item.subtitle }}</div>
-                    </div>
-                  </div>
-                  <div class="access-parity__overviewValue">{{ item.value }}</div>
-                  <div class="access-parity__overviewCaption">{{ item.caption }}</div>
-                </div>
-              </div>
-
-              <div v-if="accessParityMismatchTypeCards.length > 0" class="access-parity__mismatchTypes mt-4">
-                <div class="text-caption text-uppercase text-medium-emphasis font-weight-bold mb-2">
-                  Sinyal dominan yang sedang dipantau
-                </div>
-                <div class="access-parity__mismatchTypeGrid">
-                  <div v-for="item in accessParityMismatchTypeCards" :key="item.key" class="access-parity__mismatchTypeCard">
-                    <VChip size="x-small" :color="item.color" label variant="tonal">
-                      {{ item.label }}
-                    </VChip>
-                    <div class="access-parity__mismatchTypeValue">{{ item.count }}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </VCardText>
-        </VCard>
-      </VCol>
-    </VRow>
   </div>
 </template>
 
@@ -1451,34 +1146,46 @@ useHead({ title: 'Dashboard Admin' })
   color: rgba(var(--v-theme-on-surface), 0.64);
 }
 
-.dashboard-analytics-card__comparison {
+.dashboard-analytics-card__salesOverview {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   gap: 14px;
+  align-items: center;
 }
 
-.dashboard-analytics-card__comparisonItem {
-  padding: 14px;
-  border-radius: 16px;
-  background: rgba(var(--v-theme-on-surface), 0.03);
-  box-shadow: inset 0 0 0 1px rgba(var(--v-theme-on-surface), 0.05);
+.dashboard-analytics-card__salesMetric {
+  min-width: 0;
 }
 
-.dashboard-analytics-card__comparisonItem--end {
+.dashboard-analytics-card__salesMetric--end {
   text-align: right;
 }
 
-.dashboard-analytics-card__comparisonLabel {
-  display: flex;
-  align-items: center;
+.dashboard-analytics-card__salesLabel {
   font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: rgba(var(--v-theme-on-surface), 0.62);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(var(--v-theme-on-surface), 0.56);
 }
 
-.dashboard-analytics-card__comparisonLabel--end {
-  justify-content: flex-end;
+.dashboard-analytics-card__salesVersus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+  box-shadow: inset 0 0 0 1px rgba(var(--v-theme-on-surface), 0.06);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: rgba(var(--v-theme-on-surface), 0.52);
+}
+
+.dashboard-analytics-card__salesProgress {
+  padding-top: 2px;
 }
 
 .dashboard-analytics-card__comparisonValue {
@@ -1493,29 +1200,28 @@ useHead({ title: 'Dashboard Admin' })
   color: rgba(var(--v-theme-on-surface), 0.58);
 }
 
-.dashboard-analytics-card__statList {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.dashboard-analytics-card__reportChart {
+  min-height: 178px;
 }
 
-.dashboard-analytics-card__statRow {
+.dashboard-analytics-card__reportFooter {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+}
+
+.dashboard-analytics-card__reportStat {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding-block-end: 10px;
-  border-block-end: 1px dashed rgba(var(--v-theme-on-surface), 0.08);
   font-size: 0.84rem;
   color: rgba(var(--v-theme-on-surface), 0.64);
 }
 
-.dashboard-analytics-card__statRow:last-child {
-  padding-block-end: 0;
-  border-block-end: 0;
-}
-
-.dashboard-analytics-card__statRow strong {
+.dashboard-analytics-card__reportStat strong {
   font-size: 0.88rem;
   font-weight: 700;
   color: rgba(var(--v-theme-on-surface), 0.88);
@@ -1533,8 +1239,8 @@ useHead({ title: 'Dashboard Admin' })
   justify-content: space-between;
   gap: 10px;
   padding: 12px 14px;
-  border-radius: 16px;
-  background: rgba(var(--v-theme-on-surface), 0.03);
+  border-radius: 14px;
+  background: rgba(var(--v-theme-on-surface), 0.025);
   box-shadow: inset 0 0 0 1px rgba(var(--v-theme-on-surface), 0.05);
 }
 
@@ -1548,25 +1254,9 @@ useHead({ title: 'Dashboard Admin' })
   font-weight: 700;
 }
 
-.dashboard-analytics-card__packageHighlight {
-  padding: 14px 16px;
-  border-radius: 18px;
-  background: rgba(var(--v-theme-secondary), 0.08);
-}
-
-.dashboard-analytics-card__packageLabel {
-  font-size: 0.74rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: rgba(var(--v-theme-on-surface), 0.56);
-}
-
-.dashboard-analytics-card__packageValue {
-  margin-top: 6px;
-  font-size: 1.08rem;
-  font-weight: 700;
-  line-height: 1.35;
+.dashboard-analytics-card__chartBlock {
+  padding-top: 4px;
+  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.06);
 }
 
 /*
@@ -1592,272 +1282,31 @@ useHead({ title: 'Dashboard Admin' })
   align-self: center !important;
 }
 
-.reliability-metric-box {
-  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
-  height: 100%;
-  transition: border-color 0.2s;
-
-  &:hover {
-    border-color: rgba(var(--v-theme-primary), 0.4);
-  }
-}
-
-.reliability-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-.reliability-section__hero {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 18px;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-  border-radius: 20px;
-  background: linear-gradient(180deg, rgba(var(--v-theme-primary), 0.08) 0%, rgba(var(--v-theme-surface), 0.92) 100%);
-}
-
-.reliability-section__summary {
-  min-inline-size: 120px;
-  padding: 12px 14px;
-  border-radius: 16px;
-  background: rgba(var(--v-theme-surface), 0.92);
-  text-align: right;
-  box-shadow: inset 0 0 0 1px rgba(var(--v-theme-on-surface), 0.06);
-}
-
-.reliability-section__summaryLabel {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: rgba(var(--v-theme-on-surface), 0.56);
-}
-
-.reliability-section__summaryValue {
-  font-size: 1.8rem;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.reliability-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.reliability-card {
-  padding: 16px;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-  border-radius: 18px;
-  background: rgba(var(--v-theme-surface), 0.9);
-  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.04);
-  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
-}
-
-.reliability-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(var(--v-theme-primary), 0.18);
-  box-shadow: 0 22px 40px rgba(15, 23, 42, 0.06);
-}
-
-.reliability-card__head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
-}
-
-.reliability-card__title {
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  line-height: 1.35;
-  color: rgba(var(--v-theme-on-surface), 0.62);
-}
-
-.reliability-card__status {
-  margin-top: 6px;
-}
-
-.reliability-card__value {
-  font-size: 1.08rem;
-  font-weight: 800;
-  text-align: right;
-  white-space: nowrap;
-}
-
-.reliability-card__caption {
-  font-size: 0.82rem;
-  line-height: 1.5;
-  color: rgba(var(--v-theme-on-surface), 0.68);
-}
-
-.access-parity {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-.access-parity__hero {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 18px;
-  padding: 18px;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-  border-radius: 20px;
-  background: linear-gradient(180deg, rgba(var(--v-theme-info), 0.08) 0%, rgba(var(--v-theme-surface), 0.94) 100%);
-}
-
-.access-parity__heroCopy {
-  min-width: 0;
-}
-
-.access-parity__eyebrow {
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(var(--v-theme-info), 0.92);
-}
-
-.access-parity__heroTitle {
-  font-size: 1.16rem;
-  font-weight: 700;
-  line-height: 1.2;
-  margin-top: 6px;
-}
-
-.access-parity__overviewGrid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.access-parity__overviewCard {
-  padding: 16px;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-  border-radius: 18px;
-  background: rgba(var(--v-theme-surface), 0.9);
-  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.04);
-  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
-}
-
-.access-parity__overviewCard:hover {
-  transform: translateY(-2px);
-  border-color: rgba(var(--v-theme-primary), 0.18);
-  box-shadow: 0 22px 40px rgba(15, 23, 42, 0.06);
-}
-
-.access-parity__overviewHead {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.access-parity__overviewMeta {
-  min-width: 0;
-}
-
-.access-parity__overviewTitle {
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: rgba(var(--v-theme-on-surface), 0.58);
-}
-
-.access-parity__overviewSubtitle {
-  margin-top: 4px;
-  font-size: 0.78rem;
-  color: rgba(var(--v-theme-on-surface), 0.62);
-}
-
-.access-parity__overviewValue {
-  margin-top: 14px;
-  font-size: 1.42rem;
-  font-weight: 700;
-  line-height: 1.1;
-}
-
-.access-parity__overviewCaption {
-  margin-top: 8px;
-  font-size: 0.82rem;
-  line-height: 1.45;
-  color: rgba(var(--v-theme-on-surface), 0.68);
-}
-
-.access-parity__mismatchTypes {
-  padding: 16px;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-  border-radius: 18px;
-  background: rgba(var(--v-theme-on-surface), 0.02);
-}
-
-.access-parity__mismatchTypeGrid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.access-parity__mismatchTypeCard {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  background: rgba(var(--v-theme-surface), 0.92);
-  box-shadow: inset 0 0 0 1px rgba(var(--v-theme-on-surface), 0.05);
-}
-
-.access-parity__mismatchTypeValue {
-  font-size: 1rem;
-  font-weight: 700;
-}
-
 @media (max-width: 959px) {
-  .dashboard-analytics-card__comparison,
-  .dashboard-analytics-card__miniGrid,
-  .reliability-grid,
-  .access-parity__overviewGrid,
-  .access-parity__mismatchTypeGrid {
+  .dashboard-analytics-card__miniGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-analytics-card__salesOverview {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-analytics-card__salesMetric--end {
+    text-align: left;
+  }
+
+  .dashboard-analytics-card__salesVersus {
+    justify-self: flex-start;
   }
 }
 
 @media (max-width: 600px) {
-  .reliability-section__hero,
-  .access-parity__hero {
-    flex-direction: column;
-  }
-
-  .reliability-section__summary {
-    width: 100%;
-  }
-
-  .reliability-grid,
-  .dashboard-analytics-card__comparison,
-  .dashboard-analytics-card__miniGrid,
-  .access-parity__overviewGrid,
-  .access-parity__mismatchTypeGrid {
+  .dashboard-analytics-card__miniGrid {
     grid-template-columns: 1fr;
   }
 
-  .dashboard-analytics-card__comparisonItem--end {
-    text-align: left;
-  }
-
-  .dashboard-analytics-card__comparisonLabel--end {
-    justify-content: flex-start;
-  }
-
-  .access-parity__hero {
-    padding: 16px;
+  .dashboard-analytics-card__reportFooter {
+    grid-template-columns: 1fr;
   }
 }
 

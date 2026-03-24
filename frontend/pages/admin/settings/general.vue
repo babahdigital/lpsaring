@@ -284,7 +284,7 @@ useHead({ title: 'Setting Aplikasi' })
     <VCard>
       <VCardItem class="pb-4">
         <VCardTitle>Pengaturan Aplikasi</VCardTitle>
-        <VCardSubtitle>Kelola pengaturan umum, tampilan, dan integrasi aplikasi Anda.</VCardSubtitle>
+        <VCardSubtitle>Pengaturan umum, tampilan, dan integrasi.</VCardSubtitle>
       </VCardItem>
 
       <ClientOnly>

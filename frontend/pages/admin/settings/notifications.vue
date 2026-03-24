@@ -178,7 +178,7 @@ watch(loading, (val) => {
       <VCard class="mb-6">
         <VCardItem>
           <VCardTitle>Pilih Jenis Notifikasi</VCardTitle>
-          <VCardSubtitle>Pilih jenis notifikasi yang ingin Anda kelola penerimanya.</VCardSubtitle>
+          <VCardSubtitle>Pilih notifikasi yang akan diatur.</VCardSubtitle>
         </VCardItem>
         <VCardText>
           <AppSelect
@@ -206,9 +206,7 @@ watch(loading, (val) => {
       <VCard>
         <VCardItem>
           <VCardTitle>Manajemen Penerima Notifikasi</VCardTitle>
-          <VCardSubtitle>
-            Tentukan admin mana saja yang menerima notifikasi untuk jenis yang dipilih.
-          </VCardSubtitle>
+          <VCardSubtitle>Atur admin penerima untuk notifikasi terpilih.</VCardSubtitle>
         </VCardItem>
 
         <VDivider />

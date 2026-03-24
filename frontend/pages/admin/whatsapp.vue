@@ -234,7 +234,7 @@ onMounted(fetchUsers)
         <VCard class="h-100">
           <VCardItem>
             <VCardTitle>Kirim Informasi Massal</VCardTitle>
-            <VCardSubtitle>Kirim pesan ke semua pengguna berdasarkan role: User atau Komandan.</VCardSubtitle>
+            <VCardSubtitle>Kirim pesan ke user atau komandan.</VCardSubtitle>
           </VCardItem>
           <VCardText>
             <VRow>
@@ -285,7 +285,7 @@ onMounted(fetchUsers)
         <VCard class="h-100">
           <VCardItem>
             <VCardTitle>Tes Pengiriman WhatsApp</VCardTitle>
-            <VCardSubtitle>Validasi konfigurasi Fonnte dari panel admin.</VCardSubtitle>
+            <VCardSubtitle>Uji kirim dari panel admin.</VCardSubtitle>
           </VCardItem>
           <VCardText>
             <VRow>
