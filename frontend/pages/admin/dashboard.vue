@@ -1152,7 +1152,6 @@ useHead({ title: 'Dashboard Admin' })
   display: flex;
   flex-direction: column;
   justify-content: center;
-  min-height: 100%;
 }
 
 .dashboard-top-package-card__chart {
