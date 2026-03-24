@@ -965,7 +965,6 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 
           <VBtn
             prepend-icon="tabler-plus"
-            height="56"
             class="admin-users__addBtn"
             @click="openAddUserDialog()"
           >
