@@ -388,7 +388,7 @@ async function handleRefreshOperations() {
               </div>
             </template>
           </VCardItem>
-          <VCardText>
+          <VCardText class="operations-page__tableSection">
             <div class="operations-page__heroBody">
               <div class="operations-page__heroCopy">
                 <div class="operations-page__eyebrow">
@@ -445,7 +445,7 @@ async function handleRefreshOperations() {
                     <th>User / Device</th>
                     <th>Mismatch</th>
                     <th>Scope</th>
-                    <th>Rencana Sistem</th>
+                    <th>Rencana</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -551,7 +551,7 @@ async function handleRefreshOperations() {
                   </div>
 
                   <div class="operations-page__mobileSection">
-                    <div class="operations-page__mobileLabel">Rencana Sistem</div>
+                    <div class="operations-page__mobileLabel">Rencana</div>
                     <div class="operations-page__chipGroup">
                       <VChip
                         v-for="action in item.action_plan.slice(0, 2)"
@@ -817,6 +817,14 @@ async function handleRefreshOperations() {
 
 .operations-page__tableWrap {
   overflow: hidden;
+  padding: 10px 12px 6px;
+  border-radius: 20px;
+  background: rgba(var(--v-theme-on-surface), 0.025);
+  box-shadow: inset 0 0 0 1px rgba(var(--v-theme-on-surface), 0.05);
+}
+
+.operations-page__tableSection {
+  padding-top: 12px;
 }
 
 .operations-page__table {
@@ -825,6 +833,8 @@ async function handleRefreshOperations() {
 }
 
 .operations-page__table th {
+  padding-top: 10px;
+  padding-bottom: 12px;
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.05em;
@@ -835,13 +845,19 @@ async function handleRefreshOperations() {
 .operations-page__table th,
 .operations-page__table td {
   padding-block: 14px;
+  padding-inline: 14px;
   vertical-align: top;
   white-space: normal;
+}
+
+.operations-page__table tbody tr:first-child td {
+  padding-top: 18px;
 }
 
 .operations-page__table th:nth-child(1),
 .operations-page__table td:nth-child(1) {
   width: 36%;
+  padding-left: 18px;
 }
 
 .operations-page__table th:nth-child(2),
@@ -879,7 +895,8 @@ async function handleRefreshOperations() {
 .operations-page__mobileList {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
+  padding: 2px;
 }
 
 .operations-page__mobileCard {
@@ -1051,6 +1068,10 @@ async function handleRefreshOperations() {
     width: 100%;
   }
 
+  .operations-page__tableWrap {
+    padding: 8px 10px 4px;
+  }
+
   .operations-page__watchlistIntro {
     flex-direction: column;
   }
@@ -1071,6 +1092,15 @@ async function handleRefreshOperations() {
 }
 
 @media (max-width: 600px) {
+  .operations-page__tableSection {
+    padding-top: 8px;
+  }
+
+  .operations-page__tableWrap {
+    padding: 6px;
+    border-radius: 16px;
+  }
+
   .operations-page__heroStats {
     grid-template-columns: 1fr;
   }
