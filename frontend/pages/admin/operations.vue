@@ -422,7 +422,7 @@ async function handleRefreshOperations() {
     </VRow>
 
     <VRow class="match-height">
-      <VCol cols="12" lg="8">
+      <VCol cols="12" lg="7">
         <VCard class="h-100">
           <VCardItem>
             <template #prepend>
@@ -523,65 +523,73 @@ async function handleRefreshOperations() {
         </VCard>
       </VCol>
 
-      <VCol cols="12" lg="4">
-        <VCard class="mb-6">
-          <VCardItem>
-            <template #prepend>
-              <VAvatar color="secondary" variant="tonal" rounded="lg" size="40">
-                <VIcon icon="tabler-layers-subtract" size="20" />
-              </VAvatar>
-            </template>
-            <VCardTitle>Sinyal Parity Dominan</VCardTitle>
-            <VCardSubtitle>Tipe mismatch terbanyak pada audit terakhir.</VCardSubtitle>
-          </VCardItem>
-          <VCardText>
-            <div v-if="mismatchTypeCards.length > 0" class="operations-page__stackList">
-              <div v-for="item in mismatchTypeCards" :key="item.key" class="operations-page__stackItem">
-                <div class="d-flex align-center gap-2 min-w-0">
-                  <VChip size="x-small" :color="item.color" variant="tonal" label>
-                    {{ item.label }}
-                  </VChip>
-                </div>
-                <div class="operations-page__stackValue">{{ item.count }}</div>
-              </div>
-            </div>
-            <div v-else class="text-body-2 text-medium-emphasis">
-              Tidak ada mismatch dominan.
-            </div>
-          </VCardText>
-        </VCard>
-
-        <VCard>
-          <VCardItem>
-            <template #prepend>
-              <VAvatar color="success" variant="tonal" rounded="lg" size="40">
-                <VIcon icon="tabler-activity-heartbeat" size="20" />
-              </VAvatar>
-            </template>
-            <VCardTitle>Reliability Signals</VCardTitle>
-            <VCardSubtitle>Ringkasan status backend utama.</VCardSubtitle>
-          </VCardItem>
-          <VCardText>
-            <VAlert v-if="metricsError" type="warning" variant="tonal" class="mb-4" icon="tabler-alert-triangle">
-              Reliability metrics belum dapat dimuat penuh. Nilai ringkasan mungkin tidak lengkap.
-            </VAlert>
-
-            <div class="operations-page__stackList">
-              <div v-for="item in reliabilityCards" :key="item.key" class="operations-page__signalItem">
-                <div class="d-flex align-start gap-3">
-                  <VAvatar :color="item.color" variant="tonal" size="36" rounded>
-                    <VIcon :icon="item.icon" size="18" />
+      <VCol cols="12" lg="5">
+        <VCard class="h-100 operations-page__summaryRail">
+          <VCardText class="operations-page__summaryRailBody">
+            <section class="operations-page__summarySection">
+              <div class="operations-page__summaryHeader">
+                <div class="d-flex align-center gap-3 min-w-0">
+                  <VAvatar color="secondary" variant="tonal" rounded="lg" size="40">
+                    <VIcon icon="tabler-layers-subtract" size="20" />
                   </VAvatar>
                   <div>
-                    <div class="font-weight-medium text-high-emphasis">{{ item.title }}</div>
-                    <div class="text-body-2 text-medium-emphasis mt-1">{{ item.detail }}</div>
+                    <div class="text-h6 font-weight-bold text-high-emphasis">Sinyal Parity Dominan</div>
+                    <div class="text-body-2 text-medium-emphasis">Tipe mismatch terbanyak pada audit terakhir.</div>
                   </div>
                 </div>
-                <VChip size="x-small" :color="item.color" variant="tonal" label>
-                  {{ item.status }}
-                </VChip>
               </div>
-            </div>
+
+              <div v-if="mismatchTypeCards.length > 0" class="operations-page__stackList mt-4">
+                <div v-for="item in mismatchTypeCards" :key="item.key" class="operations-page__stackItem">
+                  <div class="d-flex align-center gap-2 min-w-0">
+                    <VChip size="x-small" :color="item.color" variant="tonal" label>
+                      {{ item.label }}
+                    </VChip>
+                  </div>
+                  <div class="operations-page__stackValue">{{ item.count }}</div>
+                </div>
+              </div>
+              <div v-else class="text-body-2 text-medium-emphasis mt-4">
+                Tidak ada mismatch dominan.
+              </div>
+            </section>
+
+            <VDivider />
+
+            <section class="operations-page__summarySection">
+              <div class="operations-page__summaryHeader">
+                <div class="d-flex align-center gap-3 min-w-0">
+                  <VAvatar color="success" variant="tonal" rounded="lg" size="40">
+                    <VIcon icon="tabler-activity-heartbeat" size="20" />
+                  </VAvatar>
+                  <div>
+                    <div class="text-h6 font-weight-bold text-high-emphasis">Reliability Signals</div>
+                    <div class="text-body-2 text-medium-emphasis">Ringkasan status backend utama.</div>
+                  </div>
+                </div>
+              </div>
+
+              <VAlert v-if="metricsError" type="warning" variant="tonal" class="mt-4" icon="tabler-alert-triangle">
+                Reliability metrics belum dapat dimuat penuh. Nilai ringkasan mungkin tidak lengkap.
+              </VAlert>
+
+              <div class="operations-page__stackList mt-4">
+                <div v-for="item in reliabilityCards" :key="item.key" class="operations-page__signalItem">
+                  <div class="d-flex align-start gap-3 min-w-0">
+                    <VAvatar :color="item.color" variant="tonal" size="36" rounded>
+                      <VIcon :icon="item.icon" size="18" />
+                    </VAvatar>
+                    <div class="min-w-0">
+                      <div class="font-weight-medium text-high-emphasis">{{ item.title }}</div>
+                      <div class="text-body-2 text-medium-emphasis mt-1">{{ item.detail }}</div>
+                    </div>
+                  </div>
+                  <VChip size="x-small" :color="item.color" variant="tonal" label>
+                    {{ item.status }}
+                  </VChip>
+                </div>
+              </div>
+            </section>
           </VCardText>
         </VCard>
       </VCol>
@@ -782,6 +790,30 @@ async function handleRefreshOperations() {
   box-shadow: inset 0 0 0 1px rgba(var(--v-theme-on-surface), 0.05);
 }
 
+.operations-page__summaryRail {
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+}
+
+.operations-page__summaryRailBody {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  height: 100%;
+}
+
+.operations-page__summarySection {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.operations-page__summaryHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .operations-page__stackValue {
   font-size: 1rem;
   font-weight: 700;
@@ -907,6 +939,10 @@ async function handleRefreshOperations() {
   .operations-page__watchlistHead {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .operations-page__summaryRailBody {
+    gap: 16px;
   }
 }
 </style>
