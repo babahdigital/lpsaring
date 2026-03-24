@@ -590,80 +590,83 @@ async function handleRefreshOperations() {
     <VRow>
       <VCol cols="12">
         <VCard>
-          <VCardItem>
-            <template #prepend>
-              <VAvatar color="warning" variant="tonal" rounded="lg" size="40">
-                <VIcon icon="tabler-user-x" size="20" />
-              </VAvatar>
-            </template>
-            <VCardTitle>Cleanup Watchlist</VCardTitle>
-            <VCardSubtitle>Ringkasan kandidat nonaktif untuk tindak lanjut operasional.</VCardSubtitle>
-          </VCardItem>
-          <VCardText>
+          <VCardText class="operations-page__watchlistBlock">
+            <div class="operations-page__watchlistIntro">
+              <div class="operations-page__watchlistIntroMain">
+                <VAvatar color="warning" variant="tonal" rounded="lg" size="40">
+                  <VIcon icon="tabler-user-x" size="20" />
+                </VAvatar>
+                <div>
+                  <div class="text-h6 font-weight-bold text-high-emphasis">Cleanup Watchlist</div>
+                  <div class="text-body-2 text-medium-emphasis">Ringkasan kandidat nonaktif untuk tindak lanjut operasional.</div>
+                </div>
+              </div>
+
+              <div class="operations-page__watchlistMeta">
+                <div class="text-body-2 text-medium-emphasis">
+                  Auto-delete {{ cleanupSummary.deleteEnabled ? 'aktif' : 'nonaktif' }} · maksimal {{ cleanupSummary.deleteMaxPerRun }} user per siklus.
+                </div>
+
+                <div class="operations-page__watchlistMetaChips">
+                  <VChip size="small" color="warning" variant="tonal" label>
+                    Deactivate ≥ {{ cleanupSummary.deactivateThreshold }} hari
+                  </VChip>
+                  <VChip size="small" color="error" variant="tonal" label>
+                    Delete ≥ {{ cleanupSummary.deleteThreshold }} hari
+                  </VChip>
+                </div>
+              </div>
+            </div>
+
             <VAlert v-if="cleanupError" type="warning" variant="tonal" class="mb-4" icon="tabler-alert-triangle">
               Watchlist cleanup belum dapat dimuat. Data kandidat mungkin tertunda.
             </VAlert>
 
-            <div class="text-body-2 text-medium-emphasis mb-4">
-              Auto-delete {{ cleanupSummary.deleteEnabled ? 'aktif' : 'nonaktif' }} · maksimal {{ cleanupSummary.deleteMaxPerRun }} user per siklus.
-            </div>
-
-            <div class="d-flex align-center gap-2 flex-wrap mb-4">
-              <VChip size="small" color="warning" variant="tonal" label>
-                Deactivate ≥ {{ cleanupSummary.deactivateThreshold }} hari
-              </VChip>
-              <VChip size="small" color="error" variant="tonal" label>
-                Delete ≥ {{ cleanupSummary.deleteThreshold }} hari
-              </VChip>
-            </div>
-
-            <VRow align="start">
-              <VCol v-for="section in cleanupSections" :key="section.key" cols="12" md="6">
-                <div class="operations-page__watchlistCard">
-                  <div class="operations-page__watchlistHead">
-                    <div class="d-flex align-center gap-3">
-                      <VAvatar :color="section.color" variant="tonal" rounded size="40">
-                        <VIcon :icon="section.icon" size="20" />
-                      </VAvatar>
-                      <div>
-                        <div class="font-weight-medium text-high-emphasis">{{ section.title }}</div>
-                        <div class="text-body-2 text-medium-emphasis">{{ section.subtitle }}</div>
-                      </div>
+            <div class="operations-page__watchlistGrid">
+              <div v-for="section in cleanupSections" :key="section.key" class="operations-page__watchlistCard">
+                <div class="operations-page__watchlistHead">
+                  <div class="d-flex align-center gap-3">
+                    <VAvatar :color="section.color" variant="tonal" rounded size="40">
+                      <VIcon :icon="section.icon" size="20" />
+                    </VAvatar>
+                    <div>
+                      <div class="font-weight-medium text-high-emphasis">{{ section.title }}</div>
+                      <div class="text-body-2 text-medium-emphasis">{{ section.subtitle }}</div>
                     </div>
-                    <div class="operations-page__watchlistCount">{{ section.count }}</div>
                   </div>
-
-                  <VList v-if="section.items.length > 0" density="compact" lines="two" class="mt-3">
-                    <VListItem v-for="item in section.items" :key="item.id">
-                      <template #prepend>
-                        <VAvatar :color="section.color" variant="tonal" size="34" rounded>
-                          <span class="text-sm font-weight-medium">{{ item.full_name.slice(0, 1).toUpperCase() }}</span>
-                        </VAvatar>
-                      </template>
-
-                      <VListItemTitle>{{ item.full_name }}</VListItemTitle>
-                      <VListItemSubtitle>
-                        {{ formatPhoneNumberForDisplay(item.phone_number) }}
-                        • {{ formatDateTime(item.last_activity_at) }}
-                      </VListItemSubtitle>
-
-                      <template #append>
-                        <div class="text-end">
-                          <div class="operations-page__watchlistDays">{{ item.days_inactive }} hari</div>
-                          <VChip size="x-small" :color="item.is_active ? 'success' : 'secondary'" variant="tonal" label>
-                            {{ item.is_active ? 'Masih aktif' : 'Sudah nonaktif' }}
-                          </VChip>
-                        </div>
-                      </template>
-                    </VListItem>
-                  </VList>
-
-                  <div v-else-if="!cleanupPending" class="operations-page__watchlistEmpty mt-4 text-body-2 text-medium-emphasis">
-                    {{ section.emptyText }}
-                  </div>
+                  <div class="operations-page__watchlistCount">{{ section.count }}</div>
                 </div>
-              </VCol>
-            </VRow>
+
+                <VList v-if="section.items.length > 0" density="compact" lines="two" class="mt-3">
+                  <VListItem v-for="item in section.items" :key="item.id">
+                    <template #prepend>
+                      <VAvatar :color="section.color" variant="tonal" size="34" rounded>
+                        <span class="text-sm font-weight-medium">{{ item.full_name.slice(0, 1).toUpperCase() }}</span>
+                      </VAvatar>
+                    </template>
+
+                    <VListItemTitle>{{ item.full_name }}</VListItemTitle>
+                    <VListItemSubtitle>
+                      {{ formatPhoneNumberForDisplay(item.phone_number) }}
+                      • {{ formatDateTime(item.last_activity_at) }}
+                    </VListItemSubtitle>
+
+                    <template #append>
+                      <div class="text-end">
+                        <div class="operations-page__watchlistDays">{{ item.days_inactive }} hari</div>
+                        <VChip size="x-small" :color="item.is_active ? 'success' : 'secondary'" variant="tonal" label>
+                          {{ item.is_active ? 'Masih aktif' : 'Sudah nonaktif' }}
+                        </VChip>
+                      </div>
+                    </template>
+                  </VListItem>
+                </VList>
+
+                <div v-else-if="!cleanupPending" class="operations-page__watchlistEmpty text-body-2 text-medium-emphasis">
+                  {{ section.emptyText }}
+                </div>
+              </div>
+            </div>
           </VCardText>
         </VCard>
       </VCol>
@@ -801,6 +804,49 @@ async function handleRefreshOperations() {
   background: rgba(var(--v-theme-surface), 0.96);
 }
 
+.operations-page__watchlistBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.operations-page__watchlistIntro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.operations-page__watchlistIntroMain {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  min-width: 0;
+}
+
+.operations-page__watchlistMeta {
+  display: flex;
+  flex: 0 1 420px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  text-align: right;
+}
+
+.operations-page__watchlistMetaChips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.operations-page__watchlistGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+
 .operations-page__watchlistHead {
   display: flex;
   align-items: flex-start;
@@ -820,7 +866,7 @@ async function handleRefreshOperations() {
 }
 
 .operations-page__watchlistEmpty {
-  padding: 4px 2px 2px;
+  padding: 14px 2px 2px;
 }
 
 @media (max-width: 959px) {
@@ -830,6 +876,24 @@ async function handleRefreshOperations() {
 
   .operations-page__heroStats {
     width: 100%;
+  }
+
+  .operations-page__watchlistIntro {
+    flex-direction: column;
+  }
+
+  .operations-page__watchlistMeta {
+    flex-basis: auto;
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .operations-page__watchlistMetaChips {
+    justify-content: flex-start;
+  }
+
+  .operations-page__watchlistGrid {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -924,29 +924,6 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
         </template>
         <VCardTitle>Manajemen Pengguna</VCardTitle>
         <VCardSubtitle class="admin-users__subtitle">Kelola semua akun yang terdaftar di sistem.</VCardSubtitle>
-        <template v-if="!isMobile" #append>
-          <div class="admin-users__toolbar">
-            <div class="admin-users__search">
-              <AppTextField
-                v-model="search"
-                placeholder="Cari (Nama/No. HP)..."
-                prepend-inner-icon="tabler-search"
-                clearable
-                density="comfortable"
-                hide-details
-              />
-            </div>
-
-            <VBtn
-              prepend-icon="tabler-plus"
-              height="56"
-              class="admin-users__addBtn"
-              @click="openAddUserDialog()"
-            >
-              Tambah Akun
-            </VBtn>
-          </div>
-        </template>
       </VCardItem>
 
       <!-- Mobile: 3 baris (Search di bawah judul, tombol di bawah search) -->
@@ -974,6 +951,28 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
       </VCardText>
       <VDivider v-if="!isMobile" />
       <VCardText v-if="isHydrated && !isMobile">
+        <div class="admin-users__toolbar admin-users__toolbar--desktop mb-4">
+          <div class="admin-users__search">
+            <AppTextField
+              v-model="search"
+              placeholder="Cari nama atau nomor HP"
+              prepend-inner-icon="tabler-search"
+              clearable
+              density="comfortable"
+              hide-details
+            />
+          </div>
+
+          <VBtn
+            prepend-icon="tabler-plus"
+            height="56"
+            class="admin-users__addBtn"
+            @click="openAddUserDialog()"
+          >
+            Tambah Akun
+          </VBtn>
+        </div>
+
         <VRow align="center" class="mt-1" dense>
           <VCol cols="12" md="4">
             <AppSelect
@@ -1554,7 +1553,13 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
   display: flex;
   align-items: center;
   gap: 16px;
-  width: min(100%, 520px);
+  width: 100%;
+}
+
+.admin-users__toolbar--desktop {
+  align-items: stretch;
+  justify-content: space-between;
+  flex-wrap: wrap;
 }
 
 .admin-users__connectionHint {
@@ -1602,8 +1607,12 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 }
 
 .admin-users__search {
-  flex: 1 1 auto;
+  flex: 1 1 560px;
   min-width: 0;
+}
+
+.admin-users__toolbar--desktop .admin-users__search {
+  min-width: min(100%, 420px);
 }
 
 .admin-users__toolbar--mobile .admin-users__search {
@@ -1612,6 +1621,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 
 .admin-users__addBtn {
   min-width: 160px;
+  flex: 0 0 auto;
 }
 
 .admin-users__toolbar--mobile .admin-users__addBtn {
