@@ -598,16 +598,6 @@ async function handleRefreshOperations() {
             </template>
             <VCardTitle>Cleanup Watchlist</VCardTitle>
             <VCardSubtitle>Ringkasan kandidat nonaktif untuk tindak lanjut operasional.</VCardSubtitle>
-            <template #append>
-              <div class="d-flex align-center gap-2 flex-wrap justify-end">
-                <VChip size="small" color="warning" variant="tonal" label>
-                  Deactivate ≥ {{ cleanupSummary.deactivateThreshold }} hari
-                </VChip>
-                <VChip size="small" color="error" variant="tonal" label>
-                  Delete ≥ {{ cleanupSummary.deleteThreshold }} hari
-                </VChip>
-              </div>
-            </template>
           </VCardItem>
           <VCardText>
             <VAlert v-if="cleanupError" type="warning" variant="tonal" class="mb-4" icon="tabler-alert-triangle">
@@ -618,7 +608,16 @@ async function handleRefreshOperations() {
               Auto-delete {{ cleanupSummary.deleteEnabled ? 'aktif' : 'nonaktif' }} · maksimal {{ cleanupSummary.deleteMaxPerRun }} user per siklus.
             </div>
 
-            <VRow>
+            <div class="d-flex align-center gap-2 flex-wrap mb-4">
+              <VChip size="small" color="warning" variant="tonal" label>
+                Deactivate ≥ {{ cleanupSummary.deactivateThreshold }} hari
+              </VChip>
+              <VChip size="small" color="error" variant="tonal" label>
+                Delete ≥ {{ cleanupSummary.deleteThreshold }} hari
+              </VChip>
+            </div>
+
+            <VRow align="start">
               <VCol v-for="section in cleanupSections" :key="section.key" cols="12" md="6">
                 <div class="operations-page__watchlistCard">
                   <div class="operations-page__watchlistHead">
@@ -634,7 +633,7 @@ async function handleRefreshOperations() {
                     <div class="operations-page__watchlistCount">{{ section.count }}</div>
                   </div>
 
-                  <VList density="compact" lines="two" class="mt-3">
+                  <VList v-if="section.items.length > 0" density="compact" lines="two" class="mt-3">
                     <VListItem v-for="item in section.items" :key="item.id">
                       <template #prepend>
                         <VAvatar :color="section.color" variant="tonal" size="34" rounded>
@@ -657,9 +656,11 @@ async function handleRefreshOperations() {
                         </div>
                       </template>
                     </VListItem>
-
-                    <VListItem v-if="section.items.length === 0 && !cleanupPending" :title="section.emptyText" />
                   </VList>
+
+                  <div v-else-if="!cleanupPending" class="operations-page__watchlistEmpty mt-4 text-body-2 text-medium-emphasis">
+                    {{ section.emptyText }}
+                  </div>
                 </div>
               </VCol>
             </VRow>
@@ -794,7 +795,6 @@ async function handleRefreshOperations() {
 }
 
 .operations-page__watchlistCard {
-  height: 100%;
   padding: 16px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
   border-radius: 20px;
@@ -817,6 +817,10 @@ async function handleRefreshOperations() {
   margin-bottom: 6px;
   font-size: 0.88rem;
   font-weight: 700;
+}
+
+.operations-page__watchlistEmpty {
+  padding: 4px 2px 2px;
 }
 
 @media (max-width: 959px) {

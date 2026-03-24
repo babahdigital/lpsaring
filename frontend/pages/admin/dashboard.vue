@@ -722,7 +722,7 @@ useHead({ title: 'Dashboard Admin' })
               </VChip>
             </template>
           </VCardItem>
-          <VCardText class="pt-2">
+          <VCardText class="pt-2 dashboard-analytics-card__body dashboard-analytics-card__body--spread">
             <div class="dashboard-analytics-card__headline">
               <div class="dashboard-analytics-card__value">
                 {{ formatCurrency(stats?.pendapatanMingguIni) }}
@@ -733,29 +733,53 @@ useHead({ title: 'Dashboard Admin' })
             </div>
 
             <div class="dashboard-analytics-card__salesOverview mt-5">
-              <div class="dashboard-analytics-card__salesMetric">
-                <div class="dashboard-analytics-card__salesLabel">Minggu Ini</div>
-                <div class="dashboard-analytics-card__comparisonValue">
-                  {{ formatCurrency(stats?.pendapatanMingguIni) }}
-                </div>
-                <div class="dashboard-analytics-card__comparisonMeta">
-                  {{ stats?.transaksiMingguIni ?? 0 }} transaksi
-                </div>
-              </div>
+              <VRow no-gutters>
+                <VCol cols="5">
+                  <div class="dashboard-analytics-card__salesMetric py-2">
+                    <div class="d-flex align-center mb-3">
+                      <VAvatar color="info" variant="tonal" :size="24" rounded class="me-2">
+                        <VIcon size="16" icon="tabler-calendar-check" />
+                      </VAvatar>
+                      <span class="dashboard-analytics-card__salesLabel dashboard-analytics-card__salesLabel--plain">Minggu Ini</span>
+                    </div>
+                    <div class="dashboard-analytics-card__comparisonValue mt-0">
+                      {{ formatCurrency(stats?.pendapatanMingguIni) }}
+                    </div>
+                    <div class="dashboard-analytics-card__comparisonMeta">
+                      {{ stats?.transaksiMingguIni ?? 0 }} transaksi
+                    </div>
+                  </div>
+                </VCol>
 
-              <div class="dashboard-analytics-card__salesVersus">
-                VS
-              </div>
+                <VCol cols="2">
+                  <div class="dashboard-analytics-card__salesDivider">
+                    <VDivider vertical class="mx-auto" />
+                    <VAvatar size="28" color="rgba(var(--v-theme-on-surface), var(--v-hover-opacity))" class="my-2">
+                      <div class="text-overline text-disabled">
+                        VS
+                      </div>
+                    </VAvatar>
+                    <VDivider vertical class="mx-auto" />
+                  </div>
+                </VCol>
 
-              <div class="dashboard-analytics-card__salesMetric dashboard-analytics-card__salesMetric--end">
-                <div class="dashboard-analytics-card__salesLabel">Minggu Lalu</div>
-                <div class="dashboard-analytics-card__comparisonValue">
-                  {{ formatCurrency(stats?.pendapatanMingguLalu) }}
-                </div>
-                <div class="dashboard-analytics-card__comparisonMeta">
-                  {{ stats?.transaksiMingguLalu ?? 0 }} transaksi
-                </div>
-              </div>
+                <VCol cols="5">
+                  <div class="dashboard-analytics-card__salesMetric dashboard-analytics-card__salesMetric--end py-2">
+                    <div class="d-flex align-center justify-end mb-3">
+                      <span class="dashboard-analytics-card__salesLabel dashboard-analytics-card__salesLabel--plain me-2">Minggu Lalu</span>
+                      <VAvatar color="secondary" variant="tonal" :size="24" rounded>
+                        <VIcon size="16" icon="tabler-calendar-stats" />
+                      </VAvatar>
+                    </div>
+                    <div class="dashboard-analytics-card__comparisonValue mt-0">
+                      {{ formatCurrency(stats?.pendapatanMingguLalu) }}
+                    </div>
+                    <div class="dashboard-analytics-card__comparisonMeta">
+                      {{ stats?.transaksiMingguLalu ?? 0 }} transaksi
+                    </div>
+                  </div>
+                </VCol>
+              </VRow>
             </div>
 
             <div class="dashboard-analytics-card__salesProgress mt-5">
@@ -931,9 +955,6 @@ useHead({ title: 'Dashboard Admin' })
             </template>
           </VCardItem>
           <VCardText class="pt-5 pb-6">
-            <div class="dashboard-analytics-card__caption mb-4">
-              Komposisi penjualan paket bulan ini ditampilkan berdasarkan jumlah transaksi.
-            </div>
             <ClientOnly>
               <VueApexCharts
                 v-if="!showInitialSkeleton && paketTerlarisChartSeries.length > 0 && paketTerlarisChartSeries.some((s: number) => s > 0)"
@@ -1146,11 +1167,18 @@ useHead({ title: 'Dashboard Admin' })
   color: rgba(var(--v-theme-on-surface), 0.64);
 }
 
+.dashboard-analytics-card__body {
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-analytics-card__body--spread {
+  height: 100%;
+  justify-content: space-between;
+}
+
 .dashboard-analytics-card__salesOverview {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  gap: 14px;
-  align-items: center;
+  min-height: 168px;
 }
 
 .dashboard-analytics-card__salesMetric {
@@ -1169,19 +1197,18 @@ useHead({ title: 'Dashboard Admin' })
   color: rgba(var(--v-theme-on-surface), 0.56);
 }
 
-.dashboard-analytics-card__salesVersus {
-  display: inline-flex;
+.dashboard-analytics-card__salesLabel--plain {
+  text-transform: none;
+  letter-spacing: 0;
+  color: rgba(var(--v-theme-on-surface), 0.68);
+}
+
+.dashboard-analytics-card__salesDivider {
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 999px;
-  background: rgba(var(--v-theme-on-surface), 0.04);
-  box-shadow: inset 0 0 0 1px rgba(var(--v-theme-on-surface), 0.06);
-  font-size: 0.76rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  color: rgba(var(--v-theme-on-surface), 0.52);
+  height: 100%;
 }
 
 .dashboard-analytics-card__salesProgress {
@@ -1288,15 +1315,11 @@ useHead({ title: 'Dashboard Admin' })
   }
 
   .dashboard-analytics-card__salesOverview {
-    grid-template-columns: 1fr;
+    min-height: auto;
   }
 
   .dashboard-analytics-card__salesMetric--end {
     text-align: left;
-  }
-
-  .dashboard-analytics-card__salesVersus {
-    justify-self: flex-start;
   }
 }
 
@@ -1307,6 +1330,10 @@ useHead({ title: 'Dashboard Admin' })
 
   .dashboard-analytics-card__reportFooter {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-analytics-card__body--spread {
+    height: auto;
   }
 }
 
