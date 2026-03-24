@@ -502,8 +502,9 @@ const paketTerlarisChartOptions = computed(() => {
     },
     legend: {
       position: 'bottom',
+      offsetY: 20,
       markers: { offsetX: -3 },
-      itemMargin: { horizontal: 10 },
+      itemMargin: { horizontal: 10, vertical: 8 },
       labels: { colors: onSurfaceColor, useSeriesColors: false },
     },
     plotOptions: {
@@ -939,7 +940,7 @@ useHead({ title: 'Dashboard Admin' })
         cols="12"
         md="5"
       >
-        <VCard>
+        <VCard class="h-100 dashboard-insight-card dashboard-top-package-card">
           <VCardItem>
             <template #prepend>
               <VAvatar color="secondary" variant="tonal" rounded="lg" size="40">
@@ -954,10 +955,11 @@ useHead({ title: 'Dashboard Admin' })
               </VChip>
             </template>
           </VCardItem>
-          <VCardText class="pt-5 pb-6">
+          <VCardText class="pt-5 pb-6 dashboard-top-package-card__body">
             <ClientOnly>
               <VueApexCharts
                 v-if="!showInitialSkeleton && paketTerlarisChartSeries.length > 0 && paketTerlarisChartSeries.some((s: number) => s > 0)"
+                class="dashboard-top-package-card__chart"
                 type="donut"
                 height="350"
                 :options="paketTerlarisChartOptions"
@@ -965,7 +967,7 @@ useHead({ title: 'Dashboard Admin' })
               />
               <div
                 v-else-if="!showInitialSkeleton"
-                class="d-flex flex-column align-center justify-center text-center"
+                class="d-flex flex-column align-center justify-center text-center dashboard-top-package-card__empty"
                 style="height: 350px;"
               >
                 <VIcon
@@ -979,7 +981,7 @@ useHead({ title: 'Dashboard Admin' })
               </div>
               <div
                 v-else
-                class="d-flex align-center justify-center"
+                class="d-flex align-center justify-center dashboard-top-package-card__empty"
                 style="height: 350px;"
               >
                 <VProgressCircular
@@ -1005,7 +1007,7 @@ useHead({ title: 'Dashboard Admin' })
         cols="12"
         md="7"
       >
-        <VCard>
+        <VCard class="h-100 dashboard-insight-card">
           <VCardItem>
             <template #prepend>
               <VAvatar color="info" variant="tonal" rounded="lg" size="40">
@@ -1138,6 +1140,32 @@ useHead({ title: 'Dashboard Admin' })
 .dashboard-analytics-card {
   border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
   box-shadow: 0 18px 34px rgba(15, 23, 42, 0.04);
+}
+
+.dashboard-insight-card {
+  height: 100%;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.04);
+}
+
+.dashboard-top-package-card__body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 100%;
+}
+
+.dashboard-top-package-card__chart {
+  display: block;
+  padding-bottom: 27px;
+}
+
+.dashboard-top-package-card__empty {
+  padding-bottom: 27px;
+}
+
+.dashboard-top-package-card :deep(.apexcharts-legend) {
+  margin-top: 20px !important;
 }
 
 .dashboard-analytics-card__headline {
@@ -1321,6 +1349,15 @@ useHead({ title: 'Dashboard Admin' })
   .dashboard-analytics-card__salesMetric--end {
     text-align: left;
   }
+
+  .dashboard-top-package-card__chart,
+  .dashboard-top-package-card__empty {
+    padding-bottom: 20px;
+  }
+
+  .dashboard-top-package-card :deep(.apexcharts-legend) {
+    margin-top: 16px !important;
+  }
 }
 
 @media (max-width: 600px) {
@@ -1334,6 +1371,15 @@ useHead({ title: 'Dashboard Admin' })
 
   .dashboard-analytics-card__body--spread {
     height: auto;
+  }
+
+  .dashboard-top-package-card__chart,
+  .dashboard-top-package-card__empty {
+    padding-bottom: 12px;
+  }
+
+  .dashboard-top-package-card :deep(.apexcharts-legend) {
+    margin-top: 12px !important;
   }
 }
 

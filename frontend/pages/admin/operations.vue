@@ -439,7 +439,7 @@ async function handleRefreshOperations() {
             </VAlert>
 
             <div v-if="sortedParityItems.length > 0" class="operations-page__tableWrap">
-              <VTable class="operations-page__table text-no-wrap">
+              <VTable class="operations-page__table d-none d-md-block">
                 <thead>
                   <tr>
                     <th>User / Device</th>
@@ -453,7 +453,7 @@ async function handleRefreshOperations() {
                     <td>
                       <div class="operations-page__identity">
                         <div class="font-weight-medium text-high-emphasis">{{ formatPhoneNumberForDisplay(item.phone_number) }}</div>
-                        <div class="text-caption text-medium-emphasis">
+                        <div class="text-caption text-medium-emphasis operations-page__identityMeta">
                           MAC {{ item.mac ?? '-' }}
                           <span v-if="item.ip"> • IP {{ item.ip }}</span>
                         </div>
@@ -508,6 +508,73 @@ async function handleRefreshOperations() {
                   </tr>
                 </tbody>
               </VTable>
+
+              <div class="operations-page__mobileList d-md-none">
+                <article
+                  v-for="item in sortedParityItems.slice(0, 10)"
+                  :key="`mobile-${item.user_id}-${item.mac ?? 'no-mac'}-${item.ip ?? 'no-ip'}`"
+                  class="operations-page__mobileCard"
+                >
+                  <div class="operations-page__mobileHeader">
+                    <div class="operations-page__identity">
+                      <div class="font-weight-medium text-high-emphasis">{{ formatPhoneNumberForDisplay(item.phone_number) }}</div>
+                      <div class="text-caption text-medium-emphasis operations-page__identityMeta">
+                        MAC {{ item.mac ?? '-' }}
+                        <span v-if="item.ip"> • IP {{ item.ip }}</span>
+                      </div>
+                    </div>
+
+                    <VChip
+                      size="x-small"
+                      :color="item.parity_relevant ? 'error' : 'secondary'"
+                      variant="tonal"
+                      label
+                    >
+                      {{ item.parity_relevant ? 'Akses inti' : 'Operasional' }}
+                    </VChip>
+                  </div>
+
+                  <div class="operations-page__mobileSection">
+                    <div class="operations-page__mobileLabel">Mismatch</div>
+                    <div class="operations-page__chipGroup">
+                      <VChip
+                        v-for="mismatch in item.mismatches"
+                        :key="`mobile-${item.user_id}-${mismatch}`"
+                        size="x-small"
+                        :color="getParityMismatchMeta(mismatch).color"
+                        variant="tonal"
+                        label
+                      >
+                        {{ getParityMismatchMeta(mismatch).label }}
+                      </VChip>
+                    </div>
+                  </div>
+
+                  <div class="operations-page__mobileSection">
+                    <div class="operations-page__mobileLabel">Rencana Sistem</div>
+                    <div class="operations-page__chipGroup">
+                      <VChip
+                        v-for="action in item.action_plan.slice(0, 2)"
+                        :key="`mobile-${item.user_id}-${action.action}`"
+                        size="x-small"
+                        :color="getActionModeMeta(action.mode).color"
+                        variant="tonal"
+                        label
+                      >
+                        {{ getActionLabel(action.action) }}
+                      </VChip>
+                      <VChip
+                        size="x-small"
+                        :color="getActionModeMeta(item.auto_fixable ? 'auto' : 'informational').color"
+                        variant="tonal"
+                        label
+                      >
+                        {{ getActionModeMeta(item.auto_fixable ? 'auto' : 'informational').label }}
+                      </VChip>
+                    </div>
+                  </div>
+                </article>
+              </div>
             </div>
 
             <div v-else-if="!parityPending" class="operations-page__emptyState">
@@ -749,7 +816,12 @@ async function handleRefreshOperations() {
 }
 
 .operations-page__tableWrap {
-  overflow-x: auto;
+  overflow: hidden;
+}
+
+.operations-page__table {
+  width: 100%;
+  table-layout: fixed;
 }
 
 .operations-page__table th {
@@ -760,16 +832,85 @@ async function handleRefreshOperations() {
   color: rgba(var(--v-theme-on-surface), 0.56);
 }
 
+.operations-page__table th,
+.operations-page__table td {
+  padding-block: 14px;
+  vertical-align: top;
+  white-space: normal;
+}
+
+.operations-page__table th:nth-child(1),
+.operations-page__table td:nth-child(1) {
+  width: 36%;
+}
+
+.operations-page__table th:nth-child(2),
+.operations-page__table td:nth-child(2) {
+  width: 30%;
+}
+
+.operations-page__table th:nth-child(3),
+.operations-page__table td:nth-child(3) {
+  width: 15%;
+}
+
+.operations-page__table th:nth-child(4),
+.operations-page__table td:nth-child(4) {
+  width: 19%;
+}
+
 .operations-page__identity {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
+}
+
+.operations-page__identityMeta {
+  overflow-wrap: anywhere;
 }
 
 .operations-page__chipGroup {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.operations-page__mobileList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.operations-page__mobileCard {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(var(--v-theme-on-surface), 0.03);
+  box-shadow: inset 0 0 0 1px rgba(var(--v-theme-on-surface), 0.05);
+}
+
+.operations-page__mobileHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.operations-page__mobileSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.operations-page__mobileLabel {
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(var(--v-theme-on-surface), 0.56);
 }
 
 .operations-page__stackList {
@@ -932,6 +1073,10 @@ async function handleRefreshOperations() {
 @media (max-width: 600px) {
   .operations-page__heroStats {
     grid-template-columns: 1fr;
+  }
+
+  .operations-page__mobileHeader {
+    flex-direction: column;
   }
 
   .operations-page__stackItem,
