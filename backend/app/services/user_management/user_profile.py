@@ -688,6 +688,7 @@ def update_user_by_admin_comprehensive(
     pending_unblock = False
     pending_unblock_reason = data.get("blocked_reason") or None
     unlimited_activated = False
+    unlimited_activated_via_debt = False
     was_unlimited_before = bool(getattr(target_user, "is_unlimited_user", False))
     unlimited_time_cleared = False
 
@@ -809,6 +810,7 @@ def update_user_by_admin_comprehensive(
                         if not success_unlimited:
                             return False, msg_unlimited, None
                         unlimited_activated = True
+                        unlimited_activated_via_debt = True
                         pkg_days = int(getattr(pkg, "duration_days", 0) or 0)
                         if pkg_days > 0:
                             success_extend, msg_extend = quota_service.inject_user_quota(target_user, admin_actor, 0, pkg_days)
@@ -1086,7 +1088,7 @@ def update_user_by_admin_comprehensive(
     if changes:
         _log_admin_action(admin_actor, target_user, AdminActionType.UPDATE_USER_PROFILE, changes)
 
-    if unlimited_activated:
+    if unlimited_activated and not unlimited_activated_via_debt:
         try:
             _send_whatsapp_notification(
                 target_user.phone_number,

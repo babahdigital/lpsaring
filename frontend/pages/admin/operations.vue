@@ -851,6 +851,18 @@ async function handleRefreshOperations() {
   white-space: normal;
 }
 
+.operations-page__table tbody tr {
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.06);
+}
+
+.operations-page__table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.operations-page__table tbody tr td {
+  padding-block: 16px;
+}
+
 .operations-page__table tbody tr:first-child td {
   padding-top: 18px;
 }
@@ -881,6 +893,7 @@ async function handleRefreshOperations() {
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+  line-height: 1.5;
 }
 
 .operations-page__identityMeta {
@@ -891,6 +904,7 @@ async function handleRefreshOperations() {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  align-items: center;
 }
 
 .operations-page__mobileList {

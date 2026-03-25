@@ -280,6 +280,8 @@ const showDebtCard = computed(() => {
   return debtTotalMb.value > 0 || debtManualMb.value > 0 || quotaDebtItems.value.length > 0
 })
 
+const unpaidDebtCount = computed(() => quotaDebtItems.value.filter(d => !d.is_paid).length)
+
 function isUnlimitedDebtItem(note: string | null | undefined, amountMb: number | null | undefined): boolean {
   const normalizedNote = String(note ?? '').toLowerCase()
   return normalizedNote.startsWith('paket:') && normalizedNote.includes('unlimited') && Number(amountMb ?? 0) <= 1
@@ -1018,13 +1020,24 @@ useHead({ title: 'Riwayat Transaksi & Kuota' })
         <VCard v-if="showDebtCard" variant="tonal" class="mb-4">
           <VCardText class="py-4">
             <div class="d-flex align-center justify-space-between flex-wrap gap-2">
-              <div>
-                <div class="text-subtitle-1 font-weight-medium">
-                  Tunggakan Kuota
+              <div class="d-flex align-center gap-2">
+                <div>
+                  <div class="text-subtitle-1 font-weight-medium">
+                    Tunggakan Kuota
+                  </div>
+                  <div class="text-caption text-medium-emphasis">
+                    Nilai referensi
+                  </div>
                 </div>
-                <div class="text-caption text-medium-emphasis">
-                  Nilai referensi
-                </div>
+                <VChip
+                  v-if="unpaidDebtCount > 0"
+                  size="small"
+                  color="warning"
+                  variant="flat"
+                  label
+                >
+                  {{ unpaidDebtCount }} belum lunas
+                </VChip>
               </div>
 
               <div class="text-body-1 font-weight-medium">

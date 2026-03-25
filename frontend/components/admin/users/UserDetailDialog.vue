@@ -197,6 +197,17 @@ function formatDataSize(sizeInMB: number) {
   else return `${(sizeInMB / 1024).toLocaleString('id-ID', options)} GB`
 }
 
+function isUnlimitedDebtItem(note: string | null | undefined, amountMb: number | null | undefined): boolean {
+  const normalizedNote = String(note ?? '').toLowerCase()
+  return normalizedNote.startsWith('paket:') && normalizedNote.includes('unlimited') && Number(amountMb ?? 0) <= 1
+}
+
+function formatDebtItemSize(amountMb: number | null | undefined, note?: string | null): string {
+  if (isUnlimitedDebtItem(note, amountMb))
+    return 'Unlimited'
+  return formatDataSize(Number(amountMb ?? 0))
+}
+
 const quotaDetails = computed((): QuotaInfo | null => {
   if (!props.user)
     return null
@@ -256,22 +267,27 @@ const quotaDetails = computed((): QuotaInfo | null => {
 })
 
 const debtAutoMb = computed(() => (props.user?.is_unlimited_user === true ? 0 : Number(props.user?.quota_debt_auto_mb ?? 0)))
-const debtManualMb = computed(() => (props.user?.is_unlimited_user === true ? 0 : Number(props.user?.quota_debt_manual_mb ?? props.user?.manual_debt_mb ?? 0)))
-const debtTotalMb = computed(() => (props.user?.is_unlimited_user === true ? 0 : Number(props.user?.quota_debt_total_mb ?? (debtAutoMb.value + debtManualMb.value))))
+const debtManualMb = computed(() => Number(props.user?.quota_debt_manual_mb ?? props.user?.manual_debt_mb ?? 0))
+const debtTotalMb = computed(() => {
+  if (props.user?.is_unlimited_user === true)
+    return debtManualMb.value
+  return Number(props.user?.quota_debt_total_mb ?? (debtAutoMb.value + debtManualMb.value))
+})
+const hasUnlimitedManualDebt = computed(() => props.user?.is_unlimited_user === true && debtManualMb.value > 0)
 
 const hasDebt = computed(() => debtTotalMb.value > 0)
 
 const shouldShowManualDebtSection = computed(() => {
   const totalItems = Number(manualDebtSummary.value?.total_items ?? 0)
-  return manualDebtLoading.value || manualDebtItems.value.length > 0 || totalItems > 0
+  return manualDebtLoading.value || manualDebtItems.value.length > 0 || totalItems > 0 || hasUnlimitedManualDebt.value
 })
 
 const debtStatusMeta = computed(() => {
-  const hasDebt = debtTotalMb.value > 0
+  const hasDebtVal = debtTotalMb.value > 0 || hasUnlimitedManualDebt.value
   return {
-    text: hasDebt ? 'ADA TUNGGAKAN' : 'TIDAK ADA TUNGGAKAN',
-    color: hasDebt ? 'warning' : 'success',
-    icon: hasDebt ? 'tabler-alert-triangle' : 'tabler-circle-check',
+    text: hasDebtVal ? 'ADA TUNGGAKAN' : 'TIDAK ADA TUNGGAKAN',
+    color: hasDebtVal ? 'warning' : 'success',
+    icon: hasDebtVal ? 'tabler-alert-triangle' : 'tabler-circle-check',
   }
 })
 
@@ -327,12 +343,15 @@ const debtBreakdownRows = computed<DebtBreakdownRow[]>(() => {
   return rows
 })
 
-type UserServiceStatusLabel = 'Aktif' | 'FUP' | 'Habis' | 'Blokir' | 'Inactive'
+type UserServiceStatusLabel = 'Aktif' | 'FUP' | 'Habis' | 'Blokir' | 'Inactive' | 'Unlimited'
 function getUserServiceStatusMeta(user: User | null | undefined): { text: UserServiceStatusLabel, color: string, icon: string, tooltip?: string } {
   if (!user)
     return { text: 'Inactive', color: 'secondary', icon: 'tabler-user-off' }
 
   const status = resolveAccessStatusFromUser(user)
+
+  if (status === 'ok' && user.is_unlimited_user === true)
+    return { text: 'Unlimited', color: 'success', icon: 'tabler-infinity' }
 
   switch (status) {
     case 'blocked':
@@ -723,8 +742,13 @@ function onClose() {
             class="mt-4"
             density="compact"
           >
-            Tunggakan kuota terdeteksi: <strong>{{ formatDataSize(debtTotalMb) }}</strong>
-            (otomatis {{ formatDataSize(debtAutoMb) }}, manual {{ formatDataSize(debtManualMb) }})
+            <template v-if="hasUnlimitedManualDebt">
+              Tunggakan manual tercatat (akses saat ini: <strong>Unlimited</strong>)
+            </template>
+            <template v-else>
+              Tunggakan kuota terdeteksi: <strong>{{ formatDataSize(debtTotalMb) }}</strong>
+              (otomatis {{ formatDataSize(debtAutoMb) }}, manual {{ formatDataSize(debtManualMb) }})
+            </template>
           </VAlert>
 
           <VSheet v-if="debtBreakdownRows.length > 0" rounded="lg" border class="pa-3 mt-4">
@@ -820,13 +844,13 @@ function onClose() {
                     </div>
                   </td>
                   <td class="text-right">
-                    {{ formatDataSize(item.amount_mb) }}
+                    {{ formatDebtItemSize(item.amount_mb, item.note) }}
                   </td>
                   <td class="text-right">
-                    {{ formatDataSize(item.paid_mb) }}
+                    {{ formatDebtItemSize(item.paid_mb, item.note) }}
                   </td>
                   <td class="text-right">
-                    {{ formatDataSize(item.remaining_mb) }}
+                    {{ formatDebtItemSize(item.remaining_mb, item.note) }}
                   </td>
                   <td>
                     <VChip :color="item.is_paid ? 'success' : 'warning'" size="x-small" label>

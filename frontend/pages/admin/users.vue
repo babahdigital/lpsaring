@@ -316,8 +316,10 @@ function getDeviceStatusMeta(user: User): { text: string, color: string, icon: s
 }
 
 function getUserDebtTotalMb(user: User): number {
-  if (user.is_unlimited_user === true)
-    return 0
+  if (user.is_unlimited_user === true) {
+    // For unlimited users, show manual debt total (sentinel 1 MB per unlimited debt item)
+    return Number(user.quota_debt_manual_mb ?? user.manual_debt_mb ?? 0)
+  }
   const direct = Number(user.quota_debt_total_mb ?? 0)
   if (Number.isFinite(direct) && direct > 0)
     return direct
@@ -326,9 +328,23 @@ function getUserDebtTotalMb(user: User): number {
   return (Number.isFinite(autoMb) ? autoMb : 0) + (Number.isFinite(manualMb) ? manualMb : 0)
 }
 
-type UserAccessLabel = 'Aktif' | 'FUP' | 'Habis' | 'Blokir' | 'Inactive'
+function hasUnlimitedDebt(user: User): boolean {
+  return user.is_unlimited_user === true && getUserDebtTotalMb(user) > 0
+}
+
+function formatDebtChipText(user: User): string {
+  if (hasUnlimitedDebt(user))
+    return 'Debt Unlimited'
+  return `Debt ${formatQuotaFromMb(getUserDebtTotalMb(user))}`
+}
+
+type UserAccessLabel = 'Aktif' | 'FUP' | 'Habis' | 'Blokir' | 'Inactive' | 'Unlimited'
 function getUserAccessMeta(user: User): { text: UserAccessLabel, color: string, icon: string, tooltip?: string } {
   const status = resolveAccessStatusFromUser(user)
+
+  // Check unlimited before returning generic 'ok' → 'Aktif'
+  if (status === 'ok' && user.is_unlimited_user === true)
+    return { text: 'Unlimited', color: 'success', icon: 'tabler-infinity' }
 
   switch (status) {
     case 'blocked':
@@ -1041,10 +1057,10 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
                 </VChip>
               </div>
               <div v-if="getUserDebtTotalMb(item) > 0" class="mt-1">
-                <VTooltip :text="`Debt: ${getUserDebtTotalMb(item)} MB`" location="top">
+                <VTooltip :text="hasUnlimitedDebt(item) ? 'Tunggakan paket unlimited' : `Debt: ${getUserDebtTotalMb(item)} MB`" location="top">
                   <template #activator="{ props: tooltipProps }">
                     <VChip v-bind="tooltipProps" color="warning" size="x-small" label prepend-icon="tabler-alert-triangle">
-                      Debt {{ formatQuotaFromMb(getUserDebtTotalMb(item)) }}
+                      {{ formatDebtChipText(item) }}
                     </VChip>
                   </template>
                 </VTooltip>
@@ -1079,10 +1095,10 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
               {{ getUserAccessMeta(item).text }}
             </VChip>
 
-            <VTooltip v-if="getUserDebtTotalMb(item) > 0" :text="`Debt: ${getUserDebtTotalMb(item)} MB`" location="top">
+            <VTooltip v-if="getUserDebtTotalMb(item) > 0" :text="hasUnlimitedDebt(item) ? 'Tunggakan paket unlimited' : `Debt: ${getUserDebtTotalMb(item)} MB`" location="top">
               <template #activator="{ props: tooltipProps }">
                 <VChip v-bind="tooltipProps" color="warning" size="x-small" label prepend-icon="tabler-alert-triangle">
-                  Debt {{ formatQuotaFromMb(getUserDebtTotalMb(item)) }}
+                  {{ formatDebtChipText(item) }}
                 </VChip>
               </template>
             </VTooltip>
@@ -1243,7 +1259,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
                 </VChip>
                 <div v-if="getUserDebtTotalMb(user) > 0" class="admin-users__mobile-debt mt-2">
                   <VChip color="warning" size="x-small" label prepend-icon="tabler-alert-triangle">
-                    Debt {{ formatQuotaFromMb(getUserDebtTotalMb(user)) }}
+                    {{ formatDebtChipText(user) }}
                   </VChip>
                 </div>
               </div>
