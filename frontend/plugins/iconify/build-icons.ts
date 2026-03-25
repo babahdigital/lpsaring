@@ -323,6 +323,7 @@ const tablerIcons = [
   'layers-subtract',
   'user-minus',
   'chart-donut',
+  'shield-x',
   'x',
 ]
 
