@@ -554,7 +554,7 @@ def admin_reconcile_transaction_impl(
         record_failure('midtrans')
         db.session.rollback()
         return jsonify({'message': f'Midtrans API error: {e.message}', 'quota_applied': False}), HTTPStatus.BAD_GATEWAY
-    except Exception as e:
+    except Exception:
         record_failure('midtrans')
         db.session.rollback()
         return jsonify({'message': 'Gagal menghubungi Midtrans.', 'quota_applied': False}), HTTPStatus.BAD_GATEWAY

@@ -295,7 +295,7 @@ def token_required(f):
                     g.new_refresh_token = rotated.new_refresh_token
 
             return f(current_user_id=user_uuid_from_token, *args, **kwargs)
-        except (JWTError, ValueError, TypeError) as e:
+        except (JWTError, ValueError, TypeError):
             return _auth_error("Token tidak valid atau sudah kedaluwarsa.", HTTPStatus.UNAUTHORIZED, "AUTH_TOKEN_INVALID")
 
         return f(current_user_id=user_uuid_from_token, *args, **kwargs)

@@ -85,7 +85,7 @@ def handle_my_profile(current_user_id):
             return jsonify(
                 {"message": "Data input tidak valid.", "details": e.errors()}
             ), HTTPStatus.UNPROCESSABLE_ENTITY
-        except Exception as e:
+        except Exception:
             db.session.rollback()
             abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Terjadi kesalahan internal. Silakan coba lagi.")
 
