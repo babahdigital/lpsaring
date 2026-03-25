@@ -2,6 +2,7 @@
 
 Folder ini menyimpan ringkasan RCA insiden produksi atau near-miss yang perlu bisa ditelusuri ulang.
 
+- [2026-03-26 Security Audit — Error Information Leakage & Hardening](2026-03-26-security-audit-error-leakage-hardening.md)
 - [2026-03-26 Unlimited Debt Display & Settlement Amount Errors](2026-03-26-unlimited-debt-display-settlement-errors.md)
 - [2026-03-22 GitHub Actions Dispatch Gagal dari Workspace Lokal — Jalur IPv6/NAT64 api.github.com Reset Koneksi](2026-03-22-github-actions-dispatch-ipv6-reset.md)
 - [2026-03-22 Manual Debt Report Undercount — Nominal Manual Ikut Jatuh ke Estimator Aggregate](2026-03-22-manual-debt-report-undercount.md)
