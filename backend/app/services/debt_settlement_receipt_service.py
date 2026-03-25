@@ -179,6 +179,38 @@ def build_debt_settlement_receipt_context(
     paid_manual_amount_rp = 0
     if debt_item is not None and getattr(debt_item, "price_rp", None):
         paid_manual_amount_rp = _safe_int(getattr(debt_item, "price_rp", 0))
+    elif debt_item is None and paid_manual_mb > 0:
+        # settle-all: no single debt_item_id — sum price_rp from all recently settled items
+        settled_items = db.session.scalars(
+            select(UserQuotaDebt)
+            .where(UserQuotaDebt.user_id == user.id, UserQuotaDebt.is_paid.is_(True))
+            .where(UserQuotaDebt.paid_at.is_not(None))
+            .order_by(UserQuotaDebt.paid_at.desc())
+            .limit(50)
+        ).all()
+        # Filter to items settled around the same time as the settlement entry
+        entry_created = getattr(settlement_entry, "created_at", None)
+        sum_price_rp = 0
+        has_unlimited_item = False
+        for si in settled_items:
+            si_paid_at = getattr(si, "paid_at", None)
+            if entry_created and si_paid_at:
+                diff = abs((entry_created - si_paid_at).total_seconds())
+                if diff > 10:
+                    continue
+            si_price = getattr(si, "price_rp", None)
+            if si_price and si_price > 0:
+                sum_price_rp += int(si_price)
+            si_note = str(getattr(si, "note", "") or "").lower()
+            si_amount = int(getattr(si, "amount_mb", 0) or 0)
+            if si_amount <= 1 and "unlimited" in si_note:
+                has_unlimited_item = True
+        if sum_price_rp > 0:
+            paid_manual_amount_rp = sum_price_rp
+        else:
+            paid_manual_amount_rp = estimate_amount_rp_for_mb(paid_manual_mb)
+        if has_unlimited_item:
+            is_unlimited_manual = True
     elif paid_manual_mb > 0:
         paid_manual_amount_rp = estimate_amount_rp_for_mb(paid_manual_mb)
 
