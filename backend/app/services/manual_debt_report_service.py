@@ -103,7 +103,10 @@ def build_user_manual_debt_report_context(user: User) -> dict[str, Any]:
         paid_mb = int(getattr(debt, "paid_mb", 0) or 0)
         remaining_mb = max(0, amount_mb - paid_mb)
         is_paid = bool(getattr(debt, "is_paid", False)) or remaining_mb <= 0
+        note_text = str(getattr(debt, "note", "") or "").lower()
+        is_unlimited_debt = amount_mb <= 1 and "unlimited" in note_text
         payload = UserQuotaDebtItemResponseSchema.from_orm(debt).model_dump()
+        payload["is_unlimited_debt"] = is_unlimited_debt
         payload["debt_date_display"] = format_app_date_display(payload.get("debt_date"), fallback="-")
         payload["due_date_display"] = format_app_date_display(getattr(debt, "due_date", None), fallback="-")
         payload["created_at_display"] = format_app_datetime_display(payload.get("created_at"), fallback="-")
@@ -154,7 +157,8 @@ def build_user_debt_detail_lines(report_context: dict[str, Any], *, max_items: i
     detail_lines: list[str] = []
     for index, item in enumerate(open_items[:max_items], start=1):
         due_text = item.get("due_date_display") or item.get("debt_date_display") or "-"
-        amount_text = item.get("remaining_gb") or format_mb_to_gb(item.get("remaining_mb") or item.get("amount_mb") or 0)
+        is_unl = bool(item.get("is_unlimited_debt"))
+        amount_text = "Unlimited" if is_unl else (item.get("remaining_gb") or format_mb_to_gb(item.get("remaining_mb") or item.get("amount_mb") or 0))
         price_text = item.get("remaining_amount_display") or format_currency_idr(item.get("remaining_rp") or 0)
         package_text = str(item.get("note") or "Tunggakan manual").strip()
         detail_lines.append(f"{index}. {due_text} — {amount_text} | {price_text} | {package_text}")
@@ -169,9 +173,10 @@ def build_user_debt_detail_lines(report_context: dict[str, Any], *, max_items: i
 def build_user_debt_whatsapp_context(user: User, report_context: dict[str, Any], pdf_url: str) -> dict[str, Any]:
     detail_lines = build_user_debt_detail_lines(report_context)
     open_items = list(report_context.get("open_items") or [])
+    has_unlimited = any(bool(item.get("is_unlimited_debt")) for item in open_items)
     return {
         "full_name": user.full_name,
-        "total_manual_debt_gb": format_mb_to_gb(report_context.get("debt_manual_mb") or 0),
+        "total_manual_debt_gb": "Unlimited" if has_unlimited else format_mb_to_gb(report_context.get("debt_manual_mb") or 0),
         "total_manual_debt_amount_display": format_currency_idr(report_context.get("debt_manual_estimated_rp") or 0),
         "open_items": len(open_items),
         "debt_detail_lines": "\n".join(detail_lines),
@@ -186,6 +191,8 @@ def build_due_debt_reminder_context(user: User, report_context: dict[str, Any], 
     amount_mb = int(getattr(debt, "amount_mb", 0) or 0)
     paid_mb = int(getattr(debt, "paid_mb", 0) or 0)
     remaining_mb = max(0, amount_mb - paid_mb)
+    debt_note = str(getattr(debt, "note", "") or "").lower()
+    is_unlimited_debt = amount_mb <= 1 and "unlimited" in debt_note
     debt_amount_display = (
         item_payload.get("remaining_amount_display")
         if item_payload
@@ -201,7 +208,7 @@ def build_due_debt_reminder_context(user: User, report_context: dict[str, Any], 
 
     return {
         "full_name": user.full_name,
-        "debt_gb": format_mb_to_gb(remaining_mb),
+        "debt_gb": "Unlimited" if is_unlimited_debt else format_mb_to_gb(remaining_mb),
         "debt_amount_display": debt_amount_display,
         "due_date": due_date_display,
         "total_manual_debt_gb": format_mb_to_gb(report_context.get("debt_manual_mb") or 0),
