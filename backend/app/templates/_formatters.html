@@ -1,6 +1,9 @@
 {# Reusable Jinja macros for admin PDF/HTML templates #}
 
-{%- macro fmt_quota(mb) -%}
+{%- macro fmt_quota(mb, unlimited=false) -%}
+  {%- if unlimited -%}
+    Unlimited
+  {%- else -%}
   {%- set v = (mb or 0) | float -%}
   {%- set sign = '-' if v < 0 else '' -%}
   {%- set a = (v * -1) if v < 0 else v -%}
@@ -22,6 +25,7 @@
     {{- sign -}}{{ gb_str }} GB
   {%- else -%}
     {{- sign -}}{{ a | round(0, 'common') | int }} MB
+  {%- endif -%}
   {%- endif -%}
 {%- endmacro -%}
 

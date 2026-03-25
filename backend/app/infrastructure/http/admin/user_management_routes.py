@@ -834,6 +834,12 @@ def _build_user_detail_report_context(
 
     last_login_label = format_app_datetime_display(getattr(user, "last_login_at", None), fallback="Belum ada login")
     device_count = int(getattr(user, "device_count", 0) or 0)
+    if device_count == 0:
+        device_count = int(
+            db.session.query(sa.func.count(UserDevice.id))
+            .filter(UserDevice.user_id == user.id)
+            .scalar() or 0
+        )
     debt_summary_line = (
         f"- Tunggakan aktif: *{format_mb_to_gb(debt_total_mb)}* ({int(open_debt_items)} item)"
         if debt_total_mb > 0

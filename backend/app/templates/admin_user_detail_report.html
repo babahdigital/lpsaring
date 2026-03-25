@@ -218,6 +218,59 @@
           <span class="meta-label">Status Akses</span>
           <span class="meta-value tone-{{ access_status_tone }}">{{ access_status_label }}</span>
         </div>
+        <div class="meta-chip">
+          <span class="meta-label">Kuota</span>
+          <span class="meta-value">
+            {%- if is_unlimited_user -%}
+              Unlimited
+            {%- else -%}
+              {{ fmt_quota(quota_remaining_mb) }} tersisa
+            {%- endif -%}
+          </span>
+        </div>
+        <div class="meta-chip">
+          <span class="meta-label">Masa Aktif</span>
+          <span class="meta-value">{{ quota_expiry_label }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Kuota &amp; Akses</div>
+      <div class="grid">
+        {% if is_unlimited_user %}
+          <div class="card">
+            <div class="card-title">Jenis Akses</div>
+            <div class="card-value tone-success">Unlimited</div>
+            <div class="card-caption">Pengguna memiliki akses data tanpa batas kuota.</div>
+          </div>
+          <div class="card">
+            <div class="card-title">Pemakaian</div>
+            <div class="card-value">{{ fmt_quota(quota_used_mb) }}</div>
+            <div class="card-caption">Total data terpakai sejak awal.</div>
+          </div>
+        {% else %}
+          <div class="card">
+            <div class="card-title">Total Kuota</div>
+            <div class="card-value">{{ fmt_quota(quota_total_mb) }}</div>
+            <div class="card-caption">Total kuota yang dibeli.</div>
+          </div>
+          <div class="card">
+            <div class="card-title">Terpakai</div>
+            <div class="card-value">{{ fmt_quota(quota_used_mb) }}</div>
+            <div class="card-caption">Data yang sudah digunakan.</div>
+          </div>
+          <div class="card">
+            <div class="card-title">Sisa Kuota</div>
+            <div class="card-value{% if quota_remaining_mb <= 0 %} tone-error{% endif %}">{{ fmt_quota(quota_remaining_mb) }}</div>
+            <div class="card-caption">Kuota tersedia untuk digunakan.</div>
+          </div>
+        {% endif %}
+        <div class="card">
+          <div class="card-title">Masa Aktif Hingga</div>
+          <div class="card-value">{{ quota_expiry_label }}</div>
+          <div class="card-caption">{{ access_status_hint }}</div>
+        </div>
       </div>
     </div>
 
@@ -248,17 +301,31 @@
         <div class="grid">
           <div class="card">
             <div class="card-title">Total Tunggakan</div>
-            <div class="card-value tone-warning">{{ fmt_quota(debt_total_mb) }}</div>
+            <div class="card-value tone-warning">
+              {%- if is_unlimited_user and debt_manual_mb > 0 and debt_auto_mb <= 0 -%}
+                {{ open_debt_items }} item
+              {%- else -%}
+                {{ fmt_quota(debt_total_mb) }}
+              {%- endif -%}
+            </div>
             <div class="card-caption">{{ open_debt_items }} item terbuka{% if paid_debt_items %} • {{ paid_debt_items }} item lunas{% endif %}.</div>
           </div>
-          <div class="card">
-            <div class="card-title">Tunggakan Otomatis</div>
-            <div class="card-value">{{ fmt_quota(debt_auto_mb) }}</div>
-            <div class="card-caption">Selisih pemakaian terhadap kuota tercatat.</div>
-          </div>
+          {% if not is_unlimited_user %}
+            <div class="card">
+              <div class="card-title">Tunggakan Otomatis</div>
+              <div class="card-value">{{ fmt_quota(debt_auto_mb) }}</div>
+              <div class="card-caption">Selisih pemakaian terhadap kuota tercatat.</div>
+            </div>
+          {% endif %}
           <div class="card">
             <div class="card-title">Tunggakan Manual</div>
-            <div class="card-value">{{ fmt_quota(debt_manual_mb) }}</div>
+            <div class="card-value">
+              {%- if is_unlimited_user -%}
+                {{ open_debt_items }} item
+              {%- else -%}
+                {{ fmt_quota(debt_manual_mb) }}
+              {%- endif -%}
+            </div>
             <div class="card-caption">Pencatatan tindak lanjut manual oleh admin.</div>
           </div>
         </div>
@@ -301,11 +368,12 @@
             </thead>
             <tbody>
               {% for item in manual_debt_items %}
+                {%- set is_debt_unlimited = (item.amount_mb is defined and item.amount_mb <= 1 and item.note is defined and 'unlimited' in (item.note or '')|lower) -%}
                 <tr>
                   <td>{{ item.debt_date or item.created_at }}</td>
-                  <td class="right">{{ fmt_quota(item.amount_mb) }}</td>
-                  <td class="right">{{ fmt_quota(item.paid_mb) }}</td>
-                  <td class="right">{{ fmt_quota(item.remaining_mb) }}</td>
+                  <td class="right">{{ fmt_quota(item.amount_mb, unlimited=is_debt_unlimited) }}</td>
+                  <td class="right">{{ fmt_quota(item.paid_mb, unlimited=is_debt_unlimited) }}</td>
+                  <td class="right">{{ fmt_quota(item.remaining_mb, unlimited=is_debt_unlimited) }}</td>
                   <td class="tone-{{ 'success' if item.is_paid else 'warning' }}">{{ 'Lunas' if item.is_paid else 'Belum lunas' }}</td>
                   <td class="small">{{ item.note or '-' }}</td>
                 </tr>

@@ -651,9 +651,6 @@ function onClose() {
               </VBtn>
             </div>
           </div>
-          <div class="text-caption text-medium-emphasis mt-3">
-            Pengiriman internal memakai popup pemilih penerima agar laporan tidak terkirim ke semua admin secara otomatis.
-          </div>
         </VSheet>
 
         <VList lines="two" density="compact">
@@ -750,34 +747,6 @@ function onClose() {
               (otomatis {{ formatDataSize(debtAutoMb) }}, manual {{ formatDataSize(debtManualMb) }})
             </template>
           </VAlert>
-
-          <VSheet v-if="debtBreakdownRows.length > 0" rounded="lg" border class="pa-3 mt-4">
-            <div class="text-overline mb-2">
-              Rincian Tunggakan Sistem
-            </div>
-            <VTable density="compact" class="admin-user-detail__debtBreakdownTable">
-              <thead>
-                <tr>
-                  <th>Jenis</th>
-                  <th class="text-right">Nilai</th>
-                  <th>Status</th>
-                  <th>Keterangan</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="row in debtBreakdownRows" :key="row.key">
-                  <td>{{ row.label }}</td>
-                  <td class="text-right">{{ formatDataSize(row.amountMb) }}</td>
-                  <td>
-                    <VChip :color="row.statusColor" size="x-small" label>
-                      {{ row.statusText }}
-                    </VChip>
-                  </td>
-                  <td>{{ row.detail }}</td>
-                </tr>
-              </tbody>
-            </VTable>
-          </VSheet>
 
           <VSheet v-if="shouldShowManualDebtSection" rounded="lg" border class="pa-3 mt-4">
             <div class="admin-user-detail__debtHead">
@@ -1115,12 +1084,15 @@ function onClose() {
 
 .manual-debt-table :deep(th),
 .manual-debt-table :deep(td) {
-  padding-block: 10px;
+  padding-block: 12px;
 }
 
-.admin-user-detail__debtBreakdownTable :deep(th),
-.admin-user-detail__debtBreakdownTable :deep(td) {
-  padding-block: 10px;
+.manual-debt-table :deep(tbody tr) {
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.06);
+}
+
+.manual-debt-table :deep(tbody tr:last-child) {
+  border-bottom: none;
 }
 
 .manual-debt-table__date {
