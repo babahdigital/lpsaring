@@ -180,7 +180,7 @@ class PromoEvent(db.Model):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
     created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_by: Mapped["User"] = relationship("User", back_populates="created_promo_events")
 
@@ -266,7 +266,7 @@ class User(db.Model):
     blocked_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     blocked_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     blocked_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", name="fk_users_blocked_by_id_users"), nullable=True
+        UUID(as_uuid=True), ForeignKey("users.id", name="fk_users_blocked_by_id_users", ondelete="SET NULL"), nullable=True
     )
 
     # PENAMBAHAN FIELD BARU
@@ -317,11 +317,11 @@ class User(db.Model):
     )
     approved_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", name="fk_users_approved_by_id_users"), nullable=True
+        UUID(as_uuid=True), ForeignKey("users.id", name="fk_users_approved_by_id_users", ondelete="SET NULL"), nullable=True
     )
     rejected_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     rejected_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", name="fk_users_rejected_by_id_users"), nullable=True
+        UUID(as_uuid=True), ForeignKey("users.id", name="fk_users_rejected_by_id_users", ondelete="SET NULL"), nullable=True
     )
     last_login_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     last_low_quota_notif_at: Mapped[Optional[datetime.datetime]] = mapped_column(
@@ -338,7 +338,7 @@ class User(db.Model):
     )
 
     transactions: Mapped[List["Transaction"]] = relationship(
-        "Transaction", back_populates="user", lazy="select", cascade="all, delete-orphan"
+        "Transaction", back_populates="user", lazy="select", passive_deletes=True
     )
     daily_usage_logs: Mapped[List["DailyUsageLog"]] = relationship(
         "DailyUsageLog", back_populates="user", lazy="dynamic", cascade="all, delete-orphan"
