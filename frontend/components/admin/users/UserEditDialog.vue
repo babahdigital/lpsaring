@@ -333,8 +333,6 @@ watch(() => props.user, (newUser) => {
 
 watch(() => isDebtQuotaEnabled.value, (enabled) => {
   if (enabled === true) {
-    if (formData.is_unlimited_user === true)
-      formData.is_unlimited_user = false
     formData.unlimited_time = false
     if (formData.debt_date == null || String(formData.debt_date).trim() === '')
       formData.debt_date = getTodayYmd()
@@ -424,11 +422,9 @@ const isInjectBlockedByDebt = computed(() => {
 
 const debtPackageOptions = computed(() => {
   return adminPackages.value
-    .filter(pkg => pkg.is_active === true)
+    .filter(pkg => pkg.is_active === true && Number(pkg.data_quota_gb ?? 0) > 0)
     .map(pkg => ({
-      title: Number(pkg.data_quota_gb) === 0
-        ? `${pkg.name} — Unlimited — Rp ${Number(pkg.price ?? 0).toLocaleString('id-ID')}`
-        : `${pkg.name} — ${Number(pkg.data_quota_gb).toLocaleString('id-ID')} GB — Rp ${Number(pkg.price ?? 0).toLocaleString('id-ID')}`,
+      title: `${pkg.name} — ${Number(pkg.data_quota_gb).toLocaleString('id-ID')} GB — Rp ${Number(pkg.price ?? 0).toLocaleString('id-ID')}`,
       value: pkg.id,
     }))
 })
@@ -651,6 +647,12 @@ async function onSave() {
     }
 
     if (isDebtQuotaEnabled.value !== true) {
+      payload.debt_package_id = null
+      payload.debt_date = null
+      payload.debt_note = null
+    }
+
+    if (props.user?.is_unlimited_user === true && payload.debt_package_id) {
       payload.debt_package_id = null
       payload.debt_date = null
       payload.debt_note = null

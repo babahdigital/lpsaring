@@ -712,8 +712,8 @@ async function handleRefreshOperations() {
                   <div class="operations-page__watchlistCount">{{ section.count }}</div>
                 </div>
 
-                <VList v-if="section.items.length > 0" density="compact" lines="two" class="mt-3">
-                  <VListItem v-for="item in section.items" :key="item.id">
+                <VList v-if="section.items.length > 0" lines="two" class="mt-3 operations-page__watchlistList">
+                  <VListItem v-for="item in section.items" :key="item.id" class="operations-page__watchlistListItem" rounded="lg">
                     <template #prepend>
                       <VAvatar :color="section.color" variant="tonal" size="34" rounded>
                         <span class="text-sm font-weight-medium">{{ item.full_name.slice(0, 1).toUpperCase() }}</span>
@@ -833,16 +833,17 @@ async function handleRefreshOperations() {
 }
 
 .operations-page__table th {
-  padding-top: 10px;
-  padding-bottom: 12px;
+  padding-block: 12px;
+  padding-inline: 14px;
   font-size: 0.74rem;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: rgba(var(--v-theme-on-surface), 0.56);
+  vertical-align: middle;
+  white-space: normal;
 }
 
-.operations-page__table th,
 .operations-page__table td {
   padding-block: 14px;
   padding-inline: 14px;
@@ -1057,6 +1058,23 @@ async function handleRefreshOperations() {
 
 .operations-page__watchlistEmpty {
   padding: 14px 2px 2px;
+}
+
+.operations-page__watchlistList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 !important;
+  background: transparent !important;
+}
+
+.operations-page__watchlistListItem {
+  border-radius: 12px !important;
+  background: rgba(var(--v-theme-on-surface), 0.03) !important;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.06) !important;
+  padding-block: 10px !important;
+  padding-inline: 12px !important;
+  min-height: 56px !important;
 }
 
 @media (max-width: 959px) {

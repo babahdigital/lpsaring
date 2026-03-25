@@ -689,6 +689,8 @@ def update_user_by_admin_comprehensive(
     pending_unblock = False
     pending_unblock_reason = data.get("blocked_reason") or None
     unlimited_activated = False
+    was_unlimited_before = bool(getattr(target_user, "is_unlimited_user", False))
+    unlimited_time_cleared = False
 
     if "is_blocked" in data and data["is_blocked"] != target_user.is_blocked:
         should_block = bool(data["is_blocked"])
@@ -731,6 +733,7 @@ def update_user_by_admin_comprehensive(
         if target_user.quota_expiry_date is not None:
             target_user.quota_expiry_date = None
             changes["unlimited_time"] = True
+            unlimited_time_cleared = True
 
             # Ensure Mikrotik session-timeout is cleared (0) for truly unlimited time.
             try:
@@ -753,6 +756,8 @@ def update_user_by_admin_comprehensive(
     # Manual debt input / clear (admin-only)
     # Berlaku hanya untuk USER (termasuk tamping). Tidak berlaku untuk KOMANDAN/ADMIN/SUPER_ADMIN atau user unlimited.
     if target_user.role == UserRole.USER and not bool(getattr(target_user, "is_unlimited_user", False)):
+        if was_unlimited_before and (data.get("debt_package_id") or int(data.get("debt_add_mb") or 0) > 0):
+            return False, "Debt manual tidak berlaku untuk pengguna unlimited. Nonaktifkan status unlimited terlebih dahulu.", None
         debt_package_id = data.get("debt_package_id")
         if debt_package_id:
             pkg = db.session.get(Package, debt_package_id)
@@ -764,8 +769,10 @@ def update_user_by_admin_comprehensive(
             except (TypeError, ValueError):
                 pkg_quota_gb = 0.0
 
-            is_unlimited_pkg = pkg_quota_gb <= 0
-            debt_add_mb_pkg = 1 if is_unlimited_pkg else int(round(pkg_quota_gb * 1024))
+            if pkg_quota_gb <= 0:
+                return False, "Paket unlimited tidak dapat digunakan sebagai debt manual. Gunakan fitur 'Aktifkan Unlimited' secara terpisah.", None
+            is_unlimited_pkg = False
+            debt_add_mb_pkg = int(round(pkg_quota_gb * 1024))
             pkg_quota_str = "Unlimited" if is_unlimited_pkg else f"{pkg_quota_gb:g} GB"
             note = data.get("debt_note")
             pkg_note = (
@@ -1095,6 +1102,22 @@ def update_user_by_admin_comprehensive(
         except Exception:
             current_app.logger.exception(
                 "Gagal mengirim notifikasi aktivasi unlimited untuk user %s",
+                target_user.id,
+            )
+
+    if unlimited_time_cleared and not unlimited_activated:
+        try:
+            _send_whatsapp_notification(
+                target_user.phone_number,
+                "user_unlimited_activated_by_admin",
+                {
+                    "full_name": target_user.full_name,
+                    "profile_name": "Unlimited (tanpa batas waktu)",
+                },
+            )
+        except Exception:
+            current_app.logger.exception(
+                "Gagal mengirim notifikasi unlimited time cleared untuk user %s",
                 target_user.id,
             )
 
