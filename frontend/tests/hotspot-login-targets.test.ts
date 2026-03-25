@@ -6,7 +6,7 @@ describe('hotspot login targets', () => {
   it('prefers the MikroTik login URL directly as bridge target (avoids neverssl stuck)', () => {
     expect(resolveHotspotBridgeTarget('http://login.home.arpa/login', 'http://neverssl.com/')).toBe('http://login.home.arpa/')
     expect(resolveHotspotBridgeTarget('http://login.home.arpa', 'http://neverssl.com/')).toBe('http://login.home.arpa/')
-    expect(resolveHotspotBridgeTarget('http://192.168.88.1/login', 'http://neverssl.com/')).toBe('http://192.168.88.1/')
+    expect(resolveHotspotBridgeTarget('http://172.16.2.1/login', 'http://neverssl.com/')).toBe('http://172.16.2.1/')
   })
 
   it('falls back to the router portal root when no configured probe exists', () => {

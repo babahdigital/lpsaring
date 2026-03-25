@@ -2396,6 +2396,27 @@ def _calculate_usage_update(
             last_bytes = db_last_bytes
 
         if last_bytes is None:
+            # Device baru pertama kali muncul di sync.
+            # MikroTik memulai counter bytes dari 0 saat host entry dibuat,
+            # jadi bytes_total = pemakaian riil sejak device connect ke WiFi.
+            # Hitung sebagai initial delta agar tidak hilang (Gap #2 fix).
+            if bytes_total > 0:
+                device_deltas.append(
+                    HotspotUsageDeviceDelta(
+                        mac_address=mac,
+                        ip_address=str(getattr(device, "ip_address", "") or "").strip() or None,
+                        label=str(getattr(device, "label", "") or "").strip() or None,
+                        delta_mb=bytes_total / BYTES_PER_MB,
+                        previous_bytes_total=0,
+                        bytes_total=int(bytes_total),
+                        host_id=host_id,
+                        uptime_seconds=uptime_seconds,
+                        source_address=str(host_usage.get("source_address") or "").strip() or None,
+                        to_address=str(host_usage.get("to_address") or "").strip() or None,
+                    )
+                )
+                delta_bytes += bytes_total
+                found = True
             _update_device_usage_baseline(
                 device=device,
                 now=now,
@@ -2439,6 +2460,27 @@ def _calculate_usage_update(
                     to_address=str(host_usage.get("to_address") or "").strip() or None,
                 )
             )
+            # Setelah counter regression (router reboot), bytes_total baru
+            # = pemakaian sejak reboot. Hitung sebagai delta agar tidak hilang (Gap #1 fix).
+            # Contoh: last_bytes=50MB, router reboot, user pakai 3MB → bytes_total=3MB.
+            # Tanpa fix: 3MB hilang. Dengan fix: 3MB dicatat sebagai delta.
+            if bytes_total > 0 and "counter_regressed" in rebaseline_reasons:
+                post_reboot_delta = int(bytes_total)
+                delta_bytes += post_reboot_delta
+                device_deltas.append(
+                    HotspotUsageDeviceDelta(
+                        mac_address=mac,
+                        ip_address=str(getattr(device, "ip_address", "") or "").strip() or None,
+                        label=str(getattr(device, "label", "") or "").strip() or None,
+                        delta_mb=post_reboot_delta / BYTES_PER_MB,
+                        previous_bytes_total=0,
+                        bytes_total=int(bytes_total),
+                        host_id=host_id,
+                        uptime_seconds=uptime_seconds,
+                        source_address=str(host_usage.get("source_address") or "").strip() or None,
+                        to_address=str(host_usage.get("to_address") or "").strip() or None,
+                    )
+                )
             _update_device_usage_baseline(
                 device=device,
                 now=now,
