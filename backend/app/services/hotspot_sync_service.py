@@ -3094,6 +3094,54 @@ def _log_system_cleanup_action(user: "User", reason: str, action: str) -> None:
         current_app.logger.warning("cleanup: gagal catat audit log untuk user %s: %s", user.phone_number, e)
 
 
+def _remove_owned_status_entries_for_ip(
+    api: object,
+    ip_address: str,
+    *,
+    user_id: str,
+    username_08: str,
+) -> int:
+    """Hapus address-list entries HANYA jika comment menunjukkan milik user tertentu.
+
+    Berbeda dengan _remove_managed_status_entries_for_ip() yang blind (hapus semua match IP),
+    fungsi ini aman untuk cleanup karena cek ownership via uid/user di comment.
+    Mencegah penghapusan entry milik user lain yang kebetulan dapat IP sama (DHCP reassign).
+    """
+    if not api or not _is_valid_ip_candidate(ip_address):
+        return 0
+    if not user_id and not username_08:
+        return 0
+
+    removed_count = 0
+    managed_lists = _resolve_managed_status_lists()
+    resource = api.get_resource("/ip/firewall/address-list")
+
+    for list_name in managed_lists:
+        try:
+            entries = resource.get(address=str(ip_address).strip(), list=list_name)
+        except Exception:
+            continue
+        for entry in entries:
+            comment = entry.get("comment", "")
+            if not _is_status_entry_owned_by_user(comment, user_id=user_id, username_08=username_08):
+                current_app.logger.debug(
+                    "cleanup: SKIP address-list %s ip=%s — bukan milik uid=%s (comment=%s)",
+                    list_name, ip_address, user_id, comment,
+                )
+                continue
+            entry_id = entry.get(".id") or entry.get("id")
+            if entry_id:
+                try:
+                    resource.remove(**{".id": entry_id} if entry.get(".id") else {"id": entry_id})
+                    removed_count += 1
+                except Exception as exc:
+                    current_app.logger.warning(
+                        "cleanup: gagal hapus address-list %s ip=%s id=%s: %s",
+                        list_name, ip_address, entry_id, exc,
+                    )
+    return removed_count
+
+
 def _send_cleanup_notification(user: User, template_key: str, extra_context: Optional[Dict[str, Any]] = None) -> None:
     """Kirim WA notifikasi terkait cleanup user tidak aktif (best effort)."""
     if settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") != "True":
@@ -3201,7 +3249,10 @@ def cleanup_inactive_users() -> Dict[str, int]:
                         if device.mac_address:
                             _remove_ip_binding(device.mac_address, user.mikrotik_server_name or "all", api_connection=api)
                         if device.ip_address:
-                            _remove_managed_status_entries_for_ip(api, device.ip_address)
+                            _remove_owned_status_entries_for_ip(
+                                api, device.ip_address,
+                                user_id=str(user.id), username_08=username_08,
+                            )
                         db.session.delete(device)
                     if api and username_08:
                         delete_hotspot_user(api_connection=api, username=username_08)
@@ -3255,7 +3306,10 @@ def cleanup_inactive_users() -> Dict[str, int]:
                     if device.mac_address:
                         _remove_ip_binding(device.mac_address, user.mikrotik_server_name or "all", api_connection=api)
                     if device.ip_address:
-                        _remove_managed_status_entries_for_ip(api, device.ip_address)
+                        _remove_owned_status_entries_for_ip(
+                            api, device.ip_address,
+                            user_id=str(user.id), username_08=username_08,
+                        )
                 if api and username_08:
                     delete_hotspot_user(api_connection=api, username=username_08)
                 # Kirim WA setelah deactivate
@@ -3296,7 +3350,10 @@ def cleanup_inactive_users() -> Dict[str, int]:
                     if device.mac_address:
                         _remove_ip_binding(device.mac_address, user.mikrotik_server_name or "all", api_connection=api2)
                     if device.ip_address:
-                        _remove_managed_status_entries_for_ip(api2, device.ip_address)
+                        _remove_owned_status_entries_for_ip(
+                            api2, device.ip_address,
+                            user_id=str(user.id), username_08=username_08,
+                        )
                     db.session.delete(device)
                 if api2 and username_08:
                     delete_hotspot_user(api_connection=api2, username=username_08)
