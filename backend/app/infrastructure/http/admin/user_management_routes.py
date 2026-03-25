@@ -2119,9 +2119,11 @@ def get_inactive_cleanup_preview(current_admin: User):
     try:
         now_utc = datetime.now(dt_timezone.utc)
         deactivate_days = settings_service.get_setting_as_int("INACTIVE_DEACTIVATE_DAYS", 45)
+        deactivate_enabled = settings_service.get_setting_as_bool("INACTIVE_DEACTIVATE_ENABLED", False)
         delete_days = settings_service.get_setting_as_int("INACTIVE_DELETE_DAYS", 90)
         delete_enabled = settings_service.get_setting_as_bool("INACTIVE_AUTO_DELETE_ENABLED", False)
         delete_max_per_run = settings_service.get_setting_as_int("INACTIVE_DELETE_MAX_PER_RUN", 0)
+        pre_delete_warning_days = settings_service.get_setting_as_int("INACTIVE_PRE_DELETE_WARNING_DAYS", 75)
         limit = min(request.args.get("limit", 50, type=int), 200)
 
         users = db.session.scalars(
@@ -2162,9 +2164,11 @@ def get_inactive_cleanup_preview(current_admin: User):
             {
                 "thresholds": {
                     "deactivate_days": deactivate_days,
+                    "deactivate_enabled": deactivate_enabled,
                     "delete_days": delete_days,
                     "delete_enabled": delete_enabled,
                     "delete_max_per_run": delete_max_per_run,
+                    "pre_delete_warning_days": pre_delete_warning_days,
                 },
                 "summary": {
                     "deactivate_candidates": len(deactivate_candidates),

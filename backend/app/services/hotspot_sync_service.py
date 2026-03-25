@@ -3094,6 +3094,25 @@ def _log_system_cleanup_action(user: "User", reason: str, action: str) -> None:
         current_app.logger.warning("cleanup: gagal catat audit log untuk user %s: %s", user.phone_number, e)
 
 
+def _send_cleanup_notification(user: User, template_key: str, extra_context: Optional[Dict[str, Any]] = None) -> None:
+    """Kirim WA notifikasi terkait cleanup user tidak aktif (best effort)."""
+    if settings_service.get_setting("ENABLE_WHATSAPP_NOTIFICATIONS", "True") != "True":
+        return
+    if not user.phone_number:
+        return
+    try:
+        payload = {
+            "full_name": user.full_name or "Pengguna",
+            "phone_number": user.phone_number or "",
+            **(extra_context or {}),
+        }
+        message = get_notification_message(template_key, payload)
+        if message:
+            send_whatsapp_message(user.phone_number, message)
+    except Exception:
+        logger.warning("cleanup: gagal kirim WA '%s' ke %s", template_key, user.phone_number)
+
+
 def cleanup_inactive_users() -> Dict[str, int]:
     """Bersihkan user tidak aktif berdasarkan criteria kuota + waktu login.
 
@@ -3106,6 +3125,7 @@ def cleanup_inactive_users() -> Dict[str, int]:
     counters = {
         "deleted": 0,
         "deactivated": 0,
+        "pre_delete_warned": 0,
         "delete_skipped_guard": 0,
         "delete_skipped_active_quota": 0,
         "unapproved_deleted": 0,
@@ -3119,6 +3139,7 @@ def cleanup_inactive_users() -> Dict[str, int]:
     # Safety cap: default 5 agar tidak hapus massal sekaligus
     delete_max_per_run = settings_service.get_setting_as_int("INACTIVE_DELETE_MAX_PER_RUN", 5)
     unapproved_delete_days = settings_service.get_setting_as_int("UNAPPROVED_AUTO_DELETE_DAYS", 30)
+    pre_delete_warning_days = settings_service.get_setting_as_int("INACTIVE_PRE_DELETE_WARNING_DAYS", 75)
 
     if not delete_enabled:
         current_app.logger.info(
@@ -3128,6 +3149,9 @@ def cleanup_inactive_users() -> Dict[str, int]:
         current_app.logger.info(
             "cleanup_inactive_users: deactivate dinonaktifkan (INACTIVE_DEACTIVATE_ENABLED=False)."
         )
+
+    # Redis untuk dedup pre-delete warning (1 kali per user per 7 hari)
+    redis_client = _get_redis_client()
 
     # --- BAGIAN 1: User approved (USER/KOMANDAN) ---
     users = db.session.scalars(
@@ -3166,6 +3190,10 @@ def cleanup_inactive_users() -> Dict[str, int]:
                     delete_max_per_run <= 0 or counters["deleted"] < delete_max_per_run
                 )
                 if can_delete:
+                    # Kirim WA sebelum hapus (best effort)
+                    _send_cleanup_notification(user, "user_account_auto_deleted", {
+                        "days_inactive": str(days_inactive),
+                    })
                     devices = db.session.scalars(
                         select(UserDevice).where(UserDevice.user_id == user.id)
                     ).all()
@@ -3193,6 +3221,28 @@ def cleanup_inactive_users() -> Dict[str, int]:
                 counters["delete_skipped_guard"] += 1
                 continue
 
+            # --- Path: PRE-DELETE WARNING (e.g. 75 hari, 15 hari sebelum delete) ---
+            if (
+                delete_enabled
+                and days_inactive >= pre_delete_warning_days
+                and not has_active_quota
+            ):
+                # Dedup: kirim hanya 1x per 7 hari per user
+                dedup_key = f"cleanup:pre_delete_warn:{user.id}"
+                should_warn = True
+                if redis_client:
+                    try:
+                        should_warn = bool(redis_client.set(dedup_key, "1", ex=7 * 86400, nx=True))
+                    except Exception:
+                        pass
+                if should_warn:
+                    days_remaining = max(delete_days - days_inactive, 0)
+                    _send_cleanup_notification(user, "user_account_pre_delete_warning", {
+                        "days_inactive": str(days_inactive),
+                        "days_remaining": str(days_remaining),
+                    })
+                    counters["pre_delete_warned"] += 1
+
             # --- Path: DEACTIVATE (soft) ---
             if deactivate_enabled and user.is_active and days_inactive >= deactivate_days:
                 if has_active_quota:
@@ -3208,6 +3258,10 @@ def cleanup_inactive_users() -> Dict[str, int]:
                         _remove_managed_status_entries_for_ip(api, device.ip_address)
                 if api and username_08:
                     delete_hotspot_user(api_connection=api, username=username_08)
+                # Kirim WA setelah deactivate
+                _send_cleanup_notification(user, "user_account_deactivated", {
+                    "days_inactive": str(days_inactive),
+                })
                 current_app.logger.info(
                     "cleanup_inactive: DEACTIVATE %s (phone=%s, inactive=%d hari)",
                     user.full_name, user.phone_number, days_inactive,

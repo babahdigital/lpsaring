@@ -73,9 +73,11 @@ interface InactiveCleanupCandidate {
 interface InactiveCleanupPreviewResponse {
   thresholds?: {
     deactivate_days?: number
+    deactivate_enabled?: boolean
     delete_days?: number
     delete_enabled?: boolean
     delete_max_per_run?: number
+    pre_delete_warning_days?: number
   }
   summary?: {
     deactivate_candidates?: number
@@ -138,9 +140,11 @@ const cleanupSummary = computed(() => ({
   deactivateCandidates: cleanupPreview.value?.summary?.deactivate_candidates ?? 0,
   deleteCandidates: cleanupPreview.value?.summary?.delete_candidates ?? 0,
   deactivateThreshold: cleanupPreview.value?.thresholds?.deactivate_days ?? 45,
+  deactivateEnabled: cleanupPreview.value?.thresholds?.deactivate_enabled ?? false,
   deleteThreshold: cleanupPreview.value?.thresholds?.delete_days ?? 90,
   deleteEnabled: cleanupPreview.value?.thresholds?.delete_enabled ?? false,
   deleteMaxPerRun: cleanupPreview.value?.thresholds?.delete_max_per_run ?? 0,
+  preDeleteWarningDays: cleanupPreview.value?.thresholds?.pre_delete_warning_days ?? 75,
 }))
 
 const accessParityItems = computed(() => accessParity.value?.items ?? [])
@@ -260,7 +264,7 @@ const cleanupSections = computed(() => [
   {
     key: 'deactivate',
     title: 'Watchlist Deactivate',
-    subtitle: `Akan ditinjau saat inactivity >= ${cleanupSummary.value.deactivateThreshold} hari.`,
+    subtitle: `Deactivate ${cleanupSummary.value.deactivateEnabled ? 'aktif' : 'nonaktif'} · threshold >= ${cleanupSummary.value.deactivateThreshold} hari.`,
     count: cleanupSummary.value.deactivateCandidates,
     color: 'warning',
     icon: 'tabler-user-minus',
@@ -270,7 +274,7 @@ const cleanupSections = computed(() => [
   {
     key: 'delete',
     title: 'Watchlist Delete',
-    subtitle: `Auto-delete ${cleanupSummary.value.deleteEnabled ? 'aktif' : 'nonaktif'} dengan threshold ${cleanupSummary.value.deleteThreshold} hari.`,
+    subtitle: `Auto-delete ${cleanupSummary.value.deleteEnabled ? 'aktif' : 'nonaktif'} · threshold ${cleanupSummary.value.deleteThreshold} hari · WA warning di hari ke-${cleanupSummary.value.preDeleteWarningDays}.`,
     count: cleanupSummary.value.deleteCandidates,
     color: 'error',
     icon: 'tabler-trash',
@@ -679,12 +683,15 @@ async function handleRefreshOperations() {
 
               <div class="operations-page__watchlistMeta">
                 <div class="text-body-2 text-medium-emphasis">
-                  Auto-delete {{ cleanupSummary.deleteEnabled ? 'aktif' : 'nonaktif' }} · maksimal {{ cleanupSummary.deleteMaxPerRun }} user per siklus.
+                  Deactivate {{ cleanupSummary.deactivateEnabled ? 'aktif' : 'nonaktif' }} · Auto-delete {{ cleanupSummary.deleteEnabled ? 'aktif' : 'nonaktif' }} · maks {{ cleanupSummary.deleteMaxPerRun }} user/siklus · WA notifikasi otomatis.
                 </div>
 
                 <div class="operations-page__watchlistMetaChips">
                   <VChip size="small" color="warning" variant="tonal" label>
                     Deactivate ≥ {{ cleanupSummary.deactivateThreshold }} hari
+                  </VChip>
+                  <VChip size="small" color="info" variant="tonal" label>
+                    WA Warning ≥ {{ cleanupSummary.preDeleteWarningDays }} hari
                   </VChip>
                   <VChip size="small" color="error" variant="tonal" label>
                     Delete ≥ {{ cleanupSummary.deleteThreshold }} hari
