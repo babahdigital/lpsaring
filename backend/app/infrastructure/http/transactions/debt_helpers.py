@@ -171,6 +171,7 @@ def apply_debt_settlement_on_success(*, session, transaction: Transaction) -> di
             "paid_auto_mb": int(paid_auto_mb),
             "paid_manual_mb": int(paid_manual_mb),
             "unblocked": bool(unblocked),
+            "debt_item_id": str(manual_debt_id) if manual_debt_id is not None else None,
         },
     )
 

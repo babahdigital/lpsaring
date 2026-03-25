@@ -617,7 +617,10 @@ def initiate_debt_settlement_transaction_impl(
             abort(HTTPStatus.FORBIDDEN, description="Akun Anda belum aktif atau disetujui untuk melakukan transaksi.")
 
         if bool(getattr(user, "is_unlimited_user", False)):
-            abort(HTTPStatus.BAD_REQUEST, description="Pengguna unlimited tidak memiliki tunggakan kuota.")
+            # Unlimited users can still have manual debt items — only block if no manual debt exists
+            manual_debt_mb = int(getattr(user, "quota_debt_manual_mb", 0) or 0)
+            if manual_debt_mb <= 0:
+                abort(HTTPStatus.BAD_REQUEST, description="Pengguna unlimited tidak memiliki tunggakan kuota.")
 
         debt_total_mb = float(getattr(user, "quota_debt_total_mb", 0) or 0)
         if debt_total_mb <= 0:
@@ -644,7 +647,15 @@ def initiate_debt_settlement_transaction_impl(
             if manual_item_remaining_mb <= 0:
                 abort(HTTPStatus.BAD_REQUEST, description="Hutang manual tersebut sudah lunas.")
 
-        gross_amount = int((estimate_debt_rp_for_mb(manual_item_remaining_mb) if manual_debt_id is not None else estimate_user_debt_rp(user)) or 0)
+        # Determine gross amount: prefer explicit price_rp from the debt item (e.g., unlimited packages)
+        if manual_debt_id is not None and manual_item is not None:
+            explicit_price_rp = getattr(manual_item, "price_rp", None)
+            if explicit_price_rp is not None and int(explicit_price_rp) > 0:
+                gross_amount = int(explicit_price_rp)
+            else:
+                gross_amount = int(estimate_debt_rp_for_mb(manual_item_remaining_mb) or 0)
+        else:
+            gross_amount = int(estimate_user_debt_rp(user) or 0)
         if gross_amount <= 0:
             abort(
                 HTTPStatus.SERVICE_UNAVAILABLE,

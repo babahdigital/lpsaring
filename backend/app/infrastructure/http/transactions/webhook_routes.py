@@ -185,6 +185,58 @@ def handle_notification_impl(
                         result.get("unblocked"),
                     )
                     increment_metric("payment.success")
+
+                    # Send WA notification to user (best-effort)
+                    try:
+                        from app.services.debt_settlement_receipt_service import (
+                            build_debt_settlement_receipt_context,
+                            get_debt_settlement_mutation_for_transaction,
+                            format_currency_idr as _fmt_idr,
+                        )
+                        from app.services.user_management.helpers import _send_whatsapp_notification
+                        from app.utils.formatters import format_mb_to_gb
+
+                        _user = transaction.user
+                        if _user and getattr(_user, "phone_number", None):
+                            _receipt_ctx = None
+                            try:
+                                _mutation = get_debt_settlement_mutation_for_transaction(transaction)
+                                if _mutation:
+                                    _receipt_ctx = build_debt_settlement_receipt_context(
+                                        user=_user, settlement_entry=_mutation, transaction=transaction,
+                                    )
+                            except Exception:
+                                pass
+
+                            _paid_auto = int(result.get("paid_auto_mb") or 0)
+                            _paid_manual = int(result.get("paid_manual_mb") or 0)
+                            _paid_total = _paid_auto + _paid_manual
+                            _is_unl = bool(getattr(_user, "is_unlimited_user", False))
+                            _tmpl = "user_debt_cleared_unblock" if result.get("unblocked") else "user_debt_cleared"
+
+                            _purchased = float(getattr(_user, "total_quota_purchased_mb", 0) or 0)
+                            _used = float(getattr(_user, "total_quota_used_mb", 0) or 0)
+                            _remaining = max(0.0, _purchased - _used)
+
+                            _send_whatsapp_notification(
+                                _user.phone_number,
+                                _tmpl,
+                                {
+                                    "full_name": _user.full_name,
+                                    "paid_auto_debt_gb": format_mb_to_gb(_paid_auto),
+                                    "paid_manual_debt_gb": _receipt_ctx.get("paid_manual_gb", format_mb_to_gb(_paid_manual)) if _receipt_ctx else format_mb_to_gb(_paid_manual),
+                                    "paid_total_debt_gb": _receipt_ctx.get("paid_total_gb", format_mb_to_gb(_paid_total)) if _receipt_ctx else format_mb_to_gb(_paid_total),
+                                    "paid_total_debt_amount_display": _receipt_ctx.get("paid_total_amount_display", _fmt_idr(int(getattr(transaction, "amount", 0) or 0))) if _receipt_ctx else _fmt_idr(int(getattr(transaction, "amount", 0) or 0)),
+                                    "payment_channel_label": "Pembayaran online via Midtrans",
+                                    "remaining_quota": "Unlimited" if _is_unl else format_mb_to_gb(_remaining),
+                                    "receipt_url": "-",
+                                },
+                            )
+                    except Exception as wa_err:
+                        current_app.logger.warning(
+                            "WEBHOOK: Gagal mengirim WA notifikasi debt settlement %s: %s",
+                            order_id, wa_err,
+                        )
                 except Exception as e:
                     session.rollback()
                     current_app.logger.error("WEBHOOK: gagal settle DEBT %s: %s", order_id, e, exc_info=True)
