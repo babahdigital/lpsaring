@@ -468,6 +468,8 @@ def _build_user_manual_debt_payload(user: User, *, max_age_days: int | None = No
         payload["paid_mb"] = int(paid_mb)
         payload["amount_mb"] = int(amount)
         payload["estimated_rp"] = int(estimate.estimated_rp_rounded or 0)
+        note_text = str(getattr(debt, "note", "") or "").lower()
+        payload["is_unlimited_debt"] = amount <= 1 and "unlimited" in note_text
         items.append(payload)
 
     return {
@@ -805,6 +807,7 @@ def _build_user_detail_report_context(
     access_status_meta = _build_detail_access_status_meta(user)
 
     debt_breakdown_rows: list[dict[str, object]] = []
+    _is_unlimited = bool(getattr(user, "is_unlimited_user", False))
     if debt_auto_mb > 0:
         debt_breakdown_rows.append(
             {
@@ -817,11 +820,17 @@ def _build_user_detail_report_context(
             }
         )
     if total_manual_debt_items > 0 or debt_manual_mb > 0:
+        # For unlimited users, check if any manual debt items are unlimited debt
+        _has_unlimited_debt = _is_unlimited and any(
+            bool(item.get("is_unlimited_debt"))
+            for item in manual_debt_items
+            if isinstance(item, dict)
+        )
         debt_breakdown_rows.append(
             {
                 "kind": "Manual",
                 "amount_mb": debt_manual_mb,
-                "amount_display": format_mb_to_gb(debt_manual_mb),
+                "amount_display": f"{open_debt_items} item Unlimited" if _has_unlimited_debt else format_mb_to_gb(debt_manual_mb),
                 "status_label": (
                     f"{open_debt_items} belum lunas / {paid_debt_items} lunas"
                     if total_manual_debt_items > 0
@@ -840,9 +849,10 @@ def _build_user_detail_report_context(
             .filter(UserDevice.user_id == user.id)
             .scalar() or 0
         )
+    _debt_display = "Unlimited" if _is_unlimited and open_debt_items > 0 else format_mb_to_gb(debt_total_mb)
     debt_summary_line = (
-        f"- Tunggakan aktif: *{format_mb_to_gb(debt_total_mb)}* ({int(open_debt_items)} item)"
-        if debt_total_mb > 0
+        f"- Tunggakan aktif: *{_debt_display}* ({int(open_debt_items)} item)"
+        if debt_total_mb > 0 or (_is_unlimited and open_debt_items > 0)
         else ""
     )
     recent_purchase_summary_line = (
