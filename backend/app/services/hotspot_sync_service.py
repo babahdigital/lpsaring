@@ -24,6 +24,7 @@ from app.infrastructure.db.models import (
     NotificationRecipient,
     NotificationType,
     Package,
+    RefreshToken,
     Transaction,
     UserDevice,
     AdminActionLog,
@@ -3242,20 +3243,26 @@ def cleanup_inactive_users() -> Dict[str, int]:
                     _send_cleanup_notification(user, "user_account_auto_deleted", {
                         "days_inactive": str(days_inactive),
                     })
+                    # Thorough MikroTik cleanup: ip-binding, address-list,
+                    # DHCP lease, ARP, hotspot host, comment-tagged entries
                     devices = db.session.scalars(
                         select(UserDevice).where(UserDevice.user_id == user.id)
                     ).all()
+                    try:
+                        from app.services.user_management.user_deletion import _cleanup_router_artifacts
+                        artifact_summary = _cleanup_router_artifacts(user, devices, include_comment_scan=True)
+                        current_app.logger.info(
+                            "cleanup_inactive: MikroTik cleanup untuk %s: %s",
+                            user.phone_number, {k: v for k, v in artifact_summary.items() if k != "errors"},
+                        )
+                    except Exception as exc:
+                        current_app.logger.warning("cleanup_inactive: MikroTik cleanup gagal untuk %s: %s", user.phone_number, exc)
+                    # Explicit delete RefreshToken (belt-and-suspenders, meski DB CASCADE ada)
+                    for token in db.session.scalars(select(RefreshToken).where(RefreshToken.user_id == user.id)).all():
+                        db.session.delete(token)
+                    # Delete devices dari DB
                     for device in devices:
-                        if device.mac_address:
-                            _remove_ip_binding(device.mac_address, user.mikrotik_server_name or "all", api_connection=api)
-                        if device.ip_address:
-                            _remove_owned_status_entries_for_ip(
-                                api, device.ip_address,
-                                user_id=str(user.id), username_08=username_08,
-                            )
                         db.session.delete(device)
-                    if api and username_08:
-                        delete_hotspot_user(api_connection=api, username=username_08)
                     current_app.logger.warning(
                         "cleanup_inactive: HARD DELETE %s (phone=%s, inactive=%d hari, quota_expiry=%s)",
                         user.full_name, user.phone_number, days_inactive, user.quota_expiry_date,
@@ -3340,35 +3347,31 @@ def cleanup_inactive_users() -> Dict[str, int]:
             )
         ).all()
 
-        with get_mikrotik_connection() as api2:
-            for user in unapproved_users:
-                username_08 = format_to_local_phone(user.phone_number)
-                devices = db.session.scalars(
-                    select(UserDevice).where(UserDevice.user_id == user.id)
-                ).all()
-                for device in devices:
-                    if device.mac_address:
-                        _remove_ip_binding(device.mac_address, user.mikrotik_server_name or "all", api_connection=api2)
-                    if device.ip_address:
-                        _remove_owned_status_entries_for_ip(
-                            api2, device.ip_address,
-                            user_id=str(user.id), username_08=username_08,
-                        )
-                    db.session.delete(device)
-                if api2 and username_08:
-                    delete_hotspot_user(api_connection=api2, username=username_08)
-                days_pending = (now_utc - user.created_at).days if user.created_at else 0
-                current_app.logger.warning(
-                    "cleanup_unapproved: DELETE %s (phone=%s, status=%s, %d hari sejak daftar)",
-                    user.full_name, user.phone_number, user.approval_status.value, days_pending,
-                )
-                _log_system_cleanup_action(
-                    user,
-                    reason=f"Tidak di-approve dalam {days_pending} hari (status: {user.approval_status.value})",
-                    action="unapproved_delete",
-                )
-                db.session.delete(user)
-                counters["unapproved_deleted"] += 1
+        for user in unapproved_users:
+            devices = db.session.scalars(
+                select(UserDevice).where(UserDevice.user_id == user.id)
+            ).all()
+            try:
+                from app.services.user_management.user_deletion import _cleanup_router_artifacts
+                _cleanup_router_artifacts(user, devices, include_comment_scan=False)
+            except Exception as exc:
+                current_app.logger.warning("cleanup_unapproved: MikroTik cleanup gagal untuk %s: %s", user.phone_number, exc)
+            for token in db.session.scalars(select(RefreshToken).where(RefreshToken.user_id == user.id)).all():
+                db.session.delete(token)
+            for device in devices:
+                db.session.delete(device)
+            days_pending = (now_utc - user.created_at).days if user.created_at else 0
+            current_app.logger.warning(
+                "cleanup_unapproved: DELETE %s (phone=%s, status=%s, %d hari sejak daftar)",
+                user.full_name, user.phone_number, user.approval_status.value, days_pending,
+            )
+            _log_system_cleanup_action(
+                user,
+                reason=f"Tidak di-approve dalam {days_pending} hari (status: {user.approval_status.value})",
+                action="unapproved_delete",
+            )
+            db.session.delete(user)
+            counters["unapproved_deleted"] += 1
 
     if db.session.dirty or db.session.new or db.session.deleted:
         db.session.commit()
