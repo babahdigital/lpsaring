@@ -395,10 +395,10 @@ function hasExplicitHotspotIdentity(identity = getHotspotIdentity()): boolean {
 
 function getMissingIdentityMessage(): string {
   if (loginHotspotUrl.value) {
-    return 'IP/MAC perangkat belum terbaca dari router. Tekan Aktifkan Internet agar sistem mencoba mengambil konteks hotspot otomatis. Jika tetap gagal, buka Login Hotspot sekali lalu coba lagi.'
+    return 'Informasi perangkat belum tersedia. Tekan Aktifkan Internet atau buka Login Hotspot terlebih dahulu.'
   }
 
-  return 'IP/MAC perangkat belum terbaca dari router. Tekan Aktifkan Internet agar sistem mencoba mengambil konteks hotspot otomatis. Jika tetap gagal, buka satu halaman HTTP biasa agar router mengarahkan ke Login Hotspot, lalu coba lagi.'
+  return 'Informasi perangkat belum tersedia. Tekan Aktifkan Internet untuk mencoba kembali.'
 }
 
 function handleMacConfirmation(proceed: boolean) {
@@ -411,10 +411,10 @@ function handleMacConfirmation(proceed: boolean) {
 
 function getHotspotNotReadyMessage(): string {
   if (loginHotspotUrl.value) {
-    return 'Internet perangkat belum aktif sepenuhnya. Buka Login Hotspot sekali, lalu tekan Aktifkan Internet lagi.'
+    return 'Internet belum aktif sepenuhnya. Buka Login Hotspot, lalu coba lagi.'
   }
 
-  return 'Internet perangkat belum aktif sepenuhnya. Buka satu halaman HTTP biasa agar router menampilkan Login Hotspot, lalu tekan Aktifkan Internet lagi.'
+  return 'Internet belum aktif sepenuhnya. Silakan coba lagi dalam beberapa saat.'
 }
 
 function triggerHotspotProbe() {
@@ -570,7 +570,7 @@ async function activateInternetOneClick(options: { allowBridgeRoundtrip?: boolea
           return
       }
 
-      progressMessage.value = 'IP/MAC perangkat belum terbaca. Melanjutkan pengecekan lokal terlebih dahulu...'
+      progressMessage.value = 'Membaca informasi perangkat...'
     }
 
     setActivationStage('sync', 'Menyinkronkan sesi hotspot dengan router...')
@@ -647,7 +647,7 @@ async function activateInternetOneClick(options: { allowBridgeRoundtrip?: boolea
   catch {
     resetActivationState()
     showFallbackLogin.value = Boolean(loginHotspotUrl.value)
-    statusMessage.value = 'Internet belum bisa diaktifkan otomatis. Silakan buka Login Hotspot, lalu coba lagi.'
+    statusMessage.value = 'Gagal mengaktifkan internet otomatis. Buka Login Hotspot, lalu coba lagi.'
   }
   finally {
     activating.value = false
@@ -760,34 +760,29 @@ onBeforeUnmount(() => {
   <div class="auth-wrapper d-flex align-center justify-center pa-4 pa-sm-6">
     <VCard class="auth-card" max-width="460" width="100%">
       <!-- MAC Randomization Confirmation Dialog -->
-      <VDialog v-model="showMacConfirmDialog" max-width="420">
+      <VDialog v-model="showMacConfirmDialog" max-width="380">
         <VCard>
-          <VCardText class="pa-6">
+          <VCardText class="pa-5">
             <div class="text-center">
-              <VIcon icon="tabler-alert-circle" size="48" color="warning" class="mb-4" />
-              <h4 class="text-h6 mb-3">Alamat MAC Ter-Randomisasi</h4>
-              <p class="text-body-2 text-medium-emphasis mb-4">
-                Device Anda menggunakan "Private Address" (MAC randomization). Ini dapat menyebabkan masalah koneksi:
+              <VIcon icon="tabler-wifi" size="40" color="info" class="mb-3" />
+              <h4 class="text-h6 mb-2">Alamat MAC Acak Terdeteksi</h4>
+              <p class="text-body-2 text-medium-emphasis mb-3">
+                Perangkat Anda menggunakan alamat MAC acak. Koneksi tetap bisa digunakan, namun mungkin perlu login ulang jika WiFi terputus.
               </p>
-              <ul class="text-caption text-start text-medium-emphasis mb-4" style="line-height: 1.6">
-                <li>Portal login diminta berulang kali</li>
-                <li>Koneksi terputus dan masuk kembali</li>
-                <li>Device tidak terdeteksi dengan baik</li>
-              </ul>
-              <p class="text-body-2 font-weight-semibold mb-4 text-warning">
-                Sebaiknya matikan "Private Address" terlebih dahulu.
+              <p class="text-caption text-medium-emphasis mb-0">
+                Untuk koneksi lebih stabil, matikan <strong>"Private Address"</strong> di pengaturan WiFi jaringan ini.
               </p>
             </div>
           </VCardText>
 
           <VDivider />
 
-          <VCardActions class="pa-4 d-flex flex-column ga-3">
-            <VBtn color="warning" size="large" variant="elevated" block @click="handleMacConfirmation(false)">
-              Oke, Matikan Dulu
+          <VCardActions class="pa-4 d-flex flex-column ga-2">
+            <VBtn color="primary" size="large" variant="elevated" block @click="handleMacConfirmation(true)">
+              Lanjutkan
             </VBtn>
-            <VBtn color="secondary" size="large" variant="tonal" block @click="handleMacConfirmation(true)">
-              Lanjut dengan Resiko
+            <VBtn color="default" size="small" variant="text" block @click="handleMacConfirmation(false)">
+              Atur Dulu di Pengaturan WiFi
             </VBtn>
           </VCardActions>
         </VCard>
@@ -839,20 +834,14 @@ onBeforeUnmount(() => {
           Anda sudah berhasil login. Tekan tombol di bawah agar internet langsung aktif.
         </p>
 
-        <VAlert v-if="showMacRandomizationAlert" type="warning" variant="tonal" density="comfortable" class="mb-6 text-start">
-          <template #prepend>
-            <VIcon icon="tabler-alert-triangle" />
-          </template>
-          <div class="text-body-2">
-            <strong>⚠ Alamat MAC Ter-Randomisasi</strong>
-            <p class="mt-2 mb-0 text-caption">
-              {{ macRandomizationWarning }}
-            </p>
+        <VAlert v-if="showMacRandomizationAlert" type="info" variant="tonal" density="compact" class="mb-4 text-start">
+          <div class="text-caption">
+            Alamat MAC acak terdeteksi. Koneksi tetap bisa digunakan. Untuk hasil terbaik, matikan "Private Address" di pengaturan WiFi.
           </div>
         </VAlert>
 
-        <VAlert type="info" variant="tonal" density="comfortable" class="mb-6 text-start">
-          Proses ini berjalan otomatis. Jika belum aktif, gunakan tombol Login Hotspot lalu coba lagi.
+        <VAlert type="info" variant="tonal" density="compact" class="mb-6 text-start">
+          <span class="text-caption">Tekan tombol di bawah untuk mengaktifkan internet secara otomatis.</span>
         </VAlert>
 
         <VCard v-if="activating && activationProgress.currentStep > 0" variant="tonal" color="info" class="mb-6 text-start">

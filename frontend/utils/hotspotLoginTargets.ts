@@ -102,9 +102,11 @@ export function resolveHotspotBridgeTarget(mikrotikLoginUrl: string, configuredP
   const preferredLoginUrl = normalizeHotspotBridgeUrl(mikrotikLoginUrl)
   const configuredProbe = normalizeHotspotBridgeUrl(configuredProbeUrl)
 
-  if (configuredProbe && isLocalHotspotTarget(mikrotikLoginUrl))
-    return configuredProbe
-
+  // Always prefer the MikroTik login URL directly — it is the most reliable bridge target.
+  // MikroTik will either intercept (if hotspot not active) and redirect with client_ip/mac params,
+  // or serve its own page (if active) which is harmless and stays on the local network.
+  // Using neverssl.com as bridge is problematic: if hotspot IS active, MikroTik won't intercept
+  // and the user ends up stuck on neverssl.com with no way back.
   if (preferredLoginUrl)
     return preferredLoginUrl
 

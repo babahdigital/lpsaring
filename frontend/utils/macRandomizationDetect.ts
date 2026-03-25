@@ -82,21 +82,7 @@ export function analyzeMacRandomization(macAddress: string | null | undefined): 
 
   let recommendation = ''
   if (isRandomized) {
-    recommendation = `
-Device Anda menggunakan "Private Address" (MAC randomization).
-Ini dapat menyebabkan:
-- Portal login diminta berulang kali
-- Koneksi terputus dan masuk kembali
-- Device tidak terdeteksi dengan baik
-
-Solusi:
-1. Buka WiFi Settings
-2. Pilih jaringan "ikhlas"
-3. Matikan "Private Address" atau "Random MAC"
-4. Login kembali
-
-Catatan: Matikan hanya untuk jaringan hotspot ini, bukan semua WiFi.
-    `.trim()
+    recommendation = 'Perangkat menggunakan alamat MAC acak. Untuk koneksi lebih stabil, matikan "Private Address" di pengaturan WiFi jaringan ini.'
   }
 
   return {

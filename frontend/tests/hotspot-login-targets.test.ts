@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest'
 import { normalizeHotspotBridgeUrl, normalizeHotspotLoginUrl, resolveHotspotBridgeTarget } from '../utils/hotspotLoginTargets'
 
 describe('hotspot login targets', () => {
-  it('prefers the configured probe for bridge flows when the router hint is a local captive host', () => {
-    expect(resolveHotspotBridgeTarget('http://login.home.arpa/login', 'http://neverssl.com/')).toBe('http://neverssl.com/')
-    expect(resolveHotspotBridgeTarget('http://login.home.arpa', 'http://neverssl.com/')).toBe('http://neverssl.com/')
-    expect(resolveHotspotBridgeTarget('http://192.168.88.1/login', 'http://neverssl.com/')).toBe('http://neverssl.com/')
+  it('prefers the MikroTik login URL directly as bridge target (avoids neverssl stuck)', () => {
+    expect(resolveHotspotBridgeTarget('http://login.home.arpa/login', 'http://neverssl.com/')).toBe('http://login.home.arpa/')
+    expect(resolveHotspotBridgeTarget('http://login.home.arpa', 'http://neverssl.com/')).toBe('http://login.home.arpa/')
+    expect(resolveHotspotBridgeTarget('http://192.168.88.1/login', 'http://neverssl.com/')).toBe('http://192.168.88.1/')
   })
 
   it('falls back to the router portal root when no configured probe exists', () => {
@@ -18,7 +18,7 @@ describe('hotspot login targets', () => {
     expect(resolveHotspotBridgeTarget('', '')).toBe('http://neverssl.com/')
   })
 
-  it('keeps public bridge targets on the trusted login target when it is not a local captive host', () => {
+  it('keeps public bridge targets on the trusted login target', () => {
     expect(resolveHotspotBridgeTarget('https://portal.example/login', 'http://neverssl.com/')).toBe('https://portal.example/login')
   })
 
