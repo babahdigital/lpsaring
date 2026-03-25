@@ -81,6 +81,31 @@ from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package
 from app.services.user_management import user_approval, user_deletion, user_profile as user_profile_service
 from app.services.access_policy_service import get_user_access_status
 
+
+def _is_unlimited_debt_item(debt: UserQuotaDebt) -> bool:
+    """Check if a debt item represents an unlimited package (sentinel amount_mb=1, note contains 'unlimited')."""
+    amount_mb = int(getattr(debt, "amount_mb", 0) or 0)
+    note = str(getattr(debt, "note", "") or "").lower()
+    return amount_mb <= 1 and "unlimited" in note
+
+
+def _format_remaining_manual_debt_display(user: User, remaining_manual_debt_mb: int) -> str:
+    """Format remaining manual debt for WA display, detecting unlimited items."""
+    if remaining_manual_debt_mb <= 0:
+        return "0 GB"
+    # Check if user still has any open unlimited debt items
+    open_unlimited = db.session.execute(
+        select(func.count())
+        .select_from(UserQuotaDebt)
+        .where(UserQuotaDebt.user_id == user.id, UserQuotaDebt.is_paid.is_(False))
+        .where(UserQuotaDebt.amount_mb <= 1)
+        .where(UserQuotaDebt.note.ilike("%unlimited%"))
+    ).scalar() or 0
+    if open_unlimited > 0:
+        return f"{open_unlimited} item Unlimited"
+    return format_mb_to_gb(remaining_manual_debt_mb)
+
+
 user_management_bp = Blueprint("user_management_api", __name__)
 
 
@@ -1609,16 +1634,24 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
                         "full_name": user.full_name,
                         "debt_date": debt_date_str,
                         "paid_at": paid_at_str,
-                        "paid_manual_debt_gb": format_mb_to_gb(paid_mb),
-                        "paid_manual_debt_amount_display": (
-                            receipt_context.get("paid_manual_amount_display") if receipt_context else format_currency_idr(estimate_amount_rp_for_mb(paid_mb))
+                        "paid_manual_debt_gb": receipt_context.get("paid_manual_gb", "Unlimited") if receipt_context else (
+                            "Unlimited" if _is_unlimited_debt_item(debt) else format_mb_to_gb(paid_mb)
                         ),
-                        "paid_total_debt_gb": receipt_context.get("paid_total_gb") if receipt_context else format_mb_to_gb(paid_mb),
+                        "paid_manual_debt_amount_display": (
+                            receipt_context.get("paid_manual_amount_display") if receipt_context else format_currency_idr(
+                                int(getattr(debt, "price_rp", 0) or 0) or estimate_amount_rp_for_mb(paid_mb)
+                            )
+                        ),
+                        "paid_total_debt_gb": receipt_context.get("paid_total_gb", "Unlimited") if receipt_context else (
+                            "Unlimited" if _is_unlimited_debt_item(debt) else format_mb_to_gb(paid_mb)
+                        ),
                         "paid_total_debt_amount_display": (
-                            receipt_context.get("paid_total_amount_display") if receipt_context else format_currency_idr(estimate_amount_rp_for_mb(paid_mb))
+                            receipt_context.get("paid_total_amount_display") if receipt_context else format_currency_idr(
+                                int(getattr(debt, "price_rp", 0) or 0) or estimate_amount_rp_for_mb(paid_mb)
+                            )
                         ),
                         "payment_channel_label": "Pelunasan manual oleh Admin",
-                        "remaining_manual_debt_gb": format_mb_to_gb(remaining_manual_debt),
+                        "remaining_manual_debt_gb": _format_remaining_manual_debt_display(user, remaining_manual_debt),
                         "remaining_quota_gb": format_mb_to_gb(remaining_quota_mb),
                         "expiry_date": expiry_date_str,
                         "receipt_url": receipt_url or "-",
@@ -1715,13 +1748,13 @@ def settle_all_debts(current_admin: User, user_id: uuid.UUID):
                     {
                         "full_name": user.full_name,
                         "paid_auto_debt_gb": format_mb_to_gb(paid_auto_mb),
-                        "paid_manual_debt_gb": format_mb_to_gb(paid_manual_mb),
-                        "paid_total_debt_gb": format_mb_to_gb(paid_total_mb),
+                        "paid_manual_debt_gb": receipt_context.get("paid_manual_gb", format_mb_to_gb(paid_manual_mb)) if receipt_context else format_mb_to_gb(paid_manual_mb),
+                        "paid_total_debt_gb": receipt_context.get("paid_total_gb", format_mb_to_gb(paid_total_mb)) if receipt_context else format_mb_to_gb(paid_total_mb),
                         "paid_total_debt_amount_display": (
                             receipt_context.get("paid_total_amount_display") if receipt_context else format_currency_idr(estimate_amount_rp_for_mb(paid_total_mb))
                         ),
                         "payment_channel_label": "Pelunasan manual oleh Admin",
-                        "remaining_quota": format_mb_to_gb(remaining_mb),
+                        "remaining_quota": format_mb_to_gb(remaining_mb) if not bool(getattr(user, "is_unlimited_user", False)) else "Unlimited",
                         "receipt_url": receipt_url or "-",
                     },
                 )
