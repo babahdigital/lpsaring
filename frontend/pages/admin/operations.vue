@@ -833,7 +833,7 @@ async function handleRefreshOperations() {
 }
 
 .operations-page__table th {
-  padding-block: 12px;
+  padding-block: 14px;
   padding-inline: 14px;
   font-size: 0.74rem;
   font-weight: 700;
@@ -842,12 +842,13 @@ async function handleRefreshOperations() {
   color: rgba(var(--v-theme-on-surface), 0.56);
   vertical-align: middle;
   white-space: normal;
+  border-bottom: 2px solid rgba(var(--v-theme-on-surface), 0.1);
 }
 
 .operations-page__table td {
   padding-block: 14px;
   padding-inline: 14px;
-  vertical-align: top;
+  vertical-align: middle;
   white-space: normal;
 }
 
@@ -864,7 +865,7 @@ async function handleRefreshOperations() {
 }
 
 .operations-page__table tbody tr:first-child td {
-  padding-top: 18px;
+  padding-top: 20px;
 }
 
 .operations-page__table th:nth-child(1),

@@ -1401,7 +1401,10 @@ def get_users_list(current_admin: User):
                 elif status in {"unlimited", "unlimted"}:
                     conditions.append(User.is_unlimited_user.is_(True))
                 elif status in {"debt", "hutang"}:
-                    conditions.append(sa.and_(User.is_unlimited_user.is_(False), total_debt > 0))
+                    conditions.append(sa.or_(
+                        sa.and_(User.is_unlimited_user.is_(False), total_debt > 0),
+                        sa.and_(User.is_unlimited_user.is_(True), User.manual_debt_mb > 0),
+                    ))
                 elif status in {"expired", "expiried"}:
                     conditions.append(sa.and_(User.quota_expiry_date.is_not(None), User.quota_expiry_date < now_utc))
                 elif status in {"fup"}:
