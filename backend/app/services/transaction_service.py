@@ -42,7 +42,6 @@ def _sync_ip_binding_for_authorized_devices(user, mikrotik_api: Any, date_str: s
         return
 
     target_binding_type = resolve_allowed_binding_type_for_user(user)
-    username_08 = format_to_local_phone(getattr(user, "phone_number", None) or "") or ""
     server_name = getattr(user, "mikrotik_server_name", None)
     synced_count = 0
 

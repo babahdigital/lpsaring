@@ -4,8 +4,6 @@ import math
 from typing import Any, Tuple
 from flask import current_app
 
-from datetime import datetime, timezone as dt_timezone
-
 from app.extensions import db
 from app.infrastructure.db.models import User, UserRole, AdminActionType
 from app.utils.formatters import build_ip_binding_comment, format_to_local_phone, get_app_local_datetime
@@ -24,7 +22,7 @@ from app.services.quota_mutation_ledger_service import (
     lock_user_quota_row,
     snapshot_user_quota_state,
 )
-from app.utils.formatters import get_app_date_time_strings
+
 
 
 def _sync_ip_binding_for_authorized_devices(user: User, api_conn: Any, source: str) -> None:
@@ -32,9 +30,6 @@ def _sync_ip_binding_for_authorized_devices(user: User, api_conn: Any, source: s
         return
 
     target_binding_type = resolve_allowed_binding_type_for_user(user)
-    username_08 = format_to_local_phone(getattr(user, "phone_number", None) or "") or ""
-    now_utc = datetime.now(dt_timezone.utc)
-    date_str, time_str = get_app_date_time_strings(now_utc)
     server_name = getattr(user, "mikrotik_server_name", None)
 
     for device in user.devices:
