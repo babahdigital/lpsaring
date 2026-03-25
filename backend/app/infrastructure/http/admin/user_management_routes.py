@@ -1806,7 +1806,7 @@ def verify_mikrotik_rules(current_admin: User):
             raw_rules = api_conn.get_resource("/ip/firewall/raw").get()
     except Exception as e:
         current_app.logger.error("Gagal mengambil firewall rules dari MikroTik: %s", e, exc_info=True)
-        return jsonify({"status": "error", "message": f"Gagal koneksi MikroTik: {str(e)}"}), HTTPStatus.SERVICE_UNAVAILABLE
+        return jsonify({"status": "error", "message": "Gagal koneksi MikroTik. Cek koneksi ke router."}), HTTPStatus.SERVICE_UNAVAILABLE
 
     if filter_rules is None or raw_rules is None:
         return jsonify({"status": "error", "message": "Gagal membaca firewall rules dari MikroTik."}), HTTPStatus.SERVICE_UNAVAILABLE

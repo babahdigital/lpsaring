@@ -296,7 +296,7 @@ def token_required(f):
 
             return f(current_user_id=user_uuid_from_token, *args, **kwargs)
         except (JWTError, ValueError, TypeError) as e:
-            return _auth_error(f"Invalid token: {str(e)}", HTTPStatus.UNAUTHORIZED, "AUTH_TOKEN_INVALID")
+            return _auth_error("Token tidak valid atau sudah kedaluwarsa.", HTTPStatus.UNAUTHORIZED, "AUTH_TOKEN_INVALID")
 
         return f(current_user_id=user_uuid_from_token, *args, **kwargs)
 

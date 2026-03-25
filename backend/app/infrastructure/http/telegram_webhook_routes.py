@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 from flask import Blueprint, jsonify, request, current_app
 from http import HTTPStatus
 from datetime import datetime, timezone
@@ -23,7 +24,7 @@ def _is_webhook_secret_valid() -> bool:
     if not expected:
         return False
     provided = (request.headers.get("X-Telegram-Bot-Api-Secret-Token") or "").strip()
-    return provided == expected
+    return hmac.compare_digest(provided, expected)
 
 
 @telegram_bp.route("/webhook", methods=["POST"])

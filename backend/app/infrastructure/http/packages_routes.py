@@ -186,5 +186,5 @@ def get_packages():
     except Exception as e:
         current_app.logger.error(f"Unexpected error in get_packages: {e}", exc_info=True)
         return jsonify(
-            {"success": False, "message": "Terjadi kesalahan internal pada server.", "error": str(e)}
+            {"success": False, "message": "Terjadi kesalahan internal pada server."}
         ), HTTPStatus.INTERNAL_SERVER_ERROR

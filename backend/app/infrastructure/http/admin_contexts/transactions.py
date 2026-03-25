@@ -292,7 +292,7 @@ def export_transactions_impl(
             except Exception:
                 offset_hours = 0
             offset_hours = max(-12, min(offset_hours, 14))
-            local_created = Transaction.created_at + sa.text(f"INTERVAL '{offset_hours} hours'")
+            local_created = Transaction.created_at + sa.text("INTERVAL '1 hour'") * sa.literal(offset_hours)
 
             if group_by == 'daily':
                 period_expr = func.date(local_created)
@@ -557,7 +557,7 @@ def admin_reconcile_transaction_impl(
     except Exception as e:
         record_failure('midtrans')
         db.session.rollback()
-        return jsonify({'message': f'Gagal menghubungi Midtrans: {str(e)}', 'quota_applied': False}), HTTPStatus.BAD_GATEWAY
+        return jsonify({'message': 'Gagal menghubungi Midtrans.', 'quota_applied': False}), HTTPStatus.BAD_GATEWAY
 
     mt_status = str(midtrans_resp.get('transaction_status', '') or '').strip().lower()
     fraud_status_raw = midtrans_resp.get('fraud_status')

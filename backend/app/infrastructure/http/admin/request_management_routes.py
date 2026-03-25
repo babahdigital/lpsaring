@@ -361,7 +361,7 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
         db.session.rollback()
         current_app.logger.error(f"Gagal menyimpan ke DB saat memproses permintaan: {e}", exc_info=True)
         return jsonify(
-            {"message": f"Gagal menyimpan perubahan ke database. Error: {str(e)}"}
+            {"message": "Gagal menyimpan perubahan ke database."}
         ), HTTPStatus.INTERNAL_SERVER_ERROR
 
     try:

@@ -156,7 +156,7 @@ def get_transaction_by_order_id_impl(
         current_app.logger.error(f"Kesalahan tak terduga saat mengambil detail transaksi: {e}", exc_info=True)
         if isinstance(e, (HTTPException, midtransclient.error_midtrans.MidtransAPIError)):
             raise e
-        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description=f"Kesalahan tak terduga: {e}")
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Terjadi kesalahan internal. Silakan coba lagi.")
     finally:
         if session:
             session.remove()
@@ -243,6 +243,6 @@ def get_transaction_qr_impl(*, current_user_id, midtrans_order_id: str, session,
         if session.is_active:
             session.rollback()
         current_app.logger.error(f"Error saat mengambil QR untuk {midtrans_order_id}: {e}", exc_info=True)
-        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description=f"Kesalahan tak terduga: {e}")
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Terjadi kesalahan internal. Silakan coba lagi.")
     finally:
         session.remove()

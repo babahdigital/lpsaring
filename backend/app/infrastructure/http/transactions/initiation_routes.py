@@ -546,7 +546,7 @@ def initiate_transaction_impl(
         record_failure("midtrans")
         db.session.rollback()
         current_app.logger.error(f"Error di initiate_transaction: {e}", exc_info=True)
-        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description=str(e))
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Terjadi kesalahan internal. Silakan coba lagi.")
     finally:
         db.session.remove()
 
@@ -854,6 +854,6 @@ def initiate_debt_settlement_transaction_impl(
         record_failure("midtrans")
         session.rollback()
         current_app.logger.error("Error di initiate_debt_settlement_transaction: %s", e, exc_info=True)
-        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description=str(e))
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Terjadi kesalahan internal. Silakan coba lagi.")
     finally:
         db.session.remove()

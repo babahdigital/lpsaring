@@ -87,7 +87,7 @@ def handle_my_profile(current_user_id):
             ), HTTPStatus.UNPROCESSABLE_ENTITY
         except Exception as e:
             db.session.rollback()
-            abort(HTTPStatus.INTERNAL_SERVER_ERROR, description=f"Kesalahan internal: {str(e)}")
+            abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Terjadi kesalahan internal. Silakan coba lagi.")
 
     abort(HTTPStatus.METHOD_NOT_ALLOWED, description="Metode tidak didukung.")
 
@@ -171,7 +171,7 @@ def get_my_login_history(current_user_id):
 
     except Exception as e:
         current_app.logger.error(f"Error di get_my_login_history: {e}", exc_info=True)
-        return jsonify({"message": f"Gagal mengambil riwayat: {e}"}), HTTPStatus.INTERNAL_SERVER_ERROR
+        return jsonify({"message": "Gagal mengambil riwayat login."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
 @profile_bp.route("/me/devices", methods=["GET"])

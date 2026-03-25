@@ -97,7 +97,7 @@ def get_transaction_invoice_impl(
         current_app.logger.error(f"Error saat membuat invoice PDF untuk {midtrans_order_id}: {e}", exc_info=True)
         if isinstance(e, midtransclient_module.error_midtrans.MidtransAPIError):
             raise e
-        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description=f"Kesalahan tak terduga saat membuat invoice: {e}")
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Terjadi kesalahan internal saat membuat invoice.")
     finally:
         if session:
             session.remove()
