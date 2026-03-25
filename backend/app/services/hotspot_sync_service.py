@@ -57,6 +57,7 @@ from app.services.quota_mutation_ledger_service import (
     snapshot_user_quota_state,
 )
 from app.utils.formatters import (
+    build_ip_binding_comment,
     format_to_local_phone,
     get_app_date_time_strings,
     get_app_local_datetime,
@@ -1116,9 +1117,12 @@ def _self_heal_policy_binding_for_user(
             address=ip_addr or None,
             server=getattr(user, "mikrotik_server_name", None),
             binding_type=expected_binding_type,
-            comment=(
-                f"authorized|user={username_08}|uid={user.id}|role={user.role.value}"
-                f"|source=sync-self-heal|date={date_str}|time={time_str}"
+            comment=build_ip_binding_comment(
+                binding_type=expected_binding_type,
+                phone_number=user.phone_number,
+                user_id=str(user.id),
+                role=user.role.value,
+                source="sync-self-heal",
             ),
         )
         if ok:

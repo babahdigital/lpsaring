@@ -15,7 +15,7 @@ from app.infrastructure.gateways.mikrotik_client import (
 from app.services.access_policy_service import resolve_allowed_binding_type_for_user
 from app.services.device_management_service import normalize_mac
 from app.services.hotspot_sync_service import sync_address_list_for_single_user
-from app.utils.formatters import format_to_local_phone, get_app_date_time_strings, get_phone_number_variations
+from app.utils.formatters import build_ip_binding_comment, format_to_local_phone, get_app_date_time_strings, get_phone_number_variations
 
 logger = logging.getLogger(__name__)
 
@@ -151,9 +151,12 @@ def sync_mikrotik_access_command(
         # 2) Sync ip-binding (kalau MAC ketemu)
         if update_ip_binding and found_mac:
             binding_type = resolve_allowed_binding_type_for_user(user)
-            comment = (
-                f"authorized|user={username_08}|uid={user.id}|role={user.role.value}"
-                f"|source=sync-ip|date={date_str}|time={time_str}"
+            comment = build_ip_binding_comment(
+                binding_type=binding_type,
+                phone_number=user.phone_number,
+                user_id=str(user.id),
+                role=user.role.value,
+                source="sync-ip",
             )
             if not apply_changes:
                 click.echo(

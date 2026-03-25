@@ -19,7 +19,7 @@ from app.services import settings_service
 from app.services.access_policy_service import resolve_allowed_binding_type_for_user
 from app.services.access_parity_service import collect_access_parity_report
 from app.services.hotspot_sync_service import sync_address_list_for_single_user
-from app.utils.formatters import format_to_local_phone, get_app_date_time_strings
+from app.utils.formatters import build_ip_binding_comment, format_to_local_phone, get_app_date_time_strings
 from app.utils.metrics_utils import get_metrics
 
 metrics_bp = Blueprint("admin_metrics", __name__)
@@ -208,9 +208,12 @@ def fix_access_parity(current_admin):
                 address=resolved_ip,
                 server=getattr(user, "mikrotik_server_name", None),
                 binding_type=expected_binding_type,
-                comment=(
-                    f"authorized|user={username_08}|uid={user.id}|role={user.role.value}"
-                    f"|source=admin-parity-fix|date={date_str}|time={time_str}"
+                comment=build_ip_binding_comment(
+                    binding_type=expected_binding_type,
+                    phone_number=user.phone_number,
+                    user_id=str(user.id),
+                    role=user.role.value,
+                    source="admin-parity-fix",
                 ),
             )
             if not ok_binding:

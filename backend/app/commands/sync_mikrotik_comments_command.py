@@ -17,7 +17,7 @@ from app.infrastructure.gateways.mikrotik_client import (
 )
 from app.services.device_management_service import normalize_mac
 from app.services import settings_service
-from app.utils.formatters import format_to_local_phone, get_app_date_time_strings, get_phone_number_variations
+from app.utils.formatters import build_ip_binding_comment, format_to_local_phone, get_app_date_time_strings, get_phone_number_variations
 
 logger = logging.getLogger(__name__)
 
@@ -37,13 +37,6 @@ def _load_device_maps() -> Tuple[Dict[str, User], Dict[str, User]]:
         if device.ip_address:
             ip_to_user[str(device.ip_address)] = user
     return mac_to_user, ip_to_user
-
-
-def _build_ip_binding_comment(prefix: str, user: User, now: datetime) -> str:
-    username_08 = format_to_local_phone(user.phone_number) or ""
-    date_str, time_str = get_app_date_time_strings(now)
-    base = prefix.strip() or "synced"
-    return f"{base}|user={username_08}|uid={user.id}|role={user.role.value}|date={date_str}|time={time_str}"
 
 
 def _build_address_list_comment(status_value: str, user: User, ip: Optional[str], now: datetime) -> str:
@@ -150,8 +143,21 @@ def sync_mikrotik_comments_command(apply_changes: bool, do_ip_binding: bool, do_
                     updated["skipped"] += 1
                     continue
 
-                prefix = comment.split("|", 1)[0] if "|" in comment else (comment.strip() or "synced")
-                new_comment = _build_ip_binding_comment(prefix, user, now)
+                # Derive source from old comment if available
+                source = None
+                if "|source=" in comment:
+                    src_match = re.search(r"\|source=([^|]+)", comment)
+                    if src_match:
+                        source = src_match.group(1).strip()
+
+                entry_binding_type = entry.get("type") or "regular"
+                new_comment = build_ip_binding_comment(
+                    binding_type=entry_binding_type,
+                    phone_number=user.phone_number,
+                    user_id=str(user.id),
+                    role=user.role.value,
+                    source=source or "sync-comment",
+                )
                 if comment == new_comment:
                     continue
                 if not apply_changes:

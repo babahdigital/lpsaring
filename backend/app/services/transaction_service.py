@@ -22,7 +22,7 @@ from app.services.hotspot_sync_service import sync_address_list_for_single_user
 from app.services.access_policy_service import resolve_allowed_binding_type_for_user
 from app.services.quota_expiry_policy import calculate_quota_expiry_date
 from app.services.quota_mutation_ledger_service import append_quota_mutation_event, snapshot_user_quota_state
-from app.utils.formatters import format_to_local_phone, get_app_date_time_strings
+from app.utils.formatters import build_ip_binding_comment, format_to_local_phone, get_app_date_time_strings
 
 logger = logging.getLogger(__name__)
 
@@ -61,9 +61,12 @@ def _sync_ip_binding_for_authorized_devices(user, mikrotik_api: Any, date_str: s
             address=ip_address,
             server=server_name,
             binding_type=target_binding_type,
-            comment=(
-                f"authorized|user={username_08}|uid={user.id}|role={user.role.value}"
-                f"|source=transaction|date={date_str}|time={time_str}"
+            comment=build_ip_binding_comment(
+                binding_type=target_binding_type,
+                phone_number=user.phone_number,
+                user_id=str(user.id),
+                role=user.role.value,
+                source="transaction",
             ),
         )
         if ok:

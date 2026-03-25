@@ -33,6 +33,7 @@ from app.infrastructure.gateways.mikrotik_client import (
     remove_address_list_entry,
 )
 from app.services.access_policy_service import resolve_allowed_binding_type_for_user
+from app.utils.formatters import build_ip_binding_comment
 from app.utils.ip_ranges import expand_ip_tokens
 
 logger = logging.getLogger(__name__)
@@ -1260,8 +1261,11 @@ def apply_device_binding_for_login(
                 mac_address=device.mac_address,
                 ip_address=device.ip_address,
                 binding_type=allowed_binding_type,
-                binding_comment=(
-                    f"authorized|user={username_08}|uid={user.id}|role={user.role.value}|date={date_str}|time={time_str}"
+                binding_comment=build_ip_binding_comment(
+                    binding_type=allowed_binding_type,
+                    phone_number=user.phone_number,
+                    user_id=str(user.id),
+                    role=user.role.value,
                 ),
                 server=user.mikrotik_server_name or settings["mikrotik_server_default"],
                 username=username_08 or None,

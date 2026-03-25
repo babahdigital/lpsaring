@@ -8,7 +8,7 @@ from datetime import datetime, timezone as dt_timezone
 
 from app.extensions import db
 from app.infrastructure.db.models import User, UserRole, AdminActionType
-from app.utils.formatters import format_to_local_phone, get_app_local_datetime
+from app.utils.formatters import build_ip_binding_comment, format_to_local_phone, get_app_local_datetime
 from app.services import settings_service
 
 # [PERBAIKAN] Impor fungsi `_generate_password` yang hilang dari helper.
@@ -57,9 +57,12 @@ def _sync_ip_binding_for_authorized_devices(user: User, api_conn: Any, source: s
             address=ip_address,
             server=server_name,
             binding_type=target_binding_type,
-            comment=(
-                f"authorized|user={username_08}|uid={user.id}|role={user.role.value}"
-                f"|source={source}|date={date_str}|time={time_str}"
+            comment=build_ip_binding_comment(
+                binding_type=target_binding_type,
+                phone_number=user.phone_number,
+                user_id=str(user.id),
+                role=user.role.value,
+                source=source,
             ),
         )
         if not ok:

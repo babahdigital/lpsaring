@@ -351,3 +351,35 @@ def get_phone_number_variations(query: str) -> List[str]:
         pass
 
     return list(variations)
+
+
+def build_ip_binding_comment(
+    *,
+    binding_type: str,
+    phone_number: Optional[str],
+    user_id: str,
+    role: str,
+    source: Optional[str] = None,
+) -> str:
+    """Buat comment ip-binding yang akurat berdasarkan binding_type.
+
+    - bypassed  → "authorized|..." (user mendapat akses penuh)
+    - regular   → "managed|..."   (user dikenali tapi hotspot gate masih aktif)
+    - blocked   → "blocked|..."   (user diblokir dari jaringan)
+    """
+    username_08 = format_to_local_phone(phone_number) or ""
+    date_str, time_str = get_app_date_time_strings()
+
+    bt = str(binding_type or "regular").strip().lower()
+    if bt == "bypassed":
+        prefix = "authorized"
+    elif bt == "blocked":
+        prefix = "blocked"
+    else:
+        prefix = "managed"
+
+    parts = [f"{prefix}|user={username_08}|uid={user_id}|role={role}"]
+    if source:
+        parts.append(f"|source={source}")
+    parts.append(f"|date={date_str}|time={time_str}")
+    return "".join(parts)

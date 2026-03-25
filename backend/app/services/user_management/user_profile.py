@@ -19,6 +19,7 @@ from app.infrastructure.db.models import (
     PromoEventStatus,
 )
 from app.utils.formatters import (
+    build_ip_binding_comment,
     format_mb_to_gb,
     format_to_local_phone,
     get_app_local_datetime,
@@ -1365,9 +1366,12 @@ def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reas
 
             # Re-apply allowed ip-binding type (MAC-only) and remove blocked address-list using host table as fallback.
             binding_type = resolve_allowed_binding_type_for_user(user)
-            comment = (
-                f"authorized|user={username_08}|uid={user.id}|role={user.role.value}"
-                f"|source=unblock|date={date_str}|time={time_str}"
+            comment = build_ip_binding_comment(
+                binding_type=binding_type,
+                phone_number=user.phone_number,
+                user_id=str(user.id),
+                role=user.role.value,
+                source="unblock",
             )
 
             ok_bind, binding_map, _bind_msg = get_hotspot_ip_binding_user_map(api_connection)

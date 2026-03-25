@@ -70,7 +70,7 @@ from app.services.user_management.helpers import _handle_mikrotik_operation
 from app.services.user_management.user_deletion import run_user_auth_cleanup
 from app.commands.sync_unauthorized_hosts_command import sync_unauthorized_hosts_command
 from app.utils.block_reasons import build_manual_debt_eom_reason
-from app.utils.formatters import format_mb_to_gb, format_to_local_phone, get_app_local_datetime, get_phone_number_variations
+from app.utils.formatters import build_ip_binding_comment, format_mb_to_gb, format_to_local_phone, get_app_local_datetime, get_phone_number_variations
 from app.utils.metrics_utils import increment_metric
 from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package, format_rupiah
 
@@ -503,7 +503,13 @@ def _run_policy_parity_auto_remediation(app: Any, report: dict[str, Any]) -> dic
                                 address=mac_ip,
                                 server=getattr(user, "mikrotik_server_name", None),
                                 binding_type=expected_binding_type,
-                                comment=f"lpsaring|source=parity-guard|uid={user.id}",
+                                comment=build_ip_binding_comment(
+                                    binding_type=expected_binding_type,
+                                    phone_number=getattr(user, "phone_number", None),
+                                    user_id=str(user.id),
+                                    role=getattr(user.role, "value", "USER"),
+                                    source="parity-guard",
+                                ),
                             )
                             if not ok_bind:
                                 logger.warning(
