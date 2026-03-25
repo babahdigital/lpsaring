@@ -368,7 +368,7 @@
             </thead>
             <tbody>
               {% for item in manual_debt_items %}
-                {%- set is_debt_unlimited = (item.amount_mb is defined and item.amount_mb <= 1 and item.note is defined and 'unlimited' in (item.note or '')|lower) -%}
+                {%- set is_debt_unlimited = item.is_unlimited_debt if item.is_unlimited_debt is defined else (item.amount_mb is defined and item.amount_mb <= 1 and item.note is defined and 'unlimited' in (item.note or '')|lower) -%}
                 <tr>
                   <td>{{ item.debt_date or item.created_at }}</td>
                   <td class="right">{{ fmt_quota(item.amount_mb, unlimited=is_debt_unlimited) }}</td>

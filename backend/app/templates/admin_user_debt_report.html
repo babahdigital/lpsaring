@@ -166,7 +166,7 @@
       <tbody>
         {% if items and items|length > 0 %}
           {% for it in items %}
-            {%- set is_unl = it.get('is_unlimited_debt', false) if it.get is defined else (it.is_unlimited_debt if it.is_unlimited_debt is defined else false) -%}
+            {%- set is_unl = it.is_unlimited_debt if it.is_unlimited_debt is defined else false -%}
             <tr>
               <td class="nowrap">{{ it.debt_date_display or it.debt_date or '-' }}</td>
               <td class="nowrap">{{ it.due_date_display or it.due_date or '-' }}</td>
