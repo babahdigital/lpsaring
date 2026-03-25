@@ -169,6 +169,13 @@ def build_debt_settlement_receipt_context(
     paid_total_mb = paid_auto_mb + paid_manual_mb
     debt_item = _get_manual_debt_item(user.id, details.get("debt_item_id"))
 
+    # Detect unlimited manual debt item (sentinel amount_mb=1, note contains "unlimited")
+    is_unlimited_manual = False
+    if debt_item is not None:
+        item_amount = int(getattr(debt_item, "amount_mb", 0) or 0)
+        item_note = str(getattr(debt_item, "note", "") or "").lower()
+        is_unlimited_manual = item_amount <= 1 and "unlimited" in item_note
+
     paid_manual_amount_rp = 0
     if debt_item is not None and getattr(debt_item, "price_rp", None):
         paid_manual_amount_rp = _safe_int(getattr(debt_item, "price_rp", 0))
@@ -184,7 +191,8 @@ def build_debt_settlement_receipt_context(
             f"Auto debt dibayar {format_mb_to_gb(paid_auto_mb)} ({format_currency_idr(paid_auto_amount_rp)})"
         )
     if paid_manual_mb > 0:
-        manual_line = f"Manual debt dibayar {format_mb_to_gb(paid_manual_mb)} ({format_currency_idr(paid_manual_amount_rp)})"
+        manual_qty_text = "Unlimited" if is_unlimited_manual else format_mb_to_gb(paid_manual_mb)
+        manual_line = f"Manual debt dibayar {manual_qty_text} ({format_currency_idr(paid_manual_amount_rp)})"
         if debt_item is not None:
             due_text = format_app_date_display(getattr(debt_item, "due_date", None), fallback="-")
             debt_date_text = format_app_date_display(getattr(debt_item, "debt_date", None), fallback="-")
@@ -212,9 +220,9 @@ def build_debt_settlement_receipt_context(
         "created_at_display": format_app_datetime_display(getattr(settlement_entry, "created_at", None), fallback="-"),
         "amount_label": amount_label,
         "total_amount_display": format_currency_idr(total_amount_rp),
-        "paid_total_gb": format_mb_to_gb(paid_total_mb),
+        "paid_total_gb": "Unlimited" if is_unlimited_manual and paid_auto_mb <= 0 else format_mb_to_gb(paid_total_mb),
         "paid_auto_gb": format_mb_to_gb(paid_auto_mb),
-        "paid_manual_gb": format_mb_to_gb(paid_manual_mb),
+        "paid_manual_gb": "Unlimited" if is_unlimited_manual else format_mb_to_gb(paid_manual_mb),
         "paid_auto_amount_display": format_currency_idr(paid_auto_amount_rp),
         "paid_manual_amount_display": format_currency_idr(paid_manual_amount_rp),
         "paid_total_amount_display": format_currency_idr(total_amount_rp),
