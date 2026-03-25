@@ -165,6 +165,20 @@ def _format_manual_debt_display(amount_mb: int, note: Any = None) -> str:
     return format_mb_to_gb(amount_mb)
 
 
+def _format_total_manual_debt_gb(user: User, total_manual_debt_mb: int) -> str:
+    """Format total manual debt for WA display, detecting open unlimited items."""
+    open_unlimited = db.session.execute(
+        select(db.func.count())
+        .select_from(UserQuotaDebt)
+        .where(UserQuotaDebt.user_id == user.id, UserQuotaDebt.is_paid.is_(False))
+        .where(UserQuotaDebt.amount_mb <= 1)
+        .where(UserQuotaDebt.note.ilike("%unlimited%"))
+    ).scalar() or 0
+    if open_unlimited > 0:
+        return f"{open_unlimited} item Unlimited"
+    return format_mb_to_gb(total_manual_debt_mb)
+
+
 def _build_debt_detail_snapshot(user: User) -> Dict[str, Any]:
     snapshot: Dict[str, Any] = {
         "lines": "(Tidak ada rincian)",
@@ -889,9 +903,9 @@ def update_user_by_admin_comprehensive(
                         "debt_mb": int(debt_add_mb_pkg),
                         "debt_gb": "Unlimited" if is_unlimited_pkg else format_mb_to_gb(debt_add_mb_pkg),
                         "total_debt_mb": int(total_debt_mb),
-                        "total_debt_gb": format_mb_to_gb(total_debt_mb),
+                        "total_debt_gb": _format_total_manual_debt_gb(target_user, int(total_debt_mb)),
                         "total_manual_debt_mb": int(total_manual_debt_mb),
-                        "total_manual_debt_gb": format_mb_to_gb(total_manual_debt_mb),
+                        "total_manual_debt_gb": _format_total_manual_debt_gb(target_user, total_manual_debt_mb),
                         "total_manual_debt_amount_rp": _total_manual_debt_amount_rp,
                         "total_manual_debt_amount_display": _total_manual_debt_amount_display,
                         "auto_debt_deducted_mb": int(auto_deducted_mb),
@@ -1002,9 +1016,9 @@ def update_user_by_admin_comprehensive(
                         "debt_mb": int(debt_add_mb),
                         "debt_gb": format_mb_to_gb(debt_add_mb),
                         "total_debt_mb": int(total_debt_mb),
-                        "total_debt_gb": format_mb_to_gb(total_debt_mb),
+                        "total_debt_gb": _format_total_manual_debt_gb(target_user, int(total_debt_mb)),
                         "total_manual_debt_mb": int(total_manual_debt_mb),
-                        "total_manual_debt_gb": format_mb_to_gb(total_manual_debt_mb),
+                        "total_manual_debt_gb": _format_total_manual_debt_gb(target_user, total_manual_debt_mb),
                         "total_manual_debt_amount_rp": _total_manual_debt_amount_rp,
                         "total_manual_debt_amount_display": _total_manual_debt_amount_display,
                         "auto_debt_deducted_mb": int(auto_deducted_mb),
@@ -1046,15 +1060,35 @@ def update_user_by_admin_comprehensive(
                 purchased_now = float(target_user.total_quota_purchased_mb or 0.0)
                 used_now = float(target_user.total_quota_used_mb or 0.0)
                 remaining_mb = max(0.0, purchased_now - used_now)
+                paid_total_mb = int(paid_auto_mb) + int(paid_manual_mb)
+
+                # Detect if any settled items were unlimited (since all debts are now paid,
+                # check recently paid items)
+                _recently_paid_unlimited = db.session.execute(
+                    select(db.func.count())
+                    .select_from(UserQuotaDebt)
+                    .where(UserQuotaDebt.user_id == target_user.id, UserQuotaDebt.is_paid.is_(True))
+                    .where(UserQuotaDebt.amount_mb <= 1)
+                    .where(UserQuotaDebt.note.ilike("%unlimited%"))
+                ).scalar() or 0
+                _has_unlimited_settled = _recently_paid_unlimited > 0
+
+                from app.services.debt_settlement_receipt_service import (
+                    estimate_amount_rp_for_mb as _est_rp,
+                    format_currency_idr as _fmt_idr,
+                )
                 _send_whatsapp_notification(
                     target_user.phone_number,
                     "user_debt_cleared",
                     {
                         "full_name": target_user.full_name,
-                        "paid_auto_debt_mb": int(paid_auto_mb),
-                        "paid_manual_debt_mb": int(paid_manual_mb),
-                        "paid_total_debt_mb": int(paid_auto_mb) + int(paid_manual_mb),
-                        "remaining_mb": float(remaining_mb),
+                        "paid_auto_debt_gb": format_mb_to_gb(paid_auto_mb),
+                        "paid_manual_debt_gb": f"{_recently_paid_unlimited} item Unlimited" if _has_unlimited_settled else format_mb_to_gb(paid_manual_mb),
+                        "paid_total_debt_gb": f"{_recently_paid_unlimited} item Unlimited" if _has_unlimited_settled and int(paid_auto_mb) <= 0 else format_mb_to_gb(paid_total_mb),
+                        "paid_total_debt_amount_display": _fmt_idr(_est_rp(paid_total_mb)),
+                        "payment_channel_label": "Pelunasan manual oleh Admin",
+                        "remaining_quota": "Unlimited" if bool(getattr(target_user, "is_unlimited_user", False)) else format_mb_to_gb(remaining_mb),
+                        "receipt_url": "-",
                     },
                 )
             except Exception:
