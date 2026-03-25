@@ -19,7 +19,6 @@ from app.infrastructure.db.models import (
     PromoEventStatus,
 )
 from app.utils.formatters import (
-    format_app_datetime_display,
     format_mb_to_gb,
     format_to_local_phone,
     get_app_local_datetime,
