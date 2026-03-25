@@ -753,10 +753,8 @@ def update_user_by_admin_comprehensive(
                 pass
 
     # Manual debt input / clear (admin-only)
-    # Berlaku hanya untuk USER (termasuk tamping). Tidak berlaku untuk KOMANDAN/ADMIN/SUPER_ADMIN atau user unlimited.
-    if target_user.role == UserRole.USER and not bool(getattr(target_user, "is_unlimited_user", False)):
-        if was_unlimited_before and (data.get("debt_package_id") or int(data.get("debt_add_mb") or 0) > 0):
-            return False, "Debt manual tidak berlaku untuk pengguna unlimited. Nonaktifkan status unlimited terlebih dahulu.", None
+    # Berlaku untuk semua USER (termasuk tamping dan unlimited). Tidak berlaku untuk KOMANDAN/ADMIN/SUPER_ADMIN.
+    if target_user.role == UserRole.USER:
         debt_package_id = data.get("debt_package_id")
         if debt_package_id:
             pkg = db.session.get(Package, debt_package_id)
@@ -768,10 +766,8 @@ def update_user_by_admin_comprehensive(
             except (TypeError, ValueError):
                 pkg_quota_gb = 0.0
 
-            if pkg_quota_gb <= 0:
-                return False, "Paket unlimited tidak dapat digunakan sebagai debt manual. Gunakan fitur 'Aktifkan Unlimited' secara terpisah.", None
-            is_unlimited_pkg = False
-            debt_add_mb_pkg = int(round(pkg_quota_gb * 1024))
+            is_unlimited_pkg = pkg_quota_gb <= 0
+            debt_add_mb_pkg = 1 if is_unlimited_pkg else int(round(pkg_quota_gb * 1024))
             pkg_quota_str = "Unlimited" if is_unlimited_pkg else f"{pkg_quota_gb:g} GB"
             note = data.get("debt_note")
             pkg_note = (
@@ -808,19 +804,22 @@ def update_user_by_admin_comprehensive(
 
             try:
                 if is_unlimited_pkg:
-                    success_unlimited, msg_unlimited = quota_service.set_user_unlimited(target_user, admin_actor, True)
-                    if not success_unlimited:
-                        return False, msg_unlimited, None
-                    unlimited_activated = True
-                    pkg_days = int(getattr(pkg, "duration_days", 0) or 0)
-                    if pkg_days > 0:
-                        success_extend, msg_extend = quota_service.inject_user_quota(target_user, admin_actor, 0, pkg_days)
-                        if not success_extend:
-                            return False, msg_extend, None
+                    if not was_unlimited_before:
+                        success_unlimited, msg_unlimited = quota_service.set_user_unlimited(target_user, admin_actor, True)
+                        if not success_unlimited:
+                            return False, msg_unlimited, None
+                        unlimited_activated = True
+                        pkg_days = int(getattr(pkg, "duration_days", 0) or 0)
+                        if pkg_days > 0:
+                            success_extend, msg_extend = quota_service.inject_user_quota(target_user, admin_actor, 0, pkg_days)
+                            if not success_extend:
+                                return False, msg_extend, None
+                        changes["debt_added_days"] = pkg_days
+                    else:
+                        changes["debt_added_days"] = 0
                     changes["debt_credit_quota_mb"] = 0
                     changes["debt_paid_auto_before_credit_mb"] = 0
                     changes["debt_net_quota_mb"] = 0
-                    changes["debt_added_days"] = pkg_days
                 else:
                     paid_auto_mb, remaining_credit_mb = _apply_manual_debt_advance_credit(
                         user=target_user,
@@ -875,34 +874,33 @@ def update_user_by_admin_comprehensive(
                 _total_manual_debt_amount_display = str(
                     _debt_detail_snapshot_pkg.get("total_price_rp_display") or "–"
                 )
-                if not is_unlimited_pkg:
-                    _send_whatsapp_notification(
-                        target_user.phone_number,
-                        "user_debt_added",
-                        {
-                            "full_name": target_user.full_name,
-                            "debt_date": debt_date_text,
-                            "due_date_summary": "akhir bulan (otomatis)",
-                            "package_name": _pkg_name,
-                            "price_rp_display": _price_rp_display,
-                            "debt_mb": int(debt_add_mb_pkg),
-                            "debt_gb": format_mb_to_gb(debt_add_mb_pkg),
-                            "total_debt_mb": int(total_debt_mb),
-                            "total_debt_gb": format_mb_to_gb(total_debt_mb),
-                            "total_manual_debt_mb": int(total_manual_debt_mb),
-                            "total_manual_debt_gb": format_mb_to_gb(total_manual_debt_mb),
-                            "total_manual_debt_amount_rp": _total_manual_debt_amount_rp,
-                            "total_manual_debt_amount_display": _total_manual_debt_amount_display,
-                            "auto_debt_deducted_mb": int(auto_deducted_mb),
-                            "auto_debt_deducted_gb": format_mb_to_gb(auto_deducted_mb),
-                            "effective_quota_mb": int(effective_quota_mb),
-                            "effective_quota_gb": format_mb_to_gb(effective_quota_mb),
-                            "access_grant_summary": access_grant_summary,
-                            "debt_detail_lines": _debt_detail_lines_pkg,
-                            "_debt_detail_degraded": bool(_debt_detail_snapshot_pkg.get("degraded")),
-                            "_debt_detail_invalid_items": int(_debt_detail_snapshot_pkg.get("invalid_items") or 0),
-                        },
-                    )
+                _send_whatsapp_notification(
+                    target_user.phone_number,
+                    "user_debt_added",
+                    {
+                        "full_name": target_user.full_name,
+                        "debt_date": debt_date_text,
+                        "due_date_summary": "akhir bulan (otomatis)",
+                        "package_name": _pkg_name,
+                        "price_rp_display": _price_rp_display,
+                        "debt_mb": int(debt_add_mb_pkg),
+                        "debt_gb": "Unlimited" if is_unlimited_pkg else format_mb_to_gb(debt_add_mb_pkg),
+                        "total_debt_mb": int(total_debt_mb),
+                        "total_debt_gb": format_mb_to_gb(total_debt_mb),
+                        "total_manual_debt_mb": int(total_manual_debt_mb),
+                        "total_manual_debt_gb": format_mb_to_gb(total_manual_debt_mb),
+                        "total_manual_debt_amount_rp": _total_manual_debt_amount_rp,
+                        "total_manual_debt_amount_display": _total_manual_debt_amount_display,
+                        "auto_debt_deducted_mb": int(auto_deducted_mb),
+                        "auto_debt_deducted_gb": format_mb_to_gb(auto_deducted_mb),
+                        "effective_quota_mb": int(effective_quota_mb),
+                        "effective_quota_gb": "Unlimited" if is_unlimited_pkg else format_mb_to_gb(effective_quota_mb),
+                        "access_grant_summary": access_grant_summary,
+                        "debt_detail_lines": _debt_detail_lines_pkg,
+                        "_debt_detail_degraded": bool(_debt_detail_snapshot_pkg.get("degraded")),
+                        "_debt_detail_invalid_items": int(_debt_detail_snapshot_pkg.get("invalid_items") or 0),
+                    },
+                )
             except Exception:
                 current_app.logger.exception(
                     "Gagal mengirim notifikasi debt package untuk user %s",

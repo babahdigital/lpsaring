@@ -102,8 +102,6 @@ def add_manual_debt(
     before_state = snapshot_user_quota_state(user)
     if getattr(user, "role", None) == UserRole.KOMANDAN:
         return False, "Debt tidak berlaku untuk role KOMANDAN.", None
-    if bool(getattr(user, "is_unlimited_user", False)):
-        return False, "Debt tidak berlaku untuk pengguna unlimited.", None
     try:
         amount_int = int(amount_mb)
     except (TypeError, ValueError):
