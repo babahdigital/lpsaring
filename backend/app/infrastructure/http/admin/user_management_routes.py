@@ -2827,11 +2827,25 @@ def _build_bulk_user_row(user: User, *, fup_threshold_mb: float, now_utc: dateti
     approval_raw = getattr(user, "approval_status", None)
     approval_key = str(approval_raw.name) if approval_raw is not None and hasattr(approval_raw, "name") else str(approval_raw or "PENDING_APPROVAL")
 
+    # Kamar: extract number only (e.g. "Kamar_6" -> "6", "6" -> "6")
+    raw_kamar = getattr(user, "kamar", None) or ""
+    import re as _re
+    kamar_match = _re.search(r"(\d+)", str(raw_kamar))
+    kamar_number = kamar_match.group(1) if kamar_match else (raw_kamar or None)
+
+    # Device count
+    device_count = int(
+        db.session.query(sa.func.count(UserDevice.id))
+        .filter(UserDevice.user_id == user.id)
+        .scalar() or 0
+    )
+
     return {
         "full_name": getattr(user, "full_name", "") or "",
         "phone_display": format_to_local_phone(getattr(user, "phone_number", None)) or str(getattr(user, "phone_number", "") or "-"),
         "blok": getattr(user, "blok", None),
-        "kamar": getattr(user, "kamar", None),
+        "kamar": kamar_number,
+        "device_count": device_count,
         "role_key": role_key,
         "approval_status_key": approval_key,
         "is_blocked": is_blocked,

@@ -67,22 +67,23 @@
         table-layout: fixed;
       }
 
-      col.no { width: 4%; }
+      col.no { width: 3%; }
       col.name { width: 14%; }
-      col.phone { width: 11%; }
-      col.blok { width: 5%; }
-      col.kamar { width: 6%; }
+      col.phone { width: 10%; }
+      col.blok { width: 4%; }
+      col.kamar { width: 4%; }
       col.layanan { width: 7%; }
-      col.total-quota { width: 9%; }
-      col.used { width: 9%; }
-      col.remaining { width: 9%; }
+      col.device { width: 4%; }
+      col.total-quota { width: 8%; }
+      col.used { width: 8%; }
+      col.remaining { width: 8%; }
       col.debt-auto { width: 8%; }
       col.debt-manual { width: 8%; }
       col.debt-rp { width: 10%; }
 
       th, td {
         border: 1px solid #d8dee9;
-        padding: 5px 6px;
+        padding: 4px 5px;
         vertical-align: top;
       }
 
@@ -91,12 +92,12 @@
         text-align: left;
         text-transform: uppercase;
         letter-spacing: 0.04em;
-        font-size: 8px;
+        font-size: 7.5px;
         color: #334155;
         white-space: nowrap;
       }
 
-      td { background: #fff; }
+      td { background: #fff; font-size: 8.5px; }
 
       tr { page-break-inside: avoid; }
 
@@ -107,10 +108,10 @@
 
       .badge {
         display: inline-block;
-        padding: 1px 6px;
+        padding: 1px 5px;
         border-radius: 999px;
         border: 1px solid #d8dee9;
-        font-size: 8px;
+        font-size: 7px;
         font-weight: 700;
       }
 
@@ -119,6 +120,7 @@
       .badge-blocked { background: #fee2e2; border-color: #fca5a5; color: #991b1b; }
       .badge-expired { background: #f3f4f6; border-color: #d1d5db; color: #6b7280; }
       .badge-unlimited { background: #dbeafe; border-color: #93c5fd; color: #1e40af; }
+      .badge-debt { background: #fee2e2; border-color: #fca5a5; color: #b42318; }
 
       .empty-state { color: #667085; padding: 20px; }
 
@@ -141,6 +143,8 @@
         color: #667085;
         font-size: 8px;
       }
+
+      .name-cell { line-height: 1.6; }
     </style>
   </head>
   <body>
@@ -182,6 +186,7 @@
         <col class="blok">
         <col class="kamar">
         <col class="layanan">
+        <col class="device">
         <col class="total-quota">
         <col class="used">
         <col class="remaining">
@@ -197,6 +202,7 @@
           <th>Blok</th>
           <th>Kamar</th>
           <th>Layanan</th>
+          <th class="center">Device</th>
           <th class="right">Total Kuota</th>
           <th class="right">Terpakai</th>
           <th class="right">Sisa</th>
@@ -210,7 +216,9 @@
           {% for u in users %}
             <tr>
               <td class="center nowrap">{{ loop.index }}</td>
-              <td class="ellipsis" title="{{ u.full_name }}">{{ u.full_name }}</td>
+              <td class="name-cell" title="{{ u.full_name }}">
+                {{- u.full_name }} <span class="badge badge-debt">DEBT</span>
+              </td>
               <td class="nowrap">{{ u.phone_display }}</td>
               <td class="center">{{ u.blok or '-' }}</td>
               <td class="center">{{ u.kamar or '-' }}</td>
@@ -227,6 +235,7 @@
                   <span class="badge badge-ok">Aktif</span>
                 {% endif %}
               </td>
+              <td class="center nowrap">{{ u.device_count }}</td>
               <td class="right nowrap">{{ fmt_quota(u.total_quota_purchased_mb) }}</td>
               <td class="right nowrap">{{ fmt_quota(u.total_quota_used_mb) }}</td>
               <td class="right nowrap">{{ fmt_quota(u.remaining_mb) }}</td>
@@ -242,7 +251,7 @@
             </tr>
           {% endfor %}
           <tr class="subtotal-row">
-            <td colspan="6" class="right">TOTAL</td>
+            <td colspan="7" class="right">TOTAL</td>
             <td class="right nowrap">{{ fmt_quota(summary_total_purchased_mb) }}</td>
             <td class="right nowrap">{{ fmt_quota(summary_total_used_mb) }}</td>
             <td class="right nowrap">{{ fmt_quota(summary_total_remaining_mb) }}</td>
@@ -252,7 +261,7 @@
           </tr>
         {% else %}
           <tr>
-            <td colspan="12" class="center empty-state">
+            <td colspan="13" class="center empty-state">
               Tidak ada pengguna dengan tunggakan saat ini.
             </td>
           </tr>
@@ -263,6 +272,7 @@
     <div class="note">
       Kuota ditampilkan KB/MB/GB (1 GB = 1024 MB); nilai GB selalu 2 desimal.
       Debt otomatis = selisih pemakaian terhadap kuota tercatat.
+      Device = jumlah perangkat terdaftar.
       Nilai referensi memakai pro-rata dari paket aktif termurah: {{ estimate_base_package_name or '-' }}.
     </div>
 
