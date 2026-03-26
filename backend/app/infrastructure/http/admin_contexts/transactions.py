@@ -8,7 +8,9 @@ from http import HTTPStatus
 import sqlalchemy as sa
 from flask import abort, current_app, jsonify, make_response, render_template, request
 
+from app.infrastructure.db.models import UserQuotaDebt
 from app.infrastructure.http.transactions.helpers import resolve_transaction_package_label
+from app.services.manual_debt_report_service import estimate_amount_rp_for_mb
 from app.utils.formatters import format_app_datetime_display
 
 
@@ -222,6 +224,47 @@ def export_transactions_impl(
     select,
     desc,
 ):
+    def _load_open_manual_debts(user_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[UserQuotaDebt]]:
+        if not user_ids:
+            return {}
+
+        debts = db.session.scalars(
+            select(UserQuotaDebt)
+            .where(UserQuotaDebt.user_id.in_(user_ids), UserQuotaDebt.is_paid.is_(False))
+            .order_by(UserQuotaDebt.created_at.desc())
+        ).all()
+
+        grouped: dict[uuid.UUID, list[UserQuotaDebt]] = {}
+        for debt in debts:
+            grouped.setdefault(debt.user_id, []).append(debt)
+        return grouped
+
+    def _estimate_manual_debt_rp(open_debts: list[UserQuotaDebt]) -> tuple[int, bool]:
+        total_rp = 0
+        has_unlimited_debt = False
+
+        for debt in open_debts:
+            amount_mb = int(getattr(debt, 'amount_mb', 0) or 0)
+            paid_mb = int(getattr(debt, 'paid_mb', 0) or 0)
+            remaining_mb = max(0, amount_mb - paid_mb)
+            if remaining_mb <= 0:
+                continue
+
+            note_text = str(getattr(debt, 'note', '') or '').lower()
+            has_unlimited_debt = has_unlimited_debt or (amount_mb <= 1 and 'unlimited' in note_text)
+
+            explicit_price_rp = getattr(debt, 'price_rp', None)
+            if explicit_price_rp is not None and amount_mb > 0:
+                try:
+                    total_rp += max(0, int(round(int(explicit_price_rp) * (remaining_mb / float(amount_mb)))))
+                    continue
+                except Exception:
+                    pass
+
+            total_rp += int(estimate_amount_rp_for_mb(remaining_mb) or 0)
+
+        return total_rp, has_unlimited_debt
+
     try:
         fmt = str(request.args.get('format', '') or '').strip().lower()
         start_date_str = str(request.args.get('start_date', '') or '').strip()
@@ -335,21 +378,18 @@ def export_transactions_impl(
         manual_debt_num = sa.case((debt_not_applicable, sa.cast(0, sa.Numeric)), else_=manual_debt_raw)
         total_debt = auto_debt + manual_debt_num
 
-        debt_users = db.session.execute(
-            select(
-                User.full_name,
-                User.phone_number,
-                auto_debt.label('auto_debt_mb'),
-                manual_debt_num.label('manual_debt_mb'),
-                total_debt.label('total_debt_mb'),
-            )
+        debt_users_orm = db.session.scalars(
+            select(User)
             .where(
-                User.role.in_([UserRole.USER, UserRole.KOMANDAN]),
+                User.role == UserRole.USER,
                 User.is_active.is_(True),
                 User.approval_status == ApprovalStatus.APPROVED,
-                total_debt > 0,
+                sa.or_(
+                    sa.and_(User.is_unlimited_user.is_(False), total_debt > 0),
+                    sa.and_(User.is_unlimited_user.is_(True), User.manual_debt_mb > 0),
+                ),
             )
-            .order_by(total_debt.desc(), User.full_name.asc())
+            .order_by(User.full_name.asc())
             .limit(100)
         ).all()
 
@@ -370,72 +410,64 @@ def export_transactions_impl(
                     label = period.strftime('%Y') if hasattr(period, 'strftime') else str(period)
                 period_summaries.append({'period': label, 'qty': int(row[1] or 0), 'revenue': int(row[2] or 0)})
 
-        debt_items = [
-            {
-                'full_name': r[0],
-                'phone_number': format_to_local_phone(r[1] or '') or (r[1] or ''),
-                'debt_total_mb': float(r[4] or 0),
-                'debt_auto_mb': float(r[2] or 0),
-                'debt_manual_mb': float(r[3] or 0),
-            }
-            for r in debt_users
-        ]
+        open_debt_map = _load_open_manual_debts([user.id for user in debt_users_orm])
+        debt_items: list[dict[str, object]] = []
+        estimated_debt_total_rp = 0
+        total_debt_users_count = 0
+        total_debt_manual_mb = 0.0
+        total_debt_auto_mb = 0.0
 
-        ref_packages = []
+        for user in debt_users_orm:
+            open_debts = open_debt_map.get(user.id, [])
+            auto_debt_mb = 0.0 if bool(getattr(user, 'is_unlimited_user', False)) else float(getattr(user, 'quota_debt_auto_mb', 0) or 0)
+            manual_debt_mb = float(getattr(user, 'quota_debt_manual_mb', getattr(user, 'manual_debt_mb', 0)) or 0)
+            manual_debt_rp, is_unlimited_debt = _estimate_manual_debt_rp(open_debts)
+            if manual_debt_mb > 0 and manual_debt_rp <= 0:
+                manual_debt_rp = int(estimate_amount_rp_for_mb(manual_debt_mb) or 0)
+
+            auto_debt_rp = int(estimate_amount_rp_for_mb(auto_debt_mb) or 0)
+            debt_estimated_rp = int(auto_debt_rp + manual_debt_rp)
+            debt_total_mb_value = float(auto_debt_mb + manual_debt_mb)
+
+            debt_items.append(
+                {
+                    'full_name': str(getattr(user, 'full_name', '') or ''),
+                    'phone_number': format_to_local_phone(getattr(user, 'phone_number', '') or '') or (getattr(user, 'phone_number', '') or ''),
+                    'debt_total_mb': debt_total_mb_value,
+                    'debt_auto_mb': auto_debt_mb,
+                    'debt_manual_mb': manual_debt_mb,
+                    'debt_estimated_rp': debt_estimated_rp,
+                    'is_unlimited_debt': is_unlimited_debt,
+                }
+            )
+
+            estimated_debt_total_rp += debt_estimated_rp
+            total_debt_users_count += 1
+            total_debt_manual_mb += manual_debt_mb
+            total_debt_auto_mb += auto_debt_mb
+
+        def _debt_item_sort_key(item: dict[str, object]) -> tuple[float, str]:
+            raw_total = item.get('debt_total_mb')
+            total_value = float(raw_total) if isinstance(raw_total, (int, float)) else 0.0
+            return (-total_value, str(item.get('full_name') or '').lower())
+
+        debt_items.sort(key=_debt_item_sort_key)
+
+        estimate_base_package_name = None
         try:
-            ref_packages = (
-                db.session.execute(
-                    select(Package)
-                    .where(Package.is_active.is_(True))
-                    .where(Package.data_quota_gb.is_not(None))
-                    .where(Package.data_quota_gb > 0)
-                    .where(Package.price.is_not(None))
-                    .where(Package.price > 0)
-                    .order_by(Package.data_quota_gb.asc(), Package.price.asc())
-                )
-                .scalars()
-                .all()
-            )
+            ref_pkg = db.session.execute(
+                select(Package)
+                .where(Package.is_active.is_(True))
+                .where(Package.data_quota_gb.is_not(None))
+                .where(Package.data_quota_gb > 0)
+                .where(Package.price.is_not(None))
+                .where(Package.price > 0)
+                .order_by(Package.data_quota_gb.asc(), Package.price.asc())
+                .limit(1)
+            ).scalar_one_or_none()
+            estimate_base_package_name = str(getattr(ref_pkg, 'name', '') or '') or None if ref_pkg else None
         except Exception:
-            ref_packages = []
-
-        def _pick_ref_pkg_for_mb(value_mb: float):
-            try:
-                mb = float(value_mb or 0)
-            except Exception:
-                mb = 0.0
-            if mb <= 0 or not ref_packages:
-                return None
-            debt_gb = mb / 1024.0
-            for pkg in ref_packages:
-                try:
-                    if float(pkg.data_quota_gb or 0) >= debt_gb:
-                        return pkg
-                except Exception:
-                    continue
-            return ref_packages[-1] if ref_packages else None
-
-        total_debt_mb_sum = float(sum(float(item.get('debt_total_mb') or 0) for item in debt_items))
-        total_ref_pkg = _pick_ref_pkg_for_mb(total_debt_mb_sum)
-        cheapest_pkg_price = int(getattr(total_ref_pkg, 'price', 0) or 0) if total_ref_pkg else None
-        cheapest_pkg_quota_gb = float(getattr(total_ref_pkg, 'data_quota_gb', 0) or 0) if total_ref_pkg else None
-        cheapest_pkg_name = str(getattr(total_ref_pkg, 'name', '') or '') or None if total_ref_pkg else None
-        est_total = estimate_debt_rp_from_cheapest_package(
-            debt_mb=total_debt_mb_sum,
-            cheapest_package_price_rp=cheapest_pkg_price,
-            cheapest_package_quota_gb=cheapest_pkg_quota_gb,
-            cheapest_package_name=cheapest_pkg_name,
-        )
-        estimated_debt_total_rp = int(est_total.estimated_rp_rounded or 0)
-        for item in debt_items:
-            item_ref = _pick_ref_pkg_for_mb(float(item.get('debt_total_mb') or 0))
-            est = estimate_debt_rp_from_cheapest_package(
-                debt_mb=float(item.get('debt_total_mb') or 0),
-                cheapest_package_price_rp=int(getattr(item_ref, 'price', 0) or 0) if item_ref else None,
-                cheapest_package_quota_gb=float(getattr(item_ref, 'data_quota_gb', 0) or 0) if item_ref else None,
-                cheapest_package_name=str(getattr(item_ref, 'name', '') or '') or None if item_ref else None,
-            )
-            item['debt_estimated_rp'] = int(est.estimated_rp_rounded or 0)
+            estimate_base_package_name = None
 
         context = {
             'start_date': start_date_str,
@@ -447,7 +479,7 @@ def export_transactions_impl(
             'total_amount': total_amount,
             'estimated_debt_total_rp': estimated_debt_total_rp,
             'estimated_revenue_plus_debt_rp': int(total_amount or 0) + int(estimated_debt_total_rp or 0),
-            'estimate_base_package_name': cheapest_pkg_name,
+            'estimate_base_package_name': estimate_base_package_name,
             'group_by': group_by,
             'period_summaries': period_summaries,
             'packages': [
@@ -458,6 +490,9 @@ def export_transactions_impl(
                 {'method': (r[0] or '(unknown)'), 'qty': int(r[1] or 0), 'revenue': int(r[2] or 0)} for r in method_rows
             ],
             'debt_users': debt_items,
+            'debt_users_total_count': total_debt_users_count,
+            'debt_users_total_manual_mb': total_debt_manual_mb,
+            'debt_users_total_auto_mb': total_debt_auto_mb,
             'business_name': current_app.config.get('BUSINESS_NAME', 'LPSaring'),
             'business_phone': current_app.config.get('BUSINESS_PHONE', ''),
             'business_address': current_app.config.get('BUSINESS_ADDRESS', ''),

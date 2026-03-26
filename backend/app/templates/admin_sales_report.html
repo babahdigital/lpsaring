@@ -49,23 +49,24 @@
 
     .summary-row {
       margin-top: 12px;
-      font-size: 0;
+      display: table;
+      width: 100%;
+      table-layout: fixed;
+      border-spacing: 10px 0;
+      margin-left: -10px;
+      page-break-inside: avoid;
     }
 
     .summary-card {
-      display: inline-block;
+      display: table-cell;
       vertical-align: top;
-      width: calc(25% - 7.5px);
       min-height: 74px;
-      margin-right: 10px;
       padding: 10px 12px;
       border: 1px solid #d8dee9;
       border-radius: 10px;
       background: #f8fafc;
-      page-break-inside: avoid;
+      overflow: hidden;
     }
-
-    .summary-card:last-child { margin-right: 0; }
 
     .summary-card.revenue {
       background: #f5f9ff;
@@ -94,11 +95,12 @@
     .summary-value {
       display: block;
       margin-top: 5px;
-      font-size: 15px;
+      font-size: 14px;
       line-height: 1.15;
       font-weight: 700;
       color: #15253f;
-      white-space: nowrap;
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
 
     .summary-meta {
@@ -110,22 +112,24 @@
 
     .insight-row {
       margin-top: 8px;
-      font-size: 0;
+      display: table;
+      width: 100%;
+      table-layout: fixed;
+      border-spacing: 10px 0;
+      margin-left: -10px;
+      page-break-inside: avoid;
     }
 
     .insight-card {
-      display: inline-block;
+      display: table-cell;
       vertical-align: top;
-      width: calc(33.333% - 6.7px);
       min-height: 48px;
-      margin-right: 10px;
       padding: 8px 10px;
       border: 1px solid #d8dee9;
       border-radius: 8px;
       background: #fff;
+      overflow: hidden;
     }
-
-    .insight-card:last-child { margin-right: 0; }
 
     .insight-label {
       display: block;
@@ -153,7 +157,6 @@
 
     .section {
       margin-top: 14px;
-      page-break-inside: avoid;
     }
 
     .section-title {
@@ -171,6 +174,7 @@
       border-radius: 10px;
       overflow: hidden;
       background: #fff;
+      page-break-inside: auto;
     }
 
     table {
@@ -216,6 +220,7 @@
     }
 
     tr:last-child td { border-bottom: 0; }
+    tr { page-break-inside: avoid; }
 
     td {
       color: #172033;
@@ -259,6 +264,12 @@
       color: #1d4ed8;
     }
 
+    .badge-unlimited {
+      background: #dbeafe;
+      border-color: #93c5fd;
+      color: #1e40af;
+    }
+
     .empty-state {
       padding: 18px;
       color: #667085;
@@ -266,6 +277,16 @@
     }
 
     .note {
+      margin-top: 6px;
+      color: #667085;
+      font-size: 8px;
+    }
+
+    .debt-table td:first-child {
+      line-height: 1.55;
+    }
+
+    .debt-summary {
       margin-top: 6px;
       color: #667085;
       font-size: 8px;
@@ -325,7 +346,7 @@
         </div>
         <div class="insight-card">
           <span class="insight-label">Snapshot User Debt</span>
-          <span class="insight-value">{{ debt_users | length }} user</span>
+          <span class="insight-value">{{ debt_users_total_count | format_number }} user</span>
           <span class="insight-sub">Tampil maksimum 100 user saat PDF dibuat.</span>
         </div>
       </div>
@@ -437,7 +458,7 @@
       <div class="section">
         <div class="section-title">Daftar User Punya Debt (Saat Laporan Dibuat)</div>
         <div class="table-wrap">
-          <table>
+          <table class="debt-table">
             <colgroup>
               <col class="debt-name">
               <col class="debt-phone">
@@ -462,18 +483,20 @@
                   <td>
                     <span class="ellipsis">{{ u.full_name }}</span>
                     {% if u.debt_auto_mb > 0 %}<span class="badge badge-auto">Auto</span>{% endif %}
-                    {% if u.debt_manual_mb > 0 %}<span class="badge badge-manual">Manual</span>{% endif %}
+                    {% if u.debt_manual_mb > 0 and not u.is_unlimited_debt %}<span class="badge badge-manual">Manual</span>{% endif %}
+                    {% if u.is_unlimited_debt %}<span class="badge badge-unlimited">Unlimited</span>{% endif %}
                   </td>
                   <td class="nowrap">{{ u.phone_number }}</td>
                   <td class="num nowrap">{{ fmt_quota(u.debt_total_mb) }}</td>
                   <td class="num nowrap">{{ fmt_quota(u.debt_auto_mb) }}</td>
-                  <td class="num nowrap">{{ fmt_quota(u.debt_manual_mb) }}</td>
+                  <td class="num nowrap">{% if u.is_unlimited_debt %}<span class="badge badge-unlimited">Unlimited</span>{% else %}{{ fmt_quota(u.debt_manual_mb) }}{% endif %}</td>
                   <td class="num nowrap">Rp {{ fmt_rp(u.debt_estimated_rp) }}</td>
                 </tr>
               {% endfor %}
             </tbody>
           </table>
         </div>
+        <div class="debt-summary">Snapshot debt ini mengikuti builder yang sama dengan report debt bulk: debt manual memakai nominal item terbuka yang aktual bila tersedia, sedangkan debt otomatis tetap memakai nilai referensi pro-rata.</div>
       </div>
       <div class="note">Satuan debt otomatis KB/MB/GB (1 GB = 1024 MB). Debt otomatis memakai nilai referensi pro-rata dari paket aktif termurah: {{ estimate_base_package_name or '-' }}. Debt manual mengikuti nominal item yang masih tercatat bila tersedia.</div>
     {% endif %}
