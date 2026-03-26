@@ -564,7 +564,7 @@ def _resolve_managed_status_lists() -> List[str]:
 
 
 def _remove_managed_status_entries_for_ip(
-    api: object,
+    api: Any,
     ip_address: str,
     *,
     managed_status_lists: Optional[List[str]] = None,
@@ -603,7 +603,7 @@ def _comment_has_tag_value(comment_text: str, tag_name: str, expected_value: str
     return comment_text.endswith(trailing_token)
 
 
-def _is_status_entry_owned_by_user(comment: Any, *, user_id: str, username_08: str) -> bool:
+def _is_status_entry_owned_by_user(comment: Any, *, user_id: str, username_08: Optional[str]) -> bool:
     comment_text = str(comment or "").strip()
     if "lpsaring|status=" not in comment_text:
         return False
@@ -646,7 +646,7 @@ def _build_owned_status_entries_snapshot() -> Dict[str, Any]:
 
 
 def _snapshot_owned_status_entries_for_prune(
-    api: object,
+    api: Any,
     *,
     managed_status_lists: Optional[List[str]] = None,
 ) -> tuple[bool, Dict[str, Any]]:
@@ -707,7 +707,7 @@ def _collect_snapshot_status_entries_for_user(
     snapshot: Dict[str, Any],
     *,
     user_id: str,
-    username_08: str,
+    username_08: Optional[str],
 ) -> List[tuple[str, str]]:
     entries: set[tuple[str, str]] = set()
     if user_id:
@@ -799,7 +799,7 @@ def _status_comment_matches_expected_tags(
     comment: Any,
     *,
     status_value: str,
-    username_08: str,
+    username_08: Optional[str],
     user_uid: str,
     role_value: str,
     ip_address: Optional[str] = None,
@@ -825,7 +825,7 @@ def _status_comment_matches_expected_tags(
 
 
 def _prune_stale_status_entries_for_user(
-    api: object,
+    api: Any,
     user: User,
     keep_ips: Optional[List[str]] = None,
     *,
@@ -1063,7 +1063,7 @@ def _emit_policy_binding_mismatch_metrics(user: User, ip_binding_map: Optional[D
 
 
 def _self_heal_policy_binding_for_user(
-    api: object,
+    api: Any,
     user: User,
     ip_binding_map: Optional[Dict[str, Dict[str, Any]]],
     host_usage_map: Optional[Dict[str, Dict[str, Any]]],
@@ -1165,7 +1165,7 @@ def _self_heal_policy_binding_for_user(
 
 
 def _self_heal_policy_dhcp_for_user(
-    api: object,
+    api: Any,
     user: User,
     *,
     host_usage_map: Optional[Dict[str, Dict[str, Any]]],
@@ -1947,9 +1947,9 @@ def _send_access_status_notification(
 
 
 def _sync_address_list_status(
-    api: object,
+    api: Any,
     user: User,
-    username_08: str,
+    username_08: Optional[str],
     remaining_mb: float,
     remaining_percent: float,
     is_expired: bool,
@@ -2039,6 +2039,8 @@ def _sync_address_list_status(
     )
     if list_unauthorized and list_unauthorized not in other_lists:
         other_lists.append(list_unauthorized)
+    if not username_08:
+        return False
     ok, msg = sync_address_list_for_user(
         api_connection=api,
         username=username_08,
@@ -2115,7 +2117,7 @@ def _sync_address_list_status(
 
 
 def _sync_address_list_status_for_ip(
-    api: object,
+    api: Any,
     user: User,
     ip_address: str,
     remaining_mb: float,
@@ -3096,11 +3098,11 @@ def _log_system_cleanup_action(user: "User", reason: str, action: str) -> None:
 
 
 def _remove_owned_status_entries_for_ip(
-    api: object,
+    api: Any,
     ip_address: str,
     *,
     user_id: str,
-    username_08: str,
+    username_08: Optional[str],
 ) -> int:
     """Hapus address-list entries HANYA jika comment menunjukkan milik user tertentu.
 

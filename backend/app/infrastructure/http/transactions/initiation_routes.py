@@ -288,6 +288,162 @@ def _try_reuse_package_tx(
     return jsonify(payload), HTTPStatus.OK
 
 
+def _parse_manual_debt_id_from_request(req_data: dict) -> uuid.UUID | None:
+    """Parse and validate manual_debt_id from request data."""
+    raw = req_data.get("manual_debt_id")
+    if raw is None:
+        return None
+    try:
+        return uuid.UUID(str(raw))
+    except Exception:
+        abort(HTTPStatus.UNPROCESSABLE_ENTITY, description="manual_debt_id tidak valid.")
+
+
+def _validate_debt_user(session, current_user_id: uuid.UUID):
+    """Load user and validate eligibility for debt settlement.
+
+    Returns (user, debt_total_mb).
+    """
+    user = session.get(User, current_user_id)
+    if not user or not user.is_active or user.approval_status != ApprovalStatus.APPROVED:
+        abort(HTTPStatus.FORBIDDEN, description="Akun Anda belum aktif atau disetujui untuk melakukan transaksi.")
+
+    if bool(getattr(user, "is_unlimited_user", False)):
+        manual_debt_mb = int(getattr(user, "quota_debt_manual_mb", 0) or 0)
+        if manual_debt_mb <= 0:
+            abort(HTTPStatus.BAD_REQUEST, description="Pengguna unlimited tidak memiliki tunggakan kuota.")
+
+    debt_total_mb = float(getattr(user, "quota_debt_total_mb", 0) or 0)
+    if debt_total_mb <= 0:
+        abort(HTTPStatus.BAD_REQUEST, description="Tidak ada tunggakan kuota untuk dilunasi.")
+
+    return user, debt_total_mb
+
+
+def _load_manual_debt_item(session, user_id, manual_debt_id: uuid.UUID | None):
+    """Load and validate a specific manual debt item.
+
+    Returns (manual_item, remaining_mb).
+    """
+    if manual_debt_id is None:
+        return None, 0.0
+
+    manual_item = (
+        session.query(UserQuotaDebt)
+        .filter(UserQuotaDebt.id == manual_debt_id)
+        .filter(UserQuotaDebt.user_id == user_id)
+        .first()
+    )
+    if manual_item is None:
+        abort(HTTPStatus.NOT_FOUND, description="Hutang manual tidak ditemukan.")
+    try:
+        amount = int(getattr(manual_item, "amount_mb", 0) or 0)
+        paid = int(getattr(manual_item, "paid_mb", 0) or 0)
+    except Exception:
+        amount, paid = 0, 0
+    remaining_mb = float(max(0, amount - paid))
+    if remaining_mb <= 0:
+        abort(HTTPStatus.BAD_REQUEST, description="Hutang manual tersebut sudah lunas.")
+
+    return manual_item, remaining_mb
+
+
+def _calculate_debt_gross_amount(
+    manual_debt_id: uuid.UUID | None,
+    manual_item,
+    manual_item_remaining_mb: float,
+    estimate_debt_rp_for_mb,
+    estimate_user_debt_rp,
+    user,
+) -> int:
+    """Calculate the gross Rupiah amount for a debt settlement transaction."""
+    if manual_debt_id is not None and manual_item is not None:
+        explicit_price_rp = getattr(manual_item, "price_rp", None)
+        if explicit_price_rp is not None and int(explicit_price_rp) > 0:
+            return int(explicit_price_rp)
+        return int(estimate_debt_rp_for_mb(manual_item_remaining_mb) or 0)
+    return int(estimate_user_debt_rp(user) or 0)
+
+
+def _build_debt_response_payload(
+    tx,
+    provider_mode: str,
+    generate_transaction_status_token,
+    status_token: str | None = None,
+) -> dict:
+    """Build response payload dict for a debt settlement transaction."""
+    response_data = InitiateDebtSettlementResponseSchema.model_validate(tx, from_attributes=True)
+    payload = response_data.model_dump(by_alias=False, exclude_none=True)
+    payload["provider_mode"] = provider_mode
+    payload["expiry_time_display"] = format_app_datetime_display(payload.get("expiry_time"), fallback="-")
+
+    base_callback_url = (
+        current_app.config.get("APP_PUBLIC_BASE_URL")
+        or current_app.config.get("FRONTEND_URL")
+        or current_app.config.get("APP_LINK_USER")
+        or ""
+    )
+    token = status_token
+    if token is None:
+        try:
+            token = generate_transaction_status_token(tx.midtrans_order_id)
+        except Exception:
+            token = None
+
+    if base_callback_url and token:
+        payload["status_token"] = token
+        payload["status_url"] = (
+            f"{str(base_callback_url).rstrip('/')}/payment/status?order_id={tx.midtrans_order_id}&t={token}"
+        )
+    return payload
+
+
+def _try_reuse_debt_settlement_tx(
+    session,
+    user,
+    debt_prefixes: list[str],
+    manual_debt_id: uuid.UUID | None,
+    provider_mode: str,
+    now_utc,
+    tx_has_snap_initiation_data,
+    tx_has_core_initiation_data,
+    generate_transaction_status_token,
+    encode_uuid_base64url,
+    encode_uuid_base32,
+):
+    """Try to find and reuse an existing pending debt settlement transaction.
+
+    Returns (response, status_code) tuple or None.
+    """
+    debt_like_filters = [Transaction.midtrans_order_id.like(f"{p}-%") for p in debt_prefixes]
+
+    existing_tx_query = (
+        session.query(Transaction)
+        .filter(Transaction.user_id == user.id)
+        .filter(sa.or_(*debt_like_filters))
+        .filter(Transaction.status.in_([TransactionStatus.UNKNOWN, TransactionStatus.PENDING]))
+        .filter(sa.or_(Transaction.expiry_time.is_(None), Transaction.expiry_time > now_utc))
+        .order_by(Transaction.created_at.desc())
+    )
+
+    if manual_debt_id is not None:
+        manual_like_filters = _build_manual_debt_like_filters(
+            debt_prefixes, manual_debt_id, encode_uuid_base64url, encode_uuid_base32
+        )
+        existing_tx_query = existing_tx_query.filter(sa.or_(*manual_like_filters))
+
+    existing_tx = existing_tx_query.first()
+    if not existing_tx:
+        return None
+
+    can_reuse = tx_has_snap_initiation_data(existing_tx) if provider_mode == "snap" else tx_has_core_initiation_data(existing_tx)
+    if not can_reuse:
+        return None
+
+    payload = _build_debt_response_payload(existing_tx, provider_mode, generate_transaction_status_token)
+    return jsonify(payload), HTTPStatus.OK
+
+
 def _build_manual_debt_like_filters(
     debt_prefixes: list[str],
     manual_debt_id: uuid.UUID,
@@ -587,13 +743,7 @@ def initiate_debt_settlement_transaction_impl(
     session = db.session
     try:
         req_data = request.get_json(silent=True) or {}
-        manual_debt_id_raw = req_data.get("manual_debt_id")
-        manual_debt_id: uuid.UUID | None = None
-        if manual_debt_id_raw is not None:
-            try:
-                manual_debt_id = uuid.UUID(str(manual_debt_id_raw))
-            except Exception:
-                abort(HTTPStatus.UNPROCESSABLE_ENTITY, description="manual_debt_id tidak valid.")
+        manual_debt_id = _parse_manual_debt_id_from_request(req_data)
 
         provider_mode = get_payment_provider_mode()
         requested_method = normalize_payment_method(req_data.get("payment_method"))
@@ -612,50 +762,13 @@ def initiate_debt_settlement_transaction_impl(
                 if not is_core_api_va_bank_enabled(requested_va_bank, enabled_core_va_banks):
                     abort(HTTPStatus.UNPROCESSABLE_ENTITY, description="Bank VA tidak tersedia.")
 
-        user = session.get(User, current_user_id)
-        if not user or not user.is_active or user.approval_status != ApprovalStatus.APPROVED:
-            abort(HTTPStatus.FORBIDDEN, description="Akun Anda belum aktif atau disetujui untuk melakukan transaksi.")
+        user, debt_total_mb = _validate_debt_user(session, current_user_id)
+        manual_item, manual_item_remaining_mb = _load_manual_debt_item(session, user.id, manual_debt_id)
 
-        if bool(getattr(user, "is_unlimited_user", False)):
-            # Unlimited users can still have manual debt items — only block if no manual debt exists
-            manual_debt_mb = int(getattr(user, "quota_debt_manual_mb", 0) or 0)
-            if manual_debt_mb <= 0:
-                abort(HTTPStatus.BAD_REQUEST, description="Pengguna unlimited tidak memiliki tunggakan kuota.")
-
-        debt_total_mb = float(getattr(user, "quota_debt_total_mb", 0) or 0)
-        if debt_total_mb <= 0:
-            abort(HTTPStatus.BAD_REQUEST, description="Tidak ada tunggakan kuota untuk dilunasi.")
-
-        manual_item = None
-        manual_item_remaining_mb = 0.0
-        if manual_debt_id is not None:
-            manual_item = (
-                session.query(UserQuotaDebt)
-                .filter(UserQuotaDebt.id == manual_debt_id)
-                .filter(UserQuotaDebt.user_id == user.id)
-                .first()
-            )
-            if manual_item is None:
-                abort(HTTPStatus.NOT_FOUND, description="Hutang manual tidak ditemukan.")
-            try:
-                amount = int(getattr(manual_item, "amount_mb", 0) or 0)
-                paid = int(getattr(manual_item, "paid_mb", 0) or 0)
-            except Exception:
-                amount = 0
-                paid = 0
-            manual_item_remaining_mb = float(max(0, amount - paid))
-            if manual_item_remaining_mb <= 0:
-                abort(HTTPStatus.BAD_REQUEST, description="Hutang manual tersebut sudah lunas.")
-
-        # Determine gross amount: prefer explicit price_rp from the debt item (e.g., unlimited packages)
-        if manual_debt_id is not None and manual_item is not None:
-            explicit_price_rp = getattr(manual_item, "price_rp", None)
-            if explicit_price_rp is not None and int(explicit_price_rp) > 0:
-                gross_amount = int(explicit_price_rp)
-            else:
-                gross_amount = int(estimate_debt_rp_for_mb(manual_item_remaining_mb) or 0)
-        else:
-            gross_amount = int(estimate_user_debt_rp(user) or 0)
+        gross_amount = _calculate_debt_gross_amount(
+            manual_debt_id, manual_item, manual_item_remaining_mb,
+            estimate_debt_rp_for_mb, estimate_user_debt_rp, user,
+        )
         if gross_amount <= 0:
             abort(
                 HTTPStatus.SERVICE_UNAVAILABLE,
@@ -671,47 +784,14 @@ def initiate_debt_settlement_transaction_impl(
         local_expiry_time = now_utc + timedelta(minutes=expiry_minutes)
 
         debt_prefixes = get_debt_order_prefixes()
-        debt_like_filters = [Transaction.midtrans_order_id.like(f"{p}-%") for p in debt_prefixes]
 
-        existing_tx_query = (
-            session.query(Transaction)
-            .filter(Transaction.user_id == user.id)
-            .filter(sa.or_(*debt_like_filters))
-            .filter(Transaction.status.in_([TransactionStatus.UNKNOWN, TransactionStatus.PENDING]))
-            .filter(sa.or_(Transaction.expiry_time.is_(None), Transaction.expiry_time > now_utc))
-            .order_by(Transaction.created_at.desc())
+        reuse_resp = _try_reuse_debt_settlement_tx(
+            session, user, debt_prefixes, manual_debt_id, provider_mode, now_utc,
+            tx_has_snap_initiation_data, tx_has_core_initiation_data,
+            generate_transaction_status_token, encode_uuid_base64url, encode_uuid_base32,
         )
-
-        if manual_debt_id is not None:
-            manual_like_filters = _build_manual_debt_like_filters(
-                debt_prefixes, manual_debt_id, encode_uuid_base64url, encode_uuid_base32
-            )
-            existing_tx_query = existing_tx_query.filter(sa.or_(*manual_like_filters))
-
-        existing_tx = existing_tx_query.first()
-        if existing_tx:
-            can_reuse = tx_has_snap_initiation_data(existing_tx) if provider_mode == "snap" else tx_has_core_initiation_data(existing_tx)
-            if can_reuse:
-                response_data = InitiateDebtSettlementResponseSchema.model_validate(existing_tx, from_attributes=True)
-                payload = response_data.model_dump(by_alias=False, exclude_none=True)
-                payload["provider_mode"] = provider_mode
-                payload["expiry_time_display"] = format_app_datetime_display(payload.get("expiry_time"), fallback="-")
-                try:
-                    status_token = generate_transaction_status_token(existing_tx.midtrans_order_id)
-                    base_callback_url = (
-                        current_app.config.get("APP_PUBLIC_BASE_URL")
-                        or current_app.config.get("FRONTEND_URL")
-                        or current_app.config.get("APP_LINK_USER")
-                        or ""
-                    )
-                    if base_callback_url:
-                        payload["status_token"] = status_token
-                        payload["status_url"] = (
-                            f"{str(base_callback_url).rstrip('/')}/payment/status?order_id={existing_tx.midtrans_order_id}&t={status_token}"
-                        )
-                except Exception:
-                    pass
-                return jsonify(payload), HTTPStatus.OK
+        if reuse_resp is not None:
+            return reuse_resp
 
         debt_prefix = get_primary_debt_order_prefix()
         if manual_debt_id is not None:
@@ -795,8 +875,7 @@ def initiate_debt_settlement_transaction_impl(
                 extract_va_number, extract_action_url, is_qr_payment_type, extract_qr_code_url,
             )
 
-        expiry_time = new_transaction.expiry_time
-
+        _expiry = new_transaction.expiry_time
         log_transaction_event(
             session=session,
             transaction=new_transaction,
@@ -807,7 +886,7 @@ def initiate_debt_settlement_transaction_impl(
                 "order_id": order_id,
                 "amount": int(gross_amount),
                 "debt_total_mb": float(debt_total_mb),
-                "expiry_time": expiry_time.isoformat() if expiry_time is not None else None,
+                "expiry_time": _expiry.isoformat() if _expiry is not None else None,
                 "provider_mode": provider_mode,
                 "requested_method": requested_method,
                 "requested_va_bank": requested_va_bank,
@@ -822,11 +901,7 @@ def initiate_debt_settlement_transaction_impl(
         session.add(new_transaction)
         session.commit()
 
-        response_data = InitiateDebtSettlementResponseSchema.model_validate(new_transaction, from_attributes=True)
-        payload = response_data.model_dump(by_alias=False, exclude_none=True)
-        payload["provider_mode"] = provider_mode
-        payload["expiry_time_display"] = format_app_datetime_display(payload.get("expiry_time"), fallback="-")
-        payload["status_token"] = status_token
+        payload = _build_debt_response_payload(new_transaction, provider_mode, generate_transaction_status_token, status_token)
         payload["status_url"] = status_url
         return jsonify(payload), HTTPStatus.OK
     except HTTPException:

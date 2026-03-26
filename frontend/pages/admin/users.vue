@@ -202,6 +202,125 @@ type BillPaymentMethod = 'qris' | 'va' | 'gopay' | 'shopeepay'
 const billPaymentMethod = ref<BillPaymentMethod>('qris')
 const billVaBank = ref<'bni' | 'bca' | 'bri' | 'mandiri' | 'permata' | 'cimb'>('bni')
 
+const exportMenuOpen = ref(false)
+const exportLoading = ref(false)
+
+function generateCsvContent(rows: User[], columns: { key: string, header: string, format?: (u: User) => string }[]): string {
+  const header = columns.map(c => `"${c.header}"`).join(',')
+  const lines = rows.map(u =>
+    columns.map(c => {
+      const val = c.format ? c.format(u) : (u as any)[c.key] ?? ''
+      return `"${String(val).replace(/"/g, '""')}"`
+    }).join(','),
+  )
+  return `${header}\n${lines.join('\n')}`
+}
+
+function downloadCsv(content: string, filename: string) {
+  const bom = '\uFEFF'
+  const blob = new Blob([bom + content], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+const exportColumns: { key: string, header: string, format?: (u: User) => string }[] = [
+  { key: 'full_name', header: 'Nama' },
+  { key: 'phone_number', header: 'No. HP', format: u => formatPhoneNumberDisplay(u.phone_number) ?? '' },
+  { key: 'role', header: 'Peran', format: u => getRoleMeta(u.role).text },
+  { key: 'blok', header: 'Blok', format: u => u.blok ?? '-' },
+  { key: 'kamar', header: 'Kamar', format: u => u.kamar ?? '-' },
+  { key: 'approval_status', header: 'Status Approval', format: u => getStatusMeta(u.approval_status).text },
+  { key: 'is_active', header: 'Koneksi', format: u => u.is_active ? 'Aktif' : 'Inactive' },
+  { key: 'status_layanan', header: 'Layanan', format: u => getUserAccessMeta(u).text },
+  { key: 'total_quota_purchased_mb', header: 'Total Kuota (MB)' },
+  { key: 'total_quota_used_mb', header: 'Kuota Terpakai (MB)', format: u => String(Math.round(u.total_quota_used_mb)) },
+  { key: 'sisa_mb', header: 'Sisa Kuota (MB)', format: u => String(Math.max(0, Math.round(u.total_quota_purchased_mb - u.total_quota_used_mb))) },
+  { key: 'debt_total', header: 'Debt (MB)', format: u => String(getUserDebtTotalMb(u)) },
+  { key: 'quota_expiry_date', header: 'Masa Aktif', format: u => u.quota_expiry_date ? formatCreatedAt(u.quota_expiry_date) : '-' },
+  { key: 'created_at', header: 'Terdaftar', format: u => formatCreatedAt(u.created_at) },
+]
+
+async function fetchAllUsersForExport(filterParams?: Record<string, string>): Promise<User[]> {
+  const params = new URLSearchParams()
+  params.append('page', '1')
+  params.append('itemsPerPage', '10000')
+  params.append('sortBy', 'full_name')
+  params.append('sortOrder', 'asc')
+  if (filterParams) {
+    for (const [k, v] of Object.entries(filterParams))
+      params.append(k, v)
+  }
+  const response = await $api<{ items: User[], totalItems: number }>(`/admin/users?${params.toString()}`)
+  return response.items ?? []
+}
+
+async function exportDebtUsers() {
+  exportLoading.value = true
+  try {
+    const allUsers = await fetchAllUsersForExport({ status: 'debt' })
+    if (allUsers.length === 0) {
+      showSnackbar({ type: 'info', title: 'Export', text: 'Tidak ada pengguna dengan tunggakan.' })
+      return
+    }
+    const csv = generateCsvContent(allUsers, exportColumns)
+    const date = new Date().toISOString().split('T')[0]
+    downloadCsv(csv, `users_debt_${date}.csv`)
+    showSnackbar({ type: 'success', title: 'Export', text: `${allUsers.length} pengguna dengan debt di-export.` })
+  }
+  catch {
+    showSnackbar({ type: 'error', title: 'Export Gagal', text: 'Gagal mengekspor data pengguna.' })
+  }
+  finally {
+    exportLoading.value = false
+  }
+}
+
+async function exportByRole(role: string) {
+  exportLoading.value = true
+  try {
+    const allUsers = await fetchAllUsersForExport({ role })
+    if (allUsers.length === 0) {
+      showSnackbar({ type: 'info', title: 'Export', text: `Tidak ada pengguna dengan role ${role}.` })
+      return
+    }
+    const csv = generateCsvContent(allUsers, exportColumns)
+    const date = new Date().toISOString().split('T')[0]
+    downloadCsv(csv, `users_${role.toLowerCase()}_${date}.csv`)
+    showSnackbar({ type: 'success', title: 'Export', text: `${allUsers.length} ${role} di-export.` })
+  }
+  catch {
+    showSnackbar({ type: 'error', title: 'Export Gagal', text: 'Gagal mengekspor data pengguna.' })
+  }
+  finally {
+    exportLoading.value = false
+  }
+}
+
+async function exportAllUsers() {
+  exportLoading.value = true
+  try {
+    const allUsers = await fetchAllUsersForExport()
+    if (allUsers.length === 0) {
+      showSnackbar({ type: 'info', title: 'Export', text: 'Tidak ada data pengguna.' })
+      return
+    }
+    const csv = generateCsvContent(allUsers, exportColumns)
+    const date = new Date().toISOString().split('T')[0]
+    downloadCsv(csv, `users_all_${date}.csv`)
+    showSnackbar({ type: 'success', title: 'Export', text: `${allUsers.length} pengguna di-export.` })
+  }
+  catch {
+    showSnackbar({ type: 'error', title: 'Export Gagal', text: 'Gagal mengekspor data pengguna.' })
+  }
+  finally {
+    exportLoading.value = false
+  }
+}
+
 function parseCsvList(value: unknown): string[] {
   const raw = (value ?? '').toString().trim()
   if (raw === '')
@@ -872,15 +991,17 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
     </VCard>
 
     <VCard v-if="showCleanupPreviewSection" class="rounded-lg mb-6 admin-users__cleanupCard">
-      <VCardItem class="pb-2">
+      <VCardItem class="admin-users__cleanupCardItem pb-2">
         <template #prepend>
           <VAvatar color="warning" variant="tonal" rounded="lg" size="40">
             <VIcon icon="tabler-user-x" size="20" />
           </VAvatar>
         </template>
-        <VCardTitle>Preview Cleanup Nonaktif</VCardTitle>
+        <VCardTitle class="admin-users__cleanupCardTitle">
+          Preview Cleanup Nonaktif
+        </VCardTitle>
         <template #append>
-          <div class="d-flex align-center gap-2 flex-wrap justify-end">
+          <div class="admin-users__cleanupCardActions">
             <VBtn
               v-if="authStore.isSuperAdmin === true"
               size="small"
@@ -888,7 +1009,8 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
               color="secondary"
               to="/admin/operations"
             >
-              Halaman Operasional
+              <VIcon icon="tabler-settings" start size="16" />
+              <span class="admin-users__cleanupBtnLabel">Operasional</span>
             </VBtn>
             <VBtn
               class="admin-users__cleanup-refresh"
@@ -963,6 +1085,30 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
           >
             Tambah Akun
           </VBtn>
+
+          <VMenu :close-on-content-click="false" location="bottom center">
+            <template #activator="{ props: menuProps }">
+              <VBtn
+                v-bind="menuProps"
+                variant="tonal"
+                color="secondary"
+                prepend-icon="tabler-upload"
+                :height="44"
+                block
+                :loading="exportLoading"
+              >
+                Export Data
+              </VBtn>
+            </template>
+            <VList density="compact" min-width="220">
+              <VListItem prepend-icon="tabler-file-spreadsheet" title="Semua Pengguna" @click="exportAllUsers()" />
+              <VListItem prepend-icon="tabler-alert-triangle" title="Pengguna Debt" @click="exportDebtUsers()" />
+              <VDivider class="my-1" />
+              <VListItem prepend-icon="tabler-user" title="User" @click="exportByRole('USER')" />
+              <VListItem prepend-icon="tabler-shield" title="Komandan" @click="exportByRole('KOMANDAN')" />
+              <VListItem v-if="authStore.isAdmin || authStore.isSuperAdmin" prepend-icon="tabler-user-cog" title="Admin" @click="exportByRole('ADMIN')" />
+            </VList>
+          </VMenu>
         </div>
       </VCardText>
       <VDivider v-if="!isMobile" />
@@ -986,6 +1132,31 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
           >
             Tambah Akun
           </VBtn>
+
+          <VMenu v-model="exportMenuOpen" :close-on-content-click="false" location="bottom end">
+            <template #activator="{ props: menuProps }">
+              <VBtn
+                v-bind="menuProps"
+                variant="tonal"
+                color="secondary"
+                prepend-icon="tabler-upload"
+                :loading="exportLoading"
+                class="admin-users__exportBtn"
+              >
+                Export
+              </VBtn>
+            </template>
+            <VList density="compact" min-width="220">
+              <VListSubheader>Export Data Pengguna</VListSubheader>
+              <VListItem prepend-icon="tabler-file-spreadsheet" title="Semua Pengguna" @click="exportMenuOpen = false; exportAllUsers()" />
+              <VListItem prepend-icon="tabler-alert-triangle" title="Pengguna Debt" @click="exportMenuOpen = false; exportDebtUsers()" />
+              <VDivider class="my-1" />
+              <VListSubheader>Export per Role</VListSubheader>
+              <VListItem prepend-icon="tabler-user" title="User" @click="exportMenuOpen = false; exportByRole('USER')" />
+              <VListItem prepend-icon="tabler-shield" title="Komandan" @click="exportMenuOpen = false; exportByRole('KOMANDAN')" />
+              <VListItem v-if="authStore.isAdmin || authStore.isSuperAdmin" prepend-icon="tabler-user-cog" title="Admin" @click="exportMenuOpen = false; exportByRole('ADMIN')" />
+            </VList>
+          </VMenu>
         </div>
 
         <VRow align="center" class="mt-1" dense>
@@ -1456,6 +1627,33 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
   border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
 }
 
+.admin-users__cleanupCardItem {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-users__cleanupCardTitle {
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.3;
+}
+
+.admin-users__cleanupCardActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.admin-users__cleanupBtnLabel {
+  display: inline;
+}
+
+.admin-users__exportBtn {
+  flex: 0 0 auto;
+}
+
 .admin-users__cleanupOverview {
   display: grid;
   grid-template-columns: 1fr;
@@ -1733,6 +1931,29 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
 
   .admin-users__cleanupStats {
     grid-template-columns: 1fr;
+  }
+
+  .admin-users__cleanupCardItem {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .admin-users__cleanupCardItem :deep(.v-card-item__prepend) {
+    margin-bottom: 4px;
+  }
+
+  .admin-users__cleanupCardItem :deep(.v-card-item__append) {
+    width: 100%;
+    margin-inline-start: 0;
+  }
+
+  .admin-users__cleanupCardActions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .admin-users__cleanupCardActions .v-btn {
+    flex: 1 1 0;
   }
 
   .dialog-titlebar {
