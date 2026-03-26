@@ -321,6 +321,18 @@ async function exportAllUsers() {
   }
 }
 
+function exportPdfDebtUsers() {
+  window.open('/api/admin/users/export/debt-list', '_blank', 'noopener')
+}
+
+function exportPdfAllUsers() {
+  window.open('/api/admin/users/export/users-list', '_blank', 'noopener')
+}
+
+function exportPdfByRole(role: string) {
+  window.open(`/api/admin/users/export/users-list?role=${encodeURIComponent(role)}`, '_blank', 'noopener')
+}
+
 function parseCsvList(value: unknown): string[] {
   const raw = (value ?? '').toString().trim()
   if (raw === '')
@@ -1101,12 +1113,19 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
               </VBtn>
             </template>
             <VList density="compact" min-width="220">
-              <VListItem prepend-icon="tabler-file-spreadsheet" title="Semua Pengguna" @click="exportAllUsers()" />
-              <VListItem prepend-icon="tabler-alert-triangle" title="Pengguna Debt" @click="exportDebtUsers()" />
+              <VListSubheader>Export PDF</VListSubheader>
+              <VListItem prepend-icon="tabler-file-type-pdf" title="Semua Pengguna" @click="exportPdfAllUsers()" />
+              <VListItem prepend-icon="tabler-file-type-pdf" title="Pengguna Debt" @click="exportPdfDebtUsers()" />
+              <VListItem prepend-icon="tabler-file-type-pdf" title="User" @click="exportPdfByRole('USER')" />
+              <VListItem prepend-icon="tabler-file-type-pdf" title="Komandan" @click="exportPdfByRole('KOMANDAN')" />
+              <VListItem v-if="authStore.isAdmin || authStore.isSuperAdmin" prepend-icon="tabler-file-type-pdf" title="Admin" @click="exportPdfByRole('ADMIN')" />
               <VDivider class="my-1" />
-              <VListItem prepend-icon="tabler-user" title="User" @click="exportByRole('USER')" />
-              <VListItem prepend-icon="tabler-shield" title="Komandan" @click="exportByRole('KOMANDAN')" />
-              <VListItem v-if="authStore.isAdmin || authStore.isSuperAdmin" prepend-icon="tabler-user-cog" title="Admin" @click="exportByRole('ADMIN')" />
+              <VListSubheader>Export CSV</VListSubheader>
+              <VListItem prepend-icon="tabler-file-spreadsheet" title="Semua Pengguna" @click="exportAllUsers()" />
+              <VListItem prepend-icon="tabler-file-spreadsheet" title="Pengguna Debt" @click="exportDebtUsers()" />
+              <VListItem prepend-icon="tabler-file-spreadsheet" title="User" @click="exportByRole('USER')" />
+              <VListItem prepend-icon="tabler-file-spreadsheet" title="Komandan" @click="exportByRole('KOMANDAN')" />
+              <VListItem v-if="authStore.isAdmin || authStore.isSuperAdmin" prepend-icon="tabler-file-spreadsheet" title="Admin" @click="exportByRole('ADMIN')" />
             </VList>
           </VMenu>
         </div>
@@ -1147,14 +1166,19 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
               </VBtn>
             </template>
             <VList density="compact" min-width="220">
-              <VListSubheader>Export Data Pengguna</VListSubheader>
-              <VListItem prepend-icon="tabler-file-spreadsheet" title="Semua Pengguna" @click="exportMenuOpen = false; exportAllUsers()" />
-              <VListItem prepend-icon="tabler-alert-triangle" title="Pengguna Debt" @click="exportMenuOpen = false; exportDebtUsers()" />
+              <VListSubheader>Export PDF</VListSubheader>
+              <VListItem prepend-icon="tabler-file-type-pdf" title="Semua Pengguna" @click="exportMenuOpen = false; exportPdfAllUsers()" />
+              <VListItem prepend-icon="tabler-file-type-pdf" title="Pengguna Debt" @click="exportMenuOpen = false; exportPdfDebtUsers()" />
+              <VListItem prepend-icon="tabler-file-type-pdf" title="User" @click="exportMenuOpen = false; exportPdfByRole('USER')" />
+              <VListItem prepend-icon="tabler-file-type-pdf" title="Komandan" @click="exportMenuOpen = false; exportPdfByRole('KOMANDAN')" />
+              <VListItem v-if="authStore.isAdmin || authStore.isSuperAdmin" prepend-icon="tabler-file-type-pdf" title="Admin" @click="exportMenuOpen = false; exportPdfByRole('ADMIN')" />
               <VDivider class="my-1" />
-              <VListSubheader>Export per Role</VListSubheader>
-              <VListItem prepend-icon="tabler-user" title="User" @click="exportMenuOpen = false; exportByRole('USER')" />
-              <VListItem prepend-icon="tabler-shield" title="Komandan" @click="exportMenuOpen = false; exportByRole('KOMANDAN')" />
-              <VListItem v-if="authStore.isAdmin || authStore.isSuperAdmin" prepend-icon="tabler-user-cog" title="Admin" @click="exportMenuOpen = false; exportByRole('ADMIN')" />
+              <VListSubheader>Export CSV</VListSubheader>
+              <VListItem prepend-icon="tabler-file-spreadsheet" title="Semua Pengguna" @click="exportMenuOpen = false; exportAllUsers()" />
+              <VListItem prepend-icon="tabler-file-spreadsheet" title="Pengguna Debt" @click="exportMenuOpen = false; exportDebtUsers()" />
+              <VListItem prepend-icon="tabler-file-spreadsheet" title="User" @click="exportMenuOpen = false; exportByRole('USER')" />
+              <VListItem prepend-icon="tabler-file-spreadsheet" title="Komandan" @click="exportMenuOpen = false; exportByRole('KOMANDAN')" />
+              <VListItem v-if="authStore.isAdmin || authStore.isSuperAdmin" prepend-icon="tabler-file-spreadsheet" title="Admin" @click="exportMenuOpen = false; exportByRole('ADMIN')" />
             </VList>
           </VMenu>
         </div>
