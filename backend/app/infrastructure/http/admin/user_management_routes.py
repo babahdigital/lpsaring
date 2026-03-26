@@ -23,6 +23,7 @@ from app.infrastructure.db.models import (
     Transaction,
     TransactionStatus,
     UserDevice,
+    DailyUsageLog,
 )
 from app.infrastructure.http.decorators import admin_required
 from app.infrastructure.http.schemas.user_schemas import (
@@ -104,6 +105,119 @@ def _format_remaining_manual_debt_display(user: User, remaining_manual_debt_mb: 
     if open_unlimited > 0:
         return f"{open_unlimited} item Unlimited"
     return format_mb_to_gb(remaining_manual_debt_mb)
+
+
+def _normalize_bulk_blok_display(raw_blok: object) -> str | None:
+    raw_value = str(getattr(raw_blok, "value", raw_blok) or "").strip()
+    if not raw_value:
+        return None
+
+    compact = raw_value.replace("_", " ").strip()
+    if "." in compact:
+        compact = compact.split(".")[-1].strip()
+    compact = re.sub(r"(?i)^blok\s+", "", compact).strip()
+    if not compact:
+        return None
+
+    match = re.search(r"([A-Za-z0-9]+)$", compact)
+    normalized = match.group(1) if match else compact
+    return normalized.upper()
+
+
+def _normalize_bulk_kamar_display(raw_kamar: object) -> str | None:
+    raw_value = str(getattr(raw_kamar, "value", raw_kamar) or "").strip()
+    if not raw_value:
+        return None
+
+    compact = raw_value.replace(" ", "")
+    lowered = compact.lower()
+    if (lowered.startswith("kamar_") or lowered.startswith("kamr_")) and compact.split("_")[-1].isdigit():
+        return f"Kamar {compact.split('_')[-1]}"
+
+    digit_match = re.search(r"(\d+)$", compact)
+    if digit_match:
+        return f"Kamar {digit_match.group(1)}"
+
+    normalized = raw_value.replace("_", " ").strip()
+    if normalized.lower().startswith("kamar "):
+        return "Kamar " + normalized[6:].strip()
+    return normalized
+
+
+def _load_bulk_device_counts(user_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
+    if not user_ids:
+        return {}
+
+    rows = db.session.execute(
+        select(UserDevice.user_id, func.count(UserDevice.id))
+        .where(UserDevice.user_id.in_(user_ids))
+        .group_by(UserDevice.user_id)
+    ).all()
+    return {row[0]: int(row[1] or 0) for row in rows}
+
+
+def _load_bulk_daily_usage_totals(user_ids: list[uuid.UUID]) -> dict[uuid.UUID, float]:
+    if not user_ids:
+        return {}
+
+    rows = db.session.execute(
+        select(DailyUsageLog.user_id, func.coalesce(func.sum(DailyUsageLog.usage_mb), 0))
+        .where(DailyUsageLog.user_id.in_(user_ids))
+        .group_by(DailyUsageLog.user_id)
+    ).all()
+    return {row[0]: float(row[1] or 0.0) for row in rows}
+
+
+def _load_bulk_open_manual_debts(user_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[UserQuotaDebt]]:
+    if not user_ids:
+        return {}
+
+    debts = db.session.scalars(
+        select(UserQuotaDebt)
+        .where(UserQuotaDebt.user_id.in_(user_ids), UserQuotaDebt.is_paid.is_(False))
+        .order_by(UserQuotaDebt.created_at.desc())
+    ).all()
+
+    grouped: dict[uuid.UUID, list[UserQuotaDebt]] = {}
+    for debt in debts:
+        grouped.setdefault(debt.user_id, []).append(debt)
+    return grouped
+
+
+def _resolve_bulk_usage_display_mb(user: User, daily_usage_total_mb: float | None) -> float:
+    stored_usage_mb = float(getattr(user, "total_quota_used_mb", 0) or 0.0)
+    fallback_usage_mb = float(daily_usage_total_mb or 0.0)
+    role = getattr(user, "role", None)
+
+    if bool(getattr(user, "is_unlimited_user", False)) or role in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+        return max(stored_usage_mb, fallback_usage_mb)
+    return stored_usage_mb
+
+
+def _estimate_bulk_manual_debt_rp(open_debts: list[UserQuotaDebt]) -> tuple[int, bool]:
+    total_rp = 0
+    has_unlimited_debt = False
+
+    for debt in open_debts:
+        amount_mb = int(getattr(debt, "amount_mb", 0) or 0)
+        paid_mb = int(getattr(debt, "paid_mb", 0) or 0)
+        remaining_mb = max(0, amount_mb - paid_mb)
+        if remaining_mb <= 0:
+            continue
+
+        has_unlimited_debt = has_unlimited_debt or _is_unlimited_debt_item(debt)
+
+        explicit_price_rp = getattr(debt, "price_rp", None)
+        if explicit_price_rp is not None and amount_mb > 0:
+            try:
+                total_rp += max(0, int(round(int(explicit_price_rp) * (remaining_mb / float(amount_mb)))))
+                continue
+            except Exception:
+                pass
+
+        total_rp += int(estimate_amount_rp_for_mb(remaining_mb) or 0)
+
+    return total_rp, has_unlimited_debt
 
 
 user_management_bp = Blueprint("user_management_api", __name__)
@@ -2791,16 +2905,25 @@ def seed_imported_update_submissions(current_admin: User):
 # ---------------------------------------------------------------------------
 
 
-def _build_bulk_user_row(user: User, *, fup_threshold_mb: float, now_utc: datetime) -> dict:
+def _build_bulk_user_row(
+    user: User,
+    *,
+    fup_threshold_mb: float,
+    now_utc: datetime,
+    device_count: int | None = None,
+    daily_usage_total_mb: float | None = None,
+    open_debts: list[UserQuotaDebt] | None = None,
+) -> dict:
     """Transform a User ORM object into a flat dict for bulk PDF templates."""
     purchased = float(getattr(user, "total_quota_purchased_mb", 0) or 0)
-    used = float(getattr(user, "total_quota_used_mb", 0) or 0)
+    used = _resolve_bulk_usage_display_mb(user, daily_usage_total_mb)
     remaining = max(0.0, purchased - used)
     debt_auto = float(getattr(user, "quota_debt_auto_mb", 0) or 0)
     debt_manual = int(getattr(user, "quota_debt_manual_mb", getattr(user, "manual_debt_mb", 0)) or 0)
     debt_total = float(getattr(user, "quota_debt_total_mb", debt_auto + debt_manual) or 0)
     is_blocked = bool(getattr(user, "is_blocked", False))
     is_unlimited = bool(getattr(user, "is_unlimited_user", False))
+    is_tamping = bool(getattr(user, "is_tamping", False))
     expiry = getattr(user, "quota_expiry_date", None)
     is_expired = bool(expiry and expiry < now_utc)
     is_fup = (
@@ -2813,45 +2936,45 @@ def _build_bulk_user_row(user: User, *, fup_threshold_mb: float, now_utc: dateti
     )
 
     # Check if manual debt is unlimited type
-    is_unlimited_debt = False
-    if is_unlimited and debt_manual > 0:
-        open_debts = db.session.scalars(
-            select(UserQuotaDebt)
-            .where(UserQuotaDebt.user_id == user.id, UserQuotaDebt.is_paid.is_(False))
-            .limit(5)
-        ).all()
-        is_unlimited_debt = any(_is_unlimited_debt_item(d) for d in open_debts)
+    open_debts = list(open_debts or [])
+    manual_debt_estimated_rp, is_unlimited_debt = _estimate_bulk_manual_debt_rp(open_debts)
+    if debt_manual > 0 and manual_debt_estimated_rp <= 0:
+        manual_debt_estimated_rp = int(estimate_amount_rp_for_mb(debt_manual) or 0)
+    debt_auto_estimated_rp = int(estimate_amount_rp_for_mb(debt_auto) or 0)
+    debt_estimated_rp = debt_auto_estimated_rp + manual_debt_estimated_rp
 
     role_raw = getattr(user, "role", None)
     role_key = str(role_raw.name) if role_raw is not None and hasattr(role_raw, "name") else str(role_raw or "USER")
     approval_raw = getattr(user, "approval_status", None)
     approval_key = str(approval_raw.name) if approval_raw is not None and hasattr(approval_raw, "name") else str(approval_raw or "PENDING_APPROVAL")
+    show_location_columns = role_key == "USER"
 
-    # Kamar: extract number only (e.g. "Kamar_6" -> "6", "6" -> "6")
-    raw_kamar = getattr(user, "kamar", None) or ""
-    import re as _re
-    kamar_match = _re.search(r"(\d+)", str(raw_kamar))
-    kamar_number = kamar_match.group(1) if kamar_match else (raw_kamar or None)
+    normalized_blok = _normalize_bulk_blok_display(getattr(user, "blok", None))
+    normalized_kamar = _normalize_bulk_kamar_display(getattr(user, "kamar", None))
+    blok_display = normalized_blok if show_location_columns and not is_tamping and normalized_blok else "-"
+    kamar_display = normalized_kamar if show_location_columns and not is_tamping and normalized_kamar else "-"
 
-    # Device count
-    device_count = int(
-        db.session.query(sa.func.count(UserDevice.id))
-        .filter(UserDevice.user_id == user.id)
-        .scalar() or 0
-    )
+    if device_count is None:
+        device_count = int(
+            db.session.query(sa.func.count(UserDevice.id))
+            .filter(UserDevice.user_id == user.id)
+            .scalar() or 0
+        )
 
     return {
         "full_name": getattr(user, "full_name", "") or "",
         "phone_display": format_to_local_phone(getattr(user, "phone_number", None)) or str(getattr(user, "phone_number", "") or "-"),
-        "blok": getattr(user, "blok", None),
-        "kamar": kamar_number,
-        "device_count": device_count,
+        "blok_display": blok_display,
+        "kamar_display": kamar_display,
+        "show_location_columns": show_location_columns,
+        "device_count": int(device_count or 0),
         "role_key": role_key,
         "approval_status_key": approval_key,
         "is_blocked": is_blocked,
         "is_unlimited_user": is_unlimited,
         "is_expired": is_expired,
         "is_fup": is_fup,
+        "is_tamping": is_tamping,
         "is_unlimited_debt": is_unlimited_debt,
         "total_quota_purchased_mb": purchased,
         "total_quota_used_mb": used,
@@ -2859,7 +2982,7 @@ def _build_bulk_user_row(user: User, *, fup_threshold_mb: float, now_utc: dateti
         "debt_auto_mb": debt_auto,
         "debt_manual_mb": debt_manual,
         "debt_total_mb": debt_total,
-        "debt_estimated_rp": 0,  # filled below
+        "debt_estimated_rp": debt_estimated_rp,
         "expiry_display": _format_short_date(expiry),
         "created_at_display": _format_short_date(getattr(user, "created_at", None)),
     }
@@ -2914,16 +3037,18 @@ def export_debt_users_list_pdf(current_admin: User):
             query = query.where(User.role != UserRole.SUPER_ADMIN)
 
         users_orm = db.session.scalars(query).all()
+        user_ids = [u.id for u in users_orm]
+        device_counts = _load_bulk_device_counts(user_ids)
+        daily_usage_totals = _load_bulk_daily_usage_totals(user_ids)
+        open_debt_map = _load_bulk_open_manual_debts(user_ids)
 
-        # Single DB query to find cheapest reference package for estimate
+        # Reference package is kept only as fallback note for non-ledger estimation.
         ref_pkg = db.session.execute(
             select(Package)
             .where(Package.is_active.is_(True), Package.data_quota_gb.is_not(None), Package.data_quota_gb > 0, Package.price.is_not(None), Package.price > 0)
             .order_by(Package.data_quota_gb.asc(), Package.price.asc())
             .limit(1)
         ).scalar_one_or_none()
-        pkg_price = int(ref_pkg.price) if ref_pkg and ref_pkg.price is not None else None
-        pkg_quota_gb = float(ref_pkg.data_quota_gb) if ref_pkg and ref_pkg.data_quota_gb is not None else None
         pkg_name = str(ref_pkg.name) if ref_pkg and ref_pkg.name else None
 
         rows = []
@@ -2932,16 +3057,14 @@ def export_debt_users_list_pdf(current_admin: User):
         sum_debt_rp = 0
         unlimited_count = 0
         for u in users_orm:
-            row = _build_bulk_user_row(u, fup_threshold_mb=fup_threshold_mb, now_utc=now_utc)
-            # Estimate Rp
-            if row["debt_total_mb"] > 0:
-                est = estimate_debt_rp_from_cheapest_package(
-                    debt_mb=row["debt_total_mb"],
-                    cheapest_package_price_rp=pkg_price,
-                    cheapest_package_quota_gb=pkg_quota_gb,
-                    cheapest_package_name=pkg_name,
-                )
-                row["debt_estimated_rp"] = int(est.estimated_rp_rounded or 0)
+            row = _build_bulk_user_row(
+                u,
+                fup_threshold_mb=fup_threshold_mb,
+                now_utc=now_utc,
+                device_count=device_counts.get(u.id, 0),
+                daily_usage_total_mb=daily_usage_totals.get(u.id, 0.0),
+                open_debts=open_debt_map.get(u.id, []),
+            )
             rows.append(row)
 
             sum_purchased += row["total_quota_purchased_mb"]
@@ -2953,9 +3076,12 @@ def export_debt_users_list_pdf(current_admin: User):
             if row["is_unlimited_debt"]:
                 unlimited_count += 1
 
+        show_location_columns = any(bool(row.get("show_location_columns")) for row in rows)
+
         business_context = build_receipt_business_identity_context()
         context = {
             "users": rows,
+            "show_location_columns": show_location_columns,
             "summary_debt_auto_mb": sum_debt_auto,
             "summary_debt_manual_mb": sum_debt_manual,
             "summary_debt_estimated_rp": sum_debt_rp,
@@ -3025,13 +3151,22 @@ def export_users_list_pdf(current_admin: User):
                 return jsonify({"message": "Role filter tidak valid."}), HTTPStatus.BAD_REQUEST
 
         users_orm = db.session.scalars(query).all()
+        user_ids = [u.id for u in users_orm]
+        device_counts = _load_bulk_device_counts(user_ids)
+        daily_usage_totals = _load_bulk_daily_usage_totals(user_ids)
 
         rows = []
         sum_purchased = sum_used = sum_remaining = sum_debt = 0.0
         role_counts: dict[str, int] = {}
         active_count = blocked_count = debt_count = 0
         for u in users_orm:
-            row = _build_bulk_user_row(u, fup_threshold_mb=fup_threshold_mb, now_utc=now_utc)
+            row = _build_bulk_user_row(
+                u,
+                fup_threshold_mb=fup_threshold_mb,
+                now_utc=now_utc,
+                device_count=device_counts.get(u.id, 0),
+                daily_usage_total_mb=daily_usage_totals.get(u.id, 0.0),
+            )
             rows.append(row)
 
             sum_purchased += row["total_quota_purchased_mb"]
@@ -3049,11 +3184,14 @@ def export_users_list_pdf(current_admin: User):
             if row["debt_total_mb"] > 0:
                 debt_count += 1
 
+        show_location_columns = any(bool(row.get("show_location_columns")) for row in rows)
+
         report_title = f"Daftar Pengguna — {filter_label}" if filter_label else "Daftar Pengguna"
 
         business_context = build_receipt_business_identity_context()
         context = {
             "users": rows,
+            "show_location_columns": show_location_columns,
             "report_title": report_title,
             "filter_label": filter_label,
             "summary_by_role": role_counts,

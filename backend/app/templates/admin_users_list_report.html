@@ -69,14 +69,16 @@
       }
 
       col.no { width: 3%; }
-      col.name { width: 18%; }
-      col.phone { width: 11%; }
+      col.name { width: 15%; }
+      col.phone { width: 10%; }
       col.role { width: 7%; }
+      col.blok { width: 4%; }
+      col.kamar { width: 6%; }
       col.approval { width: 7%; }
       col.layanan { width: 7%; }
-      col.total-quota { width: 8.5%; }
-      col.used { width: 8.5%; }
-      col.remaining { width: 8.5%; }
+      col.total-quota { width: 8%; }
+      col.used { width: 8%; }
+      col.remaining { width: 8%; }
       col.device { width: 4%; }
       col.expiry { width: 9%; }
       col.registered { width: 9%; }
@@ -124,6 +126,7 @@
       .badge-approved { background: #dcfce7; border-color: #86efac; color: #166534; }
       .badge-rejected { background: #fee2e2; border-color: #fca5a5; color: #991b1b; }
       .badge-debt { background: #fee2e2; border-color: #fca5a5; color: #b42318; }
+      .badge-tamping { background: #ecfeff; border-color: #67e8f9; color: #155e75; }
 
       .badge-role-admin { background: #ede9fe; border-color: #c4b5fd; color: #5b21b6; }
       .badge-role-komandan { background: #dbeafe; border-color: #93c5fd; color: #1e40af; }
@@ -190,6 +193,10 @@
         <col class="name">
         <col class="phone">
         <col class="role">
+        {% if show_location_columns %}
+          <col class="blok">
+          <col class="kamar">
+        {% endif %}
         <col class="approval">
         <col class="layanan">
         <col class="total-quota">
@@ -205,6 +212,10 @@
           <th>Nama</th>
           <th>No. HP</th>
           <th>Peran</th>
+          {% if show_location_columns %}
+            <th>Blok</th>
+            <th>Kamar</th>
+          {% endif %}
           <th>Approval</th>
           <th>Layanan</th>
           <th class="right">Total Kuota</th>
@@ -222,6 +233,7 @@
               <td class="center nowrap">{{ loop.index }}</td>
               <td class="name-cell" title="{{ u.full_name }}">
                 {{- u.full_name -}}
+                {%- if u.is_tamping %} <span class="badge badge-tamping">Tamping</span>{% endif -%}
               </td>
               <td class="nowrap">{{ u.phone_display }}</td>
               <td class="nowrap">
@@ -235,6 +247,10 @@
                   <span class="badge badge-role-user">User</span>
                 {% endif %}
               </td>
+              {% if show_location_columns %}
+                <td class="center nowrap">{{ u.blok_display }}</td>
+                <td class="center nowrap">{{ u.kamar_display }}</td>
+              {% endif %}
               <td class="nowrap">
                 {% if u.approval_status_key == 'APPROVED' %}
                   <span class="badge badge-approved">Disetujui</span>
@@ -266,7 +282,7 @@
             </tr>
           {% endfor %}
           <tr class="subtotal-row">
-            <td colspan="6" class="right">TOTAL</td>
+            <td colspan="{{ 8 if show_location_columns else 6 }}" class="right">TOTAL</td>
             <td class="right nowrap">{{ fmt_quota(summary_total_purchased_mb) }}</td>
             <td class="right nowrap">{{ fmt_quota(summary_total_used_mb) }}</td>
             <td class="right nowrap">{{ fmt_quota(summary_total_remaining_mb) }}</td>
@@ -274,7 +290,7 @@
           </tr>
         {% else %}
           <tr>
-            <td colspan="12" class="center empty-state">
+            <td colspan="{{ 14 if show_location_columns else 12 }}" class="center empty-state">
               Tidak ada data pengguna{{ ' untuk filter yang dipilih' if filter_label else '' }}.
             </td>
           </tr>
@@ -285,6 +301,8 @@
     <div class="note">
       Kuota ditampilkan KB/MB/GB (1 GB = 1024 MB); nilai GB selalu 2 desimal.
       Unlimited = kuota tidak terbatas, pemakaian tetap dicatat.
+      Blok mengikuti kode alamat (A/B/C), kamar mengikuti format form edit user.
+      Tamping ditandai badge khusus; blok/kamar untuk tamping ditampilkan `-`.
       Device = jumlah perangkat terdaftar. Peran: Super = Super Admin.
     </div>
 
