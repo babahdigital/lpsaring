@@ -7,7 +7,7 @@ from uuid import uuid4
 from flask import Flask
 import sqlalchemy as sa
 
-from app.infrastructure.db.models import ApprovalStatus, Package, Transaction, TransactionStatus, User, UserQuotaDebt, UserRole
+from app.infrastructure.db.models import ApprovalStatus, Package, Transaction, TransactionStatus, User, UserRole
 from app.infrastructure.http.admin_contexts import transactions as transactions_context
 
 
