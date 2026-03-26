@@ -8,6 +8,10 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Documentation (2026-03-27)
+
+- `docs/devlogs/2026-03-27-debt-underpayment-remediation-verification.md` — arsip verifikasi produksi untuk label riwayat debt, audit historis underpayment debt settlement, hasil debt koreksi dua user terdampak, dan status WA koreksi.
+
 ### Fixed (2026-03-24 - Source Audit and Restored Admin, Unlimited, WA, and Self-Heal Fixes)
 
 - **Audit source vs image produksi membuktikan image terbaru saat itu memang berasal dari `main`, tetapi `main` sendiri belum memuat sebagian patch yang sebelumnya diasumsikan sudah masuk.** Temuan ini menutup false lead bahwa `deploy_pi.sh --recreate` atau `docker pull` adalah akar masalah utama untuk regresi yang masih terlihat user.

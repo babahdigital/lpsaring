@@ -459,6 +459,8 @@ def export_transactions_impl(
             ],
             'debt_users': debt_items,
             'business_name': current_app.config.get('BUSINESS_NAME', 'LPSaring'),
+            'business_phone': current_app.config.get('BUSINESS_PHONE', ''),
+            'business_address': current_app.config.get('BUSINESS_ADDRESS', ''),
         }
 
         public_base_url = current_app.config.get('APP_PUBLIC_BASE_URL', request.url_root)
