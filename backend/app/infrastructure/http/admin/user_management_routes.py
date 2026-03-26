@@ -2784,3 +2784,276 @@ def seed_imported_update_submissions(current_admin: User):
         db.session.rollback()
         current_app.logger.error(f"seed_imported_update_submissions error: {e}", exc_info=True)
         return jsonify({"success": False, "message": "Gagal seed submission."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+# ---------------------------------------------------------------------------
+# Bulk PDF export: Daftar Pengguna dengan Tunggakan
+# ---------------------------------------------------------------------------
+
+
+def _build_bulk_user_row(user: User, *, fup_threshold_mb: float, now_utc: datetime) -> dict:
+    """Transform a User ORM object into a flat dict for bulk PDF templates."""
+    purchased = float(getattr(user, "total_quota_purchased_mb", 0) or 0)
+    used = float(getattr(user, "total_quota_used_mb", 0) or 0)
+    remaining = max(0.0, purchased - used)
+    debt_auto = float(getattr(user, "quota_debt_auto_mb", 0) or 0)
+    debt_manual = int(getattr(user, "quota_debt_manual_mb", getattr(user, "manual_debt_mb", 0)) or 0)
+    debt_total = float(getattr(user, "quota_debt_total_mb", debt_auto + debt_manual) or 0)
+    is_blocked = bool(getattr(user, "is_blocked", False))
+    is_unlimited = bool(getattr(user, "is_unlimited_user", False))
+    expiry = getattr(user, "quota_expiry_date", None)
+    is_expired = bool(expiry and expiry < now_utc)
+    is_fup = (
+        not is_blocked
+        and not is_unlimited
+        and purchased > fup_threshold_mb
+        and remaining > 0
+        and remaining <= fup_threshold_mb
+        and not is_expired
+    )
+
+    # Check if manual debt is unlimited type
+    is_unlimited_debt = False
+    if is_unlimited and debt_manual > 0:
+        open_debts = db.session.scalars(
+            select(UserQuotaDebt)
+            .where(UserQuotaDebt.user_id == user.id, UserQuotaDebt.is_paid.is_(False))
+            .limit(5)
+        ).all()
+        is_unlimited_debt = any(_is_unlimited_debt_item(d) for d in open_debts)
+
+    role_raw = getattr(user, "role", None)
+    role_key = str(role_raw.name) if role_raw is not None and hasattr(role_raw, "name") else str(role_raw or "USER")
+    approval_raw = getattr(user, "approval_status", None)
+    approval_key = str(approval_raw.name) if approval_raw is not None and hasattr(approval_raw, "name") else str(approval_raw or "PENDING_APPROVAL")
+
+    return {
+        "full_name": getattr(user, "full_name", "") or "",
+        "phone_display": format_to_local_phone(getattr(user, "phone_number", None)) or str(getattr(user, "phone_number", "") or "-"),
+        "blok": getattr(user, "blok", None),
+        "kamar": getattr(user, "kamar", None),
+        "role_key": role_key,
+        "approval_status_key": approval_key,
+        "is_blocked": is_blocked,
+        "is_unlimited_user": is_unlimited,
+        "is_expired": is_expired,
+        "is_fup": is_fup,
+        "is_unlimited_debt": is_unlimited_debt,
+        "total_quota_purchased_mb": purchased,
+        "total_quota_used_mb": used,
+        "remaining_mb": remaining,
+        "debt_auto_mb": debt_auto,
+        "debt_manual_mb": debt_manual,
+        "debt_total_mb": debt_total,
+        "debt_estimated_rp": 0,  # filled below
+        "expiry_display": format_app_datetime_display(expiry, fallback="-"),
+        "created_at_display": format_app_datetime_display(getattr(user, "created_at", None), fallback="-"),
+    }
+
+
+@user_management_bp.route("/users/export/debt-list", methods=["GET"])
+@admin_required
+def export_debt_users_list_pdf(current_admin: User):
+    """Export PDF: daftar semua pengguna yang memiliki tunggakan."""
+    try:
+        __import__("weasyprint")
+    except Exception:
+        return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
+
+    try:
+        from weasyprint import HTML  # type: ignore
+
+        now_utc = datetime.now(dt_timezone.utc)
+        fup_threshold_mb = float(settings_service.get_setting_as_int("QUOTA_FUP_THRESHOLD_MB", 3072) or 3072)
+
+        purchased_num = sa.cast(User.total_quota_purchased_mb, sa.Numeric)
+        used_num = sa.cast(User.total_quota_used_mb, sa.Numeric)
+        auto_debt = sa.func.greatest(sa.cast(0, sa.Numeric), used_num - purchased_num)
+        manual_debt_num = sa.cast(func.coalesce(User.manual_debt_mb, 0), sa.Numeric)
+        total_debt = auto_debt + manual_debt_num
+
+        query = (
+            select(User)
+            .where(
+                sa.or_(
+                    sa.and_(User.is_unlimited_user.is_(False), total_debt > 0),
+                    sa.and_(User.is_unlimited_user.is_(True), User.manual_debt_mb > 0),
+                )
+            )
+            .order_by(User.full_name.asc())
+        )
+        if not current_admin.is_super_admin_role:
+            query = query.where(User.role != UserRole.SUPER_ADMIN)
+
+        users_orm = db.session.scalars(query).all()
+
+        # Single DB query to find cheapest reference package for estimate
+        ref_pkg = db.session.execute(
+            select(Package)
+            .where(Package.is_active.is_(True), Package.data_quota_gb.is_not(None), Package.data_quota_gb > 0, Package.price.is_not(None), Package.price > 0)
+            .order_by(Package.data_quota_gb.asc(), Package.price.asc())
+            .limit(1)
+        ).scalar_one_or_none()
+        pkg_price = int(ref_pkg.price) if ref_pkg and ref_pkg.price is not None else None
+        pkg_quota_gb = float(ref_pkg.data_quota_gb) if ref_pkg and ref_pkg.data_quota_gb is not None else None
+        pkg_name = str(ref_pkg.name) if ref_pkg and ref_pkg.name else None
+
+        rows = []
+        sum_purchased = sum_used = sum_remaining = 0.0
+        sum_debt_auto = sum_debt_manual = 0.0
+        sum_debt_rp = 0
+        unlimited_count = 0
+        for u in users_orm:
+            row = _build_bulk_user_row(u, fup_threshold_mb=fup_threshold_mb, now_utc=now_utc)
+            # Estimate Rp
+            if row["debt_total_mb"] > 0:
+                est = estimate_debt_rp_from_cheapest_package(
+                    debt_mb=row["debt_total_mb"],
+                    cheapest_package_price_rp=pkg_price,
+                    cheapest_package_quota_gb=pkg_quota_gb,
+                    cheapest_package_name=pkg_name,
+                )
+                row["debt_estimated_rp"] = int(est.estimated_rp_rounded or 0)
+            rows.append(row)
+
+            sum_purchased += row["total_quota_purchased_mb"]
+            sum_used += row["total_quota_used_mb"]
+            sum_remaining += row["remaining_mb"]
+            sum_debt_auto += row["debt_auto_mb"]
+            sum_debt_manual += row["debt_manual_mb"]
+            sum_debt_rp += row["debt_estimated_rp"]
+            if row["is_unlimited_debt"]:
+                unlimited_count += 1
+
+        business_context = build_receipt_business_identity_context()
+        context = {
+            "users": rows,
+            "summary_debt_auto_mb": sum_debt_auto,
+            "summary_debt_manual_mb": sum_debt_manual,
+            "summary_debt_estimated_rp": sum_debt_rp,
+            "summary_total_purchased_mb": sum_purchased,
+            "summary_total_used_mb": sum_used,
+            "summary_total_remaining_mb": sum_remaining,
+            "summary_unlimited_count": unlimited_count,
+            "estimate_base_package_name": pkg_name,
+            "generated_at": format_app_datetime_display(now_utc, fallback="-"),
+            **business_context,
+        }
+
+        html_string = render_template("admin_debt_users_list_report.html", **context)
+        public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
+        pdf_bytes = HTML(string=html_string, base_url=public_base_url).write_pdf()
+        if pdf_bytes is None:
+            raise RuntimeError("Gagal menghasilkan PDF daftar debt.")
+
+        date_str = now_utc.strftime("%Y-%m-%d")
+        filename = f"debt-users-list-{date_str}.pdf"
+        resp = make_response(pdf_bytes)
+        resp.headers["Content-Type"] = "application/pdf"
+        resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return resp
+
+    except Exception as e:
+        current_app.logger.error("Error export debt users list PDF: %s", e, exc_info=True)
+        return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+# ---------------------------------------------------------------------------
+# Bulk PDF export: Daftar Pengguna (all / by role)
+# ---------------------------------------------------------------------------
+
+
+@user_management_bp.route("/users/export/users-list", methods=["GET"])
+@admin_required
+def export_users_list_pdf(current_admin: User):
+    """Export PDF: daftar pengguna (semua atau berdasarkan filter role)."""
+    try:
+        __import__("weasyprint")
+    except Exception:
+        return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
+
+    try:
+        from weasyprint import HTML  # type: ignore
+
+        now_utc = datetime.now(dt_timezone.utc)
+        fup_threshold_mb = float(settings_service.get_setting_as_int("QUOTA_FUP_THRESHOLD_MB", 3072) or 3072)
+
+        role_filter = request.args.get("role", "").strip()
+
+        query = select(User).order_by(User.full_name.asc())
+        if not current_admin.is_super_admin_role:
+            query = query.where(User.role != UserRole.SUPER_ADMIN)
+            demo_phone_variations = _collect_demo_phone_variations_from_env()
+            if demo_phone_variations:
+                query = query.where(~User.phone_number.in_(demo_phone_variations))
+            query = query.where(~User.full_name.ilike("Demo User%"))
+
+        filter_label = ""
+        if role_filter:
+            try:
+                query = query.where(User.role == UserRole[role_filter.upper()])
+                filter_label = role_filter.capitalize()
+            except KeyError:
+                return jsonify({"message": "Role filter tidak valid."}), HTTPStatus.BAD_REQUEST
+
+        users_orm = db.session.scalars(query).all()
+
+        rows = []
+        sum_purchased = sum_used = sum_remaining = sum_debt = 0.0
+        role_counts: dict[str, int] = {}
+        active_count = blocked_count = debt_count = 0
+        for u in users_orm:
+            row = _build_bulk_user_row(u, fup_threshold_mb=fup_threshold_mb, now_utc=now_utc)
+            rows.append(row)
+
+            sum_purchased += row["total_quota_purchased_mb"]
+            sum_used += row["total_quota_used_mb"]
+            sum_remaining += row["remaining_mb"]
+            sum_debt += row["debt_total_mb"]
+
+            _rk = str(row["role_key"])
+            role_label = {"SUPER_ADMIN": "Super Admin", "ADMIN": "Admin", "KOMANDAN": "Komandan", "USER": "User"}.get(_rk, _rk)
+            role_counts[role_label] = role_counts.get(role_label, 0) + 1
+            if not row["is_blocked"]:
+                active_count += 1
+            else:
+                blocked_count += 1
+            if row["debt_total_mb"] > 0:
+                debt_count += 1
+
+        report_title = f"Daftar Pengguna — {filter_label}" if filter_label else "Daftar Pengguna"
+
+        business_context = build_receipt_business_identity_context()
+        context = {
+            "users": rows,
+            "report_title": report_title,
+            "filter_label": filter_label,
+            "summary_by_role": role_counts,
+            "summary_active_count": active_count,
+            "summary_blocked_count": blocked_count,
+            "summary_debt_count": debt_count,
+            "summary_total_purchased_mb": sum_purchased,
+            "summary_total_used_mb": sum_used,
+            "summary_total_remaining_mb": sum_remaining,
+            "summary_total_debt_mb": sum_debt,
+            "generated_at": format_app_datetime_display(now_utc, fallback="-"),
+            **business_context,
+        }
+
+        html_string = render_template("admin_users_list_report.html", **context)
+        public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
+        pdf_bytes = HTML(string=html_string, base_url=public_base_url).write_pdf()
+        if pdf_bytes is None:
+            raise RuntimeError("Gagal menghasilkan PDF daftar pengguna.")
+
+        date_str = now_utc.strftime("%Y-%m-%d")
+        role_suffix = f"-{role_filter.lower()}" if role_filter else ""
+        filename = f"users-list{role_suffix}-{date_str}.pdf"
+        resp = make_response(pdf_bytes)
+        resp.headers["Content-Type"] = "application/pdf"
+        resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return resp
+
+    except Exception as e:
+        current_app.logger.error("Error export users list PDF: %s", e, exc_info=True)
+        return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR

@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Daftar Pengguna dengan Tunggakan</title>
+    <style>
+      @page {
+        size: A4 landscape;
+        margin: 10mm;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: "DejaVu Sans", sans-serif;
+        font-size: 9px;
+        line-height: 1.4;
+        color: #172033;
+        background: #fff;
+      }
+
+      h1 { font-size: 16px; margin: 0 0 2px 0; font-weight: 700; }
+      .sub { color: #667085; font-size: 9px; margin-bottom: 10px; }
+
+      .summary-row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+      }
+
+      .summary-card {
+        flex: 1 1 160px;
+        padding: 9px 11px;
+        border: 1px solid #d8dee9;
+        border-radius: 10px;
+        background: #f8fafc;
+      }
+
+      .summary-label {
+        display: block;
+        color: #5f7089;
+        font-size: 8px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        font-weight: 700;
+      }
+
+      .summary-value {
+        display: block;
+        margin-top: 3px;
+        font-size: 12px;
+        font-weight: 700;
+        color: #15253f;
+      }
+
+      .tone-warning { color: #9a3412; }
+      .tone-error { color: #b42318; }
+      .tone-success { color: #166534; }
+
+      table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        table-layout: fixed;
+      }
+
+      col.no { width: 4%; }
+      col.name { width: 14%; }
+      col.phone { width: 11%; }
+      col.blok { width: 5%; }
+      col.kamar { width: 6%; }
+      col.layanan { width: 7%; }
+      col.total-quota { width: 9%; }
+      col.used { width: 9%; }
+      col.remaining { width: 9%; }
+      col.debt-auto { width: 8%; }
+      col.debt-manual { width: 8%; }
+      col.debt-rp { width: 10%; }
+
+      th, td {
+        border: 1px solid #d8dee9;
+        padding: 5px 6px;
+        vertical-align: top;
+      }
+
+      th {
+        background: #e9eef6;
+        text-align: left;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        font-size: 8px;
+        color: #334155;
+        white-space: nowrap;
+      }
+
+      td { background: #fff; }
+
+      tr { page-break-inside: avoid; }
+
+      .right { text-align: right; }
+      .center { text-align: center; }
+      .nowrap { white-space: nowrap; }
+      .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+      .badge {
+        display: inline-block;
+        padding: 1px 6px;
+        border-radius: 999px;
+        border: 1px solid #d8dee9;
+        font-size: 8px;
+        font-weight: 700;
+      }
+
+      .badge-ok { background: #dcfce7; border-color: #86efac; color: #166534; }
+      .badge-fup { background: #fef3c7; border-color: #fcd34d; color: #92400e; }
+      .badge-blocked { background: #fee2e2; border-color: #fca5a5; color: #991b1b; }
+      .badge-expired { background: #f3f4f6; border-color: #d1d5db; color: #6b7280; }
+      .badge-unlimited { background: #dbeafe; border-color: #93c5fd; color: #1e40af; }
+
+      .subtotal-row td {
+        background: #f1f5f9;
+        font-weight: 700;
+        border-top: 2px solid #94a3b8;
+      }
+
+      .footer {
+        margin-top: 12px;
+        padding-top: 6px;
+        border-top: 1px solid #d8dee9;
+        color: #667085;
+        font-size: 8px;
+      }
+
+      .note {
+        margin-top: 6px;
+        color: #667085;
+        font-size: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    {%- from '_formatters.html' import fmt_quota, fmt_rp -%}
+
+    <h1>Daftar Pengguna dengan Tunggakan</h1>
+    <div class="sub">{{ business_name }} | Dicetak: {{ generated_at }} | Total: {{ users | length }} pengguna</div>
+
+    <div class="summary-row">
+      <div class="summary-card">
+        <span class="summary-label">Jumlah Pengguna Debt</span>
+        <span class="summary-value tone-warning">{{ users | length }}</span>
+      </div>
+      <div class="summary-card">
+        <span class="summary-label">Total Debt Otomatis</span>
+        <span class="summary-value">{{ fmt_quota(summary_debt_auto_mb) }}</span>
+      </div>
+      <div class="summary-card">
+        <span class="summary-label">Total Debt Manual</span>
+        <span class="summary-value">{{ fmt_quota(summary_debt_manual_mb) }}</span>
+      </div>
+      <div class="summary-card">
+        <span class="summary-label">Total Nilai Referensi (IDR)</span>
+        <span class="summary-value tone-error">Rp {{ fmt_rp(summary_debt_estimated_rp) }}</span>
+      </div>
+      {% if summary_unlimited_count > 0 %}
+        <div class="summary-card">
+          <span class="summary-label">Debt Unlimited</span>
+          <span class="summary-value">{{ summary_unlimited_count }} pengguna</span>
+        </div>
+      {% endif %}
+    </div>
+
+    <table>
+      <colgroup>
+        <col class="no">
+        <col class="name">
+        <col class="phone">
+        <col class="blok">
+        <col class="kamar">
+        <col class="layanan">
+        <col class="total-quota">
+        <col class="used">
+        <col class="remaining">
+        <col class="debt-auto">
+        <col class="debt-manual">
+        <col class="debt-rp">
+      </colgroup>
+      <thead>
+        <tr>
+          <th class="center">No</th>
+          <th>Nama</th>
+          <th>No. HP</th>
+          <th>Blok</th>
+          <th>Kamar</th>
+          <th>Layanan</th>
+          <th class="right">Total Kuota</th>
+          <th class="right">Terpakai</th>
+          <th class="right">Sisa</th>
+          <th class="right">Debt Auto</th>
+          <th class="right">Debt Manual</th>
+          <th class="right">Nilai Ref. (Rp)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if users and users | length > 0 %}
+          {% for u in users %}
+            <tr>
+              <td class="center nowrap">{{ loop.index }}</td>
+              <td class="ellipsis" title="{{ u.full_name }}">{{ u.full_name }}</td>
+              <td class="nowrap">{{ u.phone_display }}</td>
+              <td class="center">{{ u.blok or '-' }}</td>
+              <td class="center">{{ u.kamar or '-' }}</td>
+              <td class="nowrap">
+                {% if u.is_unlimited_user %}
+                  <span class="badge badge-unlimited">Unlimited</span>
+                {% elif u.is_blocked %}
+                  <span class="badge badge-blocked">Diblokir</span>
+                {% elif u.is_expired %}
+                  <span class="badge badge-expired">Expired</span>
+                {% elif u.is_fup %}
+                  <span class="badge badge-fup">FUP</span>
+                {% else %}
+                  <span class="badge badge-ok">Aktif</span>
+                {% endif %}
+              </td>
+              <td class="right nowrap">{{ fmt_quota(u.total_quota_purchased_mb) }}</td>
+              <td class="right nowrap">{{ fmt_quota(u.total_quota_used_mb) }}</td>
+              <td class="right nowrap">{{ fmt_quota(u.remaining_mb) }}</td>
+              <td class="right nowrap">{{ fmt_quota(u.debt_auto_mb) }}</td>
+              <td class="right nowrap">
+                {%- if u.is_unlimited_debt -%}
+                  <span class="badge badge-unlimited">Unlimited</span>
+                {%- else -%}
+                  {{ fmt_quota(u.debt_manual_mb) }}
+                {%- endif -%}
+              </td>
+              <td class="right nowrap">{{ fmt_rp(u.debt_estimated_rp) }}</td>
+            </tr>
+          {% endfor %}
+          <tr class="subtotal-row">
+            <td colspan="6" class="right">TOTAL</td>
+            <td class="right nowrap">{{ fmt_quota(summary_total_purchased_mb) }}</td>
+            <td class="right nowrap">{{ fmt_quota(summary_total_used_mb) }}</td>
+            <td class="right nowrap">{{ fmt_quota(summary_total_remaining_mb) }}</td>
+            <td class="right nowrap">{{ fmt_quota(summary_debt_auto_mb) }}</td>
+            <td class="right nowrap">{{ fmt_quota(summary_debt_manual_mb) }}</td>
+            <td class="right nowrap">{{ fmt_rp(summary_debt_estimated_rp) }}</td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="12" style="text-align: center; color: #667085; padding: 20px;">
+              Tidak ada pengguna dengan tunggakan saat ini.
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+
+    <div class="note">
+      Kuota ditampilkan KB/MB/GB (1 GB = 1024 MB); nilai GB selalu 2 desimal.
+      Debt otomatis = selisih pemakaian terhadap kuota tercatat.
+      Nilai referensi memakai pro-rata dari paket aktif termurah: {{ estimate_base_package_name or '-' }}.
+    </div>
+
+    <div class="footer">
+      Dokumen ini dibuat oleh {{ business_name }}. Kontak layanan: {{ business_phone or '-' }}.
+      {% if business_address %}<br>{{ business_address }}{% endif %}
+    </div>
+  </body>
+</html>
