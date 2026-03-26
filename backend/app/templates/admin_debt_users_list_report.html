@@ -120,6 +120,8 @@
       .badge-expired { background: #f3f4f6; border-color: #d1d5db; color: #6b7280; }
       .badge-unlimited { background: #dbeafe; border-color: #93c5fd; color: #1e40af; }
 
+      .empty-state { color: #667085; padding: 20px; }
+
       .subtotal-row td {
         background: #f1f5f9;
         font-weight: 700;
@@ -250,7 +252,7 @@
           </tr>
         {% else %}
           <tr>
-            <td colspan="12" style="text-align: center; color: #667085; padding: 20px;">
+            <td colspan="12" class="center empty-state">
               Tidak ada pengguna dengan tunggakan saat ini.
             </td>
           </tr>

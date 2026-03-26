@@ -131,6 +131,8 @@
       .badge-role-user { background: #f3f4f6; border-color: #d1d5db; color: #374151; }
       .badge-role-super { background: #fce7f3; border-color: #f9a8d4; color: #9d174d; }
 
+      .empty-state { color: #667085; padding: 20px; }
+
       .subtotal-row td {
         background: #f1f5f9;
         font-weight: 700;
@@ -289,7 +291,7 @@
           </tr>
         {% else %}
           <tr>
-            <td colspan="14" style="text-align: center; color: #667085; padding: 20px;">
+            <td colspan="14" class="center empty-state">
               Tidak ada data pengguna{{ ' untuk filter yang dipilih' if filter_label else '' }}.
             </td>
           </tr>
