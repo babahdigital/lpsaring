@@ -348,7 +348,56 @@ def _load_manual_debt_item(session, user_id, manual_debt_id: uuid.UUID | None):
     return manual_item, remaining_mb
 
 
+def _estimate_manual_debt_remaining_price_rp(manual_item, remaining_mb: float, estimate_debt_rp_for_mb) -> int:
+    """Estimate the remaining Rupiah value for a manual debt item.
+
+    When an explicit item price exists, only bill the unpaid fraction.
+    """
+    explicit_price_rp = getattr(manual_item, "price_rp", None)
+    if explicit_price_rp is not None and int(explicit_price_rp) > 0:
+        try:
+            total_amount_mb = int(getattr(manual_item, "amount_mb", 0) or 0)
+        except Exception:
+            total_amount_mb = 0
+        remaining_value_mb = max(0.0, float(remaining_mb or 0))
+        if total_amount_mb > 0 and remaining_value_mb > 0:
+            if remaining_value_mb >= total_amount_mb:
+                return int(explicit_price_rp)
+            prorated_price = math.ceil((int(explicit_price_rp) * remaining_value_mb) / total_amount_mb)
+            return max(1, int(prorated_price))
+        return int(explicit_price_rp)
+    return int(estimate_debt_rp_for_mb(remaining_mb) or 0)
+
+
+def _calculate_open_manual_debts_gross_amount(session, user_id, estimate_debt_rp_for_mb) -> int:
+    """Sum the unpaid Rupiah value for all open manual debt items."""
+    open_manual_debts = (
+        session.query(UserQuotaDebt)
+        .filter(UserQuotaDebt.user_id == user_id)
+        .filter(UserQuotaDebt.is_paid.is_(False))
+        .order_by(UserQuotaDebt.debt_date.asc().nulls_last(), UserQuotaDebt.created_at.asc())
+        .all()
+    )
+
+    total_amount_rp = 0
+    for manual_item in open_manual_debts:
+        try:
+            amount_mb = int(getattr(manual_item, "amount_mb", 0) or 0)
+            paid_mb = int(getattr(manual_item, "paid_mb", 0) or 0)
+        except Exception:
+            amount_mb, paid_mb = 0, 0
+        remaining_mb = float(max(0, amount_mb - paid_mb))
+        if remaining_mb <= 0:
+            continue
+        total_amount_rp += _estimate_manual_debt_remaining_price_rp(
+            manual_item, remaining_mb, estimate_debt_rp_for_mb
+        )
+
+    return int(total_amount_rp)
+
+
 def _calculate_debt_gross_amount(
+    session,
     manual_debt_id: uuid.UUID | None,
     manual_item,
     manual_item_remaining_mb: float,
@@ -358,10 +407,19 @@ def _calculate_debt_gross_amount(
 ) -> int:
     """Calculate the gross Rupiah amount for a debt settlement transaction."""
     if manual_debt_id is not None and manual_item is not None:
-        explicit_price_rp = getattr(manual_item, "price_rp", None)
-        if explicit_price_rp is not None and int(explicit_price_rp) > 0:
-            return int(explicit_price_rp)
-        return int(estimate_debt_rp_for_mb(manual_item_remaining_mb) or 0)
+        return _estimate_manual_debt_remaining_price_rp(manual_item, manual_item_remaining_mb, estimate_debt_rp_for_mb)
+
+    manual_debt_amount_rp = _calculate_open_manual_debts_gross_amount(session, user.id, estimate_debt_rp_for_mb)
+    try:
+        auto_debt_mb = float(getattr(user, "quota_debt_auto_mb", 0) or 0)
+    except Exception:
+        auto_debt_mb = 0.0
+    auto_debt_amount_rp = int(estimate_debt_rp_for_mb(auto_debt_mb) or 0) if auto_debt_mb > 0 else 0
+
+    combined_amount_rp = int(manual_debt_amount_rp) + int(auto_debt_amount_rp)
+    if combined_amount_rp > 0:
+        return combined_amount_rp
+
     return int(estimate_user_debt_rp(user) or 0)
 
 
@@ -766,6 +824,7 @@ def initiate_debt_settlement_transaction_impl(
         manual_item, manual_item_remaining_mb = _load_manual_debt_item(session, user.id, manual_debt_id)
 
         gross_amount = _calculate_debt_gross_amount(
+            session,
             manual_debt_id, manual_item, manual_item_remaining_mb,
             estimate_debt_rp_for_mb, estimate_user_debt_rp, user,
         )

@@ -39,7 +39,16 @@ class _FakeQuery:
         return self
 
     def first(self):
+        if isinstance(self._result, list):
+            return self._result[0] if self._result else None
         return self._result
+
+    def all(self):
+        if isinstance(self._result, list):
+            return list(self._result)
+        if self._result is None:
+            return []
+        return [self._result]
 
 
 class _FakeSession:
@@ -586,6 +595,81 @@ def test_initiate_debt_settlement_manual_snap_creates_debt_transaction(monkeypat
     assert int(created_tx.amount) == 22000
 
 
+def test_initiate_debt_settlement_settle_all_uses_open_manual_debt_prices(monkeypatch):
+    user_id = uuid.uuid4()
+
+    fake_user = SimpleNamespace(
+        id=user_id,
+        is_active=True,
+        approval_status=ApprovalStatus.APPROVED,
+        is_unlimited_user=False,
+        quota_debt_total_mb=11776,
+        quota_debt_auto_mb=512,
+        full_name="User",
+        phone_number="+6281234567890",
+    )
+    fake_debts = [
+        SimpleNamespace(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            amount_mb=20480,
+            paid_mb=0,
+            price_rp=200000,
+        ),
+        SimpleNamespace(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            amount_mb=20480,
+            paid_mb=10240,
+            price_rp=200000,
+        ),
+        SimpleNamespace(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            amount_mb=1024,
+            paid_mb=0,
+            price_rp=None,
+        ),
+    ]
+
+    fake_session = _FakeSession(user=fake_user, debt=fake_debts)
+    monkeypatch.setattr(transactions_routes, "db", _FakeDB(fake_session))
+    monkeypatch.setattr(transactions_routes, "should_allow_call", lambda _name: True)
+
+    def _fake_estimate_debt_rp_for_mb(value_mb):
+        lookup = {
+            512: 7000,
+            1024: 15000,
+        }
+        rounded = int(float(value_mb or 0))
+        return lookup.get(rounded, 0)
+
+    monkeypatch.setattr(transactions_routes, "_estimate_debt_rp_for_mb", _fake_estimate_debt_rp_for_mb)
+
+    capture = {}
+    monkeypatch.setattr(transactions_routes, "get_midtrans_snap_client", lambda: _FakeSnap(capture))
+
+    app = _make_app()
+    initiate_impl = _unwrap_decorators(transactions_routes.initiate_debt_settlement_transaction)
+
+    with app.test_request_context(
+        "/api/transactions/debt/initiate",
+        method="POST",
+        json={},
+    ):
+        resp, status = initiate_impl(current_user_id=user_id)
+
+    assert status == 200
+    payload = resp.get_json()
+    assert payload["provider_mode"] == "snap"
+
+    created_tx = next(
+        obj for obj in fake_session.added if hasattr(obj, "midtrans_order_id") and hasattr(obj, "expiry_time")
+    )
+    assert int(created_tx.amount) == 322000
+    assert capture["snap_params"]["transaction_details"]["gross_amount"] == 322000
+
+
 def test_initiate_debt_settlement_reuses_existing_snap_transaction(monkeypatch):
     user_id = uuid.uuid4()
     existing_order_id = "DEBT-EXISTING-SNAP"
@@ -895,6 +979,114 @@ def test_webhook_debt_settlement_success_runs_unblock_flow(monkeypatch):
     assert fake_tx.status == TransactionStatus.SUCCESS
     assert "payment.success" in metrics
     assert any(getattr(obj, "event_type", None) == "DEBT_SETTLED" for obj in fake_session.added)
+
+
+def test_webhook_debt_settlement_success_sends_receipt_link_for_online_payment(monkeypatch):
+    from app.infrastructure.http.transactions import webhook_routes
+    from app.services import debt_settlement_receipt_service
+    from app.services.user_management import helpers as user_management_helpers
+
+    order_id = "DEBT-ORDER-ONLINE-001"
+    fake_user = SimpleNamespace(
+        id=uuid.uuid4(),
+        full_name="Puguh Rahmansyah",
+        phone_number="+6289527796925",
+        is_unlimited_user=False,
+        total_quota_purchased_mb=20480,
+        total_quota_used_mb=1024,
+        is_blocked=False,
+        blocked_reason=None,
+        quota_debt_total_mb=0,
+    )
+    fake_tx = SimpleNamespace(
+        id=uuid.uuid4(),
+        midtrans_order_id=order_id,
+        midtrans_transaction_id=None,
+        status=TransactionStatus.UNKNOWN,
+        payment_method="qris",
+        payment_time=None,
+        expiry_time=None,
+        va_number=None,
+        payment_code=None,
+        biller_code=None,
+        qr_code_url=None,
+        midtrans_notification_payload=None,
+        user=fake_user,
+        package=None,
+        amount=400000,
+    )
+    fake_session = _FakeSession(transaction=fake_tx)
+
+    sent = {}
+
+    def _fake_apply_debt_settlement_on_success(*, session, transaction):
+        assert session is fake_session
+        assert transaction is fake_tx
+        return {"paid_auto_mb": 0, "paid_manual_mb": 40960, "paid_total_mb": 40960, "unblocked": False}
+
+    fake_mutation = SimpleNamespace(id=uuid.uuid4())
+
+    monkeypatch.setattr(transactions_routes, "db", _FakeDB(fake_session))
+    monkeypatch.setattr(transactions_routes, "increment_metric", lambda _name: None)
+    monkeypatch.setattr(transactions_routes, "_apply_debt_settlement_on_success", _fake_apply_debt_settlement_on_success)
+    monkeypatch.setattr(webhook_routes, "sync_address_list_for_single_user", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        webhook_routes.settings_service,
+        "get_setting",
+        lambda key, default=None: {"APP_PUBLIC_BASE_URL": "https://lpsaring.example"}.get(key, default),
+    )
+    monkeypatch.setattr(
+        debt_settlement_receipt_service,
+        "get_debt_settlement_mutation_for_transaction",
+        lambda _transaction: fake_mutation,
+    )
+    monkeypatch.setattr(
+        debt_settlement_receipt_service,
+        "build_debt_settlement_receipt_context",
+        lambda **_kwargs: {
+            "paid_manual_gb": "40.00 GB",
+            "paid_total_gb": "40.00 GB",
+            "paid_total_amount_display": "Rp 400.000",
+            "payment_channel_label": "Pembayaran online via Midtrans",
+            "payment_method_label": "QRIS",
+        },
+    )
+    monkeypatch.setattr(
+        user_management_helpers,
+        "_send_whatsapp_notification",
+        lambda phone_number, template_key, context: sent.update(
+            {
+                "phone_number": phone_number,
+                "template_key": template_key,
+                "context": context,
+            }
+        ),
+    )
+
+    app = _make_app()
+    webhook_impl = _unwrap_decorators(transactions_routes.handle_notification)
+
+    with app.test_request_context(
+        "/api/transactions/notification",
+        method="POST",
+        json={
+            "order_id": order_id,
+            "transaction_status": "settlement",
+            "status_code": "200",
+            "gross_amount": "400000.00",
+            "transaction_id": "trx-debt-online-001",
+            "payment_type": "qris",
+        },
+    ):
+        resp, status = webhook_impl()
+
+    assert status == 200
+    payload = resp.get_json()
+    assert payload.get("status") == "ok"
+    assert sent["phone_number"] == "+6289527796925"
+    assert sent["template_key"] == "user_debt_cleared_online"
+    assert sent["context"]["payment_method_label"] == "QRIS"
+    assert sent["context"]["receipt_url"].startswith("https://lpsaring.example/api/admin/users/debt-settlements/temp/")
 
 
 def test_webhook_skips_duplicate_hotspot_apply_side_effect(monkeypatch):

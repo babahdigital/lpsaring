@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from app.extensions import db
 from app.infrastructure.db.models import Package, QuotaMutationLedger, Transaction, User, UserQuotaDebt
+from app.services.notification_service import generate_temp_debt_settlement_receipt_token
 from app.utils.formatters import format_app_date_display, format_app_datetime_display, format_mb_to_gb, format_to_local_phone
 from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package
 
@@ -142,6 +143,11 @@ def get_latest_admin_debt_settlement_mutation(user_id: uuid.UUID, source: str) -
         .order_by(QuotaMutationLedger.created_at.desc())
         .limit(1)
     ).scalar_one_or_none()
+
+
+def build_debt_settlement_receipt_url(entry_id: uuid.UUID | str, base_url: str) -> str:
+    token = generate_temp_debt_settlement_receipt_token(str(entry_id))
+    return f"{str(base_url).rstrip('/')}/api/admin/users/debt-settlements/temp/{token}.pdf"
 
 
 def _get_manual_debt_item(user_id: uuid.UUID, debt_item_id: str | None) -> UserQuotaDebt | None:
