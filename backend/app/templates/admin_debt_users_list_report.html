@@ -68,17 +68,15 @@
       }
 
       col.no { width: 3%; }
-      col.name { width: 14%; }
-      col.phone { width: 10%; }
-      col.blok { width: 4%; }
-      col.kamar { width: 4%; }
+      col.name { width: 16%; }
+      col.phone { width: 11%; }
       col.layanan { width: 7%; }
-      col.device { width: 4%; }
-      col.total-quota { width: 8%; }
-      col.used { width: 8%; }
-      col.remaining { width: 8%; }
-      col.debt-auto { width: 8%; }
-      col.debt-manual { width: 8%; }
+      col.device { width: 5%; }
+      col.total-quota { width: 9%; }
+      col.used { width: 9%; }
+      col.remaining { width: 9%; }
+      col.debt-auto { width: 9%; }
+      col.debt-manual { width: 9%; }
       col.debt-rp { width: 10%; }
 
       th, td {
@@ -183,8 +181,6 @@
         <col class="no">
         <col class="name">
         <col class="phone">
-        <col class="blok">
-        <col class="kamar">
         <col class="layanan">
         <col class="device">
         <col class="total-quota">
@@ -199,8 +195,6 @@
           <th class="center">No</th>
           <th>Nama</th>
           <th>No. HP</th>
-          <th>Blok</th>
-          <th>Kamar</th>
           <th>Layanan</th>
           <th class="center">Device</th>
           <th class="right">Total Kuota</th>
@@ -220,8 +214,6 @@
                 {{- u.full_name }} <span class="badge badge-debt">DEBT</span>
               </td>
               <td class="nowrap">{{ u.phone_display }}</td>
-              <td class="center">{{ u.blok or '-' }}</td>
-              <td class="center">{{ u.kamar or '-' }}</td>
               <td class="nowrap">
                 {% if u.is_unlimited_user %}
                   <span class="badge badge-unlimited">Unlimited</span>
@@ -236,9 +228,9 @@
                 {% endif %}
               </td>
               <td class="center nowrap">{{ u.device_count }}</td>
-              <td class="right nowrap">{{ fmt_quota(u.total_quota_purchased_mb) }}</td>
+              <td class="right nowrap">{{ fmt_quota(u.total_quota_purchased_mb, unlimited=u.is_unlimited_user) }}</td>
               <td class="right nowrap">{{ fmt_quota(u.total_quota_used_mb) }}</td>
-              <td class="right nowrap">{{ fmt_quota(u.remaining_mb) }}</td>
+              <td class="right nowrap">{{ fmt_quota(u.remaining_mb, unlimited=u.is_unlimited_user) }}</td>
               <td class="right nowrap">{{ fmt_quota(u.debt_auto_mb) }}</td>
               <td class="right nowrap">
                 {%- if u.is_unlimited_debt -%}
@@ -251,7 +243,7 @@
             </tr>
           {% endfor %}
           <tr class="subtotal-row">
-            <td colspan="7" class="right">TOTAL</td>
+            <td colspan="5" class="right">TOTAL</td>
             <td class="right nowrap">{{ fmt_quota(summary_total_purchased_mb) }}</td>
             <td class="right nowrap">{{ fmt_quota(summary_total_used_mb) }}</td>
             <td class="right nowrap">{{ fmt_quota(summary_total_remaining_mb) }}</td>
@@ -261,7 +253,7 @@
           </tr>
         {% else %}
           <tr>
-            <td colspan="13" class="center empty-state">
+            <td colspan="11" class="center empty-state">
               Tidak ada pengguna dengan tunggakan saat ini.
             </td>
           </tr>

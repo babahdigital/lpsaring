@@ -2860,9 +2860,23 @@ def _build_bulk_user_row(user: User, *, fup_threshold_mb: float, now_utc: dateti
         "debt_manual_mb": debt_manual,
         "debt_total_mb": debt_total,
         "debt_estimated_rp": 0,  # filled below
-        "expiry_display": format_app_datetime_display(expiry, fallback="-"),
-        "created_at_display": format_app_datetime_display(getattr(user, "created_at", None), fallback="-"),
+        "expiry_display": _format_short_date(expiry),
+        "created_at_display": _format_short_date(getattr(user, "created_at", None)),
     }
+
+
+def _format_short_date(dt_val: object) -> str:
+    """Format datetime to short date string DD-MM-YYYY for PDF lists."""
+    if dt_val is None:
+        return "-"
+    try:
+        from datetime import datetime as _dt
+        if isinstance(dt_val, _dt):
+            utc_plus_8 = dt_val + timedelta(hours=8)
+            return utc_plus_8.strftime("%d-%m-%Y")
+    except Exception:
+        pass
+    return str(dt_val)[:10] if dt_val else "-"
 
 
 @user_management_bp.route("/users/export/debt-list", methods=["GET"])

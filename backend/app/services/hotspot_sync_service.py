@@ -204,7 +204,7 @@ def _load_hotspot_usage_sync_db_state() -> HotspotUsageSyncDbState:
         raw_user_ids = db.session.scalars(
             select(User.id).where(
                 User.is_active,
-                User.role.in_([UserRole.USER, UserRole.KOMANDAN]),
+                User.role.in_([UserRole.USER, UserRole.KOMANDAN, UserRole.ADMIN]),
                 User.approval_status == ApprovalStatus.APPROVED,
             )
         ).all()
@@ -2708,12 +2708,9 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                                     },
                                 )
 
-                            # Jangan update total_quota_used_mb untuk unlimited users.
-                            # Daily log tetap dicatat di atas untuk keperluan grafik pemakaian.
-                            if (
-                                not bool(getattr(user, "is_unlimited_user", False))
-                                and abs(new_total_usage_mb - old_usage_mb) >= 0.01
-                            ):
+                            # Catat total_quota_used_mb untuk SEMUA user termasuk unlimited.
+                            # Unlimited user tetap tercatat pemakaiannya; debt tetap 0 via model property.
+                            if abs(new_total_usage_mb - old_usage_mb) >= 0.01:
                                 lock_user_quota_row(user)
                                 before_state = snapshot_user_quota_state(user)
                                 user.total_quota_used_mb = new_total_usage_mb
