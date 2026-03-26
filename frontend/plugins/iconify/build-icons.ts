@@ -324,6 +324,8 @@ const tablerIcons = [
   'user-minus',
   'chart-donut',
   'shield-x',
+  'file-spreadsheet',
+  'shield',
   'x',
 ]
 
