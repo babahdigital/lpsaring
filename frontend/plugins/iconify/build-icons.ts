@@ -325,6 +325,7 @@ const tablerIcons = [
   'chart-donut',
   'shield-x',
   'file-spreadsheet',
+  'file-type-pdf',
   'shield',
   'x',
 ]
