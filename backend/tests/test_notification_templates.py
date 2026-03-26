@@ -215,6 +215,38 @@ def test_user_debt_partial_payment_accepts_receipt_fields(monkeypatch, app):
     assert "debt-settlements/temp/token.pdf" in message
 
 
+def test_user_debt_underpayment_correction_accepts_audit_fields(monkeypatch, app):
+    from app.services import notification_service
+
+    monkeypatch.setattr(
+        notification_service,
+        "_load_templates",
+        lambda: {
+            "user_debt_underpayment_correction": "Audit {full_name} {order_id} {paid_amount_display} {expected_amount_display} {shortage_amount_display} {shortage_debt_gb} {due_date} {debt_pdf_url}",
+        },
+    )
+    monkeypatch.setattr(notification_service, "get_app_links", lambda: {})
+
+    with app.app_context():
+        message = notification_service.get_notification_message(
+            "user_debt_underpayment_correction",
+            {
+                "full_name": "Puguh Rahmansyah",
+                "order_id": "BD-DBLP-28C1A6E02017",
+                "paid_amount_display": "Rp 270.000",
+                "expected_amount_display": "Rp 400.000",
+                "shortage_amount_display": "Rp 130.000",
+                "shortage_debt_gb": "13.00 GB",
+                "due_date": "02 Apr 2026",
+                "debt_pdf_url": "https://example.test/api/admin/users/debts/temp/token.pdf",
+            },
+        )
+
+    assert "Peringatan:" not in message
+    assert "BD-DBLP-28C1A6E02017" in message
+    assert "debts/temp/token.pdf" in message
+
+
 def test_user_manual_debt_reminder_accepts_detail_and_invoice_fields(monkeypatch, app):
     from app.services import notification_service
 

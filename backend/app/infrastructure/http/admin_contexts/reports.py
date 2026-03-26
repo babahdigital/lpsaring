@@ -6,6 +6,7 @@ from http import HTTPStatus
 
 from flask import abort, current_app, make_response, render_template, request
 
+from app.infrastructure.http.transactions.helpers import resolve_transaction_package_label
 from app.utils.formatters import get_app_timezone_label, get_app_timezone_offset_hours
 
 
@@ -149,6 +150,11 @@ def get_transaction_admin_report_pdf_impl(
         'transaction': tx,
         'user': tx.user,
         'package': tx.package,
+        'package_label': resolve_transaction_package_label(
+            tx.midtrans_order_id,
+            getattr(getattr(tx, 'package', None), 'name', None),
+            default_unknown='N/A',
+        ),
         'status': tx.status.value,
         'report_date_local': datetime.now(local_tz),
         'tx_created_at_local': _format_dt_local(tx.created_at, get_local_tz=get_local_tz),

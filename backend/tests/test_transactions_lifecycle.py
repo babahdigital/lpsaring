@@ -10,6 +10,7 @@ import pytest
 
 from app.infrastructure.http import transactions_routes
 from app.infrastructure.db.models import ApprovalStatus, TransactionStatus
+from app.infrastructure.http.transactions.helpers import resolve_transaction_package_label
 
 
 def _unwrap_decorators(func):
@@ -222,6 +223,18 @@ def test_initiate_transaction_sets_unknown_and_expiry_and_finish_url(monkeypatch
 
     finish_url = capture["snap_params"]["callbacks"]["finish"]
     assert "status=pending" not in finish_url
+
+
+def test_resolve_transaction_package_label_returns_debt_specific_labels():
+    manual_order_id = f"DEBT-{uuid.uuid4()}~ABCD"
+    settle_all_order_id = "BD-DBLP-28C1A6E02017"
+    app = _make_app()
+    app.config["DEBT_ORDER_ID_PREFIX"] = "BD-DBLP"
+
+    with app.app_context():
+        assert resolve_transaction_package_label(manual_order_id, None) == "Partial Debt"
+        assert resolve_transaction_package_label(settle_all_order_id, None) == "Pelunasan Debt"
+        assert resolve_transaction_package_label("BD-LPSR-ABC123", "Paket Hemat") == "Paket Hemat"
 
 
 def test_initiate_transaction_core_api_sets_pending_and_qr_fields(monkeypatch):

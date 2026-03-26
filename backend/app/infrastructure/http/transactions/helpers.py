@@ -187,3 +187,21 @@ def _is_debt_settlement_order_id(order_id: str | None) -> bool:
         if raw.startswith(f"{p}-"):
             return True
     return False
+
+
+def resolve_transaction_package_label(
+    order_id: str | None,
+    package_name: str | None = None,
+    *,
+    default_unknown: str = "N/A",
+) -> str:
+    normalized_package_name = str(package_name or "").strip()
+    if normalized_package_name:
+        return normalized_package_name
+
+    if _is_debt_settlement_order_id(order_id):
+        manual_debt_id = _extract_manual_debt_id_from_order_id(order_id)
+        return "Partial Debt" if manual_debt_id is not None else "Pelunasan Debt"
+
+    normalized_unknown = str(default_unknown or "").strip()
+    return normalized_unknown or "N/A"

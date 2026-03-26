@@ -384,7 +384,7 @@ def register_commands(app: Flask):
         sync_mikrotik_access_command,
         sync_dhcp_leases_command,
     )
-    from .commands.manual_debt_command import add_manual_debt_command
+    from .commands.manual_debt_command import add_manual_debt_command, audit_debt_settlement_underpayments_command
     from .commands.sync_unauthorized_hosts_command import sync_unauthorized_hosts_command
     from .commands.bulk_reset_quota_command import bulk_reset_quota_command
     from .commands.cleanup_transactions_command import cleanup_transactions_command
@@ -400,6 +400,7 @@ def register_commands(app: Flask):
     app.cli.add_command(sync_mikrotik_access_command.sync_mikrotik_access_command)
     app.cli.add_command(sync_dhcp_leases_command.sync_dhcp_leases_command)
     app.cli.add_command(add_manual_debt_command)
+    app.cli.add_command(audit_debt_settlement_underpayments_command)
     app.cli.add_command(sync_unauthorized_hosts_command)
     app.cli.add_command(bulk_reset_quota_command)
     app.cli.add_command(cleanup_transactions_command)

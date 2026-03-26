@@ -16,6 +16,7 @@ from sqlalchemy.engine import make_url
 from app.extensions import db
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
 from app.infrastructure.gateways.telegram_client import send_telegram_message
+from app.infrastructure.http.transactions.helpers import resolve_transaction_package_label
 from app.utils.formatters import (
     format_app_datetime_display,
     get_app_local_datetime,
@@ -447,7 +448,13 @@ def get_dashboard_stats(current_admin: User):
                 "amount": float(tx.amount),
                 "created_at": tx.created_at.isoformat(),
                 "created_at_display": format_app_datetime_display(tx.created_at, fallback="-"),
-                "package": {"name": tx.package.name if tx.package else "N/A"},
+                "package": {
+                    "name": resolve_transaction_package_label(
+                        tx.midtrans_order_id,
+                        getattr(getattr(tx, "package", None), "name", None),
+                        default_unknown="N/A",
+                    ),
+                },
                 "user": {
                     "full_name": tx.user.full_name if tx.user else "Pengguna Dihapus",
                     "phone_number": tx.user.phone_number if tx.user else None,

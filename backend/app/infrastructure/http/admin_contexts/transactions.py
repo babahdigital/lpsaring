@@ -8,6 +8,7 @@ from http import HTTPStatus
 import sqlalchemy as sa
 from flask import abort, current_app, jsonify, make_response, render_template, request
 
+from app.infrastructure.http.transactions.helpers import resolve_transaction_package_label
 from app.utils.formatters import format_app_datetime_display
 
 
@@ -98,7 +99,11 @@ def get_transactions_list_impl(
                     'full_name': tx.user.full_name if tx.user else 'N/A',
                     'phone_number': tx.user.phone_number if tx.user else 'N/A',
                 },
-                'package_name': tx.package.name if tx.package else 'N/A',
+                'package_name': resolve_transaction_package_label(
+                    tx.midtrans_order_id,
+                    getattr(getattr(tx, 'package', None), 'name', None),
+                    default_unknown='N/A',
+                ),
             }
             for tx in pagination.items
         ]
@@ -182,7 +187,11 @@ def get_transaction_detail_impl(*, db, order_id: str, Transaction, TransactionEv
                         'full_name': tx.user.full_name if tx.user else 'N/A',
                         'phone_number': tx.user.phone_number if tx.user else 'N/A',
                     },
-                    'package_name': tx.package.name if tx.package else 'N/A',
+                    'package_name': resolve_transaction_package_label(
+                        tx.midtrans_order_id,
+                        getattr(getattr(tx, 'package', None), 'name', None),
+                        default_unknown='N/A',
+                    ),
                     'midtrans_notification_payload': payload,
                     'events': events_payload,
                 }

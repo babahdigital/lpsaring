@@ -1495,6 +1495,11 @@ useHead({ title: 'Riwayat Transaksi & Kuota' })
                 >
                   <VCardText class="d-flex flex-column gap-2">
                     <div class="d-flex justify-space-between">
+                      <span class="font-weight-bold">Jenis:</span>
+                      <span>{{ item.package_name }}</span>
+                    </div>
+
+                    <div class="d-flex justify-space-between">
                       <span class="font-weight-bold">Tanggal:</span>
                       <span>{{ formatDateTime(item.created_at) }}</span>
                     </div>
