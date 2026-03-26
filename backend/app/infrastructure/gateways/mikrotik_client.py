@@ -838,7 +838,20 @@ def upsert_address_list_entry(
                 update_data["comment"] = comment
             if timeout is not None:
                 update_data["timeout"] = timeout
-            resource.set(**update_data)
+            try:
+                resource.set(**update_data)
+            except Exception as set_exc:
+                # TOCTOU race: entry expired/dihapus antara get() dan set().
+                # Fallback ke add() agar operasi tetap berhasil.
+                if "no such item" in str(set_exc).lower():
+                    add_data = {"address": address, "list": list_name}
+                    if comment is not None:
+                        add_data["comment"] = comment
+                    if timeout is not None:
+                        add_data["timeout"] = timeout
+                    resource.add(**add_data)
+                else:
+                    raise
         else:
             add_data = {"address": address, "list": list_name}
             if comment is not None:

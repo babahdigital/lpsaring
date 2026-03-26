@@ -2562,7 +2562,10 @@ def cleanup_waiting_dhcp_arp_task(self):
 
                     last_seen_text = str(lease.get("last-seen") or "").strip()
                     last_seen_seconds = _parse_mikrotik_duration_seconds(last_seen_text)
-                    if last_seen_seconds and last_seen_seconds < min_last_seen_seconds:
+                    # last_seen_seconds == 0 artinya lease baru (never seen) — jangan hapus,
+                    # karena self-heal baru saja membuatnya untuk device offline yang masih
+                    # authorized. Menghapus lease never-seen menyebabkan loop create-delete.
+                    if last_seen_seconds == 0 or last_seen_seconds < min_last_seen_seconds:
                         summary["skipped_recent"] += 1
                         continue
 

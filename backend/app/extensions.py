@@ -203,7 +203,7 @@ def make_celery_app(app=None):
         },
         "expire-stale-transactions": {
             "task": "expire_stale_transactions_task",
-            "schedule": 60,
+            "schedule": 300,  # 5 menit — transaksi stale tidak berubah status tiap detik
         },
         "cleanup-inactive-users": {
             "task": "cleanup_inactive_users_task",

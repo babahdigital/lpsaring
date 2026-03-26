@@ -3,7 +3,7 @@
 Dokumen ini mencatat semua pengembangan yang sudah dianalisis, didesain, atau sebagian diimplementasi
 tapi **belum selesai penuh** atau **perlu tindakan lanjutan**. Update setiap kali item selesai atau di-skip.
 
-> **Update terakhir**: 2026-03-20 (Session 5 — Final cleanup: hapus miskonsepsi config DB, pindah 5-user ke monitoring, fix DHCP status)
+> **Update terakhir**: 2026-03-26 (Session 6 — Production audit: 3 fixes deploy — expire_stale 5m, DHCP loop fix, MikroTik TOCTOU)
 
 ---
 
@@ -103,12 +103,15 @@ tapi **belum selesai penuh** atau **perlu tindakan lanjutan**. Update setiap kal
 
 ---
 
-### 🔍 Fix Bug DHCP Loop: Static Lease Dibuat Ulang Terus
-**Status**: Deployed (Session 5), **dalam pemantauan** — belum confirmed selesai.
-**Root Cause**: `_snapshot_dhcp_ips_by_mac` dan `_collect_dhcp_lease_snapshot` skip semua waiting lease.
-**Fix yang diterapkan**: Include lpsaring-tagged waiting lease → tidak di-recreate terus.
-**Progress**: `dhcp_self_healed` 31–34 (pre-deploy) → 26 → 16 (post-deploy, 53% turun).
-**Tindakan selanjutnya**: Monitor 1–2 siklus. Jika tidak turun ke ~0 → investigasi root cause kedua.
+### ✅ Fix Bug DHCP Loop: Static Lease Dibuat Ulang Terus
+**Status**: SELESAI (26 Mar 2026, Session 6) — root cause kedua ditemukan & fixed.
+**Root Cause #1** (fix #39): `_snapshot_dhcp_ips_by_mac` skip semua waiting lease → fixed Session 5.
+**Root Cause #2** (fix baru): `cleanup_waiting_dhcp_arp_task` punya guard `if last_seen_seconds and ...`
+yang falsy ketika `last_seen_seconds=0` (lease baru, never seen). Lease yang baru dicreate oleh self-heal
+langsung dihapus → loop 33 device setiap siklus.
+**Fix**: Ubah guard menjadi `if last_seen_seconds == 0 or last_seen_seconds < min_last_seen_seconds` —
+lease never-seen dianggap "recent" dan di-skip, bukan dihapus.
+**File**: `backend/app/tasks.py` line 2565
 
 ---
 
@@ -171,9 +174,9 @@ File: `frontend/pages/login/hotspot-required.vue` (4 baris setelah `if (sessionB
 - **5 user `no_authorized_device`**: self-resolve — sistem fix otomatis saat user konek ulang ke hotspot. Tidak butuh admin action. (lihat ℹ️ bawah)
 - `+6281255962309` (MAC randomization LAA) → `dhcp_lease_missing` loop — belum selesai, pending MAC randomization fallback fix
 
-### ℹ️ 5 User Tanpa Device Terdaftar
+### ℹ️ 6 User Tanpa Device Terdaftar
 User berikut muncul di log parity guard tiap 10 menit sebagai `no_authorized_device`:
-`+6285752083738`, `+6285751420446`, `+6281528670170`, `+6282294570374`, `+6281348822424`
+`+6285752083738`, `+6285751420446`, `+6281528670170`, `+6282294570374`, `+6281348822424`, `+62811508961`
 
 **Root cause**: User lama ganti HP/MAC — tidak punya device `is_authorized=True` di DB.
 **Perilaku**: User BISA login ke portal. Saat konek ke hotspot → device baru auto-register → binding fix otomatis.
@@ -185,17 +188,25 @@ User berikut muncul di log parity guard tiap 10 menit sebagai `no_authorized_dev
 - WA quota Fonnte: ~9472 remaining (19 Mar 2026)
 
 ### DHCP Self-Heal
-- Pre-deploy: 31–34/siklus → Post-deploy: ~16/siklus (sedang turun)
-- Jika tidak mencapai ~0 dalam beberapa siklus → investigasi root cause kedua (diluar waiting lease fix)
+- Pre-fix#39: 31–34/siklus → Post-fix#39: ~16/siklus → **Post-fix#2 (26 Mar): target ~0/siklus**
+- Root cause kedua (last_seen=0 falsy guard) fixed → lease never-seen tidak lagi dihapus oleh cleanup
+- Monitor setelah deploy: `dhcp_self_healed` harus ~0 dan `skipped_recent` harus naik ~33
 
 ### Redis Fragmentation
-- `mem_fragmentation_ratio: 3.13` (20 Mar 2026) — tinggi, target < 1.5
+- `mem_fragmentation_ratio: 3.13` (20 Mar 2026) → **1.99** (26 Mar 2026) — turun 36%
 - `--activedefrag yes` aktif sejak deploy Session 5
+- Target < 1.5 — masih perlu monitor
 - Monitor: `docker exec hotspot_prod_redis_cache redis-cli info memory | grep mem_fragmentation_ratio`
 
 ---
 
 ## ARSIP ITEM YANG SUDAH SELESAI
+
+### ✅ Production Audit & 3 Fixes (26 Mar 2026 — Session 6)
+- **Fix #1** (TINGGI): `expire_stale_transactions_task` schedule 60s → 300s (5 menit). Mengurangi ~80% DB query dan Celery task overhead. File: `backend/app/extensions.py`
+- **Fix #2** (MEDIUM): DHCP self-heal loop 33 device — root cause: `if last_seen_seconds and ...` falsy ketika 0 (never-seen lease). Fix: `if last_seen_seconds == 0 or ...` — lease never-seen di-skip. File: `backend/app/tasks.py`
+- **Fix #3** (MEDIUM): MikroTik `no such item (4)` TOCTOU race — `upsert_address_list_entry` fallback ke `add()` jika `set()` gagal karena entry expired antara `get()` dan `set()`. File: `backend/app/infrastructure/gateways/mikrotik_client.py`
+- System status: 6/6 container healthy, 0 nginx error, DB 193 MB, Redis frag 1.99 (turun dari 3.13)
 
 ### ✅ Code Bugs Audit 20 Mar 2026 (Session 5)
 - **Bug #1**: Hardcoded `lpsaring.babahdigital.net` di WA overdue block → `APP_PUBLIC_BASE_URL`
