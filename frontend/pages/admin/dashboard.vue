@@ -711,7 +711,7 @@ useHead({ title: 'Dashboard Admin' })
               </VAvatar>
             </template>
             <VCardTitle>Pendapatan Mingguan</VCardTitle>
-            <VCardSubtitle>7 hari vs minggu lalu</VCardSubtitle>
+            <VCardSubtitle>Minggu Ini vs Minggu Lalu</VCardSubtitle>
             <template #append>
               <VChip
                 size="small"

@@ -27,7 +27,7 @@ _DEGRADED_NOTIFICATION_PREFIX = "Peringatan:"
 
 
 def _send_whatsapp_notification(user_phone: str, template_key: str, context: dict) -> bool:
-    """Mengirim notifikasi WhatsApp jika diaktifkan."""
+    """Mengirim notifikasi WhatsApp jika diaktifkan dan mencatat hasilnya ke AdminActionLog."""
     try:
         from app.services.notification_service import get_notification_message
         from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
@@ -61,6 +61,7 @@ def _send_whatsapp_notification(user_phone: str, template_key: str, context: dic
                 )
 
             sent = bool(send_whatsapp_message(user_phone, message_body))
+            _log_wa_notification(user_phone, template_key, sent)
             if not sent:
                 increment_metric("notification.whatsapp.send_failed")
                 increment_metric(f"notification.whatsapp.{template_key}.send_failed")
@@ -113,6 +114,29 @@ def _log_admin_action(admin: User, target_user: User, action_type: AdminActionTy
         db.session.add(log_entry)
     except Exception as e:
         current_app.logger.error(f"Gagal mencatat aksi admin: {e}", exc_info=True)
+
+
+def _log_wa_notification(recipient_phone: str, template_key: str, success: bool) -> None:
+    """Catat pengiriman notifikasi WA ke AdminActionLog agar terlihat di halaman log admin."""
+    try:
+        from app.utils.formatters import get_phone_number_variations
+
+        variations = get_phone_number_variations(recipient_phone)
+        target_user = db.session.query(User).filter(User.phone_number.in_(variations)).first() if variations else None
+
+        log_entry = AdminActionLog()
+        log_entry.admin_id = None  # system-generated
+        log_entry.target_user_id = target_user.id if target_user else None
+        log_entry.action_type = AdminActionType.SEND_WHATSAPP_NOTIFICATION
+        log_entry.details = json.dumps({
+            "template": template_key,
+            "recipient": recipient_phone,
+            "success": success,
+            "source": "notification.whatsapp",
+        }, default=str)
+        db.session.add(log_entry)
+    except Exception as e:
+        current_app.logger.debug(f"Gagal mencatat WA notification log: {e}")
 
 
 def _generate_password(length=6, numeric_only=True) -> str:

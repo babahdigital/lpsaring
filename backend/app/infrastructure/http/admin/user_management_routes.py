@@ -9,7 +9,7 @@ from http import HTTPStatus
 from pydantic import ValidationError
 import sqlalchemy as sa
 
-from app.extensions import db
+from app.extensions import db, limiter
 from app.infrastructure.db.models import (
     User,
     UserRole,
@@ -1348,6 +1348,7 @@ def delete_user(current_admin: User, user_id):
 
 
 @user_management_bp.route("/users/<uuid:user_id>/reset-hotspot-password", methods=["POST"])
+@limiter.limit(lambda: current_app.config.get("ADMIN_RESET_PASSWORD_RATE_LIMIT", "5 per minute;20 per hour"))
 @admin_required
 def admin_reset_hotspot_password(current_admin: User, user_id):
     user = db.session.get(User, user_id)
@@ -1366,6 +1367,7 @@ def admin_reset_hotspot_password(current_admin: User, user_id):
 
 
 @user_management_bp.route("/users/<uuid:user_id>/generate-admin-password", methods=["POST"])
+@limiter.limit(lambda: current_app.config.get("ADMIN_GENERATE_PASSWORD_RATE_LIMIT", "5 per minute;20 per hour"))
 @admin_required
 def generate_admin_password_for_user(current_admin: User, user_id):
     user = db.session.get(User, user_id)
@@ -1383,6 +1385,7 @@ def generate_admin_password_for_user(current_admin: User, user_id):
 
 
 @user_management_bp.route("/users/<uuid:user_id>/reset-login", methods=["POST"])
+@limiter.limit(lambda: current_app.config.get("ADMIN_RESET_LOGIN_RATE_LIMIT", "5 per minute;20 per hour"))
 @admin_required
 def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
     """Force user to login fresh without changing quota/status fields in DB.
@@ -1451,6 +1454,7 @@ def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
 
 
 @user_management_bp.route("/users/<uuid:user_id>/reset-password", methods=["POST"])
+@limiter.limit(lambda: current_app.config.get("ADMIN_RESET_PASSWORD_RATE_LIMIT", "5 per minute;20 per hour"))
 @admin_required
 def admin_reset_user_password(current_admin: User, user_id: uuid.UUID):
     """Reset password pengguna ke 6 angka acak, simpan hash ke DB, kirim via WhatsApp."""
@@ -1724,6 +1728,7 @@ def get_user_manual_debts(current_admin: User, user_id: uuid.UUID):
 
 
 @user_management_bp.route("/users/<uuid:user_id>/debts/<uuid:debt_id>/settle", methods=["POST"])
+@limiter.limit(lambda: current_app.config.get("ADMIN_DEBT_SETTLE_RATE_LIMIT", "10 per minute;60 per hour"))
 @admin_required
 def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: uuid.UUID):
     """Lunasi satu item debt manual (one-by-one), tanpa clear semua debt."""
@@ -1852,6 +1857,7 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
 
 
 @user_management_bp.route("/users/<uuid:user_id>/debts/settle-all", methods=["POST"])
+@limiter.limit(lambda: current_app.config.get("ADMIN_DEBT_SETTLE_RATE_LIMIT", "10 per minute;60 per hour"))
 @admin_required
 def settle_all_debts(current_admin: User, user_id: uuid.UUID):
     """Lunasi semua tunggakan user (auto + manual) sekaligus.

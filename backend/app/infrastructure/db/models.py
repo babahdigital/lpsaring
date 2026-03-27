@@ -144,6 +144,8 @@ class AdminActionType(enum.Enum):
 
     TRANSACTION_RECONCILE = "TRANSACTION_RECONCILE"
 
+    SEND_WHATSAPP_NOTIFICATION = "SEND_WHATSAPP_NOTIFICATION"
+
 
 # --- Definisi Model ---
 

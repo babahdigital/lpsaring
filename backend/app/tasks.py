@@ -3013,6 +3013,45 @@ def revoke_expired_refresh_tokens_task(self):
 
 
 @celery_app.task(
+    name="purge_old_admin_action_logs_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 1},
+)
+def purge_old_admin_action_logs_task(self):
+    """
+    Hapus AdminActionLog yang lebih tua dari ADMIN_ACTION_LOG_RETENTION_DAYS (default 90).
+    Jalan harian jam 04:15 via Celery Beat.
+    """
+    app = create_app()
+    with app.app_context():
+        try:
+            retention_days = int(app.config.get("ADMIN_ACTION_LOG_RETENTION_DAYS", 90))
+            if retention_days <= 0:
+                logger.info("Celery Task: Admin action log retention disabled (days=%s).", retention_days)
+                return
+            cutoff = datetime.now(dt_timezone.utc) - timedelta(days=retention_days)
+            deleted = (
+                db.session.query(AdminActionLog)
+                .filter(AdminActionLog.created_at < cutoff)
+                .delete(synchronize_session=False)
+            )
+            if deleted:
+                db.session.commit()
+                logger.info(
+                    "Celery Task: Purged %s admin action logs older than %s days.", deleted, retention_days,
+                )
+            else:
+                logger.info("Celery Task: Admin action log purge — tidak ada record usang.")
+        except Exception as e:
+            db.session.rollback()
+            logger.error("Celery Task: Error purging admin action logs: %s", str(e))
+            raise
+
+
+@celery_app.task(
     name="upsert_dhcp_static_lease_instant_task",
     bind=True,
     autoretry_for=(Exception,),

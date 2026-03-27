@@ -179,12 +179,21 @@ def export_action_logs(current_admin: User):  # noqa: ARG001
 @action_log_bp.route("/action-logs", methods=["DELETE"])
 @super_admin_required
 def clear_all_logs(current_admin: User):
-    """Endpoint untuk menghapus semua log aktivitas."""
+    """Endpoint untuk menghapus log aktivitas. Mendukung filter tanggal opsional."""
     try:
-        num_deleted = db.session.query(AdminActionLog).delete()
+        before_date_str = request.args.get("before_date")
+        query = db.session.query(AdminActionLog)
+        if before_date_str:
+            try:
+                before_date = datetime.fromisoformat(before_date_str.split("T")[0] + "T23:59:59")
+                query = query.filter(AdminActionLog.created_at <= before_date)
+            except (ValueError, TypeError):
+                return jsonify({"message": "Format before_date tidak valid (YYYY-MM-DD)."}), HTTPStatus.BAD_REQUEST
+        num_deleted = query.delete(synchronize_session=False)
         db.session.commit()
-        current_app.logger.info(f"Super Admin {current_admin.full_name} cleared all ({num_deleted}) action logs.")
-        return jsonify({"message": f"Berhasil menghapus {num_deleted} catatan log."}), HTTPStatus.OK
+        scope = f" sebelum {before_date_str}" if before_date_str else ""
+        current_app.logger.info(f"Super Admin {current_admin.full_name} cleared {num_deleted} action logs{scope}.")
+        return jsonify({"message": f"Berhasil menghapus {num_deleted} catatan log{scope}."}), HTTPStatus.OK
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error clearing action logs: {e}", exc_info=True)

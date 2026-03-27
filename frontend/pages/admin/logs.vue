@@ -222,6 +222,13 @@ const actionDisplayMap = computed(() => ({
   PROCESS_QUOTA_REQUEST_REJECT: { color: 'error', icon: 'tabler-x' },
   PROCESS_QUOTA_REQUEST_PARTIALLY_APPROVED: { color: 'info', icon: 'tabler-check' },
   ADMIN_API_MUTATION: { color: 'secondary', icon: 'tabler-settings-bolt' },
+  SEND_WHATSAPP_NOTIFICATION: { color: 'teal', icon: 'tabler-brand-whatsapp' },
+  BLOCK_USER: { color: 'error', icon: 'tabler-lock' },
+  UNBLOCK_USER: { color: 'success', icon: 'tabler-lock-open' },
+  RESET_USER_PASSWORD: { color: 'warning', icon: 'tabler-key' },
+  RESET_USER_LOGIN: { color: 'warning', icon: 'tabler-refresh' },
+  CREATE_QRIS_BILL: { color: 'primary', icon: 'tabler-qrcode' },
+  TRANSACTION_RECONCILE: { color: 'info', icon: 'tabler-receipt-refund' },
   DEFAULT: { color: 'secondary', icon: 'tabler-question-mark' },
 }))
 const getActionChip = (action: string) => actionDisplayMap.value[action as keyof typeof actionDisplayMap.value] ?? actionDisplayMap.value.DEFAULT
@@ -240,6 +247,9 @@ const keyDictionary: Record<string, string> = {
   profile: 'Profil Mikrotik',
   reason: 'Alasan',
   result: 'Hasil',
+  template: 'Template',
+  recipient: 'Penerima',
+  success: 'Berhasil',
 }
 
 function formatValue(key: string, value: any): string {
@@ -321,6 +331,12 @@ function formatLogDetails(log: AdminActionLog): string {
           parts.push(`Mengubah ${keyDictionary[key] ?? key} menjadi '${formatValue(key, details[key])}'.`)
 
         return parts.join(' ')
+      case 'SEND_WHATSAPP_NOTIFICATION': {
+        const status = details.success ? '✅ Berhasil' : '❌ Gagal'
+        const tpl = details.template ?? 'unknown'
+        const phone = details.recipient ? formatPhoneNumber(details.recipient) : '-'
+        return `${status} kirim WA template "${tpl}" ke ${phone}.`
+      }
       default:
         return Object.entries(details)
           .map(([key, value]) => `${keyDictionary[key] ?? key}: ${formatValue(key, value)}`)

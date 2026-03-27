@@ -327,6 +327,7 @@ const tablerIcons = [
   'file-spreadsheet',
   'file-type-pdf',
   'shield',
+  'receipt-refund',
   'x',
 ]
 

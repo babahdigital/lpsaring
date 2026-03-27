@@ -3,7 +3,7 @@
 Dokumen ini mencatat semua pengembangan yang sudah dianalisis, didesain, atau sebagian diimplementasi
 tapi **belum selesai penuh** atau **perlu tindakan lanjutan**. Update setiap kali item selesai atau di-skip.
 
-> **Update terakhir**: 2026-03-27 (Session 7 — Quota history WA, admin UX polish, mobile layout fix, gap analysis)
+> **Update terakhir**: 2026-03-27 (Session 7 — Rate limiting, log retention, WA tracking, DR docs, gap implementation)
 
 ---
 
@@ -205,40 +205,54 @@ User berikut muncul di log parity guard tiap 10 menit sebagai `no_authorized_dev
 Detail lengkap tersedia di [docs/GAP_ANALYSIS_2026_03_27.md](GAP_ANALYSIS_2026_03_27.md).
 
 ### ⏳ P1 — Automated E2E Test untuk Critical Path
-**Status**: Belum dimulai.
+**Status**: Infrastruktur siap (`docker-compose.e2e.yml` + `scripts/e2e/lib/`). Test script belum dibuat.
 **Gap**: Semua validasi saat ini manual (lint + unit test + smoke). Tidak ada E2E test otomatis yang menguji flow captive → login → OTP → beli paket → aktivasi internet end-to-end.
 **Risiko**: Regression pada integrasi antar-komponen yang lolos unit test tapi gagal di produksi.
 **Saran**: Playwright/Cypress E2E minimal untuk: (1) login OTP sukses, (2) captive portal redirect, (3) admin CRUD user, (4) debt settle flow.
 
 ### ⏳ P1 — Structured Error Response Consistency
-**Status**: Sebagian tercapai (security hardening 26 Mar), belum menyeluruh.
+**Status**: Sebagian tercapai (security hardening 26 Mar), belum menyeluruh. **SKIP untuk saat ini.**
 **Gap**: Backend masih ada jalur yang mengembalikan plain string atau dict ad-hoc untuk error. Belum ada schema `ErrorResponse` tunggal yang dipakai semua endpoint.
 **Saran**: Standarisasi `{"error": "code", "message": "human-readable", "details": {...}}` untuk semua 4xx/5xx.
 
-### ⏳ P2 — Rate Limiting per Endpoint (bukan hanya OTP)
-**Status**: Hanya OTP yang punya rate limit eksplisit (`5/min, 20/hour`).
-**Gap**: Endpoint sensitif lain (admin login, reset-password, debt settlement) belum di-rate-limit.
-**Saran**: `Flask-Limiter` per endpoint group, terutama `POST /auth/admin/login`, `POST /admin/users/{id}/reset-password`.
+### ✅ P2 — Rate Limiting per Endpoint (27 Mar 2026, Session 7)
+**Status**: SELESAI & DEPLOYED.
+**Perubahan**: `Flask-Limiter` diterapkan pada endpoint admin sensitif:
+- `POST /admin/users/{id}/reset-password` → `ADMIN_RESET_PASSWORD_RATE_LIMIT` (5/min; 20/hour)
+- `POST /admin/users/{id}/reset-hotspot-password` → `ADMIN_RESET_PASSWORD_RATE_LIMIT`
+- `POST /admin/users/{id}/reset-login` → `ADMIN_RESET_LOGIN_RATE_LIMIT` (5/min; 20/hour)
+- `POST /admin/users/{id}/generate-admin-password` → `ADMIN_GENERATE_PASSWORD_RATE_LIMIT` (5/min; 20/hour)
+- `POST /admin/users/{id}/debts/{id}/settle` → `ADMIN_DEBT_SETTLE_RATE_LIMIT` (10/min; 60/hour)
+- `POST /admin/users/{id}/debts/settle-all` → `ADMIN_DEBT_SETTLE_RATE_LIMIT`
+**Catatan**: `POST /auth/admin/login` sudah ada rate limit sebelumnya (`ADMIN_LOGIN_RATE_LIMIT`).
 
-### ⏳ P2 — Backup & Disaster Recovery Test
-**Status**: Backup SQL otomatis berjalan, tapi belum pernah diuji restore.
-**Gap**: Tidak ada dokumentasi atau skrip restoration verified. Jika server mati, restore time unknown.
-**Saran**: DR drill: restore backup ke staging, verifikasi data integrity, dokumentasikan prosedur.
+### ✅ P2 — Backup & Disaster Recovery Test (27 Mar 2026, Session 7)
+**Status**: SELESAI — prosedur restore didokumentasikan.
+**Perubahan**:
+- Dokumentasi lengkap restore DB dari backup: `docs/workflows/disaster-recovery.md`
+- Prosedur DR drill via E2E stack (restore ke environment lokal)
+- Backup off-site (S3/R2) belum diimplementasi → tetap di PENDING sebagai enhancement
 
-### ⏳ P2 — Admin Audit Log Retention & Export
-**Status**: `AdminActionLog` tersimpan tanpa batas, tidak ada policy retention.
-**Gap**: Tabel akan terus membesar. Belum ada fitur export bulk log untuk archival.
-**Saran**: Retention policy (misal 90 hari aktif + archive), endpoint admin export CSV/JSON.
+### ✅ P2 — Admin Audit Log Retention & Export (27 Mar 2026, Session 7)
+**Status**: SELESAI & DEPLOYED.
+**Perubahan**:
+- Celery task `purge_old_admin_action_logs_task` — otomatis hapus log > 90 hari (configurable `ADMIN_ACTION_LOG_RETENTION_DAYS`)
+- Endpoint DELETE `/api/admin/action-logs?before_date=YYYY-MM-DD` — purge log sebelum tanggal tertentu
+- CSV/TXT export sudah ada sebelumnya (tidak berubah)
+
+### ✅ P3 — WA Notification Delivery Tracking (27 Mar 2026, Session 7)
+**Status**: SELESAI — tracking via AdminActionLog (bukan dashboard terpisah).
+**Perubahan**:
+- `AdminActionType.SEND_WHATSAPP_NOTIFICATION` ditambahkan
+- Setiap pengiriman WA via `_send_whatsapp_notification()` otomatis tercatat di AdminActionLog
+- Detail log: template, recipient, success/fail
+- Frontend: chip WhatsApp hijau + format detail otomatis di halaman admin Log Aktivitas
+- Admin bisa filter/search "SEND_WHATSAPP_NOTIFICATION" di halaman log
 
 ### ⏳ P3 — User Self-Service Password Reset (tanpa Admin)
-**Status**: Reset password hanya via admin.
+**Status**: Reset password hanya via admin. **Tidak diubah (by design).**
 **Gap**: User yang lupa password harus menghubungi admin secara manual.
 **Saran**: Flow OTP-based self-service password reset untuk user reguler.
-
-### ⏳ P3 — Notification Delivery Tracking Dashboard
-**Status**: Event WA invoice tersimpan di `transaction_events`, tapi tidak ada dashboard untuk review delivery rate.
-**Gap**: Admin tidak bisa melihat success/fail rate notifikasi WA kecuali baca log Docker.
-**Saran**: Halaman admin sederhana: list notifikasi terakhir + status delivery + retry manual.
 
 ---
 

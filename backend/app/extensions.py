@@ -377,6 +377,15 @@ def make_celery_app(app=None):
         "schedule": crontab(hour=4, minute=30),
     }
 
+    # ---- Admin Action Log retention ----
+    retention_days = int(os.environ.get("ADMIN_ACTION_LOG_RETENTION_DAYS", "90"))
+    if retention_days > 0:
+        celery_instance.conf.beat_schedule["purge-old-admin-action-logs"] = {
+            "task": "purge_old_admin_action_logs_task",
+            # Harian jam 04:15
+            "schedule": crontab(hour=4, minute=15),
+        }
+
     if int(os.environ.get("TASK_DLQ_ALERT_THROTTLE_MINUTES", "60")) > 0:
         celery_instance.conf.beat_schedule["dlq-health-monitor"] = {
             "task": "dlq_health_monitor_task",
