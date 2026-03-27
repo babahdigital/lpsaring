@@ -54,6 +54,7 @@ export {
   type AdminUserDetailReportWhatsappRequest,
   type AdminUserDetailReportWhatsappRecipient,
   type AdminUserDetailReportWhatsappResponse,
+  // quota-history/send-wa uses inline response type in GeneratedApiContractMap
   type PublicDatabaseUpdateSubmissionRequest,
   type PublicUpdateSubmissionStatusResponse,
   type PaymentAvailabilityResponse,

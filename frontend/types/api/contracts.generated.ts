@@ -2,7 +2,7 @@
 // AUTO-GENERATED FILE. DO NOT EDIT MANUALLY.
 // Source: contracts/openapi/openapi.v1.yaml
 
-export const OPENAPI_SOURCE_SHA256 = '6afc09dd2bcd85a64cb53c30bd0fa0c3df234a332924a0e8257372e4447a1e8a' as const
+export const OPENAPI_SOURCE_SHA256 = 'c207db370677c93d316203dcb96417945a35c72166c4abeb2362f2b89ee02357' as const
 export const API_CONTRACT_REVISION = 'openapi-1.0.0' as const
 
 export type MessageResponse = { message: string }
@@ -210,11 +210,6 @@ export interface GeneratedApiContractMap {
     response: AdminUserDetailReportWhatsappResponse
     error: ErrorResponse
   }
-  'POST /admin/users/{user_id}/quota-history/send-wa': {
-    request: never
-    response: { message: string, whatsapp_sent: boolean }
-    error: ErrorResponse
-  }
   'GET /admin/users/{user_id}/detail-summary': {
     request: never
     response: AdminUserDetailSummaryResponse
@@ -228,6 +223,11 @@ export interface GeneratedApiContractMap {
   'POST /admin/users/{user_id}/quota-adjust': {
     request: AdminQuotaAdjustRequest
     response: AdminQuotaAdjustResponse
+    error: ErrorResponse
+  }
+  'POST /admin/users/{user_id}/quota-history/send-wa': {
+    request: { startDate?: string; endDate?: string; search?: string }
+    response: { message?: string; whatsapp_sent?: boolean }
     error: ErrorResponse
   }
   'POST /admin/users/{user_id}/reset-login': {
