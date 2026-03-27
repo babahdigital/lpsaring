@@ -2333,6 +2333,145 @@ def export_user_quota_history_pdf(current_admin: User, user_id: uuid.UUID):
         return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
+@user_management_bp.route("/users/<uuid:user_id>/quota-history/send-wa", methods=["POST"])
+@admin_required
+def send_user_quota_history_wa(current_admin: User, user_id: uuid.UUID):
+    """Generate quota history PDF dan kirim ke WhatsApp user."""
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+    denied_response = _deny_non_super_admin_target_access(current_admin, user)
+    if denied_response:
+        return denied_response
+
+    if not user.phone_number:
+        return jsonify({"message": "Pengguna tidak memiliki nomor telepon."}), HTTPStatus.BAD_REQUEST
+
+    body = request.get_json(silent=True) or {}
+    start_date = body.get("startDate") or request.args.get("startDate")
+    end_date = body.get("endDate") or request.args.get("endDate")
+    search = body.get("search") or request.args.get("search")
+
+    try:
+        from weasyprint import HTML  # type: ignore
+    except Exception:
+        return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
+
+    try:
+        payload = get_user_quota_history_payload(
+            user=user,
+            include_all=True,
+            items_per_page=200,
+            start_date=start_date,
+            end_date=end_date,
+            search=search,
+        )
+        generated_local = format_app_datetime_display(datetime.now(dt_timezone.utc), include_seconds=False)
+        context = {
+            "user": user,
+            "user_phone_display": format_to_local_phone(getattr(user, "phone_number", "") or "")
+            or (getattr(user, "phone_number", "") or ""),
+            "generated_at": generated_local,
+            "items": payload["items"],
+            "summary": payload["summary"],
+            "filters": payload["filters"],
+        }
+
+        public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
+        html_string = render_template("quota_history_report.html", **context)
+        pdf_bytes = HTML(string=html_string, base_url=public_base_url).write_pdf()
+        if not pdf_bytes:
+            return jsonify({"message": "Gagal menghasilkan file PDF."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+        # Save PDF to temp file and generate a temp-token URL
+        import os
+
+        safe_phone = (getattr(user, "phone_number", "") or "").replace("+", "")
+        filename = f"quota-history-{safe_phone or user.id}.pdf"
+
+        # Save to a temp path accessible by the app
+        temp_dir = os.path.join(current_app.instance_path, "tmp_pdf")
+        os.makedirs(temp_dir, exist_ok=True)
+
+        import secrets as _secrets
+
+        token = _secrets.token_urlsafe(24)
+        temp_path = os.path.join(temp_dir, f"{token}.pdf")
+        with open(temp_path, "wb") as f:
+            f.write(pdf_bytes)
+
+        pdf_url = f"{public_base_url.rstrip('/')}/api/admin/users/quota-report/temp/{token}.pdf"
+
+        # Build period label for WA message
+        filters_info = payload.get("filters") or {}
+        period_label = filters_info.get("label", "")
+        if not period_label:
+            s = filters_info.get("start_date", "")
+            e = filters_info.get("end_date", "")
+            if s and e:
+                period_label = f"{s} s/d {e}"
+            else:
+                period_label = "30 hari terakhir"
+
+        from app.services.notification_service import get_notification_message
+
+        caption = get_notification_message("admin_send_quota_history", {
+            "full_name": user.full_name or "Pengguna",
+            "period": period_label,
+            "admin_name": current_admin.full_name or "Admin",
+        })
+        if str(caption).startswith("Peringatan:"):
+            # Template not found, use fallback message
+            caption = (
+                f"Laporan Mutasi Kuota\n\n"
+                f"Nama: {user.full_name or 'Pengguna'}\n"
+                f"Periode: {period_label}\n\n"
+                f"Silakan buka file PDF terlampir untuk melihat rincian mutasi kuota Anda."
+            )
+
+        from app.infrastructure.gateways.whatsapp_client import send_whatsapp_with_pdf
+
+        wa_sent = send_whatsapp_with_pdf(user.phone_number, caption, pdf_url, filename)
+        if not wa_sent:
+            # Fallback: send text only
+            from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
+
+            send_whatsapp_message(user.phone_number, caption)
+
+        msg = "Laporan mutasi kuota berhasil dikirim via WhatsApp."
+        if not wa_sent:
+            msg = "PDF gagal dikirim, pesan teks telah dikirim sebagai fallback."
+
+        return jsonify({"message": msg, "whatsapp_sent": bool(wa_sent)}), HTTPStatus.OK
+    except Exception as e:
+        current_app.logger.error(f"Error sending quota history WA for user {user_id}: {e}", exc_info=True)
+        return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@user_management_bp.route("/users/quota-report/temp/<token>.pdf", methods=["GET"])
+def serve_temp_quota_report_pdf(token: str):
+    """Serve a temporary quota report PDF by token."""
+    import os
+    import re as _re
+
+    if not _re.match(r'^[A-Za-z0-9_-]{1,64}$', token):
+        return jsonify({"message": "Token tidak valid."}), HTTPStatus.BAD_REQUEST
+
+    temp_dir = os.path.join(current_app.instance_path, "tmp_pdf")
+    temp_path = os.path.join(temp_dir, f"{token}.pdf")
+
+    if not os.path.isfile(temp_path):
+        return jsonify({"message": "File tidak ditemukan atau sudah kedaluwarsa."}), HTTPStatus.NOT_FOUND
+
+    with open(temp_path, "rb") as f:
+        pdf_bytes = f.read()
+
+    resp = make_response(pdf_bytes)
+    resp.headers["Content-Type"] = "application/pdf"
+    resp.headers["Content-Disposition"] = 'inline; filename="quota-report.pdf"'
+    return resp
+
+
 @user_management_bp.route("/users/inactive-cleanup-preview", methods=["GET"])
 @admin_required
 def get_inactive_cleanup_preview(current_admin: User):

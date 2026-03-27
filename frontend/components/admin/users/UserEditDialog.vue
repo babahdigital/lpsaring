@@ -928,14 +928,6 @@ function openQuotaHistory() {
                         Reset Login
                       </VBtn>
                       <VBtn
-                        v-if="(authStore.isAdmin || authStore.isSuperAdmin) && isTargetAdminOrSuper"
-                        size="small" variant="tonal" color="warning"
-                        :loading="isResetPasswordLoading" prepend-icon="tabler-key"
-                        @click="resetUserPassword"
-                      >
-                        Reset Password
-                      </VBtn>
-                      <VBtn
                         v-if="canAdminInject"
                         size="small" variant="tonal" color="info"
                         :loading="isCheckingMikrotik" prepend-icon="tabler-refresh-dot"
@@ -1317,15 +1309,28 @@ function openQuotaHistory() {
         </AppPerfectScrollbar>
 
         <VDivider />
-        <VCardActions class="pa-4 d-flex" :class="isMobile ? 'flex-column ga-3' : 'justify-end'">
-          <VBtn
-            variant="tonal"
-            color="secondary"
-            :block="isMobile"
-            @click="onClose"
-          >
-            Batal
-          </VBtn>
+        <VCardActions class="pa-4 d-flex" :class="isMobile ? 'flex-column ga-3' : 'justify-space-between'">
+          <div class="d-flex" :class="isMobile ? 'flex-column ga-2 w-100' : 'ga-2'">
+            <VBtn
+              variant="tonal"
+              color="secondary"
+              :block="isMobile"
+              @click="onClose"
+            >
+              Batal
+            </VBtn>
+            <VBtn
+              v-if="(authStore.isAdmin || authStore.isSuperAdmin) && isTargetAdminOrSuper"
+              variant="tonal"
+              color="warning"
+              :block="isMobile"
+              :loading="isResetPasswordLoading"
+              prepend-icon="tabler-key"
+              @click="resetUserPassword"
+            >
+              Reset Password
+            </VBtn>
+          </div>
           <VBtn
             type="submit"
             color="primary"

@@ -507,6 +507,39 @@ function exportQuotaHistoryPdf() {
   const queryString = buildPdfQueryString()
   window.open(`/api/admin/users/${props.user.id}/quota-history/export?${queryString}`, '_blank', 'noopener')
 }
+
+const isSendingWa = ref(false)
+
+async function sendQuotaHistoryWa() {
+  if (!props.user)
+    return
+
+  const ok = window.confirm(
+    `Kirim laporan mutasi kuota ke WhatsApp ${props.user.full_name} (${props.user.phone_number})?`,
+  )
+  if (!ok)
+    return
+
+  isSendingWa.value = true
+  try {
+    const params = buildHistoryParams({ includePagination: false })
+    const res = await $api<{ message: string, whatsapp_sent: boolean }>(`/admin/users/${props.user.id}/quota-history/send-wa`, {
+      method: 'POST',
+      body: params,
+    })
+    showSnackbar({
+      type: res?.whatsapp_sent ? 'success' : 'warning',
+      title: 'WhatsApp',
+      text: res?.message || 'Laporan terkirim.',
+    })
+  }
+  catch (error: any) {
+    showSnackbar({ type: 'error', title: 'Gagal', text: error.data?.message || 'Gagal mengirim via WhatsApp.' })
+  }
+  finally {
+    isSendingWa.value = false
+  }
+}
 </script>
 
 <template>
@@ -530,14 +563,33 @@ function exportQuotaHistoryPdf() {
             </div>
           </div>
           <div class="dialog-titlebar__actions">
-            <VBtn
-              icon="tabler-printer"
-              variant="text"
-              size="small"
-              class="text-white"
-              :disabled="loading || items.length === 0"
-              @click="exportQuotaHistoryPdf"
-            />
+            <VTooltip location="bottom" text="Kirim ke WhatsApp">
+              <template #activator="{ props: tp }">
+                <VBtn
+                  v-bind="tp"
+                  icon="tabler-brand-whatsapp"
+                  variant="text"
+                  size="small"
+                  class="text-white"
+                  :disabled="loading || items.length === 0 || isSendingWa"
+                  :loading="isSendingWa"
+                  @click="sendQuotaHistoryWa"
+                />
+              </template>
+            </VTooltip>
+            <VTooltip location="bottom" text="Export PDF">
+              <template #activator="{ props: tp }">
+                <VBtn
+                  v-bind="tp"
+                  icon="tabler-download"
+                  variant="text"
+                  size="small"
+                  class="text-white"
+                  :disabled="loading || items.length === 0"
+                  @click="exportQuotaHistoryPdf"
+                />
+              </template>
+            </VTooltip>
             <VBtn icon="tabler-x" variant="text" size="small" class="text-white" @click="close" />
           </div>
         </div>
