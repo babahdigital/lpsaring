@@ -3,7 +3,7 @@
 Dokumen ini mencatat semua pengembangan yang sudah dianalisis, didesain, atau sebagian diimplementasi
 tapi **belum selesai penuh** atau **perlu tindakan lanjutan**. Update setiap kali item selesai atau di-skip.
 
-> **Update terakhir**: 2026-03-26 (Session 6 — Production audit: 3 fixes deploy — expire_stale 5m, DHCP loop fix, MikroTik TOCTOU)
+> **Update terakhir**: 2026-03-27 (Session 7 — Quota history WA, admin UX polish, mobile layout fix, gap analysis)
 
 ---
 
@@ -197,6 +197,48 @@ User berikut muncul di log parity guard tiap 10 menit sebagai `no_authorized_dev
 - `--activedefrag yes` aktif sejak deploy Session 5
 - Target < 1.5 — masih perlu monitor
 - Monitor: `docker exec hotspot_prod_redis_cache redis-cli info memory | grep mem_fragmentation_ratio`
+
+---
+
+## GAP ANALYSIS — Masukan Penyempurnaan (27 Maret 2026)
+
+Detail lengkap tersedia di [docs/GAP_ANALYSIS_2026_03_27.md](GAP_ANALYSIS_2026_03_27.md).
+
+### ⏳ P1 — Automated E2E Test untuk Critical Path
+**Status**: Belum dimulai.
+**Gap**: Semua validasi saat ini manual (lint + unit test + smoke). Tidak ada E2E test otomatis yang menguji flow captive → login → OTP → beli paket → aktivasi internet end-to-end.
+**Risiko**: Regression pada integrasi antar-komponen yang lolos unit test tapi gagal di produksi.
+**Saran**: Playwright/Cypress E2E minimal untuk: (1) login OTP sukses, (2) captive portal redirect, (3) admin CRUD user, (4) debt settle flow.
+
+### ⏳ P1 — Structured Error Response Consistency
+**Status**: Sebagian tercapai (security hardening 26 Mar), belum menyeluruh.
+**Gap**: Backend masih ada jalur yang mengembalikan plain string atau dict ad-hoc untuk error. Belum ada schema `ErrorResponse` tunggal yang dipakai semua endpoint.
+**Saran**: Standarisasi `{"error": "code", "message": "human-readable", "details": {...}}` untuk semua 4xx/5xx.
+
+### ⏳ P2 — Rate Limiting per Endpoint (bukan hanya OTP)
+**Status**: Hanya OTP yang punya rate limit eksplisit (`5/min, 20/hour`).
+**Gap**: Endpoint sensitif lain (admin login, reset-password, debt settlement) belum di-rate-limit.
+**Saran**: `Flask-Limiter` per endpoint group, terutama `POST /auth/admin/login`, `POST /admin/users/{id}/reset-password`.
+
+### ⏳ P2 — Backup & Disaster Recovery Test
+**Status**: Backup SQL otomatis berjalan, tapi belum pernah diuji restore.
+**Gap**: Tidak ada dokumentasi atau skrip restoration verified. Jika server mati, restore time unknown.
+**Saran**: DR drill: restore backup ke staging, verifikasi data integrity, dokumentasikan prosedur.
+
+### ⏳ P2 — Admin Audit Log Retention & Export
+**Status**: `AdminActionLog` tersimpan tanpa batas, tidak ada policy retention.
+**Gap**: Tabel akan terus membesar. Belum ada fitur export bulk log untuk archival.
+**Saran**: Retention policy (misal 90 hari aktif + archive), endpoint admin export CSV/JSON.
+
+### ⏳ P3 — User Self-Service Password Reset (tanpa Admin)
+**Status**: Reset password hanya via admin.
+**Gap**: User yang lupa password harus menghubungi admin secara manual.
+**Saran**: Flow OTP-based self-service password reset untuk user reguler.
+
+### ⏳ P3 — Notification Delivery Tracking Dashboard
+**Status**: Event WA invoice tersimpan di `transaction_events`, tapi tidak ada dashboard untuk review delivery rate.
+**Gap**: Admin tidak bisa melihat success/fail rate notifikasi WA kecuali baca log Docker.
+**Saran**: Halaman admin sederhana: list notifikasi terakhir + status delivery + retry manual.
 
 ---
 

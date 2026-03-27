@@ -8,9 +8,26 @@ Lampiran wajib:
 
 ## [Unreleased]
 
+### Added (2026-03-27 — Quota History WA, Admin UX Polish, Multi-Signal Inactive, Mobile Layout)
+
+- **Admin kini bisa mengirim riwayat mutasi kuota ke WhatsApp user dengan lampiran PDF:** backend menambahkan endpoint `POST /api/admin/users/{id}/quota-history/send-wa` yang menerima `recipient_phone` dan rentang tanggal, men-generate PDF via WeasyPrint, mengirim dengan lampiran ke Fonnte, dan fallback ke teks jika PDF gagal. Route publik bertoken `GET /api/admin/users/quota-report/temp/{token}.pdf` ditambahkan agar Fonnte bisa mengambil file tanpa sesi admin.
+- **Tombol Export PDF dan WhatsApp di dialog Riwayat Mutasi Kuota:** `UserQuotaHistoryDialog.vue` kini memiliki tombol export PDF (download langsung) dan tombol WhatsApp (kirim riwayat mutasi ke nomor user) di header dialog. Ikon printer diganti `tabler-download` untuk export, ditambah `tabler-brand-whatsapp` untuk kirim WA.
+- **Multi-signal inactive detection:** `cleanup_stale_hotspot_hosts_task` dan `sync_unauthorized_hosts_task` kini mempertimbangkan lebih dari satu sinyal (DHCP lease, ARP table, hotspot host) untuk menentukan apakah perangkat benar-benar inactive, mengurangi false positive cleanup.
+
+### Changed (2026-03-27 — Admin UX Improvements)
+
+- **Tombol Reset Password dipindah ke footer dialog edit user:** `UserEditDialog.vue` kini menampilkan Reset Password di area `VCardActions` footer berdampingan dengan tombol Batal, bukan di area inject-actions yang terlalu padat. Layout `justify-space-between` memisahkan kedua tombol dengan jelas.
+- **Tombol Print diganti Export di dialog riwayat mutasi kuota:** label dan ikon berubah dari "Print" menjadi "Export PDF" dengan tooltip yang lebih deskriptif.
+- **Layout mobile card Preview Cleanup Nonaktif diperbaiki:** tombol Operasional dan Refresh kini berada di baris terpisah di bawah judul pada tampilan mobile (`max-width: 600px`), menghindari wrapping yang menekan judul. Desktop layout tidak berubah. CSS override `grid-template-columns` pada `VCardItem` dan `grid-column: 1 / -1` pada append slot.
+- **Tombol Reset Password dibatasi hanya untuk role ADMIN:** endpoint `POST /api/admin/users/{id}/reset-password` kini menolak request dari non-ADMIN dengan 403. Frontend menyembunyikan tombol untuk operator non-admin.
+- **Inject quota=0 untuk ex-unlimited user:** saat admin menonaktifkan mode unlimited, counter quota user di-reset ke 0 agar state database konsisten.
+
 ### Documentation (2026-03-27)
 
 - `docs/devlogs/2026-03-27-debt-underpayment-remediation-verification.md` — arsip verifikasi produksi untuk label riwayat debt, audit historis underpayment debt settlement, hasil debt koreksi dua user terdampak, dan status WA koreksi.
+- `docs/devlogs/2026-03-27-quota-wa-admin-ux-mobile-fix.md` — catatan implementasi batch: quota history WA, reset password relocation, export button rename, mobile cleanup card layout, log analysis produksi.
+- `docs/GAP_ANALYSIS_2026_03_27.md` — analisa gap dan masukan penyempurnaan sistem setelah 10 hari iterasi intensif.
+- Incident index, PENDING_DEVELOPMENT, dan REFERENCE_PENGEMBANGAN diperbarui.
 
 ### Fixed (2026-03-24 - Source Audit and Restored Admin, Unlimited, WA, and Self-Heal Fixes)
 
