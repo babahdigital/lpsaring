@@ -32,7 +32,6 @@ from app.services import settings_service
 from app.services.access_policy_service import get_user_access_status, resolve_allowed_binding_type_for_user
 from app.services.quota_expiry_policy import calculate_quota_expiry_date
 from app.services.quota_mutation_ledger_service import append_quota_mutation_event, snapshot_user_quota_state
-from app.utils.quota_debt import compute_debt_mb
 from app.utils.metrics_utils import increment_metric
 
 # Impor service lain dari paket yang sama
@@ -1370,10 +1369,6 @@ def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reas
 
     # Unblock path
     # Requirement: unblock should set debt (auto + manual) to 0.
-    manual_before = int(getattr(user, "manual_debt_mb", 0) or 0)
-    auto_before = float(
-        compute_debt_mb(float(user.total_quota_purchased_mb or 0.0), float(user.total_quota_used_mb or 0.0))
-    )
     paid_auto_mb, paid_manual_mb = debt_service.clear_all_debts_to_zero(
         user=user,
         admin_actor=admin,

@@ -45,6 +45,7 @@ export {
   type AdminDebtSettleItemResponse,
   type AdminDebtSettleAllResponse,
   type AdminDebtWhatsappQueueResponse,
+  type AdminResetPasswordResponse,
   type AdminUserMikrotikStatusResponse,
   type AdminUserDetailSummaryMikrotik,
   type AdminUserDetailSummaryDebt,

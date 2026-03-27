@@ -77,6 +77,8 @@ Perubahan endpoint prioritas dianggap lengkap hanya jika keempat artefak berikut
 - `POST /admin/users/{user_id}/debts/{debt_id}/settle`
 - `POST /admin/users/{user_id}/debts/settle-all`
 - `POST /admin/users/{user_id}/debts/send-whatsapp`
+- `POST /admin/users/{user_id}/reset-login`
+- `POST /admin/users/{user_id}/reset-password`
 - `GET /admin/users/debts/temp/{token}.pdf`
 - `GET /admin/users/debt-settlements/temp/{token}.pdf`
 - `GET /admin/settings`

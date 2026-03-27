@@ -1002,6 +1002,62 @@ paths:
         '404':
           $ref: '#/components/responses/ErrorNotFound'
 
+  /admin/users/{user_id}/reset-login:
+    post:
+      tags: [AdminUsers]
+      summary: Reset login hotspot user (hapus password MikroTik, paksa OTP)
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Login berhasil direset
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+
+  /admin/users/{user_id}/reset-password:
+    post:
+      tags: [AdminUsers]
+      summary: Reset password user ke 6 angka acak dan kirim via WhatsApp
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Password berhasil direset
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminResetPasswordResponse'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+
   /admin/users/{user_id}/mikrotik-status:
     get:
       tags: [AdminUsers]
@@ -2596,6 +2652,15 @@ components:
         message:
           type: string
         queued:
+          type: boolean
+
+    AdminResetPasswordResponse:
+      type: object
+      required: [message, whatsapp_sent]
+      properties:
+        message:
+          type: string
+        whatsapp_sent:
           type: boolean
 
     AdminUserMikrotikStatusResponse:

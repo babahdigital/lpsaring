@@ -3,7 +3,7 @@ import click
 from flask import current_app
 from flask.cli import with_appcontext
 from sqlalchemy import select, func as sa_func
-from datetime import datetime, timedelta, timezone as dt_timezone
+from datetime import datetime, timezone as dt_timezone
 import logging
 
 from app.extensions import db
@@ -12,7 +12,6 @@ from app.infrastructure.db.models import (
     AdminActionLog,
 )
 from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection, delete_hotspot_user
-from app.utils.formatters import format_app_date
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +28,6 @@ def _compute_last_real_activity_cli(user: User) -> datetime | None:
     Sama dengan _compute_last_real_activity di hotspot_sync_service; logika
     dipisah agar command tidak bergantung pada import service besar.
     """
-    now_utc = datetime.now(dt_timezone.utc)
     candidates: list[datetime] = []
     if user.last_login_at:
         candidates.append(user.last_login_at)

@@ -2,7 +2,7 @@
 // AUTO-GENERATED FILE. DO NOT EDIT MANUALLY.
 // Source: contracts/openapi/openapi.v1.yaml
 
-export const OPENAPI_SOURCE_SHA256 = '92591849e12231eb18a39f0cfecf09fea481a73c5027a52749d297db296edb8e' as const
+export const OPENAPI_SOURCE_SHA256 = '6afc09dd2bcd85a64cb53c30bd0fa0c3df234a332924a0e8257372e4447a1e8a' as const
 export const API_CONTRACT_REVISION = 'openapi-1.0.0' as const
 
 export type MessageResponse = { message: string }
@@ -60,6 +60,7 @@ export type AdminUserDebtListResponse = { items: Array<AdminUserDebtItem>; summa
 export type AdminDebtSettleItemResponse = { message: string; paid_mb: number; unblocked: boolean; receipt_url?: string | null }
 export type AdminDebtSettleAllResponse = { message: string; paid_auto_mb: number; paid_manual_mb: number; debt_auto_before_mb: number; debt_manual_before_mb: number; unblocked: boolean; receipt_url?: string | null }
 export type AdminDebtWhatsappQueueResponse = { message: string; queued: boolean }
+export type AdminResetPasswordResponse = { message: string; whatsapp_sent: boolean }
 export type AdminUserMikrotikStatusResponse = { user_id: string; exists_on_mikrotik: boolean; live_available: boolean; message: string; reason?: string | null; details?: { [key: string]: unknown } | null; resolved_profile_name: string; database_profile_name?: string | null; derived_profile_name: string; db_quota_purchased_mb: number; db_quota_used_mb: number; db_quota_remaining_mb: number }
 export type AdminUserDetailSummaryMikrotik = { live_available: boolean; exists_on_mikrotik: boolean; message: string; reason?: string | null }
 export type AdminUserDetailSummaryDebt = { auto_mb: number; manual_mb: number; total_mb: number; open_items: number }
@@ -217,6 +218,16 @@ export interface GeneratedApiContractMap {
   'POST /admin/users/{user_id}/quota-adjust': {
     request: AdminQuotaAdjustRequest
     response: AdminQuotaAdjustResponse
+    error: ErrorResponse
+  }
+  'POST /admin/users/{user_id}/reset-login': {
+    request: never
+    response: MessageResponse
+    error: ErrorResponse
+  }
+  'POST /admin/users/{user_id}/reset-password': {
+    request: never
+    response: AdminResetPasswordResponse
     error: ErrorResponse
   }
   'POST /auth/admin/login': {
