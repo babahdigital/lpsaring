@@ -1656,6 +1656,10 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
   gap: 8px;
 }
 
+.admin-users__cleanupCardItem :deep(.v-card-item__content) {
+  overflow: visible;
+}
+
 .admin-users__cleanupCardTitle {
   white-space: normal;
   word-break: break-word;

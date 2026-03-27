@@ -314,6 +314,12 @@ def set_user_unlimited(user: User, admin_actor: User, make_unlimited: bool) -> T
                 or settings_service.get_setting("MIKROTIK_USER_PROFILE", "user")
                 or settings_service.get_setting("MIKROTIK_DEFAULT_PROFILE", "default")
             )
+        # Reset quota counters agar user mulai bersih tanpa phantom-debt
+        # dari usage selama periode unlimited.
+        user.total_quota_purchased_mb = 0
+        user.total_quota_used_mb = 0
+        user.auto_debt_offset_mb = 0
+
         limit_bytes_total = 1
         session_timeout_seconds = 0
         status_text = "dikembalikan dari"

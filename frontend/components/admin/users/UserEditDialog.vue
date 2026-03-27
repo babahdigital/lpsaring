@@ -928,7 +928,7 @@ function openQuotaHistory() {
                         Reset Login
                       </VBtn>
                       <VBtn
-                        v-if="authStore.isAdmin || authStore.isSuperAdmin"
+                        v-if="(authStore.isAdmin || authStore.isSuperAdmin) && isTargetAdminOrSuper"
                         size="small" variant="tonal" color="warning"
                         :loading="isResetPasswordLoading" prepend-icon="tabler-key"
                         @click="resetUserPassword"

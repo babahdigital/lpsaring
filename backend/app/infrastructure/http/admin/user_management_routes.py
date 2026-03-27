@@ -1465,6 +1465,8 @@ def admin_reset_user_password(current_admin: User, user_id: uuid.UUID):
     denied_response = _deny_non_super_admin_target_access(current_admin, user)
     if denied_response:
         return denied_response
+    if user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+        return jsonify({"message": "Reset password hanya untuk akun Admin/Super Admin. USER/KOMANDAN menggunakan OTP."}), HTTPStatus.BAD_REQUEST
 
     new_pin = "".join([str(secrets.randbelow(10)) for _ in range(6)])
 
