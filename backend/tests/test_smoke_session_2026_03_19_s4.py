@@ -21,6 +21,13 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 
+def _unwrap(fn):
+    current = fn
+    while hasattr(current, "__wrapped__"):
+        current = current.__wrapped__
+    return current
+
+
 @pytest.fixture()
 def app():
     from flask import Flask
@@ -266,7 +273,7 @@ def test_settle_single_debt_sets_unblocked_true_when_all_paid(app):
             from app.infrastructure.http.admin.user_management_routes import settle_single_manual_debt
             admin_mock = MagicMock()
             admin_mock.id = uuid.uuid4()
-            resp = settle_single_manual_debt.__wrapped__(admin_mock, user_id, debt_id)
+            resp = _unwrap(settle_single_manual_debt)(admin_mock, user_id, debt_id)
             data = resp[0].get_json()
             assert data.get("unblocked") is True, "unblocked harus True ketika semua debt lunas dan user diblok karena debt"
             assert fake_user.is_blocked is False
@@ -304,7 +311,7 @@ def test_verify_mikrotik_rules_ok_when_all_rules_present(app):
 
             from app.infrastructure.http.admin.user_management_routes import verify_mikrotik_rules
             admin_mock = MagicMock()
-            resp = verify_mikrotik_rules.__wrapped__(admin_mock)
+            resp = _unwrap(verify_mikrotik_rules)(admin_mock)
             data = resp[0].get_json()
             assert data["status"] == "ok"
             assert data["all_found"] is True
@@ -341,7 +348,7 @@ def test_verify_mikrotik_rules_error_when_rule_missing(app):
 
             from app.infrastructure.http.admin.user_management_routes import verify_mikrotik_rules
             admin_mock = MagicMock()
-            resp = verify_mikrotik_rules.__wrapped__(admin_mock)
+            resp = _unwrap(verify_mikrotik_rules)(admin_mock)
             data = resp[0].get_json()
             assert data["status"] == "error"
             assert data["all_found"] is False
@@ -380,7 +387,7 @@ def test_verify_mikrotik_rules_error_when_order_wrong(app):
 
             from app.infrastructure.http.admin.user_management_routes import verify_mikrotik_rules
             admin_mock = MagicMock()
-            resp = verify_mikrotik_rules.__wrapped__(admin_mock)
+            resp = _unwrap(verify_mikrotik_rules)(admin_mock)
             data = resp[0].get_json()
             assert data["status"] == "error"
             assert data["all_found"] is False
