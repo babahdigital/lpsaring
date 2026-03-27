@@ -77,6 +77,10 @@ Perubahan endpoint prioritas dianggap lengkap hanya jika keempat artefak berikut
 - `POST /admin/users/{user_id}/debts/{debt_id}/settle`
 - `POST /admin/users/{user_id}/debts/settle-all`
 - `POST /admin/users/{user_id}/debts/send-whatsapp`
+- `GET /admin/users/{user_id}/quota-history`
+- `GET /admin/users/{user_id}/quota-history/export`
+- `POST /admin/users/{user_id}/quota-history/send-wa`
+- `GET /admin/users/quota-report/temp/{token}.pdf`
 - `POST /admin/users/{user_id}/reset-login`
 - `POST /admin/users/{user_id}/reset-password`
 - `GET /admin/users/debts/temp/{token}.pdf`
@@ -113,5 +117,9 @@ Jika signature endpoint berubah, lakukan urutan ini:
 - `POST /admin/users/{user_id}/detail-report/send-whatsapp` menerima `recipient_mode=user|internal`. Mode `user` akan mengirim ke nomor pengguna, sedangkan mode `internal` wajib menyertakan `recipient_user_ids` agar PDF hanya dikirim ke admin/super admin yang dipilih.
 - `POST /admin/users/{user_id}/detail-report/send-whatsapp` mengembalikan `queued_count`, `recipient_mode`, dan daftar `recipients` agar frontend bisa menampilkan siapa yang benar-benar menerima kiriman.
 - `GET /admin/users/detail-report/temp/{token}.pdf` adalah URL publik sementara untuk attachment PDF detail pengguna yang dikirim ke WhatsApp. Jika token invalid/kedaluwarsa, endpoint akan menampilkan halaman HTML yang mudah dipahami pengguna, bukan raw JSON.
+- `GET /admin/users/{user_id}/quota-history` mengembalikan daftar mutasi kuota pengguna beserta rangkuman dan informasi filter aktif.
+- `GET /admin/users/{user_id}/quota-history/export` menghasilkan PDF laporan mutasi kuota, mendukung query `startDate`, `endDate`, `search`.
+- `POST /admin/users/{user_id}/quota-history/send-wa` men-generate PDF mutasi kuota lalu mengirim ke WhatsApp pengguna. Mengembalikan `{ message, whatsapp_sent }`.
+- `GET /admin/users/quota-report/temp/{token}.pdf` adalah URL publik sementara untuk attachment PDF mutasi kuota yang dikirim ke WhatsApp.
 
 Workflow lengkap kontrak ada di [docs/workflows/OPENAPI_CONTRACT.md](workflows/OPENAPI_CONTRACT.md).

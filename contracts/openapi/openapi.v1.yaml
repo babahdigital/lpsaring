@@ -1210,6 +1210,79 @@ paths:
         '404':
           $ref: '#/components/responses/ErrorNotFound'
 
+  /admin/users/{user_id}/quota-history/send-wa:
+    post:
+      tags: [AdminUsers]
+      summary: Generate dan kirim PDF mutasi kuota user ke WhatsApp
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                startDate:
+                  type: string
+                  format: date
+                endDate:
+                  type: string
+                  format: date
+                search:
+                  type: string
+      responses:
+        '200':
+          description: Hasil kirim WhatsApp mutasi kuota
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  whatsapp_sent:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/ErrorBadRequest'
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+        '403':
+          $ref: '#/components/responses/ErrorForbidden'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+
+  /admin/users/quota-report/temp/{token}.pdf:
+    get:
+      tags: [AdminUsers]
+      summary: Akses publik sementara untuk PDF mutasi kuota user
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: PDF mutasi kuota user
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/ErrorBadRequest'
+        '404':
+          $ref: '#/components/responses/ErrorNotFound'
+
   /admin/users/debts/temp/{token}.pdf:
     get:
       tags: [AdminUsers]

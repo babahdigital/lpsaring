@@ -165,6 +165,11 @@ export interface GeneratedApiContractMap {
     response: unknown
     error: ErrorResponse
   }
+  'GET /admin/users/quota-report/temp/{token}.pdf': {
+    request: never
+    response: unknown
+    error: ErrorResponse
+  }
   'POST /admin/users/seed-imported-update-submissions': {
     request: SeedImportedUpdateSubmissionsRequest
     response: SeedImportedUpdateSubmissionsResponse
@@ -203,6 +208,11 @@ export interface GeneratedApiContractMap {
   'POST /admin/users/{user_id}/detail-report/send-whatsapp': {
     request: AdminUserDetailReportWhatsappRequest
     response: AdminUserDetailReportWhatsappResponse
+    error: ErrorResponse
+  }
+  'POST /admin/users/{user_id}/quota-history/send-wa': {
+    request: never
+    response: { message: string, whatsapp_sent: boolean }
     error: ErrorResponse
   }
   'GET /admin/users/{user_id}/detail-summary': {
