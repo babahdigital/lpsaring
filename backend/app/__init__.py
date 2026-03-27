@@ -524,9 +524,21 @@ def create_app(config_name: Optional[str] = None) -> HotspotFlask:
             if is_api_path and is_error_status and response.mimetype == "application/json":
                 payload = response.get_json(silent=True)
                 if isinstance(payload, dict):
-                    message = payload.get("error") or payload.get("message") or "Internal server error."
+                    # Already normalized (has both 'success' and 'code' keys) — skip
+                    if "success" in payload and "code" in payload:
+                        return response
+
+                    message = payload.get("error") or payload.get("message")
                     if not isinstance(message, str) or not message.strip():
-                        message = "Internal server error."
+                        # Fallback: validation errors tanpa message
+                        sc = int(response.status_code)
+                        if payload.get("errors") and sc == 422:
+                            message = "Validasi gagal."
+                        else:
+                            try:
+                                message = HTTPStatus(sc).phrase
+                            except ValueError:
+                                message = "Error."
                     details = payload.get("details")
                     existing_code = payload.get("code")
 

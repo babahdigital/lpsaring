@@ -210,10 +210,14 @@ Detail lengkap tersedia di [docs/GAP_ANALYSIS_2026_03_27.md](GAP_ANALYSIS_2026_0
 **Risiko**: Regression pada integrasi antar-komponen yang lolos unit test tapi gagal di produksi.
 **Saran**: Playwright/Cypress E2E minimal untuk: (1) login OTP sukses, (2) captive portal redirect, (3) admin CRUD user, (4) debt settle flow.
 
-### ⏳ P1 — Structured Error Response Consistency
-**Status**: Sebagian tercapai (security hardening 26 Mar), belum menyeluruh. **SKIP untuk saat ini.**
-**Gap**: Backend masih ada jalur yang mengembalikan plain string atau dict ad-hoc untuk error. Belum ada schema `ErrorResponse` tunggal yang dipakai semua endpoint.
-**Saran**: Standarisasi `{"error": "code", "message": "human-readable", "details": {...}}` untuk semua 4xx/5xx.
+### ✅ P1 — Structured Error Response Consistency (27 Mar 2026, Session 7)
+**Status**: SELESAI — normalizer `after_request` sudah aktif untuk semua API 4xx/5xx.
+**Perubahan**:
+- `after_request` hook di `__init__.py` otomatis menormalisasi semua JSON error response ke format standar:
+  `{"success": false, "error": "...", "message": "...", "status_code": N, "code": "HTTP_N", "request_id": "..."}`
+- Skip normalization jika response sudah canonical (punya `success` + `code`)
+- Fallback khusus untuk 422 validation errors (`{"errors": [...]}`) → message "Validasi gagal."
+- Extra keys dari payload asli (contoh: `errors`, `isValid`, `whatsapp_sent`) tetap dipertahankan
 
 ### ✅ P2 — Rate Limiting per Endpoint (27 Mar 2026, Session 7)
 **Status**: SELESAI & DEPLOYED.
