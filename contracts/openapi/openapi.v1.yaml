@@ -1229,28 +1229,14 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                startDate:
-                  type: string
-                  format: date
-                endDate:
-                  type: string
-                  format: date
-                search:
-                  type: string
+              $ref: '#/components/schemas/AdminQuotaHistorySendWaRequest'
       responses:
         '200':
           description: Hasil kirim WhatsApp mutasi kuota
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                  whatsapp_sent:
-                    type: boolean
+                $ref: '#/components/schemas/AdminQuotaHistorySendWaResponse'
         '400':
           $ref: '#/components/responses/ErrorBadRequest'
         '401':
@@ -2875,6 +2861,26 @@ components:
           items:
             type: string
             format: uuid
+
+    AdminQuotaHistorySendWaRequest:
+      type: object
+      properties:
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        search:
+          type: string
+
+    AdminQuotaHistorySendWaResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        whatsapp_sent:
+          type: boolean
 
     AdminUserDetailReportWhatsappRecipient:
       type: object
