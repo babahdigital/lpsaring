@@ -1962,22 +1962,23 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
   }
 
   .admin-users__cleanupCardItem {
-    flex-direction: column;
-    align-items: flex-start;
+    grid-template-columns: max-content 1fr !important;
   }
 
   .admin-users__cleanupCardItem :deep(.v-card-item__prepend) {
-    margin-bottom: 4px;
+    align-self: flex-start;
   }
 
   .admin-users__cleanupCardItem :deep(.v-card-item__append) {
+    grid-column: 1 / -1;
     width: 100%;
     margin-inline-start: 0;
   }
 
   .admin-users__cleanupCardActions {
     width: 100%;
-    justify-content: stretch;
+    display: flex;
+    gap: 8px;
   }
 
   .admin-users__cleanupCardActions .v-btn {
