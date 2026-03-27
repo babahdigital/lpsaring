@@ -129,6 +129,7 @@ class AdminActionType(enum.Enum):
     UNBLOCK_USER = "UNBLOCK_USER"
 
     RESET_USER_LOGIN = "RESET_USER_LOGIN"
+    RESET_USER_PASSWORD = "RESET_USER_PASSWORD"
 
     # --- [PENAMBAHAN DI SINI] ---
     # Menambahkan tipe aksi spesifik untuk pemrosesan permintaan kuota.

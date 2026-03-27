@@ -1524,19 +1524,25 @@ def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reas
         purchased_now = float(user.total_quota_purchased_mb or 0.0)
         used_now = float(user.total_quota_used_mb or 0.0)
         remaining_mb = max(0.0, purchased_now - used_now)
+        paid_total_mb = int(paid_auto_mb) + int(paid_manual_mb)
         template_key = _resolve_unblock_notification_template(user)
+
+        from app.services.debt_settlement_receipt_service import (
+            estimate_amount_rp_for_mb as _est_rp,
+            format_currency_idr as _fmt_idr,
+        )
         _send_whatsapp_notification(
             user.phone_number,
             template_key,
             {
                 "full_name": user.full_name,
-                "paid_auto_debt_mb": int(paid_auto_mb),
-                "paid_manual_debt_mb": int(paid_manual_mb),
-                "paid_total_debt_mb": int(paid_auto_mb) + int(paid_manual_mb),
-                "manual_debt_before_mb": int(manual_before),
-                "auto_debt_before_mb": float(auto_before),
-                "remaining_mb": float(remaining_mb),
-                "reason": reason or "",
+                "paid_auto_debt_gb": format_mb_to_gb(paid_auto_mb),
+                "paid_manual_debt_gb": format_mb_to_gb(paid_manual_mb),
+                "paid_total_debt_gb": format_mb_to_gb(paid_total_mb),
+                "paid_total_debt_amount_display": _fmt_idr(_est_rp(paid_total_mb)),
+                "payment_channel_label": "Pelunasan manual oleh Admin",
+                "remaining_quota": "Unlimited" if bool(getattr(user, "is_unlimited_user", False)) else format_mb_to_gb(remaining_mb),
+                "receipt_url": "-",
             },
         )
     except Exception:

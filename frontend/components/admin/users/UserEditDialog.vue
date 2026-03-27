@@ -43,6 +43,7 @@ const { $api } = useNuxtApp()
 const tab = ref('info')
 const { add: showSnackbar } = useSnackbar()
 const isResetLoginLoading = ref(false)
+const isResetPasswordLoading = ref(false)
 
 interface User {
   id: string
@@ -632,6 +633,29 @@ async function resetUserLogin() {
   }
 }
 
+async function resetUserPassword() {
+  if (!props.user)
+    return
+
+  const ok = window.confirm(
+    `Reset password untuk ${props.user.full_name} (${props.user.phone_number})?\n\nSistem akan:\n- Membuat password baru berupa 6 angka acak\n- Menyimpan hash password baru ke database\n- Mengirim password baru ke WhatsApp pengguna\n\nPassword lama tidak dapat dikembalikan.`,
+  )
+  if (!ok)
+    return
+
+  isResetPasswordLoading.value = true
+  try {
+    const res = await $api<{ message: string, whatsapp_sent: boolean }>(`/admin/users/${props.user.id}/reset-password`, { method: 'POST' })
+    showSnackbar({ type: 'success', title: 'Password Direset', text: res?.message || 'Password berhasil direset.' })
+  }
+  catch (error: any) {
+    showSnackbar({ type: 'error', title: 'Gagal', text: error.data?.message || 'Gagal mereset password.' })
+  }
+  finally {
+    isResetPasswordLoading.value = false
+  }
+}
+
 async function onSave() {
   if (!formRef.value)
     return
@@ -902,6 +926,14 @@ function openQuotaHistory() {
                         @click="resetUserLogin"
                       >
                         Reset Login
+                      </VBtn>
+                      <VBtn
+                        v-if="authStore.isAdmin || authStore.isSuperAdmin"
+                        size="small" variant="tonal" color="warning"
+                        :loading="isResetPasswordLoading" prepend-icon="tabler-key"
+                        @click="resetUserPassword"
+                      >
+                        Reset Password
                       </VBtn>
                       <VBtn
                         v-if="canAdminInject"

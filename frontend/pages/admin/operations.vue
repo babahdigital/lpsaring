@@ -365,33 +365,33 @@ async function handleRefreshOperations() {
     <VRow class="match-height">
       <VCol cols="12">
         <VCard class="operations-page__hero">
-          <VCardItem>
-            <template #prepend>
+          <VCardText class="operations-page__heroHeader">
+            <div class="operations-page__heroHeaderMain">
               <VAvatar color="info" variant="tonal" rounded="lg" size="44">
                 <VIcon icon="tabler-activity-heartbeat" size="22" />
               </VAvatar>
-            </template>
-            <VCardTitle>Pusat Operasional</VCardTitle>
-            <VCardSubtitle>Detail akses, watchlist cleanup, dan health check sistem.</VCardSubtitle>
-            <template #append>
-              <div class="d-flex align-center gap-2 flex-wrap justify-end">
-                <VBtn size="small" variant="tonal" color="secondary" to="/admin/dashboard">
-                  Dashboard
-                </VBtn>
-                <VBtn size="small" variant="tonal" color="primary" to="/admin/users">
-                  Pengguna
-                </VBtn>
-                <VBtn
-                  size="small"
-                  color="info"
-                  :loading="metricsPending || parityPending || cleanupPending"
-                  @click="handleRefreshOperations"
-                >
-                  Refresh
-                </VBtn>
+              <div class="operations-page__heroHeaderCopy">
+                <div class="text-h6 font-weight-bold">Pusat Operasional</div>
+                <div class="text-body-2 text-medium-emphasis">Detail akses, watchlist cleanup, dan health check sistem.</div>
               </div>
-            </template>
-          </VCardItem>
+            </div>
+            <div class="operations-page__heroHeaderActions">
+              <VBtn size="small" variant="tonal" color="secondary" to="/admin/dashboard">
+                Dashboard
+              </VBtn>
+              <VBtn size="small" variant="tonal" color="primary" to="/admin/users">
+                Pengguna
+              </VBtn>
+              <VBtn
+                size="small"
+                color="info"
+                :loading="metricsPending || parityPending || cleanupPending"
+                @click="handleRefreshOperations"
+              >
+                Refresh
+              </VBtn>
+            </div>
+          </VCardText>
           <VCardText class="operations-page__tableSection">
             <div class="operations-page__heroBody">
               <div class="operations-page__heroCopy">
@@ -762,6 +762,32 @@ async function handleRefreshOperations() {
   background: linear-gradient(180deg, rgba(var(--v-theme-info), 0.08) 0%, rgba(var(--v-theme-surface), 0.98) 100%);
 }
 
+.operations-page__heroHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.operations-page__heroHeaderMain {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.operations-page__heroHeaderCopy {
+  min-width: 0;
+}
+
+.operations-page__heroHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
 .operations-page__heroBody {
   display: flex;
   align-items: flex-start;
@@ -1100,6 +1126,16 @@ async function handleRefreshOperations() {
 }
 
 @media (max-width: 959px) {
+  .operations-page__heroHeader {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .operations-page__heroHeaderActions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .operations-page__heroBody {
     flex-direction: column;
   }

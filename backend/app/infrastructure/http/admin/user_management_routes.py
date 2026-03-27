@@ -17,6 +17,7 @@ from app.infrastructure.db.models import (
     UserKamar,
     ApprovalStatus,
     AdminActionType,
+    AdminActionLog,
     Package,
     PublicDatabaseUpdateSubmission,
     QuotaMutationLedger,
@@ -1449,6 +1450,66 @@ def admin_reset_user_login(current_admin: User, user_id: uuid.UUID):
     ), HTTPStatus.OK
 
 
+@user_management_bp.route("/users/<uuid:user_id>/reset-password", methods=["POST"])
+@admin_required
+def admin_reset_user_password(current_admin: User, user_id: uuid.UUID):
+    """Reset password pengguna ke 6 angka acak, simpan hash ke DB, kirim via WhatsApp."""
+    import secrets
+    from werkzeug.security import generate_password_hash
+    from app.infrastructure.gateways.whatsapp_client import send_whatsapp_message
+    from app.services.notification_service import get_notification_message
+
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+    denied_response = _deny_non_super_admin_target_access(current_admin, user)
+    if denied_response:
+        return denied_response
+
+    new_pin = "".join([str(secrets.randbelow(10)) for _ in range(6)])
+
+    user.password_hash = generate_password_hash(new_pin)
+
+    try:
+        _log_admin_action(
+            admin=current_admin,
+            target_user=user,
+            action_type=AdminActionType.RESET_USER_PASSWORD,
+            details={
+                "target_phone": user.phone_number,
+                "target_name": user.full_name,
+            },
+        )
+    except Exception:
+        pass
+
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Gagal commit reset password untuk user {user_id}: {e}", exc_info=True)
+        return jsonify({"message": "Gagal menyimpan perubahan password."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+    wa_sent = False
+    if user.phone_number:
+        try:
+            message = get_notification_message("admin_reset_user_password", {
+                "full_name": user.full_name or "Pengguna",
+                "new_password": new_pin,
+            })
+            wa_sent = send_whatsapp_message(user.phone_number, message)
+        except Exception as exc:
+            current_app.logger.warning("Gagal kirim WA reset password ke %s: %s", user.phone_number, exc)
+
+    msg = "Password berhasil direset."
+    if wa_sent:
+        msg += " Password baru telah dikirim ke WhatsApp pengguna."
+    else:
+        msg += " Namun pengiriman WhatsApp gagal, harap sampaikan password baru secara manual."
+
+    return jsonify({"message": msg, "whatsapp_sent": wa_sent}), HTTPStatus.OK
+
+
 @user_management_bp.route("/users/me", methods=["PUT"])
 @admin_required
 def update_my_profile(current_admin: User):
@@ -2283,9 +2344,10 @@ def get_inactive_cleanup_preview(current_admin: User):
         pre_delete_warning_days = settings_service.get_setting_as_int("INACTIVE_PRE_DELETE_WARNING_DAYS", 75)
         limit = min(request.args.get("limit", 50, type=int), 200)
 
+        _cleanup_target_roles = [UserRole.USER, UserRole.KOMANDAN, UserRole.ADMIN]
         users = db.session.scalars(
             select(User).where(
-                User.role.in_([UserRole.USER, UserRole.KOMANDAN]),
+                User.role.in_(_cleanup_target_roles),
                 User.approval_status == ApprovalStatus.APPROVED,
             )
         ).all()
@@ -2294,11 +2356,53 @@ def get_inactive_cleanup_preview(current_admin: User):
         delete_candidates = []
 
         for user in users:
-            last_activity = user.last_login_at or user.created_at
+            # Multi-sinyal: ambil aktivitas terakhir dari login, usage, mutasi kuota, device
+            activity_candidates: list[datetime] = []
+            if user.last_login_at:
+                activity_candidates.append(user.last_login_at)
+            latest_usage_date = db.session.scalar(
+                select(func.max(DailyUsageLog.log_date)).where(DailyUsageLog.user_id == user.id)
+            )
+            if latest_usage_date is not None:
+                activity_candidates.append(
+                    datetime.combine(latest_usage_date, datetime.min.time(), tzinfo=dt_timezone.utc)
+                )
+            latest_mutation_at = db.session.scalar(
+                select(func.max(QuotaMutationLedger.created_at)).where(QuotaMutationLedger.user_id == user.id)
+            )
+            if latest_mutation_at is not None:
+                activity_candidates.append(
+                    latest_mutation_at if latest_mutation_at.tzinfo else latest_mutation_at.replace(tzinfo=dt_timezone.utc)
+                )
+            latest_device_at = db.session.scalar(
+                select(func.max(UserDevice.last_seen_at)).where(UserDevice.user_id == user.id)
+            )
+            if latest_device_at is not None:
+                activity_candidates.append(
+                    latest_device_at if latest_device_at.tzinfo else latest_device_at.replace(tzinfo=dt_timezone.utc)
+                )
+            # Khusus ADMIN: cek aksi admin terakhir
+            if user.role == UserRole.ADMIN:
+                latest_admin_action_at = db.session.scalar(
+                    select(func.max(AdminActionLog.created_at)).where(AdminActionLog.admin_id == user.id)
+                )
+                if latest_admin_action_at is not None:
+                    activity_candidates.append(
+                        latest_admin_action_at if latest_admin_action_at.tzinfo
+                        else latest_admin_action_at.replace(tzinfo=dt_timezone.utc)
+                    )
+            last_activity = max(activity_candidates) if activity_candidates else (user.created_at or None)
             if not last_activity:
                 continue
 
             days_inactive = (now_utc - last_activity).days
+
+            # Hitung sinyal-sinyal untuk transparansi
+            has_active_quota = (
+                user.quota_expiry_date is not None
+                and user.quota_expiry_date > now_utc
+            )
+
             payload = {
                 "id": str(user.id),
                 "full_name": user.full_name,
@@ -2306,12 +2410,15 @@ def get_inactive_cleanup_preview(current_admin: User):
                 "role": user.role.value,
                 "is_active": user.is_active,
                 "last_activity_at": last_activity.isoformat(),
+                "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
+                "last_usage_date": str(latest_usage_date) if latest_usage_date else None,
                 "days_inactive": days_inactive,
+                "has_active_quota": has_active_quota,
             }
 
-            if days_inactive >= delete_days:
+            if days_inactive >= delete_days and not has_active_quota:
                 delete_candidates.append(payload)
-            elif user.is_active and days_inactive >= deactivate_days:
+            elif user.is_active and days_inactive >= deactivate_days and not has_active_quota:
                 deactivate_candidates.append(payload)
 
         delete_candidates.sort(key=lambda item: item["days_inactive"], reverse=True)

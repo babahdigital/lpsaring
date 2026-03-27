@@ -12,7 +12,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from flask import current_app
 
-from sqlalchemy import select, text
+from sqlalchemy import func as sa_func, select, text
 from sqlalchemy.orm import selectinload
 
 from app.extensions import db
@@ -24,6 +24,7 @@ from app.infrastructure.db.models import (
     NotificationRecipient,
     NotificationType,
     Package,
+    QuotaMutationLedger,
     RefreshToken,
     Transaction,
     UserDevice,
@@ -3069,6 +3070,58 @@ def resolve_target_profile_for_user(user: User) -> str:
     return _resolve_target_profile(user, remaining_mb, remaining_percent, is_expired)
 
 
+def _compute_last_real_activity(user: User) -> Optional[datetime]:
+    """Hitung waktu aktivitas terakhir dari multi sinyal.
+
+    Pada sistem IP-binding, user jarang login ulang setelah OTP pertama.
+    Sinyal yang diperhitungkan:
+    1. last_login_at — login portal/OTP terakhir
+    2. DailyUsageLog.max(log_date) — hari terakhir ada pemakaian bandwidth (paling akurat)
+    3. QuotaMutationLedger.max(created_at) — aktivitas kuota (pembelian, inject, dll)
+    4. UserDevice.max(last_seen_at) — perubahan device binding terakhir
+    5. AdminActionLog.max(created_at) — aksi admin terakhir (khusus ADMIN role)
+    Fallback: created_at
+    """
+    candidates: List[datetime] = []
+    if user.last_login_at:
+        candidates.append(user.last_login_at)
+
+    latest_usage_date = db.session.scalar(
+        select(sa_func.max(DailyUsageLog.log_date)).where(DailyUsageLog.user_id == user.id)
+    )
+    if latest_usage_date is not None:
+        candidates.append(
+            datetime.combine(latest_usage_date, datetime.min.time(), tzinfo=dt_timezone.utc)
+        )
+
+    latest_mutation_at = db.session.scalar(
+        select(sa_func.max(QuotaMutationLedger.created_at)).where(QuotaMutationLedger.user_id == user.id)
+    )
+    if latest_mutation_at is not None:
+        candidates.append(latest_mutation_at if latest_mutation_at.tzinfo else latest_mutation_at.replace(tzinfo=dt_timezone.utc))
+
+    latest_device_at = db.session.scalar(
+        select(sa_func.max(UserDevice.last_seen_at)).where(UserDevice.user_id == user.id)
+    )
+    if latest_device_at is not None:
+        candidates.append(latest_device_at if latest_device_at.tzinfo else latest_device_at.replace(tzinfo=dt_timezone.utc))
+
+    # Khusus ADMIN: cek aksi admin terakhir (approve user, inject quota, dll)
+    if user.role == UserRole.ADMIN:
+        latest_admin_action_at = db.session.scalar(
+            select(sa_func.max(AdminActionLog.created_at)).where(AdminActionLog.admin_id == user.id)
+        )
+        if latest_admin_action_at is not None:
+            candidates.append(
+                latest_admin_action_at if latest_admin_action_at.tzinfo
+                else latest_admin_action_at.replace(tzinfo=dt_timezone.utc)
+            )
+
+    if candidates:
+        return max(candidates)
+    return user.created_at if user.created_at else None
+
+
 def _log_system_cleanup_action(user: "User", reason: str, action: str) -> None:
     """Catat aksi cleanup sistem ke AdminActionLog (admin_id=None = system action)."""
     try:
@@ -3201,17 +3254,18 @@ def cleanup_inactive_users() -> Dict[str, int]:
     # Redis untuk dedup pre-delete warning (1 kali per user per 7 hari)
     redis_client = _get_redis_client()
 
-    # --- BAGIAN 1: User approved (USER/KOMANDAN) ---
+    # --- BAGIAN 1: User approved (USER/KOMANDAN/ADMIN), kecuali SUPER_ADMIN ---
+    _cleanup_target_roles = [UserRole.USER, UserRole.KOMANDAN, UserRole.ADMIN]
     users = db.session.scalars(
         select(User).where(
-            User.role.in_([UserRole.USER, UserRole.KOMANDAN]),
+            User.role.in_(_cleanup_target_roles),
             User.approval_status == ApprovalStatus.APPROVED,
         )
     ).all()
 
     with get_mikrotik_connection() as api:
         for user in users:
-            last_activity = user.last_login_at or user.created_at
+            last_activity = _compute_last_real_activity(user)
             if not last_activity:
                 continue
 
@@ -3271,7 +3325,18 @@ def cleanup_inactive_users() -> Dict[str, int]:
                         reason=f"Tidak aktif {days_inactive} hari, kuota habis sejak {user.quota_expiry_date}",
                         action="hard_delete",
                     )
+                    target_user_id = user.id
                     db.session.delete(user)
+                    try:
+                        db.session.commit()
+                    except Exception as e:
+                        db.session.rollback()
+                        current_app.logger.error(
+                            "cleanup_inactive: GAGAL commit hard delete user_id=%s phone=%s: %s",
+                            target_user_id, user.phone_number, e,
+                        )
+                        counters["delete_skipped_guard"] += 1
+                        continue
                     counters["deleted"] += 1
                     continue
 
@@ -3318,10 +3383,6 @@ def cleanup_inactive_users() -> Dict[str, int]:
                         )
                 if api and username_08:
                     delete_hotspot_user(api_connection=api, username=username_08)
-                # Kirim WA setelah deactivate
-                _send_cleanup_notification(user, "user_account_deactivated", {
-                    "days_inactive": str(days_inactive),
-                })
                 current_app.logger.info(
                     "cleanup_inactive: DEACTIVATE %s (phone=%s, inactive=%d hari)",
                     user.full_name, user.phone_number, days_inactive,
@@ -3333,6 +3394,27 @@ def cleanup_inactive_users() -> Dict[str, int]:
                 )
                 user.is_active = False
                 user.mikrotik_user_exists = False
+                try:
+                    db.session.commit()
+                except Exception as e:
+                    db.session.rollback()
+                    current_app.logger.error(
+                        "cleanup_inactive: GAGAL commit deactivate user_id=%s phone=%s: %s",
+                        user.id, user.phone_number, e,
+                    )
+                    continue
+                # Kirim WA SETELAH commit berhasil — mencegah spam jika commit gagal
+                dedup_deactivate_key = f"cleanup:deactivate_notif:{user.id}"
+                should_notify_deactivate = True
+                if redis_client:
+                    try:
+                        should_notify_deactivate = bool(redis_client.set(dedup_deactivate_key, "1", ex=30 * 86400, nx=True))
+                    except Exception:
+                        pass
+                if should_notify_deactivate:
+                    _send_cleanup_notification(user, "user_account_deactivated", {
+                        "days_inactive": str(days_inactive),
+                    })
                 counters["deactivated"] += 1
 
     # --- BAGIAN 2: User belum di-approve terlalu lama ---
@@ -3340,7 +3422,7 @@ def cleanup_inactive_users() -> Dict[str, int]:
         cutoff = now_utc - timedelta(days=unapproved_delete_days)
         unapproved_users = db.session.scalars(
             select(User).where(
-                User.role.in_([UserRole.USER, UserRole.KOMANDAN]),
+                User.role.in_(_cleanup_target_roles),
                 User.approval_status == ApprovalStatus.PENDING_APPROVAL,
                 User.created_at < cutoff,
             )
@@ -3369,11 +3451,18 @@ def cleanup_inactive_users() -> Dict[str, int]:
                 reason=f"Tidak di-approve dalam {days_pending} hari (status: {user.approval_status.value})",
                 action="unapproved_delete",
             )
+            target_user_id = user.id
             db.session.delete(user)
+            try:
+                db.session.commit()
+            except Exception as e:
+                db.session.rollback()
+                current_app.logger.error(
+                    "cleanup_unapproved: GAGAL commit delete user_id=%s phone=%s: %s",
+                    target_user_id, user.phone_number, e,
+                )
+                continue
             counters["unapproved_deleted"] += 1
-
-    if db.session.dirty or db.session.new or db.session.deleted:
-        db.session.commit()
 
     current_app.logger.info("cleanup_inactive_users selesai: %s", counters)
     return counters

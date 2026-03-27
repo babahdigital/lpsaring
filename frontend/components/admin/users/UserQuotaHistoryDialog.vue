@@ -500,6 +500,13 @@ watch(
       void resetFilters()
   },
 )
+
+function exportQuotaHistoryPdf() {
+  if (!props.user)
+    return
+  const queryString = buildPdfQueryString()
+  window.open(`/api/admin/users/${props.user.id}/quota-history/export?${queryString}`, '_blank', 'noopener')
+}
 </script>
 
 <template>
@@ -523,6 +530,14 @@ watch(
             </div>
           </div>
           <div class="dialog-titlebar__actions">
+            <VBtn
+              icon="tabler-printer"
+              variant="text"
+              size="small"
+              class="text-white"
+              :disabled="loading || items.length === 0"
+              @click="exportQuotaHistoryPdf"
+            />
             <VBtn icon="tabler-x" variant="text" size="small" class="text-white" @click="close" />
           </div>
         </div>
