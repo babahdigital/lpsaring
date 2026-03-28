@@ -1012,7 +1012,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
         <VCardTitle class="admin-users__cleanupCardTitle">
           Preview Cleanup Nonaktif
         </VCardTitle>
-        <template #append>
+        <template v-if="!isMobile" #append>
           <div class="admin-users__cleanupCardActions">
             <VBtn
               v-if="authStore.isSuperAdmin === true"
@@ -1037,6 +1037,27 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
           </div>
         </template>
       </VCardItem>
+      <div v-if="isMobile" class="admin-users__cleanupCardActionsMobile">
+        <VBtn
+          v-if="authStore.isSuperAdmin === true"
+          size="small"
+          variant="tonal"
+          color="secondary"
+          to="/admin/operations"
+        >
+          <VIcon icon="tabler-settings" start size="16" />
+          Operasional
+        </VBtn>
+        <VBtn
+          size="small"
+          variant="tonal"
+          color="info"
+          :loading="cleanupPreviewLoading"
+          @click="fetchInactiveCleanupPreview"
+        >
+          Refresh
+        </VBtn>
+      </div>
       <VCardText>
         <div class="admin-users__cleanupOverview">
           <div class="admin-users__cleanupChips">
@@ -1674,6 +1695,17 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
   justify-content: flex-end;
 }
 
+.admin-users__cleanupCardActionsMobile {
+  display: flex;
+  gap: 8px;
+  padding-inline: 16px;
+  padding-block-end: 4px;
+}
+
+.admin-users__cleanupCardActionsMobile .v-btn {
+  flex: 1 1 0;
+}
+
 .admin-users__cleanupBtnLabel {
   display: inline;
 }
@@ -1962,27 +1994,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
   }
 
   .admin-users__cleanupCardItem {
-    grid-template-columns: max-content 1fr !important;
-  }
-
-  .admin-users__cleanupCardItem :deep(.v-card-item__prepend) {
-    align-self: flex-start;
-  }
-
-  .admin-users__cleanupCardItem :deep(.v-card-item__append) {
-    grid-column: 1 / -1;
-    width: 100%;
-    margin-inline-start: 0;
-  }
-
-  .admin-users__cleanupCardActions {
-    width: 100%;
-    display: flex;
-    gap: 8px;
-  }
-
-  .admin-users__cleanupCardActions .v-btn {
-    flex: 1 1 0;
+    gap: 4px;
   }
 
   .dialog-titlebar {
