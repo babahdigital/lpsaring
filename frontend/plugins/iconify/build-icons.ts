@@ -328,6 +328,7 @@ const tablerIcons = [
   'file-type-pdf',
   'shield',
   'receipt-refund',
+  'lock-open',
   'x',
 ]
 
