@@ -1431,7 +1431,8 @@ def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reas
 
                 purchased_mb = float(user.total_quota_purchased_mb or 0.0)
                 used_mb = float(user.total_quota_used_mb or 0.0)
-                remaining_mb = max(0.0, purchased_mb - used_mb)
+                offset_mb = float(getattr(user, "auto_debt_offset_mb", 0) or 0.0)
+                remaining_mb = max(0.0, purchased_mb + offset_mb - used_mb)
 
                 now_utc = datetime.now(dt_timezone.utc)
                 is_expired = bool(user.quota_expiry_date and user.quota_expiry_date < now_utc)
@@ -1572,7 +1573,11 @@ def _sync_user_to_mikrotik(user: User, comment: str) -> Tuple[bool, str]:
     limit_bytes, timeout = 0, "0s"
     now = datetime.now(dt_timezone.utc)
     if not user.is_unlimited_user:
-        remaining_mb = (user.total_quota_purchased_mb or 0) - (user.total_quota_used_mb or 0)
+        remaining_mb = (
+            (user.total_quota_purchased_mb or 0)
+            + int(getattr(user, "auto_debt_offset_mb", 0) or 0)
+            - (user.total_quota_used_mb or 0)
+        )
         limit_bytes = max(1, int(remaining_mb * 1024 * 1024))
 
     if user.quota_expiry_date and user.quota_expiry_date > now:

@@ -1013,7 +1013,10 @@ def _get_thresholds_from_env(key: str, default: List[int]) -> List[int]:
 def _calculate_remaining(user: User) -> Tuple[float, float]:
     purchased_mb = float(user.total_quota_purchased_mb or 0.0)
     used_mb = float(user.total_quota_used_mb or 0.0)
-    remaining_mb = max(0.0, purchased_mb - used_mb)
+    offset_mb = float(getattr(user, "auto_debt_offset_mb", 0) or 0.0)
+    # Offset dipakai agar pemakaian selama user berstatus unlimited/KOMANDAN
+    # tidak menekan remaining ke 0 setelah status tersebut dicabut.
+    remaining_mb = max(0.0, purchased_mb + offset_mb - used_mb)
     remaining_percent = 0.0
     if purchased_mb > 0:
         remaining_percent = round((remaining_mb / purchased_mb) * 100, 2)

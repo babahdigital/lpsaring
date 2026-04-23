@@ -1,5 +1,6 @@
 from app.utils.quota_debt import (
     compute_debt_mb,
+    compute_effective_remaining_mb,
     estimate_debt_rp_from_cheapest_package,
     format_rupiah,
     round_up_rp_to_10k,
@@ -10,6 +11,43 @@ def test_compute_debt_mb_basic():
     assert compute_debt_mb(100.0, 90.0) == 0.0
     assert compute_debt_mb(100.0, 100.0) == 0.0
     assert compute_debt_mb(100.0, 150.5) == 50.5
+
+
+def test_compute_effective_remaining_mb_no_offset():
+    assert compute_effective_remaining_mb(100.0, 30.0) == 70.0
+    assert compute_effective_remaining_mb(100.0, 100.0) == 0.0
+    assert compute_effective_remaining_mb(100.0, 150.0) == 0.0
+
+
+def test_compute_effective_remaining_mb_with_offset_from_ex_unlimited():
+    # Skenario user eks-unlimited: purchased=81920, used=156434, offset=156410.
+    # Remaining efektif harus ~81896 MB, bukan 0.
+    remaining = compute_effective_remaining_mb(
+        purchased_mb=81920.0,
+        used_mb=156434.96,
+        auto_debt_offset_mb=156410.0,
+    )
+    assert remaining > 80000.0
+    assert remaining < 82000.0
+
+
+def test_compute_effective_remaining_mb_offset_fully_covers_overuse():
+    # Offset cukup mengimbangi over-use: remaining = purchased.
+    assert compute_effective_remaining_mb(1000.0, 500.0, 500.0) == 1000.0
+
+
+def test_compute_effective_remaining_mb_debt_complement():
+    # Saat remaining > 0 => debt harus 0 (compute_debt_mb(purchased+offset, used)).
+    remaining = compute_effective_remaining_mb(100.0, 60.0, 20.0)
+    debt = compute_debt_mb(100.0 + 20.0, 60.0)
+    assert remaining == 60.0
+    assert debt == 0.0
+
+    # Saat used melebihi purchased+offset => remaining 0, debt > 0.
+    remaining_neg = compute_effective_remaining_mb(50.0, 200.0, 20.0)
+    debt_pos = compute_debt_mb(50.0 + 20.0, 200.0)
+    assert remaining_neg == 0.0
+    assert debt_pos > 0.0
 
 
 def test_round_up_rp_to_10k():

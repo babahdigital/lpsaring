@@ -47,6 +47,45 @@ def compute_debt_mb(purchased_mb: float, used_mb: float) -> float:
     return float(debt)
 
 
+def compute_effective_remaining_mb(
+    purchased_mb: float,
+    used_mb: float,
+    auto_debt_offset_mb: float = 0.0,
+) -> float:
+    """Return remaining quota (MB) dengan memperhitungkan auto_debt_offset_mb.
+
+    Offset bertambah saat user berstatus unlimited/KOMANDAN agar pemakaian
+    selama status tersebut tidak dihitung sebagai utang ketika status dicabut.
+    Remaining efektif = purchased + offset - used (floor 0).
+
+    Formula ini konsisten dengan `compute_debt_mb(purchased + offset, used)` —
+    jika remaining > 0 maka debt = 0, dan sebaliknya.
+    """
+
+    def _to_decimal(value: object) -> Decimal:
+        if value in (None, ""):
+            return Decimal("0")
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError):
+            return Decimal("0")
+
+    purchased = _to_decimal(purchased_mb)
+    used = _to_decimal(used_mb)
+    offset = _to_decimal(auto_debt_offset_mb)
+    remaining = purchased + offset - used
+
+    if remaining <= 0:
+        return 0.0
+
+    try:
+        remaining = remaining.quantize(Decimal("0.01"), rounding="ROUND_HALF_UP")
+    except Exception:
+        pass
+
+    return float(remaining)
+
+
 def round_up_rp_to_10k(value_rp: int) -> int:
     if value_rp <= 0:
         return 0

@@ -799,7 +799,8 @@ def _get_user_mikrotik_status_payload(user: User) -> dict:
     mikrotik_username = format_to_local_phone(user.phone_number)
     purchased_mb = float(user.total_quota_purchased_mb or 0)
     used_mb = float(user.total_quota_used_mb or 0)
-    remaining_mb = max(0.0, purchased_mb - used_mb)
+    offset_mb = float(getattr(user, "auto_debt_offset_mb", 0) or 0)
+    remaining_mb = max(0.0, purchased_mb + offset_mb - used_mb)
     database_profile_name = str(getattr(user, "mikrotik_profile_name", "") or "").strip()
     derived_profile_name = _default_profile_for_user(user)
 
@@ -903,7 +904,7 @@ def _build_user_detail_report_context(
         mikrotik_account_label = "Perlu cek live"
         mikrotik_account_hint = "Jalankan cek live untuk memastikan akun hotspot."
 
-    remaining_mb = max(0.0, float(getattr(user, "total_quota_purchased_mb", 0) or 0) - float(getattr(user, "total_quota_used_mb", 0) or 0))
+    remaining_mb = float(getattr(user, "quota_remaining_mb", 0.0) or 0.0)
     debt_auto_mb = float(getattr(user, "quota_debt_auto_mb", 0) or 0)
     debt_manual_mb = int(getattr(user, "quota_debt_manual_mb", getattr(user, "manual_debt_mb", 0)) or 0)
     debt_total_mb = float(getattr(user, "quota_debt_total_mb", debt_auto_mb + debt_manual_mb) or 0)

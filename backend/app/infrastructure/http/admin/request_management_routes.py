@@ -262,7 +262,12 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
             notification_template_key = "komandan_request_quota_approved"
             notification_context = {"gb_added": gb_added, "days_added": days_to_add}
 
-            remaining_quota_mb = max(0, target_user.total_quota_purchased_mb - (target_user.total_quota_used_mb or 0))
+            remaining_quota_mb = max(
+                0,
+                (target_user.total_quota_purchased_mb or 0)
+                + int(getattr(target_user, "auto_debt_offset_mb", 0) or 0)
+                - (target_user.total_quota_used_mb or 0),
+            )
             limit_bytes = int(remaining_quota_mb * 1024 * 1024)
             timeout_seconds = int((new_expiry_date - now_local).total_seconds())
 
@@ -331,7 +336,12 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
             "granted_days": days_to_add,
         }
 
-        remaining_quota_mb = max(0, target_user.total_quota_purchased_mb - (target_user.total_quota_used_mb or 0))
+        remaining_quota_mb = max(
+            0,
+            (target_user.total_quota_purchased_mb or 0)
+            + int(getattr(target_user, "auto_debt_offset_mb", 0) or 0)
+            - (target_user.total_quota_used_mb or 0),
+        )
         limit_bytes = int(remaining_quota_mb * 1024 * 1024)
         timeout_seconds = int((new_expiry_date - now_local).total_seconds())
 

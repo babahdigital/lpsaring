@@ -243,7 +243,11 @@ def change_user_role(
     if mikrotik_username:
         limit_bytes = 0
         if not user.is_unlimited_user and user.total_quota_purchased_mb is not None:
-            remaining_mb = (user.total_quota_purchased_mb or 0) - (user.total_quota_used_mb or 0)
+            remaining_mb = (
+                (user.total_quota_purchased_mb or 0)
+                + int(getattr(user, "auto_debt_offset_mb", 0) or 0)
+                - (user.total_quota_used_mb or 0)
+            )
             limit_bytes = max(0, int(remaining_mb * 1024 * 1024))
             if limit_bytes <= 0:
                 limit_bytes = 1

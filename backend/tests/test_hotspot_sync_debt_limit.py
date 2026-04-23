@@ -171,6 +171,36 @@ def test_resolve_target_profile_uses_runtime_settings_without_settings_lookup(mo
     assert result == "cached-fup"
 
 
+def test_calculate_remaining_uses_auto_debt_offset():
+    # User eks-unlimited: purchased=81920, used=156434, offset=156410.
+    # Fungsi harus menghitung remaining ~81895 MB dan persen > 99.
+    user = SimpleNamespace(
+        total_quota_purchased_mb=81920,
+        total_quota_used_mb=156434.96,
+        auto_debt_offset_mb=156410,
+    )
+
+    remaining_mb, remaining_percent = svc._calculate_remaining(user)
+
+    assert remaining_mb > 80000.0
+    assert remaining_mb < 82000.0
+    assert remaining_percent > 99.0
+    assert remaining_percent <= 100.0
+
+
+def test_calculate_remaining_without_offset_matches_legacy_formula():
+    user = SimpleNamespace(
+        total_quota_purchased_mb=1000,
+        total_quota_used_mb=250,
+        auto_debt_offset_mb=0,
+    )
+
+    remaining_mb, remaining_percent = svc._calculate_remaining(user)
+
+    assert remaining_mb == 750.0
+    assert remaining_percent == 75.0
+
+
 def test_apply_auto_debt_limit_block_state_sets_block_when_limit_reached(monkeypatch):
     monkeypatch.setattr(
         svc.settings_service,

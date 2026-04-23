@@ -426,6 +426,35 @@ class User(db.Model):
             return 0.0
         return float(self.quota_debt_auto_mb) + float(self.quota_debt_manual_mb)
 
+    @property
+    def quota_remaining_mb(self) -> float:
+        """Sisa kuota efektif dalam MB.
+
+        Menghitung dengan memperhitungkan `auto_debt_offset_mb` agar user yang
+        pernah berstatus unlimited tidak muncul kehabisan kuota setelah status
+        unlimited dicabut. User unlimited dan KOMANDAN dianggap tak terbatas —
+        pemanggil harus memeriksa `is_unlimited_user` / role sebelum pakai nilai ini.
+        """
+        if self.role == UserRole.KOMANDAN or bool(getattr(self, "is_unlimited_user", False)):
+            return 0.0
+        from app.utils.quota_debt import compute_effective_remaining_mb
+
+        return compute_effective_remaining_mb(
+            purchased_mb=float(self.total_quota_purchased_mb or 0.0),
+            used_mb=float(self.total_quota_used_mb or 0.0),
+            auto_debt_offset_mb=float(getattr(self, "auto_debt_offset_mb", 0) or 0.0),
+        )
+
+    @property
+    def quota_remaining_percent(self) -> float:
+        """Sisa kuota sebagai persentase terhadap `total_quota_purchased_mb`."""
+        if self.role == UserRole.KOMANDAN or bool(getattr(self, "is_unlimited_user", False)):
+            return 0.0
+        purchased_mb = float(self.total_quota_purchased_mb or 0.0)
+        if purchased_mb <= 0:
+            return 0.0
+        return round((float(self.quota_remaining_mb) / purchased_mb) * 100, 2)
+
 
 class UserQuotaDebt(db.Model):
     __tablename__ = "user_quota_debts"

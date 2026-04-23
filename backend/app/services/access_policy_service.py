@@ -110,7 +110,8 @@ def get_user_access_status(user) -> str:
 
     purchased_mb = float(getattr(user, "total_quota_purchased_mb", 0) or 0.0)
     used_mb = float(getattr(user, "total_quota_used_mb", 0) or 0.0)
-    remaining_mb = max(0.0, purchased_mb - used_mb)
+    offset_mb = float(getattr(user, "auto_debt_offset_mb", 0) or 0.0)
+    remaining_mb = max(0.0, purchased_mb + offset_mb - used_mb)
 
     if purchased_mb <= 0 or remaining_mb <= 0:
         return "habis"
