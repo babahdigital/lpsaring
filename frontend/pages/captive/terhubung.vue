@@ -132,17 +132,19 @@ async function handleDone() {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   const user = authStore.currentUser ?? authStore.lastKnownUser
   if (!user) {
-    navigateTo('/captive', { replace: true })
+    isNavigatingAway.value = true
+    await navigateTo('/captive', { replace: true })
     return
   }
 
   const status = authStore.getAccessStatusFromUser(user)
   if (!isConnectedStatus(status)) {
+    isNavigatingAway.value = true
     const redirectPath = authStore.getRedirectPathForStatus(status, 'captive') || '/captive'
-    navigateTo(redirectPath, { replace: true })
+    await navigateTo(redirectPath, { replace: true })
     return
   }
 

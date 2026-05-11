@@ -6,7 +6,7 @@ import authV1TopShape from '@images/svg/auth-v1-top-shape.svg?raw'
 import { VNodeRenderer } from '@layouts/components/VNodeRenderer'
 import { themeConfig } from '@themeConfig'
 
-import { computed, h, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import { useSnackbar } from '~/composables/useSnackbar'
@@ -261,6 +261,16 @@ watch(regIsTamping, (isTamping) => {
 
 // --- Aturan Validasi Asinkron untuk Nomor WhatsApp ---
 let validationTimeout: NodeJS.Timeout | null = null
+
+onBeforeUnmount(() => {
+  // Cegah timeout yang sudah dijadwalkan tetap berjalan setelah komponen unmount
+  // (memory leak kecil + risiko request /validate-whatsapp ke context yang sudah lepas).
+  if (validationTimeout !== null) {
+    clearTimeout(validationTimeout)
+    validationTimeout = null
+  }
+})
+
 function whatsappValidationRule(v: string) {
   const isFormatBasicallyCorrect = phoneFormatRules.every(rule => rule(v) === true)
   if (isFormatBasicallyCorrect !== true)
@@ -323,6 +333,9 @@ async function tryFocus(refInstance: { focus?: () => void } | null) {
 async function handleRequestOtp() {
   if (loginFormRef.value === null)
     return
+  // Guard: cegah double-submit saat user click 2x cepat sebelum loading state aktif.
+  if (isSubmitting.value)
+    return
 
   const { valid } = await loginFormRef.value.validate()
   if (valid !== true)
@@ -349,6 +362,9 @@ async function handleRequestOtp() {
 
 async function handleVerifyOtp() {
   if (loginFormRef.value === null)
+    return
+  // Guard: cegah double-submit selama proses verify masih berjalan.
+  if (isSubmitting.value || isAutoActivating.value)
     return
 
   const { valid } = await loginFormRef.value.validate()
@@ -482,6 +498,9 @@ async function handleVerifyOtp() {
           }
           finally {
             isAutoActivating.value = false
+            // Selalu bersihkan pesan agar tidak ada flash teks lama saat user
+            // kembali ke layar login (mis. setelah fallback gagal).
+            autoActivateMessage.value = ''
           }
         }
 
