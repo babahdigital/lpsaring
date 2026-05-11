@@ -15,19 +15,32 @@ const authStore = useAuthStore()
 const { public: { captiveSuccessRedirectUrl } } = useRuntimeConfig()
 const countdown = ref(5)
 const isClosing = ref(false)
+const isNavigatingAway = ref(false)
 let statusRecheckInterval: ReturnType<typeof setInterval> | null = null
+let autoCloseInterval: ReturnType<typeof setInterval> | null = null
 
 function isConnectedStatus(status: string): boolean {
   return status === 'ok' || status === 'fup'
+}
+
+function stopAutoClose() {
+  if (autoCloseInterval != null) {
+    clearInterval(autoCloseInterval)
+    autoCloseInterval = null
+  }
 }
 
 function startAutoClose() {
   if (!import.meta.client)
     return
 
-  const interval = window.setInterval(() => {
+  autoCloseInterval = window.setInterval(() => {
+    if (isNavigatingAway.value) {
+      stopAutoClose()
+      return
+    }
     if (countdown.value <= 1) {
-      window.clearInterval(interval)
+      stopAutoClose()
       void handleDone()
       return
     }
@@ -42,17 +55,31 @@ function stopStatusRecheck() {
   }
 }
 
+function stopAllTimers() {
+  stopStatusRecheck()
+  stopAutoClose()
+}
+
 async function recheckAccessStatus() {
+  if (isNavigatingAway.value)
+    return
+
   await authStore.refreshSessionStatus('/captive/terhubung')
+  if (isNavigatingAway.value)
+    return
+
   const latestUser = authStore.currentUser ?? authStore.lastKnownUser
   if (!latestUser) {
+    isNavigatingAway.value = true
+    stopAllTimers()
     await navigateTo('/captive', { replace: true })
     return
   }
 
   const latestStatus = authStore.getAccessStatusFromUser(latestUser)
   if (!isConnectedStatus(latestStatus)) {
-    stopStatusRecheck()
+    isNavigatingAway.value = true
+    stopAllTimers()
     const redirectPath = authStore.getRedirectPathForStatus(latestStatus, 'captive') || '/captive'
     await navigateTo(redirectPath, { replace: true })
   }
@@ -83,16 +110,25 @@ async function redirectAfterSuccess() {
 }
 
 async function handleDone() {
-  if (isClosing.value)
+  if (isClosing.value || isNavigatingAway.value)
     return
 
   isClosing.value = true
+  isNavigatingAway.value = true
+  stopAllTimers()
   clearCaptiveContext()
+
   if (import.meta.client) {
-    window.close()
-    setTimeout(() => {
+    // Only attempt window.close() in popup windows. In a regular tab
+    // window.close() is silently blocked by browsers; skip the 500ms wait.
+    const isPopup = window.opener != null && window.opener !== window
+    if (isPopup) {
+      window.close()
+      setTimeout(() => void redirectAfterSuccess(), 500)
+    }
+    else {
       void redirectAfterSuccess()
-    }, 500)
+    }
   }
 }
 
@@ -118,7 +154,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  stopStatusRecheck()
+  stopAllTimers()
 })
 </script>
 

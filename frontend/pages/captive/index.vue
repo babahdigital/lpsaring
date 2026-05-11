@@ -413,6 +413,11 @@ async function verifyOtp() {
   const currentUser = authStore.currentUser
   if (currentUser) {
     const status = authStore.getAccessStatusFromUser(currentUser)
+    // FUP users are throttled but still connected – treat as ok in captive context
+    if (status === 'ok' || status === 'fup') {
+      await navigateTo('/captive/terhubung', { replace: true })
+      return
+    }
     const redirectPath = authStore.getRedirectPathForStatus(status, 'captive')
     if (redirectPath) {
       await navigateTo(redirectPath, { replace: true })
