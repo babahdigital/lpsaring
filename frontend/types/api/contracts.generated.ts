@@ -2,7 +2,7 @@
 // AUTO-GENERATED FILE. DO NOT EDIT MANUALLY.
 // Source: contracts/openapi/openapi.v1.yaml
 
-export const OPENAPI_SOURCE_SHA256 = '09a8f69914175d38c75cc32ee3ca370e7677cd8b58bd146b013c8276e5558ca3' as const
+export const OPENAPI_SOURCE_SHA256 = '7c560fa12602599d10781e83d9bd46e4abada8ef6fa83ac575efdf2bc2d9719f' as const
 export const API_CONTRACT_REVISION = 'openapi-1.0.0' as const
 
 export type MessageResponse = { message: string }
@@ -250,6 +250,11 @@ export interface GeneratedApiContractMap {
   'POST /auth/auto-login': {
     request: AuthAutoLoginRequest
     response: AuthVerifyOtpResponse
+    error: ErrorResponse
+  }
+  'POST /auth/captive/auto-activate': {
+    request: never
+    response: { activated: boolean; reason?: 'no_known_device' | 'mikrotik_unavailable' | 'binding_failed' | 'disabled' | 'user_not_found'; mac_used?: string; binding_active?: boolean; detail?: string }
     error: ErrorResponse
   }
   'GET /auth/hotspot-session-status': {

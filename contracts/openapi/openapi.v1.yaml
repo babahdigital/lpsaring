@@ -221,6 +221,9 @@ paths:
           $ref: '#/components/responses/ErrorUnauthorized'
 
   /auth/session/consume:
+    post:
+      tags: [Auth]
+      summary: Consume session token (cross-device login handoff)
       requestBody:
         required: true
         content:
