@@ -183,10 +183,44 @@ paths:
         '422':
           $ref: '#/components/responses/ErrorValidation'
 
-  /auth/session/consume:
+  /auth/captive/auto-activate:
     post:
       tags: [Auth]
-      summary: Consume session token (cross-device login handoff)
+      summary: Aktivasi internet captive otomatis untuk perangkat terakhir
+      description: |
+        Dipanggil tepat setelah verify-otp berhasil ketika frontend tidak punya
+        client_ip/client_mac (mis. user datang via HTTPS Cloudflare). Endpoint
+        ini mencari device terakhir milik user dan mencoba apply ip-binding di
+        MikroTik secara best-effort. Selalu mengembalikan 200; field `activated`
+        menentukan apakah frontend bisa langsung redirect ke captive/terhubung
+        atau harus fallback ke /login/hotspot-required.
+      security:
+        - bearerAuth: []
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Hasil percobaan auto-activate (best-effort)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [activated]
+                properties:
+                  activated:
+                    type: boolean
+                  reason:
+                    type: string
+                    enum: [no_known_device, mikrotik_unavailable, binding_failed, disabled, user_not_found]
+                  mac_used:
+                    type: string
+                  binding_active:
+                    type: boolean
+                  detail:
+                    type: string
+        '401':
+          $ref: '#/components/responses/ErrorUnauthorized'
+
+  /auth/session/consume:
       requestBody:
         required: true
         content:

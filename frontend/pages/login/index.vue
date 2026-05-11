@@ -19,6 +19,7 @@ import { sanitizePostLoginHotspotBridgeReturnPath, shouldAttemptPostLoginHotspot
 import { TAMPING_OPTION_ITEMS } from '~/utils/constants'
 import { rememberHotspotIdentity, resolveHotspotIdentity } from '~/utils/hotspotIdentity'
 import { extractTrustedHotspotLoginHintFromQuery, resolveHotspotTrustConfig, sanitizeHotspotLoginHint } from '~/utils/hotspotTrust'
+import { attemptAutoActivate } from '~/utils/autoActivateHotspot'
 
 definePageMeta({
   layout: 'blank',
@@ -55,6 +56,8 @@ const otpSent = ref(false)
 const phoneNumber = ref('')
 const otpCode = ref('')
 const otpInputRef = ref<any>(null)
+const isAutoActivating = ref(false)
+const autoActivateMessage = ref('')
 
 // --- State untuk Form Register ---
 const registerFormRef = ref<InstanceType<typeof VForm> | null>(null)
@@ -459,6 +462,29 @@ async function handleVerifyOtp() {
       }
 
       if (requireHotspotStep) {
+        const hasIdentity = Boolean(clientIp || clientMac)
+        // Smooth path: try captive auto-activate first when frontend tidak punya IP/MAC.
+        if (!hasIdentity) {
+          isAutoActivating.value = true
+          autoActivateMessage.value = 'Sedang mengaktifkan internet, mohon tunggu...'
+          try {
+            const { $api } = useNuxtApp()
+            const outcome = await attemptAutoActivate({
+              apiFetch: (url, init) => $api(url, init as any),
+              hotspotLoginRequired: loginResponse.hotspot_login_required,
+              hasClientIdentity: hasIdentity,
+            })
+            if (outcome === 'activated') {
+              autoActivateMessage.value = 'Internet aktif, mengarahkan...'
+              await navigateTo('/captive/terhubung', { replace: true })
+              return
+            }
+          }
+          finally {
+            isAutoActivating.value = false
+          }
+        }
+
         const hotspotQuery = new URLSearchParams()
         if (clientIp)
           hotspotQuery.set('client_ip', clientIp)
@@ -717,6 +743,23 @@ watch(regRole, () => {
                     >
                       Verifikasi & Masuk
                     </VBtn>
+                    <VAlert
+                      v-if="isAutoActivating"
+                      type="info"
+                      variant="tonal"
+                      density="compact"
+                      class="mt-3"
+                    >
+                      <div class="d-flex align-center">
+                        <VProgressCircular
+                          indeterminate
+                          size="18"
+                          width="2"
+                          class="me-2"
+                        />
+                        <span>{{ autoActivateMessage || 'Sedang mengaktifkan internet, mohon tunggu...' }}</span>
+                      </div>
+                    </VAlert>
                     <VBtn
                       variant="text"
                       block

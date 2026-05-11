@@ -510,6 +510,75 @@ def admin_login():
     )
 
 
+@auth_bp.route("/captive/auto-activate", methods=["POST"])
+@token_required
+def captive_auto_activate(current_user_id: uuid.UUID):
+    import concurrent.futures
+
+    enabled_raw = current_app.config.get("ENABLE_OTP_AUTO_ACTIVATE", True)
+    enabled = bool(enabled_raw) if not isinstance(enabled_raw, str) else enabled_raw.strip().lower() in {"1", "true", "yes", "on"}
+    if not enabled:
+        return {"activated": False, "reason": "disabled"}, 200
+
+    user = db.session.get(User, current_user_id)
+    if user is None:
+        return {"activated": False, "reason": "user_not_found"}, 200
+
+    devices = list(getattr(user, "devices", []) or [])
+    if not devices:
+        return {"activated": False, "reason": "no_known_device"}, 200
+
+    devices.sort(
+        key=lambda d: getattr(d, "last_seen_at", None) or getattr(d, "first_seen_at", None) or 0,
+        reverse=True,
+    )
+    latest = devices[0]
+    device_mac = getattr(latest, "mac_address", None)
+    device_ip = getattr(latest, "ip_address", None)
+    if not device_mac:
+        return {"activated": False, "reason": "no_known_device"}, 200
+
+    ua = request.headers.get("User-Agent")
+    timeout_s = float(current_app.config.get("OTP_AUTO_ACTIVATE_TIMEOUT_S", 8))
+
+    def _do_apply():
+        return apply_device_binding_for_login(
+            user=user,
+            client_ip=device_ip,
+            user_agent=ua,
+            client_mac=device_mac,
+            bypass_explicit_auth=True,
+        )
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_do_apply)
+            ok, msg, _ip = future.result(timeout=timeout_s)
+    except concurrent.futures.TimeoutError:
+        current_app.logger.warning(
+            "captive_auto_activate timeout user=%s mac=%s timeout=%s", current_user_id, device_mac, timeout_s
+        )
+        return {"activated": False, "reason": "mikrotik_unavailable"}, 200
+    except Exception as exc:  # noqa: BLE001
+        current_app.logger.warning(
+            "captive_auto_activate error user=%s mac=%s err=%s", current_user_id, device_mac, exc
+        )
+        return {"activated": False, "reason": "mikrotik_unavailable"}, 200
+
+    if not ok:
+        current_app.logger.info(
+            "captive_auto_activate not activated user=%s mac=%s msg=%s", current_user_id, device_mac, msg
+        )
+        return {"activated": False, "reason": "binding_failed", "detail": msg}, 200
+
+    try:
+        db.session.commit()
+    except Exception:  # noqa: BLE001
+        db.session.rollback()
+
+    return {"activated": True, "mac_used": device_mac, "binding_active": True}, 200
+
+
 @auth_bp.route("/refresh", methods=["POST"])
 @limiter.limit(
     lambda: current_app.config.get("REFRESH_TOKEN_RATE_LIMIT", "60 per minute"), key_func=_rate_limit_key_with_ip
