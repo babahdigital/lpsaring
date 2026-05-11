@@ -88,8 +88,10 @@ export function resolveExpiredOrHabisRedirect(path: string, accessStatus: string
   if (accessStatus !== 'expired' && accessStatus !== 'habis')
     return null
 
-  if (isStatusSelfServicePath(path, accessStatus, isKomandan))
+  if (isStatusSelfServicePath(path, accessStatus as AccessStatus, isKomandan))
     return null
 
-  return getQuotaRecoveryDestination(isKomandan)
+  // Redirect ke halaman policy informasi dulu (mis. /policy/habis) agar user tahu
+  // alasan pembatasan & bisa pilih CTA Beli Paket. Sebelumnya langsung ke /beli.
+  return getStatusRouteForAccessStatus(accessStatus as AccessStatus, 'login') ?? getQuotaRecoveryDestination(isKomandan)
 }

@@ -62,9 +62,22 @@ describe('auth guard decisions', () => {
       expect(resolveExpiredOrHabisRedirect('/payment/finish', 'habis', false)).toBeNull()
     })
 
-    it('redirects expired/habis users to destination when path not allowed', () => {
-      expect(resolveExpiredOrHabisRedirect('/dashboard', 'expired', false)).toBe('/beli')
-      expect(resolveExpiredOrHabisRedirect('/dashboard', 'habis', true)).toBe('/requests')
+    it('allows quota recovery destination (beli/requests) for expired/habis users', () => {
+      expect(resolveExpiredOrHabisRedirect('/beli', 'expired', false)).toBeNull()
+      expect(resolveExpiredOrHabisRedirect('/beli', 'habis', false)).toBeNull()
+      expect(resolveExpiredOrHabisRedirect('/requests', 'habis', true)).toBeNull()
+    })
+
+    it('redirects expired/habis users to policy info page first (not /beli directly)', () => {
+      expect(resolveExpiredOrHabisRedirect('/dashboard', 'expired', false)).toBe('/policy/expired')
+      expect(resolveExpiredOrHabisRedirect('/dashboard', 'habis', false)).toBe('/policy/habis')
+      // Komandan juga diarahkan ke policy page dulu, bukan langsung /requests
+      expect(resolveExpiredOrHabisRedirect('/dashboard', 'habis', true)).toBe('/policy/habis')
+    })
+
+    it('does not redirect when user already on the matching policy page', () => {
+      expect(resolveExpiredOrHabisRedirect('/policy/expired', 'expired', false)).toBeNull()
+      expect(resolveExpiredOrHabisRedirect('/policy/habis', 'habis', false)).toBeNull()
     })
 
     it('does nothing for non expired/habis status', () => {

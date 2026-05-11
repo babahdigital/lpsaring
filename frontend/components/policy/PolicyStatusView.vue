@@ -190,9 +190,14 @@ const viewModel = computed(() => {
       description: `Masa aktif layanan internet Anda telah berakhir${expiredAtText.value !== '-' ? ` pada ${expiredAtText.value}` : ''}.`,
       actions: [
         {
+          label: isKomandan.value ? 'Ajukan Permintaan' : 'Beli Paket Data',
+          path: isKomandan.value ? '/requests' : '/beli',
+          kind: 'primary',
+        },
+        {
           label: 'Kembali Dashboard',
           path: '/dashboard',
-          kind: 'primary',
+          kind: 'secondary',
         },
       ] as PolicyAction[],
       waText: `Halo Admin, masa aktif saya sudah berakhir.\n\nNama: ${user.value?.full_name || 'Pengguna'}\nNo. HP: ${user.value?.phone_number ? format_to_local_phone(user.value.phone_number) : 'Tidak terdaftar'}\n\nMohon bantu perpanjangan paket.`,
