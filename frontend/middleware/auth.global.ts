@@ -210,8 +210,13 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
     const hasResolvedHotspotIdentity = Object.keys(hotspotIdentityQuery).length > 0
 
     // Halaman public diizinkan untuk semua role (hindari auto-redirect ke dashboard).
-    if (isPublicPage)
+    if (isPublicPage) {
+      // Khusus halaman captive (hotspotOnly): admin tidak boleh nyasar ke flow user
+      const isHotspotOnly = Boolean((to.meta as any)?.hotspotOnly === true)
+      if (isHotspotOnly && isAdmin)
+        return navigateTo('/admin/dashboard', { replace: true })
       return
+    }
 
     if (!isAdmin) {
       const accessStatus = authStore.getAccessStatusFromUser(authStore.currentUser ?? authStore.lastKnownUser)

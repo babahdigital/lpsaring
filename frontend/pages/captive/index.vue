@@ -12,6 +12,7 @@ definePageMeta({
   layout: 'blank',
   auth: false,
   public: true,
+  hotspotOnly: true,
 })
 
 useHead({ title: 'Login Hotspot Captive' })

@@ -930,7 +930,18 @@ export const useAuthStore = defineStore('auth', () => {
     return getStatusRouteForAccessStatus(status, context)
   }
 
+  let inFlightInitPromise: Promise<void> | null = null
+
   async function initializeAuth(routeInfo?: { path: string; query?: Record<string, unknown> }) {
+    if (inFlightInitPromise != null)
+      return inFlightInitPromise
+    inFlightInitPromise = _initializeAuthImpl(routeInfo).finally(() => {
+      inFlightInitPromise = null
+    })
+    return inFlightInitPromise
+  }
+
+  async function _initializeAuthImpl(routeInfo?: { path: string; query?: Record<string, unknown> }) {
     const route = routeInfo ?? useRoute()
     const routePath = route?.path ?? ''
     const context: 'login' | 'captive' = routePath.startsWith('/captive') ? 'captive' : 'login'

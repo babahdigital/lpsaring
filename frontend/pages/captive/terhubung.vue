@@ -7,6 +7,7 @@ definePageMeta({
   layout: 'blank',
   auth: false,
   public: true,
+  hotspotOnly: true,
 })
 
 useHead({ title: 'Koneksi Berhasil' })
