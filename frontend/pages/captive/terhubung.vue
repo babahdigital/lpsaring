@@ -34,7 +34,7 @@ function startAutoClose() {
   if (!import.meta.client)
     return
 
-  autoCloseInterval = window.setInterval(() => {
+  autoCloseInterval = setInterval(() => {
     if (isNavigatingAway.value) {
       stopAutoClose()
       return
