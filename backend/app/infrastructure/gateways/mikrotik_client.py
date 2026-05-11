@@ -563,9 +563,11 @@ def get_hotspot_host_usage_map(api_connection: Any) -> Tuple[bool, Dict[str, Dic
         hosts = api_connection.get_resource("/ip/hotspot/host").get()
         hotspot_networks: List[ipaddress._BaseNetwork] = []
         try:
-            cidr_values = current_app.config.get("HOTSPOT_CLIENT_IP_CIDRS") or current_app.config.get(
-                "MIKROTIK_UNAUTHORIZED_CIDRS"
-            ) or []
+            cidr_values = (
+                current_app.config.get("HOTSPOT_CLIENT_IP_CIDRS")
+                or current_app.config.get("MIKROTIK_UNAUTHORIZED_CIDRS")
+                or []
+            )
         except Exception:
             cidr_values = []
 
@@ -596,9 +598,12 @@ def get_hotspot_host_usage_map(api_connection: Any) -> Tuple[bool, Dict[str, Dic
             uptime_seconds = parse_routeros_duration_to_seconds(entry.get("uptime"))
             address_in_subnet = 1 if _ip_in_networks(entry.get("address")) else 0
             translated_in_subnet = 1 if _ip_in_networks(entry.get("to-address")) else 0
-            trusted_state = 1 if str(entry.get("bypassed", "false")).lower() == "true" or str(
-                entry.get("authorized", "false")
-            ).lower() == "true" else 0
+            trusted_state = (
+                1
+                if str(entry.get("bypassed", "false")).lower() == "true"
+                or str(entry.get("authorized", "false")).lower() == "true"
+                else 0
+            )
             return (
                 address_in_subnet,
                 translated_in_subnet,
@@ -828,7 +833,16 @@ def upsert_address_list_entry(
         return False, "Alamat atau nama list kosong"
     try:
         resource = api_connection.get_resource("/ip/firewall/address-list")
-        entries = resource.get(address=address, list=list_name)
+        try:
+            entries = resource.get(address=address, list=list_name)
+        except Exception as get_exc:
+            # Beberapa versi RouterOS API mengembalikan "no such item (4)" pada
+            # query /print walau seharusnya hanya menghasilkan list kosong.
+            # Anggap entri belum ada dan lanjutkan ke jalur add().
+            if "no such item" in str(get_exc).lower():
+                entries = []
+            else:
+                raise
         if entries:
             entry_id = entries[0].get("id") or entries[0].get(".id")
             if not entry_id:
@@ -858,7 +872,15 @@ def upsert_address_list_entry(
                 add_data["comment"] = comment
             if timeout is not None:
                 add_data["timeout"] = timeout
-            resource.add(**add_data)
+            try:
+                resource.add(**add_data)
+            except Exception as add_exc:
+                # Race: entri sudah dibuat oleh sesi lain antara cek dan add.
+                # "already have" / "failure: already have" dianggap sukses idempoten.
+                if "already have" in str(add_exc).lower():
+                    pass
+                else:
+                    raise
         return True, "Sukses"
     except Exception as e:
         return False, str(e)
@@ -1098,7 +1120,41 @@ def upsert_dhcp_static_lease(
             if comment is not None:
                 update_data["comment"] = comment
             # NOTE: don't rewrite server when chosen already matches server_norm.
-            resource.set(**update_data)
+            try:
+                resource.set(**update_data)
+            except Exception as set_exc:
+                # IP conflict: lease lain (MAC berbeda) memegang alamat target.
+                # Jika lease tersebut juga managed marker yang sama, hapus dan retry sekali.
+                if "already have static lease with this ip" in str(set_exc).lower():
+                    try:
+                        all_leases = resource.get() or []
+                    except Exception:
+                        all_leases = []
+                    cleaned = False
+                    for other in all_leases:
+                        other_id = other.get("id") or other.get(".id")
+                        other_addr = str(other.get("address") or "").strip()
+                        other_mac = str(other.get("mac-address") or "").strip().upper()
+                        other_comment = str(other.get("comment") or "")
+                        if not other_id or other_id == lease_id:
+                            continue
+                        if other_addr != address:
+                            continue
+                        if other_mac == mac_address.upper():
+                            continue
+                        if not managed_marker or managed_marker not in other_comment:
+                            continue
+                        try:
+                            resource.remove(id=other_id)
+                            cleaned = True
+                        except Exception:
+                            pass
+                    if cleaned:
+                        resource.set(**update_data)
+                    else:
+                        raise
+                else:
+                    raise
             return True, "Sukses"
 
         # If server is pinned and no lease exists for that server, create a new one.
