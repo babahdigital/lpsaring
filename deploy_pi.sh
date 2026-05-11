@@ -3,17 +3,17 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Deploy lpsaring minimal package to Raspberry Pi and restart production stack.
+Deploy lpsaring minimal package to VPS and restart production stack.
 
 Usage:
   ./deploy_pi.sh [options]
 
 Target wajib (dikunci):
-  ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@159.89.192.31
+  ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@194.233.80.163
   Remote path: /home/abdullah/lpsaring/app
 
 Optional:
-  --host <PI_HOST>              Harus 159.89.192.31 (opsional, divalidasi)
+  --host <PI_HOST>              Harus 194.233.80.163 (opsional, divalidasi)
   --user <PI_USER>              Harus abdullah (opsional, divalidasi)
   --port <SSH_PORT>             SSH port (default: 1983)
   --key <SSH_KEY_PATH>          SSH private key (default: ~/.ssh/id_raspi_ed25519)
@@ -57,11 +57,11 @@ Examples:
   ./deploy_pi.sh
 
   # ekuivalen eksplisit (tetap target yang sama):
-  ./deploy_pi.sh --host 159.89.192.31 --user abdullah --port 1983 \
+  ./deploy_pi.sh --host 194.233.80.163 --user abdullah --port 1983 \
     --key ~/.ssh/id_raspi_ed25519 --remote-dir /home/abdullah/lpsaring/app
 
   # Jika nginx/conf.d/lpsaring.conf berubah, sinkronkan sekalian:
-  ./deploy_pi.sh --host 159.89.192.31 --user abdullah --port 1983 \
+  ./deploy_pi.sh --host 194.233.80.163 --user abdullah --port 1983 \
     --key ~/.ssh/id_raspi_ed25519 --remote-dir /home/abdullah/lpsaring/app \
     --sync-nginx-conf
 EOF
@@ -378,7 +378,7 @@ wait_for_ci_green() {
 }
 
 LOCKED_PI_USER="abdullah"
-LOCKED_PI_HOST="159.89.192.31"
+LOCKED_PI_HOST="194.233.80.163"
 LOCKED_PI_PORT="1983"
 LOCKED_REMOTE_DIR="/home/abdullah/lpsaring/app"
 
