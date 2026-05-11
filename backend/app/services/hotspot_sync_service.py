@@ -1109,7 +1109,8 @@ def _self_heal_policy_binding_for_user(
             continue
 
         current_entry = ip_binding_map.get(mac) or {}
-        actual_binding_type = str(current_entry.get("type") or "").strip().lower()
+        # RouterOS returns "" for 'regular' (default type) — normalise before comparing.
+        actual_binding_type = _normalize_binding_type(current_entry.get("type"))
         if actual_binding_type == expected_binding_type:
             continue
 
