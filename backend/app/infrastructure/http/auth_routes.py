@@ -541,14 +541,32 @@ def captive_auto_activate(current_user_id: uuid.UUID):
     ua = request.headers.get("User-Agent")
     timeout_s = float(current_app.config.get("OTP_AUTO_ACTIVATE_TIMEOUT_S", 8))
 
+    # ThreadPoolExecutor threads do NOT inherit the Flask app/request context.
+    # Capture the real app object and db reference (not proxies) before spawning.
+    # Using db_ref (module-level reference) keeps monkeypatching in tests working.
+    # Inside the thread we push a fresh app_context so current_app, SQLAlchemy
+    # scoped sessions, and any lazy-loaded relationships work correctly.
+    app_obj = current_app._get_current_object()
+    db_ref = db  # same instance as auth_routes.db; monkeypatch-safe
+    user_id_for_thread = current_user_id
+
     def _do_apply():
-        return apply_device_binding_for_login(
-            user=user,
-            client_ip=device_ip,
-            user_agent=ua,
-            client_mac=device_mac,
-            bypass_explicit_auth=True,
-        )
+        with app_obj.app_context():
+            thread_user = db_ref.session.get(User, user_id_for_thread)
+            if thread_user is None:
+                return False, "user_not_found_in_thread", None
+            result = apply_device_binding_for_login(
+                user=thread_user,
+                client_ip=device_ip,
+                user_agent=ua,
+                client_mac=device_mac,
+                bypass_explicit_auth=True,
+            )
+            try:
+                db_ref.session.commit()
+            except Exception:  # noqa: BLE001
+                db_ref.session.rollback()
+            return result
 
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
@@ -570,11 +588,6 @@ def captive_auto_activate(current_user_id: uuid.UUID):
             "captive_auto_activate not activated user=%s mac=%s msg=%s", current_user_id, device_mac, msg
         )
         return {"activated": False, "reason": "binding_failed", "detail": msg}, 200
-
-    try:
-        db.session.commit()
-    except Exception:  # noqa: BLE001
-        db.session.rollback()
 
     return {"activated": True, "mac_used": device_mac, "binding_active": True}, 200
 
