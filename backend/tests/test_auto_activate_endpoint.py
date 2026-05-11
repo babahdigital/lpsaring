@@ -158,3 +158,84 @@ def test_binding_failed_returns_reason(monkeypatch):
     assert status == 200
     assert body["activated"] is False
     assert body["reason"] == "binding_failed"
+
+
+def test_timeout_returns_mikrotik_unavailable(monkeypatch):
+    """If apply_device_binding_for_login exceeds timeout_s, endpoint returns mikrotik_unavailable."""
+    import time
+
+    user = _make_user(devices=[_make_device()])
+    monkeypatch.setattr(auth_routes, "db", _FakeDb(user))
+
+    def _slow(**_kwargs):
+        time.sleep(2)
+        return True, "ok", None
+
+    monkeypatch.setattr(auth_routes, "apply_device_binding_for_login", _slow)
+
+    app = _make_app()
+    app.config["OTP_AUTO_ACTIVATE_TIMEOUT_S"] = 0.2
+    impl = _unwrap(auth_routes.captive_auto_activate)
+    with app.test_request_context("/api/auth/captive/auto-activate", method="POST"):
+        body, status = impl(current_user_id=user.id)
+    assert status == 200
+    assert body == {"activated": False, "reason": "mikrotik_unavailable"}
+
+
+def test_user_not_found_in_thread(monkeypatch):
+    """If the in-thread session.get returns None (user deleted between request & thread), gracefully fail."""
+    user = _make_user(devices=[_make_device()])
+
+    class _NullSession:
+        def get(self, _model, _ident):
+            return None
+
+        def commit(self):
+            return None
+
+        def rollback(self):
+            return None
+
+    class _SometimesDb:
+        # First .get call (outside thread) returns user, but inside thread returns None.
+        # Implemented via call counter on session.
+        def __init__(self):
+            self._calls = 0
+            self._user = user
+
+            class _Sess:
+                _outer = self
+
+                def get(self_sess, _model, _ident):
+                    self_sess._outer._calls += 1
+                    if self_sess._outer._calls == 1:
+                        return self_sess._outer._user
+                    return None
+
+                def commit(self_sess):
+                    return None
+
+                def rollback(self_sess):
+                    return None
+
+            self.session = _Sess()
+
+    monkeypatch.setattr(auth_routes, "db", _SometimesDb())
+
+    called = {"count": 0}
+
+    def _apply(**_kwargs):
+        called["count"] += 1
+        return True, "ok", None
+
+    monkeypatch.setattr(auth_routes, "apply_device_binding_for_login", _apply)
+
+    app = _make_app()
+    impl = _unwrap(auth_routes.captive_auto_activate)
+    with app.test_request_context("/api/auth/captive/auto-activate", method="POST"):
+        body, status = impl(current_user_id=user.id)
+    assert status == 200
+    assert body["activated"] is False
+    assert body["reason"] == "binding_failed"
+    assert body["detail"] == "user_not_found_in_thread"
+    assert called["count"] == 0  # apply_device_binding_for_login never invoked

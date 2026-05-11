@@ -578,8 +578,9 @@ def captive_auto_activate(current_user_id: uuid.UUID):
         )
         return {"activated": False, "reason": "mikrotik_unavailable"}, 200
     except Exception as exc:  # noqa: BLE001
-        current_app.logger.warning(
-            "captive_auto_activate error user=%s mac=%s err=%s", current_user_id, device_mac, exc
+        current_app.logger.error(
+            "captive_auto_activate unexpected error user=%s mac=%s err=%s",
+            current_user_id, device_mac, exc, exc_info=True,
         )
         return {"activated": False, "reason": "mikrotik_unavailable"}, 200
 
