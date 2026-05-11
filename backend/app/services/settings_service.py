@@ -38,7 +38,14 @@ def _get_fernet() -> Fernet:
 
 def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
     try:
-        setting = db.session.get(ApplicationSetting, key)
+        # Use no_autoflush to prevent SQLAlchemy from flushing pending ORM
+        # changes when this SELECT runs inside an outer dirty transaction
+        # (e.g. hotspot_sync_service).  Without this guard, a concurrent
+        # deletion of a UserDevice row can cause StaleDataError here, which
+        # poisons the outer transaction and cascades into "closed transaction"
+        # errors on the next DB operation.
+        with db.session.no_autoflush:
+            setting = db.session.get(ApplicationSetting, key)
         if setting:
             if setting.is_encrypted:
                 if not setting.setting_value:

@@ -14,6 +14,7 @@ from flask import current_app
 
 from sqlalchemy import func as sa_func, select, text
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.exc import StaleDataError
 
 from app.extensions import db
 from app.infrastructure.db.models import (
@@ -2902,6 +2903,17 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                             _send_expiry_notifications(user, runtime_settings=runtime_settings)
 
                         counters["processed"] += 1
+                except StaleDataError as e:
+                    # Transient race condition: a UserDevice row was deleted by
+                    # another concurrent task between when we loaded it and when
+                    # SQLAlchemy tried to UPDATE it.  This is safe to skip —
+                    # the next sync run will pick up the correct state.
+                    logger.warning(
+                        "StaleDataError sinkronisasi user %s (device dihapus bersamaan) — skip run ini: %s",
+                        user_id,
+                        e,
+                    )
+                    counters["failed"] += 1
                 except Exception as e:
                     logger.error("Error sinkronisasi user %s: %s", user_id, e, exc_info=True)
                     counters["failed"] += 1

@@ -891,7 +891,15 @@ def remove_address_list_entry(api_connection: Any, address: str, list_name: str)
         return False, "Alamat atau nama list kosong"
     try:
         resource = api_connection.get_resource("/ip/firewall/address-list")
-        entries = resource.get(address=address, list=list_name)
+        try:
+            entries = resource.get(address=address, list=list_name)
+        except Exception as get_exc:
+            # Some RouterOS versions return "no such item (4)" for an empty
+            # filter result instead of an empty list.  Treat this as
+            # "already not present" — the desired end-state is satisfied.
+            if "no such item" in str(get_exc).lower():
+                return True, "Tidak ada entri (sudah tidak ada)"
+            raise
         removed = 0
         for entry in entries:
             entry_id_dot = entry.get(".id")
