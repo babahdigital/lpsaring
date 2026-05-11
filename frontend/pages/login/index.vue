@@ -183,6 +183,18 @@ function beginSilentHotspotBridge(): boolean {
   if (!targetUrl)
     return false
 
+  // Guard mixed-content: jangan navigasi ke http://login.home.arpa saat frontend
+  // disajikan via HTTPS (Cloudflare Tunnel). Lihat utils/hotspotRedirect untuk
+  // konteks lengkap; auto-bridge HTTPS->HTTP akan diblok browser / NXDOMAIN.
+  try {
+    const parsed = new URL(targetUrl, window.location.origin)
+    if (window.location.protocol === 'https:' && parsed.protocol === 'http:')
+      return false
+  }
+  catch {
+    return false
+  }
+
   rememberPendingHotspotBridge({
     returnPath: sanitizePostLoginHotspotBridgeReturnPath(route.fullPath, window.location.origin),
     autoResume: true,

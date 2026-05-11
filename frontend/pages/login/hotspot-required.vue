@@ -236,6 +236,24 @@ function beginSilentHotspotBridge(): boolean {
   if (!targetUrl)
     return false
 
+  // Guard mixed-content: frontend di-publish via Cloudflare Tunnel (HTTPS publik).
+  // Target captive MikroTik (http://login.home.arpa) hanya bisa diakses dari jaringan
+  // internal dan menggunakan HTTP. Browser akan memblokir navigasi HTTPS->HTTP
+  // (mixed content) atau gagal NXDOMAIN bila user sedang di luar jaringan internal.
+  // Lihat docs incident: redirect ke login.home.arpa untuk user logged-in eksternal.
+  try {
+    const target = new URL(targetUrl, window.location.origin)
+    if (window.location.protocol === 'https:' && target.protocol === 'http:') {
+      // Simpan link manual saja, tampilkan tombol fallback agar user (yang berada di
+      // jaringan internal) dapat membuka manual.
+      rememberMikrotikLoginLink(manualLoginUrl || targetUrl)
+      return false
+    }
+  }
+  catch {
+    return false
+  }
+
   rememberPendingHotspotBridge({
     returnPath: '/login/hotspot-required',
     autoResume: true,
@@ -352,6 +370,18 @@ function getQueryValueFromKeys(keys: string[]): string | null {
   return null
 }
 
+function isMixedContentNavigation(rawUrl: string): boolean {
+  if (!import.meta.client)
+    return false
+  try {
+    const target = new URL(rawUrl, window.location.origin)
+    return window.location.protocol === 'https:' && target.protocol === 'http:'
+  }
+  catch {
+    return false
+  }
+}
+
 function openHotspotLogin() {
   if (!import.meta.client)
     return
@@ -363,6 +393,14 @@ function openHotspotLogin() {
   const targetUrl = String(loginHotspotUrl.value || '').trim()
   if (!targetUrl) {
     statusMessage.value = getMissingIdentityMessage()
+    return
+  }
+
+  // Guard mixed-content: jangan paksa user ke URL HTTP saat frontend HTTPS.
+  // Browser akan memblokir atau NXDOMAIN (login.home.arpa hanya resolvable di
+  // jaringan internal). Beritahu user agar membuka link dari WiFi internal.
+  if (isMixedContentNavigation(targetUrl)) {
+    statusMessage.value = 'Sambungkan perangkat ke WiFi internal terlebih dahulu untuk membuka portal login hotspot.'
     return
   }
 
@@ -734,7 +772,16 @@ onMounted(async () => {
       // Skenario 3 (simulasi-auth-otp.html): tidak ada identitas MAC/IP dari query/storage.
       // Auto-bridge ke login.home.arpa untuk mendapatkan MAC/IP dari MikroTik
       // SEBELUM menampilkan tombol fallback manual kepada user.
-      if (status.hotspotRequired && (hotspotBridgeTargetUrl.value || loginHotspotUrl.value)) {
+      //
+      // PENTING: hanya lakukan auto-bridge jika frontend dapat benar-benar mencapai
+      // router (yaitu user berada di jaringan internal). Saat frontend di-publish via
+      // Cloudflare Tunnel (HTTPS) dan user mengakses dari luar jaringan,
+      // navigasi ke http://login.home.arpa akan gagal NXDOMAIN atau diblok mixed-content
+      // → user "terjebak" di halaman ini selama N menit. Lihat docs/incidents.
+      const targetForBridge = String(hotspotBridgeTargetUrl.value || loginHotspotUrl.value || '').trim()
+      const bridgeReachable = Boolean(targetForBridge) && !isMixedContentNavigation(targetForBridge)
+
+      if (status.hotspotRequired && bridgeReachable) {
         statusMessage.value = 'Membaca informasi perangkat dari router...'
         if (beginSilentHotspotBridge()) {
           // Navigasi ke router sedang berlangsung (login.home.arpa → redirect kembali dengan params).

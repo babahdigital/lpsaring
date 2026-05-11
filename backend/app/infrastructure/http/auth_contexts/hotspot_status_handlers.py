@@ -57,18 +57,16 @@ def get_hotspot_session_status_impl(
             require_identity_hint = True
             has_explicit_identity_hint = bool(client_ip_hint or incoming_mac)
             try:
-                allow_user_level_fallback = (
-                    str(current_app.config.get("HOTSPOT_SESSION_STATUS_ALLOW_USER_LEVEL_FALLBACK", "False")).strip().lower()
-                    in {"1", "true", "yes", "on"}
-                )
+                allow_user_level_fallback = str(
+                    current_app.config.get("HOTSPOT_SESSION_STATUS_ALLOW_USER_LEVEL_FALLBACK", "False")
+                ).strip().lower() in {"1", "true", "yes", "on"}
             except Exception:
                 allow_user_level_fallback = False
 
             try:
-                require_identity_hint = (
-                    str(current_app.config.get("HOTSPOT_SESSION_STATUS_REQUIRE_IDENTITY_HINT", "True")).strip().lower()
-                    in {"1", "true", "yes", "on"}
-                )
+                require_identity_hint = str(
+                    current_app.config.get("HOTSPOT_SESSION_STATUS_REQUIRE_IDENTITY_HINT", "True")
+                ).strip().lower() in {"1", "true", "yes", "on"}
             except Exception:
                 require_identity_hint = True
 
@@ -107,7 +105,11 @@ def get_hotspot_session_status_impl(
                                 HTTPStatus.OK,
                             )
 
-            if binding_lookup_mode == "none" and not binding_mac and (has_explicit_identity_hint or not require_identity_hint):
+            if (
+                binding_lookup_mode == "none"
+                and not binding_mac
+                and (has_explicit_identity_hint or not require_identity_hint)
+            ):
                 try:
                     with get_mikrotik_connection() as api_connection:
                         if api_connection:
@@ -145,7 +147,17 @@ def get_hotspot_session_status_impl(
                 binding_lookup_mode = "hint-or-user"
 
             if require_identity_hint and not binding_mac:
-                hotspot_binding_active = False
+                # Tidak ada cukup informasi (client_ip/client_mac/router-mac/db-mac) untuk
+                # menentukan status binding. Kembalikan unknown (binding_active=None) dan
+                # JANGAN paksa hotspot_login_required=True. Memaksa True di sini menyebabkan
+                # frontend (lihat hotspot-required.vue#onMounted) men-trigger silent bridge
+                # ke http://login.home.arpa yang gagal mixed-content saat user mengakses
+                # via Cloudflare HTTPS dari luar jaringan internal.
+                # Frontend menggunakan kontrak `binding_active !== true` untuk memutuskan
+                # redirect (lihat shouldRedirectToHotspotRequired); base_hotspot_login_required
+                # tetap dipertahankan agar user yang memang perlu langkah hotspot tidak
+                # kehilangan info, namun absen dorongan paksa saat data minimal.
+                hotspot_binding_active = None
                 if binding_lookup_mode == "hint-or-user":
                     binding_lookup_mode = "missing-hints"
                 current_app.logger.info(
@@ -162,9 +174,7 @@ def get_hotspot_session_status_impl(
                 return (
                     jsonify(
                         {
-                            "hotspot_login_required": bool(
-                                base_hotspot_login_required or hotspot_binding_active is not True
-                            ),
+                            "hotspot_login_required": bool(base_hotspot_login_required),
                             "hotspot_binding_active": hotspot_binding_active,
                             "hotspot_hint_applied": hotspot_hint_applied,
                         }
@@ -187,8 +197,14 @@ def get_hotspot_session_status_impl(
                         if allow_user_level_fallback and hotspot_binding_active is not True:
                             should_try_user_level_fallback = False
                             if client_ip_hint and binding_mac:
-                                ok_user_ip, hotspot_user_ip, _ = get_hotspot_user_ip(api_connection, username_for_hotspot)
-                                if ok_user_ip and hotspot_user_ip and str(hotspot_user_ip).strip() == str(client_ip_hint).strip():
+                                ok_user_ip, hotspot_user_ip, _ = get_hotspot_user_ip(
+                                    api_connection, username_for_hotspot
+                                )
+                                if (
+                                    ok_user_ip
+                                    and hotspot_user_ip
+                                    and str(hotspot_user_ip).strip() == str(client_ip_hint).strip()
+                                ):
                                     should_try_user_level_fallback = True
 
                             if should_try_user_level_fallback:

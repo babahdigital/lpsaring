@@ -122,8 +122,10 @@ def test_hotspot_session_status_marks_inactive_when_identity_hint_missing():
 
     assert status == 200
     payload = response.get_json()
+    # Kontrak baru: saat identity hint hilang, backend mengembalikan binding_active=None
+    # (unknown). Lihat hotspot_status_handlers.py "reason=identity_hint_missing".
     assert payload["hotspot_login_required"] is True
-    assert payload["hotspot_binding_active"] is False
+    assert payload["hotspot_binding_active"] is None
 
 
 def test_hotspot_session_status_marks_inactive_when_query_missing_even_if_router_can_derive_old_identity():
@@ -148,7 +150,9 @@ def test_hotspot_session_status_marks_inactive_when_query_missing_even_if_router
             query_args={},
             format_to_local_phone=lambda *_a, **_k: "08122000113",
             normalize_mac=lambda value: str(value or "").strip().upper() or None,
-            resolve_client_mac=lambda ip, *_a, **_k: (True, "AA:BB:CC:DD:EE:AB", "ok") if ip == "172.16.2.88" else (True, None, "no-ip"),
+            resolve_client_mac=lambda ip, *_a, **_k: (
+                (True, "AA:BB:CC:DD:EE:AB", "ok") if ip == "172.16.2.88" else (True, None, "no-ip")
+            ),
             is_hotspot_login_required=lambda *_a, **_k: True,
             get_mikrotik_connection=_conn,
             has_hotspot_ip_binding_for_user=_has_binding,
@@ -157,8 +161,10 @@ def test_hotspot_session_status_marks_inactive_when_query_missing_even_if_router
 
     assert status == 200
     payload = response.get_json()
+    # Kontrak baru: query kosong → binding_active=None (unknown), login_required tetap mengikuti
+    # base_hotspot_login_required tanpa override paksa.
     assert payload["hotspot_login_required"] is True
-    assert payload["hotspot_binding_active"] is False
+    assert payload["hotspot_binding_active"] is None
     assert payload["hotspot_hint_applied"] is False
 
 
@@ -185,7 +191,9 @@ def test_hotspot_session_status_derives_identity_from_hotspot_user_ip_when_query
             query_args={},
             format_to_local_phone=lambda *_a, **_k: "08122000113",
             normalize_mac=lambda value: str(value or "").strip().upper() or None,
-            resolve_client_mac=lambda ip, *_a, **_k: (True, "AA:BB:CC:DD:EE:AB", "ok") if ip == "172.16.2.88" else (True, None, "no-ip"),
+            resolve_client_mac=lambda ip, *_a, **_k: (
+                (True, "AA:BB:CC:DD:EE:AB", "ok") if ip == "172.16.2.88" else (True, None, "no-ip")
+            ),
             is_hotspot_login_required=lambda *_a, **_k: True,
             get_mikrotik_connection=_conn,
             has_hotspot_ip_binding_for_user=_has_binding,
@@ -402,7 +410,9 @@ def test_hotspot_session_status_missing_hints_does_not_use_db_device_mac_by_defa
 
     assert status == 200
     payload = response.get_json()
-    assert payload["hotspot_binding_active"] is False
+    # Mode aman default tidak boleh memakai DB device MAC; identity dianggap kosong
+    # → binding_active=None (unknown), tidak False.
+    assert payload["hotspot_binding_active"] is None
 
 
 def test_hotspot_session_status_uses_db_device_mac_when_no_hints_and_no_hotspot_host_in_legacy_mode():
@@ -444,7 +454,7 @@ def test_hotspot_session_status_uses_db_device_mac_when_no_hints_and_no_hotspot_
 
 def test_hotspot_session_status_missing_hints_when_db_device_mac_also_empty():
     """Ketika tidak ada IP/MAC hint, tidak ada hotspot host, dan tidak ada DB device,
-    harus tetap return binding_active=False (missing-hints)."""
+    harus return binding_active=None (unknown, missing-hints)."""
     app = _make_app()
     user = SimpleNamespace(id="u-8", phone_number="+628122333559")
 
@@ -471,4 +481,4 @@ def test_hotspot_session_status_missing_hints_when_db_device_mac_also_empty():
 
     assert status == 200
     payload = response.get_json()
-    assert payload["hotspot_binding_active"] is False
+    assert payload["hotspot_binding_active"] is None

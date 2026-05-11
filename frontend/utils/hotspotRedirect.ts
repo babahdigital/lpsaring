@@ -27,7 +27,14 @@ function matchesPathPrefix(pathname: string, prefix: string): boolean {
 }
 
 export function shouldRedirectToHotspotRequired(input: HotspotRedirectInput): boolean {
-  return input.hotspotLoginRequired === true && input.hotspotBindingActive !== true
+  // `hotspotBindingActive === null` artinya backend tidak dapat menentukan status
+  // (mis. identity hint tidak tersedia). Jangan redirect saat status tidak diketahui;
+  // ini mencegah false-positive redirect ke /login/hotspot-required yang berujung
+  // auto-bridge ke http://login.home.arpa (gagal mixed-content / NXDOMAIN dari luar
+  // jaringan internal). Kembalikan true HANYA bila kita yakin binding tidak aktif.
+  if (input.hotspotLoginRequired !== true)
+    return false
+  return input.hotspotBindingActive === false
 }
 
 export function resolvePostHotspotRecheckRoute(status: HotspotAccessStatus): string {

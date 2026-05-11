@@ -21,11 +21,16 @@ describe('shouldRedirectToHotspotRequired', () => {
     })).toBe(false)
   })
 
-  it('returns true when binding state is unknown', () => {
+  it('returns false when binding state is unknown (identity hint missing)', () => {
+    // Kontrak baru: backend mengembalikan binding_active=null bila tidak bisa
+    // menentukan status (mis. identity hint hilang). Pada kondisi ini middleware
+    // tidak boleh memaksa redirect ke /login/hotspot-required karena dapat
+    // memicu auto-bridge ke http://login.home.arpa (mixed-content/NXDOMAIN
+    // dari luar jaringan internal saat frontend disajikan via Cloudflare Tunnel).
     expect(shouldRedirectToHotspotRequired({
       hotspotLoginRequired: true,
       hotspotBindingActive: null,
-    })).toBe(true)
+    })).toBe(false)
   })
 
   it('returns false when hotspot login is not required', () => {
