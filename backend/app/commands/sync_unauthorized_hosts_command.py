@@ -248,7 +248,9 @@ def _load_unauthorized_sync_db_state(
             settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired"
         ).strip()
         list_habis = str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis").strip()
-        list_blocked = str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked").strip()
+        list_blocked = str(
+            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked"
+        ).strip()
 
         status_list_names = {
             name
@@ -415,7 +417,6 @@ def sync_unauthorized_hosts_command(
     forced_binding_dhcp_remove = 0
     forced_status_overlap_remove = 0
     forced_critical_status_overlap_remove = 0
-    hotspot_host_cleanup_removed = 0
     failed_add_or_refresh = 0
     failed_remove = 0
     failed_forced_exempt_remove = 0
@@ -423,7 +424,6 @@ def sync_unauthorized_hosts_command(
     failed_forced_binding_dhcp_remove = 0
     failed_forced_status_overlap_remove = 0
     failed_forced_critical_status_overlap_remove = 0
-    failed_hotspot_host_cleanup = 0
     failed_add_or_refresh_samples: List[str] = []
     failed_remove_samples: List[str] = []
     failed_forced_exempt_remove_samples: List[str] = []
@@ -481,11 +481,10 @@ def sync_unauthorized_hosts_command(
 
             # Root-cause guard:
             # Jika host punya non-blocked ip-binding + DHCP lease valid, anggap trusted dan jangan masuk unauthorized.
-            # Stale host entry dibersihkan agar tidak terus re-appear tiap scheduler run.
+            # Catatan: pembersihan /ip/hotspot/host bukan tanggung jawab task ini — dilakukan saat device
+            # di-authorize/dihapus (device_management_service) atau saat cleanup stale device (tasks.py).
             if trust_binding_and_dhcp:
-                has_non_blocked_binding = bool(mac and mac in ipb_non_blocked_macs) or (
-                    ip_text in ipb_non_blocked_ips
-                )
+                has_non_blocked_binding = bool(mac and mac in ipb_non_blocked_macs) or (ip_text in ipb_non_blocked_ips)
                 has_dhcp_lease = (
                     (bool(mac) and (mac, ip_text) in dhcp_pairs)
                     or (bool(mac) and (mac, ip_text) in ipb_non_blocked_pairs and ip_text in dhcp_ips)
@@ -720,14 +719,12 @@ def sync_unauthorized_hosts_command(
         f"forced_binding_dhcp_remove={forced_binding_dhcp_remove} "
         f"forced_status_overlap_remove={forced_status_overlap_remove} "
         f"forced_critical_status_overlap_remove={forced_critical_status_overlap_remove} "
-        f"hotspot_host_cleanup_removed={hotspot_host_cleanup_removed} "
         f"failed_add_or_refresh={failed_add_or_refresh} failed_remove={failed_remove} "
         f"failed_forced_exempt_remove={failed_forced_exempt_remove} "
         f"failed_forced_authorized_remove={failed_forced_authorized_remove} "
         f"failed_forced_binding_dhcp_remove={failed_forced_binding_dhcp_remove} "
         f"failed_forced_status_overlap_remove={failed_forced_status_overlap_remove} "
         f"failed_forced_critical_status_overlap_remove={failed_forced_critical_status_overlap_remove} "
-        f"failed_hotspot_host_cleanup={failed_hotspot_host_cleanup} "
         f"skipped_no_ip={skipped_no_ip} skipped_not_allowed={skipped_not_allowed} "
         f"skipped_exempt={skipped_exempt} "
         f"skipped_authorized_device_ip={skipped_authorized_device_ip} "
@@ -758,8 +755,7 @@ def sync_unauthorized_hosts_command(
             )
         if failed_forced_binding_dhcp_remove_samples:
             failure_details.append(
-                "failed_forced_binding_dhcp_remove_sample="
-                f"{failed_forced_binding_dhcp_remove_samples[0]}"
+                f"failed_forced_binding_dhcp_remove_sample={failed_forced_binding_dhcp_remove_samples[0]}"
             )
         if failed_forced_status_overlap_remove_samples:
             failure_details.append(
