@@ -126,7 +126,13 @@
         "video.js",
         "eslint"
       ]
-    }
+    },
+    "onlyBuiltDependencies": [
+      "@parcel/watcher",
+      "@scarf/scarf",
+      "esbuild",
+      "unrs-resolver"
+    ]
   },
   "overrides": {
     "@types/video.js": "^7",
