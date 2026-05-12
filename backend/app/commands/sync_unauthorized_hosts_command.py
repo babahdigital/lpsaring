@@ -147,6 +147,48 @@ def _collect_dhcp_lease_snapshot(api) -> Tuple[set[str], set[Tuple[str, str]], s
     return mac_set, mac_ip_pairs, ip_set, lpsaring_macs
 
 
+def _collect_infra_lease_ips(
+    api,
+    comment_marker: str,
+    networks: List[ipaddress._BaseNetwork],
+) -> set[str]:
+    """Fetch IPs dari DHCP lease yang di-tag comment_marker sebagai auto-exempt infra.
+
+    Strategi: baca /ip/dhcp-server/lease, kumpulkan IP yang comment-nya mengandung
+    comment_marker (case-insensitive substring match, contoh: 'lpsaring:infra').
+    Bounded ke CIDR scan untuk mencegah false-positive (AP di subnet lain).
+
+    Returns set kosong jika API gagal — caller melanjutkan dengan exempt_set lama.
+    """
+    if not comment_marker:
+        return set()
+
+    infra_ips: set[str] = set()
+    try:
+        rows = api.get_resource("/ip/dhcp-server/lease").get() or []
+    except Exception as exc:
+        current_app.logger.warning(
+            "sync-unauthorized-hosts: gagal fetch infra lease untuk auto-exempt: %s", exc
+        )
+        return infra_ips
+
+    marker_lower = comment_marker.lower()
+    for row in rows:
+        comment = str(row.get("comment") or "").lower()
+        if marker_lower not in comment:
+            continue
+        # Gunakan active-address (IP aktif dari DHCP), fallback ke address (static/reserved)
+        ip_text = _normalize_ip_for_compare(row.get("active-address") or row.get("address") or "")
+        if not ip_text:
+            continue
+        # Safety: hanya exempt IP dalam CIDR yang kita monitor
+        if not _ip_allowed(ip_text, networks):
+            continue
+        infra_ips.add(ip_text)
+
+    return infra_ips
+
+
 def _resolve_critical_overlap_keep_list(
     present_lists: set[str],
     *,
@@ -434,6 +476,7 @@ def sync_unauthorized_hosts_command(
 
     trusted_binding_dhcp_ips: set[str] = set()
     desired_trusted_override = 0
+    infra_auto_exempt_count = 0
 
     with get_mikrotik_connection() as api:
         if not api:
@@ -451,6 +494,16 @@ def sync_unauthorized_hosts_command(
         dhcp_macs, dhcp_pairs, dhcp_ips, dhcp_lpsaring_macs = _collect_dhcp_lease_snapshot(api)
         if not trust_binding_and_dhcp:
             dhcp_lpsaring_macs = set()
+
+        # Auto-exempt infra devices (AP, repeater, switch) via DHCP lease comment marker.
+        # Set comment "lpsaring:infra" pada lease static AP/Repeater di MikroTik agar
+        # backend otomatis menambah IP-nya ke exempt_set tanpa hardcode di .env.prod.
+        infra_comment_marker = str(current_app.config.get("MIKROTIK_INFRA_LEASE_COMMENT_MARKER") or "").strip()
+        if infra_comment_marker:
+            _infra_ips = _collect_infra_lease_ips(api, infra_comment_marker, networks)
+            if _infra_ips:
+                infra_auto_exempt_count = len(_infra_ips)
+                exempt_set.update(_infra_ips)
 
         for host in hosts:
             processed += 1
@@ -758,6 +811,7 @@ def sync_unauthorized_hosts_command(
         f"skipped_authorized_device_mac={skipped_authorized_device_mac} "
         f"skipped_binding_dhcp_trusted={skipped_binding_dhcp_trusted} "
         f"desired_trusted_override={desired_trusted_override} "
+        f"infra_auto_exempt={infra_auto_exempt_count} "
         f"skipped_low_uptime={skipped_low_uptime} skipped_authorized_or_bypassed={skipped_authorized}"
     )
 

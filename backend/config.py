@@ -573,9 +573,15 @@ class Config:
         "AUTO_CLEANUP_WAITING_DHCP_ARP_COMMENT_KEYWORD", "lpsaring|static-dhcp"
     )
     # IP/range yang dikecualikan untuk maintenance. Contoh: ['172.16.2.3-7']
-    MIKROTIK_UNAUTHORIZED_EXEMPT_IPS = get_env_list("MIKROTIK_UNAUTHORIZED_EXEMPT_IPS", "['172.16.2.3-7']")
+    # Biasanya kosong jika menggunakan auto-discovery via MIKROTIK_INFRA_LEASE_COMMENT_MARKER.
+    MIKROTIK_UNAUTHORIZED_EXEMPT_IPS = get_env_list("MIKROTIK_UNAUTHORIZED_EXEMPT_IPS", "[]")
     # Alias bypass agar operasional mudah: jika diisi, diperlakukan sama seperti EXEMPT_IPS.
     MIKROTIK_UNAUTHORIZED_BYPASS_IPS = get_env_list("MIKROTIK_UNAUTHORIZED_BYPASS_IPS", "[]")
+    # Marker comment di DHCP lease MikroTik untuk auto-exempt perangkat infra (AP, repeater, switch).
+    # Tambahkan comment "lpsaring:infra" pada lease static AP/Repeater di MikroTik.
+    # Backend akan otomatis membaca IP-nya dan exempt dari unauthorized list setiap cycle.
+    # Kosongkan untuk menonaktifkan auto-discovery.
+    MIKROTIK_INFRA_LEASE_COMMENT_MARKER = os.environ.get("MIKROTIK_INFRA_LEASE_COMMENT_MARKER", "lpsaring:infra")
     # Jika True, host dengan non-blocked ip-binding + DHCP lease tidak akan masuk unauthorized.
     MIKROTIK_UNAUTHORIZED_TRUST_IP_BINDING_DHCP = get_env_bool("MIKROTIK_UNAUTHORIZED_TRUST_IP_BINDING_DHCP", "True")
     # TTL lock Redis untuk mencegah overlap task unauthorized sync dari scheduler Celery.
