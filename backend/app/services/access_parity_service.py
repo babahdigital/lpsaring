@@ -381,7 +381,13 @@ def collect_access_parity_report(*, max_items: int = 500) -> dict[str, Any]:
 
                 if not _should_skip_dhcp_mismatch(expected_binding_type=expected_binding_type):
                     host_ip = _normalize_ip((host_map.get(mac) or {}).get("address"))
-                    if not _has_live_host_ip_signal(host_ip=host_ip, resolved_ip=ip_addr):
+                    # Only flag dhcp_lease_missing for devices currently active in the hotspot
+                    # host table (host_ip is non-None). Offline devices may hold a stale
+                    # device.ip_address in DB that no longer matches any live DHCP assignment;
+                    # flagging them generates permanent false-positives since no usable IP is
+                    # available to write a static lease. When they reconnect the OTP/login flow
+                    # re-creates the DHCP lease as needed.
+                    if host_ip and not _has_live_host_ip_signal(host_ip=host_ip, resolved_ip=ip_addr):
                         if mac not in dhcp_macs:
                             mismatch_list.append("dhcp_lease_missing")
                         elif ip_addr and ip_addr not in dhcp_ips_by_mac.get(mac, set()):
