@@ -116,6 +116,9 @@ def change_user_role(
         action_type = AdminActionType.DOWNGRADE_FROM_ADMIN
         user.password_hash = None
         user.role = new_role
+        from app.services.user_management.user_quota import reset_baseline_on_unlimited_revoke
+
+        reset_baseline_on_unlimited_revoke(user, source="role_downgrade_from_admin")
         user.is_unlimited_user = False
 
         # Pastikan tamping dan hutang tidak terbawa setelah downgrade.

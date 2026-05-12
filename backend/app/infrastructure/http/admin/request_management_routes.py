@@ -244,6 +244,9 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
             if days_to_add > max_quota_days:
                 return jsonify({"message": "Durasi kuota melebihi batas maksimum."}), HTTPStatus.BAD_REQUEST
 
+            from app.services.user_management.user_quota import reset_baseline_on_unlimited_revoke
+
+            reset_baseline_on_unlimited_revoke(target_user, source="quota_request_approve")
             target_user.is_unlimited_user = False
             target_user.total_quota_purchased_mb = (target_user.total_quota_purchased_mb or 0) + mb_to_add
             current_expiry = target_user.quota_expiry_date
@@ -314,6 +317,9 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
 
         req_to_process.granted_details = json.dumps({"granted_mb": mb_to_add, "granted_duration_days": days_to_add})
 
+        from app.services.user_management.user_quota import reset_baseline_on_unlimited_revoke
+
+        reset_baseline_on_unlimited_revoke(target_user, source="quota_request_partial_grant")
         target_user.is_unlimited_user = False
         target_user.total_quota_purchased_mb = (target_user.total_quota_purchased_mb or 0) + mb_to_add
         current_expiry = target_user.quota_expiry_date

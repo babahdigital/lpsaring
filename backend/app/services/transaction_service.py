@@ -164,12 +164,17 @@ def apply_package_and_sync_to_mikrotik(transaction: Transaction, mikrotik_api: A
     logger.info(f"Menerapkan paket '{package.name}' ke pengguna '{user.full_name}' dari transaksi {transaction.id}.")
 
     is_unlimited_package = Decimal(str(package.data_quota_gb)) == Decimal("0")
-    user.is_unlimited_user = is_unlimited_package
 
     if is_unlimited_package:
+        user.is_unlimited_user = True
         user.total_quota_purchased_mb = 0
         logger.info(f"User ID {user.id} diproses sebagai PENGGUNA UNLIMITED.")
     else:
+        # Reset baseline kalau user sebelumnya unlimited agar paket regular baru
+        # tidak langsung terpotong oleh akumulator pemakaian saat unlimited.
+        from app.services.user_management.user_quota import reset_baseline_on_unlimited_revoke
+
+        reset_baseline_on_unlimited_revoke(user, source="transaction_purchase")
         user.is_unlimited_user = False
         added_quota_mb = int(float(package.data_quota_gb) * 1024)
 

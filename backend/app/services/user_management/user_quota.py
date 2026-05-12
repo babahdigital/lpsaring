@@ -25,6 +25,38 @@ from app.services.quota_mutation_ledger_service import (
 
 
 
+def reset_baseline_on_unlimited_revoke(user: User, *, source: str = "unknown") -> bool:
+    """Reset quota baseline saat user transisi dari unlimited ke regular.
+
+    Tanpa reset, `total_quota_used_mb` (akumulator selama unlimited) akan
+    langsung memotong paket regular yang baru dibeli sehingga user instant habis.
+    Path ini WAJIB dipanggil sebelum field `is_unlimited_user` di-set ke False
+    DAN sebelum penambahan `total_quota_purchased_mb` dari paket baru.
+
+    Returns True jika reset dilakukan, False kalau bukan transisi.
+    """
+    if not bool(getattr(user, "is_unlimited_user", False)):
+        return False
+
+    try:
+        lock_user_quota_row(user)
+    except Exception:  # noqa: BLE001
+        pass
+
+    before_state = snapshot_user_quota_state(user)
+    user.total_quota_purchased_mb = 0
+    user.total_quota_used_mb = 0
+    user.auto_debt_offset_mb = 0
+    append_quota_mutation_event(
+        user=user,
+        source="quota.transition_from_unlimited",
+        before_state=before_state,
+        after_state=snapshot_user_quota_state(user),
+        event_details={"reason": str(source or "unknown")[:80]},
+    )
+    return True
+
+
 def _sync_ip_binding_for_authorized_devices(user: User, api_conn: Any, source: str) -> None:
     if not api_conn or not getattr(user, "devices", None):
         return
