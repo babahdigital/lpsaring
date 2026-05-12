@@ -542,10 +542,16 @@ def sync_unauthorized_hosts_command(
             if _normalize_ip_for_compare(e.get("address") or "")
         }
 
+        # IP yang sudah dijadwalkan untuk dihapus oleh regular reconcile loop.
+        # Safety guard di bawah WAJIB melewati IP ini agar tidak terjadi double-counting
+        # dan redundant API call (remove entry yang sudah dihapus).
+        already_removing: set[str] = set()
+
         # Remove entries that are managed but no longer desired.
         for addr in list(existing_managed.keys()):
             if addr and addr not in desired:
                 to_remove += 1
+                already_removing.add(addr)
                 if apply:
                     ok_remove, remove_msg = remove_address_list_entry(api, addr, resolved_list)
                     if not ok_remove:
@@ -584,6 +590,8 @@ def sync_unauthorized_hosts_command(
             normalized_exempt_ip = _normalize_ip_for_compare(exempt_ip)
             if not normalized_exempt_ip:
                 continue
+            if normalized_exempt_ip in already_removing:
+                continue  # Sudah ditangani oleh regular reconcile loop.
             if normalized_exempt_ip not in existing_unauthorized_ips:
                 continue  # Tidak ada di unauthorized list, skip API call no-op.
             forced_exempt_remove += 1
@@ -603,6 +611,8 @@ def sync_unauthorized_hosts_command(
         for authorized_ip in sorted(authorized_device_ips):
             if not authorized_ip:
                 continue
+            if authorized_ip in already_removing:
+                continue  # Sudah ditangani oleh regular reconcile loop.
             if authorized_ip not in existing_unauthorized_ips:
                 continue  # Tidak ada di unauthorized list, skip API call no-op.
             forced_authorized_remove += 1
@@ -622,6 +632,8 @@ def sync_unauthorized_hosts_command(
         for trusted_ip in sorted(trusted_binding_dhcp_ips):
             if not trusted_ip:
                 continue
+            if trusted_ip in already_removing:
+                continue  # Sudah ditangani oleh regular reconcile loop.
             if trusted_ip not in existing_unauthorized_ips:
                 continue  # Tidak ada di unauthorized list, skip API call no-op.
             forced_binding_dhcp_remove += 1
@@ -654,6 +666,8 @@ def sync_unauthorized_hosts_command(
         for status_ip in sorted(protected_status_ips):
             if not status_ip:
                 continue
+            if status_ip in already_removing:
+                continue  # Sudah ditangani oleh regular reconcile loop.
             if status_ip not in existing_unauthorized_ips:
                 continue  # Tidak ada di unauthorized list, skip API call no-op.
             forced_status_overlap_remove += 1
