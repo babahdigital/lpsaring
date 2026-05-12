@@ -317,6 +317,11 @@ def collect_access_parity_report(*, max_items: int = 500) -> dict[str, Any]:
             ]
 
             if not authorized_devices:
+                # Expired/inactive users are not expected to have active devices.
+                # Flagging them as no_authorized_device produces noise in the
+                # Operations panel since there is nothing actionable for these users.
+                if app_status in ("expired", "inactive"):
+                    continue
                 mismatch_list = ["no_authorized_device"]
                 item = {
                     "user_id": str(user.id),
