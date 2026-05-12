@@ -1075,17 +1075,26 @@ def get_mac_by_ip(api_connection: Any, ip_address: str) -> Tuple[bool, Optional[
 
 
 def get_ip_by_mac(api_connection: Any, mac_address: str) -> Tuple[bool, Optional[str], str]:
-    """Mencari IP address berdasarkan MAC melalui hotspot host, ARP, atau DHCP lease."""
+    """Mencari IP address berdasarkan MAC melalui DHCP lease, ARP, atau hotspot host.
+
+    Urutan sumber sama seperti `get_mac_by_ip`: DHCP lease (paling autoritatif)
+    -> ARP -> hotspot/host (dengan smart-pick agar tidak terjebak entry stale).
+    """
     if not mac_address:
         return False, None, "MAC address tidak valid"
 
     try:
-        host_resource = api_connection.get_resource("/ip/hotspot/host")
-        hosts = host_resource.get(**{"mac-address": mac_address})
-        if hosts:
-            address = hosts[0].get("address")
+        lease_resource = api_connection.get_resource("/ip/dhcp-server/lease")
+        leases = lease_resource.get(**{"mac-address": mac_address})
+        if leases:
+            for row in leases:
+                addr = row.get("active-address") or row.get("address")
+                status = str(row.get("status") or "").strip().lower()
+                if addr and status in ("", "bound", "waiting", "offered"):
+                    return True, str(addr), "Sukses (DHCP lease)"
+            address = leases[0].get("active-address") or leases[0].get("address")
             if address:
-                return True, str(address), "Sukses (hotspot host)"
+                return True, str(address), "Sukses (DHCP lease)"
     except Exception:
         pass
 
@@ -1100,12 +1109,13 @@ def get_ip_by_mac(api_connection: Any, mac_address: str) -> Tuple[bool, Optional
         pass
 
     try:
-        lease_resource = api_connection.get_resource("/ip/dhcp-server/lease")
-        leases = lease_resource.get(**{"mac-address": mac_address})
-        if leases:
-            address = leases[0].get("address")
+        host_resource = api_connection.get_resource("/ip/hotspot/host")
+        hosts = host_resource.get(**{"mac-address": mac_address})
+        best = _pick_best_hotspot_host_entry(list(hosts or []))
+        if best:
+            address = best.get("address")
             if address:
-                return True, str(address), "Sukses (DHCP lease)"
+                return True, str(address), "Sukses (hotspot host)"
     except Exception as e:
         return False, None, str(e)
 
