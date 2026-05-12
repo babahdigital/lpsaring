@@ -115,6 +115,30 @@ def handle_notification_impl(
         if transaction.status == new_status and transaction.midtrans_transaction_id:
             return jsonify({"status": "ok"}), HTTPStatus.OK
 
+        # Guard: forbid late SUCCESS transition from terminal-negative states
+        # (CANCELLED/FAILED/EXPIRED). Race window: user cancels via UI then a
+        # legitimate settlement webhook arrives. Without this guard the user
+        # would receive quota for a cancelled order. Log & ack to Midtrans.
+        if new_status == TransactionStatus.SUCCESS and transaction.status in (
+            TransactionStatus.CANCELLED,
+            TransactionStatus.FAILED,
+            TransactionStatus.EXPIRED,
+        ):
+            log_transaction_event(
+                session=session,
+                transaction=transaction,
+                source=TransactionEventSource.MIDTRANS_WEBHOOK,
+                event_type="IGNORED_LATE_SUCCESS_FROM_TERMINAL_STATE",
+                status=transaction.status,
+                payload={
+                    "from_state": transaction.status.value,
+                    "midtrans_status": midtrans_status,
+                    "order_id": order_id,
+                },
+            )
+            session.commit()
+            return jsonify({"status": "ok"}), HTTPStatus.OK
+
         transaction.status = new_status
 
         log_transaction_event(
