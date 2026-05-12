@@ -968,18 +968,85 @@ def sync_address_list_for_user(
     return True, "Sukses"
 
 
+def _parse_mikrotik_duration_to_seconds(value: Any) -> int:
+    """Konversi durasi format RouterOS (mis. '5d3h6m38s', '49m47s', '3s') ke detik.
+
+    Return 10**12 untuk input kosong/invalid agar dianggap "paling lama" saat
+    digunakan sebagai sort key (prefer entry yang lebih fresh/lebih kecil).
+    """
+    if value is None:
+        return 10**12
+    text = str(value).strip().lower()
+    if not text:
+        return 10**12
+    units = {"w": 604800, "d": 86400, "h": 3600, "m": 60, "s": 1}
+    total = 0
+    num = ""
+    for ch in text:
+        if ch.isdigit():
+            num += ch
+        elif ch in units and num:
+            total += int(num) * units[ch]
+            num = ""
+        else:
+            num = ""
+    return total if total > 0 else 10**12
+
+
+def _pick_best_hotspot_host_entry(hosts: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Pilih entry hotspot host paling autoritatif untuk satu IP.
+
+    Prioritas (semakin awal semakin baik):
+      1. Entry dengan DHCP=true (MAC berasal dari DHCP request asli klien)
+      2. Entry dengan idle-time paling kecil (host paling fresh/aktif)
+      3. Entry dengan host-dead-time paling kecil
+    Stale dynamic entry dari sniffing DNS/UDP awal (yang membawa MAC AP/bridge,
+    contoh: `F6:75:0C:85:0E:BD`) akan kalah dari entry DHCP yang membawa MAC asli
+    perangkat klien — sehingga "Identitas perangkat tidak valid" tidak terjadi
+    saat backend membandingkan MAC router dengan MAC dari captive `$(mac)`.
+    """
+    if not hosts:
+        return None
+
+    def _is_dhcp_true(row: Dict[str, Any]) -> bool:
+        val = str(row.get("DHCP") or row.get("dhcp") or "").strip().lower()
+        return val == "true"
+
+    def _sort_key(row: Dict[str, Any]) -> Tuple[int, int, int]:
+        return (
+            0 if _is_dhcp_true(row) else 1,
+            _parse_mikrotik_duration_to_seconds(row.get("idle-time")),
+            _parse_mikrotik_duration_to_seconds(row.get("host-dead-time")),
+        )
+
+    return sorted(hosts, key=_sort_key)[0]
+
+
 def get_mac_by_ip(api_connection: Any, ip_address: str) -> Tuple[bool, Optional[str], str]:
-    """Mencari MAC address berdasarkan IP melalui hotspot host, ARP, atau DHCP lease."""
+    """Mencari MAC address berdasarkan IP melalui DHCP lease, ARP, atau hotspot host.
+
+    Urutan sumber dipilih berdasarkan tingkat otoritas terhadap MAC<->IP:
+      1. `/ip/dhcp-server/lease`  -> MAC dari DHCP request asli (paling akurat)
+      2. `/ip/arp`                -> MAC observasi ARP terbaru di interface
+      3. `/ip/hotspot/host`       -> dipilih entry paling autoritatif via
+         `_pick_best_hotspot_host_entry` (prefer DHCP=true + idle-time minimal)
+         agar tidak terjebak entry stale yang membawa MAC AP/bridge.
+    """
     if not ip_address:
         return False, None, "IP address tidak valid"
 
     try:
-        host_resource = api_connection.get_resource("/ip/hotspot/host")
-        hosts = host_resource.get(address=ip_address)
-        if hosts:
-            mac = hosts[0].get("mac-address")
+        lease_resource = api_connection.get_resource("/ip/dhcp-server/lease")
+        leases = lease_resource.get(address=ip_address)
+        if leases:
+            for row in leases:
+                mac = row.get("active-mac-address") or row.get("mac-address")
+                status = str(row.get("status") or "").strip().lower()
+                if mac and status in ("", "bound", "waiting", "offered"):
+                    return True, str(mac), "Sukses (DHCP lease)"
+            mac = leases[0].get("active-mac-address") or leases[0].get("mac-address")
             if mac:
-                return True, str(mac), "Sukses (hotspot host)"
+                return True, str(mac), "Sukses (DHCP lease)"
     except Exception:
         pass
 
@@ -994,12 +1061,13 @@ def get_mac_by_ip(api_connection: Any, ip_address: str) -> Tuple[bool, Optional[
         pass
 
     try:
-        lease_resource = api_connection.get_resource("/ip/dhcp-server/lease")
-        leases = lease_resource.get(address=ip_address)
-        if leases:
-            mac = leases[0].get("mac-address")
+        host_resource = api_connection.get_resource("/ip/hotspot/host")
+        hosts = host_resource.get(address=ip_address)
+        best = _pick_best_hotspot_host_entry(list(hosts or []))
+        if best:
+            mac = best.get("mac-address")
             if mac:
-                return True, str(mac), "Sukses (DHCP lease)"
+                return True, str(mac), "Sukses (hotspot host)"
     except Exception as e:
         return False, None, str(e)
 
