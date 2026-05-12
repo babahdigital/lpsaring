@@ -189,6 +189,47 @@ def _collect_infra_lease_ips(
     return infra_ips
 
 
+def _collect_router_gateway_ips(
+    api,
+    networks: List[ipaddress._BaseNetwork],
+) -> set[str]:
+    """Fetch semua IP router (gateway) dari /ip/address untuk auto-exempt.
+
+    Gateway IP TIDAK BOLEH masuk unauthorized list — jika user device dengan
+    random MAC kebetulan tercatat di /ip/hotspot/host dengan source IP =
+    gateway (mis. karena stale ARP, static misconfig, atau spoofing),
+    blocking gateway akan memutus koneksi semua user.
+
+    Bounded ke CIDR yang dimonitor untuk safety.
+    Returns set kosong jika API gagal.
+    """
+    gateway_ips: set[str] = set()
+    try:
+        rows = api.get_resource("/ip/address").get() or []
+    except Exception as exc:
+        current_app.logger.warning(
+            "sync-unauthorized-hosts: gagal fetch /ip/address untuk gateway exempt: %s", exc
+        )
+        return gateway_ips
+
+    for row in rows:
+        if str(row.get("disabled", "false")).lower() == "true":
+            continue
+        addr_field = str(row.get("address") or "").strip()
+        if not addr_field:
+            continue
+        # Format biasanya "172.16.2.1/24" — ambil bagian IP saja
+        ip_part = addr_field.split("/", 1)[0].strip()
+        ip_text = _normalize_ip_for_compare(ip_part)
+        if not ip_text:
+            continue
+        if not _ip_allowed(ip_text, networks):
+            continue
+        gateway_ips.add(ip_text)
+
+    return gateway_ips
+
+
 def _resolve_critical_overlap_keep_list(
     present_lists: set[str],
     *,
@@ -477,6 +518,7 @@ def sync_unauthorized_hosts_command(
     trusted_binding_dhcp_ips: set[str] = set()
     desired_trusted_override = 0
     infra_auto_exempt_count = 0
+    gateway_auto_exempt_count = 0
 
     with get_mikrotik_connection() as api:
         if not api:
@@ -504,6 +546,16 @@ def sync_unauthorized_hosts_command(
             if _infra_ips:
                 infra_auto_exempt_count = len(_infra_ips)
                 exempt_set.update(_infra_ips)
+
+        # Auto-exempt router gateway IPs dari /ip/address — CRITICAL safety guard.
+        # Jika user device dengan random MAC kebetulan tercatat di /ip/hotspot/host
+        # dengan source IP = gateway (stale ARP / static misconfig / spoofing),
+        # blocking gateway IP akan memutus internet semua user di subnet itu.
+        gateway_auto_exempt_count = 0
+        _gateway_ips = _collect_router_gateway_ips(api, networks)
+        if _gateway_ips:
+            gateway_auto_exempt_count = len(_gateway_ips)
+            exempt_set.update(_gateway_ips)
 
         for host in hosts:
             processed += 1
@@ -812,6 +864,7 @@ def sync_unauthorized_hosts_command(
         f"skipped_binding_dhcp_trusted={skipped_binding_dhcp_trusted} "
         f"desired_trusted_override={desired_trusted_override} "
         f"infra_auto_exempt={infra_auto_exempt_count} "
+        f"gateway_auto_exempt={gateway_auto_exempt_count} "
         f"skipped_low_uptime={skipped_low_uptime} skipped_authorized_or_bypassed={skipped_authorized}"
     )
 
