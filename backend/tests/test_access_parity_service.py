@@ -216,6 +216,49 @@ def test_collect_access_parity_report_treats_dhcp_only_mismatch_as_non_parity(mo
     assert report["summary"]["mismatch_types"]["dhcp_lease_missing"] == 1
 
 
+def test_collect_access_parity_report_no_dhcp_mismatch_for_waiting_static_lease(monkeypatch):
+    """Regression: "waiting" DHCP static lease must count as present — not as missing.
+
+    Scenario: parity-guard previously wrote a static DHCP lease for the device's
+    live IP. RouterOS reports this lease as status="waiting" because the client
+    hasn't yet renewed its DHCP lease from the hotspot server (it's using a DHCP
+    IP from before the static lease was written). The old code skipped "waiting"
+    leases unconditionally, so the very lease we wrote was invisible → parity-guard
+    flagged dhcp_lease_missing again → wrote the same lease → infinite loop.
+
+    After the fix: "waiting" leases are counted as present; only "offered" (ephemeral
+    in-flight) and "expired" (lapsed dynamic) leases are skipped.
+    """
+    mac = "F6:75:0C:85:0E:BE"
+    ip_db = "172.16.3.174"   # stale IP stored in DB
+    ip_live = "172.16.3.184"  # current live IP from host table (device has new DHCP IP)
+    device = SimpleNamespace(mac_address=mac, ip_address=ip_db, is_authorized=True)
+    user = SimpleNamespace(id="waiting-lease-user", phone_number="+6283852923433", devices=[device])
+
+    # The parity-guard previously wrote a static lease for ip_live with status=waiting.
+    dhcp_rows = [
+        {"mac-address": mac, "address": ip_live, "status": "waiting", "dynamic": "false"},
+    ]
+    _setup_common_mocks(
+        monkeypatch,
+        [user],
+        host_map={mac: {"address": ip_live}},  # device is online with ip_live
+        binding_map={mac: {"type": "bypassed", "address": None}},
+        dhcp_rows=dhcp_rows,
+        firewall_entries_by_list={"active": [{"address": ip_db}]},
+    )
+    monkeypatch.setattr(access_parity_service, "get_user_access_status", lambda _user: "active")
+    monkeypatch.setattr(access_parity_service, "resolve_allowed_binding_type_for_user", lambda _user: "bypassed")
+
+    report = access_parity_service.collect_access_parity_report()
+
+    assert report["ok"] is True
+    # Static DHCP lease in "waiting" state IS a configured lease → no dhcp_lease_missing
+    assert report["summary"]["mismatch_types"].get("dhcp_lease_missing", 0) == 0
+    # No parity mismatches (ip-binding is correct, firewall list is correct)
+    assert report["summary"]["mismatches"] == 0
+
+
 def test_collect_access_parity_report_no_dhcp_mismatch_for_offline_bypassed_user(monkeypatch):
     """Regression test: offline bypassed users must NOT produce dhcp_lease_missing.
 

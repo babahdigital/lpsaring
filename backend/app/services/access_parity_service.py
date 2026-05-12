@@ -271,7 +271,14 @@ def collect_access_parity_report(*, max_items: int = 500) -> dict[str, Any]:
                 continue
 
             status = str(row.get("status") or "").strip().lower()
-            if status == "waiting":
+            # Skip only genuinely transient or expired states.
+            # "waiting" = static lease is configured but the client hasn't renewed
+            # via DHCP yet. It IS a real, intentionally-written lease and must be
+            # counted as present — omitting it causes parity-guard to perpetually
+            # re-write the same static lease (infinite dhcp_lease_missing loop).
+            # "offered" = ephemeral in-flight DHCP offer (millisecond window).
+            # "expired" = dynamic lease that has lapsed; MAC-IP mapping is invalid.
+            if status in ("offered", "expired"):
                 continue
 
             dhcp_macs.add(mac)

@@ -2524,21 +2524,16 @@ def cleanup_stale_hotspot_hosts_task(self):
                 # Random-MAC users (privacy MAC) sering ganti IP via DHCP, sehingga
                 # /ip/hotspot/host menumpuk banyak (MAC, IP) entries di subnet yang
                 # sama. Hapus row di subnet kalau:
-                #   - authorized=false AND bypassed=false (belum aktif login)
+                #   - authorized=false (aktif login tidak dihapus)
                 #   - IP TIDAK ada di ARP/DHCP-active untuk MAC tsb (= IP basi)
                 #   - uptime/idle ≥ threshold (default 6 jam) untuk safety
-                # Ini juga membersihkan kasus rare: gateway IP / static IP tercatat
-                # sebagai source untuk MAC user (ARP poisoning / stale ARP) — IP
-                # tsb tidak akan match DHCP lease MAC user.
+                # Ini mencakup BAIK bypassed=true (pengguna bypass yang ganti IP)
+                # MAUPUN bypassed=false (device belum login). Sebelumnya bypassed=true
+                # di-skip di sini sehingga entri basi menumpuk tanpa batas waktu.
                 for row in host_rows:
                     address = str(row.get("address") or "").strip()
                     mac_address = str(row.get("mac-address") or "").strip().upper()
-                    bypassed = str(row.get("bypassed") or "").strip().lower() == "true"
                     authorized = str(row.get("authorized") or "").strip().lower() == "true"
-
-                    if bypassed:
-                        # Sudah dihandle di Branch A.
-                        continue
                     if not _ip_in_networks(address, networks):
                         continue
                     if not mac_address:
