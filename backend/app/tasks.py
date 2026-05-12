@@ -2446,7 +2446,20 @@ def cleanup_stale_hotspot_hosts_task(self):
             "skipped_no_local_ip": 0,
             "skipped_recent": 0,
             "failed": 0,
+            # Branch B: in-subnet stale per-MAC dedup (random-MAC users)
+            "removed_in_subnet_stale": 0,
+            "skipped_in_subnet_authorized": 0,
+            "skipped_in_subnet_alive_ip": 0,
+            "skipped_in_subnet_recent": 0,
+            "failed_in_subnet": 0,
         }
+
+        # Threshold terpisah untuk in-subnet stale (default 6 jam) — supaya tidak
+        # ganggu device aktif yang baru saja idle.
+        min_idle_in_subnet = max(
+            1800,
+            int(app.config.get("AUTO_CLEANUP_STALE_HOTSPOT_HOSTS_IN_SUBNET_MIN_IDLE_SECONDS", 21600) or 21600),
+        )
 
         try:
             with get_mikrotik_connection() as api:
@@ -2502,6 +2515,62 @@ def cleanup_stale_hotspot_hosts_task(self):
                         summary["failed"] += 1
                         logger.info(
                             "Celery Task: Gagal cleanup stale hotspot host mac=%s address=%s msg=%s",
+                            mac_address,
+                            address,
+                            remove_msg,
+                        )
+
+                # === Branch B: in-subnet stale per-MAC dedup ===
+                # Random-MAC users (privacy MAC) sering ganti IP via DHCP, sehingga
+                # /ip/hotspot/host menumpuk banyak (MAC, IP) entries di subnet yang
+                # sama. Hapus row di subnet kalau:
+                #   - authorized=false AND bypassed=false (belum aktif login)
+                #   - IP TIDAK ada di ARP/DHCP-active untuk MAC tsb (= IP basi)
+                #   - uptime/idle ≥ threshold (default 6 jam) untuk safety
+                # Ini juga membersihkan kasus rare: gateway IP / static IP tercatat
+                # sebagai source untuk MAC user (ARP poisoning / stale ARP) — IP
+                # tsb tidak akan match DHCP lease MAC user.
+                for row in host_rows:
+                    address = str(row.get("address") or "").strip()
+                    mac_address = str(row.get("mac-address") or "").strip().upper()
+                    bypassed = str(row.get("bypassed") or "").strip().lower() == "true"
+                    authorized = str(row.get("authorized") or "").strip().lower() == "true"
+
+                    if bypassed:
+                        # Sudah dihandle di Branch A.
+                        continue
+                    if not _ip_in_networks(address, networks):
+                        continue
+                    if not mac_address:
+                        continue
+                    if authorized:
+                        summary["skipped_in_subnet_authorized"] += 1
+                        continue
+
+                    # IP masih hidup di ARP/DHCP untuk MAC ini → bukan stale.
+                    alive_ips = local_ips_by_mac.get(mac_address) or set()
+                    if address in alive_ips:
+                        summary["skipped_in_subnet_alive_ip"] += 1
+                        continue
+
+                    uptime_seconds = _parse_mikrotik_duration_seconds(str(row.get("uptime") or ""))
+                    idle_seconds = _parse_mikrotik_duration_seconds(str(row.get("idle-time") or ""))
+                    age_seconds = max(uptime_seconds, idle_seconds)
+                    if age_seconds < min_idle_in_subnet:
+                        summary["skipped_in_subnet_recent"] += 1
+                        continue
+
+                    ok_remove, remove_msg, removed = remove_hotspot_host_entries(
+                        api_connection=api,
+                        mac_address=mac_address,
+                        address=address or None,
+                    )
+                    if ok_remove:
+                        summary["removed_in_subnet_stale"] += int(removed or 0)
+                    else:
+                        summary["failed_in_subnet"] += 1
+                        logger.info(
+                            "Celery Task: Gagal cleanup in-subnet stale host mac=%s address=%s msg=%s",
                             mac_address,
                             address,
                             remove_msg,
