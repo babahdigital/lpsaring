@@ -31,7 +31,7 @@ class PackageSchema(BaseModel):
     id: Optional[uuid.UUID] = None
     name: str = Field(..., min_length=3, max_length=100)
     description: Optional[str] = None
-    price: int = Field(..., ge=0)
+    price: int = Field(..., gt=0)
     is_active: bool = True
     profile_id: Optional[uuid.UUID] = None
     data_quota_gb: float = Field(..., ge=0)

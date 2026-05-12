@@ -583,6 +583,15 @@ def initiate_transaction_impl(
         _enforce_debt_guard_for_package(user, package)
 
         gross_amount = int(package.price or 0)
+        if gross_amount <= 0:
+            current_app.logger.error(
+                "Paket %s memiliki harga tidak valid (price=%s). Tolak inisiasi transaksi.",
+                getattr(package, "id", None), gross_amount,
+            )
+            abort(
+                HTTPStatus.UNPROCESSABLE_ENTITY,
+                description="Paket tidak memiliki harga valid untuk dibayar.",
+            )
 
         provider_mode = get_payment_provider_mode()
         requested_method = normalize_payment_method(getattr(req_data, "payment_method", None))
