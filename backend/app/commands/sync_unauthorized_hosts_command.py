@@ -433,6 +433,7 @@ def sync_unauthorized_hosts_command(
     failed_forced_critical_status_overlap_remove_samples: List[str] = []
 
     trusted_binding_dhcp_ips: set[str] = set()
+    desired_trusted_override = 0
 
     with get_mikrotik_connection() as api:
         if not api:
@@ -522,6 +523,18 @@ def sync_unauthorized_hosts_command(
         if exempt_set:
             for exempt_ip in list(exempt_set):
                 desired.pop(_normalize_ip_for_compare(exempt_ip), None)
+
+        # Remove trusted IPs from desired to prevent add-then-remove oscillation.
+        # Scenario: IP has two hotspot/host entries — one with an AP/bridge MAC (not recognized →
+        # added to desired) and one with the real device MAC (authorized → added to
+        # trusted_binding_dhcp_ips). Without this removal, the reconcile adds the IP to the
+        # unauthorized list, then the safety guard removes it in the same run. Next cycle the add
+        # happens again, creating a ~4-minute ping-pong that briefly blocks authorized devices.
+        desired_trusted_override = 0
+        for tip in trusted_binding_dhcp_ips:
+            if tip in desired:
+                desired.pop(tip)
+                desired_trusted_override += 1
 
         # Reconcile: remove managed entries no longer desired
         ok, existing, msg = get_firewall_address_list_entries(api, resolved_list)
@@ -744,6 +757,7 @@ def sync_unauthorized_hosts_command(
         f"skipped_authorized_device_ip={skipped_authorized_device_ip} "
         f"skipped_authorized_device_mac={skipped_authorized_device_mac} "
         f"skipped_binding_dhcp_trusted={skipped_binding_dhcp_trusted} "
+        f"desired_trusted_override={desired_trusted_override} "
         f"skipped_low_uptime={skipped_low_uptime} skipped_authorized_or_bypassed={skipped_authorized}"
     )
 
