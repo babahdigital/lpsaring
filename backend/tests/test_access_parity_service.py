@@ -108,7 +108,9 @@ def test_collect_access_parity_report_flags_no_ip_binding_and_dhcp_gap(monkeypat
     assert report["summary"]["no_authorized_device_count"] == 0
 
     item = report["items"][0]
-    assert set(item["mismatches"]) == {"dhcp_lease_missing", "missing_ip_binding", "no_resolvable_ip"}
+    # dhcp_lease_missing is NOT expected: device is offline (not in host table),
+    # so DHCP check is intentionally skipped to avoid permanent false positives.
+    assert set(item["mismatches"]) == {"missing_ip_binding", "no_resolvable_ip"}
     assert item["parity_relevant"] is True
     assert item["auto_fixable"] is False
     assert any(action["action"] == "resolve_ip_from_host_or_binding" for action in item["action_plan"])
@@ -116,7 +118,7 @@ def test_collect_access_parity_report_flags_no_ip_binding_and_dhcp_gap(monkeypat
     mismatch_types = report["summary"]["mismatch_types"]
     assert mismatch_types["missing_ip_binding"] == 1
     assert mismatch_types["no_resolvable_ip"] == 1
-    assert mismatch_types["dhcp_lease_missing"] == 1
+    assert mismatch_types.get("dhcp_lease_missing", 0) == 0
 
 
 def test_collect_access_parity_report_ignores_missing_dhcp_for_blocked_hard_block(monkeypatch):
@@ -171,15 +173,28 @@ def test_collect_access_parity_report_skips_dhcp_missing_when_live_host_signal_e
 
 
 def test_collect_access_parity_report_treats_dhcp_only_mismatch_as_non_parity(monkeypatch):
+    """dhcp_lease_missing is non-parity when it is the sole mismatch.
+
+    Scenario: device is currently online (present in hotspot host table) but with a
+    different IP than the one stored in the DB (e.g. after a DHCP reassignment). The
+    ip-binding is correct, but no static DHCP lease exists for the DB address. The
+    mismatch is purely administrative and does not affect current connectivity, so
+    parity_relevant must be False.
+
+    Note: dhcp_lease_missing is intentionally NOT flagged for offline devices (host_ip
+    is None) to avoid permanent false positives for bypassed users who are not
+    currently connected.
+    """
     mac = "84:14:4D:8F:19:CA"
     ip = "172.16.3.138"
+    ip_live = "172.16.3.100"  # device is online but with a different IP than DB record
     device = SimpleNamespace(mac_address=mac, ip_address=ip, is_authorized=True)
     user = SimpleNamespace(id="dhcp-only-user", phone_number="+6282113301370", devices=[device])
 
     _setup_common_mocks(
         monkeypatch,
         [user],
-        host_map={},
+        host_map={mac: {"address": ip_live}},  # online with different IP → triggers DHCP check
         binding_map={mac: {"type": "bypassed", "address": ip}},
         dhcp_rows=[],
         firewall_entries_by_list={"active": [{"address": ip}]},
@@ -199,3 +214,37 @@ def test_collect_access_parity_report_treats_dhcp_only_mismatch_as_non_parity(mo
     assert report["summary"]["mismatches_total"] == 1
     assert report["summary"]["non_parity_mismatches"] == 1
     assert report["summary"]["mismatch_types"]["dhcp_lease_missing"] == 1
+
+
+def test_collect_access_parity_report_no_dhcp_mismatch_for_offline_bypassed_user(monkeypatch):
+    """Regression test: offline bypassed users must NOT produce dhcp_lease_missing.
+
+    This was a performance bug: 31 offline bypassed users were flagged every 10 min
+    because host_ip=None caused _has_live_host_ip_signal to return False regardless
+    of the DHCP state. The fix adds `if host_ip and` to skip the DHCP check entirely
+    when the device is not present in the hotspot host table.
+    """
+    mac = "AA:11:BB:22:CC:33"
+    ip = "172.16.3.50"
+    device = SimpleNamespace(mac_address=mac, ip_address=ip, is_authorized=True)
+    user = SimpleNamespace(id="offline-bypass", phone_number="+6281200001234", devices=[device])
+
+    _setup_common_mocks(
+        monkeypatch,
+        [user],
+        host_map={},  # device NOT in host table → offline
+        binding_map={mac: {"type": "bypassed", "address": ip}},
+        dhcp_rows=[],  # no static DHCP lease
+        firewall_entries_by_list={"active": [{"address": ip}]},
+    )
+    monkeypatch.setattr(access_parity_service, "get_user_access_status", lambda _user: "active")
+    monkeypatch.setattr(access_parity_service, "resolve_allowed_binding_type_for_user", lambda _user: "bypassed")
+
+    report = access_parity_service.collect_access_parity_report()
+
+    assert report["ok"] is True
+    # Offline device with correct ip-binding → no mismatches at all
+    assert report["items"] == []
+    assert report["summary"]["mismatches"] == 0
+    assert report["summary"]["mismatches_total"] == 0
+    assert report["summary"]["mismatch_types"].get("dhcp_lease_missing", 0) == 0
