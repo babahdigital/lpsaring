@@ -185,7 +185,7 @@ git push origin main
 cd lpsaring && bash deploy_pi.sh --trigger-build
 
 # 3. Verifikasi post-deploy
-ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@159.89.192.31
+ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@194.233.80.163
 docker logs hotspot_prod_celery_worker --tail=50 | grep "dhcp_self_healed"
 # Expected: "dhcp_self_healed": 0
 

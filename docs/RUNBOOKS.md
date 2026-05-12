@@ -29,7 +29,7 @@ docker logs hotspot_prod_flask_backend | grep -i "mikrotik\|connection\|auth"
 **Quick Fix** (1–2 min):
 ```bash
 # 1. Check MikroTik server is reachable
-ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@159.89.192.31
+ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@194.233.80.163
 ping -c 1 10.19.83.2  # MikroTik IP from config
 
 # 2. Restart circuit breaker + pool (no manual restart needed, auto-recover on next task)
@@ -55,7 +55,7 @@ docker logs -f hotspot_prod_flask_backend | grep "RouterOsApiPool"
 **Detection**:
 ```bash
 # SSH to server
-ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@159.89.192.31
+ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@194.233.80.163
 
 # Check DLQ size
 docker exec hotspot_prod_redis_cache redis-cli LLEN celery:dlq
@@ -161,7 +161,7 @@ docker logs hotspot_prod_celery_worker --since 30m | grep "cleanup_waiting_dhcp"
 # Look for: "lease_removed=X" — should reflect waiting_candidates
 
 # 3. If abnormal, check MikroTik logs
-ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@159.89.192.31
+ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@194.233.80.163
 ssh -u admin 10.19.83.2  # SSH into MikroTik
 /ip dhcp-server lease print where dynamic=true status=waiting
 # Count waiting leases — if > 30, problem is lease expiry queue

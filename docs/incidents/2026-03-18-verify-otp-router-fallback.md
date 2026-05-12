@@ -97,10 +97,10 @@ Perubahan permanen dilakukan pada backend:
 ## Runbook diagnosis singkat bila gejala serupa muncul lagi
 
 ```bash
-ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@159.89.192.31 \
+ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@194.233.80.163 \
   'cd /home/abdullah/nginx/logs && grep -E "verify-otp|request-otp|auth/me|hotspot-required|captive/terhubung" lpsaring_access.log | tail -n 250'
 
-ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@159.89.192.31 \
+ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@194.233.80.163 \
   'cd /home/abdullah/lpsaring/app && docker compose --env-file .env.prod -f docker-compose.prod.yml logs --since=30m --no-color backend frontend celery_worker | grep -Ei "verify-otp|router|mikrotik|warning|error|exception" || true'
 ```
 

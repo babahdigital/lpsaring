@@ -3,7 +3,7 @@
 ## Project Structure
 - Local: `d:/Data/Projek/hotspot/lpsaring/`
 - Repo: `babahdigital/lpsaring` (github)
-- Production: `ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@159.89.192.31`
+- Production: `ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@194.233.80.163`
 - Remote app dir: `/home/abdullah/lpsaring/app`
 - Nginx logs: `/home/abdullah/nginx/logs/`
 - Docker compose file: `docker-compose.prod.yml` (bukan docker-compose.yml)

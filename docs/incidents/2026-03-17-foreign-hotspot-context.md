@@ -104,7 +104,7 @@ Perubahan permanen dipusatkan pada trust boundary frontend:
 ## Runbook diagnosis singkat bila gejala serupa muncul lagi
 
 ```bash
-ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@159.89.192.31 \
+ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@194.233.80.163 \
   'tail -n 400 /home/abdullah/nginx/logs/access.log \
     | grep -E "link_login_only|/captive|/login|/hotspot-required|wartelpas|172\.16\.12\.1| 500 | 401 " || true'
 

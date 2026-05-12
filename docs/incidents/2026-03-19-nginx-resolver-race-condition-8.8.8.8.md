@@ -109,19 +109,19 @@ cd /home/abdullah/lpsaring/app
 bash /d/Data/Projek/hotspot/lpsaring/deploy_pi.sh --recreate   # dari lokal
 
 # 2. Jika sudah terlanjur down, setelah up periksa network membership:
-ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@159.89.192.31 \
+ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@194.233.80.163 \
   "docker network inspect proxy-network --format '{{range .Containers}}{{.Name}} {{.IPv4Address}}{{\"\\n\"}}{{end}}'"
 
 # 3. Verifikasi DNS dari dalam nginx:
-ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@159.89.192.31 \
+ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@194.233.80.163 \
   "docker exec global-nginx-proxy nslookup lpsaring-backend && docker exec global-nginx-proxy nslookup lpsaring-frontend"
 
 # 4. Jika DNS gagal, reload nginx saja (tidak perlu restart):
-ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@159.89.192.31 \
+ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@194.233.80.163 \
   "docker exec global-nginx-proxy nginx -s reload"
 
 # 5. Periksa error log untuk resolusi cepat:
-ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@159.89.192.31 \
+ssh -i ~/.ssh/id_raspi_ed25519 -p 1983 abdullah@194.233.80.163 \
   "tail -20 /home/abdullah/nginx/logs/lpsaring_error.log"
 ```
 

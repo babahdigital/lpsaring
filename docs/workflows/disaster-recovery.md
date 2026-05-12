@@ -15,7 +15,7 @@
 
 ## Prasyarat
 
-- SSH access ke server produksi (`ssh -i ~/.ssh/id_raspi_ed25519 abdullah@159.89.192.31 -p 1983`)
+- SSH access ke server produksi (`ssh -i ~/.ssh/id_raspi_ed25519 abdullah@194.233.80.163 -p 1983`)
 - Docker Compose tersedia di server
 - File backup `.sql` tersedia (lokal atau remote)
 
@@ -42,7 +42,7 @@ ls -lt ../backups/*.sql
 ```bash
 scp -i ~/.ssh/id_raspi_ed25519 -P 1983 \
   ../backups/<file_backup>.sql \
-  abdullah@159.89.192.31:/tmp/restore_backup.sql
+  abdullah@194.233.80.163:/tmp/restore_backup.sql
 ```
 
 ### 4. Restore Database
