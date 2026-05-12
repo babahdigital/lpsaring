@@ -146,6 +146,17 @@ def _derive_private_ips_from_hosts(hosts: List[str]) -> List[str]:
     return sorted(ips)
 
 
+_INVALID_IP_TARGETS: frozenset[str] = frozenset(
+    [
+        "0.0.0.0",       # unspecified — harmless alone but signals bad data
+        "0.0.0.0/0",     # catastrophic: would allow ALL traffic unauthenticated
+        "::",            # IPv6 unspecified
+        "::/0",          # IPv6 default route
+        "255.255.255.255",  # broadcast
+    ]
+)
+
+
 def _normalize_ip_targets(values: Iterable[str]) -> List[str]:
     normalized: set[str] = set()
     for value in values or []:
@@ -154,12 +165,21 @@ def _normalize_ip_targets(values: Iterable[str]) -> List[str]:
             continue
         try:
             if "/" in raw:
-                normalized.add(str(ipaddress.ip_network(raw, strict=False)))
+                net = ipaddress.ip_network(raw, strict=False)
+                # Reject default-route (would open all traffic to unauthenticated users)
+                if net.prefixlen == 0:
+                    logger.warning("Walled-garden: menolak default-route %s dari IP targets", raw)
+                    continue
+                normalized.add(str(net))
             else:
-                normalized.add(str(ipaddress.ip_address(raw)))
+                ip = ipaddress.ip_address(raw)
+                if ip.is_unspecified:
+                    logger.warning("Walled-garden: menolak IP unspecified %s dari IP targets", raw)
+                    continue
+                normalized.add(str(ip))
         except ValueError:
             continue
-    return sorted(normalized)
+    return sorted(ip for ip in normalized if ip not in _INVALID_IP_TARGETS)
 
 
 def _derive_ips_from_address_lists(api_connection: Any, list_names: List[str]) -> List[str]:
