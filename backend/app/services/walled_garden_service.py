@@ -199,7 +199,18 @@ def _derive_ips_from_address_lists(api_connection: Any, list_names: List[str]) -
         list_name = str(entry.get("list") or "").strip()
         if list_name not in target_lists:
             continue
-        collected.append(str(entry.get("address") or "").strip())
+        raw_addr = str(entry.get("address") or "").strip()
+        # MikroTik DNS-style address-lists may insert "0.0.0.0" placeholders when
+        # FQDN resolution fails. Skip silently here so it doesn't trigger the
+        # WARNING in _normalize_ip_targets (that warning is reserved for
+        # admin-configured ENV/DB values, where 0.0.0.0 indicates real misconfig).
+        if raw_addr in _INVALID_IP_TARGETS:
+            logger.debug(
+                "Walled-garden: skip entry placeholder %s dari address-list %s (DNS resolver MikroTik)",
+                raw_addr, list_name,
+            )
+            continue
+        collected.append(raw_addr)
     return _normalize_ip_targets(collected)
 
 

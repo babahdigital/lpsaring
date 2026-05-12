@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 _connection_pool = None
 _pool_config_key = None
 _supports_socket_timeout: Optional[bool] = None
+_socket_timeout_log_emitted: bool = False
 
 
 class MikrotikConfig(TypedDict):
@@ -170,7 +171,10 @@ def init_mikrotik_pool():
         if supports_socket_timeout:
             pool_kwargs["socket_timeout"] = socket_timeout_seconds
         else:
-            logger.info("RouterOsApiPool tanpa dukungan socket_timeout; memakai timeout bawaan library.")
+            global _socket_timeout_log_emitted
+            if not _socket_timeout_log_emitted:
+                logger.info("RouterOsApiPool tanpa dukungan socket_timeout; memakai timeout bawaan library.")
+                _socket_timeout_log_emitted = True
 
         try:
             _connection_pool = routeros_api.RouterOsApiPool(host, **pool_kwargs)
