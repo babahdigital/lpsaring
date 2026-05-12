@@ -39,8 +39,9 @@ export const useDashboardStore = defineStore('dashboard', () => {
       }
     }
     catch (error) {
-      console.error('Failed to fetch dashboard stats:', error)
-      stats.value = null // Reset jika gagal
+      if (import.meta.dev)
+        console.error('Failed to fetch dashboard stats:', error)
+      stats.value = null
     }
     finally {
       isLoading.value = false

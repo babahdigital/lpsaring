@@ -2680,6 +2680,18 @@ def cleanup_inactive_users_task(self):
 def sync_walled_garden_task(self):
     app = create_app()
     with app.app_context():
+        redis_client = getattr(app, "redis_client_otp", None)
+        lock_key = "sync_walled_garden_task:lock"
+        lock_acquired = False
+        lock_ttl_seconds = max(300, int(app.config.get("WALLED_GARDEN_SYNC_INTERVAL_SECONDS", 1800) or 1800))
+        if redis_client is not None:
+            try:
+                lock_acquired = bool(redis_client.set(lock_key, "1", nx=True, ex=lock_ttl_seconds))
+            except Exception:
+                lock_acquired = False
+            if not lock_acquired:
+                logger.info("Celery Task: Skip sync walled-garden (worker lain sedang berjalan).")
+                return
         logger.info("Celery Task: Memulai sinkronisasi walled-garden.")
         try:
             result = sync_walled_garden()
@@ -2689,6 +2701,12 @@ def sync_walled_garden_task(self):
             if self.request.retries >= 2:
                 _record_task_failure(app, "sync_walled_garden_task", {}, str(e))
             raise
+        finally:
+            if lock_acquired and redis_client is not None:
+                try:
+                    redis_client.delete(lock_key)
+                except Exception:
+                    pass
 
 
 @celery_app.task(

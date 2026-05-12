@@ -221,9 +221,20 @@ def increment_otp_fail_count(phone_number: str) -> None:
         return
     try:
         key = get_otp_fail_key(phone_number)
-        window_seconds = int(current_app.config.get("OTP_VERIFY_WINDOW_SECONDS", 300))
-        redis_client.incr(key)
-        redis_client.expire(key, window_seconds)
+        base_window = int(current_app.config.get("OTP_VERIFY_WINDOW_SECONDS", 300))
+        max_window = int(current_app.config.get("OTP_VERIFY_MAX_BACKOFF_SECONDS", 3600))
+        threshold = int(current_app.config.get("OTP_VERIFY_BACKOFF_AFTER", 3))
+        new_count = redis_client.incr(key)
+        try:
+            count_int = int(new_count)
+        except Exception:
+            count_int = 1
+        if count_int <= threshold:
+            ttl = base_window
+        else:
+            multiplier = 2 ** min(count_int - threshold, 10)
+            ttl = min(base_window * multiplier, max_window)
+        redis_client.expire(key, ttl)
     except Exception:
         return
 

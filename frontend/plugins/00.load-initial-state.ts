@@ -116,10 +116,12 @@ export default defineNuxtPlugin(async (_nuxtApp) => {
       const errorCode = getErrorCode(error)
       const codeSuffix = errorCode ? ` code=${errorCode}` : ''
 
-      if (isTransientStartupError(error))
-        console.warn(`[startup] Pengaturan awal belum tersedia, pakai default sementara.${codeSuffix}`)
-      else
-        console.error(`[startup] Gagal memuat pengaturan awal dari server.${codeSuffix}`, error)
+      if (import.meta.dev) {
+        if (isTransientStartupError(error))
+          console.warn(`[startup] Pengaturan awal belum tersedia, pakai default sementara.${codeSuffix}`)
+        else
+          console.error(`[startup] Gagal memuat pengaturan awal dari server.${codeSuffix}`, error)
+      }
 
       // Set state default jika gagal agar aplikasi tidak crash.
       settingsStore.setSettings([])

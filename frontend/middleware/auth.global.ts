@@ -24,6 +24,64 @@ import { shouldRedirectToHotspotRequired } from '../utils/hotspotRedirect'
 const HOTSPOT_PRECHECK_ROUTES = new Set<string>(['/', '/login', '/register', '/daftar'])
 const HOTSPOT_AUTO_START_QUERY_KEY = 'auto_start'
 const LAST_MIKROTIK_LOGIN_HINT_KEY = 'lpsaring:last-mikrotik-login-link'
+const REDIRECT_CHAIN_KEY = 'lpsaring:auth-redirect-chain'
+const MAX_AUTH_REDIRECTS = 5
+
+interface RedirectChainState {
+  count: number
+  lastPath: string
+  ts: number
+}
+
+function readRedirectChain(): RedirectChainState | null {
+  if (!import.meta.client)
+    return null
+  try {
+    const raw = window.sessionStorage.getItem(REDIRECT_CHAIN_KEY)
+    if (!raw)
+      return null
+    const parsed = JSON.parse(raw) as Partial<RedirectChainState>
+    if (typeof parsed?.count === 'number' && typeof parsed?.lastPath === 'string' && typeof parsed?.ts === 'number')
+      return parsed as RedirectChainState
+  }
+  catch {}
+  return null
+}
+
+function writeRedirectChain(state: RedirectChainState | null): void {
+  if (!import.meta.client)
+    return
+  try {
+    if (state == null)
+      window.sessionStorage.removeItem(REDIRECT_CHAIN_KEY)
+    else
+      window.sessionStorage.setItem(REDIRECT_CHAIN_KEY, JSON.stringify(state))
+  }
+  catch {}
+}
+
+function trackRedirect(currentPath: string, target: string): boolean {
+  if (!import.meta.client)
+    return true
+  const now = Date.now()
+  const prior = readRedirectChain()
+  if (prior == null || now - prior.ts > 5000 || prior.lastPath !== currentPath) {
+    writeRedirectChain({ count: 1, lastPath: target, ts: now })
+    return true
+  }
+  if (prior.count >= MAX_AUTH_REDIRECTS) {
+    if (import.meta.dev)
+      console.warn(`[auth.global] Redirect loop terdeteksi (${prior.count}x), abort: ${currentPath} -> ${target}`)
+    writeRedirectChain(null)
+    return false
+  }
+  writeRedirectChain({ count: prior.count + 1, lastPath: target, ts: now })
+  return true
+}
+
+function clearRedirectChain(): void {
+  writeRedirectChain(null)
+}
 
 function getQueryValueFromKeys(query: Record<string, unknown>, keys: string[]): string | null {
   for (const key of keys) {
@@ -139,8 +197,16 @@ function hasHotspotContextQuery(query: Record<string, unknown>, trustConfig: Hot
  * Berjalan setelah middleware maintenance.
  */
 export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => {
-  if (isLegalPublicPath(to.path))
+  if (isLegalPublicPath(to.path)) {
+    clearRedirectChain()
     return
+  }
+
+  const guardedNavigate = (target: string) => {
+    if (!trackRedirect(to.path, target))
+      return undefined
+    return navigateTo(target, { replace: true })
+  }
 
   if (isCaptiveRoutePath(to.path))
     markCaptiveContextActive()
@@ -187,13 +253,13 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
       const captivePath = queryString.length > 0
         ? `/captive?${queryString}`
         : '/captive'
-      return navigateTo(captivePath, { replace: true })
+      return guardedNavigate(captivePath)
     }
 
     // Jika tujuan rute BUKAN halaman untuk tamu, redirect ke halaman login yang sesuai.
     const guestRedirect = resolveGuestProtectedRedirect(to.path, to.fullPath)
     if (guestRedirect)
-      return navigateTo(guestRedirect, { replace: true })
+      return guardedNavigate(guestRedirect)
   }
   // --- Logika untuk Pengguna yang Sudah Login ---
   else {
@@ -214,7 +280,7 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
       // Khusus halaman captive (hotspotOnly): admin tidak boleh nyasar ke flow user
       const isHotspotOnly = Boolean((to.meta as any)?.hotspotOnly === true)
       if (isHotspotOnly && isAdmin)
-        return navigateTo('/admin/dashboard', { replace: true })
+        return guardedNavigate('/admin/dashboard')
       return
     }
 
@@ -222,14 +288,14 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
       const accessStatus = authStore.getAccessStatusFromUser(authStore.currentUser ?? authStore.lastKnownUser)
       const statusRoute = getStatusRouteForAccessStatus(accessStatus, 'login')
       if ((accessStatus === 'blocked' || accessStatus === 'inactive') && statusRoute && to.path !== statusRoute)
-        return navigateTo(statusRoute, { replace: true })
+        return guardedNavigate(statusRoute)
     }
 
     if (!isAdmin && isDemoUser) {
       const demoAllowedPaths = ['/beli', '/payment/status', '/payment/finish']
       const isAllowedDemoPath = demoAllowedPaths.some(path => to.path === path || to.path.startsWith(`${path}/`))
       if (!isAllowedDemoPath)
-        return navigateTo('/beli', { replace: true })
+        return guardedNavigate('/beli')
     }
 
     const shouldRunHotspotPrecheck = !isAdmin && (
@@ -249,7 +315,7 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
           hotspotLoginRequired: hotspotStatus?.hotspot_login_required,
           hotspotBindingActive: hotspotStatus?.hotspot_binding_active,
         })) {
-          return navigateTo(buildHotspotRequiredPath(resolvedHotspotRecoveryQuery, { autoStart: true }), { replace: true })
+          return guardedNavigate(buildHotspotRequiredPath(resolvedHotspotRecoveryQuery, { autoStart: true }))
         }
       }
       catch {
@@ -259,7 +325,7 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
 
     const roleRedirect = resolveLoggedInRoleRedirect(to.path, isAdmin, isKomandan)
     if (roleRedirect)
-      return navigateTo(roleRedirect, { replace: true })
+      return guardedNavigate(roleRedirect)
 
     if (!isAdmin) {
       if (isCaptiveContextActive() && isRestrictedInCaptiveContext(to.path)) {
@@ -268,8 +334,8 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
           return
         const captiveStatusRoute = getStatusRouteForAccessStatus(accessStatus, 'captive')
         if (captiveStatusRoute && captiveStatusRoute !== to.path)
-          return navigateTo(captiveStatusRoute, { replace: true })
-        return navigateTo('/captive/terhubung', { replace: true })
+          return guardedNavigate(captiveStatusRoute)
+        return guardedNavigate('/captive/terhubung')
       }
 
       const accessStatus = authStore.getAccessStatusFromUser(authStore.currentUser ?? authStore.lastKnownUser)
@@ -279,7 +345,7 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
 
       const expiredOrHabisRedirect = resolveExpiredOrHabisRedirect(to.path, accessStatus, isKomandan)
       if (expiredOrHabisRedirect)
-        return navigateTo(expiredOrHabisRedirect, { replace: true })
+        return guardedNavigate(expiredOrHabisRedirect)
     }
 
     // Aturan 2: Pengguna yang sudah login (admin/biasa) tidak boleh kembali ke halaman tamu atau root.
@@ -288,7 +354,7 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
       const redirectQuery = Array.isArray(to.query.redirect) ? to.query.redirect[0] : to.query.redirect
       const redirectTarget = getSafeRedirectTarget(redirectQuery, isAdmin)
       if (redirectTarget)
-        return navigateTo(redirectTarget, { replace: true })
+        return guardedNavigate(redirectTarget)
 
       if (!isAdmin) {
         const accessStatus = authStore.getAccessStatusFromUser(authStore.currentUser ?? authStore.lastKnownUser)
@@ -296,7 +362,7 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
         if (statusRoute && to.path === statusRoute)
           return
       }
-      return navigateTo(isAdmin ? adminDashboard : userDashboard, { replace: true })
+      return guardedNavigate(isAdmin ? adminDashboard : userDashboard)
     }
   }
 })

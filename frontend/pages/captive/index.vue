@@ -57,9 +57,7 @@ const blockOptions = Array.from({ length: 6 }, (_, i) => ({ title: `Blok ${Strin
 const kamarOptions = Array.from({ length: 6 }, (_, i) => ({ title: `Kamar ${i + 1}`, value: (i + 1).toString() }))
 const appLandingUrl = computed(() => {
   const appBase = String(runtimeConfig.public.appBaseUrl ?? '').trim()
-  if (appBase)
-    return appBase
-  return 'https://lpsaring.babahdigital.net'
+  return appBase || '/'
 })
 const mikrotikLoginUrl = computed(() => {
   const fromRouter = String(portalParams.value.linkLoginOnly || '').trim()

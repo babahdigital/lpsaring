@@ -99,9 +99,7 @@ export default defineNuxtPlugin((nuxtApp) => {
           store.clearSession(401)  // clearSession expects number | null, not string
 
           // Show user notification only if this is not an auth-specific endpoint
-          if (!isAuthSessionRequest) {
-            // Log to console for debugging - user will be redirected to login
-            // which will show the login form with implicit "session expired" UX
+          if (!isAuthSessionRequest && import.meta.dev) {
             console.warn('API 401 Unauthorized: Session expired on non-auth endpoint. Redirecting to login.')
           }
           if (import.meta.client) {

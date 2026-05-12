@@ -15,6 +15,8 @@ function isFinalStatus(status: TransactionStatusContract): boolean {
 export function usePaymentStatusPolling(options: UsePaymentStatusPollingOptions) {
   const { finalStatus, refreshStatus, intervalMs = 8000 } = options
   const isPolling = ref(false)
+  const MAX_CONSECUTIVE_ERRORS = 5
+  let consecutiveErrors = 0
 
   let timer: ReturnType<typeof setInterval> | null = null
 
@@ -32,8 +34,19 @@ export function usePaymentStatusPolling(options: UsePaymentStatusPollingOptions)
     if (isFinalStatus(finalStatus.value))
       return
 
+    consecutiveErrors = 0
     timer = setInterval(() => {
-      void refreshStatus()
+      refreshStatus()
+        .then(() => {
+          consecutiveErrors = 0
+        })
+        .catch(error => {
+          consecutiveErrors += 1
+          if (import.meta.dev)
+            console.warn(`[paymentPolling] refresh gagal (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS})`, error)
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS)
+            stopPolling()
+        })
     }, intervalMs)
     isPolling.value = true
   }

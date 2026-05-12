@@ -93,27 +93,37 @@ function getRedirectTargetAfterLogin(): string | null {
   const redirectPath = Array.isArray(redirectQuery) ? redirectQuery[0] : redirectQuery
   if (typeof redirectPath !== 'string' || redirectPath.length === 0)
     return null
-  if (!redirectPath.startsWith('/') || redirectPath.startsWith('//'))
+
+  let normalizedPath: string
+  try {
+    const fakeBase = 'https://lpsaring-internal.invalid'
+    const parsed = new URL(redirectPath, fakeBase)
+    if (parsed.origin !== fakeBase)
+      return null
+    normalizedPath = `${parsed.pathname}${parsed.search}${parsed.hash}`
+  }
+  catch {
     return null
-  if (redirectPath.includes('://'))
+  }
+
+  if (!normalizedPath.startsWith('/') || normalizedPath.startsWith('//'))
+    return null
+  if (/[\\\u0000-\u001F]/.test(normalizedPath))
     return null
 
-  // Hindari loop ke halaman auth/guest.
   const disallowedPrefixes = ['/login', '/register', '/daftar', '/captive', '/session/consume']
-  if (disallowedPrefixes.some(prefix => redirectPath === prefix || redirectPath.startsWith(`${prefix}/`)))
+  if (disallowedPrefixes.some(prefix => normalizedPath === prefix || normalizedPath.startsWith(`${prefix}/`)))
     return null
 
-  // Non-admin tidak boleh diarahkan ke area admin.
-  if (!authStore.isAdmin && (redirectPath === '/admin' || redirectPath.startsWith('/admin/')))
+  if (!authStore.isAdmin && (normalizedPath === '/admin' || normalizedPath.startsWith('/admin/')))
     return null
 
-  // Admin boleh ke /admin/*, tapi jangan ke halaman login admin.
   if (authStore.isAdmin) {
-    if (redirectPath === '/admin' || redirectPath === '/admin/login' || redirectPath.startsWith('/admin/login/'))
+    if (normalizedPath === '/admin' || normalizedPath === '/admin/login' || normalizedPath.startsWith('/admin/login/'))
       return null
   }
 
-  return redirectPath
+  return normalizedPath
 }
 
 function getQueryValueFromKeys(keys: string[]): string {
