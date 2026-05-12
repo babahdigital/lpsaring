@@ -339,7 +339,29 @@ def verify_otp_impl(  # pyright: ignore[reportGeneralTypeIssues]
         binding_mac = str(authoritative_binding_mac or binding_context.get("resolved_mac") or "").strip() or None
         if username_for_hotspot:
             if not binding_mac:
-                hotspot_binding_active = False
+                # Tidak ada MAC hint dari request (mis. Chrome via Cloudflare tanpa captive context).
+                # Lakukan user-level binding check agar user yang sudah aktif via CNA tidak dipaksa
+                # melewati hotspot-required lagi. Jika tidak ada binding → False (hotspot step diperlukan).
+                # Jika MikroTik tidak tersedia → None (tidak memaksa redirect, defensive).
+                try:
+                    with get_mikrotik_connection() as api_connection:
+                        if api_connection:
+                            ok_binding_check, has_any_binding, _ = has_hotspot_ip_binding_for_user(
+                                api_connection,
+                                username=username_for_hotspot,
+                                user_id=str(user_to_login.id),
+                                mac_address=None,
+                            )
+                            hotspot_binding_active = bool(has_any_binding) if ok_binding_check else None
+                        else:
+                            hotspot_binding_active = None
+                except Exception as check_err:
+                    current_app.logger.warning(
+                        "Verify-OTP user-level binding check failed for user=%s: %s",
+                        user_to_login.id,
+                        check_err,
+                    )
+                    hotspot_binding_active = None
             else:
                 try:
                     with get_mikrotik_connection() as api_connection:
