@@ -1395,9 +1395,14 @@ def send_manual_debt_reminders_task(self):
                     continue
 
                 redis_key = f"debt_reminder:{debt.id}:{stage_key}"
+                ttl = max(3600, int(diff.total_seconds()) + 86400)
+                # Atomic dedup: acquire the key before sending to prevent double-send
+                # if the task runs concurrently (e.g., retry overlap).
+                dedup_acquired = False
                 if redis_client:
                     try:
-                        if redis_client.exists(redis_key):
+                        dedup_acquired = bool(redis_client.set(redis_key, "1", nx=True, ex=ttl))
+                        if not dedup_acquired:
                             summary["skipped_dedup"] += 1
                             continue
                     except Exception:
@@ -1430,6 +1435,12 @@ def send_manual_debt_reminders_task(self):
                             stage_key,
                             msg,
                         )
+                        # Release dedup key so this stage can be retried.
+                        if dedup_acquired and redis_client:
+                            try:
+                                redis_client.delete(redis_key)
+                            except Exception:
+                                pass
                         continue
 
                     phone = getattr(user, "phone_number", "")
@@ -1451,14 +1462,14 @@ def send_manual_debt_reminders_task(self):
 
                     if sent:
                         summary["sent"] += 1
-                        if redis_client:
-                            try:
-                                ttl = max(3600, int(diff.total_seconds()) + 86400)
-                                redis_client.setex(redis_key, ttl, "1")
-                            except Exception:
-                                pass
                     else:
                         summary["failed"] += 1
+                        # Release dedup key to allow retry on next task run.
+                        if dedup_acquired and redis_client:
+                            try:
+                                redis_client.delete(redis_key)
+                            except Exception:
+                                pass
                         logger.warning(
                             "send_manual_debt_reminders: gagal kirim WA %s ke user=%s debt=%s",
                             stage_key,
@@ -1512,6 +1523,23 @@ def enforce_end_of_month_debt_block_task(self):
 
         if now_local.day != last_day or now_local.hour < min_hour:
             return
+
+        # Distributed lock: prevent duplicate execution on task retry or concurrent workers.
+        eom_redis = getattr(app, "redis_client_otp", None)
+        lock_key = f"eom_debt_block:{now_local.year}:{now_local.month}:{now_local.day}"
+        lock_acquired = False
+        if eom_redis:
+            try:
+                lock_acquired = bool(
+                    eom_redis.set(lock_key, str(self.request.id or "eom"), nx=True, ex=7200)
+                )
+                if not lock_acquired:
+                    logger.info(
+                        "EOM debt block: lock already held for %s, skipping duplicate run.", lock_key
+                    )
+                    return
+            except Exception as e:
+                logger.warning("EOM debt block: gagal acquire Redis lock: %s — lanjut tanpa lock.", e)
 
         if settings_service.get_setting("ENABLE_MIKROTIK_OPERATIONS", "True") != "True":
             logger.info("EOM debt block: Mikrotik ops disabled; will still update DB + WhatsApp.")
@@ -1770,6 +1798,12 @@ def enforce_end_of_month_debt_block_task(self):
             summary["block_failed"],
             summary["admin_notify_failed"],
         )
+
+        if lock_acquired and eom_redis:
+            try:
+                eom_redis.delete(lock_key)
+            except Exception:
+                pass
 
 
 def _record_task_failure(app, task_name: str, payload: dict, error_message: str) -> None:

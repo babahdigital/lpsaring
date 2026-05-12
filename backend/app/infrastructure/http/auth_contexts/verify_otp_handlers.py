@@ -137,10 +137,10 @@ def verify_otp_impl(  # pyright: ignore[reportGeneralTypeIssues]
                 AuthErrorResponseSchema(error="Terlalu banyak percobaan OTP. Silakan coba lagi nanti.").model_dump()
             ), HTTPStatus.TOO_MANY_REQUESTS
 
-        otp_bypass_code = str(current_app.config.get("OTP_BYPASS_CODE", "000000") or "000000")
-        bypass_allowed = current_app.config.get("OTP_ALLOW_BYPASS", False)
-        demo_bypass_code = str(current_app.config.get("DEMO_BYPASS_OTP_CODE", "000000") or "000000")
-        demo_bypass_allowed = is_demo_phone_allowed(phone_e164)
+        otp_bypass_code = str(current_app.config.get("OTP_BYPASS_CODE", "") or "").strip()
+        bypass_allowed = bool(current_app.config.get("OTP_ALLOW_BYPASS", False)) and bool(otp_bypass_code)
+        demo_bypass_code = str(current_app.config.get("DEMO_BYPASS_OTP_CODE", "") or "").strip()
+        demo_bypass_allowed = is_demo_phone_allowed(phone_e164) and bool(demo_bypass_code)
         used_bypass_code = False
         used_demo_bypass = False
 
