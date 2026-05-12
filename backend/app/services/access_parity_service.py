@@ -398,7 +398,15 @@ def collect_access_parity_report(*, max_items: int = 500) -> dict[str, Any]:
                         if mac not in dhcp_macs:
                             mismatch_list.append("dhcp_lease_missing")
                         elif ip_addr and ip_addr not in dhcp_ips_by_mac.get(mac, set()):
-                            mismatch_list.append("dhcp_lease_missing")
+                            # ip_addr is the (potentially stale) DB address. Only flag
+                            # dhcp_lease_missing when NEITHER the DB IP nor the current
+                            # live host IP is covered by a DHCP lease. If the DHCP lease
+                            # was already written for the live IP (host_ip), the mismatch
+                            # is purely about DB staleness — the device will use the live
+                            # lease on its next DHCP renewal.
+                            live_ip_covered = host_ip in dhcp_ips_by_mac.get(mac, set())
+                            if not live_ip_covered:
+                                mismatch_list.append("dhcp_lease_missing")
 
                 mismatch_list = sorted(set(mismatch_list))
                 if not mismatch_list:
