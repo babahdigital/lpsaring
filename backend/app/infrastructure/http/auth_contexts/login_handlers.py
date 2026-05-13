@@ -228,6 +228,25 @@ def auto_login_impl(
         if (not ok_mac or not resolved_mac) and incoming_mac:
             recovered_ip = _recover_ip_from_client_mac_hint(incoming_mac)
             if recovered_ip and _is_client_ip_allowed(recovered_ip):
+                claimed_ip = payload_dict.get("client_ip")
+                if claimed_ip and recovered_ip != claimed_ip:
+                    current_app.logger.warning(
+                        "Auto-login fallback rejected: MAC hint maps to %s but claimed ip=%s mac=%s",
+                        recovered_ip,
+                        claimed_ip,
+                        incoming_mac,
+                    )
+                    _log_auto_login_decision(
+                        reason_code="MAC_HINT_IP_MISMATCH",
+                        http_status=HTTPStatus.FORBIDDEN,
+                        client_ip_value=claimed_ip,
+                        client_mac_value=incoming_mac,
+                        level="warning",
+                        details=f"mac_maps_to={recovered_ip}",
+                    )
+                    return jsonify(
+                        AuthErrorResponseSchema(error="Tidak dapat memverifikasi perangkat dari router.").model_dump()
+                    ), HTTPStatus.FORBIDDEN
                 client_ip = recovered_ip
                 login_ip_for_history = recovered_ip
                 resolved_mac = incoming_mac

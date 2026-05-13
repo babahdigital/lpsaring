@@ -4,6 +4,7 @@ import logging
 import json
 import calendar
 import secrets
+import string
 import subprocess
 import sys
 import re
@@ -1671,7 +1672,8 @@ def enforce_end_of_month_debt_block_task(self):
                 before_state = snapshot_user_quota_state(user)
 
                 if not user.mikrotik_password:
-                    user.mikrotik_password = "".join(secrets.choice("0123456789") for _ in range(6))
+                    _pw_chars = string.ascii_letters + string.digits
+                    user.mikrotik_password = "".join(secrets.choice(_pw_chars) for _ in range(8))
 
                 username_08 = format_to_local_phone(user.phone_number) or user.phone_number or ""
                 comment = f"blocked|quota-debt-eom|user={username_08}"
@@ -3546,7 +3548,8 @@ def enforce_overdue_debt_block_task(self):
                 before_state = snapshot_user_quota_state(user)
 
                 if not user.mikrotik_password:
-                    user.mikrotik_password = "".join(secrets.choice("0123456789") for _ in range(6))
+                    _pw_chars = string.ascii_letters + string.digits
+                    user.mikrotik_password = "".join(secrets.choice(_pw_chars) for _ in range(8))
 
                 _handle_mikrotik_operation(
                     activate_or_update_hotspot_user,
