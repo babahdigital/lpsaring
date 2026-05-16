@@ -19,7 +19,11 @@ from sqlalchemy.orm import selectinload
 
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_with_pdf, send_whatsapp_message
 from app.infrastructure.http.transactions.events import log_transaction_event
-from app.services.hotspot_sync_service import sync_hotspot_usage_and_profiles, cleanup_inactive_users, sync_address_list_for_single_user
+from app.services.hotspot_sync_service import (
+    sync_hotspot_usage_and_profiles,
+    cleanup_inactive_users,
+    sync_address_list_for_single_user,
+)
 from app.services import settings_service
 from app.services.access_parity_service import collect_access_parity_report
 from app.services.walled_garden_service import sync_walled_garden
@@ -66,12 +70,22 @@ from app.services.manual_debt_report_service import (
     resolve_public_base_url,
 )
 from app.services.access_policy_service import resolve_allowed_binding_type_for_user
-from app.services.quota_mutation_ledger_service import append_quota_mutation_event, lock_user_quota_row, snapshot_user_quota_state
+from app.services.quota_mutation_ledger_service import (
+    append_quota_mutation_event,
+    lock_user_quota_row,
+    snapshot_user_quota_state,
+)
 from app.services.user_management.helpers import _handle_mikrotik_operation
 from app.services.user_management.user_deletion import run_user_auth_cleanup
 from app.commands.sync_unauthorized_hosts_command import sync_unauthorized_hosts_command
 from app.utils.block_reasons import build_manual_debt_eom_reason
-from app.utils.formatters import build_ip_binding_comment, format_mb_to_gb, format_to_local_phone, get_app_local_datetime, get_phone_number_variations
+from app.utils.formatters import (
+    build_ip_binding_comment,
+    format_mb_to_gb,
+    format_to_local_phone,
+    get_app_local_datetime,
+    get_phone_number_variations,
+)
 from app.utils.metrics_utils import increment_metric
 from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package, format_rupiah
 
@@ -126,9 +140,7 @@ def _acquire_quota_sync_run_lock(redis_client: Any, current_task_id: str | None 
     if other_task_active is not False:
         return False
 
-    logger.warning(
-        "Celery Task: Stale quota sync lock terdeteksi tanpa task aktif lain; mencoba reclaim lock."
-    )
+    logger.warning("Celery Task: Stale quota sync lock terdeteksi tanpa task aktif lain; mencoba reclaim lock.")
     redis_client.delete(_QUOTA_SYNC_LOCK_KEY)
     return bool(
         redis_client.set(
@@ -158,12 +170,8 @@ class PolicyParityAutoRemediationConfig:
 def _load_cleanup_waiting_dhcp_arp_config() -> CleanupWaitingDhcpArpConfig:
     try:
         return CleanupWaitingDhcpArpConfig(
-            mikrotik_operations_enabled=(
-                settings_service.get_setting("ENABLE_MIKROTIK_OPERATIONS", "True") == "True"
-            ),
-            feature_enabled=(
-                settings_service.get_setting("AUTO_CLEANUP_WAITING_DHCP_ARP_ENABLED", "False") == "True"
-            ),
+            mikrotik_operations_enabled=(settings_service.get_setting("ENABLE_MIKROTIK_OPERATIONS", "True") == "True"),
+            feature_enabled=(settings_service.get_setting("AUTO_CLEANUP_WAITING_DHCP_ARP_ENABLED", "False") == "True"),
             keyword=(
                 settings_service.get_setting("AUTO_CLEANUP_WAITING_DHCP_ARP_COMMENT_KEYWORD", "lpsaring|static-dhcp")
                 or "lpsaring|static-dhcp"
@@ -193,6 +201,7 @@ def _load_policy_parity_auto_remediation_config(app: Any) -> PolicyParityAutoRem
         max_users=max(1, max_users_raw),
         run_unauthorized_sync=bool(app.config.get("POLICY_PARITY_AUTO_REMEDIATION_RUN_UNAUTHORIZED_SYNC", True)),
     )
+
 
 # Import create_app dari app/__init__.py
 from app import create_app as _flask_create_app
@@ -301,9 +310,7 @@ def _collect_policy_parity_auto_remediation_candidates(
             continue
 
         mismatch_set = {
-            str(mismatch or "").strip()
-            for mismatch in (item.get("mismatches") or [])
-            if str(mismatch or "").strip()
+            str(mismatch or "").strip() for mismatch in (item.get("mismatches") or []) if str(mismatch or "").strip()
         }
         remediable_mismatches = mismatch_set.intersection(_POLICY_PARITY_AUTO_REMEDIATION_MISMATCH_KEYS)
         if not remediable_mismatches:
@@ -515,7 +522,9 @@ def _run_policy_parity_auto_remediation(app: Any, report: dict[str, Any]) -> dic
                             if not ok_bind:
                                 logger.warning(
                                     "Policy parity auto-remediation: gagal upsert ip-binding user=%s mac=%s: %s",
-                                    candidate["user_id"], mac_to_fix, bind_msg,
+                                    candidate["user_id"],
+                                    mac_to_fix,
+                                    bind_msg,
                                 )
 
                     # --- Step 2: Sync address-list ---
@@ -527,8 +536,12 @@ def _run_policy_parity_auto_remediation(app: Any, report: dict[str, Any]) -> dic
 
                     # --- Step 3: Fix DHCP static lease per MAC (dhcp_lease_missing, best-effort) ---
                     if needs_dhcp_fix and candidate.get("macs"):
-                        dhcp_enabled = settings_service.get_setting("MIKROTIK_DHCP_STATIC_LEASE_ENABLED", "False") == "True"
-                        dhcp_server_name = (settings_service.get_setting("MIKROTIK_DHCP_LEASE_SERVER_NAME", "") or "").strip() or None
+                        dhcp_enabled = (
+                            settings_service.get_setting("MIKROTIK_DHCP_STATIC_LEASE_ENABLED", "False") == "True"
+                        )
+                        dhcp_server_name = (
+                            settings_service.get_setting("MIKROTIK_DHCP_LEASE_SERVER_NAME", "") or ""
+                        ).strip() or None
                         if dhcp_enabled and dhcp_server_name:
                             for mac_to_fix in candidate.get("macs") or []:
                                 mac_ip = _normalize_policy_parity_ip(
@@ -547,7 +560,10 @@ def _run_policy_parity_auto_remediation(app: Any, report: dict[str, Any]) -> dic
                                 if not ok_dhcp:
                                     logger.warning(
                                         "Policy parity auto-remediation: gagal upsert DHCP lease user=%s mac=%s ip=%s: %s",
-                                        candidate["user_id"], mac_to_fix, mac_ip, dhcp_msg,
+                                        candidate["user_id"],
+                                        mac_to_fix,
+                                        mac_ip,
+                                        dhcp_msg,
                                     )
 
                 except Exception as exc:
@@ -659,11 +675,14 @@ def _cleanup_stale_user_device_router_state(api_connection, device: UserDevice) 
     user = getattr(device, "user", None)
     mac_address = str(getattr(device, "mac_address", "") or "").strip().upper()
     ip_address = str(getattr(device, "ip_address", "") or "").strip()
-    server_name = str(
-        getattr(user, "mikrotik_server_name", None)
-        or settings_service.get_setting("MIKROTIK_DEFAULT_SERVER_USER", "all")
+    server_name = (
+        str(
+            getattr(user, "mikrotik_server_name", None)
+            or settings_service.get_setting("MIKROTIK_DEFAULT_SERVER_USER", "all")
+            or "all"
+        ).strip()
         or "all"
-    ).strip() or "all"
+    )
     dhcp_server_name = str(settings_service.get_setting("MIKROTIK_DHCP_LEASE_SERVER_NAME", "") or "").strip() or None
     username_08 = format_to_local_phone(getattr(user, "phone_number", None)) if user is not None else None
 
@@ -915,16 +934,13 @@ def send_public_update_submission_whatsapp_batch_task(self):
             deadline_days = 3
         deadline_days = max(1, deadline_days)
 
-        message_template = (
-            app.config.get("UPDATE_WHATSAPP_IMPORT_MESSAGE_TEMPLATE")
-            or (
-                "Halo *{full_name}*,\n\n"
-                "Kami mendeteksi data Anda di jaringan LPSaring perlu dilengkapi.\n\n"
-                "Silakan perbarui data melalui link berikut *dalam {deadline_days} hari*:\n"
-                "{update_link}\n\n"
-                "\u26a0\ufe0f *Peringatan:* Jika tidak diperbarui, akun Anda akan *dihapus otomatis* dari sistem.\n\n"
-                "Terima kasih,\nTim LPSaring"
-            )
+        message_template = app.config.get("UPDATE_WHATSAPP_IMPORT_MESSAGE_TEMPLATE") or (
+            "Halo *{full_name}*,\n\n"
+            "Kami mendeteksi data Anda di jaringan LPSaring perlu dilengkapi.\n\n"
+            "Silakan perbarui data melalui link berikut *dalam {deadline_days} hari*:\n"
+            "{update_link}\n\n"
+            "\u26a0\ufe0f *Peringatan:* Jika tidak diperbarui, akun Anda akan *dihapus otomatis* dari sistem.\n\n"
+            "Terima kasih,\nTim LPSaring"
         )
         base_public_url = str(app.config.get("APP_PUBLIC_BASE_URL") or "").strip().rstrip("/")
 
@@ -933,7 +949,8 @@ def send_public_update_submission_whatsapp_batch_task(self):
         pending_rows = [
             row
             for row in all_rows
-            if getattr(row, "whatsapp_notified_at", None) is None and str(getattr(row, "phone_number", "") or "").strip()
+            if getattr(row, "whatsapp_notified_at", None) is None
+            and str(getattr(row, "phone_number", "") or "").strip()
         ]
         pending_rows.sort(key=lambda item: getattr(item, "created_at", datetime.min.replace(tzinfo=dt_timezone.utc)))
         pending_rows = pending_rows[:fetch_limit]
@@ -1138,9 +1155,7 @@ def auto_delete_unresponsive_imported_users_task(self):
                     )
                     for sub in submissions:
                         sub.approval_status = "DELETED_AUTO"
-                        sub.rejection_reason = (
-                            f"Auto-deleted: tidak merespons {deadline_days} hari (user not found)"
-                        )
+                        sub.rejection_reason = f"Auto-deleted: tidak merespons {deadline_days} hari (user not found)"
                     skipped_count += 1
                     continue
 
@@ -1151,9 +1166,7 @@ def auto_delete_unresponsive_imported_users_task(self):
 
                 user_name = str(getattr(user, "full_name", "") or "").strip()
                 if not user_name.startswith("Imported "):
-                    logger.info(
-                        "Auto-delete unresponsive: SKIP non-imported user %s.", user.phone_number
-                    )
+                    logger.info("Auto-delete unresponsive: SKIP non-imported user %s.", user.phone_number)
                     skipped_count += 1
                     continue
 
@@ -1173,7 +1186,8 @@ def auto_delete_unresponsive_imported_users_task(self):
                     if not ok and "tidak ditemukan" not in str(msg).lower():
                         logger.warning(
                             "Auto-delete unresponsive: failed to delete MikroTik user %s: %s",
-                            username_08, msg,
+                            username_08,
+                            msg,
                         )
 
                 # Gunakan run_user_auth_cleanup untuk cleanup menyeluruh:
@@ -1195,28 +1209,35 @@ def auto_delete_unresponsive_imported_users_task(self):
                 log_entry.admin_id = None
                 log_entry.target_user_id = None
                 log_entry.action_type = AdminActionType.MANUAL_USER_DELETE
-                log_entry.details = json.dumps({
-                    "auto_delete": True,
-                    "phone_number": raw_phone,
-                    "full_name": user_name,
-                    "deadline_days": deadline_days,
-                    "devices_cleaned": devices_cleaned,
-                    "mikrotik_connected": mikrotik_connected,
-                }, default=str)
+                log_entry.details = json.dumps(
+                    {
+                        "auto_delete": True,
+                        "phone_number": raw_phone,
+                        "full_name": user_name,
+                        "deadline_days": deadline_days,
+                        "devices_cleaned": devices_cleaned,
+                        "mikrotik_connected": mikrotik_connected,
+                    },
+                    default=str,
+                )
                 db.session.add(log_entry)
 
                 db.session.delete(user)
                 deleted_count += 1
                 logger.warning(
                     "Auto-delete unresponsive: DELETED %s (phone=%s, deadline=%d hari)",
-                    user_name, raw_phone, deadline_days,
+                    user_name,
+                    raw_phone,
+                    deadline_days,
                 )
 
         db.session.commit()
 
         logger.info(
             "Auto-delete unresponsive imported users: deleted=%d skipped=%d deadline_days=%d",
-            deleted_count, skipped_count, deadline_days,
+            deleted_count,
+            skipped_count,
+            deadline_days,
         )
         return {
             "success": True,
@@ -1249,10 +1270,7 @@ def populate_update_submissions_from_imported_users_task(self):
             return {"success": True, "skipped": True, "reason": "update_sync_disabled"}
 
         imported_users = (
-            db.session.query(User)
-            .filter(User.full_name.like("Imported %"))
-            .order_by(User.created_at.asc())
-            .all()
+            db.session.query(User).filter(User.full_name.like("Imported %")).order_by(User.created_at.asc()).all()
         )
 
         created = 0
@@ -1287,7 +1305,9 @@ def populate_update_submissions_from_imported_users_task(self):
 
         logger.info(
             "populate_imported_submissions: created=%d already_exists=%d total_imported_users=%d",
-            created, already_exists, len(imported_users),
+            created,
+            already_exists,
+            len(imported_users),
         )
         return {
             "success": True,
@@ -1295,6 +1315,7 @@ def populate_update_submissions_from_imported_users_task(self):
             "already_exists": already_exists,
             "total_imported_users": len(imported_users),
         }
+
 
 def _parse_mikrotik_duration_seconds(value: str) -> int:
     text = str(value or "").strip().lower()
@@ -1531,13 +1552,9 @@ def enforce_end_of_month_debt_block_task(self):
         lock_acquired = False
         if eom_redis:
             try:
-                lock_acquired = bool(
-                    eom_redis.set(lock_key, str(self.request.id or "eom"), nx=True, ex=7200)
-                )
+                lock_acquired = bool(eom_redis.set(lock_key, str(self.request.id or "eom"), nx=True, ex=7200))
                 if not lock_acquired:
-                    logger.info(
-                        "EOM debt block: lock already held for %s, skipping duplicate run.", lock_key
-                    )
+                    logger.info("EOM debt block: lock already held for %s, skipping duplicate run.", lock_key)
                     return
             except Exception as e:
                 logger.warning("EOM debt block: gagal acquire Redis lock: %s — lanjut tanpa lock.", e)
@@ -1870,9 +1887,7 @@ def audit_mikrotik_reconciliation_task(self):
             stderr = (completed.stderr or "").strip()
 
             if completed.returncode != 0:
-                raise RuntimeError(
-                    f"audit_mikrotik_total exit={completed.returncode}; stderr={stderr or '-'}"
-                )
+                raise RuntimeError(f"audit_mikrotik_total exit={completed.returncode}; stderr={stderr or '-'}")
 
             if stdout:
                 logger.info("Celery Task: Audit MikroTik selesai. Summary:\n%s", stdout[-8000:])
@@ -1958,11 +1973,22 @@ def policy_parity_guard_task(self):
 
             if mismatches > 0:
                 top_items = report.get("items", [])[:5]
-                logger.warning(
-                    "Policy parity guard detected mismatches=%s detail=%s",
-                    mismatches,
-                    json.dumps(top_items, ensure_ascii=False),
-                )
+                all_items = report.get("items", [])
+                # Pisahkan mismatch yang benar-benar perlu tindakan (parity_relevant=True) dari yang hanya
+                # informasional (mis. user belum reconnect setelah purchase) agar log produksi tidak bising.
+                relevant_count = sum(1 for it in all_items if it.get("parity_relevant"))
+                if relevant_count > 0:
+                    logger.warning(
+                        "Policy parity guard detected mismatches=%s (relevant=%s) detail=%s",
+                        mismatches,
+                        relevant_count,
+                        json.dumps(top_items, ensure_ascii=False),
+                    )
+                else:
+                    logger.info(
+                        "Policy parity guard: %s informational items (semua parity_relevant=False, action=wait_for_user_reconnect).",
+                        mismatches,
+                    )
             else:
                 logger.info("Policy parity guard: no mismatch detected.")
         except Exception as e:
@@ -2248,9 +2274,7 @@ def sync_unauthorized_hosts_task(self):
             logger.error(f"Celery Task: Sinkronisasi unauthorized hosts gagal: {e}", exc_info=True)
             if _is_non_retryable_unauthorized_sync_error(e):
                 _record_task_failure(app, "sync_unauthorized_hosts_task", {}, str(e))
-                logger.warning(
-                    "Celery Task: Sinkronisasi unauthorized hosts tidak diretry karena error non-retryable."
-                )
+                logger.warning("Celery Task: Sinkronisasi unauthorized hosts tidak diretry karena error non-retryable.")
                 return {
                     "success": False,
                     "reason": "non_retryable_mikrotik_sync_error",
@@ -2875,7 +2899,7 @@ def purge_stale_quota_keys_task(self):
                 cursor, keys = redis_client.scan(cursor, match=f"{prefix}*", count=200)
                 for key in keys:
                     key_str = key.decode("utf-8") if isinstance(key, bytes) else key
-                    mac = key_str[len(prefix):]
+                    mac = key_str[len(prefix) :]
                     if mac:
                         redis_macs.add(mac.upper())
                 if cursor == 0:
@@ -2909,8 +2933,7 @@ def purge_stale_quota_keys_task(self):
                     pass
 
             logger.info(
-                "Celery Task: Purge stale quota keys selesai. "
-                "redis_total=%s active_db=%s stale_deleted=%s",
+                "Celery Task: Purge stale quota keys selesai. redis_total=%s active_db=%s stale_deleted=%s",
                 len(redis_macs),
                 len(active_macs),
                 deleted,
@@ -2957,7 +2980,7 @@ def dlq_health_monitor_task(self):
                     for raw in items_raw:
                         try:
                             item = json.loads(raw)
-                            preview_lines.append(f"- [{item.get('task','?')}] {item.get('error','')[:80]}")
+                            preview_lines.append(f"- [{item.get('task', '?')}] {item.get('error', '')[:80]}")
                         except Exception:
                             pass
                     preview = "\n".join(preview_lines) if preview_lines else "(tidak bisa dibaca)"
@@ -2976,9 +2999,7 @@ def dlq_health_monitor_task(self):
                         )
                         try:
                             send_whatsapp_message(wa_number, msg)
-                            logger.warning(
-                                "Celery Task: DLQ alert dikirim ke admin. DLQ length=%s.", dlq_length
-                            )
+                            logger.warning("Celery Task: DLQ alert dikirim ke admin. DLQ length=%s.", dlq_length)
                         except Exception as wa_err:
                             logger.error("Celery Task: Gagal kirim DLQ alert WA: %s", wa_err)
                     redis_client.setex(throttle_key, throttle_minutes * 60, 1)
@@ -2996,9 +3017,8 @@ def dlq_health_monitor_task(self):
                     except Exception:
                         pass
                 if circuit_names:
-                    alert_phone = (
-                        app.config.get("CIRCUIT_BREAKER_ALERT_PHONE", "")
-                        or app.config.get("SUPERADMIN_PHONE", "")
+                    alert_phone = app.config.get("CIRCUIT_BREAKER_ALERT_PHONE", "") or app.config.get(
+                        "SUPERADMIN_PHONE", ""
                     )
                     if alert_phone:
                         wa_number = re.sub(r"[^0-9]", "", str(alert_phone))
@@ -3015,13 +3035,9 @@ def dlq_health_monitor_task(self):
                         )
                         try:
                             send_whatsapp_message(wa_number, msg)
-                            logger.warning(
-                                "Celery Task: Circuit breaker open alert dikirim: %s", circuit_names
-                            )
+                            logger.warning("Celery Task: Circuit breaker open alert dikirim: %s", circuit_names)
                         except Exception as wa_err:
-                            logger.error(
-                                "Celery Task: Gagal kirim circuit breaker alert WA: %s", wa_err
-                            )
+                            logger.error("Celery Task: Gagal kirim circuit breaker alert WA: %s", wa_err)
 
         except Exception as e:
             logger.error("Celery Task: DLQ health monitor gagal: %s", e, exc_info=True)
@@ -3060,12 +3076,12 @@ def purge_quota_mutation_ledger_task(self):
                 db.session.commit()
                 logger.info(
                     "Celery Task: Purged %s quota_mutation_ledger entri (retention=%d hari, cutoff=%s).",
-                    deleted, retention_days, cutoff.date(),
+                    deleted,
+                    retention_days,
+                    cutoff.date(),
                 )
             else:
-                logger.info(
-                    "Celery Task: quota_mutation_ledger purge — tidak ada entri > %d hari.", retention_days
-                )
+                logger.info("Celery Task: quota_mutation_ledger purge — tidak ada entri > %d hari.", retention_days)
         except Exception as e:
             db.session.rollback()
             logger.error("Celery Task: purge_quota_mutation_ledger gagal: %s", e, exc_info=True)
@@ -3121,7 +3137,9 @@ def revoke_expired_refresh_tokens_task(self):
                 db.session.commit()
                 logger.info(
                     "Celery Task: Cleanup refresh tokens — expired=%s, revoked_old=%s (total=%s).",
-                    deleted_expired, deleted_revoked, total,
+                    deleted_expired,
+                    deleted_revoked,
+                    total,
                 )
             else:
                 logger.info("Celery Task: Refresh token cleanup — tidak ada token usang.")
@@ -3159,7 +3177,9 @@ def purge_old_admin_action_logs_task(self):
             if deleted:
                 db.session.commit()
                 logger.info(
-                    "Celery Task: Purged %s admin action logs older than %s days.", deleted, retention_days,
+                    "Celery Task: Purged %s admin action logs older than %s days.",
+                    deleted,
+                    retention_days,
                 )
             else:
                 logger.info("Celery Task: Admin action log purge — tidak ada record usang.")
@@ -3212,19 +3232,25 @@ def upsert_dhcp_static_lease_instant_task(self, mac_address: str, address: str, 
             if ok:
                 logger.info(
                     "Celery Task: Instant DHCP lease upserted successfully — mac=%s address=%s server=%s",
-                    mac_address, address, server
+                    mac_address,
+                    address,
+                    server,
                 )
                 return {"success": True}
             else:
                 logger.warning(
                     "Celery Task: Instant DHCP lease upsert failed — mac=%s address=%s server=%s (will retry)",
-                    mac_address, address, server
+                    mac_address,
+                    address,
+                    server,
                 )
                 raise Exception(f"DHCP upsert returned False for mac={mac_address} address={address}")
         except Exception as e:
             logger.error(
                 "Celery Task: Error during instant DHCP upsert — mac=%s address=%s error=%s (will retry)",
-                mac_address, address, str(e)
+                mac_address,
+                address,
+                str(e),
             )
             raise
 
@@ -3266,11 +3292,14 @@ def sync_access_banking_task(self):
 
         # Daftar domain banking — configurable via settings DB.
         # Default mencakup bank-bank umum di Indonesia.
-        domains_raw = settings_service.get_setting(
-            "AKSES_BANKING_DOMAINS",
-            "klikbca.com,bri.co.id,bankmandiri.co.id,bni.co.id,cimbniaga.co.id,"
-            "permatabank.co.id,ocbcnisp.com,bca.co.id,danamon.co.id,btn.co.id",
-        ) or ""
+        domains_raw = (
+            settings_service.get_setting(
+                "AKSES_BANKING_DOMAINS",
+                "klikbca.com,bri.co.id,bankmandiri.co.id,bni.co.id,cimbniaga.co.id,"
+                "permatabank.co.id,ocbcnisp.com,bca.co.id,danamon.co.id,btn.co.id",
+            )
+            or ""
+        )
         banking_domains = [d.strip() for d in domains_raw.split(",") if d.strip()]
 
         list_name = settings_service.get_setting("AKSES_BANKING_LIST_NAME", "Bypass_Server") or "Bypass_Server"
@@ -3341,9 +3370,7 @@ def sync_access_banking_task(self):
 
                 # Upsert IP yang berhasil di-resolve
                 for ip, domain in resolved_ips.items():
-                    entry_comment = (
-                        f"{comment_prefix}|{comment_marker}|domain={domain}|managed-by=lpsaring"
-                    )
+                    entry_comment = f"{comment_prefix}|{comment_marker}|domain={domain}|managed-by=lpsaring"
                     ok_upsert, upsert_msg = upsert_address_list_entry(
                         api_connection=api,
                         address=ip,
@@ -3359,7 +3386,10 @@ def sync_access_banking_task(self):
                         summary["errors"] += 1
                         logger.warning(
                             "Banking sync: gagal upsert ip=%s domain=%s list=%s: %s",
-                            ip, domain, list_name, upsert_msg,
+                            ip,
+                            domain,
+                            list_name,
+                            upsert_msg,
                         )
 
                 # Hapus entri banking-sync yang sudah stale (IP tidak lagi di-resolve)
@@ -3375,7 +3405,9 @@ def sync_access_banking_task(self):
                         else:
                             logger.warning(
                                 "Banking sync: gagal remove stale ip=%s list=%s: %s",
-                                stale_ip, list_name, rm_msg,
+                                stale_ip,
+                                list_name,
+                                rm_msg,
                             )
 
                 logger.info("Celery Task: Banking bypass sync selesai. %s", json.dumps(summary))
@@ -3432,8 +3464,9 @@ def enforce_overdue_debt_block_task(self):
             overdue_debts = (
                 db.session.query(UserQuotaDebt)
                 .options(
-                    _joinedload(UserQuotaDebt.user)
-                    .selectinload(User.devices)  # CRITICAL: Load devices relationship to avoid DetachedInstanceError
+                    _joinedload(UserQuotaDebt.user).selectinload(
+                        User.devices
+                    )  # CRITICAL: Load devices relationship to avoid DetachedInstanceError
                 )
                 .filter(UserQuotaDebt.paid_at.is_(None))
                 .filter(UserQuotaDebt.is_paid.is_(False))
@@ -3624,7 +3657,10 @@ def enforce_overdue_debt_block_task(self):
                 increment_metric("overdue.debt_block.blocked")
                 logger.info(
                     "Overdue debt block: user=%s diblokir (debt=%dMB, due=%s, %d hari lewat).",
-                    uid, total_debt_mb, oldest_due_date, days_overdue,
+                    uid,
+                    total_debt_mb,
+                    oldest_due_date,
+                    days_overdue,
                 )
             except Exception:
                 logger.exception("Overdue debt block: gagal block user=%s", uid)

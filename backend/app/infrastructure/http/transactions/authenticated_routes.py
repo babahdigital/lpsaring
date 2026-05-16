@@ -72,7 +72,9 @@ def get_transaction_by_order_id_impl(
         u = transaction.user
 
         is_debt_settlement = is_debt_settlement_order_id(transaction.midtrans_order_id)
-        manual_debt_id = extract_manual_debt_id_from_order_id(transaction.midtrans_order_id) if is_debt_settlement else None
+        manual_debt_id = (
+            extract_manual_debt_id_from_order_id(transaction.midtrans_order_id) if is_debt_settlement else None
+        )
 
         debt_type: str | None = None
         debt_mb: int | None = None
@@ -115,7 +117,9 @@ def get_transaction_by_order_id_impl(
             "snap_token": transaction.snap_token if getattr(transaction, "snap_token", None) else None,
             "snap_redirect_url": transaction.snap_redirect_url if getattr(transaction, "snap_token", None) else None,
             "deeplink_redirect_url": (
-                transaction.snap_redirect_url if (transaction.snap_token is None and transaction.snap_redirect_url) else None
+                transaction.snap_redirect_url
+                if (transaction.snap_token is None and transaction.snap_redirect_url)
+                else None
             ),
             "payment_time": transaction.payment_time.isoformat() if transaction.payment_time else None,
             "payment_time_display": format_app_datetime_display(transaction.payment_time, fallback="-"),
@@ -153,9 +157,19 @@ def get_transaction_by_order_id_impl(
     except Exception as e:
         if session.is_active:
             session.rollback()
-        current_app.logger.error(f"Kesalahan tak terduga saat mengambil detail transaksi: {e}", exc_info=True)
-        if isinstance(e, (HTTPException, midtransclient.error_midtrans.MidtransAPIError)):
+        if isinstance(e, HTTPException):
+            # Intentional HTTP responses (403/404/etc) bukan error tak terduga; log sebagai INFO agar
+            # tidak mencemari error log production.
+            current_app.logger.info(
+                "Detail transaksi ditolak (HTTP %s): %s",
+                getattr(e, "code", "?"),
+                getattr(e, "description", str(e)),
+            )
             raise e
+        if isinstance(e, midtransclient.error_midtrans.MidtransAPIError):
+            current_app.logger.warning(f"Midtrans API error saat mengambil detail transaksi: {e}")
+            raise e
+        current_app.logger.error(f"Kesalahan tak terduga saat mengambil detail transaksi: {e}", exc_info=True)
         abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Terjadi kesalahan internal. Silakan coba lagi.")
     finally:
         if session:
@@ -164,7 +178,9 @@ def get_transaction_by_order_id_impl(
 
 def cancel_transaction_impl(*, current_user_id, order_id: str, session, log_transaction_event):
     try:
-        transaction = session.query(Transaction).filter(Transaction.midtrans_order_id == order_id).with_for_update().first()
+        transaction = (
+            session.query(Transaction).filter(Transaction.midtrans_order_id == order_id).with_for_update().first()
+        )
         if not transaction:
             abort(HTTPStatus.NOT_FOUND, description=f"Transaksi dengan Order ID {order_id} tidak ditemukan.")
 
