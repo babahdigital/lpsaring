@@ -110,7 +110,7 @@ jobs:
 
       - name: SSH sanity (verify connection)
         run: |
-          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} \
+          ssh -p ${VPS_PORT} -i ~/.ssh/deploy_key ${VPS_USER}@${VPS_HOST} \
             'echo "SSH OK"; uname -a; df -h / | tail -1; free -h | head -2'
 
       # ----- Pre-deploy DB backup -----
@@ -129,7 +129,7 @@ jobs:
           echo "remote_dump=${REMOTE_DUMP}" >> "$GITHUB_OUTPUT"
           echo "backup_name=${BACKUP_NAME}" >> "$GITHUB_OUTPUT"
 
-          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} bash -s <<EOF
+          ssh -p ${VPS_PORT} -i ~/.ssh/deploy_key ${VPS_USER}@${VPS_HOST} bash -s <<EOF
           set -euo pipefail
           cd "${REMOTE_DIR}"
           mkdir -p "${REMOTE_DIR_SAFE}"
@@ -185,7 +185,7 @@ jobs:
       - name: Sync compose file
         if: ${{ inputs.backup_only != true }}
         run: |
-          scp -i ~/.ssh/deploy_key -P ${VPS_PORT} \
+          scp -P ${VPS_PORT} -i ~/.ssh/deploy_key \
             docker-compose.prod.yml \
             ${VPS_USER}@${VPS_HOST}:${REMOTE_DIR}/docker-compose.prod.yml
 
@@ -194,7 +194,7 @@ jobs:
         if: ${{ inputs.backup_only != true }}
         id: snapshot
         run: |
-          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} bash -s <<'EOF' > previous-deploy.json
+          ssh -p ${VPS_PORT} -i ~/.ssh/deploy_key ${VPS_USER}@${VPS_HOST} bash -s <<'EOF' > previous-deploy.json
           set -e
           cd "/home/abdullah/lpsaring/app"
           docker compose --env-file .env.prod -f docker-compose.prod.yml ps --format json 2>/dev/null | \
@@ -206,7 +206,7 @@ jobs:
       - name: Force fresh pull images
         if: ${{ inputs.backup_only != true && inputs.fresh_pull != false }}
         run: |
-          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} bash -s <<EOF
+          ssh -p ${VPS_PORT} -i ~/.ssh/deploy_key ${VPS_USER}@${VPS_HOST} bash -s <<EOF
           set -euo pipefail
           cd "${REMOTE_DIR}"
           echo "==> Removing local images (force fresh pull)"
@@ -220,7 +220,7 @@ jobs:
       - name: Pull all images
         if: ${{ inputs.backup_only != true }}
         run: |
-          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} bash -s <<EOF
+          ssh -p ${VPS_PORT} -i ~/.ssh/deploy_key ${VPS_USER}@${VPS_HOST} bash -s <<EOF
           set -e
           cd "${REMOTE_DIR}"
           docker compose --env-file .env.prod -f ${COMPOSE_FILE} pull
@@ -230,7 +230,7 @@ jobs:
       - name: Run DB migration
         if: ${{ inputs.backup_only != true }}
         run: |
-          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} bash -s <<EOF
+          ssh -p ${VPS_PORT} -i ~/.ssh/deploy_key ${VPS_USER}@${VPS_HOST} bash -s <<EOF
           set -euo pipefail
           cd "${REMOTE_DIR}"
           # Migrate runs as one-off service (defined in compose). Wait for completion.
@@ -241,7 +241,7 @@ jobs:
       - name: Recreate containers (preserves proxy-network)
         if: ${{ inputs.backup_only != true }}
         run: |
-          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} bash -s <<EOF
+          ssh -p ${VPS_PORT} -i ~/.ssh/deploy_key ${VPS_USER}@${VPS_HOST} bash -s <<EOF
           set -euo pipefail
           cd "${REMOTE_DIR}"
           # WARNING: JANGAN PERNAH 'docker compose down' di sini.
@@ -257,7 +257,7 @@ jobs:
         id: verify
         run: |
           set +e
-          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} bash -s <<'EOF'
+          ssh -p ${VPS_PORT} -i ~/.ssh/deploy_key ${VPS_USER}@${VPS_HOST} bash -s <<'EOF'
           set -uo pipefail
           for i in $(seq 1 18); do
             sleep 5
@@ -287,10 +287,10 @@ jobs:
         run: |
           echo "::warning::Rolling back to previous images"
           # Upload previous-deploy.json to VPS for the rollback script
-          scp -i ~/.ssh/deploy_key -P ${VPS_PORT} previous-deploy.json \
+          scp -P ${VPS_PORT} -i ~/.ssh/deploy_key previous-deploy.json \
             ${VPS_USER}@${VPS_HOST}:${REMOTE_DIR}/previous-deploy.json
 
-          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} bash -s <<'EOF'
+          ssh -p ${VPS_PORT} -i ~/.ssh/deploy_key ${VPS_USER}@${VPS_HOST} bash -s <<'EOF'
           set -e
           cd "/home/abdullah/lpsaring/app"
           python3 - <<'PY'
@@ -316,7 +316,7 @@ jobs:
         if: failure() && steps.verify.outputs.rollback == 'true' && steps.backup.outputs.remote_dump != ''
         run: |
           echo "::warning::Restoring DB from pre-deploy backup ${{ steps.backup.outputs.remote_dump }}"
-          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} bash -s <<EOF
+          ssh -p ${VPS_PORT} -i ~/.ssh/deploy_key ${VPS_USER}@${VPS_HOST} bash -s <<EOF
           set -e
           cd "${REMOTE_DIR}"
           DUMP="${{ steps.backup.outputs.remote_dump }}"
@@ -331,13 +331,13 @@ jobs:
       - name: Image prune (post-deploy)
         if: ${{ inputs.backup_only != true && success() }}
         run: |
-          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} \
+          ssh -p ${VPS_PORT} -i ~/.ssh/deploy_key ${VPS_USER}@${VPS_HOST} \
             'docker image prune -f && docker container prune -f' || true
 
       - name: Post-deploy summary
         if: ${{ inputs.backup_only != true && success() }}
         run: |
-          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} bash -s <<'EOF' | tee deploy-summary.txt
+          ssh -p ${VPS_PORT} -i ~/.ssh/deploy_key ${VPS_USER}@${VPS_HOST} bash -s <<'EOF' | tee deploy-summary.txt
           echo "=== Container Status ==="
           docker ps --filter "name=hotspot_prod" --format 'table {{.Names}}\t{{.Status}}'
           echo ""

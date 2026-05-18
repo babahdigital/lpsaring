@@ -18,9 +18,8 @@ from sqlalchemy import (
     Date,
     String,
     Integer,
-    JSON,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from sqlalchemy.sql import expression
 import sqlalchemy as sa
@@ -234,7 +233,6 @@ class User(db.Model):
         Index("ix_users_blocked_by_id", "blocked_by_id"),
         Index("ix_users_approved_by_id", "approved_by_id"),
         Index("ix_users_rejected_by_id", "rejected_by_id"),
-        {"extend_existing": True},
     )
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     phone_number: Mapped[str] = mapped_column(String(25), nullable=False)
@@ -485,7 +483,6 @@ class UserQuotaDebt(db.Model):
         # H1 FK indexes
         Index("ix_user_quota_debts_created_by_id", "created_by_id"),
         Index("ix_user_quota_debts_last_paid_by_id", "last_paid_by_id"),
-        {"extend_existing": True},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -528,7 +525,6 @@ class UserDevice(db.Model):
         # H4: composite covers prefix queries (user_id) DAN sort-by-last_seen.
         Index("ix_user_devices_user_id_last_seen_at", "user_id", "last_seen_at"),
         Index("ix_user_devices_mac_address", "mac_address"),
-        {"extend_existing": True},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -565,7 +561,6 @@ class RefreshToken(db.Model):
         Index("ix_refresh_tokens_expires_at", "expires_at"),
         # H1: FK self-reference untuk replaced_by_id (rotation chain lookup).
         Index("ix_refresh_tokens_replaced_by_id", "replaced_by_id"),
-        {"extend_existing": True},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -598,7 +593,6 @@ class NotificationRecipient(db.Model):
     __table_args__ = (
         UniqueConstraint("admin_user_id", "notification_type", name="uq_notification_recipient_user_type"),
         Index("ix_notification_recipients_admin_user_id", "admin_user_id"),
-        {"extend_existing": True},
     )
     id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
     admin_user_id: Mapped[uuid.UUID] = mapped_column(
@@ -623,7 +617,6 @@ class Transaction(db.Model):
         # H2: composite untuk admin dashboard yang filter status + sort by created_at desc.
         Index("ix_transactions_status_created_at", "status", "created_at"),
         Index("ix_transactions_midtrans_transaction_id", "midtrans_transaction_id"),
-        {"extend_existing": True},
     )
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
@@ -814,9 +807,11 @@ class QuotaMutationLedger(db.Model):
     )
     source: Mapped[str] = mapped_column(String(80), nullable=False)
     idempotency_key: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
-    before_state: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    after_state: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    event_details: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # H6: JSONB (bukan JSON) — mendukung GIN index + query operator. Migration
+    # 20260518_c_jsonb_quota_mutation_ledger rewrite kolom ke jsonb.
+    before_state: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    after_state: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    event_details: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -69,7 +69,7 @@ jobs:
           echo "backup_name=${BACKUP_NAME}" >> "$GITHUB_OUTPUT"
           echo "remote_dump=${REMOTE_DUMP}" >> "$GITHUB_OUTPUT"
 
-          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} bash -s <<EOF
+          ssh -p ${VPS_PORT} -i ~/.ssh/deploy_key ${VPS_USER}@${VPS_HOST} bash -s <<EOF
           set -euo pipefail
           cd "${REMOTE_DIR}"
           mkdir -p "${REMOTE_DIR_SAFE}"
@@ -113,7 +113,7 @@ jobs:
       - name: Summary
         if: success()
         run: |
-          BACKUP_SIZE=$(ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} \
+          BACKUP_SIZE=$(ssh -p ${VPS_PORT} -i ~/.ssh/deploy_key ${VPS_USER}@${VPS_HOST} \
             "wc -c < '${{ steps.backup.outputs.remote_dump }}' | tr -d '[:space:]'")
           {
             echo "## Scheduled Backup Summary"
