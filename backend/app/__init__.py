@@ -508,6 +508,37 @@ def create_app(config_name: Optional[str] = None) -> HotspotFlask:
         return jsonify({"message": message}), HTTPStatus.SERVICE_UNAVAILABLE
 
     @app.after_request
+    def apply_security_headers(response):
+        # Sprint 13: defense-in-depth security headers. Nginx reverse proxy juga
+        # bisa set, tapi app-level menjamin header tetap ada meskipun nginx config
+        # berubah / disabled / direct hit ke backend port.
+        # X-Content-Type-Options: nosniff → cegah MIME-sniff attack.
+        # X-Frame-Options: DENY → cegah clickjacking embed di iframe.
+        # Referrer-Policy: same-origin → tidak leak full URL ke external link.
+        # Permissions-Policy: disable kamera/mic/geo by default (app tidak butuh).
+        try:
+            response.headers.setdefault("X-Content-Type-Options", "nosniff")
+            response.headers.setdefault("X-Frame-Options", "DENY")
+            response.headers.setdefault("Referrer-Policy", "same-origin")
+            response.headers.setdefault(
+                "Permissions-Policy",
+                "camera=(), microphone=(), geolocation=(), payment=()",
+            )
+            # HSTS hanya saat HTTPS-aware (di production gunicorn di belakang
+            # nginx TLS). Toleransi 6 bulan supaya rollback bisa.
+            is_secure = bool(
+                request.is_secure or str(request.headers.get("X-Forwarded-Proto", "")).strip().lower() == "https"
+            )
+            if is_secure:
+                response.headers.setdefault(
+                    "Strict-Transport-Security",
+                    "max-age=15552000; includeSubDomains",
+                )
+        except Exception:
+            pass
+        return response
+
+    @app.after_request
     def apply_refreshed_auth_cookies_hook(response):
         # token_required dapat melakukan auto-refresh access token dari refresh cookie.
         # Token baru disimpan di flask.g agar bisa dipasang ke response apa pun.

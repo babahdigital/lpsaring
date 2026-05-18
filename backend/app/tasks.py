@@ -1525,6 +1525,18 @@ def send_manual_debt_reminders_task(self):
                     phone = getattr(user, "phone_number", "")
                     sent = False
                     if pdf_url:
+                        # Sprint 13 BUG-2: child `send_whatsapp_invoice_task` bisa
+                        # fail+retry 3x lalu DLQ; parent fire-and-forget +
+                        # `sent=True` membuat dedup key tetap aktif (TTL up to
+                        # ~180 jam) → reminder tidak pernah kirim ulang sampai
+                        # next due_date cycle. Mitigasi singkat: turunkan TTL
+                        # dedup key PDF path ke 30 menit supaya next beat run
+                        # (30-min interval) bisa retry kalau child task gagal.
+                        if dedup_acquired and redis_client:
+                            try:
+                                redis_client.expire(redis_key, 1800)
+                            except Exception:
+                                pass
                         send_whatsapp_invoice_task.delay(
                             str(phone),
                             msg,
