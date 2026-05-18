@@ -367,6 +367,11 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
 
     if (!isAdmin) {
       if (isCaptiveContextActive() && isRestrictedInCaptiveContext(to.path)) {
+        // Sprint 17 BUG-F3: refresh TS supaya TTL 30 menit tidak silent-expire
+        // saat user idle navigasi internal di dalam flow captive (mis. dari
+        // /captive/terhubung ke /dashboard). Tanpa refresh, setelah 30 menit
+        // flag auto-clear → user lolos restriction tanpa hand-off explicit.
+        markCaptiveContextActive()
         const accessStatus = authStore.getAccessStatusFromUser(authStore.currentUser ?? authStore.lastKnownUser)
         if (isStatusSelfServicePath(to.path, accessStatus, isKomandan))
           return

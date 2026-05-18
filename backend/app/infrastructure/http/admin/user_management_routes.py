@@ -1614,10 +1614,14 @@ def get_users_list(current_admin: User):
     try:
         page = request.args.get("page", 1, type=int)
         per_page_raw = request.args.get("itemsPerPage", 10, type=int)
-        if per_page_raw == -1:
-            per_page = None
+        # Sprint 17 BUG-1 (HIGH): cap itemsPerPage=-1 yang sebelumnya fetch
+        # ALL users → OOM gunicorn worker pada DB ribuan user. Pola sama
+        # dengan action_log_routes (Sprint 13). Clamp ke max 200.
+        _MAX_PER_PAGE = 200
+        if per_page_raw <= 0 or per_page_raw > _MAX_PER_PAGE:
+            per_page = _MAX_PER_PAGE
         else:
-            per_page = min(max(int(per_page_raw or 10), 1), 100)
+            per_page = min(max(int(per_page_raw or 10), 1), _MAX_PER_PAGE)
         search_query, role_filter = request.args.get("search", ""), request.args.get("role")
         tamping_filter = request.args.get("tamping", None)
 
@@ -1732,15 +1736,29 @@ def get_users_list(current_admin: User):
             if conditions:
                 query = query.where(or_(*conditions))
 
-        sort_col = getattr(User, sort_by, User.created_at)
+        # Sprint 17 BUG-2 (MED): whitelist allowed sort columns supaya
+        # attacker tidak bisa request `sortBy=password_hash` (leak ordering
+        # info) atau `sortBy=metadata` (slow JSONB sort).
+        _ALLOWED_SORT_COLUMNS = {
+            "created_at": User.created_at,
+            "full_name": User.full_name,
+            "phone_number": User.phone_number,
+            "role": User.role,
+            "approval_status": User.approval_status,
+            "is_active": User.is_active,
+            "quota_expiry_date": User.quota_expiry_date,
+            "total_quota_purchased_mb": User.total_quota_purchased_mb,
+            "total_quota_used_mb": User.total_quota_used_mb,
+            "blok": User.blok,
+            "kamar": User.kamar,
+        }
+        sort_col = _ALLOWED_SORT_COLUMNS.get(sort_by, User.created_at)
         query = query.order_by(sort_col.desc() if sort_order == "desc" else sort_col.asc())
 
         total = db.session.scalar(select(func.count()).select_from(query.subquery()))
 
-        if per_page is None:
-            users = db.session.scalars(query).all()
-        else:
-            users = db.session.scalars(query.limit(per_page).offset((page - 1) * per_page)).all()
+        # Sprint 17 BUG-1: per_page sudah di-cap, selalu apply limit/offset.
+        users = db.session.scalars(query.limit(per_page).offset((page - 1) * per_page)).all()
 
         user_ids = [u.id for u in users]
         device_counts: dict = {}
