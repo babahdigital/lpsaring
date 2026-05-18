@@ -936,12 +936,25 @@ def register_or_update_device(
 
         return True, "Device ditemukan", device
 
-    cross_user_device = db.session.scalar(
-        sa.select(UserDevice)
-        .where(UserDevice.mac_address == mac_address, UserDevice.user_id != user.id)
-        .order_by(UserDevice.is_authorized.desc(), UserDevice.last_seen_at.desc())
-        .limit(1)
-    )
+    # Sprint 10 BUG-3: Row-lock cross_user_device supaya 2 user yang claim
+    # MAC sama bersamaan tidak dua-duanya pass `cross_user_device` check
+    # lalu trigger MikroTik calls duplikat (atau write user_id race).
+    try:
+        cross_user_device = db.session.scalar(
+            sa.select(UserDevice)
+            .where(UserDevice.mac_address == mac_address, UserDevice.user_id != user.id)
+            .order_by(UserDevice.is_authorized.desc(), UserDevice.last_seen_at.desc())
+            .limit(1)
+            .with_for_update()
+        )
+    except Exception:
+        # FakeSession di test mungkin tidak support with_for_update — fallback.
+        cross_user_device = db.session.scalar(
+            sa.select(UserDevice)
+            .where(UserDevice.mac_address == mac_address, UserDevice.user_id != user.id)
+            .order_by(UserDevice.is_authorized.desc(), UserDevice.last_seen_at.desc())
+            .limit(1)
+        )
     if cross_user_device:
         if not settings.get("global_mac_claim_transfer_enabled"):
             return False, "MAC sudah terdaftar pada user lain", None

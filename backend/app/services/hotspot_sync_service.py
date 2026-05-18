@@ -1336,13 +1336,21 @@ def _apply_auto_debt_limit_block_state(
             event_details={"action": action, **details},
         )
 
-    if bool(getattr(user, "is_unlimited_user", False)) or getattr(user, "role", None) == UserRole.KOMANDAN:
+    # Sprint 10 BUG-1: ADMIN/SUPER_ADMIN ikut exempt — sama policy dengan
+    # `User.quota_debt_auto_mb` di models. Cegah admin self-block via debt-limit.
+    _user_role = getattr(user, "role", None)
+    if (
+        bool(getattr(user, "is_unlimited_user", False))
+        or _user_role == UserRole.KOMANDAN
+        or _user_role == UserRole.ADMIN
+        or _user_role == UserRole.SUPER_ADMIN
+    ):
         if is_auto_blocked:
             user.is_blocked = False
             user.blocked_reason = None
             user.blocked_at = None
             user.blocked_by_id = None
-            _record_policy_transition("unblock_auto_debt_exempt", {"reason": "unlimited_or_komandan"})
+            _record_policy_transition("unblock_auto_debt_exempt", {"reason": "unlimited_or_komandan_or_admin"})
         # Jaga auto_debt_offset_mb agar raw_debt tidak terakumulasi selama user unlimited/KOMANDAN.
         # Tanpa ini, saat status unlimited dicabut, user tiba-tiba punya debt besar.
         _raw_auto_debt = max(

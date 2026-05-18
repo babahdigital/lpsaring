@@ -2927,11 +2927,7 @@ def expire_stale_transactions_task(self):
             try:
                 q = (
                     db.session.query(Transaction)
-                    .filter(
-                        Transaction.status.in_(
-                            [TransactionStatus.UNKNOWN, TransactionStatus.PENDING]
-                        )
-                    )
+                    .filter(Transaction.status.in_([TransactionStatus.UNKNOWN, TransactionStatus.PENDING]))
                     .filter(Transaction.expiry_time.isnot(None))
                     .filter(Transaction.expiry_time < expiry_cutoff)
                     .with_for_update(skip_locked=True)
@@ -2940,11 +2936,7 @@ def expire_stale_transactions_task(self):
 
                 q_legacy = (
                     db.session.query(Transaction)
-                    .filter(
-                        Transaction.status.in_(
-                            [TransactionStatus.UNKNOWN, TransactionStatus.PENDING]
-                        )
-                    )
+                    .filter(Transaction.status.in_([TransactionStatus.UNKNOWN, TransactionStatus.PENDING]))
                     .filter(Transaction.expiry_time.is_(None))
                     .filter(Transaction.created_at < legacy_cutoff)
                     .with_for_update(skip_locked=True)
@@ -2959,22 +2951,14 @@ def expire_stale_transactions_task(self):
                 )
                 to_expire = (
                     db.session.query(Transaction)
-                    .filter(
-                        Transaction.status.in_(
-                            [TransactionStatus.UNKNOWN, TransactionStatus.PENDING]
-                        )
-                    )
+                    .filter(Transaction.status.in_([TransactionStatus.UNKNOWN, TransactionStatus.PENDING]))
                     .filter(Transaction.expiry_time.isnot(None))
                     .filter(Transaction.expiry_time < expiry_cutoff)
                     .all()
                 )
                 to_expire.extend(
                     db.session.query(Transaction)
-                    .filter(
-                        Transaction.status.in_(
-                            [TransactionStatus.UNKNOWN, TransactionStatus.PENDING]
-                        )
-                    )
+                    .filter(Transaction.status.in_([TransactionStatus.UNKNOWN, TransactionStatus.PENDING]))
                     .filter(Transaction.expiry_time.is_(None))
                     .filter(Transaction.created_at < legacy_cutoff)
                     .all()

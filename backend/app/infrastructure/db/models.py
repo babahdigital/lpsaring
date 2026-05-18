@@ -413,7 +413,14 @@ class User(db.Model):
 
     @property
     def quota_debt_auto_mb(self) -> float:
-        if self.role == UserRole.KOMANDAN or bool(getattr(self, "is_unlimited_user", False)):
+        # Sprint 10 BUG-1: ADMIN/SUPER_ADMIN tidak boleh kena auto-debt karena
+        # mereka tidak beli paket via Midtrans (consumption testing/usage normal).
+        # Sebelumnya cuma KOMANDAN + unlimited yang exempt → admin yang dipakai
+        # untuk testing bisa kena `is_blocked=True` dengan reason `debt-limit`
+        # → admin lock out portal sendiri.
+        if self.role in (UserRole.KOMANDAN, UserRole.ADMIN, UserRole.SUPER_ADMIN) or bool(
+            getattr(self, "is_unlimited_user", False)
+        ):
             return 0.0
         from app.utils.quota_debt import compute_debt_mb
 

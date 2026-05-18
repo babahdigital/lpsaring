@@ -1142,7 +1142,17 @@ def list_public_update_submissions(current_admin: User):
 @user_management_bp.route("/update-submissions/<uuid:submission_id>/approve", methods=["POST"])
 @admin_required
 def approve_public_update_submission(current_admin: User, submission_id):
-    submission = db.session.get(PublicDatabaseUpdateSubmission, submission_id)
+    # Sprint 10 BUG-2: TOCTOU — load submission dengan FOR UPDATE supaya 2 admin
+    # yang klik Approve bersamaan tidak dua-duanya pass `PENDING` guard lalu
+    # mutate User row (last-writer wins, audit trail lose first actor).
+    try:
+        submission = db.session.execute(
+            select(PublicDatabaseUpdateSubmission)
+            .where(PublicDatabaseUpdateSubmission.id == submission_id)
+            .with_for_update()
+        ).scalar_one_or_none()
+    except Exception:
+        submission = db.session.get(PublicDatabaseUpdateSubmission, submission_id)
     if not submission:
         return jsonify({"message": "Pengajuan tidak ditemukan."}), HTTPStatus.NOT_FOUND
 
@@ -1224,7 +1234,15 @@ def approve_public_update_submission(current_admin: User, submission_id):
 @user_management_bp.route("/update-submissions/<uuid:submission_id>/reject", methods=["POST"])
 @admin_required
 def reject_public_update_submission(current_admin: User, submission_id):
-    submission = db.session.get(PublicDatabaseUpdateSubmission, submission_id)
+    # Sprint 10 BUG-2: row lock supaya 2 admin reject bersamaan tidak race.
+    try:
+        submission = db.session.execute(
+            select(PublicDatabaseUpdateSubmission)
+            .where(PublicDatabaseUpdateSubmission.id == submission_id)
+            .with_for_update()
+        ).scalar_one_or_none()
+    except Exception:
+        submission = db.session.get(PublicDatabaseUpdateSubmission, submission_id)
     if not submission:
         return jsonify({"message": "Pengajuan tidak ditemukan."}), HTTPStatus.NOT_FOUND
 
