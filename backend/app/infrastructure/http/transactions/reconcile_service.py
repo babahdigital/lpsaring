@@ -206,11 +206,14 @@ def reconcile_pending_transaction(
 
                     is_success, message = apply_package_and_sync_to_mikrotik(transaction, mikrotik_api)
                     if is_success:
+                        # Sprint 15: DEFERRED jika MikroTik api None → log
+                        # MIKROTIK_APPLY_DEFERRED supaya retry task tetap retry.
+                        _is_deferred = isinstance(message, str) and message.startswith("DEFERRED:")
                         log_transaction_event(
                             session=session,
                             transaction=transaction,
                             source=TransactionEventSource.APP,
-                            event_type="MIKROTIK_APPLY_SUCCESS",
+                            event_type=("MIKROTIK_APPLY_DEFERRED" if _is_deferred else "MIKROTIK_APPLY_SUCCESS"),
                             status=transaction.status,
                             payload={"message": message},
                         )
@@ -218,7 +221,7 @@ def reconcile_pending_transaction(
                         finish_order_effect(
                             order_id=order_id,
                             lock_key=effect_lock_key,
-                            success=True,
+                            success=not _is_deferred,
                             effect_name="hotspot_apply",
                         )
                     else:

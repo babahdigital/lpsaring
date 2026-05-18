@@ -452,11 +452,15 @@ def handle_notification_impl(
                 with get_mikrotik_connection() as mikrotik_api:
                     is_success, message = apply_package_and_sync_to_mikrotik(transaction, mikrotik_api)
                     if is_success:
+                        # Sprint 15: distinguish DEFERRED (MikroTik api None) vs
+                        # full SUCCESS. DEFERRED event tidak akan menghalangi
+                        # retry_failed_mikrotik_apply_task untuk re-apply nanti.
+                        _is_deferred = isinstance(message, str) and message.startswith("DEFERRED:")
                         log_transaction_event(
                             session=session,
                             transaction=transaction,
                             source=TransactionEventSource.APP,
-                            event_type="MIKROTIK_APPLY_SUCCESS",
+                            event_type=("MIKROTIK_APPLY_DEFERRED" if _is_deferred else "MIKROTIK_APPLY_SUCCESS"),
                             status=transaction.status,
                             payload={"message": message},
                         )

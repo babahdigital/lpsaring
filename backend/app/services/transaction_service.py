@@ -226,7 +226,13 @@ def apply_package_and_sync_to_mikrotik(transaction: Transaction, mikrotik_api: A
     transaction.hotspot_password = user.mikrotik_password
 
     if not mikrotik_api:
-        msg = "Koneksi Mikrotik tidak tersedia, sinkronisasi dilewati."
+        # Sprint 15: sentinel prefix `DEFERRED:` supaya webhook handler bisa
+        # log event MIKROTIK_APPLY_DEFERRED (bukan SUCCESS), sehingga
+        # retry_failed_mikrotik_apply_task tetap akan retry pada cycle berikut.
+        # Sebelumnya: webhook log MIKROTIK_APPLY_SUCCESS → retry task skip →
+        # user dapat quota di DB tapi MikroTik tidak punya account → user
+        # tidak bisa konek sampai login flow self-heal.
+        msg = "DEFERRED: Koneksi Mikrotik tidak tersedia, sinkronisasi dilewati."
         logger.warning(msg)
         return True, msg
 
