@@ -22,20 +22,31 @@ from app.commands.sync_unauthorized_hosts_command import (  # noqa: E402
 def main() -> int:
     failed_checks: list[str] = []
 
+    # NOTE: `_is_expected_missing_dhcp_for_blocked_row` requires `resolved_uid` +
+    # `users_by_uid` since commit 826d9018 (user-blocking-type aware check). Untuk
+    # simulator standalone, pass nilai netral yang menggiring fungsi ke jalur tanpa
+    # user resolution (uid="" → users_by_uid.get → None → fallback "blocked").
+    _empty_users: dict[str, object] = {}
     blocked_expected = _is_expected_missing_dhcp_for_blocked_row(
         list_name="blocked",
         blocked_list_name="blocked",
         has_binding=True,
+        resolved_uid="",
+        users_by_uid=_empty_users,  # type: ignore[arg-type]
     )
     non_blocked_expected = _is_expected_missing_dhcp_for_blocked_row(
         list_name="active",
         blocked_list_name="blocked",
         has_binding=True,
+        resolved_uid="",
+        users_by_uid=_empty_users,  # type: ignore[arg-type]
     )
     blocked_without_binding_expected = _is_expected_missing_dhcp_for_blocked_row(
         list_name="blocked",
         blocked_list_name="blocked",
         has_binding=False,
+        resolved_uid="",
+        users_by_uid=_empty_users,  # type: ignore[arg-type]
     )
 
     if blocked_expected is not True:

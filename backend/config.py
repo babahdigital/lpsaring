@@ -263,7 +263,11 @@ class Config:
         JWT_SECRET_KEY = "dev-jwt-secret-key-ganti-ini-di-produksi"
 
     # SECURITY FIX: Raise error in production if JWT_SECRET_KEY still has default value
-    if FLASK_ENV_CHECK == "production" and JWT_SECRET_KEY == "dev-jwt-secret-key-ganti-ini-di-produksi" and not is_testing_env:
+    if (
+        FLASK_ENV_CHECK == "production"
+        and JWT_SECRET_KEY == "dev-jwt-secret-key-ganti-ini-di-produksi"
+        and not is_testing_env
+    ):
         raise RuntimeError(
             "CRITICAL: JWT_SECRET_KEY masih menggunakan nilai default di production! "
             "Set JWT_SECRET_KEY env var sebelum menjalankan aplikasi."

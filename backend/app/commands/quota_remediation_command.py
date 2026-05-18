@@ -12,9 +12,21 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
 from app.extensions import db
-from app.infrastructure.db.models import AdminActionLog, AdminActionType, Package, QuotaMutationLedger, Transaction, TransactionStatus, User
+from app.infrastructure.db.models import (
+    AdminActionLog,
+    AdminActionType,
+    Package,
+    QuotaMutationLedger,
+    Transaction,
+    TransactionStatus,
+    User,
+)
 from app.services.quota_expiry_policy import calculate_quota_expiry_date
-from app.services.quota_mutation_ledger_service import append_quota_mutation_event, lock_user_quota_row, snapshot_user_quota_state
+from app.services.quota_mutation_ledger_service import (
+    append_quota_mutation_event,
+    lock_user_quota_row,
+    snapshot_user_quota_state,
+)
 from app.services.user_management.helpers import _send_whatsapp_notification
 from app.utils.block_reasons import is_auto_debt_limit_reason
 from app.utils.formatters import format_mb_to_gb, get_app_local_datetime, get_phone_number_variations
@@ -208,7 +220,9 @@ def _extract_order_id_from_event_details(value: Any) -> str:
     return str(details.get("order_id") or "").strip()
 
 
-def _resolve_target_user_ids(*, phone: Optional[str], user_id: Optional[str], unlimited_only: bool = False) -> Optional[set[uuid.UUID]]:
+def _resolve_target_user_ids(
+    *, phone: Optional[str], user_id: Optional[str], unlimited_only: bool = False
+) -> Optional[set[uuid.UUID]]:
     resolved_user_id = _parse_optional_user_uuid(user_id)
 
     stmt = select(User.id)
@@ -233,7 +247,9 @@ def _resolve_target_user_ids(*, phone: Optional[str], user_id: Optional[str], un
 
 
 def _load_existing_purchase_order_ids(user_ids: Optional[set[uuid.UUID]] = None) -> set[str]:
-    stmt = select(QuotaMutationLedger.event_details).where(QuotaMutationLedger.source.startswith("quota.purchase_package"))
+    stmt = select(QuotaMutationLedger.event_details).where(
+        QuotaMutationLedger.source.startswith("quota.purchase_package")
+    )
     if user_ids:
         stmt = stmt.where(QuotaMutationLedger.user_id.in_(list(user_ids)))
 
@@ -334,7 +350,8 @@ def _build_transaction_expiry_candidate(transaction: Transaction) -> Optional[di
         source_kind="quota.purchase_package",
         grant_kind="purchase",
         is_unlimited=_is_unlimited_package(package),
-        grant_reference=str(getattr(transaction, "midtrans_order_id", "") or "").strip() or str(getattr(transaction, "id", "") or "").strip(),
+        grant_reference=str(getattr(transaction, "midtrans_order_id", "") or "").strip()
+        or str(getattr(transaction, "id", "") or "").strip(),
         grant_label=str(getattr(package, "name", "") or "").strip() or "Paket pembelian",
     )
 
@@ -368,7 +385,8 @@ def _build_debt_advance_ledger_candidate(entry: QuotaMutationLedger) -> Optional
         source_kind="quota.debt_advance",
         grant_kind="manual_debt_advance",
         is_unlimited=False,
-        grant_reference=str(event_details.get("grant_reference") or "").strip() or str(getattr(entry, "id", "") or "").strip(),
+        grant_reference=str(event_details.get("grant_reference") or "").strip()
+        or str(getattr(entry, "id", "") or "").strip(),
         grant_label=str(event_details.get("grant_label") or "").strip() or "Manual debt advance",
     )
 
@@ -594,7 +612,9 @@ def _build_spike_candidate(
 @click.option("--order-id", default=None, help="Filter satu order tertentu.")
 @click.option("--limit", type=int, default=500, show_default=True, help="Batas maksimum transaksi yang diproses.")
 @with_appcontext
-def backfill_purchase_history(apply: bool, phone: Optional[str], user_id: Optional[str], order_id: Optional[str], limit: int):
+def backfill_purchase_history(
+    apply: bool, phone: Optional[str], user_id: Optional[str], order_id: Optional[str], limit: int
+):
     safe_limit = max(1, int(limit or 500))
     target_user_ids = _resolve_target_user_ids(phone=phone, user_id=user_id)
     if target_user_ids == set():
@@ -697,7 +717,9 @@ def _run_normalize_expiry(
     if target_user_ids == set():
         click.echo(
             click.style(
-                "Tidak ada user unlimited yang cocok dengan filter." if unlimited_only else "Tidak ada user yang cocok dengan filter.",
+                "Tidak ada user unlimited yang cocok dengan filter."
+                if unlimited_only
+                else "Tidak ada user yang cocok dengan filter.",
                 fg="yellow",
             )
         )
@@ -709,7 +731,9 @@ def _run_normalize_expiry(
         return
 
     candidate_user_ids = {candidate_key[0] for candidate_key in candidate_map.keys()}
-    user_stmt = select(User).where(User.id.in_(list(candidate_user_ids))).order_by(User.created_at.asc()).limit(safe_limit)
+    user_stmt = (
+        select(User).where(User.id.in_(list(candidate_user_ids))).order_by(User.created_at.asc()).limit(safe_limit)
+    )
     if target_user_ids:
         user_stmt = user_stmt.where(User.id.in_(list(target_user_ids)))
     if unlimited_only:
@@ -719,7 +743,9 @@ def _run_normalize_expiry(
     if not users:
         click.echo(
             click.style(
-                "Tidak ada user unlimited untuk dinormalisasi." if unlimited_only else "Tidak ada user untuk dinormalisasi.",
+                "Tidak ada user unlimited untuk dinormalisasi."
+                if unlimited_only
+                else "Tidak ada user untuk dinormalisasi.",
                 fg="yellow",
             )
         )
@@ -770,7 +796,11 @@ def _run_normalize_expiry(
             before_state = snapshot_user_quota_state(user)
             previous_expiry = _coerce_datetime(getattr(user, "quota_expiry_date", None))
             user.quota_expiry_date = normalized_expiry
-            source = NORMALIZE_UNLIMITED_EXPIRY_SOURCE if bool(getattr(user, "is_unlimited_user", False)) else NORMALIZE_EXPIRY_SOURCE
+            source = (
+                NORMALIZE_UNLIMITED_EXPIRY_SOURCE
+                if bool(getattr(user, "is_unlimited_user", False))
+                else NORMALIZE_EXPIRY_SOURCE
+            )
             append_quota_mutation_event(
                 user=user,
                 source=source,
@@ -787,7 +817,9 @@ def _run_normalize_expiry(
                     "grant_label": grant_label,
                     "grant_reference": grant_reference,
                     "duration_days": int(candidate["duration_days"]),
-                    "purchase_at": candidate["grant_at"].isoformat() if candidate["source_kind"] == "quota.purchase_package" else None,
+                    "purchase_at": candidate["grant_at"].isoformat()
+                    if candidate["source_kind"] == "quota.purchase_package"
+                    else None,
                     "grant_at": candidate["grant_at"].isoformat(),
                     "previous_expiry_at": previous_expiry.isoformat() if previous_expiry else None,
                     "normalized_expiry_at": normalized_expiry.isoformat(),
@@ -868,10 +900,7 @@ def normalize_user_expiry(
 
 @quota_remediation_command.command(
     "normalize-unlimited-expiry",
-    help=(
-        "Selaraskan expiry user unlimited ke grant unlimited terakhir, "
-        "bukan menumpuk sisa masa aktif lama."
-    ),
+    help=("Selaraskan expiry user unlimited ke grant unlimited terakhir, bukan menumpuk sisa masa aktif lama."),
 )
 @click.option("--apply", is_flag=True, help="Simpan perubahan ke database. Default hanya preview.")
 @click.option("--phone", default=None, help="Filter nomor telepon user tertentu.")
@@ -1039,7 +1068,12 @@ def audit_hotspot_spikes(
 
         if candidate["confidence"] == "low" and not allow_low_confidence_apply:
             skipped_low_confidence += 1
-            click.echo(click.style("  -> SKIP apply karena confidence rendah. Gunakan --allow-low-confidence-apply bila yakin.", fg="yellow"))
+            click.echo(
+                click.style(
+                    "  -> SKIP apply karena confidence rendah. Gunakan --allow-low-confidence-apply bila yakin.",
+                    fg="yellow",
+                )
+            )
             continue
 
         if user is None:
@@ -1097,7 +1131,11 @@ def audit_hotspot_spikes(
                 float(getattr(user, "total_quota_purchased_mb", 0) or 0.0)
                 - float(getattr(user, "total_quota_used_mb", 0) or 0.0),
             )
-            access_status_note = "Akses aktif kembali" if was_blocked and not bool(getattr(user, "is_blocked", False)) else "Status akses tidak berubah"
+            access_status_note = (
+                "Akses aktif kembali"
+                if was_blocked and not bool(getattr(user, "is_blocked", False))
+                else "Status akses tidak berubah"
+            )
             pending_notifications.append(
                 {
                     "phone_number": str(getattr(user, "phone_number", "") or "").strip(),

@@ -65,10 +65,13 @@ def test_has_other_active_celery_task_ignores_current_task(monkeypatch):
         SimpleNamespace(inspect=lambda timeout=1.0: _FakeInspector()),
     )
 
-    assert tasks._has_other_active_celery_task(
-        "sync_hotspot_usage_task",
-        current_task_id="current-task",
-    ) is False
+    assert (
+        tasks._has_other_active_celery_task(
+            "sync_hotspot_usage_task",
+            current_task_id="current-task",
+        )
+        is False
+    )
 
 
 def test_sync_hotspot_usage_task_reclaims_stale_lock_without_other_active_task(monkeypatch):

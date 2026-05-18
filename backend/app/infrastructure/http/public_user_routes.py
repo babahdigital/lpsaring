@@ -156,10 +156,7 @@ def get_public_update_submission_status():
         )
 
         # Submission dari form manusia memiliki source_ip bukan "system:populate_task"
-        human_submissions = [
-            s for s in submissions
-            if str(getattr(s, "source_ip", "") or "") != "system:populate_task"
-        ]
+        human_submissions = [s for s in submissions if str(getattr(s, "source_ip", "") or "") != "system:populate_task"]
 
         if human_submissions:
             return jsonify({"success": True, "status": "reviewing"}), HTTPStatus.OK
@@ -171,7 +168,6 @@ def get_public_update_submission_status():
             db.session.rollback()
         current_app.logger.error(f"[Update Status] Error: {e}", exc_info=True)
         return jsonify({"success": False, "message": "Kesalahan internal server."}), HTTPStatus.INTERNAL_SERVER_ERROR
-
 
 
 @public_user_bp.route("/check-or-register", methods=["POST"])

@@ -98,7 +98,9 @@ def test_reset_user_network_on_logout_cleans_all_network_artifacts(monkeypatch):
     monkeypatch.setattr(dms, "remove_dhcp_lease", _remove_dhcp_lease)
     monkeypatch.setattr(dms, "remove_hotspot_host_entries", _remove_hotspot_host_entries)
     monkeypatch.setattr(dms, "remove_arp_entries", _remove_arp_entries)
-    monkeypatch.setattr(dms, "_remove_managed_address_lists", lambda _ip: calls.__setitem__("address_list", calls["address_list"] + 1))
+    monkeypatch.setattr(
+        dms, "_remove_managed_address_lists", lambda _ip: calls.__setitem__("address_list", calls["address_list"] + 1)
+    )
     monkeypatch.setattr(dms.settings_service, "get_setting", lambda _key, default=None: default)
 
     summary = reset_user_network_on_logout(cast(Any, user))

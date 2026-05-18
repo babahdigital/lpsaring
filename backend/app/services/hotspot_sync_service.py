@@ -225,9 +225,16 @@ def _load_hotspot_usage_sync_runtime_settings(
     release_session: bool = True,
 ) -> HotspotUsageSyncRuntimeSettings:
     try:
-        list_active, list_fup, list_inactive, list_expired, list_habis, list_blocked, list_unauthorized, fup_threshold_mb = (
-            _resolve_status_list_runtime_values()
-        )
+        (
+            list_active,
+            list_fup,
+            list_inactive,
+            list_expired,
+            list_habis,
+            list_blocked,
+            list_unauthorized,
+            fup_threshold_mb,
+        ) = _resolve_status_list_runtime_values()
         active_profile = (
             settings_service.get_setting("MIKROTIK_ACTIVE_PROFILE", None)
             or settings_service.get_setting("MIKROTIK_DEFAULT_PROFILE", "default")
@@ -327,7 +334,9 @@ def _resolve_hotspot_status_networks() -> List[ipaddress._BaseNetwork]:
     return networks
 
 
-def _is_ip_in_hotspot_status_networks(ip_text: Optional[str], networks: Optional[List[ipaddress._BaseNetwork]] = None) -> bool:
+def _is_ip_in_hotspot_status_networks(
+    ip_text: Optional[str], networks: Optional[List[ipaddress._BaseNetwork]] = None
+) -> bool:
     if not _is_valid_ip_candidate(ip_text):
         return False
 
@@ -535,7 +544,9 @@ def _resolve_status_list_runtime_values(
     list_expired = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired"
     list_habis = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis"
     list_blocked = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked"
-    list_unauthorized = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized") or "unauthorized"
+    list_unauthorized = (
+        settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized") or "unauthorized"
+    )
     fup_threshold_mb = float(settings_service.get_setting_as_int("QUOTA_FUP_THRESHOLD_MB", 3072) or 3072)
 
     return (
@@ -842,11 +853,7 @@ def _prune_stale_status_entries_for_user(
         return 0
 
     user_id = str(getattr(user, "id", "") or "").strip()
-    keep_ip_set = {
-        str(ip).strip()
-        for ip in (keep_ips or [])
-        if _is_valid_ip_candidate(str(ip or "").strip())
-    }
+    keep_ip_set = {str(ip).strip() for ip in (keep_ips or []) if _is_valid_ip_candidate(str(ip or "").strip())}
 
     if owned_status_entries_snapshot is not None:
         removed = 0
@@ -1029,7 +1036,9 @@ def _resolve_auto_quota_debt_for_limit(user: User) -> float:
     try:
         return float(getattr(user, "quota_debt_auto_mb", 0) or 0.0)
     except Exception:
-        return float(compute_debt_mb(float(user.total_quota_purchased_mb or 0.0), float(user.total_quota_used_mb or 0.0)))
+        return float(
+            compute_debt_mb(float(user.total_quota_purchased_mb or 0.0), float(user.total_quota_used_mb or 0.0))
+        )
 
 
 def _is_auto_debt_blocked(user: User) -> bool:
@@ -1328,15 +1337,14 @@ def _apply_auto_debt_limit_block_state(
             _record_policy_transition("unblock_auto_debt_exempt", {"reason": "unlimited_or_komandan"})
         # Jaga auto_debt_offset_mb agar raw_debt tidak terakumulasi selama user unlimited/KOMANDAN.
         # Tanpa ini, saat status unlimited dicabut, user tiba-tiba punya debt besar.
-        _raw_auto_debt = max(0.0,
+        _raw_auto_debt = max(
+            0.0,
             float(getattr(user, "total_quota_used_mb", 0) or 0)
             - float(getattr(user, "total_quota_purchased_mb", 0) or 0)
-            - float(getattr(user, "auto_debt_offset_mb", 0) or 0))
+            - float(getattr(user, "auto_debt_offset_mb", 0) or 0),
+        )
         if _raw_auto_debt >= 1.0:
-            user.auto_debt_offset_mb = (
-                int(getattr(user, "auto_debt_offset_mb", 0) or 0)
-                + math.ceil(_raw_auto_debt)
-            )
+            user.auto_debt_offset_mb = int(getattr(user, "auto_debt_offset_mb", 0) or 0) + math.ceil(_raw_auto_debt)
         return False
 
     if runtime_settings is not None:
@@ -1492,7 +1500,9 @@ def _build_auto_debt_limit_notification_payload(user: User, *, debt_mb: float, l
     estimated_debt = estimate_debt_rp_from_cheapest_package(
         debt_mb=float(debt_mb or 0),
         cheapest_package_price_rp=int(getattr(reference_package, "price", 0) or 0) if reference_package else 0,
-        cheapest_package_quota_gb=float(getattr(reference_package, "data_quota_gb", 0) or 0) if reference_package else 0,
+        cheapest_package_quota_gb=float(getattr(reference_package, "data_quota_gb", 0) or 0)
+        if reference_package
+        else 0,
         cheapest_package_name=base_package_name,
     )
     estimate_rp = estimated_debt.estimated_rp_rounded
@@ -1981,7 +1991,9 @@ def _sync_address_list_status(
             user,
             ip_binding_map=ip_binding_map,
             ip_binding_rows_by_mac=ip_binding_rows_by_mac,
-            hotspot_networks=(list(runtime_settings.hotspot_status_networks or []) if runtime_settings is not None else None),
+            hotspot_networks=(
+                list(runtime_settings.hotspot_status_networks or []) if runtime_settings is not None else None
+            ),
         ):
             _remove_managed_status_entries_for_ip(
                 api,
@@ -1991,9 +2003,16 @@ def _sync_address_list_status(
             )
         return False
 
-    list_active, list_fup, list_inactive, list_expired, list_habis, list_blocked, list_unauthorized, fup_threshold_mb = (
-        _resolve_status_list_runtime_values(runtime_settings)
-    )
+    (
+        list_active,
+        list_fup,
+        list_inactive,
+        list_expired,
+        list_habis,
+        list_blocked,
+        list_unauthorized,
+        fup_threshold_mb,
+    ) = _resolve_status_list_runtime_values(runtime_settings)
 
     target_list = None
     blocked_for_list = bool(force_blocked or bool(getattr(user, "is_blocked", False)))
@@ -2031,9 +2050,7 @@ def _sync_address_list_status(
     user_uid = str(user_id_raw).strip() if user_id_raw is not None else ""
     now = datetime.now(dt_timezone.utc)
     date_str, time_str = get_app_date_time_strings(now)
-    comment = (
-        f"lpsaring|status={status_value}|user={username_08}|uid={user_uid or 'unknown'}|role={user.role.value}|date={date_str}|time={time_str}"
-    )
+    comment = f"lpsaring|status={status_value}|user={username_08}|uid={user_uid or 'unknown'}|role={user.role.value}|date={date_str}|time={time_str}"
     other_lists = _build_managed_status_lists(
         list_active=list_active,
         list_fup=list_fup,
@@ -2166,9 +2183,16 @@ def _sync_address_list_status_for_ip(
         )
         return False
 
-    list_active, list_fup, list_inactive, list_expired, list_habis, list_blocked, list_unauthorized, fup_threshold_mb = (
-        _resolve_status_list_runtime_values(runtime_settings)
-    )
+    (
+        list_active,
+        list_fup,
+        list_inactive,
+        list_expired,
+        list_habis,
+        list_blocked,
+        list_unauthorized,
+        fup_threshold_mb,
+    ) = _resolve_status_list_runtime_values(runtime_settings)
 
     target_list = None
     blocked_for_list = bool(force_blocked or bool(getattr(user, "is_blocked", False)))
@@ -2241,7 +2265,9 @@ def _sync_address_list_status_for_ip(
     )
 
     if not target_is_already_synced:
-        ok, msg = upsert_address_list_entry(api_connection=api, address=ip_address, list_name=target_list, comment=comment)
+        ok, msg = upsert_address_list_entry(
+            api_connection=api, address=ip_address, list_name=target_list, comment=comment
+        )
         if not ok:
             logger.debug(f"Gagal upsert address-list untuk IP {ip_address}: {msg}")
             return False
@@ -2726,13 +2752,14 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                                     source="hotspot.sync_usage",
                                     before_state=before_state,
                                     after_state=snapshot_user_quota_state(user),
-                                    idempotency_key=(f"sync_usage:{user_id}:{today.isoformat()}:{round(new_total_usage_mb,2)}")[:128],
+                                    idempotency_key=(
+                                        f"sync_usage:{user_id}:{today.isoformat()}:{round(new_total_usage_mb, 2)}"
+                                    )[:128],
                                     event_details={
                                         "delta_mb": float(round(delta_mb, 2)),
                                         "new_total_usage_mb": float(round(new_total_usage_mb, 2)),
                                         "device_deltas": [
-                                            _serialize_usage_device_delta(item)
-                                            for item in usage_update.device_deltas
+                                            _serialize_usage_device_delta(item) for item in usage_update.device_deltas
                                         ],
                                     },
                                 )
@@ -3106,21 +3133,23 @@ def _compute_last_real_activity(user: User) -> Optional[datetime]:
         select(sa_func.max(DailyUsageLog.log_date)).where(DailyUsageLog.user_id == user.id)
     )
     if latest_usage_date is not None:
-        candidates.append(
-            datetime.combine(latest_usage_date, datetime.min.time(), tzinfo=dt_timezone.utc)
-        )
+        candidates.append(datetime.combine(latest_usage_date, datetime.min.time(), tzinfo=dt_timezone.utc))
 
     latest_mutation_at = db.session.scalar(
         select(sa_func.max(QuotaMutationLedger.created_at)).where(QuotaMutationLedger.user_id == user.id)
     )
     if latest_mutation_at is not None:
-        candidates.append(latest_mutation_at if latest_mutation_at.tzinfo else latest_mutation_at.replace(tzinfo=dt_timezone.utc))
+        candidates.append(
+            latest_mutation_at if latest_mutation_at.tzinfo else latest_mutation_at.replace(tzinfo=dt_timezone.utc)
+        )
 
     latest_device_at = db.session.scalar(
         select(sa_func.max(UserDevice.last_seen_at)).where(UserDevice.user_id == user.id)
     )
     if latest_device_at is not None:
-        candidates.append(latest_device_at if latest_device_at.tzinfo else latest_device_at.replace(tzinfo=dt_timezone.utc))
+        candidates.append(
+            latest_device_at if latest_device_at.tzinfo else latest_device_at.replace(tzinfo=dt_timezone.utc)
+        )
 
     # Khusus ADMIN: cek aksi admin terakhir (approve user, inject quota, dll)
     if user.role == UserRole.ADMIN:
@@ -3129,7 +3158,8 @@ def _compute_last_real_activity(user: User) -> Optional[datetime]:
         )
         if latest_admin_action_at is not None:
             candidates.append(
-                latest_admin_action_at if latest_admin_action_at.tzinfo
+                latest_admin_action_at
+                if latest_admin_action_at.tzinfo
                 else latest_admin_action_at.replace(tzinfo=dt_timezone.utc)
             )
 
@@ -3151,13 +3181,15 @@ def _log_system_cleanup_action(user: "User", reason: str, action: str) -> None:
         log_entry.admin_id = None
         log_entry.target_user_id = user.id
         log_entry.action_type = action_type
-        log_entry.details = str({
+        log_entry.details = str(
+            {
                 "source": "cleanup_inactive_users (system)",
                 "action": action,
                 "reason": reason,
                 "user_phone": user.phone_number,
                 "user_name": user.full_name,
-            })
+            }
+        )
         db.session.add(log_entry)
     except Exception as e:
         current_app.logger.warning("cleanup: gagal catat audit log untuk user %s: %s", user.phone_number, e)
@@ -3195,7 +3227,10 @@ def _remove_owned_status_entries_for_ip(
             if not _is_status_entry_owned_by_user(comment, user_id=user_id, username_08=username_08):
                 current_app.logger.debug(
                     "cleanup: SKIP address-list %s ip=%s — bukan milik uid=%s (comment=%s)",
-                    list_name, ip_address, user_id, comment,
+                    list_name,
+                    ip_address,
+                    user_id,
+                    comment,
                 )
                 continue
             entry_id = entry.get(".id") or entry.get("id")
@@ -3206,7 +3241,10 @@ def _remove_owned_status_entries_for_ip(
                 except Exception as exc:
                     current_app.logger.warning(
                         "cleanup: gagal hapus address-list %s ip=%s id=%s: %s",
-                        list_name, ip_address, entry_id, exc,
+                        list_name,
+                        ip_address,
+                        entry_id,
+                        exc,
                     )
     return removed_count
 
@@ -3263,9 +3301,7 @@ def cleanup_inactive_users() -> Dict[str, int]:
             "cleanup_inactive_users: hard delete dinonaktifkan (INACTIVE_AUTO_DELETE_ENABLED=False)."
         )
     if not deactivate_enabled:
-        current_app.logger.info(
-            "cleanup_inactive_users: deactivate dinonaktifkan (INACTIVE_DEACTIVATE_ENABLED=False)."
-        )
+        current_app.logger.info("cleanup_inactive_users: deactivate dinonaktifkan (INACTIVE_DEACTIVATE_ENABLED=False).")
 
     # Redis untuk dedup pre-delete warning (1 kali per user per 7 hari)
     redis_client = _get_redis_client()
@@ -3289,10 +3325,7 @@ def cleanup_inactive_users() -> Dict[str, int]:
             username_08 = format_to_local_phone(user.phone_number)
 
             # Guard utama: jangan sentuh user yang masih punya kuota aktif
-            has_active_quota = (
-                user.quota_expiry_date is not None
-                and user.quota_expiry_date > now_utc
-            )
+            has_active_quota = user.quota_expiry_date is not None and user.quota_expiry_date > now_utc
 
             # --- Path: HARD DELETE ---
             if days_inactive >= delete_days:
@@ -3300,32 +3333,38 @@ def cleanup_inactive_users() -> Dict[str, int]:
                     counters["delete_skipped_active_quota"] += 1
                     current_app.logger.info(
                         "cleanup_inactive: SKIP delete %s — kuota masih aktif hingga %s (inactive %d hari)",
-                        user.phone_number, user.quota_expiry_date, days_inactive,
+                        user.phone_number,
+                        user.quota_expiry_date,
+                        days_inactive,
                     )
                     continue
 
-                can_delete = delete_enabled and (
-                    delete_max_per_run <= 0 or counters["deleted"] < delete_max_per_run
-                )
+                can_delete = delete_enabled and (delete_max_per_run <= 0 or counters["deleted"] < delete_max_per_run)
                 if can_delete:
                     # Kirim WA sebelum hapus (best effort)
-                    _send_cleanup_notification(user, "user_account_auto_deleted", {
-                        "days_inactive": str(days_inactive),
-                    })
+                    _send_cleanup_notification(
+                        user,
+                        "user_account_auto_deleted",
+                        {
+                            "days_inactive": str(days_inactive),
+                        },
+                    )
                     # Thorough MikroTik cleanup: ip-binding, address-list,
                     # DHCP lease, ARP, hotspot host, comment-tagged entries
-                    devices = db.session.scalars(
-                        select(UserDevice).where(UserDevice.user_id == user.id)
-                    ).all()
+                    devices = db.session.scalars(select(UserDevice).where(UserDevice.user_id == user.id)).all()
                     try:
                         from app.services.user_management.user_deletion import _cleanup_router_artifacts
+
                         artifact_summary = _cleanup_router_artifacts(user, devices, include_comment_scan=True)
                         current_app.logger.info(
                             "cleanup_inactive: MikroTik cleanup untuk %s: %s",
-                            user.phone_number, {k: v for k, v in artifact_summary.items() if k != "errors"},
+                            user.phone_number,
+                            {k: v for k, v in artifact_summary.items() if k != "errors"},
                         )
                     except Exception as exc:
-                        current_app.logger.warning("cleanup_inactive: MikroTik cleanup gagal untuk %s: %s", user.phone_number, exc)
+                        current_app.logger.warning(
+                            "cleanup_inactive: MikroTik cleanup gagal untuk %s: %s", user.phone_number, exc
+                        )
                     # Explicit delete RefreshToken (belt-and-suspenders, meski DB CASCADE ada)
                     for token in db.session.scalars(select(RefreshToken).where(RefreshToken.user_id == user.id)).all():
                         db.session.delete(token)
@@ -3334,7 +3373,10 @@ def cleanup_inactive_users() -> Dict[str, int]:
                         db.session.delete(device)
                     current_app.logger.warning(
                         "cleanup_inactive: HARD DELETE %s (phone=%s, inactive=%d hari, quota_expiry=%s)",
-                        user.full_name, user.phone_number, days_inactive, user.quota_expiry_date,
+                        user.full_name,
+                        user.phone_number,
+                        days_inactive,
+                        user.quota_expiry_date,
                     )
                     _log_system_cleanup_action(
                         user,
@@ -3349,7 +3391,9 @@ def cleanup_inactive_users() -> Dict[str, int]:
                         db.session.rollback()
                         current_app.logger.error(
                             "cleanup_inactive: GAGAL commit hard delete user_id=%s phone=%s: %s",
-                            target_user_id, user.phone_number, e,
+                            target_user_id,
+                            user.phone_number,
+                            e,
                         )
                         counters["delete_skipped_guard"] += 1
                         continue
@@ -3360,11 +3404,7 @@ def cleanup_inactive_users() -> Dict[str, int]:
                 continue
 
             # --- Path: PRE-DELETE WARNING (e.g. 75 hari, 15 hari sebelum delete) ---
-            if (
-                delete_enabled
-                and days_inactive >= pre_delete_warning_days
-                and not has_active_quota
-            ):
+            if delete_enabled and days_inactive >= pre_delete_warning_days and not has_active_quota:
                 # Dedup: kirim hanya 1x per 7 hari per user
                 dedup_key = f"cleanup:pre_delete_warn:{user.id}"
                 should_warn = True
@@ -3375,10 +3415,14 @@ def cleanup_inactive_users() -> Dict[str, int]:
                         pass
                 if should_warn:
                     days_remaining = max(delete_days - days_inactive, 0)
-                    _send_cleanup_notification(user, "user_account_pre_delete_warning", {
-                        "days_inactive": str(days_inactive),
-                        "days_remaining": str(days_remaining),
-                    })
+                    _send_cleanup_notification(
+                        user,
+                        "user_account_pre_delete_warning",
+                        {
+                            "days_inactive": str(days_inactive),
+                            "days_remaining": str(days_remaining),
+                        },
+                    )
                     counters["pre_delete_warned"] += 1
 
             # --- Path: DEACTIVATE (soft) ---
@@ -3386,22 +3430,24 @@ def cleanup_inactive_users() -> Dict[str, int]:
                 if has_active_quota:
                     continue
 
-                devices = db.session.scalars(
-                    select(UserDevice).where(UserDevice.user_id == user.id)
-                ).all()
+                devices = db.session.scalars(select(UserDevice).where(UserDevice.user_id == user.id)).all()
                 for device in devices:
                     if device.mac_address:
                         _remove_ip_binding(device.mac_address, user.mikrotik_server_name or "all", api_connection=api)
                     if device.ip_address:
                         _remove_owned_status_entries_for_ip(
-                            api, device.ip_address,
-                            user_id=str(user.id), username_08=username_08,
+                            api,
+                            device.ip_address,
+                            user_id=str(user.id),
+                            username_08=username_08,
                         )
                 if api and username_08:
                     delete_hotspot_user(api_connection=api, username=username_08)
                 current_app.logger.info(
                     "cleanup_inactive: DEACTIVATE %s (phone=%s, inactive=%d hari)",
-                    user.full_name, user.phone_number, days_inactive,
+                    user.full_name,
+                    user.phone_number,
+                    days_inactive,
                 )
                 _log_system_cleanup_action(
                     user,
@@ -3416,7 +3462,9 @@ def cleanup_inactive_users() -> Dict[str, int]:
                     db.session.rollback()
                     current_app.logger.error(
                         "cleanup_inactive: GAGAL commit deactivate user_id=%s phone=%s: %s",
-                        user.id, user.phone_number, e,
+                        user.id,
+                        user.phone_number,
+                        e,
                     )
                     continue
                 # Kirim WA SETELAH commit berhasil — mencegah spam jika commit gagal
@@ -3424,13 +3472,19 @@ def cleanup_inactive_users() -> Dict[str, int]:
                 should_notify_deactivate = True
                 if redis_client:
                     try:
-                        should_notify_deactivate = bool(redis_client.set(dedup_deactivate_key, "1", ex=30 * 86400, nx=True))
+                        should_notify_deactivate = bool(
+                            redis_client.set(dedup_deactivate_key, "1", ex=30 * 86400, nx=True)
+                        )
                     except Exception:
                         pass
                 if should_notify_deactivate:
-                    _send_cleanup_notification(user, "user_account_deactivated", {
-                        "days_inactive": str(days_inactive),
-                    })
+                    _send_cleanup_notification(
+                        user,
+                        "user_account_deactivated",
+                        {
+                            "days_inactive": str(days_inactive),
+                        },
+                    )
                 counters["deactivated"] += 1
 
     # --- BAGIAN 2: User belum di-approve terlalu lama ---
@@ -3445,14 +3499,15 @@ def cleanup_inactive_users() -> Dict[str, int]:
         ).all()
 
         for user in unapproved_users:
-            devices = db.session.scalars(
-                select(UserDevice).where(UserDevice.user_id == user.id)
-            ).all()
+            devices = db.session.scalars(select(UserDevice).where(UserDevice.user_id == user.id)).all()
             try:
                 from app.services.user_management.user_deletion import _cleanup_router_artifacts
+
                 _cleanup_router_artifacts(user, devices, include_comment_scan=False)
             except Exception as exc:
-                current_app.logger.warning("cleanup_unapproved: MikroTik cleanup gagal untuk %s: %s", user.phone_number, exc)
+                current_app.logger.warning(
+                    "cleanup_unapproved: MikroTik cleanup gagal untuk %s: %s", user.phone_number, exc
+                )
             for token in db.session.scalars(select(RefreshToken).where(RefreshToken.user_id == user.id)).all():
                 db.session.delete(token)
             for device in devices:
@@ -3460,7 +3515,10 @@ def cleanup_inactive_users() -> Dict[str, int]:
             days_pending = (now_utc - user.created_at).days if user.created_at else 0
             current_app.logger.warning(
                 "cleanup_unapproved: DELETE %s (phone=%s, status=%s, %d hari sejak daftar)",
-                user.full_name, user.phone_number, user.approval_status.value, days_pending,
+                user.full_name,
+                user.phone_number,
+                user.approval_status.value,
+                days_pending,
             )
             _log_system_cleanup_action(
                 user,
@@ -3475,7 +3533,9 @@ def cleanup_inactive_users() -> Dict[str, int]:
                 db.session.rollback()
                 current_app.logger.error(
                     "cleanup_unapproved: GAGAL commit delete user_id=%s phone=%s: %s",
-                    target_user_id, user.phone_number, e,
+                    target_user_id,
+                    user.phone_number,
+                    e,
                 )
                 continue
             counters["unapproved_deleted"] += 1

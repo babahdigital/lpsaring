@@ -269,7 +269,7 @@ def settle_manual_debt_item_to_zero(
         before_state=before_state,
         after_state=snapshot_user_quota_state(user),
         actor_user_id=getattr(admin_actor, "id", None),
-        event_details={"paid_manual_mb": int(remaining), "debt_item_id": str(getattr(debt, 'id', '') or '')},
+        event_details={"paid_manual_mb": int(remaining), "debt_item_id": str(getattr(debt, "id", "") or "")},
     )
     return int(remaining)
 

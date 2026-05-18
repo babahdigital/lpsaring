@@ -102,7 +102,11 @@ def _format_event_detail_datetime(value: Any) -> Optional[str]:
 def _get_quota_history_retention_days() -> int:
     default_retention_days = 90
     try:
-        raw_value = current_app.config.get("QUOTA_MUTATION_LEDGER_RETENTION_DAYS", default_retention_days) if has_app_context() else default_retention_days
+        raw_value = (
+            current_app.config.get("QUOTA_MUTATION_LEDGER_RETENTION_DAYS", default_retention_days)
+            if has_app_context()
+            else default_retention_days
+        )
         retention_days = int(raw_value)
     except Exception:
         retention_days = default_retention_days
@@ -242,9 +246,7 @@ def _apply_search_filter(items: list[dict[str, Any]], search: str) -> list[dict[
 
 def _build_history_summary(items: list[dict[str, Any]], *, page_items: int) -> dict[str, Any]:
     category_counts = Counter(item.get("category") for item in items)
-    total_net_purchased_mb = round_mb(
-        sum(float(item.get("deltas", {}).get("purchased_mb") or 0.0) for item in items)
-    )
+    total_net_purchased_mb = round_mb(sum(float(item.get("deltas", {}).get("purchased_mb") or 0.0) for item in items))
     total_net_used_mb = round_mb(sum(float(item.get("deltas", {}).get("used_mb") or 0.0) for item in items))
 
     created_at_values = [
@@ -344,7 +346,11 @@ def _format_category(source: str) -> str:
         return "purchase"
     if normalized.startswith("quota.inject") or normalized in {"quota.adjust_direct", "quota.hotspot_spike_refund"}:
         return "adjustment"
-    if normalized.startswith("quota.set_unlimited") or normalized in {"quota.normalize_expiry", "quota.normalize_unlimited_expiry"} or normalized.startswith("policy.block_transition:"):
+    if (
+        normalized.startswith("quota.set_unlimited")
+        or normalized in {"quota.normalize_expiry", "quota.normalize_unlimited_expiry"}
+        or normalized.startswith("policy.block_transition:")
+    ):
         return "policy"
     if normalized.startswith("quota.debt_advance:"):
         return "debt"
@@ -572,7 +578,9 @@ def _build_highlights(
         if reason:
             highlights.append(f"Alasan: {reason}")
         if event_details.get("set_purchased_mb") not in (None, ""):
-            highlights.append(f"Purchased diset: {_format_quota_text(_as_float(event_details.get('set_purchased_mb')))}")
+            highlights.append(
+                f"Purchased diset: {_format_quota_text(_as_float(event_details.get('set_purchased_mb')))}"
+            )
         if event_details.get("set_used_mb") not in (None, ""):
             highlights.append(f"Used diset: {_format_quota_text(_as_float(event_details.get('set_used_mb')))}")
 
@@ -679,7 +687,9 @@ def _build_description(
         return "Counter pengguna unlimited direset agar baseline penggunaan kembali bersih."
 
     if normalized == "quota.hotspot_spike_refund":
-        return "Sistem mengembalikan kuota yang sebelumnya tersedot oleh lonjakan sinkronisasi hotspot yang mencurigakan."
+        return (
+            "Sistem mengembalikan kuota yang sebelumnya tersedot oleh lonjakan sinkronisasi hotspot yang mencurigakan."
+        )
 
     if normalized == "quota.normalize_expiry":
         return "Masa aktif akun pengguna diselaraskan ulang ke grant kuota terakhir agar tidak akumulatif."
@@ -810,7 +820,7 @@ def get_user_quota_history_payload(
         items = filtered_items
     else:
         offset = (safe_page - 1) * safe_items_per_page
-        items = filtered_items[offset:offset + safe_items_per_page]
+        items = filtered_items[offset : offset + safe_items_per_page]
 
     summary = _build_history_summary(filtered_items, page_items=len(items))
 

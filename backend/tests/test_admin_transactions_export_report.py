@@ -140,9 +140,12 @@ def test_export_transactions_uses_open_manual_debt_prices_for_snapshot(monkeypat
 
     app = _make_app()
 
-    with app.app_context(), app.test_request_context(
-        "/api/admin/transactions/export?format=pdf&start_date=2026-02-28&end_date=2026-03-26&group_by=none",
-        method="GET",
+    with (
+        app.app_context(),
+        app.test_request_context(
+            "/api/admin/transactions/export?format=pdf&start_date=2026-02-28&end_date=2026-03-26&group_by=none",
+            method="GET",
+        ),
     ):
         response = transactions_context.export_transactions_impl(
             db=fake_db,

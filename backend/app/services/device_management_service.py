@@ -201,7 +201,11 @@ def normalize_mac(mac: Optional[str]) -> Optional[str]:
 
 
 def _ensure_ip_binding(
-    mac_address: str, ip_address: Optional[str], binding_type: str, comment: str, server: Optional[str],
+    mac_address: str,
+    ip_address: Optional[str],
+    binding_type: str,
+    comment: str,
+    server: Optional[str],
     api_connection: Any = None,
 ) -> None:
     if not mac_address:
@@ -267,7 +271,9 @@ def _remove_unauthorized_address_list(ip_address: Optional[str]) -> None:
     if not _is_mikrotik_operations_enabled():
         logger.info("MikroTik ops disabled: skip address-list unauthorized remove")
         return
-    list_unauthorized = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized") or "unauthorized"
+    list_unauthorized = (
+        settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized") or "unauthorized"
+    )
     with get_mikrotik_connection() as api:
         if not api:
             logger.warning("Tidak bisa konek MikroTik untuk remove address-list unauthorized")
@@ -299,7 +305,9 @@ def _apply_post_auth_mikrotik_ops(
         return
 
     list_blocked = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked"
-    list_unauthorized = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized") or "unauthorized"
+    list_unauthorized = (
+        settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized") or "unauthorized"
+    )
     list_fup = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup"
     list_habis = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis"
     list_expired = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired"
@@ -418,12 +426,12 @@ def _should_cleanup_hotspot_host_after_login(ip_address: Optional[str]) -> bool:
     if not _is_mikrotik_operations_enabled():
         return False
 
-    list_unauthorized = settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized") or "unauthorized"
+    list_unauthorized = (
+        settings_service.get_setting("MIKROTIK_ADDRESS_LIST_UNAUTHORIZED", "unauthorized") or "unauthorized"
+    )
     with get_mikrotik_connection() as api:
         if not api:
-            logger.warning(
-                "Tidak bisa konek MikroTik untuk cek unauthorized list sebelum hotspot host cleanup"
-            )
+            logger.warning("Tidak bisa konek MikroTik untuk cek unauthorized list sebelum hotspot host cleanup")
             return False
 
         ok, entries, msg = get_firewall_address_list_entries(api_connection=api, list_name=list_unauthorized)
@@ -508,7 +516,9 @@ def _remove_ip_binding(mac_address: str, server: Optional[str], api_connection: 
         remove_ip_binding(api_connection=api, mac_address=mac_address, server=server)
 
 
-def resolve_client_mac(client_ip: Optional[str], api_connection: Optional[Any] = None) -> Tuple[bool, Optional[str], str]:
+def resolve_client_mac(
+    client_ip: Optional[str], api_connection: Optional[Any] = None
+) -> Tuple[bool, Optional[str], str]:
     if not client_ip:
         return False, None, "IP klien tidak ditemukan"
     if not _is_mikrotik_operations_enabled():
@@ -551,7 +561,9 @@ def _is_client_ip_allowed(client_ip: Optional[str]) -> bool:
     return False
 
 
-def _resolve_binding_ip(user: User, client_ip: Optional[str], api_connection: Optional[Any] = None) -> Tuple[Optional[str], str, str]:
+def _resolve_binding_ip(
+    user: User, client_ip: Optional[str], api_connection: Optional[Any] = None
+) -> Tuple[Optional[str], str, str]:
     if client_ip and _is_client_ip_allowed(client_ip):
         return client_ip, "client_ip", "IP klien valid"
 
@@ -653,6 +665,7 @@ def _cleanup_device_network_artifacts(
             summary["dhcp_removed"] = True
 
     if _is_mikrotik_operations_enabled():
+
         def _do_cleanup(api: Any) -> None:
             summary["mikrotik_connected"] = True
 
@@ -886,6 +899,7 @@ def register_or_update_device(
             return False, "MAC tidak ditemukan", None
 
     if (not client_ip or not _is_client_ip_allowed(client_ip)) and mac_address:
+
         def _do_ip_from_mac(api: Any) -> None:
             nonlocal client_ip
             ok, ip_from_mac, msg = get_ip_by_mac(api, mac_address)
@@ -898,6 +912,7 @@ def register_or_update_device(
                         mac_address,
                         client_ip,
                     )
+
         if api_connection is not None:
             _do_ip_from_mac(api_connection)
         else:
@@ -1169,15 +1184,13 @@ def apply_device_binding_for_login(
         if not ok:
             # If device binding failed and we have session MAC fallback, try with fallback MAC
             retry_mac = client_mac
-            if (
-                not ok
-                and session_mac_fallback
-                and session_mac_fallback != client_mac
-            ):
+            if not ok and session_mac_fallback and session_mac_fallback != client_mac:
                 logger.info(
                     "Device binding failed with current MAC, trying session MAC fallback: "
                     "user=%s current_mac=%s fallback_mac=%s",
-                    user.id, client_mac, session_mac_fallback,
+                    user.id,
+                    client_mac,
+                    session_mac_fallback,
                 )
                 ok, msg, device = register_or_update_device(
                     user,
@@ -1191,8 +1204,9 @@ def apply_device_binding_for_login(
                 if ok and device:
                     retry_mac = session_mac_fallback
                     logger.info(
-                        "Device binding succeeded with session MAC fallback: "
-                        "user=%s mac=%s", user.id, session_mac_fallback
+                        "Device binding succeeded with session MAC fallback: user=%s mac=%s",
+                        user.id,
+                        session_mac_fallback,
                     )
 
             if not ok and bypass_explicit_auth:
@@ -1566,12 +1580,13 @@ def trigger_instant_dhcp_upsert_async(
             expires=300,  # Expire after 5 minutes if not processed
         )
         logger.debug(
-            "Dispatched instant DHCP upsert task: user_id=%s mac=%s ip=%s",
-            user_id_str, mac_address, ip_address
+            "Dispatched instant DHCP upsert task: user_id=%s mac=%s ip=%s", user_id_str, mac_address, ip_address
         )
     except Exception as e:
         logger.warning(
             "Failed to dispatch instant DHCP upsert task: user_id=%s mac=%s ip=%s error=%s",
-            str(user.id), mac_address, ip_address, str(e)
+            str(user.id),
+            mac_address,
+            ip_address,
+            str(e),
         )
-

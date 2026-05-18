@@ -229,7 +229,9 @@ def handle_notification_impl(
                                 _mutation = get_debt_settlement_mutation_for_transaction(transaction)
                                 if _mutation:
                                     _receipt_ctx = build_debt_settlement_receipt_context(
-                                        user=_user, settlement_entry=_mutation, transaction=transaction,
+                                        user=_user,
+                                        settlement_entry=_mutation,
+                                        transaction=transaction,
                                     )
                                     _base_url = (
                                         settings_service.get_setting("APP_PUBLIC_BASE_URL")
@@ -246,7 +248,11 @@ def handle_notification_impl(
                             _paid_manual = int(result.get("paid_manual_mb") or 0)
                             _paid_total = _paid_auto + _paid_manual
                             _is_unl = bool(getattr(_user, "is_unlimited_user", False))
-                            _tmpl = "user_debt_cleared_online_unblock" if result.get("unblocked") else "user_debt_cleared_online"
+                            _tmpl = (
+                                "user_debt_cleared_online_unblock"
+                                if result.get("unblocked")
+                                else "user_debt_cleared_online"
+                            )
 
                             _purchased = float(getattr(_user, "total_quota_purchased_mb", 0) or 0)
                             _used = float(getattr(_user, "total_quota_used_mb", 0) or 0)
@@ -258,11 +264,30 @@ def handle_notification_impl(
                                 {
                                     "full_name": _user.full_name,
                                     "paid_auto_debt_gb": format_mb_to_gb(_paid_auto),
-                                    "paid_manual_debt_gb": _receipt_ctx.get("paid_manual_gb", format_mb_to_gb(_paid_manual)) if _receipt_ctx else format_mb_to_gb(_paid_manual),
-                                    "paid_total_debt_gb": _receipt_ctx.get("paid_total_gb", format_mb_to_gb(_paid_total)) if _receipt_ctx else format_mb_to_gb(_paid_total),
-                                    "paid_total_debt_amount_display": _receipt_ctx.get("paid_total_amount_display", _fmt_idr(int(getattr(transaction, "amount", 0) or 0))) if _receipt_ctx else _fmt_idr(int(getattr(transaction, "amount", 0) or 0)),
-                                    "payment_channel_label": _receipt_ctx.get("payment_channel_label", "Pembayaran online via Midtrans") if _receipt_ctx else "Pembayaran online via Midtrans",
-                                    "payment_method_label": _receipt_ctx.get("payment_method_label", "Midtrans") if _receipt_ctx else "Midtrans",
+                                    "paid_manual_debt_gb": _receipt_ctx.get(
+                                        "paid_manual_gb", format_mb_to_gb(_paid_manual)
+                                    )
+                                    if _receipt_ctx
+                                    else format_mb_to_gb(_paid_manual),
+                                    "paid_total_debt_gb": _receipt_ctx.get(
+                                        "paid_total_gb", format_mb_to_gb(_paid_total)
+                                    )
+                                    if _receipt_ctx
+                                    else format_mb_to_gb(_paid_total),
+                                    "paid_total_debt_amount_display": _receipt_ctx.get(
+                                        "paid_total_amount_display",
+                                        _fmt_idr(int(getattr(transaction, "amount", 0) or 0)),
+                                    )
+                                    if _receipt_ctx
+                                    else _fmt_idr(int(getattr(transaction, "amount", 0) or 0)),
+                                    "payment_channel_label": _receipt_ctx.get(
+                                        "payment_channel_label", "Pembayaran online via Midtrans"
+                                    )
+                                    if _receipt_ctx
+                                    else "Pembayaran online via Midtrans",
+                                    "payment_method_label": _receipt_ctx.get("payment_method_label", "Midtrans")
+                                    if _receipt_ctx
+                                    else "Midtrans",
                                     "remaining_quota": "Unlimited" if _is_unl else format_mb_to_gb(_remaining),
                                     "receipt_url": _receipt_url,
                                 },
@@ -270,7 +295,8 @@ def handle_notification_impl(
                     except Exception as wa_err:
                         current_app.logger.warning(
                             "WEBHOOK: Gagal mengirim WA notifikasi debt settlement %s: %s",
-                            order_id, wa_err,
+                            order_id,
+                            wa_err,
                         )
                 except Exception as e:
                     session.rollback()

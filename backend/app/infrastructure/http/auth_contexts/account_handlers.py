@@ -35,7 +35,9 @@ def unlink_my_telegram_impl(*, current_user_id, db, User):
     return jsonify({"message": "Telegram berhasil diputus."}), HTTPStatus.OK
 
 
-def create_my_telegram_link_token_impl(*, current_user_id, db, User, settings_service, generate_user_link_token, current_app):
+def create_my_telegram_link_token_impl(
+    *, current_user_id, db, User, settings_service, generate_user_link_token, current_app
+):
     user = db.session.get(User, current_user_id)
     if not user:
         return jsonify({"message": "User not found."}), HTTPStatus.NOT_FOUND

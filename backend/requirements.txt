@@ -44,13 +44,7 @@ weasyprint==68.1
 pytest==9.0.2
 ruff==0.15.1
 
-# Type checking (dev/CI only — Dockerfile-prod install dari requirements-prod.lock.txt;
-# tools ini TIDAK masuk image production).
-mypy==1.18.2
-types-requests==2.32.0.20251201
-types-pytz==2025.2.0.20251201
-celery-types==0.23.0
-
-# Security tooling (dev/CI only)
-bandit==1.8.0
-pip-audit==2.9.0
+# NOTE: type-checking (mypy, types-*, celery-types) dan security scanners
+# (bandit, pip-audit) di-install langsung di CI workflow (.github/workflows/ci.yml
+# backend-types job, security.yml) untuk menghindari drift antara requirements.txt
+# dan requirements.lock.txt. Tidak masuk image production.

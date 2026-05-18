@@ -135,7 +135,9 @@ def test_reset_login_calls_network_reset_only_no_token_or_cookie_clear() -> None
 
     db = SimpleNamespace(session=SimpleNamespace(get=lambda _model, _id: user))
 
-    with app.test_request_context("/api/auth/reset-login", method="POST", headers={"Cookie": "refresh_token=rt-reset-1"}):
+    with app.test_request_context(
+        "/api/auth/reset-login", method="POST", headers={"Cookie": "refresh_token=rt-reset-1"}
+    ):
         response, status = reset_login_user_impl(
             current_user_id=user_id,
             request=SimpleNamespace(cookies={"refresh_token": "rt-reset-1"}),

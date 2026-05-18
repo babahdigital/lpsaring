@@ -82,10 +82,7 @@ class TestSecretKeyProductionGuard:
 
             # Should NOT raise error
             assert config_module.Config.SECRET_KEY == "valid-secret-key-xxxxxxxxxxxx"
-            assert (
-                config_module.Config.JWT_SECRET_KEY
-                == "valid-jwt-secret-key-xxxxxxxx"
-            )
+            assert config_module.Config.JWT_SECRET_KEY == "valid-jwt-secret-key-xxxxxxxx"
 
     def test_hardcoded_keys_allowed_in_development(self):
         """Test that hardcoded keys are allowed in development without error."""
@@ -104,7 +101,4 @@ class TestSecretKeyProductionGuard:
 
             # Should use defaults without error
             assert config_module.Config.SECRET_KEY == "dev-secret-key-ganti-ini-di-produksi"
-            assert (
-                config_module.Config.JWT_SECRET_KEY
-                == "dev-jwt-secret-key-ganti-ini-di-produksi"
-            )
+            assert config_module.Config.JWT_SECRET_KEY == "dev-jwt-secret-key-ganti-ini-di-produksi"

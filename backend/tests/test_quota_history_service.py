@@ -23,7 +23,9 @@ class _HistorySessionStub:
         for criterion in getattr(query, "_where_criteria", ()):  # pragma: no branch - tiny helper
             filtered_rows = [row for row in filtered_rows if _matches_where_clause(row, criterion)]
 
-        filtered_rows.sort(key=lambda row: getattr(row, "created_at", datetime.min.replace(tzinfo=timezone.utc)), reverse=True)
+        filtered_rows.sort(
+            key=lambda row: getattr(row, "created_at", datetime.min.replace(tzinfo=timezone.utc)), reverse=True
+        )
         return _ScalarResultStub(filtered_rows)
 
 
@@ -227,7 +229,10 @@ def test_serialize_quota_history_entry_auto_debt_advance_event_is_localized_in_i
 
     assert item["title"] == "Tunggakan otomatis dikurangi"
     assert item["category"] == "debt"
-    assert item["description"] == "Kuota paket advance admin dipakai untuk mengurangi tunggakan otomatis sebelum sisa kuota diberikan ke pengguna."
+    assert (
+        item["description"]
+        == "Kuota paket advance admin dipakai untuk mengurangi tunggakan otomatis sebelum sisa kuota diberikan ke pengguna."
+    )
     assert any("Tunggakan otomatis dibayar: 138 MB" in highlight for highlight in item["highlights"])
     assert any("Sisa kuota advance: 0 KB" in highlight for highlight in item["highlights"])
 

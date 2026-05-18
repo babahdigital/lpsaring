@@ -203,10 +203,7 @@ def test_fix_access_parity_requires_user_id():
 def test_read_cached_policy_parity_mismatch_count_legacy_payload_excludes_no_authorized_device():
     app = _make_app()
     app.redis_client_otp = _FakeRedis(
-        (
-            '{"summary":{"mismatches":40,"mismatch_types":'
-            '{"no_authorized_device":40,"binding_type":0}}}'
-        ).encode("utf-8")
+        ('{"summary":{"mismatches":40,"mismatch_types":{"no_authorized_device":40,"binding_type":0}}}').encode("utf-8")
     )
 
     with app.app_context():
@@ -218,10 +215,7 @@ def test_read_cached_policy_parity_mismatch_count_legacy_payload_excludes_no_aut
 def test_read_cached_policy_parity_mismatch_count_new_payload_uses_actionable_value():
     app = _make_app()
     app.redis_client_otp = _FakeRedis(
-        (
-            '{"summary":{"mismatches":2,"mismatches_total":9,'
-            '"no_authorized_device_count":7}}'
-        ).encode("utf-8")
+        ('{"summary":{"mismatches":2,"mismatches_total":9,"no_authorized_device_count":7}}').encode("utf-8")
     )
 
     with app.app_context():

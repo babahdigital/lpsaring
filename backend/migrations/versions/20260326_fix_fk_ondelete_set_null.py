@@ -37,7 +37,10 @@ def upgrade():
         batch_op.drop_constraint("promo_events_created_by_id_fkey", type_="foreignkey")
         batch_op.create_foreign_key(
             "promo_events_created_by_id_fkey",
-            "users", ["created_by_id"], ["id"], ondelete="SET NULL",
+            "users",
+            ["created_by_id"],
+            ["id"],
+            ondelete="SET NULL",
         )
 
     # users self-referencing FKs
@@ -52,7 +55,9 @@ def downgrade():
         batch_op.drop_constraint("promo_events_created_by_id_fkey", type_="foreignkey")
         batch_op.create_foreign_key(
             "promo_events_created_by_id_fkey",
-            "users", ["created_by_id"], ["id"],
+            "users",
+            ["created_by_id"],
+            ["id"],
         )
 
     _replace_fk("users", "blocked_by_id", "fk_users_blocked_by_id_users", ondelete="NO ACTION")

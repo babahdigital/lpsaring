@@ -90,7 +90,9 @@ def test_cleanup_stale_user_devices_task_prunes_router_inactive_device(monkeypat
         first_seen_at=now - timedelta(days=60),
     )
     fake_session = _FakeSession([device])
-    monkeypatch.setattr(tasks, "db", SimpleNamespace(session=fake_session, select=lambda *_args, **_kwargs: _FakeQuery()))
+    monkeypatch.setattr(
+        tasks, "db", SimpleNamespace(session=fake_session, select=lambda *_args, **_kwargs: _FakeQuery())
+    )
     api = object()
     monkeypatch.setattr(tasks, "get_mikrotik_connection", lambda: _api_context(api))
     monkeypatch.setattr(tasks, "get_hotspot_host_usage_map", lambda _api: (True, {}, "ok"))
@@ -183,7 +185,9 @@ def test_cleanup_stale_user_devices_task_skips_active_router_host(monkeypatch):
         first_seen_at=now - timedelta(days=60),
     )
     fake_session = _FakeSession([device])
-    monkeypatch.setattr(tasks, "db", SimpleNamespace(session=fake_session, select=lambda *_args, **_kwargs: _FakeQuery()))
+    monkeypatch.setattr(
+        tasks, "db", SimpleNamespace(session=fake_session, select=lambda *_args, **_kwargs: _FakeQuery())
+    )
     api = object()
     monkeypatch.setattr(tasks, "get_mikrotik_connection", lambda: _api_context(api))
     monkeypatch.setattr(
@@ -193,10 +197,26 @@ def test_cleanup_stale_user_devices_task_skips_active_router_host(monkeypatch):
     )
 
     cleanup_calls = {"count": 0}
-    monkeypatch.setattr(tasks, "remove_ip_binding", lambda **_kwargs: (cleanup_calls.__setitem__("count", cleanup_calls["count"] + 1), (True, "ok"))[1])
-    monkeypatch.setattr(tasks, "remove_address_list_entry", lambda **_kwargs: (cleanup_calls.__setitem__("count", cleanup_calls["count"] + 1), (True, "ok"))[1])
-    monkeypatch.setattr(tasks, "remove_dhcp_lease", lambda **_kwargs: (cleanup_calls.__setitem__("count", cleanup_calls["count"] + 1), (True, "ok"))[1])
-    monkeypatch.setattr(tasks, "remove_hotspot_host_entries_best_effort", lambda **_kwargs: (cleanup_calls.__setitem__("count", cleanup_calls["count"] + 1), (True, "ok", 0))[1])
+    monkeypatch.setattr(
+        tasks,
+        "remove_ip_binding",
+        lambda **_kwargs: (cleanup_calls.__setitem__("count", cleanup_calls["count"] + 1), (True, "ok"))[1],
+    )
+    monkeypatch.setattr(
+        tasks,
+        "remove_address_list_entry",
+        lambda **_kwargs: (cleanup_calls.__setitem__("count", cleanup_calls["count"] + 1), (True, "ok"))[1],
+    )
+    monkeypatch.setattr(
+        tasks,
+        "remove_dhcp_lease",
+        lambda **_kwargs: (cleanup_calls.__setitem__("count", cleanup_calls["count"] + 1), (True, "ok"))[1],
+    )
+    monkeypatch.setattr(
+        tasks,
+        "remove_hotspot_host_entries_best_effort",
+        lambda **_kwargs: (cleanup_calls.__setitem__("count", cleanup_calls["count"] + 1), (True, "ok", 0))[1],
+    )
 
     result = tasks.cleanup_stale_user_devices_task.run()
 

@@ -29,9 +29,7 @@ def lock_user_quota_row(user: User, nowait: bool = False) -> None:
     if user is None or getattr(user, "id", None) is None:
         return
     try:
-        db.session.execute(
-            sa.select(User.id).where(User.id == user.id).with_for_update(nowait=nowait)
-        )
+        db.session.execute(sa.select(User.id).where(User.id == user.id).with_for_update(nowait=nowait))
     except Exception:
         if nowait:
             raise

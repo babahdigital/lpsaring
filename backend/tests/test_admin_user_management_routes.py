@@ -240,13 +240,15 @@ def test_get_user_detail_summary_returns_operational_payload(monkeypatch):
             "debt_manual_mb": 0,
             "debt_total_mb": 0.0,
             "open_debt_items": 0,
-            "recent_purchases": [{
-                "order_id": "ORD-1",
-                "package_name": "Paket Hemat",
-                "amount_display": "Rp 20.000",
-                "paid_at_display": "22-03-2026 07:00:00",
-                "payment_method": "qris",
-            }],
+            "recent_purchases": [
+                {
+                    "order_id": "ORD-1",
+                    "package_name": "Paket Hemat",
+                    "amount_display": "Rp 20.000",
+                    "paid_at_display": "22-03-2026 07:00:00",
+                    "payment_method": "qris",
+                }
+            ],
             "purchase_count_30d": 1,
             "purchase_total_amount_30d": 20000,
             "purchase_total_amount_30d_display": "Rp 20.000",
@@ -288,7 +290,11 @@ def test_send_user_detail_report_whatsapp_queues_pdf(monkeypatch):
 
     monkeypatch.setattr(user_management_routes, "db", SimpleNamespace(session=fake_session))
     monkeypatch.setattr(user_management_routes, "_deny_non_super_admin_target_access", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(user_management_routes, "_get_user_mikrotik_status_payload", lambda _user: {"live_available": True, "exists_on_mikrotik": True, "message": "ok"})
+    monkeypatch.setattr(
+        user_management_routes,
+        "_get_user_mikrotik_status_payload",
+        lambda _user: {"live_available": True, "exists_on_mikrotik": True, "message": "ok"},
+    )
     monkeypatch.setattr(
         user_management_routes,
         "_build_user_detail_report_context",
@@ -303,8 +309,14 @@ def test_send_user_detail_report_whatsapp_queues_pdf(monkeypatch):
         },
     )
     monkeypatch.setattr(user_management_routes, "_resolve_public_base_url", lambda: "https://example.test")
-    monkeypatch.setattr(user_management_routes, "generate_temp_user_detail_report_token", lambda _user_id: "temp-detail-token")
-    monkeypatch.setattr(user_management_routes, "get_notification_message", lambda _name, context: f"CAPTION {context['detail_pdf_url']}")
+    monkeypatch.setattr(
+        user_management_routes, "generate_temp_user_detail_report_token", lambda _user_id: "temp-detail-token"
+    )
+    monkeypatch.setattr(
+        user_management_routes,
+        "get_notification_message",
+        lambda _name, context: f"CAPTION {context['detail_pdf_url']}",
+    )
     monkeypatch.setattr(user_management_routes, "normalize_to_e164", lambda raw: "+6282213631573")
     monkeypatch.setattr(user_management_routes, "send_whatsapp_invoice_task", _FakeTask())
 
@@ -359,7 +371,11 @@ def test_send_user_detail_report_whatsapp_queues_selected_internal_recipients(mo
 
     monkeypatch.setattr(user_management_routes, "db", SimpleNamespace(session=fake_session))
     monkeypatch.setattr(user_management_routes, "_deny_non_super_admin_target_access", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(user_management_routes, "_get_user_mikrotik_status_payload", lambda _user: {"live_available": True, "exists_on_mikrotik": True, "message": "ok"})
+    monkeypatch.setattr(
+        user_management_routes,
+        "_get_user_mikrotik_status_payload",
+        lambda _user: {"live_available": True, "exists_on_mikrotik": True, "message": "ok"},
+    )
     monkeypatch.setattr(
         user_management_routes,
         "_build_user_detail_report_context",
@@ -395,8 +411,14 @@ def test_send_user_detail_report_whatsapp_queues_selected_internal_recipients(mo
         ),
     )
     monkeypatch.setattr(user_management_routes, "_resolve_public_base_url", lambda: "https://example.test")
-    monkeypatch.setattr(user_management_routes, "generate_temp_user_detail_report_token", lambda _user_id: "temp-detail-token")
-    monkeypatch.setattr(user_management_routes, "get_notification_message", lambda _name, context: f"CAPTION {context['detail_pdf_url']}")
+    monkeypatch.setattr(
+        user_management_routes, "generate_temp_user_detail_report_token", lambda _user_id: "temp-detail-token"
+    )
+    monkeypatch.setattr(
+        user_management_routes,
+        "get_notification_message",
+        lambda _name, context: f"CAPTION {context['detail_pdf_url']}",
+    )
     monkeypatch.setattr(user_management_routes, "send_whatsapp_invoice_task", _FakeTask())
 
     app = _make_app()
@@ -571,7 +593,7 @@ def test_build_user_manual_debt_payload_excludes_entries_older_than_30_days(monk
         paid_mb=0,
         is_paid=False,
         paid_at=None,
-        note='Debt terbaru',
+        note="Debt terbaru",
         price_rp=None,
         created_at=now,
         updated_at=now,
@@ -585,11 +607,11 @@ def test_build_user_manual_debt_payload_excludes_entries_older_than_30_days(monk
         paid_mb=2048,
         is_paid=True,
         paid_at=now,
-        note='Debt lama',
+        note="Debt lama",
         price_rp=None,
         created_at=datetime(2026, 1, 10, 8, 0, tzinfo=timezone.utc),
         updated_at=now,
-        last_paid_source='admin',
+        last_paid_source="admin",
     )
     fake_user = SimpleNamespace(
         id=uuid.uuid4(),
@@ -612,54 +634,63 @@ def test_build_user_manual_debt_payload_excludes_entries_older_than_30_days(monk
             return _FakeScalars([recent_debt, old_debt])
         return _FakeScalars([])
 
-    monkeypatch.setattr(user_management_routes, 'db', SimpleNamespace(session=SimpleNamespace(scalars=_fake_scalars)))
+    monkeypatch.setattr(user_management_routes, "db", SimpleNamespace(session=SimpleNamespace(scalars=_fake_scalars)))
     monkeypatch.setattr(
         user_management_routes,
-        'UserQuotaDebtItemResponseSchema',
+        "UserQuotaDebtItemResponseSchema",
         SimpleNamespace(
             from_orm=lambda debt: SimpleNamespace(
                 model_dump=lambda: {
-                    'id': debt.id,
-                    'debt_date': debt.debt_date,
-                    'due_date': debt.due_date,
-                    'amount_mb': debt.amount_mb,
-                    'paid_mb': debt.paid_mb,
-                    'is_paid': debt.is_paid,
-                    'paid_at': debt.paid_at,
-                    'note': debt.note,
-                    'price_rp': debt.price_rp,
-                    'created_at': debt.created_at,
-                    'updated_at': debt.updated_at,
-                    'last_paid_source': debt.last_paid_source,
+                    "id": debt.id,
+                    "debt_date": debt.debt_date,
+                    "due_date": debt.due_date,
+                    "amount_mb": debt.amount_mb,
+                    "paid_mb": debt.paid_mb,
+                    "is_paid": debt.is_paid,
+                    "paid_at": debt.paid_at,
+                    "note": debt.note,
+                    "price_rp": debt.price_rp,
+                    "created_at": debt.created_at,
+                    "updated_at": debt.updated_at,
+                    "last_paid_source": debt.last_paid_source,
                 },
             ),
         ),
     )
-    monkeypatch.setattr(user_management_routes, 'estimate_debt_rp_from_cheapest_package', lambda **_kwargs: SimpleNamespace(estimated_rp_rounded=0))
+    monkeypatch.setattr(
+        user_management_routes,
+        "estimate_debt_rp_from_cheapest_package",
+        lambda **_kwargs: SimpleNamespace(estimated_rp_rounded=0),
+    )
 
     class _FrozenDateTime(datetime):
         @classmethod
         def now(cls, tz=None):
             return now if tz else now.replace(tzinfo=None)
 
-    monkeypatch.setattr(user_management_routes, 'datetime', _FrozenDateTime)
+    monkeypatch.setattr(user_management_routes, "datetime", _FrozenDateTime)
 
     payload = user_management_routes._build_user_manual_debt_payload(fake_user, max_age_days=30)
 
-    assert len(payload['items']) == 1
-    assert payload['items'][0]['note'] == 'Debt terbaru'
-    assert payload['summary']['total_items'] == 1
-    assert payload['summary']['open_items'] == 1
-    assert payload['summary']['paid_items'] == 0
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["note"] == "Debt terbaru"
+    assert payload["summary"]["total_items"] == 1
+    assert payload["summary"]["open_items"] == 1
+    assert payload["summary"]["paid_items"] == 0
 
 
 def test_export_user_detail_report_pdf_temp_invalid_token_renders_html_page(monkeypatch):
     monkeypatch.setattr(user_management_routes, "verify_temp_user_detail_report_token", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(user_management_routes, "settings_service", SimpleNamespace(get_setting=lambda _key, default=None: "https://portal.example.test"))
+    monkeypatch.setattr(
+        user_management_routes,
+        "settings_service",
+        SimpleNamespace(get_setting=lambda _key, default=None: "https://portal.example.test"),
+    )
     monkeypatch.setattr(
         user_management_routes,
         "render_template",
-        lambda _template, **context: f"<html><body><h1>{context['title']}</h1><a href='{context['action_url']}'>Portal</a></body></html>",
+        lambda _template,
+        **context: f"<html><body><h1>{context['title']}</h1><a href='{context['action_url']}'>Portal</a></body></html>",
     )
 
     app = _make_app()

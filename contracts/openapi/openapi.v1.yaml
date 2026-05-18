@@ -501,6 +501,33 @@ paths:
         '401':
           $ref: '#/components/responses/ErrorUnauthorized'
 
+  /users/check-or-register:
+    post:
+      tags: [Profile]
+      summary: Cek status registrasi nomor telepon (publik, tanpa autentikasi)
+      description: |
+        Dipakai halaman pembelian (`pages/beli/index.vue`) untuk memverifikasi apakah
+        nomor telepon sudah terdaftar sebelum melanjutkan flow OTP / pendaftaran.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhoneCheckRequest'
+      responses:
+        '200':
+          description: Hasil pengecekan nomor telepon
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhoneCheckResponse'
+        '400':
+          $ref: '#/components/responses/ErrorBadRequest'
+        '422':
+          $ref: '#/components/responses/ErrorValidation'
+        '500':
+          $ref: '#/components/responses/ErrorInternal'
+
   /users/database-update-submissions:
     post:
       tags: [Profile]
@@ -1738,6 +1765,12 @@ components:
                     type: array
                     items:
                       $ref: '#/components/schemas/ValidationErrorDetail'
+    ErrorInternal:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
 
   schemas:
     MessageResponse:
@@ -2414,6 +2447,32 @@ components:
           type: array
           items:
             type: string
+
+    PhoneCheckRequest:
+      type: object
+      required: [phone_number]
+      properties:
+        phone_number:
+          type: string
+          description: Nomor HP (format bebas; dinormalisasi server ke E.164)
+        full_name:
+          type: string
+          nullable: true
+          description: Opsional; bila user sudah ada tapi full_name kosong, akan diisi
+
+    PhoneCheckResponse:
+      type: object
+      required: [user_exists]
+      properties:
+        user_exists:
+          type: boolean
+        user_id:
+          type: string
+          format: uuid
+          nullable: true
+        message:
+          type: string
+          nullable: true
 
     PublicDatabaseUpdateSubmissionRequest:
       type: object

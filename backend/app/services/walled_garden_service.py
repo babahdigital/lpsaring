@@ -148,10 +148,10 @@ def _derive_private_ips_from_hosts(hosts: List[str]) -> List[str]:
 
 _INVALID_IP_TARGETS: frozenset[str] = frozenset(
     [
-        "0.0.0.0",       # unspecified — harmless alone but signals bad data
-        "0.0.0.0/0",     # catastrophic: would allow ALL traffic unauthenticated
-        "::",            # IPv6 unspecified
-        "::/0",          # IPv6 default route
+        "0.0.0.0",  # unspecified — harmless alone but signals bad data
+        "0.0.0.0/0",  # catastrophic: would allow ALL traffic unauthenticated
+        "::",  # IPv6 unspecified
+        "::/0",  # IPv6 default route
         "255.255.255.255",  # broadcast
     ]
 )
@@ -207,7 +207,8 @@ def _derive_ips_from_address_lists(api_connection: Any, list_names: List[str]) -
         if raw_addr in _INVALID_IP_TARGETS:
             logger.debug(
                 "Walled-garden: skip entry placeholder %s dari address-list %s (DNS resolver MikroTik)",
-                raw_addr, list_name,
+                raw_addr,
+                list_name,
             )
             continue
         collected.append(raw_addr)

@@ -167,9 +167,7 @@ def _collect_infra_lease_ips(
     try:
         rows = api.get_resource("/ip/dhcp-server/lease").get() or []
     except Exception as exc:
-        current_app.logger.warning(
-            "sync-unauthorized-hosts: gagal fetch infra lease untuk auto-exempt: %s", exc
-        )
+        current_app.logger.warning("sync-unauthorized-hosts: gagal fetch infra lease untuk auto-exempt: %s", exc)
         return infra_ips
 
     marker_lower = comment_marker.lower()
@@ -207,9 +205,7 @@ def _collect_router_gateway_ips(
     try:
         rows = api.get_resource("/ip/address").get() or []
     except Exception as exc:
-        current_app.logger.warning(
-            "sync-unauthorized-hosts: gagal fetch /ip/address untuk gateway exempt: %s", exc
-        )
+        current_app.logger.warning("sync-unauthorized-hosts: gagal fetch /ip/address untuk gateway exempt: %s", exc)
         return gateway_ips
 
     for row in rows:

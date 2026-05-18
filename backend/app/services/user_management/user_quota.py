@@ -24,7 +24,6 @@ from app.services.quota_mutation_ledger_service import (
 )
 
 
-
 def reset_baseline_on_unlimited_revoke(user: User, *, source: str = "unknown") -> bool:
     """Reset quota baseline saat user transisi dari unlimited ke regular.
 

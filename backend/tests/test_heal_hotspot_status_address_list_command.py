@@ -77,9 +77,7 @@ def test_heal_hotspot_status_dry_run_only_reports(monkeypatch):
 
     app = _make_app()
     runner = app.test_cli_runner()
-    result = runner.invoke(
-        args=["heal-hotspot-status-address-list", "--dry-run", "--no-resync-users"]
-    )
+    result = runner.invoke(args=["heal-hotspot-status-address-list", "--dry-run", "--no-resync-users"])
 
     assert result.exit_code == 0
     assert "DRY-RUN remove list=klient_aktif ip=10.0.99.40" in result.output
@@ -116,9 +114,7 @@ def test_heal_hotspot_status_apply_removes_and_resyncs(monkeypatch):
     monkeypatch.setattr(
         cmd,
         "_find_user_by_phone",
-        lambda phone: SimpleNamespace(id=101)
-        if phone == "0811111111"
-        else None,
+        lambda phone: SimpleNamespace(id=101) if phone == "0811111111" else None,
     )
 
     resync_calls = {"count": 0}
@@ -131,9 +127,7 @@ def test_heal_hotspot_status_apply_removes_and_resyncs(monkeypatch):
 
     app = _make_app()
     runner = app.test_cli_runner()
-    result = runner.invoke(
-        args=["heal-hotspot-status-address-list", "--apply", "--resync-users"]
-    )
+    result = runner.invoke(args=["heal-hotspot-status-address-list", "--apply", "--resync-users"])
 
     assert result.exit_code == 0
     assert "out_of_cidr=2" in result.output

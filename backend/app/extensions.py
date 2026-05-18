@@ -17,6 +17,7 @@ from celery.signals import after_setup_logger, after_setup_task_logger
 import os
 from dotenv import load_dotenv
 
+
 # --- Helper Functions ---
 def _safe_get_int(value: str, default: int, max_val: int) -> int:
     """
@@ -30,9 +31,9 @@ def _safe_get_int(value: str, default: int, max_val: int) -> int:
         return parsed
     except (ValueError, TypeError) as e:
         raise RuntimeError(
-            f"Invalid cron configuration: {value} is not an integer or out of range [0, {max_val}]. "
-            f"Error: {e}"
+            f"Invalid cron configuration: {value} is not an integer or out of range [0, {max_val}]. Error: {e}"
         )
+
 
 # Hanya buat instance di sini untuk ekstensi Flask yang ada
 db = SQLAlchemy()

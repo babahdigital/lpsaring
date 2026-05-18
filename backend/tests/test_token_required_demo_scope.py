@@ -198,7 +198,9 @@ def test_token_required_logout_expired_cookie_does_not_set_new_tokens(monkeypatc
     non_demo_user = _make_user("+628112223334")
 
     monkeypatch.setattr(decorators, "db", SimpleNamespace(session=_FakeSession(non_demo_user)))
-    monkeypatch.setattr(decorators.jwt, "decode", lambda *_a, **_k: (_ for _ in ()).throw(ExpiredSignatureError("expired")))
+    monkeypatch.setattr(
+        decorators.jwt, "decode", lambda *_a, **_k: (_ for _ in ()).throw(ExpiredSignatureError("expired"))
+    )
     monkeypatch.setattr(
         decorators,
         "rotate_refresh_token",

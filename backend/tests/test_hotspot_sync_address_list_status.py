@@ -320,7 +320,9 @@ def test_self_heal_policy_binding_repairs_mismatch(monkeypatch):
 
     calls = {"count": 0, "binding_type": None}
 
-    def _fake_upsert_ip_binding(*, api_connection, mac_address, address=None, server=None, binding_type="regular", comment=None):
+    def _fake_upsert_ip_binding(
+        *, api_connection, mac_address, address=None, server=None, binding_type="regular", comment=None
+    ):
         calls["count"] += 1
         calls["binding_type"] = binding_type
         return True, "ok"
@@ -457,7 +459,9 @@ def test_self_heal_policy_binding_respects_disable_toggle(monkeypatch):
 
     calls = {"count": 0}
 
-    def _fake_upsert_ip_binding(*, api_connection, mac_address, address=None, server=None, binding_type="regular", comment=None):
+    def _fake_upsert_ip_binding(
+        *, api_connection, mac_address, address=None, server=None, binding_type="regular", comment=None
+    ):
         calls["count"] += 1
         return True, "ok"
 

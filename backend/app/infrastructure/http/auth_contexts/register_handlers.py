@@ -96,7 +96,9 @@ def register_user_impl(
                 new_user_obj.full_name,
             )
             new_user_obj.total_quota_purchased_mb = active_bonus.bonus_value_mb
-            new_user_obj.quota_expiry_date = datetime.now(dt_timezone.utc) + timedelta(days=active_bonus.bonus_duration_days)
+            new_user_obj.quota_expiry_date = datetime.now(dt_timezone.utc) + timedelta(
+                days=active_bonus.bonus_duration_days
+            )
         else:
             new_user_obj.total_quota_purchased_mb = 0
             new_user_obj.quota_expiry_date = None

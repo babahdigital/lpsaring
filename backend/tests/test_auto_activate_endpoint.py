@@ -1,4 +1,5 @@
 """Tests for POST /api/auth/captive/auto-activate."""
+
 from __future__ import annotations
 
 import uuid
@@ -147,7 +148,8 @@ def test_binding_failed_returns_reason(monkeypatch):
     monkeypatch.setattr(auth_routes, "db", _FakeDb(user))
 
     monkeypatch.setattr(
-        auth_routes, "apply_device_binding_for_login",
+        auth_routes,
+        "apply_device_binding_for_login",
         lambda **_kw: (False, "Limit perangkat tercapai", None),
     )
 

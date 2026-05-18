@@ -966,7 +966,9 @@ def test_webhook_debt_settlement_success_runs_unblock_flow(monkeypatch):
 
     monkeypatch.setattr(transactions_routes, "db", _FakeDB(fake_session))
     monkeypatch.setattr(transactions_routes, "increment_metric", lambda name: metrics.append(name))
-    monkeypatch.setattr(transactions_routes, "_apply_debt_settlement_on_success", _fake_apply_debt_settlement_on_success)
+    monkeypatch.setattr(
+        transactions_routes, "_apply_debt_settlement_on_success", _fake_apply_debt_settlement_on_success
+    )
 
     app = _make_app()
     webhook_impl = _unwrap_decorators(transactions_routes.handle_notification)
@@ -1041,7 +1043,9 @@ def test_webhook_debt_settlement_success_sends_receipt_link_for_online_payment(m
 
     monkeypatch.setattr(transactions_routes, "db", _FakeDB(fake_session))
     monkeypatch.setattr(transactions_routes, "increment_metric", lambda _name: None)
-    monkeypatch.setattr(transactions_routes, "_apply_debt_settlement_on_success", _fake_apply_debt_settlement_on_success)
+    monkeypatch.setattr(
+        transactions_routes, "_apply_debt_settlement_on_success", _fake_apply_debt_settlement_on_success
+    )
     monkeypatch.setattr(webhook_routes, "sync_address_list_for_single_user", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
         webhook_routes.settings_service,

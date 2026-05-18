@@ -10,7 +10,12 @@ from sqlalchemy import select
 from app.extensions import db
 from app.infrastructure.db.models import Package, QuotaMutationLedger, Transaction, User, UserQuotaDebt
 from app.services.notification_service import generate_temp_debt_settlement_receipt_token
-from app.utils.formatters import format_app_date_display, format_app_datetime_display, format_mb_to_gb, format_to_local_phone
+from app.utils.formatters import (
+    format_app_date_display,
+    format_app_datetime_display,
+    format_mb_to_gb,
+    format_to_local_phone,
+)
 from app.utils.quota_debt import estimate_debt_rp_from_cheapest_package
 
 
@@ -31,23 +36,30 @@ def format_currency_idr(value: int | float | None) -> str:
 
 
 def build_receipt_business_identity_context() -> dict[str, str]:
-    business_name = str(
-        current_app.config.get("BUSINESS_NAME")
-        or os.environ.get("BUSINESS_NAME")
+    business_name = (
+        str(
+            current_app.config.get("BUSINESS_NAME") or os.environ.get("BUSINESS_NAME") or DEFAULT_RECEIPT_BUSINESS_NAME
+        ).strip()
         or DEFAULT_RECEIPT_BUSINESS_NAME
-    ).strip() or DEFAULT_RECEIPT_BUSINESS_NAME
-    business_address = str(
-        current_app.config.get("BUSINESS_ADDRESS")
-        or os.environ.get("BUSINESS_ADDRESS")
+    )
+    business_address = (
+        str(
+            current_app.config.get("BUSINESS_ADDRESS")
+            or os.environ.get("BUSINESS_ADDRESS")
+            or DEFAULT_RECEIPT_BUSINESS_ADDRESS
+        ).strip()
         or DEFAULT_RECEIPT_BUSINESS_ADDRESS
-    ).strip() or DEFAULT_RECEIPT_BUSINESS_ADDRESS
-    raw_business_phone = str(
-        current_app.config.get("BUSINESS_PHONE")
-        or os.environ.get("BUSINESS_PHONE")
-        or current_app.config.get("NUXT_PUBLIC_ADMIN_WHATSAPP")
-        or os.environ.get("NUXT_PUBLIC_ADMIN_WHATSAPP")
+    )
+    raw_business_phone = (
+        str(
+            current_app.config.get("BUSINESS_PHONE")
+            or os.environ.get("BUSINESS_PHONE")
+            or current_app.config.get("NUXT_PUBLIC_ADMIN_WHATSAPP")
+            or os.environ.get("NUXT_PUBLIC_ADMIN_WHATSAPP")
+            or DEFAULT_RECEIPT_BUSINESS_PHONE
+        ).strip()
         or DEFAULT_RECEIPT_BUSINESS_PHONE
-    ).strip() or DEFAULT_RECEIPT_BUSINESS_PHONE
+    )
     business_phone = format_to_local_phone(raw_business_phone) or raw_business_phone or DEFAULT_RECEIPT_BUSINESS_PHONE
     return {
         "business_name": business_name,
@@ -90,7 +102,9 @@ def _pick_reference_package(value_mb: float) -> Package | None:
         .limit(1)
     ).scalar_one_or_none()
     if ref is None:
-        ref = db.session.execute(base_q.order_by(Package.data_quota_gb.desc(), Package.price.asc()).limit(1)).scalar_one_or_none()
+        ref = db.session.execute(
+            base_q.order_by(Package.data_quota_gb.desc(), Package.price.asc()).limit(1)
+        ).scalar_one_or_none()
     return ref
 
 
@@ -221,7 +235,11 @@ def build_debt_settlement_receipt_context(
         paid_manual_amount_rp = estimate_amount_rp_for_mb(paid_manual_mb)
 
     paid_auto_amount_rp = estimate_amount_rp_for_mb(paid_auto_mb)
-    total_amount_rp = _safe_int(getattr(transaction, "amount", 0)) if transaction is not None else paid_auto_amount_rp + paid_manual_amount_rp
+    total_amount_rp = (
+        _safe_int(getattr(transaction, "amount", 0))
+        if transaction is not None
+        else paid_auto_amount_rp + paid_manual_amount_rp
+    )
 
     settlement_lines: list[str] = []
     if paid_auto_mb > 0:
@@ -242,8 +260,15 @@ def build_debt_settlement_receipt_context(
     if not settlement_lines:
         settlement_lines.append("Detail nominal pelunasan tidak tersedia pada event ini.")
 
-    payment_at = getattr(transaction, "payment_time", None) if transaction is not None else getattr(settlement_entry, "created_at", None)
-    receipt_number = str(getattr(transaction, "midtrans_order_id", "") or "").strip() or f"QML-{str(settlement_entry.id)[:8].upper()}"
+    payment_at = (
+        getattr(transaction, "payment_time", None)
+        if transaction is not None
+        else getattr(settlement_entry, "created_at", None)
+    )
+    receipt_number = (
+        str(getattr(transaction, "midtrans_order_id", "") or "").strip()
+        or f"QML-{str(settlement_entry.id)[:8].upper()}"
+    )
     channel_label = "Pembayaran online via Midtrans" if transaction is not None else "Pelunasan manual oleh Admin"
     amount_label = "Nilai pembayaran" if transaction is not None else "Nilai referensi pelunasan"
 
@@ -251,9 +276,12 @@ def build_debt_settlement_receipt_context(
         "receipt_title": "Invoice Pelunasan Tunggakan" if transaction is not None else "Bukti Pelunasan Tunggakan",
         "receipt_number": receipt_number,
         "user": user,
-        "user_phone_display": format_to_local_phone(getattr(user, "phone_number", "") or "") or (getattr(user, "phone_number", "") or "-"),
+        "user_phone_display": format_to_local_phone(getattr(user, "phone_number", "") or "")
+        or (getattr(user, "phone_number", "") or "-"),
         "payment_channel_label": channel_label,
-        "payment_method_label": _humanize_payment_method(getattr(transaction, "payment_method", None) if transaction is not None else None),
+        "payment_method_label": _humanize_payment_method(
+            getattr(transaction, "payment_method", None) if transaction is not None else None
+        ),
         "payment_at_display": format_app_datetime_display(payment_at, fallback="-"),
         "created_at_display": format_app_datetime_display(getattr(settlement_entry, "created_at", None), fallback="-"),
         "amount_label": amount_label,

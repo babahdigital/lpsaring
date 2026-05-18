@@ -26,14 +26,14 @@ def get_transactions_list_impl(
     desc,
 ):
     try:
-        page = request.args.get('page', 1, type=int)
-        per_page = min(request.args.get('itemsPerPage', 10, type=int), 100)
-        sort_by = request.args.get('sortBy', 'created_at')
-        sort_order = request.args.get('sortOrder', 'desc')
-        search_query = request.args.get('search', '').strip()
-        user_id_filter = request.args.get('user_id')
-        start_date_str = request.args.get('start_date')
-        end_date_str = request.args.get('end_date')
+        page = request.args.get("page", 1, type=int)
+        per_page = min(request.args.get("itemsPerPage", 10, type=int), 100)
+        sort_by = request.args.get("sortBy", "created_at")
+        sort_order = request.args.get("sortOrder", "desc")
+        search_query = request.args.get("search", "").strip()
+        user_id_filter = request.args.get("user_id")
+        start_date_str = request.args.get("start_date")
+        end_date_str = request.args.get("end_date")
 
         query = db.select(Transaction).options(selectinload(Transaction.user), selectinload(Transaction.package))
 
@@ -45,7 +45,7 @@ def get_transactions_list_impl(
                 user_uuid = uuid.UUID(user_id_filter)
                 query = query.where(Transaction.user_id == user_uuid)
             except ValueError:
-                return jsonify({'message': 'Invalid user_id format.'}), HTTPStatus.BAD_REQUEST
+                return jsonify({"message": "Invalid user_id format."}), HTTPStatus.BAD_REQUEST
 
         if start_date_str and end_date_str:
             try:
@@ -53,12 +53,12 @@ def get_transactions_list_impl(
                 query = query.where(Transaction.created_at >= start_utc)
                 query = query.where(Transaction.created_at < end_utc)
             except ValueError:
-                return jsonify({'message': 'Format tanggal tidak valid.'}), HTTPStatus.BAD_REQUEST
+                return jsonify({"message": "Format tanggal tidak valid."}), HTTPStatus.BAD_REQUEST
         elif start_date_str or end_date_str:
-            return jsonify({'message': 'start_date dan end_date harus diisi keduanya.'}), HTTPStatus.BAD_REQUEST
+            return jsonify({"message": "start_date dan end_date harus diisi keduanya."}), HTTPStatus.BAD_REQUEST
 
         if search_query:
-            search_term = f'%{search_query}%'
+            search_term = f"%{search_query}%"
             phone_variations = get_phone_number_variations(search_query)
             query = query.where(
                 or_(
@@ -71,13 +71,13 @@ def get_transactions_list_impl(
             )
 
         sortable_columns = {
-            'created_at': Transaction.created_at,
-            'amount': Transaction.amount,
-            'status': Transaction.status,
+            "created_at": Transaction.created_at,
+            "amount": Transaction.amount,
+            "status": Transaction.status,
         }
         if sort_by in sortable_columns:
             query = query.order_by(
-                desc(sortable_columns[sort_by]) if sort_order == 'desc' else sortable_columns[sort_by]
+                desc(sortable_columns[sort_by]) if sort_order == "desc" else sortable_columns[sort_by]
             )
         else:
             query = query.order_by(desc(Transaction.created_at))
@@ -85,42 +85,42 @@ def get_transactions_list_impl(
         pagination = db.paginate(query, page=page, per_page=per_page, error_out=False)
         transactions_data = [
             {
-                'id': str(tx.id),
-                'order_id': tx.midtrans_order_id,
-                'amount': float(tx.amount),
-                'status': tx.status.value,
-                'created_at': tx.created_at.isoformat(),
-                'created_at_display': format_app_datetime_display(tx.created_at, fallback='-'),
-                'midtrans_transaction_id': tx.midtrans_transaction_id,
-                'payment_method': tx.payment_method,
-                'payment_time': tx.payment_time.isoformat() if tx.payment_time else None,
-                'payment_time_display': format_app_datetime_display(tx.payment_time, fallback='-'),
-                'expiry_time': tx.expiry_time.isoformat() if tx.expiry_time else None,
-                'expiry_time_display': format_app_datetime_display(tx.expiry_time, fallback='-'),
-                'user': {
-                    'full_name': tx.user.full_name if tx.user else 'N/A',
-                    'phone_number': tx.user.phone_number if tx.user else 'N/A',
+                "id": str(tx.id),
+                "order_id": tx.midtrans_order_id,
+                "amount": float(tx.amount),
+                "status": tx.status.value,
+                "created_at": tx.created_at.isoformat(),
+                "created_at_display": format_app_datetime_display(tx.created_at, fallback="-"),
+                "midtrans_transaction_id": tx.midtrans_transaction_id,
+                "payment_method": tx.payment_method,
+                "payment_time": tx.payment_time.isoformat() if tx.payment_time else None,
+                "payment_time_display": format_app_datetime_display(tx.payment_time, fallback="-"),
+                "expiry_time": tx.expiry_time.isoformat() if tx.expiry_time else None,
+                "expiry_time_display": format_app_datetime_display(tx.expiry_time, fallback="-"),
+                "user": {
+                    "full_name": tx.user.full_name if tx.user else "N/A",
+                    "phone_number": tx.user.phone_number if tx.user else "N/A",
                 },
-                'package_name': resolve_transaction_package_label(
+                "package_name": resolve_transaction_package_label(
                     tx.midtrans_order_id,
-                    getattr(getattr(tx, 'package', None), 'name', None),
-                    default_unknown='N/A',
+                    getattr(getattr(tx, "package", None), "name", None),
+                    default_unknown="N/A",
                 ),
             }
             for tx in pagination.items
         ]
 
-        return jsonify({'items': transactions_data, 'totalItems': pagination.total}), HTTPStatus.OK
+        return jsonify({"items": transactions_data, "totalItems": pagination.total}), HTTPStatus.OK
     except Exception as e:
-        current_app.logger.error(f'Error mengambil daftar transaksi: {e}', exc_info=True)
-        return jsonify({'message': 'Terjadi kesalahan internal.'}), HTTPStatus.INTERNAL_SERVER_ERROR
+        current_app.logger.error(f"Error mengambil daftar transaksi: {e}", exc_info=True)
+        return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
 def get_transaction_detail_impl(*, db, order_id: str, Transaction, TransactionEvent, select, selectinload, json_module):
     try:
-        order_id = (order_id or '').strip()
+        order_id = (order_id or "").strip()
         if not order_id:
-            return jsonify({'message': 'order_id tidak boleh kosong.'}), HTTPStatus.BAD_REQUEST
+            return jsonify({"message": "order_id tidak boleh kosong."}), HTTPStatus.BAD_REQUEST
 
         tx = db.session.scalar(
             select(Transaction)
@@ -129,14 +129,14 @@ def get_transaction_detail_impl(*, db, order_id: str, Transaction, TransactionEv
         )
 
         if tx is None:
-            return jsonify({'message': 'Transaksi tidak ditemukan.'}), HTTPStatus.NOT_FOUND
+            return jsonify({"message": "Transaksi tidak ditemukan."}), HTTPStatus.NOT_FOUND
 
         payload: object | None = None
         if tx.midtrans_notification_payload:
             try:
                 payload = json_module.loads(tx.midtrans_notification_payload)
             except Exception:
-                payload = {'_raw': tx.midtrans_notification_payload}
+                payload = {"_raw": tx.midtrans_notification_payload}
 
         events_q = (
             select(TransactionEvent)
@@ -151,58 +151,58 @@ def get_transaction_detail_impl(*, db, order_id: str, Transaction, TransactionEv
                 try:
                     ev_payload = json_module.loads(ev.payload)
                 except Exception:
-                    ev_payload = {'_raw': ev.payload}
+                    ev_payload = {"_raw": ev.payload}
             events_payload.append(
                 {
-                    'id': str(ev.id),
-                    'created_at': ev.created_at.isoformat() if ev.created_at else None,
-                    'created_at_display': format_app_datetime_display(ev.created_at, fallback='-'),
-                    'source': ev.source.value,
-                    'event_type': ev.event_type,
-                    'status': ev.status.value if ev.status else None,
-                    'payload': ev_payload,
+                    "id": str(ev.id),
+                    "created_at": ev.created_at.isoformat() if ev.created_at else None,
+                    "created_at_display": format_app_datetime_display(ev.created_at, fallback="-"),
+                    "source": ev.source.value,
+                    "event_type": ev.event_type,
+                    "status": ev.status.value if ev.status else None,
+                    "payload": ev_payload,
                 }
             )
 
         return (
             jsonify(
                 {
-                    'id': str(tx.id),
-                    'order_id': tx.midtrans_order_id,
-                    'amount': float(tx.amount),
-                    'status': tx.status.value,
-                    'created_at': tx.created_at.isoformat(),
-                    'created_at_display': format_app_datetime_display(tx.created_at, fallback='-'),
-                    'updated_at': tx.updated_at.isoformat() if tx.updated_at else None,
-                    'updated_at_display': format_app_datetime_display(tx.updated_at, fallback='-'),
-                    'midtrans_transaction_id': tx.midtrans_transaction_id,
-                    'payment_method': tx.payment_method,
-                    'payment_time': tx.payment_time.isoformat() if tx.payment_time else None,
-                    'payment_time_display': format_app_datetime_display(tx.payment_time, fallback='-'),
-                    'expiry_time': tx.expiry_time.isoformat() if tx.expiry_time else None,
-                    'expiry_time_display': format_app_datetime_display(tx.expiry_time, fallback='-'),
-                    'va_number': tx.va_number,
-                    'payment_code': tx.payment_code,
-                    'biller_code': tx.biller_code,
-                    'qr_code_url': tx.qr_code_url,
-                    'user': {
-                        'full_name': tx.user.full_name if tx.user else 'N/A',
-                        'phone_number': tx.user.phone_number if tx.user else 'N/A',
+                    "id": str(tx.id),
+                    "order_id": tx.midtrans_order_id,
+                    "amount": float(tx.amount),
+                    "status": tx.status.value,
+                    "created_at": tx.created_at.isoformat(),
+                    "created_at_display": format_app_datetime_display(tx.created_at, fallback="-"),
+                    "updated_at": tx.updated_at.isoformat() if tx.updated_at else None,
+                    "updated_at_display": format_app_datetime_display(tx.updated_at, fallback="-"),
+                    "midtrans_transaction_id": tx.midtrans_transaction_id,
+                    "payment_method": tx.payment_method,
+                    "payment_time": tx.payment_time.isoformat() if tx.payment_time else None,
+                    "payment_time_display": format_app_datetime_display(tx.payment_time, fallback="-"),
+                    "expiry_time": tx.expiry_time.isoformat() if tx.expiry_time else None,
+                    "expiry_time_display": format_app_datetime_display(tx.expiry_time, fallback="-"),
+                    "va_number": tx.va_number,
+                    "payment_code": tx.payment_code,
+                    "biller_code": tx.biller_code,
+                    "qr_code_url": tx.qr_code_url,
+                    "user": {
+                        "full_name": tx.user.full_name if tx.user else "N/A",
+                        "phone_number": tx.user.phone_number if tx.user else "N/A",
                     },
-                    'package_name': resolve_transaction_package_label(
+                    "package_name": resolve_transaction_package_label(
                         tx.midtrans_order_id,
-                        getattr(getattr(tx, 'package', None), 'name', None),
-                        default_unknown='N/A',
+                        getattr(getattr(tx, "package", None), "name", None),
+                        default_unknown="N/A",
                     ),
-                    'midtrans_notification_payload': payload,
-                    'events': events_payload,
+                    "midtrans_notification_payload": payload,
+                    "events": events_payload,
                 }
             ),
             HTTPStatus.OK,
         )
     except Exception as e:
-        current_app.logger.error(f'Error mengambil detail transaksi {order_id}: {e}', exc_info=True)
-        return jsonify({'message': 'Terjadi kesalahan internal.'}), HTTPStatus.INTERNAL_SERVER_ERROR
+        current_app.logger.error(f"Error mengambil detail transaksi {order_id}: {e}", exc_info=True)
+        return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
 def export_transactions_impl(
@@ -244,16 +244,16 @@ def export_transactions_impl(
         has_unlimited_debt = False
 
         for debt in open_debts:
-            amount_mb = int(getattr(debt, 'amount_mb', 0) or 0)
-            paid_mb = int(getattr(debt, 'paid_mb', 0) or 0)
+            amount_mb = int(getattr(debt, "amount_mb", 0) or 0)
+            paid_mb = int(getattr(debt, "paid_mb", 0) or 0)
             remaining_mb = max(0, amount_mb - paid_mb)
             if remaining_mb <= 0:
                 continue
 
-            note_text = str(getattr(debt, 'note', '') or '').lower()
-            has_unlimited_debt = has_unlimited_debt or (amount_mb <= 1 and 'unlimited' in note_text)
+            note_text = str(getattr(debt, "note", "") or "").lower()
+            has_unlimited_debt = has_unlimited_debt or (amount_mb <= 1 and "unlimited" in note_text)
 
-            explicit_price_rp = getattr(debt, 'price_rp', None)
+            explicit_price_rp = getattr(debt, "price_rp", None)
             if explicit_price_rp is not None and amount_mb > 0:
                 try:
                     total_rp += max(0, int(round(int(explicit_price_rp) * (remaining_mb / float(amount_mb)))))
@@ -266,28 +266,30 @@ def export_transactions_impl(
         return total_rp, has_unlimited_debt
 
     try:
-        fmt = str(request.args.get('format', '') or '').strip().lower()
-        start_date_str = str(request.args.get('start_date', '') or '').strip()
-        end_date_str = str(request.args.get('end_date', '') or '').strip()
-        user_id_filter = request.args.get('user_id')
-        group_by = str(request.args.get('group_by', 'daily') or 'daily').strip().lower()
-        if group_by not in ('daily', 'monthly', 'yearly', 'none'):
-            return jsonify({'message': 'group_by tidak valid. Gunakan daily|monthly|yearly|none.'}), HTTPStatus.BAD_REQUEST
+        fmt = str(request.args.get("format", "") or "").strip().lower()
+        start_date_str = str(request.args.get("start_date", "") or "").strip()
+        end_date_str = str(request.args.get("end_date", "") or "").strip()
+        user_id_filter = request.args.get("user_id")
+        group_by = str(request.args.get("group_by", "daily") or "daily").strip().lower()
+        if group_by not in ("daily", "monthly", "yearly", "none"):
+            return jsonify(
+                {"message": "group_by tidak valid. Gunakan daily|monthly|yearly|none."}
+            ), HTTPStatus.BAD_REQUEST
 
-        if fmt and fmt != 'pdf':
-            return jsonify({'message': 'format tidak valid. Gunakan pdf.'}), HTTPStatus.BAD_REQUEST
-        fmt = 'pdf'
+        if fmt and fmt != "pdf":
+            return jsonify({"message": "format tidak valid. Gunakan pdf."}), HTTPStatus.BAD_REQUEST
+        fmt = "pdf"
         if not start_date_str or not end_date_str:
-            return jsonify({'message': 'start_date dan end_date wajib diisi.'}), HTTPStatus.BAD_REQUEST
+            return jsonify({"message": "start_date dan end_date wajib diisi."}), HTTPStatus.BAD_REQUEST
 
         try:
-            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+            end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
         except ValueError:
-            return jsonify({'message': 'Format tanggal tidak valid. Gunakan YYYY-MM-DD.'}), HTTPStatus.BAD_REQUEST
+            return jsonify({"message": "Format tanggal tidak valid. Gunakan YYYY-MM-DD."}), HTTPStatus.BAD_REQUEST
 
         if end_date < start_date:
-            return jsonify({'message': 'end_date tidak boleh lebih kecil dari start_date.'}), HTTPStatus.BAD_REQUEST
+            return jsonify({"message": "end_date tidak boleh lebih kecil dari start_date."}), HTTPStatus.BAD_REQUEST
 
         start_dt, end_dt = parse_local_date_range_to_utc(start_date_str, end_date_str)
 
@@ -302,7 +304,7 @@ def export_transactions_impl(
                 user_uuid = uuid.UUID(str(user_id_filter))
                 base_filters.append(Transaction.user_id == user_uuid)
             except ValueError:
-                return jsonify({'message': 'Invalid user_id format.'}), HTTPStatus.BAD_REQUEST
+                return jsonify({"message": "Invalid user_id format."}), HTTPStatus.BAD_REQUEST
 
         totals_row = db.session.execute(
             select(
@@ -317,47 +319,47 @@ def export_transactions_impl(
         package_rows = db.session.execute(
             select(
                 Package.name,
-                func.count(Transaction.id).label('qty'),
-                func.coalesce(func.sum(Transaction.amount), 0).label('revenue'),
+                func.count(Transaction.id).label("qty"),
+                func.coalesce(func.sum(Transaction.amount), 0).label("revenue"),
             )
             .join(Package, Transaction.package_id == Package.id)
             .where(*base_filters)
             .group_by(Package.name)
-            .order_by(desc('revenue'), desc('qty'), Package.name.asc())
+            .order_by(desc("revenue"), desc("qty"), Package.name.asc())
         ).all()
 
         method_rows = db.session.execute(
             select(
                 Transaction.payment_method,
-                func.count(Transaction.id).label('qty'),
-                func.coalesce(func.sum(Transaction.amount), 0).label('revenue'),
+                func.count(Transaction.id).label("qty"),
+                func.coalesce(func.sum(Transaction.amount), 0).label("revenue"),
             )
             .where(*base_filters)
             .group_by(Transaction.payment_method)
-            .order_by(desc('revenue'), desc('qty'))
+            .order_by(desc("revenue"), desc("qty"))
         ).all()
 
         period_rows = []
-        if group_by != 'none':
+        if group_by != "none":
             try:
-                offset_hours = int(current_app.config.get('APP_TIMEZONE_OFFSET') or 0)
+                offset_hours = int(current_app.config.get("APP_TIMEZONE_OFFSET") or 0)
             except Exception:
                 offset_hours = 0
             offset_hours = max(-12, min(offset_hours, 14))
             local_created = Transaction.created_at + sa.text("INTERVAL '1 hour'") * sa.literal(offset_hours)
 
-            if group_by == 'daily':
+            if group_by == "daily":
                 period_expr = func.date(local_created)
-            elif group_by == 'monthly':
-                period_expr = func.date_trunc('month', local_created)
+            elif group_by == "monthly":
+                period_expr = func.date_trunc("month", local_created)
             else:
-                period_expr = func.date_trunc('year', local_created)
+                period_expr = func.date_trunc("year", local_created)
 
             period_rows = db.session.execute(
                 select(
-                    period_expr.label('period'),
-                    func.count(Transaction.id).label('qty'),
-                    func.coalesce(func.sum(Transaction.amount), 0).label('revenue'),
+                    period_expr.label("period"),
+                    func.count(Transaction.id).label("qty"),
+                    func.coalesce(func.sum(Transaction.amount), 0).label("revenue"),
                 )
                 .where(*base_filters)
                 .group_by(period_expr)
@@ -394,21 +396,21 @@ def export_transactions_impl(
         ).all()
 
         if not WEASYPRINT_AVAILABLE or HTML is None:
-            return jsonify({'message': 'Komponen PDF server tidak tersedia.'}), HTTPStatus.NOT_IMPLEMENTED
+            return jsonify({"message": "Komponen PDF server tidak tersedia."}), HTTPStatus.NOT_IMPLEMENTED
 
         local_tz = get_local_tz()
 
         period_summaries = []
-        if group_by != 'none':
+        if group_by != "none":
             for row in period_rows:
                 period = row[0]
-                if group_by == 'daily':
-                    label = period.strftime('%d-%m-%Y') if hasattr(period, 'strftime') else str(period)
-                elif group_by == 'monthly':
-                    label = period.strftime('%Y-%m') if hasattr(period, 'strftime') else str(period)
+                if group_by == "daily":
+                    label = period.strftime("%d-%m-%Y") if hasattr(period, "strftime") else str(period)
+                elif group_by == "monthly":
+                    label = period.strftime("%Y-%m") if hasattr(period, "strftime") else str(period)
                 else:
-                    label = period.strftime('%Y') if hasattr(period, 'strftime') else str(period)
-                period_summaries.append({'period': label, 'qty': int(row[1] or 0), 'revenue': int(row[2] or 0)})
+                    label = period.strftime("%Y") if hasattr(period, "strftime") else str(period)
+                period_summaries.append({"period": label, "qty": int(row[1] or 0), "revenue": int(row[2] or 0)})
 
         open_debt_map = _load_open_manual_debts([user.id for user in debt_users_orm])
         debt_items: list[dict[str, object]] = []
@@ -419,8 +421,12 @@ def export_transactions_impl(
 
         for user in debt_users_orm:
             open_debts = open_debt_map.get(user.id, [])
-            auto_debt_mb = 0.0 if bool(getattr(user, 'is_unlimited_user', False)) else float(getattr(user, 'quota_debt_auto_mb', 0) or 0)
-            manual_debt_mb = float(getattr(user, 'quota_debt_manual_mb', getattr(user, 'manual_debt_mb', 0)) or 0)
+            auto_debt_mb = (
+                0.0
+                if bool(getattr(user, "is_unlimited_user", False))
+                else float(getattr(user, "quota_debt_auto_mb", 0) or 0)
+            )
+            manual_debt_mb = float(getattr(user, "quota_debt_manual_mb", getattr(user, "manual_debt_mb", 0)) or 0)
             manual_debt_rp, is_unlimited_debt = _estimate_manual_debt_rp(open_debts)
             if manual_debt_mb > 0 and manual_debt_rp <= 0:
                 manual_debt_rp = int(estimate_amount_rp_for_mb(manual_debt_mb) or 0)
@@ -431,13 +437,14 @@ def export_transactions_impl(
 
             debt_items.append(
                 {
-                    'full_name': str(getattr(user, 'full_name', '') or ''),
-                    'phone_number': format_to_local_phone(getattr(user, 'phone_number', '') or '') or (getattr(user, 'phone_number', '') or ''),
-                    'debt_total_mb': debt_total_mb_value,
-                    'debt_auto_mb': auto_debt_mb,
-                    'debt_manual_mb': manual_debt_mb,
-                    'debt_estimated_rp': debt_estimated_rp,
-                    'is_unlimited_debt': is_unlimited_debt,
+                    "full_name": str(getattr(user, "full_name", "") or ""),
+                    "phone_number": format_to_local_phone(getattr(user, "phone_number", "") or "")
+                    or (getattr(user, "phone_number", "") or ""),
+                    "debt_total_mb": debt_total_mb_value,
+                    "debt_auto_mb": auto_debt_mb,
+                    "debt_manual_mb": manual_debt_mb,
+                    "debt_estimated_rp": debt_estimated_rp,
+                    "is_unlimited_debt": is_unlimited_debt,
                 }
             )
 
@@ -447,9 +454,9 @@ def export_transactions_impl(
             total_debt_auto_mb += auto_debt_mb
 
         def _debt_item_sort_key(item: dict[str, object]) -> tuple[float, str]:
-            raw_total = item.get('debt_total_mb')
+            raw_total = item.get("debt_total_mb")
             total_value = float(raw_total) if isinstance(raw_total, (int, float)) else 0.0
-            return (-total_value, str(item.get('full_name') or '').lower())
+            return (-total_value, str(item.get("full_name") or "").lower())
 
         debt_items.sort(key=_debt_item_sort_key)
 
@@ -465,53 +472,53 @@ def export_transactions_impl(
                 .order_by(Package.data_quota_gb.asc(), Package.price.asc())
                 .limit(1)
             ).scalar_one_or_none()
-            estimate_base_package_name = str(getattr(ref_pkg, 'name', '') or '') or None if ref_pkg else None
+            estimate_base_package_name = str(getattr(ref_pkg, "name", "") or "") or None if ref_pkg else None
         except Exception:
             estimate_base_package_name = None
 
         context = {
-            'start_date': start_date_str,
-            'end_date': end_date_str,
-            'start_date_display': start_date.strftime('%d-%m-%Y'),
-            'end_date_display': end_date.strftime('%d-%m-%Y'),
-            'generated_at': datetime.now(local_tz),
-            'total_success': total_success,
-            'total_amount': total_amount,
-            'estimated_debt_total_rp': estimated_debt_total_rp,
-            'estimated_revenue_plus_debt_rp': int(total_amount or 0) + int(estimated_debt_total_rp or 0),
-            'estimate_base_package_name': estimate_base_package_name,
-            'group_by': group_by,
-            'period_summaries': period_summaries,
-            'packages': [
-                {'rank': idx, 'name': r[0], 'qty': int(r[1] or 0), 'revenue': int(r[2] or 0)}
+            "start_date": start_date_str,
+            "end_date": end_date_str,
+            "start_date_display": start_date.strftime("%d-%m-%Y"),
+            "end_date_display": end_date.strftime("%d-%m-%Y"),
+            "generated_at": datetime.now(local_tz),
+            "total_success": total_success,
+            "total_amount": total_amount,
+            "estimated_debt_total_rp": estimated_debt_total_rp,
+            "estimated_revenue_plus_debt_rp": int(total_amount or 0) + int(estimated_debt_total_rp or 0),
+            "estimate_base_package_name": estimate_base_package_name,
+            "group_by": group_by,
+            "period_summaries": period_summaries,
+            "packages": [
+                {"rank": idx, "name": r[0], "qty": int(r[1] or 0), "revenue": int(r[2] or 0)}
                 for idx, r in enumerate(package_rows, start=1)
             ],
-            'methods': [
-                {'method': (r[0] or '(unknown)'), 'qty': int(r[1] or 0), 'revenue': int(r[2] or 0)} for r in method_rows
+            "methods": [
+                {"method": (r[0] or "(unknown)"), "qty": int(r[1] or 0), "revenue": int(r[2] or 0)} for r in method_rows
             ],
-            'debt_users': debt_items,
-            'debt_users_total_count': total_debt_users_count,
-            'debt_users_total_manual_mb': total_debt_manual_mb,
-            'debt_users_total_auto_mb': total_debt_auto_mb,
-            'business_name': current_app.config.get('BUSINESS_NAME', 'LPSaring'),
-            'business_phone': current_app.config.get('BUSINESS_PHONE', ''),
-            'business_address': current_app.config.get('BUSINESS_ADDRESS', ''),
+            "debt_users": debt_items,
+            "debt_users_total_count": total_debt_users_count,
+            "debt_users_total_manual_mb": total_debt_manual_mb,
+            "debt_users_total_auto_mb": total_debt_auto_mb,
+            "business_name": current_app.config.get("BUSINESS_NAME", "LPSaring"),
+            "business_phone": current_app.config.get("BUSINESS_PHONE", ""),
+            "business_address": current_app.config.get("BUSINESS_ADDRESS", ""),
         }
 
-        public_base_url = current_app.config.get('APP_PUBLIC_BASE_URL', request.url_root)
-        html_string = render_template('admin_sales_report.html', **context)
+        public_base_url = current_app.config.get("APP_PUBLIC_BASE_URL", request.url_root)
+        html_string = render_template("admin_sales_report.html", **context)
         pdf_bytes = HTML(string=html_string, base_url=public_base_url).write_pdf()
         if not pdf_bytes:
-            abort(HTTPStatus.INTERNAL_SERVER_ERROR, 'Gagal menghasilkan file PDF.')
+            abort(HTTPStatus.INTERNAL_SERVER_ERROR, "Gagal menghasilkan file PDF.")
         resp = make_response(pdf_bytes)
-        resp.headers['Content-Type'] = 'application/pdf'
-        resp.headers['Content-Disposition'] = (
+        resp.headers["Content-Type"] = "application/pdf"
+        resp.headers["Content-Disposition"] = (
             f'attachment; filename="laporan-transaksi-{start_date_str}-to-{end_date_str}.pdf"'
         )
         return resp
     except Exception as e:
-        current_app.logger.error(f'Error export transaksi: {e}', exc_info=True)
-        return jsonify({'message': 'Terjadi kesalahan internal.'}), HTTPStatus.INTERNAL_SERVER_ERROR
+        current_app.logger.error(f"Error export transaksi: {e}", exc_info=True)
+        return jsonify({"message": "Terjadi kesalahan internal."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
 def admin_reconcile_transaction_impl(
@@ -550,9 +557,9 @@ def admin_reconcile_transaction_impl(
     import midtransclient
     from flask import request as flask_request
 
-    order_id = (order_id or '').strip()
+    order_id = (order_id or "").strip()
     if not order_id:
-        return jsonify({'message': 'order_id tidak boleh kosong.'}), HTTPStatus.BAD_REQUEST
+        return jsonify({"message": "order_id tidak boleh kosong."}), HTTPStatus.BAD_REQUEST
 
     try:
         tx = db.session.scalar(
@@ -562,19 +569,21 @@ def admin_reconcile_transaction_impl(
             .with_for_update()
         )
     except Exception as e:
-        current_app.logger.error(f'ADMIN_RECONCILE: DB error {order_id}: {e}', exc_info=True)
-        return jsonify({'message': 'Gagal mengambil data transaksi.'}), HTTPStatus.INTERNAL_SERVER_ERROR
+        current_app.logger.error(f"ADMIN_RECONCILE: DB error {order_id}: {e}", exc_info=True)
+        return jsonify({"message": "Gagal mengambil data transaksi."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
     if tx is None:
-        return jsonify({'message': 'Transaksi tidak ditemukan.'}), HTTPStatus.NOT_FOUND
+        return jsonify({"message": "Transaksi tidak ditemukan."}), HTTPStatus.NOT_FOUND
 
     if tx.status == TransactionStatus.SUCCESS:
-        return jsonify({
-            'message': 'Transaksi sudah berstatus SUCCESS. Tidak perlu diperbaiki.',
-            'transaction_status': tx.status.value,
-            'quota_applied': False,
-            'whatsapp_sent': False,
-        }), HTTPStatus.OK
+        return jsonify(
+            {
+                "message": "Transaksi sudah berstatus SUCCESS. Tidak perlu diperbaiki.",
+                "transaction_status": tx.status.value,
+                "quota_applied": False,
+                "whatsapp_sent": False,
+            }
+        ), HTTPStatus.OK
 
     fixable_statuses = {
         TransactionStatus.EXPIRED,
@@ -584,56 +593,61 @@ def admin_reconcile_transaction_impl(
         TransactionStatus.UNKNOWN,
     }
     if tx.status not in fixable_statuses:
-        return jsonify({
-            'message': f'Status {tx.status.value} tidak dapat diperbaiki.',
-        }), HTTPStatus.UNPROCESSABLE_ENTITY
+        return jsonify(
+            {
+                "message": f"Status {tx.status.value} tidak dapat diperbaiki.",
+            }
+        ), HTTPStatus.UNPROCESSABLE_ENTITY
 
-    if not should_allow_call('midtrans'):
-        return jsonify({'message': 'Midtrans sementara tidak tersedia (circuit breaker).'}), HTTPStatus.SERVICE_UNAVAILABLE
+    if not should_allow_call("midtrans"):
+        return jsonify(
+            {"message": "Midtrans sementara tidak tersedia (circuit breaker)."}
+        ), HTTPStatus.SERVICE_UNAVAILABLE
 
     # --- Verifikasi ke Midtrans ---
     try:
         core_api = get_midtrans_core_api_client()
         midtrans_resp = core_api.transactions.status(order_id)
-        record_success('midtrans')
+        record_success("midtrans")
     except midtransclient.error_midtrans.MidtransAPIError as e:
-        record_failure('midtrans')
+        record_failure("midtrans")
         db.session.rollback()
-        return jsonify({'message': f'Midtrans API error: {e.message}', 'quota_applied': False}), HTTPStatus.BAD_GATEWAY
+        return jsonify({"message": f"Midtrans API error: {e.message}", "quota_applied": False}), HTTPStatus.BAD_GATEWAY
     except Exception:
-        record_failure('midtrans')
+        record_failure("midtrans")
         db.session.rollback()
-        return jsonify({'message': 'Gagal menghubungi Midtrans.', 'quota_applied': False}), HTTPStatus.BAD_GATEWAY
+        return jsonify({"message": "Gagal menghubungi Midtrans.", "quota_applied": False}), HTTPStatus.BAD_GATEWAY
 
-    mt_status = str(midtrans_resp.get('transaction_status', '') or '').strip().lower()
-    fraud_status_raw = midtrans_resp.get('fraud_status')
+    mt_status = str(midtrans_resp.get("transaction_status", "") or "").strip().lower()
+    fraud_status_raw = midtrans_resp.get("fraud_status")
     fraud_status = str(fraud_status_raw).strip().lower() if fraud_status_raw else None
-    payment_success = (mt_status == 'settlement') or (mt_status == 'capture' and fraud_status in (None, 'accept'))
+    payment_success = (mt_status == "settlement") or (mt_status == "capture" and fraud_status in (None, "accept"))
 
     if not payment_success:
         db.session.rollback()
-        return jsonify({
-            'message': f'Pembayaran BELUM lunas di Midtrans (status: {mt_status}). Tidak dapat diperbaiki.',
-            'transaction_status': tx.status.value,
-            'midtrans_status': mt_status,
-            'quota_applied': False,
-            'whatsapp_sent': False,
-        }), HTTPStatus.UNPROCESSABLE_ENTITY
+        return jsonify(
+            {
+                "message": f"Pembayaran BELUM lunas di Midtrans (status: {mt_status}). Tidak dapat diperbaiki.",
+                "transaction_status": tx.status.value,
+                "midtrans_status": mt_status,
+                "quota_applied": False,
+                "whatsapp_sent": False,
+            }
+        ), HTTPStatus.UNPROCESSABLE_ENTITY
 
     # --- Konfirmasi bayar: update transaksi dan injek kuota ---
     try:
         status_before = tx.status.value
         tx.status = TransactionStatus.SUCCESS
 
-        if midtrans_resp.get('transaction_id'):
-            tx.midtrans_transaction_id = midtrans_resp.get('transaction_id')
+        if midtrans_resp.get("transaction_id"):
+            tx.midtrans_transaction_id = midtrans_resp.get("transaction_id")
         if not tx.payment_time:
-            tx.payment_time = (
-                safe_parse_midtrans_datetime(midtrans_resp.get('settlement_time'))
-                or datetime.now(dt_timezone.utc)
+            tx.payment_time = safe_parse_midtrans_datetime(midtrans_resp.get("settlement_time")) or datetime.now(
+                dt_timezone.utc
             )
-        if midtrans_resp.get('payment_type') and not tx.payment_method:
-            tx.payment_method = midtrans_resp.get('payment_type')
+        if midtrans_resp.get("payment_type") and not tx.payment_method:
+            tx.payment_method = midtrans_resp.get("payment_type")
         try:
             tx.midtrans_notification_payload = _json.dumps(midtrans_resp, ensure_ascii=False)
         except Exception:
@@ -643,12 +657,12 @@ def admin_reconcile_transaction_impl(
             session=db.session,
             transaction=tx,
             source=TransactionEventSource.APP,
-            event_type='ADMIN_RECONCILE',
+            event_type="ADMIN_RECONCILE",
             status=tx.status,
             payload={
-                'reconciled_by': current_actor_id,
-                'midtrans_status': mt_status,
-                'status_before': status_before,
+                "reconciled_by": current_actor_id,
+                "midtrans_status": mt_status,
+                "status_before": status_before,
             },
         )
 
@@ -656,7 +670,7 @@ def admin_reconcile_transaction_impl(
         quota_applied = False
         should_apply, effect_lock_key = begin_order_effect(
             order_id=order_id,
-            effect_name='hotspot_apply',
+            effect_name="hotspot_apply",
             session=db.session,
         )
 
@@ -664,17 +678,21 @@ def admin_reconcile_transaction_impl(
             # Effect was already done (done_key set) — just fix DB status
             db.session.commit()
             quota_applied = True
-            current_app.logger.info(f'ADMIN_RECONCILE: {order_id} effect already done, status fixed to SUCCESS.')
+            current_app.logger.info(f"ADMIN_RECONCILE: {order_id} effect already done, status fixed to SUCCESS.")
         else:
             with get_mikrotik_connection() as mikrotik_api:
                 if not mikrotik_api:
-                    finish_order_effect(order_id=order_id, lock_key=effect_lock_key, success=False, effect_name='hotspot_apply')
+                    finish_order_effect(
+                        order_id=order_id, lock_key=effect_lock_key, success=False, effect_name="hotspot_apply"
+                    )
                     db.session.rollback()
-                    return jsonify({
-                        'message': 'Gagal konek ke MikroTik. Kuota belum diinjek.',
-                        'quota_applied': False,
-                        'midtrans_status': mt_status,
-                    }), HTTPStatus.SERVICE_UNAVAILABLE
+                    return jsonify(
+                        {
+                            "message": "Gagal konek ke MikroTik. Kuota belum diinjek.",
+                            "quota_applied": False,
+                            "midtrans_status": mt_status,
+                        }
+                    ), HTTPStatus.SERVICE_UNAVAILABLE
 
                 is_success, message = apply_package_and_sync_to_mikrotik(tx, mikrotik_api)
                 if is_success:
@@ -682,23 +700,29 @@ def admin_reconcile_transaction_impl(
                         session=db.session,
                         transaction=tx,
                         source=TransactionEventSource.APP,
-                        event_type='MIKROTIK_APPLY_SUCCESS',
+                        event_type="MIKROTIK_APPLY_SUCCESS",
                         status=tx.status,
-                        payload={'message': message},
+                        payload={"message": message},
                     )
                     db.session.commit()
-                    finish_order_effect(order_id=order_id, lock_key=effect_lock_key, success=True, effect_name='hotspot_apply')
+                    finish_order_effect(
+                        order_id=order_id, lock_key=effect_lock_key, success=True, effect_name="hotspot_apply"
+                    )
                     quota_applied = True
-                    current_app.logger.info(f'ADMIN_RECONCILE: {order_id} quota applied: {message}')
+                    current_app.logger.info(f"ADMIN_RECONCILE: {order_id} quota applied: {message}")
                 else:
-                    finish_order_effect(order_id=order_id, lock_key=effect_lock_key, success=False, effect_name='hotspot_apply')
+                    finish_order_effect(
+                        order_id=order_id, lock_key=effect_lock_key, success=False, effect_name="hotspot_apply"
+                    )
                     db.session.rollback()
-                    return jsonify({
-                        'message': f'Midtrans OK. Tapi gagal apply ke MikroTik: {message}',
-                        'midtrans_status': mt_status,
-                        'quota_applied': False,
-                        'whatsapp_sent': False,
-                    }), HTTPStatus.INTERNAL_SERVER_ERROR
+                    return jsonify(
+                        {
+                            "message": f"Midtrans OK. Tapi gagal apply ke MikroTik: {message}",
+                            "midtrans_status": mt_status,
+                            "quota_applied": False,
+                            "whatsapp_sent": False,
+                        }
+                    ), HTTPStatus.INTERNAL_SERVER_ERROR
 
         # --- Log admin action ---
         try:
@@ -706,12 +730,14 @@ def admin_reconcile_transaction_impl(
                 admin_user_id=current_actor_id,
                 action_type=AdminActionType.TRANSACTION_RECONCILE,
                 target_user_id=tx.user_id,
-                details=_json.dumps({
-                    'order_id': order_id,
-                    'status_before': status_before,
-                    'midtrans_status': mt_status,
-                    'quota_applied': quota_applied,
-                }),
+                details=_json.dumps(
+                    {
+                        "order_id": order_id,
+                        "status_before": status_before,
+                        "midtrans_status": mt_status,
+                        "quota_applied": quota_applied,
+                    }
+                ),
             )
             db.session.add(action_log)
             db.session.commit()
@@ -724,35 +750,37 @@ def admin_reconcile_transaction_impl(
             try:
                 temp_token = generate_temp_invoice_token(str(tx.id))
                 base_url = (
-                    settings_service.get_setting('APP_PUBLIC_BASE_URL')
-                    or settings_service.get_setting('FRONTEND_URL')
-                    or settings_service.get_setting('APP_LINK_USER')
+                    settings_service.get_setting("APP_PUBLIC_BASE_URL")
+                    or settings_service.get_setting("FRONTEND_URL")
+                    or settings_service.get_setting("APP_LINK_USER")
                 )
                 if base_url:
                     temp_invoice_url = f"{base_url.rstrip('/')}/api/transactions/invoice/temp/{temp_token}.pdf"
                     status_token = generate_transaction_status_token(tx.midtrans_order_id)
-                    status_url = f"{base_url.rstrip('/')}/payment/status?order_id={tx.midtrans_order_id}&t={status_token}"
+                    status_url = (
+                        f"{base_url.rstrip('/')}/payment/status?order_id={tx.midtrans_order_id}&t={status_token}"
+                    )
                     msg_context = {
-                        'full_name': tx.user.full_name,
-                        'order_id': tx.midtrans_order_id,
-                        'package_name': tx.package.name,
-                        'package_price': format_currency_fn(tx.package.price),
-                        'status_url': status_url,
+                        "full_name": tx.user.full_name,
+                        "order_id": tx.midtrans_order_id,
+                        "package_name": tx.package.name,
+                        "package_price": format_currency_fn(tx.package.price),
+                        "status_url": status_url,
                     }
-                    caption_message = get_notification_message('purchase_success_with_invoice', msg_context)
+                    caption_message = get_notification_message("purchase_success_with_invoice", msg_context)
                     filename = f"invoice-{tx.midtrans_order_id}.pdf"
-                    request_id = flask_request.environ.get('FLASK_REQUEST_ID', '') if flask_request else ''
+                    request_id = flask_request.environ.get("FLASK_REQUEST_ID", "") if flask_request else ""
                     log_transaction_event(
                         session=db.session,
                         transaction=tx,
                         source=TransactionEventSource.APP,
-                        event_type='WHATSAPP_INVOICE_QUEUED',
+                        event_type="WHATSAPP_INVOICE_QUEUED",
                         status=tx.status,
                         payload={
-                            'recipient_number': str(tx.user.phone_number),
-                            'pdf_url': temp_invoice_url,
-                            'filename': filename,
-                            'request_id': request_id,
+                            "recipient_number": str(tx.user.phone_number),
+                            "pdf_url": temp_invoice_url,
+                            "filename": filename,
+                            "request_id": request_id,
                         },
                     )
                     db.session.commit()
@@ -765,19 +793,25 @@ def admin_reconcile_transaction_impl(
                         str(tx.id),
                     )
                     whatsapp_sent = True
-                    current_app.logger.info(f'ADMIN_RECONCILE: WA invoice queued for {tx.user.phone_number} / {order_id}')
+                    current_app.logger.info(
+                        f"ADMIN_RECONCILE: WA invoice queued for {tx.user.phone_number} / {order_id}"
+                    )
             except Exception as e_notif:
-                current_app.logger.error(f'ADMIN_RECONCILE: Gagal antri WA {order_id}: {e_notif}', exc_info=True)
+                current_app.logger.error(f"ADMIN_RECONCILE: Gagal antri WA {order_id}: {e_notif}", exc_info=True)
 
-        return jsonify({
-            'message': f'Transaksi berhasil diperbaiki. Kuota {"diinjek" if quota_applied else "sudah tersambung sebelumnya"}. WhatsApp {"dikirim" if whatsapp_sent else "tidak terkirim (cek log)"}.',
-            'transaction_status': 'SUCCESS',
-            'midtrans_status': mt_status,
-            'quota_applied': quota_applied,
-            'whatsapp_sent': whatsapp_sent,
-        }), HTTPStatus.OK
+        return jsonify(
+            {
+                "message": f"Transaksi berhasil diperbaiki. Kuota {'diinjek' if quota_applied else 'sudah tersambung sebelumnya'}. WhatsApp {'dikirim' if whatsapp_sent else 'tidak terkirim (cek log)'}.",
+                "transaction_status": "SUCCESS",
+                "midtrans_status": mt_status,
+                "quota_applied": quota_applied,
+                "whatsapp_sent": whatsapp_sent,
+            }
+        ), HTTPStatus.OK
 
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f'ADMIN_RECONCILE: Fatal error {order_id}: {e}', exc_info=True)
-        return jsonify({'message': 'Terjadi kesalahan internal saat memperbaiki transaksi.'}), HTTPStatus.INTERNAL_SERVER_ERROR
+        current_app.logger.error(f"ADMIN_RECONCILE: Fatal error {order_id}: {e}", exc_info=True)
+        return jsonify(
+            {"message": "Terjadi kesalahan internal saat memperbaiki transaksi."}
+        ), HTTPStatus.INTERNAL_SERVER_ERROR

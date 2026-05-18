@@ -10,11 +10,7 @@ class _Resource:
     def get(self, **kwargs):
         address = kwargs.get("address")
         list_name = kwargs.get("list")
-        return [
-            entry
-            for entry in self.entries
-            if entry.get("address") == address and entry.get("list") == list_name
-        ]
+        return [entry for entry in self.entries if entry.get("address") == address and entry.get("list") == list_name]
 
     def remove(self, **kwargs):
         if ".id" in kwargs:

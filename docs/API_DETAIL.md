@@ -60,6 +60,12 @@ Perubahan endpoint prioritas dianggap lengkap hanya jika keempat artefak berikut
 - `GET /transactions/{order_id}/qr`
 - `GET /transactions/public/{order_id}/qr`
 
+### Public user
+
+- `POST /users/check-or-register` — cek apakah nomor telepon sudah terdaftar (dipakai pages/beli/index.vue)
+- `POST /users/database-update-submissions`
+- `GET /users/database-update-submissions/status`
+
 ### Public settings
 
 - `GET /settings/payment-availability`

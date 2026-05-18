@@ -192,8 +192,7 @@ def verify_otp_impl(  # pyright: ignore[reportGeneralTypeIssues]
                 # bisa mengakses halaman pembayaran hutang. MikroTik binding dilewati.
                 _is_auto_debt_block_login = True
                 current_app.logger.info(
-                    "Verify-OTP: auto-debt-limit block — limited login allowed for debt settlement. "
-                    "user=%s reason=%s",
+                    "Verify-OTP: auto-debt-limit block — limited login allowed for debt settlement. user=%s reason=%s",
                     user_to_login.id,
                     _blocked_reason,
                 )
@@ -222,9 +221,10 @@ def verify_otp_impl(  # pyright: ignore[reportGeneralTypeIssues]
                 session_mac_token = None
                 session_mac_fallback = None
         is_production_like = str(current_app.config.get("FLASK_ENV", "")).strip().lower() == "production"
-        require_trusted_captive_context = bool(
-            current_app.config.get("VERIFY_OTP_REQUIRE_TRUSTED_CAPTIVE_CONTEXT_PRODUCTION", True)
-        ) and is_production_like
+        require_trusted_captive_context = (
+            bool(current_app.config.get("VERIFY_OTP_REQUIRE_TRUSTED_CAPTIVE_CONTEXT_PRODUCTION", True))
+            and is_production_like
+        )
         allow_raw_client_mac_fallback = bool(current_app.config.get("VERIFY_OTP_ALLOW_RAW_CLIENT_MAC_FALLBACK", False))
 
         if require_trusted_captive_context and data.hotspot_login_context is True and not (client_ip or client_mac):
@@ -233,7 +233,9 @@ def verify_otp_impl(  # pyright: ignore[reportGeneralTypeIssues]
                 user_agent,
             )
             return jsonify(
-                AuthErrorResponseSchema(error="Konteks hotspot tidak valid. Silakan login dari halaman captive yang resmi.").model_dump()
+                AuthErrorResponseSchema(
+                    error="Konteks hotspot tidak valid. Silakan login dari halaman captive yang resmi."
+                ).model_dump()
             ), HTTPStatus.FORBIDDEN
 
         login_ip_for_history = client_ip
@@ -265,8 +267,10 @@ def verify_otp_impl(  # pyright: ignore[reportGeneralTypeIssues]
             ok_router_mac, router_mac_raw, router_mac_msg = resolve_client_mac(resolved_ip)
             authoritative_binding_mac = normalize_mac(router_mac_raw) if router_mac_raw else None
 
-            should_try_mac_hint_fallback = bool(incoming_mac) and resolved_ip_source == "client_ip" and (
-                not ok_router_mac or not authoritative_binding_mac
+            should_try_mac_hint_fallback = (
+                bool(incoming_mac)
+                and resolved_ip_source == "client_ip"
+                and (not ok_router_mac or not authoritative_binding_mac)
             )
             if should_try_mac_hint_fallback:
                 recovered_ip = _recover_ip_from_client_mac_hint(incoming_mac)
@@ -390,7 +394,11 @@ def verify_otp_impl(  # pyright: ignore[reportGeneralTypeIssues]
         else:
             hotspot_login_required = base_hotspot_login_required
 
-        if (not is_demo_login) and (not _is_auto_debt_block_login) and user_to_login.role in [UserRole.USER, UserRole.KOMANDAN, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
+        if (
+            (not is_demo_login)
+            and (not _is_auto_debt_block_login)
+            and user_to_login.role in [UserRole.USER, UserRole.KOMANDAN, UserRole.ADMIN, UserRole.SUPER_ADMIN]
+        ):
             # OTP valid dari user sendiri -> self-authorize default untuk mencegah deadlock
             # "device belum authorize" pada user baru/perangkat baru.
             # Pengecualian: saat OTP bypass code dipakai, tetap konservatif.
@@ -415,11 +423,12 @@ def verify_otp_impl(  # pyright: ignore[reportGeneralTypeIssues]
                 except Exception:
                     bypass_explicit = True
 
-            trusted_takeover_source = (
-                binding_context.get("mac_source") == "mikrotik"
-                and bool(binding_context.get("resolved_mac"))
+            trusted_takeover_source = binding_context.get("mac_source") == "mikrotik" and bool(
+                binding_context.get("resolved_mac")
             )
-            allow_cross_user_transfer = bool(data.confirm_device_takeover) and trusted_takeover_source and (not used_bypass_code)
+            allow_cross_user_transfer = (
+                bool(data.confirm_device_takeover) and trusted_takeover_source and (not used_bypass_code)
+            )
 
             if bool(data.confirm_device_takeover) and not trusted_takeover_source:
                 current_app.logger.warning(

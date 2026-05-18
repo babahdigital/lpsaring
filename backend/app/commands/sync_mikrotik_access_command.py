@@ -15,7 +15,12 @@ from app.infrastructure.gateways.mikrotik_client import (
 from app.services.access_policy_service import resolve_allowed_binding_type_for_user
 from app.services.device_management_service import normalize_mac
 from app.services.hotspot_sync_service import sync_address_list_for_single_user
-from app.utils.formatters import build_ip_binding_comment, format_to_local_phone, get_app_date_time_strings, get_phone_number_variations
+from app.utils.formatters import (
+    build_ip_binding_comment,
+    format_to_local_phone,
+    get_app_date_time_strings,
+    get_phone_number_variations,
+)
 
 logger = logging.getLogger(__name__)
 

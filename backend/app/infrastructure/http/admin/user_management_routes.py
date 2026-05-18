@@ -96,13 +96,16 @@ def _format_remaining_manual_debt_display(user: User, remaining_manual_debt_mb: 
     if remaining_manual_debt_mb <= 0:
         return "0 GB"
     # Check if user still has any open unlimited debt items
-    open_unlimited = db.session.execute(
-        select(func.count())
-        .select_from(UserQuotaDebt)
-        .where(UserQuotaDebt.user_id == user.id, UserQuotaDebt.is_paid.is_(False))
-        .where(UserQuotaDebt.amount_mb <= 1)
-        .where(UserQuotaDebt.note.ilike("%unlimited%"))
-    ).scalar() or 0
+    open_unlimited = (
+        db.session.execute(
+            select(func.count())
+            .select_from(UserQuotaDebt)
+            .where(UserQuotaDebt.user_id == user.id, UserQuotaDebt.is_paid.is_(False))
+            .where(UserQuotaDebt.amount_mb <= 1)
+            .where(UserQuotaDebt.note.ilike("%unlimited%"))
+        ).scalar()
+        or 0
+    )
     if open_unlimited > 0:
         return f"{open_unlimited} item Unlimited"
     return format_mb_to_gb(remaining_manual_debt_mb)
@@ -314,7 +317,9 @@ def _pick_ref_pkg_for_debt_mb(value_mb: float) -> Package | None:
         .limit(1)
     ).scalar_one_or_none()
     if ref is None:
-        ref = db.session.execute(base_q.order_by(Package.data_quota_gb.desc(), Package.price.asc()).limit(1)).scalar_one_or_none()
+        ref = db.session.execute(
+            base_q.order_by(Package.data_quota_gb.desc(), Package.price.asc()).limit(1)
+        ).scalar_one_or_none()
     return ref
 
 
@@ -512,8 +517,8 @@ def _format_detail_kamar_label(kamar: str | None) -> str:
     normalized = raw_value.replace(" ", "")
     lowered = normalized.lower()
     for prefix in ("kamar_", "kamr_"):
-        if lowered.startswith(prefix) and normalized[len(prefix):].isdigit():
-            return normalized[len(prefix):]
+        if lowered.startswith(prefix) and normalized[len(prefix) :].isdigit():
+            return normalized[len(prefix) :]
 
     match = re.search(r"(\d+)$", normalized)
     if match:
@@ -555,9 +560,7 @@ def _build_user_manual_debt_payload(user: User, *, max_age_days: int | None = No
     ).all()
 
     ref_packages = db.session.scalars(
-        select(Package)
-        .where(Package.is_active == True, Package.data_quota_gb > 0)
-        .order_by(Package.price.asc())
+        select(Package).where(Package.is_active == True, Package.data_quota_gb > 0).order_by(Package.price.asc())
     ).all()
 
     def _pick_ref_pkg(amount_mb: int):
@@ -579,7 +582,9 @@ def _build_user_manual_debt_payload(user: User, *, max_age_days: int | None = No
             if isinstance(debt_date_value, date):
                 include_item = debt_date_value >= cutoff_date
             elif isinstance(created_at_value, datetime):
-                normalized_created_at = created_at_value if created_at_value.tzinfo else created_at_value.replace(tzinfo=dt_timezone.utc)
+                normalized_created_at = (
+                    created_at_value if created_at_value.tzinfo else created_at_value.replace(tzinfo=dt_timezone.utc)
+                )
                 include_item = normalized_created_at >= cutoff_datetime
 
             if not include_item:
@@ -630,7 +635,9 @@ def _build_detail_access_status_meta(user: User) -> dict[str, str]:
         return {
             "access_status_key": "blocked",
             "access_status_label": "Blokir",
-            "access_status_hint": str(getattr(user, "blocked_reason", "") or "Akses login ditolak sampai blokir dibuka.").strip(),
+            "access_status_hint": str(
+                getattr(user, "blocked_reason", "") or "Akses login ditolak sampai blokir dibuka."
+            ).strip(),
             "access_status_tone": "error",
         }
     if status_key == "inactive":
@@ -764,7 +771,9 @@ def _default_profile_for_user(user: User) -> str:
     user_profile = str(settings_service.get_setting("MIKROTIK_PROFILE_USER", "user") or "user").strip()
     komandan_profile = str(settings_service.get_setting("MIKROTIK_PROFILE_KOMANDAN", "komandan") or "komandan").strip()
     inactive_profile = str(settings_service.get_setting("MIKROTIK_PROFILE_INACTIVE", "inactive") or "inactive").strip()
-    unlimited_profile = str(settings_service.get_setting("MIKROTIK_PROFILE_UNLIMITED", "unlimited") or "unlimited").strip()
+    unlimited_profile = str(
+        settings_service.get_setting("MIKROTIK_PROFILE_UNLIMITED", "unlimited") or "unlimited"
+    ).strip()
 
     if getattr(user, "is_active", False) is not True:
         return inactive_profile
@@ -861,9 +870,13 @@ def _get_user_mikrotik_status_payload(user: User) -> dict:
         }
 
     user_exists = isinstance(details, dict) and bool(details)
-    _persist_mikrotik_snapshot(user, exists_on_mikrotik=user_exists, details=details if isinstance(details, dict) else None)
+    _persist_mikrotik_snapshot(
+        user, exists_on_mikrotik=user_exists, details=details if isinstance(details, dict) else None
+    )
 
-    resolved_profile_name = str((details or {}).get("profile") or "").strip() or database_profile_name or derived_profile_name
+    resolved_profile_name = (
+        str((details or {}).get("profile") or "").strip() or database_profile_name or derived_profile_name
+    )
     return {
         "user_id": str(user.id),
         "exists_on_mikrotik": user_exists,
@@ -889,7 +902,11 @@ def _build_user_detail_report_context(
         user,
         str(status_payload.get("resolved_profile_name") or _default_profile_for_user(user)).strip(),
     )
-    profile_source = "Live MikroTik" if live_available and exists_on_mikrotik else ("Sinkron terakhir" if getattr(user, "mikrotik_profile_name", None) else "Standar sistem")
+    profile_source = (
+        "Live MikroTik"
+        if live_available and exists_on_mikrotik
+        else ("Sinkron terakhir" if getattr(user, "mikrotik_profile_name", None) else "Standar sistem")
+    )
 
     if live_available and exists_on_mikrotik:
         mikrotik_account_label = "Sinkron live"
@@ -925,7 +942,9 @@ def _build_user_detail_report_context(
     )
     if purchase_window_days is not None and purchase_window_days > 0:
         cutoff = datetime.now(dt_timezone.utc) - timedelta(days=purchase_window_days)
-        purchase_stmt = purchase_stmt.where(sa.func.coalesce(Transaction.payment_time, Transaction.created_at) >= cutoff)
+        purchase_stmt = purchase_stmt.where(
+            sa.func.coalesce(Transaction.payment_time, Transaction.created_at) >= cutoff
+        )
     purchase_rows = db.session.scalars(purchase_stmt).all()
 
     recent_purchases: list[dict] = []
@@ -936,7 +955,10 @@ def _build_user_detail_report_context(
         recent_purchases.append(
             {
                 "order_id": str(getattr(tx, "midtrans_order_id", "") or "-").strip() or "-",
-                "package_name": str(getattr(getattr(tx, "package", None), "name", "") or "Paket tidak diketahui").strip() or "Paket tidak diketahui",
+                "package_name": str(
+                    getattr(getattr(tx, "package", None), "name", "") or "Paket tidak diketahui"
+                ).strip()
+                or "Paket tidak diketahui",
                 "amount": int(getattr(tx, "amount", 0) or 0),
                 "amount_display": _format_currency_idr(getattr(tx, "amount", 0) or 0),
                 "payment_method": str(getattr(tx, "payment_method", "") or "-").strip() or "-",
@@ -963,15 +985,15 @@ def _build_user_detail_report_context(
     if total_manual_debt_items > 0 or debt_manual_mb > 0:
         # For unlimited users, check if any manual debt items are unlimited debt
         _has_unlimited_debt = _is_unlimited and any(
-            bool(item.get("is_unlimited_debt"))
-            for item in manual_debt_items
-            if isinstance(item, dict)
+            bool(item.get("is_unlimited_debt")) for item in manual_debt_items if isinstance(item, dict)
         )
         debt_breakdown_rows.append(
             {
                 "kind": "Manual",
                 "amount_mb": debt_manual_mb,
-                "amount_display": f"{open_debt_items} item Unlimited" if _has_unlimited_debt else format_mb_to_gb(debt_manual_mb),
+                "amount_display": f"{open_debt_items} item Unlimited"
+                if _has_unlimited_debt
+                else format_mb_to_gb(debt_manual_mb),
                 "status_label": (
                     f"{open_debt_items} belum lunas / {paid_debt_items} lunas"
                     if total_manual_debt_items > 0
@@ -986,9 +1008,7 @@ def _build_user_detail_report_context(
     device_count = int(getattr(user, "device_count", 0) or 0)
     if device_count == 0:
         device_count = int(
-            db.session.query(sa.func.count(UserDevice.id))
-            .filter(UserDevice.user_id == user.id)
-            .scalar() or 0
+            db.session.query(sa.func.count(UserDevice.id)).filter(UserDevice.user_id == user.id).scalar() or 0
         )
     _debt_display = "Unlimited" if _is_unlimited and open_debt_items > 0 else format_mb_to_gb(debt_total_mb)
     debt_summary_line = (
@@ -1008,7 +1028,8 @@ def _build_user_detail_report_context(
         "user": user,
         "generated_at": format_app_datetime_display(datetime.now(dt_timezone.utc), fallback="-"),
         "printed_at": format_app_datetime_display(datetime.now(dt_timezone.utc), fallback="-"),
-        "user_phone_display": format_to_local_phone(getattr(user, "phone_number", None)) or str(getattr(user, "phone_number", "") or "-"),
+        "user_phone_display": format_to_local_phone(getattr(user, "phone_number", None))
+        or str(getattr(user, "phone_number", "") or "-"),
         "user_role_label": _format_detail_role_label(getattr(user, "role", None)),
         "address_display": address_display,
         "profile_display_name": profile_display_name,
@@ -1027,7 +1048,9 @@ def _build_user_detail_report_context(
         "quota_total_mb": float(getattr(user, "total_quota_purchased_mb", 0) or 0),
         "quota_used_mb": float(getattr(user, "total_quota_used_mb", 0) or 0),
         "quota_remaining_mb": remaining_mb,
-        "quota_expiry_label": format_app_datetime_display(getattr(user, "quota_expiry_date", None), fallback="Belum diatur"),
+        "quota_expiry_label": format_app_datetime_display(
+            getattr(user, "quota_expiry_date", None), fallback="Belum diatur"
+        ),
         "is_unlimited_user": bool(getattr(user, "is_unlimited_user", False)),
         "debt_auto_mb": debt_auto_mb,
         "debt_manual_mb": debt_manual_mb,
@@ -1117,7 +1140,9 @@ def approve_public_update_submission(current_admin: User, submission_id):
         return jsonify({"message": "Pengajuan sudah diproses sebelumnya."}), HTTPStatus.BAD_REQUEST
 
     if not submission.phone_number:
-        return jsonify({"message": "Pengajuan ini tidak memiliki nomor telepon untuk diverifikasi."}), HTTPStatus.BAD_REQUEST
+        return jsonify(
+            {"message": "Pengajuan ini tidak memiliki nomor telepon untuk diverifikasi."}
+        ), HTTPStatus.BAD_REQUEST
 
     variations = get_phone_number_variations(str(submission.phone_number))
     user = db.session.execute(select(User).where(User.phone_number.in_(variations))).scalar_one_or_none()
@@ -1219,6 +1244,7 @@ def reject_public_update_submission(current_admin: User, submission_id):
         db.session.rollback()
         current_app.logger.error("Gagal reject pengajuan %s: %s", submission_id, e, exc_info=True)
         return jsonify({"message": "Gagal menolak pengajuan."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
 
 # --- SEMUA ROUTE LAINNYA DI ATAS INI TIDAK BERUBAH ---
 # (create_user, update_user, approve_user, dll. tetap sama)
@@ -1471,7 +1497,9 @@ def admin_reset_user_password(current_admin: User, user_id: uuid.UUID):
     if denied_response:
         return denied_response
     if user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
-        return jsonify({"message": "Reset password hanya untuk akun Admin/Super Admin. USER/KOMANDAN menggunakan OTP."}), HTTPStatus.BAD_REQUEST
+        return jsonify(
+            {"message": "Reset password hanya untuk akun Admin/Super Admin. USER/KOMANDAN menggunakan OTP."}
+        ), HTTPStatus.BAD_REQUEST
 
     new_pin = "".join([str(secrets.randbelow(10)) for _ in range(6)])
 
@@ -1500,10 +1528,13 @@ def admin_reset_user_password(current_admin: User, user_id: uuid.UUID):
     wa_sent = False
     if user.phone_number:
         try:
-            message = get_notification_message("admin_reset_user_password", {
-                "full_name": user.full_name or "Pengguna",
-                "new_password": new_pin,
-            })
+            message = get_notification_message(
+                "admin_reset_user_password",
+                {
+                    "full_name": user.full_name or "Pengguna",
+                    "new_password": new_pin,
+                },
+            )
             wa_sent = send_whatsapp_message(user.phone_number, message)
         except Exception as exc:
             current_app.logger.warning("Gagal kirim WA reset password ke %s: %s", user.phone_number, exc)
@@ -1624,10 +1655,12 @@ def get_users_list(current_admin: User):
                 elif status in {"unlimited", "unlimted"}:
                     conditions.append(User.is_unlimited_user.is_(True))
                 elif status in {"debt", "hutang"}:
-                    conditions.append(sa.or_(
-                        sa.and_(User.is_unlimited_user.is_(False), total_debt > 0),
-                        sa.and_(User.is_unlimited_user.is_(True), User.manual_debt_mb > 0),
-                    ))
+                    conditions.append(
+                        sa.or_(
+                            sa.and_(User.is_unlimited_user.is_(False), total_debt > 0),
+                            sa.and_(User.is_unlimited_user.is_(True), User.manual_debt_mb > 0),
+                        )
+                    )
                 elif status in {"expired", "expiried"}:
                     conditions.append(sa.and_(User.quota_expiry_date.is_not(None), User.quota_expiry_date < now_utc))
                 elif status in {"fup"}:
@@ -1806,7 +1839,9 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
                 # Format debt_date dan paid_at dengan zona waktu aplikasi
                 debt_date_str = format_app_date_display(debt.debt_date, fallback="–")
                 paid_at_str = (
-                    format_app_datetime_display(debt.paid_at, fallback=format_app_datetime()) if debt.paid_at else format_app_datetime()
+                    format_app_datetime_display(debt.paid_at, fallback=format_app_datetime())
+                    if debt.paid_at
+                    else format_app_datetime()
                 )
 
                 wa_template = "user_debt_partial_payment_unblock" if unblocked else "user_debt_partial_payment"
@@ -1817,19 +1852,23 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
                         "full_name": user.full_name,
                         "debt_date": debt_date_str,
                         "paid_at": paid_at_str,
-                        "paid_manual_debt_gb": receipt_context.get("paid_manual_gb", "Unlimited") if receipt_context else (
-                            "Unlimited" if _is_unlimited_debt_item(debt) else format_mb_to_gb(paid_mb)
-                        ),
+                        "paid_manual_debt_gb": receipt_context.get("paid_manual_gb", "Unlimited")
+                        if receipt_context
+                        else ("Unlimited" if _is_unlimited_debt_item(debt) else format_mb_to_gb(paid_mb)),
                         "paid_manual_debt_amount_display": (
-                            receipt_context.get("paid_manual_amount_display") if receipt_context else format_currency_idr(
+                            receipt_context.get("paid_manual_amount_display")
+                            if receipt_context
+                            else format_currency_idr(
                                 int(getattr(debt, "price_rp", 0) or 0) or estimate_amount_rp_for_mb(paid_mb)
                             )
                         ),
-                        "paid_total_debt_gb": receipt_context.get("paid_total_gb", "Unlimited") if receipt_context else (
-                            "Unlimited" if _is_unlimited_debt_item(debt) else format_mb_to_gb(paid_mb)
-                        ),
+                        "paid_total_debt_gb": receipt_context.get("paid_total_gb", "Unlimited")
+                        if receipt_context
+                        else ("Unlimited" if _is_unlimited_debt_item(debt) else format_mb_to_gb(paid_mb)),
                         "paid_total_debt_amount_display": (
-                            receipt_context.get("paid_total_amount_display") if receipt_context else format_currency_idr(
+                            receipt_context.get("paid_total_amount_display")
+                            if receipt_context
+                            else format_currency_idr(
                                 int(getattr(debt, "price_rp", 0) or 0) or estimate_amount_rp_for_mb(paid_mb)
                             )
                         ),
@@ -1841,16 +1880,16 @@ def settle_single_manual_debt(current_admin: User, user_id: uuid.UUID, debt_id: 
                     },
                 )
         except Exception as e:
-            current_app.logger.warning(
-                "Gagal mengirim notifikasi pembayaran partial debt user %s: %s", user.id, e
-            )
+            current_app.logger.warning("Gagal mengirim notifikasi pembayaran partial debt user %s: %s", user.id, e)
 
-        return jsonify({
-            "message": "Debt berhasil dilunasi.",
-            "paid_mb": int(paid_mb),
-            "unblocked": bool(unblocked),
-            "receipt_url": receipt_url,
-        }), HTTPStatus.OK
+        return jsonify(
+            {
+                "message": "Debt berhasil dilunasi.",
+                "paid_mb": int(paid_mb),
+                "unblocked": bool(unblocked),
+                "receipt_url": receipt_url,
+            }
+        ), HTTPStatus.OK
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Error settling debt {debt_id} for user {user_id}: {e}", exc_info=True)
@@ -1932,13 +1971,21 @@ def settle_all_debts(current_admin: User, user_id: uuid.UUID):
                     {
                         "full_name": user.full_name,
                         "paid_auto_debt_gb": format_mb_to_gb(paid_auto_mb),
-                        "paid_manual_debt_gb": receipt_context.get("paid_manual_gb", format_mb_to_gb(paid_manual_mb)) if receipt_context else format_mb_to_gb(paid_manual_mb),
-                        "paid_total_debt_gb": receipt_context.get("paid_total_gb", format_mb_to_gb(paid_total_mb)) if receipt_context else format_mb_to_gb(paid_total_mb),
+                        "paid_manual_debt_gb": receipt_context.get("paid_manual_gb", format_mb_to_gb(paid_manual_mb))
+                        if receipt_context
+                        else format_mb_to_gb(paid_manual_mb),
+                        "paid_total_debt_gb": receipt_context.get("paid_total_gb", format_mb_to_gb(paid_total_mb))
+                        if receipt_context
+                        else format_mb_to_gb(paid_total_mb),
                         "paid_total_debt_amount_display": (
-                            receipt_context.get("paid_total_amount_display") if receipt_context else format_currency_idr(estimate_amount_rp_for_mb(paid_total_mb))
+                            receipt_context.get("paid_total_amount_display")
+                            if receipt_context
+                            else format_currency_idr(estimate_amount_rp_for_mb(paid_total_mb))
                         ),
                         "payment_channel_label": "Pelunasan manual oleh Admin",
-                        "remaining_quota": format_mb_to_gb(remaining_mb) if not bool(getattr(user, "is_unlimited_user", False)) else "Unlimited",
+                        "remaining_quota": format_mb_to_gb(remaining_mb)
+                        if not bool(getattr(user, "is_unlimited_user", False))
+                        else "Unlimited",
                         "receipt_url": receipt_url or "-",
                     },
                 )
@@ -1974,10 +2021,10 @@ def verify_mikrotik_rules(current_admin: User):
     # _table: tabel RouterOS yang akan diquery ("raw" atau "filter")
     # Sisa key adalah field yang harus cocok pada rule (semua harus ada & sama).
     EXPECTED_RULES: list[dict] = [
-        {"_table": "raw",    "chain": "prerouting", "action": "drop",   "src-address-list": "klient_inactive"},
-        {"_table": "raw",    "chain": "prerouting", "action": "drop",   "dst-address-list": "klient_inactive"},
-        {"_table": "filter", "chain": "hs-unauth",  "action": "return", "src-address-list": "klient_aktif"},
-        {"_table": "filter", "chain": "hs-unauth",  "action": "return", "src-address-list": "klient_fup"},
+        {"_table": "raw", "chain": "prerouting", "action": "drop", "src-address-list": "klient_inactive"},
+        {"_table": "raw", "chain": "prerouting", "action": "drop", "dst-address-list": "klient_inactive"},
+        {"_table": "filter", "chain": "hs-unauth", "action": "return", "src-address-list": "klient_aktif"},
+        {"_table": "filter", "chain": "hs-unauth", "action": "return", "src-address-list": "klient_fup"},
     ]
 
     filter_rules: list[dict] | None = None
@@ -1985,19 +2032,25 @@ def verify_mikrotik_rules(current_admin: User):
     try:
         with get_mikrotik_connection(raise_on_error=True) as api_conn:
             if not api_conn:
-                return jsonify({"status": "error", "message": "Koneksi MikroTik tidak tersedia."}), HTTPStatus.SERVICE_UNAVAILABLE
+                return jsonify(
+                    {"status": "error", "message": "Koneksi MikroTik tidak tersedia."}
+                ), HTTPStatus.SERVICE_UNAVAILABLE
             filter_rules = api_conn.get_resource("/ip/firewall/filter").get()
             raw_rules = api_conn.get_resource("/ip/firewall/raw").get()
     except Exception as e:
         current_app.logger.error("Gagal mengambil firewall rules dari MikroTik: %s", e, exc_info=True)
-        return jsonify({"status": "error", "message": "Gagal koneksi MikroTik. Cek koneksi ke router."}), HTTPStatus.SERVICE_UNAVAILABLE
+        return jsonify(
+            {"status": "error", "message": "Gagal koneksi MikroTik. Cek koneksi ke router."}
+        ), HTTPStatus.SERVICE_UNAVAILABLE
 
     if filter_rules is None or raw_rules is None:
-        return jsonify({"status": "error", "message": "Gagal membaca firewall rules dari MikroTik."}), HTTPStatus.SERVICE_UNAVAILABLE
+        return jsonify(
+            {"status": "error", "message": "Gagal membaca firewall rules dari MikroTik."}
+        ), HTTPStatus.SERVICE_UNAVAILABLE
 
     rules_by_table: dict[str, list[dict]] = {
         "filter": [r for r in filter_rules if r.get("disabled", "false") != "true"],
-        "raw":    [r for r in raw_rules    if r.get("disabled", "false") != "true"],
+        "raw": [r for r in raw_rules if r.get("disabled", "false") != "true"],
     }
 
     def _matches(actual: dict, expected: dict) -> bool:
@@ -2019,13 +2072,15 @@ def verify_mikrotik_rules(current_admin: User):
     active_filter_count = len(rules_by_table["filter"])
     active_raw_count = len(rules_by_table["raw"])
 
-    return jsonify({
-        "status": "ok" if all_found else "error",
-        "all_found": all_found,
-        "total_filter_rules": active_filter_count,
-        "total_raw_rules": active_raw_count,
-        "checks": checks,
-    }), HTTPStatus.OK
+    return jsonify(
+        {
+            "status": "ok" if all_found else "error",
+            "all_found": all_found,
+            "total_filter_rules": active_filter_count,
+            "total_raw_rules": active_raw_count,
+            "checks": checks,
+        }
+    ), HTTPStatus.OK
 
 
 @user_management_bp.route("/users/<uuid:user_id>/debts/export", methods=["GET"])
@@ -2175,7 +2230,9 @@ def export_debt_settlement_receipt_temp(token: str):
     transaction = None
     order_id = str((getattr(entry, "event_details", None) or {}).get("order_id") or "").strip()
     if order_id:
-        transaction = db.session.execute(select(Transaction).where(Transaction.midtrans_order_id == order_id)).scalar_one_or_none()
+        transaction = db.session.execute(
+            select(Transaction).where(Transaction.midtrans_order_id == order_id)
+        ).scalar_one_or_none()
 
     try:
         context = build_debt_settlement_receipt_context(user=user, settlement_entry=entry, transaction=transaction)
@@ -2208,11 +2265,15 @@ def send_user_manual_debts_whatsapp(current_admin: User, user_id: uuid.UUID):
         report_context = _build_user_manual_debt_report_context(user)
         open_items = [item for item in report_context.get("items", []) if not bool(item.get("is_paid"))]
         if not open_items:
-            return jsonify({"message": "Tidak ada tunggakan manual yang masih terbuka untuk dikirimkan."}), HTTPStatus.BAD_REQUEST
+            return jsonify(
+                {"message": "Tidak ada tunggakan manual yang masih terbuka untuk dikirimkan."}
+            ), HTTPStatus.BAD_REQUEST
 
         base_url = _resolve_public_base_url()
         if not base_url:
-            return jsonify({"message": "Konfigurasi alamat publik aplikasi tidak ditemukan."}), HTTPStatus.SERVICE_UNAVAILABLE
+            return jsonify(
+                {"message": "Konfigurasi alamat publik aplikasi tidak ditemukan."}
+            ), HTTPStatus.SERVICE_UNAVAILABLE
 
         temp_token = generate_temp_debt_report_token(str(user.id))
         pdf_url = f"{base_url.rstrip('/')}/api/admin/users/debts/temp/{temp_token}.pdf"
@@ -2235,7 +2296,9 @@ def send_user_manual_debts_whatsapp(current_admin: User, user_id: uuid.UUID):
             user.phone_number,
             current_admin.id,
         )
-        return jsonify({"message": "Ringkasan tunggakan berhasil diantrikan ke WhatsApp.", "queued": True}), HTTPStatus.OK
+        return jsonify(
+            {"message": "Ringkasan tunggakan berhasil diantrikan ke WhatsApp.", "queued": True}
+        ), HTTPStatus.OK
     except Exception as e:
         current_app.logger.error(f"Error queue debt WhatsApp report for user {user_id}: {e}", exc_info=True)
         return jsonify({"message": "Gagal mengantrekan WhatsApp tunggakan."}), HTTPStatus.INTERNAL_SERVER_ERROR
@@ -2422,11 +2485,14 @@ def send_user_quota_history_wa(current_admin: User, user_id: uuid.UUID):
 
         from app.services.notification_service import get_notification_message
 
-        caption = get_notification_message("admin_send_quota_history", {
-            "full_name": user.full_name or "Pengguna",
-            "period": period_label,
-            "admin_name": current_admin.full_name or "Admin",
-        })
+        caption = get_notification_message(
+            "admin_send_quota_history",
+            {
+                "full_name": user.full_name or "Pengguna",
+                "period": period_label,
+                "admin_name": current_admin.full_name or "Admin",
+            },
+        )
         if str(caption).startswith("Peringatan:"):
             # Template not found, use fallback message
             caption = (
@@ -2461,7 +2527,7 @@ def serve_temp_quota_report_pdf(token: str):
     import os
     import re as _re
 
-    if not _re.match(r'^[A-Za-z0-9_-]{1,64}$', token):
+    if not _re.match(r"^[A-Za-z0-9_-]{1,64}$", token):
         return jsonify({"message": "Token tidak valid."}), HTTPStatus.BAD_REQUEST
 
     temp_dir = os.path.join(current_app.instance_path, "tmp_pdf")
@@ -2520,7 +2586,9 @@ def get_inactive_cleanup_preview(current_admin: User):
             )
             if latest_mutation_at is not None:
                 activity_candidates.append(
-                    latest_mutation_at if latest_mutation_at.tzinfo else latest_mutation_at.replace(tzinfo=dt_timezone.utc)
+                    latest_mutation_at
+                    if latest_mutation_at.tzinfo
+                    else latest_mutation_at.replace(tzinfo=dt_timezone.utc)
                 )
             latest_device_at = db.session.scalar(
                 select(func.max(UserDevice.last_seen_at)).where(UserDevice.user_id == user.id)
@@ -2536,7 +2604,8 @@ def get_inactive_cleanup_preview(current_admin: User):
                 )
                 if latest_admin_action_at is not None:
                     activity_candidates.append(
-                        latest_admin_action_at if latest_admin_action_at.tzinfo
+                        latest_admin_action_at
+                        if latest_admin_action_at.tzinfo
                         else latest_admin_action_at.replace(tzinfo=dt_timezone.utc)
                     )
             last_activity = max(activity_candidates) if activity_candidates else (user.created_at or None)
@@ -2546,10 +2615,7 @@ def get_inactive_cleanup_preview(current_admin: User):
             days_inactive = (now_utc - last_activity).days
 
             # Hitung sinyal-sinyal untuk transparansi
-            has_active_quota = (
-                user.quota_expiry_date is not None
-                and user.quota_expiry_date > now_utc
-            )
+            has_active_quota = user.quota_expiry_date is not None and user.quota_expiry_date > now_utc
 
             payload = {
                 "id": str(user.id),
@@ -2889,7 +2955,9 @@ def send_user_detail_report_whatsapp(current_admin: User, user_id: uuid.UUID):
 
         base_url = _resolve_public_base_url()
         if not base_url:
-            return jsonify({"message": "Konfigurasi alamat publik aplikasi tidak ditemukan."}), HTTPStatus.SERVICE_UNAVAILABLE
+            return jsonify(
+                {"message": "Konfigurasi alamat publik aplikasi tidak ditemukan."}
+            ), HTTPStatus.SERVICE_UNAVAILABLE
 
         temp_token = generate_temp_user_detail_report_token(str(user.id))
         pdf_url = f"{base_url.rstrip('/')}/api/admin/users/detail-report/temp/{temp_token}.pdf"
@@ -2989,7 +3057,9 @@ def adjust_user_quota_direct(current_admin: User, user_id: uuid.UUID):
                 if set_purchased_mb < 0:
                     raise ValueError
             except (ValueError, TypeError):
-                return jsonify({"message": "set_purchased_mb harus bilangan bulat >= 0."}), HTTPStatus.UNPROCESSABLE_ENTITY
+                return jsonify(
+                    {"message": "set_purchased_mb harus bilangan bulat >= 0."}
+                ), HTTPStatus.UNPROCESSABLE_ENTITY
 
         set_used_mb: int | None = None
         if raw_used is not None:
@@ -3058,7 +3128,9 @@ def adjust_user_quota_direct(current_admin: User, user_id: uuid.UUID):
     except SAOperationalError:
         db.session.rollback()
         return jsonify(
-            {"message": "Sistem sedang memproses data pengguna ini (sinkronisasi aktif). Coba lagi dalam beberapa detik."}
+            {
+                "message": "Sistem sedang memproses data pengguna ini (sinkronisasi aktif). Coba lagi dalam beberapa detik."
+            }
         ), HTTPStatus.CONFLICT
 
     except Exception as e:
@@ -3131,23 +3203,28 @@ def seed_imported_update_submissions(current_admin: User):
 
         current_app.logger.info(
             "seed_imported_update_submissions: seeded=%d skipped=%d dry_run=%s by admin=%s",
-            len(seeded), len(skipped), dry_run, current_admin.phone_number,
+            len(seeded),
+            len(skipped),
+            dry_run,
+            current_admin.phone_number,
         )
 
-        return jsonify({
-            "success": True,
-            "dry_run": dry_run,
-            "seeded_count": len(seeded),
-            "skipped_count": len(skipped),
-            "seeded_phones": seeded,
-            "skipped_phones": skipped,
-            "message": (
-                f"{'[DRY RUN] ' if dry_run else ''}"
-                f"{len(seeded)} submission dibuat untuk user Imported"
-                f"{f' (test: {test_phone})' if test_phone else ''}."
-                f" {len(skipped)} sudah ada / sudah dinotifikasi."
-            ),
-        }), HTTPStatus.OK
+        return jsonify(
+            {
+                "success": True,
+                "dry_run": dry_run,
+                "seeded_count": len(seeded),
+                "skipped_count": len(skipped),
+                "seeded_phones": seeded,
+                "skipped_phones": skipped,
+                "message": (
+                    f"{'[DRY RUN] ' if dry_run else ''}"
+                    f"{len(seeded)} submission dibuat untuk user Imported"
+                    f"{f' (test: {test_phone})' if test_phone else ''}."
+                    f" {len(skipped)} sudah ada / sudah dinotifikasi."
+                ),
+            }
+        ), HTTPStatus.OK
 
     except Exception as e:
         db.session.rollback()
@@ -3201,7 +3278,11 @@ def _build_bulk_user_row(
     role_raw = getattr(user, "role", None)
     role_key = str(role_raw.name) if role_raw is not None and hasattr(role_raw, "name") else str(role_raw or "USER")
     approval_raw = getattr(user, "approval_status", None)
-    approval_key = str(approval_raw.name) if approval_raw is not None and hasattr(approval_raw, "name") else str(approval_raw or "PENDING_APPROVAL")
+    approval_key = (
+        str(approval_raw.name)
+        if approval_raw is not None and hasattr(approval_raw, "name")
+        else str(approval_raw or "PENDING_APPROVAL")
+    )
     show_location_columns = role_key == "USER"
 
     normalized_blok = _normalize_bulk_blok_display(getattr(user, "blok", None))
@@ -3211,14 +3292,13 @@ def _build_bulk_user_row(
 
     if device_count is None:
         device_count = int(
-            db.session.query(sa.func.count(UserDevice.id))
-            .filter(UserDevice.user_id == user.id)
-            .scalar() or 0
+            db.session.query(sa.func.count(UserDevice.id)).filter(UserDevice.user_id == user.id).scalar() or 0
         )
 
     return {
         "full_name": getattr(user, "full_name", "") or "",
-        "phone_display": format_to_local_phone(getattr(user, "phone_number", None)) or str(getattr(user, "phone_number", "") or "-"),
+        "phone_display": format_to_local_phone(getattr(user, "phone_number", None))
+        or str(getattr(user, "phone_number", "") or "-"),
         "blok_display": blok_display,
         "kamar_display": kamar_display,
         "show_location_columns": show_location_columns,
@@ -3249,6 +3329,7 @@ def _format_short_date(dt_val: object) -> str:
         return "-"
     try:
         from datetime import datetime as _dt
+
         if isinstance(dt_val, _dt):
             utc_plus_8 = dt_val + timedelta(hours=8)
             return utc_plus_8.strftime("%d-%m-%Y")
@@ -3300,7 +3381,13 @@ def export_debt_users_list_pdf(current_admin: User):
         # Reference package is kept only as fallback note for non-ledger estimation.
         ref_pkg = db.session.execute(
             select(Package)
-            .where(Package.is_active.is_(True), Package.data_quota_gb.is_not(None), Package.data_quota_gb > 0, Package.price.is_not(None), Package.price > 0)
+            .where(
+                Package.is_active.is_(True),
+                Package.data_quota_gb.is_not(None),
+                Package.data_quota_gb > 0,
+                Package.price.is_not(None),
+                Package.price > 0,
+            )
             .order_by(Package.data_quota_gb.asc(), Package.price.asc())
             .limit(1)
         ).scalar_one_or_none()
@@ -3430,7 +3517,9 @@ def export_users_list_pdf(current_admin: User):
             sum_debt += row["debt_total_mb"]
 
             _rk = str(row["role_key"])
-            role_label = {"SUPER_ADMIN": "Super Admin", "ADMIN": "Admin", "KOMANDAN": "Komandan", "USER": "User"}.get(_rk, _rk)
+            role_label = {"SUPER_ADMIN": "Super Admin", "ADMIN": "Admin", "KOMANDAN": "Komandan", "USER": "User"}.get(
+                _rk, _rk
+            )
             role_counts[role_label] = role_counts.get(role_label, 0) + 1
             if not row["is_blocked"]:
                 active_count += 1

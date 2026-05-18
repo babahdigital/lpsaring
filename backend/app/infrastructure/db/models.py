@@ -269,7 +269,9 @@ class User(db.Model):
     blocked_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     blocked_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     blocked_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", name="fk_users_blocked_by_id_users", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True),
+        ForeignKey("users.id", name="fk_users_blocked_by_id_users", ondelete="SET NULL"),
+        nullable=True,
     )
 
     # PENAMBAHAN FIELD BARU
@@ -320,11 +322,15 @@ class User(db.Model):
     )
     approved_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", name="fk_users_approved_by_id_users", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True),
+        ForeignKey("users.id", name="fk_users_approved_by_id_users", ondelete="SET NULL"),
+        nullable=True,
     )
     rejected_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     rejected_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", name="fk_users_rejected_by_id_users", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True),
+        ForeignKey("users.id", name="fk_users_rejected_by_id_users", ondelete="SET NULL"),
+        nullable=True,
     )
     last_login_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     last_low_quota_notif_at: Mapped[Optional[datetime.datetime]] = mapped_column(
@@ -809,7 +815,9 @@ class PublicDatabaseUpdateSubmission(db.Model):
     tamping_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     phone_number: Mapped[Optional[str]] = mapped_column(String(25), nullable=True)
     source_ip: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    approval_status: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING", server_default="PENDING")
+    approval_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="PENDING", server_default="PENDING"
+    )
     processed_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

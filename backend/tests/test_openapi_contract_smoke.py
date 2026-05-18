@@ -23,58 +23,58 @@ def _extract_declared_methods_for_path(spec_text: str, path: str) -> set[str]:
 
 def test_openapi_priority_paths_and_methods_present():
     repo_root = Path(__file__).resolve().parents[2]
-    spec_path = repo_root / 'contracts' / 'openapi' / 'openapi.v1.yaml'
-    assert spec_path.exists(), f'OpenAPI spec not found: {spec_path}'
+    spec_path = repo_root / "contracts" / "openapi" / "openapi.v1.yaml"
+    assert spec_path.exists(), f"OpenAPI spec not found: {spec_path}"
 
-    spec_text = spec_path.read_text(encoding='utf-8')
+    spec_text = spec_path.read_text(encoding="utf-8")
 
     expected = {
-        '/auth/auto-login': {'post'},
-        '/auth/admin/login': {'post'},
-        '/auth/status-token/verify': {'post'},
-        '/auth/me': {'get'},
-        '/users/me/quota-debts': {'get'},
-        '/transactions/initiate': {'post'},
-        '/transactions/debt/initiate': {'post'},
-        '/transactions/by-order-id/{order_id}': {'get'},
-        '/transactions/public/by-order-id/{order_id}': {'get'},
-        '/transactions/{order_id}/cancel': {'post'},
-        '/transactions/public/{order_id}/cancel': {'post'},
-        '/admin/transactions/bill': {'post'},
+        "/auth/auto-login": {"post"},
+        "/auth/admin/login": {"post"},
+        "/auth/status-token/verify": {"post"},
+        "/auth/me": {"get"},
+        "/users/me/quota-debts": {"get"},
+        "/transactions/initiate": {"post"},
+        "/transactions/debt/initiate": {"post"},
+        "/transactions/by-order-id/{order_id}": {"get"},
+        "/transactions/public/by-order-id/{order_id}": {"get"},
+        "/transactions/{order_id}/cancel": {"post"},
+        "/transactions/public/{order_id}/cancel": {"post"},
+        "/admin/transactions/bill": {"post"},
     }
 
-    missing_paths = [path for path in expected if f'  {path}:' not in spec_text]
-    assert not missing_paths, f'Missing contract paths: {missing_paths}'
+    missing_paths = [path for path in expected if f"  {path}:" not in spec_text]
+    assert not missing_paths, f"Missing contract paths: {missing_paths}"
 
     method_mismatches: list[str] = []
     for path, expected_methods in expected.items():
         declared = _extract_declared_methods_for_path(spec_text, path)
         if not expected_methods.issubset(declared):
-            method_mismatches.append(f'{path} expected {sorted(expected_methods)} got {sorted(declared)}')
+            method_mismatches.append(f"{path} expected {sorted(expected_methods)} got {sorted(declared)}")
 
-    assert not method_mismatches, f'Contract method mismatch: {method_mismatches}'
+    assert not method_mismatches, f"Contract method mismatch: {method_mismatches}"
 
 
 def test_openapi_admin_user_operational_paths_present():
     repo_root = Path(__file__).resolve().parents[2]
-    spec_path = repo_root / 'contracts' / 'openapi' / 'openapi.v1.yaml'
-    spec_text = spec_path.read_text(encoding='utf-8')
+    spec_path = repo_root / "contracts" / "openapi" / "openapi.v1.yaml"
+    spec_text = spec_path.read_text(encoding="utf-8")
 
     expected = {
-        '/admin/users/{user_id}/mikrotik-status': {'get'},
-        '/admin/users/{user_id}/detail-summary': {'get'},
-        '/admin/users/{user_id}/detail-report/export': {'get'},
-        '/admin/users/{user_id}/detail-report/send-whatsapp': {'post'},
-        '/admin/users/detail-report/temp/{token}.pdf': {'get'},
+        "/admin/users/{user_id}/mikrotik-status": {"get"},
+        "/admin/users/{user_id}/detail-summary": {"get"},
+        "/admin/users/{user_id}/detail-report/export": {"get"},
+        "/admin/users/{user_id}/detail-report/send-whatsapp": {"post"},
+        "/admin/users/detail-report/temp/{token}.pdf": {"get"},
     }
 
-    missing_paths = [path for path in expected if f'  {path}:' not in spec_text]
-    assert not missing_paths, f'Missing admin user operational paths: {missing_paths}'
+    missing_paths = [path for path in expected if f"  {path}:" not in spec_text]
+    assert not missing_paths, f"Missing admin user operational paths: {missing_paths}"
 
     method_mismatches: list[str] = []
     for path, expected_methods in expected.items():
         declared = _extract_declared_methods_for_path(spec_text, path)
         if not expected_methods.issubset(declared):
-            method_mismatches.append(f'{path} expected {sorted(expected_methods)} got {sorted(declared)}')
+            method_mismatches.append(f"{path} expected {sorted(expected_methods)} got {sorted(declared)}")
 
-    assert not method_mismatches, f'Admin user operational method mismatch: {method_mismatches}'
+    assert not method_mismatches, f"Admin user operational method mismatch: {method_mismatches}"

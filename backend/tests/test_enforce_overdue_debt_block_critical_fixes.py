@@ -131,7 +131,9 @@ def _run_task(monkeypatch, app, fake_session, now_local, settings_overrides=None
     monkeypatch.setattr("app.tasks.settings_service.get_ip_binding_type_setting", lambda *_args, **_kwargs: "blocked")
     monkeypatch.setattr("app.tasks.format_to_local_phone", lambda value: value)
     monkeypatch.setattr("app.tasks.lock_user_quota_row", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("app.tasks.snapshot_user_quota_state", lambda user: {"blocked": getattr(user, "is_blocked", False)})
+    monkeypatch.setattr(
+        "app.tasks.snapshot_user_quota_state", lambda user: {"blocked": getattr(user, "is_blocked", False)}
+    )
     monkeypatch.setattr("app.tasks.append_quota_mutation_event", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("app.tasks.increment_metric", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("app.tasks.send_whatsapp_message", lambda *_args, **_kwargs: True)

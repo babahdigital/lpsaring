@@ -35,6 +35,7 @@ def auto_login_impl(
     build_status_error,
 ):
     try:
+
         def _log_auto_login_decision(
             *,
             reason_code: str,
@@ -341,9 +342,7 @@ def auto_login_impl(
             # MAC randomization fallback: router mungkin melihat MAC acak baru,
             # coba cari user via session_mac_fallback (MAC asli tersimpan di sessionStorage browser).
             if session_mac_fallback and session_mac_fallback != resolved_mac:
-                fallback_device = device_query.filter(
-                    UserDevice.mac_address == session_mac_fallback
-                ).first()
+                fallback_device = device_query.filter(UserDevice.mac_address == session_mac_fallback).first()
                 if fallback_device and getattr(fallback_device, "user", None):
                     user = fallback_device.user
                     current_app.logger.info(
@@ -454,7 +453,9 @@ def auto_login_impl(
                         details="jwt user does not match existing device owner",
                     )
                     return jsonify(
-                        AuthErrorResponseSchema(error="Sesi login tidak cocok dengan perangkat. Silakan login OTP.").model_dump()
+                        AuthErrorResponseSchema(
+                            error="Sesi login tidak cocok dengan perangkat. Silakan login OTP."
+                        ).model_dump()
                     ), HTTPStatus.UNAUTHORIZED
                 else:
                     user = trusted_session_user

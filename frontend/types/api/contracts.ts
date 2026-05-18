@@ -58,6 +58,8 @@ export {
   type AdminQuotaHistorySendWaResponse,
   type PublicDatabaseUpdateSubmissionRequest,
   type PublicUpdateSubmissionStatusResponse,
+  type PhoneCheckRequest as PhoneCheckRequestContract,
+  type PhoneCheckResponse as PhoneCheckResponseContract,
   type PaymentAvailabilityResponse,
 } from './contracts.generated'
 

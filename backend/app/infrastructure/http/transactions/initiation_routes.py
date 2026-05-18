@@ -12,7 +12,16 @@ from flask import abort, current_app, jsonify, request
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from werkzeug.exceptions import HTTPException
 
-from app.infrastructure.db.models import ApprovalStatus, Package, Transaction, TransactionEventSource, TransactionStatus, User, UserQuotaDebt, UserRole
+from app.infrastructure.db.models import (
+    ApprovalStatus,
+    Package,
+    Transaction,
+    TransactionEventSource,
+    TransactionStatus,
+    User,
+    UserQuotaDebt,
+    UserRole,
+)
 from app.infrastructure.http.error_envelope import error_response
 from app.utils.formatters import format_app_datetime_display
 from app.utils.payment_availability import get_payment_gateway_unavailable_message
@@ -222,7 +231,11 @@ def _try_reuse_package_tx(
     )
     if not existing_tx:
         return None
-    can_reuse = tx_has_snap_initiation_data(existing_tx) if provider_mode == "snap" else tx_has_core_initiation_data(existing_tx)
+    can_reuse = (
+        tx_has_snap_initiation_data(existing_tx)
+        if provider_mode == "snap"
+        else tx_has_core_initiation_data(existing_tx)
+    )
     if can_reuse and provider_mode == "core_api":
         if not tx_matches_requested_core_payment(
             existing_tx,
@@ -389,9 +402,7 @@ def _calculate_open_manual_debts_gross_amount(session, user_id, estimate_debt_rp
         remaining_mb = float(max(0, amount_mb - paid_mb))
         if remaining_mb <= 0:
             continue
-        total_amount_rp += _estimate_manual_debt_remaining_price_rp(
-            manual_item, remaining_mb, estimate_debt_rp_for_mb
-        )
+        total_amount_rp += _estimate_manual_debt_remaining_price_rp(manual_item, remaining_mb, estimate_debt_rp_for_mb)
 
     return int(total_amount_rp)
 
@@ -494,7 +505,11 @@ def _try_reuse_debt_settlement_tx(
     if not existing_tx:
         return None
 
-    can_reuse = tx_has_snap_initiation_data(existing_tx) if provider_mode == "snap" else tx_has_core_initiation_data(existing_tx)
+    can_reuse = (
+        tx_has_snap_initiation_data(existing_tx)
+        if provider_mode == "snap"
+        else tx_has_core_initiation_data(existing_tx)
+    )
     if not can_reuse:
         return None
 
@@ -586,7 +601,8 @@ def initiate_transaction_impl(
         if gross_amount <= 0:
             current_app.logger.error(
                 "Paket %s memiliki harga tidak valid (price=%s). Tolak inisiasi transaksi.",
-                getattr(package, "id", None), gross_amount,
+                getattr(package, "id", None),
+                gross_amount,
             )
             abort(
                 HTTPStatus.UNPROCESSABLE_ENTITY,
@@ -675,19 +691,26 @@ def initiate_transaction_impl(
         if provider_mode == "snap":
             snap_params = {
                 "transaction_details": {"order_id": order_id, "gross_amount": gross_amount},
-                "item_details": [{"id": str(package.id), "price": gross_amount, "quantity": 1, "name": package.name[:100]}],
+                "item_details": [
+                    {"id": str(package.id), "price": gross_amount, "quantity": 1, "name": package.name[:100]}
+                ],
                 "customer_details": {
                     "first_name": user.full_name or "Pengguna",
                     "phone": format_to_local_phone(user.phone_number),
                 },
                 "callbacks": {"finish": finish_url_base_with_token},
             }
-            snap_token, redirect_url = _do_snap_charge(get_midtrans_snap_client(), snap_params, new_transaction, record_success)
+            snap_token, redirect_url = _do_snap_charge(
+                get_midtrans_snap_client(), snap_params, new_transaction, record_success
+            )
         else:
             method, va_bank = _resolve_core_api_method_and_bank(
-                requested_method, requested_va_bank,
-                enabled_core_methods, enabled_core_va_banks,
-                is_core_api_method_enabled, is_core_api_va_bank_enabled,
+                requested_method,
+                requested_va_bank,
+                enabled_core_methods,
+                enabled_core_va_banks,
+                is_core_api_method_enabled,
+                is_core_api_va_bank_enabled,
             )
             core_api = get_midtrans_core_api_client()
             charge_payload = build_core_api_charge_payload(
@@ -705,8 +728,14 @@ def initiate_transaction_impl(
             charge_response = core_api.charge(charge_payload)
             record_success("midtrans")
             _apply_core_api_response_to_tx(
-                new_transaction, charge_response, method, va_bank,
-                extract_va_number, extract_action_url, is_qr_payment_type, extract_qr_code_url,
+                new_transaction,
+                charge_response,
+                method,
+                va_bank,
+                extract_va_number,
+                extract_action_url,
+                is_qr_payment_type,
+                extract_qr_code_url,
             )
 
         expiry_time = new_transaction.expiry_time
@@ -834,8 +863,12 @@ def initiate_debt_settlement_transaction_impl(
 
         gross_amount = _calculate_debt_gross_amount(
             session,
-            manual_debt_id, manual_item, manual_item_remaining_mb,
-            estimate_debt_rp_for_mb, estimate_user_debt_rp, user,
+            manual_debt_id,
+            manual_item,
+            manual_item_remaining_mb,
+            estimate_debt_rp_for_mb,
+            estimate_user_debt_rp,
+            user,
         )
         if gross_amount <= 0:
             abort(
@@ -854,9 +887,17 @@ def initiate_debt_settlement_transaction_impl(
         debt_prefixes = get_debt_order_prefixes()
 
         reuse_resp = _try_reuse_debt_settlement_tx(
-            session, user, debt_prefixes, manual_debt_id, provider_mode, now_utc,
-            tx_has_snap_initiation_data, tx_has_core_initiation_data,
-            generate_transaction_status_token, encode_uuid_base64url, encode_uuid_base32,
+            session,
+            user,
+            debt_prefixes,
+            manual_debt_id,
+            provider_mode,
+            now_utc,
+            tx_has_snap_initiation_data,
+            tx_has_core_initiation_data,
+            generate_transaction_status_token,
+            encode_uuid_base64url,
+            encode_uuid_base32,
         )
         if reuse_resp is not None:
             return reuse_resp
@@ -916,12 +957,17 @@ def initiate_debt_settlement_transaction_impl(
                 },
                 "callbacks": {"finish": finish_url_base_with_token},
             }
-            snap_token, redirect_url = _do_snap_charge(get_midtrans_snap_client(), snap_params, new_transaction, record_success)
+            snap_token, redirect_url = _do_snap_charge(
+                get_midtrans_snap_client(), snap_params, new_transaction, record_success
+            )
         else:
             method, va_bank = _resolve_core_api_method_and_bank(
-                requested_method, requested_va_bank,
-                enabled_core_methods, enabled_core_va_banks,
-                is_core_api_method_enabled, is_core_api_va_bank_enabled,
+                requested_method,
+                requested_va_bank,
+                enabled_core_methods,
+                enabled_core_va_banks,
+                is_core_api_method_enabled,
+                is_core_api_va_bank_enabled,
             )
             core_api = get_midtrans_core_api_client()
             charge_payload = build_core_api_charge_payload(
@@ -939,8 +985,14 @@ def initiate_debt_settlement_transaction_impl(
             charge_response = core_api.charge(charge_payload)
             record_success("midtrans")
             _apply_core_api_response_to_tx(
-                new_transaction, charge_response, method, va_bank,
-                extract_va_number, extract_action_url, is_qr_payment_type, extract_qr_code_url,
+                new_transaction,
+                charge_response,
+                method,
+                va_bank,
+                extract_va_number,
+                extract_action_url,
+                is_qr_payment_type,
+                extract_qr_code_url,
             )
 
         _expiry = new_transaction.expiry_time
@@ -969,7 +1021,9 @@ def initiate_debt_settlement_transaction_impl(
         session.add(new_transaction)
         session.commit()
 
-        payload = _build_debt_response_payload(new_transaction, provider_mode, generate_transaction_status_token, status_token)
+        payload = _build_debt_response_payload(
+            new_transaction, provider_mode, generate_transaction_status_token, status_token
+        )
         payload["status_url"] = status_url
         return jsonify(payload), HTTPStatus.OK
     except HTTPException:
@@ -978,7 +1032,9 @@ def initiate_debt_settlement_transaction_impl(
         record_failure("midtrans")
         session.rollback()
         raw_msg = getattr(e_mdt, "message", "") or str(e_mdt)
-        current_app.logger.error("Midtrans API error di initiate_debt_settlement_transaction: %s", raw_msg, exc_info=False)
+        current_app.logger.error(
+            "Midtrans API error di initiate_debt_settlement_transaction: %s", raw_msg, exc_info=False
+        )
         return error_response(
             _build_midtrans_user_message(raw_msg),
             status_code=HTTPStatus.SERVICE_UNAVAILABLE,
@@ -987,7 +1043,9 @@ def initiate_debt_settlement_transaction_impl(
     except requests.exceptions.RequestException as e_req:
         record_failure("midtrans")
         session.rollback()
-        current_app.logger.error("Midtrans network error di initiate_debt_settlement_transaction: %s", e_req, exc_info=False)
+        current_app.logger.error(
+            "Midtrans network error di initiate_debt_settlement_transaction: %s", e_req, exc_info=False
+        )
         return error_response(
             get_payment_gateway_unavailable_message(),
             status_code=HTTPStatus.SERVICE_UNAVAILABLE,

@@ -31,6 +31,7 @@ def _unwrap(fn):
 @pytest.fixture()
 def app():
     from flask import Flask
+
     a = Flask(__name__)
     a.config.update(SECRET_KEY="smoke-test-secret")
     return a
@@ -39,6 +40,7 @@ def app():
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _load_templates() -> dict:
     templates_path = os.path.join(PROJECT_ROOT, "app", "notifications", "templates.json")
@@ -49,6 +51,7 @@ def _load_templates() -> dict:
 # ---------------------------------------------------------------------------
 # 1. WA Template: user_debt_added — placeholders baru wajib ada
 # ---------------------------------------------------------------------------
+
 
 def test_user_debt_added_template_has_package_name():
     """Template user_debt_added harus punya placeholder {package_name}."""
@@ -178,6 +181,7 @@ def test_user_unlimited_activated_template_renders_simple_unlimited_message():
 # 2. WA Template: user_debt_partial_payment_unblock — template baru P1
 # ---------------------------------------------------------------------------
 
+
 def test_user_debt_partial_payment_unblock_template_exists():
     """Template user_debt_partial_payment_unblock harus ada di templates.json."""
     templates = _load_templates()
@@ -190,9 +194,20 @@ def test_user_debt_partial_payment_unblock_has_required_fields():
     """Template unblock harus punya semua placeholder yang sama dengan partial_payment."""
     templates = _load_templates()
     tpl = templates["user_debt_partial_payment_unblock"]
-    for field in ["{full_name}", "{debt_date}", "{paid_at}", "{paid_manual_debt_gb}",
-                  "{paid_manual_debt_amount_display}", "{paid_total_debt_gb}", "{paid_total_debt_amount_display}",
-                  "{payment_channel_label}", "{remaining_manual_debt_gb}", "{remaining_quota_gb}", "{expiry_date}", "{receipt_url}"]:
+    for field in [
+        "{full_name}",
+        "{debt_date}",
+        "{paid_at}",
+        "{paid_manual_debt_gb}",
+        "{paid_manual_debt_amount_display}",
+        "{paid_total_debt_gb}",
+        "{paid_total_debt_amount_display}",
+        "{payment_channel_label}",
+        "{remaining_manual_debt_gb}",
+        "{remaining_quota_gb}",
+        "{expiry_date}",
+        "{receipt_url}",
+    ]:
         assert field in tpl, f"Template unblock harus punya {field}"
 
 
@@ -225,6 +240,7 @@ def test_user_debt_partial_payment_unblock_renders_correctly():
 # 3. P1: Auto-unblock logic — settle_single_manual_debt
 # ---------------------------------------------------------------------------
 
+
 def test_settle_single_debt_sets_unblocked_true_when_all_paid(app):
     """Auto-unblock harus terjadi ketika is_blocked=True karena debt dan quota_debt_total_mb=0 setelah bayar."""
     import uuid
@@ -253,29 +269,37 @@ def test_settle_single_debt_sets_unblocked_true_when_all_paid(app):
     fake_debt.paid_at = None
 
     # Verifikasi bahwa blocked_reason ini dikenal sebagai debt reason
-    assert is_debt_block_reason("tunggakan_overdue|debt_mb=20480.00|due=2026-03-31|days_overdue=3"), \
+    assert is_debt_block_reason("tunggakan_overdue|debt_mb=20480.00|due=2026-03-31|days_overdue=3"), (
         "tunggakan_overdue| harus dikenal sebagai debt block reason"
+    )
 
     with app.test_request_context():
         with (
             patch("app.infrastructure.http.admin.user_management_routes.db") as mock_db,
             patch("app.infrastructure.http.admin.user_management_routes.user_debt_service") as mock_svc,
             patch("app.infrastructure.http.admin.user_management_routes._send_whatsapp_notification"),
-            patch("app.infrastructure.http.admin.user_management_routes.format_app_datetime", return_value="19-03-2026 18:00"),
+            patch(
+                "app.infrastructure.http.admin.user_management_routes.format_app_datetime",
+                return_value="19-03-2026 18:00",
+            ),
             patch("app.infrastructure.http.admin.user_management_routes.format_mb_to_gb", return_value="20.00 GB"),
-            patch("app.infrastructure.http.admin.user_management_routes._deny_non_super_admin_target_access", return_value=None),
+            patch(
+                "app.infrastructure.http.admin.user_management_routes._deny_non_super_admin_target_access",
+                return_value=None,
+            ),
         ):
-            mock_db.session.get.side_effect = lambda model, oid: (
-                fake_user if model.__name__ == "User" else fake_debt
-            )
+            mock_db.session.get.side_effect = lambda model, oid: (fake_user if model.__name__ == "User" else fake_debt)
             mock_svc.settle_manual_debt_item_to_zero.return_value = 20 * 1024
 
             from app.infrastructure.http.admin.user_management_routes import settle_single_manual_debt
+
             admin_mock = MagicMock()
             admin_mock.id = uuid.uuid4()
             resp = _unwrap(settle_single_manual_debt)(admin_mock, user_id, debt_id)
             data = resp[0].get_json()
-            assert data.get("unblocked") is True, "unblocked harus True ketika semua debt lunas dan user diblok karena debt"
+            assert data.get("unblocked") is True, (
+                "unblocked harus True ketika semua debt lunas dan user diblok karena debt"
+            )
             assert fake_user.is_blocked is False
 
 
@@ -283,11 +307,12 @@ def test_settle_single_debt_sets_unblocked_true_when_all_paid(app):
 # 4. P2: verify_mikrotik_rules endpoint — format response
 # ---------------------------------------------------------------------------
 
+
 def test_verify_mikrotik_rules_ok_when_all_rules_present(app):
     """verify_mikrotik_rules harus return status=ok ketika semua 4 rule kritis ada di tabel yang benar."""
     filter_rules = [
         {"chain": "hs-unauth", "action": "return", "src-address-list": "klient_aktif", "disabled": "false"},
-        {"chain": "hs-unauth", "action": "return", "src-address-list": "klient_fup",   "disabled": "false"},
+        {"chain": "hs-unauth", "action": "return", "src-address-list": "klient_fup", "disabled": "false"},
     ]
     raw_rules = [
         {"chain": "prerouting", "action": "drop", "src-address-list": "klient_inactive", "disabled": "false"},
@@ -305,11 +330,15 @@ def test_verify_mikrotik_rules_ok_when_all_rules_present(app):
     with app.test_request_context():
         with (
             patch("app.infrastructure.http.admin.user_management_routes.get_mikrotik_connection") as mock_conn,
-            patch("app.infrastructure.http.admin.user_management_routes._deny_non_super_admin_target_access", return_value=None),
+            patch(
+                "app.infrastructure.http.admin.user_management_routes._deny_non_super_admin_target_access",
+                return_value=None,
+            ),
         ):
             mock_conn.return_value.__enter__.return_value = mock_api
 
             from app.infrastructure.http.admin.user_management_routes import verify_mikrotik_rules
+
             admin_mock = MagicMock()
             resp = _unwrap(verify_mikrotik_rules)(admin_mock)
             data = resp[0].get_json()
@@ -324,7 +353,7 @@ def test_verify_mikrotik_rules_error_when_rule_missing(app):
     # Missing: raw drop for klient_inactive src (dst-only present)
     filter_rules = [
         {"chain": "hs-unauth", "action": "return", "src-address-list": "klient_aktif", "disabled": "false"},
-        {"chain": "hs-unauth", "action": "return", "src-address-list": "klient_fup",   "disabled": "false"},
+        {"chain": "hs-unauth", "action": "return", "src-address-list": "klient_fup", "disabled": "false"},
     ]
     raw_rules = [
         # Only the dst variant is present; src variant is missing
@@ -342,11 +371,15 @@ def test_verify_mikrotik_rules_error_when_rule_missing(app):
     with app.test_request_context():
         with (
             patch("app.infrastructure.http.admin.user_management_routes.get_mikrotik_connection") as mock_conn,
-            patch("app.infrastructure.http.admin.user_management_routes._deny_non_super_admin_target_access", return_value=None),
+            patch(
+                "app.infrastructure.http.admin.user_management_routes._deny_non_super_admin_target_access",
+                return_value=None,
+            ),
         ):
             mock_conn.return_value.__enter__.return_value = mock_api
 
             from app.infrastructure.http.admin.user_management_routes import verify_mikrotik_rules
+
             admin_mock = MagicMock()
             resp = _unwrap(verify_mikrotik_rules)(admin_mock)
             data = resp[0].get_json()
@@ -363,7 +396,7 @@ def test_verify_mikrotik_rules_error_when_order_wrong(app):
     # Semua rule ada tapi satu di-disabled — harus dianggap tidak ditemukan
     filter_rules = [
         {"chain": "hs-unauth", "action": "return", "src-address-list": "klient_aktif", "disabled": "false"},
-        {"chain": "hs-unauth", "action": "return", "src-address-list": "klient_fup",   "disabled": "true"},  # disabled!
+        {"chain": "hs-unauth", "action": "return", "src-address-list": "klient_fup", "disabled": "true"},  # disabled!
     ]
     raw_rules = [
         {"chain": "prerouting", "action": "drop", "src-address-list": "klient_inactive", "disabled": "false"},
@@ -381,11 +414,15 @@ def test_verify_mikrotik_rules_error_when_order_wrong(app):
     with app.test_request_context():
         with (
             patch("app.infrastructure.http.admin.user_management_routes.get_mikrotik_connection") as mock_conn,
-            patch("app.infrastructure.http.admin.user_management_routes._deny_non_super_admin_target_access", return_value=None),
+            patch(
+                "app.infrastructure.http.admin.user_management_routes._deny_non_super_admin_target_access",
+                return_value=None,
+            ),
         ):
             mock_conn.return_value.__enter__.return_value = mock_api
 
             from app.infrastructure.http.admin.user_management_routes import verify_mikrotik_rules
+
             admin_mock = MagicMock()
             resp = _unwrap(verify_mikrotik_rules)(admin_mock)
             data = resp[0].get_json()

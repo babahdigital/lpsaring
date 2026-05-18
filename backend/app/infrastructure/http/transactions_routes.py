@@ -107,6 +107,7 @@ transactions_bp = Blueprint(
     template_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../templates"),
 )
 
+
 # --- FUNGSI HELPER (Tidak ada perubahan) ---
 # --- JINJA FILTERS (Tidak ada perubahan) ---
 def format_datetime_short(value: datetime) -> str:

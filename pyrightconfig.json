@@ -1,0 +1,43 @@
+{
+  "include": [
+    "backend/app",
+    "backend/scripts",
+    "scripts"
+  ],
+  "exclude": [
+    "backend/migrations/versions",
+    "backend/tests",
+    "backend/__pycache__",
+    "**/__pycache__",
+    "**/.venv",
+    "**/node_modules"
+  ],
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "basic",
+  "useLibraryCodeForTypes": true,
+  "// Phase 1": "Legacy codebase — most legacy type warnings di-silence. Phase 2 akan re-enable bertahap.",
+  "reportMissingImports": "none",
+  "reportMissingTypeStubs": "none",
+  "reportGeneralTypeIssues": "none",
+  "reportOptionalMemberAccess": "none",
+  "reportOptionalSubscript": "none",
+  "reportOptionalCall": "none",
+  "reportArgumentType": "none",
+  "reportAttributeAccessIssue": "none",
+  "reportPrivateUsage": "none",
+  "reportUnusedImport": "none",
+  "reportUnusedVariable": "none",
+  "reportUnusedFunction": "none",
+  "reportUnusedExpression": "none",
+  "reportUnknownMemberType": "none",
+  "reportUnknownVariableType": "none",
+  "reportUnknownArgumentType": "none",
+  "reportUnknownLambdaType": "none",
+  "reportUnknownParameterType": "none",
+  "reportMissingParameterType": "none",
+  "reportCallIssue": "error",
+  "reportInvalidTypeForm": "error",
+  "reportRedeclaration": "none",
+  "reportAssignmentType": "none",
+  "reportReturnType": "none"
+}

@@ -260,6 +260,7 @@ def bind_current_device(current_user_id):
         try:
             import json as _json
             import base64 as _base64
+
             _tok_data = _json.loads(_base64.b64decode(session_mac_token))
             session_mac_fallback = str(_tok_data.get("mac") or "").strip() or None
         except Exception:
@@ -340,10 +341,12 @@ def delete_my_device(current_user_id, device_id):
     cleanup = revoke_device(user, device)
     db.session.delete(device)
     db.session.commit()
-    return jsonify({
-        "message": "Perangkat berhasil dihapus.",
-        "cleanup": cleanup,
-    }), HTTPStatus.OK
+    return jsonify(
+        {
+            "message": "Perangkat berhasil dihapus.",
+            "cleanup": cleanup,
+        }
+    ), HTTPStatus.OK
 
 
 @profile_bp.route("/me/devices/<uuid:device_id>/label", methods=["PUT"])

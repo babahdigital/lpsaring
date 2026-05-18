@@ -167,8 +167,7 @@ def fix_access_parity(current_admin):
         {
             str(getattr(device, "mac_address", "") or "").strip().upper()
             for device in (user.devices or [])
-            if bool(getattr(device, "is_authorized", False))
-            and str(getattr(device, "mac_address", "") or "").strip()
+            if bool(getattr(device, "is_authorized", False)) and str(getattr(device, "mac_address", "") or "").strip()
         }
     )
     auto_selected_mac = False
@@ -178,7 +177,9 @@ def fix_access_parity(current_admin):
             auto_selected_mac = True
         elif len(authorized_macs) > 1:
             return (
-                jsonify({"message": "User memiliki lebih dari satu MAC authorized. Sertakan MAC spesifik untuk parity fix."}),
+                jsonify(
+                    {"message": "User memiliki lebih dari satu MAC authorized. Sertakan MAC spesifik untuk parity fix."}
+                ),
                 HTTPStatus.BAD_REQUEST,
             )
         elif not ip_address:
@@ -227,7 +228,9 @@ def fix_access_parity(current_admin):
             binding_updated = True
 
             dhcp_enabled = settings_service.get_setting("MIKROTIK_DHCP_STATIC_LEASE_ENABLED", "False") == "True"
-            dhcp_server_name = (settings_service.get_setting("MIKROTIK_DHCP_LEASE_SERVER_NAME", "") or "").strip() or None
+            dhcp_server_name = (
+                settings_service.get_setting("MIKROTIK_DHCP_LEASE_SERVER_NAME", "") or ""
+            ).strip() or None
             if dhcp_enabled and resolved_ip and dhcp_server_name:
                 ok_dhcp, dhcp_msg = upsert_dhcp_static_lease(
                     api_connection=api,

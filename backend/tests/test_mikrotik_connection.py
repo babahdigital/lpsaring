@@ -13,12 +13,15 @@ MIKROTIK_PASSWORD = os.getenv("MIKROTIK_PASSWORD")
 MIKROTIK_PORT = int(os.getenv("MIKROTIK_PORT", 8728))  # Default port jika tidak ada
 MIKROTIK_USE_SSL = os.getenv("MIKROTIK_USE_SSL", "false").lower() == "true"
 
+
 def main() -> None:
     if not MIKROTIK_HOST or not MIKROTIK_USER or not MIKROTIK_PASSWORD:
         print("Missing required MikroTik env vars: MIKROTIK_HOST, MIKROTIK_USER, MIKROTIK_PASSWORD")
         return
 
-    print(f"Attempting to connect to {MIKROTIK_HOST}:{MIKROTIK_PORT} as user '{MIKROTIK_USER}' (SSL: {MIKROTIK_USE_SSL})")
+    print(
+        f"Attempting to connect to {MIKROTIK_HOST}:{MIKROTIK_PORT} as user '{MIKROTIK_USER}' (SSL: {MIKROTIK_USE_SSL})"
+    )
 
     try:
         # Gunakan parameter persis seperti di config/client Anda

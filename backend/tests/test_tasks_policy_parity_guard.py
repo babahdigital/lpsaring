@@ -247,7 +247,11 @@ def test_policy_parity_guard_auto_remediates_non_parity_dhcp_gap(monkeypatch):
         SimpleNamespace(
             session=SimpleNamespace(
                 query=lambda *_args, **_kwargs: _FakeQuery(
-                    [SimpleNamespace(id="user-3", devices=[SimpleNamespace(is_authorized=True, mac_address="AA:BB:CC:DD:EE:03")])]
+                    [
+                        SimpleNamespace(
+                            id="user-3", devices=[SimpleNamespace(is_authorized=True, mac_address="AA:BB:CC:DD:EE:03")]
+                        )
+                    ]
                 ),
                 remove=lambda: None,
             )
@@ -345,7 +349,11 @@ def test_policy_parity_guard_unauthorized_sync_failure_is_soft(monkeypatch):
         SimpleNamespace(
             session=SimpleNamespace(
                 query=lambda *_args, **_kwargs: _FakeQuery(
-                    [SimpleNamespace(id="user-1", devices=[SimpleNamespace(is_authorized=True, mac_address="AA:BB:CC:DD:EE:01")])]
+                    [
+                        SimpleNamespace(
+                            id="user-1", devices=[SimpleNamespace(is_authorized=True, mac_address="AA:BB:CC:DD:EE:01")]
+                        )
+                    ]
                 ),
                 remove=lambda: None,
             )
@@ -361,8 +369,12 @@ def test_policy_parity_guard_unauthorized_sync_failure_is_soft(monkeypatch):
         "get_hotspot_ip_binding_user_map",
         lambda _api: (True, {"AA:BB:CC:DD:EE:01": {"address": "172.16.2.98"}}, "ok"),
     )
-    monkeypatch.setattr(tasks, "sync_address_list_for_single_user", lambda user, client_ip=None, api_connection=None: True)
-    monkeypatch.setattr(tasks.sync_unauthorized_hosts_command, "main", lambda *args, **kwargs: (_ for _ in ()).throw(SystemExit(2)))
+    monkeypatch.setattr(
+        tasks, "sync_address_list_for_single_user", lambda user, client_ip=None, api_connection=None: True
+    )
+    monkeypatch.setattr(
+        tasks.sync_unauthorized_hosts_command, "main", lambda *args, **kwargs: (_ for _ in ()).throw(SystemExit(2))
+    )
 
     @contextmanager
     def _fake_mikrotik_connection():

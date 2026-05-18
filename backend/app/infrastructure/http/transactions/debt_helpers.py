@@ -183,8 +183,7 @@ def apply_debt_settlement_on_success(*, session, transaction: Transaction) -> di
             source="policy.block_transition:transactions.debt_settlement",
             before_state=before_state,
             after_state=snapshot_user_quota_state(user),
-            idempotency_key=(str(getattr(transaction, "midtrans_order_id", "") or "")[:120] + ":policy")
-            or None,
+            idempotency_key=(str(getattr(transaction, "midtrans_order_id", "") or "")[:120] + ":policy") or None,
             event_details={
                 "action": "unblock" if unblocked else "policy_state_update",
                 "order_id": str(getattr(transaction, "midtrans_order_id", "") or "") or None,

@@ -376,9 +376,7 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f"Gagal menyimpan ke DB saat memproses permintaan: {e}", exc_info=True)
-        return jsonify(
-            {"message": "Gagal menyimpan perubahan ke database."}
-        ), HTTPStatus.INTERNAL_SERVER_ERROR
+        return jsonify({"message": "Gagal menyimpan perubahan ke database."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
     try:
         if WHATSAPP_AVAILABLE and notification_template_key:

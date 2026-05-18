@@ -308,12 +308,14 @@ def main(argv: list[str]) -> int:
                         address = str(row.get("address") or "").strip()
                         if not address or address in known_ips:
                             continue
-                        orphan_candidates.append({
-                            "id": row.get("id") or row.get(".id"),
-                            "address": address,
-                            "list": list_name,
-                            "comment": comment,
-                        })
+                        orphan_candidates.append(
+                            {
+                                "id": row.get("id") or row.get(".id"),
+                                "address": address,
+                                "list": list_name,
+                                "comment": comment,
+                            }
+                        )
                 report["counts"]["orphaned_lists_detected"] = len(orphan_candidates)
                 report["anomalies"]["orphaned_lists"] = orphan_candidates[: max(0, int(args.limit))]
 

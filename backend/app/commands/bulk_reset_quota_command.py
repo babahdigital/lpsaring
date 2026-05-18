@@ -155,9 +155,7 @@ def bulk_reset_quota_command(
     click.echo(
         f"PARAM quota_mb={quota_mb} expiry={expiry} expiry_target_utc={expiry_target_utc.isoformat() if expiry_target_utc else 'KEEP'} mikrotik={apply_mikrotik} mode={'DRY_RUN' if dry_run else 'APPLY'}"
     )
-    click.echo(
-        f"FILTER server_name={server_name or 'ALL'} enforce_expired_profile={enforce_expired_profile}"
-    )
+    click.echo(f"FILTER server_name={server_name or 'ALL'} enforce_expired_profile={enforce_expired_profile}")
 
     if dry_run:
         sample_e = eligible_users[:5]

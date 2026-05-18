@@ -45,7 +45,9 @@ def _resolve_managed_lists() -> Dict[str, str]:
     return {
         "active": str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active").strip(),
         "fup": str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup").strip(),
-        "inactive": str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive").strip(),
+        "inactive": str(
+            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive"
+        ).strip(),
         "expired": str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired").strip(),
         "habis": str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis").strip(),
         "blocked": str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked").strip(),

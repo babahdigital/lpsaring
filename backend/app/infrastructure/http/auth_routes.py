@@ -388,6 +388,7 @@ def get_hotspot_session_status(current_user_id: uuid.UUID):
 
     def _get_latest_authorized_device_mac(user_id):
         from sqlalchemy import select
+
         device = db.session.scalars(
             select(UserDevice)
             .where(UserDevice.user_id == user_id, UserDevice.is_authorized == True)  # noqa: E712
@@ -516,7 +517,11 @@ def captive_auto_activate(current_user_id: uuid.UUID):
     import concurrent.futures
 
     enabled_raw = current_app.config.get("ENABLE_OTP_AUTO_ACTIVATE", True)
-    enabled = bool(enabled_raw) if not isinstance(enabled_raw, str) else enabled_raw.strip().lower() in {"1", "true", "yes", "on"}
+    enabled = (
+        bool(enabled_raw)
+        if not isinstance(enabled_raw, str)
+        else enabled_raw.strip().lower() in {"1", "true", "yes", "on"}
+    )
     if not enabled:
         return {"activated": False, "reason": "disabled"}, 200
 
@@ -580,7 +585,10 @@ def captive_auto_activate(current_user_id: uuid.UUID):
     except Exception as exc:  # noqa: BLE001
         current_app.logger.error(
             "captive_auto_activate unexpected error user=%s mac=%s err=%s",
-            current_user_id, device_mac, exc, exc_info=True,
+            current_user_id,
+            device_mac,
+            exc,
+            exc_info=True,
         )
         return {"activated": False, "reason": "mikrotik_unavailable"}, 200
 

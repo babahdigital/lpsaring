@@ -36,10 +36,13 @@ def test_refresh_access_token_impl_keeps_existing_refresh_cookie_when_rotation_r
     def _set_refresh_cookie(_response, token: str):
         tracker["refresh"] = token
 
-    with app.app_context(), app.test_request_context(
-        "/api/auth/refresh",
-        method="POST",
-        headers={"Cookie": "refresh_token=stale-refresh", "User-Agent": "UA/1.0"},
+    with (
+        app.app_context(),
+        app.test_request_context(
+            "/api/auth/refresh",
+            method="POST",
+            headers={"Cookie": "refresh_token=stale-refresh", "User-Agent": "UA/1.0"},
+        ),
     ):
         response, status = refresh_access_token_impl(
             request=request,

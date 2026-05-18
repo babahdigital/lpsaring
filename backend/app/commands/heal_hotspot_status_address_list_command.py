@@ -80,10 +80,14 @@ def heal_hotspot_status_address_list_command(apply: bool, resync_users: bool) ->
     - Opsional re-sync user terdampak agar entry valid hotspot CIDR ditulis ulang.
     """
 
-    cidrs = current_app.config.get("MIKROTIK_UNAUTHORIZED_CIDRS") or current_app.config.get("HOTSPOT_CLIENT_IP_CIDRS") or []
+    cidrs = (
+        current_app.config.get("MIKROTIK_UNAUTHORIZED_CIDRS") or current_app.config.get("HOTSPOT_CLIENT_IP_CIDRS") or []
+    )
     networks = _resolve_networks(cidrs)
     if not networks:
-        raise click.ClickException("CIDR hotspot kosong/tidak valid. Set MIKROTIK_UNAUTHORIZED_CIDRS atau HOTSPOT_CLIENT_IP_CIDRS.")
+        raise click.ClickException(
+            "CIDR hotspot kosong/tidak valid. Set MIKROTIK_UNAUTHORIZED_CIDRS atau HOTSPOT_CLIENT_IP_CIDRS."
+        )
 
     target_lists = {
         current_app.config.get("MIKROTIK_ADDRESS_LIST_ACTIVE", "active"),

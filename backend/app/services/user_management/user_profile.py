@@ -166,13 +166,16 @@ def _format_manual_debt_display(amount_mb: int, note: Any = None) -> str:
 
 def _format_total_manual_debt_gb(user: User, total_manual_debt_mb: int) -> str:
     """Format total manual debt for WA display, detecting open unlimited items."""
-    open_unlimited = db.session.execute(
-        select(db.func.count())
-        .select_from(UserQuotaDebt)
-        .where(UserQuotaDebt.user_id == user.id, UserQuotaDebt.is_paid.is_(False))
-        .where(UserQuotaDebt.amount_mb <= 1)
-        .where(UserQuotaDebt.note.ilike("%unlimited%"))
-    ).scalar() or 0
+    open_unlimited = (
+        db.session.execute(
+            select(db.func.count())
+            .select_from(UserQuotaDebt)
+            .where(UserQuotaDebt.user_id == user.id, UserQuotaDebt.is_paid.is_(False))
+            .where(UserQuotaDebt.amount_mb <= 1)
+            .where(UserQuotaDebt.note.ilike("%unlimited%"))
+        ).scalar()
+        or 0
+    )
     if open_unlimited > 0:
         return f"{open_unlimited} item Unlimited"
     return format_mb_to_gb(total_manual_debt_mb)
@@ -246,9 +249,7 @@ def _build_debt_detail_snapshot(user: User) -> Dict[str, Any]:
     except Exception:
         snapshot["degraded"] = True
         snapshot["invalid_items"] = max(1, int(snapshot["invalid_items"] or 0))
-        current_app.logger.exception(
-            "_build_debt_detail_lines gagal untuk user %s", getattr(user, "id", "?")
-        )
+        current_app.logger.exception("_build_debt_detail_lines gagal untuk user %s", getattr(user, "id", "?"))
         snapshot["lines"] = (
             "(Detail item tunggakan sedang direkonsiliasi sistem. Total tunggakan tetap tercatat; "
             "silakan cek portal atau hubungi Admin.)"
@@ -403,7 +404,9 @@ def create_user_by_admin(admin_actor: User, data: Dict[str, Any]) -> Tuple[bool,
         new_user.full_name = data["full_name"]
         new_user.phone_number = phone_number
         new_user.role = new_role
-        new_user.blok = _normalize_user_blok_value(data.get("blok")) if new_role == UserRole.USER and not is_tamping else None
+        new_user.blok = (
+            _normalize_user_blok_value(data.get("blok")) if new_role == UserRole.USER and not is_tamping else None
+        )
         new_user.kamar = (
             _normalize_user_kamar_value(data.get("kamar"))
             if new_role == UserRole.USER and data.get("kamar") and not is_tamping
@@ -786,8 +789,7 @@ def update_user_by_admin_comprehensive(
             pkg_quota_str = "Unlimited" if is_unlimited_pkg else f"{pkg_quota_gb:g} GB"
             note = data.get("debt_note")
             pkg_note = (
-                f"Paket: {getattr(pkg, 'name', '') or ''} "
-                f"({pkg_quota_str}, Rp {int(getattr(pkg, 'price', 0) or 0):,})"
+                f"Paket: {getattr(pkg, 'name', '') or ''} ({pkg_quota_str}, Rp {int(getattr(pkg, 'price', 0) or 0):,})"
             )
             merged_note = pkg_note
             if isinstance(note, str) and note.strip():
@@ -820,14 +822,18 @@ def update_user_by_admin_comprehensive(
             try:
                 if is_unlimited_pkg:
                     if not was_unlimited_before:
-                        success_unlimited, msg_unlimited = quota_service.set_user_unlimited(target_user, admin_actor, True)
+                        success_unlimited, msg_unlimited = quota_service.set_user_unlimited(
+                            target_user, admin_actor, True
+                        )
                         if not success_unlimited:
                             return False, msg_unlimited, None
                         unlimited_activated = True
                         unlimited_activated_via_debt = True
                         pkg_days = int(getattr(pkg, "duration_days", 0) or 0)
                         if pkg_days > 0:
-                            success_extend, msg_extend = quota_service.inject_user_quota(target_user, admin_actor, 0, pkg_days)
+                            success_extend, msg_extend = quota_service.inject_user_quota(
+                                target_user, admin_actor, 0, pkg_days
+                            )
                             if not success_extend:
                                 return False, msg_extend, None
                         changes["debt_added_days"] = pkg_days
@@ -849,7 +855,9 @@ def update_user_by_admin_comprehensive(
                     changes["debt_credit_quota_mb"] = int(debt_add_mb_pkg)
                     changes["debt_paid_auto_before_credit_mb"] = int(paid_auto_mb)
                     changes["debt_net_quota_mb"] = int(remaining_credit_mb)
-                    changes["debt_added_days"] = int(getattr(pkg, "duration_days", 0) or DEFAULT_MANUAL_DEBT_ADVANCE_DAYS)
+                    changes["debt_added_days"] = int(
+                        getattr(pkg, "duration_days", 0) or DEFAULT_MANUAL_DEBT_ADVANCE_DAYS
+                    )
             except Exception as e:
                 current_app.logger.error(
                     "Gagal mengkredit kuota advance untuk debt package user %s: %s",
@@ -887,9 +895,7 @@ def update_user_by_admin_comprehensive(
                 _pkg_price_int = int(getattr(pkg, "price", 0) or 0)
                 _price_rp_display = ("Rp " + f"{_pkg_price_int:,}".replace(",", ".")) if _pkg_price_int > 0 else "–"
                 _total_manual_debt_amount_rp = int(_debt_detail_snapshot_pkg.get("total_price_rp") or 0)
-                _total_manual_debt_amount_display = str(
-                    _debt_detail_snapshot_pkg.get("total_price_rp_display") or "–"
-                )
+                _total_manual_debt_amount_display = str(_debt_detail_snapshot_pkg.get("total_price_rp_display") or "–")
                 _send_whatsapp_notification(
                     target_user.phone_number,
                     "user_debt_added",
@@ -1000,9 +1006,7 @@ def update_user_by_admin_comprehensive(
                 effective_quota_mb = int(changes.get("debt_net_quota_mb") or 0)
                 access_grant_summary = f"Kuota efektif yang bisa dipakai: *{format_mb_to_gb(effective_quota_mb)}*."
                 _total_manual_debt_amount_rp = int(_debt_detail_snapshot_mb.get("total_price_rp") or 0)
-                _total_manual_debt_amount_display = str(
-                    _debt_detail_snapshot_mb.get("total_price_rp_display") or "–"
-                )
+                _total_manual_debt_amount_display = str(_debt_detail_snapshot_mb.get("total_price_rp_display") or "–")
                 _send_whatsapp_notification(
                     target_user.phone_number,
                     "user_debt_added",
@@ -1063,30 +1067,40 @@ def update_user_by_admin_comprehensive(
 
                 # Detect if any settled items were unlimited (since all debts are now paid,
                 # check recently paid items)
-                _recently_paid_unlimited = db.session.execute(
-                    select(db.func.count())
-                    .select_from(UserQuotaDebt)
-                    .where(UserQuotaDebt.user_id == target_user.id, UserQuotaDebt.is_paid.is_(True))
-                    .where(UserQuotaDebt.amount_mb <= 1)
-                    .where(UserQuotaDebt.note.ilike("%unlimited%"))
-                ).scalar() or 0
+                _recently_paid_unlimited = (
+                    db.session.execute(
+                        select(db.func.count())
+                        .select_from(UserQuotaDebt)
+                        .where(UserQuotaDebt.user_id == target_user.id, UserQuotaDebt.is_paid.is_(True))
+                        .where(UserQuotaDebt.amount_mb <= 1)
+                        .where(UserQuotaDebt.note.ilike("%unlimited%"))
+                    ).scalar()
+                    or 0
+                )
                 _has_unlimited_settled = _recently_paid_unlimited > 0
 
                 from app.services.debt_settlement_receipt_service import (
                     estimate_amount_rp_for_mb as _est_rp,
                     format_currency_idr as _fmt_idr,
                 )
+
                 _send_whatsapp_notification(
                     target_user.phone_number,
                     "user_debt_cleared",
                     {
                         "full_name": target_user.full_name,
                         "paid_auto_debt_gb": format_mb_to_gb(paid_auto_mb),
-                        "paid_manual_debt_gb": f"{_recently_paid_unlimited} item Unlimited" if _has_unlimited_settled else format_mb_to_gb(paid_manual_mb),
-                        "paid_total_debt_gb": f"{_recently_paid_unlimited} item Unlimited" if _has_unlimited_settled and int(paid_auto_mb) <= 0 else format_mb_to_gb(paid_total_mb),
+                        "paid_manual_debt_gb": f"{_recently_paid_unlimited} item Unlimited"
+                        if _has_unlimited_settled
+                        else format_mb_to_gb(paid_manual_mb),
+                        "paid_total_debt_gb": f"{_recently_paid_unlimited} item Unlimited"
+                        if _has_unlimited_settled and int(paid_auto_mb) <= 0
+                        else format_mb_to_gb(paid_total_mb),
                         "paid_total_debt_amount_display": _fmt_idr(_est_rp(paid_total_mb)),
                         "payment_channel_label": "Pelunasan manual oleh Admin",
-                        "remaining_quota": "Unlimited" if bool(getattr(target_user, "is_unlimited_user", False)) else format_mb_to_gb(remaining_mb),
+                        "remaining_quota": "Unlimited"
+                        if bool(getattr(target_user, "is_unlimited_user", False))
+                        else format_mb_to_gb(remaining_mb),
                         "receipt_url": "-",
                     },
                 )
@@ -1527,6 +1541,7 @@ def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reas
             estimate_amount_rp_for_mb as _est_rp,
             format_currency_idr as _fmt_idr,
         )
+
         _send_whatsapp_notification(
             user.phone_number,
             template_key,
@@ -1537,7 +1552,9 @@ def _handle_user_blocking(user: User, should_be_blocked: bool, admin: User, reas
                 "paid_total_debt_gb": format_mb_to_gb(paid_total_mb),
                 "paid_total_debt_amount_display": _fmt_idr(_est_rp(paid_total_mb)),
                 "payment_channel_label": "Pelunasan manual oleh Admin",
-                "remaining_quota": "Unlimited" if bool(getattr(user, "is_unlimited_user", False)) else format_mb_to_gb(remaining_mb),
+                "remaining_quota": "Unlimited"
+                if bool(getattr(user, "is_unlimited_user", False))
+                else format_mb_to_gb(remaining_mb),
                 "receipt_url": "-",
             },
         )

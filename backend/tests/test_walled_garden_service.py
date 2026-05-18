@@ -64,7 +64,9 @@ def test_sync_walled_garden_auto_include_external_hosts(monkeypatch):
         "TELEGRAM_API_BASE_URL": "https://api.telegram.org",
     }
 
-    monkeypatch.setattr(service.settings_service, "get_setting", lambda key, default=None: setting_map.get(key, default))
+    monkeypatch.setattr(
+        service.settings_service, "get_setting", lambda key, default=None: setting_map.get(key, default)
+    )
 
     captured = {}
 
@@ -99,7 +101,9 @@ def test_sync_walled_garden_auto_include_disabled_keeps_portal_fallback(monkeypa
         "WALLED_GARDEN_AUTO_INCLUDE_EXTERNAL_HOSTS": "False",
     }
 
-    monkeypatch.setattr(service.settings_service, "get_setting", lambda key, default=None: setting_map.get(key, default))
+    monkeypatch.setattr(
+        service.settings_service, "get_setting", lambda key, default=None: setting_map.get(key, default)
+    )
 
     captured = {}
 
@@ -129,7 +133,9 @@ def test_sync_walled_garden_resolves_ips_from_address_list_names(monkeypatch):
         "WALLED_GARDEN_AUTO_INCLUDE_EXTERNAL_HOSTS": "False",
     }
 
-    monkeypatch.setattr(service.settings_service, "get_setting", lambda key, default=None: setting_map.get(key, default))
+    monkeypatch.setattr(
+        service.settings_service, "get_setting", lambda key, default=None: setting_map.get(key, default)
+    )
 
     captured = {}
 
@@ -170,7 +176,9 @@ def test_load_walled_garden_sync_config_releases_session(monkeypatch):
         "WALLED_GARDEN_AUTO_INCLUDE_EXTERNAL_HOSTS": "False",
     }
 
-    monkeypatch.setattr(service.settings_service, "get_setting", lambda key, default=None: setting_map.get(key, default))
+    monkeypatch.setattr(
+        service.settings_service, "get_setting", lambda key, default=None: setting_map.get(key, default)
+    )
     monkeypatch.setattr(service, "db", SimpleNamespace(session=SimpleNamespace(remove=lambda: removed.append(True))))
 
     with app.app_context():

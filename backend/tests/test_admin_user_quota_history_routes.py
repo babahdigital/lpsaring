@@ -30,7 +30,9 @@ def test_get_user_quota_history_passes_filter_params(monkeypatch):
     target_user = SimpleNamespace(id=user_id, role="USER")
     captured: dict[str, object] = {}
 
-    monkeypatch.setattr(user_management_routes, "db", SimpleNamespace(session=SimpleNamespace(get=lambda *_args: target_user)))
+    monkeypatch.setattr(
+        user_management_routes, "db", SimpleNamespace(session=SimpleNamespace(get=lambda *_args: target_user))
+    )
     monkeypatch.setattr(user_management_routes, "_deny_non_super_admin_target_access", lambda *_args: None)
 
     def _fake_payload(**kwargs):
@@ -49,9 +51,12 @@ def test_get_user_quota_history_passes_filter_params(monkeypatch):
     app = _make_app()
     impl = _unwrap_decorators(user_management_routes.get_user_quota_history)
 
-    with app.app_context(), app.test_request_context(
-        f"/api/admin/users/{user_id}/quota-history?startDate=2026-03-13&endDate=2026-03-15&search=lapangan",
-        method="GET",
+    with (
+        app.app_context(),
+        app.test_request_context(
+            f"/api/admin/users/{user_id}/quota-history?startDate=2026-03-13&endDate=2026-03-15&search=lapangan",
+            method="GET",
+        ),
     ):
         current_admin = cast(User, SimpleNamespace(id=uuid.uuid4(), is_super_admin_role=True))
         response, status = impl(current_admin=current_admin, user_id=user_id)
@@ -69,7 +74,9 @@ def test_get_user_quota_history_returns_400_for_invalid_filter(monkeypatch):
     user_id = uuid.uuid4()
     target_user = SimpleNamespace(id=user_id, role="USER")
 
-    monkeypatch.setattr(user_management_routes, "db", SimpleNamespace(session=SimpleNamespace(get=lambda *_args: target_user)))
+    monkeypatch.setattr(
+        user_management_routes, "db", SimpleNamespace(session=SimpleNamespace(get=lambda *_args: target_user))
+    )
     monkeypatch.setattr(user_management_routes, "_deny_non_super_admin_target_access", lambda *_args: None)
     monkeypatch.setattr(
         user_management_routes,
@@ -80,9 +87,12 @@ def test_get_user_quota_history_returns_400_for_invalid_filter(monkeypatch):
     app = _make_app()
     impl = _unwrap_decorators(user_management_routes.get_user_quota_history)
 
-    with app.app_context(), app.test_request_context(
-        f"/api/admin/users/{user_id}/quota-history?startDate=2026-99-99",
-        method="GET",
+    with (
+        app.app_context(),
+        app.test_request_context(
+            f"/api/admin/users/{user_id}/quota-history?startDate=2026-99-99",
+            method="GET",
+        ),
     ):
         current_admin = cast(User, SimpleNamespace(id=uuid.uuid4(), is_super_admin_role=True))
         response, status = impl(current_admin=current_admin, user_id=user_id)
@@ -105,14 +115,22 @@ def test_export_user_quota_history_pdf_passes_filter_context(monkeypatch):
             return b"%PDF-test"
 
     monkeypatch.setitem(sys.modules, "weasyprint", SimpleNamespace(HTML=_FakeHTML))
-    monkeypatch.setattr(user_management_routes, "db", SimpleNamespace(session=SimpleNamespace(get=lambda *_args: target_user)))
+    monkeypatch.setattr(
+        user_management_routes, "db", SimpleNamespace(session=SimpleNamespace(get=lambda *_args: target_user))
+    )
     monkeypatch.setattr(user_management_routes, "_deny_non_super_admin_target_access", lambda *_args: None)
     monkeypatch.setattr(
         user_management_routes,
         "get_user_quota_history_payload",
         lambda **_kwargs: {
             "items": [],
-            "summary": {"page_items": 0, "total_net_purchased_mb": 0, "total_net_used_mb": 0, "first_event_at_display": None, "last_event_at_display": None},
+            "summary": {
+                "page_items": 0,
+                "total_net_purchased_mb": 0,
+                "total_net_used_mb": 0,
+                "first_event_at_display": None,
+                "last_event_at_display": None,
+            },
             "filters": {
                 "search": "manual",
                 "label": "3 hari terakhir",
@@ -135,9 +153,12 @@ def test_export_user_quota_history_pdf_passes_filter_context(monkeypatch):
     app = _make_app()
     impl = _unwrap_decorators(user_management_routes.export_user_quota_history_pdf)
 
-    with app.app_context(), app.test_request_context(
-        f"/api/admin/users/{user_id}/quota-history/export?format=pdf&startDate=2026-03-13&endDate=2026-03-15&search=manual",
-        method="GET",
+    with (
+        app.app_context(),
+        app.test_request_context(
+            f"/api/admin/users/{user_id}/quota-history/export?format=pdf&startDate=2026-03-13&endDate=2026-03-15&search=manual",
+            method="GET",
+        ),
     ):
         current_admin = cast(User, SimpleNamespace(id=uuid.uuid4(), is_super_admin_role=True))
         response = impl(current_admin=current_admin, user_id=user_id)

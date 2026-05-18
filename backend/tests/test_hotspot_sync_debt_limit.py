@@ -331,7 +331,9 @@ def test_apply_auto_debt_limit_block_state_sends_warning_before_block(monkeypatc
     monkeypatch.setattr(
         svc.settings_service,
         "get_setting_as_int",
-        lambda key, default=0: 500 if key == "QUOTA_DEBT_LIMIT_MB" else (400 if key == "QUOTA_DEBT_WARNING_MB" else default),
+        lambda key, default=0: 500
+        if key == "QUOTA_DEBT_LIMIT_MB"
+        else (400 if key == "QUOTA_DEBT_WARNING_MB" else default),
     )
 
     warnings = []
@@ -376,7 +378,9 @@ def test_self_heal_policy_binding_also_enforces_static_dhcp_lease(monkeypatch):
     monkeypatch.setattr(svc, "resolve_allowed_binding_type_for_user", lambda _u: "regular")
     monkeypatch.setattr(svc, "upsert_ip_binding", lambda **_k: (True, "ok"))
     monkeypatch.setattr(svc, "increment_metric", lambda *_a, **_k: None)
-    monkeypatch.setattr(svc.settings_service, "get_setting", lambda k, d=None: "Klien" if k == "MIKROTIK_DHCP_LEASE_SERVER_NAME" else d)
+    monkeypatch.setattr(
+        svc.settings_service, "get_setting", lambda k, d=None: "Klien" if k == "MIKROTIK_DHCP_LEASE_SERVER_NAME" else d
+    )
 
     def _capture_lease(**kwargs):
         calls.append(kwargs)
@@ -435,7 +439,9 @@ def test_self_heal_policy_binding_skips_static_dhcp_when_ip_missing(monkeypatch)
     ip_binding_map = {"AA:BB:CC:DD:EE:00": {"type": "blocked"}}
 
     with app.app_context():
-        repaired = svc._self_heal_policy_binding_for_user(api=object(), user=user, ip_binding_map=ip_binding_map, host_usage_map={})
+        repaired = svc._self_heal_policy_binding_for_user(
+            api=object(), user=user, ip_binding_map=ip_binding_map, host_usage_map={}
+        )
 
     assert repaired == 1
     assert calls == []

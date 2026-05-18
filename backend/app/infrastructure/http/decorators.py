@@ -199,11 +199,13 @@ def token_required(f):
                     if not user_from_token.is_active and not is_logout_or_reset_path:
                         return _auth_error("User account is inactive.", HTTPStatus.FORBIDDEN, "AUTH_USER_INACTIVE")
                     if not user_from_token.is_approved and not is_logout_or_reset_path:
-                        return _auth_error("User account is not approved.", HTTPStatus.FORBIDDEN, "AUTH_USER_UNAPPROVED")
+                        return _auth_error(
+                            "User account is not approved.", HTTPStatus.FORBIDDEN, "AUTH_USER_UNAPPROVED"
+                        )
 
-                    if _is_demo_user_by_phone(getattr(user_from_token, "phone_number", None)) and not _is_demo_path_allowed(
-                        request.path
-                    ):
+                    if _is_demo_user_by_phone(
+                        getattr(user_from_token, "phone_number", None)
+                    ) and not _is_demo_path_allowed(request.path):
                         return _auth_error(
                             "Akun demo hanya diizinkan mengakses alur pembayaran.",
                             HTTPStatus.FORBIDDEN,
@@ -231,7 +233,9 @@ def token_required(f):
             user_from_token = db.session.get(User, user_uuid_from_token)
 
             if not user_from_token:
-                return _auth_error("User associated with token not found.", HTTPStatus.UNAUTHORIZED, "AUTH_USER_NOT_FOUND")
+                return _auth_error(
+                    "User associated with token not found.", HTTPStatus.UNAUTHORIZED, "AUTH_USER_NOT_FOUND"
+                )
 
             if not user_from_token.is_active and not is_logout_or_reset_path:
                 return _auth_error("User account is inactive.", HTTPStatus.FORBIDDEN, "AUTH_USER_INACTIVE")
@@ -271,7 +275,9 @@ def token_required(f):
 
             user_from_token = db.session.get(User, user_uuid_from_token)
             if not user_from_token:
-                return _auth_error("User associated with token not found.", HTTPStatus.UNAUTHORIZED, "AUTH_USER_NOT_FOUND")
+                return _auth_error(
+                    "User associated with token not found.", HTTPStatus.UNAUTHORIZED, "AUTH_USER_NOT_FOUND"
+                )
 
             if not user_from_token.is_active and not is_logout_or_reset_path:
                 return _auth_error("User account is inactive.", HTTPStatus.FORBIDDEN, "AUTH_USER_INACTIVE")
@@ -296,7 +302,9 @@ def token_required(f):
 
             return f(current_user_id=user_uuid_from_token, *args, **kwargs)
         except (JWTError, ValueError, TypeError):
-            return _auth_error("Token tidak valid atau sudah kedaluwarsa.", HTTPStatus.UNAUTHORIZED, "AUTH_TOKEN_INVALID")
+            return _auth_error(
+                "Token tidak valid atau sudah kedaluwarsa.", HTTPStatus.UNAUTHORIZED, "AUTH_TOKEN_INVALID"
+            )
 
         return f(current_user_id=user_uuid_from_token, *args, **kwargs)
 
@@ -314,7 +322,9 @@ def admin_required(f):
                 f"Akses DITOLAK ke rute admin. User ID: {current_user_id}, "
                 f"Role: {admin_user.role.value if admin_user and admin_user.role else 'Tidak Ditemukan'}"
             )
-            return _auth_error("Akses ditolak. Memerlukan hak akses Admin.", HTTPStatus.FORBIDDEN, "AUTH_ADMIN_REQUIRED")
+            return _auth_error(
+                "Akses ditolak. Memerlukan hak akses Admin.", HTTPStatus.FORBIDDEN, "AUTH_ADMIN_REQUIRED"
+            )
 
         resp = f(current_admin=admin_user, *args, **kwargs)
 

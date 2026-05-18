@@ -2710,16 +2710,12 @@ def fix_quota_bug_20260309(dry_run: bool, min_inflation_mb: int, unlimited_only:
         label = f"{row.full_name} ({row.phone_number})"
 
         if net_inflation < min_inflation_mb:
-            click.echo(
-                click.style(f"[SKIP] {label}: inflasi {net_inflation:.0f} MB < threshold", fg="cyan")
-            )
+            click.echo(click.style(f"[SKIP] {label}: inflasi {net_inflation:.0f} MB < threshold", fg="cyan"))
             skipped_count += 1
             continue
 
         if unlimited_only and not bool(row.is_unlimited_user):
-            click.echo(
-                click.style(f"[SKIP] {label}: bukan unlimited user (--unlimited-only aktif)", fg="cyan")
-            )
+            click.echo(click.style(f"[SKIP] {label}: bukan unlimited user (--unlimited-only aktif)", fg="cyan"))
             skipped_count += 1
             continue
 
@@ -2805,6 +2801,7 @@ def fix_quota_bug_20260309(dry_run: bool, min_inflation_mb: int, unlimited_only:
 
 # --- Perintah reset-unlimited-quota-counters ---
 
+
 @user_cli_bp.command(
     "reset-unlimited-quota-counters",
     help=(
@@ -2834,12 +2831,18 @@ def reset_unlimited_quota_counters(dry_run: bool, include_manual_debt: bool):
     click.echo(f"Mode: {'DRY-RUN' if dry_run else 'LIVE'}")
     click.echo(f"Include manual-debt: {include_manual_debt}\n")
 
-    unlimited_users = db.session.execute(
-        db.select(User).filter(
-            User.is_unlimited_user.is_(True),
-            User.total_quota_used_mb > User.total_quota_purchased_mb,
-        ).order_by(User.total_quota_used_mb.desc())
-    ).scalars().all()
+    unlimited_users = (
+        db.session.execute(
+            db.select(User)
+            .filter(
+                User.is_unlimited_user.is_(True),
+                User.total_quota_used_mb > User.total_quota_purchased_mb,
+            )
+            .order_by(User.total_quota_used_mb.desc())
+        )
+        .scalars()
+        .all()
+    )
 
     if not unlimited_users:
         click.echo(click.style("Tidak ada user unlimited dengan raw_remaining negatif.", fg="yellow"))
@@ -2857,10 +2860,12 @@ def reset_unlimited_quota_counters(dry_run: bool, include_manual_debt: bool):
         raw_remaining = purchased - used
 
         if manual > 0 and not include_manual_debt:
-            click.echo(click.style(
-                f"[SKIP] {label}: manual_debt={manual} MB — lewati (pakai --include-manual-debt untuk sertakan)",
-                fg="yellow",
-            ))
+            click.echo(
+                click.style(
+                    f"[SKIP] {label}: manual_debt={manual} MB — lewati (pakai --include-manual-debt untuk sertakan)",
+                    fg="yellow",
+                )
+            )
             skip_count += 1
             continue
 

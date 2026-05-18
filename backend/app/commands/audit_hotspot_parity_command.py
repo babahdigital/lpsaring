@@ -47,7 +47,9 @@ def _resolve_managed_lists() -> Dict[str, str]:
     return {
         "active": str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_ACTIVE", "active") or "active").strip(),
         "fup": str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_FUP", "fup") or "fup").strip(),
-        "inactive": str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive").strip(),
+        "inactive": str(
+            settings_service.get_setting("MIKROTIK_ADDRESS_LIST_INACTIVE", "inactive") or "inactive"
+        ).strip(),
         "expired": str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_EXPIRED", "expired") or "expired").strip(),
         "habis": str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_HABIS", "habis") or "habis").strip(),
         "blocked": str(settings_service.get_setting("MIKROTIK_ADDRESS_LIST_BLOCKED", "blocked") or "blocked").strip(),
@@ -475,11 +477,7 @@ def audit_hotspot_parity_command(
     binding_indexes = _build_binding_indexes(ip_binding_rows)
     dhcp_indexes = _build_dhcp_indexes(dhcp_lease_rows)
 
-    unauthorized_rows = [
-        row
-        for row in address_list_rows
-        if str(row.get("list") or "").strip() == unauthorized_list
-    ]
+    unauthorized_rows = [row for row in address_list_rows if str(row.get("list") or "").strip() == unauthorized_list]
     unauthorized_ips = {
         str(row.get("address") or "").strip()
         for row in unauthorized_rows

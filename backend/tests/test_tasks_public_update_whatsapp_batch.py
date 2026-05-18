@@ -51,9 +51,9 @@ def _make_app() -> Flask:
     app.config["SECRET_KEY"] = "unit-test-secret"
     app.config["UPDATE_ENABLE_SYNC"] = True
     app.config["UPDATE_WHATSAPP_BATCH_SIZE"] = 3
-    app.config[
-        "UPDATE_WHATSAPP_IMPORT_MESSAGE_TEMPLATE"
-    ] = "Halo {full_name}, data pemutakhiran Anda sudah kami terima dan sedang diproses."
+    app.config["UPDATE_WHATSAPP_IMPORT_MESSAGE_TEMPLATE"] = (
+        "Halo {full_name}, data pemutakhiran Anda sudah kami terima dan sedang diproses."
+    )
     return app
 
 

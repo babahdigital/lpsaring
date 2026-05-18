@@ -128,12 +128,15 @@ def _log_wa_notification(recipient_phone: str, template_key: str, success: bool)
         log_entry.admin_id = None  # system-generated
         log_entry.target_user_id = target_user.id if target_user else None
         log_entry.action_type = AdminActionType.SEND_WHATSAPP_NOTIFICATION
-        log_entry.details = json.dumps({
-            "template": template_key,
-            "recipient": recipient_phone,
-            "success": success,
-            "source": "notification.whatsapp",
-        }, default=str)
+        log_entry.details = json.dumps(
+            {
+                "template": template_key,
+                "recipient": recipient_phone,
+                "success": success,
+                "source": "notification.whatsapp",
+            },
+            default=str,
+        )
         db.session.add(log_entry)
     except Exception as e:
         current_app.logger.debug(f"Gagal mencatat WA notification log: {e}")

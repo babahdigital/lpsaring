@@ -110,10 +110,14 @@ def test_sync_hotspot_usage_and_profiles_isolates_user_failures(monkeypatch):
     }
 
     monkeypatch.setattr(svc, "db", SimpleNamespace(session=fake_session))
-    monkeypatch.setattr(svc, "settings_service", SimpleNamespace(
-        get_setting=lambda _key, default=None: default,
-        get_setting_as_int=lambda _key, default=0: default,
-    ))
+    monkeypatch.setattr(
+        svc,
+        "settings_service",
+        SimpleNamespace(
+            get_setting=lambda _key, default=None: default,
+            get_setting_as_int=lambda _key, default=0: default,
+        ),
+    )
     monkeypatch.setattr(
         svc,
         "_load_hotspot_usage_sync_db_state",
@@ -169,7 +173,9 @@ def test_sync_hotspot_usage_and_profiles_isolates_user_failures(monkeypatch):
     monkeypatch.setattr(svc, "_sync_address_list_status", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(svc, "_send_quota_notifications", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(svc, "_send_expiry_notifications", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(svc, "get_app_local_datetime", lambda *_args, **_kwargs: datetime(2026, 3, 14, tzinfo=timezone.utc))
+    monkeypatch.setattr(
+        svc, "get_app_local_datetime", lambda *_args, **_kwargs: datetime(2026, 3, 14, tzinfo=timezone.utc)
+    )
 
     with app.app_context():
         result = svc.sync_hotspot_usage_and_profiles()
@@ -242,7 +248,9 @@ def test_sync_hotspot_usage_and_profiles_releases_preloop_settings_session(monke
     monkeypatch.setattr(svc, "_sync_address_list_status", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(svc, "_send_quota_notifications", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(svc, "_send_expiry_notifications", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(svc, "get_app_local_datetime", lambda *_args, **_kwargs: datetime(2026, 3, 14, tzinfo=timezone.utc))
+    monkeypatch.setattr(
+        svc, "get_app_local_datetime", lambda *_args, **_kwargs: datetime(2026, 3, 14, tzinfo=timezone.utc)
+    )
 
     with app.app_context():
         result = svc.sync_hotspot_usage_and_profiles()
@@ -329,7 +337,9 @@ def test_sync_hotspot_usage_and_profiles_continues_without_host_snapshot(monkeyp
     monkeypatch.setattr(svc, "_sync_address_list_status", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(svc, "_send_quota_notifications", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(svc, "_send_expiry_notifications", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(svc, "get_app_local_datetime", lambda *_args, **_kwargs: datetime(2026, 3, 14, tzinfo=timezone.utc))
+    monkeypatch.setattr(
+        svc, "get_app_local_datetime", lambda *_args, **_kwargs: datetime(2026, 3, 14, tzinfo=timezone.utc)
+    )
 
     with app.app_context():
         result = svc.sync_hotspot_usage_and_profiles()
@@ -392,10 +402,12 @@ def test_sync_hotspot_usage_and_profiles_reuses_owned_status_snapshot_for_prune(
     monkeypatch.setattr(svc, "_snapshot_dhcp_ips_by_mac", lambda _api: (True, {}))
 
     def _fake_snapshot(_api, *, managed_status_lists=None):
-        snapshot_calls.append((
-            _api,
-            tuple(managed_status_lists or []),
-        ))
+        snapshot_calls.append(
+            (
+                _api,
+                tuple(managed_status_lists or []),
+            )
+        )
         return True, managed_snapshot
 
     def _fake_prune(_api, user, keep_ips=None, *, owned_status_entries_snapshot=None, managed_status_lists=None):
@@ -423,7 +435,9 @@ def test_sync_hotspot_usage_and_profiles_reuses_owned_status_snapshot_for_prune(
     monkeypatch.setattr(svc, "_sync_address_list_status", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(svc, "_send_quota_notifications", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(svc, "_send_expiry_notifications", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(svc, "get_app_local_datetime", lambda *_args, **_kwargs: datetime(2026, 3, 14, tzinfo=timezone.utc))
+    monkeypatch.setattr(
+        svc, "get_app_local_datetime", lambda *_args, **_kwargs: datetime(2026, 3, 14, tzinfo=timezone.utc)
+    )
 
     with app.app_context():
         result = svc.sync_hotspot_usage_and_profiles()

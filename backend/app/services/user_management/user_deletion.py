@@ -262,7 +262,9 @@ def _run_auth_cleanup(
     include_comment_scan: bool = True,
 ) -> tuple[int, int, dict[str, Any]]:
     tokens_deleted = (
-        db.session.query(RefreshToken).filter(RefreshToken.user_id == user_to_remove.id).delete(synchronize_session=False)
+        db.session.query(RefreshToken)
+        .filter(RefreshToken.user_id == user_to_remove.id)
+        .delete(synchronize_session=False)
     )
     devices_deleted = (
         db.session.query(UserDevice).filter(UserDevice.user_id == user_to_remove.id).delete(synchronize_session=False)

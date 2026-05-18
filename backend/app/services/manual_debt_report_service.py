@@ -46,7 +46,9 @@ def _pick_ref_pkg_for_debt_mb(value_mb: float) -> Package | None:
         .limit(1)
     ).scalar_one_or_none()
     if ref is None:
-        ref = db.session.execute(base_q.order_by(Package.data_quota_gb.desc(), Package.price.asc()).limit(1)).scalar_one_or_none()
+        ref = db.session.execute(
+            base_q.order_by(Package.data_quota_gb.desc(), Package.price.asc()).limit(1)
+        ).scalar_one_or_none()
     return ref
 
 
@@ -158,13 +160,19 @@ def build_user_debt_detail_lines(report_context: dict[str, Any], *, max_items: i
     for index, item in enumerate(open_items[:max_items], start=1):
         due_text = item.get("due_date_display") or item.get("debt_date_display") or "-"
         is_unl = bool(item.get("is_unlimited_debt"))
-        amount_text = "Unlimited" if is_unl else (item.get("remaining_gb") or format_mb_to_gb(item.get("remaining_mb") or item.get("amount_mb") or 0))
+        amount_text = (
+            "Unlimited"
+            if is_unl
+            else (item.get("remaining_gb") or format_mb_to_gb(item.get("remaining_mb") or item.get("amount_mb") or 0))
+        )
         price_text = item.get("remaining_amount_display") or format_currency_idr(item.get("remaining_rp") or 0)
         package_text = str(item.get("note") or "Tunggakan manual").strip()
         detail_lines.append(f"{index}. {due_text} — {amount_text} | {price_text} | {package_text}")
 
     if len(open_items) > max_items:
-        detail_lines.append(f"... dan {len(open_items) - max_items} item lainnya. Lihat PDF terlampir untuk rincian lengkap.")
+        detail_lines.append(
+            f"... dan {len(open_items) - max_items} item lainnya. Lihat PDF terlampir untuk rincian lengkap."
+        )
     if not detail_lines:
         detail_lines.append("Tidak ada item tunggakan manual yang masih terbuka.")
     return detail_lines
@@ -176,7 +184,9 @@ def build_user_debt_whatsapp_context(user: User, report_context: dict[str, Any],
     has_unlimited = any(bool(item.get("is_unlimited_debt")) for item in open_items)
     return {
         "full_name": user.full_name,
-        "total_manual_debt_gb": "Unlimited" if has_unlimited else format_mb_to_gb(report_context.get("debt_manual_mb") or 0),
+        "total_manual_debt_gb": "Unlimited"
+        if has_unlimited
+        else format_mb_to_gb(report_context.get("debt_manual_mb") or 0),
         "total_manual_debt_amount_display": format_currency_idr(report_context.get("debt_manual_estimated_rp") or 0),
         "open_items": len(open_items),
         "debt_detail_lines": "\n".join(detail_lines),
@@ -185,7 +195,9 @@ def build_user_debt_whatsapp_context(user: User, report_context: dict[str, Any],
     }
 
 
-def build_due_debt_reminder_context(user: User, report_context: dict[str, Any], debt: UserQuotaDebt, pdf_url: str) -> dict[str, Any]:
+def build_due_debt_reminder_context(
+    user: User, report_context: dict[str, Any], debt: UserQuotaDebt, pdf_url: str
+) -> dict[str, Any]:
     item_payload = next((item for item in report_context.get("items", []) if str(item.get("id")) == str(debt.id)), None)
 
     amount_mb = int(getattr(debt, "amount_mb", 0) or 0)

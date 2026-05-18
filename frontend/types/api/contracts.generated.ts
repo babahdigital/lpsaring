@@ -2,7 +2,7 @@
 // AUTO-GENERATED FILE. DO NOT EDIT MANUALLY.
 // Source: contracts/openapi/openapi.v1.yaml
 
-export const OPENAPI_SOURCE_SHA256 = '7c560fa12602599d10781e83d9bd46e4abada8ef6fa83ac575efdf2bc2d9719f' as const
+export const OPENAPI_SOURCE_SHA256 = '4adae1322aebe13dced4fef7f57dd5fe60f609c92106914c9ebfd2fe25e93059' as const
 export const API_CONTRACT_REVISION = 'openapi-1.0.0' as const
 
 export type MessageResponse = { message: string }
@@ -40,6 +40,8 @@ export type AdminUserUpdateRequest = { full_name?: string; role?: 'USER' | 'KOMA
 export type AdminUserMutationResponse = { message: string; user: UserMeResponse }
 export type SeedImportedUpdateSubmissionsRequest = { test_phone?: string | null; dry_run?: boolean | null }
 export type SeedImportedUpdateSubmissionsResponse = { seeded_count: number; skipped_count: number; seeded_phones?: Array<string>; skipped_phones?: Array<string> }
+export type PhoneCheckRequest = { phone_number: string; full_name?: string | null }
+export type PhoneCheckResponse = { user_exists: boolean; user_id?: string | null; message?: string | null }
 export type PublicDatabaseUpdateSubmissionRequest = { full_name: string; role: 'USER' | 'KOMANDAN' | 'TAMPING'; blok?: string | null; kamar?: string | null; tamping_type?: string | null; phone_number: string }
 export type PublicUpdateSubmissionStatusResponse = { success: boolean; status: 'none' | 'reviewing' | 'approved' }
 export type SettingItem = { key: string; value: string | number | boolean | null; description?: string | null }
@@ -340,6 +342,11 @@ export interface GeneratedApiContractMap {
   'GET /transactions/{order_id}/qr': {
     request: never
     response: string
+    error: ErrorResponse
+  }
+  'POST /users/check-or-register': {
+    request: PhoneCheckRequest
+    response: PhoneCheckResponse
     error: ErrorResponse
   }
   'POST /users/database-update-submissions': {

@@ -70,12 +70,24 @@ def test_snapshot_dhcp_includes_lpsaring_waiting_lease():
     from app.services.hotspot_sync_service import _snapshot_dhcp_ips_by_mac
 
     leases = [
-        {"mac-address": "AA:BB:CC:11:22:33", "address": "172.16.2.50",
-         "status": "waiting", "comment": "lpsaring|static-dhcp|uid=test-user-1"},
-        {"mac-address": "BB:CC:DD:44:55:66", "address": "172.16.2.51",
-         "status": "waiting", "comment": "some-other-tool"},
-        {"mac-address": "CC:DD:EE:77:88:99", "address": "172.16.2.52",
-         "status": "bound", "comment": "lpsaring|static-dhcp|uid=test-user-2"},
+        {
+            "mac-address": "AA:BB:CC:11:22:33",
+            "address": "172.16.2.50",
+            "status": "waiting",
+            "comment": "lpsaring|static-dhcp|uid=test-user-1",
+        },
+        {
+            "mac-address": "BB:CC:DD:44:55:66",
+            "address": "172.16.2.51",
+            "status": "waiting",
+            "comment": "some-other-tool",
+        },
+        {
+            "mac-address": "CC:DD:EE:77:88:99",
+            "address": "172.16.2.52",
+            "status": "bound",
+            "comment": "lpsaring|static-dhcp|uid=test-user-2",
+        },
     ]
     api = _FakeApi({"/ip/dhcp-server/lease": _FakeResource(leases)})
     ok, by_mac = _snapshot_dhcp_ips_by_mac(api)
@@ -91,10 +103,8 @@ def test_snapshot_dhcp_excludes_non_lpsaring_waiting():
     from app.services.hotspot_sync_service import _snapshot_dhcp_ips_by_mac
 
     leases = [
-        {"mac-address": "AA:AA:AA:AA:AA:01", "address": "10.0.0.1",
-         "status": "waiting", "comment": ""},
-        {"mac-address": "AA:AA:AA:AA:AA:02", "address": "10.0.0.2",
-         "status": "waiting", "comment": "manual-entry"},
+        {"mac-address": "AA:AA:AA:AA:AA:01", "address": "10.0.0.1", "status": "waiting", "comment": ""},
+        {"mac-address": "AA:AA:AA:AA:AA:02", "address": "10.0.0.2", "status": "waiting", "comment": "manual-entry"},
     ]
     api = _FakeApi({"/ip/dhcp-server/lease": _FakeResource(leases)})
     _, by_mac = _snapshot_dhcp_ips_by_mac(api)
@@ -112,12 +122,19 @@ def test_collect_dhcp_snapshot_protects_lpsaring_waiting_mac():
     from app.commands.sync_unauthorized_hosts_command import _collect_dhcp_lease_snapshot
 
     leases = [
-        {"mac-address": "DE:AD:BE:EF:00:01", "address": "172.16.2.60",
-         "status": "waiting", "comment": "lpsaring|static-dhcp|uid=offline-user"},
-        {"mac-address": "DE:AD:BE:EF:00:02", "address": "172.16.2.61",
-         "status": "waiting", "comment": "non-lpsaring"},
-        {"mac-address": "DE:AD:BE:EF:00:03", "address": "172.16.2.62",
-         "status": "bound", "comment": "lpsaring|static-dhcp|uid=online-user"},
+        {
+            "mac-address": "DE:AD:BE:EF:00:01",
+            "address": "172.16.2.60",
+            "status": "waiting",
+            "comment": "lpsaring|static-dhcp|uid=offline-user",
+        },
+        {"mac-address": "DE:AD:BE:EF:00:02", "address": "172.16.2.61", "status": "waiting", "comment": "non-lpsaring"},
+        {
+            "mac-address": "DE:AD:BE:EF:00:03",
+            "address": "172.16.2.62",
+            "status": "bound",
+            "comment": "lpsaring|static-dhcp|uid=online-user",
+        },
     ]
     api = _FakeApi({"/ip/dhcp-server/lease": _FakeResource(leases)})
     mac_set, mac_ip_pairs, ip_set, lpsaring_macs = _collect_dhcp_lease_snapshot(api)
@@ -187,7 +204,9 @@ def test_sync_access_banking_task_skips_when_disabled(monkeypatch):
 
     app = _make_app()
     monkeypatch.setattr(tasks, "create_app", lambda: app)
-    monkeypatch.setattr(tasks.settings_service, "get_setting", lambda k, d=None: "False" if k == "AKSES_BANKING_ENABLED" else d)
+    monkeypatch.setattr(
+        tasks.settings_service, "get_setting", lambda k, d=None: "False" if k == "AKSES_BANKING_ENABLED" else d
+    )
 
     with app.app_context():
         result = tasks.sync_access_banking_task.run()
@@ -380,8 +399,7 @@ def test_extensions_uses_max_for_beat_interval():
     bad_code_lines = [
         line.strip()
         for line in source.splitlines()
-        if "schedule_seconds = min(sync_interval, 60)" in line
-        and not line.strip().startswith("#")
+        if "schedule_seconds = min(sync_interval, 60)" in line and not line.strip().startswith("#")
     ]
     assert not bad_code_lines, f"Old min() bug must not exist as code: {bad_code_lines}"
 
@@ -398,9 +416,7 @@ def test_tasks_banking_ip_cast_to_str():
         source = f.read()
 
     # The fix: str(addr_info[4][0])
-    assert "str(addr_info[4][0])" in source, (
-        "IP from getaddrinfo must be cast to str() to satisfy Pylance type checker"
-    )
+    assert "str(addr_info[4][0])" in source, "IP from getaddrinfo must be cast to str() to satisfy Pylance type checker"
 
 
 def test_tasks_wa_overdue_uses_correct_kwargs():

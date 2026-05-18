@@ -201,9 +201,7 @@ def logout_user_impl(
         if UserDevice is not None:
             try:
                 devices_deleted = int(
-                    session.query(UserDevice)
-                    .filter(UserDevice.user_id == user.id)
-                    .delete(synchronize_session=False)
+                    session.query(UserDevice).filter(UserDevice.user_id == user.id).delete(synchronize_session=False)
                     or 0
                 )
             except Exception as e:

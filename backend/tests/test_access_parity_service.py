@@ -230,7 +230,7 @@ def test_collect_access_parity_report_no_dhcp_mismatch_for_waiting_static_lease(
     in-flight) and "expired" (lapsed dynamic) leases are skipped.
     """
     mac = "F6:75:0C:85:0E:BE"
-    ip_db = "172.16.3.174"   # stale IP stored in DB
+    ip_db = "172.16.3.174"  # stale IP stored in DB
     ip_live = "172.16.3.184"  # current live IP from host table (device has new DHCP IP)
     device = SimpleNamespace(mac_address=mac, ip_address=ip_db, is_authorized=True)
     user = SimpleNamespace(id="waiting-lease-user", phone_number="+6283852923433", devices=[device])

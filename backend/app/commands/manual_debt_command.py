@@ -14,14 +14,27 @@ from flask.cli import with_appcontext
 from sqlalchemy.orm import selectinload
 
 from app.extensions import db
-from app.infrastructure.db.models import Package, QuotaMutationLedger, Transaction, TransactionStatus, User, UserQuotaDebt, UserRole
+from app.infrastructure.db.models import (
+    Package,
+    QuotaMutationLedger,
+    Transaction,
+    TransactionStatus,
+    User,
+    UserQuotaDebt,
+    UserRole,
+)
 from app.infrastructure.http.transactions.helpers import _get_debt_order_prefixes
 from app.services import settings_service
 from app.services.manual_debt_report_service import build_user_manual_debt_report_context, estimate_amount_rp_for_mb
 from app.services.notification_service import generate_temp_debt_report_token
 from app.services.user_management.helpers import _send_whatsapp_notification
 from app.services.user_management import user_debt as debt_service
-from app.utils.formatters import format_app_date_display, format_mb_to_gb, get_phone_number_variations, normalize_to_e164
+from app.utils.formatters import (
+    format_app_date_display,
+    format_mb_to_gb,
+    get_phone_number_variations,
+    normalize_to_e164,
+)
 
 
 UNDERPAYMENT_NOTE_PREFIX = "Koreksi kekurangan pembayaran debt online"
@@ -171,7 +184,11 @@ def _build_underpayment_rows(
         paid_manual_mb = int(details.get("paid_manual_mb") or 0)
         if paid_manual_mb <= 0:
             continue
-        settled_at = getattr(transaction, "payment_time", None) or getattr(mutation, "created_at", None) or getattr(transaction, "created_at", None)
+        settled_at = (
+            getattr(transaction, "payment_time", None)
+            or getattr(mutation, "created_at", None)
+            or getattr(transaction, "created_at", None)
+        )
         matched_debts = _find_matched_paid_debts(user.id, settled_at)
         expected_rp = _estimate_expected_transaction_rp(matched_debts)
         paid_rp = int(getattr(transaction, "amount", 0) or 0)
@@ -320,9 +337,22 @@ def add_manual_debt_command(
 @click.option("--phone", default=None, help="Filter nomor telepon user (08... / +62...).")
 @click.option("--order-id", default=None, help="Filter satu order ID transaksi debt.")
 @click.option("--limit", type=int, default=50, show_default=True, help="Maksimum transaksi debt sukses yang diperiksa.")
-@click.option("--due-days", type=int, default=7, show_default=True, help="Jatuh tempo debt koreksi dihitung dari tanggal settle + N hari.")
-@click.option("--send-wa/--no-send-wa", default=False, show_default=True, help="Kirim WhatsApp koreksi setelah debt dibuat (hanya saat --apply).")
-@click.option("--apply/--dry-run", default=False, show_default=True, help="Apply debt koreksi atau hanya audit tanpa perubahan.")
+@click.option(
+    "--due-days",
+    type=int,
+    default=7,
+    show_default=True,
+    help="Jatuh tempo debt koreksi dihitung dari tanggal settle + N hari.",
+)
+@click.option(
+    "--send-wa/--no-send-wa",
+    default=False,
+    show_default=True,
+    help="Kirim WhatsApp koreksi setelah debt dibuat (hanya saat --apply).",
+)
+@click.option(
+    "--apply/--dry-run", default=False, show_default=True, help="Apply debt koreksi atau hanya audit tanpa perubahan."
+)
 @with_appcontext
 def audit_debt_settlement_underpayments_command(
     phone: Optional[str],
@@ -421,7 +451,9 @@ def audit_debt_settlement_underpayments_command(
                     "due_date": format_app_date_display(due_date_value, fallback=due_date_value.isoformat()),
                     "debt_pdf_url": debt_pdf_url,
                     "total_manual_debt_gb": format_mb_to_gb(report_context.get("debt_manual_mb") or 0),
-                    "total_manual_debt_amount_display": _format_currency_idr(report_context.get("debt_manual_estimated_rp") or 0),
+                    "total_manual_debt_amount_display": _format_currency_idr(
+                        report_context.get("debt_manual_estimated_rp") or 0
+                    ),
                 },
             )
             if sent:

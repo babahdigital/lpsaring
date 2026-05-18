@@ -16,10 +16,7 @@ class _HostResource:
 
     def remove(self, **kwargs):
         entry_id = kwargs.get("id") or kwargs.get(".id")
-        self.entries = [
-            entry for entry in self.entries
-            if (entry.get("id") or entry.get(".id")) != entry_id
-        ]
+        self.entries = [entry for entry in self.entries if (entry.get("id") or entry.get(".id")) != entry_id]
 
 
 class _FailingHostResource:
@@ -93,9 +90,7 @@ def test_remove_hotspot_host_entries_best_effort_stops_after_first_success():
     assert msg == "Sukses"
     assert removed == 1
     assert resource.entries == []
-    assert resource.queries == [
-        {"mac-address": "AA:BB:CC:DD:EE:FF", "address": "172.16.2.10", "user": "08123456789"}
-    ]
+    assert resource.queries == [{"mac-address": "AA:BB:CC:DD:EE:FF", "address": "172.16.2.10", "user": "08123456789"}]
 
 
 def test_remove_hotspot_host_entries_best_effort_returns_error_when_query_fails():

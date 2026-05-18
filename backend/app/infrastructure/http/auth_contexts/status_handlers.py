@@ -8,7 +8,9 @@ from pydantic import ValidationError
 from sqlalchemy import select
 
 
-def verify_status_token_impl(*, payload, StatusTokenVerifyRequestSchema, AuthErrorResponseSchema, verify_status_token, validation_error_details):
+def verify_status_token_impl(
+    *, payload, StatusTokenVerifyRequestSchema, AuthErrorResponseSchema, verify_status_token, validation_error_details
+):
     try:
         if not payload:
             return jsonify(
@@ -29,7 +31,9 @@ def verify_status_token_impl(*, payload, StatusTokenVerifyRequestSchema, AuthErr
         ), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
-def debug_binding_impl(*, payload, db, User, AuthErrorResponseSchema, get_phone_number_variations, resolve_binding_context):
+def debug_binding_impl(
+    *, payload, db, User, AuthErrorResponseSchema, get_phone_number_variations, resolve_binding_context
+):
     if current_app.config.get("FLASK_ENV") == "production":
         return jsonify(AuthErrorResponseSchema(error="Endpoint tidak tersedia.").model_dump()), HTTPStatus.NOT_FOUND
 

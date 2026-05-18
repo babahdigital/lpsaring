@@ -29,7 +29,9 @@ def main() -> int:
     check_script = backend_dir / "scripts" / "check_requirements_lock_sync.py"
 
     print("Refreshing lockfile from current environment...")
-    result = subprocess.run([python_exe, "-m", "pip", "freeze"], cwd=str(backend_dir), check=True, capture_output=True, text=True)
+    result = subprocess.run(
+        [python_exe, "-m", "pip", "freeze"], cwd=str(backend_dir), check=True, capture_output=True, text=True
+    )
     lockfile_path.write_text(result.stdout, encoding="utf-8")
 
     print("Validating requirements.txt <-> requirements.lock.txt sync...")
