@@ -303,7 +303,24 @@ def bulk_reset_quota_command(
                     db.session.commit()
                     _since_last_commit = 0
                 except Exception as exc_chunk_commit:
-                    click.echo(f"WARN: chunked commit gagal: {exc_chunk_commit}")
+                    # Sprint 20 (regression fix LOW): log user IDs di chunk
+                    # failed untuk forensic. MikroTik mutation di chunk ini
+                    # sudah pushed ke router → state drift kalau DB rollback.
+                    # Operator butuh tahu siapa yang harus di-reconcile manual.
+                    _affected_user_ids = [
+                        str(getattr(u, "id", "?"))
+                        for u in eligible_users[counters.updated_db - _since_last_commit : counters.updated_db]
+                    ]
+                    click.echo(
+                        f"WARN: chunked commit gagal: {exc_chunk_commit}. "
+                        f"MikroTik state untuk user IDs {_affected_user_ids} "
+                        f"mungkin sudah ter-apply tapi DB rolled back — verifikasi manual."
+                    )
+                    logger.error(
+                        "bulk_reset_quota chunk commit gagal. drift_user_ids=%s err=%s",
+                        _affected_user_ids,
+                        exc_chunk_commit,
+                    )
                     db.session.rollback()
                     raise
 

@@ -48,9 +48,16 @@ def admin_login_impl(
         return jsonify({"message": str(e)}), HTTPStatus.BAD_REQUEST
 
     phone_variations = get_phone_number_variations(normalized_phone)
-    # Sprint 14: .scalars().first() supaya admin login tidak 500 bila ada legacy duplicate.
+    # Sprint 14 + Sprint 20: .scalars().first() defensive + ORDER BY created_at
+    # ASC. Untuk admin login, oldest-wins memastikan kalau legacy duplicate
+    # admin row (created lebih dulu) vs USER row baru, pakai admin row →
+    # admin tidak fail-login dengan auth-as-USER (privilege confusion).
     user_to_login = (
-        db.session.execute(db.select(User).filter(User.phone_number.in_(phone_variations))).scalars().first()
+        db.session.execute(
+            db.select(User).filter(User.phone_number.in_(phone_variations)).order_by(User.created_at.asc())
+        )
+        .scalars()
+        .first()
     )
 
     if (

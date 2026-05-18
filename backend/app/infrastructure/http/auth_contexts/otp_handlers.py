@@ -64,7 +64,18 @@ def request_otp_impl(
         phone_variations = get_phone_number_variations(phone_e164)
         # Sprint 14: .scalars().first() bukan scalar_one_or_none() supaya OTP
         # request tidak crash 500 kalau ada legacy duplicate phone row.
-        user_for_otp = db.session.execute(select(User).where(User.phone_number.in_(phone_variations))).scalars().first()
+        # Sprint 20 (regression fix HIGH): ORDER BY created_at ASC supaya
+        # deterministic — kalau ada legacy duplicate (mis. row admin lama +
+        # row USER baru dengan phone sama), selalu pakai row tertua (admin).
+        # Sebelumnya non-deterministic → potensi privilege confusion (admin
+        # auth bind ke USER row → role downgrade silent).
+        user_for_otp = (
+            db.session.execute(
+                select(User).where(User.phone_number.in_(phone_variations)).order_by(User.created_at.asc())
+            )
+            .scalars()
+            .first()
+        )
         if not user_for_otp:
             if demo_phone_allowed:
                 increment_metric("otp.request.failed")

@@ -167,9 +167,16 @@ def verify_otp_impl(  # pyright: ignore[reportGeneralTypeIssues]
         increment_metric("otp.verify.success")
 
         phone_variations = get_phone_number_variations(phone_e164)
-        # Sprint 14: .scalars().first() defensive bila ada legacy duplicate.
+        # Sprint 14 + Sprint 20: .scalars().first() defensive + ORDER BY supaya
+        # deterministic. Critical: harus konsisten dengan otp_handlers (sama-sama
+        # ORDER BY created_at ASC) supaya OTP-request dan verify-OTP target user
+        # yang SAMA bila ada duplicate.
         user_to_login = (
-            db.session.execute(select(User).where(User.phone_number.in_(phone_variations))).scalars().first()
+            db.session.execute(
+                select(User).where(User.phone_number.in_(phone_variations)).order_by(User.created_at.asc())
+            )
+            .scalars()
+            .first()
         )
 
         if not user_to_login:

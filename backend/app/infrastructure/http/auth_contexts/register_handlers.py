@@ -45,7 +45,15 @@ def register_user_impl(
         # crash MultipleResultsFound bila ada user legacy yang slip normalization
         # E.164 (variasi seperti +6281xxx vs 081xxx). Lebih aman menolak
         # registrasi daripada 500.
-        if db.session.execute(select(User.id).where(User.phone_number.in_(phone_variations))).first() is not None:
+        # Sprint 20 (regression fix): tambah ORDER BY id supaya deterministic
+        # bila ada duplicate row (existence check, urutan tidak kritis tapi
+        # konsisten).
+        if (
+            db.session.execute(
+                select(User.id).where(User.phone_number.in_(phone_variations)).order_by(User.id.asc())
+            ).first()
+            is not None
+        ):
             return jsonify(
                 AuthErrorResponseSchema(error="Phone number is already registered.").model_dump()
             ), HTTPStatus.CONFLICT
