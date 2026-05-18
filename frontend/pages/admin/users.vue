@@ -12,6 +12,7 @@ import { useSnackbar } from '@/composables/useSnackbar'
 import { useAuthStore } from '@/store/auth'
 import { useSettingsStore } from '@/store/settings'
 import { resolveAccessStatusFromUser } from '@/utils/authAccess'
+import { escapeHtml } from '@/utils/formatters'
 
 interface User {
   id: string
@@ -848,7 +849,7 @@ async function handleSaveUser(payload: EditPayload) {
 function handleApprove(user: User) {
   openConfirmDialog({
     title: 'Konfirmasi Persetujuan',
-    message: `Anda yakin ingin menyetujui pengguna <strong>${user.full_name}</strong>? Akun akan diaktifkan dan notifikasi akan dikirim.`,
+    message: `Anda yakin ingin menyetujui pengguna <strong>${escapeHtml(user.full_name)}</strong>? Akun akan diaktifkan dan notifikasi akan dikirim.`,
     color: 'success',
     action: async () => await performAction(`/admin/users/${user.id}/approve`, 'PATCH', 'Pengguna berhasil disetujui.'),
   })
@@ -857,7 +858,7 @@ function handleApprove(user: User) {
 function handleReject(user: User) {
   openConfirmDialog({
     title: 'Konfirmasi Penolakan',
-    message: `Anda yakin ingin menolak & menghapus pendaftaran <strong>${user.full_name}</strong>? Notifikasi penolakan akan dikirim. Aksi ini tidak dapat dibatalkan.`,
+    message: `Anda yakin ingin menolak & menghapus pendaftaran <strong>${escapeHtml(user.full_name)}</strong>? Notifikasi penolakan akan dikirim. Aksi ini tidak dapat dibatalkan.`,
     color: 'error',
     action: async () => await performAction(`/admin/users/${user.id}/reject`, 'POST', 'Pendaftaran pengguna ditolak dan data telah dihapus.'),
   })
@@ -865,7 +866,7 @@ function handleReject(user: User) {
 function handleDelete(user: User) {
   openConfirmDialog({
     title: 'Konfirmasi Penghapusan',
-    message: `Anda yakin ingin menghapus atau menonaktifkan pengguna <strong>${user.full_name}</strong>? Sistem akan membersihkan token, sesi perangkat, serta artefak jaringan MikroTik (DHCP/ARP/IP-Binding/host) untuk user ini.`,
+    message: `Anda yakin ingin menghapus atau menonaktifkan pengguna <strong>${escapeHtml(user.full_name)}</strong>? Sistem akan membersihkan token, sesi perangkat, serta artefak jaringan MikroTik (DHCP/ARP/IP-Binding/host) untuk user ini.`,
     color: 'error',
     action: async () => await performAction(`/admin/users/${user.id}`, 'DELETE', 'Cleanup pengguna berhasil dijalankan.'),
   })
@@ -873,7 +874,7 @@ function handleDelete(user: User) {
 function handleApproveRoleClaim(item: PublicUpdateSubmission) {
   openConfirmDialog({
     title: 'Setujui Klaim Role',
-    message: `Setujui klaim <strong>${item.role}</strong> untuk <strong>${item.full_name}</strong>? Data user akan disesuaikan dengan blok/kamar pengajuan.`,
+    message: `Setujui klaim <strong>${escapeHtml(item.role)}</strong> untuk <strong>${escapeHtml(item.full_name)}</strong>? Data user akan disesuaikan dengan blok/kamar pengajuan.`,
     color: 'success',
     action: async () => {
       await performUpdateSubmissionAction(
@@ -888,7 +889,7 @@ function handleApproveRoleClaim(item: PublicUpdateSubmission) {
 function handleRejectRoleClaim(item: PublicUpdateSubmission) {
   openConfirmDialog({
     title: 'Tolak Klaim Role',
-    message: `Tolak klaim role untuk <strong>${item.full_name}</strong>?`,
+    message: `Tolak klaim role untuk <strong>${escapeHtml(item.full_name)}</strong>?`,
     color: 'error',
     action: async () => {
       await performUpdateSubmissionAction(

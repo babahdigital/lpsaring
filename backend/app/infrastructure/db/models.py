@@ -461,6 +461,14 @@ class UserQuotaDebt(db.Model):
     __table_args__ = (
         Index("ix_user_quota_debts_user_id", "user_id"),
         Index("ix_user_quota_debts_is_paid", "is_paid"),
+        # Partial index dibuat di migration 20260318_add_due_date_to_manual_quota_debt.
+        # Wajib dideklarasikan di model agar flask db migrate tidak meng-auto-generate
+        # drop_index untuk index ini.
+        Index(
+            "ix_user_quota_debts_due_date",
+            "due_date",
+            postgresql_where=sa.text("is_paid = false AND due_date IS NOT NULL"),
+        ),
         {"extend_existing": True},
     )
 

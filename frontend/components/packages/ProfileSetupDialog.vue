@@ -95,11 +95,13 @@ function closeDialog() {
         />
         <VCardTitle class="text-h5 mb-2">
           Konfigurasi Diperlukan
-        </VCardTitle> <p
+        </VCardTitle>
+        <p
           class="text-body-1 text-medium-emphasis mx-auto"
-          style="max-width: 350px;"
-          v-html="props.errorMessage"
-        />
+          style="max-width: 350px; white-space: pre-line;"
+        >
+          {{ props.errorMessage }}
+        </p>
       </VCardItem>
       <VCardText class="text-center pb-6">
         <p class="text-caption text-disabled">

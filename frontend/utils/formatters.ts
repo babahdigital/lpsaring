@@ -2,6 +2,26 @@
 // Ini adalah versi JavaScript/TypeScript dari fungsi yang ada di backend/app/utils/formatters.py
 
 /**
+ * Escape HTML special characters untuk mencegah XSS saat nilai user-controlled
+ * dirender via v-html. Gunakan WAJIB untuk semua interpolasi field user
+ * (full_name, role, blok, kamar, dll.) di message HTML dialog.
+ *
+ * Tidak boleh dipakai untuk nilai konstan/UI text — biarkan template Vue
+ * meng-escape secara default. Hanya untuk pre-rendered HTML string yang
+ * akan masuk ke v-html.
+ */
+export function escapeHtml(value: unknown): string {
+  if (value === null || value === undefined) return ''
+  const s = String(value)
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+/**
  * Menormalisasi nomor telepon ke format E.164.
  * Fungsi ini sengaja dibuat untuk mereplikasi logika di backend.
  * Dukungan:

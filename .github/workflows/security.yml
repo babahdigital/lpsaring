@@ -1,0 +1,113 @@
+name: security
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  schedule:
+    - cron: "0 3 * * 1"   # Senin 03:00 UTC = 10:00 WITA
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  secrets-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with: { fetch-depth: 0 }
+      - name: Gitleaks (soft gate)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+  python-sast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.lock.txt
+      - name: Install scanners
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install bandit==1.8.0 "pip-audit==2.9.0"
+      - name: Bandit (Python SAST, soft gate)
+        continue-on-error: true
+        run: |
+          bandit -r backend/app backend/scripts scripts \
+            -c pyproject.toml -f txt -o bandit-report.txt || true
+          {
+            echo '### Bandit result'
+            echo '```'
+            tail -n 200 bandit-report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: pip-audit (CVE di dependency pinned, soft gate)
+        continue-on-error: true
+        run: |
+          pip-audit -r backend/requirements.lock.txt \
+            --strict --disable-pip --format columns \
+            2>&1 | tee pip-audit-report.txt
+          {
+            echo '### pip-audit result'
+            echo '```'
+            cat pip-audit-report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: python-sast-reports
+          path: |
+            bandit-report.txt
+            pip-audit-report.txt
+          retention-days: 14
+
+  frontend-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install frontend deps
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: pnpm audit (high+, soft gate)
+        continue-on-error: true
+        working-directory: frontend
+        run: |
+          pnpm audit --prod --audit-level=high \
+            2>&1 | tee ../pnpm-audit-report.txt
+          {
+            echo '### pnpm-audit result'
+            echo '```'
+            cat ../pnpm-audit-report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  workflow-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: actionlint (soft gate)
+        uses: raven-actions/actionlint@v2
+        with:
+          fail-on-error: false

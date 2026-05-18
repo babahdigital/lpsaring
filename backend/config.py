@@ -406,6 +406,11 @@ class Config:
     PUBLIC_TRANSACTION_QR_RATE_LIMIT = os.environ.get("PUBLIC_TRANSACTION_QR_RATE_LIMIT", "30 per minute")
     PUBLIC_TRANSACTION_CANCEL_RATE_LIMIT = os.environ.get("PUBLIC_TRANSACTION_CANCEL_RATE_LIMIT", "20 per minute")
 
+    # Rate-limit webhook endpoints. Tinggi karena Midtrans bisa retry; tetap perlu
+    # cap untuk mencegah amplification attack (signature divalidasi per-request).
+    MIDTRANS_WEBHOOK_RATE_LIMIT = os.environ.get("MIDTRANS_WEBHOOK_RATE_LIMIT", "120 per minute")
+    TELEGRAM_WEBHOOK_RATE_LIMIT = os.environ.get("TELEGRAM_WEBHOOK_RATE_LIMIT", "60 per minute")
+
     # --- Konfigurasi Midtrans ---
     MIDTRANS_SERVER_KEY = os.environ.get("MIDTRANS_SERVER_KEY")
     MIDTRANS_CLIENT_KEY = os.environ.get("MIDTRANS_CLIENT_KEY")

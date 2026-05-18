@@ -1,0 +1,362 @@
+# ===============================================================
+#  Deploy lpsaring ke VPS produksi (194.233.80.163, port 1983).
+#
+#  Mengganti deploy_pi.sh manual. Workflow ini melakukan:
+#    1. Validasi secret SSH key tersedia
+#    2. Setup SSH + sync compose & env files ke VPS
+#    3. Pre-deploy DB backup via pg_dump (retention 14 terakhir)
+#    4. Pull image baru dari registry (force fresh pull)
+#    5. Run migration (alembic upgrade head) di container terisolasi
+#    6. up -d --force-recreate (mempertahankan proxy-network DNS;
+#       TIDAK pernah ``docker compose down`` — itu menyebabkan 502
+#       burst, lihat memory entry #34)
+#    7. Health verify dengan retry (18× × 5s = 90s timeout)
+#    8. Auto-rollback dengan restore DB jika health gagal
+#    9. Image prune untuk hemat disk
+#
+#  Required secrets:
+#    - VPS_PROD_SSH_KEY : private key isi ~/.ssh/id_raspi_ed25519
+#    - VPS_PROD_HOST    : 194.233.80.163 (opsional, default tersedia)
+#    - VPS_PROD_USER    : abdullah        (opsional, default tersedia)
+#    - VPS_PROD_PORT    : 1983            (opsional, default tersedia)
+#
+#  Trigger:
+#    - workflow_dispatch (manual + dari docker-publish trigger-deploy)
+#    - call dari docker-publish.yml setelah build sukses
+# ===============================================================
+
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: "Commit SHA yang akan di-deploy (default: HEAD main)"
+        type: string
+        required: false
+        default: ""
+      do_backup:
+        description: "Backup DB sebelum deploy (rekomendasi: True)"
+        type: boolean
+        required: false
+        default: true
+      fresh_pull:
+        description: "Force pull image (hapus image lokal dulu)"
+        type: boolean
+        required: false
+        default: true
+      skip_health_check:
+        description: "Skip health verify (jangan dipakai kecuali emergency)"
+        type: boolean
+        required: false
+        default: false
+      backup_only:
+        description: "Hanya backup DB, tidak deploy (untuk maintenance)"
+        type: boolean
+        required: false
+        default: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  VPS_HOST: 194.233.80.163
+  VPS_USER: abdullah
+  VPS_PORT: "1983"
+  REMOTE_DIR: /home/abdullah/lpsaring/app
+  COMPOSE_FILE: docker-compose.prod.yml
+  BACKUP_RETENTION: "14"
+  MIN_BACKUP_BYTES: "102400"   # 100 KB; abort kalau backup terlalu kecil
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false   # SERIALIZE deploy — jangan batalkan deploy berjalan
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      # ----- Checkout target commit -----
+      - name: Resolve target ref
+        id: ref
+        run: |
+          if [ -n "${{ inputs.target_sha }}" ]; then
+            echo "ref=${{ inputs.target_sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ github.ref }}" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.ref.outputs.ref }}
+
+      # ----- Validasi secret -----
+      - name: Validasi secret VPS_PROD_SSH_KEY
+        run: |
+          if [ -z "${{ secrets.VPS_PROD_SSH_KEY }}" ]; then
+            echo "::error::Secret VPS_PROD_SSH_KEY belum di-set."
+            echo "Set via: gh secret set VPS_PROD_SSH_KEY < ~/.ssh/id_raspi_ed25519"
+            exit 1
+          fi
+
+      # ----- SSH setup -----
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_PROD_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 0600 ~/.ssh/deploy_key
+          ssh-keyscan -p ${VPS_PORT} -H ${VPS_HOST} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: SSH sanity (verify connection)
+        run: |
+          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} \
+            'echo "SSH OK"; uname -a; df -h / | tail -1; free -h | head -2'
+
+      # ----- Pre-deploy DB backup -----
+      - name: Pre-deploy DB backup
+        if: ${{ inputs.do_backup == true || inputs.backup_only == true }}
+        id: backup
+        run: |
+          set -euo pipefail
+          TS=$(date -u +%Y%m%d_%H%M%S)
+          MODE="deploy"
+          BACKUP_NAME="${MODE}_predeploy_${TS}"
+          REMOTE_DIR_SAFE="${REMOTE_DIR}/_safe_backups/${BACKUP_NAME}"
+          REMOTE_DUMP="${REMOTE_DIR_SAFE}/postgres_dump.sql"
+
+          echo "==> Pre-deploy backup: ${BACKUP_NAME}"
+          echo "remote_dump=${REMOTE_DUMP}" >> "$GITHUB_OUTPUT"
+          echo "backup_name=${BACKUP_NAME}" >> "$GITHUB_OUTPUT"
+
+          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} bash -s <<EOF
+          set -euo pipefail
+          cd "${REMOTE_DIR}"
+          mkdir -p "${REMOTE_DIR_SAFE}"
+
+          # Ensure DB up
+          docker compose --env-file .env.prod -f ${COMPOSE_FILE} up -d db >/dev/null 2>&1 || true
+
+          # Wait DB ready (max 120s)
+          for i in \$(seq 1 60); do
+            if docker compose --env-file .env.prod -f ${COMPOSE_FILE} exec -T db sh -lc 'pg_isready -U "\$POSTGRES_USER" -d "\$POSTGRES_DB" >/dev/null 2>&1'; then
+              break
+            fi
+            sleep 2
+          done
+
+          # Dump
+          docker compose --env-file .env.prod -f ${COMPOSE_FILE} exec -T db sh -lc 'pg_dump -U "\$POSTGRES_USER" "\$POSTGRES_DB"' > "${REMOTE_DUMP}"
+
+          # Metadata
+          {
+            echo "created_at_utc=\$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "host=${VPS_HOST}"
+            echo "remote_dir=${REMOTE_DIR}"
+            echo "mode=${MODE}"
+            echo "target_sha=${{ steps.ref.outputs.ref }}"
+            echo "workflow_run=https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > "${REMOTE_DIR_SAFE}/backup_meta.txt"
+
+          # Verify min size
+          SIZE=\$(wc -c < "${REMOTE_DUMP}" | tr -d '[:space:]')
+          echo "==> Backup size: \${SIZE} bytes (min: ${MIN_BACKUP_BYTES})"
+          if [ "\${SIZE}" -lt "${MIN_BACKUP_BYTES}" ]; then
+            echo "::error::Backup terlalu kecil (\${SIZE} < ${MIN_BACKUP_BYTES} bytes). Abort."
+            exit 1
+          fi
+
+          # Retention (keep 14 terakhir)
+          mkdir -p "${REMOTE_DIR}/_safe_backups"
+          ls -1dt "${REMOTE_DIR}"/_safe_backups/*_predeploy_* 2>/dev/null \
+            | tail -n +$((${BACKUP_RETENTION} + 1)) | xargs -r rm -rf -- || true
+
+          echo "==> Backup OK: ${REMOTE_DUMP}"
+          EOF
+
+      # Backup-only mode → stop here
+      - name: Stop if backup_only
+        if: ${{ inputs.backup_only == true }}
+        run: |
+          echo "==> backup_only=true; deploy step di-skip."
+          exit 0
+
+      # ----- Sync compose + nginx conf -----
+      - name: Sync compose file
+        if: ${{ inputs.backup_only != true }}
+        run: |
+          scp -i ~/.ssh/deploy_key -P ${VPS_PORT} \
+            docker-compose.prod.yml \
+            ${VPS_USER}@${VPS_HOST}:${REMOTE_DIR}/docker-compose.prod.yml
+
+      # ----- Pre-deploy image snapshot (rollback anchor) -----
+      - name: Snapshot running image digests
+        if: ${{ inputs.backup_only != true }}
+        id: snapshot
+        run: |
+          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} bash -s <<'EOF' > previous-deploy.json
+          set -e
+          cd "/home/abdullah/lpsaring/app"
+          docker compose --env-file .env.prod -f docker-compose.prod.yml ps --format json 2>/dev/null | \
+            python3 -c "import json,sys; rows=[json.loads(l) for l in sys.stdin if l.strip()]; print(json.dumps([{'name':r['Name'],'image':r['Image']} for r in rows], indent=2))"
+          EOF
+          cat previous-deploy.json
+
+      # ----- Force fresh pull -----
+      - name: Force fresh pull images
+        if: ${{ inputs.backup_only != true && inputs.fresh_pull != false }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} bash -s <<EOF
+          set -euo pipefail
+          cd "${REMOTE_DIR}"
+          echo "==> Removing local images (force fresh pull)"
+          docker image rm babahdigital/sobigidul_backend:latest 2>/dev/null || true
+          docker image rm babahdigital/sobigidul_frontend:latest 2>/dev/null || true
+          echo "==> Pulling fresh images"
+          docker compose --env-file .env.prod -f ${COMPOSE_FILE} pull backend frontend
+          EOF
+
+      # ----- Pull rest (db, redis tetap pin tag, idempotent) -----
+      - name: Pull all images
+        if: ${{ inputs.backup_only != true }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} bash -s <<EOF
+          set -e
+          cd "${REMOTE_DIR}"
+          docker compose --env-file .env.prod -f ${COMPOSE_FILE} pull
+          EOF
+
+      # ----- Run migration (alembic upgrade head) -----
+      - name: Run DB migration
+        if: ${{ inputs.backup_only != true }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} bash -s <<EOF
+          set -euo pipefail
+          cd "${REMOTE_DIR}"
+          # Migrate runs as one-off service (defined in compose). Wait for completion.
+          docker compose --env-file .env.prod -f ${COMPOSE_FILE} run --rm migrate
+          EOF
+
+      # ----- up -d with --force-recreate (NEVER 'down') -----
+      - name: Recreate containers (preserves proxy-network)
+        if: ${{ inputs.backup_only != true }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} bash -s <<EOF
+          set -euo pipefail
+          cd "${REMOTE_DIR}"
+          # WARNING: JANGAN PERNAH 'docker compose down' di sini.
+          # 'down' menghapus container dari proxy-network → Docker DNS NXDOMAIN
+          # ~21 menit → 502 burst. Gunakan HANYA --force-recreate.
+          # Memory entry #34.
+          docker compose --env-file .env.prod -f ${COMPOSE_FILE} up -d --force-recreate --remove-orphans
+          EOF
+
+      # ----- Health verify -----
+      - name: Health verify (90s budget)
+        if: ${{ inputs.backup_only != true && inputs.skip_health_check != true }}
+        id: verify
+        run: |
+          set +e
+          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} bash -s <<'EOF'
+          set -uo pipefail
+          for i in $(seq 1 18); do
+            sleep 5
+            STATUS=$(docker ps --filter "name=hotspot_prod" --format '{{.Names}}|{{.Status}}')
+            echo "--- attempt $i/18 ---"
+            echo "$STATUS"
+            UNHEALTHY=$(echo "$STATUS" | grep -E '\| (Restarting|Exited|unhealthy)' || true)
+            STARTING=$(echo "$STATUS" | grep -E 'health: starting' || true)
+            if [ -z "$UNHEALTHY" ] && [ -z "$STARTING" ]; then
+              echo "All containers healthy ✓"
+              exit 0
+            fi
+          done
+          echo "::error::Containers belum healthy setelah 90s"
+          docker ps --filter "name=hotspot_prod" --format '{{.Names}}|{{.Status}}' >&2
+          exit 1
+          EOF
+          STATUS=$?
+          if [ "$STATUS" -ne 0 ]; then
+            echo "rollback=true" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      # ----- Rollback on failure -----
+      - name: Rollback to previous image digests
+        if: failure() && steps.verify.outputs.rollback == 'true'
+        run: |
+          echo "::warning::Rolling back to previous images"
+          # Upload previous-deploy.json to VPS for the rollback script
+          scp -i ~/.ssh/deploy_key -P ${VPS_PORT} previous-deploy.json \
+            ${VPS_USER}@${VPS_HOST}:${REMOTE_DIR}/previous-deploy.json
+
+          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} bash -s <<'EOF'
+          set -e
+          cd "/home/abdullah/lpsaring/app"
+          python3 - <<'PY'
+          import json, subprocess
+          with open("previous-deploy.json") as f:
+              prev = json.load(f)
+          for entry in prev:
+              img = entry.get("image","")
+              if not img or "@" not in img:
+                  # No digest pin → can't safely roll back this service.
+                  continue
+              repo = img.split("@")[0]
+              subprocess.run(["docker", "pull", img], check=True)
+              subprocess.run(["docker", "tag", img, f"{repo}:latest"], check=True)
+              print(f"Re-tagged {repo}:latest -> {img}")
+          PY
+          docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --force-recreate
+          sleep 15
+          docker ps --filter 'name=hotspot_prod' --format '{{.Names}}: {{.Status}}'
+          EOF
+
+      - name: Restore DB from backup (last resort)
+        if: failure() && steps.verify.outputs.rollback == 'true' && steps.backup.outputs.remote_dump != ''
+        run: |
+          echo "::warning::Restoring DB from pre-deploy backup ${{ steps.backup.outputs.remote_dump }}"
+          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} bash -s <<EOF
+          set -e
+          cd "${REMOTE_DIR}"
+          DUMP="${{ steps.backup.outputs.remote_dump }}"
+          if [ ! -f "\$DUMP" ]; then
+            echo "::error::Backup dump tidak ditemukan: \$DUMP"
+            exit 1
+          fi
+          docker compose --env-file .env.prod -f ${COMPOSE_FILE} exec -T db sh -lc 'psql -U "\$POSTGRES_USER" "\$POSTGRES_DB"' < "\$DUMP"
+          EOF
+
+      # ----- Post-deploy housekeeping -----
+      - name: Image prune (post-deploy)
+        if: ${{ inputs.backup_only != true && success() }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} \
+            'docker image prune -f && docker container prune -f' || true
+
+      - name: Post-deploy summary
+        if: ${{ inputs.backup_only != true && success() }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} bash -s <<'EOF' | tee deploy-summary.txt
+          echo "=== Container Status ==="
+          docker ps --filter "name=hotspot_prod" --format 'table {{.Names}}\t{{.Status}}'
+          echo ""
+          echo "=== Disk Usage ==="
+          df -h / | head -2
+          echo ""
+          echo "=== Memory ==="
+          free -h | head -2
+          EOF
+          {
+            echo "## Deploy Summary"
+            echo ""
+            echo "**Target SHA:** \`${{ steps.ref.outputs.ref }}\`"
+            echo ""
+            echo '```'
+            cat deploy-summary.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

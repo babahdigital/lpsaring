@@ -247,6 +247,7 @@ def initiate_debt_settlement_transaction(current_user_id: uuid.UUID):
 
 
 @transactions_bp.route("/notification", methods=["POST"])
+@limiter.limit(lambda: current_app.config.get("MIDTRANS_WEBHOOK_RATE_LIMIT", "120 per minute"))
 def handle_notification():
     return handle_notification_impl(**_deps().build_notification_dependencies())
 

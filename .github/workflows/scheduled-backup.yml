@@ -1,0 +1,129 @@
+# ===============================================================
+#  Scheduled DB backup harian.
+#  Mengganti dependence pada deploy_pi.sh --backup-only manual.
+#
+#  Jadwal: setiap hari jam 18:00 UTC = 02:00 WITA berikutnya.
+#  Retention: 14 backup terbaru (sama dengan pre-deploy backup).
+# ===============================================================
+
+name: scheduled-backup
+
+on:
+  schedule:
+    - cron: "0 18 * * *"   # 02:00 WITA harian
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag opsional untuk backup (mis. 'manual-rollout-test')"
+        type: string
+        required: false
+        default: ""
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  VPS_HOST: 194.233.80.163
+  VPS_USER: abdullah
+  VPS_PORT: "1983"
+  REMOTE_DIR: /home/abdullah/lpsaring/app
+  COMPOSE_FILE: docker-compose.prod.yml
+  BACKUP_RETENTION: "14"
+  MIN_BACKUP_BYTES: "102400"
+
+concurrency:
+  group: scheduled-backup-prod
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Validasi secret
+        run: |
+          if [ -z "${{ secrets.VPS_PROD_SSH_KEY }}" ]; then
+            echo "::error::Secret VPS_PROD_SSH_KEY belum di-set."
+            exit 1
+          fi
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_PROD_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 0600 ~/.ssh/deploy_key
+          ssh-keyscan -p ${VPS_PORT} -H ${VPS_HOST} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Backup DB (pg_dump)
+        id: backup
+        run: |
+          set -euo pipefail
+          TS=$(date -u +%Y%m%d_%H%M%S)
+          TAG_SUFFIX=""
+          if [ -n "${{ inputs.tag }}" ]; then
+            TAG_SUFFIX="_${{ inputs.tag }}"
+          fi
+          BACKUP_NAME="scheduled_${TS}${TAG_SUFFIX}"
+          REMOTE_DIR_SAFE="${REMOTE_DIR}/_safe_backups/${BACKUP_NAME}"
+          REMOTE_DUMP="${REMOTE_DIR_SAFE}/postgres_dump.sql"
+
+          echo "==> Scheduled backup: ${BACKUP_NAME}"
+          echo "backup_name=${BACKUP_NAME}" >> "$GITHUB_OUTPUT"
+          echo "remote_dump=${REMOTE_DUMP}" >> "$GITHUB_OUTPUT"
+
+          ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} bash -s <<EOF
+          set -euo pipefail
+          cd "${REMOTE_DIR}"
+          mkdir -p "${REMOTE_DIR_SAFE}"
+
+          # Wait for DB ready (max 60s)
+          for i in \$(seq 1 30); do
+            if docker compose --env-file .env.prod -f ${COMPOSE_FILE} exec -T db sh -lc 'pg_isready -U "\$POSTGRES_USER" -d "\$POSTGRES_DB" >/dev/null 2>&1'; then
+              break
+            fi
+            sleep 2
+          done
+
+          docker compose --env-file .env.prod -f ${COMPOSE_FILE} exec -T db sh -lc 'pg_dump -U "\$POSTGRES_USER" "\$POSTGRES_DB"' > "${REMOTE_DUMP}"
+
+          {
+            echo "created_at_utc=\$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "host=${VPS_HOST}"
+            echo "mode=scheduled"
+            echo "tag=${{ inputs.tag }}"
+            echo "workflow_run=https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > "${REMOTE_DIR_SAFE}/backup_meta.txt"
+
+          SIZE=\$(wc -c < "${REMOTE_DUMP}" | tr -d '[:space:]')
+          echo "==> Backup size: \${SIZE} bytes"
+          if [ "\${SIZE}" -lt "${MIN_BACKUP_BYTES}" ]; then
+            echo "::error::Backup terlalu kecil (\${SIZE} < ${MIN_BACKUP_BYTES} bytes)."
+            exit 1
+          fi
+          echo "BACKUP_SIZE=\$SIZE" >> /tmp/backup-info.txt
+
+          # Retention
+          mkdir -p "${REMOTE_DIR}/_safe_backups"
+          ls -1dt "${REMOTE_DIR}"/_safe_backups/scheduled_* 2>/dev/null \
+            | tail -n +$((${BACKUP_RETENTION} + 1)) | xargs -r rm -rf -- || true
+          ls -1dt "${REMOTE_DIR}"/_safe_backups/*_predeploy_* 2>/dev/null \
+            | tail -n +$((${BACKUP_RETENTION} + 1)) | xargs -r rm -rf -- || true
+
+          echo "==> Backup OK: ${REMOTE_DUMP}"
+          EOF
+
+      - name: Summary
+        if: success()
+        run: |
+          BACKUP_SIZE=$(ssh -i ~/.ssh/deploy_key -p ${VPS_PORT} ${VPS_USER}@${VPS_HOST} \
+            "wc -c < '${{ steps.backup.outputs.remote_dump }}' | tr -d '[:space:]'")
+          {
+            echo "## Scheduled Backup Summary"
+            echo ""
+            echo "- **Name:** \`${{ steps.backup.outputs.backup_name }}\`"
+            echo "- **Path:** \`${{ steps.backup.outputs.remote_dump }}\`"
+            echo "- **Size:** \`${BACKUP_SIZE}\` bytes"
+            echo "- **Retention:** ${BACKUP_RETENTION} terbaru"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

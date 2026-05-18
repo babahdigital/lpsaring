@@ -145,6 +145,50 @@ jobs:
           python -m pytest backend/tests \
             --ignore=backend/tests/test_whatsapp_send.py
 
+  backend-types:
+    needs: changes
+    if: ${{ needs.changes.outputs.backend == 'true' || needs.changes.outputs.ci == 'true' }}
+    runs-on: ubuntu-latest
+    env:
+      FLASK_ENV: testing
+      SKIP_DOTENV_AUTOLOAD: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: |
+            backend/requirements.lock.txt
+            backend/requirements.txt
+      - name: Install backend deps + type tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements.lock.txt
+          python -m pip install \
+            "mypy==1.18.2" \
+            "types-requests==2.32.0.20251201" \
+            "types-pytz==2025.2.0.20251201" \
+            "celery-types==0.23.0"
+      - name: Mypy (permissive baseline, Phase 1 — soft gate)
+        id: mypy
+        continue-on-error: true
+        run: |
+          python -m mypy --config-file pyproject.toml --no-error-summary 2>&1 \
+            | tee mypy-report.txt
+          {
+            echo '### Mypy result'
+            echo '```'
+            tail -n 80 mypy-report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mypy-report
+          path: mypy-report.txt
+          retention-days: 14
+
   frontend:
     needs: changes
     if: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.ci == 'true' }}

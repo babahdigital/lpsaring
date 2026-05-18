@@ -6,7 +6,7 @@ from http import HTTPStatus
 from datetime import datetime, timezone
 import uuid
 
-from app.extensions import db
+from app.extensions import db, limiter
 from app.infrastructure.db.models import User
 from app.services import settings_service
 from app.services.telegram_link_service import verify_user_link_token
@@ -28,6 +28,7 @@ def _is_webhook_secret_valid() -> bool:
 
 
 @telegram_bp.route("/webhook", methods=["POST"])
+@limiter.limit(lambda: current_app.config.get("TELEGRAM_WEBHOOK_RATE_LIMIT", "60 per minute"))
 def telegram_webhook():
     if not _is_webhook_secret_valid():
         return jsonify({"message": "Unauthorized webhook."}), HTTPStatus.FORBIDDEN

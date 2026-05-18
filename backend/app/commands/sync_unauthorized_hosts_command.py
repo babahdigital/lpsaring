@@ -844,7 +844,9 @@ def sync_unauthorized_hosts_command(
                         remove_msg,
                     )
 
-    click.echo(
+    # Summary stats — DEBUG level untuk mengurangi noise produksi (task tiap 2 menit).
+    # Hanya jadikan INFO bila ada failure (akan dicatat di logger.warning di bawah).
+    _summary_line = (
         f"processed_hosts={processed} desired_block_ips={len(desired)} "
         f"would_add_or_refresh={to_add} would_remove={to_remove} apply={apply} "
         f"forced_exempt_remove={forced_exempt_remove} forced_authorized_remove={forced_authorized_remove} "
@@ -867,6 +869,7 @@ def sync_unauthorized_hosts_command(
         f"gateway_auto_exempt={gateway_auto_exempt_count} "
         f"skipped_low_uptime={skipped_low_uptime} skipped_authorized_or_bypassed={skipped_authorized}"
     )
+    current_app.logger.debug("sync-unauthorized-hosts summary: %s", _summary_line)
 
     if apply and (
         failed_add_or_refresh > 0

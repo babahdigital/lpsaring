@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lpsaring-backend"
+version = "0.0.0"
+requires-python = ">=3.12"
+
+# Ruff (mirror dari ruff.toml + backend/ruff.toml; consolidate nanti di Phase 2)
+[tool.ruff]
+line-length = 120
+src = ["backend"]
+extend-exclude = ["backend/migrations/versions", "backend/__pycache__", "frontend/node_modules"]
+
+[tool.ruff.lint]
+extend-ignore = ["E701", "E702", "E711", "E712", "E402"]
+
+# Mypy - PERMISSIVE baseline (Phase 1). Tighten incrementally di Phase 2.
+[tool.mypy]
+python_version = "3.12"
+files = ["backend/app", "backend/scripts", "scripts"]
+exclude = [
+  "backend/migrations/",
+  "backend/tests/",
+  "backend/test_mikrotik_connection.py",
+  "backend/__pycache__/",
+  "backend/app/__pycache__/",
+]
+ignore_missing_imports = true
+follow_imports = "silent"
+show_error_codes = true
+warn_redundant_casts = true
+warn_unused_ignores = false       # Phase 2: flip ke true
+check_untyped_defs = false        # Phase 2: flip ke true
+disallow_untyped_defs = false     # Phase 3
+disallow_incomplete_defs = false  # Phase 3
+no_implicit_optional = true
+strict_equality = false           # Phase 2
+warn_unreachable = false          # Phase 2
+pretty = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = [
+  "routeros_api.*",
+  "midtransclient.*",
+  "weasyprint.*",
+  "flask_jwt_extended.*",
+  "flask_limiter.*",
+  "factory.*",
+  "user_agents.*",
+  "redis.*",
+  "celery.*",
+]
+ignore_missing_imports = true
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+# Bandit - Python SAST
+[tool.bandit]
+exclude_dirs = ["backend/tests", "backend/migrations", ".venv", "node_modules", "frontend"]
+skips = [
+  "B101",  # assert_used — pytest pakai assert
+  "B404",  # subprocess import — kita kontrol semua call di scripts/
+  "B603",  # subprocess_without_shell_equals_true — args sudah divalidasi
+]

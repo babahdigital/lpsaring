@@ -8,29 +8,10 @@ def get_client_ip() -> Optional[str]:
     """
     Mendapatkan IP klien asli. ProxyFix seharusnya sudah mengatur request.remote_addr
     dengan benar jika header X-Forwarded-For ada dan dipercaya.
-    Fungsi ini menambahkan logging untuk diagnosis.
+    Fungsi ini menambahkan logging untuk diagnosis. Dipanggil hanya dari request
+    handler — current_app dipastikan tersedia oleh Flask context.
     """
-    if not current_app:
-        # Fallback logging jika current_app tidak tersedia (seharusnya tidak terjadi dalam endpoint)
-        print("WARNING: current_app not available in get_client_ip. Logging to stdout.")
-
-        # Membuat logger dummy sederhana jika current_app.logger tidak tersedia
-        class DummyLogger:
-            def debug(self, msg):
-                print(f"DEBUG: {msg}")
-
-            def warning(self, msg):
-                print(f"WARNING: {msg}")
-
-            def info(self, msg):
-                print(f"INFO: {msg}")
-
-            def error(self, msg):
-                print(f"ERROR: {msg}")
-
-        logger = DummyLogger()
-    else:
-        logger = current_app.logger
+    logger = current_app.logger
 
     # Koreksi pada baris f-string: Gunakan tanda kutip ganda untuk string di dalam getattr
     request_id_environ_key = "FLASK_REQUEST_ID"  # Variabel untuk kejelasan

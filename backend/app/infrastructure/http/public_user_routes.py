@@ -174,6 +174,7 @@ def get_public_update_submission_status():
 
 
 
+@public_user_bp.route("/check-or-register", methods=["POST"])
 def check_or_register_phone():
     current_app.logger.info("POST /api/users/check-or-register endpoint requested.")
     try:
