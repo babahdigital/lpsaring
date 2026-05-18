@@ -167,9 +167,10 @@ def verify_otp_impl(  # pyright: ignore[reportGeneralTypeIssues]
         increment_metric("otp.verify.success")
 
         phone_variations = get_phone_number_variations(phone_e164)
-        user_to_login = db.session.execute(
-            select(User).where(User.phone_number.in_(phone_variations))
-        ).scalar_one_or_none()
+        # Sprint 14: .scalars().first() defensive bila ada legacy duplicate.
+        user_to_login = (
+            db.session.execute(select(User).where(User.phone_number.in_(phone_variations))).scalars().first()
+        )
 
         if not user_to_login:
             if used_demo_bypass:

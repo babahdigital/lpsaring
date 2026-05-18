@@ -62,9 +62,9 @@ def request_otp_impl(
 
         demo_phone_allowed = is_demo_phone_allowed(phone_e164)
         phone_variations = get_phone_number_variations(phone_e164)
-        user_for_otp = db.session.execute(
-            select(User).where(User.phone_number.in_(phone_variations))
-        ).scalar_one_or_none()
+        # Sprint 14: .scalars().first() bukan scalar_one_or_none() supaya OTP
+        # request tidak crash 500 kalau ada legacy duplicate phone row.
+        user_for_otp = db.session.execute(select(User).where(User.phone_number.in_(phone_variations))).scalars().first()
         if not user_for_otp:
             if demo_phone_allowed:
                 increment_metric("otp.request.failed")

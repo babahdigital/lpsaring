@@ -22,6 +22,22 @@ class _FakeExecuteResult:
     def scalar_one_or_none(self):
         return self._user
 
+    def scalars(self):
+        # Sprint 14: production code switched to `.scalars().first()` untuk
+        # defensive against legacy duplicate phone rows.
+        return _FakeScalars(self._user)
+
+
+class _FakeScalars:
+    def __init__(self, user):
+        self._user = user
+
+    def first(self):
+        return self._user
+
+    def all(self):
+        return [self._user] if self._user is not None else []
+
 
 class _FakeSession:
     def __init__(self, user, *, scalar_value: Any = None):

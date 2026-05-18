@@ -41,7 +41,11 @@ def register_user_impl(
             return jsonify(AuthErrorResponseSchema(error=str(e)).model_dump()), HTTPStatus.UNPROCESSABLE_ENTITY
 
         phone_variations = get_phone_number_variations(normalized_phone_number)
-        if db.session.execute(select(User.id).where(User.phone_number.in_(phone_variations))).scalar_one_or_none():
+        # Sprint 14: pakai .first() bukan scalar_one_or_none() supaya tidak
+        # crash MultipleResultsFound bila ada user legacy yang slip normalization
+        # E.164 (variasi seperti +6281xxx vs 081xxx). Lebih aman menolak
+        # registrasi daripada 500.
+        if db.session.execute(select(User.id).where(User.phone_number.in_(phone_variations))).first() is not None:
             return jsonify(
                 AuthErrorResponseSchema(error="Phone number is already registered.").model_dump()
             ), HTTPStatus.CONFLICT

@@ -53,7 +53,8 @@ def debug_binding_impl(
             return jsonify(AuthErrorResponseSchema(error="user_id tidak valid.").model_dump()), HTTPStatus.BAD_REQUEST
     elif phone_number:
         variations = get_phone_number_variations(str(phone_number))
-        user = db.session.execute(select(User).where(User.phone_number.in_(variations))).scalar_one_or_none()
+        # Sprint 14: .scalars().first() defensive bila ada legacy duplicate.
+        user = db.session.execute(select(User).where(User.phone_number.in_(variations))).scalars().first()
     else:
         return jsonify(
             AuthErrorResponseSchema(error="user_id atau phone_number wajib diisi.").model_dump()
