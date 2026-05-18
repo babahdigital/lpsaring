@@ -18,9 +18,10 @@
 #
 #  Trigger:
 #    - workflow_dispatch (manual)
-#    - workflow_run("ci" completed success on main) + commit message
-#      contains ``[deploy]`` (opt-in deploy untuk mencegah deploy tidak
-#      sengaja di setiap merge ke main).
+#    - workflow_run("ci" completed success on main): auto-deploy SETIAP
+#      merge sukses ke main. Untuk skip deploy pada commit tertentu
+#      (mis. docs-only, refactor tanpa runtime impact), tambahkan
+#      ``[skip-deploy]`` di subject commit.
 # ===============================================================
 
 name: deploy
@@ -76,15 +77,15 @@ jobs:
   deploy:
     # Trigger gate:
     #   - workflow_dispatch  : always allowed
-    #   - workflow_run       : CI must conclude=success AND triggering commit
-    #                          message must contain ``[deploy]`` (opt-in).
+    #   - workflow_run       : CI must conclude=success AND commit message
+    #                          TIDAK mengandung ``[skip-deploy]`` (opt-out).
     if: >-
       ${{
         github.event_name == 'workflow_dispatch' ||
         (
           github.event_name == 'workflow_run' &&
           github.event.workflow_run.conclusion == 'success' &&
-          contains(github.event.workflow_run.head_commit.message, '[deploy]')
+          !contains(github.event.workflow_run.head_commit.message, '[skip-deploy]')
         )
       }}
     runs-on: ubuntu-latest
