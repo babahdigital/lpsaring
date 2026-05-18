@@ -82,7 +82,24 @@ jobs:
             sleep 2
           done
 
+          # Sprint 24 (HIGH): integrity verification. Sebelumnya pg_dump
+          # plain SQL + size>=100KB gate. Mid-stream pg_dump fail bisa loloskan
+          # gate ini (preamble alone >100KB). Sekarang: pakai pg_dump exit
+          # code + sha256 checksum + tail line check (`-- PostgreSQL database
+          # dump complete` sebagai trailer signal).
+          set -o pipefail
           docker compose --env-file .env.prod -f ${COMPOSE_FILE} exec -T db sh -lc 'pg_dump -U "\$POSTGRES_USER" "\$POSTGRES_DB"' > "${REMOTE_DUMP}"
+          PG_DUMP_EXIT=\$?
+          if [ "\$PG_DUMP_EXIT" -ne 0 ]; then
+            echo "::error::pg_dump exit code \$PG_DUMP_EXIT — backup corrupted."
+            exit \$PG_DUMP_EXIT
+          fi
+          if ! tail -n 5 "${REMOTE_DUMP}" | grep -q 'PostgreSQL database dump complete'; then
+            echo "::error::pg_dump trailer marker absent — dump incomplete."
+            exit 1
+          fi
+          # Compute sha256 for integrity verification on restore.
+          sha256sum "${REMOTE_DUMP}" | awk '{print \$1}' > "${REMOTE_DUMP}.sha256"
 
           {
             echo "created_at_utc=\$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -90,6 +107,7 @@ jobs:
             echo "mode=scheduled"
             echo "tag=${{ inputs.tag }}"
             echo "workflow_run=https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "sha256=\$(cat ${REMOTE_DUMP}.sha256)"
           } > "${REMOTE_DIR_SAFE}/backup_meta.txt"
 
           SIZE=\$(wc -c < "${REMOTE_DUMP}" | tr -d '[:space:]')

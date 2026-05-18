@@ -45,10 +45,14 @@ RUN pip install --upgrade pip && \
 # Tahap final untuk menjalankan aplikasi
 FROM base AS runtime
 
-# Buat user dan group non-root terlebih dahulu
+# Buat user dan group non-root terlebih dahulu.
+# Sprint 24 (HIGH): pin UID/GID 999 supaya konsisten dengan
+# docker-compose.prod.yml `backups_init: chown -R 999:999 /app/backups`.
+# Tanpa pin, `useradd -r` ambil next free SYS_UID; base image rebuild
+# dengan extra system user bisa shift UID → EACCES on /app/backups.
 ARG APP_USER=appuser
 ARG APP_GROUP=appgroup
-RUN groupadd -r ${APP_GROUP} && useradd -r -g ${APP_GROUP} ${APP_USER}
+RUN groupadd -r --gid 999 ${APP_GROUP} && useradd -r --uid 999 -g ${APP_GROUP} ${APP_USER}
 
 # Set direktori kerja
 WORKDIR /app

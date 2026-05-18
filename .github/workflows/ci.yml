@@ -421,7 +421,11 @@ jobs:
 
       - name: Trivy image scan (publish only, soft gate)
         if: ${{ steps.pub.outputs.publish == 'true' && steps.build_publish.outputs.digest != '' }}
-        uses: aquasecurity/trivy-action@master
+        # Sprint 24 (HIGH): pin Trivy ke version tag (bukan mutable @master)
+        # supaya upstream main-branch push tidak bisa execute arbitrary code
+        # di CI dengan packages:write permission + Docker Hub credentials.
+        # v0.36.0 = latest stable per 2026-05-19 (update via dependabot).
+        uses: aquasecurity/trivy-action@v0.36.0
         continue-on-error: true
         with:
           image-ref: ${{ matrix.image }}@${{ steps.build_publish.outputs.digest }}

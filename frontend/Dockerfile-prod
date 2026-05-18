@@ -49,6 +49,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app/.output ./.output
 COPY --from=builder /app/public ./public
+# Sprint 24 (CRITICAL): non-root user. Distroless ship `nonroot` (UID 65532)
+# tapi tanpa USER directive default ke root → RCE di Nuxt SSR jalan as root.
+USER nonroot:nonroot
 EXPOSE 3010
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 CMD ["node", "-e", "fetch('http://127.0.0.1:3010/login').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 CMD [".output/server/index.mjs"]
