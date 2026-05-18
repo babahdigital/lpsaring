@@ -7,6 +7,7 @@ import UserAddDialog from '@/components/admin/users/UserAddDialog.vue'
 
 import UserDetailDialog from '@/components/admin/users/UserDetailDialog.vue'
 import UserEditDialog from '@/components/admin/users/UserEditDialog.vue'
+import UserLoginHistoryDialog from '@/components/admin/users/UserLoginHistoryDialog.vue'
 import UserQuotaHistoryDialog from '@/components/admin/users/UserQuotaHistoryDialog.vue'
 import { useSnackbar } from '@/composables/useSnackbar'
 import { useAuthStore } from '@/store/auth'
@@ -148,8 +149,9 @@ const options = ref<Options>({ page: 1, itemsPerPage: 10, sortBy: [{ key: 'creat
 const roleFilter = ref<string | null>(null)
 const statusFilter = ref<string | null>(null)
 const tampingFilter = ref<'all' | 'tamping' | 'non_tamping'>('all')
-const dialogState = reactive({ view: false, add: false, edit: false, quotaHistory: false, confirm: false })
+const dialogState = reactive({ view: false, add: false, edit: false, quotaHistory: false, loginHistory: false, confirm: false })
 const selectedUser = ref<User | null>(null)
+const loginHistoryUser = ref<User | null>(null)
 const editedUser = ref<User | null>(null)
 const quotaHistoryUser = ref<User | null>(null)
 const confirmProps = reactive({ title: '', message: '', color: 'primary', action: async () => {} })
@@ -820,6 +822,10 @@ function openQuotaHistoryDialog(user: User) {
   quotaHistoryUser.value = { ...user }
   dialogState.quotaHistory = true
 }
+function openLoginHistoryDialog(user: User) {
+  loginHistoryUser.value = { ...user }
+  dialogState.loginHistory = true
+}
 function openViewDialog(user: User, previewContext: UserDetailPreviewContext | null = null) {
   selectedUserPreviewContext.value = previewContext
   selectedUser.value = user
@@ -837,6 +843,7 @@ function closeAllDialogs() {
   dialogState.add = false
   dialogState.edit = false
   dialogState.quotaHistory = false
+  dialogState.loginHistory = false
   dialogState.confirm = false
   selectedUserPreviewContext.value = null
 }
@@ -1368,6 +1375,11 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
               </VBtn>
             </template>
             <template v-else>
+              <VBtn icon variant="text" color="secondary" size="small" class="admin-users__actionBtn" @click="openLoginHistoryDialog(item)">
+                <VIcon icon="tabler-history" /><VTooltip activator="parent">
+                  Riwayat Login
+                </VTooltip>
+              </VBtn>
               <VBtn icon variant="text" color="secondary" size="small" class="admin-users__actionBtn" @click="openQuotaHistoryDialog(item)">
                 <VIcon icon="tabler-history-toggle" /><VTooltip activator="parent">
                   Riwayat Quota
@@ -1639,6 +1651,7 @@ async function performAction(endpoint: string, method: 'PATCH' | 'POST' | 'DELET
     <UserAddDialog v-model="dialogState.add" :loading="loading" :available-bloks="availableBloks" :available-kamars="availableKamars" :is-alamat-loading="isAlamatLoading" @save="handleSaveUser" />
     <UserEditDialog v-if="dialogState.edit === true && editedUser !== null" v-model="dialogState.edit" :user="editedUser" :loading="loading" :available-bloks="availableBloks" :available-kamars="availableKamars" :is-alamat-loading="isAlamatLoading" :mikrotik-options="mikrotikOptions" @save="handleSaveUser" />
     <UserQuotaHistoryDialog v-model="dialogState.quotaHistory" :user="quotaHistoryUser" />
+    <UserLoginHistoryDialog v-model="dialogState.loginHistory" :user="loginHistoryUser" />
     <UserActionConfirmDialog v-model="dialogState.confirm" :title="confirmProps.title" :message="confirmProps.message" :color="confirmProps.color" :loading="loading" @confirm="confirmProps.action" />
   </div>
 </template>

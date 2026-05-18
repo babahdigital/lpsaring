@@ -957,6 +957,26 @@ onBeforeUnmount(() => {
 <style scoped>
 .auth-wrapper {
   min-block-size: 100dvh;
+  background: linear-gradient(135deg, rgba(var(--v-theme-primary), 0.08) 0%, rgba(var(--v-theme-surface), 1) 60%);
+}
+
+.auth-card {
+  /* Card lebih clean: soft shadow + radius modern */
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(0, 0, 0, 0.04);
+  backdrop-filter: blur(8px);
+  animation: card-pop-in 320ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes card-pop-in {
+  0% {
+    transform: scale(0.97) translateY(8px);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
 }
 
 .activation-step-icon--active {

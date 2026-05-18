@@ -158,6 +158,10 @@ export default defineNuxtConfig({
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+        // Smooth color theme transition (mencegah flash putih saat transisi
+        // dark→light atau load awal). Browser akan render scrollbar/form pakai
+        // hint ini sebelum CSS theme loaded.
+        { name: 'color-scheme', content: 'light dark' },
       ],
       link: [{
         rel: 'icon',
@@ -165,6 +169,11 @@ export default defineNuxtConfig({
         href: `${appBaseUrl}/favicon.ico`,
       }],
     },
+    // Smooth page transition global — mengurangi "blink" saat navigasi auth
+    // flow (login → hotspot-required → dashboard). Default Vue <Transition>
+    // fade pada body. Halaman bisa override per-page via definePageMeta.
+    pageTransition: { name: 'page', mode: 'out-in', duration: 180 },
+    layoutTransition: { name: 'layout', mode: 'out-in', duration: 180 },
   },
 
   devtools: {

@@ -478,14 +478,10 @@ def verify_otp_impl(  # pyright: ignore[reportGeneralTypeIssues]
 
             if resolved_ip:
                 login_ip_for_history = resolved_ip
-            else:
-                try:
-                    from app.services.device_management_service import _is_client_ip_allowed  # type: ignore
-
-                    if not _is_client_ip_allowed(client_ip):
-                        login_ip_for_history = None
-                except Exception:
-                    pass
+            # PERBAIKAN: catat tetap IP klien (dari X-Forwarded-For) untuk audit.
+            # Sebelumnya: untuk login dari luar hotspot subnet, IP di-set None →
+            # admin kehilangan trace IP. IP klien (public/private) tetap berguna
+            # untuk anomaly detection. Privacy: display layer bisa mask jika perlu.
         elif is_demo_login:
             current_app.logger.info(
                 "Verify-OTP demo payment-only: skip device binding/address-list sync for user_id=%s",

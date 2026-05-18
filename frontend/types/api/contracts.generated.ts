@@ -2,7 +2,7 @@
 // AUTO-GENERATED FILE. DO NOT EDIT MANUALLY.
 // Source: contracts/openapi/openapi.v1.yaml
 
-export const OPENAPI_SOURCE_SHA256 = '4adae1322aebe13dced4fef7f57dd5fe60f609c92106914c9ebfd2fe25e93059' as const
+export const OPENAPI_SOURCE_SHA256 = '3cd488dd8ecd4d94d3dcd215011baa8304e65afba4b16b5215e4b4da325e7d38' as const
 export const API_CONTRACT_REVISION = 'openapi-1.0.0' as const
 
 export type MessageResponse = { message: string }
@@ -71,6 +71,8 @@ export type AdminUserDetailSummaryResponse = { mikrotik: AdminUserDetailSummaryM
 export type AdminUserDetailReportWhatsappRequest = { recipient_mode?: 'user' | 'internal' | null; recipient_phone?: string | null; recipient_user_ids?: Array<string> | null }
 export type AdminQuotaHistorySendWaRequest = { startDate?: string; endDate?: string; search?: string }
 export type AdminQuotaHistorySendWaResponse = { message?: string; whatsapp_sent?: boolean }
+export type AdminUserLoginHistoryItem = { id: string; login_time?: string | null; ip_address?: string | null; user_agent?: string | null }
+export type AdminUserLoginHistoryResponse = { items: Array<AdminUserLoginHistoryItem>; totalItems: number; page: number; itemsPerPage: number }
 export type AdminUserDetailReportWhatsappRecipient = { user_id?: string | null; full_name: string; role: string | null; phone_number: string }
 export type AdminUserDetailReportWhatsappResponse = { message: string; queued: boolean; queued_count: number; recipient_mode: 'user' | 'internal'; recipients: Array<AdminUserDetailReportWhatsappRecipient> }
 export type AdminMetricsReliabilitySignals = { payment_idempotency_degraded?: boolean; hotspot_sync_lock_degraded?: boolean; policy_parity_degraded?: boolean }
@@ -217,6 +219,11 @@ export interface GeneratedApiContractMap {
   'GET /admin/users/{user_id}/detail-summary': {
     request: never
     response: AdminUserDetailSummaryResponse
+    error: ErrorResponse
+  }
+  'GET /admin/users/{user_id}/login-history': {
+    request: never
+    response: AdminUserLoginHistoryResponse
     error: ErrorResponse
   }
   'GET /admin/users/{user_id}/mikrotik-status': {

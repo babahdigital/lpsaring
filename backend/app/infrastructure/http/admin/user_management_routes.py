@@ -24,6 +24,7 @@ from app.infrastructure.db.models import (
     Transaction,
     TransactionStatus,
     UserDevice,
+    UserLoginHistory,
     DailyUsageLog,
 )
 from app.infrastructure.http.decorators import admin_required
@@ -2302,6 +2303,66 @@ def send_user_manual_debts_whatsapp(current_admin: User, user_id: uuid.UUID):
     except Exception as e:
         current_app.logger.error(f"Error queue debt WhatsApp report for user {user_id}: {e}", exc_info=True)
         return jsonify({"message": "Gagal mengantrekan WhatsApp tunggakan."}), HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+@user_management_bp.route("/users/<uuid:user_id>/login-history", methods=["GET"])
+@admin_required
+def get_user_login_history(current_admin: User, user_id: uuid.UUID):
+    """Riwayat login user — penting untuk audit terutama saat device tidak ter-bind
+    MikroTik (user login via portal dari luar hotspot). Menampilkan IP, user agent,
+    waktu login. Pagination via ?page=N&limit=M (default 25, max 100)."""
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"message": "Pengguna tidak ditemukan."}), HTTPStatus.NOT_FOUND
+    denied_response = _deny_non_super_admin_target_access(current_admin, user)
+    if denied_response:
+        return denied_response
+
+    try:
+        page = max(1, request.args.get("page", 1, type=int) or 1)
+        items_per_page = min(max(request.args.get("itemsPerPage", 25, type=int) or 25, 1), 100)
+
+        total_query = db.session.scalar(
+            sa.select(sa.func.count(UserLoginHistory.id)).where(UserLoginHistory.user_id == user_id)
+        )
+        total_items = int(total_query or 0)
+
+        offset = (page - 1) * items_per_page
+        rows = (
+            db.session.execute(
+                sa.select(UserLoginHistory)
+                .where(UserLoginHistory.user_id == user_id)
+                .order_by(UserLoginHistory.login_time.desc())
+                .offset(offset)
+                .limit(items_per_page)
+            )
+            .scalars()
+            .all()
+        )
+
+        items = [
+            {
+                "id": str(row.id),
+                "login_time": row.login_time.isoformat() if row.login_time else None,
+                "ip_address": row.ip_address,
+                "user_agent": row.user_agent_string,
+            }
+            for row in rows
+        ]
+        return (
+            jsonify(
+                {
+                    "items": items,
+                    "totalItems": total_items,
+                    "page": page,
+                    "itemsPerPage": items_per_page,
+                }
+            ),
+            HTTPStatus.OK,
+        )
+    except Exception as e:
+        current_app.logger.error(f"Error get login history for user {user_id}: {e}", exc_info=True)
+        return jsonify({"message": "Gagal mengambil riwayat login."}), HTTPStatus.INTERNAL_SERVER_ERROR
 
 
 @user_management_bp.route("/users/<uuid:user_id>/quota-history", methods=["GET"])

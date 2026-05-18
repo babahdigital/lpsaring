@@ -66,6 +66,10 @@ Perubahan endpoint prioritas dianggap lengkap hanya jika keempat artefak berikut
 - `POST /users/database-update-submissions`
 - `GET /users/database-update-submissions/status`
 
+### Admin user audit
+
+- `GET /admin/users/{user_id}/login-history?page=N&itemsPerPage=M` — riwayat login (IP, UA, time) untuk audit user yang login dari luar hotspot subnet (tidak ter-bind MikroTik)
+
 ### Public settings
 
 - `GET /settings/payment-availability`

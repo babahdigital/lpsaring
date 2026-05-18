@@ -953,5 +953,37 @@ watch(regRole, () => {
 
 .auth-wrapper {
   min-block-size: 100dvh;
+  background: linear-gradient(135deg, rgba(var(--v-theme-primary), 0.06) 0%, rgba(var(--v-theme-surface), 1) 60%);
+}
+
+/* Card polish: smooth radius + soft shadow + entry animation.
+   Tidak override Vuexy default elevation supaya konsisten dengan halaman lain. */
+.auth-card {
+  border-radius: 18px !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.07), 0 2px 8px rgba(0, 0, 0, 0.04) !important;
+  backdrop-filter: blur(6px);
+  animation: auth-card-fade-in 280ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes auth-card-fade-in {
+  0% {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* OTP input: lebih premium dengan border subtle + transition focus */
+.v-otp-input__content input {
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.v-otp-input__content input:focus {
+  box-shadow: 0 0 0 3px rgba(var(--v-theme-primary), 0.15);
 }
 </style>

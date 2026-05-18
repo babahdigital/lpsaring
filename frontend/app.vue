@@ -178,6 +178,7 @@ const shouldShowPromoFetcher = computed(() => {
   align-items: center;
   justify-content: center;
   background-color: rgb(var(--v-theme-surface));
+  transition: opacity 220ms ease;
 }
 
 .initial-loading-screen .loading-content {
@@ -185,5 +186,26 @@ const shouldShowPromoFetcher = computed(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+}
+
+/* Page transition global (nuxt.config.ts `pageTransition.name = page`).
+   Fade halus 180ms — cukup smooth tanpa lag interaksi.
+   Pastikan tidak ada layout shift dengan position absolute saat fading out. */
+.page-enter-active,
+.page-leave-active {
+  transition: opacity 180ms ease;
+}
+.page-enter-from,
+.page-leave-to {
+  opacity: 0;
+}
+
+.layout-enter-active,
+.layout-leave-active {
+  transition: opacity 180ms ease;
+}
+.layout-enter-from,
+.layout-leave-to {
+  opacity: 0;
 }
 </style>
