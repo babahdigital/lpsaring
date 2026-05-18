@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import calendar
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone as dt_timezone
 from typing import Any, Optional
@@ -183,6 +184,16 @@ def bulk_reset_quota_command(
 
     expired_profile = settings_service.get_setting("MIKROTIK_EXPIRED_PROFILE", "expired") or "expired"
 
+    # Sprint 11 BUG-3 (HIGH ops): commit per-N user supaya kalau MikroTik
+    # connection drop mid-batch, DB writes user 1..N-1 tidak hilang sementara
+    # RouterOS sudah updated → akan bikin sync flip user ke FUP/HABIS, eating
+    # granted quota. Default chunk 50, configurable lewat env.
+    try:
+        _commit_chunk_size = int(os.environ.get("BULK_RESET_QUOTA_COMMIT_CHUNK", "50"))
+    except Exception:
+        _commit_chunk_size = 50
+    _commit_chunk_size = max(1, min(_commit_chunk_size, 500))
+
     with get_mikrotik_connection() as api:
         host_usage_map: dict[str, dict[str, Any]] = {}
         if apply_mikrotik:
@@ -192,6 +203,7 @@ def bulk_reset_quota_command(
             if not ok_host:
                 raise click.ClickException(f"Gagal ambil hotspot host usage map: {msg}")
 
+        _since_last_commit = 0
         for user in eligible_users:
             # DB reset
             user.total_quota_purchased_mb = int(quota_mb)
@@ -281,6 +293,19 @@ def bulk_reset_quota_command(
                 _sync_address_list_status(api, user, username_08, remaining_mb, remaining_percent, is_expired)
             except Exception:
                 pass
+
+            # Sprint 11 BUG-3: commit chunked supaya progress tidak hilang kalau
+            # connection drop di iter berikutnya. Per-iter commit lebih aman tapi
+            # write amplification; chunk default 50 = kompromi.
+            _since_last_commit += 1
+            if _since_last_commit >= _commit_chunk_size:
+                try:
+                    db.session.commit()
+                    _since_last_commit = 0
+                except Exception as exc_chunk_commit:
+                    click.echo(f"WARN: chunked commit gagal: {exc_chunk_commit}")
+                    db.session.rollback()
+                    raise
 
         # expired users: optional Mikrotik profile enforcement
         if apply_mikrotik and api and enforce_expired_profile:

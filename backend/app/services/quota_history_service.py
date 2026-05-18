@@ -800,6 +800,13 @@ def get_user_quota_history_payload(
     safe_items_per_page = min(max(int(items_per_page or 50), 1), 200)
     resolved_filters = _resolve_history_filters(start_date=start_date, end_date=end_date, search=search)
 
+    # Sprint 11 BUG-2: Hard cap supaya tidak load seluruh history user (ledger
+    # bisa puluhan ribu rows untuk heavy user dengan hourly sync events).
+    # Sebelumnya `.all()` materialize semua, filter di Python, slice di Python →
+    # memory worker tumbuh linear. include_all dipakai untuk export; tetap cap
+    # ke MAX supaya tidak OOM. UI normal pakai limit/offset di SQL.
+    _MAX_HISTORY_ROWS = 10_000
+
     query = (
         select(QuotaMutationLedger)
         .where(
@@ -809,6 +816,7 @@ def get_user_quota_history_payload(
         )
         .options(selectinload(QuotaMutationLedger.actor))
         .order_by(QuotaMutationLedger.created_at.desc())
+        .limit(_MAX_HISTORY_ROWS)
     )
 
     rows = db.session.scalars(query).all()

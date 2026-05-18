@@ -6,6 +6,7 @@ from http import HTTPStatus
 from typing import Any
 
 import midtransclient
+import sqlalchemy as sa
 from flask import abort, current_app, has_request_context, request
 
 from app.infrastructure.db.models import Transaction, TransactionEventSource, TransactionStatus
@@ -255,9 +256,65 @@ def reconcile_pending_transaction(
                 "cancel": TransactionStatus.CANCELLED,
             }
             if new_status := status_map.get(midtrans_trx_status):
-                if transaction.status != new_status:
-                    transaction.status = new_status
+                # Sprint 11 BUG-1 (HIGH/money-loss): re-fetch dengan FOR UPDATE
+                # supaya tidak overwrite SUCCESS yang baru saja commit dari
+                # webhook race. Reconcile awalnya read tx PENDING tanpa lock;
+                # selama Midtrans API call (puluhan ms s/d detik), webhook bisa
+                # commit SUCCESS → in-memory `transaction` stale → blindly UPDATE
+                # SUCCESS→EXPIRED → user bayar tapi kuota di-revoke.
+                try:
+                    fresh_tx = session.execute(
+                        sa.select(Transaction).where(Transaction.id == transaction.id).with_for_update()
+                    ).scalar_one_or_none()
+                except Exception:
+                    fresh_tx = None
+                if fresh_tx is None:
+                    fresh_tx = transaction
+                # Defense-in-depth: hanya transisi ke terminal-negative dari
+                # PENDING/UNKNOWN. Kalau webhook sudah flip ke SUCCESS, jangan
+                # overwrite.
+                if (
+                    fresh_tx.status
+                    in (
+                        TransactionStatus.PENDING,
+                        TransactionStatus.UNKNOWN,
+                    )
+                    and fresh_tx.status != new_status
+                ):
+                    fresh_tx.status = new_status
+                    log_transaction_event(
+                        session=session,
+                        transaction=fresh_tx,
+                        source=TransactionEventSource.APP,
+                        event_type="RECONCILE_TERMINAL_TRANSITION",
+                        status=fresh_tx.status,
+                        payload={
+                            "midtrans_status": midtrans_trx_status,
+                            "order_id": order_id,
+                        },
+                    )
                     session.commit()
+                    # Sync in-memory reference supaya log STATUS_CHANGED di bawah konsisten.
+                    transaction.status = fresh_tx.status
+                elif fresh_tx.status not in (
+                    TransactionStatus.PENDING,
+                    TransactionStatus.UNKNOWN,
+                ):
+                    # Tx sudah final (kemungkinan SUCCESS dari webhook); skip overwrite.
+                    log_transaction_event(
+                        session=session,
+                        transaction=fresh_tx,
+                        source=TransactionEventSource.APP,
+                        event_type="RECONCILE_SKIPPED_FINAL_STATE",
+                        status=fresh_tx.status,
+                        payload={
+                            "intended_state": new_status.value,
+                            "midtrans_status": midtrans_trx_status,
+                            "order_id": order_id,
+                        },
+                    )
+                    session.commit()
+                    transaction.status = fresh_tx.status
 
         if prev_status != transaction.status:
             log_transaction_event(
