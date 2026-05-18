@@ -56,6 +56,8 @@ export {
   type AdminUserDetailReportWhatsappResponse,
   type AdminQuotaHistorySendWaRequest,
   type AdminQuotaHistorySendWaResponse,
+  type AdminUserLoginHistoryItem,
+  type AdminUserLoginHistoryResponse,
   type PublicDatabaseUpdateSubmissionRequest,
   type PublicUpdateSubmissionStatusResponse,
   type PhoneCheckRequest as PhoneCheckRequestContract,
