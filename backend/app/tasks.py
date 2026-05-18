@@ -3146,6 +3146,7 @@ def retry_failed_mikrotik_apply_task(self):
     - user_id NOT NULL (skip orphan)
     """
     from app.infrastructure.db.models import Transaction, TransactionEvent, TransactionStatus
+    from app.infrastructure.gateways.mikrotik_client import get_mikrotik_connection
     from app.services.transaction_service import apply_package_and_sync_to_mikrotik
 
     app = create_app()
@@ -3173,19 +3174,28 @@ def retry_failed_mikrotik_apply_task(self):
             failed = 0
             for tx in stuck:
                 try:
-                    user = tx.user
-                    if user is None:
+                    if tx.user is None or tx.package is None:
                         continue
-                    is_success, err_msg = apply_package_and_sync_to_mikrotik(user, tx)
+                    with get_mikrotik_connection() as api_conn:
+                        if not api_conn:
+                            failed += 1
+                            logger.warning(
+                                "retry_failed_mikrotik_apply: koneksi MikroTik gagal untuk %s",
+                                tx.midtrans_order_id,
+                            )
+                            continue
+                        is_success, err_msg = apply_package_and_sync_to_mikrotik(tx, api_conn)
                     if is_success:
                         retried += 1
+                        db.session.commit()
                         logger.info(
                             "retry_failed_mikrotik_apply: SUCCESS retry order_id=%s user_id=%s",
                             tx.midtrans_order_id,
-                            user.id,
+                            tx.user_id,
                         )
                     else:
                         failed += 1
+                        db.session.rollback()
                         logger.warning(
                             "retry_failed_mikrotik_apply: masih gagal order_id=%s msg=%s",
                             tx.midtrans_order_id,
