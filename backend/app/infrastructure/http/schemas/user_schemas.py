@@ -10,7 +10,7 @@ from app.infrastructure.db.models import UserRole, ApprovalStatus, UserBlok, Use
 
 # Impor formatter terpusat
 from app.utils.formatters import normalize_to_e164
-from app.infrastructure.http.schemas.auth_schemas import TAMPING_TYPES
+from app.infrastructure.http.schemas.auth_schemas import TAMPING_TYPES, _validate_full_name
 
 
 ALLOWED_TAMPING_TYPES = set(TAMPING_TYPES)
@@ -271,11 +271,14 @@ class UserMeResponseSchema(UserResponseSchema):
 
 
 class UserProfileUpdateRequestSchema(BaseModel):
-    full_name: str = Field(..., min_length=2)
+    full_name: str = Field(..., min_length=2, max_length=80)
     blok: Optional[str] = None
     kamar: Optional[str] = None
     is_tamping: Optional[bool] = None
     tamping_type: Optional[str] = None
+
+    # Sprint 6: tolak control chars + cap panjang nama.
+    _normalize_full_name = field_validator("full_name", mode="before")(_validate_full_name)
 
     @field_validator("tamping_type", mode="before")
     @classmethod

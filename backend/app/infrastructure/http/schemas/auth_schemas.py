@@ -1,10 +1,31 @@
 # backend/app/infrastructure/http/schemas/auth_schemas.py
+import unicodedata
+
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, List, Dict, Any
 import uuid
 
 # Impor fungsi normalisasi dari helper terpusat
 from app.utils.formatters import normalize_to_e164
+
+
+# Sprint 6: validator untuk full_name supaya tidak inject control char (newline,
+# null byte, RTL override) yang nanti masuk WA template / PDF / audit log.
+def _validate_full_name(value: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError("Nama lengkap harus berupa teks.")
+    stripped = value.strip()
+    if len(stripped) < 2:
+        raise ValueError("Nama lengkap minimal 2 karakter.")
+    if len(stripped) > 80:
+        raise ValueError("Nama lengkap maksimal 80 karakter.")
+    for ch in stripped:
+        # Tolak control characters (Cc/Cf) — \n, \r, \0, zero-width joiner, RTL override.
+        category = unicodedata.category(ch)
+        if category.startswith("C"):
+            raise ValueError("Nama lengkap mengandung karakter tidak valid.")
+    return stripped
+
 
 TAMPING_TYPES = [
     "Tamping luar",
@@ -65,7 +86,7 @@ class UserRegisterRequestSchema(BaseModel):
     """Skema untuk registrasi pengguna baru, sekarang mendukung Komandan."""
 
     phone_number: str
-    full_name: str = Field(..., min_length=2)
+    full_name: str = Field(..., min_length=2, max_length=80)
     blok: Optional[str] = None  # Dijadikan opsional
     kamar: Optional[str] = None  # Dijadikan opsional
     is_tamping: bool = Field(False, description="True jika pengguna tamping")
@@ -73,6 +94,7 @@ class UserRegisterRequestSchema(BaseModel):
     register_as_komandan: bool = Field(False, description="Tandai True untuk mendaftar sebagai Komandan")
 
     _normalize_phone = field_validator("phone_number", mode="before")(validate_phone_number)
+    _normalize_full_name = field_validator("full_name", mode="before")(_validate_full_name)
 
     @model_validator(mode="after")
     def check_address_for_user_role(self) -> "UserRegisterRequestSchema":

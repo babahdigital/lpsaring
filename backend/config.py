@@ -273,6 +273,13 @@ class Config:
             "Set JWT_SECRET_KEY env var sebelum menjalankan aplikasi."
         )
     JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
+    # Sprint 6: iss/aud claims supaya token staging tidak bisa di-replay ke prod
+    # walau JWT_SECRET_KEY bocor antar environment. Default mengikuti FLASK_ENV.
+    JWT_ISSUER = os.environ.get(
+        "JWT_ISSUER",
+        f"lpsaring-{(os.environ.get('FLASK_ENV') or 'production').lower()}",
+    )
+    JWT_AUDIENCE = os.environ.get("JWT_AUDIENCE", "lpsaring-portal")
     JWT_ACCESS_TOKEN_EXPIRES_MINUTES = get_env_int("JWT_ACCESS_TOKEN_EXPIRES_MINUTES", 30)
 
     # --- Konfigurasi Cookie Auth ---

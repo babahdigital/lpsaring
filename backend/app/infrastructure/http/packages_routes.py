@@ -94,6 +94,8 @@ def _get_request_user_optional() -> User | None:
             token,
             current_app.config["JWT_SECRET_KEY"],
             algorithms=[current_app.config["JWT_ALGORITHM"]],
+            issuer=current_app.config.get("JWT_ISSUER"),
+            audience=current_app.config.get("JWT_AUDIENCE"),
         )
         user_id = uuid.UUID(str(payload.get("sub")))
     except Exception:

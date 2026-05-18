@@ -13,10 +13,15 @@ def create_access_token(data: dict) -> str:
         expire_minutes = 30
 
     expire_at_utc = datetime.now(dt_timezone.utc) + timedelta(minutes=expire_minutes)
+    now_utc = datetime.now(dt_timezone.utc)
     to_encode.update(
         {
             "exp": expire_at_utc,
-            "iat": datetime.now(dt_timezone.utc),
+            "iat": now_utc,
+            # Sprint 6: iss/aud claims supaya token staging tidak bisa di-replay
+            # ke prod walau JWT_SECRET_KEY bocor antar environment.
+            "iss": current_app.config.get("JWT_ISSUER", "lpsaring-production"),
+            "aud": current_app.config.get("JWT_AUDIENCE", "lpsaring-portal"),
         }
     )
     return jwt.encode(

@@ -493,7 +493,11 @@ def create_app(config_name: Optional[str] = None) -> HotspotFlask:
         if token:
             try:
                 payload = jwt.decode(
-                    token, current_app.config["JWT_SECRET_KEY"], algorithms=[current_app.config["JWT_ALGORITHM"]]
+                    token,
+                    current_app.config["JWT_SECRET_KEY"],
+                    algorithms=[current_app.config["JWT_ALGORITHM"]],
+                    issuer=current_app.config.get("JWT_ISSUER"),
+                    audience=current_app.config.get("JWT_AUDIENCE"),
                 )
                 if payload.get("rl") in [UserRole.ADMIN.value, UserRole.SUPER_ADMIN.value]:
                     return

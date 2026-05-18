@@ -397,6 +397,8 @@ def auto_login_impl(
                     token,
                     jwt_secret,
                     algorithms=[jwt_algorithm],
+                    issuer=current_app.config.get("JWT_ISSUER"),
+                    audience=current_app.config.get("JWT_AUDIENCE"),
                 )
                 user_id = payload_jwt.get("sub")
                 if not user_id:

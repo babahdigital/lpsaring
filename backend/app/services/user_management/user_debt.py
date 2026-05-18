@@ -108,6 +108,17 @@ def add_manual_debt(
         return False, "Jumlah debt (MB) tidak valid.", None
     if amount_int <= 0:
         return False, "Jumlah debt (MB) harus > 0.", None
+    # Sprint 6: Hard cap supaya admin typo (mis. "100000000" alih-alih "1000")
+    # tidak overflow Integer kolom (Postgres int4 max 2^31-1 ≈ 2.1 GB) saat
+    # akumulasi `user.manual_debt_mb`. 10 GB ≈ 10240 MB cukup untuk skenario
+    # operasional realistis; melebihi itu hampir pasti typo.
+    _MAX_DEBT_MB_PER_ENTRY = 10_240
+    if amount_int > _MAX_DEBT_MB_PER_ENTRY:
+        return (
+            False,
+            f"Jumlah debt (MB) terlalu besar (maks {_MAX_DEBT_MB_PER_ENTRY} MB / 10 GB per entry).",
+            None,
+        )
 
     normalized_debt_date = _coerce_optional_date(debt_date)
     if debt_date not in {None, ""} and normalized_debt_date is None:

@@ -350,7 +350,13 @@ def token_required(f):
             return _auth_error("Invalid origin.", HTTPStatus.FORBIDDEN, "AUTH_ORIGIN_INVALID")
         try:
             payload = jwt.decode(
-                token, current_app.config["JWT_SECRET_KEY"], algorithms=[current_app.config["JWT_ALGORITHM"]]
+                token,
+                current_app.config["JWT_SECRET_KEY"],
+                algorithms=[current_app.config["JWT_ALGORITHM"]],
+                # Sprint 6: validasi iss/aud — token dari environment lain (mis. staging)
+                # akan ditolak meskipun JWT_SECRET_KEY sama.
+                issuer=current_app.config.get("JWT_ISSUER"),
+                audience=current_app.config.get("JWT_AUDIENCE"),
             )
             user_uuid_from_token = uuid.UUID(payload.get("sub"))
             user_from_token = db.session.get(User, user_uuid_from_token)
