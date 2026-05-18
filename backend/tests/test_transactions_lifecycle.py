@@ -87,6 +87,11 @@ class _FakeSession:
     def remove(self):
         return None
 
+    def execute(self, *args, **kwargs):
+        # P-C2 fix: webhook melakukan `session.execute("SELECT pg_advisory_xact_lock(...)")`.
+        # FakeSession tidak perlu real lock; return None untuk no-op.
+        return None
+
 
 class _FakeDB:
     def __init__(self, session: _FakeSession):

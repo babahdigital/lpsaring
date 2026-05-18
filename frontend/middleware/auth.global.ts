@@ -248,14 +248,16 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
       return
 
     // L-C6: Cegah lock-in di /captive. Guest yang sudah AKTIF di /captive (atau
-    // page /captive/*) jangan di-redirect lagi ke /captive — biarkan flow login
-    // continue di /captive page itu sendiri. Sebelumnya: user di /captive klik
-    // link/refresh → middleware re-redirect ke /captive dengan query baru → infinite
-    // loop sampai trackRedirect chain guard kena 5-redirect-max.
+    // page /captive/*) jangan di-redirect lagi ke /captive — biarkan flow continue
+    // di /captive page itu sendiri. Sebelumnya: user di /captive klik link/refresh
+    // → middleware re-redirect ke /captive dengan query baru → infinite loop
+    // sampai trackRedirect chain guard kena 5-redirect-max.
+    // CATATAN: /login TETAP boleh di-redirect ke /captive — karena user dari portal
+    // MikroTik datang dengan client_ip/mac di /login dan harus diarahkan ke
+    // /captive bridge page (existing behavior, ada test runtime untuk ini).
     if (
       !to.path.startsWith('/admin')
       && !to.path.startsWith('/captive')
-      && !to.path.startsWith('/login')
       && hasHotspotContextQuery((to.query as Record<string, unknown>) ?? {}, hotspotTrustConfig)
     ) {
       const hotspotRouteQuery = pickHotspotRouteQuery((to.query as Record<string, unknown>) ?? {}, hotspotTrustConfig)

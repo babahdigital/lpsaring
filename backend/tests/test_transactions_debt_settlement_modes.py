@@ -62,7 +62,7 @@ def test_apply_debt_settlement_manual_item_path(monkeypatch):
         user.quota_debt_manual_mb = 0
         return 2048
 
-    def _fake_clear_all(*, user, admin_actor, source):
+    def _fake_clear_all(*, user, admin_actor, source, created_before=None):
         called["auto"] = True
         return (0, 0)
 
@@ -103,7 +103,7 @@ def test_apply_debt_settlement_auto_path(monkeypatch):
         called["manual"] = True
         return 0
 
-    def _fake_clear_all(*, user, admin_actor, source):
+    def _fake_clear_all(*, user, admin_actor, source, created_before=None):
         called["auto"] = True
         assert source == "user_debt_settlement_payment"
         user.quota_debt_total_mb = 0
