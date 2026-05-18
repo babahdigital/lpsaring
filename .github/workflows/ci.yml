@@ -300,30 +300,132 @@ jobs:
           echo "Frontend build skipped: no runtime-critical frontend changes in this PR."
           echo "Build will still run on push to main." >> "$GITHUB_STEP_SUMMARY"
 
+  # ----------------------------------------------------------------
+  # docker-build:
+  #   - PR / push non-main : push=false, amd64-only (fast verification)
+  #   - push to main + tag : push=true, multi-arch (amd64+arm64), fresh build
+  #                          (no-cache + cache prune), Trivy scan post-build
+  # ----------------------------------------------------------------
   docker-build:
-    needs: changes
-    if: ${{ needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.docker == 'true' || needs.changes.outputs.ci == 'true' }}
+    needs: [changes, backend, frontend, backend-types, contract-gate]
+    if: |
+      always()
+      && (needs.changes.outputs.backend == 'true' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.docker == 'true' || needs.changes.outputs.ci == 'true')
+      && (needs.backend.result == 'success' || needs.backend.result == 'skipped')
+      && (needs.frontend.result == 'success' || needs.frontend.result == 'skipped')
+      && (needs.backend-types.result == 'success' || needs.backend-types.result == 'skipped')
+      && (needs.contract-gate.result == 'success' || needs.contract-gate.result == 'skipped')
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: backend
+          - service: backend
             context: ./backend
-          - name: frontend
+            dockerfile: ./backend/Dockerfile-prod
+            image: babahdigital/sobigidul_backend
+          - service: frontend
             context: ./frontend
+            dockerfile: ./frontend/Dockerfile-prod
+            image: babahdigital/sobigidul_frontend
     steps:
       - uses: actions/checkout@v6
+
+      - name: Set publish flag
+        id: pub
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Publish=${{ steps.pub.outputs.publish }}"
+
+      - name: Set up QEMU (multi-arch publish only)
+        if: ${{ steps.pub.outputs.publish == 'true' }}
+        uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
-      - name: Build ${{ matrix.name }} image (no push)
+
+      - name: Login to Docker Hub
+        if: ${{ steps.pub.outputs.publish == 'true' }}
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Purge builder + image cache (fresh build)
+        if: ${{ steps.pub.outputs.publish == 'true' }}
+        run: |
+          docker builder prune -af || true
+          docker image prune -af || true
+          docker system df
+
+      - name: Prod config hygiene (frontend dev bypass token must be empty)
+        if: ${{ matrix.service == 'frontend' && steps.pub.outputs.publish == 'true' }}
+        run: |
+          if [ -n "${NUXT_PUBLIC_DEV_BYPASS_TOKEN:-}" ]; then
+            echo "::error::NUXT_PUBLIC_DEV_BYPASS_TOKEN terisi pada build production. Blocked."
+            exit 1
+          fi
+
+      - name: Docker metadata (publish)
+        if: ${{ steps.pub.outputs.publish == 'true' }}
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ matrix.image }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+            type=sha,prefix=sha-,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+            type=ref,event=tag
+
+      - name: Build & push (fresh, multi-arch)
+        if: ${{ steps.pub.outputs.publish == 'true' }}
+        id: build_publish
         uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          no-cache: true
+          provenance: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            NODE_OPTIONS=--max-old-space-size=3072
+            NUXT_PUBLIC_APP_BASE_URL=https://lpsaring.babahdigital.net
+            NUXT_PUBLIC_API_BASE_URL=/api
+
+      - name: Build verify (PR / non-publish — amd64 only, cached)
+        if: ${{ steps.pub.outputs.publish == 'false' }}
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
           push: false
           load: false
-          tags: local/${{ matrix.name }}:ci-${{ github.sha }}
+          tags: local/${{ matrix.service }}:ci-${{ github.sha }}
           build-args: |
             NUXT_PUBLIC_APP_BASE_URL=https://lpsaring.babahdigital.net
             NUXT_PUBLIC_API_BASE_URL=/api
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      - name: Trivy image scan (publish only, soft gate)
+        if: ${{ steps.pub.outputs.publish == 'true' && steps.build_publish.outputs.digest != '' }}
+        uses: aquasecurity/trivy-action@master
+        continue-on-error: true
+        with:
+          image-ref: ${{ matrix.image }}@${{ steps.build_publish.outputs.digest }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: "0"

@@ -14,20 +14,22 @@
 #    8. Auto-rollback dengan restore DB jika health gagal
 #    9. Image prune untuk hemat disk
 #
-#  Required secrets:
-#    - VPS_PROD_SSH_KEY : private key isi ~/.ssh/id_raspi_ed25519
-#    - VPS_PROD_HOST    : 194.233.80.163 (opsional, default tersedia)
-#    - VPS_PROD_USER    : abdullah        (opsional, default tersedia)
-#    - VPS_PROD_PORT    : 1983            (opsional, default tersedia)
+#  Required secret: VPS_PROD_SSH_KEY (private key untuk SSH ke VPS).
 #
 #  Trigger:
-#    - workflow_dispatch (manual + dari docker-publish trigger-deploy)
-#    - call dari docker-publish.yml setelah build sukses
+#    - workflow_dispatch (manual)
+#    - workflow_run("ci" completed success on main) + commit message
+#      contains ``[deploy]`` (opt-in deploy untuk mencegah deploy tidak
+#      sengaja di setiap merge ke main).
 # ===============================================================
 
 name: deploy
 
 on:
+  workflow_run:
+    workflows: ["ci"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       target_sha:
@@ -72,6 +74,19 @@ concurrency:
 
 jobs:
   deploy:
+    # Trigger gate:
+    #   - workflow_dispatch  : always allowed
+    #   - workflow_run       : CI must conclude=success AND triggering commit
+    #                          message must contain ``[deploy]`` (opt-in).
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          contains(github.event.workflow_run.head_commit.message, '[deploy]')
+        )
+      }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -83,6 +98,8 @@ jobs:
         run: |
           if [ -n "${{ inputs.target_sha }}" ]; then
             echo "ref=${{ inputs.target_sha }}" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ github.event.workflow_run.head_sha }}" ]; then
+            echo "ref=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
           else
             echo "ref=${{ github.ref }}" >> "$GITHUB_OUTPUT"
           fi
@@ -114,8 +131,10 @@ jobs:
             'echo "SSH OK"; uname -a; df -h / | tail -1; free -h | head -2'
 
       # ----- Pre-deploy DB backup -----
+      # Default `true` untuk workflow_run trigger (inputs.do_backup tidak set →
+      # `inputs.do_backup != false` evaluates true). Backup_only hanya via dispatch.
       - name: Pre-deploy DB backup
-        if: ${{ inputs.do_backup == true || inputs.backup_only == true }}
+        if: ${{ (inputs.do_backup != false) || inputs.backup_only == true }}
         id: backup
         run: |
           set -euo pipefail
@@ -204,7 +223,8 @@ jobs:
 
       # ----- Force fresh pull -----
       - name: Force fresh pull images
-        if: ${{ inputs.backup_only != true && inputs.fresh_pull != false }}
+        # Default `true` (inputs.fresh_pull undefined → `!= false` evaluates true)
+        if: ${{ inputs.backup_only != true && (inputs.fresh_pull != false) }}
         run: |
           ssh -p ${VPS_PORT} -i ~/.ssh/deploy_key ${VPS_USER}@${VPS_HOST} bash -s <<EOF
           set -euo pipefail
