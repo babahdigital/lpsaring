@@ -46,8 +46,9 @@ class PackageSchema(BaseModel):
 def get_packages_list(current_admin: User):
     """Mengambil daftar paket jualan dengan paginasi."""
     try:
-        page = request.args.get("page", 1, type=int)
-        per_page = min(request.args.get("itemsPerPage", 10, type=int), 100)
+        # Sprint 27: clamp page/per_page minimum 1.
+        page = max(1, request.args.get("page", 1, type=int) or 1)
+        per_page = max(1, min(request.args.get("itemsPerPage", 10, type=int), 100))
 
         sort_by = (request.args.get("sortBy") or "created_at").strip()
         sort_order = (request.args.get("sortOrder") or "desc").strip().lower()

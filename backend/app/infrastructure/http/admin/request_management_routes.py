@@ -93,8 +93,9 @@ def _log_admin_action(admin: User, target_user_id: uuid.UUID, action_type: Admin
 @admin_required
 def get_all_requests(current_admin: User):
     try:
-        page = request.args.get("page", 1, type=int)
-        per_page = min(request.args.get("itemsPerPage", 10, type=int), 100)
+        # Sprint 27: clamp page/per_page minimum 1.
+        page = max(1, request.args.get("page", 1, type=int) or 1)
+        per_page = max(1, min(request.args.get("itemsPerPage", 10, type=int), 100))
         status_filter = request.args.get("status", type=str)
         sort_by_list = request.args.getlist("sortBy")
         sort_order_list = request.args.getlist("sortOrder")

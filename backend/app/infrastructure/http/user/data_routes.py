@@ -278,8 +278,9 @@ def get_my_weekly_spending_summary(current_user_id):
 def get_my_transactions(current_user_id):
     _get_authenticated_user(current_user_id)
     try:
-        page = request.args.get("page", 1, type=int)
-        per_page = min(request.args.get("per_page", 10, type=int), 50)
+        # Sprint 27: clamp page/per_page minimum 1 cegah negative offset.
+        page = max(1, request.args.get("page", 1, type=int) or 1)
+        per_page = max(1, min(request.args.get("per_page", 10, type=int), 50))
 
         query = (
             select(Transaction)

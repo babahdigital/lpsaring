@@ -204,8 +204,9 @@ def get_my_requests_history(current_user_id: uuid.UUID):
         return jsonify({"message": "Akses ditolak."}), HTTPStatus.FORBIDDEN
 
     try:
-        page = request.args.get("page", 1, type=int)
-        per_page = min(request.args.get("itemsPerPage", 10, type=int), 50)
+        # Sprint 27: clamp page/per_page minimum 1.
+        page = max(1, request.args.get("page", 1, type=int) or 1)
+        per_page = max(1, min(request.args.get("itemsPerPage", 10, type=int), 50))
 
         sort_by = request.args.get("sortBy") or "created_at"
         sort_order = request.args.get("sortOrder", "desc").lower()

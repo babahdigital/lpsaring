@@ -1614,6 +1614,9 @@ def get_users_list(current_admin: User):
     try:
         page = request.args.get("page", 1, type=int)
         per_page_raw = request.args.get("itemsPerPage", 10, type=int)
+        # Sprint 27: clamp page minimum 1 supaya offset tidak negatif.
+        if page < 1:
+            page = 1
         # Sprint 17 BUG-1 (HIGH): cap itemsPerPage=-1 yang sebelumnya fetch
         # ALL users → OOM gunicorn worker pada DB ribuan user. Pola sama
         # dengan action_log_routes (Sprint 13). Clamp ke max 200.

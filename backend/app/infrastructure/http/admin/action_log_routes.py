@@ -111,6 +111,11 @@ def get_action_logs(current_admin: User):  # noqa: ARG001
         # [PERBAIKAN UTAMA] Logika untuk menangani itemsPerPage = -1
         page = request.args.get("page", 1, type=int)
         per_page = request.args.get("itemsPerPage", 15, type=int)
+        # Sprint 27: clamp page minimum 1. Kalau user kirim page=0 atau
+        # page=-1, offset jadi -per_page → SQL behavior aneh / negative offset
+        # error di Postgres.
+        if page < 1:
+            page = 1
         # Audit-6: Hard cap supaya admin tidak bisa request unbounded result yang
         # OOM gunicorn worker (admin_action_logs bisa ribuan baris). -1 / 0 → cap.
         _MAX_ITEMS_PER_PAGE = 200
