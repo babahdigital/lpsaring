@@ -33,9 +33,25 @@ def lock_user_quota_row(user: User, nowait: bool = False) -> None:
         return
     try:
         db.session.execute(sa.select(User.id).where(User.id == user.id).with_for_update(nowait=nowait))
-    except Exception:
+    except Exception as exc_lock:
         if nowait:
             raise
+        # Sprint 16: log silent swallow supaya kalau production Postgres
+        # serialization/deadlock fail, operator bisa investigate. Sebelumnya
+        # purely silent — caller proceed tanpa serialisasi → potensi
+        # lost-update di kolom debt/quota yang seharusnya di-protect.
+        # NOTE: tidak raise di non-nowait path supaya test FakeSession yang
+        # tidak support with_for_update tetap bisa jalan (production caller
+        # responsibility untuk handle eksplisit jika critical).
+        try:
+            current_app.logger.warning(
+                "lock_user_quota_row: lock gagal user_id=%s nowait=%s err=%s",
+                getattr(user, "id", None),
+                nowait,
+                exc_lock,
+            )
+        except Exception:
+            _logger.warning("lock_user_quota_row gagal (no app ctx): %s", exc_lock)
         return
 
 

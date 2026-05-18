@@ -1989,6 +1989,27 @@ def policy_parity_guard_task(self):
             logger.info("Celery Task: Skip policy parity guard (MikroTik operations disabled).")
             return
 
+        # Sprint 16: hindari overlap dengan sync_hotspot_usage_task yang juga
+        # mutate MikroTik state shared per user (address-list, ip-binding) +
+        # kolom DB user. Tanpa lock, address-list bisa flip-flop antara
+        # `klient_aktif` ↔ `klient_fup` di log. Beat schedule: sync setiap
+        # 300s, parity guard setiap 600s + offset 55s → window overlap di
+        # T+55..T+300. Acquire Redis lock TTL 360s di awal task.
+        _parity_lock_client = getattr(app, "redis_client_otp", None)
+        _parity_lock_key = "policy_parity_guard:lock"
+        _parity_lock_acquired = False
+        if _parity_lock_client is not None:
+            try:
+                _parity_lock_acquired = bool(_parity_lock_client.set(_parity_lock_key, "1", nx=True, ex=360))
+                if not _parity_lock_acquired:
+                    logger.info("Celery Task: Skip policy parity guard (lock held by previous run).")
+                    return
+            except Exception as exc_parity_lock:
+                logger.warning(
+                    "Policy parity guard: lock acquire gagal (%s), continue best-effort.",
+                    exc_parity_lock,
+                )
+
         logger.info("Celery Task: Menjalankan policy parity guard.")
         try:
             report = collect_access_parity_report(max_items=300)
@@ -2068,6 +2089,13 @@ def policy_parity_guard_task(self):
             if self.request.retries >= 2:
                 _record_task_failure(app, "policy_parity_guard_task", {}, str(e))
             raise
+        finally:
+            # Sprint 16: release Redis lock supaya next run tidak blocked.
+            if _parity_lock_acquired and _parity_lock_client is not None:
+                try:
+                    _parity_lock_client.delete(_parity_lock_key)
+                except Exception:
+                    pass
 
 
 @celery_app.task(
