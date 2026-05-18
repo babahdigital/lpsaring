@@ -331,9 +331,9 @@ def test_apply_auto_debt_limit_block_state_sends_warning_before_block(monkeypatc
     monkeypatch.setattr(
         svc.settings_service,
         "get_setting_as_int",
-        lambda key, default=0: 500
-        if key == "QUOTA_DEBT_LIMIT_MB"
-        else (400 if key == "QUOTA_DEBT_WARNING_MB" else default),
+        lambda key, default=0: (
+            500 if key == "QUOTA_DEBT_LIMIT_MB" else (400 if key == "QUOTA_DEBT_WARNING_MB" else default)
+        ),
     )
 
     warnings = []

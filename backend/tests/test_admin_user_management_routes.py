@@ -689,8 +689,9 @@ def test_export_user_detail_report_pdf_temp_invalid_token_renders_html_page(monk
     monkeypatch.setattr(
         user_management_routes,
         "render_template",
-        lambda _template,
-        **context: f"<html><body><h1>{context['title']}</h1><a href='{context['action_url']}'>Portal</a></body></html>",
+        lambda _template, **context: (
+            f"<html><body><h1>{context['title']}</h1><a href='{context['action_url']}'>Portal</a></body></html>"
+        ),
     )
 
     app = _make_app()

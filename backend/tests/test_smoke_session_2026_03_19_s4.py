@@ -288,7 +288,7 @@ def test_settle_single_debt_sets_unblocked_true_when_all_paid(app):
                 return_value=None,
             ),
         ):
-            mock_db.session.get.side_effect = lambda model, oid: (fake_user if model.__name__ == "User" else fake_debt)
+            mock_db.session.get.side_effect = lambda model, oid: fake_user if model.__name__ == "User" else fake_debt
             mock_svc.settle_manual_debt_item_to_zero.return_value = 20 * 1024
 
             from app.infrastructure.http.admin.user_management_routes import settle_single_manual_debt
