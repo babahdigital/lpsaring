@@ -228,6 +228,12 @@ def _apply_pool_socket_timeout(socket_timeout_seconds: float) -> None:
         pass
 
 
+# H1 (audit-5): Gate connect-thread supaya satu zombie hanging tidak diikuti
+# spawn baru tiap 2 menit (akumulasi belasan thread sebelum yang pertama cleanup).
+# Non-blocking acquire — kalau previous connect masih in-flight, skip langsung.
+_get_api_inflight_lock = threading.Lock()
+
+
 def _get_api_with_timeout(pool: Any, timeout_seconds: float) -> Optional[Any]:
     """Jalankan pool.get_api() dalam daemon thread dengan batas waktu.
 
@@ -235,7 +241,14 @@ def _get_api_with_timeout(pool: Any, timeout_seconds: float) -> Optional[Any]:
     TCP connect/auth bisa hang hingga OS default (~75s) jika router tidak merespons.
     Dengan wrapper ini, jika koneksi tidak selesai dalam `timeout_seconds`,
     fungsi langsung return None (thread daemon akan mati sendiri saat koneksi akhirnya timeout di OS).
+
+    Tambahan H1 (audit-5): in-flight gate — kalau satu thread masih hanging dari
+    panggilan sebelumnya, skip spawn baru supaya thread tidak akumulasi.
     """
+    if not _get_api_inflight_lock.acquire(blocking=False):
+        logger.warning("MikroTik connect skip: previous connect masih in-flight (kemungkinan router hang).")
+        return None
+
     result: List[Optional[Any]] = [None]
     exc: List[Optional[Exception]] = [None]
 
@@ -244,18 +257,25 @@ def _get_api_with_timeout(pool: Any, timeout_seconds: float) -> Optional[Any]:
             result[0] = pool.get_api()
         except Exception as e:
             exc[0] = e
+        finally:
+            try:
+                _get_api_inflight_lock.release()
+            except RuntimeError:
+                pass
 
     t = threading.Thread(target=_do_connect, daemon=True)
     t.start()
     t.join(timeout=timeout_seconds)
 
     if t.is_alive():
-        # Koneksi masih berjalan melewati batas waktu
+        # Koneksi masih berjalan melewati batas waktu. Lock akan di-release oleh
+        # thread daemon saat dia akhirnya selesai (OS TCP timeout ~75s). Sebelum
+        # itu, panggilan berikutnya akan short-circuit di acquire(blocking=False).
         logger.warning(
             "MikroTik pool.get_api() tidak selesai dalam %.1fs — kemungkinan router tidak merespons.",
             timeout_seconds,
         )
-        return None  # thread daemon akan cleanup sendiri
+        return None
 
     if exc[0] is not None:
         raise exc[0]

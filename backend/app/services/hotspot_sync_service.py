@@ -85,6 +85,7 @@ REDIS_SYNC_LOCK_PREFIX = "quota:sync_lock:user:"
 REDIS_GLOBAL_SYNC_LOCK_KEY = "quota:sync_lock:global"
 REDIS_ACCESS_STATUS_DEDUPE_PREFIX = "wa:dedupe:access_status:"
 REDIS_AUTO_DEBT_WARNING_DEDUPE_PREFIX = "wa:dedupe:auto_debt_warning:"
+REDIS_QUOTA_THRESHOLD_DEDUPE_PREFIX = "wa:dedupe:quota_threshold:"
 LOCAL_GLOBAL_SYNC_LOCK_TOKEN = "__local_global_sync_lock__"
 _local_global_sync_lock = threading.Lock()
 _thread_local_state = threading.local()
@@ -1703,14 +1704,21 @@ def _release_global_sync_lock(redis_client, token: str) -> None:
         return
     if not token:
         return
+    # M3 (audit-5): GET+DEL non-atomic memungkinkan worker B menimpa lock worker A.
+    # Pakai Lua script supaya GET-compare-DELETE jalan dalam satu Redis tick.
+    _release_lua = "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end"
     try:
-        current_token = redis_client.get(REDIS_GLOBAL_SYNC_LOCK_KEY)
-        if isinstance(current_token, (bytes, bytearray)):
-            current_token = current_token.decode("utf-8", errors="ignore")
-        if str(current_token or "") == str(token):
-            redis_client.delete(REDIS_GLOBAL_SYNC_LOCK_KEY)
+        redis_client.eval(_release_lua, 1, REDIS_GLOBAL_SYNC_LOCK_KEY, str(token))
     except Exception:
-        return
+        # Fallback non-atomic (worst case: redundant DELETE pada lock orang lain).
+        try:
+            current_token = redis_client.get(REDIS_GLOBAL_SYNC_LOCK_KEY)
+            if isinstance(current_token, (bytes, bytearray)):
+                current_token = current_token.decode("utf-8", errors="ignore")
+            if str(current_token or "") == str(token):
+                redis_client.delete(REDIS_GLOBAL_SYNC_LOCK_KEY)
+        except Exception:
+            return
 
 
 def _should_send_access_status_notification(redis_client, *, user_id: uuid.UUID, status_key: str) -> bool:
@@ -1732,6 +1740,28 @@ def _should_send_access_status_notification(redis_client, *, user_id: uuid.UUID,
         return True
 
     key = f"{REDIS_ACCESS_STATUS_DEDUPE_PREFIX}{status}:{user_id}"
+    try:
+        return bool(redis_client.set(key, "1", ex=ttl_seconds, nx=True))
+    except Exception:
+        return True
+
+
+def _should_send_quota_threshold_notification(redis_client, *, user_id: uuid.UUID, threshold_mb: int) -> bool:
+    """H3 (audit-5): Dedupe quota threshold WA. Sebelumnya hanya mengandalkan
+    `user.last_quota_notification_level` di DB; jika 2 sync run overlap baca state
+    sama sebelum yang pertama commit, keduanya kirim WA → spam ke user.
+    """
+    if redis_client is None:
+        return True
+    if threshold_mb <= 0:
+        return True
+    try:
+        ttl_seconds = int(current_app.config.get("WHATSAPP_QUOTA_THRESHOLD_DEDUPE_SECONDS", 6 * 3600))
+    except Exception:
+        ttl_seconds = 6 * 3600
+    if ttl_seconds <= 0:
+        return True
+    key = f"{REDIS_QUOTA_THRESHOLD_DEDUPE_PREFIX}{threshold_mb}:{user_id}"
     try:
         return bool(redis_client.set(key, "1", ex=ttl_seconds, nx=True))
     except Exception:
@@ -1881,8 +1911,19 @@ def _send_quota_notifications(
     if last_level is not None and isinstance(last_level, int) and last_level <= 100 and max(thresholds) > 100:
         last_level = None
 
+    redis_client_for_dedup = getattr(current_app, "redis_client_otp", None)
+
     for threshold in thresholds:
         if remaining_mb <= float(threshold) and (last_level is None or last_level > threshold):
+            # H3 (audit-5): Redis SETNX dedup di luar DB state supaya 2 sync run
+            # overlap tidak dua-duanya kirim WA dengan threshold yang sama.
+            if not _should_send_quota_threshold_notification(
+                redis_client_for_dedup, user_id=user.id, threshold_mb=int(threshold)
+            ):
+                # Sudah dikirim oleh run lain dalam window TTL — update DB state saja.
+                user.last_quota_notification_level = threshold
+                user.last_low_quota_notif_at = datetime.now(dt_timezone.utc)
+                break
             message = get_notification_message(
                 template_key,
                 {

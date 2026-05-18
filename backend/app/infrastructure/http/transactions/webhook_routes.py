@@ -52,7 +52,13 @@ def handle_notification_impl(
 
     server_key = current_app.config.get("MIDTRANS_SERVER_KEY")
     require_signature_validation_cfg = current_app.config.get("MIDTRANS_REQUIRE_SIGNATURE_VALIDATION")
-    if isinstance(require_signature_validation_cfg, bool):
+    # M4 (audit-5): Signature WAJIB jika `MIDTRANS_SERVER_KEY` di-set, bypass hanya
+    # boleh saat testing (TESTING=True). Cegah bypass kalau env mistakenly bukan
+    # `production` di VPS prod (mis. typo APP_ENV).
+    is_testing_mode = bool(current_app.config.get("TESTING", False))
+    if server_key and not is_testing_mode:
+        require_signature_validation = True
+    elif isinstance(require_signature_validation_cfg, bool):
         require_signature_validation = require_signature_validation_cfg
     else:
         flask_env = str(current_app.config.get("FLASK_ENV", "") or "").strip().lower()

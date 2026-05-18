@@ -251,9 +251,14 @@ def validate_whatsapp_number():
     current_app.logger.info("POST /api/users/validate-whatsapp (v2) endpoint requested.")
 
     try:
-        json_data = request.get_json()
-        # HAPUS DUPLIKASI KODE DI BAWAH INI
-        # current_app.logger.debug(f"Payload received: {json_data}")
+        # M1 (audit-5): gunakan silent=True supaya body kosong / non-JSON tidak
+        # melempar `TypeError` lewat broad `except Exception` di bawah (yang akan
+        # mencatat log error noisy ke Sentry). Validasi struktur secara eksplisit.
+        json_data = request.get_json(silent=True)
+        if not isinstance(json_data, dict):
+            return jsonify(
+                {"isValid": False, "message": "Request body harus JSON dengan field phoneNumber."}
+            ), HTTPStatus.BAD_REQUEST
 
         # PERBAIKAN: Gunakan key yang sesuai dengan frontend
         if "phoneNumber" in json_data:

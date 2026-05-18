@@ -89,6 +89,21 @@ def get_setting_as_bool(key: str, default: bool) -> bool:
     return default
 
 
+def is_whatsapp_notifications_enabled() -> bool:
+    """M5 (audit-5): Sumber tunggal untuk cek apakah notifikasi WhatsApp aktif.
+
+    Sebelumnya 15+ call site memakai default berbeda ("True" vs "False") yang
+    membuat semantik divergen saat DB setting row missing. Helper ini anchor ke
+    `current_app.config["ENABLE_WHATSAPP_NOTIFICATIONS"]` sebagai fallback, yang
+    di-load dari env (`.env.prod` di produksi = True).
+    """
+    try:
+        env_default = bool(current_app.config.get("ENABLE_WHATSAPP_NOTIFICATIONS", True))
+    except RuntimeError:
+        env_default = True
+    return get_setting_as_bool("ENABLE_WHATSAPP_NOTIFICATIONS", env_default)
+
+
 def get_ip_binding_type_setting(key: str, default: str) -> str:
     value_raw = get_setting(key, default)
     value = str(value_raw or default).strip().lower()

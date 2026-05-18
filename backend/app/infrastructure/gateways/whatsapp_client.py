@@ -10,6 +10,35 @@ from flask import current_app
 from app.utils.circuit_breaker import record_failure, record_success, should_allow_call
 
 
+_WHATSAPP_THROTTLE_KEY = "wa:fonnte:throttle_until"
+
+
+def _is_whatsapp_throttled() -> bool:
+    """H2 (audit-5): Check Redis untuk throttle yang dipasang dari respon Fonnte 429."""
+    redis_client = getattr(current_app, "redis_client_otp", None)
+    if redis_client is None:
+        return False
+    try:
+        raw = redis_client.get(_WHATSAPP_THROTTLE_KEY)
+        return raw is not None
+    except Exception:
+        return False
+
+
+def _set_whatsapp_throttle(retry_after_seconds: int | None) -> None:
+    """Set throttle marker di Redis. TTL = Retry-After atau default 60s."""
+    redis_client = getattr(current_app, "redis_client_otp", None)
+    if redis_client is None:
+        return
+    ttl = retry_after_seconds if (retry_after_seconds and retry_after_seconds > 0) else 60
+    # Cap pada 600 detik supaya tidak terlalu lama nge-block kalau Fonnte salah header.
+    ttl = min(ttl, 600)
+    try:
+        redis_client.set(_WHATSAPP_THROTTLE_KEY, "1", ex=ttl)
+    except Exception as exc:
+        current_app.logger.warning("WhatsApp throttle Redis set gagal: %s", exc)
+
+
 def _check_whatsapp_rate_limit(target_number: str) -> bool:
     """Best-effort Redis rate limit untuk pengiriman WhatsApp.
 
@@ -168,6 +197,13 @@ def send_whatsapp_message(
     if not _check_whatsapp_rate_limit(target_number):
         return False
 
+    # H2 (audit-5): hormati throttle dari respon 429 sebelumnya.
+    if _is_whatsapp_throttled():
+        current_app.logger.warning(
+            "WhatsApp Fonnte sedang dithrottle (Retry-After). Skipping send to %s.", target_number
+        )
+        return False
+
     payload = {"target": target_number, "message": message_body, "countryCode": "0"}
 
     if not should_allow_call("whatsapp"):
@@ -187,6 +223,25 @@ def send_whatsapp_message(
             resolved_timeout_seconds = 15
 
         response = requests.post(api_url, headers=headers, data=payload, timeout=resolved_timeout_seconds)
+        if response.status_code == 429:
+            # H2 (audit-5): Fonnte rate-limit. Parse Retry-After (detik) supaya
+            # circuit breaker / scheduler bisa pause; tetap log distinct supaya
+            # operator tahu rate-limited (bukan generic failure).
+            retry_after_raw = response.headers.get("Retry-After")
+            retry_after_seconds: int | None = None
+            if retry_after_raw:
+                try:
+                    retry_after_seconds = max(1, int(float(str(retry_after_raw).strip())))
+                except (ValueError, TypeError):
+                    retry_after_seconds = None
+            current_app.logger.warning(
+                "Fonnte API 429 throttled for %s. Retry-After=%s seconds.",
+                target_number,
+                retry_after_seconds if retry_after_seconds is not None else "unknown",
+            )
+            _set_whatsapp_throttle(retry_after_seconds)
+            record_failure("whatsapp")
+            return False
         if not (200 <= response.status_code < 300):
             current_app.logger.warning(
                 f"Fonnte API returned non-2xx status: {response.status_code} - {response.text[:200]}"
@@ -438,13 +493,14 @@ def send_otp_whatsapp(target_number: str, otp: str) -> bool:
     from app.services.notification_service import get_notification_message
 
     message_body = get_notification_message("auth_send_otp", {"otp_code": otp, "otp_expiry_minutes": expire_minutes})
-    otp_timeout_seconds = int(current_app.config.get("WHATSAPP_HTTP_TIMEOUT_SECONDS", 15))
+    # C1 (audit-5): pakai timeout dedicated untuk OTP, bukan cap hardcoded 8s.
+    otp_timeout_seconds = int(current_app.config.get("WHATSAPP_OTP_TIMEOUT_SECONDS", 12))
     if otp_timeout_seconds <= 0:
-        otp_timeout_seconds = 15
+        otp_timeout_seconds = 12
 
     return send_whatsapp_message(
         target_number,
         message_body,
         apply_send_delay=False,
-        timeout_seconds=min(otp_timeout_seconds, 8),
+        timeout_seconds=otp_timeout_seconds,
     )

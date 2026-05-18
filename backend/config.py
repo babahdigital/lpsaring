@@ -473,6 +473,10 @@ class Config:
     WHATSAPP_API_KEY = os.environ.get("WHATSAPP_API_KEY")
     ENABLE_WHATSAPP_NOTIFICATIONS = get_env_bool("ENABLE_WHATSAPP_NOTIFICATIONS", "True")
     WHATSAPP_HTTP_TIMEOUT_SECONDS = get_env_int("WHATSAPP_HTTP_TIMEOUT_SECONDS", 15)
+    # C1 (audit-5): OTP butuh response cepat tapi 8s terlalu agresif saat Fonnte p95
+    # 6-10s. Default 12s — kompromi UX vs reliability. Naikkan ke 15 di .env bila
+    # jaringan/Fonnte sedang lambat.
+    WHATSAPP_OTP_TIMEOUT_SECONDS = get_env_int("WHATSAPP_OTP_TIMEOUT_SECONDS", 12)
     WHATSAPP_PDF_DOWNLOAD_TIMEOUT_SECONDS = get_env_int("WHATSAPP_PDF_DOWNLOAD_TIMEOUT_SECONDS", 20)
     WHATSAPP_SEND_DELAY_MIN_MS = get_env_int("WHATSAPP_SEND_DELAY_MIN_MS", 400)
     WHATSAPP_SEND_DELAY_MAX_MS = get_env_int("WHATSAPP_SEND_DELAY_MAX_MS", 1200)
