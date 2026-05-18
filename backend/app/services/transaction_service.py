@@ -250,7 +250,16 @@ def apply_package_and_sync_to_mikrotik(transaction: Transaction, mikrotik_api: A
         )
         mikrotik_profile_to_set = unlimited_profile_name
 
-    limit_bytes_total = 0 if user.is_unlimited_user else int((user.total_quota_purchased_mb or 0) * 1024 * 1024)
+    # Sprint 16: defensive — kalau user bukan unlimited dan
+    # total_quota_purchased_mb edge ke 0 (mis. race debt apply), limit=0 di
+    # MikroTik berarti UNLIMITED, BUG critical (user dapat akses tanpa batas).
+    # Floor ke 1 KB = effectively no access tapi tidak unlimited; margin 1 KB
+    # vs 1 byte hindari edge MikroTik counter precision.
+    if user.is_unlimited_user:
+        limit_bytes_total = 0
+    else:
+        _raw_limit = int((user.total_quota_purchased_mb or 0) * 1024 * 1024)
+        limit_bytes_total = _raw_limit if _raw_limit > 0 else 1024
     expiry_date = user.quota_expiry_date or now_utc
     session_timeout_seconds = max(0, int((expiry_date - now_utc).total_seconds()))
 
