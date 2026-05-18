@@ -475,7 +475,12 @@ def create_user_by_admin(admin_actor: User, data: Dict[str, Any]) -> Tuple[bool,
                 new_user.quota_expiry_date = None
 
         if new_role in [UserRole.USER, UserRole.KOMANDAN] and (add_gb > 0 or add_days > 0):
-            new_user.total_quota_purchased_mb = int(add_gb * 1024)
+            # Sprint 15 BUG-1 (HIGH): gate `total_quota_purchased_mb = int(add_gb * 1024)`
+            # dengan `add_gb > 0`. Sebelumnya admin yang hanya kirim `add_days`
+            # (extend expiry) tanpa `add_gb` blindly meng-overwrite quota dengan
+            # 0 → bonus registrasi yang baru di-set di blok sebelumnya hilang.
+            if add_gb > 0:
+                new_user.total_quota_purchased_mb = int(add_gb * 1024)
             if add_days > 0:
                 new_user.quota_expiry_date = datetime.now(dt_timezone.utc) + timedelta(days=add_days)
             elif new_user.quota_expiry_date is None:
