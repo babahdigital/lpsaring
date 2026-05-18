@@ -78,6 +78,11 @@ jobs:
 
   frontend-audit:
     runs-on: ubuntu-latest
+    env:
+      # nuxt.config.ts mengecek env required di postinstall (nuxt prepare).
+      # Tanpa ini, install gagal di workflow security yang tidak butuh build.
+      NUXT_PUBLIC_APP_BASE_URL: https://lpsaring.babahdigital.net
+      NUXT_PUBLIC_API_BASE_URL: /api
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
@@ -89,7 +94,9 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
       - name: Install frontend deps
         working-directory: frontend
-        run: pnpm install --frozen-lockfile
+        # --ignore-scripts: skip postinstall yang trigger nuxt prepare (butuh env runtime
+        # yang tidak relevan untuk audit dep CVE).
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - name: pnpm audit (high+, soft gate)
         continue-on-error: true
         working-directory: frontend

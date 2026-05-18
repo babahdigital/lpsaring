@@ -1,7 +1,7 @@
 import type { Pinia } from 'pinia'
 import { ofetch } from 'ofetch'
 import { useAuthStore } from '~/store/auth'
-import { navigateTo, useRequestHeaders, useRoute } from '#app'
+import { navigateTo, useNuxtApp, useRequestHeaders } from '#app'
 
 function createRequestId(): string {
   if (typeof globalThis.crypto?.randomUUID === 'function')
@@ -79,6 +79,18 @@ export default defineNuxtPlugin((nuxtApp) => {
 
     // Interceptor yang dijalankan SETELAH permintaan yang GAGAL.
     async onResponseError({ request, response }) {
+      // H-2 fix: useRoute() di interceptor (executed at request-time, bukan setup-time)
+      // tidak reliable di SSR/worker context. Gunakan $router.currentRoute.value via
+      // useNuxtApp() yang selalu ter-bound.
+      const getCurrentRoute = () => {
+        try {
+          return useNuxtApp().$router.currentRoute.value
+        }
+        catch {
+          return null
+        }
+      }
+
       // Jika kita mendapatkan error 401 (Unauthorized), itu berarti token tidak valid.
       // Lakukan logout secara otomatis.
       if (response.status === 401) {
@@ -87,25 +99,28 @@ export default defineNuxtPlugin((nuxtApp) => {
           || requestPath.includes('/auth/logout')
           || requestPath.includes('/auth/session/consume')
 
+        // H-1 fix: cek cooldown DULU, tapi JANGAN set lastUnauthorizedAt sebelum
+        // menentukan action (kasus dimana store.currentUser == null tidak boleh
+        // memakan slot cooldown — biarkan 401 berikutnya yang punya action eligible).
         const now = Date.now()
         if (now - lastUnauthorizedAt < unauthorizedCooldownMs)
           return
-        lastUnauthorizedAt = now
         const store = getAuthStore()
 
         if (store.currentUser != null) {
+          // Sekarang baru set cooldown — karena kita benar-benar akan ambil action.
+          lastUnauthorizedAt = now
           // SECURITY FIX: Always logout on 401, even for non-auth requests
           // This prevents silent failures where user thinks they're logged in but API calls fail
-          store.clearSession(401)  // clearSession expects number | null, not string
+          store.clearSession(401)
 
-          // Show user notification only if this is not an auth-specific endpoint
           if (!isAuthSessionRequest && import.meta.dev) {
             console.warn('API 401 Unauthorized: Session expired on non-auth endpoint. Redirecting to login.')
           }
           if (import.meta.client) {
-            const route = useRoute()
-            const path = route.path
-            const fullPath = route.fullPath
+            const route = getCurrentRoute()
+            const path = route?.path ?? '/'
+            const fullPath = route?.fullPath ?? path
             const isGuestPath = path === '/login'
               || path === '/admin'
               || path === '/admin/login'
@@ -139,8 +154,8 @@ export default defineNuxtPlugin((nuxtApp) => {
         if (status === 'blocked' || status === 'inactive') {
           await store.logout(false)
           if (import.meta.client) {
-            const route = useRoute()
-            const isAdminRoute = route.path.startsWith('/admin')
+            const route = getCurrentRoute()
+            const isAdminRoute = (route?.path ?? '').startsWith('/admin')
             const redirectPath = store.getStatusRedirectPath('login')
               ?? store.getRedirectPathForStatus(status, 'login')
             await navigateTo(redirectPath ?? (isAdminRoute ? '/admin' : '/login'), { replace: true })

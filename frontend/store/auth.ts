@@ -752,6 +752,17 @@ export const useAuthStore = defineStore('auth', () => {
     autoLoginAttempted.value = false
     lastStatusRedirect.value = null
     lastAuthErrorCode.value = null
+    // H-4 fix: bersihkan juga last-autologin-attempt key di sessionStorage.
+    // Sebelumnya hanya `autoLoginAttempted.value` di-reset → kalau user logout
+    // lalu user lain login di tab yang sama, cooldown 20s key sessionStorage
+    // masih ada → blocking auto-login user baru.
+    try {
+      if (import.meta.client && typeof sessionStorage !== 'undefined')
+        sessionStorage.removeItem(LAST_AUTOLOGIN_ATTEMPT_KEY)
+    }
+    catch {
+      // sessionStorage may not be available in all environments.
+    }
     if (performRedirect)
       lastKnownUser.value = null
 

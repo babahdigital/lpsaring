@@ -152,6 +152,10 @@ class AdminActionType(enum.Enum):
 
 class PromoEvent(db.Model):
     __tablename__ = "promo_events"
+    __table_args__ = (
+        # H1: FK index untuk created_by_id (ondelete=SET NULL).
+        Index("ix_promo_events_created_by_id", "created_by_id"),
+    )
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
     description: Mapped[Optional[str]] = mapped_column(Text)
@@ -226,7 +230,10 @@ class User(db.Model):
     __tablename__ = "users"
     __table_args__ = (
         UniqueConstraint("phone_number", name="uq_users_phone_number"),
-        Index("ix_users_phone_number", "phone_number", unique=True),
+        # FK indexes (H1) — tanpa ini, DELETE user trigger seq scan di tabel anak.
+        Index("ix_users_blocked_by_id", "blocked_by_id"),
+        Index("ix_users_approved_by_id", "approved_by_id"),
+        Index("ix_users_rejected_by_id", "rejected_by_id"),
         {"extend_existing": True},
     )
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -465,8 +472,8 @@ class User(db.Model):
 class UserQuotaDebt(db.Model):
     __tablename__ = "user_quota_debts"
     __table_args__ = (
-        Index("ix_user_quota_debts_user_id", "user_id"),
-        Index("ix_user_quota_debts_is_paid", "is_paid"),
+        # H5: composite (user_id, is_paid) — query paling sering filter combo dua kolom ini.
+        Index("ix_user_quota_debts_user_id_is_paid", "user_id", "is_paid"),
         # Partial index dibuat di migration 20260318_add_due_date_to_manual_quota_debt.
         # Wajib dideklarasikan di model agar flask db migrate tidak meng-auto-generate
         # drop_index untuk index ini.
@@ -475,6 +482,9 @@ class UserQuotaDebt(db.Model):
             "due_date",
             postgresql_where=sa.text("is_paid = false AND due_date IS NOT NULL"),
         ),
+        # H1 FK indexes
+        Index("ix_user_quota_debts_created_by_id", "created_by_id"),
+        Index("ix_user_quota_debts_last_paid_by_id", "last_paid_by_id"),
         {"extend_existing": True},
     )
 
@@ -515,7 +525,8 @@ class UserDevice(db.Model):
     __tablename__ = "user_devices"
     __table_args__ = (
         UniqueConstraint("user_id", "mac_address", name="uq_user_devices_user_mac"),
-        Index("ix_user_devices_user_id", "user_id"),
+        # H4: composite covers prefix queries (user_id) DAN sort-by-last_seen.
+        Index("ix_user_devices_user_id_last_seen_at", "user_id", "last_seen_at"),
         Index("ix_user_devices_mac_address", "mac_address"),
         {"extend_existing": True},
     )
@@ -552,6 +563,8 @@ class RefreshToken(db.Model):
         UniqueConstraint("token_hash", name="uq_refresh_tokens_token_hash"),
         Index("ix_refresh_tokens_user_id", "user_id"),
         Index("ix_refresh_tokens_expires_at", "expires_at"),
+        # H1: FK self-reference untuk replaced_by_id (rotation chain lookup).
+        Index("ix_refresh_tokens_replaced_by_id", "replaced_by_id"),
         {"extend_existing": True},
     )
 
@@ -605,10 +618,10 @@ class Transaction(db.Model):
     __tablename__ = "transactions"
     __table_args__ = (
         UniqueConstraint("midtrans_order_id", name="uq_transactions_midtrans_order_id"),
-        Index("ix_transactions_midtrans_order_id", "midtrans_order_id", unique=True),
         Index("ix_transactions_user_id", "user_id"),
         Index("ix_transactions_package_id", "package_id"),
-        Index("ix_transactions_status", "status"),
+        # H2: composite untuk admin dashboard yang filter status + sort by created_at desc.
+        Index("ix_transactions_status_created_at", "status", "created_at"),
         Index("ix_transactions_midtrans_transaction_id", "midtrans_transaction_id"),
         {"extend_existing": True},
     )
@@ -662,7 +675,8 @@ class Transaction(db.Model):
 class TransactionEvent(db.Model):
     __tablename__ = "transaction_events"
     __table_args__ = (
-        Index("ix_transaction_events_transaction_id", "transaction_id"),
+        # H3: composite untuk idempotency lookup yang filter transaction_id + event_type.
+        Index("ix_transaction_events_transaction_id_event_type", "transaction_id", "event_type"),
         Index("ix_transaction_events_created_at", "created_at"),
     )
 
@@ -748,6 +762,11 @@ class ApplicationSetting(db.Model):
 
 class AdminActionLog(db.Model):
     __tablename__ = "admin_action_logs"
+    __table_args__ = (
+        # H7: BRIN index untuk created_at — purge task scan kolom ini setiap hari, BRIN
+        # cocok karena append-only + delete-oldest-first.
+        Index("ix_admin_action_logs_created_at", "created_at", postgresql_using="brin"),
+    )
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     admin_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
@@ -776,6 +795,8 @@ class QuotaMutationLedger(db.Model):
     __table_args__ = (
         Index("ix_quota_mutation_ledger_user_created", "user_id", "created_at"),
         Index("ix_quota_mutation_ledger_source", "source"),
+        # H1: FK index untuk actor_user_id (~842k rows, jangan seq scan saat user dihapus).
+        Index("ix_quota_mutation_ledger_actor_user_id", "actor_user_id"),
         UniqueConstraint(
             "user_id",
             "source",
@@ -806,6 +827,19 @@ class QuotaMutationLedger(db.Model):
 
 class PublicDatabaseUpdateSubmission(db.Model):
     __tablename__ = "public_database_update_submissions"
+    __table_args__ = (
+        # H1: FK index untuk processed_by_user_id (ondelete=SET NULL).
+        Index("ix_public_database_update_submissions_processed_by_user_id", "processed_by_user_id"),
+        # H8: composite partial untuk WA reminder task (filter PENDING + cek whatsapp_notified_at).
+        Index(
+            "ix_pds_pending_whatsapp",
+            "whatsapp_notified_at",
+            postgresql_where=sa.text("approval_status = 'PENDING'"),
+        ),
+        Index("ix_public_database_update_submissions_approval_status", "approval_status"),
+        Index("ix_public_database_update_submissions_phone_number", "phone_number"),
+        Index("ix_public_database_update_submissions_created_at", "created_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     full_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
