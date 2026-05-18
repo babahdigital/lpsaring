@@ -475,8 +475,19 @@ def create_app(config_name: Optional[str] = None) -> HotspotFlask:
         if not is_maintenance:
             return
 
-        # Izinkan akses ke endpoint public tertentu
-        allowed_paths = ["/api/admin", "/api/auth", "/api/settings/public"]
+        # Izinkan akses ke endpoint public tertentu.
+        # Sprint 21 (HIGH): exempt healthcheck endpoint. Tanpa ini, saat admin
+        # enable MAINTENANCE_MODE_ACTIVE, /api/ping (docker-compose healthcheck)
+        # dan /api/health (monitoring/nginx) return 503 → Docker mark container
+        # unhealthy setelah 3 retry → restart loop justru saat admin sedang
+        # maintenance (worst-case behavior).
+        allowed_paths = [
+            "/api/admin",
+            "/api/auth",
+            "/api/settings/public",
+            "/api/ping",
+            "/api/health",
+        ]
         if any(request.path.startswith(p) for p in allowed_paths):
             return
 
