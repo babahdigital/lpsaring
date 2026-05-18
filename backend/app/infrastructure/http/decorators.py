@@ -58,6 +58,11 @@ _AUDIT_SENSITIVE_SUBSTRINGS = (
     "session_key",
     "encryption_key",
     "csrf_token",
+    "server_key",  # Midtrans server key, dll.
+    "client_key",  # Midtrans client key, dll.
+    "signature",  # signature, signature_key, x_signature, dll.
+    "access_token",
+    "refresh_token",
 )
 
 
