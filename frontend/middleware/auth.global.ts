@@ -194,12 +194,38 @@ function hasHotspotContextQuery(query: Record<string, unknown>, trustConfig: Hot
 
 /**
  * Middleware untuk otentikasi dan otorisasi.
- * Berjalan setelah middleware maintenance.
+ *
+ * CATATAN ORDER: Nuxt 3 load global middleware alphabetically. File ini
+ * (`auth.global`) jalan SEBELUM `maintenance.global`. Maka di awal, kita
+ * cek maintenance mode dulu; kalau aktif (dan user bukan admin login),
+ * return cepat supaya `maintenance.global` yang melakukan redirect ke
+ * `/maintenance` (cegah flicker `/dashboard → /login → /maintenance`).
  */
 export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => {
   if (isLegalPublicPath(to.path)) {
     clearRedirectChain()
     return
+  }
+
+  // Sprint 16 BUG (frontend agent): early-exit kalau maintenance aktif &
+  // user bukan admin login. Maintenance middleware jalan setelah ini dan
+  // akan handle redirect ke /maintenance. Tanpa early-exit, auth logic
+  // bisa redirect ke /login dulu → maintenance.global redirect lagi ke
+  // /maintenance → flicker 2-hop di address bar.
+  try {
+    const { useMaintenanceStore } = await import('~/store/maintenance')
+    const maintenanceStore = useMaintenanceStore()
+    if (maintenanceStore.isActive && to.path !== '/maintenance' && !to.path.startsWith('/admin')) {
+      const authStore = useAuthStore()
+      const isAdminLoggedIn = authStore.isLoggedIn && authStore.isAdmin
+      if (!isAdminLoggedIn) {
+        // Biarkan maintenance.global yang redirect.
+        return
+      }
+    }
+  }
+  catch {
+    // Store belum init — lanjut auth logic biasa.
   }
 
   const guardedNavigate = (target: string) => {
