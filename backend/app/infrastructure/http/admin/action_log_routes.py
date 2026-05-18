@@ -7,13 +7,38 @@ from http import HTTPStatus
 import json
 import csv
 import io
-from datetime import datetime
+from datetime import datetime, timezone as dt_timezone
 
 from app.extensions import db
 from app.infrastructure.db.models import AdminActionLog, User
 from app.infrastructure.http.decorators import admin_required, super_admin_required
 from .schemas import AdminActionLogResponseSchema
 from app.utils.formatters import format_app_datetime, format_app_date
+
+
+def _parse_admin_date_to_utc(date_str: str, end_of_day: bool = False) -> datetime:
+    """Sprint 25 BUG-1: Parse `YYYY-MM-DD` dari admin input → datetime aware UTC.
+
+    Admin client kirim "2026-01-01" mengacu ke tanggal lokal WITA. Sebelumnya
+    `datetime.fromisoformat(...)` return naive → Postgres TIMESTAMPTZ
+    interpret sebagai UTC → effective filter mundur 8 jam dari intent admin.
+
+    Cara fix: parse sebagai date lokal app (WITA), set jam awal/akhir, lalu
+    convert ke UTC supaya aware datetime cocok dengan `DateTime(timezone=True)`
+    column type.
+    """
+    date_part = date_str.split("T")[0]
+    naive = datetime.fromisoformat(date_part + ("T23:59:59.999999" if end_of_day else "T00:00:00"))
+    try:
+        from zoneinfo import ZoneInfo  # noqa: PLC0415
+
+        tz_name = current_app.config.get("APP_TIMEZONE", "Asia/Makassar")
+        local_aware = naive.replace(tzinfo=ZoneInfo(tz_name))
+    except Exception:
+        # Fallback: anggap UTC bila ZoneInfo gagal.
+        local_aware = naive.replace(tzinfo=dt_timezone.utc)
+    return local_aware.astimezone(dt_timezone.utc)
+
 
 action_log_bp = Blueprint("action_log_api", __name__)
 
@@ -62,13 +87,15 @@ def _build_log_query(apply_filters=True):
             query = query.where(AdminActionLog.target_user_id == target_user_id)
         if start_date_str:
             try:
-                start_date = datetime.fromisoformat(start_date_str.split("T")[0] + "T00:00:00")
+                # Sprint 25 BUG-1: parse sebagai date WITA → convert ke UTC
+                # supaya filter dengan TIMESTAMPTZ column tidak mundur 8 jam.
+                start_date = _parse_admin_date_to_utc(start_date_str, end_of_day=False)
                 query = query.where(AdminActionLog.created_at >= start_date)
             except (ValueError, TypeError):
                 pass  # Abaikan jika format tanggal salah
         if end_date_str:
             try:
-                end_date = datetime.fromisoformat(end_date_str.split("T")[0] + "T23:59:59")
+                end_date = _parse_admin_date_to_utc(end_date_str, end_of_day=True)
                 query = query.where(AdminActionLog.created_at <= end_date)
             except (ValueError, TypeError):
                 pass  # Abaikan jika format tanggal salah
@@ -156,16 +183,29 @@ def export_action_logs(current_admin: User):  # noqa: ARG001
             writer.writerow(
                 ["Waktu", "Admin Pelaku", "No. HP Admin", "Aksi", "Detail Aksi", "Target Pengguna", "No. HP Target"]
             )
+
+            def _csv_safe(value):
+                """Sprint 25: CSV formula injection prevention.
+                Excel/LibreOffice eksekusi formula bila cell dimulai dengan
+                `=`, `+`, `-`, `@`. Prefix dengan apostrophe supaya jadi text.
+                """
+                if value is None:
+                    return ""
+                text = str(value)
+                if text and text[0] in ("=", "+", "-", "@", "\t", "\r"):
+                    return "'" + text
+                return text
+
             for log in logs:
                 writer.writerow(
                     [
-                        format_app_datetime(log.created_at),
-                        log.admin.full_name if log.admin else "N/A",
-                        log.admin.phone_number if log.admin else "N/A",
-                        log.action_type.value if log.action_type else "N/A",
-                        json.dumps(log.details) if isinstance(log.details, dict) else log.details,
-                        log.target_user.full_name if log.target_user else "N/A",
-                        log.target_user.phone_number if log.target_user else "N/A",
+                        _csv_safe(format_app_datetime(log.created_at)),
+                        _csv_safe(log.admin.full_name if log.admin else "N/A"),
+                        _csv_safe(log.admin.phone_number if log.admin else "N/A"),
+                        _csv_safe(log.action_type.value if log.action_type else "N/A"),
+                        _csv_safe(json.dumps(log.details) if isinstance(log.details, dict) else log.details),
+                        _csv_safe(log.target_user.full_name if log.target_user else "N/A"),
+                        _csv_safe(log.target_user.phone_number if log.target_user else "N/A"),
                     ]
                 )
             mimetype = "text/csv"
@@ -201,7 +241,9 @@ def clear_all_logs(current_admin: User):
         query = db.session.query(AdminActionLog)
         if before_date_str:
             try:
-                before_date = datetime.fromisoformat(before_date_str.split("T")[0] + "T23:59:59")
+                # Sprint 25 BUG-1: parse ke UTC aware supaya tidak under-delete
+                # 8 jam (admin pikir delete sampai jam 23:59 WITA → kena 15:59 UTC).
+                before_date = _parse_admin_date_to_utc(before_date_str, end_of_day=True)
                 query = query.filter(AdminActionLog.created_at <= before_date)
             except (ValueError, TypeError):
                 return jsonify({"message": "Format before_date tidak valid (YYYY-MM-DD)."}), HTTPStatus.BAD_REQUEST

@@ -218,9 +218,14 @@ def get_notification_message(template_key: str, context: Optional[Dict[str, Any]
         final_context["remaining_quota"] = _format_quota_human_readable(final_context.get("remaining_mb"))
 
     try:
+        # Sprint 25 BUG-2: spintax hanya di template (controlled author), JANGAN
+        # post-process hasil setelah .format() — user-controlled field
+        # (`full_name`, `reason`, `package_name`, dst.) bisa berisi `{a|b}`
+        # yang akan di-randomize spintax → message corruption. Cukup 1x
+        # spintax di template_string sebelum format.
         template_string = _render_spintax(template_string)
         rendered = template_string.format(**final_context)
-        return _render_spintax(rendered)
+        return rendered
     except KeyError as e:
         current_app.logger.error(f"Placeholder hilang di konteks untuk template '{template_key}': {e}", exc_info=True)
         return f"Peringatan: Data untuk placeholder {e} pada template '{template_key}' tidak disediakan."
