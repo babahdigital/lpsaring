@@ -1910,6 +1910,12 @@ def _record_task_failure(app, task_name: str, payload: dict, error_message: str)
             "created_at": datetime.now(dt_timezone.utc).isoformat(),
         }
         redis_client.rpush(dlq_key, json.dumps(item))
+        # Sprint 23: cap DLQ list size supaya tidak unbounded growth (kalau
+        # task gagal terus, Redis maxmemory 256MB bisa tercapai).
+        # LTRIM start=-N end=-1 simpan N item terakhir saja.
+        _max_dlq = int(app.config.get("TASK_DLQ_MAX_ITEMS", 1000) or 1000)
+        if _max_dlq > 0:
+            redis_client.ltrim(dlq_key, -_max_dlq, -1)
     except Exception:
         return
 
