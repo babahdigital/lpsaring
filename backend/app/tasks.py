@@ -842,7 +842,30 @@ def clear_total_if_no_update_submission_task(self):
             )
             return {"success": True, "skipped": True, "reason": "fresh_submission"}
 
-        users = db.session.query(User).all()
+        # Sprint 12 BUG-3 (HIGH when enabled): TOCTOU race antara snapshot user
+        # list (untuk MikroTik delete) dan TRUNCATE. Worker concurrent bisa
+        # INSERT user baru di window ini → user baru ke-truncate dari DB tanpa
+        # MikroTik cleanup → ghost hotspot user. Fix: pakai PostgreSQL advisory
+        # lock pada hash konstan supaya register/webhook handler block sampai
+        # task ini selesai. Hash konstan = `LOCK_KEY_DESTRUCTIVE_AUTOCLEAR`.
+        _DESTRUCTIVE_AUTOCLEAR_LOCK_KEY = -7314205981234567
+        try:
+            db.session.execute(
+                text("SELECT pg_advisory_xact_lock(:k)"),
+                {"k": _DESTRUCTIVE_AUTOCLEAR_LOCK_KEY},
+            )
+        except Exception as exc_lock:
+            logger.warning(
+                "destructive_autoclear: advisory lock gagal (%s), continue best-effort.",
+                exc_lock,
+            )
+
+        # Snapshot user list dengan FOR UPDATE supaya register concurrent
+        # block sampai commit.
+        try:
+            users = db.session.query(User).with_for_update().all()
+        except Exception:
+            users = db.session.query(User).all()
         mikrotik_failed = []
 
         if app.config.get("ENABLE_MIKROTIK_OPERATIONS", True):
@@ -862,6 +885,11 @@ def clear_total_if_no_update_submission_task(self):
 
         if mikrotik_failed:
             logger.warning("Update sync auto-clear dibatalkan karena kegagalan cleanup MikroTik.")
+            # Rollback supaya advisory lock + FOR UPDATE di-release.
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
             return {
                 "success": False,
                 "skipped": True,
@@ -869,8 +897,9 @@ def clear_total_if_no_update_submission_task(self):
                 "errors": mikrotik_failed,
             }
 
-        # Clear total user-related data from DB.
-        # Use get_bind() first because scoped sessions may have bind=None even on PostgreSQL.
+        # Sprint 12 BUG-3: pakai DELETE WHERE id IN (...) supaya user yang
+        # INSERT di window ini (kalau sempat lolos lock) tidak ikut ke-clear.
+        # TRUNCATE sebelumnya delete BARIS BARU JUGA → orphan MikroTik state.
         session_bind = None
         try:
             session_bind = db.session.get_bind()
@@ -878,19 +907,31 @@ def clear_total_if_no_update_submission_task(self):
             session_bind = getattr(db.session, "bind", None)
 
         dialect_name = str(getattr(getattr(session_bind, "dialect", None), "name", "") or "").lower()
-        if dialect_name.startswith("postgresql"):
-            db.session.execute(text("TRUNCATE TABLE users RESTART IDENTITY CASCADE"))
-        else:
-            # Fallback for non-postgres test/dev cases. Use set-based statements to avoid
-            # row-by-row ORM delete ordering/autoflush issues on self-referenced FKs.
-            db.session.execute(
-                text(
-                    "UPDATE users "
-                    "SET approved_by_id = NULL, rejected_by_id = NULL, blocked_by_id = NULL "
-                    "WHERE approved_by_id IS NOT NULL OR rejected_by_id IS NOT NULL OR blocked_by_id IS NOT NULL"
+        snapshot_user_ids = [getattr(u, "id", None) for u in users if getattr(u, "id", None) is not None]
+        if snapshot_user_ids:
+            if dialect_name.startswith("postgresql"):
+                # Set FK pointer balik (approved_by, rejected_by, blocked_by) ke NULL
+                # untuk row yang masih di-snapshot supaya DELETE tidak melanggar FK.
+                db.session.execute(
+                    text(
+                        "UPDATE users SET approved_by_id = NULL, rejected_by_id = NULL, "
+                        "blocked_by_id = NULL WHERE id = ANY(:ids)"
+                    ),
+                    {"ids": snapshot_user_ids},
                 )
-            )
-            db.session.query(User).delete(synchronize_session=False)
+                db.session.execute(
+                    text("DELETE FROM users WHERE id = ANY(:ids)"),
+                    {"ids": snapshot_user_ids},
+                )
+            else:
+                db.session.execute(
+                    text(
+                        "UPDATE users "
+                        "SET approved_by_id = NULL, rejected_by_id = NULL, blocked_by_id = NULL "
+                        "WHERE approved_by_id IS NOT NULL OR rejected_by_id IS NOT NULL OR blocked_by_id IS NOT NULL"
+                    )
+                )
+                db.session.query(User).filter(User.id.in_(snapshot_user_ids)).delete(synchronize_session=False)
         db.session.commit()
 
         logger.warning(
@@ -945,15 +986,20 @@ def send_public_update_submission_whatsapp_batch_task(self):
         base_public_url = str(app.config.get("APP_PUBLIC_BASE_URL") or "").strip().rstrip("/")
 
         fetch_limit = max(batch_size * 10, 30)
-        all_rows = db.session.query(PublicDatabaseUpdateSubmission).all()
-        pending_rows = [
-            row
-            for row in all_rows
-            if getattr(row, "whatsapp_notified_at", None) is None
-            and str(getattr(row, "phone_number", "") or "").strip()
-        ]
-        pending_rows.sort(key=lambda item: getattr(item, "created_at", datetime.min.replace(tzinfo=dt_timezone.utc)))
-        pending_rows = pending_rows[:fetch_limit]
+        # Sprint 12 BUG-1: Push filter ke SQL — sebelumnya `.all()` load seluruh
+        # tabel ke memory lalu filter di Python. Index `ix_pds_pending_whatsapp`
+        # baru efektif setelah filter di SQL.
+        pending_rows = (
+            db.session.query(PublicDatabaseUpdateSubmission)
+            .filter(
+                PublicDatabaseUpdateSubmission.whatsapp_notified_at.is_(None),
+                PublicDatabaseUpdateSubmission.phone_number.isnot(None),
+                PublicDatabaseUpdateSubmission.phone_number != "",
+            )
+            .order_by(PublicDatabaseUpdateSubmission.created_at.asc())
+            .limit(fetch_limit)
+            .all()
+        )
 
         def _normalize_phone_key(phone_number: str) -> str:
             digits = "".join(ch for ch in str(phone_number or "") if ch.isdigit())
@@ -1364,6 +1410,15 @@ def send_manual_debt_reminders_task(self):
         app_tz = now_local.tzinfo or dt_timezone.utc
         redis_client = getattr(app, "redis_client_otp", None)
 
+        # Sprint 12 BUG-2: Sebelumnya load SEMUA unpaid debt + joinedload user
+        # → 95%+ row di-discard karena tidak masuk stage window 0-84 jam.
+        # Push window ke SQL: only `due_date BETWEEN now-1d AND now+5d` supaya
+        # rate of growth tetap O(active reminders), bukan O(akumulasi tunggakan).
+        from datetime import timedelta as _td  # noqa: PLC0415
+
+        _due_window_start = now_local - _td(days=1)
+        _due_window_end = now_local + _td(days=5)
+
         try:
             from sqlalchemy.orm import joinedload as _joinedload
 
@@ -1373,6 +1428,8 @@ def send_manual_debt_reminders_task(self):
                 .filter(
                     UserQuotaDebt.is_paid == False,  # noqa: E712
                     UserQuotaDebt.due_date.isnot(None),
+                    UserQuotaDebt.due_date >= _due_window_start,
+                    UserQuotaDebt.due_date <= _due_window_end,
                 )
                 .all()
             )

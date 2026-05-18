@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import uuid as _uuid
+from dataclasses import dataclass, field
 from flask import Flask
 
 import app.tasks as tasks
@@ -9,6 +10,8 @@ import app.tasks as tasks
 @dataclass
 class _UserRow:
     phone_number: str
+    # Sprint 12 BUG-3: task pakai snapshot id untuk DELETE WHERE id = ANY(...).
+    id: _uuid.UUID = field(default_factory=_uuid.uuid4)
 
 
 class _FakeQuery:
@@ -18,6 +21,14 @@ class _FakeQuery:
         self.delete_calls: list[bool] = []
 
     def order_by(self, *_args, **_kwargs):
+        return self
+
+    def filter(self, *_args, **_kwargs):
+        # Sprint 12 BUG-3: task sekarang pakai DELETE WHERE id IN (...).
+        return self
+
+    def with_for_update(self, *_args, **_kwargs):
+        # Sprint 12 BUG-3: task sekarang pakai SELECT ... FOR UPDATE.
         return self
 
     def first(self):
@@ -65,7 +76,9 @@ class _FakeSession:
             raise self._get_bind_result
         return self._get_bind_result
 
-    def execute(self, statement):
+    def execute(self, statement, params=None):
+        # Sprint 12 BUG-3: task sekarang execute dengan params (pg_advisory_xact_lock,
+        # UPDATE ... WHERE id = ANY(:ids)). Fake hanya record SQL string.
         self.executed_sql.append(str(statement))
 
     def commit(self):
@@ -87,7 +100,7 @@ def _make_app() -> Flask:
     return app
 
 
-def test_clear_total_auto_clear_uses_truncate_when_get_bind_postgresql(monkeypatch):
+def test_clear_total_auto_clear_uses_scoped_delete_when_get_bind_postgresql(monkeypatch):
     app = _make_app()
     users = [_UserRow(phone_number="0811"), _UserRow(phone_number="0812")]
     session = _FakeSession(
@@ -104,7 +117,11 @@ def test_clear_total_auto_clear_uses_truncate_when_get_bind_postgresql(monkeypat
 
     assert result["success"] is True
     assert result["cleared_users"] == 2
-    assert any("TRUNCATE TABLE users RESTART IDENTITY CASCADE" in sql for sql in session.executed_sql)
+    # Sprint 12 BUG-3: TRUNCATE diganti DELETE WHERE id = ANY(...) supaya
+    # user baru yang lolos advisory lock tidak ke-clear secara tidak sengaja.
+    assert any("DELETE FROM users WHERE id = ANY" in sql for sql in session.executed_sql)
+    assert any("pg_advisory_xact_lock" in sql for sql in session.executed_sql)
+    assert all("TRUNCATE TABLE users" not in sql for sql in session.executed_sql)
     assert session.user_query.delete_calls == []
     assert session.committed is True
 

@@ -24,8 +24,24 @@ class _Submission:
 class _FakeQuery:
     def __init__(self, rows):
         self._rows = rows
+        self._limit: int | None = None
+
+    def filter(self, *_args, **_kwargs):
+        # Sprint 12 BUG-1: task sekarang push filter ke SQL — test fake hanya
+        # perlu mempertahankan signature; filter sebenarnya dilakukan via fixture
+        # rows (test bertanggung jawab supply rows yang sudah memenuhi predicate).
+        return self
+
+    def order_by(self, *_args, **_kwargs):
+        return self
+
+    def limit(self, n):
+        self._limit = int(n) if n is not None else None
+        return self
 
     def all(self):
+        if self._limit is not None:
+            return list(self._rows)[: self._limit]
         return list(self._rows)
 
 
