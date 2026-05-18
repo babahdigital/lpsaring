@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from datetime import date, datetime, timezone as dt_timezone
-from typing import Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import sqlalchemy as sa
 
@@ -148,12 +148,21 @@ def apply_manual_debt_payment(
     admin_actor: Optional[User],
     pay_mb: int,
     source: str,
+    debt_id_filter: Optional[List[Any]] = None,
+    created_before: Optional[datetime] = None,
 ) -> int:
     lock_user_quota_row(user)
     before_state = snapshot_user_quota_state(user)
     if getattr(user, "role", None) == UserRole.KOMANDAN:
         return 0
     """Apply payment (MB) to open manual debt entries, oldest-first.
+
+    P-H6 args:
+    - `debt_id_filter`: optional list of debt IDs. Hanya debt yang IDnya termasuk
+      list yang akan dibayar (snapshot mode).
+    - `created_before`: optional datetime cutoff. Hanya debt yang created_at <
+      cutoff yang akan dibayar (time-based snapshot — debts yang ditambah admin
+      SETELAH user initiate tx tidak ikut terbayar).
 
     Returns actual MB paid (0..pay_mb).
     """
@@ -174,6 +183,10 @@ def apply_manual_debt_payment(
         .where(UserQuotaDebt.user_id == user.id, UserQuotaDebt.is_paid.is_(False))
         .order_by(UserQuotaDebt.debt_date.asc().nulls_last(), UserQuotaDebt.created_at.asc())
     )
+    if debt_id_filter:
+        query = query.where(UserQuotaDebt.id.in_(list(debt_id_filter)))
+    if created_before is not None:
+        query = query.where(UserQuotaDebt.created_at < created_before)
 
     paid_total = 0
     now = datetime.now(dt_timezone.utc)
@@ -279,7 +292,12 @@ def clear_all_debts_to_zero(
     user: User,
     admin_actor: Optional[User],
     source: str,
+    created_before: Optional[datetime] = None,
 ) -> Tuple[int, int]:
+    """P-H6: `created_before` snapshot mode — hanya debt yang created sebelum
+    cutoff (biasanya tx.created_at) yang dibayar. Cegah race: admin tambah debt
+    SETELAH user initiate settle-all tx, lalu webhook settle ALL termasuk debt
+    yang user belum bayar."""
     lock_user_quota_row(user)
     before_state = snapshot_user_quota_state(user)
     if getattr(user, "role", None) == UserRole.KOMANDAN:
@@ -291,6 +309,7 @@ def clear_all_debts_to_zero(
             admin_actor=admin_actor,
             pay_mb=manual_balance,
             source=source,
+            created_before=created_before,
         )
         append_quota_mutation_event(
             user=user,
@@ -312,6 +331,7 @@ def clear_all_debts_to_zero(
         admin_actor=admin_actor,
         pay_mb=manual_balance,
         source=source,
+        created_before=created_before,
     )
     append_quota_mutation_event(
         user=user,

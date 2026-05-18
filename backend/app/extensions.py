@@ -372,6 +372,24 @@ def make_celery_app(app=None):
         # Harian jam 04:00 — setelah cleanup-inactive-users & purge-stale-quota-keys
         "schedule": crontab(hour=4, minute=0),
     }
+    # P-H1: Retry MikroTik apply yang gagal di webhook. Setiap 10 menit, scan
+    # tx SUCCESS ≤24 jam tanpa event MIKROTIK_APPLY_SUCCESS dan retry.
+    celery_instance.conf.beat_schedule["retry-failed-mikrotik-apply"] = {
+        "task": "retry_failed_mikrotik_apply_task",
+        "schedule": 600,  # 10 menit
+    }
+    # Q-C1: Monthly reset quota usage (tanggal 1 jam 00:01 WITA).
+    # Mencegah akumulasi `total_quota_used_mb` selamanya yang menyebabkan user
+    # beli paket baru langsung habis. Lihat audit quota 2026-05-18.
+    if os.environ.get("MONTHLY_QUOTA_RESET_ENABLED", "True").lower() == "true":
+        celery_instance.conf.beat_schedule["monthly-quota-usage-reset"] = {
+            "task": "monthly_quota_usage_reset_task",
+            # WITA = UTC+8. Tanggal 1 jam 00:01 WITA = tanggal 30/31 (varies) 16:01 UTC.
+            # Pakai hour=16, day_of_month=1 di UTC supaya jam 00:01 WITA tanggal 1.
+            # Note: crontab di Celery beat tanpa timezone akan pakai timezone aplikasi
+            # (CELERY_TIMEZONE = Asia/Makassar di config). Maka hour=0, minute=1 = 00:01 WITA.
+            "schedule": crontab(hour=0, minute=1, day_of_month=1),
+        }
     celery_instance.conf.beat_schedule["revoke-expired-refresh-tokens"] = {
         "task": "revoke_expired_refresh_tokens_task",
         # Harian jam 04:30

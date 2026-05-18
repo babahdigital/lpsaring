@@ -322,6 +322,14 @@ export const useAuthStore = defineStore('auth', () => {
     if (inflightUserFetch?.key === fetchKey)
       return inflightUserFetch.promise
 
+    // L-C2: TTL cache singkat (2s). Sebelumnya: middleware + plugin + watchEffect
+    // fire fetchUser bertubi-tubi (6 GET /auth/me dalam 3s saat user navigasi
+    // login → hotspot-required → dashboard). Cache 2s tidak terasa stale ke user
+    // tapi menghemat 4-5 round-trip per flow.
+    const FETCH_USER_TTL_MS = 2000
+    if (user.value != null && (Date.now() - lastUserFetchAt.value) < FETCH_USER_TTL_MS)
+      return true
+
     const requestPromise = (async () => {
       loadingUser.value = true
       try {
@@ -918,8 +926,12 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function getAccessStatusFromUser(inputUser: User | null): AccessStatus {
+    // L-C3: Safe default 'inactive' (bukan 'ok') untuk null user.
+    // Sebelumnya: null user → 'ok' → logged-out user dianggap aktif oleh middleware/guard.
+    // Sekarang: fail-safe — null user = no access decided, treat as inactive.
+    // Caller seharusnya cek user != null sebelum call ini; ini hanya safety net.
     if (inputUser == null)
-      return 'ok'
+      return 'inactive'
     const fupThresholdMb = useSettingsStore().getSettingAsInt('QUOTA_FUP_THRESHOLD_MB', 3072)
     return resolveAccessStatusFromUser(inputUser, Date.now(), fupThresholdMb)
   }

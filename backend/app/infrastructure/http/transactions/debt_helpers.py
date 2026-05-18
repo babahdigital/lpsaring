@@ -144,10 +144,16 @@ def apply_debt_settlement_on_success(*, session, transaction: Transaction) -> di
             )
         )
     else:
+        # P-H6: pass `created_before=tx.created_at` supaya hanya debt yang ada
+        # SEBELUM user initiate tx yang dibayar. Cegah admin tambah debt baru
+        # SAAT user sedang bayar settle-all → debt baru ikut lunas tanpa user
+        # bayar (money loss / fraud window).
+        _tx_created_at = getattr(transaction, "created_at", None)
         paid_auto_mb, paid_manual_mb = user_debt_service.clear_all_debts_to_zero(
             user=user,
             admin_actor=None,
             source="user_debt_settlement_payment",
+            created_before=_tx_created_at,
         )
 
     unblocked = False

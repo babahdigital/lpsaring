@@ -247,7 +247,17 @@ export default defineNuxtRouteMiddleware(async (to: RouteLocationNormalized) => 
     if (isPublicPage)
       return
 
-    if (!to.path.startsWith('/admin') && hasHotspotContextQuery((to.query as Record<string, unknown>) ?? {}, hotspotTrustConfig)) {
+    // L-C6: Cegah lock-in di /captive. Guest yang sudah AKTIF di /captive (atau
+    // page /captive/*) jangan di-redirect lagi ke /captive — biarkan flow login
+    // continue di /captive page itu sendiri. Sebelumnya: user di /captive klik
+    // link/refresh → middleware re-redirect ke /captive dengan query baru → infinite
+    // loop sampai trackRedirect chain guard kena 5-redirect-max.
+    if (
+      !to.path.startsWith('/admin')
+      && !to.path.startsWith('/captive')
+      && !to.path.startsWith('/login')
+      && hasHotspotContextQuery((to.query as Record<string, unknown>) ?? {}, hotspotTrustConfig)
+    ) {
       const hotspotRouteQuery = pickHotspotRouteQuery((to.query as Record<string, unknown>) ?? {}, hotspotTrustConfig)
       const queryString = new URLSearchParams(hotspotRouteQuery).toString()
       const captivePath = queryString.length > 0

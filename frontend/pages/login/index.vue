@@ -395,9 +395,15 @@ async function handleVerifyOtp() {
     const clientIp = identity.clientIp
     const clientMac = identity.clientMac
     const mikrotikLinkHint = String(trustedHotspotLoginHint.value || '').trim()
+    // L-H1: Set hotspot_login_context=true bila user datang dengan client_ip/mac
+    // dari hotspot (captive flow). Tanpa flag ini, backend tidak tahu user dalam
+    // konteks hotspot → response `hotspot_login_required` salah → frontend tidak
+    // redirect ke /login/hotspot-required → ping-pong loop antara /login dan /.
+    const hotspotLoginContext = Boolean(clientIp || clientMac || mikrotikLinkHint)
     const loginResponse = await authStore.verifyOtp(numberToVerify, otpToSend, {
       clientIp: clientIp || null,
       clientMac: clientMac || null,
+      hotspotLoginContext,
     })
     if (loginResponse == null) {
       const errorText = authStore.error || ''
@@ -408,9 +414,17 @@ async function handleVerifyOtp() {
       }
 
       if (import.meta.client && errorText.includes('Perangkat belum diotorisasi')) {
+        // L-H4: forward sessionMacToken untuk MAC randomization fallback.
+        // Sebelumnya: retry authorize tidak pakai sessionMacToken → backend gagal
+        // resolve user pada iOS Private Address / Android MAC random scenario.
+        const sessionBinding = (await import('@/utils/sessionMacBinding')).getSessionMacBinding()
+        const sessionMacToken = sessionBinding
+          ? (await import('@/utils/sessionMacBinding')).generateSessionMacToken(sessionBinding)
+          : null
         const authorized = await authStore.authorizeDevice({
           clientIp: clientIp || null,
           clientMac: clientMac || null,
+          sessionMacToken: sessionMacToken || null,
           bestEffort: true,
         })
         if (authorized) {

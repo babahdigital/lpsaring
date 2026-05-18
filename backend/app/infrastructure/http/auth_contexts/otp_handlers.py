@@ -94,7 +94,16 @@ def request_otp_impl(
                     AuthErrorResponseSchema(error="Failed to process OTP request.").model_dump()
                 ), HTTPStatus.INTERNAL_SERVER_ERROR
 
-        send_otp_whatsapp(phone_e164, otp_generated)
+        # L-C5: Dispatch ke Celery task async (sebelumnya sinkron 5-8s block worker).
+        try:
+            from app.tasks import send_otp_whatsapp_task
+
+            send_otp_whatsapp_task.delay(phone_e164, otp_generated)
+        except Exception as exc_dispatch:
+            # Fallback: bila Celery dispatch gagal (Redis down), kirim sinkron
+            # supaya OTP tetap sampai. Konsumsi worker time tapi tidak hang infinitely.
+            current_app.logger.warning("OTP dispatch async gagal, fallback sinkron: %s", exc_dispatch)
+            send_otp_whatsapp(phone_e164, otp_generated)
         set_otp_cooldown(phone_e164)
         increment_metric("otp.request.success")
 

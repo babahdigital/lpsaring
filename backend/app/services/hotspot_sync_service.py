@@ -299,6 +299,12 @@ def _load_hotspot_usage_sync_runtime_settings(
 
 
 def _load_hotspot_sync_user(user_id: uuid.UUID) -> Optional[User]:
+    # Q-C2 / Q-H2: Pakai `with_for_update()` agar sync menunggu webhook commit.
+    # Sebelumnya: sync ambil snapshot user TANPA lock, paralel dengan webhook
+    # apply_package_and_sync_to_mikrotik yang ubah purchased/expiry/used.
+    # Race: sync write `used_mb += delta` overwriting webhook's reset used=0,
+    # atau sync set profile=habis karena stale purchased_mb.
+    # Konsekuensi: 1-2 query/sync menunggu max ~100ms untuk webhook commit.
     return db.session.scalars(
         select(User)
         .where(User.id == user_id)
@@ -306,6 +312,7 @@ def _load_hotspot_sync_user(user_id: uuid.UUID) -> Optional[User]:
             selectinload(User.transactions).selectinload(Transaction.package),
             selectinload(User.devices),
         )
+        .with_for_update()
     ).first()
 
 
@@ -1344,7 +1351,12 @@ def _apply_auto_debt_limit_block_state(
             - float(getattr(user, "auto_debt_offset_mb", 0) or 0),
         )
         if _raw_auto_debt >= 1.0:
-            user.auto_debt_offset_mb = int(getattr(user, "auto_debt_offset_mb", 0) or 0) + math.ceil(_raw_auto_debt)
+            # Q-H4: gunakan int(round()) bukan math.ceil. Sync iter setiap 60s; jika
+            # user unlimited pakai delta 2.3 MB per iter, math.ceil(2.3)=3 → offset
+            # tumbuh +0.7 MB ekstra per iter → setelah ribuan iter offset > used,
+            # saat unlimited→regular transition user dapat "bonus quota".
+            # int(round()) approximate exact dengan rounding banker (default Python).
+            user.auto_debt_offset_mb = int(getattr(user, "auto_debt_offset_mb", 0) or 0) + int(round(_raw_auto_debt))
         return False
 
     if runtime_settings is not None:
@@ -2503,7 +2515,13 @@ def _calculate_usage_update(
             # = pemakaian sejak reboot. Hitung sebagai delta agar tidak hilang (Gap #1 fix).
             # Contoh: last_bytes=50MB, router reboot, user pakai 3MB → bytes_total=3MB.
             # Tanpa fix: 3MB hilang. Dengan fix: 3MB dicatat sebagai delta.
-            if bytes_total > 0 and "counter_regressed" in rebaseline_reasons:
+            #
+            # Q-C4: Restrict post-reboot delta credit HANYA jika SOLE reason
+            # counter_regressed. Jika gabungan dengan host_row_changed (MikroTik HA
+            # failover/device pindah ke host entry baru dengan counter pre-existing),
+            # bytes_total bukan pemakaian sejak reboot melainkan akumulasi dari host
+            # lain → mencatatnya sebagai delta menyebabkan over-count.
+            if bytes_total > 0 and rebaseline_reasons == ["counter_regressed"]:
                 post_reboot_delta = int(bytes_total)
                 delta_bytes += post_reboot_delta
                 device_deltas.append(
@@ -2747,13 +2765,19 @@ def sync_hotspot_usage_and_profiles() -> Dict[str, int]:
                                 before_state = snapshot_user_quota_state(user)
                                 user.total_quota_used_mb = new_total_usage_mb
                                 counters["updated_usage"] += 1
+                                # Q-C3: idempotency_key include microsecond timestamp untuk
+                                # cegah collision saat (user, day, rounded_usage) same di run berbeda.
+                                # Sebelumnya: jika user kembali ke nilai usage yang sama 1 jam
+                                # kemudian (mis. counter reset), event hilang silently karena
+                                # unique constraint (user_id, source, idempotency_key) violated.
+                                _now_us = int(datetime.now(dt_timezone.utc).timestamp() * 1_000_000)
                                 append_quota_mutation_event(
                                     user=user,
                                     source="hotspot.sync_usage",
                                     before_state=before_state,
                                     after_state=snapshot_user_quota_state(user),
                                     idempotency_key=(
-                                        f"sync_usage:{user_id}:{today.isoformat()}:{round(new_total_usage_mb, 2)}"
+                                        f"sync_usage:{user_id}:{today.isoformat()}:{round(new_total_usage_mb, 2)}:{_now_us}"
                                     )[:128],
                                     event_details={
                                         "delta_mb": float(round(delta_mb, 2)),

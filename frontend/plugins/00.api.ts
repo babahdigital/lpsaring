@@ -121,10 +121,15 @@ export default defineNuxtPlugin((nuxtApp) => {
             const route = getCurrentRoute()
             const path = route?.path ?? '/'
             const fullPath = route?.fullPath ?? path
+            // L-C4: tambah `/captive/*` dan `/login/hotspot-required` ke guest path.
+            // Sebelumnya: user di-kick mid-flow saat token belum siap.
             const isGuestPath = path === '/login'
               || path === '/admin'
               || path === '/admin/login'
               || path.startsWith('/session/consume')
+              || path.startsWith('/captive/')
+              || path.startsWith('/login/hotspot-required')
+              || path.startsWith('/login/')
 
             if (!isGuestPath) {
               const nextTarget = encodeURIComponent(fullPath)

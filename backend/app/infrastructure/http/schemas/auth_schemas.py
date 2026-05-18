@@ -53,6 +53,11 @@ class VerifyOtpRequestSchema(BaseModel):
     client_mac: Optional[str] = None
     hotspot_login_context: Optional[bool] = None
     confirm_device_takeover: Optional[bool] = None
+    # L-C1: Session MAC token untuk MAC randomization fallback. Sebelumnya field ini
+    # dibaca via raw payload_dict di verify_otp_handlers — tapi pydantic schema strict
+    # mode dapat drop field tak-declared bila dipakai sebagai model. Declare explicit
+    # agar fallback MAC binding berfungsi (kasus iOS Private Address / Android MAC rand).
+    session_mac_token: Optional[str] = None
     _normalize_phone = field_validator("phone_number", mode="before")(validate_phone_number)
 
 

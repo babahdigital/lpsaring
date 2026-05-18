@@ -231,6 +231,29 @@ def _try_reuse_package_tx(
     )
     if not existing_tx:
         return None
+    # P-H4: Compare existing.amount vs current package.price. Admin yang ubah harga
+    # paket di tengah tidak boleh kebobolan user bayar harga lama (atau sebaliknya:
+    # tidak boleh klaim user bayar harga baru saat existing harga lama).
+    current_price = int(getattr(package, "price", 0) or 0)
+    existing_amount = int(getattr(existing_tx, "amount", 0) or 0)
+    if current_price != existing_amount:
+        existing_tx.status = TransactionStatus.CANCELLED
+        log_transaction_event(
+            session=session,
+            transaction=existing_tx,
+            source=TransactionEventSource.APP,
+            event_type="CANCELLED_BY_NEW_INITIATE",
+            status=existing_tx.status,
+            payload={
+                "order_id": existing_tx.midtrans_order_id,
+                "reason": "package_price_changed",
+                "existing_amount": existing_amount,
+                "current_price": current_price,
+            },
+        )
+        session.commit()
+        return None
+
     can_reuse = (
         tx_has_snap_initiation_data(existing_tx)
         if provider_mode == "snap"
@@ -580,6 +603,23 @@ def initiate_transaction_impl(
             code="VALIDATION_ERROR",
             details=e.errors(),
         )
+
+    # P-H5: User-level lock untuk prevent dual tx dari spam klik Beli.
+    # Acquire Redis lock per (user_id, package_id) TTL 30s. Bila lock taken,
+    # client menerima 409 dan harus menunggu/retry.
+    _lock_key = f"lock:tx:initiate:{current_user_id}:{req_data.package_id}"
+    _redis_lock = getattr(current_app, "redis_client_otp", None)
+    if _redis_lock is not None:
+        try:
+            _acquired = bool(_redis_lock.set(_lock_key, "1", nx=True, ex=30))
+            if not _acquired:
+                return error_response(
+                    "Permintaan beli paket sedang diproses. Mohon tunggu beberapa detik.",
+                    status_code=HTTPStatus.CONFLICT,
+                    code="TX_INITIATE_IN_PROGRESS",
+                )
+        except Exception:
+            pass
 
     session = db.session
     try:

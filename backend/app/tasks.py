@@ -14,7 +14,7 @@ from typing import Any
 from urllib.parse import quote_plus
 from pathlib import Path
 from datetime import datetime, timedelta, timezone as dt_timezone
-from sqlalchemy import text
+from sqlalchemy import or_, text
 from sqlalchemy.orm import selectinload
 
 from app.infrastructure.gateways.whatsapp_client import send_whatsapp_with_pdf, send_whatsapp_message
@@ -1999,6 +1999,38 @@ def policy_parity_guard_task(self):
 
 
 @celery_app.task(
+    name="send_otp_whatsapp_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 2},
+)
+def send_otp_whatsapp_task(self, target_number: str, otp: str):
+    """L-C5: Send OTP via WhatsApp asinkron supaya gunicorn worker tidak block.
+
+    Sebelumnya: `send_otp_whatsapp` dipanggil sinkron di `/api/auth/request-otp`.
+    Tiap call butuh ~5-8 detik (HTTP request ke WA gateway + retry). Gunicorn
+    worker block selama itu → rate-limit DOS amplifier (5 req/min × 8s = 40s
+    busy per minute per attacker).
+    """
+    from app.infrastructure.gateways.whatsapp_client import send_otp_whatsapp as _send_otp_sync
+
+    app = create_app()
+    with app.app_context():
+        try:
+            ok = _send_otp_sync(target_number, otp)
+            if not ok:
+                logger.warning("send_otp_whatsapp_task: gagal kirim ke %s", target_number)
+                # raise untuk trigger autoretry
+                raise RuntimeError(f"WA OTP send failed for {target_number}")
+            logger.info("send_otp_whatsapp_task: OTP terkirim ke %s", target_number)
+        except Exception as e:
+            logger.warning("send_otp_whatsapp_task error: %s", e)
+            raise
+
+
+@celery_app.task(
     name="send_whatsapp_invoice_task",
     bind=True,
     autoretry_for=(Exception,),
@@ -3087,6 +3119,160 @@ def purge_quota_mutation_ledger_task(self):
             logger.error("Celery Task: purge_quota_mutation_ledger gagal: %s", e, exc_info=True)
             if self.request.retries >= 1:
                 _record_task_failure(app, "purge_quota_mutation_ledger_task", {}, str(e))
+            raise
+
+
+@celery_app.task(
+    name="retry_failed_mikrotik_apply_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 1},
+)
+def retry_failed_mikrotik_apply_task(self):
+    """P-H1: Retry MikroTik apply untuk transaksi SUCCESS yang belum pernah
+    `MIKROTIK_APPLY_SUCCESS` event-nya. Skenario: webhook commit tx.status=SUCCESS
+    tapi apply ke MikroTik gagal (network timeout). Sebelumnya admin harus manual
+    reconcile. Sekarang task ini scan tiap 10 menit dan retry untuk tx ≤24 jam
+    terakhir.
+
+    Filter:
+    - tx.status = SUCCESS
+    - created_at >= now - 24h
+    - tidak ada event MIKROTIK_APPLY_SUCCESS
+    - tidak ada event DEMO_PAYMENT_ONLY_SKIP_MIKROTIK
+    - tidak debt-settlement (BD-DBLP- prefix tidak butuh apply paket baru)
+    - user_id NOT NULL (skip orphan)
+    """
+    from app.infrastructure.db.models import Transaction, TransactionEvent, TransactionStatus
+    from app.services.transaction_service import apply_package_and_sync_to_mikrotik
+
+    app = create_app()
+    with app.app_context():
+        try:
+            cutoff_recent = datetime.now(dt_timezone.utc) - timedelta(hours=24)
+            applied_subq = (
+                db.session.query(TransactionEvent.transaction_id)
+                .filter(TransactionEvent.event_type.in_(["MIKROTIK_APPLY_SUCCESS", "DEMO_PAYMENT_ONLY_SKIP_MIKROTIK"]))
+                .subquery()
+            )
+            stuck = (
+                db.session.query(Transaction)
+                .filter(
+                    Transaction.status == TransactionStatus.SUCCESS,
+                    Transaction.created_at >= cutoff_recent,
+                    Transaction.user_id.is_not(None),
+                    ~Transaction.midtrans_order_id.like("BD-DBLP-%"),
+                    ~Transaction.id.in_(db.session.query(applied_subq.c.transaction_id)),
+                )
+                .limit(20)
+                .all()
+            )
+            retried = 0
+            failed = 0
+            for tx in stuck:
+                try:
+                    user = tx.user
+                    if user is None:
+                        continue
+                    is_success, err_msg = apply_package_and_sync_to_mikrotik(user, tx)
+                    if is_success:
+                        retried += 1
+                        logger.info(
+                            "retry_failed_mikrotik_apply: SUCCESS retry order_id=%s user_id=%s",
+                            tx.midtrans_order_id,
+                            user.id,
+                        )
+                    else:
+                        failed += 1
+                        logger.warning(
+                            "retry_failed_mikrotik_apply: masih gagal order_id=%s msg=%s",
+                            tx.midtrans_order_id,
+                            err_msg,
+                        )
+                except Exception as exc_one:
+                    failed += 1
+                    logger.warning("retry_failed_mikrotik_apply error untuk %s: %s", tx.midtrans_order_id, exc_one)
+                    db.session.rollback()
+            return {"scanned": len(stuck), "retried_success": retried, "still_failed": failed}
+        except Exception as e:
+            db.session.rollback()
+            logger.error("retry_failed_mikrotik_apply_task gagal: %s", e, exc_info=True)
+            raise
+
+
+@celery_app.task(
+    name="monthly_quota_usage_reset_task",
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 2},
+)
+def monthly_quota_usage_reset_task(self):
+    """Q-C1: Reset bulanan `total_quota_used_mb` + `auto_debt_offset_mb` semua user.
+
+    Tanpa reset ini, used_mb akumulasi terus → user beli paket baru tetap habis
+    karena `remaining = purchased + offset - used` menjadi negatif/0.
+
+    Strategy:
+    - Update users SET total_quota_used_mb=0, auto_debt_offset_mb=0 WHERE NOT is_unlimited_user.
+    - User unlimited dibiarkan (mereka punya akumulasi tersendiri yang di-handle saat unlimited→regular transition).
+    - Catat satu event quota_mutation_ledger per user untuk audit trail.
+    - Idempotent: idempotency_key = `monthly_reset:<YYYY-MM>` per user, sehingga rerun
+      tidak duplicate.
+    """
+    from app.services.quota_mutation_ledger_service import append_quota_mutation_event
+
+    app = create_app()
+    with app.app_context():
+        try:
+            now_utc = datetime.now(dt_timezone.utc)
+            month_key = now_utc.strftime("%Y-%m")
+            users_to_reset = (
+                db.session.query(User)
+                .filter(User.role.in_([UserRole.USER, UserRole.KOMANDAN]))
+                .filter(User.is_unlimited_user.is_(False))
+                .filter(or_(User.total_quota_used_mb > 0, User.auto_debt_offset_mb > 0))
+                .all()
+            )
+            processed = 0
+            for user in users_to_reset:
+                before = {
+                    "total_quota_used_mb": float(user.total_quota_used_mb or 0),
+                    "auto_debt_offset_mb": int(user.auto_debt_offset_mb or 0),
+                }
+                user.total_quota_used_mb = 0
+                user.auto_debt_offset_mb = 0
+                try:
+                    append_quota_mutation_event(
+                        user=user,
+                        source="policy.monthly_reset",
+                        idempotency_key=f"monthly_reset:{month_key}",
+                        before_state=before,
+                        after_state={"total_quota_used_mb": 0, "auto_debt_offset_mb": 0},
+                        event_details={"reason": "monthly_quota_usage_reset", "month": month_key},
+                    )
+                    processed += 1
+                except Exception as exc_ev:
+                    logger.warning(
+                        "monthly_reset: gagal append ledger user_id=%s: %s",
+                        user.id,
+                        exc_ev,
+                    )
+            db.session.commit()
+            logger.info(
+                "Celery Task: monthly_quota_usage_reset_task — month=%s reset_count=%s",
+                month_key,
+                processed,
+            )
+            return {"month": month_key, "reset_count": processed}
+        except Exception as e:
+            db.session.rollback()
+            logger.error("Celery Task: monthly_quota_usage_reset_task gagal: %s", e, exc_info=True)
+            if self.request.retries >= 2:
+                _record_task_failure(app, "monthly_quota_usage_reset_task", {}, str(e))
             raise
 
 

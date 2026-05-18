@@ -195,6 +195,24 @@ def cancel_transaction_impl(*, current_user_id, order_id: str, session, log_tran
                 code="TRANSACTION_ALREADY_SUCCESS",
             )
 
+        # P-H7: Block cancel jika tx sudah punya payment instructions (VA, QRIS,
+        # snap_redirect_url). User mungkin sudah/akan bayar di tab lain meski
+        # menutup Snap modal. Sebelumnya: frontend `onClose` auto-call cancel →
+        # tx jadi CANCELLED → webhook SUCCESS hit guard IGNORED_LATE_SUCCESS →
+        # user bayar tapi tidak dapat kuota (MONEY LOSS).
+        has_pending_payment_instructions = bool(
+            getattr(transaction, "va_number", None)
+            or getattr(transaction, "qr_code_url", None)
+            or getattr(transaction, "snap_redirect_url", None)
+            or getattr(transaction, "payment_code", None)
+        )
+        if has_pending_payment_instructions and transaction.status == TransactionStatus.PENDING:
+            return error_response(
+                "Transaksi sedang menunggu pembayaran. Tidak bisa dibatalkan sebelum kedaluwarsa.",
+                status_code=HTTPStatus.BAD_REQUEST,
+                code="TRANSACTION_PAYMENT_PENDING",
+            )
+
         if transaction.status in (TransactionStatus.UNKNOWN, TransactionStatus.PENDING):
             transaction.status = TransactionStatus.CANCELLED
             log_transaction_event(

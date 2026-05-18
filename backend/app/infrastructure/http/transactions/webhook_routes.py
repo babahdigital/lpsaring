@@ -4,6 +4,7 @@ import json
 from http import HTTPStatus
 
 from flask import current_app, jsonify, request
+import sqlalchemy as sa
 from sqlalchemy.orm import selectinload
 
 from app.infrastructure.db.models import Transaction, TransactionEventSource, TransactionStatus
@@ -77,6 +78,16 @@ def handle_notification_impl(
 
     session = db.session
     try:
+        # P-C2: PostgreSQL advisory lock per order_id supaya hanya 1 webhook
+        # memproses tx tertentu dalam satu waktu, terlepas dari status Redis lock.
+        # `pg_advisory_xact_lock(int8)` otomatis release di end of transaction.
+        # Hash order_id ke int64 — kolision tolerable (lock terkoordinasi via
+        # additional with_for_update di bawah).
+        import hashlib as _hashlib_for_lock
+
+        _order_hash = int.from_bytes(_hashlib_for_lock.sha1(order_id.encode("utf-8")).digest()[:8], "big", signed=True)
+        session.execute(sa.text("SELECT pg_advisory_xact_lock(:k)"), {"k": _order_hash})
+
         transaction = (
             session.query(Transaction)
             .options(selectinload(Transaction.user), selectinload(Transaction.package))

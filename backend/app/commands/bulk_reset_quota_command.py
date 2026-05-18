@@ -196,6 +196,11 @@ def bulk_reset_quota_command(
             # DB reset
             user.total_quota_purchased_mb = int(quota_mb)
             user.total_quota_used_mb = 0
+            # Q-H6: reset juga auto_debt_offset_mb. Tanpa ini, user yang pernah
+            # unlimited akan dapat "bonus quota" karena formula remaining =
+            # purchased + offset - used menghitung offset lama yang tidak relevan
+            # lagi setelah reset bulanan.
+            user.auto_debt_offset_mb = 0
             user.is_unlimited_user = False
             if expiry_target_utc is not None:
                 user.quota_expiry_date = expiry_target_utc
