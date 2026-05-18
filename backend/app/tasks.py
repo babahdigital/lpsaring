@@ -1525,6 +1525,9 @@ def send_manual_debt_reminders_task(self):
     retry_backoff=True,
     retry_jitter=True,
     retry_kwargs={"max_retries": 2},
+    # C6: time limits supaya task tidak block worker forever bila WA gateway hang.
+    soft_time_limit=600,
+    time_limit=720,
 )
 def enforce_end_of_month_debt_block_task(self):
     """At end-of-month, warn users with unpaid quota debt via WhatsApp, then block them.
@@ -2001,33 +2004,51 @@ def policy_parity_guard_task(self):
 @celery_app.task(
     name="send_otp_whatsapp_task",
     bind=True,
-    autoretry_for=(Exception,),
-    retry_backoff=True,
-    retry_jitter=True,
-    retry_kwargs={"max_retries": 2},
+    # C2: HANYA retry untuk transient network error. Sebelumnya `Exception` catch-all
+    # menyebabkan retry untuk segala error → user terima 2-3 OTP duplikat.
+    autoretry_for=(),
+    retry_kwargs={"max_retries": 0},
+    soft_time_limit=15,
+    time_limit=20,
 )
-def send_otp_whatsapp_task(self, target_number: str, otp: str):
-    """L-C5: Send OTP via WhatsApp asinkron supaya gunicorn worker tidak block.
+def send_otp_whatsapp_task(self, target_number: str, otp_ref_key: str):
+    """L-C5 + C2: Send OTP via WhatsApp asinkron + secure.
 
-    Sebelumnya: `send_otp_whatsapp` dipanggil sinkron di `/api/auth/request-otp`.
-    Tiap call butuh ~5-8 detik (HTTP request ke WA gateway + retry). Gunicorn
-    worker block selama itu → rate-limit DOS amplifier (5 req/min × 8s = 40s
-    busy per minute per attacker).
+    C2 SECURITY: OTP TIDAK pernah masuk Celery broker args (yang bisa dibaca
+    dari Redis backup/snoop). Args adalah `otp_ref_key` saja — task fetch OTP
+    plaintext dari Redis via key tersebut (one-shot peek, OTP tetap di Redis
+    untuk verify endpoint dipakai user).
     """
     from app.infrastructure.gateways.whatsapp_client import send_otp_whatsapp as _send_otp_sync
+    from app.infrastructure.http.auth_contexts.shared_helpers import get_redis_client_otp
 
     app = create_app()
     with app.app_context():
         try:
-            ok = _send_otp_sync(target_number, otp)
+            otp_plaintext = None
+            otp_redis = get_redis_client_otp()
+            if otp_redis is not None:
+                try:
+                    raw = otp_redis.get(otp_ref_key)
+                    if raw:
+                        otp_plaintext = raw.decode() if isinstance(raw, bytes) else str(raw)
+                except Exception as exc_get:
+                    logger.warning("send_otp_whatsapp_task: gagal ambil OTP dari Redis: %s", exc_get)
+            if not otp_plaintext:
+                logger.warning(
+                    "send_otp_whatsapp_task: OTP tidak ditemukan untuk ref %s (mungkin sudah expired)",
+                    otp_ref_key,
+                )
+                return {"ok": False, "reason": "otp_not_in_redis"}
+            ok = _send_otp_sync(target_number, otp_plaintext)
             if not ok:
-                logger.warning("send_otp_whatsapp_task: gagal kirim ke %s", target_number)
-                # raise untuk trigger autoretry
-                raise RuntimeError(f"WA OTP send failed for {target_number}")
+                logger.warning("send_otp_whatsapp_task: gateway gagal kirim ke %s", target_number)
+                return {"ok": False, "reason": "gateway_failed"}
             logger.info("send_otp_whatsapp_task: OTP terkirim ke %s", target_number)
+            return {"ok": True}
         except Exception as e:
             logger.warning("send_otp_whatsapp_task error: %s", e)
-            raise
+            return {"ok": False, "reason": "exception"}
 
 
 @celery_app.task(
@@ -2057,6 +2078,29 @@ def send_whatsapp_invoice_task(
         pdf_url (str): URL publik ke file PDF invoice.
         filename (str): Nama file PDF.
     """
+    # H3: Idempotency check — sebelum send, cek Redis flag apakah sudah pernah
+    # terkirim sukses untuk (transaction_id, recipient_number, kind). Mencegah
+    # duplikat saat task retry setelah sukses kirim (race antara Fonnte response
+    # decode error dan actual delivery success).
+    if transaction_id and recipient_number:
+        try:
+            from app.infrastructure.http.auth_contexts.shared_helpers import get_redis_client_otp
+
+            _idem_redis = get_redis_client_otp()
+            _idem_key = f"wa_invoice_sent:{transaction_id}:{recipient_number}:{notification_kind}"
+            if _idem_redis is not None:
+                _already = _idem_redis.get(_idem_key)
+                if _already:
+                    logger.info(
+                        "send_whatsapp_invoice_task: SKIP duplicate send untuk %s recipient=%s kind=%s",
+                        transaction_id,
+                        recipient_number,
+                        notification_kind,
+                    )
+                    return {"ok": True, "skipped_duplicate": True}
+        except Exception as exc_idem:
+            logger.debug("WA invoice idempotency check error (continuing): %s", exc_idem)
+
     # Penting: Buat instance aplikasi Flask di dalam konteks task
     # Ini memastikan current_app tersedia untuk semua fungsi yang dipanggil dalam task
     # yang membutuhkan konteks aplikasi (misalnya, mengakses app.config)
@@ -2171,6 +2215,17 @@ def send_whatsapp_invoice_task(
                         "notification_kind": notification_kind,
                     },
                 )
+                # H3: SET Redis idempotency flag TTL 24h supaya retry tidak duplicate.
+                if transaction_id and recipient_number:
+                    try:
+                        from app.infrastructure.http.auth_contexts.shared_helpers import get_redis_client_otp
+
+                        _success_redis = get_redis_client_otp()
+                        if _success_redis is not None:
+                            _success_key = f"wa_invoice_sent:{transaction_id}:{recipient_number}:{notification_kind}"
+                            _success_redis.setex(_success_key, 86400, "1")
+                    except Exception as exc_set:
+                        logger.debug("WA invoice idempotency set error: %s", exc_set)
         except Exception as e:
             logger.error(
                 f"Celery Task: Exception saat mengirim WhatsApp invoice ke {recipient_number}: {e}", exc_info=True
@@ -3628,6 +3683,9 @@ def sync_access_banking_task(self):
     retry_backoff=True,
     retry_jitter=True,
     retry_kwargs={"max_retries": 2},
+    # C6: time limits cegah worker exhaustion saat WA gateway lambat.
+    soft_time_limit=600,
+    time_limit=720,
 )
 def enforce_overdue_debt_block_task(self):
     """Blokir user yang tunggakan manualnya sudah melewati due_date.

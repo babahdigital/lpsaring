@@ -26,6 +26,124 @@ def _auth_error(message: str, status: HTTPStatus, code: str):
     return error_response(message, status_code=status, code=code)
 
 
+# M7: Daftar substring/suffix sensitif — semua dict key yang cocok di-redact dari
+# admin_action_logs. Pakai substring lowercase supaya WHATSAPP_API_KEY, TELEGRAM_BOT_TOKEN,
+# MIDTRANS_SERVER_KEY, MIKROTIK_PASSWORD, dan setting sejenis ikut tertangkap.
+_AUDIT_SENSITIVE_EXACT = frozenset(
+    {
+        "password",
+        "new_password",
+        "otp",
+        "token",
+        "access_token",
+        "refresh_token",
+        "authorization",
+        "server_key",
+        "client_key",
+        "signature",
+        "signature_key",
+    }
+)
+_AUDIT_SENSITIVE_SUBSTRINGS = (
+    "password",
+    "passwd",
+    "secret",
+    "api_key",
+    "apikey",
+    "private_key",
+    "privatekey",
+    "auth_token",
+    "bot_token",
+    "webhook_secret",
+    "session_key",
+    "encryption_key",
+    "csrf_token",
+)
+
+
+def _audit_key_is_sensitive(key: str) -> bool:
+    if not key:
+        return False
+    lowered = key.lower()
+    if lowered in _AUDIT_SENSITIVE_EXACT:
+        return True
+    for needle in _AUDIT_SENSITIVE_SUBSTRINGS:
+        if needle in lowered:
+            return True
+    return False
+
+
+def _audit_sanitize(value: object, *, depth: int = 0) -> object:
+    if depth > 4:
+        return "(truncated)"
+    if value is None:
+        return None
+    if isinstance(value, (int, float, bool)):
+        return value
+    if isinstance(value, str):
+        return value if len(value) <= 500 else (value[:500] + "…")
+    if isinstance(value, (list, tuple)):
+        items = list(value)[:50]
+        return [_audit_sanitize(v, depth=depth + 1) for v in items]
+    if isinstance(value, dict):
+        sanitized: dict[str, object] = {}
+        for k, v in list(value.items())[:100]:
+            key = str(k)
+            if _audit_key_is_sensitive(key):
+                sanitized[key] = "(redacted)"
+            else:
+                sanitized[key] = _audit_sanitize(v, depth=depth + 1)
+        return sanitized
+    try:
+        return str(value)
+    except Exception:
+        return "(unserializable)"
+
+
+def _extract_target_user_id(payload: object | None = None) -> str | None:
+    """H1: Ekstrak target_user_id dari request untuk admin_action_logs.
+
+    Sumber (urutan prioritas):
+      1. request.view_args — `user_id`, `target_user_id`, atau `id` (route param)
+      2. request.args — `user_id` atau `target_user_id` (query string)
+      3. JSON body — `target_user_id` atau `user_id`
+
+    Validasi: hanya kembalikan jika UUID parseable. Selain itu None supaya tidak
+    mengotori kolom UUID di DB dengan string sembarang.
+    """
+
+    def _try_uuid(raw: object) -> str | None:
+        if raw is None:
+            return None
+        try:
+            return str(uuid.UUID(str(raw)))
+        except (ValueError, TypeError, AttributeError):
+            return None
+
+    view_args = getattr(request, "view_args", None) or {}
+    for key in ("target_user_id", "user_id", "id"):
+        candidate = _try_uuid(view_args.get(key))
+        if candidate:
+            return candidate
+
+    try:
+        args_map = dict(request.args)
+    except Exception:
+        args_map = {}
+    for key in ("target_user_id", "user_id"):
+        candidate = _try_uuid(args_map.get(key))
+        if candidate:
+            return candidate
+
+    if isinstance(payload, dict):
+        for key in ("target_user_id", "user_id"):
+            candidate = _try_uuid(payload.get(key))
+            if candidate:
+                return candidate
+
+    return None
+
+
 def _is_demo_user_by_phone(phone_number: str | None) -> bool:
     demo_mode_enabled = settings_service.get_setting_as_bool(
         "DEMO_MODE_ENABLED",
@@ -336,45 +454,6 @@ def admin_required(f):
                 if not (disable_super_admin_logs and getattr(admin_user, "is_super_admin_role", False)):
                     response_obj = make_response(resp)
 
-                    def _sanitize(value: object, *, depth: int = 0) -> object:
-                        if depth > 4:
-                            return "(truncated)"
-                        if value is None:
-                            return None
-                        if isinstance(value, (int, float, bool)):
-                            return value
-                        if isinstance(value, str):
-                            return value if len(value) <= 500 else (value[:500] + "…")
-                        if isinstance(value, (list, tuple)):
-                            items = list(value)[:50]
-                            return [_sanitize(v, depth=depth + 1) for v in items]
-                        if isinstance(value, dict):
-                            blocked = {
-                                "password",
-                                "new_password",
-                                "otp",
-                                "token",
-                                "access_token",
-                                "refresh_token",
-                                "authorization",
-                                "server_key",
-                                "client_key",
-                                "signature",
-                                "signature_key",
-                            }
-                            sanitized: dict[str, object] = {}
-                            for k, v in list(value.items())[:100]:
-                                key = str(k)
-                                if key.lower() in blocked:
-                                    sanitized[key] = "(redacted)"
-                                else:
-                                    sanitized[key] = _sanitize(v, depth=depth + 1)
-                            return sanitized
-                        try:
-                            return str(value)
-                        except Exception:
-                            return "(unserializable)"
-
                     payload: object | None = None
                     try:
                         payload = request.get_json(silent=True)
@@ -385,8 +464,8 @@ def admin_required(f):
                         {
                             "method": request.method,
                             "path": request.path,
-                            "query": _sanitize(dict(request.args)),
-                            "json": _sanitize(payload),
+                            "query": _audit_sanitize(dict(request.args)),
+                            "json": _audit_sanitize(payload),
                             "status_code": int(getattr(response_obj, "status_code", 0) or 0),
                         },
                         ensure_ascii=False,
@@ -399,13 +478,15 @@ def admin_required(f):
                         VALUES (:id, :admin_id, :target_user_id, :action_type, :details)
                         """
                     )
+                    target_user_id = _extract_target_user_id(payload)
+
                     with db.engine.begin() as conn:
                         conn.execute(
                             stmt,
                             {
                                 "id": str(uuid.uuid4()),
                                 "admin_id": str(admin_user.id),
-                                "target_user_id": None,
+                                "target_user_id": target_user_id,
                                 "action_type": AdminActionType.ADMIN_API_MUTATION.value,
                                 "details": details_json,
                             },
@@ -448,45 +529,6 @@ def super_admin_required(f):
                 if not (disable_super_admin_logs and getattr(super_admin_user, "is_super_admin_role", False)):
                     response_obj = make_response(resp)
 
-                    def _sanitize(value: object, *, depth: int = 0) -> object:
-                        if depth > 4:
-                            return "(truncated)"
-                        if value is None:
-                            return None
-                        if isinstance(value, (int, float, bool)):
-                            return value
-                        if isinstance(value, str):
-                            return value if len(value) <= 500 else (value[:500] + "…")
-                        if isinstance(value, (list, tuple)):
-                            items = list(value)[:50]
-                            return [_sanitize(v, depth=depth + 1) for v in items]
-                        if isinstance(value, dict):
-                            blocked = {
-                                "password",
-                                "new_password",
-                                "otp",
-                                "token",
-                                "access_token",
-                                "refresh_token",
-                                "authorization",
-                                "server_key",
-                                "client_key",
-                                "signature",
-                                "signature_key",
-                            }
-                            sanitized: dict[str, object] = {}
-                            for k, v in list(value.items())[:100]:
-                                key = str(k)
-                                if key.lower() in blocked:
-                                    sanitized[key] = "(redacted)"
-                                else:
-                                    sanitized[key] = _sanitize(v, depth=depth + 1)
-                            return sanitized
-                        try:
-                            return str(value)
-                        except Exception:
-                            return "(unserializable)"
-
                     payload: object | None = None
                     try:
                         payload = request.get_json(silent=True)
@@ -497,8 +539,8 @@ def super_admin_required(f):
                         {
                             "method": request.method,
                             "path": request.path,
-                            "query": _sanitize(dict(request.args)),
-                            "json": _sanitize(payload),
+                            "query": _audit_sanitize(dict(request.args)),
+                            "json": _audit_sanitize(payload),
                             "status_code": int(getattr(response_obj, "status_code", 0) or 0),
                         },
                         ensure_ascii=False,
@@ -511,13 +553,15 @@ def super_admin_required(f):
                         VALUES (:id, :admin_id, :target_user_id, :action_type, :details)
                         """
                     )
+                    target_user_id = _extract_target_user_id(payload)
+
                     with db.engine.begin() as conn:
                         conn.execute(
                             stmt,
                             {
                                 "id": str(uuid.uuid4()),
                                 "admin_id": str(super_admin_user.id),
-                                "target_user_id": None,
+                                "target_user_id": target_user_id,
                                 "action_type": AdminActionType.ADMIN_API_MUTATION.value,
                                 "details": details_json,
                             },

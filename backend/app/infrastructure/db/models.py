@@ -233,6 +233,9 @@ class User(db.Model):
         Index("ix_users_blocked_by_id", "blocked_by_id"),
         Index("ix_users_approved_by_id", "approved_by_id"),
         Index("ix_users_rejected_by_id", "rejected_by_id"),
+        # Telegram link (C1/C3) — index untuk lookup chat_id + UNIQUE partial dipasang
+        # di migration (alembic karena SQLAlchemy < 2.x partial index portability terbatas).
+        Index("ix_users_telegram_chat_id", "telegram_chat_id"),
     )
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     phone_number: Mapped[str] = mapped_column(String(25), nullable=False)

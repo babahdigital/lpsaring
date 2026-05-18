@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from http import HTTPStatus
 
-from app.extensions import db
+from app.extensions import db, limiter
 from app.infrastructure.db.models import PublicDatabaseUpdateSubmission, User
 from app.utils.formatters import get_phone_number_variations
 
@@ -26,6 +26,7 @@ public_user_bp = Blueprint("public_user_api", __name__, url_prefix="/api/users")
 
 
 @public_user_bp.route("/database-update-submissions", methods=["POST"])
+@limiter.limit(lambda: current_app.config.get("PUBLIC_DB_UPDATE_RATE_LIMIT", "3 per minute;30 per hour"))
 def create_public_database_update_submission():
     current_app.logger.info("POST /api/users/database-update-submissions endpoint requested.")
 
@@ -123,6 +124,7 @@ def create_public_database_update_submission():
 
 
 @public_user_bp.route("/database-update-submissions/status", methods=["GET"])
+@limiter.limit(lambda: current_app.config.get("PUBLIC_DB_UPDATE_STATUS_RATE_LIMIT", "10 per minute;100 per hour"))
 def get_public_update_submission_status():
     """Cek status pemutakhiran data berdasarkan nomor HP.
 
@@ -171,6 +173,7 @@ def get_public_update_submission_status():
 
 
 @public_user_bp.route("/check-or-register", methods=["POST"])
+@limiter.limit(lambda: current_app.config.get("CHECK_OR_REGISTER_RATE_LIMIT", "5 per minute;30 per hour"))
 def check_or_register_phone():
     current_app.logger.info("POST /api/users/check-or-register endpoint requested.")
     try:
@@ -238,6 +241,7 @@ def check_or_register_phone():
 
 
 @public_user_bp.route("/validate-whatsapp", methods=["POST"])
+@limiter.limit(lambda: current_app.config.get("VALIDATE_WHATSAPP_RATE_LIMIT", "3 per minute;20 per hour"))
 def validate_whatsapp_number():
     """
     [SEMPURNA] Endpoint untuk validasi real-time yang melakukan 2 hal:

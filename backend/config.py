@@ -308,7 +308,11 @@ class Config:
     # --- Konfigurasi CSRF (Cookie Auth) ---
     CSRF_PROTECT_ENABLED = get_env_bool("CSRF_PROTECT_ENABLED", "True")
     CSRF_TRUSTED_ORIGINS = get_env_list("CSRF_TRUSTED_ORIGINS", "[]")
-    CSRF_STRICT_NO_ORIGIN = get_env_bool("CSRF_STRICT_NO_ORIGIN", "False")
+    # M3: Default strict — request tanpa Origin/Referer di-block kecuali IP-nya
+    # whitelisted di CSRF_NO_ORIGIN_ALLOWED_IPS. Browser modern selalu mengirim
+    # Origin/Referer untuk request mutating (POST/PUT/PATCH/DELETE). Mode loose
+    # (False) hanya untuk kompatibilitas legacy / debugging.
+    CSRF_STRICT_NO_ORIGIN = get_env_bool("CSRF_STRICT_NO_ORIGIN", "True")
     CSRF_NO_ORIGIN_ALLOWED_IPS = get_env_list("CSRF_NO_ORIGIN_ALLOWED_IPS", "[]")
 
     # --- Konfigurasi Redis ---
@@ -376,6 +380,12 @@ class Config:
     RATELIMIT_STRATEGY = os.environ.get("RATELIMIT_STRATEGY", "fixed-window")
     PING_RATE_LIMIT = os.environ.get("PING_RATE_LIMIT", "10 per minute")
     RATELIMIT_ENABLED = get_env_bool("RATELIMIT_ENABLED", "True")
+    # M5: Fail-closed pada storage error.
+    # - SWALLOW_ERRORS=False → storage error propagate ke handler; tidak diam-diam allow.
+    # - IN_MEMORY_FALLBACK_ENABLED=False → tidak boleh fallback ke memori per-pod
+    #   (akan memberi bypass partial saat satu pod kehilangan koneksi Redis sementara).
+    RATELIMIT_SWALLOW_ERRORS = get_env_bool("RATELIMIT_SWALLOW_ERRORS", "False")
+    RATELIMIT_IN_MEMORY_FALLBACK_ENABLED = get_env_bool("RATELIMIT_IN_MEMORY_FALLBACK_ENABLED", "False")
 
     OTP_REQUEST_RATE_LIMIT = os.environ.get("OTP_REQUEST_RATE_LIMIT", "5 per minute;20 per hour")
     OTP_VERIFY_RATE_LIMIT = os.environ.get("OTP_VERIFY_RATE_LIMIT", "10 per minute;60 per hour")
@@ -414,6 +424,18 @@ class Config:
     # cap untuk mencegah amplification attack (signature divalidasi per-request).
     MIDTRANS_WEBHOOK_RATE_LIMIT = os.environ.get("MIDTRANS_WEBHOOK_RATE_LIMIT", "120 per minute")
     TELEGRAM_WEBHOOK_RATE_LIMIT = os.environ.get("TELEGRAM_WEBHOOK_RATE_LIMIT", "60 per minute")
+    # C7: Idempotent webhook dedup TTL (Redis). Telegram bisa retry delivery sampai
+    # 24 jam jika webhook gagal. 3600s sebagai default — cukup besar untuk umumnya,
+    # tidak sebesar 24h karena chance update_id collision sangat rendah & memori.
+    TELEGRAM_WEBHOOK_DEDUP_TTL_SECONDS = int(os.environ.get("TELEGRAM_WEBHOOK_DEDUP_TTL_SECONDS", "3600"))
+
+    # C4: Rate-limit public-facing endpoints (cegah enumerasi nomor + Fonnte DoS).
+    CHECK_OR_REGISTER_RATE_LIMIT = os.environ.get("CHECK_OR_REGISTER_RATE_LIMIT", "5 per minute;30 per hour")
+    VALIDATE_WHATSAPP_RATE_LIMIT = os.environ.get("VALIDATE_WHATSAPP_RATE_LIMIT", "3 per minute;20 per hour")
+    PUBLIC_DB_UPDATE_RATE_LIMIT = os.environ.get("PUBLIC_DB_UPDATE_RATE_LIMIT", "3 per minute;30 per hour")
+    PUBLIC_DB_UPDATE_STATUS_RATE_LIMIT = os.environ.get(
+        "PUBLIC_DB_UPDATE_STATUS_RATE_LIMIT", "10 per minute;100 per hour"
+    )
 
     # --- Konfigurasi Midtrans ---
     MIDTRANS_SERVER_KEY = os.environ.get("MIDTRANS_SERVER_KEY")
