@@ -84,6 +84,11 @@ def get_action_logs(current_admin: User):  # noqa: ARG001
         # [PERBAIKAN UTAMA] Logika untuk menangani itemsPerPage = -1
         page = request.args.get("page", 1, type=int)
         per_page = request.args.get("itemsPerPage", 15, type=int)
+        # Audit-6: Hard cap supaya admin tidak bisa request unbounded result yang
+        # OOM gunicorn worker (admin_action_logs bisa ribuan baris). -1 / 0 → cap.
+        _MAX_ITEMS_PER_PAGE = 200
+        if per_page <= 0 or per_page > _MAX_ITEMS_PER_PAGE:
+            per_page = _MAX_ITEMS_PER_PAGE
 
         sort_by_key = request.args.get("sortBy", "created_at")
         sort_order = request.args.get("sortOrder", "desc")
@@ -105,12 +110,8 @@ def get_action_logs(current_admin: User):  # noqa: ARG001
         count_query = select(func.count()).select_from(base_query.subquery())
         total_items = db.session.scalar(count_query) or 0
 
-        # Terapkan paginasi hanya jika per_page positif
-        if per_page > 0:
-            paginated_query = base_query.offset((page - 1) * per_page).limit(per_page)
-        else:
-            # Jika per_page adalah -1 (atau nilai negatif lainnya), ambil semua data
-            paginated_query = base_query
+        # Audit-6: per_page sudah di-cap di atas, selalu apply limit/offset.
+        paginated_query = base_query.offset((page - 1) * per_page).limit(per_page)
 
         logs = db.session.scalars(paginated_query).unique().all()
 
@@ -130,9 +131,24 @@ def export_action_logs(current_admin: User):  # noqa: ARG001
     file_format = request.args.get("format", "csv").lower()
 
     try:
-        # Untuk ekspor, kita selalu ambil semua log tanpa limit
+        # Audit-6: Hard cap supaya export tidak OOM gunicorn worker pada DB besar.
+        # Admin perlu filter date range bila log > MAX_EXPORT_ROWS.
+        _MAX_EXPORT_ROWS = 50_000
         base_query = _build_log_query().order_by(AdminActionLog.created_at.desc())
-        logs = db.session.scalars(base_query).unique().all()
+
+        count_query = select(func.count()).select_from(base_query.subquery())
+        total_rows = int(db.session.scalar(count_query) or 0)
+        if total_rows > _MAX_EXPORT_ROWS:
+            return jsonify(
+                {
+                    "message": (
+                        f"Export ditolak: total {total_rows} baris melebihi batas {_MAX_EXPORT_ROWS}. "
+                        "Persempit dengan filter rentang tanggal atau admin tertentu."
+                    )
+                }
+            ), HTTPStatus.UNPROCESSABLE_ENTITY
+
+        logs = db.session.scalars(base_query.limit(_MAX_EXPORT_ROWS)).unique().all()
 
         output = io.StringIO()
         if file_format == "csv":
