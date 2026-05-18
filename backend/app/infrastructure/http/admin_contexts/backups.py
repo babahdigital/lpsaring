@@ -93,6 +93,23 @@ def upload_backup_impl(*, get_backup_dir: Callable[[], str]):
         if extension not in (".dump", ".sql"):
             return jsonify({"message": "Format file tidak didukung. Gunakan .dump atau .sql"}), HTTPStatus.BAD_REQUEST
 
+        # Sprint 7: size limit guard supaya admin nakal atau bug client tidak isi
+        # disk via upload super besar. Default 500 MB; configurable via env.
+        max_upload_mb = int(current_app.config.get("BACKUP_UPLOAD_MAX_MB", 500) or 500)
+        if max_upload_mb <= 0:
+            max_upload_mb = 500
+        max_bytes = max_upload_mb * 1024 * 1024
+        try:
+            uploaded_file.stream.seek(0, os.SEEK_END)
+            size_bytes = uploaded_file.stream.tell()
+            uploaded_file.stream.seek(0)
+        except Exception:
+            size_bytes = uploaded_file.content_length or 0
+        if size_bytes > max_bytes:
+            return jsonify(
+                {"message": f"Ukuran file melebihi batas {max_upload_mb} MB."}
+            ), HTTPStatus.REQUEST_ENTITY_TOO_LARGE
+
         backup_dir = pathlib.Path(get_backup_dir())
         stem = pathlib.Path(original_name).stem
         timestamp = datetime.now(dt_timezone.utc).strftime("%Y%m%d_%H%M%S")

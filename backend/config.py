@@ -253,6 +253,8 @@ class Config:
 
     # --- Konfigurasi Backup ---
     BACKUP_DIR = os.environ.get("BACKUP_DIR", "/app/backups")
+    # Sprint 7: cap upload backup admin supaya tidak isi disk (DoS).
+    BACKUP_UPLOAD_MAX_MB = get_env_int("BACKUP_UPLOAD_MAX_MB", 500)
 
     # --- Konfigurasi Autentikasi (JWT) ---
     JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY")

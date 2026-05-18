@@ -308,10 +308,19 @@ def consume_session_token_value(token: str) -> Optional[uuid.UUID]:
         return None
     key = f"session:{token}"
     try:
-        user_id_str = redis_client.get(key)
+        # Sprint 7 BUG-2: GETDEL atomic supaya 2 request bersamaan tidak dua-duanya
+        # dapat user_id (Redis 6.2+; production memakai 7-alpine).
+        # Fallback ke GET+DEL non-atomic kalau GETDEL belum support.
+        user_id_str: Optional[str] = None
+        getdel = getattr(redis_client, "getdel", None)
+        if callable(getdel):
+            user_id_str = getdel(key)
+        else:
+            user_id_str = redis_client.get(key)
+            if user_id_str:
+                redis_client.delete(key)
         if not user_id_str:
             return None
-        redis_client.delete(key)
         return uuid.UUID(user_id_str)
     except Exception as e:
         current_app.logger.error(f"Gagal mengkonsumsi session token: {e}", exc_info=True)

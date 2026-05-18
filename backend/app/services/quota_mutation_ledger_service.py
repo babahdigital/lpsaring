@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional
 
 import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
-from flask import has_app_context
+from flask import current_app, has_app_context
 
 from app.extensions import db
 from app.infrastructure.db.models import QuotaMutationLedger, User
+
+_logger = logging.getLogger(__name__)
 
 
 def snapshot_user_quota_state(user: User) -> dict[str, Any]:
@@ -69,7 +72,29 @@ def append_quota_mutation_event(
         with db.session.begin_nested():
             db.session.add(item)
             db.session.flush()
-    except RuntimeError:
+    except RuntimeError as exc_rt:
+        # Sprint 7 BUG-3 (audit-7): log silent swallow supaya hilangnya audit trail
+        # tetap observable (sebelumnya purely silent).
+        try:
+            current_app.logger.warning(
+                "quota_ledger.append RuntimeError swallowed: user_id=%s source=%s idem=%s err=%s",
+                user.id,
+                normalized_source,
+                normalized_idempotency,
+                exc_rt,
+            )
+        except Exception:
+            _logger.warning("quota_ledger.append RuntimeError swallowed (no app ctx): %s", exc_rt)
         return
-    except IntegrityError:
+    except IntegrityError as exc_ie:
+        try:
+            current_app.logger.warning(
+                "quota_ledger.append IntegrityError swallowed: user_id=%s source=%s idem=%s err=%s",
+                user.id,
+                normalized_source,
+                normalized_idempotency,
+                exc_ie,
+            )
+        except Exception:
+            _logger.warning("quota_ledger.append IntegrityError swallowed (no app ctx): %s", exc_ie)
         return

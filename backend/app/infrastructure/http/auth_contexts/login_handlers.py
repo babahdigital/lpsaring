@@ -180,6 +180,31 @@ def auto_login_impl(
                 ).model_dump()
             ), HTTPStatus.UNAUTHORIZED
 
+        # Sprint 7 BUG-1 (CRITICAL): Cegah account takeover via client_ip spoofing.
+        # Kalau payload hanya provide client_ip TANPA client_mac, real source IP dari
+        # HTTP harus MATCH client_ip — jika tidak, attacker bisa claim IP korban dan
+        # mendapat token korban (karena MikroTik ARP lookup return MAC korban).
+        # Bila client_mac juga disediakan, mismatch handled oleh MAC vs router check
+        # di bawah. Skenario sah: MikroTik captive portal mengirim dari router-side
+        # → real source IP = router gateway, bukan client_ip — jadi kita biarkan
+        # itu lewat selama bersama-sama dengan client_mac.
+        if client_ip and not client_mac:
+            real_source_ip = get_client_ip()
+            if real_source_ip and real_source_ip != client_ip:
+                _log_auto_login_decision(
+                    reason_code="CLIENT_IP_SOURCE_MISMATCH",
+                    http_status=HTTPStatus.FORBIDDEN,
+                    client_ip_value=client_ip,
+                    client_mac_value=client_mac,
+                    level="warning",
+                    details=f"real_source_ip={real_source_ip}",
+                )
+                return jsonify(
+                    AuthErrorResponseSchema(
+                        error="Identitas perangkat tidak dapat diverifikasi. Silakan login dengan OTP."
+                    ).model_dump()
+                ), HTTPStatus.FORBIDDEN
+
         if not client_ip:
             client_ip = get_client_ip()
         if not client_ip and incoming_mac:
