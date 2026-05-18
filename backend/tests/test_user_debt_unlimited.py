@@ -41,7 +41,7 @@ def test_clear_all_debts_to_zero_for_unlimited_clears_manual_only(monkeypatch):
 
     called = {"pay_mb": None}
 
-    def _fake_apply_manual_debt_payment(*, user, admin_actor, pay_mb, source):
+    def _fake_apply_manual_debt_payment(*, user, admin_actor, pay_mb, source, debt_id_filter=None, created_before=None):
         called["pay_mb"] = int(pay_mb)
         user.manual_debt_mb = 0
         return int(pay_mb)

@@ -206,7 +206,7 @@ export default defineNuxtConfig({
 
   plugins: [
     '~/plugins/vuetify',
-    '~/plugins/api.ts',
+    '~/plugins/00.api.ts',
   ],
 
   imports: {

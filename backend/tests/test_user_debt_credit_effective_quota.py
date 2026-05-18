@@ -41,7 +41,7 @@ def test_consume_injected_mb_for_debt_consumes_auto_then_manual(monkeypatch):
         manual_debt_mb=100,
     )
 
-    def _fake_apply_manual_debt_payment(*, user, admin_actor, pay_mb, source):
+    def _fake_apply_manual_debt_payment(*, user, admin_actor, pay_mb, source, debt_id_filter=None, created_before=None):
         paid = int(pay_mb)
         user.manual_debt_mb = max(0, int(user.manual_debt_mb) - paid)
         return paid
