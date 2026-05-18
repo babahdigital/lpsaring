@@ -764,12 +764,29 @@ export const useAuthStore = defineStore('auth', () => {
     // Sebelumnya hanya `autoLoginAttempted.value` di-reset → kalau user logout
     // lalu user lain login di tab yang sama, cooldown 20s key sessionStorage
     // masih ada → blocking auto-login user baru.
+    // Sprint 14 Bug-1: refs in-memory juga harus di-reset; sebelumnya hanya
+    // sessionStorage yang clear, ref tetap punya signature/timestamp lama →
+    // isAutoLoginRetryCoolingDown cek ref dulu sebelum sessionStorage → user
+    // berikut di tab sama masih di-block selama 20 detik.
+    lastAutoLoginAttemptSignature.value = ''
+    lastAutoLoginAttemptAt.value = 0
     try {
       if (import.meta.client && typeof sessionStorage !== 'undefined')
         sessionStorage.removeItem(LAST_AUTOLOGIN_ATTEMPT_KEY)
     }
     catch {
       // sessionStorage may not be available in all environments.
+    }
+    // Sprint 14 Bug-2: clear hotspot identity localStorage supaya user
+    // berikut di tab sama tidak inherit IP/MAC user sebelumnya (max-age 10
+    // menit). Backend tetap re-validate (bukan security bypass), tapi bisa
+    // bikin captive redirect / device-bind salah.
+    try {
+      if (import.meta.client && typeof localStorage !== 'undefined')
+        localStorage.removeItem('lpsaring:last-hotspot-identity')
+    }
+    catch {
+      // localStorage may not be available.
     }
     if (performRedirect)
       lastKnownUser.value = null

@@ -45,6 +45,12 @@ export default defineNuxtPlugin((nuxtApp) => {
 
     credentials: 'include',
 
+    // Sprint 14 Bug-3: timeout default supaya request hung di flaky network
+    // captive tidak bikin UI button spin selamanya. ofetch tidak set default,
+    // jadi inherit platform (browser fetch tidak punya timeout). 25 detik
+    // cukup untuk endpoint lambat (MikroTik sync), tapi tidak forever.
+    timeout: 25000,
+
     // Interceptor yang dijalankan SEBELUM setiap permintaan.
     onRequest({ options }) {
       const headers = new Headers(options.headers)
