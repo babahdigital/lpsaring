@@ -285,7 +285,16 @@ def _is_demo_user(user: User | None) -> bool:
 def _deny_non_super_admin_target_access(current_admin: User, target_user: User):
     if current_admin.is_super_admin_role:
         return None
-    if target_user.role == UserRole.SUPER_ADMIN or _is_demo_user(target_user):
+    # Sprint 8 BUG-1: Sebelumnya hanya blokir SUPER_ADMIN target — ADMIN bisa
+    # reset password ADMIN lain, force re-login, atau ubah field non-role peer
+    # admin. Sekarang: ADMIN biasa tidak boleh aksi terhadap ADMIN atau SUPER_ADMIN
+    # lain (peer / superior). Demo user tetap diblokir.
+    # Catat: SimpleNamespace di test tidak punya `is_admin_role` property → derive
+    # dari role enum manual (UserRole.ADMIN / SUPER_ADMIN).
+    is_target_admin = bool(getattr(target_user, "is_admin_role", False)) or (
+        getattr(target_user, "role", None) in (UserRole.ADMIN, UserRole.SUPER_ADMIN)
+    )
+    if is_target_admin or _is_demo_user(target_user):
         return jsonify({"message": "Akses ditolak."}), HTTPStatus.FORBIDDEN
     return None
 

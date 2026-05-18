@@ -4,8 +4,10 @@ from typing import Tuple, Optional
 from werkzeug.security import generate_password_hash
 from datetime import datetime, timezone as dt_timezone, timedelta
 from flask import current_app
+from sqlalchemy import func, select
 
-from app.infrastructure.db.models import User, UserRole, AdminActionType
+from app.extensions import db
+from app.infrastructure.db.models import ApprovalStatus, User, UserRole, AdminActionType
 from app.utils.formatters import format_to_local_phone
 from app.services import settings_service
 from .helpers import _log_admin_action, _generate_password, _send_whatsapp_notification, _handle_mikrotik_operation
@@ -49,6 +51,36 @@ def change_user_role(
     old_role = user.role
     if old_role == new_role:
         return False, "Tidak ada perubahan peran."
+
+    # Sprint 8 BUG-2: Admin tidak boleh ubah role akun sendiri (mencegah self-demote
+    # SUPER_ADMIN ke ADMIN yang misleadingly diberi label UPGRADE_TO_ADMIN dan
+    # menulis ulang password_hash sendiri).
+    if getattr(user, "id", None) == getattr(admin, "id", None):
+        return False, "Tidak dapat mengubah peran akun Anda sendiri."
+
+    # Sprint 8 BUG-2: Cegah governance lockout — kalau ini SUPER_ADMIN terakhir
+    # (aktif & approved) yang akan diturunkan, tolak. Operator harus angkat
+    # SUPER_ADMIN lain dulu sebelum demote.
+    if old_role == UserRole.SUPER_ADMIN and new_role != UserRole.SUPER_ADMIN:
+        try:
+            remaining = (
+                db.session.execute(
+                    select(func.count(User.id)).where(
+                        User.role == UserRole.SUPER_ADMIN,
+                        User.is_active.is_(True),
+                        User.approval_status == ApprovalStatus.APPROVED,
+                        User.id != user.id,
+                    )
+                ).scalar()
+                or 0
+            )
+        except Exception:
+            remaining = None
+        if remaining is not None and int(remaining) == 0:
+            return (
+                False,
+                "Tidak dapat menurunkan peran Super Admin terakhir. Angkat Super Admin lain terlebih dahulu.",
+            )
 
     # [PERBAIKAN] Menggunakan variabel 'admin' yang benar, bukan 'admin_actor'
     if not admin.is_super_admin_role:

@@ -9,6 +9,23 @@ from decimal import Decimal, ROUND_HALF_UP
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
+def mask_phone_for_log(phone_number: Optional[str]) -> str:
+    """Sprint 8: Mask phone number untuk log (cegah PII leak).
+
+    Tampilkan first 4 + last 3 digit, mask tengah dengan '*'.
+    Contoh: +6281234567890 → +6281***890.
+    Pakai di log statement kalau memang harus menampilkan nomor untuk
+    correlation; sebenarnya `user_id` (UUID) lebih disukai bila tersedia.
+    """
+    if not phone_number:
+        return ""
+    raw = str(phone_number).strip()
+    if len(raw) <= 7:
+        # Terlalu pendek untuk masking informatif → kembalikan full (atau "***").
+        return "***"
+    return f"{raw[:4]}***{raw[-3:]}"
+
+
 def format_app_date(dt_utc: Optional[datetime] = None) -> str:
     """Format tanggal sesuai zona waktu aplikasi (dd-mm-yyyy)."""
     local_dt = get_app_local_datetime(dt_utc)
