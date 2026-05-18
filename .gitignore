@@ -84,3 +84,32 @@ db.sqlite3-journal
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Local working directories (deploy / audit artifacts)
+backups/
+tmp/
+deploy.log
+deploy-summary.txt
+previous-deploy.json
+mypy-report.txt
+mypy-report.json
+pyright-report.txt
+pyright-report.json
+bandit-report.txt
+pip-audit-report.txt
+pnpm-audit-report.txt
+ruff-format-report.txt
+stylelint-report.txt
+knip-report.txt
+frontend-test-full-report.txt
+
+# Generated artifacts
+*.pyc
+*.pyd
+
+# Type checker caches
+.pytype/
+
+# Local AI / scratch
+.claude_local/
+notes/

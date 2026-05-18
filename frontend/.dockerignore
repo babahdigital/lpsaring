@@ -1,5 +1,15 @@
+# =============================================================
+# frontend/.dockerignore — context khusus untuk frontend Dockerfile
+# (Dockerfile-prod). Build images Nuxt 3 SSR — exclude semua
+# artifact build/dev/test.
+# =============================================================
+
+# Dependencies / pnpm
 node_modules
 .pnpm-store
+.npm
+
+# Build artifacts (akan di-generate di stage build)
 .nuxt
 .output
 .nitro
@@ -7,23 +17,44 @@ dist
 build
 .vite
 coverage
-tests
+.eslintcache
 
+# Tests + dev tools
+tests/
+__tests__/
+vitest.config.ts
+eslint.config.js
+eslint-json.config.js
+stylelint.config.cjs
+knip.config.ts
+
+# Audit / lint reports
+*-report.txt
+*-report.json
+stylelint-report.txt
+knip-report.txt
+frontend-test-full-report.txt
+
+# Env files — secret tidak masuk image
 .env
 .env.*
 !.env*.example
 
+# Runtime / log artifacts
 *.log
 *.tmp
 *.dump
 *.bak
 tmp
 
+# VCS / IDE
 .git
 .github
 .gitignore
 .gitattributes
 .vscode/
 .idea/
+*.swp
+*~
 .DS_Store
 Thumbs.db

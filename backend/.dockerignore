@@ -1,31 +1,68 @@
+# =============================================================
+# backend/.dockerignore — context khusus untuk backend Dockerfile
+# (Dockerfile-prod). Lebih ketat dari root .dockerignore karena
+# image production tidak butuh tools dev/test/CI.
+# =============================================================
+
+# Python cache + bytecode
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.pytype/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
 
+# Virtualenvs (kalau dev local pernah init di sini)
 .venv/
+.venv*/
 venv/
 env/
+ENV/
 .direnv/
+.python-version
 
+# Env files — secret tidak masuk image
 .env
 .env.*
 !.env*.example
 
+# Runtime artifacts
 backups/
 logs/
 tmp/
 celerybeat-schedule
 celerybeat-schedule.*
+gunicorn.ctl
 
+# Test, docs, scripts ad-hoc — production image tidak butuh
 docs/
 dev/
 tests/
+test_*.py
+scripts/
 
+# Audit / lint reports
+mypy-report.txt
+pyright-report.txt
+bandit-report.txt
+pip-audit-report.txt
+ruff-format-report.txt
+
+# VCS / IDE metadata
 .git
 .github
 .gitignore
 .gitattributes
 .vscode/
 .idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db

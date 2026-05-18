@@ -1,3 +1,9 @@
+# =============================================================
+# .dockerignore (root) — minimalkan build context yang dikirim ke
+# Docker daemon. Lebih kecil = build lebih cepat + tidak ada secret
+# leak ke image.
+# =============================================================
+
 # VCS and editor metadata
 .git
 .github
@@ -5,12 +11,19 @@
 .gitattributes
 .vscode/
 .idea/
+*.swp
+*~
 
 # Documentation and local notes
 docs/
+CHANGELOG.md
+CONTRIBUTING.md
+DEVELOPMENT.md
+PROJECT_OVERVIEW.md
+README.md
 *.md
 
-# Local env and secrets
+# Local env and secrets (jangan masukkan secret ke image)
 .env
 .env.*
 !.env.example
@@ -18,28 +31,88 @@ docs/
 !.env.public.prod.example
 !backend/.env*.example
 !frontend/.env*.example
+secrets/
+credentials/
+*.pem
+*.key
 
-# Dependencies and build output
+# Dependencies and build output (per-tech, both root + sub)
 **/node_modules
 **/.pnpm-store
+**/.npm
 frontend/.nuxt
 frontend/.output
 frontend/.nitro
+frontend/.vite
 frontend/dist
 frontend/build
+frontend/coverage
 **/__pycache__
 **/*.py[cod]
 **/.pytest_cache
 **/.ruff_cache
 **/.mypy_cache
+**/.pytype/
+.eslintcache
 
 # Runtime artifacts
 tmp/
 logs/
 backend/backups/
+backend/celerybeat-schedule
+backend/celerybeat-schedule.*
+backend/gunicorn.ctl
 *.log
 *.tmp
 *.dump
 *.bak
 dev/
 tests/
+
+# Test + e2e — image production tidak butuh
+backend/tests/
+frontend/tests/
+scripts/e2e/
+
+# Deploy + audit artifacts dari CI/local
+deploy.log
+deploy-summary.txt
+previous-deploy.json
+mypy-report.txt
+mypy-report.json
+pyright-report.txt
+pyright-report.json
+bandit-report.txt
+pip-audit-report.txt
+pnpm-audit-report.txt
+ruff-format-report.txt
+stylelint-report.txt
+knip-report.txt
+frontend-test-full-report.txt
+
+# Backups dir di repo root (lokal pre-deploy backup)
+/backups/
+backend/backups/
+
+# Old compose / sh scripts — tidak perlu di build context image
+deploy_pi.sh
+docker-compose.dev.yml
+docker-compose.e2e.yml
+docker-compose.override.yml
+docker-compose.prod.yml.bak-*
+
+# Infrastructure config (nginx, dll) — managed di VPS langsung
+infrastructure/
+
+# Contracts source-only (TS contract sudah di-generate ke frontend/)
+contracts/
+
+# Local databases
+*.sqlite
+*.sqlite3
+*.db
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
