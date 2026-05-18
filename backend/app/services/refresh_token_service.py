@@ -141,6 +141,11 @@ def rotate_refresh_token(raw_token: str, user_agent: Optional[str] = None) -> Op
     normalized_user_agent = _normalize_user_agent(user_agent)
     client_ip = _get_client_ip_safely()
 
+    # H-rt1 (audit-5): Lock baris supaya 2 request paralel dengan token sama
+    # tidak masing-masing mint replacement (single-use violation).
+    # SELECT ... FOR UPDATE → request kedua menunggu request pertama commit;
+    # setelah commit pertama, request kedua melihat `revoked_at IS NOT NULL`
+    # dan masuk ke jalur grace reuse (tidak mint replacement baru).
     existing = (
         db.session.query(RefreshToken)
         .filter(
@@ -148,6 +153,7 @@ def rotate_refresh_token(raw_token: str, user_agent: Optional[str] = None) -> Op
             RefreshToken.revoked_at.is_(None),
             RefreshToken.expires_at > now,
         )
+        .with_for_update()
         .first()
     )
 

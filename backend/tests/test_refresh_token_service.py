@@ -18,6 +18,9 @@ class _FakeQuery:
     def filter(self, *_args, **_kwargs):
         return self
 
+    def with_for_update(self, *_args, **_kwargs):
+        return self
+
     def first(self):
         if self._call_index == 1:
             return self._session.active_token
