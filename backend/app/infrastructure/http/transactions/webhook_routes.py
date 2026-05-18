@@ -163,6 +163,30 @@ def handle_notification_impl(
             session.commit()
             return jsonify({"status": "ok"}), HTTPStatus.OK
 
+        # Sprint 9: Guard sebaliknya — tx yang sudah SUCCESS jangan di-overwrite ke
+        # CANCELLED/EXPIRED/FAILED via late webhook (out-of-order delivery dari
+        # Midtrans). State sudah final SUCCESS dan quota sudah di-apply; ubah ke
+        # terminal-negative akan misleading di UI + audit log.
+        if transaction.status == TransactionStatus.SUCCESS and new_status in (
+            TransactionStatus.CANCELLED,
+            TransactionStatus.FAILED,
+            TransactionStatus.EXPIRED,
+        ):
+            log_transaction_event(
+                session=session,
+                transaction=transaction,
+                source=TransactionEventSource.MIDTRANS_WEBHOOK,
+                event_type="IGNORED_LATE_TERMINAL_FROM_SUCCESS",
+                status=transaction.status,
+                payload={
+                    "intended_state": new_status.value,
+                    "midtrans_status": midtrans_status,
+                    "order_id": order_id,
+                },
+            )
+            session.commit()
+            return jsonify({"status": "ok"}), HTTPStatus.OK
+
         transaction.status = new_status
 
         log_transaction_event(
