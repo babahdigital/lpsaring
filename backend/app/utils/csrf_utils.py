@@ -23,9 +23,7 @@ def _normalize_origin(origin: str) -> Optional[str]:
         return None
     port = parsed.port
     # Strip port kalau matches scheme default.
-    if port is not None and (
-        (scheme == "https" and port == 443) or (scheme == "http" and port == 80)
-    ):
+    if port is not None and ((scheme == "https" and port == 443) or (scheme == "http" and port == 80)):
         port = None
     netloc = f"{hostname}:{port}" if port is not None else hostname
     return f"{scheme}://{netloc}"
