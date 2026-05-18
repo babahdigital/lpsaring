@@ -1446,8 +1446,13 @@ def _resolve_target_profile(
         return expired_profile
     if user.is_unlimited_user:
         return unlimited_profile
-    if (user.total_quota_purchased_mb or 0) <= 0 and not is_expired:
-        return habis_profile
+    # Sprint 9 BUG-3: predicate dipersempit ke `remaining_mb <= 0` (sama dengan
+    # `_sync_address_list_status` di bawah) supaya profile + address-list
+    # konsisten. Sebelumnya cek dua kondisi terpisah:
+    # - `purchased_mb <= 0 and not is_expired` (dead `not is_expired` karena sudah
+    #   guarded di line 1445)
+    # - `remaining_mb <= 0`
+    # Hasilnya bisa divergen kalau ada interaksi unlimited/debt yang aneh.
     if remaining_mb <= 0:
         return habis_profile
     if float(getattr(user, "total_quota_purchased_mb", 0) or 0) > fup_threshold_mb and remaining_mb <= fup_threshold_mb:

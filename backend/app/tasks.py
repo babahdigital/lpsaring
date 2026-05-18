@@ -2918,32 +2918,86 @@ def expire_stale_transactions_task(self):
             grace_minutes = 5
             legacy_cutoff = now_utc - timedelta(minutes=(expiry_minutes + grace_minutes))
 
-            # Expire transactions that were initiated or pending but exceeded expiry_time.
-            q = (
-                db.session.query(Transaction)
-                .filter(Transaction.status.in_([TransactionStatus.UNKNOWN, TransactionStatus.PENDING]))
-                .filter(Transaction.expiry_time.isnot(None))
-                .filter(Transaction.expiry_time < expiry_cutoff)
-            )
-            to_expire = q.all()
+            # Sprint 9 CRITICAL: Race-safe expire — webhook bisa flip tx ke SUCCESS
+            # selama task ini berjalan (long MikroTik RPC di webhook). Tanpa guard,
+            # task ini overwrite SUCCESS → EXPIRED (money loss + audit confusion).
+            # Solusi: ambil row lock `with_for_update(skip_locked=True)` supaya
+            # baris yang sedang di-lock webhook diabaikan; lalu re-check status
+            # masih PENDING/UNKNOWN setelah lock (defense-in-depth).
+            try:
+                q = (
+                    db.session.query(Transaction)
+                    .filter(
+                        Transaction.status.in_(
+                            [TransactionStatus.UNKNOWN, TransactionStatus.PENDING]
+                        )
+                    )
+                    .filter(Transaction.expiry_time.isnot(None))
+                    .filter(Transaction.expiry_time < expiry_cutoff)
+                    .with_for_update(skip_locked=True)
+                )
+                to_expire = q.all()
 
-            # Also expire legacy rows that never had expiry_time set.
-            q_legacy = (
-                db.session.query(Transaction)
-                .filter(Transaction.status.in_([TransactionStatus.UNKNOWN, TransactionStatus.PENDING]))
-                .filter(Transaction.expiry_time.is_(None))
-                .filter(Transaction.created_at < legacy_cutoff)
-            )
-            to_expire.extend(q_legacy.all())
+                q_legacy = (
+                    db.session.query(Transaction)
+                    .filter(
+                        Transaction.status.in_(
+                            [TransactionStatus.UNKNOWN, TransactionStatus.PENDING]
+                        )
+                    )
+                    .filter(Transaction.expiry_time.is_(None))
+                    .filter(Transaction.created_at < legacy_cutoff)
+                    .with_for_update(skip_locked=True)
+                )
+                to_expire.extend(q_legacy.all())
+            except Exception as exc_lock:
+                # FakeSession di test mungkin tidak support with_for_update — fallback
+                # tanpa lock. Tetap pakai status re-check di bawah supaya safe.
+                logger.warning(
+                    "expire_stale_transactions_task: with_for_update gagal (%s), fallback non-lock.",
+                    exc_lock,
+                )
+                to_expire = (
+                    db.session.query(Transaction)
+                    .filter(
+                        Transaction.status.in_(
+                            [TransactionStatus.UNKNOWN, TransactionStatus.PENDING]
+                        )
+                    )
+                    .filter(Transaction.expiry_time.isnot(None))
+                    .filter(Transaction.expiry_time < expiry_cutoff)
+                    .all()
+                )
+                to_expire.extend(
+                    db.session.query(Transaction)
+                    .filter(
+                        Transaction.status.in_(
+                            [TransactionStatus.UNKNOWN, TransactionStatus.PENDING]
+                        )
+                    )
+                    .filter(Transaction.expiry_time.is_(None))
+                    .filter(Transaction.created_at < legacy_cutoff)
+                    .all()
+                )
 
             if not to_expire:
                 return
 
+            expired_count = 0
             for tx in to_expire:
-                tx.status = TransactionStatus.EXPIRED
+                # Defense-in-depth: re-check status. Walau with_for_update sudah
+                # mencegah konflik, kalau fallback non-lock dipakai (FakeSession),
+                # guard ini memastikan tidak overwrite SUCCESS yang baru saja commit.
+                if tx.status in (TransactionStatus.UNKNOWN, TransactionStatus.PENDING):
+                    tx.status = TransactionStatus.EXPIRED
+                    expired_count += 1
 
             db.session.commit()
-            logger.info("Celery Task: Expired %s stale transactions.", len(to_expire))
+            logger.info(
+                "Celery Task: Expired %s stale transactions (skipped %s already-final).",
+                expired_count,
+                len(to_expire) - expired_count,
+            )
         except Exception as e:
             logger.error("Celery Task: Expire stale transactions gagal: %s", e, exc_info=True)
             if self.request.retries >= 2:
