@@ -594,7 +594,13 @@ class RefreshToken(db.Model):
     ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
     user_agent: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
-    user: Mapped["User"] = relationship("User", lazy="joined")
+    # `innerjoin=True` WAJIB ada bila relationship dipakai bersama `.with_for_update()`
+    # di refresh_token_service.rotate_refresh_token (decorators.py:307/396 auto-rotate).
+    # `lazy="joined"` default ke LEFT OUTER JOIN, dan Postgres `FOR UPDATE` tidak boleh
+    # diaplikasikan ke nullable side of OUTER JOIN → `psycopg2.errors.FeatureNotSupported`
+    # → 500 di semua endpoint yang panggil token_required saat access token expired.
+    # FK `user_id` NOT NULL + ON DELETE CASCADE — INNER JOIN aman tanpa kehilangan data.
+    user: Mapped["User"] = relationship("User", lazy="joined", innerjoin=True)
     replaced_by: Mapped[Optional["RefreshToken"]] = relationship("RefreshToken", remote_side=[id], lazy="select")
 
 
