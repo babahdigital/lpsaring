@@ -560,7 +560,11 @@ class UserDevice(db.Model):
 
     deauthorized_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    user: Mapped["User"] = relationship("User", back_populates="devices", lazy="joined")
+    # `innerjoin=True` WAJIB ada bila relationship dipakai bersama `.with_for_update()`
+    # di device_management_service.register_or_update_device():948 (cross_user_device lock).
+    # Lihat penjelasan lengkap di RefreshToken.user di bawah. FK `user_id` NOT NULL +
+    # ON DELETE CASCADE — INNER JOIN aman.
+    user: Mapped["User"] = relationship("User", back_populates="devices", lazy="joined", innerjoin=True)
 
 
 class RefreshToken(db.Model):
