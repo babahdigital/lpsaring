@@ -394,13 +394,15 @@ async function handleVerifyOtp() {
     rememberHotspotIdentity(identity, hotspotTrustConfig)
     const clientIp = identity.clientIp
     const clientMac = identity.clientMac
+    const mikrotikLinkHint = String(trustedHotspotLoginHint.value || '').trim()
     // L-H1: hotspot_login_context HARUS hanya true bila identity device benar-benar
     // tersedia. Backend (verify_otp_handlers.py) reject 403 di produksi bila flag
     // true tanpa client_ip/client_mac — sengaja, untuk cegah palsu bypass captive.
     // mikrotikLinkHint TIDAK dipakai di sini karena persist di localStorage post-logout
     // (lihat auth.ts:801,814), sehingga hint stale dari sesi captive sebelumnya bikin
     // user 403 saat akses /login manual (mis. bookmark/home-screen icon) tanpa
-    // pernah melalui captive lagi.
+    // pernah melalui captive lagi. Hint masih dipakai untuk membangun
+    // /login/hotspot-required path di bawah (L538-539).
     const hotspotLoginContext = Boolean(clientIp || clientMac)
     const loginResponse = await authStore.verifyOtp(numberToVerify, otpToSend, {
       clientIp: clientIp || null,
