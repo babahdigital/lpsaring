@@ -1,6 +1,7 @@
 # backend/app/services/user_management/user_quota.py
 
 import math
+from datetime import datetime, timezone
 from typing import Any, Tuple
 from flask import current_app
 
@@ -338,9 +339,8 @@ def set_user_unlimited(user: User, admin_actor: User, make_unlimited: bool) -> T
         # profile-expired di siklus berikutnya. Komandan unlimited-for-N-days punya
         # flow terpisah (`request_management_routes.py`) yang explicit set
         # quota_expiry_date SETELAH memanggil ini (atau tanpa memanggil ini).
-        from datetime import datetime as _dt, timezone as _tz
         _expiry = getattr(user, "quota_expiry_date", None)
-        if _expiry is None or _expiry < _dt.now(_tz.utc):
+        if _expiry is None or _expiry < datetime.now(timezone.utc):
             user.quota_expiry_date = None
         limit_bytes_total = 0
         session_timeout_seconds = 0
