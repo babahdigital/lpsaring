@@ -1450,15 +1450,15 @@ def _resolve_target_profile(
         expired_profile = settings_service.get_setting("MIKROTIK_EXPIRED_PROFILE", "expired") or "expired"
         fup_threshold_mb = float(settings_service.get_setting_as_int("QUOTA_FUP_THRESHOLD_MB", 3072) or 3072)
 
-    # Sprint 29: is_unlimited_user DIDAHULUKAN sebelum is_expired. Unlimited user
-    # tidak terikat oleh expiry_date — admin bisa set is_unlimited_user=True pada
-    # user yang sebelumnya expired (mis. naik kelas KOMANDAN). Sebelumnya cek
-    # `is_expired` lebih dulu → sync_hotspot_usage overwrite profile-unlimited
-    # ke profile-expired tiap 2 menit, user unlimited tidak bisa internet.
-    if user.is_unlimited_user:
-        return unlimited_profile
+    # Order: blocked(luar fungsi) > expired > unlimited > habis > fup > active.
+    # Unlimited+expired adalah valid state (Komandan request unlimited for N days)
+    # → setelah N hari lewat, akses berakhir. Untuk admin yang ingin unlimited
+    # ABSOLUT (no expiry), set_user_unlimited di user_quota.py auto-CLEAR
+    # quota_expiry_date saat make_unlimited=True. Sehingga is_expired=False di sini.
     if is_expired:
         return expired_profile
+    if user.is_unlimited_user:
+        return unlimited_profile
     # Sprint 9 BUG-3: predicate dipersempit ke `remaining_mb <= 0` (sama dengan
     # `_sync_address_list_status` di bawah) supaya profile + address-list
     # konsisten. Sebelumnya cek dua kondisi terpisah:
@@ -2088,16 +2088,15 @@ def _sync_address_list_status(
     target_list = None
     blocked_for_list = bool(force_blocked or bool(getattr(user, "is_blocked", False)))
 
-    # Sprint 29: blocked > unlimited > expired (lihat _resolve_target_profile).
-    # Admin block tetap menang absolut; unlimited user diam-diam ditolak akses
-    # tanpa fix ini bila quota_expiry_date sudah lampau (overwrite ke list_expired
-    # tiap 2 menit dari sync_hotspot_usage).
+    # Order: blocked > expired > unlimited > habis > fup > active. Match
+    # _resolve_target_profile. Admin yang set unlimited absolut → expiry diclear
+    # di set_user_unlimited; Komandan unlimited-for-N-days tetap honor expiry.
     if blocked_for_list:
         target_list = list_blocked
-    elif user.is_unlimited_user:
-        target_list = list_active
     elif is_expired:
         target_list = list_expired
+    elif user.is_unlimited_user:
+        target_list = list_active
     elif remaining_mb <= 0:
         target_list = list_habis
     elif (
@@ -2109,10 +2108,10 @@ def _sync_address_list_status(
 
     if blocked_for_list:
         status_value = "blocked"
-    elif user.is_unlimited_user:
-        status_value = "unlimited"
     elif is_expired:
         status_value = "expired"
+    elif user.is_unlimited_user:
+        status_value = "unlimited"
     elif remaining_mb <= 0:
         status_value = "habis"
     elif (
@@ -2272,13 +2271,13 @@ def _sync_address_list_status_for_ip(
     target_list = None
     blocked_for_list = bool(force_blocked or bool(getattr(user, "is_blocked", False)))
 
-    # Sprint 29: unlimited > expired (lihat _resolve_target_profile + _sync_address_list_status).
+    # Order: blocked > expired > unlimited > habis > fup > active.
     if blocked_for_list:
         target_list = list_blocked
-    elif user.is_unlimited_user:
-        target_list = list_active
     elif is_expired:
         target_list = list_expired
+    elif user.is_unlimited_user:
+        target_list = list_active
     elif remaining_mb <= 0:
         target_list = list_habis
     elif (
@@ -2291,10 +2290,10 @@ def _sync_address_list_status_for_ip(
     username_08 = format_to_local_phone(user.phone_number)
     if blocked_for_list:
         status_value = "blocked"
-    elif user.is_unlimited_user:
-        status_value = "unlimited"
     elif is_expired:
         status_value = "expired"
+    elif user.is_unlimited_user:
+        status_value = "unlimited"
     elif remaining_mb <= 0:
         status_value = "habis"
     elif (

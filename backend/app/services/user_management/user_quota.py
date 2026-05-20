@@ -332,6 +332,16 @@ def set_user_unlimited(user: User, admin_actor: User, make_unlimited: bool) -> T
     if make_unlimited:
         action_type = AdminActionType.SET_UNLIMITED_STATUS
         user.mikrotik_profile_name = settings_service.get_setting("MIKROTIK_UNLIMITED_PROFILE", "unlimited")
+        # Sprint 29: Saat admin toggle is_unlimited_user=True via UI dasar, maksudnya
+        # "unlimited ABSOLUT" (no time limit). Clear quota_expiry_date jika sudah lewat
+        # atau NULL — sehingga sync_hotspot_usage tidak overwrite profile-unlimited ke
+        # profile-expired di siklus berikutnya. Komandan unlimited-for-N-days punya
+        # flow terpisah (`request_management_routes.py`) yang explicit set
+        # quota_expiry_date SETELAH memanggil ini (atau tanpa memanggil ini).
+        from datetime import datetime as _dt, timezone as _tz
+        _expiry = getattr(user, "quota_expiry_date", None)
+        if _expiry is None or _expiry < _dt.now(_tz.utc):
+            user.quota_expiry_date = None
         limit_bytes_total = 0
         session_timeout_seconds = 0
         status_text = "dijadikan"
