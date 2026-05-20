@@ -214,6 +214,10 @@ def process_quota_request(current_admin: User, request_id: uuid.UUID):
 
             # [PERBAIKAN] Menggunakan profil unlimited dari settings
             unlimited_profile = settings_service.get_setting("MIKROTIK_UNLIMITED_PROFILE", "unlimited")
+            # Sprint 29: sinkronkan kolom DB `mikrotik_profile_name` dengan apa yang
+            # di-push ke router. Tanpa ini, parity guard & sync_hotspot_usage tidak
+            # tahu user sudah unlimited; kolom DB stale dari status sebelumnya.
+            target_user.mikrotik_profile_name = unlimited_profile
             # [PERBAIKAN] Menghitung session timeout dan menghapus limit bytes
             timeout_seconds = int((new_expiry_date - now_local).total_seconds())
 
